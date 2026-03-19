@@ -576,15 +576,15 @@ const Canvas = {
 
         const x = comp.x;
         const y = comp.y - 30;
-        const vuPu = result.voltage_pu.toFixed(3);
-        const label = result.voltage_pu < 0.95 ? 'LOW V' : 'HIGH V';
+        const vStr = Annotations.formatVoltage(result.voltage_kv);
+        const label = result.voltage_pu < 0.95 ? 'LOW' : 'HIGH';
 
         html += `
           <g class="overload-flag" transform="translate(${x},${y})">
             <polygon points="-2,-12 2,-12 3,0 -3,0" fill="#d32f2f"/>
             <polygon points="-7,0 7,0 7,-4 0,-12 -7,-4" fill="#d32f2f"/>
-            <rect x="-24" y="1" width="48" height="13" rx="2" fill="#d32f2f"/>
-            <text x="0" y="11" text-anchor="middle" font-size="8" fill="#fff" font-weight="bold">${label} ${vuPu}</text>
+            <rect x="-28" y="1" width="56" height="13" rx="2" fill="#d32f2f"/>
+            <text x="0" y="11" text-anchor="middle" font-size="8" fill="#fff" font-weight="bold">${label} ${vStr}</text>
           </g>`;
       }
     }
