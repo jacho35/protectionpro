@@ -19,29 +19,16 @@ const Project = {
     document.title = 'ProtectionPro — New Project';
   },
 
-  // Save to database (primary save action)
-  async saveProject() {
-    // Prompt for project name if it's still the default
+  // Save project — exports as JSON file (primary save action)
+  saveProject() {
     if (AppState.projectName === 'Untitled Project') {
       const name = prompt('Project name:', AppState.projectName);
       if (!name) return;
       AppState.projectName = name;
     }
-
-    document.getElementById('status-info').textContent = 'Saving...';
-    try {
-      const result = await API.saveProject();
-      AppState.projectId = result.id;
-      AppState.dirty = false;
-      document.title = `ProtectionPro — ${AppState.projectName}`;
-      document.getElementById('status-info').textContent = 'Project saved to database.';
-      setTimeout(() => {
-        document.getElementById('status-info').textContent = '';
-      }, 3000);
-    } catch (e) {
-      document.getElementById('status-info').textContent = 'Save failed: ' + e.message;
-      alert('Could not save to database: ' + e.message + '\n\nUse File > Export JSON to save locally.');
-    }
+    this.exportJSON();
+    AppState.dirty = false;
+    document.title = `ProtectionPro — ${AppState.projectName}`;
   },
 
   // Export as JSON file (download)
