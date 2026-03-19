@@ -13,9 +13,10 @@ const Canvas = {
   isPanning: false,
   panStart: { x: 0, y: 0 },
 
-  // State for selection box
+  // State for selection box (marquee)
   isSelecting: false,
   selBoxStart: { x: 0, y: 0 },
+  selBoxBaseIds: new Set(), // IDs selected before marquee started (for shift+drag)
 
   init() {
     this.svg = document.getElementById('sld-canvas');
@@ -163,9 +164,13 @@ const Canvas = {
     }
 
     // Click on empty canvas: start selection box or clear selection
-    if (!e.shiftKey) {
+    if (e.shiftKey) {
+      // Shift+drag: remember current selection to preserve it
+      this.selBoxBaseIds = new Set(AppState.selectedIds);
+    } else {
       AppState.clearSelection();
       Properties.clear();
+      this.selBoxBaseIds = new Set();
     }
     this.isSelecting = true;
     this.selBoxStart = worldPt;
@@ -267,29 +272,66 @@ const Canvas = {
     this.updateTransform();
   },
 
-  // Selection box
+  // Selection box (marquee) — recalculates selection on every move
   updateSelectionBox(start, end) {
     const box = document.getElementById('selection-box');
     const rect = box.querySelector('rect');
-    const x = Math.min(start.x, end.x);
-    const y = Math.min(start.y, end.y);
-    const w = Math.abs(end.x - start.x);
-    const h = Math.abs(end.y - start.y);
-    rect.setAttribute('x', x);
-    rect.setAttribute('y', y);
-    rect.setAttribute('width', w);
-    rect.setAttribute('height', h);
+    const bx = Math.min(start.x, end.x);
+    const by = Math.min(start.y, end.y);
+    const bw = Math.abs(end.x - start.x);
+    const bh = Math.abs(end.y - start.y);
+    rect.setAttribute('x', bx);
+    rect.setAttribute('y', by);
+    rect.setAttribute('width', bw);
+    rect.setAttribute('height', bh);
     box.style.display = '';
 
-    // Select components within box
+    // Start from the base selection (shift+drag preserves prior selection)
+    AppState.selectedIds = new Set(this.selBoxBaseIds);
+
+    // Select components whose bounding box overlaps the marquee
     for (const [id, comp] of AppState.components) {
       const def = COMPONENT_DEFS[comp.type];
-      const cx = comp.x, cy = comp.y;
-      if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) {
+      const hw = def.width / 2;
+      const hh = def.height / 2;
+      const cx1 = comp.x - hw, cy1 = comp.y - hh;
+      const cx2 = comp.x + hw, cy2 = comp.y + hh;
+      // AABB overlap test
+      if (cx2 >= bx && cx1 <= bx + bw && cy2 >= by && cy1 <= by + bh) {
         AppState.selectedIds.add(id);
       }
     }
+
+    // Select wires whose any segment intersects the marquee
+    for (const [id, wire] of AppState.wires) {
+      const fromComp = AppState.components.get(wire.fromComponent);
+      const toComp = AppState.components.get(wire.toComponent);
+      if (!fromComp || !toComp) continue;
+      const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
+      const to = Symbols.getPortWorldPosition(toComp, wire.toPort);
+      const midY = (from.y + to.y) / 2;
+      // Three segments of orthogonal route: vertical, horizontal, vertical
+      const segments = [
+        { x1: from.x, y1: from.y, x2: from.x, y2: midY },
+        { x1: from.x, y1: midY, x2: to.x, y2: midY },
+        { x1: to.x, y1: midY, x2: to.x, y2: to.y },
+      ];
+      for (const seg of segments) {
+        if (this.segmentIntersectsRect(seg, bx, by, bw, bh)) {
+          AppState.selectedIds.add(id);
+          break;
+        }
+      }
+    }
+
     this.render();
+  },
+
+  // Test if an axis-aligned line segment intersects a rectangle
+  segmentIntersectsRect(seg, rx, ry, rw, rh) {
+    const sx1 = Math.min(seg.x1, seg.x2), sx2 = Math.max(seg.x1, seg.x2);
+    const sy1 = Math.min(seg.y1, seg.y2), sy2 = Math.max(seg.y1, seg.y2);
+    return sx2 >= rx && sx1 <= rx + rw && sy2 >= ry && sy1 <= ry + rh;
   },
 
   hideSelectionBox() {
