@@ -34,6 +34,10 @@ const AppState = {
   // Drag state
   dragState: null, // {startX, startY, offsetX, offsetY, ids}
 
+  // Display toggles
+  showCableLabels: true,
+  showWarnings: true,
+
   // Clipboard for copy/paste
   clipboard: null, // { components: [], wires: [] }
 

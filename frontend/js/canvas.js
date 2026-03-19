@@ -371,6 +371,65 @@ const Canvas = {
 
     // Render annotations if results exist
     Annotations.render();
+
+    // Render cable size labels
+    if (AppState.showCableLabels) {
+      this.renderCableLabels();
+    }
+
+    // Render unconnected port warnings
+    if (AppState.showWarnings) {
+      this.renderUnconnectedWarnings();
+    }
+  },
+
+  // Show cable size/type label next to each cable
+  renderCableLabels() {
+    let html = '';
+    for (const comp of AppState.components.values()) {
+      if (comp.type !== 'cable') continue;
+      const p = comp.props;
+      // Build label: show standard type name or size info
+      let label = '';
+      if (p.standard_type) {
+        const std = STANDARD_CABLES.find(c => c.id === p.standard_type);
+        if (std) {
+          label = `${std.size_mm2}mm² ${std.conductor}`;
+        }
+      }
+      if (!label) {
+        // Fallback: show R value as size hint
+        label = `R=${p.r_per_km} Ω/km`;
+      }
+      // Also show length
+      const lenStr = p.length_km >= 1 ? `${p.length_km} km` : `${(p.length_km * 1000).toFixed(0)} m`;
+      const fullLabel = `${label}, ${lenStr}`;
+
+      const x = comp.x + 18;
+      const y = comp.y;
+      html += `<text class="cable-size-label" x="${x}" y="${y}" font-size="9" fill="#555" font-family="var(--font-mono)">${fullLabel}</text>`;
+    }
+    this.annotationsLayer.insertAdjacentHTML('beforeend', html);
+  },
+
+  // Show red warning circles on unconnected ports
+  renderUnconnectedWarnings() {
+    const unconnected = Components.getUnconnectedPorts();
+    if (unconnected.length === 0) return;
+
+    let html = '';
+    for (const { comp, port } of unconnected) {
+      const def = COMPONENT_DEFS[comp.type];
+      const localPos = Symbols.getPortPosition(port, def.width, def.height);
+      const wx = comp.x + localPos.x;
+      const wy = comp.y + localPos.y;
+      html += `
+        <g class="unconnected-warning" transform="translate(${wx},${wy})">
+          <circle r="8" fill="none" stroke="#d32f2f" stroke-width="2" stroke-dasharray="3,2"/>
+          <circle r="2" fill="#d32f2f"/>
+        </g>`;
+    }
+    this.annotationsLayer.insertAdjacentHTML('beforeend', html);
   },
 
   // Place a component at position (for drag-drop from palette)
