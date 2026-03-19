@@ -4,6 +4,7 @@ const Properties = {
   contentEl: null,
   calcInfoEl: null,
   currentId: null,
+  unitSelections: {}, // track chosen unit per field, e.g. { 'rated_mva': 'kVA' }
 
   init() {
     this.contentEl = document.getElementById('properties-content');
@@ -88,26 +89,60 @@ const Properties = {
     // Bind change events
     this.contentEl.querySelectorAll('input, select').forEach(input => {
       input.addEventListener('change', (e) => this.onFieldChange(e, comp));
-      input.addEventListener('input', (e) => {
-        // Live update for text/number fields
-        if (e.target.type === 'text' || e.target.type === 'number') {
-          this.onFieldChange(e, comp);
-        }
-      });
+      if (!input.classList.contains('unit-select')) {
+        input.addEventListener('input', (e) => {
+          // Live update for text/number fields
+          if (e.target.type === 'text' || e.target.type === 'number') {
+            this.onFieldChange(e, comp);
+          }
+        });
+      }
     });
   },
 
   renderField(field, value, compId) {
-    const unitHtml = field.unit ? `<span class="unit">${field.unit}</span>` : '';
     let inputHtml = '';
+    let unitHtml = '';
 
-    if (field.type === 'select') {
+    if (field.type === 'standard_select') {
+      // Standard type selector (cable library or transformer library)
+      const library = field.library === 'cable' ? STANDARD_CABLES : STANDARD_TRANSFORMERS;
+      const options = library.map(item =>
+        `<option value="${item.id}" ${value === item.id ? 'selected' : ''}>${item.name}</option>`
+      ).join('');
+      inputHtml = `<select data-field="${field.key}" data-library="${field.library}">
+        <option value="">-- Custom --</option>${options}</select>`;
+    } else if (field.type === 'select') {
       const options = field.options.map(opt =>
         `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`
       ).join('');
       inputHtml = `<select data-field="${field.key}">${options}</select>`;
     } else {
-      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${value}" step="any">`;
+      // Number or text input — handle unit conversion for display
+      let displayValue = value;
+      if (field.unitOptions) {
+        const selectedUnit = this.unitSelections[field.key] || field.unitOptions[0].label;
+        const unitOpt = field.unitOptions.find(u => u.label === selectedUnit);
+        if (unitOpt && unitOpt.mult !== 1) {
+          displayValue = value / unitOpt.mult;
+        }
+        // Round to avoid floating point noise
+        if (typeof displayValue === 'number') {
+          displayValue = parseFloat(displayValue.toPrecision(10));
+        }
+      }
+      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${displayValue}" step="any">`;
+    }
+
+    // Unit display: selectable dropdown if unitOptions, else static text
+    if (field.unitOptions) {
+      const selectedUnit = this.unitSelections[field.key] || field.unitOptions[0].label;
+      const opts = field.unitOptions.map(u =>
+        `<option value="${u.label}" ${u.label === selectedUnit ? 'selected' : ''}>${u.label}</option>`
+      ).join('');
+      unitHtml = `<select class="unit-select" data-unit-for="${field.key}">${opts}</select>`;
+    } else if (field.unit) {
+      unitHtml = `<span class="unit">${field.unit}</span>`;
     }
 
     return `
@@ -122,6 +157,27 @@ const Properties = {
     const field = e.target.dataset.field;
     let value = e.target.value;
 
+    // Unit selector changed — convert display and re-render
+    if (e.target.classList.contains('unit-select')) {
+      const forField = e.target.dataset.unitFor;
+      this.unitSelections[forField] = value;
+      this.show(comp.id); // re-render with new unit
+      return;
+    }
+
+    // Standard type selector — auto-fill fields from library
+    if (e.target.dataset.library) {
+      comp.props[field] = value;
+      if (value) {
+        this.applyStandardType(comp, e.target.dataset.library, value);
+      }
+      AppState.dirty = true;
+      AppState.clearResults();
+      Canvas.render();
+      this.show(comp.id); // re-render to show filled values
+      return;
+    }
+
     // Position/rotation are special
     if (field === '__x') {
       comp.x = snapToGrid(parseFloat(value) || 0);
@@ -130,10 +186,18 @@ const Properties = {
     } else if (field === '__rotation') {
       comp.rotation = parseInt(value) || 0;
     } else {
-      // Type coerce numbers
+      // Type coerce numbers, applying unit conversion
       if (e.target.type === 'number') {
         value = parseFloat(value);
         if (isNaN(value)) return;
+        // Convert from display unit back to base unit
+        const def = COMPONENT_DEFS[comp.type];
+        const fieldDef = def.fields.find(f => f.key === field);
+        if (fieldDef && fieldDef.unitOptions) {
+          const selectedUnit = this.unitSelections[field] || fieldDef.unitOptions[0].label;
+          const unitOpt = fieldDef.unitOptions.find(u => u.label === selectedUnit);
+          if (unitOpt) value = value * unitOpt.mult;
+        }
       }
       comp.props[field] = value;
     }
@@ -146,6 +210,29 @@ const Properties = {
     if (field === 'name') {
       const label = document.querySelector(`.sld-component[data-id="${comp.id}"] .comp-label`);
       if (label) label.textContent = value;
+    }
+  },
+
+  // Auto-fill component properties from a standard library entry
+  applyStandardType(comp, libraryType, typeId) {
+    if (libraryType === 'cable') {
+      const cable = STANDARD_CABLES.find(c => c.id === typeId);
+      if (cable) {
+        comp.props.r_per_km = cable.r_per_km;
+        comp.props.x_per_km = cable.x_per_km;
+        comp.props.rated_amps = cable.rated_amps;
+        comp.props.voltage_kv = cable.voltage_kv;
+      }
+    } else if (libraryType === 'transformer') {
+      const xfmr = STANDARD_TRANSFORMERS.find(t => t.id === typeId);
+      if (xfmr) {
+        comp.props.rated_mva = xfmr.rated_mva;
+        comp.props.voltage_hv_kv = xfmr.voltage_hv_kv;
+        comp.props.voltage_lv_kv = xfmr.voltage_lv_kv;
+        comp.props.z_percent = xfmr.z_percent;
+        comp.props.x_r_ratio = xfmr.x_r_ratio;
+        comp.props.vector_group = xfmr.vector_group;
+      }
     }
   },
 

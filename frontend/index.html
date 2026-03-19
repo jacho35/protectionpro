@@ -57,6 +57,11 @@
       </div>
     </div>
     <div class="toolbar-right">
+      <button id="btn-settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13.4 6.5l-.8-.2a4.8 4.8 0 00-.5-1.2l.4-.7a.5.5 0 00-.1-.6l-.7-.7a.5.5 0 00-.6-.1l-.7.4a4.8 4.8 0 00-1.2-.5l-.2-.8a.5.5 0 00-.5-.4h-1a.5.5 0 00-.5.4l-.2.8a4.8 4.8 0 00-1.2.5l-.7-.4a.5.5 0 00-.6.1l-.7.7a.5.5 0 00-.1.6l.4.7a4.8 4.8 0 00-.5 1.2l-.8.2a.5.5 0 00-.4.5v1a.5.5 0 00.4.5l.8.2a4.8 4.8 0 00.5 1.2l-.4.7a.5.5 0 00.1.6l.7.7a.5.5 0 00.6.1l.7-.4a4.8 4.8 0 001.2.5l.2.8a.5.5 0 00.5.4h1a.5.5 0 00.5-.4l.2-.8a4.8 4.8 0 001.2-.5l.7.4a.5.5 0 00.6-.1l.7-.7a.5.5 0 00.1-.6l-.4-.7a4.8 4.8 0 00.5-1.2l.8-.2a.5.5 0 00.4-.5v-1a.5.5 0 00-.4-.5z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+        <span>Settings</span>
+      </button>
+      <div class="toolbar-separator"></div>
       <span id="zoom-display">100%</span>
       <button id="btn-zoom-fit" title="Zoom to Fit">Fit</button>
       <button id="btn-zoom-reset" title="Reset Zoom">1:1</button>
@@ -155,27 +160,87 @@
     </div>
   </div>
 
-  <!-- System Settings Modal -->
+  <!-- Settings Modal (tabbed) -->
   <div id="settings-modal" class="modal" style="display:none">
-    <div class="modal-content">
+    <div class="modal-content modal-wide">
       <div class="modal-header">
-        <h3>System Base Settings</h3>
+        <h3>Settings</h3>
         <button class="modal-close" id="btn-close-settings">&times;</button>
       </div>
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-tab="system">System Base</button>
+        <button class="settings-tab" data-tab="cables">Cable Library</button>
+        <button class="settings-tab" data-tab="transformers">Transformer Library</button>
+      </div>
       <div class="modal-body">
-        <div class="form-group">
-          <label for="base-mva">Base MVA</label>
-          <input type="number" id="base-mva" value="100" min="1" step="1">
-          <span class="unit">MVA</span>
+        <!-- System Base Tab -->
+        <div id="settings-tab-system" class="settings-tab-content active">
+          <div class="form-group">
+            <label for="base-mva">Base MVA</label>
+            <input type="number" id="base-mva" value="100" min="1" step="1">
+            <span class="unit">MVA</span>
+          </div>
+          <div class="form-group">
+            <label for="base-freq">System Frequency</label>
+            <select id="base-freq">
+              <option value="50">50 Hz</option>
+              <option value="60">60 Hz</option>
+            </select>
+          </div>
+          <button id="btn-save-settings" class="btn-primary">Apply</button>
         </div>
-        <div class="form-group">
-          <label for="base-freq">System Frequency</label>
-          <select id="base-freq">
-            <option value="50">50 Hz</option>
-            <option value="60">60 Hz</option>
-          </select>
+        <!-- Cable Library Tab -->
+        <div id="settings-tab-cables" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-cable" class="btn-small">+ Add Cable</button>
+            <button id="btn-reset-cables" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="cable-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Conductor</th>
+                  <th>Size (mm²)</th>
+                  <th>Voltage (kV)</th>
+                  <th>R (Ω/km)</th>
+                  <th>X (Ω/km)</th>
+                  <th>Irated (A)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cable-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
         </div>
-        <button id="btn-save-settings" class="btn-primary">Apply</button>
+        <!-- Transformer Library Tab -->
+        <div id="settings-tab-transformers" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-xfmr" class="btn-small">+ Add Transformer</button>
+            <button id="btn-reset-xfmrs" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="xfmr-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Rating (MVA)</th>
+                  <th>HV (kV)</th>
+                  <th>LV (kV)</th>
+                  <th>Z%</th>
+                  <th>X/R</th>
+                  <th>Vector</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="xfmr-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -192,6 +257,7 @@
   <script src="js/annotations.js"></script>
   <script src="js/api.js"></script>
   <script src="js/project.js"></script>
+  <script src="js/standard-data.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
