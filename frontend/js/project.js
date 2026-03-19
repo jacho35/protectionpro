@@ -19,16 +19,31 @@ const Project = {
     document.title = 'ProtectionPro — New Project';
   },
 
-  // Save project — exports as JSON file (primary save action)
-  saveProject() {
+  // Save to database (primary save action), falls back to JSON export
+  async saveProject() {
     if (AppState.projectName === 'Untitled Project') {
       const name = prompt('Project name:', AppState.projectName);
       if (!name) return;
       AppState.projectName = name;
     }
-    this.exportJSON();
-    AppState.dirty = false;
-    document.title = `ProtectionPro — ${AppState.projectName}`;
+
+    document.getElementById('status-info').textContent = 'Saving...';
+    try {
+      const result = await API.saveProject();
+      AppState.projectId = result.id;
+      AppState.dirty = false;
+      document.title = `ProtectionPro — ${AppState.projectName}`;
+      document.getElementById('status-info').textContent = 'Project saved.';
+      setTimeout(() => {
+        document.getElementById('status-info').textContent = '';
+      }, 3000);
+    } catch (e) {
+      // Backend unavailable — fall back to JSON export
+      document.getElementById('status-info').textContent = 'Database unavailable, exporting JSON...';
+      this.exportJSON();
+      AppState.dirty = false;
+      document.title = `ProtectionPro — ${AppState.projectName}`;
+    }
   },
 
   // Export as JSON file (download)

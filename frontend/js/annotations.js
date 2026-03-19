@@ -71,12 +71,24 @@ const Annotations = {
 
   renderLoadFlowBadge(x, y, result) {
     const lines = [];
-    if (result.voltage_pu != null) lines.push(`V: ${result.voltage_pu.toFixed(4)} p.u.`);
+    if (result.voltage_kv != null) lines.push(`V: ${result.voltage_kv.toFixed(3)} kV (${result.voltage_pu.toFixed(4)} p.u.)`);
     if (result.angle_deg != null) lines.push(`δ: ${result.angle_deg.toFixed(2)}°`);
+    // Show power and current in actual units
+    const sMVA = Math.sqrt((result.p_mw || 0) ** 2 + (result.q_mvar || 0) ** 2);
+    if (sMVA > 0.001) {
+      const pStr = Math.abs(result.p_mw) >= 1 ? `${result.p_mw.toFixed(3)} MW` : `${(result.p_mw * 1000).toFixed(1)} kW`;
+      const qStr = Math.abs(result.q_mvar) >= 1 ? `${result.q_mvar.toFixed(3)} MVAr` : `${(result.q_mvar * 1000).toFixed(1)} kVAr`;
+      lines.push(`P: ${pStr}`);
+      lines.push(`Q: ${qStr}`);
+      if (result.voltage_kv > 0) {
+        const iAmps = (sMVA * 1000) / (Math.sqrt(3) * result.voltage_kv);
+        lines.push(`I: ${iAmps.toFixed(1)} A`);
+      }
+    }
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
-    const boxW = 110;
+    const boxW = 160;
 
     let textHtml = lines.map((line, i) =>
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
@@ -92,13 +104,22 @@ const Annotations = {
 
   renderBranchFlowBadge(x, y, branch) {
     const lines = [];
-    if (branch.p_mw != null) lines.push(`P: ${branch.p_mw.toFixed(3)} MW`);
-    if (branch.q_mvar != null) lines.push(`Q: ${branch.q_mvar.toFixed(3)} MVAr`);
-    if (branch.loading_pct != null) lines.push(`Load: ${branch.loading_pct.toFixed(1)}%`);
+    if (branch.p_mw != null) {
+      const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(3)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
+      lines.push(`P: ${pStr}`);
+    }
+    if (branch.q_mvar != null) {
+      const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(3)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
+      lines.push(`Q: ${qStr}`);
+    }
+    const sMVA = Math.sqrt((branch.p_mw || 0) ** 2 + (branch.q_mvar || 0) ** 2);
+    const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
+    lines.push(`S: ${sStr}`);
+    if (branch.loading_pct > 0) lines.push(`Load: ${branch.loading_pct.toFixed(1)}%`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
-    const boxW = 110;
+    const boxW = 120;
 
     let textHtml = lines.map((line, i) =>
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`

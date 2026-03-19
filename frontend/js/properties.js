@@ -365,9 +365,9 @@ V   = ${busLF.voltage_kv?.toFixed(4)} kV  (nominal ${nomV} kV)
 ${Math.abs(busLF.voltage_pu - 1.0) > 0.05 ? `⚠ Voltage deviation: ${((busLF.voltage_pu - 1.0) * 100).toFixed(2)}% from nominal` : ''}
 
 ─── Power ───
-P = ${busLF.p_mw?.toFixed(4)} MW  (${busLF.p_mw >= 0 ? 'generation' : 'consumption'})
-Q = ${busLF.q_mvar?.toFixed(4)} MVAr  (${busLF.q_mvar >= 0 ? 'capacitive/gen' : 'inductive/load'})
-S = ${sMVA.toFixed(4)} MVA
+P = ${busLF.p_mw?.toFixed(4)} MW  (${(busLF.p_mw * 1000).toFixed(1)} kW)  [${busLF.p_mw >= 0 ? 'generation' : 'consumption'}]
+Q = ${busLF.q_mvar?.toFixed(4)} MVAr  (${(busLF.q_mvar * 1000).toFixed(1)} kVAr)  [${busLF.q_mvar >= 0 ? 'capacitive/gen' : 'inductive/load'}]
+S = ${sMVA.toFixed(4)} MVA  (${(sMVA * 1000).toFixed(1)} kVA)
 PF = ${pf.toFixed(4)}
 I = S / (√3 × V) = ${iCalc.toFixed(2)} A</div>
           </div>`;
@@ -387,9 +387,9 @@ I = S / (√3 × V) = ${iCalc.toFixed(2)} A</div>
               <div class="calc-formula">From: ${fromBus?.props?.name || br.from_bus}
 To:   ${toBus?.props?.name || br.to_bus}
 
-P = ${br.p_mw?.toFixed(4)} MW  (${br.p_mw >= 0 ? '→' : '←'})
-Q = ${br.q_mvar?.toFixed(4)} MVAr
-S = ${sMVA.toFixed(4)} MVA
+P = ${br.p_mw?.toFixed(4)} MW  (${(br.p_mw * 1000).toFixed(1)} kW)  ${br.p_mw >= 0 ? '→' : '←'}
+Q = ${br.q_mvar?.toFixed(4)} MVAr  (${(br.q_mvar * 1000).toFixed(1)} kVAr)
+S = ${sMVA.toFixed(4)} MVA  (${(sMVA * 1000).toFixed(1)} kVA)
 ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct > 100 ? '  ⚠ OVERLOADED' : br.loading_pct > 80 ? '  ⚠ Heavy loading' : ''}` : ''}
 ${br.losses_mw ? `Losses = ${br.losses_mw.toFixed(4)} MW` : ''}</div>
             </div>`;
