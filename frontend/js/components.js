@@ -155,6 +155,40 @@ const Components = {
       }
     }
 
+    // Find direct bus-to-bus connections (solid links / bus couplers)
+    // Walk from each bus through transparent elements; if we reach another bus, add a branch
+    const busSet = new Set(graph.buses.map(b => b.id));
+    for (const bus of graph.buses) {
+      const visited = new Set([bus.id]);
+      const queue = (adj.get(bus.id) || []).map(n => n.id);
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const comp = AppState.components.get(id);
+        if (!comp) continue;
+        if (comp.type === 'bus') {
+          // Direct bus-to-bus connection (possibly through CBs/switches)
+          const key = [bus.id, comp.id].sort().join('-link-');
+          if (!foundBranches.has(key)) {
+            foundBranches.add(key);
+            graph.branches.push({
+              from: bus,
+              to: comp,
+              fromPort: 'link',
+              toPort: 'link',
+              element: null, // zero-impedance solid link
+            });
+          }
+        } else if (isTransparentClosed(comp)) {
+          for (const { id: nid } of (adj.get(id) || [])) {
+            if (!visited.has(nid)) queue.push(nid);
+          }
+        }
+        // Don't walk through transformers, cables, sources, loads
+      }
+    }
+
     return graph;
   },
 
@@ -230,7 +264,7 @@ const Components = {
 
     // 5. Voltage consistency: transformer secondary should match downstream bus voltage
     for (const branch of graph.branches) {
-      if (branch.element.type !== 'transformer') continue;
+      if (!branch.element || branch.element.type !== 'transformer') continue;
       const xfmr = branch.element;
       // Determine which bus is primary and which is secondary based on port
       let hvBus, lvBus;
@@ -281,7 +315,7 @@ const Components = {
 
     // 6. Check cables connect buses at same voltage level
     for (const branch of graph.branches) {
-      if (branch.element.type !== 'cable') continue;
+      if (!branch.element || branch.element.type !== 'cable') continue;
       const cable = branch.element;
       const v1 = branch.from.props.voltage_kv;
       const v2 = branch.to.props.voltage_kv;
@@ -341,7 +375,7 @@ const Components = {
     // 8. Check components downstream of transformer match its secondary voltage
     // Walk from each transformer's secondary bus downstream through cables/CBs/etc.
     for (const branch of graph.branches) {
-      if (branch.element.type !== 'transformer') continue;
+      if (!branch.element || branch.element.type !== 'transformer') continue;
       const xfmr = branch.element;
       let lvBus;
       if (branch.fromPort === 'secondary') {

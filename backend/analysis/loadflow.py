@@ -115,6 +115,24 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 Y[j, i] -= y
                 branch_elements.append((comp, connected_buses[0], connected_buses[1], y))
 
+    # Find direct bus-to-bus connections (solid links / bus couplers)
+    # Walk from each bus through transparent elements; if we reach another bus, add link
+    linked_pairs = set()
+    for bus in buses:
+        connected_buses = _find_buses_for_element(bus.id, adjacency, components, bus_idx)
+        for other_id in connected_buses:
+            pair = tuple(sorted([bus.id, other_id]))
+            if pair not in linked_pairs:
+                linked_pairs.add(pair)
+                i = bus_idx[bus.id]
+                j = bus_idx[other_id]
+                # Very low impedance link (effectively zero impedance bus coupler)
+                y_link = complex(1e6, 0)  # very high admittance = very low impedance
+                Y[i, i] += y_link
+                Y[j, j] += y_link
+                Y[i, j] -= y_link
+                Y[j, i] -= y_link
+
     # Set up power injections
     P_spec = np.zeros(n)  # specified real power (generation - load)
     Q_spec = np.zeros(n)  # specified reactive power
