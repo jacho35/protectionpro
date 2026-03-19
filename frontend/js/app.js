@@ -61,6 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
           Properties.clear();
         }
         break;
+      case 's':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          Project.saveProject();
+        }
+        break;
       case 'a':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
@@ -70,42 +76,144 @@ document.addEventListener('DOMContentLoaded', () => {
           Canvas.render();
         }
         break;
+      case 'c':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          AppState.copySelected();
+          document.getElementById('status-info').textContent =
+            `Copied ${AppState.clipboard?.components.length || 0} component(s).`;
+        }
+        break;
+      case 'v':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          AppState.pasteClipboard();
+          Canvas.render();
+          document.getElementById('status-info').textContent =
+            `Pasted ${AppState.selectedIds.size} component(s).`;
+        }
+        break;
+      case 'x':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          AppState.copySelected();
+          AppState.deleteSelected();
+          Canvas.render();
+          Properties.clear();
+          document.getElementById('status-info').textContent = 'Cut to clipboard.';
+        }
+        break;
+      case 'd':
+        if (e.ctrlKey || e.metaKey) {
+          // Duplicate selected
+          e.preventDefault();
+          AppState.copySelected();
+          AppState.pasteClipboard();
+          Canvas.render();
+        }
+        break;
     }
   });
 
-  // Analysis buttons
-  document.getElementById('btn-run-fault').addEventListener('click', async () => {
-    const errors = Components.validate();
-    if (errors.length > 0) {
-      alert('Validation errors:\n' + errors.join('\n'));
-      return;
-    }
-    document.getElementById('status-info').textContent = 'Running fault analysis...';
-    try {
-      const result = await API.runFaultAnalysis();
-      AppState.faultResults = result;
-      Canvas.render();
-      document.getElementById('status-info').textContent = 'Fault analysis complete.';
-    } catch (e) {
-      document.getElementById('status-info').textContent = 'Fault analysis failed: ' + e.message;
-    }
-  });
+  // ─── Analysis with validation ───
+  function showValidationModal(title, errors, warnings, onProceed) {
+    const modal = document.getElementById('calc-modal');
+    const hasErrors = errors.length > 0;
 
-  document.getElementById('btn-run-loadflow').addEventListener('click', async () => {
-    const errors = Components.validate();
+    let html = '';
     if (errors.length > 0) {
-      alert('Validation errors:\n' + errors.join('\n'));
-      return;
+      html += '<div class="validation-section"><div class="validation-section-title error-title">Errors (must fix)</div>';
+      for (const e of errors) {
+        html += `<div class="validation-item validation-error">${e.msg}</div>`;
+      }
+      html += '</div>';
     }
-    document.getElementById('status-info').textContent = 'Running load flow...';
+    if (warnings.length > 0) {
+      html += '<div class="validation-section"><div class="validation-section-title warning-title">Warnings</div>';
+      for (const w of warnings) {
+        html += `<div class="validation-item validation-warning">${w.msg}</div>`;
+      }
+      html += '</div>';
+    }
+
+    if (!hasErrors && warnings.length > 0) {
+      html += `<div style="margin-top:16px;display:flex;gap:8px;">
+        <button id="validation-proceed" class="btn-primary">Continue Anyway</button>
+        <button id="validation-cancel" class="btn-small">Cancel</button>
+      </div>`;
+    } else if (hasErrors) {
+      html += `<div style="margin-top:16px;">
+        <button id="validation-cancel" class="btn-small">Close</button>
+      </div>`;
+    }
+
+    modal.querySelector('#calc-modal-title').textContent = title;
+    modal.querySelector('#calc-modal-body').innerHTML = html;
+    modal.style.display = '';
+
+    const cancelBtn = document.getElementById('validation-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+
+    const proceedBtn = document.getElementById('validation-proceed');
+    if (proceedBtn) {
+      proceedBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+        onProceed();
+      });
+    }
+  }
+
+  async function runAnalysis(type) {
+    const { errors, warnings } = Components.validate();
+
+    if (errors.length > 0 || warnings.length > 0) {
+      showValidationModal(
+        type === 'fault' ? 'Fault Analysis — Validation' : 'Load Flow — Validation',
+        errors,
+        warnings,
+        () => executeAnalysis(type),
+      );
+      if (errors.length > 0) return; // Block if there are hard errors
+      return; // Let the modal handle proceed/cancel for warnings
+    }
+
+    executeAnalysis(type);
+  }
+
+  async function executeAnalysis(type) {
+    const label = type === 'fault' ? 'Fault analysis' : 'Load flow';
+    document.getElementById('status-info').textContent = `Running ${label.toLowerCase()}...`;
     try {
-      const result = await API.runLoadFlow();
-      AppState.loadFlowResults = result;
+      let result;
+      if (type === 'fault') {
+        result = await API.runFaultAnalysis();
+        AppState.faultResults = result;
+      } else {
+        result = await API.runLoadFlow();
+        AppState.loadFlowResults = result;
+      }
       Canvas.render();
-      document.getElementById('status-info').textContent = 'Load flow complete.';
+      document.getElementById('status-info').textContent = `${label} complete.`;
     } catch (e) {
-      document.getElementById('status-info').textContent = 'Load flow failed: ' + e.message;
+      const msg = e.message || 'Unknown error';
+      document.getElementById('status-info').textContent = `${label} failed.`;
+      showValidationModal(`${label} — Error`, [{ msg: `${label} failed: ${msg}` }], [], null);
     }
+  }
+
+  document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
+  document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
+
+  // Display toggles
+  document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
+    AppState.showCableLabels = !AppState.showCableLabels;
+    e.currentTarget.classList.toggle('active', AppState.showCableLabels);
+    Canvas.render();
+  });
+  document.getElementById('btn-toggle-warnings').addEventListener('click', (e) => {
+    AppState.showWarnings = !AppState.showWarnings;
+    e.currentTarget.classList.toggle('active', AppState.showWarnings);
+    Canvas.render();
   });
 
   // Zoom controls
