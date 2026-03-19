@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Properties.init();
   Annotations.init();
   Project.init();
+  StandardData.init();
 
   // Toolbar mode buttons
   const btnSelect = document.getElementById('btn-select');
@@ -117,8 +118,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Settings modal
+  document.getElementById('btn-settings').addEventListener('click', () => StandardData.open());
   document.getElementById('btn-close-settings').addEventListener('click', () => {
     document.getElementById('settings-modal').style.display = 'none';
+  });
+  document.getElementById('settings-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'settings-modal') {
+      document.getElementById('settings-modal').style.display = 'none';
+    }
   });
   document.getElementById('btn-save-settings').addEventListener('click', () => {
     AppState.baseMVA = parseFloat(document.getElementById('base-mva').value) || DEFAULT_BASE_MVA;
