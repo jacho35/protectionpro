@@ -75,10 +75,13 @@ class LoadFlowBus(BaseModel):
 
 class LoadFlowBranch(BaseModel):
     elementId: str
+    element_name: str = ""
     from_bus: str
     to_bus: str
     p_mw: float
     q_mvar: float
+    s_mva: float = 0
+    i_amps: float = 0
     loading_pct: float = 0
     losses_mw: float = 0
 

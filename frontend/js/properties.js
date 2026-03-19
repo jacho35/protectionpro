@@ -379,7 +379,7 @@ I = S / (√3 × V) = ${iCalc.toFixed(2)} A</div>
           if (br.elementId !== comp.id) continue;
           const fromBus = AppState.components.get(br.from_bus);
           const toBus = AppState.components.get(br.to_bus);
-          const sMVA = Math.sqrt(br.p_mw ** 2 + br.q_mvar ** 2);
+          const sMVA = br.s_mva || Math.sqrt(br.p_mw ** 2 + br.q_mvar ** 2);
 
           html += `
             <div class="calc-step">
@@ -390,8 +390,9 @@ To:   ${toBus?.props?.name || br.to_bus}
 P = ${br.p_mw?.toFixed(4)} MW  (${(br.p_mw * 1000).toFixed(1)} kW)  ${br.p_mw >= 0 ? '→' : '←'}
 Q = ${br.q_mvar?.toFixed(4)} MVAr  (${(br.q_mvar * 1000).toFixed(1)} kVAr)
 S = ${sMVA.toFixed(4)} MVA  (${(sMVA * 1000).toFixed(1)} kVA)
+I = ${br.i_amps?.toFixed(1) || '—'} A
 ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct > 100 ? '  ⚠ OVERLOADED' : br.loading_pct > 80 ? '  ⚠ Heavy loading' : ''}` : ''}
-${br.losses_mw ? `Losses = ${br.losses_mw.toFixed(4)} MW` : ''}</div>
+${br.losses_mw ? `Losses = ${(br.losses_mw * 1000).toFixed(2)} kW` : ''}</div>
             </div>`;
         }
       }

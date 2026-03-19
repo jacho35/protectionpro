@@ -9,13 +9,13 @@ from ..models.schemas import ProjectData, ProjectSummary
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.get("/", response_model=list[ProjectSummary])
+@router.get("", response_model=list[ProjectSummary])
 def list_projects(db: Session = Depends(get_db)):
     projects = db.query(Project).order_by(Project.updated_at.desc()).all()
     return projects
 
 
-@router.post("/", response_model=dict)
+@router.post("", response_model=dict)
 def create_project(data: ProjectData, db: Session = Depends(get_db)):
     project = Project(
         name=data.projectName,

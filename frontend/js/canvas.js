@@ -18,6 +18,9 @@ const Canvas = {
   selBoxStart: { x: 0, y: 0 },
   selBoxBaseIds: new Set(), // IDs selected before marquee started (for shift+drag)
 
+  // State for dragging data labels
+  labelDrag: null, // { compId, startX, startY, origOX, origOY }
+
   init() {
     this.svg = document.getElementById('sld-canvas');
     this.diagramLayer = document.getElementById('diagram-layer');
@@ -103,6 +106,24 @@ const Canvas = {
     }
 
     if (e.button !== 0) return;
+
+    // Check if clicked on a data label (for dragging)
+    const labelEl = e.target.closest('.comp-data-label');
+    if (labelEl) {
+      const compId = labelEl.dataset.compId;
+      const comp = AppState.components.get(compId);
+      if (comp) {
+        this.labelDrag = {
+          compId,
+          startX: worldPt.x,
+          startY: worldPt.y,
+          origOX: comp.labelOffsetX || 22,
+          origOY: comp.labelOffsetY || 0,
+        };
+        e.preventDefault();
+        return;
+      }
+    }
 
     // Check if clicked on a component port (for wiring)
     const portEl = e.target.closest('[data-port]');
@@ -195,6 +216,19 @@ const Canvas = {
       return;
     }
 
+    // Dragging data labels
+    if (this.labelDrag) {
+      const dx = worldPt.x - this.labelDrag.startX;
+      const dy = worldPt.y - this.labelDrag.startY;
+      const comp = AppState.components.get(this.labelDrag.compId);
+      if (comp) {
+        comp.labelOffsetX = this.labelDrag.origOX + dx;
+        comp.labelOffsetY = this.labelDrag.origOY + dy;
+        this.render();
+      }
+      return;
+    }
+
     // Dragging components
     if (AppState.dragState) {
       const dx = worldPt.x - AppState.dragState.startX;
@@ -239,6 +273,12 @@ const Canvas = {
     if (this.isPanning) {
       this.isPanning = false;
       this.svg.classList.remove('panning-active');
+      return;
+    }
+
+    if (this.labelDrag) {
+      AppState.dirty = true;
+      this.labelDrag = null;
       return;
     }
 
@@ -387,9 +427,9 @@ const Canvas = {
     // Render annotations if results exist
     Annotations.render();
 
-    // Render cable size labels
+    // Render component data labels (cables, transformers, etc.)
     if (AppState.showCableLabels) {
-      this.renderCableLabels();
+      this.renderComponentDataLabels();
     }
 
     // Render unconnected port warnings
@@ -398,31 +438,43 @@ const Canvas = {
     }
   },
 
-  // Show cable size/type label next to each cable
-  renderCableLabels() {
+  // Show key data labels next to cables, transformers, and other components
+  renderComponentDataLabels() {
     let html = '';
     for (const comp of AppState.components.values()) {
-      if (comp.type !== 'cable') continue;
       const p = comp.props;
-      // Build label: show standard type name or size info
-      let label = '';
-      if (p.standard_type) {
-        const std = STANDARD_CABLES.find(c => c.id === p.standard_type);
-        if (std) {
-          label = `${std.size_mm2}mm² ${std.conductor}`;
-        }
-      }
-      if (!label) {
-        // Fallback: show R value as size hint
-        label = `R=${p.r_per_km} Ω/km`;
-      }
-      // Also show length
-      const lenStr = p.length_km >= 1 ? `${p.length_km} km` : `${(p.length_km * 1000).toFixed(0)} m`;
-      const fullLabel = `${label}, ${lenStr}`;
+      const ox = comp.labelOffsetX || 22;
+      const oy = comp.labelOffsetY || 0;
+      let lines = [];
 
-      const x = comp.x + 18;
-      const y = comp.y;
-      html += `<text class="cable-size-label" x="${x}" y="${y}" font-size="9" fill="#555" font-family="var(--font-mono)">${fullLabel}</text>`;
+      if (comp.type === 'cable') {
+        let sizeStr = '';
+        if (p.standard_type) {
+          const std = STANDARD_CABLES.find(c => c.id === p.standard_type);
+          if (std) sizeStr = `${std.size_mm2}mm² ${std.conductor}`;
+        }
+        if (!sizeStr) sizeStr = `R=${p.r_per_km} Ω/km`;
+        const lenStr = p.length_km >= 1 ? `${p.length_km} km` : `${(p.length_km * 1000).toFixed(0)} m`;
+        lines.push(sizeStr);
+        lines.push(lenStr);
+        if (p.rated_amps) lines.push(`${p.rated_amps} A`);
+      } else if (comp.type === 'transformer') {
+        const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
+        lines.push(ratingStr);
+        if (p.voltage_hv_kv && p.voltage_lv_kv) {
+          lines.push(`${p.voltage_hv_kv}/${p.voltage_lv_kv} kV`);
+        }
+        if (p.z_percent) lines.push(`Z=${p.z_percent}%`);
+      } else {
+        continue;
+      }
+
+      const x = comp.x + ox;
+      const y = comp.y + oy;
+      const lineHtml = lines.map((line, i) =>
+        `<tspan x="${x}" dy="${i === 0 ? 0 : 12}">${line}</tspan>`
+      ).join('');
+      html += `<text class="comp-data-label" data-comp-id="${comp.id}" x="${x}" y="${y}" font-size="9" fill="#555" font-family="var(--font-mono)" cursor="move">${lineHtml}</text>`;
     }
     this.annotationsLayer.insertAdjacentHTML('beforeend', html);
   },
