@@ -36,14 +36,15 @@ const Symbols = {
   },
 
   transformer(w, h) {
+    // IEC symbol: two overlapping circles
     const r = w * 0.32;
-    const gap = 3;
+    const dy = r * 0.7; // overlap offset — circles overlap ~40%
     return `
       <g class="symbol-transformer">
-        <circle cx="0" cy="${-gap - r}" r="${r}"/>
-        <circle cx="0" cy="${gap + r}" r="${r}"/>
-        <line x1="0" y1="${-gap - 2 * r}" x2="0" y2="${-h / 2}"/>
-        <line x1="0" y1="${gap + 2 * r}" x2="0" y2="${h / 2}"/>
+        <circle cx="0" cy="${-dy}" r="${r}" fill="var(--bg-primary, #fff)"/>
+        <circle cx="0" cy="${dy}" r="${r}" fill="var(--bg-primary, #fff)"/>
+        <line x1="0" y1="${-dy - r}" x2="0" y2="${-h / 2}"/>
+        <line x1="0" y1="${dy + r}" x2="0" y2="${h / 2}"/>
       </g>`;
   },
 
@@ -192,7 +193,8 @@ const Symbols = {
     const symbolSvg = symbolFn.call(this, w, h);
     const portsHtml = (def.ports || []).map(p => {
       const pos = this.getPortPosition(p, w, h);
-      return `<circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
+      return `<circle class="conn-port-hit" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
+              <circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
     }).join('');
 
     // Name label below component

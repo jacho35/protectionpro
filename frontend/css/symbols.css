@@ -28,20 +28,26 @@
 }
 
 /* Connection ports */
+.conn-port-hit {
+  pointer-events: all;
+  cursor: crosshair;
+}
+
 .conn-port {
   fill: #fff;
   stroke: #888;
   stroke-width: 1.5;
-  r: 4;
+  r: 5;
   cursor: crosshair;
-  transition: fill 0.15s, stroke 0.15s;
+  transition: fill 0.15s, stroke 0.15s, r 0.15s;
+  pointer-events: none; /* hit detection is on .conn-port-hit */
 }
 
-.conn-port:hover,
+.conn-port-hit:hover + .conn-port,
 .conn-port.active {
   fill: var(--accent);
   stroke: var(--accent);
-  r: 5;
+  r: 6;
 }
 
 .conn-port.connected {

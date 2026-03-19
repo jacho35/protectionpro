@@ -55,51 +55,100 @@ const Components = {
       loads: [],
     };
 
+    // "Transparent" elements: zero-impedance pass-through components
+    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'arrester']);
+
+    // Check if a component is transparent and in closed state
+    const isTransparentClosed = (comp) => {
+      if (!TRANSPARENT.has(comp.type)) return false;
+      if (comp.type === 'cb' || comp.type === 'switch') {
+        if (comp.props.state === 'open') return false;
+      }
+      return true;
+    };
+
     for (const comp of AppState.components.values()) {
       if (comp.type === 'bus') {
         graph.buses.push(comp);
       }
     }
 
-    // Find branches between buses (transformers, cables, switches, etc.)
+    // Build adjacency from wires: compId -> [{id, localPort}]
+    const adj = new Map();
     for (const wire of AppState.wires.values()) {
-      const from = AppState.components.get(wire.fromComponent);
-      const to = AppState.components.get(wire.toComponent);
-      if (!from || !to) continue;
+      if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
+      if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
+      adj.get(wire.fromComponent).push({ id: wire.toComponent, localPort: wire.fromPort });
+      adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
+    }
 
-      // Identify branch types
-      if (from.type === 'bus' || to.type === 'bus') {
-        const bus = from.type === 'bus' ? from : to;
-        const other = from.type === 'bus' ? to : from;
-
-        if (['utility', 'generator'].includes(other.type)) {
-          graph.sources.push({ bus, source: other });
-        } else if (['static_load', 'motor_induction', 'motor_synchronous'].includes(other.type)) {
-          graph.loads.push({ bus, load: other });
+    // BFS from a component port through transparent elements to find a bus
+    const findBusFromPort = (startId, portId) => {
+      const visited = new Set([startId]);
+      const startNeighbors = (adj.get(startId) || [])
+        .filter(n => n.localPort === portId)
+        .map(n => n.id);
+      const queue = [...startNeighbors];
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const comp = AppState.components.get(id);
+        if (!comp) continue;
+        if (comp.type === 'bus') return comp;
+        if (isTransparentClosed(comp)) {
+          for (const { id: nid } of (adj.get(id) || [])) {
+            if (!visited.has(nid)) queue.push(nid);
+          }
         }
+      }
+      return null;
+    };
+
+    // For each bus, find sources/loads connected (walking through transparent elements)
+    for (const bus of graph.buses) {
+      const visited = new Set([bus.id]);
+      const queue = (adj.get(bus.id) || []).map(n => n.id);
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const comp = AppState.components.get(id);
+        if (!comp) continue;
+        if (['utility', 'generator'].includes(comp.type)) {
+          graph.sources.push({ bus, source: comp });
+        } else if (['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'].includes(comp.type)) {
+          graph.loads.push({ bus, load: comp });
+        } else if (TRANSPARENT.has(comp.type)) {
+          for (const { id: nid } of (adj.get(id) || [])) {
+            if (!visited.has(nid)) queue.push(nid);
+          }
+        }
+        // Don't walk through other buses, transformers, or cables
       }
     }
 
-    // Find bus-to-bus branches (via transformers, cables, etc.)
+    // Find bus-to-bus branches: for each transformer/cable, find the bus reachable from each port
+    const foundBranches = new Set();
     for (const comp of AppState.components.values()) {
-      if (['transformer', 'cable', 'cb', 'switch', 'fuse'].includes(comp.type)) {
-        const connectedBuses = [];
-        for (const wire of AppState.wires.values()) {
-          if (wire.fromComponent === comp.id || wire.toComponent === comp.id) {
-            const otherId = wire.fromComponent === comp.id ? wire.toComponent : wire.fromComponent;
-            const other = AppState.components.get(otherId);
-            if (other && other.type === 'bus') {
-              const localPort = wire.fromComponent === comp.id ? wire.fromPort : wire.toPort;
-              connectedBuses.push({ bus: other, port: localPort });
-            }
-          }
-        }
-        if (connectedBuses.length >= 2) {
+      if (!['transformer', 'cable'].includes(comp.type)) continue;
+      const def = COMPONENT_DEFS[comp.type];
+      if (!def || !def.ports || def.ports.length < 2) continue;
+
+      const port1 = def.ports[0]; // primary / from
+      const port2 = def.ports[1]; // secondary / to
+      const bus1 = findBusFromPort(comp.id, port1.id);
+      const bus2 = findBusFromPort(comp.id, port2.id);
+
+      if (bus1 && bus2 && bus1.id !== bus2.id) {
+        const key = [bus1.id, bus2.id, comp.id].sort().join('-');
+        if (!foundBranches.has(key)) {
+          foundBranches.add(key);
           graph.branches.push({
-            from: connectedBuses[0].bus,
-            to: connectedBuses[1].bus,
-            fromPort: connectedBuses[0].port,
-            toPort: connectedBuses[1].port,
+            from: bus1,
+            to: bus2,
+            fromPort: port1.id,
+            toPort: port2.id,
             element: comp,
           });
         }

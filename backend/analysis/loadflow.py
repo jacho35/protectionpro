@@ -14,6 +14,64 @@ from ..models.schemas import (
 MAX_ITERATIONS = 100
 TOLERANCE = 1e-6
 
+# Components that are "transparent" — zero impedance pass-through
+TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "arrester"}
+
+
+def _is_transparent_and_closed(comp):
+    """Check if a component is transparent (pass-through) and in closed/active state."""
+    if comp.type not in TRANSPARENT_TYPES:
+        return False
+    # CBs and switches can be open — block current flow
+    if comp.type in ("cb", "switch"):
+        state = comp.props.get("state", "closed")
+        if state == "open":
+            return False
+    return True
+
+
+def _find_buses_for_element(comp_id, adjacency, components, bus_idx):
+    """Walk from a branch element through transparent elements to find connected buses."""
+    visited = {comp_id}
+    queue = list(adjacency.get(comp_id, []))
+    found = []
+    while queue:
+        nid = queue.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        if nid in bus_idx:
+            found.append(nid)
+            continue
+        comp = components.get(nid)
+        if comp and _is_transparent_and_closed(comp):
+            for neighbor_id in adjacency.get(nid, []):
+                if neighbor_id not in visited:
+                    queue.append(neighbor_id)
+    return found
+
+
+def _find_components_at_bus(bus_id, adjacency, components):
+    """Find non-transparent components connected to a bus through transparent elements."""
+    visited = {bus_id}
+    queue = list(adjacency.get(bus_id, []))
+    found = []
+    while queue:
+        nid = queue.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        comp = components.get(nid)
+        if not comp:
+            continue
+        if _is_transparent_and_closed(comp):
+            for neighbor_id in adjacency.get(nid, []):
+                if neighbor_id not in visited:
+                    queue.append(neighbor_id)
+        else:
+            found.append(comp)
+    return found
+
 
 def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadFlowResults:
     """Run load flow analysis."""
@@ -40,15 +98,13 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
         adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
 
-    # Find branches between buses (through transformers, cables, etc.)
+    # Find branches between buses (through transformers, cables, walking through CBs/switches)
     branch_elements = []
     for comp in project.components:
         if comp.type in ("transformer", "cable"):
-            # Find which buses this connects
-            connected_buses = []
-            for neighbor_id in adjacency.get(comp.id, []):
-                if neighbor_id in bus_idx:
-                    connected_buses.append(neighbor_id)
+            connected_buses = _find_buses_for_element(
+                comp.id, adjacency, components, bus_idx
+            )
             if len(connected_buses) >= 2:
                 i = bus_idx[connected_buses[0]]
                 j = bus_idx[connected_buses[1]]
@@ -58,17 +114,6 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 Y[i, j] -= y
                 Y[j, i] -= y
                 branch_elements.append((comp, connected_buses[0], connected_buses[1], y))
-
-    # Add source admittances to diagonal
-    for bus in buses:
-        i = bus_idx[bus.id]
-        for neighbor_id in adjacency.get(bus.id, []):
-            comp = components.get(neighbor_id)
-            if not comp:
-                continue
-            if comp.type == "utility":
-                y_src = _utility_admittance(comp, base_mva)
-                Y[i, i] += y_src
 
     # Set up power injections
     P_spec = np.zeros(n)  # specified real power (generation - load)
@@ -86,14 +131,13 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         else:
             bus_types.append(0)
 
-        # Collect loads and generation at this bus
-        for neighbor_id in adjacency.get(bus.id, []):
-            comp = components.get(neighbor_id)
-            if not comp:
-                continue
+        # Find all components connected to this bus (walking through CBs/switches)
+        connected = _find_components_at_bus(bus.id, adjacency, components)
+        for comp in connected:
             if comp.type == "utility":
-                # Swing bus source — handled by swing bus voltage
-                pass
+                # Add source admittance
+                y_src = _utility_admittance(comp, base_mva)
+                Y[i, i] += y_src
             elif comp.type == "generator":
                 rated = comp.props.get("rated_mva", 10)
                 pf = comp.props.get("power_factor", 0.85)

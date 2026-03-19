@@ -105,7 +105,7 @@ const Canvas = {
     if (e.button !== 0) return;
 
     // Check if clicked on a component port (for wiring)
-    const portEl = e.target.closest('.conn-port');
+    const portEl = e.target.closest('[data-port]');
     if (portEl && AppState.mode === MODE.SELECT) {
       // Start wiring from this port
       const compEl = portEl.closest('.sld-component');
@@ -119,6 +119,12 @@ const Canvas = {
       if (portEl) {
         const compEl = portEl.closest('.sld-component');
         Wiring.startWire(compEl.dataset.id, portEl.dataset.port, worldPt);
+      } else {
+        // Snap to nearest port if close enough
+        const snap = this.findNearestPort(worldPt);
+        if (snap) {
+          Wiring.startWire(snap.compId, snap.portId, { x: snap.x, y: snap.y });
+        }
       }
       return;
     }
@@ -205,9 +211,15 @@ const Canvas = {
       return;
     }
 
-    // Wire preview
+    // Wire preview with snap-to-port
     if (AppState.wireStart) {
-      Wiring.updatePreview(worldPt);
+      const snap = this.findNearestPort(worldPt, AppState.wireStart.componentId);
+      AppState.wireSnapTarget = snap;
+      if (snap) {
+        Wiring.updatePreview({ x: snap.x, y: snap.y });
+      } else {
+        Wiring.updatePreview(worldPt);
+      }
       return;
     }
 
@@ -236,13 +248,16 @@ const Canvas = {
     }
 
     if (AppState.wireStart) {
-      const portEl = e.target.closest('.conn-port');
+      const portEl = e.target.closest('[data-port]');
       if (portEl) {
         const compEl = portEl.closest('.sld-component');
         Wiring.finishWire(compEl.dataset.id, portEl.dataset.port);
+      } else if (AppState.wireSnapTarget) {
+        Wiring.finishWire(AppState.wireSnapTarget.compId, AppState.wireSnapTarget.portId);
       } else {
         Wiring.cancelWire();
       }
+      AppState.wireSnapTarget = null;
       return;
     }
 
@@ -430,6 +445,29 @@ const Canvas = {
         </g>`;
     }
     this.annotationsLayer.insertAdjacentHTML('beforeend', html);
+  },
+
+  // Find the nearest port within snap radius (world coordinates)
+  findNearestPort(worldPt, excludeCompId) {
+    const SNAP_RADIUS = 30;
+    let nearest = null;
+    let minDist = SNAP_RADIUS;
+    for (const comp of AppState.components.values()) {
+      if (excludeCompId && comp.id === excludeCompId) continue;
+      const def = COMPONENT_DEFS[comp.type];
+      if (!def.ports) continue;
+      for (const port of def.ports) {
+        const pos = Symbols.getPortWorldPosition(comp, port.id);
+        const dx = worldPt.x - pos.x;
+        const dy = worldPt.y - pos.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = { compId: comp.id, portId: port.id, x: pos.x, y: pos.y };
+        }
+      }
+    }
+    return nearest;
   },
 
   // Place a component at position (for drag-drop from palette)
