@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProtectionPro — Single Line Diagram Builder</title>
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/sidebar.css">
+  <link rel="stylesheet" href="css/properties.css">
+  <link rel="stylesheet" href="css/toolbar.css">
+  <link rel="stylesheet" href="css/symbols.css">
+</head>
+<body>
+  <!-- Top Toolbar -->
+  <header id="toolbar">
+    <div class="toolbar-left">
+      <span class="app-title">ProtectionPro</span>
+      <div class="toolbar-group">
+        <button id="btn-new" title="New Project">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>New</span>
+        </button>
+        <button id="btn-open" title="Open Project">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Open</span>
+        </button>
+        <button id="btn-save" title="Save Project">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Save</span>
+        </button>
+      </div>
+      <div class="toolbar-separator"></div>
+      <div class="toolbar-group">
+        <button id="btn-select" class="active" title="Select Mode (V)">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1l10 7-5 1-2 5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Select</span>
+        </button>
+        <button id="btn-wire" title="Wire Mode (W)">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 14L8 8l6-6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Wire</span>
+        </button>
+        <button id="btn-delete" title="Delete Selected (Del)">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Delete</span>
+        </button>
+      </div>
+      <div class="toolbar-separator"></div>
+      <div class="toolbar-group">
+        <button id="btn-run-fault" title="Run Fault Analysis">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Fault Analysis</span>
+        </button>
+        <button id="btn-run-loadflow" title="Run Load Flow">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Load Flow</span>
+        </button>
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <span id="zoom-display">100%</span>
+      <button id="btn-zoom-fit" title="Zoom to Fit">Fit</button>
+      <button id="btn-zoom-reset" title="Reset Zoom">1:1</button>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div id="app-container">
+    <!-- Left Sidebar: Component Palette -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h2>Components</h2>
+        <input type="text" id="component-search" placeholder="Search components...">
+      </div>
+      <div id="palette" class="palette">
+        <!-- Categories populated by JS -->
+      </div>
+    </aside>
+
+    <!-- Sidebar Resize Handle -->
+    <div id="sidebar-resize" class="resize-handle"></div>
+
+    <!-- SVG Canvas -->
+    <main id="canvas-container">
+      <svg id="sld-canvas" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Grid pattern -->
+          <pattern id="grid-small" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+          </pattern>
+          <pattern id="grid-large" width="100" height="100" patternUnits="userSpaceOnUse">
+            <rect width="100" height="100" fill="url(#grid-small)"/>
+            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#c0c0c0" stroke-width="1"/>
+          </pattern>
+          <!-- Component symbol definitions will be added here -->
+        </defs>
+        <!-- Grid background -->
+        <rect id="grid-bg" width="10000" height="10000" x="-5000" y="-5000" fill="url(#grid-large)"/>
+        <!-- Main diagram layer -->
+        <g id="diagram-layer">
+          <!-- Wires layer (below components) -->
+          <g id="wires-layer"></g>
+          <!-- Components layer -->
+          <g id="components-layer"></g>
+          <!-- Annotations layer (above everything) -->
+          <g id="annotations-layer"></g>
+        </g>
+        <!-- Interaction overlays -->
+        <g id="overlay-layer">
+          <g id="selection-box" style="display:none">
+            <rect fill="rgba(0,120,215,0.1)" stroke="#0078d7" stroke-width="1" stroke-dasharray="4"/>
+          </g>
+          <g id="wire-preview" style="display:none">
+            <line stroke="#0078d7" stroke-width="2" stroke-dasharray="6"/>
+          </g>
+        </g>
+      </svg>
+      <!-- Status Bar -->
+      <div id="status-bar">
+        <span id="status-mode">Select Mode</span>
+        <span id="status-coords">X: 0 Y: 0</span>
+        <span id="status-info"></span>
+      </div>
+    </main>
+
+    <!-- Properties Resize Handle -->
+    <div id="properties-resize" class="resize-handle"></div>
+
+    <!-- Right Panel: Properties -->
+    <aside id="properties-panel">
+      <div class="properties-header">
+        <h2 id="properties-title">Properties</h2>
+      </div>
+      <div id="properties-content">
+        <div class="no-selection">
+          <p>Select a component to view its properties</p>
+        </div>
+      </div>
+      <!-- Per-unit Calculation Popup Trigger -->
+      <div id="calc-info" class="calc-info-box" style="display:none">
+        <button id="btn-show-calc" class="btn-calc-info">View Calculations</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Calculation Details Modal -->
+  <div id="calc-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="calc-modal-title">Calculation Details</h3>
+        <button class="modal-close" id="btn-close-calc">&times;</button>
+      </div>
+      <div id="calc-modal-body" class="modal-body">
+        <!-- Calculation steps rendered here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- System Settings Modal -->
+  <div id="settings-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>System Base Settings</h3>
+        <button class="modal-close" id="btn-close-settings">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="base-mva">Base MVA</label>
+          <input type="number" id="base-mva" value="100" min="1" step="1">
+          <span class="unit">MVA</span>
+        </div>
+        <div class="form-group">
+          <label for="base-freq">System Frequency</label>
+          <select id="base-freq">
+            <option value="50">50 Hz</option>
+            <option value="60">60 Hz</option>
+          </select>
+        </div>
+        <button id="btn-save-settings" class="btn-primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/constants.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/symbols.js"></script>
+  <script src="js/canvas.js"></script>
+  <script src="js/sidebar.js"></script>
+  <script src="js/wiring.js"></script>
+  <script src="js/properties.js"></script>
+  <script src="js/annotations.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/project.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

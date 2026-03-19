@@ -1,0 +1,192 @@
+/* ProtectionPro — Application State */
+
+const AppState = {
+  // Project
+  projectId: null,
+  projectName: 'Untitled Project',
+  dirty: false,
+
+  // System base settings
+  baseMVA: DEFAULT_BASE_MVA,
+  frequency: DEFAULT_FREQUENCY,
+
+  // Canvas transform
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+
+  // Interaction mode
+  mode: MODE.SELECT,
+  placingType: null, // component type being placed
+
+  // Component data: Map<id, componentData>
+  components: new Map(),
+  wires: new Map(),
+  nextId: 1,
+
+  // Selection
+  selectedIds: new Set(),
+  hoveredId: null,
+
+  // Wire drawing state
+  wireStart: null, // {componentId, portId, x, y}
+
+  // Drag state
+  dragState: null, // {startX, startY, offsetX, offsetY, ids}
+
+  // Analysis results
+  faultResults: null,
+  loadFlowResults: null,
+
+  // Generate unique ID
+  genId(prefix) {
+    return `${prefix}_${this.nextId++}`;
+  },
+
+  // Add component
+  addComponent(type, x, y) {
+    const def = COMPONENT_DEFS[type];
+    if (!def) return null;
+    const id = this.genId(type);
+    const comp = {
+      id,
+      type,
+      x: snapToGrid(x),
+      y: snapToGrid(y),
+      rotation: 0,
+      props: { ...def.defaults },
+    };
+    // Auto-increment names
+    const count = [...this.components.values()].filter(c => c.type === type).length;
+    comp.props.name = `${def.defaults.name}${count > 0 ? count + 1 : ''}`;
+    this.components.set(id, comp);
+    this.dirty = true;
+    return comp;
+  },
+
+  // Remove component
+  removeComponent(id) {
+    // Remove connected wires
+    for (const [wid, w] of this.wires) {
+      if (w.fromComponent === id || w.toComponent === id) {
+        this.wires.delete(wid);
+      }
+    }
+    this.components.delete(id);
+    this.selectedIds.delete(id);
+    this.dirty = true;
+  },
+
+  // Add wire
+  addWire(fromComp, fromPort, toComp, toPort) {
+    const id = this.genId('wire');
+    const wire = {
+      id,
+      fromComponent: fromComp,
+      fromPort: fromPort,
+      toComponent: toComp,
+      toPort: toPort,
+    };
+    this.wires.set(id, wire);
+    this.dirty = true;
+    return wire;
+  },
+
+  // Remove wire
+  removeWire(id) {
+    this.wires.delete(id);
+    this.selectedIds.delete(id);
+    this.dirty = true;
+  },
+
+  // Clear selection
+  clearSelection() {
+    this.selectedIds.clear();
+  },
+
+  // Select single
+  select(id) {
+    this.selectedIds.clear();
+    this.selectedIds.add(id);
+  },
+
+  // Toggle selection
+  toggleSelect(id) {
+    if (this.selectedIds.has(id)) {
+      this.selectedIds.delete(id);
+    } else {
+      this.selectedIds.add(id);
+    }
+  },
+
+  // Delete selected
+  deleteSelected() {
+    for (const id of this.selectedIds) {
+      if (this.components.has(id)) {
+        this.removeComponent(id);
+      } else if (this.wires.has(id)) {
+        this.removeWire(id);
+      }
+    }
+    this.selectedIds.clear();
+  },
+
+  // Clear all results
+  clearResults() {
+    this.faultResults = null;
+    this.loadFlowResults = null;
+  },
+
+  // Reset entire state
+  reset() {
+    this.projectId = null;
+    this.projectName = 'Untitled Project';
+    this.dirty = false;
+    this.components.clear();
+    this.wires.clear();
+    this.nextId = 1;
+    this.selectedIds.clear();
+    this.faultResults = null;
+    this.loadFlowResults = null;
+    this.zoom = 1;
+    this.panX = 0;
+    this.panY = 0;
+    this.mode = MODE.SELECT;
+    this.placingType = null;
+    this.wireStart = null;
+    this.dragState = null;
+  },
+
+  // Export to JSON
+  toJSON() {
+    return {
+      projectName: this.projectName,
+      baseMVA: this.baseMVA,
+      frequency: this.frequency,
+      components: [...this.components.values()],
+      wires: [...this.wires.values()],
+      nextId: this.nextId,
+    };
+  },
+
+  // Import from JSON
+  fromJSON(data) {
+    this.reset();
+    this.projectName = data.projectName || 'Untitled Project';
+    this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
+    this.frequency = data.frequency || DEFAULT_FREQUENCY;
+    this.nextId = data.nextId || 1;
+    for (const c of data.components || []) {
+      this.components.set(c.id, c);
+    }
+    for (const w of data.wires || []) {
+      this.wires.set(w.id, w);
+    }
+    this.dirty = false;
+  },
+};
+
+// Snap coordinate to grid
+function snapToGrid(val) {
+  return Math.round(val / SNAP_SIZE) * SNAP_SIZE;
+}
