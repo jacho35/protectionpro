@@ -134,12 +134,13 @@ const Canvas = {
       const compId = labelEl.dataset.compId;
       const comp = AppState.components.get(compId);
       if (comp) {
+        const isLoad = comp.type === 'static_load' || comp.type === 'motor_induction' || comp.type === 'motor_synchronous';
         this.labelDrag = {
           compId,
           startX: worldPt.x,
           startY: worldPt.y,
-          origOX: comp.labelOffsetX || 22,
-          origOY: comp.labelOffsetY || 0,
+          origOX: comp.labelOffsetX != null ? comp.labelOffsetX : 22,
+          origOY: comp.labelOffsetY != null ? comp.labelOffsetY : (isLoad ? 30 : 0),
         };
         e.preventDefault();
         return;
@@ -487,8 +488,7 @@ const Canvas = {
     let html = '';
     for (const comp of AppState.components.values()) {
       const p = comp.props;
-      const ox = comp.labelOffsetX || 22;
-      const oy = comp.labelOffsetY || 0;
+      let defaultOX = 22, defaultOY = 0;
       let lines = [];
 
       if (comp.type === 'cable') {
@@ -509,10 +509,27 @@ const Canvas = {
           lines.push(`${p.voltage_hv_kv}/${p.voltage_lv_kv} kV`);
         }
         if (p.z_percent) lines.push(`Z=${p.z_percent}%`);
+      } else if (comp.type === 'static_load') {
+        if (p.name && p.name !== 'Load') lines.push(p.name);
+        lines.push(`${p.rated_kva || 0} kVA`);
+        lines.push(`PF ${p.power_factor || 0.85}`);
+        defaultOY = 30;
+      } else if (comp.type === 'motor_induction') {
+        if (p.name && p.name !== 'IM') lines.push(p.name);
+        lines.push(`${p.rated_kw || 0} kW`);
+        lines.push(`PF ${p.power_factor || 0.85}`);
+        defaultOY = 32;
+      } else if (comp.type === 'motor_synchronous') {
+        if (p.name && p.name !== 'SM') lines.push(p.name);
+        lines.push(`${p.rated_kva || 0} kVA`);
+        lines.push(`PF ${p.power_factor || 0.9}`);
+        defaultOY = 32;
       } else {
         continue;
       }
 
+      const ox = comp.labelOffsetX != null ? comp.labelOffsetX : defaultOX;
+      const oy = comp.labelOffsetY != null ? comp.labelOffsetY : defaultOY;
       const x = comp.x + ox;
       const y = comp.y + oy;
       const lineHtml = lines.map((line, i) =>
@@ -576,15 +593,15 @@ const Canvas = {
 
         const x = comp.x;
         const y = comp.y - 30;
-        const vuPu = result.voltage_pu.toFixed(3);
-        const label = result.voltage_pu < 0.95 ? 'LOW V' : 'HIGH V';
+        const vStr = Annotations.formatVoltage(result.voltage_kv);
+        const label = result.voltage_pu < 0.95 ? 'LOW' : 'HIGH';
 
         html += `
           <g class="overload-flag" transform="translate(${x},${y})">
             <polygon points="-2,-12 2,-12 3,0 -3,0" fill="#d32f2f"/>
             <polygon points="-7,0 7,0 7,-4 0,-12 -7,-4" fill="#d32f2f"/>
-            <rect x="-24" y="1" width="48" height="13" rx="2" fill="#d32f2f"/>
-            <text x="0" y="11" text-anchor="middle" font-size="8" fill="#fff" font-weight="bold">${label} ${vuPu}</text>
+            <rect x="-28" y="1" width="56" height="13" rx="2" fill="#d32f2f"/>
+            <text x="0" y="11" text-anchor="middle" font-size="8" fill="#fff" font-weight="bold">${label} ${vStr}</text>
           </g>`;
       }
     }
