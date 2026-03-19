@@ -146,6 +146,12 @@
   fill: var(--accent) !important;
 }
 
+/* Overload flag on components exceeding rated capacity */
+.overload-flag {
+  pointer-events: none;
+  animation: pulse-warning 1.5s ease-in-out infinite;
+}
+
 /* Component-specific default colors */
 .symbol-bus { stroke: #222; stroke-width: 4; }
 .symbol-transformer { stroke: #333; stroke-width: 1.5; fill: none; }
