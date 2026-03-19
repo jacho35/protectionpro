@@ -1,0 +1,125 @@
+/* SVG Component Symbol Styles */
+
+/* Common component styles */
+.sld-component {
+  cursor: pointer;
+}
+
+.sld-component:hover .comp-body {
+  filter: brightness(0.95);
+}
+
+.sld-component.selected .comp-body {
+  filter: none;
+}
+
+.sld-component.selected .comp-outline {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+
+/* Selection handles */
+.select-handle {
+  fill: white;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  cursor: move;
+}
+
+/* Connection ports */
+.conn-port {
+  fill: #fff;
+  stroke: #888;
+  stroke-width: 1.5;
+  r: 4;
+  cursor: crosshair;
+  transition: fill 0.15s, stroke 0.15s;
+}
+
+.conn-port:hover,
+.conn-port.active {
+  fill: var(--accent);
+  stroke: var(--accent);
+  r: 5;
+}
+
+.conn-port.connected {
+  fill: #555;
+  stroke: #555;
+}
+
+/* Wire styles */
+.sld-wire {
+  fill: none;
+  stroke: #333;
+  stroke-width: 2;
+  cursor: pointer;
+}
+
+.sld-wire:hover {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.sld-wire.selected {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+/* Bus bar */
+.bus-bar {
+  stroke: #222;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+/* Annotation styles */
+.annotation-group {
+  pointer-events: none;
+}
+
+.annotation-badge {
+  rx: 4;
+  ry: 4;
+}
+
+.fault-annotation .annotation-badge {
+  fill: #fff3e0;
+  stroke: var(--warning);
+  stroke-width: 1;
+}
+
+.loadflow-annotation .annotation-badge {
+  fill: #e8f5e9;
+  stroke: var(--success);
+  stroke-width: 1;
+}
+
+.annotation-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--text-primary);
+}
+
+.annotation-label {
+  font-size: 9px;
+  fill: var(--text-muted);
+}
+
+/* Component-specific default colors */
+.symbol-bus { stroke: #222; stroke-width: 4; }
+.symbol-transformer { stroke: #333; stroke-width: 1.5; fill: none; }
+.symbol-generator { stroke: #2e7d32; stroke-width: 1.5; fill: none; }
+.symbol-utility { stroke: #1565c0; stroke-width: 1.5; fill: none; }
+.symbol-motor { stroke: #6a1b9a; stroke-width: 1.5; fill: none; }
+.symbol-cable { stroke: #555; stroke-width: 2; fill: none; }
+.symbol-cb { stroke: #d32f2f; stroke-width: 1.5; }
+.symbol-switch { stroke: #333; stroke-width: 1.5; }
+.symbol-fuse { stroke: #e65100; stroke-width: 1.5; fill: none; }
+.symbol-relay { stroke: #1565c0; stroke-width: 1.5; fill: none; }
+.symbol-ct { stroke: #555; stroke-width: 1.5; fill: none; }
+.symbol-pt { stroke: #555; stroke-width: 1.5; fill: none; }
+.symbol-arrester { stroke: #2e7d32; stroke-width: 1.5; fill: none; }
+.symbol-load { stroke: #555; stroke-width: 1.5; fill: none; }
+.symbol-capacitor { stroke: #0097a7; stroke-width: 1.5; fill: none; }
