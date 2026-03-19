@@ -8,7 +8,7 @@ const ZOOM_STEP = 0.1;
 const DEFAULT_BASE_MVA = 100;
 const DEFAULT_FREQUENCY = 50;
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 // Interaction modes
 const MODE = {
