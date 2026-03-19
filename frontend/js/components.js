@@ -119,7 +119,7 @@ const Components = {
           graph.sources.push({ bus, source: comp });
         } else if (['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'].includes(comp.type)) {
           graph.loads.push({ bus, load: comp });
-        } else if (TRANSPARENT.has(comp.type)) {
+        } else if (isTransparentClosed(comp)) {
           for (const { id: nid } of (adj.get(id) || [])) {
             if (!visited.has(nid)) queue.push(nid);
           }
@@ -396,7 +396,7 @@ const Components = {
       while (queue.length > 0) {
         const busId = queue.shift();
         for (const br of graph.branches) {
-          if (br.element.type === 'transformer') continue; // don't cross transformers
+          if (br.element && br.element.type === 'transformer') continue; // don't cross transformers
           let nextBus = null;
           if (br.from.id === busId && !visited.has(br.to.id)) nextBus = br.to;
           if (br.to.id === busId && !visited.has(br.from.id)) nextBus = br.from;
