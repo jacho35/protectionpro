@@ -132,6 +132,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 Y[j, j] += y_link
                 Y[i, j] -= y_link
                 Y[j, i] -= y_link
+                # Record as branch for flow reporting
+                branch_elements.append((None, bus.id, other_id, y_link))
 
     # Set up power injections
     P_spec = np.zeros(n)  # specified real power (generation - load)
@@ -209,28 +211,47 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     for comp, from_bus, to_bus, y in branch_elements:
         i = bus_idx[from_bus]
         j = bus_idx[to_bus]
-        i_branch = (V[i] - V[j]) * y
-        s_ij = V[i] * np.conj(i_branch)
+        i_branch_pu = (V[i] - V[j]) * y
+        s_ij = V[i] * np.conj(i_branch_pu)
+        s_ji = V[j] * np.conj(-i_branch_pu)
         p_mw = s_ij.real * base_mva
         q_mvar = s_ij.imag * base_mva
+        s_mva = abs(s_ij) * base_mva
 
-        # Loading percentage (for cables)
+        # Losses = power in from side + power in to side
+        losses_mw = (s_ij.real + s_ji.real) * base_mva
+
+        # Current in amps: use from-bus voltage
+        from_bus_comp = components.get(from_bus)
+        v_kv_from = from_bus_comp.props.get("voltage_kv", 11) if from_bus_comp else 11
+        i_amps = (s_mva * 1000) / (math.sqrt(3) * v_kv_from) if v_kv_from > 0 else 0
+
+        # Loading percentage (for cables and transformers)
         loading = 0
-        if comp.type == "cable":
+        if comp and comp.type == "cable":
             rated_a = comp.props.get("rated_amps", 400)
             v_kv = comp.props.get("voltage_kv", 11)
             rated_mva = math.sqrt(3) * v_kv * rated_a / 1000
-            s_mva = abs(s_ij) * base_mva
+            loading = (s_mva / rated_mva * 100) if rated_mva > 0 else 0
+        elif comp and comp.type == "transformer":
+            rated_mva = comp.props.get("rated_mva", 10)
             loading = (s_mva / rated_mva * 100) if rated_mva > 0 else 0
 
+        # Element identification
+        elem_id = comp.id if comp else f"link_{from_bus}_{to_bus}"
+        elem_name = comp.props.get("name", comp.type) if comp else "Bus Link"
+
         branch_results.append(LoadFlowBranch(
-            elementId=comp.id,
+            elementId=elem_id,
+            element_name=elem_name,
             from_bus=from_bus,
             to_bus=to_bus,
             p_mw=round(p_mw, 4),
             q_mvar=round(q_mvar, 4),
+            s_mva=round(s_mva, 4),
+            i_amps=round(i_amps, 2),
             loading_pct=round(loading, 2),
-            losses_mw=0,
+            losses_mw=round(losses_mw, 6),
         ))
 
     return LoadFlowResults(

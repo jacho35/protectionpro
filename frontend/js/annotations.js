@@ -36,10 +36,19 @@ const Annotations = {
     // Load flow on branches
     if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
       for (const branch of AppState.loadFlowResults.branches) {
+        let x, y;
         const comp = AppState.components.get(branch.elementId);
-        if (!comp) continue;
-        const x = comp.x + 40;
-        const y = comp.y;
+        if (comp) {
+          x = comp.x + 40;
+          y = comp.y;
+        } else {
+          // Solid link — position at midpoint between the two buses
+          const fromBus = AppState.components.get(branch.from_bus);
+          const toBus = AppState.components.get(branch.to_bus);
+          if (!fromBus || !toBus) continue;
+          x = (fromBus.x + toBus.x) / 2 + 40;
+          y = (fromBus.y + toBus.y) / 2;
+        }
         html += this.renderBranchFlowBadge(x, y, branch);
       }
     }
@@ -112,9 +121,10 @@ const Annotations = {
       const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(3)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
       lines.push(`Q: ${qStr}`);
     }
-    const sMVA = Math.sqrt((branch.p_mw || 0) ** 2 + (branch.q_mvar || 0) ** 2);
+    const sMVA = branch.s_mva || Math.sqrt((branch.p_mw || 0) ** 2 + (branch.q_mvar || 0) ** 2);
     const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
     lines.push(`S: ${sStr}`);
+    if (branch.i_amps > 0) lines.push(`I: ${branch.i_amps.toFixed(1)} A`);
     if (branch.loading_pct > 0) lines.push(`Load: ${branch.loading_pct.toFixed(1)}%`);
 
     const lineHeight = 14;
