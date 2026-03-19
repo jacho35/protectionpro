@@ -34,6 +34,9 @@ const AppState = {
   // Drag state
   dragState: null, // {startX, startY, offsetX, offsetY, ids}
 
+  // Clipboard for copy/paste
+  clipboard: null, // { components: [], wires: [] }
+
   // Analysis results
   faultResults: null,
   loadFlowResults: null,
@@ -129,6 +132,59 @@ const AppState = {
       }
     }
     this.selectedIds.clear();
+  },
+
+  // Copy selected components and their connecting wires to clipboard
+  copySelected() {
+    if (this.selectedIds.size === 0) return;
+    const comps = [];
+    const compIds = new Set();
+    for (const id of this.selectedIds) {
+      const comp = this.components.get(id);
+      if (comp) {
+        comps.push(JSON.parse(JSON.stringify(comp)));
+        compIds.add(id);
+      }
+    }
+    // Copy wires that connect two selected components
+    const wires = [];
+    for (const [wid, wire] of this.wires) {
+      if (compIds.has(wire.fromComponent) && compIds.has(wire.toComponent)) {
+        wires.push(JSON.parse(JSON.stringify(wire)));
+      }
+    }
+    this.clipboard = { components: comps, wires };
+  },
+
+  // Paste clipboard contents with an offset
+  pasteClipboard() {
+    if (!this.clipboard || this.clipboard.components.length === 0) return;
+    const offset = 40; // paste offset in world coords
+    const idMap = new Map(); // old id -> new id
+    this.clearSelection();
+    // Paste components
+    for (const comp of this.clipboard.components) {
+      const newId = this.genId(comp.type);
+      idMap.set(comp.id, newId);
+      const newComp = {
+        ...comp,
+        id: newId,
+        x: comp.x + offset,
+        y: comp.y + offset,
+        props: { ...comp.props, name: comp.props.name + ' copy' },
+      };
+      this.components.set(newId, newComp);
+      this.selectedIds.add(newId);
+    }
+    // Paste wires with remapped IDs
+    for (const wire of this.clipboard.wires) {
+      const newFrom = idMap.get(wire.fromComponent);
+      const newTo = idMap.get(wire.toComponent);
+      if (newFrom && newTo) {
+        this.addWire(newFrom, wire.fromPort, newTo, wire.toPort);
+      }
+    }
+    this.dirty = true;
   },
 
   // Clear all results

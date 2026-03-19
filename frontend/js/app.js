@@ -61,12 +61,54 @@ document.addEventListener('DOMContentLoaded', () => {
           Properties.clear();
         }
         break;
+      case 's':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          Project.saveProject();
+        }
+        break;
       case 'a':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
           for (const id of AppState.components.keys()) {
             AppState.selectedIds.add(id);
           }
+          Canvas.render();
+        }
+        break;
+      case 'c':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          AppState.copySelected();
+          document.getElementById('status-info').textContent =
+            `Copied ${AppState.clipboard?.components.length || 0} component(s).`;
+        }
+        break;
+      case 'v':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          AppState.pasteClipboard();
+          Canvas.render();
+          document.getElementById('status-info').textContent =
+            `Pasted ${AppState.selectedIds.size} component(s).`;
+        }
+        break;
+      case 'x':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          AppState.copySelected();
+          AppState.deleteSelected();
+          Canvas.render();
+          Properties.clear();
+          document.getElementById('status-info').textContent = 'Cut to clipboard.';
+        }
+        break;
+      case 'd':
+        if (e.ctrlKey || e.metaKey) {
+          // Duplicate selected
+          e.preventDefault();
+          AppState.copySelected();
+          AppState.pasteClipboard();
           Canvas.render();
         }
         break;
