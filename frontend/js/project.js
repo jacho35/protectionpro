@@ -6,6 +6,7 @@ const Project = {
     document.getElementById('btn-save').addEventListener('click', () => this.saveProject());
     document.getElementById('btn-open').addEventListener('click', () => this.openProject());
     document.getElementById('btn-export-json').addEventListener('click', () => this.exportJSON());
+    document.getElementById('btn-save-as').addEventListener('click', () => this.saveAsProject());
   },
 
   newProject() {
@@ -39,6 +40,31 @@ const Project = {
       }, 3000);
     } catch (e) {
       // Backend unavailable — fall back to JSON export
+      document.getElementById('status-info').textContent = 'Database unavailable, exporting JSON...';
+      this.exportJSON();
+      AppState.dirty = false;
+      document.title = `ProtectionPro — ${AppState.projectName}`;
+    }
+  },
+
+  // Save As: prompt for new name and save as a new project
+  async saveAsProject() {
+    const name = prompt('Save as project name:', AppState.projectName + ' (copy)');
+    if (!name) return;
+    AppState.projectName = name;
+    AppState.projectId = null; // Force create new project
+
+    document.getElementById('status-info').textContent = 'Saving...';
+    try {
+      const result = await API.saveProject();
+      AppState.projectId = result.id;
+      AppState.dirty = false;
+      document.title = `ProtectionPro — ${AppState.projectName}`;
+      document.getElementById('status-info').textContent = 'Project saved as new copy.';
+      setTimeout(() => {
+        document.getElementById('status-info').textContent = '';
+      }, 3000);
+    } catch (e) {
       document.getElementById('status-info').textContent = 'Database unavailable, exporting JSON...';
       this.exportJSON();
       AppState.dirty = false;

@@ -21,6 +21,9 @@ const Canvas = {
   // State for dragging data labels
   labelDrag: null, // { compId, startX, startY, origOX, origOY }
 
+  // State for dragging annotation badges
+  annotationDrag: null, // { key, startX, startY, origDX, origDY }
+
   init() {
     this.svg = document.getElementById('sld-canvas');
     this.diagramLayer = document.getElementById('diagram-layer');
@@ -106,6 +109,24 @@ const Canvas = {
     }
 
     if (e.button !== 0) return;
+
+    // Check if clicked on a draggable annotation badge
+    const annotEl = e.target.closest('.draggable-annotation');
+    if (annotEl) {
+      const key = annotEl.dataset.annotationKey;
+      if (key) {
+        const off = Annotations.getOffset(key);
+        this.annotationDrag = {
+          key,
+          startX: worldPt.x,
+          startY: worldPt.y,
+          origDX: off.dx,
+          origDY: off.dy,
+        };
+        e.preventDefault();
+        return;
+      }
+    }
 
     // Check if clicked on a data label (for dragging)
     const labelEl = e.target.closest('.comp-data-label');
@@ -216,6 +237,21 @@ const Canvas = {
       return;
     }
 
+    // Dragging annotation badges
+    if (this.annotationDrag) {
+      const dx = worldPt.x - this.annotationDrag.startX;
+      const dy = worldPt.y - this.annotationDrag.startY;
+      Annotations.setOffset(
+        this.annotationDrag.key,
+        this.annotationDrag.origDX + dx,
+        this.annotationDrag.origDY + dy,
+      );
+      Annotations.render();
+      // Re-render data labels since annotations layer is cleared
+      if (AppState.showCableLabels) this.renderComponentDataLabels();
+      return;
+    }
+
     // Dragging data labels
     if (this.labelDrag) {
       const dx = worldPt.x - this.labelDrag.startX;
@@ -273,6 +309,11 @@ const Canvas = {
     if (this.isPanning) {
       this.isPanning = false;
       this.svg.classList.remove('panning-active');
+      return;
+    }
+
+    if (this.annotationDrag) {
+      this.annotationDrag = null;
       return;
     }
 

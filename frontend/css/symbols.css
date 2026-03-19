@@ -84,6 +84,14 @@
 .annotation-group {
   pointer-events: none;
 }
+.annotation-group.draggable-annotation {
+  pointer-events: all;
+  cursor: move;
+}
+.annotation-group.draggable-annotation:hover .annotation-badge {
+  stroke-width: 2;
+  filter: brightness(0.95);
+}
 
 .annotation-badge {
   rx: 4;
@@ -128,6 +136,14 @@
 .cable-size-label {
   pointer-events: none;
   font-family: var(--font-mono);
+}
+.comp-data-label {
+  pointer-events: all;
+  cursor: move;
+  font-family: var(--font-mono);
+}
+.comp-data-label:hover {
+  fill: var(--accent) !important;
 }
 
 /* Component-specific default colors */
