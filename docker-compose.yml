@@ -24,7 +24,7 @@ services:
       dockerfile: Dockerfile
     container_name: protectionpro-frontend
     ports:
-      - "8080:80"
+      - "8095:80"
     depends_on:
       - backend
     restart: unless-stopped
