@@ -3,8 +3,20 @@
 const Annotations = {
   layer: null,
 
+  // Draggable offsets stored as { [key]: { dx, dy } }
+  // Keys: "fault:{busId}", "lf:{busId}", "br:{elementId}" or "br:{from}_{to}"
+  offsets: new Map(),
+
   init() {
     this.layer = document.getElementById('annotations-layer');
+  },
+
+  getOffset(key) {
+    return this.offsets.get(key) || { dx: 0, dy: 0 };
+  },
+
+  setOffset(key, dx, dy) {
+    this.offsets.set(key, { dx, dy });
   },
 
   render() {
@@ -16,9 +28,11 @@ const Annotations = {
       for (const [busId, result] of Object.entries(AppState.faultResults.buses)) {
         const comp = AppState.components.get(busId);
         if (!comp) continue;
-        const x = comp.x + 70;
-        const y = comp.y - 10;
-        html += this.renderFaultBadge(x, y, result);
+        const key = `fault:${busId}`;
+        const off = this.getOffset(key);
+        const x = comp.x + 70 + off.dx;
+        const y = comp.y - 10 + off.dy;
+        html += this.renderFaultBadge(x, y, result, key);
       }
     }
 
@@ -27,36 +41,40 @@ const Annotations = {
       for (const [busId, result] of Object.entries(AppState.loadFlowResults.buses)) {
         const comp = AppState.components.get(busId);
         if (!comp) continue;
-        const x = comp.x - 130;
-        const y = comp.y - 10;
-        html += this.renderLoadFlowBadge(x, y, result);
+        const key = `lf:${busId}`;
+        const off = this.getOffset(key);
+        const x = comp.x - 130 + off.dx;
+        const y = comp.y - 10 + off.dy;
+        html += this.renderLoadFlowBadge(x, y, result, key);
       }
     }
 
     // Load flow on branches
     if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
       for (const branch of AppState.loadFlowResults.branches) {
-        let x, y;
+        let baseX, baseY;
         const comp = AppState.components.get(branch.elementId);
         if (comp) {
-          x = comp.x + 40;
-          y = comp.y;
+          baseX = comp.x + 40;
+          baseY = comp.y;
         } else {
           // Solid link — position at midpoint between the two buses
           const fromBus = AppState.components.get(branch.from_bus);
           const toBus = AppState.components.get(branch.to_bus);
           if (!fromBus || !toBus) continue;
-          x = (fromBus.x + toBus.x) / 2 + 40;
-          y = (fromBus.y + toBus.y) / 2;
+          baseX = (fromBus.x + toBus.x) / 2 + 40;
+          baseY = (fromBus.y + toBus.y) / 2;
         }
-        html += this.renderBranchFlowBadge(x, y, branch);
+        const key = `br:${branch.elementId || branch.from_bus + '_' + branch.to_bus}`;
+        const off = this.getOffset(key);
+        html += this.renderBranchFlowBadge(baseX + off.dx, baseY + off.dy, branch, key);
       }
     }
 
     this.layer.innerHTML = html;
   },
 
-  renderFaultBadge(x, y, result) {
+  renderFaultBadge(x, y, result, key) {
     const lines = [];
     if (result.ik3 != null) lines.push(`3Φ: ${result.ik3.toFixed(2)} kA`);
     if (result.ik1 != null) lines.push(`SLG: ${result.ik1.toFixed(2)} kA`);
@@ -71,14 +89,14 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group fault-annotation">
-        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">FAULT</text>
         ${textHtml}
       </g>`;
   },
 
-  renderLoadFlowBadge(x, y, result) {
+  renderLoadFlowBadge(x, y, result, key) {
     const lines = [];
     if (result.voltage_kv != null) lines.push(`V: ${result.voltage_kv.toFixed(3)} kV (${result.voltage_pu.toFixed(4)} p.u.)`);
     if (result.angle_deg != null) lines.push(`δ: ${result.angle_deg.toFixed(2)}°`);
@@ -104,14 +122,14 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group loadflow-annotation">
-        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">LOAD FLOW</text>
         ${textHtml}
       </g>`;
   },
 
-  renderBranchFlowBadge(x, y, branch) {
+  renderBranchFlowBadge(x, y, branch, key) {
     const lines = [];
     if (branch.p_mw != null) {
       const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(3)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
@@ -136,8 +154,8 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group loadflow-annotation">
-        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         ${textHtml}
       </g>`;
   },

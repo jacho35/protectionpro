@@ -21,6 +21,9 @@ const Canvas = {
   // State for dragging data labels
   labelDrag: null, // { compId, startX, startY, origOX, origOY }
 
+  // State for dragging annotation badges
+  annotationDrag: null, // { key, startX, startY, origDX, origDY }
+
   init() {
     this.svg = document.getElementById('sld-canvas');
     this.diagramLayer = document.getElementById('diagram-layer');
@@ -106,6 +109,24 @@ const Canvas = {
     }
 
     if (e.button !== 0) return;
+
+    // Check if clicked on a draggable annotation badge
+    const annotEl = e.target.closest('.draggable-annotation');
+    if (annotEl) {
+      const key = annotEl.dataset.annotationKey;
+      if (key) {
+        const off = Annotations.getOffset(key);
+        this.annotationDrag = {
+          key,
+          startX: worldPt.x,
+          startY: worldPt.y,
+          origDX: off.dx,
+          origDY: off.dy,
+        };
+        e.preventDefault();
+        return;
+      }
+    }
 
     // Check if clicked on a data label (for dragging)
     const labelEl = e.target.closest('.comp-data-label');
@@ -216,6 +237,21 @@ const Canvas = {
       return;
     }
 
+    // Dragging annotation badges
+    if (this.annotationDrag) {
+      const dx = worldPt.x - this.annotationDrag.startX;
+      const dy = worldPt.y - this.annotationDrag.startY;
+      Annotations.setOffset(
+        this.annotationDrag.key,
+        this.annotationDrag.origDX + dx,
+        this.annotationDrag.origDY + dy,
+      );
+      Annotations.render();
+      // Re-render data labels since annotations layer is cleared
+      if (AppState.showCableLabels) this.renderComponentDataLabels();
+      return;
+    }
+
     // Dragging data labels
     if (this.labelDrag) {
       const dx = worldPt.x - this.labelDrag.startX;
@@ -273,6 +309,11 @@ const Canvas = {
     if (this.isPanning) {
       this.isPanning = false;
       this.svg.classList.remove('panning-active');
+      return;
+    }
+
+    if (this.annotationDrag) {
+      this.annotationDrag = null;
       return;
     }
 
@@ -436,6 +477,9 @@ const Canvas = {
     if (AppState.showWarnings) {
       this.renderUnconnectedWarnings();
     }
+
+    // Render overload flags on components exceeding rated capacity
+    this.renderOverloadFlags();
   },
 
   // Show key data labels next to cables, transformers, and other components
@@ -497,6 +541,57 @@ const Canvas = {
         </g>`;
     }
     this.annotationsLayer.insertAdjacentHTML('beforeend', html);
+  },
+
+  // Show red overload flags on components exceeding rated capacity
+  renderOverloadFlags() {
+    if (!AppState.loadFlowResults || !AppState.loadFlowResults.branches) return;
+
+    let html = '';
+    for (const branch of AppState.loadFlowResults.branches) {
+      if (!branch.loading_pct || branch.loading_pct <= 100) continue;
+
+      const comp = AppState.components.get(branch.elementId);
+      if (!comp) continue;
+
+      const x = comp.x;
+      const y = comp.y - 30;
+      const pct = branch.loading_pct.toFixed(0);
+
+      html += `
+        <g class="overload-flag" transform="translate(${x},${y})">
+          <polygon points="-2,-12 2,-12 3,0 -3,0" fill="#d32f2f"/>
+          <polygon points="-7,0 7,0 7,-4 0,-12 -7,-4" fill="#d32f2f"/>
+          <rect x="-18" y="1" width="36" height="13" rx="2" fill="#d32f2f"/>
+          <text x="0" y="11" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">${pct}%</text>
+        </g>`;
+    }
+
+    // Also check bus voltages for under/over voltage
+    if (AppState.loadFlowResults.buses) {
+      for (const [busId, result] of Object.entries(AppState.loadFlowResults.buses)) {
+        if (result.voltage_pu >= 0.95 && result.voltage_pu <= 1.05) continue;
+        const comp = AppState.components.get(busId);
+        if (!comp) continue;
+
+        const x = comp.x;
+        const y = comp.y - 30;
+        const vuPu = result.voltage_pu.toFixed(3);
+        const label = result.voltage_pu < 0.95 ? 'LOW V' : 'HIGH V';
+
+        html += `
+          <g class="overload-flag" transform="translate(${x},${y})">
+            <polygon points="-2,-12 2,-12 3,0 -3,0" fill="#d32f2f"/>
+            <polygon points="-7,0 7,0 7,-4 0,-12 -7,-4" fill="#d32f2f"/>
+            <rect x="-24" y="1" width="48" height="13" rx="2" fill="#d32f2f"/>
+            <text x="0" y="11" text-anchor="middle" font-size="8" fill="#fff" font-weight="bold">${label} ${vuPu}</text>
+          </g>`;
+      }
+    }
+
+    if (html) {
+      this.annotationsLayer.insertAdjacentHTML('beforeend', html);
+    }
   },
 
   // Find the nearest port within snap radius (world coordinates)
