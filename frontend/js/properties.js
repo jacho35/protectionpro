@@ -82,9 +82,10 @@ const Properties = {
 
     this.contentEl.innerHTML = html;
 
-    // Show calc info button if results exist
-    this.calcInfoEl.style.display =
-      (AppState.faultResults || AppState.loadFlowResults) ? '' : 'none';
+    // Always show calc info button if component has calculable data
+    const hasCalc = ['utility', 'generator', 'transformer', 'cable',
+      'motor_induction', 'motor_synchronous', 'bus', 'static_load', 'capacitor_bank'].includes(comp.type);
+    this.calcInfoEl.style.display = hasCalc ? '' : 'none';
 
     // Bind change events
     this.contentEl.querySelectorAll('input, select').forEach(input => {
@@ -289,48 +290,136 @@ const Properties = {
 
     let html = '';
 
-    // Show per-unit calculation steps
+    // Per-unit calculation steps
     html += this.renderCalcSteps(comp);
 
-    // Show fault results for this component's bus
-    if (AppState.faultResults && comp.type === 'bus') {
-      const busResult = AppState.faultResults.buses?.[comp.id];
-      if (busResult) {
+    // Find the bus this component connects to (for showing results)
+    const connectedBusIds = this._getConnectedBusIds(comp.id);
+
+    // --- Fault Results ---
+    if (AppState.faultResults && AppState.faultResults.buses) {
+      // If component IS a bus, show its own results
+      // Otherwise show results for connected bus(es)
+      const busIds = comp.type === 'bus' ? [comp.id] : connectedBusIds;
+
+      for (const busId of busIds) {
+        const busResult = AppState.faultResults.buses[busId];
+        if (!busResult) continue;
+        const busComp = AppState.components.get(busId);
+        const busName = busComp?.props?.name || busId;
+        const vkv = busResult.voltage_kv || 11;
+        const iBase = (AppState.baseMVA * 1000) / (Math.sqrt(3) * vkv);
+        const cFactor = vkv < 1.0 ? 1.05 : 1.1;
+
         html += `
           <div class="calc-step">
-            <div class="calc-step-title">Fault Analysis Results</div>
-            <div class="calc-formula">
-Three-Phase Fault: I"k3 = ${busResult.ik3?.toFixed(2) || 'N/A'} kA
-SLG Fault:         I"k1 = ${busResult.ik1?.toFixed(2) || 'N/A'} kA
-Line-to-Line:      I"kLL = ${busResult.ikLL?.toFixed(2) || 'N/A'} kA</div>
+            <div class="calc-step-title">Fault Analysis — ${busName} (${vkv} kV)</div>
+            <div class="calc-formula">Method: IEC 60909 (Symmetrical)
+Base MVA = ${AppState.baseMVA} MVA
+I_base = S_base / (√3 × V_n) = ${AppState.baseMVA * 1000} / (√3 × ${vkv}) = ${iBase.toFixed(2)} A
+c-factor = ${cFactor} (${vkv < 1.0 ? 'LV ≤ 1kV' : 'MV/HV > 1kV'})
+
+─── Three-Phase Fault (I"k3) ───
+I"k3 = c × V_n / (√3 × |Z_eq|)
+I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA
+${busResult.ik3 ? `i_p (peak) ≈ ${(busResult.ik3 * Math.sqrt(2) * 1.8).toFixed(3)} kA (κ ≈ 1.8)` : ''}
+${busResult.ik3 ? `I_b (breaking) ≈ ${busResult.ik3.toFixed(3)} kA` : ''}
+
+─── Single Line-to-Ground Fault (I"k1) ───
+I"k1 = 3c × V_n / (√3 × |Z1 + Z2 + Z0|)
+I"k1 = ${busResult.ik1?.toFixed(3) || 'N/A'} kA
+
+─── Line-to-Line Fault (I"kLL) ───
+I"kLL = c × √3 × V_n / (√3 × |Z1 + Z2|)
+I"kLL = ${busResult.ikLL?.toFixed(3) || 'N/A'} kA</div>
           </div>`;
       }
     }
 
-    // Show load flow results
-    if (AppState.loadFlowResults && comp.type === 'bus') {
-      const busLF = AppState.loadFlowResults.buses?.[comp.id];
-      if (busLF) {
+    // --- Load Flow Results ---
+    if (AppState.loadFlowResults) {
+      const lf = AppState.loadFlowResults;
+      const busIds = comp.type === 'bus' ? [comp.id] : connectedBusIds;
+
+      for (const busId of busIds) {
+        const busLF = lf.buses?.[busId];
+        if (!busLF) continue;
+        const busComp = AppState.components.get(busId);
+        const busName = busComp?.props?.name || busId;
+        const nomV = busComp?.props?.voltage_kv || 11;
+        const sMVA = Math.sqrt(busLF.p_mw ** 2 + busLF.q_mvar ** 2);
+        const pf = sMVA > 0 ? Math.abs(busLF.p_mw) / sMVA : 1;
+        const iCalc = (sMVA * 1000) / (Math.sqrt(3) * nomV);
+
         html += `
           <div class="calc-step">
-            <div class="calc-step-title">Load Flow Results</div>
-            <div class="calc-formula">
-Voltage: ${busLF.voltage_pu?.toFixed(4) || 'N/A'} p.u. (${busLF.voltage_kv?.toFixed(2) || 'N/A'} kV)
-Angle:   ${busLF.angle_deg?.toFixed(2) || 'N/A'}°
-P load:  ${busLF.p_mw?.toFixed(3) || 'N/A'} MW
-Q load:  ${busLF.q_mvar?.toFixed(3) || 'N/A'} MVAr</div>
+            <div class="calc-step-title">Load Flow — ${busName}</div>
+            <div class="calc-formula">Method: ${lf.method === 'newton_raphson' ? 'Newton-Raphson' : 'Gauss-Seidel'}
+Converged: ${lf.converged ? 'Yes' : 'NO — results may be inaccurate'}
+Iterations: ${lf.iterations}
+
+─── Bus Voltage ───
+|V| = ${busLF.voltage_pu?.toFixed(6)} p.u.
+V   = ${busLF.voltage_kv?.toFixed(4)} kV  (nominal ${nomV} kV)
+δ   = ${busLF.angle_deg?.toFixed(4)}°
+${Math.abs(busLF.voltage_pu - 1.0) > 0.05 ? `⚠ Voltage deviation: ${((busLF.voltage_pu - 1.0) * 100).toFixed(2)}% from nominal` : ''}
+
+─── Power ───
+P = ${busLF.p_mw?.toFixed(4)} MW  (${busLF.p_mw >= 0 ? 'generation' : 'consumption'})
+Q = ${busLF.q_mvar?.toFixed(4)} MVAr  (${busLF.q_mvar >= 0 ? 'capacitive/gen' : 'inductive/load'})
+S = ${sMVA.toFixed(4)} MVA
+PF = ${pf.toFixed(4)}
+I = S / (√3 × V) = ${iCalc.toFixed(2)} A</div>
           </div>`;
+      }
+
+      // Branch flow for this component (if it's a branch element)
+      if (['transformer', 'cable', 'cb', 'switch', 'fuse'].includes(comp.type) && lf.branches) {
+        for (const br of lf.branches) {
+          if (br.elementId !== comp.id) continue;
+          const fromBus = AppState.components.get(br.from_bus);
+          const toBus = AppState.components.get(br.to_bus);
+          const sMVA = Math.sqrt(br.p_mw ** 2 + br.q_mvar ** 2);
+
+          html += `
+            <div class="calc-step">
+              <div class="calc-step-title">Branch Power Flow — ${comp.props.name}</div>
+              <div class="calc-formula">From: ${fromBus?.props?.name || br.from_bus}
+To:   ${toBus?.props?.name || br.to_bus}
+
+P = ${br.p_mw?.toFixed(4)} MW  (${br.p_mw >= 0 ? '→' : '←'})
+Q = ${br.q_mvar?.toFixed(4)} MVAr
+S = ${sMVA.toFixed(4)} MVA
+${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct > 100 ? '  ⚠ OVERLOADED' : br.loading_pct > 80 ? '  ⚠ Heavy loading' : ''}` : ''}
+${br.losses_mw ? `Losses = ${br.losses_mw.toFixed(4)} MW` : ''}</div>
+            </div>`;
+        }
       }
     }
 
     if (!html) {
-      html = '<p>No calculation data available. Run Fault Analysis or Load Flow first.</p>';
+      html = '<p>No calculation data available for this component. Run Fault Analysis or Load Flow to see results.</p>';
     }
 
     document.getElementById('calc-modal-title').textContent =
       `Calculations — ${comp.props.name || comp.type}`;
     document.getElementById('calc-modal-body').innerHTML = html;
     document.getElementById('calc-modal').style.display = '';
+  },
+
+  // Find bus IDs connected to a component via wires
+  _getConnectedBusIds(compId) {
+    const busIds = [];
+    for (const wire of AppState.wires.values()) {
+      let otherId = null;
+      if (wire.fromComponent === compId) otherId = wire.toComponent;
+      if (wire.toComponent === compId) otherId = wire.fromComponent;
+      if (otherId) {
+        const other = AppState.components.get(otherId);
+        if (other && other.type === 'bus') busIds.push(other.id);
+      }
+    }
+    return busIds;
   },
 
   hideCalcModal() {
@@ -344,73 +433,253 @@ Q load:  ${busLF.q_mvar?.toFixed(3) || 'N/A'} MVAr</div>
     if (comp.type === 'utility') {
       const fmva = comp.props.fault_mva || 500;
       const xr = comp.props.x_r_ratio || 15;
+      const vkv = comp.props.voltage_kv || 33;
       const Zpu = base / fmva;
       const Xpu = Zpu * xr / Math.sqrt(1 + xr * xr);
       const Rpu = Xpu / xr;
+      const Zbase = (vkv * vkv) / base;
+      const Rohm = Rpu * Zbase;
+      const Xohm = Xpu * Zbase;
       html += `
         <div class="calc-step">
           <div class="calc-step-title">Per-Unit Impedance (Utility Source)</div>
-          <div class="calc-formula">
-Base MVA = ${base} MVA
+          <div class="calc-formula">Base MVA = ${base} MVA
 Fault Level = ${fmva} MVA
 X/R Ratio = ${xr}
+Voltage = ${vkv} kV
 
 Z_pu = Base_MVA / Fault_MVA
 Z_pu = ${base} / ${fmva} = ${Zpu.toFixed(6)} p.u.
 
 X_pu = Z_pu × (X/R) / √(1 + (X/R)²)
-X_pu = ${Zpu.toFixed(6)} × ${xr} / √(1 + ${xr}²)
-X_pu = ${Xpu.toFixed(6)} p.u.
+X_pu = ${Zpu.toFixed(6)} × ${xr} / √(1 + ${xr}²) = ${Xpu.toFixed(6)} p.u.
 
 R_pu = X_pu / (X/R)
-R_pu = ${Xpu.toFixed(6)} / ${xr}
-R_pu = ${Rpu.toFixed(6)} p.u.</div>
+R_pu = ${Xpu.toFixed(6)} / ${xr} = ${Rpu.toFixed(6)} p.u.
+
+─── Actual Impedance ───
+Z_base = V² / S_base = ${vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
+R = ${Rohm.toFixed(4)} Ω,  X = ${Xohm.toFixed(4)} Ω</div>
         </div>`;
+
+    } else if (comp.type === 'generator') {
+      const rated = comp.props.rated_mva || 10;
+      const vkv = comp.props.voltage_kv || 11;
+      const xdpp = comp.props.xd_pp || 0.15;
+      const xdp = comp.props.xd_p || 0.25;
+      const xd = comp.props.xd || 1.2;
+      const xr = comp.props.x_r_ratio || 40;
+      const Xpu = xdpp * base / rated;
+      const Rpu = Xpu / xr;
+      const Zbase = (vkv * vkv) / base;
+      const iRated = (rated * 1000) / (Math.sqrt(3) * vkv);
+      html += `
+        <div class="calc-step">
+          <div class="calc-step-title">Per-Unit Impedance (Generator)</div>
+          <div class="calc-formula">Base MVA = ${base} MVA
+Rated = ${rated} MVA at ${vkv} kV
+I_rated = S / (√3 × V) = ${iRated.toFixed(2)} A
+
+─── Reactances (on machine base) ───
+X"d (sub-transient) = ${xdpp} p.u.
+X'd (transient)     = ${xdp} p.u.
+Xd  (synchronous)   = ${xd} p.u.
+
+─── On System Base (${base} MVA) ───
+X"d_pu = X"d × (Base_MVA / Rated_MVA)
+X"d_pu = ${xdpp} × (${base} / ${rated}) = ${Xpu.toFixed(6)} p.u.
+
+R_pu = X"d_pu / (X/R) = ${Xpu.toFixed(6)} / ${xr} = ${Rpu.toFixed(6)} p.u.
+
+─── Actual Impedance ───
+Z_base = ${vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
+X"d = ${(Xpu * Zbase).toFixed(4)} Ω</div>
+        </div>`;
+
     } else if (comp.type === 'transformer') {
       const rated = comp.props.rated_mva || 10;
+      const hvkv = comp.props.voltage_hv_kv || 33;
+      const lvkv = comp.props.voltage_lv_kv || 11;
       const zPct = comp.props.z_percent || 8;
       const xr = comp.props.x_r_ratio || 10;
+      const tap = comp.props.tap_percent || 0;
       const Zpu = (zPct / 100) * base / rated;
       const Xpu = Zpu * xr / Math.sqrt(1 + xr * xr);
       const Rpu = Xpu / xr;
+      const ZbaseHV = (hvkv * hvkv) / base;
+      const ZbaseLV = (lvkv * lvkv) / base;
+      const iHV = (rated * 1000) / (Math.sqrt(3) * hvkv);
+      const iLV = (rated * 1000) / (Math.sqrt(3) * lvkv);
       html += `
         <div class="calc-step">
           <div class="calc-step-title">Per-Unit Impedance (Transformer)</div>
-          <div class="calc-formula">
-Base MVA = ${base} MVA
-Rated MVA = ${rated} MVA
-Z% = ${zPct}%
-X/R Ratio = ${xr}
+          <div class="calc-formula">Base MVA = ${base} MVA
+Rated = ${rated} MVA
+HV: ${hvkv} kV  →  LV: ${lvkv} kV
+Vector Group: ${comp.props.vector_group || 'Dyn11'}
+Tap: ${tap}%
+
+I_HV = ${iHV.toFixed(2)} A,  I_LV = ${iLV.toFixed(2)} A
+Turns ratio = ${hvkv} / ${lvkv} = ${(hvkv / lvkv).toFixed(4)}
 
 Z_pu = (Z% / 100) × (Base_MVA / Rated_MVA)
-Z_pu = (${zPct} / 100) × (${base} / ${rated})
-Z_pu = ${Zpu.toFixed(6)} p.u.
+Z_pu = (${zPct} / 100) × (${base} / ${rated}) = ${Zpu.toFixed(6)} p.u.
 
 X_pu = Z_pu × (X/R) / √(1 + (X/R)²)
-X_pu = ${Xpu.toFixed(6)} × ${xr} / √(1 + ${xr}²)
 X_pu = ${Xpu.toFixed(6)} p.u.
 
-R_pu = X_pu / (X/R) = ${Rpu.toFixed(6)} p.u.</div>
+R_pu = X_pu / (X/R) = ${Rpu.toFixed(6)} p.u.
+
+─── Referred to HV side ───
+Z_base(HV) = ${hvkv}² / ${base} = ${ZbaseHV.toFixed(4)} Ω
+R = ${(Rpu * ZbaseHV).toFixed(4)} Ω,  X = ${(Xpu * ZbaseHV).toFixed(4)} Ω
+
+─── Referred to LV side ───
+Z_base(LV) = ${lvkv}² / ${base} = ${ZbaseLV.toFixed(4)} Ω
+R = ${(Rpu * ZbaseLV).toFixed(4)} Ω,  X = ${(Xpu * ZbaseLV).toFixed(4)} Ω</div>
         </div>`;
+
     } else if (comp.type === 'cable') {
       const Vkv = comp.props.voltage_kv || 11;
+      const len = comp.props.length_km || 1;
+      const rpk = comp.props.r_per_km || 0;
+      const xpk = comp.props.x_per_km || 0;
       const Zbase = (Vkv * Vkv) / base;
-      const R = comp.props.r_per_km * comp.props.length_km;
-      const X = comp.props.x_per_km * comp.props.length_km;
+      const R = rpk * len;
+      const X = xpk * len;
+      const Rpu = R / Zbase;
+      const Xpu = X / Zbase;
+      const Zpu = Math.sqrt(Rpu * Rpu + Xpu * Xpu);
+      const rated = comp.props.rated_amps || 400;
+      const ratedMVA = Math.sqrt(3) * Vkv * rated / 1000;
       html += `
         <div class="calc-step">
           <div class="calc-step-title">Per-Unit Impedance (Cable)</div>
-          <div class="calc-formula">
-Base MVA = ${base} MVA
+          <div class="calc-formula">Base MVA = ${base} MVA
 Voltage = ${Vkv} kV
+Length = ${len} km
+R = ${rpk} Ω/km,  X = ${xpk} Ω/km
+Rated current = ${rated} A  (S_rated = ${ratedMVA.toFixed(3)} MVA)
 
 Z_base = V² / Base_MVA = ${Vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
 
-R_total = ${comp.props.r_per_km} × ${comp.props.length_km} = ${R.toFixed(4)} Ω
-X_total = ${comp.props.x_per_km} × ${comp.props.length_km} = ${X.toFixed(4)} Ω
+R_total = ${rpk} × ${len} = ${R.toFixed(4)} Ω
+X_total = ${xpk} × ${len} = ${X.toFixed(4)} Ω
+Z_total = √(R² + X²) = ${Math.sqrt(R * R + X * X).toFixed(4)} Ω
 
-R_pu = R / Z_base = ${R.toFixed(4)} / ${Zbase.toFixed(4)} = ${(R / Zbase).toFixed(6)} p.u.
-X_pu = X / Z_base = ${X.toFixed(4)} / ${Zbase.toFixed(4)} = ${(X / Zbase).toFixed(6)} p.u.</div>
+R_pu = ${R.toFixed(4)} / ${Zbase.toFixed(4)} = ${Rpu.toFixed(6)} p.u.
+X_pu = ${X.toFixed(4)} / ${Zbase.toFixed(4)} = ${Xpu.toFixed(6)} p.u.
+Z_pu = ${Zpu.toFixed(6)} p.u.
+
+Voltage drop (at rated) ≈ ${(Rpu * rated / (ratedMVA * 1000 / (Math.sqrt(3) * Vkv)) * 100).toFixed(2)}% (R only)</div>
+        </div>`;
+
+    } else if (comp.type === 'motor_induction') {
+      const kw = comp.props.rated_kw || 200;
+      const vkv = comp.props.voltage_kv || 0.4;
+      const eff = comp.props.efficiency || 0.93;
+      const pf = comp.props.power_factor || 0.85;
+      const xpp = comp.props.x_pp || 0.17;
+      const lrc = comp.props.locked_rotor_current || 6;
+      const kva = kw / eff;
+      const mva = kva / 1000;
+      const Xpu = xpp * base / mva;
+      const iRated = (kva) / (Math.sqrt(3) * vkv * 1000);
+      const iStart = iRated * lrc;
+      html += `
+        <div class="calc-step">
+          <div class="calc-step-title">Per-Unit Impedance (Induction Motor)</div>
+          <div class="calc-formula">Base MVA = ${base} MVA
+Rated = ${kw} kW at ${vkv} kV
+Efficiency = ${(eff * 100).toFixed(1)}%
+Power Factor = ${pf}
+
+Input kVA = P / η = ${kw} / ${eff} = ${kva.toFixed(1)} kVA (${mva.toFixed(4)} MVA)
+I_rated = ${(iRated * 1000).toFixed(2)} A
+I_start = ${lrc} × I_rated = ${(iStart * 1000).toFixed(2)} A
+
+X"_pu (on system base) = X" × (Base_MVA / Rated_MVA)
+X"_pu = ${xpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u.
+
+─── Power Consumption ───
+P = ${(mva * pf).toFixed(4)} MW
+Q = ${(mva * Math.sqrt(1 - pf * pf)).toFixed(4)} MVAr</div>
+        </div>`;
+
+    } else if (comp.type === 'motor_synchronous') {
+      const kva = comp.props.rated_kva || 500;
+      const vkv = comp.props.voltage_kv || 3.3;
+      const pf = comp.props.power_factor || 0.9;
+      const xdpp = comp.props.xd_pp || 0.15;
+      const mva = kva / 1000;
+      const Xpu = xdpp * base / mva;
+      const iRated = kva / (Math.sqrt(3) * vkv * 1000);
+      html += `
+        <div class="calc-step">
+          <div class="calc-step-title">Per-Unit Impedance (Synchronous Motor)</div>
+          <div class="calc-formula">Base MVA = ${base} MVA
+Rated = ${kva} kVA at ${vkv} kV
+Power Factor = ${pf}
+I_rated = ${(iRated * 1000).toFixed(2)} A
+
+X"d_pu (on system base) = X"d × (Base_MVA / Rated_MVA)
+X"d_pu = ${xdpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u.
+
+─── Power Consumption ───
+P = ${(mva * pf).toFixed(4)} MW
+Q = ${(mva * Math.sqrt(1 - pf * pf)).toFixed(4)} MVAr</div>
+        </div>`;
+
+    } else if (comp.type === 'static_load') {
+      const kva = comp.props.rated_kva || 100;
+      const vkv = comp.props.voltage_kv || 0.4;
+      const pf = comp.props.power_factor || 0.85;
+      const mva = kva / 1000;
+      const iRated = kva / (Math.sqrt(3) * vkv * 1000);
+      html += `
+        <div class="calc-step">
+          <div class="calc-step-title">Load Summary (Static Load)</div>
+          <div class="calc-formula">Rated = ${kva} kVA at ${vkv} kV
+Power Factor = ${pf}
+Load Type = ${comp.props.load_type || 'constant_power'}
+
+I_rated = S / (√3 × V) = ${(iRated * 1000).toFixed(2)} A
+
+P = S × PF = ${(mva * pf).toFixed(4)} MW (${(mva * pf * 1000).toFixed(1)} kW)
+Q = S × sin(φ) = ${(mva * Math.sqrt(1 - pf * pf)).toFixed(4)} MVAr
+
+P_pu = ${(mva * pf / base).toFixed(6)} p.u.
+Q_pu = ${(mva * Math.sqrt(1 - pf * pf) / base).toFixed(6)} p.u.</div>
+        </div>`;
+
+    } else if (comp.type === 'capacitor_bank') {
+      const kvar = comp.props.rated_kvar || 100;
+      const vkv = comp.props.voltage_kv || 11;
+      const mvar = kvar / 1000;
+      const iRated = kvar / (Math.sqrt(3) * vkv * 1000);
+      html += `
+        <div class="calc-step">
+          <div class="calc-step-title">Capacitor Bank Data</div>
+          <div class="calc-formula">Rated = ${kvar} kVAr at ${vkv} kV
+Steps = ${comp.props.steps || 1}
+
+I = Q / (√3 × V) = ${(iRated * 1000).toFixed(2)} A
+Q_pu = ${(mvar / base).toFixed(6)} p.u. (injected)</div>
+        </div>`;
+
+    } else if (comp.type === 'bus') {
+      const vkv = comp.props.voltage_kv || 11;
+      const Zbase = (vkv * vkv) / base;
+      const Ibase = (base * 1000) / (Math.sqrt(3) * vkv);
+      html += `
+        <div class="calc-step">
+          <div class="calc-step-title">Bus Base Values</div>
+          <div class="calc-formula">Bus Type: ${comp.props.bus_type || 'PQ'}
+Voltage = ${vkv} kV
+Base MVA = ${base} MVA
+
+Z_base = V² / S_base = ${vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
+I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFixed(2)} A</div>
         </div>`;
     }
 
