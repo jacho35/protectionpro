@@ -341,14 +341,28 @@ def _generator_impedance(comp, base_mva):
 
 
 def _transformer_impedance(comp, base_mva):
-    """Transformer per-unit impedance."""
+    """Transformer per-unit impedance with IEC 60909 correction factor K_T.
+
+    K_T = 0.95 × c_max / (1 + 0.6 × x_T)  per IEC 60909-0 §6.3.3
+    where x_T is the transformer reactance p.u. on its own rating.
+    """
     rated_mva = comp.props.get("rated_mva", 10)
     z_pct = comp.props.get("z_percent", 8)
     xr = comp.props.get("x_r_ratio", 10)
+    voltage_hv_kv = comp.props.get("voltage_hv_kv", 33)
+
+    # Uncorrected impedance on system base
     z_pu = (z_pct / 100) * base_mva / rated_mva
     x_pu = z_pu * xr / math.sqrt(1 + xr * xr)
     r_pu = x_pu / xr
-    return complex(r_pu, x_pu)
+
+    # IEC 60909 impedance correction factor K_T
+    # x_T is reactance p.u. on transformer's own rating
+    x_t = (z_pct / 100) * xr / math.sqrt(1 + xr * xr)
+    c_max = 1.05 if voltage_hv_kv < 1.0 else 1.1
+    k_t = 0.95 * c_max / (1 + 0.6 * x_t)
+
+    return complex(r_pu * k_t, x_pu * k_t)
 
 
 def _cable_impedance(comp, base_mva):
