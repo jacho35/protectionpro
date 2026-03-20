@@ -1,10 +1,10 @@
-"""IEC 60909 Symmetrical Short-Circuit Current Calculation.
+"""IEC 60909 Short-Circuit Current Calculation.
 
-Implements initial symmetrical short-circuit current (I"k) for:
-- Three-phase fault
-- Single line-to-ground (SLG) fault
-- Line-to-line (LL) fault
-- Double line-to-ground (LLG) fault
+Implements the full IEC 60909-0 fault current characterisation:
+- I"k: Initial symmetrical short-circuit current (3Φ, SLG, LL, LLG)
+- ip:  Peak short-circuit current (κ × √2 × I"k)
+- Ib:  Symmetrical breaking current (μ/q decay factors)
+- Ik:  Steady-state short-circuit current (synchronous reactance)
 
 Includes motor contribution per IEC 60909-0 §13:
 - Induction motors contribute sub-transient current that decays
@@ -178,6 +178,23 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ik3_motor = round(motor_pu * i_base_ka, 3)
             ik3_network = round(network_pu * i_base_ka, 3)
 
+        # IEC 60909 time-varying fault currents (3-phase)
+        ip_ka, kappa = _compute_peak_current(ik3_ka, z_eq)
+        ib_ka = _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mva)
+        ik_steady_ka = _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, voltage_kv)
+
+        # Asymmetric breaking current: Ib_asym = √(Ib² + (2fτ × ip × e^(-t/τ))²)
+        # Simplified per IEC 60909-0 §9.1.3: use DC component at t_min
+        ib_asym_ka = None
+        if ib_ka and ip_ka and kappa:
+            # DC decay time constant τ ≈ X/(2πfR), approximate from R/X
+            r_x = abs(z_eq.real / z_eq.imag) if abs(z_eq.imag) > 1e-15 else 1.0
+            freq = 50  # Hz — could use project.frequency
+            tau = 1 / (2 * math.pi * freq * r_x) if r_x > 1e-10 else 0.1
+            t_min = 0.1  # 100ms default breaking time
+            i_dc = math.sqrt(2) * ik3_ka * math.exp(-t_min / tau)
+            ib_asym_ka = round(math.sqrt(ib_ka ** 2 + i_dc ** 2), 3)
+
         results[bus.id] = FaultResultBus(
             bus_id=bus.id,
             bus_name=bus.props.get("name", bus.id),
@@ -201,6 +218,11 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             motor_count=motor_count,
             ik3_motor=ik3_motor,
             ik3_network=ik3_network,
+            ip=ip_ka,
+            kappa=kappa,
+            ib=ib_ka,
+            ib_asymmetric=ib_asym_ka,
+            ik_steady=ik_steady_ka,
             branches=branches,
         )
 
@@ -231,34 +253,50 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
                 "z_total": z_path + z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
+                "source_type": "utility",
             })
             return
         if comp.type == "generator":
             z_src = _generator_impedance(comp, base_mva)
+            rated_mva = comp.props.get("rated_mva", 10)
             paths.append({
                 "z_total": z_path + z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
+                "source_type": "generator",
+                "xd_pp": comp.props.get("xd_pp", 0.15),
+                "xd_p": comp.props.get("xd_p", 0.25),
+                "xd": comp.props.get("xd", 1.2),
+                "rated_mva": rated_mva,
             })
             return
 
         # Motors contribute sub-transient fault current (IEC 60909-0 §13)
         if comp.type == "motor_induction":
             z_src = _motor_induction_impedance(comp, base_mva)
+            rated_kw = comp.props.get("rated_kw", 200)
+            eff = comp.props.get("efficiency", 0.93)
             paths.append({
                 "z_total": z_path + z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
+                "source_type": "motor_induction",
                 "is_motor": True,
+                "rated_mva": rated_kw / (eff * 1000),
             })
             return
         if comp.type == "motor_synchronous":
             z_src = _motor_synchronous_impedance(comp, base_mva)
+            rated_kva = comp.props.get("rated_kva", 500)
             paths.append({
                 "z_total": z_path + z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
+                "source_type": "motor_synchronous",
                 "is_motor": True,
+                "xd_pp": comp.props.get("xd_pp", 0.15),
+                "xd_p": comp.props.get("xd_p", 0.25),
+                "rated_mva": rated_kva / 1000,
             })
             return
 
@@ -676,3 +714,198 @@ def _parallel_impedances(impedances):
     if abs(y_total) < 1e-15:
         return complex(1e10, 0)
     return 1 / y_total
+
+
+# ─── IEC 60909 Time-Varying Fault Currents ───────────────────────────────────
+
+
+def _compute_kappa(r_over_x):
+    """Compute peak factor κ per IEC 60909-0 §8.1, Eq. (55).
+
+    κ = 1.02 + 0.98 × e^(−3 × R/X)
+    Range: 1.02 (pure R) to 2.0 (pure X).
+    """
+    return 1.02 + 0.98 * math.exp(-3 * r_over_x)
+
+
+def _compute_peak_current(ik3_ka, z_eq):
+    """Compute peak short-circuit current ip per IEC 60909-0 §8.1.
+
+    ip = κ × √2 × I"k3
+
+    The R/X ratio is derived from the equivalent impedance Z_eq.
+    For meshed networks, use Method C (§8.1, Eq. 56):
+    R/X = R_eq / X_eq from the complex impedance at the fault point.
+
+    Returns (ip_ka, kappa).
+    """
+    if ik3_ka is None or ik3_ka < 1e-10 or abs(z_eq) < 1e-15:
+        return None, None
+
+    r = z_eq.real
+    x = z_eq.imag
+    r_over_x = abs(r / x) if abs(x) > 1e-15 else 10.0  # High R/X → low κ
+    kappa = _compute_kappa(r_over_x)
+    ip_ka = kappa * math.sqrt(2) * ik3_ka
+    return round(ip_ka, 3), round(kappa, 3)
+
+
+def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mva, t_min=0.1):
+    """Compute symmetrical breaking current Ib per IEC 60909-0 §9.1.
+
+    For near-to-generator faults:
+      Ib = μ × I"k   (per source contribution)
+
+    Factor μ depends on I"k/I_rG ratio and minimum breaking time t_min.
+    Per IEC 60909-0 §9.1.1, Eq. (70):
+      μ = 0.84 + 0.26 × e^(−0.26 × I"kG/I_rG)  for t_min = 0.02s
+      μ = 0.71 + 0.51 × e^(−0.30 × I"kG/I_rG)  for t_min = 0.05s
+      μ = 0.62 + 0.72 × e^(−0.32 × I"kG/I_rG)  for t_min = 0.10s
+      μ = 0.56 + 0.94 × e^(−0.38 × I"kG/I_rG)  for t_min ≥ 0.25s
+
+    For far-from-generator faults (utility sources): μ = 1 (no decay).
+    For induction motors: μ determined by I"k/I_rM and t_min per §13.
+    Motor q factor: q = 1.03 + 0.12 × ln(m) for t_min = 0.02s, etc.
+
+    Returns Ib in kA.
+    """
+    if ik3_ka is None or ik3_ka < 1e-10:
+        return None
+
+    ib_total = 0
+
+    for path in source_paths:
+        z_path = path["z_total"]
+        if abs(z_path) < 1e-15:
+            continue
+
+        ik_path_pu = c_factor / abs(z_path)
+        ik_path_ka = ik_path_pu * i_base_ka
+        source_type = path.get("source_type", "utility")
+
+        if source_type == "utility":
+            # Far-from-generator: no decay, μ = 1
+            ib_total += ik_path_ka
+
+        elif source_type == "generator":
+            rated_mva = path.get("rated_mva", 10)
+            i_rg_ka = rated_mva / (math.sqrt(3) * 1)  # in p.u. terms
+            # I"kG / I_rG ratio — use per-unit on generator base
+            xd_pp = path.get("xd_pp", 0.15)
+            ik_over_ir = c_factor / xd_pp  # ≈ 1.1/0.15 ≈ 7.3 typical
+            mu = _mu_factor(ik_over_ir, t_min)
+            ib_total += mu * ik_path_ka
+
+        elif source_type == "motor_synchronous":
+            # Synchronous motors: same μ formula as generators
+            xd_pp = path.get("xd_pp", 0.15)
+            ik_over_ir = c_factor / xd_pp
+            mu = _mu_factor(ik_over_ir, t_min)
+            ib_total += mu * ik_path_ka
+
+        elif source_type == "motor_induction":
+            # Induction motors: current decays rapidly
+            # Per IEC 60909-0 §13.2, use μ × q factor
+            rated_mva = path.get("rated_mva", 0.2)
+            # For LV motors, per-unit ratio based on locked-rotor
+            ik_over_ir = ik_path_pu * base_mva / rated_mva if rated_mva > 1e-6 else 6
+            mu = _mu_factor(ik_over_ir, t_min)
+            q = _q_factor(ik_over_ir, t_min)
+            ib_total += mu * q * ik_path_ka
+
+    return round(ib_total, 3)
+
+
+def _mu_factor(ik_over_ir, t_min):
+    """Decay factor μ per IEC 60909-0 §9.1.1, Eq. (70)-(73).
+
+    Interpolates between standard breaking times.
+    """
+    if ik_over_ir < 2:
+        return 1.0  # Far from generator — no significant decay
+
+    if t_min <= 0.02:
+        mu = 0.84 + 0.26 * math.exp(-0.26 * ik_over_ir)
+    elif t_min <= 0.05:
+        mu = 0.71 + 0.51 * math.exp(-0.30 * ik_over_ir)
+    elif t_min <= 0.10:
+        mu = 0.62 + 0.72 * math.exp(-0.32 * ik_over_ir)
+    else:  # t_min >= 0.25
+        mu = 0.56 + 0.94 * math.exp(-0.38 * ik_over_ir)
+
+    return min(mu, 1.0)  # μ ≤ 1
+
+
+def _q_factor(ik_over_ir, t_min):
+    """Motor decay factor q per IEC 60909-0 §13.2.
+
+    For induction motors, accounts for faster current decay.
+    q approaches 0 for small motors at longer breaking times.
+    """
+    if ik_over_ir < 1:
+        return 1.0
+
+    m = ik_over_ir
+    if t_min <= 0.02:
+        q = 1.03 + 0.12 * math.log(m) if m > 0 else 1.0
+    elif t_min <= 0.05:
+        q = 0.79 + 0.12 * math.log(m) if m > 0 else 0.79
+    elif t_min <= 0.10:
+        q = 0.57 + 0.12 * math.log(m) if m > 0 else 0.57
+    else:
+        q = 0.26 + 0.10 * math.log(m) if m > 0 else 0.26
+
+    return max(min(q, 1.0), 0.0)  # 0 ≤ q ≤ 1
+
+
+def _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, voltage_kv):
+    """Compute steady-state short-circuit current Ik per IEC 60909-0 §10.
+
+    Ik depends on source type:
+    - Utility/network: Ik = I"k (no decay for far-from-generator faults)
+    - Generator: Ik = c × V / (√3 × Xd × Z_base) — uses synchronous Xd
+    - Synchronous motor: similar to generator with Xd
+    - Induction motor: Ik = 0 (current decays to zero within ~200ms)
+
+    Returns Ik in kA.
+    """
+    ik_total = 0
+
+    for path in source_paths:
+        z_path = path["z_total"]
+        if abs(z_path) < 1e-15:
+            continue
+
+        ik_path_pu = c_factor / abs(z_path)
+        ik_path_ka = ik_path_pu * i_base_ka
+        source_type = path.get("source_type", "utility")
+
+        if source_type == "utility":
+            # Network source: Ik = I"k (sustained)
+            ik_total += ik_path_ka
+
+        elif source_type == "generator":
+            # Generator: steady-state uses Xd (synchronous reactance)
+            xd = path.get("xd", 1.2)
+            xd_pp = path.get("xd_pp", 0.15)
+            rated_mva = path.get("rated_mva", 10)
+            # Scale: Ik_gen = I"k × (X"d / Xd) approximately
+            # More precisely: Ik = c / (Xd × base_mva/rated_mva) × i_base
+            xd_sys = xd * base_mva / rated_mva
+            ik_steady_pu = c_factor / xd_sys if xd_sys > 1e-10 else 0
+            ik_total += ik_steady_pu * i_base_ka
+
+        elif source_type == "motor_synchronous":
+            # Synchronous motor: reduced steady-state contribution
+            xd_p = path.get("xd_p", 0.25)
+            rated_mva = path.get("rated_mva", 0.5)
+            # Use transient reactance for conservative steady-state estimate
+            xd_p_sys = xd_p * base_mva / rated_mva
+            ik_steady_pu = c_factor / xd_p_sys if xd_p_sys > 1e-10 else 0
+            ik_total += ik_steady_pu * i_base_ka
+
+        elif source_type == "motor_induction":
+            # Induction motor: current decays to zero — no steady-state contribution
+            pass
+
+    return round(ik_total, 3) if ik_total > 1e-10 else None

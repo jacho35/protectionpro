@@ -455,19 +455,31 @@ Z_eq = ${zeqR.toFixed(6)} + j${zeqX.toFixed(6)} p.u. (${(zeqR * 100).toFixed(4)}
 |Z_eq| = ${zeqMag.toFixed(6)} p.u. (${(zeqMag * 100).toFixed(4)}%) = ${zeqOhm.toFixed(6)} Ω
 R/X = ${zeqX !== 0 ? (zeqR / zeqX).toFixed(4) : 'N/A'}    X/R = ${zeqR !== 0 ? (zeqX / zeqR).toFixed(2) : 'N/A'}` : ''}
 
-─── Three-Phase Fault (I"k3) ───
+─── Three-Phase Fault (I"k3) ── IEC 60909-0 §8–10 ───
 I"k3 = c × V_n / (√3 × |Z_eq|)${hasZeq ? ` = ${cFactor} / ${zeqMag.toFixed(6)} × ${iBaseKA.toFixed(4)}` : ''}
-I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA
+I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA (initial symmetrical)
 ${busResult.ik3 ? `S"k3 = √3 × ${vkv} × ${busResult.ik3.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ik3).toFixed(2)} MVA` : ''}
-${busResult.ik3 ? `i_p (peak) ≈ ${(busResult.ik3 * Math.sqrt(2) * 1.8).toFixed(3)} kA (κ ≈ 1.8)` : ''}
-${busResult.ik3 ? `I_b (breaking) ≈ ${busResult.ik3.toFixed(3)} kA` : ''}
+${busResult.ip != null ? `
+─── Peak Current ip (§8.1) ───
+ip = κ × √2 × I"k3 = ${busResult.kappa} × √2 × ${busResult.ik3.toFixed(3)}
+ip = ${busResult.ip.toFixed(3)} kA    κ = ${busResult.kappa} (R/X = ${zeqX !== 0 ? Math.abs(zeqR / zeqX).toFixed(4) : 'N/A'})
+κ = 1.02 + 0.98 × e^(−3 × R/X)` : ''}
+${busResult.ib != null ? `
+─── Breaking Current Ib (§9.1) ───
+Ib = ${busResult.ib.toFixed(3)} kA (symmetrical, t_min = 0.1s)${busResult.ib_asymmetric != null ? `
+Ib_asym = √(Ib² + i_DC²) = ${busResult.ib_asymmetric.toFixed(3)} kA (asymmetric)` : ''}
+${busResult.ib < busResult.ik3 ? `Decay: μ/q factors applied to generator/motor contributions` : `No decay (far-from-generator fault)`}` : ''}
+${busResult.ik_steady != null ? `
+─── Steady-State Current Ik (§10) ───
+Ik = ${busResult.ik_steady.toFixed(3)} kA
+${busResult.ik_steady < busResult.ik3 ? `Generators use Xd (synchronous), induction motors contribute 0` : `Network-fed: Ik ≈ I"k (no decay)`}` : ''}
 ${busResult.motor_count > 0 ? `
-─── Motor Contribution (IEC 60909-0 §13) ───
+─── Motor Contribution (§13) ───
 Motors contributing: ${busResult.motor_count}
 I"k3 from network: ${busResult.ik3_network?.toFixed(3) || '—'} kA
 I"k3 from motors:  ${busResult.ik3_motor?.toFixed(3) || '—'} kA (${busResult.ik3 > 0 ? (busResult.ik3_motor / busResult.ik3 * 100).toFixed(1) : 0}% of total)
-Note: Motor sub-transient current decays within ~100ms (induction)
-      or is sustained (synchronous). I"k includes motor contribution.` : ''}
+Induction motors: sub-transient current decays to 0 within ~200ms
+Synchronous motors: sustained contribution (like generators)` : ''}
 
 ─── Zero-Sequence Impedance (Z0) ───
 ${busResult.z0_mag != null ? `Z0 = ${busResult.z0_real?.toFixed(6)} + j${busResult.z0_imag?.toFixed(6)} p.u. (${(busResult.z0_real * 100)?.toFixed(4)} + j${(busResult.z0_imag * 100)?.toFixed(4)}%)
