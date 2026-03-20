@@ -448,8 +448,29 @@ I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA
 ${busResult.ik3 ? `i_p (peak) ≈ ${(busResult.ik3 * Math.sqrt(2) * 1.8).toFixed(3)} kA (κ ≈ 1.8)` : ''}
 ${busResult.ik3 ? `I_b (breaking) ≈ ${busResult.ik3.toFixed(3)} kA` : ''}
 
+─── Zero-Sequence Impedance (Z0) ───
+${busResult.z0_mag != null ? `Z0 = ${busResult.z0_real?.toFixed(6)} + j${busResult.z0_imag?.toFixed(6)} p.u.
+|Z0| = ${busResult.z0_mag?.toFixed(6)} p.u.
+Z0 sources: ${busResult.z0_source_count || 0} path(s)` : `No zero-sequence path found (Z0 → ∞)
+(Bus-side winding is delta or ungrounded star, or no
+grounded transformer provides a Z0 return path)`}
+${(busResult.z0_sources_detail || []).map((d, i) =>
+  `  Path ${i + 1}: ${d}`
+).join('\n')}
+${busResult.z0_mag != null ? `
+Z0 model per IEC 60909:
+• Z1 = Z2 = Z_eq (positive = negative seq for static equipment)
+• Dyn / YNd: far-side Δ provides Z0 circulation → Xfmr is Z0 source
+  Z0_xfmr = Z_t(leakage) + 3×Z_n(grounding)
+• YNyn: Z0 passes through — walk continues to find grounded source
+• Yyn / Dd: no Z0 path (ungrounded star or delta on bus side)` : ''}
+
 ─── Single Line-to-Ground Fault (I"k1) ───
 I"k1 = 3c × V_n / (√3 × |Z1 + Z2 + Z0|)
+${busResult.z0_mag != null && busResult.ik1 != null ? `Z_SLG = Z1 + Z2 + Z0 = 2×Z_eq + Z0
+     = 2×${zeqMag.toFixed(6)} + ${busResult.z0_mag?.toFixed(6)}
+     = ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} p.u.
+I"k1 = 3 × ${cFactor} / ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} × ${iBaseKA.toFixed(4)}` : busResult.ik1 === 0 ? `No Z0 path → I"k1 = 0 (zero-sequence current cannot return)` : ''}
 I"k1 = ${busResult.ik1?.toFixed(3) || 'N/A'} kA
 
 ─── Line-to-Line Fault (I"kLL) ───
@@ -458,6 +479,7 @@ I"kLL = ${busResult.ikLL?.toFixed(3) || 'N/A'} kA
 
 ─── Double Line-to-Ground Fault (I"kLLG) ───
 I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
+${busResult.z0_mag != null ? `Z2‖Z0 = Z2×Z0 / (Z2+Z0) = Z_eq×Z0 / (Z_eq+Z0)` : `No Z0 path → degenerates to LL fault`}
 I"kLLG = ${busResult.ikLLG?.toFixed(3) || 'N/A'} kA</div>
           </div>`;
 
