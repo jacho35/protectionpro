@@ -52,6 +52,18 @@ const AppState = {
   scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
   _scenarioNextId: 1,
 
+  // Component groups — reusable blocks
+  groups: new Map(), // Map<groupId, {id, name, memberIds: Set<string>, collapsed: boolean}>
+  _groupNextId: 1,
+
+  // Multi-page diagram sheets
+  pages: [{ id: 'page_1', name: 'Sheet 1' }],
+  activePageId: 'page_1',
+  _pageNextId: 2,
+
+  // Wire routing mode: 'orthogonal' | 'diagonal' | 'spline'
+  wireRouteMode: 'orthogonal',
+
   // Generate unique ID
   genId(prefix) {
     return `${prefix}_${this.nextId++}`;
@@ -68,6 +80,7 @@ const AppState = {
       x: snapToGrid(x),
       y: snapToGrid(y),
       rotation: 0,
+      pageId: this.activePageId,
       props: { ...def.defaults },
     };
     // Auto-increment names
@@ -258,6 +271,114 @@ const AppState = {
     return true;
   },
 
+  // ── Component Grouping ──
+
+  createGroup(name) {
+    const selectedComps = [...this.selectedIds].filter(id => this.components.has(id));
+    if (selectedComps.length < 2) return null;
+    const id = `group_${this._groupNextId++}`;
+    const group = { id, name: name || `Group ${this._groupNextId - 1}`, memberIds: new Set(selectedComps), collapsed: false };
+    this.groups.set(id, group);
+    // Tag components with groupId
+    for (const cid of selectedComps) {
+      const comp = this.components.get(cid);
+      if (comp) comp.groupId = id;
+    }
+    this.dirty = true;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    return group;
+  },
+
+  ungroupSelected() {
+    const groupIds = new Set();
+    for (const id of this.selectedIds) {
+      const comp = this.components.get(id);
+      if (comp?.groupId) groupIds.add(comp.groupId);
+    }
+    for (const gid of groupIds) {
+      const group = this.groups.get(gid);
+      if (!group) continue;
+      for (const cid of group.memberIds) {
+        const comp = this.components.get(cid);
+        if (comp) delete comp.groupId;
+      }
+      this.groups.delete(gid);
+    }
+    this.dirty = true;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+  },
+
+  getGroupBounds(groupId) {
+    const group = this.groups.get(groupId);
+    if (!group) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const cid of group.memberIds) {
+      const comp = this.components.get(cid);
+      if (!comp) continue;
+      const def = COMPONENT_DEFS[comp.type];
+      const hw = (def?.width || 60) / 2;
+      const hh = (def?.height || 60) / 2;
+      minX = Math.min(minX, comp.x - hw);
+      minY = Math.min(minY, comp.y - hh);
+      maxX = Math.max(maxX, comp.x + hw);
+      maxY = Math.max(maxY, comp.y + hh);
+    }
+    return { x: minX - 10, y: minY - 10, w: maxX - minX + 20, h: maxY - minY + 20 };
+  },
+
+  selectGroup(groupId) {
+    const group = this.groups.get(groupId);
+    if (!group) return;
+    for (const cid of group.memberIds) this.selectedIds.add(cid);
+  },
+
+  // ── Multi-Page Diagrams ──
+
+  addPage(name) {
+    const id = `page_${this._pageNextId++}`;
+    this.pages.push({ id, name: name || `Sheet ${this.pages.length + 1}` });
+    this.dirty = true;
+    return id;
+  },
+
+  deletePage(pageId) {
+    if (this.pages.length <= 1) return false;
+    // Remove components on this page
+    for (const [cid, comp] of this.components) {
+      if (comp.pageId === pageId) this.removeComponent(cid);
+    }
+    this.pages = this.pages.filter(p => p.id !== pageId);
+    if (this.activePageId === pageId) this.activePageId = this.pages[0].id;
+    this.dirty = true;
+    return true;
+  },
+
+  renamePage(pageId, name) {
+    const page = this.pages.find(p => p.id === pageId);
+    if (page) { page.name = name; this.dirty = true; }
+  },
+
+  getActivePageComponents() {
+    // Components without pageId belong to page_1 (legacy)
+    const result = new Map();
+    for (const [id, comp] of this.components) {
+      const cPage = comp.pageId || 'page_1';
+      if (cPage === this.activePageId) result.set(id, comp);
+    }
+    return result;
+  },
+
+  getActivePageWires() {
+    const pageComps = this.getActivePageComponents();
+    const result = new Map();
+    for (const [id, wire] of this.wires) {
+      if (pageComps.has(wire.fromComponent) || pageComps.has(wire.toComponent)) {
+        result.set(id, wire);
+      }
+    }
+    return result;
+  },
+
   // Clear all results
   clearResults() {
     this.faultResults = null;
@@ -284,6 +405,12 @@ const AppState = {
     this.dragState = null;
     this.scenarios = [];
     this._scenarioNextId = 1;
+    this.groups.clear();
+    this._groupNextId = 1;
+    this.pages = [{ id: 'page_1', name: 'Sheet 1' }];
+    this.activePageId = 'page_1';
+    this._pageNextId = 2;
+    this.wireRouteMode = 'orthogonal';
   },
 
   // Export to JSON
@@ -297,6 +424,10 @@ const AppState = {
       wires: [...this.wires.values()],
       nextId: this.nextId,
       scenarios: this.scenarios,
+      groups: [...this.groups.values()].map(g => ({ ...g, memberIds: [...g.memberIds] })),
+      pages: this.pages,
+      activePageId: this.activePageId,
+      wireRouteMode: this.wireRouteMode,
       annotationOffsets: Annotations.offsets.size > 0
         ? Object.fromEntries(Annotations.offsets)
         : undefined,
@@ -321,6 +452,21 @@ const AppState = {
     for (const w of data.wires || []) {
       this.wires.set(w.id, w);
     }
+    // Restore groups
+    if (data.groups) {
+      for (const g of data.groups) {
+        this.groups.set(g.id, { ...g, memberIds: new Set(g.memberIds) });
+      }
+      this._groupNextId = data.groups.length > 0
+        ? Math.max(...data.groups.map(g => parseInt(g.id.replace('group_', '')) || 0)) + 1 : 1;
+    }
+    // Restore pages
+    if (data.pages && data.pages.length > 0) {
+      this.pages = data.pages;
+      this.activePageId = data.activePageId || data.pages[0].id;
+      this._pageNextId = Math.max(...data.pages.map(p => parseInt(p.id.replace('page_', '')) || 0)) + 1;
+    }
+    if (data.wireRouteMode) this.wireRouteMode = data.wireRouteMode;
     // Restore annotation badge positions
     if (data.annotationOffsets && typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();

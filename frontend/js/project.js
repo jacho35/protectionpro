@@ -645,6 +645,7 @@ const Project = {
           AppState.fromJSON(data);
           AppState.projectId = null; // imported files don't have a DB id
           Canvas.updateTransform();
+          if (typeof renderPageTabs === 'function') renderPageTabs();
           Canvas.render();
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;
@@ -711,6 +712,7 @@ const Project = {
           AppState.fromJSON(data);
           AppState.projectId = el.dataset.id;
           Canvas.updateTransform();
+          if (typeof renderPageTabs === 'function') renderPageTabs();
           Canvas.render();
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;

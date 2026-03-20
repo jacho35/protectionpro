@@ -127,6 +127,23 @@ document.addEventListener('DOMContentLoaded', () => {
           document.getElementById('status-info').textContent = 'Cut to clipboard.';
         }
         break;
+      case 'g':
+      case 'G':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            AppState.ungroupSelected();
+            Canvas.render();
+            document.getElementById('status-info').textContent = 'Ungrouped selected components.';
+          } else {
+            const group = AppState.createGroup();
+            if (group) {
+              Canvas.render();
+              document.getElementById('status-info').textContent = `Created group: ${group.name}`;
+            }
+          }
+        }
+        break;
       case 'd':
         if (e.ctrlKey || e.metaKey) {
           // Duplicate selected
@@ -445,6 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Load this scenario? Current unsaved changes will be replaced.')) return;
         const loaded = AppState.loadScenario(btn.dataset.id);
         if (loaded) {
+          renderPageTabs();
           Canvas.render();
           Properties.clear();
           scenariosModal.style.display = 'none';
@@ -497,6 +515,212 @@ document.addEventListener('DOMContentLoaded', () => {
     renderScenarioList();
     document.getElementById('status-info').textContent = `Scenario "${name}" saved.`;
   });
+
+  // ─── Group / Ungroup ───
+  document.getElementById('btn-group').addEventListener('click', () => {
+    const group = AppState.createGroup();
+    if (group) {
+      Canvas.render();
+      document.getElementById('status-info').textContent = `Created group: ${group.name}`;
+    } else {
+      document.getElementById('status-info').textContent = 'Select at least 2 components to group.';
+    }
+  });
+  document.getElementById('btn-ungroup').addEventListener('click', () => {
+    AppState.ungroupSelected();
+    Canvas.render();
+    document.getElementById('status-info').textContent = 'Ungrouped selected components.';
+  });
+
+  // ─── Wire Routing Mode ───
+  document.getElementById('wire-route-mode').addEventListener('change', (e) => {
+    AppState.wireRouteMode = e.target.value;
+    Canvas.render();
+    document.getElementById('status-info').textContent = `Wire routing: ${e.target.value}`;
+  });
+
+  // ─── Page Tabs ───
+  // Expose for other modules (project load, template load)
+  window.renderPageTabs = renderPageTabs;
+  function renderPageTabs() {
+    const container = document.getElementById('page-tabs');
+    container.innerHTML = '';
+    for (const page of AppState.pages) {
+      const btn = document.createElement('button');
+      btn.className = 'page-tab' + (page.id === AppState.activePageId ? ' active' : '');
+      btn.dataset.pageId = page.id;
+      btn.innerHTML = `<span class="page-tab-name">${page.name}</span>` +
+        (AppState.pages.length > 1 ? `<span class="page-tab-close" title="Delete sheet">&times;</span>` : '');
+      btn.addEventListener('click', (e) => {
+        if (e.target.classList.contains('page-tab-close')) {
+          if (confirm(`Delete "${page.name}"? Components on this page will be removed.`)) {
+            AppState.deletePage(page.id);
+            renderPageTabs();
+            Canvas.render();
+          }
+          return;
+        }
+        AppState.activePageId = page.id;
+        AppState.clearSelection();
+        renderPageTabs();
+        Canvas.render();
+        Properties.clear();
+      });
+      btn.addEventListener('dblclick', () => {
+        const newName = prompt('Rename sheet:', page.name);
+        if (newName && newName.trim()) {
+          AppState.renamePage(page.id, newName.trim());
+          renderPageTabs();
+        }
+      });
+      container.appendChild(btn);
+    }
+  }
+
+  document.getElementById('btn-add-page').addEventListener('click', () => {
+    const id = AppState.addPage();
+    AppState.activePageId = id;
+    renderPageTabs();
+    Canvas.render();
+    document.getElementById('status-info').textContent = `Added new sheet.`;
+  });
+
+  renderPageTabs();
+
+  // ─── Print / Page Layout ───
+  document.getElementById('btn-print').addEventListener('click', () => {
+    document.getElementById('print-title').value = AppState.projectName || 'Single Line Diagram';
+    document.getElementById('print-modal').style.display = '';
+  });
+  document.getElementById('btn-close-print').addEventListener('click', () => {
+    document.getElementById('print-modal').style.display = 'none';
+  });
+  document.getElementById('print-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'print-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-print-pdf').addEventListener('click', () => {
+    _exportPrintPDF();
+  });
+  document.getElementById('btn-print-preview').addEventListener('click', () => {
+    _printPreview();
+  });
+
+  function _exportPrintPDF() {
+    const { jsPDF } = window.jspdf;
+    const pageSize = document.getElementById('print-page-size').value;
+    const orientation = document.getElementById('print-orientation').value;
+    const title = document.getElementById('print-title').value || 'Single Line Diagram';
+    const drawingNo = document.getElementById('print-drawing-no').value || '';
+    const revision = document.getElementById('print-revision').value || '';
+    const drawnBy = document.getElementById('print-drawn-by').value || '';
+    const showTitleBlock = document.getElementById('print-show-title-block').checked;
+    const showLegend = document.getElementById('print-show-legend').checked;
+    const showBorder = document.getElementById('print-show-border').checked;
+
+    const doc = new jsPDF({ orientation, format: pageSize });
+    const pw = doc.internal.pageSize.getWidth();
+    const ph = doc.internal.pageSize.getHeight();
+    const margin = 10;
+
+    // Border
+    if (showBorder) {
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.5);
+      doc.rect(margin, margin, pw - 2 * margin, ph - 2 * margin);
+      doc.setLineWidth(0.3);
+      doc.rect(margin + 2, margin + 2, pw - 2 * margin - 4, ph - 2 * margin - 4);
+    }
+
+    // Title block
+    if (showTitleBlock) {
+      const tbW = 120, tbH = 28;
+      const tbX = pw - margin - tbW - 2;
+      const tbY = ph - margin - tbH - 2;
+      doc.setLineWidth(0.4);
+      doc.rect(tbX, tbY, tbW, tbH);
+      doc.line(tbX, tbY + 10, tbX + tbW, tbY + 10);
+      doc.line(tbX, tbY + 20, tbX + tbW, tbY + 20);
+      doc.line(tbX + 60, tbY, tbX + 60, tbY + tbH);
+
+      doc.setFontSize(7);
+      doc.setTextColor(100);
+      doc.text('TITLE', tbX + 2, tbY + 4);
+      doc.text('DRAWING NO.', tbX + 2, tbY + 14);
+      doc.text('DRAWN BY', tbX + 2, tbY + 24);
+      doc.text('REVISION', tbX + 62, tbY + 14);
+      doc.text('DATE', tbX + 62, tbY + 24);
+
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      doc.text(title, tbX + 2, tbY + 9);
+      doc.setFontSize(8);
+      doc.text(drawingNo, tbX + 2, tbY + 19);
+      doc.text(drawnBy, tbX + 2, tbY + 28);
+      doc.text(revision, tbX + 62, tbY + 19);
+      doc.text(new Date().toLocaleDateString(), tbX + 62, tbY + 28);
+    }
+
+    // Embed diagram as SVG → PNG
+    const svgEl = document.getElementById('sld-canvas');
+    const svgClone = svgEl.cloneNode(true);
+    // Remove grid for print
+    const gridBg = svgClone.querySelector('#grid-bg');
+    if (gridBg) gridBg.remove();
+    const svgData = new XMLSerializer().serializeToString(svgClone);
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const diagramArea = { w: pw - 2 * margin - 10, h: ph - 2 * margin - (showTitleBlock ? 40 : 10) };
+      canvas.width = diagramArea.w * 4;
+      canvas.height = diagramArea.h * 4;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imgData = canvas.toDataURL('image/png');
+      doc.addImage(imgData, 'PNG', margin + 5, margin + 5, diagramArea.w, diagramArea.h);
+      URL.revokeObjectURL(url);
+
+      // Legend
+      if (showLegend) {
+        const types = new Set([...AppState.components.values()].map(c => c.type));
+        const legendX = margin + 5;
+        let legendY = ph - margin - (showTitleBlock ? 34 : 8);
+        doc.setFontSize(7);
+        doc.setTextColor(80);
+        const legendItems = [...types].slice(0, 8);
+        doc.text('Legend: ' + legendItems.map(t => {
+          const def = COMPONENT_DEFS[t];
+          return def ? def.label : t;
+        }).join(' | '), legendX, legendY);
+      }
+
+      doc.save(`${title.replace(/\s+/g, '_')}_print.pdf`);
+      document.getElementById('print-modal').style.display = 'none';
+      document.getElementById('status-info').textContent = 'Print PDF exported.';
+    };
+    img.src = url;
+  }
+
+  function _printPreview() {
+    // Use browser print with a styled iframe
+    const svgEl = document.getElementById('sld-canvas');
+    const svgClone = svgEl.cloneNode(true);
+    const gridBg = svgClone.querySelector('#grid-bg');
+    if (gridBg) gridBg.setAttribute('fill', 'white');
+    const svgData = new XMLSerializer().serializeToString(svgClone);
+    const printWin = window.open('', '_blank', 'width=900,height=650');
+    printWin.document.write(`<!DOCTYPE html><html><head><title>Print Preview</title>
+      <style>body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#fff;}
+      svg{max-width:100%;max-height:100%;}</style></head>
+      <body>${svgData}</body></html>`);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => printWin.print(), 500);
+  }
 
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {

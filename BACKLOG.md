@@ -24,12 +24,6 @@
 - **Drag devices between tabs**: Move devices to custom tabs via drag-and-drop
 - **User-defined curve data**: Import custom manufacturer TCC data points (CSV)
 
-## UI / UX
-- **Component grouping**: Group components into reusable blocks / sub-diagrams
-- **Multi-page diagrams**: Multiple sheets per project for large systems
-- **Print / Page layout**: Print-ready diagram output with title block and legend
-- **Wire diagonal/spline routing**: Diagonal routing, spline curves (bend points already implemented)
-
 ## Multi-User & Collaboration
 - **User authentication**: Login system with role-based access
 - **Project sharing**: Share projects between users
