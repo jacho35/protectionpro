@@ -18,6 +18,8 @@ class Component(BaseModel):
     y: float
     rotation: float = 0
     props: dict
+    labelOffsetX: Optional[float] = None
+    labelOffsetY: Optional[float] = None
 
 
 class Wire(BaseModel):

@@ -58,27 +58,8 @@ const Annotations = {
       }
     }
 
-    // Load flow on branches
-    if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
-      for (const branch of AppState.loadFlowResults.branches) {
-        let baseX, baseY;
-        const comp = AppState.components.get(branch.elementId);
-        if (comp) {
-          baseX = comp.x + 40;
-          baseY = comp.y;
-        } else {
-          // Solid link — position at midpoint between the two buses
-          const fromBus = AppState.components.get(branch.from_bus);
-          const toBus = AppState.components.get(branch.to_bus);
-          if (!fromBus || !toBus) continue;
-          baseX = (fromBus.x + toBus.x) / 2 + 40;
-          baseY = (fromBus.y + toBus.y) / 2;
-        }
-        const key = `br:${branch.elementId || branch.from_bus + '_' + branch.to_bus}`;
-        const off = this.getOffset(key);
-        html += this.renderBranchFlowBadge(baseX + off.dx, baseY + off.dy, branch, key);
-      }
-    }
+    // Branch flow badges are NOT rendered here — they are shown as inline
+    // data labels on each component by Canvas.renderComponentDataLabels().
 
     // Voltage mismatch warnings from load flow
     if (AppState.loadFlowResults && AppState.loadFlowResults.warnings) {
