@@ -300,6 +300,36 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
             })
             return
 
+        # Solar PV inverter-based source (IEC 60909-0 §11 / IEC TR 60909-4)
+        if comp.type == "solar_pv":
+            z_src = _solar_pv_impedance(comp, base_mva)
+            rated_kw = comp.props.get("rated_kw", 100)
+            n_inv = comp.props.get("num_inverters", 1)
+            paths.append({
+                "z_total": z_path + z_src,
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+                "source_type": "solar_pv",
+                "rated_mva": rated_kw * n_inv / 1000,
+            })
+            return
+
+        # Wind turbine generator
+        if comp.type == "wind_turbine":
+            z_src = _wind_turbine_impedance(comp, base_mva)
+            rated_mva = comp.props.get("rated_mva", 2.0)
+            n_turb = comp.props.get("num_turbines", 1)
+            t_type = comp.props.get("turbine_type", "type3_dfig")
+            paths.append({
+                "z_total": z_path + z_src,
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+                "source_type": "wind_turbine",
+                "rated_mva": rated_mva * n_turb,
+                "turbine_type": t_type,
+            })
+            return
+
         # Accumulate impedance through branch elements
         z_element = complex(0, 0)
         if comp.type == "transformer":
@@ -486,6 +516,70 @@ def _motor_synchronous_impedance(comp, base_mva):
     return complex(r_pu, x_pu)
 
 
+def _solar_pv_impedance(comp, base_mva):
+    """Solar PV inverter fault impedance per IEC TR 60909-4.
+
+    Inverter-based sources are current-limited. Fault contribution is modeled as:
+      I_fault = fault_contribution_pu × I_rated
+    The equivalent impedance is derived so that V/Z gives the correct current.
+
+    Z_pv = V_rated / (fault_contribution × I_rated) in p.u. on system base
+    """
+    rated_kw = comp.props.get("rated_kw", 100)
+    num_inv = comp.props.get("num_inverters", 1)
+    voltage_kv = comp.props.get("voltage_kv", 0.4)
+    fault_pu = comp.props.get("fault_contribution_pu", 1.1)
+    eff = comp.props.get("inverter_eff", 0.97)
+
+    # Total rated apparent power (assume PF=1 for sizing)
+    total_kw = rated_kw * num_inv
+    rated_mva = total_kw / (eff * 1000)
+
+    if rated_mva < 1e-10:
+        return complex(1e6, 1e6)  # Effectively infinite impedance
+
+    # Equivalent reactance: X = 1 / fault_contribution (p.u. on machine base)
+    # Then convert to system base
+    x_machine_pu = 1.0 / max(fault_pu, 0.1)
+    x_pu = x_machine_pu * base_mva / rated_mva
+
+    # Inverters are predominantly reactive (high X/R ≈ 10)
+    xr = 10
+    r_pu = x_pu / xr
+    return complex(r_pu, x_pu)
+
+
+def _wind_turbine_impedance(comp, base_mva):
+    """Wind turbine generator fault impedance.
+
+    Type 1/2 (SCIG/WRIG): Modeled like induction motors with Xd'' on machine base.
+    Type 3 (DFIG): Crowbar-protected, contributes ~3-5× rated current; uses Xd''.
+    Type 4 (Full converter): Current-limited like solar PV inverters (~1.1× rated).
+    """
+    rated_mva = comp.props.get("rated_mva", 2.0)
+    num_turbines = comp.props.get("num_turbines", 1)
+    turbine_type = comp.props.get("turbine_type", "type3_dfig")
+    xr = comp.props.get("x_r_ratio", 30)
+
+    total_mva = rated_mva * num_turbines
+    if total_mva < 1e-10:
+        return complex(1e6, 1e6)
+
+    if turbine_type == "type4_frc":
+        # Full converter: current-limited like inverter
+        fault_pu = comp.props.get("fault_contribution_pu", 1.1)
+        x_machine_pu = 1.0 / max(fault_pu, 0.1)
+        x_pu = x_machine_pu * base_mva / total_mva
+        xr = 10  # Converter X/R
+    else:
+        # Type 1/2/3: Use sub-transient reactance
+        xd_pp = comp.props.get("xd_pp", 0.20)
+        x_pu = xd_pp * base_mva / total_mva
+
+    r_pu = x_pu / xr
+    return complex(r_pu, x_pu)
+
+
 def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
     """Collect zero-sequence impedances from sources feeding a bus.
 
@@ -522,6 +616,20 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             z_src = _generator_impedance(comp, base_mva)
             z_total = z0_path + z_src * 3
             desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            z0_sources.append((z_total, desc))
+            return
+
+        if comp.type == "solar_pv":
+            z_src = _solar_pv_impedance(comp, base_mva)
+            z_total = z0_path + z_src * 3
+            desc = " → ".join(trail + [f"Solar PV '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            z0_sources.append((z_total, desc))
+            return
+
+        if comp.type == "wind_turbine":
+            z_src = _wind_turbine_impedance(comp, base_mva)
+            z_total = z0_path + z_src * 3
+            desc = " → ".join(trail + [f"Wind Turbine '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
             z0_sources.append((z_total, desc))
             return
 
@@ -812,6 +920,29 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
             mu = _mu_factor(ik_over_ir, t_min)
             q = _q_factor(ik_over_ir, t_min)
             ib_total += mu * q * ik_path_ka
+
+        elif source_type == "solar_pv":
+            # Inverter-based: no decay, current-limited at fault contribution level
+            ib_total += ik_path_ka
+
+        elif source_type == "wind_turbine":
+            t_type = path.get("turbine_type", "type3_dfig")
+            if t_type == "type4_frc":
+                # Full converter: no decay, current-limited
+                ib_total += ik_path_ka
+            elif t_type in ("type1_scig", "type2_wrig"):
+                # Induction-machine based: decays like induction motor
+                rated_mva = path.get("rated_mva", 2.0)
+                ik_over_ir = ik_path_pu * base_mva / rated_mva if rated_mva > 1e-6 else 5
+                mu = _mu_factor(ik_over_ir, t_min)
+                q = _q_factor(ik_over_ir, t_min)
+                ib_total += mu * q * ik_path_ka
+            else:
+                # Type 3 DFIG: partial converter, use μ factor like generator
+                xd_pp = path.get("xd_pp", 0.20)
+                ik_over_ir = c_factor / xd_pp if xd_pp > 1e-6 else 5
+                mu = _mu_factor(ik_over_ir, t_min)
+                ib_total += mu * ik_path_ka
 
     return round(ib_total, 3)
 

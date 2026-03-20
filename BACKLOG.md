@@ -17,7 +17,6 @@
 - **Working distance configuration**: Per-bus working distance settings
 
 ## Load Flow Enhancements
-- **Distributed generation**: Solar PV and wind turbine models
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 
 ## TCC Chart Enhancements
@@ -58,3 +57,4 @@
 - ~~Wire diagonal/spline routing~~
 - ~~Off-page connectors (cross-page electrical links)~~
 - ~~Draggable bus resizing with dynamic connection ports~~
+- ~~Distributed generation: Solar PV and wind turbine models~~

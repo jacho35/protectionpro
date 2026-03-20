@@ -136,7 +136,7 @@ const Components = {
         visited.add(id);
         const comp = AppState.components.get(id);
         if (!comp) continue;
-        if (['utility', 'generator'].includes(comp.type)) {
+        if (['utility', 'generator', 'solar_pv', 'wind_turbine'].includes(comp.type)) {
           graph.sources.push({ bus, source: comp });
         } else if (['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'].includes(comp.type)) {
           graph.loads.push({ bus, load: comp });

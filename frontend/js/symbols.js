@@ -27,6 +27,31 @@ const Symbols = {
       </g>`;
   },
 
+  solar_pv(w, h) {
+    const r = Math.min(w, h) * 0.38;
+    return `
+      <g class="symbol-solar-pv">
+        <circle cx="0" cy="0" r="${r}" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="${-r * 0.55}" y1="${r * 0.35}" x2="${r * 0.55}" y2="${-r * 0.35}" stroke="currentColor" stroke-width="1.3"/>
+        <line x1="${-r * 0.55}" y1="${r * 0.0}" x2="${r * 0.55}" y2="${-r * 0.7}" stroke="currentColor" stroke-width="1.3"/>
+        <text x="${r * 0.05}" y="${r * 0.65}" text-anchor="middle" font-size="8" font-weight="600" fill="#e67700" font-family="sans-serif">PV</text>
+        <line x1="0" y1="${r}" x2="0" y2="${h / 2}"/>
+      </g>`;
+  },
+
+  wind_turbine(w, h) {
+    const r = Math.min(w, h) * 0.38;
+    // Simplified wind turbine: circle with ~ inside
+    return `
+      <g class="symbol-wind-turbine">
+        <circle cx="0" cy="0" r="${r}" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M0,${-r * 0.1} L${-r * 0.5},${r * 0.45} L${r * 0.5},${r * 0.45} Z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="0" y1="${-r * 0.1}" x2="0" y2="${-r * 0.6}" stroke="currentColor" stroke-width="1.2"/>
+        <text x="0" y="${-r * 0.25}" text-anchor="middle" font-size="6" font-weight="600" fill="#1976d2" font-family="sans-serif">W</text>
+        <line x1="0" y1="${r}" x2="0" y2="${h / 2 + 2}"/>
+      </g>`;
+  },
+
   bus(w, h, comp) {
     const bw = (comp && comp.props && comp.props.busWidth) || w;
     const hw = bw / 2;
