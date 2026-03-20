@@ -329,6 +329,11 @@ document.addEventListener('DOMContentLoaded', () => {
     e.currentTarget.classList.toggle('active', AppState.showCableLabels);
     Canvas.render();
   });
+  document.getElementById('btn-toggle-devices').addEventListener('click', (e) => {
+    AppState.showDeviceLabels = !AppState.showDeviceLabels;
+    e.currentTarget.classList.toggle('active', AppState.showDeviceLabels);
+    Canvas.render();
+  });
   document.getElementById('btn-toggle-warnings').addEventListener('click', (e) => {
     AppState.showWarnings = !AppState.showWarnings;
     e.currentTarget.classList.toggle('active', AppState.showWarnings);

@@ -592,6 +592,23 @@ const Canvas = {
         lines.push(`${p.rated_kva || 0} kVA`);
         lines.push(`PF ${p.power_factor || 0.9}`);
         defaultOY = 32;
+      } else if (comp.type === 'cb' && AppState.showDeviceLabels) {
+        const cbType = (p.cb_type || 'mccb').toUpperCase();
+        const tripA = p.trip_rating_a || 630;
+        lines.push(`${cbType} ${tripA}A`);
+        if (p.breaking_capacity_ka) lines.push(`Icu ${p.breaking_capacity_ka}kA`);
+        const thPu = p.thermal_pickup || 1.0;
+        const magPu = p.magnetic_pickup || 10;
+        lines.push(`Ir=${thPu}× Im=${magPu}×`);
+        if (cbType === 'ACB' && p.short_time_pickup) {
+          lines.push(`ST=${p.short_time_pickup}×`);
+        }
+      } else if (comp.type === 'fuse' && AppState.showDeviceLabels) {
+        const fuseType = p.fuse_type || 'gG';
+        const ratedA = p.rated_current_a || 100;
+        lines.push(`${fuseType} ${ratedA}A`);
+        if (p.rated_voltage_kv) lines.push(`${p.rated_voltage_kv} kV`);
+        if (p.breaking_capacity_ka) lines.push(`Icu ${p.breaking_capacity_ka}kA`);
       } else {
         continue;
       }

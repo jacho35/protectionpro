@@ -37,6 +37,7 @@ const AppState = {
 
   // Display toggles
   showCableLabels: true,
+  showDeviceLabels: false,
   showWarnings: true,
 
   // Clipboard for copy/paste
