@@ -27,7 +27,11 @@ const Properties = {
       return;
     }
     const def = COMPONENT_DEFS[comp.type];
+    this._currentCompType = comp.type;
     document.getElementById('properties-title').textContent = def.name;
+
+    // Dismiss any open info popup when switching components
+    this._dismissInfoPopup();
 
     // Build component info header
     let html = `
@@ -116,6 +120,48 @@ const Properties = {
         });
       }
     });
+
+    // Bind info button popups
+    this.contentEl.querySelectorAll('.prop-info-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.infoKey;
+        const text = FIELD_INFO[key];
+        if (text) this._showInfoPopup(btn, text);
+      });
+    });
+  },
+
+  // Dismiss any open info popup
+  _dismissInfoPopup() {
+    const existing = document.querySelector('.prop-info-popup');
+    if (existing) existing.remove();
+  },
+
+  // Show info popup next to the ⓘ button
+  _showInfoPopup(btn, text) {
+    this._dismissInfoPopup();
+    const popup = document.createElement('div');
+    popup.className = 'prop-info-popup';
+    popup.innerHTML = `<button class="info-close">&times;</button>${text}`;
+    document.body.appendChild(popup);
+
+    // Position relative to button
+    const rect = btn.getBoundingClientRect();
+    popup.style.top = (rect.bottom + 6) + 'px';
+    popup.style.right = (window.innerWidth - rect.right) + 'px';
+
+    // Close on button click or outside click
+    popup.querySelector('.info-close').addEventListener('click', () => popup.remove());
+    setTimeout(() => {
+      const handler = (e) => {
+        if (!popup.contains(e.target) && e.target !== btn) {
+          popup.remove();
+          document.removeEventListener('mousedown', handler);
+        }
+      };
+      document.addEventListener('mousedown', handler);
+    }, 0);
   },
 
   renderField(field, value, compId) {
@@ -170,11 +216,17 @@ const Properties = {
       unitHtml = `<span class="unit">${field.unit}</span>`;
     }
 
+    // Info button for fields with source documentation
+    const infoKey = `${this._currentCompType}.${field.key}`;
+    const hasInfo = FIELD_INFO && FIELD_INFO[infoKey];
+    const infoHtml = hasInfo ? `<button class="prop-info-btn" data-info-key="${infoKey}" title="Default value info">i</button>` : '';
+
     return `
       <div class="prop-row">
         <label>${field.label}</label>
         ${inputHtml}
         ${unitHtml}
+        ${infoHtml}
       </div>`;
   },
 
@@ -735,6 +787,7 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
   // Clear properties panel
   clear() {
     this.currentId = null;
+    this._dismissInfoPopup();
     document.getElementById('properties-title').textContent = 'Properties';
     this.contentEl.innerHTML = '<div class="no-selection"><p>Select a component to view its properties</p></div>';
     this.calcInfoEl.style.display = 'none';

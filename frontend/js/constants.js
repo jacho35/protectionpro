@@ -415,6 +415,78 @@ const COMPONENT_CATEGORIES = [
 ];
 
 // Component type definitions with default properties
+// ─── Default Value Source Information ───
+// Describes the standard or reference for generic/default values shown to the user via ⓘ buttons.
+// Keyed by "componentType.fieldKey".
+const FIELD_INFO = {
+  // Utility Source
+  'utility.fault_mva':   'Default 500 MVA represents a typical medium-strength distribution network.\nSource: IEC 60909-0 §2.1 — network feeder fault level.',
+  'utility.x_r_ratio':   'Default X/R = 15 is typical for transmission/sub-transmission networks.\nSource: IEC 60909-0 Table 1 — X/R ratios for network feeders.',
+  'utility.voltage_kv':  'Default 33 kV — standard sub-transmission voltage per IEC 60038.',
+
+  // Generator
+  'generator.xd_pp':     'Default Xd″ = 0.15 p.u. is typical for salient-pole synchronous generators.\nSource: IEC 60034-4 Table 5 — sub-transient reactance range 0.10–0.25 p.u.',
+  'generator.xd_p':      'Default Xd′ = 0.25 p.u. is typical transient reactance.\nSource: IEC 60034-4 Table 5 — transient reactance range 0.15–0.35 p.u.',
+  'generator.xd':        'Default Xd = 1.2 p.u. is typical synchronous reactance.\nSource: IEC 60034-4 Table 5 — synchronous reactance range 0.8–1.8 p.u.',
+  'generator.x_r_ratio': 'Default X/R = 40 is typical for generators.\nSource: IEC 60909-0 §3.7 — generator X/R ratios are generally high (30–60).',
+  'generator.power_factor': 'Default PF = 0.85 lagging, typical industrial generator rating.\nSource: IEC 60034-1 §8 — rated power factor.',
+
+  // Transformer
+  'transformer.z_percent':    'Default Z% = 8% is typical for 10 MVA distribution transformers.\nSource: IEC 60076-5 Table 2 — impedance voltage at rated current.\n• ≤630 kVA: 4–6%\n• 1–10 MVA: 6–9%\n• >10 MVA: 8–12%',
+  'transformer.x_r_ratio':    'Default X/R = 10 for distribution transformers.\nSource: IEC 60076-5 — typical X/R ratios:\n• Small (<1 MVA): 3–6\n• Medium (1–10 MVA): 7–12\n• Large (>10 MVA): 15–40',
+  'transformer.vector_group':  'Default Dyn11 — most common distribution transformer configuration.\nSource: IEC 60076-1 §5 — vector group designation.\nD = Delta HV, y = Star LV, n = LV neutral brought out, 11 = 30° lead.',
+  'transformer.grounding_lv':  'Default: solidly grounded LV neutral. Common for Dyn transformers in TN systems.\nSource: IEC 60364-1 — system earthing arrangements.',
+  'transformer.voltage_hv_kv': 'Default 33 kV — standard sub-transmission voltage.\nSource: IEC 60038 — standard voltages above 1 kV.',
+  'transformer.voltage_lv_kv': 'Default 11 kV — standard primary distribution voltage.\nSource: IEC 60038 — standard voltages above 1 kV.',
+
+  // Cable
+  'cable.r_per_km':    'Default R = 0.1 Ω/km — typical for 240mm² Cu XLPE cable at 90°C.\nSource: IEC 60502-2 Table 2 — conductor resistance values.',
+  'cable.x_per_km':    'Default X = 0.08 Ω/km — typical reactance for XLPE cables in trefoil.\nSource: IEC 60502-2 Annex C — cable reactance values.',
+  'cable.rated_amps':  'Default 400A — typical rating for medium-voltage distribution cable.\nSource: IEC 60502 / IEC 60364-5-52 — current-carrying capacity tables.',
+
+  // Circuit Breaker
+  'cb.breaking_capacity_ka': 'Default 25 kA — typical for 11 kV distribution circuit breakers.\nSource: IEC 62271-100 — rated short-circuit breaking current.',
+  'cb.thermal_pickup':       'Default 1.0×In — thermal overload pickup at rated current.\nSource: IEC 60947-2 §4.7 — thermal trip characteristics.',
+  'cb.magnetic_pickup':      'Default 10×In — typical magnetic instantaneous pickup for MCCB.\nSource: IEC 60947-2 Annex F — magnetic trip range:\n• Type B: 3–5×In\n• Type C: 5–10×In\n• Type D: 10–20×In',
+  'cb.long_time_delay':      'Default class 10 — standard long-time delay for motor and feeder protection.\nSource: IEC 60947-2 §4.7.1 — tripping classes:\n• Class 5: fast (motor starting)\n• Class 10: standard\n• Class 20: heavy-duty motor starts\n• Class 30: very heavy-duty.',
+
+  // Fuse
+  'fuse.breaking_capacity_ka': 'Default 50 kA — typical for gG fuse-links.\nSource: IEC 60269-1 — rated breaking capacity for HRC fuses.',
+  'fuse.fuse_type':            'Default gG — general purpose fuse for overload and short-circuit protection.\nSource: IEC 60269-1:\n• gG: general purpose full-range\n• aM: motor circuit partial-range (short-circuit only).',
+
+  // Relay
+  'relay.pickup_a':  'Default 100A — adjust to match load current and CT ratio.\nSource: IEC 60255-151 — overcurrent relay pickup setting.',
+  'relay.time_dial':  'Default TDS = 1.0 — middle of adjustment range.\nSource: IEC 60255-151 / IEEE C37.112 — time dial setting (0.05–10).',
+  'relay.curve':      'Default IEC Standard Inverse curve.\nSource: IEC 60255-151 §5.5 — IDMT characteristics:\nt = TDS × 0.14 / (M^0.02 − 1)',
+
+  // CT
+  'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.',
+  'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current\n• P = protection application.',
+  'ct.burden_va':      'Default 15 VA — typical protection CT burden.\nSource: IEC 61869-2 §2 — standard rated burden values.',
+
+  // PT
+  'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V.',
+  'pt.accuracy_class': 'Default 0.5 — metering grade accuracy.\nSource: IEC 61869-3 — accuracy classes: 0.1, 0.2, 0.5, 1.0, 3.0.',
+  'pt.burden_va':      'Default 30 VA — typical metering PT burden.\nSource: IEC 61869-3 §2 — standard burden values.',
+
+  // Induction Motor
+  'motor_induction.efficiency':           'Default 93% — typical for IE3 200 kW motor.\nSource: IEC 60034-30-1 Table 2 — efficiency classes for induction motors.',
+  'motor_induction.power_factor':         'Default PF = 0.85 — typical for medium induction motors.\nSource: IEC 60034-1 — rated power factor varies with size (0.80–0.92).',
+  'motor_induction.locked_rotor_current': 'Default 6×FLC — typical locked rotor (starting) current.\nSource: IEC 60034-1 §9.7 — starting current:\n• Most motors: 5–8× FLC\n• High-efficiency: 6–7× FLC.',
+  'motor_induction.x_pp':                 'Default X″ = 0.17 p.u. — sub-transient reactance for fault contribution.\nSource: IEC 60909-0 Table 3 — motor sub-transient reactance 0.12–0.25 p.u.',
+
+  // Synchronous Motor
+  'motor_synchronous.xd_pp': 'Default Xd″ = 0.15 p.u. — sub-transient reactance.\nSource: IEC 60034-4 Table 5 — synchronous motor Xd″ range 0.10–0.25 p.u.',
+  'motor_synchronous.xd_p':  'Default Xd′ = 0.25 p.u. — transient reactance.\nSource: IEC 60034-4 Table 5 — synchronous motor Xd′ range 0.15–0.35 p.u.',
+  'motor_synchronous.power_factor': 'Default PF = 0.9 leading — synchronous motors often operate at leading PF.\nSource: IEC 60034-1 — rated at unity or leading PF.',
+
+  // Static Load
+  'static_load.power_factor': 'Default PF = 0.85 lagging — typical mixed commercial/industrial load.\nSource: General practice — power factor range 0.7–0.95 depending on load type.',
+
+  // Surge Arrester
+  'surge_arrester.mcov_kv': 'Default MCOV = 8.4 kV (for 11 kV system, ratio ≈ 0.76).\nSource: IEC 60099-4 §5.2 — maximum continuous operating voltage.\nMCOV ≥ Um / √3 for grounded systems.',
+};
+
 const COMPONENT_DEFS = {
   // --- Sources ---
   utility: {
