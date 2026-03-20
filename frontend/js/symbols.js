@@ -61,12 +61,24 @@ const Symbols = {
       </g>`;
   },
 
-  cb(w, h) {
-    // Circuit breaker: square with X
+  cb(w, h, comp) {
+    // Circuit breaker: square with X (closed) or gap (open)
     const s = Math.min(w, h) * 0.35;
     const hh = h / 2;
+    const isOpen = comp && comp.props && comp.props.state === 'open';
+    if (isOpen) {
+      return `
+        <g class="symbol-cb symbol-open">
+          <rect x="${-s}" y="${-s}" width="${s * 2}" height="${s * 2}" fill="white" stroke-dasharray="4,2"/>
+          <line x1="${-s}" y1="${-s}" x2="${s}" y2="${s}" stroke-dasharray="4,2"/>
+          <line x1="${s}" y1="${-s}" x2="${-s}" y2="${s}" stroke-dasharray="4,2"/>
+          <line x1="0" y1="${-s}" x2="0" y2="${-hh}"/>
+          <line x1="0" y1="${s}" x2="0" y2="${hh}"/>
+          <line x1="${-s - 2}" y1="${-s - 1}" x2="${s + 2}" y2="${-s - 1}" stroke="red" stroke-width="2"/>
+        </g>`;
+    }
     return `
-      <g class="symbol-cb">
+      <g class="symbol-cb symbol-closed">
         <rect x="${-s}" y="${-s}" width="${s * 2}" height="${s * 2}" fill="white"/>
         <line x1="${-s}" y1="${-s}" x2="${s}" y2="${s}"/>
         <line x1="${s}" y1="${-s}" x2="${-s}" y2="${s}"/>
@@ -96,14 +108,28 @@ const Symbols = {
       </g>`;
   },
 
-  switch(w, h) {
+  switch(w, h, comp) {
     const hh = h / 2;
     const sw = w * 0.3;
+    const isOpen = comp && comp.props && comp.props.state === 'open';
+    if (isOpen) {
+      // Open switch: blade angled away, gap visible
+      return `
+        <g class="symbol-switch symbol-open">
+          <line x1="0" y1="${hh}" x2="0" y2="${hh * 0.2}"/>
+          <line x1="0" y1="${hh * 0.2}" x2="${sw * 1.3}" y2="${-hh * 0.6}"/>
+          <circle cx="0" cy="${hh * 0.2}" r="3" fill="#333"/>
+          <circle cx="0" cy="${-hh * 0.4}" r="3" fill="none" stroke="#333" stroke-width="1.5"/>
+          <line x1="0" y1="${-hh * 0.4}" x2="0" y2="${-hh}"/>
+        </g>`;
+    }
+    // Closed switch: blade makes contact
     return `
-      <g class="symbol-switch">
+      <g class="symbol-switch symbol-closed">
         <line x1="0" y1="${hh}" x2="0" y2="${hh * 0.2}"/>
-        <line x1="0" y1="${hh * 0.2}" x2="${sw}" y2="${-hh * 0.4}"/>
+        <line x1="0" y1="${hh * 0.2}" x2="0" y2="${-hh * 0.4}"/>
         <circle cx="0" cy="${hh * 0.2}" r="3" fill="#333"/>
+        <circle cx="0" cy="${-hh * 0.4}" r="3" fill="#333"/>
         <line x1="0" y1="${-hh * 0.4}" x2="0" y2="${-hh}"/>
       </g>`;
   },

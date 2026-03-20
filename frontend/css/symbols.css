@@ -167,7 +167,9 @@
 .symbol-motor { stroke: #6a1b9a; stroke-width: 1.5; fill: none; }
 .symbol-cable { stroke: #555; stroke-width: 2; fill: none; }
 .symbol-cb { stroke: #d32f2f; stroke-width: 1.5; }
+.symbol-cb.symbol-open { stroke: #999; }
 .symbol-switch { stroke: #333; stroke-width: 1.5; }
+.symbol-switch.symbol-open { stroke: #999; }
 .symbol-fuse { stroke: #e65100; stroke-width: 1.5; fill: none; }
 .symbol-relay { stroke: #1565c0; stroke-width: 1.5; fill: none; }
 .symbol-ct { stroke: #555; stroke-width: 1.5; fill: none; }
