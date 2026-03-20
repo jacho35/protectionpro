@@ -802,10 +802,17 @@ Voltage drop (at rated) ≈ ${(Rpu * rated / (ratedMVA * 1000 / (Math.sqrt(3) * 
       const eff = comp.props.efficiency || 0.93;
       const pf = comp.props.power_factor || 0.85;
       const xpp = comp.props.x_pp || 0.17;
+      const xr = comp.props.x_r_ratio || 10;
       const lrc = comp.props.locked_rotor_current || 6;
       const kva = kw / eff;
       const mva = kva / 1000;
-      const Xpu = xpp * base / mva;
+      const Zpu_motor = xpp;  // Z" on motor rating
+      const Xpu_motor = Zpu_motor * xr / Math.sqrt(1 + xr * xr);
+      const Rpu_motor = Xpu_motor / xr;
+      const Zpu = Zpu_motor * base / mva;
+      const Xpu = Xpu_motor * base / mva;
+      const Rpu = Rpu_motor * base / mva;
+      const Zbase = (vkv * vkv) / base;
       const iRated = (kva) / (Math.sqrt(3) * vkv * 1000);
       const iStart = iRated * lrc;
       html += `
@@ -815,13 +822,25 @@ Voltage drop (at rated) ≈ ${(Rpu * rated / (ratedMVA * 1000 / (Math.sqrt(3) * 
 Rated = ${kw} kW at ${vkv} kV
 Efficiency = ${(eff * 100).toFixed(1)}%
 Power Factor = ${pf}
+X/R Ratio = ${xr}
 
 Input kVA = P / η = ${kw} / ${eff} = ${kva.toFixed(1)} kVA (${mva.toFixed(4)} MVA)
 I_rated = ${(iRated * 1000).toFixed(2)} A
 I_start = ${lrc} × I_rated = ${(iStart * 1000).toFixed(2)} A
 
-X"_pu (on system base) = X" × (Base_MVA / Rated_MVA)
-X"_pu = ${xpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u. (${(Xpu * 100).toFixed(2)}%)
+Z"_pu (on motor rating) = ${Zpu_motor} p.u.
+X" = Z" × (X/R) / √(1 + (X/R)²) = ${Xpu_motor.toFixed(6)} p.u.
+R" = X" / (X/R) = ${Rpu_motor.toFixed(6)} p.u.
+
+─── On System Base ───
+Z"_pu = ${Zpu_motor} × (${base} / ${mva.toFixed(4)}) = ${Zpu.toFixed(4)} p.u. (${(Zpu * 100).toFixed(2)}%)
+X"_pu = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
+R"_pu = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
+Z = ${Rpu.toFixed(6)} + j${Xpu.toFixed(6)} p.u.
+
+─── Actual Impedance ───
+Z_base = ${vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
+R = ${(Rpu * Zbase).toFixed(4)} Ω,  X = ${(Xpu * Zbase).toFixed(4)} Ω
 
 ─── Power Consumption ───
 P = ${(mva * pf).toFixed(4)} MW
