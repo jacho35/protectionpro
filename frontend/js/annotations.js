@@ -74,6 +74,28 @@ const Annotations = {
       }
     }
 
+    // Voltage depression overlays (when single-bus fault results exist)
+    if (AppState.faultResults && AppState.faultResults.buses) {
+      const faultedBusIds = Object.keys(AppState.faultResults.buses);
+      // Show voltage depression when single bus is faulted
+      if (faultedBusIds.length === 1) {
+        const faultResult = AppState.faultResults.buses[faultedBusIds[0]];
+        if (faultResult.voltage_depression) {
+          for (const [depBusId, dep] of Object.entries(faultResult.voltage_depression)) {
+            if (depBusId === faultedBusIds[0]) continue; // Skip faulted bus itself
+            const comp = AppState.components.get(depBusId);
+            if (!comp) continue;
+            const vPu = dep.subtransient_pu != null ? dep.subtransient_pu : 1.0;
+            const key = `vdep:${depBusId}`;
+            const off = this.getOffset(key);
+            const x = comp.x + off.dx;
+            const y = comp.y - 30 + off.dy;
+            html += this.renderVoltageDepBadge(x, y, dep, vPu, key);
+          }
+        }
+      }
+    }
+
     // Arc flash annotations on buses
     if (AppState.arcFlashResults && AppState.arcFlashResults.buses) {
       for (const [busId, result] of Object.entries(AppState.arcFlashResults.buses)) {
@@ -233,6 +255,40 @@ const Annotations = {
       <g class="annotation-group error-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">VOLTAGE ERROR</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderVoltageDepBadge(x, y, dep, vPu, key) {
+    const pct = (vPu * 100).toFixed(1);
+    let fillColor;
+    if (vPu >= 0.8) fillColor = '#4caf50';       // green — normal
+    else if (vPu >= 0.5) fillColor = '#f9a825';   // yellow — moderate sag
+    else if (vPu >= 0.3) fillColor = '#e65100';    // orange — severe
+    else fillColor = '#d32f2f';                     // red — near collapse
+
+    const lines = [`V: ${pct}%`];
+    if (dep.retained_kv != null) lines.push(`${dep.retained_kv.toFixed(2)} kV`);
+    if (dep.transient_pu != null && dep.transient_pu !== dep.subtransient_pu) {
+      lines.push(`Tr: ${(dep.transient_pu * 100).toFixed(1)}%`);
+    }
+    if (dep.steadystate_pu != null && dep.steadystate_pu !== dep.transient_pu) {
+      lines.push(`SS: ${(dep.steadystate_pu * 100).toFixed(1)}%`);
+    }
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 90;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group vdep-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">RETAINED V</text>
         ${textHtml}
       </g>`;
   },

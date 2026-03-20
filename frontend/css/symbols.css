@@ -203,6 +203,18 @@
 }
 .af-rec-list li { margin-bottom: 4px; }
 
+/* Voltage depression table */
+.vdep-table .af-ppe-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+.vdep-table td:nth-child(3),
+.vdep-table td:nth-child(4),
+.vdep-table td:nth-child(5) {
+  font-family: var(--font-mono, monospace);
+  text-align: right;
+}
+
 /* Help modal */
 .help-body { padding: 0 !important; }
 .help-tabs {

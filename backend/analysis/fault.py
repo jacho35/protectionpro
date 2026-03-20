@@ -226,6 +226,18 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             branches=branches,
         )
 
+    # ── Voltage Depression Calculation (IEC 60909 §3.6) ──
+    # Build Zbus matrix for all buses and compute retained voltage at each bus
+    # during a fault at each faulted bus: V_j = 1 - Z_jk / Z_kk
+    all_buses = [c for c in project.components if c.type == "bus"]
+    if len(all_buses) >= 2:
+        try:
+            _compute_voltage_depression(
+                all_buses, components, adjacency, wires, base_mva, results
+            )
+        except Exception:
+            pass  # Non-critical — don't fail fault analysis if voltage depression fails
+
     return FaultResults(
         buses=results,
         base_mva=base_mva,
@@ -1040,3 +1052,355 @@ def _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, v
             pass
 
     return round(ik_total, 3) if ik_total > 1e-10 else None
+
+
+# ─── Voltage Depression (IEC 60909 §3.6 / Zbus Method) ──────────────────────
+
+
+def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mva, results):
+    """Compute voltage depression at all buses during fault at each faulted bus.
+
+    Builds the bus admittance matrix (Ybus) from branch impedances and source
+    shunt admittances, inverts to get the bus impedance matrix (Zbus), then
+    applies: V_j = 1 - Z_jk / Z_kk  (retained voltage at bus j for fault at bus k).
+
+    Three impedance modes are computed:
+      - Sub-transient: generators use Xd'', motors use X''
+      - Transient: generators use Xd', motors decayed (removed)
+      - Steady-state: generators use Xd, motors removed
+
+    Motor reacceleration recovery is computed for buses with connected motors.
+    """
+    bus_ids = [b.id for b in all_buses]
+    n = len(bus_ids)
+    if n < 2:
+        return
+    bus_idx = {bid: i for i, bid in enumerate(bus_ids)}
+    bus_voltage = {b.id: b.props.get("voltage_kv", 11) for b in all_buses}
+
+    # Build adjacency info: find branches between buses and sources at buses
+    branches = []   # (bus_i_id, bus_j_id, z_branch)
+    bus_shunts = {bid: [] for bid in bus_ids}  # bus_id -> [(z_source, source_type, comp)]
+
+    # Find bus-to-bus connections through transformers/cables
+    # Walk from each bus to find directly connected buses via branch elements
+    for bus in all_buses:
+        _find_bus_branches(bus.id, bus_ids, components, adjacency, branches, bus_shunts, base_mva)
+
+    # Deduplicate branches (each found from both sides)
+    seen_branches = set()
+    unique_branches = []
+    for bi, bj, z in branches:
+        key = tuple(sorted([bi, bj]))
+        if key not in seen_branches:
+            seen_branches.add(key)
+            unique_branches.append((bi, bj, z))
+
+    # Build Ybus and compute Zbus for three impedance modes
+    modes = ["subtransient", "transient", "steadystate"]
+    for mode in modes:
+        ybus = np.zeros((n, n), dtype=complex)
+
+        # Add branch admittances
+        for bi, bj, z in unique_branches:
+            if bi not in bus_idx or bj not in bus_idx:
+                continue
+            i, j = bus_idx[bi], bus_idx[bj]
+            if abs(z) < 1e-15:
+                z = complex(1e-6, 1e-6)  # Avoid division by zero
+            y = 1.0 / z
+            ybus[i, i] += y
+            ybus[j, j] += y
+            ybus[i, j] -= y
+            ybus[j, i] -= y
+
+        # Add source shunt admittances (mode-dependent)
+        for bid in bus_ids:
+            i = bus_idx[bid]
+            for z_src, src_type, comp in bus_shunts[bid]:
+                z_mode = _get_mode_impedance(z_src, src_type, comp, base_mva, mode)
+                if z_mode is not None and abs(z_mode) > 1e-15:
+                    ybus[i, i] += 1.0 / z_mode
+
+        # Invert Ybus to get Zbus
+        try:
+            zbus = np.linalg.inv(ybus)
+        except np.linalg.LinAlgError:
+            continue  # Singular matrix — skip this mode
+
+        # Compute retained voltage: V_j = 1 - Z_jk / Z_kk
+        for faulted_bus_id, fault_result in results.items():
+            if faulted_bus_id not in bus_idx:
+                continue
+            k = bus_idx[faulted_bus_id]
+            z_kk = zbus[k, k]
+            if abs(z_kk) < 1e-15:
+                continue
+
+            if fault_result.voltage_depression is None:
+                fault_result.voltage_depression = {}
+
+            c_factor = 1.05 if bus_voltage.get(faulted_bus_id, 11) < 1.0 else 1.1
+
+            for other_bus in all_buses:
+                j = bus_idx[other_bus.id]
+                z_jk = zbus[j, k]
+                v_retained_pu = abs(1.0 - z_jk / z_kk)
+                # Clamp to [0, 1.2] — can exceed 1.0 due to voltage factor
+                v_retained_pu = max(0.0, min(v_retained_pu, 1.2))
+                v_kv = bus_voltage.get(other_bus.id, 11)
+
+                key = other_bus.id
+                if key not in fault_result.voltage_depression:
+                    fault_result.voltage_depression[key] = {
+                        "bus_name": other_bus.props.get("name", other_bus.id),
+                        "voltage_kv": v_kv,
+                    }
+                fault_result.voltage_depression[key][f"{mode}_pu"] = round(v_retained_pu, 4)
+                fault_result.voltage_depression[key]["retained_kv"] = round(
+                    v_retained_pu * v_kv, 3
+                )
+
+    # Motor reacceleration recovery for each faulted bus
+    for faulted_bus_id, fault_result in results.items():
+        if faulted_bus_id not in bus_idx:
+            continue
+        motor_data = _collect_motor_data(faulted_bus_id, all_buses, components, adjacency, base_mva)
+        if motor_data:
+            clearing_time = 0.1  # Default 100ms
+            # Try to get from arc flash or CB data
+            for nid, _, _ in adjacency.get(faulted_bus_id, []):
+                comp = components.get(nid)
+                if comp and comp.type == "cb":
+                    lt_delay = comp.props.get("long_time_delay", 10)
+                    if lt_delay <= 5:
+                        clearing_time = 0.05
+                    elif lt_delay <= 10:
+                        clearing_time = 0.1
+                    break
+
+            fault_result.motor_recovery = _calc_motor_reacceleration(
+                motor_data, bus_shunts, bus_idx, faulted_bus_id,
+                all_buses, base_mva, clearing_time
+            )
+
+
+def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branches, bus_shunts, base_mva):
+    """Walk from a bus to find connected buses (through transformers/cables) and sources."""
+    bus_set = set(all_bus_ids)
+
+    def walk(comp_id, z_path, visited, from_bus_id):
+        if comp_id in visited:
+            return
+        visited.add(comp_id)
+        comp = components.get(comp_id)
+        if not comp:
+            return
+
+        # Hit another bus — record branch
+        if comp.type == "bus" and comp_id in bus_set and comp_id != from_bus_id:
+            if abs(z_path) > 1e-15:
+                branches.append((from_bus_id, comp_id, z_path))
+            else:
+                # Direct bus coupler — very low impedance
+                branches.append((from_bus_id, comp_id, complex(1e-6, 1e-6)))
+            return
+
+        # Source — record as shunt on the originating bus
+        if comp.type == "utility":
+            z_src = _utility_impedance(comp, base_mva)
+            bus_shunts[from_bus_id].append((z_src, "utility", comp))
+            return
+        if comp.type == "generator":
+            z_src = _generator_impedance(comp, base_mva)
+            bus_shunts[from_bus_id].append((z_src, "generator", comp))
+            return
+        if comp.type == "solar_pv":
+            z_src = _solar_pv_impedance(comp, base_mva)
+            bus_shunts[from_bus_id].append((z_src, "solar_pv", comp))
+            return
+        if comp.type == "wind_turbine":
+            z_src = _wind_turbine_impedance(comp, base_mva)
+            bus_shunts[from_bus_id].append((z_src, "wind_turbine", comp))
+            return
+        if comp.type in ("motor_induction", "motor_synchronous"):
+            if comp.type == "motor_induction":
+                z_src = _motor_induction_impedance(comp, base_mva)
+            else:
+                z_src = _motor_synchronous_impedance(comp, base_mva)
+            bus_shunts[from_bus_id].append((z_src, comp.type, comp))
+            return
+
+        # Accumulate impedance through branch elements
+        z_element = complex(0, 0)
+        if comp.type == "transformer":
+            z_element = _transformer_impedance(comp, base_mva)
+        elif comp.type == "cable":
+            z_element = _cable_impedance(comp, base_mva)
+        elif comp.type in ("cb", "switch"):
+            state = comp.props.get("state", "closed")
+            if state == "open":
+                return
+        # Continue walking
+        for neighbor_id, _, _ in adjacency.get(comp_id, []):
+            walk(neighbor_id, z_path + z_element, visited, from_bus_id)
+
+    visited = {start_bus_id}
+    for neighbor_id, _, _ in adjacency.get(start_bus_id, []):
+        walk(neighbor_id, complex(0, 0), set(visited), start_bus_id)
+
+
+def _get_mode_impedance(z_subtransient, source_type, comp, base_mva, mode):
+    """Get source impedance for the given time period (mode).
+
+    Sub-transient: Xd'' (generators), X'' (motors)
+    Transient: Xd' (generators), motors removed
+    Steady-state: Xd (generators), motors removed
+    """
+    if source_type == "utility":
+        return z_subtransient  # Utility impedance doesn't change with time
+
+    if source_type == "solar_pv":
+        return z_subtransient  # Inverter-limited, constant
+
+    if source_type == "wind_turbine":
+        t_type = comp.props.get("turbine_type", "type3_dfig") if comp else "type3_dfig"
+        if t_type == "type4_frc":
+            return z_subtransient  # Converter-limited, constant
+        # Type 1-3: like generators/motors below
+
+    if source_type in ("generator", "motor_synchronous", "wind_turbine"):
+        if mode == "subtransient":
+            return z_subtransient  # Already Xd''
+        elif mode == "transient":
+            # Use Xd' instead of Xd''
+            xd_p = comp.props.get("xd_p", 0.25) if comp else 0.25
+            xd_pp = comp.props.get("xd_pp", 0.15) if comp else 0.15
+            if abs(xd_pp) > 1e-10:
+                ratio = xd_p / xd_pp
+                return z_subtransient * ratio
+            return z_subtransient
+        else:  # steadystate
+            xd = comp.props.get("xd", 1.2) if comp else 1.2
+            xd_pp = comp.props.get("xd_pp", 0.15) if comp else 0.15
+            if abs(xd_pp) > 1e-10:
+                ratio = xd / xd_pp
+                return z_subtransient * ratio
+            return z_subtransient
+
+    if source_type == "motor_induction":
+        if mode == "subtransient":
+            return z_subtransient  # Motors contribute during sub-transient
+        else:
+            return None  # Motors decayed — remove from network
+
+    return z_subtransient
+
+
+def _collect_motor_data(faulted_bus_id, all_buses, components, adjacency, base_mva):
+    """Collect motor data for reacceleration calculation."""
+    motors = []
+    for bus in all_buses:
+        for nid, _, _ in adjacency.get(bus.id, []):
+            comp = components.get(nid)
+            if not comp:
+                continue
+            if comp.type == "motor_induction":
+                rated_kw = comp.props.get("rated_kw", 200)
+                eff = comp.props.get("efficiency", 0.93)
+                rated_mva = rated_kw / (eff * 1000)
+                lra_mult = comp.props.get("lra_multiplier", 6.0)
+                h_constant = comp.props.get("h_constant", 0.5)  # Inertia constant (s)
+                motors.append({
+                    "bus_id": bus.id,
+                    "comp_id": comp.id,
+                    "rated_mva": rated_mva,
+                    "lra_multiplier": lra_mult,
+                    "h_constant": max(h_constant, 0.1),
+                    "type": "induction",
+                })
+            elif comp.type == "motor_synchronous":
+                rated_kva = comp.props.get("rated_kva", 500)
+                rated_mva = rated_kva / 1000
+                h_constant = comp.props.get("h_constant", 1.0)
+                motors.append({
+                    "bus_id": bus.id,
+                    "comp_id": comp.id,
+                    "rated_mva": rated_mva,
+                    "lra_multiplier": comp.props.get("lra_multiplier", 5.0),
+                    "h_constant": max(h_constant, 0.1),
+                    "type": "synchronous",
+                })
+    return motors
+
+
+def _calc_motor_reacceleration(motor_data, bus_shunts, bus_idx, faulted_bus_id,
+                                all_buses, base_mva, clearing_time):
+    """Calculate post-fault voltage recovery considering motor reacceleration.
+
+    During fault: motors decelerate (speed drops based on H constant and voltage).
+    After clearing: motors draw high reacceleration current (near LRA),
+    which decays exponentially as they recover speed.
+
+    Returns list of {t_ms, v_pu} points for 0 to 5 seconds post-clearing.
+    """
+    if not motor_data:
+        return None
+
+    # Total motor reacceleration current at t=0 (post-clearing)
+    # I_reaccel(0) ≈ LRA × (1 - speed_remaining)
+    # Speed drop during fault: Δω/ω ≈ t_fault / (2H) for voltage ≈ 0 at motor
+    total_motor_mva = sum(m["rated_mva"] for m in motor_data)
+    if total_motor_mva < 1e-6:
+        return None
+
+    # Calculate aggregate reacceleration current envelope
+    # Motor reacceleration time constant τ ≈ 2H × V² / (T_load)
+    # Simplified: τ = 2H (seconds) for full-voltage restart
+    profile = []
+    dt_ms = 50  # 50ms steps
+    max_t_ms = 5000  # 5 seconds
+
+    for t_ms in range(0, max_t_ms + dt_ms, dt_ms):
+        t_s = t_ms / 1000.0
+        total_i_reaccel_pu = 0
+
+        for motor in motor_data:
+            h = motor["h_constant"]
+            lra = motor["lra_multiplier"]
+            s_motor = motor["rated_mva"]
+
+            # Speed drop during fault: Δω ≈ clearing_time / (2H)
+            speed_drop = min(clearing_time / (2 * h), 0.8)  # Cap at 80% speed loss
+            # Reacceleration current decays as motor regains speed
+            # τ_reaccel ≈ 2H (time to recover speed)
+            tau = 2 * h
+            i_reaccel = lra * speed_drop * math.exp(-t_s / tau) * (s_motor / base_mva)
+            total_i_reaccel_pu += i_reaccel
+
+        # Voltage depression from reacceleration current
+        # V ≈ 1.0 - Z_network × I_reaccel (simplified)
+        # Use average network impedance (from bus shunts)
+        # For a more accurate calc, would use Zbus diagonal at faulted bus
+        # Approximate Z_network from source shunts
+        z_net_pu = complex(0, 0)
+        if faulted_bus_id in bus_shunts:
+            shunt_y = sum(
+                1.0 / z for z, st, _ in bus_shunts[faulted_bus_id]
+                if st == "utility" and abs(z) > 1e-15
+            )
+            if abs(shunt_y) > 1e-15:
+                z_net_pu = 1.0 / shunt_y
+
+        v_drop = abs(z_net_pu) * total_i_reaccel_pu
+        v_pu = max(0.0, min(1.0 - v_drop, 1.05))
+
+        profile.append({"t_ms": t_ms, "v_pu": round(v_pu, 4)})
+
+        # Stop early if voltage has recovered to >0.98 p.u.
+        if t_ms > 500 and v_pu >= 0.98:
+            # Add final point at full recovery
+            profile.append({"t_ms": t_ms + dt_ms, "v_pu": 1.0})
+            break
+
+    return profile

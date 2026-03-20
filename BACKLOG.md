@@ -59,3 +59,9 @@
 - ~~IEEE 1584-2018 arc flash calculations with incident energy, PPE categories, and arc flash boundary~~
 - ~~Per-bus working distance and electrode configuration settings~~
 - ~~Arc flash on-diagram annotations with PPE-category color coding~~
+- ~~Arc flash improvement recommendations per bus~~
+- ~~Help modal with comprehensive documentation~~
+- ~~Voltage depression during fault (Zbus matrix, retained voltage at all buses)~~
+- ~~Time-varying voltage profile (sub-transient/transient/steady-state)~~
+- ~~Motor reacceleration voltage recovery post-fault clearing~~
+- ~~Color-coded voltage sag map on SLD~~

@@ -112,6 +112,12 @@ class FaultResultBus(BaseModel):
     ib_asymmetric: Optional[float] = None  # Asymmetric breaking current (kA)
     ik_steady: Optional[float] = None  # Steady-state short-circuit current Ik (kA)
     branches: list[FaultBranchContribution] = []
+    # Voltage depression at all buses when THIS bus is faulted
+    # {bus_id: {subtransient_pu, transient_pu, steadystate_pu, retained_kv}}
+    voltage_depression: Optional[dict] = None
+    # Motor reacceleration voltage recovery profile (post-clearing)
+    # [{t_ms: float, v_pu: float}]
+    motor_recovery: Optional[list] = None
 
 
 class FaultResults(BaseModel):

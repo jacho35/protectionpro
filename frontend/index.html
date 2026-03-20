@@ -305,6 +305,21 @@
     </div>
   </div>
 
+  <!-- Voltage Depression Modal -->
+  <div id="vdep-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Voltage Depression During Fault (IEC 60909)</h3>
+        <button class="modal-close" id="btn-close-vdep">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="vdep-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Arc Flash Results Modal -->
   <div id="arcflash-modal" class="modal" style="display:none">
     <div class="modal-content modal-wide">
@@ -952,6 +967,15 @@
             <li><strong>I"kLLG</strong> — Double line-to-ground fault current</li>
           </ul>
           <p>Select a single bus before running to analyze only that bus, or run on all buses. Motor fault contribution and branch contributions are included.</p>
+
+          <h4>Voltage Depression During Fault</h4>
+          <p>When a single bus is faulted, ProtectionPro calculates the <strong>retained voltage</strong> at all other buses using the Zbus impedance matrix method (V<sub>j</sub> = 1 − Z<sub>jk</sub>/Z<sub>kk</sub>). Three time periods are computed per IEC 60909:</p>
+          <ul>
+            <li><strong>Sub-transient</strong> (0–5 cycles) — generators at Xd'', motors contributing</li>
+            <li><strong>Transient</strong> (~5 cycles to 0.5s) — generators at Xd', motors decayed</li>
+            <li><strong>Steady-state</strong> (&gt;0.5s) — generators at Xd, motors fully decayed</li>
+          </ul>
+          <p>Buses are color-coded on the diagram: green (&gt;80%), yellow (50–80%), orange (30–50%), red (&lt;30%). A detailed table shows all bus voltages and a motor reacceleration voltage recovery chart shows how voltage recovers after fault clearing as motors re-speed.</p>
 
           <h4>Load Flow (Newton-Raphson / Gauss-Seidel)</h4>
           <p>Calculates steady-state power flow through the network. Results include bus voltages, angles, branch power flows, currents, and loading percentages. Voltage violations and mismatched ratings are flagged as warnings.</p>
