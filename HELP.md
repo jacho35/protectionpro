@@ -316,14 +316,30 @@ Browse, add, edit, or delete transformer types. The built-in library includes 22
 
 ## Export & Reports
 
-### JSON Export
-Click **Export** to download the project as a `.json` file. This file can be re-imported via Open → Import from JSON file.
+Click the **Export** dropdown in the toolbar to access all export options.
 
-### CSV Report
-Available via API (`/projects/{id}/export/csv`). Exports fault and load flow results as tabular data.
+### Export Project (JSON)
+Downloads the full project as a `.json` file including all components, wires, settings, and analysis results. This file can be re-imported via Open → Import from JSON file.
 
-### PDF Report
-Available via API (`/projects/{id}/export/pdf`). Generates a formatted PDF with analysis result tables.
+### Export Diagram (SVG)
+Exports a clean standalone SVG vector image of the single-line diagram with all annotations and data labels. Grid lines are removed. Suitable for embedding in documents or further editing in vector graphics software.
+
+### Export Diagram (PNG)
+Exports the diagram as a 2x resolution PNG raster image with a white background. Ideal for presentations and reports.
+
+### Export Results (CSV)
+Exports fault analysis and load flow results as a CSV spreadsheet. Includes fault currents at each bus, bus voltages/powers, and branch flows with loading percentages. Requires running analysis first.
+
+### Export Report (PDF)
+Generates a multi-page PDF report containing:
+- **Title page** with project name, base MVA, frequency, and date
+- **Diagram** — the single-line diagram rendered on the first page
+- **Fault analysis table** — IEC 60909 short-circuit currents at each bus (blue header)
+- **Load flow tables** — bus voltages/power and branch flows with loading (green header)
+- **Equipment summary** — all components with type and key parameters
+- Page numbers and project name footer on every page
+
+Requires running fault analysis and/or load flow first. All export is done client-side using jsPDF.
 
 ---
 
@@ -564,10 +580,7 @@ The following features are planned for upcoming releases of ProtectionPro:
 
 ### Reporting & Export
 - **DXF / DWG export** — Export diagrams in AutoCAD-compatible formats
-- **SVG export** — High-quality vector export of the single-line diagram
-- **PNG / PDF diagram export** — Raster and vector image export of the canvas
 - **Compliance report** — IEC 60909 / IEEE 141 formatted analysis reports with standard references
-- **Equipment schedule** — Auto-generated bill of materials and equipment list
 - **Setting schedule export** — Protection device settings in tabular format
 
 ### Collaboration & Integration
