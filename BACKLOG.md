@@ -39,9 +39,6 @@
 
 ## Reports & Export
 - **DXF/DWG export**: Export SLD to CAD formats
-- **Customizable report templates**: User-defined report layouts
-- **Comparison reports**: Compare results between scenarios
-- **Setting schedule export**: Protection device settings in tabular format
 
 ## Data & Integration
 - **Component library import**: Import manufacturer data (transformers, cables, etc.)

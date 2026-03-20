@@ -23,6 +23,9 @@ const Project = {
     document.getElementById('btn-export-png').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportPNG(); });
     document.getElementById('btn-export-csv').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportResultsCSV(); });
     document.getElementById('btn-export-pdf').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportPDF(); });
+    document.getElementById('btn-export-template').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.showTemplateEditor(); });
+    document.getElementById('btn-export-settings').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.exportSettingsCSV(); });
+    document.getElementById('btn-export-compare').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.showComparisonDialog(); });
   },
 
   newProject() {
