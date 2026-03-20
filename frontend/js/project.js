@@ -297,6 +297,26 @@ const Project = {
         rows.push([busId, busName, r.voltage_kv ?? '', r.ik3 ?? '', r.ik1 ?? '', r.ikLL ?? '']);
       }
       rows.push([]);
+
+      // Fault branch contributions
+      let hasBranches = false;
+      for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
+        if (r.branches && r.branches.length > 0) {
+          if (!hasBranches) {
+            rows.push(['=== FAULT BRANCH CONTRIBUTIONS ===']);
+            rows.push(['Faulted Bus', 'Element', 'Type', 'If (kA)', 'Contribution (%)', '|Z_path| (p.u.)', 'Source']);
+            hasBranches = true;
+          }
+          const busComp = AppState.components.get(busId);
+          const busName = busComp?.props?.name || busId;
+          for (const br of r.branches) {
+            const elComp = AppState.components.get(br.element_id);
+            const elName = elComp?.props?.name || br.element_name || br.element_id;
+            rows.push([busName, elName, br.element_type, br.ik_ka, br.contribution_pct, br.z_path_mag, br.source_name]);
+          }
+        }
+      }
+      if (hasBranches) rows.push([]);
     }
 
     // Load flow bus results
@@ -439,6 +459,44 @@ const Project = {
           alternateRowStyles: { fillColor: [245, 245, 245] },
           columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
         });
+
+        // Fault branch contributions table
+        const branchRows = [];
+        for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
+          if (!r.branches || r.branches.length === 0) continue;
+          const busComp = AppState.components.get(busId);
+          const busName = busComp?.props?.name || busId;
+          for (const br of r.branches) {
+            const elComp = AppState.components.get(br.element_id);
+            const elName = elComp?.props?.name || br.element_name || br.element_id;
+            branchRows.push([
+              busName, elName, (br.element_type || '').replace('_', ' '),
+              br.ik_ka != null ? Number(br.ik_ka).toFixed(3) : '\u2014',
+              br.contribution_pct != null ? Number(br.contribution_pct).toFixed(1) + '%' : '\u2014',
+              br.z_path_mag != null ? Number(br.z_path_mag).toFixed(6) : '\u2014',
+              br.source_name || '\u2014',
+            ]);
+          }
+        }
+
+        if (branchRows.length > 0) {
+          const branchY = doc.lastAutoTable.finalY + 10;
+          doc.setFontSize(12);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Branch Fault Current Contributions', margin, branchY);
+          doc.setFont('helvetica', 'normal');
+
+          doc.autoTable({
+            startY: branchY + 4,
+            margin: { left: margin, right: margin },
+            head: [['Faulted Bus', 'Element', 'Type', 'If (kA)', '%', '|Z_path| (p.u.)', 'Source']],
+            body: branchRows,
+            styles: { fontSize: 8, cellPadding: 1.5 },
+            headStyles: { fillColor: [183, 28, 28], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [255, 245, 245] },
+            columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+          });
+        }
       }
 
       if (hasLoadFlow) {
