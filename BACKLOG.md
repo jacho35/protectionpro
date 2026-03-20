@@ -38,7 +38,6 @@
 - **DXF/DWG export**: Export SLD to CAD formats
 - **Customizable report templates**: User-defined report layouts
 - **Comparison reports**: Compare results between scenarios
-- **Compliance report**: IEC 60909 / IEEE 141 formatted reports with standard references
 - **Setting schedule export**: Protection device settings in tabular format
 
 ## Data & Integration

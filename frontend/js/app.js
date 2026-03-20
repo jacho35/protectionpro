@@ -204,6 +204,51 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
   document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
 
+  // Compliance report
+  document.getElementById('btn-compliance').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before generating a compliance report.';
+      return;
+    }
+    const report = Compliance.generate();
+    const modal = document.getElementById('compliance-modal');
+    document.getElementById('compliance-body').innerHTML = Compliance.renderHTML(report);
+
+    // Summary badge
+    const t = report.totals;
+    const badge = document.getElementById('compliance-summary');
+    if (t.fail > 0) {
+      badge.textContent = `${t.pass} Pass, ${t.fail} Fail, ${t.warn} Warn`;
+      badge.className = 'compliance-summary-badge summary-has-fail';
+    } else if (t.warn > 0) {
+      badge.textContent = `${t.pass} Pass, ${t.warn} Warn`;
+      badge.className = 'compliance-summary-badge summary-has-warn';
+    } else {
+      badge.textContent = `${t.pass} Pass — All Clear`;
+      badge.className = 'compliance-summary-badge summary-all-pass';
+    }
+
+    modal.style.display = '';
+    document.getElementById('status-info').textContent = 'Compliance report generated.';
+
+    // Store report for PDF export
+    modal._complianceReport = report;
+  });
+
+  document.getElementById('btn-close-compliance').addEventListener('click', () => {
+    document.getElementById('compliance-modal').style.display = 'none';
+  });
+  document.getElementById('compliance-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'compliance-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-compliance-pdf').addEventListener('click', () => {
+    const modal = document.getElementById('compliance-modal');
+    if (modal._complianceReport) {
+      Compliance.exportPDF(modal._complianceReport);
+    }
+  });
+
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
     AppState.showCableLabels = !AppState.showCableLabels;

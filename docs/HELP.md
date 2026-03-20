@@ -16,12 +16,13 @@
 8. [Load Flow Analysis](#load-flow-analysis)
 9. [Annotations & Data Labels](#annotations--data-labels)
 10. [Overload & Voltage Warnings](#overload--voltage-warnings)
-11. [Project Management](#project-management)
-12. [Settings & Libraries](#settings--libraries)
-13. [Export & Reports](#export--reports)
-14. [Keyboard Shortcuts](#keyboard-shortcuts)
-15. [Component Reference](#component-reference)
-16. [Roadmap — Future Features](#roadmap--future-features)
+11. [Compliance Report](#compliance-report)
+12. [Project Management](#project-management)
+13. [Settings & Libraries](#settings--libraries)
+14. [Export & Reports](#export--reports)
+15. [Keyboard Shortcuts](#keyboard-shortcuts)
+16. [Component Reference](#component-reference)
+17. [Roadmap — Future Features](#roadmap--future-features)
 
 ---
 
@@ -269,6 +270,53 @@ The voltage value is displayed in the unit selected in the properties panel (kV 
 
 ### Unconnected Port Warnings
 Toggle with the **Warnings** toolbar button. Shows pulsing dashed red circles on any component port that has no wire connected.
+
+---
+
+## Compliance Report
+
+Click the **Compliance** button in the toolbar to generate a standards compliance report. The report cross-checks analysis results against equipment ratings and IEC standards limits.
+
+### Report Sections
+
+#### 1. Network Validation (General)
+Checks network topology for errors and warnings — missing buses, isolated components, voltage mismatches, missing swing bus.
+
+#### 2. Fault Duty Assessment (IEC 60909)
+Compares prospective fault currents (I"k3) at each bus against the breaking capacity of connected circuit breakers and fuses. Flags:
+- **FAIL** — Fault current exceeds device breaking capacity
+- **PASS** — Device is adequately rated, with margin percentage shown
+- **WARN** — No breaking capacity specified, or no protection device on bus
+
+Requires fault analysis to be run first.
+
+#### 3. Voltage Compliance (IEC 60038)
+Checks all bus voltages from load flow against the IEC 60038 standard range of 0.95–1.05 p.u.:
+- **FAIL** — Under-voltage (< 0.95 p.u.) or over-voltage (> 1.05 p.u.)
+- **PASS** — Voltage within acceptable range
+
+Requires load flow to be run first.
+
+#### 4. Thermal Loading (IEC 60364 / IEC 60076)
+Checks cable and transformer loading percentages from load flow:
+- **FAIL** — Loading exceeds 100% (overloaded)
+- **WARN** — Loading above 80% (limited headroom)
+- **PASS** — Loading within acceptable limits
+
+#### 5. Protection Device Ratings (IEC 62271 / IEC 60947)
+Checks that circuit breaker, fuse, and switch rated voltages match the system voltage at their connected bus. Also checks rated current against load flow currents through adjacent branches.
+
+#### 6. Equipment Inventory
+Summary count of all component types in the network.
+
+### Summary Badge
+The modal header shows a summary badge:
+- **Green** — All checks pass
+- **Orange** — Warnings present but no failures
+- **Red** — One or more failures detected
+
+### PDF Export
+Click **Download PDF** in the compliance modal to generate a formatted A4 portrait PDF with all sections, colour-coded status columns, and page numbers.
 
 ---
 

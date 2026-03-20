@@ -551,6 +551,137 @@ html, body {
   color: var(--text-muted);
 }
 
+/* ─── Compliance Report ─── */
+.compliance-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.compliance-summary-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.summary-all-pass {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.summary-has-warn {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.summary-has-fail {
+  background: #fce4ec;
+  color: #b71c1c;
+}
+
+.compliance-header {
+  margin-bottom: 14px;
+}
+
+.compliance-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.compliance-section {
+  margin-bottom: 16px;
+}
+
+.compliance-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.compliance-section-header h4 {
+  font-size: 13px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.compliance-standard {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.compliance-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.badge-pass { background: #e8f5e9; color: #1b5e20; }
+.badge-fail { background: #fce4ec; color: #b71c1c; }
+.badge-warn { background: #fff3e0; color: #e65100; }
+.badge-info { background: var(--bg-tertiary); color: var(--text-muted); }
+
+.compliance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.compliance-table thead th {
+  background: var(--bg-tertiary);
+  padding: 5px 8px;
+  font-weight: 600;
+  font-size: 11px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.compliance-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+
+.compliance-status-cell {
+  width: 28px;
+  text-align: center;
+}
+
+.compliance-comp-cell {
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compliance-detail-cell {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.compliance-row.compliance-fail td {
+  background: #fff5f5;
+}
+
+.compliance-row.compliance-warn td {
+  background: #fffcf0;
+}
+
+.compliance-row.compliance-pass td {
+  background: #f6fff6;
+}
+
 /* Project picker */
 .project-list {
   max-height: 300px;
