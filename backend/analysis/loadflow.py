@@ -134,6 +134,48 @@ def _get_impedance(comp, base_mva):
     return complex(0, 0)
 
 
+def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
+    """Find transformer in a branch chain and compute its off-nominal turns ratio.
+
+    Uses the standard transformer model where the tap is on the HV side.
+    The turns ratio t accounts for both tap position and any mismatch between
+    transformer rated voltages and bus base voltages.
+
+    Returns (t, hv_bus_id) where t is the per-unit turns ratio and hv_bus_id
+    is the bus on the HV (tap) side, or (1.0, None) if no transformer in chain.
+    """
+    for e in elems.values():
+        if e.type != "transformer":
+            continue
+
+        v_hv_rated = e.props.get("voltage_hv_kv", 33)
+        v_lv_rated = e.props.get("voltage_lv_kv", 11)
+        tap_pct = e.props.get("tap_percent", 0)
+
+        bus_a_comp = components.get(bus_a_id)
+        bus_b_comp = components.get(bus_b_id)
+        bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
+        bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
+
+        # Match buses to HV/LV sides based on voltage proximity
+        if abs(bus_a_v - v_hv_rated) <= abs(bus_b_v - v_hv_rated):
+            hv_bus_id = bus_a_id
+            base_ratio = bus_a_v / bus_b_v if bus_b_v > 0 else 1.0
+        else:
+            hv_bus_id = bus_b_id
+            base_ratio = bus_b_v / bus_a_v if bus_a_v > 0 else 1.0
+
+        # Off-nominal turns ratio: actual ratio / base voltage ratio
+        # When base voltages match transformer ratings, this equals (1 + tap_pct/100)
+        nominal_ratio = v_hv_rated / v_lv_rated if v_lv_rated > 0 else 1.0
+        actual_ratio = nominal_ratio * (1 + tap_pct / 100)
+        t = actual_ratio / base_ratio if base_ratio > 0 else 1.0
+
+        return t, hv_bus_id
+
+    return 1.0, None
+
+
 def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadFlowResults:
     """Run load flow analysis."""
     base_mva = project.baseMVA
@@ -211,12 +253,30 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
         i = bus_idx[bus_a]
         j = bus_idx[bus_b]
-        Y[i, i] += y
-        Y[j, j] += y
-        Y[i, j] -= y
-        Y[j, i] -= y
 
-        branch_chains.append((all_elems, bus_a, bus_b, y))
+        # Determine if chain contains a transformer and compute turns ratio
+        t, hv_bus = _get_chain_turns_ratio(all_elems, bus_a, bus_b, components)
+
+        if hv_bus == bus_a:
+            # Tap on bus_a (i) side — standard transformer pi-model
+            Y[i, i] += y / (t * t)
+            Y[j, j] += y
+            Y[i, j] -= y / t
+            Y[j, i] -= y / t
+        elif hv_bus == bus_b:
+            # Tap on bus_b (j) side
+            Y[i, i] += y
+            Y[j, j] += y / (t * t)
+            Y[i, j] -= y / t
+            Y[j, i] -= y / t
+        else:
+            # No transformer — simple series element
+            Y[i, i] += y
+            Y[j, j] += y
+            Y[i, j] -= y
+            Y[j, i] -= y
+
+        branch_chains.append((all_elems, bus_a, bus_b, y, t, hv_bus))
 
     # ── Find direct bus-to-bus connections (solid links through transparent elements only) ──
     linked_pairs = set()
@@ -248,7 +308,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         Y[j, j] += y_link
         Y[i, j] -= y_link
         Y[j, i] -= y_link
-        branch_chains.append((None, pair[0], pair[1], y_link))
+        branch_chains.append((None, pair[0], pair[1], y_link, 1.0, None))
 
     # ── Set up power injections ──
     P_spec = np.zeros(n)
@@ -322,12 +382,28 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
     # ── Branch flows ──
     branch_results = []
-    for elems, from_bus, to_bus, y in branch_chains:
+    for elems, from_bus, to_bus, y, t, hv_bus in branch_chains:
         i = bus_idx[from_bus]
         j = bus_idx[to_bus]
-        i_branch_pu = (V[i] - V[j]) * y
-        s_ij = V[i] * np.conj(i_branch_pu)
-        s_ji = V[j] * np.conj(-i_branch_pu)
+
+        if hv_bus is not None:
+            # Transformer branch — use pi-model current equations
+            if hv_bus == from_bus:
+                # Tap on i (from) side
+                I_i = (y / (t * t)) * V[i] - (y / t) * V[j]
+                I_j = -(y / t) * V[i] + y * V[j]
+            else:
+                # Tap on j (to) side
+                I_i = y * V[i] - (y / t) * V[j]
+                I_j = -(y / t) * V[i] + (y / (t * t)) * V[j]
+            s_ij = V[i] * np.conj(I_i)
+            s_ji = V[j] * np.conj(I_j)
+        else:
+            # Simple series element
+            i_branch_pu = (V[i] - V[j]) * y
+            s_ij = V[i] * np.conj(i_branch_pu)
+            s_ji = V[j] * np.conj(-i_branch_pu)
+
         p_mw = s_ij.real * base_mva
         q_mvar = s_ij.imag * base_mva
         s_mva = abs(s_ij) * base_mva
@@ -348,23 +424,33 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
             ))
         else:
             # Report flow for each element in the series chain
+            # For transformer chains, compute LV-side apparent power for accurate reporting
+            s_lv_mva = abs(s_ji) * base_mva if hv_bus == from_bus else s_mva
+            s_hv_mva = s_mva if hv_bus == from_bus else abs(s_ji) * base_mva
+
             for elem in elems.values():
                 loading = 0
                 if elem.type == "cable":
                     v_kv = elem.props.get("voltage_kv", 11)
-                    elem_i_amps = (s_mva * 1000) / (math.sqrt(3) * v_kv) if v_kv > 0 else 0
+                    # Use the power at the cable's voltage level
+                    cable_s_mva = s_mva
+                    if hv_bus is not None:
+                        hv_v = components.get(hv_bus)
+                        hv_v_kv = hv_v.props.get("voltage_kv", 33) if hv_v else 33
+                        cable_s_mva = s_hv_mva if abs(v_kv - hv_v_kv) < abs(v_kv) else s_lv_mva
+                    elem_i_amps = (cable_s_mva * 1000) / (math.sqrt(3) * v_kv) if v_kv > 0 else 0
                     rated_a = elem.props.get("rated_amps", 400)
                     rated_mva = math.sqrt(3) * v_kv * rated_a / 1000
-                    loading = (s_mva / rated_mva * 100) if rated_mva > 0 else 0
+                    loading = (cable_s_mva / rated_mva * 100) if rated_mva > 0 else 0
                 elif elem.type == "transformer":
                     rated_mva_xfmr = elem.props.get("rated_mva", 10)
                     loading = (s_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
-                    # Report current at the LV side (higher current)
+                    # Report current at the LV side (higher current) using LV-side power
                     lv_kv = min(
                         elem.props.get("voltage_hv_kv", 11),
                         elem.props.get("voltage_lv_kv", 0.42)
                     )
-                    elem_i_amps = (s_mva * 1000) / (math.sqrt(3) * lv_kv) if lv_kv > 0 else 0
+                    elem_i_amps = (s_lv_mva * 1000) / (math.sqrt(3) * lv_kv) if lv_kv > 0 else 0
                 else:
                     from_bus_comp = components.get(from_bus)
                     v_kv_fb = from_bus_comp.props.get("voltage_kv", 11) if from_bus_comp else 11
