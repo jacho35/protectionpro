@@ -58,8 +58,8 @@ const Symbols = {
     return `
       <g class="symbol-bus">
         <line class="bus-bar" x1="${-hw}" y1="0" x2="${hw}" y2="0"/>
-        <rect class="bus-resize-handle bus-resize-left" x="${-hw - 5}" y="-6" width="6" height="12" rx="2" data-bus-resize="left"/>
-        <rect class="bus-resize-handle bus-resize-right" x="${hw - 1}" y="-6" width="6" height="12" rx="2" data-bus-resize="right"/>
+        <rect class="bus-resize-handle bus-resize-left" x="${-hw - 14}" y="-10" width="14" height="20" rx="3" data-bus-resize="left"/>
+        <rect class="bus-resize-handle bus-resize-right" x="${hw}" y="-10" width="14" height="20" rx="3" data-bus-resize="right"/>
       </g>`;
   },
 
@@ -68,10 +68,7 @@ const Symbols = {
     const bw = (comp && comp.props && comp.props.busWidth) || 120;
     const hw = bw / 2;
     const ports = [];
-    // Left and right edge ports
-    ports.push({ id: 'left', side: 'left', offset: 0, _x: -hw, _y: 0 });
-    ports.push({ id: 'right', side: 'right', offset: 0, _x: hw, _y: 0 });
-    // Evenly spaced top/bottom ports every 40px
+    // Evenly spaced top/bottom ports every 40px (no side ports — resize handles live there)
     const spacing = 40;
     const count = Math.max(1, Math.floor(bw / spacing));
     const startX = -hw + (bw - (count - 1) * spacing) / 2;
