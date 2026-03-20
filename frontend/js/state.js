@@ -9,6 +9,7 @@ const AppState = {
   // System base settings
   baseMVA: DEFAULT_BASE_MVA,
   frequency: DEFAULT_FREQUENCY,
+  defaultLengthUnit: 'm',  // Default display unit for cable length ('m' or 'km')
 
   // Canvas transform
   zoom: 1,
@@ -223,6 +224,7 @@ const AppState = {
       projectName: this.projectName,
       baseMVA: this.baseMVA,
       frequency: this.frequency,
+      defaultLengthUnit: this.defaultLengthUnit,
       components: [...this.components.values()],
       wires: [...this.wires.values()],
       nextId: this.nextId,
@@ -235,6 +237,7 @@ const AppState = {
     this.projectName = data.projectName || 'Untitled Project';
     this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
+    this.defaultLengthUnit = data.defaultLengthUnit || 'm';
     this.nextId = data.nextId || 1;
     for (const c of data.components || []) {
       this.components.set(c.id, c);

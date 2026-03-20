@@ -147,6 +147,24 @@ const Canvas = {
       }
     }
 
+    // Check if clicked on a name label (for dragging)
+    const nameLabelEl = e.target.closest('.comp-name-label');
+    if (nameLabelEl) {
+      const compId = nameLabelEl.dataset.compId;
+      const comp = AppState.components.get(compId);
+      if (comp) {
+        this.nameLabelDrag = {
+          compId,
+          startX: worldPt.x,
+          startY: worldPt.y,
+          origOX: comp.nameLabelOffsetX || 0,
+          origOY: comp.nameLabelOffsetY || 0,
+        };
+        e.preventDefault();
+        return;
+      }
+    }
+
     // Check if clicked on a component port (for wiring)
     const portEl = e.target.closest('[data-port]');
     if (portEl && AppState.mode === MODE.SELECT) {
@@ -266,6 +284,19 @@ const Canvas = {
       return;
     }
 
+    // Dragging name labels
+    if (this.nameLabelDrag) {
+      const dx = worldPt.x - this.nameLabelDrag.startX;
+      const dy = worldPt.y - this.nameLabelDrag.startY;
+      const comp = AppState.components.get(this.nameLabelDrag.compId);
+      if (comp) {
+        comp.nameLabelOffsetX = this.nameLabelDrag.origOX + dx;
+        comp.nameLabelOffsetY = this.nameLabelDrag.origOY + dy;
+        this.render();
+      }
+      return;
+    }
+
     // Dragging components
     if (AppState.dragState) {
       const dx = worldPt.x - AppState.dragState.startX;
@@ -321,6 +352,12 @@ const Canvas = {
     if (this.labelDrag) {
       AppState.dirty = true;
       this.labelDrag = null;
+      return;
+    }
+
+    if (this.nameLabelDrag) {
+      AppState.dirty = true;
+      this.nameLabelDrag = null;
       return;
     }
 
@@ -498,7 +535,8 @@ const Canvas = {
           if (std) sizeStr = `${std.size_mm2}mm² ${std.conductor}`;
         }
         if (!sizeStr) sizeStr = `R=${p.r_per_km} Ω/km`;
-        const lenStr = p.length_km >= 1 ? `${p.length_km} km` : `${(p.length_km * 1000).toFixed(0)} m`;
+        const useMeters = AppState.defaultLengthUnit === 'm' || p.length_km < 1;
+        const lenStr = useMeters ? `${(p.length_km * 1000).toFixed(0)} m` : `${p.length_km} km`;
         lines.push(sizeStr);
         lines.push(lenStr);
         if (p.rated_amps) lines.push(`${p.rated_amps} A`);

@@ -145,6 +145,13 @@
 .comp-data-label:hover {
   fill: var(--accent) !important;
 }
+.comp-name-label {
+  pointer-events: all;
+  cursor: move;
+}
+.comp-name-label:hover {
+  fill: var(--accent) !important;
+}
 
 /* Overload flag on components exceeding rated capacity */
 .overload-flag {
