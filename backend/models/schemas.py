@@ -1,6 +1,6 @@
 """Pydantic schemas for API request/response validation."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -22,6 +22,24 @@ class Component(BaseModel):
     labelOffsetY: Optional[float] = None
     nameLabelOffsetX: Optional[float] = None
     nameLabelOffsetY: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _coerce_numeric_props(self):
+        """Coerce string values in props to numbers where possible.
+
+        Frontend JSON may send numeric fields as strings (e.g. "11" instead of 11).
+        This prevents TypeError in analysis code that does arithmetic on props.
+        """
+        for k, v in self.props.items():
+            if isinstance(v, str):
+                try:
+                    self.props[k] = int(v)
+                except ValueError:
+                    try:
+                        self.props[k] = float(v)
+                    except ValueError:
+                        pass  # Genuinely a string (e.g. name, state)
+        return self
 
 
 class Wire(BaseModel):
