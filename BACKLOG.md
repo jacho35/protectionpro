@@ -1,18 +1,15 @@
 # ProtectionPro — Backlog Features
 
 ## Protection Coordination Enhancements
-- **Circuit breaker TCC curves**: Trip curves for MCCB and ACB thermal-magnetic characteristics
 - **CT saturation modeling**: CT ratio and burden effects on relay operating times
 - **Directional relay curves**: Directional overcurrent (67) curve plotting
-- **TCC curve overlay on fault results**: Show fault current levels on TCC chart from analysis results
-- **TCC PDF export**: Multi-page PDF report with TCC chart and coordination table
-- **Manufacturer relay/fuse libraries**: Import specific manufacturer curve data
+- **Distance relay (21) TCC curves**: Impedance-based relay plotting on TCC
+- **Auto-coordination engine**: Automatically set relay/CB grading based on upstream/downstream topology
 
 ## Fault Analysis Enhancements
-- **Full IEC 60909 time-varying fault currents**: I"k (initial), Ip (peak), Ib (breaking), Ik (steady-state)
-- **Motor contribution to faults**: Induction and synchronous motor sub-transient contributions with decay modeling
-- **DLG (Double Line-to-Ground) fault type**: Add to existing 3-phase, SLG, LL fault calculations
 - **Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component
+- **IEC 61363 marine/offshore fault analysis**: Fault analysis for isolated marine/offshore networks
+- **Protection relay miscoordination detection**: Flag relays that won't trip in correct sequence for a given fault
 
 ## Arc Flash
 - **IEEE 1584-2018 arc flash calculations**: Incident energy, arc flash boundary, PPE category
@@ -20,20 +17,18 @@
 - **Working distance configuration**: Per-bus working distance settings
 
 ## Load Flow Enhancements
-- **Voltage regulator modeling**: Tap-changing transformers with automatic tap adjustment
 - **Distributed generation**: Solar PV and wind turbine models
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 
+## TCC Chart Enhancements
+- **Drag devices between tabs**: Move devices to custom tabs via drag-and-drop
+- **User-defined curve data**: Import custom manufacturer TCC data points (CSV)
+
 ## UI / UX
-- **Undo/Redo system**: Full action history with keyboard shortcuts
-- **Mini-map**: Overview panel for large diagrams
-- **Dark mode**: Alternative color scheme
 - **Component grouping**: Group components into reusable blocks / sub-diagrams
 - **Multi-page diagrams**: Multiple sheets per project for large systems
 - **Print / Page layout**: Print-ready diagram output with title block and legend
-- **Wire routing options**: Manual bend points, diagonal routing, spline curves
-- **Component mirroring**: Horizontal and vertical flip in addition to rotation
-- **Annotation text boxes**: Free-text notes and labels on the diagram
+- **Wire diagonal/spline routing**: Diagonal routing, spline curves (bend points already implemented)
 
 ## Multi-User & Collaboration
 - **User authentication**: Login system with role-based access

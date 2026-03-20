@@ -75,6 +75,7 @@ const AppState = {
     comp.props.name = `${def.defaults.name}${count > 0 ? count + 1 : ''}`;
     this.components.set(id, comp);
     this.dirty = true;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     return comp;
   },
 
@@ -103,6 +104,7 @@ const AppState = {
     };
     this.wires.set(id, wire);
     this.dirty = true;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     return wire;
   },
 
@@ -143,6 +145,7 @@ const AppState = {
       }
     }
     this.selectedIds.clear();
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
   },
 
   // Copy selected components and their connecting wires to clipboard
@@ -196,6 +199,7 @@ const AppState = {
       }
     }
     this.dirty = true;
+    // Snapshot is already taken by addWire/addComponent calls above
   },
 
   // Save current network configuration as a scenario

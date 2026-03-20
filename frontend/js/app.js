@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
   Project.init();
   StandardData.init();
   TCC.init();
+  UndoManager.init();
+  MiniMap.init();
 
   // Toolbar mode buttons
   const btnSelect = document.getElementById('btn-select');
@@ -32,6 +34,24 @@ document.addEventListener('DOMContentLoaded', () => {
     Canvas.render();
     Properties.clear();
   });
+
+  // Undo/Redo buttons
+  document.getElementById('btn-undo').addEventListener('click', () => UndoManager.undo());
+  document.getElementById('btn-redo').addEventListener('click', () => UndoManager.redo());
+
+  // Dark mode toggle
+  document.getElementById('btn-dark-mode').addEventListener('click', () => {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    localStorage.setItem('protectionpro-dark-mode', isDark ? '1' : '0');
+    document.getElementById('btn-dark-mode').classList.toggle('active', isDark);
+    MiniMap.render();
+  });
+  // Restore dark mode preference
+  if (localStorage.getItem('protectionpro-dark-mode') === '1') {
+    document.body.classList.add('dark-mode');
+    document.getElementById('btn-dark-mode').classList.add('active');
+  }
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -111,6 +131,24 @@ document.addEventListener('DOMContentLoaded', () => {
           AppState.copySelected();
           AppState.pasteClipboard();
           Canvas.render();
+        }
+        break;
+      case 'z':
+      case 'Z':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            UndoManager.redo();
+          } else {
+            UndoManager.undo();
+          }
+        }
+        break;
+      case 'y':
+      case 'Y':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          UndoManager.redo();
         }
         break;
     }
@@ -280,6 +318,39 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'tcc-modal') TCC.close();
   });
   document.getElementById('btn-tcc-export-png').addEventListener('click', () => TCC.exportPNG());
+  document.getElementById('btn-tcc-export-pdf').addEventListener('click', () => TCC.exportPDF());
+  document.getElementById('btn-tcc-export-csv').addEventListener('click', () => TCC.exportCSV());
+
+  // TCC fault markers toggle
+  document.getElementById('btn-tcc-fault-markers').addEventListener('click', (e) => {
+    TCC.showFaultMarkers = !TCC.showFaultMarkers;
+    e.target.classList.toggle('active', TCC.showFaultMarkers);
+    TCC.render();
+  });
+
+  // TCC compare mode toggle
+  document.getElementById('btn-tcc-compare').addEventListener('click', (e) => {
+    TCC.compareMode = !TCC.compareMode;
+    e.target.classList.toggle('active', TCC.compareMode);
+    const section = document.getElementById('tcc-compare-section');
+    section.style.display = TCC.compareMode ? '' : 'none';
+    if (TCC.compareMode) {
+      TCC._renderCompareSelector();
+      // Default to second tab if available
+      if (TCC.tabs.length > 1 && !TCC.compareTabId) {
+        TCC.compareTabId = TCC.tabs[1].id;
+      }
+    } else {
+      TCC.compareTabId = null;
+    }
+    TCC.render();
+  });
+
+  // TCC compare tab selector
+  document.getElementById('tcc-compare-tab').addEventListener('change', (e) => {
+    TCC.compareTabId = e.target.value;
+    TCC.render();
+  });
 
   // TCC add device tab switching
   document.querySelectorAll('.tcc-add-tab').forEach(tab => {

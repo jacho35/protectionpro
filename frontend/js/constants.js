@@ -884,6 +884,7 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       locked_rotor_current: 6,
       x_pp: 0.17,
+      x_r_ratio: 10,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -893,6 +894,7 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number' },
       { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.' },
+      { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number' },
     ],
   },
   motor_synchronous: {

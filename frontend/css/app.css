@@ -26,6 +26,39 @@
   --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
 }
 
+/* Dark mode overrides */
+body.dark-mode {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #252536;
+  --bg-tertiary: #2a2a3c;
+  --text-primary: #e0e0e8;
+  --text-secondary: #a0a0b0;
+  --text-muted: #666680;
+  --border-color: #3a3a50;
+  --accent: #4a9eff;
+  --accent-hover: #6ab4ff;
+  --danger: #ff6b6b;
+  --success: #69db7c;
+  --warning: #ffd43b;
+}
+
+/* Dark mode SVG canvas adjustments */
+body.dark-mode #sld-canvas { background: #1a1a2a; }
+body.dark-mode #grid-bg { opacity: 0.15; }
+body.dark-mode .sld-wire { stroke: #8888aa; }
+body.dark-mode .sld-wire.selected { stroke: #4a9eff; }
+body.dark-mode .sld-component text { fill: #c0c0d0; }
+body.dark-mode .sld-component .symbol-line { stroke: #c0c0d0; }
+body.dark-mode .sld-component .symbol-fill { fill: #2a2a3c; }
+body.dark-mode .sld-port { fill: #4a9eff; }
+body.dark-mode .modal-content { background: var(--bg-primary); color: var(--text-primary); }
+body.dark-mode .modal-header { border-color: var(--border-color); }
+body.dark-mode input, body.dark-mode select, body.dark-mode textarea {
+  background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-color);
+}
+body.dark-mode .tcc-coord-pass { background: #1a3a1a; }
+body.dark-mode .dropdown-item:hover { background: var(--bg-tertiary); }
+
 html, body {
   width: 100%;
   height: 100%;
@@ -217,6 +250,12 @@ html, body {
 
 .btn-small:hover {
   background: var(--bg-tertiary);
+}
+
+.btn-small.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .btn-secondary {
@@ -818,7 +857,67 @@ html, body {
 .tcc-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+/* Voltage reference selector in header */
+.tcc-voltage-ref {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+.tcc-voltage-ref label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.tcc-voltage-ref select {
+  padding: 3px 6px;
+  font-size: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--bg-primary);
+}
+
+/* Tab bar for voltage grouping */
+.tcc-tab-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.tcc-view-tab {
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tcc-view-tab:hover {
+  color: var(--text-primary);
+}
+.tcc-view-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.tcc-add-custom-tab {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 10px;
+  color: var(--text-muted);
+}
+.tcc-add-custom-tab:hover {
+  color: var(--accent);
 }
 
 .tcc-body {
@@ -1040,6 +1139,40 @@ html, body {
 .tcc-margin-fail {
   color: var(--danger);
   font-weight: 600;
+}
+
+/* ─── Wire bend point handles ─── */
+.wire-bend-point {
+  cursor: move;
+  transition: r 0.1s;
+}
+.wire-bend-point:hover {
+  r: 7;
+  fill: var(--accent-hover);
+}
+body.dark-mode .wire-bend-point {
+  fill: #4a9eff;
+  stroke: #1e1e2e;
+}
+
+/* ─── Mini-map ─── */
+.minimap {
+  position: absolute;
+  bottom: 36px;
+  right: 8px;
+  width: 180px;
+  height: 130px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  z-index: 20;
+  overflow: hidden;
+  cursor: crosshair;
+}
+.minimap canvas {
+  width: 100%;
+  height: 100%;
 }
 
 /* ─── Scenarios ─── */

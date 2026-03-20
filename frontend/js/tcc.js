@@ -3,15 +3,20 @@
  * Renders a log-log TCC chart on an HTML5 canvas with:
  *   - IDMT relay curves (IEC 60255 / IEEE C37.112)
  *   - gG fuse pre-arcing curves (IEC 60269)
+ *   - CB trip curves (MCCB/ACB)
+ *   - Transformer & cable thermal damage curves
+ *   - Multi-tab views (auto by voltage + custom)
+ *   - Voltage reference: all currents referred to selectable base voltage
+ *   - Interactive curve dragging (relay pickup/TDS, CB settings)
+ *   - Per-tab export: PNG, PDF, CSV
  *   - Automatic coordination / grading margin checks
- *   - Interactive device list with add/remove/highlight
  */
 
 const TCC = {
   // Chart configuration
   canvas: null,
   ctx: null,
-  devices: [],   // Array of { id, name, type, color, visible, ... }
+  devices: [],   // Array of { id, name, type, color, visible, voltage_kv, tabId, ... }
 
   // Log-log axis ranges
   currentMin: 1,       // Amps
@@ -37,6 +42,22 @@ const TCC = {
   // Coordination settings
   gradingMargin: 0.3,  // seconds
 
+  // ── Tab system ──
+  tabs: [],        // Array of { id, name, isVoltageTab, voltage_kv }
+  activeTabId: null,
+  referenceVoltage: null, // kV — null means no voltage scaling
+
+  // ── Fault current markers ──
+  showFaultMarkers: true,
+
+  // ── Comparison mode ──
+  compareMode: false,
+  compareTabId: null, // second tab ID for comparison
+
+  // ── Curve drag state ──
+  _curveDrag: null,  // { devIndex, mode: 'pickup'|'tds'|'magnetic', startX, startY, origValue }
+  _curveHandles: [], // { devIndex, mode, x, y, r } for hit-testing
+
   // ── Initialisation ──
 
   init() {
@@ -56,9 +77,11 @@ const TCC = {
     const ro = new ResizeObserver(() => this.render());
     ro.observe(container);
 
-    // Tooltip on hover
+    // Tooltip on hover + curve drag move
     this.canvas.addEventListener('mousemove', (e) => {
-      if (this._labelDrag) {
+      if (this._curveDrag) {
+        this._handleCurveDragMove(e);
+      } else if (this._labelDrag) {
         this._handleLabelDragMove(e);
       } else {
         this._handleHover(e);
@@ -67,12 +90,22 @@ const TCC = {
     this.canvas.addEventListener('mouseleave', () => {
       this._tooltip = null;
       this._labelDrag = null;
+      this._curveDrag = null;
       this.render();
     });
 
-    // Label dragging
-    this.canvas.addEventListener('mousedown', (e) => this._handleLabelDragStart(e));
+    // Mouse down: curve drag or label drag
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (!this._handleCurveDragStart(e)) {
+        this._handleLabelDragStart(e);
+      }
+    });
     this.canvas.addEventListener('mouseup', () => {
+      if (this._curveDrag) {
+        this._finishCurveDrag();
+        this._curveDrag = null;
+        this.canvas.style.cursor = '';
+      }
       if (this._labelDrag) {
         this._labelDrag = null;
         this.canvas.style.cursor = '';
@@ -115,16 +148,94 @@ const TCC = {
     this.render();
   },
 
+  // ── Interactive curve dragging (relay pickup/TDS, CB magnetic/thermal) ──
+
+  _handleCurveDragStart(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    for (const h of this._curveHandles) {
+      const dx = mx - h.x, dy = my - h.y;
+      if (dx * dx + dy * dy <= h.r * h.r) {
+        const dev = this.devices[h.devIndex];
+        let origValue;
+        if (h.mode === 'pickup') origValue = dev.pickup;
+        else if (h.mode === 'tds') origValue = dev.tds;
+        else if (h.mode === 'magnetic') origValue = dev.cbParams.magnetic_pickup;
+        else if (h.mode === 'thermal') origValue = dev.cbParams.thermal_pickup;
+        this._curveDrag = { devIndex: h.devIndex, mode: h.mode, startX: mx, startY: my, origValue };
+        this.canvas.style.cursor = h.mode === 'pickup' || h.mode === 'magnetic' || h.mode === 'thermal' ? 'ew-resize' : 'ns-resize';
+        e.preventDefault();
+        return true;
+      }
+    }
+    return false;
+  },
+
+  _handleCurveDragMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const drag = this._curveDrag;
+    const dev = this.devices[drag.devIndex];
+
+    if (drag.mode === 'pickup') {
+      // Horizontal drag → change relay pickup current
+      const newCurrent = this._xToCurrent(mx);
+      dev.pickup = Math.max(1, Math.round(newCurrent));
+    } else if (drag.mode === 'tds') {
+      // Vertical drag → change TDS (up = higher TDS = slower)
+      const deltaY = drag.startY - my; // positive = dragged up
+      const newTDS = drag.origValue + deltaY * 0.01;
+      dev.tds = Math.max(0.05, Math.min(10, Math.round(newTDS * 20) / 20));
+    } else if (drag.mode === 'magnetic') {
+      // Horizontal drag → change CB magnetic pickup multiplier
+      const newCurrent = this._xToCurrent(mx);
+      const Ir = (dev.cbParams.trip_rating_a || 630) * (dev.cbParams.thermal_pickup || 1.0);
+      dev.cbParams.magnetic_pickup = Math.max(2, Math.min(20, Math.round(newCurrent / Ir * 2) / 2));
+    } else if (drag.mode === 'thermal') {
+      // Horizontal drag → change CB thermal pickup multiplier
+      const newCurrent = this._xToCurrent(mx);
+      const Irated = dev.cbParams.trip_rating_a || 630;
+      dev.cbParams.thermal_pickup = Math.max(0.4, Math.min(1.3, Math.round(newCurrent / Irated * 20) / 20));
+    }
+    this.render();
+    this._renderDeviceList();
+  },
+
+  _finishCurveDrag() {
+    // Sync dragged settings back to the SLD component
+    const drag = this._curveDrag;
+    const dev = this.devices[drag.devIndex];
+    const comp = AppState.components.get(dev.id);
+    if (!comp) return;
+
+    if (drag.mode === 'pickup' && comp.props) {
+      comp.props.pickup_a = dev.pickup;
+    } else if (drag.mode === 'tds' && comp.props) {
+      comp.props.time_dial = dev.tds;
+    } else if (drag.mode === 'magnetic' && comp.props) {
+      comp.props.magnetic_pickup = dev.cbParams.magnetic_pickup;
+    } else if (drag.mode === 'thermal' && comp.props) {
+      comp.props.thermal_pickup = dev.cbParams.thermal_pickup;
+    }
+    this._runCoordinationCheck();
+  },
+
   // ── Open the TCC modal ──
 
   open() {
     this.devices = [];
     this.colorIndex = 0;
     this._loadDevicesFromNetwork();
+    this._buildTabs();
     document.getElementById('tcc-modal').style.display = '';
     // Defer render to let the modal layout settle
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        this._renderTabs();
+        this._renderVoltageSelector();
         this.render();
         this._renderDeviceList();
         this._runCoordinationCheck();
@@ -134,6 +245,38 @@ const TCC = {
 
   close() {
     document.getElementById('tcc-modal').style.display = 'none';
+  },
+
+  // ── Resolve voltage at a component by tracing wires to a bus ──
+
+  _resolveDeviceVoltage(compId) {
+    // BFS through wires to find the nearest bus/transformer with a known voltage
+    const visited = new Set([compId]);
+    const queue = [compId];
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      const comp = AppState.components.get(cur);
+      if (!comp) continue;
+      // Bus with explicit voltage
+      if (comp.type === 'bus' && comp.props?.voltage_kv) return comp.props.voltage_kv;
+      // Transformer — return LV side voltage (most common TCC reference)
+      if (comp.type === 'transformer') {
+        return comp.props?.voltage_lv_kv || comp.props?.voltage_hv_kv || null;
+      }
+      // Generator / utility
+      if ((comp.type === 'generator' || comp.type === 'utility') && comp.props?.voltage_kv) return comp.props.voltage_kv;
+      // Follow wires
+      for (const [, wire] of AppState.wires || []) {
+        let neighbor = null;
+        if (wire.fromComponent === cur) neighbor = wire.toComponent;
+        else if (wire.toComponent === cur) neighbor = wire.fromComponent;
+        if (neighbor && !visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+    return null;
   },
 
   // ── Load relays and fuses from the SLD ──
@@ -147,6 +290,7 @@ const TCC = {
           deviceType: 'relay',
           color: this.palette[this.colorIndex++ % this.palette.length],
           visible: true,
+          voltage_kv: this._resolveDeviceVoltage(id),
           // Relay params
           curveName: comp.props?.curve || 'IEC Standard Inverse',
           pickup: comp.props?.pickup_a || 100,
@@ -163,6 +307,7 @@ const TCC = {
             deviceType: 'fuse',
             color: this.palette[this.colorIndex++ % this.palette.length],
             visible: true,
+            voltage_kv: this._resolveDeviceVoltage(id),
             fuseRating: nearestRating,
             actualRating: ratingA,
           });
@@ -174,6 +319,7 @@ const TCC = {
           deviceType: 'cb',
           color: this.palette[this.colorIndex++ % this.palette.length],
           visible: true,
+          voltage_kv: this._resolveDeviceVoltage(id),
           cbParams: {
             cb_type: comp.props?.cb_type || 'mccb',
             trip_rating_a: comp.props?.trip_rating_a || comp.props?.rated_current_a || 630,
@@ -199,6 +345,7 @@ const TCC = {
             deviceType: 'xfmr_thermal',
             color: this.palette[this.colorIndex++ % this.palette.length],
             visible: true,
+            voltage_kv: lvKv,
             ratedA,
             mva,
             zPercent: comp.props?.z_percent || 8,
@@ -224,6 +371,7 @@ const TCC = {
             deviceType: 'cable_thermal',
             color: this.palette[this.colorIndex++ % this.palette.length],
             visible: true,
+            voltage_kv: this._resolveDeviceVoltage(id),
             ratedAmps,
             sizeMm2,
             kFactor,
@@ -244,6 +392,71 @@ const TCC = {
     // Only accept if within 20% of a standard rating
     if (best && Math.abs(best - ratingA) / ratingA < 0.2) return best;
     return best; // Still return nearest even if not exact
+  },
+
+  // ── Tab system: auto-group by voltage + custom tabs ──
+
+  _buildTabs() {
+    this.tabs = [];
+    // "All" tab always first
+    this.tabs.push({ id: 'all', name: 'All Devices', isVoltageTab: false, voltage_kv: null });
+
+    // Collect unique voltages
+    const voltages = new Set();
+    for (const dev of this.devices) {
+      if (dev.voltage_kv && dev.voltage_kv > 0) voltages.add(dev.voltage_kv);
+    }
+
+    // Sort voltages descending (HV first)
+    const sorted = [...voltages].sort((a, b) => b - a);
+    for (const v of sorted) {
+      this.tabs.push({
+        id: `v_${v}`,
+        name: `${v} kV`,
+        isVoltageTab: true,
+        voltage_kv: v,
+      });
+    }
+
+    // Assign devices to voltage tabs
+    for (const dev of this.devices) {
+      if (dev.voltage_kv) {
+        dev.tabId = `v_${dev.voltage_kv}`;
+      } else {
+        dev.tabId = null; // shown in "All" only
+      }
+    }
+
+    this.activeTabId = 'all';
+
+    // Collect voltage options for reference selector
+    this._voltageOptions = sorted;
+    this.referenceVoltage = null;
+  },
+
+  _getVisibleDevicesForTab() {
+    if (this.activeTabId === 'all') return this.devices;
+    return this.devices.filter(d => d.tabId === this.activeTabId || d.tabId === null);
+  },
+
+  addCustomTab(name) {
+    const id = 'custom_' + Date.now();
+    this.tabs.push({ id, name: name || 'Custom', isVoltageTab: false, voltage_kv: null });
+    this._renderTabs();
+  },
+
+  // ── Voltage reference scaling ──
+
+  _scaleCurrent(amps, dev) {
+    if (!this.referenceVoltage || !dev || !dev.voltage_kv) return amps;
+    // Refer current to reference voltage: I_ref = I_actual × (V_actual / V_ref)
+    return amps * (dev.voltage_kv / this.referenceVoltage);
+  },
+
+  _scaleCurrentInverse(amps, dev) {
+    // Inverse: from reference voltage back to device voltage
+    if (!this.referenceVoltage || !dev || !dev.voltage_kv) return amps;
+    return amps * (this.referenceVoltage / dev.voltage_kv);
   },
 
   // ── Coordinate mapping (log-log) ──
@@ -296,24 +509,41 @@ const TCC = {
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Compute plot area
-    this.plotLeft = 70;
-    this.plotTop = 30;
-    this.plotRight = w - 20;
-    this.plotBottom = h - 40;
-    this.plotWidth = this.plotRight - this.plotLeft;
-    this.plotHeight = this.plotBottom - this.plotTop;
-
     // Background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
 
+    if (this.compareMode && this.compareTabId) {
+      // ── Comparison mode: two charts side-by-side ──
+      this._renderCompareMode(ctx, w, h);
+    } else {
+      // ── Normal single-chart mode ──
+      this._renderSingleChart(ctx, w, h, this.activeTabId);
+    }
+  },
+
+  _renderSingleChart(ctx, w, h, tabId, offsetX, chartWidth) {
+    const ox = offsetX || 0;
+    const cw = chartWidth || w;
+
+    // Compute plot area
+    this.plotLeft = ox + 70;
+    this.plotTop = 30;
+    this.plotRight = ox + cw - 20;
+    this.plotBottom = h - 40;
+    this.plotWidth = this.plotRight - this.plotLeft;
+    this.plotHeight = this.plotBottom - this.plotTop;
+
     this._drawGrid(ctx);
     this._drawAxes(ctx);
 
-    // Draw each device curve
+    // Draw each device curve (filtered by tab)
     this._labelRects = [];
-    for (const dev of this.devices) {
+    this._curveHandles = [];
+    const savedTabId = this.activeTabId;
+    this.activeTabId = tabId;
+    const tabDevices = this._getVisibleDevicesForTab();
+    for (const dev of tabDevices) {
       if (!dev.visible) continue;
       if (dev.deviceType === 'relay') this._drawRelayCurve(ctx, dev);
       else if (dev.deviceType === 'fuse') this._drawFuseCurve(ctx, dev);
@@ -321,6 +551,13 @@ const TCC = {
       else if (dev.deviceType === 'xfmr_thermal') this._drawXfmrThermal(ctx, dev);
       else if (dev.deviceType === 'cable_thermal') this._drawCableThermal(ctx, dev);
     }
+    this.activeTabId = savedTabId;
+
+    // Draw interactive curve handles
+    this._drawCurveHandles(ctx);
+
+    // Draw fault current markers
+    this._drawFaultMarkers(ctx);
 
     // Draw tooltip
     if (this._tooltip) {
@@ -331,7 +568,48 @@ const TCC = {
     ctx.fillStyle = '#333';
     ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Time-Current Characteristic (TCC)', w / 2, 18);
+    let title = 'Time-Current Characteristic (TCC)';
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (tab && tab.id !== 'all') title += ` — ${tab.name}`;
+    if (this.referenceVoltage) title += ` @ ${this.referenceVoltage} kV ref`;
+    ctx.fillText(title, ox + cw / 2, 18);
+  },
+
+  _renderCompareMode(ctx, w, h) {
+    const halfW = Math.floor(w / 2);
+
+    // Draw divider line
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(halfW, 0);
+    ctx.lineTo(halfW, h);
+    ctx.stroke();
+
+    // Left chart: active tab
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, halfW, h);
+    ctx.clip();
+    this._renderSingleChart(ctx, w, h, this.activeTabId, 0, halfW);
+    ctx.restore();
+
+    // Right chart: compare tab
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(halfW, 0, halfW, h);
+    ctx.clip();
+    this._renderSingleChart(ctx, w, h, this.compareTabId, halfW, halfW);
+    ctx.restore();
+
+    // Compare label
+    ctx.fillStyle = '#555';
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    const leftTab = this.tabs.find(t => t.id === this.activeTabId);
+    const rightTab = this.tabs.find(t => t.id === this.compareTabId);
+    ctx.fillText(leftTab?.name || 'Left', halfW / 2, h - 5);
+    ctx.fillText(rightTab?.name || 'Right', halfW + halfW / 2, h - 5);
   },
 
   _drawGrid(ctx) {
@@ -430,20 +708,20 @@ const TCC = {
     ctx.beginPath();
 
     let started = false;
-    // Sample current from pickup to 100x pickup
+    // Sample current from pickup to 100x pickup (in device amps, then scale for display)
     const iStart = dev.pickup * 1.05; // Just above pickup
-    const iEnd = Math.min(dev.pickup * 100, this.currentMax);
+    const iEnd = Math.min(dev.pickup * 100, this._scaleCurrentInverse(this.currentMax, dev));
     const steps = 200;
 
     for (let i = 0; i <= steps; i++) {
       const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
-      const current = Math.pow(10, logI);
+      const current = Math.pow(10, logI); // actual device amps
       const M = current / dev.pickup;
       const t = idmtTripTime(dev.curveName, M, dev.tds);
 
       if (t <= 0 || !isFinite(t) || t > this.timeMax || t < this.timeMin) continue;
 
-      const x = this._currentToX(current);
+      const x = this._currentToX(this._scaleCurrent(current, dev));
       const y = this._timeToY(t);
 
       if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
@@ -458,7 +736,7 @@ const TCC = {
     ctx.strokeStyle = dev.color;
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.5;
-    const px = this._currentToX(dev.pickup);
+    const px = this._currentToX(this._scaleCurrent(dev.pickup, dev));
     if (px >= this.plotLeft && px <= this.plotRight) {
       ctx.beginPath();
       ctx.moveTo(px, this.plotTop);
@@ -472,8 +750,11 @@ const TCC = {
     const labelI = dev.pickup * 3;
     const labelT = idmtTripTime(dev.curveName, 3, dev.tds);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), dev.name);
+      this._drawLabel(ctx, dev, this._currentToX(this._scaleCurrent(labelI, dev)), this._timeToY(labelT), dev.name);
     }
+
+    // Register drag handles
+    this._registerRelayHandles(dev);
   },
 
   _drawFuseCurve(ctx, dev) {
@@ -487,9 +768,10 @@ const TCC = {
 
     let started = false;
     for (const [current, time] of points) {
-      if (current < this.currentMin || current > this.currentMax) continue;
+      const scaledI = this._scaleCurrent(current, dev);
+      if (scaledI < this.currentMin || scaledI > this.currentMax) continue;
       if (time < this.timeMin || time > this.timeMax) continue;
-      const x = this._currentToX(current);
+      const x = this._currentToX(scaledI);
       const y = this._timeToY(time);
       if (!started) { ctx.moveTo(x, y); started = true; }
       else ctx.lineTo(x, y);
@@ -500,8 +782,9 @@ const TCC = {
     // Label near middle of curve
     const midIdx = Math.floor(points.length / 2);
     const [mI, mT] = points[midIdx];
-    if (mI >= this.currentMin && mI <= this.currentMax && mT >= this.timeMin && mT <= this.timeMax) {
-      this._drawLabel(ctx, dev, this._currentToX(mI), this._timeToY(mT), `${dev.name} (${dev.fuseRating}A)`);
+    const scaledMI = this._scaleCurrent(mI, dev);
+    if (scaledMI >= this.currentMin && scaledMI <= this.currentMax && mT >= this.timeMin && mT <= this.timeMax) {
+      this._drawLabel(ctx, dev, this._currentToX(scaledMI), this._timeToY(mT), `${dev.name} (${dev.fuseRating}A)`);
     }
   },
 
@@ -509,6 +792,7 @@ const TCC = {
     const p = dev.cbParams;
     const Ir = (p.trip_rating_a || 630) * (p.thermal_pickup || 1.0);
     const Im = Ir * (p.magnetic_pickup || 10);
+    const sc = (amps) => this._scaleCurrent(amps, dev); // shorthand for voltage scaling
 
     // --- Thermal (long-time inverse) region ---
     ctx.strokeStyle = dev.color;
@@ -517,7 +801,7 @@ const TCC = {
 
     let started = false;
     const iStart = Ir * 1.05;
-    const iEnd = Math.min(Im, this.currentMax);
+    const iEnd = Math.min(Im, this._scaleCurrentInverse(this.currentMax, dev));
     const steps = 200;
 
     for (let i = 0; i <= steps; i++) {
@@ -527,7 +811,7 @@ const TCC = {
 
       if (t <= 0 || !isFinite(t) || t > this.timeMax || t < this.timeMin) continue;
 
-      const x = this._currentToX(current);
+      const x = this._currentToX(sc(current));
       const y = this._timeToY(t);
 
       if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
@@ -545,7 +829,7 @@ const TCC = {
     ctx.beginPath();
     ctx.lineWidth = 2.5;
     const thermalTimeAtIm = cbTripTime({ ...p, magnetic_pickup: 9999, short_time_pickup: 0, instantaneous_pickup: 0 }, Im);
-    const xMag = this._currentToX(Im);
+    const xMag = this._currentToX(sc(Im));
     if (xMag >= this.plotLeft && xMag <= this.plotRight) {
       const yTop = this._timeToY(Math.min(thermalTimeAtIm, this.timeMax));
       const yBot = this._timeToY(magTime);
@@ -560,8 +844,8 @@ const TCC = {
     ctx.beginPath();
     const yMag = this._timeToY(magTime);
     if (yMag >= this.plotTop && yMag <= this.plotBottom) {
-      const xStart = this._currentToX(Im);
-      const xEnd = this._currentToX(Math.min(this.currentMax, (p.trip_rating_a || 630) * 200));
+      const xStart = this._currentToX(sc(Im));
+      const xEnd = this._currentToX(sc(Math.min(this._scaleCurrentInverse(this.currentMax, dev), (p.trip_rating_a || 630) * 200)));
       ctx.moveTo(Math.max(xStart, this.plotLeft), yMag);
       ctx.lineTo(Math.min(xEnd, this.plotRight), yMag);
     }
@@ -571,7 +855,7 @@ const TCC = {
     if (p.cb_type === 'acb' && p.short_time_pickup > 0) {
       const stCurrent = Ir * p.short_time_pickup;
       const stDelay = p.short_time_delay || 0.1;
-      const xST = this._currentToX(stCurrent);
+      const xST = this._currentToX(sc(stCurrent));
       const yST = this._timeToY(stDelay);
 
       if (xST >= this.plotLeft && yST >= this.plotTop && yST <= this.plotBottom) {
@@ -589,7 +873,7 @@ const TCC = {
         // Horizontal at short-time delay
         ctx.beginPath();
         const instCurrent = p.instantaneous_pickup > 0 ? Ir * p.instantaneous_pickup : Im;
-        const xEnd = this._currentToX(instCurrent);
+        const xEnd = this._currentToX(sc(instCurrent));
         ctx.moveTo(xST, yST);
         ctx.lineTo(Math.min(xEnd, this.plotRight), yST);
         ctx.stroke();
@@ -598,7 +882,7 @@ const TCC = {
       // ACB instantaneous drop
       if (p.instantaneous_pickup > 0) {
         const instI = Ir * p.instantaneous_pickup;
-        const xInst = this._currentToX(instI);
+        const xInst = this._currentToX(sc(instI));
         if (xInst >= this.plotLeft && xInst <= this.plotRight) {
           ctx.beginPath();
           ctx.moveTo(xInst, this._timeToY(stDelay));
@@ -619,7 +903,7 @@ const TCC = {
     ctx.strokeStyle = dev.color;
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.5;
-    const px = this._currentToX(Ir);
+    const px = this._currentToX(sc(Ir));
     if (px >= this.plotLeft && px <= this.plotRight) {
       ctx.beginPath();
       ctx.moveTo(px, this.plotTop);
@@ -634,8 +918,11 @@ const TCC = {
     const labelT = cbTripTime(p, labelI);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
       const typeStr = (p.cb_type || 'mccb').toUpperCase();
-      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), `${dev.name} (${typeStr})`);
+      this._drawLabel(ctx, dev, this._currentToX(this._scaleCurrent(labelI, dev)), this._timeToY(labelT), `${dev.name} (${typeStr})`);
     }
+
+    // Register drag handles
+    this._registerCBHandles(dev);
   },
 
   // ── Draw label with offset + register hit rect ──
@@ -660,16 +947,145 @@ const TCC = {
     }
   },
 
+  // ── Interactive curve handles (drawn as circles on relay/CB curves) ──
+
+  _drawCurveHandles(ctx) {
+    for (const h of this._curveHandles) {
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fill();
+      ctx.strokeStyle = h.color || '#333';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Inner dot
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = h.color || '#333';
+      ctx.fill();
+    }
+  },
+
+  // ── Fault current markers from analysis results ──
+
+  _drawFaultMarkers(ctx) {
+    if (!this.showFaultMarkers) return;
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses) return;
+
+    const markers = []; // { current_ka, label, bus, voltage_kv, color }
+    for (const [busId, r] of Object.entries(fr.buses)) {
+      const comp = AppState.components.get(busId);
+      const busName = comp?.props?.name || busId;
+      const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
+
+      if (r.ik3 != null) markers.push({ current_ka: r.ik3, label: `${busName} 3Φ`, voltage_kv: vkv, color: '#d32f2f' });
+      if (r.ik1 != null) markers.push({ current_ka: r.ik1, label: `${busName} SLG`, voltage_kv: vkv, color: '#1565c0' });
+      if (r.ip != null) markers.push({ current_ka: r.ip, label: `${busName} ip`, voltage_kv: vkv, color: '#f57c00' });
+    }
+
+    if (markers.length === 0) return;
+
+    ctx.save();
+    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+
+    for (const m of markers) {
+      let amps = m.current_ka * 1000; // kA to A
+      // Apply voltage reference scaling if active
+      if (this.referenceVoltage && m.voltage_kv) {
+        amps = amps * (m.voltage_kv / this.referenceVoltage);
+      }
+      if (amps < this.currentMin || amps > this.currentMax) continue;
+
+      const x = this._currentToX(amps);
+      if (x < this.plotLeft || x > this.plotRight) continue;
+
+      // Dashed vertical line
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = m.color;
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(x, this.plotTop);
+      ctx.lineTo(x, this.plotBottom);
+      ctx.stroke();
+
+      // Label at top (rotated)
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash([]);
+      ctx.save();
+      ctx.translate(x + 3, this.plotTop + 4);
+      ctx.rotate(Math.PI / 2);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = m.color;
+      ctx.fillText(`${m.label} ${m.current_ka.toFixed(2)} kA`, 0, 0);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  },
+
+  _registerRelayHandles(dev) {
+    const devIndex = this.devices.indexOf(dev);
+    if (devIndex < 0) return;
+
+    // Pickup handle: on the pickup line at the middle of the chart
+    const pickupI = this._scaleCurrent(dev.pickup, dev);
+    const px = this._currentToX(pickupI);
+    const midT = Math.sqrt(this.timeMin * this.timeMax); // geometric mean
+    const py = this._timeToY(midT);
+    if (px >= this.plotLeft && px <= this.plotRight && py >= this.plotTop && py <= this.plotBottom) {
+      this._curveHandles.push({ devIndex, mode: 'pickup', x: px, y: py, r: 7, color: dev.color });
+    }
+
+    // TDS handle: on the curve at 3× pickup
+    const tdsI = dev.pickup * 3;
+    const tdsT = idmtTripTime(dev.curveName, 3, dev.tds);
+    if (isFinite(tdsT) && tdsT > this.timeMin && tdsT < this.timeMax) {
+      const scaledI = this._scaleCurrent(tdsI, dev);
+      const tx = this._currentToX(scaledI);
+      const ty = this._timeToY(tdsT);
+      if (tx >= this.plotLeft && tx <= this.plotRight && ty >= this.plotTop && ty <= this.plotBottom) {
+        this._curveHandles.push({ devIndex, mode: 'tds', x: tx, y: ty, r: 7, color: dev.color });
+      }
+    }
+  },
+
+  _registerCBHandles(dev) {
+    const devIndex = this.devices.indexOf(dev);
+    if (devIndex < 0) return;
+    const p = dev.cbParams;
+    const Ir = (p.trip_rating_a || 630) * (p.thermal_pickup || 1.0);
+    const Im = Ir * (p.magnetic_pickup || 10);
+
+    // Thermal pickup handle: at Ir on the thermal curve
+    const thermalI = Ir * 2;
+    const thermalT = cbTripTime(p, thermalI);
+    if (isFinite(thermalT) && thermalT > this.timeMin && thermalT < this.timeMax) {
+      const scaledI = this._scaleCurrent(thermalI, dev);
+      const tx = this._currentToX(scaledI);
+      const ty = this._timeToY(thermalT);
+      if (tx >= this.plotLeft && tx <= this.plotRight && ty >= this.plotTop && ty <= this.plotBottom) {
+        this._curveHandles.push({ devIndex, mode: 'thermal', x: tx, y: ty, r: 7, color: dev.color });
+      }
+    }
+
+    // Magnetic pickup handle: at Im on the vertical drop
+    const scaledIm = this._scaleCurrent(Im, dev);
+    const mx = this._currentToX(scaledIm);
+    const my = this._timeToY(0.05); // near instantaneous region
+    if (mx >= this.plotLeft && mx <= this.plotRight && my >= this.plotTop && my <= this.plotBottom) {
+      this._curveHandles.push({ devIndex, mode: 'magnetic', x: mx, y: my, r: 7, color: dev.color });
+    }
+  },
+
   // ── Transformer Thermal Damage Curve (ANSI/IEEE C57.109) ──
   _drawXfmrThermal(ctx, dev) {
-    // Through-fault withstand: I²t = constant, with categories per IEEE C57.109
-    // Category II (typical distribution): 1250 × Ir² for 2s
-    // We plot: t = (Ir² × 1250) / I² for frequent faults
-    // Also a mechanical limit at I = Ir × (100 / Z%), t = 2s
     const Ir = dev.ratedA;
     const zPct = dev.zPercent || 8;
-    const Imax = Ir * (100 / zPct); // Max through-fault current
-    const I2t = Ir * Ir * 1250; // I²t constant (category II, frequent faults)
+    const Imax = Ir * (100 / zPct);
+    const I2t = Ir * Ir * 1250;
+    const sc = (amps) => this._scaleCurrent(amps, dev);
 
     ctx.strokeStyle = dev.color;
     ctx.lineWidth = 2;
@@ -679,7 +1095,7 @@ const TCC = {
     let started = false;
     const steps = 200;
     const iStart = Ir * 2;
-    const iEnd = Math.min(Imax * 1.2, this.currentMax);
+    const iEnd = Math.min(Imax * 1.2, this._scaleCurrentInverse(this.currentMax, dev));
 
     for (let i = 0; i <= steps; i++) {
       const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
@@ -687,7 +1103,7 @@ const TCC = {
       const t = I2t / (current * current);
 
       if (t < this.timeMin || t > this.timeMax) continue;
-      const x = this._currentToX(current);
+      const x = this._currentToX(sc(current));
       const y = this._timeToY(t);
       if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
 
@@ -698,7 +1114,7 @@ const TCC = {
     ctx.setLineDash([]);
 
     // Vertical line at max through-fault current
-    const xMax = this._currentToX(Imax);
+    const xMax = this._currentToX(sc(Imax));
     if (xMax >= this.plotLeft && xMax <= this.plotRight) {
       ctx.setLineDash([3, 3]);
       ctx.lineWidth = 1;
@@ -715,15 +1131,15 @@ const TCC = {
     const labelI = Ir * 4;
     const labelT = I2t / (labelI * labelI);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), dev.name);
+      this._drawLabel(ctx, dev, this._currentToX(sc(labelI)), this._timeToY(labelT), dev.name);
     }
   },
 
   // ── Cable Thermal Damage Curve (IEC 60364 adiabatic) ──
   _drawCableThermal(ctx, dev) {
-    // Adiabatic equation: I²t = k²S² → t = k²S² / I²
-    const kS = dev.kFactor * dev.sizeMm2; // k × S
-    const I2t = kS * kS; // (kS)²
+    const kS = dev.kFactor * dev.sizeMm2;
+    const I2t = kS * kS;
+    const sc = (amps) => this._scaleCurrent(amps, dev);
 
     ctx.strokeStyle = dev.color;
     ctx.lineWidth = 2;
@@ -732,9 +1148,8 @@ const TCC = {
 
     let started = false;
     const steps = 200;
-    // Start from rated current, go up to where t < timeMin
     const iStart = dev.ratedAmps * 1.5;
-    const iEnd = Math.min(Math.sqrt(I2t / this.timeMin), this.currentMax);
+    const iEnd = Math.min(Math.sqrt(I2t / this.timeMin), this._scaleCurrentInverse(this.currentMax, dev));
 
     if (iEnd <= iStart) { ctx.setLineDash([]); return; }
 
@@ -744,7 +1159,7 @@ const TCC = {
       const t = I2t / (current * current);
 
       if (t < this.timeMin || t > this.timeMax) continue;
-      const x = this._currentToX(current);
+      const x = this._currentToX(sc(current));
       const y = this._timeToY(t);
       if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
 
@@ -755,7 +1170,7 @@ const TCC = {
     ctx.setLineDash([]);
 
     // Rated current vertical line
-    const xRated = this._currentToX(dev.ratedAmps);
+    const xRated = this._currentToX(sc(dev.ratedAmps));
     if (xRated >= this.plotLeft && xRated <= this.plotRight) {
       ctx.setLineDash([3, 3]);
       ctx.lineWidth = 1;
@@ -772,7 +1187,7 @@ const TCC = {
     const labelI = dev.ratedAmps * 4;
     const labelT = I2t / (labelI * labelI);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), dev.name);
+      this._drawLabel(ctx, dev, this._currentToX(sc(labelI)), this._timeToY(labelT), dev.name);
     }
   },
 
@@ -790,10 +1205,13 @@ const TCC = {
       return;
     }
 
-    const current = this._xToCurrent(mx);
+    const displayCurrent = this._xToCurrent(mx); // current in reference voltage frame
     const lines = [];
-    for (const dev of this.devices) {
+    const tabDevices = this._getVisibleDevicesForTab();
+    for (const dev of tabDevices) {
       if (!dev.visible) continue;
+      // Convert display current back to device's actual amps
+      const current = this._scaleCurrentInverse(displayCurrent, dev);
       let t = null;
       if (dev.deviceType === 'relay') {
         const M = current / dev.pickup;
@@ -815,26 +1233,37 @@ const TCC = {
     }
 
     if (lines.length > 0) {
-      this._tooltip = { x: mx, y: my, current, lines };
+      this._tooltip = { x: mx, y: my, current: displayCurrent, lines };
     } else {
       this._tooltip = null;
     }
 
-    // Cursor hint for draggable labels
-    let overLabel = false;
-    for (const lr of this._labelRects) {
-      if (mx >= lr.x && mx <= lr.x + lr.w && my >= lr.y && my <= lr.y + lr.h) {
-        overLabel = true;
+    // Cursor hint for curve handles and draggable labels
+    let cursor = '';
+    for (const h of this._curveHandles) {
+      const dx = mx - h.x, dy = my - h.y;
+      if (dx * dx + dy * dy <= h.r * h.r) {
+        cursor = (h.mode === 'pickup' || h.mode === 'magnetic' || h.mode === 'thermal') ? 'ew-resize' : 'ns-resize';
         break;
       }
     }
-    this.canvas.style.cursor = overLabel ? 'grab' : '';
+    if (!cursor) {
+      for (const lr of this._labelRects) {
+        if (mx >= lr.x && mx <= lr.x + lr.w && my >= lr.y && my <= lr.y + lr.h) {
+          cursor = 'grab';
+          break;
+        }
+      }
+    }
+    this.canvas.style.cursor = cursor;
 
     this.render();
   },
 
   _drawTooltip(ctx, tip) {
-    const lines = [`${tip.current.toFixed(1)} A`];
+    let currentLabel = `${tip.current.toFixed(1)} A`;
+    if (this.referenceVoltage) currentLabel += ` @ ${this.referenceVoltage} kV`;
+    const lines = [currentLabel];
     for (const l of tip.lines) {
       lines.push(`${l.name}: ${l.time >= 1 ? l.time.toFixed(2) + 's' : (l.time * 1000).toFixed(1) + 'ms'}`);
     }
@@ -868,12 +1297,15 @@ const TCC = {
     const list = document.getElementById('tcc-device-list');
     if (!list) return;
 
-    if (this.devices.length === 0) {
+    const tabDevices = this._getVisibleDevicesForTab();
+
+    if (tabDevices.length === 0) {
       list.innerHTML = '<div class="tcc-no-devices">No protection devices, transformers, or cables in the network.<br>Add components to the SLD to see their curves.</div>';
       return;
     }
 
-    list.innerHTML = this.devices.map((dev, i) => {
+    list.innerHTML = tabDevices.map((dev, _) => {
+      const i = this.devices.indexOf(dev);
       let typeLabel;
       if (dev.deviceType === 'relay') {
         typeLabel = `${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`;
@@ -1065,17 +1497,129 @@ const TCC = {
     return Infinity;
   },
 
-  // ── Export TCC chart as PNG ──
+  // ── Tab & Voltage Reference UI ──
+
+  _renderTabs() {
+    const container = document.getElementById('tcc-tab-bar');
+    if (!container) return;
+    if (this.tabs.length <= 1) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+    container.innerHTML = this.tabs.map(tab =>
+      `<button class="tcc-view-tab ${tab.id === this.activeTabId ? 'active' : ''}" data-tab-id="${tab.id}">${tab.name}</button>`
+    ).join('') + '<button class="tcc-view-tab tcc-add-custom-tab" title="Add custom tab">+</button>';
+
+    container.querySelectorAll('.tcc-view-tab:not(.tcc-add-custom-tab)').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.activeTabId = e.target.dataset.tabId;
+        this._renderTabs();
+        this._renderDeviceList();
+        this.render();
+        this._runCoordinationCheck();
+      });
+    });
+    const addBtn = container.querySelector('.tcc-add-custom-tab');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        const name = prompt('Tab name:');
+        if (name) this.addCustomTab(name);
+      });
+    }
+  },
+
+  _renderVoltageSelector() {
+    const container = document.getElementById('tcc-voltage-ref');
+    if (!container) return;
+    if (!this._voltageOptions || this._voltageOptions.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+    const options = ['<option value="">No scaling</option>'];
+    for (const v of this._voltageOptions) {
+      const sel = this.referenceVoltage === v ? ' selected' : '';
+      options.push(`<option value="${v}"${sel}>${v} kV</option>`);
+    }
+    container.innerHTML = `<label for="tcc-voltage-select">Ref. Voltage</label>
+      <select id="tcc-voltage-select">${options.join('')}</select>`;
+    document.getElementById('tcc-voltage-select').addEventListener('change', (e) => {
+      const val = parseFloat(e.target.value);
+      this.referenceVoltage = isNaN(val) ? null : val;
+      this.render();
+    });
+  },
+
+  _renderCompareSelector() {
+    const sel = document.getElementById('tcc-compare-tab');
+    if (!sel) return;
+    sel.innerHTML = this.tabs.map(t =>
+      `<option value="${t.id}" ${t.id === this.compareTabId ? 'selected' : ''}>${t.name}</option>`
+    ).join('');
+  },
+
+  // ── Export: PNG, PDF, CSV (per-tab) ──
 
   exportPNG() {
     if (!this.canvas) return;
+    const tabName = (this.tabs.find(t => t.id === this.activeTabId) || {}).name || 'all';
     this.canvas.toBlob((blob) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${AppState.projectName || 'tcc'}_chart.png`;
+      a.download = `${AppState.projectName || 'tcc'}_${tabName.replace(/\s+/g, '_')}.png`;
       a.click();
       URL.revokeObjectURL(url);
     }, 'image/png');
+  },
+
+  exportPDF() {
+    if (!this.canvas) return;
+    const tabName = (this.tabs.find(t => t.id === this.activeTabId) || {}).name || 'all';
+    // Use canvas data URL in a printable window
+    const dataUrl = this.canvas.toDataURL('image/png');
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>TCC - ${tabName}</title>
+      <style>@media print { body { margin: 0; } img { width: 100%; max-height: 100vh; } }</style>
+      </head><body><img src="${dataUrl}" onload="window.print(); window.close();"></body></html>`);
+    win.document.close();
+  },
+
+  exportCSV() {
+    const tabDevices = this._getVisibleDevicesForTab().filter(d => d.visible);
+    if (tabDevices.length === 0) return;
+
+    // Sample currents across the range
+    const currents = [];
+    for (let decade = Math.floor(Math.log10(this.currentMin)); decade <= Math.ceil(Math.log10(this.currentMax)); decade++) {
+      for (const mult of [1, 1.5, 2, 3, 5, 7]) {
+        const val = mult * Math.pow(10, decade);
+        if (val >= this.currentMin && val <= this.currentMax) currents.push(val);
+      }
+    }
+
+    // Header
+    const header = ['Current (A)', ...tabDevices.map(d => `${d.name} Time (s)`)];
+    const rows = [header.join(',')];
+
+    for (const I of currents) {
+      const row = [I.toFixed(1)];
+      for (const dev of tabDevices) {
+        const t = this._deviceTripTime(dev, I);
+        row.push(isFinite(t) && t > 0 ? t.toFixed(4) : '');
+      }
+      rows.push(row.join(','));
+    }
+
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const tabName = (this.tabs.find(t => t.id === this.activeTabId) || {}).name || 'all';
+    a.href = url;
+    a.download = `${AppState.projectName || 'tcc'}_${tabName.replace(/\s+/g, '_')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   },
 };

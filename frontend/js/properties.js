@@ -287,6 +287,7 @@ const Properties = {
 
     AppState.dirty = true;
     AppState.clearResults();
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
 
     // Update component label if name changed
@@ -455,12 +456,31 @@ Z_eq = ${zeqR.toFixed(6)} + j${zeqX.toFixed(6)} p.u. (${(zeqR * 100).toFixed(4)}
 |Z_eq| = ${zeqMag.toFixed(6)} p.u. (${(zeqMag * 100).toFixed(4)}%) = ${zeqOhm.toFixed(6)} Ω
 R/X = ${zeqX !== 0 ? (zeqR / zeqX).toFixed(4) : 'N/A'}    X/R = ${zeqR !== 0 ? (zeqX / zeqR).toFixed(2) : 'N/A'}` : ''}
 
-─── Three-Phase Fault (I"k3) ───
+─── Three-Phase Fault (I"k3) ── IEC 60909-0 §8–10 ───
 I"k3 = c × V_n / (√3 × |Z_eq|)${hasZeq ? ` = ${cFactor} / ${zeqMag.toFixed(6)} × ${iBaseKA.toFixed(4)}` : ''}
-I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA
+I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA (initial symmetrical)
 ${busResult.ik3 ? `S"k3 = √3 × ${vkv} × ${busResult.ik3.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ik3).toFixed(2)} MVA` : ''}
-${busResult.ik3 ? `i_p (peak) ≈ ${(busResult.ik3 * Math.sqrt(2) * 1.8).toFixed(3)} kA (κ ≈ 1.8)` : ''}
-${busResult.ik3 ? `I_b (breaking) ≈ ${busResult.ik3.toFixed(3)} kA` : ''}
+${busResult.ip != null ? `
+─── Peak Current ip (§8.1) ───
+ip = κ × √2 × I"k3 = ${busResult.kappa} × √2 × ${busResult.ik3.toFixed(3)}
+ip = ${busResult.ip.toFixed(3)} kA    κ = ${busResult.kappa} (R/X = ${zeqX !== 0 ? Math.abs(zeqR / zeqX).toFixed(4) : 'N/A'})
+κ = 1.02 + 0.98 × e^(−3 × R/X)` : ''}
+${busResult.ib != null ? `
+─── Breaking Current Ib (§9.1) ───
+Ib = ${busResult.ib.toFixed(3)} kA (symmetrical, t_min = 0.1s)${busResult.ib_asymmetric != null ? `
+Ib_asym = √(Ib² + i_DC²) = ${busResult.ib_asymmetric.toFixed(3)} kA (asymmetric)` : ''}
+${busResult.ib < busResult.ik3 ? `Decay: μ/q factors applied to generator/motor contributions` : `No decay (far-from-generator fault)`}` : ''}
+${busResult.ik_steady != null ? `
+─── Steady-State Current Ik (§10) ───
+Ik = ${busResult.ik_steady.toFixed(3)} kA
+${busResult.ik_steady < busResult.ik3 ? `Generators use Xd (synchronous), induction motors contribute 0` : `Network-fed: Ik ≈ I"k (no decay)`}` : ''}
+${busResult.motor_count > 0 ? `
+─── Motor Contribution (§13) ───
+Motors contributing: ${busResult.motor_count}
+I"k3 from network: ${busResult.ik3_network?.toFixed(3) || '—'} kA
+I"k3 from motors:  ${busResult.ik3_motor?.toFixed(3) || '—'} kA (${busResult.ik3 > 0 ? (busResult.ik3_motor / busResult.ik3 * 100).toFixed(1) : 0}% of total)
+Induction motors: sub-transient current decays to 0 within ~200ms
+Synchronous motors: sustained contribution (like generators)` : ''}
 
 ─── Zero-Sequence Impedance (Z0) ───
 ${busResult.z0_mag != null ? `Z0 = ${busResult.z0_real?.toFixed(6)} + j${busResult.z0_imag?.toFixed(6)} p.u. (${(busResult.z0_real * 100)?.toFixed(4)} + j${(busResult.z0_imag * 100)?.toFixed(4)}%)
@@ -519,9 +539,11 @@ ${busResult.ikLLG ? `S"kLLG = √3 × ${vkv} × ${busResult.ikLLG.toFixed(3)} = 
 ${busResult.branches.map(br => {
   const elComp = AppState.components.get(br.element_id);
   const elName = elComp?.props?.name || br.element_name || br.element_id;
+  const isMotor = (br.element_type || '').startsWith('motor_');
   const typeLabel = (br.element_type || '').replace('_', ' ');
-  return `<tr style="border-bottom:1px solid #ddd">
-  <td style="padding:2px 6px">${elName}</td>
+  const motorTag = isMotor ? ' <span style="color:#6a1b9a;font-weight:bold" title="Motor fault contribution">[M]</span>' : '';
+  return `<tr style="border-bottom:1px solid #ddd${isMotor ? ';background:#f3e5f5' : ''}">
+  <td style="padding:2px 6px">${elName}${motorTag}</td>
   <td style="padding:2px 6px">${typeLabel}</td>
   <td style="text-align:right;padding:2px 6px;font-weight:bold;color:#b71c1c">${br.ik_ka.toFixed(3)}</td>
   <td style="text-align:right;padding:2px 6px">${br.contribution_pct.toFixed(1)}%</td>
@@ -802,10 +824,17 @@ Voltage drop (at rated) ≈ ${(Rpu * rated / (ratedMVA * 1000 / (Math.sqrt(3) * 
       const eff = comp.props.efficiency || 0.93;
       const pf = comp.props.power_factor || 0.85;
       const xpp = comp.props.x_pp || 0.17;
+      const xr = comp.props.x_r_ratio || 10;
       const lrc = comp.props.locked_rotor_current || 6;
       const kva = kw / eff;
       const mva = kva / 1000;
-      const Xpu = xpp * base / mva;
+      const Zpu_motor = xpp;  // Z" on motor rating
+      const Xpu_motor = Zpu_motor * xr / Math.sqrt(1 + xr * xr);
+      const Rpu_motor = Xpu_motor / xr;
+      const Zpu = Zpu_motor * base / mva;
+      const Xpu = Xpu_motor * base / mva;
+      const Rpu = Rpu_motor * base / mva;
+      const Zbase = (vkv * vkv) / base;
       const iRated = (kva) / (Math.sqrt(3) * vkv * 1000);
       const iStart = iRated * lrc;
       html += `
@@ -815,13 +844,30 @@ Voltage drop (at rated) ≈ ${(Rpu * rated / (ratedMVA * 1000 / (Math.sqrt(3) * 
 Rated = ${kw} kW at ${vkv} kV
 Efficiency = ${(eff * 100).toFixed(1)}%
 Power Factor = ${pf}
+X/R Ratio = ${xr}
 
 Input kVA = P / η = ${kw} / ${eff} = ${kva.toFixed(1)} kVA (${mva.toFixed(4)} MVA)
 I_rated = ${(iRated * 1000).toFixed(2)} A
 I_start = ${lrc} × I_rated = ${(iStart * 1000).toFixed(2)} A
 
-X"_pu (on system base) = X" × (Base_MVA / Rated_MVA)
-X"_pu = ${xpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u. (${(Xpu * 100).toFixed(2)}%)
+Z"_pu (on motor rating) = ${Zpu_motor} p.u.
+X" = Z" × (X/R) / √(1 + (X/R)²) = ${Xpu_motor.toFixed(6)} p.u.
+R" = X" / (X/R) = ${Rpu_motor.toFixed(6)} p.u.
+
+─── On System Base ───
+Z"_pu = ${Zpu_motor} × (${base} / ${mva.toFixed(4)}) = ${Zpu.toFixed(4)} p.u. (${(Zpu * 100).toFixed(2)}%)
+X"_pu = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
+R"_pu = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
+Z = ${Rpu.toFixed(6)} + j${Xpu.toFixed(6)} p.u.
+
+─── Actual Impedance ───
+Z_base = ${vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
+R = ${(Rpu * Zbase).toFixed(4)} Ω,  X = ${(Xpu * Zbase).toFixed(4)} Ω
+
+─── Fault Contribution (IEC 60909-0 §13) ───
+I"k_motor = c / Z"_pu × I_base (at faulted bus)
+Sub-transient current decays within ~100ms for induction motors.
+Motor acts as a voltage source behind Z" during fault.
 
 ─── Power Consumption ───
 P = ${(mva * pf).toFixed(4)} MW
@@ -846,6 +892,11 @@ I_rated = ${(iRated * 1000).toFixed(2)} A
 
 X"d_pu (on system base) = X"d × (Base_MVA / Rated_MVA)
 X"d_pu = ${xdpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u. (${(Xpu * 100).toFixed(2)}%)
+
+─── Fault Contribution (IEC 60909-0 §13) ───
+I"k_motor = c / X"d_pu × I_base (at faulted bus)
+Synchronous motors contribute sustained fault current (like generators).
+Motor acts as a voltage source behind X"d during fault.
 
 ─── Power Consumption ───
 P = ${(mva * pf).toFixed(4)} MW

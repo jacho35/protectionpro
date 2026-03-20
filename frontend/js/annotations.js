@@ -88,6 +88,9 @@ const Annotations = {
       let s = `3Φ: ${result.ik3.toFixed(2)} kA`;
       if (showAngles && result.ik3_angle != null) s += ` ∠${result.ik3_angle.toFixed(1)}°`;
       lines.push(s);
+      if (result.ip != null) {
+        lines.push(`ip: ${result.ip.toFixed(2)} kA`);
+      }
     }
     if (result.ik1 != null) {
       let s = `SLG: ${result.ik1.toFixed(2)} kA`;
@@ -103,6 +106,9 @@ const Annotations = {
       let s = `LLG: ${result.ikLLG.toFixed(2)} kA`;
       if (showAngles && result.ikLLG_angle != null) s += ` ∠${result.ikLLG_angle.toFixed(1)}°`;
       lines.push(s);
+    }
+    if (result.motor_count > 0 && result.ik3_motor != null) {
+      lines.push(`Motors: ${result.ik3_motor.toFixed(2)} kA (${result.motor_count})`);
     }
 
     const lineHeight = 14;

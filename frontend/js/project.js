@@ -290,11 +290,11 @@ const Project = {
     // Fault results
     if (AppState.faultResults && AppState.faultResults.buses) {
       rows.push(['=== FAULT ANALYSIS (IEC 60909) ===']);
-      rows.push(['Bus ID', 'Bus Name', 'Voltage (kV)', 'I"k3 (kA)', 'I"k1 (kA)', 'I"kLL (kA)']);
+      rows.push(['Bus ID', 'Bus Name', 'Voltage (kV)', 'I"k3 (kA)', 'I"k1 (kA)', 'I"kLL (kA)', 'I"kLLG (kA)']);
       for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
         const comp = AppState.components.get(busId);
         const busName = comp?.props?.name || busId;
-        rows.push([busId, busName, r.voltage_kv ?? '', r.ik3 ?? '', r.ik1 ?? '', r.ikLL ?? '']);
+        rows.push([busId, busName, r.voltage_kv ?? '', r.ik3 ?? '', r.ik1 ?? '', r.ikLL ?? '', r.ikLLG ?? '']);
       }
       rows.push([]);
 
@@ -446,18 +446,19 @@ const Project = {
             r.ik3 != null ? Number(r.ik3).toFixed(3) : '\u2014',
             r.ik1 != null ? Number(r.ik1).toFixed(3) : '\u2014',
             r.ikLL != null ? Number(r.ikLL).toFixed(3) : '\u2014',
+            r.ikLLG != null ? Number(r.ikLLG).toFixed(3) : '\u2014',
           ]);
         }
 
         doc.autoTable({
           startY: margin + 12,
           margin: { left: margin, right: margin },
-          head: [['Bus', 'Voltage (kV)', 'I"k3 (kA)', 'I"k1 (kA)', 'I"kLL (kA)']],
+          head: [['Bus', 'Voltage (kV)', 'I"k3 (kA)', 'I"k1 (kA)', 'I"kLL (kA)', 'I"kLLG (kA)']],
           body: faultRows,
           styles: { fontSize: 9, cellPadding: 2 },
           headStyles: { fillColor: [0, 120, 215], textColor: 255, fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [245, 245, 245] },
-          columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
+          columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
         });
 
         // Fault branch contributions table
@@ -577,18 +578,17 @@ const Project = {
         const equipRows = [];
         for (const [id, comp] of AppState.components) {
           const def = COMPONENT_DEFS[comp.type];
-          const label = def ? def.label : comp.type;
+          const label = def ? def.name : comp.type;
           const eName = comp.props?.name || id;
           const params = [];
-          if (comp.props?.voltage != null) params.push(`${comp.props.voltage} kV`);
-          if (comp.props?.ratedMVA != null) params.push(`${comp.props.ratedMVA} MVA`);
-          if (comp.props?.ratedKVA != null) params.push(`${comp.props.ratedKVA} kVA`);
-          if (comp.props?.ratedKW != null) params.push(`${comp.props.ratedKW} kW`);
-          if (comp.props?.ratedKVAr != null) params.push(`${comp.props.ratedKVAr} kVAr`);
-          if (comp.props?.ratedCurrent != null) params.push(`${comp.props.ratedCurrent} A`);
-          if (comp.props?.faultLevel != null) params.push(`FL: ${comp.props.faultLevel} MVA`);
-          if (comp.props?.zPercent != null) params.push(`Z: ${comp.props.zPercent}%`);
-          if (comp.props?.length != null) params.push(`${comp.props.length} km`);
+          if (comp.props?.voltage_kv != null) params.push(`${comp.props.voltage_kv} kV`);
+          if (comp.props?.rated_mva != null) params.push(`${comp.props.rated_mva} MVA`);
+          if (comp.props?.fault_mva != null) params.push(`FL: ${comp.props.fault_mva} MVA`);
+          if (comp.props?.z_percent != null) params.push(`Z: ${comp.props.z_percent}%`);
+          if (comp.props?.x_r_ratio != null) params.push(`X/R: ${comp.props.x_r_ratio}`);
+          if (comp.props?.vector_group != null) params.push(comp.props.vector_group);
+          if (comp.props?.length_km != null) params.push(`${comp.props.length_km} km`);
+          if (comp.props?.rated_current_a != null) params.push(`${comp.props.rated_current_a} A`);
           if (comp.props?.state != null) params.push(comp.props.state);
           equipRows.push([eName, label, params.join(', ')]);
         }

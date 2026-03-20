@@ -101,6 +101,16 @@ class FaultResultBus(BaseModel):
     z0_mag: Optional[float] = None     # |Z0| magnitude (p.u.)
     z0_source_count: Optional[int] = None  # Number of Z0 source paths
     z0_sources_detail: Optional[list[str]] = None  # Description of each Z0 source
+    # Motor contribution summary
+    motor_count: int = 0  # Number of motors contributing to fault
+    ik3_motor: Optional[float] = None  # Motor contribution to 3-phase fault (kA)
+    ik3_network: Optional[float] = None  # Network (non-motor) contribution to 3-phase fault (kA)
+    # IEC 60909 time-varying fault currents (3-phase)
+    ip: Optional[float] = None  # Peak short-circuit current (kA) — ip = κ × √2 × I"k
+    kappa: Optional[float] = None  # Peak factor κ (1.02–2.0)
+    ib: Optional[float] = None  # Symmetrical breaking current (kA) at t_min
+    ib_asymmetric: Optional[float] = None  # Asymmetric breaking current (kA)
+    ik_steady: Optional[float] = None  # Steady-state short-circuit current Ik (kA)
     branches: list[FaultBranchContribution] = []
 
 

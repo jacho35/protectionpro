@@ -24,6 +24,9 @@ const Canvas = {
   // State for dragging annotation badges
   annotationDrag: null, // { key, startX, startY, origDX, origDY }
 
+  // State for dragging wire bend points
+  bendDrag: null, // { wireId, bendIndex, startX, startY }
+
   init() {
     this.svg = document.getElementById('sld-canvas');
     this.diagramLayer = document.getElementById('diagram-layer');
@@ -43,6 +46,57 @@ const Canvas = {
     this.svg.addEventListener('mouseup', (e) => this.onMouseUp(e));
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Double-click to add/remove wire bend points
+    this.svg.addEventListener('dblclick', (e) => {
+      const worldPt = this.screenToWorld(e.clientX, e.clientY);
+      // Check if double-clicked on a bend point (remove it)
+      const bendEl = e.target.closest('.wire-bend-point');
+      if (bendEl) {
+        const wireId = bendEl.dataset.wireId;
+        const bendIdx = parseInt(bendEl.dataset.bendIndex);
+        const wire = AppState.wires.get(wireId);
+        if (wire && wire.bendPoints) {
+          wire.bendPoints.splice(bendIdx, 1);
+          if (wire.bendPoints.length === 0) delete wire.bendPoints;
+          AppState.dirty = true;
+          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+          this.render();
+        }
+        return;
+      }
+      // Check if double-clicked on a wire (add bend point)
+      const wireEl = e.target.closest('.sld-wire');
+      if (wireEl) {
+        const wireId = wireEl.dataset.id;
+        const wire = AppState.wires.get(wireId);
+        if (wire) {
+          if (!wire.bendPoints) wire.bendPoints = [];
+          // Insert bend point at clicked position, sorted by proximity to path segments
+          const snapped = { x: snapToGrid(worldPt.x), y: snapToGrid(worldPt.y) };
+          // Find insertion index based on distance along the wire
+          const fromComp = AppState.components.get(wire.fromComponent);
+          const toComp = AppState.components.get(wire.toComponent);
+          if (fromComp && toComp) {
+            const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
+            const allPts = [from, ...wire.bendPoints, Symbols.getPortWorldPosition(toComp, wire.toPort)];
+            let bestIdx = wire.bendPoints.length; // default: append
+            let bestDist = Infinity;
+            for (let i = 0; i < allPts.length - 1; i++) {
+              const d = this._ptSegDist(snapped, allPts[i], allPts[i + 1]);
+              if (d < bestDist) { bestDist = d; bestIdx = i; }
+            }
+            wire.bendPoints.splice(bestIdx, 0, snapped);
+          } else {
+            wire.bendPoints.push(snapped);
+          }
+          AppState.dirty = true;
+          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+          this.render();
+        }
+        return;
+      }
+    });
 
     // Track coordinates in status bar
     this.svg.addEventListener('mousemove', (e) => {
@@ -93,6 +147,9 @@ const Canvas = {
     // Update zoom display
     document.getElementById('zoom-display').textContent =
       `${Math.round(AppState.zoom * 100)}%`;
+
+    // Update mini-map viewport
+    if (typeof MiniMap !== 'undefined') MiniMap.render();
   },
 
   // Mouse down handler
@@ -163,6 +220,16 @@ const Canvas = {
         e.preventDefault();
         return;
       }
+    }
+
+    // Check if clicked on a wire bend point (for dragging)
+    const bendEl = e.target.closest('.wire-bend-point');
+    if (bendEl) {
+      const wireId = bendEl.dataset.wireId;
+      const bendIdx = parseInt(bendEl.dataset.bendIndex);
+      this.bendDrag = { wireId, bendIndex: bendIdx, startX: worldPt.x, startY: worldPt.y };
+      e.preventDefault();
+      return;
     }
 
     // Check if clicked on a component port (for wiring)
@@ -256,6 +323,19 @@ const Canvas = {
       return;
     }
 
+    // Dragging wire bend points
+    if (this.bendDrag) {
+      const wire = AppState.wires.get(this.bendDrag.wireId);
+      if (wire && wire.bendPoints && wire.bendPoints[this.bendDrag.bendIndex]) {
+        wire.bendPoints[this.bendDrag.bendIndex] = {
+          x: snapToGrid(worldPt.x),
+          y: snapToGrid(worldPt.y),
+        };
+        this.render();
+      }
+      return;
+    }
+
     // Dragging annotation badges
     if (this.annotationDrag) {
       const dx = worldPt.x - this.annotationDrag.startX;
@@ -344,6 +424,13 @@ const Canvas = {
       return;
     }
 
+    if (this.bendDrag) {
+      AppState.dirty = true;
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      this.bendDrag = null;
+      return;
+    }
+
     if (this.annotationDrag) {
       this.annotationDrag = null;
       return;
@@ -363,6 +450,7 @@ const Canvas = {
 
     if (AppState.dragState) {
       AppState.dragState = null;
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
       return;
     }
 
@@ -483,10 +571,31 @@ const Canvas = {
       const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
       const to = Symbols.getPortWorldPosition(toComp, wire.toPort);
       const selected = AppState.selectedIds.has(id) ? ' selected' : '';
-      // Orthogonal routing: go vertical from source, horizontal, then vertical to target
-      const midY = (from.y + to.y) / 2;
-      const path = `M${from.x},${from.y} L${from.x},${midY} L${to.x},${midY} L${to.x},${to.y}`;
+
+      let path;
+      if (wire.bendPoints && wire.bendPoints.length > 0) {
+        // Route through bend points with orthogonal segments
+        const pts = [from, ...wire.bendPoints, to];
+        path = `M${pts[0].x},${pts[0].y}`;
+        for (let i = 1; i < pts.length; i++) {
+          const prev = pts[i - 1];
+          const curr = pts[i];
+          // Orthogonal: horizontal then vertical
+          path += ` L${curr.x},${prev.y} L${curr.x},${curr.y}`;
+        }
+      } else {
+        // Default orthogonal routing
+        const midY = (from.y + to.y) / 2;
+        path = `M${from.x},${from.y} L${from.x},${midY} L${to.x},${midY} L${to.x},${to.y}`;
+      }
       wiresHtml += `<path class="sld-wire${selected}" data-id="${id}" d="${path}"/>`;
+
+      // Draw bend point handles for selected wires
+      if (AppState.selectedIds.has(id) && wire.bendPoints) {
+        wire.bendPoints.forEach((bp, i) => {
+          wiresHtml += `<circle class="wire-bend-point" data-wire-id="${id}" data-bend-index="${i}" cx="${bp.x}" cy="${bp.y}" r="5" fill="#0078d7" stroke="#fff" stroke-width="1.5" style="cursor:move"/>`;
+        });
+      }
     }
     this.wiresLayer.innerHTML = wiresHtml;
 
@@ -518,6 +627,9 @@ const Canvas = {
 
     // Render overload flags on components exceeding rated capacity
     this.renderOverloadFlags();
+
+    // Update mini-map
+    if (typeof MiniMap !== 'undefined') MiniMap.render();
   },
 
   // Show key data labels next to cables, transformers, and other components
@@ -770,6 +882,16 @@ const Canvas = {
       Properties.show(comp.id);
     }
     return comp;
+  },
+
+  // Point-to-segment distance for bend point insertion
+  _ptSegDist(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
   },
 
   // Zoom to fit all components
