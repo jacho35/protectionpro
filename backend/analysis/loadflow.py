@@ -7,7 +7,7 @@ using per-unit system on a common MVA base.
 import math
 import numpy as np
 from ..models.schemas import (
-    ProjectData, LoadFlowResults, LoadFlowBus, LoadFlowBranch
+    ProjectData, LoadFlowResults, LoadFlowBus, LoadFlowBranch, LoadFlowWarning
 )
 
 
@@ -504,9 +504,78 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     loading_pct=round(loading, 2), losses_mw=round(losses_mw, 6),
                 ))
 
+    # ── Voltage mismatch warnings ──
+    # Check every device in transformer chains for incorrect voltage ratings.
+    # Walk from each bus through transparent devices to find all components
+    # on each side of the transformer and verify their voltage ratings.
+    voltage_warnings = []
+    warned_ids = set()  # Avoid duplicate warnings for the same component
+    tolerance = 0.15  # 15% mismatch threshold
+
+    for elems, from_bus, to_bus, y, t, hv_bus, cvs in branch_chains:
+        if elems is None or hv_bus is None:
+            continue  # Skip bus links and non-transformer chains
+
+        # Determine bus voltages for each side
+        from_v = components[from_bus].props.get("voltage_kv", 0) if from_bus in components else 0
+        to_v = components[to_bus].props.get("voltage_kv", 0) if to_bus in components else 0
+
+        # Find the transformer to use as the walk boundary
+        xfmr_id = None
+        for eid, e in elems.items():
+            if e.type == "transformer":
+                xfmr_id = eid
+                break
+        if not xfmr_id:
+            continue
+
+        # Walk from each bus toward the transformer, collecting ALL components on that side
+        for side_bus, expected_v in [(from_bus, from_v), (to_bus, to_v)]:
+            if expected_v <= 0:
+                continue
+            visited = {side_bus}
+            stack = list(adjacency.get(side_bus, []))
+            while stack:
+                nid = stack.pop()
+                if nid in visited or nid == xfmr_id:
+                    continue
+                visited.add(nid)
+                # Don't cross into another bus
+                if nid in bus_idx and nid != side_bus:
+                    continue
+                comp = components.get(nid)
+                if not comp:
+                    continue
+
+                # Check voltage property based on component type
+                actual_v = 0
+                if comp.type == "cable":
+                    actual_v = comp.props.get("voltage_kv", 0)
+                elif comp.type in ("cb", "switch", "fuse", "surge_arrester"):
+                    actual_v = comp.props.get("rated_voltage_kv", 0)
+                elif comp.type in ("ct", "pt"):
+                    actual_v = comp.props.get("voltage_kv", 0)
+
+                if actual_v > 0 and abs(actual_v - expected_v) / expected_v > tolerance and comp.id not in warned_ids:
+                    warned_ids.add(comp.id)
+                    voltage_warnings.append(LoadFlowWarning(
+                        elementId=comp.id,
+                        element_name=comp.props.get("name", comp.type),
+                        message=f"Voltage mismatch: rated {actual_v} kV, expected {expected_v} kV from connected bus",
+                        expected_kv=round(expected_v, 3),
+                        actual_kv=round(actual_v, 3),
+                    ))
+
+                # Continue walking through chain elements and transparent devices
+                if comp.id in elems or _is_transparent_and_closed(comp):
+                    for neighbor in adjacency.get(nid, []):
+                        if neighbor not in visited:
+                            stack.append(neighbor)
+
     return LoadFlowResults(
         buses=bus_results,
         branches=branch_results,
+        warnings=voltage_warnings,
         converged=converged,
         iterations=iterations,
         method=method,

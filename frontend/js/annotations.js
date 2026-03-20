@@ -80,6 +80,19 @@ const Annotations = {
       }
     }
 
+    // Voltage mismatch warnings from load flow
+    if (AppState.loadFlowResults && AppState.loadFlowResults.warnings) {
+      for (const warn of AppState.loadFlowResults.warnings) {
+        const comp = AppState.components.get(warn.elementId);
+        if (!comp) continue;
+        const key = `warn:${warn.elementId}`;
+        const off = this.getOffset(key);
+        const baseX = comp.x + 40 + off.dx;
+        const baseY = comp.y - 50 + off.dy;
+        html += this.renderVoltageMismatchBadge(baseX, baseY, comp, warn, key);
+      }
+    }
+
     this.layer.innerHTML = html;
   },
 
@@ -165,6 +178,39 @@ const Annotations = {
     return `
       <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderVoltageMismatchBadge(x, y, comp, warn, key) {
+    const expectedStr = warn.expected_kv >= 1 ? `${warn.expected_kv} kV` : `${(warn.expected_kv * 1000).toFixed(0)} V`;
+    const actualStr = warn.actual_kv >= 1 ? `${warn.actual_kv} kV` : `${(warn.actual_kv * 1000).toFixed(0)} V`;
+    const lines = [
+      `Rated: ${actualStr}`,
+      `Expected: ${expectedStr}`,
+    ];
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 130;
+
+    // Red highlight ring around the component symbol
+    const ringX = comp.x - 18;
+    const ringY = comp.y - 28;
+    const ringW = 36;
+    const ringH = 56;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group error-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect x="${ringX}" y="${ringY}" width="${ringW}" height="${ringH}"
+              fill="none" stroke="#d32f2f" stroke-width="2.5" stroke-dasharray="5,3" rx="6" ry="6"
+              class="voltage-error-ring"/>
+        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">VOLTAGE ERROR</text>
         ${textHtml}
       </g>`;
   },
