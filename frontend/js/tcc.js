@@ -358,13 +358,18 @@ const TCC = {
   _loadDevicesFromNetwork() {
     for (const [id, comp] of AppState.components) {
       if (comp.type === 'relay' && (comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N')) {
+        // If relay has an associated CT, resolve voltage from CT's location
+        const ctId = comp.props?.associated_ct;
+        const measureAt = ctId && AppState.components.has(ctId) ? ctId : id;
         this.devices.push({
           id,
           name: comp.props?.name || id,
           deviceType: 'relay',
           color: this.palette[this.colorIndex++ % this.palette.length],
           visible: true,
-          voltage_kv: this._resolveDeviceVoltage(id),
+          voltage_kv: this._resolveDeviceVoltage(measureAt),
+          associated_ct: ctId || null,
+          trip_cb: comp.props?.trip_cb || null,
           // Relay params
           curveName: comp.props?.curve || 'IEC Standard Inverse',
           pickup: comp.props?.pickup_a || 100,
@@ -1670,6 +1675,14 @@ const TCC = {
       let typeLabel;
       if (dev.deviceType === 'relay') {
         typeLabel = `${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`;
+        if (dev.associated_ct) {
+          const ctComp = AppState.components.get(dev.associated_ct);
+          typeLabel += ` | CT: ${ctComp?.props?.name || dev.associated_ct}`;
+        }
+        if (dev.trip_cb) {
+          const cbComp = AppState.components.get(dev.trip_cb);
+          typeLabel += ` | \u2192 ${cbComp?.props?.name || dev.trip_cb}`;
+        }
       } else if (dev.deviceType === 'distance_relay') {
         const zSummary = dev.zones.map(z => `${z.name}: ${z.reach_ohm}\u03A9`).join(' | ');
         typeLabel = `Distance (21) | ${zSummary}`;
@@ -2123,6 +2136,353 @@ const TCC = {
       return (kS * kS) / (currentA * currentA);
     }
     return Infinity;
+  },
+
+  // ── Topology Analysis: determine upstream/downstream device ordering ──
+
+  /**
+   * Build ordered protection paths from sources (utility/generator) to loads.
+   * Returns array of paths, where each path is an ordered array of TCC device
+   * objects from upstream (source-side) to downstream (load-side).
+   */
+  _buildProtectionPaths() {
+    const wires = AppState.wires;
+    if (!wires || wires.size === 0) return [];
+
+    // Build adjacency map: compId -> [{neighbor, fromPort, toPort}]
+    const adj = new Map();
+    for (const [, w] of wires) {
+      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
+      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
+      adj.get(w.fromComponent).push(w.toComponent);
+      adj.get(w.toComponent).push(w.fromComponent);
+    }
+
+    // Find source components (utility, generator)
+    const sources = [];
+    for (const [id, comp] of AppState.components) {
+      if (comp.type === 'utility' || comp.type === 'generator') {
+        sources.push(id);
+      }
+    }
+    if (sources.length === 0) return [];
+
+    // Protection device types that appear on TCC
+    const protTypes = new Set(['relay', 'fuse', 'cb']);
+    const isProtDevice = (id) => {
+      const comp = AppState.components.get(id);
+      if (!comp) return false;
+      if (comp.type === 'relay') {
+        return comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N' || comp.props?.relay_type === '21';
+      }
+      return protTypes.has(comp.type);
+    };
+
+    // Map SLD component IDs to TCC device objects
+    const tccDevMap = new Map();
+    for (const dev of this.devices) {
+      tccDevMap.set(dev.id, dev);
+    }
+
+    // Build relay → CB trip mapping: if a relay has a trip_cb, the relay
+    // effectively operates at the CB's location for coordination purposes.
+    // Also include the CB's TCC entry under the relay when the relay trips it.
+    const relayCbMap = new Map(); // relay TCC dev → CB TCC dev
+    for (const dev of this.devices) {
+      if ((dev.deviceType === 'relay' || dev.deviceType === 'distance_relay') && dev.trip_cb) {
+        const cbDev = tccDevMap.get(dev.trip_cb);
+        if (cbDev) relayCbMap.set(dev, cbDev);
+      }
+    }
+
+    // For CBs that are tripped by relays, skip them as independent devices
+    // in path building (they operate as part of the relay scheme)
+    const cbsTrippedByRelay = new Set();
+    for (const [, cbDev] of relayCbMap) {
+      cbsTrippedByRelay.add(cbDev.id);
+    }
+
+    // DFS from each source, collecting ordered protection devices along each path
+    const allPaths = [];
+    for (const srcId of sources) {
+      const stack = [{ node: srcId, visited: new Set([srcId]), protDevices: [] }];
+      while (stack.length > 0) {
+        const { node, visited, protDevices } = stack.pop();
+        const neighbors = adj.get(node) || [];
+        const comp = AppState.components.get(node);
+
+        // If this is a protection device, add to current path
+        // Skip CBs that are tripped by relays (relay+CB act as one device)
+        let currentPath = [...protDevices];
+        if (isProtDevice(node) && tccDevMap.has(node) && !cbsTrippedByRelay.has(node)) {
+          currentPath.push(tccDevMap.get(node));
+        }
+        // If this is a CT, check if any relay uses it — add that relay's device here
+        if (comp && comp.type === 'ct') {
+          for (const dev of this.devices) {
+            if (dev.associated_ct === node && !currentPath.includes(dev)) {
+              currentPath.push(dev);
+            }
+          }
+        }
+
+        // If this is a load or dead-end with protection devices, record the path
+        const isLoad = comp && (comp.type === 'static_load' || comp.type === 'motor_induction' ||
+                                comp.type === 'motor_synchronous');
+        const unvisitedNeighbors = neighbors.filter(n => !visited.has(n));
+
+        if ((isLoad || unvisitedNeighbors.length === 0) && currentPath.length >= 2) {
+          allPaths.push(currentPath);
+        }
+
+        // Continue DFS
+        for (const next of unvisitedNeighbors) {
+          const newVisited = new Set(visited);
+          newVisited.add(next);
+          stack.push({ node: next, visited: newVisited, protDevices: currentPath });
+        }
+      }
+    }
+
+    return allPaths;
+  },
+
+  // ── Auto-Coordination Engine ──
+
+  /**
+   * Automatically set relay TDS / CB settings so that downstream devices
+   * trip faster than upstream ones by at least the grading margin.
+   *
+   * Strategy:
+   * 1. Build protection paths from sources to loads
+   * 2. Start from the most downstream device and work upstream
+   * 3. For each upstream device, ensure it trips slower than the device
+   *    below it by at least the grading margin at the maximum fault current
+   */
+  autoCoordinate() {
+    const paths = this._buildProtectionPaths();
+    if (paths.length === 0) {
+      this._showCoordMessage('No source-to-load protection paths found. Ensure utility/generator components are connected to protection devices.');
+      return;
+    }
+
+    // Get maximum fault current from analysis results (or use a default)
+    let maxFaultA = 10000; // default
+    const fr = AppState.faultResults;
+    if (fr && fr.buses) {
+      for (const [, bus] of Object.entries(fr.buses)) {
+        if (bus.ik3) maxFaultA = Math.max(maxFaultA, bus.ik3 * 1000);
+      }
+    }
+
+    // Test currents for grading (use fault-level-based range)
+    const testCurrents = [
+      maxFaultA * 0.5,
+      maxFaultA * 0.75,
+      maxFaultA,
+    ];
+
+    let adjustments = 0;
+    const changes = [];
+
+    for (const path of paths) {
+      // path is ordered upstream to downstream: [upstream, ..., downstream]
+      // Process from downstream to upstream
+      for (let i = path.length - 2; i >= 0; i--) {
+        const upstream = path[i];
+        const downstream = path[i + 1];
+
+        // Check grading at test currents
+        for (const testI of testCurrents) {
+          const tDown = this._deviceTripTime(downstream, testI);
+          const tUp = this._deviceTripTime(upstream, testI);
+
+          if (!isFinite(tDown) || tDown <= 0) continue;
+
+          const requiredTime = tDown + this.gradingMargin;
+
+          if (isFinite(tUp) && tUp >= requiredTime) continue; // Already coordinated
+
+          // Need to slow down the upstream device
+          if (upstream.deviceType === 'relay' && upstream.curveName) {
+            // Adjust TDS so that trip time at testI >= requiredTime
+            const M = testI / upstream.pickup;
+            if (M <= 1) continue;
+            // t = TDS * f(M) → TDS = t / f(M)
+            const tAtTDS1 = idmtTripTime(upstream.curveName, M, 1.0);
+            if (!isFinite(tAtTDS1) || tAtTDS1 <= 0) continue;
+            const newTDS = Math.max(upstream.tds, requiredTime / tAtTDS1);
+            if (newTDS > upstream.tds && newTDS <= 10) {
+              const oldTDS = upstream.tds;
+              upstream.tds = Math.round(newTDS * 20) / 20; // round to 0.05
+              adjustments++;
+              changes.push(`${upstream.name}: TDS ${oldTDS.toFixed(2)} \u2192 ${upstream.tds.toFixed(2)}`);
+              // Sync to SLD
+              const comp = AppState.components.get(upstream.id);
+              if (comp?.props) comp.props.time_dial = upstream.tds;
+            }
+          } else if (upstream.deviceType === 'cb') {
+            // For CBs: adjust long-time delay class upward
+            const p = upstream.cbParams;
+            const currentClass = p.long_time_delay || 10;
+            const classes = [5, 10, 20, 30];
+            // Find the smallest class that gives enough margin
+            for (const cls of classes) {
+              if (cls <= currentClass) continue;
+              p.long_time_delay = cls;
+              const newT = this._deviceTripTime(upstream, testI);
+              if (isFinite(newT) && newT >= requiredTime) {
+                adjustments++;
+                changes.push(`${upstream.name}: LT delay class ${currentClass} \u2192 ${cls}`);
+                const comp = AppState.components.get(upstream.id);
+                if (comp?.props) comp.props.long_time_delay = cls;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Report results
+    if (adjustments === 0) {
+      this._showCoordMessage('All protection paths are already coordinated. No adjustments needed.');
+    } else {
+      this._showCoordMessage(
+        `Auto-coordination adjusted ${adjustments} device(s):\n` +
+        changes.map(c => `  \u2022 ${c}`).join('\n'),
+        'success'
+      );
+    }
+
+    this._renderDeviceList();
+    this._renderSelectedDeviceSettings();
+    this.render();
+    this._runCoordinationCheck();
+  },
+
+  // ── Miscoordination Detection ──
+
+  /**
+   * Detect protection devices that won't trip in the correct sequence
+   * for faults at each bus. Uses network topology to determine which device
+   * should trip first (closest downstream device) and flags violations.
+   */
+  detectMiscoordination() {
+    const paths = this._buildProtectionPaths();
+    if (paths.length === 0) {
+      this._showMiscoordResults('No source-to-load protection paths found.');
+      return;
+    }
+
+    // Build test currents from fault results or defaults
+    const testCurrents = new Set();
+    const fr = AppState.faultResults;
+    if (fr && fr.buses) {
+      for (const [, bus] of Object.entries(fr.buses)) {
+        if (bus.ik3) testCurrents.add(Math.round(bus.ik3 * 1000));
+        if (bus.ik1) testCurrents.add(Math.round(bus.ik1 * 1000));
+      }
+    }
+    if (testCurrents.size === 0) {
+      // Use default test currents
+      [500, 1000, 2000, 5000, 10000, 20000].forEach(i => testCurrents.add(i));
+    }
+
+    const violations = [];
+
+    for (const path of paths) {
+      // For each adjacent pair in the path (upstream first, downstream second)
+      for (let i = 0; i < path.length - 1; i++) {
+        const upstream = path[i];
+        const downstream = path[i + 1];
+
+        for (const testI of testCurrents) {
+          const tUp = this._deviceTripTime(upstream, testI);
+          const tDown = this._deviceTripTime(downstream, testI);
+
+          if (!isFinite(tDown) || tDown <= 0) continue;
+          if (!isFinite(tUp) || tUp <= 0) continue;
+
+          // Violation: upstream trips before or same time as downstream
+          if (tUp <= tDown) {
+            violations.push({
+              upstream: upstream.name,
+              downstream: downstream.name,
+              current: testI,
+              tUpstream: tUp,
+              tDownstream: tDown,
+              severity: tUp < tDown * 0.9 ? 'critical' : 'warning',
+              issue: tUp < tDown
+                ? `${upstream.name} trips BEFORE ${downstream.name} — upstream will unnecessarily disconnect`
+                : `${upstream.name} trips at SAME TIME as ${downstream.name} — race condition`,
+            });
+          } else if (tUp - tDown < this.gradingMargin) {
+            violations.push({
+              upstream: upstream.name,
+              downstream: downstream.name,
+              current: testI,
+              tUpstream: tUp,
+              tDownstream: tDown,
+              severity: 'marginal',
+              issue: `Insufficient margin: ${((tUp - tDown) * 1000).toFixed(0)}ms < ${(this.gradingMargin * 1000).toFixed(0)}ms required`,
+            });
+          }
+        }
+      }
+    }
+
+    // Deduplicate: keep worst violation per device pair
+    const pairMap = new Map();
+    for (const v of violations) {
+      const key = `${v.upstream}|${v.downstream}`;
+      const existing = pairMap.get(key);
+      if (!existing || (v.severity === 'critical' && existing.severity !== 'critical') ||
+          (v.severity === existing.severity && v.tUpstream < existing.tUpstream)) {
+        pairMap.set(key, v);
+      }
+    }
+
+    this._showMiscoordResults(null, [...pairMap.values()]);
+  },
+
+  _showCoordMessage(msg, type) {
+    const resultsDiv = document.getElementById('tcc-coord-results');
+    if (!resultsDiv) return;
+    const cls = type === 'success' ? 'tcc-coord-pass' : 'tcc-coord-info';
+    resultsDiv.innerHTML = `<div class="${cls}" style="white-space:pre-wrap">${msg}</div>`;
+  },
+
+  _showMiscoordResults(message, violations) {
+    const resultsDiv = document.getElementById('tcc-coord-results');
+    if (!resultsDiv) return;
+
+    if (message) {
+      resultsDiv.innerHTML = `<div class="tcc-coord-info">${message}</div>`;
+      return;
+    }
+
+    if (!violations || violations.length === 0) {
+      resultsDiv.innerHTML = '<div class="tcc-coord-pass">No miscoordination detected. All devices trip in correct upstream-to-downstream sequence.</div>';
+      return;
+    }
+
+    const sevIcon = { critical: '\u26D4', warning: '\u26A0', marginal: '\u25B3' };
+    const sevClass = { critical: 'tcc-sev-critical', warning: 'tcc-sev-warning', marginal: 'tcc-sev-marginal' };
+
+    let html = `<div class="tcc-coord-title">Miscoordination: ${violations.length} issue(s) detected</div>`;
+    html += '<table class="tcc-coord-table"><thead><tr><th>Sev.</th><th>Issue</th><th>At</th><th>Times</th></tr></thead><tbody>';
+    for (const v of violations) {
+      const fmtT = (t) => t >= 1 ? t.toFixed(2) + 's' : (t * 1000).toFixed(0) + 'ms';
+      html += `<tr>
+        <td class="${sevClass[v.severity] || ''}">${sevIcon[v.severity] || ''}</td>
+        <td>${v.issue}</td>
+        <td>${v.current >= 1000 ? (v.current / 1000).toFixed(1) + 'kA' : v.current + 'A'}</td>
+        <td>\u2191${fmtT(v.tUpstream)} \u2193${fmtT(v.tDownstream)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    resultsDiv.innerHTML = html;
   },
 
   // ── Tab & Voltage Reference UI ──

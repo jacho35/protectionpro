@@ -180,6 +180,17 @@ const Properties = {
       ).join('');
       inputHtml = `<select data-field="${field.key}" data-library="${field.library}">
         <option value="">-- Custom --</option>${options}</select>`;
+    } else if (field.type === 'component_select') {
+      // Dynamic dropdown listing components of a specific type
+      const filterType = field.filter || '';
+      const options = [];
+      options.push(`<option value="" ${!value ? 'selected' : ''}>-- None --</option>`);
+      for (const [id, comp] of AppState.components) {
+        if (filterType && comp.type !== filterType) continue;
+        const name = comp.props?.name || `${comp.type} ${id}`;
+        options.push(`<option value="${id}" ${value === id ? 'selected' : ''}>${name}</option>`);
+      }
+      inputHtml = `<select data-field="${field.key}">${options.join('')}</select>`;
     } else if (field.type === 'select') {
       const options = field.options.map(opt =>
         `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`
