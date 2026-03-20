@@ -371,6 +371,23 @@ const Components = {
       }
     }
 
+    // 6b. Check generator and utility source voltages match their connected bus
+    for (const { bus, source } of graph.sources) {
+      const busV = bus.props.voltage_kv;
+      const srcV = source.props.voltage_kv;
+      if (busV && srcV) {
+        const tolerance = 0.15;
+        if (Math.abs(busV - srcV) / srcV > tolerance) {
+          const typeName = source.type === 'utility' ? 'Utility source' : 'Generator';
+          warnings.push({
+            type: 'warning',
+            msg: `${source.props.name} voltage (${srcV} kV) doesn't match ${bus.props.name} voltage (${busV} kV).`,
+            compId: source.id,
+          });
+        }
+      }
+    }
+
     // 7. Check for missing/zero critical properties
     for (const comp of AppState.components.values()) {
       const p = comp.props;
