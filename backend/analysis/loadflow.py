@@ -15,7 +15,7 @@ MAX_ITERATIONS = 100
 TOLERANCE = 1e-6
 
 # Components that are "transparent" — zero impedance pass-through
-TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "arrester"}
+TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester"}
 
 
 def _is_transparent_and_closed(comp):

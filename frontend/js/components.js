@@ -266,20 +266,31 @@ const Components = {
     for (const branch of graph.branches) {
       if (!branch.element || branch.element.type !== 'transformer') continue;
       const xfmr = branch.element;
-      // Determine which bus is primary and which is secondary based on port
-      let hvBus, lvBus;
+      const isStepUp = xfmr.props.winding_config === 'step_up';
+      // Determine which bus is HV and which is LV based on port and winding config
+      // Step-down (default): primary (top) = HV, secondary (bottom) = LV
+      // Step-up: primary (top) = LV, secondary (bottom) = HV
+      let primaryBus, secondaryBus;
       if (branch.fromPort === 'primary') {
-        hvBus = branch.from;
-        lvBus = branch.to;
+        primaryBus = branch.from;
+        secondaryBus = branch.to;
       } else if (branch.fromPort === 'secondary') {
-        hvBus = branch.to;
-        lvBus = branch.from;
+        primaryBus = branch.to;
+        secondaryBus = branch.from;
       } else if (branch.toPort === 'primary') {
-        hvBus = branch.to;
-        lvBus = branch.from;
+        primaryBus = branch.to;
+        secondaryBus = branch.from;
       } else {
-        hvBus = branch.from;
-        lvBus = branch.to;
+        primaryBus = branch.from;
+        secondaryBus = branch.to;
+      }
+      let hvBus, lvBus;
+      if (isStepUp) {
+        hvBus = secondaryBus;
+        lvBus = primaryBus;
+      } else {
+        hvBus = primaryBus;
+        lvBus = secondaryBus;
       }
 
       const xfmrHV = xfmr.props.voltage_hv_kv;
@@ -377,17 +388,20 @@ const Components = {
     for (const branch of graph.branches) {
       if (!branch.element || branch.element.type !== 'transformer') continue;
       const xfmr = branch.element;
-      let lvBus;
+      const isStepUp8 = xfmr.props.winding_config === 'step_up';
+      // For step-down: secondary (bottom) is LV side, check downstream matches LV voltage
+      // For step-up: secondary (bottom) is HV side, check downstream matches HV voltage
+      let downstreamBus;
       if (branch.fromPort === 'secondary') {
-        lvBus = branch.from;
+        downstreamBus = branch.from;
       } else if (branch.toPort === 'secondary') {
-        lvBus = branch.to;
+        downstreamBus = branch.to;
       } else {
         // Fallback: use the bus with lower voltage
-        lvBus = (branch.from.props.voltage_kv || 0) <= (branch.to.props.voltage_kv || 0) ? branch.from : branch.to;
+        downstreamBus = (branch.from.props.voltage_kv || 0) <= (branch.to.props.voltage_kv || 0) ? branch.from : branch.to;
       }
 
-      const expectedV = xfmr.props.voltage_lv_kv;
+      const expectedV = isStepUp8 ? xfmr.props.voltage_hv_kv : xfmr.props.voltage_lv_kv;
       if (!expectedV || !lvBus) continue;
 
       // BFS downstream from lvBus through non-transformer branches
