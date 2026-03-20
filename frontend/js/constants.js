@@ -984,4 +984,25 @@ const COMPONENT_DEFS = {
       { key: 'class', label: 'Class', type: 'select', options: ['Station', 'Intermediate', 'Distribution'] },
     ],
   },
+
+  offpage_connector: {
+    name: 'Off-Page Connector',
+    label: 'Off-Page Connector',
+    category: 'other',
+    ports: [
+      { id: 'port', side: 'bottom', offset: 0 },
+    ],
+    width: 40,
+    height: 40,
+    defaults: {
+      name: 'X1',
+      target_page: '',
+      target_label: '',
+    },
+    fields: [
+      { key: 'name', label: 'Label', type: 'text' },
+      { key: 'target_page', label: 'Target Page', type: 'text' },
+      { key: 'target_label', label: 'Target Label', type: 'text' },
+    ],
+  },
 };

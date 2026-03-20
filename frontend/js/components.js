@@ -56,7 +56,7 @@ const Components = {
     };
 
     // "Transparent" elements: zero-impedance pass-through components
-    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester']);
+    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector']);
 
     // Check if a component is transparent and in closed state
     const isTransparentClosed = (comp) => {
@@ -80,6 +80,27 @@ const Components = {
       if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
       adj.get(wire.fromComponent).push({ id: wire.toComponent, localPort: wire.fromPort });
       adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
+    }
+
+    // Link matched off-page connectors as virtual wires (same label = same node)
+    const offpageByLabel = new Map();
+    for (const comp of AppState.components.values()) {
+      if (comp.type === 'offpage_connector') {
+        const lbl = comp.props.name || '';
+        if (!offpageByLabel.has(lbl)) offpageByLabel.set(lbl, []);
+        offpageByLabel.get(lbl).push(comp);
+      }
+    }
+    for (const [, connectors] of offpageByLabel) {
+      for (let i = 0; i < connectors.length; i++) {
+        for (let j = i + 1; j < connectors.length; j++) {
+          const a = connectors[i].id, b = connectors[j].id;
+          if (!adj.has(a)) adj.set(a, []);
+          if (!adj.has(b)) adj.set(b, []);
+          adj.get(a).push({ id: b, localPort: 'port' });
+          adj.get(b).push({ id: a, localPort: 'port' });
+        }
+      }
     }
 
     // BFS from a component port through transparent elements to find a bus

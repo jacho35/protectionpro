@@ -330,6 +330,16 @@ const Symbols = {
       </g>`;
   },
 
+  offpage_connector(w, h, comp) {
+    const r = w * 0.45;
+    const label = (comp && comp.props && comp.props.name) || 'X';
+    return `
+      <g class="symbol-offpage">
+        <polygon points="0,${-r} ${r},0 0,${r} ${-r},0" class="symbol-fill" fill="white" stroke="currentColor" stroke-width="1.5"/>
+        <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${label}</text>
+      </g>`;
+  },
+
   // Render a component on the canvas SVG
   renderComponent(comp) {
     const def = COMPONENT_DEFS[comp.type];
