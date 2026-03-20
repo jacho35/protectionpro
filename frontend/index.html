@@ -244,9 +244,18 @@
       <div class="modal-header">
         <h3>Time-Current Curves (TCC)</h3>
         <div class="tcc-header-actions">
-          <button id="btn-tcc-export-png" class="btn-small" title="Export chart as PNG">Export PNG</button>
+          <div id="tcc-voltage-ref" class="tcc-voltage-ref" style="display:none">
+            <!-- Populated by JS: voltage reference selector -->
+          </div>
+          <button id="btn-tcc-export-png" class="btn-small" title="Export chart as PNG">PNG</button>
+          <button id="btn-tcc-export-pdf" class="btn-small" title="Export chart as PDF">PDF</button>
+          <button id="btn-tcc-export-csv" class="btn-small" title="Export curve data as CSV">CSV</button>
           <button class="modal-close" id="btn-close-tcc">&times;</button>
         </div>
+      </div>
+      <!-- Tab bar for voltage grouping -->
+      <div id="tcc-tab-bar" class="tcc-tab-bar" style="display:none">
+        <!-- Populated by JS -->
       </div>
       <div class="tcc-body">
         <!-- Chart area -->

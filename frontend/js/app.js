@@ -280,6 +280,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'tcc-modal') TCC.close();
   });
   document.getElementById('btn-tcc-export-png').addEventListener('click', () => TCC.exportPNG());
+  document.getElementById('btn-tcc-export-pdf').addEventListener('click', () => TCC.exportPDF());
+  document.getElementById('btn-tcc-export-csv').addEventListener('click', () => TCC.exportCSV());
 
   // TCC add device tab switching
   document.querySelectorAll('.tcc-add-tab').forEach(tab => {

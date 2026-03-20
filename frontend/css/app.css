@@ -818,7 +818,67 @@ html, body {
 .tcc-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+/* Voltage reference selector in header */
+.tcc-voltage-ref {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+.tcc-voltage-ref label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.tcc-voltage-ref select {
+  padding: 3px 6px;
+  font-size: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--bg-primary);
+}
+
+/* Tab bar for voltage grouping */
+.tcc-tab-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.tcc-view-tab {
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tcc-view-tab:hover {
+  color: var(--text-primary);
+}
+.tcc-view-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.tcc-add-custom-tab {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 10px;
+  color: var(--text-muted);
+}
+.tcc-add-custom-tab:hover {
+  color: var(--accent);
 }
 
 .tcc-body {
