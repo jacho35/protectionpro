@@ -540,6 +540,20 @@ const Canvas = {
         lines.push(sizeStr);
         lines.push(lenStr);
         if (p.rated_amps) lines.push(`${p.rated_amps} A`);
+        // Show load flow results on cable
+        if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
+          const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
+          if (branch) {
+            const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
+            const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
+            const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
+            lines.push({text: '───────', color: loadColor});
+            lines.push({text: `P: ${pStr}`, color: loadColor});
+            lines.push({text: `Q: ${qStr}`, color: loadColor});
+            if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
+            if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
+          }
+        }
       } else if (comp.type === 'transformer') {
         const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
         lines.push(ratingStr);
@@ -551,6 +565,18 @@ const Canvas = {
           }
         }
         if (p.z_percent) lines.push(`Z=${p.z_percent}%`);
+        // Show load flow results on transformer
+        if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
+          const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
+          if (branch) {
+            const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
+            const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
+            lines.push({text: '───────', color: loadColor});
+            lines.push({text: `P: ${pStr}`, color: loadColor});
+            if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
+            if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
+          }
+        }
       } else if (comp.type === 'static_load') {
         if (p.name && p.name !== 'Load') lines.push(p.name);
         lines.push(`${p.rated_kva || 0} kVA`);
@@ -574,9 +600,11 @@ const Canvas = {
       const oy = comp.labelOffsetY != null ? comp.labelOffsetY : defaultOY;
       const x = comp.x + ox;
       const y = comp.y + oy;
-      const lineHtml = lines.map((line, i) =>
-        `<tspan x="${x}" dy="${i === 0 ? 0 : 12}">${line}</tspan>`
-      ).join('');
+      const lineHtml = lines.map((line, i) => {
+        const text = typeof line === 'string' ? line : line.text;
+        const fill = typeof line === 'object' && line.color ? ` fill="${line.color}"` : '';
+        return `<tspan x="${x}" dy="${i === 0 ? 0 : 12}"${fill}>${text}</tspan>`;
+      }).join('');
       html += `<text class="comp-data-label" data-comp-id="${comp.id}" x="${x}" y="${y}" font-size="9" fill="#555" font-family="var(--font-mono)" cursor="move">${lineHtml}</text>`;
     }
     this.annotationsLayer.insertAdjacentHTML('beforeend', html);
