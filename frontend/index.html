@@ -243,6 +243,7 @@
             <div class="tcc-add-tabs">
               <button class="tcc-add-tab active" data-tcc-add="relay">Relay</button>
               <button class="tcc-add-tab" data-tcc-add="fuse">Fuse</button>
+              <button class="tcc-add-tab" data-tcc-add="cb">CB</button>
             </div>
             <!-- Add Relay Form -->
             <div id="tcc-add-relay" class="tcc-add-form">
@@ -301,6 +302,56 @@
                 </select>
               </div>
               <button id="btn-tcc-add-fuse" class="btn-small btn-primary">Add Fuse</button>
+            </div>
+            <!-- Add CB Form -->
+            <div id="tcc-add-cb" class="tcc-add-form" style="display:none">
+              <div class="tcc-form-row">
+                <label for="tcc-cb-name">Name</label>
+                <input type="text" id="tcc-cb-name" placeholder="CB 1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-cb-type">Type</label>
+                <select id="tcc-cb-type">
+                  <option value="mccb">MCCB</option>
+                  <option value="acb">ACB</option>
+                </select>
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-cb-rating">Trip Rating (A)</label>
+                <input type="number" id="tcc-cb-rating" value="630" min="1" step="1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-cb-thermal">Thermal Pickup (×In)</label>
+                <input type="number" id="tcc-cb-thermal" value="1.0" min="0.4" max="1.3" step="0.05">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-cb-magnetic">Magnetic Pickup (×In)</label>
+                <input type="number" id="tcc-cb-magnetic" value="10" min="2" max="20" step="0.5">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-cb-ltdelay">LT Delay Class</label>
+                <select id="tcc-cb-ltdelay">
+                  <option value="5">5 (fast)</option>
+                  <option value="10" selected>10 (standard)</option>
+                  <option value="20">20 (slow)</option>
+                  <option value="30">30 (very slow)</option>
+                </select>
+              </div>
+              <div id="tcc-cb-acb-fields" style="display:none">
+                <div class="tcc-form-row">
+                  <label for="tcc-cb-st-pickup">ST Pickup (×In)</label>
+                  <input type="number" id="tcc-cb-st-pickup" value="6" min="1" max="20" step="0.5">
+                </div>
+                <div class="tcc-form-row">
+                  <label for="tcc-cb-st-delay">ST Delay (s)</label>
+                  <input type="number" id="tcc-cb-st-delay" value="0.1" min="0.02" max="1" step="0.01">
+                </div>
+                <div class="tcc-form-row">
+                  <label for="tcc-cb-inst">Instantaneous (×In)</label>
+                  <input type="number" id="tcc-cb-inst" value="12" min="0" max="25" step="0.5">
+                </div>
+              </div>
+              <button id="btn-tcc-add-cb" class="btn-small btn-primary">Add CB</button>
             </div>
           </div>
           <div class="tcc-panel-section">

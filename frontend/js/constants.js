@@ -303,6 +303,75 @@ function fuseTripTime(ratingA, currentA) {
 
 const FUSE_RATINGS_GG = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630];
 
+// ─── Circuit Breaker Trip Curves (IEC 60947-2 / IEC 60898) ───
+// Thermal-magnetic characteristics for MCCB and ACB
+//
+// MCCB: thermal (I²t inverse-time) region + fixed magnetic instantaneous
+// ACB:  long-time (thermal) + optional short-time + instantaneous
+//
+// Thermal region model: t = k / ((I/Ir)^2 - 1)
+// where k = long_time_delay class factor, Ir = trip_rating × thermal_pickup
+// Magnetic region: fixed trip time (typically 20ms for MCCB, configurable for ACB)
+
+const CB_TRIP_CLASSES = {
+  // Long-time delay class factors (IEC 60947-2 Annex F)
+  // Higher k = slower thermal trip at same overload
+  5:   { k: 80 },
+  10:  { k: 200 },
+  20:  { k: 500 },
+  30:  { k: 1000 },
+};
+
+/**
+ * Calculate CB trip time for a given current.
+ * @param {object} params - { cb_type, trip_rating_a, thermal_pickup, magnetic_pickup,
+ *                            long_time_delay, short_time_pickup, short_time_delay, instantaneous_pickup }
+ * @param {number} currentA - Fault/overload current in amps
+ * @returns {number} Trip time in seconds, or Infinity if below pickup
+ */
+function cbTripTime(params, currentA) {
+  const Ir = (params.trip_rating_a || 630) * (params.thermal_pickup || 1.0);
+  const Im = Ir * (params.magnetic_pickup || 10);  // Magnetic pickup in amps
+  const M = currentA / Ir;  // Current as multiple of thermal pickup
+
+  if (M <= 1.0) return Infinity;  // Below thermal pickup — no trip
+
+  const cbType = params.cb_type || 'mccb';
+
+  // ACB with short-time and instantaneous regions
+  if (cbType === 'acb') {
+    const stPickup = (params.short_time_pickup || 0) * Ir;
+    const stDelay = params.short_time_delay || 0.1;
+    const instPickup = (params.instantaneous_pickup || 0) * Ir;
+
+    // Instantaneous region (highest priority)
+    if (instPickup > 0 && currentA >= instPickup) {
+      return 0.02;  // 20ms instantaneous
+    }
+    // Short-time region
+    if (stPickup > 0 && currentA >= stPickup) {
+      return stDelay;  // Fixed short-time delay
+    }
+  }
+
+  // MCCB magnetic instantaneous
+  if (currentA >= Im) {
+    return 0.02;  // 20ms magnetic trip
+  }
+
+  // Thermal (long-time) region: I²t inverse-time characteristic
+  const ltClass = params.long_time_delay || 10;
+  const classData = CB_TRIP_CLASSES[ltClass] || CB_TRIP_CLASSES[10];
+  const k = classData.k;
+  const t = k / (M * M - 1);
+
+  // Clamp to reasonable range
+  return Math.min(t, 10000);
+}
+
+// Standard MCCB frame sizes for the custom device dropdown
+const CB_FRAME_SIZES = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
+
 // Interaction modes
 const MODE = {
   SELECT: 'select',
@@ -515,6 +584,14 @@ const COMPONENT_DEFS = {
       rated_current_a: 630,
       breaking_capacity_ka: 25,
       state: 'closed',
+      cb_type: 'mccb',
+      trip_rating_a: 630,
+      thermal_pickup: 1.0,
+      magnetic_pickup: 10,
+      long_time_delay: 10,
+      short_time_pickup: 0,
+      short_time_delay: 0,
+      instantaneous_pickup: 0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -522,6 +599,17 @@ const COMPONENT_DEFS = {
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
       { key: 'state', label: 'State', type: 'select', options: ['closed', 'open'] },
+      { key: 'cb_type', label: 'CB Type', type: 'select', options: ['mccb', 'acb'] },
+      { key: 'trip_rating_a', label: 'Trip Rating', type: 'number', unit: 'A' },
+      { key: 'thermal_pickup', label: 'Thermal Pickup', type: 'number', unit: '×In' },
+      { key: 'magnetic_pickup', label: 'Magnetic Pickup', type: 'number', unit: '×In' },
+      { key: 'long_time_delay', label: 'LT Delay Class', type: 'number' },
+      { key: 'short_time_pickup', label: 'ST Pickup', type: 'number', unit: '×In',
+        showWhen: { field: 'cb_type', values: ['acb'] } },
+      { key: 'short_time_delay', label: 'ST Delay', type: 'number', unit: 's',
+        showWhen: { field: 'cb_type', values: ['acb'] } },
+      { key: 'instantaneous_pickup', label: 'Instantaneous', type: 'number', unit: '×In',
+        showWhen: { field: 'cb_type', values: ['acb'] } },
     ],
   },
   fuse: {

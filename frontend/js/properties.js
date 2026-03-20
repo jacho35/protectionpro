@@ -240,7 +240,7 @@ const Properties = {
     }
 
     // Re-render properties when fields with conditional dependents change
-    if (['vector_group', 'grounding_hv', 'grounding_lv'].includes(field)) {
+    if (['vector_group', 'grounding_hv', 'grounding_lv', 'cb_type'].includes(field)) {
       this.show(comp.id);
     }
   },

@@ -112,6 +112,24 @@ const TCC = {
             actualRating: ratingA,
           });
         }
+      } else if (comp.type === 'cb') {
+        this.devices.push({
+          id,
+          name: comp.props?.name || id,
+          deviceType: 'cb',
+          color: this.palette[this.colorIndex++ % this.palette.length],
+          visible: true,
+          cbParams: {
+            cb_type: comp.props?.cb_type || 'mccb',
+            trip_rating_a: comp.props?.trip_rating_a || comp.props?.rated_current_a || 630,
+            thermal_pickup: comp.props?.thermal_pickup || 1.0,
+            magnetic_pickup: comp.props?.magnetic_pickup || 10,
+            long_time_delay: comp.props?.long_time_delay || 10,
+            short_time_pickup: comp.props?.short_time_pickup || 0,
+            short_time_delay: comp.props?.short_time_delay || 0,
+            instantaneous_pickup: comp.props?.instantaneous_pickup || 0,
+          },
+        });
       }
     }
   },
@@ -199,6 +217,7 @@ const TCC = {
       if (!dev.visible) continue;
       if (dev.deviceType === 'relay') this._drawRelayCurve(ctx, dev);
       else if (dev.deviceType === 'fuse') this._drawFuseCurve(ctx, dev);
+      else if (dev.deviceType === 'cb') this._drawCBCurve(ctx, dev);
     }
 
     // Draw tooltip
@@ -396,6 +415,146 @@ const TCC = {
     }
   },
 
+  _drawCBCurve(ctx, dev) {
+    const p = dev.cbParams;
+    const Ir = (p.trip_rating_a || 630) * (p.thermal_pickup || 1.0);
+    const Im = Ir * (p.magnetic_pickup || 10);
+
+    // --- Thermal (long-time inverse) region ---
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+
+    let started = false;
+    const iStart = Ir * 1.05;
+    const iEnd = Math.min(Im, this.currentMax);
+    const steps = 200;
+
+    for (let i = 0; i <= steps; i++) {
+      const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
+      const current = Math.pow(10, logI);
+      const t = cbTripTime(p, current);
+
+      if (t <= 0 || !isFinite(t) || t > this.timeMax || t < this.timeMin) continue;
+
+      const x = this._currentToX(current);
+      const y = this._timeToY(t);
+
+      if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
+
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // --- Magnetic (instantaneous) region: vertical drop + horizontal line ---
+    const magTime = 0.02;  // 20ms
+    const magTimeACB = p.cb_type === 'acb' && p.short_time_pickup > 0 ? p.short_time_delay : magTime;
+
+    // Draw the vertical drop at magnetic pickup
+    ctx.beginPath();
+    ctx.lineWidth = 2.5;
+    const thermalTimeAtIm = cbTripTime({ ...p, magnetic_pickup: 9999, short_time_pickup: 0, instantaneous_pickup: 0 }, Im);
+    const xMag = this._currentToX(Im);
+    if (xMag >= this.plotLeft && xMag <= this.plotRight) {
+      const yTop = this._timeToY(Math.min(thermalTimeAtIm, this.timeMax));
+      const yBot = this._timeToY(magTime);
+      if (yTop >= this.plotTop && yBot <= this.plotBottom) {
+        ctx.moveTo(xMag, yTop);
+        ctx.lineTo(xMag, yBot);
+      }
+    }
+    ctx.stroke();
+
+    // Horizontal line at magnetic trip time from Im to max current
+    ctx.beginPath();
+    const yMag = this._timeToY(magTime);
+    if (yMag >= this.plotTop && yMag <= this.plotBottom) {
+      const xStart = this._currentToX(Im);
+      const xEnd = this._currentToX(Math.min(this.currentMax, (p.trip_rating_a || 630) * 200));
+      ctx.moveTo(Math.max(xStart, this.plotLeft), yMag);
+      ctx.lineTo(Math.min(xEnd, this.plotRight), yMag);
+    }
+    ctx.stroke();
+
+    // --- ACB short-time region ---
+    if (p.cb_type === 'acb' && p.short_time_pickup > 0) {
+      const stCurrent = Ir * p.short_time_pickup;
+      const stDelay = p.short_time_delay || 0.1;
+      const xST = this._currentToX(stCurrent);
+      const yST = this._timeToY(stDelay);
+
+      if (xST >= this.plotLeft && yST >= this.plotTop && yST <= this.plotBottom) {
+        // Vertical drop from thermal to short-time delay
+        ctx.beginPath();
+        ctx.setLineDash([4, 2]);
+        const thermalAtST = cbTripTime({ ...p, short_time_pickup: 0, instantaneous_pickup: 0, magnetic_pickup: 9999 }, stCurrent);
+        if (isFinite(thermalAtST) && thermalAtST > stDelay) {
+          ctx.moveTo(xST, this._timeToY(thermalAtST));
+          ctx.lineTo(xST, yST);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Horizontal at short-time delay
+        ctx.beginPath();
+        const instCurrent = p.instantaneous_pickup > 0 ? Ir * p.instantaneous_pickup : Im;
+        const xEnd = this._currentToX(instCurrent);
+        ctx.moveTo(xST, yST);
+        ctx.lineTo(Math.min(xEnd, this.plotRight), yST);
+        ctx.stroke();
+      }
+
+      // ACB instantaneous drop
+      if (p.instantaneous_pickup > 0) {
+        const instI = Ir * p.instantaneous_pickup;
+        const xInst = this._currentToX(instI);
+        if (xInst >= this.plotLeft && xInst <= this.plotRight) {
+          ctx.beginPath();
+          ctx.moveTo(xInst, this._timeToY(stDelay));
+          ctx.lineTo(xInst, this._timeToY(0.02));
+          ctx.stroke();
+          // Horizontal at 20ms
+          ctx.beginPath();
+          const y20 = this._timeToY(0.02);
+          ctx.moveTo(xInst, y20);
+          ctx.lineTo(this.plotRight, y20);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // --- Pickup line (dashed vertical at Ir) ---
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.5;
+    const px = this._currentToX(Ir);
+    if (px >= this.plotLeft && px <= this.plotRight) {
+      ctx.beginPath();
+      ctx.moveTo(px, this.plotTop);
+      ctx.lineTo(px, this.plotBottom);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+
+    // --- Label ---
+    const labelI = Ir * 2.5;
+    const labelT = cbTripTime(p, labelI);
+    if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
+      const lx = this._currentToX(labelI);
+      const ly = this._timeToY(labelT);
+      if (lx > this.plotLeft && lx < this.plotRight - 60) {
+        ctx.fillStyle = dev.color;
+        ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'left';
+        const typeStr = (p.cb_type || 'mccb').toUpperCase();
+        ctx.fillText(`${dev.name} (${typeStr})`, lx + 6, ly - 4);
+      }
+    }
+  },
+
   // ── Tooltip on hover ──
   _tooltip: null,
 
@@ -420,6 +579,8 @@ const TCC = {
         t = idmtTripTime(dev.curveName, M, dev.tds);
       } else if (dev.deviceType === 'fuse') {
         t = fuseTripTime(dev.fuseRating, current);
+      } else if (dev.deviceType === 'cb') {
+        t = cbTripTime(dev.cbParams, current);
       }
       if (t != null && isFinite(t) && t > 0 && t <= this.timeMax) {
         lines.push({ name: dev.name, time: t, color: dev.color });
@@ -470,14 +631,22 @@ const TCC = {
     if (!list) return;
 
     if (this.devices.length === 0) {
-      list.innerHTML = '<div class="tcc-no-devices">No overcurrent relays (50/51) or fuses in the network.<br>Add relays or fuses to the SLD to see their curves.</div>';
+      list.innerHTML = '<div class="tcc-no-devices">No overcurrent relays (50/51), fuses, or circuit breakers in the network.<br>Add protection devices to the SLD to see their curves.</div>';
       return;
     }
 
     list.innerHTML = this.devices.map((dev, i) => {
-      const typeLabel = dev.deviceType === 'relay'
-        ? `${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`
-        : `gG Fuse ${dev.fuseRating}A`;
+      let typeLabel;
+      if (dev.deviceType === 'relay') {
+        typeLabel = `${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`;
+      } else if (dev.deviceType === 'fuse') {
+        typeLabel = `gG Fuse ${dev.fuseRating}A`;
+      } else if (dev.deviceType === 'cb') {
+        const p = dev.cbParams;
+        typeLabel = `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a}A | Mag: ${p.magnetic_pickup}×In`;
+      } else {
+        typeLabel = '';
+      }
       return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'}" data-index="${i}">
         <div class="tcc-device-color" style="background:${dev.color}"></div>
         <div class="tcc-device-info">
@@ -528,6 +697,29 @@ const TCC = {
       visible: true,
       fuseRating: nearest,
       actualRating: ratingA || 100,
+    });
+    this._renderDeviceList();
+    this.render();
+    this._runCoordinationCheck();
+  },
+
+  addCustomCB(name, cbParams) {
+    this.devices.push({
+      id: 'custom_' + Date.now(),
+      name: name || `CB ${this.devices.length + 1}`,
+      deviceType: 'cb',
+      color: this.palette[this.colorIndex++ % this.palette.length],
+      visible: true,
+      cbParams: {
+        cb_type: cbParams.cb_type || 'mccb',
+        trip_rating_a: cbParams.trip_rating_a || 630,
+        thermal_pickup: cbParams.thermal_pickup || 1.0,
+        magnetic_pickup: cbParams.magnetic_pickup || 10,
+        long_time_delay: cbParams.long_time_delay || 10,
+        short_time_pickup: cbParams.short_time_pickup || 0,
+        short_time_delay: cbParams.short_time_delay || 0,
+        instantaneous_pickup: cbParams.instantaneous_pickup || 0,
+      },
     });
     this._renderDeviceList();
     this.render();
@@ -618,6 +810,8 @@ const TCC = {
       return idmtTripTime(dev.curveName, M, dev.tds);
     } else if (dev.deviceType === 'fuse') {
       return fuseTripTime(dev.fuseRating, currentA) || Infinity;
+    } else if (dev.deviceType === 'cb') {
+      return cbTripTime(dev.cbParams, currentA);
     }
     return Infinity;
   },
