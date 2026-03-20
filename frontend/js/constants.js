@@ -610,22 +610,26 @@ const COMPONENT_DEFS = {
     name: 'Bus',
     category: 'distribution',
     ports: [
+      // Base ports — additional ports are generated dynamically based on busWidth
       { id: 'top', side: 'top', offset: 0 },
       { id: 'bottom', side: 'bottom', offset: 0 },
       { id: 'left', side: 'left', offset: 0 },
       { id: 'right', side: 'right', offset: 0 },
     ],
+    dynamicPorts: true, // flag indicating ports are generated at runtime
     width: 120,
     height: 10,
     defaults: {
       name: 'Bus',
       voltage_kv: 11,
       bus_type: 'PQ',
+      busWidth: 120,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
       { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'] },
+      { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
     ],
   },
   transformer: {

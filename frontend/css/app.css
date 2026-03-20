@@ -1379,6 +1379,23 @@ body.dark-mode .wire-bend-point {
   width: 100%;
 }
 
+/* ─── Bus Resize Handles ─── */
+.bus-resize-handle {
+  fill: var(--accent);
+  opacity: 0;
+  cursor: ew-resize;
+  transition: opacity 0.15s;
+}
+.sld-component:hover .bus-resize-handle {
+  opacity: 0.6;
+}
+.bus-resize-handle:hover {
+  opacity: 1 !important;
+}
+body.dark-mode .bus-resize-handle {
+  fill: #4a9eff;
+}
+
 /* ─── Component Group Bounding Boxes ─── */
 .sld-group rect {
   fill: rgba(0, 120, 215, 0.04);

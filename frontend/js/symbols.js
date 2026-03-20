@@ -27,12 +27,35 @@ const Symbols = {
       </g>`;
   },
 
-  bus(w, h) {
-    const hw = w / 2;
+  bus(w, h, comp) {
+    const bw = (comp && comp.props && comp.props.busWidth) || w;
+    const hw = bw / 2;
     return `
       <g class="symbol-bus">
         <line class="bus-bar" x1="${-hw}" y1="0" x2="${hw}" y2="0"/>
+        <rect class="bus-resize-handle bus-resize-left" x="${-hw - 5}" y="-6" width="6" height="12" rx="2" data-bus-resize="left"/>
+        <rect class="bus-resize-handle bus-resize-right" x="${hw - 1}" y="-6" width="6" height="12" rx="2" data-bus-resize="right"/>
       </g>`;
+  },
+
+  // Generate dynamic ports for a bus based on its width
+  getBusPorts(comp) {
+    const bw = (comp && comp.props && comp.props.busWidth) || 120;
+    const hw = bw / 2;
+    const ports = [];
+    // Left and right edge ports
+    ports.push({ id: 'left', side: 'left', offset: 0, _x: -hw, _y: 0 });
+    ports.push({ id: 'right', side: 'right', offset: 0, _x: hw, _y: 0 });
+    // Evenly spaced top/bottom ports every 40px
+    const spacing = 40;
+    const count = Math.max(1, Math.floor(bw / spacing));
+    const startX = -hw + (bw - (count - 1) * spacing) / 2;
+    for (let i = 0; i < count; i++) {
+      const x = Math.round(startX + i * spacing);
+      ports.push({ id: `top_${i}`, side: 'top', offset: x, _x: x, _y: -5 });
+      ports.push({ id: `bottom_${i}`, side: 'bottom', offset: x, _x: x, _y: 5 });
+    }
+    return ports;
   },
 
   transformer(w, h, comp) {
@@ -344,13 +367,16 @@ const Symbols = {
   renderComponent(comp) {
     const def = COMPONENT_DEFS[comp.type];
     if (!def) return '';
-    const { width: w, height: h } = def;
+    const isBus = comp.type === 'bus';
+    const w = isBus ? ((comp.props && comp.props.busWidth) || def.width) : def.width;
+    const h = def.height;
     const symbolFn = this[comp.type];
     if (!symbolFn) return '';
 
     const symbolSvg = symbolFn.call(this, w, h, comp);
-    const portsHtml = (def.ports || []).map(p => {
-      const pos = this.getPortPosition(p, w, h);
+    const ports = isBus ? this.getBusPorts(comp) : (def.ports || []);
+    const portsHtml = ports.map(p => {
+      const pos = isBus ? { x: p._x || p.offset || 0, y: p._y || (p.side === 'top' ? -h / 2 : (p.side === 'bottom' ? h / 2 : 0)) } : this.getPortPosition(p, w, h);
       return `<circle class="conn-port-hit" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
               <circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
     }).join('');
@@ -386,9 +412,31 @@ const Symbols = {
   // Get port position in world (absolute) coordinates, accounting for rotation
   getPortWorldPosition(comp, portId) {
     const def = COMPONENT_DEFS[comp.type];
-    const port = def.ports.find(p => p.id === portId);
-    if (!port) return { x: comp.x, y: comp.y };
-    const local = this.getPortPosition(port, def.width, def.height);
+    const isBus = comp.type === 'bus';
+    let local;
+
+    if (isBus) {
+      // Use dynamic bus ports
+      const ports = this.getBusPorts(comp);
+      const port = ports.find(p => p.id === portId);
+      if (!port) {
+        // Fallback: try to find a matching port by prefix for legacy wires
+        // e.g. 'top' maps to 'top_0', 'bottom' maps to 'bottom_0'
+        const fallback = ports.find(p => p.id === portId + '_0') || ports.find(p => p.id === portId);
+        if (fallback) {
+          local = { x: fallback._x || 0, y: fallback._y || 0 };
+        } else {
+          return { x: comp.x, y: comp.y };
+        }
+      } else {
+        local = { x: port._x || 0, y: port._y || 0 };
+      }
+    } else {
+      const port = def.ports.find(p => p.id === portId);
+      if (!port) return { x: comp.x, y: comp.y };
+      local = this.getPortPosition(port, def.width, def.height);
+    }
+
     // Apply component rotation to local port coordinates
     const rot = (comp.rotation || 0) * Math.PI / 180;
     const cos = Math.cos(rot);

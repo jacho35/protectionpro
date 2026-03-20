@@ -21,6 +21,9 @@ const Canvas = {
   // State for dragging data labels
   labelDrag: null, // { compId, startX, startY, origOX, origOY }
 
+  // State for bus resize drag
+  busResize: null, // { compId, side, startX, origWidth }
+
   // State for dragging annotation badges
   annotationDrag: null, // { key, startX, startY, origDX, origDY }
 
@@ -254,6 +257,28 @@ const Canvas = {
       return;
     }
 
+    // Check if clicked on a bus resize handle
+    const busResizeEl = e.target.closest('[data-bus-resize]');
+    if (busResizeEl) {
+      const compEl = busResizeEl.closest('.sld-component');
+      if (compEl) {
+        const compId = compEl.dataset.id;
+        const comp = AppState.components.get(compId);
+        if (comp && comp.type === 'bus') {
+          const side = busResizeEl.dataset.busResize; // 'left' or 'right'
+          this.busResize = {
+            compId,
+            side,
+            startX: worldPt.x,
+            origWidth: comp.props.busWidth || 120,
+            origCompX: comp.x,
+          };
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+
     // Check if clicked on a component port (for wiring)
     const portEl = e.target.closest('[data-port]');
     if (portEl && AppState.mode === MODE.SELECT) {
@@ -302,7 +327,6 @@ const Canvas = {
         if (comp?.groupId) AppState.selectGroup(comp.groupId);
       }
       // Start drag
-      const comp = AppState.components.get(id);
       if (comp) {
         AppState.dragState = {
           startX: worldPt.x,
@@ -355,6 +379,30 @@ const Canvas = {
       AppState.panX = e.clientX - this.panStart.x;
       AppState.panY = e.clientY - this.panStart.y;
       this.updateTransform();
+      return;
+    }
+
+    // Bus resize dragging
+    if (this.busResize) {
+      const comp = AppState.components.get(this.busResize.compId);
+      if (comp) {
+        const dx = worldPt.x - this.busResize.startX;
+        if (this.busResize.side === 'right') {
+          // Extend right: add dx to width, shift center right by dx/2
+          const newWidth = snapToGrid(Math.max(60, this.busResize.origWidth + dx));
+          const widthDelta = newWidth - this.busResize.origWidth;
+          comp.props.busWidth = newWidth;
+          comp.x = snapToGrid(this.busResize.origCompX + widthDelta / 2);
+        } else {
+          // Extend left: subtract dx from width, shift center left by dx/2
+          const newWidth = snapToGrid(Math.max(60, this.busResize.origWidth - dx));
+          const widthDelta = newWidth - this.busResize.origWidth;
+          comp.props.busWidth = newWidth;
+          comp.x = snapToGrid(this.busResize.origCompX - widthDelta / 2);
+        }
+        AppState.dirty = true;
+        this.render();
+      }
       return;
     }
 
@@ -456,6 +504,14 @@ const Canvas = {
     if (this.isPanning) {
       this.isPanning = false;
       this.svg.classList.remove('panning-active');
+      return;
+    }
+
+    if (this.busResize) {
+      AppState.dirty = true;
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      this.busResize = null;
+      this.render();
       return;
     }
 
@@ -922,7 +978,8 @@ const Canvas = {
       if (excludeCompId && comp.id === excludeCompId) continue;
       const def = COMPONENT_DEFS[comp.type];
       if (!def.ports) continue;
-      for (const port of def.ports) {
+      const ports = (comp.type === 'bus') ? Symbols.getBusPorts(comp) : def.ports;
+      for (const port of ports) {
         const pos = Symbols.getPortWorldPosition(comp, port.id);
         const dx = worldPt.x - pos.x;
         const dy = worldPt.y - pos.y;
