@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
   UndoManager.init();
   MiniMap.init();
 
+  // Templates button
+  document.getElementById('btn-templates').addEventListener('click', () => NetworkTemplates.show());
+
   // Toolbar mode buttons
   const btnSelect = document.getElementById('btn-select');
   const btnWire = document.getElementById('btn-wire');

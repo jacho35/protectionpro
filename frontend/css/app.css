@@ -1329,3 +1329,52 @@ body.dark-mode .wire-bend-point {
   color: #fff;
   border-color: var(--danger);
 }
+
+/* Template picker */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.template-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: default;
+  transition: border-color 0.15s;
+}
+
+.template-card:hover {
+  border-color: var(--accent);
+}
+
+.template-card-header {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.template-card-preview {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  background: rgba(0,120,215,0.06);
+  border-radius: 4px;
+}
+
+.template-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.template-card .template-load-btn {
+  width: 100%;
+}
