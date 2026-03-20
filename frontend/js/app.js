@@ -273,6 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const which = e.target.dataset.tccAdd;
       document.getElementById('tcc-add-relay').style.display = which === 'relay' ? '' : 'none';
       document.getElementById('tcc-add-fuse').style.display = which === 'fuse' ? '' : 'none';
+      document.getElementById('tcc-add-cb').style.display = which === 'cb' ? '' : 'none';
     });
   });
 
@@ -292,6 +293,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const rating = parseInt(document.getElementById('tcc-fuse-rating').value) || 100;
     TCC.addCustomFuse(name, rating);
     document.getElementById('tcc-fuse-name').value = '';
+  });
+
+  // TCC add CB
+  document.getElementById('tcc-cb-type').addEventListener('change', (e) => {
+    document.getElementById('tcc-cb-acb-fields').style.display = e.target.value === 'acb' ? '' : 'none';
+  });
+  document.getElementById('btn-tcc-add-cb').addEventListener('click', () => {
+    const name = document.getElementById('tcc-cb-name').value;
+    const cbType = document.getElementById('tcc-cb-type').value;
+    const cbParams = {
+      cb_type: cbType,
+      trip_rating_a: parseFloat(document.getElementById('tcc-cb-rating').value) || 630,
+      thermal_pickup: parseFloat(document.getElementById('tcc-cb-thermal').value) || 1.0,
+      magnetic_pickup: parseFloat(document.getElementById('tcc-cb-magnetic').value) || 10,
+      long_time_delay: parseInt(document.getElementById('tcc-cb-ltdelay').value) || 10,
+      short_time_pickup: cbType === 'acb' ? parseFloat(document.getElementById('tcc-cb-st-pickup').value) || 0 : 0,
+      short_time_delay: cbType === 'acb' ? parseFloat(document.getElementById('tcc-cb-st-delay').value) || 0 : 0,
+      instantaneous_pickup: cbType === 'acb' ? parseFloat(document.getElementById('tcc-cb-inst').value) || 0 : 0,
+    };
+    TCC.addCustomCB(name, cbParams);
+    document.getElementById('tcc-cb-name').value = '';
   });
 
   // TCC grading margin update
