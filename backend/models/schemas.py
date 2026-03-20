@@ -28,6 +28,16 @@ class Wire(BaseModel):
     toPort: str
 
 
+class Scenario(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    timestamp: str = ""
+    components: list[Component] = []
+    wires: list[Wire] = []
+    nextId: int = 1
+
+
 class ProjectData(BaseModel):
     projectName: str = "Untitled Project"
     baseMVA: float = 100.0
@@ -35,6 +45,7 @@ class ProjectData(BaseModel):
     components: list[Component] = []
     wires: list[Wire] = []
     nextId: int = 1
+    scenarios: list[Scenario] = []
     loadFlowMethod: Optional[str] = None
     faultBusId: Optional[str] = None
     faultType: Optional[str] = None  # "3phase", "slg", "ll", or None for all

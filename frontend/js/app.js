@@ -338,6 +338,92 @@ document.addEventListener('DOMContentLoaded', () => {
     TCC._runCoordinationCheck();
   });
 
+  // ─── Scenarios ───
+  const scenariosModal = document.getElementById('scenarios-modal');
+
+  function renderScenarioList() {
+    const list = document.getElementById('scenario-list');
+    if (AppState.scenarios.length === 0) {
+      list.innerHTML = '<p class="scenario-empty">No scenarios saved yet.</p>';
+      return;
+    }
+    list.innerHTML = AppState.scenarios.map(s => {
+      const date = new Date(s.timestamp).toLocaleString();
+      const compCount = s.components.length;
+      const descHtml = s.description ? `<div class="scenario-desc">${escapeHtml(s.description)}</div>` : '';
+      return `
+        <div class="scenario-item" data-id="${s.id}">
+          <div class="scenario-info">
+            <div class="scenario-name">${escapeHtml(s.name)}</div>
+            ${descHtml}
+            <div class="scenario-meta">${date} &mdash; ${compCount} component${compCount !== 1 ? 's' : ''}</div>
+          </div>
+          <div class="scenario-actions">
+            <button class="btn-load-scenario" data-id="${s.id}" title="Load this scenario">Load</button>
+            <button class="btn-delete-scenario" data-id="${s.id}" title="Delete this scenario">&times;</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Bind load buttons
+    list.querySelectorAll('.btn-load-scenario').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!confirm('Load this scenario? Current unsaved changes will be replaced.')) return;
+        const loaded = AppState.loadScenario(btn.dataset.id);
+        if (loaded) {
+          Canvas.render();
+          Properties.clear();
+          scenariosModal.style.display = 'none';
+          const scenario = AppState.scenarios.find(s => s.id === btn.dataset.id);
+          document.getElementById('status-info').textContent = `Loaded scenario: ${scenario.name}`;
+        }
+      });
+    });
+
+    // Bind delete buttons
+    list.querySelectorAll('.btn-delete-scenario').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!confirm('Delete this scenario permanently?')) return;
+        AppState.deleteScenario(btn.dataset.id);
+        renderScenarioList();
+      });
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  document.getElementById('btn-scenarios').addEventListener('click', () => {
+    document.getElementById('scenario-name').value = '';
+    document.getElementById('scenario-desc').value = '';
+    renderScenarioList();
+    scenariosModal.style.display = '';
+  });
+
+  document.getElementById('btn-close-scenarios').addEventListener('click', () => {
+    scenariosModal.style.display = 'none';
+  });
+  scenariosModal.addEventListener('click', (e) => {
+    if (e.target === scenariosModal) scenariosModal.style.display = 'none';
+  });
+
+  document.getElementById('btn-save-scenario').addEventListener('click', () => {
+    const name = document.getElementById('scenario-name').value.trim();
+    if (!name) {
+      document.getElementById('scenario-name').focus();
+      return;
+    }
+    const desc = document.getElementById('scenario-desc').value.trim();
+    AppState.saveScenario(name, desc);
+    document.getElementById('scenario-name').value = '';
+    document.getElementById('scenario-desc').value = '';
+    renderScenarioList();
+    document.getElementById('status-info').textContent = `Scenario "${name}" saved.`;
+  });
+
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
     AppState.showCableLabels = !AppState.showCableLabels;

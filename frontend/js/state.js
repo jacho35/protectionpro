@@ -47,6 +47,10 @@ const AppState = {
   faultResults: null,
   loadFlowResults: null,
 
+  // Scenarios — saved snapshots of network configuration
+  scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
+  _scenarioNextId: 1,
+
   // Generate unique ID
   genId(prefix) {
     return `${prefix}_${this.nextId++}`;
@@ -193,6 +197,62 @@ const AppState = {
     this.dirty = true;
   },
 
+  // Save current network configuration as a scenario
+  saveScenario(name, description = '') {
+    const id = `scenario_${this._scenarioNextId++}`;
+    const scenario = {
+      id,
+      name,
+      description,
+      timestamp: new Date().toISOString(),
+      components: JSON.parse(JSON.stringify([...this.components.values()])),
+      wires: JSON.parse(JSON.stringify([...this.wires.values()])),
+      nextId: this.nextId,
+    };
+    this.scenarios.push(scenario);
+    this.dirty = true;
+    return scenario;
+  },
+
+  // Load a scenario, replacing current network configuration
+  loadScenario(scenarioId) {
+    const scenario = this.scenarios.find(s => s.id === scenarioId);
+    if (!scenario) return false;
+    this.components.clear();
+    this.wires.clear();
+    this.selectedIds.clear();
+    this.faultResults = null;
+    this.loadFlowResults = null;
+    for (const c of scenario.components) {
+      this.components.set(c.id, JSON.parse(JSON.stringify(c)));
+    }
+    for (const w of scenario.wires) {
+      this.wires.set(w.id, JSON.parse(JSON.stringify(w)));
+    }
+    this.nextId = scenario.nextId;
+    this.dirty = true;
+    return true;
+  },
+
+  // Update scenario description
+  updateScenario(scenarioId, name, description) {
+    const scenario = this.scenarios.find(s => s.id === scenarioId);
+    if (!scenario) return false;
+    if (name != null) scenario.name = name;
+    if (description != null) scenario.description = description;
+    this.dirty = true;
+    return true;
+  },
+
+  // Delete a scenario
+  deleteScenario(scenarioId) {
+    const idx = this.scenarios.findIndex(s => s.id === scenarioId);
+    if (idx === -1) return false;
+    this.scenarios.splice(idx, 1);
+    this.dirty = true;
+    return true;
+  },
+
   // Clear all results
   clearResults() {
     this.faultResults = null;
@@ -217,6 +277,8 @@ const AppState = {
     this.placingType = null;
     this.wireStart = null;
     this.dragState = null;
+    this.scenarios = [];
+    this._scenarioNextId = 1;
   },
 
   // Export to JSON
@@ -229,6 +291,7 @@ const AppState = {
       components: [...this.components.values()],
       wires: [...this.wires.values()],
       nextId: this.nextId,
+      scenarios: this.scenarios,
     };
   },
 
@@ -240,6 +303,10 @@ const AppState = {
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
     this.defaultLengthUnit = data.defaultLengthUnit || 'm';
     this.nextId = data.nextId || 1;
+    this.scenarios = data.scenarios || [];
+    this._scenarioNextId = this.scenarios.length > 0
+      ? Math.max(...this.scenarios.map(s => parseInt(s.id.replace('scenario_', '')) || 0)) + 1
+      : 1;
     for (const c of data.components || []) {
       this.components.set(c.id, c);
     }
