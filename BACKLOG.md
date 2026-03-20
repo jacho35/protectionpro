@@ -1,5 +1,13 @@
 # ProtectionPro — Backlog Features
 
+## Protection Coordination Enhancements
+- **Circuit breaker TCC curves**: Trip curves for MCCB and ACB thermal-magnetic characteristics
+- **CT saturation modeling**: CT ratio and burden effects on relay operating times
+- **Directional relay curves**: Directional overcurrent (67) curve plotting
+- **TCC curve overlay on fault results**: Show fault current levels on TCC chart from analysis results
+- **TCC PDF export**: Multi-page PDF report with TCC chart and coordination table
+- **Manufacturer relay/fuse libraries**: Import specific manufacturer curve data
+
 ## Fault Analysis Enhancements
 - **Full IEC 60909 time-varying fault currents**: I"k (initial), Ip (peak), Ib (breaking), Ik (steady-state)
 - **Motor contribution to faults**: Induction and synchronous motor sub-transient contributions with decay modeling

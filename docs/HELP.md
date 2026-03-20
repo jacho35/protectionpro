@@ -17,12 +17,13 @@
 9. [Annotations & Data Labels](#annotations--data-labels)
 10. [Overload & Voltage Warnings](#overload--voltage-warnings)
 11. [Compliance Report](#compliance-report)
-12. [Project Management](#project-management)
-13. [Settings & Libraries](#settings--libraries)
-14. [Export & Reports](#export--reports)
-15. [Keyboard Shortcuts](#keyboard-shortcuts)
-16. [Component Reference](#component-reference)
-17. [Roadmap — Future Features](#roadmap--future-features)
+12. [Protection Coordination (TCC)](#protection-coordination-tcc)
+13. [Project Management](#project-management)
+14. [Settings & Libraries](#settings--libraries)
+15. [Export & Reports](#export--reports)
+16. [Keyboard Shortcuts](#keyboard-shortcuts)
+17. [Component Reference](#component-reference)
+18. [Roadmap — Future Features](#roadmap--future-features)
 
 ---
 
@@ -317,6 +318,35 @@ The modal header shows a summary badge:
 
 ### PDF Export
 Click **Download PDF** in the compliance modal to generate a formatted A4 portrait PDF with all sections, colour-coded status columns, and page numbers.
+
+---
+
+## Protection Coordination (TCC)
+
+The **TCC** (Time-Current Characteristic) chart displays overcurrent protection device curves on a log-log plot, enabling visual coordination analysis.
+
+### Opening the TCC Chart
+Click the **TCC** button in the toolbar. The chart automatically loads all 50/51 overcurrent relays and fuses from the current SLD.
+
+### Chart Features
+- **Log-log axes**: Current (1A–100kA) on the X axis, time (1ms–1000s) on the Y axis
+- **IDMT relay curves**: IEC 60255 (Standard, Very, Extremely, Long Time Inverse) and IEEE C37.112 (Moderately, Very, Extremely Inverse)
+- **Fuse curves**: IEC 60269 gG fuse pre-arcing time-current characteristics (16A–630A)
+- **Interactive tooltip**: Hover over the chart to see trip times for all visible devices at any current level
+- **Device visibility**: Toggle individual device curves on/off in the device list
+
+### Adding Custom Devices
+Use the side panel to add devices not on the SLD:
+- **Relay**: Select curve type, set pickup current (A) and time dial setting (TDS)
+- **Fuse**: Select a standard gG fuse rating (16A–630A)
+
+### Coordination Check
+The automatic grading margin checker tests all visible device pairs at multiple fault current levels (500A–20kA) and flags any pair with less than the configured grading margin (default 0.3s). Results appear in the coordination panel with downstream/upstream device names, test current, and measured margin.
+
+Adjust the grading margin using the **Grading Margin (s)** input field.
+
+### Export
+Click **Export PNG** to download the TCC chart as a high-resolution PNG image.
 
 ---
 

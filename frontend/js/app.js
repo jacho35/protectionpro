@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Annotations.init();
   Project.init();
   StandardData.init();
+  TCC.init();
 
   // Toolbar mode buttons
   const btnSelect = document.getElementById('btn-select');
@@ -247,6 +248,56 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modal._complianceReport) {
       Compliance.exportPDF(modal._complianceReport);
     }
+  });
+
+  // TCC Chart
+  document.getElementById('btn-tcc').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before opening TCC chart.';
+      return;
+    }
+    TCC.open();
+    document.getElementById('status-info').textContent = 'TCC chart opened.';
+  });
+  document.getElementById('btn-close-tcc').addEventListener('click', () => TCC.close());
+  document.getElementById('tcc-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'tcc-modal') TCC.close();
+  });
+  document.getElementById('btn-tcc-export-png').addEventListener('click', () => TCC.exportPNG());
+
+  // TCC add device tab switching
+  document.querySelectorAll('.tcc-add-tab').forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      document.querySelectorAll('.tcc-add-tab').forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      const which = e.target.dataset.tccAdd;
+      document.getElementById('tcc-add-relay').style.display = which === 'relay' ? '' : 'none';
+      document.getElementById('tcc-add-fuse').style.display = which === 'fuse' ? '' : 'none';
+    });
+  });
+
+  // TCC add relay
+  document.getElementById('btn-tcc-add-relay').addEventListener('click', () => {
+    const name = document.getElementById('tcc-relay-name').value;
+    const pickup = parseFloat(document.getElementById('tcc-relay-pickup').value) || 100;
+    const tds = parseFloat(document.getElementById('tcc-relay-tds').value) || 1.0;
+    const curve = document.getElementById('tcc-relay-curve').value;
+    TCC.addCustomRelay(name, pickup, tds, curve);
+    document.getElementById('tcc-relay-name').value = '';
+  });
+
+  // TCC add fuse
+  document.getElementById('btn-tcc-add-fuse').addEventListener('click', () => {
+    const name = document.getElementById('tcc-fuse-name').value;
+    const rating = parseInt(document.getElementById('tcc-fuse-rating').value) || 100;
+    TCC.addCustomFuse(name, rating);
+    document.getElementById('tcc-fuse-name').value = '';
+  });
+
+  // TCC grading margin update
+  document.getElementById('tcc-grading-margin').addEventListener('change', (e) => {
+    TCC.gradingMargin = parseFloat(e.target.value) || 0.3;
+    TCC._runCoordinationCheck();
   });
 
   // Display toggles

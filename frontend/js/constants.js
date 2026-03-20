@@ -228,6 +228,81 @@ const IEC_60909_VOLTAGE_FACTORS = {
 // Standard cable sizes (mm²) per IEC
 const IEC_STANDARD_SIZES = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
 
+// ─── IDMT Relay Curve Parameters ───
+// IEC 60255 inverse-time curves: t = TDS * (k / (M^a - 1)) + c
+// IEEE C37.112 curves: t = TDS * (A / (M^p - 1) + B)
+// Where M = I/Ipickup (current multiple)
+const IDMT_CURVES = {
+  'IEC Standard Inverse':     { std: 'IEC', k: 0.14,   a: 0.02,  c: 0 },
+  'IEC Very Inverse':         { std: 'IEC', k: 13.5,   a: 1.0,   c: 0 },
+  'IEC Extremely Inverse':    { std: 'IEC', k: 80.0,   a: 2.0,   c: 0 },
+  'IEC Long Time Inverse':    { std: 'IEC', k: 120.0,  a: 1.0,   c: 0 },
+  'IEEE Moderately Inverse':  { std: 'IEEE', A: 0.0515, p: 0.02,  B: 0.114 },
+  'IEEE Very Inverse':        { std: 'IEEE', A: 19.61,  p: 2.0,   B: 0.491 },
+  'IEEE Extremely Inverse':   { std: 'IEEE', A: 28.2,   p: 2.0,   B: 0.1217 },
+};
+
+// Calculate relay trip time for a given current multiple M and TDS
+function idmtTripTime(curveName, M, TDS) {
+  if (M <= 1) return Infinity;
+  const c = IDMT_CURVES[curveName];
+  if (!c) return Infinity;
+  if (c.std === 'IEC') {
+    return TDS * (c.k / (Math.pow(M, c.a) - 1) + c.c);
+  } else {
+    return TDS * (c.A / (Math.pow(M, c.p) - 1) + c.B);
+  }
+}
+
+// ─── IEC 60269 Fuse Curves (gG General Purpose) ───
+// Pre-arcing (minimum melting) time-current points: [current_A, time_s]
+// Based on IEC 60269-1 characteristic data for gG fuses
+const FUSE_CURVES_GG = {
+  16:   [[25,600],[32,100],[40,30],[50,8],[80,1.5],[100,0.5],[160,0.08],[250,0.02],[400,0.008]],
+  20:   [[32,600],[40,100],[50,30],[63,8],[100,1.5],[125,0.5],[200,0.08],[315,0.02],[500,0.008]],
+  25:   [[40,600],[50,100],[63,30],[80,8],[125,1.5],[160,0.5],[250,0.08],[400,0.02],[630,0.008]],
+  32:   [[50,600],[63,100],[80,30],[100,8],[160,1.5],[200,0.5],[315,0.08],[500,0.02],[800,0.008]],
+  40:   [[63,600],[80,100],[100,30],[125,8],[200,1.5],[250,0.5],[400,0.08],[630,0.02],[1000,0.008]],
+  50:   [[80,600],[100,100],[125,30],[160,8],[250,1.5],[315,0.5],[500,0.08],[800,0.02],[1250,0.008]],
+  63:   [[100,600],[125,100],[160,30],[200,8],[315,1.5],[400,0.5],[630,0.08],[1000,0.02],[1600,0.008]],
+  80:   [[125,600],[160,100],[200,30],[250,8],[400,1.5],[500,0.5],[800,0.08],[1250,0.02],[2000,0.008]],
+  100:  [[160,600],[200,100],[250,30],[315,8],[500,1.5],[630,0.5],[1000,0.08],[1600,0.02],[2500,0.008]],
+  125:  [[200,600],[250,100],[315,30],[400,8],[630,1.5],[800,0.5],[1250,0.08],[2000,0.02],[3150,0.008]],
+  160:  [[250,600],[315,100],[400,30],[500,8],[800,1.5],[1000,0.5],[1600,0.08],[2500,0.02],[4000,0.008]],
+  200:  [[315,600],[400,100],[500,30],[630,8],[1000,1.5],[1250,0.5],[2000,0.08],[3150,0.02],[5000,0.008]],
+  250:  [[400,600],[500,100],[630,30],[800,8],[1250,1.5],[1600,0.5],[2500,0.08],[4000,0.02],[6300,0.008]],
+  315:  [[500,600],[630,100],[800,30],[1000,8],[1600,1.5],[2000,0.5],[3150,0.08],[5000,0.02],[8000,0.008]],
+  400:  [[630,600],[800,100],[1000,30],[1250,8],[2000,1.5],[2500,0.5],[4000,0.08],[6300,0.02],[10000,0.008]],
+  500:  [[800,600],[1000,100],[1250,30],[1600,8],[2500,1.5],[3150,0.5],[5000,0.08],[8000,0.02],[12500,0.008]],
+  630:  [[1000,600],[1250,100],[1600,30],[2000,8],[3150,1.5],[4000,0.5],[6300,0.08],[10000,0.02],[16000,0.008]],
+};
+
+// Get fuse trip time by log-log interpolation of the characteristic points
+function fuseTripTime(ratingA, currentA) {
+  const points = FUSE_CURVES_GG[ratingA];
+  if (!points) return null;
+  if (currentA <= points[0][0]) return Infinity; // Below minimum operating current
+  if (currentA >= points[points.length - 1][0]) return points[points.length - 1][1];
+
+  // Log-log interpolation
+  for (let i = 0; i < points.length - 1; i++) {
+    const [i1, t1] = points[i];
+    const [i2, t2] = points[i + 1];
+    if (currentA >= i1 && currentA <= i2) {
+      const logI = Math.log10(currentA);
+      const logI1 = Math.log10(i1);
+      const logI2 = Math.log10(i2);
+      const logT1 = Math.log10(t1);
+      const logT2 = Math.log10(t2);
+      const frac = (logI - logI1) / (logI2 - logI1);
+      return Math.pow(10, logT1 + frac * (logT2 - logT1));
+    }
+  }
+  return points[points.length - 1][1];
+}
+
+const FUSE_RATINGS_GG = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630];
+
 // Interaction modes
 const MODE = {
   SELECT: 'select',
@@ -443,9 +518,11 @@ const COMPONENT_DEFS = {
       rated_voltage_kv: 11,
       rated_current_a: 100,
       breaking_capacity_ka: 50,
+      fuse_type: 'gG',
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
+      { key: 'fuse_type', label: 'Fuse Type', type: 'select', options: ['gG', 'aM'] },
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },

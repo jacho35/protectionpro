@@ -77,6 +77,10 @@
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           <span>Compliance</span>
         </button>
+        <button id="btn-tcc" title="Time-Current Curves (TCC)">
+          <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
+          <span>TCC</span>
+        </button>
       </div>
     </div>
     <div class="toolbar-right">
@@ -206,6 +210,109 @@
         </div>
         <div id="compliance-body">
           <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TCC Chart Modal -->
+  <div id="tcc-modal" class="modal" style="display:none">
+    <div class="modal-content tcc-modal-content">
+      <div class="modal-header">
+        <h3>Time-Current Curves (TCC)</h3>
+        <div class="tcc-header-actions">
+          <button id="btn-tcc-export-png" class="btn-small" title="Export chart as PNG">Export PNG</button>
+          <button class="modal-close" id="btn-close-tcc">&times;</button>
+        </div>
+      </div>
+      <div class="tcc-body">
+        <!-- Chart area -->
+        <div class="tcc-chart-area">
+          <canvas id="tcc-canvas"></canvas>
+        </div>
+        <!-- Side panel -->
+        <div class="tcc-side-panel">
+          <div class="tcc-panel-section">
+            <h4>Devices</h4>
+            <div id="tcc-device-list" class="tcc-device-list">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+          <div class="tcc-panel-section">
+            <h4>Add Custom Device</h4>
+            <div class="tcc-add-tabs">
+              <button class="tcc-add-tab active" data-tcc-add="relay">Relay</button>
+              <button class="tcc-add-tab" data-tcc-add="fuse">Fuse</button>
+            </div>
+            <!-- Add Relay Form -->
+            <div id="tcc-add-relay" class="tcc-add-form">
+              <div class="tcc-form-row">
+                <label for="tcc-relay-name">Name</label>
+                <input type="text" id="tcc-relay-name" placeholder="Relay 1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-relay-curve">Curve</label>
+                <select id="tcc-relay-curve">
+                  <option value="IEC Standard Inverse">IEC Standard Inverse</option>
+                  <option value="IEC Very Inverse">IEC Very Inverse</option>
+                  <option value="IEC Extremely Inverse">IEC Extremely Inverse</option>
+                  <option value="IEC Long Time Inverse">IEC Long Time Inverse</option>
+                  <option value="IEEE Moderately Inverse">IEEE Moderately Inverse</option>
+                  <option value="IEEE Very Inverse">IEEE Very Inverse</option>
+                  <option value="IEEE Extremely Inverse">IEEE Extremely Inverse</option>
+                </select>
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-relay-pickup">Pickup (A)</label>
+                <input type="number" id="tcc-relay-pickup" value="100" min="1" step="1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-relay-tds">Time Dial (TDS)</label>
+                <input type="number" id="tcc-relay-tds" value="1.0" min="0.05" max="10" step="0.05">
+              </div>
+              <button id="btn-tcc-add-relay" class="btn-small btn-primary">Add Relay</button>
+            </div>
+            <!-- Add Fuse Form -->
+            <div id="tcc-add-fuse" class="tcc-add-form" style="display:none">
+              <div class="tcc-form-row">
+                <label for="tcc-fuse-name">Name</label>
+                <input type="text" id="tcc-fuse-name" placeholder="Fuse 1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-fuse-rating">Rating (A)</label>
+                <select id="tcc-fuse-rating">
+                  <option value="16">16A</option>
+                  <option value="20">20A</option>
+                  <option value="25">25A</option>
+                  <option value="32">32A</option>
+                  <option value="40">40A</option>
+                  <option value="50">50A</option>
+                  <option value="63">63A</option>
+                  <option value="80">80A</option>
+                  <option value="100" selected>100A</option>
+                  <option value="125">125A</option>
+                  <option value="160">160A</option>
+                  <option value="200">200A</option>
+                  <option value="250">250A</option>
+                  <option value="315">315A</option>
+                  <option value="400">400A</option>
+                  <option value="500">500A</option>
+                  <option value="630">630A</option>
+                </select>
+              </div>
+              <button id="btn-tcc-add-fuse" class="btn-small btn-primary">Add Fuse</button>
+            </div>
+          </div>
+          <div class="tcc-panel-section">
+            <h4>Coordination Check</h4>
+            <div class="tcc-form-row">
+              <label for="tcc-grading-margin">Grading Margin (s)</label>
+              <input type="number" id="tcc-grading-margin" value="0.3" min="0.1" max="1.0" step="0.05">
+            </div>
+            <div id="tcc-coord-results" class="tcc-coord-results">
+              <!-- Populated by JS -->
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -502,6 +609,7 @@
   <script src="js/annotations.js"></script>
   <script src="js/api.js"></script>
   <script src="js/compliance.js"></script>
+  <script src="js/tcc.js"></script>
   <script src="js/project.js"></script>
   <script src="js/standard-data.js"></script>
   <script src="js/app.js"></script>
