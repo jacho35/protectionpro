@@ -95,6 +95,82 @@
   flex-shrink: 0;
 }
 
+/* Info button (ⓘ) for default value sources */
+.prop-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  font-style: italic;
+  font-family: Georgia, 'Times New Roman', serif;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  padding: 0;
+  transition: all 0.15s;
+}
+.prop-info-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0,120,215,0.08);
+}
+
+/* Info popup positioned relative to properties panel */
+.prop-info-popup {
+  position: fixed;
+  z-index: 9999;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  white-space: pre-line;
+  pointer-events: auto;
+}
+.prop-info-popup::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: 16px;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
+  transform: rotate(45deg);
+}
+.prop-info-popup .info-source {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.prop-info-popup .info-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0 2px;
+  line-height: 1;
+}
+.prop-info-popup .info-close:hover {
+  color: var(--text-primary);
+}
+
 .prop-row .unit-select {
   font-size: 11px;
   color: var(--accent);
