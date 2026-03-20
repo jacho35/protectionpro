@@ -452,7 +452,8 @@ c-factor = ${cFactor} (${vkv < 1.0 ? 'LV ≤ 1kV' : 'MV/HV > 1kV'})
 ${hasZeq ? `
 ─── Equivalent Impedance (Z_eq) ───
 Z_eq = ${zeqR.toFixed(6)} + j${zeqX.toFixed(6)} p.u.
-|Z_eq| = ${zeqMag.toFixed(6)} p.u. = ${zeqOhm.toFixed(6)} Ω` : ''}
+|Z_eq| = ${zeqMag.toFixed(6)} p.u. = ${zeqOhm.toFixed(6)} Ω
+R/X = ${zeqX !== 0 ? (zeqR / zeqX).toFixed(4) : 'N/A'}    X/R = ${zeqR !== 0 ? (zeqX / zeqR).toFixed(2) : 'N/A'}` : ''}
 
 ─── Three-Phase Fault (I"k3) ───
 I"k3 = c × V_n / (√3 × |Z_eq|)${hasZeq ? ` = ${cFactor} / ${zeqMag.toFixed(6)} × ${iBaseKA.toFixed(4)}` : ''}
