@@ -223,13 +223,19 @@ const Symbols = {
     }
   },
 
-  // Get port position in world (absolute) coordinates
+  // Get port position in world (absolute) coordinates, accounting for rotation
   getPortWorldPosition(comp, portId) {
     const def = COMPONENT_DEFS[comp.type];
     const port = def.ports.find(p => p.id === portId);
     if (!port) return { x: comp.x, y: comp.y };
     const local = this.getPortPosition(port, def.width, def.height);
-    return { x: comp.x + local.x, y: comp.y + local.y };
+    // Apply component rotation to local port coordinates
+    const rot = (comp.rotation || 0) * Math.PI / 180;
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    const rx = local.x * cos - local.y * sin;
+    const ry = local.x * sin + local.y * cos;
+    return { x: comp.x + rx, y: comp.y + ry };
   },
 
   // Render palette icon (smaller, no ports)
