@@ -72,10 +72,16 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         ikLL_ka = None
         ikLLG_ka = None
 
+        ik3_angle = None
+        ik1_angle = None
+        ikLL_angle = None
+        ikLLG_angle = None
+
         # Three-phase fault: I"k3 = c * V_n / (sqrt(3) * |Z_eq|)
         if not fault_type or fault_type == "3phase":
             ik3_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
             ik3_ka = round(ik3_pu * i_base_ka, 3)
+            ik3_angle = round(-math.degrees(math.atan2(z_eq.imag, z_eq.real)), 2) if abs(z_eq) > 1e-10 else None
 
         # Compute Z0 once for fault types that need it (SLG, LLG)
         needs_z0 = not fault_type or fault_type in ("slg", "llg")
@@ -96,6 +102,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
                 ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
                 ik1_ka = round(ik1_pu * i_base_ka, 3)
+                ik1_angle = round(-math.degrees(math.atan2(z_slg.imag, z_slg.real)), 2) if abs(z_slg) > 1e-10 else None
             else:
                 # No zero-sequence path exists (e.g. bus between delta windings)
                 # Z0 → ∞, so SLG fault current ≈ 0
@@ -106,6 +113,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             z_ll = z_eq + z_eq
             ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
             ikLL_ka = round(ikLL_pu * i_base_ka, 3)
+            ikLL_angle = round(-math.degrees(math.atan2(z_ll.imag, z_ll.real)) - 30, 2) if abs(z_ll) > 1e-10 else None
 
         # Double line-to-ground fault:
         # I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
@@ -119,12 +127,14 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 z_llg = z_eq + z2_par_z0  # Z1 + Z2‖Z0
                 ikLLG_pu = c_factor * math.sqrt(3) / abs(z_llg) if abs(z_llg) > 1e-10 else 0
                 ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
+                ikLLG_angle = round(-math.degrees(math.atan2(z_llg.imag, z_llg.real)), 2) if abs(z_llg) > 1e-10 else None
             else:
                 # No zero-sequence path: Z0 → ∞, Z2‖Z0 → Z2
                 # Degenerates to line-to-line fault
                 z_ll_deg = z_eq + z_eq
                 ikLLG_pu = c_factor * math.sqrt(3) / abs(z_ll_deg) if abs(z_ll_deg) > 1e-10 else 0
                 ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
+                ikLLG_angle = round(-math.degrees(math.atan2(z_ll_deg.imag, z_ll_deg.real)), 2) if abs(z_ll_deg) > 1e-10 else None
 
         # Compute branch contributions using current divider
         # For selected fault type, determine total fault current in p.u.
@@ -155,9 +165,13 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             bus_name=bus.props.get("name", bus.id),
             voltage_kv=voltage_kv,
             ik3=ik3_ka,
+            ik3_angle=ik3_angle,
             ik1=ik1_ka,
+            ik1_angle=ik1_angle,
             ikLL=ikLL_ka,
+            ikLL_angle=ikLL_angle,
             ikLLG=ikLLG_ka,
+            ikLLG_angle=ikLLG_angle,
             z_eq_real=round(z_eq.real, 6),
             z_eq_imag=round(z_eq.imag, 6),
             z_eq_mag=round(abs(z_eq), 6),

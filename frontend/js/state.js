@@ -39,6 +39,7 @@ const AppState = {
   showCableLabels: true,
   showDeviceLabels: false,
   showWarnings: true,
+  showFaultAngles: false,
 
   // Clipboard for copy/paste
   clipboard: null, // { components: [], wires: [] }

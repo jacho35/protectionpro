@@ -85,9 +85,13 @@ class FaultResultBus(BaseModel):
     bus_name: str
     voltage_kv: float
     ik3: Optional[float] = None  # 3-phase fault kA
+    ik3_angle: Optional[float] = None  # 3-phase fault angle (degrees)
     ik1: Optional[float] = None  # SLG fault kA
+    ik1_angle: Optional[float] = None  # SLG fault angle (degrees)
     ikLL: Optional[float] = None  # Line-to-line fault kA
+    ikLL_angle: Optional[float] = None  # LL fault angle (degrees)
     ikLLG: Optional[float] = None  # Double line-to-ground fault kA
+    ikLLG_angle: Optional[float] = None  # LLG fault angle (degrees)
     z_eq_real: Optional[float] = None  # Z_eq real part (p.u.)
     z_eq_imag: Optional[float] = None  # Z_eq imaginary part (p.u.)
     z_eq_mag: Optional[float] = None   # |Z_eq| magnitude (p.u.)
