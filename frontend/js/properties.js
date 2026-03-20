@@ -296,6 +296,12 @@ const Properties = {
       if (label) label.textContent = value;
     }
 
+    // When relay type changes, re-render to show/hide conditional fields
+    if (field === 'relay_type' && comp.type === 'relay') {
+      this.show(comp.id);
+      return;
+    }
+
     // When vector group changes, auto-set grounding defaults to match
     if (field === 'vector_group' && comp.type === 'transformer') {
       const vg = value || 'Dyn11';

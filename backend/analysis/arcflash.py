@@ -127,10 +127,15 @@ class ArcFlashResults:
 
 
 def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
-    """Calculate arcing current per IEEE 1584-2018.
+    """Calculate arcing current per IEEE 1584-2002 Eq. 1 & 2.
 
-    Simplified model: uses empirical relationship between bolted fault
-    current and arcing current.
+    IEEE 1584-2002 empirical model:
+      For V < 1kV:  log(Ia) = K + 0.662×log(Ibf) + 0.0966×V + 0.000526×G
+                              + 0.5588×V×log(Ibf) - 0.00304×G×log(Ibf)
+      For V >= 1kV: log(Ia) = 0.00402 + 0.983×log(Ibf)
+
+    Where: Ia, Ibf in kA; V in kV; G in mm;
+           K = -0.153 (open air) or -0.097 (box/enclosed)
 
     Args:
         ibf_ka: Bolted fault current (kA rms)
@@ -141,27 +146,31 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
     Returns:
         (iarc_ka, iarc_reduced_ka): Arcing current and reduced variation (kA)
     """
-    ibf = ibf_ka  # kA
-    voc = voc_kv * 1000  # Convert to V
+    ibf = max(ibf_ka, 0.01)  # kA
+    log_ibf = math.log10(ibf)
 
-    if voc <= 600:
-        # Low voltage model (IEEE 1584-2018 Eq. 1)
-        log_iarc = (0.600 * math.log10(ibf)
+    if voc_kv < 1.0:
+        # Low voltage model (IEEE 1584-2002 Eq. 1)
+        # K = -0.153 for open air, -0.097 for enclosed
+        K = -0.153 if config in ("VOA", "HOA") else -0.097
+        log_iarc = (K
+                    + 0.662 * log_ibf
+                    + 0.0966 * voc_kv
                     + 0.000526 * gap_mm
-                    + 0.5588 * math.log10(voc)
-                    - 0.00304)
+                    + 0.5588 * voc_kv * log_ibf
+                    - 0.00304 * gap_mm * log_ibf)
     else:
-        # Medium voltage model (IEEE 1584-2018 Eq. 2)
-        log_iarc = (0.600 * math.log10(ibf)
-                    + 0.000194 * gap_mm
-                    + 0.5588 * math.log10(voc)
-                    - 0.00304)
+        # Medium voltage model (IEEE 1584-2002 Eq. 2)
+        log_iarc = 0.00402 + 0.983 * log_ibf
 
     iarc = 10 ** log_iarc
 
-    # Reduced arcing current variation factor (IEEE 1584-2018 §4.9)
-    # For variation study: use 85% of arcing current for LV, 90% for MV
-    if voc <= 600:
+    # Clamp: arcing current cannot exceed bolted fault current
+    iarc = min(iarc, ibf)
+
+    # Reduced arcing current variation factor (IEEE 1584-2002 §5.5)
+    # For variation study: use 85% for LV, 90% for MV
+    if voc_kv < 1.0:
         iarc_reduced = iarc * 0.85
     else:
         iarc_reduced = iarc * 0.90
@@ -171,7 +180,18 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
 
 def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
                          config="VCB", enclosure_mm=508):
-    """Calculate incident energy per IEEE 1584-2018.
+    """Calculate incident energy per IEEE 1584-2002 Eq. 3-5.
+
+    IEEE 1584-2002:
+      log(En) = K1 + K2 + 1.081×log(Ia) + 0.0011×G
+      E = 4.184 × Cf × En × (t/0.2) × (610/D)^x
+
+    Where:
+      K1 = -0.792 (open air) or -0.555 (box/enclosed)
+      K2 = 0 (ungrounded/HRG) or -0.113 (grounded) — use 0 as default
+      Cf = 1.0 for V<1kV, 1.5 for V>=1kV
+      x = distance exponent from IEEE 1584 Table 4
+      En in J/cm²; E in J/cm²; convert to cal/cm² by dividing by 4.184
 
     Args:
         iarc_ka: Arcing current (kA)
@@ -180,7 +200,7 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
         gap_mm: Conductor gap (mm)
         dist_mm: Working distance (mm)
         config: Electrode configuration
-        enclosure_mm: Enclosure width/depth (mm)
+        enclosure_mm: Enclosure width/depth (mm) — not used in 2002 model
 
     Returns:
         Incident energy in cal/cm²
@@ -188,38 +208,32 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
     if iarc_ka <= 0 or t_arc_s <= 0:
         return 0.0
 
-    voc = voc_kv * 1000  # V
+    # K1: configuration factor
+    K1 = -0.792 if config in ("VOA", "HOA") else -0.555
+    # K2: grounding factor (assume ungrounded/HRG = 0)
+    K2 = 0
 
-    # IEEE 1584-2018 normalized incident energy (Eq. 5)
-    # E_n = incident energy at 610mm for 0.2s arc duration
-    if voc <= 600:
-        # Low voltage
-        log_en = (1.5 * math.log10(iarc_ka)
-                  + 0.0011 * gap_mm
-                  - 0.0001 * enclosure_mm
-                  - 0.5588)
-    else:
-        # Medium voltage
-        log_en = (1.5 * math.log10(iarc_ka)
-                  + 0.00055 * gap_mm
-                  - 0.0001 * enclosure_mm
-                  - 0.5588)
+    # Normalized incident energy at 610mm, 0.2s (IEEE 1584-2002 Eq. 3)
+    log_en = K1 + K2 + 1.081 * math.log10(iarc_ka) + 0.0011 * gap_mm
+    en = 10 ** log_en  # J/cm²
 
-    en = 10 ** log_en  # Normalized energy (J/cm²)
+    # Cf: calculation factor for voltage
+    cf = 1.0 if voc_kv < 1.0 else 1.5
 
-    # Distance exponent (IEEE 1584-2018 Table 8)
+    # Distance exponent x (IEEE 1584-2002 Table 4)
     if config in ("VOA", "HOA"):
         x_factor = 2.0  # Open air
+    elif voc_kv < 1.0:
+        x_factor = 1.641  # Low voltage enclosed
     else:
-        x_factor = 1.641 if voc <= 600 else 2.0  # Enclosed
+        x_factor = 2.0  # Medium voltage enclosed
 
-    # Scale to actual time and distance (Eq. 7)
-    # E = C_f × E_n × (t/0.2) × (610/D)^x
-    c_f = 1.0  # Calculation factor (1.0 for cal/cm², 4.184 for J/cm²)
-    e_actual = c_f * en * (t_arc_s / 0.2) * (610.0 / dist_mm) ** x_factor
+    # Scale to actual time and distance (IEEE 1584-2002 Eq. 5)
+    # E = 4.184 × Cf × En × (t/0.2) × (610/D)^x  → in J/cm²
+    e_joules = 4.184 * cf * en * (t_arc_s / 0.2) * (610.0 / dist_mm) ** x_factor
 
-    # Convert J/cm² to cal/cm² (1 cal = 4.184 J)
-    e_cal = e_actual / 4.184
+    # Convert J/cm² to cal/cm²
+    e_cal = e_joules / 4.184
 
     return max(0, e_cal)
 
