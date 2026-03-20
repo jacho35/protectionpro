@@ -554,6 +554,8 @@ const Canvas = {
             if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
           }
         }
+        // Show fault branch contributions on cable
+        this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'transformer') {
         const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
         lines.push(ratingStr);
@@ -577,6 +579,8 @@ const Canvas = {
             if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
           }
         }
+        // Show fault branch contributions on transformer
+        this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'static_load') {
         if (p.name && p.name !== 'Load') lines.push(p.name);
         lines.push(`${p.rated_kva || 0} kVA`);
@@ -603,12 +607,17 @@ const Canvas = {
         if (cbType === 'ACB' && p.short_time_pickup) {
           lines.push(`ST=${p.short_time_pickup}×`);
         }
+        this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'fuse' && AppState.showDeviceLabels) {
         const fuseType = p.fuse_type || 'gG';
         const ratedA = p.rated_current_a || 100;
         lines.push(`${fuseType} ${ratedA}A`);
         if (p.rated_voltage_kv) lines.push(`${p.rated_voltage_kv} kV`);
         if (p.breaking_capacity_ka) lines.push(`Icu ${p.breaking_capacity_ka}kA`);
+        this._appendFaultBranchLines(comp, lines);
+      } else if (this._hasFaultBranchData(comp)) {
+        // Switch or other element with fault branch data — show it even without device labels
+        this._appendFaultBranchLines(comp, lines);
       } else {
         continue;
       }
@@ -625,6 +634,37 @@ const Canvas = {
       html += `<text class="comp-data-label" data-comp-id="${comp.id}" x="${x}" y="${y}" font-size="9" fill="#555" font-family="var(--font-mono)" cursor="move">${lineHtml}</text>`;
     }
     this.annotationsLayer.insertAdjacentHTML('beforeend', html);
+  },
+
+  // Find fault branch contribution for a component across all faulted buses
+  _findFaultBranch(comp) {
+    if (!AppState.faultResults || !AppState.faultResults.buses) return null;
+    // Aggregate across all buses — take the max current seen on this element
+    let best = null;
+    for (const busResult of Object.values(AppState.faultResults.buses)) {
+      if (!busResult.branches) continue;
+      for (const br of busResult.branches) {
+        if (br.element_id === comp.id) {
+          if (!best || br.ik_ka > best.ik_ka) best = br;
+        }
+      }
+    }
+    return best;
+  },
+
+  _hasFaultBranchData(comp) {
+    return this._findFaultBranch(comp) != null;
+  },
+
+  _appendFaultBranchLines(comp, lines) {
+    const br = this._findFaultBranch(comp);
+    if (!br || br.ik_ka <= 0) return;
+    const faultColor = '#b71c1c';
+    lines.push({text: '── FAULT ──', color: faultColor});
+    lines.push({text: `If: ${br.ik_ka.toFixed(2)} kA`, color: faultColor});
+    if (br.contribution_pct > 0) {
+      lines.push({text: `(${br.contribution_pct.toFixed(1)}%)`, color: faultColor});
+    }
   },
 
   // Show red warning circles on unconnected ports

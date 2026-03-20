@@ -456,6 +456,38 @@ I"k1 = ${busResult.ik1?.toFixed(3) || 'N/A'} kA
 I"kLL = c × √3 × V_n / (√3 × |Z1 + Z2|)
 I"kLL = ${busResult.ikLL?.toFixed(3) || 'N/A'} kA</div>
           </div>`;
+
+        // Branch contributions table
+        if (busResult.branches && busResult.branches.length > 0) {
+          html += `
+          <div class="calc-step">
+            <div class="calc-step-title">Branch Fault Current Contributions — ${busName}</div>
+            <div class="calc-formula" style="overflow-x:auto">
+<table style="border-collapse:collapse;font-size:11px;font-family:var(--font-mono);width:100%">
+<tr style="border-bottom:2px solid #666">
+  <th style="text-align:left;padding:2px 6px">Element</th>
+  <th style="text-align:left;padding:2px 6px">Type</th>
+  <th style="text-align:right;padding:2px 6px">If (kA)</th>
+  <th style="text-align:right;padding:2px 6px">%</th>
+  <th style="text-align:right;padding:2px 6px">|Z_path| (p.u.)</th>
+  <th style="text-align:left;padding:2px 6px">Source</th>
+</tr>
+${busResult.branches.map(br => {
+  const elComp = AppState.components.get(br.element_id);
+  const elName = elComp?.props?.name || br.element_name || br.element_id;
+  const typeLabel = (br.element_type || '').replace('_', ' ');
+  return `<tr style="border-bottom:1px solid #ddd">
+  <td style="padding:2px 6px">${elName}</td>
+  <td style="padding:2px 6px">${typeLabel}</td>
+  <td style="text-align:right;padding:2px 6px;font-weight:bold;color:#b71c1c">${br.ik_ka.toFixed(3)}</td>
+  <td style="text-align:right;padding:2px 6px">${br.contribution_pct.toFixed(1)}%</td>
+  <td style="text-align:right;padding:2px 6px">${br.z_path_mag.toFixed(6)}</td>
+  <td style="padding:2px 6px">${br.source_name || '—'}</td>
+</tr>`;
+}).join('')}
+</table></div>
+          </div>`;
+        }
       }
     }
 

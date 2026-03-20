@@ -65,6 +65,21 @@ class ProjectSummary(BaseModel):
         from_attributes = True
 
 
+class FaultBranchContribution(BaseModel):
+    """Fault current contribution through a single branch path."""
+    element_id: str
+    element_name: str = ""
+    element_type: str = ""
+    from_bus: str = ""
+    to_bus: str = ""
+    ik_ka: float = 0  # Branch fault current in kA for selected fault type
+    z_path_real: float = 0  # Total path impedance real (p.u.)
+    z_path_imag: float = 0  # Total path impedance imaginary (p.u.)
+    z_path_mag: float = 0  # Total path impedance magnitude (p.u.)
+    contribution_pct: float = 0  # Percentage of total fault current
+    source_name: str = ""  # Name of the source at end of path
+
+
 class FaultResultBus(BaseModel):
     bus_id: str
     bus_name: str
@@ -75,6 +90,7 @@ class FaultResultBus(BaseModel):
     z_eq_real: Optional[float] = None  # Z_eq real part (p.u.)
     z_eq_imag: Optional[float] = None  # Z_eq imaginary part (p.u.)
     z_eq_mag: Optional[float] = None   # |Z_eq| magnitude (p.u.)
+    branches: list[FaultBranchContribution] = []
 
 
 class FaultResults(BaseModel):

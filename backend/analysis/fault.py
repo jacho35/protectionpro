@@ -10,7 +10,7 @@ Per-unit method on a common MVA base.
 
 import math
 import numpy as np
-from ..models.schemas import ProjectData, FaultResults, FaultResultBus
+from ..models.schemas import ProjectData, FaultResults, FaultResultBus, FaultBranchContribution
 
 
 def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None) -> FaultResults:
@@ -44,10 +44,10 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         voltage_kv = bus.props.get("voltage_kv", 11)
         i_base_ka = base_mva / (math.sqrt(3) * voltage_kv)  # kA
 
-        # Collect all source impedances connected to this bus
-        z_sources = _collect_source_impedances(bus.id, components, adjacency, base_mva)
+        # Collect all source paths with component trail
+        source_paths = _collect_source_paths(bus.id, components, adjacency, base_mva)
 
-        if not z_sources:
+        if not source_paths:
             # No sources connected — infinite impedance (no fault current)
             results[bus.id] = FaultResultBus(
                 bus_id=bus.id,
@@ -56,6 +56,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 ik3=0, ik1=0, ikLL=0
             )
             continue
+
+        z_sources = [p["z_total"] for p in source_paths]
 
         # Parallel combination of all source impedances
         z_eq = _parallel_impedances(z_sources)
@@ -89,6 +91,26 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
             ikLL_ka = round(ikLL_pu * i_base_ka, 3)
 
+        # Compute branch contributions using current divider
+        # For selected fault type, determine total fault current in p.u.
+        # When no specific fault type, default to 3-phase for branch display
+        active_type = fault_type or "3phase"
+        if active_type == "slg":
+            # z0 was computed in the SLG block above (always runs when fault_type == "slg")
+            z_slg_br = z_eq + z_eq + z0
+            ik_total_pu = 3 * c_factor / abs(z_slg_br) if abs(z_slg_br) > 1e-10 else 0
+        elif active_type == "ll":
+            z_ll_br = z_eq + z_eq
+            ik_total_pu = c_factor * math.sqrt(3) / abs(z_ll_br) if abs(z_ll_br) > 1e-10 else 0
+        else:
+            ik_total_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
+
+        ik_total_ka = ik_total_pu * i_base_ka
+
+        branches = _compute_branch_contributions(
+            source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, active_type
+        )
+
         results[bus.id] = FaultResultBus(
             bus_id=bus.id,
             bus_name=bus.props.get("name", bus.id),
@@ -99,6 +121,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             z_eq_real=round(z_eq.real, 6),
             z_eq_imag=round(z_eq.imag, 6),
             z_eq_mag=round(abs(z_eq), 6),
+            branches=branches,
         )
 
     return FaultResults(
@@ -108,12 +131,12 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     )
 
 
-def _collect_source_impedances(bus_id, components, adjacency, base_mva):
-    """Walk the network from a bus and collect source impedances in per-unit."""
+def _collect_source_paths(bus_id, components, adjacency, base_mva):
+    """Walk the network from a bus and collect source paths with component trails."""
     visited = set()
-    z_sources = []
+    paths = []
 
-    def walk(comp_id, z_path):
+    def walk(comp_id, z_path, trail):
         if comp_id in visited:
             return
         visited.add(comp_id)
@@ -121,14 +144,22 @@ def _collect_source_impedances(bus_id, components, adjacency, base_mva):
         if not comp:
             return
 
-        # If we hit a source, record total impedance
+        # If we hit a source, record the complete path
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva)
-            z_sources.append(z_path + z_src)
+            paths.append({
+                "z_total": z_path + z_src,
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+            })
             return
         if comp.type == "generator":
             z_src = _generator_impedance(comp, base_mva)
-            z_sources.append(z_path + z_src)
+            paths.append({
+                "z_total": z_path + z_src,
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+            })
             return
 
         # Accumulate impedance through branch elements
@@ -138,7 +169,6 @@ def _collect_source_impedances(bus_id, components, adjacency, base_mva):
         elif comp.type == "cable":
             z_element = _cable_impedance(comp, base_mva)
         elif comp.type in ("cb", "switch"):
-            # Treat closed CB/switch as zero impedance
             state = comp.props.get("state", "closed")
             if state == "open":
                 return  # Open device blocks fault current
@@ -148,13 +178,87 @@ def _collect_source_impedances(bus_id, components, adjacency, base_mva):
         # Continue walking
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element)
+                walk(neighbor_id, z_path + z_element, trail + [comp_id])
 
     # Start from bus's neighbors
     for neighbor_id, _, _ in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0))
+        walk(neighbor_id, complex(0, 0), [])
 
-    return z_sources
+    return paths
+
+
+def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, fault_type):
+    """Compute fault current contribution through each branch element.
+
+    Uses current divider: I_path = V_fault / Z_path
+    where V_fault = c (in p.u.), so I_path_pu = c / |Z_path|
+    """
+    if not source_paths or ik_total_ka < 1e-10:
+        return []
+
+    # For each path, compute the current it carries
+    path_currents = []
+    for path in source_paths:
+        z_path = path["z_total"]
+        if abs(z_path) > 1e-15:
+            if fault_type == "ll":
+                i_path_pu = c_factor * math.sqrt(3) / abs(z_path)
+            else:
+                i_path_pu = c_factor / abs(z_path)
+            i_path_ka = i_path_pu * i_base_ka
+        else:
+            i_path_ka = 0
+        path_currents.append(i_path_ka)
+
+    # Aggregate current per branch element across all paths
+    # Element may appear in multiple paths — sum contributions
+    element_current = {}  # element_id -> total current in kA
+    element_z_path = {}   # element_id -> z_path of first path containing it (for display)
+    element_source = {}   # element_id -> source names
+
+    for i, path in enumerate(source_paths):
+        trail = path["trail"]
+        i_ka = path_currents[i]
+        source_id = path["source_id"]
+        source_comp = components.get(source_id)
+        source_name = source_comp.props.get("name", source_id) if source_comp else source_id
+
+        for elem_id in trail:
+            if elem_id not in element_current:
+                element_current[elem_id] = 0
+                element_z_path[elem_id] = path["z_total"]
+                element_source[elem_id] = set()
+            element_current[elem_id] += i_ka
+            element_source[elem_id].add(source_name)
+
+    # Build branch contribution objects
+    branches = []
+    for elem_id, ik_ka in element_current.items():
+        comp = components.get(elem_id)
+        if not comp:
+            continue
+        # Skip sources and buses from branch display — they aren't "branches"
+        if comp.type in ("bus",):
+            continue
+
+        z_path = element_z_path[elem_id]
+        contribution_pct = (ik_ka / ik_total_ka * 100) if ik_total_ka > 1e-10 else 0
+
+        branches.append(FaultBranchContribution(
+            element_id=elem_id,
+            element_name=comp.props.get("name", elem_id),
+            element_type=comp.type,
+            ik_ka=round(ik_ka, 3),
+            z_path_real=round(z_path.real, 6),
+            z_path_imag=round(z_path.imag, 6),
+            z_path_mag=round(abs(z_path), 6),
+            contribution_pct=round(contribution_pct, 1),
+            source_name=", ".join(sorted(element_source[elem_id])),
+        ))
+
+    # Sort by current descending
+    branches.sort(key=lambda b: b.ik_ka, reverse=True)
+    return branches
 
 
 def _utility_impedance(comp, base_mva):
