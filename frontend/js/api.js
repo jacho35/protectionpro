@@ -11,8 +11,26 @@ const API = {
     try {
       const resp = await fetch(`${API_BASE}${endpoint}`, opts);
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-        throw new Error(err.detail || `HTTP ${resp.status}`);
+        let detail = `HTTP ${resp.status}`;
+        try {
+          const err = await resp.json();
+          // FastAPI returns {detail: "..."} for HTTPException
+          // and {detail: [{msg: "...", ...}]} for validation errors
+          if (typeof err.detail === 'string') {
+            detail = err.detail;
+          } else if (Array.isArray(err.detail)) {
+            detail = err.detail.map(d => d.msg || d.message || JSON.stringify(d)).join('; ');
+          } else if (err.message) {
+            detail = err.message;
+          }
+        } catch (_) {
+          // Response wasn't JSON — try reading as text
+          try {
+            const text = await resp.text();
+            if (text.length < 300) detail = text;
+          } catch (_2) { /* use default */ }
+        }
+        throw new Error(detail);
       }
       return await resp.json();
     } catch (e) {
