@@ -3,9 +3,13 @@
 ## Protection Coordination Enhancements
 - **CT saturation modeling**: CT ratio and burden effects on relay operating times
 - **Directional relay curves**: Directional overcurrent (67) curve plotting
+- **Distance relay (21) TCC curves**: Impedance-based relay plotting on TCC
+- **Auto-coordination engine**: Automatically set relay/CB grading based on upstream/downstream topology
 
 ## Fault Analysis Enhancements
 - **Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component
+- **IEC 61363 marine/offshore fault analysis**: Fault analysis for isolated marine/offshore networks
+- **Protection relay miscoordination detection**: Flag relays that won't trip in correct sequence for a given fault
 
 ## Arc Flash
 - **IEEE 1584-2018 arc flash calculations**: Incident energy, arc flash boundary, PPE category
@@ -15,6 +19,12 @@
 ## Load Flow Enhancements
 - **Distributed generation**: Solar PV and wind turbine models
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
+
+## TCC Chart Enhancements
+- **Drag devices between tabs**: Move devices to custom tabs via drag-and-drop
+- **Overlay fault current markers**: Show fault levels from analysis as vertical markers on TCC
+- **TCC comparison mode**: Side-by-side view of two tabs for before/after coordination comparison
+- **User-defined curve data**: Import custom manufacturer TCC data points (CSV)
 
 ## UI / UX
 - **Undo/Redo system**: Full action history with keyboard shortcuts
