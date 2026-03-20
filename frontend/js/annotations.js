@@ -79,14 +79,35 @@ const Annotations = {
 
   renderFaultBadge(x, y, result, key) {
     const lines = [];
-    if (result.ik3 != null) lines.push(`3Φ: ${result.ik3.toFixed(2)} kA`);
-    if (result.ik1 != null) lines.push(`SLG: ${result.ik1.toFixed(2)} kA`);
-    if (result.ikLL != null) lines.push(`LL: ${result.ikLL.toFixed(2)} kA`);
-    if (result.ikLLG != null) lines.push(`LLG: ${result.ikLLG.toFixed(2)} kA`);
+    const showAngles = AppState.showFaultAngles;
+
+    if (showAngles && result.voltage_kv != null) {
+      lines.push(`V: ${result.voltage_kv} kV`);
+    }
+    if (result.ik3 != null) {
+      let s = `3Φ: ${result.ik3.toFixed(2)} kA`;
+      if (showAngles && result.ik3_angle != null) s += ` ∠${result.ik3_angle.toFixed(1)}°`;
+      lines.push(s);
+    }
+    if (result.ik1 != null) {
+      let s = `SLG: ${result.ik1.toFixed(2)} kA`;
+      if (showAngles && result.ik1_angle != null) s += ` ∠${result.ik1_angle.toFixed(1)}°`;
+      lines.push(s);
+    }
+    if (result.ikLL != null) {
+      let s = `LL: ${result.ikLL.toFixed(2)} kA`;
+      if (showAngles && result.ikLL_angle != null) s += ` ∠${result.ikLL_angle.toFixed(1)}°`;
+      lines.push(s);
+    }
+    if (result.ikLLG != null) {
+      let s = `LLG: ${result.ikLLG.toFixed(2)} kA`;
+      if (showAngles && result.ikLLG_angle != null) s += ` ∠${result.ikLLG_angle.toFixed(1)}°`;
+      lines.push(s);
+    }
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
-    const boxW = 100;
+    const boxW = showAngles ? 160 : 100;
 
     let textHtml = lines.map((line, i) =>
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`

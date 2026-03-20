@@ -440,6 +440,11 @@ document.addEventListener('DOMContentLoaded', () => {
     e.currentTarget.classList.toggle('active', AppState.showWarnings);
     Canvas.render();
   });
+  document.getElementById('btn-toggle-angles').addEventListener('click', (e) => {
+    AppState.showFaultAngles = !AppState.showFaultAngles;
+    e.currentTarget.classList.toggle('active', AppState.showFaultAngles);
+    Canvas.render();
+  });
 
   // Zoom controls
   document.getElementById('btn-zoom-fit').addEventListener('click', () => Canvas.zoomToFit());
