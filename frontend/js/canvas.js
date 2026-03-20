@@ -767,11 +767,14 @@ const Canvas = {
           if (std) sizeStr = `${std.size_mm2}mm² ${std.conductor}`;
         }
         if (!sizeStr) sizeStr = `R=${p.r_per_km} Ω/km`;
+        const nPar = p.num_parallel || 1;
+        if (nPar > 1) sizeStr = `${nPar}× ${sizeStr}`;
         const useMeters = AppState.defaultLengthUnit === 'm' || p.length_km < 1;
         const lenStr = useMeters ? `${(p.length_km * 1000).toFixed(0)} m` : `${p.length_km} km`;
         lines.push(sizeStr);
         lines.push(lenStr);
-        if (p.rated_amps) lines.push(`${p.rated_amps} A`);
+        const totalAmps = (p.rated_amps || 0) * nPar;
+        if (totalAmps) lines.push(`${totalAmps} A${nPar > 1 ? ` (${nPar}×${p.rated_amps})` : ''}`);
         // Show load flow results on cable
         if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
           const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);

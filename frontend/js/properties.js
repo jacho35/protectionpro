@@ -387,10 +387,15 @@ const Properties = {
     } else if (comp.type === 'cable') {
       const Vkv = comp.props.voltage_kv || 11;
       const Zbase = (Vkv * Vkv) / base;
-      const Rpu = (comp.props.r_per_km * comp.props.length_km) / Zbase;
-      const Xpu = (comp.props.x_per_km * comp.props.length_km) / Zbase;
+      const nPar = Math.max(1, comp.props.num_parallel || 1);
+      const Rpu = (comp.props.r_per_km * comp.props.length_km) / Zbase / nPar;
+      const Xpu = (comp.props.x_per_km * comp.props.length_km) / Zbase / nPar;
       html += `<div class="prop-row"><label>R (p.u.)</label><span class="pu-value">${Rpu.toFixed(4)}</span></div>`;
       html += `<div class="prop-row"><label>X (p.u.)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
+      if (nPar > 1) {
+        const totalAmps = (comp.props.rated_amps || 0) * nPar;
+        html += `<div class="prop-row"><label>Total Rating</label><span class="pu-value">${totalAmps} A (${nPar}×${comp.props.rated_amps})</span></div>`;
+      }
     } else if (comp.type === 'motor_induction') {
       const kva = (comp.props.rated_kw || 200) / (comp.props.efficiency || 0.93);
       const Xpu = (comp.props.x_pp || 0.17) * base / (kva / 1000);
@@ -788,14 +793,21 @@ R = ${(Rpu * ZbaseLV).toFixed(4)} Ω,  X = ${(Xpu * ZbaseLV).toFixed(4)} Ω
       const len = comp.props.length_km || 1;
       const rpk = comp.props.r_per_km || 0;
       const xpk = comp.props.x_per_km || 0;
+      const nPar = Math.max(1, comp.props.num_parallel || 1);
       const Zbase = (Vkv * Vkv) / base;
       const R = rpk * len;
       const X = xpk * len;
-      const Rpu = R / Zbase;
-      const Xpu = X / Zbase;
+      const Rpu = R / Zbase / nPar;
+      const Xpu = X / Zbase / nPar;
       const Zpu = Math.sqrt(Rpu * Rpu + Xpu * Xpu);
       const rated = comp.props.rated_amps || 400;
-      const ratedMVA = Math.sqrt(3) * Vkv * rated / 1000;
+      const totalRated = rated * nPar;
+      const ratedMVA = Math.sqrt(3) * Vkv * totalRated / 1000;
+      const parNote = nPar > 1 ? `\nParallel cables = ${nPar}` : '';
+      const parCalc = nPar > 1 ? `\n\n── Parallel cable division (÷${nPar}) ──
+R_pu = ${(R / Zbase).toFixed(6)} / ${nPar} = ${Rpu.toFixed(6)} p.u.
+X_pu = ${(X / Zbase).toFixed(6)} / ${nPar} = ${Xpu.toFixed(6)} p.u.
+Total rated current = ${nPar} × ${rated} = ${totalRated} A` : '';
       html += `
         <div class="calc-step">
           <div class="calc-step-title">Per-Unit Impedance (Cable)</div>
@@ -803,7 +815,7 @@ R = ${(Rpu * ZbaseLV).toFixed(4)} Ω,  X = ${(Xpu * ZbaseLV).toFixed(4)} Ω
 Voltage = ${Vkv} kV
 Length = ${len} km
 R = ${rpk} Ω/km,  X = ${xpk} Ω/km
-Rated current = ${rated} A  (S_rated = ${ratedMVA.toFixed(3)} MVA)
+Rated current = ${rated} A  (S_rated = ${ratedMVA.toFixed(3)} MVA)${parNote}
 
 Z_base = V² / Base_MVA = ${Vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
 
@@ -811,11 +823,12 @@ R_total = ${rpk} × ${len} = ${R.toFixed(4)} Ω
 X_total = ${xpk} × ${len} = ${X.toFixed(4)} Ω
 Z_total = √(R² + X²) = ${Math.sqrt(R * R + X * X).toFixed(4)} Ω
 
-R_pu = ${R.toFixed(4)} / ${Zbase.toFixed(4)} = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
-X_pu = ${X.toFixed(4)} / ${Zbase.toFixed(4)} = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
-Z_pu = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
+R_pu = ${R.toFixed(4)} / ${Zbase.toFixed(4)} = ${(R / Zbase).toFixed(6)} p.u. (${((R / Zbase) * 100).toFixed(4)}%)
+X_pu = ${X.toFixed(4)} / ${Zbase.toFixed(4)} = ${(X / Zbase).toFixed(6)} p.u. (${((X / Zbase) * 100).toFixed(4)}%)${parCalc}
 
-Voltage drop (at rated) ≈ ${(Rpu * rated / (ratedMVA * 1000 / (Math.sqrt(3) * Vkv)) * 100).toFixed(2)}% (R only)</div>
+Z_pu(eff) = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
+
+Voltage drop (at rated) ≈ ${(Rpu * totalRated / (ratedMVA * 1000 / (Math.sqrt(3) * Vkv)) * 100).toFixed(2)}% (R only)</div>
         </div>`;
 
     } else if (comp.type === 'motor_induction') {

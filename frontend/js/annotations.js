@@ -148,7 +148,8 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
-    const boxW = showAngles ? 160 : 100;
+    const maxLen = Math.max(...lines.map(l => l.length));
+    const boxW = Math.max(100, maxLen * 6.5 + 14);
 
     let textHtml = lines.map((line, i) =>
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
@@ -181,7 +182,8 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
-    const boxW = 160;
+    const maxLen = Math.max(...lines.map(l => l.length));
+    const boxW = Math.max(120, maxLen * 6.5 + 14);
 
     let textHtml = lines.map((line, i) =>
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`

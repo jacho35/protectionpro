@@ -1010,22 +1010,12 @@ const TCC = {
   _drawCurveHandles(ctx) {
     for (const h of this._curveHandles) {
       if (h.hitRect) {
-        // Draw a grab indicator along the flat line (arrows + highlight)
-        const hr = h.hitRect;
+        // Draw handle circle at the vertical drop midpoint with left-right arrows
         ctx.save();
-        ctx.strokeStyle = h.color || '#333';
-        ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.35;
-        ctx.setLineDash([2, 3]);
-        ctx.beginPath();
-        ctx.moveTo(hr.x1, hr.y);
-        ctx.lineTo(hr.x2, hr.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
         ctx.globalAlpha = 1;
-        // Draw handle circle at the left edge (the magnetic pickup point)
+        // Draw handle circle
         ctx.beginPath();
-        ctx.arc(hr.x1, hr.y, h.r, 0, Math.PI * 2);
+        ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.fill();
         ctx.strokeStyle = h.color || '#333';
@@ -1033,14 +1023,14 @@ const TCC = {
         ctx.stroke();
         // Left-right arrows inside the handle
         ctx.beginPath();
-        ctx.moveTo(hr.x1 - 3, hr.y);
-        ctx.lineTo(hr.x1 + 3, hr.y);
-        ctx.moveTo(hr.x1 - 2, hr.y - 2);
-        ctx.lineTo(hr.x1 - 3, hr.y);
-        ctx.lineTo(hr.x1 - 2, hr.y + 2);
-        ctx.moveTo(hr.x1 + 2, hr.y - 2);
-        ctx.lineTo(hr.x1 + 3, hr.y);
-        ctx.lineTo(hr.x1 + 2, hr.y + 2);
+        ctx.moveTo(h.x - 3, h.y);
+        ctx.lineTo(h.x + 3, h.y);
+        ctx.moveTo(h.x - 2, h.y - 2);
+        ctx.lineTo(h.x - 3, h.y);
+        ctx.lineTo(h.x - 2, h.y + 2);
+        ctx.moveTo(h.x + 2, h.y - 2);
+        ctx.lineTo(h.x + 3, h.y);
+        ctx.lineTo(h.x + 2, h.y + 2);
         ctx.strokeStyle = h.color || '#333';
         ctx.lineWidth = 1.5;
         ctx.stroke();
@@ -1166,7 +1156,7 @@ const TCC = {
       }
     }
 
-    // Magnetic pickup handle: midway up the vertical drop at Im
+    // Magnetic pickup handle: on the vertical drop at Im (midpoint between thermal and instantaneous)
     const magTime = (p.cb_type === 'mccb') ? 0.02 : 0.01;
     const scaledIm = this._scaleCurrent(Im, dev);
     const mx = this._currentToX(scaledIm);
@@ -1177,15 +1167,14 @@ const TCC = {
     const yMid = (yDropTop + yDropBot) / 2; // midpoint of vertical drop
 
     if (mx >= this.plotLeft && mx <= this.plotRight && yMid >= this.plotTop && yMid <= this.plotBottom) {
-      // Hit zone spans the vertical drop and the flat instantaneous line
-      const yFlat = this._timeToY(magTime);
+      // Handle circle on the vertical drop midpoint; hit zone spans the flat line for dragging
       this._curveHandles.push({
         devIndex, mode: 'magnetic',
         x: mx, y: yMid, r: 7, color: dev.color,
         hitRect: {
-          x1: mx - 8,
+          x1: mx,
           x2: Math.min(this.plotRight, this._currentToX(this._scaleCurrent(Ir * 200, dev))),
-          y: yFlat,
+          y: yMid,
           tolerance: 8
         }
       });

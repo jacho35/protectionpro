@@ -27,6 +27,8 @@ app.add_middleware(
 app.include_router(projects.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
+from .routes.reports import report_router
+app.include_router(report_router, prefix="/api")
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"
