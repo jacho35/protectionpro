@@ -82,7 +82,10 @@ const Components = {
       adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
     }
 
-    // BFS from a component port through transparent elements to find a bus
+    // BFS from a component port through transparent elements, cables, and
+    // transformers to find a bus.  When a cable is wired directly to a
+    // transformer (no intermediate bus) we still need to discover the bus
+    // on the far side so that branches and source-reachability work correctly.
     const findBusFromPort = (startId, portId) => {
       const visited = new Set([startId]);
       const startNeighbors = (adj.get(startId) || [])
@@ -96,7 +99,8 @@ const Components = {
         const comp = AppState.components.get(id);
         if (!comp) continue;
         if (comp.type === 'bus') return comp;
-        if (isTransparentClosed(comp)) {
+        // Walk through transparent elements AND branch elements (cable/transformer)
+        if (isTransparentClosed(comp) || comp.type === 'cable' || comp.type === 'transformer') {
           for (const { id: nid } of (adj.get(id) || [])) {
             if (!visited.has(nid)) queue.push(nid);
           }
@@ -232,26 +236,49 @@ const Components = {
     }
 
     // 4. Check each bus has at least one source path
+    //    Use full wire-graph BFS from every source, walking through all
+    //    element types (transparent, cables, transformers, buses) to find
+    //    every reachable bus — not limited to pre-built branches.
     const graph = this.buildNetworkGraph();
-    const busesWithSource = new Set();
-    for (const { bus } of graph.sources) {
-      busesWithSource.add(bus.id);
+
+    // Build simple adjacency (component id -> [neighbor ids]) for reachability
+    const reachAdj = new Map();
+    for (const wire of AppState.wires.values()) {
+      if (!reachAdj.has(wire.fromComponent)) reachAdj.set(wire.fromComponent, []);
+      if (!reachAdj.has(wire.toComponent)) reachAdj.set(wire.toComponent, []);
+      reachAdj.get(wire.fromComponent).push(wire.toComponent);
+      reachAdj.get(wire.toComponent).push(wire.fromComponent);
     }
-    // Propagate source reachability through branches
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const branch of graph.branches) {
-        if (busesWithSource.has(branch.from.id) && !busesWithSource.has(branch.to.id)) {
-          busesWithSource.add(branch.to.id);
-          changed = true;
-        }
-        if (busesWithSource.has(branch.to.id) && !busesWithSource.has(branch.from.id)) {
-          busesWithSource.add(branch.from.id);
-          changed = true;
+
+    // BFS from all sources through the full wire graph
+    const busesWithSource = new Set();
+    const sourceIds = [...AppState.components.values()]
+      .filter(c => c.type === 'utility' || c.type === 'generator')
+      .map(c => c.id);
+
+    const reachVisited = new Set();
+    const reachQueue = [...sourceIds];
+    for (const id of reachQueue) reachVisited.add(id);
+
+    while (reachQueue.length > 0) {
+      const id = reachQueue.shift();
+      const comp = AppState.components.get(id);
+      if (!comp) continue;
+      if (comp.type === 'bus') busesWithSource.add(id);
+
+      // Walk through everything except open CBs/switches
+      if (comp.type === 'cb' || comp.type === 'switch') {
+        if (comp.props.state === 'open') continue; // open device blocks path
+      }
+
+      for (const nid of (reachAdj.get(id) || [])) {
+        if (!reachVisited.has(nid)) {
+          reachVisited.add(nid);
+          reachQueue.push(nid);
         }
       }
     }
+
     for (const bus of buses) {
       if (!busesWithSource.has(bus.id)) {
         errors.push({
@@ -402,11 +429,11 @@ const Components = {
       }
 
       const expectedV = isStepUp8 ? xfmr.props.voltage_hv_kv : xfmr.props.voltage_lv_kv;
-      if (!expectedV || !lvBus) continue;
+      if (!expectedV || !downstreamBus) continue;
 
-      // BFS downstream from lvBus through non-transformer branches
-      const visited = new Set([lvBus.id]);
-      const queue = [lvBus.id];
+      // BFS downstream from the secondary-side bus through non-transformer branches
+      const visited = new Set([downstreamBus.id]);
+      const queue = [downstreamBus.id];
       while (queue.length > 0) {
         const busId = queue.shift();
         for (const br of graph.branches) {
