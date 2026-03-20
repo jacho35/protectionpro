@@ -56,7 +56,7 @@ const Components = {
     };
 
     // "Transparent" elements: zero-impedance pass-through components
-    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'arrester']);
+    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester']);
 
     // Check if a component is transparent and in closed state
     const isTransparentClosed = (comp) => {

@@ -547,10 +547,9 @@ const Canvas = {
 
     let html = '';
     for (const { comp, port } of unconnected) {
-      const def = COMPONENT_DEFS[comp.type];
-      const localPos = Symbols.getPortPosition(port, def.width, def.height);
-      const wx = comp.x + localPos.x;
-      const wy = comp.y + localPos.y;
+      const pos = Symbols.getPortWorldPosition(comp, port.id);
+      const wx = pos.x;
+      const wy = pos.y;
       html += `
         <g class="unconnected-warning" transform="translate(${wx},${wy})">
           <circle r="8" fill="none" stroke="#d32f2f" stroke-width="2" stroke-dasharray="3,2"/>
