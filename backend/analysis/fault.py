@@ -13,8 +13,14 @@ import numpy as np
 from ..models.schemas import ProjectData, FaultResults, FaultResultBus
 
 
-def run_fault_analysis(project: ProjectData) -> FaultResults:
-    """Run IEC 60909 fault analysis on all buses."""
+def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None) -> FaultResults:
+    """Run IEC 60909 fault analysis.
+
+    Args:
+        project: The project data.
+        fault_bus_id: If set, only compute fault on this bus.
+        fault_type: "3phase", "slg", "ll", or None for all types.
+    """
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
     wires = project.wires
@@ -27,8 +33,10 @@ def run_fault_analysis(project: ProjectData) -> FaultResults:
         adjacency.setdefault(w.toComponent, []).append(
             (w.fromComponent, w.toPort, w.fromPort))
 
-    # Identify buses
+    # Identify buses — filter to selected bus if specified
     buses = [c for c in project.components if c.type == "bus"]
+    if fault_bus_id:
+        buses = [c for c in buses if c.id == fault_bus_id]
 
     # For each bus, compute equivalent impedance seen from that bus
     results = {}
@@ -52,36 +60,42 @@ def run_fault_analysis(project: ProjectData) -> FaultResults:
         # Parallel combination of all source impedances
         z_eq = _parallel_impedances(z_sources)
 
-        # Three-phase fault: I"k3 = c * V_n / (sqrt(3) * |Z_eq|)
         # IEC 60909 voltage factor c = 1.1 for MV/HV, 1.05 for LV
         c_factor = 1.05 if voltage_kv < 1.0 else 1.1
-        ik3_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
-        ik3_ka = ik3_pu * i_base_ka
+
+        ik3_ka = None
+        ik1_ka = None
+        ikLL_ka = None
+
+        # Three-phase fault: I"k3 = c * V_n / (sqrt(3) * |Z_eq|)
+        if not fault_type or fault_type == "3phase":
+            ik3_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
+            ik3_ka = round(ik3_pu * i_base_ka, 3)
 
         # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
-        # Z0 depends on transformer grounding configuration
-        z0_sources = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
-        if z0_sources:
-            z0 = _parallel_impedances(z0_sources)
-        else:
-            z0 = z_eq * 3  # Fallback: conservative estimate if no grounding info
-        z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
-        ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
-        ik1_ka = ik1_pu * i_base_ka
+        if not fault_type or fault_type == "slg":
+            z0_sources = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
+            if z0_sources:
+                z0 = _parallel_impedances(z0_sources)
+            else:
+                z0 = z_eq * 3  # Fallback: conservative estimate if no grounding info
+            z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
+            ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
+            ik1_ka = round(ik1_pu * i_base_ka, 3)
 
         # Line-to-line fault: I"kLL = c * V_n / |Z1 + Z2|
-        # Z1 = Z2 = Z_eq
-        z_ll = z_eq + z_eq
-        ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
-        ikLL_ka = ikLL_pu * i_base_ka
+        if not fault_type or fault_type == "ll":
+            z_ll = z_eq + z_eq
+            ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
+            ikLL_ka = round(ikLL_pu * i_base_ka, 3)
 
         results[bus.id] = FaultResultBus(
             bus_id=bus.id,
             bus_name=bus.props.get("name", bus.id),
             voltage_kv=voltage_kv,
-            ik3=round(ik3_ka, 3),
-            ik1=round(ik1_ka, 3),
-            ikLL=round(ikLL_ka, 3),
+            ik3=ik3_ka,
+            ik1=ik1_ka,
+            ikLL=ikLL_ka,
             z_eq_real=round(z_eq.real, 6),
             z_eq_imag=round(z_eq.imag, 6),
             z_eq_mag=round(abs(z_eq), 6),

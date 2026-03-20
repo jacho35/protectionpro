@@ -36,6 +36,8 @@ class ProjectData(BaseModel):
     wires: list[Wire] = []
     nextId: int = 1
     loadFlowMethod: Optional[str] = None
+    faultBusId: Optional[str] = None
+    faultType: Optional[str] = None  # "3phase", "slg", "ll", or None for all
 
 
 class ProjectSummary(BaseModel):
@@ -89,9 +91,18 @@ class LoadFlowBranch(BaseModel):
     losses_mw: float = 0
 
 
+class LoadFlowWarning(BaseModel):
+    elementId: str
+    element_name: str = ""
+    message: str
+    expected_kv: float = 0
+    actual_kv: float = 0
+
+
 class LoadFlowResults(BaseModel):
     buses: dict[str, LoadFlowBus]
     branches: list[LoadFlowBranch] = []
+    warnings: list[LoadFlowWarning] = []
     converged: bool
     iterations: int
     method: str

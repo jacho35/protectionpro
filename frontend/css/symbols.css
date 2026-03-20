@@ -121,6 +121,30 @@
   fill: var(--text-muted);
 }
 
+.error-annotation .annotation-badge {
+  fill: #ffebee;
+  stroke: var(--danger);
+  stroke-width: 1;
+}
+
+.error-annotation .annotation-label {
+  fill: #b71c1c;
+  font-weight: bold;
+}
+
+.error-annotation .annotation-text {
+  fill: #b71c1c;
+}
+
+.voltage-error-ring {
+  animation: pulse-error 2s ease-in-out infinite;
+}
+
+@keyframes pulse-error {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* Unconnected port warning circles */
 .unconnected-warning {
   pointer-events: none;

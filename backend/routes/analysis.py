@@ -11,7 +11,7 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 @router.post("/fault", response_model=FaultResults)
 def fault_analysis(data: ProjectData):
     """Run IEC 60909 short-circuit analysis."""
-    return run_fault_analysis(data)
+    return run_fault_analysis(data, fault_bus_id=data.faultBusId, fault_type=data.faultType)
 
 
 @router.post("/loadflow", response_model=LoadFlowResults)

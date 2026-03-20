@@ -22,8 +22,10 @@ const API = {
   },
 
   // Run fault analysis
-  async runFaultAnalysis() {
+  async runFaultAnalysis(faultBusId = null, faultType = null) {
     const data = AppState.toJSON();
+    if (faultBusId) data.faultBusId = faultBusId;
+    if (faultType) data.faultType = faultType;
     return this.request('/analysis/fault', 'POST', data);
   },
 

@@ -7,7 +7,7 @@ using per-unit system on a common MVA base.
 import math
 import numpy as np
 from ..models.schemas import (
-    ProjectData, LoadFlowResults, LoadFlowBus, LoadFlowBranch
+    ProjectData, LoadFlowResults, LoadFlowBus, LoadFlowBranch, LoadFlowWarning
 )
 
 
@@ -244,7 +244,44 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         processed_chains.add(chain_key)
 
         # Compute total series impedance
-        z_total = sum((_get_impedance(e, base_mva) for e in all_elems.values()), complex(0, 0))
+        # For chains with a transformer, cable impedances must use the bus voltage
+        # on their side of the transformer as the impedance base — not the cable's
+        # own voltage_kv property, which may be wrong or defaulted.
+        has_xfmr = any(e.type == "transformer" for e in all_elems.values())
+        cable_voltages = {}  # elem_id -> effective voltage_kv
+
+        if has_xfmr:
+            path_a_ids = {e.id for e in path_a}
+            path_b_ids = {e.id for e in path_b}
+            bus_a_comp = components.get(bus_a)
+            bus_b_comp = components.get(bus_b)
+            bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
+            bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
+
+            z_total = complex(0, 0)
+            for e in all_elems.values():
+                if e.type == "transformer":
+                    z_total += _get_impedance(e, base_mva)
+                elif e.type == "cable":
+                    # Determine which side of transformer this cable is on
+                    in_a = e.id in path_a_ids
+                    in_b = e.id in path_b_ids
+                    if in_a and not in_b:
+                        v_kv = bus_a_v
+                    elif in_b and not in_a:
+                        v_kv = bus_b_v
+                    else:
+                        # In both paths (starting element) — closer to shorter path's bus
+                        v_kv = bus_a_v if len(path_a) <= len(path_b) else bus_b_v
+                    cable_voltages[e.id] = v_kv
+                    z_base = (v_kv ** 2) / base_mva
+                    r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
+                    x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
+                    z_total += complex(r / z_base, x / z_base)
+                else:
+                    z_total += _get_impedance(e, base_mva)
+        else:
+            z_total = sum((_get_impedance(e, base_mva) for e in all_elems.values()), complex(0, 0))
 
         if abs(z_total) > 1e-15:
             y = 1 / z_total
@@ -276,7 +313,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
             Y[i, j] -= y
             Y[j, i] -= y
 
-        branch_chains.append((all_elems, bus_a, bus_b, y, t, hv_bus))
+        branch_chains.append((all_elems, bus_a, bus_b, y, t, hv_bus, cable_voltages))
 
     # ── Find direct bus-to-bus connections (solid links through transparent elements only) ──
     linked_pairs = set()
@@ -308,7 +345,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         Y[j, j] += y_link
         Y[i, j] -= y_link
         Y[j, i] -= y_link
-        branch_chains.append((None, pair[0], pair[1], y_link, 1.0, None))
+        branch_chains.append((None, pair[0], pair[1], y_link, 1.0, None, {}))
 
     # ── Set up power injections ──
     P_spec = np.zeros(n)
@@ -382,7 +419,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
     # ── Branch flows ──
     branch_results = []
-    for elems, from_bus, to_bus, y, t, hv_bus in branch_chains:
+    for elems, from_bus, to_bus, y, t, hv_bus, cable_voltages in branch_chains:
         i = bus_idx[from_bus]
         j = bus_idx[to_bus]
 
@@ -431,13 +468,15 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
             for elem in elems.values():
                 loading = 0
                 if elem.type == "cable":
-                    v_kv = elem.props.get("voltage_kv", 11)
+                    # Use the bus-inferred voltage for cables in transformer chains,
+                    # falling back to the cable's own voltage_kv property
+                    v_kv = cable_voltages.get(elem.id, elem.props.get("voltage_kv", 11))
                     # Use the power at the cable's voltage level
                     cable_s_mva = s_mva
                     if hv_bus is not None:
-                        hv_v = components.get(hv_bus)
-                        hv_v_kv = hv_v.props.get("voltage_kv", 33) if hv_v else 33
-                        cable_s_mva = s_hv_mva if abs(v_kv - hv_v_kv) < abs(v_kv) else s_lv_mva
+                        hv_v_kv = components.get(hv_bus).props.get("voltage_kv", 33) if components.get(hv_bus) else 33
+                        # Cable on HV side uses HV power, LV side uses LV power
+                        cable_s_mva = s_hv_mva if abs(v_kv - hv_v_kv) <= abs(v_kv) * 0.5 else s_lv_mva
                     elem_i_amps = (cable_s_mva * 1000) / (math.sqrt(3) * v_kv) if v_kv > 0 else 0
                     rated_a = elem.props.get("rated_amps", 400)
                     rated_mva = math.sqrt(3) * v_kv * rated_a / 1000
@@ -465,9 +504,78 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     loading_pct=round(loading, 2), losses_mw=round(losses_mw, 6),
                 ))
 
+    # ── Voltage mismatch warnings ──
+    # Check every device in transformer chains for incorrect voltage ratings.
+    # Walk from each bus through transparent devices to find all components
+    # on each side of the transformer and verify their voltage ratings.
+    voltage_warnings = []
+    warned_ids = set()  # Avoid duplicate warnings for the same component
+    tolerance = 0.15  # 15% mismatch threshold
+
+    for elems, from_bus, to_bus, y, t, hv_bus, cvs in branch_chains:
+        if elems is None or hv_bus is None:
+            continue  # Skip bus links and non-transformer chains
+
+        # Determine bus voltages for each side
+        from_v = components[from_bus].props.get("voltage_kv", 0) if from_bus in components else 0
+        to_v = components[to_bus].props.get("voltage_kv", 0) if to_bus in components else 0
+
+        # Find the transformer to use as the walk boundary
+        xfmr_id = None
+        for eid, e in elems.items():
+            if e.type == "transformer":
+                xfmr_id = eid
+                break
+        if not xfmr_id:
+            continue
+
+        # Walk from each bus toward the transformer, collecting ALL components on that side
+        for side_bus, expected_v in [(from_bus, from_v), (to_bus, to_v)]:
+            if expected_v <= 0:
+                continue
+            visited = {side_bus}
+            stack = list(adjacency.get(side_bus, []))
+            while stack:
+                nid = stack.pop()
+                if nid in visited or nid == xfmr_id:
+                    continue
+                visited.add(nid)
+                # Don't cross into another bus
+                if nid in bus_idx and nid != side_bus:
+                    continue
+                comp = components.get(nid)
+                if not comp:
+                    continue
+
+                # Check voltage property based on component type
+                actual_v = 0
+                if comp.type == "cable":
+                    actual_v = comp.props.get("voltage_kv", 0)
+                elif comp.type in ("cb", "switch", "fuse", "surge_arrester"):
+                    actual_v = comp.props.get("rated_voltage_kv", 0)
+                elif comp.type in ("ct", "pt"):
+                    actual_v = comp.props.get("voltage_kv", 0)
+
+                if actual_v > 0 and abs(actual_v - expected_v) / expected_v > tolerance and comp.id not in warned_ids:
+                    warned_ids.add(comp.id)
+                    voltage_warnings.append(LoadFlowWarning(
+                        elementId=comp.id,
+                        element_name=comp.props.get("name", comp.type),
+                        message=f"Voltage mismatch: rated {actual_v} kV, expected {expected_v} kV from connected bus",
+                        expected_kv=round(expected_v, 3),
+                        actual_kv=round(actual_v, 3),
+                    ))
+
+                # Continue walking through chain elements and transparent devices
+                if comp.id in elems or _is_transparent_and_closed(comp):
+                    for neighbor in adjacency.get(nid, []):
+                        if neighbor not in visited:
+                            stack.append(neighbor)
+
     return LoadFlowResults(
         buses=bus_results,
         branches=branch_results,
+        warnings=voltage_warnings,
         converged=converged,
         iterations=iterations,
         method=method,
