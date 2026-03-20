@@ -65,10 +65,16 @@
       </div>
       <div class="toolbar-separator"></div>
       <div class="toolbar-group">
-        <button id="btn-run-fault" title="Run Fault Analysis">
+        <button id="btn-run-fault" title="Run Fault Analysis (select a bus first for single-bus analysis)">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           <span>Fault Analysis</span>
         </button>
+        <select id="fault-type" title="Fault Type">
+          <option value="">All Types</option>
+          <option value="3phase">3-Phase</option>
+          <option value="slg">Single Line-Ground</option>
+          <option value="ll">Line-to-Line</option>
+        </select>
         <button id="btn-run-loadflow" title="Run Load Flow">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           <span>Load Flow</span>

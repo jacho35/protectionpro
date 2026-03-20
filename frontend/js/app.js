@@ -187,8 +187,23 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       let result;
       if (type === 'fault') {
-        result = await API.runFaultAnalysis();
+        // Determine if a single bus is selected
+        let faultBusId = null;
+        if (AppState.selectedIds.size === 1) {
+          const selId = [...AppState.selectedIds][0];
+          const selComp = AppState.components.get(selId);
+          if (selComp && selComp.type === 'bus') {
+            faultBusId = selId;
+          }
+        }
+        const faultType = document.getElementById('fault-type').value || null;
+        result = await API.runFaultAnalysis(faultBusId, faultType);
         AppState.faultResults = result;
+        // Update status with context
+        const busInfo = faultBusId ? ` on ${AppState.components.get(faultBusId)?.props?.name || faultBusId}` : ' on all buses';
+        document.getElementById('status-info').textContent = `Fault analysis complete${busInfo}.`;
+        Canvas.render();
+        return;
       } else {
         const lfMethod = document.getElementById('loadflow-method').value;
         result = await API.runLoadFlow(lfMethod);

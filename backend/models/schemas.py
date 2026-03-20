@@ -36,6 +36,8 @@ class ProjectData(BaseModel):
     wires: list[Wire] = []
     nextId: int = 1
     loadFlowMethod: Optional[str] = None
+    faultBusId: Optional[str] = None
+    faultType: Optional[str] = None  # "3phase", "slg", "ll", or None for all
 
 
 class ProjectSummary(BaseModel):
