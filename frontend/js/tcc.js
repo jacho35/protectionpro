@@ -180,8 +180,12 @@ const TCC = {
         else if (h.mode === 'tds') origValue = dev.tds;
         else if (h.mode === 'magnetic') origValue = dev.cbParams.magnetic_pickup;
         else if (h.mode === 'thermal') origValue = dev.cbParams.thermal_pickup;
+        else if (h.mode.startsWith('zone_')) {
+          const zi = parseInt(h.mode.split('_')[1]);
+          origValue = dev.zones[zi]?.reach_ohm || 1;
+        }
         this._curveDrag = { devIndex: h.devIndex, mode: h.mode, startX: mx, startY: my, origValue };
-        this.canvas.style.cursor = h.mode === 'pickup' || h.mode === 'magnetic' || h.mode === 'thermal' ? 'ew-resize' : 'ns-resize';
+        this.canvas.style.cursor = h.mode === 'pickup' || h.mode === 'magnetic' || h.mode === 'thermal' || h.mode.startsWith('zone_') ? 'ew-resize' : 'ns-resize';
         e.preventDefault();
         return true;
       }
@@ -215,6 +219,15 @@ const TCC = {
       const newCurrent = this._xToCurrent(mx);
       const Irated = dev.cbParams.trip_rating_a || 630;
       dev.cbParams.thermal_pickup = Math.max(0.4, Math.min(1.3, Math.round(newCurrent / Irated * 20) / 20));
+    } else if (drag.mode.startsWith('zone_')) {
+      // Horizontal drag → change distance relay zone reach
+      const zi = parseInt(drag.mode.split('_')[1]);
+      const newCurrent = this._scaleCurrentInverse(this._xToCurrent(mx), dev);
+      // I = V_phase / Z → Z = V_phase / I
+      const vPhase = (dev.voltage_kv || 11) * 1000 / Math.sqrt(3);
+      const newReach = Math.max(0.1, vPhase / Math.max(1, newCurrent));
+      dev.zones[zi].reach_ohm = Math.round(newReach * 10) / 10;
+      dev.zones[zi].pickup_a = vPhase / dev.zones[zi].reach_ohm;
     }
     this.render();
     this._renderDeviceList();
@@ -235,6 +248,17 @@ const TCC = {
       comp.props.magnetic_pickup = dev.cbParams.magnetic_pickup;
     } else if (drag.mode === 'thermal' && comp.props) {
       comp.props.thermal_pickup = dev.cbParams.thermal_pickup;
+    } else if (drag.mode.startsWith('zone_') && comp.props) {
+      // Sync zone reaches back to SLD component
+      const zoneKeys = [
+        ['z1_reach_ohm', 'z1_delay_s'],
+        ['z2_reach_ohm', 'z2_delay_s'],
+        ['z3_reach_ohm', 'z3_delay_s'],
+      ];
+      for (let i = 0; i < dev.zones.length && i < zoneKeys.length; i++) {
+        comp.props[zoneKeys[i][0]] = dev.zones[i].reach_ohm;
+        comp.props[zoneKeys[i][1]] = dev.zones[i].delay_s;
+      }
     }
     this._runCoordinationCheck();
   },
@@ -346,6 +370,22 @@ const TCC = {
           pickup: comp.props?.pickup_a || 100,
           tds: comp.props?.time_dial || 1.0,
         });
+      } else if (comp.type === 'relay' && comp.props?.relay_type === '21') {
+        // Distance relay — zone impedance reaches converted to current thresholds
+        const vkv = comp.props?.voltage_kv || this._resolveDeviceVoltage(id) || 11;
+        const zones = buildDistanceRelayZones({ ...comp.props, voltage_kv: vkv });
+        if (zones.length > 0) {
+          this.devices.push({
+            id,
+            name: comp.props?.name || id,
+            deviceType: 'distance_relay',
+            color: this.palette[this.colorIndex++ % this.palette.length],
+            visible: true,
+            voltage_kv: vkv,
+            zones,  // [{ name, reach_ohm, delay_s, pickup_a }]
+            mho_angle: comp.props?.mho_angle_deg || 75,
+          });
+        }
       } else if (comp.type === 'fuse') {
         const ratingA = comp.props?.rated_current_a || 100;
         // Only plot if we have curve data for this rating
@@ -603,6 +643,7 @@ const TCC = {
       const isSelected = this.devices.indexOf(dev) === selIdx;
       ctx.globalAlpha = hasSelection && !isSelected ? 0.3 : 1.0;
       if (dev.deviceType === 'relay') this._drawRelayCurve(ctx, dev);
+      else if (dev.deviceType === 'distance_relay') this._drawDistanceRelayCurve(ctx, dev);
       else if (dev.deviceType === 'fuse') this._drawFuseCurve(ctx, dev);
       else if (dev.deviceType === 'cb') this._drawCBCurve(ctx, dev);
       else if (dev.deviceType === 'xfmr_thermal') this._drawXfmrThermal(ctx, dev);
@@ -616,6 +657,9 @@ const TCC = {
 
     // Draw fault current markers
     this._drawFaultMarkers(ctx);
+
+    // Draw mho characteristic inset for distance relays
+    this._drawMhoInset(ctx, tabDevices);
 
     // Draw tooltip
     if (this._tooltip) {
@@ -813,6 +857,210 @@ const TCC = {
 
     // Register drag handles
     this._registerRelayHandles(dev);
+  },
+
+  _drawDistanceRelayCurve(ctx, dev) {
+    const zones = dev.zones; // sorted by pickup_a descending (Z1 highest current first)
+    if (!zones || zones.length === 0) return;
+
+    const sc = (amps) => this._scaleCurrent(amps, dev);
+
+    // Draw each zone as a stepped characteristic:
+    // Horizontal line at zone delay, vertical drop between zones
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 2.5;
+
+    // Collect the step points: each zone has a pickup current and delay
+    // The curve is a staircase from high current (Z1) to low current (Z3)
+    const steps = []; // { current_a, time_s, name }
+    for (const z of zones) {
+      steps.push({ current_a: z.pickup_a, time_s: Math.max(z.delay_s, 0.001), name: z.name });
+    }
+
+    // Draw the stepped curve
+    ctx.beginPath();
+    let started = false;
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const xStep = this._currentToX(sc(step.current_a));
+      const yStep = this._timeToY(step.time_s);
+
+      if (xStep < this.plotLeft || xStep > this.plotRight) continue;
+      if (yStep < this.plotTop || yStep > this.plotBottom) continue;
+
+      if (!started) {
+        // Start: horizontal line from right edge to Z1 pickup
+        const xRight = Math.min(this.plotRight, this._currentToX(sc(step.current_a * 10)));
+        ctx.moveTo(xRight, yStep);
+        ctx.lineTo(xStep, yStep);
+        started = true;
+      } else {
+        // Vertical drop from previous zone delay to this zone delay
+        ctx.lineTo(xStep, yStep);
+        // Horizontal line at this zone delay extending to the left
+      }
+
+      // Extend horizontal line to the next zone's pickup (or to minimum current)
+      if (i < steps.length - 1) {
+        const nextX = this._currentToX(sc(steps[i + 1].current_a));
+        ctx.lineTo(nextX, yStep);
+      } else {
+        // Last zone: extend to left edge or minimum visible current
+        const xLeft = Math.max(this.plotLeft, this._currentToX(sc(step.current_a * 0.3)));
+        ctx.lineTo(xLeft, yStep);
+      }
+    }
+    ctx.stroke();
+
+    // Draw zone pickup lines (vertical dashed)
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+    for (const z of zones) {
+      const px = this._currentToX(sc(z.pickup_a));
+      if (px >= this.plotLeft && px <= this.plotRight) {
+        ctx.beginPath();
+        ctx.moveTo(px, this.plotTop);
+        ctx.lineTo(px, this.plotBottom);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+
+    // Zone labels (small text at each zone step)
+    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = dev.color;
+    for (const z of zones) {
+      const px = this._currentToX(sc(z.pickup_a));
+      const py = this._timeToY(Math.max(z.delay_s, 0.001));
+      if (px >= this.plotLeft && px <= this.plotRight - 20 && py >= this.plotTop && py <= this.plotBottom) {
+        ctx.textAlign = 'left';
+        const delayStr = z.delay_s >= 1 ? z.delay_s.toFixed(1) + 's' : (z.delay_s * 1000).toFixed(0) + 'ms';
+        ctx.fillText(`${z.name} (${z.reach_ohm}\u03A9, ${delayStr})`, px + 4, py - 4);
+      }
+    }
+
+    // Main device label
+    const labelZ = zones[0]; // Z1 (highest current)
+    const labelX = this._currentToX(sc(labelZ.pickup_a * 2));
+    const labelY = this._timeToY(Math.max(labelZ.delay_s, 0.001));
+    if (labelX >= this.plotLeft && labelX <= this.plotRight && labelY >= this.plotTop && labelY <= this.plotBottom) {
+      this._drawLabel(ctx, dev, labelX, labelY, `${dev.name} (21)`);
+    }
+
+    // Register drag handles for zone reaches
+    this._registerDistanceRelayHandles(dev);
+  },
+
+  _registerDistanceRelayHandles(dev) {
+    const devIndex = this.devices.indexOf(dev);
+    if (devIndex < 0) return;
+    const sc = (amps) => this._scaleCurrent(amps, dev);
+
+    for (let i = 0; i < dev.zones.length; i++) {
+      const z = dev.zones[i];
+      const px = this._currentToX(sc(z.pickup_a));
+      const py = this._timeToY(Math.max(z.delay_s, 0.001));
+      if (px >= this.plotLeft && px <= this.plotRight && py >= this.plotTop && py <= this.plotBottom) {
+        this._curveHandles.push({
+          devIndex, mode: `zone_${i}`, x: px, y: py, r: 7, color: dev.color,
+        });
+      }
+    }
+  },
+
+  // ── Mho Characteristic Inset (R-X impedance plane) ──
+  // Draws a small R-X diagram in the top-right corner of the TCC
+  // showing mho circle zones for any visible distance relays.
+  _drawMhoInset(ctx, tabDevices) {
+    const distDevs = tabDevices.filter(d => d.visible && d.deviceType === 'distance_relay');
+    if (distDevs.length === 0) return;
+
+    // Inset dimensions and position (top-right corner of plot)
+    const insetSize = Math.min(140, this.plotWidth * 0.22);
+    const insetX = this.plotRight - insetSize - 8;
+    const insetY = this.plotTop + 8;
+    const cx = insetX + insetSize / 2; // center X
+    const cy = insetY + insetSize * 0.6; // center Y (shifted down — origin at lower-center)
+
+    // Background
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(insetX, insetY, insetSize, insetSize, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Title
+    ctx.fillStyle = '#555';
+    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('R-X Diagram (\u03A9)', cx, insetY + 11);
+
+    // Axes
+    const axLen = insetSize * 0.38;
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 0.7;
+    // R axis (horizontal)
+    ctx.beginPath();
+    ctx.moveTo(cx - axLen, cy);
+    ctx.lineTo(cx + axLen, cy);
+    ctx.stroke();
+    // X axis (vertical, positive up)
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + axLen * 0.4);
+    ctx.lineTo(cx, cy - axLen);
+    ctx.stroke();
+
+    // Axis labels
+    ctx.fillStyle = '#999';
+    ctx.font = '8px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('R', cx + axLen - 1, cy + 10);
+    ctx.textAlign = 'center';
+    ctx.fillText('X', cx + 8, cy - axLen + 4);
+
+    // Find max zone reach across all distance relays for scaling
+    let maxReach = 1;
+    for (const dev of distDevs) {
+      for (const z of dev.zones) {
+        maxReach = Math.max(maxReach, z.reach_ohm);
+      }
+    }
+    const scale = (axLen * 0.85) / maxReach; // ohms → pixels
+
+    // Draw mho circles for each distance relay
+    for (const dev of distDevs) {
+      const mhoRad = (dev.mho_angle || 75) * Math.PI / 180;
+
+      for (let i = dev.zones.length - 1; i >= 0; i--) {
+        const z = dev.zones[i];
+        // Mho circle: centered at (Z/2 cos(theta), Z/2 sin(theta)) with radius Z/2
+        const r = (z.reach_ohm * scale) / 2;
+        const centerR = r * Math.cos(mhoRad); // R component
+        const centerX = r * Math.sin(mhoRad); // X component (positive up)
+
+        ctx.beginPath();
+        ctx.arc(cx + centerR, cy - centerX, r, 0, Math.PI * 2);
+        ctx.strokeStyle = dev.color;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.4 + 0.2 * i;
+        ctx.stroke();
+
+        // Zone label
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = dev.color;
+        ctx.font = '7px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(z.name, cx + centerR, cy - centerX - r - 2);
+      }
+    }
+
+    ctx.restore();
   },
 
   _drawFuseCurve(ctx, dev) {
@@ -1318,6 +1566,8 @@ const TCC = {
       if (dev.deviceType === 'relay') {
         const M = current / dev.pickup;
         t = idmtTripTime(dev.curveName, M, dev.tds);
+      } else if (dev.deviceType === 'distance_relay') {
+        t = distanceRelayTripTime(dev.zones, current);
       } else if (dev.deviceType === 'fuse') {
         t = fuseTripTime(dev.fuseRating, current);
       } else if (dev.deviceType === 'cb') {
@@ -1354,7 +1604,7 @@ const TCC = {
         }
       }
       if (hovering) {
-        cursor = (h.mode === 'pickup' || h.mode === 'magnetic' || h.mode === 'thermal') ? 'ew-resize' : 'ns-resize';
+        cursor = (h.mode === 'pickup' || h.mode === 'magnetic' || h.mode === 'thermal' || h.mode.startsWith('zone_')) ? 'ew-resize' : 'ns-resize';
         break;
       }
     }
@@ -1420,6 +1670,9 @@ const TCC = {
       let typeLabel;
       if (dev.deviceType === 'relay') {
         typeLabel = `${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`;
+      } else if (dev.deviceType === 'distance_relay') {
+        const zSummary = dev.zones.map(z => `${z.name}: ${z.reach_ohm}\u03A9`).join(' | ');
+        typeLabel = `Distance (21) | ${zSummary}`;
       } else if (dev.deviceType === 'fuse') {
         typeLabel = `gG Fuse ${dev.fuseRating}A`;
       } else if (dev.deviceType === 'cb') {
@@ -1542,6 +1795,20 @@ const TCC = {
           <label>Time Dial (TDS)</label>
           <input type="number" data-sel-field="tds" value="${dev.tds}" min="0.05" max="10" step="0.05">
         </div>`;
+    } else if (dev.deviceType === 'distance_relay') {
+      html = dev.zones.map((z, i) => `
+        <div class="tcc-form-row">
+          <label>${z.name} Reach (\u03A9)</label>
+          <input type="number" data-sel-field="zone_reach_${i}" value="${z.reach_ohm}" min="0.01" step="0.1">
+        </div>
+        <div class="tcc-form-row">
+          <label>${z.name} Delay (s)</label>
+          <input type="number" data-sel-field="zone_delay_${i}" value="${z.delay_s}" min="0" step="0.01">
+        </div>`).join('') + `
+        <div class="tcc-form-row">
+          <label>Voltage (kV)</label>
+          <input type="number" data-sel-field="voltage_kv" value="${dev.voltage_kv}" min="0.1" step="0.1">
+        </div>`;
     } else if (dev.deviceType === 'fuse') {
       html = `
         <div class="tcc-form-row">
@@ -1645,12 +1912,33 @@ const TCC = {
         const acbFields = el.closest('#tcc-selected-settings').querySelector('.tcc-sel-acb-fields');
         if (acbFields) acbFields.style.display = val === 'acb' ? '' : 'none';
       }
+    } else if (field.startsWith('zone_reach_') || field.startsWith('zone_delay_')) {
+      // Distance relay zone settings
+      const parts = field.split('_');
+      const zoneIdx = parseInt(parts[parts.length - 1]);
+      if (dev.zones && dev.zones[zoneIdx]) {
+        if (field.startsWith('zone_reach_')) {
+          dev.zones[zoneIdx].reach_ohm = val;
+          // Recalculate pickup current
+          const vLL = (dev.voltage_kv || 11) * 1000;
+          dev.zones[zoneIdx].pickup_a = vLL / (Math.sqrt(3) * val);
+        } else {
+          dev.zones[zoneIdx].delay_s = val;
+        }
+      }
     } else {
       dev[field] = val;
       // For fuse, recalculate nearest standard rating
       if (field === 'fuseRating') {
         dev.fuseRating = parseInt(val);
         dev.actualRating = parseInt(val);
+      }
+      // For distance relay voltage change, recalculate all zone pickup currents
+      if (field === 'voltage_kv' && dev.deviceType === 'distance_relay') {
+        const vLL = val * 1000;
+        for (const z of dev.zones) {
+          z.pickup_a = vLL / (Math.sqrt(3) * z.reach_ohm);
+        }
       }
     }
 
@@ -1661,6 +1949,11 @@ const TCC = {
         comp.props.pickup_a = dev.pickup;
         comp.props.time_dial = dev.tds;
         comp.props.curve_type = dev.curveName;
+      } else if (dev.deviceType === 'distance_relay') {
+        if (dev.zones[0]) { comp.props.z1_reach_ohm = dev.zones[0].reach_ohm; comp.props.z1_delay_s = dev.zones[0].delay_s; }
+        if (dev.zones[1]) { comp.props.z2_reach_ohm = dev.zones[1].reach_ohm; comp.props.z2_delay_s = dev.zones[1].delay_s; }
+        if (dev.zones[2]) { comp.props.z3_reach_ohm = dev.zones[2].reach_ohm; comp.props.z3_delay_s = dev.zones[2].delay_s; }
+        comp.props.voltage_kv = dev.voltage_kv;
       } else if (dev.deviceType === 'cb') {
         Object.assign(comp.props, dev.cbParams);
       } else if (dev.deviceType === 'xfmr_thermal') {
@@ -1815,6 +2108,8 @@ const TCC = {
     if (dev.deviceType === 'relay') {
       const M = currentA / dev.pickup;
       return idmtTripTime(dev.curveName, M, dev.tds);
+    } else if (dev.deviceType === 'distance_relay') {
+      return distanceRelayTripTime(dev.zones, currentA);
     } else if (dev.deviceType === 'fuse') {
       return fuseTripTime(dev.fuseRating, currentA) || Infinity;
     } else if (dev.deviceType === 'cb') {

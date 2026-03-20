@@ -254,6 +254,50 @@ function idmtTripTime(curveName, M, TDS) {
   }
 }
 
+// ─── Distance Relay (21) Trip Time ───
+// Converts impedance zones to equivalent current thresholds and returns
+// the trip time for a given fault current.
+// Zone reach (ohms) → pickup current: I = V_LL / (√3 × Z_reach)
+// The relay trips at the fastest matching zone delay.
+function distanceRelayTripTime(zones, currentA) {
+  // zones: [{ reach_ohm, delay_s, pickup_a (pre-computed) }, ...]
+  // Returns trip time for the fault current, or Infinity if below all zones
+  let bestTime = Infinity;
+  for (const z of zones) {
+    if (currentA >= z.pickup_a) {
+      bestTime = Math.min(bestTime, z.delay_s);
+    }
+  }
+  return bestTime;
+}
+
+// Build zone array from distance relay component props
+function buildDistanceRelayZones(props) {
+  const vkv = props.voltage_kv || 11;
+  const vLL = vkv * 1000; // Line-to-line voltage in V
+  const zones = [];
+  const zoneDefs = [
+    { reach: props.z1_reach_ohm, delay: props.z1_delay_s, name: 'Z1' },
+    { reach: props.z2_reach_ohm, delay: props.z2_delay_s, name: 'Z2' },
+    { reach: props.z3_reach_ohm, delay: props.z3_delay_s, name: 'Z3' },
+  ];
+  for (const zd of zoneDefs) {
+    if (zd.reach > 0) {
+      // I = V_phase / Z = (V_LL / √3) / Z_reach
+      const pickup_a = vLL / (Math.sqrt(3) * zd.reach);
+      zones.push({
+        name: zd.name,
+        reach_ohm: zd.reach,
+        delay_s: zd.delay != null ? zd.delay : 0,
+        pickup_a,
+      });
+    }
+  }
+  // Sort by pickup current descending (smallest impedance = highest current = innermost zone first)
+  zones.sort((a, b) => b.pickup_a - a.pickup_a);
+  return zones;
+}
+
 // ─── IEC 60269 Fuse Curves (gG General Purpose) ───
 // Pre-arcing (minimum melting) time-current points: [current_A, time_s]
 // Based on IEC 60269-1 characteristic data for gG fuses
@@ -527,6 +571,10 @@ const FIELD_INFO = {
   'relay.pickup_a':  'Default 100A — adjust to match load current and CT ratio.\nSource: IEC 60255-151 — overcurrent relay pickup setting.',
   'relay.time_dial':  'Default TDS = 1.0 — middle of adjustment range.\nSource: IEC 60255-151 / IEEE C37.112 — time dial setting (0.05–10).',
   'relay.curve':      'Default IEC Standard Inverse curve.\nSource: IEC 60255-151 §5.5 — IDMT characteristics:\nt = TDS × 0.14 / (M^0.02 − 1)',
+  'relay.z1_reach_ohm': 'Zone 1 forward reach in primary ohms.\nTypically set to 80% of protected line impedance for instantaneous tripping.\nSource: IEEE C37.113 / IEC 60255-121.',
+  'relay.z2_reach_ohm': 'Zone 2 forward reach in primary ohms.\nTypically set to 120% of protected line impedance (overreaches into next section).\nOperates with a time delay (typically 0.3-0.5s).\nSource: IEEE C37.113.',
+  'relay.z3_reach_ohm': 'Zone 3 forward reach in primary ohms.\nTypically set to cover the next line section (200%+ of protected line).\nOperates with a longer time delay (typically 0.6-1.2s) as backup.\nSource: IEEE C37.113.',
+  'relay.mho_angle_deg': 'Maximum torque angle (MTA) of the mho characteristic.\nTypically 60-85 degrees depending on line impedance angle.\nSource: IEC 60255-121 §5.3.',
 
   // CT
   'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.',
@@ -867,13 +915,33 @@ const COMPONENT_DEFS = {
       pickup_a: 100,
       time_dial: 1.0,
       curve: 'IEC Standard Inverse',
+      // Distance relay (21) defaults
+      voltage_kv: 11,
+      z1_reach_ohm: 4.0,
+      z1_delay_s: 0.0,
+      z2_reach_ohm: 6.0,
+      z2_delay_s: 0.3,
+      z3_reach_ohm: 12.0,
+      z3_delay_s: 0.8,
+      z3_reverse: false,
+      mho_angle_deg: 75,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'relay_type', label: 'Type', type: 'select', options: ['50/51', '50N/51N', '87', '21'] },
-      { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A' },
-      { key: 'time_dial', label: 'Time Dial', type: 'number' },
-      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse'] },
+      // Overcurrent (50/51, 50N/51N) fields
+      { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
+      { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
+      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
+      // Distance relay (21) fields
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', showWhen: { field: 'relay_type', values: ['21'] } },
+      { key: 'z1_reach_ohm', label: 'Z1 Reach', type: 'number', unit: '\u03A9', min: 0.01, step: 0.1, showWhen: { field: 'relay_type', values: ['21'] } },
+      { key: 'z1_delay_s', label: 'Z1 Delay', type: 'number', unit: 's', min: 0, step: 0.01, showWhen: { field: 'relay_type', values: ['21'] } },
+      { key: 'z2_reach_ohm', label: 'Z2 Reach', type: 'number', unit: '\u03A9', min: 0.01, step: 0.1, showWhen: { field: 'relay_type', values: ['21'] } },
+      { key: 'z2_delay_s', label: 'Z2 Delay', type: 'number', unit: 's', min: 0, step: 0.01, showWhen: { field: 'relay_type', values: ['21'] } },
+      { key: 'z3_reach_ohm', label: 'Z3 Reach', type: 'number', unit: '\u03A9', min: 0.01, step: 0.1, showWhen: { field: 'relay_type', values: ['21'] } },
+      { key: 'z3_delay_s', label: 'Z3 Delay', type: 'number', unit: 's', min: 0, step: 0.01, showWhen: { field: 'relay_type', values: ['21'] } },
+      { key: 'mho_angle_deg', label: 'Mho Angle', type: 'number', unit: '\u00B0', min: 30, max: 90, step: 1, showWhen: { field: 'relay_type', values: ['21'] } },
     ],
   },
   switch: {
