@@ -190,7 +190,8 @@ document.addEventListener('DOMContentLoaded', () => {
         result = await API.runFaultAnalysis();
         AppState.faultResults = result;
       } else {
-        result = await API.runLoadFlow();
+        const lfMethod = document.getElementById('loadflow-method').value;
+        result = await API.runLoadFlow(lfMethod);
         AppState.loadFlowResults = result;
       }
       Canvas.render();

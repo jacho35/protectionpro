@@ -81,6 +81,21 @@
   font-weight: 500;
 }
 
+#loadflow-method {
+  font-size: 11px;
+  font-family: var(--font-family);
+  padding: 3px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+#loadflow-method:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* Export dropdown */
 .toolbar-dropdown {
   position: relative;
