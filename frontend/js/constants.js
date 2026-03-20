@@ -437,10 +437,12 @@ const COMPONENT_DEFS = {
       x_r_ratio: 10,
       tap_percent: 0,
       vector_group: 'Dyn11',
+      winding_config: 'step_down',
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'standard_type', label: 'Standard Type', type: 'standard_select', library: 'transformer' },
+      { key: 'winding_config', label: 'Configuration', type: 'select', options: ['step_down', 'step_up'] },
       { key: 'rated_mva', label: 'Rating', type: 'number', unit: 'MVA', unitOptions: [{ label: 'MVA', mult: 1 }, { label: 'kVA', mult: 0.001 }] },
       { key: 'voltage_hv_kv', label: 'HV Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
       { key: 'voltage_lv_kv', label: 'LV Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },

@@ -506,7 +506,11 @@ const Canvas = {
         const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
         lines.push(ratingStr);
         if (p.voltage_hv_kv && p.voltage_lv_kv) {
-          lines.push(`${p.voltage_hv_kv}/${p.voltage_lv_kv} kV`);
+          if (p.winding_config === 'step_up') {
+            lines.push(`${p.voltage_lv_kv}→${p.voltage_hv_kv} kV`);
+          } else {
+            lines.push(`${p.voltage_hv_kv}→${p.voltage_lv_kv} kV`);
+          }
         }
         if (p.z_percent) lines.push(`Z=${p.z_percent}%`);
       } else if (comp.type === 'static_load') {

@@ -82,7 +82,10 @@ const Components = {
       adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
     }
 
-    // BFS from a component port through transparent elements to find a bus
+    // BFS from a component port through transparent elements, cables, and
+    // transformers to find a bus.  When a cable is wired directly to a
+    // transformer (no intermediate bus) we still need to discover the bus
+    // on the far side so that branches and source-reachability work correctly.
     const findBusFromPort = (startId, portId) => {
       const visited = new Set([startId]);
       const startNeighbors = (adj.get(startId) || [])
@@ -96,7 +99,8 @@ const Components = {
         const comp = AppState.components.get(id);
         if (!comp) continue;
         if (comp.type === 'bus') return comp;
-        if (isTransparentClosed(comp)) {
+        // Walk through transparent elements AND branch elements (cable/transformer)
+        if (isTransparentClosed(comp) || comp.type === 'cable' || comp.type === 'transformer') {
           for (const { id: nid } of (adj.get(id) || [])) {
             if (!visited.has(nid)) queue.push(nid);
           }
@@ -232,26 +236,49 @@ const Components = {
     }
 
     // 4. Check each bus has at least one source path
+    //    Use full wire-graph BFS from every source, walking through all
+    //    element types (transparent, cables, transformers, buses) to find
+    //    every reachable bus — not limited to pre-built branches.
     const graph = this.buildNetworkGraph();
-    const busesWithSource = new Set();
-    for (const { bus } of graph.sources) {
-      busesWithSource.add(bus.id);
+
+    // Build simple adjacency (component id -> [neighbor ids]) for reachability
+    const reachAdj = new Map();
+    for (const wire of AppState.wires.values()) {
+      if (!reachAdj.has(wire.fromComponent)) reachAdj.set(wire.fromComponent, []);
+      if (!reachAdj.has(wire.toComponent)) reachAdj.set(wire.toComponent, []);
+      reachAdj.get(wire.fromComponent).push(wire.toComponent);
+      reachAdj.get(wire.toComponent).push(wire.fromComponent);
     }
-    // Propagate source reachability through branches
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const branch of graph.branches) {
-        if (busesWithSource.has(branch.from.id) && !busesWithSource.has(branch.to.id)) {
-          busesWithSource.add(branch.to.id);
-          changed = true;
-        }
-        if (busesWithSource.has(branch.to.id) && !busesWithSource.has(branch.from.id)) {
-          busesWithSource.add(branch.from.id);
-          changed = true;
+
+    // BFS from all sources through the full wire graph
+    const busesWithSource = new Set();
+    const sourceIds = [...AppState.components.values()]
+      .filter(c => c.type === 'utility' || c.type === 'generator')
+      .map(c => c.id);
+
+    const reachVisited = new Set();
+    const reachQueue = [...sourceIds];
+    for (const id of reachQueue) reachVisited.add(id);
+
+    while (reachQueue.length > 0) {
+      const id = reachQueue.shift();
+      const comp = AppState.components.get(id);
+      if (!comp) continue;
+      if (comp.type === 'bus') busesWithSource.add(id);
+
+      // Walk through everything except open CBs/switches
+      if (comp.type === 'cb' || comp.type === 'switch') {
+        if (comp.props.state === 'open') continue; // open device blocks path
+      }
+
+      for (const nid of (reachAdj.get(id) || [])) {
+        if (!reachVisited.has(nid)) {
+          reachVisited.add(nid);
+          reachQueue.push(nid);
         }
       }
     }
+
     for (const bus of buses) {
       if (!busesWithSource.has(bus.id)) {
         errors.push({
@@ -266,20 +293,31 @@ const Components = {
     for (const branch of graph.branches) {
       if (!branch.element || branch.element.type !== 'transformer') continue;
       const xfmr = branch.element;
-      // Determine which bus is primary and which is secondary based on port
-      let hvBus, lvBus;
+      const isStepUp = xfmr.props.winding_config === 'step_up';
+      // Determine which bus is HV and which is LV based on port and winding config
+      // Step-down (default): primary (top) = HV, secondary (bottom) = LV
+      // Step-up: primary (top) = LV, secondary (bottom) = HV
+      let primaryBus, secondaryBus;
       if (branch.fromPort === 'primary') {
-        hvBus = branch.from;
-        lvBus = branch.to;
+        primaryBus = branch.from;
+        secondaryBus = branch.to;
       } else if (branch.fromPort === 'secondary') {
-        hvBus = branch.to;
-        lvBus = branch.from;
+        primaryBus = branch.to;
+        secondaryBus = branch.from;
       } else if (branch.toPort === 'primary') {
-        hvBus = branch.to;
-        lvBus = branch.from;
+        primaryBus = branch.to;
+        secondaryBus = branch.from;
       } else {
-        hvBus = branch.from;
-        lvBus = branch.to;
+        primaryBus = branch.from;
+        secondaryBus = branch.to;
+      }
+      let hvBus, lvBus;
+      if (isStepUp) {
+        hvBus = secondaryBus;
+        lvBus = primaryBus;
+      } else {
+        hvBus = primaryBus;
+        lvBus = secondaryBus;
       }
 
       const xfmrHV = xfmr.props.voltage_hv_kv;
@@ -377,22 +415,25 @@ const Components = {
     for (const branch of graph.branches) {
       if (!branch.element || branch.element.type !== 'transformer') continue;
       const xfmr = branch.element;
-      let lvBus;
+      const isStepUp8 = xfmr.props.winding_config === 'step_up';
+      // For step-down: secondary (bottom) is LV side, check downstream matches LV voltage
+      // For step-up: secondary (bottom) is HV side, check downstream matches HV voltage
+      let downstreamBus;
       if (branch.fromPort === 'secondary') {
-        lvBus = branch.from;
+        downstreamBus = branch.from;
       } else if (branch.toPort === 'secondary') {
-        lvBus = branch.to;
+        downstreamBus = branch.to;
       } else {
         // Fallback: use the bus with lower voltage
-        lvBus = (branch.from.props.voltage_kv || 0) <= (branch.to.props.voltage_kv || 0) ? branch.from : branch.to;
+        downstreamBus = (branch.from.props.voltage_kv || 0) <= (branch.to.props.voltage_kv || 0) ? branch.from : branch.to;
       }
 
-      const expectedV = xfmr.props.voltage_lv_kv;
-      if (!expectedV || !lvBus) continue;
+      const expectedV = isStepUp8 ? xfmr.props.voltage_hv_kv : xfmr.props.voltage_lv_kv;
+      if (!expectedV || !downstreamBus) continue;
 
-      // BFS downstream from lvBus through non-transformer branches
-      const visited = new Set([lvBus.id]);
-      const queue = [lvBus.id];
+      // BFS downstream from the secondary-side bus through non-transformer branches
+      const visited = new Set([downstreamBus.id]);
+      const queue = [downstreamBus.id];
       while (queue.length > 0) {
         const busId = queue.shift();
         for (const br of graph.branches) {

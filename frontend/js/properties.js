@@ -516,7 +516,8 @@ X"d = ${(Xpu * Zbase).toFixed(4)} Ω</div>
           <div class="calc-step-title">Per-Unit Impedance (Transformer)</div>
           <div class="calc-formula">Base MVA = ${base} MVA
 Rated = ${rated} MVA
-HV: ${hvkv} kV  →  LV: ${lvkv} kV
+Configuration: ${comp.props.winding_config === 'step_up' ? 'Step Up' : 'Step Down'}
+${comp.props.winding_config === 'step_up' ? `LV: ${lvkv} kV  →  HV: ${hvkv} kV  (Primary=LV, Secondary=HV)` : `HV: ${hvkv} kV  →  LV: ${lvkv} kV  (Primary=HV, Secondary=LV)`}
 Vector Group: ${comp.props.vector_group || 'Dyn11'}
 Tap: ${tap}%
 
