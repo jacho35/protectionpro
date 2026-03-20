@@ -295,6 +295,18 @@ const Properties = {
       if (label) label.textContent = value;
     }
 
+    // When vector group changes, auto-set grounding defaults to match
+    if (field === 'vector_group' && comp.type === 'transformer') {
+      const vg = value || 'Dyn11';
+      const lvPart = vg.replace(/^[A-Z]+/, '');
+      const hvIsGrounded = /^(YN|ZN)/i.test(vg.toUpperCase());
+      const lvIsGrounded = /^(yn|zn)/.test(lvPart.toLowerCase());
+      // Set grounding to solidly_grounded if winding is grounded star,
+      // ungrounded if it's delta or ungrounded star
+      comp.props.grounding_hv = hvIsGrounded ? 'solidly_grounded' : 'ungrounded';
+      comp.props.grounding_lv = lvIsGrounded ? 'solidly_grounded' : 'ungrounded';
+    }
+
     // Re-render properties when fields with conditional dependents change
     if (['vector_group', 'grounding_hv', 'grounding_lv', 'cb_type'].includes(field)) {
       this.show(comp.id);
