@@ -104,6 +104,9 @@ const Annotations = {
       if (showAngles && result.ikLLG_angle != null) s += ` ∠${result.ikLLG_angle.toFixed(1)}°`;
       lines.push(s);
     }
+    if (result.motor_count > 0 && result.ik3_motor != null) {
+      lines.push(`Motors: ${result.ik3_motor.toFixed(2)} kA (${result.motor_count})`);
+    }
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;

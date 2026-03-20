@@ -6,6 +6,10 @@ Implements initial symmetrical short-circuit current (I"k) for:
 - Line-to-line (LL) fault
 - Double line-to-ground (LLG) fault
 
+Includes motor contribution per IEC 60909-0 §13:
+- Induction motors contribute sub-transient current that decays
+- Synchronous motors contribute like generators (sustained)
+
 Per-unit method on a common MVA base.
 """
 
@@ -60,6 +64,10 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             continue
 
         z_sources = [p["z_total"] for p in source_paths]
+
+        # Separate motor and network source paths
+        motor_paths = [p for p in source_paths if p.get("is_motor")]
+        network_paths = [p for p in source_paths if not p.get("is_motor")]
 
         # Parallel combination of all source impedances
         z_eq = _parallel_impedances(z_sources)
@@ -155,6 +163,21 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, active_type
         )
 
+        # Motor contribution summary (3-phase current split)
+        motor_count = len(motor_paths)
+        ik3_motor = None
+        ik3_network = None
+        if motor_count > 0 and ik3_ka and ik3_ka > 0:
+            # Sum motor contributions via current divider: I_motor = c / |Z_motor_path|
+            motor_pu = sum(
+                c_factor / abs(p["z_total"]) for p in motor_paths if abs(p["z_total"]) > 1e-15
+            )
+            network_pu = sum(
+                c_factor / abs(p["z_total"]) for p in network_paths if abs(p["z_total"]) > 1e-15
+            )
+            ik3_motor = round(motor_pu * i_base_ka, 3)
+            ik3_network = round(network_pu * i_base_ka, 3)
+
         results[bus.id] = FaultResultBus(
             bus_id=bus.id,
             bus_name=bus.props.get("name", bus.id),
@@ -175,6 +198,9 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             z0_mag=round(abs(z0), 6) if has_z0_path else None,
             z0_source_count=len(z0_detail) if z0_detail else None,
             z0_sources_detail=z0_detail if z0_detail else None,
+            motor_count=motor_count,
+            ik3_motor=ik3_motor,
+            ik3_network=ik3_network,
             branches=branches,
         )
 
@@ -213,6 +239,26 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
                 "z_total": z_path + z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
+            })
+            return
+
+        # Motors contribute sub-transient fault current (IEC 60909-0 §13)
+        if comp.type == "motor_induction":
+            z_src = _motor_induction_impedance(comp, base_mva)
+            paths.append({
+                "z_total": z_path + z_src,
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+                "is_motor": True,
+            })
+            return
+        if comp.type == "motor_synchronous":
+            z_src = _motor_synchronous_impedance(comp, base_mva)
+            paths.append({
+                "z_total": z_path + z_src,
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+                "is_motor": True,
             })
             return
 
@@ -367,6 +413,39 @@ def _cable_impedance(comp, base_mva):
     r = comp.props.get("r_per_km", 0.1) * comp.props.get("length_km", 1)
     x = comp.props.get("x_per_km", 0.08) * comp.props.get("length_km", 1)
     return complex(r / z_base, x / z_base)
+
+
+def _motor_induction_impedance(comp, base_mva):
+    """Induction motor sub-transient impedance per IEC 60909-0 §13.
+
+    Uses X" (locked-rotor reactance) on motor base, converted to system base.
+    Motor MVA = rated_kW / efficiency.
+    """
+    rated_kw = comp.props.get("rated_kw", 200)
+    efficiency = comp.props.get("efficiency", 0.93)
+    x_pp = comp.props.get("x_pp", 0.17)  # Sub-transient reactance p.u. on motor base
+    xr = comp.props.get("x_r_ratio", 10)
+
+    rated_mva = rated_kw / (efficiency * 1000)  # Input MVA
+    x_pu = x_pp * base_mva / rated_mva
+    r_pu = x_pu / xr
+    return complex(r_pu, x_pu)
+
+
+def _motor_synchronous_impedance(comp, base_mva):
+    """Synchronous motor sub-transient impedance per IEC 60909-0 §13.
+
+    Uses X"d (sub-transient reactance) on motor base, converted to system base.
+    Treated identically to a synchronous generator for fault contribution.
+    """
+    rated_kva = comp.props.get("rated_kva", 500)
+    xd_pp = comp.props.get("xd_pp", 0.15)
+    xr = comp.props.get("x_r_ratio", 40)
+
+    rated_mva = rated_kva / 1000
+    x_pu = xd_pp * base_mva / rated_mva
+    r_pu = x_pu / xr
+    return complex(r_pu, x_pu)
 
 
 def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):

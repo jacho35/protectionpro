@@ -6,7 +6,6 @@
 
 ## Fault Analysis Enhancements
 - **Full IEC 60909 time-varying fault currents**: Ip (peak), Ib (breaking), Ik (steady-state) — beyond initial I"k
-- **Motor contribution to faults**: Induction and synchronous motor sub-transient contributions with decay modeling
 - **Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component
 
 ## Arc Flash

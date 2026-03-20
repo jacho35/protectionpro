@@ -101,6 +101,10 @@ class FaultResultBus(BaseModel):
     z0_mag: Optional[float] = None     # |Z0| magnitude (p.u.)
     z0_source_count: Optional[int] = None  # Number of Z0 source paths
     z0_sources_detail: Optional[list[str]] = None  # Description of each Z0 source
+    # Motor contribution summary
+    motor_count: int = 0  # Number of motors contributing to fault
+    ik3_motor: Optional[float] = None  # Motor contribution to 3-phase fault (kA)
+    ik3_network: Optional[float] = None  # Network (non-motor) contribution to 3-phase fault (kA)
     branches: list[FaultBranchContribution] = []
 
 
