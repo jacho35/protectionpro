@@ -123,7 +123,7 @@ const Annotations = {
 
   renderLoadFlowBadge(x, y, result, key) {
     const lines = [];
-    if (result.voltage_kv != null) lines.push(`V: ${this.formatVoltage(result.voltage_kv)} (${result.voltage_pu.toFixed(4)} p.u.)`);
+    if (result.voltage_kv != null) lines.push(`V: ${this.formatVoltage(result.voltage_kv)} (${result.voltage_pu.toFixed(4)} p.u. / ${(result.voltage_pu * 100).toFixed(2)}%)`);
     if (result.angle_deg != null) lines.push(`δ: ${result.angle_deg.toFixed(2)}°`);
     // Show power and current in actual units
     const sMVA = Math.sqrt((result.p_mw || 0) ** 2 + (result.q_mvar || 0) ** 2);

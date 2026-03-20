@@ -451,8 +451,8 @@ I_base = S_base / (√3 × V_n) = ${AppState.baseMVA} / (√3 × ${vkv}) = ${iBa
 c-factor = ${cFactor} (${vkv < 1.0 ? 'LV ≤ 1kV' : 'MV/HV > 1kV'})
 ${hasZeq ? `
 ─── Equivalent Impedance (Z_eq) ───
-Z_eq = ${zeqR.toFixed(6)} + j${zeqX.toFixed(6)} p.u.
-|Z_eq| = ${zeqMag.toFixed(6)} p.u. = ${zeqOhm.toFixed(6)} Ω
+Z_eq = ${zeqR.toFixed(6)} + j${zeqX.toFixed(6)} p.u. (${(zeqR * 100).toFixed(4)} + j${(zeqX * 100).toFixed(4)}%)
+|Z_eq| = ${zeqMag.toFixed(6)} p.u. (${(zeqMag * 100).toFixed(4)}%) = ${zeqOhm.toFixed(6)} Ω
 R/X = ${zeqX !== 0 ? (zeqR / zeqX).toFixed(4) : 'N/A'}    X/R = ${zeqR !== 0 ? (zeqX / zeqR).toFixed(2) : 'N/A'}` : ''}
 
 ─── Three-Phase Fault (I"k3) ───
@@ -463,8 +463,8 @@ ${busResult.ik3 ? `i_p (peak) ≈ ${(busResult.ik3 * Math.sqrt(2) * 1.8).toFixed
 ${busResult.ik3 ? `I_b (breaking) ≈ ${busResult.ik3.toFixed(3)} kA` : ''}
 
 ─── Zero-Sequence Impedance (Z0) ───
-${busResult.z0_mag != null ? `Z0 = ${busResult.z0_real?.toFixed(6)} + j${busResult.z0_imag?.toFixed(6)} p.u.
-|Z0| = ${busResult.z0_mag?.toFixed(6)} p.u.
+${busResult.z0_mag != null ? `Z0 = ${busResult.z0_real?.toFixed(6)} + j${busResult.z0_imag?.toFixed(6)} p.u. (${(busResult.z0_real * 100)?.toFixed(4)} + j${(busResult.z0_imag * 100)?.toFixed(4)}%)
+|Z0| = ${busResult.z0_mag?.toFixed(6)} p.u. (${(busResult.z0_mag * 100)?.toFixed(4)}%)
 Z0 sources: ${busResult.z0_source_count || 0} path(s)` : `No zero-sequence path found (Z0 → ∞)
 (Bus-side winding is delta or ungrounded star, or no
 grounded transformer provides a Z0 return path)`}
@@ -483,7 +483,7 @@ Z0 model per IEC 60909:
 I"k1 = 3c × V_n / (√3 × |Z1 + Z2 + Z0|)
 ${busResult.z0_mag != null && busResult.ik1 != null ? `Z_SLG = Z1 + Z2 + Z0 = 2×Z_eq + Z0
      = 2×${zeqMag.toFixed(6)} + ${busResult.z0_mag?.toFixed(6)}
-     = ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} p.u.
+     = ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} p.u. (${((2 * zeqMag + busResult.z0_mag) * 100).toFixed(4)}%)
 I"k1 = 3 × ${cFactor} / ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} × ${iBaseKA.toFixed(4)}` : busResult.ik1 === 0 ? `No Z0 path → I"k1 = 0 (zero-sequence current cannot return)` : ''}
 I"k1 = ${busResult.ik1?.toFixed(3) || 'N/A'} kA
 ${busResult.ik1 ? `S"k1 = √3 × ${vkv} × ${busResult.ik1.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ik1).toFixed(2)} MVA` : ''}
@@ -557,7 +557,7 @@ Converged: ${lf.converged ? 'Yes' : 'NO — results may be inaccurate'}
 Iterations: ${lf.iterations}
 
 ─── Bus Voltage ───
-|V| = ${busLF.voltage_pu?.toFixed(6)} p.u.
+|V| = ${busLF.voltage_pu?.toFixed(6)} p.u. (${(busLF.voltage_pu * 100)?.toFixed(4)}%)
 V   = ${busLF.voltage_kv?.toFixed(4)} kV  (nominal ${nomV} kV)
 δ   = ${busLF.angle_deg?.toFixed(4)}°
 ${Math.abs(busLF.voltage_pu - 1.0) > 0.05 ? `⚠ Voltage deviation: ${((busLF.voltage_pu - 1.0) * 100).toFixed(2)}% from nominal` : ''}
@@ -648,13 +648,13 @@ X/R Ratio = ${xr}
 Voltage = ${vkv} kV
 
 Z_pu = Base_MVA / Fault_MVA
-Z_pu = ${base} / ${fmva} = ${Zpu.toFixed(6)} p.u.
+Z_pu = ${base} / ${fmva} = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
 
 X_pu = Z_pu × (X/R) / √(1 + (X/R)²)
-X_pu = ${Zpu.toFixed(6)} × ${xr} / √(1 + ${xr}²) = ${Xpu.toFixed(6)} p.u.
+X_pu = ${Zpu.toFixed(6)} × ${xr} / √(1 + ${xr}²) = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
 
 R_pu = X_pu / (X/R)
-R_pu = ${Xpu.toFixed(6)} / ${xr} = ${Rpu.toFixed(6)} p.u.
+R_pu = ${Xpu.toFixed(6)} / ${xr} = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
 
 ─── Actual Impedance ───
 Z_base = V² / S_base = ${vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
@@ -686,9 +686,9 @@ Xd  (synchronous)   = ${xd} p.u.
 
 ─── On System Base (${base} MVA) ───
 X"d_pu = X"d × (Base_MVA / Rated_MVA)
-X"d_pu = ${xdpp} × (${base} / ${rated}) = ${Xpu.toFixed(6)} p.u.
+X"d_pu = ${xdpp} × (${base} / ${rated}) = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
 
-R_pu = X"d_pu / (X/R) = ${Xpu.toFixed(6)} / ${xr} = ${Rpu.toFixed(6)} p.u.
+R_pu = X"d_pu / (X/R) = ${Xpu.toFixed(6)} / ${xr} = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
 
 ─── Actual Impedance ───
 Z_base = ${vkv}² / ${base} = ${Zbase.toFixed(4)} Ω
@@ -723,12 +723,12 @@ I_HV = ${iHV.toFixed(2)} A,  I_LV = ${iLV.toFixed(2)} A
 Turns ratio = ${hvkv} / ${lvkv} = ${(hvkv / lvkv).toFixed(4)}
 
 Z_pu = (Z% / 100) × (Base_MVA / Rated_MVA)
-Z_pu = (${zPct} / 100) × (${base} / ${rated}) = ${Zpu.toFixed(6)} p.u.
+Z_pu = (${zPct} / 100) × (${base} / ${rated}) = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
 
 X_pu = Z_pu × (X/R) / √(1 + (X/R)²)
-X_pu = ${Xpu.toFixed(6)} p.u.
+X_pu = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
 
-R_pu = X_pu / (X/R) = ${Rpu.toFixed(6)} p.u.
+R_pu = X_pu / (X/R) = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
 
 ─── Referred to HV side ───
 Z_base(HV) = ${hvkv}² / ${base} = ${ZbaseHV.toFixed(4)} Ω
@@ -767,9 +767,9 @@ R_total = ${rpk} × ${len} = ${R.toFixed(4)} Ω
 X_total = ${xpk} × ${len} = ${X.toFixed(4)} Ω
 Z_total = √(R² + X²) = ${Math.sqrt(R * R + X * X).toFixed(4)} Ω
 
-R_pu = ${R.toFixed(4)} / ${Zbase.toFixed(4)} = ${Rpu.toFixed(6)} p.u.
-X_pu = ${X.toFixed(4)} / ${Zbase.toFixed(4)} = ${Xpu.toFixed(6)} p.u.
-Z_pu = ${Zpu.toFixed(6)} p.u.
+R_pu = ${R.toFixed(4)} / ${Zbase.toFixed(4)} = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
+X_pu = ${X.toFixed(4)} / ${Zbase.toFixed(4)} = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
+Z_pu = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
 
 Voltage drop (at rated) ≈ ${(Rpu * rated / (ratedMVA * 1000 / (Math.sqrt(3) * Vkv)) * 100).toFixed(2)}% (R only)</div>
         </div>`;
@@ -799,7 +799,7 @@ I_rated = ${(iRated * 1000).toFixed(2)} A
 I_start = ${lrc} × I_rated = ${(iStart * 1000).toFixed(2)} A
 
 X"_pu (on system base) = X" × (Base_MVA / Rated_MVA)
-X"_pu = ${xpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u.
+X"_pu = ${xpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u. (${(Xpu * 100).toFixed(2)}%)
 
 ─── Power Consumption ───
 P = ${(mva * pf).toFixed(4)} MW
@@ -823,7 +823,7 @@ Power Factor = ${pf}
 I_rated = ${(iRated * 1000).toFixed(2)} A
 
 X"d_pu (on system base) = X"d × (Base_MVA / Rated_MVA)
-X"d_pu = ${xdpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u.
+X"d_pu = ${xdpp} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u. (${(Xpu * 100).toFixed(2)}%)
 
 ─── Power Consumption ───
 P = ${(mva * pf).toFixed(4)} MW
@@ -848,8 +848,8 @@ I_rated = S / (√3 × V) = ${(iRated * 1000).toFixed(2)} A
 P = S × PF = ${(mva * pf).toFixed(4)} MW (${(mva * pf * 1000).toFixed(1)} kW)
 Q = S × sin(φ) = ${(mva * Math.sqrt(1 - pf * pf)).toFixed(4)} MVAr
 
-P_pu = ${(mva * pf / base).toFixed(6)} p.u.
-Q_pu = ${(mva * Math.sqrt(1 - pf * pf) / base).toFixed(6)} p.u.</div>
+P_pu = ${(mva * pf / base).toFixed(6)} p.u. (${(mva * pf / base * 100).toFixed(4)}%)
+Q_pu = ${(mva * Math.sqrt(1 - pf * pf) / base).toFixed(6)} p.u. (${(mva * Math.sqrt(1 - pf * pf) / base * 100).toFixed(4)}%)</div>
         </div>`;
 
     } else if (comp.type === 'capacitor_bank') {
@@ -864,7 +864,7 @@ Q_pu = ${(mva * Math.sqrt(1 - pf * pf) / base).toFixed(6)} p.u.</div>
 Steps = ${comp.props.steps || 1}
 
 I = Q / (√3 × V) = ${(iRated * 1000).toFixed(2)} A
-Q_pu = ${(mvar / base).toFixed(6)} p.u. (injected)</div>
+Q_pu = ${(mvar / base).toFixed(6)} p.u. (${(mvar / base * 100).toFixed(4)}%) (injected)</div>
         </div>`;
 
     } else if (comp.type === 'bus') {
