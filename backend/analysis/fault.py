@@ -487,12 +487,13 @@ def _transformer_impedance(comp, base_mva):
 
 
 def _cable_impedance(comp, base_mva):
-    """Cable per-unit impedance."""
+    """Cable per-unit impedance (accounts for parallel cables)."""
     v_kv = comp.props.get("voltage_kv", 11)
     z_base = (v_kv ** 2) / base_mva
     r = comp.props.get("r_per_km", 0.1) * comp.props.get("length_km", 1)
     x = comp.props.get("x_per_km", 0.08) * comp.props.get("length_km", 1)
-    return complex(r / z_base, x / z_base)
+    n = max(1, int(comp.props.get("num_parallel", 1)))
+    return complex(r / z_base, x / z_base) / n
 
 
 def _motor_induction_impedance(comp, base_mva):

@@ -10,13 +10,19 @@ const Reports = {
       id: 'full',
       name: 'Full Analysis Report',
       builtin: true,
-      sections: ['title', 'diagram', 'fault', 'fault_branches', 'loadflow_bus', 'loadflow_branch', 'equipment'],
+      sections: ['title', 'diagram', 'fault', 'fault_branches', 'voltage_depression', 'loadflow_bus', 'loadflow_branch', 'equipment', 'arcflash'],
     },
     {
       id: 'fault_only',
       name: 'Fault Analysis Only',
       builtin: true,
-      sections: ['title', 'fault', 'fault_branches'],
+      sections: ['title', 'fault', 'fault_branches', 'voltage_depression'],
+    },
+    {
+      id: 'arcflash_report',
+      name: 'Arc Flash Report',
+      builtin: true,
+      sections: ['title', 'arcflash'],
     },
     {
       id: 'loadflow_only',
@@ -48,6 +54,8 @@ const Reports = {
     loadflow_bus:    { label: 'Bus Voltages & Power',          group: 'Load Flow' },
     loadflow_branch: { label: 'Branch Flows & Loading',        group: 'Load Flow' },
     settings_schedule: { label: 'Protection Settings Schedule', group: 'Protection' },
+    voltage_depression: { label: 'Voltage Depression',          group: 'Fault Analysis' },
+    arcflash:           { label: 'Arc Flash Summary',           group: 'Arc Flash' },
   },
 
   _userTemplates: [],
@@ -73,71 +81,25 @@ const Reports = {
 
   // ── Template-based PDF Export ──
 
-  exportWithTemplate(templateId) {
+  async exportWithTemplate(templateId) {
     const tmpl = this._getAllTemplates().find(t => t.id === templateId);
     if (!tmpl) return;
 
-    const { jsPDF } = window.jspdf;
-    if (!jsPDF) {
-      Project._statusMsg('PDF library not loaded.');
-      return;
-    }
-
-    const projName = AppState.projectName || 'Untitled Project';
-    const sections = tmpl.sections;
-    const needsDiagram = sections.includes('diagram');
-
-    const buildPDF = (canvas) => {
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
-      const margin = 15;
-      const contentW = pageW - margin * 2;
-
-      for (let si = 0; si < sections.length; si++) {
-        const sec = sections[si];
-        if (si > 0 && sec !== 'title') doc.addPage();
-
-        if (sec === 'title') {
-          this._renderTitleBlock(doc, projName, margin);
-        } else if (sec === 'diagram' && canvas) {
-          this._renderDiagram(doc, canvas, margin, pageW, pageH, contentW);
-        } else if (sec === 'fault') {
-          this._renderFaultTable(doc, margin);
-        } else if (sec === 'fault_branches') {
-          this._renderFaultBranches(doc, margin);
-        } else if (sec === 'loadflow_bus') {
-          this._renderLoadFlowBus(doc, margin);
-        } else if (sec === 'loadflow_branch') {
-          this._renderLoadFlowBranch(doc, margin);
-        } else if (sec === 'equipment') {
-          this._renderEquipment(doc, margin);
-        } else if (sec === 'settings_schedule') {
-          this._renderSettingsSchedule(doc, margin);
-        }
-      }
-
-      // Footer on all pages
-      const totalPages = doc.internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(150);
-        doc.text(`ProtectionPro \u2014 ${projName}`, margin, pageH - 5);
-        doc.text(`Page ${i} of ${totalPages}`, pageW - margin, pageH - 5, { align: 'right' });
-        doc.setTextColor(0);
-      }
-
-      doc.save(`${projName}_${tmpl.id}.pdf`);
+    // Filter out 'diagram' — server-side doesn't handle diagram rasterization
+    const sections = tmpl.sections.filter(s => s !== 'diagram');
+    Project._statusMsg(`Generating "${tmpl.name}" PDF...`);
+    try {
+      const blob = await API.generateReport(sections);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${AppState.projectName || 'Untitled'}_${tmpl.id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
       Project._statusMsg(`Exported "${tmpl.name}" as PDF.`);
-    };
-
-    if (needsDiagram) {
-      const { clone, svgW, svgH } = Project._prepareExportSVG(40);
-      Project._rasterizeSVG(clone, svgW, svgH, 3, buildPDF);
-    } else {
-      buildPDF(null);
+    } catch (e) {
+      Project._statusMsg(`PDF export failed: ${e.message}`);
+      console.error('Template PDF export error:', e);
     }
   },
 
@@ -398,6 +360,185 @@ const Reports = {
       headStyles: { fillColor: [106, 27, 154], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 245, 252] },
     });
+  },
+
+  _renderVoltageDepression(doc, margin) {
+    if (!AppState.faultResults?.buses) return;
+    // Collect voltage depression data from all faulted buses
+    const allEntries = [];
+    for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
+      if (!r.voltage_depression) continue;
+      const faultBusName = AppState.components.get(busId)?.props?.name || busId;
+      for (const [depId, d] of Object.entries(r.voltage_depression)) {
+        if (depId === busId) continue;
+        const depName = d.bus_name || AppState.components.get(depId)?.props?.name || depId;
+        const vSub = d.subtransient_pu != null ? d.subtransient_pu : 1;
+        const vTr = d.transient_pu != null ? d.transient_pu : vSub;
+        const vSS = d.steadystate_pu != null ? d.steadystate_pu : vTr;
+        const worst = Math.min(vSub, vTr, vSS);
+        const status = worst >= 0.8 ? 'Normal' : worst >= 0.5 ? 'Moderate Sag' : worst >= 0.3 ? 'Severe Sag' : 'Near Collapse';
+        allEntries.push([
+          faultBusName, depName,
+          (d.voltage_kv || 0).toFixed(1),
+          (vSub * 100).toFixed(1) + '%',
+          (vTr * 100).toFixed(1) + '%',
+          (vSS * 100).toFixed(1) + '%',
+          (d.retained_kv || 0).toFixed(2),
+          status,
+        ]);
+      }
+    }
+    if (allEntries.length === 0) return;
+
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Voltage Depression During Fault', margin, margin + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.autoTable({
+      startY: margin + 12,
+      margin: { left: margin, right: margin },
+      head: [['Faulted Bus', 'Affected Bus', 'Rated kV', 'Sub-transient', 'Transient', 'Steady-state', 'Retained kV', 'Status']],
+      body: allEntries,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [0, 120, 215], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [240, 248, 255] },
+      columnStyles: {
+        2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
+        5: { halign: 'right' }, 6: { halign: 'right' },
+      },
+    });
+  },
+
+  _renderArcFlash(doc, margin) {
+    if (!AppState.arcFlashResults?.buses) return;
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Arc Flash Analysis \u2014 IEEE 1584-2018', margin, margin + 6);
+    doc.setFont('helvetica', 'normal');
+
+    const rows = [];
+    for (const [busId, r] of Object.entries(AppState.arcFlashResults.buses)) {
+      const name = AppState.components.get(busId)?.props?.name || busId;
+      rows.push([
+        name,
+        r.voltage_kv != null ? Number(r.voltage_kv).toFixed(1) : '\u2014',
+        r.bolted_fault_ka != null ? Number(r.bolted_fault_ka).toFixed(2) : '\u2014',
+        r.arcing_current_ka != null ? Number(r.arcing_current_ka).toFixed(2) : '\u2014',
+        r.incident_energy_cal != null ? Number(r.incident_energy_cal).toFixed(2) : '\u2014',
+        r.ppe_category != null ? String(r.ppe_category) : '\u2014',
+        r.arc_flash_boundary_mm != null ? (Number(r.arc_flash_boundary_mm) / 1000).toFixed(2) : '\u2014',
+        r.working_distance_mm != null ? String(r.working_distance_mm) : '\u2014',
+      ]);
+    }
+    doc.autoTable({
+      startY: margin + 12,
+      margin: { left: margin, right: margin },
+      head: [['Bus', 'V (kV)', 'Ibf (kA)', 'Iarc (kA)', 'E (cal/cm\u00b2)', 'PPE Cat', 'AFB (m)', 'WD (mm)']],
+      body: rows,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [213, 0, 0], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [255, 245, 245] },
+      columnStyles: {
+        1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' },
+        4: { halign: 'right' }, 5: { halign: 'center' }, 6: { halign: 'right' }, 7: { halign: 'right' },
+      },
+    });
+  },
+
+  // ── Arc Flash Label Export (NFPA 70E) ──
+
+  async exportArcFlashLabels() {
+    if (!AppState.arcFlashResults?.buses || Object.keys(AppState.arcFlashResults.buses).length === 0) {
+      Project._statusMsg('No arc flash results. Run Arc Flash analysis first.');
+      return;
+    }
+    Project._statusMsg('Generating arc flash labels...');
+    try {
+      const blob = await API.generateArcFlashLabels();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${AppState.projectName || 'Untitled'}_ArcFlash_Labels.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      Project._statusMsg('Exported arc flash labels as PDF.');
+    } catch (e) {
+      Project._statusMsg(`Arc flash labels export failed: ${e.message}`);
+    }
+  },
+
+  _drawArcFlashLabel(doc, x, y, w, h, busName, r, projName) {
+    // Danger header
+    const dangerH = 12;
+    doc.setFillColor(213, 0, 0);
+    doc.rect(x, y, w, dangerH, 'F');
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('DANGER', x + w / 2, y + dangerH / 2 + 1, { align: 'center', baseline: 'middle' });
+    doc.setFontSize(7);
+    doc.text('ARC FLASH AND SHOCK HAZARD', x + w / 2, y + dangerH - 2, { align: 'center' });
+
+    // Orange warning stripe
+    doc.setFillColor(255, 152, 0);
+    doc.rect(x, y + dangerH, w, 3, 'F');
+
+    // Body
+    const bodyY = y + dangerH + 3;
+    const bodyH = h - dangerH - 3;
+    doc.setFillColor(255, 255, 255);
+    doc.rect(x, bodyY, w, bodyH, 'F');
+
+    // Border
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(x, y, w, h);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(busName, x + 4, bodyY + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(projName, x + w - 4, bodyY + 6, { align: 'right' });
+
+    // Label data
+    const lineH = 5.5;
+    let ly = bodyY + 12;
+
+    const energy = r.incident_energy_cal != null ? r.incident_energy_cal.toFixed(2) : '—';
+    const ppe = r.ppe_category != null ? r.ppe_category : '—';
+    const afb = r.arc_flash_boundary_mm != null ? (r.arc_flash_boundary_mm / 1000).toFixed(2) : '—';
+    const iarc = r.arcing_current_ka != null ? r.arcing_current_ka.toFixed(2) : '—';
+    const ibf = r.bolted_fault_ka != null ? r.bolted_fault_ka.toFixed(2) : '—';
+    const wd = r.working_distance_mm != null ? r.working_distance_mm : '—';
+    const vkv = r.voltage_kv != null ? r.voltage_kv : '—';
+
+    const labelData = [
+      ['Incident Energy:', `${energy} cal/cm²`],
+      ['PPE Category:', `Cat ${ppe}`],
+      ['Arc Flash Boundary:', `${afb} m`],
+      ['Arcing Current:', `${iarc} kA`],
+      ['Bolted Fault Current:', `${ibf} kA`],
+      ['Working Distance:', `${wd} mm`],
+      ['Nominal Voltage:', `${vkv} kV`],
+    ];
+
+    doc.setFontSize(8);
+    for (const [label, value] of labelData) {
+      doc.setFont('helvetica', 'bold');
+      doc.text(label, x + 4, ly);
+      doc.setFont('helvetica', 'normal');
+      doc.text(value, x + 46, ly);
+      ly += lineH;
+    }
+
+    // Footer
+    doc.setFontSize(6);
+    doc.setTextColor(100);
+    doc.text('NFPA 70E / IEEE 1584-2018', x + 4, y + h - 2);
+    doc.text(new Date().toLocaleDateString(), x + w - 4, y + h - 2, { align: 'right' });
+    doc.setTextColor(0);
   },
 
   // ── Settings Schedule CSV Export ──

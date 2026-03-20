@@ -25,6 +25,7 @@ const Project = {
     document.getElementById('btn-export-pdf').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportPDF(); });
     document.getElementById('btn-export-template').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.showTemplateEditor(); });
     document.getElementById('btn-export-settings').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.exportSettingsCSV(); });
+    document.getElementById('btn-export-aflabels').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.exportArcFlashLabels(); });
     document.getElementById('btn-export-compare').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.showComparisonDialog(); });
   },
 
@@ -371,258 +372,22 @@ const Project = {
 
   // Export full report as PDF (diagram + results)
   // Uses canvas rasterization for the diagram (not addSvgAsImage) so that
-  // all CSS-styled symbols render correctly in the PDF.
-  exportPDF() {
-    const { jsPDF } = window.jspdf;
-    if (!jsPDF) {
-      this._statusMsg('PDF library not loaded. Check your internet connection.');
-      return;
+  // Server-side PDF report generation
+  async exportPDF() {
+    this._statusMsg('Generating PDF report...');
+    try {
+      const blob = await API.generateReport();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${AppState.projectName || 'Untitled'}_report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      this._statusMsg('Exported report as PDF.');
+    } catch (e) {
+      this._statusMsg(`PDF export failed: ${e.message}`);
+      console.error('PDF export error:', e);
     }
-
-    const projName = AppState.projectName || 'Untitled Project';
-
-    // Prepare the SVG clone and rasterize it FIRST, then build the PDF
-    // inside the callback (canvas rasterization is async).
-    const { clone, svgW, svgH } = this._prepareExportSVG(40);
-
-    this._rasterizeSVG(clone, svgW, svgH, 3, (canvas) => {
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
-      const margin = 15;
-      const contentW = pageW - margin * 2;
-
-      // ── Title block ──
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.text('ProtectionPro \u2014 Analysis Report', margin, margin + 6);
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Project: ${projName}`, margin, margin + 14);
-      doc.text(`Base MVA: ${AppState.baseMVA}   |   Frequency: ${AppState.frequency} Hz   |   Date: ${new Date().toLocaleDateString()}`, margin, margin + 20);
-
-      // ── Diagram image (rasterized via canvas) ──
-      const diagramY = margin + 28;
-      try {
-        const maxDiagH = pageH - diagramY - margin - 10;
-        const aspect = svgW / svgH;
-        let imgW = contentW;
-        let imgH = imgW / aspect;
-        if (imgH > maxDiagH) {
-          imgH = maxDiagH;
-          imgW = imgH * aspect;
-        }
-
-        // Convert canvas to PNG data URL and embed it
-        const pngData = canvas.toDataURL('image/png');
-        doc.setDrawColor(200);
-        doc.rect(margin, diagramY, imgW, imgH);
-        doc.addImage(pngData, 'PNG', margin, diagramY, imgW, imgH);
-      } catch (_e) {
-        // If image embedding fails, continue with tables only
-      }
-
-      // ── Analysis tables ──
-      const hasFault = AppState.faultResults && AppState.faultResults.buses && Object.keys(AppState.faultResults.buses).length > 0;
-      const hasLoadFlow = AppState.loadFlowResults && AppState.loadFlowResults.buses && Object.keys(AppState.loadFlowResults.buses).length > 0;
-
-      if (!hasFault && !hasLoadFlow) {
-        doc.addPage();
-        doc.setFontSize(12);
-        doc.text('No analysis results available. Run Fault Analysis or Load Flow first.', margin, margin + 10);
-      }
-
-      if (hasFault) {
-        doc.addPage();
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Fault Analysis \u2014 IEC 60909 (Initial Symmetrical Short-Circuit)', margin, margin + 6);
-        doc.setFont('helvetica', 'normal');
-
-        const faultRows = [];
-        for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
-          const comp = AppState.components.get(busId);
-          const busName = comp?.props?.name || busId;
-          const vkv = r.voltage_kv != null ? Number(r.voltage_kv).toFixed(1) : '\u2014';
-          faultRows.push([
-            busName, vkv,
-            r.ik3 != null ? Number(r.ik3).toFixed(3) : '\u2014',
-            r.ik1 != null ? Number(r.ik1).toFixed(3) : '\u2014',
-            r.ikLL != null ? Number(r.ikLL).toFixed(3) : '\u2014',
-            r.ikLLG != null ? Number(r.ikLLG).toFixed(3) : '\u2014',
-          ]);
-        }
-
-        doc.autoTable({
-          startY: margin + 12,
-          margin: { left: margin, right: margin },
-          head: [['Bus', 'Voltage (kV)', 'I"k3 (kA)', 'I"k1 (kA)', 'I"kLL (kA)', 'I"kLLG (kA)']],
-          body: faultRows,
-          styles: { fontSize: 9, cellPadding: 2 },
-          headStyles: { fillColor: [0, 120, 215], textColor: 255, fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [245, 245, 245] },
-          columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
-        });
-
-        // Fault branch contributions table
-        const branchRows = [];
-        for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
-          if (!r.branches || r.branches.length === 0) continue;
-          const busComp = AppState.components.get(busId);
-          const busName = busComp?.props?.name || busId;
-          for (const br of r.branches) {
-            const elComp = AppState.components.get(br.element_id);
-            const elName = elComp?.props?.name || br.element_name || br.element_id;
-            branchRows.push([
-              busName, elName, (br.element_type || '').replace('_', ' '),
-              br.ik_ka != null ? Number(br.ik_ka).toFixed(3) : '\u2014',
-              br.contribution_pct != null ? Number(br.contribution_pct).toFixed(1) + '%' : '\u2014',
-              br.z_path_mag != null ? Number(br.z_path_mag).toFixed(6) : '\u2014',
-              br.source_name || '\u2014',
-            ]);
-          }
-        }
-
-        if (branchRows.length > 0) {
-          const branchY = doc.lastAutoTable.finalY + 10;
-          doc.setFontSize(12);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Branch Fault Current Contributions', margin, branchY);
-          doc.setFont('helvetica', 'normal');
-
-          doc.autoTable({
-            startY: branchY + 4,
-            margin: { left: margin, right: margin },
-            head: [['Faulted Bus', 'Element', 'Type', 'If (kA)', '%', '|Z_path| (p.u.)', 'Source']],
-            body: branchRows,
-            styles: { fontSize: 8, cellPadding: 1.5 },
-            headStyles: { fillColor: [183, 28, 28], textColor: 255, fontStyle: 'bold' },
-            alternateRowStyles: { fillColor: [255, 245, 245] },
-            columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
-          });
-        }
-      }
-
-      if (hasLoadFlow) {
-        doc.addPage();
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        const lf = AppState.loadFlowResults;
-        const method = lf.method === 'newton_raphson' ? 'Newton-Raphson' : 'Gauss-Seidel';
-        const conv = lf.converged ? 'Converged' : 'Did NOT converge';
-        doc.text(`Load Flow \u2014 ${method} (${conv}, ${lf.iterations} iterations)`, margin, margin + 6);
-        doc.setFont('helvetica', 'normal');
-
-        const busRows = [];
-        for (const [busId, r] of Object.entries(lf.buses)) {
-          const comp = AppState.components.get(busId);
-          const busName = comp?.props?.name || busId;
-          busRows.push([
-            busName,
-            Number(r.voltage_pu).toFixed(4), Number(r.voltage_kv).toFixed(2),
-            Number(r.angle_deg).toFixed(2), Number(r.p_mw).toFixed(3), Number(r.q_mvar).toFixed(3),
-          ]);
-        }
-
-        doc.autoTable({
-          startY: margin + 12,
-          margin: { left: margin, right: margin },
-          head: [['Bus', 'V (p.u.)', 'V (kV)', 'Angle (\u00B0)', 'P (MW)', 'Q (MVAr)']],
-          body: busRows,
-          styles: { fontSize: 9, cellPadding: 2 },
-          headStyles: { fillColor: [46, 125, 50], textColor: 255, fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [245, 245, 245] },
-          columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
-        });
-
-        // Branch flows
-        if (lf.branches && lf.branches.length > 0) {
-          const branchY = doc.lastAutoTable.finalY + 10;
-          doc.setFontSize(12);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Branch Flows', margin, branchY);
-          doc.setFont('helvetica', 'normal');
-
-          const branchRows = [];
-          for (const br of lf.branches) {
-            const comp = AppState.components.get(br.elementId);
-            const elName = comp?.props?.name || br.elementId;
-            branchRows.push([
-              elName, br.from_bus || '\u2014', br.to_bus || '\u2014',
-              br.p_mw != null ? Number(br.p_mw).toFixed(3) : '\u2014',
-              br.q_mvar != null ? Number(br.q_mvar).toFixed(3) : '\u2014',
-              br.s_mva != null ? Number(br.s_mva).toFixed(3) : '\u2014',
-              br.i_amps != null ? Number(br.i_amps).toFixed(1) : '\u2014',
-              br.loading_pct != null ? Number(br.loading_pct).toFixed(1) : '\u2014',
-            ]);
-          }
-
-          doc.autoTable({
-            startY: branchY + 4,
-            margin: { left: margin, right: margin },
-            head: [['Element', 'From', 'To', 'P (MW)', 'Q (MVAr)', 'S (MVA)', 'I (A)', 'Loading (%)']],
-            body: branchRows,
-            styles: { fontSize: 8, cellPadding: 2 },
-            headStyles: { fillColor: [46, 125, 50], textColor: 255, fontStyle: 'bold' },
-            alternateRowStyles: { fillColor: [245, 245, 245] },
-            columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
-          });
-        }
-      }
-
-      // ── Equipment Summary ──
-      if (AppState.components.size > 0) {
-        doc.addPage();
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Equipment Summary', margin, margin + 6);
-        doc.setFont('helvetica', 'normal');
-
-        const equipRows = [];
-        for (const [id, comp] of AppState.components) {
-          const def = COMPONENT_DEFS[comp.type];
-          const label = def ? def.name : comp.type;
-          const eName = comp.props?.name || id;
-          const params = [];
-          if (comp.props?.voltage_kv != null) params.push(`${comp.props.voltage_kv} kV`);
-          if (comp.props?.rated_mva != null) params.push(`${comp.props.rated_mva} MVA`);
-          if (comp.props?.fault_mva != null) params.push(`FL: ${comp.props.fault_mva} MVA`);
-          if (comp.props?.z_percent != null) params.push(`Z: ${comp.props.z_percent}%`);
-          if (comp.props?.x_r_ratio != null) params.push(`X/R: ${comp.props.x_r_ratio}`);
-          if (comp.props?.vector_group != null) params.push(comp.props.vector_group);
-          if (comp.props?.length_km != null) params.push(`${comp.props.length_km} km`);
-          if (comp.props?.rated_current_a != null) params.push(`${comp.props.rated_current_a} A`);
-          if (comp.props?.state != null) params.push(comp.props.state);
-          equipRows.push([eName, label, params.join(', ')]);
-        }
-
-        doc.autoTable({
-          startY: margin + 12,
-          margin: { left: margin, right: margin },
-          head: [['Name', 'Type', 'Key Parameters']],
-          body: equipRows,
-          styles: { fontSize: 9, cellPadding: 2 },
-          headStyles: { fillColor: [80, 80, 80], textColor: 255, fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [245, 245, 245] },
-          columnStyles: { 2: { cellWidth: 'auto' } },
-        });
-      }
-
-      // ── Footer on all pages ──
-      const totalPages = doc.internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(150);
-        doc.text(`ProtectionPro \u2014 ${projName}`, margin, pageH - 5);
-        doc.text(`Page ${i} of ${totalPages}`, pageW - margin, pageH - 5, { align: 'right' });
-        doc.setTextColor(0);
-      }
-
-      doc.save(`${projName}_report.pdf`);
-      Project._statusMsg('Exported report as PDF.');
-    });
   },
 
   _statusMsg(msg) {

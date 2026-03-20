@@ -85,4 +85,51 @@ const API = {
     if (!resp.ok) throw new Error('PDF export failed');
     return resp.blob();
   },
+
+  // Server-side PDF report generation (from current app state)
+  async generateReport(sections = null) {
+    const body = {
+      projectName: AppState.projectName || 'Untitled Project',
+      baseMVA: AppState.baseMVA,
+      frequency: AppState.frequency,
+      components: Array.from(AppState.components.values()).map(c => ({
+        id: c.id, type: c.type, props: c.props,
+      })),
+      faultResults: AppState.faultResults || null,
+      loadFlowResults: AppState.loadFlowResults || null,
+      arcFlashResults: AppState.arcFlashResults || null,
+    };
+    if (sections) body.sections = sections;
+    const resp = await fetch(`${API_BASE}/reports/pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'PDF generation failed' }));
+      throw new Error(err.detail || 'PDF generation failed');
+    }
+    return resp.blob();
+  },
+
+  // Server-side arc flash label PDF
+  async generateArcFlashLabels() {
+    const body = {
+      projectName: AppState.projectName || 'Untitled Project',
+      components: Array.from(AppState.components.values()).map(c => ({
+        id: c.id, type: c.type, props: c.props,
+      })),
+      arcFlashResults: AppState.arcFlashResults || null,
+    };
+    const resp = await fetch(`${API_BASE}/reports/arcflash-labels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Arc flash labels export failed' }));
+      throw new Error(err.detail || 'Arc flash labels export failed');
+    }
+    return resp.blob();
+  },
 };

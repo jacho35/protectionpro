@@ -208,11 +208,26 @@
   font-size: 10px;
   padding: 2px 6px;
 }
+.vdep-table {
+  table-layout: fixed;
+}
+.vdep-table th:nth-child(1) { width: 18%; }
+.vdep-table th:nth-child(2) { width: 10%; text-align: right; }
+.vdep-table th:nth-child(3),
+.vdep-table th:nth-child(4),
+.vdep-table th:nth-child(5) { width: 13%; text-align: right; }
+.vdep-table th:nth-child(6) { width: 12%; text-align: right; }
+.vdep-table th:nth-child(7) { width: 14%; text-align: center; }
+.vdep-table td:nth-child(2),
 .vdep-table td:nth-child(3),
 .vdep-table td:nth-child(4),
-.vdep-table td:nth-child(5) {
+.vdep-table td:nth-child(5),
+.vdep-table td:nth-child(6) {
   font-family: var(--font-mono, monospace);
   text-align: right;
+}
+.vdep-table td:nth-child(7) {
+  text-align: center;
 }
 
 /* Help modal */

@@ -130,7 +130,8 @@ def _get_impedance(comp, base_mva):
         z_base = (v_kv ** 2) / base_mva
         r = comp.props.get("r_per_km", 0.1) * comp.props.get("length_km", 1)
         x = comp.props.get("x_per_km", 0.08) * comp.props.get("length_km", 1)
-        return complex(r / z_base, x / z_base)
+        n = max(1, int(comp.props.get("num_parallel", 1)))
+        return complex(r / z_base, x / z_base) / n
     return complex(0, 0)
 
 
@@ -501,7 +502,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                         # Cable on HV side uses HV power, LV side uses LV power
                         cable_s_mva = s_hv_mva if abs(v_kv - hv_v_kv) <= abs(v_kv) * 0.5 else s_lv_mva
                     elem_i_amps = (cable_s_mva * 1000) / (math.sqrt(3) * v_kv) if v_kv > 0 else 0
-                    rated_a = elem.props.get("rated_amps", 400)
+                    rated_a = elem.props.get("rated_amps", 400) * max(1, int(elem.props.get("num_parallel", 1)))
                     rated_mva = math.sqrt(3) * v_kv * rated_a / 1000
                     loading = (cable_s_mva / rated_mva * 100) if rated_mva > 0 else 0
                 elif elem.type == "transformer":

@@ -261,10 +261,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const busInfo = faultBusId ? ` on ${AppState.components.get(faultBusId)?.props?.name || faultBusId}` : ' on all buses';
         document.getElementById('status-info').textContent = `Fault analysis complete${busInfo}.`;
         Canvas.render();
-        // Show voltage depression table if single-bus fault has depression data
-        if (faultBusId && result.buses && result.buses[faultBusId]?.voltage_depression) {
-          showVoltageDepression(faultBusId, result.buses[faultBusId]);
-        }
         return;
       } else {
         const lfMethod = document.getElementById('loadflow-method').value;
