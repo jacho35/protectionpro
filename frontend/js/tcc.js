@@ -156,8 +156,18 @@ const TCC = {
     const my = e.clientY - rect.top;
 
     for (const h of this._curveHandles) {
+      let hit = false;
       const dx = mx - h.x, dy = my - h.y;
       if (dx * dx + dy * dy <= h.r * h.r) {
+        hit = true;
+      } else if (h.hitRect) {
+        // Extended hit zone along a line segment
+        const hr = h.hitRect;
+        if (mx >= hr.x1 && mx <= hr.x2 && Math.abs(my - hr.y) <= hr.tolerance) {
+          hit = true;
+        }
+      }
+      if (hit) {
         const dev = this.devices[h.devIndex];
         let origValue;
         if (h.mode === 'pickup') origValue = dev.pickup;
@@ -951,18 +961,56 @@ const TCC = {
 
   _drawCurveHandles(ctx) {
     for (const h of this._curveHandles) {
-      ctx.beginPath();
-      ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fill();
-      ctx.strokeStyle = h.color || '#333';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      // Inner dot
-      ctx.beginPath();
-      ctx.arc(h.x, h.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = h.color || '#333';
-      ctx.fill();
+      if (h.hitRect) {
+        // Draw a grab indicator along the flat line (arrows + highlight)
+        const hr = h.hitRect;
+        ctx.save();
+        ctx.strokeStyle = h.color || '#333';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.35;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(hr.x1, hr.y);
+        ctx.lineTo(hr.x2, hr.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+        // Draw handle circle at the left edge (the magnetic pickup point)
+        ctx.beginPath();
+        ctx.arc(hr.x1, hr.y, h.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fill();
+        ctx.strokeStyle = h.color || '#333';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Left-right arrows inside the handle
+        ctx.beginPath();
+        ctx.moveTo(hr.x1 - 3, hr.y);
+        ctx.lineTo(hr.x1 + 3, hr.y);
+        ctx.moveTo(hr.x1 - 2, hr.y - 2);
+        ctx.lineTo(hr.x1 - 3, hr.y);
+        ctx.lineTo(hr.x1 - 2, hr.y + 2);
+        ctx.moveTo(hr.x1 + 2, hr.y - 2);
+        ctx.lineTo(hr.x1 + 3, hr.y);
+        ctx.lineTo(hr.x1 + 2, hr.y + 2);
+        ctx.strokeStyle = h.color || '#333';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fill();
+        ctx.strokeStyle = h.color || '#333';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Inner dot
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = h.color || '#333';
+        ctx.fill();
+      }
     }
   },
 
@@ -1070,12 +1118,27 @@ const TCC = {
       }
     }
 
-    // Magnetic pickup handle: at Im on the vertical drop
+    // Magnetic pickup handle: on the flat instantaneous line at Im
+    // Use the magnetic trip time (the horizontal flat portion) for the y position
+    const magTime = (p.cb_type === 'mccb') ? 0.02 : 0.01;
+    const yFlat = this._timeToY(magTime);
     const scaledIm = this._scaleCurrent(Im, dev);
     const mx = this._currentToX(scaledIm);
-    const my = this._timeToY(0.05); // near instantaneous region
-    if (mx >= this.plotLeft && mx <= this.plotRight && my >= this.plotTop && my <= this.plotBottom) {
-      this._curveHandles.push({ devIndex, mode: 'magnetic', x: mx, y: my, r: 7, color: dev.color });
+    // Place handle at the midpoint of the flat line (between Im and right edge)
+    const flatMidX = Math.min(mx + 40, this.plotRight);
+    if (mx >= this.plotLeft && mx <= this.plotRight && yFlat >= this.plotTop && yFlat <= this.plotBottom) {
+      // Register as a wide line-segment handle along the flat instantaneous line
+      this._curveHandles.push({
+        devIndex, mode: 'magnetic',
+        x: flatMidX, y: yFlat, r: 7, color: dev.color,
+        // Extra hit zone: entire horizontal line from Im to right edge
+        hitRect: {
+          x1: mx,
+          x2: Math.min(this.plotRight, this._currentToX(this._scaleCurrent(Ir * 200, dev))),
+          y: yFlat,
+          tolerance: 8
+        }
+      });
     }
   },
 
@@ -1241,8 +1304,17 @@ const TCC = {
     // Cursor hint for curve handles and draggable labels
     let cursor = '';
     for (const h of this._curveHandles) {
+      let hovering = false;
       const dx = mx - h.x, dy = my - h.y;
       if (dx * dx + dy * dy <= h.r * h.r) {
+        hovering = true;
+      } else if (h.hitRect) {
+        const hr = h.hitRect;
+        if (mx >= hr.x1 && mx <= hr.x2 && Math.abs(my - hr.y) <= hr.tolerance) {
+          hovering = true;
+        }
+      }
+      if (hovering) {
         cursor = (h.mode === 'pickup' || h.mode === 'magnetic' || h.mode === 'thermal') ? 'ew-resize' : 'ns-resize';
         break;
       }
