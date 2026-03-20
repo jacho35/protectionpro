@@ -277,12 +277,12 @@ def get_clearing_time(bus, components, adjacency):
             continue
         if comp.type == "cb":
             # Estimate trip time based on CB settings
-            trip_rating = comp.props.get("trip_rating_a", 630)
-            magnetic_pickup = comp.props.get("magnetic_pickup", 10)
+            trip_rating = float(comp.props.get("trip_rating_a", 630))
+            magnetic_pickup = float(comp.props.get("magnetic_pickup", 10))
             inst_threshold = trip_rating * magnetic_pickup
             # If fault exceeds instantaneous threshold, use fast clearing
             # Otherwise use long-time delay
-            lt_delay = comp.props.get("long_time_delay", 10)
+            lt_delay = float(comp.props.get("long_time_delay", 10))
             if lt_delay <= 5:
                 t = 0.05
             elif lt_delay <= 10:
@@ -292,11 +292,11 @@ def get_clearing_time(bus, components, adjacency):
             best_time = min(best_time, t)
         elif comp.type == "fuse":
             # Fuse typically clears in < 0.01s for high fault currents
-            rating = comp.props.get("rated_amps", 100)
+            rating = float(comp.props.get("rated_amps", 100))
             best_time = min(best_time, 0.02)
         elif comp.type == "relay":
             # Use TDS to estimate clearing time
-            tds = comp.props.get("tds", 1.0)
+            tds = float(comp.props.get("tds", 1.0))
             best_time = min(best_time, tds * 0.1 + 0.08)  # Relay + CB time
 
     return best_time
@@ -330,11 +330,11 @@ def run_arc_flash(project_data, fault_results):
     warnings = []
 
     for bus_id, bus in buses.items():
-        voltage_kv = bus.props.get("voltage_kv", 11)
+        voltage_kv = float(bus.props.get("voltage_kv", 11))
         bus_name = bus.props.get("name", bus_id)
-        working_dist = bus.props.get("working_distance_mm", 455)
+        working_dist = float(bus.props.get("working_distance_mm", 455))
         electrode_config = bus.props.get("electrode_config", "VCB")
-        enclosure_mm = bus.props.get("enclosure_size_mm", 508)
+        enclosure_mm = float(bus.props.get("enclosure_size_mm", 508))
 
         # Get bolted fault current from fault results
         fault_bus = fault_results.buses.get(bus_id)
