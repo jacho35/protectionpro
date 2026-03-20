@@ -643,6 +643,10 @@ document.addEventListener('DOMContentLoaded', () => {
     TCC._runCoordinationCheck();
   });
 
+  // Auto-coordination & miscoordination detection buttons
+  document.getElementById('btn-tcc-auto-coord').addEventListener('click', () => TCC.autoCoordinate());
+  document.getElementById('btn-tcc-detect-miscord').addEventListener('click', () => TCC.detectMiscoordination());
+
   // ─── Scenarios ───
   const scenariosModal = document.getElementById('scenarios-modal');
 

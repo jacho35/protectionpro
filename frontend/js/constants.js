@@ -568,6 +568,8 @@ const FIELD_INFO = {
   'fuse.fuse_type':            'Default gG — general purpose fuse for overload and short-circuit protection.\nSource: IEC 60269-1:\n• gG: general purpose full-range\n• aM: motor circuit partial-range (short-circuit only).',
 
   // Relay
+  'relay.associated_ct': 'Select the current transformer (CT) that feeds this relay.\nThe CT measurement location determines where the relay measures fault current.\nThe relay pickup should be set in primary amps (before CT ratio).',
+  'relay.trip_cb': 'Select the circuit breaker that this relay trips.\nWhen the relay operates, it sends a trip signal to this CB to isolate the fault.',
   'relay.pickup_a':  'Default 100A — adjust to match load current and CT ratio.\nSource: IEC 60255-151 — overcurrent relay pickup setting.',
   'relay.time_dial':  'Default TDS = 1.0 — middle of adjustment range.\nSource: IEC 60255-151 / IEEE C37.112 — time dial setting (0.05–10).',
   'relay.curve':      'Default IEC Standard Inverse curve.\nSource: IEC 60255-151 §5.5 — IDMT characteristics:\nt = TDS × 0.14 / (M^0.02 − 1)',
@@ -912,6 +914,8 @@ const COMPONENT_DEFS = {
     defaults: {
       name: 'Relay',
       relay_type: '50/51',
+      associated_ct: '',
+      trip_cb: '',
       pickup_a: 100,
       time_dial: 1.0,
       curve: 'IEC Standard Inverse',
@@ -929,6 +933,8 @@ const COMPONENT_DEFS = {
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'relay_type', label: 'Type', type: 'select', options: ['50/51', '50N/51N', '87', '21'] },
+      { key: 'associated_ct', label: 'Measuring CT', type: 'component_select', filter: 'ct' },
+      { key: 'trip_cb', label: 'Trip CB', type: 'component_select', filter: 'cb' },
       // Overcurrent (50/51, 50N/51N) fields
       { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
       { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },

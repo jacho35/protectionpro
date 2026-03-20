@@ -498,6 +498,10 @@
               <label for="tcc-grading-margin">Grading Margin (s)</label>
               <input type="number" id="tcc-grading-margin" value="0.3" min="0.1" max="1.0" step="0.05">
             </div>
+            <div class="tcc-coord-actions">
+              <button id="btn-tcc-auto-coord" class="btn-small btn-primary" title="Automatically adjust relay/CB settings for correct grading">Auto-Coordinate</button>
+              <button id="btn-tcc-detect-miscord" class="btn-small" title="Detect devices that won't trip in correct sequence">Detect Miscoordination</button>
+            </div>
             <div id="tcc-coord-results" class="tcc-coord-results">
               <!-- Populated by JS -->
             </div>
