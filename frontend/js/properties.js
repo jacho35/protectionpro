@@ -457,6 +457,7 @@ Z_eq = ${zeqR.toFixed(6)} + j${zeqX.toFixed(6)} p.u.
 ─── Three-Phase Fault (I"k3) ───
 I"k3 = c × V_n / (√3 × |Z_eq|)${hasZeq ? ` = ${cFactor} / ${zeqMag.toFixed(6)} × ${iBaseKA.toFixed(4)}` : ''}
 I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA
+${busResult.ik3 ? `S"k3 = √3 × ${vkv} × ${busResult.ik3.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ik3).toFixed(2)} MVA` : ''}
 ${busResult.ik3 ? `i_p (peak) ≈ ${(busResult.ik3 * Math.sqrt(2) * 1.8).toFixed(3)} kA (κ ≈ 1.8)` : ''}
 ${busResult.ik3 ? `I_b (breaking) ≈ ${busResult.ik3.toFixed(3)} kA` : ''}
 
@@ -484,15 +485,18 @@ ${busResult.z0_mag != null && busResult.ik1 != null ? `Z_SLG = Z1 + Z2 + Z0 = 2�
      = ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} p.u.
 I"k1 = 3 × ${cFactor} / ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} × ${iBaseKA.toFixed(4)}` : busResult.ik1 === 0 ? `No Z0 path → I"k1 = 0 (zero-sequence current cannot return)` : ''}
 I"k1 = ${busResult.ik1?.toFixed(3) || 'N/A'} kA
+${busResult.ik1 ? `S"k1 = √3 × ${vkv} × ${busResult.ik1.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ik1).toFixed(2)} MVA` : ''}
 
 ─── Line-to-Line Fault (I"kLL) ───
 I"kLL = c × √3 × V_n / (√3 × |Z1 + Z2|)
 I"kLL = ${busResult.ikLL?.toFixed(3) || 'N/A'} kA
+${busResult.ikLL ? `S"kLL = √3 × ${vkv} × ${busResult.ikLL.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ikLL).toFixed(2)} MVA` : ''}
 
 ─── Double Line-to-Ground Fault (I"kLLG) ───
 I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
 ${busResult.z0_mag != null ? `Z2‖Z0 = Z2×Z0 / (Z2+Z0) = Z_eq×Z0 / (Z_eq+Z0)` : `No Z0 path → degenerates to LL fault`}
-I"kLLG = ${busResult.ikLLG?.toFixed(3) || 'N/A'} kA</div>
+I"kLLG = ${busResult.ikLLG?.toFixed(3) || 'N/A'} kA
+${busResult.ikLLG ? `S"kLLG = √3 × ${vkv} × ${busResult.ikLLG.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ikLLG).toFixed(2)} MVA` : ''}</div>
           </div>`;
 
         // Branch contributions table
