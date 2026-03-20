@@ -261,6 +261,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const busInfo = faultBusId ? ` on ${AppState.components.get(faultBusId)?.props?.name || faultBusId}` : ' on all buses';
         document.getElementById('status-info').textContent = `Fault analysis complete${busInfo}.`;
         Canvas.render();
+        // Show voltage depression table if single-bus fault has depression data
+        if (faultBusId && result.buses && result.buses[faultBusId]?.voltage_depression) {
+          showVoltageDepression(faultBusId, result.buses[faultBusId]);
+        }
         return;
       } else {
         const lfMethod = document.getElementById('loadflow-method').value;
@@ -374,6 +378,93 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  function showVoltageDepression(faultBusId, faultResult) {
+    const modal = document.getElementById('vdep-modal');
+    const body = document.getElementById('vdep-body');
+    if (!modal || !body) return;
+
+    const dep = faultResult.voltage_depression || {};
+    const faultBusName = faultResult.bus_name || faultBusId;
+    const entries = Object.entries(dep)
+      .filter(([id]) => id !== faultBusId)
+      .map(([id, d]) => ({ id, ...d }))
+      .sort((a, b) => (a.subtransient_pu || 1) - (b.subtransient_pu || 1));
+
+    if (entries.length === 0) {
+      body.innerHTML = '<p>No voltage depression data available.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    let html = `<p>Fault at <strong>${faultBusName}</strong> (${faultResult.voltage_kv} kV) — Retained voltage at other buses:</p>`;
+    html += `<table class="af-table vdep-table">
+      <thead><tr>
+        <th>Bus</th><th>Rated kV</th>
+        <th>Sub-transient</th><th>Transient</th><th>Steady-state</th>
+        <th>Retained kV</th><th>Status</th>
+      </tr></thead><tbody>`;
+
+    for (const d of entries) {
+      const vSub = d.subtransient_pu != null ? d.subtransient_pu : 1;
+      const vTr = d.transient_pu != null ? d.transient_pu : vSub;
+      const vSS = d.steadystate_pu != null ? d.steadystate_pu : vTr;
+      const worst = Math.min(vSub, vTr, vSS);
+      const rowClass = worst >= 0.8 ? 'af-low' : worst >= 0.5 ? 'af-medium' : worst >= 0.3 ? 'af-high' : 'af-danger';
+      const status = worst >= 0.8 ? 'Normal' : worst >= 0.5 ? 'Moderate Sag' : worst >= 0.3 ? 'Severe Sag' : 'Near Collapse';
+      html += `<tr class="${rowClass}">
+        <td>${d.bus_name || d.id}</td>
+        <td>${(d.voltage_kv || 0).toFixed(1)}</td>
+        <td>${(vSub * 100).toFixed(1)}%</td>
+        <td>${(vTr * 100).toFixed(1)}%</td>
+        <td>${(vSS * 100).toFixed(1)}%</td>
+        <td>${(d.retained_kv || 0).toFixed(2)} kV</td>
+        <td><span class="af-ppe-badge">${status}</span></td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+
+    // Motor recovery chart
+    if (faultResult.motor_recovery && faultResult.motor_recovery.length > 0) {
+      html += '<h4 style="margin-top:16px;">Motor Reacceleration Voltage Recovery</h4>';
+      html += _renderRecoveryChart(faultResult.motor_recovery);
+    }
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
+  function _renderRecoveryChart(profile) {
+    // Simple SVG line chart
+    const w = 500, h = 150, pad = 40;
+    const maxT = profile[profile.length - 1].t_ms;
+    const scaleX = (t) => pad + (t / maxT) * (w - pad * 2);
+    const scaleY = (v) => h - pad - (v * (h - pad * 2));
+
+    let pathD = profile.map((p, i) => {
+      const x = scaleX(p.t_ms);
+      const y = scaleY(p.v_pu);
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+
+    // Reference lines
+    const y100 = scaleY(1.0);
+    const y95 = scaleY(0.95);
+    const y80 = scaleY(0.8);
+
+    return `<svg width="${w}" height="${h}" style="border:1px solid var(--border,#ddd);border-radius:4px;margin-top:8px;">
+      <line x1="${pad}" y1="${y100}" x2="${w - pad}" y2="${y100}" stroke="#4caf50" stroke-width="0.5" stroke-dasharray="4,4"/>
+      <text x="${pad - 4}" y="${y100 + 3}" text-anchor="end" font-size="9" fill="#666">100%</text>
+      <line x1="${pad}" y1="${y95}" x2="${w - pad}" y2="${y95}" stroke="#f9a825" stroke-width="0.5" stroke-dasharray="4,4"/>
+      <text x="${pad - 4}" y="${y95 + 3}" text-anchor="end" font-size="9" fill="#666">95%</text>
+      <line x1="${pad}" y1="${y80}" x2="${w - pad}" y2="${y80}" stroke="#d32f2f" stroke-width="0.5" stroke-dasharray="4,4"/>
+      <text x="${pad - 4}" y="${y80 + 3}" text-anchor="end" font-size="9" fill="#666">80%</text>
+      <path d="${pathD}" fill="none" stroke="#1976d2" stroke-width="2"/>
+      <text x="${w / 2}" y="${h - 5}" text-anchor="middle" font-size="10" fill="#666">Time after clearing (ms)</text>
+      <text x="${pad}" y="${h - 5}" font-size="9" fill="#666">0</text>
+      <text x="${w - pad}" y="${h - 5}" text-anchor="end" font-size="9" fill="#666">${maxT}</text>
+    </svg>`;
+  }
+
   // Compliance report
   document.getElementById('btn-compliance').addEventListener('click', () => {
     if (AppState.components.size === 0) {
@@ -411,6 +502,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-close-arcflash').addEventListener('click', () => {
     document.getElementById('arcflash-modal').style.display = 'none';
+  });
+
+  document.getElementById('btn-close-vdep').addEventListener('click', () => {
+    document.getElementById('vdep-modal').style.display = 'none';
+  });
+  document.getElementById('vdep-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'vdep-modal') e.target.style.display = 'none';
   });
 
   // Help modal
