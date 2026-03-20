@@ -99,6 +99,10 @@
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13.4 6.5l-.8-.2a4.8 4.8 0 00-.5-1.2l.4-.7a.5.5 0 00-.1-.6l-.7-.7a.5.5 0 00-.6-.1l-.7.4a4.8 4.8 0 00-1.2-.5l-.2-.8a.5.5 0 00-.5-.4h-1a.5.5 0 00-.5.4l-.2.8a4.8 4.8 0 00-1.2.5l-.7-.4a.5.5 0 00-.6.1l-.7.7a.5.5 0 00-.1.6l.4.7a4.8 4.8 0 00-.5 1.2l-.8.2a.5.5 0 00-.4.5v1a.5.5 0 00.4.5l.8.2a4.8 4.8 0 00.5 1.2l-.4.7a.5.5 0 00.1.6l.7.7a.5.5 0 00.6.1l.7-.4a4.8 4.8 0 001.2.5l.2.8a.5.5 0 00.5.4h1a.5.5 0 00.5-.4l.2-.8a4.8 4.8 0 001.2-.5l.7.4a.5.5 0 00.6-.1l.7-.7a.5.5 0 00.1-.6l-.4-.7a4.8 4.8 0 00.5-1.2l.8-.2a.5.5 0 00.4-.5v-1a.5.5 0 00-.4-.5z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
           <span>Settings</span>
         </button>
+        <button id="btn-help" title="Help &amp; Documentation">
+          <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 6.5a2 2 0 013.5 1.3c0 1.2-1.5 1.2-1.5 2.2M8 12v.5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+          <span>Help</span>
+        </button>
         <div class="toolbar-separator"></div>
         <span id="zoom-display">100%</span>
         <button id="btn-zoom-fit" title="Zoom to Fit">Fit</button>
@@ -858,6 +862,185 @@
             <p class="scenario-empty">No scenarios saved yet.</p>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help Modal -->
+  <div id="help-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>ProtectionPro — Help &amp; Documentation</h3>
+        <button class="modal-close" id="btn-close-help">&times;</button>
+      </div>
+      <div class="modal-body help-body">
+        <div class="help-tabs">
+          <button class="help-tab active" data-tab="getting-started">Getting Started</button>
+          <button class="help-tab" data-tab="components">Components</button>
+          <button class="help-tab" data-tab="analysis">Analysis</button>
+          <button class="help-tab" data-tab="arcflash">Arc Flash</button>
+          <button class="help-tab" data-tab="shortcuts">Shortcuts</button>
+        </div>
+
+        <div class="help-content" id="help-tab-getting-started">
+          <h4>Welcome to ProtectionPro</h4>
+          <p>ProtectionPro is a power systems protection coordination tool for building single-line diagrams (SLDs) and performing electrical analysis.</p>
+
+          <h4>Building a Single-Line Diagram</h4>
+          <ol>
+            <li><strong>Add components</strong> — Drag components from the left sidebar palette onto the canvas. Components include buses, transformers, cables, circuit breakers, fuses, relays, generators, loads, motors, and distributed generation (solar PV, wind turbines).</li>
+            <li><strong>Connect components</strong> — Click a connection port (small circle) on one component and drag to a port on another to draw a wire. Alternatively, use the Wire tool in the toolbar.</li>
+            <li><strong>Configure properties</strong> — Click a component to select it. Edit its electrical properties in the right-hand properties panel (voltage, impedance, ratings, etc.).</li>
+            <li><strong>Run analysis</strong> — Use the toolbar buttons to run fault analysis, load flow, arc flash, or generate TCC curves.</li>
+          </ol>
+
+          <h4>Canvas Navigation</h4>
+          <ul>
+            <li><strong>Pan</strong> — Middle-click drag or hold Space + left-click drag</li>
+            <li><strong>Zoom</strong> — Mouse scroll wheel, or use Fit / 1:1 buttons</li>
+            <li><strong>Select</strong> — Click a component, or drag a selection box around multiple components</li>
+            <li><strong>Multi-select</strong> — Hold Shift and click to add/remove from selection</li>
+          </ul>
+
+          <h4>Multi-Page Diagrams</h4>
+          <p>Use the page tab bar below the canvas to add, rename, and switch between diagram sheets. Double-click a tab to rename it. Use off-page connectors to link electrical connections across pages — connectors with the same label are electrically joined.</p>
+
+          <h4>Bus Resizing</h4>
+          <p>Hover over a bus to reveal resize handles on each end. Drag the handles to make the bus wider or narrower. Connection ports are automatically added as the bus grows — one top/bottom pair per 40px of width. Edge ports (left/right) are available for bus tie breaker connections.</p>
+
+          <h4>Component Grouping</h4>
+          <p>Select multiple components and press <kbd>Ctrl+G</kbd> to group them. Groups can be selected together and moved as a unit. Press <kbd>Ctrl+Shift+G</kbd> to ungroup.</p>
+
+          <h4>Wire Routing</h4>
+          <p>Choose between orthogonal (right-angle), diagonal, or spline wire routing using the dropdown in the toolbar. Double-click a wire to add bend points for custom routing.</p>
+
+          <h4>Saving &amp; Loading</h4>
+          <p>Use <kbd>Ctrl+S</kbd> to save your project. Projects can be saved to the server or exported as JSON files. Use <kbd>Ctrl+O</kbd> to open a project.</p>
+        </div>
+
+        <div class="help-content" id="help-tab-components" style="display:none">
+          <h4>Component Reference</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Bus</strong></td><td>Electrical busbar — the node where components connect</td><td>Voltage (kV), bus width, electrode config, working distance</td></tr>
+              <tr><td><strong>Utility</strong></td><td>Grid / utility supply source</td><td>Voltage (kV), fault level (MVA or kA), X/R ratio</td></tr>
+              <tr><td><strong>Generator</strong></td><td>Synchronous generator source</td><td>Rated MVA, voltage, Xd'', X/R ratio</td></tr>
+              <tr><td><strong>Solar PV</strong></td><td>Photovoltaic inverter-based generation</td><td>Rated kW, number of inverters, fault contribution (p.u.)</td></tr>
+              <tr><td><strong>Wind Turbine</strong></td><td>Wind turbine generator (Type 1-4)</td><td>Rated MVA, turbine type, Xd'', fault contribution</td></tr>
+              <tr><td><strong>Transformer</strong></td><td>Power transformer (2-winding)</td><td>Rated MVA, HV/LV voltages, impedance (%Z), vector group, tap position</td></tr>
+              <tr><td><strong>Cable</strong></td><td>Power cable / overhead line</td><td>Length, R and X per km, rated current, cable size</td></tr>
+              <tr><td><strong>Circuit Breaker</strong></td><td>Protective switching device</td><td>Rated current, breaking capacity, trip curve, instantaneous pickup</td></tr>
+              <tr><td><strong>Fuse</strong></td><td>Overcurrent protective device</td><td>Rated amps, fuse type (HRC, NH, K, T), breaking capacity</td></tr>
+              <tr><td><strong>Relay</strong></td><td>Protection relay (50/51)</td><td>CT ratio, pickup current, TDS, curve type (IEC/IEEE)</td></tr>
+              <tr><td><strong>Load</strong></td><td>Electrical load / demand</td><td>Rated kVA, power factor, load type</td></tr>
+              <tr><td><strong>Motor</strong></td><td>Induction motor (contributes to fault current)</td><td>Rated kW, voltage, efficiency, locked-rotor current multiplier</td></tr>
+              <tr><td><strong>Off-Page Connector</strong></td><td>Links electrical connections across diagram pages</td><td>Label (matched across pages), target page</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="help-content" id="help-tab-analysis" style="display:none">
+          <h4>Fault Analysis (IEC 60909)</h4>
+          <p>Calculates short-circuit currents at each bus per IEC 60909. Results include:</p>
+          <ul>
+            <li><strong>I"k3</strong> — Initial symmetrical 3-phase fault current (kA)</li>
+            <li><strong>ip</strong> — Peak short-circuit current (kA)</li>
+            <li><strong>Ib</strong> — Symmetrical breaking current (kA)</li>
+            <li><strong>I"k1</strong> — Single line-to-ground (SLG) fault current</li>
+            <li><strong>I"kLL</strong> — Line-to-line fault current</li>
+            <li><strong>I"kLLG</strong> — Double line-to-ground fault current</li>
+          </ul>
+          <p>Select a single bus before running to analyze only that bus, or run on all buses. Motor fault contribution and branch contributions are included.</p>
+
+          <h4>Load Flow (Newton-Raphson / Gauss-Seidel)</h4>
+          <p>Calculates steady-state power flow through the network. Results include bus voltages, angles, branch power flows, currents, and loading percentages. Voltage violations and mismatched ratings are flagged as warnings.</p>
+
+          <h4>Time-Current Curves (TCC)</h4>
+          <p>Plots protective device operating curves on a log-log time-current chart. Use TCC to verify protection coordination — upstream devices should operate slower than downstream devices for the same fault current. Fault overlay markers show where fault currents intersect device curves.</p>
+
+          <h4>Compliance Report</h4>
+          <p>Checks the network against standard requirements (cable sizing, protection coordination, voltage drop limits, breaking capacity adequacy). Generates a pass/fail/warning report with recommendations.</p>
+        </div>
+
+        <div class="help-content" id="help-tab-arcflash" style="display:none">
+          <h4>Arc Flash Analysis (IEEE 1584-2018)</h4>
+          <p>Calculates arc flash hazard at each bus per IEEE 1584-2018 and classifies PPE requirements per NFPA 70E.</p>
+
+          <h4>What is Calculated</h4>
+          <ul>
+            <li><strong>Arcing current</strong> — Current that sustains the arc (typically less than bolted fault current)</li>
+            <li><strong>Incident energy</strong> — Thermal energy at the working distance (cal/cm²), determines PPE requirement</li>
+            <li><strong>Arc flash boundary (AFB)</strong> — Distance where incident energy drops to 1.2 cal/cm² (onset of second-degree burn)</li>
+            <li><strong>PPE category</strong> — NFPA 70E hazard category (0-4, or DANGER if &gt;40 cal/cm²)</li>
+          </ul>
+
+          <h4>PPE Categories (NFPA 70E)</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Category</th><th>Energy (cal/cm²)</th><th>Required PPE</th></tr></thead>
+            <tbody>
+              <tr class="af-low"><td>0</td><td>&lt; 1.2</td><td>No arc-rated PPE required</td></tr>
+              <tr class="af-low"><td>1</td><td>1.2 – 4.0</td><td>Arc-rated shirt, pants, safety glasses</td></tr>
+              <tr class="af-medium"><td>2</td><td>4.0 – 8.0</td><td>Arc-rated shirt, pants, flash suit hood, hard hat</td></tr>
+              <tr class="af-high"><td>3</td><td>8.0 – 25.0</td><td>Arc flash suit, hard hat, balaclava</td></tr>
+              <tr class="af-danger"><td>4</td><td>25.0 – 40.0</td><td>Multi-layer arc flash suit</td></tr>
+              <tr class="af-danger"><td>DANGER</td><td>&gt; 40.0</td><td>Do not work energized</td></tr>
+            </tbody>
+          </table>
+
+          <h4>Key Bus Properties for Arc Flash</h4>
+          <ul>
+            <li><strong>Working distance</strong> — Distance from the arc source to the worker (mm). Default 455mm for low-voltage switchgear (NFPA 70E Table 130.7(C)(15)(b)).</li>
+            <li><strong>Electrode configuration</strong> — VCB (vertical, in box), VCBB, HCB, VOA (vertical, open air), HOA. Enclosed configurations produce higher incident energy.</li>
+            <li><strong>Enclosure size</strong> — Width/depth of the enclosure (mm). Larger enclosures slightly reduce energy concentration.</li>
+          </ul>
+
+          <h4>How to Reduce Arc Flash Hazard</h4>
+          <p>The analysis generates bus-specific recommendations. General strategies in order of effectiveness:</p>
+          <ol>
+            <li><strong>Reduce clearing time</strong> — The single most effective measure. Incident energy is directly proportional to arc duration.
+              <ul>
+                <li>Enable instantaneous trip on upstream circuit breakers</li>
+                <li>Install arc flash detection relays (light/pressure sensors) for &lt;35ms clearing</li>
+                <li>Use bus differential protection (87B) for sub-cycle clearing</li>
+                <li>Implement zone-selective interlocking (ZSI)</li>
+                <li>Use maintenance mode switches to lower trip thresholds during work</li>
+              </ul>
+            </li>
+            <li><strong>Increase working distance</strong> — Incident energy follows an inverse-square relationship with distance. Moving from 455mm to 610mm significantly reduces exposure.</li>
+            <li><strong>Reduce available fault current</strong> — Use current-limiting fuses or reactors to reduce the energy source.</li>
+            <li><strong>Change electrode configuration</strong> — Open-air configurations (VOA, HOA) produce less concentrated energy than enclosed (VCB, HCB).</li>
+            <li><strong>Remote operation</strong> — Remote racking and switching eliminates personnel exposure entirely.</li>
+            <li><strong>De-energize</strong> — For Category 4 or DANGER, de-energize before work per NFPA 70E §130.2.</li>
+          </ol>
+
+          <h4>IEEE 1584-2018 Applicability</h4>
+          <p>Valid for: 208V to 15kV, 3-phase, 50/60 Hz, bolted fault current 500A to 106kA, gaps 6.35 to 76.2mm. For voltages &gt;15kV, the Ralph Lee theoretical model is used. Below 240V with fault current &lt;500A, arc flash hazard is generally minimal.</p>
+        </div>
+
+        <div class="help-content" id="help-tab-shortcuts" style="display:none">
+          <h4>Keyboard Shortcuts</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Ctrl+S</kbd></td><td>Save project</td></tr>
+              <tr><td><kbd>Ctrl+O</kbd></td><td>Open project</td></tr>
+              <tr><td><kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
+              <tr><td><kbd>Ctrl+Shift+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>
+              <tr><td><kbd>Ctrl+C</kbd></td><td>Copy selected components</td></tr>
+              <tr><td><kbd>Ctrl+V</kbd></td><td>Paste copied components</td></tr>
+              <tr><td><kbd>Delete</kbd></td><td>Delete selected components/wires</td></tr>
+              <tr><td><kbd>Ctrl+A</kbd></td><td>Select all components on current page</td></tr>
+              <tr><td><kbd>Ctrl+G</kbd></td><td>Group selected components</td></tr>
+              <tr><td><kbd>Ctrl+Shift+G</kbd></td><td>Ungroup selected components</td></tr>
+              <tr><td><kbd>R</kbd></td><td>Rotate selected component 90°</td></tr>
+              <tr><td><kbd>Escape</kbd></td><td>Cancel current action / deselect</td></tr>
+              <tr><td><kbd>Space + Drag</kbd></td><td>Pan the canvas</td></tr>
+              <tr><td><kbd>Scroll Wheel</kbd></td><td>Zoom in/out</td></tr>
+            </tbody>
+          </table>
+        </div>
+
       </div>
     </div>
   </div>

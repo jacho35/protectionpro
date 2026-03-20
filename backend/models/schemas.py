@@ -139,6 +139,7 @@ class ArcFlashBusResult(BaseModel):
     ppe_description: str
     warning: str = ""
     label_html: str = ""
+    recommendations: list[str] = []  # Suggestions to reduce incident energy / PPE category
 
 
 class ArcFlashResults(BaseModel):
