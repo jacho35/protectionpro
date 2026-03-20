@@ -199,6 +199,7 @@
         <button class="settings-tab active" data-tab="system">System Base</button>
         <button class="settings-tab" data-tab="cables">Cable Library</button>
         <button class="settings-tab" data-tab="transformers">Transformer Library</button>
+        <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
       </div>
       <div class="modal-body">
         <!-- System Base Tab -->
@@ -267,6 +268,197 @@
                 <!-- Populated by JS -->
               </tbody>
             </table>
+          </div>
+        </div>
+        <!-- IEC Standards Tab -->
+        <div id="settings-tab-iec-standards" class="settings-tab-content">
+          <div class="iec-standards-container">
+            <!-- Sub-tabs for IEC sections -->
+            <div class="iec-subtabs">
+              <button class="iec-subtab active" data-iec="ampacity">Cable Ampacity (IEC 60364-5-52)</button>
+              <button class="iec-subtab" data-iec="sizing">Cable Sizing Calculator</button>
+              <button class="iec-subtab" data-iec="derating">Derating Factors</button>
+              <button class="iec-subtab" data-iec="voltage-factors">Voltage Factors (IEC 60909)</button>
+            </div>
+
+            <!-- Ampacity Reference Table -->
+            <div id="iec-section-ampacity" class="iec-section active">
+              <div class="iec-description">
+                <strong>IEC 60364-5-52 Table B.52.2 – B.52.5</strong> &mdash;
+                Current-carrying capacity (A) for 3-phase circuits at reference conditions: 30&deg;C ambient (air), 20&deg;C (ground), soil resistivity 2.5 K&middot;m/W.
+              </div>
+              <div class="iec-filters">
+                <label>Conductor: <select id="iec-amp-conductor">
+                  <option value="cu">Copper</option>
+                  <option value="al">Aluminium</option>
+                </select></label>
+                <label>Insulation: <select id="iec-amp-insulation">
+                  <option value="xlpe">XLPE</option>
+                  <option value="pvc">PVC</option>
+                </select></label>
+              </div>
+              <div class="library-table-wrap">
+                <table class="library-table iec-ref-table">
+                  <thead id="iec-ampacity-head">
+                    <!-- Populated by JS -->
+                  </thead>
+                  <tbody id="iec-ampacity-body">
+                    <!-- Populated by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Cable Sizing Calculator -->
+            <div id="iec-section-sizing" class="iec-section">
+              <div class="iec-description">
+                <strong>Cable Sizing Tool</strong> &mdash;
+                Enter load current and installation conditions. The calculator applies IEC 60364-5-52 derating factors and recommends a cable size.
+              </div>
+              <div class="iec-calc-form">
+                <div class="iec-calc-row">
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-current">Design Current (A)</label>
+                    <input type="number" id="iec-calc-current" value="100" min="1" step="1">
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-conductor">Conductor</label>
+                    <select id="iec-calc-conductor">
+                      <option value="cu">Copper</option>
+                      <option value="al">Aluminium</option>
+                    </select>
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-insulation">Insulation</label>
+                    <select id="iec-calc-insulation">
+                      <option value="xlpe">XLPE</option>
+                      <option value="pvc">PVC</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="iec-calc-row">
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-method">Installation Method</label>
+                    <select id="iec-calc-method">
+                      <!-- Populated by JS -->
+                    </select>
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-temp">Ambient Temp (&deg;C)</label>
+                    <input type="number" id="iec-calc-temp" value="30" min="10" max="80" step="5">
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-circuits">No. of Circuits</label>
+                    <input type="number" id="iec-calc-circuits" value="1" min="1" max="20" step="1">
+                  </div>
+                </div>
+                <div class="iec-calc-row">
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-grouping">Grouping Arrangement</label>
+                    <select id="iec-calc-grouping">
+                      <option value="bunched">Bunched / in conduit</option>
+                      <option value="single_layer_wall">Single layer on wall</option>
+                      <option value="single_layer_floor">Single layer on floor</option>
+                      <option value="single_layer_tray_touching">Single layer on tray (touching)</option>
+                      <option value="single_layer_tray_spaced">Single layer on tray (spaced)</option>
+                      <option value="trefoil_tray_touching">Trefoil on tray (touching)</option>
+                    </select>
+                  </div>
+                  <div class="iec-calc-field" id="iec-soil-group" style="display:none;">
+                    <label for="iec-calc-soil">Soil Resistivity (K&middot;m/W)</label>
+                    <select id="iec-calc-soil">
+                      <option value="0.5">0.5</option>
+                      <option value="0.7">0.7</option>
+                      <option value="1.0">1.0</option>
+                      <option value="1.5">1.5</option>
+                      <option value="2.0">2.0</option>
+                      <option value="2.5" selected>2.5 (reference)</option>
+                      <option value="3.0">3.0</option>
+                    </select>
+                  </div>
+                  <div class="iec-calc-field" id="iec-depth-group" style="display:none;">
+                    <label for="iec-calc-depth">Depth of Laying (m)</label>
+                    <select id="iec-calc-depth">
+                      <option value="0.5">0.5</option>
+                      <option value="0.6">0.6</option>
+                      <option value="0.7" selected>0.7 (reference)</option>
+                      <option value="0.8">0.8</option>
+                      <option value="1.0">1.0</option>
+                      <option value="1.2">1.2</option>
+                      <option value="1.5">1.5</option>
+                    </select>
+                  </div>
+                </div>
+                <button id="btn-iec-calculate" class="btn-primary">Calculate</button>
+              </div>
+              <div id="iec-calc-results" class="iec-calc-results" style="display:none;">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- Derating Factor Tables -->
+            <div id="iec-section-derating" class="iec-section">
+              <div class="iec-description">
+                <strong>IEC 60364-5-52 Correction Factors</strong> &mdash;
+                Multiply base ampacity by each applicable factor to get the derated current-carrying capacity.
+              </div>
+              <h4>Temperature Correction (Table B.52.14/15)</h4>
+              <div class="iec-filters">
+                <label>Environment: <select id="iec-derating-env">
+                  <option value="air">Air (ref. 30&deg;C)</option>
+                  <option value="ground">Ground (ref. 20&deg;C)</option>
+                </select></label>
+              </div>
+              <div class="library-table-wrap">
+                <table class="library-table iec-ref-table">
+                  <thead id="iec-temp-head"></thead>
+                  <tbody id="iec-temp-body"></tbody>
+                </table>
+              </div>
+              <h4 style="margin-top:16px;">Grouping Correction (Table B.52.17)</h4>
+              <div class="library-table-wrap">
+                <table class="library-table iec-ref-table">
+                  <thead id="iec-group-head"></thead>
+                  <tbody id="iec-group-body"></tbody>
+                </table>
+              </div>
+              <h4 style="margin-top:16px;">Soil Thermal Resistivity (Table B.52.16)</h4>
+              <div class="library-table-wrap" style="max-height:none;">
+                <table class="library-table iec-ref-table">
+                  <thead><tr><th>Resistivity (K&middot;m/W)</th><th>Correction Factor</th></tr></thead>
+                  <tbody id="iec-soil-body"></tbody>
+                </table>
+              </div>
+              <h4 style="margin-top:16px;">Depth of Laying (Table B.52.18)</h4>
+              <div class="library-table-wrap" style="max-height:none;">
+                <table class="library-table iec-ref-table">
+                  <thead><tr><th>Depth (m)</th><th>Correction Factor</th></tr></thead>
+                  <tbody id="iec-depth-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- IEC 60909 Voltage Factors -->
+            <div id="iec-section-voltage-factors" class="iec-section">
+              <div class="iec-description">
+                <strong>IEC 60909 Table 1</strong> &mdash;
+                Voltage factor <em>c</em> for calculating maximum and minimum short-circuit currents.
+              </div>
+              <div class="library-table-wrap" style="max-height:none;">
+                <table class="library-table iec-ref-table">
+                  <thead>
+                    <tr>
+                      <th>Voltage Level</th>
+                      <th>Description</th>
+                      <th>c<sub>max</sub></th>
+                      <th>c<sub>min</sub></th>
+                    </tr>
+                  </thead>
+                  <tbody id="iec-vf-body"></tbody>
+                </table>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>

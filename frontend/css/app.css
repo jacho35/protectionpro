@@ -352,6 +352,205 @@ html, body {
   color: #fff;
 }
 
+/* ─── IEC Standards Database ─── */
+.iec-standards-container {
+  min-height: 350px;
+}
+
+.iec-subtabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.iec-subtab {
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-family);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.iec-subtab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.iec-subtab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.iec-section {
+  display: none;
+}
+
+.iec-section.active {
+  display: block;
+}
+
+.iec-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  border-left: 3px solid var(--accent);
+}
+
+.iec-filters {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.iec-filters label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.iec-filters select {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--font-family);
+  background: #fff;
+}
+
+.iec-ref-table .num-cell {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.iec-ref-row {
+  background: rgba(0, 120, 215, 0.08) !important;
+  font-weight: 600;
+}
+
+/* Calculator form */
+.iec-calc-form {
+  margin-bottom: 16px;
+}
+
+.iec-calc-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.iec-calc-field {
+  flex: 1;
+  min-width: 180px;
+}
+
+.iec-calc-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.iec-calc-field input,
+.iec-calc-field select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--font-family);
+  box-sizing: border-box;
+}
+
+.iec-calc-field input:focus,
+.iec-calc-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 120, 215, 0.15);
+}
+
+/* Calculator results */
+.iec-calc-results {
+  border-top: 1px solid var(--border-color);
+  padding-top: 14px;
+}
+
+.iec-calc-results h4 {
+  font-size: 13px;
+  margin: 0 0 8px 0;
+  color: var(--text-primary);
+}
+
+.iec-calc-required {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.iec-calc-recommendation {
+  font-size: 13px;
+  padding: 10px 14px;
+  background: #e8f5e9;
+  border: 1px solid #2e7d32;
+  border-radius: 4px;
+  margin: 12px 0;
+  color: #1b5e20;
+}
+
+.iec-calc-error {
+  font-size: 12px;
+  padding: 10px 14px;
+  background: #fce4ec;
+  border: 1px solid #d32f2f;
+  border-radius: 4px;
+  margin: 12px 0;
+  color: #b71c1c;
+}
+
+.iec-compact {
+  margin-bottom: 14px;
+}
+
+.iec-compact th,
+.iec-compact td {
+  padding: 4px 8px !important;
+}
+
+.iec-total-row {
+  border-top: 2px solid var(--border-color);
+  background: var(--bg-secondary) !important;
+}
+
+.iec-selected-row {
+  background: #e8f5e9 !important;
+  font-weight: 600;
+}
+
+.iec-ok-row {
+  background: #f1f8e9 !important;
+}
+
+.iec-fail-row {
+  color: var(--text-muted);
+}
+
 /* Project picker */
 .project-list {
   max-height: 300px;

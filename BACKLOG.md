@@ -43,7 +43,7 @@
 
 ## Data & Integration
 - **Component library import**: Import manufacturer data (transformers, cables, etc.)
-- **Standards database**: Built-in cable ampacity tables (IEC 60364, NEC)
+- **NEC ampacity tables**: Add NEC Article 310 ampacity data alongside existing IEC 60364
 - **Import from external tools**: Import from PSS/E, ETAP, or PowerWorld formats
 - **Template library**: Pre-built network templates (substation, industrial plant, residential)
 - **Cloud storage**: Project storage with user accounts and sharing

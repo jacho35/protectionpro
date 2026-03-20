@@ -312,6 +312,47 @@ Browse, add, edit, or delete transformer types. The built-in library includes 22
 - Sub-transmission: 132/33 kV and 132/11 kV (20 MVA to 80 MVA)
 - Standard vector groups: Dyn11, YNd11, Yyn0
 
+### IEC Standards Tab
+
+A built-in reference database of IEC electrical installation standards with four sub-sections:
+
+#### Cable Ampacity (IEC 60364-5-52)
+Reference current-carrying capacity tables from IEC 60364-5-52 (Tables B.52.2–B.52.5). Filter by conductor material (Copper/Aluminium) and insulation type (XLPE/PVC) to see base ampacity values across installation methods A1, B1, C, D1, D2, E, F.
+
+- 17 standard cable sizes from 1.5 mm² to 400 mm²
+- 7 installation methods
+- Reference conditions: 30°C ambient air, 20°C ground, 2.5 K·m/W soil resistivity
+
+#### Cable Sizing Calculator
+Enter a design current and installation conditions, and the calculator applies all applicable IEC 60364-5-52 derating factors to recommend a cable size:
+
+- **Inputs**: Design current (A), conductor, insulation, installation method, ambient temperature, number of grouped circuits, grouping arrangement
+- **Buried cable inputs**: Soil thermal resistivity, depth of laying
+- **Derating factors applied**:
+  - Temperature correction (Table B.52.14/15)
+  - Grouping correction (Table B.52.17)
+  - Soil resistivity correction (Table B.52.16) — buried cables only
+  - Depth of laying correction (Table B.52.18) — buried cables only
+- **Output**: Combined derating factor, required base ampacity, recommended cable size with margin %, and a table showing all cable sizes with their derated capacities
+
+#### Derating Factors
+Browse the individual correction factor tables:
+
+| Table | Reference | Description |
+|-------|-----------|-------------|
+| Temperature (B.52.14/15) | 30°C air / 20°C ground | PVC and XLPE factors for 10°C to 80°C |
+| Grouping (B.52.17) | 1 circuit | Factors for 1–20 circuits across 6 arrangements |
+| Soil Resistivity (B.52.16) | 2.5 K·m/W | Factors for 0.5 to 3.0 K·m/W |
+| Depth of Laying (B.52.18) | 0.7 m | Factors for 0.5 m to 1.5 m |
+
+Reference values are highlighted in each table.
+
+#### Voltage Factors (IEC 60909)
+IEC 60909 Table 1 voltage factor *c* values for maximum and minimum short-circuit current calculations:
+- Low voltage (≤ 1 kV): c_max = 1.05, c_min = 0.95
+- Medium voltage (1–35 kV): c_max = 1.10, c_min = 1.00
+- High voltage (> 35 kV): c_max = 1.10, c_min = 1.00
+
 ---
 
 ## Export & Reports
