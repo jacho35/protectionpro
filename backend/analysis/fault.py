@@ -4,6 +4,7 @@ Implements initial symmetrical short-circuit current (I"k) for:
 - Three-phase fault
 - Single line-to-ground (SLG) fault
 - Line-to-line (LL) fault
+- Double line-to-ground (LLG) fault
 
 Per-unit method on a common MVA base.
 """
@@ -19,7 +20,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     Args:
         project: The project data.
         fault_bus_id: If set, only compute fault on this bus.
-        fault_type: "3phase", "slg", "ll", or None for all types.
+        fault_type: "3phase", "slg", "ll", "llg", or None for all types.
     """
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
@@ -53,7 +54,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 bus_id=bus.id,
                 bus_name=bus.props.get("name", bus.id),
                 voltage_kv=voltage_kv,
-                ik3=0, ik1=0, ikLL=0
+                ik3=0, ik1=0, ikLL=0, ikLLG=0
             )
             continue
 
@@ -68,24 +69,32 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         ik3_ka = None
         ik1_ka = None
         ikLL_ka = None
+        ikLLG_ka = None
 
         # Three-phase fault: I"k3 = c * V_n / (sqrt(3) * |Z_eq|)
         if not fault_type or fault_type == "3phase":
             ik3_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
             ik3_ka = round(ik3_pu * i_base_ka, 3)
 
-        # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
-        if not fault_type or fault_type == "slg":
+        # Compute Z0 once for fault types that need it (SLG, LLG)
+        needs_z0 = not fault_type or fault_type in ("slg", "llg")
+        z0 = complex(1e10, 0)  # Default: no zero-sequence path
+        has_z0_path = False
+        if needs_z0:
             z0_sources = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
             if z0_sources:
                 z0 = _parallel_impedances(z0_sources)
+                has_z0_path = True
+
+        # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
+        if not fault_type or fault_type == "slg":
+            if has_z0_path:
                 z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
                 ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
                 ik1_ka = round(ik1_pu * i_base_ka, 3)
             else:
                 # No zero-sequence path exists (e.g. bus between delta windings)
                 # Z0 → ∞, so SLG fault current ≈ 0
-                z0 = complex(1e10, 0)
                 ik1_ka = 0.0
 
         # Line-to-line fault: I"kLL = c * V_n / |Z1 + Z2|
@@ -94,17 +103,40 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
             ikLL_ka = round(ikLL_pu * i_base_ka, 3)
 
+        # Double line-to-ground fault:
+        # I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
+        # where Z2‖Z0 = Z2 × Z0 / (Z2 + Z0)
+        # With Z1 = Z2 = z_eq (positive = negative seq for static equipment):
+        # I"kLLG = √3 × c / |z_eq + z_eq × z0 / (z_eq + z0)|
+        if not fault_type or fault_type == "llg":
+            if has_z0_path:
+                z2 = z_eq  # Z2 = Z1 for static equipment per IEC 60909
+                z2_par_z0 = (z2 * z0) / (z2 + z0) if abs(z2 + z0) > 1e-15 else complex(1e10, 0)
+                z_llg = z_eq + z2_par_z0  # Z1 + Z2‖Z0
+                ikLLG_pu = c_factor * math.sqrt(3) / abs(z_llg) if abs(z_llg) > 1e-10 else 0
+                ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
+            else:
+                # No zero-sequence path: Z0 → ∞, Z2‖Z0 → Z2
+                # Degenerates to line-to-line fault
+                z_ll_deg = z_eq + z_eq
+                ikLLG_pu = c_factor * math.sqrt(3) / abs(z_ll_deg) if abs(z_ll_deg) > 1e-10 else 0
+                ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
+
         # Compute branch contributions using current divider
         # For selected fault type, determine total fault current in p.u.
         # When no specific fault type, default to 3-phase for branch display
         active_type = fault_type or "3phase"
         if active_type == "slg":
-            # z0 was computed in the SLG block above (always runs when fault_type == "slg")
             z_slg_br = z_eq + z_eq + z0
             ik_total_pu = 3 * c_factor / abs(z_slg_br) if abs(z_slg_br) > 1e-10 else 0
         elif active_type == "ll":
             z_ll_br = z_eq + z_eq
             ik_total_pu = c_factor * math.sqrt(3) / abs(z_ll_br) if abs(z_ll_br) > 1e-10 else 0
+        elif active_type == "llg":
+            z2_br = z_eq
+            z2_par_z0_br = (z2_br * z0) / (z2_br + z0) if abs(z2_br + z0) > 1e-15 else complex(1e10, 0)
+            z_llg_br = z_eq + z2_par_z0_br
+            ik_total_pu = c_factor * math.sqrt(3) / abs(z_llg_br) if abs(z_llg_br) > 1e-10 else 0
         else:
             ik_total_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
 
@@ -121,6 +153,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ik3=ik3_ka,
             ik1=ik1_ka,
             ikLL=ikLL_ka,
+            ikLLG=ikLLG_ka,
             z_eq_real=round(z_eq.real, 6),
             z_eq_imag=round(z_eq.imag, 6),
             z_eq_mag=round(abs(z_eq), 6),
@@ -204,7 +237,7 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
     for path in source_paths:
         z_path = path["z_total"]
         if abs(z_path) > 1e-15:
-            if fault_type == "ll":
+            if fault_type in ("ll", "llg"):
                 i_path_pu = c_factor * math.sqrt(3) / abs(z_path)
             else:
                 i_path_pu = c_factor / abs(z_path)

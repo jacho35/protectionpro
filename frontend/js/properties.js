@@ -454,7 +454,11 @@ I"k1 = ${busResult.ik1?.toFixed(3) || 'N/A'} kA
 
 ─── Line-to-Line Fault (I"kLL) ───
 I"kLL = c × √3 × V_n / (√3 × |Z1 + Z2|)
-I"kLL = ${busResult.ikLL?.toFixed(3) || 'N/A'} kA</div>
+I"kLL = ${busResult.ikLL?.toFixed(3) || 'N/A'} kA
+
+─── Double Line-to-Ground Fault (I"kLLG) ───
+I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
+I"kLLG = ${busResult.ikLLG?.toFixed(3) || 'N/A'} kA</div>
           </div>`;
 
         // Branch contributions table
