@@ -8,7 +8,8 @@
 :root {
   --sidebar-width: 260px;
   --properties-width: 300px;
-  --toolbar-height: 44px;
+  --toolbar-height: 66px;
+  --toolbar-row-height: 32px;
   --status-height: 28px;
   --bg-primary: #ffffff;
   --bg-secondary: #f5f6f8;

@@ -1,13 +1,22 @@
 /* Toolbar Styles */
 #toolbar {
-  height: var(--toolbar-height);
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+.toolbar-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
-  user-select: none;
+  height: var(--toolbar-row-height, 32px);
+}
+
+.toolbar-row:first-child {
+  border-bottom: 1px solid var(--border-color);
 }
 
 .toolbar-left,
@@ -42,7 +51,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 10px;
+  padding: 3px 8px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: none;
