@@ -115,19 +115,16 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ikLL_ka = round(ikLL_pu * i_base_ka, 3)
             ikLL_angle = round(-math.degrees(math.atan2(z_ll.imag, z_ll.real)) - 30, 2) if abs(z_ll) > 1e-10 else None
 
-        # Double line-to-ground fault:
-        # I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
-        # where Z2‖Z0 = Z2 × Z0 / (Z2 + Z0)
-        # With Z1 = Z2 = z_eq (positive = negative seq for static equipment):
-        # I"kLLG = √3 × c / |z_eq + z_eq × z0 / (z_eq + z0)|
+        # Double line-to-ground fault (IEC 60909 earth fault current):
+        # Ia1 = c / (Z1 + Z2‖Z0),  Ia0 = -Ia1 × Z2 / (Z2 + Z0)
+        # I"kE2E = |3 × Ia0| = 3c / |Z1 + 2×Z0|  (when Z1 = Z2)
         if not fault_type or fault_type == "llg":
             if has_z0_path:
-                z2 = z_eq  # Z2 = Z1 for static equipment per IEC 60909
-                z2_par_z0 = (z2 * z0) / (z2 + z0) if abs(z2 + z0) > 1e-15 else complex(1e10, 0)
-                z_llg = z_eq + z2_par_z0  # Z1 + Z2‖Z0
-                ikLLG_pu = c_factor * math.sqrt(3) / abs(z_llg) if abs(z_llg) > 1e-10 else 0
+                z_llg_denom = z_eq + 2 * z0  # Z1 + 2×Z0 (simplified for Z1=Z2)
+                i_llg = -3 * c_factor / z_llg_denom if abs(z_llg_denom) > 1e-10 else complex(0, 0)
+                ikLLG_pu = abs(i_llg)
                 ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
-                ikLLG_angle = round(-math.degrees(math.atan2(z_llg.imag, z_llg.real)), 2) if abs(z_llg) > 1e-10 else None
+                ikLLG_angle = round(math.degrees(math.atan2(i_llg.imag, i_llg.real)), 2) if ikLLG_pu > 1e-10 else None
             else:
                 # No zero-sequence path: Z0 → ∞, Z2‖Z0 → Z2
                 # Degenerates to line-to-line fault
@@ -147,10 +144,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             z_ll_br = z_eq + z_eq
             ik_total_pu = c_factor * math.sqrt(3) / abs(z_ll_br) if abs(z_ll_br) > 1e-10 else 0
         elif active_type == "llg":
-            z2_br = z_eq
-            z2_par_z0_br = (z2_br * z0) / (z2_br + z0) if abs(z2_br + z0) > 1e-15 else complex(1e10, 0)
-            z_llg_br = z_eq + z2_par_z0_br
-            ik_total_pu = c_factor * math.sqrt(3) / abs(z_llg_br) if abs(z_llg_br) > 1e-10 else 0
+            z_llg_br_denom = z_eq + 2 * z0  # Z1 + 2×Z0 (Z1=Z2)
+            ik_total_pu = 3 * c_factor / abs(z_llg_br_denom) if abs(z_llg_br_denom) > 1e-10 else 0
         else:
             ik_total_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
 

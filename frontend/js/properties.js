@@ -493,10 +493,11 @@ I"kLL = c × √3 × V_n / (√3 × |Z1 + Z2|)
 I"kLL = ${busResult.ikLL?.toFixed(3) || 'N/A'} kA
 ${busResult.ikLL ? `S"kLL = √3 × ${vkv} × ${busResult.ikLL.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ikLL).toFixed(2)} MVA` : ''}
 
-─── Double Line-to-Ground Fault (I"kLLG) ───
-I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
-${busResult.z0_mag != null ? `Z2‖Z0 = Z2×Z0 / (Z2+Z0) = Z_eq×Z0 / (Z_eq+Z0)` : `No Z0 path → degenerates to LL fault`}
-I"kLLG = ${busResult.ikLLG?.toFixed(3) || 'N/A'} kA
+─── Double Line-to-Ground Fault (I"kE2E) ───
+Ia1 = c / (Z1 + Z2‖Z0),  Ia0 = −Ia1 × Z2 / (Z2 + Z0)
+I"kE2E = |3 × Ia0| = 3c / |Z1 + 2×Z0|  (earth fault current, Z1=Z2)
+${busResult.z0_mag != null ? `Z1 + 2×Z0 = Z_eq + 2×Z0` : `No Z0 path → degenerates to LL fault`}
+I"kE2E = ${busResult.ikLLG?.toFixed(3) || 'N/A'} kA
 ${busResult.ikLLG ? `S"kLLG = √3 × ${vkv} × ${busResult.ikLLG.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ikLLG).toFixed(2)} MVA` : ''}</div>
           </div>`;
 
