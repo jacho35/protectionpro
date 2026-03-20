@@ -730,13 +730,18 @@ X_pu = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
 
 R_pu = X_pu / (X/R) = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
 
+Z = ${Rpu.toFixed(6)} + j${Xpu.toFixed(6)} p.u.
+|Z| = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
+
 ─── Referred to HV side ───
 Z_base(HV) = ${hvkv}² / ${base} = ${ZbaseHV.toFixed(4)} Ω
 R = ${(Rpu * ZbaseHV).toFixed(4)} Ω,  X = ${(Xpu * ZbaseHV).toFixed(4)} Ω
+|Z| = ${(Zpu * ZbaseHV).toFixed(4)} Ω
 
 ─── Referred to LV side ───
 Z_base(LV) = ${lvkv}² / ${base} = ${ZbaseLV.toFixed(4)} Ω
-R = ${(Rpu * ZbaseLV).toFixed(4)} Ω,  X = ${(Xpu * ZbaseLV).toFixed(4)} Ω</div>
+R = ${(Rpu * ZbaseLV).toFixed(4)} Ω,  X = ${(Xpu * ZbaseLV).toFixed(4)} Ω
+|Z| = ${(Zpu * ZbaseLV).toFixed(4)} Ω</div>
         </div>`;
 
     } else if (comp.type === 'cable') {
