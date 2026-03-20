@@ -36,21 +36,138 @@ const Symbols = {
   },
 
   transformer(w, h, comp) {
-    // IEC symbol: two overlapping circles
+    // IEC symbol: two overlapping circles with winding type indicators
     const r = w * 0.32;
     const dy = r * 0.7; // overlap offset — circles overlap ~40%
     const isStepUp = comp && comp.props && comp.props.winding_config === 'step_up';
     const topLabel = isStepUp ? 'LV' : 'HV';
     const botLabel = isStepUp ? 'HV' : 'LV';
+
+    // Parse vector group to determine winding types
+    const vg = (comp && comp.props && comp.props.vector_group) || 'Dyn11';
+    const { hvType, hvGrounded, lvType, lvGrounded } = this._parseVectorGroup(vg);
+
+    // Determine which winding is top/bottom based on step-up/down
+    const topType = isStepUp ? lvType : hvType;
+    const topGrounded = isStepUp ? lvGrounded : hvGrounded;
+    const botType = isStepUp ? hvType : lvType;
+    const botGrounded = isStepUp ? hvGrounded : lvGrounded;
+
+    // Get grounding config for the grounded side
+    const topGroundingType = isStepUp
+      ? (comp?.props?.grounding_lv || 'solidly_grounded')
+      : (comp?.props?.grounding_hv || 'ungrounded');
+    const botGroundingType = isStepUp
+      ? (comp?.props?.grounding_hv || 'ungrounded')
+      : (comp?.props?.grounding_lv || 'solidly_grounded');
+
+    // Draw winding indicators inside circles
+    const topIndicator = this._windingIndicator(0, -dy, r, topType);
+    const botIndicator = this._windingIndicator(0, dy, r, botType);
+
+    // Draw grounding legs
+    let groundingSvg = '';
+    if (topGrounded && topGroundingType !== 'ungrounded') {
+      groundingSvg += this._groundingLeg(0, -dy, r, 'top', topGroundingType);
+    }
+    if (botGrounded && botGroundingType !== 'ungrounded') {
+      groundingSvg += this._groundingLeg(0, dy, r, 'bottom', botGroundingType);
+    }
+
     return `
       <g class="symbol-transformer">
         <circle cx="0" cy="${-dy}" r="${r}" fill="var(--bg-primary, #fff)"/>
         <circle cx="0" cy="${dy}" r="${r}" fill="var(--bg-primary, #fff)"/>
+        ${topIndicator}
+        ${botIndicator}
         <line x1="0" y1="${-dy - r}" x2="0" y2="${-h / 2}"/>
         <line x1="0" y1="${dy + r}" x2="0" y2="${h / 2}"/>
+        ${groundingSvg}
         <text x="${w / 2 + 2}" y="${-dy + 4}" font-size="8" fill="#888" font-family="sans-serif">${topLabel}</text>
         <text x="${w / 2 + 2}" y="${dy + 4}" font-size="8" fill="#888" font-family="sans-serif">${botLabel}</text>
       </g>`;
+  },
+
+  _parseVectorGroup(vg) {
+    // HV winding: first uppercase letter(s)
+    let hvType = 'D', hvGrounded = false;
+    if (vg.startsWith('YN')) { hvType = 'Y'; hvGrounded = true; }
+    else if (vg.startsWith('Y')) { hvType = 'Y'; }
+    else if (vg.startsWith('D')) { hvType = 'D'; }
+    else if (vg.startsWith('ZN')) { hvType = 'Z'; hvGrounded = true; }
+    else if (vg.startsWith('Z')) { hvType = 'Z'; }
+
+    // LV winding: lowercase portion after HV designation
+    const lvPart = vg.replace(/^[A-Z]+/, '');
+    let lvType = 'y', lvGrounded = false;
+    if (lvPart.startsWith('yn')) { lvType = 'Y'; lvGrounded = true; }
+    else if (lvPart.startsWith('y')) { lvType = 'Y'; }
+    else if (lvPart.startsWith('d')) { lvType = 'D'; }
+    else if (lvPart.startsWith('zn')) { lvType = 'Z'; lvGrounded = true; }
+    else if (lvPart.startsWith('z')) { lvType = 'Z'; }
+
+    return { hvType, hvGrounded, lvType, lvGrounded };
+  },
+
+  _windingIndicator(cx, cy, r, type) {
+    const s = r * 0.45; // scale factor for indicators
+    if (type === 'D') {
+      // Delta: equilateral triangle
+      const h = s * 0.87; // height of equilateral triangle (sqrt(3)/2 * s)
+      return `<polygon points="${cx},${cy - h * 0.6} ${cx + s * 0.5},${cy + h * 0.4} ${cx - s * 0.5},${cy + h * 0.4}" fill="none" stroke="#333" stroke-width="1.2"/>`;
+    }
+    if (type === 'Y') {
+      // Wye/Star: Y shape
+      const arm = s * 0.55;
+      const topY = cy - arm * 0.7;
+      const midY = cy + arm * 0.1;
+      const botY = cy + arm * 0.7;
+      return `<g stroke="#333" stroke-width="1.2" fill="none">
+        <line x1="${cx}" y1="${midY}" x2="${cx - arm * 0.6}" y2="${topY}"/>
+        <line x1="${cx}" y1="${midY}" x2="${cx + arm * 0.6}" y2="${topY}"/>
+        <line x1="${cx}" y1="${midY}" x2="${cx}" y2="${botY}"/>
+      </g>`;
+    }
+    if (type === 'Z') {
+      // Zigzag: Z shape
+      const zw = s * 0.35;
+      const zh = s * 0.55;
+      return `<polyline points="${cx - zw},${cy - zh} ${cx + zw},${cy - zh} ${cx - zw},${cy + zh} ${cx + zw},${cy + zh}" fill="none" stroke="#333" stroke-width="1.2"/>`;
+    }
+    return '';
+  },
+
+  _groundingLeg(cx, cy, r, position, groundingType) {
+    // Draw grounding symbol extending to the right of the winding circle
+    const startX = cx + r;  // start from edge of circle
+    const legLen = 12;      // horizontal leg length
+    const endX = startX + legLen;
+    const earthX = endX;
+
+    // Earth symbol: 3 horizontal lines of decreasing width
+    let earthSvg = '';
+    if (groundingType === 'solidly_grounded') {
+      // Solid earth: filled lines
+      earthSvg = `
+        <line x1="${earthX - 5}" y1="${cy + 2}" x2="${earthX + 5}" y2="${cy + 2}" stroke="#333" stroke-width="1.2"/>
+        <line x1="${earthX - 3.5}" y1="${cy + 5}" x2="${earthX + 3.5}" y2="${cy + 5}" stroke="#333" stroke-width="1.2"/>
+        <line x1="${earthX - 2}" y1="${cy + 8}" x2="${earthX + 2}" y2="${cy + 8}" stroke="#333" stroke-width="1.2"/>`;
+    } else {
+      // Impedance grounded: earth with a zigzag (resistor/reactor) inline
+      const zx = startX + 3;
+      const zw = legLen - 6;
+      const za = zw / 4; // zigzag step width
+      earthSvg = `
+        <polyline points="${zx},${cy} ${zx + za},${cy - 3} ${zx + za * 2},${cy + 3} ${zx + za * 3},${cy - 3} ${zx + za * 4},${cy}" fill="none" stroke="#333" stroke-width="1"/>
+        <line x1="${earthX - 4}" y1="${cy + 3}" x2="${earthX + 4}" y2="${cy + 3}" stroke="#333" stroke-width="1.2"/>
+        <line x1="${earthX - 2.5}" y1="${cy + 5.5}" x2="${earthX + 2.5}" y2="${cy + 5.5}" stroke="#333" stroke-width="1.2"/>
+        <line x1="${earthX - 1}" y1="${cy + 8}" x2="${earthX + 1}" y2="${cy + 8}" stroke="#333" stroke-width="1.2"/>`;
+    }
+
+    return `<g class="grounding-symbol">
+      <line x1="${startX}" y1="${cy}" x2="${endX}" y2="${cy}" stroke="#333" stroke-width="1.2"/>
+      ${earthSvg}
+    </g>`;
   },
 
   cable(w, h) {
