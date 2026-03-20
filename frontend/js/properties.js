@@ -702,9 +702,16 @@ X"d = ${(Xpu * Zbase).toFixed(4)} Ω</div>
       const zPct = comp.props.z_percent || 8;
       const xr = comp.props.x_r_ratio || 10;
       const tap = comp.props.tap_percent || 0;
-      const Zpu = (zPct / 100) * base / rated;
-      const Xpu = Zpu * xr / Math.sqrt(1 + xr * xr);
-      const Rpu = Xpu / xr;
+      const Zpu_uncorr = (zPct / 100) * base / rated;
+      const Xpu_uncorr = Zpu_uncorr * xr / Math.sqrt(1 + xr * xr);
+      const Rpu_uncorr = Xpu_uncorr / xr;
+      // IEC 60909 correction factor K_T = 0.95 × c_max / (1 + 0.6 × x_T)
+      const xT = (zPct / 100) * xr / Math.sqrt(1 + xr * xr);
+      const cMax = hvkv < 1.0 ? 1.05 : 1.1;
+      const KT = 0.95 * cMax / (1 + 0.6 * xT);
+      const Zpu = Zpu_uncorr * KT;
+      const Xpu = Xpu_uncorr * KT;
+      const Rpu = Rpu_uncorr * KT;
       const ZbaseHV = (hvkv * hvkv) / base;
       const ZbaseLV = (lvkv * lvkv) / base;
       const iHV = (rated * 1000) / (Math.sqrt(3) * hvkv);
@@ -723,13 +730,22 @@ I_HV = ${iHV.toFixed(2)} A,  I_LV = ${iLV.toFixed(2)} A
 Turns ratio = ${hvkv} / ${lvkv} = ${(hvkv / lvkv).toFixed(4)}
 
 Z_pu = (Z% / 100) × (Base_MVA / Rated_MVA)
-Z_pu = (${zPct} / 100) × (${base} / ${rated}) = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
+Z_pu = (${zPct} / 100) × (${base} / ${rated}) = ${Zpu_uncorr.toFixed(6)} p.u. (${(Zpu_uncorr * 100).toFixed(4)}%)
 
 X_pu = Z_pu × (X/R) / √(1 + (X/R)²)
-X_pu = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
+X_pu = ${Xpu_uncorr.toFixed(6)} p.u. (${(Xpu_uncorr * 100).toFixed(4)}%)
 
-R_pu = X_pu / (X/R) = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
+R_pu = X_pu / (X/R) = ${Rpu_uncorr.toFixed(6)} p.u. (${(Rpu_uncorr * 100).toFixed(4)}%)
 
+─── IEC 60909 Correction Factor (§6.3.3) ───
+x_T = (Z% / 100) × (X/R) / √(1 + (X/R)²) = ${xT.toFixed(6)} p.u. (on transformer rating)
+c_max = ${cMax} (${hvkv < 1.0 ? 'LV < 1 kV' : 'MV/HV ≥ 1 kV'})
+K_T = 0.95 × c_max / (1 + 0.6 × x_T)
+K_T = 0.95 × ${cMax} / (1 + 0.6 × ${xT.toFixed(6)}) = ${KT.toFixed(6)}
+
+─── Corrected Impedance (Z × K_T) ───
+Z_pu = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
+X_pu = ${Xpu.toFixed(6)} p.u.,  R_pu = ${Rpu.toFixed(6)} p.u.
 Z = ${Rpu.toFixed(6)} + j${Xpu.toFixed(6)} p.u.
 |Z| = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
 
