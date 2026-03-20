@@ -20,6 +20,8 @@ class Component(BaseModel):
     props: dict
     labelOffsetX: Optional[float] = None
     labelOffsetY: Optional[float] = None
+    nameLabelOffsetX: Optional[float] = None
+    nameLabelOffsetY: Optional[float] = None
 
 
 class Wire(BaseModel):
