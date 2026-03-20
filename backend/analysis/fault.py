@@ -371,14 +371,21 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
 
         if comp.type == "transformer":
             z_xfmr = _transformer_impedance(comp, base_mva)
-            z_gnd = _transformer_zero_seq(comp, base_mva, entry_port)
+            z_gnd, far_side = _transformer_zero_seq(comp, base_mva, entry_port)
             if z_gnd is None:
                 return  # No zero-sequence path through this transformer
             z0_element = z_xfmr + z_gnd
-            # Continue walking on the other side
-            for neighbor_id, local_port, _ in adjacency.get(comp_id, []):
-                if neighbor_id != bus_id or comp_id == bus_id:
-                    walk(neighbor_id, z0_path + z0_element, None)
+            if far_side == 'delta':
+                # Delta/zigzag on far side provides Z0 circulation —
+                # transformer itself is a Z0 source (e.g. Dyn11 from yn side).
+                z0_sources.append(z0_path + z0_element)
+            elif far_side == 'grounded':
+                # Grounded star on far side — Z0 passes through,
+                # continue walking to find source (e.g. YNyn0).
+                for neighbor_id, local_port, _ in adjacency.get(comp_id, []):
+                    if neighbor_id != bus_id or comp_id == bus_id:
+                        walk(neighbor_id, z0_path + z0_element, None)
+            # else far_side == 'blocked': ungrounded star, no Z0 path
             return
 
         if comp.type == "cable":
@@ -406,16 +413,17 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
 def _transformer_zero_seq(comp, base_mva, entry_port=None):
     """Compute zero-sequence grounding impedance contribution.
 
-    Returns the additional grounding impedance in per-unit, or None if
-    the transformer winding configuration blocks zero-sequence current.
+    Returns (z_gnd, far_side) tuple:
+      - z_gnd: grounding impedance in per-unit, or None if Z0 is blocked.
+      - far_side: 'delta' if the far winding provides Z0 circulation
+        (transformer is itself a Z0 source), 'grounded' if Z0 can pass
+        through to the far-side network, or 'blocked' if the far side
+        has no Z0 path (ungrounded star).
 
     The entry_port parameter indicates which transformer port faces the
     fault bus ('primary' = top port, 'secondary' = bottom port).
     For step-down transformers: primary=HV, secondary=LV.
     For step-up transformers: primary=LV, secondary=HV.
-
-    A delta winding on the bus-facing side blocks zero-sequence current
-    from entering the transformer, so Z0 is infinite (returns None).
     """
     vg = comp.props.get("vector_group", "Dyn11")
     grounding_hv = comp.props.get("grounding_hv", "ungrounded")
@@ -428,8 +436,10 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
 
     hv_grounded = vg.upper().startswith("YN") or vg.upper().startswith("ZN")
     hv_delta = vg[0].upper() == 'D'
+    hv_is_delta_or_zigzag = vg[0].upper() in ('D', 'Z')
     lv_grounded = lv_part.lower().startswith("yn") or lv_part.lower().startswith("zn")
     lv_delta = lv_part.lower().startswith("d")
+    lv_is_delta_or_zigzag = len(lv_part) > 0 and lv_part[0].lower() in ('d', 'z')
 
     # Map port to winding side, accounting for step-up inversion
     # step_down (default): primary(top)=HV, secondary(bottom)=LV
@@ -444,22 +454,40 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     if bus_side == 'hv':
         bus_side_delta = hv_delta
         bus_side_grounded = hv_grounded
+        far_delta_or_zigzag = lv_is_delta_or_zigzag
+        far_grounded = lv_grounded
     elif bus_side == 'lv':
         bus_side_delta = lv_delta
         bus_side_grounded = lv_grounded
+        far_delta_or_zigzag = hv_is_delta_or_zigzag
+        far_grounded = hv_grounded
     else:
         # Port unknown — fall back to checking both sides
         bus_side_delta = False
         bus_side_grounded = hv_grounded or lv_grounded
+        far_delta_or_zigzag = hv_is_delta_or_zigzag or lv_is_delta_or_zigzag
+        far_grounded = hv_grounded or lv_grounded
 
     # A delta winding on the bus side presents infinite zero-sequence
     # impedance to the fault bus — zero-sequence current cannot enter.
     if bus_side_delta:
-        return None
+        return None, 'blocked'
 
     # The bus-side winding must be grounded star for Z0 to flow
     if not bus_side_grounded:
-        return None  # Ungrounded star — no zero-sequence path
+        return None, 'blocked'  # Ungrounded star — no zero-sequence path
+
+    # Determine far-side behaviour:
+    # - Delta/zigzag: provides zero-sequence circulation — transformer
+    #   is itself a Z0 source.  Walk stops here.
+    # - Grounded star: Z0 passes through — walk continues to far side.
+    # - Ungrounded star: no Z0 circulation or pass-through — blocked.
+    if far_delta_or_zigzag:
+        far_side = 'delta'
+    elif far_grounded:
+        far_side = 'grounded'
+    else:
+        far_side = 'blocked'
 
     # Compute grounding impedance.
     # The vector group designation (YN/yn/zn) indicates the neutral IS
@@ -493,10 +521,10 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
         z_gnd = None
 
     if z_gnd is None:
-        return None  # Truly ungrounded — no zero-sequence path
+        return None, 'blocked'
 
     # 3*Zn appears in the zero-sequence circuit
-    return z_gnd * 3
+    return z_gnd * 3, far_side
 
 
 def _grounding_impedance(grounding_type, comp, side, z_base):
