@@ -91,6 +91,12 @@ class FaultResultBus(BaseModel):
     z_eq_real: Optional[float] = None  # Z_eq real part (p.u.)
     z_eq_imag: Optional[float] = None  # Z_eq imaginary part (p.u.)
     z_eq_mag: Optional[float] = None   # |Z_eq| magnitude (p.u.)
+    # Zero-sequence detail fields
+    z0_real: Optional[float] = None    # Z0 real part (p.u.)
+    z0_imag: Optional[float] = None    # Z0 imaginary part (p.u.)
+    z0_mag: Optional[float] = None     # |Z0| magnitude (p.u.)
+    z0_source_count: Optional[int] = None  # Number of Z0 source paths
+    z0_sources_detail: Optional[list[str]] = None  # Description of each Z0 source
     branches: list[FaultBranchContribution] = []
 
 

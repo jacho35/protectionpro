@@ -81,10 +81,13 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         needs_z0 = not fault_type or fault_type in ("slg", "llg")
         z0 = complex(1e10, 0)  # Default: no zero-sequence path
         has_z0_path = False
+        z0_detail = []  # descriptive strings for each Z0 source path
         if needs_z0:
-            z0_sources = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
-            if z0_sources:
-                z0 = _parallel_impedances(z0_sources)
+            z0_source_tuples = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
+            if z0_source_tuples:
+                z0_impedances = [t[0] for t in z0_source_tuples]
+                z0_detail = [t[1] for t in z0_source_tuples]
+                z0 = _parallel_impedances(z0_impedances)
                 has_z0_path = True
 
         # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
@@ -158,6 +161,11 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             z_eq_real=round(z_eq.real, 6),
             z_eq_imag=round(z_eq.imag, 6),
             z_eq_mag=round(abs(z_eq), 6),
+            z0_real=round(z0.real, 6) if has_z0_path else None,
+            z0_imag=round(z0.imag, 6) if has_z0_path else None,
+            z0_mag=round(abs(z0), 6) if has_z0_path else None,
+            z0_source_count=len(z0_detail) if z0_detail else None,
+            z0_sources_detail=z0_detail if z0_detail else None,
             branches=branches,
         )
 
@@ -346,11 +354,16 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
     The winding facing the fault bus must provide a zero-sequence path — a
     delta winding on the bus side blocks zero-sequence regardless of the
     other winding's grounding.
+
+    Returns a list of (z0_impedance, detail_string) tuples.
     """
     visited = set()
-    z0_sources = []
+    z0_sources = []  # list of (complex, str)
 
-    def walk(comp_id, z0_path, entry_port=None):
+    def _comp_name(comp):
+        return comp.props.get("name", comp.id) if comp else "?"
+
+    def walk(comp_id, z0_path, trail, entry_port=None):
         if comp_id in visited:
             return
         visited.add(comp_id)
@@ -359,53 +372,62 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             return
 
         if comp.type == "utility":
-            # Utility source: assume solidly grounded system behind it
             z_src = _utility_impedance(comp, base_mva)
-            z0_sources.append(z0_path + z_src * 3)
+            z_total = z0_path + z_src * 3
+            desc = " → ".join(trail + [f"Utility '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            z0_sources.append((z_total, desc))
             return
 
         if comp.type == "generator":
             z_src = _generator_impedance(comp, base_mva)
-            z0_sources.append(z0_path + z_src * 3)
+            z_total = z0_path + z_src * 3
+            desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            z0_sources.append((z_total, desc))
             return
 
         if comp.type == "transformer":
             z_xfmr = _transformer_impedance(comp, base_mva)
             z_gnd, far_side = _transformer_zero_seq(comp, base_mva, entry_port)
+            vg = comp.props.get("vector_group", "Dyn11")
+            name = _comp_name(comp)
             if z_gnd is None:
                 return  # No zero-sequence path through this transformer
             z0_element = z_xfmr + z_gnd
+            xfmr_label = f"Xfmr '{name}' ({vg}, Z0={abs(z0_element):.4f})"
             if far_side == 'delta':
                 # Delta/zigzag on far side provides Z0 circulation —
                 # transformer itself is a Z0 source (e.g. Dyn11 from yn side).
-                z0_sources.append(z0_path + z0_element)
+                z_total = z0_path + z0_element
+                desc = " → ".join(trail + [xfmr_label + " [Δ provides Z0 return]"])
+                z0_sources.append((z_total, desc))
             elif far_side == 'grounded':
                 # Grounded star on far side — Z0 passes through,
                 # continue walking to find source (e.g. YNyn0).
+                new_trail = trail + [xfmr_label + " [YN pass-through]"]
                 for neighbor_id, local_port, _ in adjacency.get(comp_id, []):
                     if neighbor_id != bus_id or comp_id == bus_id:
-                        walk(neighbor_id, z0_path + z0_element, None)
+                        walk(neighbor_id, z0_path + z0_element, new_trail, None)
             # else far_side == 'blocked': ungrounded star, no Z0 path
             return
 
         if comp.type == "cable":
-            # Zero-sequence cable impedance is ~3x positive-sequence
             z_cable = _cable_impedance(comp, base_mva) * 3
+            new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
             for neighbor_id, _, _ in adjacency.get(comp_id, []):
-                walk(neighbor_id, z0_path + z_cable)
+                walk(neighbor_id, z0_path + z_cable, new_trail)
             return
 
         if comp.type in ("cb", "switch"):
             state = comp.props.get("state", "closed")
             if state == "open":
                 return
-        # Transparent elements (CB, fuse, etc.)
+        # Transparent elements (CB, fuse, bus, etc.)
         for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z0_path, remote_port)
+                walk(neighbor_id, z0_path, trail, remote_port)
 
     for neighbor_id, _, remote_port in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0), remote_port)
+        walk(neighbor_id, complex(0, 0), [], remote_port)
 
     return z0_sources
 
