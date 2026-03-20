@@ -55,6 +55,9 @@ class FaultResultBus(BaseModel):
     ik3: Optional[float] = None  # 3-phase fault kA
     ik1: Optional[float] = None  # SLG fault kA
     ikLL: Optional[float] = None  # Line-to-line fault kA
+    z_eq_real: Optional[float] = None  # Z_eq real part (p.u.)
+    z_eq_imag: Optional[float] = None  # Z_eq imaginary part (p.u.)
+    z_eq_mag: Optional[float] = None   # |Z_eq| magnitude (p.u.)
 
 
 class FaultResults(BaseModel):

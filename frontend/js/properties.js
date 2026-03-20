@@ -308,19 +308,32 @@ const Properties = {
         const busComp = AppState.components.get(busId);
         const busName = busComp?.props?.name || busId;
         const vkv = busResult.voltage_kv || 11;
-        const iBase = (AppState.baseMVA * 1000) / (Math.sqrt(3) * vkv);
+        const iBaseKA = AppState.baseMVA / (Math.sqrt(3) * vkv);
         const cFactor = vkv < 1.0 ? 1.05 : 1.1;
+        const zBase = (vkv * vkv) / AppState.baseMVA;
+
+        // Z_eq display
+        const hasZeq = busResult.z_eq_mag != null;
+        const zeqR = busResult.z_eq_real || 0;
+        const zeqX = busResult.z_eq_imag || 0;
+        const zeqMag = busResult.z_eq_mag || 0;
+        const zeqOhm = zeqMag * zBase;
 
         html += `
           <div class="calc-step">
             <div class="calc-step-title">Fault Analysis — ${busName} (${vkv} kV)</div>
             <div class="calc-formula">Method: IEC 60909 (Symmetrical)
 Base MVA = ${AppState.baseMVA} MVA
-I_base = S_base / (√3 × V_n) = ${AppState.baseMVA * 1000} / (√3 × ${vkv}) = ${iBase.toFixed(2)} A
+Z_base = V²/S = ${vkv}² / ${AppState.baseMVA} = ${zBase.toFixed(4)} Ω
+I_base = S_base / (√3 × V_n) = ${AppState.baseMVA} / (√3 × ${vkv}) = ${iBaseKA.toFixed(4)} kA
 c-factor = ${cFactor} (${vkv < 1.0 ? 'LV ≤ 1kV' : 'MV/HV > 1kV'})
+${hasZeq ? `
+─── Equivalent Impedance (Z_eq) ───
+Z_eq = ${zeqR.toFixed(6)} + j${zeqX.toFixed(6)} p.u.
+|Z_eq| = ${zeqMag.toFixed(6)} p.u. = ${zeqOhm.toFixed(6)} Ω` : ''}
 
 ─── Three-Phase Fault (I"k3) ───
-I"k3 = c × V_n / (√3 × |Z_eq|)
+I"k3 = c × V_n / (√3 × |Z_eq|)${hasZeq ? ` = ${cFactor} / ${zeqMag.toFixed(6)} × ${iBaseKA.toFixed(4)}` : ''}
 I"k3 = ${busResult.ik3?.toFixed(3) || 'N/A'} kA
 ${busResult.ik3 ? `i_p (peak) ≈ ${(busResult.ik3 * Math.sqrt(2) * 1.8).toFixed(3)} kA (κ ≈ 1.8)` : ''}
 ${busResult.ik3 ? `I_b (breaking) ≈ ${busResult.ik3.toFixed(3)} kA` : ''}

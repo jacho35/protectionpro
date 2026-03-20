@@ -34,7 +34,7 @@ def run_fault_analysis(project: ProjectData) -> FaultResults:
     results = {}
     for bus in buses:
         voltage_kv = bus.props.get("voltage_kv", 11)
-        i_base = base_mva * 1000 / (math.sqrt(3) * voltage_kv)  # kA
+        i_base_ka = base_mva / (math.sqrt(3) * voltage_kv)  # kA
 
         # Collect all source impedances connected to this bus
         z_sources = _collect_source_impedances(bus.id, components, adjacency, base_mva)
@@ -56,20 +56,20 @@ def run_fault_analysis(project: ProjectData) -> FaultResults:
         # IEC 60909 voltage factor c = 1.1 for MV/HV, 1.05 for LV
         c_factor = 1.05 if voltage_kv < 1.0 else 1.1
         ik3_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
-        ik3_ka = ik3_pu * i_base
+        ik3_ka = ik3_pu * i_base_ka
 
         # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
         # Simplified: assume Z1 = Z2 = Z_eq, Z0 = 3*Z_eq (conservative)
         z0 = z_eq * 3  # Conservative zero-sequence estimate
         z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
         ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
-        ik1_ka = ik1_pu * i_base
+        ik1_ka = ik1_pu * i_base_ka
 
         # Line-to-line fault: I"kLL = c * V_n / |Z1 + Z2|
         # Z1 = Z2 = Z_eq
         z_ll = z_eq + z_eq
         ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
-        ikLL_ka = ikLL_pu * i_base
+        ikLL_ka = ikLL_pu * i_base_ka
 
         results[bus.id] = FaultResultBus(
             bus_id=bus.id,
@@ -78,6 +78,9 @@ def run_fault_analysis(project: ProjectData) -> FaultResults:
             ik3=round(ik3_ka, 3),
             ik1=round(ik1_ka, 3),
             ikLL=round(ikLL_ka, 3),
+            z_eq_real=round(z_eq.real, 6),
+            z_eq_imag=round(z_eq.imag, 6),
+            z_eq_mag=round(abs(z_eq), 6),
         )
 
     return FaultResults(
