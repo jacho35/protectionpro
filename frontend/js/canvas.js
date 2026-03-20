@@ -21,6 +21,9 @@ const Canvas = {
   // State for dragging data labels
   labelDrag: null, // { compId, startX, startY, origOX, origOY }
 
+  // State for bus resize drag
+  busResize: null, // { compId, side, startX, origWidth }
+
   // State for dragging annotation badges
   annotationDrag: null, // { key, startX, startY, origDX, origDY }
 
@@ -107,6 +110,28 @@ const Canvas = {
   },
 
   // Convert screen coords to world coords
+  // Build a smooth cubic spline path through points using Catmull-Rom → cubic Bezier
+  _buildSplinePath(pts) {
+    if (pts.length < 2) return '';
+    if (pts.length === 2) {
+      const midY = (pts[0].y + pts[1].y) / 2;
+      return `M${pts[0].x},${pts[0].y} C${pts[0].x},${midY} ${pts[1].x},${midY} ${pts[1].x},${pts[1].y}`;
+    }
+    let d = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(i - 1, 0)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(i + 2, pts.length - 1)];
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+    }
+    return d;
+  },
+
   screenToWorld(sx, sy) {
     const rect = this.svg.getBoundingClientRect();
     return {
@@ -232,6 +257,28 @@ const Canvas = {
       return;
     }
 
+    // Check if clicked on a bus resize handle
+    const busResizeEl = e.target.closest('[data-bus-resize]');
+    if (busResizeEl) {
+      const compEl = busResizeEl.closest('.sld-component');
+      if (compEl) {
+        const compId = compEl.dataset.id;
+        const comp = AppState.components.get(compId);
+        if (comp && comp.type === 'bus') {
+          const side = busResizeEl.dataset.busResize; // 'left' or 'right'
+          this.busResize = {
+            compId,
+            side,
+            startX: worldPt.x,
+            origWidth: comp.props.busWidth || 120,
+            origCompX: comp.x,
+          };
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+
     // Check if clicked on a component port (for wiring)
     const portEl = e.target.closest('[data-port]');
     if (portEl && AppState.mode === MODE.SELECT) {
@@ -257,17 +304,29 @@ const Canvas = {
       return;
     }
 
+    // Check if clicked on a group bounding box
+    const groupEl = e.target.closest('.sld-group');
+    if (groupEl && groupEl.dataset.groupId) {
+      const gid = groupEl.dataset.groupId;
+      if (!e.shiftKey) AppState.clearSelection();
+      AppState.selectGroup(gid);
+      this.render();
+      return;
+    }
+
     // Check if clicked on a component
     const compEl = e.target.closest('.sld-component');
     if (compEl) {
       const id = compEl.dataset.id;
+      const comp = AppState.components.get(id);
       if (e.shiftKey) {
         AppState.toggleSelect(id);
       } else if (!AppState.selectedIds.has(id)) {
         AppState.select(id);
+        // Auto-select group members
+        if (comp?.groupId) AppState.selectGroup(comp.groupId);
       }
       // Start drag
-      const comp = AppState.components.get(id);
       if (comp) {
         AppState.dragState = {
           startX: worldPt.x,
@@ -320,6 +379,30 @@ const Canvas = {
       AppState.panX = e.clientX - this.panStart.x;
       AppState.panY = e.clientY - this.panStart.y;
       this.updateTransform();
+      return;
+    }
+
+    // Bus resize dragging
+    if (this.busResize) {
+      const comp = AppState.components.get(this.busResize.compId);
+      if (comp) {
+        const dx = worldPt.x - this.busResize.startX;
+        if (this.busResize.side === 'right') {
+          // Extend right: add dx to width, shift center right by dx/2
+          const newWidth = snapToGrid(Math.max(60, this.busResize.origWidth + dx));
+          const widthDelta = newWidth - this.busResize.origWidth;
+          comp.props.busWidth = newWidth;
+          comp.x = snapToGrid(this.busResize.origCompX + widthDelta / 2);
+        } else {
+          // Extend left: subtract dx from width, shift center left by dx/2
+          const newWidth = snapToGrid(Math.max(60, this.busResize.origWidth - dx));
+          const widthDelta = newWidth - this.busResize.origWidth;
+          comp.props.busWidth = newWidth;
+          comp.x = snapToGrid(this.busResize.origCompX - widthDelta / 2);
+        }
+        AppState.dirty = true;
+        this.render();
+      }
       return;
     }
 
@@ -421,6 +504,14 @@ const Canvas = {
     if (this.isPanning) {
       this.isPanning = false;
       this.svg.classList.remove('panning-active');
+      return;
+    }
+
+    if (this.busResize) {
+      AppState.dirty = true;
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      this.busResize = null;
+      this.render();
       return;
     }
 
@@ -562,9 +653,13 @@ const Canvas = {
 
   // Full re-render of all components and wires
   render() {
+    // Get page-filtered components and wires
+    const pageComps = AppState.getActivePageComponents();
+    const pageWires = AppState.getActivePageWires();
+
     // Render wires
     let wiresHtml = '';
-    for (const [id, wire] of AppState.wires) {
+    for (const [id, wire] of pageWires) {
       const fromComp = AppState.components.get(wire.fromComponent);
       const toComp = AppState.components.get(wire.toComponent);
       if (!fromComp || !toComp) continue;
@@ -573,20 +668,33 @@ const Canvas = {
       const selected = AppState.selectedIds.has(id) ? ' selected' : '';
 
       let path;
+      const mode = wire.routeMode || AppState.wireRouteMode;
+
       if (wire.bendPoints && wire.bendPoints.length > 0) {
-        // Route through bend points with orthogonal segments
         const pts = [from, ...wire.bendPoints, to];
-        path = `M${pts[0].x},${pts[0].y}`;
-        for (let i = 1; i < pts.length; i++) {
-          const prev = pts[i - 1];
-          const curr = pts[i];
-          // Orthogonal: horizontal then vertical
-          path += ` L${curr.x},${prev.y} L${curr.x},${curr.y}`;
+        if (mode === 'spline') {
+          path = this._buildSplinePath(pts);
+        } else if (mode === 'diagonal') {
+          path = `M${pts[0].x},${pts[0].y}`;
+          for (let i = 1; i < pts.length; i++) path += ` L${pts[i].x},${pts[i].y}`;
+        } else {
+          // Orthogonal: horizontal then vertical at each bend
+          path = `M${pts[0].x},${pts[0].y}`;
+          for (let i = 1; i < pts.length; i++) {
+            path += ` L${pts[i].x},${pts[i - 1].y} L${pts[i].x},${pts[i].y}`;
+          }
         }
       } else {
-        // Default orthogonal routing
-        const midY = (from.y + to.y) / 2;
-        path = `M${from.x},${from.y} L${from.x},${midY} L${to.x},${midY} L${to.x},${to.y}`;
+        if (mode === 'diagonal') {
+          path = `M${from.x},${from.y} L${to.x},${to.y}`;
+        } else if (mode === 'spline') {
+          const midY = (from.y + to.y) / 2;
+          path = `M${from.x},${from.y} C${from.x},${midY} ${to.x},${midY} ${to.x},${to.y}`;
+        } else {
+          // Default orthogonal routing
+          const midY = (from.y + to.y) / 2;
+          path = `M${from.x},${from.y} L${from.x},${midY} L${to.x},${midY} L${to.x},${to.y}`;
+        }
       }
       wiresHtml += `<path class="sld-wire${selected}" data-id="${id}" d="${path}"/>`;
 
@@ -599,9 +707,21 @@ const Canvas = {
     }
     this.wiresLayer.innerHTML = wiresHtml;
 
-    // Render components
+    // Render components (page-filtered)
     let compsHtml = '';
-    for (const [id, comp] of AppState.components) {
+    // Draw group bounding boxes first (behind components)
+    for (const [gid, group] of AppState.groups) {
+      const bounds = AppState.getGroupBounds(gid);
+      if (!bounds) continue;
+      // Check if any group member is on this page
+      const onPage = [...group.memberIds].some(cid => pageComps.has(cid));
+      if (!onPage) continue;
+      const anySelected = [...group.memberIds].some(cid => AppState.selectedIds.has(cid));
+      const cls = anySelected ? 'sld-group selected' : 'sld-group';
+      compsHtml += `<rect class="${cls}" data-group-id="${gid}" x="${bounds.x}" y="${bounds.y}" width="${bounds.w}" height="${bounds.h}" rx="6"/>`;
+      compsHtml += `<text class="sld-group-label" x="${bounds.x + 4}" y="${bounds.y - 3}" font-size="10" fill="#6a1b9a">${group.name}</text>`;
+    }
+    for (const [id, comp] of pageComps) {
       compsHtml += Symbols.renderComponent(comp);
     }
     this.componentsLayer.innerHTML = compsHtml;
@@ -858,7 +978,8 @@ const Canvas = {
       if (excludeCompId && comp.id === excludeCompId) continue;
       const def = COMPONENT_DEFS[comp.type];
       if (!def.ports) continue;
-      for (const port of def.ports) {
+      const ports = (comp.type === 'bus') ? Symbols.getBusPorts(comp) : def.ports;
+      for (const port of ports) {
         const pos = Symbols.getPortWorldPosition(comp, port.id);
         const dx = worldPt.x - pos.x;
         const dy = worldPt.y - pos.y;

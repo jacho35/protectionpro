@@ -27,12 +27,60 @@ const Symbols = {
       </g>`;
   },
 
-  bus(w, h) {
-    const hw = w / 2;
+  solar_pv(w, h) {
+    const r = Math.min(w, h) * 0.38;
+    return `
+      <g class="symbol-solar-pv">
+        <circle cx="0" cy="0" r="${r}" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="${-r * 0.55}" y1="${r * 0.35}" x2="${r * 0.55}" y2="${-r * 0.35}" stroke="currentColor" stroke-width="1.3"/>
+        <line x1="${-r * 0.55}" y1="${r * 0.0}" x2="${r * 0.55}" y2="${-r * 0.7}" stroke="currentColor" stroke-width="1.3"/>
+        <text x="${r * 0.05}" y="${r * 0.65}" text-anchor="middle" font-size="8" font-weight="600" fill="#e67700" font-family="sans-serif">PV</text>
+        <line x1="0" y1="${r}" x2="0" y2="${h / 2}"/>
+      </g>`;
+  },
+
+  wind_turbine(w, h) {
+    const r = Math.min(w, h) * 0.38;
+    // Simplified wind turbine: circle with ~ inside
+    return `
+      <g class="symbol-wind-turbine">
+        <circle cx="0" cy="0" r="${r}" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M0,${-r * 0.1} L${-r * 0.5},${r * 0.45} L${r * 0.5},${r * 0.45} Z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="0" y1="${-r * 0.1}" x2="0" y2="${-r * 0.6}" stroke="currentColor" stroke-width="1.2"/>
+        <text x="0" y="${-r * 0.25}" text-anchor="middle" font-size="6" font-weight="600" fill="#1976d2" font-family="sans-serif">W</text>
+        <line x1="0" y1="${r}" x2="0" y2="${h / 2 + 2}"/>
+      </g>`;
+  },
+
+  bus(w, h, comp) {
+    const bw = (comp && comp.props && comp.props.busWidth) || w;
+    const hw = bw / 2;
     return `
       <g class="symbol-bus">
         <line class="bus-bar" x1="${-hw}" y1="0" x2="${hw}" y2="0"/>
+        <rect class="bus-resize-handle bus-resize-left" x="${-hw - 5}" y="-6" width="6" height="12" rx="2" data-bus-resize="left"/>
+        <rect class="bus-resize-handle bus-resize-right" x="${hw - 1}" y="-6" width="6" height="12" rx="2" data-bus-resize="right"/>
       </g>`;
+  },
+
+  // Generate dynamic ports for a bus based on its width
+  getBusPorts(comp) {
+    const bw = (comp && comp.props && comp.props.busWidth) || 120;
+    const hw = bw / 2;
+    const ports = [];
+    // Left and right edge ports
+    ports.push({ id: 'left', side: 'left', offset: 0, _x: -hw, _y: 0 });
+    ports.push({ id: 'right', side: 'right', offset: 0, _x: hw, _y: 0 });
+    // Evenly spaced top/bottom ports every 40px
+    const spacing = 40;
+    const count = Math.max(1, Math.floor(bw / spacing));
+    const startX = -hw + (bw - (count - 1) * spacing) / 2;
+    for (let i = 0; i < count; i++) {
+      const x = Math.round(startX + i * spacing);
+      ports.push({ id: `top_${i}`, side: 'top', offset: x, _x: x, _y: -5 });
+      ports.push({ id: `bottom_${i}`, side: 'bottom', offset: x, _x: x, _y: 5 });
+    }
+    return ports;
   },
 
   transformer(w, h, comp) {
@@ -330,17 +378,30 @@ const Symbols = {
       </g>`;
   },
 
+  offpage_connector(w, h, comp) {
+    const r = w * 0.45;
+    const label = (comp && comp.props && comp.props.name) || 'X';
+    return `
+      <g class="symbol-offpage">
+        <polygon points="0,${-r} ${r},0 0,${r} ${-r},0" class="symbol-fill" fill="white" stroke="currentColor" stroke-width="1.5"/>
+        <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${label}</text>
+      </g>`;
+  },
+
   // Render a component on the canvas SVG
   renderComponent(comp) {
     const def = COMPONENT_DEFS[comp.type];
     if (!def) return '';
-    const { width: w, height: h } = def;
+    const isBus = comp.type === 'bus';
+    const w = isBus ? ((comp.props && comp.props.busWidth) || def.width) : def.width;
+    const h = def.height;
     const symbolFn = this[comp.type];
     if (!symbolFn) return '';
 
     const symbolSvg = symbolFn.call(this, w, h, comp);
-    const portsHtml = (def.ports || []).map(p => {
-      const pos = this.getPortPosition(p, w, h);
+    const ports = isBus ? this.getBusPorts(comp) : (def.ports || []);
+    const portsHtml = ports.map(p => {
+      const pos = isBus ? { x: p._x || p.offset || 0, y: p._y || (p.side === 'top' ? -h / 2 : (p.side === 'bottom' ? h / 2 : 0)) } : this.getPortPosition(p, w, h);
       return `<circle class="conn-port-hit" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
               <circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
     }).join('');
@@ -376,9 +437,31 @@ const Symbols = {
   // Get port position in world (absolute) coordinates, accounting for rotation
   getPortWorldPosition(comp, portId) {
     const def = COMPONENT_DEFS[comp.type];
-    const port = def.ports.find(p => p.id === portId);
-    if (!port) return { x: comp.x, y: comp.y };
-    const local = this.getPortPosition(port, def.width, def.height);
+    const isBus = comp.type === 'bus';
+    let local;
+
+    if (isBus) {
+      // Use dynamic bus ports
+      const ports = this.getBusPorts(comp);
+      const port = ports.find(p => p.id === portId);
+      if (!port) {
+        // Fallback: try to find a matching port by prefix for legacy wires
+        // e.g. 'top' maps to 'top_0', 'bottom' maps to 'bottom_0'
+        const fallback = ports.find(p => p.id === portId + '_0') || ports.find(p => p.id === portId);
+        if (fallback) {
+          local = { x: fallback._x || 0, y: fallback._y || 0 };
+        } else {
+          return { x: comp.x, y: comp.y };
+        }
+      } else {
+        local = { x: port._x || 0, y: port._y || 0 };
+      }
+    } else {
+      const port = def.ports.find(p => p.id === portId);
+      if (!port) return { x: comp.x, y: comp.y };
+      local = this.getPortPosition(port, def.width, def.height);
+    }
+
     // Apply component rotation to local port coordinates
     const rot = (comp.rotation || 0) * Math.PI / 180;
     const cos = Math.cos(rot);

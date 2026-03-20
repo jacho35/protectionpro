@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
   UndoManager.init();
   MiniMap.init();
 
+  // Templates button
+  document.getElementById('btn-templates').addEventListener('click', () => NetworkTemplates.show());
+
   // Toolbar mode buttons
   const btnSelect = document.getElementById('btn-select');
   const btnWire = document.getElementById('btn-wire');
@@ -122,6 +125,23 @@ document.addEventListener('DOMContentLoaded', () => {
           Canvas.render();
           Properties.clear();
           document.getElementById('status-info').textContent = 'Cut to clipboard.';
+        }
+        break;
+      case 'g':
+      case 'G':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            AppState.ungroupSelected();
+            Canvas.render();
+            document.getElementById('status-info').textContent = 'Ungrouped selected components.';
+          } else {
+            const group = AppState.createGroup();
+            if (group) {
+              Canvas.render();
+              document.getElementById('status-info').textContent = `Created group: ${group.name}`;
+            }
+          }
         }
         break;
       case 'd':
@@ -259,6 +279,88 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
   document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
 
+  // Arc Flash Analysis
+  document.getElementById('btn-arcflash').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running arc flash analysis.';
+      return;
+    }
+    const { errors, warnings } = Components.validate();
+    if (errors.length > 0) {
+      showValidationModal('Arc Flash — Validation', errors, warnings, null);
+      return;
+    }
+    if (warnings.length > 0) {
+      showValidationModal('Arc Flash — Validation', errors, warnings, () => executeArcFlash());
+      return;
+    }
+    executeArcFlash();
+  });
+
+  async function executeArcFlash() {
+    document.getElementById('status-info').textContent = 'Running arc flash analysis (IEEE 1584-2018)...';
+    try {
+      const result = await API.runArcFlash();
+      AppState.arcFlashResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Arc flash analysis complete.';
+      showArcFlashResults(result);
+    } catch (e) {
+      document.getElementById('status-info').textContent = 'Arc flash analysis failed.';
+      showValidationModal('Arc Flash — Error', [{ msg: `Arc flash analysis failed: ${e.message || 'Unknown error'}` }], [], null);
+    }
+  }
+
+  function showArcFlashResults(result) {
+    const modal = document.getElementById('arcflash-modal');
+    const body = document.getElementById('arcflash-body');
+    if (!modal || !body) return;
+
+    const buses = result.buses || {};
+    const entries = Object.values(buses).sort((a, b) => b.incident_energy_cal - a.incident_energy_cal);
+
+    if (entries.length === 0) {
+      body.innerHTML = '<p>No buses found for arc flash analysis.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) {
+        html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      }
+      html += '</div>';
+    }
+
+    html += `<table class="af-table">
+      <thead><tr>
+        <th>Bus</th><th>Voltage</th><th>Bolted Fault</th><th>Arcing Current</th>
+        <th>Incident Energy</th><th>AFB</th><th>Clearing Time</th>
+        <th>PPE Cat.</th><th>PPE</th>
+      </tr></thead><tbody>`;
+
+    for (const b of entries) {
+      const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
+      html += `<tr class="${ppeClass}">
+        <td>${b.bus_name || b.bus_id}</td>
+        <td>${b.voltage_kv.toFixed(3)} kV</td>
+        <td>${b.bolted_fault_ka.toFixed(2)} kA</td>
+        <td>${b.arcing_current_ka.toFixed(2)} kA</td>
+        <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
+        <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
+        <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
+        <td><span class="af-ppe-badge">${b.ppe_category}</span></td>
+        <td>${b.ppe_name}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   // Compliance report
   document.getElementById('btn-compliance').addEventListener('click', () => {
     if (AppState.components.size === 0) {
@@ -292,6 +394,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-close-compliance').addEventListener('click', () => {
     document.getElementById('compliance-modal').style.display = 'none';
+  });
+
+  document.getElementById('btn-close-arcflash').addEventListener('click', () => {
+    document.getElementById('arcflash-modal').style.display = 'none';
   });
   document.getElementById('compliance-modal').addEventListener('click', (e) => {
     if (e.target.id === 'compliance-modal') e.target.style.display = 'none';
@@ -442,6 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Load this scenario? Current unsaved changes will be replaced.')) return;
         const loaded = AppState.loadScenario(btn.dataset.id);
         if (loaded) {
+          renderPageTabs();
           Canvas.render();
           Properties.clear();
           scenariosModal.style.display = 'none';
@@ -494,6 +601,212 @@ document.addEventListener('DOMContentLoaded', () => {
     renderScenarioList();
     document.getElementById('status-info').textContent = `Scenario "${name}" saved.`;
   });
+
+  // ─── Group / Ungroup ───
+  document.getElementById('btn-group').addEventListener('click', () => {
+    const group = AppState.createGroup();
+    if (group) {
+      Canvas.render();
+      document.getElementById('status-info').textContent = `Created group: ${group.name}`;
+    } else {
+      document.getElementById('status-info').textContent = 'Select at least 2 components to group.';
+    }
+  });
+  document.getElementById('btn-ungroup').addEventListener('click', () => {
+    AppState.ungroupSelected();
+    Canvas.render();
+    document.getElementById('status-info').textContent = 'Ungrouped selected components.';
+  });
+
+  // ─── Wire Routing Mode ───
+  document.getElementById('wire-route-mode').addEventListener('change', (e) => {
+    AppState.wireRouteMode = e.target.value;
+    Canvas.render();
+    document.getElementById('status-info').textContent = `Wire routing: ${e.target.value}`;
+  });
+
+  // ─── Page Tabs ───
+  // Expose for other modules (project load, template load)
+  window.renderPageTabs = renderPageTabs;
+  function renderPageTabs() {
+    const container = document.getElementById('page-tabs');
+    container.innerHTML = '';
+    for (const page of AppState.pages) {
+      const btn = document.createElement('button');
+      btn.className = 'page-tab' + (page.id === AppState.activePageId ? ' active' : '');
+      btn.dataset.pageId = page.id;
+      btn.innerHTML = `<span class="page-tab-name">${page.name}</span>` +
+        (AppState.pages.length > 1 ? `<span class="page-tab-close" title="Delete sheet">&times;</span>` : '');
+      btn.addEventListener('click', (e) => {
+        if (e.target.classList.contains('page-tab-close')) {
+          if (confirm(`Delete "${page.name}"? Components on this page will be removed.`)) {
+            AppState.deletePage(page.id);
+            renderPageTabs();
+            Canvas.render();
+          }
+          return;
+        }
+        AppState.activePageId = page.id;
+        AppState.clearSelection();
+        renderPageTabs();
+        Canvas.render();
+        Properties.clear();
+      });
+      btn.addEventListener('dblclick', () => {
+        const newName = prompt('Rename sheet:', page.name);
+        if (newName && newName.trim()) {
+          AppState.renamePage(page.id, newName.trim());
+          renderPageTabs();
+        }
+      });
+      container.appendChild(btn);
+    }
+  }
+
+  document.getElementById('btn-add-page').addEventListener('click', () => {
+    const id = AppState.addPage();
+    AppState.activePageId = id;
+    renderPageTabs();
+    Canvas.render();
+    document.getElementById('status-info').textContent = `Added new sheet.`;
+  });
+
+  renderPageTabs();
+
+  // ─── Print / Page Layout ───
+  document.getElementById('btn-print').addEventListener('click', () => {
+    document.getElementById('print-title').value = AppState.projectName || 'Single Line Diagram';
+    document.getElementById('print-modal').style.display = '';
+  });
+  document.getElementById('btn-close-print').addEventListener('click', () => {
+    document.getElementById('print-modal').style.display = 'none';
+  });
+  document.getElementById('print-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'print-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-print-pdf').addEventListener('click', () => {
+    _exportPrintPDF();
+  });
+  document.getElementById('btn-print-preview').addEventListener('click', () => {
+    _printPreview();
+  });
+
+  function _exportPrintPDF() {
+    const { jsPDF } = window.jspdf;
+    const pageSize = document.getElementById('print-page-size').value;
+    const orientation = document.getElementById('print-orientation').value;
+    const title = document.getElementById('print-title').value || 'Single Line Diagram';
+    const drawingNo = document.getElementById('print-drawing-no').value || '';
+    const revision = document.getElementById('print-revision').value || '';
+    const drawnBy = document.getElementById('print-drawn-by').value || '';
+    const showTitleBlock = document.getElementById('print-show-title-block').checked;
+    const showLegend = document.getElementById('print-show-legend').checked;
+    const showBorder = document.getElementById('print-show-border').checked;
+
+    const doc = new jsPDF({ orientation, format: pageSize });
+    const pw = doc.internal.pageSize.getWidth();
+    const ph = doc.internal.pageSize.getHeight();
+    const margin = 10;
+
+    // Border
+    if (showBorder) {
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.5);
+      doc.rect(margin, margin, pw - 2 * margin, ph - 2 * margin);
+      doc.setLineWidth(0.3);
+      doc.rect(margin + 2, margin + 2, pw - 2 * margin - 4, ph - 2 * margin - 4);
+    }
+
+    // Title block
+    if (showTitleBlock) {
+      const tbW = 120, tbH = 28;
+      const tbX = pw - margin - tbW - 2;
+      const tbY = ph - margin - tbH - 2;
+      doc.setLineWidth(0.4);
+      doc.rect(tbX, tbY, tbW, tbH);
+      doc.line(tbX, tbY + 10, tbX + tbW, tbY + 10);
+      doc.line(tbX, tbY + 20, tbX + tbW, tbY + 20);
+      doc.line(tbX + 60, tbY, tbX + 60, tbY + tbH);
+
+      doc.setFontSize(7);
+      doc.setTextColor(100);
+      doc.text('TITLE', tbX + 2, tbY + 4);
+      doc.text('DRAWING NO.', tbX + 2, tbY + 14);
+      doc.text('DRAWN BY', tbX + 2, tbY + 24);
+      doc.text('REVISION', tbX + 62, tbY + 14);
+      doc.text('DATE', tbX + 62, tbY + 24);
+
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      doc.text(title, tbX + 2, tbY + 9);
+      doc.setFontSize(8);
+      doc.text(drawingNo, tbX + 2, tbY + 19);
+      doc.text(drawnBy, tbX + 2, tbY + 28);
+      doc.text(revision, tbX + 62, tbY + 19);
+      doc.text(new Date().toLocaleDateString(), tbX + 62, tbY + 28);
+    }
+
+    // Embed diagram as SVG → PNG
+    const svgEl = document.getElementById('sld-canvas');
+    const svgClone = svgEl.cloneNode(true);
+    // Remove grid for print
+    const gridBg = svgClone.querySelector('#grid-bg');
+    if (gridBg) gridBg.remove();
+    const svgData = new XMLSerializer().serializeToString(svgClone);
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const diagramArea = { w: pw - 2 * margin - 10, h: ph - 2 * margin - (showTitleBlock ? 40 : 10) };
+      canvas.width = diagramArea.w * 4;
+      canvas.height = diagramArea.h * 4;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imgData = canvas.toDataURL('image/png');
+      doc.addImage(imgData, 'PNG', margin + 5, margin + 5, diagramArea.w, diagramArea.h);
+      URL.revokeObjectURL(url);
+
+      // Legend
+      if (showLegend) {
+        const types = new Set([...AppState.components.values()].map(c => c.type));
+        const legendX = margin + 5;
+        let legendY = ph - margin - (showTitleBlock ? 34 : 8);
+        doc.setFontSize(7);
+        doc.setTextColor(80);
+        const legendItems = [...types].slice(0, 8);
+        doc.text('Legend: ' + legendItems.map(t => {
+          const def = COMPONENT_DEFS[t];
+          return def ? def.label : t;
+        }).join(' | '), legendX, legendY);
+      }
+
+      doc.save(`${title.replace(/\s+/g, '_')}_print.pdf`);
+      document.getElementById('print-modal').style.display = 'none';
+      document.getElementById('status-info').textContent = 'Print PDF exported.';
+    };
+    img.src = url;
+  }
+
+  function _printPreview() {
+    // Use browser print with a styled iframe
+    const svgEl = document.getElementById('sld-canvas');
+    const svgClone = svgEl.cloneNode(true);
+    const gridBg = svgClone.querySelector('#grid-bg');
+    if (gridBg) gridBg.setAttribute('fill', 'white');
+    const svgData = new XMLSerializer().serializeToString(svgClone);
+    const printWin = window.open('', '_blank', 'width=900,height=650');
+    printWin.document.write(`<!DOCTYPE html><html><head><title>Print Preview</title>
+      <style>body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#fff;}
+      svg{max-width:100%;max-height:100%;}</style></head>
+      <body>${svgData}</body></html>`);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => printWin.print(), 500);
+  }
 
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {

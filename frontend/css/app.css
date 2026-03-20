@@ -86,7 +86,7 @@ html, body {
 
 #sld-canvas {
   width: 100%;
-  height: calc(100% - var(--status-height));
+  height: calc(100% - var(--status-height) - 28px);
   cursor: default;
   user-select: none;
 }
@@ -990,6 +990,15 @@ html, body {
   opacity: 0.45;
 }
 
+.tcc-device-item.tcc-selected {
+  border-color: var(--accent);
+  background: rgba(0,120,215,0.08);
+}
+
+.tcc-device-item {
+  cursor: pointer;
+}
+
 .tcc-device-color {
   width: 10px;
   height: 10px;
@@ -1319,4 +1328,195 @@ body.dark-mode .wire-bend-point {
   background: var(--danger);
   color: #fff;
   border-color: var(--danger);
+}
+
+/* Template picker */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.template-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: default;
+  transition: border-color 0.15s;
+}
+
+.template-card:hover {
+  border-color: var(--accent);
+}
+
+.template-card-header {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.template-card-preview {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  background: rgba(0,120,215,0.06);
+  border-radius: 4px;
+}
+
+.template-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.template-card .template-load-btn {
+  width: 100%;
+}
+
+/* ─── Bus Resize Handles ─── */
+.bus-resize-handle {
+  fill: var(--accent);
+  opacity: 0;
+  cursor: ew-resize;
+  transition: opacity 0.15s;
+}
+.sld-component:hover .bus-resize-handle {
+  opacity: 0.6;
+}
+.bus-resize-handle:hover {
+  opacity: 1 !important;
+}
+body.dark-mode .bus-resize-handle {
+  fill: #4a9eff;
+}
+
+/* ─── Component Group Bounding Boxes ─── */
+.sld-group rect {
+  fill: rgba(0, 120, 215, 0.04);
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 6 3;
+  rx: 6;
+  pointer-events: none;
+}
+.sld-group.selected rect {
+  fill: rgba(0, 120, 215, 0.1);
+  stroke-width: 1.5;
+}
+.sld-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--accent);
+  pointer-events: none;
+}
+body.dark-mode .sld-group rect {
+  fill: rgba(74, 158, 255, 0.06);
+  stroke: #4a9eff;
+}
+body.dark-mode .sld-group-label {
+  fill: #4a9eff;
+}
+
+/* ─── Page Tab Bar ─── */
+#page-tab-bar {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+  padding: 0 8px;
+  gap: 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.page-tab {
+  padding: 4px 14px;
+  font-size: 11px;
+  font-family: var(--font-family);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  position: relative;
+}
+.page-tab:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.page-tab.active {
+  background: var(--bg-primary);
+  color: var(--accent);
+  font-weight: 600;
+  border-color: var(--border-color);
+}
+.page-tab-add {
+  width: 24px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: 4px;
+  margin-left: 4px;
+}
+.page-tab-add:hover {
+  background: var(--bg-secondary);
+  color: var(--accent);
+}
+.page-tab .page-tab-close {
+  display: none;
+  margin-left: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.page-tab:hover .page-tab-close {
+  display: inline;
+}
+.page-tab .page-tab-close:hover {
+  color: var(--danger);
+}
+
+/* ─── Print Layout ─── */
+.print-settings .form-group {
+  margin-bottom: 10px;
+}
+.print-preview-frame {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  margin-top: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.print-title-block {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  border: 1px solid #333;
+  font-size: 10px;
+  background: #fff;
+}
+.print-title-block td {
+  padding: 2px 6px;
+  border: 0.5px solid #999;
+}
+.print-title-block .ptb-label {
+  font-size: 8px;
+  color: #666;
+  text-transform: uppercase;
 }

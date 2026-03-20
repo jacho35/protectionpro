@@ -29,6 +29,12 @@ const API = {
     return this.request('/analysis/fault', 'POST', data);
   },
 
+  // Run arc flash analysis
+  async runArcFlash() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/arcflash', 'POST', data);
+  },
+
   // Run load flow
   async runLoadFlow(method = 'newton_raphson') {
     const data = AppState.toJSON();

@@ -454,7 +454,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'sources',
     name: 'Sources',
-    items: ['utility', 'generator'],
+    items: ['utility', 'generator', 'solar_pv', 'wind_turbine'],
   },
   {
     id: 'distribution',
@@ -479,7 +479,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'other',
     name: 'Other',
-    items: ['capacitor_bank', 'surge_arrester'],
+    items: ['capacitor_bank', 'surge_arrester', 'offpage_connector'],
   },
 ];
 
@@ -605,27 +605,101 @@ const COMPONENT_DEFS = {
     ],
   },
 
+  solar_pv: {
+    name: 'Solar PV',
+    label: 'Solar PV Inverter',
+    category: 'sources',
+    ports: [{ id: 'out', side: 'bottom', offset: 0 }],
+    width: 60,
+    height: 50,
+    defaults: {
+      name: 'PV',
+      rated_kw: 100,
+      voltage_kv: 0.4,
+      num_inverters: 1,
+      inverter_eff: 0.97,
+      power_factor: 1.0,
+      mppt_tracking: 'fixed',
+      fault_contribution_pu: 1.1,
+      irradiance_pct: 100,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'rated_kw', label: 'Rated Power', type: 'number', unit: 'kW', unitOptions: [{ label: 'kW', mult: 1 }, { label: 'MW', mult: 1000 }] },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
+      { key: 'num_inverters', label: 'No. of Inverters', type: 'number', min: 1, step: 1 },
+      { key: 'inverter_eff', label: 'Inverter Efficiency', type: 'number', unit: 'p.u.', min: 0.8, max: 1.0, step: 0.01 },
+      { key: 'power_factor', label: 'Power Factor', type: 'number', min: -1, max: 1, step: 0.01 },
+      { key: 'mppt_tracking', label: 'MPPT Mode', type: 'select', options: ['fixed', 'tracking'] },
+      { key: 'fault_contribution_pu', label: 'Fault Contribution', type: 'number', unit: '×Irated', min: 1.0, max: 2.0, step: 0.1 },
+      { key: 'irradiance_pct', label: 'Irradiance', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
+    ],
+  },
+
+  wind_turbine: {
+    name: 'Wind Turbine',
+    label: 'Wind Turbine Generator',
+    category: 'sources',
+    ports: [{ id: 'out', side: 'bottom', offset: 0 }],
+    width: 60,
+    height: 55,
+    defaults: {
+      name: 'WTG',
+      rated_mva: 2.0,
+      voltage_kv: 0.69,
+      turbine_type: 'type3_dfig',
+      xd_pp: 0.20,
+      x_r_ratio: 30,
+      power_factor: 0.95,
+      num_turbines: 1,
+      fault_contribution_pu: 1.1,
+      wind_speed_pct: 100,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'rated_mva', label: 'Rating', type: 'number', unit: 'MVA', unitOptions: [{ label: 'MVA', mult: 1 }, { label: 'kW', mult: 0.001 }] },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
+      { key: 'turbine_type', label: 'Turbine Type', type: 'select', options: ['type1_scig', 'type2_wrig', 'type3_dfig', 'type4_frc'] },
+      { key: 'xd_pp', label: "Xd'' (sub-transient)", type: 'number', unit: 'p.u.', min: 0.05, max: 1.0, step: 0.01 },
+      { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', min: 1, step: 1 },
+      { key: 'power_factor', label: 'Power Factor', type: 'number', min: -1, max: 1, step: 0.01 },
+      { key: 'num_turbines', label: 'No. of Turbines', type: 'number', min: 1, step: 1 },
+      { key: 'fault_contribution_pu', label: 'Fault Contribution', type: 'number', unit: '×Irated', min: 1.0, max: 6.0, step: 0.1 },
+      { key: 'wind_speed_pct', label: 'Wind Output', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
+    ],
+  },
+
   // --- Distribution ---
   bus: {
     name: 'Bus',
     category: 'distribution',
     ports: [
+      // Base ports — additional ports are generated dynamically based on busWidth
       { id: 'top', side: 'top', offset: 0 },
       { id: 'bottom', side: 'bottom', offset: 0 },
       { id: 'left', side: 'left', offset: 0 },
       { id: 'right', side: 'right', offset: 0 },
     ],
+    dynamicPorts: true, // flag indicating ports are generated at runtime
     width: 120,
     height: 10,
     defaults: {
       name: 'Bus',
       voltage_kv: 11,
       bus_type: 'PQ',
+      busWidth: 120,
+      working_distance_mm: 455,
+      electrode_config: 'VCB',
+      enclosure_size_mm: 508,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
       { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'] },
+      { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
+      { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5 },
+      { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'] },
+      { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10 },
     ],
   },
   transformer: {
@@ -982,6 +1056,27 @@ const COMPONENT_DEFS = {
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'mcov_kv', label: 'MCOV', type: 'number', unit: 'kV' },
       { key: 'class', label: 'Class', type: 'select', options: ['Station', 'Intermediate', 'Distribution'] },
+    ],
+  },
+
+  offpage_connector: {
+    name: 'Off-Page Connector',
+    label: 'Off-Page Connector',
+    category: 'other',
+    ports: [
+      { id: 'port', side: 'bottom', offset: 0 },
+    ],
+    width: 40,
+    height: 40,
+    defaults: {
+      name: 'X1',
+      target_page: '',
+      target_label: '',
+    },
+    fields: [
+      { key: 'name', label: 'Label', type: 'text' },
+      { key: 'target_page', label: 'Target Page', type: 'text' },
+      { key: 'target_label', label: 'Target Label', type: 'text' },
     ],
   },
 };

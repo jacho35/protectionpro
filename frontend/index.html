@@ -26,6 +26,10 @@
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             <span>Open</span>
           </button>
+          <button id="btn-templates" title="Load a pre-built network template">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Templates</span>
+          </button>
           <button id="btn-save" title="Save to Database (Ctrl+S)">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             <span>Save</span>
@@ -47,6 +51,10 @@
               <div class="dropdown-divider"></div>
               <button id="btn-export-csv" class="dropdown-item">Export Results (CSV)</button>
               <button id="btn-export-pdf" class="dropdown-item">Export Report (PDF)</button>
+              <div class="dropdown-divider"></div>
+              <button id="btn-export-template" class="dropdown-item">Report Templates...</button>
+              <button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button>
+              <button id="btn-export-compare" class="dropdown-item">Compare Scenarios...</button>
             </div>
           </div>
         </div>
@@ -63,6 +71,14 @@
           <button id="btn-delete" title="Delete Selected (Del)">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
             <span>Delete</span>
+          </button>
+          <button id="btn-group" title="Group Selected (Ctrl+G)">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2"/><rect x="3" y="4" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Group</span>
+          </button>
+          <button id="btn-ungroup" title="Ungroup Selected (Ctrl+Shift+G)">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2" opacity="0.3"/><rect x="2" y="3" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Ungroup</span>
           </button>
           <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l-3-3 3-3M1 4h9a4 4 0 010 8H6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -120,6 +136,10 @@
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             <span>Compliance</span>
           </button>
+          <button id="btn-arcflash" title="Arc Flash Analysis (IEEE 1584-2018)">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+            <span>Arc Flash</span>
+          </button>
           <button id="btn-tcc" title="Time-Current Curves (TCC)">
             <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
             <span>TCC</span>
@@ -142,6 +162,18 @@
         <button id="btn-toggle-angles" title="Toggle Fault Current Angles &amp; Voltage">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 13L13 13L3 3Z" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="7" y="11" font-size="7" fill="currentColor">∠</text></svg>
           <span>Angles</span>
+        </button>
+        <div class="toolbar-separator"></div>
+        <label style="font-size:11px;color:var(--text-secondary);white-space:nowrap;">Wire Routing:</label>
+        <select id="wire-route-mode" title="Wire routing mode" style="font-size:11px;padding:2px 6px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-secondary);font-family:var(--font-family);">
+          <option value="orthogonal">Orthogonal</option>
+          <option value="diagonal">Diagonal</option>
+          <option value="spline">Spline</option>
+        </select>
+        <div class="toolbar-separator"></div>
+        <button id="btn-print" title="Print / Page Layout">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
+          <span>Print</span>
         </button>
       </div>
     </div>
@@ -201,6 +233,13 @@
       <!-- Mini-map overlay -->
       <div id="minimap" class="minimap">
         <canvas id="minimap-canvas"></canvas>
+      </div>
+      <!-- Page Tab Bar -->
+      <div id="page-tab-bar">
+        <div id="page-tabs">
+          <button class="page-tab active" data-page-id="page_1">Sheet 1</button>
+        </div>
+        <button id="btn-add-page" class="page-tab-add" title="Add new sheet">+</button>
       </div>
       <!-- Status Bar -->
       <div id="status-bar">
@@ -262,6 +301,21 @@
     </div>
   </div>
 
+  <!-- Arc Flash Results Modal -->
+  <div id="arcflash-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Arc Flash Analysis — IEEE 1584-2018</h3>
+        <button class="modal-close" id="btn-close-arcflash">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="arcflash-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- TCC Chart Modal -->
   <div id="tcc-modal" class="modal" style="display:none">
     <div class="modal-content tcc-modal-content">
@@ -293,6 +347,12 @@
           <div class="tcc-panel-section">
             <h4>Devices</h4>
             <div id="tcc-device-list" class="tcc-device-list">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+          <div class="tcc-panel-section" id="tcc-selected-section" style="display:none">
+            <h4 id="tcc-selected-title">Selected Device</h4>
+            <div id="tcc-selected-settings">
               <!-- Populated by JS -->
             </div>
           </div>
@@ -802,6 +862,64 @@
     </div>
   </div>
 
+  <!-- Print Layout Modal -->
+  <div id="print-modal" class="modal" style="display:none">
+    <div class="modal-content" style="min-width:560px;max-width:800px;">
+      <div class="modal-header">
+        <h3>Print / Page Layout</h3>
+        <button class="modal-close" id="btn-close-print">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="print-settings">
+          <div class="form-group">
+            <label for="print-page-size">Page Size</label>
+            <select id="print-page-size">
+              <option value="a4">A4 (210 × 297 mm)</option>
+              <option value="a3">A3 (297 × 420 mm)</option>
+              <option value="letter">Letter (8.5 × 11 in)</option>
+              <option value="tabloid">Tabloid (11 × 17 in)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="print-orientation">Orientation</label>
+            <select id="print-orientation">
+              <option value="landscape">Landscape</option>
+              <option value="portrait">Portrait</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="print-title">Drawing Title</label>
+            <input type="text" id="print-title" placeholder="Single Line Diagram">
+          </div>
+          <div class="form-group">
+            <label for="print-drawing-no">Drawing No.</label>
+            <input type="text" id="print-drawing-no" placeholder="DWG-001">
+          </div>
+          <div class="form-group">
+            <label for="print-revision">Revision</label>
+            <input type="text" id="print-revision" placeholder="A">
+          </div>
+          <div class="form-group">
+            <label for="print-drawn-by">Drawn By</label>
+            <input type="text" id="print-drawn-by" placeholder="">
+          </div>
+          <div class="form-group">
+            <label>Include</label>
+            <div style="display:flex;gap:12px;flex:1;">
+              <label style="font-weight:normal;min-width:auto;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="print-show-title-block" checked> Title Block</label>
+              <label style="font-weight:normal;min-width:auto;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="print-show-legend" checked> Legend</label>
+              <label style="font-weight:normal;min-width:auto;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="print-show-border" checked> Border</label>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px;">
+          <button id="btn-print-pdf" class="btn-primary">Export PDF</button>
+          <button id="btn-print-preview" class="btn-small">Print Preview</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js"></script>
@@ -818,6 +936,8 @@
   <script src="js/compliance.js"></script>
   <script src="js/tcc.js"></script>
   <script src="js/project.js"></script>
+  <script src="js/reports.js"></script>
+  <script src="js/templates.js"></script>
   <script src="js/standard-data.js"></script>
   <script src="js/undo.js"></script>
   <script src="js/minimap.js"></script>

@@ -374,6 +374,29 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 pf = comp.props.get("power_factor", 0.85)
                 P_spec[i] += rated * pf / base_mva
                 Q_spec[i] += rated * math.sqrt(1 - pf**2) / base_mva
+            elif comp.type == "solar_pv":
+                rated_kw = comp.props.get("rated_kw", 100)
+                n_inv = comp.props.get("num_inverters", 1)
+                eff = comp.props.get("inverter_eff", 0.97)
+                pf = comp.props.get("power_factor", 1.0)
+                irr = comp.props.get("irradiance_pct", 100) / 100.0
+                rated_mva = rated_kw * n_inv * irr / (eff * 1000)
+                P_spec[i] += rated_mva * abs(pf) / base_mva
+                if pf < 0:
+                    Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) / base_mva
+                else:
+                    Q_spec[i] += rated_mva * math.sqrt(1 - pf**2) / base_mva
+            elif comp.type == "wind_turbine":
+                rated = comp.props.get("rated_mva", 2.0)
+                n_turb = comp.props.get("num_turbines", 1)
+                pf = comp.props.get("power_factor", 0.95)
+                wind_pct = comp.props.get("wind_speed_pct", 100) / 100.0
+                total_mva = rated * n_turb * wind_pct
+                P_spec[i] += total_mva * abs(pf) / base_mva
+                if pf < 0:
+                    Q_spec[i] -= total_mva * math.sqrt(1 - pf**2) / base_mva
+                else:
+                    Q_spec[i] += total_mva * math.sqrt(1 - pf**2) / base_mva
             elif comp.type == "static_load":
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
