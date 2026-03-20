@@ -130,6 +130,179 @@ const STANDARD_TRANSFORMERS = [
   { id: 'xfmr_20mva_132', name: '20 MVA 132/11kV',     rated_mva: 20,     voltage_hv_kv: 132, voltage_lv_kv: 11,   z_percent: 10.0, x_r_ratio: 20,  vector_group: 'YNd11' },
 ];
 
+// ─── IEC 60364-5-52 Standards Database ───
+// Reference installation methods per Table B.52.1
+const IEC_INSTALLATION_METHODS = [
+  { code: 'A1', description: 'Insulated conductors in conduit in thermally insulating wall', type: 'enclosed' },
+  { code: 'A2', description: 'Multi-core cable in conduit in thermally insulating wall', type: 'enclosed' },
+  { code: 'B1', description: 'Insulated conductors in conduit on wall or in trunking', type: 'enclosed' },
+  { code: 'B2', description: 'Multi-core cable in conduit on wall or in trunking', type: 'enclosed' },
+  { code: 'C',  description: 'Single-core or multi-core cable direct on wall (clipped)', type: 'open' },
+  { code: 'D1', description: 'Multi-core cable in underground ducts', type: 'buried' },
+  { code: 'D2', description: 'Multi-core cable direct buried', type: 'buried' },
+  { code: 'E',  description: 'Single-core cables in free air on perforated tray (touching)', type: 'open' },
+  { code: 'F',  description: 'Single-core cables in free air on tray (spaced)', type: 'open' },
+  { code: 'G',  description: 'Single-core cables in free air spaced from wall (cleats)', type: 'open' },
+];
+
+// Base current-carrying capacity (Amps) per IEC 60364-5-52 Table B.52.2–B.52.5
+// 3-phase circuits, PVC and XLPE insulation, 2 loaded conductors (single-phase) or 3 loaded (3-phase)
+// Reference conditions: 30°C ambient air, 20°C ground, 2.5 K·m/W soil resistivity
+// Format: { size_mm2: { method: { pvc_cu, xlpe_cu, pvc_al, xlpe_al } } }
+const IEC_AMPACITY_TABLE = {
+  1.5:   { A1: { pvc_cu: 14.5, xlpe_cu: 19.5, pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 17.5, xlpe_cu: 23,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 22,   xlpe_cu: 26,   pvc_al: null,  xlpe_al: null  } },
+  2.5:   { A1: { pvc_cu: 19.5, xlpe_cu: 27,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 24,   xlpe_cu: 31,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 30,   xlpe_cu: 36,   pvc_al: null,  xlpe_al: null  } },
+  4:     { A1: { pvc_cu: 26,   xlpe_cu: 36,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 32,   xlpe_cu: 42,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 40,   xlpe_cu: 49,   pvc_al: null,  xlpe_al: null  } },
+  6:     { A1: { pvc_cu: 34,   xlpe_cu: 46,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 41,   xlpe_cu: 54,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 51,   xlpe_cu: 63,   pvc_al: null,  xlpe_al: null  } },
+  10:    { A1: { pvc_cu: 46,   xlpe_cu: 63,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 57,   xlpe_cu: 75,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 70,   xlpe_cu: 86,   pvc_al: null,  xlpe_al: null  } },
+  16:    { A1: { pvc_cu: 61,   xlpe_cu: 85,   pvc_al: 47,    xlpe_al: 65    }, B1: { pvc_cu: 76,   xlpe_cu: 100,  pvc_al: 57,    xlpe_al: 76    }, C: { pvc_cu: 94,   xlpe_cu: 115,  pvc_al: 71,    xlpe_al: 88    }, D1: { pvc_cu: 80,  xlpe_cu: 95,  pvc_al: 62,  xlpe_al: 73 }, D2: { pvc_cu: 87,  xlpe_cu: 102, pvc_al: 67,  xlpe_al: 78 } },
+  25:    { A1: { pvc_cu: 80,   xlpe_cu: 112,  pvc_al: 62,    xlpe_al: 86    }, B1: { pvc_cu: 101,  xlpe_cu: 133,  pvc_al: 78,    xlpe_al: 101   }, C: { pvc_cu: 124,  xlpe_cu: 150,  pvc_al: 95,    xlpe_al: 116   }, D1: { pvc_cu: 106, xlpe_cu: 121, pvc_al: 81,  xlpe_al: 93 }, D2: { pvc_cu: 114, xlpe_cu: 131, pvc_al: 87,  xlpe_al: 100 }, E: { pvc_cu: 131, xlpe_cu: 161, pvc_al: 100, xlpe_al: 123 }, F: { pvc_cu: 146, xlpe_cu: 182, pvc_al: 112, xlpe_al: 140 } },
+  35:    { A1: { pvc_cu: 99,   xlpe_cu: 138,  pvc_al: 77,    xlpe_al: 107   }, B1: { pvc_cu: 125,  xlpe_cu: 164,  pvc_al: 96,    xlpe_al: 125   }, C: { pvc_cu: 154,  xlpe_cu: 185,  pvc_al: 118,   xlpe_al: 142   }, D1: { pvc_cu: 131, xlpe_cu: 146, pvc_al: 100, xlpe_al: 113 }, D2: { pvc_cu: 138, xlpe_cu: 157, pvc_al: 107, xlpe_al: 121 }, E: { pvc_cu: 162, xlpe_cu: 200, pvc_al: 124, xlpe_al: 153 }, F: { pvc_cu: 181, xlpe_cu: 226, pvc_al: 139, xlpe_al: 174 } },
+  50:    { A1: { pvc_cu: 119,  xlpe_cu: 168,  pvc_al: 93,    xlpe_al: 130   }, B1: { pvc_cu: 151,  xlpe_cu: 198,  pvc_al: 117,   xlpe_al: 151   }, C: { pvc_cu: 188,  xlpe_cu: 225,  pvc_al: 144,   xlpe_al: 173   }, D1: { pvc_cu: 153, xlpe_cu: 173, pvc_al: 118, xlpe_al: 133 }, D2: { pvc_cu: 161, xlpe_cu: 185, pvc_al: 124, xlpe_al: 142 }, E: { pvc_cu: 196, xlpe_cu: 242, pvc_al: 150, xlpe_al: 186 }, F: { pvc_cu: 219, xlpe_cu: 275, pvc_al: 168, xlpe_al: 212 } },
+  70:    { A1: { pvc_cu: 151,  xlpe_cu: 213,  pvc_al: 118,   xlpe_al: 165   }, B1: { pvc_cu: 192,  xlpe_cu: 253,  pvc_al: 149,   xlpe_al: 192   }, C: { pvc_cu: 238,  xlpe_cu: 283,  pvc_al: 183,   xlpe_al: 218   }, D1: { pvc_cu: 188, xlpe_cu: 210, pvc_al: 144, xlpe_al: 162 }, D2: { pvc_cu: 197, xlpe_cu: 225, pvc_al: 152, xlpe_al: 173 }, E: { pvc_cu: 251, xlpe_cu: 310, pvc_al: 192, xlpe_al: 237 }, F: { pvc_cu: 281, xlpe_cu: 353, pvc_al: 216, xlpe_al: 272 } },
+  95:    { A1: { pvc_cu: 182,  xlpe_cu: 258,  pvc_al: 142,   xlpe_al: 200   }, B1: { pvc_cu: 232,  xlpe_cu: 306,  pvc_al: 179,   xlpe_al: 233   }, C: { pvc_cu: 289,  xlpe_cu: 344,  pvc_al: 222,   xlpe_al: 265   }, D1: { pvc_cu: 222, xlpe_cu: 249, pvc_al: 171, xlpe_al: 191 }, D2: { pvc_cu: 236, xlpe_cu: 268, pvc_al: 182, xlpe_al: 207 }, E: { pvc_cu: 304, xlpe_cu: 377, pvc_al: 233, xlpe_al: 289 }, F: { pvc_cu: 341, xlpe_cu: 430, pvc_al: 261, xlpe_al: 331 } },
+  120:   { A1: { pvc_cu: 210,  xlpe_cu: 299,  pvc_al: 164,   xlpe_al: 232   }, B1: { pvc_cu: 269,  xlpe_cu: 354,  pvc_al: 206,   xlpe_al: 270   }, C: { pvc_cu: 337,  xlpe_cu: 400,  pvc_al: 259,   xlpe_al: 308   }, D1: { pvc_cu: 251, xlpe_cu: 283, pvc_al: 194, xlpe_al: 218 }, D2: { pvc_cu: 270, xlpe_cu: 306, pvc_al: 208, xlpe_al: 236 }, E: { pvc_cu: 352, xlpe_cu: 437, pvc_al: 269, xlpe_al: 335 }, F: { pvc_cu: 396, xlpe_cu: 500, pvc_al: 304, xlpe_al: 385 } },
+  150:   { A1: { pvc_cu: 240,  xlpe_cu: 344,  pvc_al: 189,   xlpe_al: 265   }, B1: { pvc_cu: 309,  xlpe_cu: 407,  pvc_al: 236,   xlpe_al: 310   }, C: { pvc_cu: 388,  xlpe_cu: 459,  pvc_al: 299,   xlpe_al: 354   }, D1: { pvc_cu: 278, xlpe_cu: 316, pvc_al: 215, xlpe_al: 244 }, D2: { pvc_cu: 300, xlpe_cu: 343, pvc_al: 232, xlpe_al: 265 }, E: { pvc_cu: 406, xlpe_cu: 504, pvc_al: 311, xlpe_al: 386 }, F: { pvc_cu: 456, xlpe_cu: 577, pvc_al: 351, xlpe_al: 444 } },
+  185:   { A1: { pvc_cu: 274,  xlpe_cu: 392,  pvc_al: 215,   xlpe_al: 304   }, B1: { pvc_cu: 353,  xlpe_cu: 464,  pvc_al: 271,   xlpe_al: 354   }, C: { pvc_cu: 447,  xlpe_cu: 527,  pvc_al: 344,   xlpe_al: 407   }, D1: { pvc_cu: 310, xlpe_cu: 352, pvc_al: 239, xlpe_al: 272 }, D2: { pvc_cu: 337, xlpe_cu: 384, pvc_al: 260, xlpe_al: 296 }, E: { pvc_cu: 467, xlpe_cu: 581, pvc_al: 358, xlpe_al: 446 }, F: { pvc_cu: 526, xlpe_cu: 668, pvc_al: 404, xlpe_al: 515 } },
+  240:   { A1: { pvc_cu: 321,  xlpe_cu: 461,  pvc_al: 252,   xlpe_al: 358   }, B1: { pvc_cu: 415,  xlpe_cu: 546,  pvc_al: 319,   xlpe_al: 418   }, C: { pvc_cu: 530,  xlpe_cu: 621,  pvc_al: 408,   xlpe_al: 480   }, D1: { pvc_cu: 355, xlpe_cu: 406, pvc_al: 274, xlpe_al: 314 }, D2: { pvc_cu: 388, xlpe_cu: 442, pvc_al: 300, xlpe_al: 342 }, E: { pvc_cu: 553, xlpe_cu: 689, pvc_al: 424, xlpe_al: 529 }, F: { pvc_cu: 625, xlpe_cu: 795, pvc_al: 481, xlpe_al: 613 } },
+  300:   { A1: { pvc_cu: 367,  xlpe_cu: 530,  pvc_al: 287,   xlpe_al: 411   }, B1: { pvc_cu: 475,  xlpe_cu: 629,  pvc_al: 365,   xlpe_al: 481   }, C: { pvc_cu: 610,  xlpe_cu: 715,  pvc_al: 470,   xlpe_al: 553   }, D1: { pvc_cu: 397, xlpe_cu: 456, pvc_al: 307, xlpe_al: 353 }, D2: { pvc_cu: 435, xlpe_cu: 498, pvc_al: 336, xlpe_al: 385 }, E: { pvc_cu: 637, xlpe_cu: 795, pvc_al: 488, xlpe_al: 611 }, F: { pvc_cu: 720, xlpe_cu: 920, pvc_al: 554, xlpe_al: 710 } },
+  400:   { A1: { pvc_cu: 438,  xlpe_cu: 634,  pvc_al: 344,   xlpe_al: 492   }, B1: { pvc_cu: 571,  xlpe_cu: 754,  pvc_al: 438,   xlpe_al: 578   }, C: { pvc_cu: 739,  xlpe_cu: 860,  pvc_al: 570,   xlpe_al: 665   }, E: { pvc_cu: 772, xlpe_cu: 964, pvc_al: 591, xlpe_al: 741 }, F: { pvc_cu: 878, xlpe_cu: 1122, pvc_al: 676, xlpe_al: 866 } },
+};
+
+// Ambient temperature correction factors — IEC 60364-5-52 Table B.52.14/15
+// Reference ambient: 30°C for air, 20°C for ground
+const IEC_TEMP_CORRECTION = {
+  air: {
+    pvc:  { 10: 1.22, 15: 1.17, 20: 1.12, 25: 1.06, 30: 1.00, 35: 0.94, 40: 0.87, 45: 0.79, 50: 0.71, 55: 0.61, 60: 0.50 },
+    xlpe: { 10: 1.15, 15: 1.12, 20: 1.08, 25: 1.04, 30: 1.00, 35: 0.96, 40: 0.91, 45: 0.87, 50: 0.82, 55: 0.76, 60: 0.71, 65: 0.65, 70: 0.58, 75: 0.50, 80: 0.41 },
+  },
+  ground: {
+    pvc:  { 10: 1.10, 15: 1.05, 20: 1.00, 25: 0.95, 30: 0.89, 35: 0.84, 40: 0.77, 45: 0.71, 50: 0.63, 55: 0.55, 60: 0.45 },
+    xlpe: { 10: 1.07, 15: 1.04, 20: 1.00, 25: 0.96, 30: 0.93, 35: 0.89, 40: 0.85, 45: 0.80, 50: 0.76, 55: 0.71, 60: 0.65, 65: 0.60, 70: 0.53, 75: 0.46, 80: 0.38 },
+  },
+};
+
+// Grouping correction factors — IEC 60364-5-52 Table B.52.17
+// Bunched cables or cables in conduits (touching, single layer)
+// Key = number of circuits/multi-core cables, value = correction factor
+const IEC_GROUPING_FACTORS = {
+  bunched: { 1: 1.00, 2: 0.80, 3: 0.70, 4: 0.65, 5: 0.60, 6: 0.57, 7: 0.54, 8: 0.52, 9: 0.50, 10: 0.48, 12: 0.45, 14: 0.43, 16: 0.41, 18: 0.39, 20: 0.38 },
+  single_layer_wall:  { 1: 1.00, 2: 0.85, 3: 0.79, 4: 0.75, 5: 0.73, 6: 0.72, 7: 0.72, 8: 0.71, 9: 0.70 },
+  single_layer_floor: { 1: 1.00, 2: 0.88, 3: 0.82, 4: 0.77, 5: 0.75, 6: 0.73, 7: 0.73, 8: 0.72, 9: 0.72 },
+  single_layer_tray_touching: { 1: 1.00, 2: 0.87, 3: 0.82, 4: 0.80, 5: 0.80, 6: 0.79, 7: 0.79, 8: 0.78, 9: 0.78 },
+  single_layer_tray_spaced:   { 1: 1.00, 2: 0.89, 3: 0.81, 4: 0.76, 5: 0.73, 6: 0.72, 7: 0.72, 8: 0.71, 9: 0.70 },
+  trefoil_tray_touching:      { 1: 1.00, 2: 0.81, 3: 0.72, 4: 0.68, 5: 0.66, 6: 0.64, 7: 0.63, 8: 0.62, 9: 0.61 },
+};
+
+// Soil thermal resistivity correction — IEC 60364-5-52 Table B.52.16
+// Reference: 2.5 K·m/W
+const IEC_SOIL_RESISTIVITY_FACTORS = {
+  0.5: 1.28,
+  0.7: 1.20,
+  1.0: 1.18,
+  1.5: 1.10,
+  2.0: 1.05,
+  2.5: 1.00,
+  3.0: 0.96,
+};
+
+// Depth of laying correction factors — IEC 60364-5-52 Table B.52.18
+// Reference depth: 0.7m
+const IEC_DEPTH_FACTORS = {
+  0.5: 1.02,
+  0.6: 1.01,
+  0.7: 1.00,
+  0.8: 0.99,
+  1.0: 0.97,
+  1.2: 0.95,
+  1.5: 0.93,
+};
+
+// IEC 60909 Voltage Factors — Table 1
+const IEC_60909_VOLTAGE_FACTORS = {
+  lv:  { cmax: 1.05, cmin: 0.95, description: 'Low voltage (≤ 1 kV)' },
+  mv:  { cmax: 1.10, cmin: 1.00, description: 'Medium voltage (1–35 kV)' },
+  hv:  { cmax: 1.10, cmin: 1.00, description: 'High voltage (> 35 kV)' },
+};
+
+// Standard cable sizes (mm²) per IEC
+const IEC_STANDARD_SIZES = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
+
+// ─── IDMT Relay Curve Parameters ───
+// IEC 60255 inverse-time curves: t = TDS * (k / (M^a - 1)) + c
+// IEEE C37.112 curves: t = TDS * (A / (M^p - 1) + B)
+// Where M = I/Ipickup (current multiple)
+const IDMT_CURVES = {
+  'IEC Standard Inverse':     { std: 'IEC', k: 0.14,   a: 0.02,  c: 0 },
+  'IEC Very Inverse':         { std: 'IEC', k: 13.5,   a: 1.0,   c: 0 },
+  'IEC Extremely Inverse':    { std: 'IEC', k: 80.0,   a: 2.0,   c: 0 },
+  'IEC Long Time Inverse':    { std: 'IEC', k: 120.0,  a: 1.0,   c: 0 },
+  'IEEE Moderately Inverse':  { std: 'IEEE', A: 0.0515, p: 0.02,  B: 0.114 },
+  'IEEE Very Inverse':        { std: 'IEEE', A: 19.61,  p: 2.0,   B: 0.491 },
+  'IEEE Extremely Inverse':   { std: 'IEEE', A: 28.2,   p: 2.0,   B: 0.1217 },
+};
+
+// Calculate relay trip time for a given current multiple M and TDS
+function idmtTripTime(curveName, M, TDS) {
+  if (M <= 1) return Infinity;
+  const c = IDMT_CURVES[curveName];
+  if (!c) return Infinity;
+  if (c.std === 'IEC') {
+    return TDS * (c.k / (Math.pow(M, c.a) - 1) + c.c);
+  } else {
+    return TDS * (c.A / (Math.pow(M, c.p) - 1) + c.B);
+  }
+}
+
+// ─── IEC 60269 Fuse Curves (gG General Purpose) ───
+// Pre-arcing (minimum melting) time-current points: [current_A, time_s]
+// Based on IEC 60269-1 characteristic data for gG fuses
+const FUSE_CURVES_GG = {
+  16:   [[25,600],[32,100],[40,30],[50,8],[80,1.5],[100,0.5],[160,0.08],[250,0.02],[400,0.008]],
+  20:   [[32,600],[40,100],[50,30],[63,8],[100,1.5],[125,0.5],[200,0.08],[315,0.02],[500,0.008]],
+  25:   [[40,600],[50,100],[63,30],[80,8],[125,1.5],[160,0.5],[250,0.08],[400,0.02],[630,0.008]],
+  32:   [[50,600],[63,100],[80,30],[100,8],[160,1.5],[200,0.5],[315,0.08],[500,0.02],[800,0.008]],
+  40:   [[63,600],[80,100],[100,30],[125,8],[200,1.5],[250,0.5],[400,0.08],[630,0.02],[1000,0.008]],
+  50:   [[80,600],[100,100],[125,30],[160,8],[250,1.5],[315,0.5],[500,0.08],[800,0.02],[1250,0.008]],
+  63:   [[100,600],[125,100],[160,30],[200,8],[315,1.5],[400,0.5],[630,0.08],[1000,0.02],[1600,0.008]],
+  80:   [[125,600],[160,100],[200,30],[250,8],[400,1.5],[500,0.5],[800,0.08],[1250,0.02],[2000,0.008]],
+  100:  [[160,600],[200,100],[250,30],[315,8],[500,1.5],[630,0.5],[1000,0.08],[1600,0.02],[2500,0.008]],
+  125:  [[200,600],[250,100],[315,30],[400,8],[630,1.5],[800,0.5],[1250,0.08],[2000,0.02],[3150,0.008]],
+  160:  [[250,600],[315,100],[400,30],[500,8],[800,1.5],[1000,0.5],[1600,0.08],[2500,0.02],[4000,0.008]],
+  200:  [[315,600],[400,100],[500,30],[630,8],[1000,1.5],[1250,0.5],[2000,0.08],[3150,0.02],[5000,0.008]],
+  250:  [[400,600],[500,100],[630,30],[800,8],[1250,1.5],[1600,0.5],[2500,0.08],[4000,0.02],[6300,0.008]],
+  315:  [[500,600],[630,100],[800,30],[1000,8],[1600,1.5],[2000,0.5],[3150,0.08],[5000,0.02],[8000,0.008]],
+  400:  [[630,600],[800,100],[1000,30],[1250,8],[2000,1.5],[2500,0.5],[4000,0.08],[6300,0.02],[10000,0.008]],
+  500:  [[800,600],[1000,100],[1250,30],[1600,8],[2500,1.5],[3150,0.5],[5000,0.08],[8000,0.02],[12500,0.008]],
+  630:  [[1000,600],[1250,100],[1600,30],[2000,8],[3150,1.5],[4000,0.5],[6300,0.08],[10000,0.02],[16000,0.008]],
+};
+
+// Get fuse trip time by log-log interpolation of the characteristic points
+function fuseTripTime(ratingA, currentA) {
+  const points = FUSE_CURVES_GG[ratingA];
+  if (!points) return null;
+  if (currentA <= points[0][0]) return Infinity; // Below minimum operating current
+  if (currentA >= points[points.length - 1][0]) return points[points.length - 1][1];
+
+  // Log-log interpolation
+  for (let i = 0; i < points.length - 1; i++) {
+    const [i1, t1] = points[i];
+    const [i2, t2] = points[i + 1];
+    if (currentA >= i1 && currentA <= i2) {
+      const logI = Math.log10(currentA);
+      const logI1 = Math.log10(i1);
+      const logI2 = Math.log10(i2);
+      const logT1 = Math.log10(t1);
+      const logT2 = Math.log10(t2);
+      const frac = (logI - logI1) / (logI2 - logI1);
+      return Math.pow(10, logT1 + frac * (logT2 - logT1));
+    }
+  }
+  return points[points.length - 1][1];
+}
+
+const FUSE_RATINGS_GG = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630];
+
 // Interaction modes
 const MODE = {
   SELECT: 'select',
@@ -345,9 +518,11 @@ const COMPONENT_DEFS = {
       rated_voltage_kv: 11,
       rated_current_a: 100,
       breaking_capacity_ka: 50,
+      fuse_type: 'gG',
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
+      { key: 'fuse_type', label: 'Fuse Type', type: 'select', options: ['gG', 'aM'] },
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },

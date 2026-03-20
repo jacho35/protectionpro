@@ -32,10 +32,21 @@
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="9" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg>
           <span>Save As</span>
         </button>
-        <button id="btn-export-json" title="Export as JSON file">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 8l4 4 4-4M8 12V2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12v2h12v-2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-          <span>Export</span>
-        </button>
+        <div class="toolbar-dropdown" id="export-dropdown">
+          <button id="btn-export" title="Export project or results">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 8l4 4 4-4M8 12V2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12v2h12v-2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span>Export</span>
+            <svg width="8" height="8" viewBox="0 0 8 8" style="margin-left:2px"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+          </button>
+          <div class="toolbar-dropdown-menu" id="export-menu">
+            <button id="btn-export-json" class="dropdown-item">Export Project (JSON)</button>
+            <button id="btn-export-svg" class="dropdown-item">Export Diagram (SVG)</button>
+            <button id="btn-export-png" class="dropdown-item">Export Diagram (PNG)</button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-export-csv" class="dropdown-item">Export Results (CSV)</button>
+            <button id="btn-export-pdf" class="dropdown-item">Export Report (PDF)</button>
+          </div>
+        </div>
       </div>
       <div class="toolbar-separator"></div>
       <div class="toolbar-group">
@@ -61,6 +72,14 @@
         <button id="btn-run-loadflow" title="Run Load Flow">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           <span>Load Flow</span>
+        </button>
+        <button id="btn-compliance" title="Generate Compliance Report">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Compliance</span>
+        </button>
+        <button id="btn-tcc" title="Time-Current Curves (TCC)">
+          <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
+          <span>TCC</span>
         </button>
       </div>
     </div>
@@ -177,6 +196,128 @@
     </div>
   </div>
 
+  <!-- Compliance Report Modal -->
+  <div id="compliance-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Compliance Report</h3>
+        <button class="modal-close" id="btn-close-compliance">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="compliance-toolbar">
+          <button id="btn-compliance-pdf" class="btn-small btn-primary">Download PDF</button>
+          <span id="compliance-summary" class="compliance-summary-badge"></span>
+        </div>
+        <div id="compliance-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TCC Chart Modal -->
+  <div id="tcc-modal" class="modal" style="display:none">
+    <div class="modal-content tcc-modal-content">
+      <div class="modal-header">
+        <h3>Time-Current Curves (TCC)</h3>
+        <div class="tcc-header-actions">
+          <button id="btn-tcc-export-png" class="btn-small" title="Export chart as PNG">Export PNG</button>
+          <button class="modal-close" id="btn-close-tcc">&times;</button>
+        </div>
+      </div>
+      <div class="tcc-body">
+        <!-- Chart area -->
+        <div class="tcc-chart-area">
+          <canvas id="tcc-canvas"></canvas>
+        </div>
+        <!-- Side panel -->
+        <div class="tcc-side-panel">
+          <div class="tcc-panel-section">
+            <h4>Devices</h4>
+            <div id="tcc-device-list" class="tcc-device-list">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+          <div class="tcc-panel-section">
+            <h4>Add Custom Device</h4>
+            <div class="tcc-add-tabs">
+              <button class="tcc-add-tab active" data-tcc-add="relay">Relay</button>
+              <button class="tcc-add-tab" data-tcc-add="fuse">Fuse</button>
+            </div>
+            <!-- Add Relay Form -->
+            <div id="tcc-add-relay" class="tcc-add-form">
+              <div class="tcc-form-row">
+                <label for="tcc-relay-name">Name</label>
+                <input type="text" id="tcc-relay-name" placeholder="Relay 1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-relay-curve">Curve</label>
+                <select id="tcc-relay-curve">
+                  <option value="IEC Standard Inverse">IEC Standard Inverse</option>
+                  <option value="IEC Very Inverse">IEC Very Inverse</option>
+                  <option value="IEC Extremely Inverse">IEC Extremely Inverse</option>
+                  <option value="IEC Long Time Inverse">IEC Long Time Inverse</option>
+                  <option value="IEEE Moderately Inverse">IEEE Moderately Inverse</option>
+                  <option value="IEEE Very Inverse">IEEE Very Inverse</option>
+                  <option value="IEEE Extremely Inverse">IEEE Extremely Inverse</option>
+                </select>
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-relay-pickup">Pickup (A)</label>
+                <input type="number" id="tcc-relay-pickup" value="100" min="1" step="1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-relay-tds">Time Dial (TDS)</label>
+                <input type="number" id="tcc-relay-tds" value="1.0" min="0.05" max="10" step="0.05">
+              </div>
+              <button id="btn-tcc-add-relay" class="btn-small btn-primary">Add Relay</button>
+            </div>
+            <!-- Add Fuse Form -->
+            <div id="tcc-add-fuse" class="tcc-add-form" style="display:none">
+              <div class="tcc-form-row">
+                <label for="tcc-fuse-name">Name</label>
+                <input type="text" id="tcc-fuse-name" placeholder="Fuse 1">
+              </div>
+              <div class="tcc-form-row">
+                <label for="tcc-fuse-rating">Rating (A)</label>
+                <select id="tcc-fuse-rating">
+                  <option value="16">16A</option>
+                  <option value="20">20A</option>
+                  <option value="25">25A</option>
+                  <option value="32">32A</option>
+                  <option value="40">40A</option>
+                  <option value="50">50A</option>
+                  <option value="63">63A</option>
+                  <option value="80">80A</option>
+                  <option value="100" selected>100A</option>
+                  <option value="125">125A</option>
+                  <option value="160">160A</option>
+                  <option value="200">200A</option>
+                  <option value="250">250A</option>
+                  <option value="315">315A</option>
+                  <option value="400">400A</option>
+                  <option value="500">500A</option>
+                  <option value="630">630A</option>
+                </select>
+              </div>
+              <button id="btn-tcc-add-fuse" class="btn-small btn-primary">Add Fuse</button>
+            </div>
+          </div>
+          <div class="tcc-panel-section">
+            <h4>Coordination Check</h4>
+            <div class="tcc-form-row">
+              <label for="tcc-grading-margin">Grading Margin (s)</label>
+              <input type="number" id="tcc-grading-margin" value="0.3" min="0.1" max="1.0" step="0.05">
+            </div>
+            <div id="tcc-coord-results" class="tcc-coord-results">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings Modal (tabbed) -->
   <div id="settings-modal" class="modal" style="display:none">
     <div class="modal-content modal-wide">
@@ -188,6 +329,7 @@
         <button class="settings-tab active" data-tab="system">System Base</button>
         <button class="settings-tab" data-tab="cables">Cable Library</button>
         <button class="settings-tab" data-tab="transformers">Transformer Library</button>
+        <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
       </div>
       <div class="modal-body">
         <!-- System Base Tab -->
@@ -258,11 +400,204 @@
             </table>
           </div>
         </div>
+        <!-- IEC Standards Tab -->
+        <div id="settings-tab-iec-standards" class="settings-tab-content">
+          <div class="iec-standards-container">
+            <!-- Sub-tabs for IEC sections -->
+            <div class="iec-subtabs">
+              <button class="iec-subtab active" data-iec="ampacity">Cable Ampacity (IEC 60364-5-52)</button>
+              <button class="iec-subtab" data-iec="sizing">Cable Sizing Calculator</button>
+              <button class="iec-subtab" data-iec="derating">Derating Factors</button>
+              <button class="iec-subtab" data-iec="voltage-factors">Voltage Factors (IEC 60909)</button>
+            </div>
+
+            <!-- Ampacity Reference Table -->
+            <div id="iec-section-ampacity" class="iec-section active">
+              <div class="iec-description">
+                <strong>IEC 60364-5-52 Table B.52.2 – B.52.5</strong> &mdash;
+                Current-carrying capacity (A) for 3-phase circuits at reference conditions: 30&deg;C ambient (air), 20&deg;C (ground), soil resistivity 2.5 K&middot;m/W.
+              </div>
+              <div class="iec-filters">
+                <label>Conductor: <select id="iec-amp-conductor">
+                  <option value="cu">Copper</option>
+                  <option value="al">Aluminium</option>
+                </select></label>
+                <label>Insulation: <select id="iec-amp-insulation">
+                  <option value="xlpe">XLPE</option>
+                  <option value="pvc">PVC</option>
+                </select></label>
+              </div>
+              <div class="library-table-wrap">
+                <table class="library-table iec-ref-table">
+                  <thead id="iec-ampacity-head">
+                    <!-- Populated by JS -->
+                  </thead>
+                  <tbody id="iec-ampacity-body">
+                    <!-- Populated by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Cable Sizing Calculator -->
+            <div id="iec-section-sizing" class="iec-section">
+              <div class="iec-description">
+                <strong>Cable Sizing Tool</strong> &mdash;
+                Enter load current and installation conditions. The calculator applies IEC 60364-5-52 derating factors and recommends a cable size.
+              </div>
+              <div class="iec-calc-form">
+                <div class="iec-calc-row">
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-current">Design Current (A)</label>
+                    <input type="number" id="iec-calc-current" value="100" min="1" step="1">
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-conductor">Conductor</label>
+                    <select id="iec-calc-conductor">
+                      <option value="cu">Copper</option>
+                      <option value="al">Aluminium</option>
+                    </select>
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-insulation">Insulation</label>
+                    <select id="iec-calc-insulation">
+                      <option value="xlpe">XLPE</option>
+                      <option value="pvc">PVC</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="iec-calc-row">
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-method">Installation Method</label>
+                    <select id="iec-calc-method">
+                      <!-- Populated by JS -->
+                    </select>
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-temp">Ambient Temp (&deg;C)</label>
+                    <input type="number" id="iec-calc-temp" value="30" min="10" max="80" step="5">
+                  </div>
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-circuits">No. of Circuits</label>
+                    <input type="number" id="iec-calc-circuits" value="1" min="1" max="20" step="1">
+                  </div>
+                </div>
+                <div class="iec-calc-row">
+                  <div class="iec-calc-field">
+                    <label for="iec-calc-grouping">Grouping Arrangement</label>
+                    <select id="iec-calc-grouping">
+                      <option value="bunched">Bunched / in conduit</option>
+                      <option value="single_layer_wall">Single layer on wall</option>
+                      <option value="single_layer_floor">Single layer on floor</option>
+                      <option value="single_layer_tray_touching">Single layer on tray (touching)</option>
+                      <option value="single_layer_tray_spaced">Single layer on tray (spaced)</option>
+                      <option value="trefoil_tray_touching">Trefoil on tray (touching)</option>
+                    </select>
+                  </div>
+                  <div class="iec-calc-field" id="iec-soil-group" style="display:none;">
+                    <label for="iec-calc-soil">Soil Resistivity (K&middot;m/W)</label>
+                    <select id="iec-calc-soil">
+                      <option value="0.5">0.5</option>
+                      <option value="0.7">0.7</option>
+                      <option value="1.0">1.0</option>
+                      <option value="1.5">1.5</option>
+                      <option value="2.0">2.0</option>
+                      <option value="2.5" selected>2.5 (reference)</option>
+                      <option value="3.0">3.0</option>
+                    </select>
+                  </div>
+                  <div class="iec-calc-field" id="iec-depth-group" style="display:none;">
+                    <label for="iec-calc-depth">Depth of Laying (m)</label>
+                    <select id="iec-calc-depth">
+                      <option value="0.5">0.5</option>
+                      <option value="0.6">0.6</option>
+                      <option value="0.7" selected>0.7 (reference)</option>
+                      <option value="0.8">0.8</option>
+                      <option value="1.0">1.0</option>
+                      <option value="1.2">1.2</option>
+                      <option value="1.5">1.5</option>
+                    </select>
+                  </div>
+                </div>
+                <button id="btn-iec-calculate" class="btn-primary">Calculate</button>
+              </div>
+              <div id="iec-calc-results" class="iec-calc-results" style="display:none;">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- Derating Factor Tables -->
+            <div id="iec-section-derating" class="iec-section">
+              <div class="iec-description">
+                <strong>IEC 60364-5-52 Correction Factors</strong> &mdash;
+                Multiply base ampacity by each applicable factor to get the derated current-carrying capacity.
+              </div>
+              <h4>Temperature Correction (Table B.52.14/15)</h4>
+              <div class="iec-filters">
+                <label>Environment: <select id="iec-derating-env">
+                  <option value="air">Air (ref. 30&deg;C)</option>
+                  <option value="ground">Ground (ref. 20&deg;C)</option>
+                </select></label>
+              </div>
+              <div class="library-table-wrap">
+                <table class="library-table iec-ref-table">
+                  <thead id="iec-temp-head"></thead>
+                  <tbody id="iec-temp-body"></tbody>
+                </table>
+              </div>
+              <h4 style="margin-top:16px;">Grouping Correction (Table B.52.17)</h4>
+              <div class="library-table-wrap">
+                <table class="library-table iec-ref-table">
+                  <thead id="iec-group-head"></thead>
+                  <tbody id="iec-group-body"></tbody>
+                </table>
+              </div>
+              <h4 style="margin-top:16px;">Soil Thermal Resistivity (Table B.52.16)</h4>
+              <div class="library-table-wrap" style="max-height:none;">
+                <table class="library-table iec-ref-table">
+                  <thead><tr><th>Resistivity (K&middot;m/W)</th><th>Correction Factor</th></tr></thead>
+                  <tbody id="iec-soil-body"></tbody>
+                </table>
+              </div>
+              <h4 style="margin-top:16px;">Depth of Laying (Table B.52.18)</h4>
+              <div class="library-table-wrap" style="max-height:none;">
+                <table class="library-table iec-ref-table">
+                  <thead><tr><th>Depth (m)</th><th>Correction Factor</th></tr></thead>
+                  <tbody id="iec-depth-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- IEC 60909 Voltage Factors -->
+            <div id="iec-section-voltage-factors" class="iec-section">
+              <div class="iec-description">
+                <strong>IEC 60909 Table 1</strong> &mdash;
+                Voltage factor <em>c</em> for calculating maximum and minimum short-circuit currents.
+              </div>
+              <div class="library-table-wrap" style="max-height:none;">
+                <table class="library-table iec-ref-table">
+                  <thead>
+                    <tr>
+                      <th>Voltage Level</th>
+                      <th>Description</th>
+                      <th>c<sub>max</sub></th>
+                      <th>c<sub>min</sub></th>
+                    </tr>
+                  </thead>
+                  <tbody id="iec-vf-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"></script>
   <script src="js/constants.js"></script>
   <script src="js/state.js"></script>
   <script src="js/components.js"></script>
@@ -273,6 +608,8 @@
   <script src="js/properties.js"></script>
   <script src="js/annotations.js"></script>
   <script src="js/api.js"></script>
+  <script src="js/compliance.js"></script>
+  <script src="js/tcc.js"></script>
   <script src="js/project.js"></script>
   <script src="js/standard-data.js"></script>
   <script src="js/app.js"></script>

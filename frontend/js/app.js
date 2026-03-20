@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Annotations.init();
   Project.init();
   StandardData.init();
+  TCC.init();
 
   // Toolbar mode buttons
   const btnSelect = document.getElementById('btn-select');
@@ -203,6 +204,101 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
   document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
+
+  // Compliance report
+  document.getElementById('btn-compliance').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before generating a compliance report.';
+      return;
+    }
+    const report = Compliance.generate();
+    const modal = document.getElementById('compliance-modal');
+    document.getElementById('compliance-body').innerHTML = Compliance.renderHTML(report);
+
+    // Summary badge
+    const t = report.totals;
+    const badge = document.getElementById('compliance-summary');
+    if (t.fail > 0) {
+      badge.textContent = `${t.pass} Pass, ${t.fail} Fail, ${t.warn} Warn`;
+      badge.className = 'compliance-summary-badge summary-has-fail';
+    } else if (t.warn > 0) {
+      badge.textContent = `${t.pass} Pass, ${t.warn} Warn`;
+      badge.className = 'compliance-summary-badge summary-has-warn';
+    } else {
+      badge.textContent = `${t.pass} Pass — All Clear`;
+      badge.className = 'compliance-summary-badge summary-all-pass';
+    }
+
+    modal.style.display = '';
+    document.getElementById('status-info').textContent = 'Compliance report generated.';
+
+    // Store report for PDF export
+    modal._complianceReport = report;
+  });
+
+  document.getElementById('btn-close-compliance').addEventListener('click', () => {
+    document.getElementById('compliance-modal').style.display = 'none';
+  });
+  document.getElementById('compliance-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'compliance-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-compliance-pdf').addEventListener('click', () => {
+    const modal = document.getElementById('compliance-modal');
+    if (modal._complianceReport) {
+      Compliance.exportPDF(modal._complianceReport);
+    }
+  });
+
+  // TCC Chart
+  document.getElementById('btn-tcc').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before opening TCC chart.';
+      return;
+    }
+    TCC.open();
+    document.getElementById('status-info').textContent = 'TCC chart opened.';
+  });
+  document.getElementById('btn-close-tcc').addEventListener('click', () => TCC.close());
+  document.getElementById('tcc-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'tcc-modal') TCC.close();
+  });
+  document.getElementById('btn-tcc-export-png').addEventListener('click', () => TCC.exportPNG());
+
+  // TCC add device tab switching
+  document.querySelectorAll('.tcc-add-tab').forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      document.querySelectorAll('.tcc-add-tab').forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      const which = e.target.dataset.tccAdd;
+      document.getElementById('tcc-add-relay').style.display = which === 'relay' ? '' : 'none';
+      document.getElementById('tcc-add-fuse').style.display = which === 'fuse' ? '' : 'none';
+    });
+  });
+
+  // TCC add relay
+  document.getElementById('btn-tcc-add-relay').addEventListener('click', () => {
+    const name = document.getElementById('tcc-relay-name').value;
+    const pickup = parseFloat(document.getElementById('tcc-relay-pickup').value) || 100;
+    const tds = parseFloat(document.getElementById('tcc-relay-tds').value) || 1.0;
+    const curve = document.getElementById('tcc-relay-curve').value;
+    TCC.addCustomRelay(name, pickup, tds, curve);
+    document.getElementById('tcc-relay-name').value = '';
+  });
+
+  // TCC add fuse
+  document.getElementById('btn-tcc-add-fuse').addEventListener('click', () => {
+    const name = document.getElementById('tcc-fuse-name').value;
+    const rating = parseInt(document.getElementById('tcc-fuse-rating').value) || 100;
+    TCC.addCustomFuse(name, rating);
+    document.getElementById('tcc-fuse-name').value = '';
+  });
+
+  // TCC grading margin update
+  document.getElementById('tcc-grading-margin').addEventListener('change', (e) => {
+    TCC.gradingMargin = parseFloat(e.target.value) || 0.3;
+    TCC._runCoordinationCheck();
+  });
 
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
