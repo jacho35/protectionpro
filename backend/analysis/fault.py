@@ -10,6 +10,7 @@ Per-unit method on a common MVA base.
 """
 
 import math
+import re
 import numpy as np
 from ..models.schemas import ProjectData, FaultResults, FaultResultBus, FaultBranchContribution
 
@@ -409,33 +410,41 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     the transformer winding configuration blocks zero-sequence current.
 
     The entry_port parameter indicates which transformer port faces the
-    fault bus ('primary' = HV side, 'secondary' = LV side).  A delta
-    winding on the bus-facing side blocks zero-sequence current from
-    entering the transformer, so Z0 is infinite (returns None).
+    fault bus ('primary' = top port, 'secondary' = bottom port).
+    For step-down transformers: primary=HV, secondary=LV.
+    For step-up transformers: primary=LV, secondary=HV.
+
+    A delta winding on the bus-facing side blocks zero-sequence current
+    from entering the transformer, so Z0 is infinite (returns None).
     """
     vg = comp.props.get("vector_group", "Dyn11")
     grounding_hv = comp.props.get("grounding_hv", "ungrounded")
     grounding_lv = comp.props.get("grounding_lv", "solidly_grounded")
-    v_kv = comp.props.get("voltage_lv_kv", 11)
-    z_base = (v_kv ** 2) / base_mva
+    is_step_up = comp.props.get("winding_config") == "step_up"
 
-    # Parse vector group to determine winding types
-    # HV winding: first character(s) uppercase
-    hv_grounded = vg.upper().startswith("YN")
+    # Parse vector group — strip uppercase HV designation to find LV part
+    # HV winding: leading uppercase letters (D, Y, YN, Z, ZN)
+    lv_part = re.sub(r'^[A-Z]+', '', vg)  # e.g. "Dyn11" → "yn11", "YNyn0" → "yn0"
+
+    hv_grounded = vg.upper().startswith("YN") or vg.upper().startswith("ZN")
     hv_delta = vg[0].upper() == 'D'
-    # LV winding: lowercase portion after HV designation
-    lv_part = vg[1:]  # Everything after first character
-    lv_grounded = "yn" in lv_part.lower() or "zn" in lv_part.lower()
-    lv_delta = any(c == 'd' for c in lv_part[:1])
+    lv_grounded = lv_part.lower().startswith("yn") or lv_part.lower().startswith("zn")
+    lv_delta = lv_part.lower().startswith("d")
 
-    # Determine which winding faces the fault bus
-    # 'primary' port = HV winding, 'secondary' port = LV winding
+    # Map port to winding side, accounting for step-up inversion
+    # step_down (default): primary(top)=HV, secondary(bottom)=LV
+    # step_up: primary(top)=LV, secondary(bottom)=HV
     if entry_port == 'primary':
-        # Fault bus connects to HV (primary) side
+        bus_side = 'lv' if is_step_up else 'hv'
+    elif entry_port == 'secondary':
+        bus_side = 'hv' if is_step_up else 'lv'
+    else:
+        bus_side = None  # Unknown — check both
+
+    if bus_side == 'hv':
         bus_side_delta = hv_delta
         bus_side_grounded = hv_grounded
-    elif entry_port == 'secondary':
-        # Fault bus connects to LV (secondary) side
+    elif bus_side == 'lv':
         bus_side_delta = lv_delta
         bus_side_grounded = lv_grounded
     else:
@@ -452,23 +461,39 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     if not bus_side_grounded:
         return None  # Ungrounded star — no zero-sequence path
 
-    # Compute grounding impedance from the bus-side grounded winding
-    z_gnd = complex(0, 0)
-    if entry_port == 'secondary' and lv_grounded:
-        z_gnd = _grounding_impedance(grounding_lv, comp, 'lv', z_base)
-    elif entry_port == 'primary' and hv_grounded:
-        v_hv = comp.props.get("voltage_hv_kv", 33)
-        z_base_hv = (v_hv ** 2) / base_mva
-        z_gnd = _grounding_impedance(grounding_hv, comp, 'hv', z_base_hv)
+    # Compute grounding impedance.
+    # The vector group designation (YN/yn/zn) indicates the neutral IS
+    # brought out and grounded.  If the grounding prop is still at its
+    # default "ungrounded", the vector group takes precedence — treat
+    # as solidly grounded.
+    v_hv = comp.props.get("voltage_hv_kv", 33)
+    v_lv = comp.props.get("voltage_lv_kv", 11)
+    z_base_hv = (v_hv ** 2) / base_mva
+    z_base_lv = (v_lv ** 2) / base_mva
+
+    def _get_grounding(side):
+        """Get grounding impedance for a winding side, honouring vector group."""
+        grounded_by_vg = hv_grounded if side == 'hv' else lv_grounded
+        grounding_cfg = grounding_hv if side == 'hv' else grounding_lv
+        z_b = z_base_hv if side == 'hv' else z_base_lv
+
+        # Vector group says grounded but prop says ungrounded → solidly grounded
+        if grounded_by_vg and grounding_cfg == "ungrounded":
+            return complex(0, 0)
+
+        return _grounding_impedance(grounding_cfg, comp, side, z_b)
+
+    if bus_side:
+        z_gnd = _get_grounding(bus_side)
     elif lv_grounded:
-        z_gnd = _grounding_impedance(grounding_lv, comp, 'lv', z_base)
+        z_gnd = _get_grounding('lv')
     elif hv_grounded:
-        v_hv = comp.props.get("voltage_hv_kv", 33)
-        z_base_hv = (v_hv ** 2) / base_mva
-        z_gnd = _grounding_impedance(grounding_hv, comp, 'hv', z_base_hv)
+        z_gnd = _get_grounding('hv')
+    else:
+        z_gnd = None
 
     if z_gnd is None:
-        return None  # Ungrounded winding
+        return None  # Truly ungrounded — no zero-sequence path
 
     # 3*Zn appears in the zero-sequence circuit
     return z_gnd * 3
