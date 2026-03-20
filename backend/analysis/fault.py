@@ -59,8 +59,12 @@ def run_fault_analysis(project: ProjectData) -> FaultResults:
         ik3_ka = ik3_pu * i_base_ka
 
         # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
-        # Simplified: assume Z1 = Z2 = Z_eq, Z0 = 3*Z_eq (conservative)
-        z0 = z_eq * 3  # Conservative zero-sequence estimate
+        # Z0 depends on transformer grounding configuration
+        z0_sources = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
+        if z0_sources:
+            z0 = _parallel_impedances(z0_sources)
+        else:
+            z0 = z_eq * 3  # Fallback: conservative estimate if no grounding info
         z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
         ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
         ik1_ka = ik1_pu * i_base_ka
@@ -177,6 +181,135 @@ def _cable_impedance(comp, base_mva):
     r = comp.props.get("r_per_km", 0.1) * comp.props.get("length_km", 1)
     x = comp.props.get("x_per_km", 0.08) * comp.props.get("length_km", 1)
     return complex(r / z_base, x / z_base)
+
+
+def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
+    """Collect zero-sequence impedances from sources feeding a bus.
+
+    Zero-sequence current can only flow through grounded transformer windings.
+    The zero-sequence impedance depends on vector group and grounding method.
+    """
+    visited = set()
+    z0_sources = []
+
+    def walk(comp_id, z0_path):
+        if comp_id in visited:
+            return
+        visited.add(comp_id)
+        comp = components.get(comp_id)
+        if not comp:
+            return
+
+        if comp.type == "utility":
+            # Utility source: assume solidly grounded system behind it
+            z_src = _utility_impedance(comp, base_mva)
+            z0_sources.append(z0_path + z_src * 3)
+            return
+
+        if comp.type == "generator":
+            z_src = _generator_impedance(comp, base_mva)
+            z0_sources.append(z0_path + z_src * 3)
+            return
+
+        if comp.type == "transformer":
+            z_xfmr = _transformer_impedance(comp, base_mva)
+            z_gnd = _transformer_zero_seq(comp, base_mva)
+            if z_gnd is None:
+                return  # No zero-sequence path through this transformer
+            z0_element = z_xfmr + z_gnd
+            # Continue walking on the other side
+            for neighbor_id, _, _ in adjacency.get(comp_id, []):
+                if neighbor_id != bus_id or comp_id == bus_id:
+                    walk(neighbor_id, z0_path + z0_element)
+            return
+
+        if comp.type == "cable":
+            # Zero-sequence cable impedance is ~3x positive-sequence
+            z_cable = _cable_impedance(comp, base_mva) * 3
+            for neighbor_id, _, _ in adjacency.get(comp_id, []):
+                walk(neighbor_id, z0_path + z_cable)
+            return
+
+        if comp.type in ("cb", "switch"):
+            state = comp.props.get("state", "closed")
+            if state == "open":
+                return
+        # Transparent elements (CB, fuse, etc.)
+        for neighbor_id, _, _ in adjacency.get(comp_id, []):
+            if neighbor_id != bus_id or comp_id == bus_id:
+                walk(neighbor_id, z0_path)
+
+    for neighbor_id, _, _ in adjacency.get(bus_id, []):
+        walk(neighbor_id, complex(0, 0))
+
+    return z0_sources
+
+
+def _transformer_zero_seq(comp, base_mva):
+    """Compute zero-sequence grounding impedance contribution.
+
+    Returns the additional grounding impedance in per-unit, or None if
+    the transformer winding configuration blocks zero-sequence current.
+    """
+    vg = comp.props.get("vector_group", "Dyn11")
+    grounding_hv = comp.props.get("grounding_hv", "ungrounded")
+    grounding_lv = comp.props.get("grounding_lv", "solidly_grounded")
+    v_kv = comp.props.get("voltage_lv_kv", 11)
+    z_base = (v_kv ** 2) / base_mva
+
+    # Determine which winding is grounded (YN = grounded star)
+    # HV winding is grounded if vector group starts with 'YN' (uppercase = HV)
+    hv_grounded = vg.upper().startswith("YN")
+    # LV winding is grounded if lowercase portion contains 'yn' or 'zn'
+    lv_part = vg[1:]  # Everything after first character
+    lv_grounded = "yn" in lv_part.lower() or "zn" in lv_part.lower()
+
+    # Delta winding blocks zero-sequence from passing through,
+    # but allows zero-sequence circulation on the grounded star side
+    hv_delta = vg[0].upper() == 'D'
+    lv_delta = any(c == 'd' for c in lv_part[:1])
+
+    # For zero-sequence to flow, at least one winding must be grounded star
+    if not hv_grounded and not lv_grounded:
+        return None  # No zero-sequence path
+
+    # Compute grounding impedance from the grounded winding
+    z_gnd = complex(0, 0)
+    if lv_grounded:
+        z_gnd = _grounding_impedance(grounding_lv, comp, 'lv', z_base)
+    elif hv_grounded:
+        v_hv = comp.props.get("voltage_hv_kv", 33)
+        z_base_hv = (v_hv ** 2) / base_mva
+        z_gnd = _grounding_impedance(grounding_hv, comp, 'hv', z_base_hv)
+
+    if z_gnd is None:
+        return None  # Ungrounded winding
+
+    # 3*Zn appears in the zero-sequence circuit
+    return z_gnd * 3
+
+
+def _grounding_impedance(grounding_type, comp, side, z_base):
+    """Convert grounding configuration to per-unit impedance.
+
+    Returns None for ungrounded (no zero-sequence path).
+    """
+    if grounding_type == "ungrounded":
+        return None
+    if grounding_type == "solidly_grounded":
+        return complex(0, 0)
+
+    r_key = f"grounding_{side}_resistance"
+    x_key = f"grounding_{side}_reactance"
+
+    if grounding_type in ("low_resistance", "high_resistance"):
+        r_ohm = comp.props.get(r_key, 0)
+        return complex(r_ohm / z_base, 0)
+    if grounding_type == "reactance_grounded":
+        x_ohm = comp.props.get(x_key, 0)
+        return complex(0, x_ohm / z_base)
+
+    return complex(0, 0)
 
 
 def _parallel_impedances(impedances):
