@@ -670,6 +670,8 @@ const FIELD_INFO = {
   'relay.z1_reach_ohm': 'Zone 1 forward reach in primary ohms.\nTypically set to 80% of protected line impedance for instantaneous tripping.\nSource: IEEE C37.113 / IEC 60255-121.',
   'relay.z2_reach_ohm': 'Zone 2 forward reach in primary ohms.\nTypically set to 120% of protected line impedance (overreaches into next section).\nOperates with a time delay (typically 0.3-0.5s).\nSource: IEEE C37.113.',
   'relay.z3_reach_ohm': 'Zone 3 forward reach in primary ohms.\nTypically set to cover the next line section (200%+ of protected line).\nOperates with a longer time delay (typically 0.6-1.2s) as backup.\nSource: IEEE C37.113.',
+  'relay.direction': 'Operating direction for directional overcurrent (67) relay.\nForward: operates for faults downstream (current flowing from source to load).\nReverse: operates for faults upstream (reverse power flow).\nSource: IEC 60255-151 §6 — directional overcurrent relays.',
+  'relay.characteristic_angle_deg': 'Relay characteristic angle (RCA) — the angle of maximum sensitivity.\nDefault 45° — typical for MV distribution feeders.\nSource: IEC 60255-151 — RCA depends on line impedance angle:\n• Cables (low X/R): 30-45°\n• Overhead lines: 45-65°\n• Transmission: 60-75°.',
   'relay.mho_angle_deg': 'Maximum torque angle (MTA) of the mho characteristic.\nTypically 60-85 degrees depending on line impedance angle.\nSource: IEC 60255-121 §5.3.',
 
   // CT
@@ -1015,6 +1017,9 @@ const COMPONENT_DEFS = {
       pickup_a: 100,
       time_dial: 1.0,
       curve: 'IEC Standard Inverse',
+      // Directional overcurrent (67) defaults
+      direction: 'forward',
+      characteristic_angle_deg: 45,
       // Distance relay (21) defaults
       voltage_kv: 11,
       z1_reach_ohm: 4.0,
@@ -1028,13 +1033,16 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
-      { key: 'relay_type', label: 'Type', type: 'select', options: ['50/51', '50N/51N', '87', '21'] },
+      { key: 'relay_type', label: 'Type', type: 'select', options: ['50/51', '50N/51N', '67', '87', '21'] },
       { key: 'associated_ct', label: 'Measuring CT', type: 'component_select', filter: 'ct' },
       { key: 'trip_cb', label: 'Trip CB', type: 'component_select', filter: 'cb' },
-      // Overcurrent (50/51, 50N/51N) fields
-      { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
-      { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
-      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
+      // Overcurrent (50/51, 50N/51N, 67) fields
+      { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] } },
+      { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] } },
+      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] } },
+      // Directional overcurrent (67) fields
+      { key: 'direction', label: 'Direction', type: 'select', options: ['forward', 'reverse'], showWhen: { field: 'relay_type', values: ['67'] } },
+      { key: 'characteristic_angle_deg', label: 'Char. Angle (RCA)', type: 'number', unit: '\u00B0', min: -90, max: 90, step: 1, showWhen: { field: 'relay_type', values: ['67'] } },
       // Distance relay (21) fields
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', showWhen: { field: 'relay_type', values: ['21'] } },
       { key: 'z1_reach_ohm', label: 'Z1 Reach', type: 'number', unit: '\u03A9', min: 0.01, step: 0.1, showWhen: { field: 'relay_type', values: ['21'] } },

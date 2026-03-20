@@ -357,7 +357,7 @@ const TCC = {
 
   _loadDevicesFromNetwork() {
     for (const [id, comp] of AppState.components) {
-      if (comp.type === 'relay' && (comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N')) {
+      if (comp.type === 'relay' && (comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N' || comp.props?.relay_type === '67')) {
         // If relay has an associated CT, resolve voltage from CT's location
         const ctId = comp.props?.associated_ct;
         const measureAt = ctId && AppState.components.has(ctId) ? ctId : id;
@@ -367,10 +367,12 @@ const TCC = {
           const ctComp = AppState.components.get(ctId);
           ctSat = ctSaturationParams(ctComp.props || {});
         }
+        const isDirectional = comp.props?.relay_type === '67';
         this.devices.push({
           id,
           name: comp.props?.name || id,
           deviceType: 'relay',
+          relayType: comp.props?.relay_type,
           color: this.palette[this.colorIndex++ % this.palette.length],
           visible: true,
           voltage_kv: this._resolveDeviceVoltage(measureAt),
@@ -381,6 +383,10 @@ const TCC = {
           curveName: comp.props?.curve || 'IEC Standard Inverse',
           pickup: comp.props?.pickup_a || 100,
           tds: comp.props?.time_dial || 1.0,
+          // Directional (67) params
+          directional: isDirectional,
+          direction: isDirectional ? (comp.props?.direction || 'forward') : null,
+          charAngle: isDirectional ? (comp.props?.characteristic_angle_deg || 45) : null,
         });
       } else if (comp.type === 'relay' && comp.props?.relay_type === '21') {
         // Distance relay — zone impedance reaches converted to current thresholds
@@ -860,11 +866,21 @@ const TCC = {
     ctx.setLineDash([]);
     ctx.globalAlpha = 1.0;
 
-    // Label
+    // Label (with direction suffix for 67 relays)
     const labelI = dev.pickup * 3;
     const labelT = idmtTripTime(dev.curveName, 3, dev.tds);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      this._drawLabel(ctx, dev, this._currentToX(this._scaleCurrent(labelI, dev)), this._timeToY(labelT), dev.name);
+      let labelText = dev.name;
+      if (dev.directional) {
+        const dirArrow = dev.direction === 'reverse' ? '\u2190' : '\u2192';
+        labelText += ` (67${dirArrow})`;
+      }
+      this._drawLabel(ctx, dev, this._currentToX(this._scaleCurrent(labelI, dev)), this._timeToY(labelT), labelText);
+    }
+
+    // Directional arrow indicator on the curve for 67 relays
+    if (dev.directional) {
+      this._drawDirectionalIndicator(ctx, dev);
     }
 
     // ── CT Saturation curve (dashed) ──
@@ -940,6 +956,49 @@ const TCC = {
       ctx.fillStyle = dev.color;
       ctx.textAlign = 'center';
       ctx.fillText(`CT sat ${Math.round(iSatPri)}A`, satX, this.plotTop + 12);
+    }
+
+    ctx.restore();
+  },
+
+  /**
+   * Draw directional arrow indicators along the relay curve for 67 relays.
+   * Forward: rightward arrows (→), Reverse: leftward arrows (←)
+   */
+  _drawDirectionalIndicator(ctx, dev) {
+    ctx.save();
+    ctx.fillStyle = dev.color;
+    ctx.globalAlpha = 0.7;
+
+    // Place arrow indicators at a few current multiples along the curve
+    const multiples = [2, 5, 15];
+    const arrowSize = 5;
+    const isForward = dev.direction !== 'reverse';
+
+    for (const m of multiples) {
+      const current = dev.pickup * m;
+      const t = idmtTripTime(dev.curveName, m, dev.tds);
+      if (!isFinite(t) || t <= 0 || t > this.timeMax || t < this.timeMin) continue;
+
+      const x = this._currentToX(this._scaleCurrent(current, dev));
+      const y = this._timeToY(t);
+      if (x < this.plotLeft + 10 || x > this.plotRight - 10 || y < this.plotTop || y > this.plotBottom) continue;
+
+      // Draw a small triangle arrow
+      ctx.beginPath();
+      if (isForward) {
+        // Right-pointing arrow (forward = towards load = increasing current on TCC)
+        ctx.moveTo(x + arrowSize, y);
+        ctx.lineTo(x - arrowSize, y - arrowSize);
+        ctx.lineTo(x - arrowSize, y + arrowSize);
+      } else {
+        // Left-pointing arrow (reverse = towards source)
+        ctx.moveTo(x - arrowSize, y);
+        ctx.lineTo(x + arrowSize, y - arrowSize);
+        ctx.lineTo(x + arrowSize, y + arrowSize);
+      }
+      ctx.closePath();
+      ctx.fill();
     }
 
     ctx.restore();
@@ -1675,7 +1734,9 @@ const TCC = {
         t = current > dev.ratedAmps ? (kS * kS) / (current * current) : null;
       }
       if (t != null && isFinite(t) && t > 0 && t <= this.timeMax) {
-        lines.push({ name: dev.name, time: t, color: dev.color });
+        let tooltipName = dev.name;
+        if (dev.directional) tooltipName += ` (67${dev.direction === 'reverse' ? '\u2190' : '\u2192'})`;
+        lines.push({ name: tooltipName, time: t, color: dev.color });
       }
     }
 
@@ -1766,7 +1827,8 @@ const TCC = {
       const i = this.devices.indexOf(dev);
       let typeLabel;
       if (dev.deviceType === 'relay') {
-        typeLabel = `${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`;
+        const dirPrefix = dev.directional ? `67 ${dev.direction === 'reverse' ? '\u2190Rev' : '\u2192Fwd'} | ` : '';
+        typeLabel = `${dirPrefix}${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`;
         if (dev.associated_ct) {
           const ctComp = AppState.components.get(dev.associated_ct);
           typeLabel += ` | CT: ${ctComp?.props?.name || dev.associated_ct}`;
@@ -1913,7 +1975,18 @@ const TCC = {
         <div class="tcc-form-row">
           <label>Time Dial (TDS)</label>
           <input type="number" data-sel-field="tds" value="${dev.tds}" min="0.05" max="10" step="0.05">
-        </div>` + ctSatHtml;
+        </div>` + (dev.directional ? `
+        <div class="tcc-form-row">
+          <label>Direction</label>
+          <select data-sel-field="direction">
+            <option value="forward" ${dev.direction === 'forward' ? 'selected' : ''}>Forward \u2192</option>
+            <option value="reverse" ${dev.direction === 'reverse' ? 'selected' : ''}>Reverse \u2190</option>
+          </select>
+        </div>
+        <div class="tcc-form-row">
+          <label>Char. Angle (RCA)</label>
+          <input type="number" data-sel-field="charAngle" value="${dev.charAngle || 45}" min="-90" max="90" step="1" unit="\u00B0">
+        </div>` : '') + ctSatHtml;
     } else if (dev.deviceType === 'distance_relay') {
       html = dev.zones.map((z, i) => `
         <div class="tcc-form-row">
@@ -2068,6 +2141,10 @@ const TCC = {
         comp.props.pickup_a = dev.pickup;
         comp.props.time_dial = dev.tds;
         comp.props.curve_type = dev.curveName;
+        if (dev.directional) {
+          comp.props.direction = dev.direction;
+          comp.props.characteristic_angle_deg = dev.charAngle;
+        }
       } else if (dev.deviceType === 'distance_relay') {
         if (dev.zones[0]) { comp.props.z1_reach_ohm = dev.zones[0].reach_ohm; comp.props.z1_delay_s = dev.zones[0].delay_s; }
         if (dev.zones[1]) { comp.props.z2_reach_ohm = dev.zones[1].reach_ohm; comp.props.z2_delay_s = dev.zones[1].delay_s; }
