@@ -169,8 +169,12 @@ const Properties = {
     let unitHtml = '';
 
     if (field.type === 'standard_select') {
-      // Standard type selector (cable library or transformer library)
-      const library = field.library === 'cable' ? STANDARD_CABLES : STANDARD_TRANSFORMERS;
+      // Standard type selector (cable, transformer, cb, or fuse library)
+      const library = field.library === 'cable' ? STANDARD_CABLES
+        : field.library === 'transformer' ? STANDARD_TRANSFORMERS
+        : field.library === 'cb' ? STANDARD_CBS
+        : field.library === 'fuse' ? STANDARD_FUSES
+        : [];
       const options = library.map(item =>
         `<option value="${item.id}" ${value === item.id ? 'selected' : ''}>${item.name}</option>`
       ).join('');
@@ -316,6 +320,29 @@ const Properties = {
         comp.props.z_percent = xfmr.z_percent;
         comp.props.x_r_ratio = xfmr.x_r_ratio;
         comp.props.vector_group = xfmr.vector_group;
+      }
+    } else if (libraryType === 'cb') {
+      const cb = STANDARD_CBS.find(c => c.id === typeId);
+      if (cb) {
+        comp.props.cb_type = cb.cb_type;
+        comp.props.trip_rating_a = cb.trip_rating_a;
+        comp.props.rated_current_a = cb.trip_rating_a;
+        comp.props.rated_voltage_kv = cb.rated_voltage_kv;
+        comp.props.breaking_capacity_ka = cb.breaking_ka;
+        comp.props.thermal_pickup = cb.thermal_pickup;
+        comp.props.magnetic_pickup = cb.magnetic_pickup;
+        comp.props.long_time_delay = cb.long_time_delay;
+        comp.props.short_time_pickup = cb.short_time_pickup || 0;
+        comp.props.short_time_delay = cb.short_time_delay || 0;
+        comp.props.instantaneous_pickup = cb.instantaneous_pickup || 0;
+      }
+    } else if (libraryType === 'fuse') {
+      const fuse = STANDARD_FUSES.find(f => f.id === typeId);
+      if (fuse) {
+        comp.props.fuse_type = fuse.fuse_type;
+        comp.props.rated_current_a = fuse.rated_current_a;
+        comp.props.rated_voltage_kv = fuse.rated_voltage_kv;
+        comp.props.breaking_capacity_ka = fuse.breaking_ka;
       }
     }
   },

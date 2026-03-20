@@ -380,6 +380,8 @@
         <button class="settings-tab active" data-tab="system">System Base</button>
         <button class="settings-tab" data-tab="cables">Cable Library</button>
         <button class="settings-tab" data-tab="transformers">Transformer Library</button>
+        <button class="settings-tab" data-tab="cbs">CB Library</button>
+        <button class="settings-tab" data-tab="fuses">Fuse Library</button>
         <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
       </div>
       <div class="modal-body">
@@ -453,6 +455,56 @@
                 </tr>
               </thead>
               <tbody id="xfmr-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- CB Library Tab -->
+        <div id="settings-tab-cbs" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-cb" class="btn-small">+ Add CB</button>
+            <button id="btn-reset-cbs" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="cb-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Trip (A)</th>
+                  <th>Voltage (kV)</th>
+                  <th>Breaking (kA)</th>
+                  <th>Mag. (xIn)</th>
+                  <th>LT Class</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cb-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Fuse Library Tab -->
+        <div id="settings-tab-fuses" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-fuse" class="btn-small">+ Add Fuse</button>
+            <button id="btn-reset-fuses" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="fuse-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Rating (A)</th>
+                  <th>Voltage (kV)</th>
+                  <th>Breaking (kA)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="fuse-library-body">
                 <!-- Populated by JS -->
               </tbody>
             </table>

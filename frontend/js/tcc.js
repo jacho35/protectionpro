@@ -46,6 +46,10 @@ const TCC = {
     this._bindEvents();
   },
 
+  // Label drag state
+  _labelRects: [],    // Array of { devIndex, x, y, w, h } for hit-testing
+  _labelDrag: null,   // { devIndex, startX, startY, origOX, origOY }
+
   _bindEvents() {
     // Resize observer to keep canvas sharp
     const container = this.canvas.parentElement;
@@ -53,11 +57,62 @@ const TCC = {
     ro.observe(container);
 
     // Tooltip on hover
-    this.canvas.addEventListener('mousemove', (e) => this._handleHover(e));
+    this.canvas.addEventListener('mousemove', (e) => {
+      if (this._labelDrag) {
+        this._handleLabelDragMove(e);
+      } else {
+        this._handleHover(e);
+      }
+    });
     this.canvas.addEventListener('mouseleave', () => {
       this._tooltip = null;
+      this._labelDrag = null;
       this.render();
     });
+
+    // Label dragging
+    this.canvas.addEventListener('mousedown', (e) => this._handleLabelDragStart(e));
+    this.canvas.addEventListener('mouseup', () => {
+      if (this._labelDrag) {
+        this._labelDrag = null;
+        this.canvas.style.cursor = '';
+      }
+    });
+  },
+
+  _handleLabelDragStart(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    // Check if click is on a label
+    for (const lr of this._labelRects) {
+      if (mx >= lr.x && mx <= lr.x + lr.w && my >= lr.y && my <= lr.y + lr.h) {
+        const dev = this.devices[lr.devIndex];
+        this._labelDrag = {
+          devIndex: lr.devIndex,
+          startX: mx,
+          startY: my,
+          origOX: dev.labelOffsetX || 0,
+          origOY: dev.labelOffsetY || 0,
+        };
+        this.canvas.style.cursor = 'grabbing';
+        e.preventDefault();
+        return;
+      }
+    }
+  },
+
+  _handleLabelDragMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const drag = this._labelDrag;
+
+    const dev = this.devices[drag.devIndex];
+    dev.labelOffsetX = drag.origOX + (mx - drag.startX);
+    dev.labelOffsetY = drag.origOY + (my - drag.startY);
+    this.render();
   },
 
   // ── Open the TCC modal ──
@@ -130,6 +185,50 @@ const TCC = {
             instantaneous_pickup: comp.props?.instantaneous_pickup || 0,
           },
         });
+      } else if (comp.type === 'transformer') {
+        // Transformer thermal damage curve (ANSI/IEEE C57.109)
+        const mva = comp.props?.rated_mva || 1;
+        const hvKv = comp.props?.voltage_hv_kv || 11;
+        const lvKv = comp.props?.voltage_lv_kv || 0.42;
+        // Rated current on LV side (higher current side)
+        const ratedA = (mva * 1000) / (Math.sqrt(3) * lvKv);
+        if (ratedA > 0) {
+          this.devices.push({
+            id,
+            name: (comp.props?.name || id) + ' (thermal)',
+            deviceType: 'xfmr_thermal',
+            color: this.palette[this.colorIndex++ % this.palette.length],
+            visible: true,
+            ratedA,
+            mva,
+            zPercent: comp.props?.z_percent || 8,
+          });
+        }
+      } else if (comp.type === 'cable') {
+        // Cable thermal damage curve (IEC 60364 adiabatic: I²t = k²S²)
+        const sizeStr = comp.props?.standard_type || '';
+        const stdCable = STANDARD_CABLES.find(c => c.id === sizeStr);
+        const sizeMm2 = stdCable ? stdCable.size_mm2 : (comp.props?.size_mm2 || 0);
+        const ratedAmps = comp.props?.rated_amps || (stdCable ? stdCable.rated_amps : 0);
+        const conductor = stdCable ? stdCable.conductor : (comp.props?.conductor || 'Cu');
+        if (ratedAmps > 0 && sizeMm2 > 0) {
+          // k factor: Cu XLPE=143, Cu PVC=115, Al XLPE=94, Al PVC=76
+          const insulation = stdCable ? stdCable.insulation : (comp.props?.insulation || 'XLPE');
+          let kFactor = 143; // Cu XLPE default
+          if (conductor === 'Cu' && insulation === 'PVC') kFactor = 115;
+          else if (conductor === 'Al' && insulation === 'XLPE') kFactor = 94;
+          else if (conductor === 'Al' && insulation === 'PVC') kFactor = 76;
+          this.devices.push({
+            id,
+            name: (comp.props?.name || id) + ' (thermal)',
+            deviceType: 'cable_thermal',
+            color: this.palette[this.colorIndex++ % this.palette.length],
+            visible: true,
+            ratedAmps,
+            sizeMm2,
+            kFactor,
+          });
+        }
       }
     }
   },
@@ -213,11 +312,14 @@ const TCC = {
     this._drawAxes(ctx);
 
     // Draw each device curve
+    this._labelRects = [];
     for (const dev of this.devices) {
       if (!dev.visible) continue;
       if (dev.deviceType === 'relay') this._drawRelayCurve(ctx, dev);
       else if (dev.deviceType === 'fuse') this._drawFuseCurve(ctx, dev);
       else if (dev.deviceType === 'cb') this._drawCBCurve(ctx, dev);
+      else if (dev.deviceType === 'xfmr_thermal') this._drawXfmrThermal(ctx, dev);
+      else if (dev.deviceType === 'cable_thermal') this._drawCableThermal(ctx, dev);
     }
 
     // Draw tooltip
@@ -370,14 +472,7 @@ const TCC = {
     const labelI = dev.pickup * 3;
     const labelT = idmtTripTime(dev.curveName, 3, dev.tds);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      const lx = this._currentToX(labelI);
-      const ly = this._timeToY(labelT);
-      if (lx > this.plotLeft && lx < this.plotRight - 50) {
-        ctx.fillStyle = dev.color;
-        ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(dev.name, lx + 6, ly - 4);
-      }
+      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), dev.name);
     }
   },
 
@@ -406,12 +501,7 @@ const TCC = {
     const midIdx = Math.floor(points.length / 2);
     const [mI, mT] = points[midIdx];
     if (mI >= this.currentMin && mI <= this.currentMax && mT >= this.timeMin && mT <= this.timeMax) {
-      const lx = this._currentToX(mI);
-      const ly = this._timeToY(mT);
-      ctx.fillStyle = dev.color;
-      ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(`${dev.name} (${dev.fuseRating}A)`, lx + 6, ly - 4);
+      this._drawLabel(ctx, dev, this._currentToX(mI), this._timeToY(mT), `${dev.name} (${dev.fuseRating}A)`);
     }
   },
 
@@ -543,15 +633,146 @@ const TCC = {
     const labelI = Ir * 2.5;
     const labelT = cbTripTime(p, labelI);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      const lx = this._currentToX(labelI);
-      const ly = this._timeToY(labelT);
-      if (lx > this.plotLeft && lx < this.plotRight - 60) {
-        ctx.fillStyle = dev.color;
-        ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.textAlign = 'left';
-        const typeStr = (p.cb_type || 'mccb').toUpperCase();
-        ctx.fillText(`${dev.name} (${typeStr})`, lx + 6, ly - 4);
-      }
+      const typeStr = (p.cb_type || 'mccb').toUpperCase();
+      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), `${dev.name} (${typeStr})`);
+    }
+  },
+
+  // ── Draw label with offset + register hit rect ──
+  _drawLabel(ctx, dev, baseX, baseY, text) {
+    const ox = dev.labelOffsetX || 0;
+    const oy = dev.labelOffsetY || 0;
+    const lx = baseX + ox + 6;
+    const ly = baseY + oy - 4;
+
+    if (lx < this.plotLeft || lx > this.plotRight - 10) return;
+
+    ctx.fillStyle = dev.color;
+    ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(text, lx, ly);
+
+    // Register for hit-testing
+    const w = ctx.measureText(text).width;
+    const devIndex = this.devices.indexOf(dev);
+    if (devIndex >= 0) {
+      this._labelRects.push({ devIndex, x: lx - 2, y: ly - 12, w: w + 4, h: 16 });
+    }
+  },
+
+  // ── Transformer Thermal Damage Curve (ANSI/IEEE C57.109) ──
+  _drawXfmrThermal(ctx, dev) {
+    // Through-fault withstand: I²t = constant, with categories per IEEE C57.109
+    // Category II (typical distribution): 1250 × Ir² for 2s
+    // We plot: t = (Ir² × 1250) / I² for frequent faults
+    // Also a mechanical limit at I = Ir × (100 / Z%), t = 2s
+    const Ir = dev.ratedA;
+    const zPct = dev.zPercent || 8;
+    const Imax = Ir * (100 / zPct); // Max through-fault current
+    const I2t = Ir * Ir * 1250; // I²t constant (category II, frequent faults)
+
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath();
+
+    let started = false;
+    const steps = 200;
+    const iStart = Ir * 2;
+    const iEnd = Math.min(Imax * 1.2, this.currentMax);
+
+    for (let i = 0; i <= steps; i++) {
+      const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
+      const current = Math.pow(10, logI);
+      const t = I2t / (current * current);
+
+      if (t < this.timeMin || t > this.timeMax) continue;
+      const x = this._currentToX(current);
+      const y = this._timeToY(t);
+      if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
+
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Vertical line at max through-fault current
+    const xMax = this._currentToX(Imax);
+    if (xMax >= this.plotLeft && xMax <= this.plotRight) {
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(xMax, this.plotTop);
+      ctx.lineTo(xMax, this.plotBottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Label
+    const labelI = Ir * 4;
+    const labelT = I2t / (labelI * labelI);
+    if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
+      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), dev.name);
+    }
+  },
+
+  // ── Cable Thermal Damage Curve (IEC 60364 adiabatic) ──
+  _drawCableThermal(ctx, dev) {
+    // Adiabatic equation: I²t = k²S² → t = k²S² / I²
+    const kS = dev.kFactor * dev.sizeMm2; // k × S
+    const I2t = kS * kS; // (kS)²
+
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath();
+
+    let started = false;
+    const steps = 200;
+    // Start from rated current, go up to where t < timeMin
+    const iStart = dev.ratedAmps * 1.5;
+    const iEnd = Math.min(Math.sqrt(I2t / this.timeMin), this.currentMax);
+
+    if (iEnd <= iStart) { ctx.setLineDash([]); return; }
+
+    for (let i = 0; i <= steps; i++) {
+      const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
+      const current = Math.pow(10, logI);
+      const t = I2t / (current * current);
+
+      if (t < this.timeMin || t > this.timeMax) continue;
+      const x = this._currentToX(current);
+      const y = this._timeToY(t);
+      if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
+
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Rated current vertical line
+    const xRated = this._currentToX(dev.ratedAmps);
+    if (xRated >= this.plotLeft && xRated <= this.plotRight) {
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(xRated, this.plotTop);
+      ctx.lineTo(xRated, this.plotBottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Label
+    const labelI = dev.ratedAmps * 4;
+    const labelT = I2t / (labelI * labelI);
+    if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
+      this._drawLabel(ctx, dev, this._currentToX(labelI), this._timeToY(labelT), dev.name);
     }
   },
 
@@ -581,6 +802,12 @@ const TCC = {
         t = fuseTripTime(dev.fuseRating, current);
       } else if (dev.deviceType === 'cb') {
         t = cbTripTime(dev.cbParams, current);
+      } else if (dev.deviceType === 'xfmr_thermal') {
+        const I2t = dev.ratedA * dev.ratedA * 1250;
+        t = current > dev.ratedA * 2 ? I2t / (current * current) : null;
+      } else if (dev.deviceType === 'cable_thermal') {
+        const kS = dev.kFactor * dev.sizeMm2;
+        t = current > dev.ratedAmps ? (kS * kS) / (current * current) : null;
       }
       if (t != null && isFinite(t) && t > 0 && t <= this.timeMax) {
         lines.push({ name: dev.name, time: t, color: dev.color });
@@ -592,6 +819,17 @@ const TCC = {
     } else {
       this._tooltip = null;
     }
+
+    // Cursor hint for draggable labels
+    let overLabel = false;
+    for (const lr of this._labelRects) {
+      if (mx >= lr.x && mx <= lr.x + lr.w && my >= lr.y && my <= lr.y + lr.h) {
+        overLabel = true;
+        break;
+      }
+    }
+    this.canvas.style.cursor = overLabel ? 'grab' : '';
+
     this.render();
   },
 
@@ -631,7 +869,7 @@ const TCC = {
     if (!list) return;
 
     if (this.devices.length === 0) {
-      list.innerHTML = '<div class="tcc-no-devices">No overcurrent relays (50/51), fuses, or circuit breakers in the network.<br>Add protection devices to the SLD to see their curves.</div>';
+      list.innerHTML = '<div class="tcc-no-devices">No protection devices, transformers, or cables in the network.<br>Add components to the SLD to see their curves.</div>';
       return;
     }
 
@@ -644,6 +882,10 @@ const TCC = {
       } else if (dev.deviceType === 'cb') {
         const p = dev.cbParams;
         typeLabel = `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a}A | Mag: ${p.magnetic_pickup}×In`;
+      } else if (dev.deviceType === 'xfmr_thermal') {
+        typeLabel = `Thermal damage | ${dev.mva} MVA | Ir: ${dev.ratedA.toFixed(0)}A`;
+      } else if (dev.deviceType === 'cable_thermal') {
+        typeLabel = `Thermal limit | ${dev.sizeMm2}mm² | k=${dev.kFactor} | Ir: ${dev.ratedAmps}A`;
       } else {
         typeLabel = '';
       }
@@ -812,6 +1054,13 @@ const TCC = {
       return fuseTripTime(dev.fuseRating, currentA) || Infinity;
     } else if (dev.deviceType === 'cb') {
       return cbTripTime(dev.cbParams, currentA);
+    } else if (dev.deviceType === 'xfmr_thermal') {
+      if (currentA <= dev.ratedA * 2) return Infinity;
+      return (dev.ratedA * dev.ratedA * 1250) / (currentA * currentA);
+    } else if (dev.deviceType === 'cable_thermal') {
+      if (currentA <= dev.ratedAmps) return Infinity;
+      const kS = dev.kFactor * dev.sizeMm2;
+      return (kS * kS) / (currentA * currentA);
     }
     return Infinity;
   },
