@@ -990,6 +990,15 @@ html, body {
   opacity: 0.45;
 }
 
+.tcc-device-item.tcc-selected {
+  border-color: var(--accent);
+  background: rgba(0,120,215,0.08);
+}
+
+.tcc-device-item {
+  cursor: pointer;
+}
+
 .tcc-device-color {
   width: 10px;
   height: 10px;

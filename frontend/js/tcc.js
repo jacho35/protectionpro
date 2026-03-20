@@ -47,6 +47,9 @@ const TCC = {
   activeTabId: null,
   referenceVoltage: null, // kV — null means no voltage scaling
 
+  // ── Selected device for settings panel ──
+  selectedDeviceIndex: -1,
+
   // ── Fault current markers ──
   showFaultMarkers: true,
 
@@ -94,10 +97,13 @@ const TCC = {
       this.render();
     });
 
-    // Mouse down: curve drag or label drag
+    // Mouse down: curve drag, label drag, or select curve
     this.canvas.addEventListener('mousedown', (e) => {
       if (!this._handleCurveDragStart(e)) {
         this._handleLabelDragStart(e);
+        if (!this._labelDrag) {
+          this._handleCurveSelect(e);
+        }
       }
     });
     this.canvas.addEventListener('mouseup', () => {
@@ -233,12 +239,44 @@ const TCC = {
     this._runCoordinationCheck();
   },
 
+  // ── Persisted display state across open/close ──
+  _savedDisplayState: {}, // keyed by device id: { visible, color, labelOffsetX, labelOffsetY }
+
+  _saveDisplayState() {
+    for (const dev of this.devices) {
+      this._savedDisplayState[dev.id] = {
+        visible: dev.visible,
+        color: dev.color,
+        labelOffsetX: dev.labelOffsetX || 0,
+        labelOffsetY: dev.labelOffsetY || 0,
+      };
+    }
+  },
+
+  _restoreDisplayState() {
+    for (const dev of this.devices) {
+      const saved = this._savedDisplayState[dev.id];
+      if (saved) {
+        dev.visible = saved.visible;
+        dev.color = saved.color;
+        dev.labelOffsetX = saved.labelOffsetX;
+        dev.labelOffsetY = saved.labelOffsetY;
+      }
+    }
+  },
+
   // ── Open the TCC modal ──
 
   open() {
+    // Save state before rebuilding
+    if (this.devices.length > 0) {
+      this._saveDisplayState();
+    }
     this.devices = [];
     this.colorIndex = 0;
+    this.selectedDeviceIndex = -1;
     this._loadDevicesFromNetwork();
+    this._restoreDisplayState();
     this._buildTabs();
     document.getElementById('tcc-modal').style.display = '';
     // Defer render to let the modal layout settle
@@ -248,12 +286,14 @@ const TCC = {
         this._renderVoltageSelector();
         this.render();
         this._renderDeviceList();
+        this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
       });
     });
   },
 
   close() {
+    this._saveDisplayState();
     document.getElementById('tcc-modal').style.display = 'none';
   },
 
@@ -553,14 +593,22 @@ const TCC = {
     const savedTabId = this.activeTabId;
     this.activeTabId = tabId;
     const tabDevices = this._getVisibleDevicesForTab();
+
+    // Dim non-selected curves when a device is selected
+    const selIdx = this.selectedDeviceIndex;
+    const hasSelection = selIdx >= 0 && selIdx < this.devices.length;
+
     for (const dev of tabDevices) {
       if (!dev.visible) continue;
+      const isSelected = this.devices.indexOf(dev) === selIdx;
+      ctx.globalAlpha = hasSelection && !isSelected ? 0.3 : 1.0;
       if (dev.deviceType === 'relay') this._drawRelayCurve(ctx, dev);
       else if (dev.deviceType === 'fuse') this._drawFuseCurve(ctx, dev);
       else if (dev.deviceType === 'cb') this._drawCBCurve(ctx, dev);
       else if (dev.deviceType === 'xfmr_thermal') this._drawXfmrThermal(ctx, dev);
       else if (dev.deviceType === 'cable_thermal') this._drawCableThermal(ctx, dev);
     }
+    ctx.globalAlpha = 1.0;
     this.activeTabId = savedTabId;
 
     // Draw interactive curve handles
@@ -1118,22 +1166,24 @@ const TCC = {
       }
     }
 
-    // Magnetic pickup handle: on the flat instantaneous line at Im
-    // Use the magnetic trip time (the horizontal flat portion) for the y position
+    // Magnetic pickup handle: midway up the vertical drop at Im
     const magTime = (p.cb_type === 'mccb') ? 0.02 : 0.01;
-    const yFlat = this._timeToY(magTime);
     const scaledIm = this._scaleCurrent(Im, dev);
     const mx = this._currentToX(scaledIm);
-    // Place handle at the midpoint of the flat line (between Im and right edge)
-    const flatMidX = Math.min(mx + 40, this.plotRight);
-    if (mx >= this.plotLeft && mx <= this.plotRight && yFlat >= this.plotTop && yFlat <= this.plotBottom) {
-      // Register as a wide line-segment handle along the flat instantaneous line
+    // Compute vertical drop range: from thermal curve down to magnetic flat line
+    const thermalTimeAtIm = cbTripTime({ ...p, magnetic_pickup: 9999, short_time_pickup: 0, instantaneous_pickup: 0 }, Im);
+    const yDropTop = this._timeToY(Math.min(isFinite(thermalTimeAtIm) ? thermalTimeAtIm : this.timeMax, this.timeMax));
+    const yDropBot = this._timeToY(magTime);
+    const yMid = (yDropTop + yDropBot) / 2; // midpoint of vertical drop
+
+    if (mx >= this.plotLeft && mx <= this.plotRight && yMid >= this.plotTop && yMid <= this.plotBottom) {
+      // Hit zone spans the vertical drop and the flat instantaneous line
+      const yFlat = this._timeToY(magTime);
       this._curveHandles.push({
         devIndex, mode: 'magnetic',
-        x: flatMidX, y: yFlat, r: 7, color: dev.color,
-        // Extra hit zone: entire horizontal line from Im to right edge
+        x: mx, y: yMid, r: 7, color: dev.color,
         hitRect: {
-          x1: mx,
+          x1: mx - 8,
           x2: Math.min(this.plotRight, this._currentToX(this._scaleCurrent(Ir * 200, dev))),
           y: yFlat,
           tolerance: 8
@@ -1393,7 +1443,8 @@ const TCC = {
       } else {
         typeLabel = '';
       }
-      return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'}" data-index="${i}">
+      const selected = i === this.selectedDeviceIndex;
+      return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}">
         <div class="tcc-device-color" style="background:${dev.color}"></div>
         <div class="tcc-device-info">
           <div class="tcc-device-name">${dev.name}</div>
@@ -1406,6 +1457,7 @@ const TCC = {
     // Toggle visibility
     list.querySelectorAll('.tcc-device-toggle').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const idx = parseInt(e.target.dataset.index);
         this.devices[idx].visible = !this.devices[idx].visible;
         this._renderDeviceList();
@@ -1413,6 +1465,226 @@ const TCC = {
         this._runCoordinationCheck();
       });
     });
+
+    // Click to select device
+    list.querySelectorAll('.tcc-device-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const idx = parseInt(item.dataset.index);
+        this.selectDevice(idx);
+      });
+    });
+  },
+
+  selectDevice(idx) {
+    this.selectedDeviceIndex = (idx === this.selectedDeviceIndex) ? -1 : idx;
+    this._renderDeviceList();
+    this._renderSelectedDeviceSettings();
+    this.render();
+  },
+
+  // ── Curve click-to-select on canvas ──
+
+  _handleCurveSelect(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (mx < this.plotLeft || mx > this.plotRight || my < this.plotTop || my > this.plotBottom) {
+      return;
+    }
+
+    const clickCurrent = this._xToCurrent(mx);
+    const tabDevices = this._getVisibleDevicesForTab().filter(d => d.visible);
+    let bestIdx = -1;
+    let bestDist = 20; // pixel threshold
+
+    for (const dev of tabDevices) {
+      const globalIdx = this.devices.indexOf(dev);
+      const current = this._scaleCurrentInverse(clickCurrent, dev);
+      const t = this._deviceTripTime(dev, current);
+      if (!isFinite(t) || t <= 0) continue;
+
+      const curveY = this._timeToY(t);
+      const dist = Math.abs(my - curveY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = globalIdx;
+      }
+    }
+
+    this.selectDevice(bestIdx >= 0 ? bestIdx : -1);
+  },
+
+  // ── Selected device settings panel ──
+
+  _renderSelectedDeviceSettings() {
+    const section = document.getElementById('tcc-selected-section');
+    const container = document.getElementById('tcc-selected-settings');
+    const title = document.getElementById('tcc-selected-title');
+    if (!section || !container) return;
+
+    if (this.selectedDeviceIndex < 0 || this.selectedDeviceIndex >= this.devices.length) {
+      section.style.display = 'none';
+      return;
+    }
+
+    const dev = this.devices[this.selectedDeviceIndex];
+    section.style.display = '';
+    title.textContent = dev.name;
+
+    let html = '';
+    const idx = this.selectedDeviceIndex;
+
+    if (dev.deviceType === 'relay') {
+      html = `
+        <div class="tcc-form-row">
+          <label>Curve</label>
+          <select data-sel-field="curveName">
+            ${['IEC Standard Inverse','IEC Very Inverse','IEC Extremely Inverse','IEC Long Time Inverse',
+               'IEEE Moderately Inverse','IEEE Very Inverse','IEEE Extremely Inverse']
+              .map(c => `<option value="${c}" ${c === dev.curveName ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="tcc-form-row">
+          <label>Pickup (A)</label>
+          <input type="number" data-sel-field="pickup" value="${dev.pickup}" min="1" step="1">
+        </div>
+        <div class="tcc-form-row">
+          <label>Time Dial (TDS)</label>
+          <input type="number" data-sel-field="tds" value="${dev.tds}" min="0.05" max="10" step="0.05">
+        </div>`;
+    } else if (dev.deviceType === 'fuse') {
+      html = `
+        <div class="tcc-form-row">
+          <label>Rating (A)</label>
+          <select data-sel-field="fuseRating">
+            ${[16,20,25,32,40,50,63,80,100,125,160,200,250,315,400,500,630]
+              .map(r => `<option value="${r}" ${r === dev.fuseRating ? 'selected' : ''}>${r}A</option>`).join('')}
+          </select>
+        </div>`;
+    } else if (dev.deviceType === 'cb') {
+      const p = dev.cbParams;
+      const isACB = p.cb_type === 'acb';
+      html = `
+        <div class="tcc-form-row">
+          <label>Type</label>
+          <select data-sel-field="cb.cb_type">
+            <option value="mccb" ${p.cb_type === 'mccb' ? 'selected' : ''}>MCCB</option>
+            <option value="acb" ${p.cb_type === 'acb' ? 'selected' : ''}>ACB</option>
+          </select>
+        </div>
+        <div class="tcc-form-row">
+          <label>Trip Rating (A)</label>
+          <input type="number" data-sel-field="cb.trip_rating_a" value="${p.trip_rating_a}" min="1" step="1">
+        </div>
+        <div class="tcc-form-row">
+          <label>Thermal Pickup (×In)</label>
+          <input type="number" data-sel-field="cb.thermal_pickup" value="${p.thermal_pickup}" min="0.4" max="1.3" step="0.05">
+        </div>
+        <div class="tcc-form-row">
+          <label>Magnetic Pickup (×In)</label>
+          <input type="number" data-sel-field="cb.magnetic_pickup" value="${p.magnetic_pickup}" min="2" max="20" step="0.5">
+        </div>
+        <div class="tcc-form-row">
+          <label>LT Delay Class</label>
+          <select data-sel-field="cb.long_time_delay">
+            ${[5,10,20,30].map(v => `<option value="${v}" ${p.long_time_delay === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div class="tcc-sel-acb-fields" style="display:${isACB ? '' : 'none'}">
+          <div class="tcc-form-row">
+            <label>ST Pickup (×In)</label>
+            <input type="number" data-sel-field="cb.short_time_pickup" value="${p.short_time_pickup || 0}" min="0" max="20" step="0.5">
+          </div>
+          <div class="tcc-form-row">
+            <label>ST Delay (s)</label>
+            <input type="number" data-sel-field="cb.short_time_delay" value="${p.short_time_delay || 0}" min="0.02" max="1" step="0.01">
+          </div>
+          <div class="tcc-form-row">
+            <label>Instantaneous (×In)</label>
+            <input type="number" data-sel-field="cb.instantaneous_pickup" value="${p.instantaneous_pickup || 0}" min="0" max="25" step="0.5">
+          </div>
+        </div>`;
+    } else if (dev.deviceType === 'xfmr_thermal') {
+      html = `
+        <div class="tcc-form-row">
+          <label>MVA Rating</label>
+          <input type="number" data-sel-field="mva" value="${dev.mva}" min="0.01" step="0.01" readonly>
+        </div>
+        <div class="tcc-form-row">
+          <label>Z (%)</label>
+          <input type="number" data-sel-field="zPercent" value="${dev.zPercent || 8}" min="1" max="30" step="0.5">
+        </div>`;
+    } else if (dev.deviceType === 'cable_thermal') {
+      html = `
+        <div class="tcc-form-row">
+          <label>Size (mm²)</label>
+          <input type="number" data-sel-field="sizeMm2" value="${dev.sizeMm2}" min="1" step="0.5" readonly>
+        </div>
+        <div class="tcc-form-row">
+          <label>k Factor</label>
+          <input type="number" data-sel-field="kFactor" value="${dev.kFactor}" min="50" max="250" step="1">
+        </div>
+        <div class="tcc-form-row">
+          <label>Rated (A)</label>
+          <input type="number" data-sel-field="ratedAmps" value="${dev.ratedAmps}" min="1" step="1">
+        </div>`;
+    }
+
+    container.innerHTML = html;
+
+    // Wire up change events
+    container.querySelectorAll('[data-sel-field]').forEach(el => {
+      const handler = () => this._applySelectedDeviceSetting(el);
+      el.addEventListener('change', handler);
+      if (el.tagName === 'INPUT') el.addEventListener('input', handler);
+    });
+  },
+
+  _applySelectedDeviceSetting(el) {
+    const field = el.dataset.selField;
+    const dev = this.devices[this.selectedDeviceIndex];
+    if (!dev) return;
+
+    const val = el.type === 'number' ? parseFloat(el.value) : el.value;
+
+    if (field.startsWith('cb.')) {
+      const cbField = field.slice(3);
+      dev.cbParams[cbField] = val;
+      // Show/hide ACB fields when type changes
+      if (cbField === 'cb_type') {
+        const acbFields = el.closest('#tcc-selected-settings').querySelector('.tcc-sel-acb-fields');
+        if (acbFields) acbFields.style.display = val === 'acb' ? '' : 'none';
+      }
+    } else {
+      dev[field] = val;
+      // For fuse, recalculate nearest standard rating
+      if (field === 'fuseRating') {
+        dev.fuseRating = parseInt(val);
+        dev.actualRating = parseInt(val);
+      }
+    }
+
+    // Sync to SLD component
+    const comp = AppState.components.get(dev.id);
+    if (comp && comp.props) {
+      if (dev.deviceType === 'relay') {
+        comp.props.pickup_a = dev.pickup;
+        comp.props.time_dial = dev.tds;
+        comp.props.curve_type = dev.curveName;
+      } else if (dev.deviceType === 'cb') {
+        Object.assign(comp.props, dev.cbParams);
+      } else if (dev.deviceType === 'xfmr_thermal') {
+        comp.props.z_percent = dev.zPercent;
+      } else if (dev.deviceType === 'cable_thermal') {
+        comp.props.k_factor = dev.kFactor;
+        comp.props.rated_amps = dev.ratedAmps;
+      }
+    }
+
+    this._renderDeviceList();
+    this.render();
+    this._runCoordinationCheck();
   },
 
   // ── Add custom device ──
