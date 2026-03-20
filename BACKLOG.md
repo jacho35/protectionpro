@@ -38,5 +38,23 @@
 - **Component library import**: Import manufacturer data (transformers, cables, etc.)
 - **NEC ampacity tables**: Add NEC Article 310 ampacity data alongside existing IEC 60364
 - **Import from external tools**: Import from PSS/E, ETAP, or PowerWorld formats
-
 - **Cloud storage**: Project storage with user accounts and sharing
+
+---
+
+## Completed
+- ~~Overlay fault current markers on TCC~~
+- ~~TCC comparison mode (side-by-side before/after)~~
+- ~~Toolbar reorganization (two rows)~~
+- ~~TCC CB instantaneous line dragging (magnetic pickup)~~
+- ~~TCC editable settings panel for selected curves~~
+- ~~Customizable report templates~~
+- ~~Scenario comparison reports~~
+- ~~Settings schedule export (CSV)~~
+- ~~Pre-built network template library (substation, industrial, residential, generator)~~
+- ~~Component grouping (Ctrl+G / Ctrl+Shift+G)~~
+- ~~Multi-page diagrams (sheet tabs, add/delete/rename)~~
+- ~~Print / page layout (PDF with title block, legend, border)~~
+- ~~Wire diagonal/spline routing~~
+- ~~Off-page connectors (cross-page electrical links)~~
+- ~~Draggable bus resizing with dynamic connection ports~~
