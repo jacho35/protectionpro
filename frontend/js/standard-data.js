@@ -4,15 +4,21 @@ const StandardData = {
   // Working copies of libraries (editable by user)
   cables: [],
   transformers: [],
+  cbs: [],
+  fuses: [],
 
   init() {
     // Clone defaults into working copies
     this.cables = JSON.parse(JSON.stringify(STANDARD_CABLES));
     this.transformers = JSON.parse(JSON.stringify(STANDARD_TRANSFORMERS));
+    this.cbs = JSON.parse(JSON.stringify(STANDARD_CBS));
+    this.fuses = JSON.parse(JSON.stringify(STANDARD_FUSES));
 
     this.bindTabs();
     this.bindCableTable();
     this.bindTransformerTable();
+    this.bindCBTable();
+    this.bindFuseTable();
     this.bindIECStandards();
   },
 
@@ -27,6 +33,8 @@ const StandardData = {
         // Render table when tab becomes active
         if (tab.dataset.tab === 'cables') this.renderCableTable();
         if (tab.dataset.tab === 'transformers') this.renderTransformerTable();
+        if (tab.dataset.tab === 'cbs') this.renderCBTable();
+        if (tab.dataset.tab === 'fuses') this.renderFuseTable();
         if (tab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
       });
     });
@@ -163,6 +171,133 @@ const StandardData = {
     for (const t of this.transformers) STANDARD_TRANSFORMERS.push(t);
   },
 
+  // ─── Circuit Breaker Library Table ───
+  bindCBTable() {
+    document.getElementById('btn-add-cb').addEventListener('click', () => {
+      const id = 'custom_cb_' + Date.now();
+      this.cbs.push({
+        id, name: 'New CB', cb_type: 'mccb', trip_rating_a: 100, frame_a: 100,
+        rated_voltage_kv: 0.4, breaking_ka: 25, thermal_pickup: 1.0,
+        magnetic_pickup: 10, long_time_delay: 10,
+      });
+      this.renderCBTable();
+      this.syncCBLibrary();
+    });
+
+    document.getElementById('btn-reset-cbs').addEventListener('click', () => {
+      this.cbs = JSON.parse(JSON.stringify(STANDARD_CBS));
+      this.renderCBTable();
+      this.syncCBLibrary();
+    });
+  },
+
+  renderCBTable() {
+    const tbody = document.getElementById('cb-library-body');
+    tbody.innerHTML = this.cbs.map((c, i) => `
+      <tr data-index="${i}">
+        <td><input type="text" value="${c.name}" data-key="name"></td>
+        <td><select data-key="cb_type">
+          <option value="mccb" ${c.cb_type === 'mccb' ? 'selected' : ''}>MCCB</option>
+          <option value="acb" ${c.cb_type === 'acb' ? 'selected' : ''}>ACB</option>
+        </select></td>
+        <td><input type="number" value="${c.trip_rating_a}" data-key="trip_rating_a" step="any"></td>
+        <td><input type="number" value="${c.rated_voltage_kv}" data-key="rated_voltage_kv" step="any"></td>
+        <td><input type="number" value="${c.breaking_ka}" data-key="breaking_ka" step="any"></td>
+        <td><input type="number" value="${c.magnetic_pickup}" data-key="magnetic_pickup" step="any"></td>
+        <td><input type="number" value="${c.long_time_delay}" data-key="long_time_delay" step="any"></td>
+        <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('input, select').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const row = e.target.closest('tr');
+        const idx = parseInt(row.dataset.index);
+        const key = e.target.dataset.key;
+        let val = e.target.value;
+        if (e.target.type === 'number') val = parseFloat(val) || 0;
+        this.cbs[idx][key] = val;
+        this.syncCBLibrary();
+      });
+    });
+
+    tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        this.cbs.splice(idx, 1);
+        this.renderCBTable();
+        this.syncCBLibrary();
+      });
+    });
+  },
+
+  syncCBLibrary() {
+    STANDARD_CBS.length = 0;
+    for (const c of this.cbs) STANDARD_CBS.push(c);
+  },
+
+  // ─── Fuse Library Table ───
+  bindFuseTable() {
+    document.getElementById('btn-add-fuse').addEventListener('click', () => {
+      const id = 'custom_fuse_' + Date.now();
+      this.fuses.push({
+        id, name: 'New Fuse', fuse_type: 'gG', rated_current_a: 100,
+        rated_voltage_kv: 0.4, breaking_ka: 80,
+      });
+      this.renderFuseTable();
+      this.syncFuseLibrary();
+    });
+
+    document.getElementById('btn-reset-fuses').addEventListener('click', () => {
+      this.fuses = JSON.parse(JSON.stringify(STANDARD_FUSES));
+      this.renderFuseTable();
+      this.syncFuseLibrary();
+    });
+  },
+
+  renderFuseTable() {
+    const tbody = document.getElementById('fuse-library-body');
+    tbody.innerHTML = this.fuses.map((f, i) => `
+      <tr data-index="${i}">
+        <td><input type="text" value="${f.name}" data-key="name"></td>
+        <td><select data-key="fuse_type">
+          <option value="gG" ${f.fuse_type === 'gG' ? 'selected' : ''}>gG</option>
+          <option value="aM" ${f.fuse_type === 'aM' ? 'selected' : ''}>aM</option>
+        </select></td>
+        <td><input type="number" value="${f.rated_current_a}" data-key="rated_current_a" step="any"></td>
+        <td><input type="number" value="${f.rated_voltage_kv}" data-key="rated_voltage_kv" step="any"></td>
+        <td><input type="number" value="${f.breaking_ka}" data-key="breaking_ka" step="any"></td>
+        <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('input, select').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const row = e.target.closest('tr');
+        const idx = parseInt(row.dataset.index);
+        const key = e.target.dataset.key;
+        let val = e.target.value;
+        if (e.target.type === 'number') val = parseFloat(val) || 0;
+        this.fuses[idx][key] = val;
+        this.syncFuseLibrary();
+      });
+    });
+
+    tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        this.fuses.splice(idx, 1);
+        this.renderFuseTable();
+        this.syncFuseLibrary();
+      });
+    });
+  },
+
+  syncFuseLibrary() {
+    STANDARD_FUSES.length = 0;
+    for (const f of this.fuses) STANDARD_FUSES.push(f);
+  },
+
   // Open settings modal
   open() {
     document.getElementById('base-mva').value = AppState.baseMVA;
@@ -173,6 +308,8 @@ const StandardData = {
     const activeTab = document.querySelector('.settings-tab.active');
     if (activeTab.dataset.tab === 'cables') this.renderCableTable();
     else if (activeTab.dataset.tab === 'transformers') this.renderTransformerTable();
+    else if (activeTab.dataset.tab === 'cbs') this.renderCBTable();
+    else if (activeTab.dataset.tab === 'fuses') this.renderFuseTable();
     else if (activeTab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
   },
 

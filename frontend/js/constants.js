@@ -372,6 +372,75 @@ function cbTripTime(params, currentA) {
 // Standard MCCB frame sizes for the custom device dropdown
 const CB_FRAME_SIZES = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
 
+// ─── Standard Circuit Breaker Library ───
+// Typical MCCB/ACB ratings per IEC 60947-2
+const STANDARD_CBS = [
+  // MCCB — Low Voltage (IEC 60947-2)
+  { id: 'mccb_16a',   name: 'MCCB 16A',    cb_type: 'mccb', trip_rating_a: 16,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_25a',   name: 'MCCB 25A',    cb_type: 'mccb', trip_rating_a: 25,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_32a',   name: 'MCCB 32A',    cb_type: 'mccb', trip_rating_a: 32,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_40a',   name: 'MCCB 40A',    cb_type: 'mccb', trip_rating_a: 40,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_50a',   name: 'MCCB 50A',    cb_type: 'mccb', trip_rating_a: 50,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_63a',   name: 'MCCB 63A',    cb_type: 'mccb', trip_rating_a: 63,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_80a',   name: 'MCCB 80A',    cb_type: 'mccb', trip_rating_a: 80,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_100a',  name: 'MCCB 100A',   cb_type: 'mccb', trip_rating_a: 100,  frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_125a',  name: 'MCCB 125A',   cb_type: 'mccb', trip_rating_a: 125,  frame_a: 160,  rated_voltage_kv: 0.4, breaking_ka: 36,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_160a',  name: 'MCCB 160A',   cb_type: 'mccb', trip_rating_a: 160,  frame_a: 160,  rated_voltage_kv: 0.4, breaking_ka: 36,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_200a',  name: 'MCCB 200A',   cb_type: 'mccb', trip_rating_a: 200,  frame_a: 250,  rated_voltage_kv: 0.4, breaking_ka: 36,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_250a',  name: 'MCCB 250A',   cb_type: 'mccb', trip_rating_a: 250,  frame_a: 250,  rated_voltage_kv: 0.4, breaking_ka: 36,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_315a',  name: 'MCCB 315A',   cb_type: 'mccb', trip_rating_a: 315,  frame_a: 400,  rated_voltage_kv: 0.4, breaking_ka: 50,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_400a',  name: 'MCCB 400A',   cb_type: 'mccb', trip_rating_a: 400,  frame_a: 400,  rated_voltage_kv: 0.4, breaking_ka: 50,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_630a',  name: 'MCCB 630A',   cb_type: 'mccb', trip_rating_a: 630,  frame_a: 630,  rated_voltage_kv: 0.4, breaking_ka: 50,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_800a',  name: 'MCCB 800A',   cb_type: 'mccb', trip_rating_a: 800,  frame_a: 800,  rated_voltage_kv: 0.4, breaking_ka: 65,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  // ACB — Low Voltage (IEC 60947-2)
+  { id: 'acb_630a',   name: 'ACB 630A',    cb_type: 'acb',  trip_rating_a: 630,  frame_a: 630,  rated_voltage_kv: 0.4, breaking_ka: 65,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_800a',   name: 'ACB 800A',    cb_type: 'acb',  trip_rating_a: 800,  frame_a: 800,  rated_voltage_kv: 0.4, breaking_ka: 65,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_1000a',  name: 'ACB 1000A',   cb_type: 'acb',  trip_rating_a: 1000, frame_a: 1000, rated_voltage_kv: 0.4, breaking_ka: 65,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_1250a',  name: 'ACB 1250A',   cb_type: 'acb',  trip_rating_a: 1250, frame_a: 1250, rated_voltage_kv: 0.4, breaking_ka: 65,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_1600a',  name: 'ACB 1600A',   cb_type: 'acb',  trip_rating_a: 1600, frame_a: 1600, rated_voltage_kv: 0.4, breaking_ka: 85,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_2000a',  name: 'ACB 2000A',   cb_type: 'acb',  trip_rating_a: 2000, frame_a: 2000, rated_voltage_kv: 0.4, breaking_ka: 85,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_2500a',  name: 'ACB 2500A',   cb_type: 'acb',  trip_rating_a: 2500, frame_a: 2500, rated_voltage_kv: 0.4, breaking_ka: 100, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_3200a',  name: 'ACB 3200A',   cb_type: 'acb',  trip_rating_a: 3200, frame_a: 3200, rated_voltage_kv: 0.4, breaking_ka: 100, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
+  { id: 'acb_4000a',  name: 'ACB 4000A',   cb_type: 'acb',  trip_rating_a: 4000, frame_a: 4000, rated_voltage_kv: 0.4, breaking_ka: 100, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.15, instantaneous_pickup: 15 },
+  // MV Breakers (IEC 62271-100)
+  { id: 'mccb_200a_11kv', name: 'MCCB 200A 11kV', cb_type: 'mccb', trip_rating_a: 200,  frame_a: 200,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_400a_11kv', name: 'MCCB 400A 11kV', cb_type: 'mccb', trip_rating_a: 400,  frame_a: 400,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_630a_11kv', name: 'MCCB 630A 11kV', cb_type: 'mccb', trip_rating_a: 630,  frame_a: 630,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+];
+
+// ─── Standard Fuse Library ───
+// Typical gG fuse-link ratings per IEC 60269
+const STANDARD_FUSES = [
+  // LV gG fuses (IEC 60269-2)
+  { id: 'gg_6a',    name: 'gG 6A',     fuse_type: 'gG', rated_current_a: 6,    rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_10a',   name: 'gG 10A',    fuse_type: 'gG', rated_current_a: 10,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_16a',   name: 'gG 16A',    fuse_type: 'gG', rated_current_a: 16,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_20a',   name: 'gG 20A',    fuse_type: 'gG', rated_current_a: 20,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_25a',   name: 'gG 25A',    fuse_type: 'gG', rated_current_a: 25,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_32a',   name: 'gG 32A',    fuse_type: 'gG', rated_current_a: 32,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_40a',   name: 'gG 40A',    fuse_type: 'gG', rated_current_a: 40,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_50a',   name: 'gG 50A',    fuse_type: 'gG', rated_current_a: 50,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_63a',   name: 'gG 63A',    fuse_type: 'gG', rated_current_a: 63,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_80a',   name: 'gG 80A',    fuse_type: 'gG', rated_current_a: 80,   rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_100a',  name: 'gG 100A',   fuse_type: 'gG', rated_current_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_125a',  name: 'gG 125A',   fuse_type: 'gG', rated_current_a: 125,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_160a',  name: 'gG 160A',   fuse_type: 'gG', rated_current_a: 160,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_200a',  name: 'gG 200A',   fuse_type: 'gG', rated_current_a: 200,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_250a',  name: 'gG 250A',   fuse_type: 'gG', rated_current_a: 250,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_315a',  name: 'gG 315A',   fuse_type: 'gG', rated_current_a: 315,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_400a',  name: 'gG 400A',   fuse_type: 'gG', rated_current_a: 400,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_500a',  name: 'gG 500A',   fuse_type: 'gG', rated_current_a: 500,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  { id: 'gg_630a',  name: 'gG 630A',   fuse_type: 'gG', rated_current_a: 630,  rated_voltage_kv: 0.4, breaking_ka: 80  },
+  // MV fuses (IEC 60282-1)
+  { id: 'gg_6.3a_11kv',  name: 'gG 6.3A 11kV',  fuse_type: 'gG', rated_current_a: 6.3,  rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_10a_11kv',   name: 'gG 10A 11kV',   fuse_type: 'gG', rated_current_a: 10,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_16a_11kv',   name: 'gG 16A 11kV',   fuse_type: 'gG', rated_current_a: 16,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_25a_11kv',   name: 'gG 25A 11kV',   fuse_type: 'gG', rated_current_a: 25,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_40a_11kv',   name: 'gG 40A 11kV',   fuse_type: 'gG', rated_current_a: 40,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_63a_11kv',   name: 'gG 63A 11kV',   fuse_type: 'gG', rated_current_a: 63,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_100a_11kv',  name: 'gG 100A 11kV',  fuse_type: 'gG', rated_current_a: 100,  rated_voltage_kv: 11, breaking_ka: 50 },
+];
+
 // Interaction modes
 const MODE = {
   SELECT: 'select',
@@ -667,6 +736,7 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
+      { key: 'standard_type', label: 'Standard CB', type: 'standard_select', library: 'cb' },
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
@@ -702,6 +772,7 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
+      { key: 'standard_type', label: 'Standard Fuse', type: 'standard_select', library: 'fuse' },
       { key: 'fuse_type', label: 'Fuse Type', type: 'select', options: ['gG', 'aM'] },
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
