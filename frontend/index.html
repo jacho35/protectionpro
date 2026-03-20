@@ -83,6 +83,10 @@
           <option value="newton_raphson">Newton-Raphson</option>
           <option value="gauss_seidel">Gauss-Seidel</option>
         </select>
+        <button id="btn-scenarios" title="Manage Scenarios">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+          <span>Scenarios</span>
+        </button>
         <button id="btn-compliance" title="Generate Compliance Report">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           <span>Compliance</span>
@@ -713,6 +717,36 @@
               </div>
             </div>
 
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scenarios Modal -->
+  <div id="scenarios-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Scenarios</h3>
+        <button class="modal-close" id="btn-close-scenarios">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="scenario-save-form">
+          <h4>Save Current Configuration as Scenario</h4>
+          <div class="scenario-form-row">
+            <label for="scenario-name">Name</label>
+            <input type="text" id="scenario-name" placeholder="e.g. Base Case, Summer Peak, N-1 Contingency">
+          </div>
+          <div class="scenario-form-row">
+            <label for="scenario-desc">Description</label>
+            <textarea id="scenario-desc" rows="2" placeholder="Describe what this scenario represents..."></textarea>
+          </div>
+          <button id="btn-save-scenario" class="btn-primary">Save Scenario</button>
+        </div>
+        <div class="scenario-list-section">
+          <h4>Saved Scenarios</h4>
+          <div id="scenario-list" class="scenario-list">
+            <p class="scenario-empty">No scenarios saved yet.</p>
           </div>
         </div>
       </div>
