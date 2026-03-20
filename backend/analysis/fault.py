@@ -511,26 +511,18 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     else:
         far_side = 'blocked'
 
-    # Compute grounding impedance.
-    # The vector group designation (YN/yn/zn) indicates the neutral IS
-    # brought out and grounded.  If the grounding prop is still at its
-    # default "ungrounded", the vector group takes precedence — treat
-    # as solidly grounded.
+    # Compute grounding impedance from the user-specified grounding config.
+    # The grounding prop is authoritative — if the user sets "ungrounded",
+    # Z0 is blocked even when the vector group says YN/yn.
     v_hv = comp.props.get("voltage_hv_kv", 33)
     v_lv = comp.props.get("voltage_lv_kv", 11)
     z_base_hv = (v_hv ** 2) / base_mva
     z_base_lv = (v_lv ** 2) / base_mva
 
     def _get_grounding(side):
-        """Get grounding impedance for a winding side, honouring vector group."""
-        grounded_by_vg = hv_grounded if side == 'hv' else lv_grounded
+        """Get grounding impedance for a winding side."""
         grounding_cfg = grounding_hv if side == 'hv' else grounding_lv
         z_b = z_base_hv if side == 'hv' else z_base_lv
-
-        # Vector group says grounded but prop says ungrounded → solidly grounded
-        if grounded_by_vg and grounding_cfg == "ungrounded":
-            return complex(0, 0)
-
         return _grounding_impedance(grounding_cfg, comp, side, z_b)
 
     if bus_side:
