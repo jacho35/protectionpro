@@ -82,6 +82,7 @@ const Annotations = {
     if (result.ik3 != null) lines.push(`3Φ: ${result.ik3.toFixed(2)} kA`);
     if (result.ik1 != null) lines.push(`SLG: ${result.ik1.toFixed(2)} kA`);
     if (result.ikLL != null) lines.push(`LL: ${result.ikLL.toFixed(2)} kA`);
+    if (result.ikLLG != null) lines.push(`LLG: ${result.ikLLG.toFixed(2)} kA`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
