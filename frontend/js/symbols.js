@@ -55,11 +55,13 @@ const Symbols = {
   bus(w, h, comp) {
     const bw = (comp && comp.props && comp.props.busWidth) || w;
     const hw = bw / 2;
+    // Resize handles sit beyond the edge ports (which are at ±hw)
+    const handleOffset = 18; // past the port hit radius (14)
     return `
       <g class="symbol-bus">
         <line class="bus-bar" x1="${-hw}" y1="0" x2="${hw}" y2="0"/>
-        <rect class="bus-resize-handle bus-resize-left" x="${-hw - 14}" y="-10" width="14" height="20" rx="3" data-bus-resize="left"/>
-        <rect class="bus-resize-handle bus-resize-right" x="${hw}" y="-10" width="14" height="20" rx="3" data-bus-resize="right"/>
+        <rect class="bus-resize-handle bus-resize-left" x="${-hw - handleOffset - 12}" y="-10" width="12" height="20" rx="3" data-bus-resize="left"/>
+        <rect class="bus-resize-handle bus-resize-right" x="${hw + handleOffset}" y="-10" width="12" height="20" rx="3" data-bus-resize="right"/>
       </g>`;
   },
 
@@ -68,7 +70,10 @@ const Symbols = {
     const bw = (comp && comp.props && comp.props.busWidth) || 120;
     const hw = bw / 2;
     const ports = [];
-    // Evenly spaced top/bottom ports every 40px (no side ports — resize handles live there)
+    // Left and right edge ports for bus tie breakers
+    ports.push({ id: 'left', side: 'left', offset: 0, _x: -hw, _y: 0 });
+    ports.push({ id: 'right', side: 'right', offset: 0, _x: hw, _y: 0 });
+    // Evenly spaced top/bottom ports every 40px
     const spacing = 40;
     const count = Math.max(1, Math.floor(bw / spacing));
     const startX = -hw + (bw - (count - 1) * spacing) / 2;
