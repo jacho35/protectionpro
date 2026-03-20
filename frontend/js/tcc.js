@@ -361,6 +361,12 @@ const TCC = {
         // If relay has an associated CT, resolve voltage from CT's location
         const ctId = comp.props?.associated_ct;
         const measureAt = ctId && AppState.components.has(ctId) ? ctId : id;
+        // CT saturation modeling: load CT parameters if associated
+        let ctSat = null;
+        if (ctId && AppState.components.has(ctId)) {
+          const ctComp = AppState.components.get(ctId);
+          ctSat = ctSaturationParams(ctComp.props || {});
+        }
         this.devices.push({
           id,
           name: comp.props?.name || id,
@@ -370,6 +376,7 @@ const TCC = {
           voltage_kv: this._resolveDeviceVoltage(measureAt),
           associated_ct: ctId || null,
           trip_cb: comp.props?.trip_cb || null,
+          ctSat, // CT saturation params (null if no CT)
           // Relay params
           curveName: comp.props?.curve || 'IEC Standard Inverse',
           pickup: comp.props?.pickup_a || 100,
@@ -860,8 +867,82 @@ const TCC = {
       this._drawLabel(ctx, dev, this._currentToX(this._scaleCurrent(labelI, dev)), this._timeToY(labelT), dev.name);
     }
 
+    // ── CT Saturation curve (dashed) ──
+    // Shows how CT saturation increases relay operating time at high currents
+    if (dev.ctSat && dev.ctSat.iSatPrimary < Infinity) {
+      this._drawRelaySaturationCurve(ctx, dev);
+    }
+
     // Register drag handles
     this._registerRelayHandles(dev);
+  },
+
+  /**
+   * Draw the CT-saturated relay curve as a dashed line.
+   * Above the CT saturation point, the relay sees reduced current,
+   * so its operating time increases.
+   */
+  _drawRelaySaturationCurve(ctx, dev) {
+    const sat = dev.ctSat;
+    const iSatPri = sat.iSatPrimary;
+
+    // Only draw if saturation onset is within the plotted range
+    const satX = this._currentToX(this._scaleCurrent(iSatPri, dev));
+    if (satX > this.plotRight) return; // saturation beyond plot range
+
+    ctx.save();
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+
+    let started = false;
+    // Draw from saturation onset to max current
+    const iStart = iSatPri;
+    const iEnd = Math.min(dev.pickup * 200, this._scaleCurrentInverse(this.currentMax, dev));
+    const steps = 200;
+
+    for (let i = 0; i <= steps; i++) {
+      const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
+      const actualCurrent = Math.pow(10, logI); // actual primary amps
+      const effectiveCurrent = ctEffectiveCurrent(actualCurrent, sat);
+      const M = effectiveCurrent / dev.pickup;
+      const t = idmtTripTime(dev.curveName, M, dev.tds);
+
+      if (t <= 0 || !isFinite(t) || t > this.timeMax || t < this.timeMin) continue;
+
+      // Plot at the ACTUAL current position (x) but the SATURATED time (y)
+      const x = this._currentToX(this._scaleCurrent(actualCurrent, dev));
+      const y = this._timeToY(t);
+
+      if (x < this.plotLeft || x > this.plotRight || y < this.plotTop || y > this.plotBottom) continue;
+
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Draw CT saturation onset marker (vertical dotted line)
+    if (satX >= this.plotLeft && satX <= this.plotRight) {
+      ctx.setLineDash([2, 3]);
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.moveTo(satX, this.plotTop);
+      ctx.lineTo(satX, this.plotBottom);
+      ctx.stroke();
+
+      // Label the saturation onset
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.6;
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = dev.color;
+      ctx.textAlign = 'center';
+      ctx.fillText(`CT sat ${Math.round(iSatPri)}A`, satX, this.plotTop + 12);
+    }
+
+    ctx.restore();
   },
 
   _drawDistanceRelayCurve(ctx, dev) {
@@ -1571,6 +1652,15 @@ const TCC = {
       if (dev.deviceType === 'relay') {
         const M = current / dev.pickup;
         t = idmtTripTime(dev.curveName, M, dev.tds);
+        // Show saturated time if CT saturation applies
+        if (dev.ctSat && current > dev.ctSat.iSatPrimary) {
+          const effCurrent = ctEffectiveCurrent(current, dev.ctSat);
+          const Msat = effCurrent / dev.pickup;
+          const tSat = idmtTripTime(dev.curveName, Msat, dev.tds);
+          if (isFinite(tSat) && tSat > 0) {
+            lines.push({ name: `${dev.name} (CT sat)`, time: tSat, color: dev.color, dashed: true });
+          }
+        }
       } else if (dev.deviceType === 'distance_relay') {
         t = distanceRelayTripTime(dev.zones, current);
       } else if (dev.deviceType === 'fuse') {
@@ -1653,7 +1743,9 @@ const TCC = {
     ctx.textAlign = 'left';
     for (let i = 0; i < lines.length; i++) {
       ctx.fillStyle = i === 0 ? '#ddd' : (tip.lines[i - 1]?.color || '#fff');
+      if (i > 0 && tip.lines[i - 1]?.dashed) ctx.globalAlpha = 0.6;
       ctx.fillText(lines[i], tx + pad, ty + pad + (i + 1) * lineH - 3);
+      ctx.globalAlpha = 1.0;
     }
   },
 
@@ -1678,6 +1770,9 @@ const TCC = {
         if (dev.associated_ct) {
           const ctComp = AppState.components.get(dev.associated_ct);
           typeLabel += ` | CT: ${ctComp?.props?.name || dev.associated_ct}`;
+          if (dev.ctSat && dev.ctSat.iSatPrimary < Infinity) {
+            typeLabel += ` (sat@${Math.round(dev.ctSat.iSatPrimary)}A)`;
+          }
         }
         if (dev.trip_cb) {
           const cbComp = AppState.components.get(dev.trip_cb);
@@ -1791,6 +1886,17 @@ const TCC = {
     const idx = this.selectedDeviceIndex;
 
     if (dev.deviceType === 'relay') {
+      let ctSatHtml = '';
+      if (dev.ctSat && dev.ctSat.iSatPrimary < Infinity) {
+        const s = dev.ctSat;
+        ctSatHtml = `
+        <div class="tcc-ct-sat-info">
+          <div class="tcc-ct-sat-title">CT Saturation</div>
+          <div class="tcc-ct-sat-row">Ratio: ${s.primary}/${s.secondary} (${s.ratio}:1)</div>
+          <div class="tcc-ct-sat-row">Vk: ${Math.round(s.kneePointV)}V | Rct: ${s.rctOhm}\u03A9 | Rb: ${s.burdenOhm.toFixed(1)}\u03A9</div>
+          <div class="tcc-ct-sat-row">Saturation onset: ${Math.round(s.iSatPrimary)}A primary</div>
+        </div>`;
+      }
       html = `
         <div class="tcc-form-row">
           <label>Curve</label>
@@ -1807,7 +1913,7 @@ const TCC = {
         <div class="tcc-form-row">
           <label>Time Dial (TDS)</label>
           <input type="number" data-sel-field="tds" value="${dev.tds}" min="0.05" max="10" step="0.05">
-        </div>`;
+        </div>` + ctSatHtml;
     } else if (dev.deviceType === 'distance_relay') {
       html = dev.zones.map((z, i) => `
         <div class="tcc-form-row">
@@ -2119,7 +2225,9 @@ const TCC = {
 
   _deviceTripTime(dev, currentA) {
     if (dev.deviceType === 'relay') {
-      const M = currentA / dev.pickup;
+      // Account for CT saturation: relay sees reduced current when CT saturates
+      const effectiveA = dev.ctSat ? ctEffectiveCurrent(currentA, dev.ctSat) : currentA;
+      const M = effectiveA / dev.pickup;
       return idmtTripTime(dev.curveName, M, dev.tds);
     } else if (dev.deviceType === 'distance_relay') {
       return distanceRelayTripTime(dev.zones, currentA);

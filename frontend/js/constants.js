@@ -254,6 +254,100 @@ function idmtTripTime(curveName, M, TDS) {
   }
 }
 
+// ─── CT Saturation Model ───
+// Models the effect of CT core saturation on the effective current seen by relays.
+// Based on IEC 61869-2 accuracy limit factor (ALF) and knee-point voltage.
+//
+// When the CT saturates, the secondary waveform is clipped, reducing the RMS
+// current the relay actually measures.  This increases relay operating time.
+
+/**
+ * Parse a CT ratio string like "400/5" → { primary: 400, secondary: 5, ratio: 80 }
+ */
+function parseCTRatio(ratioStr) {
+  if (!ratioStr || typeof ratioStr !== 'string') return { primary: 400, secondary: 5, ratio: 80 };
+  const parts = ratioStr.split('/').map(Number);
+  if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+    return { primary: parts[0], secondary: parts[1], ratio: parts[0] / parts[1] };
+  }
+  return { primary: 400, secondary: 5, ratio: 80 };
+}
+
+/**
+ * Parse IEC 61869-2 accuracy class like "5P20" → ALF = 20
+ * Format: <error%>P<ALF> (e.g. 5P20, 10P10, 5P30)
+ */
+function parseCTAccuracyALF(accuracyClass) {
+  if (!accuracyClass || typeof accuracyClass !== 'string') return 20;
+  const m = accuracyClass.match(/(\d+)P(\d+)/i);
+  return m ? parseInt(m[2]) : 20;
+}
+
+/**
+ * Calculate CT saturation parameters.
+ * @param {object} ctProps - CT component props (ratio, accuracy_class, burden_va, knee_point_v, rct_ohm)
+ * @returns {object} { ratio, iSatPrimary, kneePointV, rctOhm, burdenOhm, alf }
+ */
+function ctSaturationParams(ctProps) {
+  const ct = parseCTRatio(ctProps.ratio);
+  const alf = parseCTAccuracyALF(ctProps.accuracy_class);
+  const burdenVA = parseFloat(ctProps.burden_va) || 15;
+  const rctOhm = parseFloat(ctProps.rct_ohm) || 0;
+  const iSecRated = ct.secondary; // Rated secondary current (5A or 1A)
+
+  // Burden in ohms: Z_burden = VA / I²
+  const burdenOhm = burdenVA / (iSecRated * iSecRated);
+
+  // Knee point voltage (user override or derived from ALF)
+  // Vk ≈ ALF × I_sec_rated × (Rct + R_burden)  [IEC 61869-2]
+  let kneePointV = parseFloat(ctProps.knee_point_v);
+  if (!kneePointV || kneePointV <= 0) {
+    kneePointV = alf * iSecRated * (rctOhm + burdenOhm);
+  }
+
+  // Primary current at which CT begins to saturate
+  // I_sat_sec = Vk / (Rct + R_burden)
+  const totalZ = rctOhm + burdenOhm;
+  const iSatSecondary = totalZ > 0 ? kneePointV / totalZ : Infinity;
+  const iSatPrimary = iSatSecondary * ct.ratio;
+
+  return { ratio: ct.ratio, primary: ct.primary, secondary: ct.secondary,
+           iSatPrimary, kneePointV, rctOhm, burdenOhm, alf, totalZ };
+}
+
+/**
+ * Calculate effective primary current accounting for CT saturation.
+ * Below saturation knee point: I_eff = I_primary (no effect).
+ * Above: waveform clipping reduces effective RMS current.
+ *
+ * Uses saturation angle model:
+ *   Ks = Vk / (I_sec_ideal × Z_total)
+ *   θ  = arccos(1 - 2·Ks)
+ *   η  = √((θ - sin(2θ)/2) / π)
+ *   I_eff = I_primary × η
+ *
+ * @param {number} iPrimary - Actual primary fault current (A)
+ * @param {object} satParams - From ctSaturationParams()
+ * @returns {number} Effective current the relay measures (primary A)
+ */
+function ctEffectiveCurrent(iPrimary, satParams) {
+  if (!satParams || satParams.iSatPrimary === Infinity) return iPrimary;
+  if (iPrimary <= satParams.iSatPrimary) return iPrimary;
+
+  // Ideal secondary current
+  const iSecIdeal = iPrimary / satParams.ratio;
+  // Saturation factor
+  const ks = satParams.kneePointV / (iSecIdeal * satParams.totalZ);
+  if (ks >= 1) return iPrimary; // shouldn't happen but guard
+
+  // Saturation angle (portion of cycle the CT is not saturated)
+  const theta = Math.acos(1 - 2 * ks);
+  // RMS reduction factor
+  const eta = Math.sqrt((theta - Math.sin(2 * theta) / 2) / Math.PI);
+
+  return iPrimary * Math.max(eta, 0.05); // floor at 5% to avoid zero
+}
+
 // ─── Distance Relay (21) Trip Time ───
 // Converts impedance zones to equivalent current thresholds and returns
 // the trip time for a given fault current.
@@ -582,6 +676,8 @@ const FIELD_INFO = {
   'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.',
   'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current\n• P = protection application.',
   'ct.burden_va':      'Default 15 VA — typical protection CT burden.\nSource: IEC 61869-2 §2 — standard rated burden values.',
+  'ct.rct_ohm':        'Default 2.0 Ω — CT secondary winding resistance.\nSource: IEC 61869-2 — typical protection CT Rct: 1–5 Ω.\nAffects saturation onset: higher Rct means earlier saturation.',
+  'ct.knee_point_v':   'Leave 0 to auto-derive from accuracy class ALF.\nVk = ALF × I_rated × (Rct + R_burden).\nSource: IEC 61869-2 — knee point voltage defines CT saturation onset.\nManual entry overrides the calculated value.',
 
   // PT
   'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V.',
@@ -988,12 +1084,16 @@ const COMPONENT_DEFS = {
       ratio: '400/5',
       accuracy_class: '5P20',
       burden_va: 15,
+      rct_ohm: 2.0,
+      knee_point_v: 0,  // 0 = auto-derive from ALF
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'ratio', label: 'Ratio', type: 'text' },
       { key: 'accuracy_class', label: 'Accuracy', type: 'text' },
       { key: 'burden_va', label: 'Burden', type: 'number', unit: 'VA' },
+      { key: 'rct_ohm', label: 'Winding Resistance', type: 'number', unit: '\u03A9', min: 0, step: 0.1 },
+      { key: 'knee_point_v', label: 'Knee Point Voltage', type: 'number', unit: 'V', min: 0, step: 1, placeholder: 'Auto from ALF' },
     ],
   },
   pt: {
