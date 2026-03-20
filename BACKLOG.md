@@ -27,13 +27,10 @@
 - **User-defined curve data**: Import custom manufacturer TCC data points (CSV)
 
 ## UI / UX
-- **Undo/Redo system**: Full action history with keyboard shortcuts
-- **Mini-map**: Overview panel for large diagrams
-- **Dark mode**: Alternative color scheme
 - **Component grouping**: Group components into reusable blocks / sub-diagrams
 - **Multi-page diagrams**: Multiple sheets per project for large systems
 - **Print / Page layout**: Print-ready diagram output with title block and legend
-- **Wire routing options**: Manual bend points, diagonal routing, spline curves
+- **Wire diagonal/spline routing**: Diagonal routing, spline curves (bend points already implemented)
 
 ## Multi-User & Collaboration
 - **User authentication**: Login system with role-based access

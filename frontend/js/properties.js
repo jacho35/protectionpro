@@ -287,6 +287,7 @@ const Properties = {
 
     AppState.dirty = true;
     AppState.clearResults();
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
 
     // Update component label if name changed

@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
   Project.init();
   StandardData.init();
   TCC.init();
+  UndoManager.init();
+  MiniMap.init();
 
   // Toolbar mode buttons
   const btnSelect = document.getElementById('btn-select');
@@ -32,6 +34,24 @@ document.addEventListener('DOMContentLoaded', () => {
     Canvas.render();
     Properties.clear();
   });
+
+  // Undo/Redo buttons
+  document.getElementById('btn-undo').addEventListener('click', () => UndoManager.undo());
+  document.getElementById('btn-redo').addEventListener('click', () => UndoManager.redo());
+
+  // Dark mode toggle
+  document.getElementById('btn-dark-mode').addEventListener('click', () => {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    localStorage.setItem('protectionpro-dark-mode', isDark ? '1' : '0');
+    document.getElementById('btn-dark-mode').classList.toggle('active', isDark);
+    MiniMap.render();
+  });
+  // Restore dark mode preference
+  if (localStorage.getItem('protectionpro-dark-mode') === '1') {
+    document.body.classList.add('dark-mode');
+    document.getElementById('btn-dark-mode').classList.add('active');
+  }
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -111,6 +131,24 @@ document.addEventListener('DOMContentLoaded', () => {
           AppState.copySelected();
           AppState.pasteClipboard();
           Canvas.render();
+        }
+        break;
+      case 'z':
+      case 'Z':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            UndoManager.redo();
+          } else {
+            UndoManager.undo();
+          }
+        }
+        break;
+      case 'y':
+      case 'Y':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          UndoManager.redo();
         }
         break;
     }
