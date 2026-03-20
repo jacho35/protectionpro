@@ -83,8 +83,8 @@ const Symbols = {
         <line x1="0" y1="${-dy - r}" x2="0" y2="${-h / 2}"/>
         <line x1="0" y1="${dy + r}" x2="0" y2="${h / 2}"/>
         ${groundingSvg}
-        <text x="${w / 2 + 2}" y="${-dy + 4}" font-size="8" fill="#888" font-family="sans-serif">${topLabel}</text>
-        <text x="${w / 2 + 2}" y="${dy + 4}" font-size="8" fill="#888" font-family="sans-serif">${botLabel}</text>
+        <text x="${-w / 2 - 2}" y="${-dy + 4}" font-size="8" fill="#888" font-family="sans-serif" text-anchor="end">${topLabel}</text>
+        <text x="${-w / 2 - 2}" y="${dy + 4}" font-size="8" fill="#888" font-family="sans-serif" text-anchor="end">${botLabel}</text>
       </g>`;
   },
 
