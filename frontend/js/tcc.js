@@ -47,6 +47,13 @@ const TCC = {
   activeTabId: null,
   referenceVoltage: null, // kV — null means no voltage scaling
 
+  // ── Fault current markers ──
+  showFaultMarkers: true,
+
+  // ── Comparison mode ──
+  compareMode: false,
+  compareTabId: null, // second tab ID for comparison
+
   // ── Curve drag state ──
   _curveDrag: null,  // { devIndex, mode: 'pickup'|'tds'|'magnetic', startX, startY, origValue }
   _curveHandles: [], // { devIndex, mode, x, y, r } for hit-testing
@@ -502,24 +509,39 @@ const TCC = {
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Compute plot area
-    this.plotLeft = 70;
-    this.plotTop = 30;
-    this.plotRight = w - 20;
-    this.plotBottom = h - 40;
-    this.plotWidth = this.plotRight - this.plotLeft;
-    this.plotHeight = this.plotBottom - this.plotTop;
-
     // Background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
 
+    if (this.compareMode && this.compareTabId) {
+      // ── Comparison mode: two charts side-by-side ──
+      this._renderCompareMode(ctx, w, h);
+    } else {
+      // ── Normal single-chart mode ──
+      this._renderSingleChart(ctx, w, h, this.activeTabId);
+    }
+  },
+
+  _renderSingleChart(ctx, w, h, tabId, offsetX, chartWidth) {
+    const ox = offsetX || 0;
+    const cw = chartWidth || w;
+
+    // Compute plot area
+    this.plotLeft = ox + 70;
+    this.plotTop = 30;
+    this.plotRight = ox + cw - 20;
+    this.plotBottom = h - 40;
+    this.plotWidth = this.plotRight - this.plotLeft;
+    this.plotHeight = this.plotBottom - this.plotTop;
+
     this._drawGrid(ctx);
     this._drawAxes(ctx);
 
-    // Draw each device curve (filtered by active tab)
+    // Draw each device curve (filtered by tab)
     this._labelRects = [];
     this._curveHandles = [];
+    const savedTabId = this.activeTabId;
+    this.activeTabId = tabId;
     const tabDevices = this._getVisibleDevicesForTab();
     for (const dev of tabDevices) {
       if (!dev.visible) continue;
@@ -529,24 +551,65 @@ const TCC = {
       else if (dev.deviceType === 'xfmr_thermal') this._drawXfmrThermal(ctx, dev);
       else if (dev.deviceType === 'cable_thermal') this._drawCableThermal(ctx, dev);
     }
+    this.activeTabId = savedTabId;
 
     // Draw interactive curve handles
     this._drawCurveHandles(ctx);
+
+    // Draw fault current markers
+    this._drawFaultMarkers(ctx);
 
     // Draw tooltip
     if (this._tooltip) {
       this._drawTooltip(ctx, this._tooltip);
     }
 
-    // Title (include tab name and voltage reference)
+    // Title
     ctx.fillStyle = '#333';
     ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
     let title = 'Time-Current Characteristic (TCC)';
-    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
-    if (activeTab && activeTab.id !== 'all') title += ` — ${activeTab.name}`;
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (tab && tab.id !== 'all') title += ` — ${tab.name}`;
     if (this.referenceVoltage) title += ` @ ${this.referenceVoltage} kV ref`;
-    ctx.fillText(title, w / 2, 18);
+    ctx.fillText(title, ox + cw / 2, 18);
+  },
+
+  _renderCompareMode(ctx, w, h) {
+    const halfW = Math.floor(w / 2);
+
+    // Draw divider line
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(halfW, 0);
+    ctx.lineTo(halfW, h);
+    ctx.stroke();
+
+    // Left chart: active tab
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, halfW, h);
+    ctx.clip();
+    this._renderSingleChart(ctx, w, h, this.activeTabId, 0, halfW);
+    ctx.restore();
+
+    // Right chart: compare tab
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(halfW, 0, halfW, h);
+    ctx.clip();
+    this._renderSingleChart(ctx, w, h, this.compareTabId, halfW, halfW);
+    ctx.restore();
+
+    // Compare label
+    ctx.fillStyle = '#555';
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    const leftTab = this.tabs.find(t => t.id === this.activeTabId);
+    const rightTab = this.tabs.find(t => t.id === this.compareTabId);
+    ctx.fillText(leftTab?.name || 'Left', halfW / 2, h - 5);
+    ctx.fillText(rightTab?.name || 'Right', halfW + halfW / 2, h - 5);
   },
 
   _drawGrid(ctx) {
@@ -901,6 +964,65 @@ const TCC = {
       ctx.fillStyle = h.color || '#333';
       ctx.fill();
     }
+  },
+
+  // ── Fault current markers from analysis results ──
+
+  _drawFaultMarkers(ctx) {
+    if (!this.showFaultMarkers) return;
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses) return;
+
+    const markers = []; // { current_ka, label, bus, voltage_kv, color }
+    for (const [busId, r] of Object.entries(fr.buses)) {
+      const comp = AppState.components.get(busId);
+      const busName = comp?.props?.name || busId;
+      const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
+
+      if (r.ik3 != null) markers.push({ current_ka: r.ik3, label: `${busName} 3Φ`, voltage_kv: vkv, color: '#d32f2f' });
+      if (r.ik1 != null) markers.push({ current_ka: r.ik1, label: `${busName} SLG`, voltage_kv: vkv, color: '#1565c0' });
+      if (r.ip != null) markers.push({ current_ka: r.ip, label: `${busName} ip`, voltage_kv: vkv, color: '#f57c00' });
+    }
+
+    if (markers.length === 0) return;
+
+    ctx.save();
+    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+
+    for (const m of markers) {
+      let amps = m.current_ka * 1000; // kA to A
+      // Apply voltage reference scaling if active
+      if (this.referenceVoltage && m.voltage_kv) {
+        amps = amps * (m.voltage_kv / this.referenceVoltage);
+      }
+      if (amps < this.currentMin || amps > this.currentMax) continue;
+
+      const x = this._currentToX(amps);
+      if (x < this.plotLeft || x > this.plotRight) continue;
+
+      // Dashed vertical line
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = m.color;
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(x, this.plotTop);
+      ctx.lineTo(x, this.plotBottom);
+      ctx.stroke();
+
+      // Label at top (rotated)
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash([]);
+      ctx.save();
+      ctx.translate(x + 3, this.plotTop + 4);
+      ctx.rotate(Math.PI / 2);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = m.color;
+      ctx.fillText(`${m.label} ${m.current_ka.toFixed(2)} kA`, 0, 0);
+      ctx.restore();
+    }
+
+    ctx.restore();
   },
 
   _registerRelayHandles(dev) {
@@ -1427,6 +1549,14 @@ const TCC = {
       this.referenceVoltage = isNaN(val) ? null : val;
       this.render();
     });
+  },
+
+  _renderCompareSelector() {
+    const sel = document.getElementById('tcc-compare-tab');
+    if (!sel) return;
+    sel.innerHTML = this.tabs.map(t =>
+      `<option value="${t.id}" ${t.id === this.compareTabId ? 'selected' : ''}>${t.name}</option>`
+    ).join('');
   },
 
   // ── Export: PNG, PDF, CSV (per-tab) ──

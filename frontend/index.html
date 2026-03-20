@@ -263,6 +263,8 @@
           <div id="tcc-voltage-ref" class="tcc-voltage-ref" style="display:none">
             <!-- Populated by JS: voltage reference selector -->
           </div>
+          <button id="btn-tcc-fault-markers" class="btn-small active" title="Toggle fault current markers">Faults</button>
+          <button id="btn-tcc-compare" class="btn-small" title="Toggle comparison mode">Compare</button>
           <button id="btn-tcc-export-png" class="btn-small" title="Export chart as PNG">PNG</button>
           <button id="btn-tcc-export-pdf" class="btn-small" title="Export chart as PDF">PDF</button>
           <button id="btn-tcc-export-csv" class="btn-small" title="Export curve data as CSV">CSV</button>
@@ -410,6 +412,15 @@
             </div>
             <div id="tcc-coord-results" class="tcc-coord-results">
               <!-- Populated by JS -->
+            </div>
+          </div>
+          <div class="tcc-panel-section" id="tcc-compare-section" style="display:none">
+            <h4>Compare With</h4>
+            <div class="tcc-form-row">
+              <label for="tcc-compare-tab">Right Tab</label>
+              <select id="tcc-compare-tab">
+                <!-- Populated by JS -->
+              </select>
             </div>
           </div>
         </div>

@@ -22,8 +22,6 @@
 
 ## TCC Chart Enhancements
 - **Drag devices between tabs**: Move devices to custom tabs via drag-and-drop
-- **Overlay fault current markers**: Show fault levels from analysis as vertical markers on TCC
-- **TCC comparison mode**: Side-by-side view of two tabs for before/after coordination comparison
 - **User-defined curve data**: Import custom manufacturer TCC data points (CSV)
 
 ## UI / UX

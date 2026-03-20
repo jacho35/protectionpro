@@ -252,6 +252,12 @@ html, body {
   background: var(--bg-tertiary);
 }
 
+.btn-small.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 .btn-secondary {
   color: var(--text-secondary);
 }

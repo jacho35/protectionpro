@@ -321,6 +321,37 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-tcc-export-pdf').addEventListener('click', () => TCC.exportPDF());
   document.getElementById('btn-tcc-export-csv').addEventListener('click', () => TCC.exportCSV());
 
+  // TCC fault markers toggle
+  document.getElementById('btn-tcc-fault-markers').addEventListener('click', (e) => {
+    TCC.showFaultMarkers = !TCC.showFaultMarkers;
+    e.target.classList.toggle('active', TCC.showFaultMarkers);
+    TCC.render();
+  });
+
+  // TCC compare mode toggle
+  document.getElementById('btn-tcc-compare').addEventListener('click', (e) => {
+    TCC.compareMode = !TCC.compareMode;
+    e.target.classList.toggle('active', TCC.compareMode);
+    const section = document.getElementById('tcc-compare-section');
+    section.style.display = TCC.compareMode ? '' : 'none';
+    if (TCC.compareMode) {
+      TCC._renderCompareSelector();
+      // Default to second tab if available
+      if (TCC.tabs.length > 1 && !TCC.compareTabId) {
+        TCC.compareTabId = TCC.tabs[1].id;
+      }
+    } else {
+      TCC.compareTabId = null;
+    }
+    TCC.render();
+  });
+
+  // TCC compare tab selector
+  document.getElementById('tcc-compare-tab').addEventListener('change', (e) => {
+    TCC.compareTabId = e.target.value;
+    TCC.render();
+  });
+
   // TCC add device tab switching
   document.querySelectorAll('.tcc-add-tab').forEach(tab => {
     tab.addEventListener('click', (e) => {
