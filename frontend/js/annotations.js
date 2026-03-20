@@ -58,27 +58,8 @@ const Annotations = {
       }
     }
 
-    // Load flow on branches
-    if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
-      for (const branch of AppState.loadFlowResults.branches) {
-        let baseX, baseY;
-        const comp = AppState.components.get(branch.elementId);
-        if (comp) {
-          baseX = comp.x + 40;
-          baseY = comp.y;
-        } else {
-          // Solid link — position at midpoint between the two buses
-          const fromBus = AppState.components.get(branch.from_bus);
-          const toBus = AppState.components.get(branch.to_bus);
-          if (!fromBus || !toBus) continue;
-          baseX = (fromBus.x + toBus.x) / 2 + 40;
-          baseY = (fromBus.y + toBus.y) / 2;
-        }
-        const key = `br:${branch.elementId || branch.from_bus + '_' + branch.to_bus}`;
-        const off = this.getOffset(key);
-        html += this.renderBranchFlowBadge(baseX + off.dx, baseY + off.dy, branch, key);
-      }
-    }
+    // Branch flow badges are NOT rendered here — they are shown as inline
+    // data labels on each component by Canvas.renderComponentDataLabels().
 
     // Voltage mismatch warnings from load flow
     if (AppState.loadFlowResults && AppState.loadFlowResults.warnings) {
@@ -205,10 +186,10 @@ const Annotations = {
     ).join('');
 
     return `
+      <rect x="${ringX}" y="${ringY}" width="${ringW}" height="${ringH}"
+            fill="none" stroke="#d32f2f" stroke-width="2.5" stroke-dasharray="5,3" rx="6" ry="6"
+            class="voltage-error-ring" pointer-events="none"/>
       <g class="annotation-group error-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
-        <rect x="${ringX}" y="${ringY}" width="${ringW}" height="${ringH}"
-              fill="none" stroke="#d32f2f" stroke-width="2.5" stroke-dasharray="5,3" rx="6" ry="6"
-              class="voltage-error-ring"/>
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">VOLTAGE ERROR</text>
         ${textHtml}

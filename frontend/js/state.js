@@ -292,6 +292,9 @@ const AppState = {
       wires: [...this.wires.values()],
       nextId: this.nextId,
       scenarios: this.scenarios,
+      annotationOffsets: Annotations.offsets.size > 0
+        ? Object.fromEntries(Annotations.offsets)
+        : undefined,
     };
   },
 
@@ -312,6 +315,13 @@ const AppState = {
     }
     for (const w of data.wires || []) {
       this.wires.set(w.id, w);
+    }
+    // Restore annotation badge positions
+    if (data.annotationOffsets && typeof Annotations !== 'undefined') {
+      Annotations.offsets.clear();
+      for (const [key, val] of Object.entries(data.annotationOffsets)) {
+        Annotations.offsets.set(key, val);
+      }
     }
     this.dirty = false;
   },
