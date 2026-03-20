@@ -205,10 +205,10 @@ const Annotations = {
     ).join('');
 
     return `
+      <rect x="${ringX}" y="${ringY}" width="${ringW}" height="${ringH}"
+            fill="none" stroke="#d32f2f" stroke-width="2.5" stroke-dasharray="5,3" rx="6" ry="6"
+            class="voltage-error-ring" pointer-events="none"/>
       <g class="annotation-group error-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
-        <rect x="${ringX}" y="${ringY}" width="${ringW}" height="${ringH}"
-              fill="none" stroke="#d32f2f" stroke-width="2.5" stroke-dasharray="5,3" rx="6" ry="6"
-              class="voltage-error-ring"/>
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">VOLTAGE ERROR</text>
         ${textHtml}
