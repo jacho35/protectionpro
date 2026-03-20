@@ -31,9 +31,7 @@ def _is_transparent_and_closed(comp):
 
 
 def _find_buses_for_element(comp_id, adjacency, components, bus_idx):
-    """Walk from a branch element through transparent elements, cables, and
-    transformers to find connected buses.  This allows cable-transformer chains
-    (no intermediate bus) to still discover the endpoint buses."""
+    """Walk from a branch element through transparent elements to find connected buses."""
     visited = {comp_id}
     queue = list(adjacency.get(comp_id, []))
     found = []
@@ -46,10 +44,7 @@ def _find_buses_for_element(comp_id, adjacency, components, bus_idx):
             found.append(nid)
             continue
         comp = components.get(nid)
-        if not comp:
-            continue
-        # Walk through transparent elements AND other branch elements (cable/transformer)
-        if _is_transparent_and_closed(comp) or comp.type in ("cable", "transformer"):
+        if comp and _is_transparent_and_closed(comp):
             for neighbor_id in adjacency.get(nid, []):
                 if neighbor_id not in visited:
                     queue.append(neighbor_id)

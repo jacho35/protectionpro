@@ -82,10 +82,7 @@ const Components = {
       adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
     }
 
-    // BFS from a component port through transparent elements, cables, and
-    // transformers to find a bus.  When a cable is wired directly to a
-    // transformer (no intermediate bus) we still need to discover the bus
-    // on the far side so that branches and source-reachability work correctly.
+    // BFS from a component port through transparent elements to find a bus
     const findBusFromPort = (startId, portId) => {
       const visited = new Set([startId]);
       const startNeighbors = (adj.get(startId) || [])
@@ -99,8 +96,7 @@ const Components = {
         const comp = AppState.components.get(id);
         if (!comp) continue;
         if (comp.type === 'bus') return comp;
-        // Walk through transparent elements AND branch elements (cable/transformer)
-        if (isTransparentClosed(comp) || comp.type === 'cable' || comp.type === 'transformer') {
+        if (isTransparentClosed(comp)) {
           for (const { id: nid } of (adj.get(id) || [])) {
             if (!visited.has(nid)) queue.push(nid);
           }
