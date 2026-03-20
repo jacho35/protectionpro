@@ -3,16 +3,10 @@
 ## Protection Coordination Enhancements
 - **CT saturation modeling**: CT ratio and burden effects on relay operating times
 - **Directional relay curves**: Directional overcurrent (67) curve plotting
-- **Distance relay (21) TCC curves**: Impedance-based relay plotting on TCC
-- **Auto-coordination engine**: Automatically set relay/CB grading based on upstream/downstream topology
 
 ## Fault Analysis Enhancements
 - **Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component
 - **IEC 61363 marine/offshore fault analysis**: Fault analysis for isolated marine/offshore networks
-- **Protection relay miscoordination detection**: Flag relays that won't trip in correct sequence for a given fault
-
-## Arc Flash
-- **Arc flash label PDF export**: Downloadable NFPA 70E warning labels
 
 ## Load Flow Enhancements
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
@@ -65,3 +59,10 @@
 - ~~Time-varying voltage profile (sub-transient/transient/steady-state)~~
 - ~~Motor reacceleration voltage recovery post-fault clearing~~
 - ~~Color-coded voltage sag map on SLD~~
+- ~~Distance relay (21) TCC curves with mho characteristic R-X inset~~
+- ~~Auto-coordination engine: topology-aware relay/CB grading~~
+- ~~Protection relay miscoordination detection~~
+- ~~Arc flash label PDF export (server-side)~~
+- ~~Relay-CT-CB linking (associated CT and trip CB)~~
+- ~~Server-side PDF report generation (fpdf2)~~
+- ~~Parallel cable impedance modeling~~
