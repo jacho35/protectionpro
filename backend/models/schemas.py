@@ -120,6 +120,33 @@ class FaultResults(BaseModel):
     method: str = "IEC 60909"
 
 
+class ArcFlashBusResult(BaseModel):
+    bus_id: str
+    bus_name: str
+    voltage_kv: float
+    bolted_fault_ka: float
+    arcing_current_ka: float
+    arcing_current_reduced_ka: float
+    incident_energy_cal: float  # cal/cm²
+    incident_energy_reduced_cal: float
+    arc_flash_boundary_mm: float
+    clearing_time_s: float
+    working_distance_mm: float
+    electrode_config: str
+    gap_mm: float
+    ppe_category: int
+    ppe_name: str
+    ppe_description: str
+    warning: str = ""
+    label_html: str = ""
+
+
+class ArcFlashResults(BaseModel):
+    buses: dict[str, ArcFlashBusResult]
+    method: str = "IEEE 1584-2018"
+    warnings: list[str] = []
+
+
 class LoadFlowBus(BaseModel):
     bus_id: str
     bus_name: str

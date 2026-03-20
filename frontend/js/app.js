@@ -279,6 +279,88 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
   document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
 
+  // Arc Flash Analysis
+  document.getElementById('btn-arcflash').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running arc flash analysis.';
+      return;
+    }
+    const { errors, warnings } = Components.validate();
+    if (errors.length > 0) {
+      showValidationModal('Arc Flash — Validation', errors, warnings, null);
+      return;
+    }
+    if (warnings.length > 0) {
+      showValidationModal('Arc Flash — Validation', errors, warnings, () => executeArcFlash());
+      return;
+    }
+    executeArcFlash();
+  });
+
+  async function executeArcFlash() {
+    document.getElementById('status-info').textContent = 'Running arc flash analysis (IEEE 1584-2018)...';
+    try {
+      const result = await API.runArcFlash();
+      AppState.arcFlashResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Arc flash analysis complete.';
+      showArcFlashResults(result);
+    } catch (e) {
+      document.getElementById('status-info').textContent = 'Arc flash analysis failed.';
+      showValidationModal('Arc Flash — Error', [{ msg: `Arc flash analysis failed: ${e.message || 'Unknown error'}` }], [], null);
+    }
+  }
+
+  function showArcFlashResults(result) {
+    const modal = document.getElementById('arcflash-modal');
+    const body = document.getElementById('arcflash-body');
+    if (!modal || !body) return;
+
+    const buses = result.buses || {};
+    const entries = Object.values(buses).sort((a, b) => b.incident_energy_cal - a.incident_energy_cal);
+
+    if (entries.length === 0) {
+      body.innerHTML = '<p>No buses found for arc flash analysis.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) {
+        html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      }
+      html += '</div>';
+    }
+
+    html += `<table class="af-table">
+      <thead><tr>
+        <th>Bus</th><th>Voltage</th><th>Bolted Fault</th><th>Arcing Current</th>
+        <th>Incident Energy</th><th>AFB</th><th>Clearing Time</th>
+        <th>PPE Cat.</th><th>PPE</th>
+      </tr></thead><tbody>`;
+
+    for (const b of entries) {
+      const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
+      html += `<tr class="${ppeClass}">
+        <td>${b.bus_name || b.bus_id}</td>
+        <td>${b.voltage_kv.toFixed(3)} kV</td>
+        <td>${b.bolted_fault_ka.toFixed(2)} kA</td>
+        <td>${b.arcing_current_ka.toFixed(2)} kA</td>
+        <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
+        <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
+        <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
+        <td><span class="af-ppe-badge">${b.ppe_category}</span></td>
+        <td>${b.ppe_name}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   // Compliance report
   document.getElementById('btn-compliance').addEventListener('click', () => {
     if (AppState.components.size === 0) {
@@ -312,6 +394,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-close-compliance').addEventListener('click', () => {
     document.getElementById('compliance-modal').style.display = 'none';
+  });
+
+  document.getElementById('btn-close-arcflash').addEventListener('click', () => {
+    document.getElementById('arcflash-modal').style.display = 'none';
   });
   document.getElementById('compliance-modal').addEventListener('click', (e) => {
     if (e.target.id === 'compliance-modal') e.target.style.display = 'none';

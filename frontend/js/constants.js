@@ -688,12 +688,18 @@ const COMPONENT_DEFS = {
       voltage_kv: 11,
       bus_type: 'PQ',
       busWidth: 120,
+      working_distance_mm: 455,
+      electrode_config: 'VCB',
+      enclosure_size_mm: 508,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
       { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'] },
       { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
+      { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5 },
+      { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'] },
+      { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10 },
     ],
   },
   transformer: {

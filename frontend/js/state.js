@@ -47,6 +47,7 @@ const AppState = {
   // Analysis results
   faultResults: null,
   loadFlowResults: null,
+  arcFlashResults: null,
 
   // Scenarios — saved snapshots of network configuration
   scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
@@ -241,6 +242,7 @@ const AppState = {
     this.selectedIds.clear();
     this.faultResults = null;
     this.loadFlowResults = null;
+    this.arcFlashResults = null;
     for (const c of scenario.components) {
       this.components.set(c.id, JSON.parse(JSON.stringify(c)));
     }
@@ -383,6 +385,7 @@ const AppState = {
   clearResults() {
     this.faultResults = null;
     this.loadFlowResults = null;
+    this.arcFlashResults = null;
   },
 
   // Reset entire state
@@ -396,6 +399,7 @@ const AppState = {
     this.selectedIds.clear();
     this.faultResults = null;
     this.loadFlowResults = null;
+    this.arcFlashResults = null;
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;

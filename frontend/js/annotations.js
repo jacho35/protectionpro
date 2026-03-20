@@ -74,6 +74,19 @@ const Annotations = {
       }
     }
 
+    // Arc flash annotations on buses
+    if (AppState.arcFlashResults && AppState.arcFlashResults.buses) {
+      for (const [busId, result] of Object.entries(AppState.arcFlashResults.buses)) {
+        const comp = AppState.components.get(busId);
+        if (!comp) continue;
+        const key = `af:${busId}`;
+        const off = this.getOffset(key);
+        const x = comp.x + 70 + off.dx;
+        const y = comp.y + 50 + off.dy;
+        html += this.renderArcFlashBadge(x, y, result, key);
+      }
+    }
+
     this.layer.innerHTML = html;
   },
 
@@ -220,6 +233,38 @@ const Annotations = {
       <g class="annotation-group error-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">VOLTAGE ERROR</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderArcFlashBadge(x, y, result, key) {
+    const lines = [];
+    lines.push(`${result.incident_energy_cal.toFixed(2)} cal/cm²`);
+    lines.push(`PPE: Cat ${result.ppe_category}`);
+    lines.push(`AFB: ${(result.arc_flash_boundary_mm / 1000).toFixed(2)} m`);
+    lines.push(`Iarc: ${result.arcing_current_ka.toFixed(2)} kA`);
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 120;
+
+    // Color by PPE category
+    let fillColor;
+    if (result.ppe_category >= 4) fillColor = '#d32f2f';       // red - danger
+    else if (result.ppe_category === 3) fillColor = '#e65100';  // dark orange
+    else if (result.ppe_category === 2) fillColor = '#f57c00';  // orange
+    else if (result.ppe_category === 1) fillColor = '#fbc02d';  // yellow
+    else fillColor = '#4caf50';                                  // green
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text af-badge-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group arcflash-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge af-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.15" stroke="${fillColor}" stroke-width="1.5"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">ARC FLASH</text>
         ${textHtml}
       </g>`;
   },

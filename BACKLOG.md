@@ -12,9 +12,7 @@
 - **Protection relay miscoordination detection**: Flag relays that won't trip in correct sequence for a given fault
 
 ## Arc Flash
-- **IEEE 1584-2018 arc flash calculations**: Incident energy, arc flash boundary, PPE category
-- **Equipment labeling**: Auto-generate arc flash warning labels per NFPA 70E
-- **Working distance configuration**: Per-bus working distance settings
+- **Arc flash label PDF export**: Downloadable NFPA 70E warning labels
 
 ## Load Flow Enhancements
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
@@ -58,3 +56,6 @@
 - ~~Off-page connectors (cross-page electrical links)~~
 - ~~Draggable bus resizing with dynamic connection ports~~
 - ~~Distributed generation: Solar PV and wind turbine models~~
+- ~~IEEE 1584-2018 arc flash calculations with incident energy, PPE categories, and arc flash boundary~~
+- ~~Per-bus working distance and electrode configuration settings~~
+- ~~Arc flash on-diagram annotations with PPE-category color coding~~
