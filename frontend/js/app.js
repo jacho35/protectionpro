@@ -56,11 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'Escape':
         if (AppState.wireStart) {
           Wiring.cancelWire();
-        } else {
-          AppState.clearSelection();
-          Canvas.render();
-          Properties.clear();
         }
+        AppState.clearSelection();
+        setMode(MODE.SELECT);
+        Canvas.render();
+        Properties.clear();
         break;
       case 's':
         if (e.ctrlKey || e.metaKey) {
@@ -334,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-save-settings').addEventListener('click', () => {
     AppState.baseMVA = parseFloat(document.getElementById('base-mva').value) || DEFAULT_BASE_MVA;
     AppState.frequency = parseInt(document.getElementById('base-freq').value) || DEFAULT_FREQUENCY;
+    AppState.defaultLengthUnit = document.getElementById('default-length-unit').value || 'm';
     AppState.clearResults();
     Canvas.render();
     document.getElementById('settings-modal').style.display = 'none';

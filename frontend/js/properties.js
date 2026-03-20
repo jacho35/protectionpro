@@ -122,7 +122,12 @@ const Properties = {
       // Number or text input — handle unit conversion for display
       let displayValue = value;
       if (field.unitOptions) {
-        const selectedUnit = this.unitSelections[field.key] || field.unitOptions[0].label;
+        let defaultUnit = field.unitOptions[0].label;
+        // Use project setting for cable length unit
+        if (field.key === 'length_km' && AppState.defaultLengthUnit) {
+          defaultUnit = AppState.defaultLengthUnit;
+        }
+        const selectedUnit = this.unitSelections[field.key] || defaultUnit;
         const unitOpt = field.unitOptions.find(u => u.label === selectedUnit);
         if (unitOpt && unitOpt.mult !== 1) {
           displayValue = value / unitOpt.mult;
@@ -137,7 +142,9 @@ const Properties = {
 
     // Unit display: selectable dropdown if unitOptions, else static text
     if (field.unitOptions) {
-      const selectedUnit = this.unitSelections[field.key] || field.unitOptions[0].label;
+      let defaultUnit = field.unitOptions[0].label;
+      if (field.key === 'length_km' && AppState.defaultLengthUnit) defaultUnit = AppState.defaultLengthUnit;
+      const selectedUnit = this.unitSelections[field.key] || defaultUnit;
       const opts = field.unitOptions.map(u =>
         `<option value="${u.label}" ${u.label === selectedUnit ? 'selected' : ''}>${u.label}</option>`
       ).join('');
@@ -195,7 +202,9 @@ const Properties = {
         const def = COMPONENT_DEFS[comp.type];
         const fieldDef = def.fields.find(f => f.key === field);
         if (fieldDef && fieldDef.unitOptions) {
-          const selectedUnit = this.unitSelections[field] || fieldDef.unitOptions[0].label;
+          let defaultUnit = fieldDef.unitOptions[0].label;
+          if (field === 'length_km' && AppState.defaultLengthUnit) defaultUnit = AppState.defaultLengthUnit;
+          const selectedUnit = this.unitSelections[field] || defaultUnit;
           const unitOpt = fieldDef.unitOptions.find(u => u.label === selectedUnit);
           if (unitOpt) value = value * unitOpt.mult;
         }

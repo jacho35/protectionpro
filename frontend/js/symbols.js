@@ -202,8 +202,10 @@ const Symbols = {
               <circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
     }).join('');
 
-    // Name label below component
-    const labelY = h / 2 + 14;
+    // Name label below component (draggable via offsets)
+    const nlOX = comp.nameLabelOffsetX || 0;
+    const nlOY = comp.nameLabelOffsetY || 0;
+    const labelY = h / 2 + 14 + nlOY;
     const label = comp.props.name || '';
 
     return `
@@ -213,7 +215,7 @@ const Symbols = {
           ${symbolSvg}
         </g>
         ${portsHtml}
-        <text class="comp-label" x="0" y="${labelY}" text-anchor="middle" font-size="11" fill="#333">${label}</text>
+        <text class="comp-name-label" data-comp-id="${comp.id}" x="${nlOX}" y="${labelY}" text-anchor="middle" font-size="11" fill="#333" cursor="move">${label}</text>
       </g>`;
   },
 

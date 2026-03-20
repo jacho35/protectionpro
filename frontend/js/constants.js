@@ -464,7 +464,7 @@ const COMPONENT_DEFS = {
     defaults: {
       name: 'Cable',
       standard_type: '',
-      length_km: 1,
+      length_km: 0.1,
       r_per_km: 0.1,
       x_per_km: 0.08,
       rated_amps: 400,
@@ -473,7 +473,7 @@ const COMPONENT_DEFS = {
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'standard_type', label: 'Cable Type', type: 'standard_select', library: 'cable' },
-      { key: 'length_km', label: 'Length', type: 'number', unit: 'km', unitOptions: [{ label: 'km', mult: 1 }, { label: 'm', mult: 0.001 }] },
+      { key: 'length_km', label: 'Length', type: 'number', unit: 'm', unitOptions: [{ label: 'm', mult: 0.001 }, { label: 'km', mult: 1 }] },
       { key: 'r_per_km', label: 'R', type: 'number', unit: 'Ω/km' },
       { key: 'x_per_km', label: 'X', type: 'number', unit: 'Ω/km' },
       { key: 'rated_amps', label: 'Rated Current', type: 'number', unit: 'A' },
