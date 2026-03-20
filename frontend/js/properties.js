@@ -42,6 +42,23 @@ const Properties = {
     // Build editable fields grouped by section
     html += '<div class="prop-section"><div class="prop-section-title">Parameters</div>';
     for (const field of def.fields) {
+      // Conditional visibility: skip fields whose showWhen condition isn't met
+      if (field.showWhen) {
+        const depVal = comp.props[field.showWhen.field] || '';
+        if (field.showWhen.match) {
+          // Regex match against dependency value
+          if (!field.showWhen.match.test(depVal)) continue;
+          // For LV-side grounding, check the LV portion of vector group
+          if (field.showWhen.side === 'lv') {
+            const vg = depVal.toLowerCase();
+            // LV is grounded if the lowercase portion after first uppercase has 'n' (e.g., Dy*n*, Y*yn*, Yz*n*)
+            const lvPart = vg.slice(vg.search(/[a-z]/));
+            if (!lvPart.includes('n')) continue;
+          }
+        } else if (field.showWhen.values) {
+          if (!field.showWhen.values.includes(depVal)) continue;
+        }
+      }
       const val = comp.props[field.key] ?? '';
       html += this.renderField(field, val, comp.id);
     }
@@ -218,8 +235,13 @@ const Properties = {
 
     // Update component label if name changed
     if (field === 'name') {
-      const label = document.querySelector(`.sld-component[data-id="${comp.id}"] .comp-label`);
+      const label = document.querySelector(`.sld-component[data-id="${comp.id}"] .comp-name-label`);
       if (label) label.textContent = value;
+    }
+
+    // Re-render properties when fields with conditional dependents change
+    if (['vector_group', 'grounding_hv', 'grounding_lv'].includes(field)) {
+      this.show(comp.id);
     }
   },
 
