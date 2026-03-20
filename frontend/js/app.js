@@ -270,9 +270,9 @@ document.addEventListener('DOMContentLoaded', () => {
       Canvas.render();
       document.getElementById('status-info').textContent = `${label} complete.`;
     } catch (e) {
-      const msg = e.message || 'Unknown error';
+      console.error(`${label} error:`, e);
       document.getElementById('status-info').textContent = `${label} failed.`;
-      showValidationModal(`${label} — Error`, [{ msg: `${label} failed: ${msg}` }], [], null);
+      showValidationModal(`${label} — Error`, [{ msg: e.message || 'Unknown error' }], [], null);
     }
   }
 
@@ -306,8 +306,9 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('status-info').textContent = 'Arc flash analysis complete.';
       showArcFlashResults(result);
     } catch (e) {
+      console.error('Arc flash analysis error:', e);
       document.getElementById('status-info').textContent = 'Arc flash analysis failed.';
-      showValidationModal('Arc Flash — Error', [{ msg: `Arc flash analysis failed: ${e.message || 'Unknown error'}` }], [], null);
+      showValidationModal('Arc Flash — Error', [{ msg: e.message || 'Unknown error' }], [], null);
     }
   }
 
