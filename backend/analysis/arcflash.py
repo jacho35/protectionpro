@@ -115,6 +115,7 @@ class ArcFlashBusResult:
     ppe_description: str
     warning: str = ""
     label_html: str = ""  # Pre-formatted NFPA 70E label HTML
+    recommendations: list = field(default_factory=list)
 
 
 @dataclass
@@ -411,7 +412,117 @@ def run_arc_flash(project_data, fault_results):
             label_html=label,
         )
 
+    # Generate recommendations for each bus
+    for bus_id, r in results.items():
+        r.recommendations = _generate_recommendations(r, buses[bus_id], components, adjacency)
+
     return ArcFlashResults(buses=results, warnings=warnings)
+
+
+def _generate_recommendations(result, bus, components, adjacency):
+    """Generate actionable recommendations to reduce arc flash incident energy.
+
+    Analyzes the key factors (clearing time, working distance, electrode config,
+    available fault current) and suggests practical mitigation strategies.
+    """
+    recs = []
+    e = result.incident_energy_cal
+    t = result.clearing_time_s
+    ppe = result.ppe_category
+    vkv = result.voltage_kv
+
+    if ppe <= 0:
+        return recs  # Already safe — no recommendations needed
+
+    # 1. Reduce clearing time (biggest impact on incident energy)
+    if t > 0.1:
+        recs.append(
+            f"Reduce clearing time (currently {t*1000:.0f} ms). "
+            "Install or enable instantaneous trip on upstream circuit breakers. "
+            "A zone-selective interlocking (ZSI) scheme can reduce trip times to <100 ms."
+        )
+    if t > 0.5:
+        recs.append(
+            "Consider adding a bus differential relay (87B) for sub-cycle clearing (<50 ms). "
+            "This is one of the most effective methods to reduce arc flash energy."
+        )
+
+    # 2. Maintenance mode / temporary settings
+    if ppe >= 2:
+        recs.append(
+            "Use a maintenance mode switch on upstream breakers to temporarily lower "
+            "instantaneous pickup during maintenance. This reduces clearing time when "
+            "workers are exposed."
+        )
+
+    # 3. Arc flash relay
+    if e > 4.0:
+        recs.append(
+            "Install an arc flash detection relay (light/pressure sensor) for <35 ms clearing. "
+            "Arc flash relays detect UV light and current simultaneously, providing "
+            "the fastest possible fault clearing."
+        )
+
+    # 4. Increase working distance
+    if result.working_distance_mm < 610:
+        recs.append(
+            f"Increase working distance from {result.working_distance_mm} mm to 610 mm or more. "
+            "Incident energy decreases significantly with distance (inverse square relationship)."
+        )
+
+    # 5. Remote operation
+    if ppe >= 3:
+        recs.append(
+            "Implement remote racking and remote operation of circuit breakers "
+            "to eliminate personnel exposure during switching operations."
+        )
+
+    # 6. Reduce available fault current
+    if result.bolted_fault_ka > 30:
+        recs.append(
+            f"Available fault current is high ({result.bolted_fault_ka:.1f} kA). "
+            "Consider current-limiting fuses or current-limiting reactors to reduce "
+            "the available fault level at this bus."
+        )
+
+    # 7. Current-limiting fuses
+    has_fuse = False
+    for neighbor_id, _, _ in adjacency.get(bus.id, []):
+        comp = components.get(neighbor_id)
+        if comp and comp.type == "fuse":
+            has_fuse = True
+            break
+    if not has_fuse and ppe >= 2:
+        recs.append(
+            "Install current-limiting fuses upstream. Current-limiting fuses can "
+            "clear faults in less than half a cycle, dramatically reducing incident energy."
+        )
+
+    # 8. Electrode configuration change
+    if result.electrode_config in ("VCB", "VCBB"):
+        recs.append(
+            "Evaluate changing to open-air electrode configuration (VOA/HOA) where possible. "
+            "Enclosed configurations concentrate arc energy, increasing incident energy."
+        )
+
+    # 9. Voltage-specific: MV
+    if vkv > 1.0 and ppe >= 3:
+        recs.append(
+            "For medium-voltage equipment, consider vacuum circuit breakers with 3-cycle "
+            "clearing or SF6 breakers. Ensure protection relay settings are coordinated "
+            "for minimum operating time at the available fault current."
+        )
+
+    # 10. Engineering controls
+    if ppe >= 4 or ppe == -1:
+        recs.append(
+            "CRITICAL: Incident energy exceeds safe work limits. "
+            "Evaluate de-energizing the equipment before work (NFPA 70E §130.2). "
+            "If energized work is necessary, perform an energized electrical work permit "
+            "per NFPA 70E §130.2(A) and ensure a qualified safety observer is present."
+        )
+
+    return recs
 
 
 def _generate_label(bus_name, voltage_kv, energy, boundary_mm, ppe_cat,

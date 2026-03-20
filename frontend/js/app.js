@@ -343,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     for (const b of entries) {
       const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
+      const hasRecs = b.recommendations && b.recommendations.length > 0;
       html += `<tr class="${ppeClass}">
         <td>${b.bus_name || b.bus_id}</td>
         <td>${b.voltage_kv.toFixed(3)} kV</td>
@@ -354,6 +355,18 @@ document.addEventListener('DOMContentLoaded', () => {
         <td><span class="af-ppe-badge">${b.ppe_category}</span></td>
         <td>${b.ppe_name}</td>
       </tr>`;
+      if (hasRecs) {
+        html += `<tr class="${ppeClass} af-rec-row">
+          <td colspan="9">
+            <details class="af-rec-details">
+              <summary>Recommendations to reduce PPE category (${b.recommendations.length})</summary>
+              <ul class="af-rec-list">
+                ${b.recommendations.map(r => `<li>${r}</li>`).join('')}
+              </ul>
+            </details>
+          </td>
+        </tr>`;
+      }
     }
     html += '</tbody></table>';
 
@@ -398,6 +411,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-close-arcflash').addEventListener('click', () => {
     document.getElementById('arcflash-modal').style.display = 'none';
+  });
+
+  // Help modal
+  document.getElementById('btn-help').addEventListener('click', () => {
+    document.getElementById('help-modal').style.display = '';
+  });
+  document.getElementById('btn-close-help').addEventListener('click', () => {
+    document.getElementById('help-modal').style.display = 'none';
+  });
+  document.getElementById('help-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'help-modal') e.target.style.display = 'none';
+  });
+  // Help tab switching
+  document.querySelectorAll('.help-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.help-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.help-content').forEach(c => c.style.display = 'none');
+      tab.classList.add('active');
+      document.getElementById(`help-tab-${tab.dataset.tab}`).style.display = '';
+    });
   });
   document.getElementById('compliance-modal').addEventListener('click', (e) => {
     if (e.target.id === 'compliance-modal') e.target.style.display = 'none';
