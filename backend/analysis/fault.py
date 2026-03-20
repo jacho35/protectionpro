@@ -4,11 +4,13 @@ Implements initial symmetrical short-circuit current (I"k) for:
 - Three-phase fault
 - Single line-to-ground (SLG) fault
 - Line-to-line (LL) fault
+- Double line-to-ground (LLG) fault
 
 Per-unit method on a common MVA base.
 """
 
 import math
+import re
 import numpy as np
 from ..models.schemas import ProjectData, FaultResults, FaultResultBus, FaultBranchContribution
 
@@ -19,7 +21,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     Args:
         project: The project data.
         fault_bus_id: If set, only compute fault on this bus.
-        fault_type: "3phase", "slg", "ll", or None for all types.
+        fault_type: "3phase", "slg", "ll", "llg", or None for all types.
     """
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
@@ -53,7 +55,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 bus_id=bus.id,
                 bus_name=bus.props.get("name", bus.id),
                 voltage_kv=voltage_kv,
-                ik3=0, ik1=0, ikLL=0
+                ik3=0, ik1=0, ikLL=0, ikLLG=0
             )
             continue
 
@@ -68,24 +70,32 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         ik3_ka = None
         ik1_ka = None
         ikLL_ka = None
+        ikLLG_ka = None
 
         # Three-phase fault: I"k3 = c * V_n / (sqrt(3) * |Z_eq|)
         if not fault_type or fault_type == "3phase":
             ik3_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
             ik3_ka = round(ik3_pu * i_base_ka, 3)
 
-        # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
-        if not fault_type or fault_type == "slg":
+        # Compute Z0 once for fault types that need it (SLG, LLG)
+        needs_z0 = not fault_type or fault_type in ("slg", "llg")
+        z0 = complex(1e10, 0)  # Default: no zero-sequence path
+        has_z0_path = False
+        if needs_z0:
             z0_sources = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
             if z0_sources:
                 z0 = _parallel_impedances(z0_sources)
+                has_z0_path = True
+
+        # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
+        if not fault_type or fault_type == "slg":
+            if has_z0_path:
                 z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
                 ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
                 ik1_ka = round(ik1_pu * i_base_ka, 3)
             else:
                 # No zero-sequence path exists (e.g. bus between delta windings)
                 # Z0 → ∞, so SLG fault current ≈ 0
-                z0 = complex(1e10, 0)
                 ik1_ka = 0.0
 
         # Line-to-line fault: I"kLL = c * V_n / |Z1 + Z2|
@@ -94,17 +104,40 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
             ikLL_ka = round(ikLL_pu * i_base_ka, 3)
 
+        # Double line-to-ground fault:
+        # I"kLLG = √3 × c × V_n / (√3 × |Z1 + Z2‖Z0|)
+        # where Z2‖Z0 = Z2 × Z0 / (Z2 + Z0)
+        # With Z1 = Z2 = z_eq (positive = negative seq for static equipment):
+        # I"kLLG = √3 × c / |z_eq + z_eq × z0 / (z_eq + z0)|
+        if not fault_type or fault_type == "llg":
+            if has_z0_path:
+                z2 = z_eq  # Z2 = Z1 for static equipment per IEC 60909
+                z2_par_z0 = (z2 * z0) / (z2 + z0) if abs(z2 + z0) > 1e-15 else complex(1e10, 0)
+                z_llg = z_eq + z2_par_z0  # Z1 + Z2‖Z0
+                ikLLG_pu = c_factor * math.sqrt(3) / abs(z_llg) if abs(z_llg) > 1e-10 else 0
+                ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
+            else:
+                # No zero-sequence path: Z0 → ∞, Z2‖Z0 → Z2
+                # Degenerates to line-to-line fault
+                z_ll_deg = z_eq + z_eq
+                ikLLG_pu = c_factor * math.sqrt(3) / abs(z_ll_deg) if abs(z_ll_deg) > 1e-10 else 0
+                ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
+
         # Compute branch contributions using current divider
         # For selected fault type, determine total fault current in p.u.
         # When no specific fault type, default to 3-phase for branch display
         active_type = fault_type or "3phase"
         if active_type == "slg":
-            # z0 was computed in the SLG block above (always runs when fault_type == "slg")
             z_slg_br = z_eq + z_eq + z0
             ik_total_pu = 3 * c_factor / abs(z_slg_br) if abs(z_slg_br) > 1e-10 else 0
         elif active_type == "ll":
             z_ll_br = z_eq + z_eq
             ik_total_pu = c_factor * math.sqrt(3) / abs(z_ll_br) if abs(z_ll_br) > 1e-10 else 0
+        elif active_type == "llg":
+            z2_br = z_eq
+            z2_par_z0_br = (z2_br * z0) / (z2_br + z0) if abs(z2_br + z0) > 1e-15 else complex(1e10, 0)
+            z_llg_br = z_eq + z2_par_z0_br
+            ik_total_pu = c_factor * math.sqrt(3) / abs(z_llg_br) if abs(z_llg_br) > 1e-10 else 0
         else:
             ik_total_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
 
@@ -121,6 +154,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ik3=ik3_ka,
             ik1=ik1_ka,
             ikLL=ikLL_ka,
+            ikLLG=ikLLG_ka,
             z_eq_real=round(z_eq.real, 6),
             z_eq_imag=round(z_eq.imag, 6),
             z_eq_mag=round(abs(z_eq), 6),
@@ -204,7 +238,7 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
     for path in source_paths:
         z_path = path["z_total"]
         if abs(z_path) > 1e-15:
-            if fault_type == "ll":
+            if fault_type in ("ll", "llg"):
                 i_path_pu = c_factor * math.sqrt(3) / abs(z_path)
             else:
                 i_path_pu = c_factor / abs(z_path)
@@ -376,33 +410,41 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     the transformer winding configuration blocks zero-sequence current.
 
     The entry_port parameter indicates which transformer port faces the
-    fault bus ('primary' = HV side, 'secondary' = LV side).  A delta
-    winding on the bus-facing side blocks zero-sequence current from
-    entering the transformer, so Z0 is infinite (returns None).
+    fault bus ('primary' = top port, 'secondary' = bottom port).
+    For step-down transformers: primary=HV, secondary=LV.
+    For step-up transformers: primary=LV, secondary=HV.
+
+    A delta winding on the bus-facing side blocks zero-sequence current
+    from entering the transformer, so Z0 is infinite (returns None).
     """
     vg = comp.props.get("vector_group", "Dyn11")
     grounding_hv = comp.props.get("grounding_hv", "ungrounded")
     grounding_lv = comp.props.get("grounding_lv", "solidly_grounded")
-    v_kv = comp.props.get("voltage_lv_kv", 11)
-    z_base = (v_kv ** 2) / base_mva
+    is_step_up = comp.props.get("winding_config") == "step_up"
 
-    # Parse vector group to determine winding types
-    # HV winding: first character(s) uppercase
-    hv_grounded = vg.upper().startswith("YN")
+    # Parse vector group — strip uppercase HV designation to find LV part
+    # HV winding: leading uppercase letters (D, Y, YN, Z, ZN)
+    lv_part = re.sub(r'^[A-Z]+', '', vg)  # e.g. "Dyn11" → "yn11", "YNyn0" → "yn0"
+
+    hv_grounded = vg.upper().startswith("YN") or vg.upper().startswith("ZN")
     hv_delta = vg[0].upper() == 'D'
-    # LV winding: lowercase portion after HV designation
-    lv_part = vg[1:]  # Everything after first character
-    lv_grounded = "yn" in lv_part.lower() or "zn" in lv_part.lower()
-    lv_delta = any(c == 'd' for c in lv_part[:1])
+    lv_grounded = lv_part.lower().startswith("yn") or lv_part.lower().startswith("zn")
+    lv_delta = lv_part.lower().startswith("d")
 
-    # Determine which winding faces the fault bus
-    # 'primary' port = HV winding, 'secondary' port = LV winding
+    # Map port to winding side, accounting for step-up inversion
+    # step_down (default): primary(top)=HV, secondary(bottom)=LV
+    # step_up: primary(top)=LV, secondary(bottom)=HV
     if entry_port == 'primary':
-        # Fault bus connects to HV (primary) side
+        bus_side = 'lv' if is_step_up else 'hv'
+    elif entry_port == 'secondary':
+        bus_side = 'hv' if is_step_up else 'lv'
+    else:
+        bus_side = None  # Unknown — check both
+
+    if bus_side == 'hv':
         bus_side_delta = hv_delta
         bus_side_grounded = hv_grounded
-    elif entry_port == 'secondary':
-        # Fault bus connects to LV (secondary) side
+    elif bus_side == 'lv':
         bus_side_delta = lv_delta
         bus_side_grounded = lv_grounded
     else:
@@ -419,23 +461,39 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     if not bus_side_grounded:
         return None  # Ungrounded star — no zero-sequence path
 
-    # Compute grounding impedance from the bus-side grounded winding
-    z_gnd = complex(0, 0)
-    if entry_port == 'secondary' and lv_grounded:
-        z_gnd = _grounding_impedance(grounding_lv, comp, 'lv', z_base)
-    elif entry_port == 'primary' and hv_grounded:
-        v_hv = comp.props.get("voltage_hv_kv", 33)
-        z_base_hv = (v_hv ** 2) / base_mva
-        z_gnd = _grounding_impedance(grounding_hv, comp, 'hv', z_base_hv)
+    # Compute grounding impedance.
+    # The vector group designation (YN/yn/zn) indicates the neutral IS
+    # brought out and grounded.  If the grounding prop is still at its
+    # default "ungrounded", the vector group takes precedence — treat
+    # as solidly grounded.
+    v_hv = comp.props.get("voltage_hv_kv", 33)
+    v_lv = comp.props.get("voltage_lv_kv", 11)
+    z_base_hv = (v_hv ** 2) / base_mva
+    z_base_lv = (v_lv ** 2) / base_mva
+
+    def _get_grounding(side):
+        """Get grounding impedance for a winding side, honouring vector group."""
+        grounded_by_vg = hv_grounded if side == 'hv' else lv_grounded
+        grounding_cfg = grounding_hv if side == 'hv' else grounding_lv
+        z_b = z_base_hv if side == 'hv' else z_base_lv
+
+        # Vector group says grounded but prop says ungrounded → solidly grounded
+        if grounded_by_vg and grounding_cfg == "ungrounded":
+            return complex(0, 0)
+
+        return _grounding_impedance(grounding_cfg, comp, side, z_b)
+
+    if bus_side:
+        z_gnd = _get_grounding(bus_side)
     elif lv_grounded:
-        z_gnd = _grounding_impedance(grounding_lv, comp, 'lv', z_base)
+        z_gnd = _get_grounding('lv')
     elif hv_grounded:
-        v_hv = comp.props.get("voltage_hv_kv", 33)
-        z_base_hv = (v_hv ** 2) / base_mva
-        z_gnd = _grounding_impedance(grounding_hv, comp, 'hv', z_base_hv)
+        z_gnd = _get_grounding('hv')
+    else:
+        z_gnd = None
 
     if z_gnd is None:
-        return None  # Ungrounded winding
+        return None  # Truly ungrounded — no zero-sequence path
 
     # 3*Zn appears in the zero-sequence circuit
     return z_gnd * 3
