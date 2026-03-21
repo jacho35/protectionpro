@@ -78,6 +78,13 @@ const API = {
     return this.request('/analysis/duty-check', 'POST', data);
   },
 
+  // Run study manager (batch all analyses)
+  async runStudyManager(enabledStudies = null) {
+    const data = AppState.toJSON();
+    if (enabledStudies) data.enabled_studies = enabledStudies;
+    return this.request('/analysis/study-manager', 'POST', data);
+  },
+
   // Save project
   async saveProject() {
     const data = AppState.toJSON();

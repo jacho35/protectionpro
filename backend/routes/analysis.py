@@ -1,8 +1,10 @@
 """Analysis routes — fault analysis, load flow, arc flash, cable sizing,
-motor starting, and equipment duty check."""
+motor starting, equipment duty check, and study manager."""
 
 import traceback
+from typing import Optional
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
@@ -10,6 +12,7 @@ from ..analysis.arcflash import run_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
 from ..analysis.motor_starting import run_motor_starting
 from ..analysis.duty_check import run_duty_check
+from ..analysis.study_manager import run_study_manager
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -82,3 +85,18 @@ def duty_check(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Duty check error: {e}")
+
+
+class StudyManagerRequest(ProjectData):
+    """Extends ProjectData with study manager options."""
+    enabled_studies: Optional[list[str]] = None
+
+
+@router.post("/study-manager")
+def study_manager(data: StudyManagerRequest):
+    """Run all enabled studies in batch and return consolidated results."""
+    try:
+        return run_study_manager(data, enabled_studies=data.enabled_studies)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Study manager error: {e}")
