@@ -149,6 +149,18 @@
             <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
             <span>TCC</span>
           </button>
+          <button id="btn-cable-sizing" title="Cable Sizing Calculator">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Cable Sizing</span>
+          </button>
+          <button id="btn-motor-starting" title="Motor Starting Voltage Dip Analysis">
+            <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
+            <span>Motor Starting</span>
+          </button>
+          <button id="btn-duty-check" title="Equipment Duty Check">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span>Duty Check</span>
+          </button>
         </div>
       </div>
       <div class="toolbar-right">
@@ -330,6 +342,51 @@
       </div>
       <div class="modal-body">
         <div id="arcflash-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cable Sizing Results Modal -->
+  <div id="cable-sizing-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Cable Sizing Analysis</h3>
+        <button class="modal-close" id="btn-close-cable-sizing">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="cable-sizing-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Motor Starting Results Modal -->
+  <div id="motor-starting-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Motor Starting Voltage Dip Analysis</h3>
+        <button class="modal-close" id="btn-close-motor-starting">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="motor-starting-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Equipment Duty Check Results Modal -->
+  <div id="duty-check-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Equipment Duty Check</h3>
+        <button class="modal-close" id="btn-close-duty-check">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="duty-check-body">
           <!-- Populated by JS -->
         </div>
       </div>

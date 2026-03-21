@@ -312,6 +312,271 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ── Cable Sizing Analysis ──
+  document.getElementById('btn-cable-sizing').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running cable sizing.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running cable sizing analysis...';
+    try {
+      const result = await API.runCableSizing();
+      AppState.cableSizingResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Cable sizing analysis complete.';
+      showCableSizingResults(result);
+    } catch (e) {
+      console.error('Cable sizing error:', e);
+      document.getElementById('status-info').textContent = 'Cable sizing analysis failed.';
+      showValidationModal('Cable Sizing — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  });
+
+  function showCableSizingResults(result) {
+    const modal = document.getElementById('cable-sizing-modal');
+    const body = document.getElementById('cable-sizing-body');
+    if (!modal || !body) return;
+
+    const cables = result.cables || [];
+    if (cables.length === 0) {
+      body.innerHTML = '<p>No cables found in the project.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    const failCount = cables.filter(c => c.status === 'fail').length;
+    const warnCount = cables.filter(c => c.status === 'warning').length;
+    const passCount = cables.filter(c => c.status === 'pass').length;
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      html += '</div>';
+    }
+
+    if (failCount > 0) {
+      html += `<div class="af-warning-item" style="color:#d32f2f;font-weight:600;margin-bottom:8px">${failCount} cable(s) FAIL sizing checks</div>`;
+    }
+
+    html += `<table class="af-table">
+      <thead><tr>
+        <th>Cable</th><th>From → To</th><th>Load (A)</th><th>Thermal</th>
+        <th>VDrop%</th><th>Withstand</th><th>Status</th><th>Recommended</th>
+      </tr></thead><tbody>`;
+
+    for (const c of cables) {
+      const rowClass = c.status === 'fail' ? 'af-danger' : c.status === 'warning' ? 'af-medium' : 'af-low';
+      const thermalIcon = c.thermal_ok ? '✓' : '✗';
+      const vdropIcon = c.voltage_drop_ok ? '✓' : '✗';
+      const withstandIcon = c.fault_withstand_ok ? '✓' : '✗';
+      const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+        : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+        : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+      html += `<tr class="${rowClass}" data-cable-id="${c.cable_id}" style="cursor:pointer">
+        <td>${c.cable_name}</td>
+        <td>${c.from_bus} → ${c.to_bus}</td>
+        <td>${c.load_current_a.toFixed(1)}</td>
+        <td>${thermalIcon} ${c.thermal_loading_pct.toFixed(0)}%</td>
+        <td>${vdropIcon} ${c.voltage_drop_pct.toFixed(2)}%</td>
+        <td>${withstandIcon}</td>
+        <td>${statusBadge}</td>
+        <td>${c.recommended_cable || '—'}</td>
+      </tr>`;
+      if (c.issues.length > 0) {
+        html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">
+          ${c.issues.join('<br>')}
+        </td></tr>`;
+      }
+    }
+    html += '</tbody></table>';
+
+    body.innerHTML = html;
+    modal.style.display = '';
+
+    // Click-to-highlight cable on SLD
+    body.querySelectorAll('tr[data-cable-id]').forEach(row => {
+      row.addEventListener('click', () => {
+        const cid = row.dataset.cableId;
+        AppState.selectedIds.clear();
+        AppState.selectedIds.add(cid);
+        Canvas.render();
+      });
+    });
+  }
+
+  // ── Motor Starting Analysis ──
+  document.getElementById('btn-motor-starting').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running motor starting analysis.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running motor starting voltage dip analysis...';
+    try {
+      const result = await API.runMotorStarting();
+      AppState.motorStartingResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Motor starting analysis complete.';
+      showMotorStartingResults(result);
+    } catch (e) {
+      console.error('Motor starting error:', e);
+      document.getElementById('status-info').textContent = 'Motor starting analysis failed.';
+      showValidationModal('Motor Starting — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  });
+
+  function showMotorStartingResults(result) {
+    const modal = document.getElementById('motor-starting-modal');
+    const body = document.getElementById('motor-starting-body');
+    if (!modal || !body) return;
+
+    const motors = result.motors || [];
+    if (motors.length === 0) {
+      body.innerHTML = '<p>No induction motors found in the project.</p>';
+      if (result.warnings && result.warnings.length > 0) {
+        body.innerHTML += '<div class="af-warnings">' + result.warnings.map(w => `<div class="af-warning-item">⚠ ${w}</div>`).join('') + '</div>';
+      }
+      modal.style.display = '';
+      return;
+    }
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      html += '</div>';
+    }
+
+    for (const m of motors) {
+      const statusClass = m.status === 'fail' ? 'af-danger' : m.status === 'warning' ? 'af-medium' : 'af-low';
+      const willStartIcon = m.motor_will_start ? '<span style="color:#4caf50;font-weight:600">YES</span>' : '<span style="color:#d32f2f;font-weight:600">NO</span>';
+      const statusBadge = m.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+        : m.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+        : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+
+      html += `<div class="${statusClass}" style="border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong>${m.motor_name}</strong> ${statusBadge}
+      </div>`;
+      html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;margin-bottom:8px">
+        <div>Rated: <strong>${m.rated_kw} kW</strong></div>
+        <div>Start Current: <strong>${m.start_current_a.toFixed(0)} A</strong></div>
+        <div>Terminal Bus: <strong>${m.terminal_bus}</strong></div>
+        <div>Terminal V: <strong>${m.motor_terminal_voltage_pu.toFixed(3)} p.u.</strong></div>
+        <div>Will Start: ${willStartIcon}</div>
+        <div>Max Dip: <strong>${m.max_system_dip_pct.toFixed(1)}%</strong> at ${m.max_dip_bus}</div>
+      </div>`;
+
+      if (m.issues.length > 0) {
+        html += '<div style="color:#b71c1c;font-size:11px;margin-bottom:8px">' + m.issues.join('<br>') + '</div>';
+      }
+
+      // Bus dips table (top 5 worst)
+      const sortedDips = Object.entries(m.bus_dips).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      if (sortedDips.length > 0) {
+        html += `<table class="af-table" style="font-size:11px"><thead><tr><th>Bus</th><th>Voltage Dip (%)</th></tr></thead><tbody>`;
+        for (const [bus, dip] of sortedDips) {
+          const dipColor = dip > 15 ? '#d32f2f' : dip > 10 ? '#f57c00' : dip > 5 ? '#fbc02d' : '#4caf50';
+          html += `<tr><td>${bus}</td><td style="color:${dipColor};font-weight:600">${dip.toFixed(2)}%</td></tr>`;
+        }
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
+  // ── Equipment Duty Check ──
+  document.getElementById('btn-duty-check').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running duty check.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running equipment duty check...';
+    try {
+      const result = await API.runDutyCheck();
+      AppState.dutyCheckResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Equipment duty check complete.';
+      showDutyCheckResults(result);
+    } catch (e) {
+      console.error('Duty check error:', e);
+      document.getElementById('status-info').textContent = 'Duty check failed.';
+      showValidationModal('Duty Check — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  });
+
+  function showDutyCheckResults(result) {
+    const modal = document.getElementById('duty-check-modal');
+    const body = document.getElementById('duty-check-body');
+    if (!modal || !body) return;
+
+    const devices = result.devices || [];
+    if (devices.length === 0) {
+      body.innerHTML = '<p>No circuit breakers or fuses found in the project.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    const failCount = devices.filter(d => d.status === 'fail').length;
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      html += '</div>';
+    }
+
+    if (failCount > 0) {
+      html += `<div class="af-warning-item" style="color:#d32f2f;font-weight:600;margin-bottom:8px">${failCount} device(s) FAIL duty check — system is not adequately protected</div>`;
+    }
+
+    html += `<table class="af-table">
+      <thead><tr>
+        <th>Device</th><th>Type</th><th>Bus</th><th>Fault (kA)</th>
+        <th>Rating (kA)</th><th>Utilisation</th><th>Continuous</th><th>Status</th>
+      </tr></thead><tbody>`;
+
+    for (const d of devices) {
+      const rowClass = d.status === 'fail' ? 'af-danger' : d.status === 'warning' ? 'af-medium' : 'af-low';
+      const statusBadge = d.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+        : d.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+        : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+      const contIcon = d.continuous_ok ? '✓' : '✗';
+      html += `<tr class="${rowClass}" data-device-id="${d.device_id}" style="cursor:pointer">
+        <td>${d.device_name}</td>
+        <td>${d.device_type.toUpperCase()}</td>
+        <td>${d.location_bus}</td>
+        <td>${d.prospective_fault_ka.toFixed(2)}</td>
+        <td>${d.breaking_capacity_ka.toFixed(2)}</td>
+        <td>${d.utilisation_pct.toFixed(0)}%</td>
+        <td>${contIcon}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+      if (d.issues.length > 0) {
+        html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">
+          ${d.issues.join('<br>')}
+        </td></tr>`;
+      }
+    }
+    html += '</tbody></table>';
+
+    body.innerHTML = html;
+    modal.style.display = '';
+
+    // Click-to-highlight device on SLD
+    body.querySelectorAll('tr[data-device-id]').forEach(row => {
+      row.addEventListener('click', () => {
+        const did = row.dataset.deviceId;
+        AppState.selectedIds.clear();
+        AppState.selectedIds.add(did);
+        Canvas.render();
+      });
+    });
+  }
+
   function showArcFlashResults(result) {
     const modal = document.getElementById('arcflash-modal');
     const body = document.getElementById('arcflash-body');
@@ -499,6 +764,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-close-arcflash').addEventListener('click', () => {
     document.getElementById('arcflash-modal').style.display = 'none';
+  });
+
+  document.getElementById('btn-close-cable-sizing').addEventListener('click', () => {
+    document.getElementById('cable-sizing-modal').style.display = 'none';
+  });
+  document.getElementById('cable-sizing-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'cable-sizing-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-motor-starting').addEventListener('click', () => {
+    document.getElementById('motor-starting-modal').style.display = 'none';
+  });
+  document.getElementById('motor-starting-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'motor-starting-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-duty-check').addEventListener('click', () => {
+    document.getElementById('duty-check-modal').style.display = 'none';
+  });
+  document.getElementById('duty-check-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'duty-check-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-vdep').addEventListener('click', () => {
