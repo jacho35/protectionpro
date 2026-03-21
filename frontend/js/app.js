@@ -577,6 +577,138 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── Study Manager — Batch Run ──
+  document.getElementById('btn-study-manager').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running studies.';
+      return;
+    }
+    // Show config modal
+    const modal = document.getElementById('study-manager-modal');
+    document.getElementById('study-manager-body').innerHTML = '';
+    document.getElementById('study-manager-status').textContent = '';
+    document.getElementById('btn-study-run').disabled = false;
+    modal.style.display = '';
+  });
+
+  document.getElementById('btn-study-run').addEventListener('click', async () => {
+    const checks = document.querySelectorAll('#study-manager-checks input[data-study]');
+    const enabled = [];
+    checks.forEach(cb => { if (cb.checked) enabled.push(cb.dataset.study); });
+    if (enabled.length === 0) {
+      document.getElementById('study-manager-status').textContent = 'Select at least one study.';
+      return;
+    }
+
+    const btn = document.getElementById('btn-study-run');
+    const statusEl = document.getElementById('study-manager-status');
+    btn.disabled = true;
+    statusEl.textContent = `Running ${enabled.length} studies...`;
+    document.getElementById('status-info').textContent = 'Running batch studies...';
+    document.getElementById('study-manager-body').innerHTML = '';
+
+    try {
+      const result = await API.runStudyManager(enabled);
+      AppState.studyManagerResults = result;
+
+      // Distribute individual study results to their AppState slots
+      const studies = result.studies || {};
+      if (studies.fault && studies.fault.result) AppState.faultResults = studies.fault.result;
+      if (studies.loadflow && studies.loadflow.result) AppState.loadFlowResults = studies.loadflow.result;
+      if (studies.arcflash && studies.arcflash.result) AppState.arcFlashResults = studies.arcflash.result;
+      if (studies.cable_sizing && studies.cable_sizing.result) AppState.cableSizingResults = studies.cable_sizing.result;
+      if (studies.motor_starting && studies.motor_starting.result) AppState.motorStartingResults = studies.motor_starting.result;
+      if (studies.duty_check && studies.duty_check.result) AppState.dutyCheckResults = studies.duty_check.result;
+
+      Canvas.render();
+      document.getElementById('status-info').textContent = `Batch run complete (${result.total_time_s}s).`;
+      statusEl.textContent = `Completed in ${result.total_time_s}s`;
+      btn.disabled = false;
+      showStudyManagerResults(result);
+    } catch (e) {
+      console.error('Study manager error:', e);
+      document.getElementById('status-info').textContent = 'Batch run failed.';
+      statusEl.textContent = 'Failed — see console for details.';
+      btn.disabled = false;
+      showValidationModal('Study Manager — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  });
+
+  function showStudyManagerResults(result) {
+    const body = document.getElementById('study-manager-body');
+    const summary = result.summary || {};
+    const studies = result.studies || {};
+
+    let html = '';
+
+    // Summary banner
+    const totalStudies = summary.total || 0;
+    const bannerColor = summary.fail > 0 || summary.errors > 0 ? '#d32f2f'
+      : summary.warning > 0 ? '#f57c00' : '#4caf50';
+    html += `<div style="background:${bannerColor}11;border:1px solid ${bannerColor};border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:16px">
+      <strong style="color:${bannerColor};font-size:14px">${totalStudies} Studies</strong>
+      <span style="font-size:12px">
+        <span style="color:#4caf50">${summary.pass || 0} Pass</span> &middot;
+        <span style="color:#f57c00">${summary.warning || 0} Warn</span> &middot;
+        <span style="color:#d32f2f">${summary.fail || 0} Fail</span>
+        ${summary.errors > 0 ? ` &middot; <span style="color:#d32f2f">${summary.errors} Error</span>` : ''}
+      </span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted)">Total: ${result.total_time_s}s</span>
+    </div>`;
+
+    // Per-study cards
+    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'duty_check'];
+    for (const key of studyOrder) {
+      const s = studies[key];
+      if (!s) continue;
+
+      const statusColor = s.status === 'pass' ? '#4caf50'
+        : s.status === 'warning' ? '#f57c00'
+        : s.status === 'error' ? '#9e9e9e'
+        : '#d32f2f';
+      const statusLabel = s.status.toUpperCase();
+      const icon = s.status === 'pass' ? '✓' : s.status === 'warning' ? '!' : s.status === 'error' ? '✗' : '✗';
+
+      html += `<div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 14px;margin-bottom:8px;border-left:4px solid ${statusColor}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <strong style="font-size:13px">${s.name}</strong>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:var(--text-muted)">${s.time_s}s</span>
+            <span style="color:${statusColor};font-weight:600;font-size:12px">${icon} ${statusLabel}</span>
+          </div>
+        </div>`;
+
+      if (s.error) {
+        html += `<div style="font-size:11px;color:#d32f2f">${s.error}</div>`;
+      } else if (s.counts) {
+        html += '<div style="font-size:11px;color:var(--text-secondary)">';
+        html += _formatStudyCounts(key, s.counts);
+        html += '</div>';
+      }
+
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
+  }
+
+  function _formatStudyCounts(key, counts) {
+    if (key === 'loadflow') {
+      return `${counts.buses} buses analysed` + (counts.warnings > 0 ? `, ${counts.warnings} warnings` : '');
+    } else if (key === 'fault') {
+      return `${counts.buses} buses analysed`;
+    } else if (key === 'arcflash') {
+      return `${counts.buses} buses, max PPE category ${counts.max_ppe_category}`;
+    } else if (key === 'cable_sizing') {
+      return `${counts.total} cables: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
+    } else if (key === 'motor_starting') {
+      return `${counts.total} motors: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
+    } else if (key === 'duty_check') {
+      return `${counts.total} devices: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
+    }
+    return '';
+  }
+
   function showArcFlashResults(result) {
     const modal = document.getElementById('arcflash-modal');
     const body = document.getElementById('arcflash-body');
@@ -785,6 +917,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('duty-check-modal').addEventListener('click', (e) => {
     if (e.target.id === 'duty-check-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-study-manager').addEventListener('click', () => {
+    document.getElementById('study-manager-modal').style.display = 'none';
+  });
+  document.getElementById('study-manager-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'study-manager-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-vdep').addEventListener('click', () => {

@@ -168,8 +168,12 @@
           </button>
         </div>
         <div class="toolbar-separator"></div>
-        <!-- Scenarios -->
+        <!-- Batch / Scenarios -->
         <div class="toolbar-group">
+          <button id="btn-study-manager" title="Run All Studies — batch run enabled analyses">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/></svg>
+            <span>Run All</span>
+          </button>
           <button id="btn-scenarios" title="Manage Scenarios">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
             <span>Scenarios</span>
@@ -400,6 +404,50 @@
       </div>
       <div class="modal-body">
         <div id="duty-check-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Study Manager Modal -->
+  <div id="study-manager-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Study Manager — Batch Run</h3>
+        <button class="modal-close" id="btn-close-study-manager">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Study selection (shown before run) -->
+        <div id="study-manager-config">
+          <p style="margin-bottom:12px;color:var(--text-secondary);font-size:12px">Select studies to run, then click <strong>Run All</strong>.</p>
+          <div id="study-manager-checks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;margin-bottom:16px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="loadflow" checked> Load Flow
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="fault" checked> Fault Analysis
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="arcflash" checked> Arc Flash
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="cable_sizing" checked> Cable Sizing
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="motor_starting" checked> Motor Starting
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="duty_check" checked> Equipment Duty Check
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="btn-study-run" class="btn-small btn-primary" style="padding:6px 20px;font-size:13px">Run All Selected</button>
+            <span id="study-manager-status" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+        <!-- Results (shown after run) -->
+        <div id="study-manager-body" style="margin-top:16px">
           <!-- Populated by JS -->
         </div>
       </div>
