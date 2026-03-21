@@ -2546,6 +2546,326 @@ const TCC = {
     this._runCoordinationCheck();
   },
 
+  // ── Sequence-of-Operation Verification ──
+
+  /**
+   * Given a fault location (bus), trace and verify the expected sequence of
+   * relay trips and reclosures in order (primary, backup, final).
+   * Flags any device that operates out of sequence or fails to operate.
+   *
+   * More deterministic than miscoordination detection — it answers:
+   * "did the right things trip in the right order?"
+   */
+  verifySequenceOfOperation() {
+    const paths = this._buildProtectionPaths();
+    if (paths.length === 0) {
+      this._showSequenceResults(null, null, 'No source-to-load protection paths found. Connect utility/generator to protection devices.');
+      return;
+    }
+
+    // Require fault results to know actual fault currents at each bus
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses || Object.keys(fr.buses).length === 0) {
+      this._showSequenceResults(null, null, 'Run Fault Analysis first to provide fault currents at each bus.');
+      return;
+    }
+
+    // Build adjacency for bus-to-device proximity mapping
+    const adj = new Map();
+    for (const [, w] of AppState.wires) {
+      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
+      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
+      adj.get(w.fromComponent).push(w.toComponent);
+      adj.get(w.toComponent).push(w.fromComponent);
+    }
+
+    // For each bus with fault results, find which protection paths cover it
+    // A path "covers" a bus if the bus lies on the topological path between
+    // the source and the load that the protection path protects.
+    const busDeviceMap = this._mapBusesToProtectionDevices(paths, adj);
+
+    const allBusResults = [];
+
+    for (const [busId, busResult] of Object.entries(fr.buses)) {
+      const faultCurrentA = (busResult.ik3 || 0) * 1000; // 3-phase fault in amps
+      if (faultCurrentA <= 0) continue;
+
+      const busName = busResult.bus_name || busId;
+      const devicesOnPaths = busDeviceMap.get(busId);
+      if (!devicesOnPaths || devicesOnPaths.length === 0) continue;
+
+      // Compute trip time for each device at this fault current
+      const deviceOps = [];
+      for (const entry of devicesOnPaths) {
+        const dev = entry.device;
+        const tripTime = this._deviceTripTime(dev, faultCurrentA);
+        deviceOps.push({
+          device: dev,
+          name: dev.name,
+          deviceType: dev.deviceType,
+          tripTime: tripTime,
+          pathIndex: entry.pathIndex,
+          positionInPath: entry.position,  // 0 = closest to source (upstream)
+          pathLength: entry.pathLength,
+          operates: isFinite(tripTime) && tripTime > 0,
+        });
+      }
+
+      // Sort by expected sequence: primary (closest to fault / downstream) first
+      // In a protection path [upstream, ..., downstream], higher position = closer to load
+      // For a fault at a bus, the closest downstream device should trip first
+      deviceOps.sort((a, b) => {
+        // First by whether they operate at all (operating devices first)
+        if (a.operates !== b.operates) return a.operates ? -1 : 1;
+        // Then by trip time
+        if (a.operates && b.operates) return a.tripTime - b.tripTime;
+        return 0;
+      });
+
+      // Assign roles: primary (fastest), backup, final
+      const operatingDevices = deviceOps.filter(d => d.operates);
+      const failedDevices = deviceOps.filter(d => !d.operates);
+
+      for (let i = 0; i < operatingDevices.length; i++) {
+        if (i === 0) operatingDevices[i].role = 'primary';
+        else if (i === operatingDevices.length - 1 && i > 0) operatingDevices[i].role = 'final';
+        else operatingDevices[i].role = 'backup';
+      }
+      for (const d of failedDevices) {
+        d.role = 'failed';
+      }
+
+      // Verify sequence — check for violations
+      const violations = [];
+
+      // 1. Check that primary is the most downstream device (closest to fault)
+      if (operatingDevices.length > 0) {
+        const primary = operatingDevices[0];
+        // Find any device that is more downstream (higher position) but trips slower
+        for (let i = 1; i < operatingDevices.length; i++) {
+          const other = operatingDevices[i];
+          if (other.positionInPath > primary.positionInPath && other.pathIndex === primary.pathIndex) {
+            violations.push({
+              type: 'out_of_sequence',
+              severity: 'critical',
+              message: `${primary.name} (${primary.role}) trips before ${other.name} — but ${other.name} is closer to the fault`,
+              primaryDevice: primary.name,
+              otherDevice: other.name,
+              primaryTime: primary.tripTime,
+              otherTime: other.tripTime,
+            });
+          }
+        }
+      }
+
+      // 2. Check upstream-to-downstream ordering within each path
+      const pathGroups = new Map();
+      for (const d of operatingDevices) {
+        if (!pathGroups.has(d.pathIndex)) pathGroups.set(d.pathIndex, []);
+        pathGroups.get(d.pathIndex).push(d);
+      }
+
+      for (const [, devs] of pathGroups) {
+        // Sort by position in path (upstream=0 to downstream=N)
+        devs.sort((a, b) => a.positionInPath - b.positionInPath);
+
+        for (let i = 0; i < devs.length - 1; i++) {
+          const upstream = devs[i];
+          const downstream = devs[i + 1];
+
+          // Downstream should trip faster than upstream
+          if (downstream.tripTime > upstream.tripTime) {
+            violations.push({
+              type: 'out_of_sequence',
+              severity: 'critical',
+              message: `${upstream.name} trips at ${this._fmtTime(upstream.tripTime)} before downstream ${downstream.name} at ${this._fmtTime(downstream.tripTime)}`,
+              primaryDevice: upstream.name,
+              otherDevice: downstream.name,
+              primaryTime: upstream.tripTime,
+              otherTime: downstream.tripTime,
+            });
+          } else if (Math.abs(downstream.tripTime - upstream.tripTime) < 0.01) {
+            violations.push({
+              type: 'simultaneous',
+              severity: 'warning',
+              message: `${upstream.name} and ${downstream.name} trip nearly simultaneously — race condition risk`,
+              primaryDevice: upstream.name,
+              otherDevice: downstream.name,
+              primaryTime: upstream.tripTime,
+              otherTime: downstream.tripTime,
+            });
+          }
+
+          // Check grading margin between backup levels
+          const margin = upstream.tripTime - downstream.tripTime;
+          if (margin > 0 && margin < this.gradingMargin) {
+            violations.push({
+              type: 'insufficient_margin',
+              severity: 'marginal',
+              message: `Margin between ${downstream.name} and backup ${upstream.name}: ${(margin * 1000).toFixed(0)}ms < ${(this.gradingMargin * 1000).toFixed(0)}ms required`,
+              primaryDevice: downstream.name,
+              otherDevice: upstream.name,
+              primaryTime: downstream.tripTime,
+              otherTime: upstream.tripTime,
+            });
+          }
+        }
+      }
+
+      // 3. Flag devices that fail to operate
+      for (const d of failedDevices) {
+        violations.push({
+          type: 'failed_to_operate',
+          severity: 'critical',
+          message: `${d.name} does not operate at ${faultCurrentA >= 1000 ? (faultCurrentA / 1000).toFixed(1) + 'kA' : faultCurrentA + 'A'} — check pickup settings`,
+          primaryDevice: d.name,
+          otherDevice: null,
+          primaryTime: Infinity,
+          otherTime: null,
+        });
+      }
+
+      allBusResults.push({
+        busId,
+        busName,
+        faultCurrentA,
+        sequence: [...operatingDevices, ...failedDevices],
+        violations,
+        passed: violations.length === 0,
+      });
+    }
+
+    this._showSequenceResults(allBusResults, paths);
+  },
+
+  /**
+   * Map each bus to the protection devices that would see a fault at that bus.
+   * A device "sees" a fault if it lies on a protection path that passes through
+   * or connects to the faulted bus.
+   */
+  _mapBusesToProtectionDevices(paths, adj) {
+    const busDevMap = new Map(); // busId -> [{device, pathIndex, position, pathLength}]
+
+    // For each protection path, find which buses lie along it
+    // by checking all SLD components between the source and load
+    for (let pi = 0; pi < paths.length; pi++) {
+      const path = paths[pi];
+
+      // Collect all buses that are adjacent to any device in this path
+      const busesOnPath = new Set();
+      for (const dev of path) {
+        const neighbors = adj.get(dev.id) || [];
+        for (const nId of neighbors) {
+          const comp = AppState.components.get(nId);
+          if (comp && comp.type === 'bus') {
+            busesOnPath.add(nId);
+          }
+        }
+        // Also check if any CT associated with the device is adjacent to a bus
+        if (dev.associated_ct) {
+          const ctNeighbors = adj.get(dev.associated_ct) || [];
+          for (const nId of ctNeighbors) {
+            const comp = AppState.components.get(nId);
+            if (comp && comp.type === 'bus') {
+              busesOnPath.add(nId);
+            }
+          }
+        }
+      }
+
+      // For each bus on this path, all devices in the path can "see" it
+      for (const busId of busesOnPath) {
+        if (!busDevMap.has(busId)) busDevMap.set(busId, []);
+        for (let pos = 0; pos < path.length; pos++) {
+          const existing = busDevMap.get(busId);
+          // Avoid duplicates for same device on same path
+          if (!existing.some(e => e.device.id === path[pos].id && e.pathIndex === pi)) {
+            existing.push({
+              device: path[pos],
+              pathIndex: pi,
+              position: pos,
+              pathLength: path.length,
+            });
+          }
+        }
+      }
+    }
+
+    return busDevMap;
+  },
+
+  _fmtTime(t) {
+    if (!isFinite(t) || t <= 0) return 'N/A';
+    if (t >= 1) return t.toFixed(2) + 's';
+    return (t * 1000).toFixed(0) + 'ms';
+  },
+
+  _showSequenceResults(busResults, paths, errorMessage) {
+    const resultsDiv = document.getElementById('tcc-seq-results');
+    if (!resultsDiv) return;
+
+    if (errorMessage) {
+      resultsDiv.innerHTML = `<div class="tcc-coord-info">${errorMessage}</div>`;
+      return;
+    }
+
+    if (!busResults || busResults.length === 0) {
+      resultsDiv.innerHTML = '<div class="tcc-coord-info">No buses with fault results found on protection paths.</div>';
+      return;
+    }
+
+    const totalViolations = busResults.reduce((s, b) => s + b.violations.length, 0);
+    const passedBuses = busResults.filter(b => b.passed).length;
+
+    let html = '';
+    if (totalViolations === 0) {
+      html = `<div class="tcc-coord-pass">All ${passedBuses} bus(es) verified — devices trip in correct primary → backup → final sequence.</div>`;
+    } else {
+      html = `<div class="tcc-seq-summary">Verified ${busResults.length} bus(es): <span class="tcc-seq-pass">${passedBuses} passed</span>, <span class="tcc-seq-fail">${busResults.length - passedBuses} failed</span> (${totalViolations} issue(s))</div>`;
+    }
+
+    const sevIcon = { critical: '\u26D4', warning: '\u26A0', marginal: '\u25B3' };
+    const roleIcon = { primary: '\u2460', backup: '\u2461', final: '\u2462', failed: '\u2718' };
+    const roleClass = { primary: 'tcc-role-primary', backup: 'tcc-role-backup', final: 'tcc-role-final', failed: 'tcc-role-failed' };
+
+    for (const bus of busResults) {
+      const faultStr = bus.faultCurrentA >= 1000
+        ? (bus.faultCurrentA / 1000).toFixed(1) + ' kA'
+        : bus.faultCurrentA + ' A';
+      const statusCls = bus.passed ? 'tcc-bus-pass' : 'tcc-bus-fail';
+      const statusIcon = bus.passed ? '\u2705' : '\u274C';
+
+      html += `<div class="tcc-seq-bus ${statusCls}">`;
+      html += `<div class="tcc-seq-bus-header">${statusIcon} <strong>${bus.busName}</strong> — Fault: ${faultStr}</div>`;
+
+      // Show operation sequence
+      html += '<div class="tcc-seq-timeline">';
+      for (const op of bus.sequence) {
+        const icon = roleIcon[op.role] || '';
+        const cls = roleClass[op.role] || '';
+        const timeStr = op.operates ? this._fmtTime(op.tripTime) : 'NO TRIP';
+        html += `<span class="tcc-seq-device ${cls}" title="${op.deviceType}">${icon} ${op.name}: ${timeStr}</span>`;
+        if (op !== bus.sequence[bus.sequence.length - 1]) {
+          html += '<span class="tcc-seq-arrow">\u2192</span>';
+        }
+      }
+      html += '</div>';
+
+      // Show violations
+      if (bus.violations.length > 0) {
+        html += '<div class="tcc-seq-violations">';
+        for (const v of bus.violations) {
+          const icon = sevIcon[v.severity] || '';
+          html += `<div class="tcc-seq-violation tcc-sev-${v.severity}">${icon} ${v.message}</div>`;
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    resultsDiv.innerHTML = html;
+  },
+
   // ── Miscoordination Detection ──
 
   /**

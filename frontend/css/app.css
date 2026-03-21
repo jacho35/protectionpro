@@ -1182,6 +1182,72 @@ html, body {
   color: #fbc02d;
 }
 
+/* Sequence-of-Operation Verification */
+.tcc-seq-summary {
+  font-size: 11px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.tcc-seq-pass { color: var(--success); font-weight: 600; }
+.tcc-seq-fail { color: var(--danger); font-weight: 600; }
+.tcc-seq-bus {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  font-size: 10px;
+}
+.tcc-seq-bus.tcc-bus-pass { border-left: 3px solid var(--success); }
+.tcc-seq-bus.tcc-bus-fail { border-left: 3px solid var(--danger); }
+.tcc-seq-bus-header {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.tcc-seq-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 4px 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+.tcc-seq-device {
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.tcc-role-primary { background: #e3f2fd; color: #1565c0; font-weight: 600; }
+.tcc-role-backup { background: #fff3e0; color: #e65100; }
+.tcc-role-final { background: #fce4ec; color: #c62828; }
+.tcc-role-failed { background: #ffebee; color: #b71c1c; text-decoration: line-through; }
+body.dark-mode .tcc-role-primary { background: #0d2137; color: #64b5f6; }
+body.dark-mode .tcc-role-backup { background: #2a1a00; color: #ffb74d; }
+body.dark-mode .tcc-role-final { background: #2a0a0f; color: #ef9a9a; }
+body.dark-mode .tcc-role-failed { background: #2a0a0a; color: #ef5350; }
+.tcc-seq-arrow {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin: 0 1px;
+}
+.tcc-seq-violations { margin-top: 4px; }
+.tcc-seq-violation {
+  font-size: 10px;
+  padding: 2px 4px;
+  margin: 2px 0;
+  border-radius: 2px;
+}
+.tcc-seq-violation.tcc-sev-critical { background: #ffebee; }
+.tcc-seq-violation.tcc-sev-warning { background: #fff3e0; }
+.tcc-seq-violation.tcc-sev-marginal { background: #fffde7; }
+body.dark-mode .tcc-seq-violation.tcc-sev-critical { background: #2a0a0a; }
+body.dark-mode .tcc-seq-violation.tcc-sev-warning { background: #2a1a00; }
+body.dark-mode .tcc-seq-violation.tcc-sev-marginal { background: #2a2a00; }
+
 /* CT saturation info in TCC settings panel */
 .tcc-ct-sat-info {
   margin-top: 8px;
