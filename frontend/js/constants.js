@@ -699,6 +699,11 @@ const FIELD_INFO = {
 
   // Static Load
   'static_load.power_factor': 'Default PF = 0.85 lagging — typical mixed commercial/industrial load.\nSource: General practice — power factor range 0.7–0.95 depending on load type.',
+  'static_load.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed load.\nSource: IEC 60439 / IEC 61439.\nTypical values: lighting 1.0, socket outlets 0.4, motors (group) 0.5–0.8.',
+
+  // Motor demand factors
+  'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.\nTypical: single largest motor 1.0, group of 2-4 motors 0.8, 5-10 motors 0.6.',
+  'motor_synchronous.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.',
 
   // Surge Arrester
   'surge_arrester.mcov_kv': 'Default MCOV = 8.4 kV (for 11 kV system, ratio ≈ 0.76).\nSource: IEC 60099-4 §5.2 — maximum continuous operating voltage.\nMCOV ≥ Um / √3 for grounded systems.',
@@ -1143,6 +1148,7 @@ const COMPONENT_DEFS = {
       locked_rotor_current: 6,
       x_pp: 0.17,
       x_r_ratio: 10,
+      demand_factor: 1.0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -1150,6 +1156,7 @@ const COMPONENT_DEFS = {
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'efficiency', label: 'Efficiency', type: 'number' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
+      { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
       { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number' },
       { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.' },
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number' },
@@ -1168,12 +1175,14 @@ const COMPONENT_DEFS = {
       power_factor: 0.9,
       xd_pp: 0.15,
       xd_p: 0.25,
+      demand_factor: 1.0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'rated_kva', label: 'Rating', type: 'number', unit: 'kVA' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
+      { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
       { key: 'xd_pp', label: "Xd''", type: 'number', unit: 'p.u.' },
       { key: 'xd_p', label: "Xd'", type: 'number', unit: 'p.u.' },
     ],
@@ -1190,12 +1199,14 @@ const COMPONENT_DEFS = {
       voltage_kv: 0.4,
       power_factor: 0.85,
       load_type: 'constant_power',
+      demand_factor: 1.0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'rated_kva', label: 'Rating', type: 'number', unit: 'kVA' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
+      { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
       { key: 'load_type', label: 'Type', type: 'select', options: ['constant_power', 'constant_current', 'constant_impedance'] },
     ],
   },

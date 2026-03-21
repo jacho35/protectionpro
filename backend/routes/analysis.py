@@ -1,5 +1,5 @@
 """Analysis routes — fault analysis, load flow, arc flash, cable sizing,
-motor starting, equipment duty check, and study manager."""
+motor starting, equipment duty check, load diversity, and study manager."""
 
 import traceback
 from typing import Optional
@@ -12,6 +12,7 @@ from ..analysis.arcflash import run_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
 from ..analysis.motor_starting import run_motor_starting
 from ..analysis.duty_check import run_duty_check
+from ..analysis.load_diversity import run_load_diversity
 from ..analysis.study_manager import run_study_manager
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -85,6 +86,16 @@ def duty_check(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Duty check error: {e}")
+
+
+@router.post("/load-diversity")
+def load_diversity(data: ProjectData):
+    """Run load diversity and demand factor analysis."""
+    try:
+        return run_load_diversity(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Load diversity error: {e}")
 
 
 class StudyManagerRequest(ProjectData):

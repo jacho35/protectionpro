@@ -19,6 +19,7 @@ STUDY_DEFS = [
     ("cable_sizing", "Cable Sizing"),
     ("motor_starting", "Motor Starting"),
     ("duty_check", "Equipment Duty Check"),
+    ("load_diversity", "Load Diversity"),
 ]
 
 
@@ -45,6 +46,9 @@ def _run_single_study(key: str, project: ProjectData):
     elif key == "duty_check":
         from .duty_check import run_duty_check
         return run_duty_check(project)
+    elif key == "load_diversity":
+        from .load_diversity import run_load_diversity
+        return run_load_diversity(project)
     else:
         raise ValueError(f"Unknown study key: {key}")
 
@@ -201,6 +205,24 @@ def _extract_study_status(key: str, result_data) -> dict:
         if n_fail > 0:
             return {"status": "fail", "counts": counts}
         if n_warn > 0:
+            return {"status": "warning", "counts": counts}
+        return {"status": "pass", "counts": counts}
+
+    elif key == "load_diversity":
+        buses = result_data.get("buses", [])
+        xfmrs = result_data.get("transformers", [])
+        summary = result_data.get("summary", {})
+        n_xfmr_fail = sum(1 for t in xfmrs if t.get("status") == "fail")
+        n_xfmr_warn = sum(1 for t in xfmrs if t.get("status") == "warning")
+        overall_df = summary.get("overall_demand_factor", 1.0)
+        counts = {
+            "buses_with_loads": len(buses),
+            "transformers": len(xfmrs),
+            "overall_demand_factor": overall_df,
+        }
+        if n_xfmr_fail > 0:
+            return {"status": "fail", "counts": counts}
+        if n_xfmr_warn > 0:
             return {"status": "warning", "counts": counts}
         return {"status": "pass", "counts": counts}
 

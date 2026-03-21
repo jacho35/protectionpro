@@ -148,6 +148,19 @@ const Annotations = {
       }
     }
 
+    // Load diversity annotations on buses
+    if (AppState.loadDiversityResults && AppState.loadDiversityResults.buses) {
+      for (const busResult of AppState.loadDiversityResults.buses) {
+        const comp = AppState.components.get(busResult.bus_id);
+        if (!comp) continue;
+        const key = `ld:${busResult.bus_id}`;
+        const off = this.getOffset(key);
+        const x = comp.x - 130 + off.dx;
+        const y = comp.y + 40 + off.dy;
+        html += this.renderLoadDiversityBadge(x, y, busResult, key);
+      }
+    }
+
     this.layer.innerHTML = html;
   },
 
@@ -429,6 +442,31 @@ const Annotations = {
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DUTY</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderLoadDiversityBadge(x, y, busResult, key) {
+    const df = busResult.effective_demand_factor;
+    const fillColor = df >= 0.9 ? '#f57c00' : df >= 0.7 ? '#1565c0' : '#4caf50';
+    const lines = [
+      `DF: ${df.toFixed(2)}`,
+      `${busResult.diversified_demand_kva.toFixed(0)} kVA`,
+    ];
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 90;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group load-diversity-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DEMAND</text>
         ${textHtml}
       </g>`;
   },
