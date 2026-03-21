@@ -1000,6 +1000,17 @@ html, body {
   background: rgba(0,120,215,0.08);
 }
 
+.tcc-device-item.tcc-dragging {
+  opacity: 0.4;
+}
+
+.tcc-view-tab.tcc-drop-target {
+  background: var(--accent);
+  color: #fff;
+  outline: 2px dashed #fff;
+  outline-offset: -2px;
+}
+
 .tcc-device-item {
   cursor: pointer;
 }
@@ -1067,7 +1078,8 @@ html, body {
 }
 
 .tcc-add-tab:first-child { border-radius: 4px 0 0 4px; }
-.tcc-add-tab:last-child { border-radius: 0 4px 4px 0; border-left: none; }
+.tcc-add-tab:last-child { border-radius: 0 4px 4px 0; }
+.tcc-add-tab + .tcc-add-tab { border-left: none; }
 
 .tcc-add-tab.active {
   background: var(--accent);
@@ -1085,6 +1097,53 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.tcc-csv-upload {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.tcc-csv-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.tcc-csv-filename {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.tcc-csv-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.tcc-csv-or {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin: 2px 0;
+}
+
+#tcc-csv-paste {
+  width: 100%;
+  font-size: 11px;
+  font-family: monospace;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  resize: vertical;
 }
 
 .tcc-form-row label {

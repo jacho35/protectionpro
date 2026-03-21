@@ -544,6 +544,7 @@
               <button class="tcc-add-tab active" data-tcc-add="relay">Relay</button>
               <button class="tcc-add-tab" data-tcc-add="fuse">Fuse</button>
               <button class="tcc-add-tab" data-tcc-add="cb">CB</button>
+              <button class="tcc-add-tab" data-tcc-add="custom">Custom</button>
             </div>
             <!-- Add Relay Form -->
             <div id="tcc-add-relay" class="tcc-add-form">
@@ -652,6 +653,23 @@
                 </div>
               </div>
               <button id="btn-tcc-add-cb" class="btn-small btn-primary">Add CB</button>
+            </div>
+            <!-- Add Custom Curve Form (CSV Import) -->
+            <div id="tcc-add-custom" class="tcc-add-form" style="display:none">
+              <div class="tcc-form-row">
+                <label for="tcc-custom-name">Name</label>
+                <input type="text" id="tcc-custom-name" placeholder="Manufacturer Curve">
+              </div>
+              <div class="tcc-csv-upload">
+                <label for="tcc-csv-file" class="tcc-csv-label">Import CSV file</label>
+                <input type="file" id="tcc-csv-file" accept=".csv,.txt" style="display:none">
+                <button id="btn-tcc-csv-browse" class="btn-small">Browse...</button>
+                <span id="tcc-csv-filename" class="tcc-csv-filename">No file selected</span>
+              </div>
+              <div class="tcc-csv-hint">CSV format: Current (A), Time (s) — one pair per line. Lines starting with # or "Current" are skipped.</div>
+              <div class="tcc-csv-or">— or paste data —</div>
+              <textarea id="tcc-csv-paste" rows="5" placeholder="100, 10.5&#10;200, 4.2&#10;500, 1.1&#10;1000, 0.35&#10;5000, 0.02"></textarea>
+              <button id="btn-tcc-add-custom" class="btn-small btn-primary">Add Custom Curve</button>
             </div>
           </div>
           <div class="tcc-panel-section">

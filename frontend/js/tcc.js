@@ -553,6 +553,24 @@ const TCC = {
     this._renderTabs();
   },
 
+  moveDeviceToTab(devIndex, targetTabId) {
+    const dev = this.devices[devIndex];
+    if (!dev) return;
+    // "All" tab means remove custom tab assignment (device returns to its voltage tab or all-only)
+    if (targetTabId === 'all') {
+      if (dev.voltage_kv) {
+        dev.tabId = `v_${dev.voltage_kv}`;
+      } else {
+        dev.tabId = null;
+      }
+    } else {
+      dev.tabId = targetTabId;
+    }
+    this._renderDeviceList();
+    this.render();
+    this._runCoordinationCheck();
+  },
+
   // ── Voltage reference scaling ──
 
   _scaleCurrent(amps, dev) {
@@ -666,6 +684,7 @@ const TCC = {
       else if (dev.deviceType === 'cb') this._drawCBCurve(ctx, dev);
       else if (dev.deviceType === 'xfmr_thermal') this._drawXfmrThermal(ctx, dev);
       else if (dev.deviceType === 'cable_thermal') this._drawCableThermal(ctx, dev);
+      else if (dev.deviceType === 'custom_curve') this._drawCustomCurve(ctx, dev);
     }
     ctx.globalAlpha = 1.0;
     this.activeTabId = savedTabId;
@@ -1852,11 +1871,13 @@ const TCC = {
         typeLabel = `Thermal damage | ${dev.mva} MVA | Ir: ${dev.ratedA.toFixed(0)}A`;
       } else if (dev.deviceType === 'cable_thermal') {
         typeLabel = `Thermal limit | ${dev.sizeMm2}mm² | k=${dev.kFactor} | Ir: ${dev.ratedAmps}A`;
+      } else if (dev.deviceType === 'custom_curve') {
+        typeLabel = `Custom curve | ${dev.curvePoints.length} points`;
       } else {
         typeLabel = '';
       }
       const selected = i === this.selectedDeviceIndex;
-      return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}">
+      return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" draggable="true">
         <div class="tcc-device-color" style="background:${dev.color}"></div>
         <div class="tcc-device-info">
           <div class="tcc-device-name">${dev.name}</div>
@@ -1883,6 +1904,21 @@ const TCC = {
       item.addEventListener('click', () => {
         const idx = parseInt(item.dataset.index);
         this.selectDevice(idx);
+      });
+    });
+
+    // Drag device to move between tabs
+    list.querySelectorAll('.tcc-device-item').forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        const idx = item.dataset.index;
+        e.dataTransfer.setData('text/plain', idx);
+        e.dataTransfer.effectAllowed = 'move';
+        item.classList.add('tcc-dragging');
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('tcc-dragging');
+        // Remove drop highlights from tabs
+        document.querySelectorAll('.tcc-view-tab').forEach(t => t.classList.remove('tcc-drop-target'));
       });
     });
   },
@@ -2077,6 +2113,16 @@ const TCC = {
           <label>Rated (A)</label>
           <input type="number" data-sel-field="ratedAmps" value="${dev.ratedAmps}" min="1" step="1">
         </div>`;
+    } else if (dev.deviceType === 'custom_curve') {
+      html = `
+        <div class="tcc-form-row">
+          <label>Data Points</label>
+          <span style="font-size:11px;color:var(--text-muted)">${dev.curvePoints.length} points</span>
+        </div>
+        <div class="tcc-form-row">
+          <label>Current Range</label>
+          <span style="font-size:11px;color:var(--text-muted)">${dev.curvePoints[0][0]}A – ${dev.curvePoints[dev.curvePoints.length - 1][0]}A</span>
+        </div>`;
     }
 
     container.innerHTML = html;
@@ -2222,6 +2268,101 @@ const TCC = {
     this._runCoordinationCheck();
   },
 
+  // ── Custom curve: user-defined TCC data points ──
+
+  _drawCustomCurve(ctx, dev) {
+    const pts = dev.curvePoints;
+    if (!pts || pts.length < 2) return;
+
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4, 2, 4]); // dash-dot pattern for custom curves
+    ctx.beginPath();
+
+    let started = false;
+    for (const [current, time] of pts) {
+      const scaledI = this._scaleCurrent(current, dev);
+      if (scaledI < this.currentMin || scaledI > this.currentMax) continue;
+      if (time < this.timeMin || time > this.timeMax) continue;
+      const x = this._currentToX(scaledI);
+      const y = this._timeToY(time);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label near middle of curve
+    const midIdx = Math.floor(pts.length / 2);
+    const [mI, mT] = pts[midIdx];
+    const scaledMI = this._scaleCurrent(mI, dev);
+    if (scaledMI >= this.currentMin && scaledMI <= this.currentMax && mT >= this.timeMin && mT <= this.timeMax) {
+      this._drawLabel(ctx, dev, this._currentToX(scaledMI), this._timeToY(mT), dev.name);
+    }
+  },
+
+  _customCurveTripTime(dev, currentA) {
+    const pts = dev.curvePoints;
+    if (!pts || pts.length < 2) return Infinity;
+
+    // Log-log interpolation between data points (sorted by current ascending)
+    if (currentA <= pts[0][0]) return Infinity;
+    if (currentA >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [i1, t1] = pts[i];
+      const [i2, t2] = pts[i + 1];
+      if (currentA >= i1 && currentA <= i2) {
+        // Log-log interpolation
+        const logI = Math.log10(currentA);
+        const logI1 = Math.log10(i1);
+        const logI2 = Math.log10(i2);
+        const logT1 = Math.log10(Math.max(t1, 1e-6));
+        const logT2 = Math.log10(Math.max(t2, 1e-6));
+        const frac = (logI - logI1) / (logI2 - logI1);
+        return Math.pow(10, logT1 + frac * (logT2 - logT1));
+      }
+    }
+    return Infinity;
+  },
+
+  addCustomCurveFromCSV(name, csvText) {
+    const lines = csvText.trim().split('\n');
+    const points = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.toLowerCase().startsWith('current')) continue;
+      const parts = trimmed.split(/[,;\t]+/);
+      const current = parseFloat(parts[0]);
+      const time = parseFloat(parts[1]);
+      if (isFinite(current) && isFinite(time) && current > 0 && time > 0) {
+        points.push([current, time]);
+      }
+    }
+
+    if (points.length < 2) {
+      alert('CSV must contain at least 2 valid data points (current, time).');
+      return false;
+    }
+
+    // Sort by current ascending
+    points.sort((a, b) => a[0] - b[0]);
+
+    this.devices.push({
+      id: 'custom_curve_' + Date.now(),
+      name: name || `Custom ${this.devices.length + 1}`,
+      deviceType: 'custom_curve',
+      color: this.palette[this.colorIndex++ % this.palette.length],
+      visible: true,
+      curvePoints: points,
+    });
+
+    this._renderDeviceList();
+    this.render();
+    this._runCoordinationCheck();
+    return true;
+  },
+
   // ── Coordination / Grading Check ──
 
   _runCoordinationCheck() {
@@ -2319,6 +2460,8 @@ const TCC = {
       if (currentA <= dev.ratedAmps) return Infinity;
       const kS = dev.kFactor * dev.sizeMm2;
       return (kS * kS) / (currentA * currentA);
+    } else if (dev.deviceType === 'custom_curve') {
+      return this._customCurveTripTime(dev, currentA);
     }
     return Infinity;
   },
@@ -3011,6 +3154,25 @@ const TCC = {
         this._renderDeviceList();
         this.render();
         this._runCoordinationCheck();
+      });
+
+      // Drop target: accept device drags onto tabs
+      btn.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        btn.classList.add('tcc-drop-target');
+      });
+      btn.addEventListener('dragleave', () => {
+        btn.classList.remove('tcc-drop-target');
+      });
+      btn.addEventListener('drop', (e) => {
+        e.preventDefault();
+        btn.classList.remove('tcc-drop-target');
+        const devIdx = parseInt(e.dataTransfer.getData('text/plain'));
+        const targetTabId = btn.dataset.tabId;
+        if (!isNaN(devIdx) && targetTabId && this.devices[devIdx]) {
+          this.moveDeviceToTab(devIdx, targetTabId);
+        }
       });
     });
     const addBtn = container.querySelector('.tcc-add-custom-tab');
