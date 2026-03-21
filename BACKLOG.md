@@ -29,6 +29,68 @@
 
 ---
 
+## ETAP Feature Parity
+
+Features identified by comparing ProtectionPro against ETAP's full module set.
+
+### Analysis Modules
+
+- **Transient Stability Analysis**: Time-domain simulation of system disturbances — load shedding, fast bus transfer, critical clearing time, generator start-up with speed-torque dynamics
+- **Harmonic Analysis (full)**: THD calculation, harmonic current/voltage sources (VFD, UPS, converters), harmonic resonance identification, filter design; extends existing harmonic load flow backlog item
+- **Frequency Scan**: Impedance vs. frequency sweep across the network for resonance identification
+- **DC Load Flow**: Load flow solver for DC buses (UPS, battery, telecom DC systems)
+- **DC Short Circuit**: Short circuit analysis for DC networks
+- **DC Arc Flash**: DC arc flash per Stokes & Oppenlander and DGUV-I 203-077 methods (AC arc flash already implemented)
+- **Battery Sizing & Discharge Analysis**: Size batteries from duty cycle, model discharge curves, voltage performance over time
+- **Optimal Power Flow (OPF)**: Economic dispatch, Volt/VAR optimization, switching optimization
+- **Reliability Assessment**: SAIDI, SAIFI, MAIFI indices; failure mode & effect analysis (FMEA) for distribution networks
+- **Voltage Stability Analysis**: P-V and Q-V curves, nose curves, voltage collapse prediction
+- **Unbalanced Load Flow**: Three-phase asymmetric network analysis for unbalanced distribution systems
+- **Contingency Analysis (N-1 / N-2)**: Security analysis for single and double outage scenarios
+- **Motor Acceleration (Full Dynamic)**: Time-domain simulation with speed-torque curves, acceleration time, starter/contactor selection — beyond current locked-rotor static analysis
+- **Passive Filter Sizing**: Size LC/C harmonic filters to meet THD limits
+- **Optimal Capacitor Placement**: VAR compensation placement and sizing optimization
+- **Transformer Tap Optimization**: Automatic tap position optimization for voltage regulation
+- **Flicker Analysis**: Voltage flicker assessment per IEC 61000-3-3 / IEC 61000-4-15
+- **Feeder Hosting Capacity**: Nodal HC, Stochastic HC, and DER impact analysis for renewable integration planning
+- **Lightning Risk Assessment**: Structural and system lightning risk per IEC 62305-2
+
+### Standards Coverage
+
+- **ANSI/IEEE C37 Short Circuit**: Short circuit analysis per ANSI standards alongside existing IEC 60909 (required for US market)
+- **AS/NZS 3000 Thermal & Shock Protection**: Australian/NZ wiring rules compliance checks
+
+### Component & Modelling Gaps
+
+- **Battery Energy Storage System (BESS)**: BESS component for SLD with charge/discharge modelling in load flow and dynamics
+- **Variable Frequency Drive (VFD)**: Harmonic current source model for drives and converters
+- **Autotransformer (2W & 3W)**: Autotransformer model with tap-changing voltage regulation
+- **UPS / Rectifier / Charger**: DC system source components for battery-backed systems
+- **Static VAR Compensator (SVC) / STATCOM**: Reactive compensation FACTS devices for voltage control
+- **HVDC Link**: DC interconnection between AC buses for HVDC system modelling
+
+### Cable & Raceway
+
+- **Underground Raceway System (URS)**: Conduit fill analysis and thermal derating for bundled cables in conduit
+- **Cable Pulling Analysis**: Tension, sidewall pressure, and jam ratio calculations for cable installation
+
+### Control & Schematic
+
+- **Control Circuit / Schematic Diagram**: AC/DC control circuit simulation — ladder logic, interlocking, panel wiring
+- **Protective Device Sequence of Operation**: Simulate and verify the sequence of relay/CB operations during a fault event
+
+### Integration & Interoperability
+
+- **IEC CIM (Common Information Model) Import/Export**: Standard utility data interchange format
+- **GIS Integration**: Geospatial mapping and overlay of the network diagram
+- **Real-Time SCADA Integration**: Live data feeds for operational digital twin monitoring and control
+
+### Platform
+
+- **AI / Natural Language Search**: Query the model and run analyses using plain-language prompts
+
+---
+
 ## Completed
 - ~~Overlay fault current markers on TCC~~
 - ~~TCC comparison mode (side-by-side before/after)~~
