@@ -161,6 +161,19 @@ const Annotations = {
       }
     }
 
+    // Grounding analysis annotations on buses
+    if (AppState.groundingResults && AppState.groundingResults.buses) {
+      for (const busResult of AppState.groundingResults.buses) {
+        const comp = AppState.components.get(busResult.bus_id);
+        if (!comp) continue;
+        const key = `gr:${busResult.bus_id}`;
+        const off = this.getOffset(key);
+        const x = comp.x + 70 + off.dx;
+        const y = comp.y + 90 + off.dy;
+        html += this.renderGroundingBadge(x, y, busResult, key);
+      }
+    }
+
     this.layer.innerHTML = html;
   },
 
@@ -442,6 +455,34 @@ const Annotations = {
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DUTY</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderGroundingBadge(x, y, busResult, key) {
+    const fillColor = busResult.status === 'fail' ? '#d32f2f'
+      : busResult.status === 'warning' ? '#f57c00' : '#4caf50';
+    const touchIcon = busResult.touch_ok ? '✓' : '✗';
+    const stepIcon = busResult.touch_ok && busResult.step_ok ? '✓' : '✗';
+    const lines = [
+      `Vt: ${busResult.mesh_voltage_v}V ${touchIcon}`,
+      `Vs: ${busResult.step_voltage_v}V ${stepIcon}`,
+      `Rg: ${busResult.grid_resistance_ohm.toFixed(2)}Ω`,
+    ];
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 110;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group grounding-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">GROUNDING</text>
         ${textHtml}
       </g>`;
   },

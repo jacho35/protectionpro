@@ -605,6 +605,17 @@ const FIELD_INFO = {
 
   // Motor demand factors
   'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.\nTypical: single largest motor 1.0, group of 2-4 motors 0.8, 5-10 motors 0.6.',
+
+  // Grounding (IEEE 80)
+  'bus.soil_resistivity': 'Soil resistivity in Ω·m.\nSource: IEEE 80 §12.2 — typical values:\n• Wet clay: 20–100\n• Sandy clay: 50–200\n• Gravel/sand: 200–3000\n• Rock: 1000–10000',
+  'bus.grid_length': 'Grounding grid length in metres.\nSource: IEEE 80 — grid dimensions define the protected area.',
+  'bus.grid_width': 'Grounding grid width in metres.',
+  'bus.grid_depth': 'Burial depth of grid conductors (typically 0.3–1.0 m).\nSource: IEEE 80 §14.3.',
+  'bus.num_conductors_x': 'Number of parallel conductors in X direction.\nMore conductors reduce mesh voltage.',
+  'bus.num_conductors_y': 'Number of parallel conductors in Y direction.',
+  'bus.num_ground_rods': 'Number of vertical ground rods.\nSource: IEEE 80 §14.4 — rods help reduce grid resistance.',
+  'bus.ground_rod_length': 'Length of each ground rod (typically 3 m).\nSource: IEEE 80 §14.4.',
+  'bus.fault_duration': 'Fault clearing time in seconds.\nSource: IEEE 80 §9.4 — determines tolerable touch/step voltages.\nTypical: 0.15–1.0 s.',
   'motor_synchronous.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.',
 
   // Surge Arrester
@@ -746,6 +757,17 @@ const COMPONENT_DEFS = {
       working_distance_mm: 455,
       electrode_config: 'VCB',
       enclosure_size_mm: 508,
+      soil_resistivity: 100,
+      crushed_rock_resistivity: 2500,
+      crushed_rock_depth: 0.15,
+      grid_length: 30,
+      grid_width: 30,
+      grid_depth: 0.5,
+      num_conductors_x: 6,
+      num_conductors_y: 6,
+      ground_rod_length: 3.0,
+      num_ground_rods: 20,
+      fault_duration: 0.5,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -755,6 +777,15 @@ const COMPONENT_DEFS = {
       { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5 },
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'] },
       { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10 },
+      { key: 'soil_resistivity', label: 'Soil Resistivity', type: 'number', unit: 'Ω·m' },
+      { key: 'grid_length', label: 'Grid Length', type: 'number', unit: 'm' },
+      { key: 'grid_width', label: 'Grid Width', type: 'number', unit: 'm' },
+      { key: 'grid_depth', label: 'Grid Depth', type: 'number', unit: 'm' },
+      { key: 'num_conductors_x', label: 'Conductors (X)', type: 'number' },
+      { key: 'num_conductors_y', label: 'Conductors (Y)', type: 'number' },
+      { key: 'num_ground_rods', label: 'Ground Rods', type: 'number' },
+      { key: 'ground_rod_length', label: 'Rod Length', type: 'number', unit: 'm' },
+      { key: 'fault_duration', label: 'Fault Duration', type: 'number', unit: 's' },
     ],
   },
   transformer: {

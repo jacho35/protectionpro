@@ -706,6 +706,105 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  // ── Grounding System Analysis (IEEE 80) ──
+  document.getElementById('btn-grounding').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running grounding analysis.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running grounding system analysis (IEEE 80)...';
+    try {
+      const result = await API.runGroundingAnalysis();
+      AppState.groundingResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Grounding analysis complete.';
+      showGroundingResults(result);
+    } catch (e) {
+      console.error('Grounding analysis error:', e);
+      document.getElementById('status-info').textContent = 'Grounding analysis failed.';
+      showValidationModal('Grounding — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  });
+
+  function showGroundingResults(result) {
+    const modal = document.getElementById('grounding-modal');
+    const body = document.getElementById('grounding-body');
+    if (!modal || !body) return;
+
+    const buses = result.buses || [];
+    const summary = result.summary || {};
+
+    let html = '';
+
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      html += '</div>';
+    }
+
+    if (buses.length === 0) {
+      body.innerHTML = html + '<p>No buses with fault data available for grounding analysis.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    // Summary banner
+    const failCount = summary.fail || 0;
+    const warnCount = summary.warning || 0;
+    const bannerColor = failCount > 0 ? '#d32f2f' : warnCount > 0 ? '#f57c00' : '#4caf50';
+    html += `<div style="background:${bannerColor}11;border:1px solid ${bannerColor};border-radius:6px;padding:10px 14px;margin-bottom:14px">
+      <strong style="color:${bannerColor}">${summary.total} buses analysed:</strong>
+      <span style="color:#4caf50;margin-left:8px">${summary.pass} Pass</span>
+      <span style="color:#f57c00;margin-left:8px">${warnCount} Warn</span>
+      <span style="color:#d32f2f;margin-left:8px">${failCount} Fail</span>
+      ${failCount > 0 ? '<span style="color:#d32f2f;margin-left:16px;font-weight:600">— Touch/step voltage limits exceeded</span>' : ''}
+    </div>`;
+
+    // Per-bus results
+    for (const b of buses) {
+      const statusColor = b.status === 'fail' ? '#d32f2f' : b.status === 'warning' ? '#f57c00' : '#4caf50';
+      const statusLabel = b.status.toUpperCase();
+      const touchIcon = b.touch_ok ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>';
+      const stepIcon = b.step_ok ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>';
+
+      html += `<div style="border:1px solid var(--border-color);border-radius:6px;padding:12px 14px;margin-bottom:10px;border-left:4px solid ${statusColor}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong style="font-size:13px">${b.bus_name} (${b.voltage_kv} kV)</strong>
+          <span style="color:${statusColor};font-weight:600;font-size:12px">${statusLabel}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
+          <div>Grid: <strong>${b.grid_dimensions}</strong></div>
+          <div>Soil: <strong>${b.soil_resistivity} Ω·m</strong></div>
+          <div>Fault: <strong>${b.fault_current_ka} kA</strong></div>
+          <div>R<sub>grid</sub>: <strong>${b.grid_resistance_ohm.toFixed(3)} Ω</strong></div>
+          <div>GPR: <strong>${b.gpr_v.toFixed(0)} V</strong></div>
+          <div>Conductor: <strong>${b.recommended_conductor_mm2} mm²</strong></div>
+          <div>Rods: <strong>${b.num_ground_rods}</strong></div>
+          <div>L<sub>total</sub>: <strong>${b.total_conductor_length_m} m</strong></div>
+        </div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="background:var(--bg-secondary);border-radius:4px;padding:8px;font-size:12px">
+            <div style="margin-bottom:4px"><strong>Touch Voltage</strong> ${touchIcon}</div>
+            <div>Actual: <strong>${b.mesh_voltage_v.toFixed(0)} V</strong></div>
+            <div>Limit: <strong>${b.tolerable_touch_v.toFixed(0)} V</strong></div>
+          </div>
+          <div style="background:var(--bg-secondary);border-radius:4px;padding:8px;font-size:12px">
+            <div style="margin-bottom:4px"><strong>Step Voltage</strong> ${stepIcon}</div>
+            <div>Actual: <strong>${b.step_voltage_v.toFixed(0)} V</strong></div>
+            <div>Limit: <strong>${b.tolerable_step_v.toFixed(0)} V</strong></div>
+          </div>
+        </div>`;
+
+      if (b.issues.length > 0) {
+        html += `<div style="margin-top:6px;font-size:11px;color:#b71c1c">${b.issues.join('<br>')}</div>`;
+      }
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   // ── Study Manager — Batch Run ──
   document.getElementById('btn-study-manager').addEventListener('click', () => {
     if (AppState.components.size === 0) {
@@ -749,6 +848,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (studies.motor_starting && studies.motor_starting.result) AppState.motorStartingResults = studies.motor_starting.result;
       if (studies.duty_check && studies.duty_check.result) AppState.dutyCheckResults = studies.duty_check.result;
       if (studies.load_diversity && studies.load_diversity.result) AppState.loadDiversityResults = studies.load_diversity.result;
+      if (studies.grounding && studies.grounding.result) AppState.groundingResults = studies.grounding.result;
 
       Canvas.render();
       document.getElementById('status-info').textContent = `Batch run complete (${result.total_time_s}s).`;
@@ -787,7 +887,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>`;
 
     // Per-study cards
-    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'duty_check', 'load_diversity'];
+    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'duty_check', 'load_diversity', 'grounding'];
     for (const key of studyOrder) {
       const s = studies[key];
       if (!s) continue;
@@ -837,6 +937,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return `${counts.total} devices: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
     } else if (key === 'load_diversity') {
       return `${counts.buses_with_loads} buses, ${counts.transformers} transformers, overall DF ${counts.overall_demand_factor?.toFixed(3) || '—'}`;
+    } else if (key === 'grounding') {
+      return `${counts.total} buses: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
     }
     return '';
   }
@@ -1056,6 +1158,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('load-diversity-modal').addEventListener('click', (e) => {
     if (e.target.id === 'load-diversity-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-grounding').addEventListener('click', () => {
+    document.getElementById('grounding-modal').style.display = 'none';
+  });
+  document.getElementById('grounding-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'grounding-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-study-manager').addEventListener('click', () => {
