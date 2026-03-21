@@ -60,6 +60,13 @@ const API = {
     return this.request('/analysis/loadflow', 'POST', data);
   },
 
+  // Run unbalanced three-phase load flow
+  async runUnbalancedLoadFlow(method = 'newton_raphson') {
+    const data = AppState.toJSON();
+    data.loadFlowMethod = method;
+    return this.request('/analysis/unbalanced-loadflow', 'POST', data);
+  },
+
   // Run cable sizing analysis
   async runCableSizing(options = {}) {
     const data = { ...AppState.toJSON(), ...options };

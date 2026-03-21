@@ -6,9 +6,10 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, UnbalancedLoadFlowResults
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
+from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
 from ..analysis.arcflash import run_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
 from ..analysis.motor_starting import run_motor_starting
@@ -39,6 +40,17 @@ def load_flow(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Load flow error: {e}")
+
+
+@router.post("/unbalanced-loadflow", response_model=UnbalancedLoadFlowResults)
+def unbalanced_load_flow(data: ProjectData):
+    """Run three-phase unbalanced load flow using symmetrical component method."""
+    try:
+        method = data.loadFlowMethod or "newton_raphson"
+        return run_unbalanced_load_flow(data, method)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Unbalanced load flow error: {e}")
 
 
 @router.post("/arcflash", response_model=ArcFlashResults)

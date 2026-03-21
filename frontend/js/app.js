@@ -279,6 +279,40 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
   document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
 
+  // Unbalanced Load Flow
+  document.getElementById('btn-run-unbalanced-loadflow').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running unbalanced load flow.';
+      return;
+    }
+    const { errors, warnings } = Components.validate();
+    if (errors.length > 0 || warnings.length > 0) {
+      showValidationModal('Unbalanced Load Flow — Validation', errors, warnings, async () => {
+        await _runUnbalancedLoadFlow();
+      });
+    } else {
+      await _runUnbalancedLoadFlow();
+    }
+  });
+
+  async function _runUnbalancedLoadFlow() {
+    const statusEl = document.getElementById('status-info');
+    statusEl.textContent = 'Running unbalanced load flow...';
+    try {
+      const lfMethod = document.getElementById('loadflow-method').value;
+      const result = await API.runUnbalancedLoadFlow(lfMethod);
+      AppState.unbalancedLoadFlowResults = result;
+      Canvas.render();
+      const vufMax = Math.max(...Object.values(result.buses).map(b => b.vuf_pct));
+      const warnCount = result.warnings ? result.warnings.length : 0;
+      statusEl.textContent = `Unbalanced load flow complete. Max VUF: ${vufMax.toFixed(2)}%` +
+        (warnCount > 0 ? ` (${warnCount} warning${warnCount > 1 ? 's' : ''})` : '');
+    } catch (e) {
+      statusEl.textContent = 'Unbalanced load flow failed.';
+      showValidationModal('Unbalanced Load Flow — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  }
+
   // Arc Flash Analysis
   document.getElementById('btn-arcflash').addEventListener('click', async () => {
     if (AppState.components.size === 0) {

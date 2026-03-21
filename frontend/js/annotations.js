@@ -61,6 +61,30 @@ const Annotations = {
     // Branch flow badges are NOT rendered here — they are shown as inline
     // data labels on each component by Canvas.renderComponentDataLabels().
 
+    // Unbalanced load flow annotations on buses
+    if (AppState.unbalancedLoadFlowResults && AppState.unbalancedLoadFlowResults.buses) {
+      for (const [busId, result] of Object.entries(AppState.unbalancedLoadFlowResults.buses)) {
+        const comp = AppState.components.get(busId);
+        if (!comp) continue;
+        const key = `ulf:${busId}`;
+        const off = this.getOffset(key);
+        const x = comp.x - 160 + off.dx;
+        const y = comp.y + 20 + off.dy;
+        html += this.renderUnbalancedLoadFlowBadge(x, y, result, key);
+      }
+    }
+
+    // Unbalanced load flow VUF warnings
+    if (AppState.unbalancedLoadFlowResults && AppState.unbalancedLoadFlowResults.warnings) {
+      for (const warn of AppState.unbalancedLoadFlowResults.warnings) {
+        const comp = AppState.components.get(warn.elementId);
+        if (!comp) continue;
+        const key = `ulf-warn:${warn.elementId}`;
+        const off = this.getOffset(key);
+        html += this.renderVoltageMismatchBadge(comp.x + 40 + off.dx, comp.y - 65 + off.dy, comp, warn, key);
+      }
+    }
+
     // Voltage mismatch warnings from load flow
     if (AppState.loadFlowResults && AppState.loadFlowResults.warnings) {
       for (const warn of AppState.loadFlowResults.warnings) {
@@ -258,6 +282,36 @@ const Annotations = {
       <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">LOAD FLOW</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderUnbalancedLoadFlowBadge(x, y, result, key) {
+    const fmt = (v) => v != null ? v.toFixed(4) : '—';
+    const fmtKv = (v) => v != null ? (v >= 1 ? `${v.toFixed(3)} kV` : `${(v * 1000).toFixed(1)} V`) : '—';
+    const lines = [
+      `Va: ${fmt(result.va_pu)} p.u. ∠${result.angle_a_deg != null ? result.angle_a_deg.toFixed(1) : '—'}°`,
+      `Vb: ${fmt(result.vb_pu)} p.u. ∠${result.angle_b_deg != null ? result.angle_b_deg.toFixed(1) : '—'}°`,
+      `Vc: ${fmt(result.vc_pu)} p.u. ∠${result.angle_c_deg != null ? result.angle_c_deg.toFixed(1) : '—'}°`,
+      `V1: ${fmt(result.v1_pu)}  V2: ${fmt(result.v2_pu)}  V0: ${fmt(result.v0_pu)}`,
+      `VUF: ${result.vuf_pct != null ? result.vuf_pct.toFixed(2) : '—'}%`,
+    ];
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const maxLen = Math.max(...lines.map(l => l.length));
+    const boxW = Math.max(140, maxLen * 6.2 + 14);
+
+    const vufColor = result.vuf_pct > 2 ? '#d32f2f' : result.vuf_pct > 1 ? '#f57c00' : '#1976d2';
+    const textHtml = lines.map((line, i) => {
+      const color = (i === 4 && result.vuf_pct > 1) ? ` fill="${vufColor}"` : '';
+      return `<text class="annotation-text"${color} x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`;
+    }).join('');
+
+    return `
+      <g class="annotation-group unbalanced-lf-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">UNBALANCED LF</text>
         ${textHtml}
       </g>`;
   },

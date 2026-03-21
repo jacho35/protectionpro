@@ -47,6 +47,7 @@ const AppState = {
   // Analysis results
   faultResults: null,
   loadFlowResults: null,
+  unbalancedLoadFlowResults: null,
   arcFlashResults: null,
 
   // Scenarios — saved snapshots of network configuration
@@ -242,6 +243,7 @@ const AppState = {
     this.selectedIds.clear();
     this.faultResults = null;
     this.loadFlowResults = null;
+    this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
     for (const c of scenario.components) {
       this.components.set(c.id, JSON.parse(JSON.stringify(c)));
@@ -385,6 +387,7 @@ const AppState = {
   clearResults() {
     this.faultResults = null;
     this.loadFlowResults = null;
+    this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
   },
 
@@ -399,6 +402,7 @@ const AppState = {
     this.selectedIds.clear();
     this.faultResults = null;
     this.loadFlowResults = null;
+    this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
     this.zoom = 1;
     this.panX = 0;
