@@ -113,6 +113,7 @@
     <!-- Row 2: Analysis & View -->
     <div class="toolbar-row">
       <div class="toolbar-left">
+        <!-- Core Analysis -->
         <div class="toolbar-group">
           <button id="btn-run-fault" title="Run Fault Analysis (select a bus first for single-bus analysis)">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -133,22 +134,10 @@
             <option value="newton_raphson">Newton-Raphson</option>
             <option value="gauss_seidel">Gauss-Seidel</option>
           </select>
-          <button id="btn-scenarios" title="Manage Scenarios">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
-            <span>Scenarios</span>
-          </button>
-          <button id="btn-compliance" title="Generate Compliance Report">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Compliance</span>
-          </button>
-          <button id="btn-arcflash" title="Arc Flash Analysis (IEEE 1584-2018)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
-            <span>Arc Flash</span>
-          </button>
-          <button id="btn-tcc" title="Time-Current Curves (TCC)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
-            <span>TCC</span>
-          </button>
+        </div>
+        <div class="toolbar-separator"></div>
+        <!-- Equipment Studies -->
+        <div class="toolbar-group">
           <button id="btn-cable-sizing" title="Cable Sizing Calculator">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/></svg>
             <span>Cable Sizing</span>
@@ -160,6 +149,30 @@
           <button id="btn-duty-check" title="Equipment Duty Check">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             <span>Duty Check</span>
+          </button>
+        </div>
+        <div class="toolbar-separator"></div>
+        <!-- Safety & Protection -->
+        <div class="toolbar-group">
+          <button id="btn-arcflash" title="Arc Flash Analysis (IEEE 1584-2018)">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+            <span>Arc Flash</span>
+          </button>
+          <button id="btn-tcc" title="Time-Current Curves (TCC)">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
+            <span>TCC</span>
+          </button>
+          <button id="btn-compliance" title="Generate Compliance Report">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span>Compliance</span>
+          </button>
+        </div>
+        <div class="toolbar-separator"></div>
+        <!-- Scenarios -->
+        <div class="toolbar-group">
+          <button id="btn-scenarios" title="Manage Scenarios">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+            <span>Scenarios</span>
           </button>
         </div>
       </div>
