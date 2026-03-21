@@ -577,6 +577,135 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── Load Diversity & Demand Factor ──
+  document.getElementById('btn-load-diversity').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running load diversity analysis.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running load diversity analysis...';
+    try {
+      const result = await API.runLoadDiversity();
+      AppState.loadDiversityResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Load diversity analysis complete.';
+      showLoadDiversityResults(result);
+    } catch (e) {
+      console.error('Load diversity error:', e);
+      document.getElementById('status-info').textContent = 'Load diversity analysis failed.';
+      showValidationModal('Load Diversity — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  });
+
+  function showLoadDiversityResults(result) {
+    const modal = document.getElementById('load-diversity-modal');
+    const body = document.getElementById('load-diversity-body');
+    if (!modal || !body) return;
+
+    const buses = result.buses || [];
+    const xfmrs = result.transformers || [];
+    const summary = result.summary || {};
+    const iecFactors = result.iec_demand_factors || {};
+
+    let html = '';
+
+    // Summary banner
+    const overallDf = summary.overall_demand_factor || 1;
+    const savings = summary.total_installed_kva > 0
+      ? ((1 - overallDf) * 100).toFixed(0) : 0;
+    html += `<div style="background:#1565c011;border:1px solid #1565c0;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+      <div><strong style="font-size:13px">Overall Demand Factor:</strong> <span style="font-size:16px;font-weight:700;color:#1565c0">${overallDf.toFixed(3)}</span></div>
+      <div style="font-size:12px">Installed: <strong>${summary.total_installed_kva?.toFixed(0) || 0} kVA</strong> (${summary.total_installed_kw?.toFixed(0) || 0} kW)</div>
+      <div style="font-size:12px">Max Demand: <strong>${summary.total_demand_kva?.toFixed(0) || 0} kVA</strong> (${summary.total_demand_kw?.toFixed(0) || 0} kW)</div>
+      ${savings > 0 ? `<div style="font-size:12px;color:#4caf50">Diversity saving: <strong>${savings}%</strong></div>` : ''}
+    </div>`;
+
+    // Transformer loading section
+    if (xfmrs.length > 0) {
+      html += '<h4 style="margin:12px 0 8px;font-size:13px">Transformer Loading</h4>';
+      html += `<table class="af-table"><thead><tr>
+        <th>Transformer</th><th>Rating (kVA)</th><th>Fed Buses</th>
+        <th>Installed (kVA)</th><th>Demand (kVA)</th>
+        <th>Installed %</th><th>Demand %</th><th>Status</th>
+      </tr></thead><tbody>`;
+      for (const t of xfmrs) {
+        const rowClass = t.status === 'fail' ? 'af-danger' : t.status === 'warning' ? 'af-medium' : 'af-low';
+        const statusBadge = t.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+          : t.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+        html += `<tr class="${rowClass}">
+          <td>${t.transformer_name}</td>
+          <td>${t.rated_kva.toFixed(0)}</td>
+          <td>${t.fed_buses.join(', ') || '—'}</td>
+          <td>${t.installed_kva.toFixed(0)}</td>
+          <td>${t.demand_kva.toFixed(0)}</td>
+          <td>${t.installed_loading_pct.toFixed(1)}%</td>
+          <td><strong>${t.demand_loading_pct.toFixed(1)}%</strong></td>
+          <td>${statusBadge}</td>
+        </tr>`;
+        if (t.issues.length > 0) {
+          html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">${t.issues.join('<br>')}</td></tr>`;
+        }
+      }
+      html += '</tbody></table>';
+    }
+
+    // Per-bus breakdown
+    if (buses.length > 0) {
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">Bus Load Summary</h4>';
+      html += `<table class="af-table"><thead><tr>
+        <th>Bus</th><th>Loads</th><th>Installed (kVA)</th><th>Demand (kVA)</th>
+        <th>Diversity</th><th>Diversified (kVA)</th><th>Eff. DF</th><th>Current (A)</th>
+      </tr></thead><tbody>`;
+      for (const b of buses) {
+        html += `<tr>
+          <td>${b.bus_name}</td>
+          <td>${b.num_loads}</td>
+          <td>${b.installed_kva.toFixed(0)}</td>
+          <td>${b.demand_kva.toFixed(0)}</td>
+          <td>${b.diversity_factor.toFixed(3)}</td>
+          <td><strong>${b.diversified_demand_kva.toFixed(0)}</strong></td>
+          <td>${b.effective_demand_factor.toFixed(3)}</td>
+          <td>${b.demand_current_a.toFixed(1)}</td>
+        </tr>`;
+
+        // Expandable per-load detail
+        if (b.loads && b.loads.length > 0) {
+          html += `<tr><td colspan="8" style="padding:0 0 0 20px">
+            <details style="font-size:11px"><summary style="cursor:pointer;color:var(--text-secondary)">Show ${b.loads.length} loads</summary>
+            <table style="width:100%;font-size:11px;margin:4px 0"><thead><tr>
+              <th style="text-align:left">Load</th><th>Type</th><th>Installed kVA</th><th>DF</th><th>Demand kVA</th><th>PF</th>
+            </tr></thead><tbody>`;
+          for (const l of b.loads) {
+            const typeLabel = l.load_type === 'motor_induction' ? 'IM'
+              : l.load_type === 'motor_synchronous' ? 'SM' : 'Load';
+            html += `<tr>
+              <td style="text-align:left">${l.load_name}</td><td>${typeLabel}</td>
+              <td>${l.installed_kva.toFixed(1)}</td><td>${l.demand_factor.toFixed(2)}</td>
+              <td>${l.demand_kva.toFixed(1)}</td><td>${l.power_factor.toFixed(2)}</td>
+            </tr>`;
+          }
+          html += '</tbody></table></details></td></tr>';
+        }
+      }
+      html += '</tbody></table>';
+    }
+
+    // IEC reference demand factors
+    const iecEntries = Object.entries(iecFactors);
+    if (iecEntries.length > 0) {
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">IEC Reference Demand Factors</h4>';
+      html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px 16px;font-size:11px">';
+      for (const [, info] of iecEntries) {
+        html += `<div><strong>${info.factor.toFixed(1)}</strong> — ${info.description}</div>`;
+      }
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   // ── Study Manager — Batch Run ──
   document.getElementById('btn-study-manager').addEventListener('click', () => {
     if (AppState.components.size === 0) {
@@ -619,6 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (studies.cable_sizing && studies.cable_sizing.result) AppState.cableSizingResults = studies.cable_sizing.result;
       if (studies.motor_starting && studies.motor_starting.result) AppState.motorStartingResults = studies.motor_starting.result;
       if (studies.duty_check && studies.duty_check.result) AppState.dutyCheckResults = studies.duty_check.result;
+      if (studies.load_diversity && studies.load_diversity.result) AppState.loadDiversityResults = studies.load_diversity.result;
 
       Canvas.render();
       document.getElementById('status-info').textContent = `Batch run complete (${result.total_time_s}s).`;
@@ -657,7 +787,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>`;
 
     // Per-study cards
-    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'duty_check'];
+    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'duty_check', 'load_diversity'];
     for (const key of studyOrder) {
       const s = studies[key];
       if (!s) continue;
@@ -705,6 +835,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return `${counts.total} motors: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
     } else if (key === 'duty_check') {
       return `${counts.total} devices: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
+    } else if (key === 'load_diversity') {
+      return `${counts.buses_with_loads} buses, ${counts.transformers} transformers, overall DF ${counts.overall_demand_factor?.toFixed(3) || '—'}`;
     }
     return '';
   }
@@ -917,6 +1049,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('duty-check-modal').addEventListener('click', (e) => {
     if (e.target.id === 'duty-check-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-load-diversity').addEventListener('click', () => {
+    document.getElementById('load-diversity-modal').style.display = 'none';
+  });
+  document.getElementById('load-diversity-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'load-diversity-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-study-manager').addEventListener('click', () => {

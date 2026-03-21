@@ -401,21 +401,24 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
             elif comp.type == "static_load":
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
-                P_spec[i] -= rated * pf / base_mva
-                Q_spec[i] -= rated * math.sqrt(1 - pf**2) / base_mva
+                df = comp.props.get("demand_factor", 1.0)
+                P_spec[i] -= rated * pf * df / base_mva
+                Q_spec[i] -= rated * math.sqrt(1 - pf**2) * df / base_mva
             elif comp.type == "motor_induction":
                 rated_kw = comp.props.get("rated_kw", 200)
                 eff = comp.props.get("efficiency", 0.93)
                 pf = comp.props.get("power_factor", 0.85)
+                df = comp.props.get("demand_factor", 1.0)
                 rated_mva = rated_kw / eff / 1000
-                P_spec[i] -= rated_mva * pf / base_mva
-                Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) / base_mva
+                P_spec[i] -= rated_mva * pf * df / base_mva
+                Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) * df / base_mva
             elif comp.type == "motor_synchronous":
                 rated_kva = comp.props.get("rated_kva", 500)
                 pf = comp.props.get("power_factor", 0.9)
+                df = comp.props.get("demand_factor", 1.0)
                 rated_mva = rated_kva / 1000
-                P_spec[i] -= rated_mva * pf / base_mva
-                Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) / base_mva
+                P_spec[i] -= rated_mva * pf * df / base_mva
+                Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) * df / base_mva
             elif comp.type == "capacitor_bank":
                 kvar = comp.props.get("rated_kvar", 100)
                 Q_spec[i] += kvar / 1000 / base_mva

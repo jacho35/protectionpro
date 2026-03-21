@@ -78,6 +78,12 @@ const API = {
     return this.request('/analysis/duty-check', 'POST', data);
   },
 
+  // Run load diversity analysis
+  async runLoadDiversity() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/load-diversity', 'POST', data);
+  },
+
   // Run study manager (batch all analyses)
   async runStudyManager(enabledStudies = null) {
     const data = AppState.toJSON();
