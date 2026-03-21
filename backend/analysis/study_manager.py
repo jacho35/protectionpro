@@ -20,6 +20,7 @@ STUDY_DEFS = [
     ("motor_starting", "Motor Starting"),
     ("duty_check", "Equipment Duty Check"),
     ("load_diversity", "Load Diversity"),
+    ("grounding", "Grounding System (IEEE 80)"),
 ]
 
 
@@ -49,6 +50,9 @@ def _run_single_study(key: str, project: ProjectData):
     elif key == "load_diversity":
         from .load_diversity import run_load_diversity
         return run_load_diversity(project)
+    elif key == "grounding":
+        from .grounding_system import run_grounding_analysis
+        return run_grounding_analysis(project)
     else:
         raise ValueError(f"Unknown study key: {key}")
 
@@ -223,6 +227,21 @@ def _extract_study_status(key: str, result_data) -> dict:
         if n_xfmr_fail > 0:
             return {"status": "fail", "counts": counts}
         if n_xfmr_warn > 0:
+            return {"status": "warning", "counts": counts}
+        return {"status": "pass", "counts": counts}
+
+    elif key == "grounding":
+        buses = result_data.get("buses", [])
+        summary = result_data.get("summary", {})
+        counts = {
+            "total": summary.get("total", len(buses)),
+            "pass": summary.get("pass", 0),
+            "warning": summary.get("warning", 0),
+            "fail": summary.get("fail", 0),
+        }
+        if counts["fail"] > 0:
+            return {"status": "fail", "counts": counts}
+        if counts["warning"] > 0:
             return {"status": "warning", "counts": counts}
         return {"status": "pass", "counts": counts}
 

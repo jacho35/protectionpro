@@ -1,5 +1,6 @@
 """Analysis routes — fault analysis, load flow, arc flash, cable sizing,
-motor starting, equipment duty check, load diversity, and study manager."""
+motor starting, equipment duty check, load diversity, grounding system,
+and study manager."""
 
 import traceback
 from typing import Optional
@@ -13,6 +14,7 @@ from ..analysis.cable_sizing import run_cable_sizing
 from ..analysis.motor_starting import run_motor_starting
 from ..analysis.duty_check import run_duty_check
 from ..analysis.load_diversity import run_load_diversity
+from ..analysis.grounding_system import run_grounding_analysis
 from ..analysis.study_manager import run_study_manager
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -96,6 +98,16 @@ def load_diversity(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Load diversity error: {e}")
+
+
+@router.post("/grounding")
+def grounding_analysis(data: ProjectData):
+    """Run IEEE 80 grounding system analysis."""
+    try:
+        return run_grounding_analysis(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Grounding analysis error: {e}")
 
 
 class StudyManagerRequest(ProjectData):

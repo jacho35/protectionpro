@@ -84,6 +84,12 @@ const API = {
     return this.request('/analysis/load-diversity', 'POST', data);
   },
 
+  // Run grounding system analysis (IEEE 80)
+  async runGroundingAnalysis() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/grounding', 'POST', data);
+  },
+
   // Run study manager (batch all analyses)
   async runStudyManager(enabledStudies = null) {
     const data = AppState.toJSON();
