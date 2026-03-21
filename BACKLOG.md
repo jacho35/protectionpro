@@ -66,3 +66,4 @@
 - ~~Parallel cable impedance modeling~~
 - ~~CT saturation modeling: CT ratio and burden effects on relay operating times~~
 - ~~Directional relay curves: Directional overcurrent (67) curve plotting~~
+- ~~Detailed calculation formulas and standard references in HELP documentation for all analysis functions (Fault, Load Flow, Arc Flash, Cable Sizing, Duty Check, Grounding, Load Diversity, Motor Starting, TCC)~~
