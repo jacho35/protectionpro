@@ -254,6 +254,100 @@ function idmtTripTime(curveName, M, TDS) {
   }
 }
 
+// ─── CT Saturation Model ───
+// Models the effect of CT core saturation on the effective current seen by relays.
+// Based on IEC 61869-2 accuracy limit factor (ALF) and knee-point voltage.
+//
+// When the CT saturates, the secondary waveform is clipped, reducing the RMS
+// current the relay actually measures.  This increases relay operating time.
+
+/**
+ * Parse a CT ratio string like "400/5" → { primary: 400, secondary: 5, ratio: 80 }
+ */
+function parseCTRatio(ratioStr) {
+  if (!ratioStr || typeof ratioStr !== 'string') return { primary: 400, secondary: 5, ratio: 80 };
+  const parts = ratioStr.split('/').map(Number);
+  if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+    return { primary: parts[0], secondary: parts[1], ratio: parts[0] / parts[1] };
+  }
+  return { primary: 400, secondary: 5, ratio: 80 };
+}
+
+/**
+ * Parse IEC 61869-2 accuracy class like "5P20" → ALF = 20
+ * Format: <error%>P<ALF> (e.g. 5P20, 10P10, 5P30)
+ */
+function parseCTAccuracyALF(accuracyClass) {
+  if (!accuracyClass || typeof accuracyClass !== 'string') return 20;
+  const m = accuracyClass.match(/(\d+)P(\d+)/i);
+  return m ? parseInt(m[2]) : 20;
+}
+
+/**
+ * Calculate CT saturation parameters.
+ * @param {object} ctProps - CT component props (ratio, accuracy_class, burden_va, knee_point_v, rct_ohm)
+ * @returns {object} { ratio, iSatPrimary, kneePointV, rctOhm, burdenOhm, alf }
+ */
+function ctSaturationParams(ctProps) {
+  const ct = parseCTRatio(ctProps.ratio);
+  const alf = parseCTAccuracyALF(ctProps.accuracy_class);
+  const burdenVA = parseFloat(ctProps.burden_va) || 15;
+  const rctOhm = parseFloat(ctProps.rct_ohm) || 0;
+  const iSecRated = ct.secondary; // Rated secondary current (5A or 1A)
+
+  // Burden in ohms: Z_burden = VA / I²
+  const burdenOhm = burdenVA / (iSecRated * iSecRated);
+
+  // Knee point voltage (user override or derived from ALF)
+  // Vk ≈ ALF × I_sec_rated × (Rct + R_burden)  [IEC 61869-2]
+  let kneePointV = parseFloat(ctProps.knee_point_v);
+  if (!kneePointV || kneePointV <= 0) {
+    kneePointV = alf * iSecRated * (rctOhm + burdenOhm);
+  }
+
+  // Primary current at which CT begins to saturate
+  // I_sat_sec = Vk / (Rct + R_burden)
+  const totalZ = rctOhm + burdenOhm;
+  const iSatSecondary = totalZ > 0 ? kneePointV / totalZ : Infinity;
+  const iSatPrimary = iSatSecondary * ct.ratio;
+
+  return { ratio: ct.ratio, primary: ct.primary, secondary: ct.secondary,
+           iSatPrimary, kneePointV, rctOhm, burdenOhm, alf, totalZ };
+}
+
+/**
+ * Calculate effective primary current accounting for CT saturation.
+ * Below saturation knee point: I_eff = I_primary (no effect).
+ * Above: waveform clipping reduces effective RMS current.
+ *
+ * Uses saturation angle model:
+ *   Ks = Vk / (I_sec_ideal × Z_total)
+ *   θ  = arccos(1 - 2·Ks)
+ *   η  = √((θ - sin(2θ)/2) / π)
+ *   I_eff = I_primary × η
+ *
+ * @param {number} iPrimary - Actual primary fault current (A)
+ * @param {object} satParams - From ctSaturationParams()
+ * @returns {number} Effective current the relay measures (primary A)
+ */
+function ctEffectiveCurrent(iPrimary, satParams) {
+  if (!satParams || satParams.iSatPrimary === Infinity) return iPrimary;
+  if (iPrimary <= satParams.iSatPrimary) return iPrimary;
+
+  // Ideal secondary current
+  const iSecIdeal = iPrimary / satParams.ratio;
+  // Saturation factor
+  const ks = satParams.kneePointV / (iSecIdeal * satParams.totalZ);
+  if (ks >= 1) return iPrimary; // shouldn't happen but guard
+
+  // Saturation angle (portion of cycle the CT is not saturated)
+  const theta = Math.acos(1 - 2 * ks);
+  // RMS reduction factor
+  const eta = Math.sqrt((theta - Math.sin(2 * theta) / 2) / Math.PI);
+
+  return iPrimary * Math.max(eta, 0.05); // floor at 5% to avoid zero
+}
+
 // ─── Distance Relay (21) Trip Time ───
 // Converts impedance zones to equivalent current thresholds and returns
 // the trip time for a given fault current.
@@ -576,12 +670,16 @@ const FIELD_INFO = {
   'relay.z1_reach_ohm': 'Zone 1 forward reach in primary ohms.\nTypically set to 80% of protected line impedance for instantaneous tripping.\nSource: IEEE C37.113 / IEC 60255-121.',
   'relay.z2_reach_ohm': 'Zone 2 forward reach in primary ohms.\nTypically set to 120% of protected line impedance (overreaches into next section).\nOperates with a time delay (typically 0.3-0.5s).\nSource: IEEE C37.113.',
   'relay.z3_reach_ohm': 'Zone 3 forward reach in primary ohms.\nTypically set to cover the next line section (200%+ of protected line).\nOperates with a longer time delay (typically 0.6-1.2s) as backup.\nSource: IEEE C37.113.',
+  'relay.direction': 'Operating direction for directional overcurrent (67) relay.\nForward: operates for faults downstream (current flowing from source to load).\nReverse: operates for faults upstream (reverse power flow).\nSource: IEC 60255-151 §6 — directional overcurrent relays.',
+  'relay.characteristic_angle_deg': 'Relay characteristic angle (RCA) — the angle of maximum sensitivity.\nDefault 45° — typical for MV distribution feeders.\nSource: IEC 60255-151 — RCA depends on line impedance angle:\n• Cables (low X/R): 30-45°\n• Overhead lines: 45-65°\n• Transmission: 60-75°.',
   'relay.mho_angle_deg': 'Maximum torque angle (MTA) of the mho characteristic.\nTypically 60-85 degrees depending on line impedance angle.\nSource: IEC 60255-121 §5.3.',
 
   // CT
   'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.',
   'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current\n• P = protection application.',
   'ct.burden_va':      'Default 15 VA — typical protection CT burden.\nSource: IEC 61869-2 §2 — standard rated burden values.',
+  'ct.rct_ohm':        'Default 2.0 Ω — CT secondary winding resistance.\nSource: IEC 61869-2 — typical protection CT Rct: 1–5 Ω.\nAffects saturation onset: higher Rct means earlier saturation.',
+  'ct.knee_point_v':   'Leave 0 to auto-derive from accuracy class ALF.\nVk = ALF × I_rated × (Rct + R_burden).\nSource: IEC 61869-2 — knee point voltage defines CT saturation onset.\nManual entry overrides the calculated value.',
 
   // PT
   'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V.',
@@ -919,6 +1017,9 @@ const COMPONENT_DEFS = {
       pickup_a: 100,
       time_dial: 1.0,
       curve: 'IEC Standard Inverse',
+      // Directional overcurrent (67) defaults
+      direction: 'forward',
+      characteristic_angle_deg: 45,
       // Distance relay (21) defaults
       voltage_kv: 11,
       z1_reach_ohm: 4.0,
@@ -932,13 +1033,16 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
-      { key: 'relay_type', label: 'Type', type: 'select', options: ['50/51', '50N/51N', '87', '21'] },
+      { key: 'relay_type', label: 'Type', type: 'select', options: ['50/51', '50N/51N', '67', '87', '21'] },
       { key: 'associated_ct', label: 'Measuring CT', type: 'component_select', filter: 'ct' },
       { key: 'trip_cb', label: 'Trip CB', type: 'component_select', filter: 'cb' },
-      // Overcurrent (50/51, 50N/51N) fields
-      { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
-      { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
-      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N'] } },
+      // Overcurrent (50/51, 50N/51N, 67) fields
+      { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] } },
+      { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] } },
+      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] } },
+      // Directional overcurrent (67) fields
+      { key: 'direction', label: 'Direction', type: 'select', options: ['forward', 'reverse'], showWhen: { field: 'relay_type', values: ['67'] } },
+      { key: 'characteristic_angle_deg', label: 'Char. Angle (RCA)', type: 'number', unit: '\u00B0', min: -90, max: 90, step: 1, showWhen: { field: 'relay_type', values: ['67'] } },
       // Distance relay (21) fields
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', showWhen: { field: 'relay_type', values: ['21'] } },
       { key: 'z1_reach_ohm', label: 'Z1 Reach', type: 'number', unit: '\u03A9', min: 0.01, step: 0.1, showWhen: { field: 'relay_type', values: ['21'] } },
@@ -988,12 +1092,16 @@ const COMPONENT_DEFS = {
       ratio: '400/5',
       accuracy_class: '5P20',
       burden_va: 15,
+      rct_ohm: 2.0,
+      knee_point_v: 0,  // 0 = auto-derive from ALF
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'ratio', label: 'Ratio', type: 'text' },
       { key: 'accuracy_class', label: 'Accuracy', type: 'text' },
       { key: 'burden_va', label: 'Burden', type: 'number', unit: 'VA' },
+      { key: 'rct_ohm', label: 'Winding Resistance', type: 'number', unit: '\u03A9', min: 0, step: 0.1 },
+      { key: 'knee_point_v', label: 'Knee Point Voltage', type: 'number', unit: 'V', min: 0, step: 1, placeholder: 'Auto from ALF' },
     ],
   },
   pt: {

@@ -1,8 +1,6 @@
 # ProtectionPro — Backlog Features
 
 ## Protection Coordination Enhancements
-- **CT saturation modeling**: CT ratio and burden effects on relay operating times
-- **Directional relay curves**: Directional overcurrent (67) curve plotting
 
 ## Fault Analysis Enhancements
 - **Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component
@@ -66,3 +64,5 @@
 - ~~Relay-CT-CB linking (associated CT and trip CB)~~
 - ~~Server-side PDF report generation (fpdf2)~~
 - ~~Parallel cable impedance modeling~~
+- ~~CT saturation modeling: CT ratio and burden effects on relay operating times~~
+- ~~Directional relay curves: Directional overcurrent (67) curve plotting~~

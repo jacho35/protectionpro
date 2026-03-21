@@ -1182,6 +1182,29 @@ html, body {
   color: #fbc02d;
 }
 
+/* CT saturation info in TCC settings panel */
+.tcc-ct-sat-info {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 152, 0, 0.08);
+  border-left: 3px solid #ff9800;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.tcc-ct-sat-title {
+  font-weight: 600;
+  font-size: 10px;
+  color: #ff9800;
+  margin-bottom: 2px;
+}
+.tcc-ct-sat-row {
+  color: var(--text-secondary);
+}
+body.dark-mode .tcc-ct-sat-info {
+  background: rgba(255, 152, 0, 0.12);
+}
+
 /* ─── Wire bend point handles ─── */
 .wire-bend-point {
   cursor: move;
