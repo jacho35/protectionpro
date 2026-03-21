@@ -60,6 +60,24 @@ const API = {
     return this.request('/analysis/loadflow', 'POST', data);
   },
 
+  // Run cable sizing analysis
+  async runCableSizing(options = {}) {
+    const data = { ...AppState.toJSON(), ...options };
+    return this.request('/analysis/cable-sizing', 'POST', data);
+  },
+
+  // Run motor starting voltage dip analysis
+  async runMotorStarting() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/motor-starting', 'POST', data);
+  },
+
+  // Run equipment duty check
+  async runDutyCheck() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/duty-check', 'POST', data);
+  },
+
   // Save project
   async saveProject() {
     const data = AppState.toJSON();

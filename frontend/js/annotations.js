@@ -109,6 +109,45 @@ const Annotations = {
       }
     }
 
+    // Cable sizing annotations on cables
+    if (AppState.cableSizingResults && AppState.cableSizingResults.cables) {
+      for (const cable of AppState.cableSizingResults.cables) {
+        const comp = AppState.components.get(cable.cable_id);
+        if (!comp) continue;
+        const key = `cs:${cable.cable_id}`;
+        const off = this.getOffset(key);
+        const x = comp.x + 30 + off.dx;
+        const y = comp.y - 30 + off.dy;
+        html += this.renderCableSizingBadge(x, y, cable, key);
+      }
+    }
+
+    // Motor starting annotations on motors
+    if (AppState.motorStartingResults && AppState.motorStartingResults.motors) {
+      for (const motor of AppState.motorStartingResults.motors) {
+        const comp = AppState.components.get(motor.motor_id);
+        if (!comp) continue;
+        const key = `ms:${motor.motor_id}`;
+        const off = this.getOffset(key);
+        const x = comp.x + 40 + off.dx;
+        const y = comp.y - 20 + off.dy;
+        html += this.renderMotorStartingBadge(x, y, motor, key);
+      }
+    }
+
+    // Duty check annotations on CBs/fuses
+    if (AppState.dutyCheckResults && AppState.dutyCheckResults.devices) {
+      for (const device of AppState.dutyCheckResults.devices) {
+        const comp = AppState.components.get(device.device_id);
+        if (!comp) continue;
+        const key = `dc:${device.device_id}`;
+        const off = this.getOffset(key);
+        const x = comp.x + 30 + off.dx;
+        const y = comp.y - 25 + off.dy;
+        html += this.renderDutyCheckBadge(x, y, device, key);
+      }
+    }
+
     this.layer.innerHTML = html;
   },
 
@@ -323,6 +362,73 @@ const Annotations = {
         <rect class="annotation-badge af-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.15" stroke="${fillColor}" stroke-width="1.5"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">ARC FLASH</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderCableSizingBadge(x, y, cable, key) {
+    const fillColor = cable.status === 'fail' ? '#d32f2f' : cable.status === 'warning' ? '#f57c00' : '#4caf50';
+    const icon = cable.status === 'pass' ? '✓' : cable.status === 'warning' ? '!' : '✗';
+    const lines = [`${icon} ${cable.thermal_loading_pct.toFixed(0)}%`];
+    if (cable.voltage_drop_pct > 0) lines.push(`ΔV: ${cable.voltage_drop_pct.toFixed(1)}%`);
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 80;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group cable-sizing-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">CABLE</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderMotorStartingBadge(x, y, motor, key) {
+    const fillColor = motor.status === 'fail' ? '#d32f2f' : motor.status === 'warning' ? '#f57c00' : '#4caf50';
+    const icon = motor.motor_will_start ? '✓' : '✗';
+    const lines = [`${icon} ${(motor.motor_terminal_voltage_pu * 100).toFixed(1)}%`];
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 80;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group motor-starting-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">MOTOR START</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderDutyCheckBadge(x, y, device, key) {
+    const fillColor = device.status === 'fail' ? '#d32f2f' : device.status === 'warning' ? '#f57c00' : '#4caf50';
+    const icon = device.status === 'pass' ? '🛡' : device.status === 'warning' ? '🛡' : '🛡!';
+    const lines = [`${device.utilisation_pct.toFixed(0)}%`];
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    const boxW = 60;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group duty-check-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DUTY</text>
         ${textHtml}
       </g>`;
   },

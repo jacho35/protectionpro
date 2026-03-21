@@ -1,4 +1,5 @@
-"""Analysis routes — fault analysis, load flow, and arc flash."""
+"""Analysis routes — fault analysis, load flow, arc flash, cable sizing,
+motor starting, and equipment duty check."""
 
 import traceback
 from fastapi import APIRouter, HTTPException
@@ -6,6 +7,9 @@ from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlas
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.arcflash import run_arc_flash
+from ..analysis.cable_sizing import run_cable_sizing
+from ..analysis.motor_starting import run_motor_starting
+from ..analysis.duty_check import run_duty_check
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -48,3 +52,33 @@ def arc_flash(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Arc flash analysis error: {e}")
+
+
+@router.post("/cable-sizing")
+def cable_sizing(data: ProjectData):
+    """Run cable sizing analysis — thermal, voltage drop, and fault withstand checks."""
+    try:
+        return run_cable_sizing(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Cable sizing error: {e}")
+
+
+@router.post("/motor-starting")
+def motor_starting(data: ProjectData):
+    """Run motor starting voltage dip analysis."""
+    try:
+        return run_motor_starting(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Motor starting analysis error: {e}")
+
+
+@router.post("/duty-check")
+def duty_check(data: ProjectData):
+    """Run equipment duty check — fault current vs. device ratings."""
+    try:
+        return run_duty_check(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Duty check error: {e}")
