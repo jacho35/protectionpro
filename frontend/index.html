@@ -663,8 +663,12 @@
             <div class="tcc-coord-actions">
               <button id="btn-tcc-auto-coord" class="btn-small btn-primary" title="Automatically adjust relay/CB settings for correct grading">Auto-Coordinate</button>
               <button id="btn-tcc-detect-miscord" class="btn-small" title="Detect devices that won't trip in correct sequence">Detect Miscoordination</button>
+              <button id="btn-tcc-verify-seq" class="btn-small" title="Verify primary→backup→final trip sequence at each faulted bus">Verify Sequence</button>
             </div>
             <div id="tcc-coord-results" class="tcc-coord-results">
+              <!-- Populated by JS -->
+            </div>
+            <div id="tcc-seq-results" class="tcc-coord-results">
               <!-- Populated by JS -->
             </div>
           </div>
