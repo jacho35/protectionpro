@@ -1268,6 +1268,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('tcc-add-relay').style.display = which === 'relay' ? '' : 'none';
       document.getElementById('tcc-add-fuse').style.display = which === 'fuse' ? '' : 'none';
       document.getElementById('tcc-add-cb').style.display = which === 'cb' ? '' : 'none';
+      document.getElementById('tcc-add-custom').style.display = which === 'custom' ? '' : 'none';
     });
   });
 
@@ -1308,6 +1309,38 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     TCC.addCustomCB(name, cbParams);
     document.getElementById('tcc-cb-name').value = '';
+  });
+
+  // Custom curve CSV import
+  let _tccCsvContent = '';
+  document.getElementById('btn-tcc-csv-browse').addEventListener('click', () => {
+    document.getElementById('tcc-csv-file').click();
+  });
+  document.getElementById('tcc-csv-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('tcc-csv-filename').textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      _tccCsvContent = ev.target.result;
+      document.getElementById('tcc-csv-paste').value = _tccCsvContent;
+    };
+    reader.readAsText(file);
+  });
+  document.getElementById('btn-tcc-add-custom').addEventListener('click', () => {
+    const name = document.getElementById('tcc-custom-name').value;
+    const csvText = document.getElementById('tcc-csv-paste').value || _tccCsvContent;
+    if (!csvText.trim()) {
+      alert('Please import a CSV file or paste curve data.');
+      return;
+    }
+    if (TCC.addCustomCurveFromCSV(name, csvText)) {
+      document.getElementById('tcc-custom-name').value = '';
+      document.getElementById('tcc-csv-paste').value = '';
+      document.getElementById('tcc-csv-filename').textContent = 'No file selected';
+      document.getElementById('tcc-csv-file').value = '';
+      _tccCsvContent = '';
+    }
   });
 
   // TCC grading margin update
