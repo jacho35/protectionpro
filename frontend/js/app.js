@@ -1,6 +1,23 @@
 /* ProtectionPro — Main Application Entry Point */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // ─── Toolbar menu bar open/close ───
+  const toolbarMenus = document.querySelectorAll('.toolbar-menu');
+  window.closeAllToolbarMenus = () => toolbarMenus.forEach(m => m.classList.remove('open'));
+
+  toolbarMenus.forEach(menu => {
+    const btn = menu.querySelector('.toolbar-menu-btn');
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = menu.classList.contains('open');
+      window.closeAllToolbarMenus();
+      if (!isOpen) menu.classList.add('open');
+    });
+    // Keep menu open when clicking inside it (e.g. selects)
+    menu.querySelector('.toolbar-menu-panel').addEventListener('click', (e) => e.stopPropagation());
+  });
+  document.addEventListener('click', () => window.closeAllToolbarMenus());
+
   // Initialize all modules
   Canvas.init();
   Sidebar.init();
@@ -77,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Properties.clear();
         break;
       case 'Escape':
+        window.closeAllToolbarMenus?.();
         if (AppState.wireStart) {
           Wiring.cancelWire();
         }

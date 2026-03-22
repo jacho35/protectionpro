@@ -13,84 +13,218 @@
 <body>
   <!-- Top Toolbar -->
   <header id="toolbar">
-    <!-- Row 1: File & Edit -->
     <div class="toolbar-row">
       <div class="toolbar-left">
         <span class="app-title">ProtectionPro</span>
-        <div class="toolbar-group">
-          <button id="btn-new" title="New Project">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>New</span>
-          </button>
-          <button id="btn-open" title="Open Project">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Open</span>
-          </button>
-          <button id="btn-templates" title="Load a pre-built network template">
-            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-            <span>Templates</span>
-          </button>
-          <button id="btn-save" title="Save to Database (Ctrl+S)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Save</span>
-          </button>
-          <button id="btn-save-as" title="Save as new project">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="9" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Save As</span>
-          </button>
-          <div class="toolbar-dropdown" id="export-dropdown">
-            <button id="btn-export" title="Export project or results">
-              <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 8l4 4 4-4M8 12V2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12v2h12v-2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              <span>Export</span>
-              <svg width="8" height="8" viewBox="0 0 8 8" style="margin-left:2px"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+
+        <!-- File Menu -->
+        <div class="toolbar-menu" id="menu-file">
+          <button class="toolbar-menu-btn">File <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <div class="toolbar-menu-panel">
+            <button id="btn-new" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              New Project
             </button>
-            <div class="toolbar-dropdown-menu" id="export-menu">
-              <button id="btn-export-json" class="dropdown-item">Export Project (JSON)</button>
-              <button id="btn-export-svg" class="dropdown-item">Export Diagram (SVG)</button>
-              <button id="btn-export-png" class="dropdown-item">Export Diagram (PNG)</button>
-              <div class="dropdown-divider"></div>
-              <button id="btn-export-csv" class="dropdown-item">Export Results (CSV)</button>
-              <button id="btn-export-pdf" class="dropdown-item">Export Report (PDF)</button>
-              <div class="dropdown-divider"></div>
-              <button id="btn-export-template" class="dropdown-item">Report Templates...</button>
-              <button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button>
-              <button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button>
-              <button id="btn-export-compare" class="dropdown-item">Compare Scenarios...</button>
+            <button id="btn-open" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Open Project
+            </button>
+            <button id="btn-templates" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              Templates
+            </button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-save" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Save <span class="dropdown-shortcut">Ctrl+S</span>
+            </button>
+            <button id="btn-save-as" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="9" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg>
+              Save As
+            </button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-export-json" class="dropdown-item">Export Project (JSON)</button>
+            <button id="btn-export-svg" class="dropdown-item">Export Diagram (SVG)</button>
+            <button id="btn-export-png" class="dropdown-item">Export Diagram (PNG)</button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-export-csv" class="dropdown-item">Export Results (CSV)</button>
+            <button id="btn-export-pdf" class="dropdown-item">Export Report (PDF)</button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-export-template" class="dropdown-item">Report Templates...</button>
+            <button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button>
+            <button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button>
+            <button id="btn-export-compare" class="dropdown-item">Compare Scenarios...</button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-print" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
+              Print / Page Layout
+            </button>
+          </div>
+        </div>
+
+        <!-- Edit Menu -->
+        <div class="toolbar-menu" id="menu-edit">
+          <button class="toolbar-menu-btn">Edit <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <div class="toolbar-menu-panel">
+            <button id="btn-select" class="dropdown-item active">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1l10 7-5 1-2 5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Select Mode <span class="dropdown-shortcut">V</span>
+            </button>
+            <button id="btn-wire" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 14L8 8l6-6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Wire Mode <span class="dropdown-shortcut">W</span>
+            </button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-delete" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
+              Delete Selected <span class="dropdown-shortcut">Del</span>
+            </button>
+            <button id="btn-group" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2"/><rect x="3" y="4" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              Group <span class="dropdown-shortcut">Ctrl+G</span>
+            </button>
+            <button id="btn-ungroup" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2" opacity="0.3"/><rect x="2" y="3" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              Ungroup <span class="dropdown-shortcut">Ctrl+Shift+G</span>
+            </button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-undo" class="dropdown-item" disabled>
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 7l-3-3 3-3M1 4h9a4 4 0 010 8H6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Undo <span class="dropdown-shortcut">Ctrl+Z</span>
+            </button>
+            <button id="btn-redo" class="dropdown-item" disabled>
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M12 7l3-3-3-3M15 4H6a4 4 0 000 8h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Redo <span class="dropdown-shortcut">Ctrl+Shift+Z</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Analysis Menu -->
+        <div class="toolbar-menu" id="menu-analysis">
+          <button class="toolbar-menu-btn">Analysis <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <div class="toolbar-menu-panel">
+            <div class="dropdown-compound">
+              <button id="btn-run-fault" class="dropdown-item" title="Run Fault Analysis (select a bus first for single-bus analysis)">
+                <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                Fault Analysis
+              </button>
+              <select id="fault-type" class="dropdown-inline-select" title="Fault Type">
+                <option value="">All Types</option>
+                <option value="3phase">3-Phase</option>
+                <option value="slg">Single Line-Ground</option>
+                <option value="ll">Line-to-Line</option>
+                <option value="llg">Double Line-Ground</option>
+              </select>
+            </div>
+            <div class="dropdown-compound">
+              <button id="btn-run-loadflow" class="dropdown-item" title="Run Load Flow">
+                <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                Load Flow
+              </button>
+              <select id="loadflow-method" class="dropdown-inline-select" title="Load Flow Method">
+                <option value="newton_raphson">Newton-Raphson</option>
+                <option value="gauss_seidel">Gauss-Seidel</option>
+              </select>
+            </div>
+            <button id="btn-run-unbalanced-loadflow" class="dropdown-item" title="Run Unbalanced 3-Phase Load Flow">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              Unbalanced Load Flow
+            </button>
+          </div>
+        </div>
+
+        <!-- Studies Menu -->
+        <div class="toolbar-menu" id="menu-studies">
+          <button class="toolbar-menu-btn">Studies <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <div class="toolbar-menu-panel">
+            <button id="btn-cable-sizing" class="dropdown-item" title="Cable Sizing Calculator">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/></svg>
+              Cable Sizing
+            </button>
+            <button id="btn-motor-starting" class="dropdown-item" title="Motor Starting Voltage Dip Analysis">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
+              Motor Starting
+            </button>
+            <button id="btn-duty-check" class="dropdown-item" title="Equipment Duty Check">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Duty Check
+            </button>
+            <button id="btn-load-diversity" class="dropdown-item" title="Load Diversity &amp; Demand Factor Calculator">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/><path d="M2 9 L8 5 L14 2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              Load Diversity
+            </button>
+            <button id="btn-grounding" class="dropdown-item" title="Grounding System Analysis (IEEE 80)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/></svg>
+              Grounding (IEEE 80)
+            </button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-study-manager" class="dropdown-item" title="Run All Studies — batch run enabled analyses">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/></svg>
+              Run All Studies
+            </button>
+            <button id="btn-scenarios" class="dropdown-item" title="Manage Scenarios">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+              Scenarios
+            </button>
+          </div>
+        </div>
+
+        <!-- Safety Menu -->
+        <div class="toolbar-menu" id="menu-safety">
+          <button class="toolbar-menu-btn">Safety <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <div class="toolbar-menu-panel">
+            <button id="btn-arcflash" class="dropdown-item" title="Arc Flash Analysis (IEEE 1584-2018)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+              Arc Flash (IEEE 1584-2018)
+            </button>
+            <button id="btn-dc-arcflash" class="dropdown-item" title="DC Arc Flash Analysis (Stokes &amp; Oppenlander)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#1976d2" stroke="#0d47a1" stroke-width="0.8"/><text x="1" y="14" font-size="6" font-weight="bold" fill="currentColor">DC</text></svg>
+              DC Arc Flash
+            </button>
+            <button id="btn-tcc" class="dropdown-item" title="Time-Current Curves (TCC)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
+              Time-Current Curves (TCC)
+            </button>
+            <button id="btn-compliance" class="dropdown-item" title="Generate Compliance Report">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Compliance Report
+            </button>
+          </div>
+        </div>
+
+        <!-- View Menu -->
+        <div class="toolbar-menu" id="menu-view">
+          <button class="toolbar-menu-btn">View <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <div class="toolbar-menu-panel">
+            <button id="btn-toggle-labels" class="dropdown-item active" title="Toggle Cable Labels">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12h12M2 8h8M2 4h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+              Cable Labels
+            </button>
+            <button id="btn-toggle-devices" class="dropdown-item" title="Toggle CB/Fuse Labels">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
+              Device Labels
+            </button>
+            <button id="btn-toggle-warnings" class="dropdown-item active" title="Toggle Connection Warnings">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11v0.5" stroke="currentColor" stroke-width="1.5"/></svg>
+              Connection Warnings
+            </button>
+            <button id="btn-toggle-angles" class="dropdown-item" title="Toggle Fault Current Angles &amp; Voltage">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 13L13 13L3 3Z" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="7" y="11" font-size="7" fill="currentColor">∠</text></svg>
+              Fault Angles &amp; Voltage
+            </button>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-compound">
+              <span class="dropdown-label">Wire Routing</span>
+              <select id="wire-route-mode" class="dropdown-inline-select" title="Wire routing mode">
+                <option value="orthogonal">Orthogonal</option>
+                <option value="diagonal">Diagonal</option>
+                <option value="spline">Spline</option>
+              </select>
             </div>
           </div>
         </div>
-        <div class="toolbar-separator"></div>
-        <div class="toolbar-group">
-          <button id="btn-select" class="active" title="Select Mode (V)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1l10 7-5 1-2 5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Select</span>
-          </button>
-          <button id="btn-wire" title="Wire Mode (W)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 14L8 8l6-6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Wire</span>
-          </button>
-          <button id="btn-delete" title="Delete Selected (Del)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Delete</span>
-          </button>
-          <button id="btn-group" title="Group Selected (Ctrl+G)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2"/><rect x="3" y="4" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-            <span>Group</span>
-          </button>
-          <button id="btn-ungroup" title="Ungroup Selected (Ctrl+Shift+G)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2" opacity="0.3"/><rect x="2" y="3" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-            <span>Ungroup</span>
-          </button>
-          <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l-3-3 3-3M1 4h9a4 4 0 010 8H6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Undo</span>
-          </button>
-          <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M12 7l3-3-3-3M15 4H6a4 4 0 000 8h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Redo</span>
-          </button>
-        </div>
       </div>
+
       <div class="toolbar-right">
         <button id="btn-dark-mode" title="Toggle Dark Mode">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A5 5 0 018 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -108,125 +242,6 @@
         <span id="zoom-display">100%</span>
         <button id="btn-zoom-fit" title="Zoom to Fit">Fit</button>
         <button id="btn-zoom-reset" title="Reset Zoom">1:1</button>
-      </div>
-    </div>
-    <!-- Row 2: Analysis & View -->
-    <div class="toolbar-row">
-      <div class="toolbar-left">
-        <!-- Core Analysis -->
-        <div class="toolbar-group">
-          <button id="btn-run-fault" title="Run Fault Analysis (select a bus first for single-bus analysis)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Fault Analysis</span>
-          </button>
-          <select id="fault-type" title="Fault Type">
-            <option value="">All Types</option>
-            <option value="3phase">3-Phase</option>
-            <option value="slg">Single Line-Ground</option>
-            <option value="ll">Line-to-Line</option>
-            <option value="llg">Double Line-Ground</option>
-          </select>
-          <button id="btn-run-loadflow" title="Run Load Flow">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Load Flow</span>
-          </button>
-          <select id="loadflow-method" title="Load Flow Method">
-            <option value="newton_raphson">Newton-Raphson</option>
-            <option value="gauss_seidel">Gauss-Seidel</option>
-          </select>
-          <button id="btn-run-unbalanced-loadflow" title="Run Unbalanced 3-Phase Load Flow">
-            <svg width="16" height="16" viewBox="0 0 16 16">
-              <path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-            <span>Unbalanced LF</span>
-          </button>
-        </div>
-        <div class="toolbar-separator"></div>
-        <!-- Equipment Studies -->
-        <div class="toolbar-group">
-          <button id="btn-cable-sizing" title="Cable Sizing Calculator">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/></svg>
-            <span>Cable Sizing</span>
-          </button>
-          <button id="btn-motor-starting" title="Motor Starting Voltage Dip Analysis">
-            <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
-            <span>Motor Starting</span>
-          </button>
-          <button id="btn-duty-check" title="Equipment Duty Check">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Duty Check</span>
-          </button>
-          <button id="btn-load-diversity" title="Load Diversity & Demand Factor Calculator">
-            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/><path d="M2 9 L8 5 L14 2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-            <span>Load Diversity</span>
-          </button>
-          <button id="btn-grounding" title="Grounding System Analysis (IEEE 80)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/></svg>
-            <span>Grounding</span>
-          </button>
-        </div>
-        <div class="toolbar-separator"></div>
-        <!-- Safety & Protection -->
-        <div class="toolbar-group">
-          <button id="btn-arcflash" title="Arc Flash Analysis (IEEE 1584-2018)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
-            <span>Arc Flash</span>
-          </button>
-          <button id="btn-dc-arcflash" title="DC Arc Flash Analysis (Stokes &amp; Oppenlander)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#1976d2" stroke="#0d47a1" stroke-width="0.8"/><text x="1" y="14" font-size="6" font-weight="bold" fill="currentColor">DC</text></svg>
-            <span>DC Arc</span>
-          </button>
-          <button id="btn-tcc" title="Time-Current Curves (TCC)">
-            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
-            <span>TCC</span>
-          </button>
-          <button id="btn-compliance" title="Generate Compliance Report">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Compliance</span>
-          </button>
-        </div>
-        <div class="toolbar-separator"></div>
-        <!-- Batch / Scenarios -->
-        <div class="toolbar-group">
-          <button id="btn-study-manager" title="Run All Studies — batch run enabled analyses">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/></svg>
-            <span>Run All</span>
-          </button>
-          <button id="btn-scenarios" title="Manage Scenarios">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
-            <span>Scenarios</span>
-          </button>
-        </div>
-      </div>
-      <div class="toolbar-right">
-        <button id="btn-toggle-labels" class="active" title="Toggle Cable Labels">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 12h12M2 8h8M2 4h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-          <span>Labels</span>
-        </button>
-        <button id="btn-toggle-devices" title="Toggle CB/Fuse Labels">
-          <svg width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
-          <span>Devices</span>
-        </button>
-        <button id="btn-toggle-warnings" class="active" title="Toggle Connection Warnings">
-          <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11v0.5" stroke="currentColor" stroke-width="1.5"/></svg>
-          <span>Warnings</span>
-        </button>
-        <button id="btn-toggle-angles" title="Toggle Fault Current Angles &amp; Voltage">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 13L13 13L3 3Z" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="7" y="11" font-size="7" fill="currentColor">∠</text></svg>
-          <span>Angles</span>
-        </button>
-        <div class="toolbar-separator"></div>
-        <label style="font-size:11px;color:var(--text-secondary);white-space:nowrap;">Wire Routing:</label>
-        <select id="wire-route-mode" title="Wire routing mode" style="font-size:11px;padding:2px 6px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-secondary);font-family:var(--font-family);">
-          <option value="orthogonal">Orthogonal</option>
-          <option value="diagonal">Diagonal</option>
-          <option value="spline">Spline</option>
-        </select>
-        <div class="toolbar-separator"></div>
-        <button id="btn-print" title="Print / Page Layout">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
-          <span>Print</span>
-        </button>
       </div>
     </div>
   </header>
