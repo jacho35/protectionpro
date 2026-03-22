@@ -74,20 +74,23 @@ def generate_pdf_report(req: ReportRequest):
 @report_router.post("/calculations")
 def generate_calculations_pdf(req: CalculationsReportRequest):
     """Generate a detailed calculations report PDF showing formulas and intermediate values."""
-    buf = generate_calculations_report(
-        project_name=req.projectName,
-        base_mva=req.baseMVA,
-        frequency=req.frequency,
-        fault_results=req.faultResults,
-        loadflow_results=req.loadFlowResults,
-        arcflash_results=req.arcFlashResults,
-        cable_results=req.cableSizingResults,
-        motor_results=req.motorStartingResults,
-        duty_results=req.dutyCheckResults,
-        load_diversity_results=req.loadDiversityResults,
-        grounding_results=req.groundingResults,
-        components=req.components,
-    )
+    try:
+        buf = generate_calculations_report(
+            project_name=req.projectName,
+            base_mva=req.baseMVA,
+            frequency=req.frequency,
+            fault_results=req.faultResults,
+            loadflow_results=req.loadFlowResults,
+            arcflash_results=req.arcFlashResults,
+            cable_results=req.cableSizingResults,
+            motor_results=req.motorStartingResults,
+            duty_results=req.dutyCheckResults,
+            load_diversity_results=req.loadDiversityResults,
+            grounding_results=req.groundingResults,
+            components=req.components,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Calculations report generation failed: {exc}") from exc
     filename = f"{req.projectName.replace(' ', '_')}_calculations.pdf"
     return StreamingResponse(
         buf,
