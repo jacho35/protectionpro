@@ -615,6 +615,35 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         bus_id = results[0][0]
         source_tx_by_bus.setdefault(bus_id, []).append(comp)
 
+    # Detect which buses have a utility source connected via a source-connected TX.
+    # These buses should treat generators at rated output (same as direct utility),
+    # rather than proportionally splitting S_bus among generators.
+    _utility_via_tx_bus_ids = set()
+    for bus_id, tx_list in source_tx_by_bus.items():
+        for tx in tx_list:
+            # Walk from TX's neighbors away from the bus group to find source type
+            visited_src = set()
+            for cid, mapped in bus_of.items():
+                if mapped == bus_id:
+                    visited_src.add(cid)
+            visited_src.add(tx.id)
+            src_queue = [n for n in adjacency.get(tx.id, []) if n not in visited_src]
+            while src_queue:
+                nid = src_queue.pop(0)
+                if nid in visited_src:
+                    continue
+                visited_src.add(nid)
+                comp = components.get(nid)
+                if not comp:
+                    continue
+                if comp.type == "utility":
+                    _utility_via_tx_bus_ids.add(bus_id)
+                    break
+                if _is_transparent_and_closed(comp):
+                    for nbr in adjacency.get(nid, []):
+                        if nbr not in visited_src:
+                            src_queue.append(nbr)
+
     for bus_id, tx_list in source_tx_by_bus.items():
         bus_i = bus_idx[bus_id]
         n_sources = len(tx_list)
@@ -681,7 +710,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
         # ── Generator / solar / wind annotations ──
         if gen_sources:
-            if is_swing and has_utility:
+            if is_swing and (has_utility or bus.id in _utility_via_tx_bus_ids):
                 # Swing bus shared with utility: generators run at rated,
                 # utility takes the residual.  Report each generator at its
                 # rated output (loading = 100 % or rated/rated * 100).
@@ -699,7 +728,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                         loading_pct=round(s_rated / rated_mva * 100, 2), losses_mw=0,
                     ))
 
-            elif is_swing and not has_utility:
+            elif is_swing and not has_utility and bus.id not in _utility_via_tx_bus_ids:
                 # Generator-only swing bus: split S_bus proportionally by rated MVA.
                 s_actual = S_bus[bus_i] * base_mva
                 rated_map = {src.id: _source_output_mva(src)[3] for src in gen_sources}
