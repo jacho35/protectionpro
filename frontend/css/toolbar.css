@@ -13,6 +13,14 @@
   justify-content: space-between;
   padding: 0 12px;
   height: var(--toolbar-row-height, 32px);
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: none;
+  min-width: 0;
+}
+
+.toolbar-row::-webkit-scrollbar {
+  display: none;
 }
 
 .toolbar-row:first-child {
@@ -24,6 +32,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .app-title {
