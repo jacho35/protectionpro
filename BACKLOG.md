@@ -20,6 +20,7 @@
 - **Version history**: Track changes and revert to previous versions
 
 ## Reports & Export
+- ~~**Detailed calculations report**: Multi-section PDF showing formulas, intermediate values, and step-by-step calculations for fault analysis (IEC 60909), load flow, arc flash (IEEE 1584-2018), cable sizing (IEC 60364), motor starting, duty check, load diversity, and grounding (IEEE 80)~~
 - **DXF/DWG export**: Export SLD to CAD formats
 
 ## Data & Integration
@@ -139,3 +140,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~DC arc flash analysis: Stokes & Oppenlander method with DGUV-I 203-077, DC arcing current, incident energy, PPE categories, and arc flash boundary~~
 - ~~SANS 10142 automatic compliance checks: LV voltage tolerance (±10%, NRS 048-2), cable protection coordination (In ≤ Iz, Cl. 5.5.2), minimum conductor size (Cl. 5.6.3), transformer neutral earthing (Cl. 8.3.1), maximum demand vs supply capacity (Appendix B), earth fault disconnection current (Cl. 5.5.6)~~
 - ~~Source/generator load split: Fix incorrect proportional split when utility source connects via transformer — generators now report at rated output, utility takes residual~~
+- ~~Detailed calculations report: Multi-section PDF with formulas and intermediate values for all analysis types (fault, load flow, arc flash, cable sizing, motor starting, duty check, load diversity, grounding)~~

@@ -12,7 +12,7 @@ from ..models.database import get_db, Project
 from ..models.schemas import ProjectData
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
-from ..analysis.pdf_reports import generate_full_report, generate_arcflash_labels
+from ..analysis.pdf_reports import generate_full_report, generate_arcflash_labels, generate_calculations_report
 
 router = APIRouter(prefix="/projects", tags=["reports"])
 
@@ -29,6 +29,22 @@ class ReportRequest(BaseModel):
     loadFlowResults: Optional[dict] = None
     arcFlashResults: Optional[dict] = None
     sections: Optional[list[str]] = None  # which report sections to include
+
+
+class CalculationsReportRequest(BaseModel):
+    """Request body for the detailed calculations report."""
+    projectName: str = "Untitled Project"
+    baseMVA: float = 100.0
+    frequency: int = 50
+    components: list[dict] = []
+    faultResults: Optional[dict] = None
+    loadFlowResults: Optional[dict] = None
+    arcFlashResults: Optional[dict] = None
+    cableSizingResults: Optional[dict] = None
+    motorStartingResults: Optional[dict] = None
+    dutyCheckResults: Optional[dict] = None
+    loadDiversityResults: Optional[dict] = None
+    groundingResults: Optional[dict] = None
 
 
 report_router = APIRouter(prefix="/reports", tags=["reports"])
@@ -48,6 +64,31 @@ def generate_pdf_report(req: ReportRequest):
         sections=req.sections,
     )
     filename = f"{req.projectName.replace(' ', '_')}_report.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@report_router.post("/calculations")
+def generate_calculations_pdf(req: CalculationsReportRequest):
+    """Generate a detailed calculations report PDF showing formulas and intermediate values."""
+    buf = generate_calculations_report(
+        project_name=req.projectName,
+        base_mva=req.baseMVA,
+        frequency=req.frequency,
+        fault_results=req.faultResults,
+        loadflow_results=req.loadFlowResults,
+        arcflash_results=req.arcFlashResults,
+        cable_results=req.cableSizingResults,
+        motor_results=req.motorStartingResults,
+        duty_results=req.dutyCheckResults,
+        load_diversity_results=req.loadDiversityResults,
+        grounding_results=req.groundingResults,
+        components=req.components,
+    )
+    filename = f"{req.projectName.replace(' ', '_')}_calculations.pdf"
     return StreamingResponse(
         buf,
         media_type="application/pdf",

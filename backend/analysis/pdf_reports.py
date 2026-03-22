@@ -419,6 +419,507 @@ def _render_arcflash(pdf, arcflash_results, comp_map):
                 pdf.cell(0, 4, f"• {rec}", new_x="LMARGIN", new_y="NEXT")
 
 
+def generate_calculations_report(project_name, base_mva, frequency,
+                                  fault_results=None, loadflow_results=None,
+                                  arcflash_results=None, cable_results=None,
+                                  motor_results=None, duty_results=None,
+                                  load_diversity_results=None, grounding_results=None,
+                                  components=None):
+    """Generate a detailed calculations report showing formulas and intermediate values."""
+    pdf = ReportPDF(project_name=project_name)
+    pdf.set_left_margin(15)
+    pdf.set_right_margin(15)
+    pdf.alias_nb_pages()
+
+    _calc_title(pdf, project_name, base_mva, frequency)
+
+    if fault_results and fault_results.get("buses"):
+        _calc_fault(pdf, fault_results, base_mva)
+
+    if loadflow_results and loadflow_results.get("buses"):
+        _calc_loadflow(pdf, loadflow_results, base_mva)
+
+    if arcflash_results and arcflash_results.get("buses"):
+        _calc_arcflash(pdf, arcflash_results)
+
+    if cable_results and cable_results.get("cables"):
+        _calc_cable(pdf, cable_results)
+
+    if motor_results and motor_results.get("motors"):
+        _calc_motor(pdf, motor_results)
+
+    if duty_results and duty_results.get("equipment"):
+        _calc_duty(pdf, duty_results)
+
+    if load_diversity_results and load_diversity_results.get("loads"):
+        _calc_load_diversity(pdf, load_diversity_results)
+
+    if grounding_results:
+        _calc_grounding(pdf, grounding_results)
+
+    buf = io.BytesIO()
+    pdf.output(buf)
+    buf.seek(0)
+    return buf
+
+
+def _calc_label(pdf, text):
+    """Print a formula/label line in bold italic."""
+    pdf.set_font("Helvetica", "BI", 8)
+    pdf.set_text_color(60, 60, 60)
+    pdf.cell(0, 5, text, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(0, 0, 0)
+
+
+def _calc_body(pdf, text):
+    """Print a body line."""
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 4.5, text, new_x="LMARGIN", new_y="NEXT")
+
+
+def _calc_subsection(pdf, text):
+    """Print a subsection heading."""
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(0, 6, "  " + text, border="B", fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+
+
+def _calc_title(pdf, project_name, base_mva, frequency):
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.ln(20)
+    pdf.cell(0, 10, "ProtectionPro", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, "Detailed Calculations Report", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 11)
+    pdf.ln(4)
+    pdf.cell(0, 7, f"Project: {project_name}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, f"System Base: {base_mva} MVA  |  Frequency: {frequency} Hz  |  Date: {date.today().isoformat()}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(12)
+
+    # Table of contents
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, "Contents", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    sections = [
+        "1.  Fault Analysis — IEC 60909",
+        "2.  Load Flow Analysis",
+        "3.  Arc Flash Analysis — IEEE 1584-2018",
+        "4.  Cable Sizing Calculations — IEC 60364",
+        "5.  Motor Starting Analysis",
+        "6.  Equipment Duty Check",
+        "7.  Load Diversity & Demand Factors",
+        "8.  Grounding System Design — IEEE 80",
+    ]
+    for s in sections:
+        pdf.cell(10)
+        pdf.cell(0, 5, s, new_x="LMARGIN", new_y="NEXT")
+
+
+def _calc_fault(pdf, fault_results, base_mva):
+    pdf.add_page()
+    pdf.section_title("1.  Fault Analysis — IEC 60909")
+
+    _calc_label(pdf, "Method: Per-unit impedance method (IEC 60909)")
+    _calc_label(pdf, f"System Base: S_base = {base_mva} MVA")
+    pdf.ln(2)
+
+    _calc_body(pdf, "IEC 60909 defines the initial symmetrical short-circuit current I\"k as:")
+    _calc_label(pdf, "  I\"k = c * U_n / (sqrt(3) * |Z_k|)")
+    _calc_body(pdf, "  where c = voltage factor (1.0 normal, 1.1 max), U_n = nominal voltage, Z_k = total impedance to fault.")
+    pdf.ln(2)
+    _calc_body(pdf, "Peak short-circuit current:")
+    _calc_label(pdf, "  ip = kappa * sqrt(2) * I\"k")
+    _calc_body(pdf, "  kappa = 1.02 + 0.98 * exp(-3 * R/X)  (IEC 60909-0 Eq. 29)")
+    pdf.ln(2)
+    _calc_body(pdf, "Single-line-to-ground fault:")
+    _calc_label(pdf, "  I\"k1 = sqrt(3) * c * U_n / |2*Z1 + Z0|")
+    _calc_body(pdf, "  where Z1 = positive-sequence impedance, Z0 = zero-sequence impedance.")
+    pdf.ln(4)
+
+    # Per-bus calculations
+    for bus_id, r in fault_results["buses"].items():
+        _calc_subsection(pdf, f"Bus: {r.get('bus_name', bus_id)}  ({r.get('voltage_kv', '—')} kV)")
+
+        v = r.get("voltage_kv")
+        ik3 = r.get("ik3")
+        ik1 = r.get("ik1")
+        ikLL = r.get("ikLL")
+        ikLLG = r.get("ikLLG")
+        ip = r.get("ip")
+
+        # Back-calculate |Z_k| if possible
+        if v and ik3:
+            zk = (v / math.sqrt(3)) / ik3  # in Ohm (kV / kA = Ohm)
+            zk_pu = zk / (v ** 2 / base_mva * 1000)  # convert kV²/MVA to Ohm: 1 pu = kV²/MVA*1000 mOhm?
+            _calc_body(pdf, f"  Nominal voltage:           U_n     = {v:.3f} kV")
+            if ik3:
+                _calc_body(pdf, f"  3-phase fault current:     I\"k3    = {ik3:.4f} kA")
+                z_ohm = (1.0 * v * 1000) / (math.sqrt(3) * ik3 * 1000)  # Ohm
+                z_pu = z_ohm / ((v ** 2) / base_mva * 1000 / 1000)  # pu
+                _calc_body(pdf, f"  Equiv. short-circuit Zk   = c*U/(sqrt(3)*I\"k3) = 1.0 * {v:.3f}kV / (1.732 * {ik3:.4f}kA) = {z_ohm:.4f} Ohm  ({z_pu:.4f} pu)")
+        if ip and ik3:
+            kappa = ip / (math.sqrt(2) * ik3)
+            _calc_body(pdf, f"  Peak factor:               kappa   = ip/(sqrt(2)*I\"k3) = {ip:.4f}/{math.sqrt(2)*ik3:.4f} = {kappa:.4f}")
+            _calc_body(pdf, f"  Peak current:              ip      = {ip:.4f} kA")
+        if ik1:
+            _calc_body(pdf, f"  SLG fault current:         I\"k1    = {ik1:.4f} kA")
+        if ikLL:
+            _calc_body(pdf, f"  L-L fault current:         I\"kLL   = {ikLL:.4f} kA")
+            if ik3:
+                _calc_body(pdf, f"    Check: I\"kLL / I\"k3 = {ikLL/ik3:.4f}  (theoretical: sqrt(3)/2 = {math.sqrt(3)/2:.4f})")
+        if ikLLG:
+            _calc_body(pdf, f"  LLG fault current:         I\"kLLG  = {ikLLG:.4f} kA")
+
+        # Branch contributions
+        branches = r.get("branches", [])
+        if branches:
+            _calc_body(pdf, "  Branch contributions:")
+            total_if = sum(b.get("ik_ka", 0) or 0 for b in branches)
+            for br in branches:
+                name = br.get("element_name", br.get("element_id", ""))
+                ik = br.get("ik_ka", 0) or 0
+                pct = br.get("contribution_pct") or (ik / total_if * 100 if total_if else 0)
+                _calc_body(pdf, f"    {name:<30} If = {ik:.4f} kA  ({pct:.1f}%)")
+
+        pdf.ln(2)
+
+
+def _calc_loadflow(pdf, loadflow_results, base_mva):
+    pdf.add_page()
+    method_name = "Newton-Raphson" if loadflow_results.get("method") == "newton_raphson" else "Gauss-Seidel"
+    pdf.section_title(f"2.  Load Flow Analysis — {method_name}")
+
+    converged = loadflow_results.get("converged", False)
+    iterations = loadflow_results.get("iterations", "—")
+
+    _calc_label(pdf, f"Method: {method_name}  |  Status: {'Converged' if converged else 'NOT CONVERGED'}  |  Iterations: {iterations}")
+    pdf.ln(2)
+
+    if loadflow_results.get("method") == "newton_raphson":
+        _calc_body(pdf, "Newton-Raphson power flow solves the nonlinear mismatch equations:")
+        _calc_label(pdf, "  [DP]   [J11 J12] [D_delta]")
+        _calc_label(pdf, "  [DQ] = [J21 J22] [D_|V|/|V|]")
+        _calc_body(pdf, "  where DP, DQ = active/reactive power mismatches; J = Jacobian matrix.")
+        _calc_body(pdf, "  Iteration: x_(k+1) = x_k - J^-1 * f(x_k)  until |mismatch| < tolerance.")
+    else:
+        _calc_body(pdf, "Gauss-Seidel updates each bus voltage in sequence:")
+        _calc_label(pdf, "  V_i^(k+1) = (1/Y_ii) * [ (P_i - jQ_i)/conj(V_i^k) - sum_{j!=i} Y_ij * V_j^k ]")
+
+    pdf.ln(4)
+
+    # Bus results
+    _calc_subsection(pdf, "Bus Voltage Results")
+    _calc_body(pdf, "  Bus type convention:  SW = Swing/Slack (V,theta specified)  |  PV = Generator (P,|V| specified)  |  PQ = Load (P,Q specified)")
+    pdf.ln(1)
+
+    buses = loadflow_results.get("buses", {})
+    total_p_gen = total_q_gen = total_p_load = total_q_load = 0.0
+    for bus_id, r in buses.items():
+        p = r.get("p_mw", 0) or 0
+        q = r.get("q_mvar", 0) or 0
+        v_pu = r.get("voltage_pu") or r.get("v_pu", 1.0)
+        v_kv = r.get("voltage_kv") or r.get("v_kv", 0)
+        angle = r.get("angle_deg", 0) or 0
+        name = r.get("bus_name", bus_id)
+        _calc_body(pdf, f"  {name:<25}  |V| = {v_pu:.4f} pu  ({v_kv:.3f} kV)   d = {angle:+.3f} deg   P = {p:+.4f} MW   Q = {q:+.4f} MVAr")
+        if p > 0:
+            total_p_gen += p
+            total_q_gen += q
+        else:
+            total_p_load += abs(p)
+            total_q_load += abs(q)
+
+    pdf.ln(2)
+    losses_p = total_p_gen - total_p_load
+    _calc_body(pdf, f"  System totals:  P_gen = {total_p_gen:.4f} MW   P_load = {total_p_load:.4f} MW   P_loss = {losses_p:.4f} MW")
+    pdf.ln(2)
+
+    branches = loadflow_results.get("branches", [])
+    if branches:
+        _calc_subsection(pdf, "Branch Flow Results")
+        _calc_body(pdf, "  Branch loading = I_actual / I_rated * 100%")
+        _calc_label(pdf, "  S = sqrt(P^2 + Q^2)   |   I = S / (sqrt(3) * V_kV)   [kA]")
+        pdf.ln(1)
+        for br in branches:
+            name = br.get("element_name", br.get("elementId", br.get("element_id", "")))
+            p = br.get("p_mw", 0) or 0
+            q = br.get("q_mvar", 0) or 0
+            s = math.sqrt(p ** 2 + q ** 2)
+            load_pct = br.get("loading_pct", 0) or 0
+            i_a = br.get("i_amps") or br.get("i_a", 0) or 0
+            losses = br.get("losses_mw", 0) or 0
+            status = "OVERLOADED" if load_pct > 100 else ("Warning" if load_pct > 80 else "OK")
+            _calc_body(pdf, f"  {name:<25}  P={p:+.4f}MW  Q={q:+.4f}MVAr  |S|={s:.4f}MVA  I={i_a:.1f}A  Load={load_pct:.1f}%  Losses={losses:.4f}MW  [{status}]")
+
+        total_losses = sum((br.get("losses_mw", 0) or 0) for br in branches)
+        pdf.ln(1)
+        _calc_body(pdf, f"  Total system branch losses: {total_losses:.4f} MW")
+
+
+def _calc_arcflash(pdf, arcflash_results):
+    pdf.add_page()
+    pdf.section_title("3.  Arc Flash Analysis — IEEE 1584-2018")
+
+    _calc_label(pdf, "Standard: IEEE 1584-2018  (Applicable range: 208 V – 15 kV, 3-phase AC)")
+    pdf.ln(2)
+    _calc_body(pdf, "Step 1 — Arcing current (intermediate values depend on voltage class and electrode config):")
+    _calc_label(pdf, "  lg(I_arc) = k1 + k2*lg(I_bf) + k3*lg(G)  (IEEE 1584-2018 Eq. 1)")
+    _calc_body(pdf, "  where I_bf = bolted fault current [kA], G = electrode gap [mm], k1/k2/k3 = regression coefficients.")
+    pdf.ln(2)
+    _calc_body(pdf, "Step 2 — Incident energy (normalised to 610 mm working distance):")
+    _calc_label(pdf, "  E_n = 10^( k1 + k2*lg(I_arc) )   [J/cm^2]")
+    _calc_body(pdf, "  E = E_n * (t / 0.2 s) * (610^x / D^x)  where D = working distance [mm], t = arcing duration.")
+    pdf.ln(2)
+    _calc_body(pdf, "Step 3 — Arc flash boundary (AFB):")
+    _calc_label(pdf, "  AFB = [ E_n * t / (E_B * 0.2) ]^(1/x) * 610  [mm]  (E_B = 1.2 cal/cm^2 for bare skin)")
+    pdf.ln(2)
+    _calc_body(pdf, "PPE Category selection per NFPA 70E Table 130.7(C)(15)(c):")
+    for cat, limit in [(1, "4"), (2, "8"), (3, "25"), (4, "40")]:
+        _calc_body(pdf, f"  Category {cat}: E <= {limit} cal/cm^2")
+    pdf.ln(4)
+
+    for bus_id, r in arcflash_results["buses"].items():
+        _calc_subsection(pdf, f"Bus: {r.get('bus_name', bus_id)}  ({r.get('voltage_kv', '—')} kV)")
+        ibf = r.get("bolted_fault_ka", 0) or 0
+        iarc = r.get("arcing_current_ka", 0) or 0
+        e = r.get("incident_energy_cal", 0) or 0
+        ppe = r.get("ppe_category", "—")
+        afb_mm = r.get("arc_flash_boundary_mm", 0) or 0
+        wd = r.get("working_distance_mm", 0) or 0
+        v_kv = r.get("voltage_kv", 0) or 0
+
+        _calc_body(pdf, f"  Nominal voltage:           U_n     = {v_kv:.3f} kV")
+        _calc_body(pdf, f"  Bolted fault current:      I_bf    = {ibf:.4f} kA  (from fault analysis)")
+        _calc_body(pdf, f"  Arcing current:            I_arc   = {iarc:.4f} kA")
+        if ibf > 0 and iarc > 0:
+            ratio = iarc / ibf
+            _calc_body(pdf, f"    I_arc / I_bf ratio = {ratio:.4f}  (typical 0.85–0.98 for MV; lower for LV)")
+        _calc_body(pdf, f"  Working distance:          WD      = {wd} mm")
+        _calc_body(pdf, f"  Incident energy:           E       = {e:.4f} cal/cm^2")
+        _calc_body(pdf, f"  PPE category:              Cat     = {ppe}")
+        _calc_body(pdf, f"  Arc flash boundary:        AFB     = {afb_mm/1000:.3f} m  ({afb_mm:.0f} mm)")
+
+        recs = r.get("recommendations", [])
+        if recs:
+            _calc_body(pdf, "  Recommendations:")
+            for rec in recs:
+                _calc_body(pdf, f"    - {rec}")
+        pdf.ln(2)
+
+
+def _calc_cable(pdf, cable_results):
+    pdf.add_page()
+    pdf.section_title("4.  Cable Sizing Calculations — IEC 60364")
+
+    _calc_label(pdf, "Standard: IEC 60364-5-52 / IEC 60502 / SANS 1339")
+    pdf.ln(2)
+    _calc_body(pdf, "Thermal check (continuous current rating):")
+    _calc_label(pdf, "  I_load <= I_z  where I_z = derating * I_rated_tabulated")
+    pdf.ln(1)
+    _calc_body(pdf, "Voltage drop check:")
+    _calc_label(pdf, "  dV% = (I * (R*cos(phi) + X*sin(phi)) * L * 2) / U_n * 100%")
+    _calc_body(pdf, "  (single-phase: factor 2; three-phase: factor sqrt(3); limit: 3% for final, 5% total)")
+    pdf.ln(1)
+    _calc_body(pdf, "Fault withstand (adiabatic method, IEC 60364-5-54):")
+    _calc_label(pdf, "  S >= sqrt(I^2 * t) / k  [mm^2]")
+    _calc_body(pdf, "  where k = material constant (115 for Cu/PVC, 143 for Cu/XLPE), t = fault clearing time [s].")
+    pdf.ln(4)
+
+    for cable in cable_results.get("cables", []):
+        name = cable.get("cable_name", cable.get("cable_id", ""))
+        _calc_subsection(pdf, f"Cable: {name}")
+        _calc_body(pdf, f"  From: {cable.get('from_bus', '—')}  →  To: {cable.get('to_bus', '—')}")
+
+        i_load = cable.get("load_current_a", 0) or 0
+        thermal_pct = cable.get("thermal_loading_pct", 0) or 0
+        thermal_ok = cable.get("thermal_ok", True)
+        vd_pct = cable.get("voltage_drop_pct", 0) or 0
+        vd_ok = cable.get("voltage_drop_ok", True)
+        fw_ok = cable.get("fault_withstand_ok", True)
+        status = cable.get("status", "—")
+        rec = cable.get("recommended_cable", "")
+
+        _calc_body(pdf, f"  Load current:              I_load  = {i_load:.2f} A")
+        _calc_body(pdf, f"  Thermal loading:           {thermal_pct:.1f}%   {'[OK]' if thermal_ok else '[FAIL]'}")
+        _calc_body(pdf, f"  Voltage drop:              {vd_pct:.2f}%   {'[OK]' if vd_ok else '[FAIL]'}")
+        _calc_body(pdf, f"  Fault withstand:           {'[OK]' if fw_ok else '[FAIL]'}")
+        _calc_body(pdf, f"  Overall status:            {status.upper()}")
+        if rec:
+            _calc_body(pdf, f"  Recommended cable:         {rec}")
+
+        issues = cable.get("issues", [])
+        if issues:
+            _calc_body(pdf, "  Issues:")
+            for iss in issues:
+                _calc_body(pdf, f"    - {iss}")
+        pdf.ln(2)
+
+
+def _calc_motor(pdf, motor_results):
+    pdf.add_page()
+    pdf.section_title("5.  Motor Starting Analysis")
+
+    _calc_label(pdf, "Method: Locked-rotor current method; voltage dip per IEC 60034-12")
+    pdf.ln(2)
+    _calc_body(pdf, "Locked-rotor (starting) current:")
+    _calc_label(pdf, "  I_LR = I_FLA * LRC_multiplier  (typical 5–7 x FLA for DOL start)")
+    pdf.ln(1)
+    _calc_body(pdf, "Voltage dip at motor terminals:")
+    _calc_label(pdf, "  dV% = (Z_source / (Z_source + Z_motor)) * 100%")
+    _calc_body(pdf, "  where Z_source = Thevenin impedance at bus, Z_motor = V^2/S_LR")
+    pdf.ln(4)
+
+    for motor in motor_results.get("motors", []):
+        name = motor.get("motor_name", motor.get("motor_id", ""))
+        _calc_subsection(pdf, f"Motor: {name}")
+
+        v_dip = motor.get("voltage_dip_pct", 0) or 0
+        v_ok = motor.get("voltage_drop_ok", True)
+        _calc_body(pdf, f"  Voltage dip at start:      dV      = {v_dip:.2f}%   {'[OK - <= 15%]' if v_ok else '[FAIL - > 15%]'}")
+
+        for k, v in motor.items():
+            if k in ("motor_id", "motor_name", "voltage_dip_pct", "voltage_drop_ok"):
+                continue
+            if isinstance(v, (int, float)):
+                _calc_body(pdf, f"  {k:<35} = {v:.4f}" if isinstance(v, float) else f"  {k:<35} = {v}")
+            elif isinstance(v, str):
+                _calc_body(pdf, f"  {k:<35} = {v}")
+        pdf.ln(2)
+
+    warnings = motor_results.get("warnings", [])
+    if warnings:
+        _calc_subsection(pdf, "Warnings")
+        for w in warnings:
+            _calc_body(pdf, f"  - {w}")
+
+
+def _calc_duty(pdf, duty_results):
+    pdf.add_page()
+    pdf.section_title("6.  Equipment Duty Check")
+
+    _calc_label(pdf, "Verification: Calculated fault current <= Equipment rated interrupting capacity")
+    pdf.ln(2)
+    _calc_body(pdf, "Symmetrical rated interrupting capacity (IEC 62271-100 / IEEE C37.09):")
+    _calc_label(pdf, "  I_sc_rated >= I\"k  (peak rated >= ip)")
+    _calc_body(pdf, "  Duty margin = (I_rated - I_calc) / I_rated * 100%")
+    pdf.ln(4)
+
+    headers = ["Equipment", "I_fault (kA)", "I_rated (kA)", "Margin (%)", "Status"]
+    avail = pdf.w - pdf.l_margin - pdf.r_margin
+    widths = [avail * 0.35, avail * 0.15, avail * 0.15, avail * 0.15, avail * 0.20]
+    rows = []
+    for eq in duty_results.get("equipment", []):
+        name = eq.get("equipment_name", eq.get("equipment_id", ""))
+        i_fault = eq.get("fault_current_ka", 0) or 0
+        i_rated = eq.get("rated_current_ka", 0) or 0
+        margin = eq.get("margin", 0) or 0
+        ok = eq.get("duty_ok", True)
+        status = "OK" if ok else "FAIL — UNDERRATED"
+        rows.append([name, f"{i_fault:.3f}", f"{i_rated:.3f}", f"{margin:.1f}%", status])
+
+    _table(pdf, headers, rows, widths, header_color=(80, 80, 80))
+    pdf.ln(2)
+
+    warnings = duty_results.get("warnings", [])
+    if warnings:
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 5, "Warnings:", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 8)
+        for w in warnings:
+            pdf.cell(0, 4, f"  - {w}", new_x="LMARGIN", new_y="NEXT")
+
+
+def _calc_load_diversity(pdf, ld_results):
+    pdf.add_page()
+    pdf.section_title("7.  Load Diversity & Demand Factors")
+
+    _calc_label(pdf, "Method: Demand factor / diversity factor analysis (IEC 60364-1 / SANS 10142)")
+    pdf.ln(2)
+    _calc_body(pdf, "Maximum demand:")
+    _calc_label(pdf, "  MD = sum(P_i * DF_i)  where DF_i = demand factor for load i")
+    _calc_body(pdf, "Diversity factor:")
+    _calc_label(pdf, "  FD = sum(MD_i) / MD_total  (FD >= 1.0)")
+    pdf.ln(4)
+
+    summary = ld_results.get("summary", {})
+    if summary:
+        _calc_subsection(pdf, "System Summary")
+        for k, v in summary.items():
+            label = k.replace("_", " ").title()
+            val = f"{v:.3f}" if isinstance(v, float) else str(v)
+            _calc_body(pdf, f"  {label:<35} = {val}")
+        pdf.ln(2)
+
+    loads = ld_results.get("loads", [])
+    if loads:
+        _calc_subsection(pdf, "Load Calculations")
+        headers = ["Load", "Rated (kW)", "Demand Factor", "Max Demand (kW)", "Contribution (%)"]
+        avail = pdf.w - pdf.l_margin - pdf.r_margin
+        widths = [avail * 0.3, avail * 0.15, avail * 0.15, avail * 0.2, avail * 0.2]
+        rows = []
+        for ld in loads:
+            name = ld.get("load_name", ld.get("load_id", ""))
+            rated = ld.get("rated_kw", 0) or 0
+            df = ld.get("demand_factor", 1.0) or 1.0
+            md = ld.get("max_demand_kw", rated * df) or 0
+            contrib = ld.get("contribution_pct", 0) or 0
+            rows.append([name, f"{rated:.1f}", f"{df:.3f}", f"{md:.1f}", f"{contrib:.1f}%"])
+        _table(pdf, headers, rows, widths, header_color=(100, 60, 160))
+
+
+def _calc_grounding(pdf, grounding_results):
+    pdf.add_page()
+    pdf.section_title("8.  Grounding System Design — IEEE 80")
+
+    _calc_label(pdf, "Standard: IEEE Std 80-2013 — Guide for Safety in AC Substation Grounding")
+    pdf.ln(2)
+    _calc_body(pdf, "Tolerable touch voltage (IEEE 80 Eq. 29):")
+    _calc_label(pdf, "  E_touch = (1000 + 1.5 * C_s * rho_s) * 0.116 / sqrt(t_s)  [V]  (50 kg person)")
+    _calc_body(pdf, "Tolerable step voltage (IEEE 80 Eq. 28):")
+    _calc_label(pdf, "  E_step  = (1000 + 6.0 * C_s * rho_s) * 0.116 / sqrt(t_s)  [V]")
+    _calc_body(pdf, "  where C_s = surface layer derating, rho_s = surface resistivity [Ohm.m], t_s = fault duration [s].")
+    pdf.ln(2)
+    _calc_body(pdf, "Ground potential rise:")
+    _calc_label(pdf, "  GPR = I_G * R_g  [V]  where I_G = ground fault current, R_g = grid resistance.")
+    pdf.ln(2)
+    _calc_body(pdf, "Grid resistance (Schwarz formula, IEEE 80 Eq. 53):")
+    _calc_label(pdf, "  R_g = rho/(4*r) + rho/(L_T) * (1 + 1/(1 + h*sqrt(20/A)))")
+    _calc_body(pdf, "  where r = equiv. radius of grid, L_T = total conductor length, A = grid area, h = burial depth.")
+    pdf.ln(4)
+
+    grid = grounding_results.get("grid", {})
+    if grid:
+        _calc_subsection(pdf, "Grid Parameters")
+        field_labels = {
+            "soil_resistivity": "Soil resistivity (Ohm.m)",
+            "grid_resistance": "Grid resistance (Ohm)",
+            "ground_fault_current_a": "Ground fault current (A)",
+            "gpr_v": "Ground potential rise (V)",
+            "touch_voltage_v": "Calculated touch voltage (V)",
+            "step_voltage_v": "Calculated step voltage (V)",
+            "tolerable_touch_v": "Tolerable touch voltage (V)",
+            "tolerable_step_v": "Tolerable step voltage (V)",
+            "touch_safe": "Touch voltage safe",
+            "step_safe": "Step voltage safe",
+        }
+        for k, label in field_labels.items():
+            if k in grid:
+                val = grid[k]
+                if isinstance(val, float):
+                    _calc_body(pdf, f"  {label:<40} = {val:.4f}")
+                else:
+                    _calc_body(pdf, f"  {label:<40} = {val}")
+        pdf.ln(2)
+
+    warnings = grounding_results.get("warnings", [])
+    if warnings:
+        _calc_subsection(pdf, "Warnings")
+        for w in warnings:
+            _calc_body(pdf, f"  - {w}")
+
+
 def generate_arcflash_labels(project_name, arcflash_results, components=None):
     """Generate NFPA 70E arc flash warning labels as PDF."""
     if not arcflash_results or not arcflash_results.get("buses"):

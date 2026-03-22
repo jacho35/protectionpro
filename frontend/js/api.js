@@ -180,6 +180,36 @@ const API = {
     return resp.blob();
   },
 
+  // Detailed calculations report PDF (all available analysis results)
+  async generateCalculationsReport() {
+    const body = {
+      projectName: AppState.projectName || 'Untitled Project',
+      baseMVA: AppState.baseMVA,
+      frequency: AppState.frequency,
+      components: Array.from(AppState.components.values()).map(c => ({
+        id: c.id, type: c.type, props: c.props,
+      })),
+      faultResults: AppState.faultResults || null,
+      loadFlowResults: AppState.loadFlowResults || null,
+      arcFlashResults: AppState.arcFlashResults || null,
+      cableSizingResults: AppState.cableSizingResults || null,
+      motorStartingResults: AppState.motorStartingResults || null,
+      dutyCheckResults: AppState.dutyCheckResults || null,
+      loadDiversityResults: AppState.loadDiversityResults || null,
+      groundingResults: AppState.groundingResults || null,
+    };
+    const resp = await fetch(`${API_BASE}/reports/calculations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Calculations report generation failed' }));
+      throw new Error(err.detail || 'Calculations report generation failed');
+    }
+    return resp.blob();
+  },
+
   // Server-side arc flash label PDF
   async generateArcFlashLabels() {
     const body = {
