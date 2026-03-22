@@ -7,26 +7,16 @@ const Project = {
     document.getElementById('btn-open').addEventListener('click', () => this.openProject());
     document.getElementById('btn-save-as').addEventListener('click', () => this.saveAsProject());
 
-    // Export dropdown toggle
-    const exportBtn = document.getElementById('btn-export');
-    const exportMenu = document.getElementById('export-menu');
-    exportBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      exportMenu.classList.toggle('open');
-    });
-    // Close dropdown on outside click
-    document.addEventListener('click', () => exportMenu.classList.remove('open'));
-
-    // Export actions
-    document.getElementById('btn-export-json').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportJSON(); });
-    document.getElementById('btn-export-svg').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportSVG(); });
-    document.getElementById('btn-export-png').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportPNG(); });
-    document.getElementById('btn-export-csv').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportResultsCSV(); });
-    document.getElementById('btn-export-pdf').addEventListener('click', () => { exportMenu.classList.remove('open'); this.exportPDF(); });
-    document.getElementById('btn-export-template').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.showTemplateEditor(); });
-    document.getElementById('btn-export-settings').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.exportSettingsCSV(); });
-    document.getElementById('btn-export-aflabels').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.exportArcFlashLabels(); });
-    document.getElementById('btn-export-compare').addEventListener('click', () => { exportMenu.classList.remove('open'); Reports.showComparisonDialog(); });
+    // Export actions (items live inside the File menu)
+    document.getElementById('btn-export-json').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportJSON(); });
+    document.getElementById('btn-export-svg').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportSVG(); });
+    document.getElementById('btn-export-png').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPNG(); });
+    document.getElementById('btn-export-csv').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportResultsCSV(); });
+    document.getElementById('btn-export-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPDF(); });
+    document.getElementById('btn-export-template').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showTemplateEditor(); });
+    document.getElementById('btn-export-settings').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportSettingsCSV(); });
+    document.getElementById('btn-export-aflabels').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportArcFlashLabels(); });
+    document.getElementById('btn-export-compare').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showComparisonDialog(); });
   },
 
   newProject() {
