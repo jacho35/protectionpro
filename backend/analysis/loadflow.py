@@ -225,10 +225,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     n = len(buses)
     bus_idx = {b.id: i for i, b in enumerate(buses)}
 
-    # Build Y-bus admittance matrix
-    Y = np.zeros((n, n), dtype=complex)
-
-    # Build adjacency
+    # Build adjacency (needed before Y-bus for virtual bus detection)
     adjacency = {}
     for w in wires:
         adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
@@ -236,6 +233,82 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
     # Build bus groups (bus + reachable transparent elements)
     bus_of = _build_bus_groups(buses, adjacency, components, bus_idx)
+
+    # ── Virtual utility buses ──
+    # When a utility source connects through a source-connected transformer (not
+    # directly to a bus), the NR solver can't model it as the swing reference.
+    # We create a virtual swing bus at the utility side of the transformer, add
+    # the transformer impedance to Y-bus, and demote the connected real bus to
+    # PQ so that generator P_spec is properly enforced by the NR solver.
+    _virtual_buses = []   # (vb_id, connected_bus_id, tx_comp, util_comp)
+    _utility_tx_ids = set()
+
+    for comp in project.components:
+        if comp.type != "transformer":
+            continue
+        results = _find_bus_paths(comp.id, adjacency, components, bus_of)
+        if len(results) != 1:
+            continue  # 0 buses (isolated) or 2 buses (handled by branch chains)
+        connected_bus_id = results[0][0]
+        # Walk from TX away from bus to find a utility source
+        visited_src = set()
+        for cid, mapped in bus_of.items():
+            if mapped == connected_bus_id:
+                visited_src.add(cid)
+        visited_src.add(comp.id)
+        src_queue = [nb for nb in adjacency.get(comp.id, []) if nb not in visited_src]
+        util_comp = None
+        while src_queue and not util_comp:
+            nid = src_queue.pop(0)
+            if nid in visited_src:
+                continue
+            visited_src.add(nid)
+            c = components.get(nid)
+            if not c:
+                continue
+            if c.type == "utility":
+                util_comp = c
+            elif _is_transparent_and_closed(c):
+                for nb in adjacency.get(nid, []):
+                    if nb not in visited_src:
+                        src_queue.append(nb)
+        if util_comp:
+            vb_id = f"__vutil_{util_comp.id}"
+            _virtual_buses.append((vb_id, connected_bus_id, comp, util_comp))
+            _utility_tx_ids.add(comp.id)
+
+    # Extend bus system with virtual utility buses
+    for vb_id, _, _, _ in _virtual_buses:
+        bus_idx[vb_id] = n
+        n += 1
+
+    # Build Y-bus admittance matrix (extended for virtual buses)
+    Y = np.zeros((n, n), dtype=complex)
+
+    # Add utility TX impedances between virtual buses and connected real buses
+    for vb_id, connected_bus_id, tx, util in _virtual_buses:
+        vi = bus_idx[vb_id]
+        ci = bus_idx[connected_bus_id]
+        z = _get_impedance(tx, base_mva)
+        y_tx = 1 / z if abs(z) > 1e-15 else complex(1e6, 0)
+
+        # Compute off-nominal turns ratio
+        v_hv = tx.props.get("voltage_hv_kv", 11)
+        v_lv = tx.props.get("voltage_lv_kv", 0.4)
+        tap_pct = tx.props.get("tap_percent", 0)
+        cb_comp = components.get(connected_bus_id)
+        cb_v = cb_comp.props.get("voltage_kv", v_lv) if cb_comp else v_lv
+
+        nominal_ratio = v_hv / v_lv if v_lv > 0 else 1.0
+        actual_ratio = nominal_ratio * (1 + tap_pct / 100)
+        base_ratio = v_hv / cb_v if cb_v > 0 else 1.0
+        t = actual_ratio / base_ratio if base_ratio > 0 else 1.0
+
+        # Tap on virtual (HV) side — standard transformer pi-model
+        Y[vi, vi] += y_tx / (t * t)
+        Y[ci, ci] += y_tx
+        Y[vi, ci] -= y_tx / t
+        Y[ci, vi] -= y_tx / t
 
     # ── Find all branch chains between buses ──
     # A chain is a series path of cables/transformers (with transparent elements)
@@ -401,17 +474,16 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         bt = bus.props.get("bus_type", "PQ")
 
         # Bus-type priority:
-        #   1. Bus with utility source → always Swing (infinite-bus reference)
-        #   2. Bus user-labelled "Swing" but utility is elsewhere → demote to PQ
-        #      (generators there inject via P_spec, which NR enforces for PQ buses)
+        #   1. Bus with direct utility source → always Swing
+        #   2. Bus user-labelled "Swing" but utility exists (direct or via TX) → demote to PQ
+        #      so generator P_spec injections are enforced by the NR solver
         #   3. Otherwise honour user setting
+        _has_any_utility = bool(_utility_bus_ids) or bool(_virtual_buses)
         if bus.id in _utility_bus_ids:
             bus_types.append(2)  # Swing
         elif bt == "Swing":
-            if _utility_bus_ids:
-                # Utility elsewhere provides slack — demote to PQ so generator
-                # P_spec injections are enforced by the NR solver
-                bus_types.append(0)
+            if _has_any_utility:
+                bus_types.append(0)  # Demote to PQ
             else:
                 bus_types.append(2)  # No utility in network, keep user swing
         elif bt == "PV":
@@ -480,6 +552,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
             elif comp.type == "capacitor_bank":
                 kvar = comp.props.get("rated_kvar", 100)
                 Q_spec[i] += kvar / 1000 / base_mva
+
+    # ── Virtual utility bus types (swing) ──
+    for vb_id, _, _, _ in _virtual_buses:
+        bus_types.append(2)  # Swing — utility is the system voltage reference
 
     # ── Solve ──
     if method == "gauss_seidel":
@@ -607,42 +683,13 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     # Map bus_id -> list of active source-connected transformer components
     source_tx_by_bus: dict[str, list] = {}
     for comp in project.components:
-        if comp.type != "transformer" or comp.id in processed_elem_ids:
+        if comp.type != "transformer" or comp.id in processed_elem_ids or comp.id in _utility_tx_ids:
             continue
         results = _find_bus_paths(comp.id, adjacency, components, bus_of)
         if len(results) != 1:
             continue  # 0 buses (isolated) or 2 buses (already handled above)
         bus_id = results[0][0]
         source_tx_by_bus.setdefault(bus_id, []).append(comp)
-
-    # Detect which buses have a utility source connected via a source-connected TX.
-    # These buses should treat generators at rated output (same as direct utility),
-    # rather than proportionally splitting S_bus among generators.
-    _utility_via_tx_bus_ids = set()
-    for bus_id, tx_list in source_tx_by_bus.items():
-        for tx in tx_list:
-            # Walk from TX's neighbors away from the bus group to find source type
-            visited_src = set()
-            for cid, mapped in bus_of.items():
-                if mapped == bus_id:
-                    visited_src.add(cid)
-            visited_src.add(tx.id)
-            src_queue = [n for n in adjacency.get(tx.id, []) if n not in visited_src]
-            while src_queue:
-                nid = src_queue.pop(0)
-                if nid in visited_src:
-                    continue
-                visited_src.add(nid)
-                comp = components.get(nid)
-                if not comp:
-                    continue
-                if comp.type == "utility":
-                    _utility_via_tx_bus_ids.add(bus_id)
-                    break
-                if _is_transparent_and_closed(comp):
-                    for nbr in adjacency.get(nid, []):
-                        if nbr not in visited_src:
-                            src_queue.append(nbr)
 
     for bus_id, tx_list in source_tx_by_bus.items():
         bus_i = bus_idx[bus_id]
@@ -710,7 +757,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
         # ── Generator / solar / wind annotations ──
         if gen_sources:
-            if is_swing and (has_utility or bus.id in _utility_via_tx_bus_ids):
+            if is_swing and has_utility:
                 # Swing bus shared with utility: generators run at rated,
                 # utility takes the residual.  Report each generator at its
                 # rated output (loading = 100 % or rated/rated * 100).
@@ -728,7 +775,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                         loading_pct=round(s_rated / rated_mva * 100, 2), losses_mw=0,
                     ))
 
-            elif is_swing and not has_utility and bus.id not in _utility_via_tx_bus_ids:
+            elif is_swing and not has_utility:
                 # Generator-only swing bus: split S_bus proportionally by rated MVA.
                 s_actual = S_bus[bus_i] * base_mva
                 rated_map = {src.id: _source_output_mva(src)[3] for src in gen_sources}
@@ -794,6 +841,65 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     s_mva=round(s_out, 4), i_amps=round(i_amps, 2),
                     loading_pct=round(loading, 2), losses_mw=0,
                 ))
+
+    # ── Virtual utility bus results (TX flow + utility source annotation) ──
+    for vb_id, connected_bus_id, tx, util in _virtual_buses:
+        vi = bus_idx[vb_id]
+        ci = bus_idx[connected_bus_id]
+
+        # Recompute turns ratio (same as during Y-bus setup)
+        v_hv = tx.props.get("voltage_hv_kv", 11)
+        v_lv = tx.props.get("voltage_lv_kv", 0.4)
+        tap_pct = tx.props.get("tap_percent", 0)
+        cb_comp = components.get(connected_bus_id)
+        cb_v = cb_comp.props.get("voltage_kv", v_lv) if cb_comp else v_lv
+        nominal_ratio = v_hv / v_lv if v_lv > 0 else 1.0
+        actual_ratio = nominal_ratio * (1 + tap_pct / 100)
+        base_ratio = v_hv / cb_v if cb_v > 0 else 1.0
+        t_vb = actual_ratio / base_ratio if base_ratio > 0 else 1.0
+        z = _get_impedance(tx, base_mva)
+        y_tx = 1 / z if abs(z) > 1e-15 else complex(1e6, 0)
+
+        # Compute branch flow using transformer pi-model
+        I_vi = (y_tx / (t_vb * t_vb)) * V[vi] - (y_tx / t_vb) * V[ci]
+        I_ci = -(y_tx / t_vb) * V[vi] + y_tx * V[ci]
+        s_vi = V[vi] * np.conj(I_vi)
+        s_ci = V[ci] * np.conj(I_ci)
+
+        # TX loading — report at LV (higher current) side
+        s_lv_mva = abs(s_ci) * base_mva
+        rated_mva_xfmr = tx.props.get("rated_mva", 10)
+        loading = (s_lv_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
+        lv_kv = min(v_hv, v_lv)
+        elem_i_amps = (s_lv_mva * 1000) / (math.sqrt(3) * lv_kv) if lv_kv > 0 else 0
+        p_tx = s_ci.real * base_mva
+        q_tx = s_ci.imag * base_mva
+        losses_mw = (s_vi.real + s_ci.real) * base_mva
+
+        branch_results.append(LoadFlowBranch(
+            elementId=tx.id,
+            element_name=tx.props.get("name", tx.type),
+            from_bus=connected_bus_id, to_bus=connected_bus_id,
+            p_mw=round(p_tx, 4), q_mvar=round(q_tx, 4),
+            s_mva=round(s_lv_mva, 4), i_amps=round(elem_i_amps, 2),
+            loading_pct=round(loading, 2), losses_mw=round(losses_mw, 6),
+        ))
+
+        # Utility source annotation — power at HV side of TX
+        s_util_mva = abs(s_vi) * base_mva
+        fault_mva = util.props.get("fault_mva", 500)
+        util_loading = (s_util_mva / fault_mva * 100) if fault_mva > 0 else 0
+        v_kv_actual = abs(V[ci]) * cb_v
+        util_i_amps = (s_util_mva * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+        branch_results.append(LoadFlowBranch(
+            elementId=util.id,
+            element_name=util.props.get("name", "Utility"),
+            from_bus=connected_bus_id, to_bus=connected_bus_id,
+            p_mw=round(s_vi.real * base_mva, 4),
+            q_mvar=round(s_vi.imag * base_mva, 4),
+            s_mva=round(s_util_mva, 4), i_amps=round(util_i_amps, 2),
+            loading_pct=round(util_loading, 2), losses_mw=0,
+        ))
 
     # ── Voltage mismatch warnings ──
     # Check every device in transformer chains for incorrect voltage ratings.
