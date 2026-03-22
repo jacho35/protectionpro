@@ -114,6 +114,202 @@ INSTALL_DERATING = {"trefoil": 1.0, "flat": 0.95, "buried": 0.85}
 # Resistivity (Ω·mm²/m)
 RESISTIVITY = {"Cu": 0.0175, "Al": 0.0282}
 
+# ─── NEC Article 310.16 — AWG/kcmil to mm² mapping ───
+_AWG_TO_MM2 = {
+    '14': 2.08, '12': 3.31, '10': 5.26, '8': 8.37, '6': 13.3,
+    '4': 21.2, '3': 26.7, '2': 33.6, '1': 42.4,
+    '1/0': 53.5, '2/0': 67.4, '3/0': 85.0, '4/0': 107.2,
+    '250': 127, '300': 152, '350': 177, '400': 203,
+    '500': 253, '600': 304, '700': 355, '750': 380,
+    '800': 405, '900': 456, '1000': 507,
+}
+
+# NEC Table 310.16 ampacities
+_NEC_310_16 = {
+    '14':   {'cu_60': 15,  'cu_75': 20,  'cu_90': 25,  'al_60': None, 'al_75': None, 'al_90': None},
+    '12':   {'cu_60': 20,  'cu_75': 25,  'cu_90': 30,  'al_60': 15,   'al_75': 20,   'al_90': 25},
+    '10':   {'cu_60': 30,  'cu_75': 35,  'cu_90': 40,  'al_60': 25,   'al_75': 30,   'al_90': 35},
+    '8':    {'cu_60': 40,  'cu_75': 50,  'cu_90': 55,  'al_60': 35,   'al_75': 40,   'al_90': 45},
+    '6':    {'cu_60': 55,  'cu_75': 65,  'cu_90': 75,  'al_60': 40,   'al_75': 50,   'al_90': 55},
+    '4':    {'cu_60': 70,  'cu_75': 85,  'cu_90': 95,  'al_60': 55,   'al_75': 65,   'al_90': 75},
+    '3':    {'cu_60': 85,  'cu_75': 100, 'cu_90': 115, 'al_60': 65,   'al_75': 75,   'al_90': 85},
+    '2':    {'cu_60': 95,  'cu_75': 115, 'cu_90': 130, 'al_60': 75,   'al_75': 90,   'al_90': 100},
+    '1':    {'cu_60': 110, 'cu_75': 130, 'cu_90': 145, 'al_60': 85,   'al_75': 100,  'al_90': 115},
+    '1/0':  {'cu_60': 125, 'cu_75': 150, 'cu_90': 170, 'al_60': 100,  'al_75': 120,  'al_90': 135},
+    '2/0':  {'cu_60': 145, 'cu_75': 175, 'cu_90': 195, 'al_60': 115,  'al_75': 135,  'al_90': 150},
+    '3/0':  {'cu_60': 165, 'cu_75': 200, 'cu_90': 225, 'al_60': 130,  'al_75': 155,  'al_90': 175},
+    '4/0':  {'cu_60': 195, 'cu_75': 230, 'cu_90': 260, 'al_60': 150,  'al_75': 180,  'al_90': 205},
+    '250':  {'cu_60': 215, 'cu_75': 255, 'cu_90': 290, 'al_60': 170,  'al_75': 205,  'al_90': 230},
+    '300':  {'cu_60': 240, 'cu_75': 285, 'cu_90': 320, 'al_60': 190,  'al_75': 230,  'al_90': 255},
+    '350':  {'cu_60': 260, 'cu_75': 310, 'cu_90': 350, 'al_60': 210,  'al_75': 250,  'al_90': 280},
+    '400':  {'cu_60': 280, 'cu_75': 335, 'cu_90': 380, 'al_60': 225,  'al_75': 270,  'al_90': 305},
+    '500':  {'cu_60': 320, 'cu_75': 380, 'cu_90': 430, 'al_60': 260,  'al_75': 310,  'al_90': 350},
+    '600':  {'cu_60': 355, 'cu_75': 420, 'cu_90': 475, 'al_60': 285,  'al_75': 340,  'al_90': 385},
+    '700':  {'cu_60': 385, 'cu_75': 460, 'cu_90': 520, 'al_60': 310,  'al_75': 375,  'al_90': 420},
+    '750':  {'cu_60': 400, 'cu_75': 475, 'cu_90': 535, 'al_60': 320,  'al_75': 385,  'al_90': 435},
+    '800':  {'cu_60': 410, 'cu_75': 490, 'cu_90': 555, 'al_60': 330,  'al_75': 395,  'al_90': 450},
+    '900':  {'cu_60': 435, 'cu_75': 520, 'cu_90': 585, 'al_60': 355,  'al_75': 425,  'al_90': 480},
+    '1000': {'cu_60': 455, 'cu_75': 545, 'cu_90': 615, 'al_60': 375,  'al_75': 445,  'al_90': 500},
+}
+
+
+# NEC Table 310.15(B)(1): Ambient Temperature Correction Factors
+# Keys are ambient temperature thresholds (°C), values are {temp_rating: factor}
+_NEC_TEMP_CORRECTION = {
+    21: {'60C': 1.08, '75C': 1.04, '90C': 1.04},
+    26: {'60C': 1.00, '75C': 1.00, '90C': 1.00},
+    30: {'60C': 1.00, '75C': 1.00, '90C': 1.00},
+    31: {'60C': 0.91, '75C': 0.94, '90C': 0.96},
+    36: {'60C': 0.91, '75C': 0.94, '90C': 0.96},
+    40: {'60C': 0.82, '75C': 0.88, '90C': 0.91},
+    41: {'60C': 0.82, '75C': 0.88, '90C': 0.91},
+    45: {'60C': 0.71, '75C': 0.82, '90C': 0.87},
+    46: {'60C': 0.71, '75C': 0.82, '90C': 0.87},
+    50: {'60C': 0.58, '75C': 0.75, '90C': 0.82},
+    51: {'60C': 0.58, '75C': 0.75, '90C': 0.82},
+    55: {'60C': 0.41, '75C': 0.67, '90C': 0.76},
+    60: {'60C': 0.00, '75C': 0.58, '90C': 0.71},
+    65: {'60C': 0.00, '75C': 0.47, '90C': 0.65},
+    70: {'60C': 0.00, '75C': 0.33, '90C': 0.58},
+    75: {'60C': 0.00, '75C': 0.00, '90C': 0.50},
+    80: {'60C': 0.00, '75C': 0.00, '90C': 0.41},
+}
+
+# NEC Table 310.15(C)(1): Conductor Count Adjustment Factors
+_NEC_CONDUCTOR_ADJUSTMENT = [
+    (3, 1.00),
+    (6, 0.80),
+    (9, 0.70),
+    (20, 0.50),
+    (30, 0.45),
+    (40, 0.40),
+    (999, 0.35),
+]
+
+# NEC Table 310.16 ampacity data (keyed by approx mm² size)
+_NEC_AMPACITY = {
+    2:    {'60C': {'cu': 15, 'al': None}, '75C': {'cu': 20, 'al': None}, '90C': {'cu': 25, 'al': None}},
+    3.3:  {'60C': {'cu': 20, 'al': 15},   '75C': {'cu': 25, 'al': 20},   '90C': {'cu': 30, 'al': 25}},
+    5.3:  {'60C': {'cu': 30, 'al': 25},   '75C': {'cu': 35, 'al': 30},   '90C': {'cu': 40, 'al': 35}},
+    8.4:  {'60C': {'cu': 40, 'al': 35},   '75C': {'cu': 50, 'al': 45},   '90C': {'cu': 55, 'al': 45}},
+    13.3: {'60C': {'cu': 55, 'al': 40},   '75C': {'cu': 65, 'al': 50},   '90C': {'cu': 75, 'al': 60}},
+    21.2: {'60C': {'cu': 70, 'al': 55},   '75C': {'cu': 85, 'al': 65},   '90C': {'cu': 95, 'al': 75}},
+    26.7: {'60C': {'cu': 85, 'al': 65},   '75C': {'cu': 100, 'al': 75},  '90C': {'cu': 115, 'al': 85}},
+    33.6: {'60C': {'cu': 95, 'al': 75},   '75C': {'cu': 115, 'al': 90},  '90C': {'cu': 130, 'al': 100}},
+    42.4: {'60C': {'cu': 110, 'al': 85},  '75C': {'cu': 130, 'al': 100}, '90C': {'cu': 145, 'al': 115}},
+    53.5: {'60C': {'cu': 125, 'al': 100}, '75C': {'cu': 150, 'al': 120}, '90C': {'cu': 170, 'al': 135}},
+    67.4: {'60C': {'cu': 145, 'al': 115}, '75C': {'cu': 175, 'al': 135}, '90C': {'cu': 195, 'al': 150}},
+    85.0: {'60C': {'cu': 165, 'al': 130}, '75C': {'cu': 200, 'al': 155}, '90C': {'cu': 225, 'al': 175}},
+    107:  {'60C': {'cu': 195, 'al': 150}, '75C': {'cu': 230, 'al': 180}, '90C': {'cu': 260, 'al': 205}},
+    127:  {'60C': {'cu': 215, 'al': 170}, '75C': {'cu': 255, 'al': 205}, '90C': {'cu': 290, 'al': 230}},
+    152:  {'60C': {'cu': 240, 'al': 190}, '75C': {'cu': 285, 'al': 230}, '90C': {'cu': 320, 'al': 255}},
+    177:  {'60C': {'cu': 260, 'al': 210}, '75C': {'cu': 310, 'al': 250}, '90C': {'cu': 350, 'al': 280}},
+    203:  {'60C': {'cu': 280, 'al': 225}, '75C': {'cu': 335, 'al': 270}, '90C': {'cu': 380, 'al': 305}},
+    253:  {'60C': {'cu': 320, 'al': 260}, '75C': {'cu': 380, 'al': 310}, '90C': {'cu': 430, 'al': 350}},
+    304:  {'60C': {'cu': 355, 'al': 285}, '75C': {'cu': 420, 'al': 340}, '90C': {'cu': 475, 'al': 385}},
+    380:  {'60C': {'cu': 400, 'al': 320}, '75C': {'cu': 475, 'al': 385}, '90C': {'cu': 535, 'al': 435}},
+}
+
+_NEC_SIZE_LABELS = {
+    2: '14 AWG', 3.3: '12 AWG', 5.3: '10 AWG', 8.4: '8 AWG',
+    13.3: '6 AWG', 21.2: '4 AWG', 26.7: '3 AWG', 33.6: '2 AWG',
+    42.4: '1 AWG', 53.5: '1/0 AWG', 67.4: '2/0 AWG', 85.0: '3/0 AWG',
+    107: '4/0 AWG', 127: '250 kcmil', 152: '300 kcmil', 177: '350 kcmil',
+    203: '400 kcmil', 253: '500 kcmil', 304: '600 kcmil', 380: '750 kcmil',
+}
+
+
+def _nec_ampacity_lookup(size_mm2, conductor='Cu', temp_rating='75C'):
+    """Look up NEC 310.16 ampacity for a given cable size.
+
+    Args:
+        size_mm2: Cable cross-section in mm²
+        conductor: 'Cu' or 'Al'
+        temp_rating: '60C', '75C', or '90C'
+
+    Returns:
+        dict with nec_size_mm2, nec_size_label, ampacity, temp_rating or None
+    """
+    nec_sizes = sorted(_NEC_AMPACITY.keys())
+    # Find closest NEC size >= cable size
+    best = None
+    for s in nec_sizes:
+        if s >= size_mm2 * 0.8:  # Allow 20% tolerance for metric/AWG mismatch
+            best = s
+            break
+    if best is None:
+        best = nec_sizes[-1]
+
+    cond_key = conductor.lower()[:2]
+    entry = _NEC_AMPACITY.get(best, {}).get(temp_rating, {})
+    ampacity = entry.get(cond_key)
+
+    return {
+        'nec_size_mm2': best,
+        'nec_size_label': _NEC_SIZE_LABELS.get(best, f'{best}mm²'),
+        'ampacity_a': ampacity,
+        'temp_rating': temp_rating,
+    }
+
+
+def _mm2_to_awg(size_mm2):
+    """Convert mm² to closest AWG/kcmil size."""
+    best_awg = '10'
+    best_diff = 1e6
+    for awg, mm2 in _AWG_TO_MM2.items():
+        diff = abs(mm2 - size_mm2)
+        if diff < best_diff:
+            best_diff = diff
+            best_awg = awg
+    return best_awg
+
+
+def _nec_temp_rating(insulation):
+    """Map insulation type to NEC temperature rating column."""
+    # XLPE → 90°C, PVC → 60°C
+    ins = insulation.upper()
+    if ins == 'XLPE':
+        return '90C'
+    elif ins == 'PVC':
+        return '60C'
+    return '75C'
+
+
+def _nec_temp_correction_factor(ambient_temp_c, insulation):
+    """Get NEC 310.15(B)(1) ambient temperature correction factor."""
+    temp_rating = _nec_temp_rating(insulation)
+    # Find the correction factor for the closest temperature threshold
+    # that is >= the ambient temperature
+    sorted_temps = sorted(_NEC_TEMP_CORRECTION.keys())
+    selected = sorted_temps[-1]  # default to highest
+    for t in sorted_temps:
+        if t >= ambient_temp_c:
+            selected = t
+            break
+    factor = _NEC_TEMP_CORRECTION[selected].get(temp_rating, 1.0)
+    return factor if factor > 0 else 0.0
+
+
+def _nec_conductor_count_factor(num_conductors):
+    """Get NEC 310.15(C)(1) conductor count adjustment factor."""
+    for max_count, factor in _NEC_CONDUCTOR_ADJUSTMENT:
+        if num_conductors <= max_count:
+            return factor
+    return 0.35
+
+
+def _nec_ampacity(size_mm2, conductor='Cu', insulation='XLPE'):
+    """Get NEC 310.16 ampacity for given cable parameters."""
+    awg = _mm2_to_awg(size_mm2)
+    entry = _NEC_310_16.get(awg, {})
+    # Map insulation to temperature rating: XLPE=90°C, PVC=60°C
+    temp_rating = _nec_temp_rating(insulation)
+    temp = temp_rating.replace('C', '')
+    cond = 'cu' if conductor.upper() == 'CU' else 'al'
+    key = f'{cond}_{temp}'
+    return entry.get(key) or entry.get(f'{cond}_75') or 0
+
+
 # Transparent types that do not form a bus boundary
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester"}
 
@@ -197,6 +393,7 @@ def _get_cable_props(cable):
         "voltage_kv": float(p.get("voltage_kv", 0)),
         "num_parallel": int(p.get("num_parallel", 1)),
         "standard_type": std_type,
+        "ampacity_standard": p.get("ampacity_standard", "IEC"),
     }
 
 
@@ -293,18 +490,39 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         current_per_cable = load_current / num_parallel
 
         # ── Thermal check ──
+        ampacity_standard = cp["ampacity_standard"]
         rated_amps = cp["rated_amps"]
-        install_df = INSTALL_DERATING.get(install_method, 1.0)
-
-        # Ambient temperature derating
         insulation = cp["insulation"]
-        max_temp = MAX_TEMP.get(insulation, 90)
-        if ambient_temp_c != 30 and max_temp > ambient_temp_c:
-            temp_df = math.sqrt((max_temp - ambient_temp_c) / (max_temp - 30))
-        else:
-            temp_df = 1.0
 
-        derated_amps = rated_amps * install_df * temp_df
+        if ampacity_standard == "NEC":
+            # NEC 310.16 ampacity lookup
+            if cp["size_mm2"] > 0:
+                nec_amps = _nec_ampacity(cp["size_mm2"], cp["conductor"], cp["insulation"])
+                if nec_amps > 0:
+                    rated_amps = nec_amps
+
+            # NEC 310.15(B)(1) ambient temperature correction
+            temp_df = _nec_temp_correction_factor(ambient_temp_c, insulation)
+
+            # NEC 310.15(C)(1) conductor count adjustment
+            # num_parallel × 3 phases = current-carrying conductors in raceway
+            num_conductors = num_parallel * 3
+            conductor_df = _nec_conductor_count_factor(num_conductors)
+
+            install_df = 1.0  # NEC uses conductor count factor instead of installation method
+            derated_amps = rated_amps * temp_df * conductor_df
+        else:
+            # IEC derating
+            install_df = INSTALL_DERATING.get(install_method, 1.0)
+
+            # IEC ambient temperature derating
+            max_temp = MAX_TEMP.get(insulation, 90)
+            if ambient_temp_c != 30 and max_temp > ambient_temp_c:
+                temp_df = math.sqrt((max_temp - ambient_temp_c) / (max_temp - 30))
+            else:
+                temp_df = 1.0
+
+            derated_amps = rated_amps * install_df * temp_df
         thermal_ok = current_per_cable <= derated_amps if derated_amps > 0 else True
         thermal_loading_pct = (current_per_cable / derated_amps * 100) if derated_amps > 0 else 0
 
@@ -372,10 +590,12 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         min_size_mm2 = size_mm2
         recommended_cable = ""
         if status != "pass":
+            conductor_df = _nec_conductor_count_factor(num_parallel * 3) if ampacity_standard == "NEC" else 1.0
             min_size_mm2 = _find_minimum_size(
                 cp, load_current, num_parallel, length_km, voltage_kv,
                 cos_phi, sin_phi, max_voltage_drop_pct, fault_ka, t_clear,
                 install_df, temp_df, ambient_temp_c,
+                ampacity_standard=ampacity_standard, conductor_df=conductor_df,
             )
             # Find matching standard cable
             rec = _find_recommended_cable(cp["conductor"], cp["insulation"], voltage_kv, min_size_mm2)
@@ -400,6 +620,8 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             "recommended_cable": recommended_cable,
             "status": status,
             "issues": issues,
+            "ampacity_standard": ampacity_standard,
+            "nec_rating": _nec_ampacity_lookup(cp["size_mm2"], cp["conductor"], '75C'),
         })
 
     return {"cables": results, "warnings": warnings}
@@ -407,7 +629,8 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
 
 def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
                        cos_phi, sin_phi, max_vdrop_pct, fault_ka, t_clear,
-                       install_df, temp_df, ambient_temp_c):
+                       install_df, temp_df, ambient_temp_c,
+                       ampacity_standard='IEC', conductor_df=1.0):
     """Find the minimum cable size (mm²) that satisfies all three checks."""
     conductor = cp["conductor"]
     insulation = cp["insulation"]
@@ -428,7 +651,13 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
             continue
 
         # Thermal check
-        derated = match["rated_amps"] * install_df * temp_df
+        if ampacity_standard == "NEC":
+            # Use NEC 310.16 ampacity for this size
+            nec_amps = _nec_ampacity(size, conductor, insulation)
+            base_amps = nec_amps if nec_amps > 0 else match["rated_amps"]
+            derated = base_amps * temp_df * conductor_df
+        else:
+            derated = match["rated_amps"] * install_df * temp_df
         if current_per_cable > derated:
             continue
 

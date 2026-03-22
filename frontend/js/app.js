@@ -346,6 +346,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ── DC Arc Flash Analysis ──
+  document.getElementById('btn-dc-arcflash').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running DC arc flash analysis.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running DC arc flash analysis (Stokes & Oppenlander)...';
+    try {
+      const result = await API.runDCArcFlash();
+      AppState.dcArcFlashResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'DC arc flash analysis complete.';
+      showDCArcFlashResults(result);
+    } catch (e) {
+      console.error('DC arc flash analysis error:', e);
+      document.getElementById('status-info').textContent = 'DC arc flash analysis failed.';
+      showValidationModal('DC Arc Flash — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    }
+  });
+
   // ── Cable Sizing Analysis ──
   document.getElementById('btn-cable-sizing').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -878,6 +898,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (studies.fault && studies.fault.result) AppState.faultResults = studies.fault.result;
       if (studies.loadflow && studies.loadflow.result) AppState.loadFlowResults = studies.loadflow.result;
       if (studies.arcflash && studies.arcflash.result) AppState.arcFlashResults = studies.arcflash.result;
+      if (studies.dc_arcflash && studies.dc_arcflash.result) AppState.dcArcFlashResults = studies.dc_arcflash.result;
       if (studies.cable_sizing && studies.cable_sizing.result) AppState.cableSizingResults = studies.cable_sizing.result;
       if (studies.motor_starting && studies.motor_starting.result) AppState.motorStartingResults = studies.motor_starting.result;
       if (studies.duty_check && studies.duty_check.result) AppState.dutyCheckResults = studies.duty_check.result;
@@ -1040,6 +1061,70 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  function showDCArcFlashResults(result) {
+    const modal = document.getElementById('dc-arcflash-modal');
+    const body = document.getElementById('dc-arcflash-body');
+    if (!modal || !body) return;
+
+    const buses = result.buses || {};
+    const entries = Object.values(buses).sort((a, b) => b.incident_energy_cal - a.incident_energy_cal);
+
+    if (entries.length === 0) {
+      body.innerHTML = '<p>No buses found for DC arc flash analysis.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) {
+        html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      }
+      html += '</div>';
+    }
+
+    html += `<table class="af-table">
+      <thead><tr>
+        <th>Bus</th><th>DC Voltage</th><th>Bolted Fault</th><th>DC Arc Current</th>
+        <th>Arc Voltage</th><th>Incident Energy</th><th>AFB</th><th>Clearing Time</th>
+        <th>PPE Cat.</th><th>PPE</th>
+      </tr></thead><tbody>`;
+
+    for (const b of entries) {
+      const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
+      const hasRecs = b.recommendations && b.recommendations.length > 0;
+      html += `<tr class="${ppeClass}">
+        <td>${b.bus_name || b.bus_id}</td>
+        <td>${b.system_voltage_v.toFixed(0)} V</td>
+        <td>${b.bolted_fault_ka.toFixed(2)} kA</td>
+        <td>${b.dc_arcing_current_a.toFixed(1)} A</td>
+        <td>${b.arc_voltage_v.toFixed(1)} V</td>
+        <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
+        <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
+        <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
+        <td><span class="af-ppe-badge">${b.ppe_category}</span></td>
+        <td>${b.ppe_name}</td>
+      </tr>`;
+      if (hasRecs) {
+        html += `<tr class="${ppeClass} af-rec-row">
+          <td colspan="10">
+            <details class="af-rec-details">
+              <summary>Recommendations (${b.recommendations.length})</summary>
+              <ul class="af-rec-list">
+                ${b.recommendations.map(r => `<li>${r}</li>`).join('')}
+              </ul>
+            </details>
+          </td>
+        </tr>`;
+      }
+    }
+    html += '</tbody></table>';
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   function showVoltageDepression(faultBusId, faultResult) {
     const modal = document.getElementById('vdep-modal');
     const body = document.getElementById('vdep-body');
@@ -1164,6 +1249,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-close-arcflash').addEventListener('click', () => {
     document.getElementById('arcflash-modal').style.display = 'none';
+  });
+
+  document.getElementById('btn-close-dc-arcflash').addEventListener('click', () => {
+    document.getElementById('dc-arcflash-modal').style.display = 'none';
+  });
+  document.getElementById('dc-arcflash-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'dc-arcflash-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-cable-sizing').addEventListener('click', () => {

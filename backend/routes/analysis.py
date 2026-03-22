@@ -6,11 +6,12 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, UnbalancedLoadFlowResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
 from ..analysis.arcflash import run_arc_flash
+from ..analysis.dc_arcflash import run_dc_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
 from ..analysis.motor_starting import run_motor_starting
 from ..analysis.duty_check import run_duty_check
@@ -70,6 +71,25 @@ def arc_flash(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Arc flash analysis error: {e}")
+
+
+@router.post("/dc-arcflash", response_model=DCArcFlashResults)
+def dc_arc_flash(data: ProjectData):
+    """Run DC arc flash analysis per Stokes & Oppenlander method.
+
+    Requires fault analysis data. Runs fault analysis first if needed.
+    """
+    try:
+        fault_results = run_fault_analysis(data, fault_bus_id=None, fault_type=None)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Fault analysis (pre-DC-arc-flash) error: {e}")
+
+    try:
+        return run_dc_arc_flash(data, fault_results)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"DC arc flash analysis error: {e}")
 
 
 @router.post("/cable-sizing")

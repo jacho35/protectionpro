@@ -21,6 +21,7 @@ STUDY_DEFS = [
     ("duty_check", "Equipment Duty Check"),
     ("load_diversity", "Load Diversity"),
     ("grounding", "Grounding System (IEEE 80)"),
+    ("dc_arcflash", "DC Arc Flash"),
 ]
 
 
@@ -53,6 +54,11 @@ def _run_single_study(key: str, project: ProjectData):
     elif key == "grounding":
         from .grounding_system import run_grounding_analysis
         return run_grounding_analysis(project)
+    elif key == "dc_arcflash":
+        from .fault import run_fault_analysis
+        from .dc_arcflash import run_dc_arc_flash
+        fault_results = run_fault_analysis(project, fault_bus_id=None, fault_type=None)
+        return run_dc_arc_flash(project, fault_results)
     else:
         raise ValueError(f"Unknown study key: {key}")
 

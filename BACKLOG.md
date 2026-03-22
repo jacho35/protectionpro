@@ -3,7 +3,7 @@
 ## Protection Coordination Enhancements
 
 ## Fault Analysis Enhancements
-- **Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component
+- ~~**Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component~~
 - **IEC 61363 marine/offshore fault analysis**: Fault analysis for isolated marine/offshore networks
 
 ## Load Flow Enhancements
@@ -23,7 +23,7 @@
 
 ## Data & Integration
 - **Component library import**: Import manufacturer data (transformers, cables, etc.)
-- **NEC ampacity tables**: Add NEC Article 310 ampacity data alongside existing IEC 60364
+- ~~**NEC ampacity tables**: Add NEC Article 310 ampacity data alongside existing IEC 60364~~
 - **Import from external tools**: Import from PSS/E, ETAP, or PowerWorld formats
 - **Cloud storage**: Project storage with user accounts and sharing
 
@@ -40,7 +40,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - **Frequency Scan**: Impedance vs. frequency sweep across the network for resonance identification
 - **DC Load Flow**: Load flow solver for DC buses (UPS, battery, telecom DC systems)
 - **DC Short Circuit**: Short circuit analysis for DC networks
-- **DC Arc Flash**: DC arc flash per Stokes & Oppenlander and DGUV-I 203-077 methods (AC arc flash already implemented)
+- ~~**DC Arc Flash**: DC arc flash per Stokes & Oppenlander and DGUV-I 203-077 methods (AC arc flash already implemented)~~
 - **Battery Sizing & Discharge Analysis**: Size batteries from duty cycle, model discharge curves, voltage performance over time
 - **Optimal Power Flow (OPF)**: Economic dispatch, Volt/VAR optimization, switching optimization
 - **Reliability Assessment**: SAIDI, SAIFI, MAIFI indices; failure mode & effect analysis (FMEA) for distribution networks
@@ -132,3 +132,6 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~UPS / Rectifier / Battery Charger: DC system source components for battery-backed systems~~
 - ~~Directional flow arrows on wire connections (animated direction indicators)~~
 - ~~Unbalanced load flow: Three-phase asymmetric network analysis using symmetrical component method~~
+- ~~NEC ampacity tables: NEC Article 310.16 ampacity data alongside existing IEC 60364~~
+- ~~Sequence impedance editor: Positive, negative, zero sequence impedance fields for utility, generator, cable, and motor components~~
+- ~~DC arc flash analysis: Stokes & Oppenlander method with DGUV-I 203-077, DC arcing current, incident energy, PPE categories, and arc flash boundary~~
