@@ -1,5 +1,11 @@
 # CLAUDE.md — ProtectionPro Reference Guide
 
+## Development Workflow Instructions
+
+**After building any feature**, always update `BACKLOG.md`:
+1. Mark the completed item as done in its original section (strikethrough with `~~text~~`)
+2. Add a concise entry to the `## Completed` section at the bottom
+
 ## What is ProtectionPro?
 
 A browser-based power systems engineering tool for designing single-line diagrams (SLDs) and running electrical analysis. Think of it as a lightweight, web-based alternative to ETAP.
