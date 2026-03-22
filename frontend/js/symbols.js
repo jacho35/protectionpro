@@ -380,6 +380,55 @@ const Symbols = {
       </g>`;
   },
 
+  ups(w, h) {
+    // UPS: rectangle with AC~DC conversion symbol and battery indicator
+    const hw = w * 0.42, hh = h * 0.38;
+    const halfH = h / 2;
+    return `
+      <g class="symbol-ups">
+        <rect x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" rx="3" fill="var(--bg-primary, #fff)"/>
+        <line x1="0" y1="${-hh}" x2="0" y2="${hh}" stroke="#999" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <text x="${-hw * 0.5}" y="4" text-anchor="middle" font-size="9" font-weight="600" fill="#1565c0" font-family="sans-serif">~</text>
+        <text x="${hw * 0.5}" y="4" text-anchor="middle" font-size="9" font-weight="600" fill="#e65100" font-family="sans-serif">=</text>
+        <line x1="${hw * 0.25}" y1="${hh + 2}" x2="${hw * 0.25}" y2="${hh + 6}" stroke="#388e3c" stroke-width="2"/>
+        <line x1="${hw * 0.15}" y1="${hh + 4}" x2="${hw * 0.35}" y2="${hh + 4}" stroke="#388e3c" stroke-width="1.2"/>
+        <line x1="0" y1="${-hh}" x2="0" y2="${-halfH}"/>
+        <line x1="0" y1="${hh}" x2="0" y2="${halfH}"/>
+      </g>`;
+  },
+
+  rectifier(w, h) {
+    // Rectifier: rectangle with AC input ~ and DC output = symbols
+    const hw = w * 0.42, hh = h * 0.36;
+    const halfH = h / 2;
+    return `
+      <g class="symbol-rectifier">
+        <rect x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" rx="3" fill="var(--bg-primary, #fff)"/>
+        <text x="0" y="${-hh * 0.2}" text-anchor="middle" font-size="9" font-weight="600" fill="#1565c0" font-family="sans-serif">~</text>
+        <polygon points="${-hw * 0.3},${hh * 0.1} ${hw * 0.3},${hh * 0.5} ${-hw * 0.3},${hh * 0.5}" fill="none" stroke="#e65100" stroke-width="1.2"/>
+        <line x1="${hw * 0.3}" y1="${hh * 0.1}" x2="${hw * 0.3}" y2="${hh * 0.5}" stroke="#e65100" stroke-width="1.2"/>
+        <line x1="0" y1="${-hh}" x2="0" y2="${-halfH}"/>
+        <line x1="0" y1="${hh}" x2="0" y2="${halfH}"/>
+      </g>`;
+  },
+
+  charger(w, h) {
+    // Battery charger: rectangle with battery + plug symbol
+    const hw = w * 0.42, hh = h * 0.36;
+    const halfH = h / 2;
+    return `
+      <g class="symbol-charger">
+        <rect x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" rx="3" fill="var(--bg-primary, #fff)"/>
+        <line x1="${-hw * 0.35}" y1="${-hh * 0.15}" x2="${-hw * 0.35}" y2="${hh * 0.45}" stroke="#388e3c" stroke-width="2"/>
+        <line x1="${-hw * 0.55}" y1="${hh * 0.0}" x2="${-hw * 0.15}" y2="${hh * 0.0}" stroke="#388e3c" stroke-width="1.2"/>
+        <line x1="${hw * 0.15}" y1="${-hh * 0.15}" x2="${hw * 0.15}" y2="${hh * 0.45}" stroke="#e65100" stroke-width="1.5"/>
+        <line x1="${hw * 0.35}" y1="${-hh * 0.15}" x2="${hw * 0.35}" y2="${hh * 0.45}" stroke="#e65100" stroke-width="1.5"/>
+        <text x="${hw * 0.25}" y="${hh * 0.75}" text-anchor="middle" font-size="7" font-weight="600" fill="#e65100" font-family="sans-serif">+</text>
+        <line x1="0" y1="${-hh}" x2="0" y2="${-halfH}"/>
+        <line x1="0" y1="${hh}" x2="0" y2="${halfH}"/>
+      </g>`;
+  },
+
   offpage_connector(w, h, comp) {
     const r = w * 0.45;
     const label = (comp && comp.props && comp.props.name) || 'X';
