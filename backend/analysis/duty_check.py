@@ -86,7 +86,16 @@ def run_duty_check(project: ProjectData):
     if not devices:
         return {"devices": [], "warnings": ["No circuit breakers or fuses found."]}
 
+    # Build transformer loading lookup from load flow branch results
+    transformer_loading = {}
+    if lf_results and lf_results.branches:
+        for br in lf_results.branches:
+            elem = comp_map.get(br.elementId)
+            if elem and elem.type == "transformer":
+                transformer_loading[br.elementId] = br.loading_pct
+
     results = []
+    transformer_results = []
     analysis_warnings = []
 
     for device in devices:
@@ -202,4 +211,53 @@ def run_duty_check(project: ProjectData):
             "issues": issues,
         })
 
-    return {"devices": results, "warnings": analysis_warnings}
+    # ── Transformer overload check ──
+    transformers = [c for c in project.components if c.type == "transformer"]
+    for xfmr in transformers:
+        xp = xfmr.props
+        xfmr_name = xp.get("name", xfmr.id)
+        rated_mva = float(xp.get("rated_mva", 0))
+
+        # Find connected bus name for location
+        bus_ids = _find_upstream_bus(xfmr.id, adj, comp_map)
+        location_bus = ""
+        if bus_ids:
+            location_bus = comp_map[bus_ids[0]].props.get("name", bus_ids[0]) if bus_ids[0] in comp_map else bus_ids[0]
+
+        loading_pct = transformer_loading.get(xfmr.id, None)
+
+        if loading_pct is None:
+            # Load flow didn't run or transformer not in a branch — skip silently
+            continue
+
+        load_mva = (loading_pct / 100.0) * rated_mva if rated_mva > 0 else 0
+
+        issues = []
+        if loading_pct > 100:
+            issues.append(
+                f"Transformer loading {loading_pct:.1f}% exceeds rated capacity "
+                f"({load_mva:.3f} MVA on {rated_mva:.3f} MVA transformer)"
+            )
+            status = "fail"
+        elif loading_pct > 80:
+            issues.append(
+                f"Transformer loading {loading_pct:.1f}% exceeds 80% of rated capacity "
+                f"({load_mva:.3f} MVA on {rated_mva:.3f} MVA transformer)"
+            )
+            status = "warning"
+        else:
+            status = "pass"
+
+        transformer_results.append({
+            "device_id": xfmr.id,
+            "device_name": xfmr_name,
+            "device_type": "transformer",
+            "location_bus": location_bus,
+            "rated_mva": round(rated_mva, 3),
+            "load_mva": round(load_mva, 3),
+            "loading_pct": round(loading_pct, 1),
+            "status": status,
+            "issues": issues,
+        })
+
+    return {"devices": results, "transformers": transformer_results, "warnings": analysis_warnings}

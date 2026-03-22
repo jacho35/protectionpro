@@ -597,13 +597,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!modal || !body) return;
 
     const devices = result.devices || [];
-    if (devices.length === 0) {
-      body.innerHTML = '<p>No circuit breakers or fuses found in the project.</p>';
+    const transformers = result.transformers || [];
+
+    if (devices.length === 0 && transformers.length === 0) {
+      body.innerHTML = '<p>No circuit breakers, fuses, or transformers found in the project.</p>';
       modal.style.display = '';
       return;
     }
 
     const failCount = devices.filter(d => d.status === 'fail').length;
+    const xfmrFailCount = transformers.filter(t => t.status === 'fail').length;
+    const totalFails = failCount + xfmrFailCount;
 
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
@@ -612,39 +616,73 @@ document.addEventListener('DOMContentLoaded', () => {
       html += '</div>';
     }
 
-    if (failCount > 0) {
-      html += `<div class="af-warning-item" style="color:#d32f2f;font-weight:600;margin-bottom:8px">${failCount} device(s) FAIL duty check — system is not adequately protected</div>`;
+    if (totalFails > 0) {
+      html += `<div class="af-warning-item" style="color:#d32f2f;font-weight:600;margin-bottom:8px">${totalFails} item(s) FAIL duty check — system is not adequately protected</div>`;
     }
 
-    html += `<table class="af-table">
-      <thead><tr>
-        <th>Device</th><th>Type</th><th>Bus</th><th>Fault (kA)</th>
-        <th>Rating (kA)</th><th>Utilisation</th><th>Continuous</th><th>Status</th>
-      </tr></thead><tbody>`;
-
-    for (const d of devices) {
-      const rowClass = d.status === 'fail' ? 'af-danger' : d.status === 'warning' ? 'af-medium' : 'af-low';
-      const statusBadge = d.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-        : d.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-        : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-      const contIcon = d.continuous_ok ? '✓' : '✗';
-      html += `<tr class="${rowClass}" data-device-id="${d.device_id}" style="cursor:pointer">
-        <td>${d.device_name}</td>
-        <td>${d.device_type.toUpperCase()}</td>
-        <td>${d.location_bus}</td>
-        <td>${d.prospective_fault_ka.toFixed(2)}</td>
-        <td>${d.breaking_capacity_ka.toFixed(2)}</td>
-        <td>${d.utilisation_pct.toFixed(0)}%</td>
-        <td>${contIcon}</td>
-        <td>${statusBadge}</td>
-      </tr>`;
-      if (d.issues.length > 0) {
-        html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">
-          ${d.issues.join('<br>')}
-        </td></tr>`;
+    // ── Transformer overload table ──
+    if (transformers.length > 0) {
+      html += `<h4 style="margin:8px 0 4px">Transformer Loading</h4>
+      <table class="af-table">
+        <thead><tr>
+          <th>Transformer</th><th>Bus</th><th>Rated (MVA)</th>
+          <th>Load (MVA)</th><th>Loading</th><th>Status</th>
+        </tr></thead><tbody>`;
+      for (const t of transformers) {
+        const rowClass = t.status === 'fail' ? 'af-danger' : t.status === 'warning' ? 'af-medium' : 'af-low';
+        const statusBadge = t.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+          : t.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+        html += `<tr class="${rowClass}" data-device-id="${t.device_id}" style="cursor:pointer">
+          <td>${t.device_name}</td>
+          <td>${t.location_bus}</td>
+          <td>${t.rated_mva.toFixed(3)}</td>
+          <td>${t.load_mva.toFixed(3)}</td>
+          <td>${t.loading_pct.toFixed(1)}%</td>
+          <td>${statusBadge}</td>
+        </tr>`;
+        if (t.issues.length > 0) {
+          html += `<tr class="${rowClass}"><td colspan="6" style="padding-left:24px;font-size:11px;color:#b71c1c">
+            ${t.issues.join('<br>')}
+          </td></tr>`;
+        }
       }
+      html += '</tbody></table>';
     }
-    html += '</tbody></table>';
+
+    // ── CB / Fuse duty table ──
+    if (devices.length > 0) {
+      html += `<h4 style="margin:12px 0 4px">Protective Device Duty</h4>
+      <table class="af-table">
+        <thead><tr>
+          <th>Device</th><th>Type</th><th>Bus</th><th>Fault (kA)</th>
+          <th>Rating (kA)</th><th>Utilisation</th><th>Continuous</th><th>Status</th>
+        </tr></thead><tbody>`;
+
+      for (const d of devices) {
+        const rowClass = d.status === 'fail' ? 'af-danger' : d.status === 'warning' ? 'af-medium' : 'af-low';
+        const statusBadge = d.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+          : d.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+        const contIcon = d.continuous_ok ? '✓' : '✗';
+        html += `<tr class="${rowClass}" data-device-id="${d.device_id}" style="cursor:pointer">
+          <td>${d.device_name}</td>
+          <td>${d.device_type.toUpperCase()}</td>
+          <td>${d.location_bus}</td>
+          <td>${d.prospective_fault_ka.toFixed(2)}</td>
+          <td>${d.breaking_capacity_ka.toFixed(2)}</td>
+          <td>${d.utilisation_pct.toFixed(0)}%</td>
+          <td>${contIcon}</td>
+          <td>${statusBadge}</td>
+        </tr>`;
+        if (d.issues.length > 0) {
+          html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">
+            ${d.issues.join('<br>')}
+          </td></tr>`;
+        }
+      }
+      html += '</tbody></table>';
+    }
 
     body.innerHTML = html;
     modal.style.display = '';

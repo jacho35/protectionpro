@@ -208,10 +208,12 @@ def _extract_study_status(key: str, result_data) -> dict:
 
     elif key == "duty_check":
         devices = result_data.get("devices", [])
-        n_pass = sum(1 for d in devices if d.get("status") == "pass")
-        n_warn = sum(1 for d in devices if d.get("status") == "warning")
-        n_fail = sum(1 for d in devices if d.get("status") == "fail")
-        counts = {"total": len(devices), "pass": n_pass, "warning": n_warn, "fail": n_fail}
+        transformers = result_data.get("transformers", [])
+        all_items = devices + transformers
+        n_pass = sum(1 for d in all_items if d.get("status") == "pass")
+        n_warn = sum(1 for d in all_items if d.get("status") == "warning")
+        n_fail = sum(1 for d in all_items if d.get("status") == "fail")
+        counts = {"total": len(all_items), "pass": n_pass, "warning": n_warn, "fail": n_fail}
         if n_fail > 0:
             return {"status": "fail", "counts": counts}
         if n_warn > 0:
