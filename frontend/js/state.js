@@ -41,6 +41,19 @@ const AppState = {
   showWarnings: true,
   showFaultAngles: false,
 
+  // Result box visibility — per analysis type
+  showResultBoxes: {
+    fault: true,
+    loadflow: true,
+    unbalancedLF: true,
+    arcflash: true,
+    cable: true,
+    motor: true,
+    duty: true,
+    loadDiversity: true,
+    grounding: true,
+  },
+
   // Clipboard for copy/paste
   clipboard: null, // { components: [], wires: [] }
 

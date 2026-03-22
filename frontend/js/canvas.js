@@ -779,7 +779,7 @@ const Canvas = {
         const totalAmps = (p.rated_amps || 0) * nPar;
         if (totalAmps) lines.push(`${totalAmps} A${nPar > 1 ? ` (${nPar}×${p.rated_amps})` : ''}`);
         // Show load flow results on cable
-        if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
+        if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.branches) {
           const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
           if (branch) {
             const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
@@ -793,7 +793,7 @@ const Canvas = {
           }
         }
         // Show fault branch contributions on cable
-        this._appendFaultBranchLines(comp, lines);
+        if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'transformer') {
         const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
         lines.push(ratingStr);
@@ -806,7 +806,7 @@ const Canvas = {
         }
         if (p.z_percent) lines.push(`Z=${p.z_percent}%`);
         // Show load flow results on transformer
-        if (AppState.loadFlowResults && AppState.loadFlowResults.branches) {
+        if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.branches) {
           const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
           if (branch) {
             const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
@@ -818,7 +818,7 @@ const Canvas = {
           }
         }
         // Show fault branch contributions on transformer
-        this._appendFaultBranchLines(comp, lines);
+        if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'static_load') {
         if (p.name && p.name !== 'Load') lines.push(p.name);
         lines.push(`${p.rated_kva || 0} kVA`);
@@ -845,15 +845,15 @@ const Canvas = {
         if (cbType === 'ACB' && p.short_time_pickup) {
           lines.push(`ST=${p.short_time_pickup}×`);
         }
-        this._appendFaultBranchLines(comp, lines);
+        if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'fuse' && AppState.showDeviceLabels) {
         const fuseType = p.fuse_type || 'gG';
         const ratedA = p.rated_current_a || 100;
         lines.push(`${fuseType} ${ratedA}A`);
         if (p.rated_voltage_kv) lines.push(`${p.rated_voltage_kv} kV`);
         if (p.breaking_capacity_ka) lines.push(`Icu ${p.breaking_capacity_ka}kA`);
-        this._appendFaultBranchLines(comp, lines);
-      } else if (this._hasFaultBranchData(comp)) {
+        if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
+      } else if (AppState.showResultBoxes.fault && this._hasFaultBranchData(comp)) {
         // Switch or other element with fault branch data — show it even without device labels
         this._appendFaultBranchLines(comp, lines);
       } else {
