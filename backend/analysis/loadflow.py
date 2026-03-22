@@ -538,6 +538,51 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     loading_pct=round(loading, 2), losses_mw=round(losses_mw, 6),
                 ))
 
+    # ── Source-connected transformers (one bus end, one source end) ──
+    # Transformers whose HV side connects to a utility/generator (not a bus) are
+    # skipped by the bus-to-bus chain logic above, so their loading is never computed.
+    # We handle them here: find the single connected bus, then split the bus's
+    # total source injection equally among all active source-connected transformers
+    # at that bus (handles the case of parallel utility + generator incomer TXs).
+    processed_elem_ids = {eid for chain_key in processed_chains for eid in chain_key}
+
+    # Map bus_id -> list of active source-connected transformer components
+    source_tx_by_bus: dict[str, list] = {}
+    for comp in project.components:
+        if comp.type != "transformer" or comp.id in processed_elem_ids:
+            continue
+        results = _find_bus_paths(comp.id, adjacency, components, bus_of)
+        if len(results) != 1:
+            continue  # 0 buses (isolated) or 2 buses (already handled above)
+        bus_id = results[0][0]
+        source_tx_by_bus.setdefault(bus_id, []).append(comp)
+
+    for bus_id, tx_list in source_tx_by_bus.items():
+        bus_i = bus_idx[bus_id]
+        n_sources = len(tx_list)
+        # Divide bus injection equally among active source transformers
+        s_total_mva = abs(S_bus[bus_i]) * base_mva
+        s_per_tx = s_total_mva / n_sources if n_sources > 0 else 0
+        p_per_tx = (S_bus[bus_i].real * base_mva) / n_sources if n_sources > 0 else 0
+        q_per_tx = (S_bus[bus_i].imag * base_mva) / n_sources if n_sources > 0 else 0
+
+        for tx in tx_list:
+            rated_mva_xfmr = tx.props.get("rated_mva", 10)
+            loading = (s_per_tx / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
+            lv_kv = min(
+                tx.props.get("voltage_hv_kv", 11),
+                tx.props.get("voltage_lv_kv", 0.42)
+            )
+            elem_i_amps = (s_per_tx * 1000) / (math.sqrt(3) * lv_kv) if lv_kv > 0 else 0
+            branch_results.append(LoadFlowBranch(
+                elementId=tx.id,
+                element_name=tx.props.get("name", tx.type),
+                from_bus=bus_id, to_bus=bus_id,
+                p_mw=round(p_per_tx, 4), q_mvar=round(q_per_tx, 4),
+                s_mva=round(s_per_tx, 4), i_amps=round(elem_i_amps, 2),
+                loading_pct=round(loading, 2), losses_mw=0,
+            ))
+
     # ── Voltage mismatch warnings ──
     # Check every device in transformer chains for incorrect voltage ratings.
     # Walk from each bus through transparent devices to find all components
