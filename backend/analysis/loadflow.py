@@ -560,11 +560,18 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     for bus_id, tx_list in source_tx_by_bus.items():
         bus_i = bus_idx[bus_id]
         n_sources = len(tx_list)
-        # Divide bus injection equally among active source transformers
-        s_total_mva = abs(S_bus[bus_i]) * base_mva
-        s_per_tx = s_total_mva / n_sources if n_sources > 0 else 0
-        p_per_tx = (S_bus[bus_i].real * base_mva) / n_sources if n_sources > 0 else 0
-        q_per_tx = (S_bus[bus_i].imag * base_mva) / n_sources if n_sources > 0 else 0
+        # S_bus[bus_i] is the total power the bus node must inject into the Y network.
+        # For the swing bus this equals all downstream load + losses.  However,
+        # generators (and other sources) directly connected to the bus through closed
+        # transparent elements already had their output added to P_spec/Q_spec, but
+        # the NR solver ignores P_spec for the swing bus — so that generation is
+        # "invisible" to S_bus.  We subtract P_spec/Q_spec (net: gen minus local load)
+        # to recover only the share that flows through the source-connected transformers.
+        s_net_pu = S_bus[bus_i] - complex(P_spec[bus_i], Q_spec[bus_i])
+        s_net_mva = abs(s_net_pu) * base_mva
+        s_per_tx = s_net_mva / n_sources if n_sources > 0 else 0
+        p_per_tx = (s_net_pu.real * base_mva) / n_sources if n_sources > 0 else 0
+        q_per_tx = (s_net_pu.imag * base_mva) / n_sources if n_sources > 0 else 0
 
         for tx in tx_list:
             rated_mva_xfmr = tx.props.get("rated_mva", 10)
