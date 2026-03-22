@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="css/properties.css">
   <link rel="stylesheet" href="css/toolbar.css">
   <link rel="stylesheet" href="css/symbols.css">
+  <link rel="stylesheet" href="css/mobile.css">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -377,6 +378,207 @@
       </div>
     </aside>
   </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MOBILE INTERFACE ELEMENTS
+       Hidden on desktop via CSS; visible only at max-width: 768px
+       ═══════════════════════════════════════════════════════════════════ -->
+
+  <!-- Mobile header -->
+  <header id="mobile-header">
+    <span class="mobile-title">ProtectionPro</span>
+    <button id="mobile-btn-save" class="mobile-header-btn" title="Save project">
+      <svg width="18" height="18" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
+    <button id="mobile-btn-dark" class="mobile-header-btn" title="Toggle dark mode">
+      <svg width="18" height="18" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A5 5 0 018 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
+  </header>
+
+  <!-- Mobile selection action bar -->
+  <div id="mobile-selection-bar">
+    <span class="sel-count">0 selected</span>
+    <div class="sel-actions">
+      <button id="mobile-sel-properties" class="sel-action-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7v4M8 5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Properties
+      </button>
+      <button id="mobile-sel-delete" class="sel-action-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
+        Delete
+      </button>
+      <button id="mobile-sel-deselect" class="sel-action-btn">Done</button>
+    </div>
+  </div>
+
+  <!-- Mobile floating action buttons -->
+  <div id="mobile-fab-group">
+    <button id="fab-zoom-fit" class="mobile-fab" title="Zoom to fit">
+      <svg width="20" height="20" viewBox="0 0 16 16"><path d="M2 2h4M2 2v4M14 2h-4M14 2v4M2 14h4M2 14v-4M14 14h-4M14 14v-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+    </button>
+    <button id="fab-mode-wire" class="mobile-fab" title="Wire mode">
+      <svg width="20" height="20" viewBox="0 0 16 16"><path d="M2 14L8 8l6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+    <button id="fab-mode-select" class="mobile-fab fab-active" title="Select mode">
+      <svg width="20" height="20" viewBox="0 0 16 16"><path d="M3 1l10 7-5 1-2 5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
+  </div>
+
+  <!-- Mobile bottom navigation -->
+  <nav id="mobile-nav">
+    <button class="mobile-nav-btn" data-tab="components">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/>
+        <rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>
+      </svg>
+      Components
+    </button>
+    <button class="mobile-nav-btn active" data-tab="canvas">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3"/>
+      </svg>
+      Canvas
+    </button>
+    <button class="mobile-nav-btn" data-tab="analysis">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M3 17l4-4 4 4 4-8 4 4"/><path d="M21 21H3"/>
+      </svg>
+      Analysis
+    </button>
+    <button class="mobile-nav-btn" data-tab="menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+      </svg>
+      More
+    </button>
+  </nav>
+
+  <!-- Sheet backdrop -->
+  <div id="mobile-sheet-backdrop" class="mobile-sheet-backdrop"></div>
+
+  <!-- Components bottom sheet -->
+  <div id="mobile-sheet-components" class="mobile-sheet">
+    <div class="mobile-sheet-handle"></div>
+    <div class="mobile-sheet-header">
+      <span class="mobile-sheet-title">Components</span>
+      <button class="mobile-sheet-close">&times;</button>
+    </div>
+    <div class="mobile-sheet-body">
+      <input type="text" id="mobile-component-search" class="mobile-component-search" placeholder="Search components...">
+      <div id="mobile-palette-container"></div>
+    </div>
+  </div>
+
+  <!-- Analysis bottom sheet -->
+  <div id="mobile-sheet-analysis" class="mobile-sheet">
+    <div class="mobile-sheet-handle"></div>
+    <div class="mobile-sheet-header">
+      <span class="mobile-sheet-title">Analysis</span>
+      <button class="mobile-sheet-close">&times;</button>
+    </div>
+    <div class="mobile-sheet-body">
+      <p class="mobile-section-label">Fault &amp; Power Flow</p>
+      <div class="mobile-analysis-grid">
+        <button id="mobile-analysis-fault" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1l2 5h4l-3 3 1 5-4-3-4 3 1-5-3-3h4z"/></svg>
+          Fault Analysis
+        </button>
+        <button id="mobile-analysis-loadflow" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h12M10 5l4 3-4 3"/></svg>
+          Load Flow
+        </button>
+      </div>
+      <p class="mobile-section-label">Safety Studies</p>
+      <div class="mobile-analysis-grid">
+        <button id="mobile-analysis-arcflash" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1l1.5 4h3l-2.5 2 1 4L8 9l-3 2 1-4L3.5 5h3z"/></svg>
+          Arc Flash
+        </button>
+        <button id="mobile-analysis-tcc" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14L5 8l3 3 3-7 3 6"/></svg>
+          TCC Curves
+        </button>
+        <button id="mobile-analysis-compliance" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 4l-6 7-3-3"/></svg>
+          Compliance
+        </button>
+      </div>
+      <p class="mobile-section-label">Equipment Studies</p>
+      <div class="mobile-analysis-grid">
+        <button id="mobile-analysis-cable" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h12M5 5v6M11 5v6"/></svg>
+          Cable Sizing
+        </button>
+        <button id="mobile-analysis-motor" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5"/><path d="M8 4v4l3 2"/></svg>
+          Motor Starting
+        </button>
+        <button id="mobile-analysis-duty" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="10" height="10" rx="1"/><path d="M6 8h4M8 6v4"/></svg>
+          Duty Check
+        </button>
+        <button id="mobile-analysis-grounding" class="mobile-analysis-btn">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v6M4 8h8M5.5 10.5h5M7 13h2"/></svg>
+          Grounding
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Properties bottom sheet -->
+  <div id="mobile-sheet-properties" class="mobile-sheet">
+    <div class="mobile-sheet-handle"></div>
+    <div class="mobile-sheet-header">
+      <span class="mobile-sheet-title">Properties</span>
+      <button class="mobile-sheet-close">&times;</button>
+    </div>
+    <div class="mobile-sheet-body">
+      <div id="mobile-properties-content">
+        <div class="no-selection">Select a component to view its properties</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu bottom sheet -->
+  <div id="mobile-sheet-menu" class="mobile-sheet">
+    <div class="mobile-sheet-handle"></div>
+    <div class="mobile-sheet-header">
+      <span class="mobile-sheet-title">Menu</span>
+      <button class="mobile-sheet-close">&times;</button>
+    </div>
+    <div class="mobile-sheet-body">
+      <ul class="mobile-menu-list">
+        <li id="mobile-menu-new" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z"/><path d="M10 1v3h3"/></svg>
+          New Project
+        </li>
+        <li id="mobile-menu-open" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z"/></svg>
+          Open Project
+        </li>
+        <li id="mobile-menu-save" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z"/><rect x="4" y="1" width="6" height="4"/><rect x="3" y="9" width="8" height="4"/></svg>
+          Save Project
+        </li>
+        <li id="mobile-menu-templates" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+          Templates
+        </li>
+        <div class="mobile-menu-divider"></div>
+        <li id="mobile-menu-settings" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z"/><path d="M13.4 6.5l-.8-.2a4.8 4.8 0 00-.5-1.2l.4-.7a.5.5 0 00-.1-.6l-.7-.7a.5.5 0 00-.6-.1l-.7.4a4.8 4.8 0 00-1.2-.5l-.2-.8a.5.5 0 00-.5-.4h-1a.5.5 0 00-.5.4l-.2.8a4.8 4.8 0 00-1.2.5l-.7-.4a.5.5 0 00-.6.1l-.7.7a.5.5 0 00-.1.6l.4.7a4.8 4.8 0 00-.5 1.2l-.8.2a.5.5 0 00-.4.5v1a.5.5 0 00.4.5l.8.2a4.8 4.8 0 00.5 1.2l-.4.7a.5.5 0 00.1.6l.7.7a.5.5 0 00.6.1l.7-.4a4.8 4.8 0 001.2.5l.2.8a.5.5 0 00.5.4h1a.5.5 0 00.5-.4l.2-.8a4.8 4.8 0 001.2-.5l.7.4a.5.5 0 00.6-.1l.7-.7a.5.5 0 00.1-.6l-.4-.7a4.8 4.8 0 00.5-1.2l.8-.2a.5.5 0 00.4-.5v-1a.5.5 0 00-.4-.5z"/></svg>
+          Settings
+        </li>
+        <li id="mobile-menu-help" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.5a2 2 0 013.5 1.3c0 1.2-1.5 1.2-1.5 2.2M8 12v.5" stroke-linecap="round"/></svg>
+          Help
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Mobile toast notification -->
+  <div id="mobile-toast"></div>
 
   <!-- Calculation Details Modal -->
   <div id="calc-modal" class="modal" style="display:none">
@@ -1420,5 +1622,6 @@
   <script src="js/undo.js"></script>
   <script src="js/minimap.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/mobile.js"></script>
 </body>
 </html>

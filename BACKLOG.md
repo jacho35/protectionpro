@@ -95,6 +95,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 ---
 
 ## Completed
+- ~~Mobile interface: responsive layout with bottom navigation, slide-up component/analysis/properties/menu sheets, pinch-to-zoom and pan touch gestures, floating action buttons for mode and zoom, tap-to-place components~~
 - ~~Overlay fault current markers on TCC~~
 - ~~TCC comparison mode (side-by-side before/after)~~
 - ~~Toolbar reorganization (two rows)~~
