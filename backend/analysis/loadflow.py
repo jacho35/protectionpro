@@ -627,42 +627,72 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     # branch chain, so they never appear in branch_results.  Emit an entry for each
     # so the frontend can display P/Q/I/loading on the diagram.
     #
-    # For swing-bus sources: use the NR-solved S_bus (actual network demand placed
-    # on the source) so overload > 100% is detected correctly.
-    # For PQ/PV-bus sources: use rated output (enforced by the solver as P_spec).
+    # Swing bus: the NR-solved S_bus[i] is the total demand the swing node must
+    # supply to the branch network.  When multiple sources share the same swing
+    # bus (parallel generators) we split that demand proportionally by each
+    # source's rated MVA — the standard droop/governor sharing assumption.
+    # This prevents every parallel source from being credited with the full load.
+    #
+    # PQ/PV bus: the solver enforces rated injection via P_spec, so each source
+    # is reported at its rated setpoint (loading ≈ 100 % by design).
     _SOURCE_TYPES = {"generator", "solar_pv", "wind_turbine"}
     for bus in buses:
         bus_i = bus_idx[bus.id]
         v_kv_actual = abs(V[bus_i]) * bus.props.get("voltage_kv", 11)
         is_swing = (bus_types[bus_i] == 2)
-        for src in _find_components_at_bus(bus.id, adjacency, components):
-            if src.type not in _SOURCE_TYPES:
-                continue
-            _p_rated, _q_rated, s_rated, rated_mva = _source_output_mva(src)
-            if rated_mva <= 0:
-                continue
-            if is_swing:
-                # Swing bus: S_bus is the actual power the source node injects
-                # into the branch network (total system demand seen by this source).
-                s_actual = S_bus[bus_i] * base_mva
-                p_mw_out = round(s_actual.real, 4)
-                q_mvar_out = round(s_actual.imag, 4)
-                s_mva_out = round(abs(s_actual), 4)
-            else:
-                # PQ/PV bus: solver enforces rated injection; loading = rated %.
-                p_mw_out = round(_p_rated, 4)
-                q_mvar_out = round(_q_rated, 4)
-                s_mva_out = round(s_rated, 4)
-            loading = (s_mva_out / rated_mva * 100)
-            i_amps = (s_mva_out * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
-            branch_results.append(LoadFlowBranch(
-                elementId=src.id,
-                element_name=src.props.get("name", src.type),
-                from_bus=bus.id, to_bus=bus.id,
-                p_mw=p_mw_out, q_mvar=q_mvar_out,
-                s_mva=s_mva_out, i_amps=round(i_amps, 2),
-                loading_pct=round(loading, 2), losses_mw=0,
-            ))
+
+        # Collect all source components reachable at this bus
+        sources_here = [
+            s for s in _find_components_at_bus(bus.id, adjacency, components)
+            if s.type in _SOURCE_TYPES
+        ]
+        if not sources_here:
+            continue
+
+        if is_swing:
+            # Total power the swing bus must supply (real NR solution)
+            s_actual = S_bus[bus_i] * base_mva  # complex MVA
+            # Each source's rated MVA — used as the sharing weight
+            rated_map = {}
+            for src in sources_here:
+                _, _, _, rmva = _source_output_mva(src)
+                rated_map[src.id] = rmva
+            total_rated = sum(rated_map.values())
+
+            for src in sources_here:
+                rmva = rated_map[src.id]
+                if total_rated <= 0 or rmva <= 0:
+                    continue
+                fraction = rmva / total_rated          # proportional share by rating
+                p_mw_out = round(s_actual.real * fraction, 4)
+                q_mvar_out = round(s_actual.imag * fraction, 4)
+                s_mva_out = round(abs(s_actual) * fraction, 4)
+                loading = s_mva_out / rmva * 100
+                i_amps = (s_mva_out * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+                branch_results.append(LoadFlowBranch(
+                    elementId=src.id,
+                    element_name=src.props.get("name", src.type),
+                    from_bus=bus.id, to_bus=bus.id,
+                    p_mw=p_mw_out, q_mvar=q_mvar_out,
+                    s_mva=s_mva_out, i_amps=round(i_amps, 2),
+                    loading_pct=round(loading, 2), losses_mw=0,
+                ))
+        else:
+            # PQ/PV bus: solver enforces rated injection for each source
+            for src in sources_here:
+                _p_rated, _q_rated, s_rated, rated_mva = _source_output_mva(src)
+                if rated_mva <= 0:
+                    continue
+                loading = s_rated / rated_mva * 100
+                i_amps = (s_rated * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+                branch_results.append(LoadFlowBranch(
+                    elementId=src.id,
+                    element_name=src.props.get("name", src.type),
+                    from_bus=bus.id, to_bus=bus.id,
+                    p_mw=round(_p_rated, 4), q_mvar=round(_q_rated, 4),
+                    s_mva=round(s_rated, 4), i_amps=round(i_amps, 2),
+                    loading_pct=round(loading, 2), losses_mw=0,
+                ))
 
     # ── Voltage mismatch warnings ──
     # Check every device in transformer chains for incorrect voltage ratings.
