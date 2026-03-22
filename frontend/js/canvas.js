@@ -748,6 +748,9 @@ const Canvas = {
     // Render overload flags on components exceeding rated capacity
     this.renderOverloadFlags();
 
+    // Render directional flow arrows on wires (after both load flow + fault results)
+    this.renderFlowArrows();
+
     // Update mini-map
     if (typeof MiniMap !== 'undefined') MiniMap.render();
   },
@@ -970,6 +973,140 @@ const Canvas = {
     if (html) {
       this.annotationsLayer.insertAdjacentHTML('beforeend', html);
     }
+  },
+
+  // Render directional flow arrows on wires — visible only when both load flow AND fault results exist
+  renderFlowArrows() {
+    if (!AppState.loadFlowResults || !AppState.faultResults) return;
+    const branches = AppState.loadFlowResults.branches || [];
+    if (branches.length === 0) return;
+
+    const pageWires = AppState.getActivePageWires();
+    let html = '';
+
+    for (const [id, wire] of pageWires) {
+      const fromComp = AppState.components.get(wire.fromComponent);
+      const toComp = AppState.components.get(wire.toComponent);
+      if (!fromComp || !toComp) continue;
+
+      const isCableOrXfmr = t => t === 'cable' || t === 'transformer';
+      let branch = null;
+      let forward = true; // whether wire from→to aligns with branch from_bus→to_bus
+
+      if (isCableOrXfmr(toComp.type)) {
+        branch = branches.find(b => b.elementId === toComp.id);
+        if (branch) {
+          // Wire enters the element from fromComp side
+          if (branch.from_bus === fromComp.id) forward = true;
+          else if (branch.to_bus === fromComp.id) forward = false;
+        }
+      } else if (isCableOrXfmr(fromComp.type)) {
+        branch = branches.find(b => b.elementId === fromComp.id);
+        if (branch) {
+          // Wire exits the element toward toComp side
+          if (branch.to_bus === toComp.id) forward = true;
+          else if (branch.from_bus === toComp.id) forward = false;
+        }
+      }
+
+      if (!branch) continue;
+
+      // Color by loading percentage (mirrors ETAP convention)
+      let color = '#22c55e'; // green  < 80 %
+      if (branch.loading_pct > 100) color = '#ef4444';       // red
+      else if (branch.loading_pct > 80) color = '#f97316';   // amber
+
+      // Flip arrow when real power flows opposite to the wire's natural direction
+      const isForward = branch.p_mw >= 0 ? forward : !forward;
+
+      // Build the actual expanded path points for this wire
+      const fromPos = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
+      const toPos   = Symbols.getPortWorldPosition(toComp,   wire.toPort);
+      const pts = this._getWireActualPoints(wire, fromPos, toPos);
+
+      const mid = this._calcPathMidpoint(pts);
+      if (!mid) continue;
+
+      const angle = isForward ? mid.angle : mid.angle + Math.PI;
+      const s = 7; // half-size in SVG user units
+      const c = Math.cos(angle), sn = Math.sin(angle);
+
+      // Filled triangle: tip forward, two base corners behind
+      const tx = mid.x + s * c,           ty = mid.y + s * sn;
+      const lx = mid.x - s * 0.6 * c + s * 0.7 * sn, ly = mid.y - s * 0.6 * sn - s * 0.7 * c;
+      const rx = mid.x - s * 0.6 * c - s * 0.7 * sn, ry = mid.y - s * 0.6 * sn + s * 0.7 * c;
+
+      html += `<polygon class="flow-arrow" data-wire-id="${id}" ` +
+              `points="${tx},${ty} ${lx},${ly} ${rx},${ry}" ` +
+              `fill="${color}" stroke="#fff" stroke-width="0.5" style="pointer-events:none;opacity:0.92"/>`;
+    }
+
+    if (html) {
+      this.annotationsLayer.insertAdjacentHTML('beforeend', html);
+    }
+  },
+
+  // Reconstruct the actual polyline points for a wire (expanding orthogonal L-segments)
+  _getWireActualPoints(wire, fromPos, toPos) {
+    const mode = wire.routeMode || AppState.wireRouteMode;
+    const pts = [fromPos, ...(wire.bendPoints || []), toPos];
+
+    if (mode === 'diagonal' || mode === 'spline') {
+      return pts;
+    }
+
+    // Orthogonal routing: each control point creates an L-shaped corner
+    if (wire.bendPoints && wire.bendPoints.length > 0) {
+      const actual = [pts[0]];
+      for (let i = 1; i < pts.length; i++) {
+        actual.push({ x: pts[i].x, y: pts[i - 1].y });
+        actual.push(pts[i]);
+      }
+      return actual;
+    }
+
+    // Default orthogonal (no bend points): from → (from.x, midY) → (to.x, midY) → to
+    const midY = (fromPos.y + toPos.y) / 2;
+    return [
+      fromPos,
+      { x: fromPos.x, y: midY },
+      { x: toPos.x,   y: midY },
+      toPos,
+    ];
+  },
+
+  // Find the point at 50% of a polyline's total length and the direction angle there
+  _calcPathMidpoint(pts) {
+    if (pts.length < 2) return null;
+
+    const segments = [];
+    let totalLen = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const dx = pts[i + 1].x - pts[i].x;
+      const dy = pts[i + 1].y - pts[i].y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 0) segments.push({ from: pts[i], to: pts[i + 1], len, angle: Math.atan2(dy, dx) });
+      totalLen += len;
+    }
+
+    if (totalLen === 0 || segments.length === 0) return null;
+
+    let target = totalLen / 2;
+    let accumulated = 0;
+    for (const seg of segments) {
+      if (accumulated + seg.len >= target) {
+        const t = (target - accumulated) / seg.len;
+        return {
+          x: seg.from.x + t * (seg.to.x - seg.from.x),
+          y: seg.from.y + t * (seg.to.y - seg.from.y),
+          angle: seg.angle,
+        };
+      }
+      accumulated += seg.len;
+    }
+
+    const last = segments[segments.length - 1];
+    return { x: (last.from.x + last.to.x) / 2, y: (last.from.y + last.to.y) / 2, angle: last.angle };
   },
 
   // Find the nearest port within snap radius (world coordinates)
