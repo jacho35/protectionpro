@@ -64,6 +64,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             continue
 
         z_sources = [p["z_total"] for p in source_paths]
+        z2_sources = [p.get("z2_total", p["z_total"]) for p in source_paths]
 
         # Separate motor and network source paths
         motor_paths = [p for p in source_paths if p.get("is_motor")]
@@ -71,6 +72,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
 
         # Parallel combination of all source impedances
         z_eq = _parallel_impedances(z_sources)
+        # Negative-sequence equivalent impedance (may differ from Z1 for generators/motors)
+        z2_eq = _parallel_impedances(z2_sources)
 
         # IEC 60909 voltage factor c = 1.1 for MV/HV, 1.05 for LV
         c_factor = 1.05 if voltage_kv < 1.0 else 1.1
@@ -107,7 +110,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
         if not fault_type or fault_type == "slg":
             if has_z0_path:
-                z_slg = z_eq + z_eq + z0  # Z1 + Z2 + Z0
+                z_slg = z_eq + z2_eq + z0  # Z1 + Z2 + Z0
                 ik1_pu = 3 * c_factor / abs(z_slg) if abs(z_slg) > 1e-10 else 0
                 ik1_ka = round(ik1_pu * i_base_ka, 3)
                 ik1_angle = round(-math.degrees(math.atan2(z_slg.imag, z_slg.real)), 2) if abs(z_slg) > 1e-10 else None
@@ -118,25 +121,32 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
 
         # Line-to-line fault: I"kLL = c * V_n / |Z1 + Z2|
         if not fault_type or fault_type == "ll":
-            z_ll = z_eq + z_eq
+            z_ll = z_eq + z2_eq
             ikLL_pu = c_factor * math.sqrt(3) / abs(z_ll) if abs(z_ll) > 1e-10 else 0
             ikLL_ka = round(ikLL_pu * i_base_ka, 3)
             ikLL_angle = round(-math.degrees(math.atan2(z_ll.imag, z_ll.real)) - 30, 2) if abs(z_ll) > 1e-10 else None
 
         # Double line-to-ground fault (IEC 60909 earth fault current):
         # Ia1 = c / (Z1 + Z2‖Z0),  Ia0 = -Ia1 × Z2 / (Z2 + Z0)
-        # I"kE2E = |3 × Ia0| = 3c / |Z1 + 2×Z0|  (when Z1 = Z2)
+        # I"kE2E = |3 × Ia0| = 3c × Z2 / |Z2 × (Z1 + Z2 + Z0) + Z1 × Z0|
         if not fault_type or fault_type == "llg":
             if has_z0_path:
-                z_llg_denom = z_eq + 2 * z0  # Z1 + 2×Z0 (simplified for Z1=Z2)
-                i_llg = -3 * c_factor / z_llg_denom if abs(z_llg_denom) > 1e-10 else complex(0, 0)
+                # Z2 parallel Z0
+                z2_par_z0 = (z2_eq * z0) / (z2_eq + z0) if abs(z2_eq + z0) > 1e-15 else complex(0, 0)
+                # Ia1 = c / (Z1 + Z2‖Z0)
+                z_llg_a1 = z_eq + z2_par_z0
+                ia1 = c_factor / z_llg_a1 if abs(z_llg_a1) > 1e-10 else complex(0, 0)
+                # Ia0 = -Ia1 × Z2 / (Z2 + Z0)
+                ia0 = -ia1 * z2_eq / (z2_eq + z0) if abs(z2_eq + z0) > 1e-15 else complex(0, 0)
+                # I"kE2E = |3 × Ia0|
+                i_llg = 3 * ia0
                 ikLLG_pu = abs(i_llg)
                 ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
                 ikLLG_angle = round(math.degrees(math.atan2(i_llg.imag, i_llg.real)), 2) if ikLLG_pu > 1e-10 else None
             else:
                 # No zero-sequence path: Z0 → ∞, Z2‖Z0 → Z2
                 # Degenerates to line-to-line fault
-                z_ll_deg = z_eq + z_eq
+                z_ll_deg = z_eq + z2_eq
                 ikLLG_pu = c_factor * math.sqrt(3) / abs(z_ll_deg) if abs(z_ll_deg) > 1e-10 else 0
                 ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
                 ikLLG_angle = round(-math.degrees(math.atan2(z_ll_deg.imag, z_ll_deg.real)), 2) if abs(z_ll_deg) > 1e-10 else None
@@ -146,14 +156,17 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # When no specific fault type, default to 3-phase for branch display
         active_type = fault_type or "3phase"
         if active_type == "slg":
-            z_slg_br = z_eq + z_eq + z0
+            z_slg_br = z_eq + z2_eq + z0
             ik_total_pu = 3 * c_factor / abs(z_slg_br) if abs(z_slg_br) > 1e-10 else 0
         elif active_type == "ll":
-            z_ll_br = z_eq + z_eq
+            z_ll_br = z_eq + z2_eq
             ik_total_pu = c_factor * math.sqrt(3) / abs(z_ll_br) if abs(z_ll_br) > 1e-10 else 0
         elif active_type == "llg":
-            z_llg_br_denom = z_eq + 2 * z0  # Z1 + 2×Z0 (Z1=Z2)
-            ik_total_pu = 3 * c_factor / abs(z_llg_br_denom) if abs(z_llg_br_denom) > 1e-10 else 0
+            z2_par_z0_br = (z2_eq * z0) / (z2_eq + z0) if abs(z2_eq + z0) > 1e-15 else complex(0, 0)
+            z_llg_a1_br = z_eq + z2_par_z0_br
+            ia1_br = c_factor / z_llg_a1_br if abs(z_llg_a1_br) > 1e-10 else complex(0, 0)
+            ia0_br = -ia1_br * z2_eq / (z2_eq + z0) if abs(z2_eq + z0) > 1e-15 else complex(0, 0)
+            ik_total_pu = abs(3 * ia0_br)
         else:
             ik_total_pu = c_factor / abs(z_eq) if abs(z_eq) > 1e-10 else 0
 
@@ -261,8 +274,13 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
         # If we hit a source, record the complete path
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva)
+            # Negative sequence: Z2 = Z1 * z2_z1_ratio (default 1.0)
+            # Also accept legacy "x2_ratio" key for backwards compatibility
+            z2_z1 = float(comp.props.get("z2_z1_ratio", 0) or comp.props.get("x2_ratio", 0))
+            z2_src = z_src * z2_z1 if z2_z1 > 0 else z_src
             paths.append({
                 "z_total": z_path + z_src,
+                "z2_total": z_path + z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "utility",
@@ -271,8 +289,18 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
         if comp.type == "generator":
             z_src = _generator_impedance(comp, base_mva)
             rated_mva = comp.props.get("rated_mva", 10)
+            # Negative sequence: use x2 prop if > 0, else Z2 = Z1
+            x2_val = float(comp.props.get("x2", 0))
+            if x2_val > 0:
+                xr = comp.props.get("x_r_ratio", 40)
+                x2_pu = x2_val * base_mva / rated_mva
+                r2_pu = x2_pu / xr
+                z2_src = complex(r2_pu, x2_pu)
+            else:
+                z2_src = z_src
             paths.append({
                 "z_total": z_path + z_src,
+                "z2_total": z_path + z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "generator",
@@ -288,8 +316,20 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
             z_src = _motor_induction_impedance(comp, base_mva)
             rated_kw = comp.props.get("rated_kw", 200)
             eff = comp.props.get("efficiency", 0.93)
+            # Negative sequence: use x2 if > 0, else Z2 = Z1
+            # Also accept legacy "x2_pu" key for backwards compatibility
+            x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
+            if x2_val > 0:
+                rated_mva = rated_kw / (eff * 1000)
+                xr = comp.props.get("x_r_ratio", 10)
+                x2_pu = x2_val * base_mva / rated_mva
+                r2_pu = x2_pu / xr
+                z2_src = complex(r2_pu, x2_pu)
+            else:
+                z2_src = z_src
             paths.append({
                 "z_total": z_path + z_src,
+                "z2_total": z_path + z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "motor_induction",
@@ -300,8 +340,20 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
         if comp.type == "motor_synchronous":
             z_src = _motor_synchronous_impedance(comp, base_mva)
             rated_kva = comp.props.get("rated_kva", 500)
+            # Negative sequence: use x2 if > 0, else Z2 = Z1
+            # Also accept legacy "x2_pu" key for backwards compatibility
+            x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
+            if x2_val > 0:
+                rated_mva = rated_kva / 1000
+                xr = comp.props.get("x_r_ratio", 40)
+                x2_pu = x2_val * base_mva / rated_mva
+                r2_pu = x2_pu / xr
+                z2_src = complex(r2_pu, x2_pu)
+            else:
+                z2_src = z_src
             paths.append({
                 "z_total": z_path + z_src,
+                "z2_total": z_path + z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "motor_synchronous",
@@ -319,6 +371,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
             n_inv = comp.props.get("num_inverters", 1)
             paths.append({
                 "z_total": z_path + z_src,
+                "z2_total": z_path + z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "solar_pv",
@@ -334,6 +387,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
             t_type = comp.props.get("turbine_type", "type3_dfig")
             paths.append({
                 "z_total": z_path + z_src,
+                "z2_total": z_path + z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "wind_turbine",
@@ -620,15 +674,27 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
 
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva)
-            z_total = z0_path + z_src * 3
-            desc = " → ".join(trail + [f"Utility '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            # Use z0_z1_ratio to derive Z0 from Z1, with legacy "x0_ratio" fallback
+            z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
+            z0_src = z_src * z0_z1 * 3 if z0_z1 > 0 else z_src * 3
+            z_total = z0_path + z0_src
+            desc = " → ".join(trail + [f"Utility '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
 
         if comp.type == "generator":
             z_src = _generator_impedance(comp, base_mva)
-            z_total = z0_path + z_src * 3
-            desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            x0_val = float(comp.props.get("x0", 0))
+            if x0_val > 0:
+                rated_mva = comp.props.get("rated_mva", 10)
+                xr = comp.props.get("x_r_ratio", 40)
+                x0_pu = x0_val * base_mva / rated_mva
+                r0_pu = x0_pu / xr
+                z0_src = complex(r0_pu, x0_pu) * 3
+            else:
+                z0_src = z_src * 3
+            z_total = z0_path + z0_src
+            desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
 
@@ -672,7 +738,18 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             return
 
         if comp.type == "cable":
-            z_cable = _cable_impedance(comp, base_mva) * 3
+            r0_per_km = float(comp.props.get("r0_per_km", 0))
+            x0_per_km = float(comp.props.get("x0_per_km", 0))
+            if r0_per_km > 0 or x0_per_km > 0:
+                v_kv = comp.props.get("voltage_kv", 11)
+                z_base = (v_kv ** 2) / base_mva
+                length = comp.props.get("length_km", 1)
+                n_par = max(1, int(comp.props.get("num_parallel", 1)))
+                r0 = (r0_per_km if r0_per_km > 0 else comp.props.get("r_per_km", 0.1) * 3.5) * length
+                x0 = (x0_per_km if x0_per_km > 0 else comp.props.get("x_per_km", 0.08) * 3.5) * length
+                z_cable = complex(r0 / z_base, x0 / z_base) / n_par
+            else:
+                z_cable = _cable_impedance(comp, base_mva) * 3
             new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
             for neighbor_id, _, _ in adjacency.get(comp_id, []):
                 walk(neighbor_id, z0_path + z_cable, new_trail)

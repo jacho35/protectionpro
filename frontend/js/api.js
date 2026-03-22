@@ -53,6 +53,12 @@ const API = {
     return this.request('/analysis/arcflash', 'POST', data);
   },
 
+  // Run DC arc flash analysis
+  async runDCArcFlash() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/dc-arcflash', 'POST', data);
+  },
+
   // Run load flow
   async runLoadFlow(method = 'newton_raphson') {
     const data = AppState.toJSON();

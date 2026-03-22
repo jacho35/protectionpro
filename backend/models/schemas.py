@@ -172,6 +172,33 @@ class ArcFlashResults(BaseModel):
     warnings: list[str] = []
 
 
+class DCArcFlashBusResult(BaseModel):
+    bus_id: str
+    bus_name: str
+    voltage_kv: float
+    system_voltage_v: float
+    bolted_fault_ka: float
+    dc_arcing_current_a: float
+    arc_voltage_v: float
+    incident_energy_cal: float
+    arc_flash_boundary_mm: float
+    clearing_time_s: float
+    working_distance_mm: float
+    gap_mm: float
+    ppe_category: int
+    ppe_name: str
+    ppe_description: str
+    warning: str = ""
+    label_html: str = ""
+    recommendations: list[str] = []
+
+
+class DCArcFlashResults(BaseModel):
+    buses: dict[str, DCArcFlashBusResult]
+    method: str = "Stokes & Oppenlander (DC)"
+    warnings: list[str] = []
+
+
 class LoadFlowBus(BaseModel):
     bus_id: str
     bus_name: str

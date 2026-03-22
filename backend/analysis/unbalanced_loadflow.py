@@ -193,8 +193,10 @@ def run_unbalanced_load_flow(
                     z1_total += z1_cable
                     z2_total += z1_cable
                     if not z0_blocked:
-                        r0 = e.props.get("r0_per_km", r1 * 3.5)
-                        x0 = e.props.get("x0_per_km", x1 * 3.5)
+                        r0_prop = float(e.props.get("r0_per_km", 0))
+                        x0_prop = float(e.props.get("x0_per_km", 0))
+                        r0 = r0_prop if r0_prop > 0 else r1 * 3.5
+                        x0 = x0_prop if x0_prop > 0 else x1 * 3.5
                         z0_total = (z0_total or complex(0, 0)) + complex(r0 / z_base, x0 / z_base)
                 else:
                     z = _get_impedance(e, base_mva)
@@ -214,8 +216,10 @@ def run_unbalanced_load_flow(
                     z_base = (v_kv ** 2) / base_mva
                     r1 = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
                     x1 = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    r0 = e.props.get("r0_per_km", r1 * 3.5)
-                    x0 = e.props.get("x0_per_km", x1 * 3.5)
+                    r0_prop = float(e.props.get("r0_per_km", 0))
+                    x0_prop = float(e.props.get("x0_per_km", 0))
+                    r0 = r0_prop if r0_prop > 0 else r1 * 3.5
+                    x0 = x0_prop if x0_prop > 0 else x1 * 3.5
                     z0_total = (z0_total or complex(0, 0)) + complex(r0 / z_base, x0 / z_base)
                 else:
                     z0_total = (z0_total or complex(0, 0)) + z * 3
@@ -290,10 +294,23 @@ def run_unbalanced_load_flow(
             if comp.type == "utility":
                 y_src = _utility_admittance(comp, base_mva)
                 Y1[i, i] += y_src
-                Y2[i, i] += y_src  # Utility source contributes to negative-seq network
+                # Negative sequence: apply z2_z1_ratio if specified
+                # Also accept legacy "x2_ratio" key for backwards compatibility
+                z2_z1 = float(comp.props.get("z2_z1_ratio", 0) or comp.props.get("x2_ratio", 0))
+                if z2_z1 > 0 and abs(z2_z1 - 1.0) > 1e-6:
+                    # Z2 = Z1 * z2_z1_ratio, so Y2 = Y1 / z2_z1_ratio
+                    Y2[i, i] += y_src / z2_z1
+                else:
+                    Y2[i, i] += y_src
                 grounding = comp.props.get("grounding", "solidly")
                 if grounding in ("solidly", "direct", ""):
-                    Y0[i, i] += y_src  # Grounded neutral — zero-seq path exists
+                    # Zero sequence: apply z0_z1_ratio if specified
+                    # Also accept legacy "x0_ratio" key for backwards compatibility
+                    z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
+                    if z0_z1 > 0 and abs(z0_z1 - 1.0) > 1e-6:
+                        Y0[i, i] += y_src / z0_z1
+                    else:
+                        Y0[i, i] += y_src  # Grounded neutral — zero-seq path exists
 
             elif comp.type == "generator":
                 rated = comp.props.get("rated_mva", 10)
@@ -302,6 +319,30 @@ def run_unbalanced_load_flow(
                 q = rated * math.sqrt(1 - pf ** 2) / base_mva / 3
                 P_phase[i, :] += p
                 Q_phase[i, :] += q
+                # Generator internal impedance for neg/zero sequence networks
+                xd_pp = comp.props.get("xd_pp", 0.15)
+                xr = comp.props.get("x_r_ratio", 40)
+                x1_pu = xd_pp * base_mva / rated
+                r1_pu = x1_pu / xr
+                z1_gen = complex(r1_pu, x1_pu)
+                # Negative sequence: use x2 if > 0, else Z2 = Z1
+                x2_val = float(comp.props.get("x2", 0))
+                if x2_val > 0:
+                    x2_pu = x2_val * base_mva / rated
+                    r2_pu = x2_pu / xr
+                    y2_gen = 1 / complex(r2_pu, x2_pu)
+                else:
+                    y2_gen = 1 / z1_gen if abs(z1_gen) > 1e-15 else 0
+                Y2[i, i] += y2_gen
+                # Zero sequence: use x0 if > 0, else Z0 = Z1
+                x0_val = float(comp.props.get("x0", 0))
+                if x0_val > 0:
+                    x0_pu = x0_val * base_mva / rated
+                    r0_pu = x0_pu / xr
+                    y0_gen = 1 / complex(r0_pu, x0_pu)
+                else:
+                    y0_gen = 1 / z1_gen if abs(z1_gen) > 1e-15 else 0
+                Y0[i, i] += y0_gen
 
             elif comp.type == "solar_pv":
                 rated_kw = comp.props.get("rated_kw", 100)
@@ -358,6 +399,21 @@ def run_unbalanced_load_flow(
                 q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
+                # Induction motor internal impedance for neg sequence network
+                x_pp = comp.props.get("x_pp", 0.17)
+                xr = comp.props.get("x_r_ratio", 10)
+                x1_pu = x_pp * base_mva / rated_mva
+                r1_pu = x1_pu / xr
+                z1_mot = complex(r1_pu, x1_pu)
+                # Negative sequence: use x2 if > 0, else Z2 = Z1
+                x2_val = float(comp.props.get("x2", 0))
+                if x2_val > 0:
+                    x2_pu = x2_val * base_mva / rated_mva
+                    r2_pu = x2_pu / xr
+                    y2_mot = 1 / complex(r2_pu, x2_pu)
+                else:
+                    y2_mot = 1 / z1_mot if abs(z1_mot) > 1e-15 else 0
+                Y2[i, i] += y2_mot
 
             elif comp.type == "motor_synchronous":
                 rated_kva = comp.props.get("rated_kva", 500)
@@ -368,6 +424,30 @@ def run_unbalanced_load_flow(
                 q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
+                # Synchronous motor internal impedance for neg/zero sequence networks
+                xd_pp = comp.props.get("xd_pp", 0.15)
+                xr = comp.props.get("x_r_ratio", 40)
+                x1_pu = xd_pp * base_mva / rated_mva
+                r1_pu = x1_pu / xr
+                z1_mot = complex(r1_pu, x1_pu)
+                # Negative sequence: use x2 if > 0, else Z2 = Z1
+                x2_val = float(comp.props.get("x2", 0))
+                if x2_val > 0:
+                    x2_pu = x2_val * base_mva / rated_mva
+                    r2_pu = x2_pu / xr
+                    y2_mot = 1 / complex(r2_pu, x2_pu)
+                else:
+                    y2_mot = 1 / z1_mot if abs(z1_mot) > 1e-15 else 0
+                Y2[i, i] += y2_mot
+                # Zero sequence: use x0 if > 0, else Z0 = Z1
+                x0_val = float(comp.props.get("x0", 0))
+                if x0_val > 0:
+                    x0_pu = x0_val * base_mva / rated_mva
+                    r0_pu = x0_pu / xr
+                    y0_mot = 1 / complex(r0_pu, x0_pu)
+                else:
+                    y0_mot = 1 / z1_mot if abs(z1_mot) > 1e-15 else 0
+                Y0[i, i] += y0_mot
 
             elif comp.type == "capacitor_bank":
                 kvar = comp.props.get("rated_kvar", 100)
