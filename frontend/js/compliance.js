@@ -31,6 +31,7 @@ const Compliance = {
     report.sections.push(this._checkVoltageCompliance());
     report.sections.push(this._checkThermalLoading());
     report.sections.push(this._checkProtectionDevices());
+    report.sections.push(this._checkSANS10142());
     report.sections.push(this._buildEquipmentSummary());
 
     // Tally totals
@@ -336,7 +337,390 @@ const Compliance = {
     return section;
   },
 
-  // ── 6. Equipment Summary ──
+  // ── 6. SANS 10142 Wiring of Premises ──
+  _checkSANS10142() {
+    const section = { title: 'SANS 10142 — Wiring of Premises', standard: 'SANS 10142-1', items: [] };
+
+    this._sans10142_lvVoltage(section);
+    this._sans10142_cableProtection(section);
+    this._sans10142_minCableSize(section);
+    this._sans10142_transformerNeutral(section);
+    this._sans10142_maxDemand(section);
+    this._sans10142_earthFaultCurrent(section);
+
+    if (section.items.length === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No SANS 10142 checks applicable to current network.', detail: 'Add LV components (cables, transformers, CBs) to enable SANS 10142 checks.' });
+    }
+
+    return section;
+  },
+
+  // SANS 10142-1 Cl. 5.3.2 / NRS 048-2: LV supply voltage tolerance ±10%
+  _sans10142_lvVoltage(section) {
+    if (!this._hasLoadFlow()) {
+      section.items.push({ status: 'info', component: '—', message: 'LV voltage compliance (±10%): load flow not run.', detail: 'Run Load Flow to verify LV bus voltages per SANS 10142-1 Cl. 5.3.2 and NRS 048-2.' });
+      return;
+    }
+
+    const LV_THRESHOLD_KV = 1.0; // Buses ≤ 1 kV are LV
+    const LO = 0.90;
+    const HI = 1.10;
+    let checked = 0;
+
+    for (const [busId, lfResult] of Object.entries(AppState.loadFlowResults.buses)) {
+      const busComp = AppState.components.get(busId);
+      const nominalKV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
+      if (!nominalKV || nominalKV > LV_THRESHOLD_KV) continue; // Only LV buses
+
+      checked++;
+      const busName = busComp?.props?.name || busId;
+      const vpu = lfResult.voltage_pu;
+
+      if (vpu < LO) {
+        section.items.push({
+          status: 'fail',
+          component: busName,
+          message: `LV under-voltage: ${vpu.toFixed(4)} p.u. (${(vpu * nominalKV * 1000).toFixed(0)} V).`,
+          detail: `Below ${LO} p.u. (${(LO * nominalKV * 1000).toFixed(0)} V). SANS 10142-1 Cl. 5.3.2 / NRS 048-2 require ±10% of nominal ${(nominalKV * 1000).toFixed(0)} V.`,
+        });
+      } else if (vpu > HI) {
+        section.items.push({
+          status: 'fail',
+          component: busName,
+          message: `LV over-voltage: ${vpu.toFixed(4)} p.u. (${(vpu * nominalKV * 1000).toFixed(0)} V).`,
+          detail: `Above ${HI} p.u. (${(HI * nominalKV * 1000).toFixed(0)} V). SANS 10142-1 Cl. 5.3.2 / NRS 048-2 require ±10% of nominal ${(nominalKV * 1000).toFixed(0)} V.`,
+        });
+      } else {
+        section.items.push({
+          status: 'pass',
+          component: busName,
+          message: `LV voltage: ${vpu.toFixed(4)} p.u. (${(vpu * nominalKV * 1000).toFixed(0)} V).`,
+          detail: `Within ±10% of ${(nominalKV * 1000).toFixed(0)} V nominal. Complies with SANS 10142-1 Cl. 5.3.2 / NRS 048-2.`,
+        });
+      }
+    }
+
+    if (checked === 0 && this._hasLoadFlow()) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV buses (≤1 kV) found for SANS 10142 voltage check.', detail: 'LV voltage tolerance check applies to buses with nominal voltage ≤ 1 kV.' });
+    }
+  },
+
+  // SANS 10142-1 Cl. 5.5.2: Overcurrent protection coordination — In ≤ Iz (device rating ≤ cable ampacity)
+  _sans10142_cableProtection(section) {
+    let checked = 0;
+
+    for (const [cableId, comp] of AppState.components) {
+      if (comp.type !== 'cable') continue;
+      const cableName = comp.props?.name || cableId;
+      const iz = comp.props?.rated_amps; // Cable ampacity (Iz)
+      const cableVoltageKV = comp.props?.voltage_kv;
+
+      if (!iz || !cableVoltageKV || cableVoltageKV > 1.0) continue; // Only LV cables
+      checked++;
+
+      // Find upstream protective devices (CBs, fuses) connected to this cable
+      const devices = this._findConnectedDevices(cableId, ['cb', 'fuse']);
+
+      if (devices.length === 0) {
+        section.items.push({
+          status: 'warn',
+          component: cableName,
+          message: `LV cable has no upstream overcurrent protection device.`,
+          detail: `Cable ampacity Iz = ${iz} A. SANS 10142-1 Cl. 5.5.2 requires every LV circuit to be protected against overcurrent.`,
+        });
+        continue;
+      }
+
+      for (const dev of devices) {
+        const devComp = AppState.components.get(dev.id);
+        if (!devComp) continue;
+        const devName = devComp.props?.name || dev.id;
+        const in_ = devComp.props?.rated_current_a; // Device nominal current (In)
+
+        if (in_ == null || in_ <= 0) {
+          section.items.push({
+            status: 'warn',
+            component: devName,
+            message: `No rated current specified; cannot verify In ≤ Iz for cable ${cableName}.`,
+            detail: `SANS 10142-1 Cl. 5.5.2: protection device rated current In must not exceed cable ampacity Iz = ${iz} A.`,
+          });
+          continue;
+        }
+
+        if (in_ > iz) {
+          section.items.push({
+            status: 'fail',
+            component: devName,
+            message: `Protection rating In (${in_} A) EXCEEDS cable ampacity Iz (${iz} A). Cable ${cableName} is unprotected.`,
+            detail: `SANS 10142-1 Cl. 5.5.2 requires In ≤ Iz. Reduce device rating to ≤ ${iz} A or upsize cable.`,
+          });
+        } else {
+          section.items.push({
+            status: 'pass',
+            component: devName,
+            message: `In (${in_} A) ≤ Iz (${iz} A) for cable ${cableName}. Cable is adequately protected.`,
+            detail: `Complies with SANS 10142-1 Cl. 5.5.2. Protection margin: ${(((iz / in_) - 1) * 100).toFixed(1)}%.`,
+          });
+        }
+      }
+    }
+
+    if (checked === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV cables found for SANS 10142-1 Cl. 5.5.2 coordination check.', detail: 'Add LV cables with rated ampacity to enable overcurrent coordination checks.' });
+    }
+  },
+
+  // SANS 10142-1 Cl. 5.6.3.2: Minimum conductor cross-section for LV fixed wiring
+  _sans10142_minCableSize(section) {
+    const MIN_SIZE_FIXED = 1.5;   // mm² — minimum for fixed wiring (Cl. 5.6.3.2 Table 52A)
+    const MIN_SIZE_SOCKET = 2.5;  // mm² — recommended for socket-outlet final circuits
+    let checked = 0;
+
+    for (const [cableId, comp] of AppState.components) {
+      if (comp.type !== 'cable') continue;
+      const cableVoltageKV = comp.props?.voltage_kv;
+      if (!cableVoltageKV || cableVoltageKV > 1.0) continue; // Only LV
+
+      const sizeMm2 = comp.props?.size_mm2;
+      if (!sizeMm2) continue;
+      checked++;
+
+      const cableName = comp.props?.name || cableId;
+
+      if (sizeMm2 < MIN_SIZE_FIXED) {
+        section.items.push({
+          status: 'fail',
+          component: cableName,
+          message: `Conductor ${sizeMm2} mm² is BELOW minimum ${MIN_SIZE_FIXED} mm² for LV fixed wiring.`,
+          detail: `SANS 10142-1 Cl. 5.6.3.2 Table 52A: minimum conductor size for fixed wiring is 1.5 mm² (copper). Use a larger conductor.`,
+        });
+      } else if (sizeMm2 < MIN_SIZE_SOCKET) {
+        section.items.push({
+          status: 'warn',
+          component: cableName,
+          message: `Conductor ${sizeMm2} mm² meets minimum but is below 2.5 mm² socket-circuit recommendation.`,
+          detail: `SANS 10142-1 Cl. 5.6.3.3: socket-outlet circuits require ≥ 2.5 mm². Acceptable for lighting circuits only.`,
+        });
+      } else {
+        section.items.push({
+          status: 'pass',
+          component: cableName,
+          message: `Conductor size ${sizeMm2} mm² meets SANS 10142-1 Cl. 5.6.3.2 minimum requirements.`,
+          detail: `≥ 2.5 mm² — suitable for socket-outlet and lighting final circuits.`,
+        });
+      }
+    }
+
+    if (checked === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV cables with size data found for minimum conductor size check.', detail: 'Select a standard cable type to enable SANS 10142-1 Cl. 5.6.3 size checks.' });
+    }
+  },
+
+  // SANS 10142-1 Cl. 8.3.1 / IEC 60364-1: LV distribution transformer neutral earthing
+  _sans10142_transformerNeutral(section) {
+    let checked = 0;
+
+    for (const [xfId, comp] of AppState.components) {
+      if (comp.type !== 'transformer') continue;
+      const lvKV = comp.props?.voltage_lv_kv ?? comp.props?.voltage_lv;
+      if (!lvKV || lvKV > 1.0) continue; // Only transformers with LV secondary
+      checked++;
+
+      const xfName = comp.props?.name || xfId;
+      const vectorGroup = (comp.props?.vector_group || '').toLowerCase();
+      const groundingLv = comp.props?.grounding_lv || '';
+
+      // LV neutral is accessible when vector group contains 'yn' or 'zn' on LV side
+      // e.g. Dyn11 → LV is yn → neutral accessible and earthed
+      const lvNeutralAccessible = /yn|zn/.test(vectorGroup);
+      const lvSolidlyEarthed = groundingLv === 'solidly_grounded';
+      const lvUngrounded = groundingLv === 'ungrounded';
+
+      if (!lvNeutralAccessible && !lvSolidlyEarthed) {
+        section.items.push({
+          status: 'info',
+          component: xfName,
+          message: `LV winding vector group '${comp.props?.vector_group || '?'}' — no accessible LV neutral.`,
+          detail: `SANS 10142-1 Cl. 8.3.1: TN/TT systems require an earthed neutral at the LV source. Consider Dyn11 configuration with solidly earthed neutral.`,
+        });
+      } else if (lvUngrounded) {
+        section.items.push({
+          status: 'fail',
+          component: xfName,
+          message: `LV neutral is ungrounded on a distribution transformer with accessible neutral.`,
+          detail: `SANS 10142-1 Cl. 8.3.1: the LV neutral must be earthed (solidly or via low-resistance) for TN/TT systems. Ungrounded LV is only permitted for IT systems with insulation monitoring.`,
+        });
+      } else if (lvNeutralAccessible && lvSolidlyEarthed) {
+        section.items.push({
+          status: 'pass',
+          component: xfName,
+          message: `LV neutral solidly earthed (${comp.props?.vector_group || '—'}) — TN system earthing confirmed.`,
+          detail: `SANS 10142-1 Cl. 8.3.1: earthed neutral at LV source provides automatic disconnection capability.`,
+        });
+      } else {
+        // Neutral accessible but grounding not solidly set (resistance / reactance grounded)
+        section.items.push({
+          status: 'warn',
+          component: xfName,
+          message: `LV neutral earthed via impedance (${groundingLv.replace(/_/g, ' ')}). Verify disconnection times.`,
+          detail: `SANS 10142-1 Cl. 8.3.1: impedance-earthed LV neutrals increase earth fault loop impedance. Verify that disconnection times for all circuits comply with Cl. 5.5.6.`,
+        });
+      }
+    }
+
+    if (checked === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV distribution transformers (≤1 kV secondary) found for neutral earthing check.', detail: 'SANS 10142-1 Cl. 8.3.1 applies to transformers supplying LV premises installations.' });
+    }
+  },
+
+  // SANS 10142-1 Appendix B / NRS 034: Maximum demand vs supply capacity
+  _sans10142_maxDemand(section) {
+    if (!this._hasLoadFlow()) {
+      section.items.push({ status: 'info', component: '—', message: 'Maximum demand check: load flow not run.', detail: 'Run Load Flow to compare total LV demand against supply authority capacity.' });
+      return;
+    }
+
+    // Find utility sources and their fault MVA (proxy for available supply capacity)
+    let totalSupplyMVA = 0;
+    for (const comp of AppState.components.values()) {
+      if (comp.type === 'utility') {
+        const faultMVA = comp.props?.fault_mva || 0;
+        // Approximate thermal capacity as fault_mva / 20 (typical X/Z ≈ 0.05 → MVA_therm ≈ fault_mva / impedance_factor)
+        // Better: use connected transformer rating
+        totalSupplyMVA += faultMVA;
+      }
+    }
+
+    // Sum rated MVA of all LV-side transformers (supply to premises)
+    let totalXfMVA = 0;
+    const xfNames = [];
+    for (const comp of AppState.components.values()) {
+      if (comp.type !== 'transformer') continue;
+      const lvKV = comp.props?.voltage_lv_kv ?? comp.props?.voltage_lv;
+      if (!lvKV || lvKV > 1.0) continue;
+      const mva = comp.props?.rated_mva || 0;
+      totalXfMVA += mva;
+      xfNames.push(comp.props?.name || 'unnamed');
+    }
+
+    // Collect total LV load from load flow (sum of loads at LV buses)
+    let totalLoadMW = 0;
+    let totalLoadMVAR = 0;
+    for (const comp of AppState.components.values()) {
+      if (!['static_load', 'induction_motor', 'synchronous_motor'].includes(comp.type)) continue;
+      // Check if this load is on an LV bus
+      const connBuses = this._findConnectedDevices(comp.id || comp.props?.name, ['bus']);
+      for (const b of connBuses) {
+        const busComp = AppState.components.get(b.id);
+        const busV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
+        if (!busV || busV > 1.0) continue;
+        const p = comp.props?.p_mw || (comp.props?.rated_mw) || ((comp.props?.rated_mva || 0) * (comp.props?.power_factor || 0.85));
+        totalLoadMW += p;
+        const q = comp.props?.q_mvar || ((comp.props?.rated_mva || 0) * Math.sqrt(1 - Math.pow(comp.props?.power_factor || 0.85, 2)));
+        totalLoadMVAR += q;
+        break;
+      }
+    }
+    const totalLoadMVA = Math.sqrt(totalLoadMW ** 2 + totalLoadMVAR ** 2);
+
+    if (totalXfMVA > 0 && totalLoadMVA > 0) {
+      const utilPct = (totalLoadMVA / totalXfMVA) * 100;
+      if (utilPct > 100) {
+        section.items.push({
+          status: 'fail',
+          component: '—',
+          message: `Total LV load (${totalLoadMVA.toFixed(3)} MVA) EXCEEDS installed LV transformer capacity (${totalXfMVA.toFixed(3)} MVA).`,
+          detail: `Utilisation: ${utilPct.toFixed(1)}%. SANS 10142-1 Appendix B / NRS 034: maximum demand must not exceed supply capacity. Increase transformer rating or reduce demand.`,
+        });
+      } else if (utilPct > 80) {
+        section.items.push({
+          status: 'warn',
+          component: '—',
+          message: `LV demand (${totalLoadMVA.toFixed(3)} MVA) is ${utilPct.toFixed(1)}% of transformer capacity (${totalXfMVA.toFixed(3)} MVA).`,
+          detail: `Above 80% utilisation. SANS 10142-1 Appendix B: consider diversity factors and apply demand factor analysis. Limited capacity for load growth or derating.`,
+        });
+      } else {
+        section.items.push({
+          status: 'pass',
+          component: '—',
+          message: `LV maximum demand (${totalLoadMVA.toFixed(3)} MVA) within transformer capacity (${totalXfMVA.toFixed(3)} MVA).`,
+          detail: `Utilisation: ${utilPct.toFixed(1)}%. Complies with SANS 10142-1 Appendix B supply capacity requirement. Transformers: ${xfNames.join(', ')}.`,
+        });
+      }
+    } else if (totalXfMVA === 0 && totalLoadMVA === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV transformers or LV loads found for maximum demand check.', detail: 'SANS 10142-1 Appendix B: supply capacity analysis requires LV transformers and LV loads.' });
+    } else if (totalXfMVA === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV distribution transformer found; cannot evaluate maximum demand against supply capacity.', detail: 'Add a transformer with an LV secondary (≤1 kV) to enable this check.' });
+    }
+  },
+
+  // SANS 10142-1 Cl. 5.5.6: Minimum earth fault current for automatic disconnection on LV TN systems
+  _sans10142_earthFaultCurrent(section) {
+    if (!this._hasFault()) {
+      section.items.push({ status: 'info', component: '—', message: 'Earth fault disconnection check: fault analysis not run.', detail: 'Run Fault Analysis to verify minimum earth fault current for disconnection per SANS 10142-1 Cl. 5.5.6.' });
+      return;
+    }
+
+    const LV_THRESHOLD_KV = 1.0;
+    const DISCONNECTION_FACTOR = 10; // In TN system: Isc ≥ 10 × In for instantaneous CB trip (conservative threshold)
+    let checked = 0;
+
+    for (const [busId, faultResult] of Object.entries(AppState.faultResults.buses)) {
+      const busComp = AppState.components.get(busId);
+      const nominalKV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
+      if (!nominalKV || nominalKV > LV_THRESHOLD_KV) continue; // LV buses only
+
+      const islg = faultResult.islg; // Single-line-to-ground (earth) fault current in kA
+      if (islg == null) continue;
+      checked++;
+
+      const busName = busComp?.props?.name || busId;
+      const islgA = islg * 1000; // Convert kA → A
+
+      // Find the minimum-rated upstream protection device
+      const devices = this._findConnectedDevices(busId, ['cb', 'fuse']);
+      for (const dev of devices) {
+        const devComp = AppState.components.get(dev.id);
+        if (!devComp) continue;
+        const in_ = devComp.props?.rated_current_a;
+        if (!in_) continue;
+
+        const devName = devComp.props?.name || dev.id;
+        const requiredIscA = in_ * DISCONNECTION_FACTOR;
+
+        if (islgA < requiredIscA) {
+          section.items.push({
+            status: 'fail',
+            component: busName,
+            message: `Earth fault current (${islgA.toFixed(0)} A) may be insufficient to guarantee instantaneous trip of ${devName} (In = ${in_} A).`,
+            detail: `SANS 10142-1 Cl. 5.5.6: for TN systems, single-line-to-ground fault current should be ≥ 10 × In = ${requiredIscA.toFixed(0)} A for instantaneous disconnection. Verify earth fault loop impedance and consider lower-rated or more sensitive protection.`,
+          });
+        } else {
+          section.items.push({
+            status: 'pass',
+            component: busName,
+            message: `Earth fault current (${islgA.toFixed(0)} A) ≥ 10 × In (${requiredIscA.toFixed(0)} A) of ${devName}. Automatic disconnection confirmed.`,
+            detail: `SANS 10142-1 Cl. 5.5.6: sufficient earth fault current for instantaneous disconnection in TN system at ${busName}.`,
+          });
+        }
+      }
+
+      if (devices.length === 0) {
+        section.items.push({
+          status: 'warn',
+          component: busName,
+          message: `LV bus has no protection device — earth fault disconnection cannot be verified.`,
+          detail: `Earth fault current Islg = ${islgA.toFixed(0)} A at ${busName}. Add a circuit breaker or fuse to enable SANS 10142-1 Cl. 5.5.6 disconnection check.`,
+        });
+      }
+    }
+
+    if (checked === 0 && this._hasFault()) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV buses with earth fault data found for disconnection check.', detail: 'SANS 10142-1 Cl. 5.5.6 applies to LV TN system buses (nominal voltage ≤ 1 kV).' });
+    }
+  },
+
+  // ── 7. Equipment Summary ──
   _buildEquipmentSummary() {
     const section = { title: 'Equipment Inventory', standard: 'Reference', items: [] };
     const counts = {};
