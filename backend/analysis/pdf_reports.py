@@ -448,10 +448,10 @@ def generate_calculations_report(project_name, base_mva, frequency,
     if motor_results and motor_results.get("motors"):
         _calc_motor(pdf, motor_results)
 
-    if duty_results and duty_results.get("equipment"):
+    if duty_results and duty_results.get("devices"):
         _calc_duty(pdf, duty_results)
 
-    if load_diversity_results and load_diversity_results.get("loads"):
+    if load_diversity_results and load_diversity_results.get("buses"):
         _calc_load_diversity(pdf, load_diversity_results)
 
     if grounding_results:
@@ -775,17 +775,33 @@ def _calc_motor(pdf, motor_results):
         name = motor.get("motor_name", motor.get("motor_id", ""))
         _calc_subsection(pdf, f"Motor: {name}")
 
-        v_dip = motor.get("voltage_dip_pct", 0) or 0
-        v_ok = motor.get("voltage_drop_ok", True)
-        _calc_body(pdf, f"  Voltage dip at start:      dV      = {v_dip:.2f}%   {'[OK - <= 15%]' if v_ok else '[FAIL - > 15%]'}")
+        v_dip = motor.get("max_system_dip_pct", 0) or 0
+        status = motor.get("status", "pass")
+        v_ok = status != "fail"
+        _calc_body(pdf, f"  Max system voltage dip:    dV      = {v_dip:.2f}%   {'[OK - <= 15%]' if v_ok else '[FAIL - > 15%]'}")
 
-        for k, v in motor.items():
-            if k in ("motor_id", "motor_name", "voltage_dip_pct", "voltage_drop_ok"):
+        simple_fields = {
+            "terminal_bus": "Terminal bus",
+            "rated_kw": "Rated power (kW)",
+            "start_current_a": "Starting current (A)",
+            "motor_terminal_voltage_pu": "Terminal voltage at start (pu)",
+            "motor_will_start": "Motor will start",
+            "max_dip_bus": "Worst dip location",
+        }
+        for k, label in simple_fields.items():
+            val = motor.get(k)
+            if val is None:
                 continue
-            if isinstance(v, (int, float)):
-                _calc_body(pdf, f"  {k:<35} = {v:.4f}" if isinstance(v, float) else f"  {k:<35} = {v}")
-            elif isinstance(v, str):
-                _calc_body(pdf, f"  {k:<35} = {v}")
+            if isinstance(val, float):
+                _calc_body(pdf, f"  {label:<40} = {val:.4f}")
+            else:
+                _calc_body(pdf, f"  {label:<40} = {val}")
+
+        issues = motor.get("issues", [])
+        if issues:
+            _calc_body(pdf, "  Issues:")
+            for iss in issues:
+                _calc_body(pdf, f"    - {iss}")
         pdf.ln(2)
 
     warnings = motor_results.get("warnings", [])
@@ -806,18 +822,18 @@ def _calc_duty(pdf, duty_results):
     _calc_body(pdf, "  Duty margin = (I_rated - I_calc) / I_rated * 100%")
     pdf.ln(4)
 
-    headers = ["Equipment", "I_fault (kA)", "I_rated (kA)", "Margin (%)", "Status"]
+    headers = ["Device", "I_fault (kA)", "I_rated (kA)", "Utilisation (%)", "Status"]
     avail = pdf.w - pdf.l_margin - pdf.r_margin
     widths = [avail * 0.35, avail * 0.15, avail * 0.15, avail * 0.15, avail * 0.20]
     rows = []
-    for eq in duty_results.get("equipment", []):
-        name = eq.get("equipment_name", eq.get("equipment_id", ""))
-        i_fault = eq.get("fault_current_ka", 0) or 0
-        i_rated = eq.get("rated_current_ka", 0) or 0
-        margin = eq.get("margin", 0) or 0
-        ok = eq.get("duty_ok", True)
-        status = "OK" if ok else "FAIL — UNDERRATED"
-        rows.append([name, f"{i_fault:.3f}", f"{i_rated:.3f}", f"{margin:.1f}%", status])
+    for eq in duty_results.get("devices", []):
+        name = eq.get("device_name", eq.get("device_id", ""))
+        i_fault = eq.get("prospective_fault_ka", 0) or 0
+        i_rated = eq.get("breaking_capacity_ka", 0) or 0
+        utilisation = eq.get("utilisation_pct", 0) or 0
+        ok = eq.get("interrupt_ok", True)
+        status = (eq.get("status") or ("pass" if ok else "fail")).upper()
+        rows.append([name, f"{i_fault:.3f}", f"{i_rated:.3f}", f"{utilisation:.1f}%", status])
 
     _table(pdf, headers, rows, widths, header_color=(80, 80, 80))
     pdf.ln(2)
@@ -852,21 +868,23 @@ def _calc_load_diversity(pdf, ld_results):
             _calc_body(pdf, f"  {label:<35} = {val}")
         pdf.ln(2)
 
-    loads = ld_results.get("loads", [])
-    if loads:
-        _calc_subsection(pdf, "Load Calculations")
-        headers = ["Load", "Rated (kW)", "Demand Factor", "Max Demand (kW)", "Contribution (%)"]
+    buses = ld_results.get("buses", [])
+    if buses:
+        _calc_subsection(pdf, "Load Calculations per Bus")
+        headers = ["Load", "Bus", "Installed (kW)", "Demand Factor", "Demand (kW)"]
         avail = pdf.w - pdf.l_margin - pdf.r_margin
-        widths = [avail * 0.3, avail * 0.15, avail * 0.15, avail * 0.2, avail * 0.2]
+        widths = [avail * 0.25, avail * 0.2, avail * 0.18, avail * 0.17, avail * 0.2]
         rows = []
-        for ld in loads:
-            name = ld.get("load_name", ld.get("load_id", ""))
-            rated = ld.get("rated_kw", 0) or 0
-            df = ld.get("demand_factor", 1.0) or 1.0
-            md = ld.get("max_demand_kw", rated * df) or 0
-            contrib = ld.get("contribution_pct", 0) or 0
-            rows.append([name, f"{rated:.1f}", f"{df:.3f}", f"{md:.1f}", f"{contrib:.1f}%"])
-        _table(pdf, headers, rows, widths, header_color=(100, 60, 160))
+        for bus in buses:
+            bus_name = bus.get("bus_name", bus.get("bus_id", ""))
+            for ld in bus.get("loads", []):
+                name = ld.get("load_name", ld.get("load_id", ""))
+                rated = ld.get("installed_kw", 0) or 0
+                df = ld.get("demand_factor", 1.0) or 1.0
+                demand = ld.get("demand_kw", rated * df) or 0
+                rows.append([name, bus_name, f"{rated:.1f}", f"{df:.3f}", f"{demand:.1f}"])
+        if rows:
+            _table(pdf, headers, rows, widths, header_color=(100, 60, 160))
 
 
 def _calc_grounding(pdf, grounding_results):
@@ -889,29 +907,42 @@ def _calc_grounding(pdf, grounding_results):
     _calc_body(pdf, "  where r = equiv. radius of grid, L_T = total conductor length, A = grid area, h = burial depth.")
     pdf.ln(4)
 
-    grid = grounding_results.get("grid", {})
-    if grid:
-        _calc_subsection(pdf, "Grid Parameters")
-        field_labels = {
-            "soil_resistivity": "Soil resistivity (Ohm.m)",
-            "grid_resistance": "Grid resistance (Ohm)",
-            "ground_fault_current_a": "Ground fault current (A)",
-            "gpr_v": "Ground potential rise (V)",
-            "touch_voltage_v": "Calculated touch voltage (V)",
-            "step_voltage_v": "Calculated step voltage (V)",
-            "tolerable_touch_v": "Tolerable touch voltage (V)",
-            "tolerable_step_v": "Tolerable step voltage (V)",
-            "touch_safe": "Touch voltage safe",
-            "step_safe": "Step voltage safe",
-        }
-        for k, label in field_labels.items():
-            if k in grid:
-                val = grid[k]
-                if isinstance(val, float):
-                    _calc_body(pdf, f"  {label:<40} = {val:.4f}")
-                else:
-                    _calc_body(pdf, f"  {label:<40} = {val}")
-        pdf.ln(2)
+    bus_results = grounding_results.get("buses", [])
+    field_labels = [
+        ("bus_name", "Bus"),
+        ("voltage_kv", "Voltage (kV)"),
+        ("soil_resistivity", "Soil resistivity (Ohm.m)"),
+        ("grid_area_m2", "Grid area (m2)"),
+        ("grid_dimensions", "Grid dimensions"),
+        ("total_conductor_length_m", "Total conductor length (m)"),
+        ("fault_current_ka", "Ground fault current (kA)"),
+        ("grid_resistance_ohm", "Grid resistance (Ohm)"),
+        ("gpr_v", "Ground potential rise (V)"),
+        ("tolerable_touch_v", "Tolerable touch voltage (V)"),
+        ("tolerable_step_v", "Tolerable step voltage (V)"),
+        ("mesh_voltage_v", "Calculated mesh/touch voltage (V)"),
+        ("step_voltage_v", "Calculated step voltage (V)"),
+        ("touch_ok", "Touch voltage OK"),
+        ("step_ok", "Step voltage OK"),
+        ("min_conductor_mm2", "Min. conductor size (mm2)"),
+        ("recommended_conductor_mm2", "Recommended conductor (mm2)"),
+        ("status", "Status"),
+    ]
+    for bus in bus_results:
+        bus_name = bus.get("bus_name", bus.get("bus_id", ""))
+        _calc_subsection(pdf, f"Bus: {bus_name}")
+        for k, label in field_labels:
+            val = bus.get(k)
+            if val is None:
+                continue
+            if isinstance(val, float):
+                _calc_body(pdf, f"  {label:<45} = {val:.4f}")
+            else:
+                _calc_body(pdf, f"  {label:<45} = {val}")
+        issues = bus.get("issues", [])
+        for iss in issues:
+            _calc_body(pdf, f"  ! {iss}")
+        pdf.ln(1)
 
     warnings = grounding_results.get("warnings", [])
     if warnings:
