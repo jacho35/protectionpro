@@ -59,6 +59,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 
 - **ANSI/IEEE C37 Short Circuit**: Short circuit analysis per ANSI standards alongside existing IEC 60909 (required for US market)
 - **AS/NZS 3000 Thermal & Shock Protection**: Australian/NZ wiring rules compliance checks
+- ~~**SANS 10142 Wiring of Premises**: Automatic compliance checks for South African wiring rules~~
 
 ### Component & Modelling Gaps
 
@@ -135,3 +136,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~NEC ampacity tables: NEC Article 310.16 ampacity data alongside existing IEC 60364~~
 - ~~Sequence impedance editor: Positive, negative, zero sequence impedance fields for utility, generator, cable, and motor components~~
 - ~~DC arc flash analysis: Stokes & Oppenlander method with DGUV-I 203-077, DC arcing current, incident energy, PPE categories, and arc flash boundary~~
+- ~~SANS 10142 automatic compliance checks: LV voltage tolerance (±10%, NRS 048-2), cable protection coordination (In ≤ Iz, Cl. 5.5.2), minimum conductor size (Cl. 5.6.3), transformer neutral earthing (Cl. 8.3.1), maximum demand vs supply capacity (Appendix B), earth fault disconnection current (Cl. 5.5.6)~~
