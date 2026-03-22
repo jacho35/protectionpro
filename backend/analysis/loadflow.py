@@ -430,6 +430,13 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         V, converged, iterations = _newton_raphson(Y, P_spec, Q_spec, V_spec, bus_types)
 
     # ── Build results ──
+    # Compute actual bus power injections from solved voltages.
+    # S_bus = V * conj(Y @ V) gives the true injection at each bus,
+    # including the swing bus whose scheduled injection is zero but
+    # which actually supplies all system losses and unspecified power.
+    I_bus = Y @ V
+    S_bus = V * np.conj(I_bus)
+
     bus_results = {}
     for bus in buses:
         i = bus_idx[bus.id]
@@ -440,8 +447,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
             voltage_pu=round(abs(V[i]), 6),
             voltage_kv=round(abs(V[i]) * v_kv, 4),
             angle_deg=round(math.degrees(np.angle(V[i])), 4),
-            p_mw=round(P_spec[i] * base_mva, 4),
-            q_mvar=round(Q_spec[i] * base_mva, 4),
+            p_mw=round(S_bus[i].real * base_mva, 4),
+            q_mvar=round(S_bus[i].imag * base_mva, 4),
         )
 
     # ── Branch flows ──
