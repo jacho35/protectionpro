@@ -1231,6 +1231,9 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       load_type: 'constant_power',
       demand_factor: 1.0,
+      phase_a_pct: 33.33,
+      phase_b_pct: 33.33,
+      phase_c_pct: 33.34,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -1239,6 +1242,9 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
       { key: 'load_type', label: 'Type', type: 'select', options: ['constant_power', 'constant_current', 'constant_impedance'] },
+      { key: 'phase_a_pct', label: 'Phase A', type: 'number', unit: '%' },
+      { key: 'phase_b_pct', label: 'Phase B', type: 'number', unit: '%' },
+      { key: 'phase_c_pct', label: 'Phase C', type: 'number', unit: '%' },
     ],
   },
 

@@ -210,3 +210,57 @@ class LoadFlowResults(BaseModel):
     converged: bool
     iterations: int
     method: str
+
+
+class UnbalancedLoadFlowBus(BaseModel):
+    bus_id: str
+    bus_name: str
+    voltage_kv: float               # Nominal line-to-line voltage (kV)
+    # Per-phase voltages (p.u., referenced to nominal phase-to-neutral)
+    va_pu: float
+    vb_pu: float
+    vc_pu: float
+    # Per-phase voltage angles (degrees)
+    angle_a_deg: float
+    angle_b_deg: float
+    angle_c_deg: float
+    # Per-phase voltages in kV (phase-to-neutral)
+    va_kv: float
+    vb_kv: float
+    vc_kv: float
+    # Sequence voltages (p.u. magnitudes)
+    v1_pu: float                    # Positive sequence
+    v2_pu: float                    # Negative sequence
+    v0_pu: float                    # Zero sequence
+    # Voltage Unbalance Factor per IEC 61000-3-13: |V2|/|V1| × 100 %
+    vuf_pct: float
+    # Per-phase active power injections (MW, positive = generation)
+    pa_mw: float = 0
+    pb_mw: float = 0
+    pc_mw: float = 0
+
+
+class UnbalancedLoadFlowBranch(BaseModel):
+    elementId: str
+    element_name: str = ""
+    from_bus: str
+    to_bus: str
+    # Per-phase currents (A)
+    ia_amps: float
+    ib_amps: float
+    ic_amps: float
+    in_amps: float                  # Neutral current = |Ia + Ib + Ic|
+    # Sequence currents (A)
+    i1_amps: float
+    i2_amps: float
+    i0_amps: float
+    loading_pct: float = 0
+
+
+class UnbalancedLoadFlowResults(BaseModel):
+    buses: dict[str, UnbalancedLoadFlowBus]
+    branches: list[UnbalancedLoadFlowBranch] = []
+    warnings: list[LoadFlowWarning] = []
+    converged: bool
+    iterations: int
+    method: str = "Sequence Component (Unbalanced)"
