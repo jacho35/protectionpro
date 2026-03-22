@@ -110,6 +110,12 @@
   stroke-width: 1;
 }
 
+.unbalanced-lf-annotation .annotation-badge {
+  fill: #e3f2fd;
+  stroke: var(--info, #1565c0);
+  stroke-width: 1;
+}
+
 .annotation-text {
   font-family: var(--font-mono);
   font-size: 10px;
