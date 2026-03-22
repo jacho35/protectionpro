@@ -7,6 +7,7 @@
 - **IEC 61363 marine/offshore fault analysis**: Fault analysis for isolated marine/offshore networks
 
 ## Load Flow Enhancements
+- ~~**Source/generator load split**: Fix generator vs utility power split when utility is behind a source-connected transformer~~
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 
 ## TCC Chart Enhancements
@@ -137,3 +138,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Sequence impedance editor: Positive, negative, zero sequence impedance fields for utility, generator, cable, and motor components~~
 - ~~DC arc flash analysis: Stokes & Oppenlander method with DGUV-I 203-077, DC arcing current, incident energy, PPE categories, and arc flash boundary~~
 - ~~SANS 10142 automatic compliance checks: LV voltage tolerance (±10%, NRS 048-2), cable protection coordination (In ≤ Iz, Cl. 5.5.2), minimum conductor size (Cl. 5.6.3), transformer neutral earthing (Cl. 8.3.1), maximum demand vs supply capacity (Appendix B), earth fault disconnection current (Cl. 5.5.6)~~
+- ~~Source/generator load split: Fix incorrect proportional split when utility source connects via transformer — generators now report at rated output, utility takes residual~~
