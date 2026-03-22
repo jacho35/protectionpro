@@ -45,7 +45,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - **Optimal Power Flow (OPF)**: Economic dispatch, Volt/VAR optimization, switching optimization
 - **Reliability Assessment**: SAIDI, SAIFI, MAIFI indices; failure mode & effect analysis (FMEA) for distribution networks
 - **Voltage Stability Analysis**: P-V and Q-V curves, nose curves, voltage collapse prediction
-- **Unbalanced Load Flow**: Three-phase asymmetric network analysis for unbalanced distribution systems
+- ~~**Unbalanced Load Flow**: Three-phase asymmetric network analysis for unbalanced distribution systems~~ ✓
 - **Contingency Analysis (N-1 / N-2)**: Security analysis for single and double outage scenarios
 - **Motor Acceleration (Full Dynamic)**: Time-domain simulation with speed-torque curves, acceleration time, starter/contactor selection — beyond current locked-rotor static analysis
 - **Passive Filter Sizing**: Size LC/C harmonic filters to meet THD limits
@@ -65,7 +65,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - **Battery Energy Storage System (BESS)**: BESS component for SLD with charge/discharge modelling in load flow and dynamics
 - **Variable Frequency Drive (VFD)**: Harmonic current source model for drives and converters
 - **Autotransformer (2W & 3W)**: Autotransformer model with tap-changing voltage regulation
-- **UPS / Rectifier / Charger**: DC system source components for battery-backed systems
+- ~~**UPS / Rectifier / Charger**: DC system source components for battery-backed systems~~ ✓
 - **Static VAR Compensator (SVC) / STATCOM**: Reactive compensation FACTS devices for voltage control
 - **HVDC Link**: DC interconnection between AC buses for HVDC system modelling
 
@@ -129,3 +129,6 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Detailed calculation formulas and standard references in HELP documentation for all analysis functions (Fault, Load Flow, Arc Flash, Cable Sizing, Duty Check, Grounding, Load Diversity, Motor Starting, TCC)~~
 - ~~Drag devices between tabs: Move devices to custom tabs via drag-and-drop~~
 - ~~User-defined curve data: Import custom manufacturer TCC data points (CSV)~~
+- ~~UPS / Rectifier / Battery Charger: DC system source components for battery-backed systems~~
+- ~~Directional flow arrows on wire connections (animated direction indicators)~~
+- ~~Unbalanced load flow: Three-phase asymmetric network analysis using symmetrical component method~~
