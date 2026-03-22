@@ -189,6 +189,17 @@ document.addEventListener('DOMContentLoaded', () => {
           UndoManager.redo();
         }
         break;
+      case 'h':
+      case 'H':
+        if (!e.ctrlKey && !e.metaKey) {
+          const allOn = Object.values(AppState.showResultBoxes).every(Boolean);
+          const newVal = !allOn;
+          for (const k of Object.keys(AppState.showResultBoxes)) AppState.showResultBoxes[k] = newVal;
+          if (typeof _syncResultToggleButtons === 'function') _syncResultToggleButtons();
+          Canvas.render();
+          document.getElementById('status-info').textContent = newVal ? 'Result boxes shown.' : 'Result boxes hidden.';
+        }
+        break;
     }
   });
 
@@ -1812,6 +1823,55 @@ document.addEventListener('DOMContentLoaded', () => {
     e.currentTarget.classList.toggle('active', AppState.showFaultAngles);
     Canvas.render();
   });
+
+  // Result box visibility toggles
+  function _toggleResultBoxes(types, forceValue) {
+    const rb = AppState.showResultBoxes;
+    for (const t of types) {
+      rb[t] = forceValue !== undefined ? forceValue : !rb[t];
+    }
+    Canvas.render();
+  }
+
+  function _syncResultToggleButtons() {
+    const rb = AppState.showResultBoxes;
+    const allOn = Object.values(rb).every(Boolean);
+    document.getElementById('btn-toggle-results-all').classList.toggle('active', allOn);
+    document.getElementById('btn-toggle-results-fault').classList.toggle('active', rb.fault);
+    document.getElementById('btn-toggle-results-loadflow').classList.toggle('active', rb.loadflow);
+    document.getElementById('btn-toggle-results-unbalanced').classList.toggle('active', rb.unbalancedLF);
+    document.getElementById('btn-toggle-results-arcflash').classList.toggle('active', rb.arcflash);
+    document.getElementById('btn-toggle-results-cable').classList.toggle('active', rb.cable);
+    document.getElementById('btn-toggle-results-motor').classList.toggle('active', rb.motor);
+    document.getElementById('btn-toggle-results-duty').classList.toggle('active', rb.duty);
+    document.getElementById('btn-toggle-results-loaddiversity').classList.toggle('active', rb.loadDiversity);
+    document.getElementById('btn-toggle-results-grounding').classList.toggle('active', rb.grounding);
+  }
+
+  document.getElementById('btn-toggle-results-all').addEventListener('click', () => {
+    const allOn = Object.values(AppState.showResultBoxes).every(Boolean);
+    const newVal = !allOn;
+    _toggleResultBoxes(Object.keys(AppState.showResultBoxes), newVal);
+    _syncResultToggleButtons();
+  });
+
+  const _resultToggleMap = [
+    ['btn-toggle-results-fault', 'fault'],
+    ['btn-toggle-results-loadflow', 'loadflow'],
+    ['btn-toggle-results-unbalanced', 'unbalancedLF'],
+    ['btn-toggle-results-arcflash', 'arcflash'],
+    ['btn-toggle-results-cable', 'cable'],
+    ['btn-toggle-results-motor', 'motor'],
+    ['btn-toggle-results-duty', 'duty'],
+    ['btn-toggle-results-loaddiversity', 'loadDiversity'],
+    ['btn-toggle-results-grounding', 'grounding'],
+  ];
+  for (const [btnId, key] of _resultToggleMap) {
+    document.getElementById(btnId).addEventListener('click', () => {
+      _toggleResultBoxes([key]);
+      _syncResultToggleButtons();
+    });
+  }
 
   // Zoom controls
   document.getElementById('btn-zoom-fit').addEventListener('click', () => Canvas.zoomToFit());

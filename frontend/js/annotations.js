@@ -33,7 +33,7 @@ const Annotations = {
     let html = '';
 
     // Fault result annotations on buses
-    if (AppState.faultResults && AppState.faultResults.buses) {
+    if (AppState.showResultBoxes.fault && AppState.faultResults && AppState.faultResults.buses) {
       for (const [busId, result] of Object.entries(AppState.faultResults.buses)) {
         const comp = AppState.components.get(busId);
         if (!comp) continue;
@@ -46,7 +46,7 @@ const Annotations = {
     }
 
     // Load flow annotations on buses
-    if (AppState.loadFlowResults && AppState.loadFlowResults.buses) {
+    if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.buses) {
       for (const [busId, result] of Object.entries(AppState.loadFlowResults.buses)) {
         const comp = AppState.components.get(busId);
         if (!comp) continue;
@@ -62,7 +62,7 @@ const Annotations = {
     // data labels on each component by Canvas.renderComponentDataLabels().
 
     // Unbalanced load flow annotations on buses
-    if (AppState.unbalancedLoadFlowResults && AppState.unbalancedLoadFlowResults.buses) {
+    if (AppState.showResultBoxes.unbalancedLF && AppState.unbalancedLoadFlowResults && AppState.unbalancedLoadFlowResults.buses) {
       for (const [busId, result] of Object.entries(AppState.unbalancedLoadFlowResults.buses)) {
         const comp = AppState.components.get(busId);
         if (!comp) continue;
@@ -75,7 +75,7 @@ const Annotations = {
     }
 
     // Unbalanced load flow VUF warnings
-    if (AppState.unbalancedLoadFlowResults && AppState.unbalancedLoadFlowResults.warnings) {
+    if (AppState.showResultBoxes.unbalancedLF && AppState.unbalancedLoadFlowResults && AppState.unbalancedLoadFlowResults.warnings) {
       for (const warn of AppState.unbalancedLoadFlowResults.warnings) {
         const comp = AppState.components.get(warn.elementId);
         if (!comp) continue;
@@ -86,7 +86,7 @@ const Annotations = {
     }
 
     // Voltage mismatch warnings from load flow
-    if (AppState.loadFlowResults && AppState.loadFlowResults.warnings) {
+    if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.warnings) {
       for (const warn of AppState.loadFlowResults.warnings) {
         const comp = AppState.components.get(warn.elementId);
         if (!comp) continue;
@@ -99,7 +99,7 @@ const Annotations = {
     }
 
     // Voltage depression overlays (when single-bus fault results exist)
-    if (AppState.faultResults && AppState.faultResults.buses) {
+    if (AppState.showResultBoxes.fault && AppState.faultResults && AppState.faultResults.buses) {
       const faultedBusIds = Object.keys(AppState.faultResults.buses);
       // Show voltage depression when single bus is faulted
       if (faultedBusIds.length === 1) {
@@ -121,7 +121,7 @@ const Annotations = {
     }
 
     // Arc flash annotations on buses
-    if (AppState.arcFlashResults && AppState.arcFlashResults.buses) {
+    if (AppState.showResultBoxes.arcflash && AppState.arcFlashResults && AppState.arcFlashResults.buses) {
       for (const [busId, result] of Object.entries(AppState.arcFlashResults.buses)) {
         const comp = AppState.components.get(busId);
         if (!comp) continue;
@@ -134,7 +134,7 @@ const Annotations = {
     }
 
     // Cable sizing annotations on cables
-    if (AppState.cableSizingResults && AppState.cableSizingResults.cables) {
+    if (AppState.showResultBoxes.cable && AppState.cableSizingResults && AppState.cableSizingResults.cables) {
       for (const cable of AppState.cableSizingResults.cables) {
         const comp = AppState.components.get(cable.cable_id);
         if (!comp) continue;
@@ -147,7 +147,7 @@ const Annotations = {
     }
 
     // Motor starting annotations on motors
-    if (AppState.motorStartingResults && AppState.motorStartingResults.motors) {
+    if (AppState.showResultBoxes.motor && AppState.motorStartingResults && AppState.motorStartingResults.motors) {
       for (const motor of AppState.motorStartingResults.motors) {
         const comp = AppState.components.get(motor.motor_id);
         if (!comp) continue;
@@ -160,7 +160,7 @@ const Annotations = {
     }
 
     // Duty check annotations on CBs/fuses
-    if (AppState.dutyCheckResults && AppState.dutyCheckResults.devices) {
+    if (AppState.showResultBoxes.duty && AppState.dutyCheckResults && AppState.dutyCheckResults.devices) {
       for (const device of AppState.dutyCheckResults.devices) {
         const comp = AppState.components.get(device.device_id);
         if (!comp) continue;
@@ -173,7 +173,7 @@ const Annotations = {
     }
 
     // Load diversity annotations on buses
-    if (AppState.loadDiversityResults && AppState.loadDiversityResults.buses) {
+    if (AppState.showResultBoxes.loadDiversity && AppState.loadDiversityResults && AppState.loadDiversityResults.buses) {
       for (const busResult of AppState.loadDiversityResults.buses) {
         const comp = AppState.components.get(busResult.bus_id);
         if (!comp) continue;
@@ -186,7 +186,7 @@ const Annotations = {
     }
 
     // Grounding analysis annotations on buses
-    if (AppState.groundingResults && AppState.groundingResults.buses) {
+    if (AppState.showResultBoxes.grounding && AppState.groundingResults && AppState.groundingResults.buses) {
       for (const busResult of AppState.groundingResults.buses) {
         const comp = AppState.components.get(busResult.bus_id);
         if (!comp) continue;
