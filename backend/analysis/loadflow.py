@@ -177,6 +177,38 @@ def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
     return 1.0, None
 
 
+def _source_output_mva(comp):
+    """Return (p_mw, q_mvar, s_mva, rated_mva) for a directly-connected source component."""
+    if comp.type == "generator":
+        rated = comp.props.get("rated_mva", 10)
+        pf = comp.props.get("power_factor", 0.85)
+        p = rated * pf
+        q = rated * math.sqrt(max(0.0, 1 - pf ** 2))
+        return p, q, rated, rated
+    elif comp.type == "solar_pv":
+        rated_kw = comp.props.get("rated_kw", 100)
+        n_inv = comp.props.get("num_inverters", 1)
+        eff = comp.props.get("inverter_eff", 0.97)
+        pf = comp.props.get("power_factor", 1.0)
+        irr = comp.props.get("irradiance_pct", 100) / 100.0
+        rated_full = rated_kw * n_inv / (eff * 1000)   # full-sun capacity
+        s_mva = rated_full * irr
+        p = s_mva * abs(pf)
+        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2))
+        return p, q, s_mva, rated_full
+    elif comp.type == "wind_turbine":
+        rated = comp.props.get("rated_mva", 2.0)
+        n_turb = comp.props.get("num_turbines", 1)
+        pf = comp.props.get("power_factor", 0.95)
+        wind_pct = comp.props.get("wind_speed_pct", 100) / 100.0
+        rated_full = rated * n_turb
+        s_mva = rated_full * wind_pct
+        p = s_mva * abs(pf)
+        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2))
+        return p, q, s_mva, rated_full
+    return 0.0, 0.0, 0.0, 0.0
+
+
 def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadFlowResults:
     """Run load flow analysis."""
     base_mva = project.baseMVA
@@ -587,6 +619,31 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 from_bus=bus_id, to_bus=bus_id,
                 p_mw=round(p_per_tx, 4), q_mvar=round(q_per_tx, 4),
                 s_mva=round(s_per_tx, 4), i_amps=round(elem_i_amps, 2),
+                loading_pct=round(loading, 2), losses_mw=0,
+            ))
+
+    # ── Source output annotations (generator, solar_pv, wind_turbine) ──
+    # These components inject power directly into their connected bus but have no
+    # branch chain, so they never appear in branch_results.  Emit an entry for each
+    # so the frontend can display P/Q/I/loading on the diagram.
+    _SOURCE_TYPES = {"generator", "solar_pv", "wind_turbine"}
+    for bus in buses:
+        bus_i = bus_idx[bus.id]
+        v_kv_actual = abs(V[bus_i]) * bus.props.get("voltage_kv", 11)
+        for src in _find_components_at_bus(bus.id, adjacency, components):
+            if src.type not in _SOURCE_TYPES:
+                continue
+            p_mw, q_mvar, s_mva, rated_mva = _source_output_mva(src)
+            if s_mva <= 0:
+                continue
+            loading = (s_mva / rated_mva * 100) if rated_mva > 0 else 0
+            i_amps = (s_mva * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+            branch_results.append(LoadFlowBranch(
+                elementId=src.id,
+                element_name=src.props.get("name", src.type),
+                from_bus=bus.id, to_bus=bus.id,
+                p_mw=round(p_mw, 4), q_mvar=round(q_mvar, 4),
+                s_mva=round(s_mva, 4), i_amps=round(i_amps, 2),
                 loading_pct=round(loading, 2), losses_mw=0,
             ))
 

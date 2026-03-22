@@ -616,18 +616,33 @@ I = S / (√3 × V) = ${iCalc.toFixed(2)} A</div>
           </div>`;
       }
 
-      // Branch flow for this component (if it's a branch element)
-      if (['transformer', 'cable', 'cb', 'switch', 'fuse'].includes(comp.type) && lf.branches) {
+      // Branch / source flow for this component
+      const _branchTypes = ['transformer', 'cable', 'cb', 'switch', 'fuse', 'generator', 'solar_pv', 'wind_turbine'];
+      if (_branchTypes.includes(comp.type) && lf.branches) {
+        const isSource = ['generator', 'solar_pv', 'wind_turbine'].includes(comp.type);
         for (const br of lf.branches) {
           if (br.elementId !== comp.id) continue;
           const fromBus = AppState.components.get(br.from_bus);
-          const toBus = AppState.components.get(br.to_bus);
           const sMVA = br.s_mva || Math.sqrt(br.p_mw ** 2 + br.q_mvar ** 2);
 
-          html += `
-            <div class="calc-step">
-              <div class="calc-step-title">Branch Power Flow — ${comp.props.name}</div>
-              <div class="calc-formula">From: ${fromBus?.props?.name || br.from_bus}
+          if (isSource) {
+            html += `
+              <div class="calc-step">
+                <div class="calc-step-title">Load Flow Output — ${comp.props.name}</div>
+                <div class="calc-formula">Connected to: ${fromBus?.props?.name || br.from_bus}
+
+P = ${br.p_mw?.toFixed(4)} MW  (${(br.p_mw * 1000).toFixed(1)} kW)  [generation]
+Q = ${br.q_mvar?.toFixed(4)} MVAr  (${(br.q_mvar * 1000).toFixed(1)} kVAr)
+S = ${sMVA.toFixed(4)} MVA  (${(sMVA * 1000).toFixed(1)} kVA)
+I = ${br.i_amps?.toFixed(1) || '—'} A
+${br.loading_pct > 0 ? `Output = ${br.loading_pct.toFixed(1)}% of rated capacity${br.loading_pct > 100 ? '  ⚠ OVERLOADED' : ''}` : ''}</div>
+              </div>`;
+          } else {
+            const toBus = AppState.components.get(br.to_bus);
+            html += `
+              <div class="calc-step">
+                <div class="calc-step-title">Branch Power Flow — ${comp.props.name}</div>
+                <div class="calc-formula">From: ${fromBus?.props?.name || br.from_bus}
 To:   ${toBus?.props?.name || br.to_bus}
 
 P = ${br.p_mw?.toFixed(4)} MW  (${(br.p_mw * 1000).toFixed(1)} kW)  ${br.p_mw >= 0 ? '→' : '←'}
@@ -636,7 +651,8 @@ S = ${sMVA.toFixed(4)} MVA  (${(sMVA * 1000).toFixed(1)} kVA)
 I = ${br.i_amps?.toFixed(1) || '—'} A
 ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct > 100 ? '  ⚠ OVERLOADED' : br.loading_pct > 80 ? '  ⚠ Heavy loading' : ''}` : ''}
 ${br.losses_mw ? `Losses = ${(br.losses_mw * 1000).toFixed(2)} kW` : ''}</div>
-            </div>`;
+              </div>`;
+          }
         }
       }
     }
