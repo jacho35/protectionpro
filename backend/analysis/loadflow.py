@@ -678,16 +678,17 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
     # ── Source output annotations ──
     #
-    # SOURCE MODEL — DROOP-BASED LOAD SHARING
-    # ─────────────────────────────────────────
-    # S_bus[swing] = total net injection the swing bus must provide to the network.
+    # SOURCE MODEL — PROPORTIONAL LOAD SHARING (DROOP)
+    # ──────────────────────────────────────────────────
+    # On a swing bus, S_bus = total injection the bus must provide to the network.
+    # ALL sources at that bus (generators + utility TX) share S_bus proportionally
+    # by their rated MVA.  This models droop-based load sharing and gives uniform
+    # loading across all sources connected to the bus.
     #
-    # When generators share a swing bus (with or without a utility source):
-    #   1. If total generator capacity ≤ S_bus: generators at rated, utility fills gap
-    #   2. If total generator capacity > S_bus: generators share S_bus proportionally
-    #      by rated MVA (droop sharing), utility provides minimal power
+    # When utility is directly connected (infinite bus): generators at rated,
+    # utility absorbs/supplies the residual (standard swing model).
     #
-    # For non-swing PQ buses: NR enforces P_spec → generators at scheduled output.
+    # On non-swing PQ buses: NR enforces P_spec → generators at scheduled output.
     _SOURCE_TYPES = {"generator", "solar_pv", "wind_turbine"}
 
     for bus in buses:
@@ -701,40 +702,35 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         gen_sources = [s for s in all_at_bus if s.type in _SOURCE_TYPES]
         util_sources = [s for s in all_at_bus if s.type == "utility"]
 
-        # ── Generator / solar / wind annotations ──
-        if gen_sources:
-            if is_swing:
-                # Swing bus: NR ignores P_spec. S_bus is the total injection needed.
-                # Use droop sharing: generators share S_bus proportionally by rated MVA,
-                # each capped at rated output. Utility (if any) supplies the remainder.
-                s_actual = S_bus[bus_i] * base_mva  # complex MVA total demand
+        # ── Swing bus: proportional load sharing among ALL sources ──
+        if is_swing and gen_sources:
+            s_actual = S_bus[bus_i] * base_mva  # complex MVA total demand
 
-                # Compute rated outputs for each generator
-                rated_info = {}
-                for src in gen_sources:
-                    _p, _q, s_rated, rated_mva = _source_output_mva(src)
-                    rated_info[src.id] = (_p, _q, s_rated, rated_mva)
+            # Build the source pool: (kind, object(s), rated_mva)
+            source_pool = []
+            for src in gen_sources:
+                _p, _q, s_rated, rated_mva = _source_output_mva(src)
+                source_pool.append(('gen', src, rated_mva))
 
-                total_gen_p = sum(info[0] for info in rated_info.values())
-                total_gen_q = sum(info[1] for info in rated_info.values())
-                total_gen_s = sum(info[2] for info in rated_info.values())
+            if has_utility_via_tx and not has_utility:
+                # Utility behind TX: TX rating limits utility contribution
+                for tx, util in _utility_tx_bus_map[bus.id]:
+                    tx_rated = tx.props.get("rated_mva", 10)
+                    source_pool.append(('util_tx', (tx, util), tx_rated))
 
-                # Scale factor: how much of rated capacity generators should deliver
-                # Based on active power demand vs total generator active power capacity
-                if total_gen_p > 0 and s_actual.real > 0:
-                    p_scale = min(1.0, s_actual.real / total_gen_p)
-                elif s_actual.real <= 0:
-                    p_scale = 0.0  # No active power demand
-                else:
-                    p_scale = 0.0
+            total_pool_mva = sum(entry[2] for entry in source_pool)
 
-                for src in gen_sources:
-                    _p, _q, s_rated, rated_mva = rated_info[src.id]
-                    if rated_mva <= 0:
-                        continue
-                    p_out = _p * p_scale
-                    q_out = _q * p_scale
-                    s_out = s_rated * p_scale
+            for kind, obj, rated_mva in source_pool:
+                if total_pool_mva <= 0 or rated_mva <= 0:
+                    continue
+                fraction = rated_mva / total_pool_mva
+                p_out = s_actual.real * fraction
+                q_out = s_actual.imag * fraction
+                s_out = abs(s_actual) * fraction
+                loading = s_out / rated_mva * 100
+
+                if kind == 'gen':
+                    src = obj
                     i_amps = (s_out * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
                     branch_results.append(LoadFlowBranch(
                         elementId=src.id,
@@ -742,33 +738,60 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                         from_bus=bus.id, to_bus=bus.id,
                         p_mw=round(p_out, 4), q_mvar=round(q_out, 4),
                         s_mva=round(s_out, 4), i_amps=round(i_amps, 2),
-                        loading_pct=round(s_out / rated_mva * 100, 2), losses_mw=0,
+                        loading_pct=round(loading, 2), losses_mw=0,
+                    ))
+                elif kind == 'util_tx':
+                    tx, util = obj
+                    # Utility TX annotation
+                    lv_kv = min(tx.props.get("voltage_hv_kv", 11),
+                                tx.props.get("voltage_lv_kv", 0.42))
+                    tx_i_amps = (s_out * 1000) / (math.sqrt(3) * lv_kv) if lv_kv > 0 else 0
+                    branch_results.append(LoadFlowBranch(
+                        elementId=tx.id,
+                        element_name=tx.props.get("name", tx.type),
+                        from_bus=bus.id, to_bus=bus.id,
+                        p_mw=round(p_out, 4), q_mvar=round(q_out, 4),
+                        s_mva=round(s_out, 4), i_amps=round(tx_i_amps, 2),
+                        loading_pct=round(loading, 2), losses_mw=0,
+                    ))
+                    # Utility source annotation
+                    fault_mva = util.props.get("fault_mva", 500)
+                    util_loading = (s_out / fault_mva * 100) if fault_mva > 0 else 0
+                    util_i_amps = (s_out * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+                    branch_results.append(LoadFlowBranch(
+                        elementId=util.id,
+                        element_name=util.props.get("name", "Utility"),
+                        from_bus=bus.id, to_bus=bus.id,
+                        p_mw=round(p_out, 4), q_mvar=round(q_out, 4),
+                        s_mva=round(s_out, 4), i_amps=round(util_i_amps, 2),
+                        loading_pct=round(util_loading, 2), losses_mw=0,
                     ))
 
-                # Compute actual total generator output for utility remainder calc
-                _gen_actual_p = total_gen_p * p_scale
-                _gen_actual_q = total_gen_q * p_scale
-            else:
-                # Non-swing bus: NR enforces P_spec → generator injects at rated.
-                for src in gen_sources:
-                    _p, _q, s_rated, rated_mva = _source_output_mva(src)
-                    if rated_mva <= 0:
-                        continue
-                    i_amps = (s_rated * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
-                    branch_results.append(LoadFlowBranch(
-                        elementId=src.id,
-                        element_name=src.props.get("name", src.type),
-                        from_bus=bus.id, to_bus=bus.id,
-                        p_mw=round(_p, 4), q_mvar=round(_q, 4),
-                        s_mva=round(s_rated, 4), i_amps=round(i_amps, 2),
-                        loading_pct=round(s_rated / rated_mva * 100, 2), losses_mw=0,
-                    ))
+            # Track actual gen output for direct-utility residual calc
+            gen_pool_mva = sum(e[2] for e in source_pool if e[0] == 'gen')
+            _gen_actual_p = s_actual.real * gen_pool_mva / total_pool_mva if total_pool_mva > 0 else 0
+            _gen_actual_q = s_actual.imag * gen_pool_mva / total_pool_mva if total_pool_mva > 0 else 0
+
+        elif gen_sources:
+            # Non-swing bus: NR enforces P_spec → generator injects at rated.
+            for src in gen_sources:
+                _p, _q, s_rated, rated_mva = _source_output_mva(src)
+                if rated_mva <= 0:
+                    continue
+                i_amps = (s_rated * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+                branch_results.append(LoadFlowBranch(
+                    elementId=src.id,
+                    element_name=src.props.get("name", src.type),
+                    from_bus=bus.id, to_bus=bus.id,
+                    p_mw=round(_p, 4), q_mvar=round(_q, 4),
+                    s_mva=round(s_rated, 4), i_amps=round(i_amps, 2),
+                    loading_pct=round(s_rated / rated_mva * 100, 2), losses_mw=0,
+                ))
 
         # ── Utility source annotations (directly connected) ──
         if util_sources:
             s_bus_total = S_bus[bus_i] * base_mva
             if gen_sources and is_swing:
-                # Use actual generator output (droop-adjusted) for remainder calc
                 s_util = complex(s_bus_total.real - _gen_actual_p,
                                  s_bus_total.imag - _gen_actual_q)
             elif gen_sources:
@@ -793,29 +816,18 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     loading_pct=round(loading, 2), losses_mw=0,
                 ))
 
-        # ── Utility source annotations (behind source-connected TX) ──
-        if has_utility_via_tx:
+        # ── Utility behind TX (no generators at this bus) ──
+        # When there are no generators, the utility TX handles the full S_bus.
+        # (When generators ARE present, utility TX is handled in the pool above.)
+        if has_utility_via_tx and not gen_sources:
             s_bus_total = S_bus[bus_i] * base_mva
-            if gen_sources and is_swing:
-                s_util_total = complex(s_bus_total.real - _gen_actual_p,
-                                       s_bus_total.imag - _gen_actual_q)
-            elif gen_sources:
-                gen_p_rated = sum(_source_output_mva(s)[0] for s in gen_sources)
-                gen_q_rated = sum(_source_output_mva(s)[1] for s in gen_sources)
-                s_util_total = complex(s_bus_total.real - gen_p_rated,
-                                       s_bus_total.imag - gen_q_rated)
-            else:
-                s_util_total = s_bus_total
-
             tx_util_list = _utility_tx_bus_map[bus.id]
             n_util_tx = len(tx_util_list)
             for tx, util in tx_util_list:
-                # Split utility power equally among parallel utility TXs
-                s_this_tx = complex(s_util_total.real / n_util_tx,
-                                    s_util_total.imag / n_util_tx)
+                s_this_tx = complex(s_bus_total.real / n_util_tx,
+                                    s_bus_total.imag / n_util_tx)
                 s_this_mva = abs(s_this_tx)
 
-                # TX loading
                 rated_mva_xfmr = tx.props.get("rated_mva", 10)
                 tx_loading = (s_this_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
                 lv_kv = min(tx.props.get("voltage_hv_kv", 11),
@@ -830,7 +842,6 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     loading_pct=round(tx_loading, 2), losses_mw=0,
                 ))
 
-                # Utility source annotation
                 fault_mva = util.props.get("fault_mva", 500)
                 util_loading = (s_this_mva / fault_mva * 100) if fault_mva > 0 else 0
                 util_i_amps = (s_this_mva * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
