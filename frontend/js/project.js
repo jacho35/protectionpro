@@ -17,6 +17,7 @@ const Project = {
     document.getElementById('btn-export-settings').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportSettingsCSV(); });
     document.getElementById('btn-export-aflabels').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportArcFlashLabels(); });
     document.getElementById('btn-export-compare').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showComparisonDialog(); });
+    document.getElementById('btn-export-calculations').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportCalculationsReport(); });
   },
 
   newProject() {

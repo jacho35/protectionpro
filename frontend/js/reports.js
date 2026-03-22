@@ -876,4 +876,33 @@ const Reports = {
       this.exportComparisonPDF(idA, idB);
     });
   },
+
+  // ── Detailed Calculations Report ──
+
+  async exportCalculationsReport() {
+    const hasResults = AppState.faultResults || AppState.loadFlowResults ||
+      AppState.arcFlashResults || AppState.cableSizingResults ||
+      AppState.motorStartingResults || AppState.dutyCheckResults ||
+      AppState.loadDiversityResults || AppState.groundingResults;
+
+    if (!hasResults) {
+      Project._statusMsg('No analysis results found. Run at least one analysis first.');
+      return;
+    }
+
+    Project._statusMsg('Generating detailed calculations report...');
+    try {
+      const blob = await API.generateCalculationsReport();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${AppState.projectName || 'Untitled'}_calculations.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      Project._statusMsg('Exported detailed calculations report as PDF.');
+    } catch (e) {
+      Project._statusMsg(`Calculations report failed: ${e.message}`);
+      console.error('Calculations report error:', e);
+    }
+  },
 };
