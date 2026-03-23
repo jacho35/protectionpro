@@ -174,6 +174,9 @@ const Properties = {
       }
     });
 
+    // Initialize searchable select widgets (cable dropdown)
+    this._initSearchableSelects(comp);
+
     // Bind info button popups
     this.contentEl.querySelectorAll('.prop-info-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -233,10 +236,33 @@ const Properties = {
     let inputHtml = '';
     let unitHtml = '';
 
-    if (field.type === 'standard_select') {
-      // Standard type selector (cable, transformer, cb, or fuse library)
-      const library = field.library === 'cable' ? STANDARD_CABLES
-        : field.library === 'transformer' ? STANDARD_TRANSFORMERS
+    if (field.type === 'standard_select' && field.library === 'cable') {
+      // Searchable cable selector with voltage filtering
+      const voltageFilter = this._getCableVoltageFilter(compId);
+      const filtered = voltageFilter ? STANDARD_CABLES.filter(voltageFilter.fn) : STANDARD_CABLES;
+      const selectedCable = STANDARD_CABLES.find(c => c.id === value);
+      const displayText = value ? (selectedCable ? selectedCable.name : value) : '';
+      const hintHtml = voltageFilter ? `<div class="searchable-select-hint">Showing ${voltageFilter.label} cables</div>` : '';
+
+      // Build option divs
+      let optionsHtml = `<div class="searchable-select-option" data-value="">-- Custom --</div>`;
+      // If selected cable is outside filter, include it as mismatch
+      const filteredIds = new Set(filtered.map(c => c.id));
+      if (value && selectedCable && !filteredIds.has(value)) {
+        optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${selectedCable.id}">${selectedCable.name} (voltage mismatch)</div>`;
+      }
+      for (const cable of filtered) {
+        const sel = cable.id === value ? ' selected' : '';
+        optionsHtml += `<div class="searchable-select-option${sel}" data-value="${cable.id}">${cable.name}</div>`;
+      }
+
+      inputHtml = `<div class="searchable-select" data-field="${field.key}" data-library="${field.library}" data-value="${value || ''}">
+        <input type="text" class="searchable-select-input" placeholder="Search cables..." value="${displayText}" autocomplete="off">
+        <div class="searchable-select-dropdown">${hintHtml}${optionsHtml}</div>
+      </div>`;
+    } else if (field.type === 'standard_select') {
+      // Standard type selector (transformer, cb, or fuse library)
+      const library = field.library === 'transformer' ? STANDARD_TRANSFORMERS
         : field.library === 'cb' ? STANDARD_CBS
         : field.library === 'fuse' ? STANDARD_FUSES
         : [];
@@ -745,6 +771,138 @@ ${br.losses_mw ? `Losses = ${(br.losses_mw * 1000).toFixed(2)} kW` : ''}</div>
       }
     }
     return busIds;
+  },
+
+  // Get voltage filter for cable library based on connected bus voltage
+  _getCableVoltageFilter(compId) {
+    const busIds = this._getConnectedBusIds(compId);
+    if (busIds.length === 0) return null; // no buses — show all cables
+
+    const voltages = new Set();
+    for (const busId of busIds) {
+      const bus = AppState.components.get(busId);
+      if (bus && bus.props.voltage_kv) voltages.add(bus.props.voltage_kv);
+    }
+    if (voltages.size !== 1) return null; // ambiguous — show all
+
+    const busVoltage = [...voltages][0];
+    if (busVoltage <= 1.0) {
+      return { fn: c => c.voltage_kv <= 1.0, label: 'LV' };
+    } else {
+      return { fn: c => c.voltage_kv === busVoltage, label: `${busVoltage} kV` };
+    }
+  },
+
+  // Initialize searchable select widgets for cable dropdown
+  _initSearchableSelects(comp) {
+    this.contentEl.querySelectorAll('.searchable-select').forEach(wrapper => {
+      const input = wrapper.querySelector('.searchable-select-input');
+      const dropdown = wrapper.querySelector('.searchable-select-dropdown');
+      const options = dropdown.querySelectorAll('.searchable-select-option');
+      const fieldKey = wrapper.dataset.field;
+      const libraryType = wrapper.dataset.library;
+      let highlightIdx = -1;
+
+      const open = () => {
+        wrapper.classList.add('open');
+        // Show all options when opening (clear previous search filter)
+        options.forEach(opt => opt.classList.remove('hidden'));
+        highlightIdx = -1;
+      };
+
+      const close = () => {
+        wrapper.classList.remove('open');
+        // Restore display text to current selection
+        const currentVal = wrapper.dataset.value;
+        if (currentVal) {
+          const cable = STANDARD_CABLES.find(c => c.id === currentVal);
+          input.value = cable ? cable.name : currentVal;
+        } else {
+          input.value = '';
+        }
+        highlightIdx = -1;
+      };
+
+      const selectOption = (val) => {
+        wrapper.dataset.value = val;
+        comp.props[fieldKey] = val;
+        if (val) {
+          this.applyStandardType(comp, libraryType, val);
+        }
+        AppState.dirty = true;
+        AppState.clearResults();
+        Canvas.render();
+        wrapper.classList.remove('open');
+        this.show(comp.id);
+      };
+
+      const getVisibleOptions = () => [...options].filter(o => !o.classList.contains('hidden'));
+
+      const updateHighlight = (visibleOpts) => {
+        options.forEach(o => o.classList.remove('highlighted'));
+        if (highlightIdx >= 0 && highlightIdx < visibleOpts.length) {
+          visibleOpts[highlightIdx].classList.add('highlighted');
+          visibleOpts[highlightIdx].scrollIntoView({ block: 'nearest' });
+        }
+      };
+
+      input.addEventListener('focus', open);
+      input.addEventListener('click', open);
+
+      input.addEventListener('input', () => {
+        const query = input.value.toLowerCase();
+        options.forEach(opt => {
+          const text = opt.textContent.toLowerCase();
+          const val = opt.dataset.value;
+          // Always show "-- Custom --" option
+          if (val === '') {
+            opt.classList.remove('hidden');
+          } else {
+            opt.classList.toggle('hidden', !text.includes(query));
+          }
+        });
+        highlightIdx = -1;
+        if (!wrapper.classList.contains('open')) open();
+      });
+
+      input.addEventListener('keydown', (e) => {
+        const visible = getVisibleOptions();
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          highlightIdx = Math.min(highlightIdx + 1, visible.length - 1);
+          updateHighlight(visible);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          highlightIdx = Math.max(highlightIdx - 1, 0);
+          updateHighlight(visible);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (highlightIdx >= 0 && highlightIdx < visible.length) {
+            selectOption(visible[highlightIdx].dataset.value);
+          }
+        } else if (e.key === 'Escape') {
+          close();
+          input.blur();
+        }
+      });
+
+      dropdown.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // prevent input blur
+        const opt = e.target.closest('.searchable-select-option');
+        if (opt) selectOption(opt.dataset.value);
+      });
+
+      // Close on outside click
+      const outsideHandler = (e) => {
+        if (!wrapper.contains(e.target)) {
+          close();
+          document.removeEventListener('mousedown', outsideHandler);
+        }
+      };
+      input.addEventListener('focus', () => {
+        setTimeout(() => document.addEventListener('mousedown', outsideHandler), 0);
+      });
+    });
   },
 
   hideCalcModal() {
