@@ -11,6 +11,7 @@
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 
 ## TCC Chart Enhancements
+- ~~**Mini SLD panel**: Vertical protection-path diagram alongside TCC chart showing IEC symbols, component names, ratings, and curve color accents — similar to ETAP STAR module~~
 
 ## Multi-User & Collaboration
 - **User authentication**: Login system with role-based access
@@ -158,4 +159,6 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Fix single-line diagram missing from PDF reports: rasterize SVG client-side and embed in server-generated PDF~~
 - ~~Connection warning logic: unconnected port warnings on buses only shown when the bus has zero connections, not on every empty port~~
 - ~~Auto voltage propagation: components connecting to a bus automatically adopt its voltage level; bidirectional-smart logic propagates source voltages to buses at defaults; transformers bridge voltage zones with HV/LV winding matching; bus voltage changes prompt confirmation before updating all connected equipment~~
+- ~~Mini SLD panel in TCC: vertical protection-path diagram alongside TCC chart with simplified IEC symbols, component names, ratings, clickable device selection, and collapsible panel~~
 - ~~Show active project name in toolbar: display the current project name next to the app title, clickable to rename~~
+- ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
