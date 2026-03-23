@@ -50,6 +50,10 @@ const TCC = {
   // ── Selected device for settings panel ──
   selectedDeviceIndex: -1,
 
+  // ── Focused grading mode (opened from properties panel) ──
+  _focusedMode: false,
+  _focusedCompId: null,
+
   // ── Fault current markers ──
   showFaultMarkers: true,
 
@@ -322,9 +326,69 @@ const TCC = {
     });
   },
 
+  // Open TCC focused on a specific device and its upstream protection path
+  openForDevice(compId) {
+    const comp = AppState.components.get(compId);
+    if (!comp) return;
+
+    // Save state before rebuilding
+    if (this.devices.length > 0) {
+      this._saveDisplayState();
+    }
+
+    this._focusedMode = true;
+    this._focusedCompId = compId;
+    this.devices = [];
+    this.colorIndex = 0;
+    this.selectedDeviceIndex = -1;
+
+    // Trace upstream protection devices and load only those
+    const filterSet = Components.traceUpstreamProtection(compId);
+    this._loadDevicesFromNetwork(filterSet);
+    this._restoreDisplayState();
+
+    // Auto-select the target device
+    for (let i = 0; i < this.devices.length; i++) {
+      if (this.devices[i].id === compId) {
+        this.selectedDeviceIndex = i;
+        this._miniSLDEndpointDeviceIdx = i;
+        break;
+      }
+    }
+
+    // Update header
+    const headerEl = document.querySelector('#tcc-modal .modal-header h3');
+    if (headerEl) {
+      headerEl.textContent = `TCC Grading \u2014 ${comp.props?.name || compId}`;
+    }
+
+    this._buildTabs();
+    document.getElementById('tcc-modal').style.display = '';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this._renderTabs();
+        this._renderVoltageSelector();
+        this.render();
+        this._renderDeviceList();
+        this._renderSelectedDeviceSettings();
+        this._runCoordinationCheck();
+        this._renderMiniSLD();
+      });
+    });
+  },
+
   close() {
     this._saveDisplayState();
     document.getElementById('tcc-modal').style.display = 'none';
+    // Refresh properties panel if we were in focused grading mode
+    if (this._focusedMode && Properties.currentId) {
+      Properties.show(Properties.currentId);
+    }
+    this._focusedMode = false;
+    this._focusedCompId = null;
+    // Reset header
+    const headerEl = document.querySelector('#tcc-modal .modal-header h3');
+    if (headerEl) headerEl.textContent = 'Time-Current Curves (TCC)';
   },
 
   // ── Resolve voltage at a component by tracing wires to a bus ──
@@ -361,8 +425,9 @@ const TCC = {
 
   // ── Load relays and fuses from the SLD ──
 
-  _loadDevicesFromNetwork() {
+  _loadDevicesFromNetwork(filterSet = null) {
     for (const [id, comp] of AppState.components) {
+      if (filterSet && !filterSet.has(id)) continue;
       if (comp.type === 'relay' && (comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N' || comp.props?.relay_type === '67')) {
         // If relay has an associated CT, resolve voltage from CT's location
         const ctId = comp.props?.associated_ct;

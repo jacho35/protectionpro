@@ -20,6 +20,50 @@ const Components = {
     return connected;
   },
 
+  // Trace upstream from a component toward sources, collecting all protection
+  // and thermal devices encountered along the paths. Returns a Set of component IDs.
+  traceUpstreamProtection(compId) {
+    const PROTECTION_TYPES = new Set(['cb', 'fuse', 'relay']);
+    const THERMAL_TYPES = new Set(['transformer', 'cable']);
+    const SOURCE_TYPES = new Set(['utility', 'generator', 'solar_pv', 'wind_turbine']);
+    const LOAD_TYPES = new Set(['static_load', 'motor_induction', 'motor_synchronous']);
+
+    // Build adjacency from wires
+    const adj = new Map();
+    for (const wire of AppState.wires.values()) {
+      if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
+      if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
+      adj.get(wire.fromComponent).push(wire.toComponent);
+      adj.get(wire.toComponent).push(wire.fromComponent);
+    }
+
+    const relevant = new Set([compId]);
+    const visited = new Set([compId]);
+    const queue = [compId];
+
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      const comp = AppState.components.get(cur);
+      if (!comp) continue;
+
+      // Don't traverse past loads (they are downstream endpoints)
+      if (cur !== compId && LOAD_TYPES.has(comp.type)) continue;
+
+      // Collect protection and thermal devices
+      if (cur !== compId && (PROTECTION_TYPES.has(comp.type) || THERMAL_TYPES.has(comp.type))) {
+        relevant.add(cur);
+      }
+
+      for (const neighbor of (adj.get(cur) || [])) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+    return relevant;
+  },
+
   // Check if a specific port on a component has a wire connected
   isPortConnected(compId, portId) {
     for (const wire of AppState.wires.values()) {

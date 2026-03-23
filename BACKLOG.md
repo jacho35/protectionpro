@@ -12,6 +12,7 @@
 
 ## TCC Chart Enhancements
 - ~~**Mini SLD panel**: Vertical protection-path diagram alongside TCC chart showing IEC symbols, component names, ratings, and curve color accents — similar to ETAP STAR module~~
+- ~~**Per-device TCC grading button**: Button in CB/fuse/relay properties panel to open focused TCC window showing only the selected device and its upstream protection for grading adjustment~~
 
 ## Multi-User & Collaboration
 - **User authentication**: Login system with role-based access
@@ -97,6 +98,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 ---
 
 ## Completed
+- ~~Per-device TCC grading button: Button in CB/fuse/relay properties panel to open focused TCC window with upstream protection devices for grading~~
 - ~~Persist result box positions: analysis result boxes retain their dragged positions across simulation re-runs and project save/load; analysis results are saved with the project so boxes appear on load; "Reset Result Box Positions" button in View menu to restore defaults~~
 - ~~Properties panel sections: organized component properties into collapsible sections grouped by analysis type (General, Fault Analysis, Load Flow, Arc Flash, Grounding, Cable Sizing, Protection Settings)~~
 - ~~Mobile interface: responsive layout with bottom navigation, slide-up component/analysis/properties/menu sheets, pinch-to-zoom and pan touch gestures, floating action buttons for mode and zoom, tap-to-place components~~
