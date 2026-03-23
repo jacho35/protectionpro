@@ -166,3 +166,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Mini-SLD grading endpoint selection: set a downstream protection device as path endpoint from device list to show only source-to-endpoint path on mini-SLD~~
 - ~~Delete custom TCC tabs: custom tabs now show × close button to remove them, reassigning devices back to their voltage tabs~~
 - ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
+- ~~Generator/PV/Wind data labels: display static property labels (rating, voltage, power factor) next to generator, solar PV, and wind turbine components on the canvas, matching transformer label behavior~~
