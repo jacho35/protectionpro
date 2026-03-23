@@ -95,6 +95,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 ---
 
 ## Completed
+- ~~Properties panel sections: organized component properties into collapsible sections grouped by analysis type (General, Fault Analysis, Load Flow, Arc Flash, Grounding, Cable Sizing, Protection Settings)~~
 - ~~Mobile interface: responsive layout with bottom navigation, slide-up component/analysis/properties/menu sheets, pinch-to-zoom and pan touch gestures, floating action buttons for mode and zoom, tap-to-place components~~
 - ~~Overlay fault current markers on TCC~~
 - ~~TCC comparison mode (side-by-side before/after)~~
