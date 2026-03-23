@@ -1737,8 +1737,28 @@ document.addEventListener('DOMContentLoaded', () => {
     _printPreview();
   });
 
-  function _exportPrintPDF() {
-    const { jsPDF } = window.jspdf;
+  async function _loadJsPDF() {
+    if (window.jspdf) return window.jspdf.jsPDF;
+    // Dynamically load jsPDF if CDN script failed
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    if (!window.jspdf) throw new Error('Failed to load jsPDF library');
+    return window.jspdf.jsPDF;
+  }
+
+  async function _exportPrintPDF() {
+    let jsPDF;
+    try {
+      jsPDF = await _loadJsPDF();
+    } catch (e) {
+      alert('Could not load the PDF library (jsPDF). Please check your internet connection and try again.');
+      return;
+    }
     const pageSize = document.getElementById('print-page-size').value;
     const orientation = document.getElementById('print-orientation').value;
     const title = document.getElementById('print-title').value || 'Single Line Diagram';
