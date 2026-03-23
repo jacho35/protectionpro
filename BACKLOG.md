@@ -22,6 +22,7 @@
 
 ## Reports & Export
 - ~~**Detailed calculations report**: Multi-section PDF showing formulas, intermediate values, and step-by-step calculations for fault analysis (IEC 60909), load flow, arc flash (IEEE 1584-2018), cable sizing (IEC 60364), motor starting, duty check, load diversity, and grounding (IEEE 80)~~
+- ~~**Project details tab**: Project metadata (project number, client, engineer, checked by, approved by, revision, date, description, company logo) in properties panel, used on PDF report cover pages~~
 - **DXF/DWG export**: Export SLD to CAD formats
 
 ## Data & Integration
@@ -166,6 +167,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Mini-SLD grading endpoint selection: set a downstream protection device as path endpoint from device list to show only source-to-endpoint path on mini-SLD~~
 - ~~Delete custom TCC tabs: custom tabs now show × close button to remove them, reassigning devices back to their voltage tabs~~
 - ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
+- ~~Project details tab: project metadata (project number, client/company, engineer, checked by, approved by, revision, date, description, company logo) shown in properties panel when nothing selected; all details appear on PDF report cover pages~~
 - ~~Project revision timeline: horizontal timeline strip above the status bar with clickable revision dots (up to 20 revisions), preview panel with diff stats and confirm-before-restore, revisions created on every manual and auto-save, stored in backend DB for saved projects and localStorage for unsaved projects~~
 - ~~Generator/PV/Wind data labels: display static property labels (rating, voltage, power factor) next to generator, solar PV, and wind turbine components on the canvas, matching transformer label behavior~~
 - ~~Bus names in result boxes: annotation badges (Fault, Load Flow, Arc Flash, Unbalanced LF) now display the bus name in their label for easy identification on busy diagrams; hover highlighting links annotation boxes to their bus component with a blue glow effect~~
