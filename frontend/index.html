@@ -51,6 +51,17 @@
             <button id="btn-export-svg" class="dropdown-item">Export Diagram (SVG)</button>
             <button id="btn-export-png" class="dropdown-item">Export Diagram (PNG)</button>
             <div class="dropdown-divider"></div>
+            <button id="btn-print" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
+              Print / Page Layout
+            </button>
+          </div>
+        </div>
+
+        <!-- Reports Menu -->
+        <div class="toolbar-menu" id="menu-reports">
+          <button class="toolbar-menu-btn">Reports <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <div class="toolbar-menu-panel">
             <button id="btn-export-csv" class="dropdown-item">Export Results (CSV)</button>
             <button id="btn-export-pdf" class="dropdown-item">Export Report (PDF)</button>
             <div class="dropdown-divider"></div>
@@ -58,12 +69,8 @@
             <button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button>
             <button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button>
             <button id="btn-export-calculations" class="dropdown-item">Detailed Calculations (PDF)</button>
-            <button id="btn-export-compare" class="dropdown-item">Compare Scenarios...</button>
             <div class="dropdown-divider"></div>
-            <button id="btn-print" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
-              Print / Page Layout
-            </button>
+            <button id="btn-export-compare" class="dropdown-item">Compare Scenarios...</button>
           </div>
         </div>
 
@@ -1439,7 +1446,7 @@
           <p>Choose between orthogonal (right-angle), diagonal, or spline wire routing via <strong>View → Wire Routing</strong>. Double-click a wire to add bend points for custom routing. Directional flow arrows on wires show power flow direction after running load flow analysis.</p>
 
           <h4>Saving &amp; Exporting</h4>
-          <p>Use <kbd>Ctrl+S</kbd> to save your project. Projects can be saved to the server or exported in multiple formats via the <strong>File → Export</strong> menu:</p>
+          <p>Use <kbd>Ctrl+S</kbd> to save your project. Projects can be saved to the server or exported in multiple formats via the <strong>Reports</strong> menu:</p>
           <ul>
             <li><strong>JSON</strong> — Full project data (re-importable)</li>
             <li><strong>SVG / PNG</strong> — Diagram image export</li>
@@ -1451,7 +1458,7 @@
           </ul>
 
           <h4>Scenarios</h4>
-          <p>Use <strong>Studies → Scenarios</strong> to save named network configuration snapshots. Compare scenarios side-by-side via <strong>File → Compare Scenarios</strong> to evaluate different operating conditions or design alternatives.</p>
+          <p>Use <strong>Studies → Scenarios</strong> to save named network configuration snapshots. Compare scenarios side-by-side via <strong>Reports → Compare Scenarios</strong> to evaluate different operating conditions or design alternatives.</p>
 
           <h4>Mobile Support</h4>
           <p>ProtectionPro includes a responsive mobile interface with bottom navigation, slide-up component/analysis/properties panels, pinch-to-zoom and pan touch gestures, floating action buttons for mode switching, and tap-to-place components.</p>
@@ -1628,7 +1635,7 @@
           <p>Batch-runs all enabled studies in a single operation. Select which studies to include and review combined results. Useful for comprehensive design validation.</p>
 
           <h4>Scenarios</h4>
-          <p>Save named network configuration snapshots to compare different operating conditions — e.g., normal vs emergency, summer vs winter loading, future expansion. Use <strong>File → Compare Scenarios</strong> for side-by-side comparison reports.</p>
+          <p>Save named network configuration snapshots to compare different operating conditions — e.g., normal vs emergency, summer vs winter loading, future expansion. Use <strong>Reports → Compare Scenarios</strong> for side-by-side comparison reports.</p>
         </div>
 
         <div class="help-content" id="help-tab-arcflash" style="display:none">

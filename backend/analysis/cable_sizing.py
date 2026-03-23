@@ -586,10 +586,17 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         else:
             status = "pass"
 
+        # ── Warning reason (for warning status — cable passes but is near limits) ──
+        warning_reasons = []
+        if thermal_loading_pct > 80 and thermal_ok:
+            warning_reasons.append(f"Thermal loading at {thermal_loading_pct:.0f}% (>80% of derated capacity {derated_amps:.0f}A)")
+        if 3.0 < voltage_drop_pct <= max_voltage_drop_pct:
+            warning_reasons.append(f"Voltage drop at {voltage_drop_pct:.1f}% (approaching {max_voltage_drop_pct}% limit)")
+
         # ── Recommended cable ──
         min_size_mm2 = size_mm2
         recommended_cable = ""
-        if status != "pass":
+        if status == "fail":
             conductor_df = _nec_conductor_count_factor(num_parallel * 3) if ampacity_standard == "NEC" else 1.0
             min_size_mm2 = _find_minimum_size(
                 cp, load_current, num_parallel, length_km, voltage_kv,
@@ -620,6 +627,7 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             "recommended_cable": recommended_cable,
             "status": status,
             "issues": issues,
+            "warning_reasons": warning_reasons,
             "ampacity_standard": ampacity_standard,
             "nec_rating": _nec_ampacity_lookup(cp["size_mm2"], cp["conductor"], '75C'),
         })
