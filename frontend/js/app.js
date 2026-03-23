@@ -1938,6 +1938,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Reset annotation positions
+  document.getElementById('btn-reset-annotation-positions').addEventListener('click', () => {
+    Annotations.offsets.clear();
+    Canvas.render();
+    AppState.dirty = true;
+  });
+
   // Zoom controls
   document.getElementById('btn-zoom-fit').addEventListener('click', () => Canvas.zoomToFit());
   document.getElementById('btn-zoom-reset').addEventListener('click', () => {

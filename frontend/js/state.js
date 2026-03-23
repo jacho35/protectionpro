@@ -424,6 +424,13 @@ const AppState = {
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
+    this.dcArcFlashResults = null;
+    this.cableSizingResults = null;
+    this.motorStartingResults = null;
+    this.dutyCheckResults = null;
+    this.loadDiversityResults = null;
+    this.groundingResults = null;
+    this.studyManagerResults = null;
   },
 
   // Reset entire state
@@ -440,11 +447,7 @@ const AppState = {
     this.wires.clear();
     this.nextId = 1;
     this.selectedIds.clear();
-    this.faultResults = null;
-    this.faultedBusId = null;
-    this.loadFlowResults = null;
-    this.unbalancedLoadFlowResults = null;
-    this.arcFlashResults = null;
+    this.clearResults();
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;
@@ -460,6 +463,10 @@ const AppState = {
     this.activePageId = 'page_1';
     this._pageNextId = 2;
     this.wireRouteMode = 'orthogonal';
+    // Clear annotation drag offsets
+    if (typeof Annotations !== 'undefined') {
+      Annotations.offsets.clear();
+    }
   },
 
   // Export to JSON
@@ -481,6 +488,19 @@ const AppState = {
       annotationOffsets: Annotations.offsets.size > 0
         ? Object.fromEntries(Annotations.offsets)
         : undefined,
+      // Persist analysis results so result boxes survive save/load
+      faultResults: this.faultResults || undefined,
+      faultedBusId: this.faultedBusId || undefined,
+      loadFlowResults: this.loadFlowResults || undefined,
+      unbalancedLoadFlowResults: this.unbalancedLoadFlowResults || undefined,
+      arcFlashResults: this.arcFlashResults || undefined,
+      dcArcFlashResults: this.dcArcFlashResults || undefined,
+      cableSizingResults: this.cableSizingResults || undefined,
+      motorStartingResults: this.motorStartingResults || undefined,
+      dutyCheckResults: this.dutyCheckResults || undefined,
+      loadDiversityResults: this.loadDiversityResults || undefined,
+      groundingResults: this.groundingResults || undefined,
+      studyManagerResults: this.studyManagerResults || undefined,
     };
   },
 
@@ -537,6 +557,19 @@ const AppState = {
         Annotations.offsets.set(key, val);
       }
     }
+    // Restore analysis results so result boxes appear on load
+    this.faultResults = data.faultResults || null;
+    this.faultedBusId = data.faultedBusId || null;
+    this.loadFlowResults = data.loadFlowResults || null;
+    this.unbalancedLoadFlowResults = data.unbalancedLoadFlowResults || null;
+    this.arcFlashResults = data.arcFlashResults || null;
+    this.dcArcFlashResults = data.dcArcFlashResults || null;
+    this.cableSizingResults = data.cableSizingResults || null;
+    this.motorStartingResults = data.motorStartingResults || null;
+    this.dutyCheckResults = data.dutyCheckResults || null;
+    this.loadDiversityResults = data.loadDiversityResults || null;
+    this.groundingResults = data.groundingResults || null;
+    this.studyManagerResults = data.studyManagerResults || null;
     this.dirty = false;
   },
 };
