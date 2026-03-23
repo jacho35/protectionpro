@@ -154,3 +154,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Fix cable sizing warnings: warnings no longer recommend the same cable already selected; warning badges and results table now show tooltip explanations for why the cable is near limits~~
 - ~~Reports menu: moved report exports (CSV, PDF, templates, settings schedule, arc flash labels, calculations, scenario comparison) from File menu to dedicated Reports menu~~
 - ~~Fix print/page layout PDF export: add dynamic jsPDF loading with fallback when CDN script fails to load~~
+- ~~Connection warning logic: unconnected port warnings on buses only shown when the bus has zero connections, not on every empty port~~
