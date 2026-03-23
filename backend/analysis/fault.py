@@ -173,7 +173,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         ik_total_ka = ik_total_pu * i_base_ka
 
         branches = _compute_branch_contributions(
-            source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, active_type, bus.id
+            source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, active_type, bus.id,
+            base_mva=base_mva, faulted_bus_voltage_kv=voltage_kv
         )
 
         # Motor contribution summary (3-phase current split)
@@ -421,17 +422,25 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
     return paths
 
 
-def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, fault_type, faulted_bus_id=""):
+def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, fault_type, faulted_bus_id="",
+                                   base_mva=None, faulted_bus_voltage_kv=None):
     """Compute fault current contribution through each branch element.
 
     Uses current divider: I_path = V_fault / Z_path
     where V_fault = c (in p.u.), so I_path_pu = c / |Z_path|
+
+    Each element's actual kA is converted using the base current at its own
+    voltage level, not the faulted bus voltage.  This correctly accounts for
+    transformer turns ratios when displaying branch fault currents.
     """
     if not source_paths or ik_total_ka < 1e-10:
         return []
 
-    # For each path, compute the current it carries
-    path_currents = []
+    # Per-unit total fault current (for contribution % calculation)
+    ik_total_pu = ik_total_ka / i_base_ka if i_base_ka > 1e-15 else 0
+
+    # For each path, compute the per-unit current it carries
+    path_currents_pu = []
     for path in source_paths:
         z_path = path["z_total"]
         if abs(z_path) > 1e-15:
@@ -439,16 +448,16 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
                 i_path_pu = c_factor * math.sqrt(3) / abs(z_path)
             else:
                 i_path_pu = c_factor / abs(z_path)
-            i_path_ka = i_path_pu * i_base_ka
         else:
-            i_path_ka = 0
-        path_currents.append(i_path_ka)
+            i_path_pu = 0
+        path_currents_pu.append(i_path_pu)
 
-    # Aggregate current per branch element across all paths
+    # Aggregate per-unit current per branch element across all paths
     # Element may appear in multiple paths — sum contributions
-    element_current = {}  # element_id -> total current in kA
+    element_current_pu = {}  # element_id -> total per-unit current
     element_z_path = {}   # element_id -> z_path of first path containing it (for display)
     element_source = {}   # element_id -> source names
+    element_voltage = {}  # element_id -> operating voltage in kV
     # Track from_bus (source side) and to_bus (faulted bus side) for each element
     # Trail is ordered from faulted bus outward, so trail[k-1] is toward the fault
     element_from_bus = {}  # element_id -> source-side neighbor
@@ -456,26 +465,54 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
 
     for i, path in enumerate(source_paths):
         trail = path["trail"]
-        i_ka = path_currents[i]
+        i_pu = path_currents_pu[i]
         source_id = path["source_id"]
         source_comp = components.get(source_id)
         source_name = source_comp.props.get("name", source_id) if source_comp else source_id
 
+        # Determine voltage zone for each element along this trail.
+        # Walk from faulted bus outward, tracking voltage through transformers.
+        current_voltage = faulted_bus_voltage_kv or 0
+        trail_voltages = {}
         for k, elem_id in enumerate(trail):
-            if elem_id not in element_current:
-                element_current[elem_id] = 0
+            comp = components.get(elem_id)
+            if not comp:
+                trail_voltages[elem_id] = current_voltage
+                continue
+            if comp.type == "bus":
+                current_voltage = comp.props.get("voltage_kv", current_voltage)
+                trail_voltages[elem_id] = current_voltage
+            elif comp.type == "transformer":
+                # Determine which winding faces the fault side vs the source side
+                hv = comp.props.get("voltage_hv_kv", 11)
+                lv = comp.props.get("voltage_lv_kv", 0.4)
+                # Current voltage is the fault-side winding; source side is the other
+                if abs(current_voltage - lv) < abs(current_voltage - hv):
+                    source_side_voltage = hv
+                else:
+                    source_side_voltage = lv
+                # Show transformer current at source side (upstream of fault)
+                trail_voltages[elem_id] = source_side_voltage
+                current_voltage = source_side_voltage
+            else:
+                trail_voltages[elem_id] = current_voltage
+
+        for k, elem_id in enumerate(trail):
+            if elem_id not in element_current_pu:
+                element_current_pu[elem_id] = 0
                 element_z_path[elem_id] = path["z_total"]
                 element_source[elem_id] = set()
+                element_voltage[elem_id] = trail_voltages.get(elem_id, faulted_bus_voltage_kv or 0)
                 # to_bus: faulted-bus side (trail[k-1] or faulted_bus_id if first in trail)
                 element_to_bus[elem_id] = trail[k - 1] if k > 0 else faulted_bus_id
                 # from_bus: source side (trail[k+1] or source_id if last in trail)
                 element_from_bus[elem_id] = trail[k + 1] if k < len(trail) - 1 else source_id
-            element_current[elem_id] += i_ka
+            element_current_pu[elem_id] += i_pu
             element_source[elem_id].add(source_name)
 
     # Build branch contribution objects
     branches = []
-    for elem_id, ik_ka in element_current.items():
+    for elem_id, ik_pu in element_current_pu.items():
         comp = components.get(elem_id)
         if not comp:
             continue
@@ -484,7 +521,15 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
             continue
 
         z_path = element_z_path[elem_id]
-        contribution_pct = (ik_ka / ik_total_ka * 100) if ik_total_ka > 1e-10 else 0
+        contribution_pct = (ik_pu / ik_total_pu * 100) if ik_total_pu > 1e-10 else 0
+
+        # Convert per-unit current to actual kA at element's voltage level
+        elem_v = element_voltage.get(elem_id, faulted_bus_voltage_kv or 0)
+        if base_mva and elem_v and elem_v > 1e-6:
+            i_base_elem = base_mva / (math.sqrt(3) * elem_v)
+        else:
+            i_base_elem = i_base_ka  # fallback to faulted bus base
+        ik_ka = ik_pu * i_base_elem
 
         branches.append(FaultBranchContribution(
             element_id=elem_id,
