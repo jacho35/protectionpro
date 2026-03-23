@@ -68,6 +68,7 @@ const TCC = {
     if (!this.canvas) return;
     this.ctx = this.canvas.getContext('2d');
     this._bindEvents();
+    this._initMiniSLD();
   },
 
   // Label drag state
@@ -312,6 +313,7 @@ const TCC = {
         this._renderDeviceList();
         this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
+        this._renderMiniSLD();
       });
     });
   },
@@ -569,6 +571,7 @@ const TCC = {
     this._renderDeviceList();
     this.render();
     this._runCoordinationCheck();
+    this._renderMiniSLD();
   },
 
   // ── Voltage reference scaling ──
@@ -1896,6 +1899,7 @@ const TCC = {
         this._renderDeviceList();
         this.render();
         this._runCoordinationCheck();
+        this._renderMiniSLD();
       });
     });
 
@@ -1928,6 +1932,7 @@ const TCC = {
     this._renderDeviceList();
     this._renderSelectedDeviceSettings();
     this.render();
+    this._renderMiniSLD();
   },
 
   // ── Curve click-to-select on canvas ──
@@ -3154,6 +3159,7 @@ const TCC = {
         this._renderDeviceList();
         this.render();
         this._runCoordinationCheck();
+        this._renderMiniSLD();
       });
 
       // Drop target: accept device drags onto tabs
@@ -3276,5 +3282,349 @@ const TCC = {
     a.download = `${AppState.projectName || 'tcc'}_${tabName.replace(/\s+/g, '_')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Mini SLD Panel — vertical protection-path diagram alongside TCC ──
+  // ══════════════════════════════════════════════════════════════════════════
+
+  _miniSLDCollapsed: false,
+
+  _initMiniSLD() {
+    const toggle = document.getElementById('btn-tcc-mini-sld-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        this._miniSLDCollapsed = !this._miniSLDCollapsed;
+        const panel = document.getElementById('tcc-mini-sld');
+        if (panel) panel.classList.toggle('collapsed', this._miniSLDCollapsed);
+        toggle.textContent = this._miniSLDCollapsed ? '\u203A' : '\u2039';
+        localStorage.setItem('protectionpro-tcc-mini-sld-collapsed', this._miniSLDCollapsed ? '1' : '0');
+        // Re-render TCC chart since chart area size changed
+        requestAnimationFrame(() => this.render());
+      });
+      // Restore collapsed state
+      if (localStorage.getItem('protectionpro-tcc-mini-sld-collapsed') === '1') {
+        this._miniSLDCollapsed = true;
+        const panel = document.getElementById('tcc-mini-sld');
+        if (panel) panel.classList.add('collapsed');
+        toggle.textContent = '\u203A';
+      }
+    }
+  },
+
+  /**
+   * Build the full path of components (not just protection devices) from source
+   * to load, for rendering in the mini-SLD. Returns an array of nodes:
+   * [{ compId, comp, tccDevice, tccDevIndex, voltage_kv, rating }]
+   */
+  _buildMiniSLDPaths() {
+    const wires = AppState.wires;
+    if (!wires || wires.size === 0) return [];
+
+    // Build adjacency
+    const adj = new Map();
+    for (const [, w] of wires) {
+      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
+      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
+      adj.get(w.fromComponent).push(w.toComponent);
+      adj.get(w.toComponent).push(w.fromComponent);
+    }
+
+    // Find sources
+    const sources = [];
+    for (const [id, comp] of AppState.components) {
+      if (comp.type === 'utility' || comp.type === 'generator') sources.push(id);
+    }
+    if (sources.length === 0) return [];
+
+    // Map SLD IDs to TCC device objects and indices
+    const tccDevMap = new Map();
+    for (let i = 0; i < this.devices.length; i++) {
+      tccDevMap.set(this.devices[i].id, { dev: this.devices[i], idx: i });
+    }
+
+    // Types we want to show in the mini-SLD
+    const showTypes = new Set([
+      'utility', 'generator', 'bus', 'transformer', 'cb', 'fuse', 'relay',
+      'cable', 'static_load', 'motor_induction', 'motor_synchronous',
+      'ct', 'solar_pv', 'wind_turbine', 'capacitor_bank'
+    ]);
+
+    // DFS from each source, collecting ALL relevant components
+    const allPaths = [];
+    for (const srcId of sources) {
+      const stack = [{ node: srcId, visited: new Set([srcId]), path: [] }];
+      while (stack.length > 0) {
+        const { node, visited, path } = stack.pop();
+        const comp = AppState.components.get(node);
+        if (!comp) continue;
+
+        let currentPath = [...path];
+        if (showTypes.has(comp.type)) {
+          const tccEntry = tccDevMap.get(node);
+          const vkv = comp.props?.voltage_kv || this._resolveDeviceVoltage(node);
+          currentPath.push({
+            compId: node,
+            comp,
+            tccDevice: tccEntry?.dev || null,
+            tccDevIndex: tccEntry?.idx ?? -1,
+            voltage_kv: vkv,
+            rating: this._getMiniSLDRating(comp, tccEntry?.dev),
+          });
+        }
+
+        const neighbors = adj.get(node) || [];
+        const isLoad = comp.type === 'static_load' || comp.type === 'motor_induction' || comp.type === 'motor_synchronous';
+        const unvisitedNeighbors = neighbors.filter(n => !visited.has(n));
+
+        if ((isLoad || unvisitedNeighbors.length === 0) && currentPath.length >= 2) {
+          allPaths.push(currentPath);
+        }
+
+        for (const next of unvisitedNeighbors) {
+          const newVisited = new Set(visited);
+          newVisited.add(next);
+          stack.push({ node: next, visited: newVisited, path: currentPath });
+        }
+      }
+    }
+
+    return allPaths;
+  },
+
+  /** Get a concise rating string for a component */
+  _getMiniSLDRating(comp, tccDev) {
+    const p = comp.props || {};
+    switch (comp.type) {
+      case 'utility':
+        return p.fault_level_mva ? `${p.fault_level_mva} MVA` : '';
+      case 'generator':
+        return p.mva_rating ? `${p.mva_rating} MVA` : '';
+      case 'bus':
+        return p.voltage_kv ? `${p.voltage_kv} kV` : '';
+      case 'transformer':
+        return p.mva_rating ? `${p.mva_rating} MVA` : (p.kva_rating ? `${p.kva_rating} kVA` : '');
+      case 'cb':
+        return p.rated_current_a ? `${p.rated_current_a} A` : '';
+      case 'fuse':
+        return p.fuse_rating_a ? `${p.fuse_rating_a} A` : '';
+      case 'relay': {
+        if (tccDev) return `${tccDev.pickup || ''}A, TDS ${tccDev.tds || ''}`;
+        return p.pickup_a ? `${p.pickup_a} A` : '';
+      }
+      case 'cable':
+        return p.cable_size_mm2 ? `${p.cable_size_mm2} mm\u00B2` : '';
+      case 'static_load':
+        return p.kw ? `${p.kw} kW` : '';
+      case 'motor_induction':
+      case 'motor_synchronous':
+        return p.kw_rating ? `${p.kw_rating} kW` : '';
+      case 'ct':
+        return p.ct_ratio ? `${p.ct_ratio}` : '';
+      case 'solar_pv':
+        return p.kw_peak ? `${p.kw_peak} kWp` : '';
+      case 'wind_turbine':
+        return p.kw_rated ? `${p.kw_rated} kW` : '';
+      default:
+        return '';
+    }
+  },
+
+  /** Render the mini-SLD panel with vertical component strip */
+  _renderMiniSLD() {
+    const svg = document.getElementById('tcc-mini-sld-svg');
+    const content = document.getElementById('tcc-mini-sld-content');
+    if (!svg || !content) return;
+
+    const allPaths = this._buildMiniSLDPaths();
+    if (allPaths.length === 0) {
+      content.innerHTML = '<div class="tcc-mini-sld-empty">No protection path found.<br>Connect sources to protection devices and loads.</div>';
+      return;
+    }
+
+    // Filter paths by active tab
+    let paths = allPaths;
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    if (activeTab && activeTab.isVoltageTab && activeTab.voltage_kv) {
+      // Filter to paths that contain at least one device at this voltage
+      paths = allPaths.filter(path =>
+        path.some(n => n.tccDevice && Math.abs((n.voltage_kv || 0) - activeTab.voltage_kv) < 0.01)
+      );
+      if (paths.length === 0) paths = allPaths;
+    }
+
+    // Pick the longest path for display (covers the most devices)
+    let displayPath = paths[0];
+    for (const p of paths) {
+      if (p.length > displayPath.length) displayPath = p;
+    }
+
+    // Merge branch points: if other paths share a prefix, note branch-off points
+    const branches = [];
+    for (const p of paths) {
+      if (p === displayPath) continue;
+      // Find where this path diverges from the display path
+      let divergeIdx = 0;
+      while (divergeIdx < Math.min(p.length, displayPath.length) &&
+             p[divergeIdx].compId === displayPath[divergeIdx].compId) {
+        divergeIdx++;
+      }
+      if (divergeIdx > 0 && divergeIdx < p.length) {
+        branches.push({ fromIdx: divergeIdx - 1, branchNodes: p.slice(divergeIdx) });
+      }
+    }
+
+    // Layout constants
+    const nodeSpacing = 65;
+    const nodeSize = 28;
+    const centerX = 90;
+    const startY = 25;
+    const svgWidth = 180;
+    const mainHeight = startY + displayPath.length * nodeSpacing + 10;
+
+    // Also render up to 2 branch arms
+    let branchSvg = '';
+    const maxBranches = Math.min(branches.length, 2);
+
+    const totalHeight = mainHeight;
+
+    svg.setAttribute('viewBox', `0 0 ${svgWidth} ${totalHeight}`);
+    svg.setAttribute('width', svgWidth);
+    svg.setAttribute('height', totalHeight);
+    content.innerHTML = '';
+    content.appendChild(svg);
+
+    let svgContent = '';
+
+    // Draw main path
+    for (let i = 0; i < displayPath.length; i++) {
+      const node = displayPath[i];
+      const y = startY + i * nodeSpacing;
+
+      // Connecting wire to next node
+      if (i < displayPath.length - 1) {
+        const ny = startY + (i + 1) * nodeSpacing;
+        svgContent += `<line x1="${centerX}" y1="${y + nodeSize / 2 + 2}" x2="${centerX}" y2="${ny - nodeSize / 2 - 2}" stroke="var(--text-muted)" stroke-width="1.5"/>`;
+      }
+
+      // Branch indicators
+      for (let bi = 0; bi < maxBranches; bi++) {
+        const b = branches[bi];
+        if (b.fromIdx === i) {
+          const bx = centerX + 40;
+          svgContent += `<line x1="${centerX + nodeSize / 2}" y1="${y}" x2="${bx}" y2="${y}" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="3,2"/>`;
+          svgContent += `<text x="${bx + 3}" y="${y + 3}" font-size="8" fill="var(--text-muted)">+${b.branchNodes.length}</text>`;
+        }
+      }
+
+      // Node group
+      const isSelected = node.tccDevIndex >= 0 && node.tccDevIndex === this.selectedDeviceIndex;
+      const isHidden = node.tccDevice && !node.tccDevice.visible;
+      const curveColor = node.tccDevice ? node.tccDevice.color : null;
+      const classes = ['tcc-mini-sld-node'];
+      if (isSelected) classes.push('mini-sld-selected');
+      if (isHidden) classes.push('mini-sld-hidden');
+
+      svgContent += `<g class="${classes.join(' ')}" data-comp-id="${node.compId}" data-tcc-idx="${node.tccDevIndex}">`;
+
+      // Highlight rect for selected state
+      if (isSelected) {
+        svgContent += `<rect class="mini-sld-highlight" x="${centerX - nodeSize / 2 - 4}" y="${y - nodeSize / 2 - 4}" width="${nodeSize + 8}" height="${nodeSize + 8}" rx="4"/>`;
+      }
+
+      // Color accent bar for TCC devices
+      if (curveColor) {
+        svgContent += `<rect x="${centerX - nodeSize / 2 - 6}" y="${y - nodeSize / 2 + 2}" width="3" height="${nodeSize - 4}" rx="1" fill="${curveColor}"/>`;
+      }
+
+      // Symbol
+      svgContent += this._miniSLDSymbol(node.comp.type, centerX, y, nodeSize, node.comp);
+
+      // Name label (left)
+      const name = node.comp.props?.name || node.compId;
+      const truncName = name.length > 12 ? name.substring(0, 11) + '\u2026' : name;
+      svgContent += `<text x="${centerX - nodeSize / 2 - 10}" y="${y + 1}" font-size="9" fill="var(--text-primary)" text-anchor="end" font-weight="500">${this._escSvg(truncName)}</text>`;
+
+      // Rating label (right)
+      if (node.rating) {
+        const truncRating = node.rating.length > 14 ? node.rating.substring(0, 13) + '\u2026' : node.rating;
+        svgContent += `<text x="${centerX + nodeSize / 2 + 10}" y="${y + 1}" font-size="8" fill="var(--text-muted)" font-weight="400">${this._escSvg(truncRating)}</text>`;
+      }
+
+      // Invisible hit area for click
+      svgContent += `<rect x="0" y="${y - nodeSpacing / 2}" width="${svgWidth}" height="${nodeSpacing}" fill="transparent" style="cursor:pointer"/>`;
+
+      svgContent += '</g>';
+    }
+
+    svg.innerHTML = svgContent;
+
+    // Bind click events
+    svg.querySelectorAll('.tcc-mini-sld-node').forEach(g => {
+      g.addEventListener('click', (e) => {
+        const tccIdx = parseInt(g.dataset.tccIdx);
+        if (tccIdx >= 0) {
+          this.selectDevice(tccIdx);
+          this._renderMiniSLD();
+        }
+      });
+    });
+  },
+
+  /** Generate a simplified IEC symbol SVG for the mini-SLD */
+  _miniSLDSymbol(type, cx, cy, size, comp) {
+    const s = size / 2;
+    const r = s * 0.8;
+    switch (type) {
+      case 'utility':
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--text-primary)" stroke-width="1.5"/>` +
+               `<text x="${cx}" y="${cy + 3}" font-size="10" text-anchor="middle" fill="var(--text-primary)">~</text>`;
+      case 'generator':
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--text-primary)" stroke-width="1.5"/>` +
+               `<text x="${cx}" y="${cy + 3}" font-size="9" text-anchor="middle" fill="var(--text-primary)" font-weight="600">G</text>`;
+      case 'solar_pv':
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--text-primary)" stroke-width="1.5"/>` +
+               `<text x="${cx}" y="${cy + 3}" font-size="8" text-anchor="middle" fill="var(--text-primary)">PV</text>`;
+      case 'wind_turbine':
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--text-primary)" stroke-width="1.5"/>` +
+               `<text x="${cx}" y="${cy + 3}" font-size="8" text-anchor="middle" fill="var(--text-primary)">WT</text>`;
+      case 'bus':
+        return `<rect x="${cx - s * 1.2}" y="${cy - 2}" width="${s * 2.4}" height="4" fill="var(--text-primary)" rx="1"/>`;
+      case 'transformer': {
+        const ro = r * 0.7;
+        return `<circle cx="${cx}" cy="${cy - ro * 0.45}" r="${ro}" fill="none" stroke="var(--text-primary)" stroke-width="1.3"/>` +
+               `<circle cx="${cx}" cy="${cy + ro * 0.45}" r="${ro}" fill="none" stroke="var(--text-primary)" stroke-width="1.3"/>`;
+      }
+      case 'cb':
+        return `<rect x="${cx - s * 0.6}" y="${cy - s * 0.6}" width="${s * 1.2}" height="${s * 1.2}" fill="none" stroke="var(--text-primary)" stroke-width="1.3" rx="1"/>` +
+               `<line x1="${cx - s * 0.35}" y1="${cy - s * 0.35}" x2="${cx + s * 0.35}" y2="${cy + s * 0.35}" stroke="var(--text-primary)" stroke-width="1.2"/>` +
+               `<line x1="${cx + s * 0.35}" y1="${cy - s * 0.35}" x2="${cx - s * 0.35}" y2="${cy + s * 0.35}" stroke="var(--text-primary)" stroke-width="1.2"/>`;
+      case 'fuse':
+        return `<rect x="${cx - s * 0.35}" y="${cy - s * 0.7}" width="${s * 0.7}" height="${s * 1.4}" fill="none" stroke="var(--text-primary)" stroke-width="1.3" rx="2"/>` +
+               `<line x1="${cx}" y1="${cy - s * 0.4}" x2="${cx}" y2="${cy + s * 0.4}" stroke="var(--text-primary)" stroke-width="1.2"/>`;
+      case 'relay':
+        return `<rect x="${cx - s * 0.6}" y="${cy - s * 0.6}" width="${s * 1.2}" height="${s * 1.2}" fill="none" stroke="var(--text-primary)" stroke-width="1.3" rx="2"/>` +
+               `<text x="${cx}" y="${cy + 3}" font-size="9" text-anchor="middle" fill="var(--text-primary)" font-weight="600">R</text>`;
+      case 'cable':
+        return `<line x1="${cx - s * 0.8}" y1="${cy}" x2="${cx + s * 0.8}" y2="${cy}" stroke="var(--text-primary)" stroke-width="1.5" stroke-dasharray="4,2"/>`;
+      case 'ct':
+        return `<circle cx="${cx}" cy="${cy}" r="${r * 0.5}" fill="none" stroke="var(--text-primary)" stroke-width="1.2"/>` +
+               `<circle cx="${cx}" cy="${cy}" r="${r * 0.3}" fill="var(--text-primary)"/>`;
+      case 'static_load':
+        return `<polygon points="${cx},${cy - r * 0.8} ${cx + r * 0.7},${cy + r * 0.5} ${cx - r * 0.7},${cy + r * 0.5}" fill="none" stroke="var(--text-primary)" stroke-width="1.3"/>`;
+      case 'motor_induction':
+      case 'motor_synchronous':
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--text-primary)" stroke-width="1.5"/>` +
+               `<text x="${cx}" y="${cy + 3}" font-size="9" text-anchor="middle" fill="var(--text-primary)" font-weight="600">M</text>`;
+      case 'capacitor_bank':
+        return `<line x1="${cx - s * 0.5}" y1="${cy - 3}" x2="${cx + s * 0.5}" y2="${cy - 3}" stroke="var(--text-primary)" stroke-width="2"/>` +
+               `<line x1="${cx - s * 0.5}" y1="${cy + 3}" x2="${cx + s * 0.5}" y2="${cy + 3}" stroke="var(--text-primary)" stroke-width="2"/>`;
+      default:
+        return `<circle cx="${cx}" cy="${cy}" r="${r * 0.5}" fill="var(--text-muted)" stroke="none"/>`;
+    }
+  },
+
+  _escSvg(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   },
 };

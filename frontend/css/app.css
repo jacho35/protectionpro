@@ -1055,7 +1055,7 @@ html, body {
 
 .tcc-modal-content {
   width: 95vw;
-  max-width: 1400px;
+  max-width: 1600px;
   height: 88vh;
   display: flex;
   flex-direction: column;
@@ -1139,6 +1139,82 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Mini SLD strip */
+.tcc-mini-sld {
+  width: 180px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  transition: width 0.2s ease, opacity 0.2s ease;
+  overflow: hidden;
+}
+.tcc-mini-sld.collapsed {
+  width: 0;
+  border-right: none;
+}
+.tcc-mini-sld-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.tcc-mini-sld-toggle {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 1px 5px;
+  color: var(--text-secondary);
+}
+.tcc-mini-sld-toggle:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.tcc-mini-sld-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0;
+}
+.tcc-mini-sld-content svg {
+  display: block;
+  width: 100%;
+}
+/* Mini SLD node styling */
+.tcc-mini-sld-node {
+  cursor: pointer;
+}
+.tcc-mini-sld-node:hover .mini-sld-symbol {
+  filter: brightness(0.85);
+}
+.tcc-mini-sld-node.mini-sld-selected .mini-sld-highlight {
+  stroke: var(--accent);
+  stroke-width: 2;
+  fill: rgba(0,120,215,0.08);
+}
+.tcc-mini-sld-node.mini-sld-hidden {
+  opacity: 0.4;
+}
+.tcc-mini-sld-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px 10px;
+  line-height: 1.4;
 }
 
 .tcc-chart-area {

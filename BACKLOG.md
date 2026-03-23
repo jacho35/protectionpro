@@ -11,6 +11,7 @@
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 
 ## TCC Chart Enhancements
+- ~~**Mini SLD panel**: Vertical protection-path diagram alongside TCC chart showing IEC symbols, component names, ratings, and curve color accents — similar to ETAP STAR module~~
 
 ## Multi-User & Collaboration
 - **User authentication**: Login system with role-based access
@@ -157,3 +158,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Fix print/page layout PDF export: add dynamic jsPDF loading with fallback when CDN script fails to load~~
 - ~~Fix single-line diagram missing from PDF reports: rasterize SVG client-side and embed in server-generated PDF~~
 - ~~Connection warning logic: unconnected port warnings on buses only shown when the bus has zero connections, not on every empty port~~
+- ~~Mini SLD panel in TCC: vertical protection-path diagram alongside TCC chart with simplified IEC symbols, component names, ratings, clickable device selection, and collapsible panel~~
