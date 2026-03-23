@@ -30,6 +30,7 @@ class ReportRequest(BaseModel):
     arcFlashResults: Optional[dict] = None
     sections: Optional[list[str]] = None  # which report sections to include
     diagramImage: Optional[str] = None  # base64-encoded PNG of the single-line diagram
+    projectDetails: Optional[dict] = None  # project metadata for cover page
 
 
 class CalculationsReportRequest(BaseModel):
@@ -46,6 +47,7 @@ class CalculationsReportRequest(BaseModel):
     dutyCheckResults: Optional[dict] = None
     loadDiversityResults: Optional[dict] = None
     groundingResults: Optional[dict] = None
+    projectDetails: Optional[dict] = None  # project metadata for cover page
 
 
 report_router = APIRouter(prefix="/reports", tags=["reports"])
@@ -64,6 +66,7 @@ def generate_pdf_report(req: ReportRequest):
         components=req.components,
         sections=req.sections,
         diagram_image=req.diagramImage,
+        project_details=req.projectDetails,
     )
     filename = f"{req.projectName.replace(' ', '_')}_report.pdf"
     return StreamingResponse(
@@ -90,6 +93,7 @@ def generate_calculations_pdf(req: CalculationsReportRequest):
             load_diversity_results=req.loadDiversityResults,
             grounding_results=req.groundingResults,
             components=req.components,
+            project_details=req.projectDetails,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Calculations report generation failed: {exc}") from exc

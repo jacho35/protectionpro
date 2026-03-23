@@ -6,6 +6,19 @@ const AppState = {
   projectName: 'Untitled Project',
   dirty: false,
 
+  // Project details for report covers
+  projectDetails: {
+    projectNumber: '',
+    clientCompany: '',
+    engineerName: '',
+    checkedBy: '',
+    approvedBy: '',
+    revisionNumber: '',
+    date: '',
+    description: '',
+    companyLogo: null,  // base64 data URL
+  },
+
   // System base settings
   baseMVA: DEFAULT_BASE_MVA,
   frequency: DEFAULT_FREQUENCY,
@@ -418,6 +431,11 @@ const AppState = {
     this.projectId = null;
     this.projectName = 'Untitled Project';
     this.dirty = false;
+    this.projectDetails = {
+      projectNumber: '', clientCompany: '', engineerName: '',
+      checkedBy: '', approvedBy: '', revisionNumber: '',
+      date: '', description: '', companyLogo: null,
+    };
     this.components.clear();
     this.wires.clear();
     this.nextId = 1;
@@ -448,6 +466,7 @@ const AppState = {
   toJSON() {
     return {
       projectName: this.projectName,
+      projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
       frequency: this.frequency,
       defaultLengthUnit: this.defaultLengthUnit,
@@ -469,6 +488,19 @@ const AppState = {
   fromJSON(data) {
     this.reset();
     this.projectName = data.projectName || 'Untitled Project';
+    if (data.projectDetails) {
+      this.projectDetails = {
+        projectNumber: data.projectDetails.projectNumber || '',
+        clientCompany: data.projectDetails.clientCompany || '',
+        engineerName: data.projectDetails.engineerName || '',
+        checkedBy: data.projectDetails.checkedBy || '',
+        approvedBy: data.projectDetails.approvedBy || '',
+        revisionNumber: data.projectDetails.revisionNumber || '',
+        date: data.projectDetails.date || '',
+        description: data.projectDetails.description || '',
+        companyLogo: data.projectDetails.companyLogo || null,
+      };
+    }
     this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
     this.defaultLengthUnit = data.defaultLengthUnit || 'm';

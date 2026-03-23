@@ -33,9 +33,10 @@ class SafePDF(FPDF):
 class ReportPDF(SafePDF):
     """Custom PDF with header/footer for ProtectionPro reports."""
 
-    def __init__(self, project_name="Untitled Project", **kwargs):
+    def __init__(self, project_name="Untitled Project", project_number="", **kwargs):
         super().__init__(orientation="landscape", unit="mm", format="A4", **kwargs)
         self.project_name = project_name
+        self.project_number = project_number
         self.set_auto_page_break(auto=True, margin=15)
 
     def header(self):
@@ -43,7 +44,10 @@ class ReportPDF(SafePDF):
             return  # Title page has custom header
         self.set_font("Helvetica", "I", 8)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 5, f"ProtectionPro — {self.project_name}", align="L")
+        header_text = f"ProtectionPro - {self.project_name}"
+        if self.project_number:
+            header_text += f" ({self.project_number})"
+        self.cell(0, 5, header_text, align="L")
         self.ln(8)
         self.set_text_color(0, 0, 0)
 
@@ -94,14 +98,16 @@ def _table(pdf, headers, rows, col_widths=None, header_color=(0, 120, 215)):
 def generate_full_report(project_name, base_mva, frequency,
                          fault_results=None, loadflow_results=None,
                          arcflash_results=None, components=None,
-                         sections=None, diagram_image=None):
+                         sections=None, diagram_image=None,
+                         project_details=None):
     """Generate a full analysis report PDF.
 
     Args:
         sections: list of section IDs to include. If None, include all available.
         diagram_image: base64-encoded PNG of the single-line diagram.
     """
-    pdf = ReportPDF(project_name=project_name)
+    pd = project_details or {}
+    pdf = ReportPDF(project_name=project_name, project_number=pd.get("projectNumber", ""))
     pdf.alias_nb_pages()
 
     all_sections = sections or ["title", "fault", "fault_branches", "voltage_depression",
@@ -115,7 +121,7 @@ def generate_full_report(project_name, base_mva, frequency,
 
     for sec in all_sections:
         if sec == "title":
-            _render_title(pdf, project_name, base_mva, frequency)
+            _render_title(pdf, project_name, base_mva, frequency, project_details)
         elif sec == "diagram":
             _render_diagram(pdf, diagram_image)
         elif sec == "fault":
@@ -141,15 +147,75 @@ def generate_full_report(project_name, base_mva, frequency,
     return buf
 
 
-def _render_title(pdf, project_name, base_mva, frequency):
+def _render_title(pdf, project_name, base_mva, frequency, project_details=None):
+    pd = project_details or {}
     pdf.add_page()
+
+    # Company logo
+    logo_data = pd.get("companyLogo")
+    if logo_data and "," in logo_data:
+        try:
+            logo_bytes = base64.b64decode(logo_data.split(",", 1)[1])
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp.write(logo_bytes)
+                tmp.flush()
+                pdf.image(tmp.name, x=(pdf.w - 50) / 2, y=12, w=50)
+            pdf.ln(30)
+        except Exception:
+            pdf.ln(15)
+    else:
+        pdf.ln(15)
+
+    # Title
     pdf.set_font("Helvetica", "B", 22)
-    pdf.ln(30)
-    pdf.cell(0, 12, "ProtectionPro — Analysis Report", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 12, "ProtectionPro - Analysis Report", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(6)
+
+    # Project name and number
+    pdf.set_font("Helvetica", "B", 14)
+    proj_num = pd.get("projectNumber", "")
+    title_line = f"Project: {project_name}"
+    if proj_num:
+        title_line += f"   |   No: {proj_num}"
+    pdf.cell(0, 8, title_line, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    # Client
+    client = pd.get("clientCompany", "")
+    if client:
+        pdf.set_font("Helvetica", "", 12)
+        pdf.cell(0, 8, f"Client: {client}", align="C", new_x="LMARGIN", new_y="NEXT")
+
+    # Revision and date
+    rev = pd.get("revisionNumber", "")
+    report_date = pd.get("date", "") or date.today().isoformat()
+    pdf.set_font("Helvetica", "", 11)
+    info_line = f"Base MVA: {base_mva}   |   Frequency: {frequency} Hz   |   Date: {report_date}"
+    if rev:
+        info_line += f"   |   Rev: {rev}"
+    pdf.cell(0, 8, info_line, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(8)
-    pdf.cell(0, 8, f"Project: {project_name}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Base MVA: {base_mva}   |   Frequency: {frequency} Hz   |   Date: {date.today().isoformat()}", align="C", new_x="LMARGIN", new_y="NEXT")
+
+    # Personnel block
+    engineer = pd.get("engineerName", "")
+    checked = pd.get("checkedBy", "")
+    approved = pd.get("approvedBy", "")
+    if engineer or checked or approved:
+        pdf.set_font("Helvetica", "", 11)
+        if engineer:
+            pdf.cell(0, 7, f"Prepared by: {engineer}", align="C", new_x="LMARGIN", new_y="NEXT")
+        if checked:
+            pdf.cell(0, 7, f"Checked by: {checked}", align="C", new_x="LMARGIN", new_y="NEXT")
+        if approved:
+            pdf.cell(0, 7, f"Approved by: {approved}", align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(4)
+
+    # Description
+    desc = pd.get("description", "")
+    if desc:
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.set_text_color(80, 80, 80)
+        pdf.multi_cell(0, 6, desc, align="C")
+        pdf.set_text_color(0, 0, 0)
 
 
 def _png_dimensions(data: bytes):
@@ -502,14 +568,15 @@ def generate_calculations_report(project_name, base_mva, frequency,
                                   arcflash_results=None, cable_results=None,
                                   motor_results=None, duty_results=None,
                                   load_diversity_results=None, grounding_results=None,
-                                  components=None):
+                                  components=None, project_details=None):
     """Generate a detailed calculations report showing formulas and intermediate values."""
-    pdf = ReportPDF(project_name=project_name)
+    pd = project_details or {}
+    pdf = ReportPDF(project_name=project_name, project_number=pd.get("projectNumber", ""))
     pdf.set_left_margin(15)
     pdf.set_right_margin(15)
     pdf.alias_nb_pages()
 
-    _calc_title(pdf, project_name, base_mva, frequency)
+    _calc_title(pdf, project_name, base_mva, frequency, project_details)
 
     if fault_results and fault_results.get("buses"):
         _calc_fault(pdf, fault_results, base_mva)
@@ -563,17 +630,60 @@ def _calc_subsection(pdf, text):
     pdf.ln(1)
 
 
-def _calc_title(pdf, project_name, base_mva, frequency):
+def _calc_title(pdf, project_name, base_mva, frequency, project_details=None):
+    pd = project_details or {}
     pdf.add_page()
+
+    # Company logo
+    logo_data = pd.get("companyLogo")
+    if logo_data and "," in logo_data:
+        try:
+            logo_bytes = base64.b64decode(logo_data.split(",", 1)[1])
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp.write(logo_bytes)
+                tmp.flush()
+                pdf.image(tmp.name, x=(pdf.w - 50) / 2, y=12, w=50)
+            pdf.ln(25)
+        except Exception:
+            pdf.ln(10)
+    else:
+        pdf.ln(10)
+
     pdf.set_font("Helvetica", "B", 20)
-    pdf.ln(20)
     pdf.cell(0, 10, "ProtectionPro", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 8, "Detailed Calculations Report", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 11)
     pdf.ln(4)
-    pdf.cell(0, 7, f"Project: {project_name}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 7, f"System Base: {base_mva} MVA  |  Frequency: {frequency} Hz  |  Date: {date.today().isoformat()}", align="C", new_x="LMARGIN", new_y="NEXT")
+
+    proj_num = pd.get("projectNumber", "")
+    title_line = f"Project: {project_name}"
+    if proj_num:
+        title_line += f"   |   No: {proj_num}"
+    pdf.cell(0, 7, title_line, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    client = pd.get("clientCompany", "")
+    if client:
+        pdf.cell(0, 7, f"Client: {client}", align="C", new_x="LMARGIN", new_y="NEXT")
+
+    rev = pd.get("revisionNumber", "")
+    report_date = pd.get("date", "") or date.today().isoformat()
+    info_line = f"System Base: {base_mva} MVA  |  Frequency: {frequency} Hz  |  Date: {report_date}"
+    if rev:
+        info_line += f"  |  Rev: {rev}"
+    pdf.cell(0, 7, info_line, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    engineer = pd.get("engineerName", "")
+    checked = pd.get("checkedBy", "")
+    approved = pd.get("approvedBy", "")
+    if engineer or checked or approved:
+        pdf.ln(2)
+        if engineer:
+            pdf.cell(0, 6, f"Prepared by: {engineer}", align="C", new_x="LMARGIN", new_y="NEXT")
+        if checked:
+            pdf.cell(0, 6, f"Checked by: {checked}", align="C", new_x="LMARGIN", new_y="NEXT")
+        if approved:
+            pdf.cell(0, 6, f"Approved by: {approved}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(12)
 
     # Table of contents

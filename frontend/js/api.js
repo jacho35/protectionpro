@@ -193,6 +193,7 @@ const API = {
       faultResults: AppState.faultResults || null,
       loadFlowResults: AppState.loadFlowResults || null,
       arcFlashResults: AppState.arcFlashResults || null,
+      projectDetails: AppState.projectDetails || {},
     };
     if (sections) body.sections = sections;
     if (diagramImage) body.diagramImage = diagramImage;
@@ -225,6 +226,7 @@ const API = {
       dutyCheckResults: AppState.dutyCheckResults || null,
       loadDiversityResults: AppState.loadDiversityResults || null,
       groundingResults: AppState.groundingResults || null,
+      projectDetails: AppState.projectDetails || {},
     };
     const resp = await fetch(`${API_BASE}/reports/calculations`, {
       method: 'POST',
@@ -246,6 +248,7 @@ const API = {
         id: c.id, type: c.type, props: c.props,
       })),
       arcFlashResults: AppState.arcFlashResults || null,
+      projectDetails: AppState.projectDetails || {},
     };
     const resp = await fetch(`${API_BASE}/reports/arcflash-labels`, {
       method: 'POST',
