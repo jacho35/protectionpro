@@ -832,18 +832,35 @@ const Canvas = {
         // Show fault branch contributions on transformer
         if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
       } else if (['generator', 'solar_pv', 'wind_turbine'].includes(comp.type)) {
+        // Static property labels
+        if (comp.type === 'generator') {
+          const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
+          lines.push(ratingStr);
+          if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
+          if (p.power_factor) lines.push(`PF ${p.power_factor}`);
+        } else if (comp.type === 'solar_pv') {
+          const ratingStr = p.rated_kw >= 1000 ? `${(p.rated_kw / 1000).toFixed(1)} MW` : `${p.rated_kw} kW`;
+          lines.push(ratingStr);
+          if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
+          if (p.num_inverters > 1) lines.push(`${p.num_inverters}× Inv`);
+        } else if (comp.type === 'wind_turbine') {
+          const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
+          lines.push(ratingStr);
+          if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
+          if (p.num_turbines > 1) lines.push(`${p.num_turbines}× WTG`);
+        }
         // Show load flow output annotation for source components
         if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.branches) {
           const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
           if (branch && branch.s_mva > 0) {
             const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
             const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
+            lines.push({text: '───────', color: loadColor});
             lines.push({text: `P: ${pStr}`, color: loadColor});
             if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
             if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
           }
         }
-        if (!lines.length) continue;
         defaultOY = 32;
       } else if (comp.type === 'static_load') {
         if (p.name && p.name !== 'Load') lines.push(p.name);
