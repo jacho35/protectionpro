@@ -121,6 +121,17 @@ const Properties = {
       html += '</div>'; // close prop-section
     }
 
+    // TCC Grading button for protection devices
+    if (['cb', 'fuse', 'relay'].includes(comp.type)) {
+      html += `
+        <div class="prop-section prop-tcc-section">
+          <button class="prop-action-btn" id="btn-view-tcc" title="Open TCC chart showing this device and upstream protection for grading">
+            <svg width="14" height="14" viewBox="0 0 14 14" style="vertical-align:-2px;margin-right:4px"><path d="M1 13V1h1v10.5L5 5l3 4 3-7.5V13H1z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+            View TCC Grading
+          </button>
+        </div>`;
+    }
+
     // Position section
     html += `
       <div class="prop-section">
@@ -160,6 +171,12 @@ const Properties = {
     const hasCalc = ['utility', 'generator', 'transformer', 'cable',
       'motor_induction', 'motor_synchronous', 'bus', 'static_load', 'capacitor_bank'].includes(comp.type);
     this.calcInfoEl.style.display = hasCalc ? '' : 'none';
+
+    // Bind TCC Grading button
+    const btnTcc = this.contentEl.querySelector('#btn-view-tcc');
+    if (btnTcc) {
+      btnTcc.addEventListener('click', () => TCC.openForDevice(comp.id));
+    }
 
     // Bind change events
     this.contentEl.querySelectorAll('input, select').forEach(input => {
