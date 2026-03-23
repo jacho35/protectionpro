@@ -153,3 +153,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Fix fault branch current display: upstream branch fault currents now account for transformer turns ratios by converting per-unit current to actual kA at each element's operating voltage level~~
 - ~~Fix cable sizing warnings: warnings no longer recommend the same cable already selected; warning badges and results table now show tooltip explanations for why the cable is near limits~~
 - ~~Reports menu: moved report exports (CSV, PDF, templates, settings schedule, arc flash labels, calculations, scenario comparison) from File menu to dedicated Reports menu~~
+- ~~Fix print/page layout PDF export: add dynamic jsPDF loading with fallback when CDN script fails to load~~
