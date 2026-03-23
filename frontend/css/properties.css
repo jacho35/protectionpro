@@ -415,6 +415,8 @@
 
 .prop-action-btn:hover {
   opacity: 0.85;
+}
+
 /* Project Details Form */
 .project-details-form textarea {
   width: 100%;
