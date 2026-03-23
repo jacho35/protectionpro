@@ -42,11 +42,16 @@ const Components = {
   },
 
   // Get all unconnected ports across all components
+  // For buses, only show warnings when the bus has no connections at all
   getUnconnectedPorts() {
     const unconnected = [];
     const pageComps = AppState.getActivePageComponents();
     for (const comp of pageComps.values()) {
       const ports = this.getEffectivePorts(comp);
+      if (comp.type === 'bus') {
+        const hasAnyConnection = ports.some(p => this.isPortConnected(comp.id, p.id));
+        if (hasAnyConnection) continue;
+      }
       for (const port of ports) {
         if (!this.isPortConnected(comp.id, port.id)) {
           unconnected.push({ comp, port });
