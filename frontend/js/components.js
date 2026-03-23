@@ -44,7 +44,8 @@ const Components = {
   // Get all unconnected ports across all components
   getUnconnectedPorts() {
     const unconnected = [];
-    for (const comp of AppState.components.values()) {
+    const pageComps = AppState.getActivePageComponents();
+    for (const comp of pageComps.values()) {
       const ports = this.getEffectivePorts(comp);
       for (const port of ports) {
         if (!this.isPortConnected(comp.id, port.id)) {
