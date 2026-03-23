@@ -148,3 +148,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Toolbar quick access bar: Favourited/commonly used tools pinned to the toolbar for one-click access, with editor modal and localStorage persistence~~
 - ~~File manager: folder-based project organization, project/folder rename, move projects between folders~~
 - ~~Hide busbar connection points once connected: bus ports are hidden after a wire is attached, reducing visual clutter~~
+- ~~Fix sheet display bug: annotations, data labels, overload flags, and unconnected port warnings from other sheets no longer bleed through to the active sheet~~
