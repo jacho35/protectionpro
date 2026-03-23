@@ -475,7 +475,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${vdropIcon} ${c.voltage_drop_pct.toFixed(2)}%</td>
         <td>${withstandIcon}</td>
         <td>${statusBadge}</td>
-        <td>${c.recommended_cable || '—'}</td>
+        <td>${c.status === 'warning' && c.warning_reasons && c.warning_reasons.length > 0
+          ? `<span style="cursor:help;border-bottom:1px dotted #f57c00;color:#f57c00" title="${c.warning_reasons.join('; ').replace(/"/g, '&quot;')}">ⓘ Near limits</span>`
+          : (c.recommended_cable || '—')}</td>
       </tr>`;
       if (c.issues.length > 0) {
         html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">

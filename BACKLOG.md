@@ -151,3 +151,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Independent flow arrows: Load flow arrows show independently when load flow is run; fault current arrows show only when a specific bus is faulted, with direction toward the faulted bus~~
 - ~~Fix sheet display bug: annotations, data labels, overload flags, and unconnected port warnings from other sheets no longer bleed through to the active sheet~~
 - ~~Fix fault branch current display: upstream branch fault currents now account for transformer turns ratios by converting per-unit current to actual kA at each element's operating voltage level~~
+- ~~Fix cable sizing warnings: warnings no longer recommend the same cable already selected; warning badges and results table now show tooltip explanations for why the cable is near limits~~

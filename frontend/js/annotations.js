@@ -463,8 +463,15 @@ const Annotations = {
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
     ).join('');
 
+    // Build tooltip for warnings explaining why
+    const tooltipText = cable.status === 'warning' && cable.warning_reasons && cable.warning_reasons.length > 0
+      ? cable.warning_reasons.join('. ')
+      : cable.issues && cable.issues.length > 0 ? cable.issues.join('. ') : '';
+    const titleEl = tooltipText ? `<title>${tooltipText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</title>` : '';
+
     return `
       <g class="annotation-group cable-sizing-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        ${titleEl}
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">CABLE</text>
