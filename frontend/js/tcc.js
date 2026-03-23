@@ -302,6 +302,10 @@ const TCC = {
     this.selectedDeviceIndex = -1;
     this._loadDevicesFromNetwork();
     this._restoreDisplayState();
+    // Validate endpoint device index against new device list
+    if (this._miniSLDEndpointDeviceIdx >= this.devices.length) {
+      this._miniSLDEndpointDeviceIdx = -1;
+    }
     this._buildTabs();
     document.getElementById('tcc-modal').style.display = '';
     // Defer render to let the modal layout settle
@@ -1880,12 +1884,14 @@ const TCC = {
         typeLabel = '';
       }
       const selected = i === this.selectedDeviceIndex;
+      const isEndpoint = i === this._miniSLDEndpointDeviceIdx;
       return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" draggable="true">
         <div class="tcc-device-color" style="background:${dev.color}"></div>
         <div class="tcc-device-info">
           <div class="tcc-device-name">${dev.name}</div>
           <div class="tcc-device-detail">${typeLabel}</div>
         </div>
+        <button class="tcc-device-endpoint ${isEndpoint ? 'active' : ''}" data-index="${i}" title="${isEndpoint ? 'Clear path endpoint' : 'Set as furthest grading point — mini-SLD shows path from source to this device'}">\u21E5</button>
         <button class="tcc-device-toggle" data-index="${i}" title="Toggle visibility">${dev.visible ? '\u25CF' : '\u25CB'}</button>
       </div>`;
     }).join('');
@@ -1899,6 +1905,17 @@ const TCC = {
         this._renderDeviceList();
         this.render();
         this._runCoordinationCheck();
+        this._renderMiniSLD();
+      });
+    });
+
+    // Set/clear grading endpoint for mini-SLD path
+    list.querySelectorAll('.tcc-device-endpoint').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(e.target.dataset.index);
+        this._miniSLDEndpointDeviceIdx = (this._miniSLDEndpointDeviceIdx === idx) ? -1 : idx;
+        this._renderDeviceList();
         this._renderMiniSLD();
       });
     });
@@ -3148,9 +3165,11 @@ const TCC = {
       return;
     }
     container.style.display = '';
-    container.innerHTML = this.tabs.map(tab =>
-      `<button class="tcc-view-tab ${tab.id === this.activeTabId ? 'active' : ''}" data-tab-id="${tab.id}">${tab.name}</button>`
-    ).join('') + '<button class="tcc-view-tab tcc-add-custom-tab" title="Add custom tab">+</button>';
+    container.innerHTML = this.tabs.map(tab => {
+      const isCustom = tab.id.startsWith('custom_');
+      const closeBtn = isCustom ? `<span class="tcc-tab-close" data-tab-id="${tab.id}" title="Delete tab">\u00D7</span>` : '';
+      return `<button class="tcc-view-tab ${tab.id === this.activeTabId ? 'active' : ''}" data-tab-id="${tab.id}">${tab.name}${closeBtn}</button>`;
+    }).join('') + '<button class="tcc-view-tab tcc-add-custom-tab" title="Add custom tab">+</button>';
 
     container.querySelectorAll('.tcc-view-tab:not(.tcc-add-custom-tab)').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -3181,6 +3200,15 @@ const TCC = {
         }
       });
     });
+    // Delete custom tabs
+    container.querySelectorAll('.tcc-tab-close').forEach(span => {
+      span.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tabId = span.dataset.tabId;
+        this._deleteTab(tabId);
+      });
+    });
+
     const addBtn = container.querySelector('.tcc-add-custom-tab');
     if (addBtn) {
       addBtn.addEventListener('click', () => {
@@ -3188,6 +3216,27 @@ const TCC = {
         if (name) this.addCustomTab(name);
       });
     }
+  },
+
+  _deleteTab(tabId) {
+    const idx = this.tabs.findIndex(t => t.id === tabId);
+    if (idx < 0) return;
+    // Reassign devices on this tab back to their voltage tab or null
+    for (const dev of this.devices) {
+      if (dev.tabId === tabId) {
+        dev.tabId = dev.voltage_kv ? `v_${dev.voltage_kv}` : null;
+      }
+    }
+    this.tabs.splice(idx, 1);
+    // Switch to 'all' if deleted tab was active
+    if (this.activeTabId === tabId) {
+      this.activeTabId = 'all';
+    }
+    this._renderTabs();
+    this._renderDeviceList();
+    this.render();
+    this._runCoordinationCheck();
+    this._renderMiniSLD();
   },
 
   _renderVoltageSelector() {
@@ -3289,6 +3338,7 @@ const TCC = {
   // ══════════════════════════════════════════════════════════════════════════
 
   _miniSLDCollapsed: false,
+  _miniSLDEndpointDeviceIdx: -1,  // TCC device index chosen as furthest downstream grading point
 
   _initMiniSLD() {
     const toggle = document.getElementById('btn-tcc-mini-sld-toggle');
@@ -3453,10 +3503,30 @@ const TCC = {
       if (paths.length === 0) paths = allPaths;
     }
 
-    // Pick the longest path for display (covers the most devices)
+    // Pick the best path for display
     let displayPath = paths[0];
-    for (const p of paths) {
-      if (p.length > displayPath.length) displayPath = p;
+
+    if (this._miniSLDEndpointDeviceIdx >= 0 && this._miniSLDEndpointDeviceIdx < this.devices.length) {
+      // Grading endpoint set — find path containing that device and truncate to it
+      const endpointId = this.devices[this._miniSLDEndpointDeviceIdx].id;
+      for (const p of paths) {
+        const endIdx = p.findIndex(n => n.compId === endpointId);
+        if (endIdx >= 0) {
+          displayPath = p.slice(0, endIdx + 1);
+          break;
+        }
+      }
+      // If no path contains it, fall through to longest
+      if (displayPath === paths[0] && !paths[0].some(n => n.compId === endpointId)) {
+        for (const p of paths) {
+          if (p.length > displayPath.length) displayPath = p;
+        }
+      }
+    } else {
+      // No endpoint — pick longest path
+      for (const p of paths) {
+        if (p.length > displayPath.length) displayPath = p;
+      }
     }
 
     // Merge branch points: if other paths share a prefix, note branch-off points
@@ -3569,6 +3639,27 @@ const TCC = {
         }
       });
     });
+
+    // Update footer with endpoint info
+    const footer = document.getElementById('tcc-mini-sld-footer');
+    if (footer) {
+      if (this._miniSLDEndpointDeviceIdx >= 0 && this._miniSLDEndpointDeviceIdx < this.devices.length) {
+        const epDev = this.devices[this._miniSLDEndpointDeviceIdx];
+        footer.innerHTML = `<div class="mini-sld-endpoint-label">
+          <span>\u21E5 ${this._escSvg(epDev.name)}</span>
+          <button class="mini-sld-endpoint-clear" title="Clear endpoint">\u2715</button>
+        </div>`;
+        footer.querySelector('.mini-sld-endpoint-clear').addEventListener('click', () => {
+          this._miniSLDEndpointDeviceIdx = -1;
+          this._renderDeviceList();
+          this._renderMiniSLD();
+        });
+        footer.style.display = '';
+      } else {
+        footer.innerHTML = '';
+        footer.style.display = 'none';
+      }
+    }
   },
 
   /** Generate a simplified IEC symbol SVG for the mini-SLD */

@@ -162,4 +162,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Auto voltage propagation: components connecting to a bus automatically adopt its voltage level; bidirectional-smart logic propagates source voltages to buses at defaults; transformers bridge voltage zones with HV/LV winding matching; bus voltage changes prompt confirmation before updating all connected equipment~~
 - ~~Mini SLD panel in TCC: vertical protection-path diagram alongside TCC chart with simplified IEC symbols, component names, ratings, clickable device selection, and collapsible panel~~
 - ~~Show active project name in toolbar: display the current project name next to the app title, clickable to rename~~
+- ~~Fix mini-SLD collapse bug: collapsed panel now shows narrow 28px strip with reopen button instead of disappearing entirely~~
+- ~~Mini-SLD grading endpoint selection: set a downstream protection device as path endpoint from device list to show only source-to-endpoint path on mini-SLD~~
+- ~~Delete custom TCC tabs: custom tabs now show × close button to remove them, reassigning devices back to their voltage tabs~~
 - ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
