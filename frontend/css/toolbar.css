@@ -186,6 +186,25 @@
   white-space: nowrap;
 }
 
+/* ─── Checkbox rows inside dropdown panels ─── */
+.dropdown-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dropdown-checkbox:hover {
+  background: var(--hover-bg);
+}
+.dropdown-checkbox input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
 .dropdown-inline-select {
   font-size: 11px;
   font-family: var(--font-family);

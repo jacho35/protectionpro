@@ -1002,9 +1002,9 @@ const Canvas = {
     }
   },
 
-  // Render load flow directional arrows on wires — visible when load flow results exist
+  // Render load flow directional arrows on wires — visible when toggled on
   renderLoadFlowArrows() {
-    if (!AppState.loadFlowResults) return;
+    if (!AppState.showFlowArrows.loadflow || !AppState.loadFlowResults) return;
     const branches = AppState.loadFlowResults.branches || [];
     if (branches.length === 0) return;
 
@@ -1061,7 +1061,7 @@ const Canvas = {
 
   // Render fault current directional arrows — visible only when a specific bus is faulted
   renderFaultFlowArrows() {
-    if (!AppState.faultResults || !AppState.faultedBusId) return;
+    if (!AppState.showFlowArrows.fault || !AppState.faultResults || !AppState.faultedBusId) return;
     const faultedBusId = AppState.faultedBusId;
     const busResult = AppState.faultResults.buses?.[faultedBusId];
     if (!busResult || !busResult.branches || busResult.branches.length === 0) return;
