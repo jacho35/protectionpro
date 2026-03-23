@@ -1023,14 +1023,35 @@ const Canvas = {
       if (isCableOrXfmr(toComp.type)) {
         branch = branches.find(b => b.elementId === toComp.id);
         if (branch) {
-          if (branch.from_bus === fromComp.id) forward = true;
-          else if (branch.to_bus === fromComp.id) forward = false;
+          if (branch.from_bus === branch.to_bus) {
+            // Source-connected element (e.g. utility incomer TX): from_bus===to_bus
+            // Determine direction from topology: is fromComp the bus or the source?
+            if (fromComp.id === branch.from_bus) {
+              forward = false; // Wire goes bus→element; power injected toward bus = reverse
+            } else {
+              forward = true;  // Wire goes source→element; power flows same direction
+            }
+          } else if (branch.from_bus === fromComp.id) {
+            forward = true;
+          } else if (branch.to_bus === fromComp.id) {
+            forward = false;
+          }
         }
       } else if (isCableOrXfmr(fromComp.type)) {
         branch = branches.find(b => b.elementId === fromComp.id);
         if (branch) {
-          if (branch.to_bus === toComp.id) forward = true;
-          else if (branch.from_bus === toComp.id) forward = false;
+          if (branch.from_bus === branch.to_bus) {
+            // Source-connected element: determine direction from topology
+            if (toComp.id === branch.from_bus) {
+              forward = true;  // Wire goes element→bus; power flows same direction
+            } else {
+              forward = false; // Wire goes element→source; power flows reverse
+            }
+          } else if (branch.to_bus === toComp.id) {
+            forward = true;
+          } else if (branch.from_bus === toComp.id) {
+            forward = false;
+          }
         }
       }
 
@@ -1075,15 +1096,34 @@ const Canvas = {
       if (isCableOrXfmr(toComp.type)) {
         faultBranch = faultBranches.find(b => b.element_id === toComp.id);
         if (faultBranch) {
-          // Fault current flows toward the faulted bus
-          if (faultBranch.from_bus === fromComp.id) forward = true;
-          else if (faultBranch.to_bus === fromComp.id) forward = false;
+          if (faultBranch.from_bus === faultBranch.to_bus) {
+            // Source-connected element: determine direction from topology
+            if (fromComp.id === faultBranch.from_bus) {
+              forward = false;
+            } else {
+              forward = true;
+            }
+          } else if (faultBranch.from_bus === fromComp.id) {
+            forward = true;
+          } else if (faultBranch.to_bus === fromComp.id) {
+            forward = false;
+          }
         }
       } else if (isCableOrXfmr(fromComp.type)) {
         faultBranch = faultBranches.find(b => b.element_id === fromComp.id);
         if (faultBranch) {
-          if (faultBranch.to_bus === toComp.id) forward = true;
-          else if (faultBranch.from_bus === toComp.id) forward = false;
+          if (faultBranch.from_bus === faultBranch.to_bus) {
+            // Source-connected element: determine direction from topology
+            if (toComp.id === faultBranch.from_bus) {
+              forward = true;
+            } else {
+              forward = false;
+            }
+          } else if (faultBranch.to_bus === toComp.id) {
+            forward = true;
+          } else if (faultBranch.from_bus === toComp.id) {
+            forward = false;
+          }
         }
       }
 
