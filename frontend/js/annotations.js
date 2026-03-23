@@ -261,8 +261,10 @@ const Annotations = {
     if (sMVA > 0.001) {
       const pStr = Math.abs(result.p_mw) >= 1 ? `${result.p_mw.toFixed(3)} MW` : `${(result.p_mw * 1000).toFixed(1)} kW`;
       const qStr = Math.abs(result.q_mvar) >= 1 ? `${result.q_mvar.toFixed(3)} MVAr` : `${(result.q_mvar * 1000).toFixed(1)} kVAr`;
+      const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
       lines.push(`P: ${pStr}`);
       lines.push(`Q: ${qStr}`);
+      lines.push(`S: ${sStr}`);
       if (result.voltage_kv > 0) {
         const iAmps = (sMVA * 1000) / (Math.sqrt(3) * result.voltage_kv);
         lines.push(`I: ${iAmps.toFixed(1)} A`);
