@@ -47,6 +47,18 @@ class Project(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_add_folder_id()
+
+
+def _migrate_add_folder_id():
+    """Add folder_id column to projects table if it doesn't exist (legacy DB migration)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "projects" in insp.get_table_names():
+        columns = [c["name"] for c in insp.get_columns("projects")]
+        if "folder_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE projects ADD COLUMN folder_id INTEGER REFERENCES folders(id)"))
 
 
 def get_db():
