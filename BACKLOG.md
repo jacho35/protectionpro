@@ -96,6 +96,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 ---
 
 ## Completed
+- ~~Persist result box positions: analysis result boxes retain their dragged positions across simulation re-runs and project save/load; analysis results are saved with the project so boxes appear on load; "Reset Result Box Positions" button in View menu to restore defaults~~
 - ~~Properties panel sections: organized component properties into collapsible sections grouped by analysis type (General, Fault Analysis, Load Flow, Arc Flash, Grounding, Cable Sizing, Protection Settings)~~
 - ~~Mobile interface: responsive layout with bottom navigation, slide-up component/analysis/properties/menu sheets, pinch-to-zoom and pan touch gestures, floating action buttons for mode and zoom, tap-to-place components~~
 - ~~Overlay fault current markers on TCC~~
