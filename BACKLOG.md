@@ -163,3 +163,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Mini SLD panel in TCC: vertical protection-path diagram alongside TCC chart with simplified IEC symbols, component names, ratings, clickable device selection, and collapsible panel~~
 - ~~Show active project name in toolbar: display the current project name next to the app title, clickable to rename~~
 - ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
+- ~~Bus names in result boxes: annotation badges (Fault, Load Flow, Arc Flash, Unbalanced LF) now display the bus name in their label for easy identification on busy diagrams; hover highlighting links annotation boxes to their bus component with a blue glow effect~~

@@ -19,6 +19,18 @@
   stroke-dasharray: none;
 }
 
+/* Hover highlight linking annotations to their bus */
+.sld-component.highlight-linked {
+  filter: drop-shadow(0 0 6px var(--accent, #1976d2)) drop-shadow(0 0 2px var(--accent, #1976d2));
+}
+
+.annotation-group.highlight-linked .annotation-badge,
+.annotation-group.highlight-linked .annotation-hit {
+  stroke: var(--accent, #1976d2) !important;
+  stroke-width: 2.5 !important;
+  filter: drop-shadow(0 0 4px rgba(25, 118, 210, 0.4));
+}
+
 /* Selection handles */
 .select-handle {
   fill: white;

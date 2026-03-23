@@ -50,6 +50,33 @@ const Canvas = {
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    // Hover highlighting: link annotation boxes to their bus components
+    this.svg.addEventListener('mouseover', (e) => {
+      const annot = e.target.closest('.annotation-group[data-bus-id]');
+      if (annot) {
+        const busId = annot.dataset.busId;
+        const busEl = this.componentsLayer.querySelector(`.sld-component[data-id="${busId}"]`);
+        if (busEl) busEl.classList.add('highlight-linked');
+        this.svg.querySelectorAll(`.annotation-group[data-bus-id="${busId}"]`).forEach(el => el.classList.add('highlight-linked'));
+        return;
+      }
+      const comp = e.target.closest('.sld-component');
+      if (comp) {
+        const compId = comp.dataset.id;
+        this.svg.querySelectorAll(`.annotation-group[data-bus-id="${compId}"]`).forEach(el => el.classList.add('highlight-linked'));
+        if (this.svg.querySelectorAll(`.annotation-group[data-bus-id="${compId}"]`).length > 0) {
+          comp.classList.add('highlight-linked');
+        }
+      }
+    });
+    this.svg.addEventListener('mouseout', (e) => {
+      const annot = e.target.closest('.annotation-group[data-bus-id]');
+      const comp = e.target.closest('.sld-component');
+      if (annot || comp) {
+        this.svg.querySelectorAll('.highlight-linked').forEach(el => el.classList.remove('highlight-linked'));
+      }
+    });
+
     // Double-click to add/remove wire bend points
     this.svg.addEventListener('dblclick', (e) => {
       const worldPt = this.screenToWorld(e.clientX, e.clientY);
