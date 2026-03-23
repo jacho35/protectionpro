@@ -1962,6 +1962,141 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ─── Quick Access Bar ───
+  const QUICK_ACCESS_ACTIONS = [
+    // Analysis
+    { id: 'fault', label: 'Fault Analysis', category: 'Analysis', btnId: 'btn-run-fault',
+      icon: '<path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    { id: 'loadflow', label: 'Load Flow', category: 'Analysis', btnId: 'btn-run-loadflow',
+      icon: '<path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    { id: 'unbalanced-lf', label: 'Unbalanced LF', category: 'Analysis', btnId: 'btn-run-unbalanced-loadflow',
+      icon: '<path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' },
+    // Studies
+    { id: 'cable-sizing', label: 'Cable Sizing', category: 'Studies', btnId: 'btn-cable-sizing',
+      icon: '<path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/>' },
+    { id: 'motor-starting', label: 'Motor Starting', category: 'Studies', btnId: 'btn-motor-starting',
+      icon: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text>' },
+    { id: 'duty-check', label: 'Duty Check', category: 'Studies', btnId: 'btn-duty-check',
+      icon: '<path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    { id: 'load-diversity', label: 'Load Diversity', category: 'Studies', btnId: 'btn-load-diversity',
+      icon: '<rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/>' },
+    { id: 'grounding', label: 'Grounding', category: 'Studies', btnId: 'btn-grounding',
+      icon: '<path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/>' },
+    { id: 'study-manager', label: 'Run All Studies', category: 'Studies', btnId: 'btn-study-manager',
+      icon: '<path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/>' },
+    // Safety
+    { id: 'arcflash', label: 'Arc Flash', category: 'Safety', btnId: 'btn-arcflash',
+      icon: '<path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/>' },
+    { id: 'dc-arcflash', label: 'DC Arc Flash', category: 'Safety', btnId: 'btn-dc-arcflash',
+      icon: '<path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#1976d2" stroke="#0d47a1" stroke-width="0.8"/><text x="1" y="14" font-size="6" font-weight="bold" fill="currentColor">DC</text>' },
+    { id: 'tcc', label: 'TCC', category: 'Safety', btnId: 'btn-tcc',
+      icon: '<rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/>' },
+    { id: 'compliance', label: 'Compliance', category: 'Safety', btnId: 'btn-compliance',
+      icon: '<path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    // File
+    { id: 'save', label: 'Save', category: 'File', btnId: 'btn-save',
+      icon: '<path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    { id: 'export-pdf', label: 'Export PDF', category: 'File', btnId: 'btn-export-pdf',
+      icon: '<path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    // Edit
+    { id: 'undo', label: 'Undo', category: 'Edit', btnId: 'btn-undo',
+      icon: '<path d="M4 7l-3-3 3-3M1 4h9a4 4 0 010 8H6" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    { id: 'redo', label: 'Redo', category: 'Edit', btnId: 'btn-redo',
+      icon: '<path d="M12 7l3-3-3-3M15 4H6a4 4 0 000 8h4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+  ];
+
+  const QA_STORAGE_KEY = 'protectionpro-quick-access';
+  const QA_DEFAULT_IDS = ['fault', 'loadflow', 'arcflash', 'save'];
+
+  function qaLoadFavourites() {
+    try {
+      const stored = localStorage.getItem(QA_STORAGE_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) { /* ignore */ }
+    return [...QA_DEFAULT_IDS];
+  }
+
+  function qaSaveFavourites(ids) {
+    localStorage.setItem(QA_STORAGE_KEY, JSON.stringify(ids));
+  }
+
+  let qaFavourites = qaLoadFavourites();
+
+  function qaRenderBar() {
+    const container = document.getElementById('quick-access-items');
+    container.innerHTML = '';
+    if (qaFavourites.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'quick-access-empty';
+      empty.textContent = 'Click + to add tools';
+      container.appendChild(empty);
+      return;
+    }
+    for (const actionId of qaFavourites) {
+      const action = QUICK_ACCESS_ACTIONS.find(a => a.id === actionId);
+      if (!action) continue;
+      const btn = document.createElement('button');
+      btn.className = 'quick-access-btn';
+      btn.title = action.label;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16">${action.icon}</svg><span>${action.label}</span>`;
+      btn.addEventListener('click', () => {
+        const target = document.getElementById(action.btnId);
+        if (target) target.click();
+      });
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        qaFavourites = qaFavourites.filter(id => id !== actionId);
+        qaSaveFavourites(qaFavourites);
+        qaRenderBar();
+      });
+      container.appendChild(btn);
+    }
+  }
+
+  // Quick Access editor modal
+  const qaModal = document.getElementById('quick-access-modal');
+  document.getElementById('btn-quick-access-edit').addEventListener('click', () => {
+    qaRenderChecklist();
+    qaModal.style.display = 'flex';
+  });
+  document.getElementById('btn-close-quick-access').addEventListener('click', () => {
+    qaModal.style.display = 'none';
+  });
+  qaModal.addEventListener('click', (e) => {
+    if (e.target === qaModal) qaModal.style.display = 'none';
+  });
+
+  function qaRenderChecklist() {
+    const container = document.getElementById('quick-access-checklist');
+    container.innerHTML = '';
+    const categories = [...new Set(QUICK_ACCESS_ACTIONS.map(a => a.category))];
+    for (const cat of categories) {
+      const catLabel = document.createElement('div');
+      catLabel.className = 'qa-category-label';
+      catLabel.textContent = cat;
+      container.appendChild(catLabel);
+      for (const action of QUICK_ACCESS_ACTIONS.filter(a => a.category === cat)) {
+        const item = document.createElement('label');
+        item.className = 'qa-check-item';
+        const checked = qaFavourites.includes(action.id) ? 'checked' : '';
+        item.innerHTML = `<input type="checkbox" value="${action.id}" ${checked}><svg width="14" height="14" viewBox="0 0 16 16">${action.icon}</svg>${action.label}`;
+        const checkbox = item.querySelector('input');
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) {
+            if (!qaFavourites.includes(action.id)) qaFavourites.push(action.id);
+          } else {
+            qaFavourites = qaFavourites.filter(id => id !== action.id);
+          }
+          qaSaveFavourites(qaFavourites);
+          qaRenderBar();
+        });
+        container.appendChild(item);
+      }
+    }
+  }
+
+  qaRenderBar();
+
   // Initial render
   Canvas.render();
 

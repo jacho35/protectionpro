@@ -145,4 +145,5 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Detailed calculations report: Multi-section PDF with formulas and intermediate values for all analysis types (fault, load flow, arc flash, cable sizing, motor starting, duty check, load diversity, grounding)~~
 - ~~Help documentation update: Comprehensive help with all 22 component types, new Studies tab (cable sizing, motor starting, duty check, load diversity, grounding), DC arc flash docs, unbalanced load flow, TCC enhancements, compliance details, updated shortcuts, templates, export options, scenarios, and mobile support~~
 - ~~Apparent power (S) display in load flow annotation badges~~
+- ~~Toolbar quick access bar: Favourited/commonly used tools pinned to the toolbar for one-click access, with editor modal and localStorage persistence~~
 - ~~File manager: folder-based project organization, project/folder rename, move projects between folders~~

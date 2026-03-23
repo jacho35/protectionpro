@@ -268,6 +268,14 @@
         </div>
       </div>
 
+      <!-- Quick Access Bar -->
+      <div id="quick-access-bar">
+        <div id="quick-access-items"></div>
+        <button id="btn-quick-access-edit" class="quick-access-edit-btn" title="Edit Quick Access">
+          <svg width="12" height="12" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
       <div class="toolbar-right">
         <button id="btn-dark-mode" title="Toggle Dark Mode">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A5 5 0 018 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -1350,6 +1358,20 @@
             <p class="scenario-empty">No scenarios saved yet.</p>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Access Editor Modal -->
+  <div id="quick-access-modal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:480px">
+      <div class="modal-header">
+        <h3>Edit Quick Access Bar</h3>
+        <button class="modal-close" id="btn-close-quick-access">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:16px">
+        <p style="font-size:12px;color:var(--text-secondary);margin:0 0 12px">Select tools to pin to the quick access bar for one-click access.</p>
+        <div id="quick-access-checklist"></div>
       </div>
     </div>
   </div>
