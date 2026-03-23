@@ -147,3 +147,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Apparent power (S) display in load flow annotation badges~~
 - ~~Toolbar quick access bar: Favourited/commonly used tools pinned to the toolbar for one-click access, with editor modal and localStorage persistence~~
 - ~~File manager: folder-based project organization, project/folder rename, move projects between folders~~
+- ~~Hide busbar connection points once connected: bus ports are hidden after a wire is attached, reducing visual clutter~~

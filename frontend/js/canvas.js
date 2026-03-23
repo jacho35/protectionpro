@@ -726,6 +726,24 @@ const Canvas = {
     }
     this.componentsLayer.innerHTML = compsHtml;
 
+    // Hide connected ports on bus components
+    for (const [id, comp] of pageComps) {
+      if (comp.type !== 'bus') continue;
+      const grp = this.componentsLayer.querySelector(`[data-id="${id}"]`);
+      if (!grp) continue;
+      const ports = grp.querySelectorAll('.conn-port-hit');
+      for (const hitEl of ports) {
+        const portId = hitEl.getAttribute('data-port');
+        if (Components.isPortConnected(id, portId)) {
+          hitEl.style.display = 'none';
+          const vizEl = hitEl.nextElementSibling;
+          if (vizEl && vizEl.classList.contains('conn-port')) {
+            vizEl.style.display = 'none';
+          }
+        }
+      }
+    }
+
     // Apply selection styling
     for (const id of AppState.selectedIds) {
       const el = this.componentsLayer.querySelector(`[data-id="${id}"]`);
@@ -1134,6 +1152,8 @@ const Canvas = {
       if (!def.ports) continue;
       const ports = (comp.type === 'bus') ? Symbols.getBusPorts(comp) : def.ports;
       for (const port of ports) {
+        // Skip already-connected bus ports
+        if (comp.type === 'bus' && Components.isPortConnected(comp.id, port.id)) continue;
         const pos = Symbols.getPortWorldPosition(comp, port.id);
         const dx = worldPt.x - pos.x;
         const dy = worldPt.y - pos.y;
