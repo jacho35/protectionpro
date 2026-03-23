@@ -160,3 +160,6 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Connection warning logic: unconnected port warnings on buses only shown when the bus has zero connections, not on every empty port~~
 - ~~Mini SLD panel in TCC: vertical protection-path diagram alongside TCC chart with simplified IEC symbols, component names, ratings, clickable device selection, and collapsible panel~~
 - ~~Show active project name in toolbar: display the current project name next to the app title, clickable to rename~~
+- ~~Fix mini-SLD collapse bug: collapsed panel now shows narrow 28px strip with reopen button instead of disappearing entirely~~
+- ~~Mini-SLD grading endpoint selection: set a downstream protection device as path endpoint from device list to show only source-to-endpoint path on mini-SLD~~
+- ~~Delete custom TCC tabs: custom tabs now show × close button to remove them, reassigning devices back to their voltage tabs~~
