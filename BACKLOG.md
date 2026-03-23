@@ -148,3 +148,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Toolbar quick access bar: Favourited/commonly used tools pinned to the toolbar for one-click access, with editor modal and localStorage persistence~~
 - ~~File manager: folder-based project organization, project/folder rename, move projects between folders~~
 - ~~Hide busbar connection points once connected: bus ports are hidden after a wire is attached, reducing visual clutter~~
+- ~~Independent flow arrows: Load flow arrows show independently when load flow is run; fault current arrows show only when a specific bus is faulted, with direction toward the faulted bus~~

@@ -286,6 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const faultType = document.getElementById('fault-type').value || null;
         result = await API.runFaultAnalysis(faultBusId, faultType);
         AppState.faultResults = result;
+        AppState.faultedBusId = faultBusId;
         // Update status with context
         const busInfo = faultBusId ? ` on ${AppState.components.get(faultBusId)?.props?.name || faultBusId}` : ' on all buses';
         document.getElementById('status-info').textContent = `Fault analysis complete${busInfo}.`;

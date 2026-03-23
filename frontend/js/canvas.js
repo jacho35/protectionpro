@@ -758,8 +758,9 @@ const Canvas = {
     // Render overload flags on components exceeding rated capacity
     this.renderOverloadFlags();
 
-    // Render directional flow arrows on wires (after both load flow + fault results)
-    this.renderFlowArrows();
+    // Render directional flow arrows on wires
+    this.renderLoadFlowArrows();
+    this.renderFaultFlowArrows();
 
     // Update mini-map
     if (typeof MiniMap !== 'undefined') MiniMap.render();
@@ -999,9 +1000,9 @@ const Canvas = {
     }
   },
 
-  // Render directional flow arrows on wires — visible only when both load flow AND fault results exist
-  renderFlowArrows() {
-    if (!AppState.loadFlowResults || !AppState.faultResults) return;
+  // Render load flow directional arrows on wires — visible when load flow results exist
+  renderLoadFlowArrows() {
+    if (!AppState.loadFlowResults) return;
     const branches = AppState.loadFlowResults.branches || [];
     if (branches.length === 0) return;
 
@@ -1020,14 +1021,12 @@ const Canvas = {
       if (isCableOrXfmr(toComp.type)) {
         branch = branches.find(b => b.elementId === toComp.id);
         if (branch) {
-          // Wire enters the element from fromComp side
           if (branch.from_bus === fromComp.id) forward = true;
           else if (branch.to_bus === fromComp.id) forward = false;
         }
       } else if (isCableOrXfmr(fromComp.type)) {
         branch = branches.find(b => b.elementId === fromComp.id);
         if (branch) {
-          // Wire exits the element toward toComp side
           if (branch.to_bus === toComp.id) forward = true;
           else if (branch.from_bus === toComp.id) forward = false;
         }
@@ -1043,31 +1042,97 @@ const Canvas = {
       // Flip arrow when real power flows opposite to the wire's natural direction
       const isForward = branch.p_mw >= 0 ? forward : !forward;
 
-      // Build the actual expanded path points for this wire
-      const fromPos = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
-      const toPos   = Symbols.getPortWorldPosition(toComp,   wire.toPort);
-      const pts = this._getWireActualPoints(wire, fromPos, toPos);
-
-      const mid = this._calcPathMidpoint(pts);
-      if (!mid) continue;
-
-      const angle = isForward ? mid.angle : mid.angle + Math.PI;
-      const s = 7; // half-size in SVG user units
-      const c = Math.cos(angle), sn = Math.sin(angle);
-
-      // Filled triangle: tip forward, two base corners behind
-      const tx = mid.x + s * c,           ty = mid.y + s * sn;
-      const lx = mid.x - s * 0.6 * c + s * 0.7 * sn, ly = mid.y - s * 0.6 * sn - s * 0.7 * c;
-      const rx = mid.x - s * 0.6 * c - s * 0.7 * sn, ry = mid.y - s * 0.6 * sn + s * 0.7 * c;
-
-      html += `<polygon class="flow-arrow" data-wire-id="${id}" ` +
-              `points="${tx},${ty} ${lx},${ly} ${rx},${ry}" ` +
-              `fill="${color}" stroke="#fff" stroke-width="0.5" style="pointer-events:none;opacity:0.92"/>`;
+      html += this._buildArrowSvg(id, wire, fromComp, toComp, isForward, color, 'loadflow-arrow');
     }
 
     if (html) {
       this.annotationsLayer.insertAdjacentHTML('beforeend', html);
     }
+  },
+
+  // Render fault current directional arrows — visible only when a specific bus is faulted
+  renderFaultFlowArrows() {
+    if (!AppState.faultResults || !AppState.faultedBusId) return;
+    const faultedBusId = AppState.faultedBusId;
+    const busResult = AppState.faultResults.buses?.[faultedBusId];
+    if (!busResult || !busResult.branches || busResult.branches.length === 0) return;
+
+    const faultBranches = busResult.branches;
+    const pageWires = AppState.getActivePageWires();
+    let html = '';
+
+    for (const [id, wire] of pageWires) {
+      const fromComp = AppState.components.get(wire.fromComponent);
+      const toComp = AppState.components.get(wire.toComponent);
+      if (!fromComp || !toComp) continue;
+
+      const isCableOrXfmr = t => t === 'cable' || t === 'transformer';
+      let faultBranch = null;
+      let forward = true;
+
+      if (isCableOrXfmr(toComp.type)) {
+        faultBranch = faultBranches.find(b => b.element_id === toComp.id);
+        if (faultBranch) {
+          // Fault current flows toward the faulted bus
+          if (faultBranch.from_bus === fromComp.id) forward = true;
+          else if (faultBranch.to_bus === fromComp.id) forward = false;
+        }
+      } else if (isCableOrXfmr(fromComp.type)) {
+        faultBranch = faultBranches.find(b => b.element_id === fromComp.id);
+        if (faultBranch) {
+          if (faultBranch.to_bus === toComp.id) forward = true;
+          else if (faultBranch.from_bus === toComp.id) forward = false;
+        }
+      }
+
+      if (!faultBranch) continue;
+
+      // Color by contribution percentage: red for major, amber for moderate, blue for minor
+      let color = '#3b82f6'; // blue  < 20 %
+      if (faultBranch.contribution_pct > 50) color = '#ef4444';       // red
+      else if (faultBranch.contribution_pct > 20) color = '#f97316';  // amber
+
+      // Arrow points toward the faulted bus (current flows into the fault)
+      // Determine direction: does the wire lead toward or away from the faulted bus?
+      let towardFault = forward;
+      // If the to_bus of the fault branch is the faulted bus, forward means toward fault
+      // If the from_bus is the faulted bus, forward means away from fault (reverse it)
+      if (faultBranch.to_bus === faultedBusId) {
+        towardFault = forward;
+      } else if (faultBranch.from_bus === faultedBusId) {
+        towardFault = !forward;
+      }
+
+      // Offset the arrow slightly from center to avoid overlapping with load flow arrows
+      html += this._buildArrowSvg(id, wire, fromComp, toComp, towardFault, color, 'fault-arrow', 0.35);
+    }
+
+    if (html) {
+      this.annotationsLayer.insertAdjacentHTML('beforeend', html);
+    }
+  },
+
+  // Build SVG polygon for a directional arrow on a wire
+  _buildArrowSvg(wireId, wire, fromComp, toComp, isForward, color, cssClass, pathFraction = 0.5) {
+    const fromPos = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
+    const toPos   = Symbols.getPortWorldPosition(toComp,   wire.toPort);
+    const pts = this._getWireActualPoints(wire, fromPos, toPos);
+
+    const mid = this._calcPathPoint(pts, pathFraction);
+    if (!mid) return '';
+
+    const angle = isForward ? mid.angle : mid.angle + Math.PI;
+    const s = 7; // half-size in SVG user units
+    const c = Math.cos(angle), sn = Math.sin(angle);
+
+    // Filled triangle: tip forward, two base corners behind
+    const tx = mid.x + s * c,           ty = mid.y + s * sn;
+    const lx = mid.x - s * 0.6 * c + s * 0.7 * sn, ly = mid.y - s * 0.6 * sn - s * 0.7 * c;
+    const rx = mid.x - s * 0.6 * c - s * 0.7 * sn, ry = mid.y - s * 0.6 * sn + s * 0.7 * c;
+
+    return `<polygon class="flow-arrow ${cssClass}" data-wire-id="${wireId}" ` +
+           `points="${tx},${ty} ${lx},${ly} ${rx},${ry}" ` +
+           `fill="${color}" stroke="#fff" stroke-width="0.5" style="pointer-events:none;opacity:0.92"/>`;
   },
 
   // Reconstruct the actual polyline points for a wire (expanding orthogonal L-segments)
@@ -1097,6 +1162,40 @@ const Canvas = {
       { x: toPos.x,   y: midY },
       toPos,
     ];
+  },
+
+  // Find a point at a given fraction (0–1) of a polyline's total length and the direction angle there
+  _calcPathPoint(pts, fraction = 0.5) {
+    if (pts.length < 2) return null;
+
+    const segments = [];
+    let totalLen = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const dx = pts[i + 1].x - pts[i].x;
+      const dy = pts[i + 1].y - pts[i].y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 0) segments.push({ from: pts[i], to: pts[i + 1], len, angle: Math.atan2(dy, dx) });
+      totalLen += len;
+    }
+
+    if (totalLen === 0 || segments.length === 0) return null;
+
+    let target = totalLen * fraction;
+    let accumulated = 0;
+    for (const seg of segments) {
+      if (accumulated + seg.len >= target) {
+        const t = (target - accumulated) / seg.len;
+        return {
+          x: seg.from.x + t * (seg.to.x - seg.from.x),
+          y: seg.from.y + t * (seg.to.y - seg.from.y),
+          angle: seg.angle,
+        };
+      }
+      accumulated += seg.len;
+    }
+
+    const last = segments[segments.length - 1];
+    return { x: (last.from.x + last.to.x) / 2, y: (last.from.y + last.to.y) / 2, angle: last.angle };
   },
 
   // Find the point at 50% of a polyline's total length and the direction angle there
