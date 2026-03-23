@@ -135,6 +135,33 @@ const API = {
     return this.request(`/projects/${id}`, 'DELETE');
   },
 
+  // Rename project
+  async renameProject(id, name) {
+    return this.request(`/projects/${id}/rename`, 'PATCH', { name });
+  },
+
+  // Move project to folder
+  async moveProject(id, folderId) {
+    return this.request(`/projects/${id}/move`, 'PATCH', { folder_id: folderId });
+  },
+
+  // Folder CRUD
+  async listFolders() {
+    return this.request('/projects/folders');
+  },
+
+  async createFolder(name, parentId = null) {
+    return this.request('/projects/folders', 'POST', { name, parent_id: parentId });
+  },
+
+  async updateFolder(id, data) {
+    return this.request(`/projects/folders/${id}`, 'PUT', data);
+  },
+
+  async deleteFolder(id) {
+    return this.request(`/projects/folders/${id}`, 'DELETE');
+  },
+
   // Export project as JSON
   async exportJSON(id) {
     return this.request(`/projects/${id}/export/json`);
