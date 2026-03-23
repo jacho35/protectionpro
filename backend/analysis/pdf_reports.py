@@ -730,7 +730,7 @@ def _calc_cable(pdf, cable_results):
     for cable in cable_results.get("cables", []):
         name = cable.get("cable_name", cable.get("cable_id", ""))
         _calc_subsection(pdf, f"Cable: {name}")
-        _calc_body(pdf, f"  From: {cable.get('from_bus', '—')}  →  To: {cable.get('to_bus', '—')}")
+        _calc_body(pdf, f"  From: {cable.get('from_bus', '-')}  ->  To: {cable.get('to_bus', '-')}")
 
         i_load = cable.get("load_current_a", 0) or 0
         thermal_pct = cable.get("thermal_loading_pct", 0) or 0
