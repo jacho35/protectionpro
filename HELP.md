@@ -484,12 +484,18 @@ Calculates arc flash incident energy, arc flash boundary, and PPE requirements a
 - Fault clearing time: up to 2 seconds
 
 ### Electrode Configurations
-Five configurations per IEEE 1584-2018:
-- **VCB** — Vertical conductors in cubic box
-- **VCBB** — Vertical conductors terminated in barrier inside box
-- **HCB** — Horizontal conductors in cubic box
-- **VOA** — Vertical conductors in open air
-- **HOA** — Horizontal conductors in open air
+
+The electrode configuration describes the physical arrangement of conductors (electrodes) inside electrical equipment. It is a key parameter from IEEE 1584-2018 that affects how the arc behaves and how much energy is directed toward a worker. Each configuration uses different coefficients from IEEE 1584-2018 Tables 1 and 3 to calculate arcing current and incident energy.
+
+| Config | Full Name | Description |
+|--------|-----------|-------------|
+| **VCB** | Vertical conductors in a Cubic Box | Conductors are vertical inside an enclosure (e.g., switchgear, MCCs). The box concentrates arc energy outward toward the worker. This is the default and most common scenario. |
+| **VCBB** | Vertical conductors terminated in a Barrier in a Box | Same as VCB but with an insulating barrier behind the electrodes, redirecting even more energy toward the opening. Typically the worst-case configuration. |
+| **HCB** | Horizontal conductors in a Cubic Box | Conductors are horizontal inside an enclosure. Common in panelboards and some switchboards. |
+| **VOA** | Vertical conductors in Open Air | Conductors are vertical with no enclosure. Arc energy dissipates freely in all directions, resulting in lower incident energy. |
+| **HOA** | Horizontal conductors in Open Air | Conductors are horizontal with no enclosure. Also lower energy due to no focusing effect. |
+
+**Enclosed vs. open-air:** Enclosed configurations (VCB, VCBB, HCB) concentrate arc energy toward the equipment opening where a worker stands, producing higher incident energy. Open-air configurations (VOA, HOA) allow energy to disperse in all directions, reducing the incident energy at the worker's position. Where practical, switching from an enclosed to an open-air configuration can be an effective arc flash mitigation strategy.
 
 ### Arcing Current (IEEE 1584-2002 Eq. 1–2)
 
