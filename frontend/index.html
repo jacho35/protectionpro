@@ -118,6 +118,9 @@
                 <option value="llg">Double Line-Ground</option>
               </select>
             </div>
+            <label class="dropdown-checkbox" title="Show fault current flow arrows on wires">
+              <input type="checkbox" id="chk-fault-arrows"> Show fault flow arrows
+            </label>
             <div class="dropdown-compound">
               <button id="btn-run-loadflow" class="dropdown-item" title="Run Load Flow">
                 <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -128,6 +131,9 @@
                 <option value="gauss_seidel">Gauss-Seidel</option>
               </select>
             </div>
+            <label class="dropdown-checkbox" title="Show load flow direction arrows on wires">
+              <input type="checkbox" id="chk-loadflow-arrows"> Show load flow arrows
+            </label>
             <button id="btn-run-unbalanced-loadflow" class="dropdown-item" title="Run Unbalanced 3-Phase Load Flow">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               Unbalanced Load Flow

@@ -41,6 +41,12 @@ const AppState = {
   showWarnings: true,
   showFaultAngles: false,
 
+  // Flow arrow visibility — per analysis type
+  showFlowArrows: {
+    loadflow: false,
+    fault: false,
+  },
+
   // Result box visibility — per analysis type
   showResultBoxes: {
     fault: true,

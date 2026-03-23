@@ -309,6 +309,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
   document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
 
+  // Flow arrow toggle checkboxes
+  document.getElementById('chk-fault-arrows').addEventListener('change', (e) => {
+    AppState.showFlowArrows.fault = e.target.checked;
+    Canvas.render();
+  });
+  document.getElementById('chk-loadflow-arrows').addEventListener('change', (e) => {
+    AppState.showFlowArrows.loadflow = e.target.checked;
+    Canvas.render();
+  });
+
   // Unbalanced Load Flow
   document.getElementById('btn-run-unbalanced-loadflow').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
