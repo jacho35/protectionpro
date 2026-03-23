@@ -1,7 +1,9 @@
 """Server-side PDF report generation using fpdf2."""
 
+import base64
 import io
 import math
+import tempfile
 from datetime import date
 from fpdf import FPDF
 
@@ -92,11 +94,12 @@ def _table(pdf, headers, rows, col_widths=None, header_color=(0, 120, 215)):
 def generate_full_report(project_name, base_mva, frequency,
                          fault_results=None, loadflow_results=None,
                          arcflash_results=None, components=None,
-                         sections=None):
+                         sections=None, diagram_image=None):
     """Generate a full analysis report PDF.
 
     Args:
         sections: list of section IDs to include. If None, include all available.
+        diagram_image: base64-encoded PNG of the single-line diagram.
     """
     pdf = ReportPDF(project_name=project_name)
     pdf.alias_nb_pages()
@@ -113,6 +116,8 @@ def generate_full_report(project_name, base_mva, frequency,
     for sec in all_sections:
         if sec == "title":
             _render_title(pdf, project_name, base_mva, frequency)
+        elif sec == "diagram":
+            _render_diagram(pdf, diagram_image)
         elif sec == "fault":
             _render_fault_table(pdf, fault_results, comp_map)
         elif sec == "fault_branches":
@@ -145,6 +150,36 @@ def _render_title(pdf, project_name, base_mva, frequency):
     pdf.ln(8)
     pdf.cell(0, 8, f"Project: {project_name}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 8, f"Base MVA: {base_mva}   |   Frequency: {frequency} Hz   |   Date: {date.today().isoformat()}", align="C", new_x="LMARGIN", new_y="NEXT")
+
+
+def _render_diagram(pdf, diagram_image):
+    """Render the single-line diagram from a base64-encoded PNG."""
+    if not diagram_image:
+        return
+    # Strip data URL prefix if present
+    if "," in diagram_image:
+        diagram_image = diagram_image.split(",", 1)[1]
+    try:
+        img_bytes = base64.b64decode(diagram_image)
+    except Exception:
+        return
+    pdf.add_page()
+    pdf.section_title("Single Line Diagram")
+    # Write to a temp file for fpdf2 image embedding
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp.write(img_bytes)
+        tmp_path = tmp.name
+    try:
+        margin = pdf.l_margin
+        avail_w = pdf.w - margin - pdf.r_margin
+        avail_h = pdf.h - pdf.get_y() - 15  # leave room for footer
+        pdf.image(tmp_path, x=margin, y=pdf.get_y(), w=avail_w, h=0, keep_aspect_ratio=True)
+    except Exception:
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(0, 8, "Diagram image could not be rendered.", new_x="LMARGIN", new_y="NEXT")
+    finally:
+        import os
+        os.unlink(tmp_path)
 
 
 def _render_fault_table(pdf, fault_results, comp_map):
