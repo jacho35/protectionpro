@@ -17,7 +17,7 @@
 - **Project sharing**: Share projects between users
 - **Real-time collaboration**: Multiple users editing the same SLD simultaneously
 - **Audit trail**: Track changes with user attribution
-- **Version history**: Track changes and revert to previous versions
+- ~~**Version history**: Track changes and revert to previous versions~~
 
 ## Reports & Export
 - ~~**Detailed calculations report**: Multi-section PDF showing formulas, intermediate values, and step-by-step calculations for fault analysis (IEC 60909), load flow, arc flash (IEEE 1584-2018), cable sizing (IEC 60364), motor starting, duty check, load diversity, and grounding (IEEE 80)~~
@@ -159,3 +159,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Connection warning logic: unconnected port warnings on buses only shown when the bus has zero connections, not on every empty port~~
 - ~~Show active project name in toolbar: display the current project name next to the app title, clickable to rename~~
 - ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
+- ~~Project revision timeline: horizontal timeline strip above the status bar with clickable revision dots (up to 20 revisions), preview panel with diff stats and confirm-before-restore, revisions created on every manual and auto-save, stored in backend DB for saved projects and localStorage for unsaved projects~~
