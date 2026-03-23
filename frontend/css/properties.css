@@ -403,7 +403,7 @@
 .prop-action-btn {
   width: 100%;
   padding: 8px 12px;
-  background: var(--accent-color);
+  background: var(--accent);
   color: #fff;
   border: none;
   border-radius: 4px;
