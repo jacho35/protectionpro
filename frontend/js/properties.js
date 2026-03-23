@@ -1,10 +1,22 @@
 /* ProtectionPro — Properties Panel */
 
+const SECTION_ORDER = ['General', 'fault', 'loadflow', 'arcflash', 'grounding', 'cable_sizing', 'protection'];
+const SECTION_LABELS = {
+  General: 'General',
+  fault: 'Fault Analysis',
+  loadflow: 'Load Flow',
+  arcflash: 'Arc Flash',
+  grounding: 'Grounding',
+  cable_sizing: 'Cable Sizing',
+  protection: 'Protection Settings',
+};
+
 const Properties = {
   contentEl: null,
   calcInfoEl: null,
   currentId: null,
   unitSelections: {}, // track chosen unit per field, e.g. { 'rated_mva': 'kVA' }
+  collapsedSections: {}, // track collapsed state per section key
 
   init() {
     this.contentEl = document.getElementById('properties-content');
@@ -44,29 +56,70 @@ const Properties = {
       </div>`;
 
     // Build editable fields grouped by section
-    html += '<div class="prop-section"><div class="prop-section-title">Parameters</div>';
-    for (const field of def.fields) {
-      // Conditional visibility: skip fields whose showWhen condition isn't met
-      if (field.showWhen) {
-        const depVal = comp.props[field.showWhen.field] || '';
-        if (field.showWhen.match) {
-          // Regex match against dependency value
-          if (!field.showWhen.match.test(depVal)) continue;
-          // For LV-side grounding, check the LV portion of vector group
-          if (field.showWhen.side === 'lv') {
-            const vg = depVal.toLowerCase();
-            // LV is grounded if the lowercase portion after first uppercase has 'n' (e.g., Dy*n*, Y*yn*, Yz*n*)
-            const lvPart = vg.slice(vg.search(/[a-z]/));
-            if (!lvPart.includes('n')) continue;
-          }
-        } else if (field.showWhen.values) {
-          if (!field.showWhen.values.includes(depVal)) continue;
+    // 1. Filter visible fields
+    const visibleFields = def.fields.filter(field => {
+      if (!field.showWhen) return true;
+      const depVal = comp.props[field.showWhen.field] || '';
+      if (field.showWhen.match) {
+        if (!field.showWhen.match.test(depVal)) return false;
+        if (field.showWhen.side === 'lv') {
+          const vg = depVal.toLowerCase();
+          const lvPart = vg.slice(vg.search(/[a-z]/));
+          if (!lvPart.includes('n')) return false;
+        }
+      } else if (field.showWhen.values) {
+        if (!field.showWhen.values.includes(depVal)) return false;
+      }
+      return true;
+    });
+
+    // 2. Group by section
+    const sectionGroups = {};
+    for (const field of visibleFields) {
+      const sec = field.section || 'General';
+      if (!sectionGroups[sec]) sectionGroups[sec] = [];
+      sectionGroups[sec].push(field);
+    }
+
+    // 3. Determine if we have multiple sections (skip collapsible UI for simple components)
+    const sectionKeys = SECTION_ORDER.filter(s => sectionGroups[s] && sectionGroups[s].length > 0);
+    const hasMultipleSections = sectionKeys.length > 1;
+
+    // 4. Render each section
+    for (const secKey of sectionKeys) {
+      const fields = sectionGroups[secKey];
+      const label = SECTION_LABELS[secKey] || secKey;
+      const isGeneral = secKey === 'General';
+      const isCollapsible = hasMultipleSections && !isGeneral;
+      // Default: non-General sections start collapsed unless user has toggled them
+      const isCollapsed = isCollapsible && (this.collapsedSections[secKey] !== undefined ? this.collapsedSections[secKey] : true);
+
+      if (isCollapsible) {
+        html += `<div class="prop-section">`;
+        html += `<div class="prop-section-header${isCollapsed ? ' collapsed' : ''}" data-section="${secKey}">`;
+        html += `<span class="chevron">\u25B8</span>`;
+        html += `<span>${label}</span>`;
+        html += `</div>`;
+        html += `<div class="prop-section-body${isCollapsed ? ' collapsed' : ''}">`;
+      } else {
+        html += `<div class="prop-section">`;
+        if (hasMultipleSections) {
+          html += `<div class="prop-section-title">${label}</div>`;
+        } else {
+          html += `<div class="prop-section-title">Parameters</div>`;
         }
       }
-      const val = comp.props[field.key] ?? '';
-      html += this.renderField(field, val, comp.id);
+
+      for (const field of fields) {
+        const val = comp.props[field.key] ?? '';
+        html += this.renderField(field, val, comp.id);
+      }
+
+      if (isCollapsible) {
+        html += '</div>'; // close prop-section-body
+      }
+      html += '</div>'; // close prop-section
     }
-    html += '</div>';
 
     // Position section
     html += `
@@ -128,6 +181,18 @@ const Properties = {
         const key = btn.dataset.infoKey;
         const text = FIELD_INFO[key];
         if (text) this._showInfoPopup(btn, text);
+      });
+    });
+
+    // Bind collapsible section headers
+    this.contentEl.querySelectorAll('.prop-section-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const secKey = header.dataset.section;
+        const isNowCollapsed = !header.classList.contains('collapsed');
+        this.collapsedSections[secKey] = isNowCollapsed;
+        header.classList.toggle('collapsed', isNowCollapsed);
+        const body = header.nextElementSibling;
+        if (body) body.classList.toggle('collapsed', isNowCollapsed);
       });
     });
   },

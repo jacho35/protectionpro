@@ -56,6 +56,38 @@
   border-bottom: 1px solid var(--bg-tertiary);
 }
 
+/* Collapsible section headers */
+.prop-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+}
+.prop-section-header:hover {
+  color: var(--accent);
+}
+.prop-section-header .chevron {
+  font-size: 10px;
+  transition: transform 0.2s;
+  display: inline-block;
+  transform: rotate(90deg);
+}
+.prop-section-header.collapsed .chevron {
+  transform: rotate(0deg);
+}
+.prop-section-body.collapsed {
+  display: none;
+}
+
 .prop-row {
   display: flex;
   align-items: center;
