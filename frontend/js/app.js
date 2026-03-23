@@ -74,6 +74,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-dark-mode').classList.add('active');
   }
 
+  // Auto-save toggle
+  document.getElementById('btn-auto-save').addEventListener('click', () => {
+    Project.toggleAutoSave();
+  });
+  // Restore auto-save preference and check for local backup
+  Project.restoreAutoSave();
+  Project.restoreLocalBackup();
+
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     // Don't trigger if typing in an input
