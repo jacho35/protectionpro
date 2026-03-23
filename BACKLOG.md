@@ -117,6 +117,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Arc flash on-diagram annotations with PPE-category color coding~~
 - ~~Arc flash improvement recommendations per bus~~
 - ~~Help modal with comprehensive documentation~~
+- ~~Fix bus detection: validation and unconnected-port warnings now use dynamic bus ports instead of static placeholders~~
 - ~~Voltage depression during fault (Zbus matrix, retained voltage at all buses)~~
 - ~~Time-varying voltage profile (sub-transient/transient/steady-state)~~
 - ~~Motor reacceleration voltage recovery post-fault clearing~~

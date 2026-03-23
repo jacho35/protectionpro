@@ -31,13 +31,22 @@ const Components = {
     return false;
   },
 
+  // Get the effective ports for a component (dynamic for buses, static otherwise)
+  getEffectivePorts(comp) {
+    const def = COMPONENT_DEFS[comp.type];
+    if (!def || !def.ports) return [];
+    if (comp.type === 'bus' && typeof Symbols !== 'undefined' && Symbols.getBusPorts) {
+      return Symbols.getBusPorts(comp);
+    }
+    return def.ports;
+  },
+
   // Get all unconnected ports across all components
   getUnconnectedPorts() {
     const unconnected = [];
     for (const comp of AppState.components.values()) {
-      const def = COMPONENT_DEFS[comp.type];
-      if (!def || !def.ports) continue;
-      for (const port of def.ports) {
+      const ports = this.getEffectivePorts(comp);
+      for (const port of ports) {
         if (!this.isPortConnected(comp.id, port.id)) {
           unconnected.push({ comp, port });
         }
@@ -228,10 +237,10 @@ const Components = {
     // 2. Check for isolated components (no connections at all)
     for (const comp of AppState.components.values()) {
       if (comp.type === 'relay') continue;
-      const def = COMPONENT_DEFS[comp.type];
-      if (!def.ports || def.ports.length === 0) continue;
+      const ports = this.getEffectivePorts(comp);
+      if (ports.length === 0) continue;
       let hasAnyConnection = false;
-      for (const port of def.ports) {
+      for (const port of ports) {
         if (this.isPortConnected(comp.id, port.id)) {
           hasAnyConnection = true;
           break;
