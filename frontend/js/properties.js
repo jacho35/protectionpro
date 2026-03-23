@@ -1270,8 +1270,12 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
             <input type="text" data-project-field="projectNumber" value="${this._esc(d.projectNumber)}" />
           </div>
           <div class="prop-row">
-            <label>Client / Company</label>
-            <input type="text" data-project-field="clientCompany" value="${this._esc(d.clientCompany)}" />
+            <label>Client</label>
+            <input type="text" data-project-field="client" value="${this._esc(d.client)}" />
+          </div>
+          <div class="prop-row">
+            <label>Company</label>
+            <input type="text" data-project-field="company" value="${this._esc(d.company)}" />
           </div>
           <div class="prop-row">
             <label>Description</label>

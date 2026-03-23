@@ -9,7 +9,8 @@ const AppState = {
   // Project details for report covers
   projectDetails: {
     projectNumber: '',
-    clientCompany: '',
+    client: '',
+    company: '',
     engineerName: '',
     checkedBy: '',
     approvedBy: '',

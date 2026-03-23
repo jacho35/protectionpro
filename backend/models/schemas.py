@@ -62,7 +62,8 @@ class Scenario(BaseModel):
 
 class ProjectDetails(BaseModel):
     projectNumber: str = ""
-    clientCompany: str = ""
+    client: str = ""
+    company: str = ""
     engineerName: str = ""
     checkedBy: str = ""
     approvedBy: str = ""

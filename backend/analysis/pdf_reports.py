@@ -179,10 +179,13 @@ def _render_title(pdf, project_name, base_mva, frequency, project_details=None):
         title_line += f"   |   No: {proj_num}"
     pdf.cell(0, 8, title_line, align="C", new_x="LMARGIN", new_y="NEXT")
 
-    # Client
-    client = pd.get("clientCompany", "")
+    # Company and Client
+    company = pd.get("company", "")
+    client = pd.get("client", "")
+    pdf.set_font("Helvetica", "", 12)
+    if company:
+        pdf.cell(0, 8, f"Company: {company}", align="C", new_x="LMARGIN", new_y="NEXT")
     if client:
-        pdf.set_font("Helvetica", "", 12)
         pdf.cell(0, 8, f"Client: {client}", align="C", new_x="LMARGIN", new_y="NEXT")
 
     # Revision and date
