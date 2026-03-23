@@ -166,3 +166,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Mini-SLD grading endpoint selection: set a downstream protection device as path endpoint from device list to show only source-to-endpoint path on mini-SLD~~
 - ~~Delete custom TCC tabs: custom tabs now show × close button to remove them, reassigning devices back to their voltage tabs~~
 - ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
+- ~~Bus names in result boxes: annotation badges (Fault, Load Flow, Arc Flash, Unbalanced LF) now display the bus name in their label for easy identification on busy diagrams; hover highlighting links annotation boxes to their bus component with a blue glow effect~~
