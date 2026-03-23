@@ -62,7 +62,11 @@ const Wiring = {
       }
     }
 
-    AppState.addWire(fromComp, fromPort, toComponentId, toPortId);
+    const wire = AppState.addWire(fromComp, fromPort, toComponentId, toPortId, true);
+    if (typeof VoltagePropagation !== 'undefined') {
+      VoltagePropagation.propagateFromWire(wire.id);
+    }
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     this.cancelWire();
     Canvas.render();
   },

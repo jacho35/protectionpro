@@ -38,6 +38,13 @@ const Project = {
     // Load and render recent projects in File menu
     this._loadRecent();
     this._renderRecentMenu();
+
+    // Auto-save: attempt final backup on page unload
+    window.addEventListener('beforeunload', () => {
+      if (this._autoSaveEnabled && AppState.dirty) {
+        this._saveToLocalBackup();
+      }
+    });
   },
 
   newProject() {
@@ -68,6 +75,7 @@ const Project = {
       document.title = `ProtectionPro — ${AppState.projectName}`;
       updateProjectNameDisplay();
       this._addRecent(result.id, AppState.projectName);
+      this._clearLocalBackup();
       document.getElementById('status-info').textContent = 'Project saved.';
       setTimeout(() => {
         document.getElementById('status-info').textContent = '';
@@ -411,6 +419,93 @@ const Project = {
   _statusMsg(msg) {
     document.getElementById('status-info').textContent = msg;
     setTimeout(() => { document.getElementById('status-info').textContent = ''; }, 3000);
+  },
+
+  // ── Auto Save ──
+
+  _autoSaveInterval: null,
+  _autoSaveEnabled: false,
+  _AUTO_SAVE_MS: 120000, // 2 minutes
+
+  toggleAutoSave() {
+    this._autoSaveEnabled = !this._autoSaveEnabled;
+    const btn = document.getElementById('btn-auto-save');
+    btn.classList.toggle('active', this._autoSaveEnabled);
+    localStorage.setItem('protectionpro-auto-save', this._autoSaveEnabled ? '1' : '0');
+
+    if (this._autoSaveEnabled) {
+      this._autoSaveInterval = setInterval(() => this._autoSave(), this._AUTO_SAVE_MS);
+      this._statusMsg('Auto save enabled.');
+    } else {
+      clearInterval(this._autoSaveInterval);
+      this._autoSaveInterval = null;
+      this._statusMsg('Auto save disabled.');
+    }
+  },
+
+  restoreAutoSave() {
+    if (localStorage.getItem('protectionpro-auto-save') === '1') {
+      this._autoSaveEnabled = true;
+      document.getElementById('btn-auto-save').classList.add('active');
+      this._autoSaveInterval = setInterval(() => this._autoSave(), this._AUTO_SAVE_MS);
+    }
+  },
+
+  async _autoSave() {
+    if (!AppState.dirty) return;
+
+    if (AppState.projectId) {
+      try {
+        await API.saveProject();
+        AppState.dirty = false;
+        document.title = `ProtectionPro — ${AppState.projectName}`;
+        updateProjectNameDisplay();
+        this._statusMsg('Auto-saved.');
+      } catch (e) {
+        // Silently fall back to localStorage on API failure
+        this._saveToLocalBackup();
+      }
+    } else {
+      this._saveToLocalBackup();
+    }
+  },
+
+  _saveToLocalBackup() {
+    try {
+      const data = AppState.toJSON();
+      localStorage.setItem('protectionpro-auto-save-backup', JSON.stringify(data));
+      this._statusMsg('Auto-saved to local backup.');
+    } catch (e) {
+      console.error('Auto-save local backup failed:', e);
+    }
+  },
+
+  restoreLocalBackup() {
+    try {
+      const raw = localStorage.getItem('protectionpro-auto-save-backup');
+      if (!raw) return;
+      if (!confirm('A local auto-save backup was found. Restore it?')) {
+        localStorage.removeItem('protectionpro-auto-save-backup');
+        return;
+      }
+      const data = JSON.parse(raw);
+      AppState.fromJSON(data);
+      AppState.projectId = null;
+      Canvas.updateTransform();
+      if (typeof renderPageTabs === 'function') renderPageTabs();
+      Canvas.render();
+      Properties.clear();
+      document.title = `ProtectionPro — ${AppState.projectName}`;
+      updateProjectNameDisplay();
+      localStorage.removeItem('protectionpro-auto-save-backup');
+      this._statusMsg('Restored from local backup.');
+    } catch (e) {
+      console.error('Failed to restore local backup:', e);
+    }
+  },
+
+  _clearLocalBackup() {
+    localStorage.removeItem('protectionpro-auto-save-backup');
   },
 
   // Import from JSON file

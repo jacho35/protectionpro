@@ -128,7 +128,7 @@ const AppState = {
   },
 
   // Add wire
-  addWire(fromComp, fromPort, toComp, toPort) {
+  addWire(fromComp, fromPort, toComp, toPort, skipSnapshot = false) {
     const id = this.genId('wire');
     const wire = {
       id,
@@ -139,7 +139,7 @@ const AppState = {
     };
     this.wires.set(id, wire);
     this.dirty = true;
-    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    if (!skipSnapshot && typeof UndoManager !== 'undefined') UndoManager.snapshot();
     return wire;
   },
 
