@@ -245,10 +245,12 @@ const Annotations = {
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
     ).join('');
 
+    const busId = key.split(':')[1] || '';
+    const busLabel = result.bus_name || busId;
     return `
-      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
-        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">FAULT</text>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">FAULT — ${busLabel}</text>
         ${textHtml}
       </g>`;
   },
@@ -281,10 +283,12 @@ const Annotations = {
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
     ).join('');
 
+    const busId = key.split(':')[1] || '';
+    const busLabel = result.bus_name || busId;
     return `
-      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
-        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">LOAD FLOW</text>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">LOAD FLOW — ${busLabel}</text>
         ${textHtml}
       </g>`;
   },
@@ -311,10 +315,12 @@ const Annotations = {
       return `<text class="annotation-text"${color} x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`;
     }).join('');
 
+    const busId = key.split(':')[1] || '';
+    const busLabel = result.bus_name || busId;
     return `
-      <g class="annotation-group unbalanced-lf-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group unbalanced-lf-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
-        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">UNBALANCED LF</text>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">UNBALANCED LF — ${busLabel}</text>
         ${textHtml}
       </g>`;
   },
@@ -440,11 +446,13 @@ const Annotations = {
       `<text class="annotation-text af-badge-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
     ).join('');
 
+    const busId = key.split(':')[1] || '';
+    const busLabel = result.bus_name || busId;
     return `
-      <g class="annotation-group arcflash-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group arcflash-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge af-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.15" stroke="${fillColor}" stroke-width="1.5"/>
-        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">ARC FLASH</text>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">ARC FLASH — ${busLabel}</text>
         ${textHtml}
       </g>`;
   },
