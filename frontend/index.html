@@ -1366,32 +1366,37 @@
           <button class="help-tab active" data-tab="getting-started">Getting Started</button>
           <button class="help-tab" data-tab="components">Components</button>
           <button class="help-tab" data-tab="analysis">Analysis</button>
+          <button class="help-tab" data-tab="studies">Studies</button>
           <button class="help-tab" data-tab="arcflash">Arc Flash</button>
           <button class="help-tab" data-tab="shortcuts">Shortcuts</button>
         </div>
 
         <div class="help-content" id="help-tab-getting-started">
           <h4>Welcome to ProtectionPro</h4>
-          <p>ProtectionPro is a power systems protection coordination tool for building single-line diagrams (SLDs) and performing electrical analysis.</p>
+          <p>ProtectionPro is a browser-based power systems engineering tool for building single-line diagrams (SLDs) and performing electrical analysis — a lightweight, web-based alternative to ETAP.</p>
 
           <h4>Building a Single-Line Diagram</h4>
           <ol>
-            <li><strong>Add components</strong> — Drag components from the left sidebar palette onto the canvas. Components include buses, transformers, cables, circuit breakers, fuses, relays, generators, loads, motors, and distributed generation (solar PV, wind turbines).</li>
-            <li><strong>Connect components</strong> — Click a connection port (small circle) on one component and drag to a port on another to draw a wire. Alternatively, use the Wire tool in the toolbar.</li>
-            <li><strong>Configure properties</strong> — Click a component to select it. Edit its electrical properties in the right-hand properties panel (voltage, impedance, ratings, etc.).</li>
-            <li><strong>Run analysis</strong> — Use the toolbar buttons to run fault analysis, load flow, arc flash, or generate TCC curves.</li>
+            <li><strong>Add components</strong> — Drag components from the left sidebar palette onto the canvas. Use the search box to filter components. Categories include sources, distribution, protection, instruments, loads, DC systems, and other.</li>
+            <li><strong>Connect components</strong> — Click a connection port (small circle) on one component and drag to a port on another to draw a wire. Alternatively, press <kbd>W</kbd> for Wire mode.</li>
+            <li><strong>Configure properties</strong> — Click a component to select it. Edit its electrical properties in the right-hand properties panel (voltage, impedance, ratings, etc.). Sequence impedances (positive, negative, zero) can be entered for sources, cables, and motors.</li>
+            <li><strong>Run analysis</strong> — Use the Analysis, Studies, and Safety menus in the toolbar to run fault analysis, load flow, arc flash, cable sizing, and more.</li>
           </ol>
+
+          <h4>Templates</h4>
+          <p>Use <strong>File → Templates</strong> to start from a pre-built network: substation, industrial plant, residential distribution, or generator installation. Templates provide a fully wired and configured starting point.</p>
 
           <h4>Canvas Navigation</h4>
           <ul>
             <li><strong>Pan</strong> — Middle-click drag or hold Space + left-click drag</li>
-            <li><strong>Zoom</strong> — Mouse scroll wheel, or use Fit / 1:1 buttons</li>
+            <li><strong>Zoom</strong> — Mouse scroll wheel, or use Fit / 1:1 buttons in the toolbar</li>
             <li><strong>Select</strong> — Click a component, or drag a selection box around multiple components</li>
             <li><strong>Multi-select</strong> — Hold Shift and click to add/remove from selection</li>
+            <li><strong>Dark mode</strong> — Toggle via the Dark button in the top-right toolbar</li>
           </ul>
 
           <h4>Multi-Page Diagrams</h4>
-          <p>Use the page tab bar below the canvas to add, rename, and switch between diagram sheets. Double-click a tab to rename it. Use off-page connectors to link electrical connections across pages — connectors with the same label are electrically joined.</p>
+          <p>Use the page tab bar below the canvas to add, rename, and switch between diagram sheets. Double-click a tab to rename it. Drag devices between tabs to reorganize. Use off-page connectors to link electrical connections across pages — connectors with the same label are electrically joined.</p>
 
           <h4>Bus Resizing</h4>
           <p>Hover over a bus to reveal resize handles on each end. Drag the handles to make the bus wider or narrower. Connection ports are automatically added as the bus grows — one top/bottom pair per 40px of width. Edge ports (left/right) are available for bus tie breaker connections.</p>
@@ -1400,29 +1405,97 @@
           <p>Select multiple components and press <kbd>Ctrl+G</kbd> to group them. Groups can be selected together and moved as a unit. Press <kbd>Ctrl+Shift+G</kbd> to ungroup.</p>
 
           <h4>Wire Routing</h4>
-          <p>Choose between orthogonal (right-angle), diagonal, or spline wire routing using the dropdown in the toolbar. Double-click a wire to add bend points for custom routing.</p>
+          <p>Choose between orthogonal (right-angle), diagonal, or spline wire routing via <strong>View → Wire Routing</strong>. Double-click a wire to add bend points for custom routing. Directional flow arrows on wires show power flow direction after running load flow analysis.</p>
 
-          <h4>Saving &amp; Loading</h4>
-          <p>Use <kbd>Ctrl+S</kbd> to save your project. Projects can be saved to the server or exported as JSON files. Use <kbd>Ctrl+O</kbd> to open a project.</p>
+          <h4>Saving &amp; Exporting</h4>
+          <p>Use <kbd>Ctrl+S</kbd> to save your project. Projects can be saved to the server or exported in multiple formats via the <strong>File → Export</strong> menu:</p>
+          <ul>
+            <li><strong>JSON</strong> — Full project data (re-importable)</li>
+            <li><strong>SVG / PNG</strong> — Diagram image export</li>
+            <li><strong>CSV</strong> — Analysis results as spreadsheet</li>
+            <li><strong>PDF</strong> — Full report with title block, legend, and border</li>
+            <li><strong>Settings Schedule</strong> — Protection device settings CSV</li>
+            <li><strong>Arc Flash Labels</strong> — Printable warning labels (PDF)</li>
+            <li><strong>Detailed Calculations</strong> — Step-by-step formulas and intermediate values (PDF)</li>
+          </ul>
+
+          <h4>Scenarios</h4>
+          <p>Use <strong>Studies → Scenarios</strong> to save named network configuration snapshots. Compare scenarios side-by-side via <strong>File → Compare Scenarios</strong> to evaluate different operating conditions or design alternatives.</p>
+
+          <h4>Mobile Support</h4>
+          <p>ProtectionPro includes a responsive mobile interface with bottom navigation, slide-up component/analysis/properties panels, pinch-to-zoom and pan touch gestures, floating action buttons for mode switching, and tap-to-place components.</p>
         </div>
 
         <div class="help-content" id="help-tab-components" style="display:none">
-          <h4>Component Reference</h4>
+          <h4>Component Reference (22 Types)</h4>
+
+          <h4>Sources</h4>
           <table class="help-ref-table">
             <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
             <tbody>
-              <tr><td><strong>Bus</strong></td><td>Electrical busbar — the node where components connect</td><td>Voltage (kV), bus width, electrode config, working distance</td></tr>
-              <tr><td><strong>Utility</strong></td><td>Grid / utility supply source</td><td>Voltage (kV), fault level (MVA or kA), X/R ratio</td></tr>
-              <tr><td><strong>Generator</strong></td><td>Synchronous generator source</td><td>Rated MVA, voltage, Xd'', X/R ratio</td></tr>
-              <tr><td><strong>Solar PV</strong></td><td>Photovoltaic inverter-based generation</td><td>Rated kW, number of inverters, fault contribution (p.u.)</td></tr>
-              <tr><td><strong>Wind Turbine</strong></td><td>Wind turbine generator (Type 1-4)</td><td>Rated MVA, turbine type, Xd'', fault contribution</td></tr>
+              <tr><td><strong>Utility Source</strong></td><td>Grid / utility supply source</td><td>Voltage (kV), fault level (MVA), X/R ratio, Z₂/Z₁, Z₀/Z₁ ratios</td></tr>
+              <tr><td><strong>Generator</strong></td><td>Synchronous generator source</td><td>Rated MVA, voltage, Xd''/Xd'/Xd, X₂, X₀, X/R ratio, power factor</td></tr>
+              <tr><td><strong>Solar PV</strong></td><td>Photovoltaic inverter-based generation</td><td>Rated kW, number of inverters, efficiency, fault contribution (p.u.), irradiance</td></tr>
+              <tr><td><strong>Wind Turbine</strong></td><td>Wind turbine generator (Type 1-4: SCIG, WRIG, DFIG, FRC)</td><td>Rated MVA, turbine type, Xd'', fault contribution, wind output</td></tr>
+            </tbody>
+          </table>
+
+          <h4>Distribution</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Bus</strong></td><td>Electrical busbar — the node where components connect. Resizable with dynamic ports.</td><td>Voltage (kV), bus width, electrode config, working distance, enclosure size</td></tr>
               <tr><td><strong>Transformer</strong></td><td>Power transformer (2-winding)</td><td>Rated MVA, HV/LV voltages, impedance (%Z), vector group, tap position</td></tr>
-              <tr><td><strong>Cable</strong></td><td>Power cable / overhead line</td><td>Length, R and X per km, rated current, cable size</td></tr>
-              <tr><td><strong>Circuit Breaker</strong></td><td>Protective switching device</td><td>Rated current, breaking capacity, trip curve, instantaneous pickup</td></tr>
+              <tr><td><strong>Cable / Feeder</strong></td><td>Power cable or overhead line. Select from built-in library (~70 types) or enter custom values. Parallel cables supported.</td><td>Length, R/X per km, R₀/X₀ per km, rated current, cable size, number of parallel runs</td></tr>
+            </tbody>
+          </table>
+
+          <h4>Protection</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Circuit Breaker</strong></td><td>Protective switching device with TCC trip curves</td><td>Rated current, breaking capacity, trip curve type, instantaneous pickup, TDS</td></tr>
               <tr><td><strong>Fuse</strong></td><td>Overcurrent protective device</td><td>Rated amps, fuse type (HRC, NH, K, T), breaking capacity</td></tr>
-              <tr><td><strong>Relay</strong></td><td>Protection relay (50/51)</td><td>CT ratio, pickup current, TDS, curve type (IEC/IEEE)</td></tr>
-              <tr><td><strong>Load</strong></td><td>Electrical load / demand</td><td>Rated kVA, power factor, load type</td></tr>
-              <tr><td><strong>Motor</strong></td><td>Induction motor (contributes to fault current)</td><td>Rated kW, voltage, efficiency, locked-rotor current multiplier</td></tr>
+              <tr><td><strong>Relay</strong></td><td>Protection relay (50/51, 67 directional). Links to associated CT and trip CB.</td><td>CT ratio, pickup current, TDS, curve type (IEC/IEEE), directional setting</td></tr>
+              <tr><td><strong>Switch</strong></td><td>Manual or motorized switching device (no protection function)</td><td>Rated current, voltage, switch state (open/closed)</td></tr>
+            </tbody>
+          </table>
+
+          <h4>Instruments</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Current Transformer (CT)</strong></td><td>Instrument transformer for current measurement. CT saturation modeling available.</td><td>CT ratio, burden, accuracy class, knee point voltage</td></tr>
+              <tr><td><strong>Potential Transformer (PT)</strong></td><td>Instrument transformer for voltage measurement</td><td>PT ratio, burden, accuracy class</td></tr>
+            </tbody>
+          </table>
+
+          <h4>Loads</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Induction Motor</strong></td><td>Induction motor (contributes to fault current)</td><td>Rated kW, voltage, efficiency, Xd'', X₂, X₀, locked-rotor multiplier</td></tr>
+              <tr><td><strong>Synchronous Motor</strong></td><td>Synchronous motor (steady-state VAR control)</td><td>Rated kW, voltage, Xd''/Xd'/Xd, power factor, excitation mode</td></tr>
+              <tr><td><strong>Static Load</strong></td><td>Passive electrical load / demand</td><td>Rated kVA, power factor, load type (constant power/impedance/current)</td></tr>
+            </tbody>
+          </table>
+
+          <h4>DC Systems</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
+            <tbody>
+              <tr><td><strong>UPS</strong></td><td>Uninterruptible power supply for battery-backed systems</td><td>Rated kVA, input/output voltage, battery autonomy, efficiency</td></tr>
+              <tr><td><strong>Rectifier</strong></td><td>AC/DC rectifier for DC bus supply</td><td>Rated kW, input AC / output DC voltage, efficiency</td></tr>
+              <tr><td><strong>Battery Charger</strong></td><td>Charger for battery-backed DC systems</td><td>Rated kW, DC output voltage, charge current, battery capacity</td></tr>
+            </tbody>
+          </table>
+
+          <h4>Other</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Capacitor Bank</strong></td><td>Reactive power compensation</td><td>Rated MVAR, voltage, connection type (star/delta)</td></tr>
+              <tr><td><strong>Surge Arrester</strong></td><td>Overvoltage protection device</td><td>Rated voltage, protection level, energy class</td></tr>
               <tr><td><strong>Off-Page Connector</strong></td><td>Links electrical connections across diagram pages</td><td>Label (matched across pages), target page</td></tr>
             </tbody>
           </table>
@@ -1430,16 +1503,17 @@
 
         <div class="help-content" id="help-tab-analysis" style="display:none">
           <h4>Fault Analysis (IEC 60909)</h4>
-          <p>Calculates short-circuit currents at each bus per IEC 60909. Results include:</p>
+          <p>Calculates short-circuit currents at each bus per IEC 60909. Select a fault type from the dropdown or run all types at once. Results include:</p>
           <ul>
             <li><strong>I"k3</strong> — Initial symmetrical 3-phase fault current (kA)</li>
             <li><strong>ip</strong> — Peak short-circuit current (kA)</li>
             <li><strong>Ib</strong> — Symmetrical breaking current (kA)</li>
+            <li><strong>Ith</strong> — Thermal equivalent short-circuit current (kA)</li>
             <li><strong>I"k1</strong> — Single line-to-ground (SLG) fault current</li>
             <li><strong>I"kLL</strong> — Line-to-line fault current</li>
             <li><strong>I"kLLG</strong> — Double line-to-ground fault current</li>
           </ul>
-          <p>Select a single bus before running to analyze only that bus, or run on all buses. Motor fault contribution and branch contributions are included.</p>
+          <p>Select a single bus before running to analyze only that bus, or run on all buses. Motor fault contribution, branch contributions, and fault current angles are included. Use <strong>View → Fault Angles &amp; Voltage</strong> to toggle angle/voltage display on the diagram.</p>
 
           <h4>Voltage Depression During Fault</h4>
           <p>When a single bus is faulted, ProtectionPro calculates the <strong>retained voltage</strong> at all other buses using the Zbus impedance matrix method (V<sub>j</sub> = 1 − Z<sub>jk</sub>/Z<sub>kk</sub>). Three time periods are computed per IEC 60909:</p>
@@ -1451,13 +1525,79 @@
           <p>Buses are color-coded on the diagram: green (&gt;80%), yellow (50–80%), orange (30–50%), red (&lt;30%). A detailed table shows all bus voltages and a motor reacceleration voltage recovery chart shows how voltage recovers after fault clearing as motors re-speed.</p>
 
           <h4>Load Flow (Newton-Raphson / Gauss-Seidel)</h4>
-          <p>Calculates steady-state power flow through the network. Results include bus voltages, angles, branch power flows, currents, and loading percentages. Voltage violations and mismatched ratings are flagged as warnings.</p>
+          <p>Calculates steady-state power flow through the network. Choose between Newton-Raphson (faster convergence) or Gauss-Seidel (simpler iteration) via the method dropdown. Results include bus voltages, angles, branch MW/MVAR flows, currents, and loading percentages. Voltage violations and mismatched ratings are flagged as warnings. Directional flow arrows appear on wires after analysis.</p>
+
+          <h4>Unbalanced Load Flow</h4>
+          <p>Three-phase asymmetric network analysis using the symmetrical component method. Calculates per-phase voltages and currents for unbalanced distribution systems where load or source imbalance exists. Results show phase-A/B/C voltages, unbalance factor, and negative/zero sequence components at each bus.</p>
 
           <h4>Time-Current Curves (TCC)</h4>
-          <p>Plots protective device operating curves on a log-log time-current chart. Use TCC to verify protection coordination — upstream devices should operate slower than downstream devices for the same fault current. Fault overlay markers show where fault currents intersect device curves.</p>
+          <p>Plots protective device operating curves on a log-log time-current chart. Features include:</p>
+          <ul>
+            <li>Fault overlay markers showing where fault currents intersect device curves</li>
+            <li>CB instantaneous line dragging — adjust magnetic pickup directly on the chart</li>
+            <li>Editable settings panel for selected curves (pickup, TDS, curve type)</li>
+            <li>Comparison mode — side-by-side before/after coordination view</li>
+            <li>Distance relay (21) mho characteristic curves with R-X inset diagram</li>
+            <li>Directional overcurrent relay (67) curves</li>
+            <li>User-defined curve data import via CSV</li>
+            <li>Drag devices between TCC tabs for custom grouping</li>
+            <li>CT saturation modeling showing effect of CT burden on relay operating times</li>
+            <li>Auto-coordination engine: topology-aware relay/CB grading with miscoordination detection</li>
+          </ul>
 
           <h4>Compliance Report</h4>
-          <p>Checks the network against standard requirements (cable sizing, protection coordination, voltage drop limits, breaking capacity adequacy). Generates a pass/fail/warning report with recommendations.</p>
+          <p>Checks the network against standard requirements and generates a pass/fail/warning report. Verifications include:</p>
+          <ul>
+            <li>Cable sizing adequacy (thermal, voltage drop, fault withstand)</li>
+            <li>Protection coordination and grading margins</li>
+            <li>Voltage drop limits</li>
+            <li>Breaking capacity adequacy</li>
+            <li>SANS 10142 wiring rules (LV voltage tolerance, cable protection, minimum conductor sizes, neutral earthing, maximum demand, earth fault disconnection)</li>
+          </ul>
+        </div>
+
+        <div class="help-content" id="help-tab-studies" style="display:none">
+          <h4>Engineering Studies</h4>
+          <p>ProtectionPro includes specialized engineering studies available via the <strong>Studies</strong> menu. All studies can be run individually or as a batch using <strong>Run All Studies</strong>.</p>
+
+          <h4>Cable Sizing (IEC 60364)</h4>
+          <p>Evaluates cables against three criteria per IEC 60364:</p>
+          <ul>
+            <li><strong>Thermal rating</strong> — Checks cable ampacity against load current with derating factors</li>
+            <li><strong>Voltage drop</strong> — Verifies voltage drop is within acceptable limits (typically 3-5%)</li>
+            <li><strong>Fault withstand</strong> — Checks adiabatic heating during short-circuit (I²t &le; k²S²)</li>
+          </ul>
+          <p>Results show pass/fail per criterion with recommended cable sizes. Both IEC 60364 and NEC Article 310.16 ampacity tables are supported.</p>
+
+          <h4>Motor Starting</h4>
+          <p>Analyzes voltage dip during motor starting (locked-rotor current conditions). Calculates:</p>
+          <ul>
+            <li>Starting current (locked-rotor multiplier × rated current)</li>
+            <li>Voltage dip at the motor bus and upstream buses</li>
+            <li>Pass/fail against typical 15% voltage dip limit</li>
+          </ul>
+
+          <h4>Equipment Duty Check</h4>
+          <p>Validates that protective equipment fault current ratings exceed calculated fault levels. Checks circuit breakers (breaking capacity), fuses (breaking capacity), and busbar (short-time withstand) against fault analysis results. Equipment is flagged as pass, marginal, or fail.</p>
+
+          <h4>Load Diversity</h4>
+          <p>Calculates demand factors and diversified maximum demand for the network. Uses standard demand factors by load category to determine the actual loading versus connected load. Results show demand factor, coincidence factor, and diversified demand at each bus level.</p>
+
+          <h4>Grounding System Analysis (IEEE 80)</h4>
+          <p>Designs and validates grounding grids per IEEE 80. Calculates:</p>
+          <ul>
+            <li><strong>Grid resistance</strong> — Earth resistance of the grounding grid</li>
+            <li><strong>Touch voltage</strong> — Voltage between grid and 1m away, compared to tolerable limits</li>
+            <li><strong>Step voltage</strong> — Voltage between feet 1m apart, compared to tolerable limits</li>
+            <li><strong>Ground potential rise (GPR)</strong> — Maximum grid voltage during fault</li>
+          </ul>
+          <p>Configure soil resistivity, grid dimensions, conductor size, and fault clearing time in the bus properties.</p>
+
+          <h4>Run All Studies (Study Manager)</h4>
+          <p>Batch-runs all enabled studies in a single operation. Select which studies to include and review combined results. Useful for comprehensive design validation.</p>
+
+          <h4>Scenarios</h4>
+          <p>Save named network configuration snapshots to compare different operating conditions — e.g., normal vs emergency, summer vs winter loading, future expansion. Use <strong>File → Compare Scenarios</strong> for side-by-side comparison reports.</p>
         </div>
 
         <div class="help-content" id="help-tab-arcflash" style="display:none">
@@ -1513,6 +1653,15 @@
 
           <h4>IEEE 1584-2018 Applicability</h4>
           <p>Valid for: 208V to 15kV, 3-phase, 50/60 Hz, bolted fault current 500A to 106kA, gaps 6.35 to 76.2mm. For voltages &gt;15kV, the Ralph Lee theoretical model is used. Below 240V with fault current &lt;500A, arc flash hazard is generally minimal.</p>
+
+          <h4>DC Arc Flash Analysis</h4>
+          <p>Calculates DC arc flash hazard using the Stokes &amp; Oppenlander method with DGUV-I 203-077 guidelines. Available via <strong>Safety → DC Arc Flash</strong>. Applicable to DC systems including battery rooms, UPS systems, rectifiers, and solar PV DC buses.</p>
+          <ul>
+            <li><strong>DC arcing current</strong> — Sustained DC arc current based on system voltage and gap</li>
+            <li><strong>Incident energy</strong> — Thermal energy at working distance (cal/cm²)</li>
+            <li><strong>PPE category</strong> — Hazard category per NFPA 70E</li>
+            <li><strong>Arc flash boundary</strong> — Safe working distance</li>
+          </ul>
         </div>
 
         <div class="help-content" id="help-tab-shortcuts" style="display:none">
@@ -1520,18 +1669,23 @@
           <table class="help-ref-table">
             <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
             <tbody>
+              <tr><td><kbd>V</kbd></td><td>Select mode</td></tr>
+              <tr><td><kbd>W</kbd></td><td>Wire mode</td></tr>
+              <tr><td><kbd>R</kbd></td><td>Rotate selected component 90°</td></tr>
+              <tr><td><kbd>H</kbd></td><td>Toggle all result boxes on/off</td></tr>
+              <tr><td><kbd>Delete</kbd></td><td>Delete selected components/wires</td></tr>
+              <tr><td><kbd>Escape</kbd></td><td>Cancel current action / deselect</td></tr>
               <tr><td><kbd>Ctrl+S</kbd></td><td>Save project</td></tr>
               <tr><td><kbd>Ctrl+O</kbd></td><td>Open project</td></tr>
               <tr><td><kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
               <tr><td><kbd>Ctrl+Shift+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>
               <tr><td><kbd>Ctrl+C</kbd></td><td>Copy selected components</td></tr>
               <tr><td><kbd>Ctrl+V</kbd></td><td>Paste copied components</td></tr>
-              <tr><td><kbd>Delete</kbd></td><td>Delete selected components/wires</td></tr>
+              <tr><td><kbd>Ctrl+X</kbd></td><td>Cut selected components</td></tr>
+              <tr><td><kbd>Ctrl+D</kbd></td><td>Duplicate selected components</td></tr>
               <tr><td><kbd>Ctrl+A</kbd></td><td>Select all components on current page</td></tr>
               <tr><td><kbd>Ctrl+G</kbd></td><td>Group selected components</td></tr>
               <tr><td><kbd>Ctrl+Shift+G</kbd></td><td>Ungroup selected components</td></tr>
-              <tr><td><kbd>R</kbd></td><td>Rotate selected component 90°</td></tr>
-              <tr><td><kbd>Escape</kbd></td><td>Cancel current action / deselect</td></tr>
               <tr><td><kbd>Space + Drag</kbd></td><td>Pan the canvas</td></tr>
               <tr><td><kbd>Scroll Wheel</kbd></td><td>Zoom in/out</td></tr>
             </tbody>
