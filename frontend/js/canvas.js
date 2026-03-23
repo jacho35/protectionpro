@@ -769,7 +769,8 @@ const Canvas = {
   // Show key data labels next to cables, transformers, and other components
   renderComponentDataLabels() {
     let html = '';
-    for (const comp of AppState.components.values()) {
+    const pageComps = AppState.getActivePageComponents();
+    for (const comp of pageComps.values()) {
       const p = comp.props;
       let defaultOX = 22, defaultOY = 0;
       let lines = [];
@@ -953,11 +954,12 @@ const Canvas = {
   renderOverloadFlags() {
     if (!AppState.loadFlowResults || !AppState.loadFlowResults.branches) return;
 
+    const pageComps = AppState.getActivePageComponents();
     let html = '';
     for (const branch of AppState.loadFlowResults.branches) {
       if (!branch.loading_pct || branch.loading_pct <= 100) continue;
 
-      const comp = AppState.components.get(branch.elementId);
+      const comp = pageComps.get(branch.elementId);
       if (!comp) continue;
 
       const x = comp.x;
@@ -977,7 +979,7 @@ const Canvas = {
     if (AppState.loadFlowResults.buses) {
       for (const [busId, result] of Object.entries(AppState.loadFlowResults.buses)) {
         if (result.voltage_pu >= 0.95 && result.voltage_pu <= 1.05) continue;
-        const comp = AppState.components.get(busId);
+        const comp = pageComps.get(busId);
         if (!comp) continue;
 
         const x = comp.x;

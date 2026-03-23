@@ -149,3 +149,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~File manager: folder-based project organization, project/folder rename, move projects between folders~~
 - ~~Hide busbar connection points once connected: bus ports are hidden after a wire is attached, reducing visual clutter~~
 - ~~Independent flow arrows: Load flow arrows show independently when load flow is run; fault current arrows show only when a specific bus is faulted, with direction toward the faulted bus~~
+- ~~Fix sheet display bug: annotations, data labels, overload flags, and unconnected port warnings from other sheets no longer bleed through to the active sheet~~
