@@ -32,6 +32,29 @@
   white-space: nowrap;
 }
 
+.project-name-separator {
+  color: var(--text-muted);
+  margin: 0 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.project-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.project-name:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
 .toolbar-separator {
   width: 1px;
   height: 20px;

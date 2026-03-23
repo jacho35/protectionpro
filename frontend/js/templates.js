@@ -415,6 +415,7 @@ const NetworkTemplates = {
         Canvas.render();
         Properties.clear();
         document.title = `ProtectionPro \u2014 ${data.projectName}`;
+        updateProjectNameDisplay(data.projectName);
         modal.style.display = 'none';
         Project._statusMsg(`Loaded template: ${data.projectName}`);
       });
