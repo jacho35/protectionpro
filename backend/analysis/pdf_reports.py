@@ -152,8 +152,24 @@ def _render_title(pdf, project_name, base_mva, frequency):
     pdf.cell(0, 8, f"Base MVA: {base_mva}   |   Frequency: {frequency} Hz   |   Date: {date.today().isoformat()}", align="C", new_x="LMARGIN", new_y="NEXT")
 
 
+def _png_dimensions(data: bytes):
+    """Read width and height from a PNG file's IHDR chunk."""
+    import struct
+    # PNG header: 8 bytes signature, then IHDR chunk: 4 len + 4 type + 4 width + 4 height
+    if data[:8] != b'\x89PNG\r\n\x1a\n':
+        return None, None
+    w = struct.unpack('>I', data[16:20])[0]
+    h = struct.unpack('>I', data[20:24])[0]
+    return w, h
+
+
 def _render_diagram(pdf, diagram_image):
-    """Render the single-line diagram from a base64-encoded PNG."""
+    """Render the single-line diagram from a base64-encoded PNG.
+
+    For tall diagrams the image is scaled to fit the page width and
+    allowed to overflow onto subsequent pages via fpdf2's automatic
+    page-break handling.
+    """
     if not diagram_image:
         return
     # Strip data URL prefix if present
@@ -163,23 +179,50 @@ def _render_diagram(pdf, diagram_image):
         img_bytes = base64.b64decode(diagram_image)
     except Exception:
         return
-    pdf.add_page()
-    pdf.section_title("Single Line Diagram")
-    # Write to a temp file for fpdf2 image embedding
+
+    import os
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp.write(img_bytes)
         tmp_path = tmp.name
+
     try:
+        img_w_px, img_h_px = _png_dimensions(img_bytes)
+        if not img_w_px or not img_h_px:
+            return
+
         margin = pdf.l_margin
         avail_w = pdf.w - margin - pdf.r_margin
-        avail_h = pdf.h - pdf.get_y() - 15  # leave room for footer
-        pdf.image(tmp_path, x=margin, y=pdf.get_y(), w=avail_w, h=0, keep_aspect_ratio=True)
+
+        # Calculate rendered height at full page width
+        scale = avail_w / img_w_px
+        rendered_h = img_h_px * scale
+
+        pdf.add_page()
+        pdf.section_title("Single Line Diagram")
+        top_y = pdf.get_y()
+        avail_h = pdf.h - top_y - 15
+
+        if rendered_h <= avail_h:
+            # Fits on one page — render at full page width
+            pdf.image(tmp_path, x=margin, y=top_y, w=avail_w, h=rendered_h)
+        else:
+            # Tall diagram — fit entire image on one page by scaling to
+            # the available height, centering horizontally
+            fit_scale_w = avail_w / img_w_px
+            fit_scale_h = avail_h / img_h_px
+            fit_scale = min(fit_scale_w, fit_scale_h)
+            fit_w = img_w_px * fit_scale
+            fit_h = img_h_px * fit_scale
+            x_offset = margin + (avail_w - fit_w) / 2
+            pdf.image(tmp_path, x=x_offset, y=top_y, w=fit_w, h=fit_h)
     except Exception:
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(0, 8, "Diagram image could not be rendered.", new_x="LMARGIN", new_y="NEXT")
     finally:
-        import os
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def _render_fault_table(pdf, fault_results, comp_map):
