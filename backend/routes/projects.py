@@ -3,10 +3,11 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..models.database import get_db, Project, Folder
+from ..models.database import get_db, Project, Folder, Revision
 from ..models.schemas import (
     ProjectData, ProjectSummary, FolderSummary,
     FolderCreate, FolderUpdate, ProjectRename, ProjectMove,
+    RevisionSummary, RevisionDetail, RevisionCreate,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -168,3 +169,78 @@ def export_json(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return json.loads(project.data)
+
+
+# ── Revision endpoints ──
+
+MAX_REVISIONS = 20
+
+
+@router.get("/{project_id}/revisions", response_model=list[RevisionSummary])
+def list_revisions(project_id: int, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return (
+        db.query(Revision)
+        .filter(Revision.project_id == project_id)
+        .order_by(Revision.created_at.desc())
+        .limit(MAX_REVISIONS)
+        .all()
+    )
+
+
+@router.post("/{project_id}/revisions", response_model=RevisionSummary)
+def create_revision(project_id: int, body: RevisionCreate, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    revision = Revision(
+        project_id=project_id,
+        data=project.data,  # snapshot current project state
+        label=body.label or "",
+    )
+    db.add(revision)
+    db.flush()
+
+    # Trim old revisions beyond the limit
+    all_revisions = (
+        db.query(Revision)
+        .filter(Revision.project_id == project_id)
+        .order_by(Revision.created_at.desc())
+        .all()
+    )
+    if len(all_revisions) > MAX_REVISIONS:
+        for old in all_revisions[MAX_REVISIONS:]:
+            db.delete(old)
+
+    db.commit()
+    db.refresh(revision)
+    return revision
+
+
+@router.get("/{project_id}/revisions/{revision_id}", response_model=RevisionDetail)
+def get_revision(project_id: int, revision_id: int, db: Session = Depends(get_db)):
+    revision = (
+        db.query(Revision)
+        .filter(Revision.project_id == project_id, Revision.id == revision_id)
+        .first()
+    )
+    if not revision:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    return revision
+
+
+@router.delete("/{project_id}/revisions/{revision_id}")
+def delete_revision(project_id: int, revision_id: int, db: Session = Depends(get_db)):
+    revision = (
+        db.query(Revision)
+        .filter(Revision.project_id == project_id, Revision.id == revision_id)
+        .first()
+    )
+    if not revision:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    db.delete(revision)
+    db.commit()
+    return {"ok": True}

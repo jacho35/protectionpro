@@ -43,6 +43,20 @@ class Project(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
     folder = relationship("Folder", back_populates="projects")
+    revisions = relationship("Revision", back_populates="project", cascade="all, delete-orphan",
+                             order_by="Revision.created_at.desc()")
+
+
+class Revision(Base):
+    __tablename__ = "revisions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    data = Column(Text, nullable=False)  # Full ProjectData JSON snapshot
+    label = Column(String(255), nullable=False, default="")  # e.g. "Manual save", "Auto-save"
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    project = relationship("Project", back_populates="revisions")
 
 
 def init_db():

@@ -108,6 +108,31 @@ class FolderSummary(BaseModel):
         from_attributes = True
 
 
+class RevisionSummary(BaseModel):
+    id: int
+    project_id: int
+    label: str = ""
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RevisionDetail(BaseModel):
+    id: int
+    project_id: int
+    label: str = ""
+    data: str  # JSON string
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RevisionCreate(BaseModel):
+    label: str = ""
+
+
 class FolderCreate(BaseModel):
     name: str = "New Folder"
     parent_id: Optional[int] = None

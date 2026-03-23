@@ -381,6 +381,26 @@
         </div>
         <button id="btn-add-page" class="page-tab-add" title="Add new sheet">+</button>
       </div>
+      <!-- Revision Timeline Strip -->
+      <div id="revision-timeline" style="display:none">
+        <button id="btn-revision-toggle" class="revision-toggle-btn" title="Toggle revision timeline">
+          <svg width="12" height="12" viewBox="0 0 16 16"><path d="M8 1v6l3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Revisions</span>
+          <svg class="revision-chevron" width="10" height="10" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div id="revision-dots" class="revision-dots"></div>
+        <div id="revision-detail" class="revision-detail" style="display:none">
+          <div class="revision-detail-header">
+            <span id="revision-detail-label"></span>
+            <span id="revision-detail-time"></span>
+          </div>
+          <div class="revision-detail-stats" id="revision-detail-stats"></div>
+          <div class="revision-detail-actions">
+            <button id="btn-revision-restore" class="revision-btn-restore">Restore this revision</button>
+            <button id="btn-revision-cancel" class="revision-btn-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
       <!-- Status Bar -->
       <div id="status-bar">
         <span id="status-mode">Select Mode</span>
@@ -1830,6 +1850,7 @@
   <script src="js/templates.js"></script>
   <script src="js/standard-data.js"></script>
   <script src="js/undo.js"></script>
+  <script src="js/revisions.js"></script>
   <script src="js/minimap.js"></script>
   <script src="js/app.js"></script>
   <script src="js/mobile.js"></script>

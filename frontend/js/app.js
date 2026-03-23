@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   StandardData.init();
   TCC.init();
   UndoManager.init();
+  RevisionTimeline.init();
   MiniMap.init();
 
   // Templates button

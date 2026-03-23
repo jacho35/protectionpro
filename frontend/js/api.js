@@ -162,6 +162,24 @@ const API = {
     return this.request(`/projects/folders/${id}`, 'DELETE');
   },
 
+  // ── Revisions ──
+
+  async listRevisions(projectId) {
+    return this.request(`/projects/${projectId}/revisions`);
+  },
+
+  async createRevision(projectId, label = '') {
+    return this.request(`/projects/${projectId}/revisions`, 'POST', { label });
+  },
+
+  async getRevision(projectId, revisionId) {
+    return this.request(`/projects/${projectId}/revisions/${revisionId}`);
+  },
+
+  async deleteRevision(projectId, revisionId) {
+    return this.request(`/projects/${projectId}/revisions/${revisionId}`, 'DELETE');
+  },
+
   // Export project as JSON
   async exportJSON(id) {
     return this.request(`/projects/${id}/export/json`);
