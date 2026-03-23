@@ -361,6 +361,22 @@ const Properties = {
       comp.props[field] = value;
     }
 
+    // Voltage propagation: when bus voltage changes, propagate with confirmation
+    if (typeof VoltagePropagation !== 'undefined' && comp.type === 'bus' && field === 'voltage_kv') {
+      AppState.dirty = true;
+      AppState.clearResults();
+      VoltagePropagation.propagateFromBusChange(comp.id, value, () => {
+        Canvas.render();
+      });
+      return;
+    }
+
+    // Voltage propagation: when transformer voltage changes, propagate to connected zones
+    if (typeof VoltagePropagation !== 'undefined' && comp.type === 'transformer' &&
+        (field === 'voltage_hv_kv' || field === 'voltage_lv_kv')) {
+      VoltagePropagation.propagateFromTransformerChange(comp.id, field);
+    }
+
     AppState.dirty = true;
     AppState.clearResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
