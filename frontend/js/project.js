@@ -1,5 +1,10 @@
 /* ProtectionPro — Project Save/Load & Export */
 
+function updateProjectNameDisplay(name) {
+  const el = document.getElementById('project-name-display');
+  if (el) el.textContent = name || AppState.projectName || 'Untitled Project';
+}
+
 const Project = {
   init() {
     document.getElementById('btn-new').addEventListener('click', () => this.newProject());
@@ -19,6 +24,17 @@ const Project = {
     document.getElementById('btn-export-compare').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showComparisonDialog(); });
     document.getElementById('btn-export-calculations').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportCalculationsReport(); });
 
+    // Click project name to rename
+    document.getElementById('project-name-display')?.addEventListener('click', () => {
+      const newName = prompt('Rename project:', AppState.projectName);
+      if (newName && newName.trim()) {
+        AppState.projectName = newName.trim();
+        document.title = `ProtectionPro — ${AppState.projectName}`;
+        updateProjectNameDisplay();
+        AppState.dirty = true;
+      }
+    });
+
     // Load and render recent projects in File menu
     this._loadRecent();
     this._renderRecentMenu();
@@ -33,6 +49,7 @@ const Project = {
     Canvas.render();
     Properties.clear();
     document.title = 'ProtectionPro — New Project';
+    updateProjectNameDisplay('Untitled Project');
   },
 
   // Save to database (primary save action), falls back to JSON export
@@ -49,6 +66,7 @@ const Project = {
       AppState.projectId = result.id;
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
+      updateProjectNameDisplay();
       this._addRecent(result.id, AppState.projectName);
       document.getElementById('status-info').textContent = 'Project saved.';
       setTimeout(() => {
@@ -60,6 +78,7 @@ const Project = {
       this.exportJSON();
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
+      updateProjectNameDisplay();
     }
   },
 
@@ -76,6 +95,7 @@ const Project = {
       AppState.projectId = result.id;
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
+      updateProjectNameDisplay();
       this._addRecent(result.id, AppState.projectName);
       document.getElementById('status-info').textContent = 'Project saved as new copy.';
       setTimeout(() => {
@@ -86,6 +106,7 @@ const Project = {
       this.exportJSON();
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
+      updateProjectNameDisplay();
     }
   },
 
@@ -411,6 +432,7 @@ const Project = {
           Canvas.render();
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;
+          updateProjectNameDisplay();
           document.getElementById('status-info').textContent = 'Project imported from file.';
         } catch (err) {
           alert('Invalid project file: ' + err.message);
@@ -493,6 +515,7 @@ const Project = {
           Canvas.render();
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;
+          updateProjectNameDisplay();
           this._addRecent(btn.dataset.id, AppState.projectName);
           this._statusMsg('Project loaded.');
         } catch (err) {
@@ -673,6 +696,7 @@ const Project = {
           Canvas.render();
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;
+          updateProjectNameDisplay();
           this._addRecent(el.dataset.projectId, AppState.projectName);
           this._statusMsg('Project loaded.');
         } catch (err) {
@@ -726,6 +750,7 @@ const Project = {
             if (AppState.projectId == id) {
               AppState.projectName = newName;
               document.title = `ProtectionPro — ${newName}`;
+              updateProjectNameDisplay(newName);
             }
             // Update recents
             const ri = this._recentProjects.findIndex(r => String(r.id) === String(id));

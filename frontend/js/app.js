@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Properties.init();
   Annotations.init();
   Project.init();
+  updateProjectNameDisplay();
   StandardData.init();
   TCC.init();
   UndoManager.init();
