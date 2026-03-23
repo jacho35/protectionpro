@@ -439,6 +439,17 @@ const MobileUI = {
             }
           });
         });
+        // Re-bind collapsible section headers
+        mobileContent.querySelectorAll('.prop-section-header').forEach(header => {
+          header.addEventListener('click', () => {
+            const secKey = header.dataset.section;
+            const isNowCollapsed = !header.classList.contains('collapsed');
+            if (typeof Properties !== 'undefined') Properties.collapsedSections[secKey] = isNowCollapsed;
+            header.classList.toggle('collapsed', isNowCollapsed);
+            const body = header.nextElementSibling;
+            if (body) body.classList.toggle('collapsed', isNowCollapsed);
+          });
+        });
       }, 10);
     }
 
