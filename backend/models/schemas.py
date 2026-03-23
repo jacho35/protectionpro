@@ -60,8 +60,22 @@ class Scenario(BaseModel):
     nextId: int = 1
 
 
+class ProjectDetails(BaseModel):
+    projectNumber: str = ""
+    client: str = ""
+    company: str = ""
+    engineerName: str = ""
+    checkedBy: str = ""
+    approvedBy: str = ""
+    revisionNumber: str = ""
+    date: str = ""
+    description: str = ""
+    companyLogo: Optional[str] = None  # base64 data URL
+
+
 class ProjectData(BaseModel):
     projectName: str = "Untitled Project"
+    projectDetails: Optional[ProjectDetails] = None
     baseMVA: float = 100.0
     frequency: int = 50
     components: list[Component] = []

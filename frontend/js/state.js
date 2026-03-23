@@ -6,6 +6,20 @@ const AppState = {
   projectName: 'Untitled Project',
   dirty: false,
 
+  // Project details for report covers
+  projectDetails: {
+    projectNumber: '',
+    client: '',
+    company: '',
+    engineerName: '',
+    checkedBy: '',
+    approvedBy: '',
+    revisionNumber: '',
+    date: '',
+    description: '',
+    companyLogo: null,  // base64 data URL
+  },
+
   // System base settings
   baseMVA: DEFAULT_BASE_MVA,
   frequency: DEFAULT_FREQUENCY,
@@ -411,6 +425,13 @@ const AppState = {
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
+    this.dcArcFlashResults = null;
+    this.cableSizingResults = null;
+    this.motorStartingResults = null;
+    this.dutyCheckResults = null;
+    this.loadDiversityResults = null;
+    this.groundingResults = null;
+    this.studyManagerResults = null;
   },
 
   // Reset entire state
@@ -418,15 +439,16 @@ const AppState = {
     this.projectId = null;
     this.projectName = 'Untitled Project';
     this.dirty = false;
+    this.projectDetails = {
+      projectNumber: '', clientCompany: '', engineerName: '',
+      checkedBy: '', approvedBy: '', revisionNumber: '',
+      date: '', description: '', companyLogo: null,
+    };
     this.components.clear();
     this.wires.clear();
     this.nextId = 1;
     this.selectedIds.clear();
-    this.faultResults = null;
-    this.faultedBusId = null;
-    this.loadFlowResults = null;
-    this.unbalancedLoadFlowResults = null;
-    this.arcFlashResults = null;
+    this.clearResults();
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;
@@ -442,12 +464,17 @@ const AppState = {
     this.activePageId = 'page_1';
     this._pageNextId = 2;
     this.wireRouteMode = 'orthogonal';
+    // Clear annotation drag offsets
+    if (typeof Annotations !== 'undefined') {
+      Annotations.offsets.clear();
+    }
   },
 
   // Export to JSON
   toJSON() {
     return {
       projectName: this.projectName,
+      projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
       frequency: this.frequency,
       defaultLengthUnit: this.defaultLengthUnit,
@@ -462,6 +489,19 @@ const AppState = {
       annotationOffsets: Annotations.offsets.size > 0
         ? Object.fromEntries(Annotations.offsets)
         : undefined,
+      // Persist analysis results so result boxes survive save/load
+      faultResults: this.faultResults || undefined,
+      faultedBusId: this.faultedBusId || undefined,
+      loadFlowResults: this.loadFlowResults || undefined,
+      unbalancedLoadFlowResults: this.unbalancedLoadFlowResults || undefined,
+      arcFlashResults: this.arcFlashResults || undefined,
+      dcArcFlashResults: this.dcArcFlashResults || undefined,
+      cableSizingResults: this.cableSizingResults || undefined,
+      motorStartingResults: this.motorStartingResults || undefined,
+      dutyCheckResults: this.dutyCheckResults || undefined,
+      loadDiversityResults: this.loadDiversityResults || undefined,
+      groundingResults: this.groundingResults || undefined,
+      studyManagerResults: this.studyManagerResults || undefined,
     };
   },
 
@@ -469,6 +509,19 @@ const AppState = {
   fromJSON(data) {
     this.reset();
     this.projectName = data.projectName || 'Untitled Project';
+    if (data.projectDetails) {
+      this.projectDetails = {
+        projectNumber: data.projectDetails.projectNumber || '',
+        clientCompany: data.projectDetails.clientCompany || '',
+        engineerName: data.projectDetails.engineerName || '',
+        checkedBy: data.projectDetails.checkedBy || '',
+        approvedBy: data.projectDetails.approvedBy || '',
+        revisionNumber: data.projectDetails.revisionNumber || '',
+        date: data.projectDetails.date || '',
+        description: data.projectDetails.description || '',
+        companyLogo: data.projectDetails.companyLogo || null,
+      };
+    }
     this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
     this.defaultLengthUnit = data.defaultLengthUnit || 'm';
@@ -505,6 +558,19 @@ const AppState = {
         Annotations.offsets.set(key, val);
       }
     }
+    // Restore analysis results so result boxes appear on load
+    this.faultResults = data.faultResults || null;
+    this.faultedBusId = data.faultedBusId || null;
+    this.loadFlowResults = data.loadFlowResults || null;
+    this.unbalancedLoadFlowResults = data.unbalancedLoadFlowResults || null;
+    this.arcFlashResults = data.arcFlashResults || null;
+    this.dcArcFlashResults = data.dcArcFlashResults || null;
+    this.cableSizingResults = data.cableSizingResults || null;
+    this.motorStartingResults = data.motorStartingResults || null;
+    this.dutyCheckResults = data.dutyCheckResults || null;
+    this.loadDiversityResults = data.loadDiversityResults || null;
+    this.groundingResults = data.groundingResults || null;
+    this.studyManagerResults = data.studyManagerResults || null;
     this.dirty = false;
   },
 };

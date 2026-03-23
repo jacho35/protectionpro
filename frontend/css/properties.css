@@ -415,4 +415,77 @@
 
 .prop-action-btn:hover {
   opacity: 0.85;
+/* Project Details Form */
+.project-details-form textarea {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.project-details-form textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.logo-upload-area {
+  padding: 4px 0;
+}
+
+.logo-preview {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.logo-preview img {
+  max-width: 100%;
+  max-height: 80px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  display: block;
+}
+
+.btn-remove-logo {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-remove-logo:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.logo-placeholder {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.logo-upload-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
