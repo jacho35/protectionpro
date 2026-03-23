@@ -173,7 +173,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         ik_total_ka = ik_total_pu * i_base_ka
 
         branches = _compute_branch_contributions(
-            source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, active_type
+            source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, active_type, bus.id
         )
 
         # Motor contribution summary (3-phase current split)
@@ -421,7 +421,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
     return paths
 
 
-def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, fault_type):
+def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, fault_type, faulted_bus_id=""):
     """Compute fault current contribution through each branch element.
 
     Uses current divider: I_path = V_fault / Z_path
@@ -449,6 +449,10 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
     element_current = {}  # element_id -> total current in kA
     element_z_path = {}   # element_id -> z_path of first path containing it (for display)
     element_source = {}   # element_id -> source names
+    # Track from_bus (source side) and to_bus (faulted bus side) for each element
+    # Trail is ordered from faulted bus outward, so trail[k-1] is toward the fault
+    element_from_bus = {}  # element_id -> source-side neighbor
+    element_to_bus = {}    # element_id -> faulted-bus-side neighbor
 
     for i, path in enumerate(source_paths):
         trail = path["trail"]
@@ -457,11 +461,15 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
         source_comp = components.get(source_id)
         source_name = source_comp.props.get("name", source_id) if source_comp else source_id
 
-        for elem_id in trail:
+        for k, elem_id in enumerate(trail):
             if elem_id not in element_current:
                 element_current[elem_id] = 0
                 element_z_path[elem_id] = path["z_total"]
                 element_source[elem_id] = set()
+                # to_bus: faulted-bus side (trail[k-1] or faulted_bus_id if first in trail)
+                element_to_bus[elem_id] = trail[k - 1] if k > 0 else faulted_bus_id
+                # from_bus: source side (trail[k+1] or source_id if last in trail)
+                element_from_bus[elem_id] = trail[k + 1] if k < len(trail) - 1 else source_id
             element_current[elem_id] += i_ka
             element_source[elem_id].add(source_name)
 
@@ -471,7 +479,7 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
         comp = components.get(elem_id)
         if not comp:
             continue
-        # Skip sources and buses from branch display — they aren't "branches"
+        # Skip buses from branch display — they aren't "branches"
         if comp.type in ("bus",):
             continue
 
@@ -482,6 +490,8 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
             element_id=elem_id,
             element_name=comp.props.get("name", elem_id),
             element_type=comp.type,
+            from_bus=element_from_bus.get(elem_id, ""),
+            to_bus=element_to_bus.get(elem_id, ""),
             ik_ka=round(ik_ka, 3),
             z_path_real=round(z_path.real, 6),
             z_path_imag=round(z_path.imag, 6),

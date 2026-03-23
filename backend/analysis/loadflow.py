@@ -115,6 +115,21 @@ def _find_components_at_bus(bus_id, adjacency, components):
     return found
 
 
+def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
+    """Find the immediate neighbor of an element on its non-bus side.
+
+    For source-connected elements (e.g. utility incomer TX), walks from the
+    element away from the bus to find the first non-bus-group neighbor.
+    Returns the neighbor component ID, or elem_id as fallback.
+    """
+    for neighbor_id in adjacency.get(elem_id, []):
+        # Skip components that belong to the bus cluster
+        if neighbor_id == bus_id or bus_of.get(neighbor_id) == bus_id:
+            continue
+        return neighbor_id
+    return elem_id  # fallback: use the element itself
+
+
 def _get_impedance(comp, base_mva):
     """Get branch impedance in per-unit on common MVA base."""
     if comp.type == "transformer":
@@ -667,10 +682,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 tx.props.get("voltage_lv_kv", 0.42)
             )
             elem_i_amps = (s_per_tx * 1000) / (math.sqrt(3) * lv_kv) if lv_kv > 0 else 0
+            source_side = _find_source_side_neighbor(tx.id, bus_id, adjacency, bus_of)
             branch_results.append(LoadFlowBranch(
                 elementId=tx.id,
                 element_name=tx.props.get("name", tx.type),
-                from_bus=bus_id, to_bus=bus_id,
+                from_bus=source_side, to_bus=bus_id,
                 p_mw=round(p_per_tx, 4), q_mvar=round(q_per_tx, 4),
                 s_mva=round(s_per_tx, 4), i_amps=round(elem_i_amps, 2),
                 loading_pct=round(loading, 2), losses_mw=0,
@@ -735,7 +751,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     branch_results.append(LoadFlowBranch(
                         elementId=src.id,
                         element_name=src.props.get("name", src.type),
-                        from_bus=bus.id, to_bus=bus.id,
+                        from_bus=src.id, to_bus=bus.id,
                         p_mw=round(p_out, 4), q_mvar=round(q_out, 4),
                         s_mva=round(s_out, 4), i_amps=round(i_amps, 2),
                         loading_pct=round(loading, 2), losses_mw=0,
@@ -749,7 +765,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     branch_results.append(LoadFlowBranch(
                         elementId=tx.id,
                         element_name=tx.props.get("name", tx.type),
-                        from_bus=bus.id, to_bus=bus.id,
+                        from_bus=util.id, to_bus=bus.id,
                         p_mw=round(p_out, 4), q_mvar=round(q_out, 4),
                         s_mva=round(s_out, 4), i_amps=round(tx_i_amps, 2),
                         loading_pct=round(loading, 2), losses_mw=0,
@@ -761,7 +777,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     branch_results.append(LoadFlowBranch(
                         elementId=util.id,
                         element_name=util.props.get("name", "Utility"),
-                        from_bus=bus.id, to_bus=bus.id,
+                        from_bus=util.id, to_bus=bus.id,
                         p_mw=round(p_out, 4), q_mvar=round(q_out, 4),
                         s_mva=round(s_out, 4), i_amps=round(util_i_amps, 2),
                         loading_pct=round(util_loading, 2), losses_mw=0,
@@ -782,7 +798,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 branch_results.append(LoadFlowBranch(
                     elementId=src.id,
                     element_name=src.props.get("name", src.type),
-                    from_bus=bus.id, to_bus=bus.id,
+                    from_bus=src.id, to_bus=bus.id,
                     p_mw=round(_p, 4), q_mvar=round(_q, 4),
                     s_mva=round(s_rated, 4), i_amps=round(i_amps, 2),
                     loading_pct=round(s_rated / rated_mva * 100, 2), losses_mw=0,
@@ -810,7 +826,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 branch_results.append(LoadFlowBranch(
                     elementId=util.id,
                     element_name=util.props.get("name", "Utility"),
-                    from_bus=bus.id, to_bus=bus.id,
+                    from_bus=util.id, to_bus=bus.id,
                     p_mw=round(s_util.real, 4), q_mvar=round(s_util.imag, 4),
                     s_mva=round(s_out, 4), i_amps=round(i_amps, 2),
                     loading_pct=round(loading, 2), losses_mw=0,
@@ -836,7 +852,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 branch_results.append(LoadFlowBranch(
                     elementId=tx.id,
                     element_name=tx.props.get("name", tx.type),
-                    from_bus=bus.id, to_bus=bus.id,
+                    from_bus=util.id, to_bus=bus.id,
                     p_mw=round(s_this_tx.real, 4), q_mvar=round(s_this_tx.imag, 4),
                     s_mva=round(s_this_mva, 4), i_amps=round(tx_i_amps, 2),
                     loading_pct=round(tx_loading, 2), losses_mw=0,
@@ -848,7 +864,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 branch_results.append(LoadFlowBranch(
                     elementId=util.id,
                     element_name=util.props.get("name", "Utility"),
-                    from_bus=bus.id, to_bus=bus.id,
+                    from_bus=util.id, to_bus=bus.id,
                     p_mw=round(s_this_tx.real, 4), q_mvar=round(s_this_tx.imag, 4),
                     s_mva=round(s_this_mva, 4), i_amps=round(util_i_amps, 2),
                     loading_pct=round(util_loading, 2), losses_mw=0,
