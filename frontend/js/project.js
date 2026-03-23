@@ -57,6 +57,7 @@ const Project = {
     Properties.clear();
     document.title = 'ProtectionPro — New Project';
     updateProjectNameDisplay('Untitled Project');
+    RevisionTimeline.hide();
   },
 
   // Save to database (primary save action), falls back to JSON export
@@ -76,6 +77,9 @@ const Project = {
       updateProjectNameDisplay();
       this._addRecent(result.id, AppState.projectName);
       this._clearLocalBackup();
+      // Create a revision snapshot
+      await RevisionTimeline.createRevision('Manual save');
+      await RevisionTimeline.show();
       document.getElementById('status-info').textContent = 'Project saved.';
       setTimeout(() => {
         document.getElementById('status-info').textContent = '';
@@ -87,6 +91,9 @@ const Project = {
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
       updateProjectNameDisplay();
+      // Still create a local revision
+      await RevisionTimeline.createRevision('Manual save (local)');
+      await RevisionTimeline.show();
     }
   },
 
@@ -460,13 +467,19 @@ const Project = {
         AppState.dirty = false;
         document.title = `ProtectionPro — ${AppState.projectName}`;
         updateProjectNameDisplay();
+        await RevisionTimeline.createRevision('Auto-save');
+        await RevisionTimeline.show();
         this._statusMsg('Auto-saved.');
       } catch (e) {
         // Silently fall back to localStorage on API failure
         this._saveToLocalBackup();
+        await RevisionTimeline.createRevision('Auto-save (local)');
+        await RevisionTimeline.show();
       }
     } else {
       this._saveToLocalBackup();
+      await RevisionTimeline.createRevision('Auto-save (local)');
+      await RevisionTimeline.show();
     }
   },
 
@@ -612,6 +625,7 @@ const Project = {
           document.title = `ProtectionPro — ${AppState.projectName}`;
           updateProjectNameDisplay();
           this._addRecent(btn.dataset.id, AppState.projectName);
+          RevisionTimeline.show();
           this._statusMsg('Project loaded.');
         } catch (err) {
           alert('Failed to load project: ' + err.message);
@@ -793,6 +807,7 @@ const Project = {
           document.title = `ProtectionPro — ${AppState.projectName}`;
           updateProjectNameDisplay();
           this._addRecent(el.dataset.projectId, AppState.projectName);
+          RevisionTimeline.show();
           this._statusMsg('Project loaded.');
         } catch (err) {
           alert('Failed to load project: ' + err.message);
