@@ -350,7 +350,7 @@
   animation: pulse-warning 1.5s ease-in-out infinite;
 }
 
-/* Directional flow arrows — rendered on wires after load flow + fault analysis */
+/* Directional flow arrows — rendered on wires after analysis */
 .flow-arrow {
   pointer-events: none;
 }

@@ -59,6 +59,7 @@ const AppState = {
 
   // Analysis results
   faultResults: null,
+  faultedBusId: null,  // ID of the specific bus that was faulted (null = all buses)
   loadFlowResults: null,
   unbalancedLoadFlowResults: null,
   arcFlashResults: null,
@@ -255,6 +256,7 @@ const AppState = {
     this.wires.clear();
     this.selectedIds.clear();
     this.faultResults = null;
+    this.faultedBusId = null;
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
@@ -399,6 +401,7 @@ const AppState = {
   // Clear all results
   clearResults() {
     this.faultResults = null;
+    this.faultedBusId = null;
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
@@ -414,6 +417,7 @@ const AppState = {
     this.nextId = 1;
     this.selectedIds.clear();
     this.faultResults = null;
+    this.faultedBusId = null;
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
