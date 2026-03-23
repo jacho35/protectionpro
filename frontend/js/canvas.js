@@ -1008,6 +1008,10 @@ const Canvas = {
     const branches = AppState.loadFlowResults.branches || [];
     if (branches.length === 0) return;
 
+    // Index branches by elementId for fast lookup
+    const branchByElem = new Map();
+    for (const b of branches) branchByElem.set(b.elementId, b);
+
     const pageWires = AppState.getActivePageWires();
     let html = '';
 
@@ -1016,53 +1020,35 @@ const Canvas = {
       const toComp = AppState.components.get(wire.toComponent);
       if (!fromComp || !toComp) continue;
 
-      const isCableOrXfmr = t => t === 'cable' || t === 'transformer';
-      let branch = null;
-      let forward = true; // whether wire from→to aligns with branch from_bus→to_bus
-
-      if (isCableOrXfmr(toComp.type)) {
-        branch = branches.find(b => b.elementId === toComp.id);
-        if (branch) {
-          if (branch.from_bus === branch.to_bus) {
-            // Source-connected element (e.g. utility incomer TX): from_bus===to_bus
-            // Determine direction from topology: is fromComp the bus or the source?
-            if (fromComp.id === branch.from_bus) {
-              forward = false; // Wire goes bus→element; power injected toward bus = reverse
-            } else {
-              forward = true;  // Wire goes source→element; power flows same direction
-            }
-          } else if (branch.from_bus === fromComp.id) {
-            forward = true;
-          } else if (branch.to_bus === fromComp.id) {
-            forward = false;
-          }
-        }
-      } else if (isCableOrXfmr(fromComp.type)) {
-        branch = branches.find(b => b.elementId === fromComp.id);
-        if (branch) {
-          if (branch.from_bus === branch.to_bus) {
-            // Source-connected element: determine direction from topology
-            if (toComp.id === branch.from_bus) {
-              forward = true;  // Wire goes element→bus; power flows same direction
-            } else {
-              forward = false; // Wire goes element→source; power flows reverse
-            }
-          } else if (branch.to_bus === toComp.id) {
-            forward = true;
-          } else if (branch.from_bus === toComp.id) {
-            forward = false;
-          }
-        }
+      // Find the branch element this wire is adjacent to
+      let branch = branchByElem.get(toComp.id);
+      let elemIsToCmp = true;
+      if (!branch) {
+        branch = branchByElem.get(fromComp.id);
+        elemIsToCmp = false;
       }
-
       if (!branch) continue;
+
+      // Determine if wire from→to aligns with branch from_bus→to_bus
+      const otherComp = elemIsToCmp ? fromComp : toComp;
+      let forward;
+      if (branch.from_bus === otherComp.id) {
+        // The other end of this wire is the from_bus side
+        forward = elemIsToCmp; // wire goes from_bus→element when elemIsToCmp
+      } else if (branch.to_bus === otherComp.id) {
+        // The other end of this wire is the to_bus side
+        forward = !elemIsToCmp; // wire goes element→to_bus when !elemIsToCmp
+      } else {
+        // Neither endpoint matches from_bus/to_bus — skip
+        continue;
+      }
 
       // Color by loading percentage (mirrors ETAP convention)
       let color = '#22c55e'; // green  < 80 %
       if (branch.loading_pct > 100) color = '#ef4444';       // red
       else if (branch.loading_pct > 80) color = '#f97316';   // amber
 
-      // Flip arrow when real power flows opposite to the wire's natural direction
+      // Flip arrow when real power flows opposite to the branch's from→to direction
       const isForward = branch.p_mw >= 0 ? forward : !forward;
 
       html += this._buildArrowSvg(id, wire, fromComp, toComp, isForward, color, 'loadflow-arrow');
@@ -1080,7 +1066,10 @@ const Canvas = {
     const busResult = AppState.faultResults.buses?.[faultedBusId];
     if (!busResult || !busResult.branches || busResult.branches.length === 0) return;
 
-    const faultBranches = busResult.branches;
+    // Index fault branches by element_id
+    const faultByElem = new Map();
+    for (const b of busResult.branches) faultByElem.set(b.element_id, b);
+
     const pageWires = AppState.getActivePageWires();
     let html = '';
 
@@ -1089,61 +1078,35 @@ const Canvas = {
       const toComp = AppState.components.get(wire.toComponent);
       if (!fromComp || !toComp) continue;
 
-      const isCableOrXfmr = t => t === 'cable' || t === 'transformer';
-      let faultBranch = null;
-      let forward = true;
-
-      if (isCableOrXfmr(toComp.type)) {
-        faultBranch = faultBranches.find(b => b.element_id === toComp.id);
-        if (faultBranch) {
-          if (faultBranch.from_bus === faultBranch.to_bus) {
-            // Source-connected element: determine direction from topology
-            if (fromComp.id === faultBranch.from_bus) {
-              forward = false;
-            } else {
-              forward = true;
-            }
-          } else if (faultBranch.from_bus === fromComp.id) {
-            forward = true;
-          } else if (faultBranch.to_bus === fromComp.id) {
-            forward = false;
-          }
-        }
-      } else if (isCableOrXfmr(fromComp.type)) {
-        faultBranch = faultBranches.find(b => b.element_id === fromComp.id);
-        if (faultBranch) {
-          if (faultBranch.from_bus === faultBranch.to_bus) {
-            // Source-connected element: determine direction from topology
-            if (toComp.id === faultBranch.from_bus) {
-              forward = true;
-            } else {
-              forward = false;
-            }
-          } else if (faultBranch.to_bus === toComp.id) {
-            forward = true;
-          } else if (faultBranch.from_bus === toComp.id) {
-            forward = false;
-          }
-        }
+      // Find the fault branch element this wire is adjacent to
+      let faultBranch = faultByElem.get(toComp.id);
+      let elemIsToCmp = true;
+      if (!faultBranch) {
+        faultBranch = faultByElem.get(fromComp.id);
+        elemIsToCmp = false;
       }
-
       if (!faultBranch) continue;
+
+      // Determine wire alignment with branch from_bus→to_bus
+      const otherComp = elemIsToCmp ? fromComp : toComp;
+      let forward;
+      if (faultBranch.from_bus === otherComp.id) {
+        forward = elemIsToCmp;
+      } else if (faultBranch.to_bus === otherComp.id) {
+        forward = !elemIsToCmp;
+      } else {
+        continue;
+      }
 
       // Color by contribution percentage: red for major, amber for moderate, blue for minor
       let color = '#3b82f6'; // blue  < 20 %
       if (faultBranch.contribution_pct > 50) color = '#ef4444';       // red
       else if (faultBranch.contribution_pct > 20) color = '#f97316';  // amber
 
-      // Arrow points toward the faulted bus (current flows into the fault)
-      // Determine direction: does the wire lead toward or away from the faulted bus?
-      let towardFault = forward;
-      // If the to_bus of the fault branch is the faulted bus, forward means toward fault
-      // If the from_bus is the faulted bus, forward means away from fault (reverse it)
-      if (faultBranch.to_bus === faultedBusId) {
-        towardFault = forward;
-      } else if (faultBranch.from_bus === faultedBusId) {
-        towardFault = !forward;
-      }
+      // Fault current flows from source toward faulted bus
+      // The branch from_bus is the source side, to_bus is the faulted bus side
+      // forward=true means wire aligns with from→to, so arrow points toward fault
+      const towardFault = forward;
 
       // Offset the arrow slightly from center to avoid overlapping with load flow arrows
       html += this._buildArrowSvg(id, wire, fromComp, toComp, towardFault, color, 'fault-arrow', 0.35);
