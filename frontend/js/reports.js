@@ -111,30 +111,11 @@ const Reports = {
 
   _rasterizeDiagram() {
     return new Promise((resolve) => {
-      const svgEl = document.getElementById('sld-canvas');
-      if (!svgEl) { resolve(null); return; }
-      const svgClone = svgEl.cloneNode(true);
-      // Remove grid for clean export
-      const gridBg = svgClone.querySelector('#grid-bg');
-      if (gridBg) gridBg.remove();
-      const svgData = new XMLSerializer().serializeToString(svgClone);
-      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(svgBlob);
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || 1200;
-        canvas.height = img.naturalHeight || 800;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const pngData = canvas.toDataURL('image/png');
-        URL.revokeObjectURL(url);
-        resolve(pngData);
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-      img.src = url;
+      if (!AppState.components.size) { resolve(null); return; }
+      const { clone, svgW, svgH } = Project._prepareExportSVG();
+      Project._rasterizeSVG(clone, svgW, svgH, 2, (canvas) => {
+        resolve(canvas.toDataURL('image/png'));
+      });
     });
   },
 
