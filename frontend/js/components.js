@@ -20,13 +20,11 @@ const Components = {
     return connected;
   },
 
-  // Trace upstream from a component toward sources, collecting all protection
-  // and thermal devices encountered along the paths. Returns a Set of component IDs.
-  traceUpstreamProtection(compId) {
+  // Trace from sources to a target component, collecting all protection and
+  // thermal devices on the source-to-target paths. Returns a Set of component IDs.
+  traceUpstreamProtection(targetId) {
     const PROTECTION_TYPES = new Set(['cb', 'fuse', 'relay']);
     const THERMAL_TYPES = new Set(['transformer', 'cable']);
-    const SOURCE_TYPES = new Set(['utility', 'generator', 'solar_pv', 'wind_turbine']);
-    const LOAD_TYPES = new Set(['static_load', 'motor_induction', 'motor_synchronous']);
 
     // Build adjacency from wires
     const adj = new Map();
@@ -37,27 +35,40 @@ const Components = {
       adj.get(wire.toComponent).push(wire.fromComponent);
     }
 
-    const relevant = new Set([compId]);
-    const visited = new Set([compId]);
-    const queue = [compId];
+    // Find all sources
+    const sources = [];
+    for (const [id, comp] of AppState.components) {
+      if (comp.type === 'utility' || comp.type === 'generator') sources.push(id);
+    }
 
-    while (queue.length > 0) {
-      const cur = queue.shift();
-      const comp = AppState.components.get(cur);
-      if (!comp) continue;
+    // DFS from each source; collect paths that reach the target
+    const relevant = new Set([targetId]);
+    for (const srcId of sources) {
+      const stack = [{ node: srcId, visited: new Set([srcId]), trail: [] }];
+      while (stack.length > 0) {
+        const { node, visited, trail } = stack.pop();
+        const comp = AppState.components.get(node);
+        if (!comp) continue;
 
-      // Don't traverse past loads (they are downstream endpoints)
-      if (cur !== compId && LOAD_TYPES.has(comp.type)) continue;
+        const currentTrail = [...trail, node];
 
-      // Collect protection and thermal devices
-      if (cur !== compId && (PROTECTION_TYPES.has(comp.type) || THERMAL_TYPES.has(comp.type))) {
-        relevant.add(cur);
-      }
+        // Found the target — add all protection/thermal devices on this path
+        if (node === targetId) {
+          for (const id of currentTrail) {
+            const c = AppState.components.get(id);
+            if (c && (PROTECTION_TYPES.has(c.type) || THERMAL_TYPES.has(c.type))) {
+              relevant.add(id);
+            }
+          }
+          continue; // don't traverse past the target
+        }
 
-      for (const neighbor of (adj.get(cur) || [])) {
-        if (!visited.has(neighbor)) {
-          visited.add(neighbor);
-          queue.push(neighbor);
+        for (const neighbor of (adj.get(node) || [])) {
+          if (!visited.has(neighbor)) {
+            const newVisited = new Set(visited);
+            newVisited.add(neighbor);
+            stack.push({ node: neighbor, visited: newVisited, trail: currentTrail });
+          }
         }
       }
     }
