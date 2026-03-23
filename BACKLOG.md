@@ -11,6 +11,7 @@
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 
 ## TCC Chart Enhancements
+- ~~**Mini SLD panel**: Vertical protection-path diagram alongside TCC chart showing IEC symbols, component names, ratings, and curve color accents — similar to ETAP STAR module~~
 
 ## Multi-User & Collaboration
 - **User authentication**: Login system with role-based access
@@ -154,9 +155,17 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Fix fault branch current display: upstream branch fault currents now account for transformer turns ratios by converting per-unit current to actual kA at each element's operating voltage level~~
 - ~~Fix cable sizing warnings: warnings no longer recommend the same cable already selected; warning badges and results table now show tooltip explanations for why the cable is near limits~~
 - ~~Reports menu: moved report exports (CSV, PDF, templates, settings schedule, arc flash labels, calculations, scenario comparison) from File menu to dedicated Reports menu~~
+- ~~Voltage-filtered searchable cable dropdown: cable type selector now filters by connected bus voltage (LV/MV) and includes a searchable text input for quick cable lookup~~
 - ~~Fix print/page layout PDF export: add dynamic jsPDF loading with fallback when CDN script fails to load~~
 - ~~Fix single-line diagram missing from PDF reports: rasterize SVG client-side and embed in server-generated PDF~~
 - ~~Connection warning logic: unconnected port warnings on buses only shown when the bus has zero connections, not on every empty port~~
+- ~~Auto voltage propagation: components connecting to a bus automatically adopt its voltage level; bidirectional-smart logic propagates source voltages to buses at defaults; transformers bridge voltage zones with HV/LV winding matching; bus voltage changes prompt confirmation before updating all connected equipment~~
+- ~~Mini SLD panel in TCC: vertical protection-path diagram alongside TCC chart with simplified IEC symbols, component names, ratings, clickable device selection, and collapsible panel~~
 - ~~Show active project name in toolbar: display the current project name next to the app title, clickable to rename~~
+- ~~Fix mini-SLD collapse bug: collapsed panel now shows narrow 28px strip with reopen button instead of disappearing entirely~~
+- ~~Mini-SLD grading endpoint selection: set a downstream protection device as path endpoint from device list to show only source-to-endpoint path on mini-SLD~~
+- ~~Delete custom TCC tabs: custom tabs now show × close button to remove them, reassigning devices back to their voltage tabs~~
 - ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
 - ~~Project revision timeline: horizontal timeline strip above the status bar with clickable revision dots (up to 20 revisions), preview panel with diff stats and confirm-before-restore, revisions created on every manual and auto-save, stored in backend DB for saved projects and localStorage for unsaved projects~~
+- ~~Generator/PV/Wind data labels: display static property labels (rating, voltage, power factor) next to generator, solar PV, and wind turbine components on the canvas, matching transformer label behavior~~
+- ~~Bus names in result boxes: annotation badges (Fault, Load Flow, Arc Flash, Unbalanced LF) now display the bus name in their label for easy identification on busy diagrams; hover highlighting links annotation boxes to their bus component with a blue glow effect~~

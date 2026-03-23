@@ -464,6 +464,11 @@
     margin: 14px 0 6px;
   }
 
+  #mobile-properties-content .prop-section-header {
+    min-height: 36px;
+    padding: 8px 0 4px;
+  }
+
   #mobile-properties-content .prop-row {
     display: flex;
     align-items: center;
