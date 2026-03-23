@@ -160,3 +160,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Connection warning logic: unconnected port warnings on buses only shown when the bus has zero connections, not on every empty port~~
 - ~~Mini SLD panel in TCC: vertical protection-path diagram alongside TCC chart with simplified IEC symbols, component names, ratings, clickable device selection, and collapsible panel~~
 - ~~Show active project name in toolbar: display the current project name next to the app title, clickable to rename~~
+- ~~Auto-save toggle: toolbar button to enable/disable periodic auto-save (every 2 minutes), saves to database for existing projects and localStorage backup for unsaved projects, with preference persistence and page-unload backup~~
