@@ -170,6 +170,16 @@
   margin: 4px 0;
 }
 
+.dropdown-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 4px 14px 2px;
+}
+
 /* ─── Compound rows (button + inline select) ─── */
 .dropdown-compound {
   display: flex;

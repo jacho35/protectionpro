@@ -18,6 +18,10 @@ const Project = {
     document.getElementById('btn-export-aflabels').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportArcFlashLabels(); });
     document.getElementById('btn-export-compare').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showComparisonDialog(); });
     document.getElementById('btn-export-calculations').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportCalculationsReport(); });
+
+    // Load and render recent projects in File menu
+    this._loadRecent();
+    this._renderRecentMenu();
   },
 
   newProject() {
@@ -45,6 +49,7 @@ const Project = {
       AppState.projectId = result.id;
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
+      this._addRecent(result.id, AppState.projectName);
       document.getElementById('status-info').textContent = 'Project saved.';
       setTimeout(() => {
         document.getElementById('status-info').textContent = '';
@@ -71,6 +76,7 @@ const Project = {
       AppState.projectId = result.id;
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
+      this._addRecent(result.id, AppState.projectName);
       document.getElementById('status-info').textContent = 'Project saved as new copy.';
       setTimeout(() => {
         document.getElementById('status-info').textContent = '';
@@ -420,6 +426,7 @@ const Project = {
   _fmFolders: [],
   _fmProjects: [],
   _fmCurrentFolder: null, // null = root
+  _recentProjects: [],    // last 3 opened/saved projects
 
   async openProject() {
     try {
@@ -439,6 +446,84 @@ const Project = {
     }
   },
 
+  // ── Recent projects tracking ──
+
+  _loadRecent() {
+    try {
+      const raw = localStorage.getItem('protectionpro-recent-projects');
+      this._recentProjects = raw ? JSON.parse(raw) : [];
+    } catch { this._recentProjects = []; }
+  },
+
+  _saveRecent() {
+    localStorage.setItem('protectionpro-recent-projects', JSON.stringify(this._recentProjects));
+  },
+
+  _addRecent(id, name) {
+    id = String(id);
+    this._recentProjects = this._recentProjects.filter(r => String(r.id) !== id);
+    this._recentProjects.unshift({ id, name, ts: Date.now() });
+    if (this._recentProjects.length > 3) this._recentProjects.length = 3;
+    this._saveRecent();
+    this._renderRecentMenu();
+  },
+
+  _renderRecentMenu() {
+    const container = document.getElementById('recent-projects-list');
+    if (!container) return;
+    if (this._recentProjects.length === 0) {
+      container.innerHTML = '<span class="dropdown-item disabled" style="color:var(--text-muted);font-size:12px;pointer-events:none;">No recent projects</span>';
+      return;
+    }
+    container.innerHTML = this._recentProjects.map(r => `
+      <button class="dropdown-item recent-project-item" data-id="${r.id}">
+        <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+        ${this._esc(r.name)}
+      </button>
+    `).join('');
+    container.querySelectorAll('.recent-project-item').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        window.closeAllToolbarMenus?.();
+        try {
+          const data = await API.loadProject(btn.dataset.id);
+          AppState.fromJSON(data);
+          AppState.projectId = btn.dataset.id;
+          Canvas.updateTransform();
+          if (typeof renderPageTabs === 'function') renderPageTabs();
+          Canvas.render();
+          Properties.clear();
+          document.title = `ProtectionPro — ${AppState.projectName}`;
+          this._addRecent(btn.dataset.id, AppState.projectName);
+          this._statusMsg('Project loaded.');
+        } catch (err) {
+          alert('Failed to load project: ' + err.message);
+        }
+      });
+    });
+  },
+
+  // ── Folder tree builder ──
+
+  _buildFolderTreeHtml(parentId, depth) {
+    const children = this._fmFolders
+      .filter(f => (f.parent_id || null) === parentId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (children.length === 0) return '';
+    let html = '';
+    for (const f of children) {
+      const active = f.id === this._fmCurrentFolder ? ' fm-tree-active' : '';
+      const indent = depth * 16;
+      const hasChildren = this._fmFolders.some(c => c.parent_id === f.id);
+      html += `<div class="fm-tree-item${active}" data-folder-id="${f.id}" style="padding-left:${8 + indent}px;">
+        <span class="fm-tree-arrow">${hasChildren ? '&#9656;' : ''}</span>
+        <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="var(--accent, #4a9eff)" stroke="var(--accent, #4a9eff)" stroke-width="0.5" opacity="0.85"/></svg>
+        <span class="fm-tree-name">${this._esc(f.name)}</span>
+      </div>`;
+      html += this._buildFolderTreeHtml(f.id, depth + 1);
+    }
+    return html;
+  },
+
   _renderFileManager() {
     const folderId = this._fmCurrentFolder;
     const folders = this._fmFolders.filter(f => (f.parent_id || null) === folderId);
@@ -451,6 +536,16 @@ const Project = {
         ? `<span class="fm-crumb-current">${c.name}</span>`
         : `<a href="#" class="fm-crumb" data-folder-id="${c.id ?? ''}">${c.name}</a>`
     ).join('<span class="fm-crumb-sep">/</span>');
+
+    // Folder tree sidebar
+    const rootActive = this._fmCurrentFolder === null ? ' fm-tree-active' : '';
+    const treeHtml = `
+      <div class="fm-tree-item${rootActive}" data-folder-id="" style="padding-left:8px;">
+        <span class="fm-tree-arrow">${this._fmFolders.length > 0 ? '&#9656;' : ''}</span>
+        <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="var(--accent, #4a9eff)" stroke="var(--accent, #4a9eff)" stroke-width="0.5" opacity="0.85"/></svg>
+        <span class="fm-tree-name" style="font-weight:600;">All Projects</span>
+      </div>
+      ${this._buildFolderTreeHtml(null, 1)}`;
 
     let listHtml = '';
 
@@ -507,18 +602,42 @@ const Project = {
     }
 
     const modal = document.getElementById('calc-modal');
+    const modalContent = modal.querySelector('.modal-content');
+    modalContent.classList.add('modal-wide');
     modal.querySelector('#calc-modal-title').textContent = 'File Manager';
     modal.querySelector('#calc-modal-body').innerHTML = `
-      <div class="fm-breadcrumb">${breadcrumbHtml}</div>
-      <div class="fm-toolbar">
-        <button id="fm-new-folder" class="btn-small">New Folder</button>
-        <button id="fm-import-json" class="btn-small btn-primary">Import JSON...</button>
+      <div class="fm-layout">
+        <div class="fm-sidebar">
+          <div class="fm-sidebar-header">Folders</div>
+          <div class="fm-tree">${treeHtml}</div>
+        </div>
+        <div class="fm-main">
+          <div class="fm-breadcrumb">${breadcrumbHtml}</div>
+          <div class="fm-toolbar">
+            <button id="fm-new-folder" class="btn-small">New Folder</button>
+            <button id="fm-import-json" class="btn-small btn-primary">Import JSON...</button>
+          </div>
+          <div class="fm-list">${listHtml}</div>
+        </div>
       </div>
-      <div class="fm-list">${listHtml}</div>
     `;
     modal.style.display = '';
 
+    // Clean up modal-wide on close
+    const closeBtn = modal.querySelector('#btn-close-calc');
+    const removeWide = () => { modalContent.classList.remove('modal-wide'); closeBtn.removeEventListener('click', removeWide); };
+    closeBtn.addEventListener('click', removeWide);
+
     // ── Bind events ──
+
+    // Folder tree navigation
+    modal.querySelectorAll('.fm-tree-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.folderId;
+        this._fmCurrentFolder = id ? parseInt(id) : null;
+        this._renderFileManager();
+      });
+    });
 
     // Breadcrumbs
     modal.querySelectorAll('.fm-crumb').forEach(el => {
@@ -536,7 +655,6 @@ const Project = {
         this._fmCurrentFolder = parseInt(el.dataset.folderId);
         this._renderFileManager();
       });
-      // Single-click on folder name also navigates
       el.querySelector('.fm-item-info')?.addEventListener('click', () => {
         this._fmCurrentFolder = parseInt(el.dataset.folderId);
         this._renderFileManager();
@@ -555,10 +673,12 @@ const Project = {
           Canvas.render();
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;
+          this._addRecent(el.dataset.projectId, AppState.projectName);
           this._statusMsg('Project loaded.');
         } catch (err) {
           alert('Failed to load project: ' + err.message);
         }
+        modalContent.classList.remove('modal-wide');
         modal.style.display = 'none';
       });
     });
@@ -578,6 +698,7 @@ const Project = {
 
     // Import JSON
     document.getElementById('fm-import-json')?.addEventListener('click', () => {
+      modalContent.classList.remove('modal-wide');
       modal.style.display = 'none';
       this.importFromFile();
     });
@@ -602,11 +723,13 @@ const Project = {
             await API.renameProject(id, newName);
             const p = this._fmProjects.find(p => p.id === id);
             if (p) p.name = newName;
-            // Update title if renaming current project
             if (AppState.projectId == id) {
               AppState.projectName = newName;
               document.title = `ProtectionPro — ${newName}`;
             }
+            // Update recents
+            const ri = this._recentProjects.findIndex(r => String(r.id) === String(id));
+            if (ri >= 0) { this._recentProjects[ri].name = newName; this._saveRecent(); }
           }
           this._renderFileManager();
         } catch (err) {
@@ -627,13 +750,16 @@ const Project = {
           if (type === 'folder') {
             await API.deleteFolder(id);
             this._fmFolders = this._fmFolders.filter(f => f.id !== id);
-            // Orphaned items moved to root by backend
             this._fmProjects.forEach(p => { if (p.folder_id === id) p.folder_id = null; });
             this._fmFolders.forEach(f => { if (f.parent_id === id) f.parent_id = null; });
           } else {
             await API.deleteProject(id);
             this._fmProjects = this._fmProjects.filter(p => p.id !== id);
             if (AppState.projectId == id) AppState.projectId = null;
+            // Remove from recents
+            this._recentProjects = this._recentProjects.filter(r => String(r.id) !== String(id));
+            this._saveRecent();
+            this._renderRecentMenu();
           }
           this._renderFileManager();
         } catch (err) {
