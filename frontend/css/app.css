@@ -779,6 +779,140 @@ html, body {
   color: #fff;
 }
 
+/* ── File Manager ── */
+.fm-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  flex-wrap: wrap;
+}
+
+.fm-crumb {
+  color: var(--accent, #4a9eff);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.fm-crumb:hover {
+  text-decoration: underline;
+}
+
+.fm-crumb-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.fm-crumb-sep {
+  color: var(--text-muted);
+  margin: 0 4px;
+}
+
+.fm-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fm-list {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.fm-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bg-tertiary);
+  cursor: default;
+}
+
+.fm-item:last-child {
+  border-bottom: none;
+}
+
+.fm-item:hover {
+  background: var(--bg-secondary);
+}
+
+.fm-item-icon {
+  flex-shrink: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  color: var(--text-muted);
+}
+
+.fm-item-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.fm-item-name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fm-item-date {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.fm-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.fm-item:hover .fm-item-actions {
+  opacity: 1;
+}
+
+.fm-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+}
+
+.fm-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.fm-btn-delete:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.fm-empty {
+  color: var(--text-muted);
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+}
+
 /* Validation modal items */
 .validation-section {
   margin-bottom: 16px;

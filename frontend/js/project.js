@@ -415,64 +415,147 @@ const Project = {
     input.click();
   },
 
-  // Open project from database, with option to import from file
+  // ── File Manager ──
+
+  _fmFolders: [],
+  _fmProjects: [],
+  _fmCurrentFolder: null, // null = root
+
   async openProject() {
     try {
-      const projects = await API.listProjects();
-      this.showProjectPicker(projects || []);
+      const [projects, folders] = await Promise.all([
+        API.listProjects(),
+        API.listFolders(),
+      ]);
+      this._fmProjects = projects || [];
+      this._fmFolders = folders || [];
+      this._fmCurrentFolder = null;
+      this._renderFileManager();
     } catch (e) {
-      // Backend not available — show picker with just import option
-      this.showProjectPicker([]);
+      this._fmProjects = [];
+      this._fmFolders = [];
+      this._fmCurrentFolder = null;
+      this._renderFileManager();
     }
   },
 
-  showProjectPicker(projects) {
-    // Build project list HTML
+  _renderFileManager() {
+    const folderId = this._fmCurrentFolder;
+    const folders = this._fmFolders.filter(f => (f.parent_id || null) === folderId);
+    const projects = this._fmProjects.filter(p => (p.folder_id || null) === folderId);
+
+    // Breadcrumb
+    const crumbs = this._buildBreadcrumbs(folderId);
+    const breadcrumbHtml = crumbs.map((c, i) =>
+      i === crumbs.length - 1
+        ? `<span class="fm-crumb-current">${c.name}</span>`
+        : `<a href="#" class="fm-crumb" data-folder-id="${c.id ?? ''}">${c.name}</a>`
+    ).join('<span class="fm-crumb-sep">/</span>');
+
     let listHtml = '';
-    if (projects.length === 0) {
-      listHtml = '<p style="color:#888;padding:12px;">No saved projects found.</p>';
-    } else {
-      listHtml = projects.map(p => `
-        <div class="project-item" data-id="${p.id}">
-          <div class="project-item-info">
-            <strong>${p.name}</strong>
-            <small>${new Date(p.updated_at).toLocaleDateString()}</small>
+
+    // Folders first
+    folders.sort((a, b) => a.name.localeCompare(b.name));
+    for (const f of folders) {
+      listHtml += `
+        <div class="fm-item fm-folder" data-folder-id="${f.id}">
+          <div class="fm-item-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="var(--accent, #4a9eff)" stroke="var(--accent, #4a9eff)" stroke-width="0.5" opacity="0.85"/></svg>
           </div>
-          <button class="btn-delete-project" data-id="${p.id}" title="Delete project">&times;</button>
-        </div>
-      `).join('');
+          <div class="fm-item-info">
+            <span class="fm-item-name">${this._esc(f.name)}</span>
+          </div>
+          <div class="fm-item-actions">
+            <button class="fm-btn fm-btn-rename" data-type="folder" data-id="${f.id}" title="Rename">
+              <svg width="12" height="12" viewBox="0 0 16 16"><path d="M11.5 1.5l3 3L5 14H2v-3z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+            <button class="fm-btn fm-btn-delete" data-type="folder" data-id="${f.id}" title="Delete">
+              <svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+        </div>`;
     }
 
-    // Use a dedicated picker modal (reuse calc-modal structure)
+    // Projects
+    projects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    for (const p of projects) {
+      listHtml += `
+        <div class="fm-item fm-project" data-project-id="${p.id}">
+          <div class="fm-item-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+          </div>
+          <div class="fm-item-info">
+            <span class="fm-item-name">${this._esc(p.name)}</span>
+            <small class="fm-item-date">${new Date(p.updated_at).toLocaleDateString()}</small>
+          </div>
+          <div class="fm-item-actions">
+            <button class="fm-btn fm-btn-rename" data-type="project" data-id="${p.id}" title="Rename">
+              <svg width="12" height="12" viewBox="0 0 16 16"><path d="M11.5 1.5l3 3L5 14H2v-3z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+            <button class="fm-btn fm-btn-move" data-type="project" data-id="${p.id}" title="Move to folder">
+              <svg width="12" height="12" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 10h4M8 8v4" stroke="currentColor" stroke-width="1.2"/></svg>
+            </button>
+            <button class="fm-btn fm-btn-delete" data-type="project" data-id="${p.id}" title="Delete">
+              <svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+        </div>`;
+    }
+
+    if (folders.length === 0 && projects.length === 0) {
+      listHtml = '<p class="fm-empty">This folder is empty.</p>';
+    }
+
     const modal = document.getElementById('calc-modal');
-    modal.querySelector('#calc-modal-title').textContent = 'Open Project';
+    modal.querySelector('#calc-modal-title').textContent = 'File Manager';
     modal.querySelector('#calc-modal-body').innerHTML = `
-      <div class="project-list">${listHtml}</div>
-      <div style="display:flex;gap:8px;margin-top:16px;">
-        <button id="picker-import-json" class="btn-primary">Import from JSON file...</button>
+      <div class="fm-breadcrumb">${breadcrumbHtml}</div>
+      <div class="fm-toolbar">
+        <button id="fm-new-folder" class="btn-small">New Folder</button>
+        <button id="fm-import-json" class="btn-small btn-primary">Import JSON...</button>
       </div>
+      <div class="fm-list">${listHtml}</div>
     `;
     modal.style.display = '';
 
-    // Bind import button
-    document.getElementById('picker-import-json').addEventListener('click', () => {
-      modal.style.display = 'none';
-      this.importFromFile();
+    // ── Bind events ──
+
+    // Breadcrumbs
+    modal.querySelectorAll('.fm-crumb').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        const id = el.dataset.folderId;
+        this._fmCurrentFolder = id ? parseInt(id) : null;
+        this._renderFileManager();
+      });
     });
 
-    // Bind project items
-    modal.querySelectorAll('.project-item').forEach(el => {
-      el.querySelector('.project-item-info')?.addEventListener('click', async () => {
+    // Navigate into folder
+    modal.querySelectorAll('.fm-folder').forEach(el => {
+      el.addEventListener('dblclick', () => {
+        this._fmCurrentFolder = parseInt(el.dataset.folderId);
+        this._renderFileManager();
+      });
+      // Single-click on folder name also navigates
+      el.querySelector('.fm-item-info')?.addEventListener('click', () => {
+        this._fmCurrentFolder = parseInt(el.dataset.folderId);
+        this._renderFileManager();
+      });
+    });
+
+    // Open project
+    modal.querySelectorAll('.fm-project').forEach(el => {
+      el.querySelector('.fm-item-info')?.addEventListener('click', async () => {
         try {
-          const data = await API.loadProject(el.dataset.id);
+          const data = await API.loadProject(el.dataset.projectId);
           AppState.fromJSON(data);
-          AppState.projectId = el.dataset.id;
+          AppState.projectId = el.dataset.projectId;
           Canvas.updateTransform();
           if (typeof renderPageTabs === 'function') renderPageTabs();
           Canvas.render();
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;
-          document.getElementById('status-info').textContent = 'Project loaded.';
+          this._statusMsg('Project loaded.');
         } catch (err) {
           alert('Failed to load project: ' + err.message);
         }
@@ -480,23 +563,171 @@ const Project = {
       });
     });
 
-    // Bind delete buttons
-    modal.querySelectorAll('.btn-delete-project').forEach(btn => {
+    // New folder
+    document.getElementById('fm-new-folder')?.addEventListener('click', async () => {
+      const name = prompt('Folder name:', 'New Folder');
+      if (!name) return;
+      try {
+        const folder = await API.createFolder(name, this._fmCurrentFolder);
+        this._fmFolders.push(folder);
+        this._renderFileManager();
+      } catch (err) {
+        alert('Failed to create folder: ' + err.message);
+      }
+    });
+
+    // Import JSON
+    document.getElementById('fm-import-json')?.addEventListener('click', () => {
+      modal.style.display = 'none';
+      this.importFromFile();
+    });
+
+    // Rename buttons
+    modal.querySelectorAll('.fm-btn-rename').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const id = btn.dataset.id;
-        if (!confirm('Delete this project permanently?')) return;
+        const type = btn.dataset.type;
+        const id = parseInt(btn.dataset.id);
+        const current = type === 'folder'
+          ? this._fmFolders.find(f => f.id === id)?.name
+          : this._fmProjects.find(p => p.id === id)?.name;
+        const newName = prompt(`Rename ${type}:`, current || '');
+        if (!newName || newName === current) return;
         try {
-          await API.deleteProject(id);
-          // If we deleted the currently open project, clear the ID
-          if (AppState.projectId === id) AppState.projectId = null;
-          // Refresh the picker
-          const updated = await API.listProjects();
-          this.showProjectPicker(updated || []);
+          if (type === 'folder') {
+            await API.updateFolder(id, { name: newName });
+            const f = this._fmFolders.find(f => f.id === id);
+            if (f) f.name = newName;
+          } else {
+            await API.renameProject(id, newName);
+            const p = this._fmProjects.find(p => p.id === id);
+            if (p) p.name = newName;
+            // Update title if renaming current project
+            if (AppState.projectId == id) {
+              AppState.projectName = newName;
+              document.title = `ProtectionPro — ${newName}`;
+            }
+          }
+          this._renderFileManager();
         } catch (err) {
-          alert('Failed to delete: ' + err.message);
+          alert('Rename failed: ' + err.message);
         }
       });
     });
+
+    // Delete buttons
+    modal.querySelectorAll('.fm-btn-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const type = btn.dataset.type;
+        const id = parseInt(btn.dataset.id);
+        const label = type === 'folder' ? 'folder (contents will be moved to root)' : 'project';
+        if (!confirm(`Delete this ${label} permanently?`)) return;
+        try {
+          if (type === 'folder') {
+            await API.deleteFolder(id);
+            this._fmFolders = this._fmFolders.filter(f => f.id !== id);
+            // Orphaned items moved to root by backend
+            this._fmProjects.forEach(p => { if (p.folder_id === id) p.folder_id = null; });
+            this._fmFolders.forEach(f => { if (f.parent_id === id) f.parent_id = null; });
+          } else {
+            await API.deleteProject(id);
+            this._fmProjects = this._fmProjects.filter(p => p.id !== id);
+            if (AppState.projectId == id) AppState.projectId = null;
+          }
+          this._renderFileManager();
+        } catch (err) {
+          alert('Delete failed: ' + err.message);
+        }
+      });
+    });
+
+    // Move project buttons
+    modal.querySelectorAll('.fm-btn-move').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        this._showMoveDialog(id);
+      });
+    });
+  },
+
+  _showMoveDialog(projectId) {
+    const project = this._fmProjects.find(p => p.id === projectId);
+    if (!project) return;
+
+    // Build folder options
+    let options = '<option value="">Root (no folder)</option>';
+    for (const f of this._fmFolders) {
+      const path = this._getFolderPath(f.id);
+      const selected = f.id === project.folder_id ? ' selected' : '';
+      options += `<option value="${f.id}"${selected}>${this._esc(path)}</option>`;
+    }
+
+    const modal = document.getElementById('calc-modal');
+    const body = modal.querySelector('#calc-modal-body');
+    // Save current body so we can restore
+    const prevHtml = body.innerHTML;
+    modal.querySelector('#calc-modal-title').textContent = `Move "${project.name}"`;
+    body.innerHTML = `
+      <div style="margin-bottom:12px;">Select destination folder:</div>
+      <select id="fm-move-target" style="width:100%;padding:8px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+        ${options}
+      </select>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+        <button id="fm-move-cancel" class="btn-small">Cancel</button>
+        <button id="fm-move-confirm" class="btn-small btn-primary">Move</button>
+      </div>
+    `;
+
+    document.getElementById('fm-move-cancel').addEventListener('click', () => {
+      modal.querySelector('#calc-modal-title').textContent = 'File Manager';
+      body.innerHTML = prevHtml;
+      this._renderFileManager();
+    });
+
+    document.getElementById('fm-move-confirm').addEventListener('click', async () => {
+      const target = document.getElementById('fm-move-target').value;
+      const folderId = target ? parseInt(target) : null;
+      try {
+        await API.moveProject(projectId, folderId);
+        project.folder_id = folderId;
+        modal.querySelector('#calc-modal-title').textContent = 'File Manager';
+        this._renderFileManager();
+      } catch (err) {
+        alert('Move failed: ' + err.message);
+      }
+    });
+  },
+
+  _buildBreadcrumbs(folderId) {
+    const crumbs = [{ id: null, name: 'Root' }];
+    let currentId = folderId;
+    const chain = [];
+    while (currentId !== null) {
+      const folder = this._fmFolders.find(f => f.id === currentId);
+      if (!folder) break;
+      chain.unshift({ id: folder.id, name: folder.name });
+      currentId = folder.parent_id || null;
+    }
+    return crumbs.concat(chain);
+  },
+
+  _getFolderPath(folderId) {
+    const parts = [];
+    let currentId = folderId;
+    while (currentId !== null) {
+      const folder = this._fmFolders.find(f => f.id === currentId);
+      if (!folder) break;
+      parts.unshift(folder.name);
+      currentId = folder.parent_id || null;
+    }
+    return '/ ' + parts.join(' / ');
+  },
+
+  _esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
   },
 };

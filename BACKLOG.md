@@ -27,7 +27,7 @@
 - **Component library import**: Import manufacturer data (transformers, cables, etc.)
 - ~~**NEC ampacity tables**: Add NEC Article 310 ampacity data alongside existing IEC 60364~~
 - **Import from external tools**: Import from PSS/E, ETAP, or PowerWorld formats
-- **Cloud storage**: Project storage with user accounts and sharing
+- ~~**Cloud storage**: Project storage with user accounts and sharing~~ (file manager with folders implemented; user accounts pending)
 
 ---
 
@@ -145,3 +145,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Detailed calculations report: Multi-section PDF with formulas and intermediate values for all analysis types (fault, load flow, arc flash, cable sizing, motor starting, duty check, load diversity, grounding)~~
 - ~~Help documentation update: Comprehensive help with all 22 component types, new Studies tab (cable sizing, motor starting, duty check, load diversity, grounding), DC arc flash docs, unbalanced load flow, TCC enhancements, compliance details, updated shortcuts, templates, export options, scenarios, and mobile support~~
 - ~~Apparent power (S) display in load flow annotation badges~~
+- ~~File manager: folder-based project organization, project/folder rename, move projects between folders~~

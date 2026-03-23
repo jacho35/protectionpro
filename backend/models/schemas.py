@@ -76,11 +76,41 @@ class ProjectData(BaseModel):
 class ProjectSummary(BaseModel):
     id: int
     name: str
+    folder_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class FolderSummary(BaseModel):
+    id: int
+    name: str
+    parent_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FolderCreate(BaseModel):
+    name: str = "New Folder"
+    parent_id: Optional[int] = None
+
+
+class FolderUpdate(BaseModel):
+    name: Optional[str] = None
+    parent_id: Optional[int] = None
+
+
+class ProjectRename(BaseModel):
+    name: str
+
+
+class ProjectMove(BaseModel):
+    folder_id: Optional[int] = None
 
 
 class FaultBranchContribution(BaseModel):
