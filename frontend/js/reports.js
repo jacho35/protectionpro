@@ -85,11 +85,15 @@ const Reports = {
     const tmpl = this._getAllTemplates().find(t => t.id === templateId);
     if (!tmpl) return;
 
-    // Filter out 'diagram' — server-side doesn't handle diagram rasterization
-    const sections = tmpl.sections.filter(s => s !== 'diagram');
+    const sections = tmpl.sections;
     Project._statusMsg(`Generating "${tmpl.name}" PDF...`);
     try {
-      const blob = await API.generateReport(sections);
+      // Rasterize the SVG diagram to a base64 PNG if the template includes it
+      let diagramImage = null;
+      if (sections.includes('diagram')) {
+        diagramImage = await this._rasterizeDiagram();
+      }
+      const blob = await API.generateReport(sections, diagramImage);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -101,6 +105,37 @@ const Reports = {
       Project._statusMsg(`PDF export failed: ${e.message}`);
       console.error('Template PDF export error:', e);
     }
+  },
+
+  // ── Diagram Rasterization ──
+
+  _rasterizeDiagram() {
+    return new Promise((resolve) => {
+      const svgEl = document.getElementById('sld-canvas');
+      if (!svgEl) { resolve(null); return; }
+      const svgClone = svgEl.cloneNode(true);
+      // Remove grid for clean export
+      const gridBg = svgClone.querySelector('#grid-bg');
+      if (gridBg) gridBg.remove();
+      const svgData = new XMLSerializer().serializeToString(svgClone);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 1200;
+        canvas.height = img.naturalHeight || 800;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const pngData = canvas.toDataURL('image/png');
+        URL.revokeObjectURL(url);
+        resolve(pngData);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
   },
 
   // ── PDF Section Renderers ──

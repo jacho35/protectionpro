@@ -182,7 +182,7 @@ const API = {
   },
 
   // Server-side PDF report generation (from current app state)
-  async generateReport(sections = null) {
+  async generateReport(sections = null, diagramImage = null) {
     const body = {
       projectName: AppState.projectName || 'Untitled Project',
       baseMVA: AppState.baseMVA,
@@ -195,6 +195,7 @@ const API = {
       arcFlashResults: AppState.arcFlashResults || null,
     };
     if (sections) body.sections = sections;
+    if (diagramImage) body.diagramImage = diagramImage;
     const resp = await fetch(`${API_BASE}/reports/pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -29,6 +29,7 @@ class ReportRequest(BaseModel):
     loadFlowResults: Optional[dict] = None
     arcFlashResults: Optional[dict] = None
     sections: Optional[list[str]] = None  # which report sections to include
+    diagramImage: Optional[str] = None  # base64-encoded PNG of the single-line diagram
 
 
 class CalculationsReportRequest(BaseModel):
@@ -62,6 +63,7 @@ def generate_pdf_report(req: ReportRequest):
         arcflash_results=req.arcFlashResults,
         components=req.components,
         sections=req.sections,
+        diagram_image=req.diagramImage,
     )
     filename = f"{req.projectName.replace(' ', '_')}_report.pdf"
     return StreamingResponse(
