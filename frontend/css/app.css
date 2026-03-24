@@ -313,6 +313,18 @@ html, body {
   display: block;
 }
 
+/* Library source reference */
+.library-source-ref {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  border-left: 3px solid var(--accent);
+}
+
 /* Library toolbar */
 .library-toolbar {
   display: flex;
