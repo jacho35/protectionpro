@@ -395,6 +395,43 @@
   background: var(--bg-secondary);
 }
 
+/* Modified cable impedance field highlight */
+.prop-row--modified {
+  background: rgba(255, 165, 0, 0.08);
+  border-left: 3px solid #e69500;
+  margin-left: -3px;
+  padding-left: 3px;
+  border-radius: 2px;
+}
+
+.prop-row--modified input {
+  border-color: #e69500;
+}
+
+.prop-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 3px;
+  border: 1px solid #e69500;
+  background: rgba(255, 165, 0, 0.1);
+  color: #e69500;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.prop-reset-btn:hover {
+  background: #e69500;
+  color: #fff;
+}
+
 /* TCC Grading action button */
 .prop-tcc-section {
   padding: 4px 0;

@@ -204,6 +204,24 @@ const Properties = {
       });
     });
 
+    // Bind cable impedance reset buttons
+    this.contentEl.querySelectorAll('.prop-reset-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fieldKey = btn.dataset.resetField;
+        const resetValue = parseFloat(btn.dataset.resetValue);
+        const comp = AppState.components.get(this.currentId);
+        if (comp && !isNaN(resetValue)) {
+          comp.props[fieldKey] = resetValue;
+          AppState.dirty = true;
+          AppState.clearResults();
+          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+          Canvas.render();
+          this.show(comp.id);
+        }
+      });
+    });
+
     // Bind collapsible section headers
     this.contentEl.querySelectorAll('.prop-section-header').forEach(header => {
       header.addEventListener('click', () => {
@@ -344,12 +362,32 @@ const Properties = {
     const hasInfo = FIELD_INFO && FIELD_INFO[infoKey];
     const infoHtml = hasInfo ? `<button class="prop-info-btn" data-info-key="${infoKey}" title="Default value info">i</button>` : '';
 
+    // Check if this cable impedance field has been modified from its standard library default
+    const cableImpedanceFields = ['r_per_km', 'x_per_km', 'r0_per_km', 'x0_per_km', 'rated_amps', 'voltage_kv'];
+    let modifiedClass = '';
+    let resetHtml = '';
+    if (this._currentCompType === 'cable' && cableImpedanceFields.includes(field.key)) {
+      const comp = AppState.components.get(this.currentId);
+      if (comp && comp.props.standard_type) {
+        const stdCable = STANDARD_CABLES.find(c => c.id === comp.props.standard_type);
+        if (stdCable && stdCable[field.key] !== undefined) {
+          const currentVal = parseFloat(value);
+          const defaultVal = parseFloat(stdCable[field.key]);
+          if (!isNaN(currentVal) && !isNaN(defaultVal) && Math.abs(currentVal - defaultVal) > 1e-9) {
+            modifiedClass = ' prop-row--modified';
+            resetHtml = `<button class="prop-reset-btn" data-reset-field="${field.key}" data-reset-value="${defaultVal}" title="Reset to ${stdCable.name} default (${defaultVal})">&#x21A9;</button>`;
+          }
+        }
+      }
+    }
+
     return `
-      <div class="prop-row">
+      <div class="prop-row${modifiedClass}">
         <label>${field.label}</label>
         ${inputHtml}
         ${unitHtml}
         ${infoHtml}
+        ${resetHtml}
       </div>`;
   },
 

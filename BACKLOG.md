@@ -176,3 +176,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Generator/PV/Wind data labels: display static property labels (rating, voltage, power factor) next to generator, solar PV, and wind turbine components on the canvas, matching transformer label behavior~~
 - ~~Bus names in result boxes: annotation badges (Fault, Load Flow, Arc Flash, Unbalanced LF) now display the bus name in their label for easy identification on busy diagrams; hover highlighting links annotation boxes to their bus component with a blue glow effect~~
 - ~~Fix array reduction error: Fix load flow crash when all buses are swing type (e.g., single bus with utility source) causing empty mismatch array in Newton-Raphson solver~~
+- ~~Cable impedance reset to defaults: when a standard cable type is selected, impedance fields modified from library defaults are highlighted with an orange indicator and a reset button to restore the standard value~~
