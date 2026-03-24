@@ -46,7 +46,8 @@ const StandardData = {
       const id = 'custom_cable_' + Date.now();
       this.cables.push({
         id, name: 'New Cable', conductor: 'Cu', insulation: 'XLPE',
-        size_mm2: 0, voltage_kv: 11, r_per_km: 0, x_per_km: 0, rated_amps: 0,
+        size_mm2: 0, voltage_kv: 11, r_per_km: 0, x_per_km: 0,
+        r0_per_km: 0, x0_per_km: 0, rated_amps: 0,
       });
       this.renderCableTable();
       this.syncCableLibrary();
@@ -68,10 +69,17 @@ const StandardData = {
           <option value="Cu" ${c.conductor === 'Cu' ? 'selected' : ''}>Cu</option>
           <option value="Al" ${c.conductor === 'Al' ? 'selected' : ''}>Al</option>
         </select></td>
+        <td><select data-key="insulation">
+          <option value="XLPE" ${c.insulation === 'XLPE' ? 'selected' : ''}>XLPE</option>
+          <option value="PVC" ${c.insulation === 'PVC' ? 'selected' : ''}>PVC</option>
+          <option value="EPR" ${c.insulation === 'EPR' ? 'selected' : ''}>EPR</option>
+        </select></td>
         <td><input type="number" value="${c.size_mm2}" data-key="size_mm2" step="any"></td>
         <td><input type="number" value="${c.voltage_kv}" data-key="voltage_kv" step="any"></td>
         <td><input type="number" value="${c.r_per_km}" data-key="r_per_km" step="any"></td>
         <td><input type="number" value="${c.x_per_km}" data-key="x_per_km" step="any"></td>
+        <td><input type="number" value="${c.r0_per_km || 0}" data-key="r0_per_km" step="any"></td>
+        <td><input type="number" value="${c.x0_per_km || 0}" data-key="x0_per_km" step="any"></td>
         <td><input type="number" value="${c.rated_amps}" data-key="rated_amps" step="any"></td>
         <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
       </tr>
