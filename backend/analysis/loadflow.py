@@ -981,7 +981,7 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
 
         # Check convergence
         mismatch = np.concatenate([dP[non_swing], dQ[pq_idx]])
-        if np.max(np.abs(mismatch)) < TOLERANCE:
+        if len(mismatch) == 0 or np.max(np.abs(mismatch)) < TOLERANCE:
             V = np.array([abs(V[i]) * np.exp(1j * theta[i]) for i in range(n)])
             return V, True, iteration + 1
 
@@ -1079,7 +1079,8 @@ def _gauss_seidel(Y, P_spec, Q_spec, V_mag, bus_types):
                 V[i] = V_mag[i] * V[i] / abs(V[i])
 
         # Check convergence
-        max_diff = np.max(np.abs(V - V_old))
+        diff = np.abs(V - V_old)
+        max_diff = np.max(diff) if len(diff) > 0 else 0.0
         if max_diff < TOLERANCE:
             return V, True, iteration + 1
 

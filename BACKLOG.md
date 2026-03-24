@@ -8,6 +8,7 @@
 
 ## Load Flow Enhancements
 - ~~**Source/generator load split**: Fix generator vs utility power split when utility is behind a source-connected transformer~~
+- ~~**Fix array reduction error**: Fix load flow crash ("zero-size array to reduction operation maximum") when all buses are swing type~~
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 
 ## TCC Chart Enhancements
@@ -174,3 +175,4 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 - ~~Project revision timeline: horizontal timeline strip above the status bar with clickable revision dots (up to 20 revisions), preview panel with diff stats and confirm-before-restore, revisions created on every manual and auto-save, stored in backend DB for saved projects and localStorage for unsaved projects~~
 - ~~Generator/PV/Wind data labels: display static property labels (rating, voltage, power factor) next to generator, solar PV, and wind turbine components on the canvas, matching transformer label behavior~~
 - ~~Bus names in result boxes: annotation badges (Fault, Load Flow, Arc Flash, Unbalanced LF) now display the bus name in their label for easy identification on busy diagrams; hover highlighting links annotation boxes to their bus component with a blue glow effect~~
+- ~~Fix array reduction error: Fix load flow crash when all buses are swing type (e.g., single bus with utility source) causing empty mismatch array in Newton-Raphson solver~~
