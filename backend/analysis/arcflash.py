@@ -29,6 +29,7 @@ Valid ranges (IEEE 1584-2002 §1.2):
 """
 
 import math
+from collections import deque
 from dataclasses import dataclass, field
 
 
@@ -272,6 +273,152 @@ def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
 # Source component types — used to identify the upstream (source) side of a bus
 _SOURCE_TYPES = {"utility", "generator", "solar_pv", "wind_turbine"}
 
+# Circuit-breaker mechanical opening time (s) added on top of a relay operate
+# time — a typical 3-5 cycle breaker opens in 60-100 ms.
+_BREAKER_OPENING_TIME_S = 0.08
+
+# Maximum clearing time per IEEE 1584 (2 s arc-sustainability assumption)
+_MAX_CLEARING_TIME_S = 2.0
+
+# ── gG fuse pre-arcing curves (IEC 60269) ────────────────────────────────
+# Pre-arcing (minimum melting) time-current points: [current_A, time_s].
+# Ported VERBATIM from frontend/js/constants.js FUSE_CURVES_GG so the arc
+# flash engine and the frontend TCC display evaluate the same characteristic.
+_FUSE_CURVES_GG = {
+    16:  [[25, 600], [32, 100], [40, 30], [50, 8], [80, 1.5], [100, 0.5], [160, 0.08], [250, 0.02], [400, 0.008]],
+    20:  [[32, 600], [40, 100], [50, 30], [63, 8], [100, 1.5], [125, 0.5], [200, 0.08], [315, 0.02], [500, 0.008]],
+    25:  [[40, 600], [50, 100], [63, 30], [80, 8], [125, 1.5], [160, 0.5], [250, 0.08], [400, 0.02], [630, 0.008]],
+    32:  [[50, 600], [63, 100], [80, 30], [100, 8], [160, 1.5], [200, 0.5], [315, 0.08], [500, 0.02], [800, 0.008]],
+    40:  [[63, 600], [80, 100], [100, 30], [125, 8], [200, 1.5], [250, 0.5], [400, 0.08], [630, 0.02], [1000, 0.008]],
+    50:  [[80, 600], [100, 100], [125, 30], [160, 8], [250, 1.5], [315, 0.5], [500, 0.08], [800, 0.02], [1250, 0.008]],
+    63:  [[100, 600], [125, 100], [160, 30], [200, 8], [315, 1.5], [400, 0.5], [630, 0.08], [1000, 0.02], [1600, 0.008]],
+    80:  [[125, 600], [160, 100], [200, 30], [250, 8], [400, 1.5], [500, 0.5], [800, 0.08], [1250, 0.02], [2000, 0.008]],
+    100: [[160, 600], [200, 100], [250, 30], [315, 8], [500, 1.5], [630, 0.5], [1000, 0.08], [1600, 0.02], [2500, 0.008]],
+    125: [[200, 600], [250, 100], [315, 30], [400, 8], [630, 1.5], [800, 0.5], [1250, 0.08], [2000, 0.02], [3150, 0.008]],
+    160: [[250, 600], [315, 100], [400, 30], [500, 8], [800, 1.5], [1000, 0.5], [1600, 0.08], [2500, 0.02], [4000, 0.008]],
+    200: [[315, 600], [400, 100], [500, 30], [630, 8], [1000, 1.5], [1250, 0.5], [2000, 0.08], [3150, 0.02], [5000, 0.008]],
+    250: [[400, 600], [500, 100], [630, 30], [800, 8], [1250, 1.5], [1600, 0.5], [2500, 0.08], [4000, 0.02], [6300, 0.008]],
+    315: [[500, 600], [630, 100], [800, 30], [1000, 8], [1600, 1.5], [2000, 0.5], [3150, 0.08], [5000, 0.02], [8000, 0.008]],
+    400: [[630, 600], [800, 100], [1000, 30], [1250, 8], [2000, 1.5], [2500, 0.5], [4000, 0.08], [6300, 0.02], [10000, 0.008]],
+    500: [[800, 600], [1000, 100], [1250, 30], [1600, 8], [2500, 1.5], [3150, 0.5], [5000, 0.08], [8000, 0.02], [12500, 0.008]],
+    630: [[1000, 600], [1250, 100], [1600, 30], [2000, 8], [3150, 1.5], [4000, 0.5], [6300, 0.08], [10000, 0.02], [16000, 0.008]],
+}
+
+_FUSE_RATINGS_GG = sorted(_FUSE_CURVES_GG)
+
+
+def _fuse_curve_points(rating_a):
+    """gG pre-arcing curve points for an arbitrary rating.
+
+    Mirrors frontend fuseCurvePoints(): tabulated ratings are returned
+    directly; other ratings are ratio-scaled from the geometrically nearest
+    standard curve (the table is one characteristic shape scaled per rating,
+    so scaling is consistent with its construction). Returns None if the
+    rating is invalid.
+    """
+    if not (rating_a > 0):
+        return None
+    key = int(rating_a)
+    if key == rating_a and key in _FUSE_CURVES_GG:
+        return _FUSE_CURVES_GG[key]
+    best = min(_FUSE_RATINGS_GG, key=lambda r: abs(math.log(r / rating_a)))
+    scale = rating_a / best
+    return [[i * scale, t] for i, t in _FUSE_CURVES_GG[best]]
+
+
+def _fuse_prearc_time(rating_a, current_a):
+    """Fuse pre-arcing (melting) time by log-log interpolation of the
+    characteristic points — same convention as frontend fuseTripTime().
+
+    Returns math.inf below the minimum operating current, None if the
+    rating is invalid.
+    """
+    points = _fuse_curve_points(rating_a)
+    if not points:
+        return None
+    if current_a <= points[0][0]:
+        return math.inf  # Below minimum operating current — fuse never melts
+    if current_a >= points[-1][0]:
+        return points[-1][1]
+    for (i1, t1), (i2, t2) in zip(points, points[1:]):
+        if i1 <= current_a <= i2:
+            frac = (math.log10(current_a) - math.log10(i1)) / (math.log10(i2) - math.log10(i1))
+            return 10 ** (math.log10(t1) + frac * (math.log10(t2) - math.log10(t1)))
+    return points[-1][1]
+
+
+# ── IDMT relay curves ────────────────────────────────────────────────────
+# IEC 60255-151 / IEEE C37.112 constants, matching frontend/js/constants.js
+# IDMT_CURVES:  t = TDS × (k / (M^a − 1) + c)   where M = I/Ipickup.
+# 'Definite Time' is handled separately (t = time_dial seconds).
+_IDMT_CURVES = {
+    "IEC Standard Inverse": (0.14, 0.02, 0.0),
+    "IEC Very Inverse": (13.5, 1.0, 0.0),
+    "IEC Extremely Inverse": (80.0, 2.0, 0.0),
+    "IEC Long Time Inverse": (120.0, 1.0, 0.0),
+    "IEEE Moderately Inverse": (0.0515, 0.02, 0.114),
+    "IEEE Very Inverse": (19.61, 2.0, 0.491),
+    "IEEE Extremely Inverse": (28.2, 2.0, 0.1217),
+}
+
+
+def _relay_operate_time(props, current_a):
+    """Operate time (s) of an overcurrent relay at current_a (primary amps).
+
+    Evaluates the relay's IDMT curve (curve/pickup_a/time_dial) and its
+    instantaneous (50) element (inst_pickup_a/inst_delay_s, 0 = disabled),
+    matching the frontend idmtTripTime() convention. Returns None when the
+    relay never trips at this current (I ≤ pickup and no instantaneous).
+    """
+    try:
+        pickup = float(props.get("pickup_a", 100) or 0)
+        tds = float(props.get("time_dial", 1.0) or 0)
+        inst_pickup = float(props.get("inst_pickup_a", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    inst_delay = props.get("inst_delay_s")
+    inst_delay = 0.05 if inst_delay is None else float(inst_delay)
+    curve = props.get("curve", "IEC Standard Inverse")
+
+    t = None
+    if pickup > 0 and current_a > pickup:
+        if curve == "Definite Time":
+            t = tds  # time_dial is the fixed operate delay in seconds
+        elif curve in _IDMT_CURVES:
+            k, a, c = _IDMT_CURVES[curve]
+            m = current_a / pickup
+            t = tds * (k / (m ** a - 1) + c)
+    # Instantaneous (50) element overrides when picked up
+    if inst_pickup > 0 and current_a >= inst_pickup:
+        t = inst_delay if t is None else min(t, inst_delay)
+    return t
+
+
+def _build_relay_maps(components):
+    """Map CT ids and CB ids to the overcurrent relay associated with them.
+
+    Relays have no ports (they never appear in the wire graph) — they are
+    resolved via their association props: associated_ct (measuring CT on the
+    wire path) and trip_cb (CB the relay trips). Only phase-overcurrent
+    relays (50/51, 67 — the default relay_type is 50/51) are considered:
+    earth-fault (50N/51N), differential (87) and distance (21) elements do
+    not carry the IDMT phase-curve semantics evaluated here.
+    """
+    relay_by_ct = {}
+    relay_by_cb = {}
+    for comp in components.values():
+        if comp.type != "relay":
+            continue
+        if comp.props.get("relay_type", "50/51") not in ("50/51", "67"):
+            continue
+        ct_id = comp.props.get("associated_ct")
+        cb_id = comp.props.get("trip_cb")
+        if ct_id:
+            relay_by_ct[ct_id] = comp
+        if cb_id:
+            relay_by_cb[cb_id] = comp
+    return relay_by_ct, relay_by_cb
+
 
 def _leads_to_source(start_id, bus_id, components, adjacency):
     """Return True if a source is reachable from start_id without passing
@@ -296,74 +443,163 @@ def _leads_to_source(start_id, bus_id, components, adjacency):
     return False
 
 
+def _cb_self_clearing_time(props, current_a):
+    """Clearing time of a CB from its own thermal-magnetic model.
+
+    Compares the current against the instantaneous pickup
+    (trip_rating_a × magnetic_pickup); below it, the time-delayed trip is
+    estimated from the long-time delay setting (crude bucket heuristic —
+    a proper evaluation of the full device TCC is not implemented).
+    """
+    trip_rating = float(props.get("trip_rating_a", 630))
+    magnetic_pickup = float(props.get("magnetic_pickup", 10))
+    inst_threshold = trip_rating * magnetic_pickup  # primary amps
+    if current_a > 0 and current_a >= inst_threshold:
+        # Instantaneous trip incl. breaker operating time
+        return 0.05
+    # Below instantaneous pickup: time-delayed trip estimated
+    # from the long-time delay setting (crude bucket heuristic)
+    lt_delay = float(props.get("long_time_delay", 10))
+    if lt_delay <= 5:
+        return 0.5
+    elif lt_delay <= 10:
+        return 1.0
+    return 2.0
+
+
+def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb):
+    """Clearing time (s) of a single protective element at current_a
+    (primary amps at the device's voltage level), capped at 2.0 s.
+
+    - CT with an associated relay: the relay's curve governs
+      (relay operate time + breaker opening time).
+    - CB tripped by a relay (trip_cb): the relay's curve governs INSTEAD
+      of the CB's own thermal-magnetic model.
+    - CB without a relay: thermal-magnetic model.
+    - Fuse: gG pre-arcing curve evaluated at the arcing current, × 1.2
+      for total clearing time (IEC 60269 practice, matching the frontend
+      TCC convention); 2.0 s when the current is below the curve's
+      minimum operating point.
+    A relay that never picks up (I ≤ pickup, no instantaneous) leaves the
+    path unprotected → 2.0 s.
+    """
+    if comp.type == "ct":
+        relay = relay_by_ct.get(comp.id)
+        t = _relay_operate_time(relay.props, current_a) if relay else None
+        if t is None:
+            return _MAX_CLEARING_TIME_S
+        return min(t + _BREAKER_OPENING_TIME_S, _MAX_CLEARING_TIME_S)
+
+    if comp.type == "cb":
+        relay = relay_by_cb.get(comp.id)
+        if relay is not None:
+            t = _relay_operate_time(relay.props, current_a)
+            if t is None:
+                return _MAX_CLEARING_TIME_S
+            return min(t + _BREAKER_OPENING_TIME_S, _MAX_CLEARING_TIME_S)
+        return min(_cb_self_clearing_time(comp.props, current_a),
+                   _MAX_CLEARING_TIME_S)
+
+    if comp.type == "fuse":
+        rating = float(comp.props.get("rated_current_a", 100) or 0)
+        t_pre = _fuse_prearc_time(rating, current_a)
+        if t_pre is None or math.isinf(t_pre):
+            return _MAX_CLEARING_TIME_S
+        # Pre-arc → total clearing: × 1.2 (project convention, tcc.js).
+        # No lower floor: fuses genuinely clear in < 10 ms deep in the
+        # current-limiting region.
+        return min(t_pre * 1.2, _MAX_CLEARING_TIME_S)
+
+    return _MAX_CLEARING_TIME_S
+
+
 def get_clearing_time(bus, components, adjacency, iarc_ka=None):
     """Estimate fault clearing time from upstream protection devices.
+
+    BFS from the faulted bus toward the source(s): the walk passes through
+    non-device components (cables, buses, closed switches, CTs without
+    relays, PTs, transformers, ...) and stops each branch at the NEAREST
+    protective element found on it — a CB, a fuse, or a CT whose associated
+    relay measures that path. Transformers are traversable (an upstream
+    primary-side CB legitimately clears a secondary-side bus fault through
+    the transformer), with the arcing current referred across the winding
+    ratio (I_device = Iarc × V_bus / V_device, as the frontend TCC does).
 
     Only devices on the source side of the bus are considered — a
     downstream feeder breaker carries no bus-fault current and cannot
     clear a bus fault. A device is treated as upstream when a source
     (utility/generator/PV/wind) is reachable from it without passing
-    back through the faulted bus.
+    back through the faulted bus. Open CBs/switches block the walk.
+
+    Relays are resolved via their association props (associated_ct /
+    trip_cb) since they have no ports and never appear in the wire graph;
+    when a relay governs a device its IDMT curve is evaluated at the
+    arcing current plus breaker opening time.
 
     Conservative assumption: with multiple upstream infeeds the arc is
-    fed until the SLOWEST upstream device clears, so the maximum
-    clearing time across upstream devices is used.
-
-    For CBs the instantaneous pickup threshold is compared against the
-    arcing current (iarc_ka, primary amps at the bus voltage) to choose
-    between instantaneous and time-delayed tripping. The time-delayed
-    estimate from long_time_delay buckets is a crude heuristic; a proper
-    evaluation of the device TCC at Iarc (IEEE 1584 §4.5) is not
-    implemented. Falls back to 2.0s (IEEE 1584 maximum) when no upstream
-    device is found.
+    fed until the SLOWEST infeed path clears, so the maximum clearing
+    time across infeed paths is used. An infeed path that reaches a
+    source with no protective element on it — or whose relay never picks
+    up at Iarc — counts as unprotected (2.0 s, the IEEE 1584 maximum).
+    Falls back to 2.0 s when no upstream device is found.
     """
-    upstream_times = []
     iarc_a = (iarc_ka or 0) * 1000
+    v_bus = float(bus.props.get("voltage_kv", 11) or 11)
+    relay_by_ct, relay_by_cb = _build_relay_maps(components)
 
-    neighbors = adjacency.get(bus.id, [])
-    for neighbor_id, _, _ in neighbors:
-        comp = components.get(neighbor_id)
-        if not comp or comp.type not in ("cb", "fuse", "relay"):
-            continue
-        # An open device carries no fault current and cannot clear the bus fault
-        if comp.props.get("state") == "open":
-            continue
-        # Skip downstream feeder devices — they do not clear a bus fault
-        if not _leads_to_source(neighbor_id, bus.id, components, adjacency):
-            continue
-        if comp.type == "cb":
-            # Compare arcing current against the instantaneous pickup
-            trip_rating = float(comp.props.get("trip_rating_a", 630))
-            magnetic_pickup = float(comp.props.get("magnetic_pickup", 10))
-            inst_threshold = trip_rating * magnetic_pickup  # primary amps
-            if iarc_a > 0 and iarc_a >= inst_threshold:
-                # Instantaneous trip incl. breaker operating time
-                t = 0.05
-            else:
-                # Below instantaneous pickup: time-delayed trip estimated
-                # from the long-time delay setting (crude bucket heuristic)
-                lt_delay = float(comp.props.get("long_time_delay", 10))
-                if lt_delay <= 5:
-                    t = 0.5
-                elif lt_delay <= 10:
-                    t = 1.0
-                else:
-                    t = 2.0
-            upstream_times.append(t)
-        elif comp.type == "fuse":
-            # Fuse typically clears in < 0.01s for high fault currents
-            # (current-limiting region); 20ms is a conservative estimate
-            upstream_times.append(0.02)
-        elif comp.type == "relay":
-            # Use TDS to estimate clearing time
-            tds = float(comp.props.get("tds", 1.0))
-            upstream_times.append(tds * 0.1 + 0.08)  # Relay + CB time
+    path_times = []
+    visited = {bus.id}
+    queue = deque()
+    for neighbor_id, _, _ in adjacency.get(bus.id, []):
+        if neighbor_id not in visited:
+            visited.add(neighbor_id)
+            queue.append((neighbor_id, v_bus))
 
-    if not upstream_times:
-        return 2.0  # Maximum clearing time per IEEE 1584
+    while queue:
+        nid, v_here = queue.popleft()
+        comp = components.get(nid)
+        if not comp:
+            continue
+        # An open device carries no fault current — it cannot connect the
+        # bus to a source or clear the fault, so it blocks the walk.
+        if comp.type in ("cb", "switch") and comp.props.get("state") == "open":
+            continue
+        if comp.type in _SOURCE_TYPES:
+            # Source reached with no protective element on this infeed
+            # path — the arc is fed for the full IEEE 1584 maximum.
+            path_times.append(_MAX_CLEARING_TIME_S)
+            continue
 
-    # Slowest upstream device governs (conservative for multi-infeed buses)
-    return min(max(upstream_times), 2.0)
+        is_device = comp.type in ("cb", "fuse") or (
+            comp.type == "ct" and nid in relay_by_ct)
+        if is_device:
+            # Skip downstream feeder devices — they do not clear a bus fault
+            if not _leads_to_source(nid, bus.id, components, adjacency):
+                continue
+            # Refer the arcing current to the device's voltage level
+            i_dev = iarc_a * v_bus / v_here if v_here > 0 else iarc_a
+            path_times.append(
+                _device_clearing_time(comp, i_dev, relay_by_ct, relay_by_cb))
+            continue  # nearest device found — stop this branch
+
+        # Transparent element — keep walking; track the voltage level
+        # across transformers for current referral.
+        v_next = v_here
+        if comp.type == "transformer":
+            hv = float(comp.props.get("voltage_hv_kv", 11) or 0)
+            lv = float(comp.props.get("voltage_lv_kv", 0.4) or 0)
+            if hv > 0 and lv > 0:
+                v_next = hv if abs(v_here - lv) < abs(v_here - hv) else lv
+        for neighbor_id, _, _ in adjacency.get(nid, []):
+            if neighbor_id not in visited:
+                visited.add(neighbor_id)
+                queue.append((neighbor_id, v_next))
+
+    if not path_times:
+        return _MAX_CLEARING_TIME_S  # Maximum clearing time per IEEE 1584
+
+    # Slowest infeed path governs (conservative for multi-infeed buses)
+    return min(max(path_times), _MAX_CLEARING_TIME_S)
 
 
 def run_arc_flash(project_data, fault_results):

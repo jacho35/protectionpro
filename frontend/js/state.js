@@ -186,14 +186,19 @@ const AppState = {
 
   // Delete selected
   deleteSelected() {
+    let removed = 0;
     for (const id of this.selectedIds) {
       if (this.components.has(id)) {
         this.removeComponent(id);
+        removed++;
       } else if (this.wires.has(id)) {
         this.removeWire(id);
+        removed++;
       }
     }
     this.selectedIds.clear();
+    if (removed === 0) return; // nothing mutated — keep results and history
+    this.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
   },
 
@@ -263,6 +268,7 @@ const AppState = {
       }
     }
     this.dirty = true;
+    this.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
   },
 
@@ -484,6 +490,18 @@ const AppState = {
     return result;
   },
 
+  // Topology-mutation commit ritual — the same sequence a properties-panel
+  // edit performs: show the results-cleared status notice (only when there
+  // are results to clear), then clear every stale analysis result slot.
+  // Call from every path that mutates network topology (delete, cut, paste,
+  // new wire, bus resize).
+  invalidateResults() {
+    if (typeof Properties !== 'undefined' && Properties._notifyResultsCleared) {
+      Properties._notifyResultsCleared();
+    }
+    this.clearResults();
+  },
+
   // Clear all results
   clearResults() {
     this.faultResults = null;
@@ -538,10 +556,22 @@ const AppState = {
 
   // Migrate pre-v2 cable resistances (20°C DC) to operating-temperature values
   // to match the corrected cable library and the backend's hot-resistance
-  // convention. Returns the number of cables changed. Operates in place on a
-  // plain components array (main diagram or a scenario snapshot).
+  // convention. Operates in place on a plain components array (main diagram or
+  // a scenario snapshot). Returns per-category counts so the caller can log a
+  // diagnosable summary: {snapped, scaled, skipped}.
+  //   snapped — stored value matched the OLD (20°C) library value → replaced
+  //             with the corrected hot library value;
+  //   scaled  — user-edited (or library-less) 20°C value → multiplied by the
+  //             temperature factor;
+  //   skipped — stored value ALREADY matches the current (hot) library value
+  //             (v1-era file saved after the library hot-correction but before
+  //             dataVersion stamping) → normalized to the exact library figure,
+  //             NOT scaled again.
   _migrateCableResistances(components) {
     const round4 = (v) => Number(v.toPrecision(4));
+    // Within 1% of a reference value
+    const near = (v, ref) => typeof ref === 'number' && ref > 0 &&
+      Math.abs(v - ref) / ref < 0.01;
     const factorFor = (stdType) => {
       const t = String(stdType || '').toLowerCase();
       if (t.includes('cu_xlpe')) return 1.275;
@@ -551,32 +581,56 @@ const AppState = {
       return 1.275; // default: assume Cu XLPE (pre-v2 data was 20°C DC)
     };
     const lib = (typeof STANDARD_CABLES !== 'undefined') ? STANDARD_CABLES : [];
-    let changed = 0;
+    const stats = { snapped: 0, scaled: 0, skipped: 0 };
     for (const c of components) {
       if (!c || c.type !== 'cable' || !c.props) continue;
       const p = c.props;
       if (typeof p.r_per_km !== 'number' || p.r_per_km <= 0) continue;
       const factor = factorFor(p.standard_type);
       const std = p.standard_type ? lib.find(l => l.id === p.standard_type) : null;
-      if (std) {
+      const hasR0 = typeof p.r0_per_km === 'number' && p.r0_per_km > 0;
+      if (std && near(p.r_per_km, std.r_per_km)) {
+        // Already stores the CURRENT (operating-temperature) library value —
+        // a file from the window after the library hot-correction but before
+        // dataVersion stamping. Snap to the exact library figure; do NOT
+        // scale again (scaling here permanently inflated R by ×factor).
+        p.r_per_km = std.r_per_km;
+        if (hasR0 && near(p.r0_per_km, std.r0_per_km)) {
+          p.r0_per_km = std.r0_per_km;
+        }
+        stats.skipped++;
+      } else if (std) {
         // If the stored value still matches the OLD (20°C) library value, snap
         // to the library's corrected figures exactly; otherwise the user edited
         // it, so scale the user's value by the temperature factor.
         const oldLibR = std.r_per_km / factor;
-        if (Math.abs(p.r_per_km - oldLibR) / oldLibR < 0.01) {
+        if (near(p.r_per_km, oldLibR)) {
           p.r_per_km = std.r_per_km;
           if (std.r0_per_km != null) p.r0_per_km = std.r0_per_km;
+          stats.snapped++;
         } else {
           p.r_per_km = round4(p.r_per_km * factor);
-          if (typeof p.r0_per_km === 'number' && p.r0_per_km > 0) p.r0_per_km = round4(p.r0_per_km * factor);
+          if (hasR0) {
+            // Same already-hot guard per field: an r0 that already matches
+            // the current library value must not be re-scaled.
+            if (near(p.r0_per_km, std.r0_per_km)) {
+              p.r0_per_km = std.r0_per_km;
+            } else if (near(p.r0_per_km, std.r0_per_km != null ? std.r0_per_km / factor : null)) {
+              p.r0_per_km = std.r0_per_km;
+            } else {
+              p.r0_per_km = round4(p.r0_per_km * factor);
+            }
+          }
+          stats.scaled++;
         }
       } else {
+        // No library entry to compare against — assume 20°C and scale.
         p.r_per_km = round4(p.r_per_km * factor);
-        if (typeof p.r0_per_km === 'number' && p.r0_per_km > 0) p.r0_per_km = round4(p.r0_per_km * factor);
+        if (hasR0) p.r0_per_km = round4(p.r0_per_km * factor);
+        stats.scaled++;
       }
-      changed++;
     }
-    return changed;
+    return stats;
   },
 
   // Export to JSON
@@ -649,13 +703,21 @@ const AppState = {
     // the backend now treats cable r_per_km as operating-temperature). Applies
     // to the main diagram and every scenario snapshot.
     if (!data.dataVersion || data.dataVersion < 2) {
-      let migrated = this._migrateCableResistances(data.components || []);
+      const stats = this._migrateCableResistances(data.components || []);
       for (const sc of this.scenarios) {
-        migrated += this._migrateCableResistances(sc.components || []);
+        const s = this._migrateCableResistances(sc.components || []);
+        stats.snapped += s.snapped;
+        stats.scaled += s.scaled;
+        stats.skipped += s.skipped;
       }
-      if (migrated > 0) {
-        this.dirty = true;
-        console.info(`[migration] Updated ${migrated} cable(s) to operating-temperature resistance (dataVersion 2).`);
+      if (stats.snapped + stats.scaled + stats.skipped > 0) {
+        if (stats.snapped + stats.scaled > 0) this.dirty = true;
+        console.warn(
+          `[migration] "${this.projectName}": dataVersion 1→2 cable resistance migration — ` +
+          `${stats.snapped} snapped to hot library values, ` +
+          `${stats.scaled} scaled by temperature factor, ` +
+          `${stats.skipped} already at operating temperature (left unscaled).`
+        );
       }
     }
 

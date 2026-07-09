@@ -477,11 +477,11 @@ const VoltagePropagation = {
     dialog.innerHTML = `
       <h3 style="margin:0 0 12px;font-size:16px;">Update Connected Components?</h3>
       <p style="margin:0 0 12px;font-size:14px;opacity:0.8;">
-        Changing <strong>${busName}</strong> to <strong>${newVoltage} kV</strong>
+        Changing <strong>${escHtml(busName)}</strong> to <strong>${newVoltage} kV</strong>
         will also update <strong>${affectedNames.length}</strong> connected component${affectedNames.length > 1 ? 's' : ''}:
       </p>
       <ul style="margin:0 0 16px;padding-left:20px;font-size:13px;max-height:160px;overflow-y:auto;">
-        ${displayNames.map(n => `<li>${n}</li>`).join('')}
+        ${displayNames.map(n => `<li>${escHtml(n)}</li>`).join('')}
         ${truncated ? `<li style="opacity:0.6;">...and ${affectedNames.length - 8} more</li>` : ''}
       </ul>
       <div style="display:flex;gap:8px;justify-content:flex-end;">

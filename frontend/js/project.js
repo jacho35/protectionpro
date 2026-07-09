@@ -739,8 +739,8 @@ const Project = {
     const crumbs = this._buildBreadcrumbs(folderId);
     const breadcrumbHtml = crumbs.map((c, i) =>
       i === crumbs.length - 1
-        ? `<span class="fm-crumb-current">${c.name}</span>`
-        : `<a href="#" class="fm-crumb" data-folder-id="${c.id ?? ''}">${c.name}</a>`
+        ? `<span class="fm-crumb-current">${this._esc(c.name)}</span>`
+        : `<a href="#" class="fm-crumb" data-folder-id="${c.id ?? ''}">${this._esc(c.name)}</a>`
     ).join('<span class="fm-crumb-sep">/</span>');
 
     // Folder tree sidebar

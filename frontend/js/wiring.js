@@ -66,6 +66,8 @@ const Wiring = {
     if (typeof VoltagePropagation !== 'undefined') {
       VoltagePropagation.propagateFromWire(wire.id);
     }
+    // A new connection changes topology — same commit ritual as a property edit
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     this.cancelWire();
     Canvas.render();

@@ -76,8 +76,13 @@ const UndoManager = {
     AppState.components.clear();
     AppState.wires.clear();
     AppState.selectedIds.clear();
-    AppState.faultResults = null;
-    AppState.loadFlowResults = null;
+    // Stale analysis results describe a diagram that no longer exists after
+    // undo/redo — clear EVERY result slot (fault, faultedBusId, load flow,
+    // unbalanced, arc flash, DC arc flash, cable sizing, motor starting,
+    // duty check, load diversity, grounding, study manager) via the
+    // canonical list in AppState.clearResults(). No side effects: it only
+    // nulls the slots; the re-render below drops the stale annotations.
+    AppState.clearResults();
     for (const c of state.components) {
       AppState.components.set(c.id, c);
     }

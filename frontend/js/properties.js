@@ -320,11 +320,11 @@ const Properties = {
       // If selected cable is outside filter, include it as mismatch
       const filteredIds = new Set(filtered.map(c => c.id));
       if (value && selectedCable && !filteredIds.has(value)) {
-        optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${selectedCable.id}">${selectedCable.name} (voltage mismatch)</div>`;
+        optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${escHtml(selectedCable.id)}">${escHtml(selectedCable.name)} (voltage mismatch)</div>`;
       }
       for (const cable of filtered) {
         const sel = cable.id === value ? ' selected' : '';
-        optionsHtml += `<div class="searchable-select-option${sel}" data-value="${cable.id}">${cable.name}</div>`;
+        optionsHtml += `<div class="searchable-select-option${sel}" data-value="${escHtml(cable.id)}">${escHtml(cable.name)}</div>`;
       }
 
       inputHtml = `<div class="searchable-select" data-field="${field.key}" data-library="${field.library}" data-value="${escHtml(value || '')}">
@@ -338,7 +338,7 @@ const Properties = {
         : field.library === 'fuse' ? STANDARD_FUSES
         : [];
       const options = library.map(item =>
-        `<option value="${item.id}" ${value === item.id ? 'selected' : ''}>${item.name}</option>`
+        `<option value="${escHtml(item.id)}" ${value === item.id ? 'selected' : ''}>${escHtml(item.name)}</option>`
       ).join('');
       inputHtml = `<select data-field="${field.key}" data-library="${field.library}">
         <option value="">-- Custom --</option>${options}</select>`;
@@ -426,7 +426,7 @@ const Properties = {
           const defaultVal = parseFloat(stdCable[field.key]);
           if (!isNaN(currentVal) && !isNaN(defaultVal) && Math.abs(currentVal - defaultVal) > 1e-9) {
             modifiedClass = ' prop-row--modified';
-            resetHtml = `<button class="prop-reset-btn" data-reset-field="${field.key}" data-reset-value="${defaultVal}" title="Reset to ${stdCable.name} default (${defaultVal})">&#x21A9;</button>`;
+            resetHtml = `<button class="prop-reset-btn" data-reset-field="${field.key}" data-reset-value="${defaultVal}" title="Reset to ${escHtml(stdCable.name)} default (${defaultVal})">&#x21A9;</button>`;
           }
         }
       }
@@ -862,7 +862,7 @@ const Properties = {
 
         html += `
           <div class="calc-step">
-            <div class="calc-step-title">Fault Analysis — ${busName} (${vkv} kV)</div>
+            <div class="calc-step-title">Fault Analysis — ${escHtml(busName)} (${vkv} kV)</div>
             <div class="calc-formula">Method: IEC 60909 (Symmetrical)
 Base MVA = ${AppState.baseMVA} MVA
 Z_base = V²/S = ${vkv}² / ${AppState.baseMVA} = ${zBase.toFixed(4)} Ω
@@ -943,7 +943,7 @@ ${busResult.ikLLG ? `S"kLLG = √3 × ${vkv} × ${busResult.ikLLG.toFixed(3)} = 
         if (busResult.branches && busResult.branches.length > 0) {
           html += `
           <div class="calc-step">
-            <div class="calc-step-title">Branch Fault Current Contributions — ${busName}</div>
+            <div class="calc-step-title">Branch Fault Current Contributions — ${escHtml(busName)}</div>
             <div class="calc-formula" style="overflow-x:auto">
 <table style="border-collapse:collapse;font-size:11px;font-family:var(--font-mono);width:100%">
 <tr style="border-bottom:2px solid #666">
@@ -961,12 +961,12 @@ ${busResult.branches.map(br => {
   const typeLabel = (br.element_type || '').replace('_', ' ');
   const motorTag = isMotor ? ' <span style="color:#6a1b9a;font-weight:bold" title="Motor fault contribution">[M]</span>' : '';
   return `<tr style="border-bottom:1px solid #ddd${isMotor ? ';background:#f3e5f5' : ''}">
-  <td style="padding:2px 6px">${elName}${motorTag}</td>
+  <td style="padding:2px 6px">${escHtml(elName)}${motorTag}</td>
   <td style="padding:2px 6px">${typeLabel}</td>
   <td style="text-align:right;padding:2px 6px;font-weight:bold;color:#b71c1c">${br.ik_ka.toFixed(3)}</td>
   <td style="text-align:right;padding:2px 6px">${br.contribution_pct.toFixed(1)}%</td>
   <td style="text-align:right;padding:2px 6px">${br.z_path_mag.toFixed(6)}</td>
-  <td style="padding:2px 6px">${br.source_name || '—'}</td>
+  <td style="padding:2px 6px">${escHtml(br.source_name || '—')}</td>
 </tr>`;
 }).join('')}
 </table></div>
@@ -992,7 +992,7 @@ ${busResult.branches.map(br => {
 
         html += `
           <div class="calc-step">
-            <div class="calc-step-title">Load Flow — ${busName}</div>
+            <div class="calc-step-title">Load Flow — ${escHtml(busName)}</div>
             <div class="calc-formula">Method: ${lf.method === 'newton_raphson' ? 'Newton-Raphson' : 'Gauss-Seidel'}
 Converged: ${lf.converged ? 'Yes' : 'NO — results may be inaccurate'}
 Iterations: ${lf.iterations}
@@ -1024,8 +1024,8 @@ I = S / (√3 × V) = ${iCalc.toFixed(2)} A</div>
           if (isSource) {
             html += `
               <div class="calc-step">
-                <div class="calc-step-title">Load Flow Output — ${comp.props.name}</div>
-                <div class="calc-formula">Connected to: ${fromBus?.props?.name || br.from_bus}
+                <div class="calc-step-title">Load Flow Output — ${escHtml(comp.props.name)}</div>
+                <div class="calc-formula">Connected to: ${escHtml(fromBus?.props?.name || br.from_bus)}
 
 P = ${br.p_mw?.toFixed(4)} MW  (${(br.p_mw * 1000).toFixed(1)} kW)  [generation]
 Q = ${br.q_mvar?.toFixed(4)} MVAr  (${(br.q_mvar * 1000).toFixed(1)} kVAr)
@@ -1037,9 +1037,9 @@ ${br.loading_pct > 0 ? `Output = ${br.loading_pct.toFixed(1)}% of rated capacity
             const toBus = AppState.components.get(br.to_bus);
             html += `
               <div class="calc-step">
-                <div class="calc-step-title">Branch Power Flow — ${comp.props.name}</div>
-                <div class="calc-formula">From: ${fromBus?.props?.name || br.from_bus}
-To:   ${toBus?.props?.name || br.to_bus}
+                <div class="calc-step-title">Branch Power Flow — ${escHtml(comp.props.name)}</div>
+                <div class="calc-formula">From: ${escHtml(fromBus?.props?.name || br.from_bus)}
+To:   ${escHtml(toBus?.props?.name || br.to_bus)}
 
 P = ${br.p_mw?.toFixed(4)} MW  (${(br.p_mw * 1000).toFixed(1)} kW)  ${br.p_mw >= 0 ? '→' : '←'}
 Q = ${br.q_mvar?.toFixed(4)} MVAr  (${(br.q_mvar * 1000).toFixed(1)} kVAr)
@@ -1066,7 +1066,7 @@ ${br.losses_mw ? `Losses = ${(br.losses_mw * 1000).toFixed(2)} kW` : ''}</div>
 
         html += `
           <div class="calc-step">
-            <div class="calc-step-title">Unbalanced Load Flow — ${busName}</div>
+            <div class="calc-step-title">Unbalanced Load Flow — ${escHtml(busName)}</div>
             <div class="calc-formula">Method: ${ulf.method || 'Sequence Component'}
 Converged: ${ulf.converged ? 'Yes' : 'NO — results may be inaccurate'}
 Iterations: ${ulf.iterations}
@@ -1097,9 +1097,9 @@ Pa = ${br.pa_mw?.toFixed(4)} MW   Pb = ${br.pb_mw?.toFixed(4)} MW   Pc = ${br.pc
           const toBus = AppState.components.get(br.to_bus);
           html += `
             <div class="calc-step">
-              <div class="calc-step-title">Unbalanced Branch Currents — ${comp.props.name || comp.type}</div>
-              <div class="calc-formula">From: ${fromBus?.props?.name || br.from_bus}
-To:   ${toBus?.props?.name || br.to_bus}
+              <div class="calc-step-title">Unbalanced Branch Currents — ${escHtml(comp.props.name || comp.type)}</div>
+              <div class="calc-formula">From: ${escHtml(fromBus?.props?.name || br.from_bus)}
+To:   ${escHtml(toBus?.props?.name || br.to_bus)}
 
 ─── Per-Phase Currents ───
 Ia = ${br.ia_amps?.toFixed(1)} A

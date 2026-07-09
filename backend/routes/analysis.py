@@ -56,7 +56,7 @@ def unbalanced_load_flow(data: ProjectData):
 
 @router.post("/arcflash", response_model=ArcFlashResults)
 def arc_flash(data: ProjectData):
-    """Run IEEE 1584-2018 arc flash analysis.
+    """Run IEEE 1584-2002 arc flash analysis.
 
     Requires fault analysis data. Runs fault analysis first if needed.
     """

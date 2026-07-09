@@ -855,8 +855,14 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             else:
                 z_cable = _cable_impedance(comp, base_mva) * 3
             new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
-            for neighbor_id, _, _ in adjacency.get(comp_id, []):
-                walk(neighbor_id, z0_path + z_cable, new_trail, None, path_visited)
+            # Forward the far-end port (the port by which the neighbor is
+            # entered) exactly as the transparent-element branch does — a
+            # transformer reached through a cable must still know which
+            # winding faces the fault, otherwise it falls into the
+            # "port unknown" fallback and a Dyn unit behind a cable becomes
+            # a phantom Z0 source as seen from its delta side.
+            for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
+                walk(neighbor_id, z0_path + z_cable, new_trail, remote_port, path_visited)
             return
 
         if comp.type in ("cb", "switch"):

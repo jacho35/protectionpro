@@ -90,6 +90,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Don't trigger if typing in an input
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
 
+    // While any modal is open, suspend the canvas shortcuts (Delete/Backspace,
+    // arrow nudge, R rotate, V/W mode switch, Ctrl+A/C/V/X/D, Ctrl+Z/Y, zoom,
+    // grouping, H). Result-modal row clicks select components on the SLD, so
+    // e.g. Delete would silently remove the component behind the modal.
+    // Exceptions kept live: Escape (must still close the modal, handled in the
+    // switch below) and Ctrl+S (harmless save). Same open-modal probe as the
+    // Escape handler.
+    const modalIsOpen = [...document.querySelectorAll('.modal')]
+      .some(m => m.style.display !== 'none');
+    if (modalIsOpen && e.key !== 'Escape' &&
+        !((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S'))) {
+      return;
+    }
+
     switch (e.key) {
       case 'v':
       case 'V':
@@ -303,14 +317,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (errors.length > 0) {
       html += '<div class="validation-section"><div class="validation-section-title error-title">Errors (must fix)</div>';
       for (const e of errors) {
-        html += `<div class="validation-item validation-error">${e.msg}</div>`;
+        html += `<div class="validation-item validation-error">${escHtml(e.msg)}</div>`;
       }
       html += '</div>';
     }
     if (warnings.length > 0) {
       html += '<div class="validation-section"><div class="validation-section-title warning-title">Warnings</div>';
       for (const w of warnings) {
-        html += `<div class="validation-item validation-warning">${w.msg}</div>`;
+        html += `<div class="validation-item validation-warning">${escHtml(w.msg)}</div>`;
       }
       html += '</div>';
     }
@@ -663,7 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
       html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
       html += '</div>';
     }
 
@@ -689,8 +703,8 @@ document.addEventListener('DOMContentLoaded', () => {
         : c.status === 'unknown' ? '<span style="color:#9e9e9e;font-weight:600">UNKNOWN</span>'
         : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
       html += `<tr class="${rowClass}" data-cable-id="${c.cable_id}" style="cursor:pointer">
-        <td>${c.cable_name}</td>
-        <td>${c.from_bus} → ${c.to_bus}</td>
+        <td>${escHtml(c.cable_name)}</td>
+        <td>${escHtml(c.from_bus)} → ${escHtml(c.to_bus)}</td>
         <td>${c.load_current_a.toFixed(1)}</td>
         <td>${thermalIcon} ${c.thermal_loading_pct.toFixed(0)}%</td>
         <td>${vdropIcon} ${c.voltage_drop_pct.toFixed(2)}%</td>
@@ -754,7 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (motors.length === 0) {
       body.innerHTML = '<p>No induction motors found in the project.</p>';
       if (result.warnings && result.warnings.length > 0) {
-        body.innerHTML += '<div class="af-warnings">' + result.warnings.map(w => `<div class="af-warning-item">⚠ ${w}</div>`).join('') + '</div>';
+        body.innerHTML += '<div class="af-warnings">' + result.warnings.map(w => `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`).join('') + '</div>';
       }
       modal.style.display = '';
       return;
@@ -763,7 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
       html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
       html += '</div>';
     }
 
@@ -776,12 +790,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `<div class="${statusClass}" style="border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px">`;
       html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <strong>${m.motor_name}</strong> ${statusBadge}
+        <strong>${escHtml(m.motor_name)}</strong> ${statusBadge}
       </div>`;
       html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;margin-bottom:8px">
         <div>Rated: <strong>${m.rated_kw} kW</strong>${m.motor_type ? ` (${m.motor_type})` : ''}</div>
         <div>Start Current: <strong>${m.start_current_a.toFixed(0)} A</strong>${m.starting_method ? ` (${m.starting_method})` : ''}</div>
-        <div>Terminal Bus: <strong>${m.terminal_bus}</strong></div>
+        <div>Terminal Bus: <strong>${escHtml(m.terminal_bus)}</strong></div>
         <div>Terminal V: <strong>${m.motor_terminal_voltage_pu.toFixed(3)} p.u.</strong></div>
         <div>Will Start: ${willStartIcon}</div>
         <div>Max Dip: <strong>${m.max_system_dip_pct.toFixed(1)}%</strong> at ${m.max_dip_bus}</div>
@@ -852,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
       html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
       html += '</div>';
     }
 
@@ -874,8 +888,8 @@ document.addEventListener('DOMContentLoaded', () => {
           : t.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
           : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
         html += `<tr class="${rowClass}" data-device-id="${t.device_id}" style="cursor:pointer">
-          <td>${t.device_name}</td>
-          <td>${t.location_bus}</td>
+          <td>${escHtml(t.device_name)}</td>
+          <td>${escHtml(t.location_bus)}</td>
           <td>${t.rated_mva.toFixed(3)}</td>
           <td>${t.load_mva.toFixed(3)}</td>
           <td>${t.loading_pct.toFixed(1)}%</td>
@@ -906,9 +920,9 @@ document.addEventListener('DOMContentLoaded', () => {
           : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
         const contIcon = d.continuous_ok ? '✓' : '✗';
         html += `<tr class="${rowClass}" data-device-id="${d.device_id}" style="cursor:pointer">
-          <td>${d.device_name}</td>
+          <td>${escHtml(d.device_name)}</td>
           <td>${d.device_type.toUpperCase()}</td>
-          <td>${d.location_bus}</td>
+          <td>${escHtml(d.location_bus)}</td>
           <td>${d.prospective_fault_ka.toFixed(2)}</td>
           <td>${d.breaking_capacity_ka.toFixed(2)}</td>
           <td>${d.utilisation_pct.toFixed(0)}%</td>
@@ -998,7 +1012,7 @@ document.addEventListener('DOMContentLoaded', () => {
           : t.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
           : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
         html += `<tr class="${rowClass}">
-          <td>${t.transformer_name}</td>
+          <td>${escHtml(t.transformer_name)}</td>
           <td>${t.rated_kva.toFixed(0)}</td>
           <td>${t.fed_buses.join(', ') || '—'}</td>
           <td>${t.installed_kva.toFixed(0)}</td>
@@ -1023,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </tr></thead><tbody>`;
       for (const b of buses) {
         html += `<tr>
-          <td>${b.bus_name}</td>
+          <td>${escHtml(b.bus_name)}</td>
           <td>${b.num_loads}</td>
           <td>${b.installed_kva.toFixed(0)}</td>
           <td>${b.demand_kva.toFixed(0)}</td>
@@ -1044,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const typeLabel = l.load_type === 'motor_induction' ? 'IM'
               : l.load_type === 'motor_synchronous' ? 'SM' : 'Load';
             html += `<tr>
-              <td style="text-align:left">${l.load_name}</td><td>${typeLabel}</td>
+              <td style="text-align:left">${escHtml(l.load_name)}</td><td>${typeLabel}</td>
               <td>${l.installed_kva.toFixed(1)}</td><td>${l.demand_factor.toFixed(2)}</td>
               <td>${l.demand_kva.toFixed(1)}</td><td>${l.power_factor.toFixed(2)}</td>
             </tr>`;
@@ -1105,7 +1119,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (result.warnings && result.warnings.length > 0) {
       html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${w}</div>`;
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
       html += '</div>';
     }
 
@@ -1136,7 +1150,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `<div style="border:1px solid var(--border-color);border-radius:6px;padding:12px 14px;margin-bottom:10px;border-left:4px solid ${statusColor}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <strong style="font-size:13px">${b.bus_name} (${b.voltage_kv} kV)</strong>
+          <strong style="font-size:13px">${escHtml(b.bus_name)} (${b.voltage_kv} kV)</strong>
           <span style="color:${statusColor};font-weight:600;font-size:12px">${statusLabel}</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
@@ -1277,7 +1291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>`;
 
       if (s.error) {
-        html += `<div style="font-size:11px;color:#d32f2f">${s.error}</div>`;
+        html += `<div style="font-size:11px;color:#d32f2f">${escHtml(s.error)}</div>`;
       } else if (s.counts) {
         html += '<div style="font-size:11px;color:var(--text-secondary)">';
         html += _formatStudyCounts(key, s.counts);
@@ -1329,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result.warnings && result.warnings.length > 0) {
       html += '<div class="af-warnings">';
       for (const w of result.warnings) {
-        html += `<div class="af-warning-item">⚠ ${w}</div>`;
+        html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
       }
       html += '</div>';
     }
@@ -1345,7 +1359,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
       const hasRecs = b.recommendations && b.recommendations.length > 0;
       html += `<tr class="${ppeClass}">
-        <td>${b.bus_name || b.bus_id}</td>
+        <td>${escHtml(b.bus_name || b.bus_id)}</td>
         <td>${b.voltage_kv.toFixed(3)} kV</td>
         <td>${b.bolted_fault_ka.toFixed(2)} kA</td>
         <td>${b.arcing_current_ka.toFixed(2)} kA</td>
@@ -1392,7 +1406,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result.warnings && result.warnings.length > 0) {
       html += '<div class="af-warnings">';
       for (const w of result.warnings) {
-        html += `<div class="af-warning-item">⚠ ${w}</div>`;
+        html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
       }
       html += '</div>';
     }
@@ -1408,7 +1422,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
       const hasRecs = b.recommendations && b.recommendations.length > 0;
       html += `<tr class="${ppeClass}">
-        <td>${b.bus_name || b.bus_id}</td>
+        <td>${escHtml(b.bus_name || b.bus_id)}</td>
         <td>${b.system_voltage_v.toFixed(0)} V</td>
         <td>${b.bolted_fault_ka.toFixed(2)} kA</td>
         <td>${b.dc_arcing_current_a.toFixed(1)} A</td>
@@ -1456,7 +1470,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    let html = `<p>Fault at <strong>${faultBusName}</strong> (${faultResult.voltage_kv} kV) — Retained voltage at other buses:</p>`;
+    let html = `<p>Fault at <strong>${escHtml(faultBusName)}</strong> (${faultResult.voltage_kv} kV) — Retained voltage at other buses:</p>`;
     html += `<table class="af-table vdep-table">
       <thead><tr>
         <th>Bus</th><th>Rated kV</th>
@@ -1472,7 +1486,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const rowClass = worst >= 0.8 ? 'af-low' : worst >= 0.5 ? 'af-medium' : worst >= 0.3 ? 'af-high' : 'af-danger';
       const status = worst >= 0.8 ? 'Normal' : worst >= 0.5 ? 'Moderate Sag' : worst >= 0.3 ? 'Severe Sag' : 'Near Collapse';
       html += `<tr class="${rowClass}">
-        <td>${d.bus_name || d.id}</td>
+        <td>${escHtml(d.bus_name || d.id)}</td>
         <td>${(d.voltage_kv || 0).toFixed(1)}</td>
         <td>${(vSub * 100).toFixed(1)}%</td>
         <td>${(vTr * 100).toFixed(1)}%</td>
@@ -1933,7 +1947,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const btn = document.createElement('button');
       btn.className = 'page-tab' + (page.id === AppState.activePageId ? ' active' : '');
       btn.dataset.pageId = page.id;
-      btn.innerHTML = `<span class="page-tab-name">${page.name}</span>` +
+      btn.innerHTML = `<span class="page-tab-name">${escHtml(page.name)}</span>` +
         (AppState.pages.length > 1 ? `<span class="page-tab-close" title="Delete sheet">&times;</span>` : '');
       btn.addEventListener('click', (e) => {
         if (e.target.classList.contains('page-tab-close')) {

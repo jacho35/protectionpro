@@ -471,7 +471,7 @@ const Symbols = {
     return `
       <g class="symbol-offpage">
         <polygon points="0,${-r} ${r},0 0,${r} ${-r},0" class="symbol-fill" fill="white" stroke="currentColor" stroke-width="1.5"/>
-        <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${label}</text>
+        <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${escHtml(label)}</text>
       </g>`;
   },
 
@@ -522,7 +522,7 @@ const Symbols = {
           ${symbolSvg}
         </g>
         ${portsHtml}
-        <text class="comp-name-label" data-comp-id="${comp.id}" x="${nlOX}" y="${labelY}" text-anchor="middle" font-size="11" fill="#333" cursor="move">${label}</text>
+        <text class="comp-name-label" data-comp-id="${comp.id}" x="${nlOX}" y="${labelY}" text-anchor="middle" font-size="11" fill="#333" cursor="move">${escHtml(label)}</text>
       </g>`;
   },
 

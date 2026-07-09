@@ -624,6 +624,12 @@ const Canvas = {
     }
 
     if (this.busResize) {
+      // If the bus size actually changed, stale results no longer match the
+      // diagram — run the same commit ritual as a property edit.
+      const comp = AppState.components.get(this.busResize.compId);
+      if (comp && (comp.props.busWidth || 120) !== this.busResize.origWidth) {
+        AppState.invalidateResults();
+      }
       AppState.dirty = true;
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
       this.busResize = null;

@@ -877,7 +877,7 @@ const Compliance = {
 
     let html = `<div class="compliance-header">
       <div class="compliance-meta">
-        <strong>${report.projectName}</strong> &mdash;
+        <strong>${escHtml(report.projectName)}</strong> &mdash;
         Base: ${report.baseMVA} MVA, ${report.frequency} Hz &mdash;
         Generated: ${new Date(report.timestamp).toLocaleString()}
       </div>
@@ -905,9 +905,9 @@ const Compliance = {
       for (const item of section.items) {
         html += `<tr class="compliance-row compliance-${item.status}">
           <td class="compliance-status-cell">${statusIcon[item.status]}</td>
-          <td class="compliance-comp-cell">${item.component}</td>
-          <td>${item.message}</td>
-          <td class="compliance-detail-cell">${item.detail}</td>
+          <td class="compliance-comp-cell">${escHtml(item.component)}</td>
+          <td>${escHtml(item.message)}</td>
+          <td class="compliance-detail-cell">${escHtml(item.detail)}</td>
         </tr>`;
       }
 

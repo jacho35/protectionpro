@@ -1725,11 +1725,27 @@ const TCC = {
   },
 
   // ── Transformer Thermal Damage Curve (ANSI/IEEE C57.109) ──
+
+  /**
+   * IEEE C57.109 through-fault I²t constant K, with t = K·(Ir/I)² seconds.
+   * Category I (≤500 kVA 3φ): the classic t = 1250/I²_pu curve → K = 1250.
+   * Category II/III/IV (>500 kVA): the frequent-fault-incidence curve's I²t
+   * portion is anchored at 2 s at the maximum through-fault current
+   * I_max = Ir/Z_pu, i.e. K = 2·(1/Z_pu)².
+   */
+  _xfmrDamageK(dev) {
+    const kva = (dev.mva || 0) * 1000;
+    if (kva <= 500) return 1250; // Category I
+    const zPct = dev.zPercent || 8; // same typical-Z fallback as the I_max bound
+    const iMaxPu = 100 / zPct;
+    return 2 * iMaxPu * iMaxPu; // Category II/III/IV: t = 2 s at I_max
+  },
+
   _drawXfmrThermal(ctx, dev) {
     const Ir = dev.ratedA;
     const zPct = dev.zPercent || 8;
     const Imax = Ir * (100 / zPct);
-    const I2t = Ir * Ir * 1250;
+    const I2t = Ir * Ir * this._xfmrDamageK(dev);
     const sc = (amps) => this._scaleCurrent(amps, dev);
 
     ctx.strokeStyle = dev.color;
@@ -1739,8 +1755,8 @@ const TCC = {
 
     let started = false;
     const steps = 200;
-    // The C57.109 short-circuit I²t = 1250·Ir² portion is only valid above
-    // ~3.5×Ir; below that the thermal withstand is far longer than 1250/I²
+    // The C57.109 short-circuit I²t = K·Ir² portion is only valid above
+    // ~3.5×Ir; below that the thermal withstand is far longer than K/I²
     const iStart = Ir * 3.5;
     const iEnd = Math.min(Imax * 1.2, this._scaleCurrentInverse(this.currentMax, dev));
 
@@ -1901,7 +1917,7 @@ const TCC = {
       } else if (dev.deviceType === 'cb') {
         t = cbTripTime(dev.cbParams, current);
       } else if (dev.deviceType === 'xfmr_thermal') {
-        const I2t = dev.ratedA * dev.ratedA * 1250;
+        const I2t = dev.ratedA * dev.ratedA * this._xfmrDamageK(dev);
         t = current > dev.ratedA * 3.5 ? I2t / (current * current) : null;
       } else if (dev.deviceType === 'cable_thermal') {
         const kS = dev.kFactor * dev.sizeMm2;
@@ -2040,8 +2056,8 @@ const TCC = {
       return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" draggable="true">
         <div class="tcc-device-color" style="background:${dev.color}"></div>
         <div class="tcc-device-info">
-          <div class="tcc-device-name">${dev.name}</div>
-          <div class="tcc-device-detail">${typeLabel}</div>
+          <div class="tcc-device-name">${escHtml(dev.name)}</div>
+          <div class="tcc-device-detail">${escHtml(typeLabel)}</div>
         </div>
         <button class="tcc-device-endpoint ${isEndpoint ? 'active' : ''}" data-index="${i}" title="${isEndpoint ? 'Clear path endpoint' : 'Set as furthest grading point — mini-SLD shows path from source to this device'}">\u21E5</button>
         <button class="tcc-device-toggle" data-index="${i}" title="Toggle visibility">${dev.visible ? '\u25CF' : '\u25CB'}</button>
@@ -2562,8 +2578,13 @@ const TCC = {
 
   /**
    * Element class for grading: earth-fault (50N/51N) elements see residual
-   * current and grade at ik1; phase devices grade at ik3. The two classes are
-   * never graded against each other.
+   * current and grade at ik1; phase devices grade at ik3. Mixed pairs are
+   * graded only in the (upstream=earth, downstream=phase) direction — an earth
+   * fault downstream of a phase device flows through it, so the upstream 51N
+   * must clear slower than the downstream fuse/CB at the earth-fault (ik1)
+   * current. The reverse pairing (upstream=phase, downstream=earth) is skipped:
+   * a phase device set well above load current is not expected to respond at
+   * ik1 levels, and grading it there is nonstandard.
    */
   _deviceElementClass(dev) {
     return dev.relayType === '50N/51N' ? 'earth' : 'phase';
@@ -2709,10 +2730,19 @@ const TCC = {
     const issues = [];
 
     const checkPair = (devUp, devDown, assumed) => {
-      // Phase and earth-fault elements see different currents — never graded
-      // against each other
-      if (this._deviceElementClass(devUp) !== this._deviceElementClass(devDown)) return;
-      const earthPair = this._deviceElementClass(devUp) === 'earth';
+      // Mixed phase/earth pairs: grade (upstream=earth, downstream=phase) at
+      // ik1 — the earth fault flows through the downstream phase device — but
+      // skip (upstream=phase, downstream=earth) (see _deviceElementClass).
+      // Without topology the order is unknown, so mixed pairs are skipped.
+      const upClass = this._deviceElementClass(devUp);
+      const downClass = this._deviceElementClass(devDown);
+      if (assumed) {
+        if (upClass !== downClass) return;
+      } else if (upClass === 'phase' && downClass === 'earth') {
+        return;
+      }
+      // Earth-class upstream elements grade at earth-fault (ik1) test points
+      const earthPair = upClass === 'earth';
 
       // Fuse–fuse pairs: I²t / 2:1 rating-ratio rule instead of a time margin
       if (!assumed && devUp.deviceType === 'fuse' && devDown.deviceType === 'fuse') {
@@ -2797,15 +2827,15 @@ const TCC = {
       for (const [, iss] of pairMap) {
         if (iss.ratioRule) {
           html += `<tr>
-            <td>${iss.devA}</td>
-            <td>${iss.devB}</td>
+            <td>${escHtml(iss.devA)}</td>
+            <td>${escHtml(iss.devB)}</td>
             <td>—</td>
             <td class="tcc-margin-fail">fuse ratio &lt; 2:1 (I²t overlap)</td>
           </tr>`;
         } else {
           html += `<tr>
-            <td>${iss.devA} (${fmtT(iss.tFast)})</td>
-            <td>${iss.devB} (${fmtT(iss.tSlow)})</td>
+            <td>${escHtml(iss.devA)} (${fmtT(iss.tFast)})</td>
+            <td>${escHtml(iss.devB)} (${fmtT(iss.tSlow)})</td>
             <td>${fmtI(iss.current)}</td>
             <td class="tcc-margin-fail">${iss.margin >= 1 ? iss.margin.toFixed(2) + 's' : (iss.margin * 1000).toFixed(0) + 'ms'}</td>
           </tr>`;
@@ -2835,9 +2865,9 @@ const TCC = {
     } else if (dev.deviceType === 'cb') {
       return cbTripTime(dev.cbParams, currentA);
     } else if (dev.deviceType === 'xfmr_thermal') {
-      // C57.109 1250/I² portion is only valid above ~3.5×Ir
+      // C57.109 K/I² portion is only valid above ~3.5×Ir
       if (currentA <= dev.ratedA * 3.5) return Infinity;
-      return (dev.ratedA * dev.ratedA * 1250) / (currentA * currentA);
+      return (dev.ratedA * dev.ratedA * this._xfmrDamageK(dev)) / (currentA * currentA);
     } else if (dev.deviceType === 'cable_thermal') {
       if (currentA <= dev.ratedAmps) return Infinity;
       const kS = dev.kFactor * dev.sizeMm2;
@@ -2910,11 +2940,16 @@ const TCC = {
       }
     }
 
-    // For CBs that are tripped by relays, skip them as independent devices
-    // in path building (they operate as part of the relay scheme)
+    // For CBs that are tripped by relays, don't add them as independent devices
+    // in path building (they operate as part of the relay scheme). Instead the
+    // tripping relay is substituted at the CB's node — so the position never
+    // silently vanishes even when the relay has no associated_ct on the path.
     const cbsTrippedByRelay = new Set();
-    for (const [, cbDev] of relayCbMap) {
+    const cbRelayMap = new Map(); // CB comp id → relay TCC devices that trip it
+    for (const [relayDev, cbDev] of relayCbMap) {
       cbsTrippedByRelay.add(cbDev.id);
+      if (!cbRelayMap.has(cbDev.id)) cbRelayMap.set(cbDev.id, []);
+      cbRelayMap.get(cbDev.id).push(relayDev);
     }
 
     // DFS from each source, collecting ordered protection devices along each path
@@ -2926,11 +2961,20 @@ const TCC = {
         const neighbors = adj.get(node) || [];
         const comp = AppState.components.get(node);
 
-        // If this is a protection device, add to current path
-        // Skip CBs that are tripped by relays (relay+CB act as one device)
+        // If this is a protection device, add to current path.
+        // A CB tripped by a relay acts as one device with that relay: the
+        // relay's device (whose curve governs) is substituted at the CB's
+        // position instead of the CB itself. Exactly one of (relay, CB)
+        // appears here — the CB must never silently vanish from the path.
         let currentPath = [...protDevices];
-        if (isProtDevice(node) && tccDevMap.has(node) && !cbsTrippedByRelay.has(node)) {
-          currentPath.push(tccDevMap.get(node));
+        if (isProtDevice(node) && tccDevMap.has(node)) {
+          if (cbsTrippedByRelay.has(node)) {
+            for (const relayDev of cbRelayMap.get(node) || []) {
+              if (!currentPath.includes(relayDev)) currentPath.push(relayDev);
+            }
+          } else {
+            currentPath.push(tccDevMap.get(node));
+          }
         }
         // If this is a CT, check if any relay uses it — add that relay's device here
         if (comp && comp.type === 'ct') {
@@ -3007,9 +3051,13 @@ const TCC = {
         const upstream = path[i];
         const downstream = path[i + 1];
 
-        // Phase and earth-fault elements are not graded against each other
-        if (this._deviceElementClass(upstream) !== this._deviceElementClass(downstream)) continue;
-        const earthPair = this._deviceElementClass(upstream) === 'earth';
+        // Mixed phase/earth pairs: grade (upstream=earth, downstream=phase) at
+        // ik1; skip (upstream=phase, downstream=earth) (see _deviceElementClass)
+        const upClass = this._deviceElementClass(upstream);
+        const downClass = this._deviceElementClass(downstream);
+        if (upClass === 'phase' && downClass === 'earth') continue;
+        // Earth-class upstream elements grade at earth-fault (ik1) test points
+        const earthPair = upClass === 'earth';
         // Fuse–fuse pairs coordinate by I²t / rating ratio, not by a time margin,
         // and a fuse has no adjustable setting — skip (consistent with the
         // coordination check and miscoordination detection).
@@ -3353,7 +3401,7 @@ const TCC = {
       const statusIcon = bus.passed ? '\u2705' : '\u274C';
 
       html += `<div class="tcc-seq-bus ${statusCls}">`;
-      html += `<div class="tcc-seq-bus-header">${statusIcon} <strong>${bus.busName}</strong> — Fault: ${faultStr}</div>`;
+      html += `<div class="tcc-seq-bus-header">${statusIcon} <strong>${escHtml(bus.busName)}</strong> — Fault: ${faultStr}</div>`;
 
       // Show operation sequence
       html += '<div class="tcc-seq-timeline">';
@@ -3361,7 +3409,7 @@ const TCC = {
         const icon = roleIcon[op.role] || '';
         const cls = roleClass[op.role] || '';
         const timeStr = op.operates ? this._fmtTime(op.tripTime) : 'NO TRIP';
-        html += `<span class="tcc-seq-device ${cls}" title="${op.deviceType}">${icon} ${op.name}: ${timeStr}</span>`;
+        html += `<span class="tcc-seq-device ${cls}" title="${op.deviceType}">${icon} ${escHtml(op.name)}: ${timeStr}</span>`;
         if (op !== bus.sequence[bus.sequence.length - 1]) {
           html += '<span class="tcc-seq-arrow">\u2192</span>';
         }
@@ -3373,7 +3421,7 @@ const TCC = {
         html += '<div class="tcc-seq-violations">';
         for (const v of bus.violations) {
           const icon = sevIcon[v.severity] || '';
-          html += `<div class="tcc-seq-violation tcc-sev-${v.severity}">${icon} ${v.message}</div>`;
+          html += `<div class="tcc-seq-violation tcc-sev-${v.severity}">${icon} ${escHtml(v.message)}</div>`;
         }
         html += '</div>';
       }
@@ -3408,10 +3456,13 @@ const TCC = {
         const upstream = path[i];
         const downstream = path[i + 1];
 
-        // Phase and earth-fault elements see different currents — not graded
-        // against each other (earth elements grade at ik1, phase at ik3)
-        if (this._deviceElementClass(upstream) !== this._deviceElementClass(downstream)) continue;
-        const earthPair = this._deviceElementClass(upstream) === 'earth';
+        // Mixed phase/earth pairs: grade (upstream=earth, downstream=phase) at
+        // ik1; skip (upstream=phase, downstream=earth) (see _deviceElementClass)
+        const upClass = this._deviceElementClass(upstream);
+        const downClass = this._deviceElementClass(downstream);
+        if (upClass === 'phase' && downClass === 'earth') continue;
+        // Earth-class upstream elements grade at earth-fault (ik1) test points
+        const earthPair = upClass === 'earth';
 
         // Fuse–fuse pairs: I²t / 2:1 rating-ratio rule instead of a time margin
         if (upstream.deviceType === 'fuse' && downstream.deviceType === 'fuse') {
@@ -3489,7 +3540,7 @@ const TCC = {
     const resultsDiv = document.getElementById('tcc-coord-results');
     if (!resultsDiv) return;
     const cls = type === 'success' ? 'tcc-coord-pass' : 'tcc-coord-info';
-    resultsDiv.innerHTML = `<div class="${cls}" style="white-space:pre-wrap">${msg}</div>`;
+    resultsDiv.innerHTML = `<div class="${cls}" style="white-space:pre-wrap">${escHtml(msg)}</div>`;
   },
 
   _showMiscoordResults(message, violations) {
@@ -3515,7 +3566,7 @@ const TCC = {
       const fmtT = (t) => t >= 1 ? t.toFixed(2) + 's' : (t * 1000).toFixed(0) + 'ms';
       html += `<tr>
         <td class="${sevClass[v.severity] || ''}">${sevIcon[v.severity] || ''}</td>
-        <td>${v.issue}</td>
+        <td>${escHtml(v.issue)}</td>
         <td>${v.current != null ? (v.current >= 1000 ? (v.current / 1000).toFixed(1) + 'kA' : Math.round(v.current) + 'A') : '\u2014'}</td>
         <td>${v.tUpstream != null ? `\u2191${fmtT(v.tUpstream)} \u2193${fmtT(v.tDownstream)}` : '\u2014'}</td>
       </tr>`;
@@ -3537,7 +3588,7 @@ const TCC = {
     container.innerHTML = this.tabs.map(tab => {
       const isCustom = tab.id.startsWith('custom_');
       const closeBtn = isCustom ? `<span class="tcc-tab-close" data-tab-id="${tab.id}" title="Delete tab">\u00D7</span>` : '';
-      return `<button class="tcc-view-tab ${tab.id === this.activeTabId ? 'active' : ''}" data-tab-id="${tab.id}">${tab.name}${closeBtn}</button>`;
+      return `<button class="tcc-view-tab ${tab.id === this.activeTabId ? 'active' : ''}" data-tab-id="${tab.id}">${escHtml(tab.name)}${closeBtn}</button>`;
     }).join('') + '<button class="tcc-view-tab tcc-add-custom-tab" title="Add custom tab">+</button>';
 
     container.querySelectorAll('.tcc-view-tab:not(.tcc-add-custom-tab)').forEach(btn => {
@@ -3634,7 +3685,7 @@ const TCC = {
     const sel = document.getElementById('tcc-compare-tab');
     if (!sel) return;
     sel.innerHTML = this.tabs.map(t =>
-      `<option value="${t.id}" ${t.id === this.compareTabId ? 'selected' : ''}>${t.name}</option>`
+      `<option value="${t.id}" ${t.id === this.compareTabId ? 'selected' : ''}>${escHtml(t.name)}</option>`
     ).join('');
   },
 

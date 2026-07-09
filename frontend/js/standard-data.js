@@ -132,7 +132,7 @@ const StandardData = {
     const tbody = document.getElementById('cable-library-body');
     tbody.innerHTML = this.cables.map((c, i) => `
       <tr data-index="${i}">
-        <td><input type="text" value="${c.name}" data-key="name"></td>
+        <td><input type="text" value="${escHtml(c.name)}" data-key="name"></td>
         <td><select data-key="conductor">
           <option value="Cu" ${c.conductor === 'Cu' ? 'selected' : ''}>Cu</option>
           <option value="Al" ${c.conductor === 'Al' ? 'selected' : ''}>Al</option>
@@ -208,7 +208,7 @@ const StandardData = {
     const vectors = ['Dyn11', 'Dyn1', 'YNd11', 'YNd1', 'Yyn0', 'Dd0'];
     tbody.innerHTML = this.transformers.map((t, i) => `
       <tr data-index="${i}">
-        <td><input type="text" value="${t.name}" data-key="name"></td>
+        <td><input type="text" value="${escHtml(t.name)}" data-key="name"></td>
         <td><input type="number" value="${t.rated_mva}" data-key="rated_mva" step="any"></td>
         <td><input type="number" value="${t.voltage_hv_kv}" data-key="voltage_hv_kv" step="any"></td>
         <td><input type="number" value="${t.voltage_lv_kv}" data-key="voltage_lv_kv" step="any"></td>
@@ -275,7 +275,7 @@ const StandardData = {
     const tbody = document.getElementById('cb-library-body');
     tbody.innerHTML = this.cbs.map((c, i) => `
       <tr data-index="${i}">
-        <td><input type="text" value="${c.name}" data-key="name"></td>
+        <td><input type="text" value="${escHtml(c.name)}" data-key="name"></td>
         <td><select data-key="cb_type">
           <option value="mccb" ${c.cb_type === 'mccb' ? 'selected' : ''}>MCCB</option>
           <option value="acb" ${c.cb_type === 'acb' ? 'selected' : ''}>ACB</option>
@@ -341,7 +341,7 @@ const StandardData = {
     const tbody = document.getElementById('fuse-library-body');
     tbody.innerHTML = this.fuses.map((f, i) => `
       <tr data-index="${i}">
-        <td><input type="text" value="${f.name}" data-key="name"></td>
+        <td><input type="text" value="${escHtml(f.name)}" data-key="name"></td>
         <td><select data-key="fuse_type">
           <option value="gG" ${f.fuse_type === 'gG' ? 'selected' : ''}>gG</option>
           <option value="aM" ${f.fuse_type === 'aM' ? 'selected' : ''}>aM</option>

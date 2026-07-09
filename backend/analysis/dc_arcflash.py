@@ -1,8 +1,9 @@
 """DC arc flash analysis per Stokes & Oppenlander method and DGUV-I 203-077.
 
 Implements the Stokes & Oppenlander (1985) empirical model for DC arc flash:
-- DC arcing current estimation
-- Arc voltage as a function of gap distance
+- DC arcing current solved iteratively from the circuit equation with the
+  current-dependent arc resistance R_arc = (20 + 0.534·G) / I_arc^0.88
+- Arc voltage V_arc = I_arc · R_arc(I_arc)
 - Incident energy via point-source spherical radiation model
 - Arc flash boundary calculation
 - PPE category per NFPA 70E Table 130.7(C)(15)(a)
@@ -10,9 +11,10 @@ Implements the Stokes & Oppenlander (1985) empirical model for DC arc flash:
 References:
 - Stokes, A.D. & Oppenlander, W.T. (1985), "Electric Arcs in Open Air",
   Journal of Physics D: Applied Physics, Vol. 18, pp. 53-60
+- Ammerman, R.F. et al. (2010), "DC-Arc Models and Incident-Energy
+  Calculations", IEEE Transactions on Industry Applications, Vol. 46, No. 5
 - DGUV Information 203-077, "Thermal Hazards from Electric Fault Arcs"
 - NFPA 70E-2021 "Standard for Electrical Safety in the Workplace"
-- IEEE 1584-2018 Annex D (DC arc flash guidance)
 
 Valid ranges:
   - DC system voltage: 48V to 1500V (typical battery/PV/DC distribution)
@@ -92,22 +94,68 @@ class DCArcFlashResults:
     warnings: list = field(default_factory=list)
 
 
+def _dc_arc_resistance(iarc_a, gap_mm):
+    """Stokes & Oppenlander arc resistance (ohms) at a given current.
+
+        R_arc = (20 + 0.534·G) / I_arc^0.88     (G = gap in mm)
+    """
+    return (20.0 + 0.534 * gap_mm) / max(iarc_a, 1e-6) ** 0.88
+
+
+def solve_dc_arc(v_sys, r_sys_ohm, gap_mm, max_iter=30, tol=1e-6):
+    """Solve the DC arc operating point per Stokes & Oppenlander.
+
+    The arc is a non-linear resistance in series with the system:
+
+        R_arc(I) = (20 + 0.534·G) / I^0.88
+        I_arc    = V_sys / (R_sys + R_arc(I_arc))
+
+    Solved by fixed-point iteration starting at I_bolted/2 (converges in a
+    handful of iterations for realistic DC systems). The arc voltage is then
+
+        V_arc = I_arc · R_arc(I_arc) = (20 + 0.534·G) · I_arc^0.12
+
+    Args:
+        v_sys: DC system voltage in volts.
+        r_sys_ohm: System (source) resistance in ohms (= V_sys / I_bolted).
+        gap_mm: Gap between conductors in mm.
+        max_iter: Maximum fixed-point iterations.
+        tol: Relative convergence tolerance.
+
+    Returns:
+        (i_arc_a, v_arc_v, r_arc_ohm) tuple; (0, 0, 0) if no arc can sustain.
+    """
+    if v_sys <= 0 or r_sys_ohm <= 0 or gap_mm <= 0:
+        return 0.0, 0.0, 0.0
+
+    # Minimum arc voltage across the gap (S&O at I = 1 A) — if the system
+    # voltage cannot support it, the arc cannot sustain.
+    if v_sys <= 20.0 + 0.534 * gap_mm:
+        return 0.0, 0.0, 0.0
+
+    i_bolted = v_sys / r_sys_ohm
+    i_arc = i_bolted / 2.0
+    for _ in range(max_iter):
+        r_arc = _dc_arc_resistance(i_arc, gap_mm)
+        i_new = v_sys / (r_sys_ohm + r_arc)
+        if abs(i_new - i_arc) <= tol * max(i_new, 1e-9):
+            i_arc = i_new
+            break
+        i_arc = i_new
+
+    i_arc = min(i_arc, i_bolted)  # cannot exceed bolted fault current
+    r_arc = _dc_arc_resistance(i_arc, gap_mm)
+    v_arc = i_arc * r_arc
+
+    return i_arc, v_arc, r_arc
+
+
 def calc_dc_arcing_current(ibf_a, v_dc, gap_mm):
     """Calculate DC arcing current per Stokes & Oppenlander model.
 
-    The DC arc is modelled as a voltage source (arc voltage) in series with
-    the system. The arc voltage is a function of the electrode gap:
-
-        V_arc = 20 + 0.534 * gap_mm
-
-    The arcing current is then derived from the available fault current
-    and the ratio of system voltage to total circuit voltage. As a
-    conservative industry simplification:
-
-        I_arc = I_bf * V_system / (V_system + V_arc)
-
-    This is clamped to a minimum of 0.5 * I_bf (conservative lower bound)
-    to account for arc resistance uncertainty.
+    The system resistance is derived from the bolted fault current
+    (R_sys = V_dc / I_bf) and the arc operating point is solved
+    iteratively via :func:`solve_dc_arc`.
 
     Args:
         ibf_a: Bolted fault current in amperes (DC).
@@ -120,21 +168,8 @@ def calc_dc_arcing_current(ibf_a, v_dc, gap_mm):
     if ibf_a <= 0 or v_dc <= 0:
         return 0.0
 
-    v_arc = 20.0 + 0.534 * gap_mm
-
-    # If system voltage is less than arc voltage, arc cannot sustain
-    if v_dc <= v_arc:
-        return 0.0
-
-    # Resistance-based model: arc reduces available current
-    iarc = ibf_a * v_dc / (v_dc + v_arc)
-
-    # Conservative lower bound: never less than 50% of bolted fault
-    iarc = max(iarc, 0.5 * ibf_a)
-
-    # Cannot exceed bolted fault current
-    iarc = min(iarc, ibf_a)
-
+    r_sys = v_dc / ibf_a
+    iarc, _, _ = solve_dc_arc(v_dc, r_sys, gap_mm)
     return iarc
 
 
@@ -143,7 +178,8 @@ def calc_dc_incident_energy(iarc_a, gap_mm, t_clear_s, working_dist_mm):
 
     Uses point-source radiation in a sphere:
 
-        V_arc = 20 + 0.534 * G          (arc voltage, volts)
+        V_arc = I_arc * R_arc(I_arc)     (S&O arc voltage at the operating
+                                          point = (20 + 0.534·G)·I_arc^0.12)
         P_arc = V_arc * I_arc            (arc power, watts)
         E_arc = P_arc * t                (arc energy, joules)
         E_incident = E_arc / (4 * pi * D^2)   (J/m², D in metres)
@@ -161,7 +197,7 @@ def calc_dc_incident_energy(iarc_a, gap_mm, t_clear_s, working_dist_mm):
     if iarc_a <= 0 or t_clear_s <= 0 or working_dist_mm <= 0:
         return 0.0
 
-    v_arc = 20.0 + 0.534 * gap_mm
+    v_arc = iarc_a * _dc_arc_resistance(iarc_a, gap_mm)
     p_arc = v_arc * iarc_a                     # watts
     e_arc = p_arc * t_clear_s                  # joules
 
@@ -177,7 +213,8 @@ def calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear_s, threshold_cal=1.2):
 
     The arc flash boundary is the distance at which incident energy equals
     the threshold (default 1.2 cal/cm² per NFPA 70E). Solved analytically
-    from the spherical radiation model:
+    from the spherical radiation model, with the arc voltage taken at the
+    Stokes & Oppenlander operating point, V_arc = I_arc·R_arc(I_arc):
 
         threshold = (V_arc * I_arc * t) / (4 * pi * D^2 * 41868)
 
@@ -197,7 +234,7 @@ def calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear_s, threshold_cal=1.2):
     if iarc_a <= 0 or t_clear_s <= 0 or threshold_cal <= 0:
         return 0.0
 
-    v_arc = 20.0 + 0.534 * gap_mm
+    v_arc = iarc_a * _dc_arc_resistance(iarc_a, gap_mm)
     e_arc = v_arc * iarc_a * t_clear_s  # joules
 
     # D in metres: E_threshold = E_arc / (4*pi*D^2 * 41868)
@@ -275,8 +312,11 @@ def run_dc_arc_flash(project_data, fault_results):
                 "Arc flash hazard is unlikely at this voltage level."
             )
 
-        # DC arcing current
-        iarc_a = calc_dc_arcing_current(ibf_a, voltage_v, gap_mm)
+        # DC arc operating point (arcing current + arc voltage) solved
+        # iteratively per Stokes & Oppenlander: R_sys from the bolted fault
+        # current, R_arc = (20 + 0.534·G)/I^0.88.
+        r_sys = voltage_v / ibf_a
+        iarc_a, v_arc, _r_arc = solve_dc_arc(voltage_v, r_sys, gap_mm)
 
         if iarc_a <= 0:
             warnings.append(
@@ -284,9 +324,6 @@ def run_dc_arc_flash(project_data, fault_results):
                 f"sustain an arc across {gap_mm:.0f} mm gap."
             )
             continue
-
-        # Arc voltage
-        v_arc = 20.0 + 0.534 * gap_mm
 
         # Clearing time from protection devices. Pass the DC arcing current
         # (kA) so the instantaneous-pickup comparison can fire; without it the

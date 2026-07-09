@@ -587,7 +587,7 @@ def _render_arcflash(pdf, arcflash_results, comp_map):
     if not arcflash_results or not arcflash_results.get("buses"):
         return
     pdf.add_page()
-    pdf.section_title("Arc Flash Analysis — IEEE 1584-2018")
+    pdf.section_title("Arc Flash Analysis — IEEE 1584-2002")
 
     headers = ["Bus", "V (kV)", "Ibf (kA)", "Iarc (kA)", "E (cal/cm²)", "PPE Cat", "AFB (m)", "WD (mm)"]
     avail = pdf.w - pdf.l_margin - pdf.r_margin
@@ -754,7 +754,7 @@ def _calc_title(pdf, project_name, base_mva, frequency, project_details=None):
     sections = [
         "1.  Fault Analysis — IEC 60909",
         "2.  Load Flow Analysis",
-        "3.  Arc Flash Analysis — IEEE 1584-2018",
+        "3.  Arc Flash Analysis — IEEE 1584-2002",
         "4.  Cable Sizing Calculations — IEC 60364",
         "5.  Motor Starting Analysis",
         "6.  Equipment Duty Check",
@@ -909,20 +909,27 @@ def _calc_loadflow(pdf, loadflow_results, base_mva):
 
 def _calc_arcflash(pdf, arcflash_results):
     pdf.add_page()
-    pdf.section_title("3.  Arc Flash Analysis — IEEE 1584-2018")
+    pdf.section_title("3.  Arc Flash Analysis — IEEE 1584-2002")
 
-    _calc_label(pdf, "Standard: IEEE 1584-2018  (Applicable range: 208 V – 15 kV, 3-phase AC)")
+    _calc_label(pdf, "Standard: IEEE 1584-2002  (Applicable range: 208 V – 15 kV, 3-phase AC)")
     pdf.ln(2)
-    _calc_body(pdf, "Step 1 — Arcing current (intermediate values depend on voltage class and electrode config):")
-    _calc_label(pdf, "  lg(I_arc) = k1 + k2*lg(I_bf) + k3*lg(G)  (IEEE 1584-2018 Eq. 1)")
-    _calc_body(pdf, "  where I_bf = bolted fault current [kA], G = electrode gap [mm], k1/k2/k3 = regression coefficients.")
+    _calc_body(pdf, "Step 1 — Arcing current (IEEE 1584-2002 Eq. 1 & 2):")
+    _calc_label(pdf, "  V <= 1 kV:  lg(I_arc) = K + 0.662*lg(I_bf) + 0.0966*V + 0.000526*G")
+    _calc_label(pdf, "                         + 0.5588*V*lg(I_bf) - 0.00304*G*lg(I_bf)")
+    _calc_label(pdf, "  V > 1 kV:   lg(I_arc) = 0.00402 + 0.983*lg(I_bf)")
+    _calc_body(pdf, "  where I_bf = bolted fault current [kA], V = system voltage [kV], G = electrode gap [mm],")
+    _calc_body(pdf, "  K = -0.153 (open air) or -0.097 (enclosed equipment).")
     pdf.ln(2)
-    _calc_body(pdf, "Step 2 — Incident energy (normalised to 610 mm working distance):")
-    _calc_label(pdf, "  E_n = 10^( k1 + k2*lg(I_arc) )   [J/cm^2]")
-    _calc_body(pdf, "  E = E_n * (t / 0.2 s) * (610^x / D^x)  where D = working distance [mm], t = arcing duration.")
+    _calc_body(pdf, "Step 2 — Incident energy (normalised to 610 mm / 0.2 s, IEEE 1584-2002 Eq. 3-6):")
+    _calc_label(pdf, "  lg(E_n) = K1 + K2 + 1.081*lg(I_arc) + 0.0011*G   [E_n in J/cm^2]")
+    _calc_label(pdf, "  E = 4.184 * Cf * E_n * (t / 0.2 s) * (610^x / D^x)   [J/cm^2]")
+    _calc_body(pdf, "  where K1 = -0.792 (open air) or -0.555 (enclosed), K2 = 0 (ungrounded/HRG — assumed),")
+    _calc_body(pdf, "  Cf = 1.5 (V <= 1 kV) or 1.0 (V > 1 kV), D = working distance [mm], t = arcing duration [s],")
+    _calc_body(pdf, "  x = distance exponent per IEEE 1584-2002 Table 4.")
     pdf.ln(2)
     _calc_body(pdf, "Step 3 — Arc flash boundary (AFB):")
-    _calc_label(pdf, "  AFB = [ E_n * t / (E_B * 0.2) ]^(1/x) * 610  [mm]  (E_B = 1.2 cal/cm^2 for bare skin)")
+    _calc_body(pdf, "  Distance D_B at which E = 1.2 cal/cm^2 (bare-skin threshold), solved from the Step 2")
+    _calc_body(pdf, "  distance relation by bisection.")
     pdf.ln(2)
     _calc_body(pdf, "PPE Category selection per NFPA 70E Table 130.7(C)(15)(c):")
     for cat, limit in [(1, "4"), (2, "8"), (3, "25"), (4, "40")]:
@@ -1321,7 +1328,7 @@ def _draw_label(pdf, x, y, w, h, bus_name, r, project_name):
     pdf.set_font("Helvetica", "I", 5.5)
     pdf.set_text_color(100, 100, 100)
     pdf.set_xy(x + 3, y + h - 5)
-    pdf.cell(w * 0.5, 3, "NFPA 70E / IEEE 1584-2018")
+    pdf.cell(w * 0.5, 3, "NFPA 70E / IEEE 1584-2002")
     pdf.set_xy(x + w * 0.5, y + h - 5)
     pdf.cell(w * 0.5 - 3, 3, date.today().isoformat(), align="R")
     pdf.set_text_color(0, 0, 0)
