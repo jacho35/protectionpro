@@ -80,6 +80,11 @@ const Wiring = {
     if (typeof Canvas !== 'undefined' && Canvas._updateSnapHighlight) {
       Canvas._updateSnapHighlight(null);
     }
+    // Drop the wiring cursor if it was turned on transiently for a
+    // Select-mode port drag (C4); leave it on while genuinely in Wire mode.
+    if (typeof Canvas !== 'undefined' && Canvas.svg && AppState.mode !== MODE.WIRE) {
+      Canvas.svg.classList.remove('wiring');
+    }
     document.getElementById('status-mode').textContent =
       AppState.mode === MODE.WIRE ? 'Wire Mode' : 'Select Mode';
   },

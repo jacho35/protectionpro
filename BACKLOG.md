@@ -1,5 +1,23 @@
 # ProtectionPro — Backlog Features
 
+## Open UX & Accessibility Findings (June 2026 audit)
+
+Reconciled 2026-07-09 against `audit-2026-06-21.md` / `audit-responses.md`. These were accepted in the audit response but never implemented (the "UX overhaul" in `d7e095b` covered other items instead). Confirmed still open by reading current source, not just commit messages.
+
+- ~~**Native dialogs (C2)**: ~41 `alert()`/`confirm()`/`prompt()` sites still in place instead of the app's styled modal system~~ — done: all sites now use the shared `UI` module (`ui.js`); former `alert()` notices became toasts, `confirm()`/`prompt()` became promise-based modal dialogs.
+- ~~**Port-click silently starts a wire in Select mode (C4)**: `canvas.js:367-374`~~ — done: a Select-mode port drag now sets the wiring cursor and a status-bar hint, cleared on cancel.
+- ~~**No canvas keyboard operation / no modal focus trap (C3)**~~ — done: `ModalFocus` (`ui.js`) traps and restores focus for all `.modal`s; `#sld-canvas` has `tabindex`/`role`/`aria-label` and arrow-key spatial navigation between components when keyboard-focused.
+- ~~**`--text-muted` fails AA contrast (H14)**: `app.css:19`~~ — done: darkened to `#6d6d6d` (~4.9:1).
+- ~~**No global analysis-busy indicator (H15)**~~ — done: `UI.setBusy` (ref-counted) shows a full-screen spinner/lock while any analysis is in flight, driven from `_setBusy`.
+- ~~**No desktop toast system (H16)**~~ — done: shared `UI.toast` used on desktop; `MobileUI.showToast` delegates to it (single implementation).
+- ~~**Non-General property sections collapsed by default (H21)**: `properties.js:96`~~ — done: default flipped to expanded (user collapse state still persists).
+- ~~**Dark-mode result-table rows unstyled (H23)**: `symbols.css:225-243`~~ — done: `body.dark-mode` overrides for `.af-danger/.af-high/.af-medium/.af-low/.af-unknown` rows and `.af-warning-item`.
+- **Not re-verified this pass** (still deprioritized as a UX-polish tranche per the original response): H17 (toolbar IA), H20 (branch-flow label overlap), H22 (export entry points scattered).
+
+Already fixed despite audit claims (no action needed): C5 (undo-clear on revision restore, `revisions.js:286`), H18 (mobile properties panel is wired, `mobile.js:420`), H19 (annotation badge stacking has collision offsets), H24 (empty-state hint exists, `index.html:402`).
+
+All Critical/High/Medium/Low findings from `audit-2026-07-09.md` are resolved, including **PROT-21** (gG fuse curve 0.1 s-gate re-fit) — see the Completed entry below.
+
 ## Protection Coordination Enhancements
 
 ## Fault Analysis Enhancements
@@ -99,6 +117,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 ---
 
 ## Completed
+- ~~UX & accessibility audit — remaining open findings fixed (C2, C3, C4, H14, H15, H16, H21, H23) plus PROT-21: new shared `frontend/js/ui.js` module provides `UI.toast` (used on desktop; mobile `showToast` delegates to it — H16), promise-based `UI.alert/confirm/prompt` modal dialogs replacing all ~41 native dialog sites across project/app/dbschedule/standard-data/reports/tcc/templates/properties (C2), a ref-counted `UI.setBusy` full-screen busy overlay wired into `_setBusy` so the canvas locks while any analysis runs (H15), and `ModalFocus` which traps+restores focus on every `.modal` (C3). `#sld-canvas` gains `tabindex`/`role`/`aria-label` and arrow-key spatial navigation between components when keyboard-focused (C3); Select-mode port drags now show the wiring cursor + status hint (C4); `--text-muted` darkened to `#6d6d6d` for AA (H14); non-General property sections default to expanded (H21); dark-mode `.af-*` result-table rows and warning items get readable overrides (H23). PROT-21: the generic gG fuse pre-arcing characteristic (frontend `FUSE_CURVES_GG` + backend `_FUSE_CURVES_GG`, kept byte-identical) was re-anchored at the fast end so pre-arcing time reaches 0.1 s at 8×In, satisfying the IEC 60269-1 0.1 s gate (previously ~0.17 s at the gate); the affected arc-flash clearing regression assertion was updated to the new curve value. 62 backend tests pass; headless Playwright verified module load (no console errors), toast/dialog/busy behaviour, canvas a11y attributes, and expanded-by-default sections. NOTE: the gG family remains a single representative shape, not the per-rating min/max corridor of IEC 60269-1 Table 4 (licensed) — precise grading still needs manufacturer data.~~
 - ~~Per-device TCC grading button: Button in CB/fuse/relay properties panel to open focused TCC window with upstream protection devices for grading~~
 - ~~Persist result box positions: analysis result boxes retain their dragged positions across simulation re-runs and project save/load; analysis results are saved with the project so boxes appear on load; "Reset Result Box Positions" button in View menu to restore defaults~~
 - ~~Properties panel sections: organized component properties into collapsible sections grouped by analysis type (General, Fault Analysis, Load Flow, Arc Flash, Grounding, Cable Sizing, Protection Settings)~~

@@ -442,18 +442,18 @@ const DBSchedule = {
   importXlsx(comp, file) {
     if (typeof XLSX === 'undefined') return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       let rows;
       try {
         const wb = XLSX.read(ev.target.result, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
       } catch (err) {
-        alert(`Could not read the file: ${err.message}`);
+        UI.toast(`Could not read the file: ${err.message}`, 'error');
         return;
       }
       if (!rows || rows.length < 2) {
-        alert('No data rows found — expected a header row followed by circuit rows.');
+        UI.toast('No data rows found — expected a header row followed by circuit rows.', 'error');
         return;
       }
       // Fuzzy header mapping: find each column by keyword
@@ -467,7 +467,7 @@ const DBSchedule = {
         load_va: col('load', 'va'), demand_factor: col('demand', 'df'),
       };
       if (idx.load_va === -1 && idx.description === -1) {
-        alert('Could not recognise the columns — export a schedule first to get the expected template.');
+        UI.toast('Could not recognise the columns — export a schedule first to get the expected template.', 'error');
         return;
       }
       const circuits = [];
@@ -493,11 +493,11 @@ const DBSchedule = {
         });
       }
       if (circuits.length === 0) {
-        alert('No circuit rows could be read from the file.');
+        UI.toast('No circuit rows could be read from the file.', 'error');
         return;
       }
       if ((comp.props.circuits || []).length > 0 &&
-          !confirm(`Replace the current ${comp.props.circuits.length} way(s) with ${circuits.length} imported way(s)?`)) {
+          !await UI.confirm(`Replace the current ${comp.props.circuits.length} way(s) with ${circuits.length} imported way(s)?`)) {
         return;
       }
       comp.props.circuits = circuits;

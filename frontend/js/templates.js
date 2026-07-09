@@ -403,10 +403,10 @@ const NetworkTemplates = {
 
     // Bind load buttons
     modal.querySelectorAll('.template-load-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
         if (AppState.dirty) {
-          if (!confirm('You have unsaved changes. Load template?')) return;
+          if (!(await UI.confirm('You have unsaved changes. Load template?'))) return;
         }
         const data = this.generate(id);
         if (!data) return;

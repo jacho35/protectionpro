@@ -38,8 +38,8 @@ const Project = {
     document.getElementById('btn-export-calculations').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportCalculationsReport(); });
 
     // Click project name to rename
-    document.getElementById('project-name-display')?.addEventListener('click', () => {
-      const newName = prompt('Rename project:', AppState.projectName);
+    document.getElementById('project-name-display')?.addEventListener('click', async () => {
+      const newName = await UI.prompt('Rename project:', AppState.projectName);
       if (newName && newName.trim()) {
         AppState.projectName = newName.trim();
         document.title = `ProtectionPro — ${AppState.projectName}`;
@@ -77,14 +77,14 @@ const Project = {
   },
 
   // Confirm before any action that replaces the current diagram
-  _confirmDiscardUnsaved() {
+  async _confirmDiscardUnsaved() {
     if (!AppState.dirty) return true;
-    return confirm('You have unsaved changes that will be lost. Continue?');
+    return await UI.confirm('You have unsaved changes that will be lost. Continue?', { danger: true });
   },
 
-  newProject() {
+  async newProject() {
     if (AppState.dirty) {
-      if (!confirm('You have unsaved changes. Create new project?')) return;
+      if (!(await UI.confirm('You have unsaved changes. Create new project?', { danger: true }))) return;
     }
     // Different project from here on — drop the outgoing project's local
     // revisions before reset() rotates the revision namespace.
@@ -102,7 +102,7 @@ const Project = {
   // Save to database (primary save action), falls back to JSON export
   async saveProject() {
     if (AppState.projectName === 'Untitled Project') {
-      const name = prompt('Project name:', AppState.projectName);
+      const name = await UI.prompt('Project name:', AppState.projectName);
       if (!name) return;
       AppState.projectName = name;
     }
@@ -148,7 +148,7 @@ const Project = {
 
   // Save As: prompt for new name and save as a new project
   async saveAsProject() {
-    const name = prompt('Save as project name:', AppState.projectName + ' (copy)');
+    const name = await UI.prompt('Save as project name:', AppState.projectName + ' (copy)');
     if (!name) return;
     AppState.projectName = name;
     AppState.projectId = null; // Force create new project
@@ -583,11 +583,11 @@ const Project = {
     }
   },
 
-  restoreLocalBackup() {
+  async restoreLocalBackup() {
     try {
       const raw = localStorage.getItem('protectionpro-auto-save-backup');
       if (!raw) return;
-      if (!confirm('A local auto-save backup was found. Restore it?\n\nChoosing Cancel keeps the backup — you will be offered it again next time.')) {
+      if (!(await UI.confirm('A local auto-save backup was found. Restore it?\n\nChoosing Cancel keeps the backup — you will be offered it again next time.'))) {
         // Declining must NOT delete the backup; it is only removed on an
         // explicit restore or a successful database save.
         this._statusMsg('Local backup kept (not restored).');
@@ -616,8 +616,8 @@ const Project = {
   },
 
   // Import from JSON file
-  importFromFile() {
-    if (!this._confirmDiscardUnsaved()) return;
+  async importFromFile() {
+    if (!(await this._confirmDiscardUnsaved())) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
@@ -640,7 +640,7 @@ const Project = {
           updateProjectNameDisplay();
           document.getElementById('status-info').textContent = 'Project imported from file.';
         } catch (err) {
-          alert('Invalid project file: ' + err.message);
+          UI.toast('Invalid project file: ' + err.message, 'error');
         }
       };
       reader.readAsText(file);
@@ -711,7 +711,7 @@ const Project = {
     container.querySelectorAll('.recent-project-item').forEach(btn => {
       btn.addEventListener('click', async () => {
         window.closeAllToolbarMenus?.();
-        if (!this._confirmDiscardUnsaved()) return;
+        if (!(await this._confirmDiscardUnsaved())) return;
         try {
           const data = await API.loadProject(btn.dataset.id);
           RevisionTimeline.clearLocal(); // switching projects
@@ -728,7 +728,7 @@ const Project = {
           RevisionTimeline.show();
           this._statusMsg('Project loaded.');
         } catch (err) {
-          alert('Failed to load project: ' + err.message);
+          UI.toast('Failed to load project: ' + err.message, 'error');
         }
       });
     });
@@ -895,7 +895,7 @@ const Project = {
     // Open project
     modal.querySelectorAll('.fm-project').forEach(el => {
       el.querySelector('.fm-item-info')?.addEventListener('click', async () => {
-        if (!this._confirmDiscardUnsaved()) {
+        if (!(await this._confirmDiscardUnsaved())) {
           modalContent.classList.remove('modal-wide');
           modal.style.display = 'none';
           return;
@@ -916,7 +916,7 @@ const Project = {
           RevisionTimeline.show();
           this._statusMsg('Project loaded.');
         } catch (err) {
-          alert('Failed to load project: ' + err.message);
+          UI.toast('Failed to load project: ' + err.message, 'error');
         }
         modalContent.classList.remove('modal-wide');
         modal.style.display = 'none';
@@ -925,14 +925,14 @@ const Project = {
 
     // New folder
     document.getElementById('fm-new-folder')?.addEventListener('click', async () => {
-      const name = prompt('Folder name:', 'New Folder');
+      const name = await UI.prompt('Folder name:', 'New Folder');
       if (!name) return;
       try {
         const folder = await API.createFolder(name, this._fmCurrentFolder);
         this._fmFolders.push(folder);
         this._renderFileManager();
       } catch (err) {
-        alert('Failed to create folder: ' + err.message);
+        UI.toast('Failed to create folder: ' + err.message, 'error');
       }
     });
 
@@ -952,7 +952,7 @@ const Project = {
         const current = type === 'folder'
           ? this._fmFolders.find(f => f.id === id)?.name
           : this._fmProjects.find(p => p.id === id)?.name;
-        const newName = prompt(`Rename ${type}:`, current || '');
+        const newName = await UI.prompt(`Rename ${type}:`, current || '');
         if (!newName || newName === current) return;
         try {
           if (type === 'folder') {
@@ -974,7 +974,7 @@ const Project = {
           }
           this._renderFileManager();
         } catch (err) {
-          alert('Rename failed: ' + err.message);
+          UI.toast('Rename failed: ' + err.message, 'error');
         }
       });
     });
@@ -986,7 +986,7 @@ const Project = {
         const type = btn.dataset.type;
         const id = parseInt(btn.dataset.id);
         const label = type === 'folder' ? 'folder (contents will be moved to root)' : 'project';
-        if (!confirm(`Delete this ${label} permanently?`)) return;
+        if (!(await UI.confirm(`Delete this ${label} permanently?`, { danger: true, okText: 'Delete' }))) return;
         try {
           if (type === 'folder') {
             await API.deleteFolder(id);
@@ -1004,7 +1004,7 @@ const Project = {
           }
           this._renderFileManager();
         } catch (err) {
-          alert('Delete failed: ' + err.message);
+          UI.toast('Delete failed: ' + err.message, 'error');
         }
       });
     });
@@ -1062,7 +1062,7 @@ const Project = {
         modal.querySelector('#calc-modal-title').textContent = 'File Manager';
         this._renderFileManager();
       } catch (err) {
-        alert('Move failed: ' + err.message);
+        UI.toast('Move failed: ' + err.message, 'error');
       }
     });
   },

@@ -210,8 +210,9 @@ class TestFuseClearing:
 
     def test_gg630_current_limiting_region_is_fast(self):
         """Deep in the current-limiting region (Iarc ≈ 24 kA > the curve's
-        16 kA last point) the same fuse clears in 0.008 s × 1.2 ≈ 0.01 s —
-        no artificial floor is applied.
+        16 kA last point) the same fuse clears in 0.004 s × 1.2 ≈ 0.005 s —
+        no artificial floor is applied. (The 0.1 s-gate re-fit, PROT-21,
+        lowered the curve's last pre-arcing point from 0.008 s to 0.004 s.)
 
         fault_mva = 433 → Ik3 ≈ 25 kA → Iarc ≈ 23.9 kA.
         """
@@ -231,7 +232,7 @@ class TestFuseClearing:
         r = res.buses["bus-1"]
         assert r.arcing_current_ka > 20.0
         assert 0 < r.clearing_time_s < 0.1
-        assert r.clearing_time_s == pytest.approx(0.0096, abs=0.003)
+        assert r.clearing_time_s == pytest.approx(0.0048, abs=0.002)
 
     def test_prearc_interpolation_matches_table_and_convention(self):
         """Unit anchors on the ported curve: exact table point, log-log

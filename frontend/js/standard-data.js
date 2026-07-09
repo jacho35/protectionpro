@@ -120,8 +120,8 @@ const StandardData = {
       this.syncCableLibrary();
     });
 
-    document.getElementById('btn-reset-cables').addEventListener('click', () => {
-      if (!confirm('Reset the cable library to defaults?\nAll your custom cables and edits will be permanently discarded.')) return;
+    document.getElementById('btn-reset-cables').addEventListener('click', async () => {
+      if (!(await UI.confirm('Reset the cable library to defaults?\nAll your custom cables and edits will be permanently discarded.', { danger: true }))) return;
       this.cables = JSON.parse(JSON.stringify(this._defaults.cables));
       this.renderCableTable();
       this.syncCableLibrary();
@@ -195,8 +195,8 @@ const StandardData = {
       this.syncTransformerLibrary();
     });
 
-    document.getElementById('btn-reset-xfmrs').addEventListener('click', () => {
-      if (!confirm('Reset the transformer library to defaults?\nAll your custom transformers and edits will be permanently discarded.')) return;
+    document.getElementById('btn-reset-xfmrs').addEventListener('click', async () => {
+      if (!(await UI.confirm('Reset the transformer library to defaults?\nAll your custom transformers and edits will be permanently discarded.', { danger: true }))) return;
       this.transformers = JSON.parse(JSON.stringify(this._defaults.transformers));
       this.renderTransformerTable();
       this.syncTransformerLibrary();
@@ -263,8 +263,8 @@ const StandardData = {
       this.syncCBLibrary();
     });
 
-    document.getElementById('btn-reset-cbs').addEventListener('click', () => {
-      if (!confirm('Reset the circuit breaker library to defaults?\nAll your custom breakers and edits will be permanently discarded.')) return;
+    document.getElementById('btn-reset-cbs').addEventListener('click', async () => {
+      if (!(await UI.confirm('Reset the circuit breaker library to defaults?\nAll your custom breakers and edits will be permanently discarded.', { danger: true }))) return;
       this.cbs = JSON.parse(JSON.stringify(this._defaults.cbs));
       this.renderCBTable();
       this.syncCBLibrary();
@@ -329,8 +329,8 @@ const StandardData = {
       this.syncFuseLibrary();
     });
 
-    document.getElementById('btn-reset-fuses').addEventListener('click', () => {
-      if (!confirm('Reset the fuse library to defaults?\nAll your custom fuses and edits will be permanently discarded.')) return;
+    document.getElementById('btn-reset-fuses').addEventListener('click', async () => {
+      if (!(await UI.confirm('Reset the fuse library to defaults?\nAll your custom fuses and edits will be permanently discarded.', { danger: true }))) return;
       this.fuses = JSON.parse(JSON.stringify(this._defaults.fuses));
       this.renderFuseTable();
       this.syncFuseLibrary();

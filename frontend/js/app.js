@@ -51,6 +51,56 @@ document.addEventListener('DOMContentLoaded', () => {
       mode === MODE.WIRE ? 'Wire Mode' : 'Select Mode';
   }
 
+  // Keyboard navigation across components (used when the canvas has keyboard
+  // focus). With no selection, picks the component nearest the viewport centre
+  // as an entry point; with a selection, moves to the nearest component in the
+  // pressed direction. Selecting also scrolls it into view and shows its props.
+  function _keyboardNavigate(key) {
+    const comps = [...AppState.getActivePageComponents().values()];
+    if (comps.length === 0) return;
+    const dirs = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+    const dir = dirs[key];
+    const curId = [...AppState.selectedIds][0];
+    const cur = curId ? AppState.components.get(curId) : null;
+
+    let best = null;
+    if (!cur) {
+      // Entry point: nearest component to the visible viewport centre
+      const rect = Canvas.svg.getBoundingClientRect();
+      const cx = (rect.width / 2 - AppState.panX) / AppState.zoom;
+      const cy = (rect.height / 2 - AppState.panY) / AppState.zoom;
+      let bestDist = Infinity;
+      for (const c of comps) {
+        const d = (c.x - cx) ** 2 + (c.y - cy) ** 2;
+        if (d < bestDist) { bestDist = d; best = c; }
+      }
+    } else {
+      // Nearest component in the pressed direction from the current one
+      let bestScore = Infinity;
+      for (const c of comps) {
+        if (c.id === cur.id) continue;
+        const dx = c.x - cur.x, dy = c.y - cur.y;
+        const along = dx * dir[0] + dy * dir[1];
+        if (along <= 0) continue; // must lie in the pressed direction
+        const perp = Math.abs(dx * dir[1] - dy * dir[0]);
+        const score = along + perp * 2; // prefer aligned and close
+        if (score < bestScore) { bestScore = score; best = c; }
+      }
+    }
+    if (!best) return;
+
+    AppState.selectedIds.clear();
+    AppState.selectedIds.add(best.id);
+    // Scroll into view if off-screen, keeping the keyboard focus on the canvas
+    if (typeof Canvas.centerOnComponent === 'function') {
+      Canvas.centerOnComponent(best.id, { onlyIfOffscreen: true });
+    }
+    Canvas.render();
+    if (typeof Properties !== 'undefined') Properties.show(best.id);
+    const name = best.props?.name || best.type;
+    document.getElementById('status-info').textContent = `Selected ${name}.`;
+  }
+
   btnSelect.addEventListener('click', () => setMode(MODE.SELECT));
   btnWire.addEventListener('click', () => setMode(MODE.WIRE));
   btnDelete.addEventListener('click', () => {
@@ -164,6 +214,17 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'ArrowDown':
       case 'ArrowLeft':
       case 'ArrowRight': {
+        // When the SVG canvas holds keyboard focus (reached via Tab, i.e.
+        // :focus-visible), arrows navigate the selection between components
+        // for keyboard/screen-reader users. When focus is elsewhere (normal
+        // mouse editing), arrows keep nudging the selected component(s).
+        const svg = Canvas.svg;
+        const kbNav = svg && typeof svg.matches === 'function' && svg.matches(':focus-visible');
+        if (kbNav) {
+          e.preventDefault();
+          _keyboardNavigate(e.key);
+          break;
+        }
         if (AppState.selectedIds.size === 0) break;
         e.preventDefault();
         const step = (e.shiftKey ? 5 : 1) * SNAP_SIZE; // 1 grid unit, Shift = 5
@@ -444,31 +505,43 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   };
 
-  // Disable/enable a toolbar control while its request is in flight
+  // Disable/enable a toolbar control while its request is in flight, and drive
+  // the global busy overlay so the whole canvas is locked (not just the button)
+  // — prevents the user editing the network mid-request.
   function _setBusy(btnId, busy) {
     const btn = document.getElementById(btnId);
     if (btn) btn.disabled = busy;
+    let label = 'Running analysis…';
+    if (busy && btn) {
+      const t = (btn.getAttribute('title') || btn.getAttribute('aria-label') || btn.textContent || '').trim();
+      if (t) label = `Running ${t}…`;
+    }
+    if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(busy, label);
   }
 
   async function executeAnalysis(type) {
     const label = type === 'fault' ? 'Fault analysis' : 'Load flow';
     const triggerBtnId = type === 'fault' ? 'btn-run-fault' : 'btn-run-loadflow';
+
+    // Resolve the fault scope BEFORE showing the busy overlay, so the spinner
+    // doesn't sit behind the scope-choice dialog while we wait on the user.
+    let faultBusId = null;
+    if (type === 'fault' && AppState.selectedIds.size === 1) {
+      const selId = [...AppState.selectedIds][0];
+      const selComp = AppState.components.get(selId);
+      if (selComp && selComp.type === 'bus') {
+        const busName = selComp.props?.name || selId;
+        if (await UI.confirm(`Run fault analysis on selected bus "${busName}" ONLY?\n\nOK = selected bus only — Cancel = all buses`,
+            { title: 'Fault Analysis Scope', okText: 'Selected bus only', cancelText: 'All buses' })) {
+          faultBusId = selId;
+        }
+      }
+    }
+
     _setBusy(triggerBtnId, true);
     try {
       let result;
       if (type === 'fault') {
-        // Determine if a single bus is selected — make the scope an explicit choice
-        let faultBusId = null;
-        if (AppState.selectedIds.size === 1) {
-          const selId = [...AppState.selectedIds][0];
-          const selComp = AppState.components.get(selId);
-          if (selComp && selComp.type === 'bus') {
-            const busName = selComp.props?.name || selId;
-            if (confirm(`Run fault analysis on selected bus "${busName}" ONLY?\n\nOK = selected bus only — Cancel = all buses`)) {
-              faultBusId = selId;
-            }
-          }
-        }
         const scopeInfo = faultBusId
           ? `bus ${AppState.components.get(faultBusId)?.props?.name || faultBusId}`
           : 'all buses';
@@ -1787,7 +1860,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = document.getElementById('tcc-custom-name').value;
     const csvText = document.getElementById('tcc-csv-paste').value || _tccCsvContent;
     if (!csvText.trim()) {
-      alert('Please import a CSV file or paste curve data.');
+      UI.toast('Please import a CSV file or paste curve data.', 'warning');
       return;
     }
     if (TCC.addCustomCurveFromCSV(name, csvText)) {
@@ -1842,14 +1915,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Bind load buttons
     list.querySelectorAll('.btn-load-scenario').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const sc = AppState.scenarios.find(s => s.id === btn.dataset.id);
         const a = sc?.applies || { switching: true, settings: true, layout: true };
         const full = a.switching && a.settings && a.layout;
         const what = full
           ? 'Current unsaved changes will be replaced (device names are kept).'
           : `Applies ${[a.switching && 'switching states', a.settings && 'electrical settings', a.layout && 'layout'].filter(Boolean).join(' and ')} to the current network.`;
-        if (!confirm(`Load this scenario? ${what}`)) return;
+        if (!(await UI.confirm(`Load this scenario? ${what}`))) return;
         const loaded = AppState.loadScenario(btn.dataset.id);
         if (loaded) {
           UndoManager.clear();
@@ -1865,8 +1938,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Bind delete buttons
     list.querySelectorAll('.btn-delete-scenario').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (!confirm('Delete this scenario permanently?')) return;
+      btn.addEventListener('click', async () => {
+        if (!(await UI.confirm('Delete this scenario permanently?', { danger: true, okText: 'Delete' }))) return;
         AppState.deleteScenario(btn.dataset.id);
         renderScenarioList();
       });
@@ -1952,9 +2025,9 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.dataset.pageId = page.id;
       btn.innerHTML = `<span class="page-tab-name">${escHtml(page.name)}</span>` +
         (AppState.pages.length > 1 ? `<span class="page-tab-close" title="Delete sheet">&times;</span>` : '');
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         if (e.target.classList.contains('page-tab-close')) {
-          if (confirm(`Delete "${page.name}"? Components on this page will be removed.`)) {
+          if (await UI.confirm(`Delete "${page.name}"? Components on this page will be removed.`, { danger: true, okText: 'Delete' })) {
             AppState.deletePage(page.id);
             renderPageTabs();
             Canvas.render();
@@ -1967,8 +2040,8 @@ document.addEventListener('DOMContentLoaded', () => {
         Canvas.render();
         Properties.clear();
       });
-      btn.addEventListener('dblclick', () => {
-        const newName = prompt('Rename sheet:', page.name);
+      btn.addEventListener('dblclick', async () => {
+        const newName = await UI.prompt('Rename sheet:', page.name);
         if (newName && newName.trim()) {
           AppState.renamePage(page.id, newName.trim());
           renderPageTabs();
@@ -2009,7 +2082,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function _exportPrintPDF() {
     if (!window.jspdf) {
-      alert('PDF library (jsPDF) is not available. Please reload the page and try again.');
+      UI.toast('PDF library (jsPDF) is not available. Please reload the page and try again.', 'error', 5000);
       return;
     }
     const { jsPDF } = window.jspdf;
@@ -2119,7 +2192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const svgData = new XMLSerializer().serializeToString(svgClone);
     const printWin = window.open('', '_blank', 'width=900,height=650');
     if (!printWin) {
-      alert('Print preview was blocked by the browser popup blocker.\nPlease allow popups for this site and try again, or use "Export PDF" instead.');
+      UI.toast('Print preview was blocked by the browser popup blocker. Please allow popups for this site and try again, or use "Export PDF" instead.', 'error', 6000);
       return;
     }
     printWin.document.write(`<!DOCTYPE html><html><head><title>Print Preview</title>

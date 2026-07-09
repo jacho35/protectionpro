@@ -2542,7 +2542,7 @@ const TCC = {
     }
 
     if (points.length < 2) {
-      alert('CSV must contain at least 2 valid data points (current, time).');
+      UI.toast('CSV must contain at least 2 valid data points (current, time).', 'error');
       return false;
     }
 
@@ -3823,8 +3823,8 @@ const TCC = {
 
     const addBtn = container.querySelector('.tcc-add-custom-tab');
     if (addBtn) {
-      addBtn.addEventListener('click', () => {
-        const name = prompt('Tab name:');
+      addBtn.addEventListener('click', async () => {
+        const name = await UI.prompt('Tab name:');
         if (name) this.addCustomTab(name);
       });
     }

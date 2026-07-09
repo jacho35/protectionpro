@@ -92,8 +92,8 @@ const Properties = {
       const label = SECTION_LABELS[secKey] || secKey;
       const isGeneral = secKey === 'General';
       const isCollapsible = hasMultipleSections && !isGeneral;
-      // Default: non-General sections start collapsed unless user has toggled them
-      const isCollapsed = isCollapsible && (this.collapsedSections[secKey] !== undefined ? this.collapsedSections[secKey] : true);
+      // Default: non-General sections start expanded unless user has collapsed them
+      const isCollapsed = isCollapsible && (this.collapsedSections[secKey] !== undefined ? this.collapsedSections[secKey] : false);
 
       if (isCollapsible) {
         html += `<div class="prop-section">`;
@@ -1741,7 +1741,7 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
         const file = e.target.files[0];
         if (!file) return;
         if (file.size > 2 * 1024 * 1024) {
-          alert('Logo file must be under 2 MB.');
+          UI.toast('Logo file must be under 2 MB.', 'error');
           return;
         }
         const reader = new FileReader();
