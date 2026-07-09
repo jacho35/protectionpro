@@ -51,7 +51,7 @@ const AppState = {
 
   // Display toggles
   showCableLabels: true,
-  showDeviceLabels: false,
+  showDeviceLabels: true,
   showWarnings: true,
   showFaultAngles: false,
 
@@ -219,12 +219,26 @@ const AppState = {
     this.clipboard = { components: comps, wires };
   },
 
+  // Generate a unique "Name copy" / "Name copy 2" / ... name for pasted components
+  _uniqueCopyName(name, taken) {
+    const base = String(name || 'Component').replace(/ copy( \d+)?$/, '');
+    let candidate = `${base} copy`;
+    let n = 2;
+    while (taken.has(candidate)) {
+      candidate = `${base} copy ${n++}`;
+    }
+    taken.add(candidate);
+    return candidate;
+  },
+
   // Paste clipboard contents with an offset
   pasteClipboard() {
     if (!this.clipboard || this.clipboard.components.length === 0) return;
     const offset = 40; // paste offset in world coords
     const idMap = new Map(); // old id -> new id
     this.clearSelection();
+    // Existing names, for unique copy-name generation
+    const takenNames = new Set([...this.components.values()].map(c => c.props?.name));
     // Paste components
     for (const comp of this.clipboard.components) {
       const newId = this.genId(comp.type);
@@ -234,25 +248,26 @@ const AppState = {
         id: newId,
         x: comp.x + offset,
         y: comp.y + offset,
-        props: { ...comp.props, name: comp.props.name + ' copy' },
+        pageId: this.activePageId,
+        props: { ...comp.props, name: this._uniqueCopyName(comp.props.name, takenNames) },
       };
       this.components.set(newId, newComp);
       this.selectedIds.add(newId);
     }
-    // Paste wires with remapped IDs
+    // Paste wires with remapped IDs (skip per-wire snapshots; one is taken below)
     for (const wire of this.clipboard.wires) {
       const newFrom = idMap.get(wire.fromComponent);
       const newTo = idMap.get(wire.toComponent);
       if (newFrom && newTo) {
-        this.addWire(newFrom, wire.fromPort, newTo, wire.toPort);
+        this.addWire(newFrom, wire.fromPort, newTo, wire.toPort, true);
       }
     }
     this.dirty = true;
-    // Snapshot is already taken by addWire/addComponent calls above
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
   },
 
   // Save current network configuration as a scenario
-  saveScenario(name, description = '') {
+  saveScenario(name, description = '', applies = null) {
     const id = `scenario_${this._scenarioNextId++}`;
     const scenario = {
       id,
@@ -262,31 +277,81 @@ const AppState = {
       components: JSON.parse(JSON.stringify([...this.components.values()])),
       wires: JSON.parse(JSON.stringify([...this.wires.values()])),
       nextId: this.nextId,
+      // What loading this scenario applies (snapshot always stores everything;
+      // names are never applied). Missing/legacy → all true.
+      applies: applies || { switching: true, settings: true, layout: true },
     };
     this.scenarios.push(scenario);
     this.dirty = true;
     return scenario;
   },
 
-  // Load a scenario, replacing current network configuration
+  // Load a scenario. What it applies is controlled by the scenario's saved
+  // `applies` flags (switching / settings / layout — legacy scenarios apply
+  // all). Device NAMES are never applied: renames made after a scenario was
+  // saved always survive loading it.
+  //
+  // All flags ticked → full snapshot restore (components/wires added or
+  // removed since the save are restored/removed too). Any flag unticked →
+  // overlay mode: the selected categories are applied onto the CURRENT
+  // network, matched by component id; topology is left untouched.
   loadScenario(scenarioId) {
     const scenario = this.scenarios.find(s => s.id === scenarioId);
     if (!scenario) return false;
-    this.components.clear();
-    this.wires.clear();
+    const applies = scenario.applies || { switching: true, settings: true, layout: true };
+    const full = applies.switching && applies.settings && applies.layout;
+    const SWITCHING_TYPES = new Set(['cb', 'switch']);
+
     this.selectedIds.clear();
     this.faultResults = null;
     this.faultedBusId = null;
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
-    for (const c of scenario.components) {
-      this.components.set(c.id, JSON.parse(JSON.stringify(c)));
+
+    if (full) {
+      // Full restore, preserving current device names by id
+      const currentNames = new Map();
+      for (const [id, c] of this.components) {
+        if (c.props && c.props.name != null) currentNames.set(id, c.props.name);
+      }
+      this.components.clear();
+      this.wires.clear();
+      for (const c of scenario.components) {
+        const copy = JSON.parse(JSON.stringify(c));
+        if (currentNames.has(c.id)) copy.props.name = currentNames.get(c.id);
+        this.components.set(c.id, copy);
+      }
+      for (const w of scenario.wires) {
+        this.wires.set(w.id, JSON.parse(JSON.stringify(w)));
+      }
+      this.nextId = scenario.nextId;
+    } else {
+      // Overlay: apply selected categories to matching current components
+      for (const snap of scenario.components) {
+        const cur = this.components.get(snap.id);
+        if (!cur) continue;
+        if (applies.layout) {
+          cur.x = snap.x;
+          cur.y = snap.y;
+          cur.rotation = snap.rotation || 0;
+        }
+        if (!snap.props) continue;
+        const isSwitchgear = SWITCHING_TYPES.has(cur.type);
+        for (const [k, v] of Object.entries(snap.props)) {
+          if (k === 'name') continue;                       // identity: never applied
+          if (k === 'state' && isSwitchgear) {
+            if (applies.switching) cur.props[k] = JSON.parse(JSON.stringify(v));
+            continue;
+          }
+          if (k === 'busWidth') {
+            if (applies.layout) cur.props[k] = v;
+            continue;
+          }
+          if (applies.settings) cur.props[k] = JSON.parse(JSON.stringify(v));
+        }
+      }
     }
-    for (const w of scenario.wires) {
-      this.wires.set(w.id, JSON.parse(JSON.stringify(w)));
-    }
-    this.nextId = scenario.nextId;
     this.dirty = true;
     return true;
   },
@@ -389,6 +454,7 @@ const AppState = {
     this.pages = this.pages.filter(p => p.id !== pageId);
     if (this.activePageId === pageId) this.activePageId = this.pages[0].id;
     this.dirty = true;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     return true;
   },
 
@@ -440,7 +506,7 @@ const AppState = {
     this.projectName = 'Untitled Project';
     this.dirty = false;
     this.projectDetails = {
-      projectNumber: '', clientCompany: '', engineerName: '',
+      projectNumber: '', client: '', company: '', engineerName: '',
       checkedBy: '', approvedBy: '', revisionNumber: '',
       date: '', description: '', companyLogo: null,
     };
@@ -470,9 +536,55 @@ const AppState = {
     }
   },
 
+  // Migrate pre-v2 cable resistances (20°C DC) to operating-temperature values
+  // to match the corrected cable library and the backend's hot-resistance
+  // convention. Returns the number of cables changed. Operates in place on a
+  // plain components array (main diagram or a scenario snapshot).
+  _migrateCableResistances(components) {
+    const round4 = (v) => Number(v.toPrecision(4));
+    const factorFor = (stdType) => {
+      const t = String(stdType || '').toLowerCase();
+      if (t.includes('cu_xlpe')) return 1.275;
+      if (t.includes('al_xlpe')) return 1.282;
+      if (t.includes('cu_pvc')) return 1.20;
+      if (t.includes('al_pvc')) return 1.213;
+      return 1.275; // default: assume Cu XLPE (pre-v2 data was 20°C DC)
+    };
+    const lib = (typeof STANDARD_CABLES !== 'undefined') ? STANDARD_CABLES : [];
+    let changed = 0;
+    for (const c of components) {
+      if (!c || c.type !== 'cable' || !c.props) continue;
+      const p = c.props;
+      if (typeof p.r_per_km !== 'number' || p.r_per_km <= 0) continue;
+      const factor = factorFor(p.standard_type);
+      const std = p.standard_type ? lib.find(l => l.id === p.standard_type) : null;
+      if (std) {
+        // If the stored value still matches the OLD (20°C) library value, snap
+        // to the library's corrected figures exactly; otherwise the user edited
+        // it, so scale the user's value by the temperature factor.
+        const oldLibR = std.r_per_km / factor;
+        if (Math.abs(p.r_per_km - oldLibR) / oldLibR < 0.01) {
+          p.r_per_km = std.r_per_km;
+          if (std.r0_per_km != null) p.r0_per_km = std.r0_per_km;
+        } else {
+          p.r_per_km = round4(p.r_per_km * factor);
+          if (typeof p.r0_per_km === 'number' && p.r0_per_km > 0) p.r0_per_km = round4(p.r0_per_km * factor);
+        }
+      } else {
+        p.r_per_km = round4(p.r_per_km * factor);
+        if (typeof p.r0_per_km === 'number' && p.r0_per_km > 0) p.r0_per_km = round4(p.r0_per_km * factor);
+      }
+      changed++;
+    }
+    return changed;
+  },
+
   // Export to JSON
   toJSON() {
     return {
+      // Schema version. v2: cable r_per_km/r0_per_km store conductor
+      // operating-temperature resistance (was 20°C DC in v1).
+      dataVersion: 2,
       projectName: this.projectName,
       projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
@@ -512,7 +624,9 @@ const AppState = {
     if (data.projectDetails) {
       this.projectDetails = {
         projectNumber: data.projectDetails.projectNumber || '',
-        clientCompany: data.projectDetails.clientCompany || '',
+        // Accept legacy 'clientCompany' key for backward compatibility
+        client: data.projectDetails.client || data.projectDetails.clientCompany || '',
+        company: data.projectDetails.company || '',
         engineerName: data.projectDetails.engineerName || '',
         checkedBy: data.projectDetails.checkedBy || '',
         approvedBy: data.projectDetails.approvedBy || '',
@@ -530,11 +644,41 @@ const AppState = {
     this._scenarioNextId = this.scenarios.length > 0
       ? Math.max(...this.scenarios.map(s => parseInt(s.id.replace('scenario_', '')) || 0)) + 1
       : 1;
+
+    // Migrate legacy cable resistances (pre-v2 projects stored 20°C DC values;
+    // the backend now treats cable r_per_km as operating-temperature). Applies
+    // to the main diagram and every scenario snapshot.
+    if (!data.dataVersion || data.dataVersion < 2) {
+      let migrated = this._migrateCableResistances(data.components || []);
+      for (const sc of this.scenarios) {
+        migrated += this._migrateCableResistances(sc.components || []);
+      }
+      if (migrated > 0) {
+        this.dirty = true;
+        console.info(`[migration] Updated ${migrated} cable(s) to operating-temperature resistance (dataVersion 2).`);
+      }
+    }
+
     for (const c of data.components || []) {
       this.components.set(c.id, c);
     }
     for (const w of data.wires || []) {
       this.wires.set(w.id, w);
+    }
+    // Migrate legacy bus port ids (left/right/top_i/bottom_i) to free-position
+    // 'at_<x>' attachments so they stay put through bus resizes. The render
+    // fallback still resolves unmigrated ids, so this is safe best-effort.
+    if (typeof Symbols !== 'undefined' && Symbols.getBusPortLocal) {
+      for (const w of this.wires.values()) {
+        for (const [compKey, portKey] of [['fromComponent', 'fromPort'], ['toComponent', 'toPort']]) {
+          const comp = this.components.get(w[compKey]);
+          if (!comp || comp.type !== 'bus') continue;
+          const pid = String(w[portKey] || '');
+          if (pid.startsWith('at_')) continue;
+          const loc = Symbols.getBusPortLocal(comp, pid);
+          if (loc) w[portKey] = `at_${Math.round(loc.x)}`;
+        }
+      }
     }
     // Restore groups
     if (data.groups) {
@@ -578,4 +722,14 @@ const AppState = {
 // Snap coordinate to grid
 function snapToGrid(val) {
   return Math.round(val / SNAP_SIZE) * SNAP_SIZE;
+}
+
+// Escape a string for safe interpolation into HTML/SVG markup
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

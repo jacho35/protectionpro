@@ -17,6 +17,7 @@ const Properties = {
   currentId: null,
   unitSelections: {}, // track chosen unit per field, e.g. { 'rated_mva': 'kVA' }
   collapsedSections: {}, // track collapsed state per section key
+  _liveTimers: {}, // debounce timers per field for live (per-keystroke) input
 
   init() {
     this.contentEl = document.getElementById('properties-content');
@@ -50,7 +51,7 @@ const Properties = {
       <div class="component-info">
         <div class="comp-icon">${Symbols.renderPaletteIcon(comp.type)}</div>
         <div class="comp-details">
-          <div class="comp-name">${comp.props.name || def.name}</div>
+          <div class="comp-name">${escHtml(comp.props.name || def.name)}</div>
           <div class="comp-type">${def.name} — ID: ${comp.id}</div>
         </div>
       </div>`;
@@ -59,7 +60,7 @@ const Properties = {
     // 1. Filter visible fields
     const visibleFields = def.fields.filter(field => {
       if (!field.showWhen) return true;
-      const depVal = comp.props[field.showWhen.field] || '';
+      const depVal = comp.props[field.showWhen.field] ?? '';
       if (field.showWhen.match) {
         if (!field.showWhen.match.test(depVal)) return false;
         if (field.showWhen.side === 'lv') {
@@ -132,6 +133,17 @@ const Properties = {
         </div>`;
     }
 
+    // Circuit schedule editor for distribution boards
+    if (comp.type === 'distribution_board') {
+      html += `
+        <div class="prop-section prop-tcc-section">
+          <button class="prop-action-btn" id="btn-edit-db" title="Edit the board's circuit schedule (ways, breakers, phases, loads)">
+            <svg width="14" height="14" viewBox="0 0 14 14" style="vertical-align:-2px;margin-right:4px"><rect x="1.5" y="1.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="5" x2="12.5" y2="5" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="8" x2="12.5" y2="8" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="11" x2="12.5" y2="11" stroke="currentColor" stroke-width="1.3"/></svg>
+            Edit Circuit Schedule
+          </button>
+        </div>`;
+    }
+
     // Position section
     html += `
       <div class="prop-section">
@@ -155,12 +167,15 @@ const Properties = {
         </div>
       </div>`;
 
-    // Per-unit values section
+    // Computed values section (per-unit impedances; rated current for loads)
     const puValues = this.computePerUnit(comp);
     if (puValues) {
+      const puTitle = ['static_load', 'solar_pv', 'wind_turbine', 'generator', 'distribution_board'].includes(comp.type)
+        ? 'Calculated Values'
+        : `Per-Unit Values (Base: ${AppState.baseMVA} MVA)`;
       html += `
         <div class="prop-section">
-          <div class="prop-section-title">Per-Unit Values (Base: ${AppState.baseMVA} MVA)</div>
+          <div class="prop-section-title">${puTitle}</div>
           ${puValues}
         </div>`;
     }
@@ -178,14 +193,34 @@ const Properties = {
       btnTcc.addEventListener('click', () => TCC.openForDevice(comp.id));
     }
 
-    // Bind change events
+    const btnDb = this.contentEl.querySelector('#btn-edit-db');
+    if (btnDb && typeof DBSchedule !== 'undefined') {
+      btnDb.addEventListener('click', () => DBSchedule.open(comp.id));
+    }
+
+    // Bind change events.
+    // Live (per-keystroke) input applies the value to state/canvas debounced
+    // (~400 ms) without committing; 'change' (blur/Enter/select) commits the
+    // edit once: clears stale results and records a single undo step.
     this.contentEl.querySelectorAll('input, select').forEach(input => {
-      input.addEventListener('change', (e) => this.onFieldChange(e, comp));
+      input.addEventListener('change', (e) => {
+        const f = e.target.dataset.field;
+        if (f && this._liveTimers[f]) {
+          clearTimeout(this._liveTimers[f]);
+          delete this._liveTimers[f];
+        }
+        this.onFieldChange(e, comp);
+      });
       if (!input.classList.contains('unit-select')) {
         input.addEventListener('input', (e) => {
-          // Live update for text/number fields
+          // Live update for text/number fields (debounced, non-committing)
           if (e.target.type === 'text' || e.target.type === 'number') {
-            this.onFieldChange(e, comp);
+            const f = e.target.dataset.field || '';
+            if (this._liveTimers[f]) clearTimeout(this._liveTimers[f]);
+            this._liveTimers[f] = setTimeout(() => {
+              delete this._liveTimers[f];
+              this.onFieldChange(e, comp, false);
+            }, 400);
           }
         });
       }
@@ -214,6 +249,7 @@ const Properties = {
         if (comp && !isNaN(resetValue)) {
           comp.props[fieldKey] = resetValue;
           AppState.dirty = true;
+          this._notifyResultsCleared();
           AppState.clearResults();
           if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
           Canvas.render();
@@ -291,8 +327,8 @@ const Properties = {
         optionsHtml += `<div class="searchable-select-option${sel}" data-value="${cable.id}">${cable.name}</div>`;
       }
 
-      inputHtml = `<div class="searchable-select" data-field="${field.key}" data-library="${field.library}" data-value="${value || ''}">
-        <input type="text" class="searchable-select-input" placeholder="Search cables..." value="${displayText}" autocomplete="off">
+      inputHtml = `<div class="searchable-select" data-field="${field.key}" data-library="${field.library}" data-value="${escHtml(value || '')}">
+        <input type="text" class="searchable-select-input" placeholder="Search cables..." value="${escHtml(displayText)}" autocomplete="off">
         <div class="searchable-select-dropdown">${hintHtml}${optionsHtml}</div>
       </div>`;
     } else if (field.type === 'standard_select') {
@@ -314,17 +350,23 @@ const Properties = {
       for (const [id, comp] of AppState.components) {
         if (filterType && comp.type !== filterType) continue;
         const name = comp.props?.name || `${comp.type} ${id}`;
-        options.push(`<option value="${id}" ${value === id ? 'selected' : ''}>${name}</option>`);
+        options.push(`<option value="${id}" ${value === id ? 'selected' : ''}>${escHtml(name)}</option>`);
       }
       inputHtml = `<select data-field="${field.key}">${options.join('')}</select>`;
     } else if (field.type === 'select') {
-      const options = field.options.map(opt =>
-        `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`
-      ).join('');
+      const options = field.options.map(opt => {
+        const val = typeof opt === 'object' ? opt.value : opt;
+        const label = typeof opt === 'object' ? opt.label : opt;
+        // Compare via String(): the backend coerces numeric-looking string
+        // props to numbers on save, so a strict === would fail to re-select
+        // (e.g. stored 12 vs option '12') and silently show the first option.
+        return `<option value="${val}" ${String(value) === String(val) ? 'selected' : ''}>${label}</option>`;
+      }).join('');
       inputHtml = `<select data-field="${field.key}">${options}</select>`;
     } else {
       // Number or text input — handle unit conversion for display
       let displayValue = value;
+      let displayMult = 1;
       if (field.unitOptions) {
         let defaultUnit = field.unitOptions[0].label;
         // Use project setting for cable length unit
@@ -333,15 +375,24 @@ const Properties = {
         }
         const selectedUnit = this.unitSelections[field.key] || defaultUnit;
         const unitOpt = field.unitOptions.find(u => u.label === selectedUnit);
-        if (unitOpt && unitOpt.mult !== 1) {
-          displayValue = value / unitOpt.mult;
+        if (unitOpt) displayMult = unitOpt.mult;
+        if (displayMult !== 1) {
+          displayValue = value / displayMult;
         }
         // Round to avoid floating point noise
         if (typeof displayValue === 'number') {
           displayValue = parseFloat(displayValue.toPrecision(10));
         }
       }
-      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${displayValue}" step="any">`;
+      // Emit declared min/max/step constraints (defined in base units —
+      // convert to the selected display unit so the browser enforces them)
+      let constraints = '';
+      if (field.type === 'number') {
+        if (field.min !== undefined) constraints += ` min="${field.min / displayMult}"`;
+        if (field.max !== undefined) constraints += ` max="${field.max / displayMult}"`;
+        constraints += ` step="${field.step !== undefined ? field.step / displayMult : 'any'}"`;
+      }
+      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${escHtml(displayValue)}"${constraints}>`;
     }
 
     // Unit display: selectable dropdown if unitOptions, else static text
@@ -381,9 +432,23 @@ const Properties = {
       }
     }
 
+    // CB pickup settings: show the resulting trip current in brackets
+    // (TCC convention: Ir = In × thermal, Im = Ir × magnetic)
+    let labelText = field.label;
+    if (['thermal_pickup', 'magnetic_pickup'].includes(field.key) && this.currentId) {
+      const comp = AppState.components.get(this.currentId);
+      if (comp && comp.type === 'cb') {
+        const inA = comp.props.trip_rating_a || 630;
+        const ir = inA * (comp.props.thermal_pickup || 1.0);
+        const amps = field.key === 'thermal_pickup' ? ir : ir * (comp.props.magnetic_pickup || 10);
+        const ampStr = amps >= 1000 ? `${(amps / 1000).toFixed(2)} kA` : `${amps.toFixed(0)} A`;
+        labelText += ` (${ampStr})`;
+      }
+    }
+
     return `
       <div class="prop-row${modifiedClass}">
-        <label>${field.label}</label>
+        <label>${labelText}</label>
         ${inputHtml}
         ${unitHtml}
         ${infoHtml}
@@ -391,7 +456,10 @@ const Properties = {
       </div>`;
   },
 
-  onFieldChange(e, comp) {
+  // commit=false: live (debounced) keystroke update — applies the value to
+  // state/canvas only. commit=true: completed edit — also clears results and
+  // takes a single undo snapshot.
+  onFieldChange(e, comp, commit = true) {
     const field = e.target.dataset.field;
     let value = e.target.value;
 
@@ -410,6 +478,7 @@ const Properties = {
         this.applyStandardType(comp, e.target.dataset.library, value);
       }
       AppState.dirty = true;
+      this._notifyResultsCleared();
       AppState.clearResults();
       Canvas.render();
       this.show(comp.id); // re-render to show filled values
@@ -427,16 +496,38 @@ const Properties = {
       // Type coerce numbers, applying unit conversion
       if (e.target.type === 'number') {
         value = parseFloat(value);
-        if (isNaN(value)) return;
+        if (isNaN(value)) {
+          // Invalid text — flag the input and keep the previous value
+          e.target.classList.add('input-invalid');
+          e.target.style.borderColor = '#d32f2f';
+          return;
+        }
+        e.target.classList.remove('input-invalid');
+        e.target.style.borderColor = '';
         // Convert from display unit back to base unit
         const def = COMPONENT_DEFS[comp.type];
         const fieldDef = def.fields.find(f => f.key === field);
+        let mult = 1;
         if (fieldDef && fieldDef.unitOptions) {
           let defaultUnit = fieldDef.unitOptions[0].label;
           if (field === 'length_km' && AppState.defaultLengthUnit) defaultUnit = AppState.defaultLengthUnit;
           const selectedUnit = this.unitSelections[field] || defaultUnit;
           const unitOpt = fieldDef.unitOptions.find(u => u.label === selectedUnit);
-          if (unitOpt) value = value * unitOpt.mult;
+          if (unitOpt) {
+            mult = unitOpt.mult;
+            value = value * mult;
+          }
+        }
+        // Clamp to the declared min/max (defined in base units)
+        if (fieldDef) {
+          const lo = fieldDef.min !== undefined ? fieldDef.min : -Infinity;
+          const hi = fieldDef.max !== undefined ? fieldDef.max : Infinity;
+          const clamped = Math.min(hi, Math.max(lo, value));
+          if (clamped !== value) {
+            value = clamped;
+            // Reflect the clamped value in the input (display units) on commit
+            if (commit) e.target.value = parseFloat((value / mult).toPrecision(10));
+          }
         }
       }
       comp.props[field] = value;
@@ -445,6 +536,11 @@ const Properties = {
     // Voltage propagation: when bus voltage changes, propagate with confirmation
     if (typeof VoltagePropagation !== 'undefined' && comp.type === 'bus' && field === 'voltage_kv') {
       AppState.dirty = true;
+      if (!commit) {
+        Canvas.render();
+        return;
+      }
+      this._notifyResultsCleared();
       AppState.clearResults();
       VoltagePropagation.propagateFromBusChange(comp.id, value, () => {
         Canvas.render();
@@ -453,14 +549,17 @@ const Properties = {
     }
 
     // Voltage propagation: when transformer voltage changes, propagate to connected zones
-    if (typeof VoltagePropagation !== 'undefined' && comp.type === 'transformer' &&
+    if (commit && typeof VoltagePropagation !== 'undefined' && comp.type === 'transformer' &&
         (field === 'voltage_hv_kv' || field === 'voltage_lv_kv')) {
       VoltagePropagation.propagateFromTransformerChange(comp.id, field);
     }
 
     AppState.dirty = true;
-    AppState.clearResults();
-    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    if (commit) {
+      this._notifyResultsCleared();
+      AppState.clearResults();
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    }
     Canvas.render();
 
     // Update component label if name changed
@@ -477,20 +576,60 @@ const Properties = {
 
     // When vector group changes, auto-set grounding defaults to match
     if (field === 'vector_group' && comp.type === 'transformer') {
-      const vg = value || 'Dyn11';
-      const lvPart = vg.replace(/^[A-Z]+/, '');
-      const hvIsGrounded = /^(YN|ZN)/i.test(vg.toUpperCase());
-      const lvIsGrounded = /^(yn|zn)/.test(lvPart.toLowerCase());
-      // Set grounding to solidly_grounded if winding is grounded star,
-      // ungrounded if it's delta or ungrounded star
-      comp.props.grounding_hv = hvIsGrounded ? 'solidly_grounded' : 'ungrounded';
-      comp.props.grounding_lv = lvIsGrounded ? 'solidly_grounded' : 'ungrounded';
+      this._applyVectorGroupGrounding(comp, value || 'Dyn11');
+    }
+
+    // Board diversity edits change the derived lumped-load equivalents
+    if (comp.type === 'distribution_board' && field === 'board_diversity' &&
+        typeof DBSchedule !== 'undefined') {
+      DBSchedule.recompute(comp);
     }
 
     // Re-render properties when fields with conditional dependents change
     if (['vector_group', 'grounding_hv', 'grounding_lv', 'cb_type'].includes(field)) {
       this.show(comp.id);
     }
+
+    // Refresh the Calculated Values section when one of its inputs commits
+    // (static load current; solar/wind total plant rating & available output).
+    // For static loads this also re-evaluates the phase-% showWhen fields.
+    const CALC_REFRESH_FIELDS = {
+      static_load: ['rated_kva', 'voltage_kv', 'power_factor', 'demand_factor', 'phase_connection'],
+      solar_pv: ['rated_kw', 'num_inverters', 'irradiance_pct', 'voltage_kv', 'inverter_eff'],
+      wind_turbine: ['rated_mva', 'num_turbines', 'wind_speed_pct', 'voltage_kv'],
+      generator: ['rated_mva', 'voltage_kv', 'xd_pp'],
+      cb: ['trip_rating_a', 'thermal_pickup', 'magnetic_pickup'],
+      distribution_board: ['voltage_kv', 'power_factor', 'board_diversity'],
+    };
+    if (commit && CALC_REFRESH_FIELDS[comp.type]?.includes(field)) {
+      this.show(comp.id);
+    }
+  },
+
+  // Set grounding defaults from a vector group: solidly_grounded for a
+  // grounded-star winding, ungrounded for delta or ungrounded star.
+  // Shared by manual vector-group edits and library selection.
+  _applyVectorGroupGrounding(comp, vg) {
+    const lvPart = vg.replace(/^[A-Z]+/, '');
+    const hvIsGrounded = /^(YN|ZN)/i.test(vg.toUpperCase());
+    const lvIsGrounded = /^(yn|zn)/.test(lvPart.toLowerCase());
+    comp.props.grounding_hv = hvIsGrounded ? 'solidly_grounded' : 'ungrounded';
+    comp.props.grounding_lv = lvIsGrounded ? 'solidly_grounded' : 'ungrounded';
+  },
+
+  // Notify once that stale analysis results were cleared by an edit.
+  // Only fires when there were results to clear, so it appears once per
+  // editing session (results stay cleared until studies are re-run).
+  _notifyResultsCleared() {
+    const had = AppState.faultResults || AppState.loadFlowResults ||
+      AppState.unbalancedLoadFlowResults || AppState.arcFlashResults ||
+      AppState.dcArcFlashResults || AppState.cableSizingResults ||
+      AppState.motorStartingResults || AppState.dutyCheckResults ||
+      AppState.loadDiversityResults || AppState.groundingResults ||
+      AppState.studyManagerResults;
+    if (!had) return;
+    const el = document.getElementById('status-info');
+    if (el) el.textContent = 'Analysis results cleared — re-run studies after editing.';
   },
 
   // Auto-fill component properties from a standard library entry
@@ -500,6 +639,8 @@ const Properties = {
       if (cable) {
         comp.props.r_per_km = cable.r_per_km;
         comp.props.x_per_km = cable.x_per_km;
+        comp.props.r0_per_km = cable.r0_per_km;
+        comp.props.x0_per_km = cable.x0_per_km;
         comp.props.rated_amps = cable.rated_amps;
         comp.props.voltage_kv = cable.voltage_kv;
       }
@@ -512,6 +653,13 @@ const Properties = {
         comp.props.z_percent = xfmr.z_percent;
         comp.props.x_r_ratio = xfmr.x_r_ratio;
         comp.props.vector_group = xfmr.vector_group;
+        // Sync grounding props with the selected vector group (M26)
+        this._applyVectorGroupGrounding(comp, xfmr.vector_group || 'Dyn11');
+        // Propagate the new winding voltages to connected zones, same as a
+        // manual edit of voltage_hv_kv/voltage_lv_kv would
+        if (typeof VoltagePropagation !== 'undefined') {
+          VoltagePropagation.propagateFromTransformerChange(comp.id, 'voltage_lv_kv');
+        }
       }
     } else if (libraryType === 'cb') {
       const cb = STANDARD_CBS.find(c => c.id === typeId);
@@ -562,7 +710,14 @@ const Properties = {
       html += `<div class="prop-row"><label>X (p.u.)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
     } else if (comp.type === 'generator') {
       const Xpu = (comp.props.xd_pp || 0.15) * base / (comp.props.rated_mva || 1);
-      html += `<div class="prop-row"><label>X"d (p.u.)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
+      html += `<div class="prop-row"><label>X"d (p.u. @ ${base} MVA)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
+      // Full load current from the machine rating: I = S / (√3 × V)
+      const rated = comp.props.rated_mva || 0;
+      const vkv = comp.props.voltage_kv || 0;
+      if (rated > 0 && vkv > 0) {
+        const fla = (rated * 1000) / (Math.sqrt(3) * vkv);
+        html += `<div class="prop-row"><label>Full Load Current</label><span class="pu-value">${fla.toFixed(1)} A</span></div>`;
+      }
     } else if (comp.type === 'cable') {
       const Vkv = comp.props.voltage_kv || 11;
       const Zbase = (Vkv * Vkv) / base;
@@ -576,17 +731,95 @@ const Properties = {
         html += `<div class="prop-row"><label>Total Rating</label><span class="pu-value">${totalAmps} A (${nPar}×${comp.props.rated_amps})</span></div>`;
       }
     } else if (comp.type === 'motor_induction') {
-      const kva = (comp.props.rated_kw || 200) / (comp.props.efficiency || 0.93);
+      // S = P / (η·cosφ) per IEC 60909-0 §3.8 (matches the backend engines)
+      const kva = (comp.props.rated_kw || 200) /
+        ((comp.props.efficiency || 0.93) * (comp.props.power_factor || 0.85));
       const Xpu = (comp.props.x_pp || 0.17) * base / (kva / 1000);
       html += `<div class="prop-row"><label>X" (p.u.)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
     } else if (comp.type === 'motor_synchronous') {
       const Xpu = (comp.props.xd_pp || 0.15) * base / ((comp.props.rated_kva || 500) / 1000);
       html += `<div class="prop-row"><label>X"d (p.u.)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
+    } else if (comp.type === 'static_load') {
+      const amps = this._staticLoadRatedAmps(comp.props);
+      if (amps === null) return null;
+      html += `<div class="prop-row"><label>Rated Current</label><span class="pu-value">${amps.toFixed(1)} A</span></div>`;
+      const df = comp.props.demand_factor;
+      if (df && df !== 1) {
+        html += `<div class="prop-row"><label>Demand Current</label><span class="pu-value">${(amps * df).toFixed(1)} A</span></div>`;
+      }
+    } else if (comp.type === 'distribution_board') {
+      const circuits = comp.props.circuits || [];
+      const connected = comp.props.rated_kva || 0;      // derived: Σ way VA
+      const df = comp.props.demand_factor || 1;         // derived: aggregate diversity
+      const demand = connected * df;
+      html += `<div class="prop-row"><label>Ways</label><span class="pu-value">${circuits.length}</span></div>`;
+      html += `<div class="prop-row"><label>Connected Load</label><span class="pu-value">${connected.toFixed(1)} kVA</span></div>`;
+      html += `<div class="prop-row"><label>Demand (diversified)</label><span class="pu-value">${demand.toFixed(1)} kVA</span></div>`;
+      const vkv = comp.props.voltage_kv || 0;
+      if (vkv > 0 && demand > 0) {
+        html += `<div class="prop-row"><label>Demand Current</label><span class="pu-value">${(demand / (Math.sqrt(3) * vkv)).toFixed(1)} A</span></div>`;
+      }
+      if (circuits.length > 0) {
+        const pa = comp.props.phase_a_pct ?? 33.33;
+        const pb = comp.props.phase_b_pct ?? 33.33;
+        const pc = comp.props.phase_c_pct ?? 33.34;
+        html += `<div class="prop-row"><label>Phase Balance R/W/B</label><span class="pu-value">${pa.toFixed(0)}/${pb.toFixed(0)}/${pc.toFixed(0)} %</span></div>`;
+      }
+    } else if (comp.type === 'solar_pv') {
+      // Make the rated-power × inverter-count multiplication explicit
+      const nInv = Math.max(1, comp.props.num_inverters || 1);
+      const rated = comp.props.rated_kw || 0;
+      const total = rated * nInv;
+      if (total <= 0) return null;
+      const fmtKw = (kw) => kw >= 1000 ? `${(kw / 1000).toFixed(2)} MW` : `${kw.toFixed(0)} kW`;
+      const totalStr = nInv > 1 ? `${nInv} × ${fmtKw(rated)} = ${fmtKw(total)}` : fmtKw(total);
+      html += `<div class="prop-row"><label>Total Plant Rating</label><span class="pu-value">${totalStr}</span></div>`;
+      const irr = comp.props.irradiance_pct ?? 100;
+      if (irr < 100) {
+        html += `<div class="prop-row"><label>Available Output</label><span class="pu-value">${fmtKw(total * irr / 100)} @ ${irr}%</span></div>`;
+      }
+      // Full load current at the plant's rated apparent power (engine
+      // convention: S = kW × inverters / efficiency), independent of irradiance
+      const pvKv = comp.props.voltage_kv || 0;
+      const eff = comp.props.inverter_eff || 0.97;
+      if (pvKv > 0 && eff > 0) {
+        const sKva = total / eff;
+        html += `<div class="prop-row"><label>Full Load Current</label><span class="pu-value">${(sKva / (Math.sqrt(3) * pvKv)).toFixed(1)} A</span></div>`;
+      }
+    } else if (comp.type === 'wind_turbine') {
+      const nTurb = Math.max(1, comp.props.num_turbines || 1);
+      const rated = comp.props.rated_mva || 0;
+      const total = rated * nTurb;
+      if (total <= 0) return null;
+      const fmtMva = (mva) => mva >= 1 ? `${mva.toFixed(2)} MVA` : `${(mva * 1000).toFixed(0)} kVA`;
+      const totalStr = nTurb > 1 ? `${nTurb} × ${fmtMva(rated)} = ${fmtMva(total)}` : fmtMva(total);
+      html += `<div class="prop-row"><label>Total Plant Rating</label><span class="pu-value">${totalStr}</span></div>`;
+      const wind = comp.props.wind_speed_pct ?? 100;
+      if (wind < 100) {
+        html += `<div class="prop-row"><label>Available Output</label><span class="pu-value">${fmtMva(total * wind / 100)} @ ${wind}%</span></div>`;
+      }
+      const wtKv = comp.props.voltage_kv || 0;
+      if (wtKv > 0) {
+        html += `<div class="prop-row"><label>Full Load Current</label><span class="pu-value">${((total * 1000) / (Math.sqrt(3) * wtKv)).toFixed(1)} A</span></div>`;
+      }
     } else {
       return null;
     }
 
     return html;
+  },
+
+  // Rated current (A) from a static load's kVA rating and phase connection:
+  // 3P draws across √3·V_LL, 2P across V_LL, 1P across V_LN = V_LL/√3
+  // (same connection semantics as the backend unbalanced load flow)
+  _staticLoadRatedAmps(props) {
+    const kva = props.rated_kva || 0;
+    const vkv = props.voltage_kv || 0;
+    if (kva <= 0 || vkv <= 0) return null;
+    const conn = props.phase_connection || '3P';
+    if (conn.startsWith('1P')) return (kva * Math.sqrt(3)) / vkv;
+    if (conn.startsWith('2P')) return kva / vkv;
+    return kva / (Math.sqrt(3) * vkv);
   },
 
   // Show calculation details modal
@@ -616,7 +849,8 @@ const Properties = {
         const busName = busComp?.props?.name || busId;
         const vkv = busResult.voltage_kv || 11;
         const iBaseKA = AppState.baseMVA / (Math.sqrt(3) * vkv);
-        const cFactor = vkv < 1.0 ? 1.05 : 1.1;
+        // c_max per IEC 60909 Table 1: 1.10 (+10% tolerance) — matches fault.py
+        const cFactor = 1.1;
         const zBase = (vkv * vkv) / AppState.baseMVA;
 
         // Z_eq display
@@ -819,6 +1053,70 @@ ${br.losses_mw ? `Losses = ${(br.losses_mw * 1000).toFixed(2)} kW` : ''}</div>
       }
     }
 
+    // --- Unbalanced Load Flow Results ---
+    if (AppState.unbalancedLoadFlowResults) {
+      const ulf = AppState.unbalancedLoadFlowResults;
+      const busIds = comp.type === 'bus' ? [comp.id] : connectedBusIds;
+
+      for (const busId of busIds) {
+        const br = ulf.buses?.[busId];
+        if (!br) continue;
+        const busComp = AppState.components.get(busId);
+        const busName = busComp?.props?.name || busId;
+
+        html += `
+          <div class="calc-step">
+            <div class="calc-step-title">Unbalanced Load Flow — ${busName}</div>
+            <div class="calc-formula">Method: ${ulf.method || 'Sequence Component'}
+Converged: ${ulf.converged ? 'Yes' : 'NO — results may be inaccurate'}
+Iterations: ${ulf.iterations}
+
+─── Per-Phase Voltages ───
+Va = ${br.va_pu?.toFixed(4)} p.u. ∠${br.angle_a_deg?.toFixed(2)}°  =  ${br.va_kv?.toFixed(4)} kV
+Vb = ${br.vb_pu?.toFixed(4)} p.u. ∠${br.angle_b_deg?.toFixed(2)}°  =  ${br.vb_kv?.toFixed(4)} kV
+Vc = ${br.vc_pu?.toFixed(4)} p.u. ∠${br.angle_c_deg?.toFixed(2)}°  =  ${br.vc_kv?.toFixed(4)} kV
+
+─── Sequence Voltages ───
+V₁ (pos.) = ${br.v1_pu?.toFixed(4)} p.u.
+V₂ (neg.) = ${br.v2_pu?.toFixed(4)} p.u.
+V₀ (zero) = ${br.v0_pu?.toFixed(4)} p.u.
+
+─── Voltage Unbalance Factor (IEC 61000-3-13) ───
+VUF = |V₂|/|V₁| × 100 = ${br.vuf_pct?.toFixed(3)}%  ${br.vuf_pct > 2 ? '⚠ EXCEEDS 2% LIMIT' : br.vuf_pct > 1 ? '⚠ Elevated' : '✓ Within limit'}
+
+─── Per-Phase Active Power Injections ───
+Pa = ${br.pa_mw?.toFixed(4)} MW   Pb = ${br.pb_mw?.toFixed(4)} MW   Pc = ${br.pc_mw?.toFixed(4)} MW</div>
+          </div>`;
+      }
+
+      // Branch results for non-bus components
+      if (comp.type !== 'bus' && ulf.branches) {
+        for (const br of ulf.branches) {
+          if (br.elementId !== comp.id) continue;
+          const fromBus = AppState.components.get(br.from_bus);
+          const toBus = AppState.components.get(br.to_bus);
+          html += `
+            <div class="calc-step">
+              <div class="calc-step-title">Unbalanced Branch Currents — ${comp.props.name || comp.type}</div>
+              <div class="calc-formula">From: ${fromBus?.props?.name || br.from_bus}
+To:   ${toBus?.props?.name || br.to_bus}
+
+─── Per-Phase Currents ───
+Ia = ${br.ia_amps?.toFixed(1)} A
+Ib = ${br.ib_amps?.toFixed(1)} A
+Ic = ${br.ic_amps?.toFixed(1)} A
+In = ${br.in_amps?.toFixed(1)} A (neutral)
+
+─── Sequence Currents ───
+I₁ (pos.) = ${br.i1_amps?.toFixed(1)} A
+I₂ (neg.) = ${br.i2_amps?.toFixed(1)} A
+I₀ (zero) = ${br.i0_amps?.toFixed(1)} A
+${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct > 100 ? '  ⚠ OVERLOADED' : br.loading_pct > 80 ? '  ⚠ Heavy loading' : ''}` : ''}</div>
+            </div>`;
+        }
+      }
+    }
+
     if (!html) {
       html = '<p>No calculation data available for this component. Run Fault Analysis or Load Flow to see results.</p>';
     }
@@ -844,23 +1142,36 @@ ${br.losses_mw ? `Losses = ${(br.losses_mw * 1000).toFixed(2)} kW` : ''}</div>
     return busIds;
   },
 
-  // Get voltage filter for cable library based on connected bus voltage
+  // Get voltage filter for cable library based on connected bus voltages
+  // and the facing winding of directly connected transformers
   _getCableVoltageFilter(compId) {
-    const busIds = this._getConnectedBusIds(compId);
-    if (busIds.length === 0) return null; // no buses — show all cables
-
     const voltages = new Set();
-    for (const busId of busIds) {
-      const bus = AppState.components.get(busId);
-      if (bus && bus.props.voltage_kv) voltages.add(bus.props.voltage_kv);
+    let anchors = 0; // connected buses/transformers that define a voltage
+
+    for (const n of Components.getConnectedComponents(compId)) {
+      const other = AppState.components.get(n.componentId);
+      if (!other) continue;
+      if (other.type === 'bus') {
+        anchors++;
+        if (other.props.voltage_kv) voltages.add(other.props.voltage_kv);
+      } else if (other.type === 'transformer' && typeof VoltagePropagation !== 'undefined') {
+        // n.port is the transformer port this cable connects to
+        const side = VoltagePropagation.getTransformerSide(other, n.port);
+        if (!side) continue;
+        anchors++;
+        const v = other.props[side.thisKey];
+        if (v) voltages.add(v);
+      }
     }
+
+    if (anchors === 0) return null; // no buses/transformers — show all cables
     if (voltages.size !== 1) return null; // ambiguous — show all
 
-    const busVoltage = [...voltages][0];
-    if (busVoltage <= 1.0) {
+    const systemVoltage = [...voltages][0];
+    if (systemVoltage <= 1.0) {
       return { fn: c => c.voltage_kv <= 1.0, label: 'LV' };
     } else {
-      return { fn: c => c.voltage_kv === busVoltage, label: `${busVoltage} kV` };
+      return { fn: c => c.voltage_kv === systemVoltage, label: `${systemVoltage} kV` };
     }
   },
 
@@ -901,6 +1212,7 @@ ${br.losses_mw ? `Losses = ${(br.losses_mw * 1000).toFixed(2)} kW` : ''}</div>
           this.applyStandardType(comp, libraryType, val);
         }
         AppState.dirty = true;
+        this._notifyResultsCleared();
         AppState.clearResults();
         Canvas.render();
         wrapper.classList.remove('open');
@@ -1061,8 +1373,10 @@ X"d = ${(Xpu * Zbase).toFixed(4)} Ω</div>
       const Xpu_uncorr = Zpu_uncorr * xr / Math.sqrt(1 + xr * xr);
       const Rpu_uncorr = Xpu_uncorr / xr;
       // IEC 60909 correction factor K_T = 0.95 × c_max / (1 + 0.6 × x_T)
+      // c_max is tied to the LV-side nominal voltage (IEC 60909-0 §6.3.3)
       const xT = (zPct / 100) * xr / Math.sqrt(1 + xr * xr);
-      const cMax = hvkv < 1.0 ? 1.05 : 1.1;
+      // c_max per IEC 60909 Table 1 (+10% tolerance) — matches fault.py engine
+      const cMax = 1.1;
       const KT = 0.95 * cMax / (1 + 0.6 * xT);
       const Zpu = Zpu_uncorr * KT;
       const Xpu = Xpu_uncorr * KT;
@@ -1094,7 +1408,7 @@ R_pu = X_pu / (X/R) = ${Rpu_uncorr.toFixed(6)} p.u. (${(Rpu_uncorr * 100).toFixe
 
 ─── IEC 60909 Correction Factor (§6.3.3) ───
 x_T = (Z% / 100) × (X/R) / √(1 + (X/R)²) = ${xT.toFixed(6)} p.u. (on transformer rating)
-c_max = ${cMax} (${hvkv < 1.0 ? 'LV < 1 kV' : 'MV/HV ≥ 1 kV'})
+c_max = ${cMax} (LV side ${lvkv} kV ${lvkv < 1.0 ? '< 1 kV' : '≥ 1 kV'})
 K_T = 0.95 × c_max / (1 + 0.6 × x_T)
 K_T = 0.95 × ${cMax} / (1 + 0.6 × ${xT.toFixed(6)}) = ${KT.toFixed(6)}
 
@@ -1155,7 +1469,8 @@ X_pu = ${X.toFixed(4)} / ${Zbase.toFixed(4)} = ${(X / Zbase).toFixed(6)} p.u. ($
 
 Z_pu(eff) = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
 
-Voltage drop (at rated) ≈ ${(Rpu * totalRated / (ratedMVA * 1000 / (Math.sqrt(3) * Vkv)) * 100).toFixed(2)}% (R only)</div>
+Voltage drop (at rated) ≈ √3 × I × R_eff / V
+  = √3 × ${totalRated} × ${(R / nPar).toFixed(4)} / ${(Vkv * 1000).toFixed(0)} = ${(Math.sqrt(3) * totalRated * (R / nPar) / (Vkv * 1000) * 100).toFixed(3)}% (R only)</div>
         </div>`;
 
     } else if (comp.type === 'motor_induction') {
@@ -1166,7 +1481,8 @@ Voltage drop (at rated) ≈ ${(Rpu * totalRated / (ratedMVA * 1000 / (Math.sqrt(
       const xpp = comp.props.x_pp || 0.17;
       const xr = comp.props.x_r_ratio || 10;
       const lrc = comp.props.locked_rotor_current || 6;
-      const kva = kw / eff;
+      // S = P / (η·cosφ) per IEC 60909-0 §3.8 (matches the backend engines)
+      const kva = kw / (eff * pf);
       const mva = kva / 1000;
       const Zpu_motor = xpp;  // Z" on motor rating
       const Xpu_motor = Zpu_motor * xr / Math.sqrt(1 + xr * xr);
@@ -1186,7 +1502,7 @@ Efficiency = ${(eff * 100).toFixed(1)}%
 Power Factor = ${pf}
 X/R Ratio = ${xr}
 
-Input kVA = P / η = ${kw} / ${eff} = ${kva.toFixed(1)} kVA (${mva.toFixed(4)} MVA)
+Input kVA = P / (η × cosφ) = ${kw} / (${eff} × ${pf}) = ${kva.toFixed(1)} kVA (${mva.toFixed(4)} MVA)
 I_rated = ${(iRated * 1000).toFixed(2)} A
 I_start = ${lrc} × I_rated = ${(iStart * 1000).toFixed(2)} A
 
@@ -1248,15 +1564,20 @@ Q = ${(mva * Math.sqrt(1 - pf * pf)).toFixed(4)} MVAr</div>
       const vkv = comp.props.voltage_kv || 0.4;
       const pf = comp.props.power_factor || 0.85;
       const mva = kva / 1000;
-      const iRated = kva / (Math.sqrt(3) * vkv * 1000);
+      const conn = comp.props.phase_connection || '3P';
+      const iRated = this._staticLoadRatedAmps(comp.props) || 0;
+      const iFormula = conn.startsWith('1P') ? 'I_rated = S / V_LN (V_LN = V/√3)'
+        : conn.startsWith('2P') ? 'I_rated = S / V_LL'
+        : 'I_rated = S / (√3 × V)';
       html += `
         <div class="calc-step">
           <div class="calc-step-title">Load Summary (Static Load)</div>
           <div class="calc-formula">Rated = ${kva} kVA at ${vkv} kV
 Power Factor = ${pf}
 Load Type = ${comp.props.load_type || 'constant_power'}
+Connection = ${conn}
 
-I_rated = S / (√3 × V) = ${(iRated * 1000).toFixed(2)} A
+${iFormula} = ${iRated.toFixed(2)} A
 
 P = S × PF = ${(mva * pf).toFixed(4)} MW (${(mva * pf * 1000).toFixed(1)} kW)
 Q = S × sin(φ) = ${(mva * Math.sqrt(1 - pf * pf)).toFixed(4)} MVAr

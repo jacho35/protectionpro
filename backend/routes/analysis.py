@@ -92,11 +92,25 @@ def dc_arc_flash(data: ProjectData):
         raise HTTPException(status_code=500, detail=f"DC arc flash analysis error: {e}")
 
 
+class CableSizingRequest(ProjectData):
+    """Extends ProjectData with cable sizing options (all optional —
+    engine defaults are used when a field is omitted)."""
+    ambient_temp_c: Optional[float] = None
+    install_method: Optional[str] = None
+    max_voltage_drop_pct: Optional[float] = None
+
+
 @router.post("/cable-sizing")
-def cable_sizing(data: ProjectData):
+def cable_sizing(data: CableSizingRequest):
     """Run cable sizing analysis — thermal, voltage drop, and fault withstand checks."""
     try:
-        return run_cable_sizing(data)
+        return run_cable_sizing(
+            data,
+            ambient_temp_c=data.ambient_temp_c if data.ambient_temp_c is not None else 30,
+            install_method=data.install_method or "trefoil",
+            max_voltage_drop_pct=(data.max_voltage_drop_pct
+                                  if data.max_voltage_drop_pct is not None else 5.0),
+        )
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Cable sizing error: {e}")

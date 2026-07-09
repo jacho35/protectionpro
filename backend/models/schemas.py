@@ -11,7 +11,19 @@ class ComponentProps(BaseModel):
         extra = "allow"
 
 
+# Prop keys that are always textual and must never be coerced to numbers,
+# even when their value happens to be a digit-string (e.g. name: "123").
+_TEXTUAL_PROP_KEYS = {
+    "name", "label", "id", "state", "description", "notes",
+    "tag", "designation",
+}
+
+
 class Component(BaseModel):
+    # Preserve unknown fields (pageId, label offsets added later, …) so
+    # save/load round-trips don't silently drop them
+    model_config = {"extra": "allow"}
+
     id: str
     type: str
     x: float
@@ -29,8 +41,11 @@ class Component(BaseModel):
 
         Frontend JSON may send numeric fields as strings (e.g. "11" instead of 11).
         This prevents TypeError in analysis code that does arithmetic on props.
+        Clearly-textual keys (name, label, id, state, ...) are never coerced.
         """
         for k, v in self.props.items():
+            if k in _TEXTUAL_PROP_KEYS:
+                continue
             if isinstance(v, str):
                 try:
                     self.props[k] = int(v)
@@ -38,11 +53,14 @@ class Component(BaseModel):
                     try:
                         self.props[k] = float(v)
                     except ValueError:
-                        pass  # Genuinely a string (e.g. name, state)
+                        pass  # Genuinely a string (e.g. vector_group, cb_type)
         return self
 
 
 class Wire(BaseModel):
+    # Preserve bendPoints, routeMode, pageId, … through save/load
+    model_config = {"extra": "allow"}
+
     id: str
     fromComponent: str
     fromPort: str
@@ -51,6 +69,8 @@ class Wire(BaseModel):
 
 
 class Scenario(BaseModel):
+    model_config = {"extra": "allow"}
+
     id: str
     name: str
     description: str = ""
@@ -74,6 +94,13 @@ class ProjectDetails(BaseModel):
 
 
 class ProjectData(BaseModel):
+    # Preserve unknown top-level fields (dataVersion, pages, groups,
+    # wireRouteMode, annotation offsets, …) through save/load round-trips.
+    # Dropping them corrupted projects: without dataVersion the frontend's
+    # one-time cable-resistance migration re-ran on EVERY load, compounding
+    # cable R by ~1.28× per load→save cycle, and pages/groups were lost.
+    model_config = {"extra": "allow"}
+
     projectName: str = "Untitled Project"
     projectDetails: Optional[ProjectDetails] = None
     baseMVA: float = 100.0
@@ -237,7 +264,7 @@ class ArcFlashBusResult(BaseModel):
 
 class ArcFlashResults(BaseModel):
     buses: dict[str, ArcFlashBusResult]
-    method: str = "IEEE 1584-2018"
+    method: str = "IEEE 1584-2002"
     warnings: list[str] = []
 
 
@@ -276,6 +303,12 @@ class LoadFlowBus(BaseModel):
     angle_deg: float
     p_mw: float = 0
     q_mvar: float = 0
+    energized: bool = True  # False when the bus sits in a sourceless island
+    # Power the busbar carries: outgoing branch flows + local load. Unlike
+    # p_mw/q_mvar (net injection, which is ~0 for pass-through and swing
+    # buses), this is meaningful for every energized bus.
+    p_through_mw: float = 0
+    q_through_mvar: float = 0
 
 
 class LoadFlowBranch(BaseModel):
@@ -299,6 +332,21 @@ class LoadFlowWarning(BaseModel):
     actual_kv: float = 0
 
 
+class DispatchEntry(BaseModel):
+    """Merit-order generation dispatch result for one source."""
+    source_id: str
+    source_name: str = ""
+    source_type: str = ""
+    bus_id: str = ""
+    island: int = 0          # electrical island number (0 = disconnected)
+    priority: float = 0      # dispatch priority, 1 = dispatched first
+    mode: str = "must_run"   # must_run | merit_order
+    role: str = "dispatched"  # balancer | dispatched | curtailed | offline
+    available_mw: float = 0
+    dispatched_mw: float = 0
+    curtailed_mw: float = 0
+
+
 class LoadFlowResults(BaseModel):
     buses: dict[str, LoadFlowBus]
     branches: list[LoadFlowBranch] = []
@@ -306,6 +354,7 @@ class LoadFlowResults(BaseModel):
     converged: bool
     iterations: int
     method: str
+    dispatch: list[DispatchEntry] = []
 
 
 class UnbalancedLoadFlowBus(BaseModel):

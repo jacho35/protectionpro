@@ -30,9 +30,12 @@ IEC_DEMAND_FACTORS = {
     "mixed_industrial": {"description": "Mixed industrial load", "factor": 0.6},
 }
 
-# Diversity factors applied at aggregation level (bus/feeder)
-# Based on IEC 60439-1 Annex H / common practice
-# Key: approximate number of loads, value: diversity factor
+# Coincidence factors (Ks) applied at aggregation level (bus/feeder)
+# Based on IEC 60439-1 Annex H / common practice.
+# Key: approximate number of loads, value: coincidence factor (≤ 1).
+# Note: although named "diversity" throughout (kept for API compatibility),
+# these are coincidence factors Ks — the multiplicative factor applied to
+# the sum of demands. The classical diversity factor is its reciprocal (≥ 1).
 IEC_DIVERSITY_TABLE = [
     (1, 1.0),
     (2, 0.9),
@@ -52,7 +55,7 @@ IEC_DIVERSITY_TABLE = [
 
 
 def _interpolate_diversity(n_loads):
-    """Interpolate IEC diversity factor for given number of loads."""
+    """Interpolate IEC coincidence factor (Ks) for given number of loads."""
     if n_loads <= 1:
         return 1.0
     for i, (count, factor) in enumerate(IEC_DIVERSITY_TABLE):
@@ -98,7 +101,7 @@ def _find_components_at_bus(bus_id, adj, comp_map):
 
 def _get_load_kva(comp):
     """Get installed apparent power (kVA) for a load component."""
-    if comp.type == "static_load":
+    if comp.type in ("static_load", "distribution_board"):
         return float(comp.props.get("rated_kva", 100))
     elif comp.type == "motor_induction":
         rated_kw = float(comp.props.get("rated_kw", 200))
@@ -113,7 +116,7 @@ def _get_load_kva(comp):
 
 def _get_load_kw(comp):
     """Get installed real power (kW) for a load component."""
-    if comp.type == "static_load":
+    if comp.type in ("static_load", "distribution_board"):
         rated_kva = float(comp.props.get("rated_kva", 100))
         pf = float(comp.props.get("power_factor", 0.85))
         return rated_kva * pf
@@ -141,7 +144,7 @@ def run_load_diversity(project: ProjectData):
     adj = _build_adjacency(project)
 
     buses = [c for c in project.components if c.type == "bus"]
-    load_types = {"static_load", "motor_induction", "motor_synchronous"}
+    load_types = {"static_load", "distribution_board", "motor_induction", "motor_synchronous"}
 
     bus_results = []
     total_installed_kva = 0
@@ -193,7 +196,9 @@ def run_load_diversity(project: ProjectData):
             bus_installed_kw += installed_kw
             bus_demand_kw += demand_kw
 
-        # Apply group diversity factor at bus level
+        # Apply group coincidence factor (Ks) at bus level on top of the
+        # per-load demand factors (result keys keep the "diversity" naming
+        # for API compatibility)
         diversity_factor = _interpolate_diversity(n_loads)
         diversified_demand_kva = bus_demand_kva * diversity_factor
         diversified_demand_kw = bus_demand_kw * diversity_factor
@@ -237,9 +242,29 @@ def run_load_diversity(project: ProjectData):
         rated_mva = float(xfmr.props.get("rated_mva", 1.0))
         rated_kva = rated_mva * 1000
 
-        # Find buses connected to transformer secondary (load side)
+        # Find buses connected to the transformer. The walk from the
+        # transformer reaches buses on BOTH windings, so keep only LV-side
+        # (load-side) buses — counting the HV-side bus too would double-count
+        # loads that are not fed through this transformer at all.
+        hv_kv = float(xfmr.props.get("voltage_hv_kv", 11))
+        lv_kv = float(xfmr.props.get("voltage_lv_kv", 0.4))
+        if hv_kv < lv_kv:
+            hv_kv, lv_kv = lv_kv, hv_kv
         connected = _find_components_at_bus(xfmr.id, adj, comp_map)
-        downstream_buses = [c for c in connected if c.type == "bus"]
+        downstream_buses = []
+        for c in connected:
+            if c.type != "bus":
+                continue
+            v = float(c.props.get("voltage_kv", 0))
+            # A bus with unset/zero voltage must NOT be classified as LV-side:
+            # 0 is always nearer the LV rating than the HV rating, which would
+            # re-introduce the HV-bus double-count this filter exists to prevent.
+            if v <= 0:
+                continue
+            # A bus belongs to the LV side if its nominal voltage is closer
+            # to the LV winding rating than to the HV winding rating
+            if hv_kv == lv_kv or abs(v - lv_kv) < abs(v - hv_kv):
+                downstream_buses.append(c)
 
         # Sum demand from all downstream buses
         xfmr_installed_kva = 0

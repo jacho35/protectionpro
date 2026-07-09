@@ -15,6 +15,7 @@ const Compliance = {
 
   // Run all checks and return structured report data
   generate() {
+    this._adj = null; // rebuild the wire adjacency index for this run
     const report = {
       projectName: AppState.projectName || 'Untitled Project',
       baseMVA: AppState.baseMVA,
@@ -90,6 +91,12 @@ const Compliance = {
       const ik3 = faultResult.ik3;
       if (ik3 == null) continue;
 
+      // Breaking duty: compare the symmetrical breaking current Ib when the
+      // engine provides it (IEC 60909 §9); fall back to I"k3 (conservative)
+      const ibKA = faultResult.ib != null ? faultResult.ib : ik3;
+      const ibLabel = faultResult.ib != null ? 'Ib' : 'I"k3';
+      const ipKA = faultResult.ip; // Peak (making) current
+
       // Find protection devices connected to this bus (walk through wires)
       const connectedDevices = this._findConnectedDevices(busId, ['cb', 'fuse']);
 
@@ -109,21 +116,65 @@ const Compliance = {
           continue;
         }
 
-        if (ik3 > breakingKA) {
+        if (ibKA > breakingKA) {
           section.items.push({
             status: 'fail',
             component: devName,
-            message: `Fault current (${ik3.toFixed(2)} kA) EXCEEDS breaking capacity (${breakingKA} kA).`,
+            message: `Breaking duty ${ibLabel} (${ibKA.toFixed(2)} kA) EXCEEDS breaking capacity (${breakingKA} kA).`,
             detail: `At bus ${busName}. ${devComp.type === 'cb' ? 'Circuit breaker' : 'Fuse'} is under-rated for the prospective fault level. Replace with higher rated device.`,
           });
         } else {
-          const margin = ((breakingKA / ik3) - 1) * 100;
-          section.items.push({
-            status: 'pass',
-            component: devName,
-            message: `Fault current (${ik3.toFixed(2)} kA) within breaking capacity (${breakingKA} kA).`,
-            detail: `At bus ${busName}. Margin: ${margin.toFixed(1)}%.`,
-          });
+          const margin = ((breakingKA / ibKA) - 1) * 100;
+          if (margin < 10) {
+            section.items.push({
+              status: 'warn',
+              component: devName,
+              message: `Breaking duty ${ibLabel} (${ibKA.toFixed(2)} kA) within capacity (${breakingKA} kA) but margin is only ${margin.toFixed(1)}%.`,
+              detail: `At bus ${busName}. Margin below 10% — network growth or data uncertainty could exceed the rating. Consider a higher rated device.`,
+            });
+          } else {
+            section.items.push({
+              status: 'pass',
+              component: devName,
+              message: `Breaking duty ${ibLabel} (${ibKA.toFixed(2)} kA) within breaking capacity (${breakingKA} kA).`,
+              detail: `At bus ${busName}. Margin: ${margin.toFixed(1)}%.`,
+            });
+          }
+        }
+
+        // Making (peak) duty: ip vs making capacity. When no explicit making
+        // rating is given, derive it the same way as the backend duty check:
+        // MV (>1 kV) uses 2.5× breaking (IEC 62271-100); LV uses the IEC
+        // 60947-2 Table 2 ratio n = Icm/Icu stepped by Icu.
+        if (ipKA != null) {
+          const explicitMaking = devComp.props?.making_capacity_ka;
+          const devVkv = faultResult.voltage_kv || busComp?.props?.voltage_kv || 11;
+          let makingFactor, factorLabel;
+          if (devVkv > 1.0) {
+            makingFactor = 2.5;
+            factorLabel = '2.5× breaking, IEC 62271-100';
+          } else {
+            const icu = breakingKA;
+            makingFactor = icu <= 6 ? 1.5 : icu <= 10 ? 1.7 : icu <= 20 ? 2.0 : icu <= 50 ? 2.1 : 2.2;
+            factorLabel = `${makingFactor}× breaking, IEC 60947-2`;
+          }
+          const makingKA = explicitMaking || breakingKA * makingFactor;
+          const makingSrc = explicitMaking ? `${makingKA} kA rated` : `${makingKA.toFixed(1)} kA assumed (${factorLabel})`;
+          if (ipKA > makingKA) {
+            section.items.push({
+              status: 'fail',
+              component: devName,
+              message: `Peak fault current ip (${ipKA.toFixed(2)} kA) EXCEEDS making capacity (${makingSrc}).`,
+              detail: `At bus ${busName}. Device may fail on closing onto a fault. Verify the manufacturer's making/peak withstand rating.`,
+            });
+          } else {
+            section.items.push({
+              status: 'pass',
+              component: devName,
+              message: `Peak fault current ip (${ipKA.toFixed(2)} kA) within making capacity (${makingSrc}).`,
+              detail: `At bus ${busName}.`,
+            });
+          }
         }
       }
 
@@ -162,31 +213,36 @@ const Compliance = {
       const nominalKV = busComp?.props?.voltage_kv || busComp?.props?.voltage;
       const vpu = lfResult.voltage_pu;
 
-      // IEC 60038 limits: ±5% for MV/HV, ±10% for LV allowed in some standards
-      // We use ±5% as the standard compliance threshold
-      const lo = 0.95;
-      const hi = 1.05;
+      // Voltage limits: ±10% for LV buses (≤ 1 kV, IEC 60038 utilization
+      // voltage tolerance — consistent with the SANS 10142-1 / NRS 048-2
+      // section); ±5% for MV/HV buses (typical planning-level norm)
+      const isLV = nominalKV != null && nominalKV <= 1.0;
+      const lo = isLV ? 0.90 : 0.95;
+      const hi = isLV ? 1.10 : 1.05;
+      const limitRef = isLV
+        ? 'IEC 60038 LV utilization tolerance ±10%'
+        : 'MV/HV planning-level norm ±5%';
 
       if (vpu < lo) {
         section.items.push({
           status: 'fail',
           component: busName,
           message: `Under-voltage: ${vpu.toFixed(4)} p.u. (${lfResult.voltage_kv.toFixed(2)} kV).`,
-          detail: `Below ${lo} p.u. limit. Nominal: ${nominalKV || '?'} kV. Consider reactive compensation or tap adjustment.`,
+          detail: `Below ${lo} p.u. limit (${limitRef}). Nominal: ${nominalKV || '?'} kV. Consider reactive compensation or tap adjustment.`,
         });
       } else if (vpu > hi) {
         section.items.push({
           status: 'fail',
           component: busName,
           message: `Over-voltage: ${vpu.toFixed(4)} p.u. (${lfResult.voltage_kv.toFixed(2)} kV).`,
-          detail: `Above ${hi} p.u. limit. Nominal: ${nominalKV || '?'} kV. Check tap settings and reactive sources.`,
+          detail: `Above ${hi} p.u. limit (${limitRef}). Nominal: ${nominalKV || '?'} kV. Check tap settings and reactive sources.`,
         });
       } else {
         section.items.push({
           status: 'pass',
           component: busName,
           message: `Voltage: ${vpu.toFixed(4)} p.u. (${lfResult.voltage_kv.toFixed(2)} kV).`,
-          detail: `Within ${lo}–${hi} p.u. range. Nominal: ${nominalKV || '?'} kV.`,
+          detail: `Within ${lo}–${hi} p.u. range (${limitRef}). Nominal: ${nominalKV || '?'} kV.`,
         });
       }
     }
@@ -413,7 +469,7 @@ const Compliance = {
       if (comp.type !== 'cable') continue;
       const cableName = comp.props?.name || cableId;
       const iz = comp.props?.rated_amps; // Cable ampacity (Iz)
-      const cableVoltageKV = comp.props?.voltage_kv;
+      const cableVoltageKV = this._resolveCableVoltage(cableId, comp);
 
       if (!iz || !cableVoltageKV || cableVoltageKV > 1.0) continue; // Only LV cables
       checked++;
@@ -478,7 +534,7 @@ const Compliance = {
 
     for (const [cableId, comp] of AppState.components) {
       if (comp.type !== 'cable') continue;
-      const cableVoltageKV = comp.props?.voltage_kv;
+      const cableVoltageKV = this._resolveCableVoltage(cableId, comp);
       if (!cableVoltageKV || cableVoltageKV > 1.0) continue; // Only LV
 
       const sizeMm2 = comp.props?.size_mm2;
@@ -580,17 +636,6 @@ const Compliance = {
       return;
     }
 
-    // Find utility sources and their fault MVA (proxy for available supply capacity)
-    let totalSupplyMVA = 0;
-    for (const comp of AppState.components.values()) {
-      if (comp.type === 'utility') {
-        const faultMVA = comp.props?.fault_mva || 0;
-        // Approximate thermal capacity as fault_mva / 20 (typical X/Z ≈ 0.05 → MVA_therm ≈ fault_mva / impedance_factor)
-        // Better: use connected transformer rating
-        totalSupplyMVA += faultMVA;
-      }
-    }
-
     // Sum rated MVA of all LV-side transformers (supply to premises)
     let totalXfMVA = 0;
     const xfNames = [];
@@ -607,7 +652,7 @@ const Compliance = {
     let totalLoadMW = 0;
     let totalLoadMVAR = 0;
     for (const comp of AppState.components.values()) {
-      if (!['static_load', 'induction_motor', 'synchronous_motor'].includes(comp.type)) continue;
+      if (!['static_load', 'motor_induction', 'motor_synchronous'].includes(comp.type)) continue;
       // Check if this load is on an LV bus
       const connBuses = this._findConnectedDevices(comp.id || comp.props?.name, ['bus']);
       for (const b of connBuses) {
@@ -670,7 +715,7 @@ const Compliance = {
       const nominalKV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
       if (!nominalKV || nominalKV > LV_THRESHOLD_KV) continue; // LV buses only
 
-      const islg = faultResult.islg; // Single-line-to-ground (earth) fault current in kA
+      const islg = faultResult.ik1; // Single-line-to-ground (earth) fault current in kA
       if (islg == null) continue;
       checked++;
 
@@ -748,25 +793,47 @@ const Compliance = {
     return !!(AppState.loadFlowResults && AppState.loadFlowResults.buses && Object.keys(AppState.loadFlowResults.buses).length > 0);
   },
 
+  // Resolve a cable's operating voltage: use its own voltage_kv prop when set,
+  // otherwise inherit the voltage of a connected bus (via the wire walker)
+  _resolveCableVoltage(cableId, comp) {
+    const own = comp.props?.voltage_kv;
+    if (own) return own;
+    const buses = this._findConnectedDevices(cableId, ['bus']);
+    for (const b of buses) {
+      const busComp = AppState.components.get(b.id);
+      const busV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
+      if (busV) return busV;
+    }
+    return null;
+  },
+
+  // Build (and cache for this report run) a compId → [neighbourId] adjacency
+  // index so _findConnectedDevices doesn't rescan every wire per BFS node.
+  _getAdjacency() {
+    if (this._adj) return this._adj;
+    const adj = new Map();
+    for (const wire of AppState.wires.values()) {
+      if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
+      if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
+      adj.get(wire.fromComponent).push(wire.toComponent);
+      adj.get(wire.toComponent).push(wire.fromComponent);
+    }
+    this._adj = adj;
+    return adj;
+  },
+
   // Walk through wires to find components of given types connected to a component
   _findConnectedDevices(compId, types) {
     const found = [];
-    const visited = new Set();
+    const visited = new Set([compId]);
     const queue = [compId];
-    visited.add(compId);
+    const adj = this._getAdjacency();
+    const transparent = ['cb', 'fuse', 'switch', 'ct', 'pt', 'surge_arrester'];
 
     while (queue.length > 0) {
       const current = queue.shift();
-      // Find all wires connected to current component
-      for (const wire of AppState.wires.values()) {
-        let neighborId = null;
-        if (wire.from === current) neighborId = wire.to;
-        else if (wire.to === current) neighborId = wire.from;
-        if (!neighborId || visited.has(neighborId)) continue;
-
-        // Extract component ID from port reference (format: "compId_portSide")
-        const neighborCompId = this._extractCompId(neighborId);
-        if (!neighborCompId || visited.has(neighborCompId)) continue;
+      for (const neighborCompId of (adj.get(current) || [])) {
+        if (visited.has(neighborCompId)) continue;
         visited.add(neighborCompId);
 
         const neighborComp = AppState.components.get(neighborCompId);
@@ -777,28 +844,12 @@ const Compliance = {
         }
 
         // Walk through transparent elements (CBs, switches, fuses, CTs, PTs, arresters)
-        const transparent = ['cb', 'fuse', 'switch', 'ct', 'pt', 'surge_arrester'];
         if (transparent.includes(neighborComp.type) && !types.includes(neighborComp.type)) {
           queue.push(neighborCompId);
         }
       }
     }
     return found;
-  },
-
-  _extractCompId(portRef) {
-    // Port references are like "comp_id_top" or "comp_id_bottom"
-    // Component IDs contain underscores, so we match against known component IDs
-    for (const id of AppState.components.keys()) {
-      if (portRef.startsWith(id + '_') || portRef === id) return id;
-    }
-    // Fallback: strip last segment
-    const parts = portRef.split('_');
-    if (parts.length > 1) {
-      parts.pop();
-      return parts.join('_');
-    }
-    return portRef;
   },
 
   _findAdjacentBranchCurrents(deviceId) {

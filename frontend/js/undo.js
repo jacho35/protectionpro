@@ -24,11 +24,16 @@ const UndoManager = {
       this._stack.splice(this._index + 1);
     }
 
-    // Capture minimal state (components, wires, nextId)
+    // Capture state (components, wires, pages, groups, counters)
     const state = {
       components: JSON.parse(JSON.stringify([...AppState.components.values()])),
       wires: JSON.parse(JSON.stringify([...AppState.wires.values()])),
       nextId: AppState.nextId,
+      pages: JSON.parse(JSON.stringify(AppState.pages)),
+      activePageId: AppState.activePageId,
+      pageNextId: AppState._pageNextId,
+      groups: [...AppState.groups.values()].map(g => ({ ...g, memberIds: [...g.memberIds] })),
+      groupNextId: AppState._groupNextId,
     };
     this._stack.push(JSON.stringify(state));
     this._index = this._stack.length - 1;
@@ -80,7 +85,25 @@ const UndoManager = {
       AppState.wires.set(w.id, w);
     }
     AppState.nextId = state.nextId;
+    // Restore pages, active sheet and groups (older snapshots may lack them)
+    if (state.pages && state.pages.length > 0) {
+      AppState.pages = state.pages;
+      AppState.activePageId = state.pages.some(p => p.id === state.activePageId)
+        ? state.activePageId
+        : state.pages[0].id;
+      if (state.pageNextId) AppState._pageNextId = state.pageNextId;
+    }
+    AppState.groups.clear();
+    if (state.groups) {
+      for (const g of state.groups) {
+        AppState.groups.set(g.id, { ...g, memberIds: new Set(g.memberIds) });
+      }
+      if (state.groupNextId) AppState._groupNextId = state.groupNextId;
+    }
     AppState.dirty = true;
+    if (typeof window !== 'undefined' && typeof window.renderPageTabs === 'function') {
+      window.renderPageTabs();
+    }
     Canvas.render();
     Properties.clear();
     this._paused = false;
@@ -94,7 +117,7 @@ const UndoManager = {
     // Status
     const info = document.getElementById('status-info');
     if (info && (this.canUndo() || this.canRedo())) {
-      info.textContent = `Undo ${this._index}/${this._stack.length - 1}`;
+      info.textContent = `Undo available (${this._index} of ${this._stack.length - 1})`;
     }
   },
 

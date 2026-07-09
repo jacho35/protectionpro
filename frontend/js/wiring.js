@@ -75,6 +75,9 @@ const Wiring = {
   cancelWire() {
     AppState.wireStart = null;
     this.previewLine.style.display = 'none';
+    if (typeof Canvas !== 'undefined' && Canvas._updateSnapHighlight) {
+      Canvas._updateSnapHighlight(null);
+    }
     document.getElementById('status-mode').textContent =
       AppState.mode === MODE.WIRE ? 'Wire Mode' : 'Select Mode';
   },

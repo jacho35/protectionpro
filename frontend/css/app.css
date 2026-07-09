@@ -52,6 +52,7 @@ body.dark-mode .sld-component text { fill: #c0c0d0; }
 body.dark-mode .sld-component .symbol-line { stroke: #c0c0d0; }
 body.dark-mode .sld-component .symbol-fill { fill: #2a2a3c; }
 body.dark-mode .sld-port { fill: #4a9eff; }
+body.dark-mode .bus-attach-dot { fill: #c0c0d0; stroke: #1a1a2a; }
 body.dark-mode .modal-content { background: var(--bg-primary); color: var(--text-primary); }
 body.dark-mode .modal-header { border-color: var(--border-color); }
 body.dark-mode input, body.dark-mode select, body.dark-mode textarea {
@@ -76,6 +77,184 @@ html, body {
   overflow: hidden;
 }
 
+/* Distribution board schedule modal: wide table, comfortable entry boxes */
+.modal-content.db-modal-content { max-width: 1280px; width: 96%; }
+
+/* Scenario "applies" checkboxes */
+.scenario-applies {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.scenario-applies .dropdown-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Phase load-balance bars at the top of the schedule editor */
+.db-phase-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+.db-phase-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.db-phase-tag {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex: 0 0 20px;
+}
+.db-phase-track {
+  flex: 1;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+.db-phase-fill {
+  height: 100%;
+  border-radius: 7px;
+  transition: width 0.25s ease;
+}
+.db-phase-val {
+  flex: 0 0 130px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#db-modal .library-table input,
+#db-modal .library-table select {
+  font-size: 13px;
+  padding: 6px 8px;
+  min-height: 32px;
+  box-sizing: border-box;
+}
+#db-modal .library-table td { padding: 4px 6px; }
+
+/* ── Collapsible side panels ── */
+body.sidebar-collapsed #sidebar,
+body.sidebar-collapsed #sidebar-resize,
+body.properties-collapsed #properties-panel,
+body.properties-collapsed #properties-resize {
+  display: none;
+}
+
+.properties-header {
+  display: flex;
+  align-items: center;
+}
+.properties-header h2 { flex: 1; }
+
+.panel-collapse-btn {
+  float: right;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 0 4px;
+  line-height: 1;
+}
+.panel-collapse-btn:hover { color: var(--accent); }
+
+.panel-expand-tab {
+  display: none;
+  width: 16px;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  user-select: none;
+}
+#sidebar-expand-tab { border-right: 1px solid var(--border-color); }
+#properties-expand-tab { border-left: 1px solid var(--border-color); }
+.panel-expand-tab:hover { color: var(--accent); background: var(--bg-tertiary); }
+body.sidebar-collapsed #sidebar-expand-tab { display: flex; }
+body.properties-collapsed #properties-expand-tab { display: flex; }
+
+/* ── Component ribbon (View → Component Ribbon) ── */
+:root { --ribbon-height: 62px; }
+
+#component-ribbon {
+  display: flex;
+  align-items: stretch;
+  height: var(--ribbon-height);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+body.ribbon-mode #app-container {
+  height: calc(100vh - var(--toolbar-height) - var(--ribbon-height));
+}
+/* Ribbon replaces the sidebar palette entirely */
+body.ribbon-mode #sidebar,
+body.ribbon-mode #sidebar-resize,
+body.ribbon-mode #sidebar-expand-tab {
+  display: none !important;
+}
+
+.ribbon-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2px 8px;
+  border-right: 1px solid var(--border-color);
+  flex: 0 0 auto;
+}
+.ribbon-group:last-child { border-right: none; }
+
+.ribbon-group-items {
+  display: flex;
+  gap: 2px;
+}
+
+.ribbon-group-label {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 1px;
+}
+
+.ribbon-item {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: grab;
+}
+.ribbon-item:hover { background: var(--bg-tertiary); }
+.ribbon-item svg { width: 28px; height: 28px; }
+body.dark-mode #component-ribbon,
+body.dark-mode .panel-expand-tab { background: var(--bg-primary); }
+
 /* Canvas Container */
 #canvas-container {
   flex: 1;
@@ -97,6 +276,10 @@ html, body {
 
 #sld-canvas.panning-active {
   cursor: grabbing;
+}
+
+#sld-canvas.space-pan {
+  cursor: grab;
 }
 
 #sld-canvas.wiring {
@@ -2235,4 +2418,64 @@ body.dark-mode .sld-group-label {
 
 .revision-btn-cancel:hover {
   background: var(--bg-tertiary);
+}
+
+/* ─── Keyboard accessibility: visible focus ring ───
+   Inputs keep their border/box-shadow focus styles; this restores a visible
+   outline for keyboard navigation instead of blanket outline:none. */
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent, #0078d7);
+  outline-offset: 1px;
+}
+
+/* ─── Empty-canvas hint ─── */
+.canvas-empty-hint {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--text-muted, #99a);
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+}
+
+/* ─── Mini-map collapse toggle ─── */
+.minimap-toggle {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--bg-secondary, #eee);
+  color: var(--text-muted, #666);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.minimap-toggle:hover {
+  color: var(--text-primary, #333);
+}
+
+.minimap.collapsed {
+  width: 24px;
+  height: 24px;
+  background: var(--bg-primary);
+}
+
+.minimap.collapsed canvas {
+  display: none;
 }

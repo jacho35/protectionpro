@@ -75,8 +75,11 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # Negative-sequence equivalent impedance (may differ from Z1 for generators/motors)
         z2_eq = _parallel_impedances(z2_sources)
 
-        # IEC 60909 voltage factor c = 1.1 for MV/HV, 1.05 for LV
-        c_factor = 1.05 if voltage_kv < 1.0 else 1.1
+        # IEC 60909-0 Table 1 voltage factor c_max: 1.10 for MV/HV, and 1.10
+        # for LV systems with +10% voltage tolerance (modern standard
+        # practice; 1.05 applies only to legacy +6% LV systems). There is no
+        # project-level tolerance setting yet, so the +10% default is used.
+        c_factor = 1.10
 
         ik3_ka = None
         ik1_ka = None
@@ -203,7 +206,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         if ib_ka and ip_ka and kappa:
             # DC decay time constant τ ≈ X/(2πfR), approximate from R/X
             r_x = abs(z_eq.real / z_eq.imag) if abs(z_eq.imag) > 1e-15 else 1.0
-            freq = 50  # Hz — could use project.frequency
+            freq = project.frequency or 50  # Hz
             tau = 1 / (2 * math.pi * freq * r_x) if r_x > 1e-10 else 0.1
             t_min = 0.1  # 100ms default breaking time
             i_dc = math.sqrt(2) * ik3_ka * math.exp(-t_min / tau)
@@ -259,15 +262,35 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     )
 
 
-def _collect_source_paths(bus_id, components, adjacency, base_mva):
-    """Walk the network from a bus and collect source paths with component trails."""
-    visited = set()
-    paths = []
+# Cap on enumerated source/Z0 paths to avoid exponential blowup on heavily
+# meshed networks (per-path DFS enumerates all simple paths).
+MAX_FAULT_PATHS = 200
+# Hard cap on DFS node expansions. The path-count cap alone does NOT bound work:
+# on a meshed/source-free region almost every branch dead-ends on the per-path
+# cycle check without ever appending a path, so len(paths) never advances while
+# recursion grows exponentially. This budget bounds the traversal itself.
+MAX_FAULT_EXPANSIONS = 20000
 
-    def walk(comp_id, z_path, trail):
-        if comp_id in visited:
+
+def _collect_source_paths(bus_id, components, adjacency, base_mva):
+    """Walk the network from a bus and collect source paths with component trails.
+
+    Uses a per-path visited set (one copy per recursion branch) so that
+    parallel/ring paths to the same source are each enumerated — a single
+    shared visited set would silently drop every path after the first,
+    understating fault current. Cycle prevention is per-path: a component
+    may appear in many paths but never twice in the same path.
+    """
+    paths = []
+    expansions = [0]
+
+    def walk(comp_id, z_path, trail, path_visited):
+        if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
-        visited.add(comp_id)
+        expansions[0] += 1
+        if comp_id in path_visited:
+            return  # Cycle on this path
+        path_visited = path_visited | {comp_id}
         comp = components.get(comp_id)
         if not comp:
             return
@@ -317,13 +340,15 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
             z_src = _motor_induction_impedance(comp, base_mva)
             rated_kw = comp.props.get("rated_kw", 200)
             eff = comp.props.get("efficiency", 0.93)
+            pf = comp.props.get("power_factor", 0.85)
+            # IEC 60909-0 §3.8: S_rM = P_rM / (η × cosφ)
+            motor_mva = rated_kw / (eff * pf * 1000)
             # Negative sequence: use x2 if > 0, else Z2 = Z1
             # Also accept legacy "x2_pu" key for backwards compatibility
             x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
             if x2_val > 0:
-                rated_mva = rated_kw / (eff * 1000)
                 xr = comp.props.get("x_r_ratio", 10)
-                x2_pu = x2_val * base_mva / rated_mva
+                x2_pu = x2_val * base_mva / motor_mva
                 r2_pu = x2_pu / xr
                 z2_src = complex(r2_pu, x2_pu)
             else:
@@ -335,7 +360,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
                 "source_id": comp_id,
                 "source_type": "motor_induction",
                 "is_motor": True,
-                "rated_mva": rated_kw / (eff * 1000),
+                "rated_mva": motor_mva,
             })
             return
         if comp.type == "motor_synchronous":
@@ -413,11 +438,16 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
         # Continue walking
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element, trail + [comp_id])
+                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited)
 
     # Start from bus's neighbors
     for neighbor_id, _, _ in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0), [])
+        walk(neighbor_id, complex(0, 0), [], {bus_id})
+
+    if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
+        print(f"[fault] Warning: source path enumeration truncated for bus {bus_id} "
+              f"({len(paths)} paths, {expansions[0]} expansions) — heavily meshed "
+              f"network, results may omit paths")
 
     return paths
 
@@ -439,15 +469,22 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
     # Per-unit total fault current (for contribution % calculation)
     ik_total_pu = ik_total_ka / i_base_ka if i_base_ka > 1e-15 else 0
 
-    # For each path, compute the per-unit current it carries
+    # For each path, compute the per-unit current it carries.
+    # Each path takes its positive-sequence current-divider share of the
+    # ACTUAL bus fault current for the selected fault type:
+    #   share = |y_path / Σy| = |z_eq / z_path|,  i_path = share × Ik_total
+    # This keeps per-branch contributions consistent with the bus total for
+    # all fault types (3ph/SLG/LL/LLG) — for 3-phase it reduces exactly to
+    # the previous c/|z_path| divider.
+    # NOTE: shares are applied as magnitudes (arithmetic sum) because full
+    # per-path phase information is not available in this radial path model;
+    # contributions may not sum to exactly 100% when path impedance angles
+    # differ between parallel paths.
     path_currents_pu = []
     for path in source_paths:
         z_path = path["z_total"]
         if abs(z_path) > 1e-15:
-            if fault_type in ("ll", "llg"):
-                i_path_pu = c_factor * math.sqrt(3) / abs(z_path)
-            else:
-                i_path_pu = c_factor / abs(z_path)
+            i_path_pu = abs(z_eq / z_path) * ik_total_pu
         else:
             i_path_pu = 0
         path_currents_pu.append(i_path_pu)
@@ -542,7 +579,9 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
             z_path_imag=round(z_path.imag, 6),
             z_path_mag=round(abs(z_path), 6),
             contribution_pct=round(contribution_pct, 1),
-            source_name=", ".join(sorted(element_source[elem_id])),
+            # map(str, …) guards against non-string names (schemas.py coerces
+            # digit-string props to numbers, so a name like "123" arrives as int)
+            source_name=", ".join(sorted(map(str, element_source[elem_id]))),
         ))
 
     # Sort by current descending
@@ -579,7 +618,6 @@ def _transformer_impedance(comp, base_mva):
     rated_mva = comp.props.get("rated_mva", 10)
     z_pct = comp.props.get("z_percent", 8)
     xr = comp.props.get("x_r_ratio", 10)
-    voltage_hv_kv = comp.props.get("voltage_hv_kv", 33)
 
     # Uncorrected impedance on system base
     z_pu = (z_pct / 100) * base_mva / rated_mva
@@ -589,7 +627,11 @@ def _transformer_impedance(comp, base_mva):
     # IEC 60909 impedance correction factor K_T
     # x_T is reactance p.u. on transformer's own rating
     x_t = (z_pct / 100) * xr / math.sqrt(1 + xr * xr)
-    c_max = 1.05 if voltage_hv_kv < 1.0 else 1.1
+    # IEC 60909-0 §6.3.3: c_max is taken from the LOW-voltage side nominal
+    # voltage of the transformer (not the HV side). Per Table 1 we use
+    # c_max = 1.10 for LV systems with +10% voltage tolerance (modern
+    # standard practice) as well as for MV/HV.
+    c_max = 1.10
     k_t = 0.95 * c_max / (1 + 0.6 * x_t)
 
     return complex(r_pu * k_t, x_pu * k_t)
@@ -609,14 +651,15 @@ def _motor_induction_impedance(comp, base_mva):
     """Induction motor sub-transient impedance per IEC 60909-0 §13.
 
     Uses X" (locked-rotor reactance) on motor base, converted to system base.
-    Motor MVA = rated_kW / efficiency.
+    Motor MVA = rated_kW / (efficiency × power factor) per IEC 60909-0 §3.8.
     """
     rated_kw = comp.props.get("rated_kw", 200)
     efficiency = comp.props.get("efficiency", 0.93)
+    pf = comp.props.get("power_factor", 0.85)
     x_pp = comp.props.get("x_pp", 0.17)  # Sub-transient reactance p.u. on motor base
     xr = comp.props.get("x_r_ratio", 10)
 
-    rated_mva = rated_kw / (efficiency * 1000)  # Input MVA
+    rated_mva = rated_kw / (efficiency * pf * 1000)  # Input apparent power (MVA)
     x_pu = x_pp * base_mva / rated_mva
     r_pu = x_pu / xr
     return complex(r_pu, x_pu)
@@ -712,17 +755,23 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
     other winding's grounding.
 
     Returns a list of (z0_impedance, detail_string) tuples.
+
+    Uses a per-path visited set (one copy per recursion branch) so parallel/
+    ring zero-sequence paths are each found; capped at MAX_FAULT_PATHS.
     """
-    visited = set()
     z0_sources = []  # list of (complex, str)
+    expansions = [0]
 
     def _comp_name(comp):
         return comp.props.get("name", comp.id) if comp else "?"
 
-    def walk(comp_id, z0_path, trail, entry_port=None):
-        if comp_id in visited:
+    def walk(comp_id, z0_path, trail, entry_port=None, path_visited=frozenset()):
+        if len(z0_sources) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
-        visited.add(comp_id)
+        expansions[0] += 1
+        if comp_id in path_visited:
+            return  # Cycle on this path
+        path_visited = path_visited | {comp_id}
         comp = components.get(comp_id)
         if not comp:
             return
@@ -731,7 +780,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             z_src = _utility_impedance(comp, base_mva)
             # Use z0_z1_ratio to derive Z0 from Z1, with legacy "x0_ratio" fallback
             z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
-            z0_src = z_src * z0_z1 * 3 if z0_z1 > 0 else z_src * 3
+            z0_src = z_src * z0_z1 if z0_z1 > 0 else z_src
             z_total = z0_path + z0_src
             desc = " → ".join(trail + [f"Utility '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
             z0_sources.append((z_total, desc))
@@ -745,9 +794,9 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
                 xr = comp.props.get("x_r_ratio", 40)
                 x0_pu = x0_val * base_mva / rated_mva
                 r0_pu = x0_pu / xr
-                z0_src = complex(r0_pu, x0_pu) * 3
+                z0_src = complex(r0_pu, x0_pu)
             else:
-                z0_src = z_src * 3
+                z0_src = z_src
             z_total = z0_path + z0_src
             desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
             z0_sources.append((z_total, desc))
@@ -755,15 +804,15 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
 
         if comp.type == "solar_pv":
             z_src = _solar_pv_impedance(comp, base_mva)
-            z_total = z0_path + z_src * 3
-            desc = " → ".join(trail + [f"Solar PV '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            z_total = z0_path + z_src
+            desc = " → ".join(trail + [f"Solar PV '{_comp_name(comp)}' (Z0_src={abs(z_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
 
         if comp.type == "wind_turbine":
             z_src = _wind_turbine_impedance(comp, base_mva)
-            z_total = z0_path + z_src * 3
-            desc = " → ".join(trail + [f"Wind Turbine '{_comp_name(comp)}' (Z0_src={abs(z_src * 3):.4f})"])
+            z_total = z0_path + z_src
+            desc = " → ".join(trail + [f"Wind Turbine '{_comp_name(comp)}' (Z0_src={abs(z_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
 
@@ -788,7 +837,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
                 new_trail = trail + [xfmr_label + " [YN pass-through]"]
                 for neighbor_id, local_port, _ in adjacency.get(comp_id, []):
                     if neighbor_id != bus_id or comp_id == bus_id:
-                        walk(neighbor_id, z0_path + z0_element, new_trail, None)
+                        walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited)
             # else far_side == 'blocked': ungrounded star, no Z0 path
             return
 
@@ -807,7 +856,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
                 z_cable = _cable_impedance(comp, base_mva) * 3
             new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
             for neighbor_id, _, _ in adjacency.get(comp_id, []):
-                walk(neighbor_id, z0_path + z_cable, new_trail)
+                walk(neighbor_id, z0_path + z_cable, new_trail, None, path_visited)
             return
 
         if comp.type in ("cb", "switch"):
@@ -817,10 +866,14 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
         # Transparent elements (CB, fuse, bus, etc.)
         for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z0_path, trail, remote_port)
+                walk(neighbor_id, z0_path, trail, remote_port, path_visited)
 
     for neighbor_id, _, remote_port in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0), [], remote_port)
+        walk(neighbor_id, complex(0, 0), [], remote_port, frozenset({bus_id}))
+
+    if len(z0_sources) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
+        print(f"[fault] Warning: zero-sequence path enumeration truncated for bus "
+              f"{bus_id} ({len(z0_sources)} paths, {expansions[0]} expansions)")
 
     return z0_sources
 
@@ -986,9 +1039,11 @@ def _compute_peak_current(ik3_ka, z_eq):
 
     ip = κ × √2 × I"k3
 
-    The R/X ratio is derived from the equivalent impedance Z_eq.
-    For meshed networks, use Method C (§8.1, Eq. 56):
-    R/X = R_eq / X_eq from the complex impedance at the fault point.
+    The R/X ratio is taken directly from the complex equivalent impedance
+    Z_eq at the fault point (R_eq/X_eq). This is similar to Method B
+    (§8.1.2) but WITHOUT the 1.15 safety factor, and is not the full
+    Method C equivalent-frequency procedure for meshed networks — for
+    strongly meshed systems κ may be slightly understated.
 
     Returns (ip_ka, kappa).
     """
@@ -1041,9 +1096,12 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
             ib_total += ik_path_ka
 
         elif source_type == "generator":
-            rated_mva = path.get("rated_mva", 10)
-            i_rg_ka = rated_mva / (math.sqrt(3) * 1)  # in p.u. terms
-            # I"kG / I_rG ratio — use per-unit on generator base
+            # SIMPLIFICATION: I"kG/IrG is approximated as c/x"d on the
+            # generator base, i.e. the machine-terminal fault ratio. The
+            # external network impedance between generator and fault point
+            # is ignored, which overstates the ratio for remote faults
+            # (lower μ → Ib understated). IEC 60909-0 §9.1.1 defines the
+            # ratio at the actual fault location.
             xd_pp = path.get("xd_pp", 0.15)
             ik_over_ir = c_factor / xd_pp  # ≈ 1.1/0.15 ≈ 7.3 typical
             mu = _mu_factor(ik_over_ir, t_min)
@@ -1051,6 +1109,7 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
 
         elif source_type == "motor_synchronous":
             # Synchronous motors: same μ formula as generators
+            # (same terminal-ratio simplification as the generator branch above)
             xd_pp = path.get("xd_pp", 0.15)
             ik_over_ir = c_factor / xd_pp
             mu = _mu_factor(ik_over_ir, t_min)
@@ -1060,7 +1119,11 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
             # Induction motors: current decays rapidly
             # Per IEC 60909-0 §13.2, use μ × q factor
             rated_mva = path.get("rated_mva", 0.2)
-            # For LV motors, per-unit ratio based on locked-rotor
+            # For LV motors, per-unit ratio based on locked-rotor.
+            # SIMPLIFICATION: the q factor argument per IEC 60909-0 §9.1.2
+            # should be m = rated active power (MW) per pole pair; the motor
+            # pole count is not modelled, so the I"kM/IrM current ratio is
+            # used as a proxy. This is an approximation of the standard.
             ik_over_ir = ik_path_pu * base_mva / rated_mva if rated_mva > 1e-6 else 6
             mu = _mu_factor(ik_over_ir, t_min)
             q = _q_factor(ik_over_ir, t_min)
@@ -1220,13 +1283,21 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
     for bus in all_buses:
         _find_bus_branches(bus.id, bus_ids, components, adjacency, branches, bus_shunts, base_mva)
 
-    # Deduplicate branches (each found from both sides)
-    seen_branches = set()
+    # Deduplicate branches: each physical branch is discovered once from each
+    # endpoint, so keep only the entries found from the lower-ordered bus.
+    # Unlike a bus-pair keyed dedup, this preserves genuinely PARALLEL
+    # branches between the same bus pair — their admittances are summed
+    # into Ybus below.
     unique_branches = []
+    kept_pairs = set()
     for bi, bj, z in branches:
-        key = tuple(sorted([bi, bj]))
-        if key not in seen_branches:
-            seen_branches.add(key)
+        if bi < bj:
+            unique_branches.append((bi, bj, z))
+            kept_pairs.add((bi, bj))
+    # Defensive: keep reverse-direction entries whose pair was never seen
+    # from the lower-ordered side (asymmetric discovery).
+    for bi, bj, z in branches:
+        if bi > bj and (bj, bi) not in kept_pairs:
             unique_branches.append((bi, bj, z))
 
     # Build Ybus and compute Zbus for three impedance modes
@@ -1273,7 +1344,10 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
             if fault_result.voltage_depression is None:
                 fault_result.voltage_depression = {}
 
-            c_factor = 1.05 if bus_voltage.get(faulted_bus_id, 11) < 1.0 else 1.1
+            # NOTE: retained voltage uses the 1.0 p.u. prefault convention
+            # (V_j = 1 − Z_jk/Z_kk). The IEC 60909 c-factor is deliberately
+            # NOT applied here: scaling the fault current by c would show a
+            # nonzero retained voltage at the bolted-fault bus itself.
 
             for other_bus in all_buses:
                 j = bus_idx[other_bus.id]
@@ -1441,7 +1515,9 @@ def _collect_motor_data(faulted_bus_id, all_buses, components, adjacency, base_m
             if comp.type == "motor_induction":
                 rated_kw = comp.props.get("rated_kw", 200)
                 eff = comp.props.get("efficiency", 0.93)
-                rated_mva = rated_kw / (eff * 1000)
+                pf = comp.props.get("power_factor", 0.85)
+                # IEC 60909-0 §3.8: S_rM = P_rM / (η × cosφ)
+                rated_mva = rated_kw / (eff * pf * 1000)
                 lra_mult = comp.props.get("lra_multiplier", 6.0)
                 h_constant = comp.props.get("h_constant", 0.5)  # Inertia constant (s)
                 motors.append({

@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
   UndoManager.init();
   RevisionTimeline.init();
   MiniMap.init();
+  ContextMenu.init();
+  DBSchedule.init();
 
   // Templates button
   document.getElementById('btn-templates').addEventListener('click', () => NetworkTemplates.show());
@@ -91,20 +93,106 @@ document.addEventListener('DOMContentLoaded', () => {
     switch (e.key) {
       case 'v':
       case 'V':
-        setMode(MODE.SELECT);
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          AppState.pasteClipboard();
+          Canvas.render();
+          document.getElementById('status-info').textContent =
+            `Pasted ${AppState.selectedIds.size} component(s).`;
+        } else {
+          setMode(MODE.SELECT);
+        }
         break;
       case 'w':
       case 'W':
         setMode(MODE.WIRE);
         break;
+      case 'r':
+      case 'R':
+        if (!e.ctrlKey && !e.metaKey) {
+          // Rotate selected component(s) 90° (same rotation prop the
+          // properties panel edits: 0/90/180/270)
+          let rotated = 0;
+          for (const id of AppState.selectedIds) {
+            const comp = AppState.components.get(id);
+            if (comp) {
+              comp.rotation = ((comp.rotation || 0) + 90) % 360;
+              rotated++;
+            }
+          }
+          if (rotated > 0) {
+            AppState.dirty = true;
+            UndoManager.snapshot();
+            Canvas.render();
+            if (Properties.currentId && AppState.selectedIds.has(Properties.currentId)) {
+              Properties.show(Properties.currentId);
+            }
+            document.getElementById('status-info').textContent =
+              `Rotated ${rotated} component(s) 90°.`;
+          }
+        }
+        break;
+      case '=':
+      case '+':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          Canvas.zoomIn();
+        }
+        break;
+      case '-':
+      case '_':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          Canvas.zoomOut();
+        }
+        break;
+      case 'ArrowUp':
+      case 'ArrowDown':
+      case 'ArrowLeft':
+      case 'ArrowRight': {
+        if (AppState.selectedIds.size === 0) break;
+        e.preventDefault();
+        const step = (e.shiftKey ? 5 : 1) * SNAP_SIZE; // 1 grid unit, Shift = 5
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        let moved = false;
+        for (const id of AppState.selectedIds) {
+          const comp = AppState.components.get(id);
+          if (comp) {
+            comp.x += dx;
+            comp.y += dy;
+            moved = true;
+          }
+        }
+        if (moved) {
+          AppState.dirty = true;
+          UndoManager.snapshot();
+          Canvas.render();
+        }
+        break;
+      }
       case 'Delete':
       case 'Backspace':
         AppState.deleteSelected();
         Canvas.render();
         Properties.clear();
         break;
-      case 'Escape':
+      case 'Escape': {
         window.closeAllToolbarMenus?.();
+        if (typeof ContextMenu !== 'undefined') ContextMenu.close();
+        // Close the topmost open modal first, before touching the selection
+        const openModal = [...document.querySelectorAll('.modal')].reverse()
+          .find(m => m.style.display !== 'none');
+        if (openModal) {
+          if (openModal.id === 'tcc-modal' && typeof TCC !== 'undefined') {
+            TCC.close();
+          } else if (openModal.id === 'db-modal' && typeof DBSchedule !== 'undefined') {
+            DBSchedule.close(); // commits circuit edits + undo snapshot
+          } else {
+            openModal.style.display = 'none';
+          }
+          break;
+        }
         if (AppState.wireStart) {
           Wiring.cancelWire();
         }
@@ -113,6 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Canvas.render();
         Properties.clear();
         break;
+      }
       case 's':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
@@ -122,7 +211,8 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'a':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
-          for (const id of AppState.components.keys()) {
+          // Only select components on the visible sheet
+          for (const id of AppState.getActivePageComponents().keys()) {
             AppState.selectedIds.add(id);
           }
           Canvas.render();
@@ -134,15 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
           AppState.copySelected();
           document.getElementById('status-info').textContent =
             `Copied ${AppState.clipboard?.components.length || 0} component(s).`;
-        }
-        break;
-      case 'v':
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          AppState.pasteClipboard();
-          Canvas.render();
-          document.getElementById('status-info').textContent =
-            `Pasted ${AppState.selectedIds.size} component(s).`;
         }
         break;
       case 'x':
@@ -261,6 +342,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Post-run load flow summary: generation dispatch table + solver warnings.
+  // Shown automatically when the run is noteworthy (islanding, curtailment,
+  // de-energized buses, non-convergence); reuses the calc modal shell.
+  function showDispatchSummary(result) {
+    const modal = document.getElementById('calc-modal');
+    const dispatch = result.dispatch || [];
+    const warnings = result.warnings || [];
+    const roleLabel = {
+      balancer: 'Balancer (slack)', dispatched: 'Dispatched',
+      curtailed: 'Curtailed', offline: 'Disconnected', standby: 'Standby (idle)',
+      off: 'Off (sequence)',
+    };
+    // Adaptive units: a 200 kW PV plant should read in kW, not 0.200 MW
+    const fmtPower = (mw) => Math.abs(mw) >= 1
+      ? `${mw.toFixed(2)} MW`
+      : `${(mw * 1000).toFixed(0)} kW`;
+
+    let html = '';
+    if (!result.converged) {
+      html += '<div class="validation-item validation-error">Load flow did NOT converge — results are unreliable.</div>';
+    }
+    if (warnings.length > 0) {
+      html += '<div class="validation-section"><div class="validation-section-title warning-title">Warnings</div>';
+      for (const w of warnings) {
+        html += `<div class="validation-item validation-warning">${escHtml(w.message)}</div>`;
+      }
+      html += '</div>';
+    }
+    if (dispatch.length > 0) {
+      html += `<div class="validation-section"><div class="validation-section-title">Generation Dispatch</div>
+        <div style="overflow-x:auto;"><table class="library-table" style="width:100%;font-size:12px;">
+        <thead><tr><th>Source</th><th>Island</th><th>Priority</th><th>Mode</th><th>Role</th>
+        <th>Available</th><th>Dispatched</th><th>Curtailed</th></tr></thead><tbody>`;
+      const sorted = [...dispatch].sort((a, b) => (a.island - b.island) || (a.priority - b.priority));
+      for (const d of sorted) {
+        const cur = d.curtailed_mw > 0
+          ? `<span style="color:#f57c00;">${fmtPower(d.curtailed_mw)}</span>` : '—';
+        html += `<tr>
+          <td>${escHtml(d.source_name || d.source_id)}</td>
+          <td>${d.island > 0 ? d.island : '—'}</td>
+          <td>${d.priority}</td>
+          <td>${d.role === 'balancer' ? '—' : escHtml(d.mode.replace('_', ' '))}</td>
+          <td>${roleLabel[d.role] || escHtml(d.role)}</td>
+          <td>${d.source_type === 'utility' && d.available_mw === 0 ? '∞' : fmtPower(d.available_mw)}</td>
+          <td>${['offline', 'standby', 'off'].includes(d.role) ? '—' : fmtPower(d.dispatched_mw)}</td>
+          <td>${cur}</td></tr>`;
+      }
+      html += '</tbody></table></div></div>';
+    }
+    html += `<div style="margin-top:16px;"><button id="dispatch-close" class="btn-small">Close</button></div>`;
+
+    modal.querySelector('#calc-modal-title').textContent = 'Load Flow — Generation Dispatch';
+    modal.querySelector('#calc-modal-body').innerHTML = html;
+    modal.style.display = '';
+    document.getElementById('dispatch-close').addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+  }
+
   async function runAnalysis(type) {
     const { errors, warnings } = Components.validate();
 
@@ -278,46 +418,102 @@ document.addEventListener('DOMContentLoaded', () => {
     executeAnalysis(type);
   }
 
+  // Hooks for UI outside this module (context menu): reuse the full
+  // validation + single-bus-confirm fault flow with the bus preselected
+  window.AppActions = {
+    runFaultAtBus(busId) {
+      AppState.select(busId);
+      runAnalysis('fault');
+    },
+  };
+
+  // Disable/enable a toolbar control while its request is in flight
+  function _setBusy(btnId, busy) {
+    const btn = document.getElementById(btnId);
+    if (btn) btn.disabled = busy;
+  }
+
   async function executeAnalysis(type) {
     const label = type === 'fault' ? 'Fault analysis' : 'Load flow';
-    document.getElementById('status-info').textContent = `Running ${label.toLowerCase()}...`;
+    const triggerBtnId = type === 'fault' ? 'btn-run-fault' : 'btn-run-loadflow';
+    _setBusy(triggerBtnId, true);
     try {
       let result;
       if (type === 'fault') {
-        // Determine if a single bus is selected
+        // Determine if a single bus is selected — make the scope an explicit choice
         let faultBusId = null;
         if (AppState.selectedIds.size === 1) {
           const selId = [...AppState.selectedIds][0];
           const selComp = AppState.components.get(selId);
           if (selComp && selComp.type === 'bus') {
-            faultBusId = selId;
+            const busName = selComp.props?.name || selId;
+            if (confirm(`Run fault analysis on selected bus "${busName}" ONLY?\n\nOK = selected bus only — Cancel = all buses`)) {
+              faultBusId = selId;
+            }
           }
         }
+        const scopeInfo = faultBusId
+          ? `bus ${AppState.components.get(faultBusId)?.props?.name || faultBusId}`
+          : 'all buses';
+        document.getElementById('status-info').textContent = `Running fault analysis on ${scopeInfo}...`;
         const faultType = document.getElementById('fault-type').value || null;
         result = await API.runFaultAnalysis(faultBusId, faultType);
         AppState.faultResults = result;
         AppState.faultedBusId = faultBusId;
-        // Update status with context
-        const busInfo = faultBusId ? ` on ${AppState.components.get(faultBusId)?.props?.name || faultBusId}` : ' on all buses';
-        document.getElementById('status-info').textContent = `Fault analysis complete${busInfo}.`;
+        document.getElementById('status-info').textContent = `Fault analysis complete on ${scopeInfo}.`;
         Canvas.render();
         return;
       } else {
+        document.getElementById('status-info').textContent = 'Running load flow...';
         const lfMethod = document.getElementById('loadflow-method').value;
         result = await API.runLoadFlow(lfMethod);
         AppState.loadFlowResults = result;
       }
       Canvas.render();
-      document.getElementById('status-info').textContent = `${label} complete.`;
+      if (type === 'loadflow') {
+        const deadBuses = Object.values(result.buses || {}).filter(b => b.energized === false);
+        const islands = new Set((result.dispatch || []).map(d => d.island).filter(i => i > 0));
+        let status = result.converged
+          ? `Load flow converged in ${result.iterations} iteration${result.iterations === 1 ? '' : 's'}.`
+          : 'Load flow did NOT converge — results are unreliable.';
+        if (islands.size > 1 || deadBuses.length > 0) {
+          status += ` ${islands.size} island${islands.size === 1 ? '' : 's'}` +
+            (deadBuses.length ? `, ${deadBuses.length} bus${deadBuses.length === 1 ? '' : 'es'} de-energized.` : '.');
+        }
+        document.getElementById('status-info').textContent = status;
+        // Pop the dispatch summary when there is something worth flagging:
+        // islanded operation, curtailment, de-energized buses, or warnings.
+        const noteworthy = !result.converged || deadBuses.length > 0 ||
+          (result.warnings || []).length > 0 ||
+          (result.dispatch || []).some(d =>
+            d.curtailed_mw > 0 || d.role === 'offline' ||
+            (d.role === 'balancer' && d.source_type !== 'utility'));
+        if (noteworthy) showDispatchSummary(result);
+      } else {
+        document.getElementById('status-info').textContent = `${label} complete.`;
+      }
     } catch (e) {
       console.error(`${label} error:`, e);
       document.getElementById('status-info').textContent = `${label} failed.`;
       showValidationModal(`${label} — Error`, [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy(triggerBtnId, false);
     }
   }
 
   document.getElementById('btn-run-fault').addEventListener('click', () => runAnalysis('fault'));
   document.getElementById('btn-run-loadflow').addEventListener('click', () => runAnalysis('loadflow'));
+
+  // Re-open the Generation Dispatch summary from the last load flow run
+  document.getElementById('btn-show-dispatch').addEventListener('click', () => {
+    window.closeAllToolbarMenus?.();
+    if (AppState.loadFlowResults) {
+      showDispatchSummary(AppState.loadFlowResults);
+    } else {
+      document.getElementById('status-info').textContent =
+        'No load flow results yet — run a load flow first.';
+    }
+  });
 
   // Flow arrow toggle checkboxes
   document.getElementById('chk-fault-arrows').addEventListener('change', (e) => {
@@ -348,6 +544,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function _runUnbalancedLoadFlow() {
     const statusEl = document.getElementById('status-info');
     statusEl.textContent = 'Running unbalanced load flow...';
+    _setBusy('btn-run-unbalanced-loadflow', true);
     try {
       const lfMethod = document.getElementById('loadflow-method').value;
       const result = await API.runUnbalancedLoadFlow(lfMethod);
@@ -360,6 +557,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       statusEl.textContent = 'Unbalanced load flow failed.';
       showValidationModal('Unbalanced Load Flow — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-run-unbalanced-loadflow', false);
     }
   }
 
@@ -382,7 +581,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function executeArcFlash() {
-    document.getElementById('status-info').textContent = 'Running arc flash analysis (IEEE 1584-2018)...';
+    document.getElementById('status-info').textContent = 'Running arc flash analysis (IEEE 1584-2002)...';
+    _setBusy('btn-arcflash', true);
     try {
       const result = await API.runArcFlash();
       AppState.arcFlashResults = result;
@@ -393,6 +593,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Arc flash analysis error:', e);
       document.getElementById('status-info').textContent = 'Arc flash analysis failed.';
       showValidationModal('Arc Flash — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-arcflash', false);
     }
   }
 
@@ -403,6 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     document.getElementById('status-info').textContent = 'Running DC arc flash analysis (Stokes & Oppenlander)...';
+    _setBusy('btn-dc-arcflash', true);
     try {
       const result = await API.runDCArcFlash();
       AppState.dcArcFlashResults = result;
@@ -413,6 +616,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('DC arc flash analysis error:', e);
       document.getElementById('status-info').textContent = 'DC arc flash analysis failed.';
       showValidationModal('DC Arc Flash — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-dc-arcflash', false);
     }
   });
 
@@ -423,6 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     document.getElementById('status-info').textContent = 'Running cable sizing analysis...';
+    _setBusy('btn-cable-sizing', true);
     try {
       const result = await API.runCableSizing();
       AppState.cableSizingResults = result;
@@ -433,6 +639,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Cable sizing error:', e);
       document.getElementById('status-info').textContent = 'Cable sizing analysis failed.';
       showValidationModal('Cable Sizing — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-cable-sizing', false);
     }
   });
 
@@ -470,12 +678,15 @@ document.addEventListener('DOMContentLoaded', () => {
       </tr></thead><tbody>`;
 
     for (const c of cables) {
-      const rowClass = c.status === 'fail' ? 'af-danger' : c.status === 'warning' ? 'af-medium' : 'af-low';
+      const rowClass = c.status === 'fail' ? 'af-danger'
+        : c.status === 'warning' ? 'af-medium'
+        : c.status === 'unknown' ? 'af-unknown' : 'af-low';
       const thermalIcon = c.thermal_ok ? '✓' : '✗';
       const vdropIcon = c.voltage_drop_ok ? '✓' : '✗';
       const withstandIcon = c.fault_withstand_ok ? '✓' : '✗';
       const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
         : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+        : c.status === 'unknown' ? '<span style="color:#9e9e9e;font-weight:600">UNKNOWN</span>'
         : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
       html += `<tr class="${rowClass}" data-cable-id="${c.cable_id}" style="cursor:pointer">
         <td>${c.cable_name}</td>
@@ -485,8 +696,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${vdropIcon} ${c.voltage_drop_pct.toFixed(2)}%</td>
         <td>${withstandIcon}</td>
         <td>${statusBadge}</td>
-        <td>${c.status === 'warning' && c.warning_reasons && c.warning_reasons.length > 0
-          ? `<span style="cursor:help;border-bottom:1px dotted #f57c00;color:#f57c00" title="${c.warning_reasons.join('; ').replace(/"/g, '&quot;')}">ⓘ Near limits</span>`
+        <td>${(c.status === 'warning' || c.status === 'unknown') && c.warning_reasons && c.warning_reasons.length > 0
+          ? `<span style="cursor:help;border-bottom:1px dotted ${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'};color:${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'}" title="${c.warning_reasons.join('; ').replace(/"/g, '&quot;')}">ⓘ ${c.status === 'unknown' ? 'Needs load flow' : 'Near limits'}</span>`
           : (c.recommended_cable || '—')}</td>
       </tr>`;
       if (c.issues.length > 0) {
@@ -518,6 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     document.getElementById('status-info').textContent = 'Running motor starting voltage dip analysis...';
+    _setBusy('btn-motor-starting', true);
     try {
       const result = await API.runMotorStarting();
       AppState.motorStartingResults = result;
@@ -528,6 +740,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Motor starting error:', e);
       document.getElementById('status-info').textContent = 'Motor starting analysis failed.';
       showValidationModal('Motor Starting — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-motor-starting', false);
     }
   });
 
@@ -565,8 +779,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <strong>${m.motor_name}</strong> ${statusBadge}
       </div>`;
       html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;margin-bottom:8px">
-        <div>Rated: <strong>${m.rated_kw} kW</strong></div>
-        <div>Start Current: <strong>${m.start_current_a.toFixed(0)} A</strong></div>
+        <div>Rated: <strong>${m.rated_kw} kW</strong>${m.motor_type ? ` (${m.motor_type})` : ''}</div>
+        <div>Start Current: <strong>${m.start_current_a.toFixed(0)} A</strong>${m.starting_method ? ` (${m.starting_method})` : ''}</div>
         <div>Terminal Bus: <strong>${m.terminal_bus}</strong></div>
         <div>Terminal V: <strong>${m.motor_terminal_voltage_pu.toFixed(3)} p.u.</strong></div>
         <div>Will Start: ${willStartIcon}</div>
@@ -601,6 +815,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     document.getElementById('status-info').textContent = 'Running equipment duty check...';
+    _setBusy('btn-duty-check', true);
     try {
       const result = await API.runDutyCheck();
       AppState.dutyCheckResults = result;
@@ -611,6 +826,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Duty check error:', e);
       document.getElementById('status-info').textContent = 'Duty check failed.';
       showValidationModal('Duty Check — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-duty-check', false);
     }
   });
 
@@ -728,6 +945,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     document.getElementById('status-info').textContent = 'Running load diversity analysis...';
+    _setBusy('btn-load-diversity', true);
     try {
       const result = await API.runLoadDiversity();
       AppState.loadDiversityResults = result;
@@ -738,6 +956,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Load diversity error:', e);
       document.getElementById('status-info').textContent = 'Load diversity analysis failed.';
       showValidationModal('Load Diversity — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-load-diversity', false);
     }
   });
 
@@ -857,6 +1077,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     document.getElementById('status-info').textContent = 'Running grounding system analysis (IEEE 80)...';
+    _setBusy('btn-grounding', true);
     try {
       const result = await API.runGroundingAnalysis();
       AppState.groundingResults = result;
@@ -867,6 +1088,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Grounding analysis error:', e);
       document.getElementById('status-info').textContent = 'Grounding analysis failed.';
       showValidationModal('Grounding — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-grounding', false);
     }
   });
 
@@ -1583,12 +1806,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const date = new Date(s.timestamp).toLocaleString();
       const compCount = s.components.length;
       const descHtml = s.description ? `<div class="scenario-desc">${escapeHtml(s.description)}</div>` : '';
+      const a = s.applies || { switching: true, settings: true, layout: true };
+      const tags = [a.switching && 'switching', a.settings && 'settings', a.layout && 'layout']
+        .filter(Boolean).join(' · ');
       return `
         <div class="scenario-item" data-id="${s.id}">
           <div class="scenario-info">
             <div class="scenario-name">${escapeHtml(s.name)}</div>
             ${descHtml}
-            <div class="scenario-meta">${date} &mdash; ${compCount} component${compCount !== 1 ? 's' : ''}</div>
+            <div class="scenario-meta">${date} &mdash; ${compCount} component${compCount !== 1 ? 's' : ''} &mdash; applies: ${tags}</div>
           </div>
           <div class="scenario-actions">
             <button class="btn-load-scenario" data-id="${s.id}" title="Load this scenario">Load</button>
@@ -1600,9 +1826,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Bind load buttons
     list.querySelectorAll('.btn-load-scenario').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (!confirm('Load this scenario? Current unsaved changes will be replaced.')) return;
+        const sc = AppState.scenarios.find(s => s.id === btn.dataset.id);
+        const a = sc?.applies || { switching: true, settings: true, layout: true };
+        const full = a.switching && a.settings && a.layout;
+        const what = full
+          ? 'Current unsaved changes will be replaced (device names are kept).'
+          : `Applies ${[a.switching && 'switching states', a.settings && 'electrical settings', a.layout && 'layout'].filter(Boolean).join(' and ')} to the current network.`;
+        if (!confirm(`Load this scenario? ${what}`)) return;
         const loaded = AppState.loadScenario(btn.dataset.id);
         if (loaded) {
+          UndoManager.clear();
           renderPageTabs();
           Canvas.render();
           Properties.clear();
@@ -1650,7 +1883,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const desc = document.getElementById('scenario-desc').value.trim();
-    AppState.saveScenario(name, desc);
+    const applies = {
+      switching: document.getElementById('scenario-apply-switching').checked,
+      settings: document.getElementById('scenario-apply-settings').checked,
+      layout: document.getElementById('scenario-apply-layout').checked,
+    };
+    if (!applies.switching && !applies.settings && !applies.layout) {
+      document.getElementById('status-info').textContent =
+        'Tick at least one category for the scenario to apply.';
+      return;
+    }
+    AppState.saveScenario(name, desc, applies);
     document.getElementById('scenario-name').value = '';
     document.getElementById('scenario-desc').value = '';
     renderScenarioList();
@@ -1858,6 +2101,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (gridBg) gridBg.setAttribute('fill', 'white');
     const svgData = new XMLSerializer().serializeToString(svgClone);
     const printWin = window.open('', '_blank', 'width=900,height=650');
+    if (!printWin) {
+      alert('Print preview was blocked by the browser popup blocker.\nPlease allow popups for this site and try again, or use "Export PDF" instead.');
+      return;
+    }
     printWin.document.write(`<!DOCTYPE html><html><head><title>Print Preview</title>
       <style>body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#fff;}
       svg{max-width:100%;max-height:100%;}</style></head>
@@ -1877,6 +2124,46 @@ document.addEventListener('DOMContentLoaded', () => {
     AppState.showDeviceLabels = !AppState.showDeviceLabels;
     e.currentTarget.classList.toggle('active', AppState.showDeviceLabels);
     Canvas.render();
+  });
+
+  // ── Layout: collapsible side panels + component ribbon ──
+  const LAYOUT_KEY = 'protectionpro-layout';
+  const layout = (() => {
+    try { return JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {}; }
+    catch (_) { return {}; }
+  })();
+  function applyLayout() {
+    document.body.classList.toggle('sidebar-collapsed', !!layout.sidebarCollapsed);
+    document.body.classList.toggle('properties-collapsed', !!layout.propertiesCollapsed);
+    document.body.classList.toggle('ribbon-mode', !!layout.ribbon);
+    document.getElementById('component-ribbon').style.display = layout.ribbon ? '' : 'none';
+    document.getElementById('btn-toggle-ribbon').classList.toggle('active', !!layout.ribbon);
+  }
+  function saveLayout() {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (_) { /* full */ }
+    applyLayout();
+  }
+  applyLayout();
+  document.getElementById('btn-collapse-sidebar').addEventListener('click', () => {
+    layout.sidebarCollapsed = true;
+    saveLayout();
+  });
+  document.getElementById('sidebar-expand-tab').addEventListener('click', () => {
+    layout.sidebarCollapsed = false;
+    saveLayout();
+  });
+  document.getElementById('btn-collapse-properties').addEventListener('click', () => {
+    layout.propertiesCollapsed = true;
+    saveLayout();
+  });
+  document.getElementById('properties-expand-tab').addEventListener('click', () => {
+    layout.propertiesCollapsed = false;
+    saveLayout();
+  });
+  document.getElementById('btn-toggle-ribbon').addEventListener('click', () => {
+    window.closeAllToolbarMenus?.();
+    layout.ribbon = !layout.ribbon;
+    saveLayout();
   });
   document.getElementById('btn-toggle-warnings').addEventListener('click', (e) => {
     AppState.showWarnings = !AppState.showWarnings;

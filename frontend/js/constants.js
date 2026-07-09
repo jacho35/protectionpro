@@ -12,93 +12,95 @@ const API_BASE = '/api';
 
 // ─── Standard Cable Library ───
 // Typical MV/LV XLPE cable data per IEC 60502 / SANS 1339
-// Values: R and X at 90°C, trefoil formation
+// Values: AC resistance at 90°C conductor temperature (derived from IEC 60228
+// 20°C DC values × temperature factor: Cu ×1.275, Al ×1.282; PVC entries at
+// 70°C: ×1.20), trefoil formation. X values at 50 Hz.
 const STANDARD_CABLES = [
   // MV XLPE Copper (11kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE MV screened)
-  { id: 'cu_xlpe_16_11kv',  name: '16mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 11,  r_per_km: 1.15,   x_per_km: 0.119, r0_per_km: 4.370, x0_per_km: 0.333, rated_amps: 110 },
-  { id: 'cu_xlpe_25_11kv',  name: '25mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 11,  r_per_km: 0.727,  x_per_km: 0.113, r0_per_km: 2.763, x0_per_km: 0.316, rated_amps: 140 },
-  { id: 'cu_xlpe_35_11kv',  name: '35mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 11,  r_per_km: 0.524,  x_per_km: 0.110, r0_per_km: 1.991, x0_per_km: 0.308, rated_amps: 170 },
-  { id: 'cu_xlpe_50_11kv',  name: '50mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 11,  r_per_km: 0.387,  x_per_km: 0.107, r0_per_km: 1.471, x0_per_km: 0.300, rated_amps: 200 },
-  { id: 'cu_xlpe_70_11kv',  name: '70mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 11,  r_per_km: 0.268,  x_per_km: 0.104, r0_per_km: 1.018, x0_per_km: 0.291, rated_amps: 245 },
-  { id: 'cu_xlpe_95_11kv',  name: '95mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.193,  x_per_km: 0.101, r0_per_km: 0.733, x0_per_km: 0.283, rated_amps: 300 },
-  { id: 'cu_xlpe_120_11kv', name: '120mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.153,  x_per_km: 0.099, r0_per_km: 0.581, x0_per_km: 0.277, rated_amps: 340 },
-  { id: 'cu_xlpe_150_11kv', name: '150mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.124,  x_per_km: 0.097, r0_per_km: 0.471, x0_per_km: 0.272, rated_amps: 380 },
-  { id: 'cu_xlpe_185_11kv', name: '185mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.0991, x_per_km: 0.095, r0_per_km: 0.377, x0_per_km: 0.266, rated_amps: 430 },
-  { id: 'cu_xlpe_240_11kv', name: '240mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.0754, x_per_km: 0.093, r0_per_km: 0.287, x0_per_km: 0.260, rated_amps: 500 },
-  { id: 'cu_xlpe_300_11kv', name: '300mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.0601, x_per_km: 0.091, r0_per_km: 0.228, x0_per_km: 0.255, rated_amps: 560 },
-  { id: 'cu_xlpe_400_11kv', name: '400mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 400, voltage_kv: 11,  r_per_km: 0.0470, x_per_km: 0.089, r0_per_km: 0.179, x0_per_km: 0.249, rated_amps: 630 },
+  { id: 'cu_xlpe_16_11kv',  name: '16mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 11,  r_per_km: 1.466,   x_per_km: 0.119, r0_per_km: 5.572, x0_per_km: 0.333, rated_amps: 110 },
+  { id: 'cu_xlpe_25_11kv',  name: '25mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 11,  r_per_km: 0.9269,  x_per_km: 0.113, r0_per_km: 3.523, x0_per_km: 0.316, rated_amps: 140 },
+  { id: 'cu_xlpe_35_11kv',  name: '35mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 11,  r_per_km: 0.6681,  x_per_km: 0.110, r0_per_km: 2.539, x0_per_km: 0.308, rated_amps: 170 },
+  { id: 'cu_xlpe_50_11kv',  name: '50mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 11,  r_per_km: 0.4934,  x_per_km: 0.107, r0_per_km: 1.876, x0_per_km: 0.300, rated_amps: 200 },
+  { id: 'cu_xlpe_70_11kv',  name: '70mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 11,  r_per_km: 0.3417,  x_per_km: 0.104, r0_per_km: 1.298, x0_per_km: 0.291, rated_amps: 245 },
+  { id: 'cu_xlpe_95_11kv',  name: '95mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.2461,  x_per_km: 0.101, r0_per_km: 0.9346, x0_per_km: 0.283, rated_amps: 300 },
+  { id: 'cu_xlpe_120_11kv', name: '120mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.1951,  x_per_km: 0.099, r0_per_km: 0.7408, x0_per_km: 0.277, rated_amps: 340 },
+  { id: 'cu_xlpe_150_11kv', name: '150mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.1601,  x_per_km: 0.097, r0_per_km: 0.6084, x0_per_km: 0.272, rated_amps: 380 },
+  { id: 'cu_xlpe_185_11kv', name: '185mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.1289, x_per_km: 0.095, r0_per_km: 0.4898, x0_per_km: 0.266, rated_amps: 430 },
+  { id: 'cu_xlpe_240_11kv', name: '240mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.0994, x_per_km: 0.093, r0_per_km: 0.3777, x0_per_km: 0.260, rated_amps: 500 },
+  { id: 'cu_xlpe_300_11kv', name: '300mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.0807, x_per_km: 0.091, r0_per_km: 0.3067, x0_per_km: 0.255, rated_amps: 560 },
+  { id: 'cu_xlpe_400_11kv', name: '400mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 400, voltage_kv: 11,  r_per_km: 0.0649, x_per_km: 0.089, r0_per_km: 0.2466, x0_per_km: 0.249, rated_amps: 630 },
   // MV XLPE Aluminium (11kV) — r0: 3.4×r1, x0: 2.8×x1 per IEC 60502 (Al XLPE MV screened)
-  { id: 'al_xlpe_35_11kv',  name: '35mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 11,  r_per_km: 0.868,  x_per_km: 0.110, r0_per_km: 2.951, x0_per_km: 0.308, rated_amps: 130 },
-  { id: 'al_xlpe_50_11kv',  name: '50mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 11,  r_per_km: 0.641,  x_per_km: 0.107, r0_per_km: 2.179, x0_per_km: 0.300, rated_amps: 155 },
-  { id: 'al_xlpe_70_11kv',  name: '70mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 11,  r_per_km: 0.443,  x_per_km: 0.104, r0_per_km: 1.506, x0_per_km: 0.291, rated_amps: 190 },
-  { id: 'al_xlpe_95_11kv',  name: '95mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.320,  x_per_km: 0.101, r0_per_km: 1.088, x0_per_km: 0.283, rated_amps: 230 },
-  { id: 'al_xlpe_120_11kv', name: '120mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.253,  x_per_km: 0.099, r0_per_km: 0.860, x0_per_km: 0.277, rated_amps: 265 },
-  { id: 'al_xlpe_150_11kv', name: '150mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.206,  x_per_km: 0.097, r0_per_km: 0.700, x0_per_km: 0.272, rated_amps: 300 },
-  { id: 'al_xlpe_185_11kv', name: '185mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.164,  x_per_km: 0.095, r0_per_km: 0.558, x0_per_km: 0.266, rated_amps: 340 },
-  { id: 'al_xlpe_240_11kv', name: '240mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.125,  x_per_km: 0.093, r0_per_km: 0.425, x0_per_km: 0.260, rated_amps: 395 },
-  { id: 'al_xlpe_300_11kv', name: '300mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.100,  x_per_km: 0.091, r0_per_km: 0.340, x0_per_km: 0.255, rated_amps: 445 },
-  { id: 'al_xlpe_400_11kv', name: '400mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 400, voltage_kv: 11,  r_per_km: 0.0778, x_per_km: 0.089, r0_per_km: 0.265, x0_per_km: 0.249, rated_amps: 505 },
+  { id: 'al_xlpe_35_11kv',  name: '35mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 11,  r_per_km: 1.113,  x_per_km: 0.110, r0_per_km: 3.783, x0_per_km: 0.308, rated_amps: 130 },
+  { id: 'al_xlpe_50_11kv',  name: '50mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 11,  r_per_km: 0.8218,  x_per_km: 0.107, r0_per_km: 2.793, x0_per_km: 0.300, rated_amps: 155 },
+  { id: 'al_xlpe_70_11kv',  name: '70mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 11,  r_per_km: 0.5679,  x_per_km: 0.104, r0_per_km: 1.931, x0_per_km: 0.291, rated_amps: 190 },
+  { id: 'al_xlpe_95_11kv',  name: '95mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.4102,  x_per_km: 0.101, r0_per_km: 1.395, x0_per_km: 0.283, rated_amps: 230 },
+  { id: 'al_xlpe_120_11kv', name: '120mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.3243,  x_per_km: 0.099, r0_per_km: 1.103, x0_per_km: 0.277, rated_amps: 265 },
+  { id: 'al_xlpe_150_11kv', name: '150mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.2641,  x_per_km: 0.097, r0_per_km: 0.8974, x0_per_km: 0.272, rated_amps: 300 },
+  { id: 'al_xlpe_185_11kv', name: '185mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.2118,  x_per_km: 0.095, r0_per_km: 0.7201, x0_per_km: 0.266, rated_amps: 340 },
+  { id: 'al_xlpe_240_11kv', name: '240mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.1623,  x_per_km: 0.093, r0_per_km: 0.5518, x0_per_km: 0.260, rated_amps: 395 },
+  { id: 'al_xlpe_300_11kv', name: '300mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.1307,  x_per_km: 0.091, r0_per_km: 0.4444, x0_per_km: 0.255, rated_amps: 445 },
+  { id: 'al_xlpe_400_11kv', name: '400mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 400, voltage_kv: 11,  r_per_km: 0.1029, x_per_km: 0.089, r0_per_km: 0.3499, x0_per_km: 0.249, rated_amps: 505 },
   // LV XLPE Copper (0.6/1kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE)
-  { id: 'cu_xlpe_16_lv',  name: '16mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.15,   x_per_km: 0.082, r0_per_km: 4.370, x0_per_km: 0.230, rated_amps: 91  },
-  { id: 'cu_xlpe_25_lv',  name: '25mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.727,  x_per_km: 0.079, r0_per_km: 2.763, x0_per_km: 0.221, rated_amps: 116 },
-  { id: 'cu_xlpe_35_lv',  name: '35mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.524,  x_per_km: 0.077, r0_per_km: 1.991, x0_per_km: 0.216, rated_amps: 140 },
-  { id: 'cu_xlpe_50_lv',  name: '50mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.387,  x_per_km: 0.075, r0_per_km: 1.471, x0_per_km: 0.210, rated_amps: 167 },
-  { id: 'cu_xlpe_70_lv',  name: '70mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.268,  x_per_km: 0.073, r0_per_km: 1.018, x0_per_km: 0.204, rated_amps: 210 },
-  { id: 'cu_xlpe_95_lv',  name: '95mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.193,  x_per_km: 0.072, r0_per_km: 0.733, x0_per_km: 0.202, rated_amps: 254 },
-  { id: 'cu_xlpe_120_lv', name: '120mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.153,  x_per_km: 0.071, r0_per_km: 0.581, x0_per_km: 0.199, rated_amps: 292 },
-  { id: 'cu_xlpe_150_lv', name: '150mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.124,  x_per_km: 0.070, r0_per_km: 0.471, x0_per_km: 0.196, rated_amps: 330 },
-  { id: 'cu_xlpe_185_lv', name: '185mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.0991, x_per_km: 0.069, r0_per_km: 0.377, x0_per_km: 0.193, rated_amps: 375 },
-  { id: 'cu_xlpe_240_lv', name: '240mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.0754, x_per_km: 0.068, r0_per_km: 0.287, x0_per_km: 0.190, rated_amps: 440 },
-  { id: 'cu_xlpe_300_lv', name: '300mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.0601, x_per_km: 0.067, r0_per_km: 0.228, x0_per_km: 0.188, rated_amps: 500 },
+  { id: 'cu_xlpe_16_lv',  name: '16mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.466,   x_per_km: 0.082, r0_per_km: 5.572, x0_per_km: 0.230, rated_amps: 91  },
+  { id: 'cu_xlpe_25_lv',  name: '25mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.9269,  x_per_km: 0.079, r0_per_km: 3.523, x0_per_km: 0.221, rated_amps: 116 },
+  { id: 'cu_xlpe_35_lv',  name: '35mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.6681,  x_per_km: 0.077, r0_per_km: 2.539, x0_per_km: 0.216, rated_amps: 140 },
+  { id: 'cu_xlpe_50_lv',  name: '50mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.4934,  x_per_km: 0.075, r0_per_km: 1.876, x0_per_km: 0.210, rated_amps: 167 },
+  { id: 'cu_xlpe_70_lv',  name: '70mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.3417,  x_per_km: 0.073, r0_per_km: 1.298, x0_per_km: 0.204, rated_amps: 210 },
+  { id: 'cu_xlpe_95_lv',  name: '95mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.2461,  x_per_km: 0.072, r0_per_km: 0.9346, x0_per_km: 0.202, rated_amps: 254 },
+  { id: 'cu_xlpe_120_lv', name: '120mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.1951,  x_per_km: 0.071, r0_per_km: 0.7408, x0_per_km: 0.199, rated_amps: 292 },
+  { id: 'cu_xlpe_150_lv', name: '150mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.1601,  x_per_km: 0.070, r0_per_km: 0.6084, x0_per_km: 0.196, rated_amps: 330 },
+  { id: 'cu_xlpe_185_lv', name: '185mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1289, x_per_km: 0.069, r0_per_km: 0.4898, x0_per_km: 0.193, rated_amps: 375 },
+  { id: 'cu_xlpe_240_lv', name: '240mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.0994, x_per_km: 0.068, r0_per_km: 0.3777, x0_per_km: 0.190, rated_amps: 440 },
+  { id: 'cu_xlpe_300_lv', name: '300mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.0807, x_per_km: 0.067, r0_per_km: 0.3067, x0_per_km: 0.188, rated_amps: 500 },
   // MV XLPE Copper (22kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE MV screened)
-  { id: 'cu_xlpe_35_22kv',  name: '35mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 22,  r_per_km: 0.524,  x_per_km: 0.122, r0_per_km: 1.991, x0_per_km: 0.342, rated_amps: 160 },
-  { id: 'cu_xlpe_50_22kv',  name: '50mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 22,  r_per_km: 0.387,  x_per_km: 0.118, r0_per_km: 1.471, x0_per_km: 0.330, rated_amps: 190 },
-  { id: 'cu_xlpe_70_22kv',  name: '70mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 22,  r_per_km: 0.268,  x_per_km: 0.114, r0_per_km: 1.018, x0_per_km: 0.319, rated_amps: 235 },
-  { id: 'cu_xlpe_95_22kv',  name: '95mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 22,  r_per_km: 0.193,  x_per_km: 0.111, r0_per_km: 0.733, x0_per_km: 0.311, rated_amps: 280 },
-  { id: 'cu_xlpe_120_22kv', name: '120mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 22,  r_per_km: 0.153,  x_per_km: 0.108, r0_per_km: 0.581, x0_per_km: 0.302, rated_amps: 320 },
-  { id: 'cu_xlpe_150_22kv', name: '150mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 22,  r_per_km: 0.124,  x_per_km: 0.106, r0_per_km: 0.471, x0_per_km: 0.297, rated_amps: 360 },
-  { id: 'cu_xlpe_185_22kv', name: '185mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 22,  r_per_km: 0.0991, x_per_km: 0.104, r0_per_km: 0.377, x0_per_km: 0.291, rated_amps: 410 },
-  { id: 'cu_xlpe_240_22kv', name: '240mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 22,  r_per_km: 0.0754, x_per_km: 0.101, r0_per_km: 0.287, x0_per_km: 0.283, rated_amps: 475 },
-  { id: 'cu_xlpe_300_22kv', name: '300mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 22,  r_per_km: 0.0601, x_per_km: 0.099, r0_per_km: 0.228, x0_per_km: 0.277, rated_amps: 535 },
+  { id: 'cu_xlpe_35_22kv',  name: '35mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 22,  r_per_km: 0.6681,  x_per_km: 0.122, r0_per_km: 2.539, x0_per_km: 0.342, rated_amps: 160 },
+  { id: 'cu_xlpe_50_22kv',  name: '50mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 22,  r_per_km: 0.4934,  x_per_km: 0.118, r0_per_km: 1.876, x0_per_km: 0.330, rated_amps: 190 },
+  { id: 'cu_xlpe_70_22kv',  name: '70mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 22,  r_per_km: 0.3417,  x_per_km: 0.114, r0_per_km: 1.298, x0_per_km: 0.319, rated_amps: 235 },
+  { id: 'cu_xlpe_95_22kv',  name: '95mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 22,  r_per_km: 0.2461,  x_per_km: 0.111, r0_per_km: 0.9346, x0_per_km: 0.311, rated_amps: 280 },
+  { id: 'cu_xlpe_120_22kv', name: '120mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 22,  r_per_km: 0.1951,  x_per_km: 0.108, r0_per_km: 0.7408, x0_per_km: 0.302, rated_amps: 320 },
+  { id: 'cu_xlpe_150_22kv', name: '150mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 22,  r_per_km: 0.1601,  x_per_km: 0.106, r0_per_km: 0.6084, x0_per_km: 0.297, rated_amps: 360 },
+  { id: 'cu_xlpe_185_22kv', name: '185mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 22,  r_per_km: 0.1289, x_per_km: 0.104, r0_per_km: 0.4898, x0_per_km: 0.291, rated_amps: 410 },
+  { id: 'cu_xlpe_240_22kv', name: '240mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 22,  r_per_km: 0.0994, x_per_km: 0.101, r0_per_km: 0.3777, x0_per_km: 0.283, rated_amps: 475 },
+  { id: 'cu_xlpe_300_22kv', name: '300mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 22,  r_per_km: 0.0807, x_per_km: 0.099, r0_per_km: 0.3067, x0_per_km: 0.277, rated_amps: 535 },
   // MV XLPE Copper (33kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE MV screened)
-  { id: 'cu_xlpe_50_33kv',  name: '50mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 33,  r_per_km: 0.387,  x_per_km: 0.130, r0_per_km: 1.471, x0_per_km: 0.364, rated_amps: 175 },
-  { id: 'cu_xlpe_70_33kv',  name: '70mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 33,  r_per_km: 0.268,  x_per_km: 0.126, r0_per_km: 1.018, x0_per_km: 0.353, rated_amps: 220 },
-  { id: 'cu_xlpe_95_33kv',  name: '95mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 33,  r_per_km: 0.193,  x_per_km: 0.122, r0_per_km: 0.733, x0_per_km: 0.342, rated_amps: 265 },
-  { id: 'cu_xlpe_120_33kv', name: '120mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 33,  r_per_km: 0.153,  x_per_km: 0.119, r0_per_km: 0.581, x0_per_km: 0.333, rated_amps: 300 },
-  { id: 'cu_xlpe_150_33kv', name: '150mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 33,  r_per_km: 0.124,  x_per_km: 0.117, r0_per_km: 0.471, x0_per_km: 0.328, rated_amps: 340 },
-  { id: 'cu_xlpe_185_33kv', name: '185mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 33,  r_per_km: 0.0991, x_per_km: 0.114, r0_per_km: 0.377, x0_per_km: 0.319, rated_amps: 385 },
-  { id: 'cu_xlpe_240_33kv', name: '240mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 33,  r_per_km: 0.0754, x_per_km: 0.112, r0_per_km: 0.287, x0_per_km: 0.314, rated_amps: 450 },
-  { id: 'cu_xlpe_300_33kv', name: '300mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 33,  r_per_km: 0.0601, x_per_km: 0.109, r0_per_km: 0.228, x0_per_km: 0.305, rated_amps: 510 },
-  { id: 'cu_xlpe_400_33kv', name: '400mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 400, voltage_kv: 33,  r_per_km: 0.0470, x_per_km: 0.107, r0_per_km: 0.179, x0_per_km: 0.300, rated_amps: 575 },
+  { id: 'cu_xlpe_50_33kv',  name: '50mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 33,  r_per_km: 0.4934,  x_per_km: 0.130, r0_per_km: 1.876, x0_per_km: 0.364, rated_amps: 175 },
+  { id: 'cu_xlpe_70_33kv',  name: '70mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 33,  r_per_km: 0.3417,  x_per_km: 0.126, r0_per_km: 1.298, x0_per_km: 0.353, rated_amps: 220 },
+  { id: 'cu_xlpe_95_33kv',  name: '95mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 33,  r_per_km: 0.2461,  x_per_km: 0.122, r0_per_km: 0.9346, x0_per_km: 0.342, rated_amps: 265 },
+  { id: 'cu_xlpe_120_33kv', name: '120mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 33,  r_per_km: 0.1951,  x_per_km: 0.119, r0_per_km: 0.7408, x0_per_km: 0.333, rated_amps: 300 },
+  { id: 'cu_xlpe_150_33kv', name: '150mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 33,  r_per_km: 0.1601,  x_per_km: 0.117, r0_per_km: 0.6084, x0_per_km: 0.328, rated_amps: 340 },
+  { id: 'cu_xlpe_185_33kv', name: '185mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 33,  r_per_km: 0.1289, x_per_km: 0.114, r0_per_km: 0.4898, x0_per_km: 0.319, rated_amps: 385 },
+  { id: 'cu_xlpe_240_33kv', name: '240mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 33,  r_per_km: 0.0994, x_per_km: 0.112, r0_per_km: 0.3777, x0_per_km: 0.314, rated_amps: 450 },
+  { id: 'cu_xlpe_300_33kv', name: '300mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 33,  r_per_km: 0.0807, x_per_km: 0.109, r0_per_km: 0.3067, x0_per_km: 0.305, rated_amps: 510 },
+  { id: 'cu_xlpe_400_33kv', name: '400mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 400, voltage_kv: 33,  r_per_km: 0.0649, x_per_km: 0.107, r0_per_km: 0.2466, x0_per_km: 0.300, rated_amps: 575 },
   // LV XLPE Aluminium (0.6/1kV) — r0: 3.4×r1, x0: 2.8×x1 per IEC 60502 (Al XLPE)
-  { id: 'al_xlpe_16_lv',  name: '16mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.91,   x_per_km: 0.082, r0_per_km: 6.494, x0_per_km: 0.230, rated_amps: 70  },
-  { id: 'al_xlpe_25_lv',  name: '25mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 0.4, r_per_km: 1.20,   x_per_km: 0.079, r0_per_km: 4.080, x0_per_km: 0.221, rated_amps: 90  },
-  { id: 'al_xlpe_35_lv',  name: '35mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.868,  x_per_km: 0.077, r0_per_km: 2.951, x0_per_km: 0.216, rated_amps: 110 },
-  { id: 'al_xlpe_50_lv',  name: '50mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.641,  x_per_km: 0.075, r0_per_km: 2.179, x0_per_km: 0.210, rated_amps: 130 },
-  { id: 'al_xlpe_70_lv',  name: '70mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.443,  x_per_km: 0.073, r0_per_km: 1.506, x0_per_km: 0.204, rated_amps: 165 },
-  { id: 'al_xlpe_95_lv',  name: '95mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.320,  x_per_km: 0.072, r0_per_km: 1.088, x0_per_km: 0.202, rated_amps: 200 },
-  { id: 'al_xlpe_120_lv', name: '120mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.253,  x_per_km: 0.071, r0_per_km: 0.860, x0_per_km: 0.199, rated_amps: 230 },
-  { id: 'al_xlpe_150_lv', name: '150mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.206,  x_per_km: 0.070, r0_per_km: 0.700, x0_per_km: 0.196, rated_amps: 260 },
-  { id: 'al_xlpe_185_lv', name: '185mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.164,  x_per_km: 0.069, r0_per_km: 0.558, x0_per_km: 0.193, rated_amps: 295 },
-  { id: 'al_xlpe_240_lv', name: '240mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.125,  x_per_km: 0.068, r0_per_km: 0.425, x0_per_km: 0.190, rated_amps: 350 },
-  { id: 'al_xlpe_300_lv', name: '300mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.100,  x_per_km: 0.067, r0_per_km: 0.340, x0_per_km: 0.188, rated_amps: 395 },
+  { id: 'al_xlpe_16_lv',  name: '16mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 2.449,   x_per_km: 0.082, r0_per_km: 8.325, x0_per_km: 0.230, rated_amps: 70  },
+  { id: 'al_xlpe_25_lv',  name: '25mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 0.4, r_per_km: 1.538,   x_per_km: 0.079, r0_per_km: 5.231, x0_per_km: 0.221, rated_amps: 90  },
+  { id: 'al_xlpe_35_lv',  name: '35mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 1.113,  x_per_km: 0.077, r0_per_km: 3.783, x0_per_km: 0.216, rated_amps: 110 },
+  { id: 'al_xlpe_50_lv',  name: '50mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.8218,  x_per_km: 0.075, r0_per_km: 2.793, x0_per_km: 0.210, rated_amps: 130 },
+  { id: 'al_xlpe_70_lv',  name: '70mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.5679,  x_per_km: 0.073, r0_per_km: 1.931, x0_per_km: 0.204, rated_amps: 165 },
+  { id: 'al_xlpe_95_lv',  name: '95mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.4102,  x_per_km: 0.072, r0_per_km: 1.395, x0_per_km: 0.202, rated_amps: 200 },
+  { id: 'al_xlpe_120_lv', name: '120mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.3243,  x_per_km: 0.071, r0_per_km: 1.103, x0_per_km: 0.199, rated_amps: 230 },
+  { id: 'al_xlpe_150_lv', name: '150mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.2641,  x_per_km: 0.070, r0_per_km: 0.8974, x0_per_km: 0.196, rated_amps: 260 },
+  { id: 'al_xlpe_185_lv', name: '185mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.2118,  x_per_km: 0.069, r0_per_km: 0.7201, x0_per_km: 0.193, rated_amps: 295 },
+  { id: 'al_xlpe_240_lv', name: '240mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.1623,  x_per_km: 0.068, r0_per_km: 0.5518, x0_per_km: 0.190, rated_amps: 350 },
+  { id: 'al_xlpe_300_lv', name: '300mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.1307,  x_per_km: 0.067, r0_per_km: 0.4444, x0_per_km: 0.188, rated_amps: 395 },
   // LV PVC Copper (0.6/1kV) — r0: 4.2×r1, x0: 3.2×x1 per IEC 60502 (Cu PVC)
-  { id: 'cu_pvc_1.5_lv',  name: '1.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 12.1,   x_per_km: 0.094, r0_per_km: 50.820, x0_per_km: 0.301, rated_amps: 18  },
-  { id: 'cu_pvc_2.5_lv',  name: '2.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 7.41,   x_per_km: 0.090, r0_per_km: 31.122, x0_per_km: 0.288, rated_amps: 25  },
-  { id: 'cu_pvc_4_lv',    name: '4mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 4,   voltage_kv: 0.4, r_per_km: 4.61,   x_per_km: 0.087, r0_per_km: 19.362, x0_per_km: 0.278, rated_amps: 34  },
-  { id: 'cu_pvc_6_lv',    name: '6mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 6,   voltage_kv: 0.4, r_per_km: 3.08,   x_per_km: 0.084, r0_per_km: 12.936, x0_per_km: 0.269, rated_amps: 43  },
-  { id: 'cu_pvc_10_lv',   name: '10mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 10,  voltage_kv: 0.4, r_per_km: 1.83,   x_per_km: 0.080, r0_per_km: 7.686, x0_per_km: 0.256, rated_amps: 60  },
-  { id: 'cu_pvc_16_lv',   name: '16mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.15,   x_per_km: 0.079, r0_per_km: 4.830, x0_per_km: 0.253, rated_amps: 80  },
-  { id: 'cu_pvc_25_lv',   name: '25mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.727,  x_per_km: 0.077, r0_per_km: 3.053, x0_per_km: 0.246, rated_amps: 101 },
-  { id: 'cu_pvc_35_lv',   name: '35mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.524,  x_per_km: 0.075, r0_per_km: 2.201, x0_per_km: 0.240, rated_amps: 125 },
-  { id: 'cu_pvc_50_lv',   name: '50mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.387,  x_per_km: 0.073, r0_per_km: 1.625, x0_per_km: 0.234, rated_amps: 151 },
-  { id: 'cu_pvc_70_lv',   name: '70mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.268,  x_per_km: 0.072, r0_per_km: 1.126, x0_per_km: 0.230, rated_amps: 192 },
-  { id: 'cu_pvc_95_lv',   name: '95mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.193,  x_per_km: 0.071, r0_per_km: 0.811, x0_per_km: 0.227, rated_amps: 232 },
-  { id: 'cu_pvc_120_lv',  name: '120mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.153,  x_per_km: 0.070, r0_per_km: 0.643, x0_per_km: 0.224, rated_amps: 269 },
-  { id: 'cu_pvc_150_lv',  name: '150mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.124,  x_per_km: 0.069, r0_per_km: 0.521, x0_per_km: 0.221, rated_amps: 300 },
-  { id: 'cu_pvc_185_lv',  name: '185mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.0991, x_per_km: 0.068, r0_per_km: 0.416, x0_per_km: 0.218, rated_amps: 341 },
-  { id: 'cu_pvc_240_lv',  name: '240mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.0754, x_per_km: 0.067, r0_per_km: 0.317, x0_per_km: 0.214, rated_amps: 400 },
-  { id: 'cu_pvc_300_lv',  name: '300mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.0601, x_per_km: 0.066, r0_per_km: 0.252, x0_per_km: 0.211, rated_amps: 458 },
+  { id: 'cu_pvc_1.5_lv',  name: '1.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.52,   x_per_km: 0.094, r0_per_km: 60.98, x0_per_km: 0.301, rated_amps: 18  },
+  { id: 'cu_pvc_2.5_lv',  name: '2.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.892,   x_per_km: 0.090, r0_per_km: 37.35, x0_per_km: 0.288, rated_amps: 25  },
+  { id: 'cu_pvc_4_lv',    name: '4mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 4,   voltage_kv: 0.4, r_per_km: 5.532,   x_per_km: 0.087, r0_per_km: 23.23, x0_per_km: 0.278, rated_amps: 34  },
+  { id: 'cu_pvc_6_lv',    name: '6mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 6,   voltage_kv: 0.4, r_per_km: 3.696,   x_per_km: 0.084, r0_per_km: 15.52, x0_per_km: 0.269, rated_amps: 43  },
+  { id: 'cu_pvc_10_lv',   name: '10mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 10,  voltage_kv: 0.4, r_per_km: 2.196,   x_per_km: 0.080, r0_per_km: 9.223, x0_per_km: 0.256, rated_amps: 60  },
+  { id: 'cu_pvc_16_lv',   name: '16mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.380,   x_per_km: 0.079, r0_per_km: 5.796, x0_per_km: 0.253, rated_amps: 80  },
+  { id: 'cu_pvc_25_lv',   name: '25mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.8724,  x_per_km: 0.077, r0_per_km: 3.664, x0_per_km: 0.246, rated_amps: 101 },
+  { id: 'cu_pvc_35_lv',   name: '35mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.6288,  x_per_km: 0.075, r0_per_km: 2.641, x0_per_km: 0.240, rated_amps: 125 },
+  { id: 'cu_pvc_50_lv',   name: '50mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.4644,  x_per_km: 0.073, r0_per_km: 1.950, x0_per_km: 0.234, rated_amps: 151 },
+  { id: 'cu_pvc_70_lv',   name: '70mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.3216,  x_per_km: 0.072, r0_per_km: 1.351, x0_per_km: 0.230, rated_amps: 192 },
+  { id: 'cu_pvc_95_lv',   name: '95mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.2316,  x_per_km: 0.071, r0_per_km: 0.9732, x0_per_km: 0.227, rated_amps: 232 },
+  { id: 'cu_pvc_120_lv',  name: '120mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.1836,  x_per_km: 0.070, r0_per_km: 0.7716, x0_per_km: 0.224, rated_amps: 269 },
+  { id: 'cu_pvc_150_lv',  name: '150mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.1505,  x_per_km: 0.069, r0_per_km: 0.6321, x0_per_km: 0.221, rated_amps: 300 },
+  { id: 'cu_pvc_185_lv',  name: '185mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1212, x_per_km: 0.068, r0_per_km: 0.509, x0_per_km: 0.218, rated_amps: 341 },
+  { id: 'cu_pvc_240_lv',  name: '240mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.0937, x_per_km: 0.067, r0_per_km: 0.3935, x0_per_km: 0.214, rated_amps: 400 },
+  { id: 'cu_pvc_300_lv',  name: '300mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.0762, x_per_km: 0.066, r0_per_km: 0.32, x0_per_km: 0.211, rated_amps: 458 },
 ];
 
 // ─── Standard Transformer Library ───
@@ -120,8 +122,11 @@ const STANDARD_TRANSFORMERS = [
   { id: 'xfmr_3150kva',  name: '3.15 MVA 33/11kV',     rated_mva: 3.15,   voltage_hv_kv: 33,  voltage_lv_kv: 11,   z_percent: 7.0,  x_r_ratio: 10,  vector_group: 'Dyn11' },
   { id: 'xfmr_5mva',     name: '5 MVA 33/11kV',        rated_mva: 5,      voltage_hv_kv: 33,  voltage_lv_kv: 11,   z_percent: 7.5,  x_r_ratio: 12,  vector_group: 'Dyn11' },
   { id: 'xfmr_10mva',    name: '10 MVA 33/11kV',       rated_mva: 10,     voltage_hv_kv: 33,  voltage_lv_kv: 11,   z_percent: 8.0,  x_r_ratio: 15,  vector_group: 'Dyn11' },
-  { id: 'xfmr_20mva',    name: '20 MVA 33/11kV',       rated_mva: 20,     voltage_hv_kv: 33,  voltage_lv_kv: 11,   z_percent: 10.0, x_r_ratio: 18,  vector_group: 'YNd11' },
+  { id: 'xfmr_20mva',    name: '20 MVA 33/11kV',       rated_mva: 20,     voltage_hv_kv: 33,  voltage_lv_kv: 11,   z_percent: 10.0, x_r_ratio: 18,  vector_group: 'Dyn11' },
   // Power transformers (132/33 kV)
+  // YNd11 units: the delta LV winding provides no 33 kV earth-fault source —
+  // these assume a separate NECRT (neutral earthing compensator/resistor
+  // transformer) earths the 33 kV network, per common utility practice.
   { id: 'xfmr_20mva_hv', name: '20 MVA 132/33kV',      rated_mva: 20,     voltage_hv_kv: 132, voltage_lv_kv: 33,   z_percent: 10.0, x_r_ratio: 20,  vector_group: 'YNd11' },
   { id: 'xfmr_40mva',    name: '40 MVA 132/33kV',      rated_mva: 40,     voltage_hv_kv: 132, voltage_lv_kv: 33,   z_percent: 12.5, x_r_ratio: 25,  vector_group: 'YNd11' },
   { id: 'xfmr_80mva',    name: '80 MVA 132/33kV',      rated_mva: 80,     voltage_hv_kv: 132, voltage_lv_kv: 33,   z_percent: 14.0, x_r_ratio: 30,  vector_group: 'YNd11' },
@@ -318,6 +323,7 @@ const IEC_STANDARD_SIZES = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150
 // ─── IDMT Relay Curve Parameters ───
 // IEC 60255 inverse-time curves: t = TDS * (k / (M^a - 1)) + c
 // IEEE C37.112 curves: t = TDS * (A / (M^p - 1) + B)
+// Definite Time: t = TDS (fixed delay for all currents above pickup)
 // Where M = I/Ipickup (current multiple)
 const IDMT_CURVES = {
   'IEC Standard Inverse':     { std: 'IEC', k: 0.14,   a: 0.02,  c: 0 },
@@ -327,6 +333,7 @@ const IDMT_CURVES = {
   'IEEE Moderately Inverse':  { std: 'IEEE', A: 0.0515, p: 0.02,  B: 0.114 },
   'IEEE Very Inverse':        { std: 'IEEE', A: 19.61,  p: 2.0,   B: 0.491 },
   'IEEE Extremely Inverse':   { std: 'IEEE', A: 28.2,   p: 2.0,   B: 0.1217 },
+  'Definite Time':            { std: 'DT' },
 };
 
 // Calculate relay trip time for a given current multiple M and TDS
@@ -334,7 +341,9 @@ function idmtTripTime(curveName, M, TDS) {
   if (M <= 1) return Infinity;
   const c = IDMT_CURVES[curveName];
   if (!c) return Infinity;
-  if (c.std === 'IEC') {
+  if (c.std === 'DT') {
+    return TDS; // Definite time: time_dial is the fixed operate delay in seconds
+  } else if (c.std === 'IEC') {
     return TDS * (c.k / (Math.pow(M, c.a) - 1) + c.c);
   } else {
     return TDS * (c.A / (Math.pow(M, c.p) - 1) + c.B);
@@ -502,9 +511,27 @@ const FUSE_CURVES_GG = {
   630:  [[1000,600],[1250,100],[1600,30],[2000,8],[3150,1.5],[4000,0.5],[6300,0.08],[10000,0.02],[16000,0.008]],
 };
 
-// Get fuse trip time by log-log interpolation of the characteristic points
+// Get the gG pre-arcing curve points for an arbitrary rating.
+// Ratings without a tabulated curve are ratio-scaled from the nearest standard
+// curve (the table itself is one characteristic shape scaled per rating, so
+// scaling is consistent with its construction). Returns null if rating invalid.
+function fuseCurvePoints(ratingA) {
+  if (FUSE_CURVES_GG[ratingA]) return FUSE_CURVES_GG[ratingA];
+  if (!(ratingA > 0)) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for (const r of FUSE_RATINGS_GG) {
+    const dist = Math.abs(Math.log(r / ratingA));
+    if (dist < bestDist) { bestDist = dist; best = r; }
+  }
+  if (!best) return null;
+  const scale = ratingA / best;
+  return FUSE_CURVES_GG[best].map(([i, t]) => [i * scale, t]);
+}
+
+// Get fuse pre-arcing (melting) time by log-log interpolation of the characteristic points
 function fuseTripTime(ratingA, currentA) {
-  const points = FUSE_CURVES_GG[ratingA];
+  const points = fuseCurvePoints(ratingA);
   if (!points) return null;
   if (currentA <= points[0][0]) return Infinity; // Below minimum operating current
   if (currentA >= points[points.length - 1][0]) return points[points.length - 1][1];
@@ -539,12 +566,15 @@ const FUSE_RATINGS_GG = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250
 // Magnetic region: fixed trip time (typically 20ms for MCCB, configurable for ACB)
 
 const CB_TRIP_CLASSES = {
-  // Long-time delay class factors (IEC 60947-2 Annex F)
-  // Higher k = slower thermal trip at same overload
-  5:   { k: 80 },
-  10:  { k: 200 },
-  20:  { k: 500 },
-  30:  { k: 1000 },
+  // Long-time delay band factors emulating generic electronic-trip-unit LTD bands.
+  // t = k / (M² − 1), calibrated so t(6×Ir) = class seconds → k = class × (6² − 1) = class × 35.
+  // Note: these are NOT the IEC 60947-4-1 motor-starter trip classes; they are
+  // representative LTD time bands (class = seconds at 6× pickup).
+  // Higher k = slower thermal trip at same overload.
+  5:   { k: 175 },
+  10:  { k: 350 },
+  20:  { k: 700 },
+  30:  { k: 1050 },
 };
 
 /**
@@ -627,10 +657,12 @@ const STANDARD_CBS = [
   { id: 'acb_2500a',  name: 'ACB 2500A',   cb_type: 'acb',  trip_rating_a: 2500, frame_a: 2500, rated_voltage_kv: 0.4, breaking_ka: 100, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
   { id: 'acb_3200a',  name: 'ACB 3200A',   cb_type: 'acb',  trip_rating_a: 3200, frame_a: 3200, rated_voltage_kv: 0.4, breaking_ka: 100, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.1, instantaneous_pickup: 12 },
   { id: 'acb_4000a',  name: 'ACB 4000A',   cb_type: 'acb',  trip_rating_a: 4000, frame_a: 4000, rated_voltage_kv: 0.4, breaking_ka: 100, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10, short_time_pickup: 6,  short_time_delay: 0.15, instantaneous_pickup: 15 },
-  // MV Breakers (IEC 62271-100)
-  { id: 'mccb_200a_11kv', name: 'MCCB 200A 11kV', cb_type: 'mccb', trip_rating_a: 200,  frame_a: 200,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
-  { id: 'mccb_400a_11kv', name: 'MCCB 400A 11kV', cb_type: 'mccb', trip_rating_a: 400,  frame_a: 400,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
-  { id: 'mccb_630a_11kv', name: 'MCCB 630A 11kV', cb_type: 'mccb', trip_rating_a: 630,  frame_a: 630,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  // MV Vacuum Breakers (IEC 62271-100) — MCCBs are LV devices (IEC 60947-2);
+  // at 11 kV vacuum/SF6 breakers are used. cb_type stays 'mccb' so the
+  // existing thermal-magnetic curve model is retained (ids kept for saved projects).
+  { id: 'mccb_200a_11kv', name: 'VCB 200A 11kV', cb_type: 'mccb', trip_rating_a: 200,  frame_a: 200,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_400a_11kv', name: 'VCB 400A 11kV', cb_type: 'mccb', trip_rating_a: 400,  frame_a: 400,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mccb_630a_11kv', name: 'VCB 630A 11kV', cb_type: 'mccb', trip_rating_a: 630,  frame_a: 630,  rated_voltage_kv: 11,  breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
 ];
 
 // ─── Standard Fuse Library ───
@@ -656,14 +688,16 @@ const STANDARD_FUSES = [
   { id: 'gg_400a',  name: 'gG 400A',   fuse_type: 'gG', rated_current_a: 400,  rated_voltage_kv: 0.4, breaking_ka: 80  },
   { id: 'gg_500a',  name: 'gG 500A',   fuse_type: 'gG', rated_current_a: 500,  rated_voltage_kv: 0.4, breaking_ka: 80  },
   { id: 'gg_630a',  name: 'gG 630A',   fuse_type: 'gG', rated_current_a: 630,  rated_voltage_kv: 0.4, breaking_ka: 80  },
-  // MV fuses (IEC 60282-1)
-  { id: 'gg_6.3a_11kv',  name: 'gG 6.3A 11kV',  fuse_type: 'gG', rated_current_a: 6.3,  rated_voltage_kv: 11, breaking_ka: 50 },
-  { id: 'gg_10a_11kv',   name: 'gG 10A 11kV',   fuse_type: 'gG', rated_current_a: 10,   rated_voltage_kv: 11, breaking_ka: 50 },
-  { id: 'gg_16a_11kv',   name: 'gG 16A 11kV',   fuse_type: 'gG', rated_current_a: 16,   rated_voltage_kv: 11, breaking_ka: 50 },
-  { id: 'gg_25a_11kv',   name: 'gG 25A 11kV',   fuse_type: 'gG', rated_current_a: 25,   rated_voltage_kv: 11, breaking_ka: 50 },
-  { id: 'gg_40a_11kv',   name: 'gG 40A 11kV',   fuse_type: 'gG', rated_current_a: 40,   rated_voltage_kv: 11, breaking_ka: 50 },
-  { id: 'gg_63a_11kv',   name: 'gG 63A 11kV',   fuse_type: 'gG', rated_current_a: 63,   rated_voltage_kv: 11, breaking_ka: 50 },
-  { id: 'gg_100a_11kv',  name: 'gG 100A 11kV',  fuse_type: 'gG', rated_current_a: 100,  rated_voltage_kv: 11, breaking_ka: 50 },
+  // MV fuses (IEC 60282-1) — MV current-limiting fuses are class "back-up"
+  // per IEC 60282-1, not gG (an LV IEC 60269 class). fuse_type stays 'gG' so
+  // the existing curve model is retained (ids kept for saved projects).
+  { id: 'gg_6.3a_11kv',  name: 'MV Back-up 6.3A 11kV',  fuse_type: 'gG', rated_current_a: 6.3,  rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_10a_11kv',   name: 'MV Back-up 10A 11kV',   fuse_type: 'gG', rated_current_a: 10,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_16a_11kv',   name: 'MV Back-up 16A 11kV',   fuse_type: 'gG', rated_current_a: 16,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_25a_11kv',   name: 'MV Back-up 25A 11kV',   fuse_type: 'gG', rated_current_a: 25,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_40a_11kv',   name: 'MV Back-up 40A 11kV',   fuse_type: 'gG', rated_current_a: 40,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_63a_11kv',   name: 'MV Back-up 63A 11kV',   fuse_type: 'gG', rated_current_a: 63,   rated_voltage_kv: 11, breaking_ka: 50 },
+  { id: 'gg_100a_11kv',  name: 'MV Back-up 100A 11kV',  fuse_type: 'gG', rated_current_a: 100,  rated_voltage_kv: 11, breaking_ka: 50 },
 ];
 
 // Interaction modes
@@ -699,7 +733,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'loads',
     name: 'Loads',
-    items: ['motor_induction', 'motor_synchronous', 'static_load'],
+    items: ['motor_induction', 'motor_synchronous', 'static_load', 'distribution_board'],
   },
   {
     id: 'dc_systems',
@@ -729,6 +763,9 @@ const FIELD_INFO = {
   'generator.xd':        'Default Xd = 1.2 p.u. is typical synchronous reactance.\nSource: IEC 60034-4 Table 5 — synchronous reactance range 0.8–1.8 p.u.',
   'generator.x_r_ratio': 'Default X/R = 40 is typical for generators.\nSource: IEC 60909-0 §3.7 — generator X/R ratios are generally high (30–60).',
   'generator.power_factor': 'Default PF = 0.85 lagging, typical industrial generator rating.\nSource: IEC 60034-1 §8 — rated power factor.',
+  'generator.min_load_pct': 'Default 30% — diesel sets running below ~30% of rating for extended periods suffer wet stacking (unburned fuel/carbon build-up).\nSources: engine manufacturers recommend 30–35% minimum (typical spec range 30–50%); NFPA 110 §8.4.2 requires monthly exercising at ≥30% of nameplate kW.\nThe dispatcher curtails solar/wind so a running generator carries at least this load.',
+  'generator.gen_control': 'droop: all running sets share load in proportion to their ratings (isochronous/droop paralleling — the historical behaviour).\nsequential: load-demand start, like DSE/ComAp paralleling controllers — the lead set (lowest Dispatch Priority) is fully loaded before the next set starts; sets that are not needed stay off.\nSets paralleled on one bus should use the same scheme.',
+  'generator.start_threshold_pct': 'Default 90% — the next set in the sequence starts when the running sets\' capacity utilisation would exceed this threshold.\nTypical load-demand start settings on paralleling controllers are 80–90% of running capacity.\nStart sequence follows Dispatch Priority (1 starts first).',
 
   // Transformer
   'transformer.z_percent':    'Default Z% = 8% is typical for 10 MVA distribution transformers.\nSource: IEC 60076-5 Table 2 — impedance voltage at rated current.\n• ≤630 kVA: 4–6%\n• 1–10 MVA: 6–9%\n• >10 MVA: 8–12%',
@@ -770,7 +807,7 @@ const FIELD_INFO = {
   'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.',
   'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current\n• P = protection application.',
   'ct.burden_va':      'Default 15 VA — typical protection CT burden.\nSource: IEC 61869-2 §2 — standard rated burden values.',
-  'ct.rct_ohm':        'Default 2.0 Ω — CT secondary winding resistance.\nSource: IEC 61869-2 — typical protection CT Rct: 1–5 Ω.\nAffects saturation onset: higher Rct means earlier saturation.',
+  'ct.rct_ohm':        'Default 0.3 Ω — CT secondary winding resistance, typical for a 5 A secondary CT.\nSource: IEC 61869-2 — typical Rct: 0.1–0.5 Ω (5 A CTs), 1–5 Ω (1 A CTs).\nAffects saturation onset: higher Rct means earlier saturation.',
   'ct.knee_point_v':   'Leave 0 to auto-derive from accuracy class ALF.\nVk = ALF × I_rated × (Rct + R_burden).\nSource: IEC 61869-2 — knee point voltage defines CT saturation onset.\nManual entry overrides the calculated value.',
 
   // PT
@@ -782,6 +819,9 @@ const FIELD_INFO = {
   'motor_induction.efficiency':           'Default 93% — typical for IE3 200 kW motor.\nSource: IEC 60034-30-1 Table 2 — efficiency classes for induction motors.',
   'motor_induction.power_factor':         'Default PF = 0.85 — typical for medium induction motors.\nSource: IEC 60034-1 — rated power factor varies with size (0.80–0.92).',
   'motor_induction.locked_rotor_current': 'Default 6×FLC — typical locked rotor (starting) current.\nSource: IEC 60034-1 §9.7 — starting current:\n• Most motors: 5–8× FLC\n• High-efficiency: 6–7× FLC.',
+  'motor_induction.starting_method': 'Starting method — reduces the current drawn from the supply during start (I ∝ V²):\n• DOL: full locked-rotor current\n• Star-Delta: ⅓ of DOL\n• Autotransformer (80% tap): 0.64×\n• Soft Starter: ≈0.5×\n• VFD: ≈ full-load current.',
+  'motor_synchronous.starting_method': 'Starting method — reduces the current drawn from the supply during the asynchronous start (I ∝ V²):\n• DOL: full locked-rotor current\n• Star-Delta: ⅓ of DOL\n• Autotransformer (80% tap): 0.64×\n• Soft Starter: ≈0.5×\n• VFD: ≈ full-load current.',
+  'motor_synchronous.locked_rotor_current': 'Default 5.5×FLC — synchronous motors start asynchronously through the amortisseur winding.\nSource: IEC 60034-1 — starting current typically 4–7× FLC.',
   'motor_induction.x_pp':                 'Default X″ = 0.17 p.u. — sub-transient reactance for fault contribution.\nSource: IEC 60909-0 Table 3 — motor sub-transient reactance 0.12–0.25 p.u.',
 
   // Synchronous Motor
@@ -827,7 +867,9 @@ const COMPONENT_DEFS = {
       x_r_ratio: 15,
       z2_z1_ratio: 1.0,
       z0_z1_ratio: 1.0,
-      x0_r0_ratio: 0,
+      dispatch_priority: 3,
+      allow_export: 'yes',
+      supply_capacity_mva: 0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -836,7 +878,9 @@ const COMPONENT_DEFS = {
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number' },
       { key: 'z2_z1_ratio', label: 'Z₂/Z₁ Ratio', type: 'number', min: 0.5, max: 2, step: 0.1, section: 'fault' },
       { key: 'z0_z1_ratio', label: 'Z₀/Z₁ Ratio', type: 'number', min: 0.5, max: 5, step: 0.1, section: 'fault' },
-      { key: 'x0_r0_ratio', label: 'X₀/R₀ Ratio', type: 'number', section: 'fault' },
+      { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
+      { key: 'allow_export', label: 'Allow Export', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
+      { key: 'supply_capacity_mva', label: 'Supply Capacity (0 = unlimited)', type: 'number', unit: 'MVA', min: 0, step: 0.1, section: 'loadflow' },
     ],
   },
   generator: {
@@ -856,12 +900,22 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       x2: 0,
       x0: 0,
+      dispatch_priority: 2,
+      dispatch_mode: 'standby',
+      min_load_pct: 30,
+      gen_control: 'droop',
+      start_threshold_pct: 90,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'rated_mva', label: 'Rating', type: 'number', unit: 'MVA', unitOptions: [{ label: 'MVA', mult: 1 }, { label: 'kVA', mult: 0.001 }] },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
+      { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
+      { key: 'dispatch_mode', label: 'Dispatch Mode', type: 'select', options: ['must_run', 'merit_order', 'standby'], section: 'loadflow' },
+      { key: 'min_load_pct', label: 'Minimum Load', type: 'number', unit: '%', min: 0, max: 100, step: 5, section: 'loadflow' },
+      { key: 'gen_control', label: 'Control Scheme', type: 'select', options: ['droop', 'sequential'], section: 'loadflow' },
+      { key: 'start_threshold_pct', label: 'Start Threshold', type: 'number', unit: '%', min: 50, max: 100, step: 5, section: 'loadflow', showWhen: { field: 'gen_control', values: ['sequential'] } },
       { key: 'xd_pp', label: "Xd''", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'xd_p', label: "Xd'", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'xd', label: 'Xd', type: 'number', unit: 'p.u.', section: 'fault' },
@@ -888,17 +942,21 @@ const COMPONENT_DEFS = {
       mppt_tracking: 'fixed',
       fault_contribution_pu: 1.1,
       irradiance_pct: 100,
+      dispatch_priority: 1,
+      dispatch_mode: 'must_run',
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
-      { key: 'rated_kw', label: 'Rated Power', type: 'number', unit: 'kW', unitOptions: [{ label: 'kW', mult: 1 }, { label: 'MW', mult: 1000 }] },
+      { key: 'rated_kw', label: 'Rated Power (per inverter)', type: 'number', unit: 'kW', unitOptions: [{ label: 'kW', mult: 1 }, { label: 'MW', mult: 1000 }] },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
-      { key: 'num_inverters', label: 'No. of Inverters', type: 'number', min: 1, step: 1 },
+      { key: 'num_inverters', label: 'No. of Inverters (× rated power)', type: 'number', min: 1, step: 1 },
       { key: 'inverter_eff', label: 'Inverter Efficiency', type: 'number', unit: 'p.u.', min: 0.8, max: 1.0, step: 0.01 },
       { key: 'power_factor', label: 'Power Factor', type: 'number', min: -1, max: 1, step: 0.01 },
       { key: 'mppt_tracking', label: 'MPPT Mode', type: 'select', options: ['fixed', 'tracking'] },
       { key: 'fault_contribution_pu', label: 'Fault Contribution', type: 'number', unit: '×Irated', min: 1.0, max: 2.0, step: 0.1, section: 'fault' },
       { key: 'irradiance_pct', label: 'Irradiance', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
+      { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
+      { key: 'dispatch_mode', label: 'Dispatch Mode', type: 'select', options: ['must_run', 'merit_order', 'standby'], section: 'loadflow' },
     ],
   },
 
@@ -920,18 +978,22 @@ const COMPONENT_DEFS = {
       num_turbines: 1,
       fault_contribution_pu: 1.1,
       wind_speed_pct: 100,
+      dispatch_priority: 1,
+      dispatch_mode: 'must_run',
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
-      { key: 'rated_mva', label: 'Rating', type: 'number', unit: 'MVA', unitOptions: [{ label: 'MVA', mult: 1 }, { label: 'kW', mult: 0.001 }] },
+      { key: 'rated_mva', label: 'Rating (per turbine)', type: 'number', unit: 'MVA', unitOptions: [{ label: 'MVA', mult: 1 }, { label: 'kVA', mult: 0.001 }] },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
       { key: 'turbine_type', label: 'Turbine Type', type: 'select', options: ['type1_scig', 'type2_wrig', 'type3_dfig', 'type4_frc'] },
       { key: 'power_factor', label: 'Power Factor', type: 'number', min: -1, max: 1, step: 0.01 },
-      { key: 'num_turbines', label: 'No. of Turbines', type: 'number', min: 1, step: 1 },
+      { key: 'num_turbines', label: 'No. of Turbines (× rating)', type: 'number', min: 1, step: 1 },
       { key: 'xd_pp', label: "Xd'' (sub-transient)", type: 'number', unit: 'p.u.', min: 0.05, max: 1.0, step: 0.01, section: 'fault' },
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', min: 1, step: 1, section: 'fault' },
       { key: 'fault_contribution_pu', label: 'Fault Contribution', type: 'number', unit: '×Irated', min: 1.0, max: 6.0, step: 0.1, section: 'fault' },
       { key: 'wind_speed_pct', label: 'Wind Output', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
+      { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
+      { key: 'dispatch_mode', label: 'Dispatch Mode', type: 'select', options: ['must_run', 'merit_order', 'standby'], section: 'loadflow' },
     ],
   },
 
@@ -1057,8 +1119,6 @@ const COMPONENT_DEFS = {
       x_per_km: 0.08,
       r0_per_km: 0,
       x0_per_km: 0,
-      r2_per_km: 0,
-      x2_per_km: 0,
       rated_amps: 400,
       voltage_kv: 11,
       num_parallel: 1,
@@ -1072,12 +1132,10 @@ const COMPONENT_DEFS = {
       { key: 'ampacity_standard', label: 'Ampacity Standard', type: 'select', options: ['IEC', 'NEC'], section: 'cable_sizing' },
       { key: 'num_parallel', label: 'Parallel Cables', type: 'number', min: 1, max: 20, step: 1, section: 'cable_sizing' },
       { key: 'rated_amps', label: 'Rated Current (per cable)', type: 'number', unit: 'A', section: 'cable_sizing' },
-      { key: 'r_per_km', label: 'R₁ (pos. seq.)', type: 'number', unit: 'Ω/km', section: 'fault' },
-      { key: 'x_per_km', label: 'X₁ (pos. seq.)', type: 'number', unit: 'Ω/km', section: 'fault' },
+      { key: 'r_per_km', label: 'R₁ (pos. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
+      { key: 'x_per_km', label: 'X₁ (pos. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
       { key: 'r0_per_km', label: 'R₀ (zero seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
       { key: 'x0_per_km', label: 'X₀ (zero seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
-      { key: 'r2_per_km', label: 'R₂ (neg. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
-      { key: 'x2_per_km', label: 'X₂ (neg. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
     ],
   },
 
@@ -1165,6 +1223,9 @@ const COMPONENT_DEFS = {
       pickup_a: 100,
       time_dial: 1.0,
       curve: 'IEC Standard Inverse',
+      // Instantaneous (50) element: 0 = disabled
+      inst_pickup_a: 0,
+      inst_delay_s: 0.05,
       // Directional overcurrent (67) defaults
       direction: 'forward',
       characteristic_angle_deg: 45,
@@ -1187,7 +1248,9 @@ const COMPONENT_DEFS = {
       // Overcurrent (50/51, 50N/51N, 67) fields
       { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
       { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
-      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
+      { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse', 'Definite Time'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
+      { key: 'inst_pickup_a', label: 'Inst. (50) Pickup', type: 'number', unit: 'A', min: 0, step: 1, showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
+      { key: 'inst_delay_s', label: 'Inst. Delay', type: 'number', unit: 's', min: 0, step: 0.01, showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
       // Directional overcurrent (67) fields
       { key: 'direction', label: 'Direction', type: 'select', options: ['forward', 'reverse'], showWhen: { field: 'relay_type', values: ['67'] }, section: 'protection' },
       { key: 'characteristic_angle_deg', label: 'Char. Angle (RCA)', type: 'number', unit: '\u00B0', min: -90, max: 90, step: 1, showWhen: { field: 'relay_type', values: ['67'] }, section: 'protection' },
@@ -1240,7 +1303,7 @@ const COMPONENT_DEFS = {
       ratio: '400/5',
       accuracy_class: '5P20',
       burden_va: 15,
-      rct_ohm: 2.0,
+      rct_ohm: 0.3, // typical for a 5 A secondary CT (1 A CTs run 1–5 Ω)
       knee_point_v: 0,  // 0 = auto-derive from ALF
     },
     fields: [
@@ -1289,8 +1352,9 @@ const COMPONENT_DEFS = {
       efficiency: 0.93,
       power_factor: 0.85,
       locked_rotor_current: 6,
+      starting_method: 'dol',
       x_pp: 0.17,
-      x_r_ratio: 10,
+      x_r_ratio: 2.4, // IEC 60909-0: X/R ≈ 2.4 typical for LV motor groups (10 was a large-MV-motor value)
       demand_factor: 1.0,
       x2: 0,
     },
@@ -1302,6 +1366,14 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
       { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number', section: 'fault' },
+      { key: 'starting_method', label: 'Starting Method', type: 'select',
+        options: [
+          { value: 'dol',             label: 'Direct-on-Line (DOL)' },
+          { value: 'star_delta',      label: 'Star-Delta' },
+          { value: 'autotransformer', label: 'Autotransformer (80%)' },
+          { value: 'soft_starter',    label: 'Soft Starter' },
+          { value: 'vfd',             label: 'VFD' },
+        ], section: 'fault' },
       { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
@@ -1320,6 +1392,8 @@ const COMPONENT_DEFS = {
       power_factor: 0.9,
       xd_pp: 0.15,
       xd_p: 0.25,
+      locked_rotor_current: 5.5,
+      starting_method: 'dol',
       demand_factor: 1.0,
       x2: 0,
       x0: 0,
@@ -1330,6 +1404,15 @@ const COMPONENT_DEFS = {
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
+      { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number', section: 'fault' },
+      { key: 'starting_method', label: 'Starting Method', type: 'select',
+        options: [
+          { value: 'dol',             label: 'Direct-on-Line (DOL)' },
+          { value: 'star_delta',      label: 'Star-Delta' },
+          { value: 'autotransformer', label: 'Autotransformer (80%)' },
+          { value: 'soft_starter',    label: 'Soft Starter' },
+          { value: 'vfd',             label: 'VFD' },
+        ], section: 'fault' },
       { key: 'xd_pp', label: "Xd''", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'xd_p', label: "Xd'", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
@@ -1349,6 +1432,7 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       load_type: 'constant_power',
       demand_factor: 1.0,
+      phase_connection: '3P',
       phase_a_pct: 33.33,
       phase_b_pct: 33.33,
       phase_c_pct: 33.34,
@@ -1359,10 +1443,52 @@ const COMPONENT_DEFS = {
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number', section: 'loadflow' },
+      { key: 'phase_connection', label: 'Phase Connection', type: 'select',
+        options: [
+          { value: '3P',    label: '3-Phase (A-B-C)' },
+          { value: '2P-AB', label: '2-Phase (A-B)' },
+          { value: '2P-BC', label: '2-Phase (B-C)' },
+          { value: '2P-CA', label: '2-Phase (C-A)' },
+          { value: '1P-A',  label: '1-Phase (A-N)' },
+          { value: '1P-B',  label: '1-Phase (B-N)' },
+          { value: '1P-C',  label: '1-Phase (C-N)' },
+        ],
+        section: 'loadflow' },
       { key: 'load_type', label: 'Type', type: 'select', options: ['constant_power', 'constant_current', 'constant_impedance'], section: 'loadflow' },
-      { key: 'phase_a_pct', label: 'Phase A', type: 'number', unit: '%', section: 'loadflow' },
-      { key: 'phase_b_pct', label: 'Phase B', type: 'number', unit: '%', section: 'loadflow' },
-      { key: 'phase_c_pct', label: 'Phase C', type: 'number', unit: '%', section: 'loadflow' },
+      { key: 'phase_a_pct', label: 'Phase A %', type: 'number', unit: '%', section: 'loadflow', showWhen: { field: 'phase_connection', values: ['3P', ''] } },
+      { key: 'phase_b_pct', label: 'Phase B %', type: 'number', unit: '%', section: 'loadflow', showWhen: { field: 'phase_connection', values: ['3P', ''] } },
+      { key: 'phase_c_pct', label: 'Phase C %', type: 'number', unit: '%', section: 'loadflow', showWhen: { field: 'phase_connection', values: ['3P', ''] } },
+    ],
+  },
+
+  distribution_board: {
+    name: 'Distribution Board',
+    label: 'Distribution Board',
+    category: 'loads',
+    ports: [{ id: 'in', side: 'top', offset: 0 }],
+    width: 54,
+    height: 46,
+    defaults: {
+      name: 'DB',
+      voltage_kv: 0.4,
+      power_factor: 0.85,
+      board_diversity: 1.0,     // overall diversity applied on top of per-way DFs
+      circuits: [],             // circuit schedule (ways) — edited in DBSchedule
+      // Derived lumped-load equivalents, recomputed by DBSchedule on save.
+      // The analyses read these exactly like a static load's props.
+      rated_kva: 0,
+      demand_factor: 1.0,
+      load_type: 'constant_power',
+      phase_connection: '3P',
+      phase_a_pct: 33.33,
+      phase_b_pct: 33.33,
+      phase_c_pct: 33.34,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
+      { key: 'power_factor', label: 'Power Factor', type: 'number' },
+      { key: 'board_diversity', label: 'Board Diversity', type: 'number', min: 0.1, max: 1, step: 0.05, section: 'loadflow' },
     ],
   },
 
@@ -1418,7 +1544,7 @@ const COMPONENT_DEFS = {
       rectifier_type: 'thyristor',
       efficiency: 0.92,
       ripple_pct: 5,
-      num_pulses: 6,
+      num_pulses: '6', // string to match the select options
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -1482,7 +1608,7 @@ const COMPONENT_DEFS = {
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'rated_kvar', label: 'Rating', type: 'number', unit: 'kVAr' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
-      { key: 'steps', label: 'Steps', type: 'number' },
+      { key: 'steps', label: 'Steps', type: 'number', min: 1, step: 1 },
     ],
   },
   surge_arrester: {

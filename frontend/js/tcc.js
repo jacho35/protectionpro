@@ -220,10 +220,10 @@ const TCC = {
       const Ir = (dev.cbParams.trip_rating_a || 630) * (dev.cbParams.thermal_pickup || 1.0);
       dev.cbParams.magnetic_pickup = Math.max(2, Math.min(20, Math.round(newCurrent / Ir * 2) / 2));
     } else if (drag.mode === 'thermal') {
-      // Horizontal drag → change CB thermal pickup multiplier
+      // Horizontal drag → change CB thermal pickup multiplier (Ir max = 1.0×In)
       const newCurrent = this._xToCurrent(mx);
       const Irated = dev.cbParams.trip_rating_a || 630;
-      dev.cbParams.thermal_pickup = Math.max(0.4, Math.min(1.3, Math.round(newCurrent / Irated * 20) / 20));
+      dev.cbParams.thermal_pickup = Math.max(0.4, Math.min(1.0, Math.round(newCurrent / Irated * 20) / 20));
     } else if (drag.mode.startsWith('zone_')) {
       // Horizontal drag → change distance relay zone reach
       const zi = parseInt(drag.mode.split('_')[1]);
@@ -394,29 +394,37 @@ const TCC = {
   // ── Resolve voltage at a component by tracing wires to a bus ──
 
   _resolveDeviceVoltage(compId) {
-    // BFS through wires to find the nearest bus/transformer with a known voltage
+    // BFS through wires to find the nearest bus/source with a known voltage.
+    // Tracks the port through which each component is entered so that when the
+    // search reaches a transformer it can return the voltage of the winding the
+    // device is actually on ('primary' = HV, 'secondary' = LV). If the entry
+    // side is unknown the BFS stops at the transformer (no guessing) and keeps
+    // searching other branches.
     const visited = new Set([compId]);
-    const queue = [compId];
+    const queue = [{ id: compId, entryPort: null }];
     while (queue.length > 0) {
-      const cur = queue.shift();
+      const { id: cur, entryPort } = queue.shift();
       const comp = AppState.components.get(cur);
       if (!comp) continue;
       // Bus with explicit voltage
       if (comp.type === 'bus' && comp.props?.voltage_kv) return comp.props.voltage_kv;
-      // Transformer — return LV side voltage (most common TCC reference)
+      // Transformer — return the winding voltage on the side we arrived at
       if (comp.type === 'transformer') {
-        return comp.props?.voltage_lv_kv || comp.props?.voltage_hv_kv || null;
+        if (entryPort === 'primary' && comp.props?.voltage_hv_kv) return comp.props.voltage_hv_kv;
+        if (entryPort === 'secondary' && comp.props?.voltage_lv_kv) return comp.props.voltage_lv_kv;
+        continue; // ambiguous side — do not traverse through the transformer
       }
       // Generator / utility
       if ((comp.type === 'generator' || comp.type === 'utility') && comp.props?.voltage_kv) return comp.props.voltage_kv;
-      // Follow wires
+      // Follow wires, recording the port on the neighbour where we arrive
       for (const [, wire] of AppState.wires || []) {
         let neighbor = null;
-        if (wire.fromComponent === cur) neighbor = wire.toComponent;
-        else if (wire.toComponent === cur) neighbor = wire.fromComponent;
+        let port = null;
+        if (wire.fromComponent === cur) { neighbor = wire.toComponent; port = wire.toPort; }
+        else if (wire.toComponent === cur) { neighbor = wire.fromComponent; port = wire.fromPort; }
         if (neighbor && !visited.has(neighbor)) {
           visited.add(neighbor);
-          queue.push(neighbor);
+          queue.push({ id: neighbor, entryPort: port });
         }
       }
     }
@@ -454,6 +462,9 @@ const TCC = {
           curveName: comp.props?.curve || 'IEC Standard Inverse',
           pickup: comp.props?.pickup_a || 100,
           tds: comp.props?.time_dial || 1.0,
+          // Instantaneous (50) element: 0 = disabled
+          instPickup: comp.props?.inst_pickup_a || 0,
+          instDelay: comp.props?.inst_delay_s ?? 0.05,
           // Directional (67) params
           directional: isDirectional,
           direction: isDirectional ? (comp.props?.direction || 'forward') : null,
@@ -477,20 +488,20 @@ const TCC = {
         }
       } else if (comp.type === 'fuse') {
         const ratingA = comp.props?.rated_current_a || 100;
-        // Only plot if we have curve data for this rating
+        // Snap to a standard gG rating when within 20%; otherwise use the actual
+        // rating with a ratio-scaled curve, flagged on the chart and device list
         const nearestRating = this._nearestFuseRating(ratingA);
-        if (nearestRating) {
-          this.devices.push({
-            id,
-            name: comp.props?.name || id,
-            deviceType: 'fuse',
-            color: this.palette[this.colorIndex++ % this.palette.length],
-            visible: true,
-            voltage_kv: this._resolveDeviceVoltage(id),
-            fuseRating: nearestRating,
-            actualRating: ratingA,
-          });
-        }
+        this.devices.push({
+          id,
+          name: comp.props?.name || id,
+          deviceType: 'fuse',
+          color: this.palette[this.colorIndex++ % this.palette.length],
+          visible: true,
+          voltage_kv: this._resolveDeviceVoltage(id),
+          fuseRating: nearestRating || ratingA,
+          actualRating: ratingA,
+          scaledCurve: !nearestRating, // no standard curve within 20% — curve is ratio-scaled
+        });
       } else if (comp.type === 'cb') {
         this.devices.push({
           id,
@@ -568,9 +579,10 @@ const TCC = {
       const dist = Math.abs(r - ratingA);
       if (dist < bestDist) { bestDist = dist; best = r; }
     }
-    // Only accept if within 20% of a standard rating
+    // Only accept if within 20% of a standard rating; otherwise the caller
+    // falls back to a ratio-scaled curve at the actual rating
     if (best && Math.abs(best - ratingA) / ratingA < 0.2) return best;
-    return best; // Still return nearest even if not exact
+    return null;
   },
 
   // ── Tab system: auto-group by voltage + custom tabs ──
@@ -921,7 +933,10 @@ const TCC = {
     let started = false;
     // Sample current from pickup to 100x pickup (in device amps, then scale for display)
     const iStart = dev.pickup * 1.05; // Just above pickup
-    const iEnd = Math.min(dev.pickup * 100, this._scaleCurrentInverse(this.currentMax, dev));
+    let iEnd = Math.min(dev.pickup * 100, this._scaleCurrentInverse(this.currentMax, dev));
+    // Instantaneous (50) element takes over above its pickup — end the IDMT curve there
+    const hasInst = dev.instPickup > 0;
+    if (hasInst && dev.instPickup > iStart) iEnd = Math.min(iEnd, dev.instPickup);
     const steps = 200;
 
     for (let i = 0; i <= steps; i++) {
@@ -941,6 +956,31 @@ const TCC = {
       else ctx.lineTo(x, y);
     }
     ctx.stroke();
+
+    // ── Instantaneous (50) element: vertical drop + flat line at the inst delay ──
+    if (hasInst) {
+      const instT = Math.max(dev.instDelay ?? 0.05, this.timeMin);
+      const xInst = this._currentToX(this._scaleCurrent(dev.instPickup, dev));
+      const yInst = this._timeToY(instT);
+      if (yInst >= this.plotTop && yInst <= this.plotBottom) {
+        // Vertical drop from the IDMT curve down to the inst delay
+        if (xInst >= this.plotLeft && xInst <= this.plotRight) {
+          const tIdmtAtInst = idmtTripTime(dev.curveName, dev.instPickup / dev.pickup, dev.tds);
+          const yTop = this._timeToY(Math.min(isFinite(tIdmtAtInst) ? tIdmtAtInst : this.timeMax, this.timeMax));
+          ctx.beginPath();
+          ctx.moveTo(xInst, Math.max(yTop, this.plotTop));
+          ctx.lineTo(xInst, yInst);
+          ctx.stroke();
+        }
+        // Flat definite-time line at the inst delay out to the chart edge
+        if (xInst < this.plotRight) {
+          ctx.beginPath();
+          ctx.moveTo(Math.max(xInst, this.plotLeft), yInst);
+          ctx.lineTo(this.plotRight, yInst);
+          ctx.stroke();
+        }
+      }
+    }
 
     // Draw pickup line (vertical dashed line at pickup current)
     ctx.setLineDash([4, 3]);
@@ -1015,7 +1055,11 @@ const TCC = {
       const actualCurrent = Math.pow(10, logI); // actual primary amps
       const effectiveCurrent = ctEffectiveCurrent(actualCurrent, sat);
       const M = effectiveCurrent / dev.pickup;
-      const t = idmtTripTime(dev.curveName, M, dev.tds);
+      let t = idmtTripTime(dev.curveName, M, dev.tds);
+      // Instantaneous element operates on the (saturated) relay-seen current
+      if (dev.instPickup > 0 && effectiveCurrent >= dev.instPickup) {
+        t = Math.min(t, dev.instDelay ?? 0.05);
+      }
 
       if (t <= 0 || !isFinite(t) || t > this.timeMax || t < this.timeMin) continue;
 
@@ -1046,7 +1090,7 @@ const TCC = {
       ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.fillStyle = dev.color;
       ctx.textAlign = 'center';
-      ctx.fillText(`CT sat ${Math.round(iSatPri)}A`, satX, this.plotTop + 12);
+      ctx.fillText(`CT sat ~${Math.round(iSatPri)}A (approx.)`, satX, this.plotTop + 12);
     }
 
     ctx.restore();
@@ -1183,7 +1227,8 @@ const TCC = {
     const labelX = this._currentToX(sc(labelZ.pickup_a * 2));
     const labelY = this._timeToY(Math.max(labelZ.delay_s, 0.001));
     if (labelX >= this.plotLeft && labelX <= this.plotRight && labelY >= this.plotTop && labelY <= this.plotBottom) {
-      this._drawLabel(ctx, dev, labelX, labelY, `${dev.name} (21)`);
+      // Zone-to-current conversion ignores source impedance — mark as approximate
+      this._drawLabel(ctx, dev, labelX, labelY, `${dev.name} (21, approx.)`);
     }
 
     // Register drag handles for zone reaches
@@ -1300,7 +1345,9 @@ const TCC = {
   },
 
   _drawFuseCurve(ctx, dev) {
-    const points = FUSE_CURVES_GG[dev.fuseRating];
+    // Curves are pre-arcing (minimum melting) times; non-standard ratings use a
+    // ratio-scaled curve (flagged in the label)
+    const points = fuseCurvePoints(dev.fuseRating);
     if (!points || points.length < 2) return;
 
     ctx.strokeStyle = dev.color;
@@ -1326,7 +1373,8 @@ const TCC = {
     const [mI, mT] = points[midIdx];
     const scaledMI = this._scaleCurrent(mI, dev);
     if (scaledMI >= this.currentMin && scaledMI <= this.currentMax && mT >= this.timeMin && mT <= this.timeMax) {
-      this._drawLabel(ctx, dev, this._currentToX(scaledMI), this._timeToY(mT), `${dev.name} (${dev.fuseRating}A)`);
+      const suffix = dev.scaledCurve ? ', scaled curve' : '';
+      this._drawLabel(ctx, dev, this._currentToX(scaledMI), this._timeToY(mT), `${dev.name} (${dev.fuseRating}A pre-arc${suffix})`);
     }
   },
 
@@ -1336,6 +1384,11 @@ const TCC = {
     const Im = Ir * (p.magnetic_pickup || 10);
     const sc = (amps) => this._scaleCurrent(amps, dev); // shorthand for voltage scaling
 
+    // ACBs with a short-time element have no 20 ms magnetic region unless an
+    // instantaneous pickup is set — must match cbTripTime, which returns the ST
+    // delay (not 20 ms) for all currents above the ST pickup
+    const hasST = p.cb_type === 'acb' && p.short_time_pickup > 0;
+
     // --- Thermal (long-time inverse) region ---
     ctx.strokeStyle = dev.color;
     ctx.lineWidth = 2.5;
@@ -1343,7 +1396,7 @@ const TCC = {
 
     let started = false;
     const iStart = Ir * 1.05;
-    const iEnd = Math.min(Im, this._scaleCurrentInverse(this.currentMax, dev));
+    const iEnd = Math.min(hasST ? Ir * p.short_time_pickup : Im, this._scaleCurrentInverse(this.currentMax, dev));
     const steps = 200;
 
     for (let i = 0; i <= steps; i++) {
@@ -1363,38 +1416,39 @@ const TCC = {
     }
     ctx.stroke();
 
-    // --- Magnetic (instantaneous) region: vertical drop + horizontal line ---
     const magTime = 0.02;  // 20ms
-    const magTimeACB = p.cb_type === 'acb' && p.short_time_pickup > 0 ? p.short_time_delay : magTime;
 
-    // Draw the vertical drop at magnetic pickup
-    ctx.beginPath();
-    ctx.lineWidth = 2.5;
-    const thermalTimeAtIm = cbTripTime({ ...p, magnetic_pickup: 9999, short_time_pickup: 0, instantaneous_pickup: 0 }, Im);
-    const xMag = this._currentToX(sc(Im));
-    if (xMag >= this.plotLeft && xMag <= this.plotRight) {
-      const yTop = this._timeToY(Math.min(thermalTimeAtIm, this.timeMax));
-      const yBot = this._timeToY(magTime);
-      if (yTop >= this.plotTop && yBot <= this.plotBottom) {
-        ctx.moveTo(xMag, yTop);
-        ctx.lineTo(xMag, yBot);
+    if (!hasST) {
+      // --- Magnetic (instantaneous) region: vertical drop + horizontal line ---
+      // Draw the vertical drop at magnetic pickup
+      ctx.beginPath();
+      ctx.lineWidth = 2.5;
+      const thermalTimeAtIm = cbTripTime({ ...p, magnetic_pickup: 9999, short_time_pickup: 0, instantaneous_pickup: 0 }, Im);
+      const xMag = this._currentToX(sc(Im));
+      if (xMag >= this.plotLeft && xMag <= this.plotRight) {
+        const yTop = this._timeToY(Math.min(thermalTimeAtIm, this.timeMax));
+        const yBot = this._timeToY(magTime);
+        if (yTop >= this.plotTop && yBot <= this.plotBottom) {
+          ctx.moveTo(xMag, yTop);
+          ctx.lineTo(xMag, yBot);
+        }
       }
-    }
-    ctx.stroke();
+      ctx.stroke();
 
-    // Horizontal line at magnetic trip time from Im to max current
-    ctx.beginPath();
-    const yMag = this._timeToY(magTime);
-    if (yMag >= this.plotTop && yMag <= this.plotBottom) {
-      const xStart = this._currentToX(sc(Im));
-      const xEnd = this._currentToX(sc(Math.min(this._scaleCurrentInverse(this.currentMax, dev), (p.trip_rating_a || 630) * 200)));
-      ctx.moveTo(Math.max(xStart, this.plotLeft), yMag);
-      ctx.lineTo(Math.min(xEnd, this.plotRight), yMag);
+      // Horizontal line at magnetic trip time from Im to max current
+      ctx.beginPath();
+      const yMag = this._timeToY(magTime);
+      if (yMag >= this.plotTop && yMag <= this.plotBottom) {
+        const xStart = this._currentToX(sc(Im));
+        const xEnd = this._currentToX(sc(Math.min(this._scaleCurrentInverse(this.currentMax, dev), (p.trip_rating_a || 630) * 200)));
+        ctx.moveTo(Math.max(xStart, this.plotLeft), yMag);
+        ctx.lineTo(Math.min(xEnd, this.plotRight), yMag);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
     // --- ACB short-time region ---
-    if (p.cb_type === 'acb' && p.short_time_pickup > 0) {
+    if (hasST) {
       const stCurrent = Ir * p.short_time_pickup;
       const stDelay = p.short_time_delay || 0.1;
       const xST = this._currentToX(sc(stCurrent));
@@ -1412,9 +1466,13 @@ const TCC = {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Horizontal at short-time delay
+        // Horizontal at short-time delay — runs to the instantaneous pickup, or
+        // to the chart edge when no instantaneous element is set (ST delay
+        // plateau, no 20 ms region — consistent with cbTripTime)
         ctx.beginPath();
-        const instCurrent = p.instantaneous_pickup > 0 ? Ir * p.instantaneous_pickup : Im;
+        const instCurrent = p.instantaneous_pickup > 0
+          ? Ir * p.instantaneous_pickup
+          : this._scaleCurrentInverse(this.currentMax, dev);
         const xEnd = this._currentToX(sc(instCurrent));
         ctx.moveTo(xST, yST);
         ctx.lineTo(Math.min(xEnd, this.plotRight), yST);
@@ -1551,7 +1609,8 @@ const TCC = {
 
       if (r.ik3 != null) markers.push({ current_ka: r.ik3, label: `${busName} 3Φ`, voltage_kv: vkv, color: '#d32f2f' });
       if (r.ik1 != null) markers.push({ current_ka: r.ik1, label: `${busName} SLG`, voltage_kv: vkv, color: '#1565c0' });
-      if (r.ip != null) markers.push({ current_ka: r.ip, label: `${busName} ip`, voltage_kv: vkv, color: '#f57c00' });
+      // ip is the asymmetric peak — not directly comparable to the RMS TCC axis
+      if (r.ip != null) markers.push({ current_ka: r.ip, label: `${busName} ip (asym peak)`, voltage_kv: vkv, color: '#f57c00' });
     }
 
     if (markers.length === 0) return;
@@ -1680,7 +1739,9 @@ const TCC = {
 
     let started = false;
     const steps = 200;
-    const iStart = Ir * 2;
+    // The C57.109 short-circuit I²t = 1250·Ir² portion is only valid above
+    // ~3.5×Ir; below that the thermal withstand is far longer than 1250/I²
+    const iStart = Ir * 3.5;
     const iEnd = Math.min(Imax * 1.2, this._scaleCurrentInverse(this.currentMax, dev));
 
     for (let i = 0; i <= steps; i++) {
@@ -1698,6 +1759,21 @@ const TCC = {
     }
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Magnetizing inrush point (~12×In for 0.1 s) — protection curves must sit
+    // above this point and below the damage curve
+    const inrushI = Ir * 12;
+    const ix = this._currentToX(sc(inrushI));
+    const iy = this._timeToY(0.1);
+    if (ix >= this.plotLeft && ix <= this.plotRight && iy >= this.plotTop && iy <= this.plotBottom) {
+      ctx.fillStyle = dev.color;
+      ctx.beginPath();
+      ctx.arc(ix, iy, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('inrush 12×In @ 0.1s', ix + 6, iy + 3);
+    }
 
     // Vertical line at max through-fault current
     const xMax = this._currentToX(sc(Imax));
@@ -1769,11 +1845,11 @@ const TCC = {
       ctx.globalAlpha = 1.0;
     }
 
-    // Label
+    // Label — the adiabatic assumption (no heat loss) is only valid for ≤ 5 s
     const labelI = dev.ratedAmps * 4;
     const labelT = I2t / (labelI * labelI);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      this._drawLabel(ctx, dev, this._currentToX(sc(labelI)), this._timeToY(labelT), dev.name);
+      this._drawLabel(ctx, dev, this._currentToX(sc(labelI)), this._timeToY(labelT), `${dev.name} (adiabatic, valid ≤ 5s)`);
     }
   },
 
@@ -1802,11 +1878,18 @@ const TCC = {
       if (dev.deviceType === 'relay') {
         const M = current / dev.pickup;
         t = idmtTripTime(dev.curveName, M, dev.tds);
+        // Instantaneous (50) element
+        if (dev.instPickup > 0 && current >= dev.instPickup) {
+          t = Math.min(t, dev.instDelay ?? 0.05);
+        }
         // Show saturated time if CT saturation applies
         if (dev.ctSat && current > dev.ctSat.iSatPrimary) {
           const effCurrent = ctEffectiveCurrent(current, dev.ctSat);
           const Msat = effCurrent / dev.pickup;
-          const tSat = idmtTripTime(dev.curveName, Msat, dev.tds);
+          let tSat = idmtTripTime(dev.curveName, Msat, dev.tds);
+          if (dev.instPickup > 0 && effCurrent >= dev.instPickup) {
+            tSat = Math.min(tSat, dev.instDelay ?? 0.05);
+          }
           if (isFinite(tSat) && tSat > 0) {
             lines.push({ name: `${dev.name} (CT sat)`, time: tSat, color: dev.color, dashed: true });
           }
@@ -1819,7 +1902,7 @@ const TCC = {
         t = cbTripTime(dev.cbParams, current);
       } else if (dev.deviceType === 'xfmr_thermal') {
         const I2t = dev.ratedA * dev.ratedA * 1250;
-        t = current > dev.ratedA * 2 ? I2t / (current * current) : null;
+        t = current > dev.ratedA * 3.5 ? I2t / (current * current) : null;
       } else if (dev.deviceType === 'cable_thermal') {
         const kS = dev.kFactor * dev.sizeMm2;
         t = current > dev.ratedAmps ? (kS * kS) / (current * current) : null;
@@ -1827,6 +1910,7 @@ const TCC = {
       if (t != null && isFinite(t) && t > 0 && t <= this.timeMax) {
         let tooltipName = dev.name;
         if (dev.directional) tooltipName += ` (67${dev.direction === 'reverse' ? '\u2190' : '\u2192'})`;
+        if (dev.deviceType === 'fuse') tooltipName += ' (pre-arc)';
         lines.push({ name: tooltipName, time: t, color: dev.color });
       }
     }
@@ -1920,6 +2004,9 @@ const TCC = {
       if (dev.deviceType === 'relay') {
         const dirPrefix = dev.directional ? `67 ${dev.direction === 'reverse' ? '\u2190Rev' : '\u2192Fwd'} | ` : '';
         typeLabel = `${dirPrefix}${dev.curveName} | Pickup: ${dev.pickup}A | TDS: ${dev.tds}`;
+        if (dev.instPickup > 0) {
+          typeLabel += ` | 50: ${dev.instPickup}A/${(dev.instDelay ?? 0.05)}s`;
+        }
         if (dev.associated_ct) {
           const ctComp = AppState.components.get(dev.associated_ct);
           typeLabel += ` | CT: ${ctComp?.props?.name || dev.associated_ct}`;
@@ -1935,7 +2022,7 @@ const TCC = {
         const zSummary = dev.zones.map(z => `${z.name}: ${z.reach_ohm}\u03A9`).join(' | ');
         typeLabel = `Distance (21) | ${zSummary}`;
       } else if (dev.deviceType === 'fuse') {
-        typeLabel = `gG Fuse ${dev.fuseRating}A`;
+        typeLabel = `gG Fuse ${dev.fuseRating}A pre-arcing${dev.scaledCurve ? ' (scaled curve — no standard rating)' : ''}`;
       } else if (dev.deviceType === 'cb') {
         const p = dev.cbParams;
         typeLabel = `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a}A | Mag: ${p.magnetic_pickup}×In`;
@@ -2087,7 +2174,7 @@ const TCC = {
           <label>Curve</label>
           <select data-sel-field="curveName">
             ${['IEC Standard Inverse','IEC Very Inverse','IEC Extremely Inverse','IEC Long Time Inverse',
-               'IEEE Moderately Inverse','IEEE Very Inverse','IEEE Extremely Inverse']
+               'IEEE Moderately Inverse','IEEE Very Inverse','IEEE Extremely Inverse','Definite Time']
               .map(c => `<option value="${c}" ${c === dev.curveName ? 'selected' : ''}>${c}</option>`).join('')}
           </select>
         </div>
@@ -2098,6 +2185,14 @@ const TCC = {
         <div class="tcc-form-row">
           <label>Time Dial (TDS)</label>
           <input type="number" data-sel-field="tds" value="${dev.tds}" min="0.05" max="10" step="0.05">
+        </div>
+        <div class="tcc-form-row">
+          <label>Inst. (50) Pickup (A)</label>
+          <input type="number" data-sel-field="instPickup" value="${dev.instPickup || 0}" min="0" step="1" title="0 = instantaneous element disabled">
+        </div>
+        <div class="tcc-form-row">
+          <label>Inst. Delay (s)</label>
+          <input type="number" data-sel-field="instDelay" value="${dev.instDelay ?? 0.05}" min="0" step="0.01">
         </div>` + (dev.directional ? `
         <div class="tcc-form-row">
           <label>Direction</label>
@@ -2150,7 +2245,7 @@ const TCC = {
         </div>
         <div class="tcc-form-row">
           <label>Thermal Pickup (×In)</label>
-          <input type="number" data-sel-field="cb.thermal_pickup" value="${p.thermal_pickup}" min="0.4" max="1.3" step="0.05">
+          <input type="number" data-sel-field="cb.thermal_pickup" value="${p.thermal_pickup}" min="0.4" max="1.0" step="0.05">
         </div>
         <div class="tcc-form-row">
           <label>Magnetic Pickup (×In)</label>
@@ -2273,7 +2368,9 @@ const TCC = {
       if (dev.deviceType === 'relay') {
         comp.props.pickup_a = dev.pickup;
         comp.props.time_dial = dev.tds;
-        comp.props.curve_type = dev.curveName;
+        comp.props.curve = dev.curveName; // SLD prop key is 'curve'
+        comp.props.inst_pickup_a = dev.instPickup || 0;
+        comp.props.inst_delay_s = dev.instDelay ?? 0.05;
         if (dev.directional) {
           comp.props.direction = dev.direction;
           comp.props.characteristic_angle_deg = dev.charAngle;
@@ -2324,8 +2421,9 @@ const TCC = {
       deviceType: 'fuse',
       color: this.palette[this.colorIndex++ % this.palette.length],
       visible: true,
-      fuseRating: nearest,
+      fuseRating: nearest || ratingA || 100,
       actualRating: ratingA || 100,
+      scaledCurve: !nearest,
     });
     this._renderDeviceList();
     this.render();
@@ -2452,6 +2550,140 @@ const TCC = {
 
   // ── Coordination / Grading Check ──
 
+  /**
+   * Convert a current at the faulted/test bus into the amps a device actually
+   * carries on its own voltage level: I_device = I_fault × (V_faultbus / V_device).
+   * Pinned to the faulted bus voltage, NOT the chart's reference voltage.
+   */
+  _referCurrent(amps, faultVoltageKv, dev) {
+    if (!faultVoltageKv || !dev || !dev.voltage_kv) return amps;
+    return amps * (faultVoltageKv / dev.voltage_kv);
+  },
+
+  /**
+   * Element class for grading: earth-fault (50N/51N) elements see residual
+   * current and grade at ik1; phase devices grade at ik3. The two classes are
+   * never graded against each other.
+   */
+  _deviceElementClass(dev) {
+    return dev.relayType === '50N/51N' ? 'earth' : 'phase';
+  },
+
+  /**
+   * Required grading margin (CTI) per pair type:
+   *   relay/CB–relay/CB: this.gradingMargin (default 0.3 s)
+   *   relay/CB–fuse:     0.2 s (no CB opening time on the fuse side)
+   * Fuse–fuse pairs are handled by the I²t ratio rule, not a time margin.
+   */
+  _requiredMargin(devA, devB) {
+    const fuses = (devA.deviceType === 'fuse' ? 1 : 0) + (devB.deviceType === 'fuse' ? 1 : 0);
+    if (fuses === 1) return 0.2;
+    return this.gradingMargin;
+  },
+
+  /**
+   * Fuse–fuse selectivity check. The downstream fuse's total-clearing I²t must
+   * stay below the upstream fuse's pre-arcing I²t; with the synthetic ratio-
+   * scaled curves used here this is verified by the IEC 60269 2:1 rating-ratio
+   * rule (upstream rating ≥ 2× downstream).
+   */
+  _fuseFuseCoordinated(devDown, devUp) {
+    const rDown = devDown.fuseRating || devDown.actualRating || 0;
+    const rUp = devUp.fuseRating || devUp.actualRating || 0;
+    return rDown > 0 && rUp >= 2 * rDown;
+  },
+
+  /**
+   * Trip time used for the DOWNSTREAM device of a grading pair. Fuse curves are
+   * pre-arcing (melting) times; the upstream device must clear the fuse's TOTAL
+   * clearing time, approximated as 1.2× the pre-arcing time (IEC 60269 practice).
+   */
+  _downstreamClearingTime(dev, currentA) {
+    const t = this._deviceTripTime(dev, currentA);
+    if (dev.deviceType === 'fuse' && isFinite(t) && t > 0) return t * 1.2;
+    return t;
+  },
+
+  /**
+   * Build the test points for coordination checks. Prefers actual fault-study
+   * results — each point carries the faulted bus voltage so the current can be
+   * referred to each device's own voltage level — and falls back to generic
+   * current levels (no referral possible) when no fault study has been run.
+   * Each point: { amps, voltageKv (null = unknown frame), earth (bool) }.
+   */
+  _buildCoordinationTestPoints(fallbackAmps = [500, 1000, 2000, 5000, 10000, 20000]) {
+    const points = [];
+    const fr = AppState.faultResults;
+    let hasPhase = false, hasEarth = false;
+    if (fr && fr.buses) {
+      for (const [busId, r] of Object.entries(fr.buses)) {
+        const comp = AppState.components.get(busId);
+        const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
+        if (r.ik3) { points.push({ amps: r.ik3 * 1000, voltageKv: vkv, earth: false }); hasPhase = true; }
+        if (r.ik1) { points.push({ amps: r.ik1 * 1000, voltageKv: vkv, earth: true }); hasEarth = true; }
+      }
+      // A 3-phase-only study leaves ik1 null on every bus (and an SLG-only study
+      // leaves ik3 null). Without points of the missing class, earth (50N/51N)
+      // or phase device pairs would be silently skipped and falsely reported as
+      // coordinated. Backfill the missing class from the available one so the
+      // pair loop always has something to test (an SLG fault current is bounded
+      // above by the 3-phase value, so using ik3 for earth points is conservative).
+      if (points.length > 0 && (!hasPhase || !hasEarth)) {
+        const missingEarth = !hasEarth;
+        for (const p of [...points]) {
+          points.push({ amps: p.amps, voltageKv: p.voltageKv, earth: missingEarth });
+        }
+      }
+    }
+    if (points.length === 0) {
+      for (const a of fallbackAmps) {
+        points.push({ amps: a, voltageKv: null, earth: false });
+        points.push({ amps: a, voltageKv: null, earth: true });
+      }
+    }
+    return points;
+  },
+
+  /**
+   * Collect device pairs that are actually in series on a protection path,
+   * ordered [upstream, downstream]. Pairs not on a common path are not graded.
+   */
+  _seriesDevicePairs(paths, deviceSet) {
+    const seen = new Set();
+    const pairs = [];
+    for (const path of paths) {
+      for (let i = 0; i < path.length; i++) {
+        for (let j = i + 1; j < path.length; j++) {
+          const up = path[i];
+          const down = path[j];
+          if (deviceSet && (!deviceSet.has(up) || !deviceSet.has(down))) continue;
+          const key = `${up.id}|${down.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          pairs.push({ up, down });
+        }
+      }
+    }
+    return pairs;
+  },
+
+  /**
+   * Trip times for an in-series (upstream, downstream) pair at one test point,
+   * with the fault current referred to each device's own voltage level and the
+   * downstream device graded on its total-clearing time. Shared by the
+   * coordination check, auto-coordination, and miscoordination detection so the
+   * referral/curve evaluation cannot drift between them. Returns {tUp, tDown}
+   * (NaN when a device does not operate at the referred current).
+   */
+  _seriesPairTripTimes(devUp, devDown, tp) {
+    const iUp = this._referCurrent(tp.amps, tp.voltageKv, devUp);
+    const iDown = this._referCurrent(tp.amps, tp.voltageKv, devDown);
+    return {
+      tUp: this._deviceTripTime(devUp, iUp),
+      tDown: this._downstreamClearingTime(devDown, iDown),
+    };
+  },
+
   _runCoordinationCheck() {
     const resultsDiv = document.getElementById('tcc-coord-results');
     if (!resultsDiv) return;
@@ -2462,38 +2694,82 @@ const TCC = {
       return;
     }
 
-    // Test coordination at several fault current levels
-    const testCurrents = [500, 1000, 2000, 5000, 10000, 20000];
+    // Test points: fault-study levels pinned to the faulted bus voltage when
+    // available, so each current can be referred to the device's voltage level
+    const testPoints = this._buildCoordinationTestPoints();
+
+    // Topology-aware pairing: only grade pairs that are actually in series on
+    // a protection path. Without topology, fall back to all visible pairs with
+    // the order flagged as assumed.
+    const paths = this._buildProtectionPaths();
+    const visSet = new Set(visible);
+    const seriesPairs = this._seriesDevicePairs(paths, visSet);
+    const hasTopology = seriesPairs.length > 0;
+
     const issues = [];
-    const passes = [];
 
-    for (let i = 0; i < visible.length; i++) {
-      for (let j = i + 1; j < visible.length; j++) {
-        const devA = visible[i];
-        const devB = visible[j];
+    const checkPair = (devUp, devDown, assumed) => {
+      // Phase and earth-fault elements see different currents — never graded
+      // against each other
+      if (this._deviceElementClass(devUp) !== this._deviceElementClass(devDown)) return;
+      const earthPair = this._deviceElementClass(devUp) === 'earth';
 
-        for (const testI of testCurrents) {
-          const tA = this._deviceTripTime(devA, testI);
-          const tB = this._deviceTripTime(devB, testI);
+      // Fuse–fuse pairs: I²t / 2:1 rating-ratio rule instead of a time margin
+      if (!assumed && devUp.deviceType === 'fuse' && devDown.deviceType === 'fuse') {
+        if (!this._fuseFuseCoordinated(devDown, devUp)) {
+          issues.push({
+            devA: devDown.name, devB: devUp.name,
+            current: null, margin: null, tFast: null, tSlow: null,
+            ratioRule: true, assumed: false,
+          });
+        }
+        return;
+      }
 
+      const required = this._requiredMargin(devUp, devDown);
+
+      for (const tp of testPoints) {
+        if (tp.earth !== earthPair) continue;
+
+        if (assumed) {
+          // Order unknown: flag pairs that trip within the required margin of
+          // each other, without asserting which is upstream. Both graded on
+          // their own trip time (referred to each device's voltage level).
+          const tA = this._deviceTripTime(devUp, this._referCurrent(tp.amps, tp.voltageKv, devUp));
+          const tB = this._deviceTripTime(devDown, this._referCurrent(tp.amps, tp.voltageKv, devDown));
           if (!isFinite(tA) || !isFinite(tB) || tA <= 0 || tB <= 0) continue;
-
-          const faster = tA < tB ? devA : devB;
-          const slower = tA < tB ? devB : devA;
           const margin = Math.abs(tA - tB);
           const tFast = Math.min(tA, tB);
-          const tSlow = Math.max(tA, tB);
-
-          if (margin < this.gradingMargin && tFast < 10) {
+          if (margin < required && tFast < 10) {
+            const fasterFirst = tA < tB;
             issues.push({
-              devA: faster.name,
-              devB: slower.name,
-              current: testI,
-              margin: margin,
-              tFast: tFast,
-              tSlow: tSlow,
+              devA: fasterFirst ? devUp.name : devDown.name,
+              devB: fasterFirst ? devDown.name : devUp.name,
+              current: tp.amps, margin, tFast, tSlow: Math.max(tA, tB),
+              assumed: true,
             });
           }
+        } else {
+          const { tUp, tDown } = this._seriesPairTripTimes(devUp, devDown, tp);
+          if (!isFinite(tUp) || !isFinite(tDown) || tUp <= 0 || tDown <= 0) continue;
+          const margin = tUp - tDown;
+          if (margin < required && Math.min(tUp, tDown) < 10) {
+            issues.push({
+              devA: devDown.name, devB: devUp.name,
+              current: tp.amps, margin: Math.abs(margin), tFast: tDown, tSlow: tUp,
+              assumed: false,
+            });
+          }
+        }
+      }
+    };
+
+    if (hasTopology) {
+      for (const pair of seriesPairs) checkPair(pair.up, pair.down, false);
+    } else {
+      for (let i = 0; i < visible.length; i++) {
+        for (let j = i + 1; j < visible.length; j++) {
+          checkPair(visible[i], visible[j], true);
         }
       }
     }
@@ -2503,24 +2779,37 @@ const TCC = {
     for (const iss of issues) {
       const key = `${iss.devA}|${iss.devB}`;
       const existing = pairMap.get(key);
-      if (!existing || iss.margin < existing.margin) {
+      if (!existing || iss.ratioRule || (existing.margin != null && iss.margin < existing.margin)) {
         pairMap.set(key, iss);
       }
     }
 
+    const fmtT = (t) => t >= 1 ? t.toFixed(2) + 's' : (t * 1000).toFixed(0) + 'ms';
+    const fmtI = (a) => a >= 1000 ? (a / 1000).toFixed(1) + 'kA' : Math.round(a) + 'A';
+    const orderNote = hasTopology ? '' : ' <span class="tcc-coord-info">(assumed order — no source-to-load topology found)</span>';
+
     let html = '';
     if (pairMap.size === 0) {
-      html = `<div class="tcc-coord-pass">All visible device pairs have adequate grading margin (&ge; ${this.gradingMargin}s).</div>`;
+      html = `<div class="tcc-coord-pass">All ${hasTopology ? 'in-series' : 'visible'} device pairs have adequate grading margin.${orderNote}</div>`;
     } else {
-      html = `<div class="tcc-coord-title">Coordination Issues (margin &lt; ${this.gradingMargin}s)</div>`;
-      html += '<table class="tcc-coord-table"><thead><tr><th>Downstream</th><th>Upstream</th><th>At Current</th><th>Margin</th></tr></thead><tbody>';
+      html = `<div class="tcc-coord-title">Coordination Issues${orderNote}</div>`;
+      html += `<table class="tcc-coord-table"><thead><tr><th>Downstream${hasTopology ? '' : ' (assumed)'}</th><th>Upstream${hasTopology ? '' : ' (assumed)'}</th><th>At Current</th><th>Margin</th></tr></thead><tbody>`;
       for (const [, iss] of pairMap) {
-        html += `<tr>
-          <td>${iss.devA} (${iss.tFast >= 1 ? iss.tFast.toFixed(2) + 's' : (iss.tFast * 1000).toFixed(0) + 'ms'})</td>
-          <td>${iss.devB} (${iss.tSlow >= 1 ? iss.tSlow.toFixed(2) + 's' : (iss.tSlow * 1000).toFixed(0) + 'ms'})</td>
-          <td>${iss.current}A</td>
-          <td class="tcc-margin-fail">${iss.margin >= 1 ? iss.margin.toFixed(2) + 's' : (iss.margin * 1000).toFixed(0) + 'ms'}</td>
-        </tr>`;
+        if (iss.ratioRule) {
+          html += `<tr>
+            <td>${iss.devA}</td>
+            <td>${iss.devB}</td>
+            <td>—</td>
+            <td class="tcc-margin-fail">fuse ratio &lt; 2:1 (I²t overlap)</td>
+          </tr>`;
+        } else {
+          html += `<tr>
+            <td>${iss.devA} (${fmtT(iss.tFast)})</td>
+            <td>${iss.devB} (${fmtT(iss.tSlow)})</td>
+            <td>${fmtI(iss.current)}</td>
+            <td class="tcc-margin-fail">${iss.margin >= 1 ? iss.margin.toFixed(2) + 's' : (iss.margin * 1000).toFixed(0) + 'ms'}</td>
+          </tr>`;
+        }
       }
       html += '</tbody></table>';
     }
@@ -2533,7 +2822,12 @@ const TCC = {
       // Account for CT saturation: relay sees reduced current when CT saturates
       const effectiveA = dev.ctSat ? ctEffectiveCurrent(currentA, dev.ctSat) : currentA;
       const M = effectiveA / dev.pickup;
-      return idmtTripTime(dev.curveName, M, dev.tds);
+      let t = idmtTripTime(dev.curveName, M, dev.tds);
+      // Instantaneous (50) element: definite-time trip above its pickup
+      if (dev.instPickup > 0 && effectiveA >= dev.instPickup) {
+        t = Math.min(t, dev.instDelay ?? 0.05);
+      }
+      return t;
     } else if (dev.deviceType === 'distance_relay') {
       return distanceRelayTripTime(dev.zones, currentA);
     } else if (dev.deviceType === 'fuse') {
@@ -2541,7 +2835,8 @@ const TCC = {
     } else if (dev.deviceType === 'cb') {
       return cbTripTime(dev.cbParams, currentA);
     } else if (dev.deviceType === 'xfmr_thermal') {
-      if (currentA <= dev.ratedA * 2) return Infinity;
+      // C57.109 1250/I² portion is only valid above ~3.5×Ir
+      if (currentA <= dev.ratedA * 3.5) return Infinity;
       return (dev.ratedA * dev.ratedA * 1250) / (currentA * currentA);
     } else if (dev.deviceType === 'cable_thermal') {
       if (currentA <= dev.ratedAmps) return Infinity;
@@ -2559,8 +2854,12 @@ const TCC = {
    * Build ordered protection paths from sources (utility/generator) to loads.
    * Returns array of paths, where each path is an ordered array of TCC device
    * objects from upstream (source-side) to downstream (load-side).
+   *
+   * When a Map is passed as busMap, it is populated with
+   *   busId -> [{ sig, devices }] where devices is the ordered list of
+   * protection devices on the SOURCE side of that bus (closest upstream last).
    */
-  _buildProtectionPaths() {
+  _buildProtectionPaths(busMap = null) {
     const wires = AppState.wires;
     if (!wires || wires.size === 0) return [];
 
@@ -2588,7 +2887,8 @@ const TCC = {
       const comp = AppState.components.get(id);
       if (!comp) return false;
       if (comp.type === 'relay') {
-        return comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N' || comp.props?.relay_type === '21';
+        return comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N' ||
+               comp.props?.relay_type === '67' || comp.props?.relay_type === '21';
       }
       return protTypes.has(comp.type);
     };
@@ -2641,6 +2941,17 @@ const TCC = {
           }
         }
 
+        // Record the source-side device chain for each bus reached: only these
+        // devices carry a fault at this bus (downstream devices do not)
+        if (busMap && comp && comp.type === 'bus' && currentPath.length > 0) {
+          if (!busMap.has(node)) busMap.set(node, []);
+          const groups = busMap.get(node);
+          const sig = currentPath.map(d => d.id).join('>');
+          if (!groups.some(g => g.sig === sig)) {
+            groups.push({ sig, devices: [...currentPath] });
+          }
+        }
+
         // If this is a load or dead-end with protection devices, record the path
         const isLoad = comp && (comp.type === 'static_load' || comp.type === 'motor_induction' ||
                                 comp.type === 'motor_synchronous');
@@ -2681,21 +2992,10 @@ const TCC = {
       return;
     }
 
-    // Get maximum fault current from analysis results (or use a default)
-    let maxFaultA = 10000; // default
-    const fr = AppState.faultResults;
-    if (fr && fr.buses) {
-      for (const [, bus] of Object.entries(fr.buses)) {
-        if (bus.ik3) maxFaultA = Math.max(maxFaultA, bus.ik3 * 1000);
-      }
-    }
-
-    // Test currents for grading (use fault-level-based range)
-    const testCurrents = [
-      maxFaultA * 0.5,
-      maxFaultA * 0.75,
-      maxFaultA,
-    ];
+    // Test points: actual fault-study currents pinned to their faulted bus
+    // voltage when available (so they can be referred across transformers);
+    // otherwise a generic default range
+    const testPoints = this._buildCoordinationTestPoints([5000, 7500, 10000]);
 
     let adjustments = 0;
     const changes = [];
@@ -2707,21 +3007,32 @@ const TCC = {
         const upstream = path[i];
         const downstream = path[i + 1];
 
+        // Phase and earth-fault elements are not graded against each other
+        if (this._deviceElementClass(upstream) !== this._deviceElementClass(downstream)) continue;
+        const earthPair = this._deviceElementClass(upstream) === 'earth';
+        // Fuse–fuse pairs coordinate by I²t / rating ratio, not by a time margin,
+        // and a fuse has no adjustable setting — skip (consistent with the
+        // coordination check and miscoordination detection).
+        if (upstream.deviceType === 'fuse' && downstream.deviceType === 'fuse') continue;
+        const requiredMargin = this._requiredMargin(upstream, downstream);
+
         // Check grading at test currents
-        for (const testI of testCurrents) {
-          const tDown = this._deviceTripTime(downstream, testI);
-          const tUp = this._deviceTripTime(upstream, testI);
+        for (const tp of testPoints) {
+          if (tp.earth !== earthPair) continue;
+          // Referral + total-clearing for the downstream device (shared helper)
+          const { tUp, tDown } = this._seriesPairTripTimes(upstream, downstream, tp);
+          const iUp = this._referCurrent(tp.amps, tp.voltageKv, upstream);
 
           if (!isFinite(tDown) || tDown <= 0) continue;
 
-          const requiredTime = tDown + this.gradingMargin;
+          const requiredTime = tDown + requiredMargin;
 
           if (isFinite(tUp) && tUp >= requiredTime) continue; // Already coordinated
 
           // Need to slow down the upstream device
           if (upstream.deviceType === 'relay' && upstream.curveName) {
-            // Adjust TDS so that trip time at testI >= requiredTime
-            const M = testI / upstream.pickup;
+            // Adjust TDS so the trip time at the device-local current >= requiredTime
+            const M = iUp / upstream.pickup;
             if (M <= 1) continue;
             // t = TDS * f(M) → TDS = t / f(M)
             const tAtTDS1 = idmtTripTime(upstream.curveName, M, 1.0);
@@ -2745,7 +3056,7 @@ const TCC = {
             for (const cls of classes) {
               if (cls <= currentClass) continue;
               p.long_time_delay = cls;
-              const newT = this._deviceTripTime(upstream, testI);
+              const newT = this._deviceTripTime(upstream, iUp);
               if (isFinite(newT) && newT >= requiredTime) {
                 adjustments++;
                 changes.push(`${upstream.name}: LT delay class ${currentClass} \u2192 ${cls}`);
@@ -2787,8 +3098,11 @@ const TCC = {
    * "did the right things trip in the right order?"
    */
   verifySequenceOfOperation() {
-    const paths = this._buildProtectionPaths();
-    if (paths.length === 0) {
+    // Build protection paths and, in the same traversal, the map of each bus to
+    // the protection devices on its SOURCE side (only those carry a bus fault)
+    const busUpstreamMap = new Map();
+    const paths = this._buildProtectionPaths(busUpstreamMap);
+    if (paths.length === 0 && busUpstreamMap.size === 0) {
       this._showSequenceResults(null, null, 'No source-to-load protection paths found. Connect utility/generator to protection devices.');
       return;
     }
@@ -2800,19 +3114,11 @@ const TCC = {
       return;
     }
 
-    // Build adjacency for bus-to-device proximity mapping
-    const adj = new Map();
-    for (const [, w] of AppState.wires) {
-      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
-      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
-      adj.get(w.fromComponent).push(w.toComponent);
-      adj.get(w.toComponent).push(w.fromComponent);
-    }
-
-    // For each bus with fault results, find which protection paths cover it
-    // A path "covers" a bus if the bus lies on the topological path between
-    // the source and the load that the protection path protects.
-    const busDeviceMap = this._mapBusesToProtectionDevices(paths, adj);
+    // For each bus with fault results, the candidate devices are the SOURCE-side
+    // devices along each path through the bus, ranked by electrical proximity
+    // (closest upstream = primary, next = backup). Devices downstream of the
+    // fault carry no fault current and are excluded entirely.
+    const busDeviceMap = this._mapBusesToProtectionDevices(busUpstreamMap);
 
     const allBusResults = [];
 
@@ -2821,6 +3127,8 @@ const TCC = {
       if (faultCurrentA <= 0) continue;
 
       const busName = busResult.bus_name || busId;
+      const busComp = AppState.components.get(busId);
+      const busVkv = busResult.voltage_kv || busComp?.props?.voltage_kv || null;
       const devicesOnPaths = busDeviceMap.get(busId);
       if (!devicesOnPaths || devicesOnPaths.length === 0) continue;
 
@@ -2828,7 +3136,10 @@ const TCC = {
       const deviceOps = [];
       for (const entry of devicesOnPaths) {
         const dev = entry.device;
-        const tripTime = this._deviceTripTime(dev, faultCurrentA);
+        // Earth-fault (50N/51N) elements see no balanced 3-phase fault current
+        if (this._deviceElementClass(dev) === 'earth') continue;
+        // Refer the bus fault current to the device's own voltage level
+        const tripTime = this._deviceTripTime(dev, this._referCurrent(faultCurrentA, busVkv, dev));
         deviceOps.push({
           device: dev,
           name: dev.name,
@@ -2840,6 +3151,7 @@ const TCC = {
           operates: isFinite(tripTime) && tripTime > 0,
         });
       }
+      if (deviceOps.length === 0) continue;
 
       // Sort by expected sequence: primary (closest to fault / downstream) first
       // In a protection path [upstream, ..., downstream], higher position = closer to load
@@ -2969,56 +3281,31 @@ const TCC = {
   },
 
   /**
-   * Map each bus to the protection devices that would see a fault at that bus.
-   * A device "sees" a fault if it lies on a protection path that passes through
-   * or connects to the faulted bus.
+   * Map each bus to the protection devices that actually see a fault at that
+   * bus: ONLY the devices on the SOURCE side of the bus (the upstream chains
+   * recorded by _buildProtectionPaths). Devices downstream of the bus carry no
+   * fault current and are excluded entirely. Within each chain, position 0 is
+   * the device closest to the source and the last position is the closest
+   * upstream device (the expected primary).
    */
-  _mapBusesToProtectionDevices(paths, adj) {
+  _mapBusesToProtectionDevices(busUpstreamMap) {
     const busDevMap = new Map(); // busId -> [{device, pathIndex, position, pathLength}]
+    let chainIndex = 0;
 
-    // For each protection path, find which buses lie along it
-    // by checking all SLD components between the source and load
-    for (let pi = 0; pi < paths.length; pi++) {
-      const path = paths[pi];
-
-      // Collect all buses that are adjacent to any device in this path
-      const busesOnPath = new Set();
-      for (const dev of path) {
-        const neighbors = adj.get(dev.id) || [];
-        for (const nId of neighbors) {
-          const comp = AppState.components.get(nId);
-          if (comp && comp.type === 'bus') {
-            busesOnPath.add(nId);
-          }
-        }
-        // Also check if any CT associated with the device is adjacent to a bus
-        if (dev.associated_ct) {
-          const ctNeighbors = adj.get(dev.associated_ct) || [];
-          for (const nId of ctNeighbors) {
-            const comp = AppState.components.get(nId);
-            if (comp && comp.type === 'bus') {
-              busesOnPath.add(nId);
-            }
-          }
+    for (const [busId, groups] of busUpstreamMap) {
+      const entries = [];
+      for (const g of groups) {
+        const ci = chainIndex++;
+        for (let pos = 0; pos < g.devices.length; pos++) {
+          entries.push({
+            device: g.devices[pos],
+            pathIndex: ci,
+            position: pos,
+            pathLength: g.devices.length,
+          });
         }
       }
-
-      // For each bus on this path, all devices in the path can "see" it
-      for (const busId of busesOnPath) {
-        if (!busDevMap.has(busId)) busDevMap.set(busId, []);
-        for (let pos = 0; pos < path.length; pos++) {
-          const existing = busDevMap.get(busId);
-          // Avoid duplicates for same device on same path
-          if (!existing.some(e => e.device.id === path[pos].id && e.pathIndex === pi)) {
-            existing.push({
-              device: path[pos],
-              pathIndex: pi,
-              position: pos,
-              pathLength: path.length,
-            });
-          }
-        }
-      }
+      if (entries.length > 0) busDevMap.set(busId, entries);
     }
 
     return busDevMap;
@@ -3110,19 +3397,8 @@ const TCC = {
       return;
     }
 
-    // Build test currents from fault results or defaults
-    const testCurrents = new Set();
-    const fr = AppState.faultResults;
-    if (fr && fr.buses) {
-      for (const [, bus] of Object.entries(fr.buses)) {
-        if (bus.ik3) testCurrents.add(Math.round(bus.ik3 * 1000));
-        if (bus.ik1) testCurrents.add(Math.round(bus.ik1 * 1000));
-      }
-    }
-    if (testCurrents.size === 0) {
-      // Use default test currents
-      [500, 1000, 2000, 5000, 10000, 20000].forEach(i => testCurrents.add(i));
-    }
+    // Test points from fault results (pinned to the faulted bus voltage) or defaults
+    const testPoints = this._buildCoordinationTestPoints();
 
     const violations = [];
 
@@ -3132,19 +3408,47 @@ const TCC = {
         const upstream = path[i];
         const downstream = path[i + 1];
 
-        for (const testI of testCurrents) {
-          const tUp = this._deviceTripTime(upstream, testI);
-          const tDown = this._deviceTripTime(downstream, testI);
+        // Phase and earth-fault elements see different currents — not graded
+        // against each other (earth elements grade at ik1, phase at ik3)
+        if (this._deviceElementClass(upstream) !== this._deviceElementClass(downstream)) continue;
+        const earthPair = this._deviceElementClass(upstream) === 'earth';
+
+        // Fuse–fuse pairs: I²t / 2:1 rating-ratio rule instead of a time margin
+        if (upstream.deviceType === 'fuse' && downstream.deviceType === 'fuse') {
+          if (!this._fuseFuseCoordinated(downstream, upstream)) {
+            violations.push({
+              upstream: upstream.name,
+              downstream: downstream.name,
+              current: null,
+              tUpstream: null,
+              tDownstream: null,
+              severity: 'critical',
+              issue: `Fuse ratio ${upstream.fuseRating}A : ${downstream.fuseRating}A below 2:1 — downstream total-clearing I²t may overlap upstream pre-arcing I²t`,
+            });
+          }
+          continue;
+        }
+
+        const required = this._requiredMargin(upstream, downstream);
+
+        for (const tp of testPoints) {
+          if (tp.earth !== earthPair) continue;
+          // Referral + total-clearing for the downstream device (shared helper)
+          const { tUp, tDown } = this._seriesPairTripTimes(upstream, downstream, tp);
 
           if (!isFinite(tDown) || tDown <= 0) continue;
           if (!isFinite(tUp) || tUp <= 0) continue;
+          // Only grade where at least one device operates inside 10 s — pairs
+          // that both trip in the far slow region are not a real coordination
+          // concern (consistent with _runCoordinationCheck).
+          if (Math.min(tUp, tDown) >= 10) continue;
 
           // Violation: upstream trips before or same time as downstream
           if (tUp <= tDown) {
             violations.push({
               upstream: upstream.name,
               downstream: downstream.name,
-              current: testI,
+              current: tp.amps,
               tUpstream: tUp,
               tDownstream: tDown,
               severity: tUp < tDown * 0.9 ? 'critical' : 'warning',
@@ -3152,15 +3456,15 @@ const TCC = {
                 ? `${upstream.name} trips BEFORE ${downstream.name} — upstream will unnecessarily disconnect`
                 : `${upstream.name} trips at SAME TIME as ${downstream.name} — race condition`,
             });
-          } else if (tUp - tDown < this.gradingMargin) {
+          } else if (tUp - tDown < required) {
             violations.push({
               upstream: upstream.name,
               downstream: downstream.name,
-              current: testI,
+              current: tp.amps,
               tUpstream: tUp,
               tDownstream: tDown,
               severity: 'marginal',
-              issue: `Insufficient margin: ${((tUp - tDown) * 1000).toFixed(0)}ms < ${(this.gradingMargin * 1000).toFixed(0)}ms required`,
+              issue: `Insufficient margin: ${((tUp - tDown) * 1000).toFixed(0)}ms < ${(required * 1000).toFixed(0)}ms required`,
             });
           }
         }
@@ -3212,8 +3516,8 @@ const TCC = {
       html += `<tr>
         <td class="${sevClass[v.severity] || ''}">${sevIcon[v.severity] || ''}</td>
         <td>${v.issue}</td>
-        <td>${v.current >= 1000 ? (v.current / 1000).toFixed(1) + 'kA' : v.current + 'A'}</td>
-        <td>\u2191${fmtT(v.tUpstream)} \u2193${fmtT(v.tDownstream)}</td>
+        <td>${v.current != null ? (v.current >= 1000 ? (v.current / 1000).toFixed(1) + 'kA' : Math.round(v.current) + 'A') : '\u2014'}</td>
+        <td>${v.tUpstream != null ? `\u2191${fmtT(v.tUpstream)} \u2193${fmtT(v.tDownstream)}` : '\u2014'}</td>
       </tr>`;
     }
     html += '</tbody></table>';
@@ -3512,34 +3816,34 @@ const TCC = {
     const p = comp.props || {};
     switch (comp.type) {
       case 'utility':
-        return p.fault_level_mva ? `${p.fault_level_mva} MVA` : '';
+        return p.fault_mva ? `${p.fault_mva} MVA` : '';
       case 'generator':
-        return p.mva_rating ? `${p.mva_rating} MVA` : '';
+        return p.rated_mva ? `${p.rated_mva} MVA` : '';
       case 'bus':
         return p.voltage_kv ? `${p.voltage_kv} kV` : '';
       case 'transformer':
-        return p.mva_rating ? `${p.mva_rating} MVA` : (p.kva_rating ? `${p.kva_rating} kVA` : '');
+        return p.rated_mva ? `${p.rated_mva} MVA` : '';
       case 'cb':
         return p.rated_current_a ? `${p.rated_current_a} A` : '';
       case 'fuse':
-        return p.fuse_rating_a ? `${p.fuse_rating_a} A` : '';
+        return p.rated_current_a ? `${p.rated_current_a} A` : '';
       case 'relay': {
         if (tccDev) return `${tccDev.pickup || ''}A, TDS ${tccDev.tds || ''}`;
         return p.pickup_a ? `${p.pickup_a} A` : '';
       }
       case 'cable':
-        return p.cable_size_mm2 ? `${p.cable_size_mm2} mm\u00B2` : '';
+        return p.size_mm2 ? `${p.size_mm2} mm\u00B2` : '';
       case 'static_load':
-        return p.kw ? `${p.kw} kW` : '';
+        return p.rated_kva ? `${p.rated_kva} kVA` : '';
       case 'motor_induction':
       case 'motor_synchronous':
-        return p.kw_rating ? `${p.kw_rating} kW` : '';
+        return p.rated_kw ? `${p.rated_kw} kW` : '';
       case 'ct':
-        return p.ct_ratio ? `${p.ct_ratio}` : '';
+        return p.ratio ? `${p.ratio}` : '';
       case 'solar_pv':
-        return p.kw_peak ? `${p.kw_peak} kWp` : '';
+        return p.rated_kw ? `${p.rated_kw} kWp` : '';
       case 'wind_turbine':
-        return p.kw_rated ? `${p.kw_rated} kW` : '';
+        return p.rated_mva ? `${p.rated_mva} MVA` : '';
       default:
         return '';
     }

@@ -8,7 +8,16 @@ Returns pass/fail per cable with recommended minimum size.
 import math
 from ..models.schemas import ProjectData
 
-# ─── Standard cable library (mirrored from frontend STANDARD_CABLES) ───
+# ─── Standard cable library (20°C DC base, IEC 60228 Class 2) ───
+# NOTE: r_per_km values in THIS table are 20°C DC conductor resistances and are
+# corrected to conductor operating temperature via _temp_correction() at the
+# point of use (voltage-drop checks in _find_minimum_size). The frontend
+# STANDARD_CABLES library now stores OPERATING-TEMPERATURE values instead, so
+# the two tables are deliberately on different temperature bases — DO NOT copy
+# values between them. Project-payload cable props are likewise operating-
+# temperature: the frontend migrates legacy (pre-dataVersion-2) projects to the
+# corrected values on load, so payload r_per_km is trusted as hot and is NOT
+# corrected here.
 STANDARD_CABLES = [
     # MV XLPE Copper (11kV)
     {"id": "cu_xlpe_16_11kv", "conductor": "Cu", "insulation": "XLPE", "size_mm2": 16, "voltage_kv": 11, "r_per_km": 1.15, "x_per_km": 0.119, "rated_amps": 110},
@@ -111,8 +120,20 @@ MAX_TEMP = {"XLPE": 90, "PVC": 70}
 # Installation method derating factors
 INSTALL_DERATING = {"trefoil": 1.0, "flat": 0.95, "buried": 0.85}
 
-# Resistivity (Ω·mm²/m)
+# Resistivity at 20°C (Ω·mm²/m)
 RESISTIVITY = {"Cu": 0.0175, "Al": 0.0282}
+
+
+def _temp_correction(conductor, insulation):
+    """Resistance correction from 20°C DC to conductor operating temperature.
+
+    R_op = R20 × [1 + α(θ_op − 20)] with α_Cu = 0.00393/K, α_Al = 0.00403/K:
+      90°C (XLPE): Cu ×1.275, Al ×1.282
+      70°C (PVC):  ×1.20 (both conductors)
+    """
+    if str(insulation).upper() == "PVC":
+        return 1.20
+    return 1.282 if str(conductor).upper() == "AL" else 1.275
 
 # ─── NEC Article 310.16 — AWG/kcmil to mm² mapping ───
 _AWG_TO_MM2 = {
@@ -378,7 +399,11 @@ def _get_cable_props(cable):
     # Derive size from r_per_km if not known
     r_per_km = float(p.get("r_per_km", 0))
     if size_mm2 == 0 and r_per_km > 0:
-        rho = RESISTIVITY.get(conductor, 0.0175)
+        # Payload r_per_km values are at conductor OPERATING temperature
+        # (the frontend library stores 90°C XLPE / 70°C PVC values), so use
+        # the hot resistivity — the derived area then matches the actual
+        # conductor area used by the adiabatic withstand check.
+        rho = RESISTIVITY.get(conductor, 0.0175) * _temp_correction(conductor, insulation)
         # R/km = ρ×1000/S  →  S = ρ×1000/R
         size_mm2 = rho * 1000 / r_per_km
 
@@ -463,11 +488,15 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
     except Exception:
         pass
 
-    # Build branch current lookup from load flow
+    # Build branch current and power-factor lookups from load flow
     branch_currents = {}
+    branch_pf = {}
+    lf_converged = bool(lf_results and getattr(lf_results, "converged", False))
     if lf_results and lf_results.branches:
         for br in lf_results.branches:
             branch_currents[br.elementId] = br.i_amps
+            if br.s_mva and br.s_mva > 1e-6:
+                branch_pf[br.elementId] = min(1.0, abs(br.p_mw) / br.s_mva)
 
     cables = [c for c in project.components if c.type == "cable"]
     results = []
@@ -517,7 +546,12 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
 
             # IEC ambient temperature derating
             max_temp = MAX_TEMP.get(insulation, 90)
-            if ambient_temp_c != 30 and max_temp > ambient_temp_c:
+            if ambient_temp_c >= max_temp:
+                # Ambient at/above conductor operating temperature — the
+                # cable has NO usable ampacity (must fail, not silently
+                # pass with derating = 1.0)
+                temp_df = 0.0
+            elif ambient_temp_c != 30:
                 temp_df = math.sqrt((max_temp - ambient_temp_c) / (max_temp - 30))
             else:
                 temp_df = 1.0
@@ -525,10 +559,19 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             derated_amps = rated_amps * install_df * temp_df
         thermal_ok = current_per_cable <= derated_amps if derated_amps > 0 else True
         thermal_loading_pct = (current_per_cable / derated_amps * 100) if derated_amps > 0 else 0
+        if temp_df <= 0:
+            # Ambient derating wiped out all capacity (IEC or NEC table)
+            thermal_ok = False
+            thermal_loading_pct = 999.9
 
         # ── Voltage drop check ──
-        cos_phi = 0.85  # Default power factor
-        sin_phi = math.sqrt(1 - cos_phi ** 2)
+        # Use the actual branch power factor from load flow when available,
+        # falling back to a typical 0.85
+        cos_phi = branch_pf.get(cable.id, 0.85)
+        sin_phi = math.sqrt(max(0.0, 1 - cos_phi ** 2))
+        # NOTE: cp["r_per_km"] comes from the project payload (frontend
+        # library stores operating-temperature values) — no further
+        # temperature correction is applied here to avoid double-correcting.
         r_per_km = cp["r_per_km"] / num_parallel
         x_per_km = cp["x_per_km"] / num_parallel
         length_km = cp["length_km"]
@@ -572,15 +615,24 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         # ── Determine issues ──
         issues = []
         if not thermal_ok:
-            issues.append(f"Thermal overload: {current_per_cable:.1f}A exceeds derated capacity {derated_amps:.1f}A ({thermal_loading_pct:.0f}%)")
+            if temp_df <= 0:
+                issues.append(f"Ambient temperature {ambient_temp_c:.0f}°C at/above conductor max operating temperature ({MAX_TEMP.get(insulation, 90)}°C) — cable has no usable ampacity")
+            else:
+                issues.append(f"Thermal overload: {current_per_cable:.1f}A exceeds derated capacity {derated_amps:.1f}A ({thermal_loading_pct:.0f}%)")
         if not voltage_drop_ok:
             issues.append(f"Voltage drop {voltage_drop_pct:.2f}% exceeds limit {max_voltage_drop_pct}%")
         if not fault_withstand_ok:
             issues.append(f"Fault withstand: {size_mm2:.0f}mm² insufficient, need {min_size_for_fault:.0f}mm² for {fault_ka:.2f}kA / {t_clear*1000:.0f}ms")
 
         # ── Status ──
+        # When load flow failed/diverged or reports no current for this
+        # cable, the thermal and voltage-drop checks are meaningless — mark
+        # the cable "unknown" instead of silently passing it (M6).
+        current_known = lf_converged and cable.id in branch_currents and load_current > 0
         if not thermal_ok or not voltage_drop_ok or not fault_withstand_ok:
             status = "fail"
+        elif not current_known:
+            status = "unknown"
         elif thermal_loading_pct > 80 or (3.0 < voltage_drop_pct <= max_voltage_drop_pct):
             status = "warning"
         else:
@@ -588,6 +640,10 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
 
         # ── Warning reason (for warning status — cable passes but is near limits) ──
         warning_reasons = []
+        if not current_known:
+            warning_reasons.append(
+                "Load current unknown (load flow unavailable, not converged, or zero "
+                "current) — thermal and voltage-drop checks need a converged load flow")
         if thermal_loading_pct > 80 and thermal_ok:
             warning_reasons.append(f"Thermal loading at {thermal_loading_pct:.0f}% (>80% of derated capacity {derated_amps:.0f}A)")
         if 3.0 < voltage_drop_pct <= max_voltage_drop_pct:
@@ -598,19 +654,28 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         recommended_cable = ""
         if status == "fail":
             conductor_df = _nec_conductor_count_factor(num_parallel * 3) if ampacity_standard == "NEC" else 1.0
-            min_size_mm2 = _find_minimum_size(
+            found_size = _find_minimum_size(
                 cp, load_current, num_parallel, length_km, voltage_kv,
                 cos_phi, sin_phi, max_voltage_drop_pct, fault_ka, t_clear,
                 install_df, temp_df, ambient_temp_c,
                 ampacity_standard=ampacity_standard, conductor_df=conductor_df,
             )
-            # Find matching standard cable
-            rec = _find_recommended_cable(cp["conductor"], cp["insulation"], voltage_kv, min_size_mm2)
-            if rec:
-                recommended_cable = f"{rec['size_mm2']:.0f}mm² {rec['conductor']} {rec['insulation']} {voltage_kv}kV"
-                min_size_mm2 = rec["size_mm2"]
+            if found_size is None:
+                # No standard size passes all checks — return a clear failure
+                # recommendation instead of echoing the existing failing size
+                min_size_mm2 = 0
+                recommended_cable = ("No standard cable size satisfies all checks — "
+                                     "consider parallel cables, a shorter route, a "
+                                     "higher voltage level, or faster fault clearing")
             else:
-                recommended_cable = f"{min_size_mm2:.0f}mm² (no standard cable found)"
+                min_size_mm2 = found_size
+                # Find matching standard cable
+                rec = _find_recommended_cable(cp["conductor"], cp["insulation"], voltage_kv, min_size_mm2)
+                if rec:
+                    recommended_cable = f"{rec['size_mm2']:.0f}mm² {rec['conductor']} {rec['insulation']} {voltage_kv}kV"
+                    min_size_mm2 = rec["size_mm2"]
+                else:
+                    recommended_cable = f"{min_size_mm2:.0f}mm² (no standard cable found)"
 
         results.append({
             "cable_id": cable.id,
@@ -639,7 +704,11 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
                        cos_phi, sin_phi, max_vdrop_pct, fault_ka, t_clear,
                        install_df, temp_df, ambient_temp_c,
                        ampacity_standard='IEC', conductor_df=1.0):
-    """Find the minimum cable size (mm²) that satisfies all three checks."""
+    """Find the minimum cable size (mm²) that satisfies all three checks.
+
+    Returns None when NO standard cable size passes — callers must report a
+    clear failure rather than recommending a size that also fails.
+    """
     conductor = cp["conductor"]
     insulation = cp["insulation"]
     k = K_FACTORS.get((conductor, insulation), 143)
@@ -669,9 +738,11 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
         if current_per_cable > derated:
             continue
 
-        # Voltage drop check
+        # Voltage drop check — the internal STANDARD_CABLES table stores
+        # 20°C DC resistance (IEC 60228), so correct to conductor operating
+        # temperature here (H12)
         if voltage_kv > 0 and length_km > 0:
-            r = match["r_per_km"] / max(num_parallel, 1)
+            r = match["r_per_km"] * _temp_correction(conductor, insulation) / max(num_parallel, 1)
             x = match["x_per_km"] / max(num_parallel, 1)
             v_phase = voltage_kv * 1000 / math.sqrt(3)
             vdrop = load_current * length_km * (r * cos_phi + x * sin_phi)
@@ -688,8 +759,8 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
 
         return size
 
-    # No standard size satisfies all — return computed minimum
-    return max(cp.get("size_mm2", 0), 0)
+    # No standard size satisfies all checks
+    return None
 
 
 def _find_recommended_cable(conductor, insulation, voltage_kv, min_size_mm2):

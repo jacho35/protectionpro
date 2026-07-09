@@ -16,6 +16,7 @@ const Project = {
     document.getElementById('btn-export-json').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportJSON(); });
     document.getElementById('btn-export-svg').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportSVG(); });
     document.getElementById('btn-export-png').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPNG(); });
+    document.getElementById('btn-export-diagram-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDiagramPDF(); });
     document.getElementById('btn-export-csv').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportResultsCSV(); });
     document.getElementById('btn-export-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPDF(); });
     document.getElementById('btn-export-template').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showTemplateEditor(); });
@@ -40,11 +41,22 @@ const Project = {
     this._renderRecentMenu();
 
     // Auto-save: attempt final backup on page unload
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', (e) => {
       if (this._autoSaveEnabled && AppState.dirty) {
         this._saveToLocalBackup();
       }
+      // Warn before discarding unsaved work
+      if (AppState.dirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
     });
+  },
+
+  // Confirm before any action that replaces the current diagram
+  _confirmDiscardUnsaved() {
+    if (!AppState.dirty) return true;
+    return confirm('You have unsaved changes that will be lost. Continue?');
   },
 
   newProject() {
@@ -52,6 +64,7 @@ const Project = {
       if (!confirm('You have unsaved changes. Create new project?')) return;
     }
     AppState.reset();
+    UndoManager.clear();
     Canvas.updateTransform();
     Canvas.render();
     Properties.clear();
@@ -85,16 +98,26 @@ const Project = {
         document.getElementById('status-info').textContent = '';
       }, 3000);
     } catch (e) {
-      // Backend unavailable — fall back to JSON export
-      document.getElementById('status-info').textContent = 'Database unavailable, exporting JSON...';
-      this.exportJSON();
-      AppState.dirty = false;
-      document.title = `ProtectionPro — ${AppState.projectName}`;
-      updateProjectNameDisplay();
-      // Still create a local revision
-      await RevisionTimeline.createRevision('Manual save (local)');
-      await RevisionTimeline.show();
+      this._handleSaveFailure(e);
     }
+  },
+
+  // Save failed: stay dirty, keep a silent local backup, and show a
+  // persistent error that distinguishes "backend down" from "server error".
+  _handleSaveFailure(e) {
+    AppState.dirty = true;
+    try {
+      localStorage.setItem('protectionpro-auto-save-backup', JSON.stringify(AppState.toJSON()));
+    } catch (_) { /* localStorage full/unavailable — nothing more we can do */ }
+    const offline = (e instanceof TypeError) || /failed to fetch|networkerror|load failed/i.test(e.message || '');
+    const reason = offline
+      ? 'backend unreachable (is the server running?)'
+      : `server error: ${e.message}`;
+    document.title = `ProtectionPro — ${AppState.projectName} *`;
+    // Persistent message — intentionally NOT cleared after a timeout
+    document.getElementById('status-info').textContent =
+      `SAVE FAILED — ${reason}. Your changes are NOT saved to the database. ` +
+      'A local backup was kept; use File → Export JSON to save a copy.';
   },
 
   // Save As: prompt for new name and save as a new project
@@ -117,11 +140,7 @@ const Project = {
         document.getElementById('status-info').textContent = '';
       }, 3000);
     } catch (e) {
-      document.getElementById('status-info').textContent = 'Database unavailable, exporting JSON...';
-      this.exportJSON();
-      AppState.dirty = false;
-      document.title = `ProtectionPro — ${AppState.projectName}`;
-      updateProjectNameDisplay();
+      this._handleSaveFailure(e);
     }
   },
 
@@ -319,6 +338,54 @@ const Project = {
     });
   },
 
+  // ── Export: diagram as PDF (client-side via jsPDF) ──
+  exportDiagramPDF() {
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) {
+      this._statusMsg('PDF library not loaded.');
+      return;
+    }
+    const { clone, svgW, svgH } = this._prepareExportSVG();
+    this._rasterizeSVG(clone, svgW, svgH, 2, (canvas) => {
+      const landscape = svgW >= svgH;
+      // A3 for large diagrams, A4 otherwise (long edge > ~2000 canvas px)
+      const format = Math.max(svgW, svgH) > 2000 ? 'a3' : 'a4';
+      const doc = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format });
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 12;
+      const headerH = 8;
+
+      // Title line + rule
+      const name = AppState.projectName || 'Untitled Project';
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(`${name} — Single Line Diagram`, margin, margin);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(new Date().toLocaleDateString(), pageW - margin, margin, { align: 'right' });
+      doc.setDrawColor(180);
+      doc.line(margin, margin + 2, pageW - margin, margin + 2);
+      doc.setTextColor(0);
+
+      // Fit the diagram into the remaining area, preserving aspect
+      const availW = pageW - 2 * margin;
+      const availH = pageH - 2 * margin - headerH;
+      const scale = Math.min(availW / svgW, availH / svgH);
+      const imgW = svgW * scale;
+      const imgH = svgH * scale;
+      const x = margin + (availW - imgW) / 2;
+      const y = margin + headerH + (availH - imgH) / 2;
+      // JPEG keeps the file size sane (a large diagram as PNG embeds tens of
+      // MB); the rasterizer fills a white background so no alpha is lost
+      doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, y, imgW, imgH);
+
+      doc.save(`${name.replace(/[^\w-]+/g, '_')}_diagram.pdf`);
+      Project._statusMsg('Exported diagram as PDF.');
+    });
+  },
+
   // Export analysis results as CSV (client-side, no backend needed)
   exportResultsCSV() {
     const rows = [];
@@ -497,12 +564,15 @@ const Project = {
     try {
       const raw = localStorage.getItem('protectionpro-auto-save-backup');
       if (!raw) return;
-      if (!confirm('A local auto-save backup was found. Restore it?')) {
-        localStorage.removeItem('protectionpro-auto-save-backup');
+      if (!confirm('A local auto-save backup was found. Restore it?\n\nChoosing Cancel keeps the backup — you will be offered it again next time.')) {
+        // Declining must NOT delete the backup; it is only removed on an
+        // explicit restore or a successful database save.
+        this._statusMsg('Local backup kept (not restored).');
         return;
       }
       const data = JSON.parse(raw);
       AppState.fromJSON(data);
+      UndoManager.clear();
       AppState.projectId = null;
       Canvas.updateTransform();
       if (typeof renderPageTabs === 'function') renderPageTabs();
@@ -523,6 +593,7 @@ const Project = {
 
   // Import from JSON file
   importFromFile() {
+    if (!this._confirmDiscardUnsaved()) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
@@ -534,6 +605,7 @@ const Project = {
         try {
           const data = JSON.parse(ev.target.result);
           AppState.fromJSON(data);
+          UndoManager.clear();
           AppState.projectId = null; // imported files don't have a DB id
           Canvas.updateTransform();
           if (typeof renderPageTabs === 'function') renderPageTabs();
@@ -614,9 +686,11 @@ const Project = {
     container.querySelectorAll('.recent-project-item').forEach(btn => {
       btn.addEventListener('click', async () => {
         window.closeAllToolbarMenus?.();
+        if (!this._confirmDiscardUnsaved()) return;
         try {
           const data = await API.loadProject(btn.dataset.id);
           AppState.fromJSON(data);
+          UndoManager.clear();
           AppState.projectId = btn.dataset.id;
           Canvas.updateTransform();
           if (typeof renderPageTabs === 'function') renderPageTabs();
@@ -796,9 +870,15 @@ const Project = {
     // Open project
     modal.querySelectorAll('.fm-project').forEach(el => {
       el.querySelector('.fm-item-info')?.addEventListener('click', async () => {
+        if (!this._confirmDiscardUnsaved()) {
+          modalContent.classList.remove('modal-wide');
+          modal.style.display = 'none';
+          return;
+        }
         try {
           const data = await API.loadProject(el.dataset.projectId);
           AppState.fromJSON(data);
+          UndoManager.clear();
           AppState.projectId = el.dataset.projectId;
           Canvas.updateTransform();
           if (typeof renderPageTabs === 'function') renderPageTabs();

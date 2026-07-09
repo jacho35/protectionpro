@@ -288,8 +288,10 @@ def run_dc_arc_flash(project_data, fault_results):
         # Arc voltage
         v_arc = 20.0 + 0.534 * gap_mm
 
-        # Clearing time from protection devices
-        t_clear = get_clearing_time(bus, components, adjacency)
+        # Clearing time from protection devices. Pass the DC arcing current
+        # (kA) so the instantaneous-pickup comparison can fire; without it the
+        # estimator falls through to its slow time-delayed buckets.
+        t_clear = get_clearing_time(bus, components, adjacency, iarc_ka=iarc_a / 1000.0)
 
         # Incident energy at working distance
         e_cal = calc_dc_incident_energy(iarc_a, gap_mm, t_clear, working_dist)

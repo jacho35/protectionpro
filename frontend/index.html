@@ -52,6 +52,7 @@
             <button id="btn-export-json" class="dropdown-item">Export Project (JSON)</button>
             <button id="btn-export-svg" class="dropdown-item">Export Diagram (SVG)</button>
             <button id="btn-export-png" class="dropdown-item">Export Diagram (PNG)</button>
+            <button id="btn-export-diagram-pdf" class="dropdown-item">Export Diagram (PDF)</button>
             <div class="dropdown-divider"></div>
             <button id="btn-print" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
@@ -146,6 +147,10 @@
             <label class="dropdown-checkbox" title="Show load flow direction arrows on wires">
               <input type="checkbox" id="chk-loadflow-arrows"> Show load flow arrows
             </label>
+            <button id="btn-show-dispatch" class="dropdown-item" title="Show the Generation Dispatch summary from the last load flow">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="8" width="3" height="6" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6.5" y="5" width="3" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="2" width="3" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Generation Dispatch
+            </button>
             <button id="btn-run-unbalanced-loadflow" class="dropdown-item" title="Run Unbalanced 3-Phase Load Flow">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               Unbalanced Load Flow
@@ -193,9 +198,9 @@
         <div class="toolbar-menu" id="menu-safety">
           <button class="toolbar-menu-btn">Safety <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
           <div class="toolbar-menu-panel">
-            <button id="btn-arcflash" class="dropdown-item" title="Arc Flash Analysis (IEEE 1584-2018)">
+            <button id="btn-arcflash" class="dropdown-item" title="Arc Flash Analysis (IEEE 1584-2002)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
-              Arc Flash (IEEE 1584-2018)
+              Arc Flash (IEEE 1584-2002)
             </button>
             <button id="btn-dc-arcflash" class="dropdown-item" title="DC Arc Flash Analysis (Stokes &amp; Oppenlander)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#1976d2" stroke="#0d47a1" stroke-width="0.8"/><text x="1" y="14" font-size="6" font-weight="bold" fill="currentColor">DC</text></svg>
@@ -220,9 +225,13 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12h12M2 8h8M2 4h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
               Cable Labels
             </button>
-            <button id="btn-toggle-devices" class="dropdown-item" title="Toggle CB/Fuse Labels">
+            <button id="btn-toggle-devices" class="dropdown-item active" title="Toggle CB/Fuse Labels">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
               Device Labels
+            </button>
+            <button id="btn-toggle-ribbon" class="dropdown-item" title="Show the component palette as a compact ribbon below the toolbar instead of the sidebar">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="9" width="14" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2,1.5"/></svg>
+              Component Ribbon
             </button>
             <button id="btn-toggle-warnings" class="dropdown-item active" title="Toggle Connection Warnings">
               <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11v0.5" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -324,12 +333,20 @@
     </div>
   </header>
 
+  <!-- Component Ribbon (alternative palette layout, toggled in View menu) -->
+  <div id="component-ribbon" style="display:none"></div>
+
   <!-- Main Layout -->
   <div id="app-container">
+    <!-- Collapsed-sidebar expand tab -->
+    <div id="sidebar-expand-tab" class="panel-expand-tab" title="Show Components panel">&#9656;</div>
+
     <!-- Left Sidebar: Component Palette -->
     <aside id="sidebar">
       <div class="sidebar-header">
-        <h2>Components</h2>
+        <h2>Components
+          <button id="btn-collapse-sidebar" class="panel-collapse-btn" title="Collapse panel">&#9666;</button>
+        </h2>
         <input type="text" id="component-search" placeholder="Search components...">
       </div>
       <div id="palette" class="palette">
@@ -377,7 +394,13 @@
       </svg>
       <!-- Mini-map overlay -->
       <div id="minimap" class="minimap">
+        <button id="minimap-toggle" class="minimap-toggle" title="Hide mini-map">&minus;</button>
         <canvas id="minimap-canvas"></canvas>
+      </div>
+      <!-- Empty-canvas hint (toggled by Canvas.render) -->
+      <div id="canvas-empty-hint" class="canvas-empty-hint" style="display:none">
+        Drag a component from the left palette to start drawing,<br>
+        or open <strong>File &rarr; Templates</strong> for a pre-built network.
       </div>
       <!-- Page Tab Bar -->
       <div id="page-tab-bar">
@@ -421,6 +444,7 @@
     <aside id="properties-panel">
       <div class="properties-header">
         <h2 id="properties-title">Properties</h2>
+        <button id="btn-collapse-properties" class="panel-collapse-btn" title="Collapse panel">&#9656;</button>
       </div>
       <div id="properties-content">
         <div class="no-selection">
@@ -432,6 +456,9 @@
         <button id="btn-show-calc" class="btn-calc-info">View Calculations</button>
       </div>
     </aside>
+
+    <!-- Collapsed-properties expand tab -->
+    <div id="properties-expand-tab" class="panel-expand-tab" title="Show Properties panel">&#9666;</div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════════
@@ -636,7 +663,10 @@
   <div id="mobile-toast"></div>
 
   <!-- Calculation Details Modal -->
-  <div id="calc-modal" class="modal" style="display:none">
+  <!-- Right-click context menu (populated by ContextMenu) -->
+  <div id="context-menu" role="menu" style="display:none"></div>
+
+  <div id="calc-modal" class="modal" role="dialog" aria-modal="true" aria-label="Dialog" style="display:none">
     <div class="modal-content">
       <div class="modal-header">
         <h3 id="calc-modal-title">Calculation Details</h3>
@@ -648,8 +678,19 @@
     </div>
   </div>
 
+  <!-- Distribution Board Circuit Schedule Modal -->
+  <div id="db-modal" class="modal" role="dialog" aria-modal="true" aria-label="Circuit Schedule" style="display:none">
+    <div class="modal-content db-modal-content">
+      <div class="modal-header">
+        <h3 id="db-modal-title">Circuit Schedule</h3>
+        <button class="modal-close" id="db-modal-close">&times;</button>
+      </div>
+      <div id="db-modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
   <!-- Compliance Report Modal -->
-  <div id="compliance-modal" class="modal" style="display:none">
+  <div id="compliance-modal" class="modal" role="dialog" aria-modal="true" aria-label="Compliance Report" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Compliance Report</h3>
@@ -668,7 +709,7 @@
   </div>
 
   <!-- Voltage Depression Modal -->
-  <div id="vdep-modal" class="modal" style="display:none">
+  <div id="vdep-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Depression" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Voltage Depression During Fault (IEC 60909)</h3>
@@ -683,10 +724,10 @@
   </div>
 
   <!-- Arc Flash Results Modal -->
-  <div id="arcflash-modal" class="modal" style="display:none">
+  <div id="arcflash-modal" class="modal" role="dialog" aria-modal="true" aria-label="Arc Flash Results" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
-        <h3>Arc Flash Analysis — IEEE 1584-2018</h3>
+        <h3>Arc Flash Analysis — IEEE 1584-2002</h3>
         <button class="modal-close" id="btn-close-arcflash">&times;</button>
       </div>
       <div class="modal-body">
@@ -698,7 +739,7 @@
   </div>
 
   <!-- DC Arc Flash Results Modal -->
-  <div id="dc-arcflash-modal" class="modal" style="display:none">
+  <div id="dc-arcflash-modal" class="modal" role="dialog" aria-modal="true" aria-label="DC Arc Flash Results" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>DC Arc Flash Analysis — Stokes &amp; Oppenlander</h3>
@@ -713,7 +754,7 @@
   </div>
 
   <!-- Cable Sizing Results Modal -->
-  <div id="cable-sizing-modal" class="modal" style="display:none">
+  <div id="cable-sizing-modal" class="modal" role="dialog" aria-modal="true" aria-label="Cable Sizing Results" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Cable Sizing Analysis</h3>
@@ -728,7 +769,7 @@
   </div>
 
   <!-- Motor Starting Results Modal -->
-  <div id="motor-starting-modal" class="modal" style="display:none">
+  <div id="motor-starting-modal" class="modal" role="dialog" aria-modal="true" aria-label="Motor Starting Results" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Motor Starting Voltage Dip Analysis</h3>
@@ -743,7 +784,7 @@
   </div>
 
   <!-- Equipment Duty Check Results Modal -->
-  <div id="duty-check-modal" class="modal" style="display:none">
+  <div id="duty-check-modal" class="modal" role="dialog" aria-modal="true" aria-label="Equipment Duty Check Results" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Equipment Duty Check</h3>
@@ -758,7 +799,7 @@
   </div>
 
   <!-- Load Diversity Results Modal -->
-  <div id="load-diversity-modal" class="modal" style="display:none">
+  <div id="load-diversity-modal" class="modal" role="dialog" aria-modal="true" aria-label="Load Diversity Results" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Load Diversity & Demand Factor Analysis</h3>
@@ -773,7 +814,7 @@
   </div>
 
   <!-- Grounding System Analysis Modal -->
-  <div id="grounding-modal" class="modal" style="display:none">
+  <div id="grounding-modal" class="modal" role="dialog" aria-modal="true" aria-label="Grounding System Results" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Grounding System Analysis — IEEE 80</h3>
@@ -788,7 +829,7 @@
   </div>
 
   <!-- Study Manager Modal -->
-  <div id="study-manager-modal" class="modal" style="display:none">
+  <div id="study-manager-modal" class="modal" role="dialog" aria-modal="true" aria-label="Study Manager" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Study Manager — Batch Run</h3>
@@ -838,7 +879,7 @@
   </div>
 
   <!-- TCC Chart Modal -->
-  <div id="tcc-modal" class="modal" style="display:none">
+  <div id="tcc-modal" class="modal" role="dialog" aria-modal="true" aria-label="Time-Current Curves" style="display:none">
     <div class="modal-content tcc-modal-content">
       <div class="modal-header">
         <h3>Time-Current Curves (TCC)</h3>
@@ -1055,7 +1096,7 @@
   </div>
 
   <!-- Settings Modal (tabbed) -->
-  <div id="settings-modal" class="modal" style="display:none">
+  <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-label="Settings" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Settings</h3>
@@ -1397,7 +1438,7 @@
   </div>
 
   <!-- Scenarios Modal -->
-  <div id="scenarios-modal" class="modal" style="display:none">
+  <div id="scenarios-modal" class="modal" role="dialog" aria-modal="true" aria-label="Scenarios" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>Scenarios</h3>
@@ -1414,6 +1455,20 @@
             <label for="scenario-desc">Description</label>
             <textarea id="scenario-desc" rows="2" placeholder="Describe what this scenario represents..."></textarea>
           </div>
+          <div class="scenario-form-row scenario-applies-row">
+            <label title="What loading this scenario will apply. Device names are never changed by a scenario.">Applies</label>
+            <div class="scenario-applies">
+              <label class="dropdown-checkbox" title="CB and switch open/closed states">
+                <input type="checkbox" id="scenario-apply-switching" checked> Switching states
+              </label>
+              <label class="dropdown-checkbox" title="All electrical properties: ratings, dispatch settings, load values, impedances">
+                <input type="checkbox" id="scenario-apply-settings" checked> Electrical settings
+              </label>
+              <label class="dropdown-checkbox" title="Component positions, rotations and bus sizes. When everything is ticked, loading also restores added/removed components and wires (full snapshot).">
+                <input type="checkbox" id="scenario-apply-layout" checked> Diagram layout
+              </label>
+            </div>
+          </div>
           <button id="btn-save-scenario" class="btn-primary">Save Scenario</button>
         </div>
         <div class="scenario-list-section">
@@ -1427,7 +1482,7 @@
   </div>
 
   <!-- Quick Access Editor Modal -->
-  <div id="quick-access-modal" class="modal" style="display:none">
+  <div id="quick-access-modal" class="modal" role="dialog" aria-modal="true" aria-label="Quick Access Toolbar Editor" style="display:none">
     <div class="modal-content" style="max-width:480px">
       <div class="modal-header">
         <h3>Edit Quick Access Bar</h3>
@@ -1441,7 +1496,7 @@
   </div>
 
   <!-- Help Modal -->
-  <div id="help-modal" class="modal" style="display:none">
+  <div id="help-modal" class="modal" role="dialog" aria-modal="true" aria-label="Help and Documentation" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <h3>ProtectionPro — Help &amp; Documentation</h3>
@@ -1482,7 +1537,7 @@
           </ul>
 
           <h4>Multi-Page Diagrams</h4>
-          <p>Use the page tab bar below the canvas to add, rename, and switch between diagram sheets. Double-click a tab to rename it. Drag devices between tabs to reorganize. Use off-page connectors to link electrical connections across pages — connectors with the same label are electrically joined.</p>
+          <p>Use the page tab bar below the canvas to add, rename, and switch between diagram sheets. Double-click a tab to rename it. To move devices to another sheet, cut them (<kbd>Ctrl+X</kbd>), switch sheets, and paste (<kbd>Ctrl+V</kbd>). Use off-page connectors to link electrical connections across pages — connectors with the same label are electrically joined.</p>
 
           <h4>Bus Resizing</h4>
           <p>Hover over a bus to reveal resize handles on each end. Drag the handles to make the bus wider or narrower. Connection ports are automatically added as the bus grows — one top/bottom pair per 40px of width. Edge ports (left/right) are available for bus tie breaker connections.</p>
@@ -1687,8 +1742,8 @@
         </div>
 
         <div class="help-content" id="help-tab-arcflash" style="display:none">
-          <h4>Arc Flash Analysis (IEEE 1584-2018)</h4>
-          <p>Calculates arc flash hazard at each bus per IEEE 1584-2018 and classifies PPE requirements per NFPA 70E.</p>
+          <h4>Arc Flash Analysis (IEEE 1584-2002)</h4>
+          <p>Calculates arc flash hazard at each bus per IEEE 1584-2002 and classifies PPE requirements per NFPA 70E.</p>
 
           <h4>What is Calculated</h4>
           <ul>
@@ -1737,7 +1792,7 @@
             <li><strong>De-energize</strong> — For Category 4 or DANGER, de-energize before work per NFPA 70E §130.2.</li>
           </ol>
 
-          <h4>IEEE 1584-2018 Applicability</h4>
+          <h4>IEEE 1584-2002 Applicability</h4>
           <p>Valid for: 208V to 15kV, 3-phase, 50/60 Hz, bolted fault current 500A to 106kA, gaps 6.35 to 76.2mm. For voltages &gt;15kV, the Ralph Lee theoretical model is used. Below 240V with fault current &lt;500A, arc flash hazard is generally minimal.</p>
 
           <h4>DC Arc Flash Analysis</h4>
@@ -1774,6 +1829,8 @@
               <tr><td><kbd>Ctrl+Shift+G</kbd></td><td>Ungroup selected components</td></tr>
               <tr><td><kbd>Space + Drag</kbd></td><td>Pan the canvas</td></tr>
               <tr><td><kbd>Scroll Wheel</kbd></td><td>Zoom in/out</td></tr>
+              <tr><td><kbd>Ctrl+=</kbd> / <kbd>Ctrl+-</kbd></td><td>Zoom in / out</td></tr>
+              <tr><td><kbd>Arrow Keys</kbd></td><td>Nudge selection by one grid unit (Shift = 5 units)</td></tr>
             </tbody>
           </table>
         </div>
@@ -1783,7 +1840,7 @@
   </div>
 
   <!-- Print Layout Modal -->
-  <div id="print-modal" class="modal" style="display:none">
+  <div id="print-modal" class="modal" role="dialog" aria-modal="true" aria-label="Print Layout" style="display:none">
     <div class="modal-content" style="min-width:560px;max-width:800px;">
       <div class="modal-header">
         <h3>Print / Page Layout</h3>
@@ -1843,6 +1900,7 @@
   <!-- Scripts -->
   <script src="js/lib/jspdf.umd.min.js"></script>
   <script src="js/lib/jspdf.plugin.autotable.min.js"></script>
+  <script src="js/lib/xlsx.full.min.js"></script>
   <script src="js/constants.js"></script>
   <script src="js/state.js"></script>
   <script src="js/components.js"></script>
@@ -1863,6 +1921,8 @@
   <script src="js/undo.js"></script>
   <script src="js/revisions.js"></script>
   <script src="js/minimap.js"></script>
+  <script src="js/contextmenu.js"></script>
+  <script src="js/dbschedule.js"></script>
   <script src="js/app.js"></script>
   <script src="js/mobile.js"></script>
 </body>

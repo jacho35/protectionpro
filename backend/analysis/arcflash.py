@@ -1,20 +1,29 @@
-"""Arc flash analysis per IEEE 1584-2018.
+"""Arc flash analysis per IEEE 1584-2002.
 
-Implements the IEEE 1584-2018 empirical model for calculating:
-- Arcing current (kA) — Eq. 1-4
-- Incident energy (cal/cm²) — Eq. 5-8
-- Arc flash boundary (mm) — Eq. 9-12
+Implements the IEEE 1584-2002 empirical model for calculating:
+- Arcing current (kA) — Eq. 1 & 2
+- Incident energy (cal/cm²) — Eq. 3-6
+- Arc flash boundary (mm)
 - PPE category per NFPA 70E Table 130.7(C)(15)(a)
 
 References:
-- IEEE 1584-2018 "Guide for Performing Arc-Flash Hazard Calculations"
-- NFPA 70E-2021 "Standard for Electrical Safety in the Workplace"
+- IEEE 1584-2002 "Guide for Performing Arc-Flash Hazard Calculations"
+- NFPA 70E "Standard for Electrical Safety in the Workplace"
 
-Valid ranges (IEEE 1584-2018 §4.2):
+Note: this engine implements the 2002 edition, NOT IEEE 1584-2018.
+The 2018 electrode-configuration machinery (VCBB/HCB-specific
+coefficients, intermediate arcing currents at 600 V / 2700 V / 14.3 kV
+with interpolation, enclosure-size correction) is not implemented.
+Electrode configuration is used only to distinguish open-air (VOA/HOA)
+from enclosed (VCB/VCBB/HCB) equipment, which is the granularity the
+2002 model supports (its K1 "open air" vs "box" factor).
+
+Valid ranges (IEEE 1584-2002 §1.2):
   - Voltage: 208V to 15,000V (3-phase)
   - Frequency: 50/60 Hz
-  - Bolted fault current: 500A to 106,000A
-  - Gap between conductors: 6.35mm to 76.2mm
+  - Bolted fault current: 700A to 106,000A
+  - Gap between conductors: 13mm to 152mm (empirical model derivation;
+    incident-energy normalisation per Eq. 3 is bounded 6.35-76.2mm)
   - Working distance: ≥ 305mm
   - Fault clearing time: up to 2 seconds
 """
@@ -22,30 +31,6 @@ Valid ranges (IEEE 1584-2018 §4.2):
 import math
 from dataclasses import dataclass, field
 
-
-# ─── IEEE 1584-2018 Electrode Configuration Constants ───
-# Table 1: Coefficients for arcing current calculation (Eq. 1)
-# Table 3: Coefficients for incident energy calculation (Eq. 5)
-# Configurations: VCB, VCBB, HCB, VOA, HOA
-# V=Vertical, H=Horizontal, CB=in Cubic Box, OA=Open Air
-
-_IARC_COEFFS = {
-    # (k1, k2, k3, k4, k5, k6, k7, k8, k9, k10)
-    "VCB":  (0.753364, 0.566, 1.752636, -0.000776, 0, -0.002672, 0.000025, -1.598128, 0, 0.000063),
-    "VCBB": (0.753364, 0.566, 1.752636, -0.000776, 0, -0.002672, 0.000025, -1.598128, 0, 0.000063),
-    "HCB":  (0.753364, 0.566, 1.752636, -0.000776, 0, -0.002672, 0.000025, -1.598128, 0, 0.000063),
-    "VOA":  (0.753364, 0.566, 1.752636, -0.000776, 0, -0.002672, 0.000025, -1.598128, 0, 0.000063),
-    "HOA":  (0.753364, 0.566, 1.752636, -0.000776, 0, -0.002672, 0.000025, -1.598128, 0, 0.000063),
-}
-
-# Simplified box correction factors per electrode configuration (IEEE 1584-2018 Table 9)
-_BOX_FACTORS = {
-    "VCB":  1.0,
-    "VCBB": 1.0,
-    "HCB":  1.0,
-    "VOA":  1.0,
-    "HOA":  1.0,
-}
 
 # Typical gap between conductors (mm) by voltage level
 _TYPICAL_GAP = {
@@ -63,8 +48,11 @@ _TYPICAL_GAP = {
 }
 
 # NFPA 70E PPE categories (cal/cm²)
+# Note: "Category 0" was removed from NFPA 70E in the 2015 edition;
+# below 1.2 cal/cm² no arc-rated PPE is required. The numeric category
+# value 0 is retained for API compatibility.
 PPE_CATEGORIES = [
-    (0, 1.2, 0, "Category 0", "No PPE required"),
+    (0, 1.2, 0, "No arc-rated PPE required", "Below 1.2 cal/cm² — no arc-rated PPE required (NFPA 70E)"),
     (1.2, 4.0, 1, "Category 1", "Arc-rated shirt, pants, safety glasses"),
     (4.0, 8.0, 2, "Category 2", "Arc-rated shirt, pants, flash suit hood, hard hat"),
     (8.0, 25.0, 3, "Category 3", "Arc flash suit, hard hat, balaclava"),
@@ -122,7 +110,7 @@ class ArcFlashBusResult:
 class ArcFlashResults:
     """Complete arc flash analysis results."""
     buses: dict  # bus_id -> ArcFlashBusResult
-    method: str = "IEEE 1584-2018"
+    method: str = "IEEE 1584-2002"
     warnings: list = field(default_factory=list)
 
 
@@ -149,7 +137,7 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
     ibf = max(ibf_ka, 0.01)  # kA
     log_ibf = math.log10(ibf)
 
-    if voc_kv < 1.0:
+    if voc_kv <= 1.0:
         # Low voltage model (IEEE 1584-2002 Eq. 1)
         # K = -0.153 for open air, -0.097 for enclosed
         K = -0.153 if config in ("VOA", "HOA") else -0.097
@@ -170,7 +158,7 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
 
     # Reduced arcing current variation factor (IEEE 1584-2002 §5.5)
     # For variation study: use 85% for LV, 90% for MV
-    if voc_kv < 1.0:
+    if voc_kv <= 1.0:
         iarc_reduced = iarc * 0.85
     else:
         iarc_reduced = iarc * 0.90
@@ -199,8 +187,10 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
         t_arc_s: Arc duration / clearing time (seconds)
         gap_mm: Conductor gap (mm)
         dist_mm: Working distance (mm)
-        config: Electrode configuration
-        enclosure_mm: Enclosure width/depth (mm) — not used in 2002 model
+        config: Electrode configuration (open air vs enclosed only)
+        enclosure_mm: Enclosure width/depth (mm) — accepted for API
+            compatibility but UNUSED: the 2002 model has no
+            enclosure-size correction (that is a 1584-2018 feature)
 
     Returns:
         Incident energy in cal/cm²
@@ -217,16 +207,20 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
     log_en = K1 + K2 + 1.081 * math.log10(iarc_ka) + 0.0011 * gap_mm
     en = 10 ** log_en  # J/cm²
 
-    # Cf: calculation factor for voltage
-    cf = 1.0 if voc_kv < 1.0 else 1.5
+    # Cf: calculation factor for voltage (IEEE 1584-2002 Eq. 6: 1.5 for ≤1kV, 1.0 above)
+    cf = 1.5 if voc_kv <= 1.0 else 1.0
 
     # Distance exponent x (IEEE 1584-2002 Table 4)
+    # The 2002 table is keyed by equipment class; the conductor gap
+    # already encodes that class (25mm LV MCC/panel, 32mm LV switchgear,
+    # 102/153mm MV switchgear) so it is reused as the signal here.
     if config in ("VOA", "HOA"):
-        x_factor = 2.0  # Open air
-    elif voc_kv < 1.0:
-        x_factor = 1.641  # Low voltage enclosed
+        x_factor = 2.0  # Open air (all voltages)
+    elif voc_kv <= 1.0:
+        # LV enclosed: switchgear (gap ≥ 32mm) x=1.473; MCC/panel x=1.641
+        x_factor = 1.473 if gap_mm >= 32 else 1.641
     else:
-        x_factor = 2.0  # Medium voltage enclosed
+        x_factor = 0.973  # MV enclosed (5/15 kV switchgear)
 
     # Scale to actual time and distance (IEEE 1584-2002 Eq. 5)
     # E = 4.184 × Cf × En × (t/0.2) × (610/D)^x  → in J/cm²
@@ -241,7 +235,7 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
 def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
                             config="VCB", enclosure_mm=508,
                             threshold_cal=1.2):
-    """Calculate arc flash boundary distance per IEEE 1584-2018.
+    """Calculate arc flash boundary distance per IEEE 1584-2002.
 
     The arc flash boundary is the distance where incident energy
     equals the threshold (default 1.2 cal/cm² per NFPA 70E).
@@ -252,7 +246,7 @@ def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
         t_arc_s: Arc duration (seconds)
         gap_mm: Conductor gap (mm)
         config: Electrode configuration
-        enclosure_mm: Enclosure width (mm)
+        enclosure_mm: Enclosure width (mm) — unused in the 2002 model
         threshold_cal: Energy threshold (cal/cm²)
 
     Returns:
@@ -275,45 +269,101 @@ def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
     return round((low + high) / 2, 0)
 
 
-def get_clearing_time(bus, components, adjacency):
-    """Estimate fault clearing time from protection devices connected to bus.
+# Source component types — used to identify the upstream (source) side of a bus
+_SOURCE_TYPES = {"utility", "generator", "solar_pv", "wind_turbine"}
 
-    Looks for CBs/fuses directly connected and uses their trip time
-    at the bolted fault current level. Falls back to 2.0s (max).
+
+def _leads_to_source(start_id, bus_id, components, adjacency):
+    """Return True if a source is reachable from start_id without passing
+    back through bus_id (i.e. the component sits on the source side of the bus)."""
+    visited = {bus_id, start_id}
+    stack = [start_id]
+    while stack:
+        nid = stack.pop()
+        comp = components.get(nid)
+        if not comp:
+            continue
+        if comp.type in _SOURCE_TYPES:
+            return True
+        # An open CB/switch carries no fault current — it cannot connect the
+        # bus to a source, so do not traverse through it (mirrors fault.py).
+        if comp.type in ("cb", "switch") and comp.props.get("state") == "open":
+            continue
+        for neighbor_id, _, _ in adjacency.get(nid, []):
+            if neighbor_id not in visited:
+                visited.add(neighbor_id)
+                stack.append(neighbor_id)
+    return False
+
+
+def get_clearing_time(bus, components, adjacency, iarc_ka=None):
+    """Estimate fault clearing time from upstream protection devices.
+
+    Only devices on the source side of the bus are considered — a
+    downstream feeder breaker carries no bus-fault current and cannot
+    clear a bus fault. A device is treated as upstream when a source
+    (utility/generator/PV/wind) is reachable from it without passing
+    back through the faulted bus.
+
+    Conservative assumption: with multiple upstream infeeds the arc is
+    fed until the SLOWEST upstream device clears, so the maximum
+    clearing time across upstream devices is used.
+
+    For CBs the instantaneous pickup threshold is compared against the
+    arcing current (iarc_ka, primary amps at the bus voltage) to choose
+    between instantaneous and time-delayed tripping. The time-delayed
+    estimate from long_time_delay buckets is a crude heuristic; a proper
+    evaluation of the device TCC at Iarc (IEEE 1584 §4.5) is not
+    implemented. Falls back to 2.0s (IEEE 1584 maximum) when no upstream
+    device is found.
     """
-    # Find protection devices connected to this bus
-    best_time = 2.0  # Maximum clearing time per IEEE 1584
+    upstream_times = []
+    iarc_a = (iarc_ka or 0) * 1000
 
     neighbors = adjacency.get(bus.id, [])
     for neighbor_id, _, _ in neighbors:
         comp = components.get(neighbor_id)
-        if not comp:
+        if not comp or comp.type not in ("cb", "fuse", "relay"):
+            continue
+        # An open device carries no fault current and cannot clear the bus fault
+        if comp.props.get("state") == "open":
+            continue
+        # Skip downstream feeder devices — they do not clear a bus fault
+        if not _leads_to_source(neighbor_id, bus.id, components, adjacency):
             continue
         if comp.type == "cb":
-            # Estimate trip time based on CB settings
+            # Compare arcing current against the instantaneous pickup
             trip_rating = float(comp.props.get("trip_rating_a", 630))
             magnetic_pickup = float(comp.props.get("magnetic_pickup", 10))
-            inst_threshold = trip_rating * magnetic_pickup
-            # If fault exceeds instantaneous threshold, use fast clearing
-            # Otherwise use long-time delay
-            lt_delay = float(comp.props.get("long_time_delay", 10))
-            if lt_delay <= 5:
+            inst_threshold = trip_rating * magnetic_pickup  # primary amps
+            if iarc_a > 0 and iarc_a >= inst_threshold:
+                # Instantaneous trip incl. breaker operating time
                 t = 0.05
-            elif lt_delay <= 10:
-                t = 0.1
             else:
-                t = 0.3
-            best_time = min(best_time, t)
+                # Below instantaneous pickup: time-delayed trip estimated
+                # from the long-time delay setting (crude bucket heuristic)
+                lt_delay = float(comp.props.get("long_time_delay", 10))
+                if lt_delay <= 5:
+                    t = 0.5
+                elif lt_delay <= 10:
+                    t = 1.0
+                else:
+                    t = 2.0
+            upstream_times.append(t)
         elif comp.type == "fuse":
             # Fuse typically clears in < 0.01s for high fault currents
-            rating = float(comp.props.get("rated_amps", 100))
-            best_time = min(best_time, 0.02)
+            # (current-limiting region); 20ms is a conservative estimate
+            upstream_times.append(0.02)
         elif comp.type == "relay":
             # Use TDS to estimate clearing time
             tds = float(comp.props.get("tds", 1.0))
-            best_time = min(best_time, tds * 0.1 + 0.08)  # Relay + CB time
+            upstream_times.append(tds * 0.1 + 0.08)  # Relay + CB time
 
-    return best_time
+    if not upstream_times:
+        return 2.0  # Maximum clearing time per IEEE 1584
+
+    # Slowest upstream device governs (conservative for multi-infeed buses)
+    return min(max(upstream_times), 2.0)
 
 
 def run_arc_flash(project_data, fault_results):
@@ -358,33 +408,42 @@ def run_arc_flash(project_data, fault_results):
 
         ibf_ka = fault_bus.ik3  # 3-phase bolted fault current
 
-        # Validate IEEE 1584 applicability
-        warn = ""
+        gap_mm = _get_gap(voltage_kv)
+
+        # Validate IEEE 1584 applicability — collect all warnings (not just the last)
+        validity_warnings = []
         ibf_a = ibf_ka * 1000
         if ibf_a < 500:
-            warn = "Below IEEE 1584 range (< 500A)"
+            validity_warnings.append("Below IEEE 1584 range (< 500A)")
         elif ibf_a > 106000:
-            warn = "Above IEEE 1584 range (> 106kA)"
+            validity_warnings.append("Above IEEE 1584 range (> 106kA)")
         if voltage_kv > 15:
-            warn = f"Voltage {voltage_kv}kV exceeds IEEE 1584 range (≤ 15kV)"
+            validity_warnings.append(f"Voltage {voltage_kv}kV exceeds IEEE 1584 range (≤ 15kV)")
         if voltage_kv < 0.208:
-            warn = f"Voltage {voltage_kv}kV below IEEE 1584 range (≥ 208V)"
-
-        gap_mm = _get_gap(voltage_kv)
+            validity_warnings.append(f"Voltage {voltage_kv}kV below IEEE 1584 range (≥ 208V)")
+        if gap_mm < 6.35 or gap_mm > 76.2:
+            validity_warnings.append(
+                f"Gap {gap_mm}mm outside IEEE 1584-2002 incident-energy model "
+                "range (6.35-76.2mm) — results extrapolated"
+            )
+        warn = "; ".join(validity_warnings)
 
         # Calculate arcing current
         iarc, iarc_reduced = calc_arcing_current(ibf_ka, voltage_kv, gap_mm,
                                                   electrode_config)
 
-        # Estimate clearing time from protection devices
-        t_clear = get_clearing_time(bus, components, adjacency)
+        # Estimate clearing time from upstream protection devices,
+        # using the arcing current to resolve instantaneous vs delayed trips
+        t_clear = get_clearing_time(bus, components, adjacency, iarc)
 
         # Incident energy at working distance
         e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
                                      working_dist, electrode_config, enclosure_mm)
 
-        # Reduced arcing current check (longer clearing time for reduced current)
-        # Reduced current may result in slower protection, yielding higher energy
+        # Reduced arcing current check: the lower current may sit below
+        # instantaneous pickups, slowing protection. Lacking full TCC
+        # evaluation at the reduced current, t × 1.5 is applied as a
+        # conservative assumption (capped at the 2s IEEE 1584 maximum).
         t_clear_reduced = min(t_clear * 1.5, 2.0)
         e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
                                               t_clear_reduced, gap_mm,
@@ -394,9 +453,15 @@ def run_arc_flash(project_data, fault_results):
         # Use worst case (higher energy)
         e_worst = max(e_cal, e_cal_reduced)
 
-        # Arc flash boundary
-        afb = calc_arc_flash_boundary(iarc, voltage_kv, t_clear, gap_mm,
-                                      electrode_config, enclosure_mm)
+        # Arc flash boundary — evaluate for both the full and reduced arcing
+        # current (the reduced current clears more slowly, so it can push the
+        # boundary further out) and report the worst (largest) distance.
+        afb_full = calc_arc_flash_boundary(iarc, voltage_kv, t_clear, gap_mm,
+                                           electrode_config, enclosure_mm)
+        afb_reduced = calc_arc_flash_boundary(iarc_reduced, voltage_kv,
+                                              t_clear_reduced, gap_mm,
+                                              electrode_config, enclosure_mm)
+        afb = max(afb_full, afb_reduced)
 
         # PPE category
         ppe_cat, ppe_name, ppe_desc = _get_ppe(e_worst)
@@ -561,6 +626,6 @@ PPE: {ppe_name}
 {ppe_desc}
 Bolted Fault: {ibf_ka:.1f} kA
 Clearing Time: {t_clear:.3f} s
-Method: IEEE 1584-2018"""
+Method: IEEE 1584-2002"""
 
     return label

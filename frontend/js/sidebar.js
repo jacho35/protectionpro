@@ -9,8 +9,33 @@ const Sidebar = {
   init() {
     this.paletteEl = document.getElementById('palette');
     this.searchEl = document.getElementById('component-search');
+    this.ribbonEl = document.getElementById('component-ribbon');
     this.renderPalette();
+    this.renderRibbon();
     this.bindEvents();
+  },
+
+  // Compact horizontal palette shown below the toolbar (View → Component
+  // Ribbon). Icon-only items, grouped by category; same drag-drop as the
+  // sidebar (items share the .palette-item class and data-type).
+  renderRibbon() {
+    if (!this.ribbonEl) return;
+    let html = '';
+    for (const cat of COMPONENT_CATEGORIES) {
+      const items = cat.items.filter(type => COMPONENT_DEFS[type]);
+      if (items.length === 0) continue;
+      html += `
+        <div class="ribbon-group">
+          <div class="ribbon-group-items">
+            ${items.map(type => `
+              <div class="palette-item ribbon-item" data-type="${type}" draggable="true" title="${COMPONENT_DEFS[type].name}">
+                ${Symbols.renderPaletteIcon(type)}
+              </div>`).join('')}
+          </div>
+          <div class="ribbon-group-label">${cat.name}</div>
+        </div>`;
+    }
+    this.ribbonEl.innerHTML = html;
   },
 
   renderPalette(filter = '') {
@@ -68,29 +93,33 @@ const Sidebar = {
       }
     });
 
-    // Drag start from palette
-    this.paletteEl.addEventListener('dragstart', (e) => {
-      const item = e.target.closest('.palette-item');
-      if (!item) return;
-      this.dragType = item.dataset.type;
-      e.dataTransfer.setData('text/plain', this.dragType);
-      e.dataTransfer.effectAllowed = 'copy';
+    // Drag start from palette (sidebar) and from the component ribbon —
+    // both render .palette-item elements with data-type
+    const dragContainers = [this.paletteEl, this.ribbonEl].filter(Boolean);
+    for (const container of dragContainers) {
+      container.addEventListener('dragstart', (e) => {
+        const item = e.target.closest('.palette-item');
+        if (!item) return;
+        this.dragType = item.dataset.type;
+        e.dataTransfer.setData('text/plain', this.dragType);
+        e.dataTransfer.effectAllowed = 'copy';
 
-      // Create custom drag ghost
-      this.dragGhost = document.createElement('div');
-      this.dragGhost.className = 'drag-ghost';
-      this.dragGhost.innerHTML = Symbols.renderPaletteIcon(this.dragType);
-      document.body.appendChild(this.dragGhost);
-      e.dataTransfer.setDragImage(this.dragGhost, 16, 16);
-    });
+        // Create custom drag ghost
+        this.dragGhost = document.createElement('div');
+        this.dragGhost.className = 'drag-ghost';
+        this.dragGhost.innerHTML = Symbols.renderPaletteIcon(this.dragType);
+        document.body.appendChild(this.dragGhost);
+        e.dataTransfer.setDragImage(this.dragGhost, 16, 16);
+      });
 
-    this.paletteEl.addEventListener('dragend', () => {
-      if (this.dragGhost) {
-        this.dragGhost.remove();
-        this.dragGhost = null;
-      }
-      this.dragType = null;
-    });
+      container.addEventListener('dragend', () => {
+        if (this.dragGhost) {
+          this.dragGhost.remove();
+          this.dragGhost = null;
+        }
+        this.dragType = null;
+      });
+    }
 
     // Drop target: the SVG canvas
     const canvasContainer = document.getElementById('canvas-container');

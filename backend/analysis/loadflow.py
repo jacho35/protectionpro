@@ -7,7 +7,8 @@ using per-unit system on a common MVA base.
 import math
 import numpy as np
 from ..models.schemas import (
-    ProjectData, LoadFlowResults, LoadFlowBus, LoadFlowBranch, LoadFlowWarning
+    ProjectData, LoadFlowResults, LoadFlowBus, LoadFlowBranch, LoadFlowWarning,
+    DispatchEntry,
 )
 
 
@@ -115,6 +116,574 @@ def _find_components_at_bus(bus_id, adjacency, components):
     return found
 
 
+# ── Generation dispatch (merit order) ───────────────────────────────
+#
+# Sources carry three optional props:
+#   dispatch_priority — merit order, 1 = dispatched first (defaults below)
+#   dispatch_mode     — "must_run" (always inject full available output,
+#                       the historical behaviour) or "merit_order"
+#                       (dispatched only up to remaining island demand)
+#   allow_export      — utility only: "yes" lets the swing absorb excess
+#                       generation (export); "no" curtails instead
+#
+# Within each electrical island the source with the HIGHEST priority
+# number acts as the balancer (slack): utility by default, else a
+# generator, else an inverter source. Islands with no source are
+# reported de-energized instead of making the whole solve singular.
+
+DEFAULT_DISPATCH_PRIORITY = {"solar_pv": 1, "wind_turbine": 1, "generator": 2, "utility": 3}
+_BALANCER_TYPE_RANK = {"utility": 3, "generator": 2, "wind_turbine": 1, "solar_pv": 0}
+DISPATCHABLE_SOURCE_TYPES = ("generator", "solar_pv", "wind_turbine")
+
+
+def _fmt_power_mw(mw):
+    """Format a MW quantity with adaptive units (kW below 1 MW)."""
+    if abs(mw) < 1.0:
+        return f"{mw * 1000:.0f} kW"
+    return f"{mw:.2f} MW"
+
+
+def _dispatch_priority(comp):
+    try:
+        p = float(comp.props.get("dispatch_priority", 0) or 0)
+    except (TypeError, ValueError):
+        p = 0
+    return p if p > 0 else DEFAULT_DISPATCH_PRIORITY.get(comp.type, 2)
+
+
+_DEFAULT_DISPATCH_MODE = {"generator": "standby"}  # others default to must_run
+
+
+def _dispatch_mode(comp):
+    default = _DEFAULT_DISPATCH_MODE.get(comp.type, "must_run")
+    mode = str(comp.props.get("dispatch_mode", default) or default)
+    return mode if mode in ("must_run", "merit_order", "standby") else default
+
+
+def _utility_allows_export(util):
+    return str(util.props.get("allow_export", "yes")).lower() != "no"
+
+
+def _gen_control(comp):
+    """Paralleling scheme: 'droop' (rating-proportional sharing, historical)
+    or 'sequential' (load-demand start: lead set fully loaded before the
+    next starts, DSE/ComAp controller style)."""
+    mode = str(comp.props.get("gen_control", "droop") or "droop")
+    return mode if mode in ("droop", "sequential") else "droop"
+
+
+def _start_threshold(comp):
+    """Load-demand start threshold, % of running capacity (default 90)."""
+    try:
+        pct = float(comp.props.get("start_threshold_pct", 90) or 90)
+    except (TypeError, ValueError):
+        pct = 90.0
+    return max(50.0, min(100.0, pct))
+
+
+def _gen_min_load_mw(comp):
+    """Minimum running load for a generator, MW (wet-stacking floor).
+
+    Diesel sets running below ~30% of rating for extended periods suffer
+    wet stacking; manufacturers recommend 30-35% minimum and NFPA 110
+    exercises at >=30% of nameplate. Settable via min_load_pct (default 30)."""
+    if comp.type != "generator":
+        return 0.0
+    try:
+        pct = float(comp.props.get("min_load_pct", 30) or 0)
+    except (TypeError, ValueError):
+        pct = 30.0
+    rated = comp.props.get("rated_mva", 10)
+    pf = comp.props.get("power_factor", 0.85)
+    return rated * pf * max(0.0, min(100.0, pct)) / 100.0
+
+
+def _utility_supply_capacity(util):
+    """Utility supply capacity in MVA; 0 = unlimited (infinite bus)."""
+    try:
+        return float(util.props.get("supply_capacity_mva", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _source_connection_bus(src, adjacency, components, bus_idx):
+    """Nearest bus reachable from a source through closed elements.
+
+    Walks through cables/transformers/transparent devices, blocked by open
+    CBs/switches. Returns a bus id, or None if the source is disconnected."""
+    visited = {src.id}
+    queue = list(adjacency.get(src.id, []))
+    while queue:
+        nid = queue.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        if nid in bus_idx:
+            return nid
+        comp = components.get(nid)
+        if not comp:
+            continue
+        if comp.type in ("cb", "switch") and comp.props.get("state", "closed") == "open":
+            continue  # Open device blocks the path
+        for nb in adjacency.get(nid, []):
+            if nb not in visited:
+                queue.append(nb)
+    return None
+
+
+def _compute_islands(n, bus_idx, branch_pairs):
+    """Union-find over bus indices; returns island id per bus index."""
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for a, b in branch_pairs:
+        ra, rb = find(bus_idx[a]), find(bus_idx[b])
+        if ra != rb:
+            parent[ra] = rb
+
+    island_of = {}
+    island_ids = {}
+    for i in range(n):
+        root = find(i)
+        island_ids.setdefault(root, len(island_ids) + 1)
+        island_of[i] = island_ids[root]
+    return island_of
+
+
+def plan_dispatch(project, components, adjacency, bus_idx, buses,
+                  branch_pairs, bus_load_p_mw, loss_adders=None):
+    """Island detection, per-island swing selection, and merit-order dispatch.
+
+    bus_load_p_mw: per-bus-index total load MW (positive = consumption).
+    loss_adders: optional {island_number: MW} added to that island's demand —
+    used by the loss-compensation pass so curtailed sources also cover the
+    measured network losses instead of leaving them on a no-export utility.
+
+    Returns dict with:
+      swing_idx     — set of bus indices to run as Swing
+      dead_idx      — set of bus indices in de-energized (sourceless) islands
+      injections    — {bus_index: [p_mw, q_mvar]} dispatched output of
+                      non-balancer direct sources (to add to P_spec/Q_spec)
+      dispatched_by_comp — {comp_id: (p_mw, q_mvar)} same data per source
+      entries       — list of dicts for the DispatchEntry results table
+                      (balancer output is filled in post-solve by the caller)
+      warnings      — list of LoadFlowWarning
+      island_of     — {bus_index: island number}
+    """
+    n = len(buses)
+    island_of = _compute_islands(n, bus_idx, branch_pairs)
+    warnings = []
+    entries = []
+    injections = {}
+    dispatched_by_comp = {}
+    swing_idx = set()
+    dead_idx = set()
+
+    # ── Locate every source's connection bus ──
+    # Direct sources (reachable through transparent elements only) can be
+    # dispatched via P_spec. Sources behind a cable/transformer only anchor
+    # the island's reference (matching the historical utility-behind-TX
+    # promotion); their output is recovered from the slack solution.
+    direct_src_bus = {}   # comp_id -> bus_index
+    for bus in buses:
+        for comp in _find_components_at_bus(bus.id, adjacency, components):
+            if comp.type in DISPATCHABLE_SOURCE_TYPES or comp.type == "utility":
+                direct_src_bus.setdefault(comp.id, bus_idx[bus.id])
+
+    island_sources = {}   # island -> list of (comp, bus_index, direct)
+    for comp in project.components:
+        if comp.type not in DISPATCHABLE_SOURCE_TYPES and comp.type != "utility":
+            continue
+        if comp.id in direct_src_bus:
+            bi = direct_src_bus[comp.id]
+            direct = True
+        else:
+            conn = _source_connection_bus(comp, adjacency, components, bus_idx)
+            if conn is None:
+                entries.append({
+                    "source_id": comp.id,
+                    "source_name": str(comp.props.get("name", comp.type)),
+                    "source_type": comp.type, "bus_id": "", "island": 0,
+                    "priority": _dispatch_priority(comp), "mode": _dispatch_mode(comp),
+                    "role": "offline",
+                    "available_mw": round(_source_output_mva(comp)[0], 4),
+                    "dispatched_mw": 0.0, "curtailed_mw": 0.0,
+                })
+                continue  # Disconnected (e.g. behind an open CB)
+            bi = bus_idx[conn]
+            direct = False
+        island_sources.setdefault(island_of[bi], []).append((comp, bi, direct))
+
+    user_swing_islands = {}
+    for bus in buses:
+        if bus.props.get("bus_type", "PQ") == "Swing":
+            user_swing_islands.setdefault(island_of[bus_idx[bus.id]], bus_idx[bus.id])
+
+    # ── Per-island swing selection and dispatch ──
+    islands = sorted({island_of[i] for i in range(n)})
+    for isl in islands:
+        isl_buses = [i for i in range(n) if island_of[i] == isl]
+        sources = island_sources.get(isl, [])
+        utilities = [(c, bi, d) for c, bi, d in sources if c.type == "utility"]
+
+        if not sources:
+            if isl in user_swing_islands:
+                # User-forced swing with no modelled source — honour it
+                swing_idx.add(user_swing_islands[isl])
+            else:
+                dead_idx.update(isl_buses)
+                _bname = buses[isl_buses[0]].props.get("name", buses[isl_buses[0]].id)
+                warnings.append(LoadFlowWarning(
+                    elementId=buses[isl_buses[0]].id,
+                    element_name=str(_bname),
+                    message=(f"Island containing bus '{_bname}' has no connected "
+                             "source — reported de-energized (0 V)."),
+                ))
+            continue
+
+        demand_mw = (sum(bus_load_p_mw[i] for i in isl_buses)
+                     + (loss_adders or {}).get(isl, 0.0))
+
+        # ── Sequential generator commitment (load-demand start) ──
+        # Islanded sets with gen_control='sequential' commit in dispatch_priority
+        # order: the lead set runs first; the next starts only when the running
+        # capacity utilisation would exceed the start threshold. Committed sets
+        # before the last run FIXED at full output; the last committed set is
+        # the island balancer (slack). Uncommitted sets are OFF.
+        # (Grid-tied sequential sets keep their dispatch_mode behaviour —
+        # 'standby' already fills shortfall in priority order.)
+        seq_gens = sorted(
+            [(c, bi, d) for c, bi, d in sources
+             if c.type == "generator" and _gen_control(c) == "sequential"],
+            key=lambda e: (_dispatch_priority(e[0]), str(e[0].props.get("name", e[0].id))))
+        seq_balancer_entry = None
+        seq_fixed = []     # committed, non-last: fixed-output entries
+        seq_off = []       # uncommitted entries
+        seq_fixed_target = {}  # comp_id -> fixed MW (fill-first allocation)
+        if seq_gens and not utilities:
+            renewable_mw = sum(
+                _source_output_mva(c)[0] for c, _bi, d in sources
+                if d and c.type in ("solar_pv", "wind_turbine"))
+            gen_borne = max(0.0, demand_mw - renewable_mw)
+            committed = [seq_gens[0]]   # lead set always runs (island slack)
+            for entry in seq_gens[1:]:
+                cap = sum(_source_output_mva(c)[0] for c, _b, _d in committed)
+                thr = _start_threshold(committed[-1][0])
+                if gen_borne > cap * thr / 100.0:
+                    committed.append(entry)
+                    warnings.append(LoadFlowWarning(
+                        elementId=entry[0].id,
+                        element_name=str(entry[0].props.get("name", entry[0].type)),
+                        message=(f"Set '{entry[0].props.get('name', entry[0].id)}' brought "
+                                 f"online — running capacity exceeded the {thr:.0f}% "
+                                 "start threshold."),
+                    ))
+                else:
+                    seq_off.append(entry)
+            seq_balancer_entry = committed[-1]
+            seq_fixed = committed[:-1]
+            # Fill-first sharing with a floor for the balancing set: earlier
+            # sets take as much as possible, but leave the last-committed set
+            # at least its minimum load (so a set brought online just past
+            # the threshold doesn't backfeed — the lead set backs off instead)
+            avail_for_fixed = max(0.0, gen_borne - min(
+                _source_output_mva(seq_balancer_entry[0])[0],
+                _gen_min_load_mw(seq_balancer_entry[0])) if seq_fixed else gen_borne)
+            for c, _b, _d in seq_fixed:
+                rated = _source_output_mva(c)[0]
+                seq_fixed_target[c.id] = min(rated, avail_for_fixed)
+                avail_for_fixed = max(0.0, avail_for_fixed - seq_fixed_target[c.id])
+            if seq_off:
+                held = ", ".join(f"'{e[0].props.get('name', e[0].id)}'" for e in seq_off)
+                warnings.append(LoadFlowWarning(
+                    elementId=seq_off[0][0].id,
+                    element_name=str(seq_off[0][0].props.get("name", "generator")),
+                    message=(f"Sequence set(s) {held} held off — committed capacity "
+                             "covers the island demand."),
+                ))
+
+        # Balancer: highest dispatch priority number; ties broken by type
+        # (utility > generator > wind > solar) then largest available output.
+        def _balancer_key(entry):
+            comp = entry[0]
+            return (_dispatch_priority(comp),
+                    _BALANCER_TYPE_RANK.get(comp.type, 0),
+                    _source_output_mva(comp)[0] if comp.type != "utility" else float("inf"))
+
+        if utilities:
+            balancers = utilities
+        elif seq_balancer_entry is not None:
+            balancers = [seq_balancer_entry]
+        else:
+            balancers = [max(sources, key=_balancer_key)]
+        balancer_ids = {c.id for c, _bi, _d in balancers}
+
+        for comp, bi, _d in balancers:
+            swing_idx.add(bi)
+        if not utilities and isl in user_swing_islands:
+            # No utility: a user-labelled Swing bus overrides source choice
+            swing_idx -= {bi for _c, bi, _d in balancers}
+            swing_idx.add(user_swing_islands[isl])
+
+        bcomp = balancers[0][0]
+        if not utilities and bcomp.type == "generator":
+            warnings.append(LoadFlowWarning(
+                elementId=bcomp.id,
+                element_name=str(bcomp.props.get("name", bcomp.type)),
+                message=(f"Island without utility — generator "
+                         f"'{bcomp.props.get('name', bcomp.id)}' acts as the "
+                         "reference (slack) source."),
+            ))
+        elif not utilities and bcomp.type in ("solar_pv", "wind_turbine"):
+            warnings.append(LoadFlowWarning(
+                elementId=bcomp.id,
+                element_name=str(bcomp.props.get("name", bcomp.type)),
+                message=(f"Island without utility — inverter source "
+                         f"'{bcomp.props.get('name', bcomp.id)}' acts as the "
+                         "reference. A real island requires grid-forming "
+                         "inverter capability."),
+            ))
+
+        # ── Merit-order dispatch of the non-balancer direct sources ──
+        seq_managed_ids = ({c.id for c, _b, _d in seq_fixed} |
+                           {c.id for c, _b, _d in seq_off})
+        dispatchable = [(c, bi) for c, bi, d in sources
+                        if d and c.type in DISPATCHABLE_SOURCE_TYPES
+                        and c.id not in balancer_ids
+                        and c.id not in seq_managed_ids]
+
+        _merit_key = lambda e: (_dispatch_priority(e[0]),
+                                str(e[0].props.get("name", e[0].id)))
+        plan = []  # [comp, bus_index, p_avail, q_avail, p_dispatch, p_target]
+        must_run = [e for e in dispatchable if _dispatch_mode(e[0]) == "must_run"]
+        merit = [e for e in dispatchable if _dispatch_mode(e[0]) == "merit_order"]
+        standby = [e for e in dispatchable if _dispatch_mode(e[0]) == "standby"]
+        # Committed sequential sets before the last run fixed at full output
+        must_run += [(c, bi) for c, bi, d in seq_fixed if d]
+        # Uncommitted sequence sets are OFF: zero output, own role in the table
+        for comp, bi, _d in seq_off:
+            dispatched_by_comp[comp.id] = (0.0, 0.0)
+            entries.append({
+                "source_id": comp.id,
+                "source_name": str(comp.props.get("name", comp.type)),
+                "source_type": comp.type,
+                "bus_id": buses[bi].id, "island": isl,
+                "priority": _dispatch_priority(comp), "mode": "sequential",
+                "role": "off",
+                "available_mw": round(_source_output_mva(comp)[0], 4),
+                "dispatched_mw": 0.0, "curtailed_mw": 0.0,
+            })
+        if not utilities:
+            # Islanded from the utility: standby sources join the merit order
+            merit += standby
+            standby = []
+        merit.sort(key=_merit_key)
+        standby.sort(key=_merit_key)
+
+        for comp, bi in must_run:
+            p_av, q_av, _s, _r = _source_output_mva(comp)
+            # Committed sequential sets run at their fill-first allocation
+            p_tgt = seq_fixed_target.get(comp.id, p_av)
+            plan.append([comp, bi, p_av, q_av, p_tgt, p_tgt])
+
+        remaining = demand_mw - sum(e[4] for e in plan)
+        for comp, bi in merit:
+            p_av, q_av, _s, _r = _source_output_mva(comp)
+            p_disp = min(p_av, max(0.0, remaining))
+            remaining -= p_disp
+            plan.append([comp, bi, p_av, q_av, p_disp, p_disp])
+
+        # ── Standby sources: run only for demand beyond the utility's
+        # supply capacity (utility supply_capacity_mva; 0 = unlimited) ──
+        if standby:
+            caps = [_utility_supply_capacity(u) for u, _b, _d in utilities]
+            cap = None if any(c <= 0 for c in caps) else sum(caps)
+            shortfall = (demand_mw - sum(e[4] for e in plan) - cap) if cap is not None else 0.0
+            for comp, bi in standby:
+                p_av, q_av, _s, _r = _source_output_mva(comp)
+                p_disp = min(p_av, max(0.0, shortfall))
+                shortfall -= p_disp
+                if p_disp > 1e-9:
+                    plan.append([comp, bi, p_av, q_av, p_disp, p_disp])
+                    warnings.append(LoadFlowWarning(
+                        elementId=comp.id,
+                        element_name=str(comp.props.get("name", comp.type)),
+                        message=(f"Standby source '{comp.props.get('name', comp.id)}' "
+                                 f"dispatched at {_fmt_power_mw(p_disp)} — island demand "
+                                 f"exceeds the utility supply capacity ({_fmt_power_mw(cap)})."),
+                    ))
+                else:
+                    # Idle standby: record an explicit zero so branch badges
+                    # don't fall back to rated output
+                    dispatched_by_comp[comp.id] = (0.0, 0.0)
+                    entries.append({
+                        "source_id": comp.id,
+                        "source_name": str(comp.props.get("name", comp.type)),
+                        "source_type": comp.type,
+                        "bus_id": buses[bi].id, "island": isl,
+                        "priority": _dispatch_priority(comp), "mode": "standby",
+                        "role": "standby",
+                        "available_mw": round(p_av, 4),
+                        "dispatched_mw": 0.0, "curtailed_mw": 0.0,
+                    })
+
+        # ── Generator minimum load (wet-stacking floor) ──
+        # Any RUNNING generator is raised to at least min_load_pct of its
+        # rating, and that floor is protected from the curtailment pass so
+        # solar/wind give way first.
+        min_floor = {}
+        for e in plan:
+            comp = e[0]
+            if comp.type == "generator" and e[4] > 1e-9:
+                floor = min(e[2], _gen_min_load_mw(comp))
+                if floor > 0:
+                    min_floor[comp.id] = floor
+                    if e[4] < floor - 1e-9:
+                        warnings.append(LoadFlowWarning(
+                            elementId=comp.id,
+                            element_name=str(comp.props.get("name", comp.type)),
+                            message=(f"Generator '{comp.props.get('name', comp.id)}' "
+                                     f"raised to its minimum load "
+                                     f"({_fmt_power_mw(floor)}) to avoid wet stacking."),
+                        ))
+                        e[4] = floor
+                        e[5] = max(e[5], floor)
+
+        # ── Curtail when there is no export path for the excess ──
+        export_ok = bool(utilities) and all(_utility_allows_export(u) for u, _b, _d in utilities)
+        total = sum(e[4] for e in plan)
+        if total > demand_mw and not export_ok:
+            excess = total - demand_mw
+            # Curtail least-preferred sources first (highest priority number),
+            # never below a running generator's minimum-load floor
+            for e in sorted(plan, key=lambda e: -_dispatch_priority(e[0])):
+                if excess <= 1e-9:
+                    break
+                cut = min(max(0.0, e[4] - min_floor.get(e[0].id, 0.0)), excess)
+                e[4] -= cut
+                excess -= cut
+                if cut > 1e-9:
+                    warnings.append(LoadFlowWarning(
+                        elementId=e[0].id,
+                        element_name=str(e[0].props.get("name", e[0].type)),
+                        message=(f"'{e[0].props.get('name', e[0].id)}' curtailed by "
+                                 f"{_fmt_power_mw(cut)} — generation exceeds island "
+                                 "demand and no export path exists."),
+                    ))
+
+        # ── Balancer generators (islanded): curtail solar/wind so the slack
+        # generator itself carries at least its minimum load ──
+        gen_balancers = [c for c, _b, _d in balancers if c.type == "generator"]
+        gen_balancer_min = sum(min(_source_output_mva(c)[0], _gen_min_load_mw(c))
+                               for c in gen_balancers)
+        if gen_balancer_min > 0:
+            expected = demand_mw - sum(e[4] for e in plan)
+            shortfall = gen_balancer_min - expected
+            bname = gen_balancers[0].props.get("name", gen_balancers[0].id)
+            if shortfall > 1e-9:
+                renewables = [e for e in plan
+                              if e[0].type in ("solar_pv", "wind_turbine") and e[4] > 1e-9]
+                for e in sorted(renewables, key=lambda e: -_dispatch_priority(e[0])):
+                    if shortfall <= 1e-9:
+                        break
+                    cut = min(e[4], shortfall)
+                    e[4] -= cut
+                    shortfall -= cut
+                    warnings.append(LoadFlowWarning(
+                        elementId=e[0].id,
+                        element_name=str(e[0].props.get("name", e[0].type)),
+                        message=(f"'{e[0].props.get('name', e[0].id)}' curtailed by "
+                                 f"{_fmt_power_mw(cut)} — keeps generator '{bname}' at "
+                                 f"its minimum load ({_fmt_power_mw(gen_balancer_min)})."),
+                    ))
+                if shortfall > 1e-9:
+                    warnings.append(LoadFlowWarning(
+                        elementId=gen_balancers[0].id,
+                        element_name=str(bname),
+                        message=(f"Generator '{bname}' runs {_fmt_power_mw(shortfall)} below "
+                                 f"its minimum load ({_fmt_power_mw(gen_balancer_min)}) — "
+                                 "wet-stacking risk; island demand is too low."),
+                    ))
+
+        for comp, bi, p_av, q_av, p_disp, p_target in plan:
+            q_disp = q_av * (p_disp / p_av) if p_av > 0 else 0.0
+            inj = injections.setdefault(bi, [0.0, 0.0])
+            inj[0] += p_disp
+            inj[1] += q_disp
+            dispatched_by_comp[comp.id] = (p_disp, q_disp)
+            # "Curtailed" means output was actively cut below its target;
+            # a merit-order source dispatched below capacity is just partial.
+            curtailed = max(0.0, p_target - p_disp)
+            entries.append({
+                "source_id": comp.id,
+                "source_name": str(comp.props.get("name", comp.type)),
+                "source_type": comp.type,
+                "bus_id": buses[bi].id, "island": isl,
+                "priority": _dispatch_priority(comp), "mode": _dispatch_mode(comp),
+                "role": "curtailed" if curtailed > 1e-9 else "dispatched",
+                "available_mw": round(p_av, 4),
+                "dispatched_mw": round(p_disp, 4),
+                "curtailed_mw": round(curtailed, 4),
+            })
+
+        for comp, bi, _d in balancers:
+            p_av = (_source_output_mva(comp)[0] if comp.type != "utility"
+                    else _utility_supply_capacity(comp))
+            _bmode = ("sequential" if comp.type == "generator"
+                      and _gen_control(comp) == "sequential" else _dispatch_mode(comp))
+            entries.append({
+                "source_id": comp.id,
+                "source_name": str(comp.props.get("name", comp.type)),
+                "source_type": comp.type,
+                "bus_id": buses[bi].id, "island": isl,
+                "priority": _dispatch_priority(comp), "mode": _bmode,
+                "role": "balancer",
+                "available_mw": round(p_av, 4),
+                "dispatched_mw": 0.0,   # filled post-solve from the slack solution
+                "curtailed_mw": 0.0,
+            })
+
+    return {
+        "swing_idx": swing_idx,
+        "dead_idx": dead_idx,
+        "injections": injections,
+        "dispatched_by_comp": dispatched_by_comp,
+        "entries": entries,
+        "warnings": warnings,
+        "island_of": island_of,
+    }
+
+
+def solve_with_islands(Y, P_spec, Q_spec, V_spec, bus_types, dead_idx, method):
+    """Run NR/GS excluding de-energized buses; returns full-size V with 0 V there."""
+    n = len(P_spec)
+    if not dead_idx:
+        if method == "gauss_seidel":
+            return _gauss_seidel(Y, P_spec, Q_spec, V_spec, bus_types)
+        return _newton_raphson(Y, P_spec, Q_spec, V_spec, bus_types)
+
+    alive = [i for i in range(n) if i not in dead_idx]
+    V = np.zeros(n, dtype=complex)
+    if not alive:
+        return V, True, 0
+    idx = np.array(alive)
+    Y_s = Y[np.ix_(idx, idx)]
+    bt_s = [bus_types[i] for i in alive]
+    if method == "gauss_seidel":
+        V_s, converged, iterations = _gauss_seidel(
+            Y_s, P_spec[idx], Q_spec[idx], V_spec[idx], bt_s)
+    else:
+        V_s, converged, iterations = _newton_raphson(
+            Y_s, P_spec[idx], Q_spec[idx], V_spec[idx], bt_s)
+    V[idx] = V_s
+    return V, converged, iterations
+
+
 def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
     """Find the immediate neighbor of an element on its non-bus side.
 
@@ -190,6 +759,18 @@ def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
         return t, hv_bus_id
 
     return 1.0, None
+
+
+def _utility_loading_base_mva(util):
+    """Denominator for utility 'loading %' annotations.
+
+    Uses a rated/contracted MVA prop when present; falls back to fault_mva.
+    Loading vs fault level is only indicative — fault_mva is a short-circuit
+    capacity, not a supply rating.
+    """
+    return (util.props.get("rated_mva", 0)
+            or util.props.get("contract_mva", 0)
+            or util.props.get("fault_mva", 500))
 
 
 def _source_output_mva(comp):
@@ -334,7 +915,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         if abs(z_total) > 1e-15:
             y = 1 / z_total
         else:
-            y = complex(1e6, 0)
+            # Zero-impedance chain: model as a tiny series REACTANCE
+            # (large susceptance) — a real conductance of 1e6 would inject
+            # fictitious resistive losses into the solution.
+            y = complex(0, -1e6)
 
         i = bus_idx[bus_a]
         j = bus_idx[bus_b]
@@ -388,7 +972,9 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     for pair in linked_pairs:
         i = bus_idx[pair[0]]
         j = bus_idx[pair[1]]
-        y_link = complex(1e6, 0)
+        # Bus link: tiny series reactance (large susceptance) rather than a
+        # real conductance, to avoid fictitious resistive losses.
+        y_link = complex(0, -1e6)
         Y[i, i] += y_link
         Y[j, j] += y_link
         Y[i, j] -= y_link
@@ -410,29 +996,17 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     Q_spec = np.zeros(n)
     bus_types = []  # 0=PQ, 1=PV, 2=Swing
     V_spec = np.ones(n)
+    bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
+    bus_load_q_mvar = np.zeros(n)  # per-bus load Q, for swing-bus source badges
 
     for bus in buses:
         i = bus_idx[bus.id]
         bt = bus.props.get("bus_type", "PQ")
 
-        # Bus-type priority:
-        #   1. Bus with utility source → always Swing (infinite-bus reference)
-        #   2. Bus user-labelled "Swing" but utility is elsewhere → demote to PQ
-        #      (generators there inject via P_spec, which NR enforces for PQ buses)
-        #   3. Otherwise honour user setting
-        if bus.id in _utility_bus_ids:
-            bus_types.append(2)  # Swing
-        elif bt == "Swing":
-            if _utility_bus_ids:
-                # Utility elsewhere provides slack — demote to PQ so generator
-                # P_spec injections are enforced by the NR solver
-                bus_types.append(0)
-            else:
-                bus_types.append(2)  # No utility in network, keep user swing
-        elif bt == "PV":
-            bus_types.append(1)
-        else:
-            bus_types.append(0)
+        # Initial bus type from user setting; Swing assignment is decided
+        # per-island by plan_dispatch below (utility connection bus, else
+        # user-labelled Swing, else the lowest-merit source acting as balancer).
+        bus_types.append(1 if bt == "PV" else 0)
 
         # Find all components connected to this bus (walking through CBs/switches)
         connected = _find_components_at_bus(bus.id, adjacency, components)
@@ -444,47 +1018,36 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 # Power balance is handled by the swing-bus voltage constraint.
                 pass
             elif comp.type == "generator":
-                rated = comp.props.get("rated_mva", 10)
-                pf = comp.props.get("power_factor", 0.85)
-                P_spec[i] += rated * pf / base_mva
-                Q_spec[i] += rated * math.sqrt(1 - pf**2) / base_mva
-            elif comp.type == "solar_pv":
-                rated_kw = comp.props.get("rated_kw", 100)
-                n_inv = comp.props.get("num_inverters", 1)
-                eff = comp.props.get("inverter_eff", 0.97)
-                pf = comp.props.get("power_factor", 1.0)
-                irr = comp.props.get("irradiance_pct", 100) / 100.0
-                rated_mva = rated_kw * n_inv * irr / (eff * 1000)
-                P_spec[i] += rated_mva * abs(pf) / base_mva
-                if pf < 0:
-                    Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) / base_mva
-                else:
-                    Q_spec[i] += rated_mva * math.sqrt(1 - pf**2) / base_mva
-            elif comp.type == "wind_turbine":
-                rated = comp.props.get("rated_mva", 2.0)
-                n_turb = comp.props.get("num_turbines", 1)
-                pf = comp.props.get("power_factor", 0.95)
-                wind_pct = comp.props.get("wind_speed_pct", 100) / 100.0
-                total_mva = rated * n_turb * wind_pct
-                P_spec[i] += total_mva * abs(pf) / base_mva
-                if pf < 0:
-                    Q_spec[i] -= total_mva * math.sqrt(1 - pf**2) / base_mva
-                else:
-                    Q_spec[i] += total_mva * math.sqrt(1 - pf**2) / base_mva
-            elif comp.type == "static_load":
+                # Output injection comes from the merit-order dispatcher
+                # (plan_dispatch) below. Only the PV voltage setpoint is
+                # read here.
+                vset = float(comp.props.get("voltage_setpoint_pu", 0)
+                             or comp.props.get("v_setpoint_pu", 0) or 0)
+                if vset > 0 and bt == "PV":
+                    V_spec[i] = vset
+            elif comp.type in ("solar_pv", "wind_turbine"):
+                pass  # Injection set by the dispatcher below
+            elif comp.type in ("static_load", "distribution_board"):
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
                 df = comp.props.get("demand_factor", 1.0)
                 P_spec[i] -= rated * pf * df / base_mva
                 Q_spec[i] -= rated * math.sqrt(1 - pf**2) * df / base_mva
+                bus_load_p_mw[i] += rated * pf * df
+                bus_load_q_mvar[i] += rated * math.sqrt(1 - pf**2) * df
             elif comp.type == "motor_induction":
                 rated_kw = comp.props.get("rated_kw", 200)
                 eff = comp.props.get("efficiency", 0.93)
                 pf = comp.props.get("power_factor", 0.85)
                 df = comp.props.get("demand_factor", 1.0)
-                rated_mva = rated_kw / eff / 1000
+                # IEC 60909-0 §3.8 / load_diversity.py convention:
+                # S = kW/(η·pf), so P = S·pf = kW/η (unchanged) and Q is
+                # consistent with the rated power factor.
+                rated_mva = rated_kw / (eff * pf * 1000) if pf > 0 else rated_kw / (eff * 1000)
                 P_spec[i] -= rated_mva * pf * df / base_mva
                 Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) * df / base_mva
+                bus_load_p_mw[i] += rated_mva * pf * df
+                bus_load_q_mvar[i] += rated_mva * math.sqrt(1 - pf**2) * df
             elif comp.type == "motor_synchronous":
                 rated_kva = comp.props.get("rated_kva", 500)
                 pf = comp.props.get("power_factor", 0.9)
@@ -492,15 +1055,66 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 rated_mva = rated_kva / 1000
                 P_spec[i] -= rated_mva * pf * df / base_mva
                 Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) * df / base_mva
+                bus_load_p_mw[i] += rated_mva * pf * df
+                bus_load_q_mvar[i] += rated_mva * math.sqrt(1 - pf**2) * df
             elif comp.type == "capacitor_bank":
                 kvar = comp.props.get("rated_kvar", 100)
                 Q_spec[i] += kvar / 1000 / base_mva
+                bus_load_q_mvar[i] -= kvar / 1000  # capacitor supplies Q
 
-    # ── Solve ──
-    if method == "gauss_seidel":
-        V, converged, iterations = _gauss_seidel(Y, P_spec, Q_spec, V_spec, bus_types)
-    else:
-        V, converged, iterations = _newton_raphson(Y, P_spec, Q_spec, V_spec, bus_types)
+    # ── Island detection, per-island swing selection, and dispatch ──
+    # Each electrical island gets its own slack (utility connection bus,
+    # else user-labelled Swing bus, else the lowest-merit source). Islands
+    # with no source are excluded from the solve and reported de-energized.
+    branch_pairs = [(ba, bb) for _e, ba, bb, _y, _t, _hv, _cv in branch_chains]
+
+    # ── Dispatch + solve, with loss compensation ──
+    # When a no-export utility ends up carrying only the network losses while
+    # a curtailed source still has headroom, add the measured losses to the
+    # island demand and re-dispatch, so "PV covers the load" really leaves
+    # the utility at ~0 kW instead of importing the losses.
+    P_base, Q_base = P_spec.copy(), Q_spec.copy()
+    loss_adders = {}
+    for _pass in range(3):
+        dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
+                                 branch_pairs, bus_load_p_mw, loss_adders)
+        for i in dispatch["swing_idx"]:
+            bus_types[i] = 2
+        P_spec, Q_spec = P_base.copy(), Q_base.copy()
+        for i, (p_mw, q_mvar) in dispatch["injections"].items():
+            P_spec[i] += p_mw / base_mva
+            Q_spec[i] += q_mvar / base_mva
+
+        V, converged, iterations = solve_with_islands(
+            Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
+        if not converged:
+            break
+
+        S_tmp = V * np.conj(Y @ V)
+        util_import = {}   # island -> utility balancer real import (MW)
+        headroom = {}      # island -> curtailed MW still available
+        for e in dispatch["entries"]:
+            if e["role"] == "balancer" and e["source_type"] == "utility" and e["bus_id"]:
+                bi = bus_idx[e["bus_id"]]
+                inj = dispatch["injections"].get(bi, (0.0, 0.0))
+                util_import[e["island"]] = (util_import.get(e["island"], 0.0)
+                                            + S_tmp[bi].real * base_mva
+                                            + bus_load_p_mw[bi] - inj[0])
+            elif e["role"] == "curtailed":
+                headroom[e["island"]] = headroom.get(e["island"], 0.0) + e["curtailed_mw"]
+
+        adjusted = False
+        for isl, imp in util_import.items():
+            prev = loss_adders.get(isl, 0.0)
+            if headroom.get(isl, 0.0) > 1e-6 and imp > 2e-4:
+                loss_adders[isl] = prev + min(imp, headroom[isl])
+                adjusted = True
+            elif prev > 0 and imp < -2e-4:
+                # Overshoot (losses dropped once the source supplied locally)
+                loss_adders[isl] = max(0.0, prev + imp)
+                adjusted = True
+        if not adjusted:
+            break
 
     # ── Build results ──
     # Compute actual bus power injections from solved voltages.
@@ -510,19 +1124,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     I_bus = Y @ V
     S_bus = V * np.conj(I_bus)
 
-    bus_results = {}
-    for bus in buses:
-        i = bus_idx[bus.id]
-        v_kv = bus.props.get("voltage_kv", 11)
-        bus_results[bus.id] = LoadFlowBus(
-            bus_id=bus.id,
-            bus_name=bus.props.get("name", bus.id),
-            voltage_pu=round(abs(V[i]), 6),
-            voltage_kv=round(abs(V[i]) * v_kv, 4),
-            angle_deg=round(math.degrees(np.angle(V[i])), 4),
-            p_mw=round(S_bus[i].real * base_mva, 4),
-            q_mvar=round(S_bus[i].imag * base_mva, 4),
-        )
+    # Power carried by each busbar: outgoing branch flows plus local load.
+    # Accumulated in the branch loop below; net injection (S_bus) alone is
+    # ~0 for pass-through buses and for swing buses serving local load.
+    s_through = np.zeros(n, dtype=complex)  # MVA
 
     # ── Branch flows ──
     branch_results = []
@@ -553,6 +1158,12 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         s_mva = abs(s_ij) * base_mva
         losses_mw = (s_ij.real + s_ji.real) * base_mva
 
+        # Outgoing flow counts toward the sending bus's through-power
+        if s_ij.real > 0:
+            s_through[i] += s_ij * base_mva
+        if s_ji.real > 0:
+            s_through[j] += s_ji * base_mva
+
         if elems is None:
             # Bus-to-bus link (no branch elements)
             from_bus_comp = components.get(from_bus)
@@ -567,7 +1178,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 loading_pct=0, losses_mw=round(losses_mw, 6),
             ))
         else:
-            # Report flow for each element in the series chain
+            # Report flow for each element in the series chain.
+            # NOTE (display-level): every element in a series chain carries the
+            # SAME branch flow, so each element row repeats the chain's
+            # p_mw/q_mvar/losses — summing rows over a chain double-counts.
             # For transformer chains, compute LV-side apparent power for accurate reporting
             s_lv_mva = abs(s_ji) * base_mva if hv_bus == from_bus else s_mva
             s_hv_mva = s_mva if hv_bus == from_bus else abs(s_ji) * base_mva
@@ -610,6 +1224,28 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     s_mva=round(s_mva, 4), i_amps=round(elem_i_amps, 2),
                     loading_pct=round(loading, 2), losses_mw=round(losses_mw, 6),
                 ))
+
+    # ── Bus results ──
+    bus_results = {}
+    for bus in buses:
+        i = bus_idx[bus.id]
+        v_kv = bus.props.get("voltage_kv", 11)
+        # Busbar through-power: outgoing branch flows + the local load it
+        # serves (zero for de-energized buses — their load is unserved)
+        s_th = (s_through[i] + complex(bus_load_p_mw[i], bus_load_q_mvar[i])
+                if i not in dispatch["dead_idx"] else complex(0, 0))
+        bus_results[bus.id] = LoadFlowBus(
+            bus_id=bus.id,
+            bus_name=bus.props.get("name", bus.id),
+            voltage_pu=round(abs(V[i]), 6),
+            voltage_kv=round(abs(V[i]) * v_kv, 4),
+            angle_deg=round(math.degrees(np.angle(V[i])), 4),
+            p_mw=round(S_bus[i].real * base_mva, 4),
+            q_mvar=round(S_bus[i].imag * base_mva, 4),
+            energized=i not in dispatch["dead_idx"],
+            p_through_mw=round(s_th.real, 4),
+            q_through_mvar=round(s_th.imag, 4),
+        )
 
     # ── Source-connected transformers (one bus end, one source end) ──
     # Transformers whose HV side connects to a utility/generator (not a bus) are
@@ -718,15 +1354,25 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         gen_sources = [s for s in all_at_bus if s.type in _SOURCE_TYPES]
         util_sources = [s for s in all_at_bus if s.type == "utility"]
 
-        # ── Swing bus: proportional load sharing among ALL sources ──
+        # ── Swing bus: attribute each merit-dispatched source its dispatched
+        # output; the residual (remainder + losses) is shared among the
+        # balancing entries (utility TX / balancer generators) by rating ──
         if is_swing and gen_sources:
-            s_actual = S_bus[bus_i] * base_mva  # complex MVA total demand
+            # Total demand on this bus's sources: network injection plus the
+            # local load, which NR's slack accounting cannot see (local P/Q
+            # specs are ignored at the swing bus).
+            s_actual = (S_bus[bus_i] * base_mva
+                        + complex(bus_load_p_mw[bus_i], bus_load_q_mvar[bus_i]))
 
-            # Build the source pool: (kind, object(s), rated_mva)
-            source_pool = []
+            dispatched_here = []  # (src, p_mw, q_mvar)
+            source_pool = []      # residual sharers: (kind, object(s), rated_mva)
             for src in gen_sources:
-                _p, _q, s_rated, rated_mva = _source_output_mva(src)
-                source_pool.append(('gen', src, rated_mva))
+                if src.id in dispatch["dispatched_by_comp"]:
+                    p_d, q_d = dispatch["dispatched_by_comp"][src.id]
+                    dispatched_here.append((src, p_d, q_d))
+                else:
+                    _p, _q, s_rated, rated_mva = _source_output_mva(src)
+                    source_pool.append(('gen', src, rated_mva))
 
             if has_utility_via_tx and not has_utility:
                 # Utility behind TX: TX rating limits utility contribution
@@ -734,15 +1380,32 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     tx_rated = tx.props.get("rated_mva", 10)
                     source_pool.append(('util_tx', (tx, util), tx_rated))
 
+            s_residual = s_actual - complex(
+                sum(p for _s, p, _q in dispatched_here),
+                sum(q for _s, _p, q in dispatched_here))
             total_pool_mva = sum(entry[2] for entry in source_pool)
+
+            for src, p_out, q_out in dispatched_here:
+                _p, _q, _s, rated_mva = _source_output_mva(src)
+                s_out = math.hypot(p_out, q_out)
+                loading = (s_out / rated_mva * 100) if rated_mva > 0 else 0
+                i_amps = (s_out * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+                branch_results.append(LoadFlowBranch(
+                    elementId=src.id,
+                    element_name=src.props.get("name", src.type),
+                    from_bus=src.id, to_bus=bus.id,
+                    p_mw=round(p_out, 4), q_mvar=round(q_out, 4),
+                    s_mva=round(s_out, 4), i_amps=round(i_amps, 2),
+                    loading_pct=round(loading, 2), losses_mw=0,
+                ))
 
             for kind, obj, rated_mva in source_pool:
                 if total_pool_mva <= 0 or rated_mva <= 0:
                     continue
                 fraction = rated_mva / total_pool_mva
-                p_out = s_actual.real * fraction
-                q_out = s_actual.imag * fraction
-                s_out = abs(s_actual) * fraction
+                p_out = s_residual.real * fraction
+                q_out = s_residual.imag * fraction
+                s_out = abs(s_residual) * fraction
                 loading = s_out / rated_mva * 100
 
                 if kind == 'gen':
@@ -771,8 +1434,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                         loading_pct=round(loading, 2), losses_mw=0,
                     ))
                     # Utility source annotation
-                    fault_mva = util.props.get("fault_mva", 500)
-                    util_loading = (s_out / fault_mva * 100) if fault_mva > 0 else 0
+                    util_base = _utility_loading_base_mva(util)
+                    util_loading = (s_out / util_base * 100) if util_base > 0 else 0
                     util_i_amps = (s_out * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
                     branch_results.append(LoadFlowBranch(
                         elementId=util.id,
@@ -785,43 +1448,59 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
 
             # Track actual gen output for direct-utility residual calc
             gen_pool_mva = sum(e[2] for e in source_pool if e[0] == 'gen')
-            _gen_actual_p = s_actual.real * gen_pool_mva / total_pool_mva if total_pool_mva > 0 else 0
-            _gen_actual_q = s_actual.imag * gen_pool_mva / total_pool_mva if total_pool_mva > 0 else 0
+            _gen_share = gen_pool_mva / total_pool_mva if total_pool_mva > 0 else 0
+            _gen_actual_p = (sum(p for _s, p, _q in dispatched_here)
+                             + s_residual.real * _gen_share)
+            _gen_actual_q = (sum(q for _s, _p, q in dispatched_here)
+                             + s_residual.imag * _gen_share)
 
         elif gen_sources:
-            # Non-swing bus: NR enforces P_spec → generator injects at rated.
+            # Non-swing bus: NR enforces P_spec → sources sit at their
+            # dispatched output (full available for must_run, merit-order
+            # allocation otherwise).
             for src in gen_sources:
                 _p, _q, s_rated, rated_mva = _source_output_mva(src)
                 if rated_mva <= 0:
                     continue
-                i_amps = (s_rated * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
+                _p, _q = dispatch["dispatched_by_comp"].get(src.id, (_p, _q))
+                s_disp = math.hypot(_p, _q)
+                i_amps = (s_disp * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
                 branch_results.append(LoadFlowBranch(
                     elementId=src.id,
                     element_name=src.props.get("name", src.type),
                     from_bus=src.id, to_bus=bus.id,
                     p_mw=round(_p, 4), q_mvar=round(_q, 4),
-                    s_mva=round(s_rated, 4), i_amps=round(i_amps, 2),
-                    loading_pct=round(s_rated / rated_mva * 100, 2), losses_mw=0,
+                    s_mva=round(s_disp, 4), i_amps=round(i_amps, 2),
+                    loading_pct=round(s_disp / rated_mva * 100, 2), losses_mw=0,
                 ))
 
         # ── Utility source annotations (directly connected) ──
         if util_sources:
             s_bus_total = S_bus[bus_i] * base_mva
+            # On the swing bus, NR ignores local P/Q specs: loads and source
+            # injections at this bus are invisible to S_bus. The utility's
+            # real output = network injection + local load − local generation,
+            # otherwise PV serving a local load shows up as phantom utility
+            # import/export.
+            s_local_load = complex(bus_load_p_mw[bus_i], bus_load_q_mvar[bus_i]) \
+                if is_swing else complex(0, 0)
             if gen_sources and is_swing:
-                s_util = complex(s_bus_total.real - _gen_actual_p,
-                                 s_bus_total.imag - _gen_actual_q)
+                s_util = complex(s_bus_total.real + s_local_load.real - _gen_actual_p,
+                                 s_bus_total.imag + s_local_load.imag - _gen_actual_q)
             elif gen_sources:
-                gen_p_rated = sum(_source_output_mva(s)[0] for s in gen_sources)
-                gen_q_rated = sum(_source_output_mva(s)[1] for s in gen_sources)
-                s_util = complex(s_bus_total.real - gen_p_rated,
-                                 s_bus_total.imag - gen_q_rated)
+                gen_p_disp = sum(dispatch["dispatched_by_comp"].get(
+                    s.id, _source_output_mva(s)[:2])[0] for s in gen_sources)
+                gen_q_disp = sum(dispatch["dispatched_by_comp"].get(
+                    s.id, _source_output_mva(s)[:2])[1] for s in gen_sources)
+                s_util = complex(s_bus_total.real - gen_p_disp,
+                                 s_bus_total.imag - gen_q_disp)
             else:
-                s_util = s_bus_total
+                s_util = s_bus_total + s_local_load
 
             for util in util_sources:
-                fault_mva = util.props.get("fault_mva", 500)
+                util_base = _utility_loading_base_mva(util)
                 s_out = abs(s_util)
-                loading = (s_out / fault_mva * 100) if fault_mva > 0 else 0
+                loading = (s_out / util_base * 100) if util_base > 0 else 0
                 i_amps = (s_out * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
                 branch_results.append(LoadFlowBranch(
                     elementId=util.id,
@@ -837,6 +1516,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         # (When generators ARE present, utility TX is handled in the pool above.)
         if has_utility_via_tx and not gen_sources:
             s_bus_total = S_bus[bus_i] * base_mva
+            # Same swing-bus correction as above: count the local load the
+            # solver's slack accounting can't see.
+            if is_swing:
+                s_bus_total += complex(bus_load_p_mw[bus_i], bus_load_q_mvar[bus_i])
             tx_util_list = _utility_tx_bus_map[bus.id]
             n_util_tx = len(tx_util_list)
             for tx, util in tx_util_list:
@@ -858,8 +1541,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     loading_pct=round(tx_loading, 2), losses_mw=0,
                 ))
 
-                fault_mva = util.props.get("fault_mva", 500)
-                util_loading = (s_this_mva / fault_mva * 100) if fault_mva > 0 else 0
+                util_base = _utility_loading_base_mva(util)
+                util_loading = (s_this_mva / util_base * 100) if util_base > 0 else 0
                 util_i_amps = (s_this_mva * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
                 branch_results.append(LoadFlowBranch(
                     elementId=util.id,
@@ -875,6 +1558,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     # Walk from each bus through transparent devices to find all components
     # on each side of the transformer and verify their voltage ratings.
     voltage_warnings = []
+    voltage_warnings.extend(dispatch["warnings"])
     warned_ids = set()  # Avoid duplicate warnings for the same component
     tolerance = 0.15  # 15% mismatch threshold
 
@@ -938,6 +1622,75 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                         if neighbor not in visited:
                             stack.append(neighbor)
 
+    # ── Dispatch summary ──
+    # Balancer (slack) sources: actual output = network injection at the
+    # swing bus plus the local load it also serves, split proportionally by
+    # rating when several balancers share a bus (droop, as in the annotations).
+    # GENERATOR balancers are attributed ISLAND-wide instead (slack output =
+    # Σ island net injections + island load − island dispatched injections):
+    # their connection bus is not necessarily the island's swing bus (e.g. a
+    # user-labelled Swing bus elsewhere), where the per-bus formula reads ~0.
+    island_of = dispatch.get("island_of", {})
+    balancer_entries = {}
+    for entry in dispatch["entries"]:
+        if entry["role"] == "balancer" and entry["bus_id"]:
+            balancer_entries.setdefault(entry["bus_id"], []).append(entry)
+    for bus_id, entries_at_bus in balancer_entries.items():
+        bi = bus_idx[bus_id]
+        inj = dispatch["injections"].get(bi, (0.0, 0.0))
+        gen_balanced = all(e["source_type"] == "generator" for e in entries_at_bus)
+        if gen_balanced:
+            isl = island_of.get(bi)
+            isl_buses = [i for i in range(len(buses)) if island_of.get(i) == isl]
+            p_out = (sum(S_bus[i].real * base_mva + bus_load_p_mw[i] for i in isl_buses)
+                     - sum(dispatch["injections"].get(i, (0.0, 0.0))[0] for i in isl_buses))
+        else:
+            p_out = S_bus[bi].real * base_mva + bus_load_p_mw[bi] - inj[0]
+        n_bal = len(entries_at_bus)
+        weights = []
+        for entry in entries_at_bus:
+            comp = components.get(entry["source_id"])
+            if comp is not None and comp.type == "utility":
+                weights.append(_utility_loading_base_mva(comp))
+            elif comp is not None:
+                weights.append(_source_output_mva(comp)[3] or 1.0)
+            else:
+                weights.append(1.0)
+        w_total = sum(weights) or float(n_bal)
+        for entry, w in zip(entries_at_bus, weights):
+            entry["dispatched_mw"] = round(p_out * (w / w_total), 4)
+            # Sync the canvas badge for generator balancers — the annotation
+            # pass ran before this fill and fell back to rated output
+            if entry["source_type"] == "generator":
+                comp = components.get(entry["source_id"])
+                rated = _source_output_mva(comp)[3] if comp is not None else 0
+                pf = comp.props.get("power_factor", 0.85) if comp is not None else 0.85
+                p_b = entry["dispatched_mw"]
+                s_b = abs(p_b) / pf if pf > 0 else abs(p_b)
+                for br in branch_results:
+                    if br.elementId == entry["source_id"]:
+                        br.p_mw = round(p_b, 4)
+                        br.q_mvar = round(math.sqrt(max(0.0, s_b**2 - p_b**2)), 4)
+                        br.s_mva = round(s_b, 4)
+                        br.loading_pct = round(s_b / rated * 100, 2) if rated > 0 else 0
+                        v_kv_b = comp.props.get("voltage_kv", 0.4) if comp is not None else 0.4
+                        br.i_amps = round((s_b * 1000) / (math.sqrt(3) * v_kv_b), 2) if v_kv_b > 0 else 0
+                        break
+            # Utility supplying beyond its declared capacity → overload warning
+            cap = entry["available_mw"]
+            if (entry["source_type"] == "utility" and cap > 0
+                    and entry["dispatched_mw"] > cap * 1.005):
+                voltage_warnings.append(LoadFlowWarning(
+                    elementId=entry["source_id"],
+                    element_name=entry["source_name"],
+                    message=(f"Utility '{entry['source_name']}' supplies "
+                             f"{_fmt_power_mw(entry['dispatched_mw'])}, exceeding its "
+                             f"supply capacity of {_fmt_power_mw(cap)} — consider "
+                             "standby generation or load reduction."),
+                ))
+
+    dispatch_results = [DispatchEntry(**e) for e in dispatch["entries"]]
+
     return LoadFlowResults(
         buses=bus_results,
         branches=branch_results,
@@ -945,6 +1698,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         converged=converged,
         iterations=iterations,
         method=method,
+        dispatch=dispatch_results,
     )
 
 
@@ -1071,7 +1825,11 @@ def _gauss_seidel(Y, P_spec, Q_spec, V_mag, bus_types):
                 if abs(V[i]) > 1e-10:
                     V[i] = (1 / Y[i, i]) * (np.conj(S_spec) / np.conj(V[i]) - sum_yv)
             elif bus_types[i] == 1:  # PV bus
-                Q_calc = -(V[i] * np.conj(sum_yv + Y[i, i] * V[i])).imag
+                # Q_i = Im{S_i} = Im{V_i · conj(Σ_j Y_ij V_j)} — same sign
+                # convention as the NR Q_calc (G·sinθ − B·cosθ form).
+                # (A leading minus here would require conj(V_i)·I_i, not
+                # V_i·conj(I_i), and reverses the PV reactive injection.)
+                Q_calc = (V[i] * np.conj(sum_yv + Y[i, i] * V[i])).imag
                 S_spec = complex(P_spec[i], Q_calc)
                 if abs(V[i]) > 1e-10:
                     V[i] = (1 / Y[i, i]) * (np.conj(S_spec) / np.conj(V[i]) - sum_yv)

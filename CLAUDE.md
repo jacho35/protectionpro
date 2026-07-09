@@ -246,7 +246,14 @@ None currently implemented. CORS allows all origins. Auth is in the backlog.
 
 ## Testing
 
-No automated tests exist yet. Testing is done manually via the browser UI.
+Backend regression tests live in `backend/tests/test_regression.py` — standards-anchored hand calculations (IEC 60909, IEEE 1584-2002, IEEE 80) that pin the analysis engines. Run them inside the backend Docker image:
+
+```bash
+docker run --rm -v "$PWD":/work -w /work protectionpro-backend \
+  sh -c "pip install pytest -q && python -m pytest backend/tests/ -q"
+```
+
+Run these after any change to `backend/analysis/`. Frontend testing is still manual via the browser UI; `node --check frontend/js/*.js` catches syntax errors.
 
 ## Key Conventions
 

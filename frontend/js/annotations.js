@@ -21,11 +21,38 @@ const Annotations = {
   },
 
   getOffset(key) {
-    return this.offsets.get(key) || { dx: 0, dy: 0 };
+    // User-dragged offsets win; otherwise fall back to the auto-stacked
+    // position so a drag starts from where the badge is actually drawn.
+    return this.offsets.get(key) || this._stackOffsets.get(key) || { dx: 0, dy: 0 };
   },
 
   setOffset(key, dx, dy) {
     this.offsets.set(key, { dx, dy });
+  },
+
+  // ── Auto-stacking of badges per component (no user offset) ──
+  // Badges attached to the same component stack in a single column instead
+  // of overlapping at fixed offsets. User-dragged offsets stay authoritative.
+  _stackOffsets: new Map(), // key → {dx, dy} effective offsets of stacked badges
+  _lastBoxH: 38,            // height of the most recently rendered badge box
+  _STACK_X: 70,             // column x offset from component center
+  _STACK_START_Y: -10,      // y offset of the first stacked badge
+  _STACK_GAP: 18,           // vertical gap between stacked badges (label space)
+
+  _badgePos(comp, key, defaultDX, defaultDY, stacks) {
+    const userOff = this.offsets.get(key);
+    if (userOff) {
+      return { x: comp.x + defaultDX + userOff.dx, y: comp.y + defaultDY + userOff.dy, stacked: false };
+    }
+    const x = comp.x + this._STACK_X;
+    const y = stacks.has(comp.id) ? stacks.get(comp.id) : comp.y + this._STACK_START_Y;
+    this._stackOffsets.set(key, { dx: x - (comp.x + defaultDX), dy: y - (comp.y + defaultDY) });
+    return { x, y, stacked: true };
+  },
+
+  _advanceStack(stacks, comp, pos) {
+    if (!pos.stacked) return;
+    stacks.set(comp.id, pos.y + this._lastBoxH + this._STACK_GAP);
   },
 
   render() {
@@ -33,16 +60,19 @@ const Annotations = {
     let html = '';
     const pageComps = AppState.getActivePageComponents();
 
+    // Per-component stack cursor for auto-positioned badges
+    const stacks = new Map();
+    this._stackOffsets.clear();
+
     // Fault result annotations on buses
     if (AppState.showResultBoxes.fault && AppState.faultResults && AppState.faultResults.buses) {
       for (const [busId, result] of Object.entries(AppState.faultResults.buses)) {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `fault:${busId}`;
-        const off = this.getOffset(key);
-        const x = comp.x + 70 + off.dx;
-        const y = comp.y - 10 + off.dy;
-        html += this.renderFaultBadge(x, y, result, key);
+        const pos = this._badgePos(comp, key, 70, -10, stacks);
+        html += this.renderFaultBadge(pos.x, pos.y, result, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -52,10 +82,9 @@ const Annotations = {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `lf:${busId}`;
-        const off = this.getOffset(key);
-        const x = comp.x - 130 + off.dx;
-        const y = comp.y - 10 + off.dy;
-        html += this.renderLoadFlowBadge(x, y, result, key);
+        const pos = this._badgePos(comp, key, -130, -10, stacks);
+        html += this.renderLoadFlowBadge(pos.x, pos.y, result, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -68,34 +97,40 @@ const Annotations = {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `ulf:${busId}`;
-        const off = this.getOffset(key);
-        const x = comp.x - 160 + off.dx;
-        const y = comp.y + 20 + off.dy;
-        html += this.renderUnbalancedLoadFlowBadge(x, y, result, key);
+        const pos = this._badgePos(comp, key, -160, 20, stacks);
+        html += this.renderUnbalancedLoadFlowBadge(pos.x, pos.y, result, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
     // Unbalanced load flow VUF warnings
     if (AppState.showResultBoxes.unbalancedLF && AppState.unbalancedLoadFlowResults && AppState.unbalancedLoadFlowResults.warnings) {
       for (const warn of AppState.unbalancedLoadFlowResults.warnings) {
+        // Only voltage-mismatch warnings carry kV data; informational
+        // warnings (islanding, dispatch, VUF) belong in the results modal,
+        // not as a "VOLTAGE ERROR" badge showing 0 V / 0 V.
+        if (!(warn.expected_kv > 0) && !(warn.actual_kv > 0)) continue;
         const comp = pageComps.get(warn.elementId);
         if (!comp) continue;
         const key = `ulf-warn:${warn.elementId}`;
-        const off = this.getOffset(key);
-        html += this.renderVoltageMismatchBadge(comp.x + 40 + off.dx, comp.y - 65 + off.dy, comp, warn, key);
+        const pos = this._badgePos(comp, key, 40, -65, stacks);
+        html += this.renderVoltageMismatchBadge(pos.x, pos.y, comp, warn, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
     // Voltage mismatch warnings from load flow
     if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.warnings) {
       for (const warn of AppState.loadFlowResults.warnings) {
+        // Skip informational warnings (islanding, dispatch) — badge only
+        // real voltage mismatches, which carry expected/actual kV values.
+        if (!(warn.expected_kv > 0) && !(warn.actual_kv > 0)) continue;
         const comp = pageComps.get(warn.elementId);
         if (!comp) continue;
         const key = `warn:${warn.elementId}`;
-        const off = this.getOffset(key);
-        const baseX = comp.x + 40 + off.dx;
-        const baseY = comp.y - 50 + off.dy;
-        html += this.renderVoltageMismatchBadge(baseX, baseY, comp, warn, key);
+        const pos = this._badgePos(comp, key, 40, -50, stacks);
+        html += this.renderVoltageMismatchBadge(pos.x, pos.y, comp, warn, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -112,10 +147,9 @@ const Annotations = {
             if (!comp) continue;
             const vPu = dep.subtransient_pu != null ? dep.subtransient_pu : 1.0;
             const key = `vdep:${depBusId}`;
-            const off = this.getOffset(key);
-            const x = comp.x + off.dx;
-            const y = comp.y - 30 + off.dy;
-            html += this.renderVoltageDepBadge(x, y, dep, vPu, key);
+            const pos = this._badgePos(comp, key, 0, -30, stacks);
+            html += this.renderVoltageDepBadge(pos.x, pos.y, dep, vPu, key);
+            this._advanceStack(stacks, comp, pos);
           }
         }
       }
@@ -127,10 +161,9 @@ const Annotations = {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `af:${busId}`;
-        const off = this.getOffset(key);
-        const x = comp.x + 70 + off.dx;
-        const y = comp.y + 50 + off.dy;
-        html += this.renderArcFlashBadge(x, y, result, key);
+        const pos = this._badgePos(comp, key, 70, 50, stacks);
+        html += this.renderArcFlashBadge(pos.x, pos.y, result, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -140,10 +173,9 @@ const Annotations = {
         const comp = pageComps.get(cable.cable_id);
         if (!comp) continue;
         const key = `cs:${cable.cable_id}`;
-        const off = this.getOffset(key);
-        const x = comp.x + 30 + off.dx;
-        const y = comp.y - 30 + off.dy;
-        html += this.renderCableSizingBadge(x, y, cable, key);
+        const pos = this._badgePos(comp, key, 30, -30, stacks);
+        html += this.renderCableSizingBadge(pos.x, pos.y, cable, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -153,10 +185,9 @@ const Annotations = {
         const comp = pageComps.get(motor.motor_id);
         if (!comp) continue;
         const key = `ms:${motor.motor_id}`;
-        const off = this.getOffset(key);
-        const x = comp.x + 40 + off.dx;
-        const y = comp.y - 20 + off.dy;
-        html += this.renderMotorStartingBadge(x, y, motor, key);
+        const pos = this._badgePos(comp, key, 40, -20, stacks);
+        html += this.renderMotorStartingBadge(pos.x, pos.y, motor, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -166,10 +197,9 @@ const Annotations = {
         const comp = pageComps.get(device.device_id);
         if (!comp) continue;
         const key = `dc:${device.device_id}`;
-        const off = this.getOffset(key);
-        const x = comp.x + 30 + off.dx;
-        const y = comp.y - 25 + off.dy;
-        html += this.renderDutyCheckBadge(x, y, device, key);
+        const pos = this._badgePos(comp, key, 30, -25, stacks);
+        html += this.renderDutyCheckBadge(pos.x, pos.y, device, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -179,10 +209,9 @@ const Annotations = {
         const comp = pageComps.get(busResult.bus_id);
         if (!comp) continue;
         const key = `ld:${busResult.bus_id}`;
-        const off = this.getOffset(key);
-        const x = comp.x - 130 + off.dx;
-        const y = comp.y + 40 + off.dy;
-        html += this.renderLoadDiversityBadge(x, y, busResult, key);
+        const pos = this._badgePos(comp, key, -130, 40, stacks);
+        html += this.renderLoadDiversityBadge(pos.x, pos.y, busResult, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -192,10 +221,9 @@ const Annotations = {
         const comp = pageComps.get(busResult.bus_id);
         if (!comp) continue;
         const key = `gr:${busResult.bus_id}`;
-        const off = this.getOffset(key);
-        const x = comp.x + 70 + off.dx;
-        const y = comp.y + 90 + off.dy;
-        html += this.renderGroundingBadge(x, y, busResult, key);
+        const pos = this._badgePos(comp, key, 70, 90, stacks);
+        html += this.renderGroundingBadge(pos.x, pos.y, busResult, key);
+        this._advanceStack(stacks, comp, pos);
       }
     }
 
@@ -238,6 +266,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const maxLen = Math.max(...lines.map(l => l.length));
     const boxW = Math.max(100, maxLen * 6.5 + 14);
 
@@ -246,7 +275,7 @@ const Annotations = {
     ).join('');
 
     const busId = key.split(':')[1] || '';
-    const busLabel = result.bus_name || busId;
+    const busLabel = escHtml(result.bus_name || busId);
     return `
       <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
@@ -259,11 +288,16 @@ const Annotations = {
     const lines = [];
     if (result.voltage_kv != null) lines.push(`V: ${this.formatVoltage(result.voltage_kv)} (${result.voltage_pu.toFixed(4)} p.u. / ${(result.voltage_pu * 100).toFixed(2)}%)`);
     if (result.angle_deg != null) lines.push(`δ: ${result.angle_deg.toFixed(2)}°`);
-    // Show power and current in actual units
-    const sMVA = Math.sqrt((result.p_mw || 0) ** 2 + (result.q_mvar || 0) ** 2);
-    if (sMVA > 0.001) {
-      const pStr = Math.abs(result.p_mw) >= 1 ? `${result.p_mw.toFixed(3)} MW` : `${(result.p_mw * 1000).toFixed(1)} kW`;
-      const qStr = Math.abs(result.q_mvar) >= 1 ? `${result.q_mvar.toFixed(3)} MVAr` : `${(result.q_mvar * 1000).toFixed(1)} kVAr`;
+    if (result.energized === false) {
+      lines.push('DE-ENERGIZED');
+    } else {
+      // Power the busbar carries (through-flow + local load) — always shown.
+      // Falls back to net injection for results saved before p_through_mw.
+      const p = result.p_through_mw ?? result.p_mw ?? 0;
+      const q = result.q_through_mvar ?? result.q_mvar ?? 0;
+      const sMVA = Math.sqrt(p ** 2 + q ** 2);
+      const pStr = Math.abs(p) >= 1 ? `${p.toFixed(3)} MW` : `${(p * 1000).toFixed(1)} kW`;
+      const qStr = Math.abs(q) >= 1 ? `${q.toFixed(3)} MVAr` : `${(q * 1000).toFixed(1)} kVAr`;
       const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
       lines.push(`P: ${pStr}`);
       lines.push(`Q: ${qStr}`);
@@ -276,6 +310,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const maxLen = Math.max(...lines.map(l => l.length));
     const boxW = Math.max(120, maxLen * 6.5 + 14);
 
@@ -284,7 +319,7 @@ const Annotations = {
     ).join('');
 
     const busId = key.split(':')[1] || '';
-    const busLabel = result.bus_name || busId;
+    const busLabel = escHtml(result.bus_name || busId);
     return `
       <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
@@ -306,6 +341,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const maxLen = Math.max(...lines.map(l => l.length));
     const boxW = Math.max(140, maxLen * 6.2 + 14);
 
@@ -316,7 +352,7 @@ const Annotations = {
     }).join('');
 
     const busId = key.split(':')[1] || '';
-    const busLabel = result.bus_name || busId;
+    const busLabel = escHtml(result.bus_name || busId);
     return `
       <g class="annotation-group unbalanced-lf-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
@@ -343,6 +379,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 120;
 
     let textHtml = lines.map((line, i) =>
@@ -366,6 +403,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 130;
 
     // Red highlight ring around the component symbol
@@ -408,6 +446,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 90;
 
     let textHtml = lines.map((line, i) =>
@@ -432,6 +471,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 120;
 
     // Color by PPE category
@@ -447,7 +487,7 @@ const Annotations = {
     ).join('');
 
     const busId = key.split(':')[1] || '';
-    const busLabel = result.bus_name || busId;
+    const busLabel = escHtml(result.bus_name || busId);
     return `
       <g class="annotation-group arcflash-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge af-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
@@ -458,21 +498,27 @@ const Annotations = {
   },
 
   renderCableSizingBadge(x, y, cable, key) {
-    const fillColor = cable.status === 'fail' ? '#d32f2f' : cable.status === 'warning' ? '#f57c00' : '#4caf50';
-    const icon = cable.status === 'pass' ? '✓' : cable.status === 'warning' ? '!' : '✗';
+    const fillColor = cable.status === 'fail' ? '#d32f2f'
+      : cable.status === 'warning' ? '#f57c00'
+      : cable.status === 'unknown' ? '#9e9e9e' : '#4caf50';
+    const icon = cable.status === 'pass' ? '✓'
+      : cable.status === 'warning' ? '!'
+      : cable.status === 'unknown' ? '?' : '✗';
     const lines = [`${icon} ${cable.thermal_loading_pct.toFixed(0)}%`];
     if (cable.voltage_drop_pct > 0) lines.push(`ΔV: ${cable.voltage_drop_pct.toFixed(1)}%`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 80;
 
     let textHtml = lines.map((line, i) =>
       `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
     ).join('');
 
-    // Build tooltip for warnings explaining why
-    const tooltipText = cable.status === 'warning' && cable.warning_reasons && cable.warning_reasons.length > 0
+    // Build tooltip explaining why (warning OR unknown both carry reasons)
+    const tooltipText = (cable.status === 'warning' || cable.status === 'unknown')
+      && cable.warning_reasons && cable.warning_reasons.length > 0
       ? cable.warning_reasons.join('. ')
       : cable.issues && cable.issues.length > 0 ? cable.issues.join('. ') : '';
     const titleEl = tooltipText ? `<title>${tooltipText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</title>` : '';
@@ -494,6 +540,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 80;
 
     let textHtml = lines.map((line, i) =>
@@ -511,11 +558,11 @@ const Annotations = {
 
   renderDutyCheckBadge(x, y, device, key) {
     const fillColor = device.status === 'fail' ? '#d32f2f' : device.status === 'warning' ? '#f57c00' : '#4caf50';
-    const icon = device.status === 'pass' ? '🛡' : device.status === 'warning' ? '🛡' : '🛡!';
-    const lines = [`${device.utilisation_pct.toFixed(0)}%`];
+    const lines = [`${device.utilisation_pct.toFixed(0)}%${device.status === 'fail' ? ' !' : ''}`];
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 60;
 
     let textHtml = lines.map((line, i) =>
@@ -544,6 +591,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 110;
 
     let textHtml = lines.map((line, i) =>
@@ -569,6 +617,7 @@ const Annotations = {
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
     const boxW = 90;
 
     let textHtml = lines.map((line, i) =>

@@ -92,6 +92,27 @@
   stroke-linecap: round;
 }
 
+/* Free-position wire attachments on the bus bar */
+.bus-attach-dot {
+  fill: #222;
+  stroke: #fff;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+/* Wire-drag snap feedback: target bus glows, snap dot marks the landing point */
+.sld-component.wire-target .bus-bar {
+  stroke: var(--accent);
+  stroke-width: 6;
+}
+
+#wire-snap-dot {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
 /* Annotation styles */
 .annotation-group {
   pointer-events: none;
@@ -154,6 +175,29 @@
   fill: #b71c1c;
 }
 
+/* ── Dark mode: result badges & labels ──
+   Badge boxes keep light fills by default; flip them so the near-white
+   .annotation-text (var(--text-primary)) stays readable. */
+body.dark-mode .fault-annotation .annotation-badge {
+  fill: #3a2c14;
+}
+body.dark-mode .loadflow-annotation .annotation-badge {
+  fill: #14301c;
+}
+body.dark-mode .unbalanced-lf-annotation .annotation-badge {
+  fill: #14253a;
+}
+body.dark-mode .error-annotation .annotation-badge {
+  fill: #3a1416;
+}
+body.dark-mode .error-annotation .annotation-text,
+body.dark-mode .error-annotation .annotation-label {
+  fill: #ef9a9a;
+}
+body.dark-mode .annotation-label {
+  fill: #8a8aa0;
+}
+
 .arcflash-annotation .af-badge-text {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -182,6 +226,7 @@
 .af-table tr.af-high { background: #fff3e0; }
 .af-table tr.af-medium { background: #fffde7; }
 .af-table tr.af-low { background: #e8f5e9; }
+.af-table tr.af-unknown { background: #f5f5f5; }
 .af-ppe-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -344,6 +389,10 @@
   pointer-events: all;
   cursor: move;
   font-family: var(--font-mono);
+  fill: #555;
+}
+body.dark-mode .comp-data-label {
+  fill: #b8b8c8;
 }
 .comp-data-label:hover {
   fill: var(--accent) !important;
@@ -384,4 +433,50 @@
 .symbol-pt { stroke: #555; stroke-width: 1.5; fill: none; }
 .symbol-arrester { stroke: #2e7d32; stroke-width: 1.5; fill: none; }
 .symbol-load { stroke: #555; stroke-width: 1.5; fill: none; }
+.symbol-db { stroke: #555; stroke-width: 1.5; fill: none; }
+.symbol-db .symbol-text { stroke: none; fill: #555; }
+body.dark-mode .symbol-db { stroke: #c0c0d0; }
+body.dark-mode .symbol-db .symbol-text { fill: #c0c0d0; }
 .symbol-capacitor { stroke: #0097a7; stroke-width: 1.5; fill: none; }
+
+/* DC system enclosures need an outline in both themes (fill-only otherwise) */
+.symbol-ups rect, .symbol-rectifier rect, .symbol-charger rect {
+  stroke: #555;
+  stroke-width: 1.5;
+}
+
+/* ── Dark-mode symbol palette ─────────────────────────────────────────
+   The light palette's dark strokes (#222/#333/#555) and dark hues vanish
+   on the #1a1a2a canvas. Same hue semantics, lifted lightness. */
+body.dark-mode .symbol-bus,
+body.dark-mode .bus-bar { stroke: #e0e0ee; }
+body.dark-mode .bus-resize-handle { fill: #8888aa; stroke: none; }
+body.dark-mode .symbol-transformer,
+body.dark-mode .symbol-transformer line,
+body.dark-mode .symbol-transformer polygon,
+body.dark-mode .symbol-transformer circle,
+body.dark-mode .symbol-transformer text,
+body.dark-mode .grounding-symbol,
+body.dark-mode .grounding-symbol line,
+body.dark-mode .symbol-switch { stroke: #c0c0d0; }
+body.dark-mode .symbol-cable,
+body.dark-mode .symbol-ct,
+body.dark-mode .symbol-pt,
+body.dark-mode .symbol-load { stroke: #a8a8c0; }
+body.dark-mode .symbol-motor { stroke: #ba68c8; }
+body.dark-mode .symbol-utility,
+body.dark-mode .symbol-relay { stroke: #64a5f5; }
+body.dark-mode .symbol-generator,
+body.dark-mode .symbol-arrester { stroke: #66bb6a; }
+body.dark-mode .symbol-cb { stroke: #ef5350; }
+body.dark-mode .symbol-cb.symbol-open,
+body.dark-mode .symbol-switch.symbol-open { stroke: #999; }
+body.dark-mode .symbol-capacitor { stroke: #4dd0e1; }
+body.dark-mode .symbol-ups rect,
+body.dark-mode .symbol-rectifier rect,
+body.dark-mode .symbol-charger rect { stroke: #a8a8c0; }
+body.dark-mode .symbol-ups line,
+body.dark-mode .symbol-rectifier line,
+body.dark-mode .symbol-charger line { stroke: #8888aa; }
+body.dark-mode .unconnected-warning circle { stroke: #ef5350; }
+body.dark-mode .unconnected-warning circle:last-child { fill: #ef5350; stroke: none; }

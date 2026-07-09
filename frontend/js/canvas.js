@@ -1,5 +1,8 @@
 /* ProtectionPro — SVG Canvas: Pan, Zoom, Rendering */
 
+// Multiplicative zoom step — one tick is ~10% at any scale
+const ZOOM_FACTOR = 1.1;
+
 const Canvas = {
   svg: null,
   diagramLayer: null,
@@ -30,6 +33,9 @@ const Canvas = {
   // State for dragging wire bend points
   bendDrag: null, // { wireId, bendIndex, startX, startY }
 
+  // Space-bar held down → left-drag pans the canvas
+  spaceDown: false,
+
   init() {
     this.svg = document.getElementById('sld-canvas');
     this.diagramLayer = document.getElementById('diagram-layer');
@@ -45,10 +51,72 @@ const Canvas = {
 
   bindEvents() {
     this.svg.addEventListener('mousedown', (e) => this.onMouseDown(e));
-    this.svg.addEventListener('mousemove', (e) => this.onMouseMove(e));
-    this.svg.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    // Move/up are bound at document level so drags don't get "stuck" when the
+    // pointer leaves the SVG before the button is released.
+    document.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    document.addEventListener('mouseup', (e) => this.onMouseUp(e));
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
-    this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Right-click: context-sensitive menu (component / wire / canvas)
+    this.svg.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (typeof ContextMenu === 'undefined') return;
+      // No menu mid-gesture (wire drawing, drags, marquee)
+      if (AppState.wireStart || AppState.dragState || this.busResize ||
+          this.bendDrag || this.isSelecting || this.isPanning) return;
+
+      const worldPt = this.screenToWorld(e.clientX, e.clientY);
+
+      const compEl = e.target.closest('.sld-component');
+      if (compEl) {
+        const id = compEl.dataset.id;
+        const comp = AppState.components.get(id);
+        if (!comp) return;
+        // Act on what's under the cursor: select it unless it's already
+        // part of the current (possibly multi-) selection
+        if (!AppState.selectedIds.has(id)) {
+          AppState.select(id);
+          if (comp.groupId) AppState.selectGroup(comp.groupId);
+          this.render();
+          Properties.show(id);
+        }
+        ContextMenu.openForComponent(comp, e.clientX, e.clientY);
+        return;
+      }
+
+      const wireEl = e.target.closest('.sld-wire');
+      if (wireEl) {
+        const wire = AppState.wires.get(wireEl.dataset.id);
+        if (!wire) return;
+        if (!AppState.selectedIds.has(wire.id)) {
+          AppState.select(wire.id);
+          this.render();
+        }
+        ContextMenu.openForWire(wire, worldPt, e.clientX, e.clientY);
+        return;
+      }
+
+      ContextMenu.openForCanvas(worldPt, e.clientX, e.clientY);
+    });
+
+    // Space-hold + left-drag panning
+    document.addEventListener('keydown', (e) => {
+      if (e.code !== 'Space' || this.spaceDown) return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+      this.spaceDown = true;
+      this.svg.classList.add('space-pan');
+      if (e.target === document.body) e.preventDefault(); // stop page scroll
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        this.spaceDown = false;
+        this.svg.classList.remove('space-pan');
+      }
+    });
+    window.addEventListener('blur', () => {
+      this.spaceDown = false;
+      this.svg.classList.remove('space-pan');
+    });
 
     // Hover highlighting: link annotation boxes to their bus components
     this.svg.addEventListener('mouseover', (e) => {
@@ -98,32 +166,7 @@ const Canvas = {
       // Check if double-clicked on a wire (add bend point)
       const wireEl = e.target.closest('.sld-wire');
       if (wireEl) {
-        const wireId = wireEl.dataset.id;
-        const wire = AppState.wires.get(wireId);
-        if (wire) {
-          if (!wire.bendPoints) wire.bendPoints = [];
-          // Insert bend point at clicked position, sorted by proximity to path segments
-          const snapped = { x: snapToGrid(worldPt.x), y: snapToGrid(worldPt.y) };
-          // Find insertion index based on distance along the wire
-          const fromComp = AppState.components.get(wire.fromComponent);
-          const toComp = AppState.components.get(wire.toComponent);
-          if (fromComp && toComp) {
-            const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
-            const allPts = [from, ...wire.bendPoints, Symbols.getPortWorldPosition(toComp, wire.toPort)];
-            let bestIdx = wire.bendPoints.length; // default: append
-            let bestDist = Infinity;
-            for (let i = 0; i < allPts.length - 1; i++) {
-              const d = this._ptSegDist(snapped, allPts[i], allPts[i + 1]);
-              if (d < bestDist) { bestDist = d; bestIdx = i; }
-            }
-            wire.bendPoints.splice(bestIdx, 0, snapped);
-          } else {
-            wire.bendPoints.push(snapped);
-          }
-          AppState.dirty = true;
-          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
-          this.render();
-        }
+        this.addWireBendPoint(wireEl.dataset.id, worldPt);
         return;
       }
     });
@@ -208,8 +251,8 @@ const Canvas = {
   onMouseDown(e) {
     const worldPt = this.screenToWorld(e.clientX, e.clientY);
 
-    // Middle button or space+left: start panning
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    // Middle button, Alt+left or Space+left: start panning
+    if (e.button === 1 || (e.button === 0 && (e.altKey || this.spaceDown))) {
       this.isPanning = true;
       this.panStart = { x: e.clientX - AppState.panX, y: e.clientY - AppState.panY };
       this.svg.classList.add('panning-active');
@@ -243,7 +286,7 @@ const Canvas = {
       const compId = labelEl.dataset.compId;
       const comp = AppState.components.get(compId);
       if (comp) {
-        const isLoad = comp.type === 'static_load' || comp.type === 'motor_induction' || comp.type === 'motor_synchronous';
+        const isLoad = ['static_load', 'motor_induction', 'motor_synchronous', 'distribution_board'].includes(comp.type);
         this.labelDrag = {
           compId,
           startX: worldPt.x,
@@ -293,12 +336,25 @@ const Canvas = {
         const comp = AppState.components.get(compId);
         if (comp && comp.type === 'bus') {
           const side = busResizeEl.dataset.busResize; // 'left' or 'right'
+          // Capture each attached wire's endpoint WORLD position so the
+          // resize drag can keep connections where they are on the canvas
+          const attachments = [];
+          for (const wire of AppState.wires.values()) {
+            const key = wire.fromComponent === compId ? 'fromPort'
+              : (wire.toComponent === compId ? 'toPort' : null);
+            if (!key) continue;
+            attachments.push({
+              wire, key,
+              world: Symbols.getPortWorldPosition(comp, wire[key]),
+            });
+          }
           this.busResize = {
             compId,
             side,
             startX: worldPt.x,
             origWidth: comp.props.busWidth || 120,
             origCompX: comp.x,
+            attachments,
           };
           e.preventDefault();
           return;
@@ -399,6 +455,27 @@ const Canvas = {
 
   // Mouse move handler
   onMouseMove(e) {
+    // Safety net: if the button was released outside the window (we never saw
+    // mouseup), finalize any active drag instead of leaving it sticky.
+    const interacting = this.isPanning || this.busResize || this.bendDrag ||
+        this.annotationDrag || this.labelDrag || this.nameLabelDrag ||
+        AppState.dragState || this.isSelecting || AppState.wireStart;
+
+    if (e.buttons === 0 && interacting && !AppState.wireStart) {
+      this.onMouseUp(e);
+      return;
+    }
+
+    // Fast idle path: with no active interaction, only hover detection runs —
+    // and that needs no world coordinates. Skipping screenToWorld here avoids a
+    // forced layout (getBoundingClientRect) on every pointer move anywhere in
+    // the document (the move/up listeners are bound at document level).
+    if (!interacting) {
+      const hoverEl = e.target.closest('.sld-component');
+      AppState.hoveredId = hoverEl ? hoverEl.dataset.id : null;
+      return;
+    }
+
     const worldPt = this.screenToWorld(e.clientX, e.clientY);
 
     // Panning
@@ -426,6 +503,17 @@ const Canvas = {
           const widthDelta = newWidth - this.busResize.origWidth;
           comp.props.busWidth = newWidth;
           comp.x = snapToGrid(this.busResize.origCompX - widthDelta / 2);
+        }
+        // Keep every attachment at its original WORLD position: rewrite the
+        // bus-side port to 'at_<x>' relative to the moved centre (clamped to
+        // the new extent). Also migrates legacy top_i/bottom_i ids in place.
+        const hw = comp.props.busWidth / 2;
+        const rot = -(comp.rotation || 0) * Math.PI / 180;
+        for (const att of (this.busResize.attachments || [])) {
+          const wx = att.world.x - comp.x;
+          const wy = att.world.y - comp.y;
+          const lx = wx * Math.cos(rot) - wy * Math.sin(rot);
+          att.wire[att.key] = `at_${Math.round(Math.max(-hw, Math.min(hw, lx)))}`;
         }
         AppState.dirty = true;
         this.render();
@@ -512,6 +600,7 @@ const Canvas = {
       } else {
         Wiring.updatePreview(worldPt);
       }
+      this._updateSnapHighlight(snap);
       return;
     }
 
@@ -550,6 +639,7 @@ const Canvas = {
     }
 
     if (this.annotationDrag) {
+      AppState.dirty = true;
       this.annotationDrag = null;
       return;
     }
@@ -593,23 +683,33 @@ const Canvas = {
     }
   },
 
-  // Mouse wheel: zoom
+  // Mouse wheel: zoom (multiplicative steps so each tick feels consistent)
   onWheel(e) {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, AppState.zoom + delta));
-
-    // Zoom toward cursor position
+    const factor = e.deltaY > 0 ? 1 / ZOOM_FACTOR : ZOOM_FACTOR;
     const rect = this.svg.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    this.zoomAt(factor, e.clientX - rect.left, e.clientY - rect.top);
+  },
 
+  // Zoom by a factor toward a point in SVG-local screen coords
+  zoomAt(factor, mx, my) {
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, AppState.zoom * factor));
     const scale = newZoom / AppState.zoom;
     AppState.panX = mx - scale * (mx - AppState.panX);
     AppState.panY = my - scale * (my - AppState.panY);
     AppState.zoom = newZoom;
-
     this.updateTransform();
+  },
+
+  // Keyboard zoom — zooms about the canvas center
+  zoomIn() {
+    const rect = this.svg.getBoundingClientRect();
+    this.zoomAt(ZOOM_FACTOR, rect.width / 2, rect.height / 2);
+  },
+
+  zoomOut() {
+    const rect = this.svg.getBoundingClientRect();
+    this.zoomAt(1 / ZOOM_FACTOR, rect.width / 2, rect.height / 2);
   },
 
   // Selection box (marquee) — recalculates selection on every move
@@ -629,8 +729,9 @@ const Canvas = {
     // Start from the base selection (shift+drag preserves prior selection)
     AppState.selectedIds = new Set(this.selBoxBaseIds);
 
-    // Select components whose bounding box overlaps the marquee
-    for (const [id, comp] of AppState.components) {
+    // Select components whose bounding box overlaps the marquee (visible sheet only)
+    const pageComps = AppState.getActivePageComponents();
+    for (const [id, comp] of pageComps) {
       const def = COMPONENT_DEFS[comp.type];
       const hw = def.width / 2;
       const hh = def.height / 2;
@@ -642,10 +743,10 @@ const Canvas = {
       }
     }
 
-    // Select wires whose any segment intersects the marquee
+    // Select wires whose any segment intersects the marquee (visible sheet only)
     for (const [id, wire] of AppState.wires) {
-      const fromComp = AppState.components.get(wire.fromComponent);
-      const toComp = AppState.components.get(wire.toComponent);
+      const fromComp = pageComps.get(wire.fromComponent);
+      const toComp = pageComps.get(wire.toComponent);
       if (!fromComp || !toComp) continue;
       const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
       const to = Symbols.getPortWorldPosition(toComp, wire.toPort);
@@ -683,6 +784,10 @@ const Canvas = {
     // Get page-filtered components and wires
     const pageComps = AppState.getActivePageComponents();
     const pageWires = AppState.getActivePageWires();
+
+    // Empty-state hint: show only when the project has no components at all
+    const emptyHint = document.getElementById('canvas-empty-hint');
+    if (emptyHint) emptyHint.style.display = AppState.components.size === 0 ? '' : 'none';
 
     // Render wires
     let wiresHtml = '';
@@ -746,7 +851,7 @@ const Canvas = {
       const anySelected = [...group.memberIds].some(cid => AppState.selectedIds.has(cid));
       const cls = anySelected ? 'sld-group selected' : 'sld-group';
       compsHtml += `<rect class="${cls}" data-group-id="${gid}" x="${bounds.x}" y="${bounds.y}" width="${bounds.w}" height="${bounds.h}" rx="6"/>`;
-      compsHtml += `<text class="sld-group-label" x="${bounds.x + 4}" y="${bounds.y - 3}" font-size="10" fill="#6a1b9a">${group.name}</text>`;
+      compsHtml += `<text class="sld-group-label" x="${bounds.x + 4}" y="${bounds.y - 3}" font-size="10" fill="#6a1b9a">${escHtml(group.name)}</text>`;
     }
     for (const [id, comp] of pageComps) {
       compsHtml += Symbols.renderComponent(comp);
@@ -866,15 +971,23 @@ const Canvas = {
           if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
           if (p.power_factor) lines.push(`PF ${p.power_factor}`);
         } else if (comp.type === 'solar_pv') {
-          const ratingStr = p.rated_kw >= 1000 ? `${(p.rated_kw / 1000).toFixed(1)} MW` : `${p.rated_kw} kW`;
-          lines.push(ratingStr);
+          // Rating line shows the TOTAL plant size (rated kW × inverters)
+          const nInv = Math.max(1, p.num_inverters || 1);
+          const totalKw = (p.rated_kw || 0) * nInv;
+          const fmtKw = (kw) => kw >= 1000 ? `${(kw / 1000).toFixed(1)} MW` : `${kw.toFixed(0)} kW`;
+          lines.push(nInv > 1 ? `${nInv}×${fmtKw(p.rated_kw || 0)} = ${fmtKw(totalKw)}` : fmtKw(totalKw));
+          // Show the availability-scaled output when below full irradiance
+          const irr = p.irradiance_pct ?? 100;
+          if (irr < 100) lines.push(`@ ${irr}% → ${fmtKw(totalKw * irr / 100)}`);
           if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
-          if (p.num_inverters > 1) lines.push(`${p.num_inverters}× Inv`);
         } else if (comp.type === 'wind_turbine') {
-          const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
-          lines.push(ratingStr);
+          const nTurb = Math.max(1, p.num_turbines || 1);
+          const totalMva = (p.rated_mva || 0) * nTurb;
+          const fmtMva = (mva) => mva >= 1 ? `${mva.toFixed(1)} MVA` : `${(mva * 1000).toFixed(0)} kVA`;
+          lines.push(nTurb > 1 ? `${nTurb}×${fmtMva(p.rated_mva || 0)} = ${fmtMva(totalMva)}` : fmtMva(totalMva));
+          const windPct = p.wind_speed_pct ?? 100;
+          if (windPct < 100) lines.push(`@ ${windPct}% → ${fmtMva(totalMva * windPct / 100)}`);
           if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
-          if (p.num_turbines > 1) lines.push(`${p.num_turbines}× WTG`);
         }
         // Show load flow output annotation for source components
         if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.branches) {
@@ -894,6 +1007,13 @@ const Canvas = {
         lines.push(`${p.rated_kva || 0} kVA`);
         lines.push(`PF ${p.power_factor || 0.85}`);
         defaultOY = 30;
+      } else if (comp.type === 'distribution_board') {
+        if (p.name && p.name !== 'DB') lines.push(p.name);
+        const ways = (p.circuits || []).length;
+        const demand = (p.rated_kva || 0) * (p.demand_factor || 1);
+        lines.push(`${ways} way${ways === 1 ? '' : 's'}`);
+        lines.push(`${demand.toFixed(1)} kVA demand`);
+        defaultOY = 32;
       } else if (comp.type === 'motor_induction') {
         if (p.name && p.name !== 'IM') lines.push(p.name);
         lines.push(`${p.rated_kw || 0} kW`);
@@ -911,7 +1031,12 @@ const Canvas = {
         if (p.breaking_capacity_ka) lines.push(`Icu ${p.breaking_capacity_ka}kA`);
         const thPu = p.thermal_pickup || 1.0;
         const magPu = p.magnetic_pickup || 10;
-        lines.push(`Ir=${thPu}× Im=${magPu}×`);
+        // Trip currents in brackets (Ir = In × thermal, Im = Ir × magnetic)
+        const irA = tripA * thPu;
+        const imA = irA * magPu;
+        const fmtA = (a) => a >= 1000 ? `${(a / 1000).toFixed(1)}kA` : `${a.toFixed(0)}A`;
+        lines.push(`Ir=${thPu}× (${fmtA(irA)})`);
+        lines.push(`Im=${magPu}× (${fmtA(imA)})`);
         if (cbType === 'ACB' && p.short_time_pickup) {
           lines.push(`ST=${p.short_time_pickup}×`);
         }
@@ -937,9 +1062,9 @@ const Canvas = {
       const lineHtml = lines.map((line, i) => {
         const text = typeof line === 'string' ? line : line.text;
         const fill = typeof line === 'object' && line.color ? ` fill="${line.color}"` : '';
-        return `<tspan x="${x}" dy="${i === 0 ? 0 : 12}"${fill}>${text}</tspan>`;
+        return `<tspan x="${x}" dy="${i === 0 ? 0 : 12}"${fill}>${escHtml(text)}</tspan>`;
       }).join('');
-      html += `<text class="comp-data-label" data-comp-id="${comp.id}" x="${x}" y="${y}" font-size="9" fill="#555" font-family="var(--font-mono)" cursor="move">${lineHtml}</text>`;
+      html += `<text class="comp-data-label" data-comp-id="${comp.id}" x="${x}" y="${y}" font-size="9" font-family="var(--font-mono)" cursor="move">${lineHtml}</text>`;
     }
     this.annotationsLayer.insertAdjacentHTML('beforeend', html);
   },
@@ -1281,7 +1406,47 @@ const Canvas = {
     return { x: (last.from.x + last.to.x) / 2, y: (last.from.y + last.to.y) / 2, angle: last.angle };
   },
 
-  // Find the nearest port within snap radius (world coordinates)
+  // Visual feedback while dragging a wire: glow the target bus bar (or the
+  // target port dot) and show a snap dot at the exact attachment point.
+  _updateSnapHighlight(snap) {
+    // Clear previous highlights
+    this.componentsLayer.querySelectorAll('.sld-component.wire-target')
+      .forEach(el => el.classList.remove('wire-target'));
+    this.componentsLayer.querySelectorAll('.conn-port.active')
+      .forEach(el => el.classList.remove('active'));
+
+    const preview = document.getElementById('wire-preview');
+    let dot = document.getElementById('wire-snap-dot');
+    if (!snap) {
+      if (dot) dot.style.display = 'none';
+      return;
+    }
+    const grp = this.componentsLayer.querySelector(`.sld-component[data-id="${snap.compId}"]`);
+    const comp = AppState.components.get(snap.compId);
+    if (grp && comp) {
+      if (comp.type === 'bus') {
+        grp.classList.add('wire-target');
+      } else {
+        const portDot = grp.querySelector(`.conn-port[data-port="${snap.portId}"]`);
+        if (portDot) portDot.classList.add('active');
+      }
+    }
+    if (!dot && preview) {
+      dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.id = 'wire-snap-dot';
+      dot.setAttribute('r', '5');
+      preview.appendChild(dot);
+    }
+    if (dot) {
+      dot.setAttribute('cx', snap.x);
+      dot.setAttribute('cy', snap.y);
+      dot.style.display = '';
+    }
+  },
+
+  // Find the nearest port within snap radius (world coordinates).
+  // Buses accept free-position attachments: the snap target is the nearest
+  // point ON the bar (grid-snapped along it), returned as an 'at_<x>' port.
   findNearestPort(worldPt, excludeCompId) {
     const SNAP_RADIUS = 30;
     let nearest = null;
@@ -1290,8 +1455,26 @@ const Canvas = {
       if (excludeCompId && comp.id === excludeCompId) continue;
       const def = COMPONENT_DEFS[comp.type];
       if (!def.ports) continue;
-      const ports = (comp.type === 'bus') ? Symbols.getBusPorts(comp) : def.ports;
-      for (const port of ports) {
+      if (comp.type === 'bus') {
+        const hw = ((comp.props && comp.props.busWidth) || 120) / 2;
+        // Transform cursor into the bus's local frame (inverse rotation)
+        const rot = -(comp.rotation || 0) * Math.PI / 180;
+        const dx0 = worldPt.x - comp.x;
+        const dy0 = worldPt.y - comp.y;
+        const lx = dx0 * Math.cos(rot) - dy0 * Math.sin(rot);
+        const ly = dx0 * Math.sin(rot) + dy0 * Math.cos(rot);
+        // Snap along the bar to the grid, clamp to the bar extent
+        const ax = Math.max(-hw, Math.min(hw, Math.round(lx / GRID_SIZE) * GRID_SIZE));
+        const portId = `at_${Math.round(ax)}`;
+        const pos = Symbols.getPortWorldPosition(comp, portId);
+        const dist = Math.hypot(worldPt.x - pos.x, worldPt.y - pos.y);
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = { compId: comp.id, portId, x: pos.x, y: pos.y };
+        }
+        continue;
+      }
+      for (const port of def.ports) {
         const pos = Symbols.getPortWorldPosition(comp, port.id);
         const dx = worldPt.x - pos.x;
         const dy = worldPt.y - pos.y;
@@ -1315,6 +1498,33 @@ const Canvas = {
       Properties.show(comp.id);
     }
     return comp;
+  },
+
+  // Insert a bend point on a wire at the given world position, placed into
+  // the path segment nearest the point. Shared by dblclick and context menu.
+  addWireBendPoint(wireId, worldPt) {
+    const wire = AppState.wires.get(wireId);
+    if (!wire) return;
+    if (!wire.bendPoints) wire.bendPoints = [];
+    const snapped = { x: snapToGrid(worldPt.x), y: snapToGrid(worldPt.y) };
+    const fromComp = AppState.components.get(wire.fromComponent);
+    const toComp = AppState.components.get(wire.toComponent);
+    if (fromComp && toComp) {
+      const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
+      const allPts = [from, ...wire.bendPoints, Symbols.getPortWorldPosition(toComp, wire.toPort)];
+      let bestIdx = wire.bendPoints.length; // default: append
+      let bestDist = Infinity;
+      for (let i = 0; i < allPts.length - 1; i++) {
+        const d = this._ptSegDist(snapped, allPts[i], allPts[i + 1]);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      wire.bendPoints.splice(bestIdx, 0, snapped);
+    } else {
+      wire.bendPoints.push(snapped);
+    }
+    AppState.dirty = true;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    this.render();
   },
 
   // Point-to-segment distance for bend point insertion

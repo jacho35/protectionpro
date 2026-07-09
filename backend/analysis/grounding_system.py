@@ -7,8 +7,9 @@ Uses fault current results from IEC 60909 analysis.
 Key IEEE 80 equations:
   - Grid resistance (Schwarz): R_g = ρ / (4√(A/π)) + ρ / L_T
   - Ground potential rise: GPR = I_G × R_g
-  - Touch voltage limit: E_touch = (1000 + 1.5 × C_s × ρ_s) × 0.116 / √t_s
-  - Step voltage limit: E_step = (1000 + 6 × C_s × ρ_s) × 0.116 / √t_s
+  - Touch voltage limit: E_touch = (1000 + 1.5 × C_s × ρ_s) × k / √t_s
+  - Step voltage limit: E_step = (1000 + 6 × C_s × ρ_s) × k / √t_s
+    (k = 0.116 for 50 kg body weight, 0.157 for 70 kg)
   - Mesh voltage (actual touch): E_m = ρ × I_G × K_m × K_i / L_M
   - Step voltage (actual step): E_s = ρ × I_G × K_s × K_i / L_S
   - Conductor sizing (Onderdonk): A = I × √(t_c × α_r × ρ_r / (TCAP × ln(1 + (T_m - T_a) / (K_0 + T_a))))
@@ -82,7 +83,6 @@ def _compute_surface_derating(rho, rho_s, h_s):
     """
     if rho_s <= 0 or rho <= 0:
         return 1.0
-    reflection_factor = (rho - rho_s) / (rho + rho_s)
     # Simplified C_s per IEEE 80-2013 eq 27
     C_s = 1 - 0.09 * (1 - rho / rho_s) / (2 * h_s + 0.09)
     C_s = max(0.0, min(1.0, C_s))
@@ -93,11 +93,11 @@ def _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight=70):
     """Compute tolerable touch and step voltages per IEEE 80.
 
     For 70 kg person (IEEE 80 eq 32, 33):
-      E_touch = (1000 + 1.5 × C_s × ρ_s) × 0.116 / √t_s
-      E_step  = (1000 + 6.0 × C_s × ρ_s) × 0.116 / √t_s
+      E_touch = (1000 + 1.5 × C_s × ρ_s) × 0.157 / √t_s
+      E_step  = (1000 + 6.0 × C_s × ρ_s) × 0.157 / √t_s
 
     For 50 kg person (IEEE 80 eq 29, 30):
-      E_touch = (1000 + 1.5 × C_s × ρ_s) × 0.116 / √t_s  (same formula, different constant)
+      same formulae with the 0.116 body-current constant
     """
     if t_s <= 0:
         t_s = 0.5
@@ -204,14 +204,12 @@ def _compute_conductor_size(I_fault_a, t_c, material_key="copper_hard", T_a=40.0
     if ln_term <= 0:
         return 0
 
-    # IEEE 80 uses kcmil, we convert to mm²
-    # A (kcmil) = I × K_f × √t_c  where K_f = √(α_r × ρ_r × 1e4 / (TCAP × ln_term))
+    # IEEE 80 Eq. 37 metric form: A (mm²) = I (kA) × √(α_r × ρ_r × 1e4 / (TCAP × ln_term) × t_c)
     K_f_sq = alpha_r * rho_r * 1e4 / (TCAP * ln_term)
     if K_f_sq <= 0:
         return 0
 
-    A_kcmil = I_fault_a * math.sqrt(K_f_sq * t_c)
-    A_mm2 = A_kcmil * 0.5067  # 1 kcmil = 0.5067 mm²
+    A_mm2 = (I_fault_a / 1000.0) * math.sqrt(K_f_sq * t_c)
     return A_mm2
 
 

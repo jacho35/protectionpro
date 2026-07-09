@@ -193,6 +193,22 @@
   margin: 4px 0;
 }
 
+/* ─── Right-click context menu (shares .dropdown-item styling) ─── */
+#context-menu {
+  position: fixed;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  min-width: 200px;
+  z-index: 3000;
+  padding: 4px 0;
+}
+#context-menu .dropdown-item.context-danger:hover:not(:disabled) {
+  background: rgba(211, 47, 47, 0.12) !important;
+  color: #d32f2f !important;
+}
+
 .dropdown-label {
   display: block;
   font-size: 10px;

@@ -55,10 +55,13 @@ const Symbols = {
   bus(w, h, comp) {
     const bw = (comp && comp.props && comp.props.busWidth) || w;
     const hw = bw / 2;
-    // Resize handles sit beyond the edge ports (which are at ±hw)
-    const handleOffset = 18; // past the port hit radius (14)
+    const handleOffset = 18;
+    // Fat invisible hit line: makes the bar easy to click (select) and hover.
+    // Wires attach anywhere along the bar (free-position 'at_<x>' ports).
     return `
       <g class="symbol-bus">
+        <title>Click: select · Drag: move · Press W to draw a wire</title>
+        <line class="bus-bar-hit" x1="${-hw}" y1="0" x2="${hw}" y2="0" stroke="transparent" stroke-width="14" pointer-events="stroke"/>
         <line class="bus-bar" x1="${-hw}" y1="0" x2="${hw}" y2="0"/>
         <rect class="bus-resize-handle bus-resize-left" x="${-hw - handleOffset - 12}" y="-10" width="12" height="20" rx="3" data-bus-resize="left"/>
         <rect class="bus-resize-handle bus-resize-right" x="${hw + handleOffset}" y="-10" width="12" height="20" rx="3" data-bus-resize="right"/>
@@ -83,6 +86,24 @@ const Symbols = {
       ports.push({ id: `bottom_${i}`, side: 'bottom', offset: x, _x: x, _y: 5 });
     }
     return ports;
+  },
+
+  // Resolve a bus port id to LOCAL coordinates on the bar.
+  // Free-position ids ('at_<x>', x = offset from centre) are clamped to the
+  // current bar extent so resizing can never leave a connection dangling;
+  // legacy generated ids (left/right/top_i/bottom_i, plus bare 'top'/'bottom')
+  // resolve through getBusPorts. Returns null if unresolvable.
+  getBusPortLocal(comp, portId) {
+    const hw = (((comp.props && comp.props.busWidth) || 120)) / 2;
+    const pid = String(portId || '');
+    if (pid.startsWith('at_')) {
+      const off = parseFloat(pid.slice(3));
+      return { x: Math.max(-hw, Math.min(hw, isNaN(off) ? 0 : off)), y: 0 };
+    }
+    const ports = this.getBusPorts(comp);
+    const port = ports.find(p => p.id === pid) || ports.find(p => p.id === pid + '_0');
+    if (port) return { x: port._x || 0, y: port._y || 0 };
+    return null;
   },
 
   transformer(w, h, comp) {
@@ -354,6 +375,21 @@ const Symbols = {
       </g>`;
   },
 
+  distribution_board(w, h) {
+    const hw = w * 0.42, hh = h * 0.4;
+    // Enclosure with incomer stub and way rows — reads as a DB legend card
+    return `
+      <g class="symbol-db">
+        <line x1="0" y1="${-h / 2}" x2="0" y2="${-hh}"/>
+        <rect class="symbol-fill" x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" rx="2" fill="none"/>
+        <line x1="${-hw}" y1="${-hh + 9}" x2="${hw}" y2="${-hh + 9}"/>
+        <text x="0" y="${-hh + 7}" text-anchor="middle" font-size="7" font-weight="bold" class="symbol-text">DB</text>
+        <line x1="${-hw + 4}" y1="${-hh + 14}" x2="${hw - 4}" y2="${-hh + 14}" stroke-width="1"/>
+        <line x1="${-hw + 4}" y1="${-hh + 19}" x2="${hw - 4}" y2="${-hh + 19}" stroke-width="1"/>
+        <line x1="${-hw + 4}" y1="${-hh + 24}" x2="${hw - 4}" y2="${-hh + 24}" stroke-width="1"/>
+      </g>`;
+  },
+
   capacitor_bank(w, h) {
     const hw = w * 0.4;
     const gap = 4;
@@ -450,12 +486,28 @@ const Symbols = {
     if (!symbolFn) return '';
 
     const symbolSvg = symbolFn.call(this, w, h, comp);
-    const ports = isBus ? this.getBusPorts(comp) : (def.ports || []);
-    const portsHtml = ports.map(p => {
-      const pos = isBus ? { x: p._x || p.offset || 0, y: p._y || (p.side === 'top' ? -h / 2 : (p.side === 'bottom' ? h / 2 : 0)) } : this.getPortPosition(p, w, h);
-      return `<circle class="conn-port-hit" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
+    let portsHtml;
+    if (isBus) {
+      // Free-position attachments: no port hit-circles (they blocked bus
+      // selection). Draw a small dot at each connected wire endpoint instead.
+      const dots = [];
+      if (typeof AppState !== 'undefined' && AppState.wires) {
+        for (const wire of AppState.wires.values()) {
+          const pid = wire.fromComponent === comp.id ? wire.fromPort
+            : (wire.toComponent === comp.id ? wire.toPort : null);
+          if (pid == null) continue;
+          const loc = this.getBusPortLocal(comp, pid);
+          if (loc) dots.push(`<circle class="bus-attach-dot" cx="${loc.x}" cy="${loc.y}" r="3.5"/>`);
+        }
+      }
+      portsHtml = dots.join('');
+    } else {
+      portsHtml = (def.ports || []).map(p => {
+        const pos = this.getPortPosition(p, w, h);
+        return `<circle class="conn-port-hit" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
               <circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
-    }).join('');
+      }).join('');
+    }
 
     // Name label below component (draggable via offsets)
     const nlOX = comp.nameLabelOffsetX || 0;
@@ -492,21 +544,10 @@ const Symbols = {
     let local;
 
     if (isBus) {
-      // Use dynamic bus ports
-      const ports = this.getBusPorts(comp);
-      const port = ports.find(p => p.id === portId);
-      if (!port) {
-        // Fallback: try to find a matching port by prefix for legacy wires
-        // e.g. 'top' maps to 'top_0', 'bottom' maps to 'bottom_0'
-        const fallback = ports.find(p => p.id === portId + '_0') || ports.find(p => p.id === portId);
-        if (fallback) {
-          local = { x: fallback._x || 0, y: fallback._y || 0 };
-        } else {
-          return { x: comp.x, y: comp.y };
-        }
-      } else {
-        local = { x: port._x || 0, y: port._y || 0 };
-      }
+      // Free-position 'at_<x>' attachments, with legacy generated-port fallback
+      const loc = this.getBusPortLocal(comp, portId);
+      if (!loc) return { x: comp.x, y: comp.y };
+      local = loc;
     } else {
       const port = def.ports.find(p => p.id === portId);
       if (!port) return { x: comp.x, y: comp.y };

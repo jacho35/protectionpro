@@ -7,12 +7,35 @@ const StandardData = {
   cbs: [],
   fuses: [],
 
+  // localStorage key for persisted library customizations
+  _STORAGE_KEY: 'protectionpro-custom-libraries',
+  // Bump when shipped default library DATA changes (e.g. corrected cable
+  // resistances). A persisted payload with an older version still loads the
+  // user's customizations, but we warn that newer defaults are available.
+  _DATA_VERSION: 2,
+
   init() {
+    // Capture pristine defaults BEFORE any sync mutates the global arrays —
+    // "Reset to Defaults" must restore these, not the edited working copies.
+    this._defaults = {
+      cables: JSON.parse(JSON.stringify(STANDARD_CABLES)),
+      transformers: JSON.parse(JSON.stringify(STANDARD_TRANSFORMERS)),
+      cbs: JSON.parse(JSON.stringify(STANDARD_CBS)),
+      fuses: JSON.parse(JSON.stringify(STANDARD_FUSES)),
+    };
+
     // Clone defaults into working copies
     this.cables = JSON.parse(JSON.stringify(STANDARD_CABLES));
     this.transformers = JSON.parse(JSON.stringify(STANDARD_TRANSFORMERS));
     this.cbs = JSON.parse(JSON.stringify(STANDARD_CBS));
     this.fuses = JSON.parse(JSON.stringify(STANDARD_FUSES));
+
+    // Restore persisted customizations, if any
+    this._loadPersisted();
+    this.syncCableLibrary();
+    this.syncTransformerLibrary();
+    this.syncCBLibrary();
+    this.syncFuseLibrary();
 
     this.bindTabs();
     this.bindCableTable();
@@ -20,6 +43,50 @@ const StandardData = {
     this.bindCBTable();
     this.bindFuseTable();
     this.bindIECStandards();
+
+    // Persist only edits made after init
+    this._initialized = true;
+  },
+
+  // ─── Library Persistence (localStorage) ───
+  _loadPersisted() {
+    try {
+      const raw = localStorage.getItem(this._STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.cables)) this.cables = data.cables;
+      if (Array.isArray(data.transformers)) this.transformers = data.transformers;
+      if (Array.isArray(data.cbs)) this.cbs = data.cbs;
+      if (Array.isArray(data.fuses)) this.fuses = data.fuses;
+      // Keep the user's customizations, but if the shipped defaults have been
+      // revised since they were saved, let them know they can adopt the update.
+      if ((data.version || 1) < this._DATA_VERSION) {
+        const msg = 'Component libraries: the shipped defaults have been updated '
+          + '(e.g. corrected cable resistances) since your customisations were saved. '
+          + 'Use "Reset to Defaults" in Settings to adopt them.';
+        setTimeout(() => {
+          const el = document.getElementById('status-info');
+          if (el) el.textContent = msg;
+        }, 1500);
+      }
+    } catch (e) {
+      console.error('Failed to load custom libraries from localStorage:', e);
+    }
+  },
+
+  _persist() {
+    if (!this._initialized) return;
+    try {
+      localStorage.setItem(this._STORAGE_KEY, JSON.stringify({
+        version: this._DATA_VERSION,
+        cables: this.cables,
+        transformers: this.transformers,
+        cbs: this.cbs,
+        fuses: this.fuses,
+      }));
+    } catch (e) {
+      console.error('Failed to persist custom libraries:', e);
+    }
   },
 
   // ─── Tab Switching ───
@@ -54,7 +121,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-cables').addEventListener('click', () => {
-      this.cables = JSON.parse(JSON.stringify(STANDARD_CABLES));
+      if (!confirm('Reset the cable library to defaults?\nAll your custom cables and edits will be permanently discarded.')) return;
+      this.cables = JSON.parse(JSON.stringify(this._defaults.cables));
       this.renderCableTable();
       this.syncCableLibrary();
     });
@@ -112,6 +180,7 @@ const StandardData = {
     // Update the global STANDARD_CABLES array in-place
     STANDARD_CABLES.length = 0;
     for (const c of this.cables) STANDARD_CABLES.push(c);
+    this._persist();
   },
 
   // ─── Transformer Library Table ───
@@ -127,7 +196,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-xfmrs').addEventListener('click', () => {
-      this.transformers = JSON.parse(JSON.stringify(STANDARD_TRANSFORMERS));
+      if (!confirm('Reset the transformer library to defaults?\nAll your custom transformers and edits will be permanently discarded.')) return;
+      this.transformers = JSON.parse(JSON.stringify(this._defaults.transformers));
       this.renderTransformerTable();
       this.syncTransformerLibrary();
     });
@@ -177,6 +247,7 @@ const StandardData = {
   syncTransformerLibrary() {
     STANDARD_TRANSFORMERS.length = 0;
     for (const t of this.transformers) STANDARD_TRANSFORMERS.push(t);
+    this._persist();
   },
 
   // ─── Circuit Breaker Library Table ───
@@ -193,7 +264,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-cbs').addEventListener('click', () => {
-      this.cbs = JSON.parse(JSON.stringify(STANDARD_CBS));
+      if (!confirm('Reset the circuit breaker library to defaults?\nAll your custom breakers and edits will be permanently discarded.')) return;
+      this.cbs = JSON.parse(JSON.stringify(this._defaults.cbs));
       this.renderCBTable();
       this.syncCBLibrary();
     });
@@ -242,6 +314,7 @@ const StandardData = {
   syncCBLibrary() {
     STANDARD_CBS.length = 0;
     for (const c of this.cbs) STANDARD_CBS.push(c);
+    this._persist();
   },
 
   // ─── Fuse Library Table ───
@@ -257,7 +330,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-fuses').addEventListener('click', () => {
-      this.fuses = JSON.parse(JSON.stringify(STANDARD_FUSES));
+      if (!confirm('Reset the fuse library to defaults?\nAll your custom fuses and edits will be permanently discarded.')) return;
+      this.fuses = JSON.parse(JSON.stringify(this._defaults.fuses));
       this.renderFuseTable();
       this.syncFuseLibrary();
     });
@@ -304,6 +378,7 @@ const StandardData = {
   syncFuseLibrary() {
     STANDARD_FUSES.length = 0;
     for (const f of this.fuses) STANDARD_FUSES.push(f);
+    this._persist();
   },
 
   // Open settings modal

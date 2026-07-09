@@ -411,6 +411,7 @@ const NetworkTemplates = {
         const data = this.generate(id);
         if (!data) return;
         AppState.fromJSON(data);
+        UndoManager.clear();
         Canvas.updateTransform();
         Canvas.render();
         Properties.clear();

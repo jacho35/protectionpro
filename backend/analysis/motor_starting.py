@@ -14,6 +14,19 @@ from ..models.schemas import ProjectData
 # Transparent types that do not form a bus boundary
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester"}
 
+# Starting-method current-reduction factors applied to the DOL locked-rotor
+# current. Reduced-voltage starters draw I_start ∝ (V_applied)², so an 80%
+# autotransformer tap gives 0.8² ≈ 0.64. VFDs are handled specially — the
+# drive limits supply current to ≈ full-load current during the ramp, so the
+# locked-rotor multiple does not apply.
+_STARTING_METHODS = {
+    "dol":             (1.0,  "Direct-on-Line"),
+    "star_delta":      (1.0 / 3.0, "Star-Delta"),
+    "autotransformer": (0.64, "Autotransformer (80% tap)"),
+    "soft_starter":    (0.5,  "Soft Starter"),
+    "vfd":             (None, "VFD"),
+}
+
 
 def _build_adjacency(project):
     """Build adjacency map: component_id -> [(neighbor_id, wire)]."""
@@ -62,10 +75,13 @@ def run_motor_starting(project: ProjectData):
     comp_map = {c.id: c for c in project.components}
     adj = _build_adjacency(project)
 
-    # Find all induction motors
-    motors = [c for c in project.components if c.type == "motor_induction"]
+    # Find all motors (induction and synchronous — synchronous machines start
+    # asynchronously through their amortisseur winding and draw locked-rotor
+    # current just like an induction motor)
+    motors = [c for c in project.components
+              if c.type in ("motor_induction", "motor_synchronous")]
     if not motors:
-        return {"motors": [], "warnings": ["No induction motors found in the project."]}
+        return {"motors": [], "warnings": ["No motors found in the project."]}
 
     # Run baseline load flow (normal operation)
     baseline = None
@@ -89,20 +105,37 @@ def run_motor_starting(project: ProjectData):
 
     for motor in motors:
         mp = motor.props
+        is_sync = motor.type == "motor_synchronous"
         motor_name = mp.get("name", motor.id)
-        rated_kw = float(mp.get("rated_kw", 0))
         voltage_kv = float(mp.get("voltage_kv", 0))
-        efficiency = float(mp.get("efficiency", 0.93))
-        power_factor = float(mp.get("power_factor", 0.85))
-        lrc = float(mp.get("locked_rotor_current", 6.0))
+        power_factor = float(mp.get("power_factor", 0.9 if is_sync else 0.85))
+        lrc = float(mp.get("locked_rotor_current", 5.5 if is_sync else 6.0))
 
-        if rated_kw <= 0 or voltage_kv <= 0:
-            analysis_warnings.append(f"Motor '{motor_name}' has invalid ratings, skipped.")
-            continue
+        # Full-load current depends on the machine's rating convention:
+        # induction motors are rated in shaft kW (S = kW/(η·pf)), synchronous
+        # motors in kVA.
+        if is_sync:
+            rated_kva = float(mp.get("rated_kva", 0))
+            if rated_kva <= 0 or voltage_kv <= 0:
+                analysis_warnings.append(f"Motor '{motor_name}' has invalid ratings, skipped.")
+                continue
+            flc_a = rated_kva / (math.sqrt(3) * voltage_kv)
+            rated_kw = rated_kva * power_factor  # shaft-power equivalent for display
+        else:
+            rated_kw = float(mp.get("rated_kw", 0))
+            efficiency = float(mp.get("efficiency", 0.93))
+            if rated_kw <= 0 or voltage_kv <= 0:
+                analysis_warnings.append(f"Motor '{motor_name}' has invalid ratings, skipped.")
+                continue
+            flc_a = rated_kw / (math.sqrt(3) * voltage_kv * efficiency * power_factor)
 
-        # Calculate full load current
-        flc_a = rated_kw / (math.sqrt(3) * voltage_kv * efficiency * power_factor)
-        start_current_a = flc_a * lrc
+        # Apply the starting-method current reduction
+        method_key = str(mp.get("starting_method", "dol")).lower()
+        factor, method_label = _STARTING_METHODS.get(method_key, _STARTING_METHODS["dol"])
+        if factor is None:  # VFD — drive limits supply current to ≈ full-load
+            start_current_a = flc_a
+        else:
+            start_current_a = flc_a * lrc * factor
 
         # Calculate starting MVA
         s_start_mva = voltage_kv * start_current_a * math.sqrt(3) / 1000
@@ -119,14 +152,28 @@ def run_motor_starting(project: ProjectData):
 
         if motor.id in mod_comp_map:
             mod_motor = mod_comp_map[motor.id]
-            # Replace motor with locked-rotor impedance model
-            # Store original props and modify for starting condition
-            # The load flow treats motor_induction as a load — we increase its
-            # apparent power to the starting MVA at very low power factor
-            # to simulate locked-rotor condition
-            mod_motor.props["rated_kw"] = s_start_mva * 1000 * 0.3  # ~0.3 pf during start
+            # Replace the motor with a starting load drawing the full starting
+            # MVA at a low (locked-rotor) power factor.
+            #
+            # NOTE: this models the locked rotor as a constant-PQ load, which is
+            # an approximation. A locked rotor is physically a constant impedance
+            # (S ∝ V²), so the constant-PQ model draws somewhat more current at
+            # the depressed voltage than the true locked-rotor impedance would —
+            # a conservative (slightly pessimistic) bias for voltage-dip results.
+            # If the load-flow motor convention changes, the reconstruction
+            # below must change with it (see
+            # backend/tests/test_regression.py::TestMotorStarting).
             mod_motor.props["power_factor"] = 0.3  # Typical starting pf
-            mod_motor.props["efficiency"] = 1.0  # Direct impedance model
+            if is_sync:
+                # load flow models synchronous motors as S = rated_kva/1000 at
+                # the rated pf, so feeding S_start (in kVA) reproduces it.
+                mod_motor.props["rated_kva"] = s_start_mva * 1000
+            else:
+                # load flow computes S = rated_kw/(eff·pf)/1000, so with
+                # eff = 1.0 and pf = 0.3 the active-power prop must be S_start·pf
+                # for the drawn apparent power to equal the full starting MVA.
+                mod_motor.props["rated_kw"] = s_start_mva * 1000 * 0.3  # = S_start × pf
+                mod_motor.props["efficiency"] = 1.0  # Direct impedance model
 
         # Run load flow with motor in starting condition
         start_lf = None
@@ -207,6 +254,8 @@ def run_motor_starting(project: ProjectData):
             "motor_name": motor_name,
             "terminal_bus": terminal_bus_name or terminal_bus or "",
             "rated_kw": round(rated_kw, 1),
+            "motor_type": "synchronous" if is_sync else "induction",
+            "starting_method": method_label,
             "start_current_a": round(start_current_a, 1),
             "motor_terminal_voltage_pu": round(motor_terminal_v_pu, 4),
             "motor_will_start": motor_will_start,

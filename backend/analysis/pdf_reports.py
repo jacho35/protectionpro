@@ -112,7 +112,7 @@ def generate_full_report(project_name, base_mva, frequency,
 
     all_sections = sections or ["title", "fault", "fault_branches", "voltage_depression",
                                 "loadflow_bus", "loadflow_branch", "equipment",
-                                "settings_schedule", "arcflash"]
+                                "settings_schedule", "db_schedules", "arcflash"]
 
     comp_map = {}
     if components:
@@ -138,6 +138,8 @@ def generate_full_report(project_name, base_mva, frequency,
             _render_equipment(pdf, components)
         elif sec == "settings_schedule":
             _render_settings_schedule(pdf, components)
+        elif sec == "db_schedules":
+            _render_db_schedules(pdf, components)
         elif sec == "arcflash":
             _render_arcflash(pdf, arcflash_results, comp_map)
 
@@ -529,6 +531,58 @@ def _render_settings_schedule(pdf, components):
     _table(pdf, headers, rows, widths, header_color=(106, 27, 154))
 
 
+def _render_db_schedules(pdf, components):
+    """Distribution board legend cards: one schedule table per board."""
+    if not components:
+        return
+    boards = [c for c in components
+              if c.get("type") == "distribution_board"
+              and (c.get("props", {}).get("circuits") or [])]
+    if not boards:
+        return
+
+    for board in boards:
+        p = board.get("props", {})
+        circuits = p.get("circuits", [])
+        name = p.get("name", board.get("id", "DB"))
+        connected_va = sum(float(c.get("load_va") or 0) for c in circuits)
+        board_df = float(p.get("board_diversity") or 1.0)
+        demand_va = sum(float(c.get("load_va") or 0) * float(c.get("demand_factor") or 1)
+                        for c in circuits) * board_df
+        vkv = float(p.get("voltage_kv") or 0.4)
+        amps = (demand_va / 1000) / (3 ** 0.5 * vkv) if vkv > 0 else 0
+
+        pdf.add_page()
+        pdf.section_title(f"Distribution Board Schedule — {_safe(name)}")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 5, _safe(
+            f"Voltage: {vkv} kV   PF: {p.get('power_factor', 0.85)}   "
+            f"Board diversity: {board_df}"), ln=1)
+        pdf.cell(0, 5, _safe(
+            f"Connected: {connected_va / 1000:.2f} kVA   "
+            f"Demand (diversified): {demand_va / 1000:.2f} kVA   ({amps:.1f} A)"), ln=1)
+        pdf.ln(2)
+
+        rows = []
+        for c in circuits:
+            rows.append([
+                str(c.get("way", "")),
+                str(c.get("description", "") or "—"),
+                f"{c.get('poles', '1P')} {c.get('phase', '') if c.get('poles') != '3P' else 'RWB'}",
+                f"{c.get('breaker_a', '—')}A {c.get('curve', '')}",
+                str(c.get("el_group", "") or "—"),
+                f"{c.get('cable_mm2', '—')}mm² / {c.get('cable_m', '—')}m",
+                f"{float(c.get('load_va') or 0):.0f}",
+                f"{float(c.get('demand_factor') or 1):.2f}",
+            ])
+        headers = ["Way", "Description", "Poles/Ph", "Breaker", "EL Grp",
+                   "Cable", "Load (VA)", "DF"]
+        avail = pdf.w - pdf.l_margin - pdf.r_margin
+        widths = [avail * 0.06, avail * 0.28, avail * 0.1, avail * 0.12,
+                  avail * 0.09, avail * 0.15, avail * 0.11, avail * 0.09]
+        _table(pdf, headers, rows, widths, header_color=(46, 125, 50))
+
+
 def _render_arcflash(pdf, arcflash_results, comp_map):
     if not arcflash_results or not arcflash_results.get("buses"):
         return
@@ -665,9 +719,13 @@ def _calc_title(pdf, project_name, base_mva, frequency, project_details=None):
         title_line += f"   |   No: {proj_num}"
     pdf.cell(0, 7, title_line, align="C", new_x="LMARGIN", new_y="NEXT")
 
-    client = pd.get("clientCompany", "")
-    if client:
-        pdf.cell(0, 7, f"Client: {client}", align="C", new_x="LMARGIN", new_y="NEXT")
+    # Project details now carry separate client/company keys (legacy projects
+    # used a single "clientCompany" field — accept it as a fallback).
+    client = pd.get("client", "") or pd.get("clientCompany", "")
+    company = pd.get("company", "")
+    client_line = "   |   ".join(p for p in (client, company) if p)
+    if client_line:
+        pdf.cell(0, 7, f"Client: {client_line}", align="C", new_x="LMARGIN", new_y="NEXT")
 
     rev = pd.get("revisionNumber", "")
     report_date = pd.get("date", "") or date.today().isoformat()

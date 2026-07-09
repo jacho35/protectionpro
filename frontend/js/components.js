@@ -41,11 +41,22 @@ const Components = {
       if (comp.type === 'utility' || comp.type === 'generator') sources.push(id);
     }
 
-    // DFS from each source; collect paths that reach the target
+    // DFS from each source; collect paths that reach the target.
+    // Simple-path enumeration is exponential on meshed networks. Cap BOTH the
+    // number of completed paths AND the number of node expansions — on a
+    // meshed/source-isolated graph almost no path reaches the target, so a
+    // path-count cap alone never fires while the traversal blows up.
+    const MAX_PATHS = 500;
+    const MAX_EXPANSIONS = 20000;
+    let pathsFound = 0;
+    let expansions = 0;
     const relevant = new Set([targetId]);
     for (const srcId of sources) {
+      if (pathsFound >= MAX_PATHS || expansions >= MAX_EXPANSIONS) break;
       const stack = [{ node: srcId, visited: new Set([srcId]), trail: [] }];
       while (stack.length > 0) {
+        if (expansions >= MAX_EXPANSIONS) break;
+        expansions++;
         const { node, visited, trail } = stack.pop();
         const comp = AppState.components.get(node);
         if (!comp) continue;
@@ -60,6 +71,8 @@ const Components = {
               relevant.add(id);
             }
           }
+          pathsFound++;
+          if (pathsFound >= MAX_PATHS) break;
           continue; // don't traverse past the target
         }
 
@@ -104,8 +117,19 @@ const Components = {
     for (const comp of pageComps.values()) {
       const ports = this.getEffectivePorts(comp);
       if (comp.type === 'bus') {
-        const hasAnyConnection = ports.some(p => this.isPortConnected(comp.id, p.id));
+        // Buses use free-position 'at_<x>' attachments, which never match
+        // the generated port ids — connected means ANY wire touches the bus
+        let hasAnyConnection = false;
+        for (const wire of AppState.wires.values()) {
+          if (wire.fromComponent === comp.id || wire.toComponent === comp.id) {
+            hasAnyConnection = true;
+            break;
+          }
+        }
         if (hasAnyConnection) continue;
+        // Unconnected bus: a single marker at the bar centre
+        unconnected.push({ comp, port: { id: 'at_0', side: 'top' } });
+        continue;
       }
       for (const port of ports) {
         if (!this.isPortConnected(comp.id, port.id)) {
@@ -301,10 +325,20 @@ const Components = {
       const ports = this.getEffectivePorts(comp);
       if (ports.length === 0) continue;
       let hasAnyConnection = false;
-      for (const port of ports) {
-        if (this.isPortConnected(comp.id, port.id)) {
-          hasAnyConnection = true;
-          break;
+      if (comp.type === 'bus') {
+        // Free-position 'at_<x>' attachments don't match generated port ids
+        for (const wire of AppState.wires.values()) {
+          if (wire.fromComponent === comp.id || wire.toComponent === comp.id) {
+            hasAnyConnection = true;
+            break;
+          }
+        }
+      } else {
+        for (const port of ports) {
+          if (this.isPortConnected(comp.id, port.id)) {
+            hasAnyConnection = true;
+            break;
+          }
         }
       }
       if (!hasAnyConnection) {
@@ -316,10 +350,11 @@ const Components = {
       }
     }
 
-    // 3. Check for swing bus (required for load flow)
+    // 3. Check for swing bus (load flow only — the backend auto-promotes a
+    // utility-connected bus, and fault-only studies don't need one)
     const swingBus = buses.find(b => b.props.bus_type === 'Swing');
     if (!swingBus) {
-      errors.push({ type: 'error', msg: 'No Swing bus defined. Set at least one bus to "Swing" type for load flow.', compId: null });
+      warnings.push({ type: 'warning', msg: 'No Swing bus defined. Load flow will auto-select a slack bus; set one bus to "Swing" for deterministic results.', compId: null });
     }
 
     // 4. Check each bus has at least one source path
@@ -339,8 +374,9 @@ const Components = {
 
     // BFS from all sources through the full wire graph
     const busesWithSource = new Set();
+    const SOURCE_TYPES_FOR_REACH = new Set(['utility', 'generator', 'solar_pv', 'wind_turbine']);
     const sourceIds = [...AppState.components.values()]
-      .filter(c => c.type === 'utility' || c.type === 'generator')
+      .filter(c => SOURCE_TYPES_FOR_REACH.has(c.type))
       .map(c => c.id);
 
     const reachVisited = new Set();
@@ -368,11 +404,56 @@ const Components = {
 
     for (const bus of buses) {
       if (!busesWithSource.has(bus.id)) {
-        errors.push({
-          type: 'error',
-          msg: `${bus.props.name || 'Bus'} has no path to any source (Utility or Generator).`,
+        // Not an error: load flow reports sourceless islands as de-energized
+        // (0 V) instead of failing, so the user can study switching states.
+        warnings.push({
+          type: 'warning',
+          msg: `${bus.props.name || 'Bus'} has no closed path to any source ` +
+            '(utility, generator, solar or wind) — it will be reported de-energized (0 V).',
           compId: bus.id,
         });
+      }
+    }
+
+    // 4b. Loads/sources behind a terminal cable/transformer (no intervening
+    // bus) never enter the analysis graph — warn so they aren't silently
+    // dropped (e.g. Bus → Cable → Motor with no bus at the motor end).
+    {
+      const LOAD_TYPES = ['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'];
+      const SOURCE_TYPES = ['utility', 'generator', 'solar_pv', 'wind_turbine'];
+      const TRANSPARENT_TYPES = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector']);
+      const includedIds = new Set([
+        ...graph.loads.map(l => l.load.id),
+        ...graph.sources.map(s => s.source.id),
+      ]);
+      for (const comp of AppState.components.values()) {
+        if (!LOAD_TYPES.includes(comp.type) && !SOURCE_TYPES.includes(comp.type)) continue;
+        if (includedIds.has(comp.id)) continue;
+        // Walk from the dropped load/source through transparent elements to
+        // find the cable/transformer it hangs off
+        const visited = new Set([comp.id]);
+        const queue = [...(reachAdj.get(comp.id) || [])];
+        let blocker = null;
+        while (queue.length > 0) {
+          const id = queue.shift();
+          if (visited.has(id)) continue;
+          visited.add(id);
+          const c = AppState.components.get(id);
+          if (!c) continue;
+          if (c.type === 'cable' || c.type === 'transformer') { blocker = c; break; }
+          if (TRANSPARENT_TYPES.has(c.type)) {
+            for (const nid of (reachAdj.get(id) || [])) {
+              if (!visited.has(nid)) queue.push(nid);
+            }
+          }
+        }
+        if (blocker) {
+          warnings.push({
+            type: 'warning',
+            msg: `${comp.props.name || comp.type} connects through ${blocker.props.name || blocker.type} without an intervening bus — it will be excluded from analysis; insert a bus node between them.`,
+            compId: comp.id,
+          });
+        }
       }
     }
 
@@ -444,7 +525,7 @@ const Components = {
       const cable = branch.element;
       const v1 = branch.from.props.voltage_kv;
       const v2 = branch.to.props.voltage_kv;
-      if (v1 && v2 && v1 !== v2) {
+      if (v1 && v2 && Math.abs(v1 - v2) / Math.max(v1, v2) > 0.01) {
         warnings.push({
           type: 'warning',
           msg: `${cable.props.name} connects buses at different voltages: ${branch.from.props.name} (${v1} kV) and ${branch.to.props.name} (${v2} kV).`,
@@ -496,15 +577,24 @@ const Components = {
         if (!p.fault_mva || p.fault_mva <= 0) {
           errors.push({ type: 'error', msg: `${name}: Fault level (MVA) must be greater than zero.`, compId: comp.id });
         }
+        if (p.x_r_ratio !== undefined && p.x_r_ratio <= 0) {
+          errors.push({ type: 'error', msg: `${name}: X/R ratio must be greater than zero.`, compId: comp.id });
+        }
       }
       if (comp.type === 'generator') {
         if (!p.rated_mva || p.rated_mva <= 0) {
           errors.push({ type: 'error', msg: `${name}: Rating (MVA) must be greater than zero.`, compId: comp.id });
         }
+        if (p.xd_pp !== undefined && p.xd_pp <= 0) {
+          errors.push({ type: 'error', msg: `${name}: Xd'' (sub-transient reactance) must be greater than zero.`, compId: comp.id });
+        }
       }
       if (comp.type === 'cable') {
         if (!p.length_km || p.length_km <= 0) {
           warnings.push({ type: 'warning', msg: `${name}: Cable length is zero or not set.`, compId: comp.id });
+        }
+        if ((p.r_per_km || 0) <= 0 && (p.x_per_km || 0) <= 0) {
+          errors.push({ type: 'error', msg: `${name}: Cable impedance is zero or negative (R₁ and X₁ both ≤ 0).`, compId: comp.id });
         }
       }
       if (comp.type === 'bus') {

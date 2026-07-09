@@ -10,7 +10,7 @@ const Reports = {
       id: 'full',
       name: 'Full Analysis Report',
       builtin: true,
-      sections: ['title', 'diagram', 'fault', 'fault_branches', 'voltage_depression', 'loadflow_bus', 'loadflow_branch', 'equipment', 'arcflash'],
+      sections: ['title', 'diagram', 'fault', 'fault_branches', 'voltage_depression', 'loadflow_bus', 'loadflow_branch', 'equipment', 'db_schedules', 'arcflash'],
     },
     {
       id: 'fault_only',
@@ -54,6 +54,7 @@ const Reports = {
     loadflow_bus:    { label: 'Bus Voltages & Power',          group: 'Load Flow' },
     loadflow_branch: { label: 'Branch Flows & Loading',        group: 'Load Flow' },
     settings_schedule: { label: 'Protection Settings Schedule', group: 'Protection' },
+    db_schedules:    { label: 'Distribution Board Schedules',  group: 'General' },
     voltage_depression: { label: 'Voltage Depression',          group: 'Fault Analysis' },
     arcflash:           { label: 'Arc Flash Summary',           group: 'Arc Flash' },
   },
@@ -429,7 +430,7 @@ const Reports = {
     if (!AppState.arcFlashResults?.buses) return;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('Arc Flash Analysis \u2014 IEEE 1584-2018', margin, margin + 6);
+    doc.text('Arc Flash Analysis \u2014 IEEE 1584-2002', margin, margin + 6);
     doc.setFont('helvetica', 'normal');
 
     const rows = [];
@@ -552,7 +553,7 @@ const Reports = {
     // Footer
     doc.setFontSize(6);
     doc.setTextColor(100);
-    doc.text('NFPA 70E / IEEE 1584-2018', x + 4, y + h - 2);
+    doc.text('NFPA 70E / IEEE 1584-2002', x + 4, y + h - 2);
     doc.text(new Date().toLocaleDateString(), x + w - 4, y + h - 2, { align: 'right' });
     doc.setTextColor(0);
   },

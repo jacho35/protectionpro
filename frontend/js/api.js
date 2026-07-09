@@ -1,10 +1,16 @@
 /* ProtectionPro — API Client (Backend Communication) */
 
 const API = {
+  // Abort in-flight requests after this many milliseconds
+  REQUEST_TIMEOUT_MS: 60000,
+
   async request(endpoint, method = 'GET', body = null) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
     const opts = {
       method,
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
     };
     if (body) opts.body = JSON.stringify(body);
 
@@ -34,8 +40,15 @@ const API = {
       }
       return await resp.json();
     } catch (e) {
+      if (e.name === 'AbortError') {
+        const err = new Error(`Request timed out after ${this.REQUEST_TIMEOUT_MS / 1000} s — the backend may be hung or unreachable.`);
+        console.error(`API timeout [${endpoint}]:`, err);
+        throw err;
+      }
       console.error(`API error [${endpoint}]:`, e);
       throw e;
+    } finally {
+      clearTimeout(timer);
     }
   },
 

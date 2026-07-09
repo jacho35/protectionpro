@@ -26,6 +26,10 @@ const MiniMap = {
       if (e.buttons === 1) this._onClick(e);
     });
 
+    // Collapse/expand button
+    const toggleBtn = document.getElementById('minimap-toggle');
+    if (toggleBtn) toggleBtn.addEventListener('click', () => this.toggle());
+
     // Render after short delay to let the app load
     requestAnimationFrame(() => this.render());
   },
@@ -33,7 +37,12 @@ const MiniMap = {
   toggle() {
     this._visible = !this._visible;
     const el = document.getElementById('minimap');
-    if (el) el.style.display = this._visible ? '' : 'none';
+    if (el) el.classList.toggle('collapsed', !this._visible);
+    const btn = document.getElementById('minimap-toggle');
+    if (btn) {
+      btn.textContent = this._visible ? '−' : '+';
+      btn.title = this._visible ? 'Hide mini-map' : 'Show mini-map';
+    }
     if (this._visible) this.render();
   },
 
@@ -47,8 +56,8 @@ const MiniMap = {
     ctx.fillStyle = isDark ? '#1e1e2e' : '#f8f9fa';
     ctx.fillRect(0, 0, this.width, this.height);
 
-    // Calculate bounding box of all components
-    const comps = [...AppState.components.values()];
+    // Calculate bounding box of the active sheet's components (mirrors canvas)
+    const comps = [...AppState.getActivePageComponents().values()];
     if (comps.length === 0) {
       ctx.fillStyle = isDark ? '#555' : '#aaa';
       ctx.font = '10px sans-serif';
@@ -77,10 +86,10 @@ const MiniMap = {
     const toMapX = (wx) => mapPad + (wx - minX) * scale;
     const toMapY = (wy) => mapPad + (wy - minY) * scale;
 
-    // Draw wires
+    // Draw wires (active sheet only)
     ctx.strokeStyle = isDark ? '#555' : '#bbb';
     ctx.lineWidth = 0.8;
-    for (const wire of AppState.wires.values()) {
+    for (const wire of AppState.getActivePageWires().values()) {
       const fromComp = AppState.components.get(wire.fromComponent);
       const toComp = AppState.components.get(wire.toComponent);
       if (!fromComp || !toComp) continue;
@@ -146,8 +155,8 @@ const MiniMap = {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    // Reverse the mapping to get world coordinates
-    const comps = [...AppState.components.values()];
+    // Reverse the mapping to get world coordinates (active sheet only)
+    const comps = [...AppState.getActivePageComponents().values()];
     if (comps.length === 0) return;
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

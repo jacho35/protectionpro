@@ -17,6 +17,7 @@ const VoltagePropagation = {
     motor_induction:   'voltage_kv',
     motor_synchronous: 'voltage_kv',
     static_load:       'voltage_kv',
+    distribution_board: 'voltage_kv',
     capacitor_bank:    'voltage_kv',
     relay:             'voltage_kv',
     cb:                'rated_voltage_kv',
@@ -229,7 +230,23 @@ const VoltagePropagation = {
    */
   _propagateZone(startCompId, processedTransformers) {
     const zone = this.buildVoltageZone(startCompId);
-    const voltage = this.resolveZoneVoltage(zone.componentIds);
+    let voltage = this.resolveZoneVoltage(zone.componentIds);
+
+    // Zone is all-defaults: fall back to the winding voltage of a boundary
+    // transformer facing this zone (e.g. wiring an LV bus to a transformer
+    // whose secondary was already set to 0.42 kV). Only when unambiguous.
+    if (voltage === null) {
+      const windingVoltages = new Set();
+      for (const [xfmrId, facingPort] of zone.boundaryTransformers) {
+        const xfmr = AppState.components.get(xfmrId);
+        if (!xfmr) continue;
+        const side = this.getTransformerSide(xfmr, facingPort);
+        if (!side) continue;
+        const v = xfmr.props[side.thisKey];
+        if (v !== null && v !== undefined) windingVoltages.add(v);
+      }
+      if (windingVoltages.size === 1) voltage = [...windingVoltages][0];
+    }
 
     if (voltage !== null) {
       this.applyVoltageToZone(zone.componentIds, voltage);

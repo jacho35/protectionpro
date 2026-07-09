@@ -22,6 +22,7 @@ Outputs per branch:
 """
 
 import math
+import re
 import numpy as np
 from ..models.schemas import (
     ProjectData, LoadFlowWarning,
@@ -31,7 +32,9 @@ from .loadflow import (
     _build_bus_groups, _find_bus_paths, _get_impedance, _is_transparent_and_closed,
     _find_components_at_bus, _get_chain_turns_ratio, _utility_admittance,
     _newton_raphson, _gauss_seidel,
+    plan_dispatch, solve_with_islands,
 )
+from .fault import _grounding_impedance
 
 # Symmetrical component rotation operator: a = 1∠120°
 _a = np.exp(1j * 2 * math.pi / 3)
@@ -59,8 +62,10 @@ def _xfmr_blocks_zero_seq(comp) -> bool:
     """
     vg = comp.props.get("vector_group", "Dyn11").strip()
 
-    # Delta winding always blocks zero sequence
-    if any(c in ('d', 'D') for c in vg if c.isalpha()):
+    # Delta (d/D) and zigzag (z/Z) windings both block zero-sequence
+    # THROUGH-flow — the winding circulates Z0 internally rather than
+    # passing it through (same classification as fault.py _transformer_zero_seq).
+    if any(c in ('d', 'D', 'z', 'Z') for c in vg if c.isalpha()):
         return True
 
     # Ungrounded wye: Y or y not immediately followed by N or n
@@ -71,6 +76,69 @@ def _xfmr_blocks_zero_seq(comp) -> bool:
                 return True  # Ungrounded wye — blocks zero sequence
 
     return False
+
+
+def _xfmr_z0_shunts(comp, candidate_buses, base_mva):
+    """Zero-sequence ground shunts contributed by a Z0-blocking transformer.
+
+    A Dyn/YNd transformer blocks zero-sequence THROUGH-flow, but its
+    grounded-wye winding plus the delta circulation path is itself the
+    dominant zero-sequence return path for the network on the wye side
+    (e.g. the LV network of a Dyn11 distribution transformer). Without this
+    shunt the downstream Y0 row is singular and the zero-sequence solve
+    fails. Z_T0 ≈ Z_T1 is used (no zero-sequence prop exists), plus 3·Zn
+    for impedance-grounded neutrals.
+
+    Args:
+        comp: transformer component
+        candidate_buses: {bus_id: nominal_voltage_kv} of buses adjacent to
+            the transformer's chain
+        base_mva: system base
+
+    Returns list of (bus_id, y0_shunt_pu) tuples.
+    """
+    vg = comp.props.get("vector_group", "Dyn11").strip()
+    lv_part = re.sub(r'^[A-Z]+', '', vg)
+    hv_grounded = vg.upper().startswith("YN") or vg.upper().startswith("ZN")
+    # Delta (D) and zigzag (Z) windings both provide a Z0 circulation path,
+    # so either makes the grounded-wye winding on the OTHER side a Z0 source
+    # (matches fault.py _transformer_zero_seq).
+    hv_circulates = len(vg) > 0 and vg[0].upper() in ('D', 'Z')
+    lv_grounded = lv_part.lower().startswith("yn") or lv_part.lower().startswith("zn")
+    lv_circulates = len(lv_part) > 0 and lv_part[0].lower() in ('d', 'z')
+
+    sides = []
+    if lv_grounded and hv_circulates:
+        sides.append('lv')   # Dyn / Dzn — shunt at the LV bus
+    if hv_grounded and lv_circulates:
+        sides.append('hv')   # YNd / YNz — shunt at the HV bus
+    if not sides or not candidate_buses:
+        return []
+
+    v_hv = comp.props.get("voltage_hv_kv", 33)
+    v_lv = comp.props.get("voltage_lv_kv", 11)
+    z_t0 = _get_impedance(comp, base_mva)  # Z_T0 ≈ Z_T1
+
+    shunts = []
+    for side in sides:
+        v_side = v_lv if side == 'lv' else v_hv
+        v_other = v_hv if side == 'lv' else v_lv
+        # Pick the candidate bus whose nominal voltage matches this winding
+        bus_id = min(candidate_buses, key=lambda b: abs(candidate_buses[b] - v_side))
+        if abs(candidate_buses[bus_id] - v_side) > abs(candidate_buses[bus_id] - v_other):
+            continue  # The only adjacent bus is on the other winding
+        # User grounding config is authoritative (same convention as fault.py)
+        grounding_cfg = comp.props.get(
+            f"grounding_{side}",
+            "solidly_grounded" if side == 'lv' else "ungrounded")
+        z_base_side = (v_side ** 2) / base_mva if v_side > 0 else 1.0
+        z_n = _grounding_impedance(grounding_cfg, comp, side, z_base_side)
+        if z_n is None:
+            continue  # Winding set ungrounded — no zero-sequence path
+        z_shunt = z_t0 + 3 * z_n
+        if abs(z_shunt) > 1e-15:
+            shunts.append((bus_id, 1 / z_shunt))
+    return shunts
 
 
 def _add_to_ybus(Y, i, j, y, t, hv_bus_id, bus_a_id, bus_b_id):
@@ -125,6 +193,7 @@ def run_unbalanced_load_flow(
     processed_chains: set = set()
     # Each entry: (elems, bus_a, bus_b, y1, y2, y0, t, hv_bus, cable_voltages)
     branch_chains = []
+    z0_shunts: list[tuple[str, complex]] = []  # (bus_id, y0_shunt) from Dyn/YNd xfmrs
 
     for comp in project.components:
         if comp.type not in ("cable", "transformer"):
@@ -136,6 +205,15 @@ def run_unbalanced_load_flow(
 
         results = _find_bus_paths(comp.id, adjacency, components, bus_of)
         if len(results) < 2:
+            # Single-bus transformer (e.g. utility incomer TX): not a
+            # bus-to-bus branch, but a Dyn/YNd unit still grounds the
+            # zero-sequence network at its wye-side bus.
+            if (comp.type == "transformer" and len(results) == 1
+                    and _xfmr_blocks_zero_seq(comp)):
+                only_bus = results[0][0]
+                only_v = (components[only_bus].props.get("voltage_kv", 11)
+                          if only_bus in components else 11)
+                z0_shunts.extend(_xfmr_z0_shunts(comp, {only_bus: only_v}, base_mva))
             continue
 
         bus_a, path_a = results[0]
@@ -176,6 +254,10 @@ def run_unbalanced_load_flow(
                     z2_total += z           # Z2 = Z1 for transformer (passive element)
                     if _xfmr_blocks_zero_seq(e):
                         z0_blocked = True
+                        # H6: blocked through-flow, but a grounded-wye
+                        # winding still grounds Y0 at its side's bus
+                        z0_shunts.extend(_xfmr_z0_shunts(
+                            e, {bus_a: bus_a_v, bus_b: bus_b_v}, base_mva))
                     else:
                         z0_total = (z0_total or complex(0, 0)) + z
 
@@ -224,10 +306,12 @@ def run_unbalanced_load_flow(
                 else:
                     z0_total = (z0_total or complex(0, 0)) + z * 3
 
-        y1 = (1 / z1_total) if abs(z1_total) > 1e-15 else complex(1e6, 0)
-        y2 = (1 / z2_total) if abs(z2_total) > 1e-15 else complex(1e6, 0)
+        # Zero-impedance chains: tiny series reactance (large susceptance)
+        # rather than a real conductance, to avoid fictitious resistive losses
+        y1 = (1 / z1_total) if abs(z1_total) > 1e-15 else complex(0, -1e6)
+        y2 = (1 / z2_total) if abs(z2_total) > 1e-15 else complex(0, -1e6)
         y0 = (0 if z0_blocked or z0_total is None
-              else ((1 / z0_total) if abs(z0_total) > 1e-15 else complex(1e6, 0)))
+              else ((1 / z0_total) if abs(z0_total) > 1e-15 else complex(0, -1e6)))
         y0 = complex(y0)
 
         t, hv_bus = _get_chain_turns_ratio(all_elems, bus_a, bus_b, components)
@@ -245,6 +329,11 @@ def run_unbalanced_load_flow(
         # Negative/zero sequence: same tap ratio (passive element property, not sequence-dependent)
         _add_to_ybus(Y2, i, j, y2, t, hv_bus, bus_a, bus_b)
         _add_to_ybus(Y0, i, j, y0, 1.0, None, None, None)  # t=1 for zero-seq simplified model
+
+    # Zero-sequence ground shunts from Dyn/YNd transformers (H6)
+    for shunt_bus, y_shunt in z0_shunts:
+        if shunt_bus in bus_idx:
+            Y0[bus_idx[shunt_bus], bus_idx[shunt_bus]] += y_shunt
 
     # ── Direct bus-to-bus links (through transparent elements only) ──
     linked_pairs: set = set()
@@ -269,7 +358,8 @@ def run_unbalanced_load_flow(
     for pair in linked_pairs:
         i = bus_idx[pair[0]]
         j = bus_idx[pair[1]]
-        y_link = complex(1e6, 0)
+        # Bus link: large susceptance (tiny series reactance), not conductance
+        y_link = complex(0, -1e6)
         for Y in (Y1, Y2, Y0):
             Y[i, i] += y_link
             Y[j, j] += y_link
@@ -283,11 +373,15 @@ def run_unbalanced_load_flow(
     Q_phase = np.zeros((n, 3))
     bus_types = []
     V_spec = np.ones(n)
+    bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
+    special_bus_loads: dict[int, list] = {}  # bus_idx -> [(phase_conn, total_p_pu, total_q_pu)]
 
     for bus in buses:
         i = bus_idx[bus.id]
         bt = bus.props.get("bus_type", "PQ")
-        bus_types.append(2 if bt == "Swing" else (1 if bt == "PV" else 0))
+        # Swing assignment is decided per-island by plan_dispatch below
+        # (mirrors the balanced solver); user "Swing" labels are honoured there.
+        bus_types.append(1 if bt == "PV" else 0)
 
         connected = _find_components_at_bus(bus.id, adjacency, components)
         for comp in connected:
@@ -313,12 +407,9 @@ def run_unbalanced_load_flow(
                         Y0[i, i] += y_src  # Grounded neutral — zero-seq path exists
 
             elif comp.type == "generator":
+                # Output injection comes from the merit-order dispatcher
+                # (plan_dispatch) below; only sequence impedances are added here.
                 rated = comp.props.get("rated_mva", 10)
-                pf = comp.props.get("power_factor", 0.85)
-                p = rated * pf / base_mva / 3
-                q = rated * math.sqrt(1 - pf ** 2) / base_mva / 3
-                P_phase[i, :] += p
-                Q_phase[i, :] += q
                 # Generator internal impedance for neg/zero sequence networks
                 xd_pp = comp.props.get("xd_pp", 0.15)
                 xr = comp.props.get("x_r_ratio", 40)
@@ -344,61 +435,51 @@ def run_unbalanced_load_flow(
                     y0_gen = 1 / z1_gen if abs(z1_gen) > 1e-15 else 0
                 Y0[i, i] += y0_gen
 
-            elif comp.type == "solar_pv":
-                rated_kw = comp.props.get("rated_kw", 100)
-                n_inv = comp.props.get("num_inverters", 1)
-                eff = comp.props.get("inverter_eff", 0.97)
-                pf = comp.props.get("power_factor", 1.0)
-                irr = comp.props.get("irradiance_pct", 100) / 100.0
-                rated_mva = rated_kw * n_inv * irr / (eff * 1000)
-                p = rated_mva * abs(pf) / base_mva / 3
-                q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) / base_mva / 3
-                P_phase[i, :] += p
-                Q_phase[i, :] += (q if pf >= 0 else -q)
+            elif comp.type in ("solar_pv", "wind_turbine"):
+                pass  # Injection set by the merit-order dispatcher below
 
-            elif comp.type == "wind_turbine":
-                rated = comp.props.get("rated_mva", 2.0)
-                n_turb = comp.props.get("num_turbines", 1)
-                pf = comp.props.get("power_factor", 0.95)
-                wind_pct = comp.props.get("wind_speed_pct", 100) / 100.0
-                total_mva = rated * n_turb * wind_pct
-                p = total_mva * abs(pf) / base_mva / 3
-                q = total_mva * math.sqrt(max(0, 1 - pf ** 2)) / base_mva / 3
-                P_phase[i, :] += p
-                Q_phase[i, :] += (q if pf >= 0 else -q)
-
-            elif comp.type == "static_load":
+            elif comp.type in ("static_load", "distribution_board"):
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
                 df = comp.props.get("demand_factor", 1.0)
                 total_p = rated * pf * df / base_mva
                 total_q = rated * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva
-                # Per-phase percentages (default: balanced 33.33% each)
-                raw_a = float(comp.props.get("phase_a_pct", 33.33))
-                raw_b = float(comp.props.get("phase_b_pct", 33.33))
-                raw_c = float(comp.props.get("phase_c_pct", 33.34))
-                total_pct = raw_a + raw_b + raw_c
-                if total_pct > 0:
-                    pct_a, pct_b, pct_c = raw_a / total_pct, raw_b / total_pct, raw_c / total_pct
+                bus_load_p_mw[i] += total_p * base_mva
+                phase_conn = comp.props.get("phase_connection", "3P")
+
+                if phase_conn in ("2P-AB", "2P-BC", "2P-CA", "1P-A", "1P-B", "1P-C"):
+                    # Non-3P load: track separately for proper sequence injection.
+                    # Positive-sequence contribution is added to P1/Q1 after this loop.
+                    special_bus_loads.setdefault(i, []).append((phase_conn, total_p, total_q))
                 else:
-                    pct_a = pct_b = pct_c = 1 / 3
-                P_phase[i, 0] -= total_p * pct_a
-                P_phase[i, 1] -= total_p * pct_b
-                P_phase[i, 2] -= total_p * pct_c
-                Q_phase[i, 0] -= total_q * pct_a
-                Q_phase[i, 1] -= total_q * pct_b
-                Q_phase[i, 2] -= total_q * pct_c
+                    # Standard 3P load — distribute per phase percentages
+                    raw_a = float(comp.props.get("phase_a_pct", 33.33))
+                    raw_b = float(comp.props.get("phase_b_pct", 33.33))
+                    raw_c = float(comp.props.get("phase_c_pct", 33.34))
+                    total_pct = raw_a + raw_b + raw_c
+                    if total_pct > 0:
+                        pct_a, pct_b, pct_c = raw_a / total_pct, raw_b / total_pct, raw_c / total_pct
+                    else:
+                        pct_a = pct_b = pct_c = 1 / 3
+                    P_phase[i, 0] -= total_p * pct_a
+                    P_phase[i, 1] -= total_p * pct_b
+                    P_phase[i, 2] -= total_p * pct_c
+                    Q_phase[i, 0] -= total_q * pct_a
+                    Q_phase[i, 1] -= total_q * pct_b
+                    Q_phase[i, 2] -= total_q * pct_c
 
             elif comp.type == "motor_induction":
                 rated_kw = comp.props.get("rated_kw", 200)
                 eff = comp.props.get("efficiency", 0.93)
                 pf = comp.props.get("power_factor", 0.85)
                 df = comp.props.get("demand_factor", 1.0)
-                rated_mva = rated_kw / eff / 1000
+                # IEC 60909-0 §3.8: S = kW/(η·pf) — P = S·pf = kW/η unchanged
+                rated_mva = rated_kw / (eff * pf * 1000) if pf > 0 else rated_kw / (eff * 1000)
                 p = rated_mva * pf * df / base_mva / 3
                 q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
+                bus_load_p_mw[i] += rated_mva * pf * df
                 # Induction motor internal impedance for neg sequence network
                 x_pp = comp.props.get("x_pp", 0.17)
                 xr = comp.props.get("x_r_ratio", 10)
@@ -424,6 +505,7 @@ def run_unbalanced_load_flow(
                 q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
+                bus_load_p_mw[i] += rated_mva * pf * df
                 # Synchronous motor internal impedance for neg/zero sequence networks
                 xd_pp = comp.props.get("xd_pp", 0.15)
                 xr = comp.props.get("x_r_ratio", 40)
@@ -454,18 +536,46 @@ def run_unbalanced_load_flow(
                 q = kvar / 1000 / base_mva / 3
                 Q_phase[i, :] += q
 
+    # ── Auto-assign swing bus (M1, mirrors balanced load flow) ──
+    # Without a slack reference NR/GS diverges or returns garbage.
+    # MODELLING NOTE: the utility is also represented above as a Y1 shunt
+    # admittance (its source impedance). With the utility bus held at
+    # 1.0 p.u. by the swing constraint that shunt is benign in the
+    # positive-sequence solve, and it is REQUIRED in Y2/Y0 as the source's
+    # negative/zero-sequence return path — so it is kept, unlike in the
+    # balanced solver which drops it entirely.
+    # ── Island detection, per-island swing selection, and dispatch ──
+    # Shared with the balanced solver: each electrical island gets its own
+    # slack (utility connection bus, else user-labelled Swing, else the
+    # lowest-merit source); sourceless islands are excluded from the solve.
+    branch_pairs = [(ba, bb) for _e, ba, bb, _y1, _y2, _y0, _t, _hv, _cv in branch_chains]
+    dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
+                             branch_pairs, bus_load_p_mw)
+    for i in dispatch["swing_idx"]:
+        bus_types[i] = 2
+
     # ── Solve positive sequence (Newton-Raphson or Gauss-Seidel) ──
     P1 = P_phase.sum(axis=1)
     Q1 = Q_phase.sum(axis=1)
 
-    if method == "gauss_seidel":
-        V1, converged, iterations = _gauss_seidel(Y1, P1, Q1, V_spec, bus_types)
-    else:
-        V1, converged, iterations = _newton_raphson(Y1, P1, Q1, V_spec, bus_types)
+    # Dispatched source injections (balanced across the three phases)
+    for i, (p_mw, q_mvar) in dispatch["injections"].items():
+        P1[i] += p_mw / base_mva
+        Q1[i] += q_mvar / base_mva
+
+    # Add special load (2P/1P) contributions to positive-sequence power balance
+    for bus_i, loads in special_bus_loads.items():
+        for _ph, p_pu, q_pu in loads:
+            P1[bus_i] -= p_pu
+            Q1[bus_i] -= q_pu
+
+    V1, converged, iterations = solve_with_islands(
+        Y1, P1, Q1, V_spec, bus_types, dispatch["dead_idx"], method)
 
     # ── Compute sequence current injections from unbalanced loads ──
-    # Phase reference voltages (approximate using V1 = positive sequence result)
-    # Va ≈ V1, Vb ≈ a²·V1, Vc ≈ a·V1
+    # For 3P loads: decompose per-phase S into sequence currents.
+    # For 2P (line-to-line) loads: use line voltage — gives I0 = 0 exactly.
+    # For 1P (line-to-neutral) loads: use phase voltage — gives I0 ≠ 0.
     I2_inj = np.zeros(n, dtype=complex)
     I0_inj = np.zeros(n, dtype=complex)
 
@@ -474,27 +584,66 @@ def run_unbalanced_load_flow(
         if abs(v1_i) < 1e-10:
             continue
 
-        # Approximate per-phase voltages at this bus
+        # Approximate phase voltages using positive-sequence result
         Va_i = v1_i
         Vb_i = (_a ** 2) * v1_i
         Vc_i = _a * v1_i
 
-        # Per-phase complex power injections (in per-unit on base_mva)
+        # 3P loads: per-phase complex power → sequence currents.
+        # Per-phase powers are p.u. of the THREE-PHASE base while voltages
+        # are p.u. line-to-neutral, so I_base = S_base/(3·V_LN) and the
+        # per-unit phase current is I_pu = 3·conj(S_phase_pu/V_phase_pu).
+        # (Check: a balanced load S_tot gives Ia = 3·conj(S_tot/3) = S_tot,
+        # matching the balanced solver's I_pu = S_pu at V = 1 p.u.)
         Sa = complex(P_phase[i, 0], Q_phase[i, 0])
         Sb = complex(P_phase[i, 1], Q_phase[i, 1])
         Sc = complex(P_phase[i, 2], Q_phase[i, 2])
 
-        # Per-phase currents in per-unit: I = (S / V)*
-        Ia = np.conj(Sa / Va_i) if abs(Va_i) > 1e-10 else 0
-        Ib = np.conj(Sb / Vb_i) if abs(Vb_i) > 1e-10 else 0
-        Ic = np.conj(Sc / Vc_i) if abs(Vc_i) > 1e-10 else 0
+        Ia = 3 * np.conj(Sa / Va_i) if abs(Va_i) > 1e-10 else complex(0)
+        Ib = 3 * np.conj(Sb / Vb_i) if abs(Vb_i) > 1e-10 else complex(0)
+        Ic = 3 * np.conj(Sc / Vc_i) if abs(Vc_i) > 1e-10 else complex(0)
 
-        # Sequence currents: [I0, I1, I2] = A_inv * [Ia, Ib, Ic]
         I_abc = np.array([Ia, Ib, Ic], dtype=complex)
         I_seq = _A_inv @ I_abc
 
         I0_inj[i] = I_seq[0]
         I2_inj[i] = I_seq[2]
+
+        # 2P / 1P loads: compute using the correct terminal voltage.
+        # Same per-unit convention as the 3P case above: S is p.u. of the
+        # three-phase base, V is p.u. line-to-neutral, so I_pu = 3·conj(S/V).
+        for phase_conn, total_p_pu, total_q_pu in special_bus_loads.get(i, []):
+            S_consumed = complex(total_p_pu, total_q_pu)  # positive = consumed by load
+
+            if phase_conn == "2P-AB":
+                V_ll = Va_i - Vb_i
+                I_load = 3 * np.conj(S_consumed / V_ll) if abs(V_ll) > 1e-10 else complex(0)
+                # Current exits A, returns through B → Ia=-I, Ib=+I, Ic=0 → I0=0 exactly
+                Ia_s, Ib_s, Ic_s = -I_load, I_load, complex(0)
+            elif phase_conn == "2P-BC":
+                V_ll = Vb_i - Vc_i
+                I_load = 3 * np.conj(S_consumed / V_ll) if abs(V_ll) > 1e-10 else complex(0)
+                Ia_s, Ib_s, Ic_s = complex(0), -I_load, I_load
+            elif phase_conn == "2P-CA":
+                V_ll = Vc_i - Va_i
+                I_load = 3 * np.conj(S_consumed / V_ll) if abs(V_ll) > 1e-10 else complex(0)
+                Ia_s, Ib_s, Ic_s = I_load, complex(0), -I_load
+            elif phase_conn == "1P-A":
+                I_load = 3 * np.conj(S_consumed / Va_i) if abs(Va_i) > 1e-10 else complex(0)
+                Ia_s, Ib_s, Ic_s = -I_load, complex(0), complex(0)
+            elif phase_conn == "1P-B":
+                I_load = 3 * np.conj(S_consumed / Vb_i) if abs(Vb_i) > 1e-10 else complex(0)
+                Ia_s, Ib_s, Ic_s = complex(0), -I_load, complex(0)
+            elif phase_conn == "1P-C":
+                I_load = 3 * np.conj(S_consumed / Vc_i) if abs(Vc_i) > 1e-10 else complex(0)
+                Ia_s, Ib_s, Ic_s = complex(0), complex(0), -I_load
+            else:
+                continue
+
+            I_abc_s = np.array([Ia_s, Ib_s, Ic_s], dtype=complex)
+            I_seq_s = _A_inv @ I_abc_s
+            I0_inj[i] += I_seq_s[0]
+            I2_inj[i] += I_seq_s[2]
 
     # ── Solve negative sequence: Y2 * V2 = I2_inj ──
     swing_idx = [i for i, bt in enumerate(bus_types) if bt == 2]
@@ -502,9 +651,16 @@ def run_unbalanced_load_flow(
     V0 = np.zeros(n, dtype=complex)
 
     def _solve_seq(Y_mat, I_inj):
-        """Solve sequence network with swing buses forced to zero voltage."""
+        """Solve sequence network with swing buses forced to zero voltage.
+
+        Solves per connected component so that a floating subnetwork (e.g.
+        buses with no zero-sequence path to ground behind a delta winding)
+        only zeroes its OWN buses, instead of a single np.linalg.solve
+        failure silently zeroing the entire system.
+        """
+        V_out = np.zeros(n, dtype=complex)
         if not np.any(np.abs(I_inj) > 1e-12):
-            return np.zeros(n, dtype=complex)
+            return V_out
         Y_mod = Y_mat.copy()
         I_mod = I_inj.copy()
         for sw in swing_idx:
@@ -512,10 +668,31 @@ def run_unbalanced_load_flow(
             Y_mod[:, sw] = 0
             Y_mod[sw, sw] = 1.0
             I_mod[sw] = 0.0
-        try:
-            return np.linalg.solve(Y_mod, I_mod)
-        except np.linalg.LinAlgError:
-            return np.zeros(n, dtype=complex)
+        # Group buses into connected components via off-diagonal coupling
+        unassigned = set(range(n))
+        while unassigned:
+            seed = unassigned.pop()
+            comp_set = {seed}
+            stack = [seed]
+            while stack:
+                k = stack.pop()
+                for m in list(unassigned):
+                    if abs(Y_mod[k, m]) > 1e-12:
+                        unassigned.discard(m)
+                        comp_set.add(m)
+                        stack.append(m)
+            idx = sorted(comp_set)
+            sub_Y = Y_mod[np.ix_(idx, idx)]
+            sub_I = I_mod[idx]
+            if not np.any(np.abs(sub_I) > 1e-12):
+                continue  # No injections in this component — V stays 0
+            try:
+                V_out[idx] = np.linalg.solve(sub_Y, sub_I)
+            except np.linalg.LinAlgError:
+                # Component has no reference to ground — sequence current
+                # has no return path here; leave its buses at V = 0.
+                pass
+        return V_out
 
     V2 = _solve_seq(Y2, I2_inj)
     V0 = _solve_seq(Y0, I0_inj)
@@ -575,7 +752,15 @@ def run_unbalanced_load_flow(
         else:
             I1_br = (V1[i] - V1[j]) * y1
 
-        I2_br = (V2[i] - V2[j]) * y2
+        # Negative-sequence current uses the same tap-adjusted pi-model as I1
+        # (Y2 is built with the tap at line ~246, so the branch current must
+        # be consistent — M10)
+        if hv_bus == bus_a:
+            I2_br = (y2 / (t ** 2)) * V2[i] - (y2 / t) * V2[j]
+        elif hv_bus == bus_b:
+            I2_br = y2 * V2[i] - (y2 / t) * V2[j]
+        else:
+            I2_br = (V2[i] - V2[j]) * y2
         I0_br = (V0[i] - V0[j]) * y0
 
         # Phase currents: [Ia, Ib, Ic] = A * [I0, I1, I2]
@@ -632,6 +817,7 @@ def run_unbalanced_load_flow(
     # ── Warnings: high VUF ──
     VUF_LIMIT = 2.0   # IEC 61000-3-13 limit for industrial systems
     warnings: list[LoadFlowWarning] = []
+    warnings.extend(dispatch["warnings"])
     for bus_id, br in bus_results.items():
         if br.vuf_pct > VUF_LIMIT:
             warnings.append(LoadFlowWarning(

@@ -107,7 +107,6 @@ def run_duty_check(project: ProjectData):
         breaking_capacity_ka = float(dp.get("breaking_capacity_ka", 0))
         rated_current_a = float(dp.get("rated_current_a", 0))
         rated_voltage_kv = float(dp.get("rated_voltage_kv", 0))
-        cb_type = dp.get("cb_type", "mccb") if device_type == "cb" else None
 
         # Find upstream bus(es)
         bus_ids = _find_upstream_bus(device.id, adj, comp_map)
@@ -152,12 +151,38 @@ def run_duty_check(project: ProjectData):
             analysis_warnings.append(f"Device '{device_name}' has no breaking capacity rating.")
             interrupt_ok = False
 
-        # ── Making capacity check (ACB only) ──
+        # ── Making capacity check (all CBs) ──
+        # Peak fault current ip is compared against the making capacity Icm.
         making_ok = None
-        if device_type == "cb" and cb_type == "acb":
-            # Making capacity = 2.2 × breaking capacity per IEC 62271
-            making_capacity_ka = 2.2 * breaking_capacity_ka
+        making_capacity_ka = 0.0
+        making_margin_pct = None
+        if device_type == "cb" and breaking_capacity_ka > 0:
+            # Explicit making rating prop takes precedence if provided
+            making_capacity_ka = float(dp.get("making_capacity_ka", 0))
+            if making_capacity_ka <= 0:
+                is_mv = (system_voltage_kv or rated_voltage_kv) > 1.0
+                if is_mv:
+                    # IEC 62271-100: rated making capacity = 2.5 × rated
+                    # breaking capacity (50 Hz systems)
+                    making_capacity_ka = 2.5 * breaking_capacity_ka
+                else:
+                    # IEC 60947-2 Table 2: minimum ratio n = Icm/Icu
+                    # varies with the ultimate breaking capacity Icu
+                    icu = breaking_capacity_ka
+                    if icu <= 6:
+                        n = 1.5
+                    elif icu <= 10:
+                        n = 1.7
+                    elif icu <= 20:
+                        n = 2.0
+                    elif icu <= 50:
+                        n = 2.1
+                    else:
+                        n = 2.2
+                    making_capacity_ka = n * breaking_capacity_ka
             making_ok = peak_fault_ka <= making_capacity_ka
+            if making_capacity_ka > 0:
+                making_margin_pct = (1 - peak_fault_ka / making_capacity_ka) * 100
 
         # ── Continuous current check ──
         continuous_ok = True
@@ -179,7 +204,12 @@ def run_duty_check(project: ProjectData):
         if not interrupt_ok:
             issues.append(f"Prospective fault {prospective_fault_ka:.2f}kA exceeds breaking capacity {breaking_capacity_ka:.2f}kA")
         if making_ok is False:
-            issues.append(f"Peak fault {peak_fault_ka:.2f}kA exceeds making capacity {2.2 * breaking_capacity_ka:.2f}kA")
+            issues.append(f"Peak fault {peak_fault_ka:.2f}kA exceeds making capacity {making_capacity_ka:.2f}kA")
+        if making_ok and making_margin_pct is not None and making_margin_pct < 10:
+            issues.append(
+                f"Making capacity margin only {making_margin_pct:.0f}% "
+                f"(peak {peak_fault_ka:.2f}kA vs making capacity {making_capacity_ka:.2f}kA)"
+            )
         if not voltage_ok:
             issues.append(f"System voltage {system_voltage_kv}kV exceeds device rated voltage {rated_voltage_kv}kV")
         if not continuous_ok:
@@ -187,9 +217,11 @@ def run_duty_check(project: ProjectData):
         if utilisation_pct > 80 and interrupt_ok:
             issues.append(f"High utilisation {utilisation_pct:.0f}% — close to breaking capacity")
 
+        making_marginal = (making_ok is True and making_margin_pct is not None
+                           and making_margin_pct < 10)
         if not interrupt_ok or making_ok is False or not voltage_ok:
             status = "fail"
-        elif utilisation_pct > 80 or not continuous_ok:
+        elif utilisation_pct > 80 or not continuous_ok or making_marginal:
             status = "warning"
         else:
             status = "pass"
@@ -204,6 +236,8 @@ def run_duty_check(project: ProjectData):
             "breaking_capacity_ka": round(breaking_capacity_ka, 2),
             "interrupt_ok": interrupt_ok,
             "making_ok": making_ok,
+            "making_capacity_ka": round(making_capacity_ka, 2),
+            "making_margin_pct": round(making_margin_pct, 1) if making_margin_pct is not None else None,
             "continuous_ok": continuous_ok,
             "voltage_ok": voltage_ok,
             "utilisation_pct": round(utilisation_pct, 1),
