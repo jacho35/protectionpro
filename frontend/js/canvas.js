@@ -491,18 +491,21 @@ const Canvas = {
       const comp = AppState.components.get(this.busResize.compId);
       if (comp) {
         const dx = worldPt.x - this.busResize.startX;
+        // Anchor the FIXED edge exactly: the centre is derived from that edge
+        // and the snapped new width. (Snapping the centre to the grid shifted
+        // the opposite edge by half a grid on odd-grid width changes.)
         if (this.busResize.side === 'right') {
-          // Extend right: add dx to width, shift center right by dx/2
+          // Extend right: the LEFT edge stays put
+          const fixedLeft = this.busResize.origCompX - this.busResize.origWidth / 2;
           const newWidth = snapToGrid(Math.max(60, this.busResize.origWidth + dx));
-          const widthDelta = newWidth - this.busResize.origWidth;
           comp.props.busWidth = newWidth;
-          comp.x = snapToGrid(this.busResize.origCompX + widthDelta / 2);
+          comp.x = fixedLeft + newWidth / 2;
         } else {
-          // Extend left: subtract dx from width, shift center left by dx/2
+          // Extend left: the RIGHT edge stays put
+          const fixedRight = this.busResize.origCompX + this.busResize.origWidth / 2;
           const newWidth = snapToGrid(Math.max(60, this.busResize.origWidth - dx));
-          const widthDelta = newWidth - this.busResize.origWidth;
           comp.props.busWidth = newWidth;
-          comp.x = snapToGrid(this.busResize.origCompX - widthDelta / 2);
+          comp.x = fixedRight - newWidth / 2;
         }
         // Keep every attachment at its original WORLD position: rewrite the
         // bus-side port to 'at_<x>' relative to the moved centre (clamped to
@@ -1457,7 +1460,9 @@ const Canvas = {
     const SNAP_RADIUS = 30;
     let nearest = null;
     let minDist = SNAP_RADIUS;
-    for (const comp of AppState.components.values()) {
+    // Only components on the active sheet: snapping across sheets would
+    // silently wire to an invisible component at the same coordinates.
+    for (const comp of AppState.getActivePageComponents().values()) {
       if (excludeCompId && comp.id === excludeCompId) continue;
       const def = COMPONENT_DEFS[comp.type];
       if (!def.ports) continue;

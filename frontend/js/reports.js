@@ -563,20 +563,23 @@ const Reports = {
   exportSettingsCSV() {
     const lines = [];
     lines.push('Device,Type,Sub-Type,Pickup (A),TDS / Curve,Thermal (×In),Magnetic (×In),ST Pickup (×In),ST Delay (s),Inst (×In),Rating (A),Breaking (kA),Voltage (kV)');
+    // Proper CSV quoting + formula-injection guard via the shared csvCell
+    // helper (project.js) — replaces the old comma→semicolon name mangling
+    const row = (cells) => cells.map(csvCell).join(',');
 
     for (const [id, comp] of AppState.components) {
       const p = comp.props || {};
-      const name = (p.name || id).replace(/,/g, ';');
+      const name = p.name || id;
 
       if (comp.type === 'relay') {
-        lines.push([
+        lines.push(row([
           name, 'Relay', p.relay_type || '50/51',
           p.pickup_a || '', p.curve || 'IEC SI',
           '', '', '', '', '',
           '', '', p.voltage_kv || '',
-        ].join(','));
+        ]));
       } else if (comp.type === 'cb') {
-        lines.push([
+        lines.push(row([
           name, 'CB', (p.cb_type || 'mccb').toUpperCase(),
           '', '',
           p.thermal_pickup || 1.0, p.magnetic_pickup || 10,
@@ -584,14 +587,14 @@ const Reports = {
           p.instantaneous_pickup || '',
           p.trip_rating_a || p.rated_current_a || '', '',
           p.voltage_kv || '',
-        ].join(','));
+        ]));
       } else if (comp.type === 'fuse') {
-        lines.push([
+        lines.push(row([
           name, 'Fuse', p.fuse_type || 'gG',
           '', '', '', '', '', '', '',
           p.rated_current_a || '', p.breaking_capacity_ka || '',
           p.voltage_kv || '',
-        ].join(','));
+        ]));
       }
     }
 

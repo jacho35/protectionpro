@@ -469,7 +469,7 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
     Returns dict with 'cables' list and 'warnings' list.
     """
     from .loadflow import run_load_flow
-    from .fault import run_fault_analysis
+    from .fault import run_fault_analysis, thermal_m_factor
 
     comp_map = {c.id: c for c in project.components}
     adj = _build_adjacency(project)
@@ -559,6 +559,11 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             derated_amps = rated_amps * install_df * temp_df
         thermal_ok = current_per_cable <= derated_amps if derated_amps > 0 else True
         thermal_loading_pct = (current_per_cable / derated_amps * 100) if derated_amps > 0 else 0
+        # [EE-9] Unset/zero ampacity (and no NEC lookup either) means the
+        # thermal check cannot be performed — the cable must surface as
+        # "unknown" below, not silently pass with 0% loading. (When temp_df
+        # wipes out the capacity, that is a genuine FAIL handled next.)
+        ampacity_known = derated_amps > 0 or temp_df <= 0
         if temp_df <= 0:
             # Ambient derating wiped out all capacity (IEC or NEC table)
             thermal_ok = False
@@ -592,22 +597,37 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         size_mm2 = cp["size_mm2"]
         fault_withstand_ok = True
 
-        # Get fault current at upstream bus
+        # Get fault current at upstream bus — capture the κ of the governing bus
         fault_ka = 0
+        fault_kappa = None
         for bid in bus_ids:
             if fault_results and bid in fault_results.buses:
                 bus_fault = fault_results.buses[bid]
                 if bus_fault.ik3 and bus_fault.ik3 > fault_ka:
                     fault_ka = bus_fault.ik3
+                    fault_kappa = bus_fault.kappa
 
         # Get clearing time from upstream CB
         upstream_cb = _find_upstream_cb(cable.id, adj, comp_map)
         t_clear = _estimate_clearing_time(upstream_cb)
 
+        # [EE-5] Adiabatic sizing must use the thermal-equivalent current
+        # Ith = Ik″·√(m+n) per IEC 60909-0 §12, not the bare Ik″ — at the
+        # short clearing times of fuses/MCCBs the DC component adds 20-45%
+        # heat that Ik″ alone misses (non-conservative by 18-29% on area).
+        # m from the governing bus's κ (fault payload); conservative default
+        # κ = 1.8 when the payload carries no κ. n = 1 assumed (far-from-
+        # generator, Ik = Ik″) — the upper bound since n ≤ 1.
+        freq = project.frequency or 50
+        kappa = fault_kappa if fault_kappa and fault_kappa > 1.0 else 1.8
+        m_dc = thermal_m_factor(kappa, t_clear, freq)
+        sqrt_mn = math.sqrt(m_dc + 1.0)
+        ith_ka = fault_ka * sqrt_mn
+
         if fault_ka > 0 and size_mm2 > 0:
-            # Required: I_fault(A) × sqrt(t) / k ≤ S
-            i_fault_a = fault_ka * 1000
-            min_size_for_fault = i_fault_a * math.sqrt(t_clear) / k
+            # Required: I_th(A) × sqrt(t) / k ≤ S
+            i_th_a = ith_ka * 1000
+            min_size_for_fault = i_th_a * math.sqrt(t_clear) / k
             fault_withstand_ok = size_mm2 >= min_size_for_fault
         else:
             min_size_for_fault = 0
@@ -622,7 +642,10 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         if not voltage_drop_ok:
             issues.append(f"Voltage drop {voltage_drop_pct:.2f}% exceeds limit {max_voltage_drop_pct}%")
         if not fault_withstand_ok:
-            issues.append(f"Fault withstand: {size_mm2:.0f}mm² insufficient, need {min_size_for_fault:.0f}mm² for {fault_ka:.2f}kA / {t_clear*1000:.0f}ms")
+            issues.append(
+                f"Fault withstand: {size_mm2:.0f}mm² insufficient, need "
+                f"{min_size_for_fault:.0f}mm² for Ith {ith_ka:.2f}kA "
+                f"(Ik″ {fault_ka:.2f}kA × √(m+n) = {sqrt_mn:.3f}) / {t_clear*1000:.0f}ms")
 
         # ── Status ──
         # When load flow failed/diverged or reports no current for this
@@ -631,7 +654,8 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         current_known = lf_converged and cable.id in branch_currents and load_current > 0
         if not thermal_ok or not voltage_drop_ok or not fault_withstand_ok:
             status = "fail"
-        elif not current_known:
+        elif not current_known or not ampacity_known:
+            # [EE-9] no rated ampacity → the thermal check never ran
             status = "unknown"
         elif thermal_loading_pct > 80 or (3.0 < voltage_drop_pct <= max_voltage_drop_pct):
             status = "warning"
@@ -644,6 +668,10 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             warning_reasons.append(
                 "Load current unknown (load flow unavailable, not converged, or zero "
                 "current) — thermal and voltage-drop checks need a converged load flow")
+        if not ampacity_known:
+            warning_reasons.append(
+                "Cable ampacity unknown (rated_amps not set or zero) — "
+                "thermal check not performed")
         if thermal_loading_pct > 80 and thermal_ok:
             warning_reasons.append(f"Thermal loading at {thermal_loading_pct:.0f}% (>80% of derated capacity {derated_amps:.0f}A)")
         if 3.0 < voltage_drop_pct <= max_voltage_drop_pct:
@@ -656,7 +684,7 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             conductor_df = _nec_conductor_count_factor(num_parallel * 3) if ampacity_standard == "NEC" else 1.0
             found_size = _find_minimum_size(
                 cp, load_current, num_parallel, length_km, voltage_kv,
-                cos_phi, sin_phi, max_voltage_drop_pct, fault_ka, t_clear,
+                cos_phi, sin_phi, max_voltage_drop_pct, ith_ka, t_clear,
                 install_df, temp_df, ambient_temp_c,
                 ampacity_standard=ampacity_standard, conductor_df=conductor_df,
             )
@@ -705,6 +733,9 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
                        install_df, temp_df, ambient_temp_c,
                        ampacity_standard='IEC', conductor_df=1.0):
     """Find the minimum cable size (mm²) that satisfies all three checks.
+
+    fault_ka must be the THERMAL-EQUIVALENT current Ith = Ik″·√(m+n)
+    (IEC 60909-0 §12) — the caller applies the m/n factors ([EE-5]).
 
     Returns None when NO standard cable size passes — callers must report a
     clear failure rather than recommending a size that also fails.

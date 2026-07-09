@@ -261,17 +261,9 @@ const ContextMenu = {
         shortcut: 'Ctrl+V',
         disabled: !hasClipboard,
         action: () => {
-          AppState.pasteClipboard();
-          // Shift the pasted selection so its centroid lands at the cursor
-          const sel = [...AppState.selectedIds]
-            .map(id => AppState.components.get(id)).filter(Boolean);
-          if (sel.length > 0) {
-            const cx = sel.reduce((s, c) => s + c.x, 0) / sel.length;
-            const cy = sel.reduce((s, c) => s + c.y, 0) / sel.length;
-            const dx = snapToGrid(worldPt.x - cx);
-            const dy = snapToGrid(worldPt.y - cy);
-            for (const c of sel) { c.x += dx; c.y += dy; }
-          }
+          // Target point makes pasteClipboard() position the components at
+          // the cursor BEFORE its undo snapshot, so undo/redo keep the spot.
+          AppState.pasteClipboard(worldPt);
           Canvas.render();
           document.getElementById('status-info').textContent =
             `Pasted ${AppState.selectedIds.size} component(s).`;

@@ -236,8 +236,12 @@ const AppState = {
     return candidate;
   },
 
-  // Paste clipboard contents with an offset
-  pasteClipboard() {
+  // Paste clipboard contents with an offset.
+  // Optional `target` ({x, y} world point, e.g. the context-menu cursor):
+  // the pasted selection's centroid is shifted onto it BEFORE the undo
+  // snapshot below, so undo/redo restore the final positions. Without a
+  // target (Ctrl+V / Ctrl+D) behaviour is unchanged: a fixed +40px offset.
+  pasteClipboard(target = null) {
     if (!this.clipboard || this.clipboard.components.length === 0) return;
     const offset = 40; // paste offset in world coords
     const idMap = new Map(); // old id -> new id
@@ -267,6 +271,19 @@ const AppState = {
         this.addWire(newFrom, wire.fromPort, newTo, wire.toPort, true);
       }
     }
+    // Shift the pasted selection so its centroid lands at the target point
+    // (grid-snapped delta). Must happen before the snapshot below.
+    if (target) {
+      const pasted = [...this.selectedIds]
+        .map(id => this.components.get(id)).filter(Boolean);
+      if (pasted.length > 0) {
+        const cx = pasted.reduce((s, c) => s + c.x, 0) / pasted.length;
+        const cy = pasted.reduce((s, c) => s + c.y, 0) / pasted.length;
+        const dx = snapToGrid(target.x - cx);
+        const dy = snapToGrid(target.y - cy);
+        for (const c of pasted) { c.x += dx; c.y += dy; }
+      }
+    }
     this.dirty = true;
     this.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
@@ -283,6 +300,12 @@ const AppState = {
       components: JSON.parse(JSON.stringify([...this.components.values()])),
       wires: JSON.parse(JSON.stringify([...this.wires.values()])),
       nextId: this.nextId,
+      // Groups and pages belong to the snapshot too — restoring components
+      // without them desyncs comp.groupId / comp.pageId references. Legacy
+      // scenarios without these fields get reconciled on load instead.
+      groups: [...this.groups.values()].map(g => ({ ...g, memberIds: [...g.memberIds] })),
+      pages: JSON.parse(JSON.stringify(this.pages)),
+      activePageId: this.activePageId,
       // What loading this scenario applies (snapshot always stores everything;
       // names are never applied). Missing/legacy → all true.
       applies: applies || { switching: true, settings: true, layout: true },
@@ -332,6 +355,29 @@ const AppState = {
         this.wires.set(w.id, JSON.parse(JSON.stringify(w)));
       }
       this.nextId = scenario.nextId;
+      // Restore groups/pages when the snapshot carries them (newer scenarios);
+      // legacy snapshots keep the current groups/pages and rely on the
+      // reconciliation below to drop anything that no longer lines up.
+      if (Array.isArray(scenario.groups)) {
+        this.groups.clear();
+        for (const g of scenario.groups) {
+          const copy = JSON.parse(JSON.stringify(g));
+          this.groups.set(g.id, { ...copy, memberIds: new Set(copy.memberIds) });
+        }
+        this._groupNextId = Math.max(this._groupNextId,
+          ...scenario.groups.map(g => (parseInt(String(g.id).replace('group_', '')) || 0) + 1));
+      }
+      if (Array.isArray(scenario.pages) && scenario.pages.length > 0) {
+        this.pages = JSON.parse(JSON.stringify(scenario.pages));
+        this.activePageId = this.pages.some(p => p.id === scenario.activePageId)
+          ? scenario.activePageId
+          : this.pages[0].id;
+        this._pageNextId = Math.max(this._pageNextId,
+          ...this.pages.map(p => (parseInt(String(p.id).replace('page_', '')) || 0) + 1));
+      }
+      // A full snapshot can resurrect stale groupId/pageId references
+      // (groups deleted since the save, pages added since, …) — reconcile.
+      this._reconcileGroupsAndPages();
     } else {
       // Overlay: apply selected categories to matching current components
       for (const snap of scenario.components) {
@@ -360,6 +406,35 @@ const AppState = {
     }
     this.dirty = true;
     return true;
+  },
+
+  // Reconcile group and page references after a full-snapshot restore:
+  //  - drop group memberIds that reference missing components;
+  //  - delete groups left with <2 members (createGroup requires ≥2) and
+  //    untag any surviving member;
+  //  - strip comp.groupId when the group no longer exists;
+  //  - remap comp.pageId (and activePageId) referencing a nonexistent page
+  //    to the active/first page so components can't become unreachable.
+  _reconcileGroupsAndPages() {
+    for (const [gid, group] of [...this.groups]) {
+      for (const cid of [...group.memberIds]) {
+        if (!this.components.has(cid)) group.memberIds.delete(cid);
+      }
+      if (group.memberIds.size < 2) {
+        for (const cid of group.memberIds) {
+          const comp = this.components.get(cid);
+          if (comp) delete comp.groupId;
+        }
+        this.groups.delete(gid);
+      }
+    }
+    const pageIds = new Set(this.pages.map(p => p.id));
+    if (!pageIds.has(this.activePageId)) this.activePageId = this.pages[0].id;
+    for (const comp of this.components.values()) {
+      if (comp.groupId && !this.groups.has(comp.groupId)) delete comp.groupId;
+      // Components without pageId belong to page_1 (legacy convention)
+      if (!pageIds.has(comp.pageId || 'page_1')) comp.pageId = this.activePageId;
+    }
   },
 
   // Update scenario description
@@ -433,6 +508,9 @@ const AppState = {
       maxX = Math.max(maxX, comp.x + hw);
       maxY = Math.max(maxY, comp.y + hh);
     }
+    // Every member missing (e.g. stale group after a snapshot restore):
+    // never emit an Infinity rect — callers treat null as "nothing to draw".
+    if (!isFinite(minX)) return null;
     return { x: minX - 10, y: minY - 10, w: maxX - minX + 20, h: maxY - minY + 20 };
   },
 
@@ -551,6 +629,13 @@ const AppState = {
     // Clear annotation drag offsets
     if (typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
+    }
+    // Project identity changed (new project, import, load, template…):
+    // rotate the local-revision namespace so revisions of the previous
+    // unsaved project can never leak into this one — even from a switch
+    // path that forgot to call RevisionTimeline.clearLocal().
+    if (typeof RevisionTimeline !== 'undefined' && RevisionTimeline.onProjectIdentityReset) {
+      RevisionTimeline.onProjectIdentityReset();
     }
   },
 
@@ -693,7 +778,19 @@ const AppState = {
     this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
     this.defaultLengthUnit = data.defaultLengthUnit || 'm';
-    this.nextId = data.nextId || 1;
+    // nextId must clear every loaded id: a stale/hand-edited nextId below an
+    // existing suffix would let genId() mint a duplicate id, and Map.set would
+    // silently overwrite that component (its wires re-attaching to the new
+    // one). Take the max of the stored counter and (highest numeric suffix
+    // across all component AND wire ids) + 1.
+    let maxIdSuffix = 0;
+    for (const list of [data.components || [], data.wires || []]) {
+      for (const item of list) {
+        const m = /_(\d+)$/.exec(String(item && item.id || ''));
+        if (m) maxIdSuffix = Math.max(maxIdSuffix, parseInt(m[1], 10));
+      }
+    }
+    this.nextId = Math.max(data.nextId || 1, maxIdSuffix + 1);
     this.scenarios = data.scenarios || [];
     this._scenarioNextId = this.scenarios.length > 0
       ? Math.max(...this.scenarios.map(s => parseInt(s.id.replace('scenario_', '')) || 0)) + 1

@@ -8,7 +8,10 @@
  *   2. Fault Duty Assessment (IEC 60909)
  *   3. Voltage Compliance (IEC 60038)
  *   4. Thermal Loading (IEC 60364)
- *   5. Equipment Summary
+ *   5. Cable Short-Circuit Withstand (IEC 60364-4-43)
+ *   6. Protection Device Ratings (IEC 62271 / IEC 60947)
+ *   7. SANS 10142 — Wiring of Premises
+ *   8. Equipment Summary
  */
 
 const Compliance = {
@@ -31,6 +34,7 @@ const Compliance = {
     report.sections.push(this._checkFaultDuty());
     report.sections.push(this._checkVoltageCompliance());
     report.sections.push(this._checkThermalLoading());
+    report.sections.push(this._checkCableWithstand());
     report.sections.push(this._checkProtectionDevices());
     report.sections.push(this._checkSANS10142());
     report.sections.push(this._buildEquipmentSummary());
@@ -144,15 +148,17 @@ const Compliance = {
 
         // Making (peak) duty: ip vs making capacity. When no explicit making
         // rating is given, derive it the same way as the backend duty check:
-        // MV (>1 kV) uses 2.5× breaking (IEC 62271-100); LV uses the IEC
-        // 60947-2 Table 2 ratio n = Icm/Icu stepped by Icu.
+        // MV (>1 kV) uses the IEC 62271-100 rated making factor — 2.5× breaking
+        // at 50 Hz, 2.6× at 60 Hz; LV uses the IEC 60947-2 Table 2 ratio
+        // n = Icm/Icu stepped by Icu.
         if (ipKA != null) {
           const explicitMaking = devComp.props?.making_capacity_ka;
           const devVkv = faultResult.voltage_kv || busComp?.props?.voltage_kv || 11;
           let makingFactor, factorLabel;
           if (devVkv > 1.0) {
-            makingFactor = 2.5;
-            factorLabel = '2.5× breaking, IEC 62271-100';
+            const freq = Number(AppState.frequency) || 50;
+            makingFactor = freq === 60 ? 2.6 : 2.5;
+            factorLabel = `${makingFactor}× breaking, IEC 62271-100 at ${freq} Hz`;
           } else {
             const icu = breakingKA;
             makingFactor = icu <= 6 ? 1.5 : icu <= 10 ? 1.7 : icu <= 20 ? 2.0 : icu <= 50 ? 2.1 : 2.2;
@@ -328,7 +334,185 @@ const Compliance = {
     return section;
   },
 
-  // ── 5. Protection Device Checks ──
+  // ── 5. Cable Short-Circuit Withstand (IEC 60364-4-43 §434.5.2) ──
+  // Adiabatic criterion: the protective device must clear a through-fault
+  // before the conductor exceeds its final short-circuit temperature, i.e.
+  // t_clear ≤ k²·S²/I², with k per IEC 60364-5-54 for the conductor material
+  // and insulation, S the cross-section in mm² and I the through-fault current.
+  _checkCableWithstand() {
+    const section = { title: 'Cable Short-Circuit Withstand', standard: 'IEC 60364-4-43 / SANS 10142-1', items: [] };
+
+    if (!this._hasFault()) {
+      section.items.push({ status: 'info', component: '—', message: 'Cable withstand check: fault analysis not run.', detail: 'Run Fault Analysis to verify t_clear ≤ k²S²/I² per IEC 60364-4-43 §434.5.2.' });
+      return section;
+    }
+
+    const faultBuses = AppState.faultResults.buses;
+    const fmtT = (t) => (t >= 100 ? t.toFixed(0) : t >= 10 ? t.toFixed(1) : t >= 1 ? t.toFixed(2) : t.toFixed(3));
+    let anyCable = false;
+
+    for (const [cableId, comp] of AppState.components) {
+      if (comp.type !== 'cable') continue;
+      anyCable = true;
+      const cableName = comp.props?.name || cableId;
+
+      // Resolve cross-section, conductor material and insulation: library
+      // entry first, cable props as fallback (same resolution as the TCC
+      // cable thermal damage curve)
+      const stdCable = STANDARD_CABLES.find(c => c.id === (comp.props?.standard_type || ''));
+      const sizeMm2 = stdCable ? stdCable.size_mm2 : (comp.props?.size_mm2 || 0);
+      const conductor = stdCable ? stdCable.conductor : (comp.props?.conductor || 'Cu');
+      const insulation = stdCable ? stdCable.insulation : (comp.props?.insulation || 'XLPE');
+
+      if (!(sizeMm2 > 0)) {
+        section.items.push({
+          status: 'info',
+          component: cableName,
+          message: 'Conductor cross-section unknown — short-circuit withstand not verified.',
+          detail: 'Select a standard cable type (or set the conductor size) to enable the IEC 60364-4-43 §434.5.2 adiabatic check.',
+        });
+        continue;
+      }
+
+      // Adiabatic k factor per IEC 60364-5-54 (same values as the TCC damage
+      // curve): Cu/XLPE 143, Cu/PVC 115, Al/XLPE 94, Al/PVC 76
+      let kFactor = 143;
+      if (conductor === 'Cu' && insulation === 'PVC') kFactor = 115;
+      else if (conductor === 'Al' && insulation === 'XLPE') kFactor = 94;
+      else if (conductor === 'Al' && insulation === 'PVC') kFactor = 76;
+
+      // Through-fault current: a fault at the cable's remote (downstream) end
+      // flows through the whole cable. Of the connected buses with fault
+      // results, the lower-I"k3 end is the downstream end.
+      const buses = this._findConnectedDevices(cableId, ['bus']);
+      let faultKA = null;
+      let faultBusName = null;
+      for (const b of buses) {
+        const fr = faultBuses[b.id];
+        if (!fr || fr.ik3 == null) continue;
+        if (faultKA == null || fr.ik3 < faultKA) {
+          faultKA = fr.ik3;
+          faultBusName = AppState.components.get(b.id)?.props?.name || b.id;
+        }
+      }
+
+      if (faultKA == null) {
+        section.items.push({
+          status: 'info',
+          component: cableName,
+          message: 'No fault result at a connected bus — short-circuit withstand not verified.',
+          detail: `k = ${kFactor} (${conductor}/${insulation}), S = ${sizeMm2} mm². Ensure the cable's buses are included in the fault study.`,
+        });
+        continue;
+      }
+
+      const faultI = faultKA * 1000; // A
+      const tMax = Math.pow((kFactor * sizeMm2) / faultI, 2); // k²S²/I² in seconds
+      const basisStr = `k = ${kFactor} (${conductor}/${insulation}), S = ${sizeMm2} mm², I = ${faultKA.toFixed(2)} kA (I"k3 at ${faultBusName}) → withstand t = k²S²/I² = ${fmtT(tMax)} s`;
+
+      const devices = this._findConnectedDevices(cableId, ['cb', 'fuse']);
+      if (devices.length === 0) {
+        section.items.push({
+          status: 'info',
+          component: cableName,
+          message: 'No protective device found for cable — clearing time cannot be evaluated.',
+          detail: `${basisStr}. Add an upstream circuit breaker or fuse to enable the check.`,
+        });
+        continue;
+      }
+
+      for (const dev of devices) {
+        const devComp = AppState.components.get(dev.id);
+        if (!devComp) continue;
+        const devName = devComp.props?.name || dev.id;
+        let tClear;
+        let devDesc;
+
+        if (devComp.type === 'fuse') {
+          const ratingA = devComp.props?.rated_current_a;
+          if (!ratingA) {
+            section.items.push({
+              status: 'info',
+              component: devName,
+              message: `No fuse rating specified — cannot evaluate clearing time for cable ${cableName}.`,
+              detail: `${basisStr}.`,
+            });
+            continue;
+          }
+          // Total clearing ≈ 1.2 × pre-arcing time (IEC 60269 practice, as in TCC grading)
+          const preArc = fuseTripTime(ratingA, faultI);
+          tClear = (preArc != null && isFinite(preArc)) ? preArc * 1.2 : preArc;
+          devDesc = `gG fuse ${ratingA} A, total clearing (1.2× pre-arc)`;
+        } else {
+          const params = {
+            cb_type: devComp.props?.cb_type || 'mccb',
+            trip_rating_a: devComp.props?.trip_rating_a || devComp.props?.rated_current_a,
+            thermal_pickup: devComp.props?.thermal_pickup || 1.0,
+            magnetic_pickup: devComp.props?.magnetic_pickup || 10,
+            long_time_delay: devComp.props?.long_time_delay || 10,
+            short_time_pickup: devComp.props?.short_time_pickup || 0,
+            short_time_delay: devComp.props?.short_time_delay || 0,
+            instantaneous_pickup: devComp.props?.instantaneous_pickup || 0,
+          };
+          if (!params.trip_rating_a) {
+            section.items.push({
+              status: 'info',
+              component: devName,
+              message: `No trip rating specified — cannot evaluate clearing time for cable ${cableName}.`,
+              detail: `${basisStr}.`,
+            });
+            continue;
+          }
+          tClear = cbTripTime(params, faultI);
+          devDesc = `${(params.cb_type || 'mccb').toUpperCase()} trip unit`;
+        }
+
+        if (tClear == null || !isFinite(tClear)) {
+          section.items.push({
+            status: 'fail',
+            component: devName,
+            message: `Device does NOT operate at the through-fault current — cable ${cableName} is unprotected against short circuit.`,
+            detail: `${basisStr}. ${devDesc}: no trip at ${faultKA.toFixed(2)} kA, so the conductor exceeds its adiabatic limit. Lower the pickup or use a more sensitive device.`,
+          });
+          continue;
+        }
+
+        if (tClear > tMax) {
+          section.items.push({
+            status: 'fail',
+            component: devName,
+            message: `Clearing time ${fmtT(tClear)} s EXCEEDS cable ${cableName} withstand ${fmtT(tMax)} s.`,
+            detail: `${basisStr}. ${devDesc} clears in ${fmtT(tClear)} s — IEC 60364-4-43 §434.5.2 requires t_clear ≤ k²S²/I². Upsize the conductor or speed up the protection.`,
+          });
+        } else {
+          const marginPct = (tMax / tClear - 1) * 100;
+          if (marginPct < 20) {
+            section.items.push({
+              status: 'warn',
+              component: devName,
+              message: `Clearing time ${fmtT(tClear)} s within cable ${cableName} withstand ${fmtT(tMax)} s, but margin is only ${marginPct.toFixed(0)}%.`,
+              detail: `${basisStr}. ${devDesc}. Curve tolerance or a higher fault level could exceed the adiabatic limit.`,
+            });
+          } else {
+            section.items.push({
+              status: 'pass',
+              component: devName,
+              message: `Clearing time ${fmtT(tClear)} s ≤ cable ${cableName} withstand ${fmtT(tMax)} s.`,
+              detail: `${basisStr}. ${devDesc}. Complies with IEC 60364-4-43 §434.5.2.`,
+            });
+          }
+        }
+      }
+    }
+
+    if (!anyCable) {
+      section.items.push({ status: 'info', component: '—', message: 'No cables in the network for short-circuit withstand check.', detail: 'IEC 60364-4-43 §434.5.2 applies to cables protected by an upstream overcurrent device.' });
+    }
+
+    return section;
+  },
+
+  // ── 6. Protection Device Checks ──
   _checkProtectionDevices() {
     const section = { title: 'Protection Device Ratings', standard: 'IEC 62271 / IEC 60947', items: [] };
 
@@ -393,7 +577,7 @@ const Compliance = {
     return section;
   },
 
-  // ── 6. SANS 10142 Wiring of Premises ──
+  // ── 7. SANS 10142 Wiring of Premises ──
   _checkSANS10142() {
     const section = { title: 'SANS 10142 — Wiring of Premises', standard: 'SANS 10142-1', items: [] };
 
@@ -765,7 +949,7 @@ const Compliance = {
     }
   },
 
-  // ── 7. Equipment Summary ──
+  // ── 8. Equipment Summary ──
   _buildEquipmentSummary() {
     const section = { title: 'Equipment Inventory', standard: 'Reference', items: [] };
     const counts = {};
@@ -843,8 +1027,11 @@ const Compliance = {
           found.push({ id: neighborCompId, type: neighborComp.type });
         }
 
-        // Walk through transparent elements (CBs, switches, fuses, CTs, PTs, arresters)
-        if (transparent.includes(neighborComp.type) && !types.includes(neighborComp.type)) {
+        // Walk through transparent elements (CBs, switches, fuses, CTs, PTs,
+        // arresters) — including matched protective devices, so every device
+        // in a series stack (switch–fuse, CB-then-fuse) is collected rather
+        // than only the nearest one. Buses still terminate the walk.
+        if (transparent.includes(neighborComp.type)) {
           queue.push(neighborCompId);
         }
       }

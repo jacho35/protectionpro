@@ -410,6 +410,7 @@ const NetworkTemplates = {
         }
         const data = this.generate(id);
         if (!data) return;
+        if (typeof RevisionTimeline !== 'undefined') RevisionTimeline.clearLocal();
         AppState.fromJSON(data);
         UndoManager.clear();
         Canvas.updateTransform();

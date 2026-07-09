@@ -5,6 +5,18 @@ function updateProjectNameDisplay(name) {
   if (el) el.textContent = name || AppState.projectName || 'Untitled Project';
 }
 
+// Encode one CSV cell (shared by every client-side CSV exporter):
+//  - quote cells containing commas, quotes, or line breaks (doubling quotes);
+//  - Excel formula-injection guard: prefix ' to TEXT cells starting with
+//    = + - @ (component names are the shared-file attack vector). Numeric
+//    values are emitted untouched so -1.5 etc. stays a number.
+function csvCell(cell) {
+  if (cell == null) return '';
+  let s = String(cell);
+  if (typeof cell === 'string' && /^[=+\-@]/.test(s)) s = `'${s}`;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 const Project = {
   init() {
     document.getElementById('btn-new').addEventListener('click', () => this.newProject());
@@ -36,6 +48,17 @@ const Project = {
       }
     });
 
+    // The File Manager widens the shared calc modal with .modal-wide. Clean
+    // it up on the modal's generic close paths (close button, backdrop click)
+    // with ONE delegated listener bound here — per-open listeners accumulated
+    // and missed the backdrop path. The Escape path is handled in app.js.
+    const calcModal = document.getElementById('calc-modal');
+    calcModal?.addEventListener('click', (e) => {
+      if (e.target === calcModal || e.target.closest('#btn-close-calc')) {
+        calcModal.querySelector('.modal-content')?.classList.remove('modal-wide');
+      }
+    });
+
     // Load and render recent projects in File menu
     this._loadRecent();
     this._renderRecentMenu();
@@ -63,6 +86,9 @@ const Project = {
     if (AppState.dirty) {
       if (!confirm('You have unsaved changes. Create new project?')) return;
     }
+    // Different project from here on — drop the outgoing project's local
+    // revisions before reset() rotates the revision namespace.
+    RevisionTimeline.clearLocal();
     AppState.reset();
     UndoManager.clear();
     Canvas.updateTransform();
@@ -455,10 +481,7 @@ const Project = {
       return;
     }
 
-    const csv = rows.map(row => row.map(cell => {
-      const s = String(cell ?? '');
-      return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
-    }).join(',')).join('\n');
+    const csv = rows.map(row => row.map(csvCell).join(',')).join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -571,6 +594,7 @@ const Project = {
         return;
       }
       const data = JSON.parse(raw);
+      RevisionTimeline.clearLocal(); // switching projects
       AppState.fromJSON(data);
       UndoManager.clear();
       AppState.projectId = null;
@@ -604,6 +628,7 @@ const Project = {
       reader.onload = (ev) => {
         try {
           const data = JSON.parse(ev.target.result);
+          RevisionTimeline.clearLocal(); // switching projects
           AppState.fromJSON(data);
           UndoManager.clear();
           AppState.projectId = null; // imported files don't have a DB id
@@ -689,6 +714,7 @@ const Project = {
         if (!this._confirmDiscardUnsaved()) return;
         try {
           const data = await API.loadProject(btn.dataset.id);
+          RevisionTimeline.clearLocal(); // switching projects
           AppState.fromJSON(data);
           UndoManager.clear();
           AppState.projectId = btn.dataset.id;
@@ -829,10 +855,9 @@ const Project = {
     `;
     modal.style.display = '';
 
-    // Clean up modal-wide on close
-    const closeBtn = modal.querySelector('#btn-close-calc');
-    const removeWide = () => { modalContent.classList.remove('modal-wide'); closeBtn.removeEventListener('click', removeWide); };
-    closeBtn.addEventListener('click', removeWide);
+    // modal-wide cleanup on close button / backdrop / Escape is handled by
+    // the delegated listener in init() and the Escape handler in app.js —
+    // no per-open listener here (they accumulated and leaked on Escape).
 
     // ── Bind events ──
 
@@ -877,6 +902,7 @@ const Project = {
         }
         try {
           const data = await API.loadProject(el.dataset.projectId);
+          RevisionTimeline.clearLocal(); // switching projects
           AppState.fromJSON(data);
           UndoManager.clear();
           AppState.projectId = el.dataset.projectId;

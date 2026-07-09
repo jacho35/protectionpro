@@ -158,10 +158,15 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
     iarc = min(iarc, ibf)
 
     # Reduced arcing current variation factor (IEEE 1584-2002 §5.5)
-    # For variation study: use 85% for LV, 90% for MV
     if voc_kv <= 1.0:
+        # LV: the standard's 85% second calculation (§5.5 applies < 1 kV)
         iarc_reduced = iarc * 0.85
     else:
+        # MV: INTENTIONAL conservative extension beyond the standard — the
+        # 2002 §5.5 85% second calculation is defined only below 1 kV, so
+        # no reduced-current check is required here at all. A milder 0.90
+        # variation is evaluated anyway to catch protection that slows down
+        # near its pickup at MV. Deliberate; do NOT "fix" this to 0.85.
         iarc_reduced = iarc * 0.90
 
     return iarc, iarc_reduced
@@ -444,16 +449,38 @@ def _leads_to_source(start_id, bus_id, components, adjacency):
 
 
 def _cb_self_clearing_time(props, current_a):
-    """Clearing time of a CB from its own thermal-magnetic model.
+    """Clearing time of a CB from its own trip-unit model.
 
-    Compares the current against the instantaneous pickup
-    (trip_rating_a × magnetic_pickup); below it, the time-delayed trip is
-    estimated from the long-time delay setting (crude bucket heuristic —
-    a proper evaluation of the full device TCC is not implemented).
+    [PROT-11] Mirrors the frontend cbTripTime() priority (constants.js):
+
+      ACB (electronic trip unit), referenced to Ir = trip_rating × thermal_pickup:
+        1. instantaneous:  instantaneous_pickup > 0 and I ≥ Ii×Ir → ~0.05 s
+        2. short-time:     short_time_pickup > 0 and I ≥ Isd×Ir
+                           → short_time_delay + breaker opening time
+                           (an ST-only ZSI/selectivity setup clears at the
+                           intentional ST delay, NOT instantaneously)
+      All types (MCCB magnetic / ACB fallback):
+        3. magnetic:       I ≥ magnetic_pickup×Ir → 0.05 s
+        4. thermal region: long-time delay bucket heuristic (a proper
+           evaluation of the full device TCC is not implemented)
     """
     trip_rating = float(props.get("trip_rating_a", 630))
+    thermal_pickup = float(props.get("thermal_pickup", 1.0) or 1.0)
+    ir = trip_rating * thermal_pickup  # primary amps at pickup
     magnetic_pickup = float(props.get("magnetic_pickup", 10))
-    inst_threshold = trip_rating * magnetic_pickup  # primary amps
+
+    # ACB electronic-trip short-time / instantaneous settings (×Ir)
+    if props.get("cb_type", "mccb") == "acb":
+        inst_pickup = float(props.get("instantaneous_pickup", 0) or 0) * ir
+        st_pickup = float(props.get("short_time_pickup", 0) or 0) * ir
+        st_delay = float(props.get("short_time_delay", 0.1) or 0.1)
+        if inst_pickup > 0 and current_a >= inst_pickup:
+            return 0.05  # instantaneous incl. breaker operating time
+        if st_pickup > 0 and current_a >= st_pickup:
+            # Intentional short-time delay + breaker opening time
+            return st_delay + _BREAKER_OPENING_TIME_S
+
+    inst_threshold = ir * magnetic_pickup  # primary amps
     if current_a > 0 and current_a >= inst_threshold:
         # Instantaneous trip incl. breaker operating time
         return 0.05
@@ -649,8 +676,10 @@ def run_arc_flash(project_data, fault_results):
         # Validate IEEE 1584 applicability — collect all warnings (not just the last)
         validity_warnings = []
         ibf_a = ibf_ka * 1000
-        if ibf_a < 500:
-            validity_warnings.append("Below IEEE 1584 range (< 500A)")
+        # [EE-10] 700 A model floor per IEEE 1584-2002 §1.2 (and the module
+        # header) — the previous 500 A check under-warned
+        if ibf_a < 700:
+            validity_warnings.append("Below IEEE 1584 range (< 700A)")
         elif ibf_a > 106000:
             validity_warnings.append("Above IEEE 1584 range (> 106kA)")
         if voltage_kv > 15:

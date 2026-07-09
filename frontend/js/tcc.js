@@ -2275,7 +2275,7 @@ const TCC = {
         </div>
         <div class="tcc-sel-acb-fields" style="display:${isACB ? '' : 'none'}">
           <div class="tcc-form-row">
-            <label>ST Pickup (×In)</label>
+            <label>ST Pickup (×Ir)</label>
             <input type="number" data-sel-field="cb.short_time_pickup" value="${p.short_time_pickup || 0}" min="0" max="20" step="0.5">
           </div>
           <div class="tcc-form-row">
@@ -2283,7 +2283,7 @@ const TCC = {
             <input type="number" data-sel-field="cb.short_time_delay" value="${p.short_time_delay || 0}" min="0.02" max="1" step="0.01">
           </div>
           <div class="tcc-form-row">
-            <label>Instantaneous (×In)</label>
+            <label>Instantaneous (×Ir)</label>
             <input type="number" data-sel-field="cb.instantaneous_pickup" value="${p.instantaneous_pickup || 0}" min="0" max="25" step="0.5">
           </div>
         </div>`;
@@ -2591,27 +2591,46 @@ const TCC = {
   },
 
   /**
-   * Required grading margin (CTI) per pair type:
-   *   relay/CB–relay/CB: this.gradingMargin (default 0.3 s)
-   *   relay/CB–fuse:     0.2 s (no CB opening time on the fuse side)
+   * Required grading margin (CTI) per pair type, order-aware [PROT-12]:
+   *   relay/CB over relay/CB:        this.gradingMargin (default 0.3 s)
+   *   relay/CB over DOWNSTREAM fuse: 0.2 s — no CB opening time on the fuse
+   *     side, so the upstream device needs less margin over the fuse's
+   *     total-clearing curve.
+   *   UPSTREAM fuse over relay/CB:   full gradingMargin — the fuse's melting
+   *     curve must clear the downstream relay time PLUS breaker opening time
+   *     and pre-arc tolerance/pre-damage allowance, so the 0.2 s relief does
+   *     NOT apply when the fuse is on the upstream side.
+   * When the pair order is unknown (assumed mode) the conservative full
+   * margin is used for mixed fuse pairs.
    * Fuse–fuse pairs are handled by the I²t ratio rule, not a time margin.
    */
-  _requiredMargin(devA, devB) {
-    const fuses = (devA.deviceType === 'fuse' ? 1 : 0) + (devB.deviceType === 'fuse' ? 1 : 0);
-    if (fuses === 1) return 0.2;
+  _requiredMargin(devUp, devDown, orderKnown = true) {
+    if (orderKnown && devDown.deviceType === 'fuse' && devUp.deviceType !== 'fuse') return 0.2;
     return this.gradingMargin;
   },
 
   /**
-   * Fuse–fuse selectivity check. The downstream fuse's total-clearing I²t must
-   * stay below the upstream fuse's pre-arcing I²t; with the synthetic ratio-
-   * scaled curves used here this is verified by the IEC 60269 2:1 rating-ratio
-   * rule (upstream rating ≥ 2× downstream).
+   * Fuse–fuse selectivity check [PROT-17]. The downstream fuse's total-clearing
+   * I²t must stay below the upstream fuse's pre-arcing I²t. IEC 60269-1 gG
+   * fuses discriminate at a 1.6:1 rating ratio (the standard's I²t gates are
+   * designed for it); 2:1 is the conventional recommended margin.
+   * Returns { ratio, status } with status:
+   *   'pass'     ratio ≥ 2.0
+   *   'warning'  1.6 ≤ ratio < 2.0 — meets the IEC 60269 minimum, 2:1 recommended
+   *   'critical' ratio < 1.6 — below the IEC 60269 gG discrimination minimum
    */
-  _fuseFuseCoordinated(devDown, devUp) {
+  _fuseFuseSelectivity(devDown, devUp) {
     const rDown = devDown.fuseRating || devDown.actualRating || 0;
     const rUp = devUp.fuseRating || devUp.actualRating || 0;
-    return rDown > 0 && rUp >= 2 * rDown;
+    if (rDown <= 0 || rUp <= 0) return { ratio: 0, status: 'critical' };
+    const ratio = rUp / rDown;
+    // The nominal 1.6:1 minimum with tolerance for R10-series rounding: the
+    // standard two-step gG pairs the rule intends to accept compute slightly
+    // below 1.6 (100/63 = 1.587, 125/80 = 1.5625, 315/200 = 1.575).
+    const IEC_MIN = 1.5625;
+    if (ratio >= 2.0) return { ratio, status: 'pass' };
+    if (ratio >= IEC_MIN) return { ratio, status: 'warning' };
+    return { ratio, status: 'critical' };
   },
 
   /**
@@ -2630,7 +2649,10 @@ const TCC = {
    * results — each point carries the faulted bus voltage so the current can be
    * referred to each device's own voltage level — and falls back to generic
    * current levels (no referral possible) when no fault study has been run.
-   * Each point: { amps, voltageKv (null = unknown frame), earth (bool) }.
+   * Each point: { amps, voltageKv (null = unknown frame), earth (bool),
+   * busId (null = generic level, not tied to a studied bus) }. The busId lets
+   * the grading engines restrict each pair's test points to buses actually
+   * downstream of the pair [PROT-7].
    */
   _buildCoordinationTestPoints(fallbackAmps = [500, 1000, 2000, 5000, 10000, 20000]) {
     const points = [];
@@ -2640,8 +2662,8 @@ const TCC = {
       for (const [busId, r] of Object.entries(fr.buses)) {
         const comp = AppState.components.get(busId);
         const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
-        if (r.ik3) { points.push({ amps: r.ik3 * 1000, voltageKv: vkv, earth: false }); hasPhase = true; }
-        if (r.ik1) { points.push({ amps: r.ik1 * 1000, voltageKv: vkv, earth: true }); hasEarth = true; }
+        if (r.ik3) { points.push({ amps: r.ik3 * 1000, voltageKv: vkv, earth: false, busId }); hasPhase = true; }
+        if (r.ik1) { points.push({ amps: r.ik1 * 1000, voltageKv: vkv, earth: true, busId }); hasEarth = true; }
       }
       // A 3-phase-only study leaves ik1 null on every bus (and an SLG-only study
       // leaves ik3 null). Without points of the missing class, earth (50N/51N)
@@ -2652,17 +2674,87 @@ const TCC = {
       if (points.length > 0 && (!hasPhase || !hasEarth)) {
         const missingEarth = !hasEarth;
         for (const p of [...points]) {
-          points.push({ amps: p.amps, voltageKv: p.voltageKv, earth: missingEarth });
+          points.push({ amps: p.amps, voltageKv: p.voltageKv, earth: missingEarth, busId: p.busId });
         }
       }
     }
     if (points.length === 0) {
       for (const a of fallbackAmps) {
-        points.push({ amps: a, voltageKv: null, earth: false });
-        points.push({ amps: a, voltageKv: null, earth: true });
+        points.push({ amps: a, voltageKv: null, earth: false, busId: null });
+        points.push({ amps: a, voltageKv: null, earth: true, busId: null });
       }
     }
     return points;
+  },
+
+  /**
+   * [PROT-19] Reverse-looking directional (67) relays do not operate for
+   * forward (source-to-load) faults — they are excluded from downstream
+   * grading pairs and sequence-of-operation, but stay on the chart.
+   */
+  _isReverseDirectional(dev) {
+    return !!(dev && dev.directional && dev.direction === 'reverse');
+  },
+
+  /**
+   * [PROT-8] Whether a transformer blocks zero-sequence (residual) current
+   * from passing between its windings. Only a grounded-star / grounded-star
+   * (YNyn) group passes zero sequence through: a delta or zigzag winding
+   * traps residual current locally, and an ungrounded star gives it no
+   * return path (e.g. Dyn11, YNd11, Yzn11, Yyn0, Dd0 all block).
+   */
+  _xfmrBlocksZeroSeq(comp) {
+    const vg = String(comp?.props?.vector_group || 'Dyn11');
+    return !/^ynyn/i.test(vg.replace(/[^a-z]/gi, ''));
+  },
+
+  /**
+   * [PROT-7] Coordination test points for an in-series pair must be capped at
+   * the downstream device's maximum through-fault: a bus is a valid test point
+   * only if faults at that bus actually flow through BOTH devices, i.e. both
+   * appear (upstream before downstream) on the bus's source-side device chain.
+   * This stops electrically-upstream bus faults (e.g. an 11 kV 8 kA point)
+   * being ratio-referred into a 0.4 kV pair as a fictitious 220 kA test.
+   *
+   * [PROT-8] For earth-fault (ik1) points, additionally require that no
+   * transformer between the pair's upstream device and the faulted bus blocks
+   * zero sequence — residual current does not propagate through a delta or
+   * zigzag winding, so ratio-referring ik1 across one is meaningless.
+   *
+   * busMap is the map populated by _buildProtectionPaths(busMap).
+   * Returns Map<busId, { earthOk }> — buses absent from the map are not valid
+   * test points for this pair.
+   */
+  _pairTestBusEligibility(busMap, devUp, devDown) {
+    const map = new Map();
+    if (!busMap) return map;
+    for (const [busId, groups] of busMap) {
+      for (const g of groups) {
+        const iUp = g.devices.indexOf(devUp);
+        if (iUp < 0) continue;
+        const iDown = g.devices.indexOf(devDown);
+        if (iDown < 0 || iDown <= iUp) continue;
+        const xfmrs = (g.xfmrsAfter && g.xfmrsAfter[iUp]) || [];
+        const earthOk = !xfmrs.some(x => this._xfmrBlocksZeroSeq(x));
+        const cur = map.get(busId);
+        if (cur) cur.earthOk = cur.earthOk || earthOk;
+        else map.set(busId, { earthOk });
+      }
+    }
+    return map;
+  },
+
+  /**
+   * Shared test-point filter for one pair at one test point [PROT-7]/[PROT-8]:
+   * returns true when the point must be skipped. Points not tied to a studied
+   * bus (busId null — generic fallback levels) are never filtered.
+   */
+  _skipTestPointForPair(tp, eligibility, earthPair) {
+    if (tp.busId == null) return false;
+    const e = eligibility.get(tp.busId);
+    if (!e) return true;                    // bus not downstream of the pair
+    if (earthPair && !e.earthOk) return true; // ik1 blocked by Dyn/zigzag winding
+    return false;
   },
 
   /**
@@ -2722,14 +2814,23 @@ const TCC = {
     // Topology-aware pairing: only grade pairs that are actually in series on
     // a protection path. Without topology, fall back to all visible pairs with
     // the order flagged as assumed.
-    const paths = this._buildProtectionPaths();
+    const busMap = new Map();
+    const paths = this._buildProtectionPaths(busMap);
     const visSet = new Set(visible);
     const seriesPairs = this._seriesDevicePairs(paths, visSet);
     const hasTopology = seriesPairs.length > 0;
 
     const issues = [];
+    // [PROT-18] Damage/withstand curves are limits, not operating devices —
+    // they must not be pairwise time-graded in assumed (no-topology) mode.
+    // (In topology mode they never appear on protection paths.)
+    const DAMAGE_TYPES = new Set(['xfmr_thermal', 'cable_thermal', 'custom_curve']);
 
     const checkPair = (devUp, devDown, assumed) => {
+      // [PROT-19] Reverse-looking 67 relays do not operate for forward faults
+      if (this._isReverseDirectional(devUp) || this._isReverseDirectional(devDown)) return;
+      // [PROT-18] Skip damage-curve entries in assumed pairwise grading
+      if (assumed && (DAMAGE_TYPES.has(devUp.deviceType) || DAMAGE_TYPES.has(devDown.deviceType))) return;
       // Mixed phase/earth pairs: grade (upstream=earth, downstream=phase) at
       // ik1 — the earth fault flows through the downstream phase device — but
       // skip (upstream=phase, downstream=earth) (see _deviceElementClass).
@@ -2744,22 +2845,35 @@ const TCC = {
       // Earth-class upstream elements grade at earth-fault (ik1) test points
       const earthPair = upClass === 'earth';
 
-      // Fuse–fuse pairs: I²t / 2:1 rating-ratio rule instead of a time margin
-      if (!assumed && devUp.deviceType === 'fuse' && devDown.deviceType === 'fuse') {
-        if (!this._fuseFuseCoordinated(devDown, devUp)) {
+      // Fuse–fuse pairs: I²t / rating-ratio rule instead of a time margin
+      // [PROT-17]. In assumed mode [PROT-18] the order is unknown — assume the
+      // larger rating is the upstream fuse and apply the same ratio tiers.
+      if (devUp.deviceType === 'fuse' && devDown.deviceType === 'fuse') {
+        let fUp = devUp, fDown = devDown;
+        if (assumed) {
+          const rA = devUp.fuseRating || devUp.actualRating || 0;
+          const rB = devDown.fuseRating || devDown.actualRating || 0;
+          if (rB > rA) { fUp = devDown; fDown = devUp; }
+        }
+        const sel = this._fuseFuseSelectivity(fDown, fUp);
+        if (sel.status !== 'pass') {
           issues.push({
-            devA: devDown.name, devB: devUp.name,
+            devA: fDown.name, devB: fUp.name,
             current: null, margin: null, tFast: null, tSlow: null,
-            ratioRule: true, assumed: false,
+            ratioRule: true, ratioSeverity: sel.status, ratio: sel.ratio, assumed,
           });
         }
         return;
       }
 
-      const required = this._requiredMargin(devUp, devDown);
+      const required = this._requiredMargin(devUp, devDown, !assumed);
+      // [PROT-7]/[PROT-8] Restrict fault-study test points to buses whose
+      // faults actually flow through the pair (only known with topology)
+      const eligibility = assumed ? null : this._pairTestBusEligibility(busMap, devUp, devDown);
 
       for (const tp of testPoints) {
         if (tp.earth !== earthPair) continue;
+        if (!assumed && this._skipTestPointForPair(tp, eligibility, earthPair)) continue;
 
         if (assumed) {
           // Order unknown: flag pairs that trip within the required margin of
@@ -2826,11 +2940,16 @@ const TCC = {
       html += `<table class="tcc-coord-table"><thead><tr><th>Downstream${hasTopology ? '' : ' (assumed)'}</th><th>Upstream${hasTopology ? '' : ' (assumed)'}</th><th>At Current</th><th>Margin</th></tr></thead><tbody>`;
       for (const [, iss] of pairMap) {
         if (iss.ratioRule) {
+          // [PROT-17] Tiered fuse-fuse verdict: <1.6 critical, 1.6-2.0 advisory
+          const ratioTxt = iss.ratio > 0 ? `${iss.ratio.toFixed(2)}:1` : '?:1';
+          const cell = iss.ratioSeverity === 'warning'
+            ? `<td class="tcc-sev-warning">fuse ratio ${ratioTxt} meets IEC 60269 1.6:1 minimum — 2:1 recommended</td>`
+            : `<td class="tcc-margin-fail">fuse ratio ${ratioTxt} &lt; 1.6:1 IEC 60269 minimum (I²t overlap)</td>`;
           html += `<tr>
             <td>${escHtml(iss.devA)}</td>
             <td>${escHtml(iss.devB)}</td>
             <td>—</td>
-            <td class="tcc-margin-fail">fuse ratio &lt; 2:1 (I²t overlap)</td>
+            ${cell}
           </tr>`;
         } else {
           html += `<tr>
@@ -2886,8 +3005,14 @@ const TCC = {
    * objects from upstream (source-side) to downstream (load-side).
    *
    * When a Map is passed as busMap, it is populated with
-   *   busId -> [{ sig, devices }] where devices is the ordered list of
-   * protection devices on the SOURCE side of that bus (closest upstream last).
+   *   busId -> [{ sig, devices, xfmrsAfter }] where devices is the ordered
+   * list of protection devices on the SOURCE side of that bus (closest
+   * upstream last) and xfmrsAfter[i] is the list of transformer components
+   * between devices[i] and the bus (used for zero-sequence blocking checks
+   * [PROT-8]).
+   *
+   * Reverse-looking directional (67) relays do not operate for forward
+   * (source-to-load) faults and are excluded from the paths [PROT-19].
    */
   _buildProtectionPaths(busMap = null) {
     const wires = AppState.wires;
@@ -2952,12 +3077,27 @@ const TCC = {
       cbRelayMap.get(cbDev.id).push(relayDev);
     }
 
-    // DFS from each source, collecting ordered protection devices along each path
+    // DFS from each source, collecting ordered protection devices along each
+    // path. Path entries are { dev, xIdx } where xIdx is how many transformers
+    // had been crossed when the device was added — so the transformers BETWEEN
+    // a device and any later node are xfmrs.slice(entry.xIdx) [PROT-8].
+    //
+    // [PROT-9] Simple-path enumeration is exponential on meshed networks. Cap
+    // BOTH the number of completed paths AND the number of node expansions
+    // (same dual caps as components.js traceUpstreamProtection) — on a meshed
+    // graph almost no branch terminates, so a path-count cap alone never fires
+    // while the traversal blows up.
+    const MAX_PATHS = 500;
+    const MAX_EXPANSIONS = 20000;
+    let expansions = 0;
     const allPaths = [];
     for (const srcId of sources) {
-      const stack = [{ node: srcId, visited: new Set([srcId]), protDevices: [] }];
+      if (allPaths.length >= MAX_PATHS || expansions >= MAX_EXPANSIONS) break;
+      const stack = [{ node: srcId, visited: new Set([srcId]), protDevices: [], xfmrs: [] }];
       while (stack.length > 0) {
-        const { node, visited, protDevices } = stack.pop();
+        if (allPaths.length >= MAX_PATHS || expansions >= MAX_EXPANSIONS) break;
+        expansions++;
+        const { node, visited, protDevices, xfmrs } = stack.pop();
         const neighbors = adj.get(node) || [];
         const comp = AppState.components.get(node);
 
@@ -2965,23 +3105,28 @@ const TCC = {
         // A CB tripped by a relay acts as one device with that relay: the
         // relay's device (whose curve governs) is substituted at the CB's
         // position instead of the CB itself. Exactly one of (relay, CB)
-        // appears here — the CB must never silently vanish from the path.
+        // appears here — the CB must never silently vanish from the path
+        // (except a reverse-looking 67, which does not operate for forward
+        // faults and takes its tripped CB out of the forward path with it
+        // [PROT-19]).
         let currentPath = [...protDevices];
+        const hasDev = (dev) => currentPath.some(e => e.dev === dev);
+        const addDev = (dev) => {
+          if (!this._isReverseDirectional(dev) && !hasDev(dev)) {
+            currentPath.push({ dev, xIdx: xfmrs.length });
+          }
+        };
         if (isProtDevice(node) && tccDevMap.has(node)) {
           if (cbsTrippedByRelay.has(node)) {
-            for (const relayDev of cbRelayMap.get(node) || []) {
-              if (!currentPath.includes(relayDev)) currentPath.push(relayDev);
-            }
+            for (const relayDev of cbRelayMap.get(node) || []) addDev(relayDev);
           } else {
-            currentPath.push(tccDevMap.get(node));
+            addDev(tccDevMap.get(node));
           }
         }
         // If this is a CT, check if any relay uses it — add that relay's device here
         if (comp && comp.type === 'ct') {
           for (const dev of this.devices) {
-            if (dev.associated_ct === node && !currentPath.includes(dev)) {
-              currentPath.push(dev);
-            }
+            if (dev.associated_ct === node) addDev(dev);
           }
         }
 
@@ -2990,9 +3135,13 @@ const TCC = {
         if (busMap && comp && comp.type === 'bus' && currentPath.length > 0) {
           if (!busMap.has(node)) busMap.set(node, []);
           const groups = busMap.get(node);
-          const sig = currentPath.map(d => d.id).join('>');
+          const sig = currentPath.map(e => e.dev.id).join('>');
           if (!groups.some(g => g.sig === sig)) {
-            groups.push({ sig, devices: [...currentPath] });
+            groups.push({
+              sig,
+              devices: currentPath.map(e => e.dev),
+              xfmrsAfter: currentPath.map(e => xfmrs.slice(e.xIdx)),
+            });
           }
         }
 
@@ -3002,14 +3151,16 @@ const TCC = {
         const unvisitedNeighbors = neighbors.filter(n => !visited.has(n));
 
         if ((isLoad || unvisitedNeighbors.length === 0) && currentPath.length >= 2) {
-          allPaths.push(currentPath);
+          allPaths.push(currentPath.map(e => e.dev));
+          if (allPaths.length >= MAX_PATHS) break;
         }
 
-        // Continue DFS
+        // Continue DFS (crossing a transformer appends it to the trail)
+        const nextXfmrs = (comp && comp.type === 'transformer') ? [...xfmrs, comp] : xfmrs;
         for (const next of unvisitedNeighbors) {
           const newVisited = new Set(visited);
           newVisited.add(next);
-          stack.push({ node: next, visited: newVisited, protDevices: currentPath });
+          stack.push({ node: next, visited: newVisited, protDevices: currentPath, xfmrs: nextXfmrs });
         }
       }
     }
@@ -3030,7 +3181,8 @@ const TCC = {
    *    below it by at least the grading margin at the maximum fault current
    */
   autoCoordinate() {
-    const paths = this._buildProtectionPaths();
+    const busMap = new Map();
+    const paths = this._buildProtectionPaths(busMap);
     if (paths.length === 0) {
       this._showCoordMessage('No source-to-load protection paths found. Ensure utility/generator components are connected to protection devices.');
       return;
@@ -3043,6 +3195,16 @@ const TCC = {
 
     let adjustments = 0;
     const changes = [];
+    // [PROT-14] Pairs that could not be coordinated (setting range exhausted)
+    // are reported instead of silently swallowed.
+    const failures = [];
+    const failKeys = new Set();
+    const recordFailure = (up, down, reason) => {
+      const key = `${up.id}|${down.id}`;
+      if (failKeys.has(key)) return;
+      failKeys.add(key);
+      failures.push(`${up.name} vs ${down.name}: ${reason}`);
+    };
 
     for (const path of paths) {
       // path is ordered upstream to downstream: [upstream, ..., downstream]
@@ -3063,10 +3225,13 @@ const TCC = {
         // coordination check and miscoordination detection).
         if (upstream.deviceType === 'fuse' && downstream.deviceType === 'fuse') continue;
         const requiredMargin = this._requiredMargin(upstream, downstream);
+        // [PROT-7]/[PROT-8] Only test at buses whose faults flow through the pair
+        const eligibility = this._pairTestBusEligibility(busMap, upstream, downstream);
 
         // Check grading at test currents
         for (const tp of testPoints) {
           if (tp.earth !== earthPair) continue;
+          if (this._skipTestPointForPair(tp, eligibility, earthPair)) continue;
           // Referral + total-clearing for the downstream device (shared helper)
           const { tUp, tDown } = this._seriesPairTripTimes(upstream, downstream, tp);
           const iUp = this._referCurrent(tp.amps, tp.voltageKv, upstream);
@@ -3094,18 +3259,27 @@ const TCC = {
               // Sync to SLD
               const comp = AppState.components.get(upstream.id);
               if (comp?.props) comp.props.time_dial = upstream.tds;
+            } else if (newTDS > 10) {
+              // [PROT-14] Needed TDS exceeds the dial range \u2014 report, don't swallow
+              recordFailure(upstream, downstream,
+                `needs TDS ${newTDS.toFixed(2)} > 10 (max) to grade over ${downstream.name}`);
             }
           } else if (upstream.deviceType === 'cb') {
-            // For CBs: adjust long-time delay class upward
+            // For CBs: adjust long-time delay class upward.
+            // [PROT-14] Remember the original class and restore it if no
+            // candidate achieves the margin \u2014 the loop must not leave the
+            // device silently mutated to the last candidate.
             const p = upstream.cbParams;
             const currentClass = p.long_time_delay || 10;
             const classes = [5, 10, 20, 30];
+            let coordinated = false;
             // Find the smallest class that gives enough margin
             for (const cls of classes) {
               if (cls <= currentClass) continue;
               p.long_time_delay = cls;
               const newT = this._deviceTripTime(upstream, iUp);
               if (isFinite(newT) && newT >= requiredTime) {
+                coordinated = true;
                 adjustments++;
                 changes.push(`${upstream.name}: LT delay class ${currentClass} \u2192 ${cls}`);
                 const comp = AppState.components.get(upstream.id);
@@ -3113,20 +3287,29 @@ const TCC = {
                 break;
               }
             }
+            if (!coordinated) {
+              p.long_time_delay = currentClass; // restore original setting
+              recordFailure(upstream, downstream,
+                `no LT delay class (max 30) achieves ${(requiredMargin * 1000).toFixed(0)}ms margin over ${downstream.name}`);
+            }
           }
         }
       }
     }
 
-    // Report results
-    if (adjustments === 0) {
+    // Report results (including pairs that could not be coordinated [PROT-14])
+    if (adjustments === 0 && failures.length === 0) {
       this._showCoordMessage('All protection paths are already coordinated. No adjustments needed.');
     } else {
-      this._showCoordMessage(
-        `Auto-coordination adjusted ${adjustments} device(s):\n` +
-        changes.map(c => `  \u2022 ${c}`).join('\n'),
-        'success'
-      );
+      let msg = adjustments > 0
+        ? `Auto-coordination adjusted ${adjustments} device(s):\n` +
+          changes.map(c => `  \u2022 ${c}`).join('\n')
+        : 'Auto-coordination made no setting adjustments.';
+      if (failures.length > 0) {
+        msg += `\nCould not coordinate ${failures.length} pair(s):\n` +
+          failures.map(f => `  \u2717 ${f}`).join('\n');
+      }
+      this._showCoordMessage(msg, failures.length === 0 ? 'success' : undefined);
     }
 
     this._renderDeviceList();
@@ -3439,7 +3622,8 @@ const TCC = {
    * should trip first (closest downstream device) and flags violations.
    */
   detectMiscoordination() {
-    const paths = this._buildProtectionPaths();
+    const busMap = new Map();
+    const paths = this._buildProtectionPaths(busMap);
     if (paths.length === 0) {
       this._showMiscoordResults('No source-to-load protection paths found.');
       return;
@@ -3464,26 +3648,34 @@ const TCC = {
         // Earth-class upstream elements grade at earth-fault (ik1) test points
         const earthPair = upClass === 'earth';
 
-        // Fuse–fuse pairs: I²t / 2:1 rating-ratio rule instead of a time margin
+        // Fuse–fuse pairs: I²t / rating-ratio rule instead of a time margin
+        // [PROT-17]: <1.6:1 fails the IEC 60269 gG discrimination minimum;
+        // 1.6-2:1 meets the minimum but is below the recommended 2:1.
         if (upstream.deviceType === 'fuse' && downstream.deviceType === 'fuse') {
-          if (!this._fuseFuseCoordinated(downstream, upstream)) {
+          const sel = this._fuseFuseSelectivity(downstream, upstream);
+          if (sel.status !== 'pass') {
             violations.push({
               upstream: upstream.name,
               downstream: downstream.name,
               current: null,
               tUpstream: null,
               tDownstream: null,
-              severity: 'critical',
-              issue: `Fuse ratio ${upstream.fuseRating}A : ${downstream.fuseRating}A below 2:1 — downstream total-clearing I²t may overlap upstream pre-arcing I²t`,
+              severity: sel.status === 'critical' ? 'critical' : 'warning',
+              issue: sel.status === 'critical'
+                ? `Fuse ratio ${upstream.fuseRating}A : ${downstream.fuseRating}A below the IEC 60269 1.6:1 gG minimum — downstream total-clearing I²t may overlap upstream pre-arcing I²t`
+                : `Fuse ratio ${upstream.fuseRating}A : ${downstream.fuseRating}A meets the IEC 60269 1.6:1 minimum but is below the recommended 2:1 — verify I²t discrimination against manufacturer data`,
             });
           }
           continue;
         }
 
         const required = this._requiredMargin(upstream, downstream);
+        // [PROT-7]/[PROT-8] Only test at buses whose faults flow through the pair
+        const eligibility = this._pairTestBusEligibility(busMap, upstream, downstream);
 
         for (const tp of testPoints) {
           if (tp.earth !== earthPair) continue;
+          if (this._skipTestPointForPair(tp, eligibility, earthPair)) continue;
           // Referral + total-clearing for the downstream device (shared helper)
           const { tUp, tDown } = this._seriesPairTripTimes(upstream, downstream, tp);
 
@@ -3820,11 +4012,19 @@ const TCC = {
       'ct', 'solar_pv', 'wind_turbine', 'capacitor_bank'
     ]);
 
-    // DFS from each source, collecting ALL relevant components
+    // DFS from each source, collecting ALL relevant components.
+    // [PROT-9] Dual caps (paths + expansions) as in components.js
+    // traceUpstreamProtection, so ring/mesh diagrams can't hang the browser.
+    const MAX_PATHS = 500;
+    const MAX_EXPANSIONS = 20000;
+    let expansions = 0;
     const allPaths = [];
     for (const srcId of sources) {
+      if (allPaths.length >= MAX_PATHS || expansions >= MAX_EXPANSIONS) break;
       const stack = [{ node: srcId, visited: new Set([srcId]), path: [] }];
       while (stack.length > 0) {
+        if (allPaths.length >= MAX_PATHS || expansions >= MAX_EXPANSIONS) break;
+        expansions++;
         const { node, visited, path } = stack.pop();
         const comp = AppState.components.get(node);
         if (!comp) continue;

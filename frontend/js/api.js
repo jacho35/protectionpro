@@ -52,6 +52,37 @@ const API = {
     }
   },
 
+  // Blob-response variant of request() for report/label/export downloads.
+  // Same AbortController timeout, so a hung backend can't leave
+  // "Generating PDF report..." spinning forever.
+  async requestBlob(endpoint, { method = 'GET', body = null, errorLabel = 'Export failed' } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
+    const opts = { method, signal: controller.signal };
+    if (body) {
+      opts.headers = { 'Content-Type': 'application/json' };
+      opts.body = JSON.stringify(body);
+    }
+    try {
+      const resp = await fetch(`${API_BASE}${endpoint}`, opts);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: errorLabel }));
+        throw new Error(typeof err.detail === 'string' ? err.detail : errorLabel);
+      }
+      return await resp.blob();
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        const timeoutErr = new Error(`Request timed out after ${this.REQUEST_TIMEOUT_MS / 1000} s — the backend may be hung or unreachable.`);
+        console.error(`API timeout [${endpoint}]:`, timeoutErr);
+        throw timeoutErr;
+      }
+      console.error(`API error [${endpoint}]:`, e);
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
   // Run fault analysis
   async runFaultAnalysis(faultBusId = null, faultType = null) {
     const data = AppState.toJSON();
@@ -200,16 +231,12 @@ const API = {
 
   // Export report as CSV
   async exportCSV(id) {
-    const resp = await fetch(`${API_BASE}/projects/${id}/export/csv`);
-    if (!resp.ok) throw new Error('CSV export failed');
-    return resp.blob();
+    return this.requestBlob(`/projects/${id}/export/csv`, { errorLabel: 'CSV export failed' });
   },
 
   // Export report as PDF
   async exportPDF(id) {
-    const resp = await fetch(`${API_BASE}/projects/${id}/export/pdf`);
-    if (!resp.ok) throw new Error('PDF export failed');
-    return resp.blob();
+    return this.requestBlob(`/projects/${id}/export/pdf`, { errorLabel: 'PDF export failed' });
   },
 
   // Server-side PDF report generation (from current app state)
@@ -228,16 +255,9 @@ const API = {
     };
     if (sections) body.sections = sections;
     if (diagramImage) body.diagramImage = diagramImage;
-    const resp = await fetch(`${API_BASE}/reports/pdf`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    return this.requestBlob('/reports/pdf', {
+      method: 'POST', body, errorLabel: 'PDF generation failed',
     });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ detail: 'PDF generation failed' }));
-      throw new Error(err.detail || 'PDF generation failed');
-    }
-    return resp.blob();
   },
 
   // Detailed calculations report PDF (all available analysis results)
@@ -259,16 +279,9 @@ const API = {
       groundingResults: AppState.groundingResults || null,
       projectDetails: AppState.projectDetails || {},
     };
-    const resp = await fetch(`${API_BASE}/reports/calculations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    return this.requestBlob('/reports/calculations', {
+      method: 'POST', body, errorLabel: 'Calculations report generation failed',
     });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ detail: 'Calculations report generation failed' }));
-      throw new Error(err.detail || 'Calculations report generation failed');
-    }
-    return resp.blob();
   },
 
   // Server-side arc flash label PDF
@@ -281,15 +294,8 @@ const API = {
       arcFlashResults: AppState.arcFlashResults || null,
       projectDetails: AppState.projectDetails || {},
     };
-    const resp = await fetch(`${API_BASE}/reports/arcflash-labels`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    return this.requestBlob('/reports/arcflash-labels', {
+      method: 'POST', body, errorLabel: 'Arc flash labels export failed',
     });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ detail: 'Arc flash labels export failed' }));
-      throw new Error(err.detail || 'Arc flash labels export failed');
-    }
-    return resp.blob();
   },
 };

@@ -116,6 +116,8 @@ def run_duty_check(project: ProjectData):
 
         # Get worst-case fault current from connected buses
         prospective_fault_ka = 0
+        breaking_duty_ka = 0.0
+        duty_basis = "ik3"
         location_bus = ""
         kappa = 1.8  # Default peak factor
         for bid in bus_ids:
@@ -124,6 +126,16 @@ def run_duty_check(project: ProjectData):
                 ik3 = bus_fault.ik3 or 0
                 if ik3 > prospective_fault_ka:
                     prospective_fault_ka = ik3
+                    # [PROT-15] Breaking duty uses the symmetrical breaking
+                    # current Ib (IEC 60909 §9 — decayed at contact parting)
+                    # when the engine provides it, falling back to I"k3
+                    # (conservative) — matching frontend compliance.js.
+                    if bus_fault.ib and bus_fault.ib > 0:
+                        breaking_duty_ka = bus_fault.ib
+                        duty_basis = "ib"
+                    else:
+                        breaking_duty_ka = ik3
+                        duty_basis = "ik3"
                     location_bus = comp_map[bid].props.get("name", bid) if bid in comp_map else bid
                     # Use kappa from fault results if available
                     if bus_fault.kappa:
@@ -146,7 +158,7 @@ def run_duty_check(project: ProjectData):
         # ── Interrupt / breaking check ──
         interrupt_ok = True
         if breaking_capacity_ka > 0:
-            interrupt_ok = prospective_fault_ka <= breaking_capacity_ka
+            interrupt_ok = breaking_duty_ka <= breaking_capacity_ka
         elif prospective_fault_ka > 0:
             analysis_warnings.append(f"Device '{device_name}' has no breaking capacity rating.")
             interrupt_ok = False
@@ -163,8 +175,10 @@ def run_duty_check(project: ProjectData):
                 is_mv = (system_voltage_kv or rated_voltage_kv) > 1.0
                 if is_mv:
                     # IEC 62271-100: rated making capacity = 2.5 × rated
-                    # breaking capacity (50 Hz systems)
-                    making_capacity_ka = 2.5 * breaking_capacity_ka
+                    # breaking capacity at 50 Hz, 2.6 × at 60 Hz [PROT-16]
+                    freq = float(getattr(project, "frequency", 50) or 50)
+                    making_factor = 2.6 if freq == 60 else 2.5
+                    making_capacity_ka = making_factor * breaking_capacity_ka
                 else:
                     # IEC 60947-2 Table 2: minimum ratio n = Icm/Icu
                     # varies with the ultimate breaking capacity Icu
@@ -197,12 +211,13 @@ def run_duty_check(project: ProjectData):
         # ── Utilisation ──
         utilisation_pct = 0
         if breaking_capacity_ka > 0:
-            utilisation_pct = (prospective_fault_ka / breaking_capacity_ka) * 100
+            utilisation_pct = (breaking_duty_ka / breaking_capacity_ka) * 100
 
         # ── Status ──
         issues = []
         if not interrupt_ok:
-            issues.append(f"Prospective fault {prospective_fault_ka:.2f}kA exceeds breaking capacity {breaking_capacity_ka:.2f}kA")
+            duty_label = "Breaking duty Ib" if duty_basis == "ib" else "Prospective fault I\"k3"
+            issues.append(f"{duty_label} {breaking_duty_ka:.2f}kA exceeds breaking capacity {breaking_capacity_ka:.2f}kA")
         if making_ok is False:
             issues.append(f"Peak fault {peak_fault_ka:.2f}kA exceeds making capacity {making_capacity_ka:.2f}kA")
         if making_ok and making_margin_pct is not None and making_margin_pct < 10:
@@ -232,6 +247,8 @@ def run_duty_check(project: ProjectData):
             "device_type": device_type,
             "location_bus": location_bus,
             "prospective_fault_ka": round(prospective_fault_ka, 2),
+            "breaking_duty_ka": round(breaking_duty_ka, 2),
+            "duty_basis": duty_basis,
             "peak_fault_ka": round(peak_fault_ka, 2),
             "breaking_capacity_ka": round(breaking_capacity_ka, 2),
             "interrupt_ok": interrupt_ok,

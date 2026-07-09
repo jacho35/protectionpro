@@ -10,9 +10,41 @@ const RevisionTimeline = {
   _revisions: [],         // Array of {id, label, created_at, data?} (newest first)
   _selectedId: null,       // Currently previewed revision id
   _maxLocal: 20,
-  _localKey: 'protectionpro-local-revisions',
+  // localStorage keys are namespaced per project identity so revisions of
+  // one project can never surface in another's timeline:
+  //   <prefix>.p<projectId>    — saved projects (fallback store only)
+  //   <prefix>.s<sessionToken> — unsaved projects (token per project session)
+  _localKeyPrefix: 'protectionpro-local-revisions',
+  _sessionToken: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+
+  _localKey() {
+    return AppState.projectId
+      ? `${this._localKeyPrefix}.p${AppState.projectId}`
+      : `${this._localKeyPrefix}.s${this._sessionToken}`;
+  },
+
+  // Called by AppState.reset() whenever the project identity changes (new
+  // project, import, DB load, template, …): rotate the unsaved-project
+  // namespace so even a switch path that misses clearLocal() cannot leak
+  // the previous project's local revisions into the next one.
+  onProjectIdentityReset() {
+    this._sessionToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    this._revisions = [];
+    this._selectedId = null;
+  },
 
   init() {
+    // Garbage-collect unreachable revision stores: the legacy un-namespaced
+    // key, and session-scoped keys from previous sessions (their tokens are
+    // gone). Saved-project keys (.p<id>) are kept.
+    try {
+      localStorage.removeItem(this._localKeyPrefix);
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(`${this._localKeyPrefix}.s`)) localStorage.removeItem(k);
+      }
+    } catch { /* localStorage unavailable */ }
+
     const strip = document.getElementById('revision-timeline');
     const toggleBtn = document.getElementById('btn-revision-toggle');
     const restoreBtn = document.getElementById('btn-revision-restore');
@@ -78,7 +110,7 @@ const RevisionTimeline = {
 
   _loadLocal() {
     try {
-      const raw = localStorage.getItem(this._localKey);
+      const raw = localStorage.getItem(this._localKey());
       this._revisions = raw ? JSON.parse(raw) : [];
     } catch {
       this._revisions = [];
@@ -98,22 +130,29 @@ const RevisionTimeline = {
       this._revisions.length = this._maxLocal;
     }
     try {
-      localStorage.setItem(this._localKey, JSON.stringify(this._revisions));
+      localStorage.setItem(this._localKey(), JSON.stringify(this._revisions));
     } catch (e) {
       // localStorage full — drop oldest
       while (this._revisions.length > 1) {
         this._revisions.pop();
         try {
-          localStorage.setItem(this._localKey, JSON.stringify(this._revisions));
+          localStorage.setItem(this._localKey(), JSON.stringify(this._revisions));
           break;
         } catch { /* keep trimming */ }
       }
     }
   },
 
+  // Drop the current project's local revisions. Call from every path that
+  // switches to a DIFFERENT project (new project, JSON import, DB load) —
+  // BEFORE the state is replaced, so the outgoing project's key is the one
+  // removed.
   clearLocal() {
-    localStorage.removeItem(this._localKey);
+    try {
+      localStorage.removeItem(this._localKey());
+    } catch { /* localStorage unavailable */ }
     this._revisions = [];
+    this._selectedId = null;
   },
 
   // ── Rendering ──
@@ -236,10 +275,17 @@ const RevisionTimeline = {
     // Save current state as a revision before restoring (so user can go back)
     await this.createRevision('Before restore');
 
-    // Apply the revision data, preserving the current projectId
+    // Apply the revision data, preserving the current project identity:
+    // projectId, and the session token (fromJSON → reset() rotates it, but a
+    // restore is the SAME project, so its local revision timeline must survive)
     const savedProjectId = AppState.projectId;
+    const savedToken = this._sessionToken;
     AppState.fromJSON(revData);
+    // The pre-restore diagram must not be reachable via Ctrl+Z (and then
+    // silently saveable) — same rule as every other load path.
+    UndoManager.clear();
     AppState.projectId = savedProjectId;
+    this._sessionToken = savedToken;
     AppState.dirty = true;
 
     Canvas.updateTransform();

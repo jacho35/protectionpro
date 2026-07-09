@@ -56,16 +56,17 @@ def _utility_bus_project(fault_mva=500.0, xr=15.0, kv=11.0, z0_z1=1.0,
 
 class TestFaultAnalysis:
     def test_ik3_infinite_bus(self):
-        """Ik3 = c·Ibase/|Z1| for a single source: hand calculation.
+        """Ik3 at the connection point reproduces the declared fault level.
 
-        500 MVA fault level on 100 MVA base → |Z1| = 0.2 pu.
-        Ibase(11kV) = 100/(√3·11) = 5.249 kA; c = 1.10 (MV)
-        → Ik3 = 1.10 · 5.249 / 0.2 = 28.87 kA.
+        [EE-4] IEC 60909-0 §6.2 Eq. 15: Z_Q = c·U_nQ²/S″_kQ, so that
+        I″k = c·U_n/(√3·Z_Q) = S″_kQ/(√3·U_n) — the utility's declared level.
+        500 MVA at 11 kV → Ik3 = 500/(√3·11) = 26.24 kA.
+        (The pre-fix code omitted c from Z_Q and returned 1.1× the declared
+        level, 28.87 kA.)
         """
         res = run_fault_analysis(_utility_bus_project())
         bus = res.buses["bus-1"]
-        i_base = 100.0 / (math.sqrt(3) * 11.0)
-        expected = 1.10 * i_base / 0.2
+        expected = 500.0 / (math.sqrt(3) * 11.0)
         assert bus.ik3 == pytest.approx(expected, rel=0.02)
 
     def test_slg_equals_3ph_when_z0_equals_z1(self):

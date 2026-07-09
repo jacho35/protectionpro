@@ -25,6 +25,22 @@ const Components = {
   traceUpstreamProtection(targetId) {
     const PROTECTION_TYPES = new Set(['cb', 'fuse', 'relay']);
     const THERMAL_TYPES = new Set(['transformer', 'cable']);
+    // [PROT-10] CTs are collected too: they anchor unwired relays to the path
+    const MEASUREMENT_TYPES = new Set(['ct']);
+
+    // [PROT-10] Relays are never wired (ports: []) — when tracing from a
+    // relay, anchor the trace at its measuring CT (or the CB it trips), so
+    // "View TCC Grading" on a relay shows its real upstream devices instead
+    // of only the relay itself.
+    const targetComp = AppState.components.get(targetId);
+    let traceTarget = targetId;
+    if (targetComp?.type === 'relay') {
+      const p = targetComp.props || {};
+      const anchor = (p.associated_ct && AppState.components.has(p.associated_ct)) ? p.associated_ct
+        : (p.trip_cb && AppState.components.has(p.trip_cb)) ? p.trip_cb
+        : null;
+      if (anchor) traceTarget = anchor;
+    }
 
     // Build adjacency from wires
     const adj = new Map();
@@ -50,7 +66,7 @@ const Components = {
     const MAX_EXPANSIONS = 20000;
     let pathsFound = 0;
     let expansions = 0;
-    const relevant = new Set([targetId]);
+    const relevant = new Set([targetId, traceTarget]);
     for (const srcId of sources) {
       if (pathsFound >= MAX_PATHS || expansions >= MAX_EXPANSIONS) break;
       const stack = [{ node: srcId, visited: new Set([srcId]), trail: [] }];
@@ -63,11 +79,12 @@ const Components = {
 
         const currentTrail = [...trail, node];
 
-        // Found the target — add all protection/thermal devices on this path
-        if (node === targetId) {
+        // Found the target — add all protection/thermal/measurement devices on this path
+        if (node === traceTarget) {
           for (const id of currentTrail) {
             const c = AppState.components.get(id);
-            if (c && (PROTECTION_TYPES.has(c.type) || THERMAL_TYPES.has(c.type))) {
+            if (c && (PROTECTION_TYPES.has(c.type) || THERMAL_TYPES.has(c.type) ||
+                      MEASUREMENT_TYPES.has(c.type))) {
               relevant.add(id);
             }
           }
@@ -85,6 +102,19 @@ const Components = {
         }
       }
     }
+
+    // [PROT-10] Relays are not on wire paths (ports: []) — add any relay whose
+    // measuring CT or tripped CB lies on the traced paths, so grading opened
+    // from a CB (or any downstream device) includes the upstream relay curves.
+    for (const [id, comp] of AppState.components) {
+      if (comp.type !== 'relay') continue;
+      const p = comp.props || {};
+      if ((p.associated_ct && relevant.has(p.associated_ct)) ||
+          (p.trip_cb && relevant.has(p.trip_cb))) {
+        relevant.add(id);
+      }
+    }
+
     return relevant;
   },
 

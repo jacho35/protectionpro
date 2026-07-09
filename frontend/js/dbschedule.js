@@ -16,6 +16,12 @@ const DBSchedule = {
   modal: null,
   body: null,
   currentId: null,
+  _openCommitted: null,   // JSON of the committed fields at open time
+  _openDerived: null,     // derived lumped-load props at open time (pre-render)
+
+  // Lumped-load props recompute() derives from the committed fields
+  _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'phase_a_pct', 'phase_b_pct',
+    'phase_c_pct', 'phase_connection'],
 
   init() {
     this.modal = document.getElementById('db-modal');
@@ -24,6 +30,26 @@ const DBSchedule = {
     this.modal.addEventListener('click', (e) => {
       if (e.target === this.modal) this.close();
     });
+    // Escape must work while focus is in a schedule cell: the global app.js
+    // handler returns early for INPUT/SELECT targets, so the editor needs its
+    // own scoped listener. Same close (diff-aware commit) as every other
+    // close path; stopPropagation keeps the global handler from double-acting.
+    this.modal.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.close();
+      }
+    });
+  },
+
+  // What close() commits — diffed against the open-time copy so a read-only
+  // look at the schedule doesn't clear results or push an undo snapshot
+  _committedFields(comp) {
+    return {
+      circuits: comp.props.circuits || [],
+      board_diversity: comp.props.board_diversity ?? 1.0,
+    };
   },
 
   open(compId) {
@@ -31,6 +57,13 @@ const DBSchedule = {
     if (!comp || comp.type !== 'distribution_board') return;
     this.currentId = compId;
     if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
+    // Snapshot BEFORE render() (whose recompute() writes the derived props)
+    this._openCommitted = JSON.stringify(this._committedFields(comp));
+    this._openDerived = {};
+    for (const k of this._DERIVED_KEYS) {
+      this._openDerived[k] = comp.props[k] !== undefined
+        ? JSON.parse(JSON.stringify(comp.props[k])) : undefined;
+    }
     document.getElementById('db-modal-title').textContent =
       `Circuit Schedule — ${comp.props.name || compId}`;
     this.render();
@@ -42,20 +75,36 @@ const DBSchedule = {
     if (commit && this.currentId) {
       const comp = AppState.components.get(this.currentId);
       if (comp) {
-        this.recompute(comp);
-        AppState.dirty = true;
-        if (typeof Properties !== 'undefined') {
-          Properties._notifyResultsCleared();
-        }
-        AppState.clearResults();
-        if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
-        Canvas.render();
-        if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {
-          Properties.show(comp.id);
+        const unchanged = this._openCommitted != null &&
+          JSON.stringify(this._committedFields(comp)) === this._openCommitted;
+        if (unchanged) {
+          // Read-only visit: undo the derived-prop writes render()'s
+          // recompute() made and skip the commit ritual entirely (no
+          // results cleared, no dirty flag, no undo snapshot).
+          if (this._openDerived) {
+            for (const k of this._DERIVED_KEYS) {
+              if (this._openDerived[k] === undefined) delete comp.props[k];
+              else comp.props[k] = this._openDerived[k];
+            }
+          }
+        } else {
+          this.recompute(comp);
+          AppState.dirty = true;
+          if (typeof Properties !== 'undefined') {
+            Properties._notifyResultsCleared();
+          }
+          AppState.clearResults();
+          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+          Canvas.render();
+          if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {
+            Properties.show(comp.id);
+          }
         }
       }
     }
     this.currentId = null;
+    this._openCommitted = null;
+    this._openDerived = null;
   },
 
   // ── Derived lumped-load equivalents ────────────────────────────────

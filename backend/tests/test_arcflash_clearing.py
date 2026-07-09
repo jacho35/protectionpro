@@ -184,11 +184,13 @@ class TestFuseClearing:
         melts in ≈ 8 s per FUSE_CURVES_GG → total clearing capped at 2.0 s.
         The pre-fix code hardcoded 0.02 s (energy understated ×100).
 
-        fault_mva = 34.64 → Ik3 ≈ 2.0 kA → Iarc ≈ 2.0 kA (MV Eq. 2).
+        fault_mva = 38.1 → Ik3 = 38.1/(√3·11) ≈ 2.0 kA → Iarc ≈ 2.0 kA
+        (MV Eq. 2). [EE-4] Z_Q now includes c, so the declared fault level
+        is reproduced exactly at the connection point.
         """
         proj = _project(
             components=[
-                _utility(34.64),
+                _utility(38.1),
                 _comp("fuse-1", "fuse", {
                     "name": "F1", "fuse_type": "gG", "rated_current_a": 630,
                 }),
@@ -257,7 +259,9 @@ class TestRelayClearing:
     """SI curve hand anchor: pickup 400 A, TMS 0.2, Iarc = 4 kA → M = 10 →
     t = 0.2·0.14/(10^0.02 − 1) = 0.594 s; + 0.08 s breaker = 0.674 s.
 
-    fault_mva = 70.3 → Ik3 ≈ 4.06 kA → Iarc ≈ 4.00 kA (MV Eq. 2).
+    fault_mva = 77.3 → Ik3 = 77.3/(√3·11) ≈ 4.06 kA → Iarc ≈ 4.00 kA
+    (MV Eq. 2). [EE-4] Z_Q now includes c, so the declared fault level is
+    reproduced exactly at the connection point.
     """
 
     RELAY_PROPS = {
@@ -270,7 +274,7 @@ class TestRelayClearing:
     def _cb_project(self, relay_extra=None):
         return _project(
             components=[
-                _utility(70.3),
+                _utility(77.3),
                 _comp("cb-1", "cb", {
                     "name": "CB1", "state": "closed",
                     "trip_rating_a": 630, "magnetic_pickup": 10,
@@ -300,7 +304,7 @@ class TestRelayClearing:
         the wire path (relays have no ports — association props only)."""
         proj = _project(
             components=[
-                _utility(70.3),
+                _utility(77.3),
                 _comp("ct-1", "ct", {"name": "CT1", "ratio": "400/5"}),
                 _comp("bus-1", "bus", {"name": "MV Bus", "voltage_kv": 11.0}),
                 _comp("relay-1", "relay",

@@ -250,7 +250,7 @@ Backend regression tests live in `backend/tests/test_regression.py` — standard
 
 ```bash
 docker run --rm -v "$PWD":/work -w /work protectionpro-backend \
-  sh -c "pip install pytest -q && python -m pytest backend/tests/ -q"
+  sh -c "pip install pytest httpx -q && python -m pytest backend/tests/ -q"
 ```
 
 Run these after any change to `backend/analysis/`. Frontend testing is still manual via the browser UI; `node --check frontend/js/*.js` catches syntax errors.

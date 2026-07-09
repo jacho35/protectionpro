@@ -693,11 +693,13 @@ const Properties = {
     let html = '';
 
     if (comp.type === 'utility') {
-      const Zpu = base / (comp.props.fault_mva || 1);
+      // Z_Q = c·S_base/S"kQ per IEC 60909-0 Eq. 15 (c = c_max = 1.10, matches fault.py)
+      const cQ = 1.1;
+      const Zpu = cQ * base / (comp.props.fault_mva || 1);
       const xr = comp.props.x_r_ratio || 15;
       const Xpu = Zpu * xr / Math.sqrt(1 + xr * xr);
       const Rpu = Xpu / xr;
-      html += `<div class="prop-row"><label>Z (p.u.)</label><span class="pu-value">${Zpu.toFixed(4)}</span></div>`;
+      html += `<div class="prop-row"><label>Z (p.u.) = c·S_base/S"kQ, c=${cQ}</label><span class="pu-value">${Zpu.toFixed(4)}</span></div>`;
       html += `<div class="prop-row"><label>R (p.u.)</label><span class="pu-value">${Rpu.toFixed(4)}</span></div>`;
       html += `<div class="prop-row"><label>X (p.u.)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
     } else if (comp.type === 'transformer') {
@@ -919,10 +921,16 @@ Z0 model per IEC 60909:
 
 ─── Single Line-to-Ground Fault (I"k1) ───
 I"k1 = 3c × V_n / (√3 × |Z1 + Z2 + Z0|)
-${busResult.z0_mag != null && busResult.ik1 != null ? `Z_SLG = Z1 + Z2 + Z0 = 2×Z_eq + Z0
-     = 2×${zeqMag.toFixed(6)} + ${busResult.z0_mag?.toFixed(6)}
-     = ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} p.u. (${((2 * zeqMag + busResult.z0_mag) * 100).toFixed(4)}%)
-I"k1 = 3 × ${cFactor} / ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} × ${iBaseKA.toFixed(4)}` : busResult.ik1 === 0 ? `No Z0 path → I"k1 = 0 (zero-sequence current cannot return)` : ''}
+${busResult.z0_mag != null && busResult.ik1 != null ? (busResult.z_slg_mag != null ? `|Z1| = |Z_eq| = ${zeqMag.toFixed(6)} p.u.
+|Z2| = ${(busResult.z2_mag ?? zeqMag).toFixed(6)} p.u.${busResult.z2_mag != null && Math.abs(busResult.z2_mag - zeqMag) > 5e-7 ? ' (≠ Z1: rotating machines present)' : ' (= Z1 for static network)'}
+|Z0| = ${busResult.z0_mag?.toFixed(6)} p.u.
+Z_SLG = |Z1 + Z2 + Z0| = ${busResult.z_slg_mag.toFixed(6)} p.u. (${(busResult.z_slg_mag * 100).toFixed(4)}%)
+(complex sum — impedance angles differ, so magnitudes are not additive)
+I"k1 = 3 × ${cFactor} / ${busResult.z_slg_mag.toFixed(6)} × ${iBaseKA.toFixed(4)}` : `Z_SLG ≈ Z1 + Z2 + Z0 ≈ 2×|Z_eq| + |Z0|   (≈, magnitudes summed; Z2 = Z1 assumed)
+     ≈ 2×${zeqMag.toFixed(6)} + ${busResult.z0_mag?.toFixed(6)}
+     ≈ ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} p.u. (${((2 * zeqMag + busResult.z0_mag) * 100).toFixed(4)}%)
+(engine sums Z1+Z2+Z0 as complex values — re-run Fault Analysis for the exact |Z1+Z2+Z0| step)
+I"k1 ≈ 3 × ${cFactor} / ${(2 * zeqMag + busResult.z0_mag).toFixed(6)} × ${iBaseKA.toFixed(4)}`) : busResult.ik1 === 0 ? `No Z0 path → I"k1 = 0 (zero-sequence current cannot return)` : ''}
 I"k1 = ${busResult.ik1?.toFixed(3) || 'N/A'} kA
 ${busResult.ik1 ? `S"k1 = √3 × ${vkv} × ${busResult.ik1.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ik1).toFixed(2)} MVA` : ''}
 
@@ -933,8 +941,9 @@ ${busResult.ikLL ? `S"kLL = √3 × ${vkv} × ${busResult.ikLL.toFixed(3)} = ${(
 
 ─── Double Line-to-Ground Fault (I"kE2E) ───
 Ia1 = c / (Z1 + Z2‖Z0),  Ia0 = −Ia1 × Z2 / (Z2 + Z0)
-I"kE2E = |3 × Ia0| = 3c / |Z1 + 2×Z0|  (earth fault current, Z1=Z2)
-${busResult.z0_mag != null ? `Z1 + 2×Z0 = Z_eq + 2×Z0` : `No Z0 path → degenerates to LL fault`}
+I"kE2E = |3 × Ia0| = 3c × |Z2| / |Z2×(Z1+Z2+Z0) + Z1×Z0|  (earth fault current)
+${busResult.z0_mag != null ? `Evaluated with complex Z1 = Z_eq${busResult.z2_mag != null ? `, |Z2| = ${busResult.z2_mag.toFixed(6)} p.u.` : ', Z2 = Z1'}, |Z0| = ${busResult.z0_mag.toFixed(6)} p.u.
+(complex arithmetic — magnitudes are not additive)` : `No Z0 path → degenerates to LL fault`}
 I"kE2E = ${busResult.ikLLG?.toFixed(3) || 'N/A'} kA
 ${busResult.ikLLG ? `S"kLLG = √3 × ${vkv} × ${busResult.ikLLG.toFixed(3)} = ${(Math.sqrt(3) * vkv * busResult.ikLLG).toFixed(2)} MVA` : ''}</div>
           </div>`;
@@ -1300,7 +1309,10 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
       const fmva = comp.props.fault_mva || 500;
       const xr = comp.props.x_r_ratio || 15;
       const vkv = comp.props.voltage_kv || 33;
-      const Zpu = base / fmva;
+      // Z_Q = c·U_nQ²/S"kQ per IEC 60909-0 §6.2 Eq. 15 — in per-unit on S_base:
+      // Z_pu = c·S_base/S"kQ, with c = c_max = 1.10 (matches the fault.py engine)
+      const cQ = 1.1;
+      const Zpu = cQ * base / fmva;
       const Xpu = Zpu * xr / Math.sqrt(1 + xr * xr);
       const Rpu = Xpu / xr;
       const Zbase = (vkv * vkv) / base;
@@ -1313,9 +1325,10 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
 Fault Level = ${fmva} MVA
 X/R Ratio = ${xr}
 Voltage = ${vkv} kV
+c-factor = ${cQ} (c_max per IEC 60909-0 Table 1)
 
-Z_pu = Base_MVA / Fault_MVA
-Z_pu = ${base} / ${fmva} = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
+Z_Q = c × S_base / S"_kQ    (IEC 60909-0 §6.2, Eq. 15)
+Z_Q = ${cQ} × ${base} / ${fmva} = ${Zpu.toFixed(6)} p.u. (${(Zpu * 100).toFixed(4)}%)
 
 X_pu = Z_pu × (X/R) / √(1 + (X/R)²)
 X_pu = ${Zpu.toFixed(6)} × ${xr} / √(1 + ${xr}²) = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
@@ -1484,12 +1497,14 @@ Voltage drop (at rated) ≈ √3 × I × R_eff / V
       // S = P / (η·cosφ) per IEC 60909-0 §3.8 (matches the backend engines)
       const kva = kw / (eff * pf);
       const mva = kva / 1000;
-      const Zpu_motor = xpp;  // Z" on motor rating
-      const Xpu_motor = Zpu_motor * xr / Math.sqrt(1 + xr * xr);
+      // Engine convention (fault.py _motor_induction_impedance): x_pp is X"
+      // (locked-rotor reactance) on motor base; R is added on top via R = X/(X/R)
+      const Xpu_motor = xpp;  // X" on motor rating
       const Rpu_motor = Xpu_motor / xr;
-      const Zpu = Zpu_motor * base / mva;
+      const Zpu_motor = Xpu_motor * Math.sqrt(1 + 1 / (xr * xr));  // |Z"| = X"·√(1+1/(X/R)²)
       const Xpu = Xpu_motor * base / mva;
-      const Rpu = Rpu_motor * base / mva;
+      const Rpu = Xpu / xr;
+      const Zpu = Xpu * Math.sqrt(1 + 1 / (xr * xr));
       const Zbase = (vkv * vkv) / base;
       const iRated = (kva) / (Math.sqrt(3) * vkv * 1000);
       const iStart = iRated * lrc;
@@ -1506,14 +1521,14 @@ Input kVA = P / (η × cosφ) = ${kw} / (${eff} × ${pf}) = ${kva.toFixed(1)} kV
 I_rated = ${(iRated * 1000).toFixed(2)} A
 I_start = ${lrc} × I_rated = ${(iStart * 1000).toFixed(2)} A
 
-Z"_pu (on motor rating) = ${Zpu_motor} p.u.
-X" = Z" × (X/R) / √(1 + (X/R)²) = ${Xpu_motor.toFixed(6)} p.u.
+X"_pu (locked-rotor reactance, on motor rating) = ${Xpu_motor} p.u.
 R" = X" / (X/R) = ${Rpu_motor.toFixed(6)} p.u.
+|Z"| = X" × √(1 + 1/(X/R)²) = ${Zpu_motor.toFixed(6)} p.u.
 
 ─── On System Base ───
-Z"_pu = ${Zpu_motor} × (${base} / ${mva.toFixed(4)}) = ${Zpu.toFixed(4)} p.u. (${(Zpu * 100).toFixed(2)}%)
-X"_pu = ${Xpu.toFixed(6)} p.u. (${(Xpu * 100).toFixed(4)}%)
-R"_pu = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
+X"_pu = X" × (Base_MVA / Rated_MVA) = ${Xpu_motor} × (${base} / ${mva.toFixed(4)}) = ${Xpu.toFixed(4)} p.u. (${(Xpu * 100).toFixed(2)}%)
+R"_pu = X"_pu / (X/R) = ${Rpu.toFixed(6)} p.u. (${(Rpu * 100).toFixed(4)}%)
+|Z"_pu| = X"_pu × √(1 + 1/(X/R)²) = ${Zpu.toFixed(4)} p.u. (${(Zpu * 100).toFixed(2)}%)
 Z = ${Rpu.toFixed(6)} + j${Xpu.toFixed(6)} p.u.
 
 ─── Actual Impedance ───

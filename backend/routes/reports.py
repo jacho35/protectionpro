@@ -127,6 +127,21 @@ def generate_arcflash_labels_pdf(req: ReportRequest):
 
 # ── Existing project-ID-based endpoints ──
 
+def _csv_safe(value):
+    """Neutralize spreadsheet formula injection in user-controlled string cells.
+
+    String cells starting with =, +, -, @ (or tab/CR) are prefixed with a
+    single quote so Excel/LibreOffice treat them as literal text instead of
+    evaluating them as formulas (e.g. a bus named `=HYPERLINK(...)`).
+    Non-string values (numeric columns) pass through untouched. Structural
+    CSV escaping — quoting cells containing commas/quotes/newlines and
+    doubling internal quotes — is handled by csv.writer (QUOTE_MINIMAL).
+    """
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + value
+    return value
+
+
 @router.get("/{project_id}/export/csv")
 def export_csv(project_id: int, db: Session = Depends(get_db)):
     """Export analysis results as CSV."""
@@ -148,7 +163,7 @@ def export_csv(project_id: int, db: Session = Depends(get_db)):
     writer.writerow(["Bus ID", "Bus Name", "Voltage (kV)", "I\"k3 (kA)", "I\"k1 (kA)", "I\"kLL (kA)"])
     for bus_id, result in fault.buses.items():
         writer.writerow([
-            result.bus_id, result.bus_name, result.voltage_kv,
+            _csv_safe(result.bus_id), _csv_safe(result.bus_name), result.voltage_kv,
             result.ik3, result.ik1, result.ikLL
         ])
 
@@ -160,7 +175,7 @@ def export_csv(project_id: int, db: Session = Depends(get_db)):
     writer.writerow(["Bus ID", "Bus Name", "V (p.u.)", "V (kV)", "Angle (deg)", "P (MW)", "Q (MVAr)"])
     for bus_id, result in loadflow.buses.items():
         writer.writerow([
-            result.bus_id, result.bus_name, result.voltage_pu,
+            _csv_safe(result.bus_id), _csv_safe(result.bus_name), result.voltage_pu,
             result.voltage_kv, result.angle_deg, result.p_mw, result.q_mvar
         ])
 
@@ -170,7 +185,7 @@ def export_csv(project_id: int, db: Session = Depends(get_db)):
         writer.writerow(["Element", "From Bus", "To Bus", "P (MW)", "Q (MVAr)", "Loading (%)", "Losses (MW)"])
         for br in loadflow.branches:
             writer.writerow([
-                br.elementId, br.from_bus, br.to_bus,
+                _csv_safe(br.elementId), _csv_safe(br.from_bus), _csv_safe(br.to_bus),
                 br.p_mw, br.q_mvar, br.loading_pct, br.losses_mw
             ])
 

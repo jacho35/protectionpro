@@ -15,17 +15,70 @@ Per-unit method on a common MVA base.
 
 import math
 import re
+from typing import Optional
+
 import numpy as np
-from ..models.schemas import ProjectData, FaultResults, FaultResultBus, FaultBranchContribution
+from ..models.schemas import ProjectData, FaultResults, FaultBranchContribution
+from ..models.schemas import FaultResultBus as _FaultResultBusSchema
 
 
-def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None) -> FaultResults:
+# IEC 60909-0 Table 1 voltage factor c_max: 1.10 for MV/HV, and 1.10 for LV
+# systems with +10% voltage tolerance (modern standard practice; 1.05 applies
+# only to legacy +6% LV systems). There is no project-level tolerance setting
+# yet, so the +10% value is used everywhere — both in the fault equations and
+# in the network-feeder equivalent impedance (IEC 60909-0 Eq. 15).
+C_MAX = 1.10
+
+
+class FaultResultBus(_FaultResultBusSchema):
+    """Per-bus fault result extended with the 2026-07 audit-fix fields.
+
+    Extends the schema model here (schemas.py is concurrently owned by
+    another workstream). NOTE: for these fields to survive FastAPI's
+    response_model serialization the same Optional fields must also be
+    declared on schemas.FaultResultBus — in-process consumers (arc flash,
+    duty check, cable sizing, grounding, tests) see them regardless.
+    """
+    # [EE-7 contract] frontend SLG calc-display inputs
+    z2_mag: Optional[float] = None      # |Z2| used for Ik1/IkLL (p.u.)
+    z_slg_mag: Optional[float] = None   # |Z1 + Z2 + Z0| complex sum in the Ik1 denominator (p.u.)
+    # [EE-11] Thermal-equivalent short-circuit current Ith = Ik″·√(m+n)
+    ith_ka: Optional[float] = None
+
+
+def thermal_m_factor(kappa, duration_s, freq_hz=50.0):
+    """DC heat-effect factor m per IEC 60909-0 §12 (thermal equivalent
+    short-circuit current Ith = Ik″·√(m + n)):
+
+        m = (1 / (2·f·Tk·ln(κ−1))) · (e^(4·f·Tk·ln(κ−1)) − 1)
+
+    where κ is the IEC 60909 peak factor (1.02 ≤ κ < 2.0) and Tk the fault
+    duration. Guards:
+      - κ ≤ 1 (fully damped DC component), Tk ≤ 0 or f ≤ 0 → m = 0
+      - κ → 2 (ln(κ−1) → 0): analytic limit m → 2
+
+    Shared helper: used for the per-bus Ith report here (EE-11) and by
+    cable_sizing.py's adiabatic fault-withstand check (EE-5).
+    """
+    if not kappa or kappa <= 1.0 + 1e-9 or duration_s <= 0 or freq_hz <= 0:
+        return 0.0
+    x = math.log(min(kappa, 2.0) - 1.0)  # ln(κ−1) ≤ 0
+    if abs(x) < 1e-9:
+        return 2.0  # κ → 2 analytic limit
+    ft = freq_hz * duration_s
+    return (math.exp(4.0 * ft * x) - 1.0) / (2.0 * ft * x)
+
+
+def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None,
+                       thermal_duration_s: float = 1.0) -> FaultResults:
     """Run IEC 60909 fault analysis.
 
     Args:
         project: The project data.
         fault_bus_id: If set, only compute fault on this bus.
         fault_type: "3phase", "slg", "ll", "llg", or None for all types.
+        thermal_duration_s: Fault duration Tk (s) for the thermal-equivalent
+            current Ith = Ik″·√(m+n) — IEC 60909-0 §12 convention, 1.0 s default.
     """
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
@@ -75,11 +128,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # Negative-sequence equivalent impedance (may differ from Z1 for generators/motors)
         z2_eq = _parallel_impedances(z2_sources)
 
-        # IEC 60909-0 Table 1 voltage factor c_max: 1.10 for MV/HV, and 1.10
-        # for LV systems with +10% voltage tolerance (modern standard
-        # practice; 1.05 applies only to legacy +6% LV systems). There is no
-        # project-level tolerance setting yet, so the +10% default is used.
-        c_factor = 1.10
+        # IEC 60909-0 Table 1 voltage factor (see C_MAX above)
+        c_factor = C_MAX
 
         ik3_ka = None
         ik1_ka = None
@@ -196,9 +246,21 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ik3_network = round(network_pu * i_base_ka, 3)
 
         # IEC 60909 time-varying fault currents (3-phase)
+        freq = project.frequency or 50  # Hz
         ip_ka, kappa = _compute_peak_current(ik3_ka, z_eq)
         ib_ka = _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mva)
         ik_steady_ka = _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, voltage_kv)
+
+        # [EE-11] Thermal-equivalent short-circuit current per IEC 60909-0 §12:
+        #   Ith = Ik″ × √(m + n)
+        # m: DC heat-effect factor from the bus κ and the fault duration Tk
+        #    (thermal_duration_s, default 1.0 s);
+        # n: AC decay factor — n = 1 assumed (far-from-generator, Ik = Ik″),
+        #    which is the conservative upper bound (n ≤ 1).
+        ith_ka = None
+        if ik3_ka and kappa:
+            m_dc = thermal_m_factor(kappa, thermal_duration_s, freq)
+            ith_ka = round(ik3_ka * math.sqrt(m_dc + 1.0), 3)
 
         # Asymmetric breaking current: Ib_asym = √(Ib² + (2fτ × ip × e^(-t/τ))²)
         # Simplified per IEC 60909-0 §9.1.3: use DC component at t_min
@@ -206,7 +268,6 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         if ib_ka and ip_ka and kappa:
             # DC decay time constant τ ≈ X/(2πfR), approximate from R/X
             r_x = abs(z_eq.real / z_eq.imag) if abs(z_eq.imag) > 1e-15 else 1.0
-            freq = project.frequency or 50  # Hz
             tau = 1 / (2 * math.pi * freq * r_x) if r_x > 1e-10 else 0.1
             t_min = 0.1  # 100ms default breaking time
             i_dc = math.sqrt(2) * ik3_ka * math.exp(-t_min / tau)
@@ -230,6 +291,11 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             z0_real=round(z0.real, 6) if has_z0_path else None,
             z0_imag=round(z0.imag, 6) if has_z0_path else None,
             z0_mag=round(abs(z0), 6) if has_z0_path else None,
+            # [EE-7] |Z2| actually used and the COMPLEX-sum SLG denominator
+            # |Z1+Z2+Z0| — so the frontend calc display can show the complex-
+            # magnitude step instead of summing magnitudes arithmetically.
+            z2_mag=round(abs(z2_eq), 6),
+            z_slg_mag=round(abs(z_eq + z2_eq + z0), 6) if has_z0_path else None,
             z0_source_count=len(z0_detail) if z0_detail else None,
             z0_sources_detail=z0_detail if z0_detail else None,
             motor_count=motor_count,
@@ -238,6 +304,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ip=ip_ka,
             kappa=kappa,
             ib=ib_ka,
+            ith_ka=ith_ka,
             ib_asymmetric=ib_asym_ka,
             ik_steady=ik_steady_ka,
             branches=branches,
@@ -272,6 +339,16 @@ MAX_FAULT_PATHS = 200
 MAX_FAULT_EXPANSIONS = 20000
 
 
+def _transformer_far_voltage(comp, v_near):
+    """Voltage (kV) of the transformer winding OPPOSITE the side entered at
+    voltage v_near — used to track the voltage zone across a walk."""
+    hv = float(comp.props.get("voltage_hv_kv", 11) or 0)
+    lv = float(comp.props.get("voltage_lv_kv", 0.4) or 0)
+    if hv > 0 and lv > 0:
+        return hv if abs(v_near - lv) < abs(v_near - hv) else lv
+    return v_near
+
+
 def _collect_source_paths(bus_id, components, adjacency, base_mva):
     """Walk the network from a bus and collect source paths with component trails.
 
@@ -280,11 +357,16 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
     shared visited set would silently drop every path after the first,
     understating fault current. Cycle prevention is per-path: a component
     may appear in many paths but never twice in the same path.
+
+    [EE-12] The walk tracks the voltage zone (from bus props, flipped at
+    transformer windings) and uses it as the per-unit base for cable
+    impedances — the cable's own voltage_kv prop is never trusted here,
+    mirroring loadflow.py's convention.
     """
     paths = []
     expansions = [0]
 
-    def walk(comp_id, z_path, trail, path_visited):
+    def walk(comp_id, z_path, trail, path_visited, v_kv):
         if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -422,12 +504,17 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
             })
             return
 
-        # Accumulate impedance through branch elements
+        # Accumulate impedance through branch elements, tracking the
+        # voltage zone for cable per-unit conversion ([EE-12])
         z_element = complex(0, 0)
-        if comp.type == "transformer":
+        v_next = v_kv
+        if comp.type == "bus":
+            v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
+        elif comp.type == "transformer":
             z_element = _transformer_impedance(comp, base_mva)
+            v_next = _transformer_far_voltage(comp, v_kv)
         elif comp.type == "cable":
-            z_element = _cable_impedance(comp, base_mva)
+            z_element = _cable_impedance(comp, base_mva, v_kv)
         elif comp.type in ("cb", "switch"):
             state = comp.props.get("state", "closed")
             if state == "open":
@@ -438,11 +525,13 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
         # Continue walking
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited)
+                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited, v_next)
 
-    # Start from bus's neighbors
+    # Start from bus's neighbors at the faulted bus's voltage
+    _bus_comp = components.get(bus_id)
+    _v_start = float(_bus_comp.props.get("voltage_kv", 11) or 11) if _bus_comp else 11.0
     for neighbor_id, _, _ in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0), [], {bus_id})
+        walk(neighbor_id, complex(0, 0), [], {bus_id}, _v_start)
 
     if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
         print(f"[fault] Warning: source path enumeration truncated for bus {bus_id} "
@@ -590,10 +679,18 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
 
 
 def _utility_impedance(comp, base_mva):
-    """Utility source per-unit impedance."""
+    """Utility (network feeder) per-unit impedance per IEC 60909-0 §6.2, Eq. 15.
+
+    Z_Q = c × U_nQ² / S″_kQ  →  on a common MVA base: z_pu = c × S_base / S″_kQ.
+
+    The voltage factor c (same c_max = 1.10 the fault equations use, [EE-4])
+    must be INCLUDED here so that I″k = c·U_n/(√3·|Z_Q|) computed at the
+    connection point reproduces the utility's declared fault level exactly —
+    omitting it returned 1.1× the declared level.
+    """
     fault_mva = comp.props.get("fault_mva", 500)
     xr = comp.props.get("x_r_ratio", 15)
-    z_pu = base_mva / fault_mva
+    z_pu = C_MAX * base_mva / fault_mva
     x_pu = z_pu * xr / math.sqrt(1 + xr * xr)
     r_pu = x_pu / xr
     return complex(r_pu, x_pu)
@@ -637,9 +734,18 @@ def _transformer_impedance(comp, base_mva):
     return complex(r_pu * k_t, x_pu * k_t)
 
 
-def _cable_impedance(comp, base_mva):
-    """Cable per-unit impedance (accounts for parallel cables)."""
-    v_kv = comp.props.get("voltage_kv", 11)
+def _cable_impedance(comp, base_mva, v_kv=None):
+    """Cable per-unit impedance (accounts for parallel cables).
+
+    [EE-12] Callers that walk the network pass the BUS-inferred voltage of
+    the zone the cable sits in (v_kv) as the per-unit base — the cable's own
+    voltage_kv prop may be stale/defaulted (e.g. 11 kV left on a 0.4 kV run,
+    which near-zeroes its fault-path impedance by (11/0.4)² ≈ 756×). This is
+    the same convention loadflow.py uses for cables in transformer chains.
+    The prop is only a fallback when no network context is available.
+    """
+    if v_kv is None or v_kv <= 0:
+        v_kv = comp.props.get("voltage_kv", 11)
     z_base = (v_kv ** 2) / base_mva
     r = comp.props.get("r_per_km", 0.1) * comp.props.get("length_km", 1)
     x = comp.props.get("x_per_km", 0.08) * comp.props.get("length_km", 1)
@@ -765,7 +871,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
     def _comp_name(comp):
         return comp.props.get("name", comp.id) if comp else "?"
 
-    def walk(comp_id, z0_path, trail, entry_port=None, path_visited=frozenset()):
+    def walk(comp_id, z0_path, trail, entry_port=None, path_visited=frozenset(), v_kv=11.0):
         if len(z0_sources) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -835,9 +941,10 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
                 # Grounded star on far side — Z0 passes through,
                 # continue walking to find source (e.g. YNyn0).
                 new_trail = trail + [xfmr_label + " [YN pass-through]"]
+                v_far = _transformer_far_voltage(comp, v_kv)
                 for neighbor_id, local_port, _ in adjacency.get(comp_id, []):
                     if neighbor_id != bus_id or comp_id == bus_id:
-                        walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited)
+                        walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited, v_far)
             # else far_side == 'blocked': ungrounded star, no Z0 path
             return
 
@@ -845,7 +952,8 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             r0_per_km = float(comp.props.get("r0_per_km", 0))
             x0_per_km = float(comp.props.get("x0_per_km", 0))
             if r0_per_km > 0 or x0_per_km > 0:
-                v_kv = comp.props.get("voltage_kv", 11)
+                # [EE-12] per-unit base from the bus-inferred voltage zone,
+                # not the cable's own voltage_kv prop
                 z_base = (v_kv ** 2) / base_mva
                 length = comp.props.get("length_km", 1)
                 n_par = max(1, int(comp.props.get("num_parallel", 1)))
@@ -853,7 +961,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
                 x0 = (x0_per_km if x0_per_km > 0 else comp.props.get("x_per_km", 0.08) * 3.5) * length
                 z_cable = complex(r0 / z_base, x0 / z_base) / n_par
             else:
-                z_cable = _cable_impedance(comp, base_mva) * 3
+                z_cable = _cable_impedance(comp, base_mva, v_kv) * 3
             new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
             # Forward the far-end port (the port by which the neighbor is
             # entered) exactly as the transparent-element branch does — a
@@ -862,7 +970,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             # "port unknown" fallback and a Dyn unit behind a cable becomes
             # a phantom Z0 source as seen from its delta side.
             for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
-                walk(neighbor_id, z0_path + z_cable, new_trail, remote_port, path_visited)
+                walk(neighbor_id, z0_path + z_cable, new_trail, remote_port, path_visited, v_kv)
             return
 
         if comp.type in ("cb", "switch"):
@@ -870,12 +978,17 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             if state == "open":
                 return
         # Transparent elements (CB, fuse, bus, etc.)
+        v_next = v_kv
+        if comp.type == "bus":
+            v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
         for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z0_path, trail, remote_port, path_visited)
+                walk(neighbor_id, z0_path, trail, remote_port, path_visited, v_next)
 
+    _bus_comp = components.get(bus_id)
+    _v_start = float(_bus_comp.props.get("voltage_kv", 11) or 11) if _bus_comp else 11.0
     for neighbor_id, _, remote_port in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0), [], remote_port, frozenset({bus_id}))
+        walk(neighbor_id, complex(0, 0), [], remote_port, frozenset({bus_id}), _v_start)
 
     if len(z0_sources) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
         print(f"[fault] Warning: zero-sequence path enumeration truncated for bus "
@@ -1402,7 +1515,7 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
     """Walk from a bus to find connected buses (through transformers/cables) and sources."""
     bus_set = set(all_bus_ids)
 
-    def walk(comp_id, z_path, visited, from_bus_id):
+    def walk(comp_id, z_path, visited, from_bus_id, v_kv):
         if comp_id in visited:
             return
         visited.add(comp_id)
@@ -1444,23 +1557,28 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
             bus_shunts[from_bus_id].append((z_src, comp.type, comp))
             return
 
-        # Accumulate impedance through branch elements
+        # Accumulate impedance through branch elements, tracking the voltage
+        # zone for cable per-unit conversion ([EE-12])
         z_element = complex(0, 0)
+        v_next = v_kv
         if comp.type == "transformer":
             z_element = _transformer_impedance(comp, base_mva)
+            v_next = _transformer_far_voltage(comp, v_kv)
         elif comp.type == "cable":
-            z_element = _cable_impedance(comp, base_mva)
+            z_element = _cable_impedance(comp, base_mva, v_kv)
         elif comp.type in ("cb", "switch"):
             state = comp.props.get("state", "closed")
             if state == "open":
                 return
         # Continue walking
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
-            walk(neighbor_id, z_path + z_element, visited, from_bus_id)
+            walk(neighbor_id, z_path + z_element, visited, from_bus_id, v_next)
 
     visited = {start_bus_id}
+    _start_comp = components.get(start_bus_id)
+    _v_start = float(_start_comp.props.get("voltage_kv", 11) or 11) if _start_comp else 11.0
     for neighbor_id, _, _ in adjacency.get(start_bus_id, []):
-        walk(neighbor_id, complex(0, 0), set(visited), start_bus_id)
+        walk(neighbor_id, complex(0, 0), set(visited), start_bus_id, _v_start)
 
 
 def _get_mode_impedance(z_subtransient, source_type, comp, base_mva, mode):

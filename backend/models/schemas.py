@@ -1,6 +1,6 @@
 """Pydantic schemas for API request/response validation."""
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, PrivateAttr, field_serializer, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -19,6 +19,17 @@ _TEXTUAL_PROP_KEYS = {
 }
 
 
+def _coerce_numeric(v: str):
+    """Return the int/float a digit-string represents, or None if not numeric."""
+    try:
+        return int(v)
+    except ValueError:
+        try:
+            return float(v)
+        except ValueError:
+            return None  # Genuinely a string (e.g. vector_group, cb_type)
+
+
 class Component(BaseModel):
     # Preserve unknown fields (pageId, label offsets added later, …) so
     # save/load round-trips don't silently drop them
@@ -35,26 +46,59 @@ class Component(BaseModel):
     nameLabelOffsetX: Optional[float] = None
     nameLabelOffsetY: Optional[float] = None
 
+    # Props exactly as received, before numeric coercion — used by the
+    # serializer below so persistence round-trips user strings byte-exact.
+    _raw_props: Optional[dict] = PrivateAttr(default=None)
+
     @model_validator(mode="after")
     def _coerce_numeric_props(self):
         """Coerce string values in props to numbers where possible.
 
-        Frontend JSON may send numeric fields as strings (e.g. "11" instead of 11).
-        This prevents TypeError in analysis code that does arithmetic on props.
-        Clearly-textual keys (name, label, id, state, ...) are never coerced.
+        Frontend JSON (and old stored projects) may send numeric fields as
+        strings (e.g. "11" instead of 11). This prevents TypeError in analysis
+        code that does arithmetic on props. Clearly-textual keys (name, label,
+        id, state, ...) are never coerced.
+
+        The pristine props are kept in `_raw_props` and restored on
+        `model_dump()` (see `_serialize_props`), so the coercion is visible
+        only to code reading `comp.props` in-process (the analysis engines) —
+        the save path (projects.py stores `model_dump()`) persists exactly
+        what the user sent, e.g. a tag/reference field "007" stays "007".
         """
+        self._raw_props = dict(self.props)
         for k, v in self.props.items():
             if k in _TEXTUAL_PROP_KEYS:
                 continue
             if isinstance(v, str):
-                try:
-                    self.props[k] = int(v)
-                except ValueError:
-                    try:
-                        self.props[k] = float(v)
-                    except ValueError:
-                        pass  # Genuinely a string (e.g. vector_group, cb_type)
+                coerced = _coerce_numeric(v)
+                if coerced is not None:
+                    self.props[k] = coerced
         return self
+
+    @field_serializer("props")
+    def _serialize_props(self, props: dict, _info):
+        """Serialize props with the original (pre-coercion) string values.
+
+        For each key, emit the raw as-received value when the current value
+        is still what coercion produced from it; if analysis code mutated a
+        prop after validation, the mutated value wins so dumps of modified
+        models (e.g. motor_starting's deep copy) stay correct.
+        """
+        raw = self._raw_props
+        if raw is None:
+            return props
+        out = {}
+        for k, v in props.items():
+            if k in raw:
+                rv = raw[k]
+                if rv is v:
+                    out[k] = v
+                    continue
+                if isinstance(rv, str) and _coerce_numeric(rv) == v:
+                    out[k] = rv  # unchanged since coercion → restore original
+                    continue
+            out[k] = v
+        return out
 
 
 class Wire(BaseModel):

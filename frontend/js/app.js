@@ -201,9 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
           if (openModal.id === 'tcc-modal' && typeof TCC !== 'undefined') {
             TCC.close();
           } else if (openModal.id === 'db-modal' && typeof DBSchedule !== 'undefined') {
-            DBSchedule.close(); // commits circuit edits + undo snapshot
+            DBSchedule.close(); // commits circuit edits + undo snapshot (only if changed)
           } else {
             openModal.style.display = 'none';
+            // Drop the File Manager's widening class so the next use of the
+            // shared calc modal doesn't render wide (it leaked via Escape)
+            openModal.querySelector('.modal-content')?.classList.remove('modal-wide');
           }
           break;
         }

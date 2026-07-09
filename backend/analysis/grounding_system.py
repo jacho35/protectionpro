@@ -183,6 +183,35 @@ def _compute_K_i(n):
     return 0.644 + 0.148 * n
 
 
+def _compute_decrement_factor(kappa, t_s, freq_hz=50.0):
+    """Decrement factor D_f per IEEE 80-2013 Eq. 79.
+
+        D_f = √(1 + (Ta / t_f) × (1 − e^(−2·t_f/Ta)))
+        Ta  = X / (ω·R)   (DC offset time constant, s)
+
+    The system X/R at the bus is derived from the IEC 60909 peak factor κ
+    carried in the fault results:  κ = 1.02 + 0.98·e^(−3R/X)
+        →  R/X = −ln((κ − 1.02) / 0.98) / 3
+
+    D_f accounts for the asymmetrical (DC-offset) component of the earth
+    fault current over the fault duration t_f; typical values 1.0-1.1 for
+    t_f ≥ 0.5 s, larger for very short faults on high-X/R systems.
+    Guards: κ ≤ 1.02 → no DC offset → D_f = 1; κ ≥ 2 → X/R capped high.
+    """
+    if t_s <= 0 or freq_hz <= 0 or not kappa:
+        return 1.0
+    ratio = (kappa - 1.02) / 0.98
+    if ratio <= 1e-9:
+        return 1.0  # κ ≤ 1.02: fully damped — no DC offset
+    if ratio >= 1.0:
+        r_over_x = 1e-4  # κ at/above the theoretical 2.0 limit
+    else:
+        r_over_x = -math.log(ratio) / 3.0
+    x_over_r = 1.0 / max(r_over_x, 1e-4)
+    ta = x_over_r / (2.0 * math.pi * freq_hz)
+    return math.sqrt(1.0 + (ta / t_s) * (1.0 - math.exp(-2.0 * t_s / ta)))
+
+
 def _compute_conductor_size(I_fault_a, t_c, material_key="copper_hard", T_a=40.0):
     """Compute minimum conductor cross-section per IEEE 80 eq 37 (Onderdonk).
 
@@ -307,7 +336,18 @@ def run_grounding_analysis(project: ProjectData):
                 kappa = bus_fault.kappa
 
         # Use single-phase fault for grounding (if available, else 3-phase)
-        I_G_ka = I_fault_1ph_ka if I_fault_1ph_ka > 0 else I_fault_ka
+        I_sym_ka = I_fault_1ph_ka if I_fault_1ph_ka > 0 else I_fault_ka
+
+        # [EE-5] IEEE 80 Eq. 79/64: I_G = D_f × S_f × 3I₀ — apply the
+        # decrement factor D_f (asymmetrical DC-offset heating over the
+        # fault duration t_s) to the symmetrical earth fault current.
+        # X/R is derived from the κ carried in the fault results.
+        # S_f (current division / split factor) is kept at 1.0 — the
+        # conservative assumption that the grid carries the full current.
+        S_f = 1.0
+        freq = project.frequency or 50
+        D_f = _compute_decrement_factor(kappa, t_s, freq)
+        I_G_ka = D_f * S_f * I_sym_ka
         I_G = I_G_ka * 1000  # convert to amps
 
         if I_G <= 0:
@@ -376,6 +416,8 @@ def run_grounding_analysis(project: ProjectData):
             "num_ground_rods": n_R,
             "conductor_material": mat["name"],
             "fault_current_ka": round(I_G_ka, 2),
+            "symmetrical_fault_ka": round(I_sym_ka, 2),
+            "decrement_factor_df": round(D_f, 4),
             "fault_duration_s": t_s,
             # Results
             "grid_resistance_ohm": round(R_g, 4),
