@@ -5,13 +5,10 @@ const MobileUI = {
   activeSheet: null,
   toastTimer: null,
 
-  // Touch state for canvas pan/pinch
-  touch: {
-    pointers: new Map(),
-    lastPinchDist: null,
-    lastPanX: 0,
-    lastPanY: 0,
-  },
+  // NOTE: touch interaction (tap-select, drag, pan, pinch, tap-deselect) is
+  // handled natively by Canvas via Pointer Events — one pipeline for mouse
+  // and touch. This module is only the phone UI: sheets, nav, FABs,
+  // selection bar, toasts.
 
   init() {
     this.isMobile = window.matchMedia('(max-width: 768px)').matches;
@@ -21,10 +18,17 @@ const MobileUI = {
     this.bindNavEvents();
     this.bindSheetEvents();
     this.bindFabEvents();
-    this.bindCanvasTouchEvents();
     this.bindSelectionBarEvents();
     this.syncDarkMode();
     this.updateModeButtons();
+
+    // Refresh the selection bar after any canvas gesture ends (Canvas holds
+    // pointer capture on the svg, so touch pointerups always fire here)
+    const svg = document.getElementById('sld-canvas');
+    if (svg) {
+      svg.addEventListener('pointerup', () => setTimeout(() => this.updateSelectionBar(), 50));
+      svg.addEventListener('pointercancel', () => setTimeout(() => this.updateSelectionBar(), 50));
+    }
 
     // Sync selection bar when selection changes
     document.addEventListener('selectionchange-mobile', () => this.updateSelectionBar());
@@ -243,121 +247,9 @@ const MobileUI = {
     if (!selBtn || !wireBtn) return;
 
     // Read current mode from AppState (set by desktop button click or keyboard shortcut)
-    const isWire = typeof AppState !== 'undefined' && AppState.mode === 'WIRE';
+    const isWire = typeof AppState !== 'undefined' && AppState.mode === MODE.WIRE;
     selBtn.classList.toggle('fab-active', !isWire);
     wireBtn.classList.toggle('fab-active', isWire);
-  },
-
-  // ─── Canvas touch events ───────────────────────────────────────────────────
-
-  bindCanvasTouchEvents() {
-    const svg = document.getElementById('sld-canvas');
-    if (!svg) return;
-
-    svg.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
-    svg.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
-    svg.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });
-    svg.addEventListener('touchcancel', (e) => this.onTouchEnd(e), { passive: false });
-
-    // Update selection bar after any pointer-up on the canvas
-    svg.addEventListener('mouseup', () => setTimeout(() => this.updateSelectionBar(), 50));
-    svg.addEventListener('touchend', () => setTimeout(() => this.updateSelectionBar(), 50), { passive: true });
-  },
-
-  onTouchStart(e) {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      this.touch.pointers.set(t.identifier, { x: t.clientX, y: t.clientY });
-    }
-
-    if (e.touches.length === 1) {
-      this.touch.lastPanX = e.touches[0].clientX;
-      this.touch.lastPanY = e.touches[0].clientY;
-      this.touch.lastPinchDist = null;
-
-      // Single tap: pass through to canvas for component selection
-      // (handled by mousedown/click via touch events)
-    } else if (e.touches.length === 2) {
-      this.touch.lastPinchDist = this._pinchDist(e.touches[0], e.touches[1]);
-    }
-  },
-
-  onTouchMove(e) {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      this.touch.pointers.set(t.identifier, { x: t.clientX, y: t.clientY });
-    }
-
-    if (e.touches.length === 1) {
-      const dx = e.touches[0].clientX - this.touch.lastPanX;
-      const dy = e.touches[0].clientY - this.touch.lastPanY;
-      this.touch.lastPanX = e.touches[0].clientX;
-      this.touch.lastPanY = e.touches[0].clientY;
-
-      // Only pan if not in component-drag mode
-      if (AppState.mode === 'SELECT' && !AppState.dragState) {
-        AppState.panX += dx;
-        AppState.panY += dy;
-        Canvas.updateTransform();
-      }
-    } else if (e.touches.length === 2) {
-      const dist = this._pinchDist(e.touches[0], e.touches[1]);
-      if (this.touch.lastPinchDist !== null && dist > 0) {
-        const ratio = dist / this.touch.lastPinchDist;
-        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        this._zoomAt(ratio, midX, midY);
-      }
-      this.touch.lastPinchDist = dist;
-
-      // Pan with two fingers
-      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      if (this._lastTwoFingerCenter) {
-        AppState.panX += cx - this._lastTwoFingerCenter.x;
-        AppState.panY += cy - this._lastTwoFingerCenter.y;
-        Canvas.updateTransform();
-      }
-      this._lastTwoFingerCenter = { x: cx, y: cy };
-    }
-  },
-
-  onTouchEnd(e) {
-    for (const t of e.changedTouches) {
-      this.touch.pointers.delete(t.identifier);
-    }
-    if (e.touches.length < 2) {
-      this.touch.lastPinchDist = null;
-      this._lastTwoFingerCenter = null;
-    }
-    if (e.touches.length === 1) {
-      this.touch.lastPanX = e.touches[0].clientX;
-      this.touch.lastPanY = e.touches[0].clientY;
-    }
-  },
-
-  _pinchDist(t1, t2) {
-    const dx = t1.clientX - t2.clientX;
-    const dy = t1.clientY - t2.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  },
-
-  _zoomAt(ratio, screenX, screenY) {
-    const oldZoom = AppState.zoom;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * ratio));
-    if (newZoom === oldZoom) return;
-
-    const rect = document.getElementById('sld-canvas').getBoundingClientRect();
-    const wx = (screenX - rect.left - AppState.panX) / oldZoom;
-    const wy = (screenY - rect.top - AppState.panY) / oldZoom;
-
-    AppState.zoom = newZoom;
-    AppState.panX = screenX - rect.left - wx * newZoom;
-    AppState.panY = screenY - rect.top - wy * newZoom;
-
-    Canvas.updateTransform();
-    const zoomDisplay = document.getElementById('zoom-display');
-    if (zoomDisplay) zoomDisplay.textContent = Math.round(newZoom * 100) + '%';
   },
 
   // ─── Selection bar ─────────────────────────────────────────────────────────
@@ -395,13 +287,11 @@ const MobileUI = {
   updateSelectionBar() {
     if (!this.isMobile) return;
     const bar = document.getElementById('mobile-selection-bar');
-    const canvasContainer = document.getElementById('canvas-container');
     if (!bar) return;
 
     const count = AppState.selectedIds ? AppState.selectedIds.size : 0;
     if (count > 0) {
       bar.classList.add('visible');
-      canvasContainer?.classList.add('has-selection-bar');
       const label = bar.querySelector('.sel-count');
       if (label) label.textContent = `${count} selected`;
 
@@ -410,7 +300,6 @@ const MobileUI = {
       if (propBtn) propBtn.style.display = count === 1 ? '' : 'none';
     } else {
       bar.classList.remove('visible');
-      canvasContainer?.classList.remove('has-selection-bar');
     }
   },
 
@@ -437,6 +326,14 @@ const MobileUI = {
               desktopInputs[i].dispatchEvent(new Event('change', { bubbles: true }));
               desktopInputs[i].dispatchEvent(new Event('input', { bubbles: true }));
             }
+          });
+        });
+        // Re-bind ⓘ info buttons — the innerHTML copy loses their listeners
+        mobileContent.querySelectorAll('.prop-info-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const text = (typeof FIELD_INFO !== 'undefined') && FIELD_INFO[btn.dataset.infoKey];
+            if (text && typeof Properties !== 'undefined') Properties._showInfoPopup(btn, text);
           });
         });
         // Re-bind collapsible section headers

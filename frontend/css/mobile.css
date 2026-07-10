@@ -10,6 +10,12 @@
 
 @media (max-width: 768px) {
 
+  /* Field-info (ⓘ) popups must fit narrow viewports and sit above sheets */
+  .prop-info-popup {
+    max-width: calc(100vw - 24px);
+    z-index: 9999;
+  }
+
   /* ─── Hide desktop elements ────────────────────────── */
   #toolbar,
   #sidebar,
@@ -54,14 +60,33 @@
     gap: 8px;
   }
 
+  #mobile-header .mobile-title-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.05;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   #mobile-header .mobile-title {
     font-size: 15px;
     font-weight: 700;
     color: var(--accent);
-    flex: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  #mobile-header .mobile-app-version {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.4px;
   }
 
   #mobile-header .mobile-project-name {
@@ -104,7 +129,6 @@
   #sld-canvas {
     width: 100%;
     height: 100%;
-    touch-action: none;
   }
 
   /* ─── Floating Action Buttons ─────────────────────── */
@@ -620,12 +644,18 @@
     max-width: 100%;
   }
 
-  /* ─── Canvas adjusts when selection bar visible ───── */
-  #canvas-container.has-selection-bar {
-    top: calc(var(--mobile-header-height) + 40px);
-  }
+  /* The selection bar OVERLAYS the canvas (position: fixed) — it must never
+     resize the canvas container: selection changes on pointer-down, and
+     moving the svg mid-gesture corrupts the drag's coordinate mapping. */
 
 } /* end @media (max-width: 768px) */
+
+/* Applies at every viewport width: tablets and landscape phones exceed
+   768px but still drive the canvas by touch, and MobileUI's JS handles
+   all pan/pinch/drag itself. Harmless on mouse-only desktops. */
+#sld-canvas {
+  touch-action: none;
+}
 
 /* ─── Elements hidden on desktop ─────────────────────── */
 #mobile-header,

@@ -37,6 +37,12 @@ const Canvas = {
   // Space-bar held down → left-drag pans the canvas
   spaceDown: false,
 
+  // Touch state (the whole canvas runs on Pointer Events, one pipeline for
+  // mouse and touch — no synthetic-event forwarding)
+  touchPointers: new Map(), // pointerId → { x, y } for touches active on the canvas
+  _pinch: null,             // { d, cx, cy } while two fingers are down
+  _touchTap: null,          // { x, y } single touch on empty canvas, cleared on movement
+
   init() {
     this.svg = document.getElementById('sld-canvas');
     this.diagramLayer = document.getElementById('diagram-layer');
@@ -51,11 +57,18 @@ const Canvas = {
   },
 
   bindEvents() {
-    this.svg.addEventListener('mousedown', (e) => this.onMouseDown(e));
+    // Pointer Events drive everything — the same handlers receive mouse,
+    // touch and pen input (PointerEvent extends MouseEvent, so clientX,
+    // button, shiftKey and target.closest all behave identically). Touch
+    // gestures (pan / pinch / tap-deselect) are routed at the top of each
+    // handler; single-finger interaction with entities reuses the exact
+    // desktop select/drag/wire code below.
+    this.svg.addEventListener('pointerdown', (e) => this.onMouseDown(e));
     // Move/up are bound at document level so drags don't get "stuck" when the
     // pointer leaves the SVG before the button is released.
-    document.addEventListener('mousemove', (e) => this.onMouseMove(e));
-    document.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    document.addEventListener('pointermove', (e) => this.onMouseMove(e));
+    document.addEventListener('pointerup', (e) => this.onMouseUp(e));
+    document.addEventListener('pointercancel', (e) => this.onMouseUp(e));
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     // Right-click: context-sensitive menu (component / wire / canvas)
     this.svg.addEventListener('contextmenu', (e) => {
@@ -248,8 +261,27 @@ const Canvas = {
     if (typeof MiniMap !== 'undefined') MiniMap.render();
   },
 
-  // Mouse down handler
+  // Pointer down handler (mouse and touch)
   onMouseDown(e) {
+    if (e.pointerType === 'touch') {
+      // Suppress the browser's compatibility mouse events for canvas touches
+      e.preventDefault();
+      this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      // Route the whole gesture to the svg (never detached), not the touched
+      // child node — a mid-drag render() would otherwise strand the pointer's
+      // implicit capture on a removed element.
+      try { this.svg.setPointerCapture(e.pointerId); } catch (_) {}
+      if (this.touchPointers.size === 2) {
+        // Second finger: commit whatever the first finger was doing (drag,
+        // pan, wire) and switch to pinch-zoom
+        this._finalizeInteraction(e);
+        this._touchTap = null;
+        this._pinch = this._pinchFrom();
+        return;
+      }
+      if (this.touchPointers.size > 2) return; // ignore extra fingers
+    }
+
     const worldPt = this.screenToWorld(e.clientX, e.clientY);
 
     // Middle button, Alt+left or Space+left: start panning
@@ -281,8 +313,11 @@ const Canvas = {
       }
     }
 
-    // Check if clicked on a data label (for dragging)
-    const labelEl = e.target.closest('.comp-data-label');
+    // Check if clicked on a data label (for dragging). Label nudging is a
+    // precision affordance — with a finger, a touch on a label (they overlap
+    // their component) must select/move the COMPONENT, so labels are
+    // mouse-only drag targets and touch falls through to the component branch.
+    const labelEl = e.pointerType === 'touch' ? null : e.target.closest('.comp-data-label');
     if (labelEl) {
       const compId = labelEl.dataset.compId;
       const comp = AppState.components.get(compId);
@@ -300,8 +335,8 @@ const Canvas = {
       }
     }
 
-    // Check if clicked on a name label (for dragging)
-    const nameLabelEl = e.target.closest('.comp-name-label');
+    // Check if clicked on a name label (for dragging) — mouse-only, as above
+    const nameLabelEl = e.pointerType === 'touch' ? null : e.target.closest('.comp-name-label');
     if (nameLabelEl) {
       const compId = nameLabelEl.dataset.compId;
       const comp = AppState.components.get(compId);
@@ -363,9 +398,12 @@ const Canvas = {
       }
     }
 
-    // Check if clicked on a component port (for wiring)
+    // Check if clicked on a component port (for wiring). Fingers are
+    // imprecise: on touch in Select mode a port hit acts on its component
+    // (falls through to the component branch below) instead of silently
+    // starting a wire — use Wire mode to draw from ports by touch.
     const portEl = e.target.closest('[data-port]');
-    if (portEl && AppState.mode === MODE.SELECT) {
+    if (portEl && AppState.mode === MODE.SELECT && e.pointerType !== 'touch') {
       // Start wiring from this port. Give explicit feedback since we're
       // starting a wire outside Wire mode — otherwise it looks like nothing
       // happened (or a drag) to the user.
@@ -388,6 +426,8 @@ const Canvas = {
         const snap = this.findNearestPort(worldPt);
         if (snap) {
           Wiring.startWire(snap.compId, snap.portId, { x: snap.x, y: snap.y });
+        } else if (e.pointerType === 'touch') {
+          this._startTouchPan(e);
         }
       }
       return;
@@ -452,6 +492,14 @@ const Canvas = {
       return;
     }
 
+    // Touch on empty canvas: pan (marquee selection needs a mouse). If the
+    // finger lifts without moving it was a tap — deselect on pointer-up.
+    if (e.pointerType === 'touch') {
+      this._startTouchPan(e);
+      this._touchTap = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
     // Click on empty canvas: start selection box or clear selection
     if (e.shiftKey) {
       // Shift+drag: remember current selection to preserve it
@@ -466,8 +514,19 @@ const Canvas = {
     this.render();
   },
 
-  // Mouse move handler
+  // Pointer move handler (mouse and touch)
   onMouseMove(e) {
+    if (e.pointerType === 'touch') {
+      // Only track touches that started on the canvas
+      if (!this.touchPointers.has(e.pointerId)) return;
+      this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._pinch) { this._pinchMove(); return; }
+      if (this._touchTap &&
+          Math.hypot(e.clientX - this._touchTap.x, e.clientY - this._touchTap.y) > 10) {
+        this._touchTap = null; // moved too far — it's a pan, not a tap
+      }
+    }
+
     // Safety net: if the button was released outside the window (we never saw
     // mouseup), finalize any active drag instead of leaving it sticky.
     const interacting = this.isPanning || this.busResize || this.bendDrag ||
@@ -659,8 +718,41 @@ const Canvas = {
     AppState.hoveredId = compEl ? compEl.dataset.id : null;
   },
 
-  // Mouse up handler
+  // Pointer up / cancel handler (mouse and touch)
   onMouseUp(e) {
+    if (e.pointerType === 'touch') {
+      if (!this.touchPointers.delete(e.pointerId)) return;
+      if (this._pinch) {
+        if (this.touchPointers.size >= 2) return;
+        this._pinch = null;
+        if (this.touchPointers.size === 1) {
+          // One finger stays down: continue the gesture as a pan from here
+          const p = [...this.touchPointers.values()][0];
+          this.isPanning = true;
+          this.panStart = { x: p.x - AppState.panX, y: p.y - AppState.panY };
+          return;
+        }
+        // Both lifted — nothing left to finalize (pinch committed live)
+        return;
+      }
+      if (this._touchTap) {
+        // Stationary tap on empty canvas: deselect (the touch counterpart of
+        // clicking empty canvas with a mouse)
+        this._touchTap = null;
+        this.isPanning = false;
+        this.svg.classList.remove('panning-active');
+        AppState.clearSelection();
+        Properties.clear();
+        this.render();
+        return;
+      }
+    }
+    this._finalizeInteraction(e);
+  },
+
+  // Commit / tear down whatever interaction is in flight. Shared by pointer-up
+  // and by a second touch landing mid-gesture (drag commits, pinch begins).
+  _finalizeInteraction(e) {
     if (this.isPanning) {
       this.isPanning = false;
       this.svg.classList.remove('panning-active');
@@ -748,6 +840,36 @@ const Canvas = {
     const factor = e.deltaY > 0 ? 1 / ZOOM_FACTOR : ZOOM_FACTOR;
     const rect = this.svg.getBoundingClientRect();
     this.zoomAt(factor, e.clientX - rect.left, e.clientY - rect.top);
+  },
+
+  // ─── Touch gesture helpers ────────────────────────────────────────────────
+
+  _startTouchPan(e) {
+    this.isPanning = true;
+    this.panStart = { x: e.clientX - AppState.panX, y: e.clientY - AppState.panY };
+  },
+
+  _pinchFrom() {
+    const [a, b] = [...this.touchPointers.values()];
+    return {
+      d: Math.hypot(a.x - b.x, a.y - b.y),
+      cx: (a.x + b.x) / 2,
+      cy: (a.y + b.y) / 2,
+    };
+  },
+
+  _pinchMove() {
+    if (this.touchPointers.size < 2) return;
+    const p = this._pinchFrom();
+    if (this._pinch.d > 0 && p.d > 0) {
+      const rect = this.svg.getBoundingClientRect();
+      this.zoomAt(p.d / this._pinch.d, p.cx - rect.left, p.cy - rect.top);
+    }
+    // Two-finger pan: follow the midpoint
+    AppState.panX += p.cx - this._pinch.cx;
+    AppState.panY += p.cy - this._pinch.cy;
+    this.updateTransform();
+    this._pinch = p;
   },
 
   // Zoom by a factor toward a point in SVG-local screen coords
@@ -1095,7 +1217,7 @@ const Canvas = {
         }
         // Show fault branch contributions on transformer
         if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
-      } else if (['generator', 'solar_pv', 'wind_turbine'].includes(comp.type)) {
+      } else if (['generator', 'solar_pv', 'wind_turbine', 'battery'].includes(comp.type)) {
         // Static property labels
         if (comp.type === 'generator') {
           const ratingStr = p.rated_mva >= 1 ? `${p.rated_mva} MVA` : `${(p.rated_mva * 1000).toFixed(0)} kVA`;
@@ -1108,9 +1230,22 @@ const Canvas = {
           const totalKw = (p.rated_kw || 0) * nInv;
           const fmtKw = (kw) => kw >= 1000 ? `${(kw / 1000).toFixed(1)} MW` : `${kw.toFixed(0)} kW`;
           lines.push(nInv > 1 ? `${nInv}×${fmtKw(p.rated_kw || 0)} = ${fmtKw(totalKw)}` : fmtKw(totalKw));
-          // Show the availability-scaled output when below full irradiance
           const irr = p.irradiance_pct ?? 100;
-          if (irr < 100) lines.push(`@ ${irr}% → ${fmtKw(totalKw * irr / 100)}`);
+          if (p.pv_array_mode === 'array') {
+            // Array line: strings × panels = DC kWp; output clips at the inverter
+            const strings = Math.max(1, Math.round(p.pv_strings || 1));
+            const pps = Math.max(1, Math.round(p.pv_panels_per_string || 1));
+            const dcKw = (p.pv_panel_w || 0) * pps * strings * nInv / 1000;
+            lines.push(`${strings}S×${pps}P = ${dcKw >= 1000 ? (dcKw / 1000).toFixed(2) + ' MWp' : dcKw.toFixed(1) + ' kWp'}`);
+            const rawKw = dcKw * irr / 100;
+            const outKw = Math.min(rawKw, totalKw);
+            if (irr < 100 || rawKw > totalKw) {
+              lines.push(`@ ${irr}% → ${fmtKw(outKw)}${rawKw > totalKw ? ' (clipped)' : ''}`);
+            }
+          } else if (irr < 100) {
+            // Show the availability-scaled output when below full irradiance
+            lines.push(`@ ${irr}% → ${fmtKw(totalKw * irr / 100)}`);
+          }
           if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
         } else if (comp.type === 'wind_turbine') {
           const nTurb = Math.max(1, p.num_turbines || 1);
@@ -1119,6 +1254,13 @@ const Canvas = {
           lines.push(nTurb > 1 ? `${nTurb}×${fmtMva(p.rated_mva || 0)} = ${fmtMva(totalMva)}` : fmtMva(totalMva));
           const windPct = p.wind_speed_pct ?? 100;
           if (windPct < 100) lines.push(`@ ${windPct}% → ${fmtMva(totalMva * windPct / 100)}`);
+          if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
+        } else if (comp.type === 'battery') {
+          const kva = p.rated_kva || 0;
+          lines.push(kva >= 1000 ? `${(kva / 1000).toFixed(1)} MVA` : `${kva.toFixed(0)} kVA`);
+          const kwh = p.battery_kwh || 0;
+          if (kwh > 0) lines.push(kwh >= 1000 ? `${(kwh / 1000).toFixed(1)} MWh` : `${kwh.toFixed(0)} kWh`);
+          lines.push(`${p.battery_mode || 'auto'}`);
           if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
         }
         // Show load flow output annotation for source components

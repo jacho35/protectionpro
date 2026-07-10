@@ -28,9 +28,11 @@ const ControlSim = {
 
   init() {
     const svg = document.getElementById('sld-canvas');
-    // Capture phase so simulation clicks never start a drag/selection
-    svg.addEventListener('mousedown', (e) => this._onMouseDown(e), true);
-    window.addEventListener('mouseup', () => this._onMouseUp(), true);
+    // Pointer events (mouse AND touch), capture phase so simulation presses
+    // never start a drag/selection in the canvas pipeline
+    svg.addEventListener('pointerdown', (e) => this._onMouseDown(e), true);
+    window.addEventListener('pointerup', () => this._onMouseUp(), true);
+    window.addEventListener('pointercancel', () => this._onMouseUp(), true);
     document.addEventListener('keydown', (e) => {
       if (this.active && e.key === 'Escape') { this.stop(); e.stopPropagation(); }
     }, true);

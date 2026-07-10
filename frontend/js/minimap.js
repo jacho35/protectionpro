@@ -20,11 +20,18 @@ const MiniMap = {
     this.canvas.style.width = this.width + 'px';
     this.canvas.style.height = this.height + 'px';
 
-    // Click to navigate
-    this.canvas.addEventListener('mousedown', (e) => this._onClick(e));
-    this.canvas.addEventListener('mousemove', (e) => {
-      if (e.buttons === 1) this._onClick(e);
+    // Click to navigate; drag-to-scrub only for drags that STARTED on the
+    // minimap. A component drag passing over the minimap also delivers
+    // mousemoves here (Canvas drags via a document-level listener), and
+    // panning on those fights the drag in a feedback loop.
+    this.canvas.addEventListener('mousedown', (e) => {
+      this._scrubbing = true;
+      this._onClick(e);
     });
+    this.canvas.addEventListener('mousemove', (e) => {
+      if (this._scrubbing && e.buttons === 1) this._onClick(e);
+    });
+    document.addEventListener('mouseup', () => { this._scrubbing = false; });
 
     // Collapse/expand button
     const toggleBtn = document.getElementById('minimap-toggle');
