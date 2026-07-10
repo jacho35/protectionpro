@@ -863,6 +863,26 @@ const FIELD_INFO = {
   'surge_arrester.mcov_kv': 'Default MCOV = 8.4 kV (for 11 kV system, ratio ≈ 0.76).\nSource: IEC 60099-4 §5.2 — maximum continuous operating voltage.\nMCOV ≥ Um / √3 for grounded systems.',
 };
 
+// ─── Distribution Board — default circuit load types ───
+// Presets used by the DB circuit-schedule editor (DBSchedule) to pre-fill a
+// way from a common load. `va` is the connected VA per unit; `unit` is the
+// counted item (a lighting "point", a "socket", …). `df` is the per-way
+// demand factor (IEC 60439/61439 typical: lighting 1.0, socket outlets 0.4,
+// motor groups 0.5–0.8). `per_circuit` is the default number of units when a
+// whole circuit is added at once. Breaker/curve/cable follow SANS 10142-1
+// common practice for a domestic/commercial LV board.
+const DB_LOAD_TYPES = [
+  { key: 'lighting',   label: 'Lighting',          va: 100,  unit: 'point',   df: 1.0, poles: '1P', breaker_a: 10, curve: 'B', cable_mm2: 1.5, per_circuit: 10 },
+  { key: 'socket',     label: 'Socket Outlet',     va: 200,  unit: 'socket',  df: 0.4, poles: '1P', breaker_a: 20, curve: 'B', cable_mm2: 2.5, per_circuit: 6 },
+  { key: 'geyser',     label: 'Geyser',            va: 3000, unit: 'geyser',  df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'stove',      label: 'Stove / Oven',      va: 6000, unit: 'stove',   df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1 },
+  { key: 'aircon',     label: 'Air Conditioner',   va: 2500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'ev_charger', label: 'EV Charger',        va: 7400, unit: 'charger', df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1 },
+  { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+];
+
 const COMPONENT_DEFS = {
   // --- Sources ---
   utility: {
@@ -1050,6 +1070,7 @@ const COMPONENT_DEFS = {
       { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5, section: 'arcflash' },
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'], section: 'arcflash' },
       { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10, section: 'arcflash' },
+      { key: 'system_grounded', label: 'System Grounding', type: 'select', options: ['unknown', 'grounded', 'ungrounded'], section: 'arcflash' },
       { key: 'soil_resistivity', label: 'Soil Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding' },
       { key: 'grid_length', label: 'Grid Length', type: 'number', unit: 'm', section: 'grounding' },
       { key: 'grid_width', label: 'Grid Width', type: 'number', unit: 'm', section: 'grounding' },

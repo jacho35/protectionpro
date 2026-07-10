@@ -166,6 +166,59 @@ const DBSchedule = {
     return singles.length;
   },
 
+  // ── Default load presets ────────────────────────────────────────────
+  // Look up a preset from the DB_LOAD_TYPES library (constants.js).
+  _loadType(key) {
+    return (typeof DB_LOAD_TYPES !== 'undefined')
+      ? DB_LOAD_TYPES.find(t => t.key === key) : null;
+  },
+
+  // Human description for a preset way, e.g. "Lighting — 10 points".
+  _describeLoad(t, count) {
+    if (!t.va) return t.label;                       // Spare / zero-load way
+    if (count > 1) return `${t.label} — ${count} ${t.unit}s`;
+    return t.label;
+  },
+
+  // Build a circuit (way) object from a preset and a unit count. `idx` is the
+  // position it will occupy — used for the way number and R/W/B round-robin.
+  _makeCircuit(t, count, idx) {
+    const n = Math.max(1, Math.round(count) || 1);
+    const is3P = t.poles === '3P';
+    return {
+      way: String(idx + 1),
+      description: this._describeLoad(t, n),
+      poles: t.poles,
+      phase: is3P ? 'RWB' : ['R', 'W', 'B'][idx % 3],
+      breaker_a: t.breaker_a,
+      curve: t.curve,
+      el_group: '',
+      cable_mm2: t.cable_mm2,
+      cable_m: 10,
+      load_va: t.va * n,
+      demand_factor: t.df,
+    };
+  },
+
+  // Append `repeat` circuits of `key`, each carrying `count` units, then
+  // re-render and report what was added.
+  addLoad(key, count, repeat = 1) {
+    const comp = AppState.components.get(this.currentId);
+    if (!comp) return;
+    const t = this._loadType(key);
+    if (!t) return;
+    const circuits = comp.props.circuits;
+    const n = Math.max(1, Math.round(repeat) || 1);
+    for (let i = 0; i < n; i++) {
+      circuits.push(this._makeCircuit(t, count, circuits.length));
+    }
+    this.render();
+    const units = Math.max(1, Math.round(count) || 1);
+    document.getElementById('status-info').textContent = n > 1
+      ? `Added ${n} ${t.label.toLowerCase()} circuit(s).`
+      : `Added ${t.label.toLowerCase()} way (${units} ${t.unit}${units === 1 ? '' : 's'}).`;
+  },
+
   // ── Rendering ───────────────────────────────────────────────────────
   render() {
     const comp = AppState.components.get(this.currentId);
@@ -178,7 +231,7 @@ const DBSchedule = {
     const rows = circuits.map((c, i) => `
       <tr data-idx="${i}">
         <td><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
-        <td><input type="text" data-k="description" value="${escHtml(c.description || '')}" style="width:100%;min-width:220px"></td>
+        <td><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%;min-width:220px"></td>
         <td><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
         <td><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
           ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
@@ -224,7 +277,16 @@ const DBSchedule = {
         </div>`;
     }).join('');
 
+    // Default-load presets — a dropdown of common circuits (with their
+    // default wattage + demand factor) plus one-click quick-add chips.
+    const loadTypes = (typeof DB_LOAD_TYPES !== 'undefined') ? DB_LOAD_TYPES : [];
+    const typeOptions = loadTypes.map(t =>
+      `<option value="${t.key}">${escHtml(t.label)}${t.va ? ` — ${t.va} VA/${t.unit}, DF ${t.df}` : ''}</option>`).join('');
+    const datalistOptions = loadTypes.filter(t => t.va)
+      .map(t => `<option value="${escHtml(t.label)}"></option>`).join('');
+
     this.body.innerHTML = `
+      <datalist id="db-load-datalist">${datalistOptions}</datalist>
       <div class="db-phase-bars">${barsHtml}</div>
       <div class="library-table-wrap" style="max-height:62vh;overflow:auto;">
         <table class="library-table" style="width:100%;font-size:13px;">
@@ -237,6 +299,18 @@ const DBSchedule = {
             '<tr><td colspan="12" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;opacity:0.8;">Add load:</span>
+        <select id="db-load-type" title="Common load types with default wattage and demand factor">${typeOptions}</select>
+        <input type="number" id="db-load-count" value="1" min="1" step="1" style="width:56px" title="Number of units (points / sockets / …)">
+        <span style="font-size:12px;opacity:0.8;">×</span>
+        <button class="btn-small" id="db-add-load" title="Add one way pre-filled from the selected load type">+ Add circuit</button>
+        <span style="width:1px;height:20px;background:var(--border-color,#ccc);margin:0 4px;"></span>
+        <button class="btn-small" id="db-quick-lights" title="Add one lighting way with 10 points">+ 10 Lights</button>
+        <button class="btn-small" id="db-quick-sockets" title="Add one socket way with 5 sockets">+ 5 Sockets</button>
+        <button class="btn-small" id="db-multi-lights" title="Add 4 lighting circuits (10 points each)">+ 4 Light circuits</button>
+        <button class="btn-small" id="db-multi-sockets" title="Add 6 socket circuits (6 sockets each)">+ 6 Socket circuits</button>
+      </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:10px;flex-wrap:wrap;">
         <button class="btn-small" id="db-add-row">+ Add Way</button>
         <button class="btn-small" id="db-auto-balance" title="Reassign single-phase ways across R/W/B for best balance (3-phase ways untouched)">Auto Balance</button>
@@ -248,6 +322,23 @@ const DBSchedule = {
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
         <button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>
       </div>`;
+
+    // Bind — default-load presets & quick-add chips
+    this.body.querySelector('#db-add-load').addEventListener('click', () => {
+      const key = this.body.querySelector('#db-load-type').value;
+      const count = parseInt(this.body.querySelector('#db-load-count').value, 10) || 1;
+      this.addLoad(key, count, 1);
+    });
+    this.body.querySelector('#db-quick-lights').addEventListener('click', () => this.addLoad('lighting', 10, 1));
+    this.body.querySelector('#db-quick-sockets').addEventListener('click', () => this.addLoad('socket', 5, 1));
+    this.body.querySelector('#db-multi-lights').addEventListener('click', () => {
+      const t = this._loadType('lighting');
+      this.addLoad('lighting', t ? t.per_circuit : 10, 4);
+    });
+    this.body.querySelector('#db-multi-sockets').addEventListener('click', () => {
+      const t = this._loadType('socket');
+      this.addLoad('socket', t ? t.per_circuit : 6, 6);
+    });
 
     // Bind
     this.body.querySelector('#db-auto-balance').addEventListener('click', () => {
@@ -296,6 +387,25 @@ const DBSchedule = {
           if (c.poles === '3P') c.phase = 'RWB';
           else if (c.phase === 'RWB') c.phase = 'R';
           this.render();
+        } else if (k === 'description' && !(Number(c.load_va) > 0)) {
+          // Picked a known load type into an empty way → fill its defaults
+          // (wattage, demand factor, breaker, curve, cable) for one unit.
+          const t = (typeof DB_LOAD_TYPES !== 'undefined')
+            ? DB_LOAD_TYPES.find(x => x.va && x.label.toLowerCase() === String(v).trim().toLowerCase())
+            : null;
+          if (t) {
+            c.load_va = t.va;
+            c.demand_factor = t.df;
+            c.breaker_a = t.breaker_a;
+            c.curve = t.curve;
+            c.cable_mm2 = t.cable_mm2;
+            c.poles = t.poles;
+            if (t.poles === '3P') c.phase = 'RWB';
+            else if (c.phase === 'RWB') c.phase = 'R';
+            this.render();
+          } else {
+            this.refreshTotals(comp);
+          }
         } else {
           this.refreshTotals(comp);
         }
