@@ -808,7 +808,7 @@ const Reports = {
       const name = document.getElementById('new-tmpl-name').value.trim();
       if (!name) { document.getElementById('new-tmpl-name').focus(); return; }
       const sections = this._getCheckedSections();
-      if (sections.length === 0) { alert('Select at least one section.'); return; }
+      if (sections.length === 0) { UI.toast('Select at least one section.', 'warning'); return; }
       this.saveUserTemplate(name, sections);
       this.showTemplateEditor();
     });
@@ -816,7 +816,7 @@ const Reports = {
     // Export PDF
     document.getElementById('btn-report-export').addEventListener('click', () => {
       const sections = this._getCheckedSections();
-      if (sections.length === 0) { alert('Select at least one section.'); return; }
+      if (sections.length === 0) { UI.toast('Select at least one section.', 'warning'); return; }
       // Create a temporary template and export
       const tmpId = '_tmp_' + Date.now();
       const tmpl = { id: tmpId, name: 'Custom Export', sections };
@@ -858,7 +858,7 @@ const Reports = {
   showComparisonDialog() {
     const scenarios = AppState.scenarios;
     if (scenarios.length < 2) {
-      alert('Save at least 2 scenarios before comparing.');
+      UI.toast('Save at least 2 scenarios before comparing.', 'warning');
       return;
     }
 
@@ -891,7 +891,7 @@ const Reports = {
     document.getElementById('btn-run-comparison').addEventListener('click', () => {
       const idA = document.getElementById('compare-sc-a').value;
       const idB = document.getElementById('compare-sc-b').value;
-      if (idA === idB) { alert('Select two different scenarios.'); return; }
+      if (idA === idB) { UI.toast('Select two different scenarios.', 'warning'); return; }
       modal.style.display = 'none';
       this.exportComparisonPDF(idA, idB);
     });

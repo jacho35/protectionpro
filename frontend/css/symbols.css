@@ -227,6 +227,18 @@ body.dark-mode .annotation-label {
 .af-table tr.af-medium { background: #fffde7; }
 .af-table tr.af-low { background: #e8f5e9; }
 .af-table tr.af-unknown { background: #f5f5f5; }
+
+/* Dark-mode result-table row shading (light pastels are illegible on dark) */
+body.dark-mode .af-table tr.af-danger { background: #3a1f24; }
+body.dark-mode .af-table tr.af-high { background: #3a2a1a; }
+body.dark-mode .af-table tr.af-medium { background: #38341a; }
+body.dark-mode .af-table tr.af-low { background: #1c3320; }
+body.dark-mode .af-table tr.af-unknown { background: #2a2a3c; }
+body.dark-mode .af-table tr.af-danger td,
+body.dark-mode .af-table tr.af-high td,
+body.dark-mode .af-table tr.af-medium td,
+body.dark-mode .af-table tr.af-low td,
+body.dark-mode .af-table tr.af-unknown td { color: #e0e0e8; }
 .af-ppe-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -249,6 +261,7 @@ body.dark-mode .annotation-label {
   margin-bottom: 4px;
   font-size: 13px;
 }
+body.dark-mode .af-warning-item { background: #38341a; color: #e0e0e8; }
 
 /* Arc flash recommendation rows */
 .af-rec-row td { padding: 0 !important; border-top: none !important; }

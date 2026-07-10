@@ -527,7 +527,12 @@ const MobileUI = {
   // ─── Toast notifications ───────────────────────────────────────────────────
 
   showToast(message, duration = 2000) {
-    if (!this.isMobile) return;
+    // Delegate to the shared toast system (single implementation for both
+    // desktop and mobile). Falls back to the legacy element if UI is absent.
+    if (typeof UI !== 'undefined' && UI.toast) {
+      UI.toast(message, 'info', duration);
+      return;
+    }
     const toast = document.getElementById('mobile-toast');
     if (!toast) return;
     toast.textContent = message;

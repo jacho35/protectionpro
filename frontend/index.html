@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="css/properties.css">
   <link rel="stylesheet" href="css/toolbar.css">
   <link rel="stylesheet" href="css/symbols.css">
+  <link rel="stylesheet" href="css/retic.css">
   <link rel="stylesheet" href="css/mobile.css">
 </head>
 <body>
@@ -19,6 +20,12 @@
         <span class="app-title">ProtectionPro</span>
         <span class="project-name-separator">—</span>
         <span class="project-name" id="project-name-display" title="Click to rename">Untitled Project</span>
+
+        <!-- Workspace switcher: SLD canvas vs Reticulation module -->
+        <div class="workspace-switch" role="tablist" aria-label="Workspace">
+          <button id="btn-workspace-sld" class="workspace-tab active" role="tab" aria-selected="true">SLD</button>
+          <button id="btn-workspace-retic" class="workspace-tab" role="tab" aria-selected="false" title="LV reticulation / ADMD demand design">Reticulation</button>
+        </div>
 
         <!-- File Menu -->
         <div class="toolbar-menu" id="menu-file">
@@ -359,7 +366,7 @@
 
     <!-- SVG Canvas -->
     <main id="canvas-container">
-      <svg id="sld-canvas" xmlns="http://www.w3.org/2000/svg">
+      <svg id="sld-canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0" role="application" aria-label="Single-line diagram canvas. Use arrow keys to move between components when focused.">
         <defs>
           <!-- Grid pattern -->
           <pattern id="grid-small" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -459,6 +466,25 @@
 
     <!-- Collapsed-properties expand tab -->
     <div id="properties-expand-tab" class="panel-expand-tab" title="Show Properties panel">&#9666;</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       RETICULATION WORKSPACE (LV distribution / NRS 034-1 ADMD)
+       Hidden until the "Reticulation" workspace tab is selected.
+       Populated by js/retic.js.
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="retic-workspace" style="display:none">
+    <div id="retic-settings-bar" class="retic-settings-bar">
+      <!-- Populated by Retic.renderSettingsBar() -->
+    </div>
+    <div id="retic-body" class="retic-body">
+      <section id="retic-kiosks" class="retic-kiosks">
+        <!-- Kiosk cards populated by Retic.renderKiosks() -->
+      </section>
+      <aside id="retic-summary" class="retic-summary">
+        <!-- Feeder summary populated by Retic.renderSummary() -->
+      </aside>
+    </div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════════
@@ -1108,6 +1134,7 @@
         <button class="settings-tab" data-tab="transformers">Transformer Library</button>
         <button class="settings-tab" data-tab="cbs">CB Library</button>
         <button class="settings-tab" data-tab="fuses">Fuse Library</button>
+        <button class="settings-tab" data-tab="load-classes">Load Classes</button>
         <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
       </div>
       <div class="modal-body">
@@ -1237,6 +1264,37 @@
                 </tr>
               </thead>
               <tbody id="fuse-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Load Classes Tab (NRS 034-1 / CTEF100 ADMD) -->
+        <div id="settings-tab-load-classes" class="settings-tab-content">
+          <div class="library-source-ref">
+            Load classes per CTEF100 Appendix A1 (CoCT-modified NRS 034-1 Table 3, 15-year) and NRS 034-1 Table 3a. Used by the Reticulation workspace for ADMD demand estimation. α/β/c are Herman-Beta parameters; ADMD is per-consumer after-diversity maximum demand.
+          </div>
+          <div class="library-toolbar">
+            <button id="btn-add-loadclass" class="btn-small">+ Add Class</button>
+            <button id="btn-reset-loadclasses" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="loadclass-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Label</th>
+                  <th>LSM</th>
+                  <th>α</th>
+                  <th>β</th>
+                  <th>c</th>
+                  <th>ADMD (kVA)</th>
+                  <th>μ (A)</th>
+                  <th>σ (A)</th>
+                  <th>Phase</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="loadclass-library-body">
                 <!-- Populated by JS -->
               </tbody>
             </table>
@@ -1902,6 +1960,7 @@
   <script src="js/lib/jspdf.plugin.autotable.min.js"></script>
   <script src="js/lib/xlsx.full.min.js"></script>
   <script src="js/constants.js"></script>
+  <script src="js/ui.js"></script>
   <script src="js/state.js"></script>
   <script src="js/components.js"></script>
   <script src="js/voltage.js"></script>
@@ -1923,6 +1982,8 @@
   <script src="js/minimap.js"></script>
   <script src="js/contextmenu.js"></script>
   <script src="js/dbschedule.js"></script>
+  <script src="js/retic.js"></script>
+  <script src="js/retic-report.js"></script>
   <script src="js/app.js"></script>
   <script src="js/mobile.js"></script>
 </body>

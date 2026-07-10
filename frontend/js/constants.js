@@ -135,6 +135,36 @@ const STANDARD_TRANSFORMERS = [
   { id: 'xfmr_20mva_132', name: '20 MVA 132/11kV',     rated_mva: 20,     voltage_hv_kv: 132, voltage_lv_kv: 11,   z_percent: 10.0, x_r_ratio: 20,  vector_group: 'YNd11' },
 ];
 
+// ─── NRS 034-1 / CTEF100 Load-Class Library (ADMD demand estimation) ───
+// Residential consumer classes for After-Diversity Maximum Demand (ADMD)
+// reticulation design. Herman-Beta parameters a=α, b=β, c=scaling; admd is the
+// per-consumer After-Diversity Maximum Demand (kVA); mu/sigma are the Normal-
+// approximation mean/std-dev currents (A). phase 1 = single-phase (per consumer),
+// phase 3 = three-phase (parameters are per-phase). Editable via Settings and sent
+// to the backend /api/analysis/admd engine as loadClassLib.
+// Source: CTEF100 Appendix A1 (CoCT-modified NRS 034-1 Table 3, 15-year) and
+// NRS 034-1 Table 3a reference values.
+const STANDARD_LOAD_CLASSES = [
+  // CTEF100 Appendix A1 (active default set)
+  { id: 'informal',      label: 'Informal Settlement',      lsm: '3-4', a: 0.87, b: 4.61, c: 40, admd: 1.46, mu: 6.33,  sigma: 5.73,  phase: 1 },
+  { id: 'township',      label: 'Township Area',            lsm: '5-6', a: 0.98, b: 2.41, c: 40, admd: 2.66, mu: 11.54, sigma: 8.65,  phase: 1 },
+  { id: 'urban1',        label: 'Urban Residential I',      lsm: '7',   a: 1.22, b: 2.96, c: 60, admd: 4.04, mu: 17.48, sigma: 11.98, phase: 1 },
+  { id: 'urban2',        label: 'Urban Residential II',     lsm: '8-9', a: 1.05, b: 1.70, c: 60, admd: 5.31, mu: 22.98, sigma: 15.06, phase: 1 },
+  { id: 'upmarket1',     label: 'Urban Upmarket I',         lsm: '10',  a: 0.94, b: 1.25, c: 60, admd: 5.96, mu: 25.80, sigma: 16.64, phase: 1 },
+  { id: 'upmarket1_3ph', label: 'Urban Upmarket I (3Φ)',    lsm: '10',  a: 0.54, b: 3.25, c: 60, admd: 1.99, mu: 8.60,  sigma: 9.61,  phase: 3 },
+  { id: 'upmarket2_3ph', label: 'Urban Upmarket II (3Φ)',   lsm: '>10', a: 0.50, b: 2.12, c: 60, admd: 2.65, mu: 11.47, sigma: 12.39, phase: 3 },
+  // NRS 034-1 Table 3a reference values
+  { id: 'ruralSet',      label: 'Rural Settlement',         lsm: '1',   a: 0.35, b: 2.88, c: 20, admd: 0.50, mu: 2.17,  sigma: 3.03,  phase: 1 },
+  { id: 'ruralVil',      label: 'Rural Village',            lsm: '1-2', a: 0.48, b: 2.13, c: 20, admd: 0.84, mu: 3.65,  sigma: 4.07,  phase: 1 },
+  { id: 'urbanTwn_nrs',  label: 'Urban Townhouse Complex',  lsm: '8',   a: 1.42, b: 4.13, c: 80, admd: 4.70, mu: 20.43, sigma: 13.63, phase: 1 },
+  { id: 'urbanEst_nrs',  label: 'Urban Multi-Storey/Estate',lsm: '8+',  a: 1.37, b: 3.39, c: 80, admd: 5.30, mu: 23.04, sigma: 15.09, phase: 1 },
+];
+
+// Diversity/unbalance correction-factor method names (Empirical method only).
+// The actual DCF/UCF formulae live in the backend engine (admd.py).
+const LOAD_CLASS_CORRECTIONS = ['AMEU', 'British', 'None'];
+const ESTIMATION_METHODS = ['Empirical', 'Herman Beta'];
+
 // ─── IEC 60364-5-52 Standards Database ───
 // Reference installation methods per Table B.52.1
 const IEC_INSTALLATION_METHODS = [
@@ -489,26 +519,37 @@ function buildDistanceRelayZones(props) {
 }
 
 // ─── IEC 60269 Fuse Curves (gG General Purpose) ───
-// Pre-arcing (minimum melting) time-current points: [current_A, time_s]
-// Based on IEC 60269-1 characteristic data for gG fuses
+// Pre-arcing (minimum melting) time-current points: [current_A, time_s].
+//
+// One generic gG characteristic shape scaled per rating (I/In multiples):
+//   1.6→600s  2→100s  2.5→30s  3.15→8s  5→1.5s  6.3→0.5s
+//   8→0.1s    10→0.04s  16→0.01s  25→0.004s
+// The fast end is anchored so the pre-arcing time reaches 0.1 s at 8×In,
+// satisfying the IEC 60269-1 0.1 s pre-arcing gate (e.g. a 100 A gG link
+// clears in ≤0.1 s by its ~820 A gate current). The previous shape only
+// reached 0.1 s near 10×In and interpolated ~0.17 s at the gate.
+// NOTE: this is a single representative family, not the per-rating min/max
+// gate corridor of IEC 60269-1 Table 4; use manufacturer data for precise
+// grading. Currents are R10 standard values (= multiple × In rounded).
+// Mirrored VERBATIM in backend/analysis/arcflash.py `_FUSE_CURVES_GG`.
 const FUSE_CURVES_GG = {
-  16:   [[25,600],[32,100],[40,30],[50,8],[80,1.5],[100,0.5],[160,0.08],[250,0.02],[400,0.008]],
-  20:   [[32,600],[40,100],[50,30],[63,8],[100,1.5],[125,0.5],[200,0.08],[315,0.02],[500,0.008]],
-  25:   [[40,600],[50,100],[63,30],[80,8],[125,1.5],[160,0.5],[250,0.08],[400,0.02],[630,0.008]],
-  32:   [[50,600],[63,100],[80,30],[100,8],[160,1.5],[200,0.5],[315,0.08],[500,0.02],[800,0.008]],
-  40:   [[63,600],[80,100],[100,30],[125,8],[200,1.5],[250,0.5],[400,0.08],[630,0.02],[1000,0.008]],
-  50:   [[80,600],[100,100],[125,30],[160,8],[250,1.5],[315,0.5],[500,0.08],[800,0.02],[1250,0.008]],
-  63:   [[100,600],[125,100],[160,30],[200,8],[315,1.5],[400,0.5],[630,0.08],[1000,0.02],[1600,0.008]],
-  80:   [[125,600],[160,100],[200,30],[250,8],[400,1.5],[500,0.5],[800,0.08],[1250,0.02],[2000,0.008]],
-  100:  [[160,600],[200,100],[250,30],[315,8],[500,1.5],[630,0.5],[1000,0.08],[1600,0.02],[2500,0.008]],
-  125:  [[200,600],[250,100],[315,30],[400,8],[630,1.5],[800,0.5],[1250,0.08],[2000,0.02],[3150,0.008]],
-  160:  [[250,600],[315,100],[400,30],[500,8],[800,1.5],[1000,0.5],[1600,0.08],[2500,0.02],[4000,0.008]],
-  200:  [[315,600],[400,100],[500,30],[630,8],[1000,1.5],[1250,0.5],[2000,0.08],[3150,0.02],[5000,0.008]],
-  250:  [[400,600],[500,100],[630,30],[800,8],[1250,1.5],[1600,0.5],[2500,0.08],[4000,0.02],[6300,0.008]],
-  315:  [[500,600],[630,100],[800,30],[1000,8],[1600,1.5],[2000,0.5],[3150,0.08],[5000,0.02],[8000,0.008]],
-  400:  [[630,600],[800,100],[1000,30],[1250,8],[2000,1.5],[2500,0.5],[4000,0.08],[6300,0.02],[10000,0.008]],
-  500:  [[800,600],[1000,100],[1250,30],[1600,8],[2500,1.5],[3150,0.5],[5000,0.08],[8000,0.02],[12500,0.008]],
-  630:  [[1000,600],[1250,100],[1600,30],[2000,8],[3150,1.5],[4000,0.5],[6300,0.08],[10000,0.02],[16000,0.008]],
+  16:  [[25,600],[32,100],[40,30],[50,8],[80,1.5],[100,0.5],[125,0.1],[160,0.04],[250,0.01],[400,0.004]],
+  20:  [[32,600],[40,100],[50,30],[63,8],[100,1.5],[125,0.5],[160,0.1],[200,0.04],[315,0.01],[500,0.004]],
+  25:  [[40,600],[50,100],[63,30],[80,8],[125,1.5],[160,0.5],[200,0.1],[250,0.04],[400,0.01],[630,0.004]],
+  32:  [[50,600],[63,100],[80,30],[100,8],[160,1.5],[200,0.5],[250,0.1],[315,0.04],[500,0.01],[800,0.004]],
+  40:  [[63,600],[80,100],[100,30],[125,8],[200,1.5],[250,0.5],[315,0.1],[400,0.04],[630,0.01],[1000,0.004]],
+  50:  [[80,600],[100,100],[125,30],[160,8],[250,1.5],[315,0.5],[400,0.1],[500,0.04],[800,0.01],[1250,0.004]],
+  63:  [[100,600],[125,100],[160,30],[200,8],[315,1.5],[400,0.5],[500,0.1],[630,0.04],[1000,0.01],[1600,0.004]],
+  80:  [[125,600],[160,100],[200,30],[250,8],[400,1.5],[500,0.5],[630,0.1],[800,0.04],[1250,0.01],[2000,0.004]],
+  100: [[160,600],[200,100],[250,30],[315,8],[500,1.5],[630,0.5],[800,0.1],[1000,0.04],[1600,0.01],[2500,0.004]],
+  125: [[200,600],[250,100],[315,30],[400,8],[630,1.5],[800,0.5],[1000,0.1],[1250,0.04],[2000,0.01],[3150,0.004]],
+  160: [[250,600],[315,100],[400,30],[500,8],[800,1.5],[1000,0.5],[1250,0.1],[1600,0.04],[2500,0.01],[4000,0.004]],
+  200: [[315,600],[400,100],[500,30],[630,8],[1000,1.5],[1250,0.5],[1600,0.1],[2000,0.04],[3150,0.01],[5000,0.004]],
+  250: [[400,600],[500,100],[630,30],[800,8],[1250,1.5],[1600,0.5],[2000,0.1],[2500,0.04],[4000,0.01],[6300,0.004]],
+  315: [[500,600],[630,100],[800,30],[1000,8],[1600,1.5],[2000,0.5],[2500,0.1],[3150,0.04],[5000,0.01],[8000,0.004]],
+  400: [[630,600],[800,100],[1000,30],[1250,8],[2000,1.5],[2500,0.5],[3150,0.1],[4000,0.04],[6300,0.01],[10000,0.004]],
+  500: [[800,600],[1000,100],[1250,30],[1600,8],[2500,1.5],[3150,0.5],[4000,0.1],[5000,0.04],[8000,0.01],[12500,0.004]],
+  630: [[1000,600],[1250,100],[1600,30],[2000,8],[3150,1.5],[4000,0.5],[5000,0.1],[6300,0.04],[10000,0.01],[16000,0.004]],
 };
 
 // Get the gG pre-arcing curve points for an arbitrary rating.
@@ -852,6 +893,26 @@ const FIELD_INFO = {
   'surge_arrester.mcov_kv': 'Default MCOV = 8.4 kV (for 11 kV system, ratio ≈ 0.76).\nSource: IEC 60099-4 §5.2 — maximum continuous operating voltage.\nMCOV ≥ Um / √3 for grounded systems.',
 };
 
+// ─── Distribution Board — default circuit load types ───
+// Presets used by the DB circuit-schedule editor (DBSchedule) to pre-fill a
+// way from a common load. `va` is the connected VA per unit; `unit` is the
+// counted item (a lighting "point", a "socket", …). `df` is the per-way
+// demand factor (IEC 60439/61439 typical: lighting 1.0, socket outlets 0.4,
+// motor groups 0.5–0.8). `per_circuit` is the default number of units when a
+// whole circuit is added at once. Breaker/curve/cable follow SANS 10142-1
+// common practice for a domestic/commercial LV board.
+const DB_LOAD_TYPES = [
+  { key: 'lighting',   label: 'Lighting',          va: 100,  unit: 'point',   df: 1.0, poles: '1P', breaker_a: 10, curve: 'B', cable_mm2: 1.5, per_circuit: 10 },
+  { key: 'socket',     label: 'Socket Outlet',     va: 200,  unit: 'socket',  df: 0.4, poles: '1P', breaker_a: 20, curve: 'B', cable_mm2: 2.5, per_circuit: 6 },
+  { key: 'geyser',     label: 'Geyser',            va: 3000, unit: 'geyser',  df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'stove',      label: 'Stove / Oven',      va: 6000, unit: 'stove',   df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1 },
+  { key: 'aircon',     label: 'Air Conditioner',   va: 2500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'ev_charger', label: 'EV Charger',        va: 7400, unit: 'charger', df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1 },
+  { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+];
+
 const COMPONENT_DEFS = {
   // --- Sources ---
   utility: {
@@ -1039,6 +1100,7 @@ const COMPONENT_DEFS = {
       { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5, section: 'arcflash' },
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'], section: 'arcflash' },
       { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10, section: 'arcflash' },
+      { key: 'system_grounded', label: 'System Grounding', type: 'select', options: ['unknown', 'grounded', 'ungrounded'], section: 'arcflash' },
       { key: 'soil_resistivity', label: 'Soil Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding' },
       { key: 'grid_length', label: 'Grid Length', type: 'number', unit: 'm', section: 'grounding' },
       { key: 'grid_width', label: 'Grid Width', type: 'number', unit: 'm', section: 'grounding' },

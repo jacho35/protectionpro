@@ -16,7 +16,7 @@
   --bg-tertiary: #ebedf0;
   --text-primary: #1a1a2e;
   --text-secondary: #555;
-  --text-muted: #888;
+  --text-muted: #6d6d6d;
   --border-color: #d0d0d0;
   --accent: #0078d7;
   --accent-hover: #005fa3;
@@ -42,6 +42,10 @@ body.dark-mode {
   --success: #69db7c;
   --warning: #ffd43b;
 }
+
+/* Keyboard focus ring on the canvas (only when reached via keyboard) */
+#sld-canvas:focus { outline: none; }
+#sld-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Dark mode SVG canvas adjustments */
 body.dark-mode #sld-canvas { background: #1a1a2a; }
@@ -76,6 +80,103 @@ html, body {
   height: calc(100vh - var(--toolbar-height));
   overflow: hidden;
 }
+
+/* ─── Toast notifications (shared desktop + mobile via UI.toast) ─────────────── */
+#toast-container {
+  position: fixed;
+  bottom: calc(var(--status-height) + 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: 420px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #fff;
+  background: #333;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.28);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  border-left: 4px solid rgba(255,255,255,0.5);
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast-info { background: #2c3140; border-left-color: var(--accent); }
+.toast-success { background: #1e3a24; border-left-color: var(--success); }
+.toast-warning { background: #3a2f12; border-left-color: var(--warning); }
+.toast-error { background: #3a1c1c; border-left-color: var(--danger); }
+
+/* ─── Global analysis-busy overlay (UI.setBusy) ─────────────────────────────── */
+#busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 22, 30, 0.28);
+  cursor: progress;
+}
+#busy-overlay.visible { display: flex; }
+.busy-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 30px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+.busy-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--bg-tertiary);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: busy-spin 0.7s linear infinite;
+}
+@keyframes busy-spin { to { transform: rotate(360deg); } }
+.busy-label { font-size: 13px; font-weight: 500; }
+
+/* ─── Shared modal dialogs (UI.alert / UI.confirm / UI.prompt) ──────────────── */
+.ui-dialog-content { min-width: 360px; max-width: 480px; }
+.ui-dialog-message { white-space: pre-wrap; line-height: 1.5; margin: 0; }
+.ui-dialog-input {
+  width: 100%;
+  margin-top: 14px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font-family);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.ui-dialog-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0,120,215,0.15);
+}
+.ui-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.ui-dialog-danger { background: var(--danger); }
+.ui-dialog-danger:hover { background: #b71c1c; }
 
 /* Distribution board schedule modal: wide table, comfortable entry boxes */
 .modal-content.db-modal-content { max-width: 1280px; width: 96%; }

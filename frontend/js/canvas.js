@@ -365,10 +365,15 @@ const Canvas = {
     // Check if clicked on a component port (for wiring)
     const portEl = e.target.closest('[data-port]');
     if (portEl && AppState.mode === MODE.SELECT) {
-      // Start wiring from this port
+      // Start wiring from this port. Give explicit feedback since we're
+      // starting a wire outside Wire mode — otherwise it looks like nothing
+      // happened (or a drag) to the user.
       const compEl = portEl.closest('.sld-component');
       const compId = compEl.dataset.id;
       const portId = portEl.dataset.port;
+      this.svg.classList.add('wiring');
+      document.getElementById('status-info').textContent =
+        'Wiring from port — click a target port to connect, or press Esc to cancel.';
       Wiring.startWire(compId, portId, worldPt);
       return;
     }
@@ -1575,6 +1580,27 @@ const Canvas = {
     AppState.zoom = zoom;
     AppState.panX = (svgW - dw * zoom) / 2 - (minX - padding) * zoom;
     AppState.panY = (svgH - dh * zoom) / 2 - (minY - padding) * zoom;
+    this.updateTransform();
+  },
+
+  // Pan so the given component sits at the viewport centre (zoom unchanged).
+  // With { onlyIfOffscreen: true }, only pans when the component is currently
+  // outside the visible area — used by keyboard navigation.
+  centerOnComponent(id, opts = {}) {
+    const comp = AppState.components.get(id);
+    if (!comp) return;
+    const rect = this.svg.getBoundingClientRect();
+    const z = AppState.zoom;
+    if (opts.onlyIfOffscreen) {
+      const screenX = comp.x * z + AppState.panX;
+      const screenY = comp.y * z + AppState.panY;
+      const margin = 40;
+      const inView = screenX >= margin && screenX <= rect.width - margin &&
+                     screenY >= margin && screenY <= rect.height - margin;
+      if (inView) return;
+    }
+    AppState.panX = rect.width / 2 - comp.x * z;
+    AppState.panY = rect.height / 2 - comp.y * z;
     this.updateTransform();
   },
 };
