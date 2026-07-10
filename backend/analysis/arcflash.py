@@ -173,7 +173,7 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
 
 
 def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
-                         config="VCB", enclosure_mm=508):
+                         config="VCB", enclosure_mm=508, grounded=False):
     """Calculate incident energy per IEEE 1584-2002 Eq. 3-5.
 
     IEEE 1584-2002:
@@ -206,8 +206,11 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
 
     # K1: configuration factor
     K1 = -0.792 if config in ("VOA", "HOA") else -0.555
-    # K2: grounding factor (assume ungrounded/HRG = 0)
-    K2 = 0
+    # K2: grounding factor (IEEE 1584-2002 Eq. 3): −0.113 for grounded
+    # systems, 0 for ungrounded/high-resistance-grounded. Defaulting to 0
+    # when the system grounding is unknown is conservative (overstates energy
+    # by ~30% for grounded systems).
+    K2 = -0.113 if grounded else 0
 
     # Normalized incident energy at 610mm, 0.2s (IEEE 1584-2002 Eq. 3)
     log_en = K1 + K2 + 1.081 * math.log10(iarc_ka) + 0.0011 * gap_mm
@@ -240,7 +243,7 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
 
 def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
                             config="VCB", enclosure_mm=508,
-                            threshold_cal=1.2):
+                            threshold_cal=1.2, grounded=False):
     """Calculate arc flash boundary distance per IEEE 1584-2002.
 
     The arc flash boundary is the distance where incident energy
@@ -267,7 +270,7 @@ def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
     for _ in range(50):
         mid = (low + high) / 2
         e = calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, mid,
-                                 config, enclosure_mm)
+                                 config, enclosure_mm, grounded)
         if e > threshold_cal:
             low = mid
         else:
@@ -697,6 +700,11 @@ def run_arc_flash(project_data, fault_results):
             )
         warn = "; ".join(validity_warnings)
 
+        # System grounding for the K2 factor (IEEE 1584-2002 Eq. 3). Unknown
+        # → treated as ungrounded (K2=0), which is conservative.
+        grounded = str(bus.props.get("system_grounded", "unknown")).lower() in (
+            "grounded", "solidly", "effectively", "yes", "true")
+
         # Calculate arcing current
         iarc, iarc_reduced = calc_arcing_current(ibf_ka, voltage_kv, gap_mm,
                                                   electrode_config)
@@ -707,17 +715,20 @@ def run_arc_flash(project_data, fault_results):
 
         # Incident energy at working distance
         e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
-                                     working_dist, electrode_config, enclosure_mm)
+                                     working_dist, electrode_config,
+                                     enclosure_mm, grounded)
 
-        # Reduced arcing current check: the lower current may sit below
-        # instantaneous pickups, slowing protection. Lacking full TCC
-        # evaluation at the reduced current, t × 1.5 is applied as a
-        # conservative assumption (capped at the 2s IEEE 1584 maximum).
-        t_clear_reduced = min(t_clear * 1.5, 2.0)
+        # Reduced arcing current check (IEEE 1584-2002 §5.5): the lower current
+        # may sit below instantaneous pickups, slowing protection. Re-evaluate
+        # the actual protective-device TCC at the reduced current rather than
+        # scaling t_clear by a fixed heuristic — the true ratio for an IDMT
+        # relay near pickup can be several×, not 1.5×.
+        t_clear_reduced = get_clearing_time(bus, components, adjacency,
+                                            iarc_reduced)
         e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
                                               t_clear_reduced, gap_mm,
                                               working_dist, electrode_config,
-                                              enclosure_mm)
+                                              enclosure_mm, grounded)
 
         # Use worst case (higher energy)
         e_worst = max(e_cal, e_cal_reduced)
@@ -726,10 +737,12 @@ def run_arc_flash(project_data, fault_results):
         # current (the reduced current clears more slowly, so it can push the
         # boundary further out) and report the worst (largest) distance.
         afb_full = calc_arc_flash_boundary(iarc, voltage_kv, t_clear, gap_mm,
-                                           electrode_config, enclosure_mm)
+                                           electrode_config, enclosure_mm,
+                                           grounded=grounded)
         afb_reduced = calc_arc_flash_boundary(iarc_reduced, voltage_kv,
                                               t_clear_reduced, gap_mm,
-                                              electrode_config, enclosure_mm)
+                                              electrode_config, enclosure_mm,
+                                              grounded=grounded)
         afb = max(afb_full, afb_reduced)
 
         # PPE category

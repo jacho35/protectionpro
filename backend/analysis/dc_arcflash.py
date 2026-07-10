@@ -296,7 +296,21 @@ def run_dc_arc_flash(project_data, fault_results):
             )
             continue
 
-        ibf_ka = fault_bus.ik3  # 3-phase / DC bolted fault current in kA
+        # DC bolted fault current. A genuine DC bus has no 3-phase fault; the
+        # correct input is the DC bolted fault from the battery/rectifier
+        # source impedance. Use an explicit `dc_bolted_fault_ka` prop when the
+        # user supplies one; otherwise fall back to the AC 3-phase result as an
+        # approximation and warn — it has no rigorous DC meaning.
+        dc_bolted_ka = float(bus.props.get("dc_bolted_fault_ka", 0) or 0)
+        if dc_bolted_ka > 0:
+            ibf_ka = dc_bolted_ka
+        else:
+            ibf_ka = fault_bus.ik3  # AC 3-phase result used as a stand-in
+            warnings.append(
+                f"Bus '{bus_name}': no DC bolted fault current specified — using "
+                f"the AC 3-phase fault result ({ibf_ka:.1f} kA) as an approximation. "
+                "Set a DC fault level (dc_bolted_fault_ka) for a valid DC result."
+            )
         ibf_a = ibf_ka * 1000.0
 
         # Validate DC applicability

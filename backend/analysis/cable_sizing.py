@@ -333,6 +333,7 @@ def _nec_ampacity(size_mm2, conductor='Cu', insulation='XLPE'):
 
 # Transparent types that do not form a bus boundary
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester"}
+_SOURCE_TYPES = {"utility", "generator", "solar_pv", "wind_turbine"}
 
 
 def _build_adjacency(project):
@@ -422,10 +423,45 @@ def _get_cable_props(cable):
     }
 
 
+def _leads_to_source(start_id, cable_id, adj, comp_map):
+    """True if a source is reachable from start_id without passing back
+    through cable_id — i.e. start_id is on the source side of the cable.
+    Mirrors the arcflash engine's source-side check."""
+    visited = {cable_id, start_id}
+    stack = [start_id]
+    while stack:
+        nid = stack.pop()
+        comp = comp_map.get(nid)
+        if not comp:
+            continue
+        if comp.type in _SOURCE_TYPES:
+            return True
+        # An open CB/switch carries no current — don't traverse through it.
+        if comp.type in ("cb", "switch") and comp.props.get("state") == "open":
+            continue
+        for neighbor_id, _w in adj.get(nid, []):
+            if neighbor_id not in visited:
+                visited.add(neighbor_id)
+                stack.append(neighbor_id)
+    return False
+
+
 def _find_upstream_cb(cable_id, adj, comp_map):
-    """Find the nearest upstream circuit breaker or fuse for fault clearing time."""
+    """Find the nearest SOURCE-SIDE circuit breaker or fuse whose clearing
+    time governs a fault on/beyond the cable.
+
+    A feeder cable can carry a protective device on both ends (e.g. an
+    incomer on the source side and a downstream feeder CB). Only the
+    source-side device clears the cable's through-fault; the load-side
+    device sees no fault current for it. The previous walk returned the
+    first CB/fuse found in either direction, which could be the wrong
+    (load-side) device and thus the wrong clearing time for the adiabatic
+    withstand check. Prefer a device that lies on a path to a source; fall
+    back to any device if none is on a resolvable source side (e.g. no
+    source modelled)."""
     visited = {cable_id}
     stack = list(adj.get(cable_id, []))
+    fallback = None
     while stack:
         nid, _ = stack.pop()
         if nid in visited:
@@ -434,15 +470,17 @@ def _find_upstream_cb(cable_id, adj, comp_map):
         comp = comp_map.get(nid)
         if not comp:
             continue
-        if comp.type == "cb":
-            return comp
-        if comp.type == "fuse":
-            return comp
+        if comp.type in ("cb", "fuse"):
+            if _leads_to_source(nid, cable_id, adj, comp_map):
+                return comp  # source-side device governs the through-fault
+            if fallback is None:
+                fallback = comp  # remember; use only if no source-side device
+            continue  # don't traverse past a load-side device
         if comp.type in TRANSPARENT_TYPES or comp.type == "bus":
             for next_id, w in adj.get(nid, []):
                 if next_id not in visited:
                     stack.append((next_id, w))
-    return None
+    return fallback
 
 
 def _estimate_clearing_time(cb_comp):

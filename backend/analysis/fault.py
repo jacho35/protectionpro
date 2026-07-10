@@ -883,6 +883,16 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             return
 
         if comp.type == "utility":
+            # A zero-sequence source only exists if the utility neutral is
+            # grounded (IEC 60909-0 §6.4). An ungrounded/isolated neutral has
+            # Z0 → ∞ and must NOT feed an SLG/LLG fault — otherwise the earth-
+            # fault current is overstated (non-conservative for relay reach).
+            # Default "solidly" preserves prior behaviour; users model
+            # impedance grounding by raising z0_z1_ratio. Mirrors the
+            # transformer neutral gating and the unbalanced-LF utility check.
+            grounding = str(comp.props.get("grounding", "solidly")).lower()
+            if grounding in ("ungrounded", "isolated", "none", "unearthed"):
+                return
             z_src = _utility_impedance(comp, base_mva)
             # Use z0_z1_ratio to derive Z0 from Z1, with legacy "x0_ratio" fallback
             z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
@@ -1215,22 +1225,24 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
             ib_total += ik_path_ka
 
         elif source_type == "generator":
-            # SIMPLIFICATION: I"kG/IrG is approximated as c/x"d on the
-            # generator base, i.e. the machine-terminal fault ratio. The
-            # external network impedance between generator and fault point
-            # is ignored, which overstates the ratio for remote faults
-            # (lower μ → Ib understated). IEC 60909-0 §9.1.1 defines the
-            # ratio at the actual fault location.
-            xd_pp = path.get("xd_pp", 0.15)
-            ik_over_ir = c_factor / xd_pp  # ≈ 1.1/0.15 ≈ 7.3 typical
+            # I"kG/IrG evaluated at the FAULT POINT per IEC 60909-0 §9.1.1:
+            # the p.u. fault current on the system base, referred to the
+            # machine's rated current (× base_mva/rated_mva). This accounts
+            # for the external impedance between the machine and the fault
+            # (for a terminal fault it reduces to c/x"d). Using the machine-
+            # terminal ratio c/x"d overstates the ratio for remote faults,
+            # giving too small a μ and understating Ib.
+            rated_mva = path.get("rated_mva", 10)
+            ik_over_ir = (ik_path_pu * base_mva / rated_mva if rated_mva > 1e-6
+                          else c_factor / path.get("xd_pp", 0.15))
             mu = _mu_factor(ik_over_ir, t_min)
             ib_total += mu * ik_path_ka
 
         elif source_type == "motor_synchronous":
-            # Synchronous motors: same μ formula as generators
-            # (same terminal-ratio simplification as the generator branch above)
-            xd_pp = path.get("xd_pp", 0.15)
-            ik_over_ir = c_factor / xd_pp
+            # Synchronous motors: same fault-point ratio as the generator branch.
+            rated_mva = path.get("rated_mva", 0.5)
+            ik_over_ir = (ik_path_pu * base_mva / rated_mva if rated_mva > 1e-6
+                          else c_factor / path.get("xd_pp", 0.15))
             mu = _mu_factor(ik_over_ir, t_min)
             ib_total += mu * ik_path_ka
 
@@ -1266,8 +1278,10 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
                 ib_total += mu * q * ik_path_ka
             else:
                 # Type 3 DFIG: partial converter, use μ factor like generator
-                xd_pp = path.get("xd_pp", 0.20)
-                ik_over_ir = c_factor / xd_pp if xd_pp > 1e-6 else 5
+                # with the fault-point I"k/Ir ratio (see the generator branch).
+                rated_mva = path.get("rated_mva", 2.0)
+                ik_over_ir = (ik_path_pu * base_mva / rated_mva if rated_mva > 1e-6
+                              else c_factor / path.get("xd_pp", 0.20))
                 mu = _mu_factor(ik_over_ir, t_min)
                 ib_total += mu * ik_path_ka
 

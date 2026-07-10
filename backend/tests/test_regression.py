@@ -89,6 +89,52 @@ class TestFaultAnalysis:
         kappa = 1.02 + 0.98 * math.exp(-3.0 / 15.0)
         assert bus.ip / bus.ik3 == pytest.approx(kappa * math.sqrt(2), rel=0.02)
 
+    def test_ll_fault_is_root3_over_2_of_3ph(self):
+        """[F25] Line-to-line fault, IEC 60909-0 §7.4: with Z1 = Z2,
+        IkLL = c·√3/|Z1+Z2| = (√3/2)·(c/|Z1|) = (√3/2)·Ik3 ≈ 0.866·Ik3.
+
+        No LL test existed before — the F1 angle error went undetected for
+        want of one. This pins the magnitude.
+        """
+        res = run_fault_analysis(_utility_bus_project())
+        bus = res.buses["bus-1"]
+        assert bus.ikLL == pytest.approx(bus.ik3 * math.sqrt(3) / 2, rel=0.02)
+
+    def test_slg_with_z0_double_z1(self):
+        """[F25] SLG with Z0 = 2·Z1 (Z2 = Z1): Ik1 = 3c/|Z1+Z2+Z0|
+        = 3c/(4|Z1|) = 0.75·(c/|Z1|) = 0.75·Ik3. Non-degenerate check that
+        complements the Z0=Z1 case."""
+        res = run_fault_analysis(_utility_bus_project(z0_z1=2.0))
+        bus = res.buses["bus-1"]
+        assert bus.ik1 == pytest.approx(0.75 * bus.ik3, rel=0.03)
+
+    def test_llg_earth_current_with_z0_double_z1(self):
+        """[F25] Double line-to-ground earth current, IEC 60909-0 §9:
+        I"kE2E = |3·Ia0| = 3c·Z2/(Z1·Z2 + Z1·Z0 + Z2·Z0). With Z2 = Z1 and
+        Z0 = 2·Z1 → 3c·Z/(Z²+2Z²+2Z²) = 0.6·(c/|Z1|) = 0.6·Ik3."""
+        res = run_fault_analysis(_utility_bus_project(z0_z1=2.0))
+        bus = res.buses["bus-1"]
+        assert bus.ikLLG == pytest.approx(0.6 * bus.ik3, rel=0.03)
+
+    def test_ungrounded_utility_has_no_earth_fault(self):
+        """[F12] An ungrounded utility neutral has Z0 → ∞: no zero-sequence
+        source, so SLG current ≈ 0 and the LLG earth current degenerates to
+        the line-to-line value. Guards against the non-conservative pre-fix
+        behaviour that reported SLG ≈ Ik3 regardless of grounding."""
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+                "x_r_ratio": 15.0, "z0_z1_ratio": 1.0, "grounding": "ungrounded",
+            }),
+            _comp("bus-1", "bus", {"name": "Main Bus", "voltage_kv": 11.0}),
+        ]
+        proj = ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=[_wire("w1", "utility-1", "bus-1")])
+        bus = run_fault_analysis(proj).buses["bus-1"]
+        assert bus.ik3 > 0  # three-phase fault is unaffected by grounding
+        assert bus.ik1 == pytest.approx(0.0, abs=1e-6)  # no earth-fault path
+        assert bus.ikLLG == pytest.approx(bus.ikLL, rel=0.02)  # degenerates to LL
+
 
 # ── IEEE 1584-2002 arc flash ─────────────────────────────────────────────
 

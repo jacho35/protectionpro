@@ -57,7 +57,7 @@ backend/
 ├── analysis/
 │   ├── fault.py            # IEC 60909 short-circuit (3-phase, SLG, LL, LLG)
 │   ├── loadflow.py         # Newton-Raphson & Gauss-Seidel solvers
-│   ├── arcflash.py         # IEEE 1584-2018 arc flash incident energy
+│   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
 │   ├── duty_check.py       # Equipment fault current rating validation
@@ -128,7 +128,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 |---|---|---|
 | `/api/analysis/fault` | Short-circuit | IEC 60909 |
 | `/api/analysis/loadflow` | Power flow | Newton-Raphson / Gauss-Seidel |
-| `/api/analysis/arcflash` | Arc flash | IEEE 1584-2018 |
+| `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
 | `/api/analysis/duty-check` | Equipment duty | Fault current ratings |
@@ -203,7 +203,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Outputs: bus voltages/angles, branch MW/MVAR flows, losses
 
 ### Arc Flash (arcflash.py)
-- IEEE 1584-2018 method
+- IEEE 1584-2002 method (the engine docstring is explicit; 2018 is not implemented)
 - Calculates arcing current, incident energy at working distance
 - Determines PPE category (1-4) and arc flash boundary
 - Gap selection based on equipment type and voltage class
