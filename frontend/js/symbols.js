@@ -408,19 +408,21 @@ const Symbols = {
       </g>`;
   },
 
-  // NO contact: fixed terminals with the moving piece swung away
-  _ctlContactBase(h, closed, cross) {
+  // Contact base: fixed terminals ±8 from centre; the moving piece is a
+  // group pivoted at the bottom terminal (0,8) so ControlSim can swing it
+  // open/closed via CSS classes (.ctl-open / .ctl-closed) with a transition.
+  // restClosed picks the de-energized rest class; ncBar draws the NC marker.
+  _ctlContactBase(h, restClosed, ncBar) {
     const hh = h / 2;
-    // Terminals reach ±8 from centre; moving contact between them
-    const moving = closed
-      ? `<line x1="0" y1="-8" x2="0" y2="8"/>`
-      : `<line x1="0" y1="8" x2="-7" y2="-8"/>`;
-    // NC indicator: bar across the fixed terminal end
-    const bar = cross ? `<line x1="-5" y1="-8" x2="5" y2="-8"/>` : '';
+    const bar = ncBar ? `<line x1="-5" y1="-8" x2="5" y2="-8"/>` : '';
     return `
       <line x1="0" y1="${-hh}" x2="0" y2="-8"/>
       <line x1="0" y1="8" x2="0" y2="${hh}"/>
-      ${moving}${bar}`;
+      <g transform="translate(0,8)">
+        <g class="ctl-moving ${restClosed ? 'ctl-mv-nc' : 'ctl-mv-no'}">
+          <line x1="0" y1="0" x2="0" y2="-16"/>
+        </g>
+      </g>${bar}`;
   },
 
   ctl_pb_no(w, h) {
@@ -428,7 +430,7 @@ const Symbols = {
     return `
       <g class="symbol-control">
         ${this._ctlContactBase(h, false, false)}
-        <line x1="-3.5" y1="0" x2="-11" y2="0" stroke-dasharray="2,2"/>
+        <line x1="-2" y1="0" x2="-11" y2="0" stroke-dasharray="2,2"/>
         <line x1="-11" y1="-5" x2="-11" y2="5"/>
         <path d="M -11 -5 L -14 -5 L -14 5 L -11 5" fill="none"/>
       </g>`;
@@ -439,23 +441,33 @@ const Symbols = {
     return `
       <g class="symbol-control">
         ${this._ctlContactBase(h, true, true)}
-        <line x1="0" y1="0" x2="-11" y2="0" stroke-dasharray="2,2"/>
+        <line x1="-2" y1="0" x2="-11" y2="0" stroke-dasharray="2,2"/>
         <line x1="-11" y1="-5" x2="-11" y2="5"/>
         <path d="M -11 -5 L -14 -5 L -14 5 L -11 5" fill="none"/>
       </g>`;
   },
 
   ctl_switch(w, h, comp) {
-    // Maintained selector switch; drawn per its current state so toggling
-    // in simulation gives visual feedback
+    // Maintained selector switch; rest position reflects its stored state
     const p = (comp && comp.props) || {};
     const closed = p.state === 'closed';
-    const nc = p.contact_type === 'nc';
+    const restClosed = p.contact_type === 'nc' ? !closed : closed;
     return `
       <g class="symbol-control">
-        ${this._ctlContactBase(h, closed, nc)}
-        <line x1="${closed ? 0 : -3.5}" y1="0" x2="-10" y2="0" stroke-dasharray="2,2"/>
+        ${this._ctlContactBase(h, restClosed, p.contact_type === 'nc')}
+        <line x1="-2" y1="0" x2="-10" y2="0" stroke-dasharray="2,2"/>
         <circle cx="-11.5" cy="0" r="1.8" fill="currentColor" stroke="none"/>
+      </g>`;
+  },
+
+  ctl_breaker(w, h, comp) {
+    // IEC 60617 circuit breaker: contact with an X at the fixed terminal
+    const p = (comp && comp.props) || {};
+    return `
+      <g class="symbol-control">
+        ${this._ctlContactBase(h, p.state === 'closed', false)}
+        <line x1="-3" y1="-11" x2="3" y2="-5"/>
+        <line x1="-3" y1="-5" x2="3" y2="-11"/>
       </g>`;
   },
 

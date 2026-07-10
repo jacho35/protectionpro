@@ -789,7 +789,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'control',
     name: 'Control Circuit',
-    items: ['ctl_supply', 'ctl_pb_no', 'ctl_pb_nc', 'ctl_switch',
+    items: ['ctl_supply', 'ctl_breaker', 'ctl_pb_no', 'ctl_pb_nc', 'ctl_switch',
             'ctl_contact_no', 'ctl_contact_nc', 'ctl_coil', 'ctl_lamp'],
   },
 ];
@@ -797,7 +797,7 @@ const COMPONENT_CATEGORIES = [
 // Component types that belong to control schematics (IEC 60617), simulated
 // client-side by ControlSim and ignored by all power-system analyses.
 const CONTROL_TYPES = new Set([
-  'ctl_supply', 'ctl_pb_no', 'ctl_pb_nc', 'ctl_switch',
+  'ctl_supply', 'ctl_breaker', 'ctl_pb_no', 'ctl_pb_nc', 'ctl_switch',
   'ctl_contact_no', 'ctl_contact_nc', 'ctl_coil', 'ctl_lamp',
 ]);
 
@@ -1751,6 +1751,27 @@ const COMPONENT_DEFS = {
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'supply_type', label: 'Supply', type: 'select',
         options: ['230VAC', '110VAC', '24VDC', '110VDC'] },
+    ],
+  },
+
+  ctl_breaker: {
+    name: 'Control Breaker (MCB)',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 30,
+    height: 40,
+    defaults: {
+      name: 'Q1',
+      state: 'closed',
+      rating_a: 6,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'state', label: 'State', type: 'select', options: ['closed', 'open'] },
+      { key: 'rating_a', label: 'Rating', type: 'number', unit: 'A' },
     ],
   },
 

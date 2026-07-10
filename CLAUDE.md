@@ -100,7 +100,7 @@ AppState = {
   wires: [],               // Array of {id, fromComponent, fromPort, toComponent, toPort}
   selection: Set,           // Selected component/wire IDs
   clipboard: [],            // Copy/paste buffer
-  mode: 'SELECT',          // SELECT | WIRE | PLACE
+  mode: 'select',          // MODE.SELECT | MODE.WIRE | MODE.PLACE (lowercase values)
   analysisResults: {},      // Latest fault/loadflow/arcflash results
   projectName: string,
   baseMVA: 100,

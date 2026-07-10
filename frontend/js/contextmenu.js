@@ -231,6 +231,17 @@ const ContextMenu = {
         shortcut: 'Dbl-click',
         action: () => Canvas.addWireBendPoint(wire.id, worldPt),
       },
+      {
+        label: 'Reset Route',
+        disabled: typeof wire.midY !== 'number' && !(wire.bendPoints && wire.bendPoints.length),
+        action: () => {
+          delete wire.midY;
+          wire.bendPoints = [];
+          AppState.dirty = true;
+          UndoManager.snapshot();
+          Canvas.render();
+        },
+      },
       '---',
       routeItem('orthogonal', 'Route: Orthogonal'),
       routeItem('diagonal', 'Route: Diagonal'),

@@ -32,6 +32,7 @@ const Canvas = {
 
   // State for dragging wire bend points
   bendDrag: null, // { wireId, bendIndex, startX, startY }
+  wireSegDrag: null, // { wireId, grabOffset, moved } — dragging a wire's mid-run
 
   // Space-bar held down → left-drag pans the canvas
   spaceDown: false,
@@ -439,6 +440,13 @@ const Canvas = {
         AppState.toggleSelect(id);
       } else {
         AppState.select(id);
+        // Grabbing the horizontal mid-run of a default-routed wire starts
+        // a segment drag: move it up/down to reroute the corridor.
+        const seg = this._hitWireMidSegment(id, worldPt);
+        if (seg) {
+          this.wireSegDrag = { wireId: id, grabOffset: worldPt.y - seg.midY, moved: false };
+          e.preventDefault();
+        }
       }
       this.render();
       return;
@@ -463,8 +471,9 @@ const Canvas = {
     // Safety net: if the button was released outside the window (we never saw
     // mouseup), finalize any active drag instead of leaving it sticky.
     const interacting = this.isPanning || this.busResize || this.bendDrag ||
-        this.annotationDrag || this.labelDrag || this.nameLabelDrag ||
-        AppState.dragState || this.isSelecting || AppState.wireStart;
+        this.wireSegDrag || this.annotationDrag || this.labelDrag ||
+        this.nameLabelDrag || AppState.dragState || this.isSelecting ||
+        AppState.wireStart;
 
     if (e.buttons === 0 && interacting && !AppState.wireStart) {
       this.onMouseUp(e);
@@ -478,6 +487,21 @@ const Canvas = {
     if (!interacting) {
       const hoverEl = e.target.closest('.sld-component');
       AppState.hoveredId = hoverEl ? hoverEl.dataset.id : null;
+      // Cursor affordance for wire mid-run dragging. Set on the wire path
+      // itself (its stylesheet cursor:pointer outranks an svg-level style);
+      // only computes world coordinates while actually over a wire.
+      const wireHover = !hoverEl && AppState.mode === MODE.SELECT
+        ? e.target.closest('.sld-wire') : null;
+      if (this._wireCursorEl && this._wireCursorEl !== wireHover) {
+        this._wireCursorEl.style.cursor = '';
+        this._wireCursorEl = null;
+      }
+      if (wireHover) {
+        const pt = this.screenToWorld(e.clientX, e.clientY);
+        const onSeg = this._hitWireMidSegment(wireHover.dataset.id, pt);
+        wireHover.style.cursor = onSeg ? 'ns-resize' : '';
+        this._wireCursorEl = onSeg ? wireHover : null;
+      }
       return;
     }
 
@@ -537,6 +561,18 @@ const Canvas = {
           x: snapToGrid(worldPt.x),
           y: snapToGrid(worldPt.y),
         };
+        this.render();
+      }
+      return;
+    }
+
+    // Dragging a wire's horizontal mid-segment: reroute its corridor.
+    // Snap to half-grid so wires can run between component rows.
+    if (this.wireSegDrag) {
+      const wire = AppState.wires.get(this.wireSegDrag.wireId);
+      if (wire) {
+        wire.midY = Math.round((worldPt.y - this.wireSegDrag.grabOffset) / 10) * 10;
+        this.wireSegDrag.moved = true;
         this.render();
       }
       return;
@@ -652,6 +688,15 @@ const Canvas = {
       return;
     }
 
+    if (this.wireSegDrag) {
+      if (this.wireSegDrag.moved) {
+        AppState.dirty = true;
+        if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      }
+      this.wireSegDrag = null;
+      return;
+    }
+
     if (this.annotationDrag) {
       AppState.dirty = true;
       this.annotationDrag = null;
@@ -764,7 +809,7 @@ const Canvas = {
       if (!fromComp || !toComp) continue;
       const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
       const to = Symbols.getPortWorldPosition(toComp, wire.toPort);
-      const midY = (from.y + to.y) / 2;
+      const midY = this.wireMidY(id, from, to);
       // Three segments of orthogonal route: vertical, horizontal, vertical
       const segments = [
         { x1: from.x, y1: from.y, x2: from.x, y2: midY },
@@ -793,11 +838,84 @@ const Canvas = {
     document.getElementById('selection-box').style.display = 'none';
   },
 
+  // If worldPt lies on the draggable horizontal mid-run of a default-routed
+  // wire, return {midY}; else null. Bend-point and diagonal wires are edited
+  // via their handles instead.
+  _hitWireMidSegment(wireId, worldPt) {
+    const wire = AppState.wires.get(wireId);
+    if (!wire || (wire.bendPoints && wire.bendPoints.length)) return null;
+    const mode = wire.routeMode || AppState.wireRouteMode || 'orthogonal';
+    if (mode === 'diagonal') return null;
+    const fromComp = AppState.components.get(wire.fromComponent);
+    const toComp = AppState.components.get(wire.toComponent);
+    if (!fromComp || !toComp) return null;
+    const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
+    const to = Symbols.getPortWorldPosition(toComp, wire.toPort);
+    if (Math.abs(from.x - to.x) < 1) return null; // straight vertical
+    const midY = this.wireMidY(wireId, from, to);
+    const minX = Math.min(from.x, to.x) - 5;
+    const maxX = Math.max(from.x, to.x) + 5;
+    if (Math.abs(worldPt.y - midY) <= 8 && worldPt.x >= minX && worldPt.x <= maxX) {
+      return { midY };
+    }
+    return null;
+  },
+
+  // Effective mid-corridor Y for a default-routed wire: an explicit
+  // user-dragged wire.midY wins, else the geometric midpoint plus the
+  // auto lane-separation offset (so parallel wires don't overlap).
+  wireMidY(wireId, from, to) {
+    const wire = AppState.wires.get(wireId);
+    if (wire && typeof wire.midY === 'number') return wire.midY;
+    const off = this._wireLanes ? (this._wireLanes.get(wireId) || 0) : 0;
+    return (from.y + to.y) / 2 + off;
+  },
+
+  // Assign lane offsets to default-routed wires whose horizontal runs
+  // share a corridor (same 20 px midY bucket, overlapping x-spans).
+  // Lanes fan out around the corridor: 0, +10, −10, +20, −20 …
+  _computeWireLanes(pageWires) {
+    const lanes = new Map();
+    const buckets = new Map();
+    for (const [id, wire] of pageWires) {
+      if (typeof wire.midY === 'number') continue;
+      if (wire.bendPoints && wire.bendPoints.length) continue;
+      const mode = wire.routeMode || AppState.wireRouteMode || 'orthogonal';
+      if (mode === 'diagonal') continue;
+      const fromComp = AppState.components.get(wire.fromComponent);
+      const toComp = AppState.components.get(wire.toComponent);
+      if (!fromComp || !toComp) continue;
+      const from = Symbols.getPortWorldPosition(fromComp, wire.fromPort);
+      const to = Symbols.getPortWorldPosition(toComp, wire.toPort);
+      if (Math.abs(from.x - to.x) < 1) continue; // straight vertical, no corridor
+      const key = Math.round((from.y + to.y) / 2 / 20);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push({
+        id, minX: Math.min(from.x, to.x), maxX: Math.max(from.x, to.x),
+      });
+    }
+    for (const group of buckets.values()) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => a.minX - b.minX || (a.id < b.id ? -1 : 1));
+      const placed = [];
+      for (const item of group) {
+        let lane = 0;
+        while (placed.some(p => p.lane === lane && p.maxX > item.minX && p.minX < item.maxX)) lane++;
+        placed.push({ ...item, lane });
+        if (lane > 0) {
+          lanes.set(item.id, (lane % 2 ? 1 : -1) * Math.ceil(lane / 2) * 10);
+        }
+      }
+    }
+    return lanes;
+  },
+
   // Full re-render of all components and wires
   render() {
     // Get page-filtered components and wires
     const pageComps = AppState.getActivePageComponents();
     const pageWires = AppState.getActivePageWires();
+    this._wireLanes = this._computeWireLanes(pageWires);
 
     // Empty-state hint: show only when the project has no components at all
     const emptyHint = document.getElementById('canvas-empty-hint');
@@ -834,11 +952,11 @@ const Canvas = {
         if (mode === 'diagonal') {
           path = `M${from.x},${from.y} L${to.x},${to.y}`;
         } else if (mode === 'spline') {
-          const midY = (from.y + to.y) / 2;
+          const midY = this.wireMidY(id, from, to);
           path = `M${from.x},${from.y} C${from.x},${midY} ${to.x},${midY} ${to.x},${to.y}`;
         } else {
-          // Default orthogonal routing
-          const midY = (from.y + to.y) / 2;
+          // Default orthogonal routing (draggable mid-corridor)
+          const midY = this.wireMidY(id, from, to);
           path = `M${from.x},${from.y} L${from.x},${midY} L${to.x},${midY} L${to.x},${to.y}`;
         }
       }

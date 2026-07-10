@@ -23,7 +23,7 @@ const ControlSim = {
   _interval: null,
 
   CONDUCTOR_TYPES: new Set(['ctl_pb_no', 'ctl_pb_nc', 'ctl_switch',
-                            'ctl_contact_no', 'ctl_contact_nc']),
+                            'ctl_breaker', 'ctl_contact_no', 'ctl_contact_nc']),
   LOAD_TYPES: new Set(['ctl_coil', 'ctl_lamp']),
 
   init() {
@@ -51,7 +51,9 @@ const ControlSim = {
     this._oscillating = false;
     this._savedSwitchStates.clear();
     for (const c of comps) {
-      if (c.type === 'ctl_switch') this._savedSwitchStates.set(c.id, c.props.state);
+      if (c.type === 'ctl_switch' || c.type === 'ctl_breaker') {
+        this._savedSwitchStates.set(c.id, c.props.state);
+      }
     }
     this._interval = setInterval(() => this._tick(), 200);
     this.evaluate();
@@ -91,9 +93,10 @@ const ControlSim = {
     if (!comp) return;
     if (comp.type === 'ctl_pb_no' || comp.type === 'ctl_pb_nc') {
       this._held.add(comp.id);
-    } else if (comp.type === 'ctl_switch') {
+    } else if (comp.type === 'ctl_switch' || comp.type === 'ctl_breaker') {
+      // No Canvas.render() here: rebuilding the DOM would kill the CSS
+      // swing transition — the ctl-open/ctl-closed classes carry the visual.
       comp.props.state = comp.props.state === 'closed' ? 'open' : 'closed';
-      Canvas.render();
     } else {
       return; // not a control operator — let normal canvas handling run
     }
@@ -120,6 +123,7 @@ const ControlSim = {
         const closed = comp.props.state === 'closed';
         return comp.props.contact_type === 'nc' ? !closed : closed;
       }
+      case 'ctl_breaker': return comp.props.state === 'closed';
       case 'ctl_contact_no': return !!this._coilOut.get(comp.props.tag);
       case 'ctl_contact_nc': return !this._coilOut.get(comp.props.tag);
       default: return false;
@@ -268,8 +272,10 @@ const ControlSim = {
       if (!g) continue;
       g.classList.toggle('ctl-energized',
         this.LOAD_TYPES.has(c.type) && !!(this._energized && this._energized.get(c.id)));
-      g.classList.toggle('ctl-closed',
-        this.CONDUCTOR_TYPES.has(c.type) && this._contactClosed(c));
+      const isConductor = this.CONDUCTOR_TYPES.has(c.type);
+      const closed = isConductor && this._contactClosed(c);
+      g.classList.toggle('ctl-closed', closed);
+      g.classList.toggle('ctl-open', isConductor && !closed);
       g.classList.toggle('ctl-actuated', this._held.has(c.id));
     }
     for (const w of AppState.wires.values()) {
@@ -284,8 +290,8 @@ const ControlSim = {
 
   _clearHighlights() {
     const svg = document.getElementById('sld-canvas');
-    svg.querySelectorAll('.ctl-energized, .ctl-closed, .ctl-actuated').forEach(el =>
-      el.classList.remove('ctl-energized', 'ctl-closed', 'ctl-actuated'));
+    svg.querySelectorAll('.ctl-energized, .ctl-closed, .ctl-open, .ctl-actuated').forEach(el =>
+      el.classList.remove('ctl-energized', 'ctl-closed', 'ctl-open', 'ctl-actuated'));
     svg.querySelectorAll('.ctl-live').forEach(el => el.classList.remove('ctl-live'));
   },
 };

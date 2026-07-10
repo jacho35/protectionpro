@@ -516,3 +516,12 @@ body.dark-mode .sld-component.ctl-energized .symbol-control .symbol-text { fill:
 .ctl-energized [data-lamp-color="amber"] .ctl-lamp-glass { fill: #ffb300aa; }
 .ctl-energized [data-lamp-color="white"] .ctl-lamp-glass { fill: #eceff1cc; }
 .ctl-energized [data-lamp-color="blue"] .ctl-lamp-glass { fill: #2196f3aa; }
+
+/* Animated contact swing: the moving piece pivots at the bottom terminal.
+   Rest position comes from the symbol (.ctl-mv-no open / .ctl-mv-nc closed);
+   during simulation ControlSim's .ctl-open/.ctl-closed classes override. */
+.ctl-moving { transition: transform 0.15s ease; }
+.ctl-mv-no { transform: rotate(-28deg); }
+.ctl-mv-nc { transform: rotate(0deg); }
+.sld-component.ctl-closed .ctl-moving { transform: rotate(0deg); }
+.sld-component.ctl-open .ctl-moving { transform: rotate(-28deg); }

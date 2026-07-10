@@ -225,6 +225,8 @@ const Project = {
       .symbol-db .symbol-text { stroke: none; fill: #555; }
       .symbol-control { stroke: #455a64; stroke-width: 1.5; fill: none; }
       .symbol-control .symbol-text { stroke: none; fill: #455a64; }
+      .ctl-mv-no { transform: rotate(-28deg); }
+      .ctl-mv-nc { transform: rotate(0deg); }
 
       /* Selection outline & editing chrome (never render in export) */
       .comp-outline { stroke: none; fill: none; }
