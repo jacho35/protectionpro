@@ -13,6 +13,7 @@ const VoltagePropagation = {
     generator:         'voltage_kv',
     solar_pv:          'voltage_kv',
     wind_turbine:      'voltage_kv',
+    battery:           'voltage_kv',
     cable:             'voltage_kv',
     motor_induction:   'voltage_kv',
     motor_synchronous: 'voltage_kv',

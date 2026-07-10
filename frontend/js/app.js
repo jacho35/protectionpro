@@ -1,6 +1,22 @@
 /* ProtectionPro — Main Application Entry Point */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // ─── App title (desktop + mobile header): version badge + hard refresh ───
+  // A cache-busted replace forces the browser to re-fetch the app; the
+  // beforeunload guard in project.js still prompts on unsaved changes.
+  const hardRefresh = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('v', String(Date.now()));
+    window.location.replace(url.toString());
+  };
+  for (const id of ['app-version', 'mobile-app-version']) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = APP_VERSION;
+  }
+  for (const id of ['app-title-block', 'mobile-title-block']) {
+    document.getElementById(id)?.addEventListener('click', hardRefresh);
+  }
+
   // ─── Toolbar menu bar open/close ───
   const toolbarMenus = document.querySelectorAll('.toolbar-menu');
   window.closeAllToolbarMenus = () => toolbarMenus.forEach(m => m.classList.remove('open'));
@@ -1050,6 +1066,102 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── Backup Autonomy (grid outage) ──
+  document.getElementById('btn-backup-study').addEventListener('click', async () => {
+    const hasBackup = [...AppState.components.values()].some(c =>
+      c.type === 'battery' ||
+      (c.type === 'solar_pv' && c.props.inverter_type === 'hybrid'));
+    if (!hasBackup) {
+      document.getElementById('status-info').textContent =
+        'Add a BESS or a hybrid Solar PV inverter before running the backup study.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running backup autonomy study...';
+    _setBusy('btn-backup-study', true);
+    try {
+      const result = await API.runBackupAutonomy();
+      AppState.backupResults = result;
+      document.getElementById('status-info').textContent = 'Backup autonomy study complete.';
+      showBackupResults(result);
+    } catch (e) {
+      console.error('Backup study error:', e);
+      document.getElementById('status-info').textContent = 'Backup autonomy study failed.';
+      showValidationModal('Backup Autonomy — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-backup-study', false);
+    }
+  });
+
+  function showBackupResults(result) {
+    const modal = document.getElementById('backup-modal');
+    const body = document.getElementById('backup-body');
+    if (!modal || !body) return;
+    const islands = result.islands || [];
+    const summary = result.summary || {};
+
+    let html = `<div style="background:#7b1fa211;border:1px solid #7b1fa2;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+      <div style="font-size:12px">Islands (utility removed): <strong>${summary.islands_total ?? islands.length}</strong></div>
+      <div style="font-size:12px">Battery-backed: <strong>${summary.islands_backed ?? 0}</strong></div>
+      <div style="font-size:12px">Adequate at night: <strong>${summary.islands_adequate ?? 0}</strong></div>
+    </div>`;
+
+    if (islands.length === 0) {
+      html += '<p style="opacity:0.7">No islands with load or backup sources found.</p>';
+    }
+
+    const fmtH = (h) => h === null || h === undefined ? '—'
+      : h >= 48 ? `${(h / 24).toFixed(1)} d` : `${h.toFixed(1)} h`;
+    const badge = (ok) => ok
+      ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+      : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+
+    for (const isl of islands) {
+      const title = isl.bus_names && isl.bus_names.length
+        ? isl.bus_names.join(', ') : `Island ${isl.island}`;
+      html += `<h4 style="margin:14px 0 6px;font-size:13px">Island ${isl.island} — ${escHtml(title)}</h4>`;
+      if (!isl.backed_up) {
+        html += `<p style="font-size:12px;color:#d32f2f;margin:4px 0">⚠ ${escHtml(isl.notes?.[0] || 'Not backed up.')} (essential load ${isl.load_kw.toFixed(1)} kW)</p>`;
+        for (const n of (isl.notes || []).slice(1)) {
+          html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(n)}</p>`;
+        }
+        continue;
+      }
+      html += `<table class="af-table"><thead><tr>
+        <th>Essential Load</th><th>Inverter Cap.</th><th>Discharge Limit</th><th>PV Available</th>
+        <th>Usable Energy</th><th>Autonomy (night)</th><th>Autonomy (with PV)</th>
+        <th>Inverter</th><th>Power (night)</th>
+      </tr></thead><tbody><tr>
+        <td>${isl.load_kw.toFixed(1)} kW (${isl.load_kva.toFixed(1)} kVA)</td>
+        <td>${isl.inverter_kva.toFixed(1)} kVA</td>
+        <td>${isl.discharge_kw.toFixed(1)} kW</td>
+        <td>${isl.pv_kw_available.toFixed(1)} kW</td>
+        <td>${isl.usable_kwh.toFixed(1)} kWh</td>
+        <td><strong>${fmtH(isl.autonomy_night_h)}</strong></td>
+        <td><strong>${isl.autonomy_pv_h === null && isl.power_ok_pv ? '∞ (PV covers load)' : fmtH(isl.autonomy_pv_h)}</strong></td>
+        <td>${badge(isl.inverter_ok)}</td>
+        <td>${badge(isl.power_ok_night)}</td>
+      </tr></tbody></table>`;
+      if (isl.sources?.length) {
+        html += `<table class="af-table" style="margin-top:6px"><thead><tr>
+          <th>Backup Source</th><th>Type</th><th>Inverter (kVA)</th>
+          <th>Discharge (kW)</th><th>Available (kWh)</th><th>SoC</th><th>PV Now (kW)</th>
+        </tr></thead><tbody>`;
+        for (const s of isl.sources) {
+          html += `<tr><td>${escHtml(s.name)}</td><td>${s.type === 'hybrid_pv' ? 'Hybrid PV' : 'BESS'}</td>
+            <td>${s.inverter_kva.toFixed(1)}</td><td>${s.max_discharge_kw.toFixed(1)}</td>
+            <td>${s.available_kwh.toFixed(1)}</td><td>${s.soc_pct.toFixed(0)}%</td>
+            <td>${s.pv_kw_now.toFixed(1)}</td></tr>`;
+        }
+        html += '</tbody></table>';
+      }
+      for (const n of (isl.notes || [])) {
+        html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(n)}</p>`;
+      }
+    }
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   // ── Load Diversity & Demand Factor ──
   document.getElementById('btn-load-diversity').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -2017,6 +2129,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('load-diversity-modal').addEventListener('click', (e) => {
     if (e.target.id === 'load-diversity-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-backup').addEventListener('click', () => {
+    document.getElementById('backup-modal').style.display = 'none';
+  });
+  document.getElementById('backup-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'backup-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-grounding').addEventListener('click', () => {

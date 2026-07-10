@@ -3,7 +3,12 @@
  * A distribution board's ways live in comp.props.circuits:
  *   { way, description, poles ('1P'|'3P'), phase ('R'|'W'|'B'|'RWB'),
  *     breaker_a, curve ('B'|'C'|'D'), el_group, load_va, demand_factor,
- *     cable_mm2, cable_m }
+ *     cable_mm2, cable_m, leakage_ma }
+ *
+ * comp.props.el_ratings maps EL group name → the earth-leakage unit's rated
+ * residual current IΔn in mA (default 30). Standing leakage per group
+ * (Σ way leakage_ma + cable insulation leakage) is checked against
+ * 30% of IΔn per IEC 60364-5-53 §531.3.2 to flag nuisance-trip risk.
  *
  * The board is analysed as a LUMPED load: on every save (and on
  * board_diversity edits) recompute() writes static-load-equivalent props
@@ -49,6 +54,7 @@ const DBSchedule = {
     return {
       circuits: comp.props.circuits || [],
       board_diversity: comp.props.board_diversity ?? 1.0,
+      el_ratings: comp.props.el_ratings || {},
     };
   },
 
@@ -89,6 +95,7 @@ const DBSchedule = {
           }
         } else {
           this.recompute(comp);
+          this._normalizeElRatings(comp);
           AppState.dirty = true;
           if (typeof Properties !== 'undefined') {
             Properties._notifyResultsCleared();
@@ -149,6 +156,36 @@ const DBSchedule = {
     return { connectedKva: connectedVa / 1000, demandKva: demandVa / 1000, phaseVa };
   },
 
+  // ── Standing earth leakage per EL group ────────────────────────────
+  // Pure: sums each group's device leakage (way leakage_ma) plus the cable's
+  // own insulation leakage, and resolves each group's effective IΔn without
+  // touching props (so read-only schedule visits stay diff-clean).
+  _leakageGroups(comp) {
+    const stored = (comp.props.el_ratings && typeof comp.props.el_ratings === 'object')
+      ? comp.props.el_ratings : {};
+    const groups = new Map();
+    let ungrouped = 0;
+    for (const c of comp.props.circuits || []) {
+      const ma = (Number(c.leakage_ma) || 0) +
+        (Number(c.cable_m) || 0) * DB_CABLE_LEAK_MA_PER_M;
+      const g = String(c.el_group || '').trim();
+      if (!g) { ungrouped += ma; continue; }
+      groups.set(g, (groups.get(g) || 0) + ma);
+    }
+    const ratings = {};
+    for (const g of groups.keys()) {
+      ratings[g] = Number(stored[g]) > 0 ? Number(stored[g]) : 30;
+    }
+    return { groups, ungrouped, ratings };
+  },
+
+  // Commit-time tidy-up: drop ratings for groups that no longer exist and
+  // materialize the 30 mA default for groups that never had one set.
+  _normalizeElRatings(comp) {
+    const { ratings } = this._leakageGroups(comp);
+    comp.props.el_ratings = ratings;
+  },
+
   // Reassign 1P ways across R/W/B for best balance (largest-first greedy).
   // 3P ways are inherently balanced and left untouched.
   autoBalance(comp) {
@@ -197,6 +234,7 @@ const DBSchedule = {
       cable_m: 10,
       load_va: t.va * n,
       demand_factor: t.df,
+      leakage_ma: Math.round((t.leak_ma || 0) * n * 100) / 100,
     };
   },
 
@@ -238,6 +276,7 @@ const DBSchedule = {
         <td><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
         <td><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
         <td><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
+        <td><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
         <td><input type="number" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" min="0.5" step="0.5" style="width:68px"></td>
         <td><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
         <td><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
@@ -288,15 +327,17 @@ const DBSchedule = {
     this.body.innerHTML = `
       <datalist id="db-load-datalist">${datalistOptions}</datalist>
       <div class="db-phase-bars">${barsHtml}</div>
+      <div id="db-el-panel"></div>
       <div class="library-table-wrap" style="max-height:62vh;overflow:auto;">
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr>
             <th>Way</th><th>Description</th><th>Poles</th><th>Ph</th>
             <th>Breaker (A)</th><th>Curve</th><th>EL Grp</th>
+            <th title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
             <th>Cable mm²</th><th>Len (m)</th><th>Load (VA)</th><th>DF</th><th></th>
           </tr></thead>
           <tbody id="db-rows">${rows ||
-            '<tr><td colspan="12" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
+            '<tr><td colspan="13" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -322,6 +363,8 @@ const DBSchedule = {
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
         <button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>
       </div>`;
+
+    this._refreshElPanel(comp);
 
     // Bind — default-load presets & quick-add chips
     this.body.querySelector('#db-add-load').addEventListener('click', () => {
@@ -361,6 +404,7 @@ const DBSchedule = {
         way: String(circuits.length + 1), description: '', poles: '1P',
         phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
         el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
+        leakage_ma: 0,
       });
       this.render();
     });
@@ -399,6 +443,7 @@ const DBSchedule = {
             c.breaker_a = t.breaker_a;
             c.curve = t.curve;
             c.cable_mm2 = t.cable_mm2;
+            c.leakage_ma = t.leak_ma || 0;
             c.poles = t.poles;
             if (t.poles === '3P') c.phase = 'RWB';
             else if (c.phase === 'RWB') c.phase = 'R';
@@ -419,7 +464,7 @@ const DBSchedule = {
     // Keyboard navigation: Enter/↓ = same column next row (Enter on the last
     // row adds a way), ↑ = previous row, Tab keeps its native left/right.
     const NAV_COLS = ['way', 'description', 'poles', 'phase', 'breaker_a', 'curve',
-      'el_group', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor'];
+      'el_group', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor'];
     this._focusCell = (row, k) => {
       const el = this.body.querySelector(`#db-rows tr[data-idx="${row}"] [data-k="${k}"]`);
       if (el) { el.focus(); if (el.select) el.select(); }
@@ -439,6 +484,7 @@ const DBSchedule = {
             way: String(circuits.length + 1), description: '', poles: '1P',
             phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
             el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
+            leakage_ma: 0,
           });
           this.render();
           this._focusCell(circuits.length - 1, k);
@@ -470,6 +516,7 @@ const DBSchedule = {
             way: String(circuits.length + 1), description: '', poles: '1P',
             phase: 'R', breaker_a: 20, curve: 'C', el_group: '',
             cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
+            leakage_ma: 0,
           });
         }
         const c = circuits[rowIdx];
@@ -478,7 +525,7 @@ const DBSchedule = {
           const key = NAV_COLS[startCol + vi];
           const raw = String(vals[vi]).trim();
           if (raw === '') continue;
-          if (['breaker_a', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor'].includes(key)) {
+          if (['breaker_a', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor'].includes(key)) {
             const n = parseFloat(raw);
             if (!isNaN(n)) c[key] = key === 'demand_factor' ? Math.min(1, Math.max(0, n)) : n;
           } else if (key === 'poles') {
@@ -501,9 +548,10 @@ const DBSchedule = {
     });
   },
 
-  // Refresh the phase bars and totals strip in place (no table re-render,
-  // so the focused cell keeps focus during rapid spreadsheet-style entry)
+  // Refresh the phase bars, EL leakage panel and totals strip in place (no
+  // table re-render, so the focused cell keeps focus during rapid entry)
   refreshTotals(comp) {
+    this._refreshElPanel(comp);
     const totals = this.recompute(comp);
     const ph = totals.phaseVa;
     const phTotal = ph.R + ph.W + ph.B;
@@ -527,22 +575,74 @@ const DBSchedule = {
     }
   },
 
+  // ── EL group leakage panel ──────────────────────────────────────────
+  // One row per EL group: an IΔn selector, the group's standing leakage vs
+  // its 30%-of-IΔn limit, and a nuisance-trip flag when exceeded.
+  _elPanelHtml(comp) {
+    const { groups, ungrouped, ratings } = this._leakageGroups(comp);
+    if (groups.size === 0 && ungrouped < 0.05) return '';
+    const ratingList = (typeof DB_EL_RATINGS_MA !== 'undefined')
+      ? DB_EL_RATINGS_MA : [10, 30, 100, 300, 500];
+    const rows = [...groups.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+      .map(([g, ma]) => {
+        const idn = ratings[g];
+        const limit = idn * DB_EL_STANDING_LIMIT;
+        const over = ma > limit;
+        const opts = ratingList.map(r =>
+          `<option value="${r}"${r === idn ? ' selected' : ''}>${r} mA</option>`).join('');
+        return `
+          <div style="display:flex;align-items:center;gap:10px;font-size:12px;">
+            <span style="min-width:56px;"><strong>EL ${escHtml(g)}</strong></span>
+            <select data-elg="${escHtml(g)}" title="Rated residual current (IΔn) of this group's earth-leakage unit">${opts}</select>
+            <span style="min-width:170px;${over ? 'color:#d32f2f;font-weight:600;' : ''}">${ma.toFixed(1)} mA standing / ${limit.toFixed(1)} mA limit</span>
+            <span style="${over ? 'color:#d32f2f;' : 'opacity:0.65;'}">${over
+              ? '⚠ nuisance-trip risk — move ways to another EL group'
+              : '✓ within 30% of IΔn'}</span>
+          </div>`;
+      }).join('');
+    const ung = ungrouped >= 0.05
+      ? `<div style="font-size:12px;opacity:0.65;">No EL group: ${ungrouped.toFixed(1)} mA standing (ways without earth-leakage protection)</div>`
+      : '';
+    return `
+      <div style="display:flex;flex-direction:column;gap:5px;margin:8px 0;padding:8px 10px;border:1px solid var(--border-color,#ccc);border-radius:6px;">
+        <div style="font-size:12px;font-weight:600;">Standing earth leakage per EL group
+          <span style="opacity:0.6;font-weight:400;">(limit 30% of IΔn — IEC 60364-5-53 §531.3.2)</span></div>
+        ${rows}${ung}
+      </div>`;
+  },
+
+  _refreshElPanel(comp) {
+    const wrap = this.body.querySelector('#db-el-panel');
+    if (!wrap) return;
+    wrap.innerHTML = this._elPanelHtml(comp);
+    wrap.querySelectorAll('select[data-elg]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        if (!comp.props.el_ratings || typeof comp.props.el_ratings !== 'object') {
+          comp.props.el_ratings = {};
+        }
+        comp.props.el_ratings[sel.dataset.elg] = parseFloat(sel.value) || 30;
+        this._refreshElPanel(comp);
+      });
+    });
+  },
+
   // ── Excel export / import ───────────────────────────────────────────
 
   XLSX_HEADERS: ['Way', 'Description', 'Poles', 'Phase', 'Breaker (A)', 'Curve',
-    'EL Group', 'Cable (mm2)', 'Length (m)', 'Load (VA)', 'Demand Factor'],
+    'EL Group', 'Leak (mA)', 'Cable (mm2)', 'Length (m)', 'Load (VA)', 'Demand Factor'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
     const rows = (comp.props.circuits || []).map(c => [
       c.way ?? '', c.description ?? '', c.poles ?? '1P',
       (c.poles === '3P') ? 'RWB' : (c.phase ?? 'R'),
-      c.breaker_a ?? '', c.curve ?? 'C', c.el_group ?? '',
+      c.breaker_a ?? '', c.curve ?? 'C', c.el_group ?? '', c.leakage_ma ?? 0,
       c.cable_mm2 ?? '', c.cable_m ?? '', c.load_va ?? '', c.demand_factor ?? 1,
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 6 }, { wch: 11 },
-      { wch: 6 }, { wch: 9 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 13 }];
+      { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 13 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');
@@ -572,7 +672,8 @@ const DBSchedule = {
       const idx = {
         way: col('way', 'no'), description: col('desc'), poles: col('pole'),
         phase: col('phase', 'ph'), breaker_a: col('breaker', 'mcb', 'rating'),
-        curve: col('curve'), el_group: col('el', 'rcd', 'leakage'),
+        curve: col('curve'), el_group: col('el grp', 'el group', 'rcd'),
+        leakage_ma: col('leak'),
         cable_mm2: col('cable', 'mm'), cable_m: col('length', 'len'),
         load_va: col('load', 'va'), demand_factor: col('demand', 'df'),
       };
@@ -596,6 +697,7 @@ const DBSchedule = {
           breaker_a: num('breaker_a', 20),
           curve: ['B', 'C', 'D'].includes(String(get('curve')).toUpperCase()) ? String(get('curve')).toUpperCase() : 'C',
           el_group: String(get('el_group') || ''),
+          leakage_ma: Math.max(0, num('leakage_ma', 0)),
           cable_mm2: num('cable_mm2', 2.5),
           cable_m: num('cable_m', 10),
           load_va: num('load_va', 0),

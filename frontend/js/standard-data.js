@@ -353,6 +353,7 @@ const StandardData = {
       <tr data-index="${i}">
         <td><input type="text" value="${escHtml(c.name)}" data-key="name"></td>
         <td><select data-key="cb_type">
+          <option value="mcb" ${c.cb_type === 'mcb' ? 'selected' : ''}>MCB</option>
           <option value="mccb" ${c.cb_type === 'mccb' ? 'selected' : ''}>MCCB</option>
           <option value="acb" ${c.cb_type === 'acb' ? 'selected' : ''}>ACB</option>
         </select></td>

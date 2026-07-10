@@ -27,14 +27,48 @@ const Symbols = {
       </g>`;
   },
 
-  solar_pv(w, h) {
+  solar_pv(w, h, comp) {
     const r = Math.min(w, h) * 0.38;
+    // Array mode: draw a small panel-array glyph (grid of cells) beside the
+    // inverter circle with the string layout, so the panels read on the SLD
+    let arrayGlyph = '';
+    if (comp && comp.props && comp.props.pv_array_mode === 'array') {
+      const strings = Math.max(1, Math.round(comp.props.pv_strings || 1));
+      const pps = Math.max(1, Math.round(comp.props.pv_panels_per_string || 1));
+      const gx = -r - 16, gy = -r - 2, gw = 14, gh = 10;
+      arrayGlyph = `
+        <g class="symbol-pv-array" stroke="currentColor" stroke-width="0.8" fill="none">
+          <rect x="${gx}" y="${gy}" width="${gw}" height="${gh}"/>
+          <line x1="${gx + gw / 3}" y1="${gy}" x2="${gx + gw / 3}" y2="${gy + gh}"/>
+          <line x1="${gx + 2 * gw / 3}" y1="${gy}" x2="${gx + 2 * gw / 3}" y2="${gy + gh}"/>
+          <line x1="${gx}" y1="${gy + gh / 2}" x2="${gx + gw}" y2="${gy + gh / 2}"/>
+          <line x1="${gx + gw}" y1="${gy + gh / 2}" x2="${-r * 0.7}" y2="${-r * 0.7}"/>
+          <text x="${gx + gw / 2}" y="${gy + gh + 7}" text-anchor="middle" font-size="6"
+            fill="#e67700" stroke="none" font-family="sans-serif">${strings}S×${pps}P</text>
+        </g>`;
+    }
     return `
       <g class="symbol-solar-pv">
+        ${arrayGlyph}
         <circle cx="0" cy="0" r="${r}" fill="none" stroke="currentColor" stroke-width="1.5"/>
         <line x1="${-r * 0.55}" y1="${r * 0.35}" x2="${r * 0.55}" y2="${-r * 0.35}" stroke="currentColor" stroke-width="1.3"/>
         <line x1="${-r * 0.55}" y1="${r * 0.0}" x2="${r * 0.55}" y2="${-r * 0.7}" stroke="currentColor" stroke-width="1.3"/>
         <text x="${r * 0.05}" y="${r * 0.65}" text-anchor="middle" font-size="8" font-weight="600" fill="#e67700" font-family="sans-serif">PV</text>
+        <line x1="0" y1="${r}" x2="0" y2="${h / 2}"/>
+      </g>`;
+  },
+
+  battery(w, h) {
+    const r = Math.min(w, h) * 0.38;
+    // IEC-style battery cell (long/short plates) inside the source circle
+    return `
+      <g class="symbol-battery">
+        <circle cx="0" cy="0" r="${r}" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="${-r * 0.55}" y1="${-r * 0.18}" x2="${r * 0.55}" y2="${-r * 0.18}" stroke="currentColor" stroke-width="1.6"/>
+        <line x1="${-r * 0.28}" y1="${r * 0.14}" x2="${r * 0.28}" y2="${r * 0.14}" stroke="currentColor" stroke-width="1.3"/>
+        <line x1="0" y1="${-r * 0.55}" x2="0" y2="${-r * 0.18}" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="0" y1="${r * 0.14}" x2="0" y2="${r * 0.5}" stroke="currentColor" stroke-width="1.2"/>
+        <text x="${r * 0.02}" y="${r * 0.85}" text-anchor="middle" font-size="7" font-weight="600" fill="#7b1fa2" font-family="sans-serif">BESS</text>
         <line x1="0" y1="${r}" x2="0" y2="${h / 2}"/>
       </g>`;
   },

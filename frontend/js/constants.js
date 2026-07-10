@@ -1,5 +1,7 @@
 /* ProtectionPro — Constants & Configuration */
 
+const APP_VERSION = 'V3.0';
+
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
 const MIN_ZOOM = 0.1;
@@ -597,8 +599,10 @@ function fuseTripTime(ratingA, currentA) {
 const FUSE_RATINGS_GG = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630];
 
 // ─── Circuit Breaker Trip Curves (IEC 60947-2 / IEC 60898) ───
-// Thermal-magnetic characteristics for MCCB and ACB
+// Thermal-magnetic characteristics for MCB, MCCB and ACB
 //
+// MCB:  thermal (I²t inverse-time) region + fixed magnetic instantaneous,
+//       magnetic pickup set by the IEC 60898-1 curve class (B/C/D)
 // MCCB: thermal (I²t inverse-time) region + fixed magnetic instantaneous
 // ACB:  long-time (thermal) + optional short-time + instantaneous
 //
@@ -665,12 +669,56 @@ function cbTripTime(params, currentA) {
   return Math.min(t, 10000);
 }
 
+// IEC 60898-1 MCB instantaneous (magnetic) bands: B = 3–5×In, C = 5–10×In,
+// D = 10–20×In. The single-line curve model uses the TOP of the band —
+// conservative when checking that a fault level reaches the instantaneous
+// region (the device is only guaranteed to trip magnetically above it).
+const MCB_CURVE_MAGNETIC = { B: 5, C: 10, D: 20 };
+
+// ─── PV Module Library ───
+// Typical STC datasheet values for common module classes; voltages/currents
+// per module, temperature coefficients in %/°C (negative = falls with heat).
+// Used by the Solar PV array mode for string sizing per IEC 62548.
+const PV_PANELS = [
+  { id: 'pv_330_poly',  name: '330 W Poly 72-cell',     w: 330, voc: 45.9, vmp: 37.8,  isc: 9.15, imp: 8.73,  beta_voc: -0.29, gamma_vmp: -0.37 },
+  { id: 'pv_450_mono',  name: '450 W Mono PERC',        w: 450, voc: 41.5, vmp: 34.5,  isc: 13.9, imp: 13.05, beta_voc: -0.27, gamma_vmp: -0.35 },
+  { id: 'pv_550_mono',  name: '550 W Mono PERC',        w: 550, voc: 49.9, vmp: 41.95, isc: 14.0, imp: 13.12, beta_voc: -0.26, gamma_vmp: -0.34 },
+  { id: 'pv_600_ntype', name: '600 W N-type Bifacial',  w: 600, voc: 45.6, vmp: 38.0,  isc: 16.7, imp: 15.8,  beta_voc: -0.25, gamma_vmp: -0.30 },
+];
+
 // Standard MCCB frame sizes for the custom device dropdown
 const CB_FRAME_SIZES = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
 
 // ─── Standard Circuit Breaker Library ───
 // Typical MCCB/ACB ratings per IEC 60947-2
 const STANDARD_CBS = [
+  // MCB — Low Voltage (IEC 60898-1 / SANS 156). Icn 6 kA up to 63 A,
+  // 10 kA for the 80–125 A frames; magnetic pickup = top of the curve band.
+  { id: 'mcb_b6',    name: 'MCB 6A (B)',    cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 6,   frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_b10',   name: 'MCB 10A (B)',   cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 10,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_b16',   name: 'MCB 16A (B)',   cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 16,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_b20',   name: 'MCB 20A (B)',   cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 20,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_b25',   name: 'MCB 25A (B)',   cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 25,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_b32',   name: 'MCB 32A (B)',   cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 32,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_b40',   name: 'MCB 40A (B)',   cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 40,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_b63',   name: 'MCB 63A (B)',   cb_type: 'mcb', mcb_curve: 'B', trip_rating_a: 63,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 5,  long_time_delay: 10 },
+  { id: 'mcb_c6',    name: 'MCB 6A (C)',    cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 6,   frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c10',   name: 'MCB 10A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 10,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c16',   name: 'MCB 16A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 16,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c20',   name: 'MCB 20A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 20,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c25',   name: 'MCB 25A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 25,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c32',   name: 'MCB 32A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 32,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c40',   name: 'MCB 40A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 40,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c50',   name: 'MCB 50A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 50,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c63',   name: 'MCB 63A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 63,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c80',   name: 'MCB 80A (C)',   cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 80,  frame_a: 125, rated_voltage_kv: 0.4, breaking_ka: 10, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c100',  name: 'MCB 100A (C)',  cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 100, frame_a: 125, rated_voltage_kv: 0.4, breaking_ka: 10, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_c125',  name: 'MCB 125A (C)',  cb_type: 'mcb', mcb_curve: 'C', trip_rating_a: 125, frame_a: 125, rated_voltage_kv: 0.4, breaking_ka: 10, thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
+  { id: 'mcb_d16',   name: 'MCB 16A (D)',   cb_type: 'mcb', mcb_curve: 'D', trip_rating_a: 16,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 20, long_time_delay: 10 },
+  { id: 'mcb_d25',   name: 'MCB 25A (D)',   cb_type: 'mcb', mcb_curve: 'D', trip_rating_a: 25,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 20, long_time_delay: 10 },
+  { id: 'mcb_d32',   name: 'MCB 32A (D)',   cb_type: 'mcb', mcb_curve: 'D', trip_rating_a: 32,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 20, long_time_delay: 10 },
+  { id: 'mcb_d40',   name: 'MCB 40A (D)',   cb_type: 'mcb', mcb_curve: 'D', trip_rating_a: 40,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 20, long_time_delay: 10 },
+  { id: 'mcb_d63',   name: 'MCB 63A (D)',   cb_type: 'mcb', mcb_curve: 'D', trip_rating_a: 63,  frame_a: 63,  rated_voltage_kv: 0.4, breaking_ka: 6,  thermal_pickup: 1.0, magnetic_pickup: 20, long_time_delay: 10 },
   // MCCB — Low Voltage (IEC 60947-2)
   { id: 'mccb_16a',   name: 'MCCB 16A',    cb_type: 'mccb', trip_rating_a: 16,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
   { id: 'mccb_25a',   name: 'MCCB 25A',    cb_type: 'mccb', trip_rating_a: 25,   frame_a: 100,  rated_voltage_kv: 0.4, breaking_ka: 25,  thermal_pickup: 1.0, magnetic_pickup: 10, long_time_delay: 10 },
@@ -754,7 +802,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'sources',
     name: 'Sources',
-    items: ['utility', 'generator', 'solar_pv', 'wind_turbine'],
+    items: ['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery'],
   },
   {
     id: 'distribution',
@@ -904,6 +952,56 @@ const FIELD_INFO = {
 
   // Surge Arrester
   'surge_arrester.mcov_kv': 'Default MCOV = 8.4 kV (for 11 kV system, ratio ≈ 0.76).\nSource: IEC 60099-4 §5.2 — maximum continuous operating voltage.\nMCOV ≥ Um / √3 for grounded systems.',
+
+  // Solar PV — inverter & plant
+  'solar_pv.rated_kw':      'AC nameplate of ONE inverter. Total plant = rated kW × No. of Inverters.\nIn array mode the output additionally clips at this value when the DC array out-produces it.',
+  'solar_pv.num_inverters': 'Number of identical inverters; multiplies the rated power, DC array and battery limits.',
+  'solar_pv.inverter_eff':  'DC→AC conversion efficiency. Default 0.97 — typical peak efficiency of modern string inverters (datasheet "max efficiency" 96–98.5%).',
+  'solar_pv.power_factor':  'Displacement power factor at the AC terminals. Default 1.0 — inverters normally export at unity unless the utility requires reactive support (e.g. 0.95 under grid codes).',
+  'solar_pv.mppt_tracking': 'Informational: fixed-tilt vs tracking mounting. Does not change the electrical model — capture the yield difference via Irradiance %.',
+  'solar_pv.irradiance_pct':'Availability scaling of the DC resource: 100% = STC full sun, 0% = night.\nUse it to study partial output (cloud, morning/evening) — in array mode output = min(DC × irradiance, inverter rating).',
+  'solar_pv.inverter_type': 'grid_tied: PV only, shuts down on grid loss.\nhybrid: adds a DC-coupled battery behind the same inverter — enables the Battery Storage section and the Backup Autonomy study.',
+  'solar_pv.fault_contribution_pu': 'Inverter fault current limit as a multiple of rated current. Default 1.1×.\nSource: IEC TR 60909-4 — converter-based sources are current-limited (typ 1.0–1.5×, no decaying DC component).',
+
+  // Solar PV — array / DC strings (IEC 62548)
+  'solar_pv.pv_array_mode': 'Rated kW (AC): enter the plant size directly (legacy behaviour).\nStrings × Panels (DC): size the array physically — output follows panels × strings × irradiance, clipped at the inverter, and IEC 62548 string checks run live in Calculated Values.',
+  'solar_pv.pv_panel_type': 'Preset module classes with typical STC datasheet values (Voc, Vmp, Isc, Imp, temperature coefficients).\nPicking one fills the fields below; override any value from your module\'s datasheet.',
+  'solar_pv.pv_panel_w':    'Module power at STC (1000 W/m², 25 °C cell, AM1.5). The kWp headline figure on the datasheet.',
+  'solar_pv.pv_panels_per_string': 'Modules in series per string. Sets the string voltage:\n• too many → cold Voc exceeds the inverter max DC input\n• too few → hot Vmp drops out of the MPPT window.\nBoth are checked live below.',
+  'solar_pv.pv_strings':    'Parallel strings per inverter. Sets the array current and DC kWp; strings are distributed across the MPPT trackers for the current check.',
+  'solar_pv.pv_voc':        'Module open-circuit voltage at STC. Rises in cold weather — the coldest-morning value (checked below) must stay under the inverter\'s max DC input voltage.\nSource: IEC 62548 §7.2.',
+  'solar_pv.pv_vmp':        'Module maximum-power-point voltage at STC. Falls with heat — the hot-cell value must stay inside the MPPT window for the inverter to track peak power.',
+  'solar_pv.pv_isc':        'Module short-circuit current at STC. Design current per IEC 62548 §7.3 is 1.25 × Isc (irradiance can exceed STC); used for the MPPT input-current check.',
+  'solar_pv.pv_imp':        'Module maximum-power-point current at STC. Informational for cable sizing; the string check uses 1.25 × Isc.',
+  'solar_pv.pv_beta_voc':   'Voc temperature coefficient, %/°C (negative). Typical −0.24 to −0.30 for crystalline silicon.\nUsed to project Voc at the site minimum ambient: Voc × (1 + β(Tmin − 25)/100).',
+  'solar_pv.pv_gamma_vmp':  'Vmp (or Pmax) temperature coefficient, %/°C (negative). Typically slightly more negative than β_Voc: −0.30 to −0.40.\nUsed to project Vmp at the maximum cell temperature.',
+  'solar_pv.mppt_count':    'Independent MPPT trackers on the inverter (datasheet). Strings are assumed spread evenly — the current check uses ceil(strings ÷ trackers) per MPPT.',
+  'solar_pv.mppt_min_v':    'Bottom of the inverter\'s MPPT operating window (datasheet "MPPT voltage range"). The hot-weather string Vmp must stay above it.',
+  'solar_pv.mppt_max_v':    'Top of the MPPT operating window. The string Vmp must stay below it (Voc is checked against Max DC Input Voltage, which is usually higher).',
+  'solar_pv.dc_max_v':      'Absolute maximum DC input voltage of the inverter (datasheet, typ. 600 V single-phase / 1000–1100 V three-phase).\nThe coldest-morning string Voc must never exceed it — hard equipment limit per IEC 62548 §7.2.',
+  'solar_pv.mppt_max_a':    'Maximum input (or short-circuit) current per MPPT tracker from the datasheet.\nChecked against 1.25 × Isc × strings-per-MPPT.',
+  'solar_pv.site_temp_min_c': 'Lowest expected ambient at the site — the worst case for Voc (record low, not average).\nDefault −5 °C suits most of South Africa; use site climate data.',
+  'solar_pv.site_cell_temp_max_c': 'Highest expected CELL temperature — typically ambient + 25–35 °C for roof-mounted modules. Default 70 °C.\nWorst case for Vmp dropping out of the MPPT window.',
+
+  // Solar PV — hybrid battery (shared with the BESS component)
+  'solar_pv.battery_kwh':   'Total installed battery capacity (all units on this inverter). Usable energy = capacity × usable DoD.',
+  'solar_pv.battery_dod_pct': 'Usable depth of discharge — how far the BMS lets the battery run down. LiFePO₄ typically 80–90%; the remainder is a protected reserve floor.',
+  'solar_pv.battery_max_charge_kw': 'Battery-side charge power limit (BMS/inverter datasheet). Charging draws this from PV first, then the grid.',
+  'solar_pv.battery_max_discharge_kw': 'Battery-side discharge power limit. In a DC-coupled hybrid the AC output is additionally capped by the inverter headroom left after PV output.',
+  'solar_pv.battery_rt_eff': 'Round-trip (charge→discharge) energy efficiency. LiFePO₄ typically 0.92–0.96.\nAutonomy calculations derate stored energy by the one-way efficiency √η.',
+  'solar_pv.battery_soc_pct': 'State of charge for this study snapshot. Gates behaviour: no discharge at the DoD reserve floor, no charging at 100%.',
+  'solar_pv.battery_mode':  'auto: self-consumption — discharges into the site\'s renewable shortfall, charges from PV surplus (grid-following).\ncharging / discharging: force a fixed set-point.\nidle: battery inert. Only "discharging" lets the unit form an island in a grid outage.',
+
+  // BESS (same battery parameters as the hybrid PV)
+  'battery.rated_kva':      'AC nameplate of the battery inverter — caps charge and discharge power and sets the fault contribution base.',
+  'battery.battery_kwh':    'Total installed battery capacity. Usable energy = capacity × usable DoD.',
+  'battery.battery_dod_pct': 'Usable depth of discharge — how far the BMS lets the battery run down. LiFePO₄ typically 80–90%.',
+  'battery.battery_max_charge_kw': 'Charge power limit (BMS/inverter datasheet), also capped by the inverter kVA.',
+  'battery.battery_max_discharge_kw': 'Discharge power limit, also capped by the inverter kVA.',
+  'battery.battery_rt_eff': 'Round-trip energy efficiency. LiFePO₄ typically 0.92–0.96; autonomy uses the one-way √η.',
+  'battery.battery_soc_pct': 'State of charge for this study snapshot — gates charge/discharge availability.',
+  'battery.battery_mode':   'auto: self-consumption (grid-following).\ncharging / discharging: fixed set-point.\nidle: inert. Only "discharging" lets the BESS act as the island reference in a grid outage.',
+  'battery.fault_contribution_pu': 'Inverter fault current limit as a multiple of rated current. Default 1.1×.\nSource: IEC TR 60909-4 — converter sources are current-limited.',
 };
 
 // ─── Distribution Board — default circuit load types ───
@@ -914,17 +1012,32 @@ const FIELD_INFO = {
 // motor groups 0.5–0.8). `per_circuit` is the default number of units when a
 // whole circuit is added at once. Breaker/curve/cable follow SANS 10142-1
 // common practice for a domestic/commercial LV board.
+// `leak_ma` is the typical standing earth-leakage per unit (mA) from EMC
+// filter capacitors and insulation, taken from product-standard limits:
+// IEC 60335-1 §13 (portable Class I ≤ 0.75 mA, heating 0.75 mA/kW capped
+// at 5 mA), IEC 62368-1 (pluggable IT ≤ 3.5 mA), IEC 61851 (EV charger
+// ≤ 3.5 mA on the AC side), IEC 61347 (LED drivers, typ. 0.3–0.5 mA).
 const DB_LOAD_TYPES = [
-  { key: 'lighting',   label: 'Lighting',          va: 100,  unit: 'point',   df: 1.0, poles: '1P', breaker_a: 10, curve: 'B', cable_mm2: 1.5, per_circuit: 10 },
-  { key: 'socket',     label: 'Socket Outlet',     va: 200,  unit: 'socket',  df: 0.4, poles: '1P', breaker_a: 20, curve: 'B', cable_mm2: 2.5, per_circuit: 6 },
-  { key: 'geyser',     label: 'Geyser',            va: 3000, unit: 'geyser',  df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
-  { key: 'stove',      label: 'Stove / Oven',      va: 6000, unit: 'stove',   df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1 },
-  { key: 'aircon',     label: 'Air Conditioner',   va: 2500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
-  { key: 'ev_charger', label: 'EV Charger',        va: 7400, unit: 'charger', df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1 },
-  { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
-  { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1 },
-  { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1 },
+  { key: 'lighting',   label: 'Lighting',          va: 100,  unit: 'point',   df: 1.0, poles: '1P', breaker_a: 10, curve: 'B', cable_mm2: 1.5, per_circuit: 10, leak_ma: 0.4 },
+  { key: 'socket',     label: 'Socket Outlet',     va: 200,  unit: 'socket',  df: 0.4, poles: '1P', breaker_a: 20, curve: 'B', cable_mm2: 2.5, per_circuit: 6,  leak_ma: 0.75 },
+  { key: 'geyser',     label: 'Geyser',            va: 3000, unit: 'geyser',  df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.25 },
+  { key: 'stove',      label: 'Stove / Oven',      va: 6000, unit: 'stove',   df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1,  leak_ma: 4.5 },
+  { key: 'aircon',     label: 'Air Conditioner',   va: 2500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5 },
+  { key: 'ev_charger', label: 'EV Charger',        va: 7400, unit: 'charger', df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1,  leak_ma: 3.5 },
+  { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5 },
+  { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.0 },
+  { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 0 },
 ];
+
+// Standing earth-leakage of the cable itself (insulation capacitance to
+// earth): ≈ 0.5 mA per 100 m for LV PVC/XLPE, added per way from cable_m.
+const DB_CABLE_LEAK_MA_PER_M = 0.005;
+// IEC 60364-5-53 §531.3.2: standing leakage on an RCD-protected group
+// should not exceed 30% of IΔn — an RCD is permitted to trip anywhere
+// between 50% and 100% of its rated residual current.
+const DB_EL_STANDING_LIMIT = 0.3;
+// Common earth-leakage unit rated residual currents (IΔn, mA)
+const DB_EL_RATINGS_MA = [10, 30, 100, 300, 500];
 
 const COMPONENT_DEFS = {
   // --- Sources ---
@@ -1014,6 +1127,32 @@ const COMPONENT_DEFS = {
       inverter_eff: 0.97,
       power_factor: 1.0,
       mppt_tracking: 'fixed',
+      inverter_type: 'grid_tied',
+      pv_array_mode: 'rated',
+      pv_panel_type: '',
+      pv_panel_w: 550,
+      pv_panels_per_string: 10,
+      pv_strings: 2,
+      pv_voc: 49.9,
+      pv_vmp: 41.95,
+      pv_isc: 14.0,
+      pv_imp: 13.12,
+      pv_beta_voc: -0.26,
+      pv_gamma_vmp: -0.34,
+      mppt_min_v: 200,
+      mppt_max_v: 800,
+      dc_max_v: 1000,
+      mppt_count: 2,
+      mppt_max_a: 26,
+      site_temp_min_c: -5,
+      site_cell_temp_max_c: 70,
+      battery_kwh: 100,
+      battery_dod_pct: 90,
+      battery_max_charge_kw: 50,
+      battery_max_discharge_kw: 50,
+      battery_rt_eff: 0.95,
+      battery_soc_pct: 100,
+      battery_mode: 'auto',
       fault_contribution_pu: 1.1,
       irradiance_pct: 100,
       dispatch_priority: 1,
@@ -1027,6 +1166,60 @@ const COMPONENT_DEFS = {
       { key: 'inverter_eff', label: 'Inverter Efficiency', type: 'number', unit: 'p.u.', min: 0.8, max: 1.0, step: 0.01 },
       { key: 'power_factor', label: 'Power Factor', type: 'number', min: -1, max: 1, step: 0.01 },
       { key: 'mppt_tracking', label: 'MPPT Mode', type: 'select', options: ['fixed', 'tracking'] },
+      { key: 'inverter_type', label: 'Inverter Type', type: 'select', options: ['grid_tied', 'hybrid'] },
+      { key: 'pv_array_mode', label: 'PV Sizing Mode', type: 'select',
+        options: [
+          { value: 'rated', label: 'Rated kW (AC)' },
+          { value: 'array', label: 'Strings × Panels (DC)' },
+        ] },
+      { key: 'pv_panel_type', label: 'Panel Module', type: 'standard_select', library: 'pv_panel',
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_panel_w', label: 'Panel Rating', type: 'number', unit: 'W', min: 50, step: 5,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_panels_per_string', label: 'Panels per String', type: 'number', min: 1, step: 1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_strings', label: 'Strings (per inverter)', type: 'number', min: 1, step: 1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_voc', label: 'Panel Voc (STC)', type: 'number', unit: 'V', min: 0, step: 0.1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_vmp', label: 'Panel Vmp (STC)', type: 'number', unit: 'V', min: 0, step: 0.1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_isc', label: 'Panel Isc (STC)', type: 'number', unit: 'A', min: 0, step: 0.1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_imp', label: 'Panel Imp (STC)', type: 'number', unit: 'A', min: 0, step: 0.1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_beta_voc', label: 'Voc Temp Coeff', type: 'number', unit: '%/°C', min: -1, max: 0, step: 0.01,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'pv_gamma_vmp', label: 'Vmp Temp Coeff', type: 'number', unit: '%/°C', min: -1, max: 0, step: 0.01,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'mppt_count', label: 'MPPT Trackers', type: 'number', min: 1, step: 1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'mppt_min_v', label: 'MPPT Min Voltage', type: 'number', unit: 'V', min: 0, step: 5,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'mppt_max_v', label: 'MPPT Max Voltage', type: 'number', unit: 'V', min: 0, step: 5,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'dc_max_v', label: 'Max DC Input Voltage', type: 'number', unit: 'V', min: 0, step: 10,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'mppt_max_a', label: 'Max Input Current / MPPT', type: 'number', unit: 'A', min: 0, step: 0.5,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'site_temp_min_c', label: 'Site Min Ambient', type: 'number', unit: '°C', min: -40, max: 25, step: 1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'site_cell_temp_max_c', label: 'Max Cell Temperature', type: 'number', unit: '°C', min: 25, max: 100, step: 1,
+        showWhen: { field: 'pv_array_mode', values: ['array'] }, section: 'pv' },
+      { key: 'battery_kwh', label: 'Battery Capacity (total)', type: 'number', unit: 'kWh', min: 0, step: 1,
+        showWhen: { field: 'inverter_type', values: ['hybrid'] }, section: 'battery' },
+      { key: 'battery_dod_pct', label: 'Usable Depth of Discharge', type: 'number', unit: '%', min: 0, max: 100, step: 5,
+        showWhen: { field: 'inverter_type', values: ['hybrid'] }, section: 'battery' },
+      { key: 'battery_max_charge_kw', label: 'Max Charge Power', type: 'number', unit: 'kW', min: 0, step: 1,
+        showWhen: { field: 'inverter_type', values: ['hybrid'] }, section: 'battery' },
+      { key: 'battery_max_discharge_kw', label: 'Max Discharge Power', type: 'number', unit: 'kW', min: 0, step: 1,
+        showWhen: { field: 'inverter_type', values: ['hybrid'] }, section: 'battery' },
+      { key: 'battery_rt_eff', label: 'Round-trip Efficiency', type: 'number', unit: 'p.u.', min: 0.5, max: 1.0, step: 0.01,
+        showWhen: { field: 'inverter_type', values: ['hybrid'] }, section: 'battery' },
+      { key: 'battery_soc_pct', label: 'State of Charge', type: 'number', unit: '%', min: 0, max: 100, step: 5,
+        showWhen: { field: 'inverter_type', values: ['hybrid'] }, section: 'battery' },
+      { key: 'battery_mode', label: 'Battery Mode', type: 'select', options: ['auto', 'charging', 'discharging', 'idle'],
+        showWhen: { field: 'inverter_type', values: ['hybrid'] }, section: 'battery' },
       { key: 'fault_contribution_pu', label: 'Fault Contribution', type: 'number', unit: '×Irated', min: 1.0, max: 2.0, step: 0.1, section: 'fault' },
       { key: 'irradiance_pct', label: 'Irradiance', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
       { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
@@ -1068,6 +1261,45 @@ const COMPONENT_DEFS = {
       { key: 'wind_speed_pct', label: 'Wind Output', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
       { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
       { key: 'dispatch_mode', label: 'Dispatch Mode', type: 'select', options: ['must_run', 'merit_order', 'standby'], section: 'loadflow' },
+    ],
+  },
+
+  battery: {
+    name: 'Battery Storage',
+    label: 'Battery Energy Storage (BESS)',
+    category: 'sources',
+    ports: [{ id: 'out', side: 'bottom', offset: 0 }],
+    width: 60,
+    height: 50,
+    defaults: {
+      name: 'BESS',
+      rated_kva: 100,
+      voltage_kv: 0.4,
+      power_factor: 1.0,
+      battery_kwh: 200,
+      battery_dod_pct: 90,
+      battery_max_charge_kw: 100,
+      battery_max_discharge_kw: 100,
+      battery_rt_eff: 0.95,
+      battery_soc_pct: 100,
+      battery_mode: 'auto',
+      fault_contribution_pu: 1.1,
+      dispatch_priority: 1,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'rated_kva', label: 'Inverter Rating', type: 'number', unit: 'kVA', unitOptions: [{ label: 'kVA', mult: 1 }, { label: 'MVA', mult: 1000 }] },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
+      { key: 'power_factor', label: 'Power Factor', type: 'number', min: -1, max: 1, step: 0.01 },
+      { key: 'battery_kwh', label: 'Battery Capacity', type: 'number', unit: 'kWh', min: 0, step: 1, section: 'battery' },
+      { key: 'battery_dod_pct', label: 'Usable Depth of Discharge', type: 'number', unit: '%', min: 0, max: 100, step: 5, section: 'battery' },
+      { key: 'battery_max_charge_kw', label: 'Max Charge Power', type: 'number', unit: 'kW', min: 0, step: 1, section: 'battery' },
+      { key: 'battery_max_discharge_kw', label: 'Max Discharge Power', type: 'number', unit: 'kW', min: 0, step: 1, section: 'battery' },
+      { key: 'battery_rt_eff', label: 'Round-trip Efficiency', type: 'number', unit: 'p.u.', min: 0.5, max: 1.0, step: 0.01, section: 'battery' },
+      { key: 'battery_soc_pct', label: 'State of Charge', type: 'number', unit: '%', min: 0, max: 100, step: 5, section: 'battery' },
+      { key: 'battery_mode', label: 'Battery Mode', type: 'select', options: ['auto', 'charging', 'discharging', 'idle'], section: 'battery' },
+      { key: 'fault_contribution_pu', label: 'Fault Contribution', type: 'number', unit: '×Irated', min: 1.0, max: 2.0, step: 0.1, section: 'fault' },
+      { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
     ],
   },
 
@@ -1231,6 +1463,7 @@ const COMPONENT_DEFS = {
       breaking_capacity_ka: 25,
       state: 'closed',
       cb_type: 'mccb',
+      mcb_curve: 'C',
       trip_rating_a: 630,
       thermal_pickup: 1.0,
       magnetic_pickup: 10,
@@ -1246,7 +1479,9 @@ const COMPONENT_DEFS = {
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
       { key: 'state', label: 'State', type: 'select', options: ['closed', 'open'] },
-      { key: 'cb_type', label: 'CB Type', type: 'select', options: ['mccb', 'acb'] },
+      { key: 'cb_type', label: 'CB Type', type: 'select', options: ['mcb', 'mccb', 'acb'] },
+      { key: 'mcb_curve', label: 'Curve (IEC 60898)', type: 'select', options: ['B', 'C', 'D'],
+        showWhen: { field: 'cb_type', values: ['mcb'] } },
       { key: 'trip_rating_a', label: 'Trip Rating', type: 'number', unit: 'A', section: 'protection' },
       { key: 'thermal_pickup', label: 'Thermal Pickup', type: 'number', unit: '×In', section: 'protection' },
       { key: 'magnetic_pickup', label: 'Magnetic Pickup', type: 'number', unit: '×In', section: 'protection' },
@@ -1431,6 +1666,7 @@ const COMPONENT_DEFS = {
       x_pp: 0.17,
       x_r_ratio: 2.4, // IEC 60909-0: X/R ≈ 2.4 typical for LV motor groups (10 was a large-MV-motor value)
       demand_factor: 1.0,
+      essential: 'yes',
       x2: 0,
     },
     fields: [
@@ -1440,6 +1676,7 @@ const COMPONENT_DEFS = {
       { key: 'efficiency', label: 'Efficiency', type: 'number' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
+      { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number', section: 'fault' },
       { key: 'starting_method', label: 'Starting Method', type: 'select',
         options: [
@@ -1470,6 +1707,7 @@ const COMPONENT_DEFS = {
       locked_rotor_current: 5.5,
       starting_method: 'dol',
       demand_factor: 1.0,
+      essential: 'yes',
       x2: 0,
       x0: 0,
     },
@@ -1479,6 +1717,7 @@ const COMPONENT_DEFS = {
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
+      { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number', section: 'fault' },
       { key: 'starting_method', label: 'Starting Method', type: 'select',
         options: [
@@ -1507,6 +1746,7 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       load_type: 'constant_power',
       demand_factor: 1.0,
+      essential: 'yes',
       phase_connection: '3P',
       phase_a_pct: 33.33,
       phase_b_pct: 33.33,
@@ -1518,6 +1758,7 @@ const COMPONENT_DEFS = {
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number', section: 'loadflow' },
+      { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'phase_connection', label: 'Phase Connection', type: 'select',
         options: [
           { value: '3P',    label: '3-Phase (A-B-C)' },
@@ -1548,6 +1789,7 @@ const COMPONENT_DEFS = {
       voltage_kv: 0.4,
       power_factor: 0.85,
       board_diversity: 1.0,     // overall diversity applied on top of per-way DFs
+      essential: 'yes',
       circuits: [],             // circuit schedule (ways) — edited in DBSchedule
       // Derived lumped-load equivalents, recomputed by DBSchedule on save.
       // The analyses read these exactly like a static load's props.
@@ -1564,6 +1806,7 @@ const COMPONENT_DEFS = {
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'board_diversity', label: 'Board Diversity', type: 'number', min: 0.1, max: 1, step: 0.05, section: 'loadflow' },
+      { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
     ],
   },
 

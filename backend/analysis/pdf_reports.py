@@ -571,16 +571,47 @@ def _render_db_schedules(pdf, components):
                 f"{c.get('poles', '1P')} {c.get('phase', '') if c.get('poles') != '3P' else 'RWB'}",
                 f"{c.get('breaker_a', '—')}A {c.get('curve', '')}",
                 str(c.get("el_group", "") or "—"),
+                f"{float(c.get('leakage_ma') or 0):.1f}",
                 f"{c.get('cable_mm2', '—')}mm² / {c.get('cable_m', '—')}m",
                 f"{float(c.get('load_va') or 0):.0f}",
                 f"{float(c.get('demand_factor') or 1):.2f}",
             ])
         headers = ["Way", "Description", "Poles/Ph", "Breaker", "EL Grp",
-                   "Cable", "Load (VA)", "DF"]
+                   "Leak mA", "Cable", "Load (VA)", "DF"]
         avail = pdf.w - pdf.l_margin - pdf.r_margin
-        widths = [avail * 0.06, avail * 0.28, avail * 0.1, avail * 0.12,
-                  avail * 0.09, avail * 0.15, avail * 0.11, avail * 0.09]
+        widths = [avail * 0.05, avail * 0.25, avail * 0.09, avail * 0.11,
+                  avail * 0.07, avail * 0.08, avail * 0.14, avail * 0.11,
+                  avail * 0.10]
         _table(pdf, headers, rows, widths, header_color=(46, 125, 50))
+
+        # Standing earth leakage per EL group: device leakage plus cable
+        # insulation leakage (~0.5 mA per 100 m). IEC 60364-5-53 531.3.2:
+        # standing leakage should stay below 30% of the group's rated IDn.
+        cable_leak_ma_per_m = 0.005
+        el_ratings = p.get("el_ratings") or {}
+        el_groups = {}
+        for c in circuits:
+            g = str(c.get("el_group") or "").strip()
+            if not g:
+                continue
+            ma = (float(c.get("leakage_ma") or 0)
+                  + float(c.get("cable_m") or 0) * cable_leak_ma_per_m)
+            el_groups[g] = el_groups.get(g, 0.0) + ma
+        if el_groups:
+            pdf.ln(2)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(0, 5, "Standing earth leakage per EL group "
+                           "(limit 30% of IDn - IEC 60364-5-53):", ln=1)
+            pdf.set_font("Helvetica", "", 9)
+            for g in sorted(el_groups):
+                idn = float(el_ratings.get(g) or 30)
+                limit = idn * 0.3
+                total = el_groups[g]
+                verdict = ("OK" if total <= limit
+                           else "EXCEEDED - nuisance-trip risk, split ways across more EL units")
+                pdf.cell(0, 5, _safe(
+                    f"  EL {g} (IDn {idn:.0f} mA): {total:.1f} mA standing, "
+                    f"limit {limit:.1f} mA - {verdict}"), ln=1)
 
 
 def _render_arcflash(pdf, arcflash_results, comp_map):

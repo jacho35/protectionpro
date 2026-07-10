@@ -131,9 +131,60 @@ def _find_components_at_bus(bus_id, adjacency, components):
 # generator, else an inverter source. Islands with no source are
 # reported de-energized instead of making the whole solve singular.
 
-DEFAULT_DISPATCH_PRIORITY = {"solar_pv": 1, "wind_turbine": 1, "generator": 2, "utility": 3}
-_BALANCER_TYPE_RANK = {"utility": 3, "generator": 2, "wind_turbine": 1, "solar_pv": 0}
+DEFAULT_DISPATCH_PRIORITY = {"solar_pv": 1, "wind_turbine": 1, "generator": 2,
+                             "utility": 3, "battery": 1}
+_BALANCER_TYPE_RANK = {"utility": 3, "generator": 2, "wind_turbine": 1,
+                       "solar_pv": 0, "battery": 1}
 DISPATCHABLE_SOURCE_TYPES = ("generator", "solar_pv", "wind_turbine")
+
+
+def _battery_params(comp):
+    """Normalized storage parameters for a BESS or a hybrid solar_pv.
+
+    Battery power is AC-side and inverter-limited: a standalone BESS by its
+    rated_kva; a DC-coupled hybrid's discharge by the inverter headroom the
+    PV output leaves (charging from PV/grid uses the full inverter rating).
+    A snapshot solve has no time axis, so state of charge only GATES
+    charge/discharge (above the DoD reserve floor / below 100%), it does not
+    scale power. Returns None when the component has no battery.
+    """
+    p = comp.props
+    if comp.type == "battery":
+        kwh = float(p.get("battery_kwh", 200) or 0)
+        inverter_mva = float(p.get("rated_kva", 100) or 0) / 1000
+        headroom_mva = inverter_mva
+    elif comp.type == "solar_pv" and str(p.get("inverter_type", "")) == "hybrid":
+        kwh = float(p.get("battery_kwh", 0) or 0)
+        _pp, _qq, s_now, rated_full = _source_output_mva(comp)
+        inverter_mva = rated_full
+        headroom_mva = max(0.0, rated_full - s_now)
+    else:
+        return None
+    if kwh <= 0 or inverter_mva <= 0:
+        return None
+    mode = str(p.get("battery_mode", "auto") or "auto")
+    if mode not in ("auto", "charging", "discharging", "idle"):
+        mode = "auto"
+    dod = min(100.0, max(0.0, float(p.get("battery_dod_pct", 90) or 0)))
+    soc = min(100.0, max(0.0, float(p.get("battery_soc_pct", 100) or 100)))
+    max_ch = float(p.get("battery_max_charge_kw", 0) or 0) / 1000
+    max_dis = float(p.get("battery_max_discharge_kw", 0) or 0) / 1000
+    avail_kwh = kwh * max(0.0, soc - (100.0 - dod)) / 100.0
+    return {
+        "mode": mode,
+        "max_charge_mw": min(max_ch, inverter_mva),
+        "max_discharge_mw": min(max_dis, headroom_mva),
+        "can_charge": soc < 100.0 - 1e-9 and max_ch > 0,
+        "can_discharge": avail_kwh > 1e-9 and max_dis > 0,
+        "available_kwh": avail_kwh,
+    }
+
+
+def _battery_is_grid_forming(comp):
+    """A storage unit anchors an island (may act as slack) only when the user
+    explicitly set it to discharge — 'auto' is grid-following self-consumption."""
+    bp = _battery_params(comp)
+    return bool(bp and bp["mode"] == "discharging" and bp["can_discharge"])
 
 
 def _fmt_power_mw(mw):
@@ -292,12 +343,16 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
     direct_src_bus = {}   # comp_id -> bus_index
     for bus in buses:
         for comp in _find_components_at_bus(bus.id, adjacency, components):
-            if comp.type in DISPATCHABLE_SOURCE_TYPES or comp.type == "utility":
+            if (comp.type in DISPATCHABLE_SOURCE_TYPES or comp.type == "utility"
+                    or comp.type == "battery"):
                 direct_src_bus.setdefault(comp.id, bus_idx[bus.id])
 
     island_sources = {}   # island -> list of (comp, bus_index, direct)
     for comp in project.components:
-        if comp.type not in DISPATCHABLE_SOURCE_TYPES and comp.type != "utility":
+        if comp.type == "battery" and not _battery_is_grid_forming(comp):
+            continue  # auto/charging/idle storage never anchors an island
+        if (comp.type not in DISPATCHABLE_SOURCE_TYPES and comp.type != "utility"
+                and comp.type != "battery"):
             continue
         if comp.id in direct_src_bus:
             bi = direct_src_bus[comp.id]
@@ -318,6 +373,23 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
             bi = bus_idx[conn]
             direct = False
         island_sources.setdefault(island_of[bi], []).append((comp, bi, direct))
+
+    # ── Locate storage units (BESS + hybrid solar_pv batteries) per island ──
+    island_batts = {}   # island -> list of (comp, bus_index, params)
+    for comp in project.components:
+        if comp.type not in ("battery", "solar_pv"):
+            continue
+        bp = _battery_params(comp)
+        if not bp or bp["mode"] == "idle":
+            continue
+        if comp.id in direct_src_bus:
+            bi = direct_src_bus[comp.id]
+        else:
+            conn = _source_connection_bus(comp, adjacency, components, bus_idx)
+            if conn is None:
+                continue  # disconnected (e.g. behind an open CB)
+            bi = bus_idx[conn]
+        island_batts.setdefault(island_of[bi], []).append((comp, bi, bp))
 
     user_swing_islands = {}
     for bus in buses:
@@ -349,6 +421,44 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
         demand_mw = (sum(bus_load_p_mw[i] for i in isl_buses)
                      + (loss_adders or {}).get(isl, 0.0))
 
+        # ── Battery storage pass (BESS + hybrid PV batteries) ──
+        # Resolved BEFORE generator commitment and merit dispatch so both see
+        # the storage-adjusted demand:
+        #   charging    — draws from the bus (grid/PV charges the battery)
+        #   discharging — fixed injection, applied after the plan loop
+        #                 (a balancer battery is skipped — slack covers it)
+        #   auto        — self-consumption: discharges into the island's
+        #                 renewable shortfall, else charges from the surplus
+        isl_batts = island_batts.get(isl, [])
+        batt_charge = []      # (comp, bus_index, p_mw drawn, params)
+        batt_discharge = []   # (comp, bus_index, p_mw injected, params)
+        if isl_batts:
+            renewable_avail_mw = sum(
+                _source_output_mva(c)[0] for c, _bi, d in sources
+                if d and c.type in ("solar_pv", "wind_turbine"))
+            deficit = max(0.0, demand_mw - renewable_avail_mw)
+            surplus = max(0.0, renewable_avail_mw - demand_mw)
+            for comp, bi, bp in isl_batts:
+                if bp["mode"] == "charging" and bp["can_charge"]:
+                    batt_charge.append((comp, bi, bp["max_charge_mw"], bp))
+                elif bp["mode"] == "discharging" and bp["can_discharge"]:
+                    batt_discharge.append((comp, bi, bp["max_discharge_mw"], bp))
+                elif bp["mode"] == "auto":
+                    if deficit > 1e-9 and bp["can_discharge"]:
+                        p = min(bp["max_discharge_mw"], deficit)
+                        deficit -= p
+                        if p > 1e-9:
+                            batt_discharge.append((comp, bi, p, bp))
+                    elif surplus > 1e-9 and bp["can_charge"]:
+                        p = min(bp["max_charge_mw"], surplus)
+                        surplus -= p
+                        if p > 1e-9:
+                            batt_charge.append((comp, bi, p, bp))
+            # Charging is extra island demand; renewables then serve it
+            # instead of being curtailed, or the balancer imports it
+            for _c, _bi, p, _bp in batt_charge:
+                demand_mw += p
+
         # ── Sequential generator commitment (load-demand start) ──
         # Islanded sets with gen_control='sequential' commit in dispatch_priority
         # order: the lead set runs first; the next starts only when the running
@@ -369,7 +479,8 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
             renewable_mw = sum(
                 _source_output_mva(c)[0] for c, _bi, d in sources
                 if d and c.type in ("solar_pv", "wind_turbine"))
-            gen_borne = max(0.0, demand_mw - renewable_mw)
+            batt_mw = sum(p for _c, _bi, p, _bp in batt_discharge)
+            gen_borne = max(0.0, demand_mw - renewable_mw - batt_mw)
             committed = [seq_gens[0]]   # lead set always runs (island slack)
             for entry in seq_gens[1:]:
                 cap = sum(_source_output_mva(c)[0] for c, _b, _d in committed)
@@ -439,7 +550,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                          f"'{bcomp.props.get('name', bcomp.id)}' acts as the "
                          "reference (slack) source."),
             ))
-        elif not utilities and bcomp.type in ("solar_pv", "wind_turbine"):
+        elif not utilities and bcomp.type in ("solar_pv", "wind_turbine", "battery"):
             warnings.append(LoadFlowWarning(
                 elementId=bcomp.id,
                 element_name=str(bcomp.props.get("name", bcomp.type)),
@@ -631,6 +742,43 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 "curtailed_mw": round(curtailed, 4),
             })
 
+        # ── Apply storage set-points (accumulating: a hybrid PV shares its
+        # component id between the PV plan entry and its battery) ──
+        for comp, bi, p_ch, bp in batt_charge:
+            inj = injections.setdefault(bi, [0.0, 0.0])
+            inj[0] -= p_ch
+            prev = dispatched_by_comp.get(comp.id, (0.0, 0.0))
+            dispatched_by_comp[comp.id] = (prev[0] - p_ch, prev[1])
+            entries.append({
+                "source_id": comp.id,
+                "source_name": (str(comp.props.get("name", comp.type))
+                                + (" (battery)" if comp.type == "solar_pv" else "")),
+                "source_type": "battery",
+                "bus_id": buses[bi].id, "island": isl,
+                "priority": _dispatch_priority(comp), "mode": bp["mode"],
+                "role": "charging",
+                "available_mw": round(bp["max_charge_mw"], 4),
+                "dispatched_mw": round(-p_ch, 4), "curtailed_mw": 0.0,
+            })
+        for comp, bi, p_dis, bp in batt_discharge:
+            if comp.id in balancer_ids:
+                continue   # island slack — output comes from the solve
+            inj = injections.setdefault(bi, [0.0, 0.0])
+            inj[0] += p_dis
+            prev = dispatched_by_comp.get(comp.id, (0.0, 0.0))
+            dispatched_by_comp[comp.id] = (prev[0] + p_dis, prev[1])
+            entries.append({
+                "source_id": comp.id,
+                "source_name": (str(comp.props.get("name", comp.type))
+                                + (" (battery)" if comp.type == "solar_pv" else "")),
+                "source_type": "battery",
+                "bus_id": buses[bi].id, "island": isl,
+                "priority": _dispatch_priority(comp), "mode": bp["mode"],
+                "role": "discharging",
+                "available_mw": round(bp["max_discharge_mw"], 4),
+                "dispatched_mw": round(p_dis, 4), "curtailed_mw": 0.0,
+            })
+
         for comp, bi, _d in balancers:
             p_av = (_source_output_mva(comp)[0] if comp.type != "utility"
                     else _utility_supply_capacity(comp))
@@ -788,7 +936,17 @@ def _source_output_mva(comp):
         pf = comp.props.get("power_factor", 1.0)
         irr = comp.props.get("irradiance_pct", 100) / 100.0
         rated_full = rated_kw * n_inv / (eff * 1000)   # full-sun capacity
-        s_mva = rated_full * irr
+        if str(comp.props.get("pv_array_mode", "rated")) == "array":
+            # Array mode: output follows the DC array (panels × strings) at
+            # the modelled irradiance, clipped at the inverter nameplate —
+            # an oversized array (DC/AC > 1) clips near full sun.
+            dc_kw = (float(comp.props.get("pv_panel_w", 550) or 0)
+                     * max(1, int(comp.props.get("pv_panels_per_string", 1) or 1))
+                     * max(1, int(comp.props.get("pv_strings", 1) or 1))) / 1000
+            avail_kw = min(dc_kw * irr, rated_kw)
+            s_mva = avail_kw * n_inv / (eff * 1000)
+        else:
+            s_mva = rated_full * irr
         p = s_mva * abs(pf)
         q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2))
         return p, q, s_mva, rated_full
@@ -802,6 +960,14 @@ def _source_output_mva(comp):
         p = s_mva * abs(pf)
         q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2))
         return p, q, s_mva, rated_full
+    elif comp.type == "battery":
+        # Available output only in explicit 'discharging' mode; auto-mode
+        # storage is dispatched by the battery pass, not the merit order
+        rated_mva = float(comp.props.get("rated_kva", 100) or 0) / 1000
+        bp = _battery_params(comp)
+        if bp and bp["mode"] == "discharging" and bp["can_discharge"]:
+            return bp["max_discharge_mw"], 0.0, bp["max_discharge_mw"], rated_mva
+        return 0.0, 0.0, 0.0, rated_mva
     return 0.0, 0.0, 0.0, 0.0
 
 
@@ -1025,8 +1191,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                              or comp.props.get("v_setpoint_pu", 0) or 0)
                 if vset > 0 and bt == "PV":
                     V_spec[i] = vset
-            elif comp.type in ("solar_pv", "wind_turbine"):
-                pass  # Injection set by the dispatcher below
+            elif comp.type in ("solar_pv", "wind_turbine", "battery"):
+                pass  # Injection set by the dispatcher / battery pass below
             elif comp.type in ("static_load", "distribution_board"):
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
@@ -1341,7 +1507,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     # utility absorbs/supplies the residual (standard swing model).
     #
     # On non-swing PQ buses: NR enforces P_spec → generators at scheduled output.
-    _SOURCE_TYPES = {"generator", "solar_pv", "wind_turbine"}
+    _SOURCE_TYPES = {"generator", "solar_pv", "wind_turbine", "battery"}
 
     for bus in buses:
         bus_i = bus_idx[bus.id]

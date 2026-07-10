@@ -23,13 +23,33 @@
   flex-shrink: 0;
 }
 
+.app-title-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+  margin-right: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.app-title-block:hover .app-title {
+  text-decoration: underline;
+}
+
 .app-title {
   font-size: 15px;
   font-weight: 700;
   color: var(--accent);
-  margin-right: 4px;
   letter-spacing: -0.3px;
   white-space: nowrap;
+}
+
+.app-version {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
 }
 
 .project-name-separator {

@@ -10,6 +10,7 @@ from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlas
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
+from ..analysis.backup_autonomy import run_backup_autonomy
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
@@ -147,6 +148,16 @@ def load_diversity(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Load diversity error: {e}")
+
+
+@router.post("/backup")
+def backup_autonomy(data: ProjectData):
+    """Grid-outage backup adequacy & battery autonomy study."""
+    try:
+        return run_backup_autonomy(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Backup study error: {e}")
 
 
 @router.post("/grounding")

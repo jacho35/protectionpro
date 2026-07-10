@@ -1207,3 +1207,244 @@ class TestRaceway:
         assert a.cables[0].od_mm == 30.0 and not a.cables[0].od_estimated
         assert b.status == "empty" and b.warnings
         assert res.summary["total"] == 2
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Battery storage (BESS + hybrid PV) — load flow, fault, backup study
+# ─────────────────────────────────────────────────────────────────────
+
+from backend.analysis.backup_autonomy import run_backup_autonomy
+
+
+_BATT_PROPS = {
+    "name": "BESS", "rated_kva": 100, "voltage_kv": 0.4, "battery_kwh": 200,
+    "battery_dod_pct": 90, "battery_max_charge_kw": 80,
+    "battery_max_discharge_kw": 80, "battery_rt_eff": 0.95,
+    "battery_soc_pct": 100, "fault_contribution_pu": 1.1,
+}
+
+
+def _battery_net(mode, load_kva=120, soc=100, pv_kw=None, with_utility=True):
+    comps = [
+        _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 0.4}),
+        _comp("load-1", "static_load", {
+            "rated_kva": load_kva, "power_factor": 1.0,
+            "demand_factor": 1.0, "voltage_kv": 0.4}),
+        _comp("batt-1", "battery", dict(_BATT_PROPS, battery_mode=mode,
+                                        battery_soc_pct=soc)),
+    ]
+    wires = [_wire("w2", "load-1", "bus-1"), _wire("w3", "batt-1", "bus-1")]
+    if with_utility:
+        comps.append(_comp("util-1", "utility", {
+            "voltage_kv": 0.4, "fault_mva": 100, "x_r_ratio": 10}))
+        wires.append(_wire("w1", "util-1", "bus-1"))
+    if pv_kw is not None:
+        comps.append(_comp("pv-1", "solar_pv", {
+            "rated_kw": pv_kw, "num_inverters": 1, "inverter_eff": 1.0,
+            "power_factor": 1.0, "irradiance_pct": 100, "voltage_kv": 0.4,
+            "dispatch_mode": "must_run"}))
+        wires.append(_wire("w4", "pv-1", "bus-1"))
+    return ProjectData(name="t", components=comps, wires=wires,
+                       baseMVA=100, frequency=50)
+
+
+def _batt_entry(res):
+    return next((e for e in res.dispatch if e.source_type == "battery"), None)
+
+
+class TestBatteryLoadFlow:
+    def test_explicit_discharging_injects_at_limit(self):
+        """'discharging' mode injects the 80 kW discharge limit."""
+        r = run_load_flow(_battery_net("discharging"))
+        e = _batt_entry(r)
+        assert r.converged and e.role == "discharging"
+        assert e.dispatched_mw == pytest.approx(0.08, abs=1e-6)
+
+    def test_charging_draws_and_gates_at_full_soc(self):
+        """'charging' draws 80 kW below 100% SoC and is inert when full."""
+        e = _batt_entry(run_load_flow(_battery_net("charging", soc=60)))
+        assert e.role == "charging"
+        assert e.dispatched_mw == pytest.approx(-0.08, abs=1e-6)
+        assert _batt_entry(run_load_flow(_battery_net("charging", soc=100))) is None
+
+    def test_auto_discharge_matches_deficit(self):
+        """auto: 50 kW load with no renewables → discharge exactly 50 kW."""
+        e = _batt_entry(run_load_flow(_battery_net("auto", load_kva=50)))
+        assert e.role == "discharging"
+        assert e.dispatched_mw == pytest.approx(0.05, abs=1e-6)
+
+    def test_auto_charges_from_pv_surplus(self):
+        """auto: 200 kW PV vs 120 kW load → charges at the 80 kW limit."""
+        e = _batt_entry(run_load_flow(_battery_net("auto", soc=60, pv_kw=200)))
+        assert e.role == "charging"
+        assert e.dispatched_mw == pytest.approx(-0.08, abs=1e-6)
+
+    def test_discharge_gated_at_dod_floor(self):
+        """SoC at the 10% DoD reserve floor (DoD 90%) → no discharge."""
+        assert _batt_entry(run_load_flow(_battery_net("auto", soc=10))) is None
+
+    def test_islanded_discharging_bess_is_slack(self):
+        """Grid outage: an explicitly discharging BESS anchors the island."""
+        r = run_load_flow(_battery_net("discharging", load_kva=50,
+                                       with_utility=False))
+        assert r.converged
+        bal = next(e for e in r.dispatch if e.role == "balancer")
+        assert bal.source_type == "battery"
+
+    def test_islanded_auto_battery_does_not_anchor(self):
+        """A grid-following (auto) battery never forms an island."""
+        r = run_load_flow(_battery_net("auto", load_kva=50, with_utility=False))
+        assert not any(e.role == "balancer" for e in r.dispatch)
+
+    def test_hybrid_discharge_capped_by_inverter_headroom(self):
+        """DC-coupled hybrid at 40% sun: 100 kVA inverter − 40 kW PV leaves
+        60 kW headroom, so the 60 kW discharge fits; at full sun it is 0."""
+        def hybrid(irr):
+            return ProjectData(name="t", baseMVA=100, frequency=50, components=[
+                _comp("util-1", "utility", {"voltage_kv": 0.4, "fault_mva": 100,
+                                            "x_r_ratio": 10}),
+                _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 0.4}),
+                _comp("load-1", "static_load", {"rated_kva": 200, "power_factor": 1.0,
+                                                "demand_factor": 1.0, "voltage_kv": 0.4}),
+                _comp("pv-1", "solar_pv", {
+                    "rated_kw": 100, "num_inverters": 1, "inverter_eff": 1.0,
+                    "power_factor": 1.0, "irradiance_pct": irr, "voltage_kv": 0.4,
+                    "inverter_type": "hybrid", "battery_kwh": 100,
+                    "battery_dod_pct": 90, "battery_soc_pct": 100,
+                    "battery_max_charge_kw": 60, "battery_max_discharge_kw": 60,
+                    "battery_mode": "discharging"}),
+            ], wires=[_wire("w1", "util-1", "bus-1"), _wire("w2", "load-1", "bus-1"),
+                      _wire("w3", "pv-1", "bus-1")])
+        e = _batt_entry(run_load_flow(hybrid(40)))
+        assert e.dispatched_mw == pytest.approx(0.06, abs=1e-6)
+        e_full = _batt_entry(run_load_flow(hybrid(100)))
+        assert e_full is None or abs(e_full.dispatched_mw) < 1e-9
+
+
+class TestBatteryFault:
+    def test_bess_inverter_limited_contribution(self):
+        """400 kVA BESS at 0.4 kV, k=1.2: Ik'' = c × 1.2 × Irated
+        = 1.1 × 1.2 × 577.4 A ≈ 0.762 kA (X/R=10 detail shifts it slightly)."""
+        p = ProjectData(name="t", baseMVA=100, frequency=50, components=[
+            _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 0.4}),
+            _comp("batt-1", "battery", {
+                "rated_kva": 400, "voltage_kv": 0.4, "battery_kwh": 200,
+                "fault_contribution_pu": 1.2, "battery_mode": "idle"}),
+        ], wires=[_wire("w1", "batt-1", "bus-1")])
+        r = run_fault_analysis(p)
+        i_rated_ka = 400 / (math.sqrt(3) * 400)
+        assert r.buses["bus-1"].ik3 == pytest.approx(1.1 * 1.2 * i_rated_ka, rel=0.01)
+
+
+class TestBackupAutonomy:
+    def _project(self, load_kva=8):
+        return ProjectData(name="t", baseMVA=100, frequency=50, components=[
+            _comp("util-1", "utility", {"voltage_kv": 0.4, "fault_mva": 100}),
+            _comp("bus-1", "bus", {"name": "Essential", "voltage_kv": 0.4}),
+            _comp("load-1", "static_load", {"rated_kva": load_kva, "power_factor": 1.0,
+                                            "demand_factor": 1.0, "voltage_kv": 0.4}),
+            _comp("pv-1", "solar_pv", {
+                "name": "Hybrid-1", "rated_kw": 10, "num_inverters": 1,
+                "inverter_eff": 1.0, "power_factor": 1.0, "irradiance_pct": 20,
+                "voltage_kv": 0.4, "inverter_type": "hybrid", "battery_kwh": 10,
+                "battery_dod_pct": 90, "battery_soc_pct": 100,
+                "battery_max_charge_kw": 5, "battery_max_discharge_kw": 8,
+                "battery_rt_eff": 0.9025, "battery_mode": "auto"}),
+            _comp("cb-1", "cb", {"state": "open", "rated_voltage_kv": 0.4}),
+            _comp("bus-2", "bus", {"name": "NonEssential", "voltage_kv": 0.4}),
+            _comp("load-2", "static_load", {"rated_kva": 5, "power_factor": 1.0,
+                                            "demand_factor": 1.0, "voltage_kv": 0.4}),
+        ], wires=[
+            _wire("w1", "util-1", "bus-1"), _wire("w2", "load-1", "bus-1"),
+            _wire("w3", "pv-1", "bus-1"), _wire("w4", "bus-1", "cb-1"),
+            _wire("w5", "cb-1", "bus-2"), _wire("w6", "load-2", "bus-2"),
+        ])
+
+    def test_autonomy_hand_calc(self):
+        """8 kW load; usable = 10 kWh × 90% DoD × √0.9025 = 8.55 kWh →
+        night 8.55/8 = 1.07 h; with 2 kW PV: 8.55/6 = 1.425 h."""
+        r = run_backup_autonomy(self._project())
+        backed = next(i for i in r["islands"] if i["backed_up"])
+        assert backed["usable_kwh"] == pytest.approx(8.55, abs=0.01)
+        assert backed["autonomy_night_h"] == pytest.approx(1.07, abs=0.01)
+        assert backed["autonomy_pv_h"] == pytest.approx(1.425, abs=0.011)
+        assert backed["inverter_ok"] and backed["power_ok_night"]
+
+    def test_open_cb_island_reported_dark(self):
+        """The island behind the open CB has load but no backup source."""
+        r = run_backup_autonomy(self._project())
+        dark = next(i for i in r["islands"] if not i["backed_up"])
+        assert dark["bus_names"] == ["NonEssential"]
+        assert dark["load_kw"] == pytest.approx(5.0)
+
+    def test_inverter_overload_flagged(self):
+        """15 kVA island load against a 10 kVA hybrid inverter fails both
+        the capacity and the night power checks."""
+        r = run_backup_autonomy(self._project(load_kva=15))
+        b = next(i for i in r["islands"] if i["backed_up"])
+        assert not b["inverter_ok"] and not b["power_ok_night"]
+
+    def test_pv_covering_load_unbounded_autonomy(self):
+        """1.5 kW load under 2 kW of PV → with-PV autonomy unbounded (null)."""
+        r = run_backup_autonomy(self._project(load_kva=1.5))
+        b = next(i for i in r["islands"] if i["backed_up"])
+        assert b["autonomy_pv_h"] is None and b["power_ok_pv"]
+
+    def test_non_essential_load_shed(self):
+        """A 4 kW load flagged essential='no' is excluded from every check:
+        autonomy stays 8.55/8 = 1.07 h and shed_kw reports 4 kW."""
+        p = self._project()
+        p.components.append(_comp("load-3", "static_load", {
+            "rated_kva": 4, "power_factor": 1.0, "demand_factor": 1.0,
+            "voltage_kv": 0.4, "essential": "no"}))
+        p.wires.append(_wire("w7", "load-3", "bus-1"))
+        r = run_backup_autonomy(p)
+        b = next(i for i in r["islands"] if i["backed_up"])
+        assert b["load_kw"] == pytest.approx(8.0)
+        assert b["shed_kw"] == pytest.approx(4.0)
+        assert b["autonomy_night_h"] == pytest.approx(1.07, abs=0.01)
+        assert any("non-essential load excluded" in n for n in b["notes"])
+
+
+class TestPVArrayMode:
+    """Array-mode solar: output = min(DC array × irradiance, inverter kW)."""
+
+    def _pv_net(self, irr, dc_ac=1.32):
+        # 10 kW inverter; 2 strings × 12 panels × 550 W = 13.2 kWp DC
+        return ProjectData(name="t", baseMVA=100, frequency=50, components=[
+            _comp("util-1", "utility", {"voltage_kv": 0.4, "fault_mva": 100,
+                                        "x_r_ratio": 10}),
+            _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 0.4}),
+            _comp("load-1", "static_load", {"rated_kva": 20, "power_factor": 1.0,
+                                            "demand_factor": 1.0, "voltage_kv": 0.4}),
+            _comp("pv-1", "solar_pv", {
+                "rated_kw": 10, "num_inverters": 1, "inverter_eff": 1.0,
+                "power_factor": 1.0, "irradiance_pct": irr, "voltage_kv": 0.4,
+                "pv_array_mode": "array", "pv_panel_w": 550,
+                "pv_panels_per_string": 12, "pv_strings": 2,
+                "dispatch_mode": "must_run"}),
+        ], wires=[_wire("w1", "util-1", "bus-1"), _wire("w2", "load-1", "bus-1"),
+                  _wire("w3", "pv-1", "bus-1")])
+
+    def _pv_entry(self, res):
+        return next(e for e in res.dispatch if e.source_type == "solar_pv")
+
+    def test_clipped_at_full_sun(self):
+        """13.2 kWp DC at 100% clips to the 10 kW inverter nameplate."""
+        e = self._pv_entry(run_load_flow(self._pv_net(100)))
+        assert e.available_mw == pytest.approx(0.010, abs=1e-6)
+
+    def test_follows_dc_below_clip(self):
+        """At 50% irradiance the DC array gives 6.6 kW — below the clip."""
+        e = self._pv_entry(run_load_flow(self._pv_net(50)))
+        assert e.available_mw == pytest.approx(0.0066, abs=1e-6)
+
+    def test_rated_mode_unchanged(self):
+        """Legacy rated mode ignores the array fields entirely."""
+        p = self._pv_net(100)
+        p.components[3].props["pv_array_mode"] = "rated"
+        e = self._pv_entry(run_load_flow(p))
+        assert e.available_mw == pytest.approx(0.010, abs=1e-6)
+        p.components[3].props["irradiance_pct"] = 50
+        e = self._pv_entry(run_load_flow(p))
+        assert e.available_mw == pytest.approx(0.005, abs=1e-6)

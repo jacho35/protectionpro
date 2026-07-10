@@ -512,6 +512,7 @@ const TCC = {
           voltage_kv: this._resolveDeviceVoltage(id),
           cbParams: {
             cb_type: comp.props?.cb_type || 'mccb',
+            mcb_curve: comp.props?.mcb_curve || 'C',
             trip_rating_a: comp.props?.trip_rating_a || comp.props?.rated_current_a || 630,
             thermal_pickup: comp.props?.thermal_pickup || 1.0,
             magnetic_pickup: comp.props?.magnetic_pickup || 10,
@@ -1517,7 +1518,8 @@ const TCC = {
     const labelI = Ir * 2.5;
     const labelT = cbTripTime(p, labelI);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
-      const typeStr = (p.cb_type || 'mccb').toUpperCase();
+      const typeStr = p.cb_type === 'mcb'
+        ? `MCB ${p.mcb_curve || 'C'}` : (p.cb_type || 'mccb').toUpperCase();
       this._drawLabel(ctx, dev, this._currentToX(this._scaleCurrent(labelI, dev)), this._timeToY(labelT), `${dev.name} (${typeStr})`);
     }
 
@@ -1700,7 +1702,7 @@ const TCC = {
     }
 
     // Magnetic pickup handle: on the vertical drop at Im (midpoint between thermal and instantaneous)
-    const magTime = (p.cb_type === 'mccb') ? 0.02 : 0.01;
+    const magTime = (p.cb_type === 'acb') ? 0.01 : 0.02;
     const scaledIm = this._scaleCurrent(Im, dev);
     const mx = this._currentToX(scaledIm);
     // Compute vertical drop range: from thermal curve down to magnetic flat line
@@ -2041,7 +2043,9 @@ const TCC = {
         typeLabel = `gG Fuse ${dev.fuseRating}A pre-arcing${dev.scaledCurve ? ' (scaled curve — no standard rating)' : ''}`;
       } else if (dev.deviceType === 'cb') {
         const p = dev.cbParams;
-        typeLabel = `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a}A | Mag: ${p.magnetic_pickup}×In`;
+        typeLabel = p.cb_type === 'mcb'
+          ? `MCB ${p.trip_rating_a}A curve ${p.mcb_curve || 'C'} | Mag: ${p.magnetic_pickup}×In`
+          : `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a}A | Mag: ${p.magnetic_pickup}×In`;
       } else if (dev.deviceType === 'xfmr_thermal') {
         typeLabel = `Thermal damage | ${dev.mva} MVA | Ir: ${dev.ratedA.toFixed(0)}A`;
       } else if (dev.deviceType === 'cable_thermal') {
@@ -2251,6 +2255,7 @@ const TCC = {
         <div class="tcc-form-row">
           <label>Type</label>
           <select data-sel-field="cb.cb_type">
+            <option value="mcb" ${p.cb_type === 'mcb' ? 'selected' : ''}>MCB</option>
             <option value="mccb" ${p.cb_type === 'mccb' ? 'selected' : ''}>MCCB</option>
             <option value="acb" ${p.cb_type === 'acb' ? 'selected' : ''}>ACB</option>
           </select>
@@ -2455,6 +2460,7 @@ const TCC = {
       visible: true,
       cbParams: {
         cb_type: cbParams.cb_type || 'mccb',
+        mcb_curve: cbParams.mcb_curve || 'C',
         trip_rating_a: cbParams.trip_rating_a || 630,
         thermal_pickup: cbParams.thermal_pickup || 1.0,
         magnetic_pickup: cbParams.magnetic_pickup || 10,

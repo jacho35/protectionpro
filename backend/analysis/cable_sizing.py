@@ -493,9 +493,9 @@ def _estimate_clearing_time(cb_comp):
     # For CBs, use magnetic pickup to estimate instantaneous trip time
     mag = float(p.get("magnetic_pickup", 0))
     if mag > 0:
-        # Instantaneous region: assume 30-50ms for MCCB, 50-80ms for ACB
+        # Instantaneous region: assume 30-50ms for MCB/MCCB, 50-80ms for ACB
         cb_type = p.get("cb_type", "mccb")
-        return 0.05 if cb_type == "mccb" else 0.08
+        return 0.08 if cb_type == "acb" else 0.05
     return 0.1
 
 

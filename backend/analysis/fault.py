@@ -487,6 +487,19 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
             })
             return
 
+        # Battery storage inverter (BESS) — current-limited like solar PV
+        if comp.type == "battery":
+            z_src = _battery_impedance(comp, base_mva)
+            paths.append({
+                "z_total": z_path + z_src,
+                "z2_total": z_path + z_src,
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+                "source_type": "battery",
+                "rated_mva": comp.props.get("rated_kva", 100) / 1000,
+            })
+            return
+
         # Wind turbine generator
         if comp.type == "wind_turbine":
             z_src = _wind_turbine_impedance(comp, base_mva)
@@ -820,6 +833,20 @@ def _solar_pv_impedance(comp, base_mva):
     return complex(r_pu, x_pu)
 
 
+def _battery_impedance(comp, base_mva):
+    """BESS inverter fault impedance — current-limited like solar PV
+    (IEC TR 60909-4): I_fault = fault_contribution_pu × I_rated, X/R ≈ 10.
+    The inverter contributes regardless of charge/discharge state — a fault
+    collapses the terminal voltage and the converter feeds its current limit."""
+    rated_mva = float(comp.props.get("rated_kva", 100) or 0) / 1000
+    fault_pu = comp.props.get("fault_contribution_pu", 1.1)
+    if rated_mva < 1e-10:
+        return complex(1e6, 1e6)  # Effectively infinite impedance
+    x_pu = (1.0 / max(fault_pu, 0.1)) * base_mva / rated_mva
+    xr = 10
+    return complex(x_pu / xr, x_pu)
+
+
 def _wind_turbine_impedance(comp, base_mva):
     """Wind turbine generator fault impedance.
 
@@ -922,6 +949,13 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             z_src = _solar_pv_impedance(comp, base_mva)
             z_total = z0_path + z_src
             desc = " → ".join(trail + [f"Solar PV '{_comp_name(comp)}' (Z0_src={abs(z_src):.4f})"])
+            z0_sources.append((z_total, desc))
+            return
+
+        if comp.type == "battery":
+            z_src = _battery_impedance(comp, base_mva)
+            z_total = z0_path + z_src
+            desc = " → ".join(trail + [f"BESS '{_comp_name(comp)}' (Z0_src={abs(z_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
 
@@ -1260,7 +1294,7 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
             q = _q_factor(ik_over_ir, t_min)
             ib_total += mu * q * ik_path_ka
 
-        elif source_type == "solar_pv":
+        elif source_type in ("solar_pv", "battery"):
             # Inverter-based: no decay, current-limited at fault contribution level
             ib_total += ik_path_ka
 
@@ -1558,6 +1592,10 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
         if comp.type == "solar_pv":
             z_src = _solar_pv_impedance(comp, base_mva)
             bus_shunts[from_bus_id].append((z_src, "solar_pv", comp))
+            return
+        if comp.type == "battery":
+            z_src = _battery_impedance(comp, base_mva)
+            bus_shunts[from_bus_id].append((z_src, "battery", comp))
             return
         if comp.type == "wind_turbine":
             z_src = _wind_turbine_impedance(comp, base_mva)

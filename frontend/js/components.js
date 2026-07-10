@@ -260,7 +260,7 @@ const Components = {
         visited.add(id);
         const comp = AppState.components.get(id);
         if (!comp) continue;
-        if (['utility', 'generator', 'solar_pv', 'wind_turbine'].includes(comp.type)) {
+        if (['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery'].includes(comp.type)) {
           graph.sources.push({ bus, source: comp });
         } else if (['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'].includes(comp.type)) {
           graph.loads.push({ bus, load: comp });
@@ -404,7 +404,7 @@ const Components = {
 
     // BFS from all sources through the full wire graph
     const busesWithSource = new Set();
-    const SOURCE_TYPES_FOR_REACH = new Set(['utility', 'generator', 'solar_pv', 'wind_turbine']);
+    const SOURCE_TYPES_FOR_REACH = new Set(['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery']);
     const sourceIds = [...AppState.components.values()]
       .filter(c => SOURCE_TYPES_FOR_REACH.has(c.type))
       .map(c => c.id);
@@ -450,7 +450,7 @@ const Components = {
     // dropped (e.g. Bus → Cable → Motor with no bus at the motor end).
     {
       const LOAD_TYPES = ['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'];
-      const SOURCE_TYPES = ['utility', 'generator', 'solar_pv', 'wind_turbine'];
+      const SOURCE_TYPES = ['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery'];
       const TRANSPARENT_TYPES = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector']);
       const includedIds = new Set([
         ...graph.loads.map(l => l.load.id),

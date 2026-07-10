@@ -141,6 +141,12 @@ const API = {
     return this.request('/analysis/load-diversity', 'POST', data);
   },
 
+  // Run grid-outage backup adequacy & battery autonomy study
+  async runBackupAutonomy() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/backup', 'POST', data);
+  },
+
   // Run grounding system analysis (IEEE 80)
   async runGroundingAnalysis() {
     const data = AppState.toJSON();

@@ -37,6 +37,7 @@ const Compliance = {
     report.sections.push(this._checkCableWithstand());
     report.sections.push(this._checkProtectionDevices());
     report.sections.push(this._checkSANS10142());
+    report.sections.push(this._checkPVStrings());
     report.sections.push(this._buildEquipmentSummary());
 
     // Tally totals
@@ -578,6 +579,75 @@ const Compliance = {
   },
 
   // ── 7. SANS 10142 Wiring of Premises ──
+  // ── PV DC string design (IEC 62548) ──
+  // For every solar_pv in array mode: coldest string Voc vs the inverter's
+  // max DC input, hottest string Vmp vs the MPPT window, and 1.25×Isc per
+  // MPPT vs the input current limit. DC/AC ratio > 1.5 warns.
+  _checkPVStrings() {
+    const section = { title: 'PV DC String Design', standard: 'IEC 62548', items: [] };
+    let any = false;
+    for (const comp of AppState.components.values()) {
+      if (comp.type !== 'solar_pv' || comp.props?.pv_array_mode !== 'array') continue;
+      any = true;
+      const p = comp.props;
+      const name = p.name || comp.id;
+      const pps = Math.max(1, Math.round(p.pv_panels_per_string || 1));
+      const strings = Math.max(1, Math.round(p.pv_strings || 1));
+      const tMin = p.site_temp_min_c ?? -5;
+      const tCellMax = p.site_cell_temp_max_c ?? 70;
+      const vocCold = pps * (p.pv_voc || 0) * (1 + (p.pv_beta_voc || 0) / 100 * (tMin - 25));
+      const vmpHot = pps * (p.pv_vmp || 0) * (1 + (p.pv_gamma_vmp || 0) / 100 * (tCellMax - 25));
+      const dcMaxV = p.dc_max_v || 1000;
+      const mpptMin = p.mppt_min_v || 0;
+      const mpptMax = p.mppt_max_v || dcMaxV;
+      const stringsPerMppt = Math.ceil(strings / Math.max(1, Math.round(p.mppt_count || 1)));
+      const iString = stringsPerMppt * (p.pv_isc || 0) * 1.25;
+      const mpptMaxA = p.mppt_max_a || 0;
+
+      section.items.push({
+        status: vocCold <= dcMaxV ? 'pass' : 'fail', component: name,
+        message: `String Voc at ${tMin}°C: ${vocCold.toFixed(0)} V vs ${dcMaxV} V max DC input.`,
+        detail: vocCold <= dcMaxV
+          ? 'IEC 62548 §7.2: maximum system voltage respected at the coldest expected temperature.'
+          : 'IEC 62548 §7.2: coldest open-circuit voltage exceeds the inverter/array maximum — reduce panels per string.',
+      });
+      if (mpptMin > 0) {
+        const inWindow = vmpHot >= mpptMin && vmpHot <= mpptMax;
+        section.items.push({
+          status: inWindow ? 'pass' : 'fail', component: name,
+          message: `String Vmp at ${tCellMax}°C cell: ${vmpHot.toFixed(0)} V vs MPPT window ${mpptMin}–${mpptMax} V.`,
+          detail: inWindow
+            ? 'Operating voltage stays inside the MPPT tracking window at the hottest cell temperature.'
+            : 'Hot-weather operating voltage leaves the MPPT window — the inverter cannot track peak power; adjust panels per string.',
+        });
+      }
+      if (mpptMaxA > 0) {
+        section.items.push({
+          status: iString <= mpptMaxA ? 'pass' : 'fail', component: name,
+          message: `String current 1.25×Isc: ${iString.toFixed(1)} A (${stringsPerMppt} string/MPPT) vs ${mpptMaxA} A limit.`,
+          detail: iString <= mpptMaxA
+            ? 'IEC 62548 §7.3: design current within the MPPT input limit.'
+            : 'IEC 62548 §7.3: design current exceeds the MPPT input limit — spread strings across more trackers.',
+        });
+      }
+      const acKw = (p.rated_kw || 0) * Math.max(1, p.num_inverters || 1);
+      const dcKw = (p.pv_panel_w || 0) * pps * strings * Math.max(1, p.num_inverters || 1) / 1000;
+      if (acKw > 0 && dcKw / acKw > 1.5) {
+        section.items.push({
+          status: 'warn', component: name,
+          message: `DC/AC ratio ${(dcKw / acKw).toFixed(2)} — array heavily oversized vs the ${acKw.toFixed(0)} kW inverter.`,
+          detail: 'Energy is lost to clipping near full sun; confirm the inverter permits this DC oversizing.',
+        });
+      }
+    }
+    if (!any) {
+      section.items.push({ status: 'info', component: '—',
+        message: 'No PV arrays in string-sizing mode.',
+        detail: 'Set a Solar PV\'s PV Sizing Mode to "Strings × Panels" to enable IEC 62548 checks.' });
+    }
+    return section;
+  },
+
   _checkSANS10142() {
     const section = { title: 'SANS 10142 — Wiring of Premises', standard: 'SANS 10142-1', items: [] };
 

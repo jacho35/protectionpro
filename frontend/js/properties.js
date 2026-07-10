@@ -1,6 +1,6 @@
 /* ProtectionPro — Properties Panel */
 
-const SECTION_ORDER = ['General', 'fault', 'loadflow', 'arcflash', 'grounding', 'cable_sizing', 'protection'];
+const SECTION_ORDER = ['General', 'pv', 'battery', 'fault', 'loadflow', 'arcflash', 'grounding', 'cable_sizing', 'protection'];
 const SECTION_LABELS = {
   General: 'General',
   fault: 'Fault Analysis',
@@ -9,6 +9,8 @@ const SECTION_LABELS = {
   grounding: 'Grounding',
   cable_sizing: 'Cable Sizing',
   protection: 'Protection Settings',
+  battery: 'Battery Storage',
+  pv: 'PV Array / DC Strings',
 };
 
 const Properties = {
@@ -336,6 +338,7 @@ const Properties = {
       const library = field.library === 'transformer' ? STANDARD_TRANSFORMERS
         : field.library === 'cb' ? STANDARD_CBS
         : field.library === 'fuse' ? STANDARD_FUSES
+        : field.library === 'pv_panel' ? PV_PANELS
         : [];
       const options = library.map(item =>
         `<option value="${escHtml(item.id)}" ${value === item.id ? 'selected' : ''}>${escHtml(item.name)}</option>`
@@ -579,6 +582,15 @@ const Properties = {
       this._applyVectorGroupGrounding(comp, value || 'Dyn11');
     }
 
+    // MCB curve class (or switching to MCB) sets the magnetic pickup to the
+    // top of the IEC 60898-1 band (B 3–5×, C 5–10×, D 10–20×In)
+    if (comp.type === 'cb' &&
+        (field === 'mcb_curve' || (field === 'cb_type' && value === 'mcb'))) {
+      const curve = field === 'mcb_curve' ? value : (comp.props.mcb_curve || 'C');
+      comp.props.magnetic_pickup = MCB_CURVE_MAGNETIC[curve] || 10;
+      this.show(comp.id);
+    }
+
     // Board diversity edits change the derived lumped-load equivalents
     if (comp.type === 'distribution_board' && field === 'board_diversity' &&
         typeof DBSchedule !== 'undefined') {
@@ -586,7 +598,7 @@ const Properties = {
     }
 
     // Re-render properties when fields with conditional dependents change
-    if (['vector_group', 'grounding_hv', 'grounding_lv', 'cb_type'].includes(field)) {
+    if (['vector_group', 'grounding_hv', 'grounding_lv', 'cb_type', 'inverter_type', 'pv_array_mode'].includes(field)) {
       this.show(comp.id);
     }
 
@@ -595,7 +607,14 @@ const Properties = {
     // For static loads this also re-evaluates the phase-% showWhen fields.
     const CALC_REFRESH_FIELDS = {
       static_load: ['rated_kva', 'voltage_kv', 'power_factor', 'demand_factor', 'phase_connection'],
-      solar_pv: ['rated_kw', 'num_inverters', 'irradiance_pct', 'voltage_kv', 'inverter_eff'],
+      solar_pv: ['rated_kw', 'num_inverters', 'irradiance_pct', 'voltage_kv', 'inverter_eff',
+        'inverter_type', 'battery_kwh', 'battery_dod_pct', 'battery_soc_pct', 'battery_max_discharge_kw',
+        'pv_array_mode', 'pv_panel_type', 'pv_panel_w', 'pv_panels_per_string', 'pv_strings',
+        'pv_voc', 'pv_vmp', 'pv_isc', 'pv_imp', 'pv_beta_voc', 'pv_gamma_vmp',
+        'mppt_count', 'mppt_min_v', 'mppt_max_v', 'dc_max_v', 'mppt_max_a',
+        'site_temp_min_c', 'site_cell_temp_max_c'],
+      battery: ['rated_kva', 'voltage_kv', 'battery_kwh', 'battery_dod_pct', 'battery_soc_pct',
+        'battery_max_discharge_kw'],
       wind_turbine: ['rated_mva', 'num_turbines', 'wind_speed_pct', 'voltage_kv'],
       generator: ['rated_mva', 'voltage_kv', 'xd_pp'],
       cb: ['trip_rating_a', 'thermal_pickup', 'magnetic_pickup'],
@@ -665,6 +684,7 @@ const Properties = {
       const cb = STANDARD_CBS.find(c => c.id === typeId);
       if (cb) {
         comp.props.cb_type = cb.cb_type;
+        if (cb.cb_type === 'mcb') comp.props.mcb_curve = cb.mcb_curve || 'C';
         comp.props.trip_rating_a = cb.trip_rating_a;
         comp.props.rated_current_a = cb.trip_rating_a;
         comp.props.rated_voltage_kv = cb.rated_voltage_kv;
@@ -683,6 +703,17 @@ const Properties = {
         comp.props.rated_current_a = fuse.rated_current_a;
         comp.props.rated_voltage_kv = fuse.rated_voltage_kv;
         comp.props.breaking_capacity_ka = fuse.breaking_ka;
+      }
+    } else if (libraryType === 'pv_panel') {
+      const panel = PV_PANELS.find(p => p.id === typeId);
+      if (panel) {
+        comp.props.pv_panel_w = panel.w;
+        comp.props.pv_voc = panel.voc;
+        comp.props.pv_vmp = panel.vmp;
+        comp.props.pv_isc = panel.isc;
+        comp.props.pv_imp = panel.imp;
+        comp.props.pv_beta_voc = panel.beta_voc;
+        comp.props.pv_gamma_vmp = panel.gamma_vmp;
       }
     }
   },
@@ -766,6 +797,21 @@ const Properties = {
         const pb = comp.props.phase_b_pct ?? 33.33;
         const pc = comp.props.phase_c_pct ?? 33.34;
         html += `<div class="prop-row"><label>Phase Balance R/W/B</label><span class="pu-value">${pa.toFixed(0)}/${pb.toFixed(0)}/${pc.toFixed(0)} %</span></div>`;
+        // Worst EL group's standing leakage vs its 30%-of-IΔn limit
+        // (IEC 60364-5-53 §531.3.2) — full breakdown lives in the schedule
+        if (typeof DBSchedule !== 'undefined') {
+          const { groups, ratings } = DBSchedule._leakageGroups(comp);
+          let worst = null;
+          for (const [g, ma] of groups) {
+            const limit = ratings[g] * DB_EL_STANDING_LIMIT;
+            const ratio = limit > 0 ? ma / limit : 0;
+            if (!worst || ratio > worst.ratio) worst = { g, ma, limit, ratio };
+          }
+          if (worst) {
+            const over = worst.ratio > 1;
+            html += `<div class="prop-row"><label>EL Standing Leakage</label><span class="pu-value" style="${over ? 'color:#d32f2f;' : ''}">${over ? '⚠ ' : ''}EL ${escHtml(worst.g)}: ${worst.ma.toFixed(1)} / ${worst.limit.toFixed(1)} mA</span></div>`;
+          }
+        }
       }
     } else if (comp.type === 'solar_pv') {
       // Make the rated-power × inverter-count multiplication explicit
@@ -788,6 +834,14 @@ const Properties = {
         const sKva = total / eff;
         html += `<div class="prop-row"><label>Full Load Current</label><span class="pu-value">${(sKva / (Math.sqrt(3) * pvKv)).toFixed(1)} A</span></div>`;
       }
+      if (comp.props.pv_array_mode === 'array') {
+        const rows = this._pvArraySummaryRows(comp.props, total);
+        if (rows) html += rows;
+      }
+      if (comp.props.inverter_type === 'hybrid') {
+        const rows = this._batterySummaryRows(comp.props, eff > 0 ? total / eff : total);
+        if (rows) html += rows;
+      }
     } else if (comp.type === 'wind_turbine') {
       const nTurb = Math.max(1, comp.props.num_turbines || 1);
       const rated = comp.props.rated_mva || 0;
@@ -804,10 +858,100 @@ const Properties = {
       if (wtKv > 0) {
         html += `<div class="prop-row"><label>Full Load Current</label><span class="pu-value">${((total * 1000) / (Math.sqrt(3) * wtKv)).toFixed(1)} A</span></div>`;
       }
+    } else if (comp.type === 'battery') {
+      const batt = this._batterySummaryRows(comp.props, comp.props.rated_kva || 0);
+      if (!batt) return null;
+      html += batt;
     } else {
       return null;
     }
 
+    return html;
+  },
+
+  // PV array sizing + IEC 62548 DC string checks, rendered live in the
+  // Calculated Values section for solar_pv in array mode. `acTotalKw` is
+  // the total inverter AC rating (rated_kw × inverters).
+  //   Voc @ min ambient  — coldest open-circuit voltage vs max DC input
+  //   Vmp @ max cell temp — hottest operating voltage vs the MPPT window
+  //   String current      — 1.25 × Isc × strings-per-MPPT vs input limit
+  _pvArraySummaryRows(p, acTotalKw) {
+    const panelW = p.pv_panel_w || 0;
+    const pps = Math.max(1, Math.round(p.pv_panels_per_string || 1));
+    const strings = Math.max(1, Math.round(p.pv_strings || 1));
+    const nInv = Math.max(1, p.num_inverters || 1);
+    if (panelW <= 0) return null;
+    const fmtKw = (kw) => kw >= 1000 ? `${(kw / 1000).toFixed(2)} MWp` : `${kw.toFixed(1)} kWp`;
+    const dcKwInv = panelW * pps * strings / 1000;   // per inverter
+    const dcKwTotal = dcKwInv * nInv;
+    let html = `<div class="prop-row"><label>Array (DC)</label><span class="pu-value">${strings}S × ${pps}P × ${panelW} W = ${fmtKw(dcKwInv)}${nInv > 1 ? ` /inv (${fmtKw(dcKwTotal)} total)` : ''}</span></div>`;
+
+    // DC/AC ratio against the inverter nameplate
+    if (acTotalKw > 0) {
+      const ratio = dcKwTotal / acTotalKw;
+      const over = ratio > 1.5;
+      html += `<div class="prop-row"><label>DC/AC Ratio</label><span class="pu-value" style="${over ? 'color:#f57c00;' : ''}">${ratio.toFixed(2)}${over ? ' ⚠ heavy oversizing — check inverter DC limit' : ''}</span></div>`;
+      const irr = (p.irradiance_pct ?? 100) / 100;
+      const outKw = Math.min(dcKwTotal * irr, acTotalKw);
+      if (dcKwTotal * irr > acTotalKw) {
+        html += `<div class="prop-row"><label>Clipped Output</label><span class="pu-value">${outKw.toFixed(1)} kW (inverter limit)</span></div>`;
+      }
+    }
+
+    // ── DC string electrical checks (IEC 62548) ──
+    const tMin = p.site_temp_min_c ?? -5;
+    const tCellMax = p.site_cell_temp_max_c ?? 70;
+    const vocCold = pps * (p.pv_voc || 0) * (1 + (p.pv_beta_voc || 0) / 100 * (tMin - 25));
+    const vmpHot = pps * (p.pv_vmp || 0) * (1 + (p.pv_gamma_vmp || 0) / 100 * (tCellMax - 25));
+    const dcMaxV = p.dc_max_v || 1000;
+    const mpptMin = p.mppt_min_v || 0;
+    const mpptMax = p.mppt_max_v || dcMaxV;
+    const mpptCount = Math.max(1, Math.round(p.mppt_count || 1));
+    const mpptMaxA = p.mppt_max_a || 0;
+    const stringsPerMppt = Math.ceil(strings / mpptCount);
+    const iString = stringsPerMppt * (p.pv_isc || 0) * 1.25;
+
+    const row = (label, text, okFlag) =>
+      `<div class="prop-row"><label>${label}</label><span class="pu-value" style="${okFlag ? '' : 'color:#d32f2f;font-weight:600;'}">${text} ${okFlag ? '✓' : '✗'}</span></div>`;
+    if (p.pv_voc > 0) {
+      html += row('String Voc @ ' + tMin + '°C',
+        `${vocCold.toFixed(0)} V ≤ ${dcMaxV} V max`, vocCold <= dcMaxV);
+    }
+    if (p.pv_vmp > 0 && mpptMin > 0) {
+      html += row('String Vmp @ ' + tCellMax + '°C',
+        `${vmpHot.toFixed(0)} V in ${mpptMin}–${mpptMax} V window`,
+        vmpHot >= mpptMin && vmpHot <= mpptMax);
+    }
+    if (p.pv_isc > 0 && mpptMaxA > 0) {
+      html += row('String Current (1.25×Isc)',
+        `${iString.toFixed(1)} A ≤ ${mpptMaxA} A/MPPT (${stringsPerMppt} str/MPPT)`,
+        iString <= mpptMaxA);
+    }
+    return html;
+  },
+
+  // Battery storage calculated rows (shared by BESS and hybrid Solar PV).
+  // Usable = capacity × DoD; available now additionally respects the SoC
+  // above the DoD reserve floor. Autonomy is at max discharge power.
+  _batterySummaryRows(props, inverterKva) {
+    const kwh = props.battery_kwh || 0;
+    if (kwh <= 0) return null;
+    const dod = Math.min(100, Math.max(0, props.battery_dod_pct ?? 90));
+    const soc = Math.min(100, Math.max(0, props.battery_soc_pct ?? 100));
+    const usable = kwh * dod / 100;
+    const available = kwh * Math.max(0, soc - (100 - dod)) / 100;
+    const disKw = props.battery_max_discharge_kw || 0;
+    const effDisKw = inverterKva > 0 ? Math.min(disKw, inverterKva) : disKw;
+    let html = `<div class="prop-row"><label>Usable Energy</label><span class="pu-value">${usable.toFixed(1)} kWh (${dod}% DoD)</span></div>`;
+    if (soc < 100) {
+      html += `<div class="prop-row"><label>Available @ SoC</label><span class="pu-value">${available.toFixed(1)} kWh @ ${soc}%</span></div>`;
+    }
+    if (effDisKw > 0) {
+      html += `<div class="prop-row"><label>Autonomy @ Max Discharge</label><span class="pu-value">${(available / effDisKw).toFixed(1)} h @ ${effDisKw.toFixed(0)} kW</span></div>`;
+    }
+    if (inverterKva > 0 && disKw > inverterKva) {
+      html += `<div class="prop-row"><label>Note</label><span class="pu-value" style="color:#f57c00;">discharge limited by inverter ${inverterKva.toFixed(0)} kVA</span></div>`;
+    }
     return html;
   },
 
