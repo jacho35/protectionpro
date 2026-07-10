@@ -493,3 +493,26 @@ body.dark-mode .symbol-rectifier line,
 body.dark-mode .symbol-charger line { stroke: #8888aa; }
 body.dark-mode .unconnected-warning circle { stroke: #ef5350; }
 body.dark-mode .unconnected-warning circle:last-child { fill: #ef5350; stroke: none; }
+
+/* ── Control circuit symbols (IEC 60617) ── */
+.symbol-control { stroke: #455a64; stroke-width: 1.5; fill: none; }
+.symbol-control .symbol-text { stroke: none; fill: #455a64; }
+body.dark-mode .symbol-control { stroke: #b0bec5; }
+body.dark-mode .symbol-control .symbol-text { fill: #b0bec5; }
+
+/* Simulation state highlighting (applied by ControlSim) */
+.sld-component.ctl-closed .symbol-control,
+.sld-component.ctl-energized .symbol-control { stroke: #2e7d32; }
+.sld-component.ctl-energized .symbol-control .symbol-text { fill: #2e7d32; }
+.sld-component.ctl-actuated .symbol-control { stroke: #e65100; }
+.sld-wire.ctl-live { stroke: #e65100 !important; stroke-width: 2.5 !important; }
+body.dark-mode .sld-component.ctl-closed .symbol-control,
+body.dark-mode .sld-component.ctl-energized .symbol-control { stroke: #66bb6a; }
+body.dark-mode .sld-component.ctl-energized .symbol-control .symbol-text { fill: #66bb6a; }
+
+/* Energized lamp glass takes its configured lens colour */
+.ctl-energized [data-lamp-color="green"] .ctl-lamp-glass { fill: #4caf50aa; }
+.ctl-energized [data-lamp-color="red"] .ctl-lamp-glass { fill: #f44336aa; }
+.ctl-energized [data-lamp-color="amber"] .ctl-lamp-glass { fill: #ffb300aa; }
+.ctl-energized [data-lamp-color="white"] .ctl-lamp-glass { fill: #eceff1cc; }
+.ctl-energized [data-lamp-color="blue"] .ctl-lamp-glass { fill: #2196f3aa; }

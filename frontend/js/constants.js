@@ -786,7 +786,20 @@ const COMPONENT_CATEGORIES = [
     name: 'Other',
     items: ['capacitor_bank', 'surge_arrester', 'offpage_connector'],
   },
+  {
+    id: 'control',
+    name: 'Control Circuit',
+    items: ['ctl_supply', 'ctl_pb_no', 'ctl_pb_nc', 'ctl_switch',
+            'ctl_contact_no', 'ctl_contact_nc', 'ctl_coil', 'ctl_lamp'],
+  },
 ];
+
+// Component types that belong to control schematics (IEC 60617), simulated
+// client-side by ControlSim and ignored by all power-system analyses.
+const CONTROL_TYPES = new Set([
+  'ctl_supply', 'ctl_pb_no', 'ctl_pb_nc', 'ctl_switch',
+  'ctl_contact_no', 'ctl_contact_nc', 'ctl_coil', 'ctl_lamp',
+]);
 
 // Component type definitions with default properties
 // ─── Default Value Source Information ───
@@ -1714,6 +1727,164 @@ const COMPONENT_DEFS = {
       { key: 'name', label: 'Label', type: 'text' },
       { key: 'target_page', label: 'Target Page', type: 'text' },
       { key: 'target_label', label: 'Target Label', type: 'text' },
+    ],
+  },
+
+  // ── Control circuit components (IEC 60617) ──
+  // Two-terminal series devices simulated by ControlSim; contacts bind to
+  // coils via the `tag` prop (contact follows the coil with the same tag).
+
+  ctl_supply: {
+    name: 'Control Supply',
+    category: 'control',
+    ports: [
+      { id: 'l', side: 'bottom', offset: -15 },
+      { id: 'n', side: 'bottom', offset: 15 },
+    ],
+    width: 60,
+    height: 36,
+    defaults: {
+      name: 'CTRL',
+      supply_type: '230VAC',
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'supply_type', label: 'Supply', type: 'select',
+        options: ['230VAC', '110VAC', '24VDC', '110VDC'] },
+    ],
+  },
+
+  ctl_pb_no: {
+    name: 'Pushbutton NO',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 30,
+    height: 40,
+    defaults: { name: 'S1' },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+    ],
+  },
+
+  ctl_pb_nc: {
+    name: 'Pushbutton NC',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 30,
+    height: 40,
+    defaults: { name: 'S0' },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+    ],
+  },
+
+  ctl_switch: {
+    name: 'Selector Switch',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 30,
+    height: 40,
+    defaults: {
+      name: 'SA1',
+      state: 'open',
+      contact_type: 'no',
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'state', label: 'State', type: 'select', options: ['open', 'closed'] },
+      { key: 'contact_type', label: 'Contact', type: 'select', options: ['no', 'nc'] },
+    ],
+  },
+
+  ctl_contact_no: {
+    name: 'Contact NO',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 30,
+    height: 40,
+    defaults: {
+      name: 'K1.1',
+      tag: 'K1',
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'tag', label: 'Coil Tag', type: 'text' },
+    ],
+  },
+
+  ctl_contact_nc: {
+    name: 'Contact NC',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 30,
+    height: 40,
+    defaults: {
+      name: 'K1.2',
+      tag: 'K1',
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'tag', label: 'Coil Tag', type: 'text' },
+    ],
+  },
+
+  ctl_coil: {
+    name: 'Coil / Relay',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 34,
+    height: 44,
+    defaults: {
+      name: 'K1',
+      tag: 'K1',
+      coil_type: 'contactor',
+      delay_s: 1.0,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'tag', label: 'Tag', type: 'text' },
+      { key: 'coil_type', label: 'Type', type: 'select',
+        options: ['contactor', 'relay', 'timer_on', 'timer_off'] },
+      { key: 'delay_s', label: 'Delay', type: 'number', unit: 's',
+        showWhen: { field: 'coil_type', values: ['timer_on', 'timer_off'] } },
+    ],
+  },
+
+  ctl_lamp: {
+    name: 'Pilot Lamp',
+    category: 'control',
+    ports: [
+      { id: 'top', side: 'top', offset: 0 },
+      { id: 'bottom', side: 'bottom', offset: 0 },
+    ],
+    width: 30,
+    height: 40,
+    defaults: {
+      name: 'H1',
+      color: 'green',
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'color', label: 'Color', type: 'select',
+        options: ['green', 'red', 'amber', 'white', 'blue'] },
     ],
   },
 };

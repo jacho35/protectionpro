@@ -556,3 +556,130 @@ class UnbalancedLoadFlowResults(BaseModel):
     converged: bool
     iterations: int
     method: str = "Sequence Component (Unbalanced)"
+
+
+# ── Lightning Risk Assessment (IEC 62305-2) ──
+
+class LightningLine(BaseModel):
+    """A service line (power or telecom) connected to the structure."""
+    name: str = "Power supply"
+    type: str = "power"                 # power | telecom
+    length_m: float = 1000.0            # L_L — use 1000 m when unknown (A.9)
+    installation: str = "buried"        # aerial | buried (C_I, Table A.2)
+    environment: str = "suburban"       # rural | suburban | urban | urban_tall_buildings (C_E)
+    has_transformer: bool = True        # HV/LV transformer at entrance (C_T = 0.2)
+    shielded: bool = False              # shielded line bonded at equipment (P_LD)
+
+
+class LightningRiskRequest(BaseModel):
+    # Structure geometry & site
+    length_m: float = 20.0
+    width_m: float = 15.0
+    height_m: float = 8.0
+    location: str = "surrounded_same_height"  # C_D key (Table A.1)
+    ground_flash_density: float = 4.0   # N_G flashes/km²/yr
+    # Occupancy & use
+    structure_use: str = "other"        # LF_BY_USE key (Table C.2)
+    persons_in_zone: float = 10
+    persons_total: float = 10
+    hours_per_year: float = 8760.0      # t_z
+    hazard_level: str = "none"          # h_z key (Table C.6)
+    # Construction & fire
+    floor_type: str = "agricultural_concrete"  # r_t key (Table C.3)
+    fire_risk: str = "ordinary"         # r_f key (Table C.5)
+    fire_protection: str = "none"       # r_p key (Table C.4)
+    explosion_risk: bool = False
+    # Internal systems
+    equipment_withstand_kv: float = 2.5  # U_W for K_S4 / P_LI
+    # Existing protection
+    lps_class: str = "none"             # none | IV | III | II | I
+    spd_level: str = "none"             # none | III-IV | II | I
+    # Service lines
+    lines: list[LightningLine] = []
+
+
+class LightningRiskComponentRow(BaseModel):
+    code: str                           # RA, RB, ...
+    description: str
+    value: float                        # contribution to R1 (per year)
+    share_pct: float
+
+
+class LightningProtectionOption(BaseModel):
+    lps_class: str
+    spd_level: str
+    label: str
+    r1: float
+    compliant: bool
+
+
+class LightningRiskResult(BaseModel):
+    collection_area_m2: float           # A_D
+    collection_area_near_m2: float      # A_M
+    flashes_to_structure_per_year: float   # N_D
+    flashes_near_structure_per_year: float  # N_M
+    r1: float
+    tolerable_r1: float
+    compliant: bool
+    components: list[LightningRiskComponentRow]
+    options: list[LightningProtectionOption]
+    recommendation: str
+    systems_life_risk: bool
+    warnings: list[str] = []
+
+
+# ── Raceway / Conduit Fill Analysis ──
+
+class RacewayCable(BaseModel):
+    cable_id: str
+    name: str = ""
+    size_mm2: float = 0.0        # conductor cross-section, for OD estimation
+    od_mm: float = 0.0           # explicit overall diameter override (mm)
+    rated_amps: float = 0.0      # base ampacity before grouping derating
+    load_amps: float = 0.0       # operating current, if known (0 = unknown)
+
+
+class RacewayDef(BaseModel):
+    name: str = "Raceway"
+    conduit_nominal_mm: float = 50.0
+    conduit_id_mm: float = 0.0   # explicit internal diameter override (mm)
+    cables: list[RacewayCable] = []
+
+
+class RacewayRequest(BaseModel):
+    raceways: list[RacewayDef] = []
+
+
+class RacewayCableRow(BaseModel):
+    cable_id: str
+    name: str
+    od_mm: float
+    od_estimated: bool
+    area_mm2: float
+    rated_amps: float
+    derated_amps: float
+    load_amps: float
+    adequate: bool
+
+
+class RacewayResult(BaseModel):
+    name: str
+    conduit_nominal_mm: float
+    conduit_id_mm: float
+    conduit_area_mm2: float
+    cable_area_mm2: float
+    num_cables: int
+    fill_pct: float
+    fill_limit_pct: float
+    fill_ok: bool
+    jam_ratio: Optional[float] = None
+    jam_warning: bool = False
+    grouping_factor: float
+    cables: list[RacewayCableRow] = []
+    status: str                  # pass | warning | fail | empty
+    warnings: list[str] = []
+
+
+class RacewayResults(BaseModel):
+    raceways: list[RacewayResult] = []
+    summary: dict = {}

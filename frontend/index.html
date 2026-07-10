@@ -162,6 +162,11 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               Unbalanced Load Flow
             </button>
+            <div class="dropdown-divider"></div>
+            <button id="btn-control-sim" class="dropdown-item" title="Toggle live control-circuit simulation — operate pushbuttons and switches on the schematic (Esc to exit)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="5" y="5" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v4M8 11v4M1 8h4M11 8h4" stroke="currentColor" stroke-width="1.3"/></svg>
+              Control Simulation
+            </button>
           </div>
         </div>
 
@@ -188,6 +193,14 @@
             <button id="btn-grounding" class="dropdown-item" title="Grounding System Analysis (IEEE 80)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/></svg>
               Grounding (IEEE 80)
+            </button>
+            <button id="btn-lightning" class="dropdown-item" title="Lightning Risk Assessment (IEC 62305-2)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L3 9h4l-1 6 7-9H8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              Lightning Risk (IEC 62305-2)
+            </button>
+            <button id="btn-raceway" class="dropdown-item" title="Raceway / Conduit Fill &amp; Grouping Derating">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="10" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="8" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+              Raceway / Conduit Fill
             </button>
             <div class="dropdown-divider"></div>
             <button id="btn-study-manager" class="dropdown-item" title="Run All Studies — batch run enabled analyses">
@@ -850,6 +863,141 @@
         <div id="grounding-body">
           <!-- Populated by JS -->
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightning Risk Assessment Modal -->
+  <div id="lightning-modal" class="modal" role="dialog" aria-modal="true" aria-label="Lightning Risk Assessment" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Lightning Risk Assessment — IEC 62305-2</h3>
+        <button class="modal-close" id="btn-close-lightning">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="lightning-form">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;font-size:12px">
+            <label>Length L (m)<input type="number" id="lr-length" value="20" min="1" step="0.5"></label>
+            <label>Width W (m)<input type="number" id="lr-width" value="15" min="1" step="0.5"></label>
+            <label>Height H (m)<input type="number" id="lr-height" value="8" min="1" step="0.5"></label>
+            <label title="Ground flash density (flashes/km²/yr). SA highveld 6–12, coastal 1–4.">N<sub>G</sub> (fl/km²/yr)<input type="number" id="lr-ng" value="4" min="0.1" step="0.1"></label>
+            <label>Relative location (C<sub>D</sub>)
+              <select id="lr-location">
+                <option value="surrounded_by_taller">Surrounded by taller objects</option>
+                <option value="surrounded_same_height" selected>Surrounded, same height</option>
+                <option value="isolated">Isolated</option>
+                <option value="isolated_hilltop">Isolated on hilltop</option>
+              </select></label>
+            <label>Structure use (L<sub>F</sub>)
+              <select id="lr-use">
+                <option value="other" selected>Residential / other</option>
+                <option value="industrial_commercial">Industrial / commercial</option>
+                <option value="entertainment_church_museum">Entertainment / church / museum</option>
+                <option value="hospital_hotel_school">Hospital / hotel / school</option>
+              </select></label>
+            <label>Special hazard (h<sub>z</sub>)
+              <select id="lr-hazard">
+                <option value="none" selected>None</option>
+                <option value="low_panic">Low panic (&lt;100 people)</option>
+                <option value="average_panic">Average panic (100–1000)</option>
+                <option value="difficult_evacuation">Difficult evacuation</option>
+                <option value="high_panic">High panic (&gt;1000)</option>
+              </select></label>
+            <label>Floor surface (r<sub>t</sub>)
+              <select id="lr-floor">
+                <option value="agricultural_concrete" selected>Soil / concrete</option>
+                <option value="marble_ceramic">Marble / ceramic</option>
+                <option value="gravel_carpet">Gravel / carpet</option>
+                <option value="asphalt_wood_linoleum">Asphalt / wood</option>
+              </select></label>
+            <label>Fire risk (r<sub>f</sub>)
+              <select id="lr-fire-risk">
+                <option value="none">None</option>
+                <option value="low">Low</option>
+                <option value="ordinary" selected>Ordinary</option>
+                <option value="high">High</option>
+              </select></label>
+            <label>Fire protection (r<sub>p</sub>)
+              <select id="lr-fire-prot">
+                <option value="none" selected>None</option>
+                <option value="manual">Manual (extinguishers)</option>
+                <option value="automatic">Automatic suppression</option>
+              </select></label>
+            <label>Existing LPS class (P<sub>B</sub>)
+              <select id="lr-lps">
+                <option value="none" selected>None</option>
+                <option value="IV">Class IV</option>
+                <option value="III">Class III</option>
+                <option value="II">Class II</option>
+                <option value="I">Class I</option>
+              </select></label>
+            <label>Coordinated SPDs (P<sub>SPD</sub>)
+              <select id="lr-spd">
+                <option value="none" selected>None</option>
+                <option value="III-IV">LPL III–IV</option>
+                <option value="II">LPL II</option>
+                <option value="I">LPL I</option>
+              </select></label>
+            <label>Persons in structure<input type="number" id="lr-persons" value="10" min="1" step="1"></label>
+            <label>Occupied hours/yr<input type="number" id="lr-hours" value="8760" min="1" max="8760" step="1"></label>
+            <label title="Rated impulse withstand of internal equipment (K_S4, P_LI)">Equipment U<sub>W</sub> (kV)
+              <select id="lr-uw">
+                <option value="1">1.0</option>
+                <option value="1.5">1.5</option>
+                <option value="2.5" selected>2.5</option>
+                <option value="4">4.0</option>
+                <option value="6">6.0</option>
+              </select></label>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:14px"><input type="checkbox" id="lr-explosion" style="width:auto"> Risk of explosion</label>
+          </div>
+          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <fieldset style="border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;font-size:12px">
+              <legend style="font-size:12px;padding:0 4px"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="lr-line1-en" checked style="width:auto"> Power service line</label></legend>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px">
+                <label>Length (m)<input type="number" id="lr-line1-len" value="1000" min="1"></label>
+                <label>Installation<select id="lr-line1-inst"><option value="buried" selected>Buried</option><option value="aerial">Aerial</option></select></label>
+                <label>Environment<select id="lr-line1-env"><option value="rural">Rural</option><option value="suburban" selected>Suburban</option><option value="urban">Urban</option><option value="urban_tall_buildings">Urban &gt;20 m</option></select></label>
+                <label style="display:flex;align-items:center;gap:6px;margin-top:12px"><input type="checkbox" id="lr-line1-tx" checked style="width:auto"> HV/LV transformer</label>
+              </div>
+            </fieldset>
+            <fieldset style="border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;font-size:12px">
+              <legend style="font-size:12px;padding:0 4px"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="lr-line2-en" style="width:auto"> Telecom line</label></legend>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px">
+                <label>Length (m)<input type="number" id="lr-line2-len" value="1000" min="1"></label>
+                <label>Installation<select id="lr-line2-inst"><option value="buried">Buried</option><option value="aerial" selected>Aerial</option></select></label>
+                <label>Environment<select id="lr-line2-env"><option value="rural">Rural</option><option value="suburban" selected>Suburban</option><option value="urban">Urban</option><option value="urban_tall_buildings">Urban &gt;20 m</option></select></label>
+                <label style="display:flex;align-items:center;gap:6px;margin-top:12px"><input type="checkbox" id="lr-line2-shield" style="width:auto"> Shielded &amp; bonded</label>
+              </div>
+            </fieldset>
+          </div>
+          <div style="margin-top:12px;text-align:right">
+            <button id="btn-run-lightning" class="btn btn-primary">Assess Risk</button>
+          </div>
+        </div>
+        <div id="lightning-results" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Raceway / Conduit Fill Modal -->
+  <div id="raceway-modal" class="modal" role="dialog" aria-modal="true" aria-label="Raceway Conduit Fill" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Raceway / Conduit Fill &amp; Grouping Derating</h3>
+        <button class="modal-close" id="btn-close-raceway">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">
+          Group project cables into conduits. Fill limits per NEC Ch. 9 Table 1 (53 / 31 / 40 %);
+          ampacity grouping factors per IEC 60364-5-52 Table B.52.17. Cable ODs are estimated
+          from the conductor size (typical multicore SWA) unless overridden.
+        </p>
+        <div id="raceway-list"></div>
+        <div style="margin:10px 0;display:flex;justify-content:space-between">
+          <button id="btn-add-raceway" class="btn">+ Add Raceway</button>
+          <button id="btn-run-raceway" class="btn btn-primary">Analyse</button>
+        </div>
+        <div id="raceway-results"></div>
       </div>
     </div>
   </div>
@@ -1982,6 +2130,7 @@
   <script src="js/minimap.js"></script>
   <script src="js/contextmenu.js"></script>
   <script src="js/dbschedule.js"></script>
+  <script src="js/control-sim.js"></script>
   <script src="js/retic.js"></script>
   <script src="js/retic-report.js"></script>
   <script src="js/app.js"></script>

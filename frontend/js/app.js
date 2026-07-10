@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   MiniMap.init();
   ContextMenu.init();
   DBSchedule.init();
+  ControlSim.init();
   Retic.init();
 
   // Templates button
@@ -1283,6 +1284,314 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  // ── Lightning Risk Assessment (IEC 62305-2) ──
+  const LR_FIELDS = {
+    length_m: ['lr-length', 'num'], width_m: ['lr-width', 'num'],
+    height_m: ['lr-height', 'num'], ground_flash_density: ['lr-ng', 'num'],
+    location: ['lr-location', 'str'], structure_use: ['lr-use', 'str'],
+    hazard_level: ['lr-hazard', 'str'], floor_type: ['lr-floor', 'str'],
+    fire_risk: ['lr-fire-risk', 'str'], fire_protection: ['lr-fire-prot', 'str'],
+    lps_class: ['lr-lps', 'str'], spd_level: ['lr-spd', 'str'],
+    persons_in_zone: ['lr-persons', 'num'], hours_per_year: ['lr-hours', 'num'],
+    equipment_withstand_kv: ['lr-uw', 'num'], explosion_risk: ['lr-explosion', 'bool'],
+  };
+
+  function collectLightningParams() {
+    const p = {};
+    for (const [key, [id, kind]] of Object.entries(LR_FIELDS)) {
+      const el = document.getElementById(id);
+      p[key] = kind === 'num' ? parseFloat(el.value) || 0
+             : kind === 'bool' ? el.checked : el.value;
+    }
+    p.persons_total = p.persons_in_zone;  // single-zone assessment
+    p.lines = [];
+    if (document.getElementById('lr-line1-en').checked) {
+      p.lines.push({
+        name: 'Power supply', type: 'power',
+        length_m: parseFloat(document.getElementById('lr-line1-len').value) || 1000,
+        installation: document.getElementById('lr-line1-inst').value,
+        environment: document.getElementById('lr-line1-env').value,
+        has_transformer: document.getElementById('lr-line1-tx').checked,
+        shielded: false,
+      });
+    }
+    if (document.getElementById('lr-line2-en').checked) {
+      p.lines.push({
+        name: 'Telecom', type: 'telecom',
+        length_m: parseFloat(document.getElementById('lr-line2-len').value) || 1000,
+        installation: document.getElementById('lr-line2-inst').value,
+        environment: document.getElementById('lr-line2-env').value,
+        has_transformer: false,
+        shielded: document.getElementById('lr-line2-shield').checked,
+      });
+    }
+    return p;
+  }
+
+  function restoreLightningParams(p) {
+    if (!p) return;
+    for (const [key, [id, kind]] of Object.entries(LR_FIELDS)) {
+      const el = document.getElementById(id);
+      if (p[key] === undefined) continue;
+      if (kind === 'bool') el.checked = !!p[key];
+      else el.value = p[key];
+    }
+    const power = (p.lines || []).find(l => l.type === 'power');
+    const telecom = (p.lines || []).find(l => l.type === 'telecom');
+    document.getElementById('lr-line1-en').checked = !!power;
+    if (power) {
+      document.getElementById('lr-line1-len').value = power.length_m;
+      document.getElementById('lr-line1-inst').value = power.installation;
+      document.getElementById('lr-line1-env').value = power.environment;
+      document.getElementById('lr-line1-tx').checked = !!power.has_transformer;
+    }
+    document.getElementById('lr-line2-en').checked = !!telecom;
+    if (telecom) {
+      document.getElementById('lr-line2-len').value = telecom.length_m;
+      document.getElementById('lr-line2-inst').value = telecom.installation;
+      document.getElementById('lr-line2-env').value = telecom.environment;
+      document.getElementById('lr-line2-shield').checked = !!telecom.shielded;
+    }
+  }
+
+  document.getElementById('btn-lightning').addEventListener('click', () => {
+    restoreLightningParams(AppState.lightningRisk);
+    document.getElementById('lightning-results').innerHTML = '';
+    document.getElementById('lightning-modal').style.display = '';
+  });
+
+  document.getElementById('btn-run-lightning').addEventListener('click', async () => {
+    const params = collectLightningParams();
+    AppState.lightningRisk = params;  // persist inputs with the project
+    const out = document.getElementById('lightning-results');
+    out.innerHTML = '<p style="font-size:12px;color:var(--text-secondary)">Assessing…</p>';
+    _setBusy('btn-run-lightning', true);
+    try {
+      const res = await API.runLightningRisk(params);
+      renderLightningResults(res, out);
+      document.getElementById('status-info').textContent = 'Lightning risk assessment complete.';
+    } catch (e) {
+      console.error('Lightning risk error:', e);
+      out.innerHTML = `<div class="af-warning-item">⚠ ${escHtml(e.message || 'Assessment failed')}</div>`;
+    } finally {
+      _setBusy('btn-run-lightning', false);
+    }
+  });
+
+  function renderLightningResults(res, out) {
+    const fmtR = v => v === 0 ? '0' : (v * 1e5).toFixed(3);  // in units of 1e-5/yr
+    const color = res.compliant ? '#4caf50' : '#d32f2f';
+    let html = '';
+    for (const w of res.warnings || []) {
+      html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
+    }
+    html += `<div style="background:${color}11;border:1px solid ${color};border-radius:6px;padding:10px 14px;margin:10px 0">
+      <strong style="color:${color}">R1 = ${fmtR(res.r1)} ×10⁻⁵ /yr — ${res.compliant ? 'TOLERABLE' : 'EXCEEDS'} R_T = 1.0 ×10⁻⁵ /yr</strong>
+      <div style="font-size:12px;margin-top:4px">${escHtml(res.recommendation)}</div>
+    </div>`;
+    html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px;margin-bottom:12px">
+      <div>A<sub>D</sub>: <strong>${res.collection_area_m2.toLocaleString()} m²</strong></div>
+      <div>A<sub>M</sub>: <strong>${Math.round(res.collection_area_near_m2).toLocaleString()} m²</strong></div>
+      <div>N<sub>D</sub>: <strong>${res.flashes_to_structure_per_year.toExponential(2)} /yr</strong></div>
+      <div>N<sub>M</sub>: <strong>${res.flashes_near_structure_per_year.toFixed(3)} /yr</strong></div>
+    </div>`;
+    // Component breakdown
+    html += '<table class="result-table" style="width:100%;font-size:12px;margin-bottom:12px"><thead><tr><th>Component</th><th>Description</th><th style="text-align:right">×10⁻⁵ /yr</th><th style="width:30%">Share</th></tr></thead><tbody>';
+    for (const c of res.components) {
+      if (c.value === 0 && !res.systems_life_risk && ['RC', 'RM', 'RW', 'RZ'].includes(c.code)) continue;
+      html += `<tr><td><strong>${c.code}</strong></td><td>${escHtml(c.description)}</td>
+        <td style="text-align:right">${fmtR(c.value)}</td>
+        <td><div style="background:var(--accent);height:8px;border-radius:4px;width:${Math.max(1, c.share_pct).toFixed(1)}%;opacity:0.7"></div></td></tr>`;
+    }
+    html += '</tbody></table>';
+    // Protection ladder
+    html += '<table class="result-table" style="width:100%;font-size:12px"><thead><tr><th>Protection measures</th><th style="text-align:right">R1 (×10⁻⁵ /yr)</th><th>Meets R_T</th></tr></thead><tbody>';
+    for (const o of res.options) {
+      html += `<tr><td>${escHtml(o.label)}</td><td style="text-align:right">${fmtR(o.r1)}</td>
+        <td>${o.compliant ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>'}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:8px">Single-zone assessment per IEC 62305-2 Ed. 2. R_C/R_M/R_W/R_Z included only where internal-system failure endangers life (hospitals, explosion risk). No spatial-shielding credit (K_S1 = K_S2 = 1).</p>';
+    out.innerHTML = html;
+  }
+
+  // ── Raceway / Conduit Fill ──
+  const CONDUIT_SIZES = [20, 25, 32, 40, 50, 63, 75, 90, 110, 125, 160];
+  let _racewaySeq = 1;
+
+  function projectCables() {
+    return [...AppState.components.values()].filter(c => c.type === 'cable');
+  }
+
+  function renderRacewayEditor() {
+    const list = document.getElementById('raceway-list');
+    const cables = projectCables();
+    if (AppState.raceways.length === 0) {
+      list.innerHTML = '<p style="font-size:12px;color:var(--text-secondary)">No raceways defined — add one below.</p>';
+      return;
+    }
+    let html = '';
+    for (const rw of AppState.raceways) {
+      const opts = CONDUIT_SIZES.map(s =>
+        `<option value="${s}" ${rw.nominal_mm === s ? 'selected' : ''}>${s} mm</option>`).join('');
+      const cableChecks = cables.length === 0
+        ? '<span style="color:var(--text-secondary)">No cables in project</span>'
+        : cables.map(c => `
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+            <input type="checkbox" data-rw="${rw.id}" data-cable="${c.id}"
+              ${rw.cableIds.includes(c.id) ? 'checked' : ''} style="width:auto">
+            ${escHtml(c.props.name || c.id)}${c.props.num_parallel > 1 ? ` (×${c.props.num_parallel})` : ''}
+          </label>`).join('');
+      html += `<div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:12px">
+          <input type="text" data-rw-name="${rw.id}" value="${escHtml(rw.name)}" style="width:140px">
+          <label>Conduit <select data-rw-nominal="${rw.id}">${opts}</select></label>
+          <label title="Override internal diameter (0 = typical for nominal size)">ID (mm)
+            <input type="number" data-rw-id-mm="${rw.id}" value="${rw.custom_id_mm || ''}" placeholder="auto" style="width:70px" min="0" step="0.1"></label>
+          <button class="btn" data-rw-del="${rw.id}" style="margin-left:auto;color:#d32f2f">Delete</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px 12px">${cableChecks}</div>
+      </div>`;
+    }
+    list.innerHTML = html;
+
+    list.querySelectorAll('[data-rw-name]').forEach(el => el.addEventListener('change', () => {
+      const rw = AppState.raceways.find(r => r.id === el.dataset.rwName);
+      if (rw) rw.name = el.value;
+    }));
+    list.querySelectorAll('[data-rw-nominal]').forEach(el => el.addEventListener('change', () => {
+      const rw = AppState.raceways.find(r => r.id === el.dataset.rwNominal);
+      if (rw) rw.nominal_mm = parseFloat(el.value);
+    }));
+    list.querySelectorAll('[data-rw-id-mm]').forEach(el => el.addEventListener('change', () => {
+      const rw = AppState.raceways.find(r => r.id === el.dataset.rwIdMm);
+      if (rw) rw.custom_id_mm = parseFloat(el.value) || 0;
+    }));
+    list.querySelectorAll('[data-rw-del]').forEach(el => el.addEventListener('click', () => {
+      AppState.raceways = AppState.raceways.filter(r => r.id !== el.dataset.rwDel);
+      renderRacewayEditor();
+    }));
+    list.querySelectorAll('input[data-cable]').forEach(el => el.addEventListener('change', () => {
+      const rw = AppState.raceways.find(r => r.id === el.dataset.rw);
+      if (!rw) return;
+      if (el.checked) {
+        if (!rw.cableIds.includes(el.dataset.cable)) rw.cableIds.push(el.dataset.cable);
+      } else {
+        rw.cableIds = rw.cableIds.filter(id => id !== el.dataset.cable);
+      }
+    }));
+  }
+
+  document.getElementById('btn-raceway').addEventListener('click', () => {
+    // Rebase the id sequence past any loaded raceways
+    _racewaySeq = Math.max(_racewaySeq,
+      ...AppState.raceways.map(r => (parseInt(String(r.id).replace('rw_', '')) || 0) + 1), 1);
+    document.getElementById('raceway-results').innerHTML = '';
+    renderRacewayEditor();
+    document.getElementById('raceway-modal').style.display = '';
+  });
+
+  document.getElementById('btn-add-raceway').addEventListener('click', () => {
+    AppState.raceways.push({
+      id: `rw_${_racewaySeq++}`, name: `Raceway ${AppState.raceways.length + 1}`,
+      nominal_mm: 110, custom_id_mm: 0, cableIds: [],
+    });
+    renderRacewayEditor();
+  });
+
+  document.getElementById('btn-run-raceway').addEventListener('click', async () => {
+    const out = document.getElementById('raceway-results');
+    if (AppState.raceways.length === 0) {
+      out.innerHTML = '<p style="font-size:12px;color:var(--text-secondary)">Define at least one raceway first.</p>';
+      return;
+    }
+    // Operating currents from the latest load flow, if available
+    const branchAmps = {};
+    for (const br of (AppState.loadFlowResults?.branches || [])) {
+      if (br.i_amps > 0) branchAmps[br.elementId] = br.i_amps;
+    }
+    const payload = AppState.raceways.map(rw => ({
+      name: rw.name,
+      conduit_nominal_mm: rw.nominal_mm,
+      conduit_id_mm: rw.custom_id_mm || 0,
+      cables: rw.cableIds.flatMap(cid => {
+        const comp = AppState.components.get(cid);
+        if (!comp) return [];
+        const lib = comp.props.standard_type
+          ? STANDARD_CABLES.find(c => c.id === comp.props.standard_type) : null;
+        const runs = Math.max(1, parseInt(comp.props.num_parallel) || 1);
+        // Total current splits across parallel runs; each run is one
+        // physical cable in the conduit.
+        const perRun = (branchAmps[cid] || 0) / runs;
+        return Array.from({ length: runs }, (_, i) => ({
+          cable_id: runs > 1 ? `${cid}#${i + 1}` : cid,
+          name: (comp.props.name || cid) + (runs > 1 ? ` (run ${i + 1})` : ''),
+          size_mm2: lib?.size_mm2 || 0,
+          od_mm: parseFloat(comp.props.od_mm) || 0,
+          rated_amps: parseFloat(comp.props.rated_amps) || 0,
+          load_amps: perRun,
+        }));
+      }),
+    }));
+    out.innerHTML = '<p style="font-size:12px;color:var(--text-secondary)">Analysing…</p>';
+    _setBusy('btn-run-raceway', true);
+    try {
+      const res = await API.runRacewayAnalysis(payload);
+      renderRacewayResults(res, out);
+      document.getElementById('status-info').textContent = 'Raceway analysis complete.';
+    } catch (e) {
+      console.error('Raceway analysis error:', e);
+      out.innerHTML = `<div class="af-warning-item">⚠ ${escHtml(e.message || 'Analysis failed')}</div>`;
+    } finally {
+      _setBusy('btn-run-raceway', false);
+    }
+  });
+
+  function renderRacewayResults(res, out) {
+    const s = res.summary || {};
+    const bannerColor = s.fail > 0 ? '#d32f2f' : s.warning > 0 ? '#f57c00' : '#4caf50';
+    let html = `<div style="background:${bannerColor}11;border:1px solid ${bannerColor};border-radius:6px;padding:8px 14px;margin-bottom:10px;font-size:13px">
+      <strong style="color:${bannerColor}">${s.total} raceways:</strong>
+      <span style="color:#4caf50;margin-left:8px">${s.pass || 0} Pass</span>
+      <span style="color:#f57c00;margin-left:8px">${s.warning || 0} Warn</span>
+      <span style="color:#d32f2f;margin-left:8px">${s.fail || 0} Fail</span>
+    </div>`;
+    for (const rw of res.raceways) {
+      const color = rw.status === 'fail' ? '#d32f2f' : rw.status === 'warning' ? '#f57c00'
+                  : rw.status === 'empty' ? '#888' : '#4caf50';
+      html += `<div style="border:1px solid var(--border-color);border-left:4px solid ${color};border-radius:6px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+          <strong>${escHtml(rw.name)} — ${rw.conduit_nominal_mm} mm conduit (ID ${rw.conduit_id_mm} mm)</strong>
+          <span style="color:${color};font-weight:600">${rw.status.toUpperCase()}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px 16px;font-size:12px">
+          <div>Fill: <strong style="color:${rw.fill_ok ? 'inherit' : '#d32f2f'}">${rw.fill_pct}%</strong> (limit ${rw.fill_limit_pct}%)</div>
+          <div>Cables: <strong>${rw.num_cables}</strong></div>
+          <div>Grouping factor: <strong>${rw.grouping_factor.toFixed(2)}</strong></div>
+          <div>Jam ratio: <strong style="color:${rw.jam_warning ? '#f57c00' : 'inherit'}">${rw.jam_ratio ?? '—'}</strong></div>
+        </div>`;
+      if (rw.cables.length) {
+        html += `<table class="result-table" style="width:100%;font-size:12px;margin-top:6px"><thead>
+          <tr><th>Cable</th><th style="text-align:right">OD (mm)</th><th style="text-align:right">Rated (A)</th><th style="text-align:right">Derated (A)</th><th style="text-align:right">Load (A)</th><th>OK</th></tr></thead><tbody>`;
+        for (const c of rw.cables) {
+          html += `<tr><td>${escHtml(c.name)}</td>
+            <td style="text-align:right">${c.od_mm}${c.od_estimated ? ' <span title="Estimated from conductor size — verify against manufacturer data" style="color:var(--text-secondary)">≈</span>' : ''}</td>
+            <td style="text-align:right">${c.rated_amps}</td>
+            <td style="text-align:right">${c.derated_amps}</td>
+            <td style="text-align:right">${c.load_amps ? c.load_amps.toFixed(1) : '—'}</td>
+            <td>${c.adequate ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>'}</td></tr>`;
+        }
+        html += '</tbody></table>';
+      }
+      for (const w of rw.warnings || []) {
+        html += `<div style="font-size:11px;color:#b26a00;margin-top:4px">⚠ ${escHtml(w)}</div>`;
+      }
+      html += '</div>';
+    }
+    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:6px">Run Load Flow first to populate operating currents. ODs marked ≈ are catalogue-typical estimates.</p>';
+    out.innerHTML = html;
+  }
+
   // ── Study Manager — Batch Run ──
   document.getElementById('btn-study-manager').addEventListener('click', () => {
     if (AppState.components.size === 0) {
@@ -1715,6 +2024,25 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('grounding-modal').addEventListener('click', (e) => {
     if (e.target.id === 'grounding-modal') e.target.style.display = 'none';
+  });
+
+  // ── Control circuit simulation toggle ──
+  document.getElementById('btn-control-sim').addEventListener('click', () => {
+    ControlSim.toggle();
+  });
+
+  document.getElementById('btn-close-raceway').addEventListener('click', () => {
+    document.getElementById('raceway-modal').style.display = 'none';
+  });
+  document.getElementById('raceway-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'raceway-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-lightning').addEventListener('click', () => {
+    document.getElementById('lightning-modal').style.display = 'none';
+  });
+  document.getElementById('lightning-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'lightning-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-study-manager').addEventListener('click', () => {

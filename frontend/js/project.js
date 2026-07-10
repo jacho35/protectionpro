@@ -202,7 +202,10 @@ const Project = {
       /* Bus bar */
       .bus-bar { stroke: #222; stroke-width: 4; stroke-linecap: round; }
 
-      /* ── Symbol classes (every component type) ── */
+      /* ── Symbol classes (every component type) ──
+         Exports rasterize a detached SVG clone that sees ONLY this
+         stylesheet — a new symbol class in symbols.js/symbols.css must be
+         mirrored here or it renders invisible (SVG default stroke: none). */
       .symbol-bus { stroke: #222; stroke-width: 4; }
       .symbol-transformer { stroke: #333; stroke-width: 1.5; fill: none; }
       .symbol-generator { stroke: #2e7d32; stroke-width: 1.5; fill: none; }
@@ -218,10 +221,16 @@ const Project = {
       .symbol-arrester { stroke: #2e7d32; stroke-width: 1.5; fill: none; }
       .symbol-load { stroke: #555; stroke-width: 1.5; fill: none; }
       .symbol-capacitor { stroke: #0097a7; stroke-width: 1.5; fill: none; }
+      .symbol-db { stroke: #555; stroke-width: 1.5; fill: none; }
+      .symbol-db .symbol-text { stroke: none; fill: #555; }
+      .symbol-control { stroke: #455a64; stroke-width: 1.5; fill: none; }
+      .symbol-control .symbol-text { stroke: none; fill: #455a64; }
 
-      /* Selection outline (render neutral in export) */
+      /* Selection outline & editing chrome (never render in export) */
       .comp-outline { stroke: none; fill: none; }
       .select-handle { display: none; }
+      .bus-resize-handle { display: none; }
+      .wire-bend-point { display: none; }
 
       /* Annotations — CSS vars resolved to actual hex values */
       .annotation-badge { rx: 4; ry: 4; }

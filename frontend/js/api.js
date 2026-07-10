@@ -147,6 +147,16 @@ const API = {
     return this.request('/analysis/grounding', 'POST', data);
   },
 
+  // Run lightning risk assessment (IEC 62305-2) — params form, not ProjectData
+  async runLightningRisk(params) {
+    return this.request('/analysis/lightning-risk', 'POST', params);
+  },
+
+  // Run raceway conduit-fill / grouping-derating analysis
+  async runRacewayAnalysis(raceways) {
+    return this.request('/analysis/raceway', 'POST', { raceways });
+  },
+
   // Run ADMD reticulation demand estimation (NRS 034-1 / CTEF100).
   // Diversity is applied per minisub across its downstream kiosks.
   async runAdmd(settings, kiosks, minisubs = []) {

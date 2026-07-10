@@ -101,6 +101,10 @@ const AppState = {
   wireRouteMode: 'orthogonal',
 
   // ─── Reticulation module (LV distribution / NRS 034-1 ADMD design) ───
+  // Raceway/conduit-fill study definitions: {id, name, nominal_mm,
+  // custom_id_mm, cableIds: []} — persisted with the project.
+  raceways: [],
+
   // Independent workspace from the SLD canvas. Kiosks feed groups of erven
   // (stands); demand is estimated via the backend /api/analysis/admd engine.
   reticulation: {
@@ -691,6 +695,8 @@ const AppState = {
     this.wireRouteMode = 'orthogonal';
     this.reticulation = this._defaultReticulation();
     this.reticResults = null;
+    this.lightningRisk = null;   // saved IEC 62305-2 form inputs
+    this.raceways = [];
     // Clear annotation drag offsets
     if (typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
@@ -823,6 +829,8 @@ const AppState = {
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
       studyManagerResults: this.studyManagerResults || undefined,
+      lightningRisk: this.lightningRisk || undefined,
+      raceways: this.raceways.length ? this.raceways : undefined,
     };
   },
 
@@ -972,6 +980,8 @@ const AppState = {
     this.loadDiversityResults = data.loadDiversityResults || null;
     this.groundingResults = data.groundingResults || null;
     this.studyManagerResults = data.studyManagerResults || null;
+    this.lightningRisk = data.lightningRisk || null;
+    this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data
     // (reset() above ran with the default empty reticulation).

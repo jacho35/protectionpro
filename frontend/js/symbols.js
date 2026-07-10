@@ -390,6 +390,117 @@ const Symbols = {
       </g>`;
   },
 
+  // ── Control circuit symbols (IEC 60617) ──
+  // All two-terminal devices draw terminal stubs to ±h/2 so ports line up.
+
+  ctl_supply(w, h, comp) {
+    const hw = w / 2, hh = h / 2;
+    const type = (comp && comp.props && comp.props.supply_type) || '230VAC';
+    const mark = type.endsWith('DC') ? '⎓' : '∿';
+    return `
+      <g class="symbol-control">
+        <rect class="symbol-fill" x="${-hw}" y="${-hh}" width="${w}" height="${h - 8}" rx="3" fill="none"/>
+        <text x="0" y="1" text-anchor="middle" font-size="10" class="symbol-text">${mark} ${type}</text>
+        <line x1="-15" y1="${hh - 8}" x2="-15" y2="${hh}"/>
+        <line x1="15" y1="${hh - 8}" x2="15" y2="${hh}"/>
+        <text x="-15" y="${hh - 11}" text-anchor="middle" font-size="6" class="symbol-text">L</text>
+        <text x="15" y="${hh - 11}" text-anchor="middle" font-size="6" class="symbol-text">N</text>
+      </g>`;
+  },
+
+  // NO contact: fixed terminals with the moving piece swung away
+  _ctlContactBase(h, closed, cross) {
+    const hh = h / 2;
+    // Terminals reach ±8 from centre; moving contact between them
+    const moving = closed
+      ? `<line x1="0" y1="-8" x2="0" y2="8"/>`
+      : `<line x1="0" y1="8" x2="-7" y2="-8"/>`;
+    // NC indicator: bar across the fixed terminal end
+    const bar = cross ? `<line x1="-5" y1="-8" x2="5" y2="-8"/>` : '';
+    return `
+      <line x1="0" y1="${-hh}" x2="0" y2="-8"/>
+      <line x1="0" y1="8" x2="0" y2="${hh}"/>
+      ${moving}${bar}`;
+  },
+
+  ctl_pb_no(w, h) {
+    // IEC momentary pushbutton, NO: open contact + operator head
+    return `
+      <g class="symbol-control">
+        ${this._ctlContactBase(h, false, false)}
+        <line x1="-3.5" y1="0" x2="-11" y2="0" stroke-dasharray="2,2"/>
+        <line x1="-11" y1="-5" x2="-11" y2="5"/>
+        <path d="M -11 -5 L -14 -5 L -14 5 L -11 5" fill="none"/>
+      </g>`;
+  },
+
+  ctl_pb_nc(w, h) {
+    // IEC momentary pushbutton, NC: closed contact + operator head
+    return `
+      <g class="symbol-control">
+        ${this._ctlContactBase(h, true, true)}
+        <line x1="0" y1="0" x2="-11" y2="0" stroke-dasharray="2,2"/>
+        <line x1="-11" y1="-5" x2="-11" y2="5"/>
+        <path d="M -11 -5 L -14 -5 L -14 5 L -11 5" fill="none"/>
+      </g>`;
+  },
+
+  ctl_switch(w, h, comp) {
+    // Maintained selector switch; drawn per its current state so toggling
+    // in simulation gives visual feedback
+    const p = (comp && comp.props) || {};
+    const closed = p.state === 'closed';
+    const nc = p.contact_type === 'nc';
+    return `
+      <g class="symbol-control">
+        ${this._ctlContactBase(h, closed, nc)}
+        <line x1="${closed ? 0 : -3.5}" y1="0" x2="-10" y2="0" stroke-dasharray="2,2"/>
+        <circle cx="-11.5" cy="0" r="1.8" fill="currentColor" stroke="none"/>
+      </g>`;
+  },
+
+  ctl_contact_no(w, h) {
+    return `<g class="symbol-control">${this._ctlContactBase(h, false, false)}</g>`;
+  },
+
+  ctl_contact_nc(w, h) {
+    return `<g class="symbol-control">${this._ctlContactBase(h, true, true)}</g>`;
+  },
+
+  ctl_coil(w, h, comp) {
+    const p = (comp && comp.props) || {};
+    const hw = w * 0.38, hh = h / 2, bh = 11;
+    // On-delay: flag above the coil box points up; off-delay: down
+    let timer = '';
+    if (p.coil_type === 'timer_on') {
+      timer = `<path d="M -5 ${-bh - 3} L 0 ${-bh - 9} L 5 ${-bh - 3}" fill="none"/>`;
+    } else if (p.coil_type === 'timer_off') {
+      timer = `<path d="M -5 ${-bh - 9} L 0 ${-bh - 3} L 5 ${-bh - 9}" fill="none"/>`;
+    }
+    return `
+      <g class="symbol-control">
+        <line x1="0" y1="${-hh}" x2="0" y2="${-bh}"/>
+        <line x1="0" y1="${bh}" x2="0" y2="${hh}"/>
+        <rect class="symbol-fill" x="${-hw}" y="${-bh}" width="${hw * 2}" height="${bh * 2}" fill="none"/>
+        <text x="0" y="3.5" text-anchor="middle" font-size="9" class="symbol-text">${(p.tag || 'K').slice(0, 4)}</text>
+        ${timer}
+      </g>`;
+  },
+
+  ctl_lamp(w, h, comp) {
+    const r = 8, hh = h / 2;
+    const color = (comp && comp.props && comp.props.color) || 'green';
+    const k = r * Math.SQRT1_2;
+    return `
+      <g class="symbol-control" data-lamp-color="${color}">
+        <line x1="0" y1="${-hh}" x2="0" y2="${-r}"/>
+        <line x1="0" y1="${r}" x2="0" y2="${hh}"/>
+        <circle class="symbol-fill ctl-lamp-glass" cx="0" cy="0" r="${r}" fill="none"/>
+        <line x1="${-k}" y1="${-k}" x2="${k}" y2="${k}"/>
+        <line x1="${k}" y1="${-k}" x2="${-k}" y2="${k}"/>
+      </g>`;
+  },
+
   capacitor_bank(w, h) {
     const hw = w * 0.4;
     const gap = 4;

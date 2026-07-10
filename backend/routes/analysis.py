@@ -6,8 +6,10 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults
 from ..analysis.admd import run_admd
+from ..analysis.lightning_risk import run_lightning_risk
+from ..analysis.raceway import run_raceway_analysis
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
@@ -169,6 +171,26 @@ def admd(data: AdmdRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"ADMD analysis error: {e}")
+
+
+@router.post("/lightning-risk", response_model=LightningRiskResult)
+def lightning_risk(data: LightningRiskRequest):
+    """Run IEC 62305-2 lightning risk assessment (R1, loss of human life)."""
+    try:
+        return run_lightning_risk(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Lightning risk error: {e}")
+
+
+@router.post("/raceway", response_model=RacewayResults)
+def raceway_analysis(data: RacewayRequest):
+    """Run conduit fill, jam ratio, and grouping-derating analysis."""
+    try:
+        return run_raceway_analysis(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Raceway analysis error: {e}")
 
 
 class StudyManagerRequest(ProjectData):

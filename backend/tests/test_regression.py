@@ -998,3 +998,212 @@ class TestADMD:
         assert len(res["minisubs"]) == 1
         assert res["total"]["totalKVA"] == pytest.approx(
             feeder_demand(kiosks, s)["totalKVA"], abs=0.01)
+
+
+# ── IEC 62305-2 lightning risk ───────────────────────────────────────────
+
+from backend.models.schemas import LightningRiskRequest, LightningLine
+from backend.analysis.lightning_risk import (
+    run_lightning_risk, collection_area_structure, TOLERABLE_R1)
+
+
+def _lr_request(**overrides):
+    """Baseline structure: 20×15×8 m office, Ng=4, suburban surroundings,
+    concrete floors, ordinary fire risk, fully occupied, no protection."""
+    base = dict(
+        length_m=20.0, width_m=15.0, height_m=8.0,
+        location="surrounded_same_height", ground_flash_density=4.0,
+        structure_use="other", persons_in_zone=10, persons_total=10,
+        hours_per_year=8760.0, hazard_level="none",
+        floor_type="agricultural_concrete", fire_risk="ordinary",
+        fire_protection="none", explosion_risk=False,
+        equipment_withstand_kv=2.5, lps_class="none", spd_level="none",
+        lines=[],
+    )
+    base.update(overrides)
+    return LightningRiskRequest(**base)
+
+
+class TestLightningRisk:
+    def test_collection_area_eq_a2(self):
+        """IEC 62305-2 eq. A.2: A_D = L·W + 2·3H·(L+W) + π·(3H)².
+        20×15×8 m: 300 + 2·24·35 + π·576 = 3789.56 m²."""
+        ad = collection_area_structure(20.0, 15.0, 8.0)
+        assert ad == pytest.approx(300 + 1680 + math.pi * 576, rel=1e-9)
+
+    def test_nd_dangerous_events(self):
+        """N_D = N_G·A_D·C_D·1e-6 (eq. A.4). Ng=4, C_D=0.5 (same height):
+        4 × 3789.56 × 0.5 × 1e-6 = 7.579e-3 events/yr."""
+        res = run_lightning_risk(_lr_request())
+        assert res.flashes_to_structure_per_year == pytest.approx(
+            4 * 3789.5575 * 0.5 * 1e-6, rel=1e-3)
+
+    def test_r1_hand_calc_no_lines_no_protection(self):
+        """Full-occupancy single zone, no lines, no protection:
+        L_A = r_t·L_T = 1e-2·1e-2 = 1e-4;  R_A = N_D·P_A·L_A = N_D·1e-4
+        L_B = r_p·r_f·h_z·L_F = 1·1e-2·1·1e-2 = 1e-4;  R_B = N_D·1e-4
+        R1 = 2e-4·N_D = 2e-4 × 7.579e-3 = 1.516e-6 → compliant."""
+        res = run_lightning_risk(_lr_request())
+        nd = res.flashes_to_structure_per_year
+        assert res.r1 == pytest.approx(2e-4 * nd, rel=1e-6)
+        assert res.compliant  # 1.5e-6 < 1e-5
+        assert "No protection required" in res.recommendation
+
+    def test_lps_class_iii_scales_ra_rb_by_pb(self):
+        """P_B(III) = 0.1 scales both R_A (P_A = P_TA·P_B) and R_B."""
+        none = run_lightning_risk(_lr_request())
+        lps3 = run_lightning_risk(_lr_request(lps_class="III"))
+        assert lps3.r1 == pytest.approx(0.1 * none.r1, rel=1e-6)
+
+    def test_line_events_and_rv(self):
+        """Buried suburban power line with HV/LV transformer, L_L=1000 m:
+        N_L = N_G·40·L_L·C_I·C_E·C_T·1e-6 = 4·40000·0.5·0.5·0.2·1e-6 = 8e-3.
+        R_U = R_V = N_L·1e-4 each (P_U=P_V=1, L_U=L_V=1e-4), so adding the
+        line raises R1 by 2e-4·N_L = 1.6e-6."""
+        line = LightningLine(name="Incomer", type="power", length_m=1000.0,
+                             installation="buried", environment="suburban",
+                             has_transformer=True, shielded=False)
+        without = run_lightning_risk(_lr_request())
+        with_line = run_lightning_risk(_lr_request(lines=[line]))
+        assert with_line.r1 - without.r1 == pytest.approx(2e-4 * 8e-3, rel=1e-3)
+
+    def test_explosion_risk_enables_system_components(self):
+        """Explosion risk ⇒ internal-system failure endangers life:
+        R_C = N_D·P_SPD·L_O with L_O = 1e-1 dominates R1 and forces a
+        non-compliant verdict for an unprotected structure."""
+        res = run_lightning_risk(_lr_request(explosion_risk=True))
+        assert res.systems_life_risk
+        rc = next(c for c in res.components if c.code == "RC")
+        nd = res.flashes_to_structure_per_year
+        assert rc.value == pytest.approx(nd * 1.0 * 1e-1, rel=1e-6)
+        assert not res.compliant
+
+    def test_recommendation_ladder_monotonic(self):
+        """Each step up the protection ladder must not increase R1, and a
+        high-exposure case (isolated entertainment venue, Ng=6, rural aerial
+        supply, average panic) must recommend real protection. Hand calc:
+        unprotected R_V = N_L·L_V = 0.24 × 2.5e-3 = 6e-4 ≫ RT, while
+        LPS I + LPL I SPDs give R1 ≈ 7.4e-6 < RT."""
+        line = LightningLine(name="Incomer", type="power", length_m=1000.0,
+                             installation="aerial", environment="rural",
+                             has_transformer=False)
+        res = run_lightning_risk(_lr_request(
+            ground_flash_density=6.0, location="isolated",
+            structure_use="entertainment_church_museum",
+            hazard_level="average_panic", lines=[line]))
+        r1s = [o.r1 for o in res.options]
+        assert all(a >= b - 1e-15 for a, b in zip(r1s, r1s[1:]))
+        assert not res.compliant
+        assert "Install" in res.recommendation
+        assert res.options[-1].compliant  # LPS I + SPD I suffices here
+
+    def test_beyond_ladder_case_warns(self):
+        """Hospital on an isolated hilltop with high fire risk and Ng=12:
+        even LPS I + LPL I SPDs cannot reach RT (induced-surge and fire
+        losses dominate) — the engine must say so rather than recommend an
+        insufficient measure."""
+        line = LightningLine(name="Incomer", type="power", length_m=1000.0,
+                             installation="aerial", environment="rural",
+                             has_transformer=False)
+        res = run_lightning_risk(_lr_request(
+            ground_flash_density=12.0, location="isolated_hilltop",
+            structure_use="hospital_hotel_school",
+            hazard_level="difficult_evacuation", fire_risk="high",
+            lines=[line]))
+        assert not res.compliant
+        assert not res.options[-1].compliant
+        assert "cannot be reduced" in res.recommendation
+        assert any("additional measures" in w for w in res.warnings)
+
+    def test_tolerable_level(self):
+        assert TOLERABLE_R1 == 1e-5
+
+
+# ── Raceway / conduit fill ───────────────────────────────────────────────
+
+from backend.models.schemas import RacewayRequest, RacewayDef, RacewayCable
+from backend.analysis.raceway import (
+    run_raceway_analysis, grouping_factor, estimate_od_mm)
+
+
+def _raceway(nominal_mm, cables, name="RW-1", conduit_id_mm=0.0):
+    return RacewayRequest(raceways=[RacewayDef(
+        name=name, conduit_nominal_mm=nominal_mm,
+        conduit_id_mm=conduit_id_mm, cables=cables)])
+
+
+def _cbl(cid, size=70.0, od=0.0, rated=245.0, load=0.0):
+    return RacewayCable(cable_id=cid, name=cid, size_mm2=size, od_mm=od,
+                        rated_amps=rated, load_amps=load)
+
+
+class TestRaceway:
+    def test_fill_three_cables_within_40pct(self):
+        """110 mm conduit (ID 102.7 → 8283 mm²) with 3 × 70 mm² SWA
+        (OD 36 → 1017.9 mm² each): fill = 3053.6/8283 = 36.9 % ≤ 40 %.
+        Jam ratio = 1.05·102.7/36 = 3.00 → inside the 2.8–3.2 danger band,
+        so the raceway passes fill but carries a jam warning."""
+        res = run_raceway_analysis(_raceway(110, [_cbl("c1"), _cbl("c2"), _cbl("c3")]))
+        rw = res.raceways[0]
+        assert rw.conduit_area_mm2 == pytest.approx(math.pi * 51.35**2, rel=1e-3)
+        assert rw.fill_pct == pytest.approx(36.9, abs=0.15)
+        assert rw.fill_ok and rw.fill_limit_pct == 40.0
+        assert rw.jam_ratio == pytest.approx(1.05 * 102.7 / 36.0, abs=0.01)
+        assert rw.jam_warning and rw.status == "warning"
+
+    def test_fill_two_cables_31pct_limit_fails(self):
+        """2 cables use the 31 % NEC limit: 2 × 70 mm² in a 50 mm conduit
+        (ID 45.1 → 1597 mm²) is 127 % fill — hard fail."""
+        res = run_raceway_analysis(_raceway(50, [_cbl("c1"), _cbl("c2")]))
+        rw = res.raceways[0]
+        assert rw.fill_limit_pct == 31.0
+        assert rw.fill_pct > 100 and not rw.fill_ok and rw.status == "fail"
+
+    def test_single_cable_53pct_limit(self):
+        """1 cable uses the 53 % limit: 95 mm² (OD 41 → 1320 mm²) in a
+        63 mm conduit (ID 57 → 2552 mm²) is 51.7 % — passes only at the
+        single-cable limit."""
+        res = run_raceway_analysis(_raceway(63, [_cbl("c1", size=95, rated=310)]))
+        rw = res.raceways[0]
+        assert rw.fill_limit_pct == 53.0
+        assert rw.fill_pct == pytest.approx(51.7, abs=0.3)
+        assert rw.fill_ok and rw.grouping_factor == 1.0
+
+    def test_grouping_factors_iec_b52_17(self):
+        """IEC 60364-5-52 Table B.52.17 item 1 spot values; counts between
+        tabulated entries take the next-higher entry (conservative)."""
+        assert grouping_factor(1) == 1.0
+        assert grouping_factor(3) == 0.70
+        assert grouping_factor(9) == 0.50
+        assert grouping_factor(10) == 0.45   # between 9 and 12 → 12's factor
+        assert grouping_factor(25) == 0.38   # beyond table end
+    def test_derated_ampacity_flags_overload(self):
+        """3 × 70 mm² (245 A) grouped → 0.7 × 245 = 171.5 A each. A cable
+        carrying 200 A fails even though fill and jam are fine in a
+        160 mm conduit."""
+        res = run_raceway_analysis(_raceway(160, [
+            _cbl("c1", load=200), _cbl("c2"), _cbl("c3")]))
+        rw = res.raceways[0]
+        assert rw.fill_ok and not rw.jam_warning
+        assert rw.grouping_factor == 0.70
+        c1 = next(c for c in rw.cables if c.cable_id == "c1")
+        assert c1.derated_amps == pytest.approx(171.5, abs=0.1)
+        assert not c1.adequate and rw.status == "fail"
+
+    def test_od_estimation_log_interpolation(self):
+        """60 mm² sits between the 50 mm² (32 mm) and 70 mm² (36 mm)
+        catalogue points: log-interp gives ≈ 34.2 mm."""
+        assert estimate_od_mm(60) == pytest.approx(34.17, abs=0.05)
+
+    def test_explicit_od_override_and_empty(self):
+        """An explicit od_mm bypasses estimation; an empty raceway reports
+        status 'empty' with a warning."""
+        res = run_raceway_analysis(RacewayRequest(raceways=[
+            RacewayDef(name="A", conduit_nominal_mm=110,
+                       cables=[_cbl("c1", od=30.0)]),
+            RacewayDef(name="B", conduit_nominal_mm=50, cables=[]),
+        ]))
+        a, b = res.raceways
+        assert a.cables[0].od_mm == 30.0 and not a.cables[0].od_estimated
+        assert b.status == "empty" and b.warnings
+        assert res.summary["total"] == 2
