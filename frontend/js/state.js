@@ -100,9 +100,72 @@ const AppState = {
   // Wire routing mode: 'orthogonal' | 'diagonal' | 'spline'
   wireRouteMode: 'orthogonal',
 
+  // ─── Reticulation module (LV distribution / NRS 034-1 ADMD design) ───
+  // Independent workspace from the SLD canvas. Kiosks feed groups of erven
+  // (stands); demand is estimated via the backend /api/analysis/admd engine.
+  reticulation: {
+    settings: {
+      estimationMethod: 'Empirical',   // 'Empirical' | 'Herman Beta'
+      correctionMethod: 'AMEU',        // 'AMEU' | 'British' | 'None'
+      loadClass: 'urban1',             // default load-class id
+      admd: 4.04,                      // default ADMD (kVA) for Empirical
+      riskZ: 1.28,                     // Herman-Beta risk factor
+      maxRunVD: 5,                     // service/erf volt-drop limit (%)
+      maxFeederVD: 7,                  // feeder volt-drop limit (%)
+      // Quick Build defaults (also used by the per-kiosk quick-add buttons)
+      quickKiosks: 4,                  // kiosks to add per build
+      quickErven: 6,                   // erven per kiosk
+      quickServiceCable: '',           // service cable applied to each erf
+      quickServiceLen: 60,             // worst-case service run length (m)
+      quickFeederCable: '',            // feeder cable applied to each kiosk
+      quickFeederLen: 100,             // feeder segment length (m)
+      quickChain: true,                // daisy-chain kiosks (else star from minisub)
+      quickFeedFrom: 'source',         // minisub the quick build feeds from
+      networkDiversity: 1.0,           // × on Σ minisub demands (NMD estimate)
+    },
+    // Minisubs/transformer sources: ADMD diversity is applied per minisub
+    // across its downstream kiosks. The first id is 'source' so legacy
+    // kiosk.fedFrom values resolve unchanged.
+    minisubs: [{ id: 'source', name: 'Minisub 1' }],
+    kiosks: [],   // [{id,name,fedFrom,loadClass,admdOverride,feederCable,feederLength,erfs:[]}]
+    _kioskSeq: 1,
+    _erfSeq: 1,
+    _msSeq: 2,
+  },
+  reticResults: null,   // latest /api/analysis/admd response
+
   // Generate unique ID
   genId(prefix) {
     return `${prefix}_${this.nextId++}`;
+  },
+
+  // ─── Reticulation helpers ───
+  _defaultReticulation() {
+    return {
+      settings: {
+        estimationMethod: 'Empirical', correctionMethod: 'AMEU',
+        loadClass: 'urban1', admd: 4.04, riskZ: 1.28,
+        maxRunVD: 5, maxFeederVD: 7,
+        quickKiosks: 4, quickErven: 6,
+        quickServiceCable: '', quickServiceLen: 60,
+        quickFeederCable: '', quickFeederLen: 100, quickChain: true,
+        quickFeedFrom: 'source', networkDiversity: 1.0,
+      },
+      minisubs: [{ id: 'source', name: 'Minisub 1' }],
+      kiosks: [], _kioskSeq: 1, _erfSeq: 1, _msSeq: 2,
+    };
+  },
+
+  reticGenKioskId() {
+    return `kiosk_${this.reticulation._kioskSeq++}`;
+  },
+
+  reticGenErfId() {
+    return `erf_${this.reticulation._erfSeq++}`;
+  },
+
+  reticGenMinisubId() {
+    return `minisub_${this.reticulation._msSeq++}`;
   },
 
   // Add component
@@ -626,6 +689,8 @@ const AppState = {
     this.activePageId = 'page_1';
     this._pageNextId = 2;
     this.wireRouteMode = 'orthogonal';
+    this.reticulation = this._defaultReticulation();
+    this.reticResults = null;
     // Clear annotation drag offsets
     if (typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
@@ -636,6 +701,10 @@ const AppState = {
     // path that forgot to call RevisionTimeline.clearLocal().
     if (typeof RevisionTimeline !== 'undefined' && RevisionTimeline.onProjectIdentityReset) {
       RevisionTimeline.onProjectIdentityReset();
+    }
+    // Reticulation workspace: drop its local undo history and refresh its view
+    if (typeof Retic !== 'undefined' && Retic.onProjectChanged) {
+      Retic.onProjectChanged();
     }
   },
 
@@ -737,6 +806,7 @@ const AppState = {
       pages: this.pages,
       activePageId: this.activePageId,
       wireRouteMode: this.wireRouteMode,
+      reticulation: this.reticulation,
       annotationOffsets: Annotations.offsets.size > 0
         ? Object.fromEntries(Annotations.offsets)
         : undefined,
@@ -854,6 +924,34 @@ const AppState = {
       this._pageNextId = Math.max(...data.pages.map(p => parseInt(p.id.replace('page_', '')) || 0)) + 1;
     }
     if (data.wireRouteMode) this.wireRouteMode = data.wireRouteMode;
+    // Restore reticulation module (backfill defaults for older projects)
+    if (data.reticulation && typeof data.reticulation === 'object') {
+      const def = this._defaultReticulation();
+      const r = data.reticulation;
+      this.reticulation = {
+        settings: { ...def.settings, ...(r.settings || {}) },
+        minisubs: Array.isArray(r.minisubs) && r.minisubs.length
+          ? r.minisubs : [{ id: 'source', name: 'Minisub 1' }],
+        kiosks: Array.isArray(r.kiosks) ? r.kiosks : [],
+        _kioskSeq: r._kioskSeq || 1,
+        _erfSeq: r._erfSeq || 1,
+        _msSeq: r._msSeq || 2,
+      };
+      // Repair id sequence counters so genId never collides with loaded ids
+      let maxK = 0, maxE = 0, maxM = 0;
+      for (const k of this.reticulation.kiosks) {
+        const mk = /_(\d+)$/.exec(String(k.id || '')); if (mk) maxK = Math.max(maxK, +mk[1]);
+        for (const e of (k.erfs || [])) {
+          const me = /_(\d+)$/.exec(String(e.id || '')); if (me) maxE = Math.max(maxE, +me[1]);
+        }
+      }
+      for (const m of this.reticulation.minisubs) {
+        const mm = /^minisub_(\d+)$/.exec(String(m.id || '')); if (mm) maxM = Math.max(maxM, +mm[1]);
+      }
+      this.reticulation._kioskSeq = Math.max(this.reticulation._kioskSeq, maxK + 1);
+      this.reticulation._erfSeq = Math.max(this.reticulation._erfSeq, maxE + 1);
+      this.reticulation._msSeq = Math.max(this.reticulation._msSeq, maxM + 1);
+    }
     // Restore annotation badge positions
     if (data.annotationOffsets && typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
@@ -875,6 +973,11 @@ const AppState = {
     this.groundingResults = data.groundingResults || null;
     this.studyManagerResults = data.studyManagerResults || null;
     this.dirty = false;
+    // Re-baseline the reticulation workspace on the loaded project's data
+    // (reset() above ran with the default empty reticulation).
+    if (typeof Retic !== 'undefined' && Retic.onProjectChanged) {
+      Retic.onProjectChanged();
+    }
   },
 };
 

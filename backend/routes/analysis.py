@@ -6,7 +6,8 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults
+from ..analysis.admd import run_admd
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
@@ -154,6 +155,20 @@ def grounding_analysis(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Grounding analysis error: {e}")
+
+
+@router.post("/admd", response_model=AdmdResults)
+def admd(data: AdmdRequest):
+    """Estimate After Diversity Maximum Demand (NRS 034-1 / CTEF100).
+
+    Supports the Empirical (ADMD × DCF) and Herman-Beta (statistical) methods.
+    Returns per-kiosk diversified demand and the combined feeder total.
+    """
+    try:
+        return run_admd(data.model_dump())
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"ADMD analysis error: {e}")
 
 
 class StudyManagerRequest(ProjectData):

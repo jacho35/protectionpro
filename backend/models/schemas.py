@@ -169,6 +169,109 @@ class ProjectSummary(BaseModel):
         from_attributes = True
 
 
+# ── ADMD / reticulation demand estimation ───────────────────────────────────
+
+
+class ErfInput(BaseModel):
+    """A single stand/erf (consumer connection point) on a kiosk."""
+    model_config = {"extra": "allow"}
+
+    id: Optional[str] = None
+    erfNumber: Optional[str] = None
+    length: float = 0                       # service-cable length (m); >0 ⇒ active
+    phase: Optional[str] = None             # "Red"|"White"|"Blue"|"3 Phase"|None
+    cableType: Optional[str] = None
+    ratedAmps: Optional[float] = None
+    ampsOverride: Optional[float] = None    # fixed, undiversified load (A)
+
+
+class KioskInput(BaseModel):
+    """A distribution kiosk feeding a group of erven."""
+    model_config = {"extra": "allow"}
+
+    id: Optional[str] = None
+    name: str = ""
+    fedFrom: Optional[str] = None           # upstream cable-row id (topology)
+    loadClass: Optional[str] = None         # per-kiosk class override
+    admdOverride: Optional[float] = None    # per-kiosk ADMD override (kVA)
+    streetLightKVA: Optional[float] = None  # fixed, undiversified SL load (kVA)
+    erfs: list[ErfInput] = []
+
+
+class AdmdSettings(BaseModel):
+    """Project-level demand-estimation settings."""
+    model_config = {"extra": "allow"}
+
+    estimationMethod: str = "Empirical"     # "Empirical" | "Herman Beta"
+    correctionMethod: str = "AMEU"          # "AMEU" | "British" | "None"
+    loadClass: str = "urban1"               # default class id
+    admd: float = 4.04                      # default ADMD (kVA)
+    riskZ: float = 1.28                     # Herman-Beta risk factor
+    networkDiversity: float = 1.0           # applied to Σ minisub demands (NMD)
+    loadClassLib: Optional[list[dict]] = None  # project override of default classes
+
+
+class MinisubInput(BaseModel):
+    """A minisub / transformer source; ADMD diversity is applied per minisub
+    across all kiosks fed (transitively) from it."""
+    model_config = {"extra": "allow"}
+
+    id: str
+    name: str = ""
+
+
+class AdmdRequest(BaseModel):
+    settings: AdmdSettings = AdmdSettings()
+    kiosks: list[KioskInput] = []
+    minisubs: list[MinisubInput] = []       # empty ⇒ one implicit source
+
+
+class AdmdKioskResult(BaseModel):
+    model_config = {"extra": "allow"}
+
+    kioskId: Optional[str] = None
+    name: str = ""
+    totalKVA: float
+    currentA: float
+    admdKVA: float
+    conns: int
+    overrideKVA: float = 0
+    cls: str = ""
+    clsId: str = ""
+
+
+class AdmdMinisubResult(BaseModel):
+    """Diversified demand of one minisub's downstream group."""
+    model_config = {"extra": "allow"}
+
+    minisubId: str
+    name: str = ""
+    totalKVA: float
+    currentA: float
+    overrideKVA: float = 0
+    streetLightKVA: float = 0
+    conns: int
+    numKiosks: int
+
+
+class AdmdFeederTotal(BaseModel):
+    totalKVA: float                          # sumKVA × networkDiversity
+    currentA: float
+    overrideKVA: float = 0
+    streetLightKVA: float = 0
+    conns: int
+    numKiosks: int
+    sumKVA: float = 0                        # Σ per-minisub diversified demands
+    networkDiversity: float = 1.0
+
+
+class AdmdResults(BaseModel):
+    kiosks: list[AdmdKioskResult] = []
+    minisubs: list[AdmdMinisubResult] = []
+    total: AdmdFeederTotal
+    settings: dict
+
+
 class FolderSummary(BaseModel):
     id: int
     name: str

@@ -6,6 +6,7 @@ const StandardData = {
   transformers: [],
   cbs: [],
   fuses: [],
+  loadClasses: [],
 
   // localStorage key for persisted library customizations
   _STORAGE_KEY: 'protectionpro-custom-libraries',
@@ -22,6 +23,7 @@ const StandardData = {
       transformers: JSON.parse(JSON.stringify(STANDARD_TRANSFORMERS)),
       cbs: JSON.parse(JSON.stringify(STANDARD_CBS)),
       fuses: JSON.parse(JSON.stringify(STANDARD_FUSES)),
+      loadClasses: JSON.parse(JSON.stringify(STANDARD_LOAD_CLASSES)),
     };
 
     // Clone defaults into working copies
@@ -29,6 +31,7 @@ const StandardData = {
     this.transformers = JSON.parse(JSON.stringify(STANDARD_TRANSFORMERS));
     this.cbs = JSON.parse(JSON.stringify(STANDARD_CBS));
     this.fuses = JSON.parse(JSON.stringify(STANDARD_FUSES));
+    this.loadClasses = JSON.parse(JSON.stringify(STANDARD_LOAD_CLASSES));
 
     // Restore persisted customizations, if any
     this._loadPersisted();
@@ -36,12 +39,14 @@ const StandardData = {
     this.syncTransformerLibrary();
     this.syncCBLibrary();
     this.syncFuseLibrary();
+    this.syncLoadClassLibrary();
 
     this.bindTabs();
     this.bindCableTable();
     this.bindTransformerTable();
     this.bindCBTable();
     this.bindFuseTable();
+    this.bindLoadClassTable();
     this.bindIECStandards();
 
     // Persist only edits made after init
@@ -58,6 +63,7 @@ const StandardData = {
       if (Array.isArray(data.transformers)) this.transformers = data.transformers;
       if (Array.isArray(data.cbs)) this.cbs = data.cbs;
       if (Array.isArray(data.fuses)) this.fuses = data.fuses;
+      if (Array.isArray(data.loadClasses)) this.loadClasses = data.loadClasses;
       // Keep the user's customizations, but if the shipped defaults have been
       // revised since they were saved, let them know they can adopt the update.
       if ((data.version || 1) < this._DATA_VERSION) {
@@ -83,6 +89,7 @@ const StandardData = {
         transformers: this.transformers,
         cbs: this.cbs,
         fuses: this.fuses,
+        loadClasses: this.loadClasses,
       }));
     } catch (e) {
       console.error('Failed to persist custom libraries:', e);
@@ -102,6 +109,7 @@ const StandardData = {
         if (tab.dataset.tab === 'transformers') this.renderTransformerTable();
         if (tab.dataset.tab === 'cbs') this.renderCBTable();
         if (tab.dataset.tab === 'fuses') this.renderFuseTable();
+        if (tab.dataset.tab === 'load-classes') this.renderLoadClassTable();
         if (tab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
       });
     });
@@ -180,6 +188,74 @@ const StandardData = {
     // Update the global STANDARD_CABLES array in-place
     STANDARD_CABLES.length = 0;
     for (const c of this.cables) STANDARD_CABLES.push(c);
+    this._persist();
+  },
+
+  // ─── Load-Class Library Table (NRS 034-1 / CTEF100 ADMD) ───
+  bindLoadClassTable() {
+    document.getElementById('btn-add-loadclass').addEventListener('click', () => {
+      const id = 'custom_class_' + Date.now();
+      this.loadClasses.push({
+        id, label: 'New Class', lsm: '', a: 1.0, b: 3.0, c: 60,
+        admd: 4.0, mu: 17.4, sigma: 12.0, phase: 1,
+      });
+      this.renderLoadClassTable();
+      this.syncLoadClassLibrary();
+    });
+
+    document.getElementById('btn-reset-loadclasses').addEventListener('click', async () => {
+      if (!(await UI.confirm('Reset the load-class library to defaults?\nAll your custom classes and edits will be permanently discarded.', { danger: true }))) return;
+      this.loadClasses = JSON.parse(JSON.stringify(this._defaults.loadClasses));
+      this.renderLoadClassTable();
+      this.syncLoadClassLibrary();
+    });
+  },
+
+  renderLoadClassTable() {
+    const tbody = document.getElementById('loadclass-library-body');
+    if (!tbody) return;
+    tbody.innerHTML = this.loadClasses.map((c, i) => `
+      <tr data-index="${i}">
+        <td><input type="text" value="${escHtml(c.label)}" data-key="label"></td>
+        <td><input type="text" value="${escHtml(c.lsm || '')}" data-key="lsm" style="width:48px"></td>
+        <td><input type="number" value="${c.a}" data-key="a" step="any" style="width:64px"></td>
+        <td><input type="number" value="${c.b}" data-key="b" step="any" style="width:64px"></td>
+        <td><input type="number" value="${c.c}" data-key="c" step="any" style="width:64px"></td>
+        <td><input type="number" value="${c.admd}" data-key="admd" step="any" style="width:72px"></td>
+        <td><input type="number" value="${c.mu}" data-key="mu" step="any" style="width:64px"></td>
+        <td><input type="number" value="${c.sigma}" data-key="sigma" step="any" style="width:64px"></td>
+        <td><select data-key="phase">
+          <option value="1" ${Number(c.phase) === 1 ? 'selected' : ''}>1Φ</option>
+          <option value="3" ${Number(c.phase) === 3 ? 'selected' : ''}>3Φ</option>
+        </select></td>
+        <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('input, select').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.closest('tr').dataset.index);
+        const key = e.target.dataset.key;
+        let val = e.target.value;
+        if (e.target.type === 'number' || key === 'phase') val = parseFloat(val) || 0;
+        this.loadClasses[idx][key] = val;
+        this.syncLoadClassLibrary();
+      });
+    });
+
+    tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.loadClasses.splice(parseInt(e.target.dataset.index), 1);
+        this.renderLoadClassTable();
+        this.syncLoadClassLibrary();
+      });
+    });
+  },
+
+  syncLoadClassLibrary() {
+    // Update the global STANDARD_LOAD_CLASSES array in-place
+    STANDARD_LOAD_CLASSES.length = 0;
+    for (const c of this.loadClasses) STANDARD_LOAD_CLASSES.push(c);
     this._persist();
   },
 

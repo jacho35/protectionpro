@@ -1,0 +1,190 @@
+/* ProtectionPro — Reticulation Workspace (LV distribution / NRS 034-1 ADMD) */
+
+/* Workspace switcher in the toolbar */
+.workspace-switch {
+  display: inline-flex;
+  margin: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.workspace-tab {
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+}
+.workspace-tab + .workspace-tab { border-left: 1px solid var(--border-color); }
+.workspace-tab.active { background: var(--accent); color: #fff; }
+.workspace-tab:hover:not(.active) { background: var(--bg-tertiary); }
+
+/* Workspace shell — occupies the area below the toolbar */
+#retic-workspace {
+  position: absolute;
+  top: var(--toolbar-height);
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-family: var(--font-family);
+}
+
+/* Settings bar */
+.retic-settings-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 10px 16px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+.retic-field { display: flex; flex-direction: column; gap: 3px; }
+.retic-field label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.retic-field select, .retic-field input {
+  font-size: 12px; padding: 4px 6px;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 4px;
+}
+.retic-field input:disabled, .retic-field select:disabled { opacity: .5; }
+.retic-field .retic-hint { font-size: 10px; color: var(--text-muted); max-width: 150px; }
+.retic-field:has(input:disabled) .retic-hint { opacity: .5; }
+
+/* Quick Build panel — bulk network roughing */
+.retic-quickbuild {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.retic-quickbuild .qb-title {
+  font-size: 12px; font-weight: 700; color: var(--text-primary);
+  align-self: center; margin-right: 4px; white-space: nowrap;
+}
+.retic-quickbuild .retic-field input[type="number"] { width: 72px; }
+.retic-quickbuild .qb-chain {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--text-primary);
+  padding-bottom: 5px; white-space: nowrap; cursor: pointer;
+}
+.retic-settings-bar .retic-totals { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.retic-chip {
+  display: inline-flex; flex-direction: column; align-items: center;
+  padding: 4px 12px; border-radius: 6px; background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); min-width: 72px;
+}
+.retic-chip .val { font-size: 15px; font-weight: 700; color: var(--accent); }
+.retic-chip .lbl { font-size: 9px; text-transform: uppercase; color: var(--text-muted); }
+
+/* Body: kiosk list + summary */
+.retic-body { flex: 1; display: flex; overflow: hidden; }
+.retic-kiosks { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.retic-summary {
+  width: 320px; flex-shrink: 0; overflow-y: auto;
+  padding: 14px; background: var(--bg-primary);
+  border-left: 1px solid var(--border-color);
+}
+
+/* Kiosk cards */
+.kiosk-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.kiosk-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; cursor: pointer;
+  background: var(--bg-tertiary);
+}
+.kiosk-head .toggle { font-size: 11px; color: var(--text-muted); width: 12px; }
+.kiosk-head input.kiosk-name {
+  font-size: 13px; font-weight: 600; border: 1px solid transparent;
+  background: transparent; color: var(--text-primary); padding: 2px 4px; border-radius: 4px;
+  min-width: 120px;
+}
+.kiosk-head input.kiosk-name:hover, .kiosk-head input.kiosk-name:focus { border-color: var(--border-color); background: var(--bg-primary); }
+.kiosk-demand-badge {
+  margin-left: auto; display: flex; gap: 8px; align-items: center;
+  font-size: 11px; font-weight: 600;
+  padding: 3px 10px; border-radius: 5px;
+  background: #fef3c7; color: #92400e;
+}
+body.dark-mode .kiosk-demand-badge { background: #3a3320; color: #f0d890; }
+.kiosk-demand-badge .sep { opacity: .4; }
+.kiosk-body { padding: 10px 12px; }
+.kiosk-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+.kiosk-meta .retic-field select, .kiosk-meta .retic-field input { min-width: 90px; }
+
+/* Erf schedule table */
+.erf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.erf-table th {
+  text-align: left; font-size: 10px; text-transform: uppercase; color: var(--text-muted);
+  padding: 4px 6px; border-bottom: 1px solid var(--border-color); font-weight: 600;
+}
+.erf-table td { padding: 2px 6px; border-bottom: 1px solid var(--bg-tertiary); }
+.erf-table input, .erf-table select {
+  width: 100%; font-size: 12px; padding: 3px 4px; box-sizing: border-box;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 3px;
+}
+.erf-table td.vd-cell { font-variant-numeric: tabular-nums; text-align: right; }
+.vd-ok { color: var(--success); }
+.vd-fail { color: var(--danger); font-weight: 700; }
+
+/* Phase swatch on the phase select */
+.phase-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+.retic-toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.retic-btn {
+  font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 5px;
+  border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); cursor: pointer;
+}
+.retic-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.retic-btn:hover { background: var(--bg-tertiary); }
+.retic-btn.primary:hover { background: var(--accent-hover); }
+.btn-icon-del {
+  background: transparent; border: none; color: var(--danger); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 0 4px;
+}
+.retic-empty { color: var(--text-muted); font-size: 13px; padding: 30px; text-align: center; }
+
+/* Summary panel */
+.retic-summary h3 { font-size: 13px; margin: 0 0 8px; color: var(--text-primary); }
+.summary-block { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+.summary-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+.summary-row .k { color: var(--text-secondary); }
+.summary-row .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.summary-row.big .v { font-size: 15px; color: var(--accent); }
+
+/* Minisub blocks in the summary panel */
+.ms-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ms-toolbar h3 { margin: 0; }
+.minisub-block .ms-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.minisub-block .ms-name {
+  flex: 1; min-width: 0;
+  font-size: 12px; font-weight: 700; padding: 3px 6px;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 4px;
+}
+.ndf-input {
+  width: 64px; font-size: 12px; padding: 2px 4px; text-align: right;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.status-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 10px; text-transform: uppercase; }
+.status-pill.pass { background: rgba(46,125,50,.15); color: var(--success); }
+.status-pill.warn { background: rgba(245,124,0,.15); color: var(--warning); }
+.status-pill.fail { background: rgba(211,47,47,.15); color: var(--danger); }

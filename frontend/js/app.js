@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   MiniMap.init();
   ContextMenu.init();
   DBSchedule.init();
+  Retic.init();
 
   // Templates button
   document.getElementById('btn-templates').addEventListener('click', () => NetworkTemplates.show());
@@ -152,6 +153,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modalIsOpen && e.key !== 'Escape' &&
         !((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S'))) {
       return;
+    }
+
+    // While the Reticulation workspace is active the SLD canvas is hidden —
+    // suspend its shortcuts so Delete/Ctrl+A/arrows can't silently edit the
+    // hidden diagram. Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y map to the reticulation
+    // module's own undo stack; Escape (modal close) and Ctrl+S (save, which
+    // includes the reticulation data) stay live.
+    if (typeof Retic !== 'undefined' && Retic._active && !modalIsOpen) {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) Retic.redo(); else Retic.undo();
+        return;
+      }
+      if (ctrl && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        Retic.redo();
+        return;
+      }
+      if (e.key !== 'Escape' && !(ctrl && (e.key === 's' || e.key === 'S'))) return;
     }
 
     switch (e.key) {

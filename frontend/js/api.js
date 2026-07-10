@@ -147,6 +147,12 @@ const API = {
     return this.request('/analysis/grounding', 'POST', data);
   },
 
+  // Run ADMD reticulation demand estimation (NRS 034-1 / CTEF100).
+  // Diversity is applied per minisub across its downstream kiosks.
+  async runAdmd(settings, kiosks, minisubs = []) {
+    return this.request('/analysis/admd', 'POST', { settings, kiosks, minisubs });
+  },
+
   // Run study manager (batch all analyses)
   async runStudyManager(enabledStudies = null) {
     const data = AppState.toJSON();

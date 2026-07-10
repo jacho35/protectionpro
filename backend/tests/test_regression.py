@@ -701,3 +701,254 @@ class TestUnbalancedLoadFlow:
         bus_u = unbal.buses["bus-1"]
         assert bus_u.vuf_pct < 0.1
         assert bus_u.va_pu == pytest.approx(bus_b.voltage_pu, abs=0.02)
+
+
+# ── ADMD / NRS 034-1 load estimation ─────────────────────────────────────────
+
+
+from backend.analysis.admd import (
+    LOAD_CLASSES,
+    beta_params,
+    herman_beta_demand,
+    empirical_demand,
+    kiosk_demand,
+    feeder_demand,
+    feeder_tree_rollup,
+    run_admd,
+)
+
+
+def _urban1():
+    return next(c for c in LOAD_CLASSES if c["id"] == "urban1")
+
+
+def _settings(**kw):
+    base = {"estimationMethod": "Empirical", "correctionMethod": "AMEU",
+            "loadClass": "urban1", "admd": 4.04}
+    base.update(kw)
+    return base
+
+
+class TestADMD:
+    """Pin the NRS 034-1 / CTEF100 demand engine ported from Retic Builder Pro.
+
+    Values are the source app's own formulae (Herman-Beta Beta→Normal with
+    Cornish-Fisher correction; Empirical N×ADMD×DCF). See admd.py / admd_data.py.
+    """
+
+    def test_beta_params_urban1(self):
+        """Beta(1.22, 2.96)·60 → µ, σ, skewness for Urban Residential I."""
+        bp = beta_params(_urban1())
+        assert bp["mean"] == pytest.approx(17.512, abs=0.01)
+        assert bp["sigma"] == pytest.approx(11.985, abs=0.01)
+        assert bp["skewness"] == pytest.approx(0.6744, abs=0.001)
+        # ADMD derives from the computed mean (matches source calcBetaParams).
+        assert bp["admdKVA"] == pytest.approx(4.03, abs=0.01)
+
+    def test_herman_beta_single_consumer(self):
+        """N=1 design current = µ + z_cf·σ, z=1.28 with Cornish-Fisher."""
+        r = herman_beta_demand(1, _urban1())
+        assert r["totalKVA"] == pytest.approx(7.75, abs=0.01)
+        assert r["currentA"] == pytest.approx(33.71, abs=0.01)
+
+    def test_herman_beta_diversity_reduces_per_consumer(self):
+        """Per-consumer demand falls as N grows (√N diversity term)."""
+        one = herman_beta_demand(1, _urban1())["totalKVA"]
+        hundred = herman_beta_demand(100, _urban1())
+        assert hundred["totalKVA"] == pytest.approx(438.26, abs=0.1)
+        assert hundred["totalKVA"] / 100 < one          # diversity benefit
+
+    def test_empirical_single_consumer_ameu(self):
+        """N=1: DCF=1+2/1=3, UCF=1+2.8=3.8, kVA=1×4.04×3."""
+        r = empirical_demand(1, 4.04, "AMEU")
+        assert r["dcf"] == pytest.approx(3.0, abs=0.01)
+        assert r["ucf"] == pytest.approx(3.8, abs=0.01)
+        assert r["totalKVA"] == pytest.approx(12.12, abs=0.01)
+        assert r["currentA"] == pytest.approx(52.7, abs=0.05)
+        # UCF is excluded from the demand total but exposed for feeder VD.
+        assert r["feederCurrentA"] == pytest.approx(200.24, abs=0.1)
+
+    def test_empirical_dcf_approaches_one_at_scale(self):
+        """DCF → 1 for large N (ADMD defined at the 1000-consumer asymptote)."""
+        r = empirical_demand(100, 4.04, "AMEU")
+        assert r["dcf"] == pytest.approx(1.02, abs=0.01)
+
+    def test_correction_methods_differ(self):
+        """AMEU and British DCF give different diversity for the same N."""
+        ameu = empirical_demand(10, 4.04, "AMEU")["dcf"]
+        british = empirical_demand(10, 4.04, "British")["dcf"]
+        none = empirical_demand(10, 4.04, "None")["dcf"]
+        assert none == 1.0
+        assert ameu == pytest.approx(1.2, abs=0.01)         # 1+2/10
+        assert british == pytest.approx(1.2, abs=0.01)      # 1+8/(4.04·10)
+        assert ameu != pytest.approx(0)                     # sanity
+
+    def test_three_phase_class_multiplies_kva(self):
+        """A 3-phase class applies a ×3 phase multiplier on per-phase params."""
+        cls3 = next(c for c in LOAD_CLASSES if c["id"] == "upmarket1_3ph")
+        r = empirical_demand(1, cls3, "AMEU")
+        assert r["totalKVA"] == pytest.approx(5.97, abs=0.02)
+
+    def test_kiosk_three_phase_erf_counts_as_three(self):
+        """One 3-phase erf = 3 single-phase connections (one per R/W/B)."""
+        k = {"id": "K1", "erfs": [{"length": 10, "phase": "3 Phase"}]}
+        r = kiosk_demand(k, _settings())
+        assert r["conns"] == 1
+        # 3 buckets each with N=1 → 3 × single-consumer empirical demand.
+        assert r["totalKVA"] == pytest.approx(36.36, abs=0.02)
+
+    def test_kiosk_override_is_fixed_undiversified(self):
+        """An amps-override erf is excluded from diversified N and added fixed."""
+        k = {"id": "K2", "erfs": [
+            {"length": 5, "phase": "Red"},
+            {"length": 5, "phase": "Red"},
+            {"length": 5, "phase": "Red", "ampsOverride": 60},
+        ]}
+        r = kiosk_demand(k, _settings())
+        assert r["overrideKVA"] == pytest.approx(13.8, abs=0.01)   # 60×230/1000
+        # diversified part = empirical(N=2 on Red); override added on top.
+        assert r["totalKVA"] == pytest.approx(29.96, abs=0.02)
+
+    def test_feeder_diversity_beats_sum_of_kiosks(self):
+        """Combined-N feeder demand is below the sum of per-kiosk demands."""
+        ka = {"id": "A", "erfs": [{"length": 1, "phase": "Red"}] * 5}
+        kb = {"id": "B", "erfs": [{"length": 1, "phase": "Red"}] * 5}
+        per_kiosk = kiosk_demand(ka, _settings())["totalKVA"]
+        feeder = feeder_demand([ka, kb], _settings())
+        assert feeder["conns"] == 10
+        assert feeder["totalKVA"] < 2 * per_kiosk               # diversity benefit
+        assert feeder["totalKVA"] == pytest.approx(48.48, abs=0.1)
+
+    def test_single_kiosk_feeder_equals_kiosk_demand(self):
+        """A one-kiosk feeder total must equal that kiosk's own demand.
+
+        Guards the per-phase superposition fix: the feeder rollup must not
+        combine consumers across phases in a way that undercuts a single kiosk.
+        """
+        k = {"id": "K1", "erfs": [
+            {"length": 30, "phase": "Red"}, {"length": 30, "phase": "White"}]}
+        for est in ("Empirical", "Herman Beta"):
+            s = _settings(estimationMethod=est)
+            assert feeder_demand([k], s)["totalKVA"] == pytest.approx(
+                kiosk_demand(k, s)["totalKVA"], abs=0.01), f"mismatch for {est}"
+
+    def test_feeder_herman_beta_diversity(self):
+        """Herman-Beta feeder rollup also shows the diversity benefit."""
+        ka = {"id": "A", "erfs": [{"length": 1, "phase": "Red"}] * 5}
+        kb = {"id": "B", "erfs": [{"length": 1, "phase": "Red"}] * 5}
+        s = _settings(estimationMethod="Herman Beta")
+        per_kiosk = kiosk_demand(ka, s)["totalKVA"]
+        feeder = feeder_demand([ka, kb], s)
+        assert feeder["totalKVA"] < 2 * per_kiosk
+        assert feeder["totalKVA"] == pytest.approx(51.63, abs=0.1)
+
+    def test_street_lighting_adds_undiversified(self):
+        """Street lighting is a fixed load added on top of diversified demand."""
+        base = {"id": "K", "erfs": [{"length": 5, "phase": "Red"}] * 3}
+        lit = {"id": "K", "streetLightKVA": 10,
+               "erfs": [{"length": 5, "phase": "Red"}] * 3}
+        s = _settings()
+        d0 = kiosk_demand(base, s)["totalKVA"]
+        d1 = kiosk_demand(lit, s)
+        assert d1["streetLightKVA"] == pytest.approx(10.0, abs=0.01)
+        assert d1["totalKVA"] == pytest.approx(d0 + 10.0, abs=0.02)
+        # And it propagates to the feeder total.
+        assert feeder_demand([lit], s)["totalKVA"] == pytest.approx(d1["totalKVA"], abs=0.02)
+
+    def test_feeder_tree_rollup_carries_subtree(self):
+        """A feeder segment carries its kiosk plus every kiosk fed from it.
+
+        B is fed from A, so A's feeder = demand(A+B) while B's feeder = B only.
+        """
+        ka = {"id": "A", "fedFrom": "source",
+              "erfs": [{"length": 1, "phase": "Red"}] * 4}
+        kb = {"id": "B", "fedFrom": "A",
+              "erfs": [{"length": 1, "phase": "Red"}] * 6}
+        s = _settings()
+        roll = feeder_tree_rollup([ka, kb], s)
+        assert roll["A"]["feederKVA"] == pytest.approx(feeder_demand([ka, kb], s)["totalKVA"], abs=0.01)
+        assert roll["B"]["feederKVA"] == pytest.approx(feeder_demand([kb], s)["totalKVA"], abs=0.01)
+        assert roll["A"]["subtreeConns"] == 10
+        assert roll["B"]["subtreeConns"] == 6
+        # Parent feeder must carry at least as much as the child's.
+        assert roll["A"]["feederKVA"] > roll["B"]["feederKVA"]
+
+    def test_risk_z_setting_reaches_herman_beta(self):
+        """settings.riskZ must drive the Herman-Beta risk factor.
+
+        z=2.33 (1% risk) must give a higher design demand than the default
+        z=1.28 (10% risk), for both the kiosk calc and the feeder rollup.
+        """
+        k = {"id": "K", "erfs": [{"length": 30, "phase": "Red"}] * 4}
+        lo = _settings(estimationMethod="Herman Beta", riskZ=1.28)
+        hi = _settings(estimationMethod="Herman Beta", riskZ=2.33)
+        k_lo = kiosk_demand(k, lo)["totalKVA"]
+        k_hi = kiosk_demand(k, hi)["totalKVA"]
+        assert k_hi > k_lo
+        # Pin: N=4 urban1, z_cf = 2.33+(2.33²−1)/6·(0.6744/√4) = 2.579,
+        # I = 4·17.512 + 2.579·√4·11.985 = 131.87 A → 30.33 kVA.
+        assert k_hi == pytest.approx(30.33, abs=0.05)
+        assert feeder_demand([k], hi)["totalKVA"] == pytest.approx(k_hi, abs=0.01)
+
+    def test_short_custom_class_lib_does_not_crash(self):
+        """A user-edited library with <3 classes and no urban1 must not 500.
+
+        resolve_demand_param's source-app fallback was LOAD_CLASSES[2]; with a
+        short project loadClassLib it must fall back to the first class.
+        """
+        lib = [{"id": "onlyone", "label": "Only One", "a": 1.0, "b": 3.0,
+                "c": 60, "admd": 4.0, "phase": 1}]
+        k = {"id": "K", "loadClass": "missing_id",
+             "erfs": [{"length": 30, "phase": "Red"}]}
+        s = _settings(estimationMethod="Herman Beta", loadClassLib=lib)
+        r = kiosk_demand(k, s)   # must not raise
+        assert r["totalKVA"] > 0
+        assert r["cls"] == "Only One"
+
+    def test_minisub_grouping_and_network_total(self):
+        """ADMD diversity applies per minisub across its downstream kiosks;
+        the network total is the SUM of the per-minisub diversified demands
+        (× the network diversity factor) — NOT one lump diversified across
+        all minisubs, which would understate each transformer's load.
+        """
+        def kiosk(i, fed):
+            return {"id": f"K{i}", "fedFrom": fed,
+                    "erfs": [{"length": 60, "phase": p}
+                             for p in ("Red", "White", "Blue")] * 2}
+        ms = [{"id": "msA", "name": "A"}, {"id": "msB", "name": "B"}]
+        kiosks = [kiosk(1, "msA"), kiosk(2, "msA"),
+                  kiosk(3, "msB"), kiosk(4, "K3")]   # K4 chained under msB
+        s = _settings()
+        res = run_admd({"settings": s, "kiosks": kiosks, "minisubs": ms})
+
+        group_a = feeder_demand(kiosks[:2], s)["totalKVA"]
+        group_b = feeder_demand(kiosks[2:], s)["totalKVA"]
+        by_id = {m["minisubId"]: m for m in res["minisubs"]}
+        assert by_id["msA"]["totalKVA"] == pytest.approx(group_a, abs=0.01)
+        assert by_id["msB"]["totalKVA"] == pytest.approx(group_b, abs=0.01)
+        assert by_id["msB"]["numKiosks"] == 2          # chain resolved to msB
+        assert res["total"]["sumKVA"] == pytest.approx(group_a + group_b, abs=0.01)
+        assert res["total"]["totalKVA"] == pytest.approx(group_a + group_b, abs=0.01)
+        # The sum of per-group demands exceeds one lump over everything.
+        lump = feeder_demand(kiosks, s)["totalKVA"]
+        assert res["total"]["totalKVA"] > lump
+
+        # Network diversity factor scales the total, not the minisub demands.
+        res2 = run_admd({"settings": _settings(networkDiversity=0.9),
+                         "kiosks": kiosks, "minisubs": ms})
+        assert res2["total"]["totalKVA"] == pytest.approx(
+            (group_a + group_b) * 0.9, abs=0.02)
+        by_id2 = {m["minisubId"]: m for m in res2["minisubs"]}
+        assert by_id2["msA"]["totalKVA"] == pytest.approx(group_a, abs=0.01)
+
+    def test_legacy_single_source_total_unchanged(self):
+        """A request without minisubs gets one implicit source; the total
+        equals the plain all-kiosk diversified demand (backward compatible).
+        """
+        kiosks = [{"id": "K1", "fedFrom": "source",
+                   "erfs": [{"length": 30, "phase": "Red"}] * 4}]
+        s = _settings()
+        res = run_admd({"settings": s, "kiosks": kiosks})
+        assert len(res["minisubs"]) == 1
+        assert res["total"]["totalKVA"] == pytest.approx(
+            feeder_demand(kiosks, s)["totalKVA"], abs=0.01)
