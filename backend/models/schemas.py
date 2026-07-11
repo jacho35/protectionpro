@@ -304,6 +304,29 @@ class RevisionDetail(BaseModel):
         from_attributes = True
 
 
+# ── Plan Markup image store ──
+
+class PlanImageMeta(BaseModel):
+    """Metadata for a stored plan image — never carries the binary `data`."""
+    id: int
+    project_id: Optional[int] = None
+    kind: str = "raster"
+    name: str = ""
+    mime: str = "image/png"
+    width: int = 0
+    height: int = 0
+    size_bytes: int = 0
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PlanImageClaim(BaseModel):
+    """PATCH body to claim an orphan upload for a project on first save."""
+    project_id: int
+
+
 class RevisionCreate(BaseModel):
     label: str = ""
 

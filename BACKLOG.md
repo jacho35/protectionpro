@@ -46,6 +46,7 @@ All Critical/High/Medium/Low findings from `audit-2026-07-09.md` are resolved, i
 - **DXF/DWG export**: Export SLD to CAD formats
 
 ## Data & Integration
+- **Plan Markup workspace** (in progress, `feature/plan-markup`): geographic markup module ported from Retic Builder Pro's Site Plan + Distribution Designer Pro's Floor Plan — import a site/floor plan (PDF/image), calibrate scale, place components + draw cable routes/trenches on it, push measured geometry into the Reticulation schedules, export CSV + DXF. This is the "site-plan geometry" deliberately scoped out of the Reticulation/ADMD module. See `PLAN_MARKUP_INTEGRATION_PLAN.md`. **Phase 0 done**: backend plan-image BLOB store (`PlanImage` model + `/api/plan-images` CRUD, SQLite FK enforcement so orphaned images null out on project delete) and vendored pdf.js 3.11.174. Remaining: engine MVP (Phase 1), full toolset + PDF pipeline (Phase 2), push-to-schedules + CSV/DXF exports (Phase 3), retic extras (Phase 4).
 - **Component library import**: Import manufacturer data (transformers, cables, etc.)
 - ~~**NEC ampacity tables**: Add NEC Article 310 ampacity data alongside existing IEC 60364~~
 - **Import from external tools**: Import from PSS/E, ETAP, or PowerWorld formats

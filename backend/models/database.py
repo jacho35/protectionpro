@@ -1,13 +1,30 @@
 """Database setup with SQLAlchemy + SQLite."""
 
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, ForeignKey
+from sqlalchemy import (create_engine, event, Column, Integer, String, Text,
+                        DateTime, Float, ForeignKey, LargeBinary)
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime, timezone
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./protectionpro.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+
+@event.listens_for(Engine, "connect")
+def _sqlite_fk_pragma(dbapi_connection, connection_record):
+    """Enable foreign-key enforcement on SQLite connections.
+
+    SQLite ignores FK ON DELETE actions unless this pragma is set, so without
+    it PlanImage.project_id (ondelete="SET NULL") would dangle after a project
+    is deleted instead of being nulled for the cleanup sweep. Guarded so a
+    non-SQLite backend is unaffected.
+    """
+    if DATABASE_URL.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -57,6 +74,32 @@ class Revision(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     project = relationship("Project", back_populates="revisions")
+
+
+class PlanImage(Base):
+    """Background site/floor-plan images for the Plan Markup workspace.
+
+    Stored as BLOBs in the DB (not in the project JSON) so the potentially
+    multi-MB rasters never bloat Project.data or the per-save Revision
+    snapshots — the project JSON references these rows by integer id only.
+    Rows are immutable once written (id never reused with different bytes),
+    which is why GET can be cached aggressively.
+    """
+    __tablename__ = "plan_images"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # SET NULL on project delete so orphaned images can be swept by cleanup
+    # rather than cascade-deleted (older revisions may still reference them).
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"),
+                        nullable=True, index=True)
+    kind = Column(String(16), nullable=False, default="raster")   # 'raster' | 'pdf'
+    name = Column(String(255), nullable=False, default="")
+    mime = Column(String(64), nullable=False, default="image/png")
+    width = Column(Integer, default=0)      # raster px (0 for pdf kind)
+    height = Column(Integer, default=0)
+    size_bytes = Column(Integer, default=0)
+    data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 def init_db():
