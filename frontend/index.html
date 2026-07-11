@@ -166,6 +166,15 @@
               Unbalanced Load Flow
             </button>
             <div class="dropdown-divider"></div>
+            <button id="btn-dc-loadflow" class="dropdown-item" title="Run DC Load Flow on the DC bus network (set a bus's System to DC)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="0" y="6" font-size="6" font-weight="bold" fill="#e65100">DC</text></svg>
+              DC Load Flow
+            </button>
+            <button id="btn-dc-shortcircuit" class="dropdown-item" title="Run DC Short Circuit (IEC 61660-1) on the DC bus network">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="#e65100" stroke-width="1.5"/><text x="0" y="6" font-size="6" font-weight="bold" fill="#e65100">DC</text></svg>
+              DC Short Circuit (IEC 61660)
+            </button>
+            <div class="dropdown-divider"></div>
             <button id="btn-control-sim" class="dropdown-item" title="Toggle live control-circuit simulation — operate pushbuttons and switches on the schematic (Esc to exit)">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="5" y="5" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v4M8 11v4M1 8h4M11 8h4" stroke="currentColor" stroke-width="1.3"/></svg>
               Control Simulation
@@ -796,6 +805,36 @@
       </div>
       <div class="modal-body">
         <div id="dc-arcflash-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DC Load Flow Results Modal -->
+  <div id="dc-loadflow-modal" class="modal" role="dialog" aria-modal="true" aria-label="DC Load Flow Results" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>DC Load Flow — Resistive Nodal Solve</h3>
+        <button class="modal-close" id="btn-close-dc-loadflow">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="dc-loadflow-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DC Short Circuit Results Modal -->
+  <div id="dc-shortcircuit-modal" class="modal" role="dialog" aria-modal="true" aria-label="DC Short Circuit Results" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>DC Short Circuit — IEC 61660-1</h3>
+        <button class="modal-close" id="btn-close-dc-shortcircuit">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="dc-shortcircuit-body">
           <!-- Populated by JS -->
         </div>
       </div>

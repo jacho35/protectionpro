@@ -93,7 +93,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             (w.fromComponent, w.toPort, w.fromPort))
 
     # Identify buses — filter to selected bus if specified
-    buses = [c for c in project.components if c.type == "bus"]
+    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     if fault_bus_id:
         buses = [c for c in buses if c.id == fault_bus_id]
 
@@ -313,7 +313,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     # ── Voltage Depression Calculation (IEC 60909 §3.6) ──
     # Build Zbus matrix for all buses and compute retained voltage at each bus
     # during a fault at each faulted bus: V_j = 1 - Z_jk / Z_kk
-    all_buses = [c for c in project.components if c.type == "bus"]
+    all_buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     if len(all_buses) >= 2:
         try:
             _compute_voltage_depression(

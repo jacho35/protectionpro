@@ -1448,3 +1448,133 @@ class TestPVArrayMode:
         p.components[3].props["irradiance_pct"] = 50
         e = self._pv_entry(run_load_flow(p))
         assert e.available_mw == pytest.approx(0.005, abs=1e-6)
+
+
+# ── DC Load Flow & DC Short Circuit (IEC 61660-1) ────────────────────────
+
+from backend.analysis.dc_loadflow import run_dc_load_flow
+from backend.analysis.dc_shortcircuit import run_dc_short_circuit
+
+
+def _dc_bus(cid, name, vdc=120.0):
+    return _comp(cid, "bus", {"name": name, "system": "dc", "voltage_dc_v": vdc})
+
+
+class TestDCLoadFlow:
+    """Resistive DC nodal solve. Hand calc for a battery-fed radial feeder:
+    E = 120 V behind Rs = 0.1 Ω on bus A; cable A→B loop R = 2·0.5·0.1 = 0.1 Ω;
+    a 10 A constant-current load on bus B. Nodal solution: V_A = 119 V,
+    V_B = 118 V, battery current = 10 A."""
+
+    def _net(self, load_model="constant_current"):
+        comps = [
+            _comp("bat-1", "dc_battery",
+                  {"name": "Bank", "nominal_v": 120, "internal_r_mohm": 100,
+                   "ah_capacity": 200}),
+            _dc_bus("bus-a", "DC A"),
+            _comp("cbl-1", "cable",
+                  {"name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.08,
+                   "length_km": 0.1, "num_parallel": 1, "rated_amps": 100}),
+            _dc_bus("bus-b", "DC B"),
+            _comp("ld-1", "dc_load",
+                  {"name": "Load", "load_model": load_model, "load_a": 10,
+                   "load_kw": 1.18}),
+        ]
+        wires = [
+            _wire("w1", "bat-1", "bus-a"),
+            _wire("w2", "bus-a", "cbl-1"),
+            _wire("w3", "cbl-1", "bus-b"),
+            _wire("w4", "bus-b", "ld-1"),
+        ]
+        return ProjectData(projectName="dc", components=comps, wires=wires)
+
+    def test_bus_voltages(self):
+        res = run_dc_load_flow(self._net())
+        assert res.converged
+        assert res.buses["bus-a"].voltage_v == pytest.approx(119.0, abs=0.2)
+        assert res.buses["bus-b"].voltage_v == pytest.approx(118.0, abs=0.3)
+
+    def test_source_current_equals_load(self):
+        res = run_dc_load_flow(self._net())
+        src = next(s for s in res.sources if s.source_id == "bat-1")
+        assert src.current_a == pytest.approx(10.0, abs=0.1)
+
+    def test_branch_loop_resistance_two_wire(self):
+        """DC cable uses go-and-return loop resistance 2·r·ℓ = 0.1 Ω."""
+        res = run_dc_load_flow(self._net())
+        br = next(b for b in res.branches if b.elementId == "cbl-1")
+        assert br.resistance_ohm == pytest.approx(0.1, abs=1e-4)
+        assert br.current_a == pytest.approx(10.0, abs=0.1)
+
+    def test_constant_power_load_draws_rated_power(self):
+        """A 1.18 kW constant-power load at ~118 V draws ~10 A."""
+        res = run_dc_load_flow(self._net("constant_power"))
+        assert res.buses["bus-b"].load_kw == pytest.approx(1.18, abs=0.02)
+
+    def test_island_without_source_deenergized(self):
+        comps = [_dc_bus("bus-x", "Orphan")]
+        res = run_dc_load_flow(ProjectData(projectName="dc", components=comps, wires=[]))
+        assert res.buses["bus-x"].energized is False
+
+    def test_no_dc_bus_returns_warning(self):
+        comps = [_comp("bus-1", "bus", {"name": "AC", "voltage_kv": 11})]
+        res = run_dc_load_flow(ProjectData(projectName="ac", components=comps, wires=[]))
+        assert res.converged is False
+        assert res.buses == {}
+
+
+class TestDCShortCircuit:
+    """IEC 61660-1 battery source: I_kB = 0.95·E/R_BBr, i_pB = E/R_BBr."""
+
+    def _net(self, add_charger=False):
+        comps = [
+            _comp("bat-1", "dc_battery",
+                  {"name": "Bank", "nominal_v": 120, "internal_r_mohm": 100}),
+            _dc_bus("bus-a", "DC A"),
+            _comp("cbl-1", "cable",
+                  {"name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.08,
+                   "length_km": 0.1, "num_parallel": 1, "rated_amps": 100}),
+            _dc_bus("bus-b", "DC B"),
+        ]
+        wires = [
+            _wire("w1", "bat-1", "bus-a"),
+            _wire("w2", "bus-a", "cbl-1"),
+            _wire("w3", "cbl-1", "bus-b"),
+        ]
+        if add_charger:
+            comps.append(_comp("chg-1", "charger",
+                               {"name": "Chg", "rated_a": 200, "float_voltage_v": 130}))
+            wires.append(_wire("w4", "chg-1", "bus-a"))
+        return ProjectData(projectName="dc", components=comps, wires=wires)
+
+    def test_battery_bolted_fault_at_terminals(self):
+        """Fault at the battery bus: R_BBr = 0.1 Ω → I_k = 0.95·120/0.1 = 1.14 kA,
+        i_p = 120/0.1 = 1.20 kA."""
+        res = run_dc_short_circuit(self._net(), fault_bus_id="bus-a")
+        b = res.buses["bus-a"]
+        assert b.ik_ka == pytest.approx(1.14, abs=0.02)
+        assert b.ip_ka == pytest.approx(1.20, abs=0.02)
+
+    def test_battery_fault_through_cable(self):
+        """Fault at bus B: R_BBr = 0.1 (internal) + 0.1 (loop) = 0.2 Ω →
+        I_k = 0.95·120/0.2 = 0.57 kA, i_p = 0.60 kA."""
+        res = run_dc_short_circuit(self._net(), fault_bus_id="bus-b")
+        b = res.buses["bus-b"]
+        assert b.ik_ka == pytest.approx(0.57, abs=0.02)
+        assert b.ip_ka == pytest.approx(0.60, abs=0.02)
+
+    def test_converter_current_limited_superposition(self):
+        """Charger adds a current-limited partial current 1.5·200 A = 0.30 kA,
+        superposed on the battery's 1.14 kA at the common bus."""
+        res = run_dc_short_circuit(self._net(add_charger=True), fault_bus_id="bus-a")
+        b = res.buses["bus-a"]
+        types = {c.source_type for c in b.contributions}
+        assert types == {"dc_battery", "charger"}
+        chg = next(c for c in b.contributions if c.source_type == "charger")
+        assert chg.ik_ka == pytest.approx(0.30, abs=0.01)
+        assert b.ik_ka == pytest.approx(1.14 + 0.30, abs=0.03)
+
+    def test_no_dc_bus_returns_warning(self):
+        comps = [_comp("bus-1", "bus", {"name": "AC", "voltage_kv": 11})]
+        res = run_dc_short_circuit(ProjectData(projectName="ac", components=comps, wires=[]))
+        assert res.converged is False

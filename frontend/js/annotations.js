@@ -88,6 +88,30 @@ const Annotations = {
       }
     }
 
+    // DC load flow annotations on DC buses
+    if (AppState.showResultBoxes.dcLoadflow && AppState.dcLoadFlowResults && AppState.dcLoadFlowResults.buses) {
+      for (const [busId, result] of Object.entries(AppState.dcLoadFlowResults.buses)) {
+        const comp = pageComps.get(busId);
+        if (!comp) continue;
+        const key = `dclf:${busId}`;
+        const pos = this._badgePos(comp, key, -140, -10, stacks);
+        html += this.renderDCLoadFlowBadge(pos.x, pos.y, result, key);
+        this._advanceStack(stacks, comp, pos);
+      }
+    }
+
+    // DC short-circuit annotations on DC buses
+    if (AppState.showResultBoxes.dcShortCircuit && AppState.dcShortCircuitResults && AppState.dcShortCircuitResults.buses) {
+      for (const [busId, result] of Object.entries(AppState.dcShortCircuitResults.buses)) {
+        const comp = pageComps.get(busId);
+        if (!comp) continue;
+        const key = `dcsc:${busId}`;
+        const pos = this._badgePos(comp, key, 70, -10, stacks);
+        html += this.renderDCShortCircuitBadge(pos.x, pos.y, result, key);
+        this._advanceStack(stacks, comp, pos);
+      }
+    }
+
     // Branch flow badges are NOT rendered here — they are shown as inline
     // data labels on each component by Canvas.renderComponentDataLabels().
 
@@ -324,6 +348,64 @@ const Annotations = {
       <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">LOAD FLOW — ${busLabel}</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderDCLoadFlowBadge(x, y, result, key) {
+    const lines = [];
+    if (result.energized === false) {
+      lines.push('DE-ENERGIZED');
+    } else {
+      lines.push(`V: ${result.voltage_v.toFixed(1)} V (${(result.voltage_pu * 100).toFixed(1)}%)`);
+      lines.push(`Nom: ${result.nominal_v.toFixed(0)} V`);
+      if (Math.abs(result.drop_pct) >= 0.05) lines.push(`Δ: ${result.drop_pct.toFixed(2)}%`);
+      if (result.load_kw > 0) lines.push(`Load: ${result.load_kw.toFixed(2)} kW`);
+    }
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
+    const maxLen = Math.max(...lines.map(l => l.length));
+    const boxW = Math.max(120, maxLen * 6.5 + 14);
+    const textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
+    ).join('');
+    const busId = key.split(':')[1] || '';
+    const busLabel = escHtml(result.bus_name || busId);
+    return `
+      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">DC LOAD FLOW — ${busLabel}</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderDCShortCircuitBadge(x, y, result, key) {
+    const lines = [];
+    if (!result.contributions || result.contributions.length === 0) {
+      lines.push('NO DC SOURCE');
+    } else {
+      lines.push(`Ik: ${result.ik_ka.toFixed(2)} kA`);
+      lines.push(`ip: ${result.ip_ka.toFixed(2)} kA`);
+      if (result.tp_ms > 0) lines.push(`tp: ${result.tp_ms.toFixed(1)} ms`);
+      lines.push(`sources: ${result.contributions.length}`);
+    }
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
+    const maxLen = Math.max(...lines.map(l => l.length));
+    const boxW = Math.max(110, maxLen * 6.5 + 14);
+    const textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
+    ).join('');
+    const busId = key.split(':')[1] || '';
+    const busLabel = escHtml(result.bus_name || busId);
+    return `
+      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">DC SC (IEC 61660) — ${busLabel}</text>
         ${textHtml}
       </g>`;
   },

@@ -822,12 +822,12 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'loads',
     name: 'Loads',
-    items: ['motor_induction', 'motor_synchronous', 'static_load', 'distribution_board'],
+    items: ['motor_induction', 'motor_synchronous', 'static_load', 'distribution_board', 'dc_load'],
   },
   {
     id: 'dc_systems',
     name: 'DC Systems',
-    items: ['ups', 'rectifier', 'charger'],
+    items: ['ups', 'rectifier', 'charger', 'dc_battery'],
   },
   {
     id: 'other',
@@ -1002,6 +1002,24 @@ const FIELD_INFO = {
   'battery.battery_soc_pct': 'State of charge for this study snapshot — gates charge/discharge availability.',
   'battery.battery_mode':   'auto: self-consumption (grid-following).\ncharging / discharging: fixed set-point.\nidle: inert. Only "discharging" lets the BESS act as the island reference in a grid outage.',
   'battery.fault_contribution_pu': 'Inverter fault current limit as a multiple of rated current. Default 1.1×.\nSource: IEC TR 60909-4 — converter sources are current-limited.',
+
+  // Bus — DC system
+  'bus.system': 'AC bus (default) participates in fault / load-flow / arc-flash / grounding studies.\nDC bus feeds the DC Load Flow and DC Short Circuit (IEC 61660) studies instead, and is skipped by the AC engines.',
+  'bus.voltage_dc_v': 'Nominal DC voltage of the busbar (e.g. 110 / 125 / 220 Vdc). Used as the reference for DC bus voltage-drop reporting.',
+
+  // DC Battery (IEC 61660 battery source + DC load-flow source)
+  'dc_battery.nominal_v': 'Open-circuit / nominal DC voltage of the bank. Acts as the EMF (E_B) for the IEC 61660 short-circuit calc and the source voltage in DC load flow.',
+  'dc_battery.ah_capacity': 'Ampere-hour capacity (C-rating basis). Used for the default load-flow discharge cap (10 C) when Max Discharge is left at 0.',
+  'dc_battery.internal_r_mohm': 'Total internal resistance including cell interconnectors (mΩ). Dominates the battery short-circuit current: I_k = 0.95·E_B / R_BBr (IEC 61660-1).',
+  'dc_battery.internal_l_uh': 'Internal + connection inductance (µH). Sets the short-circuit rise time constant τ = L_BBr / R_BBr. Leave 0 if unknown (near-resistive battery branch).',
+  'dc_battery.max_discharge_a': 'Optional discharge current cap for load flow. 0 = auto (10 × capacity). Does not limit the short-circuit calc.',
+
+  // DC Load
+  'dc_load.load_model': 'constant_power: draws fixed kW (I = P/V — telecom/electronic loads).\nconstant_current: fixed A regardless of voltage.\nconstant_resistance: fixed Ω (heaters/lamps — I rises with voltage).',
+  'dc_load.load_kw': 'Active power drawn at the DC bus (constant-power model).',
+  'dc_load.load_a': 'Current drawn (constant-current model).',
+  'dc_load.resistance_ohm': 'Load resistance (constant-resistance model). Current = V / R.',
+  'dc_load.nominal_v': 'Nominal supply voltage for reference (display only).',
 };
 
 // ─── Distribution Board — default circuit load types ───
@@ -1319,7 +1337,9 @@ const COMPONENT_DEFS = {
     height: 10,
     defaults: {
       name: 'Bus',
+      system: 'ac',
       voltage_kv: 11,
+      voltage_dc_v: 125,
       bus_type: 'PQ',
       busWidth: 120,
       working_distance_mm: 455,
@@ -1339,8 +1359,10 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
-      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
-      { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'] },
+      { key: 'system', label: 'System', type: 'select', options: ['ac', 'dc'] },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }], showWhen: { field: 'system', values: ['ac'] } },
+      { key: 'voltage_dc_v', label: 'DC Voltage', type: 'number', unit: 'Vdc', min: 0, showWhen: { field: 'system', values: ['dc'] } },
+      { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'], showWhen: { field: 'system', values: ['ac'] } },
       { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
       { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5, section: 'arcflash' },
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'], section: 'arcflash' },
@@ -1906,6 +1928,55 @@ const COMPONENT_DEFS = {
       { key: 'equalize_voltage_v', label: 'Equalize Voltage', type: 'number', unit: 'V', showWhen: { field: 'charger_type', values: ['float_equalize'] } },
       { key: 'efficiency', label: 'Efficiency', type: 'number', min: 0.8, max: 1.0, step: 0.01 },
       { key: 'current_limit_pct', label: 'Current Limit', type: 'number', unit: '%', min: 10, max: 100, step: 5 },
+    ],
+  },
+
+  dc_battery: {
+    name: 'DC Battery',
+    label: 'DC Battery Bank',
+    category: 'dc_systems',
+    ports: [{ id: 'dc', side: 'top', offset: 0 }],
+    width: 50,
+    height: 50,
+    defaults: {
+      name: 'Battery',
+      nominal_v: 125,
+      ah_capacity: 200,
+      internal_r_mohm: 20,
+      internal_l_uh: 0,
+      max_discharge_a: 0,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'nominal_v', label: 'Nominal Voltage', type: 'number', unit: 'Vdc', min: 0 },
+      { key: 'ah_capacity', label: 'Capacity', type: 'number', unit: 'Ah', min: 0 },
+      { key: 'internal_r_mohm', label: 'Internal Resistance', type: 'number', unit: 'mΩ', min: 0, step: 1, section: 'fault' },
+      { key: 'internal_l_uh', label: 'Internal Inductance', type: 'number', unit: 'µH', min: 0, step: 1, section: 'fault' },
+      { key: 'max_discharge_a', label: 'Max Discharge (0 = auto)', type: 'number', unit: 'A', min: 0, section: 'loadflow' },
+    ],
+  },
+  dc_load: {
+    name: 'DC Load',
+    label: 'DC Load',
+    category: 'loads',
+    ports: [{ id: 'in', side: 'top', offset: 0 }],
+    width: 40,
+    height: 40,
+    defaults: {
+      name: 'DC Load',
+      load_model: 'constant_power',
+      load_kw: 1.0,
+      load_a: 10,
+      resistance_ohm: 10,
+      nominal_v: 125,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'load_model', label: 'Load Model', type: 'select', options: ['constant_power', 'constant_current', 'constant_resistance'] },
+      { key: 'load_kw', label: 'Power', type: 'number', unit: 'kW', min: 0, step: 0.1, showWhen: { field: 'load_model', values: ['constant_power'] } },
+      { key: 'load_a', label: 'Current', type: 'number', unit: 'A', min: 0, showWhen: { field: 'load_model', values: ['constant_current'] } },
+      { key: 'resistance_ohm', label: 'Resistance', type: 'number', unit: 'Ω', min: 0, step: 0.1, showWhen: { field: 'load_model', values: ['constant_resistance'] } },
+      { key: 'nominal_v', label: 'Nominal Voltage', type: 'number', unit: 'Vdc', min: 0 },
     ],
   },
 

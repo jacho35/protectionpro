@@ -280,7 +280,7 @@ def run_grounding_analysis(project: ProjectData):
     except Exception:
         return {"buses": [], "warnings": ["Fault analysis failed — cannot compute grounding."], "summary": {}}
 
-    buses = [c for c in project.components if c.type == "bus"]
+    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     if not buses:
         return {"buses": [], "warnings": ["No buses found."], "summary": {}}
 

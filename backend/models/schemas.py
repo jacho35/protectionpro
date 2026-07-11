@@ -683,3 +683,82 @@ class RacewayResult(BaseModel):
 class RacewayResults(BaseModel):
     raceways: list[RacewayResult] = []
     summary: dict = {}
+
+
+# ── DC Load Flow (resistive nodal power flow) ──
+
+class DCLoadFlowBus(BaseModel):
+    bus_id: str
+    bus_name: str = ""
+    voltage_v: float                 # Solved DC bus voltage (V)
+    nominal_v: float                 # Nominal DC voltage (V)
+    voltage_pu: float                # voltage_v / nominal_v
+    drop_pct: float = 0              # Deviation from nominal (%), positive = sag
+    load_kw: float = 0               # Local DC load drawn at this bus (kW)
+    energized: bool = True           # False when the bus has no reachable source
+
+
+class DCLoadFlowBranch(BaseModel):
+    elementId: str
+    element_name: str = ""
+    from_bus: str
+    to_bus: str
+    current_a: float                 # Branch current (A), sign per from→to
+    voltage_drop_v: float = 0        # |V_from − V_to| across the branch (V)
+    loss_kw: float = 0               # I²R loss in the branch (kW)
+    resistance_ohm: float = 0        # Loop resistance used (Ω)
+    loading_pct: float = 0           # |I| / cable ampacity (%)
+
+
+class DCLoadFlowSource(BaseModel):
+    source_id: str
+    source_name: str = ""
+    source_type: str = ""            # rectifier | charger | dc_battery
+    bus_id: str = ""
+    voltage_v: float = 0             # Terminal voltage (V)
+    current_a: float = 0             # Output current (A), positive = discharging
+    power_kw: float = 0
+    loading_pct: float = 0           # |output| / rated (%)
+    current_limited: bool = False    # True when clamped to its rated current
+
+
+class DCLoadFlowResults(BaseModel):
+    buses: dict[str, DCLoadFlowBus] = {}
+    branches: list[DCLoadFlowBranch] = []
+    sources: list[DCLoadFlowSource] = []
+    warnings: list[LoadFlowWarning] = []
+    converged: bool = True
+    iterations: int = 0
+    method: str = "DC Nodal (resistive)"
+
+
+# ── DC Short Circuit (IEC 61660-1) ──
+
+class DCShortCircuitContribution(BaseModel):
+    source_id: str
+    source_name: str = ""
+    source_type: str = ""            # dc_battery | rectifier | charger
+    ik_ka: float = 0                 # Quasi steady-state SC current (kA)
+    ip_ka: float = 0                 # Peak SC current (kA)
+    tp_ms: float = 0                 # Time to peak (ms)
+    r_mohm: float = 0                # Source-branch resistance to the fault (mΩ)
+
+
+class DCShortCircuitBus(BaseModel):
+    bus_id: str
+    bus_name: str = ""
+    nominal_v: float = 0
+    ik_ka: float = 0                 # Total quasi steady-state SC current (kA)
+    ip_ka: float = 0                 # Total peak SC current (kA)
+    tp_ms: float = 0                 # Time to peak of the combined current (ms)
+    time_constant_ms: float = 0      # Dominant rise time constant τ (ms)
+    contributions: list[DCShortCircuitContribution] = []
+    note: str = ""
+
+
+class DCShortCircuitResults(BaseModel):
+    buses: dict[str, DCShortCircuitBus] = {}
+    warnings: list[LoadFlowWarning] = []
+    converged: bool = True
+    method: str = "IEC 61660-1"
+    standard: str = "IEC 61660-1"

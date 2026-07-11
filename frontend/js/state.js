@@ -72,6 +72,8 @@ const AppState = {
     duty: true,
     loadDiversity: true,
     grounding: true,
+    dcLoadflow: true,
+    dcShortCircuit: true,
   },
 
   // Clipboard for copy/paste
@@ -83,6 +85,8 @@ const AppState = {
   loadFlowResults: null,
   unbalancedLoadFlowResults: null,
   arcFlashResults: null,
+  dcLoadFlowResults: null,
+  dcShortCircuitResults: null,
 
   // Scenarios — saved snapshots of network configuration
   scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
@@ -404,6 +408,8 @@ const AppState = {
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
+    this.dcLoadFlowResults = null;
+    this.dcShortCircuitResults = null;
 
     if (full) {
       // Full restore, preserving current device names by id
@@ -655,6 +661,8 @@ const AppState = {
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
     this.dcArcFlashResults = null;
+    this.dcLoadFlowResults = null;
+    this.dcShortCircuitResults = null;
     this.cableSizingResults = null;
     this.motorStartingResults = null;
     this.dutyCheckResults = null;
@@ -823,6 +831,8 @@ const AppState = {
       unbalancedLoadFlowResults: this.unbalancedLoadFlowResults || undefined,
       arcFlashResults: this.arcFlashResults || undefined,
       dcArcFlashResults: this.dcArcFlashResults || undefined,
+      dcLoadFlowResults: this.dcLoadFlowResults || undefined,
+      dcShortCircuitResults: this.dcShortCircuitResults || undefined,
       cableSizingResults: this.cableSizingResults || undefined,
       motorStartingResults: this.motorStartingResults || undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
@@ -974,6 +984,8 @@ const AppState = {
     this.unbalancedLoadFlowResults = data.unbalancedLoadFlowResults || null;
     this.arcFlashResults = data.arcFlashResults || null;
     this.dcArcFlashResults = data.dcArcFlashResults || null;
+    this.dcLoadFlowResults = data.dcLoadFlowResults || null;
+    this.dcShortCircuitResults = data.dcShortCircuitResults || null;
     this.cableSizingResults = data.cableSizingResults || null;
     this.motorStartingResults = data.motorStartingResults || null;
     this.dutyCheckResults = data.dutyCheckResults || null;

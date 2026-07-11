@@ -108,7 +108,7 @@ def run_backup_autonomy(project: ProjectData) -> dict:
     results = []
     for isl in sorted(islands):
         comps = islands[isl]
-        buses = [c for c in comps if c.type == "bus"]
+        buses = [c for c in comps if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
 
         # Only ESSENTIAL loads ride through the outage — a changeover is
         # assumed to shed anything flagged essential='no' (default 'yes')

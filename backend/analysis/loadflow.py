@@ -978,7 +978,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     wires = project.wires
 
     # Build bus list and index
-    buses = [c for c in project.components if c.type == "bus"]
+    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     if not buses:
         return LoadFlowResults(
             buses={}, branches=[], converged=False, iterations=0, method=method
