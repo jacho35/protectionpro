@@ -269,19 +269,30 @@ const PlanSync = {
   // returns the number of feeders created. Called on sync and on placement.
   reflectSldFeeders() {
     const pm = AppState.planMarkup;
+    const comps = AppState.components;
     const linkedBySld = {};
     for (const el of pm.elements) if (el.sldId) linkedBySld[el.sldId] = el;
+    // A cable endpoint may be a DB directly, or an outgoing bus owned by a DB.
+    const resolve = (compId) => {
+      if (linkedBySld[compId]) return { el: linkedBySld[compId], viaBus: false };
+      const c = comps.get(compId);
+      if (c && c.type === 'bus' && c.busOwner && linkedBySld[c.busOwner]) return { el: linkedBySld[c.busOwner], viaBus: true };
+      return null;
+    };
     let made = 0;
-    for (const cable of [...AppState.components.values()].filter(c => c.type === 'cable')) {
-      const linked = [];
+    for (const cable of [...comps.values()].filter(c => c.type === 'cable')) {
+      const ends = [];
       for (const w of AppState.wires.values()) {
-        let other = null;
-        if (w.fromComponent === cable.id) other = w.toComponent;
-        else if (w.toComponent === cable.id) other = w.fromComponent;
-        if (other && linkedBySld[other] && !linked.includes(other)) linked.push(other);
+        const other = w.fromComponent === cable.id ? w.toComponent : (w.toComponent === cable.id ? w.fromComponent : null);
+        if (!other) continue;
+        const r = resolve(other);
+        if (r && !ends.some(e => e.el === r.el)) ends.push(r);
       }
-      if (linked.length !== 2) continue;
-      const elA = linkedBySld[linked[0]], elB = linkedBySld[linked[1]];
+      if (ends.length !== 2) continue;
+      // Upstream = the end reached via an outgoing bus; else keep order.
+      let up = ends.find(e => e.viaBus) || ends[0];
+      let down = ends.find(e => e !== up) || ends[1];
+      const elA = up.el, elB = down.el;
       const exists = pm.routes.some(r => r.type === 'feeder' &&
         ((r.fromId === elA.id && r.toId === elB.id) || (r.fromId === elB.id && r.toId === elA.id)));
       if (exists) continue;
@@ -293,9 +304,86 @@ const PlanSync = {
       };
       pm.routes.push(route);
       cable.planLink = route.id;
+      // Keep the upstream DB's schedule consistent for reverse-drawn feeders.
+      if (elA.type === 'bd_db' && elB.type === 'bd_db' && elA.sldId && elB.sldId) {
+        const ca = comps.get(elA.sldId), cb = comps.get(elB.sldId);
+        if (ca && cb) this._ensureFeederCircuit(ca, cb, cable.props.name, 0);
+      }
       made++;
     }
     return made;
+  },
+
+  // The single outgoing busbar below a feeding DB (created on demand, shared by
+  // all of that DB's sub-board feeders). Wired DB(out) → bus(top).
+  _ensureOutBus(dbComp) {
+    let bus = dbComp.outBusId ? AppState.components.get(dbComp.outBusId) : null;
+    if (!bus) bus = [...AppState.components.values()].find(c => c.type === 'bus' && c.busOwner === dbComp.id);
+    if (!bus) {
+      bus = AppState.addComponent('bus', dbComp.x, dbComp.y + 70);
+      bus.props.name = (dbComp.props.name || 'DB') + ' Bus';
+      bus.busOwner = dbComp.id;
+      AppState.addWire(dbComp.id, 'out', bus.id, 'top', true);
+    }
+    dbComp.outBusId = bus.id;
+    return bus;
+  },
+
+  // Record/refresh a "Feeder to Sub-board" way in the upstream DB's schedule.
+  _ensureFeederCircuit(dbComp, subComp, cableType, lenM) {
+    if (!Array.isArray(dbComp.props.circuits)) dbComp.props.circuits = [];
+    const circuits = dbComp.props.circuits;
+    let c = circuits.find(x => x.type === 'feeder_db' && x.feedsDbId === subComp.id);
+    if (!c) {
+      c = {
+        type: 'feeder_db', way: String(circuits.length + 1),
+        description: '', poles: '3P', phase: 'RWB', breaker_a: 63, curve: 'C',
+        el_group: '', cable_mm2: 25, cable_m: 0, load_va: 0, demand_factor: 1,
+        leakage_ma: 0, feedsDbId: subComp.id,
+      };
+      circuits.push(c);
+    }
+    c.description = 'Feeder to ' + (subComp.props.name || 'Sub-board');
+    if (cableType) c.cable = cableType;
+    if (lenM) c.cable_m = +lenM.toFixed(2);
+  },
+
+  // Drop "Feeder to Sub-board" ways whose feeder no longer exists on the SLD
+  // (the outgoing bus no longer has a cable to that sub-board).
+  _pruneFeederCircuits() {
+    for (const db of AppState.components.values()) {
+      if (db.type !== 'distribution_board' || !Array.isArray(db.props.circuits)) continue;
+      const outBus = db.outBusId ? AppState.components.get(db.outBusId) : null;
+      db.props.circuits = db.props.circuits.filter(c => {
+        if (c.type !== 'feeder_db') return true;
+        if (!outBus) return false;
+        // keep only if a cable still links this bus to c.feedsDbId
+        return [...AppState.components.values()].some(cab => {
+          if (cab.type !== 'cable') return false;
+          const wired = (tgt) => [...AppState.wires.values()].some(w =>
+            (w.fromComponent === cab.id && w.toComponent === tgt) || (w.toComponent === cab.id && w.fromComponent === tgt));
+          return wired(outBus.id) && wired(c.feedsDbId);
+        });
+      });
+    }
+  },
+
+  // Remove any outgoing bus that no longer carries a downstream feeder cable
+  // (or whose owner DB is gone), and clear the owner's back-ref.
+  _pruneEmptyOutBuses() {
+    for (const bus of [...AppState.components.values()]) {
+      if (bus.type !== 'bus' || !bus.busOwner) continue;
+      const owner = AppState.components.get(bus.busOwner);
+      const hasCable = [...AppState.wires.values()].some(w => {
+        const other = w.fromComponent === bus.id ? w.toComponent : (w.toComponent === bus.id ? w.fromComponent : null);
+        const oc = other && AppState.components.get(other);
+        return oc && oc.type === 'cable';
+      });
+      if (!owner || !hasCable) {
+        if (owner && owner.outBusId === bus.id) owner.outBusId = null;
+        AppState.removeComponent(bus.id);
+      }
+    }
   },
 
   // Adopt an existing SLD component into the building plan at (x,y): create a
@@ -336,15 +424,22 @@ const PlanSync = {
     for (const r of feeders) if (!elById[r.fromId] || !elById[r.toId] || planEls.has(r.fromId) || planEls.has(r.toId)) planRoutes.add(r.id);
     // Cascade: SLD cable of each removed plan feeder
     for (const rid of planRoutes) { const r = feederById[rid]; if (r && r.sldCableId && comps.get(r.sldCableId)) sldComps.add(r.sldCableId); }
-    // Cascade: cables wired to a removed SLD board (+ their plan feeders)
+    // Cascade: a removed SLD board takes its outgoing bus + the feeder cables
+    // wired to the board or that bus (+ their plan feeders).
     for (const cid of [...sldComps]) {
       const c = comps.get(cid);
       if (!c || c.type !== 'distribution_board') continue;
+      const outBus = c.outBusId ? comps.get(c.outBusId) : [...comps.values()].find(x => x.type === 'bus' && x.busOwner === cid);
+      const busId = outBus ? outBus.id : null;
+      if (busId) sldComps.add(busId);
+      const wiredTo = (cabId, tgt) => [...AppState.wires.values()].some(w =>
+        (w.fromComponent === cabId && w.toComponent === tgt) || (w.toComponent === cabId && w.fromComponent === tgt));
       for (const cab of comps.values()) {
         if (cab.type !== 'cable') continue;
-        const wired = [...AppState.wires.values()].some(w =>
-          (w.fromComponent === cab.id && w.toComponent === cid) || (w.toComponent === cab.id && w.fromComponent === cid));
-        if (wired) { sldComps.add(cab.id); if (cab.planLink && feederById[cab.planLink]) planRoutes.add(cab.planLink); }
+        if (wiredTo(cab.id, cid) || (busId && wiredTo(cab.id, busId))) {
+          sldComps.add(cab.id);
+          if (cab.planLink && feederById[cab.planLink]) planRoutes.add(cab.planLink);
+        }
       }
     }
     const cableIds = [...sldComps].filter(id => comps.get(id) && comps.get(id).type === 'cable');
@@ -420,28 +515,40 @@ const PlanSync = {
       usedSld.add(comp.id);
     }
 
-    // ── Forward: plan feeder → SLD cable wired between the two linked DBs ──
+    // ── Forward: plan feeder → SLD. The upstream DB feeds the downstream DB
+    //    through an outgoing bus below it (one shared bus per feeding DB) and
+    //    records a "Feeder to Sub-board" circuit in its schedule. ──
     for (const r of feeders) {
       const a = elById[r.fromId], b = elById[r.toId];
       if (!a || !b || a.type !== 'bd_db' || b.type !== 'bd_db' || !a.sldId || !b.sldId) continue;
+      const ca = AppState.components.get(a.sldId), cb = AppState.components.get(b.sldId);
+      if (!ca || !cb) continue;
+      const lenM = factor ? this._routeLenM(r, factor) : 0;
       let cable = r.sldCableId ? AppState.components.get(r.sldCableId) : null;
       if (!cable) {
-        const ca = AppState.components.get(a.sldId), cb = AppState.components.get(b.sldId);
-        cable = AppState.addComponent('cable', (ca.x + cb.x) / 2, (ca.y + cb.y) / 2);
-        AppState.addWire(a.sldId, 'out', cable.id, 'from', true);
-        AppState.addWire(cable.id, 'to', b.sldId, 'in', true);
+        const outBus = this._ensureOutBus(ca);
+        cable = AppState.addComponent('cable', outBus.x, (outBus.y + cb.y) / 2);
+        AppState.addWire(outBus.id, 'bottom', cable.id, 'from', true);
+        AppState.addWire(cable.id, 'to', cb.id, 'in', true);
         r.sldCableId = cable.id;
-        cable.planLink = r.id;   // back-ref for deletion propagation
+        cable.planLink = r.id;
         summary.cableNew++;
       }
       if (r.cableType) cable.props.name = r.cableType;
-      if (factor) cable.props.length_km = +(this._routeLenM(r, factor) / 1000).toFixed(4);
+      if (factor) cable.props.length_km = +(lenM / 1000).toFixed(4);
       const std = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.find(c => c.name === r.cableType);
       if (std) cable.props.standard_type = std.id;
+      // Record/refresh the "Feeder to Sub-board" way on the upstream DB.
+      this._ensureFeederCircuit(ca, cb, r.cableType, lenM);
     }
+    this._pruneEmptyOutBuses();
 
     // ── Reverse: SLD cables joining two linked plan elements → plan feeders ──
     summary.planNew += this.reflectSldFeeders();
+
+    // Keep outgoing buses + feeder ways consistent with the surviving topology.
+    this._pruneEmptyOutBuses();
+    this._pruneFeederCircuits();
 
     AppState.dirty = true;
     if (typeof Canvas !== 'undefined') Canvas.render();

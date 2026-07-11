@@ -1027,6 +1027,10 @@ const DB_LOAD_TYPES = [
   { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5 },
   { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.0 },
   { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 0 },
+  // Outgoing feeder to a downstream sub-board. Carries no lumped load itself
+  // (the sub-board models its own demand); on the SLD it renders as an
+  // outgoing bus below the board that the sub-board's incomer connects to.
+  { key: 'feeder_db',  label: 'Feeder to Sub-board', va: 0,  unit: 'board',   df: 1.0, poles: '3P', breaker_a: 63, curve: 'C', cable_mm2: 25,  per_circuit: 1,  leak_ma: 0 },
 ];
 
 // Standing earth-leakage of the cable itself (insulation capacitance to
