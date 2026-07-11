@@ -48,7 +48,13 @@ const PlanSymbols = {
     ] },
 
     // ── Building distribution (Distribution Designer Pro) ──
-    bd_db: { size: 34, prims: [{ k: 'r', x: 4, y: 8, w: 32, h: 24, f: 'faint', s: 'col', w: 1.8 }, { k: 't', x: 20, y: 20, str: 'DB', size: 9, f: 'col', bold: 1 }] },
+    // DB: rectangle with a diagonal line (standard schematic board symbol).
+    bd_db: { size: 34, prims: [
+      { k: 'r', x: 5, y: 9, w: 30, h: 22, f: 'faint', s: 'col', w: 1.8 },
+      { k: 'l', x1: 5, y1: 31, x2: 35, y2: 9, s: 'col', w: 1.4 },
+      { k: 't', x: 12, y: 15, str: 'DB', size: 6, f: 'col', bold: 1 },
+    ] },
+    // bd_switchboard is parametric (tiers / feeder bays) — see _switchboard().
     bd_transformer: { size: 30, prims: [
       { k: 'c', cx: 15, cy: 20, r: 8, s: 'col', w: 1.5 },
       { k: 'c', cx: 25, cy: 20, r: 8, s: 'col', w: 1.5 },
@@ -86,6 +92,7 @@ const PlanSymbols = {
     if (type === 'bd_light') return { downlight: 20, batten: 34, floodlight: 26, exit: 30, highbay: 24, wall: 24, emergency: 24, ceiling: 24 }[props.kind] || 24;
     if (type === 'bd_socket') return props.gangs === '3' ? 26 : props.gangs === '2' ? 24 : 22;
     if (type === 'bd_switch') return 22;
+    if (type === 'bd_switchboard') return Math.min(64, 40 + (Math.max(1, parseInt(props.sections, 10) || 1) - 1) * 10);
     const r = this.RECIPES[type];
     return r ? r.size : 24;
   },
@@ -134,6 +141,17 @@ const PlanSymbols = {
         out.push({ k: 'l', x1: c + Math.cos(a) * bR, y1: c + Math.sin(a) * bR, x2: c + Math.cos(a) * (bR + lineLen), y2: c + Math.sin(a) * (bR + lineLen), s: 'col', w: sw });
       }
     }
+    return out;
+  },
+  // Switchboard: a rectangle divided into `sections` feeder bays, each with a
+  // small diagonal (reads as switchgear cubicles / tiers).
+  _switchboard(props) {
+    const n = Math.max(1, parseInt(props && props.sections, 10) || 1);
+    const x0 = 2, y0 = 12, w = 36, h = 16, bw = w / n;
+    const out = [{ k: 'r', x: x0, y: y0, w, h, f: 'faint', s: 'col', w: 1.8 }];
+    for (let i = 1; i < n; i++) out.push({ k: 'l', x1: x0 + i * bw, y1: y0, x2: x0 + i * bw, y2: y0 + h, s: 'col', w: 1 });
+    for (let i = 0; i < n; i++) { const bx = x0 + i * bw; out.push({ k: 'l', x1: bx + 2, y1: y0 + h - 2, x2: bx + bw - 2, y2: y0 + 2, s: 'col', w: 0.8 }); }
+    out.push({ k: 't', x: 20, y: 33, str: 'SB', size: 7, f: 'col', bold: 1 });
     return out;
   },
   _light(props) {
@@ -187,13 +205,14 @@ const PlanSymbols = {
     if (type === 'bd_light') return this._light(props);
     if (type === 'bd_socket') return this._socket(props);
     if (type === 'bd_switch') return this._switch(props);
+    if (type === 'bd_switchboard') return this._switchboard(props);
     const r = this.RECIPES[type];
     if (!r) return null;
     return (typeof r.prims === 'string') ? this._procedural(r.prims) : r.prims;
   },
 
   // Family types have no static RECIPE entry — report them as drawable.
-  has(type) { return type === 'bd_light' || type === 'bd_socket' || type === 'bd_switch' || !!this.RECIPES[type]; },
+  has(type) { return ['bd_light', 'bd_socket', 'bd_switch', 'bd_switchboard'].includes(type) || !!this.RECIPES[type]; },
 
   _resolve(v, ctxCol, bg) {
     if (v === 'col') return ctxCol;

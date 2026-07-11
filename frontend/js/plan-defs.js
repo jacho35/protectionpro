@@ -131,6 +131,10 @@ const PLAN_DEFS = {
     bd_generator: { name: 'Generator', domain: 'building', group: 'Power', color: '#22c55e', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 1.0 }, rotatable: true, schedule: null, namePrefix: 'GEN', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_db: { name: 'Distribution Board', domain: 'building', group: 'Power', color: '#8b5cf6', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.7 }, rotatable: true, schedule: null, namePrefix: 'DB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_riser: { name: 'Riser', domain: 'building', group: 'Power', color: '#6366f1', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.4 }, rotatable: false, schedule: null, namePrefix: 'RS', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
+    // Switchboard = an SLD bus (+ its CBs/fuses, possibly multi-section joined
+    // by a coupler/bus-duct) grouped as one board. Adopt-only (created by
+    // picking a bus in "From SLD"), so it's not offered in the palette.
+    bd_switchboard: { name: 'Switchboard', domain: 'building', group: 'Power', color: '#ef4444', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 1.5 }, rotatable: true, schedule: null, namePrefix: 'SB', adoptOnly: true, defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_jb: { name: 'Junction Box', domain: 'building', group: 'Power', color: '#94a3b8', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'JB', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // Lighting — one dynamic-block family; `kind` renders the permutation.
     bd_light: {
@@ -264,7 +268,7 @@ const PLAN_DEFS = {
     transformer: 'bd_transformer',
     generator: 'bd_generator',
     utility: 'bd_utility',
-    bus: 'bd_db',
+    bus: 'bd_switchboard',   // a bus (+ its CBs) adopts as a Switchboard
   },
 
   annotations: {
@@ -308,7 +312,7 @@ const PLAN_DEFS = {
       groups.get(label).push(item);
     };
     for (const [type, def] of Object.entries(this.elements)) {
-      if (def.domain !== domain) continue;
+      if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"
       push(def.group || 'Other', { type, kind: 'element', name: def.name, color: def.color });
     }
     for (const [type, def] of Object.entries(this.routes)) {

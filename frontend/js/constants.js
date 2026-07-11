@@ -807,7 +807,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'distribution',
     name: 'Distribution',
-    items: ['bus', 'transformer', 'cable'],
+    items: ['bus', 'transformer', 'cable', 'bus_duct'],
   },
   {
     id: 'protection',
@@ -1813,6 +1813,27 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'board_diversity', label: 'Board Diversity', type: 'number', min: 0.1, max: 1, step: 0.05, section: 'loadflow' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
+    ],
+  },
+
+  // Busway link between two switchboard bus sections — electrically transparent
+  // (a low-impedance busbar), used by the Plan Markup multi-section switchboard.
+  bus_duct: {
+    name: 'Bus Duct',
+    label: 'Bus Duct',
+    category: 'distribution',
+    ports: [{ id: 'from', side: 'left', offset: 0 }, { id: 'to', side: 'right', offset: 0 }],
+    width: 60,
+    height: 16,
+    defaults: {
+      name: 'BusDuct',
+      rated_current_a: 800,
+      length_m: 2,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
+      { key: 'length_m', label: 'Length', type: 'number', unit: 'm' },
     ],
   },
 

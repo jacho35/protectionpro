@@ -272,11 +272,30 @@ const PlanSync = {
     const comps = AppState.components;
     const linkedBySld = {};
     for (const el of pm.elements) if (el.sldId) linkedBySld[el.sldId] = el;
-    // A cable endpoint may be a DB directly, or an outgoing bus owned by a DB.
-    const resolve = (compId) => {
+    // Any bus section of a switchboard resolves to that switchboard element.
+    const swBusToEl = {};
+    for (const el of pm.elements) if (el.type === 'bd_switchboard' && Array.isArray(el.sldBuses)) {
+      for (const bid of el.sldBuses) swBusToEl[bid] = el;
+    }
+    const wires = [...AppState.wires.values()];
+    const neigh = (id) => wires.filter(w => w.fromComponent === id || w.toComponent === id)
+      .map(w => (w.fromComponent === id ? w.toComponent : w.fromComponent));
+    const WALK = new Set(['cb', 'fuse', 'switch']);
+    // A cable endpoint may be a DB/switchboard directly, an outgoing bus owned
+    // by a DB, or reachable through a board breaker (bus → CB → cable).
+    const resolve = (compId, from, depth) => {
       if (linkedBySld[compId]) return { el: linkedBySld[compId], viaBus: false };
+      if (swBusToEl[compId]) return { el: swBusToEl[compId], viaBus: true };
       const c = comps.get(compId);
-      if (c && c.type === 'bus' && c.busOwner && linkedBySld[c.busOwner]) return { el: linkedBySld[c.busOwner], viaBus: true };
+      if (!c) return null;
+      if (c.type === 'bus' && c.busOwner && linkedBySld[c.busOwner]) return { el: linkedBySld[c.busOwner], viaBus: true };
+      if (WALK.has(c.type) && (depth || 0) < 3) {
+        for (const n of neigh(compId)) {
+          if (n === from) continue;
+          const r = resolve(n, compId, (depth || 0) + 1);
+          if (r) return r;
+        }
+      }
       return null;
     };
     let made = 0;
@@ -285,7 +304,7 @@ const PlanSync = {
       for (const w of AppState.wires.values()) {
         const other = w.fromComponent === cable.id ? w.toComponent : (w.toComponent === cable.id ? w.fromComponent : null);
         if (!other) continue;
-        const r = resolve(other);
+        const r = resolve(other, cable.id, 0);
         if (r && !ends.some(e => e.el === r.el)) ends.push(r);
       }
       if (ends.length !== 2) continue;
@@ -392,6 +411,7 @@ const PlanSync = {
   placeFromSld(sldId, x, y) {
     const comp = AppState.components.get(sldId);
     if (!comp) return null;
+    if (comp.type === 'bus') return this.placeSwitchboard(sldId, x, y);
     const type = (PLAN_DEFS.sldLinkTypes && PLAN_DEFS.sldLinkTypes[comp.type]) || 'bd_db';
     const el = {
       id: AppState.planGenId('pmel'), type, x, y, rotation: 0,
@@ -403,25 +423,96 @@ const PlanSync = {
     return el;
   },
 
+  // Bus sections + their CBs/fuses/ducts that form one switchboard. Sections
+  // are buses joined by a coupler (CB directly between two buses) or a bus
+  // duct; members also include the CBs/fuses/ducts wired to any section bus.
+  sldSwitchboardGroup(startBusId) {
+    const comps = AppState.components;
+    const wires = [...AppState.wires.values()];
+    const neigh = (id) => wires.filter(w => w.fromComponent === id || w.toComponent === id)
+      .map(w => (w.fromComponent === id ? w.toComponent : w.fromComponent));
+    const LINK = new Set(['cb', 'fuse', 'switch', 'bus_duct']);
+    const busSet = new Set([startBusId]);
+    const q = [startBusId];
+    while (q.length) {
+      const b = q.shift();
+      for (const n of neigh(b)) {
+        const c = comps.get(n);
+        if (!c || !LINK.has(c.type)) continue;
+        // buses on the other side of this link → same switchboard (coupler/duct)
+        for (const ob of neigh(n)) {
+          const oc = comps.get(ob);
+          if (oc && oc.type === 'bus' && !busSet.has(ob)) { busSet.add(ob); q.push(ob); }
+        }
+      }
+    }
+    const busIds = [...busSet];
+    const members = new Set(busIds);
+    for (const b of busIds) for (const n of neigh(b)) {
+      const c = comps.get(n);
+      if (c && LINK.has(c.type)) members.add(n);   // couplers, ducts + board CBs/fuses
+    }
+    const primaryBusId = busIds.slice().sort()[0];
+    const name = (comps.get(primaryBusId).props.name) || 'Switchboard';
+    return { busIds, primaryBusId, members: [...members], name };
+  },
+
+  // All switchboard groups on the SLD (one per connected bus set).
+  sldSwitchboardGroups() {
+    const comps = AppState.components;
+    const seen = new Set(), groups = [];
+    for (const c of comps.values()) {
+      if (c.type !== 'bus' || seen.has(c.id) || c.busOwner) continue;  // skip DB outgoing buses
+      const g = this.sldSwitchboardGroup(c.id);
+      g.busIds.forEach(id => seen.add(id));
+      groups.push(g);
+    }
+    return groups;
+  },
+
+  // Adopt a bus (and its group) as a Switchboard plan element.
+  placeSwitchboard(busId, x, y) {
+    const g = this.sldSwitchboardGroup(busId);
+    const el = {
+      id: AppState.planGenId('pmel'), type: 'bd_switchboard', x, y, rotation: 0,
+      name: g.name, reticId: null, sldId: g.primaryBusId,
+      sldBuses: g.busIds, sldMembers: g.members, sections: g.busIds.length,
+      props: { sections: g.busIds.length },
+    };
+    AppState.planMarkup.elements.push(el);
+    for (const mid of g.members) { const c = AppState.components.get(mid); if (c) c.swLink = el.id; }
+    this.reflectSldFeeders();
+    return el;
+  },
+
   // Collect entities on each side whose linked partner was deleted in the
   // other view — the set that deletion-propagation would remove. Cascades:
   // removing a board removes its feeders; removing a feeder removes its cable.
   _collectDeletions(pm) {
     const comps = AppState.components;
     const planEls = new Set(), planRoutes = new Set(), sldComps = new Set();
-    const dbById = {}, elById = {};
-    for (const e of pm.elements) { elById[e.id] = e; if (e.type === 'bd_db') dbById[e.id] = e; }
+    const elById = {}, planElIds = new Set();
+    for (const e of pm.elements) { elById[e.id] = e; planElIds.add(e.id); }
     const feeders = pm.routes.filter(r => r.type === 'feeder');
     const feederById = {}; for (const r of feeders) feederById[r.id] = r;
 
-    // Broken DB pairs
-    for (const e of Object.values(dbById)) if (e.sldId && !comps.get(e.sldId)) planEls.add(e.id);
-    for (const c of comps.values()) if (c.type === 'distribution_board' && c.planLink && !dbById[c.planLink]) sldComps.add(c.id);
+    // A linked plan element whose primary SLD component is gone → SLD side
+    // deleted → remove the plan element (DB, switchboard, adopted supply).
+    for (const e of pm.elements) if (e.sldId && !comps.get(e.sldId)) planEls.add(e.id);
+    // SLD distribution_board whose plan DB is gone → remove board.
+    for (const c of comps.values()) if (c.type === 'distribution_board' && c.planLink && !planElIds.has(c.planLink)) sldComps.add(c.id);
+    // Switchboard member (swLink) whose plan switchboard is gone → remove it.
+    for (const c of comps.values()) if (c.swLink && !planElIds.has(c.swLink)) sldComps.add(c.id);
     // Broken feeder pairs
     for (const r of feeders) if (r.sldCableId && !comps.get(r.sldCableId)) planRoutes.add(r.id);
     for (const c of comps.values()) if (c.type === 'cable' && c.planLink && !feederById[c.planLink]) sldComps.add(c.id);
     // Dangling plan feeders (an endpoint board was removed)
     for (const r of feeders) if (!elById[r.fromId] || !elById[r.toId] || planEls.has(r.fromId) || planEls.has(r.toId)) planRoutes.add(r.id);
+    // Cascade: a removed plan board/switchboard takes its SLD members.
+    for (const eid of planEls) {
+      const e = elById[eid]; if (!e) continue;
+      if (Array.isArray(e.sldMembers)) for (const mid of e.sldMembers) if (comps.get(mid)) sldComps.add(mid);
+    }
     // Cascade: SLD cable of each removed plan feeder
     for (const rid of planRoutes) { const r = feederById[rid]; if (r && r.sldCableId && comps.get(r.sldCableId)) sldComps.add(r.sldCableId); }
     // Cascade: a removed SLD board takes its outgoing bus + the feeder cables
@@ -443,7 +534,9 @@ const PlanSync = {
       }
     }
     const cableIds = [...sldComps].filter(id => comps.get(id) && comps.get(id).type === 'cable');
-    const boards = planEls.size + [...sldComps].filter(id => comps.get(id) && comps.get(id).type === 'distribution_board').length;
+    const boards = [...planEls].filter(id => { const e = elById[id]; return e && (e.type === 'bd_db' || e.type === 'bd_switchboard'); }).length
+      + [...sldComps].filter(id => comps.get(id) && comps.get(id).type === 'distribution_board').length
+      + new Set([...sldComps].map(id => comps.get(id)).filter(c => c && c.swLink && !planElIds.has(c.swLink)).map(c => c.swLink)).size;
     const feedersCount = planRoutes.size + cableIds.filter(id => {
       const c = comps.get(id); return !(c.planLink && planRoutes.has(c.planLink));
     }).length;
@@ -464,7 +557,7 @@ const PlanSync = {
     const del = this._collectDeletions(pm);
     if (del.boards + del.feeders > 0) {
       const ok = await UI.confirm(
-        `Sync will remove ${del.boards} distribution board(s) and ${del.feeders} feeder(s) that were deleted in the other view. Remove them here too?`,
+        `Sync will remove ${del.boards} board/switchboard(s) and ${del.feeders} feeder(s) that were deleted in the other view. Remove them here too?`,
         { danger: true, okText: 'Remove', cancelText: 'Keep both' });
       if (ok) {
         for (const id of del.sldComps) AppState.removeComponent(id);

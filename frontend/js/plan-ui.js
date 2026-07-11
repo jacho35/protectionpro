@@ -57,18 +57,29 @@ const PlanUI = {
     // "From SLD": adopt existing SLD boards/supply that aren't on the plan yet.
     if (domain === 'building' && typeof AppState.components !== 'undefined' && PLAN_DEFS.sldLinkTypes) {
       const linkedSld = new Set(pm.elements.filter(e => e.sldId).map(e => e.sldId));
-      const avail = [...AppState.components.values()]
-        .filter(c => PLAN_DEFS.sldLinkTypes[c.type] && !linkedSld.has(c.id));
+      // Non-bus linkable comps (DB, transformer, generator, utility) individually.
+      const rows = [];
+      for (const c of AppState.components.values()) {
+        if (!PLAN_DEFS.sldLinkTypes[c.type] || c.type === 'bus' || linkedSld.has(c.id)) continue;
+        const t = PLAN_DEFS.sldLinkTypes[c.type];
+        const typeName = (typeof COMPONENT_DEFS !== 'undefined' && COMPONENT_DEFS[c.type] && COMPONENT_DEFS[c.type].name) || c.type;
+        rows.push({ id: c.id, label: c.props.name || typeName, sub: typeName, color: PLAN_DEFS.elementColor(t, pm.styles) });
+      }
+      // Buses grouped into switchboards — one row per group.
+      if (typeof PlanSync !== 'undefined' && PlanSync.sldSwitchboardGroups) {
+        for (const g of PlanSync.sldSwitchboardGroups()) {
+          if (g.busIds.some(id => linkedSld.has(id))) continue;   // already adopted
+          rows.push({ id: g.primaryBusId, label: g.name, sub: `Switchboard${g.busIds.length > 1 ? ' · ' + g.busIds.length + ' sections' : ''}`, color: PLAN_DEFS.elementColor('bd_switchboard', pm.styles) });
+        }
+      }
       html += `<div class="plan-fromsld"><div class="plan-layers-title">From SLD (unplaced)</div>`;
-      if (!avail.length) {
+      if (!rows.length) {
         html += `<div class="plan-props-empty" style="padding:2px 2px 6px">No unplaced SLD boards.</div>`;
       } else {
-        for (const c of avail) {
-          const t = PLAN_DEFS.sldLinkTypes[c.type];
-          const typeName = (typeof COMPONENT_DEFS !== 'undefined' && COMPONENT_DEFS[c.type] && COMPONENT_DEFS[c.type].name) || c.type;
-          html += `<button class="plan-pal-item" data-sld="${escHtml(c.id)}" title="Place ${escHtml(c.props.name || typeName)} from the SLD">
-            <span class="plan-pal-swatch" style="background:${PLAN_DEFS.elementColor(t, pm.styles)}"></span>${escHtml(c.props.name || typeName)}
-            <span style="color:var(--text-muted);font-size:10px;margin-left:auto">${escHtml(typeName)}</span></button>`;
+        for (const r of rows) {
+          html += `<button class="plan-pal-item" data-sld="${escHtml(r.id)}" title="Place ${escHtml(r.label)} from the SLD">
+            <span class="plan-pal-swatch" style="background:${r.color}"></span>${escHtml(r.label)}
+            <span style="color:var(--text-muted);font-size:10px;margin-left:auto">${escHtml(r.sub)}</span></button>`;
         }
       }
       html += `</div>`;
