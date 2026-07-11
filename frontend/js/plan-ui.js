@@ -167,6 +167,7 @@ const PlanUI = {
       if (role === 'domain') {
         AppState.planMarkup.settings.domain = e.target.value;
         this.renderPalette();
+        if (typeof PlanMarkup !== 'undefined' && PlanMarkup.updatePushButton) PlanMarkup.updatePushButton();
       } else if (role === 'vis') {
         const p = this._planById(e.target.dataset.plan);
         if (p) { p.visible = e.target.checked; PlanEngine.requestDraw({ bg: true }); }

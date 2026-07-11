@@ -264,8 +264,110 @@ const PlanSync = {
     return circuits;
   },
 
+  // ─── Building distribution ↔ SLD bridge ───
+  // Distribution boards drawn in the Plan become linked `distribution_board`
+  // components on the SLD; feeders between boards become a Cable/Feeder
+  // component wired MDB(out) → cable → SDB(in). Reconciles BOTH directions and
+  // is id-linked (idempotent): re-syncing updates, never duplicates, and
+  // creates only (no deletes across views). Building never touches the
+  // Reticulation schedule.
+  syncBuildingToSLD() {
+    const pm = AppState.planMarkup;
+    const factor = this._factor();
+    const dbEls = pm.elements.filter(e => e.type === 'bd_db');
+    const feeders = pm.routes.filter(r => r.type === 'feeder' && r.fromId && r.toId);
+    const elById = this._elById();
+    const summary = { dbNew: 0, dbLinked: 0, cableNew: 0, planNew: 0 };
+
+    // Layout: map plan pixel extents into a tidy SLD region (preserve relative
+    // positions), snapped to grid.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of dbEls) { minX = Math.min(minX, el.x); minY = Math.min(minY, el.y); maxX = Math.max(maxX, el.x); maxY = Math.max(maxY, el.y); }
+    const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+    const s = Math.min(600 / spanX, 400 / spanY, 1) || 1;
+    const sldX = (el) => 400 + (el.x - minX) * s;
+    const sldY = (el) => 300 + (el.y - minY) * s;
+
+    // ── Forward: plan DB → SLD distribution_board ──
+    const usedSld = new Set();
+    for (const el of dbEls) {
+      let comp = el.sldId ? AppState.components.get(el.sldId) : null;
+      if (comp) summary.dbLinked++;
+      if (!comp) {
+        comp = [...AppState.components.values()].find(c =>
+          c.type === 'distribution_board' && !usedSld.has(c.id) &&
+          (c.props.name || '').trim().toLowerCase() === (el.name || '').trim().toLowerCase() && el.name);
+      }
+      if (!comp) { comp = AppState.addComponent('distribution_board', sldX(el), sldY(el)); summary.dbNew++; }
+      if (el.name) comp.props.name = el.name;
+      el.sldId = comp.id;
+      usedSld.add(comp.id);
+    }
+
+    // ── Forward: plan feeder → SLD cable wired between the two linked DBs ──
+    for (const r of feeders) {
+      const a = elById[r.fromId], b = elById[r.toId];
+      if (!a || !b || a.type !== 'bd_db' || b.type !== 'bd_db' || !a.sldId || !b.sldId) continue;
+      let cable = r.sldCableId ? AppState.components.get(r.sldCableId) : null;
+      if (!cable) {
+        const ca = AppState.components.get(a.sldId), cb = AppState.components.get(b.sldId);
+        cable = AppState.addComponent('cable', (ca.x + cb.x) / 2, (ca.y + cb.y) / 2);
+        AppState.addWire(a.sldId, 'out', cable.id, 'from', true);
+        AppState.addWire(cable.id, 'to', b.sldId, 'in', true);
+        r.sldCableId = cable.id;
+        summary.cableNew++;
+      }
+      if (r.cableType) cable.props.name = r.cableType;
+      if (factor) cable.props.length_km = +(this._routeLenM(r, factor) / 1000).toFixed(4);
+      const std = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.find(c => c.name === r.cableType);
+      if (std) cable.props.standard_type = std.id;
+    }
+
+    // ── Reverse: SLD cable joining two linked DBs → ensure a plan feeder ──
+    const dbBySld = {};
+    for (const el of dbEls) if (el.sldId) dbBySld[el.sldId] = el;
+    for (const cable of [...AppState.components.values()].filter(c => c.type === 'cable')) {
+      const linkedDbs = [];
+      for (const w of AppState.wires.values()) {
+        let other = null;
+        if (w.fromComponent === cable.id) other = w.toComponent;
+        else if (w.toComponent === cable.id) other = w.fromComponent;
+        if (other && dbBySld[other] && !linkedDbs.includes(other)) linkedDbs.push(other);
+      }
+      if (linkedDbs.length !== 2) continue;
+      const elA = dbBySld[linkedDbs[0]], elB = dbBySld[linkedDbs[1]];
+      const exists = pm.routes.some(r => r.type === 'feeder' &&
+        ((r.fromId === elA.id && r.toId === elB.id) || (r.fromId === elB.id && r.toId === elA.id)));
+      if (exists) continue;
+      pm.routes.push({
+        id: AppState.planGenId('pmrt'), type: 'feeder',
+        fromId: elA.id, toId: elB.id,
+        points: [{ x: elA.x, y: elA.y, snappedTo: elA.id }, { x: elB.x, y: elB.y, snappedTo: elB.id }],
+        cableType: cable.props.name || '', curved: false, props: {}, sldCableId: cable.id,
+      });
+      summary.planNew++;
+    }
+
+    AppState.dirty = true;
+    if (typeof Canvas !== 'undefined') Canvas.render();
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    if (typeof UI !== 'undefined') UI.alert(
+      `Synced with SLD:\n` +
+      `• ${summary.dbNew} new + ${summary.dbLinked} linked distribution board(s)\n` +
+      `• ${summary.cableNew} feeder cable(s) created on the SLD\n` +
+      `• ${summary.planNew} SLD cable(s) reflected back as plan feeders`);
+  },
+
   // Immediate rename propagation from a plan element to its schedule row.
   onElementRenamed(el, oldName, newName) {
+    // Linked SLD distribution board follows the plan DB's name.
+    if (el && el.sldId && typeof AppState.components !== 'undefined') {
+      const comp = AppState.components.get(el.sldId);
+      if (comp) {
+        comp.props.name = newName;
+        if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
+      }
+    }
     if (!el || !el.reticId || typeof AppState.reticulation === 'undefined') return;
     const R = AppState.reticulation;
     let row = R.minisubs.find(m => m.id === el.reticId) || R.kiosks.find(k => k.id === el.reticId);

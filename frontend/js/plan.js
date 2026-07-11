@@ -57,7 +57,7 @@ const PlanMarkup = {
           <label class="plan-tb-field">Grid (m) <input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"></label>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tb-btn" data-action="push" title="Push drawn kiosks/erven/feeders into the Reticulation schedules">→ Push to Schedules</button>
+          <button class="plan-tb-btn" data-action="push" title="Push/sync drawn items to the matching workspace">→ Push to Schedules</button>
           <button class="plan-tb-btn" data-action="csv" title="Export component schedules (CSV)">⤓ CSV</button>
           <button class="plan-tb-btn" data-action="dxf" title="Export markup as AutoCAD DXF">⤓ DXF</button>
           <button class="plan-tb-btn" data-action="png" title="Export the annotated plan as a PNG image">⤓ PNG</button>
@@ -90,7 +90,11 @@ const PlanMarkup = {
       if (act.dataset.action === 'import') document.getElementById('plan-file-input').click();
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
       else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
-      else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') PlanSync.pushToSchedules();
+      else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') {
+        // Reticulation → demand schedules; Building → linked SLD boards/feeders.
+        if (AppState.planMarkup.settings.domain === 'building') PlanSync.syncBuildingToSLD();
+        else PlanSync.pushToSchedules();
+      }
       else if (act.dataset.action === 'csv' && typeof PlanCSV !== 'undefined') PlanCSV.exportAll();
       else if (act.dataset.action === 'dxf' && typeof PlanDXF !== 'undefined') PlanDXF.export();
       else if (act.dataset.action === 'png' && typeof PlanExport !== 'undefined') PlanExport.exportPNG();
@@ -129,6 +133,7 @@ const PlanMarkup = {
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
     this.updateScaleReadout();
+    this.updatePushButton();
   },
 
   deactivate() {
@@ -151,6 +156,17 @@ const PlanMarkup = {
   },
 
   markDirty() { AppState.dirty = true; if (typeof PlanLux !== 'undefined') PlanLux.invalidate(); },
+
+  // The push/sync button targets a different workspace per domain.
+  updatePushButton() {
+    const btn = document.querySelector('#plan-toolbar [data-action="push"]');
+    if (!btn) return;
+    const building = AppState.planMarkup.settings.domain === 'building';
+    btn.textContent = building ? '→ Sync with SLD' : '→ Push to Schedules';
+    btn.title = building
+      ? 'Create/link distribution boards + feeder cables on the SLD (both directions)'
+      : 'Push drawn kiosks/erven/feeders into the Reticulation schedules';
+  },
   refreshProps() { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); },
 
   // ─── Selection ───

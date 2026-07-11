@@ -1781,7 +1781,9 @@ const COMPONENT_DEFS = {
     name: 'Distribution Board',
     label: 'Distribution Board',
     category: 'loads',
-    ports: [{ id: 'in', side: 'top', offset: 0 }],
+    // 'in' = incomer; 'out' = downstream feed to a sub-board (used by the Plan
+    // Markup building-domain sync, which wires MDB out -> cable -> SDB in).
+    ports: [{ id: 'in', side: 'top', offset: 0 }, { id: 'out', side: 'bottom', offset: 0 }],
     width: 54,
     height: 46,
     defaults: {
