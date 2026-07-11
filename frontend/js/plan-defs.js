@@ -167,6 +167,14 @@ const PLAN_DEFS = {
 
   crossings: { sizes: ['110', '160'], defaultSize: '110', color: '#f97316' },
 
+  // Closed-polygon zones (rooms / areas). Used for area take-off and the lux
+  // model. Available in both domains.
+  room: {
+    fill: 'rgba(56,189,248,0.14)', stroke: '#0ea5e9',
+    defaults: { name: 'Room' },
+    fields: [{ key: 'name', label: 'Name', type: 'text' }],
+  },
+
   annotations: {
     text: {
       defaults: { text: 'Note', fontSize: 14, color: '#111827' },
@@ -221,6 +229,7 @@ const PLAN_DEFS = {
       }
       push('Other', { type: 'crossing', kind: 'crossing', name: 'Road Crossing', color: this.crossings.color });
     }
+    push('Zones', { type: 'room', kind: 'room', name: 'Room / Area', color: this.room.stroke });
     push('Annotate', { type: 'text', kind: 'text', name: 'Text', color: '#111827' });
     push('Annotate', { type: 'measurement', kind: 'measurement', name: 'Measure', color: this.annotations.measurement.color });
     return [...groups.entries()].map(([label, items]) => ({ label, items }));

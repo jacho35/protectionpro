@@ -194,6 +194,7 @@ const AppState = {
       routes: [],         // {id,type,fromId,toId,points:[{x,y,snappedTo}],cableType,curved,props}
       trenches: [],       // {id,name,excType,points:[{x,y}],widthOverride,depthOverride}
       crossings: [],      // {id,name,size,p1,p2}
+      rooms: [],          // {id,name,points:[{x,y}],color}  (closed polygon zones)
       texts: [],          // {id,x,y,text,fontSize,color}
       measurements: [],   // {id,points:[{x,y}]}
       layers,             // discipline layers (filter by entity type)
@@ -203,6 +204,8 @@ const AppState = {
         domain: 'retic', gridSize: 0.5,
         snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true,
         showGrid: true, greyBg: false, invertBg: false, slPoleKVA: 0.15,
+        // Bill-of-quantities rates (currency-neutral; 0 until the user sets them)
+        rates: { cablePerM: 0, equipUnit: 0, trenchPerM: 0, wasteFactorPct: 5 },
       },
       _seq: 1,            // single counter for all pm* ids
       nameCounters: {},   // per-type auto-name numbering {kiosk:4, pole:12, ...}
@@ -222,7 +225,7 @@ const AppState = {
     if (!p) return true;
     return !p.plans.length && !p.elements.length && !p.routes.length &&
       !p.trenches.length && !p.crossings.length && !p.texts.length &&
-      !p.measurements.length && !p.scale;
+      !p.measurements.length && !(p.rooms && p.rooms.length) && !p.scale;
   },
 
   // Add component
@@ -1033,6 +1036,7 @@ const AppState = {
         routes: arr(p.routes),
         trenches: arr(p.trenches),
         crossings: arr(p.crossings),
+        rooms: arr(p.rooms),
         texts: arr(p.texts),
         measurements: arr(p.measurements),
         layers: (Array.isArray(p.layers) && p.layers.length) ? p.layers : pdef.layers,
@@ -1052,7 +1056,8 @@ const AppState = {
       };
       const pm = this.planMarkup;
       scanSeq(pm.plans); scanSeq(pm.elements); scanSeq(pm.routes);
-      scanSeq(pm.trenches); scanSeq(pm.crossings); scanSeq(pm.texts); scanSeq(pm.measurements);
+      scanSeq(pm.trenches); scanSeq(pm.crossings); scanSeq(pm.rooms);
+      scanSeq(pm.texts); scanSeq(pm.measurements);
       pm._seq = Math.max(pm._seq, maxSeq + 1);
       // Drop dangling reticId backrefs (defensive against hand-edited files)
       const reticIds = new Set([

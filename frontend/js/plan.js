@@ -44,9 +44,10 @@ const PlanMarkup = {
           <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG)">⬆ Import Plan</button>
-          <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp" style="display:none">
+          <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF) or a DXF reference">⬆ Import Plan</button>
+          <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf" style="display:none">
           <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">⤢ Fit</button>
+          <button class="plan-tb-btn" data-action="lux" title="Toggle the lighting (lux) heatmap">💡 Lux</button>
         </div>
         <div class="plan-tb-group">
           <label class="plan-snap-pill"><input type="checkbox" data-snap="showGrid" checked> Grid</label>
@@ -88,6 +89,7 @@ const PlanMarkup = {
       if (!act) return;
       if (act.dataset.action === 'import') document.getElementById('plan-file-input').click();
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
+      else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
       else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') PlanSync.pushToSchedules();
       else if (act.dataset.action === 'csv' && typeof PlanCSV !== 'undefined') PlanCSV.exportAll();
       else if (act.dataset.action === 'dxf' && typeof PlanDXF !== 'undefined') PlanDXF.export();
@@ -106,7 +108,10 @@ const PlanMarkup = {
     const fileInput = document.getElementById('plan-file-input');
     if (fileInput) fileInput.addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
-      if (f) PlanImages.importFile(f);
+      if (f) {
+        if (/\.dxf$/i.test(f.name) && typeof PlanDxfImport !== 'undefined') PlanDxfImport.importFile(f);
+        else PlanImages.importFile(f);
+      }
       e.target.value = '';
     });
   },
@@ -139,7 +144,7 @@ const PlanMarkup = {
     }
   },
 
-  markDirty() { AppState.dirty = true; },
+  markDirty() { AppState.dirty = true; if (typeof PlanLux !== 'undefined') PlanLux.invalidate(); },
   refreshProps() { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); },
 
   // ─── Selection ───
@@ -157,7 +162,7 @@ const PlanMarkup = {
   findEntityById(id) {
     const pm = AppState.planMarkup;
     const tables = [['element', pm.elements], ['route', pm.routes], ['trench', pm.trenches],
-      ['crossing', pm.crossings], ['text', pm.texts], ['measurement', pm.measurements]];
+      ['crossing', pm.crossings], ['room', pm.rooms || []], ['text', pm.texts], ['measurement', pm.measurements]];
     for (const [kind, arr] of tables) {
       const item = arr.find(x => x.id === id);
       if (item) return { kind, item };
@@ -170,7 +175,7 @@ const PlanMarkup = {
     const pm = AppState.planMarkup;
     const kill = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (this.selectedIds.has(arr[i].id)) arr.splice(i, 1); };
     kill(pm.elements); kill(pm.routes); kill(pm.trenches);
-    kill(pm.crossings); kill(pm.texts); kill(pm.measurements);
+    kill(pm.crossings); if (pm.rooms) kill(pm.rooms); kill(pm.texts); kill(pm.measurements);
     this.selectedIds.clear();
     this._snapshot(); this.markDirty(); this.refreshProps();
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });

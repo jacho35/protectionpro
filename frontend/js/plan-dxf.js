@@ -14,6 +14,7 @@ const PlanDXF = {
     STREET_LIGHTING: '#f59e0b', FIBRE: '#a855f7', CABLE_LABELS: '#94a3b8',
     ELEMENTS: '#111827', ELEMENT_LABELS: '#334155', TRENCHING: '#7c3aed',
     CROSSINGS: '#f97316', TEXT: '#111827', DIMENSIONS: '#0ea5e9', NOTES: '#64748b',
+    ROOMS: '#0ea5e9',
     // building domain
     POWER: '#ef4444', FINAL_CIRCUITS: '#3b82f6', LIGHTING: '#eab308',
     CONTAINMENT: '#475569', DATA: '#0891b2', FIRE: '#dc2626', CONTROL: '#db2777',
@@ -44,6 +45,7 @@ const PlanDXF = {
     for (const el of pm.elements) acc(el.x, el.y);
     for (const r of pm.routes) for (const p of r.points) acc(p.x, p.y);
     for (const t of pm.trenches) for (const p of t.points) acc(p.x, p.y);
+    for (const rm of (pm.rooms || [])) for (const p of rm.points) acc(p.x, p.y);
     for (const c of pm.crossings) { acc(c.p1.x, c.p1.y); acc(c.p2.x, c.p2.y); }
     for (const t of pm.texts) acc(t.x, t.y);
     for (const m of pm.measurements) for (const p of m.points) acc(p.x, p.y);
@@ -158,6 +160,15 @@ const PlanDXF = {
       line(t(c.p1.x, c.p1.y), t(c.p2.x, c.p2.y), 'CROSSINGS');
       const mid = { x: (c.p1.x + c.p2.x) / 2, y: (c.p1.y + c.p2.y) / 2 };
       text(t(mid.x, mid.y), 1.0, `${c.name || ''} ${c.size}mm duct`, 'CROSSINGS');
+    }
+
+    // Rooms → closed POLYLINE + name/area label
+    for (const rm of (pm.rooms || [])) {
+      if (rm.points.length < 3) continue;
+      poly(rm.points.map(pt => t(pt.x, pt.y)), true, 'ROOMS');
+      const c = { x: rm.points.reduce((s, p) => s + p.x, 0) / rm.points.length, y: rm.points.reduce((s, p) => s + p.y, 0) / rm.points.length };
+      const area = (PlanEngine._polyArea(rm.points) * factor * factor).toFixed(1);
+      text(t(c.x, c.y), 1.2, `${rm.name || ''} ${area} m2`, 'ROOMS');
     }
 
     // Text annotations

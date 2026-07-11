@@ -128,8 +128,35 @@ const PlanEngine = {
       for (const el of pm.elements) acc(el.x, el.y);
       for (const r of pm.routes) for (const pt of r.points) acc(pt.x, pt.y);
       for (const t of pm.trenches) for (const pt of t.points) acc(pt.x, pt.y);
+      for (const rm of (pm.rooms || [])) for (const pt of rm.points) acc(pt.x, pt.y);
+    }
+    // Fit also to a session DXF underlay if present.
+    if (typeof PlanDxfImport !== 'undefined' && PlanDxfImport._overlay) {
+      const ext = PlanDxfImport.extentWorld();
+      if (ext) { acc(ext.minX, ext.minY); acc(ext.maxX, ext.maxY); }
     }
     return any ? { minX, minY, maxX, maxY } : null;
+  },
+
+  // A plan image's placement transform: world = off + scaleAdj·R(rot)·imagePx.
+  // Applied to a context already in world space (identity image corner at 0,0).
+  _applyPlanTransform(ctx, p) {
+    ctx.translate(p.offX || 0, p.offY || 0);
+    if (p.rotation) ctx.rotate(p.rotation * Math.PI / 180);
+    const s = (typeof p.scaleAdj === 'number' && p.scaleAdj > 0) ? p.scaleAdj : 1;
+    if (s !== 1) ctx.scale(s, s);
+  },
+  // Map an image pixel of plan p to world coords, and the inverse.
+  planImageToWorld(p, ix, iy) {
+    const s = (typeof p.scaleAdj === 'number' && p.scaleAdj > 0) ? p.scaleAdj : 1;
+    const th = (p.rotation || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    return { x: (p.offX || 0) + s * (ix * c - iy * sn), y: (p.offY || 0) + s * (ix * sn + iy * c) };
+  },
+  planWorldToImage(p, wx, wy) {
+    const s = (typeof p.scaleAdj === 'number' && p.scaleAdj > 0) ? p.scaleAdj : 1;
+    const th = (p.rotation || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    const dx = (wx - (p.offX || 0)) / s, dy = (wy - (p.offY || 0)) / s;
+    return { x: dx * c + dy * sn, y: -dx * sn + dy * c };
   },
 
   // Metres per pixel, or null when the plan is not calibrated.
@@ -188,9 +215,13 @@ const PlanEngine = {
       if (pm.settings.greyBg) filters.push('grayscale(1)');
       if (pm.settings.invertBg) filters.push('invert(1)');
       if (filters.length) ctx.filter = filters.join(' ');
-      try { ctx.drawImage(img, p.offX || 0, p.offY || 0); } catch (e) { /* not decoded yet */ }
+      this._applyPlanTransform(ctx, p);
+      try { ctx.drawImage(img, 0, 0); } catch (e) { /* not decoded yet */ }
       ctx.restore();
     }
+
+    // DXF reference underlay (session-only, behind markup)
+    if (typeof PlanDxfImport !== 'undefined' && PlanDxfImport._overlay) PlanDxfImport.draw(ctx, this.view.zoom);
 
     // Crop box: dim everything outside the export rectangle.
     if (pm.cropBox) {
@@ -263,7 +294,8 @@ const PlanEngine = {
     const z = this.view.zoom;
     const sel = (typeof PlanMarkup !== 'undefined') ? PlanMarkup.selectedIds : new Set();
 
-    // z-order: trenches → crossings → routes → elements → texts → measures
+    // z-order: rooms (zones, underneath) → trenches → crossings → routes → …
+    for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, sel.has(rm.id));
     for (const t of pm.trenches) this._drawTrench(ctx, t, sel.has(t.id));
     for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id));
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
@@ -271,8 +303,67 @@ const PlanEngine = {
     for (const tx of pm.texts) this._drawText(ctx, tx, sel.has(tx.id));
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, sel.has(m.id));
 
+    // Lux heatmap overlay (drawn above zones/routes, below tool ghosts)
+    if (typeof PlanLux !== 'undefined' && PlanLux.enabled) PlanLux.draw(ctx, this.view.zoom);
     // Tool overlay (ghosts, rubber-bands, snap ring)
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
+    ctx.restore();
+  },
+
+  _polyArea(pts) {
+    if (!pts || pts.length < 3) return 0;
+    let a = 0;
+    for (let i = 0, n = pts.length; i < n; i++) {
+      const p = pts[i], q = pts[(i + 1) % n];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return Math.abs(a) / 2;
+  },
+
+  _polyCentroid(pts) {
+    let x = 0, y = 0;
+    for (const p of pts) { x += p.x; y += p.y; }
+    return { x: x / pts.length, y: y / pts.length };
+  },
+
+  _pointInPoly(pt, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+      if (((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  },
+
+  findRoomAt(pt) {
+    const rooms = AppState.planMarkup.rooms || [];
+    for (let i = rooms.length - 1; i >= 0; i--) {
+      if (rooms[i].points.length >= 3 && this._pointInPoly(pt, rooms[i].points)) return rooms[i];
+    }
+    return null;
+  },
+
+  _drawRoom(ctx, rm, selected) {
+    if (!rm.points || rm.points.length < 3) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(rm.points[0].x, rm.points[0].y);
+    for (let i = 1; i < rm.points.length; i++) ctx.lineTo(rm.points[i].x, rm.points[i].y);
+    ctx.closePath();
+    ctx.fillStyle = rm.color || PLAN_DEFS.room.fill;
+    ctx.fill();
+    ctx.strokeStyle = selected ? '#2563eb' : PLAN_DEFS.room.stroke;
+    ctx.lineWidth = (selected ? 2 : 1.2) / this.view.zoom;
+    ctx.stroke();
+    // Label: name + area
+    const c = this._polyCentroid(rm.points);
+    const f = this.factor();
+    const area = f ? (this._polyArea(rm.points) * f * f) : null;
+    const fpx = 12 / this.view.zoom;
+    ctx.font = `${fpx}px system-ui, sans-serif`;
+    ctx.fillStyle = this._cssVar('--plan-label', '#334155');
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText((rm.name || '') + (area != null ? `  ${area.toFixed(1)} m²` : ''), c.x, c.y);
     ctx.restore();
   },
 
@@ -450,10 +541,12 @@ const PlanEngine = {
       if (!img) continue;
       ctx.save();
       ctx.globalAlpha = (typeof p.opacity === 'number') ? p.opacity : 1;
-      try { ctx.drawImage(img, p.offX || 0, p.offY || 0); } catch (e) { /* not decoded */ }
+      this._applyPlanTransform(ctx, p);
+      try { ctx.drawImage(img, 0, 0); } catch (e) { /* not decoded */ }
       ctx.restore();
     }
     // Markup, same z-order as the screen (no selection/tool overlay)
+    for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, false);
     for (const t of pm.trenches) this._drawTrench(ctx, t, false);
     for (const c of pm.crossings) this._drawCrossing(ctx, c, false);
     for (const r of pm.routes) this._drawRoute(ctx, r, false);

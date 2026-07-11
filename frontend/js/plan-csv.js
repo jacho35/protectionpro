@@ -135,6 +135,64 @@ const PlanCSV = {
     this._download(rows, 'streetlights');
   },
 
+  exportRooms() {
+    const pm = AppState.planMarkup, f = this._factor();
+    const rows = [['Name', 'Area (m²)', 'Perimeter (m)', 'Vertices']];
+    let totArea = 0;
+    for (const rm of (pm.rooms || [])) {
+      const area = f ? +(PlanEngine._polyArea(rm.points) * f * f).toFixed(2) : 0;
+      let per = 0;
+      for (let i = 0; i < rm.points.length; i++) {
+        const a = rm.points[i], b = rm.points[(i + 1) % rm.points.length];
+        per += Math.hypot(b.x - a.x, b.y - a.y);
+      }
+      totArea += area;
+      rows.push([rm.name || '', f ? area.toFixed(2) : '', f ? (per * f).toFixed(2) : '', rm.points.length]);
+    }
+    rows.push([], ['TOTAL', f ? totArea.toFixed(2) : '']);
+    this._download(rows, 'rooms');
+  },
+
+  // Bill of Quantities: cable lengths (× waste), element counts, trench
+  // lengths — each with Qty/Unit/Rate/Subtotal from settings.rates.
+  exportBOQ() {
+    const pm = AppState.planMarkup, f = this._factor(), elById = this._elById();
+    const rates = (pm.settings && pm.settings.rates) || {};
+    const cableRate = rates.cablePerM || 0, equipRate = rates.equipUnit || 0;
+    const trenchRate = rates.trenchPerM || 0, waste = 1 + (rates.wasteFactorPct || 0) / 100;
+    const rows = [['Item', 'Category', 'Description', 'Qty', 'Unit', 'Rate', 'Subtotal']];
+    let item = 0, grand = 0;
+    const add = (cat, desc, qty, unit, rate) => {
+      const sub = +(qty * rate).toFixed(2); grand += sub;
+      rows.push([++item, cat, desc, qty, unit, rate, sub.toFixed(2)]);
+    };
+    // Cables by (effective) route type
+    const cableLen = {};
+    for (const r of pm.routes) {
+      const et = this._effectiveType(r, elById);
+      cableLen[et] = +((cableLen[et] || 0) + this._routeLenM(r, f)).toFixed(2);
+    }
+    for (const [et, len] of Object.entries(cableLen)) {
+      const qty = +(len * waste).toFixed(2);
+      add('Cable', `${(PLAN_DEFS.route(et) || {}).name || et} (incl. ${rates.wasteFactorPct || 0}% waste)`, qty, 'm', cableRate);
+    }
+    // Equipment by element type
+    const counts = {};
+    for (const el of pm.elements) counts[el.type] = (counts[el.type] || 0) + 1;
+    for (const [t, n] of Object.entries(counts)) {
+      add('Equipment', (PLAN_DEFS.element(t) || {}).name || t, n, 'ea', equipRate);
+    }
+    // Excavation by trench type
+    const trLen = {};
+    for (const tr of pm.trenches) {
+      let px = 0; for (let i = 1; i < tr.points.length; i++) px += Math.hypot(tr.points[i].x - tr.points[i - 1].x, tr.points[i].y - tr.points[i - 1].y);
+      trLen[tr.excType] = +((trLen[tr.excType] || 0) + (f ? px * f : 0)).toFixed(2);
+    }
+    for (const [k, len] of Object.entries(trLen)) add('Excavation', `${k} trench`, len, 'm', trenchRate);
+    rows.push([], ['', '', 'TOTAL', '', '', '', grand.toFixed(2)]);
+    this._download(rows, 'boq');
+  },
+
   // Fire every non-empty schedule (menu "Export all schedules").
   exportAll() {
     const pm = AppState.planMarkup;
@@ -142,7 +200,9 @@ const PlanCSV = {
     if (pm.routes.length) this.exportRoutes();
     if (pm.trenches.length) this.exportTrenches();
     if (pm.crossings.length) this.exportCrossings();
+    if (pm.rooms && pm.rooms.length) this.exportRooms();
     if (typeof PlanSync !== 'undefined' && PlanSync.buildSLCircuits(this._factor()).length) this.exportStreetlights();
+    if (pm.routes.length || pm.elements.length || pm.trenches.length) this.exportBOQ();
     if (!pm.elements.length && !pm.routes.length && !pm.trenches.length && !pm.crossings.length) {
       UI.toast('Nothing to export yet.', 'info');
     }

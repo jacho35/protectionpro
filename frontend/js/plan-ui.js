@@ -26,7 +26,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room' }[kind];
   },
 
   renderPalette() {
@@ -79,6 +79,8 @@ const PlanUI = {
         <span class="plan-plan-name" title="${escHtml(P.name)}">${escHtml(P.name)}</span>
         ${nav}
         <input type="range" class="plan-plan-op" data-role="opacity" data-plan="${escHtml(P.id)}" min="0.1" max="1" step="0.1" value="${(typeof P.opacity === 'number' ? P.opacity : 1)}">
+        <button class="plan-plan-mini" data-role="move-plan" data-plan="${escHtml(P.id)}" title="Drag to reposition this plan">✥</button>
+        <button class="plan-plan-mini" data-role="align-plan" data-plan="${escHtml(P.id)}" title="2-point align this plan to the others">⤢</button>
         <button class="plan-plan-del" data-role="remove-plan" data-plan="${escHtml(P.id)}" title="Remove from project">✕</button>
       </div>`;
     }
@@ -126,6 +128,8 @@ const PlanUI = {
         this.renderPalette(); PlanEngine.requestDraw({ all: true });
         return;
       }
+      if (role === 'move-plan' && p) { PlanTools.set('nudgeplan', { planId: p.id }); return; }
+      if (role === 'align-plan' && p) { PlanTools.set('align', { planId: p.id }); return; }
       if ((role === 'prev' || role === 'next') && p) {
         const np = Math.min(p.pdfPageCount || 1, Math.max(1, (p.pdfPage || 1) + (role === 'next' ? 1 : -1)));
         if (np !== p.pdfPage && typeof PlanImages !== 'undefined') {
@@ -203,6 +207,12 @@ const PlanUI = {
         { key: 'name', label: 'Name', type: 'text' },
         { key: 'size', label: 'Duct (mm)', type: 'select', options: PLAN_DEFS.crossings.sizes.map(s => ({ value: s, label: s })) },
       ];
+      getVal = (k) => item[k];
+    } else if (kind === 'room') {
+      const f = PlanEngine.factor();
+      const area = f ? (PlanEngine._polyArea(item.points) * f * f) : null;
+      title = 'Room / Area' + (area != null ? ` — ${area.toFixed(1)} m²` : '');
+      fields = PLAN_DEFS.room.fields;
       getVal = (k) => item[k];
     } else if (kind === 'text') {
       title = 'Text';

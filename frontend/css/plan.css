@@ -152,6 +152,8 @@
 .plan-plan-op { width: 54px; }
 .plan-pagenav { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
 .plan-pagenav button { padding: 0 4px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.plan-plan-mini { border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font-size: 11px; border-radius: 3px; padding: 0 4px; }
+.plan-plan-mini:hover { background: var(--bg-tertiary); }
 .plan-plan-del { border: none; background: none; color: var(--danger); cursor: pointer; font-size: 13px; }
 
 /* Dark mode: repaint-only theming for the canvas via the custom props. */

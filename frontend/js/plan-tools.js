@@ -214,6 +214,7 @@ PlanTools.register({
     const rh = PlanEngine.findRouteAt(pt); if (rh) out.push(rh.route.id);
     const th = PlanEngine.findTrenchAt(pt); if (th) out.push(th.trench.id);
     const tx = this._textAt(pt); if (tx) out.push(tx.id);
+    const rm = PlanEngine.findRoomAt(pt); if (rm) out.push(rm.id);
     return out;
   },
 
@@ -252,6 +253,7 @@ PlanTools.register({
     for (const c of pm.crossings) if (this._ptIn(c.p1, r) || this._ptIn(c.p2, r)) ids.push(c.id);
     for (const tx of pm.texts) if (this._ptIn(tx, r)) ids.push(tx.id);
     for (const m of pm.measurements) if (m.points.some(p => this._ptIn(p, r))) ids.push(m.id);
+    for (const rm of (pm.rooms || [])) if (rm.points.some(p => this._ptIn(p, r))) ids.push(rm.id);
     return ids;
   },
 
@@ -556,6 +558,15 @@ PlanTools.register(makePolylineTool('measurement', '#0ea5e9', (pts) => {
   PlanMarkup.snapshot(); PlanMarkup.markDirty();
 }));
 
+// ROOM — closed-polygon zone (Enter closes; needs ≥3 points)
+PlanTools.register(makePolylineTool('room', PLAN_DEFS.room.stroke, (pts) => {
+  if (pts.length < 3) { UI.toast('A room needs at least 3 points.', 'warn'); return; }
+  const r = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter('_room', 'Room '), points: pts, color: null };
+  AppState.planMarkup.rooms.push(r);
+  PlanMarkup.selectOnly(r.id);
+  PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+}));
+
 // ─────────────────────────────────────────────────────────────────────────
 // CROSSING — 2-click road crossing
 // ─────────────────────────────────────────────────────────────────────────
@@ -692,6 +703,91 @@ PlanTools.register({
       ctx.restore();
     }
     if (this._hover) PlanTools._drawSnapRing(ctx, this._hover.x, this._hover.y, this._hover.snapped, zoom);
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// NUDGE PLAN — drag a background plan to reposition it (opts.planId)
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'nudgeplan', cursor: 'move', _drag: null,
+  onActivate(opts) { this._planId = opts && opts.planId; this._drag = null; },
+  cancel() { this._drag = null; },
+  onDown(pt) {
+    const p = AppState.planMarkup.plans.find(x => x.id === this._planId);
+    if (!p) return;
+    this._drag = { p, from: pt, startX: p.offX || 0, startY: p.offY || 0 };
+  },
+  onMove(pt) {
+    if (!this._drag) return;
+    this._drag.p.offX = this._drag.startX + (pt.x - this._drag.from.x);
+    this._drag.p.offY = this._drag.startY + (pt.y - this._drag.from.y);
+    PlanEngine.requestDraw({ bg: true });
+  },
+  onUp() {
+    if (this._drag) { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    this._drag = null;
+  },
+  onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); return true; } return false; },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// ALIGN PLAN — 2-point registration (opts.planId). Click order:
+//   1 feature on the plan  → 2 where it belongs  → 3 second feature → 4 where.
+// Solves a similarity (scale+rotation+translation) so the two features land
+// on the two destination points; bakes it into offX/offY/rotation/scaleAdj.
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'align', cursor: 'crosshair', _clicks: null, _hover: null,
+  onActivate(opts) {
+    this._planId = opts && opts.planId; this._clicks = []; this._hover = null;
+    UI.toast('Align: click a plan feature, then where it belongs (×2).', 'info');
+  },
+  cancel() { this._clicks = []; },
+  onMove(pt) { this._hover = pt; PlanEngine.requestDraw({ fg: true }); },
+  onDown(pt) {
+    this._clicks.push({ x: pt.x, y: pt.y });
+    if (this._clicks.length === 4) this._solve();
+    PlanEngine.requestDraw({ fg: true });
+  },
+  onKey(e) { if (e.key === 'Escape') { this._clicks = []; PlanTools.set('select'); return true; } return false; },
+  _solve() {
+    const p = AppState.planMarkup.plans.find(x => x.id === this._planId);
+    const [src1, dst1, src2, dst2] = this._clicks;
+    this._clicks = [];
+    if (!p) return;
+    // Source clicks are world points on the plan's current rendering → image px.
+    const s1 = PlanEngine.planWorldToImage(p, src1.x, src1.y);
+    const s2 = PlanEngine.planWorldToImage(p, src2.x, src2.y);
+    const vsx = s2.x - s1.x, vsy = s2.y - s1.y;
+    const vdx = dst2.x - dst1.x, vdy = dst2.y - dst1.y;
+    const ls = Math.hypot(vsx, vsy);
+    if (ls < 1e-6) { UI.toast('Pick two distinct plan features.', 'warn'); return; }
+    const scale = Math.hypot(vdx, vdy) / ls;
+    const theta = Math.atan2(vdy, vdx) - Math.atan2(vsy, vsx);
+    const c = Math.cos(theta), sn = Math.sin(theta);
+    // off = dst1 - scale·R(theta)·s1
+    p.offX = dst1.x - scale * (s1.x * c - s1.y * sn);
+    p.offY = dst1.y - scale * (s1.x * sn + s1.y * c);
+    p.rotation = ((theta * 180 / Math.PI) % 360 + 360) % 360;
+    p.scaleAdj = scale;
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    PlanEngine.requestDraw({ bg: true });
+    UI.toast('Plan aligned.', 'success');
+    PlanTools.set('select');
+  },
+  drawOverlay(ctx, zoom) {
+    const cols = ['#22c55e', '#22c55e', '#f59e0b', '#f59e0b'];
+    this._clicks.forEach((p, i) => {
+      ctx.save(); ctx.fillStyle = cols[i]; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1 / zoom;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 5 / zoom, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    });
+    // link src→dst pairs
+    ctx.save(); ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1 / zoom; ctx.setLineDash([4 / zoom, 3 / zoom]);
+    if (this._clicks.length >= 2) { ctx.beginPath(); ctx.moveTo(this._clicks[0].x, this._clicks[0].y); ctx.lineTo(this._clicks[1].x, this._clicks[1].y); ctx.stroke(); }
+    if (this._clicks.length >= 4) { ctx.beginPath(); ctx.moveTo(this._clicks[2].x, this._clicks[2].y); ctx.lineTo(this._clicks[3].x, this._clicks[3].y); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.restore();
   },
 });
 
