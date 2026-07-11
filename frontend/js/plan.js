@@ -50,8 +50,8 @@ const PlanMarkup = {
           <button class="plan-tb-btn" data-action="floors" title="Add / rename / reorder / delete floors">⚙</button>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF) or a DXF reference">⬆ Import Plan</button>
-          <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf" style="display:none">
+          <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF), a DXF reference, or a Distribution Designer .json project">⬆ Import Plan</button>
+          <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.json,application/json" style="display:none">
           <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">⤢ Fit</button>
           <button class="plan-tb-btn" data-action="lux" title="Toggle the lighting (lux) heatmap">💡 Lux</button>
         </div>
@@ -123,6 +123,7 @@ const PlanMarkup = {
       const f = e.target.files && e.target.files[0];
       if (f) {
         if (/\.dxf$/i.test(f.name) && typeof PlanDxfImport !== 'undefined') PlanDxfImport.importFile(f);
+        else if (/\.json$/i.test(f.name) && typeof PlanDdImport !== 'undefined') PlanDdImport.importFile(f);
         else PlanImages.importFile(f);
       }
       e.target.value = '';
