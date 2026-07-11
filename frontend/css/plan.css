@@ -125,6 +125,25 @@
 }
 .plan-props-delete:hover { background: var(--danger); color: #fff; }
 
+/* PDF page-selection modal */
+.plan-pdf-content { max-width: 720px; width: 90vw; }
+.plan-pdf-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.plan-pdf-controls button { padding: 4px 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.plan-pdf-hint { color: var(--text-muted); font-size: 12px; }
+.plan-pdf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; max-height: 55vh; overflow-y: auto; padding: 4px; }
+.plan-pdf-cell { position: relative; border: 2px solid var(--border-color); border-radius: 6px; padding: 4px; cursor: pointer; background: #fff; text-align: center; }
+.plan-pdf-cell.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.plan-pdf-cell canvas { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+.plan-pdf-num { position: absolute; top: 2px; left: 4px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; border-radius: 3px; padding: 0 4px; }
+
+/* Layers panel */
+.plan-layers { border-top: 1px solid var(--border-color); margin-top: 10px; padding-top: 8px; }
+.plan-layers-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 2px 6px; }
+.plan-layer-row { display: flex; align-items: center; gap: 6px; padding: 3px 2px; font-size: 12px; }
+.plan-layer-row .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.plan-layer-row.active { background: var(--bg-tertiary); border-radius: 4px; }
+.plan-layer-name { flex: 1; cursor: pointer; color: var(--text-primary); }
+
 /* Dark mode: repaint-only theming for the canvas via the custom props. */
 body.dark-mode .plan-stage {
   --plan-stage-bg: #1a1a2a;

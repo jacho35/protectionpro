@@ -192,6 +192,22 @@ const PlanEngine = {
       ctx.restore();
     }
 
+    // Crop box: dim everything outside the export rectangle.
+    if (pm.cropBox) {
+      const cb = pm.cropBox;
+      const vr = this._visibleWorldRect();
+      ctx.save();
+      ctx.fillStyle = 'rgba(15,23,42,0.45)';
+      ctx.beginPath();
+      ctx.rect(vr.minX, vr.minY, vr.maxX - vr.minX, vr.maxY - vr.minY);
+      ctx.rect(cb.x, cb.y, cb.w, cb.h);
+      ctx.fill('evenodd');
+      ctx.strokeStyle = '#0ea5e9';
+      ctx.lineWidth = 1.5 / this.view.zoom;
+      ctx.strokeRect(cb.x, cb.y, cb.w, cb.h);
+      ctx.restore();
+    }
+
     // Metric grid (only meaningful when calibrated)
     if (pm.settings.showGrid) this._drawGrid(ctx);
 
@@ -319,9 +335,7 @@ const PlanEngine = {
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     const dashed = def && def.lineStyle === 'dashed';
     ctx.setLineDash(dashed ? [8 / this.view.zoom, 5 / this.view.zoom] : []);
-    ctx.beginPath();
-    ctx.moveTo(r.points[0].x, r.points[0].y);
-    for (let i = 1; i < r.points.length; i++) ctx.lineTo(r.points[i].x, r.points[i].y);
+    this._pathPoly(ctx, r.points, r.curved);
     ctx.stroke();
     ctx.setLineDash([]);
     // Vertices when selected
@@ -415,6 +429,25 @@ const PlanEngine = {
     let d = 0;
     for (let i = 1; i < pts.length; i++) d += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
     return d;
+  },
+
+  // Trace a polyline, or a Catmull-Rom spline through the points when curved.
+  _pathPoly(ctx, pts, curved) {
+    ctx.beginPath();
+    if (!curved || pts.length < 3) {
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      return;
+    }
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i];
+      const p1 = pts[i], p2 = pts[i + 1];
+      const p3 = pts[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
+    }
   },
 
   // ─── Hit testing (thresholds in screen px, converted to world via /zoom) ───

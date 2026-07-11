@@ -54,6 +54,16 @@ const PlanUI = {
       }
       html += `</div>`;
     }
+    // Discipline layers: click a name to emphasize that layer (dim the rest);
+    // "Show all" clears the active layer.
+    html += `<div class="plan-layers"><div class="plan-layers-title">Discipline Layers</div>`;
+    html += `<div class="plan-layer-row${pm.activeLayerId ? '' : ' active'}"><span class="swatch" style="background:#94a3b8"></span><span class="plan-layer-name" data-layer="">Show all</span></div>`;
+    for (const L of pm.layers) {
+      html += `<div class="plan-layer-row${pm.activeLayerId === L.id ? ' active' : ''}">
+        <span class="swatch" style="background:${L.color}"></span>
+        <span class="plan-layer-name" data-layer="${escHtml(L.id)}">${escHtml(L.name)}</span></div>`;
+    }
+    html += `</div>`;
     el.innerHTML = html;
   },
 
@@ -69,8 +79,15 @@ const PlanUI = {
   },
 
   _onPaletteClick(e) {
+    const layerName = e.target.closest('.plan-layer-name');
+    if (layerName) {
+      AppState.planMarkup.activeLayerId = layerName.dataset.layer || null;
+      this.renderPalette();
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+      return;
+    }
     const domainSel = e.target.closest('[data-role="domain"]');
-    if (domainSel) return; // handled on change below via input? use change:
+    if (domainSel) return; // domain change handled by the 'change' listener
     const item = e.target.closest('.plan-pal-item');
     if (!item || item.disabled) return;
     const kind = item.dataset.kind, type = item.dataset.type;
@@ -113,8 +130,8 @@ const PlanUI = {
     } else if (kind === 'route') {
       const def = PLAN_DEFS.route(item.type);
       title = def ? def.name : item.type;
-      fields = (def && def.fields) || [];
-      getVal = (k) => (k === 'cableType') ? item.cableType : (item.props ? item.props[k] : undefined);
+      fields = ((def && def.fields) || []).concat([{ key: 'curved', label: 'Curved', type: 'checkbox' }]);
+      getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
     } else if (kind === 'trench') {
       title = (PLAN_DEFS.trenchTypes[item.excType] || {}).name || 'Trench';
       fields = [
@@ -146,6 +163,9 @@ const PlanUI = {
   _field(f, value) {
     const v = (value == null) ? '' : value;
     const label = `<label class="plan-field-label">${escHtml(f.label)}${f.unit ? ` <span class="plan-field-unit">(${escHtml(f.unit)})</span>` : ''}</label>`;
+    if (f.type === 'checkbox') {
+      return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${f.key}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
+    }
     if (f.type === 'cable_select') {
       return `<div class="plan-field">${label}<select data-key="${f.key}">${this._cableOptions(v, f.voltage)}</select></div>`;
     }
@@ -183,6 +203,7 @@ const PlanUI = {
     const { kind, item } = found;
     let val = e.target.value;
     if (e.target.type === 'number') val = parseFloat(val) || 0;
+    if (e.target.type === 'checkbox') val = e.target.checked;
 
     const oldName = item.name;
     if (kind === 'element') {
@@ -193,6 +214,7 @@ const PlanUI = {
       }
     } else if (kind === 'route') {
       if (key === 'cableType') item.cableType = val;
+      else if (key === 'curved') item.curved = val;
       else { item.props = item.props || {}; item.props[key] = val; }
     } else {
       item[key] = val;

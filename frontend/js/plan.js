@@ -40,6 +40,7 @@ const PlanMarkup = {
         <div class="plan-tb-group">
           <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">▤ Select</button>
           <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
+          <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
         </div>
         <div class="plan-tb-group">
           <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG)">⬆ Import Plan</button>
@@ -131,6 +132,14 @@ const PlanMarkup = {
   // ─── Selection ───
   selectOnly(id) { this.selectedIds.clear(); if (id) this.selectedIds.add(id); this.refreshProps(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
   clearSelection() { this.selectedIds.clear(); this.refreshProps(); },
+  toggleSelect(id) {
+    if (this.selectedIds.has(id)) this.selectedIds.delete(id); else this.selectedIds.add(id);
+    this.refreshProps(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
+  setSelection(ids) {
+    this.selectedIds = new Set(ids || []);
+    this.refreshProps(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
 
   findEntityById(id) {
     const pm = AppState.planMarkup;
@@ -158,9 +167,14 @@ const PlanMarkup = {
   nextName(type) {
     const def = PLAN_DEFS.element(type);
     const prefix = (def && def.namePrefix) || 'E';
+    return this.nextCounter(type, prefix);
+  },
+
+  // Generic auto-name counter (trenches, crossings, …) keyed independently.
+  nextCounter(key, prefix) {
     const counters = AppState.planMarkup.nameCounters;
-    counters[type] = (counters[type] || 0) + 1;
-    return `${prefix}${counters[type]}`;
+    counters[key] = (counters[key] || 0) + 1;
+    return `${prefix}${counters[key]}`;
   },
 
   // ─── Keyboard (returns true when consumed; see app.js routing) ───
