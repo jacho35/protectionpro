@@ -264,15 +264,79 @@ const PlanSync = {
     return circuits;
   },
 
+  // Collect entities on each side whose linked partner was deleted in the
+  // other view — the set that deletion-propagation would remove. Cascades:
+  // removing a board removes its feeders; removing a feeder removes its cable.
+  _collectDeletions(pm) {
+    const comps = AppState.components;
+    const planEls = new Set(), planRoutes = new Set(), sldComps = new Set();
+    const dbById = {}, elById = {};
+    for (const e of pm.elements) { elById[e.id] = e; if (e.type === 'bd_db') dbById[e.id] = e; }
+    const feeders = pm.routes.filter(r => r.type === 'feeder');
+    const feederById = {}; for (const r of feeders) feederById[r.id] = r;
+
+    // Broken DB pairs
+    for (const e of Object.values(dbById)) if (e.sldId && !comps.get(e.sldId)) planEls.add(e.id);
+    for (const c of comps.values()) if (c.type === 'distribution_board' && c.planLink && !dbById[c.planLink]) sldComps.add(c.id);
+    // Broken feeder pairs
+    for (const r of feeders) if (r.sldCableId && !comps.get(r.sldCableId)) planRoutes.add(r.id);
+    for (const c of comps.values()) if (c.type === 'cable' && c.planLink && !feederById[c.planLink]) sldComps.add(c.id);
+    // Dangling plan feeders (an endpoint board was removed)
+    for (const r of feeders) if (!elById[r.fromId] || !elById[r.toId] || planEls.has(r.fromId) || planEls.has(r.toId)) planRoutes.add(r.id);
+    // Cascade: SLD cable of each removed plan feeder
+    for (const rid of planRoutes) { const r = feederById[rid]; if (r && r.sldCableId && comps.get(r.sldCableId)) sldComps.add(r.sldCableId); }
+    // Cascade: cables wired to a removed SLD board (+ their plan feeders)
+    for (const cid of [...sldComps]) {
+      const c = comps.get(cid);
+      if (!c || c.type !== 'distribution_board') continue;
+      for (const cab of comps.values()) {
+        if (cab.type !== 'cable') continue;
+        const wired = [...AppState.wires.values()].some(w =>
+          (w.fromComponent === cab.id && w.toComponent === cid) || (w.toComponent === cab.id && w.fromComponent === cid));
+        if (wired) { sldComps.add(cab.id); if (cab.planLink && feederById[cab.planLink]) planRoutes.add(cab.planLink); }
+      }
+    }
+    const cableIds = [...sldComps].filter(id => comps.get(id) && comps.get(id).type === 'cable');
+    const boards = planEls.size + [...sldComps].filter(id => comps.get(id) && comps.get(id).type === 'distribution_board').length;
+    const feedersCount = planRoutes.size + cableIds.filter(id => {
+      const c = comps.get(id); return !(c.planLink && planRoutes.has(c.planLink));
+    }).length;
+    return { planEls, planRoutes, sldComps, boards, feeders: feedersCount };
+  },
+
   // ─── Building distribution ↔ SLD bridge ───
   // Distribution boards drawn in the Plan become linked `distribution_board`
   // components on the SLD; feeders between boards become a Cable/Feeder
-  // component wired MDB(out) → cable → SDB(in). Reconciles BOTH directions and
-  // is id-linked (idempotent): re-syncing updates, never duplicates, and
-  // creates only (no deletes across views). Building never touches the
-  // Reticulation schedule.
-  syncBuildingToSLD() {
+  // component wired MDB(out) → cable → SDB(in). Reconciles BOTH directions,
+  // id-linked (idempotent). Deletions propagate across views on sync, behind a
+  // confirmation. Building never touches the Reticulation schedule.
+  async syncBuildingToSLD() {
     const pm = AppState.planMarkup;
+    const comps = AppState.components;
+
+    // ── 0. Propagate deletions (with confirmation) ──
+    const del = this._collectDeletions(pm);
+    if (del.boards + del.feeders > 0) {
+      const ok = await UI.confirm(
+        `Sync will remove ${del.boards} distribution board(s) and ${del.feeders} feeder(s) that were deleted in the other view. Remove them here too?`,
+        { danger: true, okText: 'Remove', cancelText: 'Keep both' });
+      if (ok) {
+        for (const id of del.sldComps) AppState.removeComponent(id);
+        pm.elements = pm.elements.filter(e => !del.planEls.has(e.id));
+        pm.routes = pm.routes.filter(r => !del.planRoutes.has(r.id));
+        if (this.selectedIds) this.selectedIds.clear();
+        if (typeof PlanMarkup !== 'undefined' && PlanMarkup.selectedIds) PlanMarkup.selectedIds.clear();
+      } else {
+        // Keep both — drop dangling links so create/update re-establishes them.
+        for (const e of pm.elements) if (e.type === 'bd_db' && e.sldId && !comps.get(e.sldId)) e.sldId = null;
+        for (const r of pm.routes) if (r.type === 'feeder' && r.sldCableId && !comps.get(r.sldCableId)) r.sldCableId = null;
+        for (const c of comps.values()) {
+          if (c.planLink && c.type === 'distribution_board' && !pm.elements.some(e => e.id === c.planLink)) c.planLink = null;
+          if (c.planLink && c.type === 'cable' && !pm.routes.some(r => r.id === c.planLink)) c.planLink = null;
+        }
+      }
+    }
+
     const factor = this._factor();
     const dbEls = pm.elements.filter(e => e.type === 'bd_db');
     const feeders = pm.routes.filter(r => r.type === 'feeder' && r.fromId && r.toId);
@@ -301,6 +365,7 @@ const PlanSync = {
       if (!comp) { comp = AppState.addComponent('distribution_board', sldX(el), sldY(el)); summary.dbNew++; }
       if (el.name) comp.props.name = el.name;
       el.sldId = comp.id;
+      comp.planLink = el.id;   // back-ref for deletion propagation
       usedSld.add(comp.id);
     }
 
@@ -315,6 +380,7 @@ const PlanSync = {
         AppState.addWire(a.sldId, 'out', cable.id, 'from', true);
         AppState.addWire(cable.id, 'to', b.sldId, 'in', true);
         r.sldCableId = cable.id;
+        cable.planLink = r.id;   // back-ref for deletion propagation
         summary.cableNew++;
       }
       if (r.cableType) cable.props.name = r.cableType;
@@ -339,12 +405,14 @@ const PlanSync = {
       const exists = pm.routes.some(r => r.type === 'feeder' &&
         ((r.fromId === elA.id && r.toId === elB.id) || (r.fromId === elB.id && r.toId === elA.id)));
       if (exists) continue;
-      pm.routes.push({
+      const route = {
         id: AppState.planGenId('pmrt'), type: 'feeder',
         fromId: elA.id, toId: elB.id,
         points: [{ x: elA.x, y: elA.y, snappedTo: elA.id }, { x: elB.x, y: elB.y, snappedTo: elB.id }],
         cableType: cable.props.name || '', curved: false, props: {}, sldCableId: cable.id,
-      });
+      };
+      pm.routes.push(route);
+      cable.planLink = route.id;   // back-ref for deletion propagation
       summary.planNew++;
     }
 
