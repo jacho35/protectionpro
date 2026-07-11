@@ -119,6 +119,12 @@ const PlanMarkup = {
   // ─── Lifecycle (called by app.js switchWorkspace) ───
   activate() {
     this._active = true;
+    // Anchor the workspace exactly below the toolbar (whose height varies with
+    // width / responsive wrapping) so the workspace tabs stay visible and the
+    // user can always switch back. CSS var is only a fallback.
+    const tb = document.getElementById('toolbar');
+    const ws = document.getElementById('plan-workspace');
+    if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
     if (typeof PlanEngine !== 'undefined') { PlanEngine.resize(); PlanEngine.requestDraw({ all: true }); }
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }

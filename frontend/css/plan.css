@@ -3,9 +3,13 @@
  * stage (--plan-stage-bg, --plan-grid, --plan-label) so a dark-mode flip only
  * needs a repaint, not per-shape overrides. */
 
+/* Sits BELOW the toolbar (which holds the workspace tabs) — matching the
+ * Reticulation workspace — so the tab bar stays visible and you can switch
+ * back to the SLD. (Previously inset:0 covered the tabs, trapping the user.) */
 #plan-workspace {
   position: absolute;
-  inset: 0;
+  top: var(--toolbar-height);
+  left: 0; right: 0; bottom: 0;
   flex-direction: column;
   background: var(--bg-secondary);
   color: var(--text-primary);
