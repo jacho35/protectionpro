@@ -138,6 +138,13 @@ const AppState = {
   },
   reticResults: null,   // latest /api/analysis/admd response
 
+  // Plan Markup workspace: geographic markup over an imported site/floor plan.
+  // Geometry is stored in plan-image pixels; metres derived via scale.factor.
+  // Background images live on the backend (referenced by integer id here), so
+  // this object stays small enough to ride in the project JSON + revisions.
+  // Initialized just after the AppState literal (needs PLAN_DEFAULT_LAYERS).
+  planMarkup: null,
+
   // Generate unique ID
   genId(prefix) {
     return `${prefix}_${this.nextId++}`;
@@ -170,6 +177,52 @@ const AppState = {
 
   reticGenMinisubId() {
     return `minisub_${this.reticulation._msSeq++}`;
+  },
+
+  // ─── Plan Markup helpers ───
+  _defaultPlanMarkup() {
+    const layers = (typeof PLAN_DEFAULT_LAYERS !== 'undefined')
+      ? PLAN_DEFAULT_LAYERS.map(l => ({ ...l }))
+      : [];
+    return {
+      version: 1,
+      plans: [],          // background images: {id,name,imageId,sourcePdfId,pdfPage,
+                          //   pdfPages,imgW,imgH,opacity,visible,offX,offY,rotation,scaleAdj}
+      scale: null,        // {p1,p2,realDist,pxDist,factor}  factor = metres per pixel
+      cropBox: null,      // {x,y,w,h}
+      elements: [],       // {id,type,x,y,rotation,name,reticId,props}
+      routes: [],         // {id,type,fromId,toId,points:[{x,y,snappedTo}],cableType,curved,props}
+      trenches: [],       // {id,name,excType,points:[{x,y}],widthOverride,depthOverride}
+      crossings: [],      // {id,name,size,p1,p2}
+      texts: [],          // {id,x,y,text,fontSize,color}
+      measurements: [],   // {id,points:[{x,y}]}
+      layers,             // discipline layers (filter by entity type)
+      activeLayerId: null,
+      styles: {},         // sparse overrides merged over PLAN_DEFS defaults
+      settings: {
+        domain: 'retic', gridSize: 0.5,
+        snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true,
+        showGrid: true, greyBg: false, invertBg: false, slPoleKVA: 0.15,
+      },
+      _seq: 1,            // single counter for all pm* ids
+      nameCounters: {},   // per-type auto-name numbering {kiosk:4, pole:12, ...}
+    };
+  },
+
+  // Mint a plan-markup id. All prefixes start with "pm" so they can never
+  // collide with SLD ids (<type>_<n>) or reticulation ids (kiosk_/erf_/minisub_).
+  planGenId(prefix) {
+    return `${prefix}_${this.planMarkup._seq++}`;
+  },
+
+  // True when the module holds nothing worth persisting — keeps toJSON() from
+  // adding a planMarkup key to projects that never used the workspace.
+  _planMarkupIsEmpty() {
+    const p = this.planMarkup;
+    if (!p) return true;
+    return !p.plans.length && !p.elements.length && !p.routes.length &&
+      !p.trenches.length && !p.crossings.length && !p.texts.length &&
+      !p.measurements.length && !p.scale;
   },
 
   // Add component
@@ -695,6 +748,7 @@ const AppState = {
     this.wireRouteMode = 'orthogonal';
     this.reticulation = this._defaultReticulation();
     this.reticResults = null;
+    this.planMarkup = this._defaultPlanMarkup();
     this.lightningRisk = null;   // saved IEC 62305-2 form inputs
     this.raceways = [];
     // Clear annotation drag offsets
@@ -711,6 +765,10 @@ const AppState = {
     // Reticulation workspace: drop its local undo history and refresh its view
     if (typeof Retic !== 'undefined' && Retic.onProjectChanged) {
       Retic.onProjectChanged();
+    }
+    // Plan Markup workspace: same — re-baseline its local undo + image cache
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
+      PlanMarkup.onProjectChanged();
     }
   },
 
@@ -813,6 +871,7 @@ const AppState = {
       activePageId: this.activePageId,
       wireRouteMode: this.wireRouteMode,
       reticulation: this.reticulation,
+      planMarkup: this._planMarkupIsEmpty() ? undefined : this.planMarkup,
       annotationOffsets: Annotations.offsets.size > 0
         ? Object.fromEntries(Annotations.offsets)
         : undefined,
@@ -960,6 +1019,51 @@ const AppState = {
       this.reticulation._erfSeq = Math.max(this.reticulation._erfSeq, maxE + 1);
       this.reticulation._msSeq = Math.max(this.reticulation._msSeq, maxM + 1);
     }
+    // Restore plan-markup module (backfill defaults for older projects)
+    if (data.planMarkup && typeof data.planMarkup === 'object') {
+      const pdef = this._defaultPlanMarkup();
+      const p = data.planMarkup;
+      const arr = (v) => (Array.isArray(v) ? v : []);
+      this.planMarkup = {
+        version: p.version || 1,
+        plans: arr(p.plans),
+        scale: p.scale || null,
+        cropBox: p.cropBox || null,
+        elements: arr(p.elements),
+        routes: arr(p.routes),
+        trenches: arr(p.trenches),
+        crossings: arr(p.crossings),
+        texts: arr(p.texts),
+        measurements: arr(p.measurements),
+        layers: (Array.isArray(p.layers) && p.layers.length) ? p.layers : pdef.layers,
+        activeLayerId: p.activeLayerId || null,
+        styles: (p.styles && typeof p.styles === 'object') ? p.styles : {},
+        settings: { ...pdef.settings, ...(p.settings || {}) },
+        _seq: p._seq || 1,
+        nameCounters: (p.nameCounters && typeof p.nameCounters === 'object') ? p.nameCounters : {},
+      };
+      // Repair _seq so planGenId never collides with a loaded id
+      let maxSeq = 0;
+      const scanSeq = (a) => {
+        for (const it of a) {
+          const m = /_(\d+)$/.exec(String((it && it.id) || ''));
+          if (m) maxSeq = Math.max(maxSeq, +m[1]);
+        }
+      };
+      const pm = this.planMarkup;
+      scanSeq(pm.plans); scanSeq(pm.elements); scanSeq(pm.routes);
+      scanSeq(pm.trenches); scanSeq(pm.crossings); scanSeq(pm.texts); scanSeq(pm.measurements);
+      pm._seq = Math.max(pm._seq, maxSeq + 1);
+      // Drop dangling reticId backrefs (defensive against hand-edited files)
+      const reticIds = new Set([
+        ...this.reticulation.minisubs.map(m => m.id),
+        ...this.reticulation.kiosks.map(k => k.id),
+        ...this.reticulation.kiosks.flatMap(k => (k.erfs || []).map(e => e.id)),
+      ]);
+      for (const el of pm.elements) {
+        if (el.reticId && !reticIds.has(el.reticId)) el.reticId = null;
+      }
+    }
     // Restore annotation badge positions
     if (data.annotationOffsets && typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
@@ -988,8 +1092,15 @@ const AppState = {
     if (typeof Retic !== 'undefined' && Retic.onProjectChanged) {
       Retic.onProjectChanged();
     }
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
+      PlanMarkup.onProjectChanged();
+    }
   },
 };
+
+// Initialize the Plan Markup sub-store now that the AppState methods exist.
+// (PLAN_DEFAULT_LAYERS comes from plan-defs.js, loaded before this file.)
+AppState.planMarkup = AppState._defaultPlanMarkup();
 
 // Snap coordinate to grid
 function snapToGrid(val) {

@@ -111,6 +111,8 @@ const Project = {
     try {
       const result = await API.saveProject();
       AppState.projectId = result.id;
+      // Attach any plan-markup images uploaded before this project had an id.
+      if (typeof PlanImages !== 'undefined') await PlanImages.claimOrphans(result.id);
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
       updateProjectNameDisplay();
@@ -157,6 +159,8 @@ const Project = {
     try {
       const result = await API.saveProject();
       AppState.projectId = result.id;
+      // Attach any plan-markup images uploaded before this project had an id.
+      if (typeof PlanImages !== 'undefined') await PlanImages.claimOrphans(result.id);
       AppState.dirty = false;
       document.title = `ProtectionPro — ${AppState.projectName}`;
       updateProjectNameDisplay();
