@@ -20,6 +20,7 @@ from ..analysis.arcflash import run_arc_flash
 from ..analysis.dc_arcflash import run_dc_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
 from ..analysis.motor_starting import run_motor_starting
+from ..analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from ..analysis.duty_check import run_duty_check
 from ..analysis.load_diversity import run_load_diversity
 from ..analysis.grounding_system import run_grounding_analysis
@@ -153,6 +154,16 @@ def motor_starting(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Motor starting analysis error: {e}")
+
+
+@router.post("/dynamic-motor-starting")
+def dynamic_motor_starting(data: ProjectData):
+    """Run dynamic motor starting (time-domain acceleration) analysis."""
+    try:
+        return run_dynamic_motor_starting(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Dynamic motor starting error: {e}")
 
 
 @router.post("/duty-check")

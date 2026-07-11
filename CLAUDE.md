@@ -44,6 +44,7 @@ frontend/
     ├── standard-data.js    # Settings modal, editable cable & transformer libraries
     ├── templates.js        # Pre-built network templates (radial, ring, mesh)
     ├── tcc.js              # Time-current curve coordination plotting
+    ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
@@ -60,6 +61,7 @@ backend/
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
+│   ├── dynamic_motor_starting.py # Time-domain motor acceleration (swing equation)
 │   ├── duty_check.py       # Equipment fault current rating validation
 │   ├── load_diversity.py   # Load demand factor analysis
 │   ├── grounding_system.py # IEEE 80 grounding grid design
@@ -131,6 +133,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
+| `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |
 | `/api/analysis/duty-check` | Equipment duty | Fault current ratings |
 | `/api/analysis/load-diversity` | Demand factors | Load diversity |
 | `/api/analysis/grounding` | Grounding grid | IEEE 80 |
@@ -201,6 +204,15 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Gauss-Seidel: simpler iteration, slower convergence
 - Transparent elements (CBs, switches, fuses) are collapsed — connected buses grouped
 - Outputs: bus voltages/angles, branch MW/MVAR flows, losses
+
+### Dynamic Motor Starting (dynamic_motor_starting.py)
+- Time-domain acceleration: integrates 2H·dω/dt = T_e − T_L (RK2)
+- Single-cage equivalent circuit + magnetizing branch, linear deep-bar R₂(s),
+  fitted to nameplate LRC / LRT / rated point (IEEE 3002.7 methodology)
+- Network as Thevenin superposition (Z_th from the fault-path walker at c=1.0,
+  motor infeeds excluded; V_pre from a baseline load flow with the motor off)
+- Starters: DOL, star-delta, autotransformer, soft starter (current-limited); VFD not simulated
+- Reports accel time, stall, peak current, voltage dip trajectory, rotor I²t thermal use
 
 ### Arc Flash (arcflash.py)
 - IEEE 1584-2002 method (the engine docstring is explicit; 2018 is not implemented)

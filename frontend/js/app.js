@@ -995,6 +995,29 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  // ── Dynamic Motor Starting (time-domain acceleration) ──
+  document.getElementById('btn-dynamic-motor').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running dynamic motor starting.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running dynamic motor starting simulation...';
+    _setBusy('btn-dynamic-motor', true);
+    try {
+      const result = await API.runDynamicMotorStarting();
+      AppState.dynamicMotorResults = result;
+      Canvas.render();
+      document.getElementById('status-info').textContent = 'Dynamic motor starting complete.';
+      DynMotor.show(result);
+    } catch (e) {
+      console.error('Dynamic motor starting error:', e);
+      document.getElementById('status-info').textContent = 'Dynamic motor starting failed.';
+      showValidationModal('Dynamic Motor Starting — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-dynamic-motor', false);
+    }
+  });
+
   // ── Equipment Duty Check ──
   document.getElementById('btn-duty-check').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -2321,6 +2344,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-motor-starting').addEventListener('click', () => {
     document.getElementById('motor-starting-modal').style.display = 'none';
   });
+  document.getElementById('btn-close-dynamic-motor').addEventListener('click', () => {
+    document.getElementById('dynamic-motor-modal').style.display = 'none';
+  });
+  document.getElementById('dynamic-motor-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'dynamic-motor-modal') e.target.style.display = 'none';
+  });
   document.getElementById('motor-starting-modal').addEventListener('click', (e) => {
     if (e.target.id === 'motor-starting-modal') e.target.style.display = 'none';
   });
@@ -2961,6 +2990,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-toggle-results-arcflash').classList.toggle('active', rb.arcflash);
     document.getElementById('btn-toggle-results-cable').classList.toggle('active', rb.cable);
     document.getElementById('btn-toggle-results-motor').classList.toggle('active', rb.motor);
+    document.getElementById('btn-toggle-results-dynmotor').classList.toggle('active', rb.dynMotor);
     document.getElementById('btn-toggle-results-duty').classList.toggle('active', rb.duty);
     document.getElementById('btn-toggle-results-loaddiversity').classList.toggle('active', rb.loadDiversity);
     document.getElementById('btn-toggle-results-grounding').classList.toggle('active', rb.grounding);
@@ -2980,6 +3010,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['btn-toggle-results-arcflash', 'arcflash'],
     ['btn-toggle-results-cable', 'cable'],
     ['btn-toggle-results-motor', 'motor'],
+    ['btn-toggle-results-dynmotor', 'dynMotor'],
     ['btn-toggle-results-duty', 'duty'],
     ['btn-toggle-results-loaddiversity', 'loadDiversity'],
     ['btn-toggle-results-grounding', 'grounding'],
@@ -3064,6 +3095,8 @@ document.addEventListener('DOMContentLoaded', () => {
       icon: '<path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/>' },
     { id: 'motor-starting', label: 'Motor Starting', category: 'Studies', btnId: 'btn-motor-starting',
       icon: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text>' },
+    { id: 'dynamic-motor', label: 'Dynamic Motor Starting', category: 'Studies', btnId: 'btn-dynamic-motor',
+      icon: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>' },
     { id: 'duty-check', label: 'Duty Check', category: 'Studies', btnId: 'btn-duty-check',
       icon: '<path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
     { id: 'load-diversity', label: 'Load Diversity', category: 'Studies', btnId: 'btn-load-diversity',
