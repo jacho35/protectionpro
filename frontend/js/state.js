@@ -1046,6 +1046,12 @@ const AppState = {
         _seq: p._seq || 1,
         nameCounters: (p.nameCounters && typeof p.nameCounters === 'object') ? p.nameCounters : {},
       };
+      // Migrate consolidated types (central-library unification): Main DB and
+      // the old Main/Sub-Main feeders collapse to single items.
+      const ELEM_MIGRATE = { bd_mdb: 'bd_db' };
+      const ROUTE_MIGRATE = { main_feeder: 'feeder', sub_main: 'feeder' };
+      for (const el of this.planMarkup.elements) if (ELEM_MIGRATE[el.type]) el.type = ELEM_MIGRATE[el.type];
+      for (const rt of this.planMarkup.routes) if (ROUTE_MIGRATE[rt.type]) rt.type = ROUTE_MIGRATE[rt.type];
       // Repair _seq so planGenId never collides with a loaded id
       let maxSeq = 0;
       const scanSeq = (a) => {

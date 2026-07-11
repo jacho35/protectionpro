@@ -48,8 +48,7 @@ const PlanSymbols = {
     ] },
 
     // ── Building distribution (Distribution Designer Pro) ──
-    bd_mdb: { size: 34, prims: [{ k: 'r', x: 4, y: 8, w: 32, h: 24, f: 'faint', s: 'col', w: 1.8 }, { k: 't', x: 20, y: 20, str: 'MDB', size: 8, f: 'col', bold: 1 }] },
-    bd_db: { size: 32, prims: [{ k: 'r', x: 4, y: 8, w: 32, h: 24, f: 'faint', s: 'col', w: 1.8 }, { k: 't', x: 20, y: 20, str: 'DB', size: 9, f: 'col', bold: 1 }] },
+    bd_db: { size: 34, prims: [{ k: 'r', x: 4, y: 8, w: 32, h: 24, f: 'faint', s: 'col', w: 1.8 }, { k: 't', x: 20, y: 20, str: 'DB', size: 9, f: 'col', bold: 1 }] },
     bd_transformer: { size: 30, prims: [
       { k: 'c', cx: 15, cy: 20, r: 8, s: 'col', w: 1.5 },
       { k: 'c', cx: 25, cy: 20, r: 8, s: 'col', w: 1.5 },

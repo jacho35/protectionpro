@@ -76,8 +76,7 @@ const PLAN_DEFS = {
     bd_utility: { name: 'Utility Intake', domain: 'building', group: 'Power', color: '#ef4444', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.8 }, rotatable: true, schedule: null, namePrefix: 'UT', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_transformer: { name: 'Transformer', domain: 'building', group: 'Power', color: '#f59e0b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 1.2 }, rotatable: true, schedule: null, namePrefix: 'TX', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_generator: { name: 'Generator', domain: 'building', group: 'Power', color: '#22c55e', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 1.0 }, rotatable: true, schedule: null, namePrefix: 'GEN', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
-    bd_mdb: { name: 'Main DB', domain: 'building', group: 'Power', color: '#8b5cf6', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.8 }, rotatable: true, schedule: null, namePrefix: 'MDB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
-    bd_db: { name: 'Distribution Board', domain: 'building', group: 'Power', color: '#a855f7', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.6 }, rotatable: true, schedule: null, namePrefix: 'DB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
+    bd_db: { name: 'Distribution Board', domain: 'building', group: 'Power', color: '#8b5cf6', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.7 }, rotatable: true, schedule: null, namePrefix: 'DB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_riser: { name: 'Riser', domain: 'building', group: 'Power', color: '#6366f1', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.4 }, rotatable: false, schedule: null, namePrefix: 'RS', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_jb: { name: 'Junction Box', domain: 'building', group: 'Power', color: '#94a3b8', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'JB', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // Lighting
@@ -146,8 +145,7 @@ const PLAN_DEFS = {
       defaults: { cableType: '' }, fields: [],
     },
     // ── building domain routes ──
-    main_feeder: { name: 'Main Feeder', domain: 'building', color: '#ef4444', width: 2.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'POWER', schedule: null, requiresEndpoints: true, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
-    sub_main: { name: 'Sub-Main', domain: 'building', color: '#f97316', width: 2, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'POWER', schedule: null, requiresEndpoints: true, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
+    feeder: { name: 'Feeder', domain: 'building', color: '#ef4444', width: 2.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'POWER', schedule: null, requiresEndpoints: true, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
     circuit: { name: 'Final Circuit', domain: 'building', color: '#3b82f6', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'FINAL_CIRCUITS', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
     lighting_ckt: { name: 'Lighting Circuit', domain: 'building', color: '#eab308', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'LIGHTING', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
     conduit: { name: 'Conduit', domain: 'building', color: '#64748b', width: 2, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'CONTAINMENT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
@@ -296,8 +294,8 @@ const PLAN_DEFAULT_LAYERS = [
   // Building-distribution discipline layers (used when the Building domain is active)
   {
     id: 'b_power', name: 'Power Distribution', discipline: 'building', color: '#ef4444',
-    visibleElementTypes: ['bd_utility', 'bd_transformer', 'bd_generator', 'bd_mdb', 'bd_db', 'bd_riser', 'bd_jb'],
-    routeTypes: ['main_feeder', 'sub_main'], trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
+    visibleElementTypes: ['bd_utility', 'bd_transformer', 'bd_generator', 'bd_db', 'bd_riser', 'bd_jb'],
+    routeTypes: ['feeder'], trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
   {
     id: 'b_circuits', name: 'Final Circuits', discipline: 'building', color: '#3b82f6',
