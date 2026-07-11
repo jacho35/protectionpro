@@ -140,6 +140,13 @@
 .plan-pdf-cell canvas { max-width: 100%; height: auto; display: block; margin: 0 auto; }
 .plan-pdf-num { position: absolute; top: 2px; left: 4px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; border-radius: 3px; padding: 0 4px; }
 
+/* Auto-circuiting: circuit-tag editor + board panel in the properties pane */
+.plan-circuit-box { border-top: 1px solid var(--border-color); margin-top: 10px; padding-top: 8px; }
+.plan-circuit-h { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 2px 6px; }
+.plan-circuit-note { font-size: 11px; color: var(--text-muted); margin: 4px 2px; }
+.plan-circuit-btn { display: block; width: 100%; margin-top: 6px; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font-size: 12px; text-align: left; }
+.plan-circuit-btn:hover { background: var(--bg-tertiary); }
+
 /* Floor manager modal */
 .plan-floor-content { max-width: 520px; width: 90vw; }
 .plan-floor-settings { display: flex; gap: 16px; margin-bottom: 12px; }

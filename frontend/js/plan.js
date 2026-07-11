@@ -64,6 +64,7 @@ const PlanMarkup = {
         </div>
         <div class="plan-tb-group">
           <button class="plan-tb-btn" data-action="push" title="Push/sync drawn items to the matching workspace">→ Push to Schedules</button>
+          <button class="plan-tb-btn" id="plan-circuits-btn" data-action="circuits" style="display:none" title="Count plan devices into distribution-board circuits (loads + routed lengths)">⚡ Sync Circuits</button>
           <button class="plan-tb-btn" data-action="csv" title="Export component schedules (CSV)">⤓ CSV</button>
           <button class="plan-tb-btn" data-action="dxf" title="Export markup as AutoCAD DXF">⤓ DXF</button>
           <button class="plan-tb-btn" data-action="png" title="Export the annotated plan as a PNG image">⤓ PNG</button>
@@ -101,6 +102,13 @@ const PlanMarkup = {
         // Reticulation → demand schedules; Building → linked SLD boards/feeders.
         if (AppState.planMarkup.settings.domain === 'building') PlanSync.syncBuildingToSLD();
         else PlanSync.pushToSchedules();
+      }
+      else if (act.dataset.action === 'circuits' && typeof PlanCircuits !== 'undefined') {
+        const s = PlanCircuits.syncAll();
+        if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
+        this.markDirty(); this._snapshot();
+        UI.alert(`Synced circuits from plan:\n• ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} tagged device(s)\n• ${s.lengths} way cable length(s) from routes` +
+          (s.unsynced ? `\n• ${s.unsynced} board(s) not yet on the SLD (sync first)` : ''));
       }
       else if (act.dataset.action === 'csv' && typeof PlanCSV !== 'undefined') PlanCSV.exportAll();
       else if (act.dataset.action === 'dxf' && typeof PlanDXF !== 'undefined') PlanDXF.export();
@@ -191,6 +199,8 @@ const PlanMarkup = {
     const pm = AppState.planMarkup;
     const building = pm.settings.domain === 'building';
     group.style.display = building ? '' : 'none';
+    const cbtn = document.getElementById('plan-circuits-btn');
+    if (cbtn) cbtn.style.display = building ? '' : 'none';
     if (!building) return;
     // Highest level first, so the list reads top-of-building downward.
     const floors = (pm.floors || []).slice().sort((a, b) => (b.level || 0) - (a.level || 0));

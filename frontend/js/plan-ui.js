@@ -18,7 +18,9 @@ const PlanUI = {
     propsEl.addEventListener('change', (e) => this._onPropsChange(e));
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
-      if (e.target.closest('[data-role="delete"]')) PlanMarkup.deleteSelected();
+      if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
+      if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
+      if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
     });
   },
 
@@ -264,9 +266,51 @@ const PlanUI = {
     }
     let html = `<div class="plan-props-title">${escHtml(title)}</div>`;
     for (const f of fields) html += this._field(f, getVal(f.key));
+    // Building auto-circuiting: circuit-tag editor on load devices; bulk-assign
+    // on distribution boards.
+    if (kind === 'element' && typeof PlanCircuits !== 'undefined' &&
+        AppState.planMarkup.settings.domain === 'building') {
+      if (PlanCircuits.isLoadDevice(item.type)) html += this._circuitTag(item);
+      else if (item.type === 'bd_db') html += this._boardCircuits(item);
+    }
     // Delete button
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
     el.innerHTML = html;
+  },
+
+  // Circuit-tag editor for a load device: pick a board + way number. The board
+  // <select> and way write to props.circuitDbId / props.circuitNo (persisted +
+  // read by PlanCircuits.syncLoads).
+  _circuitTag(item) {
+    const boards = PlanCircuits.boardEls();
+    const p = item.props || {};
+    const cur = p.circuitDbId || '';
+    const opts = ['<option value="">— unassigned —</option>']
+      .concat(boards.map(b => `<option value="${escHtml(b.id)}" ${b.id === cur ? 'selected' : ''}>${escHtml(b.name)}</option>`))
+      .join('');
+    const va = PlanCircuits.deviceVA(item);
+    return `<div class="plan-circuit-box">
+      <div class="plan-circuit-h">Circuit</div>
+      <div class="plan-field"><label class="plan-field-label">Board</label>
+        <select data-key="circuitDbId">${opts}</select></div>
+      <div class="plan-field"><label class="plan-field-label">Way (circuit no.)</label>
+        <input type="number" min="1" step="1" data-key="circuitNo" value="${escHtml(p.circuitNo != null ? p.circuitNo : '')}"></div>
+      <div class="plan-circuit-note">Load: ${va} VA${boards.length ? '' : ' — place a Distribution Board first'}</div>
+    </div>`;
+  },
+
+  // Distribution-board panel: way count + one-click auto-distribute of connected
+  // untagged devices, and a re-sync of loads from the plan.
+  _boardCircuits(item) {
+    const comp = item.sldId && AppState.components.get(item.sldId);
+    const ways = (comp && Array.isArray(comp.props.circuits)) ? comp.props.circuits.length : 0;
+    const linked = comp ? '' : ' <span class="plan-circuit-note">(sync with the SLD to create its schedule)</span>';
+    return `<div class="plan-circuit-box">
+      <div class="plan-circuit-h">Circuits</div>
+      <div class="plan-circuit-note">${ways} way(s) on this board${linked}</div>
+      <button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices</button>
+      <button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>
+    </div>`;
   },
 
   _field(f, value) {
@@ -344,6 +388,16 @@ const PlanUI = {
       if (key === 'name' && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
         PlanSync.onElementRenamed(item, oldName, val);
       }
+      // Circuit tag changed → refresh the board schedule (on commit, not every
+      // keystroke) and re-render the panel's load readout.
+      if ((key === 'circuitDbId' || key === 'circuitNo') && e.type === 'change' &&
+          typeof PlanCircuits !== 'undefined') {
+        if (!val) { if (key === 'circuitDbId') { delete item.props.circuitNo; } }
+        PlanCircuits.syncLoads();
+        PlanMarkup.snapshot(); PlanMarkup.markDirty();
+        this.renderProps();
+        return;
+      }
     } else if (kind === 'route') {
       if (key === 'cableType') item.cableType = val;
       else if (key === 'curved') item.curved = val;
@@ -353,5 +407,29 @@ const PlanUI = {
     }
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanEngine.requestDraw({ fg: true });
+  },
+
+  // Auto-distribute the selected board's connected untagged devices into ways.
+  _bulkAssign() {
+    const ids = [...PlanMarkup.selectedIds]; if (ids.length !== 1) return;
+    const found = PlanMarkup.findEntityById(ids[0]);
+    if (!found || found.kind !== 'element' || found.item.type !== 'bd_db') return;
+    if (!found.item.sldId || !AppState.components.get(found.item.sldId)) {
+      UI.toast('Sync this board with the SLD first (it needs a circuit schedule).', 'info'); return;
+    }
+    const r = PlanCircuits.bulkAssign(found.item.id);
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    this.renderProps();
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    UI.toast(r.devices ? `Assigned ${r.devices} device(s) across ${r.ways} new way(s).` : 'No unassigned connected devices found.', r.devices ? 'success' : 'info');
+  },
+
+  // Re-count loads + routed lengths from the plan into every linked board.
+  _syncCircuits() {
+    const s = PlanCircuits.syncAll();
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    this.renderProps();
+    UI.toast(`Synced ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} device(s).` +
+      (s.unsynced ? ` ${s.unsynced} board(s) not yet on the SLD.` : ''), 'success');
   },
 };
