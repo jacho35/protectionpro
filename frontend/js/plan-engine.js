@@ -650,6 +650,16 @@ const PlanEngine = {
     return -1;
   },
 
+  // Any route vertex under the point → {route, index} (topmost first).
+  findRouteVertexAt(pt, tolPx) {
+    const pm = AppState.planMarkup;
+    for (let i = pm.routes.length - 1; i >= 0; i--) {
+      const vi = this.findVertexAt(pm.routes[i].points, pt, tolPx || 9);
+      if (vi >= 0) return { route: pm.routes[i], index: vi };
+    }
+    return null;
+  },
+
   // Ordered list of everything under the cursor (for tie-break cycling later).
   hitStack(pt) {
     const out = [];
@@ -669,7 +679,17 @@ const PlanEngine = {
     this.fg.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
     this.fg.addEventListener('contextmenu', (e) => {
       e.preventDefault();
+      if (!this._isActive()) return;
+      // Right-click a route node → delete it; otherwise cancel any tool gesture.
+      const pt = this.screenToWorld(e.clientX, e.clientY);
+      if (typeof PlanTools !== 'undefined' && PlanTools.deleteVertexAt && PlanTools.deleteVertexAt(pt)) return;
       if (typeof PlanTools !== 'undefined' && PlanTools.cancel) PlanTools.cancel();
+    });
+    // Double-click a route node → delete it.
+    this.fg.addEventListener('dblclick', (e) => {
+      if (!this._isActive()) return;
+      const pt = this.screenToWorld(e.clientX, e.clientY);
+      if (typeof PlanTools !== 'undefined' && PlanTools.deleteVertexAt) PlanTools.deleteVertexAt(pt);
     });
     // Space-hold pan (guarded to the active workspace)
     document.addEventListener('keydown', (e) => {

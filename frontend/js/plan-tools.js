@@ -37,6 +37,19 @@ const PlanTools = {
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
   },
 
+  // Delete an interior node (bend) of a route under `pt`. Endpoints are the
+  // cable's terminals, so they're kept (and a straight 2-point cable has none).
+  deleteVertexAt(pt) {
+    const hit = PlanEngine.findRouteVertexAt(pt, 9);
+    if (!hit) return false;
+    const { route, index } = hit;
+    if (index <= 0 || index >= route.points.length - 1 || route.points.length <= 2) return false;
+    route.points.splice(index, 1);
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    PlanEngine.requestDraw({ fg: true });
+    return true;
+  },
+
   onDown(pt, e) { if (this.active && this.active.onDown) this.active.onDown(pt, e); },
   onMove(pt, e) { if (this.active && this.active.onMove) this.active.onMove(pt, e); },
   onUp(pt, e) { if (this.active && this.active.onUp) this.active.onUp(pt, e); },
