@@ -654,7 +654,8 @@ def _render_arcflash(pdf, arcflash_results, comp_map):
 def generate_calculations_report(project_name, base_mva, frequency,
                                   fault_results=None, loadflow_results=None,
                                   arcflash_results=None, cable_results=None,
-                                  motor_results=None, duty_results=None,
+                                  motor_results=None, dynamic_motor_results=None,
+                                  duty_results=None,
                                   load_diversity_results=None, grounding_results=None,
                                   components=None, project_details=None):
     """Generate a detailed calculations report showing formulas and intermediate values."""
@@ -680,6 +681,9 @@ def generate_calculations_report(project_name, base_mva, frequency,
 
     if motor_results and motor_results.get("motors"):
         _calc_motor(pdf, motor_results)
+
+    if dynamic_motor_results and dynamic_motor_results.get("motors"):
+        _calc_dynamic_motor(pdf, dynamic_motor_results)
 
     if duty_results and duty_results.get("devices"):
         _calc_duty(pdf, duty_results)
@@ -788,9 +792,10 @@ def _calc_title(pdf, project_name, base_mva, frequency, project_details=None):
         "3.  Arc Flash Analysis — IEEE 1584-2002",
         "4.  Cable Sizing Calculations — IEC 60364",
         "5.  Motor Starting Analysis",
-        "6.  Equipment Duty Check",
-        "7.  Load Diversity & Demand Factors",
-        "8.  Grounding System Design — IEEE 80",
+        "6.  Dynamic Motor Starting (Acceleration)",
+        "7.  Equipment Duty Check",
+        "8.  Load Diversity & Demand Factors",
+        "9.  Grounding System Design — IEEE 80",
     ]
     for s in sections:
         pdf.cell(10)
@@ -1098,9 +1103,134 @@ def _calc_motor(pdf, motor_results):
             _calc_body(pdf, f"  - {w}")
 
 
+def _pdf_safe(text):
+    """Coerce engine-sourced text to the cp1252 range of the core fonts."""
+    s = str(text)
+    for src, dst in (("≈", "~"), ("″", '"'), ("′", "'"), ("ω", "w"),
+                     ("∫", "integral "), ("×", "x"),
+                     ("→", "->"), ("≤", "<="), ("≥", ">=")):
+        s = s.replace(src, dst)
+    return s.encode("cp1252", "replace").decode("cp1252")
+
+
+def _calc_dynamic_motor(pdf, dyn_results):
+    pdf.add_page()
+    pdf.section_title("6.  Dynamic Motor Starting (Acceleration)")
+
+    _calc_label(pdf, "Method: time-domain swing-equation integration (IEEE 3002.7 methodology)")
+    pdf.ln(2)
+    _calc_body(pdf, "Mechanical acceleration:")
+    _calc_label(pdf, "  2H * dw/dt = T_e(V, s) - T_L(w)   (per-unit on the motor base)")
+    pdf.ln(1)
+    _calc_body(pdf, "Motor model: single-cage equivalent circuit with magnetizing branch and")
+    _calc_body(pdf, "slip-dependent (deep-bar) rotor resistance, fitted to the nameplate:")
+    _calc_label(pdf, "  R2(s) = R2_run + (R2_start - R2_run) * s")
+    _calc_label(pdf, "  R2_start from LRT:  R2_start = T_LR * |Zr(1)|^2")
+    _calc_label(pdf, "  X from LRC:  |Y_in(1)| = LRC  (magnetizing branch included)")
+    _calc_label(pdf, "  R2_run from the rated point:  T_e(s_rated) = T_FL")
+    pdf.ln(1)
+    _calc_body(pdf, "Network: Thevenin superposition V_bus = V_pre - Z_th * I, with V_pre from a")
+    _calc_body(pdf, "baseline load flow (motor off) and Z_th from the IEC 60909 source paths at")
+    _calc_body(pdf, "c = 1.0, motor infeeds excluded.")
+    pdf.ln(1)
+    _calc_body(pdf, "Rotor thermal check:")
+    _calc_label(pdf, "  capacity used % = Integral(I^2 dt) / (I_LR^2 * t_stall_hot) * 100")
+    pdf.ln(4)
+
+    for motor in dyn_results.get("motors", []):
+        name = _pdf_safe(motor.get("motor_name", motor.get("motor_id", "")))
+        _calc_subsection(pdf, f"Motor: {name}")
+
+        if motor.get("status") == "not_simulated":
+            _calc_body(pdf, f"  {_pdf_safe(motor.get('note', 'Not simulated.'))}")
+            pdf.ln(2)
+            continue
+
+        sim_status = motor.get("sim_status", "")
+        sim_label = {"started": "Accelerated to full speed",
+                     "stalled": "STALLED",
+                     "not_started": "Did not reach full speed in the window"}.get(sim_status, sim_status)
+        status = motor.get("status", "pass")
+        _calc_body(pdf, f"  Result:  {sim_label}   [{status.upper()}]")
+
+        simple_fields = [
+            ("terminal_bus", "Terminal bus"),
+            ("motor_type", "Machine type"),
+            ("starting_method", "Starting method"),
+            ("accel_time_s", "Acceleration time (s)"),
+            ("final_speed_pct", "Final speed (% of sync)"),
+            ("flc_a", "Full-load current (A)"),
+            ("peak_current_a", "Peak starting current (A)"),
+            ("peak_current_xflc", "Peak current (x FLC)"),
+            ("v_prestart_pu", "Pre-start bus voltage (pu)"),
+            ("min_v_bus_pu", "Minimum bus voltage (pu)"),
+            ("min_v_motor_pu", "Minimum motor terminal V (pu)"),
+            ("max_bus_dip_pct", "Maximum bus voltage dip (%)"),
+            ("thermal_used_pct", "Rotor thermal used (% of I2t withstand)"),
+            ("stall_time_hot_s", "Hot stall time basis (s)"),
+        ]
+        for k, label in simple_fields:
+            val = motor.get(k)
+            if val is None:
+                continue
+            if isinstance(val, float):
+                _calc_body(pdf, f"  {label:<42} = {val:.4g}")
+            else:
+                _calc_body(pdf, f"  {label:<42} = {_pdf_safe(val)}")
+
+        transition = motor.get("transition")
+        if transition:
+            _calc_body(pdf, f"  {'Starter changeover':<42} = {transition.get('t_s', 0):.2f} s "
+                            f"@ {transition.get('speed_pct', 0):.0f}% speed")
+
+        model = motor.get("model") or {}
+        if model:
+            pdf.ln(1)
+            _calc_body(pdf, "  Fitted model (pu on motor base):")
+            _calc_body(pdf, f"    R1 = {model.get('r1_pu')}   R2_start = {model.get('r2_start_pu')}   "
+                            f"R2_run = {model.get('r2_run_pu')}   X = {model.get('x_pu')}   Xm = {model.get('xm_pu')}")
+            _calc_body(pdf, f"    s_rated = {model.get('s_rated')}   n_sync = {model.get('sync_speed_rpm')} rpm   "
+                            f"T_FL = {model.get('t_fl_nm')} N-m")
+            _calc_body(pdf, f"    LRT = {model.get('lrt_x_flt')} x FLT   "
+                            f"breakdown (model) = {model.get('bdt_derived_x_flt')} x FLT @ s = {model.get('bdt_slip')}")
+            _calc_body(pdf, f"    J_total = {model.get('j_total_kgm2')} kg-m2   H = {model.get('h_total_s')} s   "
+                            f"Z_th = {model.get('thevenin_r_pu')} + j{model.get('thevenin_x_pu')} pu")
+
+        # Sampled trajectory table (about 10 rows)
+        curves = motor.get("curves") or {}
+        t_arr = curves.get("t") or []
+        if t_arr:
+            pdf.ln(1)
+            _calc_body(pdf, "  Trajectory (sampled):")
+            _calc_label(pdf, f"    {'t (s)':>8} {'speed %':>9} {'I (x FLC)':>10} "
+                             f"{'V bus pu':>9} {'V mot pu':>9} {'Te pu':>8} {'TL pu':>8}")
+            step = max(1, (len(t_arr) - 1) // 9)
+            idxs = list(range(0, len(t_arr) - 1, step)) + [len(t_arr) - 1]
+            for i in idxs:
+                _calc_body(pdf, f"    {t_arr[i]:>8.3f} {curves['speed_pct'][i]:>9.1f} "
+                                f"{curves['current_xflc'][i]:>10.2f} {curves['v_bus_pu'][i]:>9.3f} "
+                                f"{curves['v_motor_pu'][i]:>9.3f} {curves['te_pu'][i]:>8.3f} "
+                                f"{curves['tl_pu'][i]:>8.3f}")
+
+        issues = motor.get("issues", [])
+        if issues:
+            _calc_body(pdf, "  Issues:")
+            for iss in issues:
+                _calc_body(pdf, f"    - {_pdf_safe(iss)}")
+        for w in motor.get("warnings", []):
+            _calc_body(pdf, f"  Note: {_pdf_safe(w)}")
+        pdf.ln(2)
+
+    warnings = dyn_results.get("warnings", [])
+    if warnings:
+        _calc_subsection(pdf, "Warnings")
+        for w in warnings:
+            _calc_body(pdf, f"  - {_pdf_safe(w)}")
+
+
 def _calc_duty(pdf, duty_results):
     pdf.add_page()
-    pdf.section_title("6.  Equipment Duty Check")
+    pdf.section_title("7.  Equipment Duty Check")
 
     _calc_label(pdf, "Verification: Calculated fault current <= Equipment rated interrupting capacity")
     pdf.ln(2)
@@ -1136,7 +1266,7 @@ def _calc_duty(pdf, duty_results):
 
 def _calc_load_diversity(pdf, ld_results):
     pdf.add_page()
-    pdf.section_title("7.  Load Diversity & Demand Factors")
+    pdf.section_title("8.  Load Diversity & Demand Factors")
 
     _calc_label(pdf, "Method: Demand factor / diversity factor analysis (IEC 60364-1 / SANS 10142)")
     pdf.ln(2)
@@ -1176,7 +1306,7 @@ def _calc_load_diversity(pdf, ld_results):
 
 def _calc_grounding(pdf, grounding_results):
     pdf.add_page()
-    pdf.section_title("8.  Grounding System Design — IEEE 80")
+    pdf.section_title("9.  Grounding System Design — IEEE 80")
 
     _calc_label(pdf, "Standard: IEEE Std 80-2013 — Guide for Safety in AC Substation Grounding")
     pdf.ln(2)

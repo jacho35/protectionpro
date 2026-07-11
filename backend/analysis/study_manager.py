@@ -18,6 +18,7 @@ STUDY_DEFS = [
     ("arcflash", "Arc Flash"),
     ("cable_sizing", "Cable Sizing"),
     ("motor_starting", "Motor Starting"),
+    ("dynamic_motor_starting", "Dynamic Motor Starting"),
     ("duty_check", "Equipment Duty Check"),
     ("load_diversity", "Load Diversity"),
     ("grounding", "Grounding System (IEEE 80)"),
@@ -45,6 +46,9 @@ def _run_single_study(key: str, project: ProjectData):
     elif key == "motor_starting":
         from .motor_starting import run_motor_starting
         return run_motor_starting(project)
+    elif key == "dynamic_motor_starting":
+        from .dynamic_motor_starting import run_dynamic_motor_starting
+        return run_dynamic_motor_starting(project)
     elif key == "duty_check":
         from .duty_check import run_duty_check
         return run_duty_check(project)
@@ -70,7 +74,8 @@ def run_study_manager(project: ProjectData, enabled_studies: list[str] | None = 
         project: The project data.
         enabled_studies: List of study keys to run. If None, runs all.
             Valid keys: loadflow, fault, arcflash, cable_sizing,
-            motor_starting, duty_check.
+            motor_starting, dynamic_motor_starting, duty_check,
+            load_diversity, grounding, dc_arcflash.
 
     Returns:
         Dict with 'studies' (per-study results), 'summary', and 'total_time_s'.
@@ -200,6 +205,20 @@ def _extract_study_status(key: str, result_data) -> dict:
         n_warn = sum(1 for m in motors if m.get("status") == "warning")
         n_fail = sum(1 for m in motors if m.get("status") == "fail")
         counts = {"total": len(motors), "pass": n_pass, "warning": n_warn, "fail": n_fail}
+        if n_fail > 0:
+            return {"status": "fail", "counts": counts}
+        if n_warn > 0:
+            return {"status": "warning", "counts": counts}
+        return {"status": "pass", "counts": counts}
+
+    elif key == "dynamic_motor_starting":
+        motors = result_data.get("motors", [])
+        n_pass = sum(1 for m in motors if m.get("status") == "pass")
+        n_warn = sum(1 for m in motors if m.get("status") == "warning")
+        n_fail = sum(1 for m in motors if m.get("status") == "fail")
+        n_skip = sum(1 for m in motors if m.get("status") == "not_simulated")
+        counts = {"total": len(motors), "pass": n_pass, "warning": n_warn,
+                  "fail": n_fail, "not_simulated": n_skip}
         if n_fail > 0:
             return {"status": "fail", "counts": counts}
         if n_warn > 0:

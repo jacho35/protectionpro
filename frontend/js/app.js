@@ -1963,6 +1963,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (studies.dc_arcflash && studies.dc_arcflash.result) AppState.dcArcFlashResults = studies.dc_arcflash.result;
       if (studies.cable_sizing && studies.cable_sizing.result) AppState.cableSizingResults = studies.cable_sizing.result;
       if (studies.motor_starting && studies.motor_starting.result) AppState.motorStartingResults = studies.motor_starting.result;
+      if (studies.dynamic_motor_starting && studies.dynamic_motor_starting.result) AppState.dynamicMotorResults = studies.dynamic_motor_starting.result;
       if (studies.duty_check && studies.duty_check.result) AppState.dutyCheckResults = studies.duty_check.result;
       if (studies.load_diversity && studies.load_diversity.result) AppState.loadDiversityResults = studies.load_diversity.result;
       if (studies.grounding && studies.grounding.result) AppState.groundingResults = studies.grounding.result;
@@ -2004,7 +2005,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>`;
 
     // Per-study cards
-    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'duty_check', 'load_diversity', 'grounding'];
+    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'dynamic_motor_starting', 'duty_check', 'load_diversity', 'grounding'];
     for (const key of studyOrder) {
       const s = studies[key];
       if (!s) continue;
@@ -2050,6 +2051,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return `${counts.total} cables: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
     } else if (key === 'motor_starting') {
       return `${counts.total} motors: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
+    } else if (key === 'dynamic_motor_starting') {
+      return `${counts.total} motors: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`
+        + (counts.not_simulated > 0 ? `, ${counts.not_simulated} not simulated (VFD)` : '');
     } else if (key === 'duty_check') {
       return `${counts.total} devices: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
     } else if (key === 'load_diversity') {

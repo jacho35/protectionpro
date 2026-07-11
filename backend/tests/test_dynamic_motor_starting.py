@@ -255,6 +255,42 @@ class TestSimulation:
         assert weak["accel_time_s"] > stiff["accel_time_s"]
 
 
+class TestIntegrations:
+    def test_study_manager_runs_dynamic_study(self):
+        """Batch runner includes the dynamic study and summarizes statuses."""
+        from backend.analysis.study_manager import run_study_manager
+        res = run_study_manager(_project(), ["dynamic_motor_starting"])
+        study = res["studies"]["dynamic_motor_starting"]
+        assert study["name"] == "Dynamic Motor Starting"
+        assert study["status"] in ("pass", "warning")
+        assert study["counts"]["total"] == 1
+        assert study["result"]["motors"][0]["sim_status"] == "started"
+
+    def test_study_manager_vfd_counts_not_simulated(self):
+        from backend.analysis.study_manager import run_study_manager
+        res = run_study_manager(_project(_motor_props(starting_method="vfd")),
+                                ["dynamic_motor_starting"])
+        counts = res["studies"]["dynamic_motor_starting"]["counts"]
+        assert counts["not_simulated"] == 1
+
+    def test_calculations_pdf_includes_dynamic_section(self):
+        """The calculations report renders the dynamic-motor section from a
+        real result payload without raising, and grows the document."""
+        from backend.analysis.pdf_reports import generate_calculations_report
+        # J unset -> engine emits the "estimated J ≈ ..." warning, which
+        # exercises the cp1252 sanitizer (core PDF fonts reject "≈")
+        dyn = run_dynamic_motor_starting(
+            _project(_motor_props(motor_j_kgm2=0, load_j_kgm2=0)))
+        assert any("≈" in w for w in dyn["motors"][0]["warnings"])
+        without = generate_calculations_report(
+            "t", 100.0, 50, components=[]).getvalue()
+        with_dyn = generate_calculations_report(
+            "t", 100.0, 50, components=[],
+            dynamic_motor_results=dyn).getvalue()
+        assert with_dyn.startswith(b"%PDF")
+        assert len(with_dyn) > len(without)
+
+
 class TestEdgeCases:
     def test_no_motors(self):
         proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,

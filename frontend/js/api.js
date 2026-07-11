@@ -315,6 +315,7 @@ const API = {
       arcFlashResults: AppState.arcFlashResults || null,
       cableSizingResults: AppState.cableSizingResults || null,
       motorStartingResults: AppState.motorStartingResults || null,
+      dynamicMotorResults: AppState.dynamicMotorResults || null,
       dutyCheckResults: AppState.dutyCheckResults || null,
       loadDiversityResults: AppState.loadDiversityResults || null,
       groundingResults: AppState.groundingResults || null,
