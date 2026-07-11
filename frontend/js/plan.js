@@ -203,6 +203,28 @@ const PlanMarkup = {
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
   },
 
+  // Keep route endpoints attached to their elements: for each moved element id,
+  // snap any route endpoint bound to it (fromId/toId or a snappedTo vertex) to
+  // the element's current position. Called live while dragging/nudging.
+  reconcileRoutes(elIds) {
+    const ids = elIds instanceof Set ? elIds : new Set(elIds || []);
+    if (!ids.size) return;
+    const pm = AppState.planMarkup;
+    const elById = {};
+    for (const e of pm.elements) elById[e.id] = e;
+    for (const r of pm.routes) {
+      if (!r.points || !r.points.length) continue;
+      const a = ids.has(r.fromId) && elById[r.fromId];
+      if (a) { r.points[0].x = a.x; r.points[0].y = a.y; }
+      const b = ids.has(r.toId) && elById[r.toId];
+      if (b) { const p = r.points[r.points.length - 1]; p.x = b.x; p.y = b.y; }
+      for (const p of r.points) {
+        const s = p.snappedTo && ids.has(p.snappedTo) && elById[p.snappedTo];
+        if (s) { p.x = s.x; p.y = s.y; }
+      }
+    }
+  },
+
   // Auto-name a freshly placed element from its type prefix.
   nextName(type) {
     const def = PLAN_DEFS.element(type);
@@ -250,6 +272,7 @@ const PlanMarkup = {
           if (f.kind === 'element') { f.item.x += dx; f.item.y += dy; }
           else if (f.item.points) for (const p of f.item.points) { p.x += dx; p.y += dy; }
         }
+        this.reconcileRoutes(this.selectedIds);   // attached cables follow
         this._snapshot(); this.markDirty(); PlanEngine.requestDraw({ fg: true });
         return true;
       }

@@ -167,6 +167,8 @@ PlanTools.register({
       const dx = snapped.x - this._drag.el.x, dy = snapped.y - this._drag.el.y;
       this._moveSelection(dx, dy, this._drag.el.id);
       this._drag.el.x = snapped.x; this._drag.el.y = snapped.y;
+      // Drag attached cables/routes along with the moved element(s).
+      PlanMarkup.reconcileRoutes(PlanMarkup.selectedIds);
       this._drag.moved = true;
     } else if (this._drag.kind === 'vertex') {
       const p = this._drag.route.points[this._drag.index];
