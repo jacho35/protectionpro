@@ -3020,6 +3020,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-save-settings').addEventListener('click', () => {
     AppState.baseMVA = parseFloat(document.getElementById('base-mva').value) || DEFAULT_BASE_MVA;
     AppState.frequency = parseInt(document.getElementById('base-freq').value) || DEFAULT_FREQUENCY;
+    AppState.voltageFactor = parseFloat(document.getElementById('voltage-factor').value) || DEFAULT_VOLTAGE_FACTOR;
     AppState.defaultLengthUnit = document.getElementById('default-length-unit').value || 'm';
     AppState.clearResults();
     Canvas.render();

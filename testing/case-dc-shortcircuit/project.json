@@ -1,0 +1,85 @@
+{
+  "projectName": "DC Short Circuit",
+  "baseMVA": 100,
+  "frequency": 50,
+  "components": [
+    {
+      "id": "dcb-1",
+      "type": "dc_battery",
+      "x": 100,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Bat",
+        "nominal_v": 120.0,
+        "internal_r_mohm": 20.098,
+        "internal_l_uh": 14.61,
+        "ah_capacity": 200
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 100,
+      "y": 120,
+      "rotation": 0,
+      "props": {
+        "name": "BatBus",
+        "system": "dc",
+        "voltage_dc_v": 120.0
+      }
+    },
+    {
+      "id": "cable-1",
+      "type": "cable",
+      "x": 100,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "cbl",
+        "r_per_km": 0.005,
+        "x_per_km": 0.004398,
+        "length_km": 0.5,
+        "num_parallel": 1,
+        "rated_amps": 6000
+      }
+    },
+    {
+      "id": "bus-2",
+      "type": "bus",
+      "x": 100,
+      "y": 280,
+      "rotation": 0,
+      "props": {
+        "name": "Brk",
+        "system": "dc",
+        "voltage_dc_v": 120.0
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "dcb-1",
+      "fromPort": "o",
+      "toComponent": "bus-1",
+      "toPort": "i"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-1",
+      "fromPort": "o",
+      "toComponent": "cable-1",
+      "toPort": "i"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "cable-1",
+      "fromPort": "o",
+      "toComponent": "bus-2",
+      "toPort": "i"
+    }
+  ],
+  "nextId": 50,
+  "dataVersion": 2
+}

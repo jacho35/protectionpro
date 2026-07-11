@@ -23,6 +23,7 @@ const AppState = {
   // System base settings
   baseMVA: DEFAULT_BASE_MVA,
   frequency: DEFAULT_FREQUENCY,
+  voltageFactor: DEFAULT_VOLTAGE_FACTOR,  // IEC 60909 voltage factor c for fault analysis
   defaultLengthUnit: 'm',  // Default display unit for cable length ('m' or 'km')
 
   // Canvas transform
@@ -811,6 +812,7 @@ const AppState = {
       projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
       frequency: this.frequency,
+      voltageFactor: this.voltageFactor,
       defaultLengthUnit: this.defaultLengthUnit,
       components: [...this.components.values()],
       wires: [...this.wires.values()],
@@ -865,6 +867,7 @@ const AppState = {
     }
     this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
+    this.voltageFactor = data.voltageFactor || DEFAULT_VOLTAGE_FACTOR;
     this.defaultLengthUnit = data.defaultLengthUnit || 'm';
     // nextId must clear every loaded id: a stale/hand-edited nextId below an
     // existing suffix would let genId() mint a duplicate id, and Map.set would

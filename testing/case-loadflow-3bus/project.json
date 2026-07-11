@@ -1,0 +1,216 @@
+{
+  "projectName": "3-Bus Load Flow (ESE470)",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "dataVersion": 2,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 160,
+      "y": 60,
+      "rotation": 0,
+      "props": {
+        "name": "Slack",
+        "voltage_kv": 230.0,
+        "fault_mva": 99999,
+        "x_r_ratio": 10,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 160,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "Bus1",
+        "voltage_kv": 230.0,
+        "bus_type": "Swing"
+      }
+    },
+    {
+      "id": "generator-1",
+      "type": "generator",
+      "x": 680,
+      "y": 600,
+      "rotation": 0,
+      "props": {
+        "name": "Gen2",
+        "rated_mva": 250,
+        "voltage_kv": 230.0,
+        "power_factor": 0.8,
+        "xd_pp": 0.2,
+        "x_r_ratio": 40,
+        "dispatch_mode": "must_run",
+        "voltage_setpoint_pu": 1.05
+      }
+    },
+    {
+      "id": "bus-2",
+      "type": "bus",
+      "x": 680,
+      "y": 480,
+      "rotation": 0,
+      "props": {
+        "name": "Bus2",
+        "voltage_kv": 230.0,
+        "bus_type": "PV"
+      }
+    },
+    {
+      "id": "bus-3",
+      "type": "bus",
+      "x": 1200,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "Bus3",
+        "voltage_kv": 230.0,
+        "bus_type": "PQ"
+      }
+    },
+    {
+      "id": "static_load-1",
+      "type": "static_load",
+      "x": 1320,
+      "y": 340,
+      "rotation": 0,
+      "props": {
+        "name": "Load3",
+        "rated_kva": 509902.0,
+        "voltage_kv": 230.0,
+        "power_factor": 0.980581,
+        "load_type": "constant_power",
+        "demand_factor": 1.0
+      }
+    },
+    {
+      "id": "cable-12",
+      "type": "cable",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "props": {
+        "name": "L1-2",
+        "conductor": "Cu",
+        "insulation": "XLPE",
+        "size_mm2": 500,
+        "r_per_km": 2.4466,
+        "x_per_km": 25.0714,
+        "length_km": 1.0,
+        "voltage_kv": 230.0,
+        "num_parallel": 1,
+        "rated_amps": 2000,
+        "ampacity_standard": "IEC"
+      }
+    },
+    {
+      "id": "cable-13",
+      "type": "cable",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "props": {
+        "name": "L1-3",
+        "conductor": "Cu",
+        "insulation": "XLPE",
+        "size_mm2": 500,
+        "r_per_km": 3.2967,
+        "x_per_km": 33.3741,
+        "length_km": 1.0,
+        "voltage_kv": 230.0,
+        "num_parallel": 1,
+        "rated_amps": 2000,
+        "ampacity_standard": "IEC"
+      }
+    },
+    {
+      "id": "cable-23",
+      "type": "cable",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "props": {
+        "name": "L2-3",
+        "conductor": "Cu",
+        "insulation": "XLPE",
+        "size_mm2": 500,
+        "r_per_km": 2.4466,
+        "x_per_km": 25.0714,
+        "length_km": 1.0,
+        "voltage_kv": 230.0,
+        "num_parallel": 1,
+        "rated_amps": 2000,
+        "ampacity_standard": "IEC"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w-u",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    },
+    {
+      "id": "w-g",
+      "fromComponent": "generator-1",
+      "fromPort": "out",
+      "toComponent": "bus-2",
+      "toPort": "p0"
+    },
+    {
+      "id": "w-l",
+      "fromComponent": "bus-3",
+      "fromPort": "p9",
+      "toComponent": "static_load-1",
+      "toPort": "in"
+    },
+    {
+      "id": "w12a",
+      "fromComponent": "bus-1",
+      "fromPort": "p1",
+      "toComponent": "cable-12",
+      "toPort": "from"
+    },
+    {
+      "id": "w12b",
+      "fromComponent": "cable-12",
+      "fromPort": "to",
+      "toComponent": "bus-2",
+      "toPort": "p1"
+    },
+    {
+      "id": "w13a",
+      "fromComponent": "bus-1",
+      "fromPort": "p2",
+      "toComponent": "cable-13",
+      "toPort": "from"
+    },
+    {
+      "id": "w13b",
+      "fromComponent": "cable-13",
+      "fromPort": "to",
+      "toComponent": "bus-3",
+      "toPort": "p1"
+    },
+    {
+      "id": "w23a",
+      "fromComponent": "bus-2",
+      "fromPort": "p2",
+      "toComponent": "cable-23",
+      "toPort": "from"
+    },
+    {
+      "id": "w23b",
+      "fromComponent": "cable-23",
+      "fromPort": "to",
+      "toComponent": "bus-3",
+      "toPort": "p2"
+    }
+  ],
+  "nextId": 100
+}

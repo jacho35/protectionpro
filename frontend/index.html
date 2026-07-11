@@ -1364,6 +1364,11 @@
             </select>
           </div>
           <div class="form-group">
+            <label for="voltage-factor">Voltage Factor c (IEC 60909)</label>
+            <input type="number" id="voltage-factor" value="1.10" min="0.9" max="1.2" step="0.01">
+            <span class="unit" title="IEC 60909-0 Table 1 voltage factor for short-circuit currents. 1.10 = c_max (default). Use 1.00 for bolted-fault / V=1.0 studies.">c</span>
+          </div>
+          <div class="form-group">
             <label for="default-length-unit">Default Cable Length Unit</label>
             <select id="default-length-unit">
               <option value="m">Meters (m)</option>

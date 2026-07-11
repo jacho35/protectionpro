@@ -1,0 +1,46 @@
+{
+  "projectName": "DC Arc Flash",
+  "baseMVA": 100,
+  "frequency": 50,
+  "voltageFactor": 1.0,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Src",
+        "voltage_kv": 0.25,
+        "fault_mva": 4.3301,
+        "x_r_ratio": 10,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 140,
+      "rotation": 0,
+      "props": {
+        "name": "DCbus",
+        "voltage_kv": 0.25,
+        "dc_bolted_fault_ka": 10.0,
+        "gap_mm": 25.0,
+        "working_distance_mm": 455.0
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    }
+  ],
+  "nextId": 50
+}

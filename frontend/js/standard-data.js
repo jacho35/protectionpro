@@ -462,6 +462,7 @@ const StandardData = {
   open() {
     document.getElementById('base-mva').value = AppState.baseMVA;
     document.getElementById('base-freq').value = AppState.frequency;
+    document.getElementById('voltage-factor').value = AppState.voltageFactor ?? DEFAULT_VOLTAGE_FACTOR;
     document.getElementById('default-length-unit').value = AppState.defaultLengthUnit || 'm';
     document.getElementById('settings-modal').style.display = '';
     // Render the currently active tab's table

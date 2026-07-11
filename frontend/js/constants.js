@@ -9,6 +9,10 @@ const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.1;
 const DEFAULT_BASE_MVA = 100;
 const DEFAULT_FREQUENCY = 50;
+// IEC 60909-0 Table 1 voltage factor c for maximum short-circuit currents.
+// 1.10 is standard for MV/HV and modern +10 % LV systems; set to 1.0 to
+// reproduce bolted-fault / V=1.0 studies that omit the voltage factor.
+const DEFAULT_VOLTAGE_FACTOR = 1.10;
 
 const API_BASE = '/api';
 

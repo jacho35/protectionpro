@@ -32,7 +32,8 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 def fault_analysis(data: ProjectData):
     """Run IEC 60909 short-circuit analysis."""
     try:
-        return run_fault_analysis(data, fault_bus_id=data.faultBusId, fault_type=data.faultType)
+        return run_fault_analysis(data, fault_bus_id=data.faultBusId, fault_type=data.faultType,
+                                  voltage_factor=data.voltageFactor)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Fault analysis error: {e}")

@@ -1,0 +1,116 @@
+{
+  "projectName": "Unbalanced Load Flow",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "dataVersion": 2,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Grid",
+        "voltage_kv": 11.0,
+        "fault_mva": 200,
+        "x_r_ratio": 10,
+        "z2_z1_ratio": 1.0,
+        "z0_z1_ratio": 1.0,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 120,
+      "rotation": 0,
+      "props": {
+        "name": "Src",
+        "voltage_kv": 11.0,
+        "bus_type": "Swing"
+      }
+    },
+    {
+      "id": "cable-1",
+      "type": "cable",
+      "x": 300,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "Ln",
+        "conductor": "Cu",
+        "insulation": "XLPE",
+        "size_mm2": 120,
+        "r_per_km": 0.5,
+        "x_per_km": 1.0,
+        "length_km": 1.0,
+        "r0_per_km": 1.5,
+        "x0_per_km": 3.0,
+        "num_parallel": 1,
+        "rated_amps": 300,
+        "ampacity_standard": "IEC"
+      }
+    },
+    {
+      "id": "bus-2",
+      "type": "bus",
+      "x": 200,
+      "y": 300,
+      "rotation": 0,
+      "props": {
+        "name": "LoadBus",
+        "voltage_kv": 11.0,
+        "bus_type": "PQ"
+      }
+    },
+    {
+      "id": "static_load-1",
+      "type": "static_load",
+      "x": 300,
+      "y": 380,
+      "rotation": 0,
+      "props": {
+        "name": "Ld",
+        "rated_kva": 2000,
+        "power_factor": 0.9,
+        "phase_connection": "3P",
+        "phase_a_pct": 60,
+        "phase_b_pct": 20,
+        "phase_c_pct": 20
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-1",
+      "fromPort": "p1",
+      "toComponent": "cable-1",
+      "toPort": "from"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "cable-1",
+      "fromPort": "to",
+      "toComponent": "bus-2",
+      "toPort": "p0"
+    },
+    {
+      "id": "w4",
+      "fromComponent": "bus-2",
+      "fromPort": "p1",
+      "toComponent": "static_load-1",
+      "toPort": "in"
+    }
+  ],
+  "nextId": 50
+}

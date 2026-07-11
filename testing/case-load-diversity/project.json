@@ -1,0 +1,82 @@
+{
+  "projectName": "Load Diversity",
+  "baseMVA": 100,
+  "frequency": 50,
+  "components": [
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 100,
+      "rotation": 0,
+      "props": {
+        "name": "LVBus",
+        "voltage_kv": 0.4
+      }
+    },
+    {
+      "id": "static_load-1",
+      "type": "static_load",
+      "x": 100,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "L1",
+        "rated_kva": 100,
+        "power_factor": 0.9,
+        "demand_factor": 0.8
+      }
+    },
+    {
+      "id": "static_load-2",
+      "type": "static_load",
+      "x": 250,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "L2",
+        "rated_kva": 50,
+        "power_factor": 0.85,
+        "demand_factor": 1.0
+      }
+    },
+    {
+      "id": "motor_induction-1",
+      "type": "motor_induction",
+      "x": 400,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "M1",
+        "rated_kw": 90,
+        "efficiency": 0.95,
+        "power_factor": 0.9,
+        "demand_factor": 1.0
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "bus-1",
+      "fromPort": "p0",
+      "toComponent": "static_load-1",
+      "toPort": "in"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-1",
+      "fromPort": "p1",
+      "toComponent": "static_load-2",
+      "toPort": "in"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "bus-1",
+      "fromPort": "p2",
+      "toComponent": "motor_induction-1",
+      "toPort": "in"
+    }
+  ],
+  "nextId": 50
+}
