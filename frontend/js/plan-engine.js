@@ -378,14 +378,14 @@ const PlanEngine = {
 
   // Constant world-pixel half-extent of a device glyph (matches the source
   // apps, which draw fixed-size symbols that scale with zoom).
-  glyphHalf(type) {
-    return (typeof PlanSymbols !== 'undefined' ? PlanSymbols.size(type) : 24) / 2;
+  glyphHalf(type, props) {
+    return (typeof PlanSymbols !== 'undefined' ? PlanSymbols.size(type, props) : 24) / 2;
   },
 
   _drawElementEntity(ctx, el, selected) {
     const def = PLAN_DEFS.element(el.type);
     const color = PLAN_DEFS.elementColor(el.type, AppState.planMarkup.styles);
-    const half = this.glyphHalf(el.type);
+    const half = this.glyphHalf(el.type, el.props);
     const bg = this._cssVar('--plan-stage-bg', '#ffffff');
     ctx.save();
     ctx.globalAlpha = this._emphasis('visibleElementTypes', el.type);
@@ -393,7 +393,7 @@ const PlanEngine = {
     if (el.rotation) ctx.rotate(el.rotation * Math.PI / 180);
     // Source-matched glyph; fall back to the registry primitive if absent.
     const drew = (typeof PlanSymbols !== 'undefined') &&
-      PlanSymbols.draw(ctx, el.type, { color, bg, sizeWorld: half * 2 });
+      PlanSymbols.draw(ctx, el.type, { color, bg, sizeWorld: half * 2, props: el.props });
     if (!drew) {
       PLAN_DEFS.drawElement(ctx, def, { sizePx: half, color, selected, strokeW: 1.5 / this.view.zoom });
     }
@@ -611,7 +611,7 @@ const PlanEngine = {
     const pm = AppState.planMarkup;
     for (let i = pm.elements.length - 1; i >= 0; i--) {
       const el = pm.elements[i];
-      const half = this.glyphHalf(el.type);
+      const half = this.glyphHalf(el.type, el.props);
       const tol = (tolPx || 6) / this.view.zoom;
       if (Math.abs(pt.x - el.x) <= half + tol && Math.abs(pt.y - el.y) <= half + tol) return el;
     }

@@ -1046,11 +1046,26 @@ const AppState = {
         _seq: p._seq || 1,
         nameCounters: (p.nameCounters && typeof p.nameCounters === 'object') ? p.nameCounters : {},
       };
-      // Migrate consolidated types (central-library unification): Main DB and
-      // the old Main/Sub-Main feeders collapse to single items.
-      const ELEM_MIGRATE = { bd_mdb: 'bd_db' };
+      // Migrate consolidated / dynamic-block types. Main DB → one DB; old
+      // Main/Sub-Main feeders → one Feeder; and the separate socket/light/
+      // switch variants collapse into parametric families driven by props.
+      const ELEM_MIGRATE = {
+        bd_mdb: { type: 'bd_db' },
+        bd_socket2: { type: 'bd_socket', props: { gangs: '2' } },
+        bd_socket_ip: { type: 'bd_socket', props: { weatherproof: true } },
+        bd_downlight: { type: 'bd_light', props: { kind: 'downlight' } },
+        bd_batten: { type: 'bd_light', props: { kind: 'batten' } },
+        bd_floodlight: { type: 'bd_light', props: { kind: 'floodlight' } },
+        bd_emergency: { type: 'bd_light', props: { kind: 'emergency' } },
+        bd_exit: { type: 'bd_light', props: { kind: 'exit' } },
+        bd_switch2: { type: 'bd_switch', props: { gangs: '2' } },
+        bd_dimmer: { type: 'bd_switch', props: { kind: 'dimmer' } },
+      };
       const ROUTE_MIGRATE = { main_feeder: 'feeder', sub_main: 'feeder' };
-      for (const el of this.planMarkup.elements) if (ELEM_MIGRATE[el.type]) el.type = ELEM_MIGRATE[el.type];
+      for (const el of this.planMarkup.elements) {
+        const m = ELEM_MIGRATE[el.type];
+        if (m) { el.type = m.type; if (m.props) el.props = { ...(el.props || {}), ...m.props }; }
+      }
       for (const rt of this.planMarkup.routes) if (ROUTE_MIGRATE[rt.type]) rt.type = ROUTE_MIGRATE[rt.type];
       // Repair _seq so planGenId never collides with a loaded id
       let maxSeq = 0;

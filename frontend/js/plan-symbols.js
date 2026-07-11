@@ -60,44 +60,13 @@ const PlanSymbols = {
       { k: 'l', x1: 20, y1: 8, x2: 20, y2: 32, s: 'col', w: 1 },
     ] },
     bd_jb: { size: 16, prims: [{ k: 'c', cx: 20, cy: 20, r: 6, f: 'faint', s: 'col', w: 1.5 }] },
-    bd_light: { size: 24, prims: [
-      { k: 'c', cx: 20, cy: 20, r: 10, s: 'col', w: 1.5 },
-      { k: 'l', x1: 13, y1: 13, x2: 27, y2: 27, s: 'col', w: 1.5 },
-      { k: 'l', x1: 27, y1: 13, x2: 13, y2: 27, s: 'col', w: 1.5 },
-    ] },
-    bd_downlight: { size: 20, prims: [{ k: 'c', cx: 20, cy: 20, r: 8, f: 'col' }] },
-    bd_batten: { size: 34, prims: [{ k: 'r', x: 2, y: 16, w: 36, h: 8, f: 'col', s: 'col', w: 0.7 }] },
-    bd_floodlight: { size: 26, prims: [{ k: 'p', pts: [[20, 8], [30, 28], [10, 28]], s: 'col', w: 1.5, close: 1 }] },
-    bd_emergency: { size: 24, prims: [
-      { k: 'c', cx: 20, cy: 20, r: 10, s: 'col', w: 1.5 },
-      { k: 'c', cx: 20, cy: 20, r: 3, f: 'col' },
-    ] },
-    bd_exit: { size: 30, prims: [
-      { k: 'r', x: 8, y: 12, w: 24, h: 16, s: 'col', w: 1.5 },
-      { k: 't', x: 20, y: 20, str: 'EXIT', size: 6, f: 'col', bold: 1 },
-    ] },
-    bd_socket: { size: 22, prims: [
-      { k: 'c', cx: 20, cy: 20, r: 9, s: 'col', w: 1.5 },
-      { k: 'l', x1: 20, y1: 15, x2: 20, y2: 25, s: 'col', w: 1.5 },
-    ] },
-    bd_socket2: { size: 24, prims: [
-      { k: 'c', cx: 20, cy: 20, r: 9, s: 'col', w: 1.5 },
-      { k: 'l', x1: 20, y1: 15, x2: 20, y2: 25, s: 'col', w: 1.5 },
-      { k: 'l', x1: 29, y1: 14, x2: 29, y2: 26, s: 'col', w: 1.5 },
-    ] },
-    bd_socket_ip: { size: 24, prims: [
-      { k: 'c', cx: 20, cy: 20, r: 9, s: 'col', w: 1.5 },
-      { k: 'l', x1: 20, y1: 15, x2: 20, y2: 25, s: 'col', w: 1.5 },
-      { k: 't', x: 20, y: 33, str: 'WP', size: 6, f: 'col' },
-    ] },
+    // bd_light / bd_socket / bd_switch are parametric "dynamic-block" families —
+    // their glyph is computed from props by _light/_socket/_switch (below).
     bd_isolator: { size: 24, prims: '__isolator__' },
     bd_fcu: { size: 24, prims: [
       { k: 'r', x: 9, y: 14, w: 22, h: 12, s: 'col', w: 1.5 },
       { k: 't', x: 20, y: 20, str: 'FU', size: 7, f: 'col', bold: 1 },
     ] },
-    bd_switch: { size: 20, prims: '__sw1__' },
-    bd_switch2: { size: 22, prims: '__sw2__' },
-    bd_dimmer: { size: 24, prims: '__dim__' },
     bd_smoke: { size: 24, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', w: 1.5 }, { k: 't', x: 20, y: 20, str: 'S', size: 9, f: 'col', bold: 1 }] },
     bd_heat: { size: 24, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', w: 1.5 }, { k: 't', x: 20, y: 20, str: 'H', size: 9, f: 'col', bold: 1 }] },
     bd_call: { size: 24, prims: [{ k: 'r', x: 8, y: 8, w: 24, h: 24, f: 'faint', s: 'col', w: 1.5 }, { k: 't', x: 20, y: 20, str: 'MCP', size: 6, f: 'col', bold: 1 }] },
@@ -111,7 +80,74 @@ const PlanSymbols = {
     bd_dali: { size: 30, prims: [{ k: 'r', x: 6, y: 10, w: 28, h: 20, s: 'col', w: 1.5 }, { k: 't', x: 20, y: 20, str: 'DALI', size: 7, f: 'col', bold: 1 }] },
   },
 
-  size(type) { const r = this.RECIPES[type]; return r ? r.size : 24; },
+  // Glyph extent (world px). Parametric families size by their variant.
+  size(type, props) {
+    props = props || {};
+    if (type === 'bd_light') return { downlight: 20, batten: 34, floodlight: 26, exit: 30, highbay: 24, wall: 24, emergency: 24, ceiling: 24 }[props.kind] || 24;
+    if (type === 'bd_socket') return props.gangs === '3' ? 26 : props.gangs === '2' ? 24 : 22;
+    if (type === 'bd_switch') return 22;
+    const r = this.RECIPES[type];
+    return r ? r.size : 24;
+  },
+
+  // ─── Parametric "dynamic-block" families (permutations from props) ───
+  _socket(props) {
+    const c = 20, sw = 1.5, gangs = parseInt(props.gangs || '1', 10) || 1;
+    const out = [{ k: 'c', cx: c, cy: c, r: 9, s: 'col', w: sw }, { k: 'l', x1: c, y1: c - 5, x2: c, y2: c + 5, s: 'col', w: sw }];
+    if (gangs >= 2) out.push({ k: 'l', x1: c + 9, y1: c - 6, x2: c + 9, y2: c + 6, s: 'col', w: sw });
+    if (gangs >= 3) out.push({ k: 'l', x1: c + 12, y1: c - 4, x2: c + 12, y2: c + 4, s: 'col', w: sw });
+    if (props.weatherproof) out.push({ k: 't', x: c, y: 33, str: 'WP', size: 6, f: 'col' });
+    return out;
+  },
+  _switch(props) {
+    const c = 20, sw = 1.5, bR = 5, lineLen = 12, tipR = 4;
+    const kind = props.kind || 'standard';
+    const gangs = parseInt(props.gangs || '1', 10) || 1;
+    const tw = kind === '2way', ii = kind === 'intermediate';
+    const isPIR = kind === 'pir', isTimer = kind === 'timer', isKey = kind === 'key', isDim = kind === 'dimmer', isPhoto = kind === 'photocell';
+    const out = [];
+    if (tw || ii) {
+      out.push({ k: 'c', cx: c, cy: c, r: bR, f: 'col', s: 'col', w: sw * 0.8 });
+      out.push({ k: 't', x: c, y: c, str: ii ? 'X' : '2', size: 6, f: 'bg', bold: 1 });
+    } else {
+      out.push({ k: 'c', cx: c, cy: c, r: bR, s: 'col', w: sw });
+    }
+    if (isPIR || isTimer || isKey || isDim || isPhoto) {
+      const a = -60 * Math.PI / 180;
+      const sx = c + Math.cos(a) * bR, sy = c + Math.sin(a) * bR;
+      const tx = c + Math.cos(a) * (bR + lineLen), ty = c + Math.sin(a) * (bR + lineLen);
+      out.push({ k: 'l', x1: sx, y1: sy, x2: tx, y2: ty, s: 'col', w: sw });
+      if (isDim) {
+        const dimR = 5, lcX = tx + Math.cos(a) * dimR, lcY = ty + Math.sin(a) * dimR;
+        out.push({ k: 'c', cx: lcX, cy: lcY, r: dimR, s: 'col', w: sw });
+        out.push({ k: 't', x: lcX, y: lcY, str: 'D', size: 7, f: 'col' });
+      } else {
+        const lbl = isPIR ? 'P' : isTimer ? 'T' : isKey ? 'K' : '☀';
+        const lcX = tx + Math.cos(a) * tipR, lcY = ty + Math.sin(a) * tipR;
+        out.push({ k: 'c', cx: lcX, cy: lcY, r: tipR, s: 'col', w: sw });
+        out.push({ k: 't', x: lcX, y: lcY, str: lbl, size: isPhoto ? 5 : 6, f: 'col' });
+      }
+    } else if (!tw && !ii) {
+      const spread = gangs === 1 ? 0 : gangs === 2 ? 20 : 15, baseAngle = -60;
+      for (let g = 0; g < gangs; g++) {
+        const a = (baseAngle - (gangs - 1) * spread / 2 + g * spread) * Math.PI / 180;
+        out.push({ k: 'l', x1: c + Math.cos(a) * bR, y1: c + Math.sin(a) * bR, x2: c + Math.cos(a) * (bR + lineLen), y2: c + Math.sin(a) * (bR + lineLen), s: 'col', w: sw });
+      }
+    }
+    return out;
+  },
+  _light(props) {
+    const c = 20, sw = 1.5, kind = props.kind || 'ceiling';
+    if (kind === 'downlight') return [{ k: 'c', cx: c, cy: c, r: 8, f: 'col' }];
+    if (kind === 'batten') return [{ k: 'r', x: 2, y: 16, w: 36, h: 8, f: 'col', s: 'col', w: 0.7 }];
+    if (kind === 'floodlight') return [{ k: 'p', pts: [[20, 8], [30, 28], [10, 28]], s: 'col', w: sw, close: 1 }];
+    if (kind === 'emergency') return [{ k: 'c', cx: c, cy: c, r: 10, s: 'col', w: sw }, { k: 'c', cx: c, cy: c, r: 3, f: 'col' }];
+    if (kind === 'exit') return [{ k: 'r', x: 8, y: 12, w: 24, h: 16, s: 'col', w: sw }, { k: 't', x: c, y: 20, str: 'EXIT', size: 6, f: 'col', bold: 1 }];
+    if (kind === 'wall') return [{ k: 'a', cx: c, cy: c, r: 12, a0: Math.PI, a1: 0, ccw: true, s: 'col', w: sw }, { k: 'l', x1: 8, y1: 20, x2: 32, y2: 20, s: 'col', w: sw }];
+    if (kind === 'highbay') return [{ k: 'c', cx: c, cy: c, r: 10, s: 'col', w: sw * 1.5 }, { k: 't', x: c, y: c, str: 'H', size: 10, f: 'col', bold: 1 }];
+    // ceiling / surface (default)
+    return [{ k: 'c', cx: c, cy: c, r: 10, s: 'col', w: sw }, { k: 'l', x1: 13, y1: 13, x2: 27, y2: 27, s: 'col', w: sw }, { k: 'l', x1: 27, y1: 13, x2: 13, y2: 27, s: 'col', w: sw }];
+  },
 
   // Procedural recipes ported verbatim from Distribution Designer's
   // _seDefaultElements (switch throws / isolator disconnect).
@@ -146,11 +182,18 @@ const PlanSymbols = {
     return [{ k: 'c', cx: c, cy: c, r: 10, s: 'col', w: sw }];
   },
 
-  prims(type) {
+  prims(type, props) {
+    props = props || {};
+    if (type === 'bd_light') return this._light(props);
+    if (type === 'bd_socket') return this._socket(props);
+    if (type === 'bd_switch') return this._switch(props);
     const r = this.RECIPES[type];
     if (!r) return null;
     return (typeof r.prims === 'string') ? this._procedural(r.prims) : r.prims;
   },
+
+  // Family types have no static RECIPE entry — report them as drawable.
+  has(type) { return type === 'bd_light' || type === 'bd_socket' || type === 'bd_switch' || !!this.RECIPES[type]; },
 
   _resolve(v, ctxCol, bg) {
     if (v === 'col') return ctxCol;
@@ -164,11 +207,11 @@ const PlanSymbols = {
   // Draw a glyph centred at the current context origin (already translated/
   // rotated to the element). `sizeWorld` is the full extent in world px.
   draw(ctx, type, opts) {
-    const prims = this.prims(type);
+    const prims = this.prims(type, opts.props);
     if (!prims) return false;
     const col = opts.color || '#6b7280';
     const bg = opts.bg || '#ffffff';
-    const sizeWorld = opts.sizeWorld || this.size(type);
+    const sizeWorld = opts.sizeWorld || this.size(type, opts.props);
     const s = sizeWorld / 40;
     ctx.save();
     ctx.scale(s, s);
@@ -180,6 +223,10 @@ const PlanSymbols = {
       ctx.lineCap = p.cap || 'butt';
       if (p.k === 'c') {
         ctx.beginPath(); ctx.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
+        if (fill && fill !== 'none') { ctx.fillStyle = fill; ctx.fill(); }
+        if (stroke && stroke !== 'none') { ctx.strokeStyle = stroke; ctx.stroke(); }
+      } else if (p.k === 'a') {
+        ctx.beginPath(); ctx.arc(p.cx, p.cy, p.r, p.a0, p.a1, !!p.ccw);
         if (fill && fill !== 'none') { ctx.fillStyle = fill; ctx.fill(); }
         if (stroke && stroke !== 'none') { ctx.strokeStyle = stroke; ctx.stroke(); }
       } else if (p.k === 'r') {

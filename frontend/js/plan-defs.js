@@ -79,23 +79,53 @@ const PLAN_DEFS = {
     bd_db: { name: 'Distribution Board', domain: 'building', group: 'Power', color: '#8b5cf6', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.7 }, rotatable: true, schedule: null, namePrefix: 'DB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_riser: { name: 'Riser', domain: 'building', group: 'Power', color: '#6366f1', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.4 }, rotatable: false, schedule: null, namePrefix: 'RS', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_jb: { name: 'Junction Box', domain: 'building', group: 'Power', color: '#94a3b8', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'JB', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    // Lighting
-    bd_light: { name: 'Light Fitting', domain: 'building', group: 'Lighting', color: '#d29922', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'L', defaults: { watts: 20 }, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'watts', label: 'Load', type: 'number', unit: 'W' }] },
-    bd_downlight: { name: 'Downlight', domain: 'building', group: 'Lighting', color: '#eab308', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DL', defaults: { watts: 12 }, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'watts', label: 'Load', type: 'number', unit: 'W' }] },
-    bd_batten: { name: 'Batten / Linear', domain: 'building', group: 'Lighting', color: '#ca8a04', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'BT', defaults: { watts: 36 }, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'watts', label: 'Load', type: 'number', unit: 'W' }] },
-    bd_floodlight: { name: 'Floodlight', domain: 'building', group: 'Lighting', color: '#f97316', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.4 }, rotatable: true, schedule: null, namePrefix: 'FL', defaults: { watts: 150 }, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'watts', label: 'Load', type: 'number', unit: 'W' }] },
-    bd_emergency: { name: 'Emergency Light', domain: 'building', group: 'Lighting', color: '#16a34a', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'EM', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_exit: { name: 'Exit Sign', domain: 'building', group: 'Lighting', color: '#15803d', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.25 }, rotatable: true, schedule: null, namePrefix: 'EX', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    // Lighting — one dynamic-block family; `kind` renders the permutation.
+    bd_light: {
+      name: 'Light Fitting', domain: 'building', group: 'Lighting', color: '#d29922', scale: 1,
+      symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'L',
+      defaults: { kind: 'ceiling', watts: 20 },
+      fields: [
+        { key: 'name', label: 'Ref', type: 'text' },
+        { key: 'kind', label: 'Type', type: 'select', options: [
+          { value: 'ceiling', label: 'Ceiling / Surface' }, { value: 'downlight', label: 'Downlight' },
+          { value: 'batten', label: 'Batten / Linear' }, { value: 'floodlight', label: 'Floodlight' },
+          { value: 'wall', label: 'Wall / Bulkhead' }, { value: 'highbay', label: 'High-bay' },
+          { value: 'emergency', label: 'Emergency' }, { value: 'exit', label: 'Exit Sign' },
+        ] },
+        { key: 'watts', label: 'Load', type: 'number', unit: 'W' },
+      ],
+    },
     // Small power
-    bd_socket: { name: 'Socket Outlet', domain: 'building', group: 'Small Power', color: '#3b82f6', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'S', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_socket2: { name: 'Double Socket', domain: 'building', group: 'Small Power', color: '#2563eb', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'S2', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_socket_ip: { name: 'Weatherproof Socket', domain: 'building', group: 'Small Power', color: '#1d4ed8', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'WP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    bd_socket: {
+      name: 'Socket Outlet', domain: 'building', group: 'Small Power', color: '#3b82f6', scale: 1,
+      symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'S',
+      defaults: { gangs: '1', weatherproof: false },
+      fields: [
+        { key: 'name', label: 'Ref', type: 'text' },
+        { key: 'gangs', label: 'Gangs', type: 'select', options: [
+          { value: '1', label: '1 gang' }, { value: '2', label: '2 gang' }, { value: '3', label: '3 gang' }] },
+        { key: 'weatherproof', label: 'Weatherproof', type: 'checkbox' },
+      ],
+    },
     bd_isolator: { name: 'Isolator', domain: 'building', group: 'Small Power', color: '#0ea5e9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'IS', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_fcu: { name: 'Fused Spur (FCU)', domain: 'building', group: 'Small Power', color: '#06b6d4', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'FCU', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    // Switches / control points
-    bd_switch: { name: 'Switch', domain: 'building', group: 'Switches', color: '#10b981', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SW', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_switch2: { name: '2-Gang Switch', domain: 'building', group: 'Switches', color: '#059669', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SW2', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_dimmer: { name: 'Dimmer', domain: 'building', group: 'Switches', color: '#047857', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DM', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    // Switches — one dynamic-block family; `gangs` + `kind` render the permutation.
+    bd_switch: {
+      name: 'Switch', domain: 'building', group: 'Switches', color: '#10b981', scale: 1,
+      symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SW',
+      defaults: { gangs: '1', kind: 'standard' },
+      fields: [
+        { key: 'name', label: 'Ref', type: 'text' },
+        { key: 'gangs', label: 'Gangs', type: 'select', options: [
+          { value: '1', label: '1 gang' }, { value: '2', label: '2 gang' }, { value: '3', label: '3 gang' }] },
+        { key: 'kind', label: 'Type', type: 'select', options: [
+          { value: 'standard', label: 'Standard' }, { value: '2way', label: '2-way' },
+          { value: 'intermediate', label: 'Intermediate' }, { value: 'dimmer', label: 'Dimmer' },
+          { value: 'pir', label: 'PIR / Occupancy' }, { value: 'key', label: 'Key switch' },
+          { value: 'timer', label: 'Timer' }, { value: 'photocell', label: 'Photocell' },
+        ] },
+      ],
+    },
     // ELV / fire / security
     bd_smoke: { name: 'Smoke Detector', domain: 'building', group: 'ELV & Fire', color: '#dc2626', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_heat: { name: 'Heat Detector', domain: 'building', group: 'ELV & Fire', color: '#b91c1c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'HD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
@@ -299,12 +329,12 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'b_circuits', name: 'Final Circuits', discipline: 'building', color: '#3b82f6',
-    visibleElementTypes: ['bd_db', 'bd_socket', 'bd_socket2', 'bd_socket_ip', 'bd_isolator', 'bd_fcu'],
+    visibleElementTypes: ['bd_db', 'bd_socket', 'bd_isolator', 'bd_fcu'],
     routeTypes: ['circuit'], trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
   {
     id: 'b_lighting', name: 'Lighting', discipline: 'building', color: '#eab308',
-    visibleElementTypes: ['bd_light', 'bd_downlight', 'bd_batten', 'bd_floodlight', 'bd_emergency', 'bd_exit', 'bd_switch', 'bd_switch2', 'bd_dimmer'],
+    visibleElementTypes: ['bd_light', 'bd_switch'],
     routeTypes: ['lighting_ckt'], trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
   {
