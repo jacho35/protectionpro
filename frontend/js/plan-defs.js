@@ -17,6 +17,59 @@ const PLAN_DOMAINS = [
   { id: 'building', name: 'Building Distribution' },
 ];
 
+/* Building final-circuit / sub-main cable library — the specialised set from
+ * Distribution Designer Pro (House Wiring T+E & singles, H07V-R singles,
+ * Surfix, SWA multicore for feeders, DALI/0-10V control). These are distinct
+ * from the reticulation STANDARD_CABLES (SWA distribution keyed by kV): one
+ * library per cable class, so building distribution routes offer the right
+ * specialised types. `rating` is the ampacity (A); r/x are Ω/km. */
+const BUILDING_CABLES = [
+  // House Wiring — twin & earth
+  { name: '1.5mm² T+E Cu PVC', category: 'House Wiring', size: 1.5, cores: 2, rating: 16, r: 14.6, x: 0.1 },
+  { name: '2.5mm² T+E Cu PVC', category: 'House Wiring', size: 2.5, cores: 2, rating: 22, r: 8.7, x: 0.095 },
+  { name: '4mm² T+E Cu PVC', category: 'House Wiring', size: 4, cores: 2, rating: 30, r: 5.5, x: 0.093 },
+  { name: '6mm² T+E Cu PVC', category: 'House Wiring', size: 6, cores: 2, rating: 38, r: 3.6, x: 0.09 },
+  { name: '10mm² T+E Cu PVC', category: 'House Wiring', size: 10, cores: 2, rating: 52, r: 2.2, x: 0.084 },
+  { name: '16mm² T+E Cu PVC', category: 'House Wiring', size: 16, cores: 2, rating: 69, r: 1.4, x: 0.08 },
+  // Wiring — H07V-R single cores (in conduit)
+  { name: '1.5mm² H07V-R Cu', category: 'Wiring', size: 1.5, cores: 1, rating: 17, r: 14.6, x: 0 },
+  { name: '2.5mm² H07V-R Cu', category: 'Wiring', size: 2.5, cores: 1, rating: 24, r: 8.7, x: 0 },
+  { name: '4mm² H07V-R Cu', category: 'Wiring', size: 4, cores: 1, rating: 32, r: 5.5, x: 0 },
+  { name: '6mm² H07V-R Cu', category: 'Wiring', size: 6, cores: 1, rating: 41, r: 3.6, x: 0 },
+  { name: '10mm² H07V-R Cu', category: 'Wiring', size: 10, cores: 1, rating: 57, r: 2.2, x: 0 },
+  { name: '16mm² H07V-R Cu', category: 'Wiring', size: 16, cores: 1, rating: 76, r: 1.4, x: 0 },
+  { name: '25mm² H07V-R Cu', category: 'Wiring', size: 25, cores: 1, rating: 101, r: 0.87, x: 0 },
+  { name: '35mm² H07V-R Cu', category: 'Wiring', size: 35, cores: 1, rating: 125, r: 0.63, x: 0 },
+  { name: '50mm² H07V-R Cu', category: 'Wiring', size: 50, cores: 1, rating: 151, r: 0.46, x: 0 },
+  { name: '70mm² H07V-R Cu', category: 'Wiring', size: 70, cores: 1, rating: 192, r: 0.32, x: 0 },
+  { name: '95mm² H07V-R Cu', category: 'Wiring', size: 95, cores: 1, rating: 232, r: 0.24, x: 0 },
+  // Surfix — flat surface twin/three + earth
+  { name: '1.5mm² Surfix 2C+E', category: 'Surfix', size: 1.5, cores: 2, rating: 20, r: 14.6, x: 0.1 },
+  { name: '2.5mm² Surfix 2C+E', category: 'Surfix', size: 2.5, cores: 2, rating: 27, r: 8.7, x: 0.095 },
+  { name: '4mm² Surfix 2C+E', category: 'Surfix', size: 4, cores: 2, rating: 36, r: 5.5, x: 0.093 },
+  { name: '6mm² Surfix 2C+E', category: 'Surfix', size: 6, cores: 2, rating: 46, r: 3.6, x: 0.09 },
+  { name: '1.5mm² Surfix 3C+E', category: 'Surfix', size: 1.5, cores: 3, rating: 16, r: 14.6, x: 0.1 },
+  { name: '2.5mm² Surfix 3C+E', category: 'Surfix', size: 2.5, cores: 3, rating: 22, r: 8.7, x: 0.095 },
+  { name: '4mm² Surfix 3C+E', category: 'Surfix', size: 4, cores: 3, rating: 30, r: 5.5, x: 0.093 },
+  // SWA multicore — sub-mains / 3-phase final circuits
+  { name: '2.5mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 2.5, cores: 4, rating: 32, r: 8.7, x: 0.095 },
+  { name: '4mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 4, cores: 4, rating: 42, r: 5.5, x: 0.093 },
+  { name: '6mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 6, cores: 4, rating: 53, r: 3.6, x: 0.09 },
+  { name: '10mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 10, cores: 4, rating: 70, r: 2.2, x: 0.084 },
+  { name: '16mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 16, cores: 4, rating: 91, r: 1.4, x: 0.08 },
+  { name: '25mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 25, cores: 4, rating: 119, r: 0.87, x: 0.084 },
+  { name: '35mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 35, cores: 4, rating: 143, r: 0.64, x: 0.084 },
+  { name: '50mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 50, cores: 4, rating: 169, r: 0.46, x: 0.081 },
+  { name: '70mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 70, cores: 4, rating: 210, r: 0.32, x: 0.081 },
+  { name: '95mm² x4C Cu PVC/SWA', category: 'SWA Multicore', size: 95, cores: 4, rating: 251, r: 0.24, x: 0.078 },
+  // Control
+  { name: '0.5mm² x2C DALI', category: 'Control', size: 0.5, cores: 2, rating: 0, r: 39, x: 0 },
+  { name: '1mm² x2C DALI', category: 'Control', size: 1, cores: 2, rating: 0, r: 19.5, x: 0 },
+  { name: '1.5mm² x2C DALI', category: 'Control', size: 1.5, cores: 2, rating: 0, r: 14.5, x: 0 },
+  { name: '1.0mm² x2C 0-10V Signal', category: 'Control', size: 1, cores: 2, rating: 0, r: 21.8, x: 0 },
+  { name: '1.5mm² x2C Screened BMS', category: 'Control', size: 1.5, cores: 2, rating: 0, r: 14.5, x: 0 },
+];
+
 const PLAN_DEFS = {
   // Point elements. `fields[]` follow the Properties.renderField conventions
   // ({key,label,type,unit,options,...}); `cable_select` is a plan-specific
@@ -174,15 +227,16 @@ const PLAN_DEFS = {
       cableVoltage: null, dxfLayer: 'FIBRE', schedule: null, requiresEndpoints: false,
       defaults: { cableType: '' }, fields: [],
     },
-    // ── building domain routes ──
-    feeder: { name: 'Feeder', domain: 'building', color: '#ef4444', width: 2.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'POWER', schedule: null, requiresEndpoints: true, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
-    circuit: { name: 'Final Circuit', domain: 'building', color: '#3b82f6', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'FINAL_CIRCUITS', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
-    lighting_ckt: { name: 'Lighting Circuit', domain: 'building', color: '#eab308', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'LIGHTING', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }] },
+    // ── building domain routes ── (cables from the specialised BUILDING_CABLES
+    //    library, filtered by category per route type)
+    feeder: { name: 'Feeder', domain: 'building', color: '#ef4444', width: 2.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'POWER', schedule: null, requiresEndpoints: true, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', library: 'building', category: ['SWA Multicore', 'Wiring'] }] },
+    circuit: { name: 'Final Circuit', domain: 'building', color: '#3b82f6', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'FINAL_CIRCUITS', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', library: 'building', category: ['House Wiring', 'Wiring', 'Surfix', 'SWA Multicore'] }] },
+    lighting_ckt: { name: 'Lighting Circuit', domain: 'building', color: '#eab308', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'LIGHTING', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', library: 'building', category: ['House Wiring', 'Surfix', 'Wiring'] }] },
     conduit: { name: 'Conduit', domain: 'building', color: '#64748b', width: 2, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'CONTAINMENT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     cable_tray: { name: 'Cable Tray', domain: 'building', color: '#475569', width: 3, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'CONTAINMENT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     data_cable: { name: 'Data Cable', domain: 'building', color: '#0891b2', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'DATA', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     fire_cable: { name: 'Fire Cable', domain: 'building', color: '#dc2626', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'FIRE', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
-    dali_bus: { name: 'DALI Bus', domain: 'building', color: '#db2777', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'CONTROL', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    dali_bus: { name: 'DALI Bus', domain: 'building', color: '#db2777', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'CONTROL', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', library: 'building', category: ['Control'] }] },
   },
 
   // Trench excavation bands (open polyline drawn as a band of real width).

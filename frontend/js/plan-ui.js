@@ -235,7 +235,7 @@ const PlanUI = {
       return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${f.key}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
     }
     if (f.type === 'cable_select') {
-      return `<div class="plan-field">${label}<select data-key="${f.key}">${this._cableOptions(v, f.voltage)}</select></div>`;
+      return `<div class="plan-field">${label}<select data-key="${f.key}">${this._cableOptions(v, f)}</select></div>`;
     }
     if (f.type === 'select') {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
@@ -248,14 +248,37 @@ const PlanUI = {
     return `<div class="plan-field">${label}<input type="text" data-key="${f.key}" value="${escHtml(v)}"></div>`;
   },
 
-  _cableOptions(selectedName, voltage) {
-    const opt = (c) => `<option value="${escHtml(c.name)}" ${selectedName === c.name ? 'selected' : ''}>${escHtml(c.name)}</option>`;
+  // Build <option>s for a cable_select field. Building routes draw from the
+  // specialised BUILDING_CABLES library (grouped by category, filtered by the
+  // field's `category` list); reticulation routes use the central
+  // STANDARD_CABLES library grouped LV/MV by voltage.
+  _cableOptions(selectedName, field) {
+    field = field || {};
+    const opt = (name) => `<option value="${escHtml(name)}" ${selectedName === name ? 'selected' : ''}>${escHtml(name)}</option>`;
+    let html = '<option value="">— select —</option>';
+    if (field.library === 'building' && typeof BUILDING_CABLES !== 'undefined') {
+      const cats = field.category || null;
+      const groups = {};
+      for (const c of BUILDING_CABLES) {
+        if (cats && !cats.includes(c.category)) continue;
+        (groups[c.category] = groups[c.category] || []).push(c.name);
+      }
+      // Preserve the field's category order, then any extras.
+      const order = cats || Object.keys(groups);
+      for (const cat of order) {
+        if (!groups[cat]) continue;
+        html += `<optgroup label="${escHtml(cat)}">${groups[cat].map(opt).join('')}</optgroup>`;
+      }
+      return html;
+    }
+    // Reticulation (STANDARD_CABLES) — LV/MV by voltage.
+    const voltage = field.voltage;
     let list = STANDARD_CABLES;
     if (voltage === 'lv') list = STANDARD_CABLES.filter(c => !(c.voltage_kv > 1));
     else if (voltage === 'mv') list = STANDARD_CABLES.filter(c => c.voltage_kv > 1);
-    const lv = list.filter(c => !(c.voltage_kv > 1)).map(opt).join('');
-    const mv = list.filter(c => c.voltage_kv > 1).map(opt).join('');
-    return '<option value="">— select —</option>'
+    const lv = list.filter(c => !(c.voltage_kv > 1)).map(c => opt(c.name)).join('');
+    const mv = list.filter(c => c.voltage_kv > 1).map(c => opt(c.name)).join('');
+    return html
       + (lv ? `<optgroup label="LV (≤1 kV)">${lv}</optgroup>` : '')
       + (mv ? `<optgroup label="MV">${mv}</optgroup>` : '');
   },
