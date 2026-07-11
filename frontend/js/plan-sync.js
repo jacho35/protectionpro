@@ -348,6 +348,24 @@ const PlanSync = {
     return bus;
   },
 
+  // Where a feeder cable attaches on the SLD for a plan element acting as the
+  // upstream (source) end: a DB feeds via its shared outgoing bus; a
+  // switchboard feeds straight off its (primary section) bus.
+  _feederSourcePoint(el) {
+    const comp = AppState.components.get(el.sldId);
+    if (!comp) return null;
+    if (el.type === 'bd_switchboard') return { compId: el.sldId, port: 'bottom' };
+    if (el.type === 'bd_db') return { compId: this._ensureOutBus(comp).id, port: 'bottom' };
+    return { compId: el.sldId, port: 'out' };
+  },
+  // …and for the downstream (fed) end: a DB takes its incomer 'in'; a
+  // switchboard takes the feed on its bus.
+  _feederSinkPoint(el) {
+    if (!AppState.components.get(el.sldId)) return null;
+    if (el.type === 'bd_switchboard') return { compId: el.sldId, port: 'top' };
+    return { compId: el.sldId, port: 'in' };
+  },
+
   // Record/refresh a "Feeder to Sub-board" way in the upstream DB's schedule.
   _ensureFeederCircuit(dbComp, subComp, cableType, lenM) {
     if (!Array.isArray(dbComp.props.circuits)) dbComp.props.circuits = [];
@@ -608,21 +626,25 @@ const PlanSync = {
       usedSld.add(comp.id);
     }
 
-    // ── Forward: plan feeder → SLD. The upstream DB feeds the downstream DB
-    //    through an outgoing bus below it (one shared bus per feeding DB) and
-    //    records a "Feeder to Sub-board" circuit in its schedule. ──
+    // ── Forward: plan feeder → SLD cable. Endpoints may be a DB or a
+    //    switchboard. A feeding DB gets a shared outgoing bus below it (and a
+    //    "Feeder to Sub-board" way); a switchboard feeds straight off its bus. ──
+    const BOARD = new Set(['bd_db', 'bd_switchboard']);
     for (const r of feeders) {
       const a = elById[r.fromId], b = elById[r.toId];
-      if (!a || !b || a.type !== 'bd_db' || b.type !== 'bd_db' || !a.sldId || !b.sldId) continue;
+      if (!a || !b || !BOARD.has(a.type) || !BOARD.has(b.type) || !a.sldId || !b.sldId) continue;
       const ca = AppState.components.get(a.sldId), cb = AppState.components.get(b.sldId);
       if (!ca || !cb) continue;
       const lenM = factor ? this._routeLenM(r, factor) : 0;
       let cable = r.sldCableId ? AppState.components.get(r.sldCableId) : null;
       if (!cable) {
-        const outBus = this._ensureOutBus(ca);
-        cable = AppState.addComponent('cable', outBus.x, (outBus.y + cb.y) / 2);
-        AppState.addWire(outBus.id, 'bottom', cable.id, 'from', true);
-        AppState.addWire(cable.id, 'to', cb.id, 'in', true);
+        const src = this._feederSourcePoint(a);   // upstream connection {compId, port}
+        const sink = this._feederSinkPoint(b);     // downstream connection
+        if (!src || !sink) continue;
+        const sc = AppState.components.get(src.compId);
+        cable = AppState.addComponent('cable', sc.x, (sc.y + cb.y) / 2);
+        AppState.addWire(src.compId, src.port, cable.id, 'from', true);
+        AppState.addWire(cable.id, 'to', sink.compId, sink.port, true);
         r.sldCableId = cable.id;
         cable.planLink = r.id;
         summary.cableNew++;
@@ -631,8 +653,9 @@ const PlanSync = {
       if (factor) cable.props.length_km = +(lenM / 1000).toFixed(4);
       const std = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.find(c => c.name === r.cableType);
       if (std) cable.props.standard_type = std.id;
-      // Record/refresh the "Feeder to Sub-board" way on the upstream DB.
-      this._ensureFeederCircuit(ca, cb, r.cableType, lenM);
+      // A feeding DB records an outgoing "Feeder to Sub-board" way (switchboards
+      // have no circuit schedule, so skip).
+      if (a.type === 'bd_db') this._ensureFeederCircuit(ca, cb, r.cableType, lenM);
     }
     this._pruneEmptyOutBuses();
 
