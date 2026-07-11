@@ -62,9 +62,30 @@ PPE_CATEGORIES = [
 ]
 
 
-def _get_gap(voltage_kv):
-    """Get typical conductor gap (mm) for a given voltage level."""
-    # Find closest match
+# Typical conductor gap (mm) by equipment class, IEEE 1584-2002 Table 4.
+# The gap encodes the equipment class the incident-energy x-factor keys off
+# (25 mm LV MCC/panel x=1.641; 32 mm LV switchgear x=1.473; 102/153 mm MV
+# switchgear x=0.973; open-air uses the VOA/HOA config factors).
+_GAP_BY_CLASS = {
+    "lv_switchgear": 32,
+    "lv_mcc_panel": 25,
+    "lv_cable": 13,
+    "mv_switchgear_5kv": 104,
+    "mv_switchgear_15kv": 153,
+    "open_air": 40,
+}
+
+
+def _get_gap(voltage_kv, equipment_class=None):
+    """Get the conductor gap (mm) for a bus.
+
+    An explicit equipment_class selects the IEEE 1584-2002 Table 4 gap
+    (letting LV switchgear be distinguished from MCC/panel); otherwise the
+    gap is inferred from the voltage level as before.
+    """
+    if equipment_class and equipment_class in _GAP_BY_CLASS:
+        return _GAP_BY_CLASS[equipment_class]
+    # Find closest match by voltage
     best_gap = 25
     best_diff = 1e6
     for v, g in _TYPICAL_GAP.items():
@@ -678,7 +699,12 @@ def run_arc_flash(project_data, fault_results):
 
         ibf_ka = fault_bus.ik3  # 3-phase bolted fault current
 
-        gap_mm = _get_gap(voltage_kv)
+        # [gap #7] Conductor gap: an explicit per-bus override wins, then the
+        # equipment class (so LV switchgear 32 mm vs MCC/panel 25 mm can be
+        # modelled), else inferred from voltage.
+        equipment_class = bus.props.get("equipment_class") or None
+        gap_override = float(bus.props.get("conductor_gap_mm", 0) or 0)
+        gap_mm = gap_override if gap_override > 0 else _get_gap(voltage_kv, equipment_class)
 
         # Validate IEEE 1584 applicability — collect all warnings (not just the last)
         validity_warnings = []

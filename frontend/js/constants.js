@@ -938,6 +938,20 @@ const FIELD_INFO = {
   // Static Load
   'static_load.power_factor': 'Default PF = 0.85 lagging — typical mixed commercial/industrial load.\nSource: General practice — power factor range 0.7–0.95 depending on load type.',
   'static_load.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed load.\nSource: IEC 60439 / IEC 61439.\nTypical values: lighting 1.0, socket outlets 0.4, motors (group) 0.5–0.8.',
+  'static_load.motor_fraction': 'Rotating share of this lumped load (0–1). When > 0 that fraction back-feeds short circuits as an induction-motor equivalent per IEC 60909-0 §13, instead of contributing nothing.\n0 = pure static load (default, unchanged). Typical mixed MCC 0.4–0.7.',
+  'static_load.motor_lrc_ratio': 'Locked-rotor current ratio (LRC = I_start / I_FLC) of the motor fraction. Sets the sub-transient reactance X″ ≈ 1/LRC.\nSource: IEC 60909-0 §13. Typical DOL induction motors 5–7 (default 6).',
+  'distribution_board.motor_fraction': 'Rotating share of the board load (0–1) that back-feeds short circuits as an induction-motor equivalent per IEC 60909-0 §13.\n0 = treat as pure static load (default).',
+  'distribution_board.motor_lrc_ratio': 'Locked-rotor current ratio (I_start / I_FLC) of the board motor fraction; sets X″ ≈ 1/LRC per IEC 60909-0 §13. Typical 5–7 (default 6).',
+
+  // Arc flash equipment class (IEEE 1584-2002 Table 4)
+  'bus.equipment_class': 'Selects the IEEE 1584-2002 conductor gap and enclosure class.\n"auto" infers from voltage (LV = MCC/panel 25 mm). Choose lv_switchgear (32 mm) to model LV switchgear, mv_switchgear_5kv (104 mm) / 15kv (153 mm) for MV, or open_air.\nSource: IEEE 1584-2002 Table 4.',
+  'bus.conductor_gap_mm': 'Explicit conductor gap override in mm (0 = use the equipment class / voltage default). Valid IEEE 1584-2002 model range 6.35–76.2 mm.\nSource: IEEE 1584-2002 §5.',
+
+  // Cable sizing — fault-withstand basis & standalone inputs
+  'cable.adiabatic_basis': 'Fault-withstand current basis.\nThermal-equiv. Iₜₕ = Ik″·√(m+n) per IEC 60909-0 §12 (default, conservative — includes the DC component).\nBare Isc uses Ik″ directly, matching the simpler adiabatic hand-calc in many design guides.',
+  'cable.standalone_current_a': 'Hand-entered design (load) current for a standalone sizing check, in A. 0 = take the current from the network load flow.\nUse when checking a cable without building/solving the full network.',
+  'cable.standalone_isc_ka': 'Hand-entered prospective short-circuit current for the fault-withstand check, in kA. 0 = take Ik″ from the fault study.',
+  'cable.standalone_clearing_s': 'Hand-entered protective-device clearing time for the fault-withstand check, in s. 0 = estimate from the upstream breaker.',
 
   // Motor demand factors
   'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.\nTypical: single largest motor 1.0, group of 2-4 motors 0.8, 5-10 motors 0.6.',
@@ -1347,6 +1361,8 @@ const COMPONENT_DEFS = {
       bus_type: 'PQ',
       busWidth: 120,
       working_distance_mm: 455,
+      equipment_class: 'auto',
+      conductor_gap_mm: 0,
       electrode_config: 'VCB',
       enclosure_size_mm: 508,
       soil_resistivity: 100,
@@ -1369,6 +1385,8 @@ const COMPONENT_DEFS = {
       { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'], showWhen: { field: 'system', values: ['ac'] } },
       { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
       { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5, section: 'arcflash' },
+      { key: 'equipment_class', label: 'Equipment Class', type: 'select', options: ['auto', 'lv_switchgear', 'lv_mcc_panel', 'lv_cable', 'mv_switchgear_5kv', 'mv_switchgear_15kv', 'open_air'], section: 'arcflash' },
+      { key: 'conductor_gap_mm', label: 'Conductor Gap (0 = auto)', type: 'number', unit: 'mm', min: 0, step: 1, section: 'arcflash' },
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'], section: 'arcflash' },
       { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10, section: 'arcflash' },
       { key: 'system_grounded', label: 'System Grounding', type: 'select', options: ['unknown', 'grounded', 'ungrounded'], section: 'arcflash' },
@@ -1465,6 +1483,10 @@ const COMPONENT_DEFS = {
       { key: 'ampacity_standard', label: 'Ampacity Standard', type: 'select', options: ['IEC', 'NEC'], section: 'cable_sizing' },
       { key: 'num_parallel', label: 'Parallel Cables', type: 'number', min: 1, max: 20, step: 1, section: 'cable_sizing' },
       { key: 'rated_amps', label: 'Rated Current (per cable)', type: 'number', unit: 'A', section: 'cable_sizing' },
+      { key: 'adiabatic_basis', label: 'Fault-withstand Basis', type: 'select', options: [{ value: '', label: 'Thermal-equiv. Iₜₕ (default)' }, { value: 'bare_isc', label: 'Bare Isc (hand-calc)' }], section: 'cable_sizing' },
+      { key: 'standalone_current_a', label: 'Standalone Design Current (0 = use load flow)', type: 'number', unit: 'A', min: 0, step: 1, section: 'cable_sizing' },
+      { key: 'standalone_isc_ka', label: 'Standalone Isc (0 = use fault study)', type: 'number', unit: 'kA', min: 0, step: 0.1, section: 'cable_sizing' },
+      { key: 'standalone_clearing_s', label: 'Standalone Clearing Time (0 = auto)', type: 'number', unit: 's', min: 0, step: 0.01, section: 'cable_sizing' },
       { key: 'r_per_km', label: 'R₁ (pos. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
       { key: 'x_per_km', label: 'X₁ (pos. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
       { key: 'r0_per_km', label: 'R₀ (zero seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
@@ -1773,6 +1795,8 @@ const COMPONENT_DEFS = {
       load_type: 'constant_power',
       demand_factor: 1.0,
       essential: 'yes',
+      motor_fraction: 0,
+      motor_lrc_ratio: 6,
       phase_connection: '3P',
       phase_a_pct: 33.33,
       phase_b_pct: 33.33,
@@ -1785,6 +1809,8 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number', section: 'loadflow' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
+      { key: 'motor_fraction', label: 'Motor Fraction (0 = none)', type: 'number', min: 0, max: 1, step: 0.05, section: 'fault' },
+      { key: 'motor_lrc_ratio', label: 'Motor LRC Ratio', type: 'number', min: 1, max: 10, step: 0.5, section: 'fault' },
       { key: 'phase_connection', label: 'Phase Connection', type: 'select',
         options: [
           { value: '3P',    label: '3-Phase (A-B-C)' },
@@ -1816,6 +1842,8 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       board_diversity: 1.0,     // overall diversity applied on top of per-way DFs
       essential: 'yes',
+      motor_fraction: 0,
+      motor_lrc_ratio: 6,
       circuits: [],             // circuit schedule (ways) — edited in DBSchedule
       // Derived lumped-load equivalents, recomputed by DBSchedule on save.
       // The analyses read these exactly like a static load's props.
@@ -1833,6 +1861,8 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'board_diversity', label: 'Board Diversity', type: 'number', min: 0.1, max: 1, step: 0.05, section: 'loadflow' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
+      { key: 'motor_fraction', label: 'Motor Fraction (0 = none)', type: 'number', min: 0, max: 1, step: 0.05, section: 'fault' },
+      { key: 'motor_lrc_ratio', label: 'Motor LRC Ratio', type: 'number', min: 1, max: 10, step: 0.5, section: 'fault' },
     ],
   },
 

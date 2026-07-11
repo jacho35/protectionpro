@@ -1624,11 +1624,26 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
             # Non-swing bus: NR enforces P_spec → sources sit at their
             # dispatched output (full available for must_run, merit-order
             # allocation otherwise).
+            # [gap #6] At a PV bus the generator's reactive output is whatever
+            # holds the setpoint voltage, not its scheduled/dispatched Q.
+            # Recover the true Q from the converged solution — net reactive
+            # injection at the bus (Im{V·conj(Y·V)}) plus the local load Q —
+            # and split it across the bus's generators by rating. P is
+            # unchanged (NR enforced P_spec).
+            pv_q_solved = None
+            gen_rated_total = 0.0
+            if bus_types[bus_i] == 1:
+                q_inj = (V[bus_i] * np.conj(Y[bus_i, :] @ V)).imag * base_mva
+                pv_q_solved = q_inj + bus_load_q_mvar[bus_i]
+                gen_rated_total = sum(_source_output_mva(s)[3] for s in gen_sources
+                                      if _source_output_mva(s)[3] > 0)
             for src in gen_sources:
                 _p, _q, s_rated, rated_mva = _source_output_mva(src)
                 if rated_mva <= 0:
                     continue
                 _p, _q = dispatch["dispatched_by_comp"].get(src.id, (_p, _q))
+                if pv_q_solved is not None and gen_rated_total > 0:
+                    _q = pv_q_solved * (rated_mva / gen_rated_total)
                 s_disp = math.hypot(_p, _q)
                 i_amps = (s_disp * 1000) / (math.sqrt(3) * v_kv_actual) if v_kv_actual > 0 else 0
                 branch_results.append(LoadFlowBranch(

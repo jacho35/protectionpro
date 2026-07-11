@@ -525,6 +525,23 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
             })
             return
 
+        # Static/lumped load with a rotating fraction ([gap #2]) — back-feeds
+        # the fault as an induction-motor equivalent (decays for Ib like any
+        # induction motor via source_type "motor_induction").
+        if comp.type in ("static_load", "distribution_board"):
+            z_src, motor_mva = _static_load_motor_impedance(comp, base_mva)
+            if z_src is not None:
+                paths.append({
+                    "z_total": z_path + z_src,
+                    "z2_total": z_path + z_src,
+                    "trail": trail + [comp_id],
+                    "source_id": comp_id,
+                    "source_type": "motor_induction",
+                    "is_motor": True,
+                    "rated_mva": motor_mva,
+                })
+            return
+
         # Accumulate impedance through branch elements, tracking the
         # voltage zone for cable per-unit conversion ([EE-12])
         z_element = complex(0, 0)
@@ -791,6 +808,32 @@ def _motor_induction_impedance(comp, base_mva):
     x_pu = x_pp * base_mva / rated_mva
     r_pu = x_pu / xr
     return complex(r_pu, x_pu)
+
+
+def _static_load_motor_impedance(comp, base_mva):
+    """Motor-equivalent sub-transient impedance for the rotating fraction of a
+    static/lumped load, per IEC 60909-0 §13 ([gap #2]).
+
+    Returns (z_src, motor_mva) or (None, 0) when no motor fraction is set.
+    The rotating share (motor_fraction × rated_kVA) is modelled as an
+    induction motor with X" ≈ 1/LRC (locked-rotor current ratio) on its own
+    base, so lumped loads with a motor component back-feed the fault instead
+    of being ignored.
+    """
+    mf = float(comp.props.get("motor_fraction", 0) or 0)
+    if mf <= 0:
+        return None, 0.0
+    mf = min(mf, 1.0)
+    rated_kva = float(comp.props.get("rated_kva", 0) or 0)
+    motor_mva = rated_kva / 1000.0 * mf
+    if motor_mva <= 1e-9:
+        return None, 0.0
+    lrc = float(comp.props.get("motor_lrc_ratio", 6) or 6)  # locked-rotor / FLC
+    x_pp = 1.0 / max(lrc, 1e-3)                              # p.u. on motor base
+    xr = float(comp.props.get("x_r_ratio", 10) or 10)
+    x_pu = x_pp * base_mva / motor_mva
+    r_pu = x_pu / xr
+    return complex(r_pu, x_pu), motor_mva
 
 
 def _motor_synchronous_impedance(comp, base_mva):
@@ -1616,6 +1659,13 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
             else:
                 z_src = _motor_synchronous_impedance(comp, base_mva)
             bus_shunts[from_bus_id].append((z_src, comp.type, comp))
+            return
+        if comp.type in ("static_load", "distribution_board"):
+            # [gap #2] rotating fraction of a lumped load contributes like a
+            # motor to the fault-induced voltage depression
+            z_src, _mva = _static_load_motor_impedance(comp, base_mva)
+            if z_src is not None:
+                bus_shunts[from_bus_id].append((z_src, "motor_induction", comp))
             return
 
         # Accumulate impedance through branch elements, tracking the voltage

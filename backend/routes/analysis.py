@@ -125,6 +125,7 @@ class CableSizingRequest(ProjectData):
     ambient_temp_c: Optional[float] = None
     install_method: Optional[str] = None
     max_voltage_drop_pct: Optional[float] = None
+    adiabatic_basis: Optional[str] = None
 
 
 @router.post("/cable-sizing")
@@ -137,6 +138,7 @@ def cable_sizing(data: CableSizingRequest):
             install_method=data.install_method or "trefoil",
             max_voltage_drop_pct=(data.max_voltage_drop_pct
                                   if data.max_voltage_drop_pct is not None else 5.0),
+            adiabatic_basis=data.adiabatic_basis or "thermal_equivalent",
         )
     except Exception as e:
         traceback.print_exc()
