@@ -1,0 +1,102 @@
+{
+  "projectName": "DC Load Flow",
+  "baseMVA": 100,
+  "frequency": 50,
+  "components": [
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 100,
+      "y": 100,
+      "rotation": 0,
+      "props": {
+        "name": "RectBus",
+        "system": "dc",
+        "voltage_dc_v": 125
+      }
+    },
+    {
+      "id": "rectifier-1",
+      "type": "rectifier",
+      "x": 100,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Rect",
+        "voltage_dc_v": 125,
+        "rated_kw": 25
+      }
+    },
+    {
+      "id": "bus-2",
+      "type": "bus",
+      "x": 300,
+      "y": 100,
+      "rotation": 0,
+      "props": {
+        "name": "LoadBus",
+        "system": "dc",
+        "voltage_dc_v": 125
+      }
+    },
+    {
+      "id": "cable-1",
+      "type": "cable",
+      "x": 200,
+      "y": 100,
+      "rotation": 0,
+      "props": {
+        "name": "DCcbl",
+        "r_per_km": 0.1,
+        "x_per_km": 0.08,
+        "length_km": 0.5,
+        "num_parallel": 1,
+        "rated_amps": 300
+      }
+    },
+    {
+      "id": "dc_load-1",
+      "type": "dc_load",
+      "x": 300,
+      "y": 180,
+      "rotation": 0,
+      "props": {
+        "name": "Ld",
+        "load_model": "constant_power",
+        "load_kw": 10
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "rectifier-1",
+      "fromPort": "o",
+      "toComponent": "bus-1",
+      "toPort": "i"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-1",
+      "fromPort": "o",
+      "toComponent": "cable-1",
+      "toPort": "i"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "cable-1",
+      "fromPort": "o",
+      "toComponent": "bus-2",
+      "toPort": "i"
+    },
+    {
+      "id": "w4",
+      "fromComponent": "bus-2",
+      "fromPort": "o",
+      "toComponent": "dc_load-1",
+      "toPort": "i"
+    }
+  ],
+  "nextId": 50,
+  "dataVersion": 2
+}

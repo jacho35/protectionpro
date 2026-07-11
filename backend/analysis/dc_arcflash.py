@@ -265,7 +265,7 @@ def run_dc_arc_flash(project_data, fault_results):
         DCArcFlashResults with per-bus DC arc flash calculations.
     """
     components = {c.id: c for c in project_data.components}
-    buses = {c.id: c for c in project_data.components if c.type == "bus"}
+    buses = {c.id: c for c in project_data.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"}
 
     # Build adjacency from wires
     adjacency = {}

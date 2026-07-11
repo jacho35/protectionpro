@@ -1,0 +1,174 @@
+{
+  "projectName": "Case 3 - Motor+Lump (static)",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "GRID",
+        "voltage_kv": 110,
+        "fault_mva": 7621.023,
+        "x_r_ratio": 14,
+        "z2_z1_ratio": 1.0,
+        "z0_z1_ratio": 1.0,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-6",
+      "type": "bus",
+      "x": 200,
+      "y": 120,
+      "rotation": 0,
+      "props": {
+        "name": "Bus6",
+        "voltage_kv": 110
+      }
+    },
+    {
+      "id": "transformer-2",
+      "type": "transformer",
+      "x": 300,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "T2",
+        "rated_mva": 25,
+        "z_percent": 10,
+        "x_r_ratio": 20,
+        "voltage_hv_kv": 110,
+        "voltage_lv_kv": 11,
+        "vector_group": "Dyn11",
+        "winding_config": "step_down",
+        "grounding_lv": "solidly_grounded",
+        "grounding_hv": "ungrounded"
+      }
+    },
+    {
+      "id": "bus-5",
+      "type": "bus",
+      "x": 200,
+      "y": 300,
+      "rotation": 0,
+      "props": {
+        "name": "Bus5",
+        "voltage_kv": 11
+      }
+    },
+    {
+      "id": "cable-21",
+      "type": "cable",
+      "x": 400,
+      "y": 380,
+      "rotation": 0,
+      "props": {
+        "name": "Cable",
+        "r_per_km": 9.8,
+        "x_per_km": 9.0,
+        "length_km": 0.01,
+        "r0_per_km": 0,
+        "x0_per_km": 0,
+        "voltage_kv": 11,
+        "num_parallel": 1
+      }
+    },
+    {
+      "id": "bus-11",
+      "type": "bus",
+      "x": 350,
+      "y": 460,
+      "rotation": 0,
+      "props": {
+        "name": "Bus11",
+        "voltage_kv": 11
+      }
+    },
+    {
+      "id": "motor_induction-1",
+      "type": "motor_induction",
+      "x": 400,
+      "y": 540,
+      "rotation": 0,
+      "props": {
+        "name": "Mtr1",
+        "rated_kw": 5000,
+        "voltage_kv": 11,
+        "efficiency": 0.9,
+        "power_factor": 0.95,
+        "x_pp": 0.15319,
+        "x_r_ratio": 10.825,
+        "x2": 0
+      }
+    },
+    {
+      "id": "static_load-2",
+      "type": "static_load",
+      "x": 150,
+      "y": 380,
+      "rotation": 0,
+      "props": {
+        "name": "Lump2",
+        "rated_kva": 18000,
+        "voltage_kv": 11,
+        "power_factor": 0.85
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-6",
+      "toPort": "p0"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-6",
+      "fromPort": "p1",
+      "toComponent": "transformer-2",
+      "toPort": "primary"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "transformer-2",
+      "fromPort": "secondary",
+      "toComponent": "bus-5",
+      "toPort": "p0"
+    },
+    {
+      "id": "w4",
+      "fromComponent": "bus-5",
+      "fromPort": "p1",
+      "toComponent": "cable-21",
+      "toPort": "from"
+    },
+    {
+      "id": "w5",
+      "fromComponent": "cable-21",
+      "fromPort": "to",
+      "toComponent": "bus-11",
+      "toPort": "p0"
+    },
+    {
+      "id": "w6",
+      "fromComponent": "bus-11",
+      "fromPort": "p1",
+      "toComponent": "motor_induction-1",
+      "toPort": "in"
+    },
+    {
+      "id": "w7",
+      "fromComponent": "bus-5",
+      "fromPort": "p2",
+      "toComponent": "static_load-2",
+      "toPort": "in"
+    }
+  ],
+  "nextId": 100
+}

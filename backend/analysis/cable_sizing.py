@@ -501,8 +501,18 @@ def _estimate_clearing_time(cb_comp):
 
 def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                      install_method: str = "trefoil",
-                     max_voltage_drop_pct: float = 5.0):
+                     max_voltage_drop_pct: float = 5.0,
+                     adiabatic_basis: str = "thermal_equivalent"):
     """Run cable sizing analysis for all cables in the project.
+
+    adiabatic_basis selects the fault-withstand current basis ([gap #4]):
+      - "thermal_equivalent" (default): I_th = Ik″·√(m+n) per IEC 60909-0 §12
+        (conservative — accounts for the DC component's heating).
+      - "bare_isc": use Ik″ directly, matching the simpler adiabatic hand-calc
+        used in many design guides.
+    A cable may also carry a per-cable ``sizing_override`` block
+    ({design_current_a, isc_ka, clearing_time_s}) so a standalone check can be
+    run with hand-entered values instead of the network load-flow/fault solve.
 
     Returns dict with 'cables' list and 'warnings' list.
     """
@@ -551,8 +561,20 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         from_bus_name = comp_map[from_bus].props.get("name", from_bus) if from_bus and from_bus in comp_map else from_bus
         to_bus_name = comp_map[to_bus].props.get("name", to_bus) if to_bus and to_bus in comp_map else to_bus
 
+        # [gap #4] Standalone override — hand-entered design/fault values let a
+        # cable be checked without a converged network load-flow/fault solve.
+        # Accepts flat per-cable props (from the properties panel) or a nested
+        # sizing_override block.
+        override = cable.props.get("sizing_override") or {}
+        ov_current = float(override.get("design_current_a", 0)
+                           or cable.props.get("standalone_current_a", 0) or 0)
+        ov_isc_ka = float(override.get("isc_ka", 0)
+                          or cable.props.get("standalone_isc_ka", 0) or 0)
+        ov_clear_s = float(override.get("clearing_time_s", 0)
+                           or cable.props.get("standalone_clearing_s", 0) or 0)
+
         # Get load current
-        load_current = branch_currents.get(cable.id, 0)
+        load_current = ov_current if ov_current > 0 else branch_currents.get(cable.id, 0)
         num_parallel = max(cp["num_parallel"], 1)
         current_per_cable = load_current / num_parallel
 
@@ -649,6 +671,12 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         upstream_cb = _find_upstream_cb(cable.id, adj, comp_map)
         t_clear = _estimate_clearing_time(upstream_cb)
 
+        # [gap #4] Standalone override for the fault-withstand check.
+        if ov_isc_ka > 0:
+            fault_ka = ov_isc_ka
+        if ov_clear_s > 0:
+            t_clear = ov_clear_s
+
         # [EE-5] Adiabatic sizing must use the thermal-equivalent current
         # Ith = Ik″·√(m+n) per IEC 60909-0 §12, not the bare Ik″ — at the
         # short clearing times of fuses/MCCBs the DC component adds 20-45%
@@ -659,7 +687,11 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         freq = project.frequency or 50
         kappa = fault_kappa if fault_kappa and fault_kappa > 1.0 else 1.8
         m_dc = thermal_m_factor(kappa, t_clear, freq)
-        sqrt_mn = math.sqrt(m_dc + 1.0)
+        # [gap #4] "bare_isc" uses Ik″ directly (simpler hand-calc basis);
+        # the default "thermal_equivalent" applies the IEC 60909-0 §12 √(m+n).
+        # A per-cable prop overrides the run-level default.
+        basis = str(cable.props.get("adiabatic_basis") or adiabatic_basis)
+        sqrt_mn = 1.0 if basis == "bare_isc" else math.sqrt(m_dc + 1.0)
         ith_ka = fault_ka * sqrt_mn
 
         if fault_ka > 0 and size_mm2 > 0:
@@ -689,7 +721,8 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         # When load flow failed/diverged or reports no current for this
         # cable, the thermal and voltage-drop checks are meaningless — mark
         # the cable "unknown" instead of silently passing it (M6).
-        current_known = lf_converged and cable.id in branch_currents and load_current > 0
+        current_known = (ov_current > 0) or (
+            lf_converged and cable.id in branch_currents and load_current > 0)
         if not thermal_ok or not voltage_drop_ok or not fault_withstand_ok:
             status = "fail"
         elif not current_known or not ampacity_known:

@@ -809,6 +809,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── DC Load Flow ──
+  document.getElementById('btn-dc-loadflow').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running DC load flow.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running DC load flow...';
+    _setBusy('btn-dc-loadflow', true);
+    try {
+      const result = await API.runDCLoadFlow();
+      AppState.dcLoadFlowResults = result;
+      Canvas.render();
+      const nBus = Object.keys(result.buses || {}).length;
+      document.getElementById('status-info').textContent = result.converged
+        ? `DC load flow complete — ${nBus} DC bus${nBus === 1 ? '' : 'es'}.`
+        : 'DC load flow: no DC buses found.';
+      showDCLoadFlowResults(result);
+    } catch (e) {
+      console.error('DC load flow error:', e);
+      document.getElementById('status-info').textContent = 'DC load flow failed.';
+      showValidationModal('DC Load Flow — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-dc-loadflow', false);
+    }
+  });
+
+  // ── DC Short Circuit (IEC 61660-1) ──
+  document.getElementById('btn-dc-shortcircuit').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running DC short circuit.';
+      return;
+    }
+    // A single selected DC bus scopes the analysis to that bus.
+    let faultBusId = null;
+    const sel = [...AppState.selectedIds];
+    if (sel.length === 1) {
+      const c = AppState.components.get(sel[0]);
+      if (c && c.type === 'bus' && String(c.props.system) === 'dc') faultBusId = sel[0];
+    }
+    document.getElementById('status-info').textContent = 'Running DC short circuit (IEC 61660)...';
+    _setBusy('btn-dc-shortcircuit', true);
+    try {
+      const result = await API.runDCShortCircuit(faultBusId);
+      AppState.dcShortCircuitResults = result;
+      Canvas.render();
+      const nBus = Object.keys(result.buses || {}).length;
+      document.getElementById('status-info').textContent = result.converged
+        ? `DC short circuit complete — ${nBus} DC bus${nBus === 1 ? '' : 'es'}.`
+        : 'DC short circuit: no DC buses found.';
+      showDCShortCircuitResults(result);
+    } catch (e) {
+      console.error('DC short circuit error:', e);
+      document.getElementById('status-info').textContent = 'DC short circuit failed.';
+      showValidationModal('DC Short Circuit — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-dc-shortcircuit', false);
+    }
+  });
+
   // ── Cable Sizing Analysis ──
   document.getElementById('btn-cable-sizing').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -1217,6 +1276,141 @@ document.addEventListener('DOMContentLoaded', () => {
       for (const n of (isl.notes || [])) {
         html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(n)}</p>`;
       }
+    }
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
+  function showDCLoadFlowResults(result) {
+    const modal = document.getElementById('dc-loadflow-modal');
+    const body = document.getElementById('dc-loadflow-body');
+    if (!modal || !body) return;
+    const buses = Object.values(result.buses || {});
+    const branches = result.branches || [];
+    const sources = result.sources || [];
+    const warnings = result.warnings || [];
+
+    let html = `<div style="background:#e6510011;border:1px solid #e65100;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+      <div style="font-size:12px">Method: <strong>${escHtml(result.method || 'DC Nodal')}</strong></div>
+      <div style="font-size:12px">DC buses: <strong>${buses.length}</strong></div>
+      <div style="font-size:12px">Iterations: <strong>${result.iterations ?? 0}</strong></div>
+    </div>`;
+
+    if (buses.length === 0) {
+      html += '<p style="opacity:0.7">No DC buses. Set a bus\'s <strong>System</strong> property to <strong>DC</strong> to model a DC network.</p>';
+      body.innerHTML = html; modal.style.display = ''; return;
+    }
+
+    html += `<h4 style="margin:12px 0 6px;font-size:13px">Bus Voltages</h4>
+      <table class="af-table"><thead><tr>
+      <th>Bus</th><th>Voltage (V)</th><th>Nominal (V)</th><th>% Nominal</th><th>Deviation</th><th>Load (kW)</th><th>Status</th>
+      </tr></thead><tbody>`;
+    for (const b of buses) {
+      const de = b.energized === false;
+      const dropColor = Math.abs(b.drop_pct) > 5 ? '#d32f2f' : Math.abs(b.drop_pct) > 2 ? '#f57c00' : '#2e7d32';
+      html += `<tr>
+        <td>${escHtml(b.bus_name)}</td>
+        <td>${de ? '—' : b.voltage_v.toFixed(1)}</td>
+        <td>${b.nominal_v.toFixed(0)}</td>
+        <td>${de ? '—' : (b.voltage_pu * 100).toFixed(1) + '%'}</td>
+        <td style="color:${dropColor}">${de ? '—' : b.drop_pct.toFixed(2) + '%'}</td>
+        <td>${b.load_kw.toFixed(2)}</td>
+        <td>${de ? '<span style="color:#d32f2f;font-weight:600">DE-ENERGIZED</span>' : '<span style="color:#4caf50">OK</span>'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+
+    if (sources.length) {
+      html += `<h4 style="margin:14px 0 6px;font-size:13px">Sources</h4>
+        <table class="af-table"><thead><tr>
+        <th>Source</th><th>Type</th><th>Bus</th><th>Voltage (V)</th><th>Current (A)</th><th>Power (kW)</th><th>Loading</th>
+        </tr></thead><tbody>`;
+      for (const s of sources) {
+        const lc = s.current_limited ? '#d32f2f' : s.loading_pct > 80 ? '#f57c00' : '#2e7d32';
+        html += `<tr>
+          <td>${escHtml(s.source_name)}</td><td>${escHtml(s.source_type)}</td>
+          <td>${escHtml((result.buses[s.bus_id] || {}).bus_name || s.bus_id)}</td>
+          <td>${s.voltage_v.toFixed(1)}</td><td>${s.current_a.toFixed(1)}</td><td>${s.power_kw.toFixed(2)}</td>
+          <td style="color:${lc}">${s.loading_pct.toFixed(0)}%${s.current_limited ? ' (limited)' : ''}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+    }
+
+    if (branches.length) {
+      html += `<h4 style="margin:14px 0 6px;font-size:13px">Cable Flows</h4>
+        <table class="af-table"><thead><tr>
+        <th>Cable</th><th>Current (A)</th><th>V-drop (V)</th><th>R loop (Ω)</th><th>Loss (kW)</th><th>Loading</th>
+        </tr></thead><tbody>`;
+      for (const br of branches) {
+        const lc = br.loading_pct > 100 ? '#d32f2f' : br.loading_pct > 80 ? '#f57c00' : '#2e7d32';
+        html += `<tr>
+          <td>${escHtml(br.element_name)}</td><td>${br.current_a.toFixed(1)}</td>
+          <td>${br.voltage_drop_v.toFixed(2)}</td><td>${br.resistance_ohm.toFixed(4)}</td>
+          <td>${br.loss_kw.toFixed(3)}</td><td style="color:${lc}">${br.loading_pct.toFixed(0)}%</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+    }
+
+    for (const w of warnings) {
+      html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(w.message)}</p>`;
+    }
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
+  function showDCShortCircuitResults(result) {
+    const modal = document.getElementById('dc-shortcircuit-modal');
+    const body = document.getElementById('dc-shortcircuit-body');
+    if (!modal || !body) return;
+    const buses = Object.values(result.buses || {});
+    const warnings = result.warnings || [];
+
+    let html = `<div style="background:#e6510011;border:1px solid #e65100;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+      <div style="font-size:12px">Standard: <strong>${escHtml(result.standard || 'IEC 61660-1')}</strong></div>
+      <div style="font-size:12px">DC buses: <strong>${buses.length}</strong></div>
+    </div>`;
+
+    if (buses.length === 0) {
+      html += '<p style="opacity:0.7">No DC buses. Set a bus\'s <strong>System</strong> property to <strong>DC</strong> to model a DC network.</p>';
+      body.innerHTML = html; modal.style.display = ''; return;
+    }
+
+    html += `<table class="af-table"><thead><tr>
+      <th>Bus</th><th>Nom. (V)</th><th>I<sub>k</sub> (kA)</th><th>i<sub>p</sub> (kA)</th><th>t<sub>p</sub> (ms)</th><th>τ (ms)</th><th>Sources</th>
+      </tr></thead><tbody>`;
+    for (const b of buses) {
+      const none = !b.contributions || b.contributions.length === 0;
+      html += `<tr>
+        <td>${escHtml(b.bus_name)}</td><td>${b.nominal_v.toFixed(0)}</td>
+        <td><strong>${b.ik_ka.toFixed(2)}</strong></td><td><strong>${b.ip_ka.toFixed(2)}</strong></td>
+        <td>${b.tp_ms.toFixed(1)}</td><td>${b.time_constant_ms.toFixed(1)}</td>
+        <td>${none ? '<span style="color:#d32f2f">none</span>' : b.contributions.length}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+
+    // Per-source contribution breakdown for buses that have sources.
+    for (const b of buses) {
+      if (!b.contributions || b.contributions.length === 0) continue;
+      html += `<h4 style="margin:14px 0 6px;font-size:13px">${escHtml(b.bus_name)} — source contributions</h4>
+        <table class="af-table"><thead><tr>
+        <th>Source</th><th>Type</th><th>I<sub>k</sub> (kA)</th><th>i<sub>p</sub> (kA)</th><th>t<sub>p</sub> (ms)</th><th>R branch (mΩ)</th>
+        </tr></thead><tbody>`;
+      for (const c of b.contributions) {
+        html += `<tr>
+          <td>${escHtml(c.source_name)}</td><td>${escHtml(c.source_type)}</td>
+          <td>${c.ik_ka.toFixed(3)}</td><td>${c.ip_ka.toFixed(3)}</td>
+          <td>${c.tp_ms.toFixed(1)}</td><td>${c.r_mohm.toFixed(1)}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+    }
+
+    html += `<p style="font-size:11px;opacity:0.7;margin-top:12px">IEC 61660-1 superposition. Battery: I<sub>k</sub> = 0.95·E<sub>B</sub>/R<sub>BBr</sub>, i<sub>p</sub> = E<sub>B</sub>/R<sub>BBr</sub>. Converters (rectifier / charger) treated as current-limited per IEC TR 60909-4. Capacitor and DC-motor sources are not yet modelled.</p>`;
+    for (const w of warnings) {
+      html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(w.message)}</p>`;
     }
     body.innerHTML = html;
     modal.style.display = '';
@@ -2163,6 +2357,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'dc-arcflash-modal') e.target.style.display = 'none';
   });
 
+  document.getElementById('btn-close-dc-loadflow').addEventListener('click', () => {
+    document.getElementById('dc-loadflow-modal').style.display = 'none';
+  });
+  document.getElementById('dc-loadflow-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'dc-loadflow-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-dc-shortcircuit').addEventListener('click', () => {
+    document.getElementById('dc-shortcircuit-modal').style.display = 'none';
+  });
+  document.getElementById('dc-shortcircuit-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'dc-shortcircuit-modal') e.target.style.display = 'none';
+  });
+
   document.getElementById('btn-close-cable-sizing').addEventListener('click', () => {
     document.getElementById('cable-sizing-modal').style.display = 'none';
   });
@@ -2872,6 +3080,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-save-settings').addEventListener('click', () => {
     AppState.baseMVA = parseFloat(document.getElementById('base-mva').value) || DEFAULT_BASE_MVA;
     AppState.frequency = parseInt(document.getElementById('base-freq').value) || DEFAULT_FREQUENCY;
+    AppState.voltageFactor = parseFloat(document.getElementById('voltage-factor').value) || DEFAULT_VOLTAGE_FACTOR;
     AppState.defaultLengthUnit = document.getElementById('default-length-unit').value || 'm';
     AppState.clearResults();
     Canvas.render();

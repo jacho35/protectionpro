@@ -90,13 +90,20 @@ const Symbols = {
     const bw = (comp && comp.props && comp.props.busWidth) || w;
     const hw = bw / 2;
     const handleOffset = 18;
+    const isDC = comp && comp.props && String(comp.props.system) === 'dc';
+    // DC busbars are drawn with a distinct colour and an "=" marker so they
+    // read differently from AC buses at a glance.
+    const dcMarker = isDC
+      ? `<text x="${hw - 8}" y="-5" text-anchor="middle" font-size="9" font-weight="700" fill="#e65100" font-family="sans-serif">=</text>`
+      : '';
     // Fat invisible hit line: makes the bar easy to click (select) and hover.
     // Wires attach anywhere along the bar (free-position 'at_<x>' ports).
     return `
-      <g class="symbol-bus">
+      <g class="symbol-bus${isDC ? ' bus-dc' : ''}">
         <title>Click: select · Drag: move · Press W to draw a wire</title>
         <line class="bus-bar-hit" x1="${-hw}" y1="0" x2="${hw}" y2="0" stroke="transparent" stroke-width="14" pointer-events="stroke"/>
-        <line class="bus-bar" x1="${-hw}" y1="0" x2="${hw}" y2="0"/>
+        <line class="bus-bar" x1="${-hw}" y1="0" x2="${hw}" y2="0"${isDC ? ' stroke="#e65100"' : ''}/>
+        ${dcMarker}
         <rect class="bus-resize-handle bus-resize-left" x="${-hw - handleOffset - 12}" y="-10" width="12" height="20" rx="3" data-bus-resize="left"/>
         <rect class="bus-resize-handle bus-resize-right" x="${hw + handleOffset}" y="-10" width="12" height="20" rx="3" data-bus-resize="right"/>
       </g>`;
@@ -630,6 +637,37 @@ const Symbols = {
         <text x="${hw * 0.25}" y="${hh * 0.75}" text-anchor="middle" font-size="7" font-weight="600" fill="#e65100" font-family="sans-serif">+</text>
         <line x1="0" y1="${-hh}" x2="0" y2="${-halfH}"/>
         <line x1="0" y1="${hh}" x2="0" y2="${halfH}"/>
+      </g>`;
+  },
+
+  dc_battery(w, h) {
+    // Stationary DC battery bank: multiple IEC cell plate pairs + "=" marker.
+    const hw = w * 0.42, hh = h * 0.34;
+    const halfH = h / 2;
+    const cells = [-hw * 0.5, 0, hw * 0.5];
+    const plates = cells.map(cx => `
+        <line x1="${cx - 5}" y1="${-hh * 0.5}" x2="${cx - 5}" y2="${hh * 0.5}" stroke="currentColor" stroke-width="1.8"/>
+        <line x1="${cx + 3}" y1="${-hh * 0.25}" x2="${cx + 3}" y2="${hh * 0.25}" stroke="currentColor" stroke-width="1.2"/>`).join('');
+    return `
+      <g class="symbol-dc-battery">
+        <rect x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" rx="3" fill="var(--bg-primary, #fff)" stroke="currentColor" stroke-width="1"/>
+        ${plates}
+        <text x="${-hw + 6}" y="${-hh + 8}" text-anchor="middle" font-size="7" font-weight="700" fill="#e65100" font-family="sans-serif">=</text>
+        <line x1="0" y1="${-hh}" x2="0" y2="${-halfH}"/>
+      </g>`;
+  },
+
+  dc_load(w, h) {
+    // DC load: box with a downward arrow and "=" marker.
+    const hw = w * 0.4, hh = h * 0.34;
+    const halfH = h / 2;
+    return `
+      <g class="symbol-dc-load">
+        <rect x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" rx="2" fill="var(--bg-primary, #fff)" stroke="currentColor" stroke-width="1.2"/>
+        <text x="${-hw + 6}" y="${-hh + 8}" text-anchor="middle" font-size="7" font-weight="700" fill="#e65100" font-family="sans-serif">=</text>
+        <line x1="0" y1="${-hh * 0.3}" x2="0" y2="${hh * 0.6}" stroke="currentColor" stroke-width="1.4"/>
+        <polygon points="0,${hh * 0.7} ${-3},${hh * 0.3} ${3},${hh * 0.3}" fill="currentColor"/>
+        <line x1="0" y1="${-hh}" x2="0" y2="${-halfH}"/>
       </g>`;
   },
 

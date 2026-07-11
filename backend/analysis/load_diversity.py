@@ -143,7 +143,7 @@ def run_load_diversity(project: ProjectData):
     comp_map = {c.id: c for c in project.components}
     adj = _build_adjacency(project)
 
-    buses = [c for c in project.components if c.type == "bus"]
+    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     load_types = {"static_load", "distribution_board", "motor_induction", "motor_synchronous"}
 
     bus_results = []

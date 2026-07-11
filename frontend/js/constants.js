@@ -9,6 +9,10 @@ const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.1;
 const DEFAULT_BASE_MVA = 100;
 const DEFAULT_FREQUENCY = 50;
+// IEC 60909-0 Table 1 voltage factor c for maximum short-circuit currents.
+// 1.10 is standard for MV/HV and modern +10 % LV systems; set to 1.0 to
+// reproduce bolted-fault / V=1.0 studies that omit the voltage factor.
+const DEFAULT_VOLTAGE_FACTOR = 1.10;
 
 const API_BASE = '/api';
 
@@ -822,12 +826,12 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'loads',
     name: 'Loads',
-    items: ['motor_induction', 'motor_synchronous', 'static_load', 'distribution_board'],
+    items: ['motor_induction', 'motor_synchronous', 'static_load', 'distribution_board', 'dc_load'],
   },
   {
     id: 'dc_systems',
     name: 'DC Systems',
-    items: ['ups', 'rectifier', 'charger'],
+    items: ['ups', 'rectifier', 'charger', 'dc_battery'],
   },
   {
     id: 'other',
@@ -934,6 +938,20 @@ const FIELD_INFO = {
   // Static Load
   'static_load.power_factor': 'Default PF = 0.85 lagging — typical mixed commercial/industrial load.\nSource: General practice — power factor range 0.7–0.95 depending on load type.',
   'static_load.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed load.\nSource: IEC 60439 / IEC 61439.\nTypical values: lighting 1.0, socket outlets 0.4, motors (group) 0.5–0.8.',
+  'static_load.motor_fraction': 'Rotating share of this lumped load (0–1). When > 0 that fraction back-feeds short circuits as an induction-motor equivalent per IEC 60909-0 §13, instead of contributing nothing.\n0 = pure static load (default, unchanged). Typical mixed MCC 0.4–0.7.',
+  'static_load.motor_lrc_ratio': 'Locked-rotor current ratio (LRC = I_start / I_FLC) of the motor fraction. Sets the sub-transient reactance X″ ≈ 1/LRC.\nSource: IEC 60909-0 §13. Typical DOL induction motors 5–7 (default 6).',
+  'distribution_board.motor_fraction': 'Rotating share of the board load (0–1) that back-feeds short circuits as an induction-motor equivalent per IEC 60909-0 §13.\n0 = treat as pure static load (default).',
+  'distribution_board.motor_lrc_ratio': 'Locked-rotor current ratio (I_start / I_FLC) of the board motor fraction; sets X″ ≈ 1/LRC per IEC 60909-0 §13. Typical 5–7 (default 6).',
+
+  // Arc flash equipment class (IEEE 1584-2002 Table 4)
+  'bus.equipment_class': 'Selects the IEEE 1584-2002 conductor gap and enclosure class.\n"auto" infers from voltage (LV = MCC/panel 25 mm). Choose lv_switchgear (32 mm) to model LV switchgear, mv_switchgear_5kv (104 mm) / 15kv (153 mm) for MV, or open_air.\nSource: IEEE 1584-2002 Table 4.',
+  'bus.conductor_gap_mm': 'Explicit conductor gap override in mm (0 = use the equipment class / voltage default). Valid IEEE 1584-2002 model range 6.35–76.2 mm.\nSource: IEEE 1584-2002 §5.',
+
+  // Cable sizing — fault-withstand basis & standalone inputs
+  'cable.adiabatic_basis': 'Fault-withstand current basis.\nThermal-equiv. Iₜₕ = Ik″·√(m+n) per IEC 60909-0 §12 (default, conservative — includes the DC component).\nBare Isc uses Ik″ directly, matching the simpler adiabatic hand-calc in many design guides.',
+  'cable.standalone_current_a': 'Hand-entered design (load) current for a standalone sizing check, in A. 0 = take the current from the network load flow.\nUse when checking a cable without building/solving the full network.',
+  'cable.standalone_isc_ka': 'Hand-entered prospective short-circuit current for the fault-withstand check, in kA. 0 = take Ik″ from the fault study.',
+  'cable.standalone_clearing_s': 'Hand-entered protective-device clearing time for the fault-withstand check, in s. 0 = estimate from the upstream breaker.',
 
   // Motor demand factors
   'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.\nTypical: single largest motor 1.0, group of 2-4 motors 0.8, 5-10 motors 0.6.',
@@ -1002,6 +1020,25 @@ const FIELD_INFO = {
   'battery.battery_soc_pct': 'State of charge for this study snapshot — gates charge/discharge availability.',
   'battery.battery_mode':   'auto: self-consumption (grid-following).\ncharging / discharging: fixed set-point.\nidle: inert. Only "discharging" lets the BESS act as the island reference in a grid outage.',
   'battery.fault_contribution_pu': 'Inverter fault current limit as a multiple of rated current. Default 1.1×.\nSource: IEC TR 60909-4 — converter sources are current-limited.',
+
+  // Bus — DC system
+  'bus.system': 'AC bus (default) participates in fault / load-flow / arc-flash / grounding studies.\nDC bus feeds the DC Load Flow and DC Short Circuit (IEC 61660) studies instead, and is skipped by the AC engines.',
+  'bus.voltage_dc_v': 'Nominal DC voltage of the busbar (e.g. 110 / 125 / 220 Vdc). Used as the reference for DC bus voltage-drop reporting.',
+
+  // DC Battery (IEC 61660 battery source + DC load-flow source)
+  'dc_battery.nominal_v': 'Nominal DC voltage U_nB of the bank (source voltage in DC load flow). For the IEC 61660-1 short-circuit calc the EMF defaults to E_B = 1.05·U_nB unless an explicit Open-circuit EMF is entered.',
+  'dc_battery.ah_capacity': 'Ampere-hour capacity (C-rating basis). Used for the default load-flow discharge cap (10 C) when Max Discharge is left at 0.',
+  'dc_battery.emf_v': 'Measured open-circuit EMF E_B (V) for the IEC 61660-1 short-circuit calc. Leave 0 to use the standard estimate E_B = 1.05·U_nB when the true OCV is unknown.',
+  'dc_battery.internal_r_mohm': 'Battery internal resistance R_B including cell interconnectors (mΩ). Per IEC 61660-1 the peak uses 0.9·R_B and the quasi-steady I_k the full R_B: i_p = E_B/(0.9·R_B + R_net), I_k = 0.95·E_B/(R_B + R_net).',
+  'dc_battery.internal_l_uh': 'Internal + connection inductance (µH). Sets the short-circuit rise-time constant τ = L_BBr/R_BBr; when 0, the IEC 61660-1 battery time constant T_B ≈ 30 ms is used.',
+  'dc_battery.max_discharge_a': 'Optional discharge current cap for load flow. 0 = auto (10 × capacity). Does not limit the short-circuit calc.',
+
+  // DC Load
+  'dc_load.load_model': 'constant_power: draws fixed kW (I = P/V — telecom/electronic loads).\nconstant_current: fixed A regardless of voltage.\nconstant_resistance: fixed Ω (heaters/lamps — I rises with voltage).',
+  'dc_load.load_kw': 'Active power drawn at the DC bus (constant-power model).',
+  'dc_load.load_a': 'Current drawn (constant-current model).',
+  'dc_load.resistance_ohm': 'Load resistance (constant-resistance model). Current = V / R.',
+  'dc_load.nominal_v': 'Nominal supply voltage for reference (display only).',
 };
 
 // ─── Distribution Board — default circuit load types ───
@@ -1323,10 +1360,14 @@ const COMPONENT_DEFS = {
     height: 10,
     defaults: {
       name: 'Bus',
+      system: 'ac',
       voltage_kv: 11,
+      voltage_dc_v: 125,
       bus_type: 'PQ',
       busWidth: 120,
       working_distance_mm: 455,
+      equipment_class: 'auto',
+      conductor_gap_mm: 0,
       electrode_config: 'VCB',
       enclosure_size_mm: 508,
       soil_resistivity: 100,
@@ -1343,10 +1384,14 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
-      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
-      { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'] },
+      { key: 'system', label: 'System', type: 'select', options: ['ac', 'dc'] },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }], showWhen: { field: 'system', values: ['ac'] } },
+      { key: 'voltage_dc_v', label: 'DC Voltage', type: 'number', unit: 'Vdc', min: 0, showWhen: { field: 'system', values: ['dc'] } },
+      { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'], showWhen: { field: 'system', values: ['ac'] } },
       { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
       { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5, section: 'arcflash' },
+      { key: 'equipment_class', label: 'Equipment Class', type: 'select', options: ['auto', 'lv_switchgear', 'lv_mcc_panel', 'lv_cable', 'mv_switchgear_5kv', 'mv_switchgear_15kv', 'open_air'], section: 'arcflash' },
+      { key: 'conductor_gap_mm', label: 'Conductor Gap (0 = auto)', type: 'number', unit: 'mm', min: 0, step: 1, section: 'arcflash' },
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'], section: 'arcflash' },
       { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10, section: 'arcflash' },
       { key: 'system_grounded', label: 'System Grounding', type: 'select', options: ['unknown', 'grounded', 'ungrounded'], section: 'arcflash' },
@@ -1443,6 +1488,10 @@ const COMPONENT_DEFS = {
       { key: 'ampacity_standard', label: 'Ampacity Standard', type: 'select', options: ['IEC', 'NEC'], section: 'cable_sizing' },
       { key: 'num_parallel', label: 'Parallel Cables', type: 'number', min: 1, max: 20, step: 1, section: 'cable_sizing' },
       { key: 'rated_amps', label: 'Rated Current (per cable)', type: 'number', unit: 'A', section: 'cable_sizing' },
+      { key: 'adiabatic_basis', label: 'Fault-withstand Basis', type: 'select', options: [{ value: '', label: 'Thermal-equiv. Iₜₕ (default)' }, { value: 'bare_isc', label: 'Bare Isc (hand-calc)' }], section: 'cable_sizing' },
+      { key: 'standalone_current_a', label: 'Standalone Design Current (0 = use load flow)', type: 'number', unit: 'A', min: 0, step: 1, section: 'cable_sizing' },
+      { key: 'standalone_isc_ka', label: 'Standalone Isc (0 = use fault study)', type: 'number', unit: 'kA', min: 0, step: 0.1, section: 'cable_sizing' },
+      { key: 'standalone_clearing_s', label: 'Standalone Clearing Time (0 = auto)', type: 'number', unit: 's', min: 0, step: 0.01, section: 'cable_sizing' },
       { key: 'r_per_km', label: 'R₁ (pos. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
       { key: 'x_per_km', label: 'X₁ (pos. seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
       { key: 'r0_per_km', label: 'R₀ (zero seq.)', type: 'number', unit: 'Ω/km', min: 0, step: 0.001, section: 'fault' },
@@ -1751,6 +1800,8 @@ const COMPONENT_DEFS = {
       load_type: 'constant_power',
       demand_factor: 1.0,
       essential: 'yes',
+      motor_fraction: 0,
+      motor_lrc_ratio: 6,
       phase_connection: '3P',
       phase_a_pct: 33.33,
       phase_b_pct: 33.33,
@@ -1763,6 +1814,8 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number', section: 'loadflow' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
+      { key: 'motor_fraction', label: 'Motor Fraction (0 = none)', type: 'number', min: 0, max: 1, step: 0.05, section: 'fault' },
+      { key: 'motor_lrc_ratio', label: 'Motor LRC Ratio', type: 'number', min: 1, max: 10, step: 0.5, section: 'fault' },
       { key: 'phase_connection', label: 'Phase Connection', type: 'select',
         options: [
           { value: '3P',    label: '3-Phase (A-B-C)' },
@@ -1796,6 +1849,8 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       board_diversity: 1.0,     // overall diversity applied on top of per-way DFs
       essential: 'yes',
+      motor_fraction: 0,
+      motor_lrc_ratio: 6,
       circuits: [],             // circuit schedule (ways) — edited in DBSchedule
       // Derived lumped-load equivalents, recomputed by DBSchedule on save.
       // The analyses read these exactly like a static load's props.
@@ -1813,6 +1868,8 @@ const COMPONENT_DEFS = {
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
       { key: 'board_diversity', label: 'Board Diversity', type: 'number', min: 0.1, max: 1, step: 0.05, section: 'loadflow' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
+      { key: 'motor_fraction', label: 'Motor Fraction (0 = none)', type: 'number', min: 0, max: 1, step: 0.05, section: 'fault' },
+      { key: 'motor_lrc_ratio', label: 'Motor LRC Ratio', type: 'number', min: 1, max: 10, step: 0.5, section: 'fault' },
     ],
   },
 
@@ -1933,6 +1990,57 @@ const COMPONENT_DEFS = {
       { key: 'equalize_voltage_v', label: 'Equalize Voltage', type: 'number', unit: 'V', showWhen: { field: 'charger_type', values: ['float_equalize'] } },
       { key: 'efficiency', label: 'Efficiency', type: 'number', min: 0.8, max: 1.0, step: 0.01 },
       { key: 'current_limit_pct', label: 'Current Limit', type: 'number', unit: '%', min: 10, max: 100, step: 5 },
+    ],
+  },
+
+  dc_battery: {
+    name: 'DC Battery',
+    label: 'DC Battery Bank',
+    category: 'dc_systems',
+    ports: [{ id: 'dc', side: 'top', offset: 0 }],
+    width: 50,
+    height: 50,
+    defaults: {
+      name: 'Battery',
+      nominal_v: 125,
+      emf_v: 0,
+      ah_capacity: 200,
+      internal_r_mohm: 20,
+      internal_l_uh: 0,
+      max_discharge_a: 0,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'nominal_v', label: 'Nominal Voltage', type: 'number', unit: 'Vdc', min: 0 },
+      { key: 'ah_capacity', label: 'Capacity', type: 'number', unit: 'Ah', min: 0 },
+      { key: 'emf_v', label: 'Open-circuit EMF (0 = 1.05·Unom)', type: 'number', unit: 'Vdc', min: 0, section: 'fault' },
+      { key: 'internal_r_mohm', label: 'Internal Resistance', type: 'number', unit: 'mΩ', min: 0, step: 1, section: 'fault' },
+      { key: 'internal_l_uh', label: 'Internal Inductance', type: 'number', unit: 'µH', min: 0, step: 1, section: 'fault' },
+      { key: 'max_discharge_a', label: 'Max Discharge (0 = auto)', type: 'number', unit: 'A', min: 0, section: 'loadflow' },
+    ],
+  },
+  dc_load: {
+    name: 'DC Load',
+    label: 'DC Load',
+    category: 'loads',
+    ports: [{ id: 'in', side: 'top', offset: 0 }],
+    width: 40,
+    height: 40,
+    defaults: {
+      name: 'DC Load',
+      load_model: 'constant_power',
+      load_kw: 1.0,
+      load_a: 10,
+      resistance_ohm: 10,
+      nominal_v: 125,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'load_model', label: 'Load Model', type: 'select', options: ['constant_power', 'constant_current', 'constant_resistance'] },
+      { key: 'load_kw', label: 'Power', type: 'number', unit: 'kW', min: 0, step: 0.1, showWhen: { field: 'load_model', values: ['constant_power'] } },
+      { key: 'load_a', label: 'Current', type: 'number', unit: 'A', min: 0, showWhen: { field: 'load_model', values: ['constant_current'] } },
+      { key: 'resistance_ohm', label: 'Resistance', type: 'number', unit: 'Ω', min: 0, step: 0.1, showWhen: { field: 'load_model', values: ['constant_resistance'] } },
+      { key: 'nominal_v', label: 'Nominal Voltage', type: 'number', unit: 'Vdc', min: 0 },
     ],
   },
 

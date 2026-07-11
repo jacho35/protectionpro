@@ -23,6 +23,7 @@ const AppState = {
   // System base settings
   baseMVA: DEFAULT_BASE_MVA,
   frequency: DEFAULT_FREQUENCY,
+  voltageFactor: DEFAULT_VOLTAGE_FACTOR,  // IEC 60909 voltage factor c for fault analysis
   defaultLengthUnit: 'm',  // Default display unit for cable length ('m' or 'km')
 
   // Canvas transform
@@ -72,6 +73,8 @@ const AppState = {
     duty: true,
     loadDiversity: true,
     grounding: true,
+    dcLoadflow: true,
+    dcShortCircuit: true,
   },
 
   // Clipboard for copy/paste
@@ -83,6 +86,8 @@ const AppState = {
   loadFlowResults: null,
   unbalancedLoadFlowResults: null,
   arcFlashResults: null,
+  dcLoadFlowResults: null,
+  dcShortCircuitResults: null,
 
   // Scenarios — saved snapshots of network configuration
   scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
@@ -663,6 +668,8 @@ const AppState = {
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
+    this.dcLoadFlowResults = null;
+    this.dcShortCircuitResults = null;
 
     if (full) {
       // Full restore, preserving current device names by id
@@ -914,6 +921,8 @@ const AppState = {
     this.unbalancedLoadFlowResults = null;
     this.arcFlashResults = null;
     this.dcArcFlashResults = null;
+    this.dcLoadFlowResults = null;
+    this.dcShortCircuitResults = null;
     this.cableSizingResults = null;
     this.motorStartingResults = null;
     this.dutyCheckResults = null;
@@ -1067,6 +1076,7 @@ const AppState = {
       projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
       frequency: this.frequency,
+      voltageFactor: this.voltageFactor,
       defaultLengthUnit: this.defaultLengthUnit,
       components: [...this.components.values()],
       wires: [...this.wires.values()],
@@ -1088,6 +1098,8 @@ const AppState = {
       unbalancedLoadFlowResults: this.unbalancedLoadFlowResults || undefined,
       arcFlashResults: this.arcFlashResults || undefined,
       dcArcFlashResults: this.dcArcFlashResults || undefined,
+      dcLoadFlowResults: this.dcLoadFlowResults || undefined,
+      dcShortCircuitResults: this.dcShortCircuitResults || undefined,
       cableSizingResults: this.cableSizingResults || undefined,
       motorStartingResults: this.motorStartingResults || undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
@@ -1120,6 +1132,7 @@ const AppState = {
     }
     this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
+    this.voltageFactor = data.voltageFactor || DEFAULT_VOLTAGE_FACTOR;
     this.defaultLengthUnit = data.defaultLengthUnit || 'm';
     // nextId must clear every loaded id: a stale/hand-edited nextId below an
     // existing suffix would let genId() mint a duplicate id, and Map.set would
@@ -1331,6 +1344,8 @@ const AppState = {
     this.unbalancedLoadFlowResults = data.unbalancedLoadFlowResults || null;
     this.arcFlashResults = data.arcFlashResults || null;
     this.dcArcFlashResults = data.dcArcFlashResults || null;
+    this.dcLoadFlowResults = data.dcLoadFlowResults || null;
+    this.dcShortCircuitResults = data.dcShortCircuitResults || null;
     this.cableSizingResults = data.cableSizingResults || null;
     this.motorStartingResults = data.motorStartingResults || null;
     this.dutyCheckResults = data.dutyCheckResults || null;

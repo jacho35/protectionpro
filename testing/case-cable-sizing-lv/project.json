@@ -1,0 +1,110 @@
+{
+  "projectName": "LV Cable Sizing",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Src",
+        "voltage_kv": 0.415,
+        "fault_mva": 28.75204340564336,
+        "x_r_ratio": 5,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-a",
+      "type": "bus",
+      "x": 200,
+      "y": 120,
+      "rotation": 0,
+      "props": {
+        "name": "BusA",
+        "voltage_kv": 0.415
+      }
+    },
+    {
+      "id": "cable-1",
+      "type": "cable",
+      "x": 300,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "Cable",
+        "conductor": "Cu",
+        "insulation": "XLPE",
+        "size_mm2": 95,
+        "r_per_km": 0.247,
+        "x_per_km": 0.0734,
+        "length_km": 0.12,
+        "voltage_kv": 0.415,
+        "rated_amps": 254,
+        "num_parallel": 1,
+        "ampacity_standard": "IEC"
+      }
+    },
+    {
+      "id": "bus-b",
+      "type": "bus",
+      "x": 200,
+      "y": 280,
+      "rotation": 0,
+      "props": {
+        "name": "BusB",
+        "voltage_kv": 0.415
+      }
+    },
+    {
+      "id": "static_load-1",
+      "type": "static_load",
+      "x": 300,
+      "y": 360,
+      "rotation": 0,
+      "props": {
+        "name": "Motor90kW",
+        "rated_kva": 117.646,
+        "voltage_kv": 0.415,
+        "power_factor": 0.85,
+        "load_type": "constant_power",
+        "demand_factor": 1.0
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-a",
+      "toPort": "p0"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-a",
+      "fromPort": "p1",
+      "toComponent": "cable-1",
+      "toPort": "from"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "cable-1",
+      "fromPort": "to",
+      "toComponent": "bus-b",
+      "toPort": "p0"
+    },
+    {
+      "id": "w4",
+      "fromComponent": "bus-b",
+      "fromPort": "p1",
+      "toComponent": "static_load-1",
+      "toPort": "in"
+    }
+  ],
+  "nextId": 100,
+  "dataVersion": 2
+}
