@@ -336,6 +336,44 @@ PlanTools.register({
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// PLACE FROM SLD — adopt an existing SLD component (opts.sldId) as a linked
+// plan element at the click point (ghost shows the mapped building symbol).
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'placeSld', cursor: 'crosshair', _sldId: null, _comp: null, _ghost: null,
+  onActivate(opts) { this._sldId = opts && opts.sldId; this._comp = this._sldId ? AppState.components.get(this._sldId) : null; this._ghost = null; },
+  cancel() { this._ghost = null; },
+  _type() { return (this._comp && PLAN_DEFS.sldLinkTypes[this._comp.type]) || 'bd_db'; },
+  onMove(pt) { this._ghost = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); },
+  onDown(pt) {
+    if (!this._comp) { PlanTools.set('select'); return; }
+    const s = PlanTools.snap(pt, { wantElements: false });
+    const el = PlanSync.placeFromSld(this._comp.id, s.x, s.y);
+    if (el) {
+      PlanMarkup.selectOnly(el.id);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();  // drop it from the unplaced list
+    }
+    PlanEngine.requestDraw({ fg: true });
+    PlanTools.set('select');   // one placement; pick the next from the list
+  },
+  onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); return true; } return false; },
+  drawOverlay(ctx, zoom) {
+    if (!this._ghost || !this._comp) return;
+    const type = this._type();
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.translate(this._ghost.x, this._ghost.y);
+    const half = PlanEngine.glyphHalf(type);
+    if (typeof PlanSymbols !== 'undefined') {
+      PlanSymbols.draw(ctx, type, { color: PLAN_DEFS.elementColor(type, AppState.planMarkup.styles), bg: '#fff', sizeWorld: half * 2 });
+    }
+    ctx.restore();
+    PlanTools._drawSnapRing(ctx, this._ghost.x, this._ghost.y, this._ghost.snapped, zoom);
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // ROUTE (polyline; endpoints may be required to land on elements)
 // ─────────────────────────────────────────────────────────────────────────
 PlanTools.register({

@@ -264,6 +264,57 @@ const PlanSync = {
     return circuits;
   },
 
+  // Reflect SLD cables that join two linked plan elements as plan feeders
+  // (any linked building element — boards or adopted supply). Idempotent;
+  // returns the number of feeders created. Called on sync and on placement.
+  reflectSldFeeders() {
+    const pm = AppState.planMarkup;
+    const linkedBySld = {};
+    for (const el of pm.elements) if (el.sldId) linkedBySld[el.sldId] = el;
+    let made = 0;
+    for (const cable of [...AppState.components.values()].filter(c => c.type === 'cable')) {
+      const linked = [];
+      for (const w of AppState.wires.values()) {
+        let other = null;
+        if (w.fromComponent === cable.id) other = w.toComponent;
+        else if (w.toComponent === cable.id) other = w.fromComponent;
+        if (other && linkedBySld[other] && !linked.includes(other)) linked.push(other);
+      }
+      if (linked.length !== 2) continue;
+      const elA = linkedBySld[linked[0]], elB = linkedBySld[linked[1]];
+      const exists = pm.routes.some(r => r.type === 'feeder' &&
+        ((r.fromId === elA.id && r.toId === elB.id) || (r.fromId === elB.id && r.toId === elA.id)));
+      if (exists) continue;
+      const route = {
+        id: AppState.planGenId('pmrt'), type: 'feeder',
+        fromId: elA.id, toId: elB.id,
+        points: [{ x: elA.x, y: elA.y, snappedTo: elA.id }, { x: elB.x, y: elB.y, snappedTo: elB.id }],
+        cableType: cable.props.name || '', curved: false, props: {}, sldCableId: cable.id,
+      };
+      pm.routes.push(route);
+      cable.planLink = route.id;
+      made++;
+    }
+    return made;
+  },
+
+  // Adopt an existing SLD component into the building plan at (x,y): create a
+  // linked plan element rendering as the mapped building symbol, then reflect
+  // any existing SLD cables to it as plan feeders (auto-feeder on placement).
+  placeFromSld(sldId, x, y) {
+    const comp = AppState.components.get(sldId);
+    if (!comp) return null;
+    const type = (PLAN_DEFS.sldLinkTypes && PLAN_DEFS.sldLinkTypes[comp.type]) || 'bd_db';
+    const el = {
+      id: AppState.planGenId('pmel'), type, x, y, rotation: 0,
+      name: (comp.props && comp.props.name) || '', reticId: null, sldId: comp.id, props: {},
+    };
+    AppState.planMarkup.elements.push(el);
+    comp.planLink = el.id;
+    this.reflectSldFeeders();   // draw feeders for any existing SLD cables now complete
+    return el;
+  },
+
   // Collect entities on each side whose linked partner was deleted in the
   // other view — the set that deletion-propagation would remove. Cascades:
   // removing a board removes its feeders; removing a feeder removes its cable.
@@ -389,32 +440,8 @@ const PlanSync = {
       if (std) cable.props.standard_type = std.id;
     }
 
-    // ── Reverse: SLD cable joining two linked DBs → ensure a plan feeder ──
-    const dbBySld = {};
-    for (const el of dbEls) if (el.sldId) dbBySld[el.sldId] = el;
-    for (const cable of [...AppState.components.values()].filter(c => c.type === 'cable')) {
-      const linkedDbs = [];
-      for (const w of AppState.wires.values()) {
-        let other = null;
-        if (w.fromComponent === cable.id) other = w.toComponent;
-        else if (w.toComponent === cable.id) other = w.fromComponent;
-        if (other && dbBySld[other] && !linkedDbs.includes(other)) linkedDbs.push(other);
-      }
-      if (linkedDbs.length !== 2) continue;
-      const elA = dbBySld[linkedDbs[0]], elB = dbBySld[linkedDbs[1]];
-      const exists = pm.routes.some(r => r.type === 'feeder' &&
-        ((r.fromId === elA.id && r.toId === elB.id) || (r.fromId === elB.id && r.toId === elA.id)));
-      if (exists) continue;
-      const route = {
-        id: AppState.planGenId('pmrt'), type: 'feeder',
-        fromId: elA.id, toId: elB.id,
-        points: [{ x: elA.x, y: elA.y, snappedTo: elA.id }, { x: elB.x, y: elB.y, snappedTo: elB.id }],
-        cableType: cable.props.name || '', curved: false, props: {}, sldCableId: cable.id,
-      };
-      pm.routes.push(route);
-      cable.planLink = route.id;   // back-ref for deletion propagation
-      summary.planNew++;
-    }
+    // ── Reverse: SLD cables joining two linked plan elements → plan feeders ──
+    summary.planNew += this.reflectSldFeeders();
 
     AppState.dirty = true;
     if (typeof Canvas !== 'undefined') Canvas.render();

@@ -54,6 +54,26 @@ const PlanUI = {
       }
       html += `</div>`;
     }
+    // "From SLD": adopt existing SLD boards/supply that aren't on the plan yet.
+    if (domain === 'building' && typeof AppState.components !== 'undefined' && PLAN_DEFS.sldLinkTypes) {
+      const linkedSld = new Set(pm.elements.filter(e => e.sldId).map(e => e.sldId));
+      const avail = [...AppState.components.values()]
+        .filter(c => PLAN_DEFS.sldLinkTypes[c.type] && !linkedSld.has(c.id));
+      html += `<div class="plan-fromsld"><div class="plan-layers-title">From SLD (unplaced)</div>`;
+      if (!avail.length) {
+        html += `<div class="plan-props-empty" style="padding:2px 2px 6px">No unplaced SLD boards.</div>`;
+      } else {
+        for (const c of avail) {
+          const t = PLAN_DEFS.sldLinkTypes[c.type];
+          const typeName = (typeof COMPONENT_DEFS !== 'undefined' && COMPONENT_DEFS[c.type] && COMPONENT_DEFS[c.type].name) || c.type;
+          html += `<button class="plan-pal-item" data-sld="${escHtml(c.id)}" title="Place ${escHtml(c.props.name || typeName)} from the SLD">
+            <span class="plan-pal-swatch" style="background:${PLAN_DEFS.elementColor(t, pm.styles)}"></span>${escHtml(c.props.name || typeName)}
+            <span style="color:var(--text-muted);font-size:10px;margin-left:auto">${escHtml(typeName)}</span></button>`;
+        }
+      }
+      html += `</div>`;
+    }
+
     // Discipline layers: click a name to emphasize that layer (dim the rest);
     // "Show all" clears the active layer.
     // Show only the layers relevant to the active domain.
@@ -143,6 +163,14 @@ const PlanUI = {
       AppState.planMarkup.activeLayerId = layerName.dataset.layer || null;
       this.renderPalette();
       if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+      return;
+    }
+    // Adopt an existing SLD entity ("From SLD" list) — link + place it.
+    const sldItem = e.target.closest('[data-sld]');
+    if (sldItem) {
+      PlanTools.set('placeSld', { sldId: sldItem.dataset.sld });
+      this.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
+      sldItem.classList.add('armed');
       return;
     }
     const domainSel = e.target.closest('[data-role="domain"]');

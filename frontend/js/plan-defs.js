@@ -257,6 +257,16 @@ const PLAN_DEFS = {
     fields: [{ key: 'name', label: 'Name', type: 'text' }],
   },
 
+  // SLD component types that can be adopted into the building plan (placed
+  // "From SLD"), mapped to the building symbol they render as.
+  sldLinkTypes: {
+    distribution_board: 'bd_db',
+    transformer: 'bd_transformer',
+    generator: 'bd_generator',
+    utility: 'bd_utility',
+    bus: 'bd_db',
+  },
+
   annotations: {
     text: {
       defaults: { text: 'Note', fontSize: 14, color: '#111827' },
