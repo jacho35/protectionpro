@@ -40,6 +40,7 @@ const PlanMarkup = {
         <div class="plan-tb-group">
           <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">▤ Select</button>
           <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
+          <button class="plan-tool-btn" data-tool="slpath" title="Draw a path → auto-place streetlight poles + circuits">💡 SL Path</button>
           <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
         </div>
         <div class="plan-tb-group">

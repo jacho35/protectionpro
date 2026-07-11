@@ -64,7 +64,35 @@ const PlanUI = {
         <span class="plan-layer-name" data-layer="${escHtml(L.id)}">${escHtml(L.name)}</span></div>`;
     }
     html += `</div>`;
+    // Background plans: visibility, opacity, PDF page-nav, remove.
+    html += `<div class="plan-plans"><div class="plan-layers-title">Background Plans
+      <button class="plan-cleanup-btn" data-role="cleanup" title="Delete unclaimed/orphaned plan images on the server">Clean</button></div>`;
+    if (!pm.plans.length) html += `<div class="plan-props-empty" style="padding:2px">No plan imported.</div>`;
+    for (const P of pm.plans) {
+      const nav = (P.pdfPageCount > 1)
+        ? `<span class="plan-pagenav"><button data-role="prev" data-plan="${escHtml(P.id)}">◀</button>${P.pdfPage}/${P.pdfPageCount}<button data-role="next" data-plan="${escHtml(P.id)}">▶</button></span>` : '';
+      html += `<div class="plan-plan-row">
+        <label class="plan-plan-vis"><input type="checkbox" data-role="vis" data-plan="${escHtml(P.id)}" ${P.visible === false ? '' : 'checked'}></label>
+        <span class="plan-plan-name" title="${escHtml(P.name)}">${escHtml(P.name)}</span>
+        ${nav}
+        <input type="range" class="plan-plan-op" data-role="opacity" data-plan="${escHtml(P.id)}" min="0.1" max="1" step="0.1" value="${(typeof P.opacity === 'number' ? P.opacity : 1)}">
+        <button class="plan-plan-del" data-role="remove-plan" data-plan="${escHtml(P.id)}" title="Remove from project">✕</button>
+      </div>`;
+    }
+    html += `</div>`;
     el.innerHTML = html;
+  },
+
+  _planById(id) { return AppState.planMarkup.plans.find(p => p.id === id); },
+
+  async _cleanup() {
+    try {
+      const resp = await fetch(`${API_BASE}/plan-images/cleanup`, { method: 'POST' });
+      const j = await resp.json();
+      UI.toast(`Cleaned ${j.deleted != null ? j.deleted : 0} orphaned plan image(s).`, 'success');
+    } catch (e) {
+      UI.toast('Cleanup failed: ' + (e && e.message ? e.message : e), 'error');
+    }
   },
 
   _onPaletteInput(e) {
@@ -75,10 +103,34 @@ const PlanUI = {
       // Re-render replaced the input — restore focus + caret to end.
       const box = this.paletteEl.querySelector('[data-role="search"]');
       if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    } else if (role === 'opacity') {
+      const p = this._planById(e.target.dataset.plan);
+      if (p) { p.opacity = parseFloat(e.target.value); PlanEngine.requestDraw({ bg: true }); }
     }
   },
 
   _onPaletteClick(e) {
+    // Plan controls (page nav / remove / cleanup)
+    const planCtl = e.target.closest('[data-role]');
+    if (planCtl) {
+      const role = planCtl.dataset.role;
+      if (role === 'cleanup') { this._cleanup(); return; }
+      const p = planCtl.dataset.plan && this._planById(planCtl.dataset.plan);
+      if (role === 'remove-plan' && p) {
+        const pm = AppState.planMarkup;
+        pm.plans = pm.plans.filter(x => x.id !== p.id);
+        PlanMarkup.snapshot(); PlanMarkup.markDirty();
+        this.renderPalette(); PlanEngine.requestDraw({ all: true });
+        return;
+      }
+      if ((role === 'prev' || role === 'next') && p) {
+        const np = Math.min(p.pdfPageCount || 1, Math.max(1, (p.pdfPage || 1) + (role === 'next' ? 1 : -1)));
+        if (np !== p.pdfPage && typeof PlanImages !== 'undefined') {
+          PlanImages.renderPdfPage(p, np).then(() => this.renderPalette());
+        }
+        return;
+      }
+    }
     const layerName = e.target.closest('.plan-layer-name');
     if (layerName) {
       AppState.planMarkup.activeLayerId = layerName.dataset.layer || null;
@@ -101,13 +153,16 @@ const PlanUI = {
     item.classList.add('armed');
   },
 
-  // domain change (select fires 'change', bubbles to palette 'input' too;
-  // handle explicitly here)
+  // Palette 'change' handling: domain select + per-plan visibility checkbox.
   bindDomainChange() {
     this.paletteEl.addEventListener('change', (e) => {
-      if (e.target.dataset.role === 'domain') {
+      const role = e.target.dataset.role;
+      if (role === 'domain') {
         AppState.planMarkup.settings.domain = e.target.value;
         this.renderPalette();
+      } else if (role === 'vis') {
+        const p = this._planById(e.target.dataset.plan);
+        if (p) { p.visible = e.target.checked; PlanEngine.requestDraw({ bg: true }); }
       }
     });
   },

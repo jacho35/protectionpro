@@ -617,6 +617,102 @@ PlanTools.register({
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// SL PATH — draw a path, auto-generate evenly-spaced poles + sl routes
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'slpath', cursor: 'crosshair', _pts: null, _hover: null, _busy: false,
+  onActivate() { this._pts = null; this._hover = null; this._busy = false; },
+  cancel() { this._pts = null; this._hover = null; },
+  onMove(pt) { this._hover = PlanTools.snap(pt); PlanEngine.requestDraw({ fg: true }); },
+  onDown(pt) {
+    const s = PlanTools.snap(pt);
+    if (!this._pts) this._pts = [{ x: s.x, y: s.y, snappedTo: s.targetId || undefined }];
+    else this._pts.push({ x: s.x, y: s.y });
+    PlanEngine.requestDraw({ fg: true });
+  },
+  onKey(e) {
+    if (e.key === 'Escape') { this._pts = null; PlanEngine.requestDraw({ fg: true }); return true; }
+    if (e.key === 'Enter') { this._finish(); return true; }
+    return false;
+  },
+  async _finish() {
+    if (this._busy) return;
+    const pts = this._pts;
+    if (!pts || pts.length < 2) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
+    const factor = PlanEngine.factor();
+    if (!factor) { UI.alert('Calibrate the plan first — pole spacing is measured in metres.'); return; }
+    this._busy = true;
+    const ans = await UI.prompt('Pole spacing (metres):', '40');
+    this._busy = false;
+    const spacingM = parseFloat(ans);
+    if (!ans || !isFinite(spacingM) || spacingM <= 0) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
+    const stepPx = spacingM / factor;
+
+    // Source element under the first vertex (kiosk/minisub) becomes the feed.
+    const sourceEl = PlanEngine.findElementAt(pts[0], 10);
+    let polePts = PlanTools._interpolate(pts, stepPx);
+    if (sourceEl && polePts.length && Math.hypot(polePts[0].x - sourceEl.x, polePts[0].y - sourceEl.y) < stepPx * 0.5) {
+      polePts = polePts.slice(1); // first point coincides with the source
+    }
+    const pm = AppState.planMarkup;
+    const poleIds = [];
+    for (const p of polePts) {
+      const el = { id: AppState.planGenId('pmel'), type: 'pole', x: p.x, y: p.y, rotation: 0, name: PlanMarkup.nextName('pole'), reticId: null, props: {} };
+      pm.elements.push(el); poleIds.push(el.id);
+    }
+    // Chain sl routes: source→pole0→pole1→…
+    const chain = [];
+    if (sourceEl) chain.push(sourceEl.id);
+    chain.push(...poleIds);
+    for (let i = 1; i < chain.length; i++) {
+      const a = pm.elements.find(e => e.id === chain[i - 1]);
+      const b = pm.elements.find(e => e.id === chain[i]);
+      pm.routes.push({
+        id: AppState.planGenId('pmrt'), type: 'sl',
+        fromId: a.id, toId: b.id,
+        points: [{ x: a.x, y: a.y, snappedTo: a.id }, { x: b.x, y: b.y, snappedTo: b.id }],
+        cableType: '', curved: false, props: {},
+      });
+    }
+    this._pts = null;
+    PlanMarkup.clearSelection();
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    PlanEngine.requestDraw({ fg: true });
+    UI.toast(`Placed ${poleIds.length} pole(s).`, 'success');
+  },
+  drawOverlay(ctx, zoom) {
+    if (this._pts) {
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5 / zoom;
+      ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.beginPath(); ctx.moveTo(this._pts[0].x, this._pts[0].y);
+      for (let i = 1; i < this._pts.length; i++) ctx.lineTo(this._pts[i].x, this._pts[i].y);
+      if (this._hover) ctx.lineTo(this._hover.x, this._hover.y);
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.restore();
+    }
+    if (this._hover) PlanTools._drawSnapRing(ctx, this._hover.x, this._hover.y, this._hover.snapped, zoom);
+  },
+});
+
+// Evenly-spaced points along a polyline, starting at the first vertex.
+PlanTools._interpolate = function (pts, step) {
+  const out = [{ x: pts[0].x, y: pts[0].y }];
+  let carry = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const segLen = Math.hypot(dx, dy);
+    if (segLen === 0) continue;
+    const ux = dx / segLen, uy = dy / segLen;
+    let d = step - carry;
+    while (d <= segLen + 1e-6) { out.push({ x: a.x + ux * d, y: a.y + uy * d }); d += step; }
+    carry = segLen - (d - step);
+  }
+  return out;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 // CROP — drag a rectangle to set the export crop box
 // ─────────────────────────────────────────────────────────────────────────
 PlanTools.register({

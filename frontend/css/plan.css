@@ -144,6 +144,16 @@
 .plan-layer-row.active { background: var(--bg-tertiary); border-radius: 4px; }
 .plan-layer-name { flex: 1; cursor: pointer; color: var(--text-primary); }
 
+/* Background-plans panel */
+.plan-plans { border-top: 1px solid var(--border-color); margin-top: 10px; padding-top: 8px; }
+.plan-cleanup-btn { float: right; font-size: 10px; padding: 1px 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; text-transform: none; letter-spacing: 0; }
+.plan-plan-row { display: flex; align-items: center; gap: 5px; padding: 3px 2px; font-size: 12px; }
+.plan-plan-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-plan-op { width: 54px; }
+.plan-pagenav { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; }
+.plan-pagenav button { padding: 0 4px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.plan-plan-del { border: none; background: none; color: var(--danger); cursor: pointer; font-size: 13px; }
+
 /* Dark mode: repaint-only theming for the canvas via the custom props. */
 body.dark-mode .plan-stage {
   --plan-stage-bg: #1a1a2a;
