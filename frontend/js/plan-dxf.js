@@ -14,6 +14,9 @@ const PlanDXF = {
     STREET_LIGHTING: '#f59e0b', FIBRE: '#a855f7', CABLE_LABELS: '#94a3b8',
     ELEMENTS: '#111827', ELEMENT_LABELS: '#334155', TRENCHING: '#7c3aed',
     CROSSINGS: '#f97316', TEXT: '#111827', DIMENSIONS: '#0ea5e9', NOTES: '#64748b',
+    // building domain
+    POWER: '#ef4444', FINAL_CIRCUITS: '#3b82f6', LIGHTING: '#eab308',
+    CONTAINMENT: '#475569', DATA: '#0891b2', FIRE: '#dc2626', CONTROL: '#db2777',
   },
   _ACI: [ // aci, r, g, b
     [1, 255, 0, 0], [2, 255, 255, 0], [3, 0, 255, 0], [4, 0, 255, 255],

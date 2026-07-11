@@ -56,9 +56,12 @@ const PlanUI = {
     }
     // Discipline layers: click a name to emphasize that layer (dim the rest);
     // "Show all" clears the active layer.
+    // Show only the layers relevant to the active domain.
+    const domLayers = pm.layers.filter(L => domain === 'building'
+      ? L.discipline === 'building' : L.discipline !== 'building');
     html += `<div class="plan-layers"><div class="plan-layers-title">Discipline Layers</div>`;
     html += `<div class="plan-layer-row${pm.activeLayerId ? '' : ' active'}"><span class="swatch" style="background:#94a3b8"></span><span class="plan-layer-name" data-layer="">Show all</span></div>`;
-    for (const L of pm.layers) {
+    for (const L of domLayers) {
       html += `<div class="plan-layer-row${pm.activeLayerId === L.id ? ' active' : ''}">
         <span class="swatch" style="background:${L.color}"></span>
         <span class="plan-layer-name" data-layer="${escHtml(L.id)}">${escHtml(L.name)}</span></div>`;

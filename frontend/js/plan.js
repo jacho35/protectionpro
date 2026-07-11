@@ -59,6 +59,8 @@ const PlanMarkup = {
           <button class="plan-tb-btn" data-action="push" title="Push drawn kiosks/erven/feeders into the Reticulation schedules">→ Push to Schedules</button>
           <button class="plan-tb-btn" data-action="csv" title="Export component schedules (CSV)">⤓ CSV</button>
           <button class="plan-tb-btn" data-action="dxf" title="Export markup as AutoCAD DXF">⤓ DXF</button>
+          <button class="plan-tb-btn" data-action="png" title="Export the annotated plan as a PNG image">⤓ PNG</button>
+          <button class="plan-tb-btn" data-action="pdf" title="Export the annotated plan as an A3 PDF sheet">⤓ PDF</button>
         </div>
         <div class="plan-tb-group plan-tb-right">
           <span id="plan-scale-readout" class="plan-scale-readout">Not calibrated</span>
@@ -89,6 +91,8 @@ const PlanMarkup = {
       else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') PlanSync.pushToSchedules();
       else if (act.dataset.action === 'csv' && typeof PlanCSV !== 'undefined') PlanCSV.exportAll();
       else if (act.dataset.action === 'dxf' && typeof PlanDXF !== 'undefined') PlanDXF.export();
+      else if (act.dataset.action === 'png' && typeof PlanExport !== 'undefined') PlanExport.exportPNG();
+      else if (act.dataset.action === 'pdf' && typeof PlanExport !== 'undefined') PlanExport.exportPDF();
     });
     tb.addEventListener('change', (e) => {
       if (e.target.dataset.snap) {

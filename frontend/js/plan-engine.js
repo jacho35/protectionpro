@@ -431,6 +431,55 @@ const PlanEngine = {
     return d;
   },
 
+  // Render the annotated plan (background images + all markup, no chrome) into
+  // an arbitrary 2D context mapping worldRect → device at `scale` px per world
+  // unit. Reuses the on-screen entity renderers by briefly repointing the view
+  // (so 1/zoom chrome resolves to device px) and disabling layer dimming.
+  renderExport(ctx, worldRect, scale) {
+    const pm = AppState.planMarkup;
+    const savedView = this.view;
+    const savedLayer = pm.activeLayerId;
+    this.view = { zoom: scale, panX: 0, panY: 0 };
+    pm.activeLayerId = null; // full opacity for every entity in the export
+    ctx.save();
+    ctx.setTransform(scale, 0, 0, scale, -worldRect.minX * scale, -worldRect.minY * scale);
+    // Background plan images
+    for (const p of pm.plans) {
+      if (p.visible === false) continue;
+      const img = (typeof PlanImages !== 'undefined') ? PlanImages.getElementImage(p.imageId) : null;
+      if (!img) continue;
+      ctx.save();
+      ctx.globalAlpha = (typeof p.opacity === 'number') ? p.opacity : 1;
+      try { ctx.drawImage(img, p.offX || 0, p.offY || 0); } catch (e) { /* not decoded */ }
+      ctx.restore();
+    }
+    // Markup, same z-order as the screen (no selection/tool overlay)
+    for (const t of pm.trenches) this._drawTrench(ctx, t, false);
+    for (const c of pm.crossings) this._drawCrossing(ctx, c, false);
+    for (const r of pm.routes) this._drawRoute(ctx, r, false);
+    for (const el of pm.elements) this._drawElementEntity(ctx, el, false);
+    for (const tx of pm.texts) this._drawText(ctx, tx, false);
+    for (const m of pm.measurements) this._drawMeasurement(ctx, m, false);
+    ctx.restore();
+    this.view = savedView;
+    pm.activeLayerId = savedLayer;
+  },
+
+  // World rectangle for exports: the crop box if set, else the content bbox
+  // padded a little. Returns null when there's nothing to export.
+  exportWorldRect(padFrac) {
+    const pm = AppState.planMarkup;
+    if (pm.cropBox && pm.cropBox.w > 1 && pm.cropBox.h > 1) {
+      const c = pm.cropBox;
+      return { minX: c.x, minY: c.y, maxX: c.x + c.w, maxY: c.y + c.h };
+    }
+    const b = this._contentBBox();
+    if (!b) return null;
+    const pf = padFrac || 0.03;
+    const px = (b.maxX - b.minX) * pf + 10, py = (b.maxY - b.minY) * pf + 10;
+    return { minX: b.minX - px, minY: b.minY - py, maxX: b.maxX + px, maxY: b.maxY + py };
+  },
+
   // Trace a polyline, or a Catmull-Rom spline through the points when curved.
   _pathPoly(ctx, pts, curved) {
     ctx.beginPath();
