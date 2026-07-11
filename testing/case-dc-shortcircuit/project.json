@@ -12,7 +12,7 @@
       "props": {
         "name": "Bat",
         "nominal_v": 120.0,
-        "internal_r_mohm": 20.098,
+        "internal_r_mohm": 18.6,
         "internal_l_uh": 14.61,
         "ah_capacity": 200
       }
@@ -37,7 +37,7 @@
       "rotation": 0,
       "props": {
         "name": "cbl",
-        "r_per_km": 0.005,
+        "r_per_km": 0.006498,
         "x_per_km": 0.004398,
         "length_km": 0.5,
         "num_parallel": 1,
