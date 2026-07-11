@@ -376,40 +376,45 @@ const PlanEngine = {
     return list.includes(type) ? 1 : 0.25;
   },
 
+  // Constant world-pixel half-extent of a device glyph (matches the source
+  // apps, which draw fixed-size symbols that scale with zoom).
+  glyphHalf(type) {
+    return (typeof PlanSymbols !== 'undefined' ? PlanSymbols.size(type) : 24) / 2;
+  },
+
   _drawElementEntity(ctx, el, selected) {
     const def = PLAN_DEFS.element(el.type);
     const color = PLAN_DEFS.elementColor(el.type, AppState.planMarkup.styles);
-    const f = this.factor();
-    const scale = (def && def.scale) || 1;
-    // Element half-size: real metres when calibrated, else a fixed screen size.
-    const sizePx = f ? ((def && def.dxf ? def.dxf.sizeM : 1) / 2 / f) * scale
-                     : (12 / this.view.zoom);
+    const half = this.glyphHalf(el.type);
+    const bg = this._cssVar('--plan-stage-bg', '#ffffff');
     ctx.save();
     ctx.globalAlpha = this._emphasis('visibleElementTypes', el.type);
     ctx.translate(el.x, el.y);
     if (el.rotation) ctx.rotate(el.rotation * Math.PI / 180);
-    PLAN_DEFS.drawElement(ctx, def, {
-      sizePx, color, selected,
-      strokeW: (selected ? 2.5 : 1.5) / this.view.zoom,
-    });
+    // Source-matched glyph; fall back to the registry primitive if absent.
+    const drew = (typeof PlanSymbols !== 'undefined') &&
+      PlanSymbols.draw(ctx, el.type, { color, bg, sizeWorld: half * 2 });
+    if (!drew) {
+      PLAN_DEFS.drawElement(ctx, def, { sizePx: half, color, selected, strokeW: 1.5 / this.view.zoom });
+    }
     ctx.restore();
     // Label + selection ring in unrotated space
     ctx.save();
     ctx.globalAlpha = this._emphasis('visibleElementTypes', el.type);
     if (selected) {
+      const pad = 4 / this.view.zoom;
       ctx.strokeStyle = '#2563eb';
       ctx.lineWidth = 1.5 / this.view.zoom;
       ctx.setLineDash([4 / this.view.zoom, 3 / this.view.zoom]);
-      ctx.strokeRect(el.x - sizePx - 3 / this.view.zoom, el.y - sizePx - 3 / this.view.zoom,
-        (sizePx + 3 / this.view.zoom) * 2, (sizePx + 3 / this.view.zoom) * 2);
+      ctx.strokeRect(el.x - half - pad, el.y - half - pad, (half + pad) * 2, (half + pad) * 2);
       ctx.setLineDash([]);
     }
     if (el.name) {
-      const fpx = 12 / this.view.zoom;
+      const fpx = 11 / this.view.zoom;
       ctx.font = `${fpx}px system-ui, sans-serif`;
       ctx.fillStyle = this._cssVar('--plan-label', '#334155');
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText(el.name, el.x + sizePx + 3 / this.view.zoom, el.y);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(el.name, el.x, el.y + half + 2 / this.view.zoom);
     }
     ctx.restore();
   },
@@ -604,13 +609,11 @@ const PlanEngine = {
 
   findElementAt(pt, tolPx) {
     const pm = AppState.planMarkup;
-    const f = this.factor();
     for (let i = pm.elements.length - 1; i >= 0; i--) {
       const el = pm.elements[i];
-      const def = PLAN_DEFS.element(el.type);
-      const sizePx = f ? ((def && def.dxf ? def.dxf.sizeM : 1) / 2 / f) : (12 / this.view.zoom);
+      const half = this.glyphHalf(el.type);
       const tol = (tolPx || 6) / this.view.zoom;
-      if (Math.abs(pt.x - el.x) <= sizePx + tol && Math.abs(pt.y - el.y) <= sizePx + tol) return el;
+      if (Math.abs(pt.x - el.x) <= half + tol && Math.abs(pt.y - el.y) <= half + tol) return el;
     }
     return null;
   },

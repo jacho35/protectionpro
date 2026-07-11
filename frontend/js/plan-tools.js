@@ -236,9 +236,8 @@ PlanTools.register({
     if (!f || f.kind !== 'element') return null;
     const def = PLAN_DEFS.element(f.item.type);
     if (!def || !def.rotatable) return null;
-    const fct = PlanEngine.factor();
-    const sizePx = fct ? ((def.dxf ? def.dxf.sizeM : 1) / 2 / fct) : (12 / PlanEngine.view.zoom);
-    return { el: f.item, hx: f.item.x, hy: f.item.y - sizePx - 18 / PlanEngine.view.zoom };
+    const half = PlanEngine.glyphHalf(f.item.type);
+    return { el: f.item, hx: f.item.x, hy: f.item.y - half - 18 / PlanEngine.view.zoom };
   },
 
   _rect(a, b) { return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) }; },
