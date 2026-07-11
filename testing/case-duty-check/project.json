@@ -1,0 +1,64 @@
+{
+  "projectName": "Duty Check",
+  "baseMVA": 100,
+  "frequency": 50,
+  "voltageFactor": 1.0,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Grid",
+        "voltage_kv": 6.6,
+        "fault_mva": 228.631,
+        "x_r_ratio": 10,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 140,
+      "rotation": 0,
+      "props": {
+        "name": "Bus1",
+        "voltage_kv": 6.6
+      }
+    },
+    {
+      "id": "cb-1",
+      "type": "cb",
+      "x": 200,
+      "y": 240,
+      "rotation": 0,
+      "props": {
+        "name": "CB1",
+        "cb_type": "vcb",
+        "breaking_capacity_ka": 25,
+        "rated_current_a": 1250,
+        "rated_voltage_kv": 7.2
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-1",
+      "fromPort": "p1",
+      "toComponent": "cb-1",
+      "toPort": "top"
+    }
+  ],
+  "nextId": 50
+}

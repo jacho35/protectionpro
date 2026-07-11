@@ -6,7 +6,7 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -14,6 +14,8 @@ from ..analysis.backup_autonomy import run_backup_autonomy
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
+from ..analysis.dc_loadflow import run_dc_load_flow
+from ..analysis.dc_shortcircuit import run_dc_short_circuit
 from ..analysis.arcflash import run_arc_flash
 from ..analysis.dc_arcflash import run_dc_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
@@ -30,7 +32,8 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 def fault_analysis(data: ProjectData):
     """Run IEC 60909 short-circuit analysis."""
     try:
-        return run_fault_analysis(data, fault_bus_id=data.faultBusId, fault_type=data.faultType)
+        return run_fault_analysis(data, fault_bus_id=data.faultBusId, fault_type=data.faultType,
+                                  voltage_factor=data.voltageFactor)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Fault analysis error: {e}")
@@ -56,6 +59,26 @@ def unbalanced_load_flow(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Unbalanced load flow error: {e}")
+
+
+@router.post("/dc-loadflow", response_model=DCLoadFlowResults)
+def dc_load_flow(data: ProjectData):
+    """Run DC load flow (resistive nodal solve) on the DC bus network."""
+    try:
+        return run_dc_load_flow(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"DC load flow error: {e}")
+
+
+@router.post("/dc-shortcircuit", response_model=DCShortCircuitResults)
+def dc_short_circuit(data: ProjectData):
+    """Run DC short-circuit analysis (IEC 61660-1) on the DC bus network."""
+    try:
+        return run_dc_short_circuit(data, fault_bus_id=data.faultBusId)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"DC short circuit error: {e}")
 
 
 @router.post("/arcflash", response_model=ArcFlashResults)
@@ -102,6 +125,7 @@ class CableSizingRequest(ProjectData):
     ambient_temp_c: Optional[float] = None
     install_method: Optional[str] = None
     max_voltage_drop_pct: Optional[float] = None
+    adiabatic_basis: Optional[str] = None
 
 
 @router.post("/cable-sizing")
@@ -114,6 +138,7 @@ def cable_sizing(data: CableSizingRequest):
             install_method=data.install_method or "trefoil",
             max_voltage_drop_pct=(data.max_voltage_drop_pct
                                   if data.max_voltage_drop_pct is not None else 5.0),
+            adiabatic_basis=data.adiabatic_basis or "thermal_equivalent",
         )
     except Exception as e:
         traceback.print_exc()

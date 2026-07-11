@@ -1,0 +1,88 @@
+{
+  "projectName": "SC-2 220/33kV",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Grid1",
+        "voltage_kv": 220,
+        "fault_mva": 15242.047,
+        "x_r_ratio": 10,
+        "z2_z1_ratio": 1.0,
+        "z0_z1_ratio": 1.0,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 120,
+      "rotation": 0,
+      "props": {
+        "name": "Bus1",
+        "voltage_kv": 220
+      }
+    },
+    {
+      "id": "transformer-1",
+      "type": "transformer",
+      "x": 300,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "T1",
+        "rated_mva": 10,
+        "z_percent": 8.35,
+        "x_r_ratio": 13,
+        "voltage_hv_kv": 220,
+        "voltage_lv_kv": 33,
+        "vector_group": "Dyn1",
+        "winding_config": "step_down",
+        "grounding_lv": "solidly_grounded",
+        "grounding_hv": "ungrounded"
+      }
+    },
+    {
+      "id": "bus-2",
+      "type": "bus",
+      "x": 200,
+      "y": 300,
+      "rotation": 0,
+      "props": {
+        "name": "Bus2",
+        "voltage_kv": 33
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-1",
+      "fromPort": "p1",
+      "toComponent": "transformer-1",
+      "toPort": "primary"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "transformer-1",
+      "fromPort": "secondary",
+      "toComponent": "bus-2",
+      "toPort": "p0"
+    }
+  ],
+  "nextId": 100
+}

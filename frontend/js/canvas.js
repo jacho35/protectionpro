@@ -1288,6 +1288,18 @@ const Canvas = {
         lines.push(`${ways} way${ways === 1 ? '' : 's'}`);
         lines.push(`${demand.toFixed(1)} kVA demand`);
         defaultOY = 32;
+      } else if (comp.type === 'dc_battery') {
+        lines.push(`${p.nominal_v || 0} Vdc`);
+        if (p.ah_capacity) lines.push(`${p.ah_capacity} Ah`);
+        lines.push(`Ri ${p.internal_r_mohm || 0} mΩ`);
+        this._appendDCLoadFlowSourceLines(comp, lines);
+        defaultOY = 30;
+      } else if (comp.type === 'dc_load') {
+        const model = p.load_model || 'constant_power';
+        if (model === 'constant_current') lines.push(`${p.load_a || 0} A`);
+        else if (model === 'constant_resistance') lines.push(`${p.resistance_ohm || 0} Ω`);
+        else lines.push(`${p.load_kw || 0} kW`);
+        defaultOY = 26;
       } else if (comp.type === 'motor_induction') {
         if (p.name && p.name !== 'IM') lines.push(p.name);
         lines.push(`${p.rated_kw || 0} kW`);
@@ -1372,6 +1384,17 @@ const Canvas = {
     if (br.contribution_pct > 0) {
       lines.push({text: `(${br.contribution_pct.toFixed(1)}%)`, color: faultColor});
     }
+  },
+
+  _appendDCLoadFlowSourceLines(comp, lines) {
+    if (!AppState.showResultBoxes.dcLoadflow || !AppState.dcLoadFlowResults) return;
+    const src = (AppState.dcLoadFlowResults.sources || []).find(s => s.source_id === comp.id);
+    if (!src) return;
+    const c = src.current_limited ? '#d32f2f' : (src.loading_pct > 80 ? '#f57c00' : '#2e7d32');
+    lines.push({text: '───────', color: c});
+    lines.push({text: `${src.voltage_v.toFixed(1)} V`, color: c});
+    lines.push({text: `${src.current_a.toFixed(1)} A`, color: c});
+    if (src.loading_pct > 0) lines.push({text: `Load: ${src.loading_pct.toFixed(0)}%`, color: c});
   },
 
   // Show red warning circles on unconnected ports

@@ -117,6 +117,19 @@ const API = {
     return this.request('/analysis/unbalanced-loadflow', 'POST', data);
   },
 
+  // Run DC load flow (resistive nodal solve on the DC bus network)
+  async runDCLoadFlow() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/dc-loadflow', 'POST', data);
+  },
+
+  // Run DC short circuit (IEC 61660-1) on the DC bus network
+  async runDCShortCircuit(faultBusId = null) {
+    const data = AppState.toJSON();
+    if (faultBusId) data.faultBusId = faultBusId;
+    return this.request('/analysis/dc-shortcircuit', 'POST', data);
+  },
+
   // Run cable sizing analysis
   async runCableSizing(options = {}) {
     const data = { ...AppState.toJSON(), ...options };

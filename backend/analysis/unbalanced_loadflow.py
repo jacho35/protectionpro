@@ -170,7 +170,7 @@ def run_unbalanced_load_flow(
     components = {c.id: c for c in project.components}
     wires = project.wires
 
-    buses = [c for c in project.components if c.type == "bus"]
+    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     if not buses:
         return UnbalancedLoadFlowResults(
             buses={}, branches=[], warnings=[],

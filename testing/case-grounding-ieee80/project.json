@@ -1,0 +1,59 @@
+{
+  "projectName": "Grounding IEEE 80",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "voltageFactor": 1.0,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Src",
+        "voltage_kv": 11.0,
+        "fault_mva": 36.3523,
+        "x_r_ratio": 0.05,
+        "grounding": "ungrounded"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 160,
+      "rotation": 0,
+      "props": {
+        "name": "GridBus",
+        "voltage_kv": 11.0,
+        "soil_resistivity": 400.0,
+        "crushed_rock_resistivity": 2500.0,
+        "crushed_rock_depth": 0.102,
+        "grid_length": 70.0,
+        "grid_width": 70.0,
+        "grid_depth": 0.5,
+        "num_conductors_x": 11,
+        "num_conductors_y": 11,
+        "ground_rod_length": 7.5,
+        "num_ground_rods": 20,
+        "conductor_diameter": 0.01,
+        "conductor_material": "copper_hard",
+        "fault_duration": 0.5,
+        "fault_clearing_time": 0.5,
+        "ambient_temp": 40.0,
+        "body_weight": 70
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    }
+  ],
+  "nextId": 100
+}

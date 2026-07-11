@@ -1,0 +1,88 @@
+{
+  "projectName": "Case 1 - No Load",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "GRID",
+        "voltage_kv": 110,
+        "fault_mva": 7621.023,
+        "x_r_ratio": 14,
+        "z2_z1_ratio": 1.0,
+        "z0_z1_ratio": 1.0,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-3",
+      "type": "bus",
+      "x": 200,
+      "y": 120,
+      "rotation": 0,
+      "props": {
+        "name": "Bus3",
+        "voltage_kv": 110
+      }
+    },
+    {
+      "id": "transformer-1",
+      "type": "transformer",
+      "x": 300,
+      "y": 200,
+      "rotation": 0,
+      "props": {
+        "name": "T1",
+        "rated_mva": 25,
+        "z_percent": 10,
+        "x_r_ratio": 20,
+        "voltage_hv_kv": 110,
+        "voltage_lv_kv": 11,
+        "vector_group": "Dyn11",
+        "winding_config": "step_down",
+        "grounding_lv": "solidly_grounded",
+        "grounding_hv": "ungrounded"
+      }
+    },
+    {
+      "id": "bus-4",
+      "type": "bus",
+      "x": 200,
+      "y": 300,
+      "rotation": 0,
+      "props": {
+        "name": "Bus4",
+        "voltage_kv": 11
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-3",
+      "toPort": "p0"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-3",
+      "fromPort": "p1",
+      "toComponent": "transformer-1",
+      "toPort": "primary"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "transformer-1",
+      "fromPort": "secondary",
+      "toComponent": "bus-4",
+      "toPort": "p0"
+    }
+  ],
+  "nextId": 100
+}

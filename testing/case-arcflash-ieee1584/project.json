@@ -1,0 +1,80 @@
+{
+  "projectName": "Arc Flash IEEE 1584-2002",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "voltageFactor": 1.0,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Src",
+        "voltage_kv": 0.48,
+        "fault_mva": 20.7846,
+        "x_r_ratio": 10,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "cb-1",
+      "type": "cb",
+      "x": 300,
+      "y": 140,
+      "rotation": 0,
+      "props": {
+        "name": "CB",
+        "cb_type": "acb",
+        "state": "closed"
+      }
+    },
+    {
+      "id": "relay-1",
+      "type": "relay",
+      "x": 420,
+      "y": 140,
+      "rotation": 0,
+      "props": {
+        "name": "R1",
+        "relay_type": "50/51",
+        "curve": "Definite Time",
+        "pickup_a": 1000,
+        "time_dial": 0.12,
+        "inst_pickup_a": 0,
+        "trip_cb": "cb-1"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 240,
+      "rotation": 0,
+      "props": {
+        "name": "MCC-480V",
+        "voltage_kv": 0.48,
+        "working_distance_mm": 455.0,
+        "electrode_config": "VCB"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "cb-1",
+      "toPort": "top"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "cb-1",
+      "fromPort": "bottom",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    }
+  ],
+  "nextId": 100
+}

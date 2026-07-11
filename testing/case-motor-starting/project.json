@@ -1,0 +1,113 @@
+{
+  "projectName": "Motor Starting",
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "dataVersion": 2,
+  "components": [
+    {
+      "id": "utility-1",
+      "type": "utility",
+      "x": 300,
+      "y": 40,
+      "rotation": 0,
+      "props": {
+        "name": "Grid",
+        "voltage_kv": 6.6,
+        "fault_mva": 99999,
+        "x_r_ratio": 10,
+        "grounding": "solidly"
+      }
+    },
+    {
+      "id": "bus-1",
+      "type": "bus",
+      "x": 200,
+      "y": 140,
+      "rotation": 0,
+      "props": {
+        "name": "Src",
+        "voltage_kv": 6.6,
+        "bus_type": "Swing"
+      }
+    },
+    {
+      "id": "cable-1",
+      "type": "cable",
+      "x": 300,
+      "y": 220,
+      "rotation": 0,
+      "props": {
+        "name": "SysZ",
+        "conductor": "Cu",
+        "insulation": "XLPE",
+        "size_mm2": 300,
+        "r_per_km": 0.0722,
+        "x_per_km": 0.7224,
+        "length_km": 1.0,
+        "voltage_kv": 6.6,
+        "num_parallel": 1,
+        "rated_amps": 600,
+        "ampacity_standard": "IEC"
+      }
+    },
+    {
+      "id": "bus-2",
+      "type": "bus",
+      "x": 200,
+      "y": 320,
+      "rotation": 0,
+      "props": {
+        "name": "MotorBus",
+        "voltage_kv": 6.6,
+        "bus_type": "PQ"
+      }
+    },
+    {
+      "id": "motor_induction-1",
+      "type": "motor_induction",
+      "x": 300,
+      "y": 400,
+      "rotation": 0,
+      "props": {
+        "name": "M1",
+        "rated_kw": 1500.0,
+        "voltage_kv": 6.6,
+        "efficiency": 0.95,
+        "power_factor": 0.9,
+        "locked_rotor_current": 6.0,
+        "starting_method": "dol"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "fromComponent": "utility-1",
+      "fromPort": "out",
+      "toComponent": "bus-1",
+      "toPort": "p0"
+    },
+    {
+      "id": "w2",
+      "fromComponent": "bus-1",
+      "fromPort": "p1",
+      "toComponent": "cable-1",
+      "toPort": "from"
+    },
+    {
+      "id": "w3",
+      "fromComponent": "cable-1",
+      "fromPort": "to",
+      "toComponent": "bus-2",
+      "toPort": "p0"
+    },
+    {
+      "id": "w4",
+      "fromComponent": "bus-2",
+      "fromPort": "p1",
+      "toComponent": "motor_induction-1",
+      "toPort": "in"
+    }
+  ],
+  "nextId": 100
+}

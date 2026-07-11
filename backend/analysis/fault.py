@@ -70,7 +70,7 @@ def thermal_m_factor(kappa, duration_s, freq_hz=50.0):
 
 
 def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None,
-                       thermal_duration_s: float = 1.0) -> FaultResults:
+                       thermal_duration_s: float = 1.0, voltage_factor: float = None) -> FaultResults:
     """Run IEC 60909 fault analysis.
 
     Args:
@@ -79,7 +79,15 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         fault_type: "3phase", "slg", "ll", "llg", or None for all types.
         thermal_duration_s: Fault duration Tk (s) for the thermal-equivalent
             current Ith = Ik″·√(m+n) — IEC 60909-0 §12 convention, 1.0 s default.
+        voltage_factor: IEC 60909-0 Table 1 voltage factor c to apply in the
+            fault equations AND the network-feeder equivalent impedance
+            (Eq. 15). None → C_MAX (1.10). Set to 1.0 to reproduce results
+            that omit the voltage factor (e.g. bolted-fault / V=1.0 studies).
+            NOTE: the transformer correction factor K_T always uses c_max=1.10
+            internally per §6.3.3 regardless of this value.
     """
+    # Resolve the voltage factor once; a positive override wins, else C_MAX.
+    c_resolved = voltage_factor if (voltage_factor is not None and voltage_factor > 0) else C_MAX
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
     wires = project.wires
@@ -93,7 +101,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             (w.fromComponent, w.toPort, w.fromPort))
 
     # Identify buses — filter to selected bus if specified
-    buses = [c for c in project.components if c.type == "bus"]
+    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     if fault_bus_id:
         buses = [c for c in buses if c.id == fault_bus_id]
 
@@ -104,7 +112,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         i_base_ka = base_mva / (math.sqrt(3) * voltage_kv)  # kA
 
         # Collect all source paths with component trail
-        source_paths = _collect_source_paths(bus.id, components, adjacency, base_mva)
+        source_paths = _collect_source_paths(bus.id, components, adjacency, base_mva, c=c_resolved)
 
         if not source_paths:
             # No sources connected — infinite impedance (no fault current)
@@ -128,8 +136,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # Negative-sequence equivalent impedance (may differ from Z1 for generators/motors)
         z2_eq = _parallel_impedances(z2_sources)
 
-        # IEC 60909-0 Table 1 voltage factor (see C_MAX above)
-        c_factor = C_MAX
+        # IEC 60909-0 Table 1 voltage factor (see C_MAX above; overridable per request)
+        c_factor = c_resolved
 
         ik3_ka = None
         ik1_ka = None
@@ -153,7 +161,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         has_z0_path = False
         z0_detail = []  # descriptive strings for each Z0 source path
         if needs_z0:
-            z0_source_tuples = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva)
+            z0_source_tuples = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva, c=c_resolved)
             if z0_source_tuples:
                 z0_impedances = [t[0] for t in z0_source_tuples]
                 z0_detail = [t[1] for t in z0_source_tuples]
@@ -313,7 +321,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     # ── Voltage Depression Calculation (IEC 60909 §3.6) ──
     # Build Zbus matrix for all buses and compute retained voltage at each bus
     # during a fault at each faulted bus: V_j = 1 - Z_jk / Z_kk
-    all_buses = [c for c in project.components if c.type == "bus"]
+    all_buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
     if len(all_buses) >= 2:
         try:
             _compute_voltage_depression(
@@ -349,7 +357,7 @@ def _transformer_far_voltage(comp, v_near):
     return v_near
 
 
-def _collect_source_paths(bus_id, components, adjacency, base_mva):
+def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
     """Walk the network from a bus and collect source paths with component trails.
 
     Uses a per-path visited set (one copy per recursion branch) so that
@@ -379,7 +387,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
 
         # If we hit a source, record the complete path
         if comp.type == "utility":
-            z_src = _utility_impedance(comp, base_mva)
+            z_src = _utility_impedance(comp, base_mva, c)
             # Negative sequence: Z2 = Z1 * z2_z1_ratio (default 1.0)
             # Also accept legacy "x2_ratio" key for backwards compatibility
             z2_z1 = float(comp.props.get("z2_z1_ratio", 0) or comp.props.get("x2_ratio", 0))
@@ -515,6 +523,23 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva):
                 "rated_mva": rated_mva * n_turb,
                 "turbine_type": t_type,
             })
+            return
+
+        # Static/lumped load with a rotating fraction ([gap #2]) — back-feeds
+        # the fault as an induction-motor equivalent (decays for Ib like any
+        # induction motor via source_type "motor_induction").
+        if comp.type in ("static_load", "distribution_board"):
+            z_src, motor_mva = _static_load_motor_impedance(comp, base_mva)
+            if z_src is not None:
+                paths.append({
+                    "z_total": z_path + z_src,
+                    "z2_total": z_path + z_src,
+                    "trail": trail + [comp_id],
+                    "source_id": comp_id,
+                    "source_type": "motor_induction",
+                    "is_motor": True,
+                    "rated_mva": motor_mva,
+                })
             return
 
         # Accumulate impedance through branch elements, tracking the
@@ -691,19 +716,20 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
     return branches
 
 
-def _utility_impedance(comp, base_mva):
+def _utility_impedance(comp, base_mva, c=C_MAX):
     """Utility (network feeder) per-unit impedance per IEC 60909-0 §6.2, Eq. 15.
 
     Z_Q = c × U_nQ² / S″_kQ  →  on a common MVA base: z_pu = c × S_base / S″_kQ.
 
-    The voltage factor c (same c_max = 1.10 the fault equations use, [EE-4])
-    must be INCLUDED here so that I″k = c·U_n/(√3·|Z_Q|) computed at the
-    connection point reproduces the utility's declared fault level exactly —
-    omitting it returned 1.1× the declared level.
+    The voltage factor c (the same c the fault equations use, [EE-4]) must be
+    INCLUDED here so that I″k = c·U_n/(√3·|Z_Q|) computed at the connection
+    point reproduces the utility's declared fault level exactly — omitting it
+    returned 1.1× the declared level. c defaults to c_max = 1.10 but is
+    overridable per request (e.g. c = 1.0 for V=1.0 / bolted-fault studies).
     """
     fault_mva = comp.props.get("fault_mva", 500)
     xr = comp.props.get("x_r_ratio", 15)
-    z_pu = C_MAX * base_mva / fault_mva
+    z_pu = c * base_mva / fault_mva
     x_pu = z_pu * xr / math.sqrt(1 + xr * xr)
     r_pu = x_pu / xr
     return complex(r_pu, x_pu)
@@ -782,6 +808,32 @@ def _motor_induction_impedance(comp, base_mva):
     x_pu = x_pp * base_mva / rated_mva
     r_pu = x_pu / xr
     return complex(r_pu, x_pu)
+
+
+def _static_load_motor_impedance(comp, base_mva):
+    """Motor-equivalent sub-transient impedance for the rotating fraction of a
+    static/lumped load, per IEC 60909-0 §13 ([gap #2]).
+
+    Returns (z_src, motor_mva) or (None, 0) when no motor fraction is set.
+    The rotating share (motor_fraction × rated_kVA) is modelled as an
+    induction motor with X" ≈ 1/LRC (locked-rotor current ratio) on its own
+    base, so lumped loads with a motor component back-feed the fault instead
+    of being ignored.
+    """
+    mf = float(comp.props.get("motor_fraction", 0) or 0)
+    if mf <= 0:
+        return None, 0.0
+    mf = min(mf, 1.0)
+    rated_kva = float(comp.props.get("rated_kva", 0) or 0)
+    motor_mva = rated_kva / 1000.0 * mf
+    if motor_mva <= 1e-9:
+        return None, 0.0
+    lrc = float(comp.props.get("motor_lrc_ratio", 6) or 6)  # locked-rotor / FLC
+    x_pp = 1.0 / max(lrc, 1e-3)                              # p.u. on motor base
+    xr = float(comp.props.get("x_r_ratio", 10) or 10)
+    x_pu = x_pp * base_mva / motor_mva
+    r_pu = x_pu / xr
+    return complex(r_pu, x_pu), motor_mva
 
 
 def _motor_synchronous_impedance(comp, base_mva):
@@ -878,7 +930,7 @@ def _wind_turbine_impedance(comp, base_mva):
     return complex(r_pu, x_pu)
 
 
-def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
+def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MAX):
     """Collect zero-sequence impedances from sources feeding a bus.
 
     Zero-sequence current can only flow through grounded transformer windings.
@@ -920,7 +972,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva):
             grounding = str(comp.props.get("grounding", "solidly")).lower()
             if grounding in ("ungrounded", "isolated", "none", "unearthed"):
                 return
-            z_src = _utility_impedance(comp, base_mva)
+            z_src = _utility_impedance(comp, base_mva, c)
             # Use z0_z1_ratio to derive Z0 from Z1, with legacy "x0_ratio" fallback
             z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
             z0_src = z_src * z0_z1 if z0_z1 > 0 else z_src
@@ -1607,6 +1659,13 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
             else:
                 z_src = _motor_synchronous_impedance(comp, base_mva)
             bus_shunts[from_bus_id].append((z_src, comp.type, comp))
+            return
+        if comp.type in ("static_load", "distribution_board"):
+            # [gap #2] rotating fraction of a lumped load contributes like a
+            # motor to the fault-induced voltage depression
+            z_src, _mva = _static_load_motor_impedance(comp, base_mva)
+            if z_src is not None:
+                bus_shunts[from_bus_id].append((z_src, "motor_induction", comp))
             return
 
         # Accumulate impedance through branch elements, tracking the voltage
