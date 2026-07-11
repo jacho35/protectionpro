@@ -21,11 +21,9 @@ const Retic = {
   ],
 
   init() {
-    const sldBtn = document.getElementById('btn-workspace-sld');
-    const reticBtn = document.getElementById('btn-workspace-retic');
-    if (sldBtn) sldBtn.addEventListener('click', () => this.deactivate());
-    if (reticBtn) reticBtn.addEventListener('click', () => this.activate());
-
+    // Workspace-tab clicks are bound centrally by app.js switchWorkspace()
+    // (three-way SLD / Reticulation / Plan switch); activate()/deactivate()
+    // below are invoked by that coordinator.
     const ws = document.getElementById('retic-workspace');
     if (ws) {
       // Delegated change handler for every field in the workspace

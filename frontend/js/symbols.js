@@ -290,6 +290,17 @@ const Symbols = {
       </g>`;
   },
 
+  bus_duct(w, h) {
+    // Busway link: a thick double bar between the left/right terminals.
+    const hw = w / 2, g = Math.max(2, h * 0.18);
+    return `
+      <g class="symbol-bus-duct">
+        <line x1="${-hw}" y1="0" x2="${hw}" y2="0" stroke-width="3"/>
+        <line x1="${-hw + 4}" y1="${-g}" x2="${hw - 4}" y2="${-g}" stroke-width="1.5"/>
+        <line x1="${-hw + 4}" y1="${g}" x2="${hw - 4}" y2="${g}" stroke-width="1.5"/>
+      </g>`;
+  },
+
   cb(w, h, comp) {
     // Circuit breaker: square with X (closed) or gap (open)
     const s = Math.min(w, h) * 0.35;
