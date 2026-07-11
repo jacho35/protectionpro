@@ -29,30 +29,31 @@ t_s = t_c = 0.5 s; T_a = 40 °C; 70 kg body; earth-fault I_G = 1908 A. Model: [`
 | Step voltage E_s (Eq. 92) | 549.1 V | 549.1 V | 549 V | ✅ exact |
 | Decrement factor D_f (Eq. 79) | 1.00 | — | 1.00 | ✅ exact |
 | Min conductor (Onderdonk Eq. 37) | 4.82 mm² → 16 mm² | 4.82 mm² | 4.8 → 16 mm² | ✅ exact |
-| **Mesh (touch) voltage E_m (Eq. 85)** | **749.1 V** | 791.8 V | 792 V | ⚠ **+5.7 %** |
+| **Mesh (touch) voltage E_m (Eq. 85)** | **749.1 V** | 749.1 V | 749 V | ✅ exact (post-fix) |
 
-## The one difference — mesh voltage E_m (qualified, conservative)
-The engine uses a **simplified effective length** `L_M = L_c + L_rod` (= 1690 m). IEEE 80 Eq. 88 for a grid
-**with rods** uses `L_M = L_c + [1.55 + 1.22·(L_r / √(L_x²+L_y²))]·L_R` (= 1786 m). Because the engine's L_M is
-smaller, its mesh voltage is **5.7 % higher** (792 V vs 749 V) — i.e. **conservative** (it overstates the touch
-voltage, erring on the safe side). Everything E_m depends on except L_M (ρ, I_G, K_m, K_i) matches exactly.
+## Mesh voltage E_m — now exact (was +5.7 %, resolved)
+The engine originally used a **simplified effective length** `L_M = L_c + L_rod` (= 1690 m), which over-stated
+the mesh voltage by +5.7 % (792 V vs 749 V) — conservative, but not exact. The full IEEE 80 **Eq. 88** for a
+grid **with rods** is now implemented: `L_M = L_c + [1.55 + 1.22·(L_r / √(L_x²+L_y²))]·L_R` (= 1786.4 m),
+alongside the full **Eq. 84–87** `n = n_a·n_b·n_c·n_d` (= 11 for this square grid, so K_m/K_s/K_i are unchanged
+here but correct for rectangular grids) and the no-rods `K_ii = 1/(2n)^(2/n)`. With the exact L_M the mesh
+voltage is now **749 V (0.0 %)**. Pinned by `_compute_n` / `_compute_K_ii` / `_compute_L_M` regression tests in
+`backend/tests/test_regression.py`.
 
 ## Screenshot (real app)
 ![grounding result](screenshots/grounding-result.png)
 
 Shows R_grid 2.753 Ω, GPR 5252 V, touch 792 V ≤ 841 V ✓, step 549 V ≤ 2696 V ✓, 16 mm² conductor — matching.
 
-## Applicability / engine limitations (documented, backlog)
-1. **`n = max(n_x, n_y)`** equals IEEE 80's `n` only for **square** grids; for rectangular/L-shaped grids the
-   full `n = n_a·n_b·n_c·n_d` differs (this is why the standard's rectangular Annex-B example would not match `n`).
-2. **`K_ii = 1.0`** is correct for grids **with rods**; grids **without rods** need `K_ii = 1/(2n)^(2/n)`.
-3. **`L_M`** omits the rod-length weighting of Eq. 88 → mesh voltage conservative by a few percent when rods
-   are present.
+## Applicability / engine coverage (all implemented)
+1. **`n = n_a·n_b·n_c·n_d`** (Eq. 84–87) — correct for square **and** rectangular grids (n_c/n_d = 1 for the
+   rectangular geometries the tool models; L-shaped grids are out of scope).
+2. **`K_ii`** — 1.0 for grids **with rods**; `1/(2n)^(2/n)` for grids **without rods** (Eq. 90/91).
+3. **`L_M`** — full Eq. 88 rod-length weighting when rods are present, `L_c + L_rod` otherwise.
 
 ## Verdict
 ProtectionPro reproduces the IEEE 80 tolerable voltages, surface derating, grid resistance, GPR, geometric
-factors (K_m/K_s/K_i), step voltage, decrement factor, and conductor sizing **exactly (0.000 %)** for a square
-grid with rods, and end-to-end in the real app. The sole divergence is the **mesh (touch) voltage, +5.7 %** and
-**conservative**, from a documented simplification of the effective buried length L_M. Recommended enhancement
-(backlog): implement the full IEEE 80 `n` and `L_M` (and no-rods `K_ii`) so mesh voltage and non-square /
-no-rods grids match exactly.
+factors (K_m/K_s/K_i), step voltage, decrement factor, conductor sizing **and mesh voltage** **exactly
+(0.000 %)** for a square grid with rods, end-to-end in the real app. The previously-qualified mesh-voltage
+simplification has been resolved by implementing the full IEEE 80 Eq. 84–88 `n`, `K_ii` and rod-weighted `L_M`,
+which also makes rectangular and no-rods geometries correct.

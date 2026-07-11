@@ -17,7 +17,9 @@ from backend.models.schemas import Component, ProjectData, Wire
 from backend.analysis.fault import run_fault_analysis
 from backend.analysis.loadflow import run_load_flow
 from backend.analysis.motor_starting import run_motor_starting
-from backend.analysis.grounding_system import _compute_conductor_size
+from backend.analysis.grounding_system import (
+    _compute_conductor_size, _compute_n, _compute_K_ii, _compute_L_M,
+)
 from backend.analysis.arcflash import calc_incident_energy
 from backend.analysis.unbalanced_loadflow import run_unbalanced_load_flow
 
@@ -179,6 +181,41 @@ class TestGrounding:
         """
         a_mm2 = _compute_conductor_size(10_000.0, 0.5, "copper_hard")
         assert 18.0 < a_mm2 < 32.0
+
+    def test_effective_n_square_equals_nx(self):
+        """IEEE 80 Eq. 84–87: for a square 70×70 m grid with 11×11 conductors
+        (L_c = 1540 m) the full n = n_a·n_b·n_c·n_d reduces to n_x = 11 — the
+        value the old ``max(n_x, n_y)`` shortcut gave, so the square-grid
+        verification stays exact."""
+        assert _compute_n(1540.0, 70.0, 70.0, 4900.0) == pytest.approx(11.0, abs=1e-6)
+
+    def test_effective_n_rectangular_differs(self):
+        """For a rectangular grid the full n = n_a·n_b (n_c = n_d = 1) departs
+        from the naive max(n_x, n_y), which is the correction over the old
+        shortcut. 70 m × 35 m, 11×6 conductors: L_c = 11·35 + 6·70 = 805 m,
+        L_p = 210 → n_a = 2·805/210 = 7.667, n_b = √(210/(4·√2450)) = 1.030,
+        n ≈ 7.90 (vs the shortcut's max(11, 6) = 11)."""
+        n = _compute_n(805.0, 70.0, 35.0, 2450.0)
+        assert n == pytest.approx(7.90, abs=0.1)
+        assert abs(n - 11.0) > 1.0  # differs materially from the naive shortcut
+
+    def test_K_ii_rods_vs_no_rods(self):
+        """K_ii = 1.0 with rods; 1/(2n)^(2/n) without (IEEE 80 Eq. 90/91)."""
+        assert _compute_K_ii(11.0, True) == 1.0
+        assert _compute_K_ii(11.0, False) == pytest.approx(1.0 / (22.0) ** (2.0 / 11.0), rel=1e-9)
+
+    def test_L_M_rod_weighting_eq88(self):
+        """IEEE 80 Eq. 88 rod-weighted effective length for the square grid:
+        L_M = 1540 + [1.55 + 1.22·(7.5/√(70²+70²))]·150 = 1786.4 m
+        (vs the old 1540 + 150 = 1690 m, which over-stated mesh voltage +5.7%)."""
+        L_M = _compute_L_M(1540.0, 150.0, 7.5, 70.0, 70.0, True)
+        assert L_M == pytest.approx(1786.4, abs=0.5)
+        # Corrected mesh voltage is 1690/1786.4 = 0.946× the old value
+        assert (1690.0 / L_M) == pytest.approx(0.946, abs=0.002)
+
+    def test_L_M_no_rods_is_lc_plus_lrod(self):
+        """Without rods Eq. 87 keeps L_M = L_c + L_rod."""
+        assert _compute_L_M(1540.0, 0.0, 0.0, 70.0, 70.0, False) == 1540.0
 
 
 # ── Motor starting ───────────────────────────────────────────────────────
@@ -1524,7 +1561,9 @@ class TestDCLoadFlow:
 
 
 class TestDCShortCircuit:
-    """IEC 61660-1 battery source: I_kB = 0.95·E/R_BBr, i_pB = E/R_BBr."""
+    """IEC 61660-1 battery source with the full standard factors:
+    E_B = 1.05·U_nB, peak i_pB = E_B/(0.9·R_B + R_net),
+    quasi-steady I_kB = 0.95·E_B/(R_B + R_net)."""
 
     def _net(self, add_charger=False):
         comps = [
@@ -1548,31 +1587,54 @@ class TestDCShortCircuit:
         return ProjectData(projectName="dc", components=comps, wires=wires)
 
     def test_battery_bolted_fault_at_terminals(self):
-        """Fault at the battery bus: R_BBr = 0.1 Ω → I_k = 0.95·120/0.1 = 1.14 kA,
-        i_p = 120/0.1 = 1.20 kA."""
+        """Fault at the battery bus (R_net = 0, R_B = 0.1 Ω, E_B = 1.05·120 = 126 V):
+        i_p = 126/(0.9·0.1) = 1.40 kA, I_k = 0.95·126/0.1 = 1.197 kA."""
         res = run_dc_short_circuit(self._net(), fault_bus_id="bus-a")
         b = res.buses["bus-a"]
-        assert b.ik_ka == pytest.approx(1.14, abs=0.02)
-        assert b.ip_ka == pytest.approx(1.20, abs=0.02)
+        assert b.ip_ka == pytest.approx(1.40, abs=0.02)
+        assert b.ik_ka == pytest.approx(1.197, abs=0.02)
 
     def test_battery_fault_through_cable(self):
-        """Fault at bus B: R_BBr = 0.1 (internal) + 0.1 (loop) = 0.2 Ω →
-        I_k = 0.95·120/0.2 = 0.57 kA, i_p = 0.60 kA."""
+        """Fault at bus B (R_B = 0.1, loop R = 0.1 Ω, E_B = 126 V):
+        i_p = 126/(0.09 + 0.1) = 0.663 kA, I_k = 0.95·126/0.2 = 0.599 kA."""
         res = run_dc_short_circuit(self._net(), fault_bus_id="bus-b")
         b = res.buses["bus-b"]
-        assert b.ik_ka == pytest.approx(0.57, abs=0.02)
-        assert b.ip_ka == pytest.approx(0.60, abs=0.02)
+        assert b.ip_ka == pytest.approx(0.663, abs=0.02)
+        assert b.ik_ka == pytest.approx(0.599, abs=0.02)
 
     def test_converter_current_limited_superposition(self):
         """Charger adds a current-limited partial current 1.5·200 A = 0.30 kA,
-        superposed on the battery's 1.14 kA at the common bus."""
+        superposed on the battery's 1.197 kA I_k at the common bus."""
         res = run_dc_short_circuit(self._net(add_charger=True), fault_bus_id="bus-a")
         b = res.buses["bus-a"]
         types = {c.source_type for c in b.contributions}
         assert types == {"dc_battery", "charger"}
         chg = next(c for c in b.contributions if c.source_type == "charger")
         assert chg.ik_ka == pytest.approx(0.30, abs=0.01)
-        assert b.ik_ka == pytest.approx(1.14 + 0.30, abs=0.03)
+        assert b.ik_ka == pytest.approx(1.197 + 0.30, abs=0.03)
+
+    def test_published_iec61660_peak_from_nameplate(self):
+        """CED E03-035 Example 1: 60-cell 120 V, 200 Ah battery, R_B = 18.6 mΩ,
+        connectors + cable = 6.498 mΩ → published peak i_pB = 5422 A. The full
+        IEC 61660-1 factors (E_B = 1.05·120 = 126 V, 0.9·R_B) must reproduce it
+        from raw nameplate inputs: i_p = 126/(0.9·0.0186 + 0.006498) = 5422 A."""
+        comps = [
+            _comp("bat-1", "dc_battery",
+                  {"name": "Bank", "nominal_v": 120, "internal_r_mohm": 18.6}),
+            _dc_bus("bus-a", "DC A"),
+            # loop R = 2·r·ℓ = 2·0.06498·0.05 = 0.006498 Ω (connectors + cable)
+            _comp("cbl-1", "cable",
+                  {"name": "Feeder", "r_per_km": 0.06498, "x_per_km": 0.0,
+                   "length_km": 0.05, "num_parallel": 1, "rated_amps": 6000}),
+            _dc_bus("bus-b", "DC B"),
+        ]
+        wires = [_wire("w1", "bat-1", "bus-a"),
+                 _wire("w2", "bus-a", "cbl-1"),
+                 _wire("w3", "cbl-1", "bus-b")]
+        proj = ProjectData(projectName="dc", components=comps, wires=wires)
+        res = run_dc_short_circuit(proj, fault_bus_id="bus-b")
+        b = res.buses["bus-b"]
+        assert b.ip_ka == pytest.approx(5.422, abs=0.01)   # exact, from nameplate
 
     def test_no_dc_bus_returns_warning(self):
         comps = [_comp("bus-1", "bus", {"name": "AC", "voltage_kv": 11})]

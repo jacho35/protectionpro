@@ -183,6 +183,56 @@ def _compute_K_i(n):
     return 0.644 + 0.148 * n
 
 
+def _compute_n(L_c, L_x, L_y, A):
+    """Effective number of parallel conductors n per IEEE 80 Eq. 84–87.
+
+    n = n_a·n_b·n_c·n_d.  For a square grid this equals n_x (= the old
+    ``max(n_x, n_y)`` shortcut); for rectangular grids n_a·n_b differs, which
+    is the correct value.  n_c and n_d are 1 for square/rectangular grids and
+    only depart from 1 for L-shaped / irregular grids, which this tool does
+    not model, so they are held at 1.
+    """
+    if L_x <= 0 or L_y <= 0 or A <= 0:
+        return 1.0
+    L_p = 2.0 * (L_x + L_y)                     # peripheral length of the grid
+    n_a = 2.0 * L_c / L_p if L_p > 0 else 1.0
+    n_b = math.sqrt(L_p / (4.0 * math.sqrt(A))) # = 1.0 for a square grid
+    n_c = 1.0                                    # rectangular → 1
+    n_d = 1.0                                    # rectangular → 1
+    return n_a * n_b * n_c * n_d
+
+
+def _compute_K_ii(n, has_rods):
+    """Corrective weighting factor K_ii per IEEE 80 Eq. 90/91.
+
+    Grids with ground rods along the perimeter / corners: K_ii = 1.0.
+    Grids without rods (or few rods): K_ii = 1 / (2n)^(2/n).
+    """
+    if has_rods:
+        return 1.0
+    if n <= 0:
+        return 1.0
+    return 1.0 / (2.0 * n) ** (2.0 / n)
+
+
+def _compute_L_M(L_c, L_rod, L_r, L_x, L_y, has_rods):
+    """Effective buried length for the mesh voltage per IEEE 80 Eq. 87/88.
+
+    Without rods (Eq. 87):  L_M = L_c + L_rod
+    With rods (Eq. 88):     L_M = L_c + [1.55 + 1.22·(L_r/√(L_x²+L_y²))]·L_R
+                            (L_R = total rod length = L_rod)
+
+    The previous simplification used L_c + L_rod in both cases, which
+    under-states L_M for rod grids and so over-states the mesh voltage by a
+    few percent (conservative).  The full Eq. 88 restores the exact value.
+    """
+    if not has_rods or L_rod <= 0:
+        return L_c + L_rod
+    diag = math.sqrt(L_x ** 2 + L_y ** 2)
+    weight = 1.55 + 1.22 * (L_r / diag) if diag > 0 else 1.55
+    return L_c + weight * L_rod
+
+
 def _compute_decrement_factor(kappa, t_s, freq_hz=50.0):
     """Decrement factor D_f per IEEE 80-2013 Eq. 79.
 
@@ -315,14 +365,18 @@ def run_grounding_analysis(project: ProjectData):
         L_c = n_x * L_y + n_y * L_x  # total conductor length (m)
         L_rod = n_R * L_r  # total rod length (m)
         L_T = L_c + L_rod  # total buried conductor length (m)
-        L_M = L_c + L_rod  # effective length for mesh voltage
-        L_S = 0.75 * L_c + 0.85 * L_rod  # effective length for step voltage
+        L_S = 0.75 * L_c + 0.85 * L_rod  # effective length for step voltage (Eq. 93)
+        has_rods = n_R > 0 and L_r > 0
+        # IEEE 80 Eq. 88 effective length for mesh voltage (rod-weighted)
+        L_M = _compute_L_M(L_c, L_rod, L_r, L_x, L_y, has_rods)
 
         # Conductor spacing
         D_x = L_x / max(n_x - 1, 1)  # spacing between x conductors
         D_y = L_y / max(n_y - 1, 1)
         D = (D_x + D_y) / 2  # average spacing
-        n = max(n_x, n_y)  # effective n for geometry factors
+        # IEEE 80 Eq. 84–87 effective n (equals max(n_x,n_y) for square grids)
+        n = _compute_n(L_c, L_x, L_y, A)
+        K_ii = _compute_K_ii(n, has_rods)
 
         # Get fault current at this bus
         I_fault_ka = 0
@@ -369,7 +423,7 @@ def run_grounding_analysis(project: ProjectData):
         GPR = I_G * R_g
 
         # Geometry factors
-        K_m = _compute_K_m(D, d, h, n)
+        K_m = _compute_K_m(D, d, h, n, K_ii)
         K_s = _compute_K_s(D, h, n)
         K_i = _compute_K_i(n)
 

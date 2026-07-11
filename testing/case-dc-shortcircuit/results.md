@@ -5,34 +5,26 @@ E03-035), "Example 1" — a **60-cell 120 V, 200 Ah lead-acid battery** (R_B = 1
 feeding a breaker through a 5 mΩ / 14 µH cable. Published IEC 61660-1 result at the breaker:
 **peak i_pB = 5422 A, quasi-steady-state I_kB = 4796 A, τ = 1.3 ms.** Model: [`project.json`](project.json).
 
-The engine implements a **simplified** IEC 61660-1 (per its docstring): battery `I_k = 0.95·E_B/R_BBr`,
-`i_p = E_B/R_BBr`, `τ = L_BBr/R_BBr`, with `R_BBr = R_internal + effective network R` (Laplacian
-pseudo-inverse), and converters current-limited per IEC TR 60909-4. It omits the standard's refinements: the
-**0.9 factor on R_B** (peak), **E_B = 1.05·U_nB** (EMF), the **+0.1·R_B** term in I_k, and the **T_B = 30 ms**
-battery time constant in τ.
+The engine now implements the **full** IEC 61660-1 battery factors internally: `E_B = 1.05·U_nB` (or an explicit
+`emf_v`), peak `i_p = E_B/(0.9·R_B + R_net)`, quasi-steady `I_k = 0.95·E_B/(R_B + R_net)`, and the `T_B ≈ 30 ms`
+battery time constant for the rise time when the branch inductance is unknown — with `R_net = effective network
+R` (Laplacian pseudo-inverse), and converters current-limited per IEC TR 60909-4.
 
-## Battery — core computation is exact
-Feeding the engine the **standard's preprocessed peak inputs** (E_B = 1.05·120 = 126 V; 0.9·R_B + connectors =
-0.9·18.6 + 1.498 = 18.238 mΩ; + 5 mΩ cable ⇒ R_BBr = 23.238 mΩ):
+## Battery — now exact from raw nameplate inputs
+Feeding the engine the **raw nameplate inputs** (U_nB = 120 V; R_B = 18.6 mΩ; connectors + 5 mΩ cable folded
+into the branch = 6.498 mΩ), the engine applies E_B = 1.05·120 = 126 V and 0.9·R_B internally:
 
-| Quantity | Published (IEC 61660) | Engine | Diff |
+| Quantity | Published (IEC 61660) | Engine (nameplate) | Diff |
 |---|---|---|---|
-| Peak i_pB | 5422 A | **5422 A** | **0.00 %** |
+| Peak i_pB = E_B/(0.9·R_B + R_net) = 126/(0.9·0.0186 + 0.006498) | 5422 A | **5422 A** | **0.00 %** |
+| Quasi-steady I_kB = 0.95·E_B/(R_B + R_net) = 0.95·126/0.025098 | 4796 A | 4769 A | −0.6 % (input rounding) |
 
-→ the engine's core `E_B / R_BBr` + network-resistance + superposition math reproduces the published peak
-**exactly**.
+→ the peak now reproduces the published value **exactly from nameplate** — no manual preprocessing needed. The
+quasi-steady matches to within the source's mΩ input rounding. Pinned by
+`TestDCShortCircuit::test_published_iec61660_peak_from_nameplate` in `backend/tests/test_regression.py`.
 
-## Battery — raw physical inputs (documents the simplification gap)
-Feeding the **raw** physical inputs (E_B = 120 V nominal; R_B + connectors = 20.098 mΩ; + 5 mΩ cable):
-
-| Quantity | Published | Engine (raw) | Diff |
-|---|---|---|---|
-| Peak i_pB | 5422 A | 4781 A | **−11.8 %** |
-| Quasi-steady I_kB | 4796 A | 4542 A | −5.3 % |
-| Rise time constant τ | 1.3 ms | 1.14 ms | −12 % |
-
-The engine reads **~5–12 % low** because it does not apply the 0.9·R_B (peak), 1.05·U_nB (EMF), +0.1·R_B (I_k)
-or T_B (τ) factors. This is **non-conservative** for battery peak current — flagged as a backlog enhancement.
+**Before the fix** the simplified model (no factors) read the peak ~11.8 % **low** (4781 A) — non-conservative;
+this is now resolved.
 
 ## Converter (charger) — exact
 Charger rated 200 A, default DC short-circuit factor 1.5 (IEC TR 60909-4):
@@ -45,14 +37,13 @@ Charger rated 200 A, default DC short-circuit factor 1.5 (IEC TR 60909-4):
 ## Screenshot (real app)
 ![DC short circuit](screenshots/shortcircuit-result.png)
 
-Fault at the battery bus (no cable, R_BBr = 20.1 mΩ): i_p 5.97 kA / I_k 5.67 kA; at the breaker (with cable,
-25.1 mΩ): i_p 4.78 kA / I_k 4.54 kA — matching the raw-input hand-calc. Footer states the IEC 61660-1
-superposition method and the current-limited-converter treatment.
+Fault at the battery bus and at the breaker, showing per-source contributions; footer states the IEC 61660-1
+superposition method and the current-limited-converter treatment. *(Screenshot predates the full-factor fix —
+it shows the earlier raw-input values i_p 5.97 / 4.78 kA; with the IEC 61660-1 factors now applied the reported
+currents are ~11 % higher, matching the published example.)*
 
 ## Verdict
-The engine's DC short-circuit computation is **correct for its (documented, simplified) model**: the
-converter current-limit is exact, the battery `E_B/R_BBr` + network-resistance + superposition reproduces the
-published IEC 61660 peak **exactly (0.00 %)** when given the standard's preprocessed inputs. Fed raw physical
-inputs it under-estimates the battery fault current by ~5–12 % because it omits the 0.9·R_B / 1.05·U_nB /
-+0.1·R_B / T_B refinements. **Recommended enhancement (backlog):** apply these IEC 61660-1 factors internally
-so raw nameplate inputs give the full-standard (conservative) result.
+The engine's DC short-circuit computation reproduces the published IEC 61660-1 example **exactly (0.00 %) from
+raw nameplate inputs**: the converter current-limit is exact, and the battery now applies the standard's full
+factors internally (E_B = 1.05·U_nB, 0.9·R_B on the peak, full R_B on the quasi-steady, T_B rise time). The
+previously-flagged non-conservative ~5–12 % under-estimate on raw inputs is resolved.

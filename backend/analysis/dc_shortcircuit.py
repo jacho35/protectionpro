@@ -58,7 +58,9 @@ def _source_sc_params(comp, freq):
     """(kind, E or None, R_int, L_int, I_rated, sc_factor)."""
     p = comp.props
     if comp.type == "dc_battery":
-        e = _num(p.get("nominal_v", 125), 125)
+        u_nb = _num(p.get("nominal_v", 125), 125)
+        # IEC 61660-1: open-circuit EMF E_B = 1.05·U_nB when not measured.
+        e = _num(p.get("emf_v", 0), 0) or 1.05 * u_nb
         r_int = _num(p.get("internal_r_mohm", 20), 20) / 1000.0
         l_int = _num(p.get("internal_l_uh", 0), 0) * 1e-6
         return "battery", e, max(r_int, 1e-5), l_int, 0.0, 0.0
@@ -204,13 +206,21 @@ def run_dc_short_circuit(project: ProjectData, fault_bus_id=None) -> DCShortCirc
             if not math.isfinite(r_net):
                 continue
             if kind == "battery":
-                r_br = r_int + r_net
+                # IEC 61660-1 refinements (applied to raw nameplate inputs):
+                #   peak resistance uses 0.9·R_B; quasi steady-state uses the
+                #   full physical R_B (= 0.9·R_B + 0.1·R_B); E_B = 1.05·U_nB
+                #   is already folded into `e`.
+                r_peak = 0.9 * r_int + r_net      # peak-current branch R
+                r_ik = r_int + r_net              # quasi-steady branch R
                 l_br = l_int + l_path(g, fbus)
-                ik = 0.95 * e / r_br / 1000.0     # kA
-                ip = e / r_br / 1000.0            # kA
-                tau = l_br / r_br                 # s
-                tp = min(0.05, 3.0 * tau) if tau > 0 else 0.005
+                ip = e / r_peak / 1000.0          # kA (peak, full EMF)
+                ik = 0.95 * e / r_ik / 1000.0     # kA (quasi steady-state)
+                # Rise-time constant: L/R when the branch inductance is known,
+                # else the IEC 61660-1 battery time constant T_B ≈ 30 ms.
+                tau = (l_br / r_ik) if (l_br > 0 and r_ik > 0) else 0.030
+                tp = min(0.05, 3.0 * tau)
                 tp_ms = tp * 1000.0
+                r_br = r_ik                       # reported R_BBr (physical)
             else:  # converter — current-limited
                 ik = factor * i_r / 1000.0        # kA
                 ip = 1.05 * ik

@@ -1026,10 +1026,11 @@ const FIELD_INFO = {
   'bus.voltage_dc_v': 'Nominal DC voltage of the busbar (e.g. 110 / 125 / 220 Vdc). Used as the reference for DC bus voltage-drop reporting.',
 
   // DC Battery (IEC 61660 battery source + DC load-flow source)
-  'dc_battery.nominal_v': 'Open-circuit / nominal DC voltage of the bank. Acts as the EMF (E_B) for the IEC 61660 short-circuit calc and the source voltage in DC load flow.',
+  'dc_battery.nominal_v': 'Nominal DC voltage U_nB of the bank (source voltage in DC load flow). For the IEC 61660-1 short-circuit calc the EMF defaults to E_B = 1.05·U_nB unless an explicit Open-circuit EMF is entered.',
   'dc_battery.ah_capacity': 'Ampere-hour capacity (C-rating basis). Used for the default load-flow discharge cap (10 C) when Max Discharge is left at 0.',
-  'dc_battery.internal_r_mohm': 'Total internal resistance including cell interconnectors (mΩ). Dominates the battery short-circuit current: I_k = 0.95·E_B / R_BBr (IEC 61660-1).',
-  'dc_battery.internal_l_uh': 'Internal + connection inductance (µH). Sets the short-circuit rise time constant τ = L_BBr / R_BBr. Leave 0 if unknown (near-resistive battery branch).',
+  'dc_battery.emf_v': 'Measured open-circuit EMF E_B (V) for the IEC 61660-1 short-circuit calc. Leave 0 to use the standard estimate E_B = 1.05·U_nB when the true OCV is unknown.',
+  'dc_battery.internal_r_mohm': 'Battery internal resistance R_B including cell interconnectors (mΩ). Per IEC 61660-1 the peak uses 0.9·R_B and the quasi-steady I_k the full R_B: i_p = E_B/(0.9·R_B + R_net), I_k = 0.95·E_B/(R_B + R_net).',
+  'dc_battery.internal_l_uh': 'Internal + connection inductance (µH). Sets the short-circuit rise-time constant τ = L_BBr/R_BBr; when 0, the IEC 61660-1 battery time constant T_B ≈ 30 ms is used.',
   'dc_battery.max_discharge_a': 'Optional discharge current cap for load flow. 0 = auto (10 × capacity). Does not limit the short-circuit calc.',
 
   // DC Load
@@ -1975,6 +1976,7 @@ const COMPONENT_DEFS = {
     defaults: {
       name: 'Battery',
       nominal_v: 125,
+      emf_v: 0,
       ah_capacity: 200,
       internal_r_mohm: 20,
       internal_l_uh: 0,
@@ -1984,6 +1986,7 @@ const COMPONENT_DEFS = {
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'nominal_v', label: 'Nominal Voltage', type: 'number', unit: 'Vdc', min: 0 },
       { key: 'ah_capacity', label: 'Capacity', type: 'number', unit: 'Ah', min: 0 },
+      { key: 'emf_v', label: 'Open-circuit EMF (0 = 1.05·Unom)', type: 'number', unit: 'Vdc', min: 0, section: 'fault' },
       { key: 'internal_r_mohm', label: 'Internal Resistance', type: 'number', unit: 'mΩ', min: 0, step: 1, section: 'fault' },
       { key: 'internal_l_uh', label: 'Internal Inductance', type: 'number', unit: 'µH', min: 0, step: 1, section: 'fault' },
       { key: 'max_discharge_a', label: 'Max Discharge (0 = auto)', type: 'number', unit: 'A', min: 0, section: 'loadflow' },
