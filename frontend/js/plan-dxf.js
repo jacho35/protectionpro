@@ -186,9 +186,12 @@ const PlanDXF = {
       text(t(mid.x, mid.y), 1.0, `${(px * factor).toFixed(2)} m`, 'DIMENSIONS');
     }
 
-    // Note: the background raster is not embedded.
+    // Note: the background raster is not embedded. DXF is a single-sheet export
+    // — the active floor. (Switch floors and re-export for the others.)
     const noteY = (box.maxY - box.minY) * factor + 2;
-    text({ x: 0, y: noteY }, 1.5, 'Background plan image not included - overlay on original. 1 unit = 1 m.', 'NOTES');
+    const af = (typeof AppState.planActiveFloor === 'function') && AppState.planActiveFloor();
+    const floorNote = (af && pm.settings.domain === 'building') ? `Floor: ${af.name}. ` : '';
+    text({ x: 0, y: noteY }, 1.5, `${floorNote}Background plan image not included - overlay on original. 1 unit = 1 m.`, 'NOTES');
 
     p(0, 'ENDSEC'); p(0, 'EOF');
 

@@ -43,6 +43,12 @@ const PlanMarkup = {
           <button class="plan-tool-btn" data-tool="slpath" title="Draw a path → auto-place streetlight poles + circuits">💡 SL Path</button>
           <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
         </div>
+        <div class="plan-tb-group" id="plan-floor-group" style="display:none">
+          <label class="plan-tb-field">Floor
+            <select id="plan-floor-select" title="Switch the active floor"></select>
+          </label>
+          <button class="plan-tb-btn" data-action="floors" title="Add / rename / reorder / delete floors">⚙</button>
+        </div>
         <div class="plan-tb-group">
           <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF) or a DXF reference">⬆ Import Plan</button>
           <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf" style="display:none">
@@ -88,6 +94,7 @@ const PlanMarkup = {
       const act = e.target.closest('[data-action]');
       if (!act) return;
       if (act.dataset.action === 'import') document.getElementById('plan-file-input').click();
+      else if (act.dataset.action === 'floors') this._openFloorManager();
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
       else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
       else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') {
@@ -107,6 +114,8 @@ const PlanMarkup = {
       } else if (e.target.id === 'plan-grid-size') {
         const v = parseFloat(e.target.value);
         if (isFinite(v) && v > 0) { AppState.planMarkup.settings.gridSize = v; PlanEngine.requestDraw({ bg: true }); }
+      } else if (e.target.id === 'plan-floor-select') {
+        this.setActiveFloor(e.target.value);
       }
     });
     const fileInput = document.getElementById('plan-file-input');
@@ -134,6 +143,7 @@ const PlanMarkup = {
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
     this.updateScaleReadout();
     this.updatePushButton();
+    this.refreshFloorBar();
   },
 
   deactivate() {
@@ -151,6 +161,7 @@ const PlanMarkup = {
     if (this._active) {
       if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
       this.updateScaleReadout();
+      this.refreshFloorBar();
       if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
     }
   },
@@ -168,6 +179,141 @@ const PlanMarkup = {
       : 'Push drawn kiosks/erven/feeders into the Reticulation schedules';
   },
   refreshProps() { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); },
+
+  // ─── Floors ───
+  // The floor switcher is a building-domain concept; hidden for reticulation
+  // site plans (which are a single implicit floor).
+  refreshFloorBar() {
+    const group = document.getElementById('plan-floor-group');
+    const sel = document.getElementById('plan-floor-select');
+    if (!group || !sel) return;
+    const pm = AppState.planMarkup;
+    const building = pm.settings.domain === 'building';
+    group.style.display = building ? '' : 'none';
+    if (!building) return;
+    // Highest level first, so the list reads top-of-building downward.
+    const floors = (pm.floors || []).slice().sort((a, b) => (b.level || 0) - (a.level || 0));
+    sel.innerHTML = floors.map(f =>
+      `<option value="${f.id}"${f.id === pm.activeFloorId ? ' selected' : ''}>${this._esc(f.name)} (L${f.level})</option>`).join('');
+  },
+
+  _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); },
+
+  // Commit the working floor, switch, and refresh everything view-side.
+  setActiveFloor(id) {
+    if (!AppState.switchFloor(id)) return;
+    this.selectedIds.clear();
+    if (typeof PlanTools !== 'undefined') PlanTools.cancel && PlanTools.cancel();
+    this._snapshot(); this.markDirty();
+    if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
+    this.refreshFloorBar();
+    this.updateScaleReadout();
+    if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+    if (typeof PlanEngine !== 'undefined') { PlanEngine.zoomFit(); PlanEngine.requestDraw({ all: true }); }
+  },
+
+  // Add/rename/reorder/delete floors + edit level & height.
+  _openFloorManager() {
+    const pm = AppState.planMarkup;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal plan-floor-modal';
+    overlay.style.display = 'flex';
+    overlay.style.zIndex = '3000';
+
+    const render = () => {
+      const floors = pm.floors.slice().sort((a, b) => (b.level || 0) - (a.level || 0));
+      const rows = floors.map(f => `
+        <tr data-floor="${f.id}">
+          <td><input class="plan-floor-name" data-role="name" value="${this._esc(f.name)}"></td>
+          <td><input class="plan-floor-num" type="number" step="1" data-role="level" value="${f.level}"></td>
+          <td><input class="plan-floor-num" type="number" step="0.1" min="0" data-role="height" value="${f.height}"></td>
+          <td class="plan-floor-acts">
+            <button data-role="up" title="Move up (raise level)">▲</button>
+            <button data-role="down" title="Move down (lower level)">▼</button>
+            <button data-role="del" title="Delete floor"${pm.floors.length <= 1 ? ' disabled' : ''}>✕</button>
+          </td>
+        </tr>`).join('');
+      overlay.innerHTML = `
+        <div class="modal-content plan-floor-content">
+          <div class="modal-header"><h3>Floors</h3></div>
+          <div class="modal-body">
+            <div class="plan-floor-settings">
+              <label>Default floor height (m)
+                <input id="plan-floor-defh" type="number" step="0.1" min="0" value="${pm.settings.floorHeight}"></label>
+              <label>Riser factor
+                <input id="plan-floor-riser" type="number" step="0.05" min="1" value="${pm.settings.riserFactor}"
+                  title="Vertical-run slack multiplier for bends/terminations"></label>
+            </div>
+            <table class="plan-floor-table">
+              <thead><tr><th>Name</th><th>Level</th><th>Height (m)</th><th></th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <button class="btn-small" data-role="add">+ Add floor</button>
+            <div class="ui-dialog-actions"><button class="btn-primary" data-role="close">Done</button></div>
+          </div>
+        </div>`;
+    };
+    render();
+    document.body.appendChild(overlay);
+
+    const commit = (refresh) => {
+      this._snapshot(); this.markDirty();
+      this.refreshFloorBar();
+      if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+      if (refresh) render();
+    };
+    const floorById = (id) => pm.floors.find(f => f.id === id);
+    // Swap two floors' levels to reorder (levels drive both the switcher order
+    // and the vertical-run maths).
+    const reorder = (id, dir) => {
+      const sorted = pm.floors.slice().sort((a, b) => (a.level || 0) - (b.level || 0));
+      const i = sorted.findIndex(f => f.id === id);
+      const j = dir === 'up' ? i + 1 : i - 1;
+      if (j < 0 || j >= sorted.length) return;
+      const a = sorted[i], b = sorted[j];
+      const t = a.level; a.level = b.level; b.level = t;
+      commit(true);
+    };
+
+    overlay.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-role]'); if (!btn) return;
+      const role = btn.dataset.role;
+      const tr = e.target.closest('[data-floor]');
+      const id = tr && tr.dataset.floor;
+      if (role === 'close') { overlay.remove(); return; }
+      if (role === 'add') {
+        const fl = AppState.addPlanFloor();
+        this.setActiveFloor(fl.id);   // switch straight to the new sheet
+        commit(true); return;
+      }
+      if (role === 'del' && id) {
+        if (pm.floors.length <= 1) return;
+        UI.confirm(`Delete floor "${floorById(id).name}" and its markup?`, { danger: true, okText: 'Delete' }).then(ok => {
+          if (!ok) return;
+          AppState.removePlanFloor(id);
+          if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
+          commit(true);
+        });
+        return;
+      }
+      if ((role === 'up' || role === 'down') && id) reorder(id, role);
+    });
+    overlay.addEventListener('change', (e) => {
+      if (e.target.id === 'plan-floor-defh') {
+        const v = parseFloat(e.target.value); if (isFinite(v) && v > 0) { pm.settings.floorHeight = v; commit(false); } return;
+      }
+      if (e.target.id === 'plan-floor-riser') {
+        const v = parseFloat(e.target.value); if (isFinite(v) && v >= 1) { pm.settings.riserFactor = v; commit(false); } return;
+      }
+      const tr = e.target.closest('[data-floor]'); if (!tr) return;
+      const fl = floorById(tr.dataset.floor); if (!fl) return;
+      const role = e.target.dataset.role;
+      if (role === 'name') { fl.name = e.target.value || fl.name; commit(false); }
+      else if (role === 'level') { const v = parseInt(e.target.value, 10); if (isFinite(v)) { fl.level = v; commit(true); } }
+      else if (role === 'height') { const v = parseFloat(e.target.value); if (isFinite(v) && v > 0) { fl.height = v; commit(false); } }
+    });
+  },
 
   // ─── Selection ───
   selectOnly(id) { this.selectedIds.clear(); if (id) this.selectedIds.add(id); this.refreshProps(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
@@ -297,6 +443,7 @@ const PlanMarkup = {
 
   // ─── Local undo (JSON snapshots of AppState.planMarkup) ───
   _snapshot() {
+    if (typeof AppState._stashActiveFloor === 'function') AppState._stashActiveFloor();
     const snap = JSON.stringify(AppState.planMarkup);
     // Drop any redo tail, push, cap.
     this._undoStack = this._undoStack.slice(0, this._undoIndex + 1);
@@ -318,6 +465,7 @@ const PlanMarkup = {
   },
   _restore(snap) {
     AppState.planMarkup = JSON.parse(snap);
+    if (typeof AppState._hydrateActiveFloor === 'function') AppState._hydrateActiveFloor();
     this.selectedIds.clear();
     this.markDirty();
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();

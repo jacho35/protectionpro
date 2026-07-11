@@ -45,7 +45,8 @@ const PlanImages = {
   // Ensure every referenced plan image is cached/fetching; drop the rest.
   syncCache() {
     const referenced = new Set();
-    for (const p of AppState.planMarkup.plans) {
+    // Every floor's background images (so switching floors is instant).
+    for (const p of AppState.planAllPlans()) {
       if (p.imageId != null) referenced.add(p.imageId);
     }
     for (const id of referenced) this.getElementImage(id);
@@ -282,7 +283,7 @@ const PlanImages = {
   // Attach every not-yet-claimed referenced image to a project on first save.
   async claimOrphans(projectId) {
     if (!projectId) return;
-    const ids = AppState.planMarkup.plans
+    const ids = AppState.planAllPlans()
       .flatMap(p => [p.imageId, p.sourcePdfId])
       .filter(id => id != null);
     for (const id of ids) {

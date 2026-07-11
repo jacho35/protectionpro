@@ -140,6 +140,21 @@
 .plan-pdf-cell canvas { max-width: 100%; height: auto; display: block; margin: 0 auto; }
 .plan-pdf-num { position: absolute; top: 2px; left: 4px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; border-radius: 3px; padding: 0 4px; }
 
+/* Floor manager modal */
+.plan-floor-content { max-width: 520px; width: 90vw; }
+.plan-floor-settings { display: flex; gap: 16px; margin-bottom: 12px; }
+.plan-floor-settings label { font-size: 12px; color: var(--text-secondary); display: inline-flex; flex-direction: column; gap: 3px; }
+.plan-floor-settings input { width: 90px; padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
+.plan-floor-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+.plan-floor-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 4px 6px; border-bottom: 1px solid var(--border-color); }
+.plan-floor-table td { padding: 4px 6px; border-bottom: 1px solid var(--border-color); }
+.plan-floor-name { width: 100%; padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
+.plan-floor-num { width: 66px; padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
+.plan-floor-acts { white-space: nowrap; }
+.plan-floor-acts button { border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; border-radius: 3px; padding: 1px 6px; margin-left: 2px; }
+.plan-floor-acts button:disabled { opacity: .4; cursor: default; }
+#plan-floor-select { padding: 3px 4px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); max-width: 160px; }
+
 /* Layers panel */
 .plan-layers { border-top: 1px solid var(--border-color); margin-top: 10px; padding-top: 8px; }
 .plan-layers-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 2px 6px; }

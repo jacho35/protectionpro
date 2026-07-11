@@ -180,12 +180,16 @@ const AppState = {
   },
 
   // ─── Plan Markup helpers ───
-  _defaultPlanMarkup() {
-    const layers = (typeof PLAN_DEFAULT_LAYERS !== 'undefined')
-      ? PLAN_DEFAULT_LAYERS.map(l => ({ ...l }))
-      : [];
+
+  // The per-floor drawing collections. Each floor owns its own copy of these;
+  // the active floor's copies are mirrored onto planMarkup.<key> as the live
+  // working set the engine + tools read/write directly (see switchFloor).
+  _PLAN_FLOOR_KEYS: ['plans', 'scale', 'cropBox', 'elements', 'routes',
+    'trenches', 'crossings', 'rooms', 'texts', 'measurements'],
+
+  // A fresh, empty per-floor data bundle.
+  _newPlanFloorData() {
     return {
-      version: 1,
       plans: [],          // background images: {id,name,imageId,sourcePdfId,pdfPage,
                           //   pdfPages,imgW,imgH,opacity,visible,offX,offY,rotation,scaleAdj}
       scale: null,        // {p1,p2,realDist,pxDist,factor}  factor = metres per pixel
@@ -197,19 +201,53 @@ const AppState = {
       rooms: [],          // {id,name,points:[{x,y}],color}  (closed polygon zones)
       texts: [],          // {id,x,y,text,fontSize,color}
       measurements: [],   // {id,points:[{x,y}]}
-      layers,             // discipline layers (filter by entity type)
+    };
+  },
+
+  // A named floor sheet. `level` is the storey index (Ground = 0, up positive,
+  // basements negative); `height` is its floor-to-floor height in metres, used
+  // for vertical riser cable runs. `data` holds this floor's drawing.
+  _newPlanFloor(name, level, height) {
+    return {
+      id: this.planGenId('pmfloor'),
+      name: name || 'Ground',
+      level: level == null ? 0 : level,
+      height: height == null ? 3.5 : height,
+      data: this._newPlanFloorData(),
+    };
+  },
+
+  _defaultPlanMarkup() {
+    const layers = (typeof PLAN_DEFAULT_LAYERS !== 'undefined')
+      ? PLAN_DEFAULT_LAYERS.map(l => ({ ...l }))
+      : [];
+    const pm = {
+      version: 2,
+      floors: [],         // [{id,name,level,height,data:{…per-floor collections}}]
+      activeFloorId: null,
+      layers,             // discipline layers (filter by entity type) — shared
       activeLayerId: null,
-      styles: {},         // sparse overrides merged over PLAN_DEFS defaults
+      styles: {},         // sparse overrides merged over PLAN_DEFS defaults — shared
       settings: {
         domain: 'retic', gridSize: 0.5,
         snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true,
         showGrid: true, greyBg: false, invertBg: false, slPoleKVA: 0.15,
+        floorHeight: 3.5,   // default storey height (m) for new floors
+        riserFactor: 1.1,   // vertical-run slack multiplier (bends/terminations)
         // Bill-of-quantities rates (currency-neutral; 0 until the user sets them)
         rates: { cablePerM: 0, equipUnit: 0, trenchPerM: 0, wasteFactorPct: 5 },
       },
       _seq: 1,            // single counter for all pm* ids
       nameCounters: {},   // per-type auto-name numbering {kiosk:4, pole:12, ...}
     };
+    // Seed the Ground floor (mint its id from pm._seq directly — planGenId reads
+    // this.planMarkup, which isn't this object yet).
+    const gf = { id: `pmfloor_${pm._seq++}`, name: 'Ground', level: 0, height: 3.5, data: this._newPlanFloorData() };
+    pm.floors = [gf];
+    pm.activeFloorId = gf.id;
+    // Mirror the active floor's (empty) collections onto the live working set.
+    for (const k of this._PLAN_FLOOR_KEYS) pm[k] = gf.data[k];
+    return pm;
   },
 
   // Mint a plan-markup id. All prefixes start with "pm" so they can never
@@ -218,14 +256,179 @@ const AppState = {
     return `${prefix}_${this.planMarkup._seq++}`;
   },
 
+  // ─── Floor sheets ───
+  // The active floor's collections live on planMarkup.<key> directly (the live
+  // working set). switchFloor() stashes those back into the outgoing floor's
+  // `data` and hydrates the incoming floor's — so the engine/tools keep reading
+  // planMarkup.elements etc. unaware of which floor is showing.
+
+  planActiveFloor() {
+    const p = this.planMarkup;
+    if (!p || !Array.isArray(p.floors)) return null;
+    return p.floors.find(f => f.id === p.activeFloorId) || p.floors[0] || null;
+  },
+
+  // Copy the live working collections back into the active floor's `data`, so
+  // `data` is authoritative before serialising or reading across all floors.
+  _stashActiveFloor() {
+    const p = this.planMarkup;
+    const fl = this.planActiveFloor();
+    if (!fl) return;
+    fl.data = fl.data || {};
+    for (const k of this._PLAN_FLOOR_KEYS) fl.data[k] = p[k];
+  },
+
+  // Make `id` the active floor, mirroring its data onto the live working set.
+  switchFloor(id) {
+    const p = this.planMarkup;
+    if (!p) return false;
+    const target = p.floors.find(f => f.id === id);
+    if (!target || target.id === p.activeFloorId) return false;
+    this._stashActiveFloor();
+    p.activeFloorId = target.id;
+    target.data = target.data || this._newPlanFloorData();
+    for (const k of this._PLAN_FLOOR_KEYS) {
+      if (target.data[k] === undefined) target.data[k] = this._newPlanFloorData()[k];
+      p[k] = target.data[k];
+    }
+    return true;
+  },
+
+  // Add a new floor above the highest existing level; returns it (not switched).
+  addPlanFloor(name) {
+    const p = this.planMarkup;
+    const maxLevel = p.floors.reduce((m, f) => Math.max(m, f.level || 0), -Infinity);
+    const level = isFinite(maxLevel) ? maxLevel + 1 : 0;
+    const h = (p.settings && p.settings.floorHeight) || 3.5;
+    const fl = this._newPlanFloor(name || `Floor ${level}`, level, h);
+    p.floors.push(fl);
+    return fl;
+  },
+
+  // Remove a floor (never the last one). If it was active, switches to a
+  // neighbour first. Its background images are dropped from the project.
+  removePlanFloor(id) {
+    const p = this.planMarkup;
+    if (!p || p.floors.length <= 1) return false;
+    const idx = p.floors.findIndex(f => f.id === id);
+    if (idx < 0) return false;
+    if (p.activeFloorId === id) {
+      const neighbour = p.floors[idx + 1] || p.floors[idx - 1];
+      this.switchFloor(neighbour.id);
+    } else {
+      this._stashActiveFloor();
+    }
+    p.floors.splice(idx, 1);
+    return true;
+  },
+
+  // Re-point the live working keys at the active floor's data refs. Call after
+  // wholesale replacing planMarkup (e.g. undo restore via JSON.parse) so the
+  // mirror + floor.data share array refs again and scalars are consistent.
+  _hydrateActiveFloor() {
+    const p = this.planMarkup;
+    const fl = this.planActiveFloor();
+    if (!fl) return;
+    fl.data = fl.data || this._newPlanFloorData();
+    for (const k of this._PLAN_FLOOR_KEYS) {
+      if (fl.data[k] === undefined) fl.data[k] = this._newPlanFloorData()[k];
+      p[k] = fl.data[k];
+    }
+  },
+
+  // All floors with their `data` current (active floor stashed first). Use for
+  // whole-building reads (SLD sync, schedules, BOQ, DXF, drawing register).
+  planFloors() {
+    this._stashActiveFloor();
+    return (this.planMarkup && this.planMarkup.floors) || [];
+  },
+
+  // Flatten one per-floor collection across every floor. Returns the real
+  // object refs (active-floor items alias planMarkup.<key>), so callers may
+  // mutate in place; no transient keys are added.
+  _planAllOf(key) {
+    const out = [];
+    for (const fl of this.planFloors()) {
+      const arr = (fl.data && fl.data[key]) || [];
+      for (const it of arr) out.push(it);
+    }
+    return out;
+  },
+  planAllElements() { return this._planAllOf('elements'); },
+  planAllRoutes() { return this._planAllOf('routes'); },
+  planAllPlans() { return this._planAllOf('plans'); },
+
+  // Vertical cable run (metres) between two storey levels, through the riser
+  // shaft: the floor-to-floor heights spanned, inflated by the riser factor for
+  // bends/terminations. Mirrors Distribution Designer's riser breakdown.
+  planVerticalRunM(levelA, levelB) {
+    const p = this.planMarkup;
+    const lo = Math.min(levelA, levelB), hi = Math.max(levelA, levelB);
+    if (lo === hi) return 0;
+    let sum = 0;
+    for (const f of (p.floors || [])) {
+      // A floor's `height` is its floor-to-next height, so count [lo, hi).
+      if ((f.level || 0) >= lo && (f.level || 0) < hi) sum += (f.height || 0);
+    }
+    const rf = (p.settings && p.settings.riserFactor) || 1;
+    return +(sum * rf).toFixed(3);
+  },
+
+  // Risers on other floors sharing this riser's (case-insensitive) name form one
+  // vertical shaft — DD's convention. Returns the shaft's floors sorted by level
+  // as [{floor, riser}] (excluding none; includes the given riser's floor).
+  planRiserShaft(name) {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return [];
+    const out = [];
+    for (const fl of this.planFloors()) {
+      for (const e of (fl.data.elements || [])) {
+        if (e.type === 'bd_riser' && String(e.name || '').trim().toLowerCase() === key) {
+          out.push({ floor: fl, riser: e });
+          break;
+        }
+      }
+    }
+    return out.sort((a, b) => (a.floor.level || 0) - (b.floor.level || 0));
+  },
+
+  // Map every element/route id → the floor object it lives on (across floors).
+  planEntityFloorMap() {
+    const m = new Map();
+    for (const fl of this.planFloors()) {
+      for (const e of (fl.data.elements || [])) m.set(e.id, fl);
+      for (const r of (fl.data.routes || [])) m.set(r.id, fl);
+    }
+    return m;
+  },
+
+  // Persistable form of planMarkup: floors[] are the single source of truth for
+  // the per-floor collections, so stash the active floor and drop the live
+  // top-level mirror keys (they'd otherwise duplicate floors[active].data).
+  _planMarkupToJSON() {
+    this._stashActiveFloor();
+    const p = this.planMarkup;
+    const out = {};
+    for (const k of Object.keys(p)) {
+      if (this._PLAN_FLOOR_KEYS.includes(k)) continue;   // mirror of active floor
+      out[k] = p[k];
+    }
+    return out;
+  },
+
   // True when the module holds nothing worth persisting — keeps toJSON() from
   // adding a planMarkup key to projects that never used the workspace.
   _planMarkupIsEmpty() {
     const p = this.planMarkup;
     if (!p) return true;
-    return !p.plans.length && !p.elements.length && !p.routes.length &&
-      !p.trenches.length && !p.crossings.length && !p.texts.length &&
-      !p.measurements.length && !(p.rooms && p.rooms.length) && !p.scale;
+    this._stashActiveFloor();
+    const floors = p.floors || [];
+    // A lone empty floor with no scale is "unused".
+    if (floors.length > 1) return false;
+    const d = (floors[0] && floors[0].data) || {};
+    return !((d.plans || []).length) && !((d.elements || []).length) && !((d.routes || []).length) &&
+      !((d.trenches || []).length) && !((d.crossings || []).length) && !((d.texts || []).length) &&
+      !((d.measurements || []).length) && !((d.rooms || []).length) && !d.scale;
   },
 
   // Add component
@@ -874,7 +1077,7 @@ const AppState = {
       activePageId: this.activePageId,
       wireRouteMode: this.wireRouteMode,
       reticulation: this.reticulation,
-      planMarkup: this._planMarkupIsEmpty() ? undefined : this.planMarkup,
+      planMarkup: this._planMarkupIsEmpty() ? undefined : this._planMarkupToJSON(),
       annotationOffsets: Annotations.offsets.size > 0
         ? Object.fromEntries(Annotations.offsets)
         : undefined,
@@ -1027,22 +1230,42 @@ const AppState = {
       const pdef = this._defaultPlanMarkup();
       const p = data.planMarkup;
       const arr = (v) => (Array.isArray(v) ? v : []);
+      const settings = { ...pdef.settings, ...(p.settings || {}) };
+      // Normalise a per-floor drawing bundle (from a floor.data, or — for
+      // legacy pre-floors projects — from the flat top-level planMarkup).
+      const normData = (d) => {
+        d = d || {};
+        return {
+          plans: arr(d.plans), scale: d.scale || null, cropBox: d.cropBox || null,
+          elements: arr(d.elements), routes: arr(d.routes), trenches: arr(d.trenches),
+          crossings: arr(d.crossings), rooms: arr(d.rooms), texts: arr(d.texts),
+          measurements: arr(d.measurements),
+        };
+      };
+      // v2+ carries floors[]; older projects had one flat plan → wrap it as the
+      // Ground floor (floors[] is designed so this needs no other migration).
+      let floors;
+      if (Array.isArray(p.floors) && p.floors.length) {
+        floors = p.floors.map((f, i) => ({
+          id: f.id || `pmfloor_leg${i}`,
+          name: f.name || (i === 0 ? 'Ground' : `Floor ${i}`),
+          level: (f.level == null ? i : f.level),
+          height: (f.height == null ? (settings.floorHeight || 3.5) : f.height),
+          data: normData(f.data),
+        }));
+      } else {
+        floors = [{ id: 'pmfloor_leg0', name: 'Ground', level: 0,
+          height: (settings.floorHeight || 3.5), data: normData(p) }];
+      }
+      const activeFloorId = (p.activeFloorId && floors.some(f => f.id === p.activeFloorId))
+        ? p.activeFloorId : floors[0].id;
       this.planMarkup = {
-        version: p.version || 1,
-        plans: arr(p.plans),
-        scale: p.scale || null,
-        cropBox: p.cropBox || null,
-        elements: arr(p.elements),
-        routes: arr(p.routes),
-        trenches: arr(p.trenches),
-        crossings: arr(p.crossings),
-        rooms: arr(p.rooms),
-        texts: arr(p.texts),
-        measurements: arr(p.measurements),
+        version: 2,
+        floors, activeFloorId,
         layers: (Array.isArray(p.layers) && p.layers.length) ? p.layers : pdef.layers,
         activeLayerId: p.activeLayerId || null,
         styles: (p.styles && typeof p.styles === 'object') ? p.styles : {},
-        settings: { ...pdef.settings, ...(p.settings || {}) },
+        settings,
         _seq: p._seq || 1,
         nameCounters: (p.nameCounters && typeof p.nameCounters === 'object') ? p.nameCounters : {},
       };
@@ -1062,11 +1285,7 @@ const AppState = {
         bd_dimmer: { type: 'bd_switch', props: { kind: 'dimmer' } },
       };
       const ROUTE_MIGRATE = { main_feeder: 'feeder', sub_main: 'feeder' };
-      for (const el of this.planMarkup.elements) {
-        const m = ELEM_MIGRATE[el.type];
-        if (m) { el.type = m.type; if (m.props) el.props = { ...(el.props || {}), ...m.props }; }
-      }
-      for (const rt of this.planMarkup.routes) if (ROUTE_MIGRATE[rt.type]) rt.type = ROUTE_MIGRATE[rt.type];
+      const pm = this.planMarkup;
       // Repair _seq so planGenId never collides with a loaded id
       let maxSeq = 0;
       const scanSeq = (a) => {
@@ -1075,20 +1294,28 @@ const AppState = {
           if (m) maxSeq = Math.max(maxSeq, +m[1]);
         }
       };
-      const pm = this.planMarkup;
-      scanSeq(pm.plans); scanSeq(pm.elements); scanSeq(pm.routes);
-      scanSeq(pm.trenches); scanSeq(pm.crossings); scanSeq(pm.rooms);
-      scanSeq(pm.texts); scanSeq(pm.measurements);
-      pm._seq = Math.max(pm._seq, maxSeq + 1);
-      // Drop dangling reticId backrefs (defensive against hand-edited files)
       const reticIds = new Set([
         ...this.reticulation.minisubs.map(m => m.id),
         ...this.reticulation.kiosks.map(k => k.id),
         ...this.reticulation.kiosks.flatMap(k => (k.erfs || []).map(e => e.id)),
       ]);
-      for (const el of pm.elements) {
-        if (el.reticId && !reticIds.has(el.reticId)) el.reticId = null;
+      for (const fl of pm.floors) {
+        const d = fl.data;
+        for (const el of d.elements) {
+          const m = ELEM_MIGRATE[el.type];
+          if (m) { el.type = m.type; if (m.props) el.props = { ...(el.props || {}), ...m.props }; }
+          if (el.reticId && !reticIds.has(el.reticId)) el.reticId = null;   // drop dangling backrefs
+        }
+        for (const rt of d.routes) if (ROUTE_MIGRATE[rt.type]) rt.type = ROUTE_MIGRATE[rt.type];
+        scanSeq(d.plans); scanSeq(d.elements); scanSeq(d.routes);
+        scanSeq(d.trenches); scanSeq(d.crossings); scanSeq(d.rooms);
+        scanSeq(d.texts); scanSeq(d.measurements);
       }
+      scanSeq(pm.floors);
+      pm._seq = Math.max(pm._seq, maxSeq + 1);
+      // Mirror the active floor's collections onto the live working set.
+      const active = pm.floors.find(f => f.id === pm.activeFloorId) || pm.floors[0];
+      for (const k of this._PLAN_FLOOR_KEYS) pm[k] = active.data[k];
     }
     // Restore annotation badge positions
     if (data.annotationOffsets && typeof Annotations !== 'undefined') {

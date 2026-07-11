@@ -25,10 +25,19 @@ const PlanSync = {
     return factor ? +(px * factor).toFixed(2) : 0;
   },
 
+  // Building sync spans every floor; reticulation is a single implicit floor,
+  // so this stays equivalent there.
   _elById() {
     const m = {};
-    for (const e of AppState.planMarkup.elements) m[e.id] = e;
+    for (const e of AppState.planAllElements()) m[e.id] = e;
     return m;
+  },
+
+  // The calibration factor of a specific floor (routes on other floors measure
+  // with their own scale). Falls back to the active-floor factor.
+  _floorFactorFor(fl) {
+    const s = fl && fl.data && fl.data.scale;
+    return (s && s.factor) ? s.factor : this._factor();
   },
 
   // Endpoint-smart route classification (mirrors the source app's effectiveType).
@@ -270,11 +279,13 @@ const PlanSync = {
   reflectSldFeeders() {
     const pm = AppState.planMarkup;
     const comps = AppState.components;
+    const allEls = AppState.planAllElements();
+    const floorMap = AppState.planEntityFloorMap();   // elId → floor
     const linkedBySld = {};
-    for (const el of pm.elements) if (el.sldId) linkedBySld[el.sldId] = el;
+    for (const el of allEls) if (el.sldId) linkedBySld[el.sldId] = el;
     // Any bus section of a switchboard resolves to that switchboard element.
     const swBusToEl = {};
-    for (const el of pm.elements) if (el.type === 'bd_switchboard' && Array.isArray(el.sldBuses)) {
+    for (const el of allEls) if (el.type === 'bd_switchboard' && Array.isArray(el.sldBuses)) {
       for (const bid of el.sldBuses) swBusToEl[bid] = el;
     }
     const wires = [...AppState.wires.values()];
@@ -312,16 +323,24 @@ const PlanSync = {
       let up = ends.find(e => e.viaBus) || ends[0];
       let down = ends.find(e => e !== up) || ends[1];
       const elA = up.el, elB = down.el;
-      const exists = pm.routes.some(r => r.type === 'feeder' &&
+      const exists = AppState.planAllRoutes().some(r => r.type === 'feeder' &&
         ((r.fromId === elA.id && r.toId === elB.id) || (r.fromId === elB.id && r.toId === elA.id)));
       if (exists) continue;
+      // A single plan route can only join two elements on the same floor; a
+      // cross-floor feeder is represented by the SLD cable alone (its length
+      // already carries the vertical riser run). Skip drawing a plan route.
+      const flA = floorMap.get(elA.id), flB = floorMap.get(elB.id);
+      if (flA && flB && flA.id !== flB.id) continue;
       const route = {
         id: AppState.planGenId('pmrt'), type: 'feeder',
         fromId: elA.id, toId: elB.id,
         points: [{ x: elA.x, y: elA.y, snappedTo: elA.id }, { x: elB.x, y: elB.y, snappedTo: elB.id }],
         cableType: cable.props.name || '', curved: false, props: {}, sldCableId: cable.id,
       };
-      pm.routes.push(route);
+      // Push onto the floor the boards live on (default: active floor).
+      const targetFloor = flA || AppState.planActiveFloor();
+      if (targetFloor && targetFloor.id !== pm.activeFloorId) targetFloor.data.routes.push(route);
+      else pm.routes.push(route);
       cable.planLink = route.id;
       // Keep the upstream DB's schedule consistent for reverse-drawn feeders.
       if (elA.type === 'bd_db' && elB.type === 'bd_db' && elA.sldId && elB.sldId) {
@@ -510,13 +529,14 @@ const PlanSync = {
     const comps = AppState.components;
     const planEls = new Set(), planRoutes = new Set(), sldComps = new Set();
     const elById = {}, planElIds = new Set();
-    for (const e of pm.elements) { elById[e.id] = e; planElIds.add(e.id); }
-    const feeders = pm.routes.filter(r => r.type === 'feeder');
+    const allEls = AppState.planAllElements();
+    for (const e of allEls) { elById[e.id] = e; planElIds.add(e.id); }
+    const feeders = AppState.planAllRoutes().filter(r => r.type === 'feeder');
     const feederById = {}; for (const r of feeders) feederById[r.id] = r;
 
     // A linked plan element whose primary SLD component is gone → SLD side
     // deleted → remove the plan element (DB, switchboard, adopted supply).
-    for (const e of pm.elements) if (e.sldId && !comps.get(e.sldId)) planEls.add(e.id);
+    for (const e of allEls) if (e.sldId && !comps.get(e.sldId)) planEls.add(e.id);
     // SLD distribution_board whose plan DB is gone → remove board.
     for (const c of comps.values()) if (c.type === 'distribution_board' && c.planLink && !planElIds.has(c.planLink)) sldComps.add(c.id);
     // Switchboard member (swLink) whose plan switchboard is gone → remove it.
@@ -579,24 +599,35 @@ const PlanSync = {
         { danger: true, okText: 'Remove', cancelText: 'Keep both' });
       if (ok) {
         for (const id of del.sldComps) AppState.removeComponent(id);
-        pm.elements = pm.elements.filter(e => !del.planEls.has(e.id));
-        pm.routes = pm.routes.filter(r => !del.planRoutes.has(r.id));
+        // Filter every floor's collections, then re-point the active mirror.
+        for (const fl of AppState.planFloors()) {
+          fl.data.elements = fl.data.elements.filter(e => !del.planEls.has(e.id));
+          fl.data.routes = fl.data.routes.filter(r => !del.planRoutes.has(r.id));
+        }
+        AppState._hydrateActiveFloor();
         if (this.selectedIds) this.selectedIds.clear();
         if (typeof PlanMarkup !== 'undefined' && PlanMarkup.selectedIds) PlanMarkup.selectedIds.clear();
       } else {
         // Keep both — drop dangling links so create/update re-establishes them.
-        for (const e of pm.elements) if (e.type === 'bd_db' && e.sldId && !comps.get(e.sldId)) e.sldId = null;
-        for (const r of pm.routes) if (r.type === 'feeder' && r.sldCableId && !comps.get(r.sldCableId)) r.sldCableId = null;
+        for (const e of AppState.planAllElements()) if (e.type === 'bd_db' && e.sldId && !comps.get(e.sldId)) e.sldId = null;
+        for (const r of AppState.planAllRoutes()) if (r.type === 'feeder' && r.sldCableId && !comps.get(r.sldCableId)) r.sldCableId = null;
+        const elIds = new Set(AppState.planAllElements().map(e => e.id));
+        const rtIds = new Set(AppState.planAllRoutes().map(r => r.id));
         for (const c of comps.values()) {
-          if (c.planLink && c.type === 'distribution_board' && !pm.elements.some(e => e.id === c.planLink)) c.planLink = null;
-          if (c.planLink && c.type === 'cable' && !pm.routes.some(r => r.id === c.planLink)) c.planLink = null;
+          if (c.planLink && c.type === 'distribution_board' && !elIds.has(c.planLink)) c.planLink = null;
+          if (c.planLink && c.type === 'cable' && !rtIds.has(c.planLink)) c.planLink = null;
         }
       }
     }
 
     const factor = this._factor();
-    const dbEls = pm.elements.filter(e => e.type === 'bd_db');
-    const feeders = pm.routes.filter(r => r.type === 'feeder' && r.fromId && r.toId);
+    const dbEls = AppState.planAllElements().filter(e => e.type === 'bd_db');
+    // Feeder routes across all floors, each carrying its own floor's scale.
+    const feeders = [];
+    for (const fl of AppState.planFloors()) {
+      const f = this._floorFactorFor(fl);
+      for (const r of (fl.data.routes || [])) if (r.type === 'feeder' && r.fromId && r.toId) feeders.push({ r, factor: f });
+    }
     const elById = this._elById();
     const summary = { dbNew: 0, dbLinked: 0, cableNew: 0, planNew: 0 };
 
@@ -630,12 +661,12 @@ const PlanSync = {
     //    switchboard. A feeding DB gets a shared outgoing bus below it (and a
     //    "Feeder to Sub-board" way); a switchboard feeds straight off its bus. ──
     const BOARD = new Set(['bd_db', 'bd_switchboard']);
-    for (const r of feeders) {
+    for (const { r, factor: rf } of feeders) {
       const a = elById[r.fromId], b = elById[r.toId];
       if (!a || !b || !BOARD.has(a.type) || !BOARD.has(b.type) || !a.sldId || !b.sldId) continue;
       const ca = AppState.components.get(a.sldId), cb = AppState.components.get(b.sldId);
       if (!ca || !cb) continue;
-      const lenM = factor ? this._routeLenM(r, factor) : 0;
+      const lenM = rf ? this._routeLenM(r, rf) : 0;
       let cable = r.sldCableId ? AppState.components.get(r.sldCableId) : null;
       if (!cable) {
         const src = this._feederSourcePoint(a);   // upstream connection {compId, port}
@@ -650,7 +681,7 @@ const PlanSync = {
         summary.cableNew++;
       }
       if (r.cableType) cable.props.name = r.cableType;
-      if (factor) cable.props.length_km = +(lenM / 1000).toFixed(4);
+      if (rf) cable.props.length_km = +(lenM / 1000).toFixed(4);
       const std = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.find(c => c.name === r.cableType);
       if (std) cable.props.standard_type = std.id;
       // A feeding DB records an outgoing "Feeder to Sub-board" way (switchboards
