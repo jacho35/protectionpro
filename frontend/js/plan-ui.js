@@ -19,6 +19,7 @@ const PlanUI = {
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
       if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
+      if (e.target.closest('[data-role="edit-schedule"]')) { this._editBoardSchedule(); return; }
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
     });
@@ -338,6 +339,7 @@ const PlanUI = {
     return `<div class="plan-circuit-box">
       <div class="plan-circuit-h">Circuits</div>
       <div class="plan-circuit-note">${ways} way(s) on this board${linked}</div>
+      <button class="plan-circuit-btn" data-role="edit-schedule">📋 Edit Circuit Schedule</button>
       <button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices</button>
       <button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>
     </div>`;
@@ -437,6 +439,20 @@ const PlanUI = {
     }
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanEngine.requestDraw({ fg: true });
+  },
+
+  // Open the SLD's own circuit-schedule editor (DBSchedule modal) for the
+  // selected plan board — the same editor the SLD shows for that DB.
+  _editBoardSchedule() {
+    const ids = [...PlanMarkup.selectedIds]; if (ids.length !== 1) return;
+    const found = PlanMarkup.findEntityById(ids[0]);
+    if (!found || found.kind !== 'element' || found.item.type !== 'bd_db') return;
+    const comp = found.item.sldId && AppState.components.get(found.item.sldId);
+    if (!comp) {
+      UI.toast('Sync this board with the SLD first (→ Sync with SLD) to create its circuit schedule.', 'info');
+      return;
+    }
+    if (typeof DBSchedule !== 'undefined') DBSchedule.open(comp.id);
   },
 
   // Auto-distribute the selected board's connected untagged devices into ways.
