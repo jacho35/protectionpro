@@ -387,6 +387,9 @@ const MobileUI = {
     mobileContent.querySelector('#btn-view-tcc')?.addEventListener('click', () => {
       if (typeof TCC !== 'undefined') TCC.openForDevice(compId);
     });
+    mobileContent.querySelector('#btn-fault-terminal')?.addEventListener('click', () => {
+      if (typeof Properties !== 'undefined') Properties.faultAtTerminal(compId);
+    });
     const dReset = [...desktopContent.querySelectorAll('.prop-reset-btn')];
     mobileContent.querySelectorAll('.prop-reset-btn').forEach((btn, i) => {
       btn.addEventListener('click', () => dReset[i] && dReset[i].click());

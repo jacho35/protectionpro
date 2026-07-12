@@ -154,6 +154,19 @@ const Properties = {
         </div>`;
     }
 
+    // Fault-at-terminal for loads/motors — place a fault at this component's
+    // terminal (its bus, or the auto-inserted terminal node for a cable-fed
+    // load) to get an end-of-feeder fault and its trip sequence.
+    if (['motor_induction', 'motor_synchronous', 'static_load'].includes(comp.type)) {
+      html += `
+        <div class="prop-section prop-tcc-section">
+          <button class="prop-action-btn" id="btn-fault-terminal" title="Run fault analysis at this component's terminal (end-of-feeder fault)">
+            <svg width="14" height="14" viewBox="0 0 14 14" style="vertical-align:-2px;margin-right:4px"><path d="M8 1L3 8h3l-1 5 6-8H8l1-4z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+            Fault at Terminal
+          </button>
+        </div>`;
+    }
+
     // Position section
     html += `
       <div class="prop-section">
@@ -206,6 +219,11 @@ const Properties = {
     const btnDb = this.contentEl.querySelector('#btn-edit-db');
     if (btnDb && typeof DBSchedule !== 'undefined') {
       btnDb.addEventListener('click', () => DBSchedule.open(comp.id));
+    }
+
+    const btnFault = this.contentEl.querySelector('#btn-fault-terminal');
+    if (btnFault) {
+      btnFault.addEventListener('click', () => this.faultAtTerminal(comp.id));
     }
 
     // Bind change events.
@@ -687,6 +705,65 @@ const Properties = {
   },
 
   // Auto-fill component properties from a standard library entry
+  // The bus a load/motor faults at: the first bus reached through transparent
+  // devices (its own terminal bus), else the synthetic terminal node the
+  // backend inserts for a load wired behind a cable/transformer (matches
+  // loadflow.insert_implicit_load_buses / SYNTHETIC_BUS_PREFIX).
+  _terminalBusId(compId) {
+    const transparent = new Set(['cb', 'fuse', 'switch', 'ct', 'pt', 'surge_arrester']);
+    const adj = {};
+    for (const w of AppState.wires.values()) {
+      (adj[w.fromComponent] = adj[w.fromComponent] || []).push(w.toComponent);
+      (adj[w.toComponent] = adj[w.toComponent] || []).push(w.fromComponent);
+    }
+    const visited = new Set([compId]);
+    const stack = [...(adj[compId] || [])];
+    while (stack.length) {
+      const id = stack.pop();
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const c = AppState.components.get(id);
+      if (!c) continue;
+      if (c.type === 'bus' || c.type === 'distribution_board') return id;
+      if (transparent.has(c.type)) {
+        for (const nb of (adj[id] || [])) if (!visited.has(nb)) stack.push(nb);
+      }
+    }
+    return '__term__' + compId;
+  },
+
+  // Run fault analysis at a load/motor's terminal (an end-of-feeder fault).
+  async faultAtTerminal(compId) {
+    const comp = AppState.components.get(compId);
+    if (!comp) return;
+    const terminalId = this._terminalBusId(compId);
+    const faultType = document.getElementById('fault-type')?.value || null;
+    const name = comp.props?.name || compId;
+    const status = document.getElementById('status-info');
+    if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, `Fault at ${name} terminal…`);
+    try {
+      const result = await API.runFaultAnalysis(terminalId, faultType);
+      AppState.faultResults = result || null;
+      AppState.faultedBusId = terminalId;
+      AppState.showResultBoxes.fault = true;
+      const hit = result && result.buses && result.buses[terminalId];
+      if (status) {
+        status.textContent = hit
+          ? `Fault analysis at ${name} terminal complete.`
+          : `No fault current at ${name} terminal — check the source path.`;
+      }
+      if (!hit && typeof UI !== 'undefined' && UI.toast) {
+        UI.toast(`No fault current at ${name} terminal — check its source path.`);
+      }
+      Canvas.render();
+    } catch (e) {
+      console.error('Fault at terminal failed:', e);
+      if (status) status.textContent = 'Fault at terminal failed.';
+    } finally {
+      if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
+    }
+  },
+
   applyStandardType(comp, libraryType, typeId) {
     if (libraryType === 'cable') {
       const cable = STANDARD_CABLES.find(c => c.id === typeId);
