@@ -120,6 +120,15 @@
   box-shadow: 0 0 0 2px rgba(0,120,215,0.12);
 }
 
+/* Fields locked by a selected standard device — read-only until "Custom".
+   Opacity-based so it reads as greyed in both light and dark themes. */
+.prop-row input:disabled,
+.prop-row select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--bg-secondary);
+}
+
 .prop-row .unit {
   font-size: 11px;
   color: var(--text-muted);
