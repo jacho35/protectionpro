@@ -528,6 +528,10 @@ body.dark-mode .panel-expand-tab { background: var(--bg-primary); }
   border: 1px solid var(--border-color);
   border-radius: 4px;
   background: var(--bg-primary);
+  /* Explicit theme-aware text colour: a <button> otherwise falls back to the
+     UA default (dark) text, which is invisible on the dark background in dark
+     mode. */
+  color: var(--text-primary);
   cursor: pointer;
   font-size: 12px;
   font-family: var(--font-family);
