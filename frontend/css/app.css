@@ -993,7 +993,7 @@ body.dark-mode .panel-expand-tab { background: var(--bg-primary); }
 
 .compliance-table td {
   padding: 5px 8px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   vertical-align: top;
 }
 
@@ -1026,6 +1026,13 @@ body.dark-mode .panel-expand-tab { background: var(--bg-primary); }
 .compliance-row.compliance-pass td {
   background: #f6fff6;
 }
+
+/* Dark mode: the status-row tints above are light; without these the
+   theme's light body text lands on a near-white background and vanishes.
+   Use dark status tints so the text stays readable (matches .tcc-coord-pass). */
+body.dark-mode .compliance-row.compliance-fail td { background: #3a1f24; }
+body.dark-mode .compliance-row.compliance-warn td { background: #3a2f1d; }
+body.dark-mode .compliance-row.compliance-pass td { background: #1f321f; }
 
 /* Project picker */
 .project-list {
