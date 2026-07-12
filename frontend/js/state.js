@@ -70,6 +70,7 @@ const AppState = {
     arcflash: true,
     cable: true,
     motor: true,
+    dynMotor: true,
     duty: true,
     loadDiversity: true,
     grounding: true,
@@ -925,6 +926,7 @@ const AppState = {
     this.dcShortCircuitResults = null;
     this.cableSizingResults = null;
     this.motorStartingResults = null;
+    this.dynamicMotorResults = null;
     this.dutyCheckResults = null;
     this.loadDiversityResults = null;
     this.groundingResults = null;
@@ -1102,6 +1104,7 @@ const AppState = {
       dcShortCircuitResults: this.dcShortCircuitResults || undefined,
       cableSizingResults: this.cableSizingResults || undefined,
       motorStartingResults: this.motorStartingResults || undefined,
+      dynamicMotorResults: this.dynamicMotorResults || undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
@@ -1348,6 +1351,7 @@ const AppState = {
     this.dcShortCircuitResults = data.dcShortCircuitResults || null;
     this.cableSizingResults = data.cableSizingResults || null;
     this.motorStartingResults = data.motorStartingResults || null;
+    this.dynamicMotorResults = data.dynamicMotorResults || null;
     this.dutyCheckResults = data.dutyCheckResults || null;
     this.loadDiversityResults = data.loadDiversityResults || null;
     this.groundingResults = data.groundingResults || null;

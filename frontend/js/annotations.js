@@ -215,6 +215,19 @@ const Annotations = {
       }
     }
 
+    // Dynamic motor starting annotations on motors
+    if (AppState.showResultBoxes.dynMotor && AppState.dynamicMotorResults && AppState.dynamicMotorResults.motors) {
+      for (const motor of AppState.dynamicMotorResults.motors) {
+        if (motor.status === 'not_simulated') continue;
+        const comp = pageComps.get(motor.motor_id);
+        if (!comp) continue;
+        const key = `dynms:${motor.motor_id}`;
+        const pos = this._badgePos(comp, key, 40, 20, stacks);
+        html += this.renderDynamicMotorBadge(pos.x, pos.y, motor, key);
+        this._advanceStack(stacks, comp, pos);
+      }
+    }
+
     // Duty check annotations on CBs/fuses
     if (AppState.showResultBoxes.duty && AppState.dutyCheckResults && AppState.dutyCheckResults.devices) {
       for (const device of AppState.dutyCheckResults.devices) {
@@ -634,6 +647,32 @@ const Annotations = {
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">MOTOR START</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  renderDynamicMotorBadge(x, y, motor, key) {
+    const fillColor = motor.status === 'fail' ? '#d32f2f' : motor.status === 'warning' ? '#f57c00' : '#4caf50';
+    const started = motor.sim_status === 'started';
+    const lines = [
+      started ? `✓ ${motor.accel_time_s.toFixed(1)}s start` : (motor.sim_status === 'stalled' ? '✗ STALL' : '✗ no start'),
+      `I ${motor.peak_current_xflc.toFixed(1)}× V ${(motor.min_v_motor_pu * 100).toFixed(0)}%`,
+    ];
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
+    const boxW = 96;
+
+    let textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${line}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group dynamic-motor-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DYN START</text>
         ${textHtml}
       </g>`;
   },

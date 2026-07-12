@@ -196,6 +196,10 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
               Motor Starting
             </button>
+            <button id="btn-dynamic-motor" class="dropdown-item" title="Dynamic Motor Starting — time-domain acceleration simulation">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Dynamic Motor Starting
+            </button>
             <button id="btn-duty-check" class="dropdown-item" title="Equipment Duty Check">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
               Duty Check
@@ -307,6 +311,10 @@
             <button id="btn-toggle-results-motor" class="dropdown-item active" title="Show/Hide Motor Starting result boxes">
               <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
               Motor Starting Results
+            </button>
+            <button id="btn-toggle-results-dynmotor" class="dropdown-item active" title="Show/Hide Dynamic Motor Starting result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Dynamic Motor Results
             </button>
             <button id="btn-toggle-results-duty" class="dropdown-item active" title="Show/Hide Duty Check result boxes">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
@@ -882,6 +890,21 @@
     </div>
   </div>
 
+  <!-- Dynamic Motor Starting Results Modal -->
+  <div id="dynamic-motor-modal" class="modal" role="dialog" aria-modal="true" aria-label="Dynamic Motor Starting Results" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Dynamic Motor Starting — Acceleration Study</h3>
+        <button class="modal-close" id="btn-close-dynamic-motor">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="dynamic-motor-body">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Equipment Duty Check Results Modal -->
   <div id="duty-check-modal" class="modal" role="dialog" aria-modal="true" aria-label="Equipment Duty Check Results" style="display:none">
     <div class="modal-content modal-wide">
@@ -1102,6 +1125,9 @@
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
               <input type="checkbox" data-study="motor_starting" checked> Motor Starting
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="dynamic_motor_starting" checked> Dynamic Motor Starting
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
               <input type="checkbox" data-study="duty_check" checked> Equipment Duty Check
@@ -2212,6 +2238,7 @@
   <script src="js/contextmenu.js"></script>
   <script src="js/dbschedule.js"></script>
   <script src="js/control-sim.js"></script>
+  <script src="js/dynmotor.js"></script>
   <script src="js/retic.js"></script>
   <script src="js/retic-report.js"></script>
   <script src="js/plan-symbols.js"></script>

@@ -142,6 +142,12 @@ const API = {
     return this.request('/analysis/motor-starting', 'POST', data);
   },
 
+  // Run dynamic motor starting (time-domain acceleration) analysis
+  async runDynamicMotorStarting() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/dynamic-motor-starting', 'POST', data);
+  },
+
   // Run equipment duty check
   async runDutyCheck() {
     const data = AppState.toJSON();
@@ -309,6 +315,7 @@ const API = {
       arcFlashResults: AppState.arcFlashResults || null,
       cableSizingResults: AppState.cableSizingResults || null,
       motorStartingResults: AppState.motorStartingResults || null,
+      dynamicMotorResults: AppState.dynamicMotorResults || null,
       dutyCheckResults: AppState.dutyCheckResults || null,
       loadDiversityResults: AppState.loadDiversityResults || null,
       groundingResults: AppState.groundingResults || null,
