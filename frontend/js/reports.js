@@ -159,7 +159,7 @@ const Reports = {
     const rows = [];
     for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
       const comp = AppState.components.get(busId);
-      const name = comp?.props?.name || busId;
+      const name = comp?.props?.name || r.bus_name || busId;
       rows.push([
         name,
         r.voltage_kv != null ? Number(r.voltage_kv).toFixed(1) : '\u2014',
@@ -186,7 +186,7 @@ const Reports = {
     const rows = [];
     for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
       if (!r.branches?.length) continue;
-      const busName = AppState.components.get(busId)?.props?.name || busId;
+      const busName = AppState.components.get(busId)?.props?.name || r.bus_name || busId;
       for (const br of r.branches) {
         const elName = AppState.components.get(br.element_id)?.props?.name || br.element_name || br.element_id;
         rows.push([
@@ -385,7 +385,7 @@ const Reports = {
     const allEntries = [];
     for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
       if (!r.voltage_depression) continue;
-      const faultBusName = AppState.components.get(busId)?.props?.name || busId;
+      const faultBusName = AppState.components.get(busId)?.props?.name || r.bus_name || busId;
       for (const [depId, d] of Object.entries(r.voltage_depression)) {
         if (depId === busId) continue;
         const depName = d.bus_name || AppState.components.get(depId)?.props?.name || depId;

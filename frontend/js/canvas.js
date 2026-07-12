@@ -24,6 +24,11 @@ const Canvas = {
   // State for dragging data labels
   labelDrag: null, // { compId, startX, startY, origOX, origOY }
 
+  // Touch long-press promotion for label dragging. Labels are mouse-only drag
+  // targets; on touch a press-and-hold promotes to a label drag (see onMouseDown).
+  _labelPress: null,      // { kind:'data'|'name', compId, sx, sy, wx, wy }
+  _labelPressTimer: null, // setTimeout handle
+
   // State for bus resize drag
   busResize: null, // { compId, side, startX, origWidth }
 
@@ -314,10 +319,17 @@ const Canvas = {
     }
 
     // Check if clicked on a data label (for dragging). Label nudging is a
-    // precision affordance — with a finger, a touch on a label (they overlap
-    // their component) must select/move the COMPONENT, so labels are
-    // mouse-only drag targets and touch falls through to the component branch.
-    const labelEl = e.pointerType === 'touch' ? null : e.target.closest('.comp-data-label');
+    // precision affordance — with a finger, a plain touch on a label (they
+    // overlap their component and sit too small to tap precisely) must not
+    // hijack the gesture, so on touch a press-and-hold promotes to a label
+    // drag while a quick touch/drag falls through to pan/deselect.
+    const labelEl = e.target.closest('.comp-data-label');
+    if (labelEl && e.pointerType === 'touch') {
+      this._armLabelLongPress('data', labelEl, e, worldPt);
+      this._startTouchPan(e);
+      this._touchTap = { x: e.clientX, y: e.clientY };
+      return;
+    }
     if (labelEl) {
       const compId = labelEl.dataset.compId;
       const comp = AppState.components.get(compId);
@@ -335,8 +347,14 @@ const Canvas = {
       }
     }
 
-    // Check if clicked on a name label (for dragging) — mouse-only, as above
-    const nameLabelEl = e.pointerType === 'touch' ? null : e.target.closest('.comp-name-label');
+    // Check if clicked on a name label (for dragging) — long-press on touch, as above
+    const nameLabelEl = e.target.closest('.comp-name-label');
+    if (nameLabelEl && e.pointerType === 'touch') {
+      this._armLabelLongPress('name', nameLabelEl, e, worldPt);
+      this._startTouchPan(e);
+      this._touchTap = { x: e.clientX, y: e.clientY };
+      return;
+    }
     if (nameLabelEl) {
       const compId = nameLabelEl.dataset.compId;
       const comp = AppState.components.get(compId);
@@ -524,6 +542,12 @@ const Canvas = {
       if (this._touchTap &&
           Math.hypot(e.clientX - this._touchTap.x, e.clientY - this._touchTap.y) > 10) {
         this._touchTap = null; // moved too far — it's a pan, not a tap
+      }
+      // Moving before the hold fires means the user is panning, not grabbing
+      // the label — cancel the pending long-press.
+      if (this._labelPress &&
+          Math.hypot(e.clientX - this._labelPress.sx, e.clientY - this._labelPress.sy) > 10) {
+        this._clearLabelLongPress();
       }
     }
 
@@ -720,6 +744,8 @@ const Canvas = {
 
   // Pointer up / cancel handler (mouse and touch)
   onMouseUp(e) {
+    // Finger lifted (or gesture cancelled) — a pending hold never completes.
+    this._clearLabelLongPress();
     if (e.pointerType === 'touch') {
       if (!this.touchPointers.delete(e.pointerId)) return;
       if (this._pinch) {
@@ -753,6 +779,7 @@ const Canvas = {
   // Commit / tear down whatever interaction is in flight. Shared by pointer-up
   // and by a second touch landing mid-gesture (drag commits, pinch begins).
   _finalizeInteraction(e) {
+    this._clearLabelLongPress();
     if (this.isPanning) {
       this.isPanning = false;
       this.svg.classList.remove('panning-active');
@@ -847,6 +874,58 @@ const Canvas = {
   _startTouchPan(e) {
     this.isPanning = true;
     this.panStart = { x: e.clientX - AppState.panX, y: e.clientY - AppState.panY };
+  },
+
+  // Arm a long-press so a stationary hold on a label promotes to a label drag.
+  _armLabelLongPress(kind, el, e, worldPt) {
+    const compId = el.dataset.compId;
+    if (!AppState.components.get(compId)) return;
+    this._clearLabelLongPress();
+    this._labelPress = { kind, compId, sx: e.clientX, sy: e.clientY, wx: worldPt.x, wy: worldPt.y };
+    this._labelPressTimer = setTimeout(() => this._promoteLabelLongPress(), 450);
+  },
+
+  // Fired when a label hold completes: abandon the pan/tap the touch had begun
+  // and hand the gesture over to the label (or name-label) drag machinery.
+  _promoteLabelLongPress() {
+    this._labelPressTimer = null;
+    const p = this._labelPress;
+    this._labelPress = null;
+    if (!p) return;
+    const comp = AppState.components.get(p.compId);
+    if (!comp) return;
+    // Cancel the pan/tap the touch started before the hold completed.
+    this.isPanning = false;
+    this.svg.classList.remove('panning-active');
+    this._touchTap = null;
+    if (p.kind === 'data') {
+      const isLoad = ['static_load', 'motor_induction', 'motor_synchronous', 'distribution_board'].includes(comp.type);
+      this.labelDrag = {
+        compId: p.compId,
+        startX: p.wx,
+        startY: p.wy,
+        origOX: comp.labelOffsetX != null ? comp.labelOffsetX : 22,
+        origOY: comp.labelOffsetY != null ? comp.labelOffsetY : (isLoad ? 30 : 0),
+      };
+    } else {
+      this.nameLabelDrag = {
+        compId: p.compId,
+        startX: p.wx,
+        startY: p.wy,
+        origOX: comp.nameLabelOffsetX || 0,
+        origOY: comp.nameLabelOffsetY || 0,
+      };
+    }
+    // Haptic cue that the label is now grabbed (where supported).
+    if (navigator.vibrate) navigator.vibrate(15);
+  },
+
+  _clearLabelLongPress() {
+    if (this._labelPressTimer) {
+      clearTimeout(this._labelPressTimer);
+      this._labelPressTimer = null;
+    }
+    this._labelPress = null;
   },
 
   _pinchFrom() {

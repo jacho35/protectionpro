@@ -70,7 +70,12 @@ def run_motor_starting(project: ProjectData):
 
     Returns dict with 'motors' list and 'warnings' list.
     """
-    from .loadflow import run_load_flow
+    from .loadflow import run_load_flow, insert_implicit_load_buses
+
+    # Give every motor wired behind a cable/transformer a terminal bus, so its
+    # load is modelled and its terminal voltage has a node to be read from
+    # (otherwise the motor is invisible to load flow and the dip reads 0%).
+    project = insert_implicit_load_buses(project)
 
     comp_map = {c.id: c for c in project.components}
     adj = _build_adjacency(project)
@@ -86,10 +91,10 @@ def run_motor_starting(project: ProjectData):
     # Run baseline load flow (normal operation)
     baseline = None
     try:
-        baseline = run_load_flow(project, "newton_raphson")
+        baseline = run_load_flow(project, "newton_raphson", include_synthetic=True)
     except Exception:
         try:
-            baseline = run_load_flow(project, "gauss_seidel")
+            baseline = run_load_flow(project, "gauss_seidel", include_synthetic=True)
         except Exception:
             return {"motors": [], "warnings": ["Load flow failed — cannot compute motor starting analysis."]}
 
@@ -178,10 +183,10 @@ def run_motor_starting(project: ProjectData):
         # Run load flow with motor in starting condition
         start_lf = None
         try:
-            start_lf = run_load_flow(modified, "newton_raphson")
+            start_lf = run_load_flow(modified, "newton_raphson", include_synthetic=True)
         except Exception:
             try:
-                start_lf = run_load_flow(modified, "gauss_seidel")
+                start_lf = run_load_flow(modified, "gauss_seidel", include_synthetic=True)
             except Exception:
                 analysis_warnings.append(f"Load flow failed for motor '{motor_name}' starting.")
                 continue

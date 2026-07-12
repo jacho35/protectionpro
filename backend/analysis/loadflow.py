@@ -116,6 +116,119 @@ def _find_components_at_bus(bus_id, adjacency, components):
     return found
 
 
+# ── Implicit load-terminal buses ─────────────────────────────────────
+# A load (motor, static load, capacitor bank) wired to the network only
+# through a series element (cable/transformer) has no busbar at its own
+# terminal. The solver gathers loads by walking out from each bus through
+# TRANSPARENT devices only, so such a load is never attached to any bus and
+# silently vanishes from the solve — and the cable feeding it, reaching just
+# one bus, is dropped as a branch too. Drawing a bus between the load and its
+# cable fixes it, so we synthesise exactly that node here, transparently.
+SYNTHETIC_BUS_PREFIX = "__term__"
+LOAD_TERMINAL_TYPES = {"motor_induction", "motor_synchronous",
+                       "static_load", "capacitor_bank"}
+
+
+def is_synthetic_bus(bus_id):
+    """True if bus_id is an auto-inserted load-terminal node."""
+    return bool(bus_id) and bus_id.startswith(SYNTHETIC_BUS_PREFIX)
+
+
+def _load_reaches_bus(load_id, adjacency, components):
+    """True if a bus is reachable from a load through transparent devices only."""
+    visited = {load_id}
+    stack = list(adjacency.get(load_id, []))
+    while stack:
+        nid = stack.pop()
+        if nid in visited:
+            continue
+        visited.add(nid)
+        comp = components.get(nid)
+        if not comp:
+            continue
+        if comp.type in ("bus", "distribution_board"):
+            return True
+        if _is_transparent_and_closed(comp):
+            for nb in adjacency.get(nid, []):
+                if nb not in visited:
+                    stack.append(nb)
+    return False
+
+
+def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
+    """Return a copy of *project* with a synthetic terminal bus inserted at
+    every dangling load — one wired to the rest of the network only through a
+    series cable/transformer, with no busbar of its own.
+
+    Idempotent: a load that already reaches a bus (directly or through a
+    CB/switch) is left untouched, so well-modelled projects and repeated calls
+    are unchanged. Synthetic buses carry an id prefix (see SYNTHETIC_BUS_PREFIX)
+    so callers can strip them from user-facing output.
+    """
+    import json
+    components = {c.id: c for c in project.components}
+    adjacency = {}
+    for w in project.wires:
+        adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
+        adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
+
+    dangling = []
+    for c in project.components:
+        if c.type not in LOAD_TERMINAL_TYPES:
+            continue
+        if str(c.props.get("system", "ac")).lower() == "dc":
+            continue  # DC loads belong to the DC solver
+        if not adjacency.get(c.id):
+            continue  # truly isolated — nothing to attach
+        if _load_reaches_bus(c.id, adjacency, components):
+            continue  # already has a terminal bus
+        dangling.append(c)
+
+    if not dangling:
+        return project
+
+    data = json.loads(project.model_dump_json())
+    wires = data["wires"]
+    for load in dangling:
+        syn_id = f"{SYNTHETIC_BUS_PREFIX}{load.id}"
+        # Terminal voltage base: the load's own rating, else a series
+        # neighbour's rating, else an LV default.
+        v_kv = load.props.get("voltage_kv")
+        if not v_kv:
+            for nb in adjacency.get(load.id, []):
+                nc = components.get(nb)
+                if nc and nc.type in ("cable", "transformer"):
+                    v_kv = nc.props.get("voltage_lv_kv") or nc.props.get("voltage_kv")
+                    if v_kv:
+                        break
+        # Rewire: the load hangs off the new bus, and everything the load used
+        # to touch now hangs off the new bus instead (load → syn → cable → …).
+        load_port = "in"
+        for w in wires:
+            if w["fromComponent"] == load.id:
+                load_port = w.get("fromPort", "in")
+                w["fromComponent"], w["fromPort"] = syn_id, "at_0"
+            elif w["toComponent"] == load.id:
+                load_port = w.get("toPort", "in")
+                w["toComponent"], w["toPort"] = syn_id, "at_0"
+        wires.append({
+            "id": f"{SYNTHETIC_BUS_PREFIX}w_{load.id}",
+            "fromComponent": load.id, "fromPort": load_port,
+            "toComponent": syn_id, "toPort": "at_0",
+        })
+        data["components"].append({
+            "id": syn_id, "type": "bus", "x": load.x, "y": load.y, "rotation": 0,
+            "props": {
+                "name": f"{load.props.get('name', load.id)} terminal",
+                "voltage_kv": float(v_kv or 0.4),
+                "bus_type": "PQ", "system": "ac",
+                "synthetic": True,
+            },
+        })
+
+    return ProjectData(**data)
+
+
 # ── Generation dispatch (merit order) ───────────────────────────────
 #
 # Sources carry three optional props:
@@ -971,8 +1084,18 @@ def _source_output_mva(comp):
     return 0.0, 0.0, 0.0, 0.0
 
 
-def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadFlowResults:
-    """Run load flow analysis."""
+def run_load_flow(project: ProjectData, method: str = "newton_raphson",
+                  include_synthetic: bool = False) -> LoadFlowResults:
+    """Run load flow analysis.
+
+    include_synthetic: keep auto-inserted load-terminal buses (see
+    insert_implicit_load_buses) in the results. Off by default so they stay
+    invisible to the UI/reports; motor-starting turns it on to read the motor
+    terminal voltage.
+    """
+    # Give any load wired behind a cable/transformer a terminal bus so its
+    # demand is modelled instead of silently dropped (idempotent).
+    project = insert_implicit_load_buses(project)
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
     wires = project.wires
@@ -1892,6 +2015,19 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                 ))
 
     dispatch_results = [DispatchEntry(**e) for e in dispatch["entries"]]
+
+    # Collapse synthetic load-terminal buses out of the user-facing result:
+    # drop their bus rows and re-point any branch endpoint that lands on one
+    # back to the real load it represents (syn id = prefix + load id).
+    if not include_synthetic:
+        syn_ids = {bid for bid in bus_results if is_synthetic_bus(bid)}
+        if syn_ids:
+            for bid in syn_ids:
+                bus_results.pop(bid, None)
+            _unsyn = lambda b: b[len(SYNTHETIC_BUS_PREFIX):] if is_synthetic_bus(b) else b
+            for br in branch_results:
+                br.from_bus = _unsyn(br.from_bus)
+                br.to_bus = _unsyn(br.to_bus)
 
     return LoadFlowResults(
         buses=bus_results,

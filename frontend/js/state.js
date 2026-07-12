@@ -156,6 +156,25 @@ const AppState = {
     return `${prefix}_${this.nextId++}`;
   },
 
+  // Synthetic load-terminal buses the backend inserts for a load wired behind
+  // a cable/transformer with no busbar of its own (see loadflow.py
+  // SYNTHETIC_BUS_PREFIX). They exist only in analysis results, not on the
+  // diagram; the id encodes the load: `__term__<loadId>`.
+  SYNTHETIC_BUS_PREFIX: '__term__',
+  isSyntheticBus(id) {
+    return typeof id === 'string' && id.startsWith(this.SYNTHETIC_BUS_PREFIX);
+  },
+  syntheticBusLoadId(id) {
+    return this.isSyntheticBus(id) ? id.slice(this.SYNTHETIC_BUS_PREFIX.length) : null;
+  },
+  // Resolve the on-diagram component that a result bus id belongs to — the bus
+  // itself, or (for a synthetic terminal) the load it hangs off — so a badge
+  // has somewhere to anchor. Returns null if nothing on the active page matches.
+  resultBusComponent(busId, pageComps = null) {
+    const get = pageComps ? (id) => pageComps.get(id) : (id) => this.components.get(id);
+    return get(busId) || (this.isSyntheticBus(busId) ? get(this.syntheticBusLoadId(busId)) : null) || null;
+  },
+
   // ─── Reticulation helpers ───
   _defaultReticulation() {
     return {
