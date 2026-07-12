@@ -88,6 +88,16 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     """
     # Resolve the voltage factor once; a positive override wins, else C_MAX.
     c_resolved = voltage_factor if (voltage_factor is not None and voltage_factor > 0) else C_MAX
+
+    # Give any load wired behind a cable/transformer a terminal bus, so a fault
+    # level is reported at that terminal too (as if the user had drawn a bus
+    # there). Idempotent; leaves well-modelled networks unchanged. Unlike load
+    # flow, these nodes are kept in the results — the terminal fault level is
+    # the useful output. A single-bus fault (fault_bus_id set to a real bus)
+    # never computes them, since the bus filter below drops them.
+    from .loadflow import insert_implicit_load_buses
+    project = insert_implicit_load_buses(project)
+
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
     wires = project.wires

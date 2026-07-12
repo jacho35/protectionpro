@@ -67,7 +67,9 @@ const Annotations = {
     // Fault result annotations on buses
     if (AppState.showResultBoxes.fault && AppState.faultResults && AppState.faultResults.buses) {
       for (const [busId, result] of Object.entries(AppState.faultResults.buses)) {
-        const comp = pageComps.get(busId);
+        // Synthetic terminal buses have no symbol of their own — anchor their
+        // badge on the load they belong to (see AppState.resultBusComponent).
+        const comp = AppState.resultBusComponent(busId, pageComps);
         if (!comp) continue;
         const key = `fault:${busId}`;
         const pos = this._badgePos(comp, key, 70, -10, stacks);
@@ -167,7 +169,7 @@ const Annotations = {
         if (faultResult.voltage_depression) {
           for (const [depBusId, dep] of Object.entries(faultResult.voltage_depression)) {
             if (depBusId === faultedBusIds[0]) continue; // Skip faulted bus itself
-            const comp = pageComps.get(depBusId);
+            const comp = AppState.resultBusComponent(depBusId, pageComps);
             if (!comp) continue;
             const vPu = dep.subtransient_pu != null ? dep.subtransient_pu : 1.0;
             const key = `vdep:${depBusId}`;

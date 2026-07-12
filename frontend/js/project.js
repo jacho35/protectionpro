@@ -438,7 +438,7 @@ const Project = {
       rows.push(['Bus ID', 'Bus Name', 'Voltage (kV)', 'I"k3 (kA)', 'I"k1 (kA)', 'I"kLL (kA)', 'I"kLLG (kA)']);
       for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
         const comp = AppState.components.get(busId);
-        const busName = comp?.props?.name || busId;
+        const busName = comp?.props?.name || r.bus_name || busId;
         rows.push([busId, busName, r.voltage_kv ?? '', r.ik3 ?? '', r.ik1 ?? '', r.ikLL ?? '', r.ikLLG ?? '']);
       }
       rows.push([]);
@@ -453,7 +453,7 @@ const Project = {
             hasBranches = true;
           }
           const busComp = AppState.components.get(busId);
-          const busName = busComp?.props?.name || busId;
+          const busName = busComp?.props?.name || r.bus_name || busId;
           for (const br of r.branches) {
             const elComp = AppState.components.get(br.element_id);
             const elName = elComp?.props?.name || br.element_name || br.element_id;

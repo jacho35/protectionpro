@@ -137,6 +137,55 @@ class TestFaultAnalysis:
         assert bus.ik1 == pytest.approx(0.0, abs=1e-6)  # no earth-fault path
         assert bus.ikLLG == pytest.approx(bus.ikLL, rel=0.02)  # degenerates to LL
 
+    def test_motor_terminal_behind_cable_gets_fault_level(self):
+        """A motor wired to a bus through a cable, with no busbar at its own
+        terminal, must get a fault level reported at that terminal — the
+        auto-inserted node makes it identical to the same network with a bus
+        drawn there — WITHOUT changing the fault level at the real buses (the
+        DFS walker already reached the motor as an infeed through the cable)."""
+        def _project(with_bus):
+            xfmr = _comp("transformer-1", "transformer", {
+                "name": "TX1", "rated_mva": 2.0, "z_percent": 6.0,
+                "x_r_ratio": 10.0, "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4,
+                "vector_group": "Dyn11",
+            })
+            lv_bus = _comp("bus-2", "bus", {"name": "Remote LV", "voltage_kv": 0.4})
+            cable = _comp("cable-1", "cable", {
+                "name": "Motor Cable", "r_per_km": 0.5, "x_per_km": 0.08,
+                "length_km": 0.15, "rated_amps": 400.0, "voltage_kv": 0.4,
+            })
+            motor = _comp("motor_induction-1", "motor_induction", {
+                "name": "M1", "rated_kw": 90.0, "voltage_kv": 0.4,
+                "efficiency": 0.93, "power_factor": 0.85,
+                "locked_rotor_current": 6.0,
+            })
+            extra = [xfmr, lv_bus, cable, motor]
+            wires = [
+                _wire("w2", "bus-1", "transformer-1"),
+                _wire("w3", "transformer-1", "bus-2"),
+                _wire("w4", "bus-2", "cable-1"),
+            ]
+            if with_bus:
+                extra.append(_comp("bus-3", "bus",
+                                   {"name": "Motor Bus", "voltage_kv": 0.4}))
+                wires += [_wire("w5", "cable-1", "bus-3"),
+                          _wire("w6", "bus-3", "motor_induction-1")]
+            else:
+                wires.append(_wire("w5", "cable-1", "motor_induction-1"))
+            return _utility_bus_project(fault_mva=500.0, extra_components=extra,
+                                        extra_wires=wires)
+
+        no_bus = run_fault_analysis(_project(False)).buses
+        with_bus = run_fault_analysis(_project(True)).buses
+
+        # Real buses are unchanged by inserting the terminal node
+        assert no_bus["bus-2"].ik3 == pytest.approx(with_bus["bus-2"].ik3, rel=1e-6)
+        # A terminal fault level now exists, matching the manual-bus reference
+        term = [b for bid, b in no_bus.items() if bid.startswith("__term__")]
+        assert len(term) == 1, "no terminal-node fault result was reported"
+        assert term[0].ik3 == pytest.approx(with_bus["bus-3"].ik3, rel=1e-6)
+        assert term[0].bus_name == "M1 terminal"  # friendly name for reports
+
 
 # ── IEEE 1584-2002 arc flash ─────────────────────────────────────────────
 
@@ -323,6 +372,56 @@ class TestMotorStarting:
         assert motors[0]["motor_type"] == "synchronous"
         assert motors[0]["max_system_dip_pct"] > 0
 
+    def test_motor_behind_cable_without_terminal_bus(self):
+        """A motor wired to a bus through a cable, with no busbar at its own
+        terminal, must still be analysed — the auto-inserted terminal node
+        makes it numerically identical to the same network with a bus drawn at
+        the motor terminal. Regression for the 'zero volt drop on starting'
+        bug, where the motor was silently dropped from the load flow because
+        loads are gathered by walking transparent devices only (a cable is
+        not one), so the dip reported the 1.0 pu default (0%)."""
+        def _project(with_bus):
+            xfmr = _comp("transformer-1", "transformer", {
+                "name": "TX1", "rated_mva": 2.0, "z_percent": 6.0,
+                "x_r_ratio": 10.0, "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4,
+                "vector_group": "Dyn11",
+            })
+            lv_bus = _comp("bus-2", "bus", {"name": "Remote LV", "voltage_kv": 0.4})
+            cable = _comp("cable-1", "cable", {
+                "name": "Motor Cable", "r_per_km": 0.5, "x_per_km": 0.08,
+                "length_km": 0.15, "rated_amps": 400.0, "voltage_kv": 0.4,
+            })
+            motor = _comp("motor_induction-1", "motor_induction", {
+                "name": "M1", "rated_kw": 90.0, "voltage_kv": 0.4,
+                "efficiency": 0.93, "power_factor": 0.85,
+                "locked_rotor_current": 6.0,
+            })
+            extra = [xfmr, lv_bus, cable, motor]
+            wires = [
+                _wire("w2", "bus-1", "transformer-1"),
+                _wire("w3", "transformer-1", "bus-2"),
+                _wire("w4", "bus-2", "cable-1"),
+            ]
+            if with_bus:
+                extra.append(_comp("bus-3", "bus",
+                                   {"name": "Motor Bus", "voltage_kv": 0.4}))
+                wires += [_wire("w5", "cable-1", "bus-3"),
+                          _wire("w6", "bus-3", "motor_induction-1")]
+            else:
+                wires.append(_wire("w5", "cable-1", "motor_induction-1"))
+            return _utility_bus_project(fault_mva=500.0, extra_components=extra,
+                                        extra_wires=wires)
+
+        no_bus = run_motor_starting(_project(False))["motors"][0]
+        with_bus = run_motor_starting(_project(True))["motors"][0]
+
+        # The motor is modelled — a real dip, not the 0% of the dropped-load bug
+        assert no_bus["motor_terminal_voltage_pu"] < 0.95
+        assert no_bus["max_system_dip_pct"] > 1.0
+        # …and the auto-inserted node reproduces the manual-bus reference
+        assert no_bus["motor_terminal_voltage_pu"] == pytest.approx(
+            with_bus["motor_terminal_voltage_pu"], rel=0.02)
+
 
 # ── Load flow sanity ─────────────────────────────────────────────────────
 
@@ -341,6 +440,33 @@ class TestLoadFlow:
         assert res.converged
         for bus in res.buses.values():
             assert 0.9 < bus.voltage_pu < 1.1
+
+    def test_load_behind_cable_without_terminal_bus_is_modelled(self):
+        """A load wired to a bus through a cable with no busbar at its terminal
+        must still load the network: the cable becomes a branch carrying the
+        load current. Previously such a load was silently dropped (loads are
+        gathered by walking transparent devices only, and a cable is not one),
+        so the cable never became a branch and the demand vanished. The
+        auto-inserted terminal node must not leak into the public result."""
+        cable = _comp("cable-1", "cable", {
+            "name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.1,
+            "length_km": 0.5, "rated_amps": 200.0, "voltage_kv": 11.0,
+        })
+        load = _comp("static_load-1", "static_load", {
+            "name": "L1", "rated_kw": 2000.0, "power_factor": 0.9,
+            "voltage_kv": 11.0,
+        })
+        proj = _utility_bus_project(
+            extra_components=[cable, load],
+            extra_wires=[_wire("w2", "bus-1", "cable-1"),
+                         _wire("w3", "cable-1", "static_load-1")])
+        res = run_load_flow(proj, "newton_raphson")
+        assert res.converged
+        cable_branch = [b for b in res.branches if b.elementId == "cable-1"]
+        assert cable_branch and cable_branch[0].i_amps > 0, \
+            "cable feeding the load was not modelled as a current-carrying branch"
+        assert not any(bid.startswith("__term__") for bid in res.buses), \
+            "synthetic terminal bus leaked into the public load-flow result"
 
 
 class TestPlanSubBoardFeeder:

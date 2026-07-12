@@ -1606,7 +1606,7 @@ const TCC = {
     const markers = []; // { current_ka, label, bus, voltage_kv, color }
     for (const [busId, r] of Object.entries(fr.buses)) {
       const comp = AppState.components.get(busId);
-      const busName = comp?.props?.name || busId;
+      const busName = comp?.props?.name || r.bus_name || busId;
       const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
 
       if (r.ik3 != null) markers.push({ current_ka: r.ik3, label: `${busName} 3Φ`, voltage_kv: vkv, color: '#d32f2f' });
