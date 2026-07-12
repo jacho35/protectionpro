@@ -1,0 +1,30 @@
+name: Backend tests
+
+# Runs the standards-anchored regression suite (IEC 60909, IEEE 1584 / 80, …)
+# in backend/tests/ so analysis-engine changes can't merge with red tests.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest httpx
+
+      - name: Run regression tests
+        run: python -m pytest backend/tests/ -q
