@@ -313,9 +313,36 @@ const Properties = {
     }, 0);
   },
 
+  // Fields each device library fills in from its standard selection. While a
+  // standard is chosen these are locked (read-only) — pick "-- Custom --" to
+  // edit them. Cable is intentionally excluded: it keeps its own
+  // edit-freely-and-reset-to-default UX.
+  _libraryControlledFields: {
+    cb: ['cb_type', 'mcb_curve', 'trip_rating_a', 'rated_current_a', 'rated_voltage_kv',
+         'breaking_capacity_ka', 'thermal_pickup', 'magnetic_pickup', 'long_time_delay',
+         'short_time_pickup', 'short_time_delay', 'instantaneous_pickup'],
+    transformer: ['rated_mva', 'voltage_hv_kv', 'voltage_lv_kv', 'z_percent', 'x_r_ratio', 'vector_group'],
+    fuse: ['fuse_type', 'rated_current_a', 'rated_voltage_kv', 'breaking_capacity_ka'],
+  },
+
+  // A field is locked when its component has a standard type selected and the
+  // field is one the standard populates (the component type doubles as the
+  // library key for cb/transformer/fuse). The `state` field and anything not
+  // library-derived stay editable.
+  _lockedByStandard(comp, fieldKey) {
+    if (!comp) return false;
+    const fields = this._libraryControlledFields[comp.type];
+    return !!(fields && fields.includes(fieldKey) && comp.props.standard_type);
+  },
+
   renderField(field, value, compId) {
     let inputHtml = '';
     let unitHtml = '';
+
+    // Lock library-derived fields while a standard type is selected.
+    const _comp = AppState.components.get(compId);
+    const dis = this._lockedByStandard(_comp, field.key) ? ' disabled' : '';
+    const lockTitle = dis ? ' title="Set by the selected standard — choose Custom to edit"' : '';
 
     if (field.type === 'standard_select' && field.library === 'cable') {
       // Searchable cable selector with voltage filtering
@@ -373,7 +400,7 @@ const Properties = {
         // (e.g. stored 12 vs option '12') and silently show the first option.
         return `<option value="${val}" ${String(value) === String(val) ? 'selected' : ''}>${label}</option>`;
       }).join('');
-      inputHtml = `<select data-field="${field.key}">${options}</select>`;
+      inputHtml = `<select data-field="${field.key}"${dis}${lockTitle}>${options}</select>`;
     } else {
       // Number or text input — handle unit conversion for display
       let displayValue = value;
@@ -403,7 +430,7 @@ const Properties = {
         if (field.max !== undefined) constraints += ` max="${field.max / displayMult}"`;
         constraints += ` step="${field.step !== undefined ? field.step / displayMult : 'any'}"`;
       }
-      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${escHtml(displayValue)}"${constraints}>`;
+      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${escHtml(displayValue)}"${constraints}${dis}${lockTitle}>`;
     }
 
     // Unit display: selectable dropdown if unitOptions, else static text
