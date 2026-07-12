@@ -48,11 +48,16 @@ const PlanSymbols = {
     ] },
 
     // ── Building distribution (Distribution Designer Pro) ──
-    // DB: rectangle with a diagonal line (standard schematic board symbol).
-    bd_db: { size: 34, prims: [
-      { k: 'r', x: 5, y: 9, w: 30, h: 22, f: 'faint', s: 'col', w: 1.8 },
-      { k: 'l', x1: 5, y1: 31, x2: 35, y2: 9, s: 'col', w: 1.4 },
-      { k: 't', x: 12, y: 15, str: 'DB', size: 6, f: 'col', bold: 1 },
+    // DB: enclosure card with an incomer stub, "DB" header and way rows —
+    // matches the SLD distribution_board symbol so the two views read the same.
+    bd_db: { size: 32, prims: [
+      { k: 'l', x1: 20, y1: 3, x2: 20, y2: 7, s: 'col', w: 1.6 },                 // incomer stub
+      { k: 'r', x: 8, y: 7, w: 24, h: 28, f: 'faint', s: 'col', w: 1.8 },         // enclosure
+      { k: 'l', x1: 8, y1: 18, x2: 32, y2: 18, s: 'col', w: 1.2 },                // header divider
+      { k: 't', x: 20, y: 13, str: 'DB', size: 8, f: 'col', bold: 1 },            // label
+      { k: 'l', x1: 12, y1: 23, x2: 28, y2: 23, s: 'col', w: 1 },                 // way rows
+      { k: 'l', x1: 12, y1: 28, x2: 28, y2: 28, s: 'col', w: 1 },
+      { k: 'l', x1: 12, y1: 33, x2: 28, y2: 33, s: 'col', w: 1 },
     ] },
     // bd_switchboard is parametric (tiers / feeder bays) — see _switchboard().
     bd_transformer: { size: 30, prims: [
