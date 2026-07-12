@@ -2251,6 +2251,7 @@ const TCC = {
     } else if (dev.deviceType === 'cb') {
       const p = dev.cbParams;
       const isACB = p.cb_type === 'acb';
+      const isMCB = p.cb_type === 'mcb';
       html = `
         <div class="tcc-form-row">
           <label>Type</label>
@@ -2258,6 +2259,12 @@ const TCC = {
             <option value="mcb" ${p.cb_type === 'mcb' ? 'selected' : ''}>MCB</option>
             <option value="mccb" ${p.cb_type === 'mccb' ? 'selected' : ''}>MCCB</option>
             <option value="acb" ${p.cb_type === 'acb' ? 'selected' : ''}>ACB</option>
+          </select>
+        </div>
+        <div class="tcc-form-row tcc-sel-mcb-fields" style="display:${isMCB ? '' : 'none'}">
+          <label>Curve (IEC 60898)</label>
+          <select data-sel-field="cb.mcb_curve">
+            ${['B', 'C', 'D'].map(c => `<option value="${c}" ${(p.mcb_curve || 'C') === c ? 'selected' : ''}>${c}</option>`).join('')}
           </select>
         </div>
         <div class="tcc-form-row">
@@ -2348,10 +2355,29 @@ const TCC = {
     if (field.startsWith('cb.')) {
       const cbField = field.slice(3);
       dev.cbParams[cbField] = val;
-      // Show/hide ACB fields when type changes
+      const root = el.closest('#tcc-selected-settings');
+      // Show/hide type-specific fields (ACB bands, MCB curve) when type changes
       if (cbField === 'cb_type') {
-        const acbFields = el.closest('#tcc-selected-settings').querySelector('.tcc-sel-acb-fields');
+        const acbFields = root && root.querySelector('.tcc-sel-acb-fields');
         if (acbFields) acbFields.style.display = val === 'acb' ? '' : 'none';
+        const mcbFields = root && root.querySelector('.tcc-sel-mcb-fields');
+        if (mcbFields) mcbFields.style.display = val === 'mcb' ? '' : 'none';
+        // Give a freshly-typed MCB a sensible curve + matching magnetic pickup
+        if (val === 'mcb' && !dev.cbParams.mcb_curve) {
+          dev.cbParams.mcb_curve = 'C';
+          dev.cbParams.magnetic_pickup = MCB_CURVE_MAGNETIC.C;
+          const curveEl = root && root.querySelector('[data-sel-field="cb.mcb_curve"]');
+          if (curveEl) curveEl.value = 'C';
+          const magEl = root && root.querySelector('[data-sel-field="cb.magnetic_pickup"]');
+          if (magEl) magEl.value = dev.cbParams.magnetic_pickup;
+        }
+      }
+      // The IEC 60898 curve sets the MCB's magnetic trip band (B 5×, C 10×,
+      // D 20× In) — mirror the properties panel and update it live.
+      if (cbField === 'mcb_curve' && MCB_CURVE_MAGNETIC[val]) {
+        dev.cbParams.magnetic_pickup = MCB_CURVE_MAGNETIC[val];
+        const magEl = root && root.querySelector('[data-sel-field="cb.magnetic_pickup"]');
+        if (magEl) magEl.value = dev.cbParams.magnetic_pickup;
       }
     } else if (field.startsWith('zone_reach_') || field.startsWith('zone_delay_')) {
       // Distance relay zone settings
