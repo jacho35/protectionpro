@@ -416,6 +416,26 @@ const PlanEngine = {
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText(el.name, el.x, el.y + half + 2 / this.view.zoom);
     }
+    // Link badge (UX-5): a small chain glyph on elements linked to the SLD.
+    if (el.sldId) this._drawLinkBadge(ctx, el.x + half, el.y - half);
+    ctx.restore();
+  },
+
+  // A small blue chain-link badge marking a plan element linked to the SLD.
+  _drawLinkBadge(ctx, wx, wy) {
+    const s = 1 / this.view.zoom;
+    ctx.save();
+    ctx.translate(wx, wy);
+    ctx.scale(s, s);
+    ctx.lineWidth = 1.2;
+    // White disc so the glyph reads over any symbol/plan.
+    ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.strokeStyle = '#2563eb'; ctx.stroke();
+    // Two interlocking rings → a chain link.
+    ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(-1.6, 0, 2.4, 1.4, -Math.PI / 4, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(1.6, 0, 2.4, 1.4, -Math.PI / 4, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   },
 

@@ -343,6 +343,78 @@ class TestLoadFlow:
             assert 0.9 < bus.voltage_pu < 1.1
 
 
+class TestPlanSubBoardFeeder:
+    """EE-1: a distribution board is a bus-like node that carries its own
+    lumped load AND passes current through to a sub-board it feeds. Regression
+    for the plan-sync 'Feeder to Sub-board' topology, where a board previously
+    blocked every network walk so the sub-board's demand vanished from the
+    solution and its feeder cable never became a branch."""
+
+    @staticmethod
+    def _feeder_project():
+        # utility → incomer bus → MDB(50 kVA) → outgoing bus → cable → SDB(30 kVA)
+        # Exactly what PlanSync.syncBuildingToSLD builds for DB→DB feeding.
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 0.4, "fault_mva": 500.0,
+            }),
+            _comp("bus-1", "bus", {"name": "Incomer", "voltage_kv": 0.4}),
+            _comp("mdb", "distribution_board", {
+                "name": "MDB", "rated_kva": 50.0, "power_factor": 0.85,
+                "demand_factor": 1.0, "voltage_kv": 0.4,
+            }),
+            _comp("obus", "bus", {"name": "MDB Outgoing", "voltage_kv": 0.4}),
+            _comp("cable-1", "cable", {
+                "name": "Feeder", "r_per_km": 0.524, "x_per_km": 0.08,
+                "length_km": 0.03, "rated_amps": 100.0, "voltage_kv": 0.4,
+            }),
+            _comp("sdb", "distribution_board", {
+                "name": "SDB", "rated_kva": 30.0, "power_factor": 0.85,
+                "demand_factor": 1.0, "voltage_kv": 0.4,
+            }),
+        ]
+        wires = [
+            _wire("w1", "utility-1", "bus-1"),
+            _wire("w2", "bus-1", "mdb"),
+            _wire("w3", "mdb", "obus"),
+            _wire("w4", "obus", "cable-1"),
+            _wire("w5", "cable-1", "sdb"),
+        ]
+        return ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_sub_board_is_energized_and_supplied(self):
+        res = run_load_flow(self._feeder_project(), "newton_raphson")
+        assert res.converged
+        # Both boards now appear as nodes and are energized (pre-fix: SDB and
+        # the outgoing bus were a sourceless island reported de-energized).
+        assert res.buses["mdb"].energized
+        assert res.buses["sdb"].energized
+        assert 0.9 < res.buses["sdb"].voltage_pu < 1.02
+        # The utility supplies BOTH boards: 50 kVA·0.85 + 30 kVA·0.85 ≈ 68 kW
+        # (pre-fix it supplied only the MDB's 42.5 kW).
+        util = next(d for d in res.dispatch if d.source_id == "utility-1")
+        assert util.dispatched_mw > 0.05          # clearly more than MDB alone
+        assert util.dispatched_mw == pytest.approx(0.068, abs=0.004)
+        # The feeder cable is now a real branch carrying the sub-board current
+        # (30 kVA at 0.4 kV ≈ 43 A); pre-fix it carried nothing.
+        feeder = next(b for b in res.branches if b.elementId == "cable-1")
+        assert 35.0 < feeder.i_amps < 50.0
+
+    def test_sub_board_unbalanced_converges_and_supplied(self):
+        res = run_unbalanced_load_flow(self._feeder_project())
+        assert res.converged
+        # A de-energized/islanded sub-board would sit at 0 V; it now solves live.
+        assert res.buses["sdb"].v1_pu > 0.9
+
+    def test_fault_level_computed_at_sub_board(self):
+        # Pre-fix the walk terminated at MDB, so SDB had no source path and a
+        # zero fault level. It must now see the utility through the board.
+        res = run_fault_analysis(self._feeder_project())
+        assert "sdb" in res.buses
+        assert res.buses["sdb"].ik3 > 0
+
+
 class TestIslandingAndDispatch:
     """Island-aware load flow and merit-order generation dispatch."""
 

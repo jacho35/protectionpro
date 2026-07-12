@@ -977,8 +977,15 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     components = {c.id: c for c in project.components}
     wires = project.wires
 
-    # Build bus list and index
-    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
+    # Build bus list and index.
+    # A distribution_board is modelled as a bus-like node: it is a busbar that
+    # carries its own lumped load AND passes current through (in→out) to any
+    # sub-board it feeds. Without this, a board blocks every network walk, so a
+    # feeder cable to a sub-board never becomes a branch and the sub-board's
+    # demand vanishes from the solution (see EE-1).
+    buses = [c for c in project.components
+             if c.type in ("bus", "distribution_board")
+             and str(c.props.get("system", "ac")).lower() != "dc"]
     if not buses:
         return LoadFlowResults(
             buses={}, branches=[], converged=False, iterations=0, method=method
@@ -1174,6 +1181,20 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
         # user-labelled Swing, else the lowest-merit source acting as balancer).
         bus_types.append(1 if bt == "PV" else 0)
 
+        # A distribution board carries its own lumped load at its own node.
+        # (It is not found by _find_components_at_bus below — that walk starts
+        # from the node's neighbours — so inject it explicitly here. The load
+        # type list below no longer includes distribution_board, so a board wired
+        # to another bus is not double-counted at that neighbour.)
+        if bus.type == "distribution_board":
+            rated = bus.props.get("rated_kva", 100) / 1000
+            pf = bus.props.get("power_factor", 0.85)
+            df = bus.props.get("demand_factor", 1.0)
+            P_spec[i] -= rated * pf * df / base_mva
+            Q_spec[i] -= rated * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva
+            bus_load_p_mw[i] += rated * pf * df
+            bus_load_q_mvar[i] += rated * math.sqrt(max(0, 1 - pf ** 2)) * df
+
         # Find all components connected to this bus (walking through CBs/switches)
         connected = _find_components_at_bus(bus.id, adjacency, components)
         for comp in connected:
@@ -1193,7 +1214,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
                     V_spec[i] = vset
             elif comp.type in ("solar_pv", "wind_turbine", "battery"):
                 pass  # Injection set by the dispatcher / battery pass below
-            elif comp.type in ("static_load", "distribution_board"):
+            elif comp.type == "static_load":
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
                 df = comp.props.get("demand_factor", 1.0)
@@ -1395,7 +1416,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson") -> LoadF
     bus_results = {}
     for bus in buses:
         i = bus_idx[bus.id]
-        v_kv = bus.props.get("voltage_kv", 11)
+        v_kv = bus.props.get("voltage_kv", 0.4 if bus.type == "distribution_board" else 11)
         # Busbar through-power: outgoing branch flows + the local load it
         # serves (zero for de-energized buses — their load is unserved)
         s_th = (s_through[i] + complex(bus_load_p_mw[i], bus_load_q_mvar[i])

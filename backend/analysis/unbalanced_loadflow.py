@@ -170,7 +170,11 @@ def run_unbalanced_load_flow(
     components = {c.id: c for c in project.components}
     wires = project.wires
 
-    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
+    # distribution_board is a bus-like node carrying its own lumped load and
+    # passing current through to any sub-board it feeds (see EE-1).
+    buses = [c for c in project.components
+             if c.type in ("bus", "distribution_board")
+             and str(c.props.get("system", "ac")).lower() != "dc"]
     if not buses:
         return UnbalancedLoadFlowResults(
             buses={}, branches=[], warnings=[],
@@ -384,6 +388,9 @@ def run_unbalanced_load_flow(
         bus_types.append(1 if bt == "PV" else 0)
 
         connected = _find_components_at_bus(bus.id, adjacency, components)
+        # A distribution board injects its own lumped load at its own node.
+        if bus.type == "distribution_board":
+            connected = list(connected) + [bus]
         for comp in connected:
             if comp.type == "utility":
                 y_src = _utility_admittance(comp, base_mva)
@@ -438,7 +445,7 @@ def run_unbalanced_load_flow(
             elif comp.type in ("solar_pv", "wind_turbine"):
                 pass  # Injection set by the merit-order dispatcher below
 
-            elif comp.type in ("static_load", "distribution_board"):
+            elif comp.type == "static_load" or (comp.type == "distribution_board" and comp.id == bus.id):
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
                 df = comp.props.get("demand_factor", 1.0)
@@ -707,7 +714,7 @@ def run_unbalanced_load_flow(
     bus_results: dict[str, UnbalancedLoadFlowBus] = {}
     for bus in buses:
         i = bus_idx[bus.id]
-        v_kv = bus.props.get("voltage_kv", 11)
+        v_kv = bus.props.get("voltage_kv", 0.4 if bus.type == "distribution_board" else 11)
         # Phase-to-neutral base voltage = V_line / √3
         v_base_ln = v_kv / math.sqrt(3)
 

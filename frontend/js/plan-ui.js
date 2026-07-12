@@ -40,10 +40,14 @@ const PlanUI = {
     const groups = PLAN_DEFS.paletteGroups(domain);
     let html = `
       <div class="plan-pal-header">
-        <select class="plan-domain-select" data-role="domain">
-          ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
-        </select>
-        <input type="search" class="plan-pal-search" data-role="search" placeholder="Filter…" value="${escHtml(this._search || '')}">
+        <label class="plan-domain-field" title="Plan type — Site reticulation or Building floor plan">
+          <span class="plan-domain-cap">Plan type</span>
+          <select class="plan-domain-select" data-role="domain" aria-label="Plan type"
+            title="Plan type — Site reticulation or Building floor plan">
+            ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
+          </select>
+        </label>
+        <input type="search" class="plan-pal-search" data-role="search" placeholder="Filter…" value="${escHtml(this._search || '')}" aria-label="Filter parts">
       </div>`;
     // Placement mode (building only): Single drop / grid Array / along a Path.
     if (domain === 'building') {
@@ -170,6 +174,8 @@ const PlanUI = {
         pm.plans = pm.plans.filter(x => x.id !== p.id);
         PlanMarkup.snapshot(); PlanMarkup.markDirty();
         this.renderPalette(); PlanEngine.requestDraw({ all: true });
+        // Removal is undoable (image bytes stay server-side) — surface how (UX-13).
+        UI.toast('Background plan removed — press Ctrl+Z or ↶ to undo.', 'info');
         return;
       }
       if (role === 'move-plan' && p) { PlanTools.set('nudgeplan', { planId: p.id }); return; }
@@ -283,10 +289,22 @@ const PlanUI = {
       title = 'Text';
       fields = PLAN_DEFS.annotations.text.fields;
       getVal = (k) => item[k === 'fontSize' ? 'fontSize' : k];
+    } else if (kind === 'measurement') {
+      // UX-11: a selected measurement now gets a titled panel (length readout +
+      // the standard Delete button) instead of a blank pane.
+      const len = (typeof PlanEngine !== 'undefined') ? PlanEngine._polyLen(item.points) : 0;
+      title = 'Measurement — ' + ((typeof PlanEngine !== 'undefined') ? PlanEngine.lenLabel(len) : `${Math.round(len)} px`);
+      fields = [];
+      getVal = () => '';
     } else {
       el.innerHTML = ''; return;
     }
     let html = `<div class="plan-props-title">${escHtml(title)}</div>`;
+    // UX-5: name the SLD counterpart on a linked plan element.
+    if (kind === 'element' && item.sldId && typeof AppState.components !== 'undefined') {
+      const comp = AppState.components.get(item.sldId);
+      if (comp) html += `<div class="plan-linked-note" title="This item is linked to an SLD component">🔗 Linked to SLD: ${escHtml((comp.props && comp.props.name) || comp.type)}</div>`;
+    }
     for (const f of fields) html += this._field(f, getVal(f.key));
     // Building auto-circuiting: circuit-tag editor on load devices; bulk-assign
     // on distribution boards.
@@ -324,9 +342,9 @@ const PlanUI = {
           <option value="1P"${poles === '1P' ? ' selected' : ''}>Single-phase (1P)</option>
           <option value="3P"${poles === '3P' ? ' selected' : ''}>Three-phase (3P)</option>
         </select></div>
-      <div class="plan-field"><label class="plan-field-label">Load <span class="plan-field-unit">(VA)</span></label>
+      <div class="plan-field"><label class="plan-field-label" title="Auto VA conventions: a light contributes its watts (≈VA at unity PF); a socket 200 VA per outlet (double = 400); a fused spur a nominal 2000 VA. The board lump then applies PF 0.85 and the way demand factor. Type a value here to override the auto figure.">Load <span class="plan-field-unit">(VA)</span></label>
         <input type="text" inputmode="numeric" data-key="load_va" value="${escHtml(loadVal)}" placeholder="auto: ${autoVa}"></div>
-      <div class="plan-circuit-note">Effective load: ${PlanCircuits.deviceVA(item)} VA${boards.length ? '' : ' — place a Distribution Board first'}</div>
+      <div class="plan-circuit-note" title="Lights use watts (≈VA); sockets 200 VA/outlet; FCU 2000 VA. Overriding Load pins this device's VA.">Effective load: ${PlanCircuits.deviceVA(item)} VA${boards.length ? '' : ' — place a Distribution Board first'}</div>
     </div>`;
   },
 
@@ -413,20 +431,29 @@ const PlanUI = {
     if (e.target.type === 'number') val = parseFloat(val) || 0;
     if (e.target.type === 'checkbox') val = e.target.checked;
 
+    // UX-12: apply the value live on every `input`, but only snapshot/propagate
+    // (undo push + SLD re-render + sync) on `change` — so a text field no longer
+    // snapshots and re-renders the SLD per keystroke. Checkboxes fire `change`
+    // only, so they snapshot once (no double-snapshot).
+    const commit = (e.type === 'change');
     const oldName = item.name;
     if (kind === 'element') {
       if (key === 'name' || key === 'rotation') item[key] = val;
       else { item.props = item.props || {}; item.props[key] = val; }
-      if (key === 'name' && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
+      if (key === 'name' && commit && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
         PlanSync.onElementRenamed(item, oldName, val);
       }
       // A circuit attribute (board / way / phase / load) changed → refresh the
       // board schedule on commit (not every keystroke) and re-render the panel.
-      if (/^(circuitDbId|circuitNo|poles|load_va)$/.test(key) && e.type === 'change' &&
+      if (/^(circuitDbId|circuitNo|poles|load_va)$/.test(key) && commit &&
           typeof PlanCircuits !== 'undefined') {
+        // Changing the board or the way NUMBER re-picks the target circuit, so
+        // drop the resolved way id and let syncLoads re-resolve (EE-7).
+        if (key === 'circuitDbId' || key === 'circuitNo') delete item.props.circuitWid;
         if (!val && key === 'circuitDbId') delete item.props.circuitNo;   // unassign clears the way
         PlanCircuits.syncLoads();
         PlanMarkup.snapshot(); PlanMarkup.markDirty();
+        if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4: pair the SLD stack
         this.renderProps();
         return;
       }
@@ -437,8 +464,8 @@ const PlanUI = {
     } else {
       item[key] = val;
     }
-    PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanEngine.requestDraw({ fg: true });
+    if (commit) { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
   },
 
   // Open the SLD's own circuit-schedule editor (DBSchedule modal) for the
@@ -465,6 +492,7 @@ const PlanUI = {
     }
     const r = PlanCircuits.bulkAssign(found.item.id);
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4
     this.renderProps();
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
     UI.toast(r.devices ? `Assigned ${r.devices} device(s) across ${r.ways} new way(s).` : 'No unassigned connected devices found.', r.devices ? 'success' : 'info');
@@ -474,6 +502,7 @@ const PlanUI = {
   _syncCircuits() {
     const s = PlanCircuits.syncAll();
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4
     this.renderProps();
     UI.toast(`Synced ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} device(s).` +
       (s.unsynced ? ` ${s.unsynced} board(s) not yet on the SLD.` : ''), 'success');

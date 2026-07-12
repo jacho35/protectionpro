@@ -63,9 +63,11 @@ const PlanImages = {
     const mime = (file.type || '').toLowerCase();
     if (mime === 'application/pdf') { await this._importPdf(file); return; }
     if (!/^image\/(png|jpeg|webp)$/.test(mime)) {
-      alert('Unsupported file type. Use PNG, JPEG, WebP or PDF.');
+      UI.alert('Unsupported file type. Use PNG, JPEG, WebP or PDF.');
       return;
     }
+    // UX-10: busy overlay while the raster is prepared + uploaded.
+    if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, 'Importing plan…');
     try {
       const prepared = await this._prepareRaster(file);
       const meta = await this._upload(prepared.blob, prepared.mime, file.name, prepared.w, prepared.h);
@@ -83,13 +85,15 @@ const PlanImages = {
       if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
       if (typeof PlanEngine !== 'undefined') { PlanEngine.zoomFit(); }
     } catch (e) {
-      alert('Plan import failed: ' + (e && e.message ? e.message : e));
+      UI.alert('Plan import failed: ' + (e && e.message ? e.message : e));
+    } finally {
+      if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
     }
   },
 
   // ─── PDF import (pdf.js) ───
   async _importPdf(file) {
-    if (typeof pdfjsLib === 'undefined') { alert('PDF library not loaded.'); return; }
+    if (typeof pdfjsLib === 'undefined') { UI.alert('PDF library not loaded.'); return; }
     try {
       const buf = await file.arrayBuffer();
       // Upload the original PDF once so pages can be re-rendered later; give
@@ -101,26 +105,33 @@ const PlanImages = {
       if (numPages === 1) pages = [1];
       else { pages = await this._pdfPageModal(pdf, numPages); if (!pages || !pages.length) return; }
 
-      let idx = 0;
-      for (const pageNum of pages) {
-        const r = await this._rasterizePdfPage(pdf, pageNum);
-        const meta = await this._upload(r.blob, 'image/png', `${file.name} p${pageNum}`, r.w, r.h, 'raster');
-        const plan = {
-          id: AppState.planGenId('pmimg'),
-          name: `${file.name} — p${pageNum}`,
-          imageId: meta.id, sourcePdfId: pdfMeta.id,
-          pdfPage: pageNum, pdfPages: pages.slice(), pdfPageCount: numPages,
-          imgW: r.w, imgH: r.h,
-          opacity: 1, visible: true, offX: idx * 40, offY: idx * 40, rotation: 0, scaleAdj: 1,
-        };
-        AppState.planMarkup.plans.push(plan);
-        this._cache.set(meta.id, r.img);
-        idx++;
+      // UX-10: busy overlay only for the rasterize/upload loop — NOT during the
+      // page-selection modal above (the overlay would block picking pages).
+      if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, 'Rendering PDF pages…');
+      try {
+        let idx = 0;
+        for (const pageNum of pages) {
+          const r = await this._rasterizePdfPage(pdf, pageNum);
+          const meta = await this._upload(r.blob, 'image/png', `${file.name} p${pageNum}`, r.w, r.h, 'raster');
+          const plan = {
+            id: AppState.planGenId('pmimg'),
+            name: `${file.name} — p${pageNum}`,
+            imageId: meta.id, sourcePdfId: pdfMeta.id,
+            pdfPage: pageNum, pdfPages: pages.slice(), pdfPageCount: numPages,
+            imgW: r.w, imgH: r.h,
+            opacity: 1, visible: true, offX: idx * 40, offY: idx * 40, rotation: 0, scaleAdj: 1,
+          };
+          AppState.planMarkup.plans.push(plan);
+          this._cache.set(meta.id, r.img);
+          idx++;
+        }
+      } finally {
+        if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
       }
       if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
       if (typeof PlanEngine !== 'undefined') PlanEngine.zoomFit();
     } catch (e) {
-      alert('PDF import failed: ' + (e && e.message ? e.message : e));
+      UI.alert('PDF import failed: ' + (e && e.message ? e.message : e));
     }
   },
 

@@ -528,3 +528,12 @@
   align-items: center;
   gap: 4px;
 }
+
+.prop-linked-note {
+  margin: -4px 0 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--accent, #2563eb);
+  background: color-mix(in srgb, var(--accent, #2563eb) 10%, transparent);
+  border-radius: 4px;
+}

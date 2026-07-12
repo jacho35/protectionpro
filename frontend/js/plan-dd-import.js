@@ -61,9 +61,11 @@ const PlanDdImport = {
       const notes = [];
       if (sum.fallbacks) notes.push(`${sum.fallbacks} element(s) mapped to a nearest symbol (original type kept in props._ddType)`);
       if (sum.imagesFailed) notes.push(`${sum.imagesFailed} background image(s) could not be uploaded (geometry imported; overlay missing)`);
+      if (sum.schedulesDropped) notes.push(`${sum.schedulesDropped} board schedule(s) were NOT imported — DD's circuit ratings have no home in the plan; re-derive them with "Sync Circuits" after syncing boards to the SLD`);
       UI.alert(
         `Imported from Distribution Designer:\n` +
         `• ${sum.floors} floor(s), ${sum.elements} device(s), ${sum.routes} route(s), ${sum.images} plan image(s)` +
+        (sum.circuits ? `\n• ${sum.circuits} device(s) relinked to their distribution-board circuit` : '') +
         (notes.length ? `\n\n${notes.join('\n')}` : ''));
     } catch (e) {
       UI.alert('Import failed: ' + (e && e.message ? e.message : e));
@@ -76,10 +78,13 @@ const PlanDdImport = {
     pm.settings.domain = 'building';   // DD is a building-distribution tool
     const idMap = new Map();           // DD element id → new plan element id
     const newFloors = [];
-    const sum = { floors: 0, elements: 0, routes: 0, images: 0, fallbacks: 0, imagesFailed: 0 };
+    const sum = { floors: 0, elements: 0, routes: 0, images: 0, fallbacks: 0, imagesFailed: 0, circuits: 0, schedulesDropped: 0 };
     const multiBuilding = S.proj.buildings.length > 1;
 
     for (const b of S.proj.buildings) {
+      // EE-11: DD's electrical board schedules (building.dbs) have no home in
+      // planMarkup — count them so the completion dialog admits the drop.
+      if (b.dbs) sum.schedulesDropped += Array.isArray(b.dbs) ? b.dbs.length : Object.keys(b.dbs).length;
       const bh = (typeof b.floorHeight === 'number') ? b.floorHeight : (pm.settings.floorHeight || 3.5);
       if (typeof b.riserFactor === 'number') pm.settings.riserFactor = b.riserFactor;   // per-building; last wins
       for (const fl of (b.floors || [])) {
@@ -185,6 +190,22 @@ const PlanDdImport = {
 
     if (!newFloors.length) throw new Error('No building floors found in this project (only a site plan?).');
 
+    // EE-11: relink each device's DD circuit assignment to the imported board
+    // (ids are only fully known now). circuitDbId + circuitNo drive syncLoads.
+    for (const floor of newFloors) {
+      for (const e of (floor.data.elements || [])) {
+        const p = e.props;
+        if (!p || p._ddDb == null) { if (p) { delete p._ddDb; delete p._ddCircuit; } continue; }
+        const bid = idMap.get(p._ddDb);
+        if (bid) {
+          p.circuitDbId = bid;
+          if (p._ddCircuit != null) p.circuitNo = String(p._ddCircuit);
+          sum.circuits++;
+        }
+        delete p._ddDb; delete p._ddCircuit;
+      }
+    }
+
     // Append the imported floors. If the project is still the untouched default
     // (one empty Ground floor), replace it rather than leaving a blank sheet.
     AppState._stashActiveFloor();
@@ -236,12 +257,28 @@ const PlanDdImport = {
       props.kind = this._lightKind(el.type);
       if (typeof el.watts === 'number') props.watts = el.watts;
     } else if (targetType === 'bd_socket') {
-      props.gangs = this._socketGangs(el.type);
+      // EE-11: the socket editor keys on `outlets`, not `gangs` — a double
+      // socket imported as gangs:'2' displayed "Single" and undercounted VA.
+      props.outlets = this._socketGangs(el.type) === '2' ? 'double' : 'single';
     } else if (targetType === 'bd_switch') {
       const s = this._switchProps(el.type);
       props.gangs = s.gangs; props.kind = s.kind;
     }
-    if (typeof el.watts === 'number' && props.watts == null) props._ddWatts = el.watts;
+    // EE-11: promote a DD wattage to the effective load_va for non-lighting
+    // load devices (lights carry it as watts); otherwise stash it, never drop.
+    if (typeof el.watts === 'number') {
+      if (targetType !== 'bd_light' && (targetType === 'bd_socket' || targetType === 'bd_fcu')) {
+        props.load_va = el.watts;
+      } else if (props.watts == null) {
+        props._ddWatts = el.watts;
+      }
+    }
+    // EE-11: carry DD circuit assignments so they can be relinked to the
+    // imported board once every element id is known (resolved in _import).
+    const ddDb = el.dbId ?? el.db ?? el.board ?? el.boardId ?? el.dbRef ?? el.circuitDb ?? null;
+    const ddCkt = el.circuit ?? el.circuitNo ?? el.ckt ?? el.way ?? el.wayNo ?? el.circuitNumber ?? null;
+    if (ddDb != null && ddDb !== '') props._ddDb = ddDb;
+    if (ddCkt != null && ddCkt !== '') props._ddCircuit = ddCkt;
     return props;
   },
 

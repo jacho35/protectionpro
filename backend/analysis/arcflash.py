@@ -668,7 +668,11 @@ def run_arc_flash(project_data, fault_results):
         ArcFlashResults
     """
     components = {c.id: c for c in project_data.components}
-    buses = {c.id: c for c in project_data.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"}
+    # distribution_board is a bus-like node (see EE-1): a fault level is now
+    # computed at each board, so arc flash is evaluated there too.
+    buses = {c.id: c for c in project_data.components
+             if c.type in ("bus", "distribution_board")
+             and str(c.props.get("system", "ac")).lower() != "dc"}
 
     # Build adjacency
     adjacency = {}
@@ -685,7 +689,7 @@ def run_arc_flash(project_data, fault_results):
     warnings = []
 
     for bus_id, bus in buses.items():
-        voltage_kv = float(bus.props.get("voltage_kv", 11))
+        voltage_kv = float(bus.props.get("voltage_kv", 0.4 if bus.type == "distribution_board" else 11))
         bus_name = bus.props.get("name", bus_id)
         working_dist = float(bus.props.get("working_distance_mm", 455))
         electrode_config = bus.props.get("electrode_config", "VCB")
