@@ -522,6 +522,37 @@ const TCC = {
             instantaneous_pickup: comp.props?.instantaneous_pickup || 0,
           },
         });
+        // Integral earth-fault (shunt-trip) release fed by a core-balance CT —
+        // a relay-less 50N/51N. Modelled as a definite-time earth-fault relay
+        // device so it plots and grades at the SLG current like any 50N/51N
+        // element (it has no phase response, so it never touches 3-phase grading).
+        const efCtId = comp.props?.ef_trip_ct;
+        const efPickup = parseFloat(comp.props?.ef_pickup_a) || 0;
+        if ((comp.props?.cb_type === 'mccb' || comp.props?.cb_type === 'acb')
+            && efCtId && efPickup > 0) {
+          const efCt = AppState.components.get(efCtId);
+          this.devices.push({
+            id: id + '__ef',
+            efParent: id,
+            name: (comp.props?.name || id) + ' E/F',
+            deviceType: 'relay',
+            relayType: '50N/51N',
+            color: this.palette[this.colorIndex++ % this.palette.length],
+            visible: true,
+            voltage_kv: this._resolveDeviceVoltage(id),
+            associated_ct: efCtId,
+            trip_cb: null,   // trips its own breaker; not a separate CB pairing
+            ctSat: efCt ? ctSaturationParams(efCt.props || {}) : null,
+            curveName: 'Definite Time',
+            pickup: efPickup,
+            tds: parseFloat(comp.props?.ef_delay_s) || 0,
+            instPickup: 0,
+            instDelay: 0.05,
+            directional: false,
+            direction: null,
+            charAngle: null,
+          });
+        }
       } else if (comp.type === 'transformer') {
         // Transformer thermal damage curve (ANSI/IEEE C57.109)
         const mva = comp.props?.rated_mva || 1;
@@ -2406,6 +2437,16 @@ const TCC = {
         for (const z of dev.zones) {
           z.pickup_a = vLL / (Math.sqrt(3) * z.reach_ohm);
         }
+      }
+    }
+
+    // Integral earth-fault element: sync its pickup/delay back to the parent
+    // breaker's ef_ props (the synthetic device has no component of its own).
+    if (dev.efParent) {
+      const cb = AppState.components.get(dev.efParent);
+      if (cb && cb.props) {
+        cb.props.ef_pickup_a = dev.pickup;
+        cb.props.ef_delay_s = dev.tds;
       }
     }
 
