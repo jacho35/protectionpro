@@ -28,7 +28,7 @@ const PlanCircuits = {
   // fused spur a nominal fixed load. Anything else contributes nothing.
   LOAD_TYPES: {
     bd_light: { klass: 'lighting', va: (p) => (Number(p.watts) || 100) },
-    bd_socket: { klass: 'socket', va: (p) => 200 * (parseInt(p.gangs, 10) || 1) },
+    bd_socket: { klass: 'socket', va: (p) => ({ single: 200, double: 400, double_usb: 500 }[p.outlets] || (p.gangs ? 200 * (parseInt(p.gangs, 10) || 1) : 200)) },
     bd_fcu: { klass: 'other', va: () => 2000 },
   },
   // Per-type "how many on one final circuit" caps (DD convention).

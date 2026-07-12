@@ -16,7 +16,7 @@ const PlanDXF = {
     const p = el.props || {};
     switch (el.type) {
       case 'bd_light': return p.kind || 'ceiling';
-      case 'bd_socket': return 'g' + (p.gangs || '1') + (p.weatherproof ? 'wp' : '');
+      case 'bd_socket': return (p.outlets || 'single') + (p.weatherproof ? 'wp' : '');
       case 'bd_switch': return (p.kind || 'standard') + 'g' + (p.gangs || '1');
       case 'bd_switchboard': return 's' + (p.sections || (p.props && p.props.sections) || 1);
       default: return '';

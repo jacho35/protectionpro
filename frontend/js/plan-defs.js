@@ -156,11 +156,12 @@ const PLAN_DEFS = {
     bd_socket: {
       name: 'Socket Outlet', domain: 'building', group: 'Small Power', color: '#3b82f6', scale: 1,
       symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'S',
-      defaults: { gangs: '1', weatherproof: false },
+      defaults: { outlets: 'single', weatherproof: false },
       fields: [
         { key: 'name', label: 'Ref', type: 'text' },
-        { key: 'gangs', label: 'Gangs', type: 'select', options: [
-          { value: '1', label: '1 gang' }, { value: '2', label: '2 gang' }, { value: '3', label: '3 gang' }] },
+        { key: 'outlets', label: 'Outlets', type: 'select', options: [
+          { value: 'single', label: 'Single' }, { value: 'double', label: 'Double' },
+          { value: 'double_usb', label: 'Double + USB' }] },
         { key: 'weatherproof', label: 'Weatherproof', type: 'checkbox' },
       ],
     },
@@ -176,7 +177,7 @@ const PLAN_DEFS = {
         { key: 'gangs', label: 'Gangs', type: 'select', options: [
           { value: '1', label: '1 gang' }, { value: '2', label: '2 gang' }, { value: '3', label: '3 gang' }] },
         { key: 'kind', label: 'Type', type: 'select', options: [
-          { value: 'standard', label: 'Standard' }, { value: '2way', label: '2-way' },
+          { value: 'standard', label: '1-way' }, { value: '2way', label: '2-way' },
           { value: 'intermediate', label: 'Intermediate' }, { value: 'dimmer', label: 'Dimmer' },
           { value: 'pir', label: 'PIR / Occupancy' }, { value: 'key', label: 'Key switch' },
           { value: 'timer', label: 'Timer' }, { value: 'photocell', label: 'Photocell' },

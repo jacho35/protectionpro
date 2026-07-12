@@ -95,7 +95,7 @@ const PlanSymbols = {
   size(type, props) {
     props = props || {};
     if (type === 'bd_light') return { downlight: 20, batten: 34, floodlight: 26, exit: 30, highbay: 24, wall: 24, emergency: 24, ceiling: 24 }[props.kind] || 24;
-    if (type === 'bd_socket') return props.gangs === '3' ? 26 : props.gangs === '2' ? 24 : 22;
+    if (type === 'bd_socket') return (props.outlets === 'double' || props.outlets === 'double_usb') ? 24 : 22;
     if (type === 'bd_switch') return 22;
     if (type === 'bd_switchboard') return Math.min(64, 40 + (Math.max(1, parseInt(props.sections, 10) || 1) - 1) * 10);
     const r = this.RECIPES[type];
@@ -103,11 +103,18 @@ const PlanSymbols = {
   },
 
   // ─── Parametric "dynamic-block" families (permutations from props) ───
+  // Socket outlet: a circle on a diameter with a vertical prong per outlet
+  // (single / double), plus a USB label for double+USB.
   _socket(props) {
-    const c = 20, sw = 1.5, gangs = parseInt(props.gangs || '1', 10) || 1;
-    const out = [{ k: 'c', cx: c, cy: c, r: 9, s: 'col', w: sw }, { k: 'l', x1: c, y1: c - 5, x2: c, y2: c + 5, s: 'col', w: sw }];
-    if (gangs >= 2) out.push({ k: 'l', x1: c + 9, y1: c - 6, x2: c + 9, y2: c + 6, s: 'col', w: sw });
-    if (gangs >= 3) out.push({ k: 'l', x1: c + 12, y1: c - 4, x2: c + 12, y2: c + 4, s: 'col', w: sw });
+    const c = 20, sw = 1.5, r = 9;
+    const outlets = props.outlets || (props.gangs && props.gangs !== '1' ? 'double' : 'single');  // legacy fallback
+    const dbl = outlets === 'double' || outlets === 'double_usb';
+    const out = [
+      { k: 'c', cx: c, cy: c, r, s: 'col', w: sw },
+      { k: 'l', x1: c - r, y1: c, x2: c + r, y2: c, s: 'col', w: sw },
+    ];
+    for (const px of (dbl ? [c - 4, c + 4] : [c])) out.push({ k: 'l', x1: px, y1: c, x2: px, y2: c - 7, s: 'col', w: sw });
+    if (outlets === 'double_usb') out.push({ k: 't', x: c, y: c + 5, str: 'USB', size: 4.2, f: 'col', bold: 1 });
     if (props.weatherproof) out.push({ k: 't', x: c, y: 33, str: 'WP', size: 6, f: 'col' });
     return out;
   },
@@ -117,14 +124,16 @@ const PlanSymbols = {
     const gangs = parseInt(props.gangs || '1', 10) || 1;
     const tw = kind === '2way', ii = kind === 'intermediate';
     const isPIR = kind === 'pir', isTimer = kind === 'timer', isKey = kind === 'key', isDim = kind === 'dimmer', isPhoto = kind === 'photocell';
+    const special = isPIR || isTimer || isKey || isDim || isPhoto;
     const out = [];
-    if (tw || ii) {
-      out.push({ k: 'c', cx: c, cy: c, r: bR, f: 'col', s: 'col', w: sw * 0.8 });
-      out.push({ k: 't', x: c, y: c, str: ii ? 'X' : '2', size: 6, f: 'bg', bold: 1 });
-    } else {
-      out.push({ k: 'c', cx: c, cy: c, r: bR, s: 'col', w: sw });
-    }
-    if (isPIR || isTimer || isKey || isDim || isPhoto) {
+    // Way-type convention: 1-way = open circle; 2-way = filled circle;
+    // intermediate = filled circle with a line above it.
+    const filled = tw || ii;
+    out.push({ k: 'c', cx: c, cy: c, r: bR, ...(filled ? { f: 'col' } : {}), s: 'col', w: sw });
+    if (ii) out.push({ k: 'l', x1: c - bR, y1: c - bR - 4, x2: c + bR, y2: c - bR - 4, s: 'col', w: sw });
+    // Function switches (dimmer/PIR/timer/key/photocell) keep an actuator
+    // throw + labelled tip off an open circle.
+    if (special) {
       const a = -60 * Math.PI / 180;
       const sx = c + Math.cos(a) * bR, sy = c + Math.sin(a) * bR;
       const tx = c + Math.cos(a) * (bR + lineLen), ty = c + Math.sin(a) * (bR + lineLen);
@@ -139,13 +148,10 @@ const PlanSymbols = {
         out.push({ k: 'c', cx: lcX, cy: lcY, r: tipR, s: 'col', w: sw });
         out.push({ k: 't', x: lcX, y: lcY, str: lbl, size: isPhoto ? 5 : 6, f: 'col' });
       }
-    } else if (!tw && !ii) {
-      const spread = gangs === 1 ? 0 : gangs === 2 ? 20 : 15, baseAngle = -60;
-      for (let g = 0; g < gangs; g++) {
-        const a = (baseAngle - (gangs - 1) * spread / 2 + g * spread) * Math.PI / 180;
-        out.push({ k: 'l', x1: c + Math.cos(a) * bR, y1: c + Math.sin(a) * bR, x2: c + Math.cos(a) * (bR + lineLen), y2: c + Math.sin(a) * (bR + lineLen), s: 'col', w: sw });
-      }
     }
+    // Gangs: small ticks to the upper-right for 2/3-gang plates.
+    if (gangs >= 2) out.push({ k: 'l', x1: c + bR + 3, y1: c - bR + 1, x2: c + bR + 3, y2: c - 1, s: 'col', w: sw });
+    if (gangs >= 3) out.push({ k: 'l', x1: c + bR + 6, y1: c - bR + 2, x2: c + bR + 6, y2: c - 1, s: 'col', w: sw });
     return out;
   },
   // Switchboard: a rectangle divided into `sections` feeder bays, each with a

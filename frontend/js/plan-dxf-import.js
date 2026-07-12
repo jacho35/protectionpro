@@ -84,7 +84,7 @@ const PlanDxfImport = {
     const props = {};
     const type = d.type, v = (d.block && d.block.indexOf('PP_' + type + '_') === 0) ? d.block.slice(('PP_' + type + '_').length) : '';
     if (type === 'bd_light') props.kind = v || 'ceiling';
-    else if (type === 'bd_socket') { const m = /^g(\d)(wp)?$/.exec(v); if (m) { props.gangs = m[1]; if (m[2]) props.weatherproof = true; } }
+    else if (type === 'bd_socket') { const m = /^(double_usb|double|single)(wp)?$/.exec(v); if (m) { props.outlets = m[1]; if (m[2]) props.weatherproof = true; } }
     else if (type === 'bd_switch') { const m = /^(.+)g(\d)$/.exec(v); if (m) { props.kind = m[1]; props.gangs = m[2]; } }
     else if (type === 'bd_switchboard') { const m = /^s(\d+)$/.exec(v); if (m) props.sections = +m[1]; }
     const a = d.attrs || {};
