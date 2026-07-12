@@ -69,6 +69,10 @@ document.addEventListener('DOMContentLoaded', () => {
     appc.style.display = (name === 'sld') ? '' : 'none';
     if (reticWs) reticWs.style.display = (name === 'retic') ? 'flex' : 'none';
     if (planWs) planWs.style.display = (name === 'plan') ? 'flex' : 'none';
+    // Mobile: flag secondary workspaces so the phone CSS hides SLD-only chrome
+    // (FABs, selection bar, Components/Analysis nav) and fits the workspace
+    // between the mobile header and bottom nav.
+    document.body.classList.toggle('mobile-ws-secondary', name !== 'sld');
 
     const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan' };
     for (const [key, id] of Object.entries(tabs)) {

@@ -37,6 +37,10 @@ const PlanMarkup = {
     if (!ws) return;
     ws.innerHTML = `
       <div id="plan-toolbar" class="plan-toolbar">
+        <div class="plan-tb-group plan-mobile-toggle">
+          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the component palette">☰ Parts</button>
+          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel">✎ Props</button>
+        </div>
         <div class="plan-tb-group">
           <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">▤ Select</button>
           <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
@@ -83,6 +87,7 @@ const PlanMarkup = {
           <div id="plan-status" class="plan-status"><span id="plan-status-coords"></span></div>
         </div>
         <aside id="plan-props" class="plan-props"></aside>
+        <div id="plan-drawer-backdrop"></div>
       </div>`;
   },
 
@@ -95,6 +100,8 @@ const PlanMarkup = {
       const act = e.target.closest('[data-action]');
       if (!act) return;
       if (act.dataset.action === 'import') document.getElementById('plan-file-input').click();
+      else if (act.dataset.action === 'toggle-palette') this._toggleDrawer('palette');
+      else if (act.dataset.action === 'toggle-props') this._toggleDrawer('props');
       else if (act.dataset.action === 'floors') this._openFloorManager();
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
       else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
@@ -126,6 +133,8 @@ const PlanMarkup = {
         this.setActiveFloor(e.target.value);
       }
     });
+    const backdrop = document.getElementById('plan-drawer-backdrop');
+    if (backdrop) backdrop.addEventListener('click', () => this._closeDrawers());
     const fileInput = document.getElementById('plan-file-input');
     if (fileInput) fileInput.addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
@@ -188,6 +197,34 @@ const PlanMarkup = {
       : 'Push drawn kiosks/erven/feeders into the Reticulation schedules';
   },
   refreshProps() { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); },
+
+  // ─── Mobile drawers (palette / properties slide over the canvas) ───
+  _isMobile() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches;
+  },
+  _toggleDrawer(which) {
+    const pal = document.getElementById('plan-palette');
+    const props = document.getElementById('plan-props');
+    const target = which === 'props' ? props : pal;
+    const other = which === 'props' ? pal : props;
+    if (!target) return;
+    const opening = !target.classList.contains('mobile-open');
+    if (other) other.classList.remove('mobile-open');
+    target.classList.toggle('mobile-open', opening);
+    this._syncDrawerBackdrop();
+  },
+  _closeDrawers() {
+    document.getElementById('plan-palette')?.classList.remove('mobile-open');
+    document.getElementById('plan-props')?.classList.remove('mobile-open');
+    this._syncDrawerBackdrop();
+  },
+  _syncDrawerBackdrop() {
+    const bd = document.getElementById('plan-drawer-backdrop');
+    if (!bd) return;
+    const open = document.getElementById('plan-palette')?.classList.contains('mobile-open') ||
+      document.getElementById('plan-props')?.classList.contains('mobile-open');
+    bd.classList.toggle('on', !!open);
+  },
 
   // ─── Floors ───
   // The floor switcher is a building-domain concept; hidden for reticulation
@@ -327,7 +364,19 @@ const PlanMarkup = {
   },
 
   // ─── Selection ───
-  selectOnly(id) { this.selectedIds.clear(); if (id) this.selectedIds.add(id); this.refreshProps(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
+  selectOnly(id) {
+    this.selectedIds.clear(); if (id) this.selectedIds.add(id); this.refreshProps();
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    // Mobile: reveal the properties drawer so a tapped item is immediately editable.
+    if (id && this._isMobile()) {
+      const props = document.getElementById('plan-props');
+      if (props && !props.classList.contains('mobile-open')) {
+        document.getElementById('plan-palette')?.classList.remove('mobile-open');
+        props.classList.add('mobile-open');
+        this._syncDrawerBackdrop();
+      }
+    }
+  },
   clearSelection() { this.selectedIds.clear(); this.refreshProps(); },
   toggleSelect(id) {
     if (this.selectedIds.has(id)) this.selectedIds.delete(id); else this.selectedIds.add(id);
@@ -443,6 +492,9 @@ const PlanMarkup = {
     if (id !== 'place' && id !== 'route' && typeof PlanUI !== 'undefined' && PlanUI.paletteEl) {
       PlanUI.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
     }
+    // Mobile: after arming a place/route tool from the palette drawer, close it
+    // so the canvas is tappable.
+    if ((id === 'place' || id === 'route') && this._isMobile()) this._closeDrawers();
   },
 
   updateScaleReadout() {

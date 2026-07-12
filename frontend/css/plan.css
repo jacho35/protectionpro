@@ -47,6 +47,8 @@
   padding: 3px 6px; border-radius: 12px; background: var(--bg-secondary);
 }
 .plan-tb-field { font-size: 12px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+/* Mobile-only drawer toggles — hidden on desktop; shown by mobile.css. */
+.plan-mobile-toggle { display: none; }
 .plan-tb-field input, #plan-grid-size { width: 56px; padding: 3px 4px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
 
 .plan-scale-readout { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); }
