@@ -1337,8 +1337,8 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
   },
 
   // Initialize searchable select widgets for cable dropdown
-  _initSearchableSelects(comp) {
-    this.contentEl.querySelectorAll('.searchable-select').forEach(wrapper => {
+  _initSearchableSelects(comp, container = this.contentEl) {
+    container.querySelectorAll('.searchable-select').forEach(wrapper => {
       const input = wrapper.querySelector('.searchable-select-input');
       const dropdown = wrapper.querySelector('.searchable-select-dropdown');
       const options = dropdown.querySelectorAll('.searchable-select-option');
@@ -1378,6 +1378,12 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
         Canvas.render();
         wrapper.classList.remove('open');
         this.show(comp.id);
+        // If the edit happened in the mobile properties sheet (a listener-less
+        // innerHTML mirror of this panel), refresh that mirror so the new cable
+        // name and its derived r/x/rating fields show through.
+        if (typeof MobileUI !== 'undefined' && MobileUI.activeSheet === 'mobile-sheet-properties') {
+          MobileUI.showPropertiesSheet(comp.id);
+        }
       };
 
       const getVisibleOptions = () => [...options].filter(o => !o.classList.contains('hidden'));
