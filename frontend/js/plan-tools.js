@@ -14,6 +14,11 @@ const PlanTools = {
 
   register(tool) { this._tools[tool.id] = tool; },
 
+  // Final-circuit runs (lights/sockets) are conventionally drawn as splines;
+  // feeders/containment/site cables stay straight. The per-route "Curved"
+  // checkbox overrides either way.
+  curvedByDefault(type) { return type === 'circuit' || type === 'lighting_ckt'; },
+
   set(id, opts) {
     const next = this._tools[id];
     if (!next) return;
@@ -450,7 +455,7 @@ PlanTools.register({
       toId: toId || null,
       points: d.points.map(p => ({ x: p.x, y: p.y, ...(p.snappedTo ? { snappedTo: p.snappedTo } : {}) })),
       cableType: PLAN_DEFS.defaults(d.type).cableType || '',
-      curved: false,
+      curved: PlanTools.curvedByDefault(d.type),   // final circuits draw as splines
       props: {},
     };
     AppState.planMarkup.routes.push(route);
@@ -999,7 +1004,7 @@ PlanTools.register({
         id: AppState.planGenId('pmrt'), type: rtype,
         fromId: placed[0].id, toId: placed[placed.length - 1].id,
         points: placed.map(e => ({ x: e.x, y: e.y, snappedTo: e.id })),
-        cableType: '', curved: false, props: {},
+        cableType: '', curved: PlanTools.curvedByDefault(rtype), props: {},
       });
     }
     this._pts = null;

@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .models.database import init_db
-from .routes import projects, analysis, reports, plan_images
+from .routes import projects, analysis, reports, plan_images, plan_dxf
 
 app = FastAPI(
     title="ProtectionPro",
@@ -30,6 +30,7 @@ app.include_router(reports.router, prefix="/api")
 from .routes.reports import report_router
 app.include_router(report_router, prefix="/api")
 app.include_router(plan_images.router, prefix="/api")
+app.include_router(plan_dxf.router, prefix="/api")
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"
