@@ -51,6 +51,45 @@ document.addEventListener('DOMContentLoaded', () => {
   DBSchedule.init();
   ControlSim.init();
   Retic.init();
+  if (typeof PlanMarkup !== 'undefined') PlanMarkup.init();
+
+  // ─── Workspace switching (SLD / Reticulation / Plan) ───
+  // Single authority for the three-way tab switch. Each secondary workspace
+  // (Retic, Plan) keeps its own activate/deactivate body; this coordinator
+  // guarantees mutual exclusion and owns the tab-button state so a third
+  // workspace can't be left half-shown.
+  function switchWorkspace(name) {
+    const appc = document.getElementById('app-container');
+    const reticWs = document.getElementById('retic-workspace');
+    const planWs = document.getElementById('plan-workspace');
+    // Stand down whichever secondary workspace we're leaving.
+    if (typeof Retic !== 'undefined' && Retic._active && name !== 'retic') Retic.deactivate();
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && name !== 'plan') PlanMarkup.deactivate();
+
+    appc.style.display = (name === 'sld') ? '' : 'none';
+    if (reticWs) reticWs.style.display = (name === 'retic') ? 'flex' : 'none';
+    if (planWs) planWs.style.display = (name === 'plan') ? 'flex' : 'none';
+
+    const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan' };
+    for (const [key, id] of Object.entries(tabs)) {
+      const b = document.getElementById(id);
+      if (!b) continue;
+      b.classList.toggle('active', key === name);
+      b.setAttribute('aria-selected', key === name ? 'true' : 'false');
+    }
+
+    if (name === 'sld') { if (typeof Canvas !== 'undefined') Canvas.render(); }
+    else if (name === 'retic') { Retic.activate(); }
+    else if (name === 'plan' && typeof PlanMarkup !== 'undefined') { PlanMarkup.activate(); }
+  }
+  window.switchWorkspace = switchWorkspace;
+  for (const [name, id] of [
+    ['sld', 'btn-workspace-sld'],
+    ['retic', 'btn-workspace-retic'],
+    ['plan', 'btn-workspace-plan'],
+  ]) {
+    document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
+  }
 
   // Templates button
   document.getElementById('btn-templates').addEventListener('click', () => NetworkTemplates.show());
@@ -138,6 +177,8 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('protectionpro-dark-mode', isDark ? '1' : '0');
     document.getElementById('btn-dark-mode').classList.toggle('active', isDark);
     MiniMap.render();
+    // Plan canvas colours come from CSS custom props — repaint on theme flip.
+    if (typeof PlanEngine !== 'undefined' && PlanEngine.requestDraw) PlanEngine.requestDraw({ all: true });
   });
   // Restore dark mode preference
   if (localStorage.getItem('protectionpro-dark-mode') === '1') {
@@ -189,6 +230,25 @@ document.addEventListener('DOMContentLoaded', () => {
         Retic.redo();
         return;
       }
+      if (e.key !== 'Escape' && !(ctrl && (e.key === 's' || e.key === 'S'))) return;
+    }
+
+    // Same treatment for the Plan Markup workspace: Ctrl+Z/Y drive its local
+    // undo stack, other editing keys are handed to it, and the SLD shortcuts
+    // are suspended (Escape / Ctrl+S stay live).
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && !modalIsOpen) {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) PlanMarkup.redo(); else PlanMarkup.undo();
+        return;
+      }
+      if (ctrl && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        PlanMarkup.redo();
+        return;
+      }
+      if (PlanMarkup.onKeydown && PlanMarkup.onKeydown(e)) { e.preventDefault(); return; }
       if (e.key !== 'Escape' && !(ctrl && (e.key === 's' || e.key === 'S'))) return;
     }
 

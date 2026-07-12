@@ -9,7 +9,7 @@ import math
 from ..models.schemas import ProjectData
 
 # Transparent types that do not form a bus boundary
-TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester"}
+TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
 
 
 def _build_adjacency(project):

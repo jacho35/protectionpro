@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="css/toolbar.css">
   <link rel="stylesheet" href="css/symbols.css">
   <link rel="stylesheet" href="css/retic.css">
+  <link rel="stylesheet" href="css/plan.css">
   <link rel="stylesheet" href="css/mobile.css">
 </head>
 <body>
@@ -28,6 +29,7 @@
         <div class="workspace-switch" role="tablist" aria-label="Workspace">
           <button id="btn-workspace-sld" class="workspace-tab active" role="tab" aria-selected="true">SLD</button>
           <button id="btn-workspace-retic" class="workspace-tab" role="tab" aria-selected="false" title="LV reticulation / ADMD demand design">Reticulation</button>
+          <button id="btn-workspace-plan" class="workspace-tab" role="tab" aria-selected="false" title="Plan markup — site &amp; floor-plan drawings">Plan</button>
         </div>
 
         <!-- File Menu -->
@@ -522,6 +524,15 @@
         <!-- Feeder summary populated by Retic.renderSummary() -->
       </aside>
     </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PLAN MARKUP WORKSPACE
+       Hidden until the "Plan" workspace tab is selected. Interior (toolbar,
+       palette, dual canvases, properties panel) is built by js/plan.js.
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="plan-workspace" style="display:none">
+    <!-- Populated by PlanMarkup.buildDOM() -->
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════════
@@ -2201,7 +2212,9 @@
   <script src="js/lib/jspdf.umd.min.js"></script>
   <script src="js/lib/jspdf.plugin.autotable.min.js"></script>
   <script src="js/lib/xlsx.full.min.js"></script>
+  <script src="js/lib/pdf.min.js"></script>
   <script src="js/constants.js"></script>
+  <script src="js/plan-defs.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/state.js"></script>
   <script src="js/components.js"></script>
@@ -2228,6 +2241,20 @@
   <script src="js/dynmotor.js"></script>
   <script src="js/retic.js"></script>
   <script src="js/retic-report.js"></script>
+  <script src="js/plan-symbols.js"></script>
+  <script src="js/plan-engine.js"></script>
+  <script src="js/plan-images.js"></script>
+  <script src="js/plan-tools.js"></script>
+  <script src="js/plan-sync.js"></script>
+  <script src="js/plan-csv.js"></script>
+  <script src="js/plan-dxf.js"></script>
+  <script src="js/plan-export.js"></script>
+  <script src="js/plan-lux.js"></script>
+  <script src="js/plan-dxf-import.js"></script>
+  <script src="js/plan-dd-import.js"></script>
+  <script src="js/plan-circuits.js"></script>
+  <script src="js/plan-ui.js"></script>
+  <script src="js/plan.js"></script>
   <script src="js/app.js"></script>
   <script src="js/mobile.js"></script>
 </body>

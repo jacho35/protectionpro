@@ -811,7 +811,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'distribution',
     name: 'Distribution',
-    items: ['bus', 'transformer', 'cable'],
+    items: ['bus', 'transformer', 'cable', 'bus_duct'],
   },
   {
     id: 'protection',
@@ -1090,6 +1090,10 @@ const DB_LOAD_TYPES = [
   { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5 },
   { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.0 },
   { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 0 },
+  // Outgoing feeder to a downstream sub-board. Carries no lumped load itself
+  // (the sub-board models its own demand); on the SLD it renders as an
+  // outgoing bus below the board that the sub-board's incomer connects to.
+  { key: 'feeder_db',  label: 'Feeder to Sub-board', va: 0,  unit: 'board',   df: 1.0, poles: '3P', breaker_a: 63, curve: 'C', cable_mm2: 25,  per_circuit: 1,  leak_ma: 0 },
 ];
 
 // Standing earth-leakage of the cable itself (insulation capacitance to
@@ -1922,7 +1926,9 @@ const COMPONENT_DEFS = {
     name: 'Distribution Board',
     label: 'Distribution Board',
     category: 'loads',
-    ports: [{ id: 'in', side: 'top', offset: 0 }],
+    // 'in' = incomer; 'out' = downstream feed to a sub-board (used by the Plan
+    // Markup building-domain sync, which wires MDB out -> cable -> SDB in).
+    ports: [{ id: 'in', side: 'top', offset: 0 }, { id: 'out', side: 'bottom', offset: 0 }],
     width: 54,
     height: 46,
     defaults: {
@@ -1952,6 +1958,27 @@ const COMPONENT_DEFS = {
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'motor_fraction', label: 'Motor Fraction (0 = none)', type: 'number', min: 0, max: 1, step: 0.05, section: 'fault' },
       { key: 'motor_lrc_ratio', label: 'Motor LRC Ratio', type: 'number', min: 1, max: 10, step: 0.5, section: 'fault' },
+    ],
+  },
+
+  // Busway link between two switchboard bus sections — electrically transparent
+  // (a low-impedance busbar), used by the Plan Markup multi-section switchboard.
+  bus_duct: {
+    name: 'Bus Duct',
+    label: 'Bus Duct',
+    category: 'distribution',
+    ports: [{ id: 'from', side: 'left', offset: 0 }, { id: 'to', side: 'right', offset: 0 }],
+    width: 60,
+    height: 16,
+    defaults: {
+      name: 'BusDuct',
+      rated_current_a: 800,
+      length_m: 2,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
+      { key: 'length_m', label: 'Length', type: 'number', unit: 'm' },
     ],
   },
 

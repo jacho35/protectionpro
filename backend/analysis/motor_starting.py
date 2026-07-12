@@ -12,7 +12,7 @@ import math
 from ..models.schemas import ProjectData
 
 # Transparent types that do not form a bus boundary
-TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester"}
+TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
 
 # Starting-method current-reduction factors applied to the DOL locked-rotor
 # current. Reduced-voltage starters draw I_start ∝ (V_applied)², so an 80%
