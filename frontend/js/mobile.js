@@ -306,75 +306,9 @@ const MobileUI = {
   // ─── Properties sheet ──────────────────────────────────────────────────────
 
   showPropertiesSheet(compId) {
-    const mobileContent = document.getElementById('mobile-properties-content');
-    const desktopContent = document.getElementById('properties-content');
-
-    // Mirror the desktop properties content into the mobile sheet
-    if (mobileContent && desktopContent) {
-      // Trigger desktop properties render
-      if (typeof Properties !== 'undefined') Properties.show(compId);
-
-      // Copy rendered HTML to mobile sheet
-      setTimeout(() => {
-        mobileContent.innerHTML = desktopContent.innerHTML;
-        // Re-bind input events: sync changes back to desktop inputs
-        mobileContent.querySelectorAll('input, select, textarea').forEach((input, i) => {
-          const desktopInputs = desktopContent.querySelectorAll('input, select, textarea');
-          // The searchable cable selector is driven by its own widget logic
-          // (re-initialised below), not by value-mirroring — binding the generic
-          // sync here would fight it. Index alignment with desktopInputs is
-          // preserved because we still iterate (just don't bind) this input.
-          if (input.closest('.searchable-select')) return;
-          input.addEventListener('change', () => {
-            if (desktopInputs[i]) {
-              desktopInputs[i].value = input.value;
-              desktopInputs[i].dispatchEvent(new Event('change', { bubbles: true }));
-              desktopInputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-            }
-          });
-        });
-        // Re-bind the searchable cable selector: the innerHTML copy drops its
-        // open/filter/select listeners, so on mobile the cable-type search box
-        // was inert (couldn't open, type-to-filter, or pick a size).
-        if (typeof Properties !== 'undefined' && Properties._initSearchableSelects
-            && typeof AppState !== 'undefined') {
-          const comp = AppState.components.get(compId);
-          if (comp) Properties._initSearchableSelects(comp, mobileContent);
-        }
-        // Re-bind ⓘ info buttons — the innerHTML copy loses their listeners
-        mobileContent.querySelectorAll('.prop-info-btn').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const text = (typeof FIELD_INFO !== 'undefined') && FIELD_INFO[btn.dataset.infoKey];
-            if (text && typeof Properties !== 'undefined') Properties._showInfoPopup(btn, text);
-          });
-        });
-        // Re-bind collapsible section headers
-        mobileContent.querySelectorAll('.prop-section-header').forEach(header => {
-          header.addEventListener('click', () => {
-            const secKey = header.dataset.section;
-            const isNowCollapsed = !header.classList.contains('collapsed');
-            if (typeof Properties !== 'undefined') Properties.collapsedSections[secKey] = isNowCollapsed;
-            header.classList.toggle('collapsed', isNowCollapsed);
-            const body = header.nextElementSibling;
-            if (body) body.classList.toggle('collapsed', isNowCollapsed);
-          });
-        });
-        // Re-bind action buttons — the innerHTML copy drops their listeners, so
-        // on mobile "Edit Circuit Schedule", "TCC Grading" and the cable-reset
-        // buttons did nothing when tapped.
-        mobileContent.querySelector('#btn-edit-db')?.addEventListener('click', () => {
-          if (typeof DBSchedule !== 'undefined') DBSchedule.open(compId);
-        });
-        mobileContent.querySelector('#btn-view-tcc')?.addEventListener('click', () => {
-          if (typeof TCC !== 'undefined') TCC.openForDevice(compId);
-        });
-        const dReset = [...desktopContent.querySelectorAll('.prop-reset-btn')];
-        mobileContent.querySelectorAll('.prop-reset-btn').forEach((btn, i) => {
-          btn.addEventListener('click', () => dReset[i] && dReset[i].click());
-        });
-      }, 10);
-    }
+    // Render the desktop panel, then mirror it into the mobile sheet.
+    if (typeof Properties !== 'undefined') Properties.show(compId);
+    setTimeout(() => this._mirrorPropertiesToSheet(compId), 10);
 
     this.openSheet('mobile-sheet-properties');
 
@@ -383,6 +317,80 @@ const MobileUI = {
     if (propBtn) {
       document.querySelectorAll('#mobile-nav .mobile-nav-btn').forEach(b => b.classList.remove('active'));
     }
+  },
+
+  // Clone the freshly-rendered desktop properties panel into the mobile sheet
+  // and re-bind the listeners the innerHTML copy drops. Called on open, and
+  // again whenever a change re-renders the desktop panel (e.g. picking a
+  // standard device auto-fills and locks fields) so the sheet reflects the
+  // new values live instead of only after a close/reopen.
+  _mirrorPropertiesToSheet(compId) {
+    const mobileContent = document.getElementById('mobile-properties-content');
+    const desktopContent = document.getElementById('properties-content');
+    if (!mobileContent || !desktopContent) return;
+
+    mobileContent.innerHTML = desktopContent.innerHTML;
+
+    // Re-bind input events: sync changes back to the matching desktop input.
+    const desktopInputs = desktopContent.querySelectorAll('input, select, textarea');
+    mobileContent.querySelectorAll('input, select, textarea').forEach((input, i) => {
+      // The searchable cable selector is driven by its own widget logic
+      // (re-initialised below), not value-mirroring. Still iterate so index
+      // alignment with desktopInputs is preserved.
+      if (input.closest('.searchable-select')) return;
+      input.addEventListener('change', () => {
+        const dInput = desktopInputs[i];
+        if (!dInput) return;
+        dInput.value = input.value;
+        dInput.dispatchEvent(new Event('change', { bubbles: true }));
+        dInput.dispatchEvent(new Event('input', { bubbles: true }));
+        // A standard-device / unit select re-renders the desktop panel, which
+        // detaches this node. Re-mirror so the sheet shows the fresh (and now
+        // locked) values immediately rather than only after a close/reopen.
+        if (!dInput.isConnected) this._mirrorPropertiesToSheet(compId);
+      });
+    });
+
+    // Re-bind the searchable cable selector: the innerHTML copy drops its
+    // open/filter/select listeners, so on mobile the cable-type search box
+    // was inert (couldn't open, type-to-filter, or pick a size).
+    if (typeof Properties !== 'undefined' && Properties._initSearchableSelects
+        && typeof AppState !== 'undefined') {
+      const comp = AppState.components.get(compId);
+      if (comp) Properties._initSearchableSelects(comp, mobileContent);
+    }
+    // Re-bind ⓘ info buttons — the innerHTML copy loses their listeners
+    mobileContent.querySelectorAll('.prop-info-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const text = (typeof FIELD_INFO !== 'undefined') && FIELD_INFO[btn.dataset.infoKey];
+        if (text && typeof Properties !== 'undefined') Properties._showInfoPopup(btn, text);
+      });
+    });
+    // Re-bind collapsible section headers
+    mobileContent.querySelectorAll('.prop-section-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const secKey = header.dataset.section;
+        const isNowCollapsed = !header.classList.contains('collapsed');
+        if (typeof Properties !== 'undefined') Properties.collapsedSections[secKey] = isNowCollapsed;
+        header.classList.toggle('collapsed', isNowCollapsed);
+        const body = header.nextElementSibling;
+        if (body) body.classList.toggle('collapsed', isNowCollapsed);
+      });
+    });
+    // Re-bind action buttons — the innerHTML copy drops their listeners, so
+    // on mobile "Edit Circuit Schedule", "TCC Grading" and the cable-reset
+    // buttons did nothing when tapped.
+    mobileContent.querySelector('#btn-edit-db')?.addEventListener('click', () => {
+      if (typeof DBSchedule !== 'undefined') DBSchedule.open(compId);
+    });
+    mobileContent.querySelector('#btn-view-tcc')?.addEventListener('click', () => {
+      if (typeof TCC !== 'undefined') TCC.openForDevice(compId);
+    });
+    const dReset = [...desktopContent.querySelectorAll('.prop-reset-btn')];
+    mobileContent.querySelectorAll('.prop-reset-btn').forEach((btn, i) => {
+      btn.addEventListener('click', () => dReset[i] && dReset[i].click());
+    });
   },
 
   // ─── Analysis sheet ────────────────────────────────────────────────────────
