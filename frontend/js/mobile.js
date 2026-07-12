@@ -360,6 +360,19 @@ const MobileUI = {
             if (body) body.classList.toggle('collapsed', isNowCollapsed);
           });
         });
+        // Re-bind action buttons — the innerHTML copy drops their listeners, so
+        // on mobile "Edit Circuit Schedule", "TCC Grading" and the cable-reset
+        // buttons did nothing when tapped.
+        mobileContent.querySelector('#btn-edit-db')?.addEventListener('click', () => {
+          if (typeof DBSchedule !== 'undefined') DBSchedule.open(compId);
+        });
+        mobileContent.querySelector('#btn-view-tcc')?.addEventListener('click', () => {
+          if (typeof TCC !== 'undefined') TCC.openForDevice(compId);
+        });
+        const dReset = [...desktopContent.querySelectorAll('.prop-reset-btn')];
+        mobileContent.querySelectorAll('.prop-reset-btn').forEach((btn, i) => {
+          btn.addEventListener('click', () => dReset[i] && dReset[i].click());
+        });
       }, 10);
     }
 
