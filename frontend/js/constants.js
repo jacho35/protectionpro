@@ -891,6 +891,9 @@ const FIELD_INFO = {
   'cb.thermal_pickup':       'Default 1.0×In — thermal overload pickup at rated current.\nSource: IEC 60947-2 §4.7 — thermal trip characteristics.',
   'cb.magnetic_pickup':      'Default 10×In — typical magnetic instantaneous pickup for MCCB.\nSource: IEC 60947-2 Annex F — magnetic trip range:\n• Type B: 3–5×In\n• Type C: 5–10×In\n• Type D: 10–20×In',
   'cb.long_time_delay':      'Default class 10 — standard long-time delay for motor and feeder protection.\nSource: IEC 60947-2 §4.7.1 — tripping classes:\n• Class 5: fast (motor starting)\n• Class 10: standard\n• Class 20: heavy-duty motor starts\n• Class 30: very heavy-duty.',
+  'cb.ef_trip_ct':           'Core-balance CT whose residual output trips this breaker directly (integral earth-fault / shunt-trip release) — no separate relay needed.\nLeave blank for no integral earth-fault element. Common on MCCB/ACB earth-leakage releases.',
+  'cb.ef_pickup_a':          'Earth-fault (residual) pickup in primary amps for the integral shunt-trip element.\nTypical sensitive-earth-fault settings: tens to a few hundred amps, well below phase pickup.',
+  'cb.ef_delay_s':           'Definite-time delay of the integral earth-fault trip (s). 0 = instantaneous.\nGrade against downstream earth-fault devices at the single-line-to-ground fault current.',
 
   // Fuse
   'fuse.breaking_capacity_ka': 'Default 50 kA — typical for gG fuse-links.\nSource: IEC 60269-1 — rated breaking capacity for HRC fuses.',
@@ -910,7 +913,8 @@ const FIELD_INFO = {
   'relay.mho_angle_deg': 'Maximum torque angle (MTA) of the mho characteristic.\nTypically 60-85 degrees depending on line impedance angle.\nSource: IEC 60255-121 §5.3.',
 
   // CT
-  'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.',
+  'ct.ct_type':        'Phase: a per-phase measurement/protection CT feeding an overcurrent element.\nCore balance (residual): a window/toroidal CT that encircles all phase conductors and measures the residual (zero-sequence) current directly — used for sensitive earth-fault protection.\nAssociate a core-balance CT with a 50N/51N relay, or with an MCCB/ACB earth-fault (shunt-trip) release.',
+  'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.\nCore-balance CTs use low ratios for sensitive earth fault (e.g. 100/1, 50/1).',
   'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current\n• P = protection application.',
   'ct.burden_va':      'Default 15 VA — typical protection CT burden.\nSource: IEC 61869-2 §2 — standard rated burden values.',
   'ct.rct_ohm':        'Default 0.3 Ω — CT secondary winding resistance, typical for a 5 A secondary CT.\nSource: IEC 61869-2 — typical Rct: 0.1–0.5 Ω (5 A CTs), 1–5 Ω (1 A CTs).\nAffects saturation onset: higher Rct means earlier saturation.',
@@ -1571,6 +1575,15 @@ const COMPONENT_DEFS = {
         showWhen: { field: 'cb_type', values: ['acb'] }, section: 'protection' },
       { key: 'instantaneous_pickup', label: 'Instantaneous', type: 'number', unit: '×Ir',
         showWhen: { field: 'cb_type', values: ['acb'] }, section: 'protection' },
+      // Integral earth-fault (shunt-trip) release — a core-balance CT can trip
+      // an MCCB/ACB directly, without a separate relay. Enabled by picking the
+      // measuring CBCT; residual pickup + definite-time delay define the element.
+      { key: 'ef_trip_ct', label: 'Earth-Fault CT', type: 'component_select', filter: 'ct',
+        showWhen: { field: 'cb_type', values: ['mccb', 'acb'] }, section: 'protection' },
+      { key: 'ef_pickup_a', label: 'E/F Pickup', type: 'number', unit: 'A', min: 0, step: 1,
+        showWhen: { field: 'cb_type', values: ['mccb', 'acb'] }, section: 'protection' },
+      { key: 'ef_delay_s', label: 'E/F Delay', type: 'number', unit: 's', min: 0, step: 0.01,
+        showWhen: { field: 'cb_type', values: ['mccb', 'acb'] }, section: 'protection' },
     ],
   },
   fuse: {
@@ -1689,6 +1702,7 @@ const COMPONENT_DEFS = {
     height: 30,
     defaults: {
       name: 'CT',
+      ct_type: 'phase',
       ratio: '400/5',
       accuracy_class: '5P20',
       burden_va: 15,
@@ -1697,6 +1711,10 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
+      { key: 'ct_type', label: 'CT Type', type: 'select', options: [
+        { value: 'phase', label: 'Phase (measurement)' },
+        { value: 'core_balance', label: 'Core balance (residual)' },
+      ] },
       { key: 'ratio', label: 'Ratio', type: 'text' },
       { key: 'accuracy_class', label: 'Accuracy', type: 'text' },
       { key: 'burden_va', label: 'Burden', type: 'number', unit: 'VA' },
