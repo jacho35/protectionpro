@@ -37,41 +37,54 @@ const PlanMarkup = {
     if (!ws) return;
     ws.innerHTML = `
       <div id="plan-toolbar" class="plan-toolbar">
+        <!-- Primary row (always visible; on mobile this is the whole bar). -->
+        <div class="plan-tb-group plan-mobile-toggle">
+          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the component palette">☰ Parts</button>
+          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel">✎ Props</button>
+        </div>
         <div class="plan-tb-group">
           <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">▤ Select</button>
-          <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
-          <button class="plan-tool-btn" data-tool="slpath" title="Draw a path → auto-place streetlight poles + circuits">💡 SL Path</button>
-          <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
-        </div>
-        <div class="plan-tb-group" id="plan-floor-group" style="display:none">
-          <label class="plan-tb-field">Floor
-            <select id="plan-floor-select" title="Switch the active floor"></select>
-          </label>
-          <button class="plan-tb-btn" data-action="floors" title="Add / rename / reorder / delete floors">⚙</button>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF), a DXF reference, or a Distribution Designer .json project">⬆ Import Plan</button>
-          <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.json,application/json" style="display:none">
           <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">⤢ Fit</button>
-          <button class="plan-tb-btn" data-action="lux" title="Toggle the lighting (lux) heatmap">💡 Lux</button>
+          <button class="plan-tb-btn plan-mobile-toggle" data-action="toggle-overflow" title="More tools & options">⋯ More</button>
         </div>
-        <div class="plan-tb-group">
-          <label class="plan-snap-pill"><input type="checkbox" data-snap="showGrid" checked> Grid</label>
-          <label class="plan-snap-pill"><input type="checkbox" data-snap="snapGrid" checked> Snap grid</label>
-          <label class="plan-snap-pill"><input type="checkbox" data-snap="snapEl" checked> Snap comp</label>
-          <label class="plan-snap-pill"><input type="checkbox" data-snap="snapVtx" checked> Snap vtx</label>
-          <label class="plan-tb-field">Grid (m) <input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"></label>
-        </div>
-        <div class="plan-tb-group">
-          <button class="plan-tb-btn" data-action="push" title="Push/sync drawn items to the matching workspace">→ Push to Schedules</button>
-          <button class="plan-tb-btn" id="plan-circuits-btn" data-action="circuits" style="display:none" title="Count plan devices into distribution-board circuits (loads + routed lengths)">⚡ Sync Circuits</button>
-          <button class="plan-tb-btn" data-action="csv" title="Export component schedules (CSV)">⤓ CSV</button>
-          <button class="plan-tb-btn" data-action="dxf" title="Export markup as AutoCAD DXF">⤓ DXF</button>
-          <button class="plan-tb-btn" data-action="png" title="Export the annotated plan as a PNG image">⤓ PNG</button>
-          <button class="plan-tb-btn" data-action="pdf" title="Export the annotated plan as an A3 PDF sheet">⤓ PDF</button>
-        </div>
-        <div class="plan-tb-group plan-tb-right">
-          <span id="plan-scale-readout" class="plan-scale-readout">Not calibrated</span>
+        <!-- Overflow: inline on desktop (display:contents), a dropdown on mobile. -->
+        <div id="plan-tb-overflow">
+          <div class="plan-tb-group">
+            <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
+            <button class="plan-tool-btn" data-tool="slpath" title="Draw a path → auto-place streetlight poles + circuits">💡 SL Path</button>
+            <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
+          </div>
+          <div class="plan-tb-group" id="plan-floor-group" style="display:none">
+            <label class="plan-tb-field">Floor
+              <select id="plan-floor-select" title="Switch the active floor"></select>
+            </label>
+            <button class="plan-tb-btn" data-action="floors" title="Add / rename / reorder / delete floors">⚙</button>
+          </div>
+          <div class="plan-tb-group">
+            <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF), a DXF reference, or a Distribution Designer .json project">⬆ Import Plan</button>
+            <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.json,application/json" style="display:none">
+            <button class="plan-tb-btn" data-action="lux" title="Toggle the lighting (lux) heatmap">💡 Lux</button>
+          </div>
+          <div class="plan-tb-group">
+            <label class="plan-snap-pill"><input type="checkbox" data-snap="showGrid" checked> Grid</label>
+            <label class="plan-snap-pill"><input type="checkbox" data-snap="snapGrid" checked> Snap grid</label>
+            <label class="plan-snap-pill"><input type="checkbox" data-snap="snapEl" checked> Snap comp</label>
+            <label class="plan-snap-pill"><input type="checkbox" data-snap="snapVtx" checked> Snap vtx</label>
+            <label class="plan-tb-field">Grid (m) <input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"></label>
+          </div>
+          <div class="plan-tb-group">
+            <button class="plan-tb-btn" data-action="push" title="Push/sync drawn items to the matching workspace">→ Push to Schedules</button>
+            <button class="plan-tb-btn" id="plan-circuits-btn" data-action="circuits" style="display:none" title="Count plan devices into distribution-board circuits (loads + routed lengths)">⚡ Sync Circuits</button>
+            <button class="plan-tb-btn" data-action="csv" title="Export component schedules (CSV)">⤓ CSV</button>
+            <button class="plan-tb-btn" data-action="dxf" title="Export markup as AutoCAD DXF">⤓ DXF</button>
+            <button class="plan-tb-btn" data-action="png" title="Export the annotated plan as a PNG image">⤓ PNG</button>
+            <button class="plan-tb-btn" data-action="pdf" title="Export the annotated plan as an A3 PDF sheet">⤓ PDF</button>
+          </div>
+          <div class="plan-tb-group plan-tb-right">
+            <span id="plan-scale-readout" class="plan-scale-readout">Not calibrated</span>
+          </div>
         </div>
       </div>
       <div id="plan-main" class="plan-main">
@@ -83,6 +96,7 @@ const PlanMarkup = {
           <div id="plan-status" class="plan-status"><span id="plan-status-coords"></span></div>
         </div>
         <aside id="plan-props" class="plan-props"></aside>
+        <div id="plan-drawer-backdrop"></div>
       </div>`;
   },
 
@@ -91,10 +105,17 @@ const PlanMarkup = {
     if (!tb) return;
     tb.addEventListener('click', (e) => {
       const toolBtn = e.target.closest('[data-tool]');
-      if (toolBtn) { PlanTools.set(toolBtn.dataset.tool); return; }
+      if (toolBtn) {
+        PlanTools.set(toolBtn.dataset.tool);
+        if (this._isMobile()) this._closeOverflow();   // picking a tool closes the ⋯ menu
+        return;
+      }
       const act = e.target.closest('[data-action]');
       if (!act) return;
       if (act.dataset.action === 'import') document.getElementById('plan-file-input').click();
+      else if (act.dataset.action === 'toggle-palette') this._toggleDrawer('palette');
+      else if (act.dataset.action === 'toggle-props') this._toggleDrawer('props');
+      else if (act.dataset.action === 'toggle-overflow') { this._toggleOverflow(); return; }
       else if (act.dataset.action === 'floors') this._openFloorManager();
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
       else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
@@ -114,6 +135,9 @@ const PlanMarkup = {
       else if (act.dataset.action === 'dxf' && typeof PlanDXF !== 'undefined') PlanDXF.export();
       else if (act.dataset.action === 'png' && typeof PlanExport !== 'undefined') PlanExport.exportPNG();
       else if (act.dataset.action === 'pdf' && typeof PlanExport !== 'undefined') PlanExport.exportPDF();
+      // Picking any overflow action closes the ⋯ dropdown (but not the drawer
+      // toggles, which live on the primary bar).
+      if (this._isMobile() && /^(floors|fit|lux|push|circuits|csv|dxf|png|pdf|import)$/.test(act.dataset.action)) this._closeOverflow();
     });
     tb.addEventListener('change', (e) => {
       if (e.target.dataset.snap) {
@@ -126,6 +150,8 @@ const PlanMarkup = {
         this.setActiveFloor(e.target.value);
       }
     });
+    const backdrop = document.getElementById('plan-drawer-backdrop');
+    if (backdrop) backdrop.addEventListener('click', () => this._closeDrawers());
     const fileInput = document.getElementById('plan-file-input');
     if (fileInput) fileInput.addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
@@ -188,6 +214,51 @@ const PlanMarkup = {
       : 'Push drawn kiosks/erven/feeders into the Reticulation schedules';
   },
   refreshProps() { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); },
+
+  // ─── Mobile drawers (palette / properties slide over the canvas) ───
+  _isMobile() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches;
+  },
+  _toggleDrawer(which) {
+    const pal = document.getElementById('plan-palette');
+    const props = document.getElementById('plan-props');
+    const target = which === 'props' ? props : pal;
+    const other = which === 'props' ? pal : props;
+    if (!target) return;
+    const opening = !target.classList.contains('mobile-open');
+    if (other) other.classList.remove('mobile-open');
+    document.getElementById('plan-tb-overflow')?.classList.remove('open');   // mutually exclusive
+    target.classList.toggle('mobile-open', opening);
+    this._syncDrawerBackdrop();
+  },
+  _toggleOverflow() {
+    const ov = document.getElementById('plan-tb-overflow');
+    if (!ov) return;
+    const opening = !ov.classList.contains('open');
+    // A drawer and the overflow menu shouldn't be open together.
+    document.getElementById('plan-palette')?.classList.remove('mobile-open');
+    document.getElementById('plan-props')?.classList.remove('mobile-open');
+    ov.classList.toggle('open', opening);
+    this._syncDrawerBackdrop();
+  },
+  _closeOverflow() {
+    document.getElementById('plan-tb-overflow')?.classList.remove('open');
+    this._syncDrawerBackdrop();
+  },
+  _closeDrawers() {
+    document.getElementById('plan-palette')?.classList.remove('mobile-open');
+    document.getElementById('plan-props')?.classList.remove('mobile-open');
+    document.getElementById('plan-tb-overflow')?.classList.remove('open');
+    this._syncDrawerBackdrop();
+  },
+  _syncDrawerBackdrop() {
+    const bd = document.getElementById('plan-drawer-backdrop');
+    if (!bd) return;
+    const open = document.getElementById('plan-palette')?.classList.contains('mobile-open') ||
+      document.getElementById('plan-props')?.classList.contains('mobile-open') ||
+      document.getElementById('plan-tb-overflow')?.classList.contains('open');
+    bd.classList.toggle('on', !!open);
+  },
 
   // ─── Floors ───
   // The floor switcher is a building-domain concept; hidden for reticulation
@@ -327,7 +398,19 @@ const PlanMarkup = {
   },
 
   // ─── Selection ───
-  selectOnly(id) { this.selectedIds.clear(); if (id) this.selectedIds.add(id); this.refreshProps(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
+  selectOnly(id) {
+    this.selectedIds.clear(); if (id) this.selectedIds.add(id); this.refreshProps();
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    // Mobile: reveal the properties drawer so a tapped item is immediately editable.
+    if (id && this._isMobile()) {
+      const props = document.getElementById('plan-props');
+      if (props && !props.classList.contains('mobile-open')) {
+        document.getElementById('plan-palette')?.classList.remove('mobile-open');
+        props.classList.add('mobile-open');
+        this._syncDrawerBackdrop();
+      }
+    }
+  },
   clearSelection() { this.selectedIds.clear(); this.refreshProps(); },
   toggleSelect(id) {
     if (this.selectedIds.has(id)) this.selectedIds.delete(id); else this.selectedIds.add(id);
@@ -443,6 +526,9 @@ const PlanMarkup = {
     if (id !== 'place' && id !== 'route' && typeof PlanUI !== 'undefined' && PlanUI.paletteEl) {
       PlanUI.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
     }
+    // Mobile: after arming a place/route tool from the palette drawer, close it
+    // so the canvas is tappable.
+    if ((id === 'place' || id === 'route') && this._isMobile()) this._closeDrawers();
   },
 
   updateScaleReadout() {

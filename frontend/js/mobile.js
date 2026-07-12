@@ -409,6 +409,16 @@ const MobileUI = {
         });
       }
     });
+
+    // Workspace switch (SLD / Reticulation / Plan) — the only way to reach the
+    // Reticulation & Plan workspaces on mobile (their desktop tabs live in the
+    // hidden #toolbar).
+    document.querySelectorAll('#mobile-sheet-menu [data-workspace]').forEach(el => {
+      el.addEventListener('click', () => {
+        this.closeSheet();
+        if (typeof window.switchWorkspace === 'function') window.switchWorkspace(el.dataset.workspace);
+      });
+    });
   },
 
   // ─── Dark mode sync ────────────────────────────────────────────────────────

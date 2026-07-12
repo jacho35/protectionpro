@@ -565,6 +565,98 @@
     background: var(--bg-tertiary);
     margin: 4px 0;
   }
+  .mobile-menu-subhead {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted); padding: 6px 4px 2px; list-style: none;
+  }
+
+  /* ─── Secondary workspaces (Reticulation, Plan) on mobile ─────────
+     They're siblings of #app-container (which switchWorkspace hides), so the
+     mobile header + bottom nav survive. Fit the workspace between them and
+     drop the SLD-only chrome. */
+  #retic-workspace, #plan-workspace {
+    top: var(--mobile-header-height) !important;
+    bottom: var(--mobile-nav-height) !important;
+    left: 0 !important; right: 0 !important;
+    z-index: 400;
+  }
+  body.mobile-ws-secondary #mobile-fab-group,
+  body.mobile-ws-secondary #mobile-selection-bar,
+  body.mobile-ws-secondary #mobile-nav .mobile-nav-btn[data-tab="components"],
+  body.mobile-ws-secondary #mobile-nav .mobile-nav-btn[data-tab="analysis"] {
+    display: none !important;
+  }
+
+  /* ─── Plan (distribution) workspace layout ─────────── */
+  /* Toolbar: a compact primary row (Parts, Props, Select, Fit, ⋯); everything
+     else drops into the ⋯ overflow menu below. */
+  .plan-toolbar {
+    position: relative;
+    z-index: 80;            /* so the ⋯ dropdown paints above the canvas below */
+    flex-wrap: nowrap;
+    overflow: visible;
+    padding: 6px 8px;
+    gap: 6px;
+    align-items: center;
+  }
+  .plan-toolbar > .plan-tb-group { flex: none; }
+  .plan-tool-btn, .plan-tb-btn { white-space: nowrap; }
+  /* Push "Fit + ⋯" to the right edge of the primary row. */
+  .plan-toolbar > .plan-tb-group:nth-of-type(3) { margin-left: auto; }
+
+  /* Overflow menu: a dropdown panel under the toolbar. */
+  #plan-tb-overflow {
+    display: none;
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.28);
+    max-height: 62vh;
+    overflow-y: auto;
+    z-index: 70;
+  }
+  #plan-tb-overflow.open { display: flex; }
+  #plan-tb-overflow .plan-tb-group {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--bg-tertiary);
+  }
+  #plan-tb-overflow .plan-tb-group:last-child { border-bottom: none; padding-bottom: 0; }
+  #plan-tb-overflow .plan-tool-btn,
+  #plan-tb-overflow .plan-tb-btn { flex: 1 1 auto; min-height: 40px; }
+  #plan-tb-overflow .plan-tb-field select,
+  #plan-tb-overflow #plan-floor-select { min-height: 36px; }
+
+  .plan-main { position: relative; }
+  /* Palette + properties become slide-in drawers over the canvas. */
+  .plan-palette, .plan-props {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: min(86vw, 320px);
+    z-index: 60;
+    transition: transform .25s ease;
+    box-shadow: 0 0 24px rgba(0,0,0,0.35);
+    overflow-y: auto;
+  }
+  .plan-palette { left: 0; transform: translateX(-102%); }
+  .plan-props   { right: 0; left: auto; transform: translateX(102%); }
+  .plan-palette.mobile-open, .plan-props.mobile-open { transform: translateX(0); }
+  .plan-stage { width: 100%; }
+
+  /* Mobile-only drawer toggle buttons (added to the plan toolbar). */
+  .plan-mobile-toggle { display: inline-flex !important; }
+
+  /* Tap-catcher shown while a drawer is open. */
+  #plan-drawer-backdrop {
+    position: absolute; inset: 0; z-index: 55;
+    background: rgba(0,0,0,0.25); display: none;
+  }
+  #plan-drawer-backdrop.on { display: block; }
 
   /* ─── Toast notification ──────────────────────────── */
   #mobile-toast {
