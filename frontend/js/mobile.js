@@ -320,6 +320,11 @@ const MobileUI = {
         // Re-bind input events: sync changes back to desktop inputs
         mobileContent.querySelectorAll('input, select, textarea').forEach((input, i) => {
           const desktopInputs = desktopContent.querySelectorAll('input, select, textarea');
+          // The searchable cable selector is driven by its own widget logic
+          // (re-initialised below), not by value-mirroring — binding the generic
+          // sync here would fight it. Index alignment with desktopInputs is
+          // preserved because we still iterate (just don't bind) this input.
+          if (input.closest('.searchable-select')) return;
           input.addEventListener('change', () => {
             if (desktopInputs[i]) {
               desktopInputs[i].value = input.value;
@@ -328,6 +333,14 @@ const MobileUI = {
             }
           });
         });
+        // Re-bind the searchable cable selector: the innerHTML copy drops its
+        // open/filter/select listeners, so on mobile the cable-type search box
+        // was inert (couldn't open, type-to-filter, or pick a size).
+        if (typeof Properties !== 'undefined' && Properties._initSearchableSelects
+            && typeof AppState !== 'undefined') {
+          const comp = AppState.components.get(compId);
+          if (comp) Properties._initSearchableSelects(comp, mobileContent);
+        }
         // Re-bind ⓘ info buttons — the innerHTML copy loses their listeners
         mobileContent.querySelectorAll('.prop-info-btn').forEach(btn => {
           btn.addEventListener('click', (e) => {
