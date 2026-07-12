@@ -36,6 +36,7 @@ const Compliance = {
     report.sections.push(this._checkThermalLoading());
     report.sections.push(this._checkCableWithstand());
     report.sections.push(this._checkProtectionDevices());
+    report.sections.push(this._checkMotorCircuits());
     report.sections.push(this._checkSANS10142());
     report.sections.push(this._checkPVStrings());
     report.sections.push(this._buildEquipmentSummary());
@@ -575,6 +576,80 @@ const Compliance = {
       section.items.push({ status: 'info', component: '—', message: 'No protection devices to check.', detail: 'Add circuit breakers or fuses to the network for protection compliance checks.' });
     }
 
+    return section;
+  },
+
+  // ── 6b. Motor Circuit Protection (nameplate, no load flow needed) ──
+  // For a device that protects a SINGLE motor (dedicated feeder), compare its
+  // rated current against the motor's full-load current, and its magnetic trip
+  // against the motor's starting current. Nameplate-based, so it flags an
+  // under-rated device even before load flow is run (and after edits clear it).
+  _checkMotorCircuits() {
+    const section = { title: 'Motor Circuit Protection', standard: 'IEC 60947-4-1', items: [] };
+    let any = false;
+
+    for (const comp of AppState.components.values()) {
+      if (comp.type !== 'motor_induction' && comp.type !== 'motor_synchronous') continue;
+      const name = comp.props?.name || comp.id;
+      const flc = this._motorFLC(comp);
+      if (flc == null) continue;
+
+      // Only single-motor (dedicated) feeders — a shared/diversified feeder
+      // can legitimately be rated below the sum of its loads, so skip those.
+      const { devices, otherLoads } = this._motorProtectiveDevices(comp.id);
+      if (otherLoads.length > 0) continue;
+
+      if (devices.length === 0) {
+        section.items.push({ status: 'warn', component: name,
+          message: `No dedicated overcurrent device protects this motor (FLC ≈ ${flc.toFixed(1)} A).`,
+          detail: 'Add a breaker or fuse in the motor feeder sized for the motor.' });
+        any = true;
+        continue;
+      }
+
+      const start = this._motorStartMultiple(comp);
+      const iStart = flc * start.mult;
+
+      for (const devId of devices) {
+        const dev = AppState.components.get(devId);
+        if (!dev) continue;
+        const dname = dev.props?.name || devId;
+        const In = parseFloat(dev.props?.rated_current_a);
+        if (!(In > 0)) {
+          section.items.push({ status: 'warn', component: dname,
+            message: `No rated current set — cannot check against motor ${name} (FLC ≈ ${flc.toFixed(1)} A).`,
+            detail: 'Set the device rated current.' });
+          any = true;
+          continue;
+        }
+
+        // Full-load current: device must carry at least the motor FLC.
+        if (In < flc) {
+          section.items.push({ status: 'fail', component: dname,
+            message: `Rated ${In} A is BELOW motor ${name} full-load current (${flc.toFixed(1)} A).`,
+            detail: `IEC 60947-4-1: a motor's protective device must carry at least the motor FLC. Undersized — will trip under normal running. Size ≥ FLC (and for starting).` });
+          any = true;
+        } else {
+          section.items.push({ status: 'pass', component: dname,
+            message: `Rated ${In} A ≥ motor ${name} FLC (${flc.toFixed(1)} A).`,
+            detail: 'Adequate for continuous running.' });
+          any = true;
+        }
+
+        // Starting current: magnetic/instantaneous trip must sit above inrush.
+        const trip = this._deviceMagneticTripA(dev);
+        if (trip && iStart > trip.a) {
+          section.items.push({ status: 'warn', component: dname,
+            message: `Starting current ≈ ${iStart.toFixed(0)} A (${start.label}) exceeds the device magnetic trip (~${trip.a.toFixed(0)} A, ${trip.desc}).`,
+            detail: `Likely nuisance-trips when motor ${name} starts. Use a higher trip curve (C/D), raise the instantaneous pickup, or size the device for starting.` });
+          any = true;
+        }
+      }
+    }
+
+    if (!any) {
+      section.items.push({ status: 'info', component: '—', message: 'No motor circuits to check.', detail: 'Add induction or synchronous motors fed by a breaker or fuse.' });
+    }
     return section;
   },
 
@@ -1124,6 +1199,86 @@ const Compliance = {
       }
     }
     return results;
+  },
+
+  // Motor full-load current (A) from nameplate — matches the backend
+  // motor_starting convention (induction rated in shaft kW, synchronous in kVA).
+  _motorFLC(comp) {
+    const p = comp.props || {};
+    const v = parseFloat(p.voltage_kv);
+    if (!(v > 0)) return null;
+    if (comp.type === 'motor_synchronous') {
+      const kva = parseFloat(p.rated_kva);
+      return kva > 0 ? kva / (Math.sqrt(3) * v) : null;
+    }
+    const kw = parseFloat(p.rated_kw);
+    if (!(kw > 0)) return null;
+    const eff = parseFloat(p.efficiency) || 0.93;
+    const pf = parseFloat(p.power_factor) || 0.85;
+    return kw / (Math.sqrt(3) * v * eff * pf);
+  },
+
+  // Starting-current multiple of FLC, per starting method (same reductions as
+  // the backend motor-starting engine: DOL 1×LRC, star-delta ⅓, autotransformer
+  // 0.64, soft starter its current limit else ½, VFD ≈ FLC).
+  _motorStartMultiple(comp) {
+    const p = comp.props || {};
+    const lrc = parseFloat(p.locked_rotor_current) || 6;
+    switch (String(p.starting_method || 'dol').toLowerCase()) {
+      case 'star_delta': return { mult: lrc / 3, label: 'star-delta' };
+      case 'autotransformer': return { mult: lrc * 0.64, label: 'autotransformer' };
+      case 'soft_starter': {
+        const lim = parseFloat(p.ss_current_limit_xflc);
+        return { mult: lim > 0 ? lim : lrc * 0.5, label: 'soft starter' };
+      }
+      case 'vfd': return { mult: 1.0, label: 'VFD' };
+      default: return { mult: lrc, label: 'DOL' };
+    }
+  },
+
+  // Guaranteed magnetic/instantaneous trip current (A) of a breaker. MCBs use
+  // their curve's upper bound (B 5×, C 10×, D 20× In); MCCB/ACB use the
+  // instantaneous/magnetic pickup multiple. Returns null when not assessable
+  // (fuses — time-current, not a fixed threshold; or no data).
+  _deviceMagneticTripA(dev) {
+    const p = dev.props || {};
+    const In = parseFloat(p.rated_current_a);
+    if (!(In > 0) || dev.type === 'fuse') return null;
+    if (String(p.cb_type || 'mccb').toLowerCase() === 'mcb') {
+      const curve = String(p.mcb_curve || 'C').toUpperCase();
+      const mult = curve === 'B' ? 5 : curve === 'D' ? 20 : 10;
+      return { a: mult * In, desc: `Type-${curve} MCB, ${mult}× In` };
+    }
+    const inst = parseFloat(p.instantaneous_pickup) || parseFloat(p.magnetic_pickup) || 0;
+    return inst > 0 ? { a: inst * In, desc: `instantaneous ${inst}× In` } : null;
+  },
+
+  // Devices at the boundary of a motor's dedicated feeder, and any OTHER loads
+  // sharing that feeder. Walk out from the motor: cb/fuse are boundaries
+  // (recorded, not crossed); buses/cables/transformers/switchgear are traversed;
+  // other motors/loads/sources stop that branch. If otherLoads is empty and one
+  // device is found, it dedicatedly protects this motor.
+  _motorProtectiveDevices(motorId) {
+    const adj = this._getAdjacency();
+    const traversable = new Set(['bus', 'cable', 'transformer', 'switch', 'ct', 'pt', 'surge_arrester']);
+    const loadTypes = new Set(['motor_induction', 'motor_synchronous', 'static_load', 'capacitor_bank']);
+    const visited = new Set([motorId]);
+    const queue = [motorId];
+    const devices = new Set();
+    const otherLoads = new Set();
+    while (queue.length) {
+      for (const nb of (adj.get(queue.shift()) || [])) {
+        if (visited.has(nb)) continue;
+        visited.add(nb);
+        const c = AppState.components.get(nb);
+        if (!c) continue;
+        if (c.type === 'cb' || c.type === 'fuse') { devices.add(nb); continue; }
+        if (loadTypes.has(c.type)) { otherLoads.add(nb); continue; }
+        if (traversable.has(c.type)) queue.push(nb);
+        // sources terminate the branch (not a load, not traversed)
+      }
+    }
+    return { devices: [...devices], otherLoads: [...otherLoads] };
   },
 
   // ── Render to HTML ──
