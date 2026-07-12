@@ -374,9 +374,20 @@ const Symbols = {
       </g>`;
   },
 
-  ct(w, h) {
+  ct(w, h, comp) {
     const r = Math.min(w, h) * 0.35;
     const hh = h / 2;
+    // Core-balance (window / toroidal) CT: a ring the conductor passes
+    // straight through, measuring residual (earth-fault) current — drawn as a
+    // double ring, distinct from a phase CT's single tapped circle.
+    if (comp && comp.props && comp.props.ct_type === 'core_balance') {
+      return `
+        <g class="symbol-ct symbol-cbct">
+          <circle cx="0" cy="0" r="${r}"/>
+          <circle cx="0" cy="0" r="${r * 0.58}"/>
+          <line x1="0" y1="${-hh}" x2="0" y2="${hh}"/>
+        </g>`;
+    }
     return `
       <g class="symbol-ct">
         <circle cx="0" cy="0" r="${r}"/>
