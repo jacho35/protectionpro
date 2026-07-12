@@ -273,6 +273,36 @@ const PlanSync = {
     return circuits;
   },
 
+  // ── EE-5: feeder direction from the SLD supply topology ──
+  // Which of two linked boards feeds the other, inferred from the SLD (the end
+  // with a source path that doesn't pass through the other end is upstream).
+  // Returns the upstream plan element, or null when ambiguous (both/neither).
+  _inferUpstream(elA, elB) {
+    const compA = elA.sldId && AppState.components.get(elA.sldId);
+    const compB = elB.sldId && AppState.components.get(elB.sldId);
+    if (!compA || !compB) return null;
+    const aSup = this._reachesSupply(compA.id, compB.id);
+    const bSup = this._reachesSupply(compB.id, compA.id);
+    if (aSup && !bSup) return elA;
+    if (bSup && !aSup) return elB;
+    return null;
+  },
+  _reachesSupply(startId, blockId) {
+    const SUP = new Set(['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery', 'grid', 'transformer']);
+    const wires = [...AppState.wires.values()];
+    const neigh = (id) => wires.filter(w => w.fromComponent === id || w.toComponent === id)
+      .map(w => (w.fromComponent === id ? w.toComponent : w.fromComponent));
+    const seen = new Set([startId, blockId]);
+    const q = [startId];
+    while (q.length) {
+      const cur = q.shift();
+      const c = AppState.components.get(cur);
+      if (c && cur !== startId && SUP.has(c.type)) return true;
+      for (const n of neigh(cur)) if (!seen.has(n)) { seen.add(n); q.push(n); }
+    }
+    return false;
+  },
+
   // Reflect SLD cables that join two linked plan elements as plan feeders
   // (any linked building element — boards or adopted supply). Idempotent;
   // returns the number of feeders created. Called on sync and on placement.
@@ -319,8 +349,13 @@ const PlanSync = {
         if (r && !ends.some(e => e.el === r.el)) ends.push(r);
       }
       if (ends.length !== 2) continue;
-      // Upstream = the end reached via an outgoing bus; else keep order.
-      let up = ends.find(e => e.viaBus) || ends[0];
+      // Upstream = the end reached via an outgoing bus (that DB is feeding);
+      // else infer from the SLD supply path (EE-5); else keep wire order.
+      let up = ends.find(e => e.viaBus);
+      if (!up) {
+        const inf = this._inferUpstream(ends[0].el, ends[1].el);
+        up = (inf === ends[1].el) ? ends[1] : ends[0];
+      }
       let down = ends.find(e => e !== up) || ends[1];
       const elA = up.el, elB = down.el;
       const exists = AppState.planAllRoutes().some(r => r.type === 'feeder' &&
@@ -336,6 +371,7 @@ const PlanSync = {
         fromId: elA.id, toId: elB.id,
         points: [{ x: elA.x, y: elA.y, snappedTo: elA.id }, { x: elB.x, y: elB.y, snappedTo: elB.id }],
         cableType: cable.props.name || '', curved: false, props: {}, sldCableId: cable.id,
+        _autoReflected: true,   // EE-6: an auto 2-point chord, not a user route
       };
       // Push onto the floor the boards live on (default: active floor).
       const targetFloor = flA || AppState.planActiveFloor();
@@ -385,6 +421,26 @@ const PlanSync = {
     return { compId: el.sldId, port: 'in' };
   },
 
+  // Resolve a building cable type name to its electrical parameters and copy
+  // them onto an SLD cable component (EE-4). BUILDING_CABLES first (feeders are
+  // drawn from that specialised library); falls back to STANDARD_CABLES by id.
+  // Returns the matched BUILDING_CABLES entry (or null) for downstream use.
+  _applyCableElectrical(cable, cableType) {
+    if (!cableType) return null;
+    const bc = (typeof BUILDING_CABLES !== 'undefined') && BUILDING_CABLES.find(c => c.name === cableType);
+    if (bc) {
+      cable.props.r_per_km = bc.r;
+      cable.props.x_per_km = bc.x;
+      if (bc.rating) cable.props.rated_amps = bc.rating;
+      cable.props.size_mm2 = bc.size;
+      cable.props.voltage_kv = 0.4;   // building feeders are 400 V, not 11 kV
+      return bc;
+    }
+    const std = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.find(c => c.name === cableType);
+    if (std) cable.props.standard_type = std.id;
+    return null;
+  },
+
   // Record/refresh a "Feeder to Sub-board" way in the upstream DB's schedule.
   _ensureFeederCircuit(dbComp, subComp, cableType, lenM) {
     if (!Array.isArray(dbComp.props.circuits)) dbComp.props.circuits = [];
@@ -392,6 +448,7 @@ const PlanSync = {
     let c = circuits.find(x => x.type === 'feeder_db' && x.feedsDbId === subComp.id);
     if (!c) {
       c = {
+        id: (typeof PlanCircuits !== 'undefined' && PlanCircuits._genWayId) ? PlanCircuits._genWayId() : ('w' + (AppState.planMarkup._seq++)),
         type: 'feeder_db', way: String(circuits.length + 1),
         description: '', poles: '3P', phase: 'RWB', breaker_a: 63, curve: 'C',
         el_group: '', cable_mm2: 25, cable_m: 0, load_va: 0, demand_factor: 1,
@@ -400,8 +457,18 @@ const PlanSync = {
       circuits.push(c);
     }
     c.description = 'Feeder to ' + (subComp.props.name || 'Sub-board');
-    if (cableType) c.cable = cableType;
+    if (cableType) {
+      c.cable = cableType;
+      // EE-9: size the feeder conductor from the chosen cable type.
+      const bc = (typeof BUILDING_CABLES !== 'undefined') && BUILDING_CABLES.find(x => x.name === cableType);
+      if (bc) { c.cable_mm2 = bc.size; if (bc.rating) c._cableAmps = bc.rating; }
+    }
     if (lenM) c.cable_m = +lenM.toFixed(2);
+    // EE-9: read-only downstream demand carried by this feeder, plus a warning
+    // when the sub-board's diversified demand exceeds the feeder breaker.
+    const demandKva = (Number(subComp.props.rated_kva) || 0) * (Number(subComp.props.demand_factor) || 1);
+    c.downstream_kva = +demandKva.toFixed(2);
+    c.downstream_a = +((demandKva * 1000) / (Math.sqrt(3) * 400)).toFixed(1);
   },
 
   // Drop "Feeder to Sub-board" ways whose feeder no longer exists on the SLD
@@ -591,7 +658,21 @@ const PlanSync = {
     const pm = AppState.planMarkup;
     const comps = AppState.components;
 
-    // ── 0. Propagate deletions (with confirmation) ──
+    // ── 0. Heal undo-stranded links (SD-1) ──
+    // An SLD-side undo/redo that crosses a sync boundary leaves a plan board's
+    // sldId (or a feeder's sldCableId) pointing at a component the undo removed.
+    // Reading that as a "deleted in the other view" would escalate an ordinary
+    // undo into a prompt offering to delete the user's plan boards. Instead,
+    // clear the dangling link here (the "Keep both" relink idiom) so the
+    // forward pass below simply re-creates / re-links the SLD component by name.
+    for (const e of AppState.planAllElements()) {
+      if ((e.type === 'bd_db' || e.type === 'bd_switchboard') && e.sldId && !comps.get(e.sldId)) e.sldId = null;
+    }
+    for (const r of AppState.planAllRoutes()) {
+      if (r.type === 'feeder' && r.sldCableId && !comps.get(r.sldCableId)) r.sldCableId = null;
+    }
+
+    // ── 0b. Propagate genuine deletions (with confirmation) ──
     const del = this._collectDeletions(pm);
     if (del.boards + del.feeders > 0) {
       const ok = await UI.confirm(
@@ -664,29 +745,68 @@ const PlanSync = {
     for (const { r, factor: rf } of feeders) {
       const a = elById[r.fromId], b = elById[r.toId];
       if (!a || !b || !BOARD.has(a.type) || !BOARD.has(b.type) || !a.sldId || !b.sldId) continue;
-      const ca = AppState.components.get(a.sldId), cb = AppState.components.get(b.sldId);
-      if (!ca || !cb) continue;
+      if (!AppState.components.get(a.sldId) || !AppState.components.get(b.sldId)) continue;
       const lenM = rf ? this._routeLenM(r, rf) : 0;
       let cable = r.sldCableId ? AppState.components.get(r.sldCableId) : null;
+      // Resolved upstream/downstream for this feeder (decided once, at cable
+      // creation; an existing cable keeps its wired direction).
+      let upEl = a, downEl = b;
       if (!cable) {
-        const src = this._feederSourcePoint(a);   // upstream connection {compId, port}
-        const sink = this._feederSinkPoint(b);     // downstream connection
+        // EE-5: which board feeds is the SLD supply topology's call, not the
+        // route's draw order. Fall back to draw order; prompt when both ends
+        // are DBs and the topology can't decide.
+        const inferred = this._inferUpstream(a, b);
+        if (inferred === b) { upEl = b; downEl = a; }
+        else if (inferred === a) { /* keep draw order (a feeds b) */ }
+        else if (a.type === 'bd_db' && b.type === 'bd_db') {
+          // Ambiguous. Only prompt on a genuine conflict — BOTH ends reach a
+          // supply — otherwise (neither energized yet, e.g. first sync) keep
+          // the draw order rather than nagging for every feeder.
+          const bothSourced = this._reachesSupply(a.sldId, b.sldId) && this._reachesSupply(b.sldId, a.sldId);
+          if (bothSourced) {
+            const aFeeds = await UI.confirm(
+              `Feeder between "${a.name || 'DB A'}" and "${b.name || 'DB B'}": which board feeds the other?`,
+              { danger: false, okText: `${a.name || 'A'} feeds`, cancelText: `${b.name || 'B'} feeds` });
+            if (!aFeeds) { upEl = b; downEl = a; }
+          }
+        }
+        const src = this._feederSourcePoint(upEl);    // upstream connection {compId, port}
+        const sink = this._feederSinkPoint(downEl);    // downstream connection
         if (!src || !sink) continue;
         const sc = AppState.components.get(src.compId);
-        cable = AppState.addComponent('cable', sc.x, (sc.y + cb.y) / 2);
+        const dc = AppState.components.get(downEl.sldId);
+        cable = AppState.addComponent('cable', sc.x, (sc.y + (dc ? dc.y : sc.y)) / 2);
         AppState.addWire(src.compId, src.port, cable.id, 'from', true);
         AppState.addWire(cable.id, 'to', sink.compId, sink.port, true);
         r.sldCableId = cable.id;
         cable.planLink = r.id;
+        r._reversed = (upEl !== a);   // flag when topology disagreed with draw order
         summary.cableNew++;
       }
-      if (r.cableType) cable.props.name = r.cableType;
-      if (rf) cable.props.length_km = +(lenM / 1000).toFixed(4);
-      const std = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.find(c => c.name === r.cableType);
-      if (std) cable.props.standard_type = std.id;
+      // EE-4: give the SLD cable REAL electrical parameters from the selected
+      // building cable type (r/x/ampacity/size, 400 V), not palette defaults.
+      // A 2-point route bound to an SLD cable is treated as an auto chord
+      // (covers pre-existing reflected feeders that predate the flag).
+      const auto2pt = r._autoReflected === true || ((r.points || []).length === 2 && !!r.sldCableId);
+      if (r.cableType) {
+        this._applyCableElectrical(cable, r.cableType);
+        // EE-6: don't clobber a user-renamed cable from an auto chord.
+        if (!auto2pt || !cable.props.name || cable.props.name === 'Cable') cable.props.name = r.cableType;
+      }
+      // EE-6: never shorten a user-entered SLD length from an auto 2-point
+      // reflected chord (shortening understates volt drop / fault loop). Write
+      // only for a new cable, a user-drawn route, or a longer measurement.
+      if (rf && lenM > 0) {
+        const km = +(lenM / 1000).toFixed(4);
+        const cur = Number(cable.props.length_km) || 0;
+        if (!cur || !auto2pt || km > cur) cable.props.length_km = km;
+      }
       // A feeding DB records an outgoing "Feeder to Sub-board" way (switchboards
       // have no circuit schedule, so skip).
-      if (a.type === 'bd_db') this._ensureFeederCircuit(ca, cb, r.cableType, lenM);
+      if (upEl.type === 'bd_db') {
+        const upComp = AppState.components.get(upEl.sldId), downComp = AppState.components.get(downEl.sldId);
+        if (upComp && downComp) this._ensureFeederCircuit(upComp, downComp, r.cableType, lenM);
+      }
     }
     this._pruneEmptyOutBuses();
 
@@ -698,6 +818,12 @@ const PlanSync = {
     this._pruneFeederCircuits();
 
     AppState.dirty = true;
+    // UX-4: sync mutates BOTH views (SLD components + plan link fields), so
+    // push a paired snapshot to each undo stack. This keeps Ctrl+Z coherent —
+    // the plan's sldId links and the SLD's boards/cables move together — and
+    // the SD-1 healing above defuses the stale-link deletion prompt on redo.
+    if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.snapshot) PlanMarkup.snapshot();
     if (typeof Canvas !== 'undefined') Canvas.render();
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
     if (typeof UI !== 'undefined') UI.alert(

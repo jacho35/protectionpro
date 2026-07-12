@@ -16,6 +16,9 @@ const UI = {
   // ─── Toasts ────────────────────────────────────────────────────────────────
 
   toast(message, type = 'info', duration = 3200) {
+    // Alias the historical 'warn' spelling to the styled 'warning' class so the
+    // amber toast style applies (only .toast-warning exists in app.css).
+    if (type === 'warn') type = 'warning';
     if (!this._toastContainer) {
       let c = document.getElementById('toast-container');
       if (!c) {

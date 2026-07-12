@@ -59,6 +59,13 @@ const Properties = {
         </div>
       </div>`;
 
+    // UX-5: surface plan↔SLD linkage in the properties panel (the canvas also
+    // shows a 🔗 badge). Boards/switchboard sections carry planLink; cables
+    // reflected from plan feeders carry swLink.
+    if (comp.planLink || comp.swLink) {
+      html += `<div class="prop-linked-note">🔗 Linked to the distribution plan</div>`;
+    }
+
     // Build editable fields grouped by section
     // 1. Filter visible fields
     const visibleFields = def.fields.filter(field => {
@@ -1423,21 +1430,26 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
         }
       });
 
-      dropdown.addEventListener('mousedown', (e) => {
-        e.preventDefault(); // prevent input blur
+      // Select on 'click', not 'mousedown': on touch devices a mousedown on a
+      // scrollable option list is withheld by the browser while it decides
+      // whether the gesture is a scroll, so taps never registered and cable
+      // sizes could not be selected on mobile. 'click' fires reliably for a
+      // genuine tap and is correctly suppressed during a scroll drag.
+      dropdown.addEventListener('click', (e) => {
         const opt = e.target.closest('.searchable-select-option');
         if (opt) selectOption(opt.dataset.value);
       });
 
-      // Close on outside click
+      // Close on outside tap. Uses pointerdown (fires for both mouse and touch)
+      // so the dropdown also dismisses on mobile.
       const outsideHandler = (e) => {
         if (!wrapper.contains(e.target)) {
           close();
-          document.removeEventListener('mousedown', outsideHandler);
+          document.removeEventListener('pointerdown', outsideHandler);
         }
       };
       input.addEventListener('focus', () => {
-        setTimeout(() => document.addEventListener('mousedown', outsideHandler), 0);
+        setTimeout(() => document.addEventListener('pointerdown', outsideHandler), 0);
       });
     });
   },

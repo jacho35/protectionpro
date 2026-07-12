@@ -27,7 +27,8 @@ const PlanCircuits = {
   // else lights use their watts (≈VA at unity PF), sockets 200 VA per gang, a
   // fused spur a nominal fixed load. Anything else contributes nothing.
   LOAD_TYPES: {
-    bd_light: { klass: 'lighting', va: (p) => (Number(p.watts) || 100) },
+    // Default watts matches the placed-device default in plan-defs.js (SD-3).
+    bd_light: { klass: 'lighting', va: (p) => (Number(p.watts) || 20) },
     bd_socket: { klass: 'socket', va: (p) => ({ single: 200, double: 400, double_usb: 500 }[p.outlets] || (p.gangs ? 200 * (parseInt(p.gangs, 10) || 1) : 200)) },
     bd_fcu: { klass: 'other', va: () => 2000 },
   },
@@ -50,11 +51,18 @@ const PlanCircuits = {
   },
   // '1P' | '3P' — the device's declared circuit type (default single-phase).
   devicePoles(el) { return ((el && el.props && el.props.poles) === '3P') ? '3P' : '1P'; },
-  deviceVA(el) {
-    const p = (el && el.props) || {};
-    if (p.load_va != null && p.load_va !== '') return Number(p.load_va) || 0;
-    const lt = this.LOAD_TYPES[el.type];
-    return lt ? (Number(lt.va(p)) || 0) : 0;
+
+  // ── Stable way ids (EE-7) ──
+  // A schedule way's identity is a stable internal id, NOT the mutable way
+  // NUMBER. Device tags reference the id (props.circuitWid) so renumbering a
+  // way, or minting a feeder way that reuses a freed number, can never remap a
+  // device's load onto the wrong physical circuit. Ids are minted from the
+  // plan sequence so they are globally unique and collision-free.
+  _genWayId() { return 'w' + (AppState.planMarkup._seq++); },
+  // Lazy migration: assign an id to any way that lacks one (old projects).
+  _ensureWayIds(comp) {
+    if (!comp || !Array.isArray(comp.props.circuits)) return;
+    for (const c of comp.props.circuits) if (!c.id) c.id = this._genWayId();
   },
 
   // Every bd_db plan element across all floors, as [{id, name, el, floor}].
@@ -77,40 +85,74 @@ const PlanCircuits = {
   // auto-name from the device mix, then recompute the board's lumped load.
   // Returns a summary {boards, ways, devices, unsynced}.
   syncLoads() {
-    const agg = new Map();   // dbElId -> Map(way -> {count, va, classes:Set, threePhase})
+    // Resolve each board's SLD component once, migrating its way ids up front
+    // (EE-7), so aggregation can key by the STABLE way id — a device with a
+    // circuitWid and a freshly-typed device sharing the same physical way both
+    // land in one group instead of clobbering each other.
+    const compByDb = new Map();
+    const compFor = (dbElId) => {
+      if (compByDb.has(dbElId)) return compByDb.get(dbElId);
+      const comp = this._sldComp(this._boardById(dbElId));
+      if (comp) { if (!Array.isArray(comp.props.circuits)) comp.props.circuits = []; this._ensureWayIds(comp); }
+      compByDb.set(dbElId, comp || null);
+      return comp || null;
+    };
+    // dbElId -> Map(key -> {count, va, classes, threePhase, num, wayId, devices})
+    const agg = new Map();
     let tagged = 0;
     for (const el of AppState.planAllElements()) {
       const p = el.props || {};
       if (!p.circuitDbId || p.circuitNo == null || p.circuitNo === '') continue;
       if (!this.isCircuitDevice(el.type)) continue;
       tagged++;
-      const way = String(p.circuitNo);
+      const num = String(p.circuitNo);
+      // Resolve to an existing way id now: by stable id, else by number
+      // (never a feeder_db way — those share the number space, EE-7).
+      let wayId = null;
+      const comp = compFor(p.circuitDbId);
+      if (comp) {
+        let c = p.circuitWid ? comp.props.circuits.find(x => x.id === p.circuitWid) : null;
+        if (!c) c = comp.props.circuits.find(x => String(x.way) === num && x.type !== 'feeder_db');
+        if (c) wayId = c.id;
+      }
+      const key = wayId ? ('#' + wayId) : ('n:' + num);
       if (!agg.has(p.circuitDbId)) agg.set(p.circuitDbId, new Map());
       const ways = agg.get(p.circuitDbId);
-      const cur = ways.get(way) || { count: 0, va: 0, classes: new Set(), threePhase: false };
+      const cur = ways.get(key) || { count: 0, va: 0, classes: new Set(), threePhase: false, num, wayId, devices: [] };
       cur.count += 1; cur.va += this.deviceVA(el);
       if (this.devicePoles(el) === '3P') cur.threePhase = true;
       const lt = this.LOAD_TYPES[el.type]; if (lt) cur.classes.add(lt.klass);
-      ways.set(way, cur);
+      cur.devices.push(el);
+      ways.set(key, cur);
     }
 
-    const sum = { boards: 0, ways: 0, devices: tagged, unsynced: 0 };
+    const sum = { boards: 0, ways: 0, devices: tagged, unsynced: 0, orphaned: 0 };
     const touchedComps = new Set();
+    const writtenByComp = new Map();   // comp -> Set(way id) written this pass
     for (const [dbElId, ways] of agg) {
-      const dbEl = this._boardById(dbElId);
-      const comp = this._sldComp(dbEl);
+      const comp = compFor(dbElId);
       if (!comp) { sum.unsynced++; continue; }   // board not synced to the SLD yet
-      if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
       sum.boards++;
-      for (const [way, a] of ways) {
-        let c = comp.props.circuits.find(x => String(x.way) === way);
-        if (!c) { c = this._newWay(comp, way); comp.props.circuits.push(c); }
+      const written = writtenByComp.get(comp) || new Set(); writtenByComp.set(comp, written);
+      for (const [, a] of ways) {
+        // The way id was resolved during aggregation; a group with no id is a
+        // number that has no schedule row yet → mint one.
+        let c = a.wayId ? comp.props.circuits.find(x => x.id === a.wayId) : null;
+        if (!c) c = comp.props.circuits.find(x => String(x.way) === a.num && x.type !== 'feeder_db');
+        if (!c) { c = this._newWay(comp, a.num, a.classes); comp.props.circuits.push(c); }
+        if (!c.id) c.id = this._genWayId();
+        // Backfill device tags with the resolved id so future renumbering can
+        // never redirect their load; keep circuitNo in sync for display.
+        for (const d of a.devices) { d.props.circuitWid = c.id; d.props.circuitNo = c.way; }
+        written.add(c.id);
+        delete c._orphaned;
         c.plan_qty = a.count;
-        // The way's poles follow the devices' declared phase; a 3P way spreads
-        // R/W/B, a 1P way keeps its assigned phase (reset off RWB if it changed).
-        c.poles = a.threePhase ? '3P' : '1P';
-        if (a.threePhase) c.phase = 'RWB';
-        else if (c.phase === 'RWB') c.phase = 'R';
+        // Poles: escalate 1P→3P only; never silently demote a 3P way to
+        // 1P-on-R (EE-14), and never touch a way whose poles the user pinned.
+        if (!c._polesManual) {
+          if (a.threePhase) { c.poles = '3P'; c.phase = 'RWB'; }
+          else if (c.poles !== '3P') { c.poles = '1P'; if (c.phase === 'RWB') c.phase = 'R'; }
+        }
         if (!c._manualLoadOverride) {
           c.load_va = Math.round(a.va);
           if (!c._nameOverride) c.description = this._describe(a.classes, a.count);
@@ -119,21 +161,60 @@ const PlanCircuits = {
       }
       touchedComps.add(comp);
     }
+
+    // EE-3: a way that was plan-derived (plan_qty>0) but received no devices
+    // this pass is now a ghost — its devices were deleted or re-tagged. Zero
+    // it (unless the user pinned the value) so the board no longer overstates.
+    for (const b of this.boardEls()) {
+      const comp = compFor(b.id);
+      if (!comp || !Array.isArray(comp.props.circuits)) continue;
+      const written = writtenByComp.get(comp);
+      for (const c of comp.props.circuits) {
+        if (c.type === 'feeder_db') continue;
+        if (!(Number(c.plan_qty) > 0)) continue;
+        if (written && written.has(c.id)) continue;
+        c.plan_qty = 0;
+        if (!c._manualLoadOverride) c.load_va = 0;
+        if (!c._cableManual) c.cable_m = 0;
+        c._orphaned = true;
+        sum.orphaned++;
+        touchedComps.add(comp);
+      }
+    }
+
     for (const comp of touchedComps) DBSchedule.recompute(comp);
     if (touchedComps.size && typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
     return sum;
   },
 
-  // A blank 1P way seeded from the lighting preset (breaker/curve/cable), so a
-  // freshly-tagged circuit that has no schedule row yet still gets sensible
-  // defaults; the user tunes it in the DB schedule editor.
-  _newWay(comp, way) {
-    const base = (typeof DB_LOAD_TYPES !== 'undefined' && DB_LOAD_TYPES.find(t => t.key === 'lighting')) || {};
+  // Map an aggregate's device classes to the dominant load preset key.
+  // Sockets outrank lighting (heavier conductor / lower DF must not be lost);
+  // anything else falls back to a generic spare-way preset (EE-8).
+  _presetKeyFor(classes) {
+    if (classes && classes.has) {
+      if (classes.has('socket')) return 'socket';
+      if (classes.has('lighting')) return 'lighting';
+      if (classes.has('other')) return 'spare';
+    }
+    return 'lighting';
+  },
+
+  // A blank way seeded from the aggregate's DOMINANT class preset
+  // (breaker/curve/cable/DF/poles), so a freshly-tagged socket circuit is no
+  // longer minted with lighting defaults (1.5 mm² / DF 1.0). The user tunes it
+  // in the DB schedule editor.
+  _newWay(comp, way, classes) {
+    const key = this._presetKeyFor(classes);
+    const base = (typeof DB_LOAD_TYPES !== 'undefined' && DB_LOAD_TYPES.find(t => t.key === key)) || {};
     const idx = comp.props.circuits.length;
+    const is3P = base.poles === '3P';
     return {
-      way: String(way), description: '', poles: '1P', phase: ['R', 'W', 'B'][idx % 3],
+      id: this._genWayId(),
+      way: String(way), description: '', poles: base.poles || '1P',
+      phase: is3P ? 'RWB' : ['R', 'W', 'B'][idx % 3],
       breaker_a: base.breaker_a || 10, curve: base.curve || 'B', el_group: '',
-      cable_mm2: base.cable_mm2 || 1.5, cable_m: 0, load_va: 0, demand_factor: base.df || 1,
+      cable_mm2: base.cable_mm2 || 1.5, cable_m: 0, load_va: 0,
+      demand_factor: base.df != null ? base.df : 1,
       leakage_ma: 0,
     };
   },
@@ -179,6 +260,7 @@ const PlanCircuits = {
     const src = elById[srcId];
     if (!src || !src.props || !src.props.circuitDbId || src.props.circuitNo == null) return 0;
     const dbId = src.props.circuitDbId, way = String(src.props.circuitNo);
+    const srcWid = src.props.circuitWid || null;
     const adj = this._adjacency();
     const seen = new Set([srcId]);
     const q = [srcId];
@@ -193,7 +275,7 @@ const PlanCircuits = {
         if (!this.isLoadDevice(e.type)) { q.push(nb); continue; }  // pass-through (JB, switch…)
         const p = e.props || {};
         if (p.circuitDbId && (p.circuitDbId !== dbId || String(p.circuitNo) !== way)) continue; // owned elsewhere
-        if (!p.circuitDbId) { e.props = p; p.circuitDbId = dbId; p.circuitNo = way; n++; }
+        if (!p.circuitDbId) { e.props = p; p.circuitDbId = dbId; p.circuitNo = way; if (srcWid) p.circuitWid = srcWid; n++; }
         q.push(nb);
       }
     }
@@ -256,8 +338,18 @@ const PlanCircuits = {
   autoTagDevices(els) {
     const loads = (els || []).filter(e => this.isLoadDevice(e.type));
     if (!loads.length) return null;
-    const boards = this.boardEls();
+    let boards = this.boardEls();
     if (!boards.length) return { tagged: 0, reason: 'no-board' };
+    // EE-10: restrict candidates to the active floor so a riser-aligned board
+    // one floor down can't silently steal the tag. Fall back cross-floor only
+    // when the active floor has no board (flagged so the caller can warn).
+    let crossFloor = false;
+    const activeFloor = AppState.planActiveFloor();
+    if (activeFloor) {
+      const onFloor = boards.filter(b => b.floor && b.floor.id === activeFloor.id);
+      if (onFloor.length) boards = onFloor;
+      else crossFloor = true;
+    }
     // Nearest board to the batch centroid.
     const cx = loads.reduce((s, e) => s + e.x, 0) / loads.length;
     const cy = loads.reduce((s, e) => s + e.y, 0) / loads.length;
@@ -279,7 +371,8 @@ const PlanCircuits = {
       ways++;
     }
     if (comp) this.syncLoads();
-    return { tagged: loads.length, board: board.name, ways, synced: !!comp };
+    return { tagged: loads.length, board: board.name, ways, synced: !!comp,
+      crossFloor, floor: (board.floor && board.floor.name) || '' };
   },
 
   // ── Phase C: routed final-circuit length → way.cable_m ──
@@ -297,12 +390,12 @@ const PlanCircuits = {
       for (const id of ids) {
         const e = elById[id];
         if (e && e.props && e.props.circuitDbId && e.props.circuitNo != null) {
-          return { dbId: e.props.circuitDbId, way: String(e.props.circuitNo) };
+          return { dbId: e.props.circuitDbId, way: String(e.props.circuitNo), wid: e.props.circuitWid || null };
         }
       }
       return null;
     };
-    const lenByWay = new Map();   // `${dbId}|${way}` -> metres
+    const lenByWay = new Map();   // `${dbId}|${wid||('n:'+way)}` -> {dbId, way, wid, m}
     for (const fl of AppState.planFloors()) {
       const f = (fl.data.scale && fl.data.scale.factor) || 0;
       if (!f) continue;
@@ -310,19 +403,21 @@ const PlanCircuits = {
         if (!this.CIRCUIT_ROUTES.includes(r.type)) continue;
         const w = routeWay(r); if (!w) continue;
         let px = 0; for (let i = 1; i < (r.points || []).length; i++) px += Math.hypot(r.points[i].x - r.points[i - 1].x, r.points[i].y - r.points[i - 1].y);
-        const key = `${w.dbId}|${w.way}`;
-        lenByWay.set(key, (lenByWay.get(key) || 0) + px * f);
+        const key = `${w.dbId}|${w.wid || ('n:' + w.way)}`;
+        const rec = lenByWay.get(key) || { dbId: w.dbId, way: w.way, wid: w.wid, m: 0 };
+        rec.m += px * f;
+        lenByWay.set(key, rec);
       }
     }
     let updated = 0;
     const touched = new Set();
-    for (const [key, m] of lenByWay) {
-      const [dbId, way] = key.split('|');
-      const comp = this._sldComp(this._boardById(dbId));
+    for (const rec of lenByWay.values()) {
+      const comp = this._sldComp(this._boardById(rec.dbId));
       if (!comp || !Array.isArray(comp.props.circuits)) continue;
-      const c = comp.props.circuits.find(x => String(x.way) === way);
+      let c = rec.wid ? comp.props.circuits.find(x => x.id === rec.wid) : null;
+      if (!c) c = comp.props.circuits.find(x => String(x.way) === rec.way && x.type !== 'feeder_db');
       if (!c || c._cableManual) continue;
-      c.cable_m = +m.toFixed(2); updated++; touched.add(comp);
+      c.cable_m = +rec.m.toFixed(2); updated++; touched.add(comp);
     }
     for (const comp of touched) DBSchedule.recompute(comp);
     return updated;

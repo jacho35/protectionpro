@@ -24,7 +24,11 @@ const UndoManager = {
       this._stack.splice(this._index + 1);
     }
 
-    // Capture state (components, wires, pages, groups, counters)
+    // Capture state (components, wires, pages, groups, counters).
+    // Plan↔SLD link fields (planLink, swLink, busOwner, outBusId) live directly
+    // on the component objects, so this deep clone preserves them across SLD
+    // undo/redo (UX-4/SD-1) — do NOT switch to a field allow-list that would
+    // drop them, or a sync after undo would re-orphan the plan boards.
     const state = {
       components: JSON.parse(JSON.stringify([...AppState.components.values()])),
       wires: JSON.parse(JSON.stringify([...AppState.wires.values()])),

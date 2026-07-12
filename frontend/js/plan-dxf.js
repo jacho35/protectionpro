@@ -100,6 +100,10 @@ const PlanDXF = {
       blocks, elements, routes, trenches, rooms, measurements, crossings, texts,
     };
 
+    // UX-10: disable the trigger + show a busy overlay for the backend round-trip.
+    const btn = document.querySelector('#plan-toolbar [data-action="dxf"]');
+    if (btn) btn.disabled = true;
+    if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, 'Exporting DXF…');
     try {
       const resp = await fetch(`${API_BASE}/plan/dxf-export`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -117,6 +121,9 @@ const PlanDXF = {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       UI.alert('DXF export failed: ' + (e && e.message ? e.message : e));
+    } finally {
+      if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
+      if (btn) btn.disabled = false;
     }
   },
 };

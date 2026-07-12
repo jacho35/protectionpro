@@ -101,14 +101,19 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             (w.fromComponent, w.toPort, w.fromPort))
 
     # Identify buses — filter to selected bus if specified
-    buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
+    # distribution_board is treated as a bus-like node (busbar + lumped load),
+    # so a fault level IS computed at each board and the walk passes through a
+    # board to reach sub-boards and upstream sources (EE-1).
+    buses = [c for c in project.components
+             if c.type in ("bus", "distribution_board")
+             and str(c.props.get("system", "ac")).lower() != "dc"]
     if fault_bus_id:
         buses = [c for c in buses if c.id == fault_bus_id]
 
     # For each bus, compute equivalent impedance seen from that bus
     results = {}
     for bus in buses:
-        voltage_kv = bus.props.get("voltage_kv", 11)
+        voltage_kv = bus.props.get("voltage_kv", 0.4 if bus.type == "distribution_board" else 11)
         i_base_ka = base_mva / (math.sqrt(3) * voltage_kv)  # kA
 
         # Collect all source paths with component trail
@@ -321,7 +326,9 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     # ── Voltage Depression Calculation (IEC 60909 §3.6) ──
     # Build Zbus matrix for all buses and compute retained voltage at each bus
     # during a fault at each faulted bus: V_j = 1 - Z_jk / Z_kk
-    all_buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
+    all_buses = [c for c in project.components
+                 if c.type in ("bus", "distribution_board")
+                 and str(c.props.get("system", "ac")).lower() != "dc"]
     if len(all_buses) >= 2:
         try:
             _compute_voltage_depression(
@@ -540,7 +547,13 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
                     "is_motor": True,
                     "rated_mva": motor_mva,
                 })
-            return
+            if comp.type == "static_load":
+                return
+            # A distribution board also passes fault current through (in→out) as
+            # a near-zero-impedance busbar, so upstream sources beyond the board
+            # and downstream sub-boards are still reached (EE-1). Fall through to
+            # the branch-walk below with zero added impedance rather than
+            # terminating the walk here.
 
         # Accumulate impedance through branch elements, tracking the
         # voltage zone for cable per-unit conversion ([EE-12])
@@ -567,7 +580,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
 
     # Start from bus's neighbors at the faulted bus's voltage
     _bus_comp = components.get(bus_id)
-    _v_start = float(_bus_comp.props.get("voltage_kv", 11) or 11) if _bus_comp else 11.0
+    _v_start = float(_bus_comp.props.get("voltage_kv", 0.4 if _bus_comp.type == "distribution_board" else 11) or 11) if _bus_comp else 11.0
     for neighbor_id, _, _ in adjacency.get(bus_id, []):
         walk(neighbor_id, complex(0, 0), [], {bus_id}, _v_start)
 
@@ -1082,7 +1095,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                 walk(neighbor_id, z0_path, trail, remote_port, path_visited, v_next)
 
     _bus_comp = components.get(bus_id)
-    _v_start = float(_bus_comp.props.get("voltage_kv", 11) or 11) if _bus_comp else 11.0
+    _v_start = float(_bus_comp.props.get("voltage_kv", 0.4 if _bus_comp.type == "distribution_board" else 11) or 11) if _bus_comp else 11.0
     for neighbor_id, _, remote_port in adjacency.get(bus_id, []):
         walk(neighbor_id, complex(0, 0), [], remote_port, frozenset({bus_id}), _v_start)
 
@@ -1623,8 +1636,8 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
         if not comp:
             return
 
-        # Hit another bus — record branch
-        if comp.type == "bus" and comp_id in bus_set and comp_id != from_bus_id:
+        # Hit another bus-like node (bus or distribution board) — record branch
+        if comp_id in bus_set and comp_id != from_bus_id:
             if abs(z_path) > 1e-15:
                 branches.append((from_bus_id, comp_id, z_path))
             else:
@@ -1687,7 +1700,7 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
 
     visited = {start_bus_id}
     _start_comp = components.get(start_bus_id)
-    _v_start = float(_start_comp.props.get("voltage_kv", 11) or 11) if _start_comp else 11.0
+    _v_start = float(_start_comp.props.get("voltage_kv", 0.4 if _start_comp.type == "distribution_board" else 11) or 11) if _start_comp else 11.0
     for neighbor_id, _, _ in adjacency.get(start_bus_id, []):
         walk(neighbor_id, complex(0, 0), set(visited), start_bus_id, _v_start)
 

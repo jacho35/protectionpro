@@ -28,6 +28,18 @@ const DBSchedule = {
   _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'phase_a_pct', 'phase_b_pct',
     'phase_c_pct', 'phase_connection'],
 
+  // Stable way id (EE-7). Mint from the shared plan sequence so plan-created
+  // and schedule-created ways never collide; device circuit tags reference
+  // this id, not the mutable way number.
+  _wayId() {
+    if (typeof PlanCircuits !== 'undefined' && PlanCircuits._genWayId) return PlanCircuits._genWayId();
+    return 'w' + (AppState.planMarkup._seq++);
+  },
+  _ensureWayIds(comp) {
+    if (!comp || !Array.isArray(comp.props.circuits)) return;
+    for (const c of comp.props.circuits) if (!c.id) c.id = this._wayId();
+  },
+
   init() {
     this.modal = document.getElementById('db-modal');
     this.body = document.getElementById('db-modal-body');
@@ -63,6 +75,7 @@ const DBSchedule = {
     if (!comp || comp.type !== 'distribution_board') return;
     this.currentId = compId;
     if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
+    this._ensureWayIds(comp);   // lazy EE-7 migration for existing projects
     // Snapshot BEFORE render() (whose recompute() writes the derived props)
     this._openCommitted = JSON.stringify(this._committedFields(comp));
     this._openDerived = {};
@@ -226,6 +239,7 @@ const DBSchedule = {
     const n = Math.max(1, Math.round(count) || 1);
     const is3P = t.poles === '3P';
     return {
+      id: this._wayId(),
       way: String(idx + 1),
       description: this._describeLoad(t, n),
       poles: t.poles,
@@ -260,6 +274,82 @@ const DBSchedule = {
       : `Added ${t.label.toLowerCase()} way (${units} ${t.unit}${units === 1 ? '' : 's'}).`;
   },
 
+  // ── Board incomer current (EE-16) ──
+  // A board whose every way is single-phase draws its heaviest-phase load at
+  // 230 V, not the √3·400 V three-phase figure; a mixed/3-phase board reports
+  // the 3φ current plus the worst-phase current so imbalance is visible.
+  _allSinglePhase(comp) {
+    const cc = comp.props.circuits || [];
+    return cc.length > 0 && cc.every(c => (c.poles || '1P') !== '3P' && c.phase !== 'RWB');
+  },
+  _ampsLabel(comp, totals) {
+    const ph = totals.phaseVa;
+    const worstA = (Math.max(ph.R, ph.W, ph.B)) / 230;   // VA / 230 V
+    if (this._allSinglePhase(comp)) return `${worstA.toFixed(1)} A @ 230 V`;
+    const vkv = comp.props.voltage_kv || 0.4;
+    const a3 = vkv > 0 ? totals.demandKva / (Math.sqrt(3) * vkv) : 0;
+    return `${a3.toFixed(1)} A 3φ · worst phase ${worstA.toFixed(1)} A`;
+  },
+
+  // ── Per-way status: pin/auto indicator + rating warnings ────────────
+  // Diversified way current at 230 V (1P) or √3·400 V (3P).
+  _wayCurrentA(c) {
+    const va = (Number(c.load_va) || 0) * (Number(c.demand_factor) || 1);
+    if (!va) return 0;
+    const is3P = c.poles === '3P' || c.phase === 'RWB';
+    return is3P ? va / (Math.sqrt(3) * 400) : va / 230;
+  },
+
+  // Overload / undersize warnings (EE-8, EE-9): way current vs breaker,
+  // socket-way conductor vs SANS 10142-1 minimum, feeder demand vs breaker.
+  _wayWarnings(c) {
+    const w = [];
+    const br = Number(c.breaker_a) || 0;
+    const I = this._wayCurrentA(c);
+    if (br && I > br + 1e-6) w.push(`Load current ${I.toFixed(1)} A exceeds the ${br} A breaker`);
+    const isSocket = /socket/i.test(c.description || '');
+    if (isSocket && Number(c.cable_mm2) > 0 && Number(c.cable_mm2) < 2.5) {
+      w.push('Socket circuit cable < 2.5 mm² (SANS 10142-1)');
+    }
+    if (c.type === 'feeder_db' && Number(c.downstream_a) > 0 && br && c.downstream_a > br + 1e-6) {
+      w.push(`Downstream demand ${Number(c.downstream_a).toFixed(1)} A exceeds the ${br} A feeder breaker`);
+    }
+    return w;
+  },
+
+  _wayPins(c) {
+    const p = [];
+    if (c._manualLoadOverride) p.push('load');
+    if (c._cableManual) p.push('length');
+    if (c._nameOverride) p.push('description');
+    if (c._polesManual) p.push('poles/phase');
+    return p;
+  },
+
+  _wayStatusHtml(c, i) {
+    let html = '';
+    const warns = this._wayWarnings(c);
+    if (warns.length) html += `<span class="db-warn" title="${escHtml(warns.join(' · '))}" style="color:#d32f2f;margin-right:4px;cursor:help;">⚠</span>`;
+    const pins = this._wayPins(c);
+    if (pins.length) {
+      html += `<button class="btn-small db-unpin" data-idx="${i}" title="Pinned (${escHtml(pins.join(', '))}) — your edit is protected from the plan sync. Click to unpin and let the plan drive it again." style="margin-right:2px;">📌</button>`;
+    } else if (Number(c.plan_qty) > 0) {
+      html += `<span class="db-auto" title="Auto from plan — load/description/length follow the tagged devices." style="opacity:0.5;margin-right:4px;">🔄</span>`;
+    }
+    return html;
+  },
+
+  // Clear a way's pin flags and re-pull its auto values from the plan.
+  _unpinWay(comp, c) {
+    delete c._manualLoadOverride; delete c._cableManual;
+    delete c._nameOverride; delete c._polesManual;
+    if (typeof PlanCircuits !== 'undefined') {
+      if (PlanCircuits.syncLoads) PlanCircuits.syncLoads();
+      if (PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
+    }
+    this.render();
+  },
+
   // ── Rendering ───────────────────────────────────────────────────────
   render() {
     const comp = AppState.components.get(this.currentId);
@@ -284,15 +374,14 @@ const DBSchedule = {
         <td><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
         <td><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
-        <td><button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
+        <td style="white-space:nowrap;">${this._wayStatusHtml(c, i)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
       </tr>`).join('');
 
     // Live totals (exact, not via the rounded aggregate demand factor)
     const totals = this.recompute(comp);
     const connected = totals.connectedKva;
     const demand = totals.demandKva;
-    const vkv = comp.props.voltage_kv || 0.4;
-    const amps = vkv > 0 ? demand / (Math.sqrt(3) * vkv) : 0;
+    const ampsLabel = this._ampsLabel(comp, totals);
 
     // Phase balance bars (SA colours: Red / White / Blue), widths relative
     // to the heaviest phase so imbalance reads at a glance
@@ -362,7 +451,7 @@ const DBSchedule = {
         <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file (replaces the current schedule)">Import Excel</button>
         <input type="file" id="db-import-file" accept=".xlsx,.xls,.csv" style="display:none">
         <span id="db-totals-strip" style="font-size:12px;">Connected: <strong>${connected.toFixed(2)} kVA</strong>
-          &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}): <strong>${demand.toFixed(2)} kVA</strong> (${amps.toFixed(1)} A)
+          &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}): <strong>${demand.toFixed(2)} kVA</strong> (${ampsLabel})
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
         <button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>
       </div>`;
@@ -404,6 +493,7 @@ const DBSchedule = {
     });
     this.body.querySelector('#db-add-row').addEventListener('click', () => {
       circuits.push({
+        id: this._wayId(),
         way: String(circuits.length + 1), description: '', poles: '1P',
         phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
         el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
@@ -418,6 +508,12 @@ const DBSchedule = {
         this.render();
       });
     });
+    this.body.querySelectorAll('.db-unpin').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const c = circuits[parseInt(btn.dataset.idx)];
+        if (c) this._unpinWay(comp, c);
+      });
+    });
     // ── Spreadsheet-style editing ──
     // change: write through to the model. Full re-render ONLY when poles
     // changes (it toggles the phase select); otherwise refresh just the
@@ -430,6 +526,17 @@ const DBSchedule = {
         const k = e.target.dataset.k;
         const v = e.target.value;
         c[k] = e.target.type === 'number' ? (parseFloat(v) || 0) : v;
+        // F-PIN (+ EE-14): a hand edit to a plan-derived way pins that field so
+        // the next PlanCircuits.syncLoads()/syncRoutedLengths() (fired on any
+        // device attribute commit) can't silently overwrite it. Only ways the
+        // plan drives (plan_qty > 0) can be pinned — manual ways are never
+        // touched by sync anyway.
+        if (Number(c.plan_qty) > 0) {
+          if (k === 'load_va') c._manualLoadOverride = true;
+          else if (k === 'cable_m') c._cableManual = true;
+          else if (k === 'description') c._nameOverride = true;
+          else if (k === 'poles' || k === 'phase') c._polesManual = true;
+        }
         if (k === 'poles') {
           if (c.poles === '3P') c.phase = 'RWB';
           else if (c.phase === 'RWB') c.phase = 'R';
@@ -484,6 +591,7 @@ const DBSchedule = {
         if (row + 1 >= circuits.length && e.key === 'Enter') {
           // Enter on the last row: append a new way and land in it
           circuits.push({
+            id: this._wayId(),
             way: String(circuits.length + 1), description: '', poles: '1P',
             phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
             el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
@@ -516,6 +624,7 @@ const DBSchedule = {
         const rowIdx = startRow + li;
         while (rowIdx >= circuits.length) {
           circuits.push({
+            id: this._wayId(),
             way: String(circuits.length + 1), description: '', poles: '1P',
             phase: 'R', breaker_a: 20, curve: 'C', el_group: '',
             cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
@@ -567,13 +676,12 @@ const DBSchedule = {
       row.querySelector('.db-phase-val').textContent =
         `${(ph[p] / 1000).toFixed(2)} kVA (${pct.toFixed(0)}%)`;
     });
-    const vkv = comp.props.voltage_kv || 0.4;
-    const amps = vkv > 0 ? totals.demandKva / (Math.sqrt(3) * vkv) : 0;
+    const ampsLabel = this._ampsLabel(comp, totals);
     const strip = this.body.querySelector('#db-totals-strip');
     if (strip) {
       strip.innerHTML = `Connected: <strong>${totals.connectedKva.toFixed(2)} kVA</strong>
         &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}):
-        <strong>${totals.demandKva.toFixed(2)} kVA</strong> (${amps.toFixed(1)} A)
+        <strong>${totals.demandKva.toFixed(2)} kVA</strong> (${ampsLabel})
         &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong>`;
     }
   },
@@ -711,14 +819,45 @@ const DBSchedule = {
         UI.toast('No circuit rows could be read from the file.', 'error');
         return;
       }
-      if ((comp.props.circuits || []).length > 0 &&
-          !await UI.confirm(`Replace the current ${comp.props.circuits.length} way(s) with ${circuits.length} imported way(s)?`)) {
-        return;
+      const existing = comp.props.circuits || [];
+      const planLinked = !!comp.planLink;
+      if (existing.length > 0) {
+        const msg = planLinked
+          ? `Merge ${circuits.length} imported way(s) into this plan-linked board? Rows are matched by way number; plan-integration fields (feeder links, plan quantities, pinned edits) are preserved.`
+          : `Merge ${circuits.length} imported way(s) into the current ${existing.length} way(s) (matched by way number)?`;
+        if (!await UI.confirm(msg)) return;
       }
-      comp.props.circuits = circuits;
+      // SD-2: merge by way number instead of a wholesale replace, so a
+      // plan-linked board keeps its stable way ids, "Feeder to Sub-board" ways
+      // (type/feedsDbId), plan_qty and pin flags — otherwise the next sync
+      // re-mints duplicates and collides way numbers (compounding EE-7).
+      const byWay = new Map();
+      for (const c of existing) byWay.set(String(c.way), c);
+      const merged = [];
+      for (const row of circuits) {
+        const ex = byWay.get(String(row.way));
+        if (ex && ex.type !== 'feeder_db') {
+          ex.description = row.description; ex.poles = row.poles; ex.phase = row.phase;
+          ex.breaker_a = row.breaker_a; ex.curve = row.curve; ex.el_group = row.el_group;
+          ex.leakage_ma = row.leakage_ma; ex.cable_mm2 = row.cable_mm2; ex.cable_m = row.cable_m;
+          ex.load_va = row.load_va; ex.demand_factor = row.demand_factor;
+          merged.push(ex);
+          byWay.delete(String(row.way));
+        } else {
+          row.id = this._wayId();
+          merged.push(row);
+        }
+      }
+      // Keep surviving integration ways (feeders + plan-driven ways) that no
+      // imported row matched, so the plan↔SLD link stays intact.
+      for (const c of existing) {
+        if (merged.indexOf(c) !== -1) continue;
+        if (c.type === 'feeder_db' || Number(c.plan_qty) > 0) merged.push(c);
+      }
+      comp.props.circuits = merged;
       this.render();
       document.getElementById('status-info').textContent =
-        `Imported ${circuits.length} circuit(s) from ${file.name}.`;
+        `Imported ${circuits.length} circuit(s) from ${file.name} (merged by way number).`;
     };
     reader.readAsArrayBuffer(file);
   },

@@ -27,7 +27,6 @@
   min-height: var(--toolbar-height);
 }
 .plan-tb-group { display: flex; align-items: center; gap: 6px; }
-.plan-tb-right { margin-left: auto; }
 
 .plan-tool-btn, .plan-tb-btn {
   padding: 5px 10px;
@@ -54,8 +53,6 @@
 #plan-tb-overflow { display: contents; }
 .plan-tb-field input, #plan-grid-size { width: 56px; padding: 3px 4px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
 
-.plan-scale-readout { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); }
-
 .plan-main { flex: 1; display: flex; min-height: 0; }
 
 .plan-palette {
@@ -65,7 +62,10 @@
   overflow-y: auto;
   padding: 8px;
 }
-.plan-pal-header { display: flex; gap: 6px; margin-bottom: 8px; }
+.plan-pal-header { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 8px; }
+/* Labelled domain (Plan type) selector (UX-15). */
+.plan-domain-field { display: flex; flex-direction: column; gap: 2px; }
+.plan-domain-cap { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 /* Placement-mode segmented control (Single / Array / Path). */
 .plan-pal-mode { display: flex; margin-bottom: 8px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
 .plan-pal-mode-btn { flex: 1; padding: 5px 4px; border: none; border-left: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font-size: 12px; }
@@ -112,9 +112,34 @@
 }
 .plan-status {
   position: absolute; bottom: 8px; left: 8px;
+  display: flex; align-items: center; gap: 10px;
   padding: 3px 8px; background: rgba(255,255,255,0.85); color: #334155;
   border-radius: 6px; font-size: 12px; font-family: var(--font-mono); pointer-events: none;
 }
+/* Always-visible scale readout — tappable to (re)calibrate (UX-14). */
+.plan-scale-chip { pointer-events: auto; cursor: pointer; white-space: nowrap; }
+.plan-scale-chip.warn {
+  background: #f59e0b; color: #1f1300; font-weight: 600;
+  padding: 1px 8px; border-radius: 6px;
+}
+
+/* Floating Done/Cancel chip for multi-point drafts — touch completion (UX-1). */
+.plan-action-chip {
+  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  display: none; gap: 8px; z-index: 45;
+  padding: 4px; border-radius: 12px;
+  background: rgba(255,255,255,0.96); box-shadow: 0 4px 18px rgba(0,0,0,0.22);
+}
+.plan-action-chip.on { display: flex; }
+.plan-action-chip button {
+  min-width: 92px; min-height: 40px; padding: 6px 14px;
+  border: 1px solid var(--border-color); border-radius: 9px;
+  background: var(--bg-secondary); color: var(--text-primary);
+  cursor: pointer; font-size: 14px; font-weight: 600;
+}
+.plan-action-chip button[data-chip="done"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.plan-action-chip button:hover { filter: brightness(1.06); }
+body.dark-mode .plan-action-chip { background: rgba(30,30,46,0.96); }
 
 .plan-props {
   width: var(--properties-width);
@@ -124,6 +149,12 @@
   padding: 10px;
 }
 .plan-props-title { font-weight: 600; margin-bottom: 10px; }
+/* "Linked to SLD" note on a linked plan element (UX-5). */
+.plan-linked-note {
+  font-size: 11px; color: var(--accent);
+  background: var(--bg-tertiary); padding: 4px 6px;
+  border-radius: 4px; margin-bottom: 8px;
+}
 .plan-props-empty { color: var(--text-muted); font-size: 13px; }
 .plan-field { margin-bottom: 8px; display: flex; flex-direction: column; gap: 3px; }
 .plan-field-label { font-size: 12px; color: var(--text-secondary); }
@@ -191,6 +222,16 @@
 .plan-plan-mini { border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font-size: 11px; border-radius: 3px; padding: 0 4px; }
 .plan-plan-mini:hover { background: var(--bg-tertiary); }
 .plan-plan-del { border: none; background: none; color: var(--danger); cursor: pointer; font-size: 13px; }
+
+/* Touch: ≥32px hit areas for the background-plan row + floor-manager buttons
+   (UX-13). */
+@media (pointer: coarse) {
+  .plan-plan-mini, .plan-plan-del, .plan-cleanup-btn,
+  .plan-pagenav button, .plan-floor-acts button {
+    min-width: 32px; min-height: 32px;
+  }
+  .plan-plan-op { min-height: 28px; }
+}
 
 /* Dark mode: repaint-only theming for the canvas via the custom props. */
 body.dark-mode .plan-stage {

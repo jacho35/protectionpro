@@ -362,7 +362,7 @@ def _find_cable_buses(cable_id, adj, comp_map):
             comp = comp_map.get(nid)
             if not comp:
                 continue
-            if comp.type == "bus":
+            if comp.type in ("bus", "distribution_board"):
                 found_bus = nid
                 break
             if comp.type in TRANSPARENT_TYPES:
@@ -476,7 +476,7 @@ def _find_upstream_cb(cable_id, adj, comp_map):
             if fallback is None:
                 fallback = comp  # remember; use only if no source-side device
             continue  # don't traverse past a load-side device
-        if comp.type in TRANSPARENT_TYPES or comp.type == "bus":
+        if comp.type in TRANSPARENT_TYPES or comp.type in ("bus", "distribution_board"):
             for next_id, w in adj.get(nid, []):
                 if next_id not in visited:
                     stack.append((next_id, w))

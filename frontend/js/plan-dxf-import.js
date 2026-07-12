@@ -38,6 +38,7 @@ const PlanDxfImport = {
     if ((!pm.scale || !pm.scale.factor) && data.factor) pm.scale = { factor: data.factor };
 
     const idByName = {};   // board name → new element id (for circuit relink)
+    const importedEls = [];
     let nDev = 0, nRoute = 0;
     for (const d of (data.devices || [])) {
       const el = {
@@ -45,7 +46,7 @@ const PlanDxfImport = {
         rotation: d.rotation || 0, name: d.name || '', reticId: null,
         props: this._propsFor(d),
       };
-      pm.elements.push(el); nDev++;
+      pm.elements.push(el); importedEls.push(el); nDev++;
       if (d.type === 'bd_db' && el.name) idByName[el.name.trim().toLowerCase()] = el.id;
     }
     // Relink each device's circuit to its board by the DBOARD attribute name.
@@ -57,12 +58,30 @@ const PlanDxfImport = {
         delete el.props._dboard;
       }
     }
+    // EE-12: routes round-trip as pure geometry (no fromId/toId, no snappedTo),
+    // which silently kills tag propagation and routed-length sync. Re-snap each
+    // endpoint/vertex to the nearest imported device — the coordinates are our
+    // own exact export, so a tight tolerance re-establishes the topology
+    // without grabbing genuinely free-space vertices.
+    const TOL2 = 6 * 6;
+    const nearestEl = (x, y) => {
+      let best = null, bd = TOL2;
+      for (const e of importedEls) { const dd = (e.x - x) ** 2 + (e.y - y) ** 2; if (dd <= bd) { bd = dd; best = e; } }
+      return best;
+    };
     for (const r of (data.routes || [])) {
       const type = (r.layer && r.layer.indexOf('RT_') === 0) ? r.layer.slice(3).toLowerCase() : 'circuit';
+      const pts = r.pts.map(p => {
+        const o = { x: p[0], y: p[1] };
+        const near = nearestEl(o.x, o.y);
+        if (near) o.snappedTo = near.id;
+        return o;
+      });
       pm.routes.push({
         id: AppState.planGenId('pmrt'), type: PLAN_DEFS.route(type) ? type : 'circuit',
-        fromId: null, toId: null,
-        points: r.pts.map(p => ({ x: p[0], y: p[1] })),
+        fromId: (pts[0] && pts[0].snappedTo) || null,
+        toId: (pts[pts.length - 1] && pts[pts.length - 1].snappedTo) || null,
+        points: pts,
         cableType: '', curved: !!r.curved, props: {},
       });
       nRoute++;
@@ -90,7 +109,15 @@ const PlanDxfImport = {
     const a = d.attrs || {};
     if (a.CIRCUIT) props.circuitNo = a.CIRCUIT;
     if (a.PHASE) props.poles = (a.PHASE === '3P') ? '3P' : '1P';
-    if (a.LOAD_VA) props.load_va = a.LOAD_VA;
+    // EE-12: the export writes every device's EFFECTIVE VA to LOAD_VA. Storing
+    // it verbatim pins a 20 W light at 20 VA forever; only keep it as an
+    // explicit override when it actually differs from the recomputed auto VA.
+    if (a.LOAD_VA) {
+      const lv = Number(a.LOAD_VA);
+      const auto = (typeof PlanCircuits !== 'undefined' && PlanCircuits.deviceVA)
+        ? PlanCircuits.deviceVA({ type, props: { ...props } }) : NaN;
+      if (!(Number.isFinite(lv) && lv === auto)) props.load_va = a.LOAD_VA;
+    }
     if (a.CABLE) props.cableType = a.CABLE;
     if (a.DBOARD) props._dboard = a.DBOARD;   // transient; relinked to circuitDbId
     return props;

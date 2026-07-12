@@ -40,6 +40,20 @@ const PlanTools = {
   cancel() {
     if (this.active && this.active.cancel) this.active.cancel();
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    this._notifyDraft();
+  },
+
+  // Does the active tool currently hold a multi-point draft? Drives the
+  // floating Done/Cancel chip (UX-1) and the live status line (UX-7).
+  draftInfo() {
+    const a = this.active;
+    if (!a) return null;
+    if (a._draft && a._draft.points && a._draft.points.length) return { n: a._draft.points.length };
+    if (a._pts && a._pts.length) return { n: a._pts.length };
+    return null;
+  },
+  _notifyDraft() {
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onDraftChanged) PlanMarkup.onDraftChanged();
   },
 
   // Delete an interior node (bend) of a route under `pt`. Endpoints are the
@@ -55,10 +69,10 @@ const PlanTools = {
     return true;
   },
 
-  onDown(pt, e) { if (this.active && this.active.onDown) this.active.onDown(pt, e); },
+  onDown(pt, e) { if (this.active && this.active.onDown) this.active.onDown(pt, e); this._notifyDraft(); },
   onMove(pt, e) { if (this.active && this.active.onMove) this.active.onMove(pt, e); },
-  onUp(pt, e) { if (this.active && this.active.onUp) this.active.onUp(pt, e); },
-  onKey(e) { return this.active && this.active.onKey ? this.active.onKey(e) : false; },
+  onUp(pt, e) { if (this.active && this.active.onUp) this.active.onUp(pt, e); this._notifyDraft(); },
+  onKey(e) { const r = this.active && this.active.onKey ? this.active.onKey(e) : false; this._notifyDraft(); return r; },
   drawOverlay(ctx, zoom) { if (this.active && this.active.drawOverlay) this.active.drawOverlay(ctx, zoom); },
 
   // ─── Snapping ───
@@ -123,6 +137,8 @@ PlanTools.register({
   onDown(pt, e) {
     const pm = AppState.planMarkup;
     const z = PlanEngine.view.zoom;
+    // Remember the press point so pointer-UP can tell a tap from a drag (UX-6).
+    this._downWorld = { x: pt.x, y: pt.y };
 
     // 0) rotate handle of a single selected rotatable element
     const rot = this._rotateHandle();
@@ -196,7 +212,7 @@ PlanTools.register({
     PlanEngine.requestDraw({ fg: true });
   },
 
-  onUp() {
+  onUp(pt) {
     if (this._marquee) {
       const r = this._rect(this._marquee.start, this._marquee.cur);
       if (r.w > 2 || r.h > 2) {
@@ -207,10 +223,24 @@ PlanTools.register({
       }
       this._marquee = null;
       PlanEngine.requestDraw({ fg: true });
+      this._maybeTapDrawer(pt);
       return;
     }
     if (this._drag && this._drag.moved) { PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps(); }
     this._drag = null;
+    this._maybeTapDrawer(pt);
+  },
+
+  // On a tap (pointer barely moved) that left a single item selected, reveal the
+  // mobile properties drawer — never on a drag (UX-6).
+  _maybeTapDrawer(pt) {
+    const down = this._downWorld; this._downWorld = null;
+    if (!down || !pt) return;
+    const moved = Math.hypot(pt.x - down.x, pt.y - down.y) > 4 / PlanEngine.view.zoom;
+    if (moved) return;
+    if (PlanMarkup.selectedIds.size === 1 && typeof PlanMarkup.openPropsForTap === 'function') {
+      PlanMarkup.openPropsForTap();
+    }
   },
 
   // Move every selected element / route / trench / text by (dx,dy) except the
@@ -920,18 +950,25 @@ PlanTools.register({
   async onUp(pt) {
     if (this._busy || !this._start) return;
     const s = PlanTools.snap(pt, { wantElements: false });
+    this._cur = { x: s.x, y: s.y };   // keep the drawn rect visible during the prompt
     const x0 = Math.min(this._start.x, s.x), x1 = Math.max(this._start.x, s.x);
     const y0 = Math.min(this._start.y, s.y), y1 = Math.max(this._start.y, s.y);
-    this._start = null; this._cur = null;
-    if (Math.hypot(x1 - x0, y1 - y0) < 6) { PlanEngine.requestDraw({ fg: true }); return; }  // too small — ignore
+    if (Math.hypot(x1 - x0, y1 - y0) < 6) { this._start = null; this._cur = null; PlanEngine.requestDraw({ fg: true }); return; }  // too small — ignore
     this._busy = true;
-    const ans = await UI.prompt('Array — columns × rows (e.g. 4x3):', '3x3');
+    // UX-8: keep the draft rectangle alive across an invalid entry and re-prompt,
+    // rather than discarding the drawn rectangle before asking.
+    let cols, rows;
+    for (;;) {
+      const ans = await UI.prompt('Array — columns × rows (e.g. 4x3):', '3x3');
+      if (ans == null || ans.trim() === '') { this._busy = false; this._start = null; this._cur = null; PlanEngine.requestDraw({ fg: true }); return; }  // cancelled → drop draft
+      let m = /^(\d+)\s*[x×,\s]\s*(\d+)$/i.exec(ans.trim());
+      if (!m && /^\d+$/.test(ans.trim())) m = [null, ans.trim(), ans.trim()];
+      if (!m) { UI.toast('Enter e.g. 4x3', 'error'); continue; }   // keep draft, ask again
+      cols = Math.max(1, parseInt(m[1], 10)); rows = Math.max(1, parseInt(m[2], 10));
+      break;
+    }
     this._busy = false;
-    if (!ans) { PlanEngine.requestDraw({ fg: true }); return; }
-    let m = /^(\d+)\s*[x×,\s]\s*(\d+)$/i.exec(ans.trim());
-    if (!m && /^\d+$/.test(ans.trim())) m = [null, ans.trim(), ans.trim()];
-    if (!m) { UI.toast('Enter e.g. 4x3', 'error'); return; }
-    const cols = Math.max(1, parseInt(m[1], 10)), rows = Math.max(1, parseInt(m[2], 10));
+    this._start = null; this._cur = null;
     const placed = PlanTools._placeGrid(this._type, x0, y0, x1, y1, cols, rows);
     PlanTools._finishBatch(this._type, placed);
     PlanTools.set('select');
@@ -1047,11 +1084,19 @@ PlanTools._finishBatch = function (type, placed) {
   let tagMsg = '';
   if (typeof PlanCircuits !== 'undefined' && AppState.planMarkup.settings.domain === 'building') {
     const r = PlanCircuits.autoTagDevices(placed);
-    if (r && r.tagged) tagMsg = ` · tagged to ${r.board} (${r.ways} way${r.ways > 1 ? 's' : ''})`;
+    if (r && r.tagged) {
+      tagMsg = ` · tagged to ${r.board} (${r.ways} way${r.ways > 1 ? 's' : ''})`;
+      // EE-10: no board on this floor — the tag fell back to another floor.
+      if (r.crossFloor && typeof UI !== 'undefined' && UI.toast) {
+        UI.toast(`No distribution board on this floor — tagged to "${r.board}"${r.floor ? ' on ' + r.floor : ''}.`, 'warning');
+      }
+    }
     else if (r && r.reason === 'no-board') tagMsg = ' · place a Distribution Board to auto-tag';
   }
   PlanMarkup.clearSelection();
   PlanMarkup.snapshot(); PlanMarkup.markDirty();
+  // UX-4: auto-tag wrote into a linked board schedule (SLD) — pair its stack.
+  if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();
   if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
   PlanEngine.requestDraw({ fg: true });
   const def = PLAN_DEFS.element(type);

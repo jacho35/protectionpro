@@ -721,6 +721,16 @@ const Symbols = {
     const labelY = h / 2 + 14 + nlOY;
     const label = comp.props.name || '';
 
+    // Link badge (UX-5): mark boards/cables/switchboard sections linked to the
+    // Plan Markup view so the plan↔SLD bridge is visible on the diagram.
+    const linked = comp.planLink || comp.swLink;
+    const linkBadge = linked ? `
+        <g class="comp-plan-link" transform="translate(${w / 2},${-h / 2})" pointer-events="none">
+          <title>Linked to Plan Markup</title>
+          <circle cx="0" cy="0" r="6.5" fill="#fff" stroke="#2563eb" stroke-width="1.2"/>
+          <text x="0" y="0.5" text-anchor="middle" dominant-baseline="central" font-size="7" fill="#2563eb">\u{1F517}</text>
+        </g>` : '';
+
     return `
       <g class="sld-component" data-id="${comp.id}" transform="translate(${comp.x},${comp.y}) rotate(${comp.rotation || 0})">
         <rect class="comp-outline" x="${-w / 2 - 4}" y="${-h / 2 - 4}" width="${w + 8}" height="${h + 8}" fill="transparent" stroke="transparent" stroke-width="1"/>
@@ -729,6 +739,7 @@ const Symbols = {
         </g>
         ${portsHtml}
         <text class="comp-name-label" data-comp-id="${comp.id}" x="${nlOX}" y="${labelY}" text-anchor="middle" font-size="11" fill="#333" cursor="move">${escHtml(label)}</text>
+        ${linkBadge}
       </g>`;
   },
 

@@ -44,6 +44,8 @@ const PlanMarkup = {
         </div>
         <div class="plan-tb-group">
           <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">▤ Select</button>
+          <button class="plan-tb-btn" data-action="undo" title="Undo (Ctrl+Z)">↶</button>
+          <button class="plan-tb-btn" data-action="redo" title="Redo (Ctrl+Shift+Z)">↷</button>
         </div>
         <div class="plan-tb-group">
           <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">⤢ Fit</button>
@@ -82,18 +84,23 @@ const PlanMarkup = {
             <button class="plan-tb-btn" data-action="png" title="Export the annotated plan as a PNG image">⤓ PNG</button>
             <button class="plan-tb-btn" data-action="pdf" title="Export the annotated plan as an A3 PDF sheet">⤓ PDF</button>
           </div>
-          <div class="plan-tb-group plan-tb-right">
-            <span id="plan-scale-readout" class="plan-scale-readout">Not calibrated</span>
-          </div>
         </div>
       </div>
       <div id="plan-main" class="plan-main">
         <aside id="plan-palette" class="plan-palette"></aside>
         <div id="plan-stage" class="plan-stage">
           <canvas id="plan-canvas-bg" class="plan-canvas"></canvas>
-          <canvas id="plan-canvas-fg" class="plan-canvas"></canvas>
+          <canvas id="plan-canvas-fg" class="plan-canvas" tabindex="0" role="application"
+            aria-label="Plan markup canvas. Use arrow keys to move between placed items when focused; R rotates, Delete removes."></canvas>
           <div id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</div>
-          <div id="plan-status" class="plan-status"><span id="plan-status-coords"></span></div>
+          <div id="plan-action-chip" class="plan-action-chip" role="group" aria-label="Finish or cancel the current drawing">
+            <button type="button" data-chip="done" title="Finish (Enter)">✓ Done</button>
+            <button type="button" data-chip="cancel" title="Cancel (Esc)">✕ Cancel</button>
+          </div>
+          <div id="plan-status" class="plan-status">
+            <span id="plan-scale-chip" class="plan-scale-chip" title="Plan scale" tabindex="0" role="button"></span>
+            <span id="plan-status-coords"></span>
+          </div>
         </div>
         <aside id="plan-props" class="plan-props"></aside>
         <div id="plan-drawer-backdrop"></div>
@@ -117,6 +124,8 @@ const PlanMarkup = {
       else if (act.dataset.action === 'toggle-props') this._toggleDrawer('props');
       else if (act.dataset.action === 'toggle-overflow') { this._toggleOverflow(); return; }
       else if (act.dataset.action === 'floors') this._openFloorManager();
+      else if (act.dataset.action === 'undo') { this.undo(); return; }
+      else if (act.dataset.action === 'redo') { this.redo(); return; }
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
       else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
       else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') {
@@ -128,6 +137,7 @@ const PlanMarkup = {
         const s = PlanCircuits.syncAll();
         if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
         this.markDirty(); this._snapshot();
+        if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4: pair the SLD stack
         UI.alert(`Synced circuits from plan:\n• ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} tagged device(s)\n• ${s.lengths} way cable length(s) from routes` +
           (s.unsynced ? `\n• ${s.unsynced} board(s) not yet on the SLD (sync first)` : ''));
       }
@@ -152,6 +162,21 @@ const PlanMarkup = {
     });
     const backdrop = document.getElementById('plan-drawer-backdrop');
     if (backdrop) backdrop.addEventListener('click', () => this._closeDrawers());
+    // Floating Done/Cancel chip for multi-point drafts (touch completion; UX-1).
+    const chip = document.getElementById('plan-action-chip');
+    if (chip) chip.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-chip]'); if (!b) return;
+      if (typeof PlanTools === 'undefined') return;
+      PlanTools.onKey({ key: b.dataset.chip === 'done' ? 'Enter' : 'Escape' });
+      this.onDraftChanged();
+    });
+    // Always-visible scale chip — tap to (re)calibrate (UX-14).
+    const scaleChip = document.getElementById('plan-scale-chip');
+    if (scaleChip) {
+      const startCal = () => { if (typeof PlanTools !== 'undefined') PlanTools.set('calibrate'); };
+      scaleChip.addEventListener('click', startCal);
+      scaleChip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startCal(); } });
+    }
     const fileInput = document.getElementById('plan-file-input');
     if (fileInput) fileInput.addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
@@ -301,6 +326,16 @@ const PlanMarkup = {
     overlay.className = 'modal plan-floor-modal';
     overlay.style.display = 'flex';
     overlay.style.zIndex = '3000';
+    // Dialog semantics + scoped Escape that actually removes the node (the
+    // generic app.js Escape only hides `.modal`, leaking orphaned overlays; UX-16).
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Floors');
+    const closeModal = () => { document.removeEventListener('keydown', onKey, true); overlay.remove(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); closeModal(); }
+    };
+    document.addEventListener('keydown', onKey, true);
 
     const render = () => {
       const floors = pm.floors.slice().sort((a, b) => (b.level || 0) - (a.level || 0));
@@ -337,6 +372,11 @@ const PlanMarkup = {
     };
     render();
     document.body.appendChild(overlay);
+    // Move focus into the dialog (first field).
+    requestAnimationFrame(() => {
+      const first = overlay.querySelector('input, select, button');
+      if (first) try { first.focus(); } catch (_) { /* gone */ }
+    });
 
     const commit = (refresh) => {
       this._snapshot(); this.markDirty();
@@ -363,7 +403,7 @@ const PlanMarkup = {
       const role = btn.dataset.role;
       const tr = e.target.closest('[data-floor]');
       const id = tr && tr.dataset.floor;
-      if (role === 'close') { overlay.remove(); return; }
+      if (role === 'close') { closeModal(); return; }
       if (role === 'add') {
         const fl = AppState.addPlanFloor();
         this.setActiveFloor(fl.id);   // switch straight to the new sheet
@@ -401,15 +441,9 @@ const PlanMarkup = {
   selectOnly(id) {
     this.selectedIds.clear(); if (id) this.selectedIds.add(id); this.refreshProps();
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
-    // Mobile: reveal the properties drawer so a tapped item is immediately editable.
-    if (id && this._isMobile()) {
-      const props = document.getElementById('plan-props');
-      if (props && !props.classList.contains('mobile-open')) {
-        document.getElementById('plan-palette')?.classList.remove('mobile-open');
-        props.classList.add('mobile-open');
-        this._syncDrawerBackdrop();
-      }
-    }
+    // NB: the mobile properties drawer is now opened on pointer-UP (a tap) by the
+    // select tool — not here — so touch-to-drag no longer slides it in mid-gesture
+    // (UX-6). See PlanMarkup.openPropsForTap().
   },
   clearSelection() { this.selectedIds.clear(); this.refreshProps(); },
   toggleSelect(id) {
@@ -435,11 +469,28 @@ const PlanMarkup = {
   deleteSelected() {
     if (!this.selectedIds.size) return;
     const pm = AppState.planMarkup;
+    // EE-3: note whether any deleted element carried a circuit tag (or was a
+    // board) so we can re-sync loads afterwards — otherwise a deleted device's
+    // VA lingers on its way forever.
+    let circuitTouched = false;
+    if (pm.settings.domain === 'building' && typeof PlanCircuits !== 'undefined') {
+      for (const e of pm.elements) {
+        if (!this.selectedIds.has(e.id)) continue;
+        if (e.type === 'bd_db' || (e.props && e.props.circuitDbId) || PlanCircuits.isCircuitDevice(e.type)) { circuitTouched = true; break; }
+      }
+    }
     const kill = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (this.selectedIds.has(arr[i].id)) arr.splice(i, 1); };
     kill(pm.elements); kill(pm.routes); kill(pm.trenches);
     kill(pm.crossings); if (pm.rooms) kill(pm.rooms); kill(pm.texts); kill(pm.measurements);
     this.selectedIds.clear();
+    if (circuitTouched) {
+      // Reflect the removed devices into the linked board schedules (zeroes
+      // orphaned ways, updates counts) before snapshotting.
+      PlanCircuits.syncLoads();
+      if (PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
+    }
     this._snapshot(); this.markDirty(); this.refreshProps();
+    if (circuitTouched && typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
   },
 
@@ -485,7 +536,8 @@ const PlanMarkup = {
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return false;
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
     if (e.key === 'Escape') { PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
-    if (e.key === 'Enter') { return PlanTools.onKey(e); }
+    if (e.key === 'Enter') { const c = PlanTools.onKey(e); this.onDraftChanged(); return c; }
+    if (e.key === 'v' || e.key === 'V') { PlanTools.set('select'); return true; }
     if (e.key === 'g' || e.key === 'G') {
       const s = AppState.planMarkup.settings; s.snapGrid = !s.snapGrid;
       const cb = document.querySelector('[data-snap="snapGrid"]'); if (cb) cb.checked = s.snapGrid;
@@ -500,6 +552,14 @@ const PlanMarkup = {
         }
       }
       if (changed) { this._snapshot(); this.markDirty(); this.refreshProps(); PlanEngine.requestDraw({ fg: true }); return true; }
+    }
+    if (e.key.startsWith('Arrow')) {
+      // When the plan canvas holds keyboard focus (reached via Tab), arrows
+      // navigate the selection between placed items (mirrors the SLD). When
+      // focus is elsewhere (mouse editing), arrows keep nudging the selection.
+      const fg = (typeof PlanEngine !== 'undefined') ? PlanEngine.fg : null;
+      const kbNav = fg && typeof fg.matches === 'function' && fg.matches(':focus-visible');
+      if (kbNav) return this._keyboardNavigate(e.key);
     }
     if (e.key.startsWith('Arrow') && this.selectedIds.size) {
       const step = e.shiftKey ? 10 : 1;
@@ -520,23 +580,125 @@ const PlanMarkup = {
     return false;
   },
 
-  onToolChanged(id) {
+  onToolChanged(id, opts) {
     const PLACERS = (id === 'place' || id === 'route' || id === 'array' || id === 'devpath');
     document.querySelectorAll('#plan-toolbar .plan-tool-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.tool === id));
     if (!PLACERS && typeof PlanUI !== 'undefined' && PlanUI.paletteEl) {
       PlanUI.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
     }
+    // Live mode/status line (UX-7): what's armed + how to finish/exit.
+    this._toolMsg = this._statusFor(id, opts || {});
+    this.onDraftChanged();
     // Mobile: after arming a placement tool from the palette drawer, close it
     // so the canvas is tappable.
     if (PLACERS && this._isMobile()) this._closeDrawers();
   },
 
+  // Human-readable status line for an armed tool (UX-7).
+  _statusFor(id, opts) {
+    const t = opts && opts.type;
+    const elName = (ty) => (PLAN_DEFS.element(ty) && PLAN_DEFS.element(ty).name) || ty;
+    const rtName = (ty) => (PLAN_DEFS.route(ty) && PLAN_DEFS.route(ty).name) || ty;
+    switch (id) {
+      case 'select': {
+        const pm = AppState.planMarkup;
+        if (!pm.plans.length && !pm.elements.length) {
+          return 'Import a plan, calibrate the scale, then place components and draw routes.';
+        }
+        return 'Select — tap to edit, drag to move. Arrow keys nudge; R rotates.';
+      }
+      case 'place': return `Placing: ${elName(t)} — click to place. Esc / Select to stop.`;
+      case 'placeSld': return 'Placing linked board — click where it goes on the plan.';
+      case 'array': return `Array: ${elName(t)} — drag a rectangle, then enter columns × rows.`;
+      case 'devpath': return `Path: ${elName(t)} — click points, then ✓ Done / Enter to place. Esc cancels.`;
+      case 'route': return `Drawing ${rtName(t)} — click points; ✓ Done / Enter finishes, Esc cancels.`;
+      case 'slpath': return 'SL Path — click a path; ✓ Done / Enter places poles. Esc cancels.';
+      case 'trench': return 'Trench — click points; ✓ Done / Enter finishes. Esc cancels.';
+      case 'measurement': return 'Measure — click points; ✓ Done / Enter finishes. Esc cancels.';
+      case 'room': return 'Room — click ≥3 points; ✓ Done / Enter closes it. Esc cancels.';
+      case 'crossing': return 'Crossing — click two points. Esc cancels.';
+      case 'calibrate': return 'Calibrate — click two points a known distance apart.';
+      case 'crop': return 'Crop — drag the export rectangle (tiny drag clears it).';
+      case 'text': return 'Text — click to place a label.';
+      case 'nudgeplan': return 'Move plan — drag the background plan. Esc / Select to stop.';
+      case 'align': return 'Align plan — click a feature, then where it belongs (×2).';
+      default: return 'Import a plan, calibrate the scale, then place components and draw routes.';
+    }
+  },
+
+  setInfo(msg) { const el = document.getElementById('plan-info'); if (el && msg != null) el.textContent = msg; },
+
+  // Refresh the status line (with any live draft point count) + the Done/Cancel
+  // chip. Called after every tool gesture and on tool change.
+  onDraftChanged() {
+    const d = (typeof PlanTools !== 'undefined' && PlanTools.draftInfo) ? PlanTools.draftInfo() : null;
+    const n = d && d.n;
+    this.setInfo(n ? `${this._toolMsg}  ·  ${n} point${n > 1 ? 's' : ''} placed` : this._toolMsg);
+    const chip = document.getElementById('plan-action-chip');
+    if (chip) chip.classList.toggle('on', !!n);
+  },
+
+  // Reveal the properties drawer on a tap (mobile) — called from the select
+  // tool's pointer-UP when the gesture didn't move (UX-6).
+  openPropsForTap() {
+    if (!this._isMobile()) return;
+    const props = document.getElementById('plan-props');
+    if (props && !props.classList.contains('mobile-open')) {
+      document.getElementById('plan-palette')?.classList.remove('mobile-open');
+      props.classList.add('mobile-open');
+      this._syncDrawerBackdrop();
+    }
+  },
+
+  // Arrow-key nearest-entity selection when the canvas has keyboard focus
+  // (ports the SLD's _keyboardNavigate; UX-17).
+  _keyboardNavigate(key) {
+    const els = AppState.planMarkup.elements;
+    if (!els.length) return false;
+    const dirs = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+    const dir = dirs[key]; if (!dir) return false;
+    const curId = [...this.selectedIds][0];
+    const cur = curId ? els.find(e => e.id === curId) : null;
+    let best = null;
+    if (!cur) {
+      // Entry point: item nearest the visible viewport centre.
+      let bx = 0, by = 0;
+      if (typeof PlanEngine !== 'undefined') {
+        bx = -PlanEngine.view.panX / PlanEngine.view.zoom;
+        by = -PlanEngine.view.panY / PlanEngine.view.zoom;
+      }
+      let bestD = Infinity;
+      for (const e of els) { const d = (e.x - bx) ** 2 + (e.y - by) ** 2; if (d < bestD) { bestD = d; best = e; } }
+    } else {
+      let bestScore = Infinity;
+      for (const e of els) {
+        if (e.id === cur.id) continue;
+        const dx = e.x - cur.x, dy = e.y - cur.y;
+        const along = dx * dir[0] + dy * dir[1];
+        if (along <= 0) continue;
+        const perp = Math.abs(dx * dir[1] - dy * dir[0]);
+        const score = along + perp * 2;
+        if (score < bestScore) { bestScore = score; best = e; }
+      }
+    }
+    if (!best) return false;
+    this.selectOnly(best.id);
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    return true;
+  },
+
   updateScaleReadout() {
-    const el = document.getElementById('plan-scale-readout');
-    if (!el) return;
     const s = AppState.planMarkup.scale;
-    el.textContent = s ? `Scale: 1 px = ${s.factor.toFixed(4)} m  ·  grid ${AppState.planMarkup.settings.gridSize} m` : 'Not calibrated';
+    const calibrated = !!(s && s.factor);
+    const chip = document.getElementById('plan-scale-chip');
+    if (chip) {
+      chip.textContent = calibrated
+        ? `📏 1 px = ${s.factor.toFixed(4)} m · grid ${AppState.planMarkup.settings.gridSize} m`
+        : '⚠ Not calibrated — tap to set scale';
+      chip.classList.toggle('warn', !calibrated);
+      chip.title = calibrated ? 'Scale calibrated — tap to recalibrate' : 'Not calibrated — tap to start Calibrate';
+    }
   },
 
   // ─── Local undo (JSON snapshots of AppState.planMarkup) ───
