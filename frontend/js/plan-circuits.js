@@ -34,7 +34,22 @@ const PlanCircuits = {
   // Per-type "how many on one final circuit" caps (DD convention).
   CAPS: { lighting: 10, socket: 6, other: 1 },
 
+  // Supply / infrastructure — these are boards & sources, not things that sit
+  // ON a final circuit, so they don't get the circuit-attribute editor.
+  INFRA: new Set(['bd_utility', 'bd_transformer', 'bd_generator', 'bd_db', 'bd_switchboard', 'bd_riser', 'bd_jb']),
+
   isLoadDevice(type) { return !!this.LOAD_TYPES[type]; },
+  // Any building device that can be assigned to a distribution-board circuit
+  // (loads plus switches/isolators/ELV points — everything but infrastructure).
+  isCircuitDevice(type) { return typeof type === 'string' && type.startsWith('bd_') && !this.INFRA.has(type); },
+  deviceVA(el) {
+    const p = (el && el.props) || {};
+    if (p.load_va != null && p.load_va !== '') return Number(p.load_va) || 0;
+    const lt = this.LOAD_TYPES[el.type];
+    return lt ? (Number(lt.va(p)) || 0) : 0;
+  },
+  // '1P' | '3P' — the device's declared circuit type (default single-phase).
+  devicePoles(el) { return ((el && el.props && el.props.poles) === '3P') ? '3P' : '1P'; },
   deviceVA(el) {
     const p = (el && el.props) || {};
     if (p.load_va != null && p.load_va !== '') return Number(p.load_va) || 0;
@@ -62,18 +77,19 @@ const PlanCircuits = {
   // auto-name from the device mix, then recompute the board's lumped load.
   // Returns a summary {boards, ways, devices, unsynced}.
   syncLoads() {
-    const agg = new Map();   // dbElId -> Map(way -> {count, va, classes:Set})
+    const agg = new Map();   // dbElId -> Map(way -> {count, va, classes:Set, threePhase})
     let tagged = 0;
     for (const el of AppState.planAllElements()) {
       const p = el.props || {};
       if (!p.circuitDbId || p.circuitNo == null || p.circuitNo === '') continue;
-      if (!this.isLoadDevice(el.type) && !(p.load_va > 0)) continue;
+      if (!this.isCircuitDevice(el.type)) continue;
       tagged++;
       const way = String(p.circuitNo);
       if (!agg.has(p.circuitDbId)) agg.set(p.circuitDbId, new Map());
       const ways = agg.get(p.circuitDbId);
-      const cur = ways.get(way) || { count: 0, va: 0, classes: new Set() };
+      const cur = ways.get(way) || { count: 0, va: 0, classes: new Set(), threePhase: false };
       cur.count += 1; cur.va += this.deviceVA(el);
+      if (this.devicePoles(el) === '3P') cur.threePhase = true;
       const lt = this.LOAD_TYPES[el.type]; if (lt) cur.classes.add(lt.klass);
       ways.set(way, cur);
     }
@@ -90,6 +106,11 @@ const PlanCircuits = {
         let c = comp.props.circuits.find(x => String(x.way) === way);
         if (!c) { c = this._newWay(comp, way); comp.props.circuits.push(c); }
         c.plan_qty = a.count;
+        // The way's poles follow the devices' declared phase; a 3P way spreads
+        // R/W/B, a 1P way keeps its assigned phase (reset off RWB if it changed).
+        c.poles = a.threePhase ? '3P' : '1P';
+        if (a.threePhase) c.phase = 'RWB';
+        else if (c.phase === 'RWB') c.phase = 'R';
         if (!c._manualLoadOverride) {
           c.load_va = Math.round(a.va);
           if (!c._nameOverride) c.description = this._describe(a.classes, a.count);
