@@ -525,6 +525,22 @@
     border-color: var(--accent);
   }
 
+  /* The cable searchable-select dropdown is position:absolute, so inside the
+     mobile sheet (overflow:hidden, scrolling body, plus the virtual keyboard)
+     it could open clipped or hidden behind the keyboard. On mobile, render it
+     inline in the scroll flow instead — it pushes the fields below down and
+     the sheet body scrolls to it, so it is always reachable. */
+  #mobile-properties-content .searchable-select.open .searchable-select-dropdown {
+    position: static;
+    max-height: 240px;
+    box-shadow: none;
+    border-top: 1px solid var(--border-color);
+    border-radius: 0 0 5px 5px;
+  }
+  #mobile-properties-content .searchable-select-option {
+    padding: 10px 10px;   /* larger touch targets in the list */
+  }
+
   /* ─── Menu sheet ──────────────────────────────────── */
   .mobile-menu-list {
     list-style: none;
