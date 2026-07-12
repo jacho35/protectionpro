@@ -740,6 +740,69 @@
      resize the canvas container: selection changes on pointer-down, and
      moving the svg mid-gesture corrupts the drag's coordinate mapping. */
 
+  /* ─── DB circuit editor: stacked cards on phones ─────────────────────
+     The schedule is a 13-column grid that otherwise forces horizontal
+     scrolling on a phone. Below the mobile breakpoint each way becomes a
+     card of "Label: field" rows (the <td> data-label attributes supply the
+     captions), so every field is reachable without side-scrolling. Scoped
+     to #db-modal so the Settings library tables are untouched. */
+  #db-modal .library-table-wrap {
+    overflow-x: hidden;
+    max-height: none !important;
+  }
+  #db-modal .library-table thead {
+    display: none;   /* captions come from td::before instead */
+  }
+  #db-modal .library-table,
+  #db-modal .library-table tbody,
+  #db-modal .library-table tr,
+  #db-modal .library-table td {
+    display: block;
+    width: 100%;
+  }
+  #db-modal .library-table tr {
+    border: 1px solid var(--border-color, #d0d0d8);
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    background: var(--bg-secondary, transparent);
+  }
+  #db-modal .library-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 0 !important;
+    border: none !important;
+  }
+  #db-modal .library-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #666);
+  }
+  #db-modal .library-table td input,
+  #db-modal .library-table td select {
+    width: auto !important;
+    min-width: 0 !important;
+    flex: 1 1 auto;
+    max-width: 62%;
+    min-height: 38px;   /* comfortable touch target */
+  }
+  /* Actions cell (pin/auto badge + delete) has no caption and sits right */
+  #db-modal .library-table td.db-row-actions {
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  #db-modal .library-table td.db-row-actions::before { content: none; }
+  #db-modal .library-table td.db-row-actions .btn-small {
+    min-height: 34px;
+    min-width: 34px;
+  }
+  /* Empty-state cell spans the card without a caption */
+  #db-modal .library-table td[colspan]::before { content: none; }
+
 } /* end @media (max-width: 768px) */
 
 /* Applies at every viewport width: tablets and landscape phones exceed

@@ -359,22 +359,25 @@ const DBSchedule = {
     const opt = (v, cur, label) =>
       `<option value="${v}"${v === cur ? ' selected' : ''}>${label ?? v}</option>`;
 
+    // data-label on each cell drives the stacked-card layout on phones (see
+    // the #db-modal card rules in mobile.css) — on desktop the labels are
+    // unused and the table renders normally.
     const rows = circuits.map((c, i) => `
       <tr data-idx="${i}">
-        <td><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
-        <td><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%;min-width:220px"></td>
-        <td><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
-        <td><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
+        <td data-label="Way"><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
+        <td data-label="Description"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%;min-width:220px"></td>
+        <td data-label="Poles"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
+        <td data-label="Phase"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
           ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
-        <td><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
-        <td><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
-        <td><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
-        <td><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
-        <td><input type="number" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" min="0.5" step="0.5" style="width:68px"></td>
-        <td><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
-        <td><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
-        <td><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
-        <td style="white-space:nowrap;">${this._wayStatusHtml(c, i)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
+        <td data-label="Breaker (A)"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
+        <td data-label="Curve"><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
+        <td data-label="EL Grp"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
+        <td data-label="Leak (mA)"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
+        <td data-label="Cable mm²"><input type="number" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" min="0.5" step="0.5" style="width:68px"></td>
+        <td data-label="Len (m)"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
+        <td data-label="Load (VA)"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
+        <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
+        <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
       </tr>`).join('');
 
     // Live totals (exact, not via the rounded aggregate demand factor)
