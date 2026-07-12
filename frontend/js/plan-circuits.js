@@ -31,6 +31,9 @@ const PlanCircuits = {
     bd_socket: { klass: 'socket', va: (p) => 200 * (parseInt(p.gangs, 10) || 1) },
     bd_fcu: { klass: 'other', va: () => 2000 },
   },
+  // Per-type "how many on one final circuit" caps (DD convention).
+  CAPS: { lighting: 10, socket: 6, other: 1 },
+
   isLoadDevice(type) { return !!this.LOAD_TYPES[type]; },
   deviceVA(el) {
     const p = (el && el.props) || {};
@@ -201,7 +204,7 @@ const PlanCircuits = {
     const untagged = found.filter(e => !(e.props && e.props.circuitDbId));
     if (!untagged.length) return { ways: 0, devices: 0 };
 
-    const CAPS = { lighting: 10, socket: 6, other: 1 };
+    const CAPS = this.CAPS;
     const groups = { lighting: [], socket: [], other: [] };
     for (const e of untagged) groups[this.LOAD_TYPES[e.type].klass].push(e);
 
@@ -224,6 +227,38 @@ const PlanCircuits = {
     // Materialise the loads into the schedule.
     this.syncLoads();
     return { ways, devices };
+  },
+
+  // Tag a batch of freshly-placed load devices (from the array / path tools)
+  // onto new circuit ways of the nearest distribution board, chunked by the
+  // per-type cap, then materialise the loads. Returns a summary or null.
+  autoTagDevices(els) {
+    const loads = (els || []).filter(e => this.isLoadDevice(e.type));
+    if (!loads.length) return null;
+    const boards = this.boardEls();
+    if (!boards.length) return { tagged: 0, reason: 'no-board' };
+    // Nearest board to the batch centroid.
+    const cx = loads.reduce((s, e) => s + e.x, 0) / loads.length;
+    const cy = loads.reduce((s, e) => s + e.y, 0) / loads.length;
+    let board = boards[0], best = Infinity;
+    for (const b of boards) {
+      const d = (b.el.x - cx) ** 2 + (b.el.y - cy) ** 2;
+      if (d < best) { best = d; board = b; }
+    }
+    const comp = this._sldComp(board.el);
+    let next = 1;
+    if (comp && Array.isArray(comp.props.circuits)) {
+      for (const c of comp.props.circuits) { const w = parseInt(c.way, 10); if (w >= next) next = w + 1; }
+    }
+    const cap = this.CAPS[this.LOAD_TYPES[loads[0].type].klass] || 1;
+    let ways = 0;
+    for (let i = 0; i < loads.length; i += cap) {
+      const way = String(next++);
+      for (const e of loads.slice(i, i + cap)) { e.props = e.props || {}; e.props.circuitDbId = board.el.id; e.props.circuitNo = way; }
+      ways++;
+    }
+    if (comp) this.syncLoads();
+    return { tagged: loads.length, board: board.name, ways, synced: !!comp };
   },
 
   // ── Phase C: routed final-circuit length → way.cable_m ──

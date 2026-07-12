@@ -521,14 +521,15 @@ const PlanMarkup = {
   },
 
   onToolChanged(id) {
+    const PLACERS = (id === 'place' || id === 'route' || id === 'array' || id === 'devpath');
     document.querySelectorAll('#plan-toolbar .plan-tool-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.tool === id));
-    if (id !== 'place' && id !== 'route' && typeof PlanUI !== 'undefined' && PlanUI.paletteEl) {
+    if (!PLACERS && typeof PlanUI !== 'undefined' && PlanUI.paletteEl) {
       PlanUI.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
     }
-    // Mobile: after arming a place/route tool from the palette drawer, close it
+    // Mobile: after arming a placement tool from the palette drawer, close it
     // so the canvas is tappable.
-    if ((id === 'place' || id === 'route') && this._isMobile()) this._closeDrawers();
+    if (PLACERS && this._isMobile()) this._closeDrawers();
   },
 
   updateScaleReadout() {

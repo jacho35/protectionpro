@@ -44,6 +44,16 @@ const PlanUI = {
         </select>
         <input type="search" class="plan-pal-search" data-role="search" placeholder="Filter…" value="${escHtml(this._search || '')}">
       </div>`;
+    // Placement mode (building only): Single drop / grid Array / along a Path.
+    if (domain === 'building') {
+      const mode = this._placeMode || 'single';
+      const modeBtn = (m, label, title) => `<button class="plan-pal-mode-btn${mode === m ? ' active' : ''}" data-role="placemode" data-mode="${m}" title="${title}">${label}</button>`;
+      html += `<div class="plan-pal-mode" role="group" aria-label="Placement mode">
+        ${modeBtn('single', 'Single', 'Drop one device per click')}
+        ${modeBtn('array', 'Array', 'Drag a rectangle → grid of devices')}
+        ${modeBtn('path', 'Path', 'Draw a path → devices spaced along it')}
+      </div>`;
+    }
     for (const g of groups) {
       const items = g.items.filter(it => !filter || it.name.toLowerCase().includes(filter));
       if (!items.length) continue;
@@ -188,11 +198,22 @@ const PlanUI = {
     }
     const domainSel = e.target.closest('[data-role="domain"]');
     if (domainSel) return; // domain change handled by the 'change' listener
+    // Placement-mode segmented control (Single / Array / Path).
+    const modeBtn = e.target.closest('[data-role="placemode"]');
+    if (modeBtn) {
+      this._placeMode = modeBtn.dataset.mode;
+      this.paletteEl.querySelectorAll('[data-role="placemode"]').forEach(b => b.classList.toggle('active', b === modeBtn));
+      return;
+    }
     const item = e.target.closest('.plan-pal-item');
     if (!item || item.disabled) return;
     const kind = item.dataset.kind, type = item.dataset.type;
     const toolId = this._toolFor(kind);
-    if (kind === 'element') PlanTools.set('place', { type });
+    if (kind === 'element') {
+      // Point-device placement honours the selected mode.
+      const byMode = { single: 'place', array: 'array', path: 'devpath' };
+      PlanTools.set(byMode[this._placeMode || 'single'] || 'place', { type });
+    }
     else if (kind === 'route') PlanTools.set('route', { type });
     else if (kind === 'trench') PlanTools.set('trench', { type });
     else PlanTools.set(toolId, { type });
