@@ -819,6 +819,16 @@
   /* Empty-state cell spans the card without a caption */
   #db-modal .library-table td[colspan]::before { content: none; }
 
+  /* ─── File Manager on phones ─────────────────────────────────────────
+     The two-column layout kept the folder sidebar at 180px, squeezing the
+     list so narrow that project/folder names were truncated to nothing
+     ("F…", a bare date). Hide the sidebar — folders are still reachable via
+     the folder rows in the list and the breadcrumb — and give the list the
+     full width. Reveal the per-item actions since touch has no hover. */
+  #calc-modal .fm-sidebar { display: none; }
+  #calc-modal .fm-main { padding-left: 0; }
+  #calc-modal .fm-item-actions { opacity: 1; }
+
 } /* end @media (max-width: 768px) */
 
 /* Applies at every viewport width: tablets and landscape phones exceed
