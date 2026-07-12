@@ -19,6 +19,7 @@ const PlanUI = {
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
       if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
+      if (e.target.closest('[data-role="edit-schedule"]')) { this._editBoardSchedule(); return; }
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
     });
@@ -44,6 +45,16 @@ const PlanUI = {
         </select>
         <input type="search" class="plan-pal-search" data-role="search" placeholder="Filter…" value="${escHtml(this._search || '')}">
       </div>`;
+    // Placement mode (building only): Single drop / grid Array / along a Path.
+    if (domain === 'building') {
+      const mode = this._placeMode || 'single';
+      const modeBtn = (m, label, title) => `<button class="plan-pal-mode-btn${mode === m ? ' active' : ''}" data-role="placemode" data-mode="${m}" title="${title}">${label}</button>`;
+      html += `<div class="plan-pal-mode" role="group" aria-label="Placement mode">
+        ${modeBtn('single', 'Single', 'Drop one device per click')}
+        ${modeBtn('array', 'Array', 'Drag a rectangle → grid of devices')}
+        ${modeBtn('path', 'Path', 'Draw a path → devices spaced along it')}
+      </div>`;
+    }
     for (const g of groups) {
       const items = g.items.filter(it => !filter || it.name.toLowerCase().includes(filter));
       if (!items.length) continue;
@@ -188,11 +199,22 @@ const PlanUI = {
     }
     const domainSel = e.target.closest('[data-role="domain"]');
     if (domainSel) return; // domain change handled by the 'change' listener
+    // Placement-mode segmented control (Single / Array / Path).
+    const modeBtn = e.target.closest('[data-role="placemode"]');
+    if (modeBtn) {
+      this._placeMode = modeBtn.dataset.mode;
+      this.paletteEl.querySelectorAll('[data-role="placemode"]').forEach(b => b.classList.toggle('active', b === modeBtn));
+      return;
+    }
     const item = e.target.closest('.plan-pal-item');
     if (!item || item.disabled) return;
     const kind = item.dataset.kind, type = item.dataset.type;
     const toolId = this._toolFor(kind);
-    if (kind === 'element') PlanTools.set('place', { type });
+    if (kind === 'element') {
+      // Point-device placement honours the selected mode.
+      const byMode = { single: 'place', array: 'array', path: 'devpath' };
+      PlanTools.set(byMode[this._placeMode || 'single'] || 'place', { type });
+    }
     else if (kind === 'route') PlanTools.set('route', { type });
     else if (kind === 'trench') PlanTools.set('trench', { type });
     else PlanTools.set(toolId, { type });
@@ -270,8 +292,8 @@ const PlanUI = {
     // on distribution boards.
     if (kind === 'element' && typeof PlanCircuits !== 'undefined' &&
         AppState.planMarkup.settings.domain === 'building') {
-      if (PlanCircuits.isLoadDevice(item.type)) html += this._circuitTag(item);
-      else if (item.type === 'bd_db') html += this._boardCircuits(item);
+      if (item.type === 'bd_db') html += this._boardCircuits(item);
+      else if (PlanCircuits.isCircuitDevice(item.type)) html += this._circuitTag(item);
     }
     // Delete button
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
@@ -288,14 +310,23 @@ const PlanUI = {
     const opts = ['<option value="">— unassigned —</option>']
       .concat(boards.map(b => `<option value="${escHtml(b.id)}" ${b.id === cur ? 'selected' : ''}>${escHtml(b.name)}</option>`))
       .join('');
-    const va = PlanCircuits.deviceVA(item);
+    const poles = (p.poles === '3P') ? '3P' : '1P';
+    const autoVa = PlanCircuits.deviceVA({ type: item.type, props: { ...p, load_va: undefined } });
+    const loadVal = (p.load_va != null && p.load_va !== '') ? p.load_va : '';
     return `<div class="plan-circuit-box">
       <div class="plan-circuit-h">Circuit</div>
       <div class="plan-field"><label class="plan-field-label">Board</label>
         <select data-key="circuitDbId">${opts}</select></div>
       <div class="plan-field"><label class="plan-field-label">Way (circuit no.)</label>
         <input type="number" min="1" step="1" data-key="circuitNo" value="${escHtml(p.circuitNo != null ? p.circuitNo : '')}"></div>
-      <div class="plan-circuit-note">Load: ${va} VA${boards.length ? '' : ' — place a Distribution Board first'}</div>
+      <div class="plan-field"><label class="plan-field-label">Phase</label>
+        <select data-key="poles">
+          <option value="1P"${poles === '1P' ? ' selected' : ''}>Single-phase (1P)</option>
+          <option value="3P"${poles === '3P' ? ' selected' : ''}>Three-phase (3P)</option>
+        </select></div>
+      <div class="plan-field"><label class="plan-field-label">Load <span class="plan-field-unit">(VA)</span></label>
+        <input type="text" inputmode="numeric" data-key="load_va" value="${escHtml(loadVal)}" placeholder="auto: ${autoVa}"></div>
+      <div class="plan-circuit-note">Effective load: ${PlanCircuits.deviceVA(item)} VA${boards.length ? '' : ' — place a Distribution Board first'}</div>
     </div>`;
   },
 
@@ -308,6 +339,7 @@ const PlanUI = {
     return `<div class="plan-circuit-box">
       <div class="plan-circuit-h">Circuits</div>
       <div class="plan-circuit-note">${ways} way(s) on this board${linked}</div>
+      <button class="plan-circuit-btn" data-role="edit-schedule">📋 Edit Circuit Schedule</button>
       <button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices</button>
       <button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>
     </div>`;
@@ -388,11 +420,11 @@ const PlanUI = {
       if (key === 'name' && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
         PlanSync.onElementRenamed(item, oldName, val);
       }
-      // Circuit tag changed → refresh the board schedule (on commit, not every
-      // keystroke) and re-render the panel's load readout.
-      if ((key === 'circuitDbId' || key === 'circuitNo') && e.type === 'change' &&
+      // A circuit attribute (board / way / phase / load) changed → refresh the
+      // board schedule on commit (not every keystroke) and re-render the panel.
+      if (/^(circuitDbId|circuitNo|poles|load_va)$/.test(key) && e.type === 'change' &&
           typeof PlanCircuits !== 'undefined') {
-        if (!val) { if (key === 'circuitDbId') { delete item.props.circuitNo; } }
+        if (!val && key === 'circuitDbId') delete item.props.circuitNo;   // unassign clears the way
         PlanCircuits.syncLoads();
         PlanMarkup.snapshot(); PlanMarkup.markDirty();
         this.renderProps();
@@ -407,6 +439,20 @@ const PlanUI = {
     }
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanEngine.requestDraw({ fg: true });
+  },
+
+  // Open the SLD's own circuit-schedule editor (DBSchedule modal) for the
+  // selected plan board — the same editor the SLD shows for that DB.
+  _editBoardSchedule() {
+    const ids = [...PlanMarkup.selectedIds]; if (ids.length !== 1) return;
+    const found = PlanMarkup.findEntityById(ids[0]);
+    if (!found || found.kind !== 'element' || found.item.type !== 'bd_db') return;
+    const comp = found.item.sldId && AppState.components.get(found.item.sldId);
+    if (!comp) {
+      UI.toast('Sync this board with the SLD first (→ Sync with SLD) to create its circuit schedule.', 'info');
+      return;
+    }
+    if (typeof DBSchedule !== 'undefined') DBSchedule.open(comp.id);
   },
 
   // Auto-distribute the selected board's connected untagged devices into ways.

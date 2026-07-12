@@ -1320,6 +1320,11 @@ const AppState = {
         for (const el of d.elements) {
           const m = ELEM_MIGRATE[el.type];
           if (m) { el.type = m.type; if (m.props) el.props = { ...(el.props || {}), ...m.props }; }
+          // Sockets: legacy `gangs` (1/2/3) → `outlets` (single/double).
+          if (el.type === 'bd_socket' && el.props && el.props.gangs != null && el.props.outlets == null) {
+            el.props.outlets = (String(el.props.gangs) === '1') ? 'single' : 'double';
+            delete el.props.gangs;
+          }
           if (el.reticId && !reticIds.has(el.reticId)) el.reticId = null;   // drop dangling backrefs
         }
         for (const rt of d.routes) if (ROUTE_MIGRATE[rt.type]) rt.type = ROUTE_MIGRATE[rt.type];

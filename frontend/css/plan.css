@@ -66,6 +66,11 @@
   padding: 8px;
 }
 .plan-pal-header { display: flex; gap: 6px; margin-bottom: 8px; }
+/* Placement-mode segmented control (Single / Array / Path). */
+.plan-pal-mode { display: flex; margin-bottom: 8px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+.plan-pal-mode-btn { flex: 1; padding: 5px 4px; border: none; border-left: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font-size: 12px; }
+.plan-pal-mode-btn:first-child { border-left: none; }
+.plan-pal-mode-btn.active { background: var(--accent); color: #fff; }
 .plan-domain-select, .plan-pal-search {
   padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px;
   background: var(--bg-primary); color: var(--text-primary); font-size: 12px;

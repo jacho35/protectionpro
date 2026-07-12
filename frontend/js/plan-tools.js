@@ -14,6 +14,11 @@ const PlanTools = {
 
   register(tool) { this._tools[tool.id] = tool; },
 
+  // Final-circuit runs (lights/sockets) are conventionally drawn as splines;
+  // feeders/containment/site cables stay straight. The per-route "Curved"
+  // checkbox overrides either way.
+  curvedByDefault(type) { return type === 'circuit' || type === 'lighting_ckt'; },
+
   set(id, opts) {
     const next = this._tools[id];
     if (!next) return;
@@ -450,7 +455,7 @@ PlanTools.register({
       toId: toId || null,
       points: d.points.map(p => ({ x: p.x, y: p.y, ...(p.snappedTo ? { snappedTo: p.snappedTo } : {}) })),
       cableType: PLAN_DEFS.defaults(d.type).cableType || '',
-      curved: false,
+      curved: PlanTools.curvedByDefault(d.type),   // final circuits draw as splines
       props: {},
     };
     AppState.planMarkup.routes.push(route);
@@ -895,3 +900,183 @@ PlanTools.register({
     ctx.restore();
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// ARRAY — drag a rectangle, then drop a grid (cols × rows) of one device type
+// (Distribution Designer's "Light Array"). Placed devices auto-tag to the
+// nearest board's next free circuit(s) in the building domain.
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'array', cursor: 'crosshair', _type: null, _start: null, _cur: null, _busy: false,
+  onActivate(opts) { this._type = opts && opts.type; this._start = null; this._cur = null; this._busy = false; },
+  cancel() { this._start = null; this._cur = null; },
+  onDown(pt) { const s = PlanTools.snap(pt, { wantElements: false }); this._start = { x: s.x, y: s.y }; this._cur = { x: s.x, y: s.y }; },
+  onMove(pt) {
+    if (!this._start) return;
+    const s = PlanTools.snap(pt, { wantElements: false });
+    this._cur = { x: s.x, y: s.y };
+    PlanEngine.requestDraw({ fg: true });
+  },
+  async onUp(pt) {
+    if (this._busy || !this._start) return;
+    const s = PlanTools.snap(pt, { wantElements: false });
+    const x0 = Math.min(this._start.x, s.x), x1 = Math.max(this._start.x, s.x);
+    const y0 = Math.min(this._start.y, s.y), y1 = Math.max(this._start.y, s.y);
+    this._start = null; this._cur = null;
+    if (Math.hypot(x1 - x0, y1 - y0) < 6) { PlanEngine.requestDraw({ fg: true }); return; }  // too small — ignore
+    this._busy = true;
+    const ans = await UI.prompt('Array — columns × rows (e.g. 4x3):', '3x3');
+    this._busy = false;
+    if (!ans) { PlanEngine.requestDraw({ fg: true }); return; }
+    let m = /^(\d+)\s*[x×,\s]\s*(\d+)$/i.exec(ans.trim());
+    if (!m && /^\d+$/.test(ans.trim())) m = [null, ans.trim(), ans.trim()];
+    if (!m) { UI.toast('Enter e.g. 4x3', 'error'); return; }
+    const cols = Math.max(1, parseInt(m[1], 10)), rows = Math.max(1, parseInt(m[2], 10));
+    const placed = PlanTools._placeGrid(this._type, x0, y0, x1, y1, cols, rows);
+    PlanTools._finishBatch(this._type, placed);
+    PlanTools.set('select');
+  },
+  onKey(e) { if (e.key === 'Escape') { this._start = null; this._cur = null; PlanTools.set('select'); return true; } return false; },
+  drawOverlay(ctx, zoom) {
+    if (!this._start || !this._cur) return;
+    const x0 = Math.min(this._start.x, this._cur.x), y0 = Math.min(this._start.y, this._cur.y);
+    const w = Math.abs(this._cur.x - this._start.x), h = Math.abs(this._cur.y - this._start.y);
+    ctx.save();
+    ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
+    ctx.strokeRect(x0, y0, w, h); ctx.setLineDash([]); ctx.restore();
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// DEVPATH — draw a polyline (click points, Enter to finish), then lay a device
+// type evenly along it (lights along a run, sockets along a wall…). A
+// final-circuit route is drawn through the placed devices and the batch
+// auto-tags to a circuit (building domain).
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'devpath', cursor: 'crosshair', _type: null, _pts: null, _hover: null, _busy: false,
+  onActivate(opts) { this._type = opts && opts.type; this._pts = null; this._hover = null; this._busy = false; },
+  cancel() { this._pts = null; this._hover = null; },
+  onMove(pt) { this._hover = PlanTools.snap(pt); PlanEngine.requestDraw({ fg: true }); },
+  onDown(pt) {
+    const s = PlanTools.snap(pt);
+    if (!this._pts) this._pts = [{ x: s.x, y: s.y }];
+    else this._pts.push({ x: s.x, y: s.y });
+    PlanEngine.requestDraw({ fg: true });
+  },
+  onKey(e) {
+    if (e.key === 'Escape') { this._pts = null; PlanEngine.requestDraw({ fg: true }); PlanTools.set('select'); return true; }
+    if (e.key === 'Enter') { this._finish(); return true; }
+    return false;
+  },
+  async _finish() {
+    if (this._busy) return;
+    const pts = this._pts;
+    if (!pts || pts.length < 2) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
+    this._busy = true;
+    const ans = await UI.prompt('How many to place along the path?  (or "2m" for metre spacing):', '6');
+    this._busy = false;
+    if (!ans) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
+    let samplePts;
+    const mm = /^([\d.]+)\s*m$/i.exec(ans.trim());
+    if (mm) {
+      const f = PlanEngine.factor();
+      if (!f) { UI.alert('Calibrate the plan first to space by metres.'); this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
+      const sp = parseFloat(mm[1]);
+      if (!(sp > 0)) { this._pts = null; return; }
+      samplePts = PlanTools._interpolate(pts, sp / f);
+    } else {
+      const n = parseInt(ans, 10);
+      if (!(n >= 1)) { UI.toast('Enter a count, or e.g. 2m', 'error'); return; }
+      samplePts = PlanTools._samplePath(pts, n);
+    }
+    const type = this._type;
+    const pm = AppState.planMarkup;
+    const placed = [];
+    for (const p of samplePts) {
+      const el = { id: AppState.planGenId('pmel'), type, x: p.x, y: p.y, rotation: 0, name: PlanMarkup.nextName(type), reticId: null, props: PLAN_DEFS.defaults(type) };
+      pm.elements.push(el); placed.push(el);
+    }
+    // Wire them with one final-circuit route (lights → lighting circuit).
+    if (placed.length >= 2) {
+      const rtype = type === 'bd_light' ? 'lighting_ckt' : 'circuit';
+      pm.routes.push({
+        id: AppState.planGenId('pmrt'), type: rtype,
+        fromId: placed[0].id, toId: placed[placed.length - 1].id,
+        points: placed.map(e => ({ x: e.x, y: e.y, snappedTo: e.id })),
+        cableType: '', curved: PlanTools.curvedByDefault(rtype), props: {},
+      });
+    }
+    this._pts = null;
+    PlanTools._finishBatch(type, placed);
+    if (typeof PlanCircuits !== 'undefined' && PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
+    PlanTools.set('select');
+  },
+  drawOverlay(ctx, zoom) {
+    if (this._pts) {
+      ctx.save();
+      ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.beginPath(); ctx.moveTo(this._pts[0].x, this._pts[0].y);
+      for (let i = 1; i < this._pts.length; i++) ctx.lineTo(this._pts[i].x, this._pts[i].y);
+      if (this._hover) ctx.lineTo(this._hover.x, this._hover.y);
+      ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    }
+    if (this._hover) PlanTools._drawSnapRing(ctx, this._hover.x, this._hover.y, this._hover.snapped, zoom);
+  },
+});
+
+// Grid of point elements filling [x0,y0]–[x1,y1]; edges inclusive. Returns the
+// placed element objects (already pushed to the active floor).
+PlanTools._placeGrid = function (type, x0, y0, x1, y1, cols, rows) {
+  const pm = AppState.planMarkup; const placed = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = cols > 1 ? x0 + (x1 - x0) * c / (cols - 1) : (x0 + x1) / 2;
+      const y = rows > 1 ? y0 + (y1 - y0) * r / (rows - 1) : (y0 + y1) / 2;
+      const el = { id: AppState.planGenId('pmel'), type, x, y, rotation: 0, name: PlanMarkup.nextName(type), reticId: null, props: PLAN_DEFS.defaults(type) };
+      pm.elements.push(el); placed.push(el);
+    }
+  }
+  return placed;
+};
+
+// Common tail for a batch placement: auto-tag to a circuit, snapshot, redraw,
+// and report.
+PlanTools._finishBatch = function (type, placed) {
+  if (!placed || !placed.length) return;
+  let tagMsg = '';
+  if (typeof PlanCircuits !== 'undefined' && AppState.planMarkup.settings.domain === 'building') {
+    const r = PlanCircuits.autoTagDevices(placed);
+    if (r && r.tagged) tagMsg = ` · tagged to ${r.board} (${r.ways} way${r.ways > 1 ? 's' : ''})`;
+    else if (r && r.reason === 'no-board') tagMsg = ' · place a Distribution Board to auto-tag';
+  }
+  PlanMarkup.clearSelection();
+  PlanMarkup.snapshot(); PlanMarkup.markDirty();
+  if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
+  PlanEngine.requestDraw({ fg: true });
+  const def = PLAN_DEFS.element(type);
+  UI.toast(`Placed ${placed.length} ${(def && def.name) || type}${tagMsg}.`, 'success');
+};
+
+// n points evenly along a polyline (endpoints included when n ≥ 2).
+PlanTools._samplePath = function (pts, n) {
+  const segs = []; let total = 0;
+  for (let i = 1; i < pts.length; i++) { const L = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); segs.push(L); total += L; }
+  if (n <= 1) return [PlanTools._pointAtLen(pts, segs, total / 2)];
+  const out = [];
+  for (let k = 0; k < n; k++) out.push(PlanTools._pointAtLen(pts, segs, total * k / (n - 1)));
+  return out;
+};
+PlanTools._pointAtLen = function (pts, segs, target) {
+  let acc = 0;
+  for (let i = 0; i < segs.length; i++) {
+    if (acc + segs[i] >= target || i === segs.length - 1) {
+      const t = segs[i] === 0 ? 0 : (target - acc) / segs[i];
+      const a = pts[i], b = pts[i + 1];
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+    acc += segs[i];
+  }
+  const last = pts[pts.length - 1];
+  return { x: last.x, y: last.y };
+};

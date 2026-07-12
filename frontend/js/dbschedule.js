@@ -112,6 +112,9 @@ const DBSchedule = {
     this.currentId = null;
     this._openCommitted = null;
     this._openDerived = null;
+    // When the editor was opened from the Plan workspace, refresh its board
+    // panel so the way count reflects any edits.
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
   },
 
   // ── Derived lumped-load equivalents ────────────────────────────────
