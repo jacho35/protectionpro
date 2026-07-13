@@ -1049,7 +1049,9 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             if z_gnd is None:
                 return  # No zero-sequence path through this transformer
             z0_element = z_xfmr + z_gnd
-            xfmr_label = f"Xfmr '{name}' ({vg}, Z0={abs(z0_element):.4f})"
+            es_lv = str(comp.props.get("earthing_system", "") or "").upper()
+            es_tag = f", {es_lv}" if es_lv == 'TT' and comp.props.get("voltage_lv_kv", 11) <= 1.0 else ""
+            xfmr_label = f"Xfmr '{name}' ({vg}{es_tag}, Z0={abs(z0_element):.4f})"
             if far_side == 'delta':
                 # Delta/zigzag on far side provides Z0 circulation —
                 # transformer itself is a Z0 source (e.g. Dyn11 from yn side).
@@ -1220,6 +1222,26 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
 
     if z_gnd is None:
         return None, 'blocked'
+
+    # LV earthing-system arrangement (IEC 60364-1 §312.2 / SANS 10142-1).
+    # Only meaningful for an LV winding (≤1 kV) facing the fault — the system
+    # earthing (TN/TT/IT) is defined on the LV side of the source. MV/HV faults
+    # and legacy projects without the field are unaffected (es == '').
+    es = str(comp.props.get("earthing_system", "") or "").upper()
+    lv_faces_fault = (bus_side == 'lv') or (bus_side is None and lv_grounded)
+    if es and lv_faces_fault and v_lv <= 1.0:
+        if es == 'IT':
+            # Source unearthed / high-impedance: no zero-sequence return for the
+            # first earth fault, so Ik1 ≈ 0 (insulation-monitoring territory).
+            return None, 'blocked'
+        if es == 'TT':
+            # The fault current returns through soil, not a metallic PE. Add the
+            # source (R_B) and installation (R_A) earth-electrode resistances.
+            # An earth-return resistance appears as 3·Z_E in the zero-sequence
+            # network — the ×3 below supplies that factor, so add R_A+R_B here.
+            r_b = float(comp.props.get("earth_electrode_r_source", 0) or 0)
+            r_a = float(comp.props.get("earth_electrode_r_installation", 0) or 0)
+            z_gnd = z_gnd + complex((r_a + r_b) / z_base_lv, 0)
 
     # 3*Zn appears in the zero-sequence circuit
     return z_gnd * 3, far_side

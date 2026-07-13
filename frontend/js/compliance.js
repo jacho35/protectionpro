@@ -730,6 +730,7 @@ const Compliance = {
     this._sans10142_cableProtection(section);
     this._sans10142_minCableSize(section);
     this._sans10142_transformerNeutral(section);
+    this._sans10142_earthingSystem(section);
     this._sans10142_maxDemand(section);
     this._sans10142_earthFaultCurrent(section);
 
@@ -914,6 +915,7 @@ const Compliance = {
       const xfName = comp.props?.name || xfId;
       const vectorGroup = (comp.props?.vector_group || '').toLowerCase();
       const groundingLv = comp.props?.grounding_lv || '';
+      const earthingSystem = comp.props?.earthing_system || 'TN-S';
 
       // LV neutral is accessible when vector group contains 'yn' or 'zn' on LV side
       // e.g. Dyn11 → LV is yn → neutral accessible and earthed
@@ -929,17 +931,28 @@ const Compliance = {
           detail: `SANS 10142-1 Cl. 8.3.1: TN/TT systems require an earthed neutral at the LV source. Consider Dyn11 configuration with solidly earthed neutral.`,
         });
       } else if (lvUngrounded) {
-        section.items.push({
-          status: 'fail',
-          component: xfName,
-          message: `LV neutral is ungrounded on a distribution transformer with accessible neutral.`,
-          detail: `SANS 10142-1 Cl. 8.3.1: the LV neutral must be earthed (solidly or via low-resistance) for TN/TT systems. Ungrounded LV is only permitted for IT systems with insulation monitoring.`,
-        });
+        // An ungrounded LV neutral is a fault for TN/TT, but is exactly what an
+        // IT system declares — treat it as consistent when IT is selected.
+        if (earthingSystem === 'IT') {
+          section.items.push({
+            status: 'info',
+            component: xfName,
+            message: `LV neutral ungrounded — consistent with the declared IT system.`,
+            detail: `SANS 10142-1 Cl. 8.3.1: IT systems have an unearthed (or high-impedance) source neutral and require an insulation-monitoring device. See the earthing-system check.`,
+          });
+        } else {
+          section.items.push({
+            status: 'fail',
+            component: xfName,
+            message: `LV neutral is ungrounded on a distribution transformer with accessible neutral (declared ${earthingSystem}).`,
+            detail: `SANS 10142-1 Cl. 8.3.1: the LV neutral must be earthed (solidly or via low-resistance) for TN/TT systems. Ungrounded LV is only permitted for IT systems with insulation monitoring.`,
+          });
+        }
       } else if (lvNeutralAccessible && lvSolidlyEarthed) {
         section.items.push({
           status: 'pass',
           component: xfName,
-          message: `LV neutral solidly earthed (${comp.props?.vector_group || '—'}) — TN system earthing confirmed.`,
+          message: `LV neutral solidly earthed (${comp.props?.vector_group || '—'}) — ${earthingSystem} earthing confirmed.`,
           detail: `SANS 10142-1 Cl. 8.3.1: earthed neutral at LV source provides automatic disconnection capability.`,
         });
       } else {
@@ -955,6 +968,132 @@ const Compliance = {
 
     if (checked === 0) {
       section.items.push({ status: 'info', component: '—', message: 'No LV distribution transformers (≤1 kV secondary) found for neutral earthing check.', detail: 'SANS 10142-1 Cl. 8.3.1 applies to transformers supplying LV premises installations.' });
+    }
+  },
+
+  // Collect the declared earthing system of every LV source (transformer with
+  // an LV secondary ≤1 kV, or a utility supplying at ≤1 kV).
+  _lvEarthingSources() {
+    const out = [];
+    for (const [id, comp] of AppState.components) {
+      let lvKV = null;
+      if (comp.type === 'transformer') {
+        lvKV = comp.props?.voltage_lv_kv ?? comp.props?.voltage_lv;
+      } else if (comp.type === 'utility') {
+        lvKV = comp.props?.voltage_kv ?? comp.props?.voltage;
+      } else {
+        continue;
+      }
+      if (!lvKV || lvKV > 1.0) continue;
+      out.push({
+        id, comp,
+        system: comp.props?.earthing_system || 'TN-S',
+        r_a: Number(comp.props?.earth_electrode_r_installation) || 0,
+        r_b: Number(comp.props?.earth_electrode_r_source) || 0,
+      });
+    }
+    return out;
+  },
+
+  // Any residual-current / earth-leakage device present: a distribution board
+  // with a grouped earth-leakage way, or a CB with a core-balance (residual)
+  // CT driving an integral earth-fault release.
+  _hasResidualDevice() {
+    for (const [, comp] of AppState.components) {
+      if (comp.type === 'distribution_board') {
+        const circuits = comp.props?.circuits || [];
+        if (circuits.some(c => String(c.el_group || '').trim())) return true;
+      }
+      if (comp.type === 'cb' && comp.props?.ef_trip_ct) return true;
+    }
+    return false;
+  },
+
+  // Largest declared RCD sensitivity IΔn (amps) across all board EL groups.
+  // Falls back to 0.3 A (a general-purpose 300 mA RCD) when earth-leakage is
+  // present but no explicit sensitivity is set.
+  _maxRcdIdnAmps() {
+    let maxMa = 0;
+    for (const [, comp] of AppState.components) {
+      if (comp.type !== 'distribution_board') continue;
+      const ratings = (comp.props?.el_ratings && typeof comp.props.el_ratings === 'object')
+        ? comp.props.el_ratings : {};
+      for (const v of Object.values(ratings)) {
+        const ma = Number(v) || 0;
+        if (ma > maxMa) maxMa = ma;
+      }
+    }
+    return (maxMa > 0 ? maxMa : 300) / 1000;
+  },
+
+  // SANS 10142-1 Cl. 6 / IEC 60364-1 §312: LV earthing-system arrangement and
+  // the protective measure each type requires (RCD for TT, insulation
+  // monitoring for IT, no RCD on a combined PEN for TN-C).
+  _sans10142_earthingSystem(section) {
+    const sources = this._lvEarthingSources();
+    if (sources.length === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV sources (≤1 kV) found for earthing-system check.', detail: 'IEC 60364-1 §312 applies to LV installations supplied by a transformer or utility at ≤1 kV.' });
+      return;
+    }
+    const hasRcd = this._hasResidualDevice();
+    for (const s of sources) {
+      const name = s.comp.props?.name || s.id;
+      switch (s.system) {
+        case 'TN-S':
+          section.items.push({
+            status: 'pass', component: name,
+            message: `TN-S: separate neutral and protective conductors — metallic earth-fault return.`,
+            detail: `IEC 60364-1 §312.2.1.1: overcurrent devices provide automatic disconnection (verify Cl. 5.5.6). RCDs are permitted for additional protection.`,
+          });
+          break;
+        case 'TN-C-S':
+          section.items.push({
+            status: 'info', component: name,
+            message: `TN-C-S (PME): combined PEN upstream, split to N + PE at the installation.`,
+            detail: `IEC 60364-1 §312.2.1.3 / SANS 10142-1: any RCD must sit downstream of the N/PE separation point — an RCD cannot operate on the combined PEN.`,
+          });
+          break;
+        case 'TN-C':
+          section.items.push({
+            status: hasRcd ? 'fail' : 'warn', component: name,
+            message: hasRcd
+              ? `TN-C with a residual-current device present — an RCD cannot operate on a combined PEN.`
+              : `TN-C: combined PEN throughout — RCD protection is not possible.`,
+            detail: `IEC 60364-1 §312.2.1.2 / SANS 10142-1: RCDs are not permitted in TN-C. Ensure PEN continuity and adequate cross-section. Use TN-S or TN-C-S where earth-leakage protection is required.`,
+          });
+          break;
+        case 'TT':
+          if (!hasRcd) {
+            section.items.push({
+              status: 'fail', component: name,
+              message: `TT system without an RCD — overcurrent devices cannot guarantee earth-fault disconnection.`,
+              detail: `IEC 60364-1 §411.5 / SANS 10142-1: TT earth-fault current returns through soil (R_A + R_B), so an RCD is mandatory. Add an earth-leakage device.`,
+            });
+          } else {
+            const idn = this._maxRcdIdnAmps();
+            const touch = s.r_a * idn;
+            const ok = touch <= 50;
+            section.items.push({
+              status: ok ? 'pass' : 'fail', component: name,
+              message: `TT with RCD: R_A·IΔn = ${s.r_a.toFixed(1)} Ω × ${(idn * 1000).toFixed(0)} mA = ${touch.toFixed(1)} V ${ok ? '≤' : '>'} 50 V.`,
+              detail: `IEC 60364-1 §411.5.3 / SANS 10142-1: R_A·IΔn ≤ 50 V is required. ${ok ? 'Complies.' : 'Reduce R_A (improve the installation earth electrode) or fit a more sensitive RCD.'}`,
+            });
+          }
+          break;
+        case 'IT':
+          section.items.push({
+            status: 'warn', component: name,
+            message: `IT system: source unearthed / high-impedance — the first earth fault does not disconnect.`,
+            detail: `IEC 60364-1 §411.6 / SANS 10142-1: IT installations require an insulation-monitoring device (IMD); a second earth fault is cleared as in TN/TT. Permitted only where continuity of supply is justified.`,
+          });
+          break;
+        default:
+          section.items.push({
+            status: 'info', component: name,
+            message: `Earthing system '${s.system}' not recognised.`,
+            detail: `Set the LV source earthing system to one of TN-S, TN-C, TN-C-S, TT or IT.`,
+          });
+      }
     }
   },
 
@@ -1032,6 +1171,22 @@ const Compliance = {
   _sans10142_earthFaultCurrent(section) {
     if (!this._hasFault()) {
       section.items.push({ status: 'info', component: '—', message: 'Earth fault disconnection check: fault analysis not run.', detail: 'Run Fault Analysis to verify minimum earth fault current for disconnection per SANS 10142-1 Cl. 5.5.6.' });
+      return;
+    }
+
+    // The 10·In overcurrent criterion is a TN construct (metallic earth-fault
+    // return). TT relies on an RCD (R_A·IΔn ≤ 50 V) and IT on insulation
+    // monitoring — both verified in _sans10142_earthingSystem — so defer to
+    // that check when any LV source declares a non-TN system.
+    const srcs = this._lvEarthingSources();
+    const sysSet = new Set(srcs.map(s => s.system));
+    const tnMode = srcs.length === 0 || [...sysSet].every(s => String(s).startsWith('TN'));
+    if (!tnMode) {
+      section.items.push({
+        status: 'info', component: '—',
+        message: `Earth-fault disconnection assessed per earthing system (${[...sysSet].join(', ')}).`,
+        detail: `SANS 10142-1: the 10·In overcurrent criterion applies to TN systems. TT (RCD, R_A·IΔn ≤ 50 V) and IT (insulation monitoring) are verified in the earthing-system check above.`,
+      });
       return;
     }
 

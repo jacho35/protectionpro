@@ -81,6 +81,14 @@ const Properties = {
       } else if (field.showWhen.values) {
         if (!field.showWhen.values.includes(depVal)) return false;
       }
+      // Numeric bounds (e.g. show only for LV sources: { field: 'voltage_lv_kv', max: 1.0 }).
+      // Combines with the predicates above — all specified conditions must hold.
+      if (field.showWhen.max != null || field.showWhen.min != null) {
+        const num = parseFloat(depVal);
+        if (!Number.isFinite(num)) return false;
+        if (field.showWhen.max != null && num > field.showWhen.max) return false;
+        if (field.showWhen.min != null && num < field.showWhen.min) return false;
+      }
       return true;
     });
 
@@ -651,7 +659,8 @@ const Properties = {
     }
 
     // Re-render properties when fields with conditional dependents change
-    if (['vector_group', 'grounding_hv', 'grounding_lv', 'cb_type', 'inverter_type', 'pv_array_mode'].includes(field)) {
+    if (['vector_group', 'grounding_hv', 'grounding_lv', 'earthing_system',
+         'voltage_lv_kv', 'voltage_kv', 'cb_type', 'inverter_type', 'pv_array_mode'].includes(field)) {
       this.show(comp.id);
     }
 
@@ -687,6 +696,16 @@ const Properties = {
     const lvIsGrounded = /^(yn|zn)/.test(lvPart.toLowerCase());
     comp.props.grounding_hv = hvIsGrounded ? 'solidly_grounded' : 'ungrounded';
     comp.props.grounding_lv = lvIsGrounded ? 'solidly_grounded' : 'ungrounded';
+    // Keep the LV earthing system consistent with the neutral: TN/TT need an
+    // earthed LV neutral, so an ungrounded LV winding implies IT. Only nudge
+    // when the current setting contradicts the neutral — never clobber a
+    // deliberate TN-S vs TN-C-S vs TT choice on a grounded neutral.
+    const es = comp.props.earthing_system;
+    if (!lvIsGrounded && es && es !== 'IT') {
+      comp.props.earthing_system = 'IT';
+    } else if (lvIsGrounded && es === 'IT') {
+      comp.props.earthing_system = 'TN-S';
+    }
   },
 
   // Notify once that stale analysis results were cleared by an edit.
