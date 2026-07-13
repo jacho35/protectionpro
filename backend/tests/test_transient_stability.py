@@ -149,6 +149,67 @@ class TestIntegrations:
         assert len(with_stab) > len(without)
 
 
+class TestIslanding:
+    """Synchronism is judged per electrical island. A genset island separated
+    from the grid drifts as a block after a load change (no governor in the
+    classical model) — that is a frequency excursion, not loss of synchronism,
+    and must not be dragged unstable by a disconnected grid's frozen angle."""
+
+    def _islanded_gensets(self, with_open_grid=False):
+        # Two gensets + load on one bus; optionally a utility fenced off behind
+        # an OPEN breaker so it sits in its own island (mirrors the winery site).
+        comps = [
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("g1", "generator", {"name": "G1", "rated_mva": 0.2, "voltage_kv": 0.4,
+                                   "xd_p": 0.25, "inertia_h_s": 3.0, "dispatch_mode": "must_run"}),
+            _c("g2", "generator", {"name": "G2", "rated_mva": 0.06, "voltage_kv": 0.4,
+                                   "xd_p": 0.25, "inertia_h_s": 2.0, "dispatch_mode": "must_run"}),
+            _c("ld", "static_load", {"name": "House", "voltage_kv": 0.4,
+                                     "rated_kva": 50, "power_factor": 0.9, "demand_factor": 1.0}),
+        ]
+        wires = [_w("w1", "g1", "busg"), _w("w2", "g2", "busg"), _w("w3", "busg", "ld")]
+        if with_open_grid:
+            comps += [
+                _c("busu", "bus", {"name": "GridBus", "voltage_kv": 0.4}),
+                _c("util", "utility", {"name": "Grid", "voltage_kv": 0.4, "fault_mva": 500}),
+                _c("tie", "cb", {"name": "SyncIncomer", "state": "open"}),
+            ]
+            wires += [_w("w4", "util", "busu"), _w("w5", "busu", "tie"), _w("w6", "tie", "busg")]
+        return ProjectData(projectName="isl", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def _by_name(self, res):
+        return {m["name"]: m for m in res["machines"]}
+
+    def test_islanded_load_step_is_stable(self):
+        p = self._islanded_gensets()
+        r = run_transient_stability(p, {"type": "load_step", "element": "ld",
+                                        "delta_pct": -50, "time_s": 0.1, "t_end_s": 5})
+        assert r["stable"] is True
+        assert any("islanded generator group" in w for w in r["warnings"])
+
+    def test_removing_tiny_load_does_not_destabilise(self):
+        """The reported bug: a small load rejection on a genset island must stay
+        stable — the gensets drift together, not apart."""
+        p = self._islanded_gensets()
+        r = run_transient_stability(p, {"type": "load_step", "element": "ld",
+                                        "delta_pct": -100, "time_s": 0.1, "t_end_s": 5})
+        assert r["stable"] is True
+        gens = self._by_name(r)
+        # relative to the island COI the swing stays well within synchronism
+        assert max(gens["G1"]["peak_angle_deg"], gens["G2"]["peak_angle_deg"]) < 90.0
+
+    def test_disconnected_grid_does_not_drag_island_unstable(self):
+        """With the grid fenced off in its own island, a load step in the genset
+        island is judged against the genset COI — the frozen grid angle must not
+        make it look like loss of synchronism (the pre-fix failure mode)."""
+        p = self._islanded_gensets(with_open_grid=True)
+        r = run_transient_stability(p, {"type": "load_step", "element": "ld",
+                                        "delta_pct": -100, "time_s": 0.1, "t_end_s": 5})
+        assert r["stable"] is True
+        assert any(m["type"] == "infinite_bus" for m in r["machines"])  # grid present but islanded
+
+
 class TestEdgeCases:
     def test_no_machines(self):
         p = ProjectData(projectName="t", baseMVA=100.0, frequency=50,

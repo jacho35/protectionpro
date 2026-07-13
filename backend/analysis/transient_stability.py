@@ -44,6 +44,37 @@ MAX_RECORD_POINTS = 400
 MACHINE_SOURCE_TYPES = ("generator", "utility")
 
 
+def _bus_islands(Y):
+    """Connected-component id per bus index from the branch Ybus sparsity.
+    Two buses share an island iff a branch/solid-link couples them (Y[i,j] ≠ 0);
+    an open breaker leaves no edge, so it separates islands. Returns {bus_idx:
+    island_id}."""
+    n = Y.shape[0]
+    comp, seen, cid = {}, set(), 0
+    for s in range(n):
+        if s in seen:
+            continue
+        stack = [s]
+        seen.add(s)
+        while stack:
+            u = stack.pop()
+            comp[u] = cid
+            for v in range(n):
+                if v != u and v not in seen and abs(Y[u, v]) > 0:
+                    seen.add(v)
+                    stack.append(v)
+        cid += 1
+    return comp
+
+
+def _machine_island_of(Y, machines):
+    """Island id for each machine (by its terminal bus). Machines in different
+    islands are not synchronously coupled and must be judged against separate
+    centres of inertia."""
+    comp = _bus_islands(Y)
+    return [comp.get(m["bus_idx"], -1) for m in machines]
+
+
 # ── Initial conditions from the load flow ───────────────────────────────
 
 def _bus_complex_voltages(lf, bus_ids):
@@ -205,7 +236,7 @@ def _p_electrical(Yred, active, machines, delta):
 
 # ── Time-domain integration ─────────────────────────────────────────────
 
-def _simulate(machines, segments, freq, t_end, dt, record=False):
+def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None):
     """Integrate the swing equations across the network ``segments``.
 
     segments: ordered list of ``(t_switch, variant)`` where variant is
@@ -219,7 +250,27 @@ def _simulate(machines, segments, freq, t_end, dt, record=False):
     omega = np.zeros(m)   # Δω (rad/s)
     Hs = np.array([mac["H"] for mac in machines])
     Ds = np.array([mac["D"] for mac in machines])
-    Htot = Hs.sum()
+
+    # Per-island centre of inertia. Machines in a grid-connected island are
+    # anchored by the infinite bus; a governor-less genset island drifts as a
+    # block after any power imbalance, so synchronism is judged against each
+    # island's OWN COI — never a global one that would include a disconnected
+    # grid and mistake a normal island frequency excursion for instability.
+    if island_of is None:
+        island_of = [0] * m
+    island_members = {}
+    for i, isl in enumerate(island_of):
+        island_members.setdefault(isl, []).append(i)
+    island_H = {isl: max(sum(Hs[j] for j in mem), 1e-12)
+                for isl, mem in island_members.items()}
+
+    def refs(dv):
+        r = np.zeros(m)
+        for isl, mem in island_members.items():
+            c = sum(Hs[j] * dv[j] for j in mem) / island_H[isl]
+            for j in mem:
+                r[j] = c
+        return r
 
     def variant_at(t):
         v = segments[0][1]
@@ -249,15 +300,12 @@ def _simulate(machines, segments, freq, t_end, dt, record=False):
     t = 0.0
     steps = int(math.ceil(t_end / dt))
 
-    def coi(dv):
-        return float((Hs * dv).sum() / Htot)
-
     for step in range(steps + 1):
         if record:
             v = variant_at(t)
             rec_t.append(round(t, 4))
-            dref = coi(delta)
-            rec_delta.append([round(math.degrees(delta[i] - dref), 2) for i in range(m)])
+            ref = refs(delta)
+            rec_delta.append([round(math.degrees(delta[i] - ref[i]), 2) for i in range(m)])
             rec_omega.append([round(omega[i] / (2.0 * math.pi), 4) for i in range(m)])
             Pe_active = _p_electrical(v["Yred"], v["active"], machines, delta)
             pe = [0.0] * m
@@ -274,9 +322,9 @@ def _simulate(machines, segments, freq, t_end, dt, record=False):
                 vmap[bi] = abs(Vbus[k])
             rec_vbus.append(vmap)
 
-        # instability check (relative to the centre of inertia)
-        dref = coi(delta)
-        if max(abs(delta[i] - dref) for i in range(m)) > UNSTABLE_ANGLE:
+        # instability check (relative to each machine's island COI)
+        ref = refs(delta)
+        if max(abs(delta[i] - ref[i]) for i in range(m)) > UNSTABLE_ANGLE:
             unstable = True
             if not record:
                 break
@@ -476,18 +524,56 @@ def run_transient_stability(project, disturbance=None):
         warnings.append("Only infinite-bus sources present — no finite-inertia "
                         "machine to swing; result is trivially stable.")
 
+    # Enforce a consistent pre-fault equilibrium: set each machine's mechanical
+    # power to its electrical output computed from the PRE-FAULT reduced network
+    # at the initial angles. Taking P_m straight from the load-flow injection
+    # leaves a residual P_m − P_e mismatch whenever the reduction isn't a perfect
+    # inverse of the flow (e.g. several machines sharing a bus, inverter sources
+    # folded in as admittances) — that mismatch makes the rotors drift or, for
+    # light high-reactance machines, run away on the slightest disturbance.
+    machine_bus_idxs = {m["bus_idx"] for m in machines}
+    load_shunt0 = _load_shunts(lf, ctx, machine_bus_idxs)
+    all_idx = list(range(len(machines)))
+    try:
+        Yred0, _, _ = _reduce(ctx["Y"], load_shunt0, machines, all_idx, set())
+        delta0 = np.array([m["delta0"] for m in machines])
+        Pe0 = _p_electrical(Yred0, all_idx, machines, delta0)
+        for i, m in enumerate(machines):
+            if not m["infinite"]:
+                m["Pm"] = float(Pe0[i])
+    except np.linalg.LinAlgError:
+        pass  # keep the load-flow P_m if the pre-fault reduction is singular
+
+    # Group machines into electrical islands so synchronism is judged per island
+    # (a genset island separated from the grid by an open breaker drifts as a
+    # block — that is a frequency excursion, not loss of synchronism).
+    island_of = _machine_island_of(ctx["Y"], machines)
+    by_isl = {}
+    for i, isl in enumerate(island_of):
+        by_isl.setdefault(isl, []).append(i)
+    if any(all(not machines[j]["infinite"] for j in mem)
+           and any(not machines[j]["infinite"] for j in mem)
+           for mem in by_isl.values()):
+        warnings.append(
+            "An islanded generator group with no grid / infinite-bus reference "
+            "was found — its frequency is set by turbine-governors, which the "
+            "classical model does not include. Only inter-machine synchronism "
+            "within the island is judged; a steady frequency/angle offset after "
+            "a load change is expected and is not flagged as instability.")
+
     t_end = float(disturbance.get("t_end_s", 5.0))
     # Step from the stiffest finite machine, bounded for accuracy/speed.
     hmin = min((m["H"] for m in machines if not m["infinite"]), default=4.0)
     dt = float(disturbance.get("dt_s", 0)) or max(min(0.005, hmin / 400.0), 0.0005)
 
     segments, event = _build_segments(project, ctx, lf, machines, disturbance, warnings)
-    sim = _simulate(machines, segments, freq, t_end, dt, record=True)
+    sim = _simulate(machines, segments, freq, t_end, dt, record=True, island_of=island_of)
 
     # Critical clearing time (binary search) for a fault, when requested.
     cct = None
     if disturbance.get("type") == "fault" and disturbance.get("find_cct", True):
-        cct = _find_cct(project, ctx, lf, machines, disturbance, freq, t_end, dt, warnings)
+        cct = _find_cct(project, ctx, lf, machines, disturbance, freq, t_end, dt,
+                        warnings, island_of)
 
     mach_out = []
     for j, mac in enumerate(machines):
@@ -528,7 +614,7 @@ def _curves_with_names(curves, project, machines, ctx):
     }
 
 
-def _find_cct(project, ctx, lf, machines, disturbance, freq, t_end, dt, warnings):
+def _find_cct(project, ctx, lf, machines, disturbance, freq, t_end, dt, warnings, island_of=None):
     """Binary-search the critical clearing time for a bolted fault."""
     lo, hi = 0.0, CCT_SEARCH_MAX
 
@@ -539,7 +625,7 @@ def _find_cct(project, ctx, lf, machines, disturbance, freq, t_end, dt, warnings
             segs, _ = _build_segments(project, ctx, lf, machines, d, warnings)
         except ValueError:
             return None
-        return _simulate(machines, segs, freq, t_end, dt, record=False)["stable"]
+        return _simulate(machines, segs, freq, t_end, dt, record=False, island_of=island_of)["stable"]
 
     if stable_for(hi):
         return None  # stable even at the search ceiling — no finite CCT found
