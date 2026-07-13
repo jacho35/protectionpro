@@ -55,6 +55,7 @@ const AppState = {
   showDeviceLabels: true,
   showWarnings: true,
   showFaultAngles: false,
+  showRatingFlags: true,  // on-diagram warning markers for under-rated devices
 
   // Flow arrow visibility — per analysis type
   showFlowArrows: {

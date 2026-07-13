@@ -3090,6 +3090,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Under-rated device flags toggle (on-diagram warning markers)
+  const _ratingFlagsBtn = document.getElementById('btn-toggle-rating-flags');
+  if (_ratingFlagsBtn) {
+    _ratingFlagsBtn.addEventListener('click', () => {
+      AppState.showRatingFlags = !AppState.showRatingFlags;
+      _ratingFlagsBtn.classList.toggle('active', AppState.showRatingFlags);
+      Canvas.render();
+      document.getElementById('status-info').textContent =
+        AppState.showRatingFlags ? 'Under-rated device flags shown.' : 'Under-rated device flags hidden.';
+    });
+  }
+
   // Reset annotation positions
   document.getElementById('btn-reset-annotation-positions').addEventListener('click', () => {
     Annotations.offsets.clear();
