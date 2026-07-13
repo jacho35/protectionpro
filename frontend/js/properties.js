@@ -1,10 +1,11 @@
 /* ProtectionPro — Properties Panel */
 
-const SECTION_ORDER = ['General', 'pv', 'battery', 'fault', 'loadflow', 'dynamic', 'arcflash', 'grounding', 'cable_sizing', 'protection'];
+const SECTION_ORDER = ['General', 'pv', 'battery', 'fault', 'loadflow', 'dynamic', 'stability', 'arcflash', 'grounding', 'cable_sizing', 'protection'];
 const SECTION_LABELS = {
   General: 'General',
   fault: 'Fault Analysis',
   dynamic: 'Motor Starting (Dynamic)',
+  stability: 'Transient Stability',
   loadflow: 'Load Flow',
   arcflash: 'Arc Flash',
   grounding: 'Grounding',

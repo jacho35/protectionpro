@@ -951,6 +951,7 @@ const AppState = {
     this.cableSizingResults = null;
     this.motorStartingResults = null;
     this.dynamicMotorResults = null;
+    this.stabilityResults = null;
     this.dutyCheckResults = null;
     this.loadDiversityResults = null;
     this.groundingResults = null;
@@ -1129,6 +1130,7 @@ const AppState = {
       cableSizingResults: this.cableSizingResults || undefined,
       motorStartingResults: this.motorStartingResults || undefined,
       dynamicMotorResults: this.dynamicMotorResults || undefined,
+      stabilityResults: this.stabilityResults || undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
@@ -1411,6 +1413,7 @@ const AppState = {
     this.cableSizingResults = data.cableSizingResults || null;
     this.motorStartingResults = data.motorStartingResults || null;
     this.dynamicMotorResults = data.dynamicMotorResults || null;
+    this.stabilityResults = data.stabilityResults || null;
     this.dutyCheckResults = data.dutyCheckResults || null;
     this.loadDiversityResults = data.loadDiversityResults || null;
     this.groundingResults = data.groundingResults || null;
