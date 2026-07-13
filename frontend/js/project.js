@@ -640,9 +640,22 @@ const Project = {
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
+      reader.onerror = () => {
+        UI.toast('Could not read the file: ' + (reader.error?.message || 'unknown error'), 'error');
+      };
       reader.onload = (ev) => {
+        let data;
         try {
-          const data = JSON.parse(ev.target.result);
+          data = JSON.parse(ev.target.result);
+        } catch (err) {
+          UI.toast('Not a valid JSON file: ' + err.message, 'error');
+          return;
+        }
+        try {
+          // fromJSON validates the shape and throws on a non-project file
+          // BEFORE mutating state, so a bad import leaves the current project
+          // untouched. Validate up front so the error is explicit either way.
+          AppState._validateProjectData(data);
           RevisionTimeline.clearLocal(); // switching projects
           AppState.fromJSON(data);
           UndoManager.clear();
@@ -653,7 +666,10 @@ const Project = {
           Properties.clear();
           document.title = `ProtectionPro — ${AppState.projectName}`;
           updateProjectNameDisplay();
-          document.getElementById('status-info').textContent = 'Project imported from file.';
+          const nc = AppState.components.size, nw = AppState.wires.size;
+          document.getElementById('status-info').textContent =
+            `Project imported: ${nc} component${nc === 1 ? '' : 's'}, ${nw} wire${nw === 1 ? '' : 's'}.`;
+          UI.toast(`Imported "${AppState.projectName}" — ${nc} component${nc === 1 ? '' : 's'}, ${nw} wire${nw === 1 ? '' : 's'}.`, 'success');
         } catch (err) {
           UI.toast('Invalid project file: ' + err.message, 'error');
         }
