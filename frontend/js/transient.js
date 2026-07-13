@@ -130,7 +130,11 @@ const Transient = {
     const d = this._readConfig();
     this._last = d;
     document.getElementById('stability-config-modal').style.display = 'none';
-    document.getElementById('status-info').textContent = 'Running transient stability simulation…';
+    const label = d.type === 'fault' && d.find_cct
+      ? 'Running transient stability (searching critical clearing time)…'
+      : 'Running transient stability simulation…';
+    document.getElementById('status-info').textContent = label;
+    if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, label);
     try {
       const result = await API.runTransientStability(d);
       AppState.stabilityResults = result;
@@ -143,6 +147,8 @@ const Transient = {
       if (typeof showValidationModal === 'function') {
         showValidationModal('Transient Stability — Error', [{ msg: e.message || 'Unknown error' }], [], null);
       }
+    } finally {
+      if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
     }
   },
 
