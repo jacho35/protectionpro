@@ -2409,6 +2409,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-arcflash').addEventListener('click', () => {
     document.getElementById('arcflash-modal').style.display = 'none';
   });
+  document.getElementById('arcflash-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'arcflash-modal') e.target.style.display = 'none';
+  });
 
   document.getElementById('btn-close-dc-arcflash').addEventListener('click', () => {
     document.getElementById('dc-arcflash-modal').style.display = 'none';
