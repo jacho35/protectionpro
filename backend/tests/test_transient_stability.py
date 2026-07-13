@@ -35,7 +35,11 @@ def _smib(h=3.5, xline_pu=0.3, gen_mva=100.0, load_mw=60.0):
         _c("bus_gen", "bus", {"name": "GEN", "voltage_kv": 11}),
         _c("g1", "generator", {"name": "G1", "rated_mva": gen_mva, "voltage_kv": 11,
                                "xd_p": 0.3, "xd_pp": 0.2, "x_r_ratio": 1000,
-                               "inertia_h_s": h, "damping_pu": 0, "dispatch_mode": "must_run"}),
+                               "inertia_h_s": h, "damping_pu": 0, "dispatch_mode": "must_run",
+                               # Equal-area CCT is a constant-Pm, constant-E′
+                               # criterion — disable the governor and AVR so the
+                               # closed form is the exact anchor.
+                               "gov_mode": "none", "avr_mode": "off"}),
         _c("ld", "static_load", {"name": "LD", "voltage_kv": 11,
                                  "rated_kva": load_mw * 1000, "power_factor": 1.0}),
     ], wires=[_w("w1", "util", "bus_inf"), _w("w2", "bus_inf", "ln"), _w("w3", "ln", "bus_gen"),
@@ -208,6 +212,312 @@ class TestIslanding:
                                         "delta_pct": -100, "time_s": 0.1, "t_end_s": 5})
         assert r["stable"] is True
         assert any(m["type"] == "infinite_bus" for m in r["machines"])  # grid present but islanded
+
+
+class TestGovernor:
+    """Turbine-governor frequency response. A load change in a grid-less genset
+    island must recover (isochronous) or settle at a bounded offset (droop);
+    with the governor disabled the frequency drifts without recovering."""
+
+    def _loaded_island(self, gov_mode):
+        # Two gensets on a gen bus feed a load bus through a feeder, so the sets
+        # carry real power (Pm > 0) and the governor has something to regulate.
+        g = lambda cid, nm: _c(cid, "generator", {
+            "name": nm, "rated_mva": 0.2, "voltage_kv": 0.4, "xd_p": 0.25,
+            "inertia_h_s": 2.0, "dispatch_mode": "must_run", "gov_mode": gov_mode,
+            "gov_droop_pct": 4, "gov_time_const_s": 0.5, "gov_reset_time_s": 4})
+        comps = [
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("busl", "bus", {"name": "LoadBus", "voltage_kv": 0.4}),
+            _c("fdr", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.1,
+                                "x_per_km": 0.07, "length_km": 0.05}),
+            g("g1", "G1"), g("g2", "G2"),
+            _c("ld", "static_load", {"name": "House", "voltage_kv": 0.4,
+                                     "rated_kva": 200, "power_factor": 0.9, "demand_factor": 1.0}),
+        ]
+        wires = [_w("wf1", "busg", "fdr"), _w("wf2", "fdr", "busl"),
+                 _w("w1", "g1", "busg"), _w("w2", "g2", "busg"), _w("w3", "busl", "ld")]
+        return ProjectData(projectName="gov", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def _stats(self, gov_mode, delta_pct=-40, t_end=25):
+        r = run_transient_stability(self._loaded_island(gov_mode),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": delta_pct, "time_s": 1, "t_end_s": t_end})
+        f = r["curves"]["speed_hz"]
+        gi = [i for i, n in enumerate(r["curves"]["machines"]) if n != "Utility"]
+        n = len(f[gi[0]])
+        q = int(n * 0.75)
+        final = max(abs(f[i][-1]) for i in gi)                    # end deviation (Hz)
+        peak = max(abs(v) for i in gi for v in f[i])              # worst excursion
+        # how much it is STILL moving over the last quarter (settled ⇒ ~0)
+        drift = max(abs(f[i][-1] - f[i][q]) for i in gi)
+        return {"final": final, "peak": peak, "drift": drift, "stable": r["stable"]}
+
+    def test_isochronous_recovers_to_nominal(self):
+        s = self._stats("isochronous")
+        assert s["stable"] is True
+        assert s["peak"] > 1e-3         # there WAS a frequency excursion
+        assert s["final"] < 0.02        # …that recovers to ~nominal
+        assert s["drift"] < 0.02        # …and has settled
+
+    def test_none_drifts_without_recovery(self):
+        s = self._stats("none")
+        assert s["stable"] is True
+        # no governor ⇒ still ramping at the end (never settles)
+        assert s["drift"] > 0.03
+        assert s["final"] > 0.05
+
+    def test_droop_settles_at_bounded_offset(self):
+        iso = self._stats("isochronous")
+        drp = self._stats("droop")
+        assert drp["stable"] is True
+        assert drp["drift"] < 0.02              # settled (bounded, unlike 'none')
+        assert drp["final"] > iso["final"]      # …but at an offset (unlike isochronous)
+
+    def test_default_mode_is_isochronous(self):
+        # a generator with no gov_mode set recovers (isochronous default)
+        p = self._loaded_island("isochronous")
+        for c in p.components:
+            if c.type == "generator":
+                c.props.pop("gov_mode", None)
+        r = run_transient_stability(p, {"type": "load_step", "element": "ld",
+                                        "delta_pct": -40, "time_s": 1, "t_end_s": 25})
+        f = r["curves"]["speed_hz"]
+        gi = [i for i, n in enumerate(r["curves"]["machines"]) if n != "Utility"]
+        assert max(abs(f[i][-1]) for i in gi) < 0.02
+
+
+class TestAVR:
+    """AVR/exciter voltage recovery. With the AVR on the field EMF is raised to
+    hold the terminal voltage after a load step; with it off the voltage stays
+    depressed (classical constant-EMF model)."""
+
+    def _island(self, avr):
+        g = _c("g1", "generator", {
+            "name": "G1", "rated_mva": 0.5, "voltage_kv": 0.4, "xd_p": 0.25,
+            "inertia_h_s": 2.0, "dispatch_mode": "must_run", "gov_mode": "isochronous",
+            "avr_mode": avr, "avr_gain": 40, "avr_time_const_s": 0.1})
+        comps = [
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("busl", "bus", {"name": "LoadBus", "voltage_kv": 0.4}),
+            _c("fdr", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.3,
+                                "x_per_km": 0.15, "length_km": 0.1}),
+            g,
+            _c("ld", "static_load", {"name": "House", "voltage_kv": 0.4,
+                                     "rated_kva": 200, "power_factor": 0.85, "demand_factor": 1.0}),
+        ]
+        wires = [_w("wf1", "busg", "fdr"), _w("wf2", "fdr", "busl"),
+                 _w("w1", "g1", "busg"), _w("w2", "busl", "ld")]
+        return ProjectData(projectName="avr", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def _loadbus_v(self, avr):
+        r = run_transient_stability(self._island(avr),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 60, "time_s": 1, "t_end_s": 8})
+        v = [b for b in r["curves"]["buses"] if b["bus"] == "LoadBus"][0]["v_pu"]
+        return {"pre": v[0], "final": v[-1], "stable": r["stable"]}
+
+    def test_avr_recovers_voltage(self):
+        on = self._loadbus_v("on")
+        off = self._loadbus_v("off")
+        assert on["stable"] and off["stable"]
+        # AVR-on holds the terminal voltage higher after the load step…
+        assert on["final"] > off["final"] + 0.01
+        # …and recovers it toward the pre-step value (off stays depressed)
+        assert on["final"] > off["final"]
+        assert off["final"] < off["pre"] - 0.02
+
+    def test_avr_default_on(self):
+        # no avr_mode set ⇒ AVR active (voltage higher than an explicit off)
+        p = self._island("on")
+        for c in p.components:
+            if c.type == "generator":
+                c.props.pop("avr_mode", None)
+        r = run_transient_stability(p, {"type": "load_step", "element": "ld",
+                                        "delta_pct": 60, "time_s": 1, "t_end_s": 8})
+        v = [b for b in r["curves"]["buses"] if b["bus"] == "LoadBus"][0]["v_pu"]
+        assert v[-1] > self._loadbus_v("off")["final"]
+
+
+class TestDynamicLoadsMotors:
+    """Dynamic load models and induction-motor slip dynamics."""
+
+    def _weak_island(self, load_model):
+        # A weak generator (AVR off) so a load increase leaves a depressed
+        # voltage where the load model matters.
+        return ProjectData(projectName="dl", baseMVA=100.0, frequency=50, components=[
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("busl", "bus", {"name": "LoadBus", "voltage_kv": 0.4}),
+            _c("fdr", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.5,
+                                "x_per_km": 0.4, "length_km": 0.3}),
+            _c("g1", "generator", {"name": "G1", "rated_mva": 0.3, "voltage_kv": 0.4,
+                                   "xd_p": 0.3, "inertia_h_s": 1.5, "dispatch_mode": "must_run",
+                                   "avr_mode": "off", "gov_mode": "isochronous"}),
+            _c("ld", "static_load", {"name": "House", "voltage_kv": 0.4, "rated_kva": 120,
+                                     "power_factor": 0.9, "demand_factor": 1.0,
+                                     "load_model": load_model}),
+        ], wires=[_w("wf1", "busg", "fdr"), _w("wf2", "fdr", "busl"),
+                  _w("wg", "g1", "busg"),
+                  Wire(id="wl", fromComponent="ld", fromPort="in", toComponent="busl", toPort="at_0")])
+
+    def _final_v(self, load_model):
+        r = run_transient_stability(self._weak_island(load_model),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 40, "time_s": 1, "t_end_s": 8})
+        return [b for b in r["curves"]["buses"] if b["bus"] == "LoadBus"][0]["v_pu"][-1]
+
+    def test_constant_impedance_default_unchanged(self):
+        # constant-impedance is the default classical model — voltage holds up
+        assert self._final_v("constant_impedance") > 0.5
+
+    def test_constant_current_sags_more_than_impedance(self):
+        assert self._final_v("constant_current") < self._final_v("constant_impedance")
+
+    def test_constant_power_can_collapse_voltage(self):
+        # constant-power load draws more current as V falls → voltage collapse
+        assert self._final_v("constant_power") < 0.3
+
+    def test_dynamic_motor_is_modelled(self):
+        p = ProjectData(projectName="dm", baseMVA=100.0, frequency=50, components=[
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("busl", "bus", {"name": "LoadBus", "voltage_kv": 0.4}),
+            _c("fdr", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.2,
+                                "x_per_km": 0.12, "length_km": 0.12}),
+            _c("g1", "generator", {"name": "G1", "rated_mva": 0.6, "voltage_kv": 0.4,
+                                   "xd_p": 0.25, "inertia_h_s": 1.5, "dispatch_mode": "must_run"}),
+            _c("m1", "motor_induction", {"name": "IM", "voltage_kv": 0.4, "rated_kw": 110,
+                                         "efficiency": 0.93, "power_factor": 0.87,
+                                         "locked_rotor_current": 6.5, "load_torque_pct": 90}),
+        ], wires=[_w("wf1", "busg", "fdr"), _w("wf2", "fdr", "busl"),
+                  _w("wg", "g1", "busg"),
+                  Wire(id="wm", fromComponent="m1", fromPort="in", toComponent="busl", toPort="at_0")])
+        r = run_transient_stability(p, {"type": "fault", "bus": "busg",
+                                        "clear_time_s": 0.15, "find_cct": False, "t_end_s": 5})
+        assert r["curves"] is not None
+        assert any("induction motor" in w and "dynamic" in w for w in r["warnings"])
+
+    def test_motor_static_override_no_dynamic_warning(self):
+        # ts_dynamic='off' freezes the motor as a constant load (no dynamic note)
+        p = ProjectData(projectName="dm", baseMVA=100.0, frequency=50, components=[
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("g1", "generator", {"name": "G1", "rated_mva": 0.6, "voltage_kv": 0.4,
+                                   "xd_p": 0.25, "inertia_h_s": 1.5, "dispatch_mode": "must_run"}),
+            _c("m1", "motor_induction", {"name": "IM", "voltage_kv": 0.4, "rated_kw": 110,
+                                         "efficiency": 0.93, "power_factor": 0.87,
+                                         "ts_dynamic": "off"}),
+        ], wires=[_w("wg", "g1", "busg"),
+                  Wire(id="wm", fromComponent="m1", fromPort="in", toComponent="busg", toPort="at_0")])
+        r = run_transient_stability(p, {"type": "load_step", "element": "m1",
+                                        "delta_pct": 0, "time_s": 1, "t_end_s": 3})
+        assert not any("modelled dynamically" in w for w in r["warnings"])
+
+
+class TestProtection:
+    """UFLS load shedding and generator protection tripping."""
+
+    def _island(self, shed=False, gen_uf=False):
+        shed_props = {"name": "SheddableDB", "voltage_kv": 0.4, "rated_kva": 120,
+                      "power_factor": 0.9, "demand_factor": 1.0}
+        if shed:
+            shed_props.update({"uf_shed_hz": 49.0, "uf_shed_delay_s": 0.2})
+        g = lambda cid, nm: _c(cid, "generator", {
+            "name": nm, "rated_mva": 0.2, "voltage_kv": 0.4, "xd_p": 0.25,
+            "inertia_h_s": 2.0, "dispatch_mode": "must_run", "gov_mode": "none",
+            **({"trip_uf_hz": 48.5, "trip_delay_s": 0.2} if gen_uf else {})})
+        comps = [
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("busl", "bus", {"name": "LoadBus", "voltage_kv": 0.4}),
+            _c("fdr", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.1,
+                                "x_per_km": 0.07, "length_km": 0.05}),
+            g("g1", "G1"), g("g2", "G2"),
+            _c("firm", "static_load", {"name": "FirmDB", "voltage_kv": 0.4, "rated_kva": 150,
+                                       "power_factor": 0.9, "demand_factor": 1.0}),
+            _c("shed", "static_load", shed_props),
+        ]
+        wires = [_w("wf1", "busg", "fdr"), _w("wf2", "fdr", "busl"),
+                 _w("wg1", "g1", "busg"), _w("wg2", "g2", "busg"),
+                 Wire(id="wfl", fromComponent="firm", fromPort="in", toComponent="busl", toPort="at_0"),
+                 Wire(id="wsh", fromComponent="shed", fromPort="in", toComponent="busl", toPort="at_0")]
+        return ProjectData(projectName="p", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def _min_freq(self, r):
+        sp = r["curves"]["speed_hz"]
+        gi = [i for i, n in enumerate(r["curves"]["machines"]) if n != "Utility"]
+        return 50.0 + min(min(sp[i]) for i in gi)
+
+    def test_no_protection_no_trips(self):
+        r = run_transient_stability(self._island(shed=False),
+                                    {"type": "load_step", "element": "firm",
+                                     "delta_pct": 30, "time_s": 1, "t_end_s": 8})
+        assert r["trips"] == []
+        assert self._min_freq(r) < 45.0   # governor-off frequency collapses freely
+
+    def test_ufls_sheds_and_arrests_decline(self):
+        base = self._min_freq(run_transient_stability(self._island(shed=False),
+                              {"type": "load_step", "element": "firm",
+                               "delta_pct": 30, "time_s": 1, "t_end_s": 8}))
+        r = run_transient_stability(self._island(shed=True),
+                                    {"type": "load_step", "element": "firm",
+                                     "delta_pct": 30, "time_s": 1, "t_end_s": 8})
+        assert any("UFLS" in tr["reason"] and tr["element"] == "SheddableDB"
+                   for tr in r["trips"])
+        # shedding arrests the decline — frequency dips far less than unshed
+        assert self._min_freq(r) > base + 5.0
+
+    def test_generator_underfrequency_trip(self):
+        r = run_transient_stability(self._island(gen_uf=True),
+                                    {"type": "load_step", "element": "firm",
+                                     "delta_pct": 30, "time_s": 1, "t_end_s": 8})
+        assert any("generator trip" in tr["reason"] for tr in r["trips"])
+
+
+class TestTwoAxis:
+    """Two-axis (flux-decay) machine model with a field-driven exciter."""
+
+    def _smib(self, model, avr="on", tdo=6.0):
+        g = {"name": "G1", "rated_mva": 100, "voltage_kv": 11, "xd_p": 0.3,
+             "xd_pp": 0.2, "x_r_ratio": 1000, "inertia_h_s": 3.5, "damping_pu": 0,
+             "dispatch_mode": "must_run", "gov_mode": "none", "avr_mode": avr,
+             "machine_model": model, "xd": 1.8, "xq": 1.7, "tdo_p": tdo, "tqo_p": 0.4}
+        return ProjectData(projectName="s", baseMVA=100.0, frequency=50, components=[
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 1e7, "x_r_ratio": 1000}),
+            _c("bi", "bus", {"name": "INF", "voltage_kv": 11}),
+            _c("ln", "cable", {"name": "L", "voltage_kv": 11, "r_per_km": 0.0,
+                               "x_per_km": 0.3 * (11 ** 2 / 100), "length_km": 1}),
+            _c("bg", "bus", {"name": "GEN", "voltage_kv": 11}),
+            _c("g1", "generator", g),
+            _c("ld", "static_load", {"name": "LD", "voltage_kv": 11, "rated_kva": 60000, "power_factor": 1.0}),
+        ], wires=[_w("w1", "util", "bi"), _w("w2", "bi", "ln"), _w("w3", "ln", "bg"),
+                  _w("w4", "bg", "g1"), _w("w5", "bg", "ld")])
+
+    def test_equilibrium_no_drift(self):
+        # a two-axis machine at a 0% load step must hold its pre-fault angle
+        r = run_transient_stability(self._smib("two_axis"),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 0, "time_s": 1, "t_end_s": 5})
+        gi = r["curves"]["machines"].index("G1")
+        dd = r["curves"]["delta_deg"][gi]
+        assert max(abs(x - dd[0]) for x in dd) < 0.05
+
+    def test_classical_limit_reproduces_cct(self):
+        # AVR off + very slow field ⇒ near-constant E' ⇒ ~classical CCT
+        classical = run_transient_stability(self._smib("classical", avr="off"),
+                                            {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
+                                             "find_cct": True, "t_end_s": 5})["cct_s"]
+        twoax = run_transient_stability(self._smib("two_axis", avr="off", tdo=1e6),
+                                        {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
+                                         "find_cct": True, "t_end_s": 5})["cct_s"]
+        assert classical is not None and twoax is not None
+        assert twoax == pytest.approx(classical, rel=0.06)
+
+    def test_two_axis_runs_with_avr(self):
+        r = run_transient_stability(self._smib("two_axis", avr="on"),
+                                    {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
+                                     "find_cct": True, "t_end_s": 5})
+        assert r["cct_s"] is not None and r["curves"] is not None
 
 
 class TestEdgeCases:

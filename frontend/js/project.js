@@ -533,6 +533,23 @@ const Project = {
     setTimeout(() => { document.getElementById('status-info').textContent = ''; }, 3000);
   },
 
+  // After loading a project, warn if any persisted study result was computed on
+  // an older app/engine version — it is shown for reference but must be re-run.
+  _noticeStaleResults() {
+    const stale = (typeof AppState.staleResultSlots === 'function')
+      ? AppState.staleResultSlots() : [];
+    if (!stale.length) return;
+    const names = stale.map(s => (typeof RESULT_SLOT_LABELS !== 'undefined'
+      && RESULT_SLOT_LABELS[s]) || s);
+    const list = names.length > 3
+      ? names.slice(0, 3).join(', ') + ` +${names.length - 3} more`
+      : names.join(', ');
+    if (typeof UI !== 'undefined' && UI.toast) {
+      UI.toast(`⚠ Out-of-date results (${list}) — computed on an earlier version. `
+        + 'Re-run to update; they are excluded from reports.', 'warning', 7000);
+    }
+  },
+
   // ── Auto Save ──
 
   _autoSaveInterval: null,
@@ -621,6 +638,7 @@ const Project = {
       updateProjectNameDisplay();
       localStorage.removeItem('protectionpro-auto-save-backup');
       this._statusMsg('Restored from local backup.');
+      this._noticeStaleResults();
     } catch (e) {
       console.error('Failed to restore local backup:', e);
     }
@@ -679,6 +697,7 @@ const Project = {
           document.getElementById('status-info').textContent =
             `Project imported: ${nc} component${nc === 1 ? '' : 's'}, ${nw} wire${nw === 1 ? '' : 's'}.`;
           UI.toast(`Imported "${AppState.projectName}" — ${nc} component${nc === 1 ? '' : 's'}, ${nw} wire${nw === 1 ? '' : 's'}.`, 'success');
+          this._noticeStaleResults();
         } catch (err) {
           UI.toast('Invalid project file: ' + err.message, 'error');
         }
@@ -767,6 +786,7 @@ const Project = {
           this._addRecent(btn.dataset.id, AppState.projectName);
           RevisionTimeline.show();
           this._statusMsg('Project loaded.');
+          this._noticeStaleResults();
         } catch (err) {
           UI.toast('Failed to load project: ' + err.message, 'error');
         }
@@ -955,6 +975,7 @@ const Project = {
           this._addRecent(el.dataset.projectId, AppState.projectName);
           RevisionTimeline.show();
           this._statusMsg('Project loaded.');
+          this._noticeStaleResults();
         } catch (err) {
           UI.toast('Failed to load project: ' + err.message, 'error');
         }

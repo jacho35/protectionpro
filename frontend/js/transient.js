@@ -280,7 +280,7 @@ const Transient = {
   _render(body) {
     const r = this._result || {};
     const warnings = r.warnings || [];
-    let html = '';
+    let html = AppState.staleBannerHTML('stabilityResults');
     if (warnings.length) {
       html += '<div class="af-warnings">' + warnings.map(w =>
         `<div class="af-warning-item">⚠ ${this._esc(w)}</div>`).join('') + '</div>';
@@ -305,6 +305,14 @@ const Transient = {
       + r.machines.map(m => `<div><strong>${this._esc(m.name)}</strong> (${this._esc(m.type === 'infinite_bus' ? 'infinite bus' : 'gen')})<br>
         <span style="color:var(--text-muted,#6d6d6d)">H=${m.h_s} s · Pm=${m.pm_pu} p.u. · δ₀=${m.delta0_deg}° · peak δ=${m.peak_angle_deg}°</span></div>`).join('')
       + '</div>';
+
+    // Protection operations (UFLS / generator & motor trips) during the run
+    if (Array.isArray(r.trips) && r.trips.length) {
+      html += '<div style="margin-bottom:10px;padding:8px 11px;border:1px solid #b26a00;border-radius:6px;background:#fff3e0;font-size:12px">'
+        + '<div style="font-weight:700;color:#8a4b00;margin-bottom:3px">⚡ Protection operations</div>'
+        + r.trips.map(tr => `<div style="color:#6d4c00">${(tr.t).toFixed(2)} s — <strong>${this._esc(tr.element)}</strong>: ${this._esc(tr.reason)}</div>`).join('')
+        + '</div>';
+    }
 
     html += `<div class="ts-chart" data-chart="angle"></div>`;
     html += `<div class="ts-chart" data-chart="freq"></div>`;

@@ -296,9 +296,9 @@ const API = {
       components: Array.from(AppState.components.values()).map(c => ({
         id: c.id, type: c.type, props: c.props,
       })),
-      faultResults: AppState.faultResults || null,
-      loadFlowResults: AppState.loadFlowResults || null,
-      arcFlashResults: AppState.arcFlashResults || null,
+      faultResults: AppState.freshResult('faultResults'),
+      loadFlowResults: AppState.freshResult('loadFlowResults'),
+      arcFlashResults: AppState.freshResult('arcFlashResults'),
       projectDetails: AppState.projectDetails || {},
     };
     if (sections) body.sections = sections;
@@ -317,16 +317,18 @@ const API = {
       components: Array.from(AppState.components.values()).map(c => ({
         id: c.id, type: c.type, props: c.props,
       })),
-      faultResults: AppState.faultResults || null,
-      loadFlowResults: AppState.loadFlowResults || null,
-      arcFlashResults: AppState.arcFlashResults || null,
-      cableSizingResults: AppState.cableSizingResults || null,
-      motorStartingResults: AppState.motorStartingResults || null,
-      dynamicMotorResults: AppState.dynamicMotorResults || null,
-      stabilityResults: AppState.stabilityResults || null,
-      dutyCheckResults: AppState.dutyCheckResults || null,
-      loadDiversityResults: AppState.loadDiversityResults || null,
-      groundingResults: AppState.groundingResults || null,
+      // Out-of-date results (computed on an older engine version) are sent as
+      // null so they are excluded from the report until re-run.
+      faultResults: AppState.freshResult('faultResults'),
+      loadFlowResults: AppState.freshResult('loadFlowResults'),
+      arcFlashResults: AppState.freshResult('arcFlashResults'),
+      cableSizingResults: AppState.freshResult('cableSizingResults'),
+      motorStartingResults: AppState.freshResult('motorStartingResults'),
+      dynamicMotorResults: AppState.freshResult('dynamicMotorResults'),
+      stabilityResults: AppState.freshResult('stabilityResults'),
+      dutyCheckResults: AppState.freshResult('dutyCheckResults'),
+      loadDiversityResults: AppState.freshResult('loadDiversityResults'),
+      groundingResults: AppState.freshResult('groundingResults'),
       projectDetails: AppState.projectDetails || {},
     };
     return this.requestBlob('/reports/calculations', {
@@ -341,7 +343,7 @@ const API = {
       components: Array.from(AppState.components.values()).map(c => ({
         id: c.id, type: c.type, props: c.props,
       })),
-      arcFlashResults: AppState.arcFlashResults || null,
+      arcFlashResults: AppState.freshResult('arcFlashResults'),
       projectDetails: AppState.projectDetails || {},
     };
     return this.requestBlob('/reports/arcflash-labels', {

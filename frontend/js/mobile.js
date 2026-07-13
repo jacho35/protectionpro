@@ -406,6 +406,8 @@ const MobileUI = {
       ['mobile-analysis-arcflash',      'btn-arcflash'],
       ['mobile-analysis-cable',         'btn-cable-sizing'],
       ['mobile-analysis-motor',         'btn-motor-starting'],
+      ['mobile-analysis-dynamic-motor', 'btn-dynamic-motor'],
+      ['mobile-analysis-transient',     'btn-transient-stability'],
       ['mobile-analysis-duty',          'btn-duty-check'],
       ['mobile-analysis-grounding',     'btn-grounding'],
       ['mobile-analysis-tcc',           'btn-tcc'],
