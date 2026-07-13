@@ -1118,6 +1118,69 @@ const Compliance = {
     return !!(AppState.faultResults && AppState.faultResults.buses && Object.keys(AppState.faultResults.buses).length > 0);
   },
 
+  // Under-rated protective devices, keyed by component id → { level, reasons }.
+  // Nameplate-only checks (rated voltage vs bus, dedicated-motor FLC) always
+  // apply; the breaking-capacity-vs-fault check adds when fault results exist.
+  // Powers the on-diagram warning markers (Canvas) and is cheap enough to call
+  // per render for typical networks.
+  deviceRatingFlags() {
+    this._adj = null; // rebuild the wire adjacency for this pass
+    const flags = new Map();
+    const add = (id, level, reason) => {
+      const f = flags.get(id) || { level: 'warn', reasons: [] };
+      if (level === 'fail') f.level = 'fail';
+      f.reasons.push(reason);
+      flags.set(id, f);
+    };
+
+    // Rated voltage below the connected bus voltage
+    for (const [id, comp] of AppState.components) {
+      if (!['cb', 'fuse', 'switch'].includes(comp.type)) continue;
+      const ratedV = parseFloat(comp.props?.rated_voltage_kv);
+      if (!(ratedV > 0)) continue;
+      for (const b of this._findConnectedDevices(id, ['bus'])) {
+        const busV = parseFloat(AppState.components.get(b.id)?.props?.voltage_kv);
+        if (busV > 0 && ratedV < busV - 1e-9) {
+          add(id, 'fail', `Rated ${ratedV} kV below bus voltage ${busV} kV`);
+          break;
+        }
+      }
+    }
+
+    // Dedicated motor protective device rated below the motor's full-load current
+    for (const comp of AppState.components.values()) {
+      if (comp.type !== 'motor_induction' && comp.type !== 'motor_synchronous') continue;
+      const flc = this._motorFLC(comp);
+      if (flc == null) continue;
+      const { devices, otherLoads } = this._motorProtectiveDevices(comp.id);
+      if (otherLoads.length > 0) continue;
+      for (const devId of devices) {
+        const In = parseFloat(AppState.components.get(devId)?.props?.rated_current_a);
+        if (In > 0 && In < flc) {
+          add(devId, 'fail', `Rated ${In} A below motor ${comp.props?.name || comp.id} FLC (${flc.toFixed(1)} A)`);
+        }
+      }
+    }
+
+    // Breaking capacity below the prospective fault current (needs fault results)
+    if (this._hasFault()) {
+      for (const [id, comp] of AppState.components) {
+        if (!['cb', 'fuse'].includes(comp.type)) continue;
+        const kaRating = parseFloat(comp.props?.breaking_capacity_ka);
+        if (!(kaRating > 0)) continue;
+        for (const b of this._findConnectedDevices(id, ['bus'])) {
+          const r = AppState.faultResults.buses[b.id];
+          if (r && r.ik3 != null && r.ik3 > kaRating + 1e-9) {
+            add(id, 'fail', `Breaking capacity ${kaRating} kA below fault level ${r.ik3.toFixed(1)} kA`);
+            break;
+          }
+        }
+      }
+    }
+
+    return flags;
+  },
+
   _hasLoadFlow() {
     return !!(AppState.loadFlowResults && AppState.loadFlowResults.buses && Object.keys(AppState.loadFlowResults.buses).length > 0);
   },

@@ -266,7 +266,36 @@ const Annotations = {
       }
     }
 
+    // Under-rated device markers — independent of the analysis result boxes.
+    // Reuse the cached flag set during a component drag (positions move but
+    // ratings/topology don't), recompute otherwise.
+    if (AppState.showRatingFlags !== false && typeof Compliance !== 'undefined'
+        && Compliance.deviceRatingFlags) {
+      if (!AppState.dragState || !this._ratingFlags) {
+        this._ratingFlags = Compliance.deviceRatingFlags();
+      }
+      for (const [compId, flag] of this._ratingFlags) {
+        const comp = pageComps.get(compId);
+        if (comp) html += this.renderUnderratedMarker(comp, flag);
+      }
+    }
+
     this.layer.innerHTML = html;
+  },
+
+  // Small red warning triangle at a device's top-right, with a tooltip listing
+  // why it's under-rated. Anchors on the component so it moves with it.
+  renderUnderratedMarker(comp, flag) {
+    const x = comp.x + 16, y = comp.y - 12;
+    const reasons = escHtml(flag.reasons.join('; '));
+    return `
+      <g class="underrated-marker" data-comp-id="${comp.id}" cursor="help">
+        <title>Under-rated device — ${reasons}</title>
+        <path d="M${x},${y - 7} L${x + 8},${y + 7} L${x - 8},${y + 7} Z"
+              fill="#d32f2f" stroke="#fff" stroke-width="0.8" stroke-linejoin="round"/>
+        <text x="${x}" y="${y + 6}" text-anchor="middle" font-size="9"
+              font-weight="bold" fill="#fff" font-family="sans-serif">!</text>
+      </g>`;
   },
 
   renderFaultBadge(x, y, result, key) {
