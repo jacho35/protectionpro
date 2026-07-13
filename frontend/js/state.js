@@ -1,5 +1,28 @@
 /* ProtectionPro — Application State */
 
+// Study-result slots that carry a stability/analysis verdict. Every one is
+// stamped with provenance (app version + time) when computed so a result left
+// over from an OLDER engine version — which a network/topology hash can't
+// detect, because the network is unchanged — is flagged stale on load.
+const RESULT_SLOTS = [
+  'faultResults', 'loadFlowResults', 'unbalancedLoadFlowResults', 'arcFlashResults',
+  'dcArcFlashResults', 'dcLoadFlowResults', 'dcShortCircuitResults', 'cableSizingResults',
+  'motorStartingResults', 'dynamicMotorResults', 'stabilityResults', 'dutyCheckResults',
+  'loadDiversityResults', 'groundingResults', 'studyManagerResults',
+];
+
+// Human labels for the stale-results notice.
+const RESULT_SLOT_LABELS = {
+  faultResults: 'Short Circuit', loadFlowResults: 'Load Flow',
+  unbalancedLoadFlowResults: 'Unbalanced Load Flow', arcFlashResults: 'Arc Flash',
+  dcArcFlashResults: 'DC Arc Flash', dcLoadFlowResults: 'DC Load Flow',
+  dcShortCircuitResults: 'DC Short Circuit', cableSizingResults: 'Cable Sizing',
+  motorStartingResults: 'Motor Starting', dynamicMotorResults: 'Dynamic Motor Starting',
+  stabilityResults: 'Transient Stability', dutyCheckResults: 'Duty Check',
+  loadDiversityResults: 'Load Diversity', groundingResults: 'Grounding',
+  studyManagerResults: 'Study Manager',
+};
+
 const AppState = {
   // Project
   projectId: null,
@@ -82,14 +105,10 @@ const AppState = {
   // Clipboard for copy/paste
   clipboard: null, // { components: [], wires: [] }
 
-  // Analysis results
-  faultResults: null,
+  // Analysis results — the RESULT_SLOTS listed above are exposed as accessors
+  // (defined after this literal) that stamp provenance on assignment; the
+  // backing store is AppState._results and provenance is AppState.resultsMeta.
   faultedBusId: null,  // ID of the specific bus that was faulted (null = all buses)
-  loadFlowResults: null,
-  unbalancedLoadFlowResults: null,
-  arcFlashResults: null,
-  dcLoadFlowResults: null,
-  dcShortCircuitResults: null,
 
   // Scenarios — saved snapshots of network configuration
   scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
@@ -1137,6 +1156,10 @@ const AppState = {
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
       studyManagerResults: this.studyManagerResults || undefined,
+      // Provenance for the persisted results (app version + time per slot) so a
+      // result computed on an older engine version is detected as stale on load.
+      resultsMeta: (this.resultsMeta && Object.keys(this.resultsMeta).length)
+        ? this.resultsMeta : undefined,
       lightningRisk: this.lightningRisk || undefined,
       raceways: this.raceways.length ? this.raceways : undefined,
     };
@@ -1403,24 +1426,20 @@ const AppState = {
         Annotations.offsets.set(key, val);
       }
     }
-    // Restore analysis results so result boxes appear on load
-    this.faultResults = data.faultResults || null;
+    // Restore analysis results so result boxes appear on load. Write straight
+    // into the backing store (NOT through the stamping accessors) and restore
+    // the saved provenance verbatim — so a result computed on an older app/
+    // engine version stays flagged stale (see resultsMeta / isResultStale).
+    // A save that predates provenance has no resultsMeta ⇒ every result reads
+    // as stale, which is the safe default.
+    this._results = {};
+    this.resultsMeta = (data.resultsMeta && typeof data.resultsMeta === 'object')
+      ? { ...data.resultsMeta } : {};
+    for (const slot of RESULT_SLOTS) {
+      if (data[slot] != null) this._results[slot] = data[slot];
+    }
     this.faultedBusId = data.faultedBusId || null;
-    this.loadFlowResults = data.loadFlowResults || null;
-    this.unbalancedLoadFlowResults = data.unbalancedLoadFlowResults || null;
-    this.arcFlashResults = data.arcFlashResults || null;
-    this.dcArcFlashResults = data.dcArcFlashResults || null;
-    this.dcLoadFlowResults = data.dcLoadFlowResults || null;
-    this.dcShortCircuitResults = data.dcShortCircuitResults || null;
-    this.cableSizingResults = data.cableSizingResults || null;
-    this.motorStartingResults = data.motorStartingResults || null;
-    this.dynamicMotorResults = data.dynamicMotorResults || null;
-    this.stabilityResults = data.stabilityResults || null;
     this.stabilityCases = Array.isArray(data.stabilityCases) ? data.stabilityCases : [];
-    this.dutyCheckResults = data.dutyCheckResults || null;
-    this.loadDiversityResults = data.loadDiversityResults || null;
-    this.groundingResults = data.groundingResults || null;
-    this.studyManagerResults = data.studyManagerResults || null;
     this.lightningRisk = data.lightningRisk || null;
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.dirty = false;
@@ -1438,6 +1457,83 @@ const AppState = {
 // Initialize the Plan Markup sub-store now that the AppState methods exist.
 // (PLAN_DEFAULT_LAYERS comes from plan-defs.js, loaded before this file.)
 AppState.planMarkup = AppState._defaultPlanMarkup();
+
+// ── Study-result provenance ────────────────────────────────────────────────
+// Expose every RESULT_SLOTS entry as an accessor over AppState._results so that
+// EVERY assignment (from any run path — no compute site can be missed) records
+// when and by which app version the result was produced. On load, fromJSON
+// writes the backing store directly and restores the saved provenance, so a
+// result computed on an older engine version reads as stale. This catches the
+// case a topology hash cannot: an engine fix that changes the verdict without
+// changing the network (e.g. the per-island transient-stability COI fix).
+AppState._results = AppState._results || {};
+AppState.resultsMeta = AppState.resultsMeta || {};   // slot -> { v, at, run }
+AppState._runSeq = 0;
+for (const slot of RESULT_SLOTS) {
+  Object.defineProperty(AppState, slot, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      const v = this._results[slot];
+      return v == null ? null : v;
+    },
+    set(v) {
+      if (v == null) {
+        delete this._results[slot];
+        delete this.resultsMeta[slot];
+        return;
+      }
+      this._results[slot] = v;
+      this.resultsMeta[slot] = {
+        v: (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null),
+        at: Date.now(),
+        run: ++this._runSeq,
+      };
+    },
+  });
+}
+
+// A stored result is stale if it exists but its provenance is missing or was
+// stamped by a different app version than the one now running.
+AppState.isResultStale = function (slot) {
+  if (this._results[slot] == null) return false;
+  const m = this.resultsMeta[slot];
+  return !m || m.v !== (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null);
+};
+
+AppState.resultMetaInfo = function (slot) {
+  return this.resultsMeta[slot] || null;
+};
+
+AppState.staleResultSlots = function () {
+  return RESULT_SLOTS.filter((s) => this.isResultStale(s));
+};
+
+// The result for a slot, or null when it is stale — used to keep out-of-date
+// results out of reports.
+AppState.freshResult = function (slot) {
+  return this.isResultStale(slot) ? null : (this._results[slot] || null);
+};
+
+// Shared "out of date — re-run" banner for a study view. Returns '' when the
+// slot's result is current (or absent), so callers can prepend it blindly.
+AppState.staleBannerHTML = function (slot) {
+  if (!this.isResultStale(slot)) return '';
+  const m = this.resultsMeta[slot];
+  const ver = (m && m.v) ? escHtml(m.v) : 'an earlier version';
+  let when = '';
+  if (m && m.at) {
+    try { when = ' (' + escHtml(new Date(m.at).toLocaleString()) + ')'; } catch (e) { when = ''; }
+  }
+  return '<div class="stale-result-banner" role="alert" style="'
+    + 'display:flex;gap:8px;align-items:flex-start;margin:0 0 10px;padding:8px 11px;'
+    + 'border:1px solid #e0a800;border-radius:6px;background:#fff8e1;color:#7a5c00;'
+    + 'font-size:12px;line-height:1.4">'
+    + '<span style="font-size:14px">⚠</span><span><strong>Out of date.</strong> '
+    + 'These results were computed on ' + ver + when + ', not the current version. '
+    + 'Re-run the study to update — they are shown for reference and are excluded from reports.'
+    + '</span></div>';
+};
 
 // Snap coordinate to grid
 function snapToGrid(val) {

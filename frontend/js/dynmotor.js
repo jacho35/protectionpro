@@ -48,7 +48,7 @@ const DynMotor = {
   _render(body) {
     const motors = (this._result && this._result.motors) || [];
     const warnings = (this._result && this._result.warnings) || [];
-    let html = '';
+    let html = AppState.staleBannerHTML('dynamicMotorResults');
 
     if (warnings.length) {
       html += '<div class="af-warnings">' + warnings.map(w =>

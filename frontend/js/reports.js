@@ -150,7 +150,7 @@ const Reports = {
   },
 
   _renderFaultTable(doc, margin) {
-    if (!AppState.faultResults?.buses) return;
+    if (!AppState.faultResults?.buses || AppState.isResultStale('faultResults')) return;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.text('Fault Analysis \u2014 IEC 60909', margin, margin + 6);
@@ -182,7 +182,7 @@ const Reports = {
   },
 
   _renderFaultBranches(doc, margin) {
-    if (!AppState.faultResults?.buses) return;
+    if (!AppState.faultResults?.buses || AppState.isResultStale('faultResults')) return;
     const rows = [];
     for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
       if (!r.branches?.length) continue;
@@ -217,7 +217,7 @@ const Reports = {
 
   _renderLoadFlowBus(doc, margin) {
     const lf = AppState.loadFlowResults;
-    if (!lf?.buses) return;
+    if (!lf?.buses || AppState.isResultStale('loadFlowResults')) return;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     const method = lf.method === 'newton_raphson' ? 'Newton-Raphson' : 'Gauss-Seidel';
@@ -250,7 +250,7 @@ const Reports = {
 
   _renderLoadFlowBranch(doc, margin) {
     const lf = AppState.loadFlowResults;
-    if (!lf?.branches) return;
+    if (!lf?.branches || AppState.isResultStale('loadFlowResults')) return;
     const rows = [];
     for (const br of lf.branches) {
       const comp = AppState.components.get(br.element_id);
@@ -380,7 +380,7 @@ const Reports = {
   },
 
   _renderVoltageDepression(doc, margin) {
-    if (!AppState.faultResults?.buses) return;
+    if (!AppState.faultResults?.buses || AppState.isResultStale('faultResults')) return;
     // Collect voltage depression data from all faulted buses
     const allEntries = [];
     for (const [busId, r] of Object.entries(AppState.faultResults.buses)) {
@@ -427,7 +427,7 @@ const Reports = {
   },
 
   _renderArcFlash(doc, margin) {
-    if (!AppState.arcFlashResults?.buses) return;
+    if (!AppState.arcFlashResults?.buses || AppState.isResultStale('arcFlashResults')) return;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.text('Arc Flash Analysis \u2014 IEEE 1584-2002', margin, margin + 6);
@@ -900,13 +900,16 @@ const Reports = {
   // ── Detailed Calculations Report ──
 
   async exportCalculationsReport() {
-    const hasResults = AppState.faultResults || AppState.loadFlowResults ||
-      AppState.arcFlashResults || AppState.cableSizingResults ||
-      AppState.motorStartingResults || AppState.dutyCheckResults ||
-      AppState.loadDiversityResults || AppState.groundingResults;
+    // A result counts only if it is present AND current — out-of-date results
+    // (computed on an older engine version) are excluded from reports.
+    const fresh = (slot) => AppState[slot] && !AppState.isResultStale(slot);
+    const hasResults = fresh('faultResults') || fresh('loadFlowResults') ||
+      fresh('arcFlashResults') || fresh('cableSizingResults') ||
+      fresh('motorStartingResults') || fresh('dutyCheckResults') ||
+      fresh('loadDiversityResults') || fresh('groundingResults');
 
     if (!hasResults) {
-      Project._statusMsg('No analysis results found. Run at least one analysis first.');
+      Project._statusMsg('No current analysis results found. Run (or re-run) at least one analysis first.');
       return;
     }
 

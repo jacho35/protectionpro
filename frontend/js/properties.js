@@ -478,6 +478,25 @@ const Properties = {
     const hasInfo = FIELD_INFO && FIELD_INFO[infoKey];
     const infoHtml = hasInfo ? `<button class="prop-info-btn" data-info-key="${infoKey}" title="Default value info">i</button>` : '';
 
+    // "Default" flag: the field still holds its typical/standard (often IEC)
+    // default — shown so the engineer knows it's an assumed value they can
+    // override, not a site-specific figure. Limited to documented parameters
+    // (those with FIELD_INFO) so identity/rating fields aren't flagged.
+    const typeDefaults = (COMPONENT_DEFS[this._currentCompType] || {}).defaults || {};
+    const defVal = typeDefaults[field.key];
+    let isDefaultVal = false;
+    if (hasInfo && defVal !== undefined && value !== undefined && value !== '' && field.key !== 'name') {
+      if (field.type === 'number') {
+        const cv = parseFloat(value), dv = parseFloat(defVal);
+        isDefaultVal = !isNaN(cv) && !isNaN(dv) && Math.abs(cv - dv) < 1e-9;
+      } else {
+        isDefaultVal = String(value) === String(defVal);
+      }
+    }
+    const defaultFlagHtml = isDefaultVal
+      ? `<span class="prop-default-flag" title="Typical/standard default value — edit to use a site-specific figure">default</span>`
+      : '';
+
     // Check if this cable impedance field has been modified from its standard library default
     const cableImpedanceFields = ['r_per_km', 'x_per_km', 'r0_per_km', 'x0_per_km', 'rated_amps', 'voltage_kv'];
     let modifiedClass = '';
@@ -517,6 +536,7 @@ const Properties = {
         ${inputHtml}
         ${unitHtml}
         ${infoHtml}
+        ${defaultFlagHtml}
         ${resetHtml}
       </div>`;
   },
