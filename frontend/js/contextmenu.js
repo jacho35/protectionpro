@@ -100,6 +100,16 @@ const ContextMenu = {
       items.push('---');
     }
 
+    // Loads/motors: fault at the component's terminal (end-of-feeder fault)
+    if (['motor_induction', 'motor_synchronous', 'static_load'].includes(comp.type)
+        && typeof Properties !== 'undefined' && Properties.faultAtTerminal) {
+      items.push({
+        label: 'Fault at Terminal',
+        action: () => Properties.faultAtTerminal(comp.id),
+      });
+      items.push('---');
+    }
+
     if (['cb', 'fuse', 'relay'].includes(comp.type) && typeof TCC !== 'undefined') {
       items.push({
         label: 'View TCC Grading',
