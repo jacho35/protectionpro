@@ -206,7 +206,8 @@ const VerificationTemplates = {
         }
       ],
       "nextId": 100,
-      "dataVersion": 2
+      "dataVersion": 2,
+      "voltageFactor": 1.0
     },
     "ver_sc_case2": {
       "projectName": "SC Case 2 — Motor Contribution (IEC 60909)",
@@ -361,7 +362,8 @@ const VerificationTemplates = {
         }
       ],
       "nextId": 100,
-      "dataVersion": 2
+      "dataVersion": 2,
+      "voltageFactor": 1.0
     },
     "ver_sc_case3": {
       "projectName": "SC Case 3 — Motor + Lump Load (IEC 60909)",
@@ -540,7 +542,8 @@ const VerificationTemplates = {
         }
       ],
       "nextId": 100,
-      "dataVersion": 2
+      "dataVersion": 2,
+      "voltageFactor": 1.0
     },
     "ver_sc_220_33": {
       "projectName": "SC — 220/33 kV, 10 MVA Dyn1 (ETAP)",
@@ -629,7 +632,8 @@ const VerificationTemplates = {
         }
       ],
       "nextId": 100,
-      "dataVersion": 2
+      "dataVersion": 2,
+      "voltageFactor": 1.1
     },
     "ver_cable_lv": {
       "projectName": "LV Cable Sizing (IEC 60364)",

@@ -67,6 +67,18 @@ CASES = [
      "Unbalanced load flow (symmetrical-component engine). Collapses to the exact balanced solution when balanced, its positive sequence equals the verified Newton-Raphson balanced LF, and the phase↔sequence transform and VUF = |V2|/|V1| are exact."),
 ]
 
+# IEC 60909 voltage factor c each short-circuit case was verified at (see each
+# testing case's results.md). Baked into the template so loading + running
+# reproduces the documented ETAP numbers instead of the app default (c = 1.10).
+# The main 3-case study used c = 1.0 to match its ETAP screenshots; the
+# 220/33 kV article used the default c = 1.10. Non-fault cases are unaffected.
+VOLTAGE_FACTOR = {
+    "ver_sc_case1": 1.0,
+    "ver_sc_case2": 1.0,
+    "ver_sc_case3": 1.0,
+    "ver_sc_220_33": 1.10,
+}
+
 meta = []
 data = {}
 for case_dir, tid, name, preview, desc in CASES:
@@ -78,6 +90,8 @@ for case_dir, tid, name, preview, desc in CASES:
     proj["dataVersion"] = 2
     # Title bar / document name should match the template card name.
     proj["projectName"] = name
+    if tid in VOLTAGE_FACTOR:
+        proj["voltageFactor"] = VOLTAGE_FACTOR[tid]
     meta.append({"id": tid, "name": name, "category": "Verification / Standards",
                  "preview": preview, "description": desc})
     data[tid] = proj
