@@ -79,6 +79,81 @@ VOLTAGE_FACTOR = {
     "ver_sc_220_33": 1.10,
 }
 
+# Per-template usage instructions, shown in the app's Project Details →
+# Description text box when the template is loaded. Says which analysis to run,
+# the pre-set voltage factor, the expected headline result, and any caveat.
+INSTRUCTIONS = {
+    "ver_sc_case1":
+        "VERIFICATION TEMPLATE — IEC 60909 short circuit (source: powerprojectsindia / ETAP). "
+        "Voltage factor c = 1.0 is pre-set to match the reference. "
+        "RUN: Fault analysis, fault at Bus4. Expected I″k3 ≈ 12.88 kA (ETAP 12.881, ≤0.01 %). "
+        "Full working: Help → Verification.",
+    "ver_sc_case2":
+        "VERIFICATION TEMPLATE — IEC 60909 short circuit with a 5 MW induction-motor contribution "
+        "(source: powerprojectsindia / ETAP). Voltage factor c = 1.0 pre-set. "
+        "RUN: Fault analysis, fault at Bus7. Expected I″k3 ≈ 14.81 kA (ETAP 14.824). "
+        "Full working: Help → Verification.",
+    "ver_sc_case3":
+        "VERIFICATION TEMPLATE — IEC 60909 short circuit: 5 MW motor + 18 MVA lump load "
+        "(source: powerprojectsindia / ETAP). Voltage factor c = 1.0 pre-set. "
+        "RUN: Fault analysis, fault at Bus5. Expected I″k3 ≈ 20.95 kA (ETAP 20.976). "
+        "NOTE: 'Lump2' is an 18 MVA LOAD modelled as a motor so it contributes to the FAULT (per IEC 60909) — "
+        "it is not a real motor. Do NOT run Motor Starting on this template: starting a 15 MW 'motor' collapses "
+        "the network voltage and the load flow will not converge (this is expected, not a bug). "
+        "Full working: Help → Verification.",
+    "ver_sc_220_33":
+        "VERIFICATION TEMPLATE — IEC 60909 short circuit, 220/33 kV 10 MVA Dyn1 (source: powerprojectsindia / ETAP). "
+        "Voltage factor c = 1.10 (the app default) pre-set to match the reference ETAP screenshots. "
+        "RUN: Fault analysis, fault at Bus2. Expected I″k3 = 2.296 kA (matches ETAP exactly). "
+        "Full working: Help → Verification.",
+    "ver_cable_lv":
+        "VERIFICATION TEMPLATE — IEC 60364 LV cable sizing (source: powerprojectsindia). "
+        "RUN: Cable Sizing study. The voltage-drop and adiabatic fault-withstand formulas reproduce the article "
+        "exactly; the engine sizes conservatively for the IEC 60909-0 thermal-equivalent current I_th = I″k·√(m+n), "
+        "so it recommends a larger conductor than the article's bare-Isc value. Full working: Help → Verification.",
+    "ver_lf_3bus":
+        "VERIFICATION TEMPLATE — Newton-Raphson load flow (Glover / ESE 470 3-bus example). "
+        "RUN: Load Flow (Newton-Raphson). Expected V2 = 1.050∠−2.06°, V3 = 0.978∠−8.78°, converges in 4 iterations. "
+        "Full working: Help → Verification.",
+    "ver_arcflash":
+        "VERIFICATION TEMPLATE — IEEE 1584-2002 arc flash, 480 V MCC. "
+        "RUN: Arc Flash analysis. Expected E ≈ 12.82 cal/cm², PPE Cat 3, arc-flash boundary 1.93 m. "
+        "Clearing time is derived from the upstream protective device (engineered to 0.2 s here). "
+        "Full working: Help → Verification.",
+    "ver_grounding":
+        "VERIFICATION TEMPLATE — IEEE 80 grounding grid (70 × 70 m, 11 × 11 conductors, 20 rods). "
+        "RUN: Grounding study. Expected grid resistance R_g = 2.75 Ω, GPR = 5252 V, mesh (touch) voltage 749 V "
+        "≤ 841 V tolerable. Full working: Help → Verification.",
+    "ver_motor_start":
+        "VERIFICATION TEMPLATE — motor starting voltage dip: 1500 kW motor on a weak (~60 MVA) source, DOL. "
+        "RUN: Motor Starting study. Expected DOL start current 921 A, terminal voltage 0.778 p.u., max dip 20.9 %, "
+        "Will Start = NO (a deliberately weak system). Full working: Help → Verification.",
+    "ver_dc_lf":
+        "VERIFICATION TEMPLATE — DC load flow (exact resistive-circuit reference). "
+        "RUN: Load Flow. Expected rectifier bus 124.5 V, load bus 115.8 V (7.34 % drop), cable current 86.3 A. "
+        "Full working: Help → Verification.",
+    "ver_dc_sc":
+        "VERIFICATION TEMPLATE — DC short circuit, IEC 61660-1 battery (CED E03-035 Example 1). "
+        "RUN: Fault analysis. Expected battery peak i_p = 5422 A from nameplate; converter I_k = 300 A, i_p = 315 A. "
+        "Full working: Help → Verification.",
+    "ver_duty":
+        "VERIFICATION TEMPLATE — equipment duty check over the verified fault engine. "
+        "RUN: Duty Check study. Expected fault 20 kA vs 25 kA breaking capacity, peak 49.38 kA ≤ 62.5 kA making "
+        "→ PASS. Full working: Help → Verification.",
+    "ver_diversity":
+        "VERIFICATION TEMPLATE — load diversity / demand factors (IEC 60439). "
+        "RUN: Load Diversity study. Expected installed 255 kVA, coincidence factor Ks = 0.85, diversified demand "
+        "200 kVA, demand current 288.6 A. Full working: Help → Verification.",
+    "ver_dc_arcflash":
+        "VERIFICATION TEMPLATE — DC arc flash (Stokes & Oppenländer / Ammerman-CED). "
+        "RUN: DC Arc Flash analysis. Expected arc current 6196 A, incident energy 10.82 cal/cm², boundary 1.37 m, "
+        "PPE Cat 3. The DC bolted fault is set via dc_bolted_fault_ka on the bus. Full working: Help → Verification.",
+    "ver_unbalanced_lf":
+        "VERIFICATION TEMPLATE — unbalanced load flow (symmetrical components), phase split 60/20/20. "
+        "RUN: Load Flow (unbalanced). Expected VUF 0.76 %, Va/Vb/Vc = 0.962 / 1.005 / 0.989 p.u. "
+        "Full working: Help → Verification.",
+}
+
 meta = []
 data = {}
 for case_dir, tid, name, preview, desc in CASES:
@@ -92,6 +167,10 @@ for case_dir, tid, name, preview, desc in CASES:
     proj["projectName"] = name
     if tid in VOLTAGE_FACTOR:
         proj["voltageFactor"] = VOLTAGE_FACTOR[tid]
+    # Usage instructions shown in the app's Project Details → Description box.
+    if tid in INSTRUCTIONS:
+        proj.setdefault("projectDetails", {})
+        proj["projectDetails"]["description"] = INSTRUCTIONS[tid]
     meta.append({"id": tid, "name": name, "category": "Verification / Standards",
                  "preview": preview, "description": desc})
     data[tid] = proj
