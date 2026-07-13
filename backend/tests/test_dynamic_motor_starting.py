@@ -312,3 +312,147 @@ class TestEdgeCases:
         m = _run_one(_motor_props(motor_j_kgm2=0, load_j_kgm2=0))
         assert any("estimated" in w.lower() for w in m["warnings"])
         assert m["model"]["j_total_kgm2"] > 0
+
+
+# ── Sequenced / coupled multi-motor starting ────────────────────────────
+
+def _two_motor_project(a_over=None, b_over=None, tx_mva=2.0):
+    """Utility → 11 kV → 2 MVA/6% tx → 0.4 kV bus → two 200 kW motors.
+    Deliberately weak transformer so the shared-bus voltage dip is visible."""
+    def motor(cid, name, over):
+        p = {
+            "name": name, "rated_kw": 200.0, "voltage_kv": 0.4,
+            "efficiency": 0.93, "power_factor": 0.85,
+            "locked_rotor_current": 6.0, "locked_rotor_torque_pct": 150.0,
+            "rated_speed_rpm": 1480.0, "starting_method": "dol",
+            "motor_j_kgm2": 3.0, "load_j_kgm2": 3.0, "load_torque_pct": 80.0,
+        }
+        p.update(over or {})
+        return _comp(cid, "motor_induction", p)
+
+    comps = [
+        _comp("utility-1", "utility",
+              {"name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0, "x_r_ratio": 15.0}),
+        _comp("bus-1", "bus", {"name": "MV", "voltage_kv": 11.0}),
+        _comp("transformer-1", "transformer",
+              {"name": "TX1", "rated_mva": tx_mva, "z_percent": 6.0, "x_r_ratio": 8.0,
+               "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4}),
+        _comp("bus-2", "bus", {"name": "LV", "voltage_kv": 0.4}),
+        motor("motor_induction-1", "MotorA", a_over),
+        motor("motor_induction-2", "motor_induction-2".upper(), b_over),
+    ]
+    comps[-1].props["name"] = "MotorB"
+    wires = [
+        _wire("w1", "utility-1", "bus-1"),
+        _wire("w2", "bus-1", "transformer-1"),
+        _wire("w3", "transformer-1", "bus-2"),
+        _wire("w4", "bus-2", "motor_induction-1"),
+        _wire("w5", "bus-2", "motor_induction-2"),
+    ]
+    return ProjectData(projectName="seq", baseMVA=100.0, frequency=50,
+                       components=comps, wires=wires)
+
+
+def _by_name(res):
+    return {m["motor_name"]: m for m in res["motors"]}
+
+
+class TestSequencedStarting:
+    def test_two_motors_sag_more_than_one(self):
+        """Two motors starting together on one bus draw combined inrush and so
+        sag the shared bus deeper than a single motor's start."""
+        two = _by_name(run_dynamic_motor_starting(_two_motor_project()))
+        # single-motor reference on the identical network
+        one_proj = _two_motor_project()
+        one_proj.components = [c for c in one_proj.components if c.id != "motor_induction-2"]
+        one_proj.wires = [w for w in one_proj.wires if w.toComponent != "motor_induction-2"]
+        one = _by_name(run_dynamic_motor_starting(one_proj))
+        assert two["MotorA"]["min_v_bus_pu"] < one["MotorA"]["min_v_bus_pu"] - 1e-3
+        assert two["MotorA"]["sim_status"] == "started"
+
+    def test_staggered_start_energizes_at_start_time(self):
+        """A motor staged to start later shows a flat pre-start segment then its
+        inrush; the shared bus dips at exactly its start_time, and its
+        acceleration time is measured from energisation (not global t)."""
+        res = run_dynamic_motor_starting(
+            _two_motor_project(b_over={"start_time_s": 3.0}))
+        b = _by_name(res)["MotorB"]
+        assert b["start_time_s"] == 3.0
+        assert b["sim_status"] == "started"
+        assert b["accel_time_s"] < 2.0  # relative to energisation, not 3+
+        c = b["curves"]
+        # speed stays zero until ~3 s, then rises
+        pre = [s for t, s in zip(c["t"], c["speed_pct"]) if t < 2.9]
+        post = [s for t, s in zip(c["t"], c["speed_pct"]) if t > 3.2]
+        assert max(pre, default=0.0) < 1.0
+        assert max(post, default=0.0) > 90.0
+        # sequence overview: bus voltage drops when B energises
+        seq = res["sequence"]
+        assert seq is not None and seq["staggered"] is True
+        tvals = seq["t"]; vvals = seq["buses"][0]["v_pu"]
+        v_before = max(v for t, v in zip(tvals, vvals) if 2.5 <= t < 3.0)
+        v_after = min(v for t, v in zip(tvals, vvals) if 3.0 <= t <= 3.3)
+        assert v_after < v_before - 0.02
+
+    def test_running_role_loads_but_not_simulated(self):
+        """A motor marked already-running is a steady background load (deepening
+        the start dip the staged motor sees) and is not simulated as a start."""
+        res = run_dynamic_motor_starting(
+            _two_motor_project(b_over={"dyn_role": "running"}))
+        b = _by_name(res)["MotorB"]
+        assert b["role"] == "running"
+        assert b["sim_status"] == "running"
+        assert b["accel_time_s"] is None
+        # starting A against a running B sags more than A entirely alone
+        a_running = _by_name(res)["MotorA"]["min_v_bus_pu"]
+        solo = _two_motor_project()
+        solo.components = [c for c in solo.components if c.id != "motor_induction-2"]
+        solo.wires = [w for w in solo.wires if w.toComponent != "motor_induction-2"]
+        a_solo = _by_name(run_dynamic_motor_starting(solo))["MotorA"]["min_v_bus_pu"]
+        assert a_running < a_solo - 1e-3
+
+    def test_cross_bus_coupling(self):
+        """Motors on two different LV buses fed from a common transformer still
+        interact: starting both together sags each bus more than one alone."""
+        def build(second_motor):
+            comps = [
+                _comp("utility-1", "utility",
+                      {"name": "G", "voltage_kv": 11.0, "fault_mva": 500.0, "x_r_ratio": 15.0}),
+                _comp("bus-mv", "bus", {"name": "MV", "voltage_kv": 11.0}),
+                _comp("tx", "transformer",
+                      {"name": "TX", "rated_mva": 2.0, "z_percent": 6.0, "x_r_ratio": 8.0,
+                       "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4}),
+                _comp("bus-lv", "bus", {"name": "LV", "voltage_kv": 0.4}),
+                _comp("c-a", "cable", {"name": "Ca", "voltage_kv": 0.4,
+                                       "r_per_km": 0.1, "x_per_km": 0.07, "length_km": 0.05}),
+                _comp("bus-a", "bus", {"name": "BusA", "voltage_kv": 0.4}),
+                _comp("motor_induction-1", "motor_induction",
+                      {"name": "MotorA", "rated_kw": 150.0, "voltage_kv": 0.4,
+                       "efficiency": 0.93, "power_factor": 0.85, "locked_rotor_current": 6.0,
+                       "locked_rotor_torque_pct": 150.0, "rated_speed_rpm": 1480.0,
+                       "motor_j_kgm2": 2.0, "load_j_kgm2": 2.0, "load_torque_pct": 80.0}),
+            ]
+            wires = [
+                _wire("w1", "utility-1", "bus-mv"), _wire("w2", "bus-mv", "tx"),
+                _wire("w3", "tx", "bus-lv"), _wire("w4", "bus-lv", "c-a"),
+                _wire("w5", "c-a", "bus-a"), _wire("w6", "bus-a", "motor_induction-1"),
+            ]
+            if second_motor:
+                comps += [
+                    _comp("c-b", "cable", {"name": "Cb", "voltage_kv": 0.4,
+                                           "r_per_km": 0.1, "x_per_km": 0.07, "length_km": 0.05}),
+                    _comp("bus-b", "bus", {"name": "BusB", "voltage_kv": 0.4}),
+                    _comp("motor_induction-2", "motor_induction",
+                          {"name": "MotorB", "rated_kw": 150.0, "voltage_kv": 0.4,
+                           "efficiency": 0.93, "power_factor": 0.85, "locked_rotor_current": 6.0,
+                           "locked_rotor_torque_pct": 150.0, "rated_speed_rpm": 1480.0,
+                           "motor_j_kgm2": 2.0, "load_j_kgm2": 2.0, "load_torque_pct": 80.0}),
+                ]
+                wires += [_wire("w7", "bus-lv", "c-b"), _wire("w8", "c-b", "bus-b"),
+                          _wire("w9", "bus-b", "motor_induction-2")]
+            return ProjectData(projectName="xbus", baseMVA=100.0, frequency=50,
+                               components=comps, wires=wires)
+
+        solo = _by_name(run_dynamic_motor_starting(build(False)))["MotorA"]["min_v_bus_pu"]
+        both = _by_name(run_dynamic_motor_starting(build(True)))["MotorA"]["min_v_bus_pu"]
+        assert both < solo - 1e-3  # MotorB's inrush reaches MotorA's bus

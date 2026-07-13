@@ -1082,6 +1082,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── Transient Stability ──
+  document.getElementById('btn-transient-stability').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running transient stability.';
+      return;
+    }
+    Transient.openConfig();
+  });
+  document.getElementById('btn-stability-run').addEventListener('click', () => Transient.runConfigured());
+  document.getElementById('btn-stability-cancel').addEventListener('click', () => {
+    document.getElementById('stability-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-stability-config').addEventListener('click', () => {
+    document.getElementById('stability-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-stability').addEventListener('click', () => {
+    document.getElementById('stability-modal').style.display = 'none';
+  });
+  document.getElementById('stability-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'stability-modal') e.target.style.display = 'none';
+  });
+  document.getElementById('stability-config-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'stability-config-modal') e.target.style.display = 'none';
+  });
+
   // ── Equipment Duty Check ──
   document.getElementById('btn-duty-check').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -2028,6 +2053,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (studies.cable_sizing && studies.cable_sizing.result) AppState.cableSizingResults = studies.cable_sizing.result;
       if (studies.motor_starting && studies.motor_starting.result) AppState.motorStartingResults = studies.motor_starting.result;
       if (studies.dynamic_motor_starting && studies.dynamic_motor_starting.result) AppState.dynamicMotorResults = studies.dynamic_motor_starting.result;
+      if (studies.transient_stability && studies.transient_stability.result) AppState.stabilityResults = studies.transient_stability.result;
       if (studies.duty_check && studies.duty_check.result) AppState.dutyCheckResults = studies.duty_check.result;
       if (studies.load_diversity && studies.load_diversity.result) AppState.loadDiversityResults = studies.load_diversity.result;
       if (studies.grounding && studies.grounding.result) AppState.groundingResults = studies.grounding.result;
@@ -2069,7 +2095,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>`;
 
     // Per-study cards
-    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'dynamic_motor_starting', 'duty_check', 'load_diversity', 'grounding'];
+    const studyOrder = ['loadflow', 'fault', 'arcflash', 'cable_sizing', 'motor_starting', 'dynamic_motor_starting', 'transient_stability', 'duty_check', 'load_diversity', 'grounding'];
     for (const key of studyOrder) {
       const s = studies[key];
       if (!s) continue;
@@ -2118,6 +2144,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (key === 'dynamic_motor_starting') {
       return `${counts.total} motors: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`
         + (counts.not_simulated > 0 ? `, ${counts.not_simulated} not simulated (VFD)` : '');
+    } else if (key === 'transient_stability') {
+      return `${counts.machines} machines: ${counts.stable === false ? 'UNSTABLE' : counts.stable === null ? 'no machines' : 'stable'}`
+        + (counts.cct_ms != null ? `, CCT ${counts.cct_ms} ms` : '');
     } else if (key === 'duty_check') {
       return `${counts.total} devices: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
     } else if (key === 'load_diversity') {
@@ -3177,6 +3206,8 @@ document.addEventListener('DOMContentLoaded', () => {
       icon: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text>' },
     { id: 'dynamic-motor', label: 'Dynamic Motor Starting', category: 'Studies', btnId: 'btn-dynamic-motor',
       icon: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>' },
+    { id: 'transient-stability', label: 'Transient Stability', category: 'Studies', btnId: 'btn-transient-stability',
+      icon: '<path d="M2 12c1.5 0 2-8 4-8s2 10 4 10 2-6 4-6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>' },
     { id: 'duty-check', label: 'Duty Check', category: 'Studies', btnId: 'btn-duty-check',
       icon: '<path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
     { id: 'load-diversity', label: 'Load Diversity', category: 'Studies', btnId: 'btn-load-diversity',

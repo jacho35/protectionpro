@@ -59,6 +59,15 @@ const DynMotor = {
       return;
     }
 
+    // Shared-timeline overview: start schedule + bus voltages vs global time.
+    // Shown whenever the run is a genuine sequence (staggered / running loads
+    // or more than one simulated motor sharing the network).
+    const seq = this._result && this._result.sequence;
+    const nSim = motors.filter(m => m.status !== 'not_simulated').length;
+    if (seq && seq.buses && seq.buses.length && (seq.staggered || nSim > 1)) {
+      html += this._renderSequenceHeader(seq);
+    }
+
     // Motor selector tabs (only when more than one motor)
     if (motors.length > 1) {
       html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
@@ -82,6 +91,47 @@ const DynMotor = {
       });
     });
     this._hydrateCharts(body, motors[this._activeIdx]);
+    const seqEl = body.querySelector('[data-chart-seq]');
+    if (seqEl && seq) this._hydrateOverview(seqEl, seq);
+  },
+
+  _renderSequenceHeader(seq) {
+    const rows = (seq.schedule || []).slice()
+      .sort((a, b) => (a.role === 'running' ? -1 : a.start_time_s)
+        - (b.role === 'running' ? -1 : b.start_time_s))
+      .map(s => {
+        const label = s.role === 'running' ? 'running'
+          : `@ ${(+s.start_time_s).toFixed(s.start_time_s % 1 ? 1 : 0)} s`;
+        const col = s.role === 'running' ? '#888' : 'var(--accent-color,#2a78d6)';
+        return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border:1px solid ${col};border-radius:12px;font-size:11px">
+          <strong>${this._esc(s.motor)}</strong><span style="color:var(--text-muted,#6d6d6d)">${this._esc(label)}</span></span>`;
+      }).join('');
+    return `<div style="margin-bottom:14px;padding:10px 12px;border:1px solid var(--border-color,#d0d0d0);border-radius:6px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:7px">Start sequence — shared timeline</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${rows}</div>
+      <p style="font-size:10px;color:var(--text-muted,#6d6d6d);margin:0 0 6px">
+        Every motor is simulated on one timeline against a multi-port network equivalent, so each start sags the bus voltage the other energised motors see.</p>
+      <div data-chart-seq></div>
+    </div>`;
+  },
+
+  _hydrateOverview(el, seq) {
+    const dark = document.body.classList.contains('dark-mode');
+    const P = this._palette(dark);
+    // Distinct-ish colours per bus, cycling the categorical palette.
+    const pool = [P.vbus, P.vmotor, P.speed, P.current, P.torque];
+    const series = (seq.buses || []).map((b, i) => ({
+      name: b.bus, values: b.v_pu.map(v => v * 100), color: pool[i % pool.length],
+      fmt: v => (v / 100).toFixed(3) + ' p.u.',
+    }));
+    const markers = (seq.schedule || [])
+      .filter(s => s.role !== 'running')
+      .map(s => ({ t: s.start_time_s, label: s.motor, color: P.inkSec, dashed: true }));
+    this._buildChart(el, {
+      title: 'Bus voltage vs time (shared start sequence)',
+      xLabel: 'Time (s)', yLabel: 'p.u. ×100', xs: seq.t, yMax: 112,
+      markers, series,
+    }, P);
   },
 
   _statusBadge(m) {
@@ -92,9 +142,11 @@ const DynMotor = {
   },
 
   _renderMotor(m) {
+    const stage = m.role === 'running' ? 'already running'
+      : (m.start_time_s ? `starts @ ${(+m.start_time_s).toFixed(m.start_time_s % 1 ? 1 : 0)} s` : 'starts @ 0 s');
     let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <strong style="font-size:14px">${this._esc(m.motor_name)}</strong>
-      <span style="font-size:12px">${this._esc(m.starting_method)} · ${this._esc(m.motor_type)} · bus ${this._esc(m.terminal_bus)} &nbsp; ${this._statusBadge(m)}</span>
+      <span style="font-size:12px">${this._esc(m.starting_method)} · ${this._esc(m.motor_type)} · bus ${this._esc(m.terminal_bus)} · ${this._esc(stage)} &nbsp; ${this._statusBadge(m)}</span>
     </div>`;
 
     if (m.status === 'not_simulated') {
@@ -180,11 +232,18 @@ const DynMotor = {
     const tFl = (m.model && m.model.t_fl_pu) || null;
     const torqueScale = tFl ? 1 / tFl : 1;
 
+    // Event markers on the shared (global) timeline: this motor's energise
+    // time, and the starter changeover (transition.t_s is relative to energise).
+    const st = m.start_time_s || 0;
+    const markers = [];
+    if (st > 0) markers.push({ t: st, label: 'energise', color: P.speed, dashed: true });
+    if (m.transition) markers.push({ t: st + m.transition.t_s, label: 'changeover' });
+
     const charts = {
       speedv: {
         title: 'Speed & voltage vs time', xLabel: 'Time (s)', yLabel: '%',
         xs: c.t, yMax: 112,
-        transition: m.transition,
+        markers,
         series: [
           { name: 'Speed', values: c.speed_pct, color: P.speed, fmt: v => v.toFixed(1) + ' %' },
           { name: 'Bus V', values: c.v_bus_pu.map(v => v * 100), color: P.vbus, fmt: v => (v / 100).toFixed(3) + ' p.u.' },
@@ -194,7 +253,7 @@ const DynMotor = {
       current: {
         title: 'Line current vs time', xLabel: 'Time (s)', yLabel: '×FLC',
         xs: c.t,
-        transition: m.transition,
+        markers,
         series: [
           { name: 'Line current', values: c.current_xflc, color: P.current,
             fmt: (v, i) => v.toFixed(2) + '×FLC (' + c.current_a[i].toFixed(0) + ' A)' },
@@ -258,12 +317,15 @@ const DynMotor = {
     // Baseline axis
     g += `<line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="${P.axis}" stroke-width="1"/>`;
 
-    // Starter changeover marker (subtle vertical hairline + caption)
-    if (spec.transition && spec.transition.t_s <= xMax) {
-      const x = X(spec.transition.t_s);
-      g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${P.tickText}" stroke-width="1" opacity="0.6"/>`;
-      g += `<text x="${x + 3}" y="${padT + 9}" font-size="8" fill="${P.tickText}">changeover</text>`;
-    }
+    // Event markers (subtle vertical hairlines + captions): motor energise
+    // times, starter changeover, etc. Alternating caption heights avoid overlap.
+    (spec.markers || []).forEach((mk, mi) => {
+      if (mk.t == null || mk.t < xMin || mk.t > xMax) return;
+      const x = X(mk.t);
+      const dashed = mk.dashed ? ' stroke-dasharray="3 2"' : '';
+      g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${mk.color || P.tickText}" stroke-width="1" opacity="0.6"${dashed}/>`;
+      g += `<text x="${x + 3}" y="${padT + 9 + (mi % 2) * 10}" font-size="8" fill="${mk.color || P.tickText}">${this._esc(mk.label)}</text>`;
+    });
 
     // Series lines (2px, round joins)
     for (const s of spec.series) {

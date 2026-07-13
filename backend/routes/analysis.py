@@ -21,6 +21,7 @@ from ..analysis.dc_arcflash import run_dc_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
 from ..analysis.motor_starting import run_motor_starting
 from ..analysis.dynamic_motor_starting import run_dynamic_motor_starting
+from ..analysis.transient_stability import run_transient_stability
 from ..analysis.duty_check import run_duty_check
 from ..analysis.load_diversity import run_load_diversity
 from ..analysis.grounding_system import run_grounding_analysis
@@ -164,6 +165,18 @@ def dynamic_motor_starting(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Dynamic motor starting error: {e}")
+
+
+@router.post("/transient-stability")
+def transient_stability(data: ProjectData):
+    """Run classical multi-machine transient stability (time-domain rotor angle)."""
+    try:
+        return run_transient_stability(data, data.stabilityDisturbance)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Transient stability error: {e}")
 
 
 @router.post("/duty-check")

@@ -19,11 +19,32 @@ STUDY_DEFS = [
     ("cable_sizing", "Cable Sizing"),
     ("motor_starting", "Motor Starting"),
     ("dynamic_motor_starting", "Dynamic Motor Starting"),
+    ("transient_stability", "Transient Stability"),
     ("duty_check", "Equipment Duty Check"),
     ("load_diversity", "Load Diversity"),
     ("grounding", "Grounding System (IEEE 80)"),
     ("dc_arcflash", "DC Arc Flash"),
 ]
+
+
+def _default_stability_disturbance(project: ProjectData):
+    """A sensible batch-mode disturbance: a bolted 3-φ fault at the bus a
+    generator connects to (else the first bus), cleared at 150 ms, CCT searched."""
+    adj = {}
+    for w in project.wires:
+        adj.setdefault(w.fromComponent, []).append(w.toComponent)
+        adj.setdefault(w.toComponent, []).append(w.fromComponent)
+    bus_ids = [c.id for c in project.components if c.type == "bus"]
+    fault_bus = bus_ids[0] if bus_ids else None
+    gen = next((c for c in project.components if c.type == "generator"), None)
+    if gen is not None:
+        for nb in adj.get(gen.id, []):
+            comp = next((c for c in project.components if c.id == nb), None)
+            if comp and comp.type == "bus":
+                fault_bus = nb
+                break
+    return {"type": "fault", "bus": fault_bus, "clear_time_s": 0.15,
+            "find_cct": True, "t_end_s": 5.0}
 
 
 def _run_single_study(key: str, project: ProjectData):
@@ -49,6 +70,13 @@ def _run_single_study(key: str, project: ProjectData):
     elif key == "dynamic_motor_starting":
         from .dynamic_motor_starting import run_dynamic_motor_starting
         return run_dynamic_motor_starting(project)
+    elif key == "transient_stability":
+        from .transient_stability import run_transient_stability
+        # Use the configured disturbance if the caller set one; otherwise a
+        # default bolted three-phase fault at the first generator's bus (or the
+        # first bus), cleared at 150 ms, with a critical-clearing-time search.
+        disturbance = project.stabilityDisturbance or _default_stability_disturbance(project)
+        return run_transient_stability(project, disturbance)
     elif key == "duty_check":
         from .duty_check import run_duty_check
         return run_duty_check(project)
@@ -222,6 +250,18 @@ def _extract_study_status(key: str, result_data) -> dict:
         if n_fail > 0:
             return {"status": "fail", "counts": counts}
         if n_warn > 0:
+            return {"status": "warning", "counts": counts}
+        return {"status": "pass", "counts": counts}
+
+    elif key == "transient_stability":
+        stable = result_data.get("stable")
+        cct = result_data.get("cct_s")
+        counts = {"machines": len(result_data.get("machines", [])),
+                  "stable": stable,
+                  "cct_ms": round(cct * 1000, 1) if cct is not None else None}
+        if stable is False:
+            return {"status": "fail", "counts": counts}
+        if stable is None:
             return {"status": "warning", "counts": counts}
         return {"status": "pass", "counts": counts}
 

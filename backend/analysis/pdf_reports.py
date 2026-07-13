@@ -655,6 +655,7 @@ def generate_calculations_report(project_name, base_mva, frequency,
                                   fault_results=None, loadflow_results=None,
                                   arcflash_results=None, cable_results=None,
                                   motor_results=None, dynamic_motor_results=None,
+                                  stability_results=None,
                                   duty_results=None,
                                   load_diversity_results=None, grounding_results=None,
                                   components=None, project_details=None):
@@ -684,6 +685,9 @@ def generate_calculations_report(project_name, base_mva, frequency,
 
     if dynamic_motor_results and dynamic_motor_results.get("motors"):
         _calc_dynamic_motor(pdf, dynamic_motor_results)
+
+    if stability_results and stability_results.get("machines"):
+        _calc_transient_stability(pdf, stability_results)
 
     if duty_results and duty_results.get("devices"):
         _calc_duty(pdf, duty_results)
@@ -1226,6 +1230,59 @@ def _calc_dynamic_motor(pdf, dyn_results):
         _calc_subsection(pdf, "Warnings")
         for w in warnings:
             _calc_body(pdf, f"  - {_pdf_safe(w)}")
+
+
+def _calc_transient_stability(pdf, res):
+    pdf.add_page()
+    pdf.section_title("6A.  Transient Stability (Rotor Angle)")
+
+    _calc_label(pdf, "Method: classical multi-machine time-domain simulation (Stevenson / Kundur)")
+    pdf.ln(2)
+    _calc_body(pdf, "Each synchronous machine is a constant voltage E' behind its transient")
+    _calc_body(pdf, "reactance X'd; utility sources are infinite buses; loads are constant")
+    _calc_body(pdf, "admittances. Rotor motion (swing equation, integrated with RK4):")
+    _calc_label(pdf, "  ddelta/dt = dw,   d(dw)/dt = (ws/2H)(Pm - Pe - D*dw/ws)")
+    _calc_body(pdf, "The network is Kron-reduced to the machine internal nodes:")
+    _calc_label(pdf, "  Pe_i = sum_j |E_i||E_j|(G_ij cos d_ij + B_ij sin d_ij)")
+    pdf.ln(3)
+
+    verdict = "STABLE" if res.get("stable") else "UNSTABLE (loss of synchronism)"
+    if res.get("stable") is None:
+        verdict = "not assessed"
+    _calc_body(pdf, f"  Disturbance:  {_pdf_safe(res.get('event', ''))}")
+    _calc_body(pdf, f"  Verdict:      {verdict}")
+    if res.get("cct_s") is not None:
+        _calc_body(pdf, f"  Critical clearing time = {res['cct_s'] * 1000:.0f} ms")
+    pdf.ln(2)
+
+    _calc_subsection(pdf, "Machines")
+    _calc_label(pdf, f"    {'Machine':<16}{'Type':<14}{'H (s)':>8}{'Pm (pu)':>10}"
+                     f"{'E (pu)':>9}{'d0 (deg)':>10}{'peak d':>9}")
+    for m in res.get("machines", []):
+        _calc_body(pdf, f"    {_pdf_safe(m.get('name',''))[:15]:<16}"
+                        f"{('inf bus' if m.get('type')=='infinite_bus' else 'generator'):<14}"
+                        f"{m.get('h_s',0):>8.2f}{m.get('pm_pu',0):>10.3f}"
+                        f"{m.get('e_pu',0):>9.3f}{m.get('delta0_deg',0):>10.2f}"
+                        f"{m.get('peak_angle_deg',0):>9.1f}")
+
+    curves = res.get("curves") or {}
+    t_arr = curves.get("t") or []
+    names = curves.get("machines") or []
+    if t_arr and names:
+        pdf.ln(2)
+        _calc_body(pdf, "  Rotor angle delta (deg, relative to centre of inertia) — sampled:")
+        hdr = f"    {'t (s)':>8}" + "".join(f"{n[:9]:>11}" for n in names)
+        _calc_label(pdf, hdr)
+        step = max(1, (len(t_arr) - 1) // 9)
+        idxs = list(range(0, len(t_arr) - 1, step)) + [len(t_arr) - 1]
+        for i in idxs:
+            row = f"    {t_arr[i]:>8.3f}" + "".join(
+                f"{curves['delta_deg'][j][i]:>11.1f}" for j in range(len(names)))
+            _calc_body(pdf, row)
+
+    for w in res.get("warnings", []):
+        _calc_body(pdf, f"  Note: {_pdf_safe(w)}")
+    pdf.ln(2)
 
 
 def _calc_duty(pdf, duty_results):

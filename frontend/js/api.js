@@ -148,6 +148,13 @@ const API = {
     return this.request('/analysis/dynamic-motor-starting', 'POST', data);
   },
 
+  // Run classical transient stability (time-domain rotor angle)
+  async runTransientStability(disturbance) {
+    const data = AppState.toJSON();
+    data.stabilityDisturbance = disturbance;
+    return this.request('/analysis/transient-stability', 'POST', data);
+  },
+
   // Run equipment duty check
   async runDutyCheck() {
     const data = AppState.toJSON();
@@ -316,6 +323,7 @@ const API = {
       cableSizingResults: AppState.cableSizingResults || null,
       motorStartingResults: AppState.motorStartingResults || null,
       dynamicMotorResults: AppState.dynamicMotorResults || null,
+      stabilityResults: AppState.stabilityResults || null,
       dutyCheckResults: AppState.dutyCheckResults || null,
       loadDiversityResults: AppState.loadDiversityResults || null,
       groundingResults: AppState.groundingResults || null,

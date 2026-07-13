@@ -200,6 +200,10 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
               Dynamic Motor Starting
             </button>
+            <button id="btn-transient-stability" class="dropdown-item" title="Transient Stability — classical multi-machine rotor-angle simulation">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12c1.5 0 2-8 4-8s2 10 4 10 2-6 4-6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Transient Stability
+            </button>
             <button id="btn-duty-check" class="dropdown-item" title="Equipment Duty Check">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
               Duty Check
@@ -909,6 +913,36 @@
     </div>
   </div>
 
+  <!-- Transient Stability — disturbance configuration Modal -->
+  <div id="stability-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Transient Stability Setup" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Transient Stability — Disturbance</h3>
+        <button class="modal-close" id="btn-close-stability-config">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="stability-config-body"><!-- Populated by JS --></div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
+        <button class="btn" id="btn-stability-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-stability-run">Run Simulation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transient Stability Results Modal -->
+  <div id="stability-modal" class="modal" role="dialog" aria-modal="true" aria-label="Transient Stability Results" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Transient Stability — Rotor-Angle Study</h3>
+        <button class="modal-close" id="btn-close-stability">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="stability-body"><!-- Populated by JS --></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Dynamic Motor Starting Results Modal -->
   <div id="dynamic-motor-modal" class="modal" role="dialog" aria-modal="true" aria-label="Dynamic Motor Starting Results" style="display:none">
     <div class="modal-content modal-wide">
@@ -1146,7 +1180,9 @@
               <input type="checkbox" data-study="motor_starting" checked> Motor Starting
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" data-study="dynamic_motor_starting" checked> Dynamic Motor Starting
+              <input type="checkbox" data-study="dynamic_motor_starting" checked> Dynamic Motor Starting</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" data-study="transient_stability"> Transient Stability
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
               <input type="checkbox" data-study="duty_check" checked> Equipment Duty Check
@@ -2309,6 +2345,7 @@
   <script src="js/dbschedule.js?v=3.5.3"></script>
   <script src="js/control-sim.js?v=3.5.3"></script>
   <script src="js/dynmotor.js?v=3.5.3"></script>
+  <script src="js/transient.js?v=3.5.3"></script>
   <script src="js/retic.js?v=3.5.3"></script>
   <script src="js/retic-report.js?v=3.5.3"></script>
   <script src="js/plan-symbols.js?v=3.5.3"></script>

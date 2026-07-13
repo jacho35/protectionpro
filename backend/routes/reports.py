@@ -45,6 +45,7 @@ class CalculationsReportRequest(BaseModel):
     cableSizingResults: Optional[dict] = None
     motorStartingResults: Optional[dict] = None
     dynamicMotorResults: Optional[dict] = None
+    stabilityResults: Optional[dict] = None
     dutyCheckResults: Optional[dict] = None
     loadDiversityResults: Optional[dict] = None
     groundingResults: Optional[dict] = None
@@ -91,6 +92,7 @@ def generate_calculations_pdf(req: CalculationsReportRequest):
             cable_results=req.cableSizingResults,
             motor_results=req.motorStartingResults,
             dynamic_motor_results=req.dynamicMotorResults,
+            stability_results=req.stabilityResults,
             duty_results=req.dutyCheckResults,
             load_diversity_results=req.loadDiversityResults,
             grounding_results=req.groundingResults,
