@@ -47,29 +47,81 @@ First-pass "classical" model per Stevenson / Kundur ch. 13:
   faulted bus grounded, and post-fault with a tripped branch / generator /
   stepped load).
 
+* Inverter-based resources (solar PV / BESS / full-converter wind) are frozen
+  as constant admittances unless made dynamic per source via ``ibr_ctrl``:
+    - **grid_forming (GFM)** — a virtual synchronous machine: a voltage E behind
+      the converter coupling reactance whose internal angle obeys the SAME swing
+      equation, driven by a synthetic inertia H_v and a P-f droop that maps onto
+      the swing damping (so a GFM shares load and provides fast frequency
+      response, and can hold an island with no rotating machine). Voltage is
+      regulated like an AVR. Converter current is bounded by a VIRTUAL IMPEDANCE
+      that grows once the terminal current exceeds the limit — the defining
+      difference from a synchronous machine, which has no such limit. The GFM
+      node is added to the machine list and reuses the reduction / RK4 / island
+      machinery unchanged.
+    - **grid_following (GFL)** — a current source synchronised to the grid: a
+      voltage-dependent bus injection folded into the dynamic-shunt path. It
+      holds its dispatched P (with a fast-frequency-response P-f droop on the
+      island frequency) and Q (with reactive-current voltage support during a
+      dip), the total current hard-limited at I_max with REACTIVE PRIORITY (grid
+      codes require dynamic voltage support first, active current fills the
+      remaining headroom). Rides through / trips on sustained under-voltage or
+      off-nominal frequency.
+  ``ibr_ctrl = frozen`` (the default) keeps the constant-admittance model, so
+  results are byte-identical to a network with no IBR dynamics.
+
 Disturbances: a bolted three-phase bus fault cleared after a set time (optional
 branch trip on clearing, and a binary-search critical clearing time); a
 generator or branch trip; and a load step. Initial conditions come from the
 positive-sequence load flow.
 
-Sub-transient (d/q″) machine dynamics and inverter-based-resource dynamics
-(grid-forming/following, synthetic inertia) are documented follow-ups — this
-engine is the framework they extend.
+Sub-transient (d/q″) machine dynamics are a documented follow-up — this engine
+is the framework they extend.
 """
 
 import math
 import numpy as np
 
 from .network_reduction import build_branch_ybus, _source_stub, _source_internal_z
-from .loadflow import run_load_flow
+from .loadflow import run_load_flow, _source_output_mva
 
 INFINITE_H = 1.0e6          # utility infinite-bus inertia (angle ~frozen)
 BUS_REG = 1.0e-8            # tiny shunt to keep the elimination matrix regular
 UNSTABLE_ANGLE = math.pi    # |δ − δ_COI| beyond 180° ⇒ loss of synchronism
 CCT_SEARCH_MAX = 1.0        # s — upper bound for the critical-clearing search
 MAX_RECORD_POINTS = 400
+GFM_CLIM_ITERS = 8          # in-step iterations to converge the GFM current limit
 
 MACHINE_SOURCE_TYPES = ("generator", "utility")
+IBR_SOURCE_TYPES = ("solar_pv", "battery", "wind_turbine")
+
+
+def _ibr_ctrl(comp):
+    """Converter control mode for an inverter-based source, or None if the
+    component is not an IBR / left frozen.
+
+    ``ibr_ctrl`` ∈ {frozen, grid_following, grid_forming}. Only a full-converter
+    (type-4) wind turbine is treated as a converter; type 1/2/3 machines keep
+    their (partial-)rotating-machine behaviour and stay frozen here. Default is
+    frozen so a project with no IBR dynamics is byte-identical to before.
+    """
+    if comp.type not in IBR_SOURCE_TYPES:
+        return None
+    if comp.type == "wind_turbine" and \
+            str(comp.props.get("turbine_type", "type3_dfig")) != "type4_frc":
+        return None
+    mode = str(comp.props.get("ibr_ctrl", "frozen") or "frozen").lower()
+    if mode in ("gfm", "grid_forming"):
+        return "gfm"
+    if mode in ("gfl", "grid_following"):
+        return "gfl"
+    return None
+
+
+def _ibr_rated_mva(comp):
+    """Converter apparent-power rating (MVA, whole plant) — the current-limit and
+    droop base. Reuses the load-flow source sizing (num inverters / turbines)."""
+    return max(float(_source_output_mva(comp)[3]), 1e-9)
 
 
 def _bus_islands(Y):
@@ -124,6 +176,17 @@ def _machine_reactance(comp, base_mva, z_stub):
     if comp.type == "utility":
         z = _source_internal_z(comp, base_mva, 1.0) + z_stub
         return z, INFINITE_H, True
+    if _ibr_ctrl(comp) == "gfm":
+        # Grid-forming converter: a voltage behind the PHYSICAL coupling
+        # (filter + step-up) reactance — not the large fault-current-limit
+        # impedance used for short circuit. Fault current is bounded instead by
+        # the virtual-impedance current limiter (see _simulate). Inertia is the
+        # synthetic/virtual inertia the control emulates.
+        rated = _ibr_rated_mva(comp)
+        xf = max(float(comp.props.get("ibr_xf_pu", 0.15) or 0.15), 1e-3)
+        z = complex(0.0, xf * base_mva / rated) + z_stub
+        h_v = max(float(comp.props.get("ibr_inertia_h_s", 3.0) or 3.0), 0.1)
+        return z, h_v * rated / base_mva, False
     rated = float(comp.props.get("rated_mva", 10) or 10)
     xdp = float(comp.props.get("xd_p", 0.25) or 0.25)
     z = complex(0.0, xdp * base_mva / rated) + z_stub
@@ -144,7 +207,10 @@ def _collect_machines(project, ctx, lf):
     components, adjacency, bus_of = ctx["components"], ctx["adjacency"], ctx["bus_of"]
     Vc = _bus_complex_voltages(lf, list(bus_idx.keys()))
 
-    sources = [c for c in project.components if c.type in MACHINE_SOURCE_TYPES]
+    # Synchronous machines (generator / utility) plus any grid-forming IBR,
+    # which is modelled as a virtual synchronous machine on the same footing.
+    sources = [c for c in project.components
+               if c.type in MACHINE_SOURCE_TYPES or _ibr_ctrl(c) == "gfm"]
     # Which machines land on each bus (to split a shared bus injection).
     on_bus = {}
     staged = []
@@ -171,12 +237,17 @@ def _collect_machines(project, ctx, lf):
             continue
         I = np.conj(s_net) / np.conj(V)
         E_internal = V + z * I
+        is_gfm = _ibr_ctrl(comp) == "gfm"
         # Turbine-governor: mechanical power is a dynamic state driven by speed
         # so frequency recovers after a load change (see _simulate). Infinite
         # buses have no governor (angle frozen). Mode ∈ {isochronous, droop,
-        # none}; default isochronous so a genset island returns to nominal.
+        # none}; default isochronous so a genset island returns to nominal. A
+        # grid-forming converter has no turbine — its P-f droop is folded into
+        # the swing damping (below) — and always regulates its terminal voltage.
         if infinite:
             gmode, rated, avr_on = "none", 1e9, False
+        elif is_gfm:
+            gmode, rated, avr_on = "none", _ibr_rated_mva(comp), True
         else:
             gmode = str(comp.props.get("gov_mode", "isochronous") or "isochronous").lower()
             if gmode not in ("isochronous", "droop", "none"):
@@ -194,7 +265,7 @@ def _collect_machines(project, ctx, lf):
                "dXd": 0.0, "dXq": 0.0, "tdop": 6.0, "tqop": 1.0}
         delta0_val = math.atan2(E_internal.imag, E_internal.real)
         E_disp = E0
-        if not infinite:
+        if not infinite and not is_gfm:
             mm = str(comp.props.get("machine_model", "classical") or "classical").lower()
             if mm not in ("classical", "two_axis"):
                 mm = "classical"
@@ -219,17 +290,39 @@ def _collect_machines(project, ctx, lf):
                    "dXd": dXd, "dXq": dXq, "tdop": tdop, "tqop": tqop}
             delta0_val = d0
             E_disp = abs(complex(epd0, epq0))
+        pmax_pu = 1e9 if infinite else rated / base_mva
+        # Damping D: the swing damping coefficient. For a grid-forming converter
+        # the P-f droop IS the damping — at steady state Δf_pu = (Pm−Pe)/D, and
+        # a droop m_p (p.u. freq per p.u. power on the converter rating) gives
+        # Δf_pu = −m_p·(Pe−Pm)_machine, so D = rating/base ÷ m_p = pmax_pu/m_p.
+        # This is what makes a GFM share load and give fast frequency response.
+        d_coef = float(comp.props.get("damping_pu", 0) or 0)
+        if is_gfm:
+            mp = max(float(comp.props.get("ibr_pf_droop_pct", 5) or 5) / 100.0, 1e-3)
+            d_coef += pmax_pu / mp
         machines.append({
             "comp_id": comp.id, "name": comp.props.get("name", comp.id),
             "bus_id": bus_id, "bus_idx": bus_idx[bus_id], "z": z,
             "E": E_disp, "delta0": delta0_val,
-            "Pm": s_net.real, "H": h_sys, "D": float(comp.props.get("damping_pu", 0) or 0),
+            "Pm": s_net.real, "H": h_sys, "D": d_coef,
             "infinite": infinite,
+            # Grid-forming-converter markers: the control mode, the current limit
+            # (system p.u.) enforced via a virtual impedance, the coupling
+            # reactance the virtual impedance adds to, and its gain. ``ibr`` is
+            # None for a real synchronous machine. ``freq_response`` marks a
+            # machine that regulates island frequency (governed set or GFM droop)
+            # so an islanded group is not warned as drifting.
+            "ibr": ("gfm" if is_gfm else None),
+            "imax": (max(float(comp.props.get("ibr_imax_pu", 1.2) or 1.2), 0.1) * pmax_pu
+                     if is_gfm else 0.0),
+            "xbase": (z.imag if is_gfm else 0.0),
+            "clim_gain": max(float(comp.props.get("ibr_clim_gain", 3.0) or 3.0), 0.1),
+            "freq_response": (gmode != "none") or is_gfm,
             "gov_mode": gmode,
             "gov_R": max(float(comp.props.get("gov_droop_pct", 4) or 4) / 100.0, 1e-3),
             "gov_Tg": max(float(comp.props.get("gov_time_const_s", 0.5) or 0.5), 1e-3),
             "gov_Tr": max(float(comp.props.get("gov_reset_time_s", 5.0) or 5.0), 1e-3),
-            "pmax": (1e9 if infinite else rated / base_mva),
+            "pmax": pmax_pu,
             "pmin": 0.0,
             # AVR/exciter: regulate terminal voltage back to its pre-fault value
             # by varying the field EMF. Vref is the pre-fault terminal voltage.
@@ -246,12 +339,14 @@ def _collect_machines(project, ctx, lf):
             "two_axis": two["two_axis"], "epq0": two["epq0"], "epd0": two["epd0"],
             "dXd": two["dXd"], "dXq": two["dXq"],
             "tdop": two["tdop"], "tqop": two["tqop"],
-            # Generator protection (0 / disabled by default): over- and under-
-            # frequency and under-voltage trips, each after a common delay.
-            "trip_of_hz": float(comp.props.get("trip_of_hz", 0) or 0),
-            "trip_uf_hz": float(comp.props.get("trip_uf_hz", 0) or 0),
-            "trip_uv_pu": float(comp.props.get("trip_uv_pu", 0) or 0),
-            "trip_delay_s": max(float(comp.props.get("trip_delay_s", 0.2) or 0.2), 0.0),
+            # Protection (0 / disabled by default): over- and under-frequency and
+            # under-voltage trips, each after a common delay. A GFM converter
+            # rides through / trips on its own ibr_* ride-through settings.
+            "trip_of_hz": float(comp.props.get("ibr_of_hz" if is_gfm else "trip_of_hz", 0) or 0),
+            "trip_uf_hz": float(comp.props.get("ibr_uf_hz" if is_gfm else "trip_uf_hz", 0) or 0),
+            "trip_uv_pu": float(comp.props.get("ibr_uv_pu" if is_gfm else "trip_uv_pu", 0) or 0),
+            "trip_delay_s": max(float(comp.props.get(
+                "ibr_trip_delay_s" if is_gfm else "trip_delay_s", 0.2) or 0.2), 0.0),
         })
     return machines, warnings
 
@@ -392,15 +487,92 @@ def _build_ts_motor(comp, project, ctx, lf, freq, base, warnings):
     }
 
 
+def _build_gfl(comp, project, ctx, lf, disp_map, base, bus_island, warnings):
+    """Grid-following-converter model for one IBR, or None to leave it frozen.
+
+    A GFL holds its dispatched real power (with an optional fast-frequency-
+    response droop) and reactive power (with grid-code voltage support), the
+    total current hard-limited at I_max with reactive priority. It is a bus
+    injection, NOT a swing node — folded into the dynamic-shunt path.
+    """
+    bi = _component_bus_idx(project, ctx, comp.id)
+    if bi is None:
+        return None
+    idx_to_bus = {i: b for b, i in ctx["bus_idx"].items()}
+    b = lf.buses.get(idx_to_bus[bi])
+    if b is None or not b.energized or b.voltage_pu < 1e-6:
+        return None
+    V0 = b.voltage_pu
+    rating = _ibr_rated_mva(comp)                    # MVA
+    p_av, q_av, _s, _r = _source_output_mva(comp)    # nameplate/available MVA
+    # Pre-fault injection: the real power the load flow actually dispatched (so a
+    # curtailed source is pulled out at its curtailed value), holding the source
+    # power factor for the reactive part. Removing exactly this from the frozen
+    # base shunt and re-injecting it at t=0 keeps the pre-fault equilibrium.
+    p0 = disp_map.get(comp.id, p_av)                 # MW (signed; −ve = charging)
+    q0 = p0 * (q_av / p_av) if p_av > 1e-9 else 0.0  # Mvar (hold pf)
+    s0_sys = complex(p0, q0) / base                  # system p.u.
+    ratio = rating / base
+    bidir = comp.type == "battery"                   # a BESS can absorb (charge)
+    headroom = max(float(comp.props.get("ibr_p_headroom_pct", 0) or 0) / 100.0, 0.0)
+    p_ref_m = (s0_sys.real / ratio) if ratio > 1e-12 else 0.0
+    return {
+        "bus": bi, "name": comp.props.get("name", comp.id),
+        "island": bus_island.get(bi, -1), "V0": V0, "v_ref": V0,
+        "ratio": ratio, "s0_sys": s0_sys,
+        "ybase": np.conj(-s0_sys) / (V0 * V0),       # frozen const-Z to remove
+        "p_ref_m": p_ref_m, "q_ref_m": (s0_sys.imag / ratio) if ratio > 1e-12 else 0.0,
+        "p_min_m": (-1.0 if bidir else 0.0),
+        "p_max_m": (1.0 if bidir else max(p_ref_m * (1.0 + headroom), 0.0)),
+        "imax_m": max(float(comp.props.get("ibr_imax_pu", 1.2) or 1.2), 0.1),
+        "ffr_R": max(float(comp.props.get("ibr_ffr_droop_pct", 0) or 0) / 100.0, 0.0),
+        "qv_gain": max(float(comp.props.get("ibr_qv_gain", 2.0) or 0), 0.0),
+        # ride-through / trip
+        "uv_pu": float(comp.props.get("ibr_uv_pu", 0) or 0),
+        "of_hz": float(comp.props.get("ibr_of_hz", 0) or 0),
+        "uf_hz": float(comp.props.get("ibr_uf_hz", 0) or 0),
+        "trip_delay": max(float(comp.props.get("ibr_trip_delay_s", 0.2) or 0.2), 0.0),
+    }
+
+
+def _gfl_injection(g, v, f, freq):
+    """Complex power a grid-following converter injects this step (system p.u.),
+    given its lagged terminal-voltage magnitude v (p.u.) and its island's
+    frequency f (Hz, or None). Worked in converter-base p.u., then scaled to the
+    system base by ``ratio``.
+
+    Fast frequency response trims active power on an island-frequency droop;
+    reactive current supports voltage during a dip past a 0.1 p.u. deadband
+    (grid-code dynamic voltage support). The current is hard-limited at I_max
+    with REACTIVE PRIORITY — reactive current is served first and active current
+    fills the remaining headroom, so P is curtailed on a deep dip."""
+    v = max(v, 1e-3)
+    p_cmd = g["p_ref_m"]
+    if g["ffr_R"] > 0 and f is not None:
+        p_cmd -= ((f - freq) / freq) / g["ffr_R"]      # f below nominal ⇒ raise P
+    p_cmd = min(max(p_cmd, g["p_min_m"]), g["p_max_m"])
+    iq = g["q_ref_m"] / v                              # reactive current for q_ref
+    dv = g["v_ref"] - v
+    if g["qv_gain"] > 0 and abs(dv) > 0.1:
+        iq += g["qv_gain"] * (dv - math.copysign(0.1, dv))
+    imax = g["imax_m"]
+    iq = min(max(iq, -imax), imax)                     # reactive priority
+    ip_avail = math.sqrt(max(0.0, imax * imax - iq * iq))
+    ip = min(max(p_cmd / v, -ip_avail), ip_avail)
+    return complex(v * ip, v * iq) * g["ratio"]        # → system p.u.
+
+
 def _dynamic_setup(project, ctx, lf, freq, warnings):
-    """Collect voltage-dependent loads and dynamic induction motors. Returns None
-    when everything is constant impedance and no motor is dynamic (⇒ the fast
-    constant-shunt path is used and results are unchanged)."""
+    """Collect voltage-dependent loads, dynamic induction motors and grid-
+    following IBR injections. Returns None when everything is constant impedance,
+    no motor is dynamic and no IBR is grid-following (⇒ the fast constant-shunt
+    path is used and results are unchanged)."""
     base = ctx["base_mva"]
     bus_idx = ctx["bus_idx"]
     idx_to_bus = {i: b for b, i in bus_idx.items()}
     bus_island = _bus_islands(ctx["Y"])   # bus_idx -> electrical-island id
-    loads, motors = [], []
+    disp_map = {e.source_id: e.dispatched_mw for e in getattr(lf, "dispatch", [])}
+    loads, motors, ibrs = [], [], []
     n_gen_prot = 0
     for comp in project.components:
         if comp.type == "static_load":
@@ -439,31 +611,56 @@ def _dynamic_setup(project, ctx, lf, freq, warnings):
                 mo["uv_pu"] = float(comp.props.get("uv_trip_pu", 0) or 0)
                 mo["uv_delay"] = max(float(comp.props.get("uv_trip_delay_s", 0.2) or 0.2), 0.0)
                 motors.append(mo)
+        elif _ibr_ctrl(comp) == "gfl":
+            g = _build_gfl(comp, project, ctx, lf, disp_map, base, bus_island, warnings)
+            if g:
+                ibrs.append(g)
+    # A grid-forming converter is a machine, but its current limiter lives in the
+    # per-step re-reduction — so its presence must switch the network off the fast
+    # constant-reduction path (dyn non-None) even with no other dynamic device.
+    gfm_comps = [c for c in project.components if _ibr_ctrl(c) == "gfm"]
+    has_gfm = bool(gfm_comps)
+    gfm_prot = any(any(float(c.props.get(k, 0) or 0) > 0
+                       for k in ("ibr_of_hz", "ibr_uf_hz", "ibr_uv_pu")) for c in gfm_comps)
     for comp in project.components:
         if comp.type == "generator" and any(float(comp.props.get(k, 0) or 0) > 0
                                             for k in ("trip_of_hz", "trip_uf_hz", "trip_uv_pu")):
             n_gen_prot += 1
-    has_protection = (n_gen_prot > 0
+    has_protection = (n_gen_prot > 0 or gfm_prot
                       or any(d["shed_hz"] > 0 or d["uv_pu"] > 0 for d in loads)
-                      or any(mo.get("uv_pu", 0) > 0 for mo in motors))
-    if not loads and not motors and not has_protection:
+                      or any(mo.get("uv_pu", 0) > 0 for mo in motors)
+                      or any(g["uv_pu"] > 0 or g["of_hz"] > 0 or g["uf_hz"] > 0 for g in ibrs))
+    if not loads and not motors and not ibrs and not has_protection and not has_gfm:
         return None
     if motors:
         warnings.append(
             f"{len(motors)} induction motor(s) modelled dynamically (single-cage "
             "slip) — a deep voltage dip can slow or stall them; set a motor's "
             "Transient-stability model to 'static' to freeze it as a constant load.")
-    return {"loads": loads, "motors": motors, "base": base,
+    if ibrs:
+        warnings.append(
+            f"{len(ibrs)} grid-following inverter(s) modelled as current-limited "
+            "converters — they hold dispatched power, support voltage on a dip and "
+            "clip at their current limit (fundamentally unlike a synchronous "
+            "machine's fault contribution).")
+    return {"loads": loads, "motors": motors, "ibrs": ibrs, "base": base,
             "has_protection": has_protection}
 
 
 def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
-               tripped_loads=None, tripped_motors=None):
+               tripped_loads=None, tripped_motors=None,
+               ibr_inj=None, tripped_ibr=None):
     """Bus shunt vector for the current step: the base constant-Z shunt with the
-    voltage-dependent loads and motor-slip admittances swapped in. Tripped loads
-    and motors are removed from the network entirely."""
+    voltage-dependent loads, motor-slip and grid-following-converter injections
+    swapped in. Tripped loads, motors and converters are removed entirely.
+
+    ibr_inj: {gfl_index: S_sys} the converter injection for this step, precomputed
+    from the lagged voltage and island frequency (falls back to the pre-fault
+    injection). Each GFL's frozen const-Z is always removed from ``y0``."""
     tripped_loads = tripped_loads or set()
     tripped_motors = tripped_motors or set()
+    tripped_ibr = tripped_ibr or set()
+    ibr_inj = ibr_inj or {}
     y = y0.copy()
     for j, d in enumerate(dyn["loads"]):
         bi = d["bus"]
@@ -481,6 +678,14 @@ def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
             continue
         s = min(max(slips[k], 1e-4), 1.0)
         y[bi] += mo["model"].y_in(s) * mo["ratio"] - mo["yrem"]
+    for j, g in enumerate(dyn.get("ibrs", [])):
+        bi = g["bus"]
+        y[bi] -= g["ybase"]               # remove the frozen const-Z (in y0)
+        if j in tripped_ibr:
+            continue                      # tripped: inject nothing
+        S = ibr_inj.get(j, g["s0_sys"])
+        V = max(vbus_mag.get(bi, g["V0"]), 1e-3)
+        y[bi] += np.conj(-S) / (V * V)    # generation ⇒ negative conductance
     if load_scale is not None:
         lbus, frac = load_scale
         y[lbus] = y[lbus] * frac
@@ -489,13 +694,17 @@ def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
 
 # ── Network reduction to the machine internal nodes ─────────────────────
 
-def _reduce(Ybus, load_shunt, machines, active, grounded):
+def _reduce(Ybus, load_shunt, machines, active, grounded, z_override=None):
     """Kron-reduce to the internal nodes of the ``active`` machines.
 
     grounded: set of bus indices held at zero volts (a bolted 3-φ fault).
+    z_override: optional {machine_idx: z} replacing a machine's internal→bus
+    impedance for this step (the grid-forming current limiter raises a
+    converter's coupling reactance when its terminal current exceeds the limit).
     Returns (Y_red [k×k over active], R [n_keptbus×k voltage-recovery],
     kept_bus_indices).
     """
+    z_override = z_override or {}
     n = Ybus.shape[0]
     keep_bus = [i for i in range(n) if i not in grounded]
     nb = len(keep_bus)
@@ -510,7 +719,7 @@ def _reduce(Ybus, load_shunt, machines, active, grounded):
 
     for k, mi in enumerate(active):
         mac = machines[mi]
-        yk = 1.0 / mac["z"]
+        yk = 1.0 / z_override.get(mi, mac["z"])
         bi = mac["bus_idx"]
         A[nb + k, nb + k] += yk
         if bi in grounded:
@@ -644,21 +853,33 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     # slows the motor (more current, possibly stall) exactly as a real machine.
     dyn_motors = dyn["motors"] if dyn else []
     dyn_loads = dyn["loads"] if dyn else []
+    dyn_ibrs = dyn["ibrs"] if dyn else []
     n_mot = len(dyn_motors)
+    n_gfl = len(dyn_ibrs)
     slips0 = np.array([mo["s0"] for mo in dyn_motors]) if n_mot else np.zeros(0)
 
+    # Grid-forming converters: a virtual impedance bounds the terminal current at
+    # I_max. Each step (dynamic path) the lagged machine current sets how much
+    # coupling reactance to add so the fault current is limited — a synchronous
+    # machine has no such limit, which is the point of modelling an IBR.
+    gfm_idx = [i for i, mac in enumerate(machines) if mac.get("ibr") == "gfm"]
+    any_gfm = bool(gfm_idx)
+    imach_peak = {i: 0.0 for i in gfm_idx}   # peak converter current for reporting
+
     # ── Protection: under-frequency load shedding (UFLS), generator over/under-
-    # frequency and under-voltage trips, and motor under-voltage (contactor)
-    # trips. Relays accumulate time-in-violation and trip after their delay; the
-    # tripped element is then removed from the network (re-reduced next step).
+    # frequency and under-voltage trips, motor under-voltage (contactor) trips,
+    # and inverter voltage/frequency ride-through trips. Relays accumulate time-
+    # in-violation and trip after their delay; the tripped element is then removed
+    # from the network (re-reduced next step).
     has_prot = bool(dyn and dyn.get("has_protection"))
-    tripped_loads, tripped_motors, tripped_mach = set(), set(), set()
+    tripped_loads, tripped_motors, tripped_mach, tripped_ibr = set(), set(), set(), set()
     trip_events = []
     load_shed_t = [0.0] * len(dyn_loads)
     load_uv_t = [0.0] * len(dyn_loads)
     mot_uv_t = [0.0] * n_mot
+    ibr_trip_t = [0.0] * n_gfl
     gen_trip_t = [0.0] * m
-    need_bus_v = any_avr or n_mot > 0 or has_prot
+    need_bus_v = any_avr or n_mot > 0 or has_prot or n_gfl > 0
     vbus_prev = {}   # last-step bus-voltage magnitudes (voltage-dependent loads)
 
     # Per-island centre of inertia. Machines in a grid-connected island are
@@ -777,18 +998,64 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     epd = epd0.copy()        # two-axis d-axis transient EMF
     slips = slips0.copy()    # induction-motor slips (empty when no dynamic motor)
 
-    def _effective_variant(t):
+    def _effective_variant(t, omega):
         """The reduction in force this step: the precomputed per-segment one, or
         (dynamic devices / protection present) a fresh reduction of the base
-        admittance with the voltage-dependent load, motor-slip and tripped-device
-        shunt, and any tripped generators removed from the active set."""
+        admittance with the voltage-dependent load, motor-slip and grid-following-
+        converter injections, tripped devices removed, tripped generators dropped
+        from the active set, and the grid-forming current-limit virtual impedance
+        converged.
+
+        The grid-forming current limiter is solved WITHIN the step (an integral
+        law on the current error, iterated over the reduction) rather than lagged
+        a step, so a converter's terminal current is held at I_max from the first
+        cycle of a fault — a lagged limiter would let one full unlimited cycle
+        through, which is exactly the synchronous-machine behaviour a converter
+        does not have."""
         if not dyn:
             return None
         vd = variant_at(t)
         active = [i for i in vd["active"] if i not in tripped_mach]
+        ibr_inj = None
+        if n_gfl:
+            isl_freq = _island_freq(omega)
+            ibr_inj = {}
+            for j, g in enumerate(dyn_ibrs):
+                if j in tripped_ibr:
+                    continue
+                v = vbus_prev.get(g["bus"], g["V0"])
+                ibr_inj[j] = _gfl_injection(g, v, isl_freq.get(g["island"]), freq)
         shunt = _dyn_shunt(dyn, y0, vbus_prev, slips, vd.get("load_scale"),
-                           tripped_loads, tripped_motors)
-        Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"])
+                           tripped_loads, tripped_motors, ibr_inj, tripped_ibr)
+        gfm_active = [i for i in active if machines[i].get("ibr") == "gfm"]
+        zov = {}
+        Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov)
+        if gfm_active:
+            eint_a = _eint(active, delta, efield, epq, epd)   # EMFs fixed this step
+            pos_of = {mi: p for p, mi in enumerate(active)}
+            for _ in range(GFM_CLIM_ITERS):
+                Ia = Yred @ eint_a if active else np.zeros(0, dtype=complex)
+                over = False
+                for mi in gfm_active:
+                    imax = machines[mi]["imax"]
+                    if imax <= 0:
+                        continue
+                    imag = abs(Ia[pos_of[mi]])
+                    if imag > imax * 1.01:
+                        # Current ≈ E / X_total, so scale the total coupling
+                        # reactance by the current-overshoot ratio to drive it to
+                        # I_max (a few iterations; monotone, bounded at 50·X_f).
+                        z0 = machines[mi]["z"]
+                        xtot = zov.get(mi, z0).imag
+                        xv = min(xtot * (imag / imax) - z0.imag, 50.0 * machines[mi]["xbase"])
+                        zov[mi] = complex(z0.real, z0.imag + xv)
+                        over = True
+                if not over:
+                    break
+                Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov)
+            Ia = Yred @ eint_a if active else np.zeros(0, dtype=complex)
+            for mi in gfm_active:                         # record the bounded peak
+                imach_peak[mi] = max(imach_peak.get(mi, 0.0), abs(Ia[pos_of[mi]]))
         return {"Yred": Yred, "R": R, "keep_bus": keep, "active": active,
                 "Pm": vd["Pm"]}
 
@@ -845,6 +1112,25 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                                         "reason": f"motor contactor drop-out at {v:.2f} p.u."})
             else:
                 mot_uv_t[k] = 0.0
+        for j, g in enumerate(dyn_ibrs):
+            if j in tripped_ibr:
+                continue
+            v = vbus_prev.get(g["bus"], g["V0"])
+            fr = isl_freq.get(g["island"])
+            hit = ((g["uv_pu"] > 0 and v < g["uv_pu"])
+                   or (fr is not None and g["of_hz"] > 0 and fr > g["of_hz"])
+                   or (fr is not None and g["uf_hz"] > 0 and fr < g["uf_hz"]))
+            if hit:
+                ibr_trip_t[j] += dt
+                if ibr_trip_t[j] >= g["trip_delay"]:
+                    tripped_ibr.add(j)
+                    why = (f"under-voltage {v:.2f} p.u." if g["uv_pu"] > 0 and v < g["uv_pu"]
+                           else f"over-freq {fr:.2f} Hz" if fr is not None and g["of_hz"] > 0 and fr > g["of_hz"]
+                           else f"under-freq {fr:.2f} Hz")
+                    trip_events.append({"t": round(t, 3), "element": g["name"],
+                                        "reason": f"inverter ride-through trip ({why})"})
+            else:
+                ibr_trip_t[j] = 0.0
         for i, mac in enumerate(machines):
             if i in tripped_mach or mac["infinite"]:
                 continue
@@ -874,7 +1160,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     for step in range(steps + 1):
         if has_prot:
             _check_protection(t, omega)
-        veff = _effective_variant(t)
+        veff = _effective_variant(t, omega)
         if record:
             v = veff if veff is not None else variant_at(t)
             rec_t.append(round(t, 4))
@@ -929,12 +1215,13 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             epd = epd + comb(k1[6], k2[6], k3[6], k4[6])
         if n_mot:
             slips = np.clip(slips + comb(k1[7], k2[7], k3[7], k4[7]), 1e-4, 1.0)
-        # Lag the bus voltages one step for the next voltage-dependent load shunt.
+        # Lag the bus voltages one step for the next voltage-dependent load / GFL
+        # shunt (the GFM current limiter converges in-step, so no current lag).
         if dyn and veff is not None:
             vbus_prev = _bus_voltages(veff, _eint(veff["active"], delta, efield, epq, epd))
         t += dt
 
-    result = {"stable": not unstable, "trips": trip_events}
+    result = {"stable": not unstable, "trips": trip_events, "ibr_current": imach_peak}
     if record:
         result["curves"] = _decimate_traj(rec_t, rec_delta, rec_omega, rec_pe,
                                            rec_vbus, machines, segments)
@@ -1162,25 +1449,28 @@ def run_transient_stability(project, disturbance=None):
     islanded_genset = [mem for mem in by_isl.values()
                        if all(not machines[j]["infinite"] for j in mem)]
     if islanded_genset:
-        # Frequency in a grid-less island is held by the turbine-governors, now
-        # modelled (see _simulate). Warn only when every genset in such an island
-        # has its governor disabled — then Pm is fixed and the island frequency
-        # drifts after a load change (the historical constant-Pm behaviour).
-        if any(all(machines[j].get("gov_mode", "none") == "none" for j in mem)
+        # Frequency in a grid-less island is held by the turbine-governors or a
+        # grid-forming converter's P-f droop, both modelled (see _simulate). Warn
+        # only when NO machine in such an island regulates frequency (every set's
+        # governor is disabled and there is no grid-forming converter) — then Pm
+        # is fixed and the island frequency drifts (the historical constant-Pm
+        # behaviour).
+        if any(all(not machines[j].get("freq_response") for j in mem)
                for mem in islanded_genset):
             warnings.append(
                 "An islanded generator group has its governor(s) disabled "
-                "(Governor = none) — with no grid reference and fixed mechanical "
-                "power the island frequency drifts after a load change and does "
-                "not recover. Set the governor to isochronous (recover to nominal) "
-                "or droop to model the frequency response.")
+                "(Governor = none) and no grid-forming source — with no grid "
+                "reference and fixed mechanical power the island frequency drifts "
+                "after a load change and does not recover. Set the governor to "
+                "isochronous / droop, or make an inverter grid-forming, to model "
+                "the frequency response.")
         else:
             warnings.append(
                 "An islanded generator group with no grid / infinite-bus "
                 "reference was found — its frequency is held by the modelled "
-                "turbine-governors (isochronous returns to nominal; droop settles "
-                "at a small offset). Synchronism is judged against the island's "
-                "own centre of inertia.")
+                "turbine-governors / grid-forming converters (isochronous returns "
+                "to nominal; droop settles at a small offset). Synchronism is "
+                "judged against the island's own centre of inertia.")
 
     t_end = float(disturbance.get("t_end_s", 5.0))
     # Step from the stiffest finite machine, bounded for accuracy/speed.
@@ -1203,19 +1493,30 @@ def run_transient_stability(project, disturbance=None):
     cct = None
     if disturbance.get("type") == "fault" and disturbance.get("find_cct", True):
         cct = _find_cct(project, ctx, lf, machines, disturbance, freq, t_end, dt,
-                        warnings, island_of)
+                        warnings, island_of, dyn=dyn, y0=y0)
 
+    ibr_cur = sim.get("ibr_current", {})
     mach_out = []
     for j, mac in enumerate(machines):
         traj_delta = sim["curves"]["delta_deg"][j] if sim.get("curves") else []
         peak = max((abs(v) for v in traj_delta), default=0.0)
-        mach_out.append({
+        entry = {
             "name": mac["name"], "bus": _bus_name(project, mac["bus_id"]),
-            "type": "infinite_bus" if mac["infinite"] else "generator",
+            "type": ("infinite_bus" if mac["infinite"]
+                     else "gfm_inverter" if mac.get("ibr") == "gfm" else "generator"),
             "h_s": round(mac["H"], 3), "pm_pu": round(mac["Pm"], 4),
             "e_pu": round(mac["E"], 4), "delta0_deg": round(math.degrees(mac["delta0"]), 2),
             "peak_angle_deg": round(peak, 1),
-        })
+        }
+        if mac.get("ibr") == "gfm":
+            # Peak converter current as a multiple of rated (rated current in
+            # system p.u. is the power rating pmax_pu at nominal voltage), and the
+            # limit it is held to — the number that distinguishes a converter from
+            # a synchronous machine's much larger fault contribution.
+            pmax_pu = mac["pmax"] or 1e-9
+            entry["peak_current_pu"] = round(ibr_cur.get(j, 0.0) / pmax_pu, 3)
+            entry["imax_pu"] = round(mac["imax"] / pmax_pu, 3)
+        mach_out.append(entry)
 
     return {
         "machines": mach_out,

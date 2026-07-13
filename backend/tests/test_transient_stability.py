@@ -520,6 +520,178 @@ class TestTwoAxis:
         assert r["cct_s"] is not None and r["curves"] is not None
 
 
+class TestIBRGridForming:
+    """Grid-forming inverter modelled as a virtual synchronous machine: it can
+    hold an island on synthetic inertia + P-f droop, and its terminal current is
+    clipped at I_max (unlike a synchronous machine's large fault contribution)."""
+
+    def _gfm_island(self, ctrl="grid_forming", droop=5.0, h=3.0, imax=1.2):
+        # BESS (grid-forming) — feeder — load bus. The load is on a SEPARATE bus
+        # so a load step is seen through the network (a load on the source's own
+        # bus is netted into its output and cannot be stepped).
+        return ProjectData(projectName="gfm", baseMVA=100.0, frequency=50, components=[
+            _c("bg", "bus", {"name": "MG", "voltage_kv": 0.4}),
+            _c("bl", "bus", {"name": "LB", "voltage_kv": 0.4}),
+            _c("f", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.05,
+                              "x_per_km": 0.08, "length_km": 0.08}),
+            _c("bat", "battery", {"name": "BESS", "rated_kva": 500, "voltage_kv": 0.4,
+                                  "power_factor": 1.0, "battery_kwh": 1000,
+                                  "battery_max_discharge_kw": 500, "battery_soc_pct": 100,
+                                  "battery_mode": "discharging", "ibr_ctrl": ctrl,
+                                  "ibr_inertia_h_s": h, "ibr_pf_droop_pct": droop,
+                                  "ibr_xf_pu": 0.15, "ibr_imax_pu": imax}),
+            _c("ld", "static_load", {"name": "Load", "voltage_kv": 0.4, "rated_kva": 150,
+                                     "power_factor": 0.95, "demand_factor": 1.0}),
+        ], wires=[_w("wb", "bat", "bg"), _w("wf1", "bg", "f"), _w("wf2", "f", "bl"),
+                  _w("wl", "bl", "ld")])
+
+    def _final_freq(self, r):
+        return 50.0 + r["curves"]["speed_hz"][0][-1]
+
+    def _early_min_freq(self, r, t=2.0):
+        ts, sp = r["curves"]["t"], r["curves"]["speed_hz"][0]
+        return 50.0 + min(sp[i] for i in range(len(ts)) if ts[i] <= t)
+
+    def test_gfm_holds_island(self):
+        r = run_transient_stability(self._gfm_island(),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 40, "time_s": 1, "t_end_s": 12})
+        assert r["stable"] is True
+        assert any(m["type"] == "gfm_inverter" for m in r["machines"])
+        # droop control settles the island frequency at a bounded offset below
+        # nominal (no secondary control returns it to 50 Hz) — it does NOT drift
+        ff = self._final_freq(r)
+        assert 49.0 < ff < 50.0
+
+    def test_gfm_droop_offset_grows_with_droop(self):
+        shallow = self._final_freq(run_transient_stability(
+            self._gfm_island(droop=2.0), {"type": "load_step", "element": "ld",
+                                          "delta_pct": 40, "time_s": 1, "t_end_s": 12}))
+        steep = self._final_freq(run_transient_stability(
+            self._gfm_island(droop=8.0), {"type": "load_step", "element": "ld",
+                                          "delta_pct": 40, "time_s": 1, "t_end_s": 12}))
+        assert steep < shallow < 50.0        # a larger droop % ⇒ a deeper offset
+
+    def test_synthetic_inertia_shallows_the_dip(self):
+        lo = run_transient_stability(self._gfm_island(h=1.0),
+                                     {"type": "load_step", "element": "ld",
+                                      "delta_pct": 40, "time_s": 1, "t_end_s": 6})
+        hi = run_transient_stability(self._gfm_island(h=6.0),
+                                     {"type": "load_step", "element": "ld",
+                                      "delta_pct": 40, "time_s": 1, "t_end_s": 6})
+        # more synthetic inertia ⇒ a slower rate of change of frequency ⇒ a
+        # shallower initial excursion
+        assert self._early_min_freq(hi) > self._early_min_freq(lo)
+
+    def test_current_clipped_at_imax(self):
+        # A close-in fault: the converter current is held at its limit, not the
+        # 5–15× a synchronous machine would push.
+        def peak(imax):
+            r = run_transient_stability(self._gfm_island(imax=imax),
+                                        {"type": "fault", "bus": "bl", "clear_time_s": 0.12,
+                                         "find_cct": False, "t_end_s": 2})
+            m = next(x for x in r["machines"] if x["type"] == "gfm_inverter")
+            return m["peak_current_pu"]
+        p_low, p_high = peak(1.1), peak(5.0)
+        assert p_low == pytest.approx(1.1, abs=0.15)   # bounded right at the limit
+        assert p_high > p_low + 1.0                    # a higher limit ⇒ more current
+
+    def test_frozen_default_is_not_a_machine(self):
+        # ibr_ctrl absent (frozen) ⇒ the inverter stays a constant admittance,
+        # is not collected as a swing machine and raises no IBR-dynamics note.
+        p = ProjectData(projectName="fz", baseMVA=100.0, frequency=50, components=[
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 0.4, "fault_mva": 500}),
+            _c("b", "bus", {"name": "B", "voltage_kv": 0.4}),
+            _c("pv", "solar_pv", {"name": "PV", "rated_kw": 100, "voltage_kv": 0.4,
+                                  "num_inverters": 1, "power_factor": 1.0}),
+            _c("ld", "static_load", {"name": "L", "voltage_kv": 0.4, "rated_kva": 200,
+                                     "power_factor": 0.95, "demand_factor": 1.0}),
+        ], wires=[_w("w1", "util", "b"), _w("wp", "pv", "b"), _w("wl", "b", "ld")])
+        r = run_transient_stability(p, {"type": "load_step", "element": "ld",
+                                        "delta_pct": 20, "time_s": 1, "t_end_s": 3})
+        assert not any(m["type"] == "gfm_inverter" for m in r["machines"])
+        assert not any("PV" == m["name"] for m in r["machines"])
+        assert not any("inverter" in w for w in r["warnings"])
+
+
+class TestIBRGridFollowing:
+    """Grid-following inverter: a current-limited bus injection that holds its
+    dispatched power with fast frequency response and rides through / trips on
+    sustained under-voltage."""
+
+    def _gfl_genset_island(self, ffr=0.0):
+        # A gov-less genset (frequency drifts on its own) plus a grid-following
+        # BESS with fast frequency response, feeding a separate load bus.
+        return ProjectData(projectName="gfl", baseMVA=100.0, frequency=50, components=[
+            _c("bg", "bus", {"name": "GB", "voltage_kv": 0.4}),
+            _c("bl", "bus", {"name": "LB", "voltage_kv": 0.4}),
+            _c("f", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.05,
+                              "x_per_km": 0.05, "length_km": 0.05}),
+            _c("g1", "generator", {"name": "G1", "rated_mva": 0.5, "voltage_kv": 0.4,
+                                   "xd_p": 0.25, "inertia_h_s": 1.5,
+                                   "dispatch_mode": "must_run", "gov_mode": "none"}),
+            _c("bat", "battery", {"name": "BESS", "rated_kva": 300, "voltage_kv": 0.4,
+                                  "power_factor": 1.0, "battery_kwh": 500,
+                                  "battery_max_discharge_kw": 150, "battery_soc_pct": 100,
+                                  "battery_mode": "discharging", "ibr_ctrl": "grid_following",
+                                  "ibr_ffr_droop_pct": ffr, "ibr_imax_pu": 1.5}),
+            _c("ld", "static_load", {"name": "Load", "voltage_kv": 0.4, "rated_kva": 250,
+                                     "power_factor": 0.95, "demand_factor": 1.0}),
+        ], wires=[_w("wg", "g1", "bg"), _w("wb", "bat", "bg"), _w("wf1", "bg", "f"),
+                  _w("wf2", "f", "bl"), _w("wl", "bl", "ld")])
+
+    def _min_freq(self, r):
+        import itertools
+        return 50.0 + min(itertools.chain(*r["curves"]["speed_hz"]))
+
+    def test_fast_frequency_response_arrests_decline(self):
+        no_ffr = run_transient_stability(self._gfl_genset_island(ffr=0.0),
+                                         {"type": "load_step", "element": "ld",
+                                          "delta_pct": 30, "time_s": 1, "t_end_s": 10})
+        with_ffr = run_transient_stability(self._gfl_genset_island(ffr=4.0),
+                                           {"type": "load_step", "element": "ld",
+                                            "delta_pct": 30, "time_s": 1, "t_end_s": 10})
+        # the gov-less genset alone collapses; FFR from the battery holds it up
+        assert self._min_freq(with_ffr) > self._min_freq(no_ffr) + 5.0
+        assert any("grid-following inverter" in w for w in with_ffr["warnings"])
+
+    def _gfl_grid(self, uv=0.15, delay=0.5, qv=2.0):
+        return ProjectData(projectName="gflf", baseMVA=100.0, frequency=50, components=[
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 500, "x_r_ratio": 10}),
+            _c("bi", "bus", {"name": "POC", "voltage_kv": 11}),
+            _c("tx", "transformer", {"name": "TX", "rated_mva": 5, "voltage_kv": 11,
+                                     "secondary_kv": 0.4, "impedance_pct": 6, "x_r_ratio": 10}),
+            _c("bl", "bus", {"name": "LV", "voltage_kv": 0.4}),
+            _c("f2", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.05,
+                               "x_per_km": 0.05, "length_km": 0.05}),
+            _c("bp", "bus", {"name": "PVB", "voltage_kv": 0.4}),
+            _c("pv", "solar_pv", {"name": "PV", "rated_kw": 1000, "voltage_kv": 0.4,
+                                  "num_inverters": 1, "power_factor": 1.0,
+                                  "ibr_ctrl": "grid_following", "ibr_imax_pu": 1.2,
+                                  "ibr_qv_gain": qv, "ibr_uv_pu": uv, "ibr_trip_delay_s": delay}),
+            _c("ld", "static_load", {"name": "L", "voltage_kv": 0.4, "rated_kva": 800,
+                                     "power_factor": 0.9, "demand_factor": 1.0}),
+        ], wires=[_w("w1", "util", "bi"), _w("w2", "bi", "tx"), _w("w3", "tx", "bl"),
+                  _w("wl", "bl", "ld"), _w("wf1", "bl", "f2"), _w("wf2", "f2", "bp"),
+                  _w("wp", "pv", "bp")])
+
+    def test_rides_through_cleared_fault(self):
+        # a ride-through window longer than the fault clearing time ⇒ no trip
+        r = run_transient_stability(self._gfl_grid(uv=0.15, delay=0.5),
+                                    {"type": "fault", "bus": "bl", "clear_time_s": 0.15,
+                                     "find_cct": False, "t_end_s": 3})
+        assert r["stable"] is True
+        assert r["trips"] == []
+
+    def test_trips_on_aggressive_ride_through(self):
+        # a short delay / high threshold ⇒ the inverter drops out on the dip
+        r = run_transient_stability(self._gfl_grid(uv=0.5, delay=0.05),
+                                    {"type": "fault", "bus": "bl", "clear_time_s": 0.3,
+                                     "find_cct": False, "t_end_s": 3})
+        assert any("ride-through trip" in tr["reason"] and tr["element"] == "PV"
+                   for tr in r["trips"])
+
+
 class TestEdgeCases:
     def test_no_machines(self):
         p = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
