@@ -75,6 +75,15 @@ branch trip on clearing, and a binary-search critical clearing time); a
 generator or branch trip; and a load step. Initial conditions come from the
 positive-sequence load flow.
 
+Stability verdict: two independent failure modes. (1) Rotor-angle loss of
+synchronism — a machine's angle exceeds 180° from its island's centre of
+inertia. (2) Frequency collapse / run-away — an island's COI frequency ends
+well off nominal and is not recovering (overload with the governors saturated,
+or a governor-less imbalance); the machines can stay in step with each other
+while drifting off nominal frequency together, so this is checked separately.
+The reported ``instability`` names whichever occurred; the CCT search uses the
+rotor-angle test alone (a first-swing metric).
+
 Sub-transient (d/q″) machine dynamics are a documented follow-up — this engine
 is the framework they extend.
 """
@@ -91,6 +100,14 @@ UNSTABLE_ANGLE = math.pi    # |δ − δ_COI| beyond 180° ⇒ loss of synchroni
 CCT_SEARCH_MAX = 1.0        # s — upper bound for the critical-clearing search
 MAX_RECORD_POINTS = 400
 GFM_CLIM_ITERS = 8          # in-step iterations to converge the GFM current limit
+# Frequency-stability verdict: an island whose centre-of-inertia frequency ends
+# more than FREQ_UNSTABLE_BAND (Hz) off nominal AND is not recovering (its end
+# deviation is no smaller than its late-window deviation, within FREQ_RECOVER_TOL)
+# has collapsed / run away — a real instability the rotor-angle synchronism test
+# does not catch (the machines can fall out of step with the grid together while
+# staying in step with each other).
+FREQ_UNSTABLE_BAND = 2.5
+FREQ_RECOVER_TOL = 0.1
 
 MACHINE_SOURCE_TYPES = ("generator", "utility")
 IBR_SOURCE_TYPES = ("solar_pv", "battery", "wind_turbine")
@@ -1154,6 +1171,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     rec_t, rec_delta, rec_omega, rec_pe, rec_vbus = [], [], [], [], []
     bus_ids_all = None
     unstable = False
+    freq_end, freq_late = {}, {}   # island COI frequency: latest, and at ~80% window
     t = 0.0
     steps = int(math.ceil(t_end / dt))
 
@@ -1188,6 +1206,13 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             if not record:
                 break
 
+        # Track each island's COI frequency (latest value, and the value ~80% of
+        # the way through the window) for the separate frequency-stability check.
+        for isl, fv in _island_freq(omega).items():
+            freq_end[isl] = fv
+            if t >= 0.8 * t_end and isl not in freq_late:
+                freq_late[isl] = fv
+
         if step == steps:
             break
         # RK4 over (delta, omega, Pm, Psec, E_field, E'q, E'd, motor slips). The
@@ -1221,7 +1246,33 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             vbus_prev = _bus_voltages(veff, _eint(veff["active"], delta, efield, epq, epd))
         t += dt
 
-    result = {"stable": not unstable, "trips": trip_events, "ibr_current": imach_peak}
+    # Frequency-stability verdict, per island, over the live machines. Flag an
+    # island whose COI frequency ended beyond FREQ_UNSTABLE_BAND of nominal and
+    # is NOT recovering (its end deviation is no smaller than its late-window
+    # deviation) — a collapse or run-away, distinct from a transient that is
+    # settling back. Kept separate from the rotor-angle ``unstable`` flag so the
+    # CCT search (which reads ``stable``) stays a pure first-swing angle test.
+    freq_unstable = False
+    freq_reason = None
+    freq_msgs = []
+    worst = 0.0
+    for isl, fe in freq_end.items():
+        fl = freq_late.get(isl, fe)
+        dev_e, dev_l = fe - freq, fl - freq
+        if abs(dev_e) > FREQ_UNSTABLE_BAND and abs(dev_e) >= abs(dev_l) - FREQ_RECOVER_TOL:
+            freq_unstable = True
+            kind = "collapse" if dev_e < 0 else "run-up"
+            freq_msgs.append(
+                f"Island frequency ended at {fe:.1f} Hz and was not recovering — a "
+                f"frequency {kind}: generation cannot follow the load (overload, or "
+                f"a governor-less / capacity-limited imbalance). Rotor angles stayed "
+                f"in synchronism, but the island frequency is unstable.")
+            if abs(dev_e) > worst:
+                worst, freq_reason = abs(dev_e), f"frequency {kind}"
+
+    result = {"stable": not unstable, "trips": trip_events, "ibr_current": imach_peak,
+              "freq_unstable": freq_unstable, "freq_reason": freq_reason,
+              "freq_msgs": freq_msgs}
     if record:
         result["curves"] = _decimate_traj(rec_t, rec_delta, rec_omega, rec_pe,
                                            rec_vbus, machines, segments)
@@ -1467,10 +1518,12 @@ def run_transient_stability(project, disturbance=None):
         else:
             warnings.append(
                 "An islanded generator group with no grid / infinite-bus "
-                "reference was found — its frequency is held by the modelled "
-                "turbine-governors / grid-forming converters (isochronous returns "
-                "to nominal; droop settles at a small offset). Synchronism is "
-                "judged against the island's own centre of inertia.")
+                "reference was found — its frequency is governed by the modelled "
+                "turbine-governors / grid-forming converters (isochronous aims to "
+                "return to nominal, droop settles at an offset), but only within "
+                "their capacity: an overloaded island's frequency can still "
+                "collapse (see the verdict and the frequency trace). Synchronism "
+                "is judged against the island's own centre of inertia.")
 
     t_end = float(disturbance.get("t_end_s", 5.0))
     # Step from the stiffest finite machine, bounded for accuracy/speed.
@@ -1485,6 +1538,17 @@ def run_transient_stability(project, disturbance=None):
     segments, event = _build_segments(project, ctx, lf, machines, disturbance, warnings)
     sim = _simulate(machines, segments, freq, t_end, dt, record=True,
                     island_of=island_of, dyn=dyn, y0=y0)
+
+    # Public stability verdict combines rotor-angle synchronism (sim["stable"])
+    # with the frequency-stability check: an island frequency that collapses /
+    # runs away is unstable even though the machines stay in step with each other.
+    angle_stable = sim["stable"]
+    freq_unstable = sim.get("freq_unstable", False)
+    stable = angle_stable and not freq_unstable
+    instability = (None if stable
+                   else "loss of synchronism" if not angle_stable
+                   else sim.get("freq_reason") or "frequency instability")
+    warnings += sim.get("freq_msgs", [])
 
     # Critical clearing time (binary search) for a fault, when requested. The
     # CCT is a first-swing rotor-angle metric evaluated with the classical
@@ -1521,7 +1585,8 @@ def run_transient_stability(project, disturbance=None):
     return {
         "machines": mach_out,
         "curves": _curves_with_names(sim["curves"], project, machines, ctx),
-        "stable": sim["stable"],
+        "stable": stable,
+        "instability": instability,   # None | "loss of synchronism" | "frequency collapse/run-up"
         "event": event,
         "cct_s": round(cct, 4) if cct is not None else None,
         "dt_s": dt, "t_end_s": t_end,
