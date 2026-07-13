@@ -36,6 +36,12 @@ const NetworkTemplates = {
   // ── Generate template data ──
 
   generate(templateId) {
+    // Verification / standards examples are embedded projects (see
+    // verification-templates.js). Return a deep clone so loading never mutates
+    // the shared template data.
+    if (typeof VerificationTemplates !== 'undefined' && VerificationTemplates.data[templateId]) {
+      return structuredClone(VerificationTemplates.data[templateId]);
+    }
     switch (templateId) {
       case 'substation_33_11': return this._substation33_11();
       case 'industrial_plant': return this._industrialPlant();
@@ -377,8 +383,13 @@ const NetworkTemplates = {
     const modal = document.getElementById('calc-modal');
     modal.querySelector('#calc-modal-title').textContent = 'Network Templates';
 
+    const allTemplates = [...this.templates];
+    if (typeof VerificationTemplates !== 'undefined') {
+      allTemplates.push(...VerificationTemplates.meta);
+    }
+
     const byCategory = {};
-    for (const t of this.templates) {
+    for (const t of allTemplates) {
       if (!byCategory[t.category]) byCategory[t.category] = [];
       byCategory[t.category].push(t);
     }
