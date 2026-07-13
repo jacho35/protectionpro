@@ -651,6 +651,15 @@ const Project = {
           UI.toast('Not a valid JSON file: ' + err.message, 'error');
           return;
         }
+        // A Distribution Designer export (proj.buildings) isn't a ProtectionPro
+        // project — its buildings/floors import into the Plan workspace, not the
+        // SLD. Route it there instead of rejecting it as "not a project".
+        if (typeof PlanDdImport !== 'undefined' && PlanDdImport.isDdProject(data)) {
+          UI.toast('Distribution Designer project detected — importing into the Plan workspace…', 'info');
+          if (typeof switchWorkspace === 'function') switchWorkspace('plan');
+          PlanDdImport.importFile(file);
+          return;
+        }
         try {
           // fromJSON validates the shape and throws on a non-project file
           // BEFORE mutating state, so a bad import leaves the current project
