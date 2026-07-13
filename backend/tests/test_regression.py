@@ -1838,3 +1838,101 @@ class TestDCShortCircuit:
         comps = [_comp("bus-1", "bus", {"name": "AC", "voltage_kv": 11})]
         res = run_dc_short_circuit(ProjectData(projectName="ac", components=comps, wires=[]))
         assert res.converged is False
+
+
+# ── LV earthing system (TN / TT / IT) — IEC 60364-1 / SANS 10142-1 ─────────
+
+
+class TestLvEarthingSystem:
+    """The declared LV earthing system reshapes the zero-sequence earth-fault
+    loop for LV (≤1 kV) sources. TN-* keeps the metallic (low-impedance)
+    return; TT adds the soil-electrode resistance R_A+R_B (as 3·(R_A+R_B) in
+    the Z0 network) so the earth-fault current collapses; IT breaks the
+    first-fault path entirely (Ik1 ≈ 0). MV/HV faults are untouched."""
+
+    @staticmethod
+    def _lv_project(earthing_system=None, r_a=20.0, r_b=1.0):
+        xf_props = {
+            "name": "TX1", "rated_mva": 1.0, "z_percent": 5.0,
+            "x_r_ratio": 8.0, "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4,
+            "vector_group": "Dyn11", "grounding_lv": "solidly_grounded",
+        }
+        if earthing_system is not None:
+            xf_props["earthing_system"] = earthing_system
+            xf_props["earth_electrode_r_installation"] = r_a
+            xf_props["earth_electrode_r_source"] = r_b
+        xfmr = _comp("transformer-1", "transformer", xf_props)
+        lv_bus = _comp("bus-2", "bus", {"name": "LV Bus", "voltage_kv": 0.4})
+        return _utility_bus_project(
+            fault_mva=500.0,
+            extra_components=[xfmr, lv_bus],
+            extra_wires=[_wire("w2", "bus-1", "transformer-1"),
+                         _wire("w3", "transformer-1", "bus-2")])
+
+    def test_default_field_absent_matches_tn(self):
+        """A legacy project (no earthing_system field) must give exactly the
+        same LV earth-fault current as an explicit TN-S declaration — the
+        feature is inert until opted into."""
+        legacy = run_fault_analysis(self._lv_project(None)).buses["bus-2"]
+        tns = run_fault_analysis(self._lv_project("TN-S")).buses["bus-2"]
+        assert legacy.ik1 > 0
+        assert tns.ik1 == pytest.approx(legacy.ik1, rel=1e-9)
+
+    def test_tn_variants_are_identical(self):
+        """TN-S, TN-C and TN-C-S all use the metallic return — the fault
+        current is the same for all three (they differ only in wiring rules,
+        checked in compliance, not in the earth-fault loop)."""
+        tns = run_fault_analysis(self._lv_project("TN-S")).buses["bus-2"].ik1
+        tnc = run_fault_analysis(self._lv_project("TN-C")).buses["bus-2"].ik1
+        tncs = run_fault_analysis(self._lv_project("TN-C-S")).buses["bus-2"].ik1
+        assert tnc == pytest.approx(tns, rel=1e-9)
+        assert tncs == pytest.approx(tns, rel=1e-9)
+
+    def test_tt_collapses_earth_fault_current(self):
+        """TT adds 3·(R_A+R_B) to the zero-sequence loop. With R_A=20 Ω and
+        R_B=1 Ω on a 0.4 kV base, that soil resistance dwarfs the transformer
+        impedance, so Ik1 must fall far below the TN value while the 3-phase
+        fault (which never uses Z0) is unchanged."""
+        tn = run_fault_analysis(self._lv_project("TN-S")).buses["bus-2"]
+        tt = run_fault_analysis(self._lv_project("TT", r_a=20.0, r_b=1.0)).buses["bus-2"]
+        assert tt.ik3 == pytest.approx(tn.ik3, rel=1e-9)   # 3φ unaffected
+        assert tt.ik1 < 0.05 * tn.ik1                      # earth fault collapses
+
+    def test_tt_larger_electrode_gives_less_current(self):
+        """Monotonicity: a higher installation electrode resistance R_A means
+        a higher loop impedance and therefore a smaller earth-fault current."""
+        low = run_fault_analysis(self._lv_project("TT", r_a=10.0)).buses["bus-2"].ik1
+        high = run_fault_analysis(self._lv_project("TT", r_a=100.0)).buses["bus-2"].ik1
+        assert 0 < high < low
+
+    def test_it_has_no_first_fault_current(self):
+        """IT declares an unearthed / high-impedance source: the first earth
+        fault has no zero-sequence return, so Ik1 ≈ 0 (Ik3 unaffected)."""
+        it = run_fault_analysis(self._lv_project("IT")).buses["bus-2"]
+        assert it.ik3 > 0
+        assert it.ik1 == pytest.approx(0.0, abs=1e-6)
+
+    def test_mv_transformer_ignores_earthing_system(self):
+        """The field only applies to LV (≤1 kV) windings. A TT declaration on
+        an 11 kV secondary must not touch the MV earth-fault current."""
+        def _mv(es):
+            props = {
+                "name": "TX", "rated_mva": 10.0, "z_percent": 8.0,
+                "x_r_ratio": 10.0, "voltage_hv_kv": 33.0, "voltage_lv_kv": 11.0,
+                "vector_group": "YNyn0", "grounding_hv": "solidly_grounded",
+                "grounding_lv": "solidly_grounded",
+            }
+            if es:
+                props["earthing_system"] = es
+                props["earth_electrode_r_installation"] = 50.0
+                props["earth_electrode_r_source"] = 5.0
+            xfmr = _comp("transformer-1", "transformer", props)
+            lv_bus = _comp("bus-2", "bus", {"name": "MV Bus", "voltage_kv": 11.0})
+            return _utility_bus_project(
+                fault_mva=500.0, kv=33.0,
+                extra_components=[xfmr, lv_bus],
+                extra_wires=[_wire("w2", "bus-1", "transformer-1"),
+                             _wire("w3", "transformer-1", "bus-2")])
+        base = run_fault_analysis(_mv(None)).buses["bus-2"].ik1
+        tt = run_fault_analysis(_mv("TT")).buses["bus-2"].ik1
+        assert tt == pytest.approx(base, rel=1e-9)

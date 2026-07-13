@@ -197,6 +197,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Handles motor fault contribution per IEC 60909
 - Calculates Ik'' (initial), Ip (peak), Ib (breaking), Ith (thermal) currents
 - Supports 3-phase, single-line-to-ground, line-to-line, double-line-to-ground
+- LV earthing systems (IEC 60364-1): each LV source (≤1 kV) carries an `earthing_system` prop (TN-S/TN-C/TN-C-S/TT/IT). TT adds the soil earth-return `3·(R_A+R_B)` to the zero-sequence loop (Ik1 collapses); IT blocks the first-fault path (Ik1 ≈ 0); TN-* use the metallic return. Absent field ⇒ TN-S (legacy-identical). Compliance branches the SANS 10142-1 disconnection rules on it (RCD for TT, insulation monitoring for IT, no RCD on a PEN for TN-C).
 
 ### Load Flow (loadflow.py)
 - Bus types: PQ (load), PV (generator), Swing (reference)
