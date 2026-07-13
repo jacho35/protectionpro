@@ -92,7 +92,7 @@ const Transient = {
         <div><input id="ts-tend" type="number" min="0.5" step="0.5" value="5" style="width:90px"> s</div>
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin-top:10px">
-        Classical model: each synchronous generator is E′ behind X′d with its inertia H; utility sources are infinite buses; loads are constant admittances. ${gens.length ? '' : '<strong>No generators found — add a generator (with an inertia constant) for a meaningful swing.</strong>'}</p>`;
+        Each synchronous generator is E′ behind X′d with its inertia H; utility sources are infinite buses; loads are constant admittances (or voltage-dependent / motor models if set). Inverters (PV / BESS / full-converter wind) are frozen unless their <em>Converter Model</em> is set to grid-following or grid-forming. ${gens.length ? '' : '<strong>No generators found — add a generator or a grid-forming inverter (with an inertia constant) for a meaningful swing.</strong>'}</p>`;
 
     body.querySelector('#ts-type').addEventListener('change', () => this._syncTypeFields());
     this._applyConfig(prefill || this._last);   // populate + reveal the right fields
@@ -301,9 +301,11 @@ const Transient = {
     </div>`;
 
     // Machine summary
+    const typeLabel = t => t === 'infinite_bus' ? 'infinite bus' : t === 'gfm_inverter' ? 'GFM inverter' : 'gen';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:6px 14px;font-size:12px;margin-bottom:10px">'
-      + r.machines.map(m => `<div><strong>${this._esc(m.name)}</strong> (${this._esc(m.type === 'infinite_bus' ? 'infinite bus' : 'gen')})<br>
-        <span style="color:var(--text-muted,#6d6d6d)">H=${m.h_s} s · Pm=${m.pm_pu} p.u. · δ₀=${m.delta0_deg}° · peak δ=${m.peak_angle_deg}°</span></div>`).join('')
+      + r.machines.map(m => `<div><strong>${this._esc(m.name)}</strong> (${this._esc(typeLabel(m.type))})<br>
+        <span style="color:var(--text-muted,#6d6d6d)">H=${m.h_s} s · Pm=${m.pm_pu} p.u. · δ₀=${m.delta0_deg}° · peak δ=${m.peak_angle_deg}°${
+          m.type === 'gfm_inverter' && m.peak_current_pu != null ? ` · peak I=${m.peak_current_pu}×I_rated (limit ${m.imax_pu}×)` : ''}</span></div>`).join('')
       + '</div>';
 
     // Protection operations (UFLS / generator & motor trips) during the run
