@@ -40,7 +40,7 @@ const Transient = {
   },
 
   // ── Disturbance setup ──────────────────────────────────────────────
-  openConfig() {
+  openConfig(prefill) {
     const buses = this._list(['bus']);
     if (!buses.length) {
       document.getElementById('status-info').textContent =
@@ -54,9 +54,8 @@ const Transient = {
     const opt = arr => arr.map(o => `<option value="${this._esc(o.id)}">${this._esc(o.name)}</option>`).join('');
     const trips = [...gens.map(g => ({ ...g, name: 'Gen: ' + g.name })),
                    ...branches.map(b => ({ ...b, name: 'Branch: ' + b.name }))];
-    const L = this._last || {};
 
-    body.innerHTML = `
+    body.innerHTML = this._renderCasesBlock() + `
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
         <label>Disturbance</label>
         <select id="ts-type">
@@ -68,11 +67,11 @@ const Transient = {
         <div class="ts-row ts-fault" style="display:contents">
           <label>Fault at bus</label><select id="ts-fault-bus">${opt(buses)}</select>
           <label>Clear time</label>
-          <div><input id="ts-clear" type="number" min="0" step="0.01" value="${L.clear_time_s ?? 0.15}" style="width:90px"> s</div>
+          <div><input id="ts-clear" type="number" min="0" step="0.01" value="0.15" style="width:90px"> s</div>
           <label>Trip on clear</label>
           <select id="ts-trip-branch"><option value="">— none —</option>${opt(branches)}</select>
           <label>Find CCT</label>
-          <div><input id="ts-cct" type="checkbox" ${L.find_cct === false ? '' : 'checked'}> critical clearing time (binary search)</div>
+          <div><input id="ts-cct" type="checkbox" checked> critical clearing time (binary search)</div>
         </div>
 
         <div class="ts-row ts-trip" style="display:none">
@@ -90,20 +89,136 @@ const Transient = {
         </div>
 
         <label>Simulation time</label>
-        <div><input id="ts-tend" type="number" min="0.5" step="0.5" value="${L.t_end_s ?? 5}" style="width:90px"> s</div>
+        <div><input id="ts-tend" type="number" min="0.5" step="0.5" value="5" style="width:90px"> s</div>
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin-top:10px">
         Classical model: each synchronous generator is E′ behind X′d with its inertia H; utility sources are infinite buses; loads are constant admittances. ${gens.length ? '' : '<strong>No generators found — add a generator (with an inertia constant) for a meaningful swing.</strong>'}</p>`;
 
-    const sync = () => {
-      const t = body.querySelector('#ts-type').value;
-      body.querySelector('.ts-fault').style.display = t === 'fault' ? 'contents' : 'none';
-      body.querySelector('.ts-trip').style.display = t === 'trip' ? 'contents' : 'none';
-      body.querySelector('.ts-load').style.display = t === 'load_step' ? 'contents' : 'none';
-    };
-    body.querySelector('#ts-type').addEventListener('change', sync);
-    sync();
+    body.querySelector('#ts-type').addEventListener('change', () => this._syncTypeFields());
+    this._applyConfig(prefill || this._last);   // populate + reveal the right fields
+    this._wireCaseButtons();
     document.getElementById('stability-config-modal').style.display = '';
+  },
+
+  _syncTypeFields() {
+    const body = document.getElementById('stability-config-body');
+    const t = body.querySelector('#ts-type').value;
+    body.querySelector('.ts-fault').style.display = t === 'fault' ? 'contents' : 'none';
+    body.querySelector('.ts-trip').style.display = t === 'trip' ? 'contents' : 'none';
+    body.querySelector('.ts-load').style.display = t === 'load_step' ? 'contents' : 'none';
+  },
+
+  // Populate the form from a disturbance spec (a saved case or the last run).
+  _applyConfig(d) {
+    const b = document.getElementById('stability-config-body');
+    const set = (sel, v) => { const el = b.querySelector(sel); if (el && v != null) el.value = v; };
+    const chk = (sel, v) => { const el = b.querySelector(sel); if (el) el.checked = !!v; };
+    if (d) {
+      if (d.type) set('#ts-type', d.type);
+      set('#ts-tend', d.t_end_s);
+      if (d.bus != null || d.type === 'fault') {
+        set('#ts-fault-bus', d.bus);
+        set('#ts-clear', d.clear_time_s);
+        set('#ts-trip-branch', d.trip_element || '');
+        chk('#ts-cct', d.find_cct !== false);
+      }
+      if (d.type === 'trip') { set('#ts-trip-el', d.element); set('#ts-trip-time', d.time_s); }
+      if (d.type === 'load_step') {
+        set('#ts-load-el', d.element); set('#ts-load-delta', d.delta_pct); set('#ts-load-time', d.time_s);
+      }
+    }
+    this._syncTypeFields();
+  },
+
+  // ── Saved study cases (persisted with the project) ─────────────────
+  _cases() {
+    if (!Array.isArray(AppState.stabilityCases)) AppState.stabilityCases = [];
+    return AppState.stabilityCases;
+  },
+
+  _name(id) {
+    const c = AppState.components.get(id);
+    return c ? (c.props?.name || id) : id;
+  },
+
+  _caseSummary(d) {
+    if (!d) return '';
+    if (d.type === 'fault') {
+      return `Fault @ ${this._name(d.bus)}, clear ${Math.round((d.clear_time_s || 0) * 1000)} ms`
+        + (d.trip_element ? `, trip ${this._name(d.trip_element)}` : '')
+        + (d.find_cct !== false ? ', CCT' : '');
+    }
+    if (d.type === 'trip') return `Trip ${this._name(d.element)} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
+    if (d.type === 'load_step') return `Step ${this._name(d.element)} ${d.delta_pct >= 0 ? '+' : ''}${d.delta_pct}% @ ${Math.round((d.time_s || 0) * 1000)} ms`;
+    return d.type || '';
+  },
+
+  _renderCasesBlock() {
+    const cases = this._cases();
+    const btn = 'font-size:11px;padding:2px 8px;cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit';
+    const rows = cases.length ? cases.map(c => `
+      <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+        <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis"><strong>${this._esc(c.name)}</strong>
+          <span style="color:var(--text-muted,#6d6d6d)"> — ${this._esc(this._caseSummary(c.disturbance))}</span></span>
+        <button style="${btn}" class="ts-case-load" data-id="${this._esc(c.id)}">Load</button>
+        <button style="${btn}" class="ts-case-del" data-id="${this._esc(c.id)}" title="Delete case">✕</button>
+      </div>`).join('')
+      : '<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">No saved cases yet — configure a disturbance below and Save it.</div>';
+    return `<div style="margin-bottom:14px;border:1px solid var(--border-color,#d0d0d0);border-radius:6px;padding:8px 10px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px">Saved study cases</div>
+      <div>${rows}</div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input id="ts-case-name" type="text" placeholder="Name this case…" style="flex:1;font-size:12px;padding:3px 6px">
+        <button style="${btn}" id="ts-case-save">Save current</button>
+      </div>
+    </div>`;
+  },
+
+  _wireCaseButtons() {
+    const b = document.getElementById('stability-config-body');
+    const saveBtn = b.querySelector('#ts-case-save');
+    if (saveBtn) saveBtn.addEventListener('click', () => this._saveCase());
+    b.querySelectorAll('.ts-case-load').forEach(el =>
+      el.addEventListener('click', () => this._loadCase(el.dataset.id)));
+    b.querySelectorAll('.ts-case-del').forEach(el =>
+      el.addEventListener('click', () => this._deleteCase(el.dataset.id)));
+  },
+
+  _saveCase() {
+    const b = document.getElementById('stability-config-body');
+    const cases = this._cases();
+    const nameEl = b.querySelector('#ts-case-name');
+    const name = (nameEl && nameEl.value || '').trim() || `Case ${cases.length + 1}`;
+    const d = this._readConfig();
+    const existing = cases.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.disturbance = d;
+    } else {
+      cases.push({ id: 'tsc_' + Date.now(), name, disturbance: d });
+    }
+    AppState.dirty = true;
+    this._last = d;
+    document.getElementById('status-info').textContent = `Saved study case “${name}”.`;
+    this.openConfig(d);  // re-render (updated list), keep the current config
+  },
+
+  _loadCase(id) {
+    const c = this._cases().find(x => x.id === id);
+    if (!c) return;
+    this._last = c.disturbance;
+    this.openConfig(c.disturbance);
+    const nameEl = document.getElementById('ts-case-name');
+    if (nameEl) nameEl.value = c.name;   // pre-fill name so re-saving updates it
+  },
+
+  _deleteCase(id) {
+    const cases = this._cases();
+    const i = cases.findIndex(x => x.id === id);
+    if (i < 0) return;
+    const current = this._readConfig();   // preserve the in-progress form
+    cases.splice(i, 1);
+    AppState.dirty = true;
+    this.openConfig(current);
   },
 
   _readConfig() {
