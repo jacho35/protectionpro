@@ -952,6 +952,7 @@ const AppState = {
     this.motorStartingResults = null;
     this.dynamicMotorResults = null;
     this.stabilityResults = null;
+    this.stabilityCases = [];  // saved transient-stability disturbance cases
     this.dutyCheckResults = null;
     this.loadDiversityResults = null;
     this.groundingResults = null;
@@ -1131,6 +1132,7 @@ const AppState = {
       motorStartingResults: this.motorStartingResults || undefined,
       dynamicMotorResults: this.dynamicMotorResults || undefined,
       stabilityResults: this.stabilityResults || undefined,
+      stabilityCases: (this.stabilityCases && this.stabilityCases.length) ? this.stabilityCases : undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
@@ -1414,6 +1416,7 @@ const AppState = {
     this.motorStartingResults = data.motorStartingResults || null;
     this.dynamicMotorResults = data.dynamicMotorResults || null;
     this.stabilityResults = data.stabilityResults || null;
+    this.stabilityCases = Array.isArray(data.stabilityCases) ? data.stabilityCases : [];
     this.dutyCheckResults = data.dutyCheckResults || null;
     this.loadDiversityResults = data.loadDiversityResults || null;
     this.groundingResults = data.groundingResults || null;

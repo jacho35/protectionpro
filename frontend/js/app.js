@@ -1103,9 +1103,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('stability-modal').addEventListener('click', (e) => {
     if (e.target.id === 'stability-modal') e.target.style.display = 'none';
   });
-  document.getElementById('stability-config-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'stability-config-modal') e.target.style.display = 'none';
-  });
+  // The setup modal deliberately does NOT close on an outside click — that would
+  // discard the disturbance configuration. Use Cancel or the ✕ button.
 
   // ── Equipment Duty Check ──
   document.getElementById('btn-duty-check').addEventListener('click', async () => {
