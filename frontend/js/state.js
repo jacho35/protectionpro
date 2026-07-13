@@ -469,7 +469,9 @@ const AppState = {
       y: snapToGrid(y),
       rotation: 0,
       pageId: this.activePageId,
-      props: { ...def.defaults },
+      // Deep-clone so nested props (e.g. distribution_board `circuits`, `el_ratings`)
+      // are not shared by reference across components or with the global default.
+      props: structuredClone(def.defaults),
     };
     // Auto-increment names
     const count = [...this.components.values()].filter(c => c.type === type).length;
@@ -610,7 +612,9 @@ const AppState = {
         x: comp.x + offset,
         y: comp.y + offset,
         pageId: this.activePageId,
-        props: { ...comp.props, name: this._uniqueCopyName(comp.props.name, takenNames) },
+        // Deep-clone so a pasted component's nested props (e.g. distribution_board
+        // `circuits`) are independent of the clipboard and of sibling pastes.
+        props: { ...structuredClone(comp.props), name: this._uniqueCopyName(comp.props.name, takenNames) },
       };
       this.components.set(newId, newComp);
       this.selectedIds.add(newId);
