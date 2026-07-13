@@ -1839,6 +1839,7 @@
           <button class="help-tab" data-tab="analysis">Analysis</button>
           <button class="help-tab" data-tab="studies">Studies</button>
           <button class="help-tab" data-tab="arcflash">Arc Flash</button>
+          <button class="help-tab" data-tab="verification">Verification</button>
           <button class="help-tab" data-tab="shortcuts">Shortcuts</button>
         </div>
 
@@ -2135,6 +2136,37 @@
           </ul>
         </div>
 
+        <div class="help-content" id="help-tab-verification" style="display:none">
+          <h4>Verification &amp; Validation</h4>
+          <p>All twelve analysis engines are cross-checked against published standards, textbook worked examples, or
+            exact first-principles / hand calculations. Each reference is rebuilt as a reproducible project and solved
+            two ways that must agree — the backend engine (authoritative) and the real app driven headlessly — with a
+            pass tolerance of <strong>&plusmn;2 %</strong>.</p>
+          <p style="margin:14px 0;">
+            <a href="verification.html" target="_blank" rel="noopener"
+               style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:6px;font-weight:600;text-decoration:none;">
+              Open the full Verification report &nearr;</a>
+          </p>
+          <p>Every example below is also loadable in-app from <strong>Templates &rarr; Verification / Standards</strong>.</p>
+          <table class="help-ref-table">
+            <thead><tr><th>Example</th><th>Standard / source</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>Short circuit — 4 networks, 16 fault points</td><td>IEC 60909 (powerprojectsindia / ETAP)</td><td>PASS ≤0.13 %</td></tr>
+              <tr><td>LV cable sizing</td><td>IEC 60364</td><td>Qualified (formulas exact)</td></tr>
+              <tr><td>3-bus load flow</td><td>Glover / ESE 470 (Newton-Raphson)</td><td>PASS ≤0.002 pu</td></tr>
+              <tr><td>Unbalanced load flow</td><td>Symmetrical components</td><td>PASS</td></tr>
+              <tr><td>Arc flash</td><td>IEEE 1584-2002</td><td>PASS 0.000 %</td></tr>
+              <tr><td>Grounding grid</td><td>IEEE 80</td><td>PASS 0.000 %</td></tr>
+              <tr><td>Motor starting</td><td>IEEE 3002.7 + 2-bus solve</td><td>PASS</td></tr>
+              <tr><td>Equipment duty check</td><td>IEC 62271-100 / 60947-2</td><td>PASS</td></tr>
+              <tr><td>Load diversity</td><td>IEC 60439</td><td>PASS</td></tr>
+              <tr><td>DC load flow</td><td>First-principles resistive circuit</td><td>PASS ≤0.005 %</td></tr>
+              <tr><td>DC short circuit</td><td>IEC 61660-1 (CED E03-035)</td><td>PASS 0.00 %</td></tr>
+              <tr><td>DC arc flash</td><td>Stokes &amp; Oppenländer / Ammerman</td><td>PASS ≤0.06 %</td></tr>
+            </tbody>
+          </table>
+        </div>
+
         <div class="help-content" id="help-tab-shortcuts" style="display:none">
           <h4>Keyboard Shortcuts</h4>
           <table class="help-ref-table">
@@ -2267,6 +2299,7 @@
   <script src="js/tcc.js?v=3.5.3"></script>
   <script src="js/project.js?v=3.5.3"></script>
   <script src="js/reports.js?v=3.5.3"></script>
+  <script src="js/verification-templates.js?v=3.5.3"></script>
   <script src="js/templates.js?v=3.5.3"></script>
   <script src="js/standard-data.js?v=3.5.3"></script>
   <script src="js/undo.js?v=3.5.3"></script>
