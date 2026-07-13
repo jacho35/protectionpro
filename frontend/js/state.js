@@ -1135,7 +1135,37 @@ const AppState = {
   },
 
   // Import from JSON
+  // Validate that `data` is a plausible ProtectionPro project before we
+  // discard the current one. JSON.parse accepts ANY valid JSON, so without
+  // this an unrelated file ({}, [], or another app's export) would silently
+  // load as an empty diagram and report success. Throwing lets the import
+  // caller's catch surface a clear error, and — because callers validate
+  // before touching state — leaves the current project intact on a bad file.
+  _validateProjectData(data) {
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('not a ProtectionPro project — expected a JSON object.');
+    }
+    if (!Array.isArray(data.components)) {
+      throw new Error('not a ProtectionPro project — missing a "components" array.');
+    }
+    if (data.wires !== undefined && !Array.isArray(data.wires)) {
+      throw new Error('malformed project — "wires" must be an array.');
+    }
+    data.components.forEach((c, i) => {
+      if (c === null || typeof c !== 'object' || Array.isArray(c) ||
+          c.id === undefined || c.type === undefined) {
+        throw new Error(`malformed project — components[${i}] is not a valid component (needs id and type).`);
+      }
+    });
+    (data.wires || []).forEach((w, i) => {
+      if (w === null || typeof w !== 'object' || Array.isArray(w) || w.id === undefined) {
+        throw new Error(`malformed project — wires[${i}] is not a valid wire (needs an id).`);
+      }
+    });
+  },
+
   fromJSON(data) {
+    this._validateProjectData(data);
     this.reset();
     this.projectName = data.projectName || 'Untitled Project';
     if (data.projectDetails) {
