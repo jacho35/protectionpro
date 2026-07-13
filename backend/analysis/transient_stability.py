@@ -1320,8 +1320,14 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
         post_v = variant(base_ybus, all_active, set(), shunt=shunt2,
                          load_scale=(lbus, frac) if lbus is not None else None)
         nm = _comp_name(project, elem) if elem else "load"
-        return ([(0.0, pre_v), (t_ev, post_v)],
-                f"Step {nm} by {disturbance.get('delta_pct', 50):+.0f}% at {t_ev*1000:.0f} ms")
+        delta = float(disturbance.get("delta_pct", 50))
+        if abs(delta + 100.0) < 1e-6:
+            event = f"Shed {nm} (−100%) at {t_ev*1000:.0f} ms"
+        elif abs(delta - 100.0) < 1e-6:
+            event = f"Switch in a 2nd {nm} block (+100%) at {t_ev*1000:.0f} ms"
+        else:
+            event = f"Step {nm} demand by {delta:+.0f}% at {t_ev*1000:.0f} ms"
+        return ([(0.0, pre_v), (t_ev, post_v)], event)
 
     raise ValueError(f"Unknown disturbance type '{dtype}'.")
 
