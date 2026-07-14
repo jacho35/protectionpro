@@ -45,6 +45,216 @@ const DynMotor = {
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   },
 
+  // ── Start-timeline config (modal) ──────────────────────────────────
+  // The motor start sequence lives here, not in each motor's properties: a
+  // shared clock where every motor either starts at its time or is already
+  // running. Mirrors the transient-stability sequenced-events editor.
+
+  _motors() {
+    return [...AppState.components.values()]
+      .filter(c => c.type === 'motor_induction' || c.type === 'motor_synchronous')
+      .map(c => ({ id: c.id, name: c.props?.name || c.id, type: c.type }));
+  },
+
+  _mname(id) {
+    const c = AppState.components.get(id);
+    return c ? (c.props?.name || id) : id;
+  },
+
+  // Seed a schedule from legacy per-motor props so projects saved before the
+  // timeline editor keep their staging on first open.
+  _scheduleFromProps() {
+    return {
+      motors: this._motors().map(m => {
+        const p = (AppState.components.get(m.id) || {}).props || {};
+        return { id: m.id, role: p.dyn_role === 'running' ? 'running' : 'starts',
+                 start_time_s: Math.max(0, +p.start_time_s || 0) };
+      }),
+    };
+  },
+
+  openConfig(prefill) {
+    const body = document.getElementById('dynamic-motor-config-body');
+    const modal = document.getElementById('dynamic-motor-config-modal');
+    const runBtn = document.getElementById('btn-dynmot-run');
+    if (!body || !modal) return;
+    const motors = this._motors();
+    if (!motors.length) {
+      body.innerHTML = '<p style="font-size:13px">No induction or synchronous motors in the project. Add a motor to run a dynamic start study.</p>';
+      if (runBtn) runBtn.disabled = true;
+      modal.style.display = '';
+      return;
+    }
+    if (runBtn) runBtn.disabled = false;
+
+    const schedule = prefill || AppState.dynamicMotorSchedule || this._scheduleFromProps();
+    const byId = {};
+    (schedule.motors || []).forEach(m => { if (m && m.id) byId[m.id] = m; });
+
+    body.innerHTML = this._renderCasesBlock() + `
+      <div style="font-size:12px;font-weight:600;margin:2px 0 6px">Start timeline (absolute times on one shared simulation clock)</div>
+      <div id="dynms-cfg-list"></div>
+      <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:8px 0 0">
+        Each motor either <strong>starts</strong> at its time (a cold start — its inrush sags every other energised motor)
+        or is <strong>already running</strong> (a steady background load present in the pre-start voltage). Stagger start
+        times to sequence a motor group and see how each start sags the buses the others sit on. VFD-started motors are
+        reported without a network transient regardless of this setting.
+      </p>`;
+    const list = body.querySelector('#dynms-cfg-list');
+    motors.forEach(m => list.appendChild(this._configRow(m, byId[m.id])));
+    this._wireCaseButtons();
+    modal.style.display = '';
+  },
+
+  _configRow(motor, entry) {
+    entry = entry || {};
+    const role = entry.role === 'running' ? 'running' : 'starts';
+    const t = Number.isFinite(+entry.start_time_s) ? +entry.start_time_s : 0;
+    const row = document.createElement('div');
+    row.className = 'dynms-cfg-row';
+    row.dataset.id = motor.id;
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:5px;font-size:12px';
+    row.innerHTML = `
+      <span style="flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis" title="${this._esc(motor.name)}"><strong>${this._esc(motor.name)}</strong>
+        <span style="color:var(--text-muted,#6d6d6d)">${motor.type === 'motor_synchronous' ? 'sync' : 'ind'}</span></span>
+      <select class="dynms-cfg-role">
+        <option value="starts">Starts @</option>
+        <option value="running">Already running</option>
+      </select>
+      <input class="dynms-cfg-t" type="number" min="0" step="0.1" value="${t}" style="width:66px" title="Start time (s)"><span class="dynms-cfg-u" style="color:var(--text-muted,#6d6d6d)">s</span>`;
+    row.querySelector('.dynms-cfg-role').value = role;
+    const sync = () => {
+      const running = row.querySelector('.dynms-cfg-role').value === 'running';
+      row.querySelector('.dynms-cfg-t').style.display = running ? 'none' : '';
+      row.querySelector('.dynms-cfg-u').style.display = running ? 'none' : '';
+    };
+    row.querySelector('.dynms-cfg-role').addEventListener('change', sync);
+    sync();
+    return row;
+  },
+
+  _readConfig() {
+    const rows = [...document.querySelectorAll('#dynms-cfg-list .dynms-cfg-row')];
+    return {
+      motors: rows.map(r => {
+        const running = r.querySelector('.dynms-cfg-role').value === 'running';
+        const t = running ? 0 : Math.max(0, parseFloat(r.querySelector('.dynms-cfg-t').value) || 0);
+        return { id: r.dataset.id, role: running ? 'running' : 'starts', start_time_s: t };
+      }),
+    };
+  },
+
+  async runConfigured() {
+    const schedule = this._readConfig();
+    AppState.dynamicMotorSchedule = schedule;
+    AppState.dirty = true;
+    const modal = document.getElementById('dynamic-motor-config-modal');
+    if (modal) modal.style.display = 'none';
+    const label = 'Running dynamic motor starting simulation…';
+    document.getElementById('status-info').textContent = label;
+    if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, label);
+    try {
+      const result = await API.runDynamicMotorStarting(schedule);
+      AppState.dynamicMotorResults = result;
+      if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
+      document.getElementById('status-info').textContent = 'Dynamic motor starting complete.';
+      this.show(result);
+    } catch (e) {
+      console.error('Dynamic motor starting error:', e);
+      document.getElementById('status-info').textContent = 'Dynamic motor starting failed.';
+      if (typeof showValidationModal === 'function') {
+        showValidationModal('Dynamic Motor Starting — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+      }
+    } finally {
+      if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
+    }
+  },
+
+  // ── Saved start schedules (persisted with the project) ─────────────
+  _cases() {
+    if (!Array.isArray(AppState.dynamicMotorCases)) AppState.dynamicMotorCases = [];
+    return AppState.dynamicMotorCases;
+  },
+
+  _caseSummary(sch) {
+    const ms = (sch && sch.motors) || [];
+    const known = new Set(this._motors().map(m => m.id));
+    const rel = ms.filter(m => m && known.has(m.id));
+    if (!rel.length) return 'no matching motors';
+    const starts = rel.filter(m => m.role !== 'running')
+      .sort((a, b) => (+a.start_time_s || 0) - (+b.start_time_s || 0));
+    const running = rel.filter(m => m.role === 'running');
+    const parts = starts.slice(0, 3).map(m => `${this._mname(m.id)}@${+m.start_time_s || 0}s`);
+    if (starts.length > 3) parts.push('…');
+    if (running.length) parts.push(`${running.length} running`);
+    return parts.join(', ');
+  },
+
+  _renderCasesBlock() {
+    const cases = this._cases();
+    const btn = 'font-size:11px;padding:2px 8px;cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit';
+    const rows = cases.length ? cases.map(c => `
+      <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+        <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis"><strong>${this._esc(c.name)}</strong>
+          <span style="color:var(--text-muted,#6d6d6d)"> — ${this._esc(this._caseSummary(c.schedule))}</span></span>
+        <button style="${btn}" class="dynms-case-load" data-id="${this._esc(c.id)}">Load</button>
+        <button style="${btn}" class="dynms-case-del" data-id="${this._esc(c.id)}" title="Delete schedule">✕</button>
+      </div>`).join('')
+      : '<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">No saved schedules yet — set start times below and Save.</div>';
+    return `<div style="margin-bottom:14px;border:1px solid var(--border-color,#d0d0d0);border-radius:6px;padding:8px 10px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px">Saved start schedules</div>
+      <div>${rows}</div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input id="dynms-case-name" type="text" placeholder="Name this schedule…" style="flex:1;font-size:12px;padding:3px 6px">
+        <button style="${btn}" id="dynms-case-save">Save current</button>
+      </div>
+    </div>`;
+  },
+
+  _wireCaseButtons() {
+    const b = document.getElementById('dynamic-motor-config-body');
+    const saveBtn = b.querySelector('#dynms-case-save');
+    if (saveBtn) saveBtn.addEventListener('click', () => this._saveCase());
+    b.querySelectorAll('.dynms-case-load').forEach(el =>
+      el.addEventListener('click', () => this._loadCase(el.dataset.id)));
+    b.querySelectorAll('.dynms-case-del').forEach(el =>
+      el.addEventListener('click', () => this._deleteCase(el.dataset.id)));
+  },
+
+  _saveCase() {
+    const b = document.getElementById('dynamic-motor-config-body');
+    const cases = this._cases();
+    const nameEl = b.querySelector('#dynms-case-name');
+    const name = (nameEl && nameEl.value || '').trim() || `Schedule ${cases.length + 1}`;
+    const schedule = this._readConfig();
+    const existing = cases.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) existing.schedule = schedule;
+    else cases.push({ id: 'dmc_' + Date.now(), name, schedule });
+    AppState.dirty = true;
+    AppState.dynamicMotorSchedule = schedule;
+    document.getElementById('status-info').textContent = `Saved start schedule “${name}”.`;
+    this.openConfig(schedule);   // re-render (updated list), keep the config
+  },
+
+  _loadCase(id) {
+    const c = this._cases().find(x => x.id === id);
+    if (!c) return;
+    AppState.dynamicMotorSchedule = c.schedule;
+    this.openConfig(c.schedule);
+    const nameEl = document.getElementById('dynms-case-name');
+    if (nameEl) nameEl.value = c.name;   // pre-fill so re-saving updates it
+  },
+
+  _deleteCase(id) {
+    const cases = this._cases();
+    const i = cases.findIndex(x => x.id === id);
+    if (i < 0) return;
+    const current = this._readConfig();   // preserve the in-progress form
+    cases.splice(i, 1);
+    AppState.dirty = true;
+    this.openConfig(current);
+  },
+
   _render(body) {
     const motors = (this._result && this._result.motors) || [];
     const warnings = (this._result && this._result.warnings) || [];

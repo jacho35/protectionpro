@@ -411,6 +411,28 @@ class TestSequencedStarting:
         a_solo = _by_name(run_dynamic_motor_starting(solo))["MotorA"]["min_v_bus_pu"]
         assert a_running < a_solo - 1e-3
 
+    def test_schedule_override_supersedes_props(self):
+        """The start-timeline modal sends a dynamicMotorSchedule that overrides
+        the motors' own dyn_role / start_time_s props: MotorB's props say start
+        at 0, but the schedule stages it at 3 s and MotorA as already-running."""
+        proj = _two_motor_project(b_over={"start_time_s": 0.0})
+        proj.dynamicMotorSchedule = {"motors": [
+            {"id": "motor_induction-1", "role": "running", "start_time_s": 0.0},
+            {"id": "motor_induction-2", "role": "starts", "start_time_s": 3.0},
+        ]}
+        res = _by_name(run_dynamic_motor_starting(proj))
+        assert res["MotorA"]["role"] == "running"
+        assert res["MotorA"]["sim_status"] == "running"
+        assert res["MotorB"]["role"] == "starts"
+        assert res["MotorB"]["start_time_s"] == 3.0
+
+    def test_no_schedule_falls_back_to_props(self):
+        """With no dynamicMotorSchedule, per-motor props still drive staging."""
+        res = _by_name(run_dynamic_motor_starting(
+            _two_motor_project(b_over={"start_time_s": 2.0})))
+        assert res["MotorB"]["start_time_s"] == 2.0
+        assert res["MotorA"]["start_time_s"] == 0.0
+
     def test_cross_bus_coupling(self):
         """Motors on two different LV buses fed from a common transformer still
         interact: starting both together sags each bus more than one alone."""

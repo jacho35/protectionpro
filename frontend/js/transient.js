@@ -401,6 +401,9 @@ const Transient = {
     if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, label);
     try {
       const result = await API.runTransientStability(d);
+      // Remember the disturbance spec on the result so the graphs can mark the
+      // event points (per-step for a sequence), surviving save/load.
+      result.__spec = d;
       AppState.stabilityResults = result;
       this.show(result);
       document.getElementById('status-info').textContent =
@@ -491,16 +494,52 @@ const Transient = {
         heads.map(h => `<th>${this._esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></details>`;
   },
 
+  // Vertical event lines for the time charts. Prefer the disturbance spec that
+  // produced this result (attached as __spec, so it survives save/load); a
+  // sequence yields one marker per timed step. Falls back to the last-run spec,
+  // then to parsing the backend event string for restored/legacy results.
   _eventMarkers(r, P) {
-    const d = this._result && AppState.stabilityResults && AppState.stabilityResults.__spec;
-    // fall back to remembered spec
-    const spec = this._last || {};
+    const spec = (r && r.__spec)
+      || (AppState.stabilityResults && AppState.stabilityResults.__spec)
+      || this._last || {};
     const marks = [];
-    if (r.event && /cleared at (\d+)/.test(r.event)) {
-      const ms = parseFloat(RegExp.$1);
-      marks.push({ t: ms / 1000, label: 'clear', color: P.inkSec, dashed: true });
+    const verb = { trip: 'open', close: 'close', load_step: 'load' };
+
+    if (spec.type === 'sequence' && Array.isArray(spec.steps) && spec.steps.length) {
+      spec.steps.forEach(s => {
+        if (!s || s.t == null) return;
+        let label = `${verb[s.action] || s.action} ${this._name(s.element)}`;
+        if (s.action === 'load_step' && s.delta_pct != null) {
+          label += ` ${s.delta_pct >= 0 ? '+' : ''}${s.delta_pct}%`;
+        }
+        marks.push({ t: +s.t, label, color: P.inkSec, dashed: true });
+      });
+      return marks;
+    }
+    if (spec.type === 'trip' && spec.time_s != null) {
+      marks.push({ t: +spec.time_s, label: 'trip ' + this._name(spec.element), color: P.inkSec, dashed: true });
+      return marks;
+    }
+    if (spec.type === 'load_step' && spec.time_s != null) {
+      marks.push({ t: +spec.time_s, label: 'load step', color: P.inkSec, dashed: true });
+      return marks;
+    }
+    // Fault: mark the clearing time (from the event string, else the spec).
+    if (r.event && /cleared at ([\d.]+)/.test(r.event)) {
+      marks.push({ t: parseFloat(RegExp.$1) / 1000, label: 'clear', color: P.inkSec, dashed: true });
+    } else if (spec.clear_time_s != null) {
+      marks.push({ t: +spec.clear_time_s, label: 'clear', color: P.inkSec, dashed: true });
     } else if (spec.time_s != null) {
-      marks.push({ t: spec.time_s, label: 'event', color: P.inkSec, dashed: true });
+      marks.push({ t: +spec.time_s, label: 'event', color: P.inkSec, dashed: true });
+    }
+    // Legacy/restored sequence with no spec: recover the "… @ Ns" times from the
+    // backend event string ("Sequence: open X @ 1s; shed Y @ 3s").
+    if (!marks.length && r.event && r.event.indexOf('@') >= 0) {
+      const re = /([^;:]+?)@\s*([\d.]+)\s*s/g;
+      let m;
+      while ((m = re.exec(r.event))) {
+        marks.push({ t: parseFloat(m[2]), label: m[1].trim(), color: P.inkSec, dashed: true });
+      }
     }
     return marks;
   },
@@ -579,11 +618,12 @@ const Transient = {
     if (yMin < 0 && yMax > 0) {
       g += `<line x1="${padL}" y1="${Y(0)}" x2="${W - padR}" y2="${Y(0)}" stroke="${P.axis}" stroke-width="1.2"/>`;
     }
-    (spec.markers || []).forEach(mk => {
+    // Cycle caption heights so closely-spaced sequence events don't collide.
+    (spec.markers || []).forEach((mk, mi) => {
       if (mk.t == null || mk.t < xMin || mk.t > xMax) return;
       const x = X(mk.t);
       g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${mk.color || P.tickText}" stroke-width="1" opacity="0.6"${mk.dashed ? ' stroke-dasharray="3 2"' : ''}/>`;
-      g += `<text x="${x + 3}" y="${padT + 9}" font-size="8" fill="${mk.color || P.tickText}">${this._esc(mk.label)}</text>`;
+      g += `<text x="${x + 3}" y="${padT + 9 + (mi % 3) * 9}" font-size="8" fill="${mk.color || P.tickText}">${this._esc(mk.label)}</text>`;
     });
     for (const s of spec.series) {
       const pts = s.values.map((v, i) => `${X(xs[i]).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');

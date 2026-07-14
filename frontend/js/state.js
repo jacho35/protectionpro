@@ -114,6 +114,14 @@ const AppState = {
   scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
   _scenarioNextId: 1,
 
+  // Study config persisted with the project (NOT results, so it survives
+  // topology edits — see clearResults). Transient-stability disturbance cases;
+  // dynamic-motor start schedule + named saved schedules. See transient.js /
+  // dynmotor.js.
+  stabilityCases: [],          // [{id, name, disturbance}]
+  dynamicMotorSchedule: null,  // {motors: [{id, role, start_time_s}]}
+  dynamicMotorCases: [],       // [{id, name, schedule}]
+
   // Component groups — reusable blocks
   groups: new Map(), // Map<groupId, {id, name, memberIds: Set<string>, collapsed: boolean}>
   _groupNextId: 1,
@@ -971,7 +979,9 @@ const AppState = {
     this.motorStartingResults = null;
     this.dynamicMotorResults = null;
     this.stabilityResults = null;
-    this.stabilityCases = [];  // saved transient-stability disturbance cases
+    // NB: stabilityCases / dynamicMotorCases are project config, NOT results —
+    // they must survive topology edits (clearResults runs on every mutation),
+    // so they are reset only in reset() / reloaded in fromJSON.
     this.dutyCheckResults = null;
     this.loadDiversityResults = null;
     this.groundingResults = null;
@@ -993,6 +1003,9 @@ const AppState = {
     this.nextId = 1;
     this.selectedIds.clear();
     this.clearResults();
+    this.stabilityCases = [];  // saved transient-stability disturbance cases
+    this.dynamicMotorSchedule = null;
+    this.dynamicMotorCases = [];
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;
@@ -1152,6 +1165,9 @@ const AppState = {
       dynamicMotorResults: this.dynamicMotorResults || undefined,
       stabilityResults: this.stabilityResults || undefined,
       stabilityCases: (this.stabilityCases && this.stabilityCases.length) ? this.stabilityCases : undefined,
+      dynamicMotorSchedule: (this.dynamicMotorSchedule && this.dynamicMotorSchedule.motors
+        && this.dynamicMotorSchedule.motors.length) ? this.dynamicMotorSchedule : undefined,
+      dynamicMotorCases: (this.dynamicMotorCases && this.dynamicMotorCases.length) ? this.dynamicMotorCases : undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
@@ -1440,6 +1456,9 @@ const AppState = {
     }
     this.faultedBusId = data.faultedBusId || null;
     this.stabilityCases = Array.isArray(data.stabilityCases) ? data.stabilityCases : [];
+    this.dynamicMotorSchedule = (data.dynamicMotorSchedule && Array.isArray(data.dynamicMotorSchedule.motors))
+      ? data.dynamicMotorSchedule : null;
+    this.dynamicMotorCases = Array.isArray(data.dynamicMotorCases) ? data.dynamicMotorCases : [];
     this.lightningRisk = data.lightningRisk || null;
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.dirty = false;
