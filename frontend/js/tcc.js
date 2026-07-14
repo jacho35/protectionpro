@@ -3454,17 +3454,47 @@ const TCC = {
       const devicesOnPaths = busDeviceMap.get(busId);
       if (!devicesOnPaths || devicesOnPaths.length === 0) continue;
 
+      // Per-device through-current from the fault study's branch contributions
+      // (keyed by component id, already at each element's own voltage). More
+      // accurate than referring the bus fault by voltage ratio — an upstream
+      // source only carries its share of the fault. Branch currents are for the
+      // fault type the study was run at, so use them only when their magnitude
+      // matches the requested type (else fall back to the referred bus current).
+      const branchA = new Map();
+      for (const br of (Array.isArray(busResult.branches) ? busResult.branches : [])) {
+        const a = (br.ik_ka || 0) * 1000;
+        if (a > 0 && br.element_id) branchA.set(br.element_id, Math.max(a, branchA.get(br.element_id) || 0));
+      }
+      let useBranch = false;
+      if (branchA.size) {
+        const maxBr = Math.max(...branchA.values());
+        const otherKA = (faultType === '3ph' ? (busResult.ik1 || 0) : (busResult.ik3 || 0)) * 1000;
+        useBranch = Math.abs(maxBr - faultCurrentA) <= Math.abs(maxBr - otherKA);
+      }
+
       // Compute trip time for each device at this fault current
       const deviceOps = [];
+      const seenDev = new Set();  // a device on several source paths appears once
       for (const entry of devicesOnPaths) {
         const dev = entry.device;
+        if (dev.id != null) {
+          if (seenDev.has(dev.id)) continue;
+          seenDev.add(dev.id);
+        }
         const isEarth = this._deviceElementClass(dev) === 'earth';
         // On a 3-phase fault, earth (50N/51N) elements see no balanced current.
         // On an SLG fault, phase elements see the line current and earth elements
         // see the residual — both at ik1 — so keep every device.
         if (faultType === '3ph' && isEarth) continue;
-        // Refer the bus fault current to the device's own voltage level
-        const currentA = this._referCurrent(faultCurrentA, busVkv, dev);
+        // Prefer the device's actual through-current (branch), else refer the
+        // bus fault current to the device's own voltage level.
+        let currentA = null;
+        if (useBranch) {
+          const key = (dev.deviceType === 'relay' || dev.deviceType === 'distance_relay')
+            ? (dev.trip_cb || dev.associated_ct) : dev.id;
+          if (key && branchA.has(key)) currentA = branchA.get(key);
+        }
+        if (currentA == null) currentA = this._referCurrent(faultCurrentA, busVkv, dev);
         const tripTime = this._deviceTripTime(dev, currentA);
         const operates = isFinite(tripTime) && tripTime > 0;
         // A CB (or a relay / distance relay that trips one) adds its breaker's
