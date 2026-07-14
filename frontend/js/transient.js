@@ -339,10 +339,12 @@ const Transient = {
       return;
     }
 
-    // Verdict banner
+    // Verdict banner. Instability is either loss of synchronism (rotor angles)
+    // or a frequency collapse / run-up (island frequency runs away though the
+    // machines stay in step) — name whichever applies.
     const stable = r.stable !== false;
     const col = stable ? '#2e7d32' : '#c62828';
-    const label = stable ? 'STABLE' : 'UNSTABLE — loss of synchronism';
+    const label = stable ? 'STABLE' : ('UNSTABLE — ' + this._esc(r.instability || 'loss of synchronism'));
     html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;padding:9px 13px;border-radius:6px;border:1px solid ${col};background:${col}14">
       <div><span style="font-weight:700;color:${col}">${label}</span>
         <span style="font-size:12px;color:var(--text-muted,#6d6d6d)"> · ${this._esc(r.event || '')}</span></div>
