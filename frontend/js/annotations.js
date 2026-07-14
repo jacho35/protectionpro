@@ -55,6 +55,54 @@ const Annotations = {
     stacks.set(comp.id, pos.y + this._lastBoxH + this._STACK_GAP);
   },
 
+  // Transparent device types a solid bus-link can pass through — mirrors the
+  // backend load-flow solid-link walk (loadflow.py: TRANSPARENT_TYPES).
+  _LF_TRANSPARENT: new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']),
+
+  _lfPassable(comp) {
+    if (!comp || !this._LF_TRANSPARENT.has(comp.type)) return false;
+    // An open CB/switch/fuse breaks the node — the two sides are then distinct.
+    return !(comp.props && comp.props.state === 'open');
+  },
+
+  // A distribution board wired straight onto a busbar (directly, or through a
+  // closed CB/switch/etc.) is the SAME electrical node as that bus — the backend
+  // ties them with a solid link, so they report an identical voltage. Drawing a
+  // LOAD FLOW badge on both makes the bus's result look shown twice. Return the
+  // set of distribution-board result ids whose badge should be suppressed
+  // because they are solid-linked to a `bus` that also has a load-flow result.
+  // Only distribution boards are suppressed — a genuine bus-coupler tie between
+  // two real `bus` components still shows both busbar voltages.
+  _lfRedundantDbBadges(pageComps, buses) {
+    const suppressed = new Set();
+    const adj = new Map();
+    const add = (a, b) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push(b); };
+    for (const w of AppState.wires.values()) {
+      if (pageComps.has(w.fromComponent) && pageComps.has(w.toComponent)) {
+        add(w.fromComponent, w.toComponent);
+        add(w.toComponent, w.fromComponent);
+      }
+    }
+    for (const dbId of Object.keys(buses)) {
+      const comp = pageComps.get(dbId);
+      if (!comp || comp.type !== 'distribution_board') continue;
+      const seen = new Set([dbId]);
+      const stack = [...(adj.get(dbId) || [])];
+      while (stack.length) {
+        const nid = stack.pop();
+        if (seen.has(nid)) continue;
+        seen.add(nid);
+        const n = pageComps.get(nid);
+        if (!n) continue;
+        if (n.type === 'bus' && buses[nid]) { suppressed.add(dbId); break; }
+        if (this._lfPassable(n)) {
+          for (const m of (adj.get(nid) || [])) if (!seen.has(m)) stack.push(m);
+        }
+      }
+    }
+    return suppressed;
+  },
+
   render() {
     if (!this.layer) return;
     let html = '';
@@ -80,9 +128,11 @@ const Annotations = {
 
     // Load flow annotations on buses
     if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.buses) {
+      const lfSuppressed = this._lfRedundantDbBadges(pageComps, AppState.loadFlowResults.buses);
       for (const [busId, result] of Object.entries(AppState.loadFlowResults.buses)) {
         const comp = pageComps.get(busId);
         if (!comp) continue;
+        if (lfSuppressed.has(busId)) continue;
         const key = `lf:${busId}`;
         const pos = this._badgePos(comp, key, -130, -10, stacks);
         html += this.renderLoadFlowBadge(pos.x, pos.y, result, key);

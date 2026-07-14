@@ -1522,8 +1522,13 @@ const Canvas = {
 
     // Also check bus voltages for under/over voltage
     if (AppState.loadFlowResults.buses) {
+      // A distribution board solid-linked to a bus repeats that bus's voltage —
+      // skip its flag so an out-of-range bus isn't flagged twice (see
+      // Annotations._lfRedundantDbBadges).
+      const lfSuppressed = Annotations._lfRedundantDbBadges(pageComps, AppState.loadFlowResults.buses);
       for (const [busId, result] of Object.entries(AppState.loadFlowResults.buses)) {
         if (result.voltage_pu >= 0.95 && result.voltage_pu <= 1.05) continue;
+        if (lfSuppressed.has(busId)) continue;
         const comp = pageComps.get(busId);
         if (!comp) continue;
 
