@@ -1084,6 +1084,57 @@ def _source_output_mva(comp):
     return 0.0, 0.0, 0.0, 0.0
 
 
+def connected_bus_loads_mw(project: ProjectData) -> dict:
+    """Per-bus local real load (MW), gathered exactly as ``run_load_flow`` does.
+
+    Returns ``{bus_id: p_mw}`` (buses with no local load are omitted). Shared by
+    the voltage-stability engine (total demand for the P-V x-axis) and the
+    contingency engine (load lost when a bus de-energizes), so both agree with
+    the solver's own load model. Synthetic load-terminal buses are included so a
+    load wired behind a cable is still counted; their id carries the synthetic
+    prefix (see ``is_synthetic_bus``).
+    """
+    project = insert_implicit_load_buses(project)
+    components = {c.id: c for c in project.components}
+    adjacency = {}
+    for w in project.wires:
+        adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
+        adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
+    buses = [c for c in project.components
+             if c.type in ("bus", "distribution_board")
+             and str(c.props.get("system", "ac")).lower() != "dc"]
+    loads = {}
+    for bus in buses:
+        p = 0.0
+        if bus.type == "distribution_board":
+            rated = bus.props.get("rated_kva", 100) / 1000
+            pf = bus.props.get("power_factor", 0.85)
+            df = bus.props.get("demand_factor", 1.0)
+            p += rated * pf * df
+        for comp in _find_components_at_bus(bus.id, adjacency, components):
+            if comp.type == "static_load":
+                rated = comp.props.get("rated_kva", 100) / 1000
+                pf = comp.props.get("power_factor", 0.85)
+                df = comp.props.get("demand_factor", 1.0)
+                p += rated * pf * df
+            elif comp.type == "motor_induction":
+                rated_kw = comp.props.get("rated_kw", 200)
+                eff = comp.props.get("efficiency", 0.93)
+                pf = comp.props.get("power_factor", 0.85)
+                df = comp.props.get("demand_factor", 1.0)
+                rated_mva = (rated_kw / (eff * pf * 1000) if pf > 0
+                             else rated_kw / (eff * 1000))
+                p += rated_mva * pf * df
+            elif comp.type == "motor_synchronous":
+                rated_kva = comp.props.get("rated_kva", 500)
+                pf = comp.props.get("power_factor", 0.9)
+                df = comp.props.get("demand_factor", 1.0)
+                p += (rated_kva / 1000) * pf * df
+        if abs(p) > 1e-12:
+            loads[bus.id] = p
+    return loads
+
+
 def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                   include_synthetic: bool = False) -> LoadFlowResults:
     """Run load flow analysis.

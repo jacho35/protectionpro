@@ -46,6 +46,8 @@ frontend/
     ├── tcc.js              # Time-current curve coordination plotting
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
+    ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
+    ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
@@ -60,6 +62,8 @@ backend/
 │   ├── fault.py            # IEC 60909 short-circuit (3-phase, SLG, LL, LLG)
 │   ├── loadflow.py         # Newton-Raphson & Gauss-Seidel solvers
 │   ├── loadflow_cases.py   # Load Flow Study Manager — run load flow across named network cases
+│   ├── voltage_stability.py # Steady-state voltage stability — P-V nose curves, Q-V reactive margin, loadability margin
+│   ├── contingency.py      # Contingency analysis (N-1 / N-2) — element-outage security screening
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -133,6 +137,8 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/fault` | Short-circuit | IEC 60909 |
 | `/api/analysis/loadflow` | Power flow | Newton-Raphson / Gauss-Seidel |
 | `/api/analysis/loadflow-cases` | Load flow across named full-snapshot cases | Load Flow Study Manager |
+| `/api/analysis/voltage-stability` | Steady-state voltage stability | P-V / Q-V continuation (loadability & collapse) |
+| `/api/analysis/contingency` | N-1 / N-2 security screening | Load-flow contingency analysis |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
@@ -208,6 +214,20 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Gauss-Seidel: simpler iteration, slower convergence
 - Transparent elements (CBs, switches, fuses) are collapsed — connected buses grouped
 - Outputs: bus voltages/angles, branch MW/MVAR flows, losses
+- The utility source is modelled as an **ideal infinite/swing bus** (held at 1.0 p.u.) — its `fault_mva` is *not* modelled in load flow, so loadability/voltage-collapse behaviour is set by the network impedance, not source strength
+- `connected_bus_loads_mw(project)` — public helper returning per-bus local real load (MW) using the engine's own bus/load walkers; reused by voltage stability and contingency so their demand accounting matches the solver
+
+### Voltage Stability (voltage_stability.py)
+- Steady-state (long-term) voltage stability — distinct from the time-domain transient-stability engine
+- **P-V (loadability)**: load-scaling continuation — all loads scaled by λ (constant power factor, via `demand_factor`), `run_load_flow` re-solved each step; the nose (max λ the solution exists for) is found by stepping λ up then **bisecting** the last-converged/first-failed bracket. Loadability margin = (λ_critical − 1) × 100 %; a stiff network that doesn't collapse within the λ cap reports the margin as a lower bound. Collapse = NR divergence, weakest bus below a floor, or an energized bus going dark
+- **Q-V (reactive margin)**: installs a fictitious synchronous condenser (P = 0, voltage-regulating) at the weakest/chosen bus, makes it a PV bus, sweeps its voltage setpoint high→low and records the reactive injection needed; the bottom of the curve (dQ/dV = 0) is the reactive margin. Skipped for source-controlled buses
+- Outputs: λ_critical, loadability margin %, per-bus P-V curves, min-V envelope, critical bus & nose voltage, Q-V curve + margin. Results are on-demand (not persisted)
+
+### Contingency Analysis (contingency.py)
+- N-1 (single outage) and optional N-2 (pairs) security screening; each contingency removes the element(s) and re-solves `run_load_flow` (never raises — mirrors the Load Flow Study Manager snapshot approach)
+- Outageable set: series branches (cables/transformers) + sources (utility/generator/solar/wind/battery); transparent devices and passive loads are not outaged
+- Flags per outage: thermal overloads (loading > limit), bus under/over-voltage (band configurable), and loss of supply (de-energized buses + MW lost, via `connected_bus_loads_mw`)
+- N-2 pairs are capped (default 400) with skipped pairs reported; results ranked worst-first (loss-of-supply > violations > secure). A network is **N-1 secure** when every single outage is violation-free. Results are on-demand (not persisted)
 
 ### Dynamic Motor Starting (dynamic_motor_starting.py)
 - Time-domain acceleration: integrates 2H·dω/dt = T_e − T_L (RK2)

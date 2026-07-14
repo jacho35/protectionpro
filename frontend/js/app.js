@@ -1118,6 +1118,50 @@ document.addEventListener('DOMContentLoaded', () => {
   // The setup modal deliberately does NOT close on an outside click — that would
   // discard the disturbance configuration. Use Cancel or the ✕ button.
 
+  // ── Voltage Stability (P-V / Q-V) ──
+  document.getElementById('btn-voltage-stability').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running voltage stability.';
+      return;
+    }
+    VoltageStability.openConfig();
+  });
+  document.getElementById('btn-vstab-run').addEventListener('click', () => VoltageStability.runConfigured());
+  document.getElementById('btn-vstab-cancel').addEventListener('click', () => {
+    document.getElementById('vstab-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-vstab-config').addEventListener('click', () => {
+    document.getElementById('vstab-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-vstab').addEventListener('click', () => {
+    document.getElementById('vstab-modal').style.display = 'none';
+  });
+  document.getElementById('vstab-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'vstab-modal') e.target.style.display = 'none';
+  });
+
+  // ── Contingency Analysis (N-1 / N-2) ──
+  document.getElementById('btn-contingency').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running contingency analysis.';
+      return;
+    }
+    Contingency.openConfig();
+  });
+  document.getElementById('btn-contingency-run').addEventListener('click', () => Contingency.runConfigured());
+  document.getElementById('btn-contingency-cancel').addEventListener('click', () => {
+    document.getElementById('contingency-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-contingency-config').addEventListener('click', () => {
+    document.getElementById('contingency-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-contingency').addEventListener('click', () => {
+    document.getElementById('contingency-modal').style.display = 'none';
+  });
+  document.getElementById('contingency-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'contingency-modal') e.target.style.display = 'none';
+  });
+
   // ── Equipment Duty Check ──
   document.getElementById('btn-duty-check').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -3225,6 +3269,10 @@ document.addEventListener('DOMContentLoaded', () => {
       icon: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>' },
     { id: 'transient-stability', label: 'Transient Stability', category: 'Studies', btnId: 'btn-transient-stability',
       icon: '<path d="M2 12c1.5 0 2-8 4-8s2 10 4 10 2-6 4-6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>' },
+    { id: 'voltage-stability', label: 'Voltage Stability (P-V / Q-V)', category: 'Studies', btnId: 'btn-voltage-stability',
+      icon: '<path d="M2 3c3 0 4.5 4 6 6s2.2 3 3 3c1.5 0 2-2 3-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11" cy="12" r="1.1" fill="currentColor"/>' },
+    { id: 'contingency', label: 'Contingency (N-1 / N-2)', category: 'Studies', btnId: 'btn-contingency',
+      icon: '<path d="M8 2l6 11H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor"/>' },
     { id: 'duty-check', label: 'Duty Check', category: 'Studies', btnId: 'btn-duty-check',
       icon: '<path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
     { id: 'load-diversity', label: 'Load Diversity', category: 'Studies', btnId: 'btn-load-diversity',
