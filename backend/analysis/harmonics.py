@@ -320,7 +320,7 @@ def run_harmonics(project, method: str = "newton_raphson"):
         lf = _lf.run_load_flow(project, method, include_synthetic=True)
         fundamental_converged = bool(lf.converged)
         for bid, b in (lf.buses or {}).items():
-            v1[bid] = abs(b.voltage_pu) if getattr(b, "voltage_pu", None) else 1.0
+            v1[bid] = float(abs(b.voltage_pu)) if getattr(b, "voltage_pu", None) else 1.0
     except Exception:
         fundamental_converged = False
 
@@ -430,14 +430,14 @@ def run_harmonics(project, method: str = "newton_raphson"):
                 warnings.append(f"Harmonic order {h}: singular network, skipped.")
                 continue
         for b in buses:
-            bus_ihd[b.id][h] = abs(Vh[bus_idx[b.id]])
+            bus_ihd[b.id][h] = float(abs(Vh[bus_idx[b.id]]))
         if pcc_bus is not None:
             # harmonic current into the source shunt at the PCC
             ys = complex(0, 0)
             for comp in _lf._find_components_at_bus(pcc_bus, adjacency, components):
                 if comp.type in ("utility", "generator"):
                     ys += _shunt_admittance_at_h(comp, base_mva, h)
-            pcc_i_h[h] = abs(Vh[bus_idx[pcc_bus]] * ys)
+            pcc_i_h[h] = float(abs(Vh[bus_idx[pcc_bus]] * ys))
 
     # 5. Per-bus THD_V + IEEE 519 voltage compliance.
     bus_results = []
@@ -450,15 +450,15 @@ def run_harmonics(project, method: str = "newton_raphson"):
         ihd = {}
         ss = 0.0
         for h, vmag in bus_ihd[b.id].items():
-            pct = 100 * vmag / vf if vf > 0 else 0.0
+            pct = float(100 * vmag / vf) if vf > 0 else 0.0
             ihd[str(h)] = round(pct, 3)
             ss += pct * pct
         thd = math.sqrt(ss)
         v_kv = b.props.get("voltage_kv", 11) or 11
         ihd_lim, thd_lim = _voltage_limits(v_kv)
-        max_ihd = max(ihd.values(), default=0.0)
-        compliant = thd <= thd_lim + 1e-6 and max_ihd <= ihd_lim + 1e-6
-        overall_compliant = overall_compliant and compliant
+        max_ihd = float(max(ihd.values(), default=0.0))
+        compliant = bool(thd <= thd_lim + 1e-6 and max_ihd <= ihd_lim + 1e-6)
+        overall_compliant = bool(overall_compliant and compliant)
         bus_results.append({
             "id": b.id, "name": b.props.get("name", b.id),
             "voltage_kv": v_kv, "v1_pu": round(vf, 4),
@@ -481,8 +481,8 @@ def run_harmonics(project, method: str = "newton_raphson"):
         v_kv = pb.props.get("voltage_kv", 11) if pb else 11
         pcc_name = pb.props.get("name", pcc_bus) if pb else pcc_bus
         tdd_lim = _tdd_limit(isc_il, v_kv)
-        i_compliant = tdd <= tdd_lim + 1e-6
-        overall_compliant = overall_compliant and i_compliant
+        i_compliant = bool(tdd <= tdd_lim + 1e-6)
+        overall_compliant = bool(overall_compliant and i_compliant)
         pcc = {
             "bus_id": pcc_bus, "name": pcc_name, "voltage_kv": v_kv,
             "i_tdd_pct": round(tdd, 2), "isc_il": round(isc_il, 1),
