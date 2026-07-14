@@ -120,6 +120,8 @@ const LFStudy = {
       #lf-study-body .lf-cmp-table th{background:var(--bg-secondary,#f4f4f7);vertical-align:top}
       #lf-study-body .lf-section{font-weight:700;background:var(--bg-secondary,#f4f4f7)}
       #lf-study-body .lf-note{font-size:11px;color:var(--text-muted,#6d6d6d);margin:8px 0 0}
+      #lf-study-body .lf-desc{width:100%;box-sizing:border-box;margin:0 0 10px;font-size:12px;font-family:inherit;resize:vertical;padding:5px 7px;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:var(--bg-primary,#fff);color:inherit}
+      #lf-study-body .lf-th-desc{font-weight:400;font-size:10px;color:var(--text-muted,#6d6d6d);white-space:normal;max-width:150px;margin:2px 0}
     </style>`;
 
     // Toolbar
@@ -137,7 +139,7 @@ const LFStudy = {
     html += '<div class="lf-chips">';
     html += `<button class="lf-chip${this._activeCaseId === '__current__' ? ' active' : ''}" data-case="__current__">Current network</button>`;
     cases.forEach(c => {
-      html += `<button class="lf-chip${this._activeCaseId === c.id ? ' active' : ''}" data-case="${this._esc(c.id)}">${this._esc(c.name)}</button>`;
+      html += `<button class="lf-chip${this._activeCaseId === c.id ? ' active' : ''}" data-case="${this._esc(c.id)}"${c.description ? ` title="${this._esc(c.description)}"` : ''}>${this._esc(c.name)}</button>`;
     });
     html += `<button class="lf-chip" id="lf-new">+ New from current</button>`;
     html += '</div>';
@@ -155,6 +157,11 @@ const LFStudy = {
       html += `<span style="font-size:12px;align-self:center;color:var(--text-muted,#6d6d6d)">The live network (read-only here). Base MVA ${this._esc(AppState.baseMVA)}. Create a case to edit attributes.</span>`;
     }
     html += '</div>';
+
+    // Case description (saved cases only) — a brief note on what this case represents
+    if (active) {
+      html += `<textarea id="lf-desc" class="lf-desc" rows="2" placeholder="Describe this case — what changed and why (e.g. “Summer peak: TX1 tap +5%, feeder F2 out for maintenance”)">${this._esc(active.description || '')}</textarea>`;
+    }
 
     // Attribute grid
     html += `<div class="lf-grid-scroll">${this._renderGrid()}</div>`;
@@ -232,7 +239,10 @@ const LFStudy = {
     ];
 
     let html = '<div class="lf-type-title">Comparison</div><div class="lf-results-scroll"><table class="lf-cmp-table"><thead><tr><th>Metric</th>' +
-      res.map(r => `<th>${this._esc(r.name)}<br><button class="lf-btn lf-show" data-id="${this._esc(r.id)}">Show on diagram</button></th>`).join('') +
+      res.map(r => {
+        const d = this._caseDesc(r.id);
+        return `<th>${this._esc(r.name)}${d ? `<div class="lf-th-desc">${this._esc(d)}</div>` : ''}<br><button class="lf-btn lf-show" data-id="${this._esc(r.id)}">Show on diagram</button></th>`;
+      }).join('') +
       '</tr></thead><tbody>';
 
     metricRows.forEach(([label, fn]) => {
@@ -281,6 +291,13 @@ const LFStudy = {
     return bid;
   },
 
+  // Description of a run result's originating case (Current network has none).
+  _caseDesc(id) {
+    if (id === '__current__') return '';
+    const c = this._cases().find(x => x.id === id);
+    return (c && c.description) || '';
+  },
+
   // ── Event wiring ───────────────────────────────────────────────────
   _wire(body) {
     const $ = sel => body.querySelector(sel);
@@ -303,6 +320,11 @@ const LFStudy = {
       const v = parseFloat(baseMva.value);
       if (Number.isFinite(v) && v > 0) { c.baseMVA = v; AppState.dirty = true; }
       else baseMva.value = c.baseMVA != null ? c.baseMVA : AppState.baseMVA;
+    });
+    const desc = $('#lf-desc');
+    if (desc) desc.addEventListener('change', () => {
+      const c = this._activeCase();
+      if (c) { c.description = desc.value; AppState.dirty = true; }
     });
     const rename = $('#lf-rename');
     if (rename) rename.addEventListener('click', () => this._rename(body));
@@ -352,7 +374,7 @@ const LFStudy = {
     const snap = this._snapshotCurrent();
     const cases = this._cases();
     const id = 'lfc_' + Date.now();
-    cases.push({ id, name: `Case ${cases.length + 1}`, baseMVA: snap.baseMVA,
+    cases.push({ id, name: `Case ${cases.length + 1}`, description: '', baseMVA: snap.baseMVA,
                  loadFlowMethod: null, nextId: snap.nextId,
                  components: snap.components, wires: snap.wires });
     AppState.dirty = true;
@@ -372,7 +394,7 @@ const LFStudy = {
     if (!c) return;
     const cases = this._cases();
     const id = 'lfc_' + Date.now();
-    cases.push({ id, name: `${c.name} (copy)`, baseMVA: c.baseMVA,
+    cases.push({ id, name: `${c.name} (copy)`, description: c.description || '', baseMVA: c.baseMVA,
                  loadFlowMethod: c.loadFlowMethod || null, nextId: c.nextId,
                  components: JSON.parse(JSON.stringify(c.components || [])),
                  wires: JSON.parse(JSON.stringify(c.wires || [])) });
