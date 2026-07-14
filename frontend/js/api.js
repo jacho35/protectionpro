@@ -151,6 +151,17 @@ const API = {
     return this.request('/analysis/dynamic-motor-starting', 'POST', data);
   },
 
+  // Run load flow across several named study cases (Load Flow Study Manager).
+  // The request body is the live project (the implicit "Current network" case)
+  // plus the saved cases; each case carries its own full network snapshot.
+  async runLoadFlowCases(cases, method = 'newton_raphson', includeCurrent = true) {
+    const data = AppState.toJSON();
+    data.loadFlowMethod = method;
+    data.cases = cases;
+    data.includeCurrent = includeCurrent;
+    return this.request('/analysis/loadflow-cases', 'POST', data);
+  },
+
   // Run classical transient stability (time-domain rotor angle)
   async runTransientStability(disturbance) {
     const data = AppState.toJSON();

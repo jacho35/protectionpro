@@ -121,6 +121,7 @@ const AppState = {
   stabilityCases: [],          // [{id, name, disturbance}]
   dynamicMotorSchedule: null,  // {motors: [{id, role, start_time_s}]}
   dynamicMotorCases: [],       // [{id, name, schedule}]
+  loadFlowCases: [],           // [{id, name, baseMVA, loadFlowMethod, components, wires}] — Load Flow Study Manager
 
   // Component groups — reusable blocks
   groups: new Map(), // Map<groupId, {id, name, memberIds: Set<string>, collapsed: boolean}>
@@ -841,6 +842,45 @@ const AppState = {
     return true;
   },
 
+  // Apply a Load Flow Study case snapshot onto the live network — a full
+  // restore of topology + attributes (mirrors loadScenario's full branch),
+  // preserving current device names by id. Used by the Study Manager's
+  // "Apply to network". loadFlowMethod is a per-run choice, not a live field,
+  // so it is not applied here; baseMVA is.
+  applyLoadFlowCase(caseObj) {
+    if (!caseObj || !Array.isArray(caseObj.components)) return false;
+    this.selectedIds.clear();
+    this.clearResults();
+    const currentNames = new Map();
+    for (const [id, c] of this.components) {
+      if (c.props && c.props.name != null) currentNames.set(id, c.props.name);
+    }
+    this.components.clear();
+    this.wires.clear();
+    for (const c of caseObj.components) {
+      const copy = JSON.parse(JSON.stringify(c));
+      if (currentNames.has(c.id)) copy.props.name = currentNames.get(c.id);
+      this.components.set(c.id, copy);
+    }
+    for (const w of (caseObj.wires || [])) {
+      this.wires.set(w.id, JSON.parse(JSON.stringify(w)));
+    }
+    if (Number.isFinite(caseObj.nextId)) {
+      this.nextId = caseObj.nextId;
+    } else {
+      let maxN = 0;
+      for (const id of this.components.keys()) {
+        const m = /(\d+)$/.exec(id);
+        if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+      }
+      this.nextId = Math.max(this.nextId, maxN + 1);
+    }
+    if (caseObj.baseMVA != null) this.baseMVA = caseObj.baseMVA;
+    this._reconcileGroupsAndPages();
+    this.dirty = true;
+    return true;
+  },
+
   // ── Component Grouping ──
 
   createGroup(name) {
@@ -979,9 +1019,9 @@ const AppState = {
     this.motorStartingResults = null;
     this.dynamicMotorResults = null;
     this.stabilityResults = null;
-    // NB: stabilityCases / dynamicMotorCases are project config, NOT results —
-    // they must survive topology edits (clearResults runs on every mutation),
-    // so they are reset only in reset() / reloaded in fromJSON.
+    // NB: stabilityCases / dynamicMotorCases / loadFlowCases are project config,
+    // NOT results — they must survive topology edits (clearResults runs on every
+    // mutation), so they are reset only in reset() / reloaded in fromJSON.
     this.dutyCheckResults = null;
     this.loadDiversityResults = null;
     this.groundingResults = null;
@@ -1006,6 +1046,7 @@ const AppState = {
     this.stabilityCases = [];  // saved transient-stability disturbance cases
     this.dynamicMotorSchedule = null;
     this.dynamicMotorCases = [];
+    this.loadFlowCases = [];   // saved load-flow study cases
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;
@@ -1168,6 +1209,7 @@ const AppState = {
       dynamicMotorSchedule: (this.dynamicMotorSchedule && this.dynamicMotorSchedule.motors
         && this.dynamicMotorSchedule.motors.length) ? this.dynamicMotorSchedule : undefined,
       dynamicMotorCases: (this.dynamicMotorCases && this.dynamicMotorCases.length) ? this.dynamicMotorCases : undefined,
+      loadFlowCases: (this.loadFlowCases && this.loadFlowCases.length) ? this.loadFlowCases : undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
@@ -1459,6 +1501,7 @@ const AppState = {
     this.dynamicMotorSchedule = (data.dynamicMotorSchedule && Array.isArray(data.dynamicMotorSchedule.motors))
       ? data.dynamicMotorSchedule : null;
     this.dynamicMotorCases = Array.isArray(data.dynamicMotorCases) ? data.dynamicMotorCases : [];
+    this.loadFlowCases = Array.isArray(data.loadFlowCases) ? data.loadFlowCases : [];
     this.lightningRisk = data.lightningRisk || null;
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.dirty = false;

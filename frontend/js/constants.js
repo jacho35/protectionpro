@@ -2644,3 +2644,31 @@ const COMPONENT_DEFS = {
     ],
   },
 };
+
+// Component attributes that affect a (balanced) load-flow solution, per type,
+// used by the Load Flow Study Manager (lfstudy.js) to build its editable
+// attribute grid. Each key is resolved to its field descriptor (label / type /
+// unit / options / min / max / step) in COMPONENT_DEFS[type].fields at render
+// time, so labels and input kinds stay in sync with the properties panel.
+const LF_ATTRS = {
+  utility: ['supply_capacity_mva', 'allow_export', 'dispatch_priority', 'fault_mva'],
+  generator: ['rated_mva', 'power_factor', 'dispatch_priority', 'dispatch_mode',
+              'min_load_pct', 'gen_control', 'start_threshold_pct', 'voltage_setpoint_pu'],
+  solar_pv: ['rated_kw', 'num_inverters', 'inverter_eff', 'power_factor', 'irradiance_pct',
+             'pv_array_mode', 'dispatch_priority', 'dispatch_mode', 'battery_mode',
+             'battery_soc_pct', 'battery_max_discharge_kw', 'battery_max_charge_kw'],
+  wind_turbine: ['rated_mva', 'num_turbines', 'power_factor', 'wind_speed_pct',
+                 'dispatch_priority', 'dispatch_mode'],
+  battery: ['rated_kva', 'battery_kwh', 'battery_mode', 'battery_soc_pct', 'battery_dod_pct',
+            'battery_max_charge_kw', 'battery_max_discharge_kw', 'dispatch_priority'],
+  bus: ['system', 'voltage_kv', 'bus_type'],
+  distribution_board: ['voltage_kv', 'rated_kva', 'power_factor', 'demand_factor'],
+  transformer: ['rated_mva', 'z_percent', 'x_r_ratio', 'voltage_hv_kv', 'voltage_lv_kv', 'tap_percent'],
+  cable: ['voltage_kv', 'r_per_km', 'x_per_km', 'length_km', 'num_parallel', 'rated_amps'],
+  static_load: ['rated_kva', 'power_factor', 'demand_factor'],
+  motor_induction: ['rated_kw', 'efficiency', 'power_factor', 'demand_factor'],
+  motor_synchronous: ['rated_kva', 'power_factor', 'demand_factor'],
+  capacitor_bank: ['rated_kvar'],
+  cb: ['state'],
+  switch: ['state'],
+};

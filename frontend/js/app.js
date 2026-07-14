@@ -1077,6 +1077,21 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('dynamic-motor-config-modal').style.display = 'none';
   });
 
+  // ── Load Flow Study Manager ──
+  document.getElementById('btn-lf-study').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running a load flow study.';
+      return;
+    }
+    LFStudy.openManager();
+  });
+  document.getElementById('btn-close-lf-study').addEventListener('click', () => {
+    document.getElementById('lf-study-modal').style.display = 'none';
+  });
+  document.getElementById('lf-study-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'lf-study-modal') e.target.style.display = 'none';
+  });
+
   // ── Transient Stability ──
   document.getElementById('btn-transient-stability').addEventListener('click', () => {
     if (AppState.components.size === 0) {
