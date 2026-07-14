@@ -576,6 +576,34 @@ const Symbols = {
       </g>`;
   },
 
+  autotransformer(w, h, comp) {
+    // IEC autotransformer: a single winding (one circle) tapped between the
+    // HV (series) terminal and the LV (common) terminal, with a diagonal
+    // arrow marking the tap. A 3-winding unit adds a delta tertiary stub.
+    const r = w * 0.34;
+    const is3w = comp && comp.props && (Number(comp.props.windings) === 3);
+    const regulating = comp && comp.props && comp.props.tap_mode === 'regulating';
+    const ax = r * 0.7;
+    const arrow = `<line x1="${-ax}" y1="${ax}" x2="${ax}" y2="${-ax}"/>`
+      + (regulating ? `<path d="M ${ax - 5} ${-ax + 1} L ${ax} ${-ax} L ${ax - 1} ${-ax + 5} Z" fill="currentColor"/>` : '');
+    let tertiary = '';
+    if (is3w) {
+      tertiary = `
+        <line x1="${r}" y1="0" x2="${w / 2}" y2="0"/>
+        <path d="M ${w / 2} -4 L ${w / 2 + 7} 0 L ${w / 2} 4 Z" fill="none"/>`;
+    }
+    return `
+      <g class="symbol-autotransformer">
+        <circle cx="0" cy="0" r="${r}" fill="var(--bg-primary, #fff)"/>
+        ${arrow}
+        <line x1="0" y1="${-r}" x2="0" y2="${-h / 2}"/>
+        <line x1="0" y1="${r}" x2="0" y2="${h / 2}"/>
+        ${tertiary}
+        <text x="${-w / 2 - 2}" y="${-r + 6}" font-size="8" fill="#888" font-family="sans-serif" text-anchor="end">HV</text>
+        <text x="${-w / 2 - 2}" y="${r}" font-size="8" fill="#888" font-family="sans-serif" text-anchor="end">LV</text>
+      </g>`;
+  },
+
   vfd(w, h, comp) {
     // IEC-style power-electronic converter: a square box with a diagonal
     // (adjustable) line and AC~ / ~AC markings — the drive rectifies then

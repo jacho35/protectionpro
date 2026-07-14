@@ -571,7 +571,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
         v_next = v_kv
         if comp.type == "bus":
             v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
-        elif comp.type == "transformer":
+        elif comp.type in ("transformer", "autotransformer"):
             z_element = _transformer_impedance(comp, base_mva)
             v_next = _transformer_far_voltage(comp, v_kv)
         elif comp.type == "cable":
@@ -669,7 +669,7 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
             if comp.type == "bus":
                 current_voltage = comp.props.get("voltage_kv", current_voltage)
                 trail_voltages[elem_id] = current_voltage
-            elif comp.type == "transformer":
+            elif comp.type in ("transformer", "autotransformer"):
                 # Determine which winding faces the fault side vs the source side
                 hv = comp.props.get("voltage_hv_kv", 11)
                 lv = comp.props.get("voltage_lv_kv", 0.4)
@@ -1067,6 +1067,20 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                     if neighbor_id != bus_id or comp_id == bus_id:
                         walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited, v_far)
             # else far_side == 'blocked': ungrounded star, no Z0 path
+            return
+
+        if comp.type == "autotransformer":
+            # Autotransformer: the series + common winding form a metallic
+            # connection, so zero-sequence passes HV↔LV (unlike a two-winding
+            # transformer, which needs a grounded-star/delta path). Screening
+            # model — Z0 ≈ the positive-sequence impedance, continue through
+            # it with the winding voltage transformation.
+            z0_element = _transformer_impedance(comp, base_mva)
+            v_far = _transformer_far_voltage(comp, v_kv)
+            new_trail = trail + [f"AutoXfmr '{_comp_name(comp)}' (Z0≈{abs(z0_element):.4f})"]
+            for neighbor_id, _lp, _ in adjacency.get(comp_id, []):
+                if neighbor_id != bus_id or comp_id == bus_id:
+                    walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited, v_far)
             return
 
         if comp.type == "cable":
@@ -1717,7 +1731,7 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
         # zone for cable per-unit conversion ([EE-12])
         z_element = complex(0, 0)
         v_next = v_kv
-        if comp.type == "transformer":
+        if comp.type in ("transformer", "autotransformer"):
             z_element = _transformer_impedance(comp, base_mva)
             v_next = _transformer_far_voltage(comp, v_kv)
         elif comp.type == "cable":

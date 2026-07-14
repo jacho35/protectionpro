@@ -2394,3 +2394,105 @@ class TestHarmonics:
         proj.components = [c for c in proj.components if c.type != "vfd"]
         res = run_harmonics(proj)
         assert res["note"] and res["vfd_sources"] == []
+
+
+# ── Autotransformer (2W & 3W, OLTC regulation) ───────────────────────────
+
+
+class TestAutotransformer:
+    """Autotransformer load-flow branch, OLTC tap regulation, 3-winding star
+    expansion, and fault-path participation."""
+
+    def _2w(self, tap_mode="fixed", tap=0.0, vtarget=1.0, load_kva=60000.0):
+        comps = [
+            _comp("util", "utility", {"voltage_kv": 132, "fault_mva": 5000, "x_r_ratio": 15}),
+            _comp("bhv", "bus", {"voltage_kv": 132, "name": "HV"}),
+            _comp("at", "autotransformer",
+                  {"windings": 2, "rated_mva": 100, "voltage_hv_kv": 132, "voltage_lv_kv": 66,
+                   "z_percent": 8, "x_r_ratio": 30, "tap_mode": tap_mode, "tap_percent": tap,
+                   "v_target_pu": vtarget, "regulated_side": "lv",
+                   "tap_min_pct": -15, "tap_max_pct": 15, "tap_step_pct": 1.25}),
+            _comp("blv", "bus", {"voltage_kv": 66, "name": "LV"}),
+            _comp("load", "static_load", {"rated_kva": load_kva, "power_factor": 0.9, "voltage_kv": 66}),
+        ]
+        wires = [
+            _wire("w1", "util", "bhv", "out", "at_0"),
+            _wire("w2", "bhv", "at", "at_1", "primary"),
+            _wire("w3", "at", "blv", "secondary", "at_0"),
+            _wire("w4", "blv", "load", "at_1", "in"),
+        ]
+        return ProjectData(projectName="at2w", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_2w_behaves_as_tapped_branch(self):
+        """A 2-winding autotransformer carries load-flow current with a voltage
+        drop set by its impedance (like a two-winding transformer branch)."""
+        res = run_load_flow(self._2w(tap=0.0))
+        assert res.converged
+        v_lv = abs(res.buses["blv"].voltage_pu)
+        assert 0.90 < v_lv < 0.99          # loaded LV sags below 1.0
+
+    def test_oltc_regulates_to_target(self):
+        """An OLTC autotransformer raises the tap changer to hold its LV bus at
+        the target voltage, versus the same unit with a fixed nominal tap."""
+        fixed = run_load_flow(self._2w("fixed", 0.0))
+        reg = run_load_flow(self._2w("regulating", 0.0, vtarget=1.0))
+        v_fixed = abs(fixed.buses["blv"].voltage_pu)
+        v_reg = abs(reg.buses["blv"].voltage_pu)
+        assert v_reg > v_fixed                       # OLTC boosted the voltage
+        assert abs(v_reg - 1.0) <= 0.01              # within ~half a tap step
+
+    def test_2w_fault_propagates(self):
+        """Fault current propagates through a 2-winding autotransformer, with
+        the HV bus reproducing the utility level and the LV reduced by the
+        through-impedance."""
+        proj = self._2w()
+        proj.components = [c for c in proj.components if c.type != "static_load"]
+        proj.wires = [w for w in proj.wires if w.toComponent != "load"]
+        res = run_fault_analysis(proj)
+        ik_hv = res.buses["bhv"].ik3
+        ik_lv = res.buses["blv"].ik3
+        assert ik_hv == pytest.approx(5000.0 / (math.sqrt(3) * 132), rel=0.02)
+        assert 0 < ik_lv < ik_hv                     # AT impedance limits LV
+
+    def test_3w_star_expansion_energises_all_windings(self):
+        """A 3-winding autotransformer is expanded into a star node + three
+        legs; all three real buses (HV/LV/TV) solve and are energised, with the
+        tertiary sitting deeper in the impedance than the LV."""
+        comps = [
+            _comp("util", "utility", {"voltage_kv": 132, "fault_mva": 5000, "x_r_ratio": 15}),
+            _comp("bhv", "bus", {"voltage_kv": 132, "name": "HV"}),
+            _comp("at", "autotransformer",
+                  {"windings": 3, "rated_mva": 100, "voltage_hv_kv": 132, "voltage_lv_kv": 66,
+                   "voltage_tv_kv": 11, "z_percent": 10, "z_ht_percent": 26, "z_lt_percent": 16,
+                   "x_r_ratio": 30, "tap_percent": 0}),
+            _comp("blv", "bus", {"voltage_kv": 66, "name": "LV"}),
+            _comp("btv", "bus", {"voltage_kv": 11, "name": "TV"}),
+            _comp("llv", "static_load", {"rated_kva": 40000, "power_factor": 0.9, "voltage_kv": 66}),
+            _comp("ltv", "static_load", {"rated_kva": 10000, "power_factor": 0.9, "voltage_kv": 11}),
+        ]
+        wires = [
+            _wire("w1", "util", "bhv", "out", "at_0"),
+            _wire("w2", "bhv", "at", "at_1", "primary"),
+            _wire("w3", "at", "blv", "secondary", "at_0"),
+            _wire("w4", "at", "btv", "tertiary", "at_0"),
+            _wire("w5", "blv", "llv", "at_1", "in"),
+            _wire("w6", "btv", "ltv", "at_1", "in"),
+        ]
+        proj = ProjectData(projectName="at3w", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        res = run_load_flow(proj)
+        assert res.converged
+        for bid in ("bhv", "blv", "btv"):
+            assert res.buses[bid].energized
+        assert abs(res.buses["bhv"].voltage_pu) == pytest.approx(1.0, abs=0.02)
+        assert abs(res.buses["btv"].voltage_pu) < abs(res.buses["blv"].voltage_pu) + 1e-6
+
+    def test_star_impedance_decomposition(self):
+        """Star-equivalent legs satisfy Z_H+Z_L = Z_HL etc. (the defining
+        pair-sum identity of the three-winding T model)."""
+        from backend.analysis.loadflow import _star_impedances_pct
+        z_h, z_l, z_t = _star_impedances_pct(10.0, 26.0, 16.0)
+        assert z_h + z_l == pytest.approx(10.0)      # Z_HL
+        assert z_h + z_t == pytest.approx(26.0)      # Z_HT
+        assert z_l + z_t == pytest.approx(16.0)      # Z_LT

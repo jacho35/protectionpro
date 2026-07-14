@@ -60,7 +60,7 @@ def _find_bus_paths(comp_id, adjacency, components, bus_of):
     Stops at bus boundaries — does not walk past a bus."""
     visited = {comp_id}
     start_comp = components.get(comp_id)
-    start_path = [start_comp] if start_comp and start_comp.type in ("cable", "transformer") else []
+    start_path = [start_comp] if start_comp and start_comp.type in ("cable", "transformer", "autotransformer") else []
 
     queue = [(nid, list(start_path)) for nid in adjacency.get(comp_id, [])]
     found = []
@@ -84,7 +84,7 @@ def _find_bus_paths(comp_id, adjacency, components, bus_of):
             for neighbor in adjacency.get(nid, []):
                 if neighbor not in visited:
                     queue.append((neighbor, list(path)))
-        elif comp.type in ("cable", "transformer"):
+        elif comp.type in ("cable", "transformer", "autotransformer"):
             new_path = path + [comp]
             for neighbor in adjacency.get(nid, []):
                 if neighbor not in visited:
@@ -197,7 +197,7 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
         if not v_kv:
             for nb in adjacency.get(load.id, []):
                 nc = components.get(nb)
-                if nc and nc.type in ("cable", "transformer"):
+                if nc and nc.type in ("cable", "transformer", "autotransformer"):
                     v_kv = nc.props.get("voltage_lv_kv") or nc.props.get("voltage_kv")
                     if v_kv:
                         break
@@ -227,6 +227,198 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
         })
 
     return ProjectData(**data)
+
+
+# ── Three-winding autotransformer expansion ─────────────────────────────
+
+
+THREE_WINDING_STAR_PREFIX = "__at3w__"
+
+
+def _neighbor_on_port(comp_id, port, wires):
+    """Return (neighbor_component_id, neighbor_port) wired to comp_id's port."""
+    for w in wires:
+        if w.get("fromComponent") == comp_id and w.get("fromPort") == port:
+            return w.get("toComponent"), w.get("toPort")
+        if w.get("toComponent") == comp_id and w.get("toPort") == port:
+            return w.get("fromComponent"), w.get("fromPort")
+    return None, None
+
+
+def _star_impedances_pct(z_hl, z_ht, z_lt):
+    """Star (T) equivalent leg impedances from the three measured pair
+    short-circuit impedances (all % on the same base). Standard three-winding
+    transformer decomposition — a leg may be negative, which is physical."""
+    z_h = 0.5 * (z_hl + z_ht - z_lt)
+    z_l = 0.5 * (z_hl + z_lt - z_ht)
+    z_t = 0.5 * (z_ht + z_lt - z_hl)
+    return z_h, z_l, z_t
+
+
+def _expand_three_winding(project: ProjectData) -> ProjectData:
+    """Replace each fully-wired 3-winding autotransformer with an internal star
+    node and three equivalent two-winding transformer legs, so the standard
+    load-flow branch machinery (which already models two-winding transformers)
+    handles it unchanged.
+
+    Idempotent: after expansion no ``windings == 3`` autotransformer remains, so
+    a second call is a no-op. A 3-winding unit whose tertiary port is unwired is
+    left alone (it then behaves as an ordinary HV–LV branch)."""
+    import json
+
+    targets = []
+    for c in project.components:
+        if c.type != "autotransformer":
+            continue
+        if int(c.props.get("windings", 2) or 2) != 3:
+            continue
+        targets.append(c)
+    if not targets:
+        return project
+
+    data = json.loads(project.model_dump_json())
+    wires = data["wires"]
+    comps = data["components"]
+
+    for at in targets:
+        prim = _neighbor_on_port(at.id, "primary", wires)
+        sec = _neighbor_on_port(at.id, "secondary", wires)
+        ter = _neighbor_on_port(at.id, "tertiary", wires)
+        if not (prim[0] and sec[0] and ter[0]):
+            continue  # tertiary (or another port) not wired — treat as 2-winding
+
+        p = at.props
+        rated = p.get("rated_mva", 20)
+        xr = p.get("x_r_ratio", 30)
+        v_hv = p.get("voltage_hv_kv", 132)
+        v_lv = p.get("voltage_lv_kv", 66)
+        v_tv = p.get("voltage_tv_kv", 11)
+        z_h, z_l, z_t = _star_impedances_pct(
+            float(p.get("z_percent", 8) or 0),
+            float(p.get("z_ht_percent", 26) or 0),
+            float(p.get("z_lt_percent", 16) or 0))
+        tap = float(p.get("tap_percent", 0) or 0)
+        star_id = f"{THREE_WINDING_STAR_PREFIX}{at.id}"
+
+        # Remove the original autotransformer and its port wires.
+        comps[:] = [c for c in comps if c["id"] != at.id]
+        wires[:] = [w for w in wires
+                    if w.get("fromComponent") != at.id and w.get("toComponent") != at.id]
+
+        # Internal star node (voltage base = HV side; the pu leg impedances
+        # already carry each winding's turns ratio).
+        comps.append({
+            "id": star_id, "type": "bus", "x": at.x, "y": at.y, "rotation": 0,
+            "props": {"name": f"{p.get('name', at.id)} star", "voltage_kv": float(v_hv),
+                      "bus_type": "PQ", "system": "ac", "synthetic": True},
+        })
+
+        def _leg(suffix, v_high, v_low, z_pct, tap_pct):
+            return {
+                "id": f"{THREE_WINDING_STAR_PREFIX}{at.id}_{suffix}",
+                "type": "transformer", "x": at.x, "y": at.y, "rotation": 0,
+                "props": {"name": f"{p.get('name', at.id)}-{suffix.upper()}",
+                          "rated_mva": rated, "z_percent": z_pct, "x_r_ratio": xr,
+                          "voltage_hv_kv": v_high, "voltage_lv_kv": v_low,
+                          "tap_percent": tap_pct, "synthetic": True},
+            }
+
+        # HV leg carries the tap; star sits at HV base so H-leg is ~1:1(+tap).
+        comps.append(_leg("h", v_hv, v_hv, z_h, tap))
+        comps.append(_leg("l", v_hv, v_lv, z_l, 0.0))
+        comps.append(_leg("t", v_hv, v_tv, z_t, 0.0))
+
+        def _w(wid, fc, fp, tc, tp):
+            wires.append({"id": wid, "fromComponent": fc, "fromPort": fp,
+                          "toComponent": tc, "toPort": tp})
+
+        hid = f"{THREE_WINDING_STAR_PREFIX}{at.id}_h"
+        lid = f"{THREE_WINDING_STAR_PREFIX}{at.id}_l"
+        tid = f"{THREE_WINDING_STAR_PREFIX}{at.id}_t"
+        # primary-net — H — star — L — secondary-net ; star — T — tertiary-net
+        _w(f"{hid}_p", prim[0], prim[1], hid, "primary")
+        _w(f"{hid}_s", hid, "secondary", star_id, "at_0")
+        _w(f"{lid}_p", star_id, "at_1", lid, "primary")
+        _w(f"{lid}_s", lid, "secondary", sec[0], sec[1])
+        _w(f"{tid}_p", star_id, "at_2", tid, "primary")
+        _w(f"{tid}_s", tid, "secondary", ter[0], ter[1])
+
+    return ProjectData(**data)
+
+
+def _autotransformer_regulated_bus(at, adjacency, components, bus_of):
+    """Return (regulated_bus_id, hv_bus_id) for a regulating 2-winding
+    autotransformer, or (None, None) if it does not span two buses."""
+    results = _find_bus_paths(at.id, adjacency, components, bus_of)
+    if len(results) < 2:
+        return None, None
+    ba = results[0][0]
+    bb = results[1][0]
+    _t, hv = _get_chain_turns_ratio({at.id: at}, ba, bb, components)
+    lv = bb if hv == ba else ba
+    side = str(at.props.get("regulated_side", "lv") or "lv").lower()
+    return (hv if side == "hv" else lv), hv
+
+
+def _run_oltc(project: ProjectData, method: str, regulators, max_passes: int = 12) -> ProjectData:
+    """Iterate the on-load tap changer of each regulating autotransformer to
+    hold its regulated bus at the target voltage. Mutates and returns a working
+    copy of *project* with the converged tap positions; each pass re-solves the
+    load flow with regulation disabled to read the controlled voltages."""
+    import json
+    work = ProjectData(**json.loads(project.model_dump_json()))
+
+    components = {c.id: c for c in work.components}
+    adjacency = {}
+    for w in work.wires:
+        adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
+        adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
+    buses = [c for c in work.components
+             if c.type in ("bus", "distribution_board")
+             and str(c.props.get("system", "ac")).lower() != "dc"]
+    bus_idx = {b.id: i for i, b in enumerate(buses)}
+    bus_of = _build_bus_groups(buses, adjacency, components, bus_idx)
+
+    reg_info = []
+    for at in regulators:
+        reg_bus, hv_bus = _autotransformer_regulated_bus(at, adjacency, components, bus_of)
+        if reg_bus is not None:
+            reg_info.append((at.id, reg_bus))
+    if not reg_info:
+        return work
+
+    for _pass in range(max_passes):
+        res = run_load_flow(work, method, include_synthetic=True, _regulate=False)
+        changed = False
+        for at_id, reg_bus in reg_info:
+            at = next(c for c in work.components if c.id == at_id)
+            vb = (res.buses or {}).get(reg_bus)
+            if not vb or getattr(vb, "energized", True) is False:
+                continue
+            v = abs(vb.voltage_pu)
+            target = float(at.props.get("v_target_pu", 1.0) or 1.0)
+            step = abs(float(at.props.get("tap_step_pct", 1.25) or 1.25)) or 1.25
+            tmin = float(at.props.get("tap_min_pct", -10) or -10)
+            tmax = float(at.props.get("tap_max_pct", 10) or 10)
+            tap = float(at.props.get("tap_percent", 0) or 0)
+            side = str(at.props.get("regulated_side", "lv") or "lv").lower()
+            deadband = step / 200.0            # half a tap step, in per-unit
+            if abs(v - target) <= deadband:
+                continue
+            # Tap is on the HV winding: raising it lowers the LV voltage.
+            raise_v = v < target
+            direction = -1 if raise_v else 1
+            if side == "hv":
+                direction = -direction
+            desired = tap + direction * step
+            desired = max(tmin, min(tmax, desired))
+            if abs(desired - tap) > 1e-9:
+                at.props["tap_percent"] = round(desired, 4)
+                changed = True
+        if not changed:
+            break
+
+    return work
 
 
 # ── Generation dispatch (merit order) ───────────────────────────────
@@ -962,7 +1154,7 @@ def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
 
 def _get_impedance(comp, base_mva):
     """Get branch impedance in per-unit on common MVA base."""
-    if comp.type == "transformer":
+    if comp.type in ("transformer", "autotransformer"):
         rated_mva = comp.props.get("rated_mva", 10)
         z_pct = comp.props.get("z_percent", 8)
         xr = comp.props.get("x_r_ratio", 10)
@@ -991,7 +1183,7 @@ def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
     is the bus on the HV (tap) side, or (1.0, None) if no transformer in chain.
     """
     for e in elems.values():
-        if e.type != "transformer":
+        if e.type not in ("transformer", "autotransformer"):
             continue
 
         v_hv_rated = e.props.get("voltage_hv_kv", 33)
@@ -1136,17 +1328,32 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
 
 
 def run_load_flow(project: ProjectData, method: str = "newton_raphson",
-                  include_synthetic: bool = False) -> LoadFlowResults:
+                  include_synthetic: bool = False,
+                  _regulate: bool = True) -> LoadFlowResults:
     """Run load flow analysis.
 
     include_synthetic: keep auto-inserted load-terminal buses (see
     insert_implicit_load_buses) in the results. Off by default so they stay
     invisible to the UI/reports; motor-starting turns it on to read the motor
     terminal voltage.
+
+    _regulate: when True (default), on-load tap changers of regulating
+    autotransformers are iterated to hold their target voltage before the final
+    solve. Set False internally to break the tap-solve recursion.
     """
     # Give any load wired behind a cable/transformer a terminal bus so its
     # demand is modelled instead of silently dropped (idempotent).
     project = insert_implicit_load_buses(project)
+    # Expand 3-winding autotransformers into a star node + three 2-winding legs
+    # (idempotent) so the standard branch machinery handles them.
+    project = _expand_three_winding(project)
+    # Iterate OLTC taps of regulating autotransformers to their setpoint.
+    if _regulate:
+        regulators = [c for c in project.components
+                      if c.type == "autotransformer"
+                      and str(c.props.get("tap_mode", "fixed") or "fixed").lower() == "regulating"]
+        if regulators:
+            project = _run_oltc(project, method, regulators)
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
     wires = project.wires
@@ -1187,7 +1394,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     branch_chains = []  # list of (elements_dict, bus_a, bus_b, admittance)
 
     for comp in project.components:
-        if comp.type not in ("cable", "transformer"):
+        if comp.type not in ("cable", "transformer", "autotransformer"):
             continue
         if comp.id in bus_of:
             continue  # Inside a bus group — shouldn't happen
@@ -1223,7 +1430,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         # For chains with a transformer, cable impedances must use the bus voltage
         # on their side of the transformer as the impedance base — not the cable's
         # own voltage_kv property, which may be wrong or defaulted.
-        has_xfmr = any(e.type == "transformer" for e in all_elems.values())
+        has_xfmr = any(e.type in ("transformer", "autotransformer") for e in all_elems.values())
         cable_voltages = {}  # elem_id -> effective voltage_kv
 
         if has_xfmr:
@@ -1236,7 +1443,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
 
             z_total = complex(0, 0)
             for e in all_elems.values():
-                if e.type == "transformer":
+                if e.type in ("transformer", "autotransformer"):
                     z_total += _get_impedance(e, base_mva)
                 elif e.type == "cable":
                     # Determine which side of transformer this cable is on
@@ -1580,7 +1787,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     rated_a = elem.props.get("rated_amps", 400) * max(1, int(elem.props.get("num_parallel", 1)))
                     rated_mva = math.sqrt(3) * v_kv * rated_a / 1000
                     loading = (cable_s_mva / rated_mva * 100) if rated_mva > 0 else 0
-                elif elem.type == "transformer":
+                elif elem.type in ("transformer", "autotransformer"):
                     rated_mva_xfmr = elem.props.get("rated_mva", 10)
                     loading = (s_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
                     # Report current at the LV side (higher current) using LV-side power
@@ -1636,7 +1843,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # Map bus_id -> list of active source-connected transformer components
     source_tx_by_bus: dict[str, list] = {}
     for comp in project.components:
-        if comp.type != "transformer" or comp.id in processed_elem_ids:
+        if comp.type not in ("transformer", "autotransformer") or comp.id in processed_elem_ids:
             continue
         results = _find_bus_paths(comp.id, adjacency, components, bus_of)
         if len(results) != 1:
