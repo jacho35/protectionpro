@@ -82,10 +82,23 @@ const Transient = {
 
         <div class="ts-row ts-load" style="display:none">
           <label>Load</label><select id="ts-load-el">${opt(loads)}</select>
-          <label>Step by</label>
-          <div><input id="ts-load-delta" type="number" step="5" value="50" style="width:90px"> %</div>
+          <label>Action</label>
+          <select id="ts-load-mode">
+            <option value="change">Change demand by %</option>
+            <option value="add">Switch in a 2nd equal block (+100%)</option>
+            <option value="shed">Shed load entirely (−100%)</option>
+          </select>
+          <label id="ts-load-delta-lbl">Change demand by</label>
+          <div><input id="ts-load-delta" type="number" step="5" value="50" style="width:90px"> % of pre-fault load</div>
           <label>At time</label>
           <div><input id="ts-load-time" type="number" min="0" step="0.01" value="0.1" style="width:90px"> s</div>
+          <p style="grid-column:1/-1;font-size:11px;color:var(--text-muted,#6d6d6d);margin:2px 0 0">
+            Steps the selected (already energised) load's demand at the event time, as a percentage of
+            its pre-fault value: <strong>+100%</strong> doubles it (like switching in a second identical
+            load), <strong>−100%</strong> sheds it entirely, <strong>−50%</strong> drops half. A load
+            sitting on its source's own terminal bus is folded into that machine's mechanical power and
+            can't be stepped — put it on a separate bus to switch it in or out.
+          </p>
         </div>
 
         <label>Simulation time</label>
@@ -95,6 +108,7 @@ const Transient = {
         Each synchronous generator is E′ behind X′d with its inertia H; utility sources are infinite buses; loads are constant admittances (or voltage-dependent / motor models if set). Inverters (PV / BESS / full-converter wind) are frozen unless their <em>Converter Model</em> is set to grid-following or grid-forming. ${gens.length ? '' : '<strong>No generators found — add a generator or a grid-forming inverter (with an inertia constant) for a meaningful swing.</strong>'}</p>`;
 
     body.querySelector('#ts-type').addEventListener('change', () => this._syncTypeFields());
+    body.querySelector('#ts-load-mode').addEventListener('change', () => this._syncLoadMode());
     this._applyConfig(prefill || this._last);   // populate + reveal the right fields
     this._wireCaseButtons();
     document.getElementById('stability-config-modal').style.display = '';
@@ -106,6 +120,24 @@ const Transient = {
     body.querySelector('.ts-fault').style.display = t === 'fault' ? 'contents' : 'none';
     body.querySelector('.ts-trip').style.display = t === 'trip' ? 'contents' : 'none';
     body.querySelector('.ts-load').style.display = t === 'load_step' ? 'contents' : 'none';
+  },
+
+  // Reflect the chosen load-step Action in the "% of pre-fault load" field.
+  // "Switch in" pins it to +100 % (a second equal block); "Shed" pins it to
+  // −100 % (drop to zero); "Change" lets the user type any percentage.
+  _syncLoadMode() {
+    const b = document.getElementById('stability-config-body');
+    const mode = b.querySelector('#ts-load-mode').value;
+    const delta = b.querySelector('#ts-load-delta');
+    const lbl = b.querySelector('#ts-load-delta-lbl');
+    if (mode === 'change') {
+      delta.disabled = false;
+      lbl.style.opacity = '';
+    } else {
+      delta.value = mode === 'add' ? 100 : -100;
+      delta.disabled = true;
+      lbl.style.opacity = '0.5';
+    }
   },
 
   // Populate the form from a disturbance spec (a saved case or the last run).
@@ -124,10 +156,16 @@ const Transient = {
       }
       if (d.type === 'trip') { set('#ts-trip-el', d.element); set('#ts-trip-time', d.time_s); }
       if (d.type === 'load_step') {
-        set('#ts-load-el', d.element); set('#ts-load-delta', d.delta_pct); set('#ts-load-time', d.time_s);
+        set('#ts-load-el', d.element); set('#ts-load-time', d.time_s);
+        // Infer the Action from delta_pct so saved cases (which store only
+        // delta_pct) round-trip: ±100 % map to the shed / switch-in presets.
+        const dp = d.delta_pct;
+        set('#ts-load-mode', dp === -100 ? 'shed' : dp === 100 ? 'add' : 'change');
+        set('#ts-load-delta', dp);
       }
     }
     this._syncTypeFields();
+    this._syncLoadMode();
   },
 
   // ── Saved study cases (persisted with the project) ─────────────────
@@ -149,7 +187,13 @@ const Transient = {
         + (d.find_cct !== false ? ', CCT' : '');
     }
     if (d.type === 'trip') return `Trip ${this._name(d.element)} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
-    if (d.type === 'load_step') return `Step ${this._name(d.element)} ${d.delta_pct >= 0 ? '+' : ''}${d.delta_pct}% @ ${Math.round((d.time_s || 0) * 1000)} ms`;
+    if (d.type === 'load_step') {
+      const dp = d.delta_pct;
+      const what = dp === -100 ? `Shed ${this._name(d.element)}`
+        : dp === 100 ? `Switch in 2nd ${this._name(d.element)}`
+        : `${this._name(d.element)} demand ${dp >= 0 ? '+' : ''}${dp}%`;
+      return `${what} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
+    }
     return d.type || '';
   },
 
@@ -235,7 +279,12 @@ const Transient = {
       d.time_s = parseFloat(b.querySelector('#ts-trip-time').value) || 0.1;
     } else {
       d.element = b.querySelector('#ts-load-el').value;
-      d.delta_pct = parseFloat(b.querySelector('#ts-load-delta').value) || 0;
+      const mode = b.querySelector('#ts-load-mode').value;
+      // The Action presets resolve to a delta_pct; the wire format stays a bare
+      // delta_pct so existing saved cases run unchanged (mode is UI-only).
+      d.delta_pct = mode === 'add' ? 100
+        : mode === 'shed' ? -100
+        : (parseFloat(b.querySelector('#ts-load-delta').value) || 0);
       d.time_s = parseFloat(b.querySelector('#ts-load-time').value) || 0.1;
     }
     return d;
