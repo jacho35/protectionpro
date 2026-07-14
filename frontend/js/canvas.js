@@ -85,6 +85,13 @@ const Canvas = {
 
       const worldPt = this.screenToWorld(e.clientX, e.clientY);
 
+      // Result box (draggable analysis badge) — its own menu (copy/reset/hide).
+      const annotEl = e.target.closest('.draggable-annotation');
+      if (annotEl && annotEl.dataset.annotationKey) {
+        ContextMenu.openForResultBox(annotEl.dataset.annotationKey, e.clientX, e.clientY);
+        return;
+      }
+
       const compEl = e.target.closest('.sld-component');
       if (compEl) {
         const id = compEl.dataset.id;
