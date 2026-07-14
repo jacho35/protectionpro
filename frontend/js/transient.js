@@ -49,11 +49,23 @@ const Transient = {
     }
     const body = document.getElementById('stability-config-body');
     const branches = this._list(['cable', 'transformer']);
+    const breakers = this._list(['cb', 'switch']);
     const gens = this._list(['generator']);
     const loads = this._list(['static_load', 'motor_induction', 'motor_synchronous']);
     const opt = arr => arr.map(o => `<option value="${this._esc(o.id)}">${this._esc(o.name)}</option>`).join('');
     const trips = [...gens.map(g => ({ ...g, name: 'Gen: ' + g.name })),
                    ...branches.map(b => ({ ...b, name: 'Branch: ' + b.name }))];
+    // Element pickers for the sequence timeline, per action. Trip can act on a
+    // generator, feeder/branch, breaker or load; reconnect on a feeder/breaker/
+    // load (generators are trip-only); load-change on a load.
+    const pfx = (arr, p) => arr.map(o => ({ id: o.id, name: p + o.name }));
+    this._seqEls = {
+      trip: [...pfx(gens, 'Gen: '), ...pfx(branches, 'Feeder: '),
+             ...pfx(breakers, 'Breaker: '), ...pfx(loads, 'Load: ')],
+      close: [...pfx(branches, 'Feeder: '), ...pfx(breakers, 'Breaker: '),
+              ...pfx(loads, 'Load: ')],
+      load_step: pfx(loads, ''),
+    };
 
     body.innerHTML = this._renderCasesBlock() + `
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
@@ -62,6 +74,7 @@ const Transient = {
           <option value="fault">Three-phase bus fault + clear</option>
           <option value="trip">Generator / branch trip</option>
           <option value="load_step">Load step</option>
+          <option value="sequence">Sequenced events (timeline)</option>
         </select>
 
         <div class="ts-row ts-fault" style="display:contents">
@@ -101,6 +114,18 @@ const Transient = {
           </p>
         </div>
 
+        <div class="ts-row ts-seq" style="display:none;grid-column:1/-1">
+          <div style="font-size:12px;font-weight:600;margin:2px 0 5px">Event timeline (absolute times)</div>
+          <div id="ts-seq-list"></div>
+          <button id="ts-seq-add" type="button" style="font-size:11px;padding:3px 10px;margin-top:4px;cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit">+ Add step</button>
+          <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:6px 0 0">
+            Each step acts on one element at its time; steps run in time order (two at the same time
+            are simultaneous). <strong>Trip / open</strong> a feeder, breaker or generator; <strong>reconnect</strong>
+            a feeder, breaker or load switched out earlier; or <strong>change a load's</strong> demand by a %.
+            Generators are trip-only. A load on its source's own terminal bus can't be stepped — put it on a separate bus.
+          </p>
+        </div>
+
         <label>Simulation time</label>
         <div><input id="ts-tend" type="number" min="0.5" step="0.5" value="5" style="width:90px"> s</div>
       </div>
@@ -109,6 +134,7 @@ const Transient = {
 
     body.querySelector('#ts-type').addEventListener('change', () => this._syncTypeFields());
     body.querySelector('#ts-load-mode').addEventListener('change', () => this._syncLoadMode());
+    body.querySelector('#ts-seq-add').addEventListener('click', () => this._addSeqRow());
     this._applyConfig(prefill || this._last);   // populate + reveal the right fields
     this._wireCaseButtons();
     document.getElementById('stability-config-modal').style.display = '';
@@ -120,6 +146,64 @@ const Transient = {
     body.querySelector('.ts-fault').style.display = t === 'fault' ? 'contents' : 'none';
     body.querySelector('.ts-trip').style.display = t === 'trip' ? 'contents' : 'none';
     body.querySelector('.ts-load').style.display = t === 'load_step' ? 'contents' : 'none';
+    body.querySelector('.ts-seq').style.display = t === 'sequence' ? '' : 'none';
+    // Switching to a sequence with no steps yet: seed one so the editor isn't empty.
+    if (t === 'sequence' && !body.querySelector('#ts-seq-list .ts-seq-row')) this._addSeqRow();
+  },
+
+  // ── Sequence timeline editor ───────────────────────────────────────
+  _seqElOpts(action, selected) {
+    return (this._seqEls[action] || []).map(o =>
+      `<option value="${this._esc(o.id)}"${o.id === selected ? ' selected' : ''}>${this._esc(o.name)}</option>`).join('');
+  },
+
+  _addSeqRow(step) {
+    const list = document.getElementById('ts-seq-list');
+    if (!list) return;
+    step = step || { t: 1, action: 'trip', element: '', delta_pct: 50 };
+    // Coerce the numeric fields to numbers before interpolating into markup (the
+    // element options are escaped via _esc; these guard against a crafted case).
+    const tVal = Number.isFinite(+step.t) ? +step.t : 1;
+    const dVal = Number.isFinite(+step.delta_pct) ? +step.delta_pct : 50;
+    const row = document.createElement('div');
+    row.className = 'ts-seq-row';
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:12px';
+    row.innerHTML = `
+      <input class="ts-seq-t" type="number" min="0" step="0.1" value="${tVal}" style="width:60px" title="Time (s)"><span style="color:var(--text-muted,#6d6d6d)">s</span>
+      <select class="ts-seq-action">
+        <option value="trip">Trip / open</option>
+        <option value="close">Reconnect</option>
+        <option value="load_step">Load change</option>
+      </select>
+      <select class="ts-seq-el" style="flex:1;min-width:110px"></select>
+      <input class="ts-seq-delta" type="number" step="5" value="${dVal}" style="width:58px;display:none" title="% change of pre-fault load"><span class="ts-seq-delta-u" style="display:none;color:var(--text-muted,#6d6d6d)">%</span>
+      <button type="button" class="ts-seq-del" title="Remove step" style="cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit;padding:0 7px">✕</button>`;
+    list.appendChild(row);
+    row.querySelector('.ts-seq-action').value = step.action || 'trip';
+    this._syncSeqRow(row, step.element);
+    row.querySelector('.ts-seq-action').addEventListener('change', () => this._syncSeqRow(row));
+    row.querySelector('.ts-seq-del').addEventListener('click', () => row.remove());
+  },
+
+  // Populate a row's element picker for its action and toggle the % field.
+  _syncSeqRow(row, keepId) {
+    const action = row.querySelector('.ts-seq-action').value;
+    const elSel = row.querySelector('.ts-seq-el');
+    const want = keepId != null ? keepId : elSel.value;   // preserve selection if still valid
+    elSel.innerHTML = this._seqElOpts(action, want);
+    const isLoad = action === 'load_step';
+    row.querySelector('.ts-seq-delta').style.display = isLoad ? '' : 'none';
+    row.querySelector('.ts-seq-delta-u').style.display = isLoad ? '' : 'none';
+  },
+
+  _readSeqSteps() {
+    return [...document.querySelectorAll('#ts-seq-list .ts-seq-row')].map(r => {
+      const action = r.querySelector('.ts-seq-action').value;
+      const step = { t: parseFloat(r.querySelector('.ts-seq-t').value) || 0, action,
+                     element: r.querySelector('.ts-seq-el').value };
+      if (action === 'load_step') step.delta_pct = parseFloat(r.querySelector('.ts-seq-delta').value) || 0;
+      return step;
+    }).filter(s => s.element);
   },
 
   // Reflect the chosen load-step Action in the "% of pre-fault load" field.
@@ -155,6 +239,13 @@ const Transient = {
         chk('#ts-cct', d.find_cct !== false);
       }
       if (d.type === 'trip') { set('#ts-trip-el', d.element); set('#ts-trip-time', d.time_s); }
+      if (d.type === 'sequence') {
+        const list = b.querySelector('#ts-seq-list');
+        if (list) {
+          list.innerHTML = '';
+          (d.steps || []).forEach(s => this._addSeqRow(s));
+        }
+      }
       if (d.type === 'load_step') {
         set('#ts-load-el', d.element); set('#ts-load-time', d.time_s);
         // Infer the Action from delta_pct so saved cases (which store only
@@ -187,6 +278,13 @@ const Transient = {
         + (d.find_cct !== false ? ', CCT' : '');
     }
     if (d.type === 'trip') return `Trip ${this._name(d.element)} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
+    if (d.type === 'sequence') {
+      const st = d.steps || [];
+      const verb = { trip: 'trip', close: 'close', load_step: 'step' };
+      const one = s => `${verb[s.action] || s.action} ${this._name(s.element)}@${s.t || 0}s`;
+      return `Sequence (${st.length} step${st.length === 1 ? '' : 's'})`
+        + (st.length ? ': ' + st.slice(0, 3).map(one).join(', ') + (st.length > 3 ? '…' : '') : '');
+    }
     if (d.type === 'load_step') {
       const dp = d.delta_pct;
       const what = dp === -100 ? `Shed ${this._name(d.element)}`
@@ -277,6 +375,8 @@ const Transient = {
     } else if (type === 'trip') {
       d.element = b.querySelector('#ts-trip-el').value;
       d.time_s = parseFloat(b.querySelector('#ts-trip-time').value) || 0.1;
+    } else if (type === 'sequence') {
+      d.steps = this._readSeqSteps();
     } else {
       d.element = b.querySelector('#ts-load-el').value;
       const mode = b.querySelector('#ts-load-mode').value;

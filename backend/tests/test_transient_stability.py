@@ -791,6 +791,79 @@ class TestDispatchAllocation:
         assert pms[0] < 0.15 * pms[1]
 
 
+class TestSequencedEvents:
+    """A timeline of events at absolute times: trip / reconnect a feeder, shed /
+    restore / step a load, trip a generator — applied cumulatively, one element
+    per step (same-time steps share a segment)."""
+
+    def _net(self):
+        # Grid + generator on a source bus; two parallel feeders to a load bus.
+        return ProjectData(projectName="seq", baseMVA=100.0, frequency=50, components=[
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 800, "x_r_ratio": 10}),
+            _c("bs", "bus", {"name": "Src", "voltage_kv": 11}),
+            _c("g1", "generator", {"name": "G1", "rated_mva": 10, "voltage_kv": 11, "xd_p": 0.25,
+                                   "inertia_h_s": 3.0, "dispatch_mode": "must_run", "gov_mode": "isochronous"}),
+            _c("f1", "cable", {"name": "Feeder1", "voltage_kv": 11, "r_per_km": 0.2, "x_per_km": 0.15, "length_km": 3}),
+            _c("f2", "cable", {"name": "Feeder2", "voltage_kv": 11, "r_per_km": 0.2, "x_per_km": 0.15, "length_km": 3}),
+            _c("bl", "bus", {"name": "LoadBus", "voltage_kv": 11}),
+            _c("ld", "static_load", {"name": "Plant", "voltage_kv": 11, "rated_kva": 3000,
+                                     "power_factor": 0.9, "demand_factor": 1.0}),
+        ], wires=[_w("wu", "util", "bs"), _w("wg", "g1", "bs"),
+                  _w("wf1a", "bs", "f1"), _w("wf1b", "f1", "bl"),
+                  _w("wf2a", "bs", "f2"), _w("wf2b", "f2", "bl"), _w("wl", "bl", "ld")])
+
+    def _lv(self, r, tt):
+        t = r["curves"]["t"]
+        v = [b for b in r["curves"]["buses"] if b["bus"] == "LoadBus"][0]["v_pu"]
+        return v[min(range(len(t)), key=lambda i: abs(t[i] - tt))]
+
+    def test_load_shed_then_restore(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
+            {"t": 1.0, "action": "trip", "element": "ld"},
+            {"t": 4.0, "action": "close", "element": "ld"}]})
+        assert r["stable"] is True
+        assert "shed Plant" in r["event"] and "restore Plant" in r["event"]
+        # shedding the load raises the load-bus voltage; restoring pulls it back
+        assert self._lv(r, 2.5) > self._lv(r, 0.5) + 0.003
+        assert self._lv(r, 6.0) < self._lv(r, 2.5) - 0.003
+
+    def test_feeder_trip_and_reclose(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1"},
+            {"t": 4.0, "action": "close", "element": "f1"}]})
+        assert r["stable"] is True and r["curves"] is not None
+        assert "open Feeder1" in r["event"] and "close Feeder1" in r["event"]
+        # losing one of two parallel feeders raises impedance ⇒ lower load-bus V;
+        # reclosing restores it
+        assert self._lv(r, 2.5) < self._lv(r, 0.5) - 0.003
+        assert self._lv(r, 6.0) > self._lv(r, 2.5) + 0.003
+
+    def test_generator_is_trip_only(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 4, "steps": [
+            {"t": 1.0, "action": "close", "element": "g1"}]})
+        assert any("trip-only" in w for w in r["warnings"])
+
+    def test_multiple_feeders_and_load_step(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1"},
+            {"t": 2.0, "action": "load_step", "element": "ld", "delta_pct": 30},
+            {"t": 4.0, "action": "close", "element": "f1"}]})
+        assert r["curves"] is not None
+        # steps are time-ordered in the event description
+        assert (r["event"].index("open Feeder1") < r["event"].index("Plant +30%")
+                < r["event"].index("close Feeder1"))
+
+    def test_simultaneous_steps_share_a_segment(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 5, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1"},
+            {"t": 1.0, "action": "trip", "element": "f2"}]})
+        assert "open Feeder1" in r["event"] and "open Feeder2" in r["event"]
+
+    def test_empty_sequence_raises(self):
+        with pytest.raises(ValueError):
+            run_transient_stability(self._net(), {"type": "sequence", "steps": []})
+
+
 class TestEdgeCases:
     def test_no_machines(self):
         p = ProjectData(projectName="t", baseMVA=100.0, frequency=50,

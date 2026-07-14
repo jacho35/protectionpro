@@ -72,8 +72,10 @@ First-pass "classical" model per Stevenson / Kundur ch. 13:
 
 Disturbances: a bolted three-phase bus fault cleared after a set time (optional
 branch trip on clearing, and a binary-search critical clearing time); a
-generator or branch trip; and a load step. Initial conditions come from the
-positive-sequence load flow.
+generator or branch trip; a load step; or a SEQUENCE of timed events (trip /
+reconnect a feeder, breaker or load, and load changes) applied at absolute times
+— feeders/breakers by topology, loads by per-bus demand scaling, generators
+trip-only. Initial conditions come from the positive-sequence load flow.
 
 Stability verdict: two independent failure modes. (1) Rotor-angle loss of
 synchronism — a machine's angle exceeds 180° from its island's centre of
@@ -719,9 +721,9 @@ def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
         S = ibr_inj.get(j, g["s0_sys"])
         V = max(vbus_mag.get(bi, g["V0"]), 1e-3)
         y[bi] += np.conj(-S) / (V * V)    # generation ⇒ negative conductance
-    if load_scale is not None:
-        lbus, frac = load_scale
-        y[lbus] = y[lbus] * frac
+    if load_scale:
+        for lbus, frac in load_scale.items():   # {bus_idx: fraction of nominal}
+            y[lbus] = y[lbus] * frac
     return y
 
 
@@ -1194,6 +1196,14 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     for step in range(steps + 1):
         if has_prot:
             _check_protection(t, omega)
+        # A finite machine dropped from the current segment's active set by a
+        # disturbance/sequence generator trip is off-line: coast it and exclude
+        # it from the island COI and the synchronism test, exactly like a
+        # protection trip. (Segment active sets only ever shrink, so this is
+        # monotonic.)
+        for i in set(range(m)) - set(variant_at(t)["active"]):
+            if not machines[i]["infinite"]:
+                tripped_mach.add(i)
         veff = _effective_variant(t, omega)
         if record:
             v = veff if veff is not None else variant_at(t)
@@ -1385,7 +1395,7 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
         pre_v = variant(base_ybus, all_active, set())
         # load_scale mirrors the shunt scaling for the dynamic re-reduction path.
         post_v = variant(base_ybus, all_active, set(), shunt=shunt2,
-                         load_scale=(lbus, frac) if lbus is not None else None)
+                         load_scale={lbus: frac} if lbus is not None else None)
         nm = _comp_name(project, elem) if elem else "load"
         delta = float(disturbance.get("delta_pct", 50))
         if abs(delta + 100.0) < 1e-6:
@@ -1396,7 +1406,102 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
             event = f"Step {nm} demand by {delta:+.0f}% at {t_ev*1000:.0f} ms"
         return ([(0.0, pre_v), (t_ev, post_v)], event)
 
+    if dtype == "sequence":
+        return _build_sequence(project, ctx, machines, base_ybus, load_shunt,
+                               all_active, variant, disturbance, warnings)
+
     raise ValueError(f"Unknown disturbance type '{dtype}'.")
+
+
+def _build_sequence(project, ctx, machines, base_ybus, load_shunt, all_active,
+                    variant, disturbance, warnings):
+    """Build the segment list for a SEQUENCE of timed events (one element each,
+    absolute times). Actions: ``trip`` (open a feeder/breaker, or take a
+    generator off line), ``close`` (re-energise a tripped feeder/breaker or
+    restore a load), ``load_step`` (change a load's demand by a %). Events are
+    applied cumulatively; simultaneous steps (same time) share one segment.
+
+    Elements: a branch (cable/transformer) or breaker/switch trips/closes by
+    topology (removed from / restored to the network); a load trips/steps/
+    restores by scaling its bus's demand; a generator is trip-only (per the
+    feature scope — re-synchronising a set is a documented follow-up).
+    """
+    LOAD_TYPES = ("static_load", "motor_induction", "motor_synchronous")
+    comp_of = {c.id: c for c in project.components}
+
+    steps = []
+    for s in (disturbance.get("steps") or []):
+        elem = s.get("element")
+        action = str(s.get("action", "trip")).lower()
+        if not elem or action not in ("trip", "close", "load_step"):
+            continue
+        steps.append({"t": max(float(s.get("t", s.get("time_s", 0.0)) or 0.0), 0.0),
+                      "action": action, "element": elem,
+                      "delta_pct": float(s.get("delta_pct", 0.0) or 0.0)})
+    steps.sort(key=lambda s: s["t"])
+    if not steps:
+        raise ValueError("Sequence has no valid steps.")
+
+    removed = set()       # open branch/breaker component ids (topology)
+    tripped_gen = set()   # tripped generator/utility comp ids
+    bus_frac = {}         # bus_idx -> load demand as a fraction of nominal
+    ybus_cache = {frozenset(): base_ybus}
+
+    def ybus_for(rem):
+        key = frozenset(rem)
+        if key not in ybus_cache:
+            c2 = build_branch_ybus(_project_without_many(project, rem))
+            ybus_cache[key] = c2["Y"] if c2 is not None else base_ybus
+        return ybus_cache[key]
+
+    def make_variant():
+        active = [i for i in all_active if machines[i]["comp_id"] not in tripped_gen]
+        pm_over = {i: 0.0 for i in all_active if machines[i]["comp_id"] in tripped_gen}
+        shunt = load_shunt.copy()
+        for lb, fr in bus_frac.items():
+            shunt[lb] = shunt[lb] * fr
+        return variant(ybus_for(removed), active, set(), shunt=shunt,
+                       pm_over=pm_over, load_scale=dict(bus_frac))
+
+    segs = [(0.0, make_variant())]     # pre-sequence operating point at t=0
+    descs = []
+    i = 0
+    while i < len(steps):
+        t_ev = steps[i]["t"]
+        while i < len(steps) and abs(steps[i]["t"] - t_ev) < 1e-9:
+            s = steps[i]; i += 1
+            elem, action = s["element"], s["action"]
+            comp = comp_of.get(elem)
+            nm = _comp_name(project, elem)
+            if comp is not None and comp.type in MACHINE_SOURCE_TYPES:
+                if action == "trip":
+                    tripped_gen.add(elem); descs.append(f"trip {nm} @ {t_ev:g}s")
+                else:
+                    warnings.append(f"Sequence: generators are trip-only — "
+                                    f"'{action}' on {nm} ignored.")
+            elif comp is not None and comp.type in LOAD_TYPES:
+                lb = _component_bus_idx(project, ctx, elem)
+                if lb is None:
+                    warnings.append(f"Sequence: load {nm} reaches no bus — step ignored.")
+                elif action == "trip":
+                    bus_frac[lb] = 0.0; descs.append(f"shed {nm} @ {t_ev:g}s")
+                elif action == "close":
+                    bus_frac[lb] = 1.0; descs.append(f"restore {nm} @ {t_ev:g}s")
+                else:
+                    bus_frac[lb] = 1.0 + s["delta_pct"] / 100.0
+                    descs.append(f"{nm} {s['delta_pct']:+.0f}% @ {t_ev:g}s")
+            elif comp is not None:   # branch / breaker / switch
+                if action == "trip":
+                    removed.add(elem); descs.append(f"open {nm} @ {t_ev:g}s")
+                elif action == "close":
+                    removed.discard(elem); descs.append(f"close {nm} @ {t_ev:g}s")
+                else:
+                    warnings.append(f"Sequence: 'load change' applies to loads, "
+                                    f"not {nm} — step ignored.")
+            else:
+                warnings.append(f"Sequence: element '{elem}' not found — step ignored.")
+        segs.append((t_ev, make_variant()))
+    return segs, "Sequence: " + "; ".join(descs)
 
 
 def _project_without(project, comp_id):
@@ -1406,6 +1511,18 @@ def _project_without(project, comp_id):
              if w.fromComponent != comp_id and w.toComponent != comp_id]
     clone = project.model_copy(update={"components": keep, "wires": wires})
     return clone
+
+
+def _project_without_many(project, comp_ids):
+    """A shallow project copy with several components (and their wires) removed —
+    the cumulative open-element set of a sequenced run."""
+    ids = set(comp_ids)
+    if not ids:
+        return project
+    keep = [c for c in project.components if c.id not in ids]
+    wires = [w for w in project.wires
+             if w.fromComponent not in ids and w.toComponent not in ids]
+    return project.model_copy(update={"components": keep, "wires": wires})
 
 
 def _bus_name(project, bus_id):
@@ -1445,9 +1562,11 @@ def _component_bus_idx(project, ctx, comp_id):
 def run_transient_stability(project, disturbance=None):
     """Run a classical transient-stability study.
 
-    disturbance (dict): ``type`` ∈ {fault, trip, load_step} plus per-type keys
-    (see module docstring). ``t_end_s``, ``dt_s`` and ``find_cct`` are optional
-    globals. Returns ``{machines, curves, stable, event, cct_s, warnings}``.
+    disturbance (dict): ``type`` ∈ {fault, trip, load_step, sequence} plus per-
+    type keys (see module docstring). A ``sequence`` carries ``steps``: a list of
+    ``{t, action ∈ (trip|close|load_step), element, delta_pct?}`` applied at
+    absolute times. ``t_end_s``, ``dt_s`` and ``find_cct`` are optional globals.
+    Returns ``{machines, curves, stable, instability, event, cct_s, warnings}``.
     """
     disturbance = dict(disturbance or {"type": "fault"})
     freq = float(project.frequency or 50)
