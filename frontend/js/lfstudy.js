@@ -18,6 +18,7 @@ const LFStudy = {
   _results: null,                 // last run: [{id, name, result, summary}]
   _method: 'newton_raphson',
   _includeCurrent: true,
+  _lfBackup: undefined,           // live loadFlowResults snapshot while a case is previewed on the canvas
 
   _esc(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -94,6 +95,7 @@ const LFStudy = {
       this._activeCaseId = '__current__';
     }
     this._render(body);
+    this.refreshBar();
     modal.style.display = '';
   },
 
@@ -279,7 +281,7 @@ const LFStudy = {
       });
     }
     html += '</tbody></table></div>';
-    html += '<p class="lf-note">“Show on diagram” loads a case’s result onto the canvas badges/arrows — close this dialog to view. The canvas then shows a hypothetical case, not the live network.</p>';
+    html += '<p class="lf-note">“Show on diagram” loads a case’s result onto the canvas badges/arrows and flips circuit breakers/switches to the case’s configured state — close this dialog to view. Use the <strong>Load Flow Case</strong> bar below the toolbar to switch cases (or return to the live network) without reopening this dialog.</p>';
     return html;
   },
 
@@ -380,13 +382,14 @@ const LFStudy = {
     AppState.dirty = true;
     this._activeCaseId = id;
     this._render(body);
+    this.refreshBar();
   },
 
   _rename(body) {
     const c = this._activeCase();
     if (!c) return;
     const name = (window.prompt('Rename case', c.name) || '').trim();
-    if (name) { c.name = name; AppState.dirty = true; this._render(body); }
+    if (name) { c.name = name; AppState.dirty = true; this._render(body); this.refreshBar(); }
   },
 
   _duplicate(body) {
@@ -401,6 +404,7 @@ const LFStudy = {
     AppState.dirty = true;
     this._activeCaseId = id;
     this._render(body);
+    this.refreshBar();
   },
 
   _delete(body) {
@@ -413,18 +417,24 @@ const LFStudy = {
     AppState.dirty = true;
     this._activeCaseId = '__current__';
     this._render(body);
+    this.refreshBar();
   },
 
   _applyToNetwork(body) {
     const c = this._activeCase();
     if (!c) return;
     if (!window.confirm(`Apply case “${c.name}” to the live diagram? This replaces the current network configuration (device names are kept).`)) return;
+    // The case becomes the live network — drop any preview so the bar/canvas
+    // reflect the real network (not a preview overlay of the now-applied case).
+    AppState.lfPreviewCaseId = null;
+    this._lfBackup = undefined;
     AppState.applyLoadFlowCase(c);
     if (typeof UndoManager !== 'undefined' && UndoManager.clear) UndoManager.clear();
     if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
     if (typeof Properties !== 'undefined' && Properties.clear) Properties.clear();
     document.getElementById('status-info').textContent = `Applied case “${c.name}” to the network.`;
     this._render(body);
+    this.refreshBar();
   },
 
   // ── Run ────────────────────────────────────────────────────────────
@@ -453,6 +463,7 @@ const LFStudy = {
         body.querySelectorAll('.lf-show').forEach(el =>
           el.addEventListener('click', () => this._showOnDiagram(el.dataset.id)));
       }
+      this.refreshBar();   // results now available — drop the "not run" hints
     } catch (e) {
       console.error('Load flow study error:', e);
       document.getElementById('status-info').textContent = 'Load flow study failed.';
@@ -465,11 +476,142 @@ const LFStudy = {
   },
 
   _showOnDiagram(id) {
+    // Show a run result on the canvas (from the modal's comparison table).
+    // Routes through the shared preview path so a saved case also flips the
+    // circuit-breaker / switch symbols to that case's state.
     const r = (this._results || []).find(x => x.id === id);
     if (!r) return;
+    this._enterPreviewBackup();
+    AppState.lfPreviewCaseId = (id === '__current__') ? null : id;
     AppState.loadFlowResults = r.result;   // result-slot accessor stamps provenance
     if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
+    this._syncBar();
     document.getElementById('status-info').textContent =
       `Load flow: showing “${r.name}” on the diagram — close this dialog to view.`;
+  },
+
+  // ── Case view bar (persistent, below the toolbar) ──────────────────────
+  //
+  // Lets the user flip between the live network and any saved case straight on
+  // the canvas — without opening the manager. Displaying a case shows its
+  // load-flow result badges (if the study has been run this session) and always
+  // reflects the case's circuit-breaker / switch state on the diagram. Viewing
+  // is non-destructive: the live network's own load-flow result is backed up and
+  // restored when you return to "Live network".
+
+  initBar() {
+    this.refreshBar();
+  },
+
+  // Rebuild the bar's contents and show/hide it based on whether saved cases
+  // exist. Cheap enough to call on any change (few cases in practice).
+  refreshBar() {
+    const bar = document.getElementById('lf-case-bar');
+    if (!bar) return;
+    const cases = this._cases();
+    if (!cases.length) {
+      // Nothing to view — hide the bar and make sure no preview is left active.
+      if (AppState.lfPreviewCaseId != null || this._lfBackup !== undefined) this.clearPreview();
+      bar.style.display = 'none';
+      bar.innerHTML = '';
+      document.body.classList.remove('lf-bar-visible');
+      return;
+    }
+    // A previewed case that has since been deleted → fall back to live.
+    if (AppState.lfPreviewCaseId != null && !cases.some(c => c.id === AppState.lfPreviewCaseId)) {
+      this.clearPreview();
+    }
+    const cur = AppState.lfPreviewCaseId || '__current__';
+    const hasRun = id => (this._results || []).some(r => r.id === id);
+    const opts = [`<option value="__current__"${cur === '__current__' ? ' selected' : ''}>● Live network</option>`]
+      .concat(cases.map(c =>
+        `<option value="${this._esc(c.id)}"${cur === c.id ? ' selected' : ''}>${this._esc(c.name)}${hasRun(c.id) ? '' : ' — not run'}</option>`))
+      .join('');
+    const previewing = AppState.lfPreviewCaseId != null;
+    const note = previewing
+      ? (hasRun(cur)
+          ? 'Viewing case — breakers &amp; voltages reflect this case.'
+          : 'Viewing case — breakers reflect this case. Run the study for voltages.')
+      : 'Viewing the live network.';
+    bar.innerHTML =
+      `<span class="lf-bar-title">Load Flow Case</span>` +
+      `<select id="lf-bar-select" title="Display a load-flow case on the diagram">${opts}</select>` +
+      `<button class="lf-bar-btn" id="lf-bar-live"${previewing ? '' : ' disabled'} title="Return to the live network">Live network</button>` +
+      `<span class="lf-bar-note${previewing ? ' active' : ''}">${note}</span>` +
+      `<button class="lf-bar-btn" id="lf-bar-manage" title="Open the Load Flow Study Manager">Manage cases…</button>`;
+    bar.style.display = '';
+    document.body.classList.add('lf-bar-visible');
+
+    const sel = bar.querySelector('#lf-bar-select');
+    if (sel) sel.addEventListener('change', () => this.previewCase(sel.value));
+    const live = bar.querySelector('#lf-bar-live');
+    if (live) live.addEventListener('click', () => this.clearPreview());
+    const manage = bar.querySelector('#lf-bar-manage');
+    if (manage) manage.addEventListener('click', () => this.openManager());
+  },
+
+  // Keep the bar's select + note in sync with AppState.lfPreviewCaseId.
+  _syncBar() {
+    this.refreshBar();
+  },
+
+  // Snapshot the live load-flow result the first time we enter preview, so it
+  // can be restored verbatim (value + provenance) on return to live.
+  _enterPreviewBackup() {
+    if (this._lfBackup !== undefined) return;
+    AppState._results = AppState._results || {};
+    AppState.resultsMeta = AppState.resultsMeta || {};
+    this._lfBackup = {
+      res: AppState._results.loadFlowResults,
+      meta: AppState.resultsMeta.loadFlowResults,
+    };
+  },
+
+  _restoreBackup() {
+    if (this._lfBackup === undefined) return;
+    AppState._results = AppState._results || {};
+    AppState.resultsMeta = AppState.resultsMeta || {};
+    if (this._lfBackup.res === undefined) delete AppState._results.loadFlowResults;
+    else AppState._results.loadFlowResults = this._lfBackup.res;
+    if (this._lfBackup.meta === undefined) delete AppState.resultsMeta.loadFlowResults;
+    else AppState.resultsMeta.loadFlowResults = this._lfBackup.meta;
+    this._lfBackup = undefined;
+  },
+
+  // Display a saved case on the diagram (breakers + any run result). '__current__'
+  // (or a falsy id) returns to the live network.
+  previewCase(id) {
+    if (!id || id === '__current__') { this.clearPreview(); return; }
+    const c = this._cases().find(x => x.id === id);
+    if (!c) { this.clearPreview(); return; }
+    this._enterPreviewBackup();
+    AppState.lfPreviewCaseId = id;
+    const r = (this._results || []).find(x => x.id === id);
+    AppState.loadFlowResults = r ? r.result : null;
+    if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
+    this._syncBar();
+    document.getElementById('status-info').textContent =
+      `Viewing case “${c.name}” — breakers show the case state` +
+      (r ? ', voltages from the last run.' : ' (run the study to see load-flow voltages).');
+  },
+
+  // Return to the live network view, restoring its own load-flow result.
+  clearPreview() {
+    const wasPreviewing = AppState.lfPreviewCaseId != null || this._lfBackup !== undefined;
+    AppState.lfPreviewCaseId = null;
+    this._restoreBackup();
+    if (wasPreviewing) {
+      if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
+      document.getElementById('status-info').textContent = 'Viewing the live network.';
+    }
+    this.refreshBar();
+  },
+
+  // The live network was replaced (new project, project load, or a case applied):
+  // drop any preview and rebuild the bar against the new set of cases.
+  onNetworkReloaded() {
+    AppState.lfPreviewCaseId = null;
+    this._lfBackup = undefined;
+    this.refreshBar();
   },
 };

@@ -96,6 +96,7 @@ const Project = {
     Properties.clear();
     document.title = 'ProtectionPro — New Project';
     updateProjectNameDisplay('Untitled Project');
+    if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
     RevisionTimeline.hide();
   },
 
@@ -639,6 +640,7 @@ const Project = {
       localStorage.removeItem('protectionpro-auto-save-backup');
       this._statusMsg('Restored from local backup.');
       this._noticeStaleResults();
+      if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
     } catch (e) {
       console.error('Failed to restore local backup:', e);
     }
@@ -698,6 +700,7 @@ const Project = {
             `Project imported: ${nc} component${nc === 1 ? '' : 's'}, ${nw} wire${nw === 1 ? '' : 's'}.`;
           UI.toast(`Imported "${AppState.projectName}" — ${nc} component${nc === 1 ? '' : 's'}, ${nw} wire${nw === 1 ? '' : 's'}.`, 'success');
           this._noticeStaleResults();
+          if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
         } catch (err) {
           UI.toast('Invalid project file: ' + err.message, 'error');
         }
@@ -787,6 +790,7 @@ const Project = {
           RevisionTimeline.show();
           this._statusMsg('Project loaded.');
           this._noticeStaleResults();
+          if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
         } catch (err) {
           UI.toast('Failed to load project: ' + err.message, 'error');
         }
@@ -976,6 +980,7 @@ const Project = {
           RevisionTimeline.show();
           this._statusMsg('Project loaded.');
           this._noticeStaleResults();
+          if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
         } catch (err) {
           UI.toast('Failed to load project: ' + err.message, 'error');
         }

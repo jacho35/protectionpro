@@ -81,6 +81,17 @@ html, body {
   overflow: hidden;
 }
 
+/* Load Flow case-view bar occupies a fixed strip below the toolbar; shrink the
+   app container to match so the canvas is not pushed off-screen (mirrors
+   ribbon-mode). Toggled by LFStudy.refreshBar via body.lf-bar-visible. */
+:root { --lf-bar-height: 34px; }
+body.lf-bar-visible #app-container {
+  height: calc(100vh - var(--toolbar-height) - var(--lf-bar-height));
+}
+body.lf-bar-visible.ribbon-mode #app-container {
+  height: calc(100vh - var(--toolbar-height) - var(--ribbon-height) - var(--lf-bar-height));
+}
+
 /* ─── Toast notifications (shared desktop + mobile via UI.toast) ─────────────── */
 #toast-container {
   position: fixed;

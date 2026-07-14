@@ -1091,6 +1091,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('lf-study-modal').addEventListener('click', (e) => {
     if (e.target.id === 'lf-study-modal') e.target.style.display = 'none';
   });
+  // Persistent case-view bar below the toolbar (shows/hides itself on cases).
+  if (typeof LFStudy !== 'undefined' && LFStudy.initBar) LFStudy.initBar();
 
   // ── Transient Stability ──
   document.getElementById('btn-transient-stability').addEventListener('click', () => {

@@ -122,6 +122,7 @@ const AppState = {
   dynamicMotorSchedule: null,  // {motors: [{id, role, start_time_s}]}
   dynamicMotorCases: [],       // [{id, name, schedule}]
   loadFlowCases: [],           // [{id, name, baseMVA, loadFlowMethod, components, wires}] — Load Flow Study Manager
+  lfPreviewCaseId: null,       // transient (NOT persisted): a saved load-flow case currently previewed on the diagram — overrides cb/switch state in the symbol render. See lfstudy.js.
 
   // Component groups — reusable blocks
   groups: new Map(), // Map<groupId, {id, name, memberIds: Set<string>, collapsed: boolean}>
