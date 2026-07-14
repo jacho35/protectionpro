@@ -40,7 +40,7 @@ const Transient = {
   },
 
   // ── Disturbance setup ──────────────────────────────────────────────
-  openConfig() {
+  openConfig(prefill) {
     const buses = this._list(['bus']);
     if (!buses.length) {
       document.getElementById('status-info').textContent =
@@ -49,30 +49,42 @@ const Transient = {
     }
     const body = document.getElementById('stability-config-body');
     const branches = this._list(['cable', 'transformer']);
+    const breakers = this._list(['cb', 'switch']);
     const gens = this._list(['generator']);
     const loads = this._list(['static_load', 'motor_induction', 'motor_synchronous']);
     const opt = arr => arr.map(o => `<option value="${this._esc(o.id)}">${this._esc(o.name)}</option>`).join('');
     const trips = [...gens.map(g => ({ ...g, name: 'Gen: ' + g.name })),
                    ...branches.map(b => ({ ...b, name: 'Branch: ' + b.name }))];
-    const L = this._last || {};
+    // Element pickers for the sequence timeline, per action. Trip can act on a
+    // generator, feeder/branch, breaker or load; reconnect on a feeder/breaker/
+    // load (generators are trip-only); load-change on a load.
+    const pfx = (arr, p) => arr.map(o => ({ id: o.id, name: p + o.name }));
+    this._seqEls = {
+      trip: [...pfx(gens, 'Gen: '), ...pfx(branches, 'Feeder: '),
+             ...pfx(breakers, 'Breaker: '), ...pfx(loads, 'Load: ')],
+      close: [...pfx(branches, 'Feeder: '), ...pfx(breakers, 'Breaker: '),
+              ...pfx(loads, 'Load: ')],
+      load_step: pfx(loads, ''),
+    };
 
-    body.innerHTML = `
+    body.innerHTML = this._renderCasesBlock() + `
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
         <label>Disturbance</label>
         <select id="ts-type">
           <option value="fault">Three-phase bus fault + clear</option>
           <option value="trip">Generator / branch trip</option>
           <option value="load_step">Load step</option>
+          <option value="sequence">Sequenced events (timeline)</option>
         </select>
 
         <div class="ts-row ts-fault" style="display:contents">
           <label>Fault at bus</label><select id="ts-fault-bus">${opt(buses)}</select>
           <label>Clear time</label>
-          <div><input id="ts-clear" type="number" min="0" step="0.01" value="${L.clear_time_s ?? 0.15}" style="width:90px"> s</div>
+          <div><input id="ts-clear" type="number" min="0" step="0.01" value="0.15" style="width:90px"> s</div>
           <label>Trip on clear</label>
           <select id="ts-trip-branch"><option value="">— none —</option>${opt(branches)}</select>
           <label>Find CCT</label>
-          <div><input id="ts-cct" type="checkbox" ${L.find_cct === false ? '' : 'checked'}> critical clearing time (binary search)</div>
+          <div><input id="ts-cct" type="checkbox" checked> critical clearing time (binary search)</div>
         </div>
 
         <div class="ts-row ts-trip" style="display:none">
@@ -83,27 +95,272 @@ const Transient = {
 
         <div class="ts-row ts-load" style="display:none">
           <label>Load</label><select id="ts-load-el">${opt(loads)}</select>
-          <label>Step by</label>
-          <div><input id="ts-load-delta" type="number" step="5" value="50" style="width:90px"> %</div>
+          <label>Action</label>
+          <select id="ts-load-mode">
+            <option value="change">Change demand by %</option>
+            <option value="add">Switch in a 2nd equal block (+100%)</option>
+            <option value="shed">Shed load entirely (−100%)</option>
+          </select>
+          <label id="ts-load-delta-lbl">Change demand by</label>
+          <div><input id="ts-load-delta" type="number" step="5" value="50" style="width:90px"> % of pre-fault load</div>
           <label>At time</label>
           <div><input id="ts-load-time" type="number" min="0" step="0.01" value="0.1" style="width:90px"> s</div>
+          <p style="grid-column:1/-1;font-size:11px;color:var(--text-muted,#6d6d6d);margin:2px 0 0">
+            Steps the selected (already energised) load's demand at the event time, as a percentage of
+            its pre-fault value: <strong>+100%</strong> doubles it (like switching in a second identical
+            load), <strong>−100%</strong> sheds it entirely, <strong>−50%</strong> drops half. A load
+            sitting on its source's own terminal bus is folded into that machine's mechanical power and
+            can't be stepped — put it on a separate bus to switch it in or out.
+          </p>
+        </div>
+
+        <div class="ts-row ts-seq" style="display:none;grid-column:1/-1">
+          <div style="font-size:12px;font-weight:600;margin:2px 0 5px">Event timeline (absolute times)</div>
+          <div id="ts-seq-list"></div>
+          <button id="ts-seq-add" type="button" style="font-size:11px;padding:3px 10px;margin-top:4px;cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit">+ Add step</button>
+          <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:6px 0 0">
+            Each step acts on one element at its time; steps run in time order (two at the same time
+            are simultaneous). <strong>Trip / open</strong> a feeder, breaker or generator; <strong>reconnect</strong>
+            a feeder, breaker or load switched out earlier; or <strong>change a load's</strong> demand by a %.
+            Generators are trip-only. A load on its source's own terminal bus can't be stepped — put it on a separate bus.
+          </p>
         </div>
 
         <label>Simulation time</label>
-        <div><input id="ts-tend" type="number" min="0.5" step="0.5" value="${L.t_end_s ?? 5}" style="width:90px"> s</div>
+        <div><input id="ts-tend" type="number" min="0.5" step="0.5" value="5" style="width:90px"> s</div>
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin-top:10px">
-        Classical model: each synchronous generator is E′ behind X′d with its inertia H; utility sources are infinite buses; loads are constant admittances. ${gens.length ? '' : '<strong>No generators found — add a generator (with an inertia constant) for a meaningful swing.</strong>'}</p>`;
+        Each synchronous generator is E′ behind X′d with its inertia H; utility sources are infinite buses; loads are constant admittances (or voltage-dependent / motor models if set). Inverters (PV / BESS / full-converter wind) are frozen unless their <em>Converter Model</em> is set to grid-following or grid-forming. ${gens.length ? '' : '<strong>No generators found — add a generator or a grid-forming inverter (with an inertia constant) for a meaningful swing.</strong>'}</p>`;
 
-    const sync = () => {
-      const t = body.querySelector('#ts-type').value;
-      body.querySelector('.ts-fault').style.display = t === 'fault' ? 'contents' : 'none';
-      body.querySelector('.ts-trip').style.display = t === 'trip' ? 'contents' : 'none';
-      body.querySelector('.ts-load').style.display = t === 'load_step' ? 'contents' : 'none';
-    };
-    body.querySelector('#ts-type').addEventListener('change', sync);
-    sync();
+    body.querySelector('#ts-type').addEventListener('change', () => this._syncTypeFields());
+    body.querySelector('#ts-load-mode').addEventListener('change', () => this._syncLoadMode());
+    body.querySelector('#ts-seq-add').addEventListener('click', () => this._addSeqRow());
+    this._applyConfig(prefill || this._last);   // populate + reveal the right fields
+    this._wireCaseButtons();
     document.getElementById('stability-config-modal').style.display = '';
+  },
+
+  _syncTypeFields() {
+    const body = document.getElementById('stability-config-body');
+    const t = body.querySelector('#ts-type').value;
+    body.querySelector('.ts-fault').style.display = t === 'fault' ? 'contents' : 'none';
+    body.querySelector('.ts-trip').style.display = t === 'trip' ? 'contents' : 'none';
+    body.querySelector('.ts-load').style.display = t === 'load_step' ? 'contents' : 'none';
+    body.querySelector('.ts-seq').style.display = t === 'sequence' ? '' : 'none';
+    // Switching to a sequence with no steps yet: seed one so the editor isn't empty.
+    if (t === 'sequence' && !body.querySelector('#ts-seq-list .ts-seq-row')) this._addSeqRow();
+  },
+
+  // ── Sequence timeline editor ───────────────────────────────────────
+  _seqElOpts(action, selected) {
+    return (this._seqEls[action] || []).map(o =>
+      `<option value="${this._esc(o.id)}"${o.id === selected ? ' selected' : ''}>${this._esc(o.name)}</option>`).join('');
+  },
+
+  _addSeqRow(step) {
+    const list = document.getElementById('ts-seq-list');
+    if (!list) return;
+    step = step || { t: 1, action: 'trip', element: '', delta_pct: 50 };
+    // Coerce the numeric fields to numbers before interpolating into markup (the
+    // element options are escaped via _esc; these guard against a crafted case).
+    const tVal = Number.isFinite(+step.t) ? +step.t : 1;
+    const dVal = Number.isFinite(+step.delta_pct) ? +step.delta_pct : 50;
+    const row = document.createElement('div');
+    row.className = 'ts-seq-row';
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:12px';
+    row.innerHTML = `
+      <input class="ts-seq-t" type="number" min="0" step="0.1" value="${tVal}" style="width:60px" title="Time (s)"><span style="color:var(--text-muted,#6d6d6d)">s</span>
+      <select class="ts-seq-action">
+        <option value="trip">Trip / open</option>
+        <option value="close">Reconnect</option>
+        <option value="load_step">Load change</option>
+      </select>
+      <select class="ts-seq-el" style="flex:1;min-width:110px"></select>
+      <input class="ts-seq-delta" type="number" step="5" value="${dVal}" style="width:58px;display:none" title="% change of pre-fault load"><span class="ts-seq-delta-u" style="display:none;color:var(--text-muted,#6d6d6d)">%</span>
+      <button type="button" class="ts-seq-del" title="Remove step" style="cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit;padding:0 7px">✕</button>`;
+    list.appendChild(row);
+    row.querySelector('.ts-seq-action').value = step.action || 'trip';
+    this._syncSeqRow(row, step.element);
+    row.querySelector('.ts-seq-action').addEventListener('change', () => this._syncSeqRow(row));
+    row.querySelector('.ts-seq-del').addEventListener('click', () => row.remove());
+  },
+
+  // Populate a row's element picker for its action and toggle the % field.
+  _syncSeqRow(row, keepId) {
+    const action = row.querySelector('.ts-seq-action').value;
+    const elSel = row.querySelector('.ts-seq-el');
+    const want = keepId != null ? keepId : elSel.value;   // preserve selection if still valid
+    elSel.innerHTML = this._seqElOpts(action, want);
+    const isLoad = action === 'load_step';
+    row.querySelector('.ts-seq-delta').style.display = isLoad ? '' : 'none';
+    row.querySelector('.ts-seq-delta-u').style.display = isLoad ? '' : 'none';
+  },
+
+  _readSeqSteps() {
+    return [...document.querySelectorAll('#ts-seq-list .ts-seq-row')].map(r => {
+      const action = r.querySelector('.ts-seq-action').value;
+      const step = { t: parseFloat(r.querySelector('.ts-seq-t').value) || 0, action,
+                     element: r.querySelector('.ts-seq-el').value };
+      if (action === 'load_step') step.delta_pct = parseFloat(r.querySelector('.ts-seq-delta').value) || 0;
+      return step;
+    }).filter(s => s.element);
+  },
+
+  // Reflect the chosen load-step Action in the "% of pre-fault load" field.
+  // "Switch in" pins it to +100 % (a second equal block); "Shed" pins it to
+  // −100 % (drop to zero); "Change" lets the user type any percentage.
+  _syncLoadMode() {
+    const b = document.getElementById('stability-config-body');
+    const mode = b.querySelector('#ts-load-mode').value;
+    const delta = b.querySelector('#ts-load-delta');
+    const lbl = b.querySelector('#ts-load-delta-lbl');
+    if (mode === 'change') {
+      delta.disabled = false;
+      lbl.style.opacity = '';
+    } else {
+      delta.value = mode === 'add' ? 100 : -100;
+      delta.disabled = true;
+      lbl.style.opacity = '0.5';
+    }
+  },
+
+  // Populate the form from a disturbance spec (a saved case or the last run).
+  _applyConfig(d) {
+    const b = document.getElementById('stability-config-body');
+    const set = (sel, v) => { const el = b.querySelector(sel); if (el && v != null) el.value = v; };
+    const chk = (sel, v) => { const el = b.querySelector(sel); if (el) el.checked = !!v; };
+    if (d) {
+      if (d.type) set('#ts-type', d.type);
+      set('#ts-tend', d.t_end_s);
+      if (d.bus != null || d.type === 'fault') {
+        set('#ts-fault-bus', d.bus);
+        set('#ts-clear', d.clear_time_s);
+        set('#ts-trip-branch', d.trip_element || '');
+        chk('#ts-cct', d.find_cct !== false);
+      }
+      if (d.type === 'trip') { set('#ts-trip-el', d.element); set('#ts-trip-time', d.time_s); }
+      if (d.type === 'sequence') {
+        const list = b.querySelector('#ts-seq-list');
+        if (list) {
+          list.innerHTML = '';
+          (d.steps || []).forEach(s => this._addSeqRow(s));
+        }
+      }
+      if (d.type === 'load_step') {
+        set('#ts-load-el', d.element); set('#ts-load-time', d.time_s);
+        // Infer the Action from delta_pct so saved cases (which store only
+        // delta_pct) round-trip: ±100 % map to the shed / switch-in presets.
+        const dp = d.delta_pct;
+        set('#ts-load-mode', dp === -100 ? 'shed' : dp === 100 ? 'add' : 'change');
+        set('#ts-load-delta', dp);
+      }
+    }
+    this._syncTypeFields();
+    this._syncLoadMode();
+  },
+
+  // ── Saved study cases (persisted with the project) ─────────────────
+  _cases() {
+    if (!Array.isArray(AppState.stabilityCases)) AppState.stabilityCases = [];
+    return AppState.stabilityCases;
+  },
+
+  _name(id) {
+    const c = AppState.components.get(id);
+    return c ? (c.props?.name || id) : id;
+  },
+
+  _caseSummary(d) {
+    if (!d) return '';
+    if (d.type === 'fault') {
+      return `Fault @ ${this._name(d.bus)}, clear ${Math.round((d.clear_time_s || 0) * 1000)} ms`
+        + (d.trip_element ? `, trip ${this._name(d.trip_element)}` : '')
+        + (d.find_cct !== false ? ', CCT' : '');
+    }
+    if (d.type === 'trip') return `Trip ${this._name(d.element)} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
+    if (d.type === 'sequence') {
+      const st = d.steps || [];
+      const verb = { trip: 'trip', close: 'close', load_step: 'step' };
+      const one = s => `${verb[s.action] || s.action} ${this._name(s.element)}@${s.t || 0}s`;
+      return `Sequence (${st.length} step${st.length === 1 ? '' : 's'})`
+        + (st.length ? ': ' + st.slice(0, 3).map(one).join(', ') + (st.length > 3 ? '…' : '') : '');
+    }
+    if (d.type === 'load_step') {
+      const dp = d.delta_pct;
+      const what = dp === -100 ? `Shed ${this._name(d.element)}`
+        : dp === 100 ? `Switch in 2nd ${this._name(d.element)}`
+        : `${this._name(d.element)} demand ${dp >= 0 ? '+' : ''}${dp}%`;
+      return `${what} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
+    }
+    return d.type || '';
+  },
+
+  _renderCasesBlock() {
+    const cases = this._cases();
+    const btn = 'font-size:11px;padding:2px 8px;cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit';
+    const rows = cases.length ? cases.map(c => `
+      <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+        <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis"><strong>${this._esc(c.name)}</strong>
+          <span style="color:var(--text-muted,#6d6d6d)"> — ${this._esc(this._caseSummary(c.disturbance))}</span></span>
+        <button style="${btn}" class="ts-case-load" data-id="${this._esc(c.id)}">Load</button>
+        <button style="${btn}" class="ts-case-del" data-id="${this._esc(c.id)}" title="Delete case">✕</button>
+      </div>`).join('')
+      : '<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">No saved cases yet — configure a disturbance below and Save it.</div>';
+    return `<div style="margin-bottom:14px;border:1px solid var(--border-color,#d0d0d0);border-radius:6px;padding:8px 10px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px">Saved study cases</div>
+      <div>${rows}</div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input id="ts-case-name" type="text" placeholder="Name this case…" style="flex:1;font-size:12px;padding:3px 6px">
+        <button style="${btn}" id="ts-case-save">Save current</button>
+      </div>
+    </div>`;
+  },
+
+  _wireCaseButtons() {
+    const b = document.getElementById('stability-config-body');
+    const saveBtn = b.querySelector('#ts-case-save');
+    if (saveBtn) saveBtn.addEventListener('click', () => this._saveCase());
+    b.querySelectorAll('.ts-case-load').forEach(el =>
+      el.addEventListener('click', () => this._loadCase(el.dataset.id)));
+    b.querySelectorAll('.ts-case-del').forEach(el =>
+      el.addEventListener('click', () => this._deleteCase(el.dataset.id)));
+  },
+
+  _saveCase() {
+    const b = document.getElementById('stability-config-body');
+    const cases = this._cases();
+    const nameEl = b.querySelector('#ts-case-name');
+    const name = (nameEl && nameEl.value || '').trim() || `Case ${cases.length + 1}`;
+    const d = this._readConfig();
+    const existing = cases.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.disturbance = d;
+    } else {
+      cases.push({ id: 'tsc_' + Date.now(), name, disturbance: d });
+    }
+    AppState.dirty = true;
+    this._last = d;
+    document.getElementById('status-info').textContent = `Saved study case “${name}”.`;
+    this.openConfig(d);  // re-render (updated list), keep the current config
+  },
+
+  _loadCase(id) {
+    const c = this._cases().find(x => x.id === id);
+    if (!c) return;
+    this._last = c.disturbance;
+    this.openConfig(c.disturbance);
+    const nameEl = document.getElementById('ts-case-name');
+    if (nameEl) nameEl.value = c.name;   // pre-fill name so re-saving updates it
+  },
+
+  _deleteCase(id) {
+    const cases = this._cases();
+    const i = cases.findIndex(x => x.id === id);
+    if (i < 0) return;
+    const current = this._readConfig();   // preserve the in-progress form
+    cases.splice(i, 1);
+    AppState.dirty = true;
+    this.openConfig(current);
   },
 
   _readConfig() {
@@ -118,9 +375,16 @@ const Transient = {
     } else if (type === 'trip') {
       d.element = b.querySelector('#ts-trip-el').value;
       d.time_s = parseFloat(b.querySelector('#ts-trip-time').value) || 0.1;
+    } else if (type === 'sequence') {
+      d.steps = this._readSeqSteps();
     } else {
       d.element = b.querySelector('#ts-load-el').value;
-      d.delta_pct = parseFloat(b.querySelector('#ts-load-delta').value) || 0;
+      const mode = b.querySelector('#ts-load-mode').value;
+      // The Action presets resolve to a delta_pct; the wire format stays a bare
+      // delta_pct so existing saved cases run unchanged (mode is UI-only).
+      d.delta_pct = mode === 'add' ? 100
+        : mode === 'shed' ? -100
+        : (parseFloat(b.querySelector('#ts-load-delta').value) || 0);
       d.time_s = parseFloat(b.querySelector('#ts-load-time').value) || 0.1;
     }
     return d;
@@ -130,9 +394,16 @@ const Transient = {
     const d = this._readConfig();
     this._last = d;
     document.getElementById('stability-config-modal').style.display = 'none';
-    document.getElementById('status-info').textContent = 'Running transient stability simulation…';
+    const label = d.type === 'fault' && d.find_cct
+      ? 'Running transient stability (searching critical clearing time)…'
+      : 'Running transient stability simulation…';
+    document.getElementById('status-info').textContent = label;
+    if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, label);
     try {
       const result = await API.runTransientStability(d);
+      // Remember the disturbance spec on the result so the graphs can mark the
+      // event points (per-step for a sequence), surviving save/load.
+      result.__spec = d;
       AppState.stabilityResults = result;
       this.show(result);
       document.getElementById('status-info').textContent =
@@ -143,6 +414,8 @@ const Transient = {
       if (typeof showValidationModal === 'function') {
         showValidationModal('Transient Stability — Error', [{ msg: e.message || 'Unknown error' }], [], null);
       }
+    } finally {
+      if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
     }
   },
 
@@ -159,7 +432,7 @@ const Transient = {
   _render(body) {
     const r = this._result || {};
     const warnings = r.warnings || [];
-    let html = '';
+    let html = AppState.staleBannerHTML('stabilityResults');
     if (warnings.length) {
       html += '<div class="af-warnings">' + warnings.map(w =>
         `<div class="af-warning-item">⚠ ${this._esc(w)}</div>`).join('') + '</div>';
@@ -169,10 +442,12 @@ const Transient = {
       return;
     }
 
-    // Verdict banner
+    // Verdict banner. Instability is either loss of synchronism (rotor angles)
+    // or a frequency collapse / run-up (island frequency runs away though the
+    // machines stay in step) — name whichever applies.
     const stable = r.stable !== false;
     const col = stable ? '#2e7d32' : '#c62828';
-    const label = stable ? 'STABLE' : 'UNSTABLE — loss of synchronism';
+    const label = stable ? 'STABLE' : ('UNSTABLE — ' + this._esc(r.instability || 'loss of synchronism'));
     html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;padding:9px 13px;border-radius:6px;border:1px solid ${col};background:${col}14">
       <div><span style="font-weight:700;color:${col}">${label}</span>
         <span style="font-size:12px;color:var(--text-muted,#6d6d6d)"> · ${this._esc(r.event || '')}</span></div>
@@ -180,10 +455,20 @@ const Transient = {
     </div>`;
 
     // Machine summary
+    const typeLabel = t => t === 'infinite_bus' ? 'infinite bus' : t === 'gfm_inverter' ? 'GFM inverter' : 'gen';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:6px 14px;font-size:12px;margin-bottom:10px">'
-      + r.machines.map(m => `<div><strong>${this._esc(m.name)}</strong> (${this._esc(m.type === 'infinite_bus' ? 'infinite bus' : 'gen')})<br>
-        <span style="color:var(--text-muted,#6d6d6d)">H=${m.h_s} s · Pm=${m.pm_pu} p.u. · δ₀=${m.delta0_deg}° · peak δ=${m.peak_angle_deg}°</span></div>`).join('')
+      + r.machines.map(m => `<div><strong>${this._esc(m.name)}</strong> (${this._esc(typeLabel(m.type))})<br>
+        <span style="color:var(--text-muted,#6d6d6d)">H=${m.h_s} s · Pm=${m.pm_pu} p.u. · δ₀=${m.delta0_deg}° · peak δ=${m.peak_angle_deg}°${
+          m.type === 'gfm_inverter' && m.peak_current_pu != null ? ` · peak I=${m.peak_current_pu}×I_rated (limit ${m.imax_pu}×)` : ''}</span></div>`).join('')
       + '</div>';
+
+    // Protection operations (UFLS / generator & motor trips) during the run
+    if (Array.isArray(r.trips) && r.trips.length) {
+      html += '<div style="margin-bottom:10px;padding:8px 11px;border:1px solid #b26a00;border-radius:6px;background:#fff3e0;font-size:12px">'
+        + '<div style="font-weight:700;color:#8a4b00;margin-bottom:3px">⚡ Protection operations</div>'
+        + r.trips.map(tr => `<div style="color:#6d4c00">${(tr.t).toFixed(2)} s — <strong>${this._esc(tr.element)}</strong>: ${this._esc(tr.reason)}</div>`).join('')
+        + '</div>';
+    }
 
     html += `<div class="ts-chart" data-chart="angle"></div>`;
     html += `<div class="ts-chart" data-chart="freq"></div>`;
@@ -209,16 +494,52 @@ const Transient = {
         heads.map(h => `<th>${this._esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></details>`;
   },
 
+  // Vertical event lines for the time charts. Prefer the disturbance spec that
+  // produced this result (attached as __spec, so it survives save/load); a
+  // sequence yields one marker per timed step. Falls back to the last-run spec,
+  // then to parsing the backend event string for restored/legacy results.
   _eventMarkers(r, P) {
-    const d = this._result && AppState.stabilityResults && AppState.stabilityResults.__spec;
-    // fall back to remembered spec
-    const spec = this._last || {};
+    const spec = (r && r.__spec)
+      || (AppState.stabilityResults && AppState.stabilityResults.__spec)
+      || this._last || {};
     const marks = [];
-    if (r.event && /cleared at (\d+)/.test(r.event)) {
-      const ms = parseFloat(RegExp.$1);
-      marks.push({ t: ms / 1000, label: 'clear', color: P.inkSec, dashed: true });
+    const verb = { trip: 'open', close: 'close', load_step: 'load' };
+
+    if (spec.type === 'sequence' && Array.isArray(spec.steps) && spec.steps.length) {
+      spec.steps.forEach(s => {
+        if (!s || s.t == null) return;
+        let label = `${verb[s.action] || s.action} ${this._name(s.element)}`;
+        if (s.action === 'load_step' && s.delta_pct != null) {
+          label += ` ${s.delta_pct >= 0 ? '+' : ''}${s.delta_pct}%`;
+        }
+        marks.push({ t: +s.t, label, color: P.inkSec, dashed: true });
+      });
+      return marks;
+    }
+    if (spec.type === 'trip' && spec.time_s != null) {
+      marks.push({ t: +spec.time_s, label: 'trip ' + this._name(spec.element), color: P.inkSec, dashed: true });
+      return marks;
+    }
+    if (spec.type === 'load_step' && spec.time_s != null) {
+      marks.push({ t: +spec.time_s, label: 'load step', color: P.inkSec, dashed: true });
+      return marks;
+    }
+    // Fault: mark the clearing time (from the event string, else the spec).
+    if (r.event && /cleared at ([\d.]+)/.test(r.event)) {
+      marks.push({ t: parseFloat(RegExp.$1) / 1000, label: 'clear', color: P.inkSec, dashed: true });
+    } else if (spec.clear_time_s != null) {
+      marks.push({ t: +spec.clear_time_s, label: 'clear', color: P.inkSec, dashed: true });
     } else if (spec.time_s != null) {
-      marks.push({ t: spec.time_s, label: 'event', color: P.inkSec, dashed: true });
+      marks.push({ t: +spec.time_s, label: 'event', color: P.inkSec, dashed: true });
+    }
+    // Legacy/restored sequence with no spec: recover the "… @ Ns" times from the
+    // backend event string ("Sequence: open X @ 1s; shed Y @ 3s").
+    if (!marks.length && r.event && r.event.indexOf('@') >= 0) {
+      const re = /([^;:]+?)@\s*([\d.]+)\s*s/g;
+      let m;
+      while ((m = re.exec(r.event))) {
+        marks.push({ t: parseFloat(m[2]), label: m[1].trim(), color: P.inkSec, dashed: true });
+      }
     }
     return marks;
   },
@@ -297,11 +618,12 @@ const Transient = {
     if (yMin < 0 && yMax > 0) {
       g += `<line x1="${padL}" y1="${Y(0)}" x2="${W - padR}" y2="${Y(0)}" stroke="${P.axis}" stroke-width="1.2"/>`;
     }
-    (spec.markers || []).forEach(mk => {
+    // Cycle caption heights so closely-spaced sequence events don't collide.
+    (spec.markers || []).forEach((mk, mi) => {
       if (mk.t == null || mk.t < xMin || mk.t > xMax) return;
       const x = X(mk.t);
       g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${mk.color || P.tickText}" stroke-width="1" opacity="0.6"${mk.dashed ? ' stroke-dasharray="3 2"' : ''}/>`;
-      g += `<text x="${x + 3}" y="${padT + 9}" font-size="8" fill="${mk.color || P.tickText}">${this._esc(mk.label)}</text>`;
+      g += `<text x="${x + 3}" y="${padT + 9 + (mi % 3) * 9}" font-size="8" fill="${mk.color || P.tickText}">${this._esc(mk.label)}</text>`;
     });
     for (const s of spec.series) {
       const pts = s.values.map((v, i) => `${X(xs[i]).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');

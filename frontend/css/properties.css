@@ -164,6 +164,26 @@
   background: rgba(0,120,215,0.08);
 }
 
+/* "default" flag — marks a field still holding its typical/standard (often IEC)
+   default value, so the user knows it is an assumed figure they can override. */
+.prop-default-flag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  flex-shrink: 0;
+  cursor: default;
+  user-select: none;
+}
+
 /* Info popup positioned relative to properties panel */
 .prop-info-popup {
   position: fixed;

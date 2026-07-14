@@ -158,6 +158,7 @@ class ProjectData(BaseModel):
     faultType: Optional[str] = None  # "3phase", "slg", "ll", "llg", or None for all
     voltageFactor: Optional[float] = None  # IEC 60909 voltage factor c; None → engine default (c_max = 1.10)
     stabilityDisturbance: Optional[dict] = None  # transient-stability event spec (see transient_stability)
+    dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
 
 
 class ProjectSummary(BaseModel):
@@ -527,6 +528,56 @@ class LoadFlowResults(BaseModel):
     iterations: int
     method: str
     dispatch: list[DispatchEntry] = []
+
+
+# ── Load Flow Study Manager (named full-snapshot cases) ──────────────────────
+class LoadFlowCaseInput(BaseModel):
+    """One study case: a self-contained network snapshot to run load flow on.
+
+    Carrying `components` as validated `Component` models means the numeric
+    coercion validator runs automatically, so grid-edited string values (e.g.
+    "11") reach the engine as numbers."""
+    model_config = {"extra": "allow"}
+
+    id: str
+    name: str = ""
+    components: list[Component] = []
+    wires: list[Wire] = []
+    baseMVA: Optional[float] = None
+    loadFlowMethod: Optional[str] = None
+
+
+class LoadFlowCaseSummary(BaseModel):
+    converged: bool = False
+    iterations: int = 0
+    min_v_pu: Optional[float] = None
+    min_v_bus: str = ""
+    max_v_pu: Optional[float] = None
+    max_v_bus: str = ""
+    total_losses_mw: float = 0
+    overloaded_branch_count: int = 0
+    worst_branch_name: str = ""
+    worst_branch_loading_pct: float = 0
+    deenergized_bus_count: int = 0
+
+
+class LoadFlowCaseResult(BaseModel):
+    id: str
+    name: str = ""
+    result: LoadFlowResults
+    summary: LoadFlowCaseSummary
+
+
+class LoadFlowCasesResults(BaseModel):
+    cases: list[LoadFlowCaseResult] = []
+    method: str = ""
+
+
+class LoadFlowCasesRequest(ProjectData):
+    """The full live project (the implicit "Current network" case) plus the
+    saved study cases to run alongside it."""
+    cases: list[LoadFlowCaseInput] = []
+    includeCurrent: bool = True
 
 
 class UnbalancedLoadFlowBus(BaseModel):

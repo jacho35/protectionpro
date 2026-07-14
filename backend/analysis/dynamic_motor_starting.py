@@ -325,10 +325,14 @@ def _baseline_voltages(project, motor_ids_off, warnings):
 
 # ── Per-motor preparation (nameplate → model, base quantities, options) ──
 
-def _prepare_unit(motor, comp_map, adj, freq, project, analysis_warnings):
+def _prepare_unit(motor, comp_map, adj, freq, project, analysis_warnings,
+                  schedule_override=None):
     """Fit the machine model and gather everything the coupled simulation
     needs for one motor. Returns a "unit" dict, ``{"passthrough": result}`` for
-    a motor that is reported without simulating (VFD), or ``None`` to skip."""
+    a motor that is reported without simulating (VFD), or ``None`` to skip.
+
+    ``schedule_override`` (when given) is a ``{motor_id: {"role","start_time_s"}}``
+    map from the start-timeline editor; it supersedes the motor's own props."""
     mp = motor.props
     is_sync = motor.type == "motor_synchronous"
     name = mp.get("name", motor.id)
@@ -343,11 +347,14 @@ def _prepare_unit(motor, comp_map, adj, freq, project, analysis_warnings):
         method = "dol"
 
     # Staging: when this motor energises on the shared timeline, and whether it
-    # is a staged start or an already-running background load.
-    role = str(mp.get("dyn_role", "starts")).lower()
+    # is a staged start or an already-running background load. The start-timeline
+    # editor (if used) overrides the motor's own dyn_role / start_time_s props.
+    sched = (schedule_override or {}).get(motor.id) or {}
+    role = str(sched.get("role", mp.get("dyn_role", "starts"))).lower()
     if role not in ("starts", "running"):
         role = "starts"
-    start_time = max(0.0, float(mp.get("start_time_s", 0) or 0))
+    start_time = max(0.0, float(sched.get("start_time_s",
+                                          mp.get("start_time_s", 0)) or 0))
     if role == "running":
         start_time = 0.0
 
@@ -840,10 +847,19 @@ def run_dynamic_motor_starting(project: ProjectData):
     if not motors:
         return {"motors": [], "warnings": ["No motors found in the project."]}
 
+    # Optional start-timeline override from the config modal, keyed by motor id.
+    schedule_override = {}
+    sched = getattr(project, "dynamicMotorSchedule", None)
+    if isinstance(sched, dict):
+        for row in (sched.get("motors") or []):
+            if isinstance(row, dict) and row.get("id"):
+                schedule_override[row["id"]] = row
+
     analysis_warnings = []
     units, passthrough = [], []
     for motor in motors:
-        prep = _prepare_unit(motor, comp_map, adj, freq, project, analysis_warnings)
+        prep = _prepare_unit(motor, comp_map, adj, freq, project,
+                             analysis_warnings, schedule_override)
         if prep is None:
             continue
         if "passthrough" in prep:

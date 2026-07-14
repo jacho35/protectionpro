@@ -142,10 +142,24 @@ const API = {
     return this.request('/analysis/motor-starting', 'POST', data);
   },
 
-  // Run dynamic motor starting (time-domain acceleration) analysis
-  async runDynamicMotorStarting() {
+  // Run dynamic motor starting (time-domain acceleration) analysis.
+  // An explicit start-timeline schedule (from the config modal) overrides
+  // whatever toJSON already carries; batch runs use the persisted schedule.
+  async runDynamicMotorStarting(schedule) {
     const data = AppState.toJSON();
+    if (schedule) data.dynamicMotorSchedule = schedule;
     return this.request('/analysis/dynamic-motor-starting', 'POST', data);
+  },
+
+  // Run load flow across several named study cases (Load Flow Study Manager).
+  // The request body is the live project (the implicit "Current network" case)
+  // plus the saved cases; each case carries its own full network snapshot.
+  async runLoadFlowCases(cases, method = 'newton_raphson', includeCurrent = true) {
+    const data = AppState.toJSON();
+    data.loadFlowMethod = method;
+    data.cases = cases;
+    data.includeCurrent = includeCurrent;
+    return this.request('/analysis/loadflow-cases', 'POST', data);
   },
 
   // Run classical transient stability (time-domain rotor angle)
@@ -296,9 +310,9 @@ const API = {
       components: Array.from(AppState.components.values()).map(c => ({
         id: c.id, type: c.type, props: c.props,
       })),
-      faultResults: AppState.faultResults || null,
-      loadFlowResults: AppState.loadFlowResults || null,
-      arcFlashResults: AppState.arcFlashResults || null,
+      faultResults: AppState.freshResult('faultResults'),
+      loadFlowResults: AppState.freshResult('loadFlowResults'),
+      arcFlashResults: AppState.freshResult('arcFlashResults'),
       projectDetails: AppState.projectDetails || {},
     };
     if (sections) body.sections = sections;
@@ -317,16 +331,18 @@ const API = {
       components: Array.from(AppState.components.values()).map(c => ({
         id: c.id, type: c.type, props: c.props,
       })),
-      faultResults: AppState.faultResults || null,
-      loadFlowResults: AppState.loadFlowResults || null,
-      arcFlashResults: AppState.arcFlashResults || null,
-      cableSizingResults: AppState.cableSizingResults || null,
-      motorStartingResults: AppState.motorStartingResults || null,
-      dynamicMotorResults: AppState.dynamicMotorResults || null,
-      stabilityResults: AppState.stabilityResults || null,
-      dutyCheckResults: AppState.dutyCheckResults || null,
-      loadDiversityResults: AppState.loadDiversityResults || null,
-      groundingResults: AppState.groundingResults || null,
+      // Out-of-date results (computed on an older engine version) are sent as
+      // null so they are excluded from the report until re-run.
+      faultResults: AppState.freshResult('faultResults'),
+      loadFlowResults: AppState.freshResult('loadFlowResults'),
+      arcFlashResults: AppState.freshResult('arcFlashResults'),
+      cableSizingResults: AppState.freshResult('cableSizingResults'),
+      motorStartingResults: AppState.freshResult('motorStartingResults'),
+      dynamicMotorResults: AppState.freshResult('dynamicMotorResults'),
+      stabilityResults: AppState.freshResult('stabilityResults'),
+      dutyCheckResults: AppState.freshResult('dutyCheckResults'),
+      loadDiversityResults: AppState.freshResult('loadDiversityResults'),
+      groundingResults: AppState.freshResult('groundingResults'),
       projectDetails: AppState.projectDetails || {},
     };
     return this.requestBlob('/reports/calculations', {
@@ -341,7 +357,7 @@ const API = {
       components: Array.from(AppState.components.values()).map(c => ({
         id: c.id, type: c.type, props: c.props,
       })),
-      arcFlashResults: AppState.arcFlashResults || null,
+      arcFlashResults: AppState.freshResult('arcFlashResults'),
       projectDetails: AppState.projectDetails || {},
     };
     return this.requestBlob('/reports/arcflash-labels', {
