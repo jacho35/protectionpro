@@ -162,6 +162,29 @@ const API = {
     return this.request('/analysis/loadflow-cases', 'POST', data);
   },
 
+  // Run steady-state voltage stability (P-V nose curves + Q-V reactive margin).
+  // opts: { qvBusId, step, lambdaMax, vFloor } — all optional (engine defaults).
+  async runVoltageStability(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.qvBusId) data.qv_bus_id = opts.qvBusId;
+    if (opts.step != null) data.step = opts.step;
+    if (opts.lambdaMax != null) data.lambda_max = opts.lambdaMax;
+    if (opts.vFloor != null) data.v_floor = opts.vFloor;
+    return this.request('/analysis/voltage-stability', 'POST', data);
+  },
+
+  // Run N-1 / N-2 contingency screening.
+  // opts: { includeN2, vMin, vMax, loadingLimitPct, maxContingencies } — optional.
+  async runContingency(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.includeN2 != null) data.include_n2 = opts.includeN2;
+    if (opts.vMin != null) data.v_min = opts.vMin;
+    if (opts.vMax != null) data.v_max = opts.vMax;
+    if (opts.loadingLimitPct != null) data.loading_limit_pct = opts.loadingLimitPct;
+    if (opts.maxContingencies != null) data.max_contingencies = opts.maxContingencies;
+    return this.request('/analysis/contingency', 'POST', data);
+  },
+
   // Run classical transient stability (time-domain rotor angle)
   async runTransientStability(disturbance) {
     const data = AppState.toJSON();

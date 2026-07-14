@@ -838,3 +838,110 @@ class DCShortCircuitResults(BaseModel):
     converged: bool = True
     method: str = "IEC 61660-1"
     standard: str = "IEC 61660-1"
+
+
+# ── Voltage Stability (P-V / Q-V, loadability margin) ──
+
+class PVBusCurve(BaseModel):
+    """One bus's voltage trajectory over the P-V load-scaling sweep.
+
+    v_pu is aligned index-for-index with the top-level ``lam`` / ``load_mw``
+    arrays; an entry is null where that bus was de-energized at that λ."""
+    bus_id: str
+    bus_name: str = ""
+    is_critical: bool = False
+    v_pu: list[Optional[float]] = []
+
+
+class QVCurvePoint(BaseModel):
+    v_pu: float                      # held bus voltage (p.u.)
+    q_mvar: float                    # reactive injection required to hold it (MVAr)
+
+
+class VoltageStabilityResults(BaseModel):
+    converged: bool = True           # base case solved
+    collapsed: bool = False          # a nose was found within lambda_max
+    lambda_critical: float = 1.0     # load-scale factor at the collapse point
+    loading_margin_pct: float = 0.0  # (lambda_critical − 1) × 100
+    base_load_mw: float = 0.0
+    critical_load_mw: float = 0.0    # total demand at the nose
+    critical_bus_id: str = ""
+    critical_bus_name: str = ""
+    nose_v_pu: float = 0.0           # weakest-bus voltage at the nose
+    # P-V curve arrays (index-aligned)
+    lam: list[float] = []
+    load_mw: list[float] = []
+    min_v_pu: list[float] = []       # weakest-bus voltage at each λ
+    bus_curves: list[PVBusCurve] = []
+    # Q-V reactive-margin curve at the critical / requested bus
+    qv_bus_id: str = ""
+    qv_bus_name: str = ""
+    qv_curve: list[QVCurvePoint] = []
+    qv_min_mvar: Optional[float] = None      # bottom of the Q-V curve (reactive margin)
+    qv_operating_v_pu: Optional[float] = None
+    qv_operating_mvar: Optional[float] = None
+    method: str = "P-V load-scaling continuation"
+    warnings: list[str] = []
+    note: str = ""
+
+
+class VoltageStabilityRequest(ProjectData):
+    """ProjectData plus voltage-stability sweep options (all optional)."""
+    qv_bus_id: Optional[str] = None          # None → auto (weakest bus)
+    step: Optional[float] = None             # λ increment (default 0.10)
+    lambda_max: Optional[float] = None       # λ cap (default 4.0)
+    v_floor: Optional[float] = None          # collapse floor p.u. (default 0.40)
+
+
+# ── Contingency Analysis (N-1 / N-2) ──
+
+class ContingencyViolation(BaseModel):
+    kind: str                        # overload | undervoltage | overvoltage | deenergized | non_converged
+    element_id: str = ""
+    element_name: str = ""
+    value: float = 0.0               # actual value (loading %, p.u., or MW lost)
+    limit: float = 0.0               # the limit breached
+    detail: str = ""
+
+
+class ContingencyResult(BaseModel):
+    id: str
+    label: str = ""
+    outaged_ids: list[str] = []
+    outaged_names: str = ""
+    order: int = 1                   # 1 = N-1, 2 = N-2
+    converged: bool = True
+    status: str = "secure"           # secure | violations | islanded | non_converged
+    violation_count: int = 0
+    max_loading_pct: float = 0.0
+    worst_branch: str = ""
+    min_v_pu: float = 0.0
+    max_v_pu: float = 0.0
+    lost_load_mw: float = 0.0
+    violations: list[ContingencyViolation] = []
+
+
+class ContingencyResults(BaseModel):
+    base_converged: bool = True
+    base_violation_count: int = 0
+    base_violations: list[ContingencyViolation] = []
+    n_minus_1_secure: bool = True
+    n_minus_1_count: int = 0
+    analyzed: int = 0
+    skipped: int = 0
+    mode: str = "N-1"
+    worst_case_id: str = ""
+    worst_case_label: str = ""
+    limits: dict = {}
+    contingencies: list[ContingencyResult] = []
+    method: str = "Load-flow contingency screening"
+    warnings: list[str] = []
+
+
+class ContingencyRequest(ProjectData):
+    """ProjectData plus contingency screening options (all optional)."""
+    include_n2: bool = False
+    v_min: Optional[float] = None            # default 0.95
+    v_max: Optional[float] = None            # default 1.05
+    loading_limit_pct: Optional[float] = None  # default 100
+    max_contingencies: Optional[int] = None  # N-2 pair cap (default 400)

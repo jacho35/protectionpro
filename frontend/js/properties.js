@@ -646,6 +646,13 @@ const Properties = {
 
     AppState.dirty = true;
     if (commit) {
+      // A committed edit changes the LIVE network — if a load-flow case is being
+      // previewed, the diagram is showing the case snapshot (e.g. breaker state),
+      // so the edit would be masked. Drop the preview back to live so it shows.
+      if (typeof LFStudy !== 'undefined' && LFStudy.clearPreview &&
+          typeof AppState !== 'undefined' && AppState.lfPreviewCaseId) {
+        LFStudy.clearPreview();
+      }
       this._notifyResultsCleared();
       AppState.clearResults();
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();

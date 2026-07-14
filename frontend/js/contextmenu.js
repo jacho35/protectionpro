@@ -312,6 +312,13 @@ const ContextMenu = {
   // Open/close a CB or switch with the same commit ritual as a
   // properties-panel edit (results cleared, undo snapshot, re-render)
   _toggleSwitchgear(comp) {
+    // Editing the live network while a load-flow case is previewed would be
+    // masked: the diagram draws the case's breaker state, so a live toggle
+    // looks stuck. Return to the live view first so the edit is visible.
+    if (typeof LFStudy !== 'undefined' && LFStudy.clearPreview &&
+        typeof AppState !== 'undefined' && AppState.lfPreviewCaseId) {
+      LFStudy.clearPreview();
+    }
     const opening = comp.props.state !== 'open';
     comp.props.state = opening ? 'open' : 'closed';
     AppState.dirty = true;

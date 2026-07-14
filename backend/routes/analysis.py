@@ -6,8 +6,10 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults
 from ..analysis.loadflow_cases import run_loadflow_cases
+from ..analysis.voltage_stability import run_voltage_stability
+from ..analysis.contingency import run_contingency
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -64,6 +66,48 @@ def loadflow_cases(data: LoadFlowCasesRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Load flow cases error: {e}")
+
+
+@router.post("/voltage-stability", response_model=VoltageStabilityResults)
+def voltage_stability(data: VoltageStabilityRequest):
+    """Run steady-state voltage stability — P-V nose curves, loadability margin,
+    and a Q-V reactive-margin curve at the weakest (or requested) bus."""
+    try:
+        method = data.loadFlowMethod or "newton_raphson"
+        kwargs = {}
+        if data.qv_bus_id:
+            kwargs["qv_bus_id"] = data.qv_bus_id
+        if data.step is not None:
+            kwargs["step"] = data.step
+        if data.lambda_max is not None:
+            kwargs["lambda_max"] = data.lambda_max
+        if data.v_floor is not None:
+            kwargs["v_floor"] = data.v_floor
+        return run_voltage_stability(data, method, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Voltage stability error: {e}")
+
+
+@router.post("/contingency", response_model=ContingencyResults)
+def contingency(data: ContingencyRequest):
+    """Run N-1 (and optionally N-2) contingency screening — flag thermal
+    overloads, voltage violations and loss of supply for each element outage."""
+    try:
+        method = data.loadFlowMethod or "newton_raphson"
+        kwargs = {"include_n2": data.include_n2}
+        if data.v_min is not None:
+            kwargs["v_min"] = data.v_min
+        if data.v_max is not None:
+            kwargs["v_max"] = data.v_max
+        if data.loading_limit_pct is not None:
+            kwargs["loading_limit_pct"] = data.loading_limit_pct
+        if data.max_contingencies is not None:
+            kwargs["max_contingencies"] = data.max_contingencies
+        return run_contingency(data, method, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Contingency analysis error: {e}")
 
 
 @router.post("/unbalanced-loadflow", response_model=UnbalancedLoadFlowResults)
