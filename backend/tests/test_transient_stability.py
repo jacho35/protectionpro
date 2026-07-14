@@ -755,6 +755,42 @@ class TestFrequencyStability:
         assert r["instability"] == "loss of synchronism"
 
 
+class TestDispatchAllocation:
+    """Pre-fault mechanical power follows each machine's actual load-flow
+    dispatch, not an equal per-bus split — so a bus-mate the load flow leaves
+    uncommitted / balancing near zero is not handed half the load it was never
+    dispatched to carry."""
+
+    def _shared_bus_island(self):
+        # Two gensets parallel on ONE gen bus feeding a separate load bus. The
+        # load flow commits them asymmetrically (one carries the load, one
+        # balances near zero) — the equal per-bus split would have given them
+        # ~half each regardless.
+        g = lambda cid, nm, mode: _c(cid, "generator", {
+            "name": nm, "rated_mva": 0.5, "voltage_kv": 0.4, "xd_p": 0.25,
+            "inertia_h_s": 2.0, "dispatch_mode": mode, "gov_mode": "isochronous"})
+        return ProjectData(projectName="da", baseMVA=100.0, frequency=50, components=[
+            _c("bg", "bus", {"name": "GB", "voltage_kv": 0.4}),
+            _c("bl", "bus", {"name": "LB", "voltage_kv": 0.4}),
+            _c("f", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.05,
+                              "x_per_km": 0.05, "length_km": 0.05}),
+            g("g1", "G1", "must_run"), g("g2", "G2", "standby"),
+            _c("ld", "static_load", {"name": "L", "voltage_kv": 0.4, "rated_kva": 200,
+                                     "power_factor": 0.9, "demand_factor": 1.0}),
+        ], wires=[_w("w1", "g1", "bg"), _w("w2", "g2", "bg"), _w("wf1", "bg", "f"),
+                  _w("wf2", "f", "bl"), _w("wl", "bl", "ld")])
+
+    def test_prefault_power_follows_dispatch_not_equal_split(self):
+        r = run_transient_stability(self._shared_bus_island(),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 10, "time_s": 1, "t_end_s": 6})
+        pms = sorted(abs(m["pm_pu"]) for m in r["machines"] if m["type"] == "generator")
+        assert len(pms) == 2 and sum(pms) > 1e-4          # the island carries load
+        # dispatch-driven: one set carries it, the other ~idles. An equal per-bus
+        # split would have made these two nearly equal (pms[0] ≈ pms[1]).
+        assert pms[0] < 0.15 * pms[1]
+
+
 class TestEdgeCases:
     def test_no_machines(self):
         p = ProjectData(projectName="t", baseMVA=100.0, frequency=50,

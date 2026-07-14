@@ -228,7 +228,10 @@ def _collect_machines(project, ctx, lf):
     # which is modelled as a virtual synchronous machine on the same footing.
     sources = [c for c in project.components
                if c.type in MACHINE_SOURCE_TYPES or _ibr_ctrl(c) == "gfm"]
-    # Which machines land on each bus (to split a shared bus injection).
+    # Which machines land on each bus, and how the load flow actually dispatched
+    # each — used to split a shared bus's injection between paralleled machines
+    # by their COMMITTED output rather than equally (an uncommitted / standby set
+    # sharing a bus then gets ~0, and paralleled sets get their real proportions).
     on_bus = {}
     staged = []
     for comp in sources:
@@ -242,14 +245,27 @@ def _collect_machines(project, ctx, lf):
         staged.append((comp, bus_id, z, h_sys, infinite))
         on_bus[bus_id] = on_bus.get(bus_id, 0) + 1
 
+    disp = {e.source_id: e.dispatched_mw for e in getattr(lf, "dispatch", [])}
+    bus_wsum = {}      # per-bus Σ committed MW (≥0) of the machines on it
+    for c_, bid, *_ in staged:
+        bus_wsum[bid] = bus_wsum.get(bid, 0.0) + max(disp.get(c_.id, 0.0), 0.0)
+
     machines, warnings = [], []
     for comp, bus_id, z, h_sys, infinite in staged:
         V = Vc[bus_id]
         b = lf.buses.get(bus_id)
-        # Gross machine output at the bus (net injection, split if the bus
-        # carries more than one machine). Classical lossless-reactance model:
-        # P_m = pre-fault electrical output.
-        s_net = complex(b.p_mw, b.q_mvar) / base_mva / on_bus[bus_id]
+        # Each machine's share of its bus's net injection. With one machine on the
+        # bus it takes all of it; paralleled machines split it in proportion to
+        # their dispatched (committed) output, falling back to an equal split only
+        # when the load flow reports no commitment for any of them. The total over
+        # a bus is preserved, so the pre-fault power balance is unchanged.
+        if on_bus[bus_id] <= 1:
+            frac = 1.0
+        elif bus_wsum.get(bus_id, 0.0) > 1e-9:
+            frac = max(disp.get(comp.id, 0.0), 0.0) / bus_wsum[bus_id]
+        else:
+            frac = 1.0 / on_bus[bus_id]
+        s_net = complex(b.p_mw, b.q_mvar) / base_mva * frac
         if abs(V) < 1e-6:
             continue
         I = np.conj(s_net) / np.conj(V)
