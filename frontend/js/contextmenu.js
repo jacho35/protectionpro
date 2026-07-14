@@ -97,6 +97,12 @@ const ContextMenu = {
           window.AppActions?.runFaultAtBus?.(comp.id);
         },
       });
+      if (typeof SOO !== 'undefined') {
+        items.push({
+          label: 'Simulate Sequence Here',
+          action: () => SOO.openConfig({ busId: comp.id }),
+        });
+      }
       items.push('---');
     }
 
