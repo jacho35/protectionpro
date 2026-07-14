@@ -419,3 +419,70 @@
   width: 14px;
   height: 14px;
 }
+
+/* ── Load Flow case-view bar ─────────────────────────────────────────────
+   Persistent strip below the toolbar (populated by LFStudy.refreshBar).
+   Select a saved load-flow case to display its result + breaker state on the
+   diagram without altering the live network. Hidden until cases exist. */
+.lf-case-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  height: var(--lf-bar-height, 34px);
+  box-sizing: border-box;
+  padding: 0 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  background: var(--bg-secondary, #f4f4f7);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.lf-case-bar .lf-bar-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.lf-case-bar select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  max-width: 260px;
+}
+.lf-case-bar .lf-bar-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.lf-case-bar .lf-bar-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  border-color: var(--accent);
+}
+.lf-case-bar .lf-bar-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.lf-case-bar .lf-bar-note {
+  color: var(--text-muted, #6d6d6d);
+}
+.lf-case-bar .lf-bar-note.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Dashed accent outline on breakers/switches whose state differs from the
+   live network while a case is previewed. */
+.sld-component.lf-preview-override .comp-body {
+  outline: none;
+}
+.sld-component.lf-preview-override .symbol-cb rect,
+.sld-component.lf-preview-override .symbol-switch {
+  filter: drop-shadow(0 0 2px var(--accent, #2a78d6));
+}

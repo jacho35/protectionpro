@@ -702,7 +702,24 @@ const Symbols = {
     const symbolFn = this[comp.type];
     if (!symbolFn) return '';
 
-    const symbolSvg = symbolFn.call(this, w, h, comp);
+    // Load-flow case preview: when a saved case is being viewed on the diagram,
+    // draw circuit breakers / switches in the state configured for that case
+    // (without touching the live component). Matched by component id.
+    let renderComp = comp;
+    let lfPreviewOverride = false;
+    if ((comp.type === 'cb' || comp.type === 'switch') &&
+        typeof AppState !== 'undefined' && AppState.lfPreviewCaseId &&
+        Array.isArray(AppState.loadFlowCases)) {
+      const pcase = AppState.loadFlowCases.find(c => c.id === AppState.lfPreviewCaseId);
+      const cc = pcase && (pcase.components || []).find(x => x.id === comp.id);
+      const caseState = cc && cc.props ? cc.props.state : undefined;
+      if (caseState != null && caseState !== (comp.props && comp.props.state)) {
+        renderComp = { ...comp, props: { ...comp.props, state: caseState } };
+        lfPreviewOverride = true;
+      }
+    }
+
+    const symbolSvg = symbolFn.call(this, w, h, renderComp);
     let portsHtml;
     if (isBus) {
       // Free-position attachments: no port hit-circles (they blocked bus
@@ -743,7 +760,7 @@ const Symbols = {
         </g>` : '';
 
     return `
-      <g class="sld-component" data-id="${comp.id}" transform="translate(${comp.x},${comp.y}) rotate(${comp.rotation || 0})">
+      <g class="sld-component${lfPreviewOverride ? ' lf-preview-override' : ''}" data-id="${comp.id}" transform="translate(${comp.x},${comp.y}) rotate(${comp.rotation || 0})">
         <rect class="comp-outline" x="${-w / 2 - 4}" y="${-h / 2 - 4}" width="${w + 8}" height="${h + 8}" fill="transparent" stroke="transparent" stroke-width="1"/>
         <g class="comp-body">
           ${symbolSvg}
