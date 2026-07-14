@@ -142,10 +142,24 @@ const API = {
     return this.request('/analysis/motor-starting', 'POST', data);
   },
 
-  // Run dynamic motor starting (time-domain acceleration) analysis
-  async runDynamicMotorStarting() {
+  // Run dynamic motor starting (time-domain acceleration) analysis.
+  // An explicit start-timeline schedule (from the config modal) overrides
+  // whatever toJSON already carries; batch runs use the persisted schedule.
+  async runDynamicMotorStarting(schedule) {
     const data = AppState.toJSON();
+    if (schedule) data.dynamicMotorSchedule = schedule;
     return this.request('/analysis/dynamic-motor-starting', 'POST', data);
+  },
+
+  // Run load flow across several named study cases (Load Flow Study Manager).
+  // The request body is the live project (the implicit "Current network" case)
+  // plus the saved cases; each case carries its own full network snapshot.
+  async runLoadFlowCases(cases, method = 'newton_raphson', includeCurrent = true) {
+    const data = AppState.toJSON();
+    data.loadFlowMethod = method;
+    data.cases = cases;
+    data.includeCurrent = includeCurrent;
+    return this.request('/analysis/loadflow-cases', 'POST', data);
   },
 
   // Run classical transient stability (time-domain rotor angle)

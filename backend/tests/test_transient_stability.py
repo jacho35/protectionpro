@@ -252,7 +252,8 @@ class TestGovernor:
         peak = max(abs(v) for i in gi for v in f[i])              # worst excursion
         # how much it is STILL moving over the last quarter (settled ⇒ ~0)
         drift = max(abs(f[i][-1] - f[i][q]) for i in gi)
-        return {"final": final, "peak": peak, "drift": drift, "stable": r["stable"]}
+        return {"final": final, "peak": peak, "drift": drift, "stable": r["stable"],
+                "instability": r.get("instability")}
 
     def test_isochronous_recovers_to_nominal(self):
         s = self._stats("isochronous")
@@ -261,12 +262,15 @@ class TestGovernor:
         assert s["final"] < 0.02        # …that recovers to ~nominal
         assert s["drift"] < 0.02        # …and has settled
 
-    def test_none_drifts_without_recovery(self):
+    def test_none_drifts_is_frequency_unstable(self):
+        # No governor ⇒ the island frequency runs away and never recovers. The
+        # machines stay in step with each other (rotor-angle synchronism holds),
+        # but this is now correctly reported as a FREQUENCY instability, not
+        # "stable" — the machines desynchronise from nominal frequency together.
         s = self._stats("none")
-        assert s["stable"] is True
-        # no governor ⇒ still ramping at the end (never settles)
-        assert s["drift"] > 0.03
-        assert s["final"] > 0.05
+        assert s["stable"] is False
+        assert "frequency" in (s["instability"] or "")
+        assert s["drift"] > 0.03        # still ramping at the end (never settles)
 
     def test_droop_settles_at_bounded_offset(self):
         iso = self._stats("isochronous")
@@ -690,6 +694,174 @@ class TestIBRGridFollowing:
                                      "find_cct": False, "t_end_s": 3})
         assert any("ride-through trip" in tr["reason"] and tr["element"] == "PV"
                    for tr in r["trips"])
+
+
+class TestFrequencyStability:
+    """The verdict flags a frequency collapse / run-away separately from rotor-
+    angle loss of synchronism: an overloaded or governor-less island whose
+    frequency runs off and does not recover is UNSTABLE even though the machines
+    stay in step with each other."""
+
+    def _island(self, gen_mva=(0.1, 0.05), load_kva=100, gov="isochronous"):
+        g = lambda cid, nm, mva: _c(cid, "generator", {
+            "name": nm, "rated_mva": mva, "voltage_kv": 0.4, "xd_p": 0.25,
+            "inertia_h_s": 2.0, "dispatch_mode": "must_run", "gov_mode": gov})
+        return ProjectData(projectName="fs", baseMVA=100.0, frequency=50, components=[
+            _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
+            _c("busl", "bus", {"name": "LoadBus", "voltage_kv": 0.4}),
+            _c("fdr", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.05,
+                                "x_per_km": 0.05, "length_km": 0.05}),
+            g("g1", "G1", gen_mva[0]), g("g2", "G2", gen_mva[1]),
+            _c("ld", "static_load", {"name": "House", "voltage_kv": 0.4,
+                                     "rated_kva": load_kva, "power_factor": 0.9, "demand_factor": 1.0}),
+        ], wires=[_w("wf1", "busg", "fdr"), _w("wf2", "fdr", "busl"),
+                  _w("w1", "g1", "busg"), _w("w2", "g2", "busg"), _w("w3", "busl", "ld")])
+
+    def test_overloaded_island_frequency_collapse_is_unstable(self):
+        # 150 kVA of gensets, +100% step takes the load past their capacity: the
+        # frequency collapses while the machines stay in synchronism (small δ).
+        r = run_transient_stability(self._island(),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 100, "time_s": 1, "t_end_s": 12})
+        assert r["stable"] is False
+        assert r["instability"] == "frequency collapse"
+        # synchronism actually held — this is a frequency, not an angle, failure
+        assert max(abs(m["peak_angle_deg"]) for m in r["machines"]
+                   if m["type"] == "generator") < 90.0
+        assert any("frequency collapse" in w for w in r["warnings"])
+
+    def test_governed_island_within_capacity_is_stable(self):
+        # a modest step the isochronous governors can follow ⇒ recovers ⇒ stable
+        r = run_transient_stability(self._island(gen_mva=(0.2, 0.1), load_kva=80),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 20, "time_s": 1, "t_end_s": 20})
+        assert r["stable"] is True
+        assert r["instability"] is None
+
+    def test_grid_connected_fault_not_frequency_flagged(self):
+        # an infinite bus anchors the frequency, so a cleared fault is judged on
+        # rotor-angle synchronism only — no spurious frequency-instability verdict
+        r = run_transient_stability(_smib(), {"type": "fault", "bus": "bus_gen",
+                                              "clear_time_s": 0.1, "find_cct": False, "t_end_s": 5})
+        assert r["stable"] is True
+        assert r["instability"] is None
+
+    def test_loss_of_synchronism_reason(self):
+        # a fault cleared well beyond the CCT slips a pole ⇒ angle instability,
+        # reported as "loss of synchronism" (not a frequency reason)
+        r = run_transient_stability(_smib(), {"type": "fault", "bus": "bus_gen",
+                                              "clear_time_s": 0.9, "find_cct": False, "t_end_s": 5})
+        assert r["stable"] is False
+        assert r["instability"] == "loss of synchronism"
+
+
+class TestDispatchAllocation:
+    """Pre-fault mechanical power follows each machine's actual load-flow
+    dispatch, not an equal per-bus split — so a bus-mate the load flow leaves
+    uncommitted / balancing near zero is not handed half the load it was never
+    dispatched to carry."""
+
+    def _shared_bus_island(self):
+        # Two gensets parallel on ONE gen bus feeding a separate load bus. The
+        # load flow commits them asymmetrically (one carries the load, one
+        # balances near zero) — the equal per-bus split would have given them
+        # ~half each regardless.
+        g = lambda cid, nm, mode: _c(cid, "generator", {
+            "name": nm, "rated_mva": 0.5, "voltage_kv": 0.4, "xd_p": 0.25,
+            "inertia_h_s": 2.0, "dispatch_mode": mode, "gov_mode": "isochronous"})
+        return ProjectData(projectName="da", baseMVA=100.0, frequency=50, components=[
+            _c("bg", "bus", {"name": "GB", "voltage_kv": 0.4}),
+            _c("bl", "bus", {"name": "LB", "voltage_kv": 0.4}),
+            _c("f", "cable", {"name": "F", "voltage_kv": 0.4, "r_per_km": 0.05,
+                              "x_per_km": 0.05, "length_km": 0.05}),
+            g("g1", "G1", "must_run"), g("g2", "G2", "standby"),
+            _c("ld", "static_load", {"name": "L", "voltage_kv": 0.4, "rated_kva": 200,
+                                     "power_factor": 0.9, "demand_factor": 1.0}),
+        ], wires=[_w("w1", "g1", "bg"), _w("w2", "g2", "bg"), _w("wf1", "bg", "f"),
+                  _w("wf2", "f", "bl"), _w("wl", "bl", "ld")])
+
+    def test_prefault_power_follows_dispatch_not_equal_split(self):
+        r = run_transient_stability(self._shared_bus_island(),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 10, "time_s": 1, "t_end_s": 6})
+        pms = sorted(abs(m["pm_pu"]) for m in r["machines"] if m["type"] == "generator")
+        assert len(pms) == 2 and sum(pms) > 1e-4          # the island carries load
+        # dispatch-driven: one set carries it, the other ~idles. An equal per-bus
+        # split would have made these two nearly equal (pms[0] ≈ pms[1]).
+        assert pms[0] < 0.15 * pms[1]
+
+
+class TestSequencedEvents:
+    """A timeline of events at absolute times: trip / reconnect a feeder, shed /
+    restore / step a load, trip a generator — applied cumulatively, one element
+    per step (same-time steps share a segment)."""
+
+    def _net(self):
+        # Grid + generator on a source bus; two parallel feeders to a load bus.
+        return ProjectData(projectName="seq", baseMVA=100.0, frequency=50, components=[
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 800, "x_r_ratio": 10}),
+            _c("bs", "bus", {"name": "Src", "voltage_kv": 11}),
+            _c("g1", "generator", {"name": "G1", "rated_mva": 10, "voltage_kv": 11, "xd_p": 0.25,
+                                   "inertia_h_s": 3.0, "dispatch_mode": "must_run", "gov_mode": "isochronous"}),
+            _c("f1", "cable", {"name": "Feeder1", "voltage_kv": 11, "r_per_km": 0.2, "x_per_km": 0.15, "length_km": 3}),
+            _c("f2", "cable", {"name": "Feeder2", "voltage_kv": 11, "r_per_km": 0.2, "x_per_km": 0.15, "length_km": 3}),
+            _c("bl", "bus", {"name": "LoadBus", "voltage_kv": 11}),
+            _c("ld", "static_load", {"name": "Plant", "voltage_kv": 11, "rated_kva": 3000,
+                                     "power_factor": 0.9, "demand_factor": 1.0}),
+        ], wires=[_w("wu", "util", "bs"), _w("wg", "g1", "bs"),
+                  _w("wf1a", "bs", "f1"), _w("wf1b", "f1", "bl"),
+                  _w("wf2a", "bs", "f2"), _w("wf2b", "f2", "bl"), _w("wl", "bl", "ld")])
+
+    def _lv(self, r, tt):
+        t = r["curves"]["t"]
+        v = [b for b in r["curves"]["buses"] if b["bus"] == "LoadBus"][0]["v_pu"]
+        return v[min(range(len(t)), key=lambda i: abs(t[i] - tt))]
+
+    def test_load_shed_then_restore(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
+            {"t": 1.0, "action": "trip", "element": "ld"},
+            {"t": 4.0, "action": "close", "element": "ld"}]})
+        assert r["stable"] is True
+        assert "shed Plant" in r["event"] and "restore Plant" in r["event"]
+        # shedding the load raises the load-bus voltage; restoring pulls it back
+        assert self._lv(r, 2.5) > self._lv(r, 0.5) + 0.003
+        assert self._lv(r, 6.0) < self._lv(r, 2.5) - 0.003
+
+    def test_feeder_trip_and_reclose(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1"},
+            {"t": 4.0, "action": "close", "element": "f1"}]})
+        assert r["stable"] is True and r["curves"] is not None
+        assert "open Feeder1" in r["event"] and "close Feeder1" in r["event"]
+        # losing one of two parallel feeders raises impedance ⇒ lower load-bus V;
+        # reclosing restores it
+        assert self._lv(r, 2.5) < self._lv(r, 0.5) - 0.003
+        assert self._lv(r, 6.0) > self._lv(r, 2.5) + 0.003
+
+    def test_generator_is_trip_only(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 4, "steps": [
+            {"t": 1.0, "action": "close", "element": "g1"}]})
+        assert any("trip-only" in w for w in r["warnings"])
+
+    def test_multiple_feeders_and_load_step(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1"},
+            {"t": 2.0, "action": "load_step", "element": "ld", "delta_pct": 30},
+            {"t": 4.0, "action": "close", "element": "f1"}]})
+        assert r["curves"] is not None
+        # steps are time-ordered in the event description
+        assert (r["event"].index("open Feeder1") < r["event"].index("Plant +30%")
+                < r["event"].index("close Feeder1"))
+
+    def test_simultaneous_steps_share_a_segment(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 5, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1"},
+            {"t": 1.0, "action": "trip", "element": "f2"}]})
+        assert "open Feeder1" in r["event"] and "open Feeder2" in r["event"]
+
+    def test_empty_sequence_raises(self):
+        with pytest.raises(ValueError):
+            run_transient_stability(self._net(), {"type": "sequence", "steps": []})
 
 
 class TestEdgeCases:

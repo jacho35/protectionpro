@@ -1060,26 +1060,36 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── Dynamic Motor Starting (time-domain acceleration) ──
-  document.getElementById('btn-dynamic-motor').addEventListener('click', async () => {
+  // The button opens the start-timeline setup modal; the modal's Run button
+  // triggers the simulation with the configured schedule.
+  document.getElementById('btn-dynamic-motor').addEventListener('click', () => {
     if (AppState.components.size === 0) {
       document.getElementById('status-info').textContent = 'Add components before running dynamic motor starting.';
       return;
     }
-    document.getElementById('status-info').textContent = 'Running dynamic motor starting simulation...';
-    _setBusy('btn-dynamic-motor', true);
-    try {
-      const result = await API.runDynamicMotorStarting();
-      AppState.dynamicMotorResults = result;
-      Canvas.render();
-      document.getElementById('status-info').textContent = 'Dynamic motor starting complete.';
-      DynMotor.show(result);
-    } catch (e) {
-      console.error('Dynamic motor starting error:', e);
-      document.getElementById('status-info').textContent = 'Dynamic motor starting failed.';
-      showValidationModal('Dynamic Motor Starting — Error', [{ msg: e.message || 'Unknown error' }], [], null);
-    } finally {
-      _setBusy('btn-dynamic-motor', false);
+    DynMotor.openConfig();
+  });
+  document.getElementById('btn-dynmot-run').addEventListener('click', () => DynMotor.runConfigured());
+  document.getElementById('btn-dynmot-cancel').addEventListener('click', () => {
+    document.getElementById('dynamic-motor-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-dynmot-config').addEventListener('click', () => {
+    document.getElementById('dynamic-motor-config-modal').style.display = 'none';
+  });
+
+  // ── Load Flow Study Manager ──
+  document.getElementById('btn-lf-study').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running a load flow study.';
+      return;
     }
+    LFStudy.openManager();
+  });
+  document.getElementById('btn-close-lf-study').addEventListener('click', () => {
+    document.getElementById('lf-study-modal').style.display = 'none';
+  });
+  document.getElementById('lf-study-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'lf-study-modal') e.target.style.display = 'none';
   });
 
   // ── Transient Stability ──
@@ -2448,6 +2458,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('dynamic-motor-modal').addEventListener('click', (e) => {
     if (e.target.id === 'dynamic-motor-modal') e.target.style.display = 'none';
+  });
+  document.getElementById('dynamic-motor-config-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'dynamic-motor-config-modal') e.target.style.display = 'none';
   });
   document.getElementById('motor-starting-modal').addEventListener('click', (e) => {
     if (e.target.id === 'motor-starting-modal') e.target.style.display = 'none';

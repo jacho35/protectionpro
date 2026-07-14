@@ -870,6 +870,12 @@ const FIELD_INFO = {
   'generator.x_r_ratio': 'Default X/R = 40 is typical for generators.\nSource: IEC 60909-0 §3.7 — generator X/R ratios are generally high (30–60).',
   'generator.power_factor': 'Default PF = 0.85 lagging, typical industrial generator rating.\nSource: IEC 60034-1 §8 — rated power factor.',
   'generator.min_load_pct': 'Default 30% — diesel sets running below ~30% of rating for extended periods suffer wet stacking (unburned fuel/carbon build-up).\nSources: engine manufacturers recommend 30–35% minimum (typical spec range 30–50%); NFPA 110 §8.4.2 requires monthly exercising at ≥30% of nameplate kW.\nThe dispatcher curtails solar/wind so a running generator carries at least this load.',
+
+  // Dispatch (load-flow commitment) — shared by all sources via the bare-key
+  // info fallback. Deliberately spells out that dispatch is NOT the stability
+  // on/off switch (that is the breaker), since the two are easily conflated.
+  'dispatch_mode': 'How the LOAD FLOW commits this source (economic dispatch). It does NOT switch the machine on or off in a stability study.\n• Must-run — always committed and generating.\n• Merit order — dispatched in priority order, only up to island demand (partial loading allowed).\n• Standby — held in reserve; committed only when the higher-priority sources cannot meet demand.\nStability note: whether a machine is ONLINE in Transient Stability is set by its BREAKER, not this field — a source behind an open breaker is out of the swing entirely (no inertia); a closed-breaker set the load flow leaves idle is modelled as a synchronous condenser (~0 MW). A machine\'s pre-fault output in the stability run follows the MW dispatched here.\nUsed by: Load Flow (and it sets the Transient Stability operating point).',
+  'dispatch_priority': 'Merit-order rank for the load flow — 1 = dispatched first. Within an electrical island the highest-priority source that can balance acts as the slack; the rest are dispatched in order up to demand. Ties fall back to the type default (utility > generator > wind > solar/storage).\nThis is economic commitment only — it does not set stability on/off status (that is the breaker).\nUsed by: Load Flow.',
   'generator.gen_control': 'droop: all running sets share load in proportion to their ratings (isochronous/droop paralleling — the historical behaviour).\nsequential: load-demand start, like DSE/ComAp paralleling controllers — the lead set (lowest Dispatch Priority) is fully loaded before the next set starts; sets that are not needed stay off.\nSets paralleled on one bus should use the same scheme.',
   'generator.start_threshold_pct': 'Default 90% — the next set in the sequence starts when the running sets\' capacity utilisation would exceed this threshold.\nTypical load-demand start settings on paralleling controllers are 80–90% of running capacity.\nStart sequence follows Dispatch Priority (1 starts first).',
 
@@ -2026,12 +2032,9 @@ const COMPONENT_DEFS = {
       { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
-      { key: 'dyn_role', label: 'Sequence Role', type: 'select', section: 'dynamic',
-        options: [
-          { value: 'starts',  label: 'Starts (staged)' },
-          { value: 'running', label: 'Already running' },
-        ] },
-      { key: 'start_time_s', label: 'Start Time', type: 'number', unit: 's', section: 'dynamic', min: 0 },
+      // Start staging (dyn_role / start_time_s) is configured in the Dynamic
+      // Motor Starting timeline modal, not here — the props remain as data
+      // defaults so older projects seed the modal on first open.
       { key: 'rated_speed_rpm', label: 'Rated Speed', type: 'number', unit: 'rpm', section: 'dynamic', min: 0 },
       { key: 'locked_rotor_torque_pct', label: 'LRT (% FLT)', type: 'number', unit: '%', section: 'dynamic', min: 20 },
       { key: 'motor_j_kgm2', label: 'Motor Inertia J', type: 'number', unit: 'kg·m²', section: 'dynamic', min: 0 },
@@ -2109,12 +2112,9 @@ const COMPONENT_DEFS = {
       { key: 'xd_p', label: "Xd'", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x0', label: 'X₀ (zero seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
-      { key: 'dyn_role', label: 'Sequence Role', type: 'select', section: 'dynamic',
-        options: [
-          { value: 'starts',  label: 'Starts (staged)' },
-          { value: 'running', label: 'Already running' },
-        ] },
-      { key: 'start_time_s', label: 'Start Time', type: 'number', unit: 's', section: 'dynamic', min: 0 },
+      // Start staging is configured in the Dynamic Motor Starting timeline modal
+      // (see motor_induction); the dyn_role / start_time_s defaults are kept for
+      // seeding older projects.
       { key: 'rated_speed_rpm', label: 'Rated Speed', type: 'number', unit: 'rpm', section: 'dynamic', min: 0 },
       { key: 'locked_rotor_torque_pct', label: 'LRT (% FLT)', type: 'number', unit: '%', section: 'dynamic', min: 20 },
       { key: 'motor_j_kgm2', label: 'Motor Inertia J', type: 'number', unit: 'kg·m²', section: 'dynamic', min: 0 },
@@ -2643,4 +2643,32 @@ const COMPONENT_DEFS = {
         options: ['green', 'red', 'amber', 'white', 'blue'] },
     ],
   },
+};
+
+// Component attributes that affect a (balanced) load-flow solution, per type,
+// used by the Load Flow Study Manager (lfstudy.js) to build its editable
+// attribute grid. Each key is resolved to its field descriptor (label / type /
+// unit / options / min / max / step) in COMPONENT_DEFS[type].fields at render
+// time, so labels and input kinds stay in sync with the properties panel.
+const LF_ATTRS = {
+  utility: ['supply_capacity_mva', 'allow_export', 'dispatch_priority', 'fault_mva'],
+  generator: ['rated_mva', 'power_factor', 'dispatch_priority', 'dispatch_mode',
+              'min_load_pct', 'gen_control', 'start_threshold_pct', 'voltage_setpoint_pu'],
+  solar_pv: ['rated_kw', 'num_inverters', 'inverter_eff', 'power_factor', 'irradiance_pct',
+             'pv_array_mode', 'dispatch_priority', 'dispatch_mode', 'battery_mode',
+             'battery_soc_pct', 'battery_max_discharge_kw', 'battery_max_charge_kw'],
+  wind_turbine: ['rated_mva', 'num_turbines', 'power_factor', 'wind_speed_pct',
+                 'dispatch_priority', 'dispatch_mode'],
+  battery: ['rated_kva', 'battery_kwh', 'battery_mode', 'battery_soc_pct', 'battery_dod_pct',
+            'battery_max_charge_kw', 'battery_max_discharge_kw', 'dispatch_priority'],
+  bus: ['system', 'voltage_kv', 'bus_type'],
+  distribution_board: ['voltage_kv', 'rated_kva', 'power_factor', 'demand_factor'],
+  transformer: ['rated_mva', 'z_percent', 'x_r_ratio', 'voltage_hv_kv', 'voltage_lv_kv', 'tap_percent'],
+  cable: ['voltage_kv', 'r_per_km', 'x_per_km', 'length_km', 'num_parallel', 'rated_amps'],
+  static_load: ['rated_kva', 'power_factor', 'demand_factor'],
+  motor_induction: ['rated_kw', 'efficiency', 'power_factor', 'demand_factor'],
+  motor_synchronous: ['rated_kva', 'power_factor', 'demand_factor'],
+  capacitor_bank: ['rated_kvar'],
+  cb: ['state'],
+  switch: ['state'],
 };

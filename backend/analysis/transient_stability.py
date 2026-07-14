@@ -72,8 +72,19 @@ First-pass "classical" model per Stevenson / Kundur ch. 13:
 
 Disturbances: a bolted three-phase bus fault cleared after a set time (optional
 branch trip on clearing, and a binary-search critical clearing time); a
-generator or branch trip; and a load step. Initial conditions come from the
-positive-sequence load flow.
+generator or branch trip; a load step; or a SEQUENCE of timed events (trip /
+reconnect a feeder, breaker or load, and load changes) applied at absolute times
+— feeders/breakers by topology, loads by per-bus demand scaling, generators
+trip-only. Initial conditions come from the positive-sequence load flow.
+
+Stability verdict: two independent failure modes. (1) Rotor-angle loss of
+synchronism — a machine's angle exceeds 180° from its island's centre of
+inertia. (2) Frequency collapse / run-away — an island's COI frequency ends
+well off nominal and is not recovering (overload with the governors saturated,
+or a governor-less imbalance); the machines can stay in step with each other
+while drifting off nominal frequency together, so this is checked separately.
+The reported ``instability`` names whichever occurred; the CCT search uses the
+rotor-angle test alone (a first-swing metric).
 
 Sub-transient (d/q″) machine dynamics are a documented follow-up — this engine
 is the framework they extend.
@@ -91,6 +102,14 @@ UNSTABLE_ANGLE = math.pi    # |δ − δ_COI| beyond 180° ⇒ loss of synchroni
 CCT_SEARCH_MAX = 1.0        # s — upper bound for the critical-clearing search
 MAX_RECORD_POINTS = 400
 GFM_CLIM_ITERS = 8          # in-step iterations to converge the GFM current limit
+# Frequency-stability verdict: an island whose centre-of-inertia frequency ends
+# more than FREQ_UNSTABLE_BAND (Hz) off nominal AND is not recovering (its end
+# deviation is no smaller than its late-window deviation, within FREQ_RECOVER_TOL)
+# has collapsed / run away — a real instability the rotor-angle synchronism test
+# does not catch (the machines can fall out of step with the grid together while
+# staying in step with each other).
+FREQ_UNSTABLE_BAND = 2.5
+FREQ_RECOVER_TOL = 0.1
 
 MACHINE_SOURCE_TYPES = ("generator", "utility")
 IBR_SOURCE_TYPES = ("solar_pv", "battery", "wind_turbine")
@@ -211,7 +230,10 @@ def _collect_machines(project, ctx, lf):
     # which is modelled as a virtual synchronous machine on the same footing.
     sources = [c for c in project.components
                if c.type in MACHINE_SOURCE_TYPES or _ibr_ctrl(c) == "gfm"]
-    # Which machines land on each bus (to split a shared bus injection).
+    # Which machines land on each bus, and how the load flow actually dispatched
+    # each — used to split a shared bus's injection between paralleled machines
+    # by their COMMITTED output rather than equally (an uncommitted / standby set
+    # sharing a bus then gets ~0, and paralleled sets get their real proportions).
     on_bus = {}
     staged = []
     for comp in sources:
@@ -225,14 +247,27 @@ def _collect_machines(project, ctx, lf):
         staged.append((comp, bus_id, z, h_sys, infinite))
         on_bus[bus_id] = on_bus.get(bus_id, 0) + 1
 
+    disp = {e.source_id: e.dispatched_mw for e in getattr(lf, "dispatch", [])}
+    bus_wsum = {}      # per-bus Σ committed MW (≥0) of the machines on it
+    for c_, bid, *_ in staged:
+        bus_wsum[bid] = bus_wsum.get(bid, 0.0) + max(disp.get(c_.id, 0.0), 0.0)
+
     machines, warnings = [], []
     for comp, bus_id, z, h_sys, infinite in staged:
         V = Vc[bus_id]
         b = lf.buses.get(bus_id)
-        # Gross machine output at the bus (net injection, split if the bus
-        # carries more than one machine). Classical lossless-reactance model:
-        # P_m = pre-fault electrical output.
-        s_net = complex(b.p_mw, b.q_mvar) / base_mva / on_bus[bus_id]
+        # Each machine's share of its bus's net injection. With one machine on the
+        # bus it takes all of it; paralleled machines split it in proportion to
+        # their dispatched (committed) output, falling back to an equal split only
+        # when the load flow reports no commitment for any of them. The total over
+        # a bus is preserved, so the pre-fault power balance is unchanged.
+        if on_bus[bus_id] <= 1:
+            frac = 1.0
+        elif bus_wsum.get(bus_id, 0.0) > 1e-9:
+            frac = max(disp.get(comp.id, 0.0), 0.0) / bus_wsum[bus_id]
+        else:
+            frac = 1.0 / on_bus[bus_id]
+        s_net = complex(b.p_mw, b.q_mvar) / base_mva * frac
         if abs(V) < 1e-6:
             continue
         I = np.conj(s_net) / np.conj(V)
@@ -686,9 +721,9 @@ def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
         S = ibr_inj.get(j, g["s0_sys"])
         V = max(vbus_mag.get(bi, g["V0"]), 1e-3)
         y[bi] += np.conj(-S) / (V * V)    # generation ⇒ negative conductance
-    if load_scale is not None:
-        lbus, frac = load_scale
-        y[lbus] = y[lbus] * frac
+    if load_scale:
+        for lbus, frac in load_scale.items():   # {bus_idx: fraction of nominal}
+            y[lbus] = y[lbus] * frac
     return y
 
 
@@ -1154,12 +1189,21 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     rec_t, rec_delta, rec_omega, rec_pe, rec_vbus = [], [], [], [], []
     bus_ids_all = None
     unstable = False
+    freq_end, freq_late = {}, {}   # island COI frequency: latest, and at ~80% window
     t = 0.0
     steps = int(math.ceil(t_end / dt))
 
     for step in range(steps + 1):
         if has_prot:
             _check_protection(t, omega)
+        # A finite machine dropped from the current segment's active set by a
+        # disturbance/sequence generator trip is off-line: coast it and exclude
+        # it from the island COI and the synchronism test, exactly like a
+        # protection trip. (Segment active sets only ever shrink, so this is
+        # monotonic.)
+        for i in set(range(m)) - set(variant_at(t)["active"]):
+            if not machines[i]["infinite"]:
+                tripped_mach.add(i)
         veff = _effective_variant(t, omega)
         if record:
             v = veff if veff is not None else variant_at(t)
@@ -1187,6 +1231,13 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             unstable = True
             if not record:
                 break
+
+        # Track each island's COI frequency (latest value, and the value ~80% of
+        # the way through the window) for the separate frequency-stability check.
+        for isl, fv in _island_freq(omega).items():
+            freq_end[isl] = fv
+            if t >= 0.8 * t_end and isl not in freq_late:
+                freq_late[isl] = fv
 
         if step == steps:
             break
@@ -1221,7 +1272,33 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             vbus_prev = _bus_voltages(veff, _eint(veff["active"], delta, efield, epq, epd))
         t += dt
 
-    result = {"stable": not unstable, "trips": trip_events, "ibr_current": imach_peak}
+    # Frequency-stability verdict, per island, over the live machines. Flag an
+    # island whose COI frequency ended beyond FREQ_UNSTABLE_BAND of nominal and
+    # is NOT recovering (its end deviation is no smaller than its late-window
+    # deviation) — a collapse or run-away, distinct from a transient that is
+    # settling back. Kept separate from the rotor-angle ``unstable`` flag so the
+    # CCT search (which reads ``stable``) stays a pure first-swing angle test.
+    freq_unstable = False
+    freq_reason = None
+    freq_msgs = []
+    worst = 0.0
+    for isl, fe in freq_end.items():
+        fl = freq_late.get(isl, fe)
+        dev_e, dev_l = fe - freq, fl - freq
+        if abs(dev_e) > FREQ_UNSTABLE_BAND and abs(dev_e) >= abs(dev_l) - FREQ_RECOVER_TOL:
+            freq_unstable = True
+            kind = "collapse" if dev_e < 0 else "run-up"
+            freq_msgs.append(
+                f"Island frequency ended at {fe:.1f} Hz and was not recovering — a "
+                f"frequency {kind}: generation cannot follow the load (overload, or "
+                f"a governor-less / capacity-limited imbalance). Rotor angles stayed "
+                f"in synchronism, but the island frequency is unstable.")
+            if abs(dev_e) > worst:
+                worst, freq_reason = abs(dev_e), f"frequency {kind}"
+
+    result = {"stable": not unstable, "trips": trip_events, "ibr_current": imach_peak,
+              "freq_unstable": freq_unstable, "freq_reason": freq_reason,
+              "freq_msgs": freq_msgs}
     if record:
         result["curves"] = _decimate_traj(rec_t, rec_delta, rec_omega, rec_pe,
                                            rec_vbus, machines, segments)
@@ -1318,12 +1395,113 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
         pre_v = variant(base_ybus, all_active, set())
         # load_scale mirrors the shunt scaling for the dynamic re-reduction path.
         post_v = variant(base_ybus, all_active, set(), shunt=shunt2,
-                         load_scale=(lbus, frac) if lbus is not None else None)
+                         load_scale={lbus: frac} if lbus is not None else None)
         nm = _comp_name(project, elem) if elem else "load"
-        return ([(0.0, pre_v), (t_ev, post_v)],
-                f"Step {nm} by {disturbance.get('delta_pct', 50):+.0f}% at {t_ev*1000:.0f} ms")
+        delta = float(disturbance.get("delta_pct", 50))
+        if abs(delta + 100.0) < 1e-6:
+            event = f"Shed {nm} (−100%) at {t_ev*1000:.0f} ms"
+        elif abs(delta - 100.0) < 1e-6:
+            event = f"Switch in a 2nd {nm} block (+100%) at {t_ev*1000:.0f} ms"
+        else:
+            event = f"Step {nm} demand by {delta:+.0f}% at {t_ev*1000:.0f} ms"
+        return ([(0.0, pre_v), (t_ev, post_v)], event)
+
+    if dtype == "sequence":
+        return _build_sequence(project, ctx, machines, base_ybus, load_shunt,
+                               all_active, variant, disturbance, warnings)
 
     raise ValueError(f"Unknown disturbance type '{dtype}'.")
+
+
+def _build_sequence(project, ctx, machines, base_ybus, load_shunt, all_active,
+                    variant, disturbance, warnings):
+    """Build the segment list for a SEQUENCE of timed events (one element each,
+    absolute times). Actions: ``trip`` (open a feeder/breaker, or take a
+    generator off line), ``close`` (re-energise a tripped feeder/breaker or
+    restore a load), ``load_step`` (change a load's demand by a %). Events are
+    applied cumulatively; simultaneous steps (same time) share one segment.
+
+    Elements: a branch (cable/transformer) or breaker/switch trips/closes by
+    topology (removed from / restored to the network); a load trips/steps/
+    restores by scaling its bus's demand; a generator is trip-only (per the
+    feature scope — re-synchronising a set is a documented follow-up).
+    """
+    LOAD_TYPES = ("static_load", "motor_induction", "motor_synchronous")
+    comp_of = {c.id: c for c in project.components}
+
+    steps = []
+    for s in (disturbance.get("steps") or []):
+        elem = s.get("element")
+        action = str(s.get("action", "trip")).lower()
+        if not elem or action not in ("trip", "close", "load_step"):
+            continue
+        steps.append({"t": max(float(s.get("t", s.get("time_s", 0.0)) or 0.0), 0.0),
+                      "action": action, "element": elem,
+                      "delta_pct": float(s.get("delta_pct", 0.0) or 0.0)})
+    steps.sort(key=lambda s: s["t"])
+    if not steps:
+        raise ValueError("Sequence has no valid steps.")
+
+    removed = set()       # open branch/breaker component ids (topology)
+    tripped_gen = set()   # tripped generator/utility comp ids
+    bus_frac = {}         # bus_idx -> load demand as a fraction of nominal
+    ybus_cache = {frozenset(): base_ybus}
+
+    def ybus_for(rem):
+        key = frozenset(rem)
+        if key not in ybus_cache:
+            c2 = build_branch_ybus(_project_without_many(project, rem))
+            ybus_cache[key] = c2["Y"] if c2 is not None else base_ybus
+        return ybus_cache[key]
+
+    def make_variant():
+        active = [i for i in all_active if machines[i]["comp_id"] not in tripped_gen]
+        pm_over = {i: 0.0 for i in all_active if machines[i]["comp_id"] in tripped_gen}
+        shunt = load_shunt.copy()
+        for lb, fr in bus_frac.items():
+            shunt[lb] = shunt[lb] * fr
+        return variant(ybus_for(removed), active, set(), shunt=shunt,
+                       pm_over=pm_over, load_scale=dict(bus_frac))
+
+    segs = [(0.0, make_variant())]     # pre-sequence operating point at t=0
+    descs = []
+    i = 0
+    while i < len(steps):
+        t_ev = steps[i]["t"]
+        while i < len(steps) and abs(steps[i]["t"] - t_ev) < 1e-9:
+            s = steps[i]; i += 1
+            elem, action = s["element"], s["action"]
+            comp = comp_of.get(elem)
+            nm = _comp_name(project, elem)
+            if comp is not None and comp.type in MACHINE_SOURCE_TYPES:
+                if action == "trip":
+                    tripped_gen.add(elem); descs.append(f"trip {nm} @ {t_ev:g}s")
+                else:
+                    warnings.append(f"Sequence: generators are trip-only — "
+                                    f"'{action}' on {nm} ignored.")
+            elif comp is not None and comp.type in LOAD_TYPES:
+                lb = _component_bus_idx(project, ctx, elem)
+                if lb is None:
+                    warnings.append(f"Sequence: load {nm} reaches no bus — step ignored.")
+                elif action == "trip":
+                    bus_frac[lb] = 0.0; descs.append(f"shed {nm} @ {t_ev:g}s")
+                elif action == "close":
+                    bus_frac[lb] = 1.0; descs.append(f"restore {nm} @ {t_ev:g}s")
+                else:
+                    bus_frac[lb] = 1.0 + s["delta_pct"] / 100.0
+                    descs.append(f"{nm} {s['delta_pct']:+.0f}% @ {t_ev:g}s")
+            elif comp is not None:   # branch / breaker / switch
+                if action == "trip":
+                    removed.add(elem); descs.append(f"open {nm} @ {t_ev:g}s")
+                elif action == "close":
+                    removed.discard(elem); descs.append(f"close {nm} @ {t_ev:g}s")
+                else:
+                    warnings.append(f"Sequence: 'load change' applies to loads, "
+                                    f"not {nm} — step ignored.")
+            else:
+                warnings.append(f"Sequence: element '{elem}' not found — step ignored.")
+        segs.append((t_ev, make_variant()))
+    return segs, "Sequence: " + "; ".join(descs)
 
 
 def _project_without(project, comp_id):
@@ -1333,6 +1511,18 @@ def _project_without(project, comp_id):
              if w.fromComponent != comp_id and w.toComponent != comp_id]
     clone = project.model_copy(update={"components": keep, "wires": wires})
     return clone
+
+
+def _project_without_many(project, comp_ids):
+    """A shallow project copy with several components (and their wires) removed —
+    the cumulative open-element set of a sequenced run."""
+    ids = set(comp_ids)
+    if not ids:
+        return project
+    keep = [c for c in project.components if c.id not in ids]
+    wires = [w for w in project.wires
+             if w.fromComponent not in ids and w.toComponent not in ids]
+    return project.model_copy(update={"components": keep, "wires": wires})
 
 
 def _bus_name(project, bus_id):
@@ -1372,9 +1562,11 @@ def _component_bus_idx(project, ctx, comp_id):
 def run_transient_stability(project, disturbance=None):
     """Run a classical transient-stability study.
 
-    disturbance (dict): ``type`` ∈ {fault, trip, load_step} plus per-type keys
-    (see module docstring). ``t_end_s``, ``dt_s`` and ``find_cct`` are optional
-    globals. Returns ``{machines, curves, stable, event, cct_s, warnings}``.
+    disturbance (dict): ``type`` ∈ {fault, trip, load_step, sequence} plus per-
+    type keys (see module docstring). A ``sequence`` carries ``steps``: a list of
+    ``{t, action ∈ (trip|close|load_step), element, delta_pct?}`` applied at
+    absolute times. ``t_end_s``, ``dt_s`` and ``find_cct`` are optional globals.
+    Returns ``{machines, curves, stable, instability, event, cct_s, warnings}``.
     """
     disturbance = dict(disturbance or {"type": "fault"})
     freq = float(project.frequency or 50)
@@ -1467,10 +1659,12 @@ def run_transient_stability(project, disturbance=None):
         else:
             warnings.append(
                 "An islanded generator group with no grid / infinite-bus "
-                "reference was found — its frequency is held by the modelled "
-                "turbine-governors / grid-forming converters (isochronous returns "
-                "to nominal; droop settles at a small offset). Synchronism is "
-                "judged against the island's own centre of inertia.")
+                "reference was found — its frequency is governed by the modelled "
+                "turbine-governors / grid-forming converters (isochronous aims to "
+                "return to nominal, droop settles at an offset), but only within "
+                "their capacity: an overloaded island's frequency can still "
+                "collapse (see the verdict and the frequency trace). Synchronism "
+                "is judged against the island's own centre of inertia.")
 
     t_end = float(disturbance.get("t_end_s", 5.0))
     # Step from the stiffest finite machine, bounded for accuracy/speed.
@@ -1485,6 +1679,17 @@ def run_transient_stability(project, disturbance=None):
     segments, event = _build_segments(project, ctx, lf, machines, disturbance, warnings)
     sim = _simulate(machines, segments, freq, t_end, dt, record=True,
                     island_of=island_of, dyn=dyn, y0=y0)
+
+    # Public stability verdict combines rotor-angle synchronism (sim["stable"])
+    # with the frequency-stability check: an island frequency that collapses /
+    # runs away is unstable even though the machines stay in step with each other.
+    angle_stable = sim["stable"]
+    freq_unstable = sim.get("freq_unstable", False)
+    stable = angle_stable and not freq_unstable
+    instability = (None if stable
+                   else "loss of synchronism" if not angle_stable
+                   else sim.get("freq_reason") or "frequency instability")
+    warnings += sim.get("freq_msgs", [])
 
     # Critical clearing time (binary search) for a fault, when requested. The
     # CCT is a first-swing rotor-angle metric evaluated with the classical
@@ -1521,7 +1726,8 @@ def run_transient_stability(project, disturbance=None):
     return {
         "machines": mach_out,
         "curves": _curves_with_names(sim["curves"], project, machines, ctx),
-        "stable": sim["stable"],
+        "stable": stable,
+        "instability": instability,   # None | "loss of synchronism" | "frequency collapse/run-up"
         "event": event,
         "cct_s": round(cct, 4) if cct is not None else None,
         "dt_s": dt, "t_end_s": t_end,
