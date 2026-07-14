@@ -15,7 +15,9 @@ import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire
 from backend.analysis.fault import run_fault_analysis
-from backend.analysis.loadflow import run_load_flow
+from backend.analysis.loadflow import run_load_flow, connected_bus_loads_mw
+from backend.analysis.voltage_stability import run_voltage_stability
+from backend.analysis.contingency import run_contingency
 from backend.analysis.motor_starting import run_motor_starting
 from backend.analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from backend.analysis.transient_stability import run_transient_stability
@@ -2122,3 +2124,165 @@ class TestTransientStabilitySMIB:
              "find_cct": False})["stable"]
         assert stable is True
         assert unstable is False
+
+
+# ── Voltage stability: P-V nose vs. maximum-power-transfer closed form ────
+
+
+class TestVoltageStabilityNose:
+    """The P-V loadability nose against the classical maximum-power-transfer
+    result for a load fed through a series reactance from a stiff source.
+
+    For a constant-power, constant-power-factor load supplied through a lossless
+    line of reactance X from a source held at E, the power-flow solution ceases
+    to exist (the nose / point of voltage collapse) at
+
+        P_max  = E²/(2X) · cosφ/(1 + sinφ)
+        V_crit = E/√(2·(1 + sinφ))
+
+    where φ is the load power-factor angle (Q = P·tanφ). Reference: the maximum-
+    power-transfer / voltage-collapse derivation in Kundur "Power System
+    Stability and Control" §2.3 and Taylor "Power System Voltage Stability"
+    §2.2; the φ = 0 case reduces to the familiar P_max = E²/(2X) at V = E/√2,
+    δ = 45°.
+
+    ProtectionPro models the utility as an ideal swing bus (E = 1.0 p.u.), scales
+    the load at constant power factor via λ, and locates the nose by bisection —
+    so λ_critical·P_base must reproduce P_max, and the nose voltage must be
+    V_crit. A lossless (r = 0) feeder isolates the reactance so the closed form
+    applies exactly.
+    """
+
+    KV = 11.0
+    BASE_MVA = 100.0
+    X_PER_KM = 0.4
+    LENGTH_KM = 5.0
+
+    def _network(self, rated_kva, pf):
+        cable = _comp("cable-1", "cable", {
+            "name": "Feeder", "voltage_kv": self.KV, "r_per_km": 0.0,
+            "x_per_km": self.X_PER_KM, "length_km": self.LENGTH_KM,
+            "rated_amps": 600.0,
+        })
+        load_bus = _comp("bus-2", "bus", {"name": "Load Bus", "voltage_kv": self.KV})
+        load = _comp("static_load-1", "static_load", {
+            "name": "L1", "rated_kva": rated_kva, "power_factor": pf,
+            "demand_factor": 1.0, "voltage_kv": self.KV,
+        })
+        # Utility → bus-1 (swing) → cable → bus-2 → load. A huge fault level keeps
+        # bus-1 a stiff 1.0-p.u. source so the nose is set purely by the feeder X.
+        return _utility_bus_project(
+            fault_mva=100_000.0, kv=self.KV,
+            extra_components=[cable, load_bus, load],
+            extra_wires=[_wire("w2", "bus-1", "cable-1"),
+                         _wire("w3", "cable-1", "bus-2"),
+                         _wire("w4", "bus-2", "static_load-1")])
+
+    def _x_pu(self):
+        return self.X_PER_KM * self.LENGTH_KM * self.BASE_MVA / self.KV ** 2
+
+    def test_unity_pf_nose_is_e2_over_2x(self):
+        """Unity-PF load (φ = 0): P_max = E²/(2X) at V = E/√2 (δ = 45°).
+        With X = 1.653 p.u. → P_max = 30.25 MW, and a 12 MW base load gives
+        λ_critical = 2.521; the bisected nose reproduces both to <0.1 %."""
+        proj = self._network(rated_kva=12_000.0, pf=1.0)
+        r = run_voltage_stability(proj, lambda_max=8.0, step=0.05)
+        assert r.collapsed, r.note
+        p_max = self.BASE_MVA / (2.0 * self._x_pu())        # E²/(2X), E = 1 p.u.
+        base_load = sum(connected_bus_loads_mw(proj).values())
+        assert base_load == pytest.approx(12.0, rel=1e-6)   # 12 MVA × pf 1.0
+        assert r.critical_load_mw == pytest.approx(p_max, rel=0.02)
+        assert r.lambda_critical == pytest.approx(p_max / base_load, rel=0.02)
+        assert r.nose_v_pu == pytest.approx(1.0 / math.sqrt(2.0), abs=0.02)
+        assert r.critical_bus_name == "Load Bus"
+
+    def test_lagging_pf_nose_matches_closed_form(self):
+        """Lagging-PF load (pf = 0.9, φ = 25.84°): the nose tightens to
+        P_max = E²/(2X)·cosφ/(1+sinφ) at V_crit = E/√(2(1+sinφ)) = 0.590 p.u.
+        A non-degenerate power factor exercises the full closed form, not just
+        the φ = 0 special case."""
+        pf = 0.9
+        phi = math.acos(pf)
+        proj = self._network(rated_kva=12_000.0, pf=pf)
+        r = run_voltage_stability(proj, lambda_max=8.0, step=0.05)
+        assert r.collapsed, r.note
+        p_max = self.BASE_MVA / (2.0 * self._x_pu()) * pf / (1.0 + math.sin(phi))
+        v_crit = 1.0 / math.sqrt(2.0 * (1.0 + math.sin(phi)))
+        base_load = sum(connected_bus_loads_mw(proj).values())
+        assert r.critical_load_mw == pytest.approx(p_max, rel=0.02)
+        assert r.lambda_critical == pytest.approx(p_max / base_load, rel=0.02)
+        assert r.nose_v_pu == pytest.approx(v_crit, abs=0.02)
+
+
+# ── Contingency: loss-of-supply MW and post-outage branch loading ─────────
+
+
+class TestContingencyWorkedExample:
+    """Worked examples pinning the contingency engine's headline numbers.
+
+    Contingency re-solves the (already standards-anchored) load flow with an
+    element removed; the engine-specific outputs are the lost-load accounting
+    and the surviving-branch loading. Both are pinned here from first principles.
+    """
+
+    def test_loss_of_sole_source_loses_full_connected_demand(self):
+        """Radial utility → bus → load (800 kVA at pf 0.9 = 0.72 MW). Removing
+        the only source de-energizes the bus, so the reported lost load must
+        equal the connected real demand exactly (P = S·pf = 0.8·0.9 MW)."""
+        comps = [
+            _comp("bus-1", "bus", {"name": "Bus", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 800.0, "power_factor": 0.9,
+                "demand_factor": 1.0, "voltage_kv": 11.0}),
+        ]
+        proj = _utility_bus_project(
+            fault_mva=500.0, kv=11.0, extra_components=comps,
+            extra_wires=[_wire("w2", "bus-1", "static_load-1")])
+        res = run_contingency(proj)
+        assert not res.n_minus_1_secure
+        grid = {r.id: r for r in res.contingencies}["utility-1"]
+        assert grid.status == "islanded"
+        assert grid.lost_load_mw == pytest.approx(0.72, rel=1e-3)
+
+    def test_surviving_feeder_loading_matches_2bus_solve(self):
+        """Two identical lossless feeders (X = 0.0826 p.u. each) between a stiff
+        1.0-p.u. bus and a 3 MW unity-PF load. With one feeder out the survivor
+        carries the whole load; the lossless 2-bus flow (E = 1∠0 → jX → load)
+        gives, on the upper branch,
+
+            sin 2δ = 2·P·X,  V = E·cos δ,  I = P/V  (p.u.),
+
+        i.e. I = 157.5 A at 11 kV → 157.5 % of the 100 A rating. The engine's
+        max_loading_pct must reproduce this independent hand solve."""
+        kv, x_per_km, length_km, rated_a, base_mva = 11.0, 0.1, 1.0, 100.0, 100.0
+        cab = lambda cid, name: _comp(cid, "cable", {
+            "name": name, "voltage_kv": kv, "r_per_km": 0.0, "x_per_km": x_per_km,
+            "length_km": length_km, "rated_amps": rated_a})
+        comps = [
+            cab("cable-1", "A"), cab("cable-2", "B"),
+            _comp("bus-2", "bus", {"name": "B2", "voltage_kv": kv}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 3000.0, "power_factor": 1.0,
+                "demand_factor": 1.0, "voltage_kv": kv}),
+        ]
+        wires = [
+            _wire("w2", "bus-1", "cable-1"), _wire("w3", "cable-1", "bus-2"),
+            _wire("w4", "bus-1", "cable-2"), _wire("w5", "cable-2", "bus-2"),
+            _wire("w6", "bus-2", "static_load-1"),
+        ]
+        proj = _utility_bus_project(fault_mva=1e5, kv=kv,
+                                    extra_components=comps, extra_wires=wires)
+        res = run_contingency(proj)
+        c1 = {r.id: r for r in res.contingencies}["cable-1"]
+        assert c1.status == "violations"
+        assert any(v.kind == "overload" for v in c1.violations)
+
+        # Independent lossless 2-bus solve for the surviving feeder.
+        x_pu = x_per_km * length_km * base_mva / kv ** 2
+        p_pu = 3000.0 * 1.0 / 1000.0 / base_mva
+        delta = 0.5 * math.asin(2.0 * p_pu * x_pu)     # upper (stable) branch
+        v_pu = math.cos(delta)
+        i_pu = p_pu / v_pu
+        i_base_a = base_mva * 1e6 / (math.sqrt(3) * kv * 1e3)
+        expected_loading = i_pu * i_base_a / rated_a * 100.0   # ≈ 157.5 %
+        assert c1.max_loading_pct == pytest.approx(expected_loading, rel=0.02)
