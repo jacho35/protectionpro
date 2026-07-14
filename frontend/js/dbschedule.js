@@ -23,10 +23,25 @@ const DBSchedule = {
   currentId: null,
   _openCommitted: null,   // JSON of the committed fields at open time
   _openDerived: null,     // derived lumped-load props at open time (pre-render)
+  _selected: new Set(),   // way ids checked for bulk editing (stable across sort/render)
 
   // Lumped-load props recompute() derives from the committed fields
   _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'phase_a_pct', 'phase_b_pct',
     'phase_c_pct', 'phase_connection'],
+
+  // Fields offered in the bulk-edit bar (applied to every selected way).
+  _BULK_FIELDS: [
+    { k: 'poles', label: 'Poles', type: 'select', opts: ['1P', '3P'], def: '1P' },
+    { k: 'phase', label: 'Phase', type: 'select', opts: ['R', 'W', 'B'], def: 'R' },
+    { k: 'curve', label: 'Curve', type: 'select', opts: ['B', 'C', 'D'], def: 'C' },
+    { k: 'breaker_a', label: 'Breaker (A)', type: 'number' },
+    { k: 'el_group', label: 'EL Group', type: 'text' },
+    { k: 'cable_mm2', label: 'Cable mm²', type: 'number' },
+    { k: 'cable_m', label: 'Length (m)', type: 'number' },
+    { k: 'load_va', label: 'Load (VA)', type: 'number' },
+    { k: 'demand_factor', label: 'DF', type: 'number' },
+    { k: 'description', label: 'Description', type: 'text' },
+  ],
 
   // Stable way id (EE-7). Mint from the shared plan sequence so plan-created
   // and schedule-created ways never collide; device circuit tags reference
@@ -74,6 +89,7 @@ const DBSchedule = {
     const comp = AppState.components.get(compId);
     if (!comp || comp.type !== 'distribution_board') return;
     this.currentId = compId;
+    this._selected = new Set();
     if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
     this._ensureWayIds(comp);   // lazy EE-7 migration for existing projects
     // Snapshot BEFORE render() (whose recompute() writes the derived props)
@@ -125,6 +141,7 @@ const DBSchedule = {
     this.currentId = null;
     this._openCommitted = null;
     this._openDerived = null;
+    this._selected = new Set();
     // When the editor was opened from the Plan workspace, refresh its board
     // panel so the way count reflects any edits.
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
@@ -356,6 +373,10 @@ const DBSchedule = {
     if (!comp) return;
     const circuits = comp.props.circuits;
 
+    // Drop selection entries for ways that no longer exist.
+    const validIds = new Set(circuits.map(c => c.id));
+    for (const id of [...this._selected]) if (!validIds.has(id)) this._selected.delete(id);
+
     const opt = (v, cur, label) =>
       `<option value="${v}"${v === cur ? ' selected' : ''}>${label ?? v}</option>`;
 
@@ -364,6 +385,7 @@ const DBSchedule = {
     // unused and the table renders normally.
     const rows = circuits.map((c, i) => `
       <tr data-idx="${i}">
+        <td data-label="" class="db-sel-cell" style="text-align:center;"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit"></td>
         <td data-label="Way"><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
         <td data-label="Description"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%;min-width:220px"></td>
         <td data-label="Poles"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
@@ -423,16 +445,18 @@ const DBSchedule = {
       <datalist id="db-load-datalist">${datalistOptions}</datalist>
       <div class="db-phase-bars">${barsHtml}</div>
       <div id="db-el-panel"></div>
+      <div id="db-bulk-bar"></div>
       <div class="library-table-wrap" style="max-height:62vh;overflow:auto;">
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr>
+            <th style="width:24px;text-align:center;"><input type="checkbox" id="db-select-all" title="Select / deselect all ways"></th>
             <th>Way</th><th>Description</th><th>Poles</th><th>Ph</th>
             <th>Breaker (A)</th><th>Curve</th><th>EL Grp</th>
             <th title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
             <th>Cable mm²</th><th>Len (m)</th><th>Load (VA)</th><th>DF</th><th></th>
           </tr></thead>
           <tbody id="db-rows">${rows ||
-            '<tr><td colspan="13" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
+            '<tr><td colspan="14" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -460,6 +484,28 @@ const DBSchedule = {
       </div>`;
 
     this._refreshElPanel(comp);
+    this._refreshBulkBar();
+
+    // ── Bulk-selection checkboxes ──
+    this.body.querySelectorAll('.db-row-sel').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) this._selected.add(cb.dataset.id);
+        else this._selected.delete(cb.dataset.id);
+        this._syncSelectAll();
+        this._refreshBulkBar();
+      });
+    });
+    const selAll = this.body.querySelector('#db-select-all');
+    if (selAll) {
+      selAll.addEventListener('change', () => {
+        if (selAll.checked) circuits.forEach(c => this._selected.add(c.id));
+        else this._selected.clear();
+        this.body.querySelectorAll('.db-row-sel').forEach(cb => { cb.checked = selAll.checked; });
+        this._syncSelectAll();
+        this._refreshBulkBar();
+      });
+      this._syncSelectAll();
+    }
 
     // Bind — default-load presets & quick-add chips
     this.body.querySelector('#db-add-load').addEventListener('click', () => {
@@ -540,7 +586,12 @@ const DBSchedule = {
           else if (k === 'description') c._nameOverride = true;
           else if (k === 'poles' || k === 'phase') c._polesManual = true;
         }
-        if (k === 'poles') {
+        if (k === 'way') {
+          // Editing a way number re-sorts the schedule by circuit number so
+          // rows always read in order (numeric-aware: 1,2,10 not 1,10,2).
+          this._sortByWay(comp);
+          this.render();
+        } else if (k === 'poles') {
           if (c.poles === '3P') c.phase = 'RWB';
           else if (c.phase === 'RWB') c.phase = 'R';
           this.render();
@@ -687,6 +738,126 @@ const DBSchedule = {
         <strong>${totals.demandKva.toFixed(2)} kVA</strong> (${ampsLabel})
         &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong>`;
     }
+  },
+
+  // ── Sort by way number ─────────────────────────────────────────────
+  // Numeric-aware in-place sort (keeps the array reference the render-time
+  // closures capture) so "1, 2, 10" order rather than "1, 10, 2".
+  _sortByWay(comp) {
+    (comp.props.circuits || []).sort((a, b) =>
+      String(a.way ?? '').localeCompare(String(b.way ?? ''),
+        undefined, { numeric: true, sensitivity: 'base' }));
+  },
+
+  // ── Bulk selection + edit ───────────────────────────────────────────
+  // Reflect the header "select all" tri-state from the current selection.
+  _syncSelectAll() {
+    const selAll = this.body && this.body.querySelector('#db-select-all');
+    if (!selAll) return;
+    const comp = AppState.components.get(this.currentId);
+    const total = comp ? (comp.props.circuits || []).length : 0;
+    const sel = this._selected.size;
+    selAll.checked = total > 0 && sel === total;
+    selAll.indeterminate = sel > 0 && sel < total;
+  },
+
+  // The bulk-edit bar appears only while ≥1 way is selected: pick a field,
+  // enter a value, apply it to every selected way (or delete them).
+  _refreshBulkBar() {
+    const wrap = this.body && this.body.querySelector('#db-bulk-bar');
+    if (!wrap) return;
+    const n = this._selected.size;
+    if (n === 0) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    const fieldOpts = this._BULK_FIELDS
+      .map(f => `<option value="${f.k}">${escHtml(f.label)}</option>`).join('');
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;padding:8px 10px;border:1px solid var(--accent-color,#1976d2);border-radius:6px;background:var(--hover-bg,rgba(25,118,210,0.08));">
+        <strong style="font-size:12px;"><span id="db-bulk-count">${n}</span> selected</strong>
+        <span style="font-size:12px;opacity:0.8;">Set</span>
+        <select id="db-bulk-field" title="Field to change on every selected way">${fieldOpts}</select>
+        <span id="db-bulk-value-wrap"></span>
+        <button class="btn-small" id="db-bulk-apply" title="Apply the value to all selected ways">Apply to selected</button>
+        <span style="width:1px;height:20px;background:var(--border-color,#ccc);"></span>
+        <button class="btn-small" id="db-bulk-delete" title="Remove all selected ways">Delete selected</button>
+        <button class="btn-small" id="db-bulk-clear" title="Clear the selection">Clear</button>
+      </div>`;
+    const valWrap = wrap.querySelector('#db-bulk-value-wrap');
+    const fieldSel = wrap.querySelector('#db-bulk-field');
+    const buildVal = () => {
+      valWrap.innerHTML = this._bulkValueControl(
+        this._BULK_FIELDS.find(f => f.k === fieldSel.value));
+    };
+    buildVal();
+    fieldSel.addEventListener('change', buildVal);
+    wrap.querySelector('#db-bulk-apply').addEventListener('click',
+      () => this._applyBulk(fieldSel.value, valWrap));
+    wrap.querySelector('#db-bulk-delete').addEventListener('click', () => this._bulkDelete());
+    wrap.querySelector('#db-bulk-clear').addEventListener('click',
+      () => { this._selected.clear(); this.render(); });
+  },
+
+  _bulkValueControl(f) {
+    if (!f) return '';
+    if (f.type === 'select') {
+      return `<select id="db-bulk-value">${f.opts.map(o =>
+        `<option value="${o}"${o === f.def ? ' selected' : ''}>${o}</option>`).join('')}</select>`;
+    }
+    if (f.type === 'number') {
+      const step = f.k === 'demand_factor' ? '0.05' : (f.k === 'cable_mm2' ? '0.5' : '1');
+      return `<input type="number" id="db-bulk-value" step="${step}" style="width:88px" placeholder="value">`;
+    }
+    return `<input type="text" id="db-bulk-value" style="width:150px" placeholder="value">`;
+  },
+
+  _applyBulk(fieldKey, valWrap) {
+    const comp = AppState.components.get(this.currentId);
+    if (!comp) return;
+    const f = this._BULK_FIELDS.find(x => x.k === fieldKey);
+    const input = valWrap.querySelector('#db-bulk-value');
+    if (!f || !input) return;
+    let val = input.value;
+    if (f.type === 'number') {
+      val = parseFloat(val);
+      if (isNaN(val)) { document.getElementById('status-info').textContent = 'Enter a value to apply.'; return; }
+      if (f.k === 'demand_factor') val = Math.min(1, Math.max(0, val));
+    }
+    let count = 0;
+    for (const c of comp.props.circuits || []) {
+      if (!this._selected.has(c.id)) continue;
+      c[fieldKey] = val;
+      // Keep poles/phase consistent, matching the per-cell edit rules.
+      if (fieldKey === 'poles') {
+        if (val === '3P') c.phase = 'RWB';
+        else if (c.phase === 'RWB') c.phase = 'R';
+      } else if (fieldKey === 'phase' && c.poles === '3P') {
+        c.phase = 'RWB';   // 3-phase ways stay RWB regardless of the picked phase
+      }
+      // Mirror the per-cell pin behaviour so a plan sync can't overwrite the
+      // bulk edit on a plan-driven way.
+      if (Number(c.plan_qty) > 0) {
+        if (fieldKey === 'load_va') c._manualLoadOverride = true;
+        else if (fieldKey === 'cable_m') c._cableManual = true;
+        else if (fieldKey === 'description') c._nameOverride = true;
+        else if (fieldKey === 'poles' || fieldKey === 'phase') c._polesManual = true;
+      }
+      count++;
+    }
+    this.render();
+    document.getElementById('status-info').textContent = `Set ${f.label} on ${count} way(s).`;
+  },
+
+  _bulkDelete() {
+    const comp = AppState.components.get(this.currentId);
+    if (!comp) return;
+    const keep = (comp.props.circuits || []).filter(c => !this._selected.has(c.id));
+    const removed = comp.props.circuits.length - keep.length;
+    // Mutate in place so the render-time closures keep their array reference.
+    comp.props.circuits.length = 0;
+    comp.props.circuits.push(...keep);
+    this._selected.clear();
+    this.render();
+    document.getElementById('status-info').textContent = `Removed ${removed} selected way(s).`;
   },
 
   // ── EL group leakage panel ──────────────────────────────────────────
