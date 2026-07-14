@@ -1068,9 +1068,10 @@ const AppState = {
     this.planMarkup = this._defaultPlanMarkup();
     this.lightningRisk = null;   // saved IEC 62305-2 form inputs
     this.raceways = [];
-    // Clear annotation drag offsets
+    // Clear annotation drag offsets + hidden result boxes
     if (typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
+      Annotations.hiddenResultBoxes.clear();
     }
     // Project identity changed (new project, import, load, template…):
     // rotate the local-revision namespace so revisions of the previous
@@ -1192,6 +1193,9 @@ const AppState = {
       planMarkup: this._planMarkupIsEmpty() ? undefined : this._planMarkupToJSON(),
       annotationOffsets: Annotations.offsets.size > 0
         ? Object.fromEntries(Annotations.offsets)
+        : undefined,
+      hiddenResultBoxes: Annotations.hiddenResultBoxes.size > 0
+        ? [...Annotations.hiddenResultBoxes]
         : undefined,
       // Persist analysis results so result boxes survive save/load
       faultResults: this.faultResults || undefined,
@@ -1483,6 +1487,13 @@ const AppState = {
       Annotations.offsets.clear();
       for (const [key, val] of Object.entries(data.annotationOffsets)) {
         Annotations.offsets.set(key, val);
+      }
+    }
+    // Restore hidden result boxes (absent key ⇒ nothing hidden)
+    if (typeof Annotations !== 'undefined') {
+      Annotations.hiddenResultBoxes.clear();
+      if (Array.isArray(data.hiddenResultBoxes)) {
+        for (const key of data.hiddenResultBoxes) Annotations.hiddenResultBoxes.add(key);
       }
     }
     // Restore analysis results so result boxes appear on load. Write straight

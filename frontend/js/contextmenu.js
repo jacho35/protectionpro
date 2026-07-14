@@ -273,6 +273,33 @@ const ContextMenu = {
     this.open(items, clientX, clientY);
   },
 
+  // Menu for a study result box (draggable analysis badge). `key` is its
+  // annotation key, e.g. "lf:bus_49", "af:bus_3", "ms:motor_7".
+  openForResultBox(key, clientX, clientY) {
+    const items = [
+      {
+        label: 'Copy Result Text',
+        action: () => Annotations.copyBoxText(key),
+      },
+      {
+        label: 'Reset Position',
+        action: () => Annotations.resetBoxPosition(key),
+      },
+      '---',
+      {
+        label: 'Open Full Results',
+        action: () => window.AppActions?.openResultBox?.(key),
+      },
+      '---',
+      {
+        label: 'Hide This Box',
+        danger: true,
+        action: () => Annotations.hideResultBox(key),
+      },
+    ];
+    this.open(items, clientX, clientY);
+  },
+
   openForCanvas(worldPt, clientX, clientY) {
     const hasClipboard = !!(AppState.clipboard && AppState.clipboard.components
       && AppState.clipboard.components.length > 0);
