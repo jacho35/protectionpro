@@ -3402,20 +3402,36 @@ const TCC = {
    * "did the right things trip in the right order?"
    */
   verifySequenceOfOperation() {
+    const { buses, paths, error } = this.computeSequenceOfOperation();
+    this._showSequenceResults(buses, paths, error);
+  },
+
+  /**
+   * Pure compute for the sequence-of-operation study (no DOM). Returns
+   * { buses, paths, error }. opts:
+   *   faultType   '3ph' (balanced, ik3) | 'slg' (earth, ik1)   [default '3ph']
+   *   breakerTimeS  mechanical breaker clearing time added to each CB operation
+   *   busFilter   Set of bus ids to include, or null for every faulted bus
+   * Callers must have loaded the TCC device list first — the TCC modal does on
+   * open; standalone launchers (SOO) call _loadDevicesFromNetwork() themselves.
+   */
+  computeSequenceOfOperation(opts = {}) {
+    const faultType = opts.faultType === 'slg' ? 'slg' : '3ph';
+    const breakerTimeS = Math.max(0, Number(opts.breakerTimeS) || 0);
+    const busFilter = opts.busFilter instanceof Set ? opts.busFilter : null;
+
     // Build protection paths and, in the same traversal, the map of each bus to
     // the protection devices on its SOURCE side (only those carry a bus fault)
     const busUpstreamMap = new Map();
     const paths = this._buildProtectionPaths(busUpstreamMap);
     if (paths.length === 0 && busUpstreamMap.size === 0) {
-      this._showSequenceResults(null, null, 'No source-to-load protection paths found. Connect utility/generator to protection devices.');
-      return;
+      return { buses: [], paths, error: 'No source-to-load protection paths found. Connect utility/generator to protection devices.' };
     }
 
     // Require fault results to know actual fault currents at each bus
     const fr = AppState.faultResults;
     if (!fr || !fr.buses || Object.keys(fr.buses).length === 0) {
-      this._showSequenceResults(null, null, 'Run Fault Analysis first to provide fault currents at each bus.');
-      return;
+      return { buses: [], paths, error: 'Run Fault Analysis first to provide fault currents at each bus.' };
     }
 
     // For each bus with fault results, the candidate devices are the SOURCE-side
@@ -3427,7 +3443,9 @@ const TCC = {
     const allBusResults = [];
 
     for (const [busId, busResult] of Object.entries(fr.buses)) {
-      const faultCurrentA = (busResult.ik3 || 0) * 1000; // 3-phase fault in amps
+      if (busFilter && !busFilter.has(busId)) continue;
+      // 3φ fault ⇒ balanced ik3; SLG ⇒ ik1 (phase line current and earth residual)
+      const faultCurrentA = (faultType === 'slg' ? (busResult.ik1 || 0) : (busResult.ik3 || 0)) * 1000;
       if (faultCurrentA <= 0) continue;
 
       const busName = busResult.bus_name || busId;
@@ -3440,19 +3458,33 @@ const TCC = {
       const deviceOps = [];
       for (const entry of devicesOnPaths) {
         const dev = entry.device;
-        // Earth-fault (50N/51N) elements see no balanced 3-phase fault current
-        if (this._deviceElementClass(dev) === 'earth') continue;
+        const isEarth = this._deviceElementClass(dev) === 'earth';
+        // On a 3-phase fault, earth (50N/51N) elements see no balanced current.
+        // On an SLG fault, phase elements see the line current and earth elements
+        // see the residual — both at ik1 — so keep every device.
+        if (faultType === '3ph' && isEarth) continue;
         // Refer the bus fault current to the device's own voltage level
-        const tripTime = this._deviceTripTime(dev, this._referCurrent(faultCurrentA, busVkv, dev));
+        const currentA = this._referCurrent(faultCurrentA, busVkv, dev);
+        const tripTime = this._deviceTripTime(dev, currentA);
+        const operates = isFinite(tripTime) && tripTime > 0;
+        // A CB (or a relay / distance relay that trips one) adds its breaker's
+        // mechanical clearing time; a fuse self-interrupts (melt time = clear).
+        const opensBreaker = dev.deviceType === 'cb'
+          || dev.deviceType === 'distance_relay'
+          || (dev.deviceType === 'relay' && !!dev.trip_cb);
+        const breakerTime = operates && opensBreaker ? breakerTimeS : 0;
         deviceOps.push({
           device: dev,
           name: dev.name,
           deviceType: dev.deviceType,
+          currentA,
           tripTime: tripTime,
+          breakerTime,
+          clearTime: operates ? tripTime + breakerTime : Infinity,
           pathIndex: entry.pathIndex,
           positionInPath: entry.position,  // 0 = closest to source (upstream)
           pathLength: entry.pathLength,
-          operates: isFinite(tripTime) && tripTime > 0,
+          operates,
         });
       }
       if (deviceOps.length === 0) continue;
@@ -3571,17 +3603,31 @@ const TCC = {
         });
       }
 
+      // Stepped timeline: the fault is cleared by the earliest-clearing operating
+      // device; any device still timing at that instant then resets (does not trip).
+      let clearedAtS = Infinity, clearedBy = null;
+      for (const d of operatingDevices) {
+        if (d.clearTime < clearedAtS) { clearedAtS = d.clearTime; clearedBy = d.name; }
+      }
+      for (const d of deviceOps) {
+        d.resets = d.operates && clearedBy != null && d.name !== clearedBy && d.tripTime >= clearedAtS;
+      }
+
       allBusResults.push({
         busId,
         busName,
+        faultType,
+        voltageKv: busVkv,
         faultCurrentA,
         sequence: [...operatingDevices, ...failedDevices],
+        clearedAtS: isFinite(clearedAtS) ? clearedAtS : null,
+        clearedBy,
         violations,
         passed: violations.length === 0,
       });
     }
 
-    this._showSequenceResults(allBusResults, paths);
+    return { buses: allBusResults, paths, error: null };
   },
 
   /**
