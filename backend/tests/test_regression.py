@@ -26,6 +26,9 @@ from backend.analysis.grounding_system import (
 )
 from backend.analysis.arcflash import calc_incident_energy
 from backend.analysis.unbalanced_loadflow import run_unbalanced_load_flow
+from backend.analysis.harmonics import (
+    run_harmonics, vfd_current_spectrum, _voltage_limits, _tdd_limit,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -2286,3 +2289,108 @@ class TestContingencyWorkedExample:
         i_base_a = base_mva * 1e6 / (math.sqrt(3) * kv * 1e3)
         expected_loading = i_pu * i_base_a / rated_a * 100.0   # ≈ 157.5 %
         assert c1.max_loading_pct == pytest.approx(expected_loading, rel=0.02)
+
+
+# ── Harmonic analysis (IEEE 519-2014) ────────────────────────────────────
+
+
+class TestHarmonics:
+    """Pin the VFD harmonic current-source penetration engine."""
+
+    def _vfd_project(self, pulse=6, front_end="diode", reactor=0.0,
+                     kvar=0.0, load_kva=1000.0, vfd_kw=800.0, fault_mva=250.0):
+        comps = [
+            _comp("util-1", "utility",
+                  {"name": "Grid", "voltage_kv": 11, "fault_mva": fault_mva, "x_r_ratio": 15}),
+            _comp("bus-hv", "bus", {"name": "HV", "voltage_kv": 11}),
+            _comp("tx-1", "transformer",
+                  {"name": "TX", "rated_mva": 2, "z_percent": 6, "x_r_ratio": 10,
+                   "voltage_hv_kv": 11, "voltage_lv_kv": 0.4}),
+            _comp("bus-lv", "bus", {"name": "LV", "voltage_kv": 0.4}),
+            _comp("vfd-1", "vfd",
+                  {"name": "Drive", "rated_kw": vfd_kw, "voltage_kv": 0.4,
+                   "efficiency": 0.96, "load_pct": 100, "displacement_pf": 0.98,
+                   "pulse_number": pulse, "front_end": front_end,
+                   "input_reactor_pct": reactor}),
+        ]
+        wires = [
+            _wire("w1", "util-1", "bus-hv"),
+            _wire("w2", "bus-hv", "tx-1"), _wire("w3", "tx-1", "bus-lv"),
+            _wire("w4", "bus-lv", "vfd-1"),
+        ]
+        if load_kva > 0:
+            comps.append(_comp("load-1", "static_load",
+                               {"name": "Load", "rated_kva": load_kva,
+                                "power_factor": 0.85, "voltage_kv": 0.4}))
+            wires.append(_wire("w5", "bus-lv", "load-1"))
+        if kvar > 0:
+            comps.append(_comp("cap-1", "capacitor_bank",
+                               {"name": "PFC", "rated_kvar": kvar, "voltage_kv": 0.4}))
+            wires.append(_wire("w6", "bus-lv", "cap-1"))
+        return ProjectData(projectName="harm", baseMVA=10.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_6pulse_ideal_spectrum_is_one_over_h(self):
+        """A 6-pulse diode front end injects the characteristic orders
+        h = 6k±1 (5,7,11,13,…). No reactor → 5th is the dominant harmonic."""
+        proj = self._vfd_project(pulse=6, reactor=0.0)
+        vfd = next(c for c in proj.components if c.type == "vfd")
+        spec = vfd_current_spectrum(vfd)
+        assert set(spec) >= {5, 7, 11, 13}
+        assert 3 not in spec and 9 not in spec       # no triplen / even
+        assert spec[5] == max(spec.values())          # 5th dominates
+
+    def test_pulse_number_cancels_low_order(self):
+        """12-pulse cancels the 5th/7th (dominant pair becomes 11/13); an
+        active front end has far lower current THD than a 6-pulse diode."""
+        p6 = self._vfd_project(pulse=6, reactor=3.0).components
+        s6 = vfd_current_spectrum(next(c for c in p6 if c.type == "vfd"))
+        s12 = vfd_current_spectrum(next(c for c in self._vfd_project(pulse=12).components if c.type == "vfd"))
+        safe = self._vfd_project(front_end="afe").components
+        s_afe = vfd_current_spectrum(next(c for c in safe if c.type == "vfd"))
+        thd = lambda s: math.sqrt(sum(v * v for v in s.values()))
+        assert s12.get(5, 0) < s6[5]                  # 5th suppressed
+        assert thd(s12) < thd(s6)                     # 12-pulse cleaner
+        assert thd(s_afe) < thd(s12)                  # AFE cleanest
+
+    def test_reactor_reduces_distortion(self):
+        """Adding an input reactor lowers the injected 5th harmonic and the
+        resulting bus voltage THD (a diode drive is line-commutated)."""
+        no_r = run_harmonics(self._vfd_project(pulse=6, reactor=0.0))
+        with_r = run_harmonics(self._vfd_project(pulse=6, reactor=5.0))
+        lv_no = next(b for b in no_r["buses"] if b["name"] == "LV")
+        lv_r = next(b for b in with_r["buses"] if b["name"] == "LV")
+        assert lv_r["thd_v_pct"] < lv_no["thd_v_pct"]
+
+    def test_capacitor_resonance_amplifies_thd(self):
+        """A shunt PFC capacitor forms a parallel resonance with the source
+        inductance near h ≈ √(Ssc/Qcap); it raises voltage THD versus the same
+        network with no capacitor."""
+        no_cap = run_harmonics(self._vfd_project(pulse=6, reactor=3.0, kvar=0))
+        with_cap = run_harmonics(self._vfd_project(pulse=6, reactor=3.0, kvar=250))
+        lv_no = next(b for b in no_cap["buses"] if b["name"] == "LV")
+        lv_cap = next(b for b in with_cap["buses"] if b["name"] == "LV")
+        assert lv_cap["thd_v_pct"] > lv_no["thd_v_pct"]
+
+    def test_clean_drive_is_ieee519_compliant(self):
+        """An 18-pulse drive with a reactor, small relative to the site load,
+        stays within IEEE 519 voltage limits."""
+        res = run_harmonics(self._vfd_project(pulse=18, reactor=5.0,
+                                              vfd_kw=250, load_kva=2000))
+        assert res["converged"] and res["compliant"]
+        lv = next(b for b in res["buses"] if b["name"] == "LV")
+        assert lv["thd_v_pct"] <= lv["thd_limit_pct"]
+
+    def test_ieee519_limit_tables(self):
+        """Voltage + current limit selectors match IEEE 519-2014 tables."""
+        assert _voltage_limits(0.4) == (5.0, 8.0)     # ≤1 kV
+        assert _voltage_limits(11) == (3.0, 5.0)      # 1–69 kV
+        assert _tdd_limit(10, 11) == 5.0              # Isc/IL < 20
+        assert _tdd_limit(150, 11) == 15.0            # 100 ≤ Isc/IL < 1000
+
+    def test_no_vfd_returns_note(self):
+        """With no harmonic source the study returns a benign note, not error."""
+        proj = self._vfd_project(pulse=6)
+        proj.components = [c for c in proj.components if c.type != "vfd"]
+        res = run_harmonics(proj)
+        assert res["note"] and res["vfd_sources"] == []

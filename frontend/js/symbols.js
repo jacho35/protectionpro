@@ -576,6 +576,24 @@ const Symbols = {
       </g>`;
   },
 
+  vfd(w, h, comp) {
+    // IEC-style power-electronic converter: a square box with a diagonal
+    // (adjustable) line and AC~ / ~AC markings — the drive rectifies then
+    // synthesises a variable-frequency output. A '3~' marks a multi-pulse
+    // (12/18/24) input.
+    const hw = w * 0.4, hh = h * 0.4;
+    const multi = comp && comp.props && Number(comp.props.pulse_number) > 6;
+    return `
+      <g class="symbol-vfd">
+        <rect x="${-hw}" y="${-hh}" width="${2 * hw}" height="${2 * hh}" rx="2" fill="var(--bg-primary, #fff)"/>
+        <line x1="${-hw}" y1="${hh}" x2="${hw}" y2="${-hh}"/>
+        <text x="${-hw + 3}" y="${-hh + 9}" font-size="9" fill="#888" font-family="sans-serif">${multi ? '3~' : '~'}</text>
+        <text x="${hw - 3}" y="${hh - 3}" font-size="9" fill="#888" font-family="sans-serif" text-anchor="end">~f</text>
+        <line x1="0" y1="${-hh}" x2="0" y2="${-h / 2}"/>
+        <line x1="0" y1="${hh}" x2="0" y2="${h / 2}"/>
+      </g>`;
+  },
+
   capacitor_bank(w, h) {
     const hw = w * 0.4;
     const gap = 4;

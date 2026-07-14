@@ -126,7 +126,7 @@ def _find_components_at_bus(bus_id, adjacency, components):
 # cable fixes it, so we synthesise exactly that node here, transparently.
 SYNTHETIC_BUS_PREFIX = "__term__"
 LOAD_TERMINAL_TYPES = {"motor_induction", "motor_synchronous",
-                       "static_load", "capacitor_bank"}
+                       "static_load", "capacitor_bank", "vfd"}
 
 
 def is_synthetic_bus(bus_id):
@@ -1422,6 +1422,23 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 kvar = comp.props.get("rated_kvar", 100)
                 Q_spec[i] += kvar / 1000 / base_mva
                 bus_load_q_mvar[i] -= kvar / 1000  # capacitor supplies Q
+            elif comp.type == "vfd":
+                # A VFD is a converter load: the DC link decouples the motor
+                # from the supply, so the drive draws a near-unity DISPLACEMENT
+                # power factor at fundamental frequency regardless of motor PF.
+                # (Harmonic current is handled by the harmonics engine, not the
+                # fundamental load flow.) Input real power = shaft kW ÷ efficiency.
+                rated_kw = comp.props.get("rated_kw", 200)
+                eff = comp.props.get("efficiency", 0.96) or 0.96
+                load = float(comp.props.get("load_pct", 100) or 0) / 100.0
+                dpf = float(comp.props.get("displacement_pf", 0.98) or 0.98)
+                df = comp.props.get("demand_factor", 1.0)
+                p_mw = rated_kw * load / (eff * 1000)
+                q_mvar = p_mw * math.sqrt(max(0.0, 1 - dpf ** 2)) / dpf if dpf > 0 else 0.0
+                P_spec[i] -= p_mw * df / base_mva
+                Q_spec[i] -= q_mvar * df / base_mva
+                bus_load_p_mw[i] += p_mw * df
+                bus_load_q_mvar[i] += q_mvar * df
 
     # ── Island detection, per-island swing selection, and dispatch ──
     # Each electrical island gets its own slack (utility connection bus,

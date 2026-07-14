@@ -826,7 +826,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'loads',
     name: 'Loads',
-    items: ['motor_induction', 'motor_synchronous', 'static_load', 'distribution_board', 'dc_load'],
+    items: ['motor_induction', 'motor_synchronous', 'vfd', 'static_load', 'distribution_board', 'dc_load'],
   },
   {
     id: 'dc_systems',
@@ -858,6 +858,13 @@ const CONTROL_TYPES = new Set([
 // Describes the standard or reference for generic/default values shown to the user via ⓘ buttons.
 // Keyed by "componentType.fieldKey".
 const FIELD_INFO = {
+  // Variable Frequency Drive (VFD)
+  'vfd.rated_kw':          'Mechanical rating of the driven motor / drive output (kW). Input electrical power = kW × loading ⁄ efficiency; this sets the fundamental (50/60 Hz) current the drive draws.',
+  'vfd.displacement_pf':   'Fundamental displacement power factor at the drive input. A diode-front-end VFD draws near-unity displacement PF (≈0.95–0.98) regardless of motor PF, because the DC-link decouples the two.\nNote: total (true) PF is lower once harmonic current is included.',
+  'vfd.pulse_number':      'Rectifier pulse number — sets which characteristic harmonics the drive injects (orders h = k·p ± 1):\n• 6-pulse: 5, 7, 11, 13 … (worst)\n• 12-pulse: 11, 13, 23, 25 (5th/7th cancelled)\n• 18-pulse: 17, 19 …\n• 24-pulse: 23, 25 …\nHigher pulse counts cancel the lower, larger harmonics.\nUsed by: Harmonic Analysis (IEEE 519).',
+  'vfd.front_end':         'diode: a 6-pulse (or multi-pulse) diode bridge — the classic line-commutated harmonic source.\nafe: active front end (IGBT / PWM rectifier) — switches at high frequency, so line-current THD is very low (≈3–5 %) and displacement PF ≈ 1.\nUsed by: Harmonic Analysis.',
+  'vfd.input_reactor_pct': 'Series AC line reactor or DC-link choke impedance as a % of the drive base. A 3–5 % reactor markedly attenuates the 5th/7th harmonic current a diode drive draws. 0 % = no reactor (highest distortion).\nUsed by: Harmonic Analysis.',
+
   // Utility Source
   'utility.fault_mva':   'Default 500 MVA represents a typical medium-strength distribution network.\nSource: IEC 60909-0 §2.1 — network feeder fault level.',
   'utility.x_r_ratio':   'Default X/R = 15 is typical for transmission/sub-transmission networks.\nSource: IEC 60909-0 Table 1 — X/R ratios for network feeders.',
@@ -2402,6 +2409,40 @@ const COMPONENT_DEFS = {
   },
 
   // --- Other ---
+  vfd: {
+    name: 'Variable Frequency Drive',
+    category: 'loads',
+    ports: [
+      { id: 'in', side: 'top', offset: 0 },
+      { id: 'out', side: 'bottom', offset: 0 },
+    ],
+    width: 50,
+    height: 50,
+    defaults: {
+      name: 'VFD',
+      rated_kw: 200,
+      voltage_kv: 0.4,
+      efficiency: 0.96,
+      load_pct: 100,
+      displacement_pf: 0.98,
+      pulse_number: 6,
+      front_end: 'diode',
+      input_reactor_pct: 3,
+      demand_factor: 1.0,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'rated_kw', label: 'Rating', type: 'number', unit: 'kW' },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
+      { key: 'efficiency', label: 'Efficiency', type: 'number', min: 0.5, max: 1, step: 0.01 },
+      { key: 'load_pct', label: 'Loading', type: 'number', unit: '%', min: 0, max: 100 },
+      { key: 'displacement_pf', label: 'Displacement PF', type: 'number', min: 0.5, max: 1, step: 0.01 },
+      { key: 'demand_factor', label: 'Demand Factor', type: 'number', min: 0, max: 1, step: 0.05, section: 'loadflow' },
+      { key: 'pulse_number', label: 'Rectifier Pulses', type: 'select', options: [{ value: 6, label: '6-pulse' }, { value: 12, label: '12-pulse' }, { value: 18, label: '18-pulse' }, { value: 24, label: '24-pulse' }], section: 'harmonics' },
+      { key: 'front_end', label: 'Front End', type: 'select', options: [{ value: 'diode', label: 'Diode rectifier' }, { value: 'afe', label: 'Active front end (AFE)' }], section: 'harmonics' },
+      { key: 'input_reactor_pct', label: 'AC/DC Reactor', type: 'number', unit: '%', min: 0, max: 10, step: 0.5, section: 'harmonics' },
+    ],
+  },
   capacitor_bank: {
     name: 'Capacitor Bank',
     category: 'other',
@@ -2668,6 +2709,7 @@ const LF_ATTRS = {
   static_load: ['rated_kva', 'power_factor', 'demand_factor'],
   motor_induction: ['rated_kw', 'efficiency', 'power_factor', 'demand_factor'],
   motor_synchronous: ['rated_kva', 'power_factor', 'demand_factor'],
+  vfd: ['rated_kw', 'voltage_kv', 'displacement_pf', 'pulse_number', 'front_end', 'demand_factor'],
   capacitor_bank: ['rated_kvar'],
   cb: ['state'],
   switch: ['state'],

@@ -1727,6 +1727,106 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── Harmonic Analysis (IEEE 519) ──
+  document.getElementById('btn-harmonics').addEventListener('click', async () => {
+    window.closeAllToolbarMenus?.();
+    const hasVfd = [...AppState.components.values()].some(c => c.type === 'vfd');
+    if (!hasVfd) {
+      showValidationModal('Harmonic Analysis',
+        [], [{ msg: 'Add a Variable Frequency Drive (VFD) — the harmonic study needs at least one harmonic current source.' }], null);
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running harmonic analysis (IEEE 519)...';
+    _setBusy('btn-harmonics', true);
+    try {
+      const result = await API.runHarmonics(document.getElementById('loadflow-method')?.value || 'newton_raphson');
+      AppState.harmonicsResults = result;
+      document.getElementById('status-info').textContent =
+        result.compliant ? 'Harmonic analysis complete — IEEE 519 compliant.'
+                          : 'Harmonic analysis complete — IEEE 519 limits exceeded.';
+      showHarmonicsResults(result);
+    } catch (e) {
+      console.error('Harmonic analysis error:', e);
+      document.getElementById('status-info').textContent = 'Harmonic analysis failed.';
+      showValidationModal('Harmonics — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-harmonics', false);
+    }
+  });
+
+  function showHarmonicsResults(result) {
+    const modal = document.getElementById('harmonics-modal');
+    const body = document.getElementById('harmonics-body');
+    if (!modal || !body) return;
+    const ok = (v) => v ? '<span style="color:#4caf50">✓ PASS</span>' : '<span style="color:#d32f2f">✗ FAIL</span>';
+    let html = '';
+
+    if (result.note) { body.innerHTML = `<p>${escHtml(result.note)}</p>`; modal.style.display = ''; return; }
+
+    // Banner
+    const bColor = result.compliant ? '#4caf50' : '#d32f2f';
+    html += `<div style="background:${bColor}11;border:1px solid ${bColor};border-radius:6px;padding:10px 14px;margin-bottom:14px">
+      <strong style="color:${bColor}">${result.compliant ? 'IEEE 519-2014 compliant' : 'IEEE 519-2014 limits exceeded'}</strong>
+      <span style="margin-left:12px">Worst bus THD<sub>V</sub>: <strong>${result.worst_thd_pct}%</strong> at ${escHtml(result.worst_bus_name || '—')}</span>
+      <span style="margin-left:12px;color:var(--text-secondary)">Orders analysed: ${(result.orders || []).join(', ')}</span>
+    </div>`;
+
+    if (result.warnings && result.warnings.length) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
+      html += '</div>';
+    }
+
+    // PCC current TDD
+    const pcc = result.pcc;
+    if (pcc) {
+      html += `<h4 style="margin:14px 0 6px">Point of Common Coupling — Current Distortion</h4>
+        <div style="border:1px solid var(--border-color);border-radius:6px;padding:12px 14px;margin-bottom:6px;border-left:4px solid ${pcc.compliant ? '#4caf50' : '#d32f2f'}">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
+            <div>PCC bus: <strong>${escHtml(pcc.name)} (${pcc.voltage_kv} kV)</strong></div>
+            <div>I<sub>SC</sub>/I<sub>L</sub>: <strong>${pcc.isc_il}</strong></div>
+            <div>Current TDD: <strong>${pcc.i_tdd_pct}%</strong></div>
+            <div>Limit / verdict: <strong>${pcc.tdd_limit_pct}%</strong> ${ok(pcc.compliant)}</div>
+          </div>
+        </div>`;
+    }
+
+    // Per-bus voltage THD table
+    html += `<h4 style="margin:14px 0 6px">Bus Voltage Distortion</h4>
+      <table class="data-table" style="width:100%;font-size:12px"><thead><tr>
+      <th style="text-align:left">Bus</th><th>kV</th><th>THD<sub>V</sub> %</th><th>Limit %</th>
+      <th>Max IHD %</th><th>IHD limit %</th><th>Verdict</th></tr></thead><tbody>`;
+    for (const b of (result.buses || [])) {
+      const c = b.compliant ? '' : 'background:#d32f2f11';
+      html += `<tr style="${c}"><td style="text-align:left">${escHtml(b.name)}</td>
+        <td style="text-align:center">${b.voltage_kv}</td>
+        <td style="text-align:center"><strong>${b.thd_v_pct}</strong></td>
+        <td style="text-align:center">${b.thd_limit_pct}</td>
+        <td style="text-align:center">${b.max_ihd_pct}</td>
+        <td style="text-align:center">${b.ihd_limit_pct}</td>
+        <td style="text-align:center">${ok(b.compliant)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+
+    // VFD sources
+    if ((result.vfd_sources || []).length) {
+      html += `<h4 style="margin:16px 0 6px">Harmonic Sources (VFDs)</h4>`;
+      for (const v of result.vfd_sources) {
+        const spec = Object.entries(v.spectrum).map(([h, r]) => `h${h}: ${(r * 100).toFixed(1)}%`).join('  ');
+        html += `<div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 14px;margin-bottom:8px">
+          <strong>${escHtml(v.name)}</strong> — ${v.pulse_number}-pulse ${escHtml(v.front_end)}, ${v.p_mw} MW, current THD ${v.current_thd_pct}%
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">I<sub>h</sub>/I<sub>1</sub>: ${spec}</div>
+        </div>`;
+      }
+    }
+
+    html += `<p style="font-size:11px;color:var(--text-secondary);margin-top:12px">${escHtml(result.method)}. `
+      + `Multiple sources of the same order summed in phase (conservative). Transformer/line tap ratios not applied at harmonic frequencies.</p>`;
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   function showGroundingResults(result) {
     const modal = document.getElementById('grounding-modal');
     const body = document.getElementById('grounding-body');
@@ -2587,6 +2687,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('grounding-modal').addEventListener('click', (e) => {
     if (e.target.id === 'grounding-modal') e.target.style.display = 'none';
+  });
+  document.getElementById('btn-close-harmonics').addEventListener('click', () => {
+    document.getElementById('harmonics-modal').style.display = 'none';
+  });
+  document.getElementById('harmonics-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'harmonics-modal') e.target.style.display = 'none';
   });
 
   // ── Control circuit simulation toggle ──

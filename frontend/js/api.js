@@ -185,6 +185,13 @@ const API = {
     return this.request('/analysis/contingency', 'POST', data);
   },
 
+  // Run harmonic penetration analysis (IEEE 519) — VFDs as current sources
+  async runHarmonics(method = 'newton_raphson') {
+    const data = AppState.toJSON();
+    data.loadFlowMethod = method;
+    return this.request('/analysis/harmonics', 'POST', data);
+  },
+
   // Run classical transient stability (time-domain rotor angle)
   async runTransientStability(disturbance) {
     const data = AppState.toJSON();
