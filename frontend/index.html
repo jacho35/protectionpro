@@ -2335,7 +2335,7 @@
 
         <div class="help-content" id="help-tab-verification" style="display:none">
           <h4>Verification &amp; Validation</h4>
-          <p>All twelve analysis engines are cross-checked against published standards, textbook worked examples, or
+          <p>All sixteen analysis engines are cross-checked against published standards, textbook worked examples, or
             exact first-principles / hand calculations. Each reference is rebuilt as a reproducible project and solved
             two ways that must agree — the backend engine (authoritative) and the real app driven headlessly — with a
             pass tolerance of <strong>&plusmn;2 %</strong>.</p>
@@ -2344,7 +2344,7 @@
                style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:6px;font-weight:600;text-decoration:none;">
               Open the full Verification report &nearr;</a>
           </p>
-          <p>Every example below is also loadable in-app from <strong>Templates &rarr; Verification / Standards</strong>.</p>
+          <p>Most examples below are also loadable in-app from <strong>Templates &rarr; Verification / Standards</strong>; the stability, contingency and dynamic-motor cases are anchored to the backend regression suite.</p>
           <table class="help-ref-table">
             <thead><tr><th>Example</th><th>Standard / source</th><th>Result</th></tr></thead>
             <tbody>
@@ -2360,6 +2360,10 @@
               <tr><td>DC load flow</td><td>First-principles resistive circuit</td><td>PASS ≤0.005 %</td></tr>
               <tr><td>DC short circuit</td><td>IEC 61660-1 (CED E03-035)</td><td>PASS 0.00 %</td></tr>
               <tr><td>DC arc flash</td><td>Stokes &amp; Oppenländer / Ammerman</td><td>PASS ≤0.06 %</td></tr>
+              <tr><td>Transient stability (CCT)</td><td>Equal-area criterion (Grainger &amp; Stevenson / Kundur)</td><td>PASS −1.1 %</td></tr>
+              <tr><td>Voltage stability (P-V nose)</td><td>Max-power transfer (Kundur / Taylor)</td><td>PASS ≤1.0 %</td></tr>
+              <tr><td>Contingency (N-1 / N-2)</td><td>Load-flow re-solve + 2-bus solve</td><td>PASS ≤0.03 %</td></tr>
+              <tr><td>Dynamic motor starting</td><td>Chapman / IEEE 3002.7</td><td>PASS ≤0.01 %</td></tr>
             </tbody>
           </table>
         </div>
