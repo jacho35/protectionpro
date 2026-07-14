@@ -412,6 +412,7 @@ const MobileUI = {
       ['mobile-analysis-duty',          'btn-duty-check'],
       ['mobile-analysis-grounding',     'btn-grounding'],
       ['mobile-analysis-tcc',           'btn-tcc'],
+      ['mobile-analysis-sequence',      'btn-sequence-op'],
       ['mobile-analysis-compliance',    'btn-compliance'],
     ];
 
