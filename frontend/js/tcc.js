@@ -3543,104 +3543,94 @@ const TCC = {
         d.role = 'failed';
       }
 
-      // Verify sequence — check for violations
-      const violations = [];
-
-      // 1. Check that primary is the most downstream device (closest to fault)
-      if (operatingDevices.length > 0) {
-        const primary = operatingDevices[0];
-        // Find any device that is more downstream (higher position) but trips slower
-        for (let i = 1; i < operatingDevices.length; i++) {
-          const other = operatingDevices[i];
-          if (other.positionInPath > primary.positionInPath && other.pathIndex === primary.pathIndex) {
-            violations.push({
-              type: 'out_of_sequence',
-              severity: 'critical',
-              message: `${primary.name} (${primary.role}) trips before ${other.name} — but ${other.name} is closer to the fault`,
-              primaryDevice: primary.name,
-              otherDevice: other.name,
-              primaryTime: primary.tripTime,
-              otherTime: other.tripTime,
-            });
-          }
-        }
-      }
-
-      // 2. Check upstream-to-downstream ordering within each path
-      const pathGroups = new Map();
-      for (const d of operatingDevices) {
-        if (!pathGroups.has(d.pathIndex)) pathGroups.set(d.pathIndex, []);
-        pathGroups.get(d.pathIndex).push(d);
-      }
-
-      for (const [, devs] of pathGroups) {
-        // Sort by position in path (upstream=0 to downstream=N)
-        devs.sort((a, b) => a.positionInPath - b.positionInPath);
-
-        for (let i = 0; i < devs.length - 1; i++) {
-          const upstream = devs[i];
-          const downstream = devs[i + 1];
-
-          // Downstream should trip faster than upstream
-          if (downstream.tripTime > upstream.tripTime) {
-            violations.push({
-              type: 'out_of_sequence',
-              severity: 'critical',
-              message: `${upstream.name} trips at ${this._fmtTime(upstream.tripTime)} before downstream ${downstream.name} at ${this._fmtTime(downstream.tripTime)}`,
-              primaryDevice: upstream.name,
-              otherDevice: downstream.name,
-              primaryTime: upstream.tripTime,
-              otherTime: downstream.tripTime,
-            });
-          } else if (Math.abs(downstream.tripTime - upstream.tripTime) < 0.01) {
-            violations.push({
-              type: 'simultaneous',
-              severity: 'warning',
-              message: `${upstream.name} and ${downstream.name} trip nearly simultaneously — race condition risk`,
-              primaryDevice: upstream.name,
-              otherDevice: downstream.name,
-              primaryTime: upstream.tripTime,
-              otherTime: downstream.tripTime,
-            });
-          }
-
-          // Check grading margin between backup levels
-          const margin = upstream.tripTime - downstream.tripTime;
-          if (margin > 0 && margin < this.gradingMargin) {
-            violations.push({
-              type: 'insufficient_margin',
-              severity: 'marginal',
-              message: `Margin between ${downstream.name} and backup ${upstream.name}: ${(margin * 1000).toFixed(0)}ms < ${(this.gradingMargin * 1000).toFixed(0)}ms required`,
-              primaryDevice: downstream.name,
-              otherDevice: upstream.name,
-              primaryTime: downstream.tripTime,
-              otherTime: upstream.tripTime,
-            });
-          }
-        }
-      }
-
-      // 3. Flag devices that fail to operate
-      for (const d of failedDevices) {
-        violations.push({
-          type: 'failed_to_operate',
-          severity: 'critical',
-          message: `${d.name} does not operate at ${faultCurrentA >= 1000 ? (faultCurrentA / 1000).toFixed(1) + 'kA' : faultCurrentA + 'A'} — check pickup settings`,
-          primaryDevice: d.name,
-          otherDevice: null,
-          primaryTime: Infinity,
-          otherTime: null,
-        });
-      }
-
       // Stepped timeline: the fault is cleared by the earliest-clearing operating
-      // device; any device still timing at that instant then resets (does not trip).
+      // device; any device still timing at that instant then resets (never trips).
       let clearedAtS = Infinity, clearedBy = null;
       for (const d of operatingDevices) {
         if (d.clearTime < clearedAtS) { clearedAtS = d.clearTime; clearedBy = d.name; }
       }
       for (const d of deviceOps) {
         d.resets = d.operates && clearedBy != null && d.name !== clearedBy && d.tripTime >= clearedAtS;
+      }
+
+      // Only devices that operate BEFORE the fault clears participate in the actual
+      // sequence — pass/fail is judged on those. Devices that reset (would trip only
+      // after the fault is already cleared) are non-participating backups: their
+      // grading is reported as informational (backupNotes), never as a failure.
+      const acting = operatingDevices.filter(d => !d.resets);
+      const resetBackups = operatingDevices.filter(d => d.resets);
+
+      // Series-pair grading within a device set (grouped by path). Emits
+      // out-of-sequence / simultaneous / margin entries into `sink`; `backup`
+      // downgrades them to informational notes about reset backups.
+      const checkPairs = (devs, sink, backup) => {
+        const groups = new Map();
+        for (const d of devs) {
+          if (!groups.has(d.pathIndex)) groups.set(d.pathIndex, []);
+          groups.get(d.pathIndex).push(d);
+        }
+        for (const [, g] of groups) {
+          g.sort((a, b) => a.positionInPath - b.positionInPath);
+          for (let i = 0; i < g.length - 1; i++) {
+            const up = g[i], down = g[i + 1];
+            if (down.tripTime > up.tripTime) {
+              sink.push({ type: 'out_of_sequence', severity: backup ? 'info' : 'critical',
+                message: `${up.name} trips at ${this._fmtTime(up.tripTime)} before downstream ${down.name} at ${this._fmtTime(down.tripTime)}${backup ? ' (both reset — informational)' : ''}`,
+                primaryDevice: up.name, otherDevice: down.name, primaryTime: up.tripTime, otherTime: down.tripTime });
+            } else if (Math.abs(down.tripTime - up.tripTime) < 0.01) {
+              sink.push({ type: 'simultaneous', severity: backup ? 'info' : 'warning',
+                message: `${up.name} and ${down.name} trip nearly simultaneously${backup ? ' (both reset — informational)' : ' — race condition risk'}`,
+                primaryDevice: up.name, otherDevice: down.name, primaryTime: up.tripTime, otherTime: down.tripTime });
+            }
+            const margin = up.tripTime - down.tripTime;
+            if (margin > 0 && margin < this.gradingMargin) {
+              sink.push({ type: 'insufficient_margin', severity: backup ? 'info' : 'marginal',
+                message: `Margin between ${down.name} and backup ${up.name}: ${(margin * 1000).toFixed(0)}ms < ${(this.gradingMargin * 1000).toFixed(0)}ms required`,
+                primaryDevice: down.name, otherDevice: up.name, primaryTime: down.tripTime, otherTime: up.tripTime });
+            }
+          }
+        }
+      };
+
+      const violations = [];
+      const backupNotes = [];
+
+      // 1. Selectivity — the device that clears the fault should be the most
+      //    downstream (closest to the fault) of every device that saw it. If a
+      //    more-downstream device existed but a further-upstream one cleared, that
+      //    is a loss of selectivity.
+      if (clearedBy != null) {
+        const clearer = operatingDevices.find(d => d.name === clearedBy);
+        if (clearer) {
+          for (const other of operatingDevices) {
+            if (other.name !== clearer.name && other.pathIndex === clearer.pathIndex
+                && other.positionInPath > clearer.positionInPath) {
+              violations.push({ type: 'out_of_sequence', severity: 'critical',
+                message: `${clearer.name} clears the fault before ${other.name}, which is closer to the fault — loss of selectivity`,
+                primaryDevice: clearer.name, otherDevice: other.name,
+                primaryTime: clearer.tripTime, otherTime: other.tripTime });
+            }
+          }
+        }
+      }
+
+      // 2. Ordering / race among the devices that actually act before clearing.
+      checkPairs(acting, violations, false);
+      // Backup grading among devices that reset — informational only.
+      checkPairs(resetBackups, backupNotes, true);
+
+      // 3. Fault not cleared at all — every candidate device fails to operate.
+      if (clearedBy == null) {
+        for (const d of failedDevices) {
+          violations.push({ type: 'failed_to_operate', severity: 'critical',
+            message: `${d.name} does not operate at ${faultCurrentA >= 1000 ? (faultCurrentA / 1000).toFixed(1) + 'kA' : Math.round(faultCurrentA) + 'A'} — fault would not be cleared`,
+            primaryDevice: d.name, otherDevice: null, primaryTime: Infinity, otherTime: null });
+        }
+        if (!failedDevices.length) {
+          violations.push({ type: 'not_cleared', severity: 'critical',
+            message: 'No protective device operates for this fault — it would not be cleared.',
+            primaryDevice: null, otherDevice: null, primaryTime: null, otherTime: null });
+        }
       }
 
       allBusResults.push({
@@ -3653,6 +3643,7 @@ const TCC = {
         clearedAtS: isFinite(clearedAtS) ? clearedAtS : null,
         clearedBy,
         violations,
+        backupNotes,
         passed: violations.length === 0,
       });
     }

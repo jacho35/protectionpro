@@ -123,15 +123,16 @@ const SOO = {
     const ftLabel = meta.faultType === 'slg' ? 'Single-line-to-ground (earth)' : 'Three-phase';
     const passed = buses.filter(b => b.passed).length;
     const totalViol = buses.reduce((s, b) => s + b.violations.length, 0);
+    const totalNotes = buses.reduce((s, b) => s + (b.backupNotes ? b.backupNotes.length : 0), 0);
     const verdictCls = totalViol === 0 ? 'soo-ok' : 'soo-bad';
     const verdict = totalViol === 0
-      ? `All ${buses.length} location(s) verified — devices operate in the correct primary → backup → final sequence.`
-      : `${passed}/${buses.length} location(s) passed — ${totalViol} coordination issue(s) found.`;
+      ? `All ${buses.length} location(s) verified — each fault is cleared selectively by the closest device.`
+      : `${passed}/${buses.length} location(s) passed — ${totalViol} coordination issue(s) in the operating sequence.`;
 
     let html = this._style();
     html += `<div class="soo-verdict ${verdictCls}">${escHtml(verdict)}</div>`;
-    html += `<div class="soo-meta">Fault type: <strong>${escHtml(ftLabel)}</strong>${meta.breakerTimeMs != null ? ` · Breaker clearing: <strong>${meta.breakerTimeMs} ms</strong>` : ''}
-      <button class="btn btn-small" id="soo-copy-btn" style="float:right">Copy report</button></div>`;
+    html += `<div class="soo-meta">Fault type: <strong>${escHtml(ftLabel)}</strong>${meta.breakerTimeMs != null ? ` · Breaker clearing: <strong>${meta.breakerTimeMs} ms</strong>` : ''}${totalNotes ? ` · <span class="soo-meta-note">${totalNotes} backup note(s)</span>` : ''}
+      <button class="btn btn-small" id="soo-copy-btn">Copy report</button></div>`;
 
     for (const bus of buses) {
       html += this._busCard(bus);
@@ -152,9 +153,9 @@ const SOO = {
 
     h += this._timelineSvg(bus);
 
-    // Operations table
-    h += `<table class="soo-table"><thead><tr>
-      <th>#</th><th>Device</th><th>Role</th><th>I seen</th><th>Trip</th><th>+Breaker</th><th>Clear</th><th>Status</th>
+    // Operations table (scrolls horizontally on narrow screens)
+    h += `<div class="soo-tablewrap"><table class="soo-table"><thead><tr>
+      <th>#</th><th>Device</th><th>Role</th><th>I seen</th><th>Trip</th><th>+Brk</th><th>Clear</th><th>Status</th>
       </tr></thead><tbody>`;
     let n = 1;
     for (const op of bus.sequence) {
@@ -162,7 +163,7 @@ const SOO = {
       let status, sCls;
       if (!op.operates) { status = 'Does not operate'; sCls = 'soo-st-fail'; }
       else if (op.name === bus.clearedBy) { status = 'Trips → clears fault'; sCls = 'soo-st-clear'; }
-      else if (op.resets) { status = 'Resets (fault cleared first)'; sCls = 'soo-st-reset'; }
+      else if (op.resets) { status = 'Resets (cleared first)'; sCls = 'soo-st-reset'; }
       else { status = 'Trips (backup)'; sCls = 'soo-st-trip'; }
       h += `<tr class="${op.resets ? 'soo-row-reset' : ''}">
         <td>${op.operates ? n++ : '—'}</td>
@@ -175,7 +176,7 @@ const SOO = {
         <td class="${sCls}">${status}</td>
       </tr>`;
     }
-    h += '</tbody></table>';
+    h += '</tbody></table></div>';
 
     if (bus.violations.length) {
       const sev = { critical: '⛔', warning: '⚠', marginal: '△' };
@@ -184,6 +185,16 @@ const SOO = {
         h += `<div class="soo-viol-item soo-sev-${v.severity}">${sev[v.severity] || ''} ${escHtml(v.message)}</div>`;
       }
       h += '</div>';
+    }
+
+    // Backup grading — informational only (devices that reset, i.e. never trip
+    // for this fault because it is cleared first). Not part of the pass/fail.
+    if (bus.backupNotes && bus.backupNotes.length) {
+      h += `<details class="soo-notes"><summary>Backup grading (informational — ${bus.backupNotes.length}) — devices that reset, do not affect this fault</summary>`;
+      for (const v of bus.backupNotes) {
+        h += `<div class="soo-note-item">${escHtml(v.message)}</div>`;
+      }
+      h += '</details>';
     }
     h += '</div>';
     return h;
@@ -257,6 +268,10 @@ const SOO = {
         lines.push(`  [${op.role || '-'}] ${op.name} (${op.deviceType}) @ ${this._fmtCurrent(op.currentA)} — ${t}${op.resets ? ' (resets)' : ''}`);
       }
       for (const v of bus.violations) lines.push(`  ! ${v.message}`);
+      if (bus.backupNotes && bus.backupNotes.length) {
+        lines.push('  Backup grading (informational):');
+        for (const v of bus.backupNotes) lines.push(`    · ${v.message}`);
+      }
     }
     const text = lines.join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
@@ -281,16 +296,19 @@ const SOO = {
       .soo-verdict { padding:8px 10px; border-radius:6px; font-size:13px; font-weight:600; margin-bottom:8px; }
       .soo-verdict.soo-ok { background:rgba(46,125,50,0.12); color:#2e7d32; }
       .soo-verdict.soo-bad { background:rgba(211,47,47,0.12); color:#c62828; }
-      .soo-meta { font-size:12px; margin-bottom:10px; overflow:hidden; }
+      .soo-meta { font-size:12px; margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+      .soo-meta #soo-copy-btn { margin-left:auto; }
+      .soo-meta-note { opacity:0.7; }
       .soo-card { border:1px solid var(--border,#ddd); border-radius:8px; padding:10px 12px; margin-bottom:12px; }
       .soo-card.soo-fail { border-color:#e57373; }
-      .soo-card-head { font-size:14px; margin-bottom:2px; }
-      .soo-card-head .soo-fault { float:right; font-weight:600; color:#c62828; }
+      .soo-card-head { font-size:14px; margin-bottom:2px; display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+      .soo-card-head .soo-fault { font-weight:600; color:#c62828; white-space:nowrap; }
       .soo-cleared { font-size:12px; margin-bottom:6px; }
       .soo-cleared.soo-bad-text { color:#c62828; }
       .soo-timeline { display:block; margin:4px 0 8px; max-width:100%; }
-      .soo-table { width:100%; border-collapse:collapse; font-size:11.5px; }
-      .soo-table th, .soo-table td { border-bottom:1px solid var(--border,#eee); padding:3px 6px; text-align:left; }
+      .soo-tablewrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+      .soo-table { width:100%; border-collapse:collapse; font-size:11.5px; min-width:520px; }
+      .soo-table th, .soo-table td { border-bottom:1px solid var(--border,#eee); padding:3px 6px; text-align:left; white-space:nowrap; }
       .soo-table th { font-weight:600; opacity:0.75; }
       .soo-dtype { font-size:9.5px; opacity:0.55; }
       .soo-row-reset { opacity:0.6; }
@@ -306,7 +324,16 @@ const SOO = {
       .soo-sev-critical { background:rgba(211,47,47,0.12); color:#c62828; }
       .soo-sev-warning { background:rgba(245,124,0,0.12); color:#e65100; }
       .soo-sev-marginal { background:rgba(255,193,7,0.14); color:#8d6e00; }
+      .soo-notes { margin-top:8px; font-size:11.5px; }
+      .soo-notes > summary { cursor:pointer; color:var(--text-muted,#6d6d6d); padding:3px 0; }
+      .soo-note-item { padding:2px 6px; margin-top:2px; color:var(--text-muted,#6d6d6d); opacity:0.85; }
       body.dark-mode .soo-table th, body.dark-mode .soo-table td { border-color:#3a3a4a; }
+      @media (max-width: 768px) {
+        .soo-card { padding:8px 9px; }
+        .soo-card-head { font-size:13px; }
+        .soo-table { font-size:11px; }
+        .soo-verdict { font-size:12px; }
+      }
     </style>`;
   },
 };
