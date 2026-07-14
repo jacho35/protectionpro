@@ -6,7 +6,8 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults
+from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -50,6 +51,19 @@ def load_flow(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Load flow error: {e}")
+
+
+@router.post("/loadflow-cases", response_model=LoadFlowCasesResults)
+def loadflow_cases(data: LoadFlowCasesRequest):
+    """Run load flow across several named network cases (Load Flow Study
+    Manager) plus the current network, and summarise each for comparison."""
+    try:
+        method = data.loadFlowMethod or "newton_raphson"
+        results = run_loadflow_cases(data, data.cases, method, data.includeCurrent)
+        return LoadFlowCasesResults(cases=results, method=method)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Load flow cases error: {e}")
 
 
 @router.post("/unbalanced-loadflow", response_model=UnbalancedLoadFlowResults)

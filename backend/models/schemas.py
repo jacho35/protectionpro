@@ -530,6 +530,56 @@ class LoadFlowResults(BaseModel):
     dispatch: list[DispatchEntry] = []
 
 
+# ── Load Flow Study Manager (named full-snapshot cases) ──────────────────────
+class LoadFlowCaseInput(BaseModel):
+    """One study case: a self-contained network snapshot to run load flow on.
+
+    Carrying `components` as validated `Component` models means the numeric
+    coercion validator runs automatically, so grid-edited string values (e.g.
+    "11") reach the engine as numbers."""
+    model_config = {"extra": "allow"}
+
+    id: str
+    name: str = ""
+    components: list[Component] = []
+    wires: list[Wire] = []
+    baseMVA: Optional[float] = None
+    loadFlowMethod: Optional[str] = None
+
+
+class LoadFlowCaseSummary(BaseModel):
+    converged: bool = False
+    iterations: int = 0
+    min_v_pu: Optional[float] = None
+    min_v_bus: str = ""
+    max_v_pu: Optional[float] = None
+    max_v_bus: str = ""
+    total_losses_mw: float = 0
+    overloaded_branch_count: int = 0
+    worst_branch_name: str = ""
+    worst_branch_loading_pct: float = 0
+    deenergized_bus_count: int = 0
+
+
+class LoadFlowCaseResult(BaseModel):
+    id: str
+    name: str = ""
+    result: LoadFlowResults
+    summary: LoadFlowCaseSummary
+
+
+class LoadFlowCasesResults(BaseModel):
+    cases: list[LoadFlowCaseResult] = []
+    method: str = ""
+
+
+class LoadFlowCasesRequest(ProjectData):
+    """The full live project (the implicit "Current network" case) plus the
+    saved study cases to run alongside it."""
+    cases: list[LoadFlowCaseInput] = []
+    includeCurrent: bool = True
+
+
 class UnbalancedLoadFlowBus(BaseModel):
     bus_id: str
     bus_name: str
