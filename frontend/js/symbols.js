@@ -576,6 +576,22 @@ const Symbols = {
       </g>`;
   },
 
+  svc(w, h, comp) {
+    // FACTS shunt compensator: a controlled reactive source — a circle with a
+    // reactance/tap arrow, tagged SVC or STATCOM, on a lead to the top port.
+    const r = w * 0.36;
+    const isStatcom = comp && comp.props && String(comp.props.device_mode) === 'statcom';
+    const tag = isStatcom ? 'ST' : 'SVC';
+    return `
+      <g class="symbol-svc">
+        <line x1="0" y1="${-r}" x2="0" y2="${-h / 2}"/>
+        <circle cx="0" cy="0" r="${r}" fill="var(--bg-primary, #fff)"/>
+        <line x1="${-r * 0.6}" y1="${r * 0.6}" x2="${r * 0.6}" y2="${-r * 0.6}"/>
+        <path d="M ${r * 0.6 - 5} ${-r * 0.6 + 1} L ${r * 0.6} ${-r * 0.6} L ${r * 0.6 - 1} ${-r * 0.6 + 5} Z" fill="currentColor"/>
+        <text x="0" y="${r + 9}" text-anchor="middle" font-size="8" fill="#888" font-family="sans-serif">${tag}</text>
+      </g>`;
+  },
+
   autotransformer(w, h, comp) {
     // IEC autotransformer: a single winding (one circle) tapped between the
     // HV (series) terminal and the LV (common) terminal, with a diagonal

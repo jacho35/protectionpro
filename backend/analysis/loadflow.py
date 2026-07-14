@@ -126,7 +126,7 @@ def _find_components_at_bus(bus_id, adjacency, components):
 # cable fixes it, so we synthesise exactly that node here, transparently.
 SYNTHETIC_BUS_PREFIX = "__term__"
 LOAD_TERMINAL_TYPES = {"motor_induction", "motor_synchronous",
-                       "static_load", "capacitor_bank", "vfd"}
+                       "static_load", "capacitor_bank", "vfd", "svc"}
 
 
 def is_synthetic_bus(bus_id):
@@ -1552,6 +1552,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     V_spec = np.ones(n)
     bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
     bus_load_q_mvar = np.zeros(n)  # per-bus load Q, for swing-bus source badges
+    svc_units = []  # FACTS shunt compensators: list of dicts (see svc branch below)
 
     for bus in buses:
         i = bus_idx[bus.id]
@@ -1646,6 +1647,30 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 Q_spec[i] -= q_mvar * df / base_mva
                 bus_load_p_mw[i] += p_mw * df
                 bus_load_q_mvar[i] += q_mvar * df
+            elif comp.type == "svc":
+                # SVC / STATCOM — a FACTS shunt reactive compensator (P ≈ 0).
+                # Voltage-regulating: hold the bus at the setpoint (a PV bus,
+                # like a synchronous condenser) within its reactive limits;
+                # a hit limit converts it to a fixed-Q shunt (see the Q-limit
+                # loop below). Fixed mode simply injects a set Q.
+                cp = comp.props
+                mode = str(cp.get("device_mode", "statcom") or "statcom").lower()
+                q_max = float(cp.get("q_max_mvar", cp.get("rated_mvar", 50)) or 50)      # capacitive
+                q_min = float(cp.get("q_min_mvar", -abs(float(cp.get("rated_mvar", 50) or 50))) or -50)  # inductive
+                ctrl = str(cp.get("control_mode", "voltage_regulating") or "voltage_regulating").lower()
+                if ctrl == "fixed_q":
+                    q_out = float(cp.get("q_output_mvar", 0) or 0)
+                    Q_spec[i] += q_out / base_mva
+                    bus_load_q_mvar[i] -= q_out
+                else:
+                    vset = float(cp.get("v_setpoint_pu", 1.0) or 1.0)
+                    bus_types[i] = 1                     # PV — hold |V| at setpoint
+                    V_spec[i] = vset
+                    svc_units.append({
+                        "i": i, "id": comp.id, "name": cp.get("name", comp.id),
+                        "device": mode, "q_max": q_max, "q_min": q_min,
+                        "vset": vset, "clamped": None, "inj_q": 0.0,
+                    })
 
     # ── Island detection, per-island swing selection, and dispatch ──
     # Each electrical island gets its own slack (utility connection bus,
@@ -1660,46 +1685,105 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # the utility at ~0 kW instead of importing the losses.
     P_base, Q_base = P_spec.copy(), Q_spec.copy()
     loss_adders = {}
-    for _pass in range(3):
-        dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
-                                 branch_pairs, bus_load_p_mw, loss_adders)
-        for i in dispatch["swing_idx"]:
-            bus_types[i] = 2
-        P_spec, Q_spec = P_base.copy(), Q_base.copy()
-        for i, (p_mw, q_mvar) in dispatch["injections"].items():
-            P_spec[i] += p_mw / base_mva
-            Q_spec[i] += q_mvar / base_mva
+    # Outer loop enforces SVC/STATCOM reactive limits: a regulating unit that
+    # would exceed its Q range is clamped to the limit and switched from a
+    # voltage-holding PV bus to a fixed-Q PQ injection, then the network is
+    # re-solved (one extra pass per unit that hits a limit).
+    for _svc_pass in range(2 * len(svc_units) + 3):
+        for _pass in range(3):
+            dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
+                                     branch_pairs, bus_load_p_mw, loss_adders)
+            for i in dispatch["swing_idx"]:
+                bus_types[i] = 2
+            P_spec, Q_spec = P_base.copy(), Q_base.copy()
+            for i, (p_mw, q_mvar) in dispatch["injections"].items():
+                P_spec[i] += p_mw / base_mva
+                Q_spec[i] += q_mvar / base_mva
 
-        V, converged, iterations = solve_with_islands(
-            Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
-        if not converged:
+            V, converged, iterations = solve_with_islands(
+                Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
+            if not converged:
+                break
+
+            S_tmp = V * np.conj(Y @ V)
+            util_import = {}   # island -> utility balancer real import (MW)
+            headroom = {}      # island -> curtailed MW still available
+            for e in dispatch["entries"]:
+                if e["role"] == "balancer" and e["source_type"] == "utility" and e["bus_id"]:
+                    bi = bus_idx[e["bus_id"]]
+                    inj = dispatch["injections"].get(bi, (0.0, 0.0))
+                    util_import[e["island"]] = (util_import.get(e["island"], 0.0)
+                                                + S_tmp[bi].real * base_mva
+                                                + bus_load_p_mw[bi] - inj[0])
+                elif e["role"] == "curtailed":
+                    headroom[e["island"]] = headroom.get(e["island"], 0.0) + e["curtailed_mw"]
+
+            adjusted = False
+            for isl, imp in util_import.items():
+                prev = loss_adders.get(isl, 0.0)
+                if headroom.get(isl, 0.0) > 1e-6 and imp > 2e-4:
+                    loss_adders[isl] = prev + min(imp, headroom[isl])
+                    adjusted = True
+                elif prev > 0 and imp < -2e-4:
+                    # Overshoot (losses dropped once the source supplied locally)
+                    loss_adders[isl] = max(0.0, prev + imp)
+                    adjusted = True
+            if not adjusted:
+                break
+
+        # SVC/STATCOM reactive-limit check on the converged solution.
+        # A regulating unit that would exceed its Q range is clamped to the
+        # limit and reverts to a fixed-Q PQ injection. A STATCOM holds a
+        # constant MVAr at the limit; an SVC is susceptance-limited, so its
+        # delivered Q follows Q = Q_nom·V² — refined across passes as V settles.
+        if not svc_units or not converged:
+            break
+        S_svc = V * np.conj(Y @ V)
+        changed = False
+        for u in svc_units:
+            bi = u["i"]
+            vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
+            if u["clamped"] is None:
+                # Reactive output the PV constraint is currently demanding.
+                q_svc = S_svc[bi].imag * base_mva + bus_load_q_mvar[bi]
+                v2 = vmag * vmag if u["device"] == "svc" else 1.0
+                if q_svc > u["q_max"] * v2 + 1e-6:
+                    u["clamped"], q_nom = "cap", u["q_max"]
+                elif q_svc < u["q_min"] * v2 - 1e-6:
+                    u["clamped"], q_nom = "ind", u["q_min"]
+                else:
+                    continue
+                bus_types[bi] = 0                # PV → PQ at the reactive limit
+                inj = q_nom * (vmag * vmag if u["device"] == "svc" else 1.0)
+                Q_base[bi] += (inj - u["inj_q"]) / base_mva
+                u["inj_q"] = inj
+                changed = True
+            elif u["device"] == "svc":
+                # Already limited: keep the susceptance fixed → track Q_nom·V².
+                q_nom = u["q_max"] if u["clamped"] == "cap" else u["q_min"]
+                inj = q_nom * vmag * vmag
+                if abs(inj - u["inj_q"]) > 1e-3:
+                    Q_base[bi] += (inj - u["inj_q"]) / base_mva
+                    u["inj_q"] = inj
+                    changed = True
+        if not changed:
             break
 
-        S_tmp = V * np.conj(Y @ V)
-        util_import = {}   # island -> utility balancer real import (MW)
-        headroom = {}      # island -> curtailed MW still available
-        for e in dispatch["entries"]:
-            if e["role"] == "balancer" and e["source_type"] == "utility" and e["bus_id"]:
-                bi = bus_idx[e["bus_id"]]
-                inj = dispatch["injections"].get(bi, (0.0, 0.0))
-                util_import[e["island"]] = (util_import.get(e["island"], 0.0)
-                                            + S_tmp[bi].real * base_mva
-                                            + bus_load_p_mw[bi] - inj[0])
-            elif e["role"] == "curtailed":
-                headroom[e["island"]] = headroom.get(e["island"], 0.0) + e["curtailed_mw"]
-
-        adjusted = False
-        for isl, imp in util_import.items():
-            prev = loss_adders.get(isl, 0.0)
-            if headroom.get(isl, 0.0) > 1e-6 and imp > 2e-4:
-                loss_adders[isl] = prev + min(imp, headroom[isl])
-                adjusted = True
-            elif prev > 0 and imp < -2e-4:
-                # Overshoot (losses dropped once the source supplied locally)
-                loss_adders[isl] = max(0.0, prev + imp)
-                adjusted = True
-        if not adjusted:
-            break
+    # Final SVC/STATCOM output summary (for reporting).
+    svc_results = []
+    if svc_units and converged:
+        S_svc = V * np.conj(Y @ V)
+        for u in svc_units:
+            bi = u["i"]
+            q_out = (u["inj_q"] if u["clamped"] is not None
+                     else S_svc[bi].imag * base_mva + bus_load_q_mvar[bi])
+            svc_results.append({
+                "id": u["id"], "name": u["name"], "device": u["device"],
+                "bus_id": buses[bi].id if bi < len(buses) else "",
+                "q_mvar": round(q_out, 3), "v_pu": round(abs(V[bi]), 4),
+                "v_setpoint_pu": u["vset"], "q_min_mvar": u["q_min"],
+                "q_max_mvar": u["q_max"], "at_limit": u["clamped"] is not None,
+            })
 
     # ── Build results ──
     # Compute actual bus power injections from solved voltages.
@@ -2312,6 +2396,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         iterations=iterations,
         method=method,
         dispatch=dispatch_results,
+        svc=svc_results,
     )
 
 

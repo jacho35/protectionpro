@@ -836,7 +836,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'other',
     name: 'Other',
-    items: ['capacitor_bank', 'surge_arrester', 'offpage_connector'],
+    items: ['capacitor_bank', 'svc', 'surge_arrester', 'offpage_connector'],
   },
   {
     id: 'control',
@@ -858,6 +858,13 @@ const CONTROL_TYPES = new Set([
 // Describes the standard or reference for generic/default values shown to the user via ⓘ buttons.
 // Keyed by "componentType.fieldKey".
 const FIELD_INFO = {
+  // SVC / STATCOM (FACTS shunt reactive compensation)
+  'svc.device_mode': 'STATCOM: a voltage-source converter — its reactive output is a roughly constant MVAr limit, largely independent of bus voltage (so it holds voltage even during a sag).\nSVC (TCR/TSC): a susceptance-based compensator — its reactive output follows Q = B·V², so support collapses as V² at low voltage.\nUsed by: Load Flow.',
+  'svc.control_mode': 'Voltage regulating: holds the connected bus at the voltage setpoint by injecting/absorbing reactive power, within the Q Min/Max limits (a PV bus that reverts to fixed-Q when a limit is reached).\nFixed reactive output: injects a set MVAr (like a controllable capacitor/reactor).',
+  'svc.v_setpoint_pu': 'Target voltage (per-unit) the compensator holds at its bus while it has reactive headroom. Once it hits Q Max (capacitive) or Q Min (inductive) it can no longer hold the setpoint and the bus voltage drifts.',
+  'svc.q_max_mvar': 'Maximum capacitive (voltage-supporting) reactive output. For an SVC this is the full-susceptance rating at 1.0 pu — the available MVAr scales with V².',
+  'svc.q_min_mvar': 'Maximum inductive (voltage-lowering) reactive absorption — usually negative. Used to hold voltage down under light load / leading conditions.',
+
   // Autotransformer
   'autotransformer.windings': '2-winding: a single tapped winding shares the HV and LV circuits (series + common) — lighter and cheaper than a two-winding transformer for ratios up to ~3:1, at the cost of no galvanic isolation.\n3-winding: adds a delta tertiary (voltage stabilisation / auxiliary supply / 3rd-harmonic path). Modelled in load flow as a star (T) equivalent with an internal node.',
   'autotransformer.z_percent': 'Short-circuit impedance HV↔LV on the unit MVA base. An autotransformer\'s through-impedance is lower than an equivalent two-winding transformer by the co-ratio (1 − Vlv/Vhv), which is its efficiency advantage.',
@@ -2502,6 +2509,34 @@ const COMPONENT_DEFS = {
       { key: 'input_reactor_pct', label: 'AC/DC Reactor', type: 'number', unit: '%', min: 0, max: 10, step: 0.5, section: 'harmonics' },
     ],
   },
+  svc: {
+    name: 'SVC / STATCOM',
+    category: 'other',
+    ports: [{ id: 'in', side: 'top', offset: 0 }],
+    width: 44,
+    height: 44,
+    defaults: {
+      name: 'SVC',
+      device_mode: 'statcom',
+      control_mode: 'voltage_regulating',
+      voltage_kv: 33,
+      v_setpoint_pu: 1.0,
+      rated_mvar: 50,
+      q_max_mvar: 50,
+      q_min_mvar: -50,
+      q_output_mvar: 0,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'device_mode', label: 'Device', type: 'select', options: [{ value: 'statcom', label: 'STATCOM (constant Q)' }, { value: 'svc', label: 'SVC (susceptance, Q∝V²)' }] },
+      { key: 'control_mode', label: 'Control', type: 'select', options: [{ value: 'voltage_regulating', label: 'Voltage regulating' }, { value: 'fixed_q', label: 'Fixed reactive output' }] },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
+      { key: 'v_setpoint_pu', label: 'Voltage Setpoint', type: 'number', unit: 'pu', min: 0.9, max: 1.1, step: 0.005, showWhen: { field: 'control_mode', values: ['voltage_regulating'] } },
+      { key: 'q_output_mvar', label: 'Reactive Output', type: 'number', unit: 'MVAr', showWhen: { field: 'control_mode', values: ['fixed_q'] } },
+      { key: 'q_max_mvar', label: 'Q Max (capacitive)', type: 'number', unit: 'MVAr', section: 'loadflow' },
+      { key: 'q_min_mvar', label: 'Q Min (inductive)', type: 'number', unit: 'MVAr', section: 'loadflow' },
+    ],
+  },
   capacitor_bank: {
     name: 'Capacitor Bank',
     category: 'other',
@@ -2771,6 +2806,7 @@ const LF_ATTRS = {
   motor_synchronous: ['rated_kva', 'power_factor', 'demand_factor'],
   vfd: ['rated_kw', 'voltage_kv', 'displacement_pf', 'pulse_number', 'front_end', 'demand_factor'],
   capacitor_bank: ['rated_kvar'],
+  svc: ['device_mode', 'control_mode', 'v_setpoint_pu', 'q_max_mvar', 'q_min_mvar'],
   cb: ['state'],
   switch: ['state'],
 };

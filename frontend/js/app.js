@@ -571,6 +571,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       html += '</tbody></table></div></div>';
     }
+    const svc = result.svc || [];
+    if (svc.length > 0) {
+      html += `<div class="validation-section"><div class="validation-section-title">FACTS Reactive Compensation (SVC / STATCOM)</div>
+        <div style="overflow-x:auto;"><table class="library-table" style="width:100%;font-size:12px;">
+        <thead><tr><th>Device</th><th>Type</th><th>Bus V (pu)</th><th>Setpoint</th>
+        <th>Q output</th><th>Q range</th><th>Status</th></tr></thead><tbody>`;
+      for (const s of svc) {
+        const status = s.at_limit
+          ? '<span style="color:#f57c00;">At Q limit</span>'
+          : '<span style="color:#4caf50;">Regulating</span>';
+        html += `<tr>
+          <td>${escHtml(s.name || s.id)}</td>
+          <td>${s.device === 'svc' ? 'SVC (Q∝V²)' : 'STATCOM'}</td>
+          <td>${s.v_pu}</td>
+          <td>${s.v_setpoint_pu} pu</td>
+          <td>${s.q_mvar >= 0 ? '+' : ''}${s.q_mvar} MVAr</td>
+          <td>${s.q_min_mvar} … ${s.q_max_mvar} MVAr</td>
+          <td>${status}</td></tr>`;
+      }
+      html += '</tbody></table></div></div>';
+    }
     html += `<div style="margin-top:16px;"><button id="dispatch-close" class="btn-small">Close</button></div>`;
 
     modal.querySelector('#calc-modal-title').textContent = 'Load Flow — Generation Dispatch';

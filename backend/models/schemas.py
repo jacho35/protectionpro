@@ -528,6 +528,7 @@ class LoadFlowResults(BaseModel):
     iterations: int
     method: str
     dispatch: list[DispatchEntry] = []
+    svc: list[dict] = []          # SVC/STATCOM reactive-output summary
 
 
 # ── Load Flow Study Manager (named full-snapshot cases) ──────────────────────

@@ -2496,3 +2496,74 @@ class TestAutotransformer:
         assert z_h + z_l == pytest.approx(10.0)      # Z_HL
         assert z_h + z_t == pytest.approx(26.0)      # Z_HT
         assert z_l + z_t == pytest.approx(16.0)      # Z_LT
+
+
+# ── SVC / STATCOM (FACTS reactive compensation) ──────────────────────────
+
+
+class TestSVC:
+    """Voltage-regulating shunt compensation with reactive limits."""
+
+    def _svc_project(self, with_svc=True, device="statcom", q_max=100.0,
+                     load_kva=35000.0, line_km=15.0, control="voltage_regulating",
+                     q_fixed=0.0, vset=1.0):
+        comps = [
+            _comp("util", "utility", {"voltage_kv": 33, "fault_mva": 800, "x_r_ratio": 10}),
+            _comp("bs", "bus", {"voltage_kv": 33, "name": "Src"}),
+            _comp("ln", "cable", {"voltage_kv": 33, "r_per_km": 0.12, "x_per_km": 0.35,
+                                  "length_km": line_km, "rated_amps": 600}),
+            _comp("bl", "bus", {"voltage_kv": 33, "name": "Load"}),
+            _comp("ld", "static_load", {"rated_kva": load_kva, "power_factor": 0.9, "voltage_kv": 33}),
+        ]
+        wires = [
+            _wire("w1", "util", "bs", "out", "at_0"),
+            _wire("w2", "bs", "ln", "at_1", "from"),
+            _wire("w3", "ln", "bl", "to", "at_0"),
+            _wire("w4", "bl", "ld", "at_1", "in"),
+        ]
+        if with_svc:
+            comps.append(_comp("svc", "svc",
+                               {"device_mode": device, "control_mode": control,
+                                "v_setpoint_pu": vset, "rated_mvar": q_max,
+                                "q_max_mvar": q_max, "q_min_mvar": -q_max,
+                                "q_output_mvar": q_fixed, "voltage_kv": 33}))
+            wires.append(_wire("w5", "bl", "svc", "at_2", "in"))
+        return ProjectData(projectName="svc", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_statcom_holds_setpoint(self):
+        """A STATCOM with ample reactive headroom holds its bus at the setpoint,
+        well above the un-compensated sag."""
+        base = run_load_flow(self._svc_project(with_svc=False))
+        comp = run_load_flow(self._svc_project(with_svc=True, q_max=100))
+        v_base = abs(base.buses["bl"].voltage_pu)
+        v_comp = abs(comp.buses["bl"].voltage_pu)
+        assert v_comp > v_base
+        assert abs(v_comp - 1.0) <= 0.005
+        assert comp.svc and comp.svc[0]["q_mvar"] > 0 and not comp.svc[0]["at_limit"]
+
+    def test_reactive_limit_clamps(self):
+        """When the required Q exceeds the limit the unit pins at Q_max, reports
+        at_limit, and the bus stays below the setpoint."""
+        res = run_load_flow(self._svc_project(with_svc=True, q_max=20))
+        s = res.svc[0]
+        assert res.converged
+        assert s["at_limit"] and s["q_mvar"] == pytest.approx(20.0, abs=0.01)
+        assert abs(res.buses["bl"].voltage_pu) < 1.0
+
+    def test_svc_v2_limited_below_statcom(self):
+        """An SVC's reactive output is susceptance-limited (Q∝V²), so at a
+        depressed voltage it delivers less than a constant-Q STATCOM of the same
+        rating — and holds a lower voltage when both are limit-constrained."""
+        statcom = run_load_flow(self._svc_project(device="statcom", q_max=20))
+        svc = run_load_flow(self._svc_project(device="svc", q_max=20))
+        assert statcom.svc[0]["at_limit"] and svc.svc[0]["at_limit"]
+        # SVC output is scaled by V² (< 1), so it delivers strictly less Q
+        assert svc.svc[0]["q_mvar"] < statcom.svc[0]["q_mvar"]
+
+    def test_fixed_q_injects_setpoint(self):
+        """In fixed-Q mode the device injects a set reactive power (like a
+        controllable capacitor), raising the bus voltage."""
+        base = run_load_flow(self._svc_project(with_svc=False))
+        fixed = run_load_flow(self._svc_project(with_svc=True, control="fixed_q", q_fixed=15))
+        assert abs(fixed.buses["bl"].voltage_pu) > abs(base.buses["bl"].voltage_pu)
