@@ -142,9 +142,12 @@ const API = {
     return this.request('/analysis/motor-starting', 'POST', data);
   },
 
-  // Run dynamic motor starting (time-domain acceleration) analysis
-  async runDynamicMotorStarting() {
+  // Run dynamic motor starting (time-domain acceleration) analysis.
+  // An explicit start-timeline schedule (from the config modal) overrides
+  // whatever toJSON already carries; batch runs use the persisted schedule.
+  async runDynamicMotorStarting(schedule) {
     const data = AppState.toJSON();
+    if (schedule) data.dynamicMotorSchedule = schedule;
     return this.request('/analysis/dynamic-motor-starting', 'POST', data);
   },
 

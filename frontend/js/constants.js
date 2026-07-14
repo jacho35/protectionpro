@@ -2032,12 +2032,9 @@ const COMPONENT_DEFS = {
       { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
-      { key: 'dyn_role', label: 'Sequence Role', type: 'select', section: 'dynamic',
-        options: [
-          { value: 'starts',  label: 'Starts (staged)' },
-          { value: 'running', label: 'Already running' },
-        ] },
-      { key: 'start_time_s', label: 'Start Time', type: 'number', unit: 's', section: 'dynamic', min: 0 },
+      // Start staging (dyn_role / start_time_s) is configured in the Dynamic
+      // Motor Starting timeline modal, not here — the props remain as data
+      // defaults so older projects seed the modal on first open.
       { key: 'rated_speed_rpm', label: 'Rated Speed', type: 'number', unit: 'rpm', section: 'dynamic', min: 0 },
       { key: 'locked_rotor_torque_pct', label: 'LRT (% FLT)', type: 'number', unit: '%', section: 'dynamic', min: 20 },
       { key: 'motor_j_kgm2', label: 'Motor Inertia J', type: 'number', unit: 'kg·m²', section: 'dynamic', min: 0 },
@@ -2115,12 +2112,9 @@ const COMPONENT_DEFS = {
       { key: 'xd_p', label: "Xd'", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x0', label: 'X₀ (zero seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
-      { key: 'dyn_role', label: 'Sequence Role', type: 'select', section: 'dynamic',
-        options: [
-          { value: 'starts',  label: 'Starts (staged)' },
-          { value: 'running', label: 'Already running' },
-        ] },
-      { key: 'start_time_s', label: 'Start Time', type: 'number', unit: 's', section: 'dynamic', min: 0 },
+      // Start staging is configured in the Dynamic Motor Starting timeline modal
+      // (see motor_induction); the dyn_role / start_time_s defaults are kept for
+      // seeding older projects.
       { key: 'rated_speed_rpm', label: 'Rated Speed', type: 'number', unit: 'rpm', section: 'dynamic', min: 0 },
       { key: 'locked_rotor_torque_pct', label: 'LRT (% FLT)', type: 'number', unit: '%', section: 'dynamic', min: 20 },
       { key: 'motor_j_kgm2', label: 'Motor Inertia J', type: 'number', unit: 'kg·m²', section: 'dynamic', min: 0 },

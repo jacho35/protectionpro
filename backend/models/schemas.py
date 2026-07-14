@@ -158,6 +158,7 @@ class ProjectData(BaseModel):
     faultType: Optional[str] = None  # "3phase", "slg", "ll", "llg", or None for all
     voltageFactor: Optional[float] = None  # IEC 60909 voltage factor c; None → engine default (c_max = 1.10)
     stabilityDisturbance: Optional[dict] = None  # transient-stability event spec (see transient_stability)
+    dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
 
 
 class ProjectSummary(BaseModel):
