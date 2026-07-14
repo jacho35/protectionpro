@@ -17,6 +17,8 @@ from backend.models.schemas import Component, ProjectData, Wire
 from backend.analysis.fault import run_fault_analysis
 from backend.analysis.loadflow import run_load_flow
 from backend.analysis.motor_starting import run_motor_starting
+from backend.analysis.dynamic_motor_starting import run_dynamic_motor_starting
+from backend.analysis.transient_stability import run_transient_stability
 from backend.analysis.grounding_system import (
     _compute_conductor_size, _compute_n, _compute_K_ii, _compute_L_M,
 )
@@ -1936,3 +1938,187 @@ class TestLvEarthingSystem:
         base = run_fault_analysis(_mv(None)).buses["bus-2"].ik1
         tt = run_fault_analysis(_mv("TT")).buses["bus-2"].ik1
         assert tt == pytest.approx(base, rel=1e-9)
+
+
+# ── Dynamic motor starting (time-domain acceleration) ────────────────────
+
+
+class TestDynamicMotorStarting:
+    """Time-domain motor-acceleration engine (run_dynamic_motor_starting),
+    anchored to the Chapman starting-current methodology and IEEE 3002.7
+    reduced-voltage starting. The static locked-rotor voltage dip is pinned by
+    TestMotorStarting; these pin the dynamic engine's headline outputs.
+
+    Reference: S. J. Chapman, "Electric Machinery Fundamentals," 4th ed.,
+    Problems 7-19/7-20 (starting current from nameplate/equivalent circuit and
+    the resulting bus voltage drop). Chapman gives steady-state locked-rotor
+    snapshots, so these check the t=0 point of the trajectory (current
+    magnitude and dip), not the acceleration curve itself.
+    """
+
+    @staticmethod
+    def _motor_project(starting_method="dol", rated_kw=200.0, eff=0.93, pf=0.87,
+                       lrc=6.5, xf_mva=10.0, xf_z_pct=10.0):
+        xfmr = _comp("transformer-1", "transformer", {
+            "name": "TX1", "rated_mva": xf_mva, "z_percent": xf_z_pct,
+            "x_r_ratio": 10.0, "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4,
+            "vector_group": "Dyn11",
+        })
+        lv_bus = _comp("bus-2", "bus", {"name": "LV Bus", "voltage_kv": 0.4})
+        motor = _comp("motor_induction-1", "motor_induction", {
+            "name": "M1", "rated_kw": rated_kw, "voltage_kv": 0.4,
+            "efficiency": eff, "power_factor": pf, "locked_rotor_current": lrc,
+            "locked_rotor_torque_pct": 150, "rated_speed_rpm": 1480,
+            "motor_j_kgm2": 5.0, "load_j_kgm2": 10.0, "load_torque_pct": 90,
+            "load_torque_model": "quadratic", "starting_method": starting_method,
+        })
+        return _utility_bus_project(
+            fault_mva=500.0,
+            extra_components=[xfmr, lv_bus, motor],
+            extra_wires=[
+                _wire("w2", "bus-1", "transformer-1"),
+                _wire("w3", "transformer-1", "bus-2"),
+                _wire("w4", "bus-2", "motor_induction-1"),
+            ])
+
+    def test_flc_and_locked_rotor_inrush(self):
+        """Full-load current follows the nameplate S = P/(η·pf),
+        FLC = S/(√3·V); the DOL inrush is the nameplate locked-rotor multiple
+        LRC depressed by the terminal-voltage sag it causes —
+        I_start(×FLC) = LRC · V_term(pu), the locked-rotor operating point.
+
+        200 kW, 0.4 kV, η=0.93, pf=0.87 → S = 0.247 MVA, FLC = 356.8 A. With
+        LRC = 6.5 the peak line current at V_term ≈ 0.98 pu is ≈ 6.38×FLC
+        (≈ 2276 A) — not a flat 6.5× — because the sag scales the inrush.
+        """
+        res = run_dynamic_motor_starting(self._motor_project("dol"))
+        assert res["motors"], f"no motor result; warnings: {res['warnings']}"
+        m = res["motors"][0]
+        flc = 200.0 / (0.93 * 0.87) / 1000.0 * 1e6 / (math.sqrt(3) * 400.0)
+        assert m["flc_a"] == pytest.approx(flc, rel=0.01)          # 356.8 A
+        # Inrush is the nameplate LRC multiple scaled by the depressed terminal
+        # voltage — both are read at the same locked-rotor instant.
+        assert m["peak_current_xflc"] == pytest.approx(
+            6.5 * m["min_v_motor_pu"], rel=0.03)
+        assert m["peak_current_a"] == pytest.approx(
+            m["peak_current_xflc"] * m["flc_a"], rel=0.01)
+        assert m["sim_status"] == "started"
+
+    def test_dol_starting_voltage_dip_hand_calc(self):
+        """A 1000 kW DOL motor behind a 10 MVA, 10 % transformer sags its bus by
+        a first-order Q·X ≈ 7 %, agreeing with the static locked-rotor result in
+        TestMotorStarting.test_voltage_dip_magnitude (the dynamic engine's t=0
+        point must match). S_start ≈ 6·1000/(0.95·0.85·1000) ≈ 7.4 MVA through
+        X_T = 0.10·100/10 = 1.0 pu → dip ≈ 7–8 %."""
+        res = run_dynamic_motor_starting(self._motor_project(
+            "dol", rated_kw=1000.0, eff=0.95, pf=0.85, lrc=6.0))
+        m = res["motors"][0]
+        assert 5.0 < m["max_bus_dip_pct"] < 12.0, m["max_bus_dip_pct"]
+        assert m["min_v_bus_pu"] < 0.95
+
+    def test_starter_type_reduces_inrush(self):
+        """IEEE 3002.7 reduced-voltage starters draw less than DOL. A soft
+        starter holds line current at its configured limit (default 3.5×FLC),
+        so its peak is that limit; the star-delta and autotransformer peaks
+        (their changeover surges) sit below the DOL locked-rotor inrush."""
+        def peak(method):
+            return run_dynamic_motor_starting(
+                self._motor_project(method))["motors"][0]["peak_current_xflc"]
+        dol = peak("dol")
+        star_delta = peak("star_delta")
+        auto = peak("autotransformer")
+        soft = peak("soft_starter")
+        assert star_delta < dol
+        assert auto < dol
+        assert soft < star_delta
+        assert soft == pytest.approx(3.5, abs=0.15)   # soft-starter current limit
+
+
+# ── Transient stability (classical single-machine-infinite-bus) ──────────
+
+
+class TestTransientStabilitySMIB:
+    """Classical SMIB critical-clearing-time against the equal-area closed form.
+
+    A generator (E′ behind X′d, no AVR, no governor, no damping — the classical
+    model) feeds an infinite bus through a reactance. A bolted 3-φ fault at the
+    generator's own bus drives the electrical power to zero during the fault
+    (the machine is shorted to the grounded bus and isolated from the infinite
+    bus), and clearing without a branch trip restores the pre-fault network.
+    For that case the equal-area criterion gives, from the machine's own
+    equilibrium alone (H, P_m, δ0):
+
+        cos δ_c = −cos δ0 + sin δ0·(π − 2·δ0)      (P_e = 0 during fault)
+        t_c     = √(4·H·(δ_c − δ0) / (ω0·P_m))     (ω0 = 2π·f0)
+
+    which the engine's binary-search CCT must reproduce. Reference: equal-area
+    criterion in Grainger & Stevenson "Power System Analysis" ch. 16 and Kundur
+    "Power System Stability and Control" ch. 13; the closed form is the standard
+    textbook result (e.g. Saadat §11.6).
+    """
+
+    @staticmethod
+    def _smib_project():
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 5000.0,
+                "x_r_ratio": 20.0}),
+            _comp("bus-inf", "bus", {"name": "Infinite Bus", "voltage_kv": 11.0}),
+            _comp("cable-1", "cable", {
+                "name": "Tie", "r_per_km": 0.0, "x_per_km": 0.4,
+                "length_km": 1.0, "rated_amps": 2000.0, "voltage_kv": 11.0}),
+            _comp("bus-gen", "bus", {"name": "Gen Bus", "voltage_kv": 11.0}),
+            _comp("gen-1", "generator", {
+                "name": "G1", "rated_mva": 60.0, "voltage_kv": 11.0,
+                "power_factor": 0.85, "xd_p": 0.30, "inertia_h_s": 4.0,
+                "dispatch_mode": "must_run", "gov_mode": "none",
+                "avr_mode": "off", "damping_pu": 0.0}),
+        ]
+        wires = [
+            _wire("w1", "utility-1", "bus-inf"),
+            _wire("w2", "bus-inf", "cable-1"),
+            _wire("w3", "cable-1", "bus-gen"),
+            _wire("w4", "gen-1", "bus-gen"),
+        ]
+        return ProjectData(projectName="smib", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    @staticmethod
+    def _equal_area_cct(H, Pm, delta0_deg, f0=50.0):
+        d0 = math.radians(delta0_deg)
+        cos_dc = -math.cos(d0) + math.sin(d0) * (math.pi - 2.0 * d0)
+        dc = math.acos(cos_dc)
+        return math.sqrt(4.0 * H * (dc - d0) / (2.0 * math.pi * f0 * Pm))
+
+    def test_smib_cct_matches_equal_area(self):
+        """The engine's CCT reproduces the equal-area closed form computed from
+        its own reported equilibrium (H, P_m, δ0) — ≈ 0.28 s vs ≈ 0.283 s (~1 %).
+        The residual is the RK4/step discretisation, not the 18-step bisection
+        (resolution ≈ 4 µs)."""
+        res = run_transient_stability(
+            self._smib_project(),
+            {"type": "fault", "bus": "bus-gen", "find_cct": True})
+        assert res["cct_s"] is not None, res["warnings"]
+        gen = next(m for m in res["machines"] if m["type"] == "generator")
+        # Non-degenerate operating point (equal-area needs 0 < δ0 < 90°)
+        assert 5.0 < gen["delta0_deg"] < 85.0
+        tc = self._equal_area_cct(gen["h_s"], gen["pm_pu"], gen["delta0_deg"])
+        assert res["cct_s"] == pytest.approx(tc, rel=0.06)
+
+    def test_smib_verdict_flips_around_cct(self):
+        """Clearing 30 % faster than the CCT is stable; 30 % slower loses
+        synchronism — the stable/unstable verdict is sharp about the CCT."""
+        cct = run_transient_stability(
+            self._smib_project(),
+            {"type": "fault", "bus": "bus-gen", "find_cct": True})["cct_s"]
+        assert cct is not None
+        stable = run_transient_stability(
+            self._smib_project(),
+            {"type": "fault", "bus": "bus-gen", "clear_time_s": cct * 0.7,
+             "find_cct": False})["stable"]
+        unstable = run_transient_stability(
+            self._smib_project(),
+            {"type": "fault", "bus": "bus-gen", "clear_time_s": cct * 1.3,
+             "find_cct": False})["stable"]
+        assert stable is True
+        assert unstable is False
