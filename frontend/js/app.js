@@ -1185,6 +1185,32 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'contingency-modal') e.target.style.display = 'none';
   });
 
+  // ── Protective Device Sequence of Operation ──
+  document.getElementById('btn-sequence-op').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running a sequence-of-operation study.';
+      return;
+    }
+    SOO.openConfig();
+  });
+  document.getElementById('btn-sequence-run').addEventListener('click', () => SOO.run());
+  document.getElementById('btn-sequence-cancel').addEventListener('click', () => {
+    document.getElementById('sequence-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-sequence-config').addEventListener('click', () => {
+    document.getElementById('sequence-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-sequence').addEventListener('click', () => {
+    document.getElementById('sequence-modal').style.display = 'none';
+  });
+  document.getElementById('sequence-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'sequence-modal') e.target.style.display = 'none';
+  });
+  // Copy-report button lives inside the (re-rendered) results body
+  document.getElementById('sequence-body').addEventListener('click', (e) => {
+    if (e.target.id === 'soo-copy-btn') SOO._copyReport();
+  });
+
   // ── Equipment Duty Check ──
   document.getElementById('btn-duty-check').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -3306,6 +3332,8 @@ document.addEventListener('DOMContentLoaded', () => {
       icon: '<path d="M2 3c3 0 4.5 4 6 6s2.2 3 3 3c1.5 0 2-2 3-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11" cy="12" r="1.1" fill="currentColor"/>' },
     { id: 'contingency', label: 'Contingency (N-1 / N-2)', category: 'Studies', btnId: 'btn-contingency',
       icon: '<path d="M8 2l6 11H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor"/>' },
+    { id: 'sequence-op', label: 'Sequence of Operation', category: 'Studies', btnId: 'btn-sequence-op',
+      icon: '<path d="M2 13h12" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><circle cx="4" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="6" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 8.3L6.7 6.7M9.3 5.4l1.4-0.8" stroke="currentColor" stroke-width="1.1"/>' },
     { id: 'duty-check', label: 'Duty Check', category: 'Studies', btnId: 'btn-duty-check',
       icon: '<path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
     { id: 'load-diversity', label: 'Load Diversity', category: 'Studies', btnId: 'btn-load-diversity',
