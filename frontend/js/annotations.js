@@ -7,6 +7,11 @@ const Annotations = {
   // Keys: "fault:{busId}", "lf:{busId}", "br:{elementId}" or "br:{from}_{to}"
   offsets: new Map(),
 
+  // Result boxes the user has hidden via the right-click menu (annotation keys).
+  // Persisted with the project (state.js toJSON/fromJSON) and restored on load;
+  // cleared only on new-project (reset). Un-hidden via the top-bar Restore button.
+  hiddenResultBoxes: new Set(),
+
   init() {
     this.layer = document.getElementById('annotations-layer');
   },
@@ -28,6 +33,74 @@ const Annotations = {
 
   setOffset(key, dx, dy) {
     this.offsets.set(key, { dx, dy });
+  },
+
+  // ── Result-box right-click actions ───────────────────────────────────────
+
+  // Snap one result box back to its auto-stacked default position.
+  resetBoxPosition(key) {
+    this.offsets.delete(key);
+    AppState.dirty = true;
+    Canvas.render();
+  },
+
+  // Hide a single result box (persists with the project).
+  hideResultBox(key) {
+    this.hiddenResultBoxes.add(key);
+    AppState.dirty = true;
+    Canvas.render();
+  },
+
+  // Un-hide every hidden result box.
+  restoreAllResultBoxes() {
+    if (!this.hiddenResultBoxes.size) return;
+    this.hiddenResultBoxes.clear();
+    AppState.dirty = true;
+    Canvas.render();
+  },
+
+  // Copy a result box's displayed text (label + value lines) to the clipboard,
+  // read straight from the rendered SVG so it matches exactly what's shown.
+  copyBoxText(key) {
+    const g = this.layer && this.layer.querySelector(
+      `.draggable-annotation[data-annotation-key="${(window.CSS && CSS.escape) ? CSS.escape(key) : key}"]`);
+    if (!g) return;
+    const lines = [...g.querySelectorAll('text')].map(t => t.textContent.trim()).filter(Boolean);
+    const text = lines.join('\n');
+    this._copyToClipboard(text);
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast('Result copied to clipboard', 'success');
+  },
+
+  // Clipboard write with a legacy fallback — navigator.clipboard needs a secure
+  // context (https), but the app is often served over plain http on a LAN.
+  _copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      navigator.clipboard.writeText(text).catch(() => this._execCopy(text));
+    } else {
+      this._execCopy(text);
+    }
+  },
+
+  _execCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* best effort */ }
+    document.body.removeChild(ta);
+  },
+
+  // Show/hide the top-bar "Restore results" button based on hidden count.
+  _syncRestoreButton() {
+    const btn = document.getElementById('btn-restore-results');
+    if (!btn) return;
+    const n = this.hiddenResultBoxes.size;
+    btn.style.display = n > 0 ? '' : 'none';
+    const label = btn.querySelector('span');
+    if (label) label.textContent = n === 1 ? 'Restore result (1)' : `Restore results (${n})`;
   },
 
   // ── Auto-stacking of badges per component (no user offset) ──
@@ -120,6 +193,7 @@ const Annotations = {
         const comp = AppState.resultBusComponent(busId, pageComps);
         if (!comp) continue;
         const key = `fault:${busId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 70, -10, stacks);
         html += this.renderFaultBadge(pos.x, pos.y, result, key);
         this._advanceStack(stacks, comp, pos);
@@ -134,6 +208,7 @@ const Annotations = {
         if (!comp) continue;
         if (lfSuppressed.has(busId)) continue;
         const key = `lf:${busId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, -130, -10, stacks);
         html += this.renderLoadFlowBadge(pos.x, pos.y, result, key);
         this._advanceStack(stacks, comp, pos);
@@ -146,6 +221,7 @@ const Annotations = {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `dclf:${busId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, -140, -10, stacks);
         html += this.renderDCLoadFlowBadge(pos.x, pos.y, result, key);
         this._advanceStack(stacks, comp, pos);
@@ -158,6 +234,7 @@ const Annotations = {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `dcsc:${busId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 70, -10, stacks);
         html += this.renderDCShortCircuitBadge(pos.x, pos.y, result, key);
         this._advanceStack(stacks, comp, pos);
@@ -173,6 +250,7 @@ const Annotations = {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `ulf:${busId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, -160, 20, stacks);
         html += this.renderUnbalancedLoadFlowBadge(pos.x, pos.y, result, key);
         this._advanceStack(stacks, comp, pos);
@@ -189,6 +267,7 @@ const Annotations = {
         const comp = pageComps.get(warn.elementId);
         if (!comp) continue;
         const key = `ulf-warn:${warn.elementId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 40, -65, stacks);
         html += this.renderVoltageMismatchBadge(pos.x, pos.y, comp, warn, key);
         this._advanceStack(stacks, comp, pos);
@@ -204,6 +283,7 @@ const Annotations = {
         const comp = pageComps.get(warn.elementId);
         if (!comp) continue;
         const key = `warn:${warn.elementId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 40, -50, stacks);
         html += this.renderVoltageMismatchBadge(pos.x, pos.y, comp, warn, key);
         this._advanceStack(stacks, comp, pos);
@@ -223,6 +303,7 @@ const Annotations = {
             if (!comp) continue;
             const vPu = dep.subtransient_pu != null ? dep.subtransient_pu : 1.0;
             const key = `vdep:${depBusId}`;
+            if (this.hiddenResultBoxes.has(key)) continue;
             const pos = this._badgePos(comp, key, 0, -30, stacks);
             html += this.renderVoltageDepBadge(pos.x, pos.y, dep, vPu, key);
             this._advanceStack(stacks, comp, pos);
@@ -237,6 +318,7 @@ const Annotations = {
         const comp = pageComps.get(busId);
         if (!comp) continue;
         const key = `af:${busId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 70, 50, stacks);
         html += this.renderArcFlashBadge(pos.x, pos.y, result, key);
         this._advanceStack(stacks, comp, pos);
@@ -249,6 +331,7 @@ const Annotations = {
         const comp = pageComps.get(cable.cable_id);
         if (!comp) continue;
         const key = `cs:${cable.cable_id}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 30, -30, stacks);
         html += this.renderCableSizingBadge(pos.x, pos.y, cable, key);
         this._advanceStack(stacks, comp, pos);
@@ -261,6 +344,7 @@ const Annotations = {
         const comp = pageComps.get(motor.motor_id);
         if (!comp) continue;
         const key = `ms:${motor.motor_id}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 40, -20, stacks);
         html += this.renderMotorStartingBadge(pos.x, pos.y, motor, key);
         this._advanceStack(stacks, comp, pos);
@@ -274,6 +358,7 @@ const Annotations = {
         const comp = pageComps.get(motor.motor_id);
         if (!comp) continue;
         const key = `dynms:${motor.motor_id}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 40, 20, stacks);
         html += this.renderDynamicMotorBadge(pos.x, pos.y, motor, key);
         this._advanceStack(stacks, comp, pos);
@@ -286,6 +371,7 @@ const Annotations = {
         const comp = pageComps.get(device.device_id);
         if (!comp) continue;
         const key = `dc:${device.device_id}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 30, -25, stacks);
         html += this.renderDutyCheckBadge(pos.x, pos.y, device, key);
         this._advanceStack(stacks, comp, pos);
@@ -298,6 +384,7 @@ const Annotations = {
         const comp = pageComps.get(busResult.bus_id);
         if (!comp) continue;
         const key = `ld:${busResult.bus_id}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, -130, 40, stacks);
         html += this.renderLoadDiversityBadge(pos.x, pos.y, busResult, key);
         this._advanceStack(stacks, comp, pos);
@@ -310,6 +397,7 @@ const Annotations = {
         const comp = pageComps.get(busResult.bus_id);
         if (!comp) continue;
         const key = `gr:${busResult.bus_id}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 70, 90, stacks);
         html += this.renderGroundingBadge(pos.x, pos.y, busResult, key);
         this._advanceStack(stacks, comp, pos);
@@ -331,6 +419,7 @@ const Annotations = {
     }
 
     this.layer.innerHTML = html;
+    this._syncRestoreButton();
   },
 
   // Small red warning triangle at a device's top-right, with a tooltip listing

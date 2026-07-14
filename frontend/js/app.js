@@ -605,6 +605,29 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.select(busId);
       runAnalysis('fault');
     },
+    // Reopen the full results view for the study a result box belongs to,
+    // from its already-stored results (no re-run). Studies with a dedicated
+    // modal reopen it; those without (fault, unbalanced LF) fall back to the
+    // full detailed-calculations report, which covers every study.
+    openResultBox(key) {
+      const prefix = String(key).split(':')[0];
+      switch (prefix) {
+        case 'af':   if (AppState.arcFlashResults) showArcFlashResults(AppState.arcFlashResults); break;
+        case 'cs':   if (AppState.cableSizingResults) showCableSizingResults(AppState.cableSizingResults); break;
+        case 'ms':   if (AppState.motorStartingResults) showMotorStartingResults(AppState.motorStartingResults); break;
+        case 'dynms': if (AppState.dynamicMotorResults && typeof DynMotor !== 'undefined') DynMotor.show(AppState.dynamicMotorResults); break;
+        case 'dc':   if (AppState.dutyCheckResults) showDutyCheckResults(AppState.dutyCheckResults); break;
+        case 'ld':   if (AppState.loadDiversityResults) showLoadDiversityResults(AppState.loadDiversityResults); break;
+        case 'gr':   if (AppState.groundingResults) showGroundingResults(AppState.groundingResults); break;
+        case 'dclf': if (AppState.dcLoadFlowResults) showDCLoadFlowResults(AppState.dcLoadFlowResults); break;
+        case 'dcsc': if (AppState.dcShortCircuitResults) showDCShortCircuitResults(AppState.dcShortCircuitResults); break;
+        case 'lf': case 'warn': if (AppState.loadFlowResults) showDispatchSummary(AppState.loadFlowResults); break;
+        default:
+          // fault, vdep, ulf, ulf-warn — no dedicated modal; open the detailed
+          // calculations report (has a full worked section per study).
+          document.getElementById('btn-show-calc')?.click();
+      }
+    },
   };
 
   // Disable/enable a toolbar control while its request is in flight, and drive
@@ -3197,6 +3220,16 @@ document.addEventListener('DOMContentLoaded', () => {
     Annotations.offsets.clear();
     Canvas.render();
     AppState.dirty = true;
+  });
+
+  // Restore result boxes hidden via the right-click menu (top-bar button,
+  // shown only while something is hidden — visibility synced in render()).
+  document.getElementById('btn-restore-results').addEventListener('click', () => {
+    const n = Annotations.hiddenResultBoxes.size;
+    Annotations.restoreAllResultBoxes();
+    if (typeof UI !== 'undefined' && UI.toast && n > 0) {
+      UI.toast(`Restored ${n} result box${n === 1 ? '' : 'es'}`, 'success');
+    }
   });
 
   // Zoom controls
