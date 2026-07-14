@@ -403,6 +403,7 @@ const MobileUI = {
     const mappings = [
       ['mobile-analysis-fault',         'btn-run-fault'],
       ['mobile-analysis-loadflow',      'btn-run-loadflow'],
+      ['mobile-analysis-lf-study',      'btn-lf-study'],
       ['mobile-analysis-arcflash',      'btn-arcflash'],
       ['mobile-analysis-cable',         'btn-cable-sizing'],
       ['mobile-analysis-motor',         'btn-motor-starting'],
