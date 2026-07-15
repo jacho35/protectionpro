@@ -1006,7 +1006,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${escHtml(c.cable_name)}</td>
         <td>${escHtml(c.from_bus)} → ${escHtml(c.to_bus)}</td>
         <td>${c.load_current_a.toFixed(1)}</td>
-        <td>${thermalIcon} ${c.thermal_loading_pct.toFixed(0)}%</td>
+        <td>${thermalIcon} ${c.thermal_loading_pct.toFixed(0)}%${c.ampacity_derated
+          ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="${(c.ampacity_conditions || '').replace(/"/g, '&quot;')}">↓ ${c.derated_ampacity_a}A</span>`
+          : ''}</td>
         <td>${vdropIcon} ${c.voltage_drop_pct.toFixed(2)}%</td>
         <td>${withstandIcon}</td>
         <td>${statusBadge}</td>

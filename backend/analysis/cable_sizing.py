@@ -374,6 +374,27 @@ def _find_cable_buses(cable_id, adj, comp_map):
     return buses
 
 
+def _format_ampacity_conditions(amp):
+    """Human-readable summary of an applied per-cable IEC 60364-5-52 ampacity
+    block, for the cable-sizing result row / report."""
+    method = amp.get("method", "?")
+    parts = [f"IEC 60364-5-52 method {method}"]
+    if amp.get("ambient_c") is not None:
+        env = "ground" if str(method).startswith("D") else "air"
+        parts.append(f"{float(amp['ambient_c']):g}°C {env}")
+    if amp.get("circuits"):
+        parts.append(f"{int(amp['circuits'])} circ")
+    if amp.get("soil_kmw") is not None:
+        parts.append(f"{float(amp['soil_kmw']):g} K·m/W")
+    if amp.get("depth_m") is not None:
+        parts.append(f"{float(amp['depth_m']):g} m deep")
+    if amp.get("derating") is not None:
+        parts.append(f"derate {float(amp['derating']):.2f}")
+    if amp.get("base_a") is not None:
+        parts.append(f"base {float(amp['base_a']):g} A")
+    return " · ".join(parts)
+
+
 def _get_cable_props(cable):
     """Extract cable properties with defaults."""
     p = cable.props
@@ -583,7 +604,32 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         rated_amps = cp["rated_amps"]
         insulation = cp["insulation"]
 
-        if ampacity_standard == "NEC":
+        # Per-cable installed ampacity (IEC 60364-5-52): when the cable carries
+        # an applied `ampacity` block (set by the properties-panel calculator),
+        # its rated current is already derated for the real install conditions
+        # (method / ambient / grouping / soil resistivity / burial depth). Use
+        # that derated rating directly and DO NOT re-apply the run-level
+        # derating, which would double-count. Legacy cables (no block) keep the
+        # previous run-level behaviour.
+        amp_block = cable.props.get("ampacity")
+        if not isinstance(amp_block, dict) or not amp_block.get("applied"):
+            amp_block = None
+        amp_derated_a = None
+        amp_conditions = ""
+        if amp_block and ampacity_standard != "NEC":
+            try:
+                amp_derated_a = float(amp_block.get("derated_a", 0) or 0)
+            except (TypeError, ValueError):
+                amp_derated_a = None
+            if amp_derated_a and amp_derated_a > 0:
+                amp_conditions = _format_ampacity_conditions(amp_block)
+
+        if amp_derated_a and amp_derated_a > 0:
+            # Installed rating already encodes the full IEC 60364-5-52 derating.
+            install_df = float(amp_block.get("derating", 1.0) or 1.0)  # for the recommend-on-fail search
+            temp_df = 1.0
+            derated_amps = amp_derated_a
+        elif ampacity_standard == "NEC":
             # NEC 310.16 ampacity lookup
             if cp["size_mm2"] > 0:
                 nec_amps = _nec_ampacity(cp["size_mm2"], cp["conductor"], cp["insulation"])
@@ -794,6 +840,12 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             "warning_reasons": warning_reasons,
             "ampacity_standard": ampacity_standard,
             "nec_rating": _nec_ampacity_lookup(cp["size_mm2"], cp["conductor"], '75C'),
+            # Installed (derated) ampacity used for the thermal check, plus the
+            # per-cable install conditions when set via the IEC 60364-5-52
+            # calculator (empty string / False otherwise).
+            "derated_ampacity_a": round(derated_amps, 1) if derated_amps else 0,
+            "ampacity_derated": bool(amp_derated_a and amp_derated_a > 0),
+            "ampacity_conditions": amp_conditions,
         })
 
     return {"cables": results, "warnings": warnings}
