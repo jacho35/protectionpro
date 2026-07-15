@@ -1,6 +1,6 @@
 /* ProtectionPro — Constants & Configuration */
 
-const APP_VERSION = 'V3.5';
+const APP_VERSION = 'V4';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
