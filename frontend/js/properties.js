@@ -581,11 +581,15 @@ const Properties = {
     // Relay overcurrent pickups are set in PRIMARY amps (the TCC plots and grades
     // on primary current). Flag this on the label so it isn't mistaken for a
     // secondary (relay-terminal) setting, and — when a measuring CT is linked —
-    // show the equivalent secondary-amps figure the relay actually sees.
+    // show the equivalent secondary-amps figure the relay actually sees. The
+    // secondary figure goes on its own full-width hint line (NOT appended to the
+    // label) so the fixed-width label can't crowd the input to nothing on the
+    // narrow mobile properties panel.
     //   • Phase CT      → primary quantity is the phase line current.
     //   • Core-balance  → primary quantity is the net RESIDUAL (earth-fault,
     //     3I₀) current summed through the window. The turns ratio still applies
     //     (secondary = primary ÷ ratio), only the meaning of "primary" changes.
+    let hintHtml = '';
     if (['pickup_a', 'inst_pickup_a'].includes(field.key) && this.currentId) {
       const comp = AppState.components.get(this.currentId);
       if (comp && comp.type === 'relay') {
@@ -599,7 +603,7 @@ const Properties = {
           if (ct.ratio > 0 && !isNaN(priA)) {
             const secA = priA / ct.ratio;
             const secStr = secA < 10 ? secA.toFixed(2) : secA.toFixed(1);
-            labelText += ` → ${secStr} A sec @ ${ct.primary}/${ct.secondary}`;
+            hintHtml = `<div class="prop-hint">&rarr; ${secStr} A secondary @ ${ct.primary}/${ct.secondary} CT</div>`;
           }
         }
       }
@@ -613,7 +617,7 @@ const Properties = {
         ${infoHtml}
         ${defaultFlagHtml}
         ${resetHtml}
-      </div>`;
+      </div>${hintHtml}`;
   },
 
   // commit=false: live (debounced) keystroke update — applies the value to
