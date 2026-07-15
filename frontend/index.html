@@ -845,6 +845,23 @@
     </div>
   </div>
 
+  <!-- Per-cable IEC 60364-5-52 Installed Ampacity Calculator Modal -->
+  <div id="ampacity-modal" class="modal" role="dialog" aria-modal="true" aria-label="Installed Ampacity Calculator" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Installed Ampacity — IEC 60364-5-52</h3>
+        <button class="modal-close" id="btn-close-ampacity">&times;</button>
+      </div>
+      <div id="ampacity-modal-body" class="modal-body">
+        <!-- Populated by JS -->
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
+        <button class="btn" id="btn-ampacity-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-ampacity-apply">Apply to cable</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Distribution Board Circuit Schedule Modal -->
   <div id="db-modal" class="modal" role="dialog" aria-modal="true" aria-label="Circuit Schedule" style="display:none">
     <div class="modal-content db-modal-content">
