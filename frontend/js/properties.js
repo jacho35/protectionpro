@@ -589,13 +589,23 @@ const Properties = {
     //   • Core-balance  → primary quantity is the net RESIDUAL (earth-fault,
     //     3I₀) current summed through the window. The turns ratio still applies
     //     (secondary = primary ÷ ratio), only the meaning of "primary" changes.
+    // The same treatment applies to a breaker's integral earth-fault (shunt-trip)
+    // release: `ef_pickup_a` is also a PRIMARY residual current, measured through
+    // the linked core-balance CT (`ef_trip_ct`) — so show its CT-referred
+    // secondary the same way as the relay pickup.
     let hintHtml = '';
-    if (['pickup_a', 'inst_pickup_a'].includes(field.key) && this.currentId) {
+    const isRelayPickup = ['pickup_a', 'inst_pickup_a'].includes(field.key);
+    const isCbEfPickup = field.key === 'ef_pickup_a';
+    if ((isRelayPickup || isCbEfPickup) && this.currentId) {
       const comp = AppState.components.get(this.currentId);
-      if (comp && comp.type === 'relay') {
-        const ctId = comp.props.associated_ct;
+      const applies = comp && ((isRelayPickup && comp.type === 'relay') ||
+                               (isCbEfPickup && comp.type === 'cb'));
+      if (applies) {
+        const ctId = isCbEfPickup ? comp.props.ef_trip_ct : comp.props.associated_ct;
         const ctComp = ctId ? AppState.components.get(ctId) : null;
-        const isResidual = ctComp && ctComp.props?.ct_type === 'core_balance';
+        // A breaker E/F release is a residual (earth-fault) element by definition;
+        // a relay is residual only when fed from a core-balance CT.
+        const isResidual = isCbEfPickup || (ctComp && ctComp.props?.ct_type === 'core_balance');
         labelText += isResidual ? ' (primary residual)' : ' (primary)';
         if (ctComp && typeof parseCTRatio === 'function') {
           const ct = parseCTRatio(ctComp.props?.ratio);
@@ -749,6 +759,14 @@ const Properties = {
     // in sync when the measuring CT is (re)linked or a pickup is committed.
     if (comp.type === 'relay' &&
         (field === 'associated_ct' || (commit && ['pickup_a', 'inst_pickup_a'].includes(field)))) {
+      this.show(comp.id);
+      return;
+    }
+
+    // Breaker integral earth-fault release ↔ CT: same live re-render so the
+    // CT-referred secondary hint tracks the linked CBCT and the E/F pickup.
+    if (comp.type === 'cb' &&
+        (field === 'ef_trip_ct' || (commit && field === 'ef_pickup_a'))) {
       this.show(comp.id);
       return;
     }
