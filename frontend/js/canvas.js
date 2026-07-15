@@ -1412,6 +1412,17 @@ const Canvas = {
         if (cbType === 'ACB' && p.short_time_pickup) {
           lines.push(`ST=${p.short_time_pickup}×`);
         }
+        // Integral earth-fault (residual) release — pickup is a PRIMARY current
+        const efA = parseFloat(p.ef_pickup_a) || 0;
+        if (efA > 0) {
+          let efLine = `E/F ${fmtA(efA)}`;
+          const efCt = p.ef_trip_ct ? AppState.getActivePageComponents().get(p.ef_trip_ct) : null;
+          if (efCt && typeof parseCTRatio === 'function') {
+            const ct = parseCTRatio(efCt.props?.ratio);
+            if (ct.ratio > 0) efLine += ` (${(efA / ct.ratio).toFixed(2)} A sec)`;
+          }
+          lines.push(efLine);
+        }
         if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'fuse' && AppState.showDeviceLabels) {
         const fuseType = p.fuse_type || 'gG';
@@ -1420,6 +1431,21 @@ const Canvas = {
         if (p.rated_voltage_kv) lines.push(`${p.rated_voltage_kv} kV`);
         if (p.breaking_capacity_ka) lines.push(`Icu ${p.breaking_capacity_ka}kA`);
         if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
+      } else if (comp.type === 'ct') {
+        if (p.name && p.name !== 'CT') lines.push(p.name);
+        if (p.ratio) lines.push(`${p.ratio} A`);
+        if (p.accuracy_class) lines.push(p.accuracy_class);
+        if (p.burden_va) lines.push(`${p.burden_va} VA`);
+        if (p.ct_type === 'core_balance') lines.push('Core balance');
+        defaultOX = 18;
+        defaultOY = 0;
+      } else if (comp.type === 'pt') {
+        if (p.name && p.name !== 'PT') lines.push(p.name);
+        if (p.ratio) lines.push(`${p.ratio}`);
+        if (p.accuracy_class) lines.push(p.accuracy_class);
+        if (p.burden_va) lines.push(`${p.burden_va} VA`);
+        defaultOX = 18;
+        defaultOY = 0;
       } else if (AppState.showResultBoxes.fault && this._hasFaultBranchData(comp)) {
         // Switch or other element with fault branch data — show it even without device labels
         this._appendFaultBranchLines(comp, lines);
