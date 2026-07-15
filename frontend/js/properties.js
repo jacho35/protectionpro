@@ -578,6 +578,33 @@ const Properties = {
       }
     }
 
+    // Relay overcurrent pickups are set in PRIMARY amps (the TCC plots and grades
+    // on primary current). Flag this on the label so it isn't mistaken for a
+    // secondary (relay-terminal) setting, and — when a measuring CT is linked —
+    // show the equivalent secondary-amps figure the relay actually sees.
+    //   • Phase CT      → primary quantity is the phase line current.
+    //   • Core-balance  → primary quantity is the net RESIDUAL (earth-fault,
+    //     3I₀) current summed through the window. The turns ratio still applies
+    //     (secondary = primary ÷ ratio), only the meaning of "primary" changes.
+    if (['pickup_a', 'inst_pickup_a'].includes(field.key) && this.currentId) {
+      const comp = AppState.components.get(this.currentId);
+      if (comp && comp.type === 'relay') {
+        const ctId = comp.props.associated_ct;
+        const ctComp = ctId ? AppState.components.get(ctId) : null;
+        const isResidual = ctComp && ctComp.props?.ct_type === 'core_balance';
+        labelText += isResidual ? ' (primary residual)' : ' (primary)';
+        if (ctComp && typeof parseCTRatio === 'function') {
+          const ct = parseCTRatio(ctComp.props?.ratio);
+          const priA = parseFloat(value);
+          if (ct.ratio > 0 && !isNaN(priA)) {
+            const secA = priA / ct.ratio;
+            const secStr = secA < 10 ? secA.toFixed(2) : secA.toFixed(1);
+            labelText += ` → ${secStr} A sec @ ${ct.primary}/${ct.secondary}`;
+          }
+        }
+      }
+    }
+
     return `
       <div class="prop-row${modifiedClass}">
         <label>${labelText}</label>
@@ -710,6 +737,14 @@ const Properties = {
 
     // When relay type changes, re-render to show/hide conditional fields
     if (field === 'relay_type' && comp.type === 'relay') {
+      this.show(comp.id);
+      return;
+    }
+
+    // Relay pickup ↔ CT: re-render so the primary/secondary label helper stays
+    // in sync when the measuring CT is (re)linked or a pickup is committed.
+    if (comp.type === 'relay' &&
+        (field === 'associated_ct' || (commit && ['pickup_a', 'inst_pickup_a'].includes(field)))) {
       this.show(comp.id);
       return;
     }

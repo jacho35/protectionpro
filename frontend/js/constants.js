@@ -938,7 +938,8 @@ const FIELD_INFO = {
   // Relay
   'relay.associated_ct': 'Select the current transformer (CT) that feeds this relay.\nThe CT measurement location determines where the relay measures fault current.\nThe relay pickup should be set in primary amps (before CT ratio).',
   'relay.trip_cb': 'Select the circuit breaker that this relay trips.\nWhen the relay operates, it sends a trip signal to this CB to isolate the fault.',
-  'relay.pickup_a':  'Default 100A — adjust to match load current and CT ratio.\nSource: IEC 60255-151 — overcurrent relay pickup setting.',
+  'relay.pickup_a':  'Set in PRIMARY amps (line current before the CT), not secondary/relay-terminal amps.\nWith a phase CT linked this is the phase current; with a core-balance CT it is the net residual (earth-fault, 3I0) current through the window.\nEither way the panel shows the equivalent secondary current (pickup ÷ CT ratio) the relay actually sees.\nDefault 100A — adjust to match load current and CT ratio.\nSource: IEC 60255-151 — overcurrent relay pickup setting.',
+  'relay.inst_pickup_a': 'Instantaneous (50) element pickup in PRIMARY amps (line current before the CT). 0 disables it.\nWith a measuring CT linked, the panel shows the equivalent secondary current (pickup ÷ CT ratio).\nSource: IEC 60255-151.',
   'relay.time_dial':  'Default TDS = 1.0 — middle of adjustment range.\nSource: IEC 60255-151 / IEEE C37.112 — time dial setting (0.05–10).',
   'relay.curve':      'Default IEC Standard Inverse curve.\nSource: IEC 60255-151 §5.5 — IDMT characteristics:\nt = TDS × 0.14 / (M^0.02 − 1)',
   'relay.z1_reach_ohm': 'Zone 1 forward reach in primary ohms.\nTypically set to 80% of protected line impedance for instantaneous tripping.\nSource: IEEE C37.113 / IEC 60255-121.',
