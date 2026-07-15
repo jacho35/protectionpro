@@ -394,6 +394,12 @@ const MobileUI = {
     mobileContent.querySelectorAll('.prop-reset-btn').forEach((btn, i) => {
       btn.addEventListener('click', () => dReset[i] && dReset[i].click());
     });
+    // Re-bind the per-cable IEC ampacity calculator launch button (its click
+    // listener is dropped by the innerHTML copy, so it was inert on mobile).
+    const dAmp = [...desktopContent.querySelectorAll('.prop-ampacity-btn')];
+    mobileContent.querySelectorAll('.prop-ampacity-btn').forEach((btn, i) => {
+      btn.addEventListener('click', () => dAmp[i] && dAmp[i].click());
+    });
   },
 
   // ─── Analysis sheet ────────────────────────────────────────────────────────
