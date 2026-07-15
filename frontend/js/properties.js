@@ -16,22 +16,9 @@ const SECTION_LABELS = {
   pv: 'PV Array / DC Strings',
 };
 
-// Result-box types shown on the diagram, in the order they appear in the
-// Display Options tick-list. Keys match AppState.showResultBoxes.
-const RESULT_BOX_TYPES = [
-  ['fault', 'Fault / Short-Circuit'],
-  ['loadflow', 'Load Flow'],
-  ['unbalancedLF', 'Unbalanced Load Flow'],
-  ['arcflash', 'Arc Flash'],
-  ['cable', 'Cable Sizing'],
-  ['motor', 'Motor Starting'],
-  ['dynMotor', 'Dynamic Motor Starting'],
-  ['duty', 'Duty Check'],
-  ['loadDiversity', 'Load Diversity'],
-  ['grounding', 'Grounding'],
-  ['dcLoadflow', 'DC Load Flow'],
-  ['dcShortCircuit', 'DC Short-Circuit'],
-];
+// The result-box type/field schema lives in RESULT_TYPE_DEFS (annotations.js),
+// shared by the render, the Display Options tick-lists here, and the result-box
+// right-click menu.
 
 const Properties = {
   contentEl: null,
@@ -2054,17 +2041,39 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
   },
 
   // Global display preferences (shown in the Project Details view when nothing
-  // is selected): which result boxes appear on the diagram, and the voltage
-  // display unit. Both persist with the project (state.js toJSON/fromJSON).
+  // is selected): the voltage display unit, which result boxes appear on the
+  // diagram, and — nested under each box — which individual value lines it
+  // shows. All persist with the project (state.js toJSON/fromJSON). The type /
+  // field schema is RESULT_TYPE_DEFS (annotations.js), shared with the render
+  // and the result-box right-click menu.
   _renderDisplayOptions() {
     const unit = AppState.voltageDisplayUnit === 'V' ? 'V' : 'kV';
     const rb = AppState.showResultBoxes || {};
-    const allOn = RESULT_BOX_TYPES.every(([k]) => rb[k]);
-    const items = RESULT_BOX_TYPES.map(([key, label]) => `
-      <label class="display-result-item">
-        <input type="checkbox" data-result-box="${key}"${rb[key] ? ' checked' : ''} />
-        <span>${label}</span>
-      </label>`).join('');
+    const defs = RESULT_TYPE_DEFS;
+    const allOn = defs.every(t => rb[t.key]);
+
+    const typeBlocks = defs.map(t => {
+      const boxOn = rb[t.key] !== false;
+      // Only offer per-value control when there's more than one line to choose.
+      const fieldHtml = t.fields.length >= 2 ? `
+        <div class="display-field-list${boxOn ? '' : ' disabled'}" data-field-group="${t.key}">
+          ${t.fields.map(f => `
+            <label class="display-field-item">
+              <input type="checkbox" data-result-field="${t.key}" data-field-name="${f.key}"
+                ${Annotations.fieldVisible(t.key, f.key) ? ' checked' : ''}${boxOn ? '' : ' disabled'} />
+              <span>${f.label}</span>
+            </label>`).join('')}
+        </div>` : '';
+      return `
+        <div class="display-type-block">
+          <label class="display-result-item">
+            <input type="checkbox" data-result-box="${t.key}"${boxOn ? ' checked' : ''} />
+            <span>${t.label}</span>
+          </label>
+          ${fieldHtml}
+        </div>`;
+    }).join('');
+
     return `
       <div class="prop-section">
         <div class="prop-section-title">Display Options</div>
@@ -2076,13 +2085,13 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
           </select>
         </div>
         <div class="display-results-head">
-          <span>Result boxes on diagram</span>
+          <span>Result boxes &amp; values</span>
           <label class="display-result-all">
             <input type="checkbox" data-result-all${allOn ? ' checked' : ''} /> All
           </label>
         </div>
         <div class="display-result-list">
-          ${items}
+          ${typeBlocks}
         </div>
       </div>`;
   },
@@ -2140,7 +2149,8 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
     this._bindDisplayOptionsEvents();
   },
 
-  // Wire up the Display Options controls (voltage unit + result-box tick list).
+  // Wire up the Display Options controls: voltage unit, per-box visibility, and
+  // the nested per-value tick lists.
   _bindDisplayOptionsEvents() {
     const unitSel = this.contentEl.querySelector('[data-display-field="voltageDisplayUnit"]');
     if (unitSel) {
@@ -2155,28 +2165,61 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
     const itemCbs = [...this.contentEl.querySelectorAll('[data-result-box]')];
 
     const syncAll = () => {
-      if (allCb) allCb.checked = RESULT_BOX_TYPES.every(([k]) => AppState.showResultBoxes[k]);
+      if (allCb) allCb.checked = RESULT_TYPE_DEFS.every(t => AppState.showResultBoxes[t.key]);
+    };
+
+    // Enable/disable a type's nested field checkboxes when its box is toggled.
+    const setGroupEnabled = (typeKey, on) => {
+      const group = this.contentEl.querySelector(`[data-field-group="${typeKey}"]`);
+      if (!group) return;
+      group.classList.toggle('disabled', !on);
+      group.querySelectorAll('input[type="checkbox"]').forEach(fc => { fc.disabled = !on; });
     };
 
     itemCbs.forEach(cb => {
       cb.addEventListener('change', () => {
         AppState.showResultBoxes[cb.dataset.resultBox] = cb.checked;
         AppState.dirty = true;
+        setGroupEnabled(cb.dataset.resultBox, cb.checked);
         syncAll();
         Canvas.render();
         window.AppActions?.refreshResultToggles?.();
       });
     });
 
+    // Per-value line toggles.
+    this.contentEl.querySelectorAll('[data-result-field]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const type = cb.dataset.resultField;
+        const field = cb.dataset.fieldName;
+        if (!AppState.resultBoxFields[type]) AppState.resultBoxFields[type] = {};
+        // Store only the "hidden" state; delete when re-shown to keep it sparse.
+        if (cb.checked) delete AppState.resultBoxFields[type][field];
+        else AppState.resultBoxFields[type][field] = false;
+        AppState.dirty = true;
+        Canvas.render();
+      });
+    });
+
     if (allCb) {
       allCb.addEventListener('change', () => {
         const on = allCb.checked;
-        for (const [k] of RESULT_BOX_TYPES) AppState.showResultBoxes[k] = on;
+        for (const t of RESULT_TYPE_DEFS) {
+          AppState.showResultBoxes[t.key] = on;
+          setGroupEnabled(t.key, on);
+        }
         itemCbs.forEach(cb => { cb.checked = on; });
         AppState.dirty = true;
         Canvas.render();
         window.AppActions?.refreshResultToggles?.();
       });
     }
+  },
+
+  // Re-render the Project Details view (which hosts Display Options) if it's the
+  // panel currently showing — used to reflect changes made from the result-box
+  // right-click menu so the sidebar tick-boxes stay in sync.
+  refreshProjectViewIfOpen() {
+    if (this.currentId == null && this.contentEl) this.clear();
   },
 };
