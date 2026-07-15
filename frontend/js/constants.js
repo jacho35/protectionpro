@@ -1,6 +1,6 @@
 /* ProtectionPro — Constants & Configuration */
 
-const APP_VERSION = 'V3.5';
+const APP_VERSION = 'V4';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -1818,6 +1818,7 @@ const COMPONENT_DEFS = {
       { key: 'ampacity_standard', label: 'Ampacity Standard', type: 'select', options: ['IEC', 'NEC'], section: 'cable_sizing' },
       { key: 'num_parallel', label: 'Parallel Cables', type: 'number', min: 1, max: 20, step: 1, section: 'cable_sizing' },
       { key: 'rated_amps', label: 'Rated Current (per cable)', type: 'number', unit: 'A', section: 'cable_sizing' },
+      { key: '_ampacity_calc', label: 'Installed Ampacity', type: 'ampacity_calc', section: 'cable_sizing' },
       { key: 'adiabatic_basis', label: 'Fault-withstand Basis', type: 'select', options: [{ value: '', label: 'Thermal-equiv. Iₜₕ (default)' }, { value: 'bare_isc', label: 'Bare Isc (hand-calc)' }], section: 'cable_sizing' },
       { key: 'standalone_current_a', label: 'Standalone Design Current (0 = use load flow)', type: 'number', unit: 'A', min: 0, step: 1, section: 'cable_sizing' },
       { key: 'standalone_isc_ka', label: 'Standalone Isc (0 = use fault study)', type: 'number', unit: 'kA', min: 0, step: 0.1, section: 'cable_sizing' },
