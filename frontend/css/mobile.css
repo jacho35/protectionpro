@@ -23,6 +23,7 @@
   #properties-resize,
   #properties-panel,
   #minimap,
+  #canvas-mode-indicator,
   #page-tab-bar,
   #status-bar {
     display: none !important;

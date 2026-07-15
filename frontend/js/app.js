@@ -105,11 +105,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setMode(mode) {
     AppState.mode = mode;
+    const isWire = mode === MODE.WIRE;
     btnSelect.classList.toggle('active', mode === MODE.SELECT);
-    btnWire.classList.toggle('active', mode === MODE.WIRE);
-    Canvas.svg.classList.toggle('wiring', mode === MODE.WIRE);
-    document.getElementById('status-mode').textContent =
-      mode === MODE.WIRE ? 'Wire Mode' : 'Select Mode';
+    btnWire.classList.toggle('active', isWire);
+    Canvas.svg.classList.toggle('wiring', isWire);
+    document.getElementById('status-mode').textContent = isWire ? 'Wire Mode' : 'Select Mode';
+    // Keep the persistent on-canvas mode indicator (H17) in sync.
+    const modeInd = document.getElementById('canvas-mode-indicator');
+    if (modeInd) {
+      modeInd.classList.toggle('wire', isWire);
+      const lbl = document.getElementById('canvas-mode-label');
+      if (lbl) lbl.textContent = isWire ? 'Wire' : 'Select';
+      modeInd.setAttribute('aria-label',
+        isWire ? 'Interaction mode: Wire. Click to switch to Select mode.'
+               : 'Interaction mode: Select. Click to switch to Wire mode.');
+    }
+  }
+  // On-canvas mode indicator: click / Enter / Space toggles Select ⇄ Wire.
+  const modeIndicator = document.getElementById('canvas-mode-indicator');
+  if (modeIndicator) {
+    const toggleMode = () => setMode(AppState.mode === MODE.WIRE ? MODE.SELECT : MODE.WIRE);
+    modeIndicator.addEventListener('click', toggleMode);
+    modeIndicator.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleMode(); }
+    });
   }
 
   // Keyboard navigation across components (used when the canvas has keyboard
@@ -3302,6 +3321,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-toggle-angles').addEventListener('click', (e) => {
     AppState.showFaultAngles = !AppState.showFaultAngles;
     e.currentTarget.classList.toggle('active', AppState.showFaultAngles);
+    Canvas.render();
+  });
+  document.getElementById('btn-toggle-branch-detail').addEventListener('click', (e) => {
+    AppState.branchFlowDetailed = !AppState.branchFlowDetailed;
+    e.currentTarget.classList.toggle('active', AppState.branchFlowDetailed);
     Canvas.render();
   });
 
