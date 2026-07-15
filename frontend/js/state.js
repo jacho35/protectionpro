@@ -48,6 +48,7 @@ const AppState = {
   frequency: DEFAULT_FREQUENCY,
   voltageFactor: DEFAULT_VOLTAGE_FACTOR,  // IEC 60909 voltage factor c for fault analysis
   defaultLengthUnit: 'm',  // Default display unit for cable length ('m' or 'km')
+  voltageDisplayUnit: 'kV',  // Display unit for voltages in result boxes ('kV' or 'V')
 
   // Canvas transform
   zoom: 1,
@@ -1184,6 +1185,8 @@ const AppState = {
       frequency: this.frequency,
       voltageFactor: this.voltageFactor,
       defaultLengthUnit: this.defaultLengthUnit,
+      voltageDisplayUnit: this.voltageDisplayUnit,
+      showResultBoxes: { ...this.showResultBoxes },
       components: [...this.components.values()],
       wires: [...this.wires.values()],
       nextId: this.nextId,
@@ -1284,6 +1287,12 @@ const AppState = {
     this.frequency = data.frequency || DEFAULT_FREQUENCY;
     this.voltageFactor = data.voltageFactor || DEFAULT_VOLTAGE_FACTOR;
     this.defaultLengthUnit = data.defaultLengthUnit || 'm';
+    this.voltageDisplayUnit = data.voltageDisplayUnit === 'V' ? 'V' : 'kV';
+    // Result-box visibility is a saved display preference. Merge onto the
+    // defaults so analysis types added in later versions default to visible.
+    if (data.showResultBoxes && typeof data.showResultBoxes === 'object') {
+      Object.assign(this.showResultBoxes, data.showResultBoxes);
+    }
     // nextId must clear every loaded id: a stale/hand-edited nextId below an
     // existing suffix would let genId() mint a duplicate id, and Map.set would
     // silently overwrite that component (its wires re-attaching to the new

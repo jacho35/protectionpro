@@ -26,9 +26,13 @@ const ContextMenu = {
       this.el.style.display = 'none';
       this.el.innerHTML = '';
     }
+    // Drop any live-rebuild hook (used by keepOpen checkbox items).
+    this._rebuild = null;
   },
 
-  /** items: array of {label, shortcut?, disabled?, checked?, danger?, action} or '---' */
+  /** items: array of {label, shortcut?, disabled?, checked?, danger?, keepOpen?, action} or '---'
+   *  keepOpen items run their action then re-render the menu in place (via
+   *  this._rebuild) instead of dismissing — used for tick-box toggles. */
   open(items, clientX, clientY) {
     if (!this.el) return;
     this.el.innerHTML = '';
@@ -53,8 +57,13 @@ const ContextMenu = {
         btn.appendChild(sc);
       }
       btn.addEventListener('click', () => {
-        this.close();
-        item.action();
+        if (item.keepOpen) {
+          item.action();
+          if (this._rebuild) this._rebuild();
+        } else {
+          this.close();
+          item.action();
+        }
       });
       this.el.appendChild(btn);
     }
@@ -73,6 +82,7 @@ const ContextMenu = {
   // ── Context builders ─────────────────────────────────────────────
 
   openForComponent(comp, clientX, clientY) {
+    this._rebuild = null;
     const items = [];
     const selCount = AppState.selectedIds.size;
     const many = selCount > 1;
@@ -230,6 +240,7 @@ const ContextMenu = {
   },
 
   openForWire(wire, worldPt, clientX, clientY) {
+    this._rebuild = null;
     const activeMode = wire.routeMode || AppState.wireRouteMode || 'orthogonal';
     const routeItem = (mode, label) => ({
       label,
@@ -279,9 +290,39 @@ const ContextMenu = {
     this.open(items, clientX, clientY);
   },
 
+  // Annotation-key prefix → { key: showResultBoxes flag, label } for the result
+  // type. Lets the right-click menu on a badge toggle that whole analysis type.
+  _RESULT_TYPE_BY_PREFIX: {
+    fault: { key: 'fault', label: 'Fault / Short-Circuit' },
+    vdep: { key: 'fault', label: 'Fault / Short-Circuit' },
+    lf: { key: 'loadflow', label: 'Load Flow' },
+    warn: { key: 'loadflow', label: 'Load Flow' },
+    ulf: { key: 'unbalancedLF', label: 'Unbalanced Load Flow' },
+    'ulf-warn': { key: 'unbalancedLF', label: 'Unbalanced Load Flow' },
+    af: { key: 'arcflash', label: 'Arc Flash' },
+    cs: { key: 'cable', label: 'Cable Sizing' },
+    ms: { key: 'motor', label: 'Motor Starting' },
+    dynms: { key: 'dynMotor', label: 'Dynamic Motor Starting' },
+    dc: { key: 'duty', label: 'Duty Check' },
+    ld: { key: 'loadDiversity', label: 'Load Diversity' },
+    gr: { key: 'grounding', label: 'Grounding' },
+    dclf: { key: 'dcLoadflow', label: 'DC Load Flow' },
+    dcsc: { key: 'dcShortCircuit', label: 'DC Short-Circuit' },
+  },
+
+  // Prefixes whose badge shows a voltage — offer the kV/V unit toggle for these.
+  _VOLTAGE_PREFIXES: new Set(['lf', 'fault', 'dclf', 'ulf', 'warn', 'ulf-warn']),
+
   // Menu for a study result box (draggable analysis badge). `key` is its
   // annotation key, e.g. "lf:bus_49", "af:bus_3", "ms:motor_7".
   openForResultBox(key, clientX, clientY) {
+    // Re-render this menu in place after a keepOpen tick-box toggles state.
+    this._rebuild = () => this.openForResultBox(key, clientX, clientY);
+
+    const prefix = String(key).split(':')[0];
+    const type = this._RESULT_TYPE_BY_PREFIX[prefix];
+    const rb = AppState.showResultBoxes || {};
+
     const items = [
       {
         label: 'Copy Result Text',
@@ -296,17 +337,49 @@ const ContextMenu = {
         label: 'Open Full Results',
         action: () => window.AppActions?.openResultBox?.(key),
       },
-      '---',
-      {
-        label: 'Hide This Box',
-        danger: true,
-        action: () => Annotations.hideResultBox(key),
-      },
     ];
+
+    // Global visibility tick-box for this analysis type (persists with project).
+    if (type) {
+      items.push('---');
+      items.push({
+        label: `Show ${type.label}`,
+        checked: rb[type.key] !== false,
+        keepOpen: true,
+        action: () => {
+          AppState.showResultBoxes[type.key] = !AppState.showResultBoxes[type.key];
+          AppState.dirty = true;
+          Canvas.render();
+          window.AppActions?.refreshResultToggles?.();
+        },
+      });
+    }
+
+    // Voltage display-unit toggle for voltage-bearing badges.
+    if (this._VOLTAGE_PREFIXES.has(prefix)) {
+      const unit = AppState.voltageDisplayUnit === 'V' ? 'V' : 'kV';
+      const setUnit = (u) => {
+        AppState.voltageDisplayUnit = u;
+        AppState.dirty = true;
+        Canvas.render();
+      };
+      items.push('---');
+      items.push({ label: 'Voltage in kV', checked: unit === 'kV', keepOpen: true, action: () => setUnit('kV') });
+      items.push({ label: 'Voltage in V', checked: unit === 'V', keepOpen: true, action: () => setUnit('V') });
+    }
+
+    items.push('---');
+    items.push({
+      label: 'Hide This Box',
+      danger: true,
+      action: () => Annotations.hideResultBox(key),
+    });
+
     this.open(items, clientX, clientY);
   },
 
   openForCanvas(worldPt, clientX, clientY) {
+    this._rebuild = null;
     const hasClipboard = !!(AppState.clipboard && AppState.clipboard.components
       && AppState.clipboard.components.length > 0);
     const items = [

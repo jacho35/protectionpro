@@ -645,6 +645,13 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.select(busId);
       runAnalysis('fault');
     },
+    // Re-sync the View-menu result-box toggle buttons to AppState. Called when
+    // visibility is changed from another surface (the properties Display
+    // Options tick list, the result-box right-click menu) so the menu's
+    // active-state matches.
+    refreshResultToggles() {
+      if (typeof _syncResultToggleButtons === 'function') _syncResultToggleButtons();
+    },
     // Reopen the full results view for the study a result box belongs to,
     // from its already-stored results (no re-run). Studies with a dedicated
     // modal reopen it; those without (fault, unbalanced LF) fall back to the

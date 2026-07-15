@@ -16,6 +16,23 @@ const SECTION_LABELS = {
   pv: 'PV Array / DC Strings',
 };
 
+// Result-box types shown on the diagram, in the order they appear in the
+// Display Options tick-list. Keys match AppState.showResultBoxes.
+const RESULT_BOX_TYPES = [
+  ['fault', 'Fault / Short-Circuit'],
+  ['loadflow', 'Load Flow'],
+  ['unbalancedLF', 'Unbalanced Load Flow'],
+  ['arcflash', 'Arc Flash'],
+  ['cable', 'Cable Sizing'],
+  ['motor', 'Motor Starting'],
+  ['dynMotor', 'Dynamic Motor Starting'],
+  ['duty', 'Duty Check'],
+  ['loadDiversity', 'Load Diversity'],
+  ['grounding', 'Grounding'],
+  ['dcLoadflow', 'DC Load Flow'],
+  ['dcShortCircuit', 'DC Short-Circuit'],
+];
+
 const Properties = {
   contentEl: null,
   calcInfoEl: null,
@@ -2032,6 +2049,41 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
             </label>
           </div>
         </div>
+        ${this._renderDisplayOptions()}
+      </div>`;
+  },
+
+  // Global display preferences (shown in the Project Details view when nothing
+  // is selected): which result boxes appear on the diagram, and the voltage
+  // display unit. Both persist with the project (state.js toJSON/fromJSON).
+  _renderDisplayOptions() {
+    const unit = AppState.voltageDisplayUnit === 'V' ? 'V' : 'kV';
+    const rb = AppState.showResultBoxes || {};
+    const allOn = RESULT_BOX_TYPES.every(([k]) => rb[k]);
+    const items = RESULT_BOX_TYPES.map(([key, label]) => `
+      <label class="display-result-item">
+        <input type="checkbox" data-result-box="${key}"${rb[key] ? ' checked' : ''} />
+        <span>${label}</span>
+      </label>`).join('');
+    return `
+      <div class="prop-section">
+        <div class="prop-section-title">Display Options</div>
+        <div class="prop-row">
+          <label>Voltage unit</label>
+          <select data-display-field="voltageDisplayUnit">
+            <option value="kV"${unit === 'kV' ? ' selected' : ''}>kV</option>
+            <option value="V"${unit === 'V' ? ' selected' : ''}>V</option>
+          </select>
+        </div>
+        <div class="display-results-head">
+          <span>Result boxes on diagram</span>
+          <label class="display-result-all">
+            <input type="checkbox" data-result-all${allOn ? ' checked' : ''} /> All
+          </label>
+        </div>
+        <div class="display-result-list">
+          ${items}
+        </div>
       </div>`;
   },
 
@@ -2082,6 +2134,48 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
         AppState.projectDetails.companyLogo = null;
         AppState.dirty = true;
         this.clear(); // re-render
+      });
+    }
+
+    this._bindDisplayOptionsEvents();
+  },
+
+  // Wire up the Display Options controls (voltage unit + result-box tick list).
+  _bindDisplayOptionsEvents() {
+    const unitSel = this.contentEl.querySelector('[data-display-field="voltageDisplayUnit"]');
+    if (unitSel) {
+      unitSel.addEventListener('change', () => {
+        AppState.voltageDisplayUnit = unitSel.value === 'V' ? 'V' : 'kV';
+        AppState.dirty = true;
+        Canvas.render();
+      });
+    }
+
+    const allCb = this.contentEl.querySelector('[data-result-all]');
+    const itemCbs = [...this.contentEl.querySelectorAll('[data-result-box]')];
+
+    const syncAll = () => {
+      if (allCb) allCb.checked = RESULT_BOX_TYPES.every(([k]) => AppState.showResultBoxes[k]);
+    };
+
+    itemCbs.forEach(cb => {
+      cb.addEventListener('change', () => {
+        AppState.showResultBoxes[cb.dataset.resultBox] = cb.checked;
+        AppState.dirty = true;
+        syncAll();
+        Canvas.render();
+        window.AppActions?.refreshResultToggles?.();
+      });
+    });
+
+    if (allCb) {
+      allCb.addEventListener('change', () => {
+        const on = allCb.checked;
+        for (const [k] of RESULT_BOX_TYPES) AppState.showResultBoxes[k] = on;
+        itemCbs.forEach(cb => { cb.checked = on; });
+        AppState.dirty = true;
+        Canvas.render();
+        window.AppActions?.refreshResultToggles?.();
       });
     }
   },
