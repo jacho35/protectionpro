@@ -576,6 +576,68 @@ const Symbols = {
       </g>`;
   },
 
+  svc(w, h, comp) {
+    // FACTS shunt compensator: a controlled reactive source — a circle with a
+    // reactance/tap arrow, tagged SVC or STATCOM, on a lead to the top port.
+    const r = w * 0.36;
+    const isStatcom = comp && comp.props && String(comp.props.device_mode) === 'statcom';
+    const tag = isStatcom ? 'ST' : 'SVC';
+    return `
+      <g class="symbol-svc">
+        <line x1="0" y1="${-r}" x2="0" y2="${-h / 2}"/>
+        <circle cx="0" cy="0" r="${r}" fill="var(--bg-primary, #fff)"/>
+        <line x1="${-r * 0.6}" y1="${r * 0.6}" x2="${r * 0.6}" y2="${-r * 0.6}"/>
+        <path d="M ${r * 0.6 - 5} ${-r * 0.6 + 1} L ${r * 0.6} ${-r * 0.6} L ${r * 0.6 - 1} ${-r * 0.6 + 5} Z" fill="currentColor"/>
+        <text x="0" y="${r + 9}" text-anchor="middle" font-size="8" fill="#888" font-family="sans-serif">${tag}</text>
+      </g>`;
+  },
+
+  autotransformer(w, h, comp) {
+    // IEC autotransformer: a single winding (one circle) tapped between the
+    // HV (series) terminal and the LV (common) terminal, with a diagonal
+    // arrow marking the tap. A 3-winding unit adds a delta tertiary stub.
+    const r = w * 0.34;
+    const is3w = comp && comp.props && (Number(comp.props.windings) === 3);
+    const regulating = comp && comp.props && comp.props.tap_mode === 'regulating';
+    const ax = r * 0.7;
+    const arrow = `<line x1="${-ax}" y1="${ax}" x2="${ax}" y2="${-ax}"/>`
+      + (regulating ? `<path d="M ${ax - 5} ${-ax + 1} L ${ax} ${-ax} L ${ax - 1} ${-ax + 5} Z" fill="currentColor"/>` : '');
+    let tertiary = '';
+    if (is3w) {
+      tertiary = `
+        <line x1="${r}" y1="0" x2="${w / 2}" y2="0"/>
+        <path d="M ${w / 2} -4 L ${w / 2 + 7} 0 L ${w / 2} 4 Z" fill="none"/>`;
+    }
+    return `
+      <g class="symbol-autotransformer">
+        <circle cx="0" cy="0" r="${r}" fill="var(--bg-primary, #fff)"/>
+        ${arrow}
+        <line x1="0" y1="${-r}" x2="0" y2="${-h / 2}"/>
+        <line x1="0" y1="${r}" x2="0" y2="${h / 2}"/>
+        ${tertiary}
+        <text x="${-w / 2 - 2}" y="${-r + 6}" font-size="8" fill="#888" font-family="sans-serif" text-anchor="end">HV</text>
+        <text x="${-w / 2 - 2}" y="${r}" font-size="8" fill="#888" font-family="sans-serif" text-anchor="end">LV</text>
+      </g>`;
+  },
+
+  vfd(w, h, comp) {
+    // IEC-style power-electronic converter: a square box with a diagonal
+    // (adjustable) line and AC~ / ~AC markings — the drive rectifies then
+    // synthesises a variable-frequency output. A '3~' marks a multi-pulse
+    // (12/18/24) input.
+    const hw = w * 0.4, hh = h * 0.4;
+    const multi = comp && comp.props && Number(comp.props.pulse_number) > 6;
+    return `
+      <g class="symbol-vfd">
+        <rect x="${-hw}" y="${-hh}" width="${2 * hw}" height="${2 * hh}" rx="2" fill="var(--bg-primary, #fff)"/>
+        <line x1="${-hw}" y1="${hh}" x2="${hw}" y2="${-hh}"/>
+        <text x="${-hw + 3}" y="${-hh + 9}" font-size="9" fill="#888" font-family="sans-serif">${multi ? '3~' : '~'}</text>
+        <text x="${hw - 3}" y="${hh - 3}" font-size="9" fill="#888" font-family="sans-serif" text-anchor="end">~f</text>
+        <line x1="0" y1="${-hh}" x2="0" y2="${-h / 2}"/>
+        <line x1="0" y1="${hh}" x2="0" y2="${h / 2}"/>
+      </g>`;
+  },
+
   capacitor_bank(w, h) {
     const hw = w * 0.4;
     const gap = 4;

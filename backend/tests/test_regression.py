@@ -26,6 +26,9 @@ from backend.analysis.grounding_system import (
 )
 from backend.analysis.arcflash import calc_incident_energy
 from backend.analysis.unbalanced_loadflow import run_unbalanced_load_flow
+from backend.analysis.harmonics import (
+    run_harmonics, vfd_current_spectrum, _voltage_limits, _tdd_limit,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -2286,3 +2289,281 @@ class TestContingencyWorkedExample:
         i_base_a = base_mva * 1e6 / (math.sqrt(3) * kv * 1e3)
         expected_loading = i_pu * i_base_a / rated_a * 100.0   # ≈ 157.5 %
         assert c1.max_loading_pct == pytest.approx(expected_loading, rel=0.02)
+
+
+# ── Harmonic analysis (IEEE 519-2014) ────────────────────────────────────
+
+
+class TestHarmonics:
+    """Pin the VFD harmonic current-source penetration engine."""
+
+    def _vfd_project(self, pulse=6, front_end="diode", reactor=0.0,
+                     kvar=0.0, load_kva=1000.0, vfd_kw=800.0, fault_mva=250.0):
+        comps = [
+            _comp("util-1", "utility",
+                  {"name": "Grid", "voltage_kv": 11, "fault_mva": fault_mva, "x_r_ratio": 15}),
+            _comp("bus-hv", "bus", {"name": "HV", "voltage_kv": 11}),
+            _comp("tx-1", "transformer",
+                  {"name": "TX", "rated_mva": 2, "z_percent": 6, "x_r_ratio": 10,
+                   "voltage_hv_kv": 11, "voltage_lv_kv": 0.4}),
+            _comp("bus-lv", "bus", {"name": "LV", "voltage_kv": 0.4}),
+            _comp("vfd-1", "vfd",
+                  {"name": "Drive", "rated_kw": vfd_kw, "voltage_kv": 0.4,
+                   "efficiency": 0.96, "load_pct": 100, "displacement_pf": 0.98,
+                   "pulse_number": pulse, "front_end": front_end,
+                   "input_reactor_pct": reactor}),
+        ]
+        wires = [
+            _wire("w1", "util-1", "bus-hv"),
+            _wire("w2", "bus-hv", "tx-1"), _wire("w3", "tx-1", "bus-lv"),
+            _wire("w4", "bus-lv", "vfd-1"),
+        ]
+        if load_kva > 0:
+            comps.append(_comp("load-1", "static_load",
+                               {"name": "Load", "rated_kva": load_kva,
+                                "power_factor": 0.85, "voltage_kv": 0.4}))
+            wires.append(_wire("w5", "bus-lv", "load-1"))
+        if kvar > 0:
+            comps.append(_comp("cap-1", "capacitor_bank",
+                               {"name": "PFC", "rated_kvar": kvar, "voltage_kv": 0.4}))
+            wires.append(_wire("w6", "bus-lv", "cap-1"))
+        return ProjectData(projectName="harm", baseMVA=10.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_6pulse_ideal_spectrum_is_one_over_h(self):
+        """A 6-pulse diode front end injects the characteristic orders
+        h = 6k±1 (5,7,11,13,…). No reactor → 5th is the dominant harmonic."""
+        proj = self._vfd_project(pulse=6, reactor=0.0)
+        vfd = next(c for c in proj.components if c.type == "vfd")
+        spec = vfd_current_spectrum(vfd)
+        assert set(spec) >= {5, 7, 11, 13}
+        assert 3 not in spec and 9 not in spec       # no triplen / even
+        assert spec[5] == max(spec.values())          # 5th dominates
+
+    def test_pulse_number_cancels_low_order(self):
+        """12-pulse cancels the 5th/7th (dominant pair becomes 11/13); an
+        active front end has far lower current THD than a 6-pulse diode."""
+        p6 = self._vfd_project(pulse=6, reactor=3.0).components
+        s6 = vfd_current_spectrum(next(c for c in p6 if c.type == "vfd"))
+        s12 = vfd_current_spectrum(next(c for c in self._vfd_project(pulse=12).components if c.type == "vfd"))
+        safe = self._vfd_project(front_end="afe").components
+        s_afe = vfd_current_spectrum(next(c for c in safe if c.type == "vfd"))
+        thd = lambda s: math.sqrt(sum(v * v for v in s.values()))
+        assert s12.get(5, 0) < s6[5]                  # 5th suppressed
+        assert thd(s12) < thd(s6)                     # 12-pulse cleaner
+        assert thd(s_afe) < thd(s12)                  # AFE cleanest
+
+    def test_reactor_reduces_distortion(self):
+        """Adding an input reactor lowers the injected 5th harmonic and the
+        resulting bus voltage THD (a diode drive is line-commutated)."""
+        no_r = run_harmonics(self._vfd_project(pulse=6, reactor=0.0))
+        with_r = run_harmonics(self._vfd_project(pulse=6, reactor=5.0))
+        lv_no = next(b for b in no_r["buses"] if b["name"] == "LV")
+        lv_r = next(b for b in with_r["buses"] if b["name"] == "LV")
+        assert lv_r["thd_v_pct"] < lv_no["thd_v_pct"]
+
+    def test_capacitor_resonance_amplifies_thd(self):
+        """A shunt PFC capacitor forms a parallel resonance with the source
+        inductance near h ≈ √(Ssc/Qcap); it raises voltage THD versus the same
+        network with no capacitor."""
+        no_cap = run_harmonics(self._vfd_project(pulse=6, reactor=3.0, kvar=0))
+        with_cap = run_harmonics(self._vfd_project(pulse=6, reactor=3.0, kvar=250))
+        lv_no = next(b for b in no_cap["buses"] if b["name"] == "LV")
+        lv_cap = next(b for b in with_cap["buses"] if b["name"] == "LV")
+        assert lv_cap["thd_v_pct"] > lv_no["thd_v_pct"]
+
+    def test_clean_drive_is_ieee519_compliant(self):
+        """An 18-pulse drive with a reactor, small relative to the site load,
+        stays within IEEE 519 voltage limits."""
+        res = run_harmonics(self._vfd_project(pulse=18, reactor=5.0,
+                                              vfd_kw=250, load_kva=2000))
+        assert res["converged"] and res["compliant"]
+        lv = next(b for b in res["buses"] if b["name"] == "LV")
+        assert lv["thd_v_pct"] <= lv["thd_limit_pct"]
+
+    def test_ieee519_limit_tables(self):
+        """Voltage + current limit selectors match IEEE 519-2014 tables."""
+        assert _voltage_limits(0.4) == (5.0, 8.0)     # ≤1 kV
+        assert _voltage_limits(11) == (3.0, 5.0)      # 1–69 kV
+        assert _tdd_limit(10, 11) == 5.0              # Isc/IL < 20
+        assert _tdd_limit(150, 11) == 15.0            # 100 ≤ Isc/IL < 1000
+
+    def test_no_vfd_returns_note(self):
+        """With no harmonic source the study returns a benign note, not error."""
+        proj = self._vfd_project(pulse=6)
+        proj.components = [c for c in proj.components if c.type != "vfd"]
+        res = run_harmonics(proj)
+        assert res["note"] and res["vfd_sources"] == []
+
+
+# ── Autotransformer (2W & 3W, OLTC regulation) ───────────────────────────
+
+
+class TestAutotransformer:
+    """Autotransformer load-flow branch, OLTC tap regulation, 3-winding star
+    expansion, and fault-path participation."""
+
+    def _2w(self, tap_mode="fixed", tap=0.0, vtarget=1.0, load_kva=60000.0):
+        comps = [
+            _comp("util", "utility", {"voltage_kv": 132, "fault_mva": 5000, "x_r_ratio": 15}),
+            _comp("bhv", "bus", {"voltage_kv": 132, "name": "HV"}),
+            _comp("at", "autotransformer",
+                  {"windings": 2, "rated_mva": 100, "voltage_hv_kv": 132, "voltage_lv_kv": 66,
+                   "z_percent": 8, "x_r_ratio": 30, "tap_mode": tap_mode, "tap_percent": tap,
+                   "v_target_pu": vtarget, "regulated_side": "lv",
+                   "tap_min_pct": -15, "tap_max_pct": 15, "tap_step_pct": 1.25}),
+            _comp("blv", "bus", {"voltage_kv": 66, "name": "LV"}),
+            _comp("load", "static_load", {"rated_kva": load_kva, "power_factor": 0.9, "voltage_kv": 66}),
+        ]
+        wires = [
+            _wire("w1", "util", "bhv", "out", "at_0"),
+            _wire("w2", "bhv", "at", "at_1", "primary"),
+            _wire("w3", "at", "blv", "secondary", "at_0"),
+            _wire("w4", "blv", "load", "at_1", "in"),
+        ]
+        return ProjectData(projectName="at2w", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_2w_behaves_as_tapped_branch(self):
+        """A 2-winding autotransformer carries load-flow current with a voltage
+        drop set by its impedance (like a two-winding transformer branch)."""
+        res = run_load_flow(self._2w(tap=0.0))
+        assert res.converged
+        v_lv = abs(res.buses["blv"].voltage_pu)
+        assert 0.90 < v_lv < 0.99          # loaded LV sags below 1.0
+
+    def test_oltc_regulates_to_target(self):
+        """An OLTC autotransformer raises the tap changer to hold its LV bus at
+        the target voltage, versus the same unit with a fixed nominal tap."""
+        fixed = run_load_flow(self._2w("fixed", 0.0))
+        reg = run_load_flow(self._2w("regulating", 0.0, vtarget=1.0))
+        v_fixed = abs(fixed.buses["blv"].voltage_pu)
+        v_reg = abs(reg.buses["blv"].voltage_pu)
+        assert v_reg > v_fixed                       # OLTC boosted the voltage
+        assert abs(v_reg - 1.0) <= 0.01              # within ~half a tap step
+
+    def test_2w_fault_propagates(self):
+        """Fault current propagates through a 2-winding autotransformer, with
+        the HV bus reproducing the utility level and the LV reduced by the
+        through-impedance."""
+        proj = self._2w()
+        proj.components = [c for c in proj.components if c.type != "static_load"]
+        proj.wires = [w for w in proj.wires if w.toComponent != "load"]
+        res = run_fault_analysis(proj)
+        ik_hv = res.buses["bhv"].ik3
+        ik_lv = res.buses["blv"].ik3
+        assert ik_hv == pytest.approx(5000.0 / (math.sqrt(3) * 132), rel=0.02)
+        assert 0 < ik_lv < ik_hv                     # AT impedance limits LV
+
+    def test_3w_star_expansion_energises_all_windings(self):
+        """A 3-winding autotransformer is expanded into a star node + three
+        legs; all three real buses (HV/LV/TV) solve and are energised, with the
+        tertiary sitting deeper in the impedance than the LV."""
+        comps = [
+            _comp("util", "utility", {"voltage_kv": 132, "fault_mva": 5000, "x_r_ratio": 15}),
+            _comp("bhv", "bus", {"voltage_kv": 132, "name": "HV"}),
+            _comp("at", "autotransformer",
+                  {"windings": 3, "rated_mva": 100, "voltage_hv_kv": 132, "voltage_lv_kv": 66,
+                   "voltage_tv_kv": 11, "z_percent": 10, "z_ht_percent": 26, "z_lt_percent": 16,
+                   "x_r_ratio": 30, "tap_percent": 0}),
+            _comp("blv", "bus", {"voltage_kv": 66, "name": "LV"}),
+            _comp("btv", "bus", {"voltage_kv": 11, "name": "TV"}),
+            _comp("llv", "static_load", {"rated_kva": 40000, "power_factor": 0.9, "voltage_kv": 66}),
+            _comp("ltv", "static_load", {"rated_kva": 10000, "power_factor": 0.9, "voltage_kv": 11}),
+        ]
+        wires = [
+            _wire("w1", "util", "bhv", "out", "at_0"),
+            _wire("w2", "bhv", "at", "at_1", "primary"),
+            _wire("w3", "at", "blv", "secondary", "at_0"),
+            _wire("w4", "at", "btv", "tertiary", "at_0"),
+            _wire("w5", "blv", "llv", "at_1", "in"),
+            _wire("w6", "btv", "ltv", "at_1", "in"),
+        ]
+        proj = ProjectData(projectName="at3w", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        res = run_load_flow(proj)
+        assert res.converged
+        for bid in ("bhv", "blv", "btv"):
+            assert res.buses[bid].energized
+        assert abs(res.buses["bhv"].voltage_pu) == pytest.approx(1.0, abs=0.02)
+        assert abs(res.buses["btv"].voltage_pu) < abs(res.buses["blv"].voltage_pu) + 1e-6
+
+    def test_star_impedance_decomposition(self):
+        """Star-equivalent legs satisfy Z_H+Z_L = Z_HL etc. (the defining
+        pair-sum identity of the three-winding T model)."""
+        from backend.analysis.loadflow import _star_impedances_pct
+        z_h, z_l, z_t = _star_impedances_pct(10.0, 26.0, 16.0)
+        assert z_h + z_l == pytest.approx(10.0)      # Z_HL
+        assert z_h + z_t == pytest.approx(26.0)      # Z_HT
+        assert z_l + z_t == pytest.approx(16.0)      # Z_LT
+
+
+# ── SVC / STATCOM (FACTS reactive compensation) ──────────────────────────
+
+
+class TestSVC:
+    """Voltage-regulating shunt compensation with reactive limits."""
+
+    def _svc_project(self, with_svc=True, device="statcom", q_max=100.0,
+                     load_kva=35000.0, line_km=15.0, control="voltage_regulating",
+                     q_fixed=0.0, vset=1.0):
+        comps = [
+            _comp("util", "utility", {"voltage_kv": 33, "fault_mva": 800, "x_r_ratio": 10}),
+            _comp("bs", "bus", {"voltage_kv": 33, "name": "Src"}),
+            _comp("ln", "cable", {"voltage_kv": 33, "r_per_km": 0.12, "x_per_km": 0.35,
+                                  "length_km": line_km, "rated_amps": 600}),
+            _comp("bl", "bus", {"voltage_kv": 33, "name": "Load"}),
+            _comp("ld", "static_load", {"rated_kva": load_kva, "power_factor": 0.9, "voltage_kv": 33}),
+        ]
+        wires = [
+            _wire("w1", "util", "bs", "out", "at_0"),
+            _wire("w2", "bs", "ln", "at_1", "from"),
+            _wire("w3", "ln", "bl", "to", "at_0"),
+            _wire("w4", "bl", "ld", "at_1", "in"),
+        ]
+        if with_svc:
+            comps.append(_comp("svc", "svc",
+                               {"device_mode": device, "control_mode": control,
+                                "v_setpoint_pu": vset, "rated_mvar": q_max,
+                                "q_max_mvar": q_max, "q_min_mvar": -q_max,
+                                "q_output_mvar": q_fixed, "voltage_kv": 33}))
+            wires.append(_wire("w5", "bl", "svc", "at_2", "in"))
+        return ProjectData(projectName="svc", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_statcom_holds_setpoint(self):
+        """A STATCOM with ample reactive headroom holds its bus at the setpoint,
+        well above the un-compensated sag."""
+        base = run_load_flow(self._svc_project(with_svc=False))
+        comp = run_load_flow(self._svc_project(with_svc=True, q_max=100))
+        v_base = abs(base.buses["bl"].voltage_pu)
+        v_comp = abs(comp.buses["bl"].voltage_pu)
+        assert v_comp > v_base
+        assert abs(v_comp - 1.0) <= 0.005
+        assert comp.svc and comp.svc[0]["q_mvar"] > 0 and not comp.svc[0]["at_limit"]
+
+    def test_reactive_limit_clamps(self):
+        """When the required Q exceeds the limit the unit pins at Q_max, reports
+        at_limit, and the bus stays below the setpoint."""
+        res = run_load_flow(self._svc_project(with_svc=True, q_max=20))
+        s = res.svc[0]
+        assert res.converged
+        assert s["at_limit"] and s["q_mvar"] == pytest.approx(20.0, abs=0.01)
+        assert abs(res.buses["bl"].voltage_pu) < 1.0
+
+    def test_svc_v2_limited_below_statcom(self):
+        """An SVC's reactive output is susceptance-limited (Q∝V²), so at a
+        depressed voltage it delivers less than a constant-Q STATCOM of the same
+        rating — and holds a lower voltage when both are limit-constrained."""
+        statcom = run_load_flow(self._svc_project(device="statcom", q_max=20))
+        svc = run_load_flow(self._svc_project(device="svc", q_max=20))
+        assert statcom.svc[0]["at_limit"] and svc.svc[0]["at_limit"]
+        # SVC output is scaled by V² (< 1), so it delivers strictly less Q
+        assert svc.svc[0]["q_mvar"] < statcom.svc[0]["q_mvar"]
+
+    def test_fixed_q_injects_setpoint(self):
+        """In fixed-Q mode the device injects a set reactive power (like a
+        controllable capacitor), raising the bus voltage."""
+        base = run_load_flow(self._svc_project(with_svc=False))
+        fixed = run_load_flow(self._svc_project(with_svc=True, control="fixed_q", q_fixed=15))
+        assert abs(fixed.buses["bl"].voltage_pu) > abs(base.buses["bl"].voltage_pu)

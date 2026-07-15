@@ -811,7 +811,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'distribution',
     name: 'Distribution',
-    items: ['bus', 'transformer', 'cable', 'bus_duct'],
+    items: ['bus', 'transformer', 'autotransformer', 'cable', 'bus_duct'],
   },
   {
     id: 'protection',
@@ -826,7 +826,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'loads',
     name: 'Loads',
-    items: ['motor_induction', 'motor_synchronous', 'static_load', 'distribution_board', 'dc_load'],
+    items: ['motor_induction', 'motor_synchronous', 'vfd', 'static_load', 'distribution_board', 'dc_load'],
   },
   {
     id: 'dc_systems',
@@ -836,7 +836,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'other',
     name: 'Other',
-    items: ['capacitor_bank', 'surge_arrester', 'offpage_connector'],
+    items: ['capacitor_bank', 'svc', 'surge_arrester', 'offpage_connector'],
   },
   {
     id: 'control',
@@ -858,6 +858,30 @@ const CONTROL_TYPES = new Set([
 // Describes the standard or reference for generic/default values shown to the user via ⓘ buttons.
 // Keyed by "componentType.fieldKey".
 const FIELD_INFO = {
+  // SVC / STATCOM (FACTS shunt reactive compensation)
+  'svc.device_mode': 'STATCOM: a voltage-source converter — its reactive output is a roughly constant MVAr limit, largely independent of bus voltage (so it holds voltage even during a sag).\nSVC (TCR/TSC): a susceptance-based compensator — its reactive output follows Q = B·V², so support collapses as V² at low voltage.\nUsed by: Load Flow.',
+  'svc.control_mode': 'Voltage regulating: holds the connected bus at the voltage setpoint by injecting/absorbing reactive power, within the Q Min/Max limits (a PV bus that reverts to fixed-Q when a limit is reached).\nFixed reactive output: injects a set MVAr (like a controllable capacitor/reactor).',
+  'svc.v_setpoint_pu': 'Target voltage (per-unit) the compensator holds at its bus while it has reactive headroom. Once it hits Q Max (capacitive) or Q Min (inductive) it can no longer hold the setpoint and the bus voltage drifts.',
+  'svc.q_max_mvar': 'Maximum capacitive (voltage-supporting) reactive output. For an SVC this is the full-susceptance rating at 1.0 pu — the available MVAr scales with V².',
+  'svc.q_min_mvar': 'Maximum inductive (voltage-lowering) reactive absorption — usually negative. Used to hold voltage down under light load / leading conditions.',
+
+  // Autotransformer
+  'autotransformer.windings': '2-winding: a single tapped winding shares the HV and LV circuits (series + common) — lighter and cheaper than a two-winding transformer for ratios up to ~3:1, at the cost of no galvanic isolation.\n3-winding: adds a delta tertiary (voltage stabilisation / auxiliary supply / 3rd-harmonic path). Modelled in load flow as a star (T) equivalent with an internal node.',
+  'autotransformer.z_percent': 'Short-circuit impedance HV↔LV on the unit MVA base. An autotransformer\'s through-impedance is lower than an equivalent two-winding transformer by the co-ratio (1 − Vlv/Vhv), which is its efficiency advantage.',
+  'autotransformer.z_ht_percent': '3-winding only: measured HV↔tertiary short-circuit impedance (% on the unit base). With Z(HV-LV) and Z(LV-TV) it sets the star-equivalent leg impedances Z_H, Z_L, Z_T = ½(sum of the two involving that winding − the third).',
+  'autotransformer.z_lt_percent': '3-winding only: measured LV↔tertiary short-circuit impedance (% on the unit base).',
+  'autotransformer.tap_mode': 'fixed: the tap stays at the entered Tap Position.\nregulating (OLTC): an on-load tap changer steps the tap between Tap Min/Max to hold the regulated bus at the Target Voltage (load flow iterates the tap to the nearest step within a deadband).',
+  'autotransformer.tap_percent': 'Tap position as a % boost/buck on the HV (series) winding — the standard model puts the tap on the HV side. +% raises the HV turns, which lowers the LV voltage; −% raises it.',
+  'autotransformer.v_target_pu': 'OLTC target voltage (per-unit) for the regulated bus. The tap changer moves toward the tap step that brings the regulated-bus voltage within half a step of this value.',
+  'autotransformer.regulated_side': 'Which bus the OLTC holds at the target voltage — the LV (common) bus is the usual load-side regulation point.',
+
+  // Variable Frequency Drive (VFD)
+  'vfd.rated_kw':          'Mechanical rating of the driven motor / drive output (kW). Input electrical power = kW × loading ⁄ efficiency; this sets the fundamental (50/60 Hz) current the drive draws.',
+  'vfd.displacement_pf':   'Fundamental displacement power factor at the drive input. A diode-front-end VFD draws near-unity displacement PF (≈0.95–0.98) regardless of motor PF, because the DC-link decouples the two.\nNote: total (true) PF is lower once harmonic current is included.',
+  'vfd.pulse_number':      'Rectifier pulse number — sets which characteristic harmonics the drive injects (orders h = k·p ± 1):\n• 6-pulse: 5, 7, 11, 13 … (worst)\n• 12-pulse: 11, 13, 23, 25 (5th/7th cancelled)\n• 18-pulse: 17, 19 …\n• 24-pulse: 23, 25 …\nHigher pulse counts cancel the lower, larger harmonics.\nUsed by: Harmonic Analysis (IEEE 519).',
+  'vfd.front_end':         'diode: a 6-pulse (or multi-pulse) diode bridge — the classic line-commutated harmonic source.\nafe: active front end (IGBT / PWM rectifier) — switches at high frequency, so line-current THD is very low (≈3–5 %) and displacement PF ≈ 1.\nUsed by: Harmonic Analysis.',
+  'vfd.input_reactor_pct': 'Series AC line reactor or DC-link choke impedance as a % of the drive base. A 3–5 % reactor markedly attenuates the 5th/7th harmonic current a diode drive draws. 0 % = no reactor (highest distortion).\nUsed by: Harmonic Analysis.',
+
   // Utility Source
   'utility.fault_mva':   'Default 500 MVA represents a typical medium-strength distribution network.\nSource: IEC 60909-0 §2.1 — network feeder fault level.',
   'utility.x_r_ratio':   'Default X/R = 15 is typical for transmission/sub-transmission networks.\nSource: IEC 60909-0 Table 1 — X/R ratios for network feeders.',
@@ -1715,6 +1739,55 @@ const COMPONENT_DEFS = {
         showWhen: { field: 'earthing_system', values: ['TT'] }, section: 'grounding' },
     ],
   },
+  autotransformer: {
+    name: 'Autotransformer',
+    category: 'distribution',
+    ports: [
+      { id: 'primary', side: 'top', offset: 0 },
+      { id: 'secondary', side: 'bottom', offset: 0 },
+      { id: 'tertiary', side: 'right', offset: 0 },
+    ],
+    width: 60,
+    height: 72,
+    defaults: {
+      name: 'AutoTX',
+      windings: 2,
+      rated_mva: 20,
+      voltage_hv_kv: 132,
+      voltage_lv_kv: 66,
+      voltage_tv_kv: 11,
+      z_percent: 8,
+      z_ht_percent: 26,
+      z_lt_percent: 16,
+      x_r_ratio: 30,
+      tap_mode: 'fixed',
+      tap_percent: 0,
+      tap_min_pct: -10,
+      tap_max_pct: 10,
+      tap_step_pct: 1.25,
+      v_target_pu: 1.0,
+      regulated_side: 'lv',
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'windings', label: 'Windings', type: 'select', options: [{ value: 2, label: '2-winding' }, { value: 3, label: '3-winding (+ tertiary)' }] },
+      { key: 'rated_mva', label: 'Rating', type: 'number', unit: 'MVA', unitOptions: [{ label: 'MVA', mult: 1 }, { label: 'kVA', mult: 0.001 }] },
+      { key: 'voltage_hv_kv', label: 'HV (series) Voltage', type: 'number', unit: 'kV' },
+      { key: 'voltage_lv_kv', label: 'LV (common) Voltage', type: 'number', unit: 'kV' },
+      { key: 'voltage_tv_kv', label: 'Tertiary Voltage', type: 'number', unit: 'kV', showWhen: { field: 'windings', values: [3, '3'] } },
+      { key: 'z_percent', label: 'Z HV-LV %', type: 'number', unit: '%', section: 'fault' },
+      { key: 'z_ht_percent', label: 'Z HV-TV %', type: 'number', unit: '%', section: 'fault', showWhen: { field: 'windings', values: [3, '3'] } },
+      { key: 'z_lt_percent', label: 'Z LV-TV %', type: 'number', unit: '%', section: 'fault', showWhen: { field: 'windings', values: [3, '3'] } },
+      { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
+      { key: 'tap_mode', label: 'Tap Changer', type: 'select', options: [{ value: 'fixed', label: 'Fixed tap' }, { value: 'regulating', label: 'OLTC (regulating)' }], section: 'loadflow' },
+      { key: 'tap_percent', label: 'Tap Position', type: 'number', unit: '%', section: 'loadflow' },
+      { key: 'regulated_side', label: 'Regulated Side', type: 'select', options: [{ value: 'lv', label: 'LV (common)' }, { value: 'hv', label: 'HV (series)' }], section: 'loadflow', showWhen: { field: 'tap_mode', values: ['regulating'] } },
+      { key: 'v_target_pu', label: 'Target Voltage', type: 'number', unit: 'pu', min: 0.9, max: 1.1, step: 0.005, section: 'loadflow', showWhen: { field: 'tap_mode', values: ['regulating'] } },
+      { key: 'tap_min_pct', label: 'Tap Min', type: 'number', unit: '%', section: 'loadflow', showWhen: { field: 'tap_mode', values: ['regulating'] } },
+      { key: 'tap_max_pct', label: 'Tap Max', type: 'number', unit: '%', section: 'loadflow', showWhen: { field: 'tap_mode', values: ['regulating'] } },
+      { key: 'tap_step_pct', label: 'Tap Step', type: 'number', unit: '%', section: 'loadflow', showWhen: { field: 'tap_mode', values: ['regulating'] } },
+    ],
+  },
   cable: {
     name: 'Cable / Feeder',
     category: 'distribution',
@@ -2402,6 +2475,68 @@ const COMPONENT_DEFS = {
   },
 
   // --- Other ---
+  vfd: {
+    name: 'Variable Frequency Drive',
+    category: 'loads',
+    ports: [
+      { id: 'in', side: 'top', offset: 0 },
+      { id: 'out', side: 'bottom', offset: 0 },
+    ],
+    width: 50,
+    height: 50,
+    defaults: {
+      name: 'VFD',
+      rated_kw: 200,
+      voltage_kv: 0.4,
+      efficiency: 0.96,
+      load_pct: 100,
+      displacement_pf: 0.98,
+      pulse_number: 6,
+      front_end: 'diode',
+      input_reactor_pct: 3,
+      demand_factor: 1.0,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'rated_kw', label: 'Rating', type: 'number', unit: 'kW' },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
+      { key: 'efficiency', label: 'Efficiency', type: 'number', min: 0.5, max: 1, step: 0.01 },
+      { key: 'load_pct', label: 'Loading', type: 'number', unit: '%', min: 0, max: 100 },
+      { key: 'displacement_pf', label: 'Displacement PF', type: 'number', min: 0.5, max: 1, step: 0.01 },
+      { key: 'demand_factor', label: 'Demand Factor', type: 'number', min: 0, max: 1, step: 0.05, section: 'loadflow' },
+      { key: 'pulse_number', label: 'Rectifier Pulses', type: 'select', options: [{ value: 6, label: '6-pulse' }, { value: 12, label: '12-pulse' }, { value: 18, label: '18-pulse' }, { value: 24, label: '24-pulse' }], section: 'harmonics' },
+      { key: 'front_end', label: 'Front End', type: 'select', options: [{ value: 'diode', label: 'Diode rectifier' }, { value: 'afe', label: 'Active front end (AFE)' }], section: 'harmonics' },
+      { key: 'input_reactor_pct', label: 'AC/DC Reactor', type: 'number', unit: '%', min: 0, max: 10, step: 0.5, section: 'harmonics' },
+    ],
+  },
+  svc: {
+    name: 'SVC / STATCOM',
+    category: 'other',
+    ports: [{ id: 'in', side: 'top', offset: 0 }],
+    width: 44,
+    height: 44,
+    defaults: {
+      name: 'SVC',
+      device_mode: 'statcom',
+      control_mode: 'voltage_regulating',
+      voltage_kv: 33,
+      v_setpoint_pu: 1.0,
+      rated_mvar: 50,
+      q_max_mvar: 50,
+      q_min_mvar: -50,
+      q_output_mvar: 0,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'device_mode', label: 'Device', type: 'select', options: [{ value: 'statcom', label: 'STATCOM (constant Q)' }, { value: 'svc', label: 'SVC (susceptance, Q∝V²)' }] },
+      { key: 'control_mode', label: 'Control', type: 'select', options: [{ value: 'voltage_regulating', label: 'Voltage regulating' }, { value: 'fixed_q', label: 'Fixed reactive output' }] },
+      { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
+      { key: 'v_setpoint_pu', label: 'Voltage Setpoint', type: 'number', unit: 'pu', min: 0.9, max: 1.1, step: 0.005, showWhen: { field: 'control_mode', values: ['voltage_regulating'] } },
+      { key: 'q_output_mvar', label: 'Reactive Output', type: 'number', unit: 'MVAr', showWhen: { field: 'control_mode', values: ['fixed_q'] } },
+      { key: 'q_max_mvar', label: 'Q Max (capacitive)', type: 'number', unit: 'MVAr', section: 'loadflow' },
+      { key: 'q_min_mvar', label: 'Q Min (inductive)', type: 'number', unit: 'MVAr', section: 'loadflow' },
+    ],
+  },
   capacitor_bank: {
     name: 'Capacitor Bank',
     category: 'other',
@@ -2664,11 +2799,14 @@ const LF_ATTRS = {
   bus: ['system', 'voltage_kv', 'bus_type'],
   distribution_board: ['voltage_kv', 'rated_kva', 'power_factor', 'demand_factor'],
   transformer: ['rated_mva', 'z_percent', 'x_r_ratio', 'voltage_hv_kv', 'voltage_lv_kv', 'tap_percent'],
+  autotransformer: ['windings', 'rated_mva', 'z_percent', 'voltage_hv_kv', 'voltage_lv_kv', 'tap_mode', 'tap_percent'],
   cable: ['voltage_kv', 'r_per_km', 'x_per_km', 'length_km', 'num_parallel', 'rated_amps'],
   static_load: ['rated_kva', 'power_factor', 'demand_factor'],
   motor_induction: ['rated_kw', 'efficiency', 'power_factor', 'demand_factor'],
   motor_synchronous: ['rated_kva', 'power_factor', 'demand_factor'],
+  vfd: ['rated_kw', 'voltage_kv', 'displacement_pf', 'pulse_number', 'front_end', 'demand_factor'],
   capacitor_bank: ['rated_kvar'],
+  svc: ['device_mode', 'control_mode', 'v_setpoint_pu', 'q_max_mvar', 'q_min_mvar'],
   cb: ['state'],
   switch: ['state'],
 };

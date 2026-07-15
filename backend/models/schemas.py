@@ -528,6 +528,7 @@ class LoadFlowResults(BaseModel):
     iterations: int
     method: str
     dispatch: list[DispatchEntry] = []
+    svc: list[dict] = []          # SVC/STATCOM reactive-output summary
 
 
 # ── Load Flow Study Manager (named full-snapshot cases) ──────────────────────
@@ -945,3 +946,23 @@ class ContingencyRequest(ProjectData):
     v_max: Optional[float] = None            # default 1.05
     loading_limit_pct: Optional[float] = None  # default 100
     max_contingencies: Optional[int] = None  # N-2 pair cap (default 400)
+
+
+# ── Harmonic Analysis (IEEE 519-2014) ──
+
+class HarmonicsResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    fundamental_converged: bool = False
+    orders: list[int] = []
+    buses: list[dict] = []            # per-bus THD_V / IHD / compliance
+    worst_thd_pct: float = 0.0
+    worst_bus_id: str = ""
+    worst_bus_name: str = ""
+    pcc: Optional[dict] = None        # PCC current TDD + IEEE 519 verdict
+    vfd_sources: list[dict] = []      # per-VFD current spectrum
+    compliant: bool = True
+    method: str = "Frequency-domain harmonic current-injection (IEEE 519-2014)"
+    warnings: list[str] = []
+    note: str = ""

@@ -60,7 +60,7 @@ def _find_bus_paths(comp_id, adjacency, components, bus_of):
     Stops at bus boundaries — does not walk past a bus."""
     visited = {comp_id}
     start_comp = components.get(comp_id)
-    start_path = [start_comp] if start_comp and start_comp.type in ("cable", "transformer") else []
+    start_path = [start_comp] if start_comp and start_comp.type in ("cable", "transformer", "autotransformer") else []
 
     queue = [(nid, list(start_path)) for nid in adjacency.get(comp_id, [])]
     found = []
@@ -84,7 +84,7 @@ def _find_bus_paths(comp_id, adjacency, components, bus_of):
             for neighbor in adjacency.get(nid, []):
                 if neighbor not in visited:
                     queue.append((neighbor, list(path)))
-        elif comp.type in ("cable", "transformer"):
+        elif comp.type in ("cable", "transformer", "autotransformer"):
             new_path = path + [comp]
             for neighbor in adjacency.get(nid, []):
                 if neighbor not in visited:
@@ -126,7 +126,7 @@ def _find_components_at_bus(bus_id, adjacency, components):
 # cable fixes it, so we synthesise exactly that node here, transparently.
 SYNTHETIC_BUS_PREFIX = "__term__"
 LOAD_TERMINAL_TYPES = {"motor_induction", "motor_synchronous",
-                       "static_load", "capacitor_bank"}
+                       "static_load", "capacitor_bank", "vfd", "svc"}
 
 
 def is_synthetic_bus(bus_id):
@@ -197,7 +197,7 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
         if not v_kv:
             for nb in adjacency.get(load.id, []):
                 nc = components.get(nb)
-                if nc and nc.type in ("cable", "transformer"):
+                if nc and nc.type in ("cable", "transformer", "autotransformer"):
                     v_kv = nc.props.get("voltage_lv_kv") or nc.props.get("voltage_kv")
                     if v_kv:
                         break
@@ -227,6 +227,198 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
         })
 
     return ProjectData(**data)
+
+
+# ── Three-winding autotransformer expansion ─────────────────────────────
+
+
+THREE_WINDING_STAR_PREFIX = "__at3w__"
+
+
+def _neighbor_on_port(comp_id, port, wires):
+    """Return (neighbor_component_id, neighbor_port) wired to comp_id's port."""
+    for w in wires:
+        if w.get("fromComponent") == comp_id and w.get("fromPort") == port:
+            return w.get("toComponent"), w.get("toPort")
+        if w.get("toComponent") == comp_id and w.get("toPort") == port:
+            return w.get("fromComponent"), w.get("fromPort")
+    return None, None
+
+
+def _star_impedances_pct(z_hl, z_ht, z_lt):
+    """Star (T) equivalent leg impedances from the three measured pair
+    short-circuit impedances (all % on the same base). Standard three-winding
+    transformer decomposition — a leg may be negative, which is physical."""
+    z_h = 0.5 * (z_hl + z_ht - z_lt)
+    z_l = 0.5 * (z_hl + z_lt - z_ht)
+    z_t = 0.5 * (z_ht + z_lt - z_hl)
+    return z_h, z_l, z_t
+
+
+def _expand_three_winding(project: ProjectData) -> ProjectData:
+    """Replace each fully-wired 3-winding autotransformer with an internal star
+    node and three equivalent two-winding transformer legs, so the standard
+    load-flow branch machinery (which already models two-winding transformers)
+    handles it unchanged.
+
+    Idempotent: after expansion no ``windings == 3`` autotransformer remains, so
+    a second call is a no-op. A 3-winding unit whose tertiary port is unwired is
+    left alone (it then behaves as an ordinary HV–LV branch)."""
+    import json
+
+    targets = []
+    for c in project.components:
+        if c.type != "autotransformer":
+            continue
+        if int(c.props.get("windings", 2) or 2) != 3:
+            continue
+        targets.append(c)
+    if not targets:
+        return project
+
+    data = json.loads(project.model_dump_json())
+    wires = data["wires"]
+    comps = data["components"]
+
+    for at in targets:
+        prim = _neighbor_on_port(at.id, "primary", wires)
+        sec = _neighbor_on_port(at.id, "secondary", wires)
+        ter = _neighbor_on_port(at.id, "tertiary", wires)
+        if not (prim[0] and sec[0] and ter[0]):
+            continue  # tertiary (or another port) not wired — treat as 2-winding
+
+        p = at.props
+        rated = p.get("rated_mva", 20)
+        xr = p.get("x_r_ratio", 30)
+        v_hv = p.get("voltage_hv_kv", 132)
+        v_lv = p.get("voltage_lv_kv", 66)
+        v_tv = p.get("voltage_tv_kv", 11)
+        z_h, z_l, z_t = _star_impedances_pct(
+            float(p.get("z_percent", 8) or 0),
+            float(p.get("z_ht_percent", 26) or 0),
+            float(p.get("z_lt_percent", 16) or 0))
+        tap = float(p.get("tap_percent", 0) or 0)
+        star_id = f"{THREE_WINDING_STAR_PREFIX}{at.id}"
+
+        # Remove the original autotransformer and its port wires.
+        comps[:] = [c for c in comps if c["id"] != at.id]
+        wires[:] = [w for w in wires
+                    if w.get("fromComponent") != at.id and w.get("toComponent") != at.id]
+
+        # Internal star node (voltage base = HV side; the pu leg impedances
+        # already carry each winding's turns ratio).
+        comps.append({
+            "id": star_id, "type": "bus", "x": at.x, "y": at.y, "rotation": 0,
+            "props": {"name": f"{p.get('name', at.id)} star", "voltage_kv": float(v_hv),
+                      "bus_type": "PQ", "system": "ac", "synthetic": True},
+        })
+
+        def _leg(suffix, v_high, v_low, z_pct, tap_pct):
+            return {
+                "id": f"{THREE_WINDING_STAR_PREFIX}{at.id}_{suffix}",
+                "type": "transformer", "x": at.x, "y": at.y, "rotation": 0,
+                "props": {"name": f"{p.get('name', at.id)}-{suffix.upper()}",
+                          "rated_mva": rated, "z_percent": z_pct, "x_r_ratio": xr,
+                          "voltage_hv_kv": v_high, "voltage_lv_kv": v_low,
+                          "tap_percent": tap_pct, "synthetic": True},
+            }
+
+        # HV leg carries the tap; star sits at HV base so H-leg is ~1:1(+tap).
+        comps.append(_leg("h", v_hv, v_hv, z_h, tap))
+        comps.append(_leg("l", v_hv, v_lv, z_l, 0.0))
+        comps.append(_leg("t", v_hv, v_tv, z_t, 0.0))
+
+        def _w(wid, fc, fp, tc, tp):
+            wires.append({"id": wid, "fromComponent": fc, "fromPort": fp,
+                          "toComponent": tc, "toPort": tp})
+
+        hid = f"{THREE_WINDING_STAR_PREFIX}{at.id}_h"
+        lid = f"{THREE_WINDING_STAR_PREFIX}{at.id}_l"
+        tid = f"{THREE_WINDING_STAR_PREFIX}{at.id}_t"
+        # primary-net — H — star — L — secondary-net ; star — T — tertiary-net
+        _w(f"{hid}_p", prim[0], prim[1], hid, "primary")
+        _w(f"{hid}_s", hid, "secondary", star_id, "at_0")
+        _w(f"{lid}_p", star_id, "at_1", lid, "primary")
+        _w(f"{lid}_s", lid, "secondary", sec[0], sec[1])
+        _w(f"{tid}_p", star_id, "at_2", tid, "primary")
+        _w(f"{tid}_s", tid, "secondary", ter[0], ter[1])
+
+    return ProjectData(**data)
+
+
+def _autotransformer_regulated_bus(at, adjacency, components, bus_of):
+    """Return (regulated_bus_id, hv_bus_id) for a regulating 2-winding
+    autotransformer, or (None, None) if it does not span two buses."""
+    results = _find_bus_paths(at.id, adjacency, components, bus_of)
+    if len(results) < 2:
+        return None, None
+    ba = results[0][0]
+    bb = results[1][0]
+    _t, hv = _get_chain_turns_ratio({at.id: at}, ba, bb, components)
+    lv = bb if hv == ba else ba
+    side = str(at.props.get("regulated_side", "lv") or "lv").lower()
+    return (hv if side == "hv" else lv), hv
+
+
+def _run_oltc(project: ProjectData, method: str, regulators, max_passes: int = 12) -> ProjectData:
+    """Iterate the on-load tap changer of each regulating autotransformer to
+    hold its regulated bus at the target voltage. Mutates and returns a working
+    copy of *project* with the converged tap positions; each pass re-solves the
+    load flow with regulation disabled to read the controlled voltages."""
+    import json
+    work = ProjectData(**json.loads(project.model_dump_json()))
+
+    components = {c.id: c for c in work.components}
+    adjacency = {}
+    for w in work.wires:
+        adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
+        adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
+    buses = [c for c in work.components
+             if c.type in ("bus", "distribution_board")
+             and str(c.props.get("system", "ac")).lower() != "dc"]
+    bus_idx = {b.id: i for i, b in enumerate(buses)}
+    bus_of = _build_bus_groups(buses, adjacency, components, bus_idx)
+
+    reg_info = []
+    for at in regulators:
+        reg_bus, hv_bus = _autotransformer_regulated_bus(at, adjacency, components, bus_of)
+        if reg_bus is not None:
+            reg_info.append((at.id, reg_bus))
+    if not reg_info:
+        return work
+
+    for _pass in range(max_passes):
+        res = run_load_flow(work, method, include_synthetic=True, _regulate=False)
+        changed = False
+        for at_id, reg_bus in reg_info:
+            at = next(c for c in work.components if c.id == at_id)
+            vb = (res.buses or {}).get(reg_bus)
+            if not vb or getattr(vb, "energized", True) is False:
+                continue
+            v = abs(vb.voltage_pu)
+            target = float(at.props.get("v_target_pu", 1.0) or 1.0)
+            step = abs(float(at.props.get("tap_step_pct", 1.25) or 1.25)) or 1.25
+            tmin = float(at.props.get("tap_min_pct", -10) or -10)
+            tmax = float(at.props.get("tap_max_pct", 10) or 10)
+            tap = float(at.props.get("tap_percent", 0) or 0)
+            side = str(at.props.get("regulated_side", "lv") or "lv").lower()
+            deadband = step / 200.0            # half a tap step, in per-unit
+            if abs(v - target) <= deadband:
+                continue
+            # Tap is on the HV winding: raising it lowers the LV voltage.
+            raise_v = v < target
+            direction = -1 if raise_v else 1
+            if side == "hv":
+                direction = -direction
+            desired = tap + direction * step
+            desired = max(tmin, min(tmax, desired))
+            if abs(desired - tap) > 1e-9:
+                at.props["tap_percent"] = round(desired, 4)
+                changed = True
+        if not changed:
+            break
+
+    return work
 
 
 # ── Generation dispatch (merit order) ───────────────────────────────
@@ -962,7 +1154,7 @@ def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
 
 def _get_impedance(comp, base_mva):
     """Get branch impedance in per-unit on common MVA base."""
-    if comp.type == "transformer":
+    if comp.type in ("transformer", "autotransformer"):
         rated_mva = comp.props.get("rated_mva", 10)
         z_pct = comp.props.get("z_percent", 8)
         xr = comp.props.get("x_r_ratio", 10)
@@ -991,7 +1183,7 @@ def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
     is the bus on the HV (tap) side, or (1.0, None) if no transformer in chain.
     """
     for e in elems.values():
-        if e.type != "transformer":
+        if e.type not in ("transformer", "autotransformer"):
             continue
 
         v_hv_rated = e.props.get("voltage_hv_kv", 33)
@@ -1136,17 +1328,32 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
 
 
 def run_load_flow(project: ProjectData, method: str = "newton_raphson",
-                  include_synthetic: bool = False) -> LoadFlowResults:
+                  include_synthetic: bool = False,
+                  _regulate: bool = True) -> LoadFlowResults:
     """Run load flow analysis.
 
     include_synthetic: keep auto-inserted load-terminal buses (see
     insert_implicit_load_buses) in the results. Off by default so they stay
     invisible to the UI/reports; motor-starting turns it on to read the motor
     terminal voltage.
+
+    _regulate: when True (default), on-load tap changers of regulating
+    autotransformers are iterated to hold their target voltage before the final
+    solve. Set False internally to break the tap-solve recursion.
     """
     # Give any load wired behind a cable/transformer a terminal bus so its
     # demand is modelled instead of silently dropped (idempotent).
     project = insert_implicit_load_buses(project)
+    # Expand 3-winding autotransformers into a star node + three 2-winding legs
+    # (idempotent) so the standard branch machinery handles them.
+    project = _expand_three_winding(project)
+    # Iterate OLTC taps of regulating autotransformers to their setpoint.
+    if _regulate:
+        regulators = [c for c in project.components
+                      if c.type == "autotransformer"
+                      and str(c.props.get("tap_mode", "fixed") or "fixed").lower() == "regulating"]
+        if regulators:
+            project = _run_oltc(project, method, regulators)
     base_mva = project.baseMVA
     components = {c.id: c for c in project.components}
     wires = project.wires
@@ -1187,7 +1394,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     branch_chains = []  # list of (elements_dict, bus_a, bus_b, admittance)
 
     for comp in project.components:
-        if comp.type not in ("cable", "transformer"):
+        if comp.type not in ("cable", "transformer", "autotransformer"):
             continue
         if comp.id in bus_of:
             continue  # Inside a bus group — shouldn't happen
@@ -1223,7 +1430,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         # For chains with a transformer, cable impedances must use the bus voltage
         # on their side of the transformer as the impedance base — not the cable's
         # own voltage_kv property, which may be wrong or defaulted.
-        has_xfmr = any(e.type == "transformer" for e in all_elems.values())
+        has_xfmr = any(e.type in ("transformer", "autotransformer") for e in all_elems.values())
         cable_voltages = {}  # elem_id -> effective voltage_kv
 
         if has_xfmr:
@@ -1236,7 +1443,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
 
             z_total = complex(0, 0)
             for e in all_elems.values():
-                if e.type == "transformer":
+                if e.type in ("transformer", "autotransformer"):
                     z_total += _get_impedance(e, base_mva)
                 elif e.type == "cable":
                     # Determine which side of transformer this cable is on
@@ -1345,6 +1552,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     V_spec = np.ones(n)
     bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
     bus_load_q_mvar = np.zeros(n)  # per-bus load Q, for swing-bus source badges
+    svc_units = []  # FACTS shunt compensators: list of dicts (see svc branch below)
 
     for bus in buses:
         i = bus_idx[bus.id]
@@ -1422,6 +1630,47 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 kvar = comp.props.get("rated_kvar", 100)
                 Q_spec[i] += kvar / 1000 / base_mva
                 bus_load_q_mvar[i] -= kvar / 1000  # capacitor supplies Q
+            elif comp.type == "vfd":
+                # A VFD is a converter load: the DC link decouples the motor
+                # from the supply, so the drive draws a near-unity DISPLACEMENT
+                # power factor at fundamental frequency regardless of motor PF.
+                # (Harmonic current is handled by the harmonics engine, not the
+                # fundamental load flow.) Input real power = shaft kW ÷ efficiency.
+                rated_kw = comp.props.get("rated_kw", 200)
+                eff = comp.props.get("efficiency", 0.96) or 0.96
+                load = float(comp.props.get("load_pct", 100) or 0) / 100.0
+                dpf = float(comp.props.get("displacement_pf", 0.98) or 0.98)
+                df = comp.props.get("demand_factor", 1.0)
+                p_mw = rated_kw * load / (eff * 1000)
+                q_mvar = p_mw * math.sqrt(max(0.0, 1 - dpf ** 2)) / dpf if dpf > 0 else 0.0
+                P_spec[i] -= p_mw * df / base_mva
+                Q_spec[i] -= q_mvar * df / base_mva
+                bus_load_p_mw[i] += p_mw * df
+                bus_load_q_mvar[i] += q_mvar * df
+            elif comp.type == "svc":
+                # SVC / STATCOM — a FACTS shunt reactive compensator (P ≈ 0).
+                # Voltage-regulating: hold the bus at the setpoint (a PV bus,
+                # like a synchronous condenser) within its reactive limits;
+                # a hit limit converts it to a fixed-Q shunt (see the Q-limit
+                # loop below). Fixed mode simply injects a set Q.
+                cp = comp.props
+                mode = str(cp.get("device_mode", "statcom") or "statcom").lower()
+                q_max = float(cp.get("q_max_mvar", cp.get("rated_mvar", 50)) or 50)      # capacitive
+                q_min = float(cp.get("q_min_mvar", -abs(float(cp.get("rated_mvar", 50) or 50))) or -50)  # inductive
+                ctrl = str(cp.get("control_mode", "voltage_regulating") or "voltage_regulating").lower()
+                if ctrl == "fixed_q":
+                    q_out = float(cp.get("q_output_mvar", 0) or 0)
+                    Q_spec[i] += q_out / base_mva
+                    bus_load_q_mvar[i] -= q_out
+                else:
+                    vset = float(cp.get("v_setpoint_pu", 1.0) or 1.0)
+                    bus_types[i] = 1                     # PV — hold |V| at setpoint
+                    V_spec[i] = vset
+                    svc_units.append({
+                        "i": i, "id": comp.id, "name": cp.get("name", comp.id),
+                        "device": mode, "q_max": q_max, "q_min": q_min,
+                        "vset": vset, "clamped": None, "inj_q": 0.0,
+                    })
 
     # ── Island detection, per-island swing selection, and dispatch ──
     # Each electrical island gets its own slack (utility connection bus,
@@ -1436,46 +1685,105 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # the utility at ~0 kW instead of importing the losses.
     P_base, Q_base = P_spec.copy(), Q_spec.copy()
     loss_adders = {}
-    for _pass in range(3):
-        dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
-                                 branch_pairs, bus_load_p_mw, loss_adders)
-        for i in dispatch["swing_idx"]:
-            bus_types[i] = 2
-        P_spec, Q_spec = P_base.copy(), Q_base.copy()
-        for i, (p_mw, q_mvar) in dispatch["injections"].items():
-            P_spec[i] += p_mw / base_mva
-            Q_spec[i] += q_mvar / base_mva
+    # Outer loop enforces SVC/STATCOM reactive limits: a regulating unit that
+    # would exceed its Q range is clamped to the limit and switched from a
+    # voltage-holding PV bus to a fixed-Q PQ injection, then the network is
+    # re-solved (one extra pass per unit that hits a limit).
+    for _svc_pass in range(2 * len(svc_units) + 3):
+        for _pass in range(3):
+            dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
+                                     branch_pairs, bus_load_p_mw, loss_adders)
+            for i in dispatch["swing_idx"]:
+                bus_types[i] = 2
+            P_spec, Q_spec = P_base.copy(), Q_base.copy()
+            for i, (p_mw, q_mvar) in dispatch["injections"].items():
+                P_spec[i] += p_mw / base_mva
+                Q_spec[i] += q_mvar / base_mva
 
-        V, converged, iterations = solve_with_islands(
-            Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
-        if not converged:
+            V, converged, iterations = solve_with_islands(
+                Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
+            if not converged:
+                break
+
+            S_tmp = V * np.conj(Y @ V)
+            util_import = {}   # island -> utility balancer real import (MW)
+            headroom = {}      # island -> curtailed MW still available
+            for e in dispatch["entries"]:
+                if e["role"] == "balancer" and e["source_type"] == "utility" and e["bus_id"]:
+                    bi = bus_idx[e["bus_id"]]
+                    inj = dispatch["injections"].get(bi, (0.0, 0.0))
+                    util_import[e["island"]] = (util_import.get(e["island"], 0.0)
+                                                + S_tmp[bi].real * base_mva
+                                                + bus_load_p_mw[bi] - inj[0])
+                elif e["role"] == "curtailed":
+                    headroom[e["island"]] = headroom.get(e["island"], 0.0) + e["curtailed_mw"]
+
+            adjusted = False
+            for isl, imp in util_import.items():
+                prev = loss_adders.get(isl, 0.0)
+                if headroom.get(isl, 0.0) > 1e-6 and imp > 2e-4:
+                    loss_adders[isl] = prev + min(imp, headroom[isl])
+                    adjusted = True
+                elif prev > 0 and imp < -2e-4:
+                    # Overshoot (losses dropped once the source supplied locally)
+                    loss_adders[isl] = max(0.0, prev + imp)
+                    adjusted = True
+            if not adjusted:
+                break
+
+        # SVC/STATCOM reactive-limit check on the converged solution.
+        # A regulating unit that would exceed its Q range is clamped to the
+        # limit and reverts to a fixed-Q PQ injection. A STATCOM holds a
+        # constant MVAr at the limit; an SVC is susceptance-limited, so its
+        # delivered Q follows Q = Q_nom·V² — refined across passes as V settles.
+        if not svc_units or not converged:
+            break
+        S_svc = V * np.conj(Y @ V)
+        changed = False
+        for u in svc_units:
+            bi = u["i"]
+            vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
+            if u["clamped"] is None:
+                # Reactive output the PV constraint is currently demanding.
+                q_svc = S_svc[bi].imag * base_mva + bus_load_q_mvar[bi]
+                v2 = vmag * vmag if u["device"] == "svc" else 1.0
+                if q_svc > u["q_max"] * v2 + 1e-6:
+                    u["clamped"], q_nom = "cap", u["q_max"]
+                elif q_svc < u["q_min"] * v2 - 1e-6:
+                    u["clamped"], q_nom = "ind", u["q_min"]
+                else:
+                    continue
+                bus_types[bi] = 0                # PV → PQ at the reactive limit
+                inj = q_nom * (vmag * vmag if u["device"] == "svc" else 1.0)
+                Q_base[bi] += (inj - u["inj_q"]) / base_mva
+                u["inj_q"] = inj
+                changed = True
+            elif u["device"] == "svc":
+                # Already limited: keep the susceptance fixed → track Q_nom·V².
+                q_nom = u["q_max"] if u["clamped"] == "cap" else u["q_min"]
+                inj = q_nom * vmag * vmag
+                if abs(inj - u["inj_q"]) > 1e-3:
+                    Q_base[bi] += (inj - u["inj_q"]) / base_mva
+                    u["inj_q"] = inj
+                    changed = True
+        if not changed:
             break
 
-        S_tmp = V * np.conj(Y @ V)
-        util_import = {}   # island -> utility balancer real import (MW)
-        headroom = {}      # island -> curtailed MW still available
-        for e in dispatch["entries"]:
-            if e["role"] == "balancer" and e["source_type"] == "utility" and e["bus_id"]:
-                bi = bus_idx[e["bus_id"]]
-                inj = dispatch["injections"].get(bi, (0.0, 0.0))
-                util_import[e["island"]] = (util_import.get(e["island"], 0.0)
-                                            + S_tmp[bi].real * base_mva
-                                            + bus_load_p_mw[bi] - inj[0])
-            elif e["role"] == "curtailed":
-                headroom[e["island"]] = headroom.get(e["island"], 0.0) + e["curtailed_mw"]
-
-        adjusted = False
-        for isl, imp in util_import.items():
-            prev = loss_adders.get(isl, 0.0)
-            if headroom.get(isl, 0.0) > 1e-6 and imp > 2e-4:
-                loss_adders[isl] = prev + min(imp, headroom[isl])
-                adjusted = True
-            elif prev > 0 and imp < -2e-4:
-                # Overshoot (losses dropped once the source supplied locally)
-                loss_adders[isl] = max(0.0, prev + imp)
-                adjusted = True
-        if not adjusted:
-            break
+    # Final SVC/STATCOM output summary (for reporting).
+    svc_results = []
+    if svc_units and converged:
+        S_svc = V * np.conj(Y @ V)
+        for u in svc_units:
+            bi = u["i"]
+            q_out = (u["inj_q"] if u["clamped"] is not None
+                     else S_svc[bi].imag * base_mva + bus_load_q_mvar[bi])
+            svc_results.append({
+                "id": u["id"], "name": u["name"], "device": u["device"],
+                "bus_id": buses[bi].id if bi < len(buses) else "",
+                "q_mvar": round(q_out, 3), "v_pu": round(abs(V[bi]), 4),
+                "v_setpoint_pu": u["vset"], "q_min_mvar": u["q_min"],
+                "q_max_mvar": u["q_max"], "at_limit": u["clamped"] is not None,
+            })
 
     # ── Build results ──
     # Compute actual bus power injections from solved voltages.
@@ -1563,7 +1871,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     rated_a = elem.props.get("rated_amps", 400) * max(1, int(elem.props.get("num_parallel", 1)))
                     rated_mva = math.sqrt(3) * v_kv * rated_a / 1000
                     loading = (cable_s_mva / rated_mva * 100) if rated_mva > 0 else 0
-                elif elem.type == "transformer":
+                elif elem.type in ("transformer", "autotransformer"):
                     rated_mva_xfmr = elem.props.get("rated_mva", 10)
                     loading = (s_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
                     # Report current at the LV side (higher current) using LV-side power
@@ -1619,7 +1927,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # Map bus_id -> list of active source-connected transformer components
     source_tx_by_bus: dict[str, list] = {}
     for comp in project.components:
-        if comp.type != "transformer" or comp.id in processed_elem_ids:
+        if comp.type not in ("transformer", "autotransformer") or comp.id in processed_elem_ids:
             continue
         results = _find_bus_paths(comp.id, adjacency, components, bus_of)
         if len(results) != 1:
@@ -2088,6 +2396,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         iterations=iterations,
         method=method,
         dispatch=dispatch_results,
+        svc=svc_results,
     )
 
 
