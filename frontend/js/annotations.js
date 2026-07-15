@@ -627,20 +627,37 @@ const Annotations = {
   },
 
   renderBranchFlowBadge(x, y, branch, key) {
-    const lines = [];
-    if (branch.p_mw != null) {
-      const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(3)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
-      lines.push(`P: ${pStr}`);
-    }
-    if (branch.q_mvar != null) {
-      const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(3)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
-      lines.push(`Q: ${qStr}`);
-    }
+    // Full detail lines (P / Q / S / I / loading).
+    const pStr = branch.p_mw != null
+      ? (Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(3)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`)
+      : null;
+    const qStr = branch.q_mvar != null
+      ? (Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(3)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`)
+      : null;
     const sMVA = branch.s_mva || Math.sqrt((branch.p_mw || 0) ** 2 + (branch.q_mvar || 0) ** 2);
     const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
-    lines.push(`S: ${sStr}`);
-    if (branch.i_amps > 0) lines.push(`I: ${branch.i_amps.toFixed(1)} A`);
-    if (branch.loading_pct > 0) lines.push(`Load: ${branch.loading_pct.toFixed(1)}%`);
+    const loadStr = branch.loading_pct > 0 ? `${branch.loading_pct.toFixed(1)}%` : null;
+
+    const fullLines = [];
+    if (pStr != null) fullLines.push(`P: ${pStr}`);
+    if (qStr != null) fullLines.push(`Q: ${qStr}`);
+    fullLines.push(`S: ${sStr}`);
+    if (branch.i_amps > 0) fullLines.push(`I: ${branch.i_amps.toFixed(1)} A`);
+    if (loadStr != null) fullLines.push(`Load: ${loadStr}`);
+
+    // Compact (default, H20): the two most useful figures — real power and
+    // loading — so the badge stays two lines and doesn't overlap neighbours.
+    // Full detail is one click away via View ▸ Detailed Branch Flow, and is
+    // always available on hover through the <title> below.
+    const detailed = typeof AppState !== 'undefined' && AppState.branchFlowDetailed;
+    let lines;
+    if (detailed) {
+      lines = fullLines;
+    } else {
+      lines = [];
+      if (pStr != null) lines.push(`P: ${pStr}`);
+      lines.push(loadStr != null ? `Load: ${loadStr}` : `S: ${sStr}`);
+    }
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
@@ -653,6 +670,7 @@ const Annotations = {
 
     return `
       <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <title>${fullLines.join(' · ')}</title>
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         ${textHtml}
       </g>`;

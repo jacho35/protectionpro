@@ -79,6 +79,9 @@ const AppState = {
   showWarnings: true,
   showFaultAngles: false,
   showRatingFlags: true,  // on-diagram warning markers for under-rated devices
+  // Branch-flow labels are compact (P + loading) by default so they don't
+  // overlap adjacent components (H20); flip to show full P/Q/S/I/loading.
+  branchFlowDetailed: false,
 
   // Flow arrow visibility — per analysis type
   showFlowArrows: {
