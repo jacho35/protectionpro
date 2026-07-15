@@ -1,5 +1,77 @@
 /* ProtectionPro — On-Diagram Annotations for Fault & Load Flow Results */
 
+// Authoritative definition of every result-box type and the individual value
+// lines it can show. Drives (1) which lines render here, (2) the per-value
+// tick-lists in the properties Display Options section, and (3) the per-value
+// toggles in the result-box right-click menu. `prefixes` are the annotation-key
+// prefixes that map to this type (so the right-click menu can identify a badge).
+// Field visibility is stored in AppState.resultBoxFields keyed by
+// [type.key][field.key]; absent ⇒ visible (see Annotations.fieldVisible).
+const RESULT_TYPE_DEFS = [
+  { key: 'fault', label: 'Fault / Short-Circuit', prefixes: ['fault', 'vdep'], fields: [
+    { key: 'ik3', label: '3Φ current' },
+    { key: 'ip', label: 'Peak current (ip)' },
+    { key: 'ik1', label: 'SLG current' },
+    { key: 'ikLL', label: 'LL current' },
+    { key: 'ikLLG', label: 'LLG current' },
+    { key: 'motors', label: 'Motor contribution' },
+  ] },
+  { key: 'loadflow', label: 'Load Flow', prefixes: ['lf', 'warn'], fields: [
+    { key: 'voltage', label: 'Voltage (V)' },
+    { key: 'angle', label: 'Angle (δ)' },
+    { key: 'p', label: 'Real power (P)' },
+    { key: 'q', label: 'Reactive power (Q)' },
+    { key: 's', label: 'Apparent power (S)' },
+    { key: 'current', label: 'Current (I)' },
+  ] },
+  { key: 'unbalancedLF', label: 'Unbalanced Load Flow', prefixes: ['ulf', 'ulf-warn'], fields: [
+    { key: 'phase', label: 'Phase voltages (Va/Vb/Vc)' },
+    { key: 'sequence', label: 'Sequence (V1/V2/V0)' },
+    { key: 'vuf', label: 'VUF' },
+  ] },
+  { key: 'arcflash', label: 'Arc Flash', prefixes: ['af'], fields: [
+    { key: 'energy', label: 'Incident energy' },
+    { key: 'ppe', label: 'PPE category' },
+    { key: 'afb', label: 'Arc flash boundary' },
+    { key: 'iarc', label: 'Arcing current' },
+  ] },
+  { key: 'cable', label: 'Cable Sizing', prefixes: ['cs'], fields: [
+    { key: 'loading', label: 'Thermal loading' },
+    { key: 'vdrop', label: 'Voltage drop (ΔV)' },
+  ] },
+  { key: 'motor', label: 'Motor Starting', prefixes: ['ms'], fields: [
+    { key: 'voltage', label: 'Terminal voltage' },
+  ] },
+  { key: 'dynMotor', label: 'Dynamic Motor Starting', prefixes: ['dynms'], fields: [
+    { key: 'status', label: 'Start status / time' },
+    { key: 'iv', label: 'Peak current & min voltage' },
+  ] },
+  { key: 'duty', label: 'Duty Check', prefixes: ['dc'], fields: [
+    { key: 'utilisation', label: 'Utilisation %' },
+  ] },
+  { key: 'loadDiversity', label: 'Load Diversity', prefixes: ['ld'], fields: [
+    { key: 'df', label: 'Demand factor' },
+    { key: 'demand', label: 'Diversified demand' },
+  ] },
+  { key: 'grounding', label: 'Grounding', prefixes: ['gr'], fields: [
+    { key: 'touch', label: 'Touch voltage (Vt)' },
+    { key: 'step', label: 'Step voltage (Vs)' },
+    { key: 'resistance', label: 'Grid resistance (Rg)' },
+  ] },
+  { key: 'dcLoadflow', label: 'DC Load Flow', prefixes: ['dclf'], fields: [
+    { key: 'voltage', label: 'Voltage' },
+    { key: 'nominal', label: 'Nominal voltage' },
+    { key: 'drop', label: 'Voltage drop (Δ)' },
+    { key: 'load', label: 'Load (kW)' },
+  ] },
+  { key: 'dcShortCircuit', label: 'DC Short-Circuit', prefixes: ['dcsc'], fields: [
+    { key: 'ik', label: 'Ik' },
+    { key: 'ip', label: 'ip' },
+    { key: 'tp', label: 'tp (time to peak)' },
+    { key: 'sources', label: 'Source count' },
+  ] },
+];
+
 const Annotations = {
   layer: null,
 
@@ -26,6 +98,15 @@ const Annotations = {
       return `${(kv * 1000).toFixed(1)} V`;
     }
     return `${kv.toFixed(3)} kV`;
+  },
+
+  // Whether a given value line should render inside its result box. Governed by
+  // AppState.resultBoxFields[type][field]; anything not explicitly set to false
+  // is visible (so a fresh project / older save shows every line). See
+  // RESULT_TYPE_DEFS for the type/field keys.
+  fieldVisible(type, field) {
+    const rbf = (typeof AppState !== 'undefined' && AppState.resultBoxFields) || null;
+    return !(rbf && rbf[type] && rbf[type][field] === false);
   },
 
   getOffset(key) {
@@ -447,30 +528,30 @@ const Annotations = {
     if (showAngles && result.voltage_kv != null) {
       lines.push(`V: ${this.formatVoltage(result.voltage_kv)}`);
     }
-    if (result.ik3 != null) {
+    if (this.fieldVisible('fault', 'ik3') && result.ik3 != null) {
       let s = `3Φ: ${result.ik3.toFixed(2)} kA`;
       if (showAngles && result.ik3_angle != null) s += ` ∠${result.ik3_angle.toFixed(1)}°`;
       lines.push(s);
-      if (result.ip != null) {
-        lines.push(`ip: ${result.ip.toFixed(2)} kA`);
-      }
     }
-    if (result.ik1 != null) {
+    if (this.fieldVisible('fault', 'ip') && result.ip != null) {
+      lines.push(`ip: ${result.ip.toFixed(2)} kA`);
+    }
+    if (this.fieldVisible('fault', 'ik1') && result.ik1 != null) {
       let s = `SLG: ${result.ik1.toFixed(2)} kA`;
       if (showAngles && result.ik1_angle != null) s += ` ∠${result.ik1_angle.toFixed(1)}°`;
       lines.push(s);
     }
-    if (result.ikLL != null) {
+    if (this.fieldVisible('fault', 'ikLL') && result.ikLL != null) {
       let s = `LL: ${result.ikLL.toFixed(2)} kA`;
       if (showAngles && result.ikLL_angle != null) s += ` ∠${result.ikLL_angle.toFixed(1)}°`;
       lines.push(s);
     }
-    if (result.ikLLG != null) {
+    if (this.fieldVisible('fault', 'ikLLG') && result.ikLLG != null) {
       let s = `LLG: ${result.ikLLG.toFixed(2)} kA`;
       if (showAngles && result.ikLLG_angle != null) s += ` ∠${result.ikLLG_angle.toFixed(1)}°`;
       lines.push(s);
     }
-    if (result.motor_count > 0 && result.ik3_motor != null) {
+    if (this.fieldVisible('fault', 'motors') && result.motor_count > 0 && result.ik3_motor != null) {
       lines.push(`Motors: ${result.ik3_motor.toFixed(2)} kA (${result.motor_count})`);
     }
 
@@ -496,12 +577,12 @@ const Annotations = {
 
   renderLoadFlowBadge(x, y, result, key) {
     const lines = [];
-    if (result.voltage_kv != null) lines.push(`V: ${this.formatVoltage(result.voltage_kv)} (${result.voltage_pu.toFixed(4)} p.u. / ${(result.voltage_pu * 100).toFixed(2)}%)`);
-    if (result.angle_deg != null) lines.push(`δ: ${result.angle_deg.toFixed(2)}°`);
+    if (this.fieldVisible('loadflow', 'voltage') && result.voltage_kv != null) lines.push(`V: ${this.formatVoltage(result.voltage_kv)} (${result.voltage_pu.toFixed(4)} p.u. / ${(result.voltage_pu * 100).toFixed(2)}%)`);
+    if (this.fieldVisible('loadflow', 'angle') && result.angle_deg != null) lines.push(`δ: ${result.angle_deg.toFixed(2)}°`);
     if (result.energized === false) {
       lines.push('DE-ENERGIZED');
     } else {
-      // Power the busbar carries (through-flow + local load) — always shown.
+      // Power the busbar carries (through-flow + local load).
       // Falls back to net injection for results saved before p_through_mw.
       const p = result.p_through_mw ?? result.p_mw ?? 0;
       const q = result.q_through_mvar ?? result.q_mvar ?? 0;
@@ -509,10 +590,10 @@ const Annotations = {
       const pStr = Math.abs(p) >= 1 ? `${p.toFixed(3)} MW` : `${(p * 1000).toFixed(1)} kW`;
       const qStr = Math.abs(q) >= 1 ? `${q.toFixed(3)} MVAr` : `${(q * 1000).toFixed(1)} kVAr`;
       const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
-      lines.push(`P: ${pStr}`);
-      lines.push(`Q: ${qStr}`);
-      lines.push(`S: ${sStr}`);
-      if (result.voltage_kv > 0) {
+      if (this.fieldVisible('loadflow', 'p')) lines.push(`P: ${pStr}`);
+      if (this.fieldVisible('loadflow', 'q')) lines.push(`Q: ${qStr}`);
+      if (this.fieldVisible('loadflow', 's')) lines.push(`S: ${sStr}`);
+      if (this.fieldVisible('loadflow', 'current') && result.voltage_kv > 0) {
         const iAmps = (sMVA * 1000) / (Math.sqrt(3) * result.voltage_kv);
         lines.push(`I: ${iAmps.toFixed(1)} A`);
       }
@@ -543,10 +624,10 @@ const Annotations = {
     if (result.energized === false) {
       lines.push('DE-ENERGIZED');
     } else {
-      lines.push(`V: ${result.voltage_v.toFixed(1)} V (${(result.voltage_pu * 100).toFixed(1)}%)`);
-      lines.push(`Nom: ${result.nominal_v.toFixed(0)} V`);
-      if (Math.abs(result.drop_pct) >= 0.05) lines.push(`Δ: ${result.drop_pct.toFixed(2)}%`);
-      if (result.load_kw > 0) lines.push(`Load: ${result.load_kw.toFixed(2)} kW`);
+      if (this.fieldVisible('dcLoadflow', 'voltage')) lines.push(`V: ${result.voltage_v.toFixed(1)} V (${(result.voltage_pu * 100).toFixed(1)}%)`);
+      if (this.fieldVisible('dcLoadflow', 'nominal')) lines.push(`Nom: ${result.nominal_v.toFixed(0)} V`);
+      if (this.fieldVisible('dcLoadflow', 'drop') && Math.abs(result.drop_pct) >= 0.05) lines.push(`Δ: ${result.drop_pct.toFixed(2)}%`);
+      if (this.fieldVisible('dcLoadflow', 'load') && result.load_kw > 0) lines.push(`Load: ${result.load_kw.toFixed(2)} kW`);
     }
 
     const lineHeight = 14;
@@ -572,10 +653,10 @@ const Annotations = {
     if (!result.contributions || result.contributions.length === 0) {
       lines.push('NO DC SOURCE');
     } else {
-      lines.push(`Ik: ${result.ik_ka.toFixed(2)} kA`);
-      lines.push(`ip: ${result.ip_ka.toFixed(2)} kA`);
-      if (result.tp_ms > 0) lines.push(`tp: ${result.tp_ms.toFixed(1)} ms`);
-      lines.push(`sources: ${result.contributions.length}`);
+      if (this.fieldVisible('dcShortCircuit', 'ik')) lines.push(`Ik: ${result.ik_ka.toFixed(2)} kA`);
+      if (this.fieldVisible('dcShortCircuit', 'ip')) lines.push(`ip: ${result.ip_ka.toFixed(2)} kA`);
+      if (this.fieldVisible('dcShortCircuit', 'tp') && result.tp_ms > 0) lines.push(`tp: ${result.tp_ms.toFixed(1)} ms`);
+      if (this.fieldVisible('dcShortCircuit', 'sources')) lines.push(`sources: ${result.contributions.length}`);
     }
 
     const lineHeight = 14;
@@ -598,25 +679,33 @@ const Annotations = {
 
   renderUnbalancedLoadFlowBadge(x, y, result, key) {
     const fmt = (v) => v != null ? v.toFixed(4) : '—';
-    const fmtKv = (v) => v != null ? (v >= 1 ? `${v.toFixed(3)} kV` : `${(v * 1000).toFixed(1)} V`) : '—';
-    const lines = [
-      `Va: ${fmt(result.va_pu)} p.u. ∠${result.angle_a_deg != null ? result.angle_a_deg.toFixed(1) : '—'}°`,
-      `Vb: ${fmt(result.vb_pu)} p.u. ∠${result.angle_b_deg != null ? result.angle_b_deg.toFixed(1) : '—'}°`,
-      `Vc: ${fmt(result.vc_pu)} p.u. ∠${result.angle_c_deg != null ? result.angle_c_deg.toFixed(1) : '—'}°`,
-      `V1: ${fmt(result.v1_pu)}  V2: ${fmt(result.v2_pu)}  V0: ${fmt(result.v0_pu)}`,
-      `VUF: ${result.vuf_pct != null ? result.vuf_pct.toFixed(2) : '—'}%`,
-    ];
+    // Each entry carries its own optional colour so hiding a group above the
+    // VUF line doesn't shift which line gets the imbalance highlight.
+    const entries = [];
+    if (this.fieldVisible('unbalancedLF', 'phase')) {
+      entries.push({ t: `Va: ${fmt(result.va_pu)} p.u. ∠${result.angle_a_deg != null ? result.angle_a_deg.toFixed(1) : '—'}°` });
+      entries.push({ t: `Vb: ${fmt(result.vb_pu)} p.u. ∠${result.angle_b_deg != null ? result.angle_b_deg.toFixed(1) : '—'}°` });
+      entries.push({ t: `Vc: ${fmt(result.vc_pu)} p.u. ∠${result.angle_c_deg != null ? result.angle_c_deg.toFixed(1) : '—'}°` });
+    }
+    if (this.fieldVisible('unbalancedLF', 'sequence')) {
+      entries.push({ t: `V1: ${fmt(result.v1_pu)}  V2: ${fmt(result.v2_pu)}  V0: ${fmt(result.v0_pu)}` });
+    }
+    const vufColor = result.vuf_pct > 2 ? '#d32f2f' : result.vuf_pct > 1 ? '#f57c00' : '#1976d2';
+    if (this.fieldVisible('unbalancedLF', 'vuf')) {
+      entries.push({ t: `VUF: ${result.vuf_pct != null ? result.vuf_pct.toFixed(2) : '—'}%`,
+        color: result.vuf_pct > 1 ? vufColor : null });
+    }
+    const lines = entries.map(e => e.t);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
     this._lastBoxH = boxH;
-    const maxLen = Math.max(...lines.map(l => l.length));
+    const maxLen = lines.length ? Math.max(...lines.map(l => l.length)) : 0;
     const boxW = Math.max(140, maxLen * 6.2 + 14);
 
-    const vufColor = result.vuf_pct > 2 ? '#d32f2f' : result.vuf_pct > 1 ? '#f57c00' : '#1976d2';
-    const textHtml = lines.map((line, i) => {
-      const color = (i === 4 && result.vuf_pct > 1) ? ` fill="${vufColor}"` : '';
-      return `<text class="annotation-text"${color} x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`;
+    const textHtml = entries.map((e, i) => {
+      const color = e.color ? ` fill="${e.color}"` : '';
+      return `<text class="annotation-text"${color} x="${x + 6}" y="${y + 14 + i * lineHeight}">${e.t}</text>`;
     }).join('');
 
     const busId = key.split(':')[1] || '';
@@ -750,10 +839,10 @@ const Annotations = {
 
   renderArcFlashBadge(x, y, result, key) {
     const lines = [];
-    lines.push(`${result.incident_energy_cal.toFixed(2)} cal/cm²`);
-    lines.push(`PPE: Cat ${result.ppe_category}`);
-    lines.push(`AFB: ${(result.arc_flash_boundary_mm / 1000).toFixed(2)} m`);
-    lines.push(`Iarc: ${result.arcing_current_ka.toFixed(2)} kA`);
+    if (this.fieldVisible('arcflash', 'energy')) lines.push(`${result.incident_energy_cal.toFixed(2)} cal/cm²`);
+    if (this.fieldVisible('arcflash', 'ppe')) lines.push(`PPE: Cat ${result.ppe_category}`);
+    if (this.fieldVisible('arcflash', 'afb')) lines.push(`AFB: ${(result.arc_flash_boundary_mm / 1000).toFixed(2)} m`);
+    if (this.fieldVisible('arcflash', 'iarc')) lines.push(`Iarc: ${result.arcing_current_ka.toFixed(2)} kA`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
@@ -790,8 +879,9 @@ const Annotations = {
     const icon = cable.status === 'pass' ? '✓'
       : cable.status === 'warning' ? '!'
       : cable.status === 'unknown' ? '?' : '✗';
-    const lines = [`${icon} ${cable.thermal_loading_pct.toFixed(0)}%`];
-    if (cable.voltage_drop_pct > 0) lines.push(`ΔV: ${cable.voltage_drop_pct.toFixed(1)}%`);
+    const lines = [];
+    if (this.fieldVisible('cable', 'loading')) lines.push(`${icon} ${cable.thermal_loading_pct.toFixed(0)}%`);
+    if (this.fieldVisible('cable', 'vdrop') && cable.voltage_drop_pct > 0) lines.push(`ΔV: ${cable.voltage_drop_pct.toFixed(1)}%`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
@@ -822,7 +912,8 @@ const Annotations = {
   renderMotorStartingBadge(x, y, motor, key) {
     const fillColor = motor.status === 'fail' ? '#d32f2f' : motor.status === 'warning' ? '#f57c00' : '#4caf50';
     const icon = motor.motor_will_start ? '✓' : '✗';
-    const lines = [`${icon} ${(motor.motor_terminal_voltage_pu * 100).toFixed(1)}%`];
+    const lines = [];
+    if (this.fieldVisible('motor', 'voltage')) lines.push(`${icon} ${(motor.motor_terminal_voltage_pu * 100).toFixed(1)}%`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
@@ -845,10 +936,13 @@ const Annotations = {
   renderDynamicMotorBadge(x, y, motor, key) {
     const fillColor = motor.status === 'fail' ? '#d32f2f' : motor.status === 'warning' ? '#f57c00' : '#4caf50';
     const started = motor.sim_status === 'started';
-    const lines = [
-      started ? `✓ ${motor.accel_time_s.toFixed(1)}s start` : (motor.sim_status === 'stalled' ? '✗ STALL' : '✗ no start'),
-      `I ${motor.peak_current_xflc.toFixed(1)}× V ${(motor.min_v_motor_pu * 100).toFixed(0)}%`,
-    ];
+    const lines = [];
+    if (this.fieldVisible('dynMotor', 'status')) {
+      lines.push(started ? `✓ ${motor.accel_time_s.toFixed(1)}s start` : (motor.sim_status === 'stalled' ? '✗ STALL' : '✗ no start'));
+    }
+    if (this.fieldVisible('dynMotor', 'iv')) {
+      lines.push(`I ${motor.peak_current_xflc.toFixed(1)}× V ${(motor.min_v_motor_pu * 100).toFixed(0)}%`);
+    }
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
@@ -870,7 +964,8 @@ const Annotations = {
 
   renderDutyCheckBadge(x, y, device, key) {
     const fillColor = device.status === 'fail' ? '#d32f2f' : device.status === 'warning' ? '#f57c00' : '#4caf50';
-    const lines = [`${device.utilisation_pct.toFixed(0)}%${device.status === 'fail' ? ' !' : ''}`];
+    const lines = [];
+    if (this.fieldVisible('duty', 'utilisation')) lines.push(`${device.utilisation_pct.toFixed(0)}%${device.status === 'fail' ? ' !' : ''}`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
@@ -895,11 +990,10 @@ const Annotations = {
       : busResult.status === 'warning' ? '#f57c00' : '#4caf50';
     const touchIcon = busResult.touch_ok ? '✓' : '✗';
     const stepIcon = busResult.touch_ok && busResult.step_ok ? '✓' : '✗';
-    const lines = [
-      `Vt: ${busResult.mesh_voltage_v}V ${touchIcon}`,
-      `Vs: ${busResult.step_voltage_v}V ${stepIcon}`,
-      `Rg: ${busResult.grid_resistance_ohm.toFixed(2)}Ω`,
-    ];
+    const lines = [];
+    if (this.fieldVisible('grounding', 'touch')) lines.push(`Vt: ${busResult.mesh_voltage_v}V ${touchIcon}`);
+    if (this.fieldVisible('grounding', 'step')) lines.push(`Vs: ${busResult.step_voltage_v}V ${stepIcon}`);
+    if (this.fieldVisible('grounding', 'resistance')) lines.push(`Rg: ${busResult.grid_resistance_ohm.toFixed(2)}Ω`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;
@@ -922,10 +1016,9 @@ const Annotations = {
   renderLoadDiversityBadge(x, y, busResult, key) {
     const df = busResult.effective_demand_factor;
     const fillColor = df >= 0.9 ? '#f57c00' : df >= 0.7 ? '#1565c0' : '#4caf50';
-    const lines = [
-      `DF: ${df.toFixed(2)}`,
-      `${busResult.diversified_demand_kva.toFixed(0)} kVA`,
-    ];
+    const lines = [];
+    if (this.fieldVisible('loadDiversity', 'df')) lines.push(`DF: ${df.toFixed(2)}`);
+    if (this.fieldVisible('loadDiversity', 'demand')) lines.push(`${busResult.diversified_demand_kva.toFixed(0)} kVA`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;

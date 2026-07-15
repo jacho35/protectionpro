@@ -290,24 +290,12 @@ const ContextMenu = {
     this.open(items, clientX, clientY);
   },
 
-  // Annotation-key prefix → { key: showResultBoxes flag, label } for the result
-  // type. Lets the right-click menu on a badge toggle that whole analysis type.
-  _RESULT_TYPE_BY_PREFIX: {
-    fault: { key: 'fault', label: 'Fault / Short-Circuit' },
-    vdep: { key: 'fault', label: 'Fault / Short-Circuit' },
-    lf: { key: 'loadflow', label: 'Load Flow' },
-    warn: { key: 'loadflow', label: 'Load Flow' },
-    ulf: { key: 'unbalancedLF', label: 'Unbalanced Load Flow' },
-    'ulf-warn': { key: 'unbalancedLF', label: 'Unbalanced Load Flow' },
-    af: { key: 'arcflash', label: 'Arc Flash' },
-    cs: { key: 'cable', label: 'Cable Sizing' },
-    ms: { key: 'motor', label: 'Motor Starting' },
-    dynms: { key: 'dynMotor', label: 'Dynamic Motor Starting' },
-    dc: { key: 'duty', label: 'Duty Check' },
-    ld: { key: 'loadDiversity', label: 'Load Diversity' },
-    gr: { key: 'grounding', label: 'Grounding' },
-    dclf: { key: 'dcLoadflow', label: 'DC Load Flow' },
-    dcsc: { key: 'dcShortCircuit', label: 'DC Short-Circuit' },
+  // Resolve a badge's annotation-key prefix to its RESULT_TYPE_DEFS entry
+  // (key, label, fields). Lets the right-click menu toggle the whole analysis
+  // type and its individual value lines from the same shared schema.
+  _typeDefForPrefix(prefix) {
+    if (typeof RESULT_TYPE_DEFS === 'undefined') return null;
+    return RESULT_TYPE_DEFS.find(t => t.prefixes.includes(prefix)) || null;
   },
 
   // Prefixes whose badge shows a voltage — offer the kV/V unit toggle for these.
@@ -320,8 +308,9 @@ const ContextMenu = {
     this._rebuild = () => this.openForResultBox(key, clientX, clientY);
 
     const prefix = String(key).split(':')[0];
-    const type = this._RESULT_TYPE_BY_PREFIX[prefix];
+    const type = this._typeDefForPrefix(prefix);
     const rb = AppState.showResultBoxes || {};
+    const boxOn = !type || rb[type.key] !== false;
 
     const items = [
       {
@@ -339,20 +328,41 @@ const ContextMenu = {
       },
     ];
 
-    // Global visibility tick-box for this analysis type (persists with project).
+    // Global visibility tick-box for this analysis type (persists with project),
+    // then per-value line toggles beneath it (only when >1 line to choose from).
     if (type) {
       items.push('---');
       items.push({
         label: `Show ${type.label}`,
-        checked: rb[type.key] !== false,
+        checked: boxOn,
         keepOpen: true,
         action: () => {
           AppState.showResultBoxes[type.key] = !AppState.showResultBoxes[type.key];
           AppState.dirty = true;
           Canvas.render();
           window.AppActions?.refreshResultToggles?.();
+          if (typeof Properties !== 'undefined') Properties.refreshProjectViewIfOpen?.();
         },
       });
+      if (type.fields.length >= 2) {
+        for (const f of type.fields) {
+          items.push({
+            label: `Value: ${f.label}`,
+            checked: Annotations.fieldVisible(type.key, f.key),
+            disabled: !boxOn,
+            keepOpen: true,
+            action: () => {
+              const rbf = AppState.resultBoxFields;
+              if (!rbf[type.key]) rbf[type.key] = {};
+              if (Annotations.fieldVisible(type.key, f.key)) rbf[type.key][f.key] = false;
+              else delete rbf[type.key][f.key];
+              AppState.dirty = true;
+              Canvas.render();
+              if (typeof Properties !== 'undefined') Properties.refreshProjectViewIfOpen?.();
+            },
+          });
+        }
+      }
     }
 
     // Voltage display-unit toggle for voltage-bearing badges.
@@ -362,6 +372,7 @@ const ContextMenu = {
         AppState.voltageDisplayUnit = u;
         AppState.dirty = true;
         Canvas.render();
+        if (typeof Properties !== 'undefined') Properties.refreshProjectViewIfOpen?.();
       };
       items.push('---');
       items.push({ label: 'Voltage in kV', checked: unit === 'kV', keepOpen: true, action: () => setUnit('kV') });

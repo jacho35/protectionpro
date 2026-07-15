@@ -106,6 +106,11 @@ const AppState = {
     dcShortCircuit: true,
   },
 
+  // Per-value visibility within each result box, keyed [type][field]. Only
+  // fields explicitly set to false are hidden; absent ⇒ shown. Field keys are
+  // defined by RESULT_TYPE_DEFS (annotations.js). Persisted with the project.
+  resultBoxFields: {},
+
   // Clipboard for copy/paste
   clipboard: null, // { components: [], wires: [] }
 
@@ -1187,6 +1192,8 @@ const AppState = {
       defaultLengthUnit: this.defaultLengthUnit,
       voltageDisplayUnit: this.voltageDisplayUnit,
       showResultBoxes: { ...this.showResultBoxes },
+      resultBoxFields: (this.resultBoxFields && Object.keys(this.resultBoxFields).length)
+        ? this.resultBoxFields : undefined,
       components: [...this.components.values()],
       wires: [...this.wires.values()],
       nextId: this.nextId,
@@ -1293,6 +1300,10 @@ const AppState = {
     if (data.showResultBoxes && typeof data.showResultBoxes === 'object') {
       Object.assign(this.showResultBoxes, data.showResultBoxes);
     }
+    // Per-value visibility: replace wholesale (absent ⇒ all fields shown, so a
+    // project saved without the setting clears any previous project's choices).
+    this.resultBoxFields = (data.resultBoxFields && typeof data.resultBoxFields === 'object'
+      && !Array.isArray(data.resultBoxFields)) ? data.resultBoxFields : {};
     // nextId must clear every loaded id: a stale/hand-edited nextId below an
     // existing suffix would let genId() mint a duplicate id, and Map.set would
     // silently overwrite that component (its wires re-attaching to the new
