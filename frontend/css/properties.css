@@ -136,6 +136,16 @@
   flex-shrink: 0;
 }
 
+/* Full-width helper line under a prop-row (e.g. the relay pickup's CT-referred
+   secondary-amps figure). Kept off the fixed-width label so it never crowds the
+   input on the narrow mobile panel; sits flush under the input, wraps freely. */
+.prop-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: -4px 0 8px 98px;
+  line-height: 1.3;
+}
+
 /* Display Options — result-box visibility tick list */
 .display-results-head {
   display: flex;
