@@ -1945,6 +1945,84 @@ class TestLvEarthingSystem:
         assert tt == pytest.approx(base, rel=1e-9)
 
 
+class TestSingleEarthedStarStar:
+    """Zero-sequence behaviour of a single-earthed star-star (YNyn0)
+    transformer — one neutral solidly earthed, the other left floating, with
+    no delta tertiary. Physically this cannot pass I0 through the floating
+    winding, so it is NOT a zero-sequence through-element; the earthed neutral
+    sources earth-fault current only through the core zero-sequence magnetising
+    reactance Z0m (finite on a three-limb core, ≈ open on five-limb/shell/bank).
+
+    Two rules are pinned: (1) the grounding_* prop — not the vector-group
+    letters — decides the path; (2) core construction sets whether a
+    single-earthed unit is a weak local source (three-limb) or effectively
+    open (five-limb/bank).
+    """
+
+    @staticmethod
+    def _project(grounding_hv="ungrounded", grounding_lv="solidly_grounded",
+                 core=None, z0m=None, set_grounding=True):
+        props = {
+            "name": "TX", "rated_mva": 10.0, "z_percent": 8.0, "x_r_ratio": 10.0,
+            "voltage_hv_kv": 33.0, "voltage_lv_kv": 11.0, "vector_group": "YNyn0",
+        }
+        if set_grounding:
+            props["grounding_hv"] = grounding_hv
+            props["grounding_lv"] = grounding_lv
+        if core is not None:
+            props["core_construction"] = core
+        if z0m is not None:
+            props["z0m_pu"] = z0m
+        xfmr = _comp("transformer-1", "transformer", props)
+        mv_bus = _comp("bus-2", "bus", {"name": "MV Bus", "voltage_kv": 11.0})
+        return _utility_bus_project(
+            fault_mva=500.0, kv=33.0,
+            extra_components=[xfmr, mv_bus],
+            extra_wires=[_wire("w2", "bus-1", "transformer-1", to_port="primary"),
+                         _wire("w3", "transformer-1", "bus-2", from_port="secondary")])
+
+    def test_three_limb_single_earthed_is_finite_but_weak(self):
+        """Single-earthed (LV earthed, HV floating) three-limb core: the earthed
+        LV neutral sources a finite earth-fault current via Z0m, but well below
+        both the three-phase level and the both-earthed through-element level."""
+        r = run_fault_analysis(self._project(core="three_limb")).buses["bus-2"]
+        assert r.ik1 > 0                    # not blocked — a real earth-fault source
+        assert r.ik1 < 0.5 * r.ik3          # but weak (Z0m ≫ Z1)
+
+    def test_five_limb_single_earthed_blocks(self):
+        """Five-limb / shell / bank core: Z0m ≈ open, so the single-earthed
+        neutral sources negligible earth-fault current (Ik1 ≈ 0); Ik3 intact."""
+        r = run_fault_analysis(self._project(core="five_limb")).buses["bus-2"]
+        assert r.ik3 > 0
+        assert r.ik1 == pytest.approx(0.0, abs=1e-6)
+
+    def test_z0m_override_monotonic(self):
+        """A smaller Z0m (stiffer core earth path) yields more earth-fault
+        current; the override drives it regardless of the core dropdown."""
+        low = run_fault_analysis(self._project(z0m=0.3)).buses["bus-2"].ik1
+        high = run_fault_analysis(self._project(z0m=1.0)).buses["bus-2"].ik1
+        assert low > high > 0
+
+    def test_grounding_prop_is_authoritative_not_vector_group(self):
+        """Same YNyn0 vector group: earthing the far (HV) neutral turns the unit
+        into a through-element (utility Z0 reaches the fault → much higher Ik1)
+        than leaving it floating (Z0m-limited)."""
+        single = run_fault_analysis(
+            self._project(grounding_hv="ungrounded", core="three_limb")).buses["bus-2"].ik1
+        both = run_fault_analysis(
+            self._project(grounding_hv="solidly_grounded")).buses["bus-2"].ik1
+        assert both > 2 * single
+
+    def test_legacy_no_grounding_props_falls_back_to_vector_group(self):
+        """Backward compatibility: a YNyn0 with NO grounding_* props set must
+        keep the legacy vector-group interpretation (both windings earthed →
+        through-element), identical to explicitly earthing both neutrals."""
+        legacy = run_fault_analysis(self._project(set_grounding=False)).buses["bus-2"].ik1
+        both = run_fault_analysis(
+            self._project(grounding_hv="solidly_grounded")).buses["bus-2"].ik1
+        assert legacy == pytest.approx(both, rel=1e-9)
+
+
 # ── Dynamic motor starting (time-domain acceleration) ────────────────────
 
 
