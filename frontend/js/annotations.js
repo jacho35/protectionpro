@@ -16,9 +16,12 @@ const Annotations = {
     this.layer = document.getElementById('annotations-layer');
   },
 
-  // Format voltage using the user's selected unit (kV or V)
+  // Format voltage using the user's globally-selected display unit (kV or V).
+  // Set from the Display Options section of the properties panel and persisted
+  // with the project (AppState.voltageDisplayUnit).
   formatVoltage(kv) {
-    const unit = Properties.unitSelections['voltage_kv'] || 'kV';
+    if (kv == null) return '—';
+    const unit = (typeof AppState !== 'undefined' && AppState.voltageDisplayUnit) || 'kV';
     if (unit === 'V') {
       return `${(kv * 1000).toFixed(1)} V`;
     }
@@ -442,7 +445,7 @@ const Annotations = {
     const showAngles = AppState.showFaultAngles;
 
     if (showAngles && result.voltage_kv != null) {
-      lines.push(`V: ${result.voltage_kv} kV`);
+      lines.push(`V: ${this.formatVoltage(result.voltage_kv)}`);
     }
     if (result.ik3 != null) {
       let s = `3Φ: ${result.ik3.toFixed(2)} kA`;
