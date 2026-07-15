@@ -1058,6 +1058,17 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                 z_total = z0_path + z0_element
                 desc = " → ".join(trail + [xfmr_label + " [Δ provides Z0 return]"])
                 z0_sources.append((z_total, desc))
+            elif far_side == 'magnetizing':
+                # Single-earthed star-star (one neutral earthed, the other
+                # floating, no delta): the far winding cannot pass I0, so the
+                # earthed neutral is a LOCAL earth-fault source limited by the
+                # transformer's zero-sequence magnetising reactance Z0m (core
+                # dependent — folded into z_gnd). Three-limb cores give a
+                # finite Z0m (tank phantom-delta); five-limb/shell/bank cores
+                # approach open-circuit and are reported as blocked instead.
+                z_total = z0_path + z0_element
+                desc = " → ".join(trail + [xfmr_label + " [single-earthed: Z0 via core magnetising path]"])
+                z0_sources.append((z_total, desc))
             elif far_side == 'grounded':
                 # Grounded star on far side — Z0 passes through,
                 # continue walking to find source (e.g. YNyn0).
@@ -1156,12 +1167,31 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     # HV winding: leading uppercase letters (D, Y, YN, Z, ZN)
     lv_part = re.sub(r'^[A-Z]+', '', vg)  # e.g. "Dyn11" → "yn11", "YNyn0" → "yn0"
 
-    hv_grounded = vg.upper().startswith("YN") or vg.upper().startswith("ZN")
     hv_delta = vg[0].upper() == 'D'
     hv_is_delta_or_zigzag = vg[0].upper() in ('D', 'Z')
-    lv_grounded = lv_part.lower().startswith("yn") or lv_part.lower().startswith("zn")
     lv_delta = lv_part.lower().startswith("d")
     lv_is_delta_or_zigzag = len(lv_part) > 0 and lv_part[0].lower() in ('d', 'z')
+
+    # The vector-group 'n' letter gives only the LEGACY grounded interpretation.
+    _vg_hv_grounded = vg.upper().startswith("YN") or vg.upper().startswith("ZN")
+    _vg_lv_grounded = lv_part.lower().startswith("yn") or lv_part.lower().startswith("zn")
+
+    # The grounding_* prop is AUTHORITATIVE for a star winding: whether its
+    # neutral is earthed is what decides if it can carry/pass zero-sequence
+    # current, not the vector-group letters. A YNyn0 with one neutral left
+    # ungrounded (and no delta) is a single-earthed star-star — it cannot pass
+    # I0 through the floating winding. A delta/zigzag winding circulates I0
+    # internally regardless of earthing, so it is never a grounded-star path.
+    # When the prop is absent (legacy projects that set only the vector group)
+    # we fall back to the vector-group letter so existing studies are unchanged.
+    def _star_grounded(prop_key, vg_grounded):
+        val = comp.props.get(prop_key, None)
+        if val is None:
+            return vg_grounded
+        return str(val).lower() not in ("ungrounded", "isolated", "none", "unearthed")
+
+    hv_grounded = (not hv_is_delta_or_zigzag) and _star_grounded("grounding_hv", _vg_hv_grounded)
+    lv_grounded = (not lv_is_delta_or_zigzag) and _star_grounded("grounding_lv", _vg_lv_grounded)
 
     # Map port to winding side, accounting for step-up inversion
     # step_down (default): primary(top)=HV, secondary(bottom)=LV
@@ -1203,13 +1233,19 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     # - Delta/zigzag: provides zero-sequence circulation — transformer
     #   is itself a Z0 source.  Walk stops here.
     # - Grounded star: Z0 passes through — walk continues to far side.
-    # - Ungrounded star: no Z0 circulation or pass-through — blocked.
+    # - Ungrounded star + no delta (single-earthed star-star): the far
+    #   winding cannot pass I0, but the earthed bus-side neutral is still a
+    #   LOCAL earth-fault source limited by the core zero-sequence magnetising
+    #   reactance Z0m — finite on a three-limb core, ≈ open on five-limb/
+    #   shell/bank (then blocked).
+    z0m = None
     if far_delta_or_zigzag:
         far_side = 'delta'
     elif far_grounded:
         far_side = 'grounded'
     else:
-        far_side = 'blocked'
+        z0m = _zero_seq_magnetizing(comp, base_mva)
+        far_side = 'magnetizing' if z0m is not None else 'blocked'
 
     # Compute grounding impedance from the user-specified grounding config.
     # The grounding prop is authoritative — if the user sets "ungrounded",
@@ -1258,7 +1294,47 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
             z_gnd = z_gnd + complex((r_a + r_b) / z_base_lv, 0)
 
     # 3*Zn appears in the zero-sequence circuit
-    return z_gnd * 3, far_side
+    z0_seq = z_gnd * 3
+    # Single-earthed star-star: add the core zero-sequence magnetising branch
+    # (Z0m is already a zero-sequence impedance — no ×3), so the earthed
+    # neutral sources a finite, limited earth-fault current instead of zero.
+    if far_side == 'magnetizing' and z0m is not None:
+        z0_seq = z0_seq + z0m
+    return z0_seq, far_side
+
+
+def _zero_seq_magnetizing(comp, base_mva):
+    """Zero-sequence magnetising impedance of a single-earthed star-star
+    transformer (one neutral earthed, the other floating, no delta), in
+    per-unit on the study base — or None if the core presents an effectively
+    open zero-sequence path.
+
+    A three-limb core forces the (in-phase) zero-sequence flux out through the
+    tank and air — a lossy "phantom delta" — giving a finite Z0m (~0.3–1.0 pu
+    on the unit base) that lets the earthed neutral drive a limited earth-fault
+    current. Five-limb, shell and single-phase-bank cores have an iron return
+    path, so Z0m approaches open circuit and the earthed neutral sources
+    negligible earth-fault current (returned as None → blocked). An explicit
+    ``z0m_pu`` prop (e.g. the datasheet open-circuit zero-sequence impedance)
+    overrides the core-type default for any construction.
+    """
+    override = comp.props.get("z0m_pu", None)
+    core = str(comp.props.get("core_construction", "three_limb")).lower().replace("-", "_")
+    if override not in (None, "", 0, 0.0):
+        z0m_own = float(override)
+    elif core in ("three_limb", "3_limb"):
+        z0m_own = 0.6  # representative tank-return value; override with datasheet X0
+    else:
+        return None  # five-limb / shell / single-phase bank ≈ open circuit
+    if z0m_own <= 0:
+        return None
+    # per-unit on the unit MVA base → study base
+    rated_mva = float(comp.props.get("rated_mva", 1.0) or 1.0)
+    z0m_study = z0m_own * base_mva / max(rated_mva, 1e-9)
+    xr = float(comp.props.get("x_r_ratio", 10) or 10)
+    x = z0m_study
+    r = x / xr if xr > 0 else 0.0
+    return complex(r, x)
 
 
 def _grounding_impedance(grounding_type, comp, side, z_base):
