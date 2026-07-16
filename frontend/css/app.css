@@ -948,6 +948,72 @@ body.dark-mode .panel-expand-tab { background: var(--bg-primary); }
   border-color: var(--accent-color, #1976d2);
 }
 
+/* ─── Cable flow-direction flip ─── */
+.prop-row--direction {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.prop-direction-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  padding: 4px 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.prop-direction-end {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 42%;
+}
+
+.prop-direction-arrow {
+  color: var(--accent-color, #1976d2);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.prop-direction-unknown {
+  color: var(--text-muted);
+}
+
+.prop-flip-btn {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.prop-flip-btn:hover:not(:disabled) {
+  background: var(--accent-color, #1976d2);
+  color: #fff;
+  border-color: var(--accent-color, #1976d2);
+}
+
+.prop-flip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prop-direction-note {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
 /* ─── Compliance Report ─── */
 .compliance-toolbar {
   display: flex;

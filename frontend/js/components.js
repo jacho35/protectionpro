@@ -6,6 +6,44 @@ const Components = {
     return [...AppState.components.values()].filter(c => c.type === 'bus');
   },
 
+  // Resolve the two bus endpoints of a cable/transformer by its port order
+  // (port[0] = 'from', port[1] = 'to'), walking through transparent closed
+  // devices. Mirrors the backend's port-based branch orientation so the
+  // properties-panel direction display matches the reported load-flow signs.
+  // Returns { fromBus, toBus } — bus/board components or null.
+  cableEndpointBuses(compId) {
+    const comp = AppState.components.get(compId);
+    const def = comp && COMPONENT_DEFS[comp.type];
+    if (!def || !def.ports || def.ports.length < 2) return { fromBus: null, toBus: null };
+
+    const adj = new Map(); // id -> [{ id, localPort }]
+    for (const wire of AppState.wires.values()) {
+      if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
+      if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
+      adj.get(wire.fromComponent).push({ id: wire.toComponent, localPort: wire.fromPort });
+      adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
+    }
+    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']);
+    const isClosed = (c) => TRANSPARENT.has(c.type)
+      && !((c.type === 'cb' || c.type === 'switch') && c.props.state === 'open');
+
+    const walk = (portId) => {
+      const visited = new Set([compId]);
+      const queue = (adj.get(compId) || []).filter(n => n.localPort === portId).map(n => n.id);
+      while (queue.length) {
+        const id = queue.shift();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const c = AppState.components.get(id);
+        if (!c) continue;
+        if (c.type === 'bus' || c.type === 'distribution_board') return c;
+        if (isClosed(c)) for (const { id: nid } of (adj.get(id) || [])) if (!visited.has(nid)) queue.push(nid);
+      }
+      return null;
+    };
+    return { fromBus: walk(def.ports[0].id), toBus: walk(def.ports[1].id) };
+  },
+
   // Get all components connected to a given component via wires
   getConnectedComponents(compId) {
     const connected = [];
