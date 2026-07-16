@@ -131,6 +131,7 @@ const AppState = {
   dynamicMotorSchedule: null,  // {motors: [{id, role, start_time_s}]}
   dynamicMotorCases: [],       // [{id, name, schedule}]
   loadFlowCases: [],           // [{id, name, baseMVA, loadFlowMethod, components, wires}] — Load Flow Study Manager
+  interlockLogic: { nodes: [], links: [] },  // CB interlocking boolean-gate diagram (Interlock workspace)
   lfPreviewCaseId: null,       // transient (NOT persisted): a saved load-flow case currently previewed on the diagram — overrides cb/switch state in the symbol render. See lfstudy.js.
 
   // Component groups — reusable blocks
@@ -1057,6 +1058,7 @@ const AppState = {
     this.dynamicMotorSchedule = null;
     this.dynamicMotorCases = [];
     this.loadFlowCases = [];   // saved load-flow study cases
+    this.interlockLogic = { nodes: [], links: [] };  // CB interlocking diagram
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;
@@ -1228,6 +1230,7 @@ const AppState = {
         && this.dynamicMotorSchedule.motors.length) ? this.dynamicMotorSchedule : undefined,
       dynamicMotorCases: (this.dynamicMotorCases && this.dynamicMotorCases.length) ? this.dynamicMotorCases : undefined,
       loadFlowCases: (this.loadFlowCases && this.loadFlowCases.length) ? this.loadFlowCases : undefined,
+      interlockLogic: (this.interlockLogic && this.interlockLogic.nodes && this.interlockLogic.nodes.length) ? this.interlockLogic : undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
@@ -1537,6 +1540,8 @@ const AppState = {
       ? data.dynamicMotorSchedule : null;
     this.dynamicMotorCases = Array.isArray(data.dynamicMotorCases) ? data.dynamicMotorCases : [];
     this.loadFlowCases = Array.isArray(data.loadFlowCases) ? data.loadFlowCases : [];
+    this.interlockLogic = (data.interlockLogic && Array.isArray(data.interlockLogic.nodes))
+      ? data.interlockLogic : { nodes: [], links: [] };
     this.lightningRisk = data.lightningRisk || null;
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.dirty = false;
@@ -1547,6 +1552,9 @@ const AppState = {
     }
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
       PlanMarkup.onProjectChanged();
+    }
+    if (typeof Interlocking !== 'undefined' && Interlocking.onProjectChanged) {
+      Interlocking.onProjectChanged();
     }
   },
 };

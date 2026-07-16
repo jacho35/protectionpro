@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ControlSim.init();
   Retic.init();
   if (typeof PlanMarkup !== 'undefined') PlanMarkup.init();
+  if (typeof Interlocking !== 'undefined') Interlocking.init();
 
   // ─── Workspace switching (SLD / Reticulation / Plan) ───
   // Single authority for the three-way tab switch. Each secondary workspace
@@ -62,19 +63,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const appc = document.getElementById('app-container');
     const reticWs = document.getElementById('retic-workspace');
     const planWs = document.getElementById('plan-workspace');
+    const interlockWs = document.getElementById('interlock-workspace');
     // Stand down whichever secondary workspace we're leaving.
     if (typeof Retic !== 'undefined' && Retic._active && name !== 'retic') Retic.deactivate();
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && name !== 'plan') PlanMarkup.deactivate();
+    if (typeof Interlocking !== 'undefined' && Interlocking._active && name !== 'interlock') Interlocking.deactivate();
 
     appc.style.display = (name === 'sld') ? '' : 'none';
     if (reticWs) reticWs.style.display = (name === 'retic') ? 'flex' : 'none';
     if (planWs) planWs.style.display = (name === 'plan') ? 'flex' : 'none';
+    if (interlockWs) interlockWs.style.display = (name === 'interlock') ? 'flex' : 'none';
     // Mobile: flag secondary workspaces so the phone CSS hides SLD-only chrome
     // (FABs, selection bar, Components/Analysis nav) and fits the workspace
     // between the mobile header and bottom nav.
     document.body.classList.toggle('mobile-ws-secondary', name !== 'sld');
 
-    const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan' };
+    const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan', interlock: 'btn-workspace-interlock' };
     for (const [key, id] of Object.entries(tabs)) {
       const b = document.getElementById(id);
       if (!b) continue;
@@ -85,12 +89,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (name === 'sld') { if (typeof Canvas !== 'undefined') Canvas.render(); }
     else if (name === 'retic') { Retic.activate(); }
     else if (name === 'plan' && typeof PlanMarkup !== 'undefined') { PlanMarkup.activate(); }
+    else if (name === 'interlock' && typeof Interlocking !== 'undefined') { Interlocking.activate(); }
   }
   window.switchWorkspace = switchWorkspace;
   for (const [name, id] of [
     ['sld', 'btn-workspace-sld'],
     ['retic', 'btn-workspace-retic'],
     ['plan', 'btn-workspace-plan'],
+    ['interlock', 'btn-workspace-interlock'],
   ]) {
     document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
   }
