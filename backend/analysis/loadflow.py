@@ -94,6 +94,32 @@ def _find_bus_paths(comp_id, adjacency, components, bus_of):
     return found
 
 
+def _bus_via_port(comp_id, port_id, adjacency_ports, adjacency, components, bus_of):
+    """Return the bus-group id reachable from a specific port of a component,
+    walking through transparent closed devices. None if no bus is found.
+
+    Used to orient a standalone cable branch by its drawn ports so the reported
+    from→to direction is deterministic (rather than depending on graph-walk
+    order), matching the frontend's port-based direction display."""
+    visited = {comp_id}
+    queue = list(adjacency_ports.get((comp_id, port_id), []))
+    while queue:
+        nid = queue.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        if nid in bus_of:
+            return bus_of[nid]
+        comp = components.get(nid)
+        if not comp:
+            continue
+        if _is_transparent_and_closed(comp):
+            for neighbor in adjacency.get(nid, []):
+                if neighbor not in visited:
+                    queue.append(neighbor)
+    return None
+
+
 def _find_components_at_bus(bus_id, adjacency, components):
     """Find non-transparent components connected to a bus through transparent elements."""
     visited = {bus_id}
@@ -842,9 +868,19 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
         for comp, bi, _d in balancers:
             swing_idx.add(bi)
         if not utilities and isl in user_swing_islands:
-            # No utility: a user-labelled Swing bus overrides source choice
-            swing_idx -= {bi for _c, bi, _d in balancers}
-            swing_idx.add(user_swing_islands[isl])
+            # No utility: a user-labelled Swing bus overrides the automatic
+            # source choice — but ONLY if that bus is itself backed by a real
+            # source in this island. A Swing bus with no source cannot act as
+            # an infinite slack; honouring it there fabricates power (e.g. a
+            # utility-incomer bus left labelled Swing after its utility is
+            # islanded away by an open breaker would inject phantom current
+            # down the dead feeder). When the labelled bus has no source, keep
+            # the real island source as the reference instead.
+            uidx = user_swing_islands[isl]
+            source_bis = {bi for _c, bi, _d in sources}
+            if uidx in source_bis:
+                swing_idx -= {bi for _c, bi, _d in balancers}
+                swing_idx.add(uidx)
 
         bcomp = balancers[0][0]
         if not utilities and bcomp.type == "generator":
@@ -907,7 +943,27 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
             p_tgt = seq_fixed_target.get(comp.id, p_av)
             plan.append([comp, bi, p_av, q_av, p_tgt, p_tgt])
 
-        remaining = demand_mw - sum(e[4] for e in plan)
+        # A fixed (must-run/discharging) battery is committed generation just
+        # like a must-run source: it must reduce the demand that merit
+        # generators are sized against and count toward the excess/curtailment
+        # check. Omitting it over-commits generators and dumps the surplus onto
+        # the slack source as negative power (a diesel set cannot motor). A
+        # battery that is itself the island balancer is excluded — its output
+        # is recovered from the slack solution, not a fixed injection.
+        batt_discharge_mw = sum(p for c, _bi, p, _bp in batt_discharge
+                                if c.id not in balancer_ids)
+
+        remaining = demand_mw - sum(e[4] for e in plan) - batt_discharge_mw
+        # The island balancer (slack) generator is already committed as the
+        # reference set, so let it carry the residual up to its own capacity
+        # before starting any additional standby/merit generator. Otherwise a
+        # standby set fires just to serve a small residual the running slack
+        # set could easily absorb (e.g. a second genset starting for a few kW
+        # when a must-run battery already meets nearly all the island load).
+        # Skipped when a sequential-commitment scheme owns the balancer.
+        if seq_balancer_entry is None:
+            remaining -= sum(_source_output_mva(c)[0] for c, _bi, _d in balancers
+                             if c.type == "generator")
         for comp, bi in merit:
             p_av, q_av, _s, _r = _source_output_mva(comp)
             p_disp = min(p_av, max(0.0, remaining))
@@ -972,7 +1028,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
 
         # ── Curtail when there is no export path for the excess ──
         export_ok = bool(utilities) and all(_utility_allows_export(u) for u, _b, _d in utilities)
-        total = sum(e[4] for e in plan)
+        total = sum(e[4] for e in plan) + batt_discharge_mw
         if total > demand_mw and not export_ok:
             excess = total - demand_mw
             # Curtail least-preferred sources first (highest priority number),
@@ -998,7 +1054,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
         gen_balancer_min = sum(min(_source_output_mva(c)[0], _gen_min_load_mw(c))
                                for c in gen_balancers)
         if gen_balancer_min > 0:
-            expected = demand_mw - sum(e[4] for e in plan)
+            expected = demand_mw - sum(e[4] for e in plan) - batt_discharge_mw
             shortfall = gen_balancer_min - expected
             bname = gen_balancers[0].props.get("name", gen_balancers[0].id)
             if shortfall > 1e-9:
@@ -1380,6 +1436,14 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     for w in wires:
         adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
         adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
+
+    # Port-aware adjacency: (component_id, port_id) -> [neighbor_ids]. Used to
+    # orient a standalone cable branch by its own from/to ports (see the cable
+    # branch emission below), so reported flow direction is deterministic.
+    adjacency_ports = {}
+    for w in wires:
+        adjacency_ports.setdefault((w.fromComponent, w.fromPort), []).append(w.toComponent)
+        adjacency_ports.setdefault((w.toComponent, w.toPort), []).append(w.fromComponent)
 
     # Build bus groups (bus + reachable transparent elements)
     bus_of = _build_bus_groups(buses, adjacency, components, bus_idx)
@@ -1857,6 +1921,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
 
             for elem in elems.values():
                 loading = 0
+                # Row-local reporting direction; may be flipped for standalone
+                # cables (see below). Magnitudes (s_mva, i_amps, losses) are
+                # direction-independent, so only from/to and P/Q signs change.
+                row_from, row_to = from_bus, to_bus
+                row_p, row_q = p_mw, q_mvar
                 if elem.type == "cable":
                     # Use the bus-inferred voltage for cables in transformer chains,
                     # falling back to the cable's own voltage_kv property
@@ -1871,6 +1940,19 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     rated_a = elem.props.get("rated_amps", 400) * max(1, int(elem.props.get("num_parallel", 1)))
                     rated_mva = math.sqrt(3) * v_kv * rated_a / 1000
                     loading = (cable_s_mva / rated_mva * 100) if rated_mva > 0 else 0
+                    # Orient a standalone cable branch by its own 'from'→'to'
+                    # ports so the reported direction is deterministic (as drawn,
+                    # typically source→load) instead of graph-walk order, then
+                    # apply the user's optional manual flip (props.reverse).
+                    if len(elems) == 1 and hv_bus is None:
+                        port_from = _bus_via_port(elem.id, "from", adjacency_ports,
+                                                  adjacency, components, bus_of)
+                        swap = port_from == to_bus  # 'from' port sits on the to-side
+                        if bool(elem.props.get("reverse", False)):
+                            swap = not swap
+                        if swap:
+                            row_from, row_to = row_to, row_from
+                            row_p, row_q = -row_p, -row_q
                 elif elem.type in ("transformer", "autotransformer"):
                     rated_mva_xfmr = elem.props.get("rated_mva", 10)
                     loading = (s_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
@@ -1888,20 +1970,36 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 branch_results.append(LoadFlowBranch(
                     elementId=elem.id,
                     element_name=elem.props.get("name", elem.type),
-                    from_bus=from_bus, to_bus=to_bus,
-                    p_mw=round(p_mw, 4), q_mvar=round(q_mvar, 4),
+                    from_bus=row_from, to_bus=row_to,
+                    p_mw=round(row_p, 4), q_mvar=round(row_q, 4),
                     s_mva=round(s_mva, 4), i_amps=round(elem_i_amps, 2),
                     loading_pct=round(loading, 2), losses_mw=round(losses_mw, 6),
                 ))
 
     # ── Bus results ──
+    def _through(branch, local):
+        """Combine branch through-flow with the local P (or Q) at a bus.
+
+        A local CONSUMER (positive `local`: loads, motors) is served in addition
+        to whatever the bar passes downstream, so it adds on top of the outgoing
+        branch flow. A local INJECTOR (negative `local`: capacitor banks,
+        over-excited machines) instead FEEDS the bar — its output leaves through
+        the branches and is therefore already captured in `s_through`. Adding the
+        negative load on top then cancels the value to ~0 (the "capacitor bus
+        reports 0 kVAr" bug), so a net injection is reported directly with its
+        own (leading/supplying) sign rather than double-counted against its own
+        export.
+        """
+        return branch + local if local >= 0 else local
+
     bus_results = {}
     for bus in buses:
         i = bus_idx[bus.id]
         v_kv = bus.props.get("voltage_kv", 0.4 if bus.type == "distribution_board" else 11)
         # Busbar through-power: outgoing branch flows + the local load it
         # serves (zero for de-energized buses — their load is unserved)
-        s_th = (s_through[i] + complex(bus_load_p_mw[i], bus_load_q_mvar[i])
+        s_th = (complex(_through(s_through[i].real, bus_load_p_mw[i]),
+                        _through(s_through[i].imag, bus_load_q_mvar[i]))
                 if i not in dispatch["dead_idx"] else complex(0, 0))
         bus_results[bus.id] = LoadFlowBus(
             bus_id=bus.id,

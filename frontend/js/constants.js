@@ -858,6 +858,9 @@ const CONTROL_TYPES = new Set([
 // Describes the standard or reference for generic/default values shown to the user via ⓘ buttons.
 // Keyed by "componentType.fieldKey".
 const FIELD_INFO = {
+  // Bus
+  'bus.bus_type': 'How the load-flow solver treats this bus:\nPQ (load bus): real and reactive power are fixed (a load, or a pure junction with none); the solver finds its voltage. Most buses are PQ.\nPV (voltage-controlled): a local generator holds the voltage magnitude by adjusting its reactive output — real power is fixed. Use for a governed/AVR-regulated generator bus.\nSwing (slack): the reference bus — it fixes both voltage magnitude AND angle (0°) and supplies whatever real+reactive power balances the network. Exactly one per energised island, and it must be backed by a real infinite source (the utility/grid).\nThe engine auto-selects the utility-connected bus as the swing, so you only need to set this by hand for a network with no utility. A bus labelled Swing but with no source of its own is only honoured when its island has no other source (else the real source is used) — so an incomer bus left as Swing after its utility is switched out will not fabricate power.\nUsed by: Load Flow.',
+
   // SVC / STATCOM (FACTS shunt reactive compensation)
   'svc.device_mode': 'STATCOM: a voltage-source converter — its reactive output is a roughly constant MVAr limit, largely independent of bus voltage (so it holds voltage even during a sag).\nSVC (TCR/TSC): a susceptance-based compensator — its reactive output follows Q = B·V², so support collapses as V² at low voltage.\nUsed by: Load Flow.',
   'svc.control_mode': 'Voltage regulating: holds the connected bus at the voltage setpoint by injecting/absorbing reactive power, within the Q Min/Max limits (a PV bus that reverts to fixed-Q when a limit is reached).\nFixed reactive output: injects a set MVAr (like a controllable capacitor/reactor).',
@@ -1822,6 +1825,7 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
+      { key: '_flow_direction', label: 'Flow Direction', type: 'cable_direction' },
       { key: 'standard_type', label: 'Cable Type', type: 'standard_select', library: 'cable' },
       { key: 'length_km', label: 'Length', type: 'number', unit: 'm', unitOptions: [{ label: 'm', mult: 0.001 }, { label: 'km', mult: 1 }] },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },

@@ -87,7 +87,12 @@ const Properties = {
     // 1. Filter visible fields
     const visibleFields = def.fields.filter(field => {
       if (!field.showWhen) return true;
-      const depVal = comp.props[field.showWhen.field] ?? '';
+      // Fall back to the definition default when the dependency prop is absent
+      // — legacy components saved before a prop existed (e.g. a bus with no
+      // `system` key) must still resolve `system` to its 'ac' default, or
+      // every AC-gated field (bus_type, voltage_kv, …) would be hidden.
+      const depDefault = def.defaults ? def.defaults[field.showWhen.field] : undefined;
+      const depVal = comp.props[field.showWhen.field] ?? depDefault ?? '';
       if (field.showWhen.match) {
         if (!field.showWhen.match.test(depVal)) return false;
         if (field.showWhen.side === 'lv') {
@@ -319,6 +324,22 @@ const Properties = {
       });
     });
 
+    // Bind the cable flow-direction flip button (swaps reported from/to)
+    this.contentEl.querySelectorAll('.prop-flip-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const c = AppState.components.get(this.currentId);
+        if (!c) return;
+        c.props.reverse = !c.props.reverse;
+        AppState.dirty = true;
+        this._notifyResultsCleared();
+        AppState.clearResults();
+        if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+        Canvas.render();
+        this.show(c.id);
+      });
+    });
+
     // Bind collapsible section headers
     this.contentEl.querySelectorAll('.prop-section-header').forEach(header => {
       header.addEventListener('click', () => {
@@ -460,6 +481,26 @@ const Properties = {
         <div class="prop-row prop-row--ampacity">
           ${summary}
           <button class="prop-ampacity-btn" type="button">⚡ Calculate installed ampacity…</button>
+        </div>`;
+    } else if (field.type === 'cable_direction') {
+      // Show the cable's from→to orientation (used for reported P/Q flow sign)
+      // with a flip button that swaps it without redrawing the cable.
+      const comp = AppState.components.get(compId);
+      const { fromBus, toBus } = Components.cableEndpointBuses(compId);
+      const nameOf = (b) => b ? escHtml(b.props.name || b.id) : '<span class="prop-direction-unknown">—</span>';
+      const reversed = !!(comp && comp.props && comp.props.reverse);
+      let a = nameOf(fromBus), b = nameOf(toBus);
+      if (reversed) { const t = a; a = b; b = t; }
+      const connected = fromBus && toBus;
+      return `
+        <div class="prop-row prop-row--direction">
+          <div class="prop-direction-summary">
+            <span class="prop-direction-end">${a}</span>
+            <span class="prop-direction-arrow">→</span>
+            <span class="prop-direction-end">${b}</span>
+          </div>
+          <button class="prop-flip-btn" type="button" title="Swap from/to — flips the sign of the reported P and Q flow"${connected ? '' : ' disabled'}>⇄ Flip direction</button>
+          ${reversed ? '<div class="prop-direction-note">Reversed from as-drawn — re-run analyses to update flows</div>' : ''}
         </div>`;
     } else if (field.type === 'select') {
       const options = field.options.map(opt => {

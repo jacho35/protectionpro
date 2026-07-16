@@ -475,6 +475,61 @@ class TestLoadFlow:
         assert not any(bid.startswith("__term__") for bid in res.buses), \
             "synthetic terminal bus leaked into the public load-flow result"
 
+    def test_leaf_capacitor_bus_reports_its_reactive_output(self):
+        """A capacitor bank alone on a leaf bus must report its reactive output
+        in the bus through-power, not zero.
+
+        Regression: through-power was `s_through + bus_load`. A capacitor is a
+        local injector (negative `bus_load`), and on a leaf bus its output flows
+        OUT through the single branch — so it was ALSO counted in `s_through`.
+        The two terms cancelled and the badge showed 0 kVAr. The bus must now
+        report ≈ −(rated kVAr) (leading/supplying sign)."""
+        cable = _comp("cable-1", "cable", {
+            "name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.1,
+            "length_km": 0.05, "rated_amps": 200.0, "voltage_kv": 11.0,
+        })
+        cap_bus = _comp("bus-2", "bus", {"name": "CAP_Bus", "voltage_kv": 11.0})
+        cap = _comp("capacitor_bank-1", "capacitor_bank", {
+            "name": "Cap", "rated_kvar": 100.0, "voltage_kv": 11.0, "steps": 1,
+        })
+        proj = _utility_bus_project(
+            extra_components=[cable, cap_bus, cap],
+            extra_wires=[_wire("w2", "bus-1", "cable-1"),
+                         _wire("w3", "cable-1", "bus-2"),
+                         _wire("w4", "bus-2", "capacitor_bank-1")])
+        res = run_load_flow(proj, "newton_raphson")
+        assert res.converged
+        cap_bus_res = res.buses["bus-2"]
+        # 100 kVAr = 0.1 MVAr, supplied (leading) → negative through-Q.
+        assert cap_bus_res.q_through_mvar == pytest.approx(-0.1, abs=5e-3), \
+            f"leaf capacitor bus reported {cap_bus_res.q_through_mvar} MVAr, expected ≈ -0.1"
+
+    def test_capacitor_reduces_but_does_not_cancel_load_bus_through_q(self):
+        """A capacitor sharing a bus with a larger inductive load (power-factor
+        correction) still leaves the bus net-inductive: through-Q stays positive
+        and is reduced by the cap's rating. Guards that the injector fix only
+        changes net-injecting buses and leaves the common net-consuming case
+        behaving as before."""
+        load = _comp("static_load-1", "static_load", {
+            # 400 kVA @ 0.8 pf → P = 320 kW, Q = 240 kVAr inductive
+            "name": "L1", "rated_kva": 400.0, "power_factor": 0.8,
+            "voltage_kv": 11.0,
+        })
+        cap = _comp("capacitor_bank-1", "capacitor_bank", {
+            "name": "Cap", "rated_kvar": 100.0, "voltage_kv": 11.0, "steps": 1,
+        })
+        proj = _utility_bus_project(
+            extra_components=[load, cap],
+            extra_wires=[_wire("w2", "bus-1", "static_load-1"),
+                         _wire("w3", "bus-1", "capacitor_bank-1")])
+        res = run_load_flow(proj, "newton_raphson")
+        assert res.converged
+        main = res.buses["bus-1"]
+        # Q_load = 0.24 MVAr, less 0.1 MVAr from the cap → 0.14 MVAr, still
+        # inductive (positive); the cap reduces but does not cancel it.
+        assert main.q_through_mvar == pytest.approx(0.14, abs=1e-2), \
+            f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
+
 
 class TestPlanSubBoardFeeder:
     """EE-1: a distribution board is a bus-like node that carries its own
