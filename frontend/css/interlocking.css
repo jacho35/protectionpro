@@ -1,0 +1,101 @@
+/* Circuit-Breaker Interlocking workspace */
+#interlock-workspace {
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: #11151c;
+  color: #e6e9ef;
+}
+#interlock-workspace { display: none; }
+
+.il-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #1a1f29;
+  border-bottom: 1px solid #2a2f3a;
+  flex-wrap: wrap;
+}
+.il-title { font-weight: 600; font-size: 14px; margin-right: 4px; }
+.il-sep { width: 1px; align-self: stretch; background: #2a2f3a; margin: 0 6px; }
+.il-gate-adds { display: inline-flex; gap: 4px; }
+.il-btn {
+  background: #2a2f3a;
+  color: #e6e9ef;
+  border: 1px solid #3a4150;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.il-btn:hover { background: #333a47; }
+.il-btn-primary { background: #2f6fb0; border-color: #3a7cc0; }
+.il-btn-primary:hover { background: #357ec4; }
+.il-btn-on { background: #c0392b; border-color: #d04335; }
+.il-btn-danger { background: #7a2b22; border-color: #a03b2e; }
+.il-gate { font-family: monospace; font-weight: 600; }
+.il-status { font-size: 12px; color: #8892a0; margin-left: 6px; }
+.il-status-warn { color: #f1c40f; }
+
+.il-body { flex: 1; display: flex; min-height: 0; }
+.il-canvas-wrap { flex: 1; overflow: auto; background:
+  radial-gradient(circle, #1b2130 1px, transparent 1px) 0 0 / 24px 24px, #11151c; }
+.il-canvas { display: block; width: 2200px; height: 1400px; }
+.il-node { cursor: grab; }
+.il-node.il-clickable { cursor: pointer; }
+.il-port { cursor: crosshair; }
+.il-link { cursor: pointer; }
+
+/* Inspector */
+.il-inspector {
+  width: 280px;
+  flex-shrink: 0;
+  background: #1a1f29;
+  border-left: 1px solid #2a2f3a;
+  padding: 14px;
+  overflow: auto;
+  font-size: 13px;
+}
+.il-insp-empty h4, .il-sub { margin: 0 0 8px; font-size: 13px; }
+.il-insp-empty p { color: #aab2c0; line-height: 1.5; margin: 0 0 10px; }
+.il-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; }
+.il-dot.out { background: #2ecc71; }
+.il-dot.in { background: #8892a0; }
+.il-insp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-weight: 600; }
+.il-insp label { display: block; margin: 10px 0 4px; color: #aab2c0; font-size: 12px; }
+.il-insp select, .il-insp input[type=text] {
+  width: 100%; box-sizing: border-box; padding: 6px 8px;
+  background: #11151c; color: #e6e9ef; border: 1px solid #3a4150; border-radius: 4px; font-size: 13px;
+}
+.il-check { display: flex !important; align-items: center; gap: 6px; margin-top: 10px; }
+.il-check input { width: auto; }
+.il-hint { color: #8892a0; font-size: 11px; margin: 4px 0 0; }
+
+/* Conflict-check modal */
+.il-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center; z-index: 3000;
+}
+.il-modal-content {
+  background: #1a1f29; color: #e6e9ef; border: 1px solid #2a2f3a; border-radius: 8px;
+  width: min(760px, 92vw); max-height: 86vh; display: flex; flex-direction: column;
+}
+.il-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2a2f3a; font-weight: 600; }
+.il-modal-close { background: none; border: none; color: #aab2c0; font-size: 22px; cursor: pointer; line-height: 1; }
+.il-modal-body { padding: 16px; overflow: auto; }
+.il-modal-body p { line-height: 1.5; margin: 0 0 10px; }
+.il-ok { color: #2ecc71; }
+.il-warn { color: #e67e22; }
+.il-note { color: #8892a0; font-size: 12px; }
+.il-table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0; }
+.il-table th, .il-table td { border: 1px solid #2a2f3a; padding: 5px 8px; text-align: center; }
+.il-table th { background: #232937; }
+.il-t1 { color: #2ecc71; font-weight: 600; }
+.il-t0 { color: #8892a0; }
+.il-tv { color: #e74c3c; font-weight: 600; }
+.il-sub { margin-top: 16px; color: #aab2c0; }
+.il-list { list-style: none; padding: 0; margin: 6px 0; }
+.il-list li { padding: 4px 0; }
+.il-badge { color: #11151c; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; }
