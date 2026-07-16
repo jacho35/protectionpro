@@ -591,12 +591,27 @@
      They're siblings of #app-container (which switchWorkspace hides), so the
      mobile header + bottom nav survive. Fit the workspace between them and
      drop the SLD-only chrome. */
-  #retic-workspace, #plan-workspace {
+  #retic-workspace, #plan-workspace, #interlock-workspace {
+    position: fixed;
     top: var(--mobile-header-height) !important;
     bottom: var(--mobile-nav-height) !important;
     left: 0 !important; right: 0 !important;
+    height: auto !important;   /* let top/bottom govern; #interlock sets height:100% for desktop */
     z-index: 400;
   }
+
+  /* Interlock workspace: stack the inspector below the canvas so the gate
+     canvas keeps the full width on a narrow screen; let the toolbar wrap. */
+  #interlock-workspace .il-body { flex-direction: column; }
+  #interlock-workspace .il-inspector {
+    width: auto;
+    max-height: 40%;
+    border-left: none;
+    border-top: 1px solid #2a2f3a;
+  }
+  #interlock-workspace .il-toolbar { padding: 6px 8px; gap: 4px; }
+  #interlock-workspace .il-btn { padding: 8px 10px; }  /* larger tap targets */
+  #interlock-workspace .il-title { width: 100%; }
   body.mobile-ws-secondary #mobile-fab-group,
   body.mobile-ws-secondary #mobile-selection-bar,
   body.mobile-ws-secondary #mobile-nav .mobile-nav-btn[data-tab="components"],
