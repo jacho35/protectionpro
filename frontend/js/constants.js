@@ -679,6 +679,21 @@ function cbTripTime(params, currentA) {
 // region (the device is only guaranteed to trip magnetically above it).
 const MCB_CURVE_MAGNETIC = { B: 5, C: 10, D: 20 };
 
+// Typical inertia constant H (seconds, on the machine MVA base) per prime-mover
+// type — used to auto-populate a generator's `inertia_h_s` when the Prime Mover
+// selector changes. Mid-range representative values: reciprocating sets have the
+// lowest stored energy, large steam turbo-sets the highest.
+// Sources: IEEE Std 3002.3 / Kundur "Power System Stability and Control" §3.9.
+// 'other' is intentionally absent — an unknown prime mover leaves H untouched.
+const PRIME_MOVER_INERTIA_H = {
+  diesel: 1.5,
+  gas_engine: 1.0,
+  gas_turbine: 4.0,
+  steam_turbine: 6.0,
+  hydro: 3.0,
+  wind: 3.0,
+};
+
 // ─── PV Module Library ───
 // Typical STC datasheet values for common module classes; voltages/currents
 // per module, temperature coefficients in %/°C (negative = falls with heat).
@@ -891,6 +906,7 @@ const FIELD_INFO = {
   'utility.voltage_kv':  'Default 33 kV — standard sub-transmission voltage per IEC 60038.',
 
   // Generator
+  'generator.prime_mover': 'The generator\'s driving machine. Descriptive/documentation attribute — it does not change the electrical model, but it flags typical inertia bands: reciprocating sets (diesel/gas engine) H ≈ 1–3 s, hydro 2–4 s, and large steam/gas turbo-sets 4–9 s (set H explicitly in the Stability section).',
   'generator.xd_pp':     'Default Xd″ = 0.15 p.u. is typical for salient-pole synchronous generators.\nSource: IEC 60034-4 Table 5 — sub-transient reactance range 0.10–0.25 p.u.',
   'generator.xd_p':      'Default Xd′ = 0.25 p.u. is typical transient reactance.\nSource: IEC 60034-4 Table 5 — transient reactance range 0.15–0.35 p.u.',
   'generator.xd':        'Default Xd = 1.2 p.u. is typical synchronous reactance.\nSource: IEC 60034-4 Table 5 — synchronous reactance range 0.8–1.8 p.u.',
@@ -1246,6 +1262,7 @@ const COMPONENT_DEFS = {
     height: 50,
     defaults: {
       name: 'Gen',
+      prime_mover: 'diesel',
       rated_mva: 10,
       voltage_kv: 11,
       xd_pp: 0.15,
@@ -1261,7 +1278,7 @@ const COMPONENT_DEFS = {
       max_load_pct: 100,
       gen_control: 'droop',
       start_threshold_pct: 90,
-      inertia_h_s: 4,
+      inertia_h_s: 1.5,
       damping_pu: 0,
       machine_model: 'classical',
       xq: 0.7,
@@ -1281,6 +1298,15 @@ const COMPONENT_DEFS = {
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
+      { key: 'prime_mover', label: 'Prime Mover', type: 'select', options: [
+        { value: 'diesel', label: 'Diesel Engine' },
+        { value: 'gas_engine', label: 'Gas Engine' },
+        { value: 'gas_turbine', label: 'Gas Turbine' },
+        { value: 'steam_turbine', label: 'Steam Turbine' },
+        { value: 'hydro', label: 'Hydro Turbine' },
+        { value: 'wind', label: 'Wind Turbine' },
+        { value: 'other', label: 'Other' },
+      ] },
       { key: 'rated_mva', label: 'Rating', type: 'number', unit: 'MVA', unitOptions: [{ label: 'MVA', mult: 1 }, { label: 'kVA', mult: 0.001 }] },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
