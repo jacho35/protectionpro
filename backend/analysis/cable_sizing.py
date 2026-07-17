@@ -107,15 +107,24 @@ STANDARD_CABLES = [
 ]
 
 # Adiabatic withstand constant k (A√s / mm²)
+# BARE = uninsulated overhead conductor (ACSR / AAAC / AAC). Its k is computed
+# with the SAME IEC 60865 material constants as the insulated rows, but for a
+# bare-conductor short-circuit temperature excursion of 80 °C (full-load) → 200 °C
+# (the usual hard-drawn Al/Cu annealing-limited maximum), which is why it comes
+# out below the XLPE (…→250 °C) values. Conservative: a lower k requires a
+# larger area for the same fault, so overhead lines are not over-rated.
 K_FACTORS = {
     ("Cu", "XLPE"): 143,
     ("Al", "XLPE"): 94,
     ("Cu", "PVC"): 115,
     ("Al", "PVC"): 76,
+    ("Cu", "BARE"): 129,
+    ("Al", "BARE"): 84,
 }
 
-# Max conductor operating temperature (°C)
-MAX_TEMP = {"XLPE": 90, "PVC": 70}
+# Max conductor operating temperature (°C). BARE overhead conductors are
+# short-circuit-limited to ~200 °C (aluminium annealing).
+MAX_TEMP = {"XLPE": 90, "PVC": 70, "BARE": 200}
 
 # Installation method derating factors
 INSTALL_DERATING = {"trefoil": 1.0, "flat": 0.95, "buried": 0.85}
@@ -398,41 +407,54 @@ def _format_ampacity_conditions(amp):
 def _get_cable_props(cable):
     """Extract cable properties with defaults."""
     p = cable.props
+    is_overhead = str(p.get("construction", "")).lower() == "overhead"
     std_type = p.get("standard_type", "")
     conductor = "Cu"
     insulation = "XLPE"
     size_mm2 = 0
 
-    # Try to resolve from standard cable library
-    if std_type:
-        for sc in STANDARD_CABLES:
-            if sc["id"] == std_type:
-                conductor = sc["conductor"]
-                insulation = sc["insulation"]
-                size_mm2 = sc["size_mm2"]
-                break
+    if is_overhead:
+        # Overhead line: bare aluminium conductor (ACSR / AAAC / AAC). The
+        # payload carries r/x/rated_amps for the selected codeword conductor;
+        # the size is derived from the 20 °C aluminium resistivity (the overhead
+        # library stores 20 °C values, unlike the hot insulated-cable tables).
+        conductor = "Al"
+        insulation = "BARE"
+        r_per_km = float(p.get("r_per_km", 0))
+        if r_per_km > 0:
+            size_mm2 = RESISTIVITY["Al"] * 1000 / r_per_km  # S = ρ₂₀×1000/R
+    else:
+        # Try to resolve from standard cable library
+        if std_type:
+            for sc in STANDARD_CABLES:
+                if sc["id"] == std_type:
+                    conductor = sc["conductor"]
+                    insulation = sc["insulation"]
+                    size_mm2 = sc["size_mm2"]
+                    break
 
-    # Override with explicit props if set
-    if "conductor" in p:
-        conductor = p["conductor"]
-    if "insulation" in p:
-        insulation = p["insulation"]
+        # Override with explicit props if set
+        if "conductor" in p:
+            conductor = p["conductor"]
+        if "insulation" in p:
+            insulation = p["insulation"]
 
-    # Derive size from r_per_km if not known
-    r_per_km = float(p.get("r_per_km", 0))
-    if size_mm2 == 0 and r_per_km > 0:
-        # Payload r_per_km values are at conductor OPERATING temperature
-        # (the frontend library stores 90°C XLPE / 70°C PVC values), so use
-        # the hot resistivity — the derived area then matches the actual
-        # conductor area used by the adiabatic withstand check.
-        rho = RESISTIVITY.get(conductor, 0.0175) * _temp_correction(conductor, insulation)
-        # R/km = ρ×1000/S  →  S = ρ×1000/R
-        size_mm2 = rho * 1000 / r_per_km
+        # Derive size from r_per_km if not known
+        r_per_km = float(p.get("r_per_km", 0))
+        if size_mm2 == 0 and r_per_km > 0:
+            # Payload r_per_km values are at conductor OPERATING temperature
+            # (the frontend library stores 90°C XLPE / 70°C PVC values), so use
+            # the hot resistivity — the derived area then matches the actual
+            # conductor area used by the adiabatic withstand check.
+            rho = RESISTIVITY.get(conductor, 0.0175) * _temp_correction(conductor, insulation)
+            # R/km = ρ×1000/S  →  S = ρ×1000/R
+            size_mm2 = rho * 1000 / r_per_km
 
     return {
         "conductor": conductor,
         "insulation": insulation,
         "size_mm2": size_mm2,
+        "overhead": is_overhead,
         "r_per_km": r_per_km,
         "x_per_km": float(p.get("x_per_km", 0)),
         "rated_amps": float(p.get("rated_amps", 0)),
@@ -624,7 +646,16 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             if amp_derated_a and amp_derated_a > 0:
                 amp_conditions = _format_ampacity_conditions(amp_block)
 
-        if amp_derated_a and amp_derated_a > 0:
+        if cp["overhead"]:
+            # Overhead line: the library's rated_amps IS the in-air thermal
+            # rating (bare conductor, ~40°C ambient / 75°C conductor). The IEC
+            # 60364-5-52 installation-method and insulation-temperature derating
+            # tables are for buried/enclosed insulated cables and do not apply —
+            # use the rating directly.
+            install_df = 1.0
+            temp_df = 1.0
+            derated_amps = rated_amps
+        elif amp_derated_a and amp_derated_a > 0:
             # Installed rating already encodes the full IEC 60364-5-52 derating.
             install_df = float(amp_block.get("derating", 1.0) or 1.0)  # for the recommend-on-fail search
             temp_df = 1.0
