@@ -897,6 +897,7 @@ const FIELD_INFO = {
   'generator.x_r_ratio': 'Default X/R = 40 is typical for generators.\nSource: IEC 60909-0 §3.7 — generator X/R ratios are generally high (30–60).',
   'generator.power_factor': 'Default PF = 0.85 lagging, typical industrial generator rating.\nSource: IEC 60034-1 §8 — rated power factor.',
   'generator.min_load_pct': 'Default 30% — diesel sets running below ~30% of rating for extended periods suffer wet stacking (unburned fuel/carbon build-up).\nSources: engine manufacturers recommend 30–35% minimum (typical spec range 30–50%); NFPA 110 §8.4.2 requires monthly exercising at ≥30% of nameplate kW.\nThe dispatcher curtails solar/wind so a running generator carries at least this load.',
+  'generator.max_load_pct': 'Default 100% — the ceiling (% of rating) a set is loaded to when it is dispatched (merit-order / must-run / standby). Lower it to hold spinning reserve or respect a site derating; demand beyond the cap flows to other sources or the island slack.\nApplies to dispatched sets — an island-slack generator still carries whatever residual the network balance requires.',
 
   // Dispatch (load-flow commitment) — shared by all sources via the bare-key
   // info fallback. Deliberately spells out that dispatch is NOT the stability
@@ -1257,6 +1258,7 @@ const COMPONENT_DEFS = {
       dispatch_priority: 2,
       dispatch_mode: 'standby',
       min_load_pct: 30,
+      max_load_pct: 100,
       gen_control: 'droop',
       start_threshold_pct: 90,
       inertia_h_s: 4,
@@ -1285,6 +1287,7 @@ const COMPONENT_DEFS = {
       { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
       { key: 'dispatch_mode', label: 'Dispatch Mode', type: 'select', options: ['must_run', 'merit_order', 'standby'], section: 'loadflow' },
       { key: 'min_load_pct', label: 'Minimum Load', type: 'number', unit: '%', min: 0, max: 100, step: 5, section: 'loadflow' },
+      { key: 'max_load_pct', label: 'Maximum Load', type: 'number', unit: '%', min: 0, max: 100, step: 5, section: 'loadflow' },
       { key: 'gen_control', label: 'Control Scheme', type: 'select', options: ['droop', 'sequential'], section: 'loadflow' },
       { key: 'start_threshold_pct', label: 'Start Threshold', type: 'number', unit: '%', min: 50, max: 100, step: 5, section: 'loadflow', showWhen: { field: 'gen_control', values: ['sequential'] } },
       { key: 'xd_pp', label: "Xd''", type: 'number', unit: 'p.u.', section: 'fault' },
@@ -2803,7 +2806,7 @@ const COMPONENT_DEFS = {
 const LF_ATTRS = {
   utility: ['supply_capacity_mva', 'allow_export', 'dispatch_priority', 'fault_mva'],
   generator: ['rated_mva', 'power_factor', 'dispatch_priority', 'dispatch_mode',
-              'min_load_pct', 'gen_control', 'start_threshold_pct', 'voltage_setpoint_pu'],
+              'min_load_pct', 'max_load_pct', 'gen_control', 'start_threshold_pct', 'voltage_setpoint_pu'],
   solar_pv: ['rated_kw', 'num_inverters', 'inverter_eff', 'power_factor', 'irradiance_pct',
              'pv_array_mode', 'dispatch_priority', 'dispatch_mode', 'battery_mode',
              'battery_soc_pct', 'battery_max_discharge_kw', 'battery_max_charge_kw'],
