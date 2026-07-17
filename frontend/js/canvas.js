@@ -1249,7 +1249,12 @@ const Canvas = {
 
       if (comp.type === 'cable') {
         let sizeStr = '';
-        if (p.standard_type) {
+        if (p.construction === 'overhead') {
+          if (p.overhead_type && typeof STANDARD_OVERHEAD_LINES !== 'undefined') {
+            const std = STANDARD_OVERHEAD_LINES.find(c => c.id === p.overhead_type);
+            if (std) sizeStr = `${std.size_mm2}mm² ${std.material}`;
+          }
+        } else if (p.standard_type) {
           const std = STANDARD_CABLES.find(c => c.id === p.standard_type);
           if (std) sizeStr = `${std.size_mm2}mm² ${std.conductor}`;
         }
