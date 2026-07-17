@@ -145,6 +145,55 @@ class TestStandaloneCableSizing:
         assert bare["min_size_mm2"] < thermal["min_size_mm2"]
 
 
+# ── Overhead-line feeder cable sizing ────────────────────────────────────
+
+def _overhead_project(extra_cable_props=None):
+    """Utility → 11 kV bus → overhead ACSR feeder → 11 kV bus → motor load."""
+    cp = {"name": "Line1", "construction": "overhead", "overhead_type": "acsr_wolf",
+          "voltage_kv": 11, "length_km": 2.0, "r_per_km": 0.1871, "x_per_km": 0.331,
+          "r0_per_km": 0.334, "x0_per_km": 1.159, "rated_amps": 405, "num_parallel": 1}
+    cp.update(extra_cable_props or {})
+    comps = [
+        _comp("utility-1", "utility", {
+            "name": "Grid", "voltage_kv": 11, "fault_mva": 500, "x_r_ratio": 15}),
+        _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 11}),
+        _comp("cable-1", "cable", cp),
+        _comp("bus-2", "bus", {"name": "B2", "voltage_kv": 11}),
+        _comp("load-1", "motor_induction", {
+            "name": "M", "rated_kw": 1500, "voltage_kv": 11,
+            "efficiency": 0.95, "power_factor": 0.87}),
+    ]
+    wires = [_wire("w1", "utility-1", "bus-1"),
+             _wire("w2", "bus-1", "cable-1"),
+             _wire("w3", "cable-1", "bus-2"),
+             _wire("w4", "bus-2", "load-1")]
+    return ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                       components=comps, wires=wires)
+
+
+class TestOverheadLineSizing:
+    def test_overhead_uses_in_air_rating_without_derating(self):
+        # The library's in-air rating is used directly — no IEC 60364-5-52
+        # installation/insulation derating (which is for buried/enclosed cables).
+        c = run_cable_sizing(_overhead_project(), install_method="buried",
+                             ambient_temp_c=45)["cables"][0]
+        assert c["derated_ampacity_a"] == 405.0
+        assert c["thermal_ok"]
+
+    def test_overhead_resolves_bare_aluminium(self):
+        from backend.analysis.cable_sizing import _get_cable_props
+        cp = _get_cable_props(_overhead_project().components[2])
+        assert cp["overhead"] and cp["conductor"] == "Al" and cp["insulation"] == "BARE"
+        # ~ Wolf aluminium area (158 mm²), derived from the 20 °C resistivity
+        assert 140 < cp["size_mm2"] < 170
+
+    def test_overhead_underrated_conductor_fails_thermally(self):
+        # A tiny conductor rating below the load current must still FAIL — the
+        # check runs, it just doesn't apply cable derating.
+        c = run_cable_sizing(_overhead_project({"rated_amps": 40}))["cables"][0]
+        assert not c["thermal_ok"] and c["status"] == "fail"
+
+
 # ── #6 PV-bus generator solved reactive ──────────────────────────────────
 
 def _pv_project():
