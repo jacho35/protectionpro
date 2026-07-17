@@ -308,6 +308,31 @@ class TestEdgeCases:
         assert res["motors"] == []
         assert any("not connected" in w for w in res["warnings"])
 
+    def test_motor_fed_through_cable_gets_terminal_bus(self):
+        """A motor wired to its bus only through a feeder cable (+ CB) has no
+        busbar at its own terminal. The transparent-only bus walk can't reach
+        it, so it used to be skipped as 'not connected to a bus'. A synthetic
+        terminal bus must be inserted (as in load flow) so the study runs and
+        the feeder impedance is part of the motor's Thevenin."""
+        proj = _project()
+        # Replace the direct bus-2 → motor wire with bus-2 → CB → cable → motor,
+        # leaving the motor with no busbar of its own.
+        proj.wires = proj.wires[:-1]
+        proj.components.append(_comp("cb-m", "cb", {"name": "CB", "state": "closed"}))
+        proj.components.append(_comp("cable-m", "cable", {
+            "name": "Feeder", "voltage_kv": 0.4, "length_km": 0.05,
+            "r_per_km": 0.1, "x_per_km": 0.08, "rated_amps": 400,
+        }))
+        proj.wires.append(_wire("wm1", "bus-2", "cb-m"))
+        proj.wires.append(_wire("wm2", "cb-m", "cable-m"))
+        proj.wires.append(_wire("wm3", "cable-m", "motor_induction-1"))
+        res = run_dynamic_motor_starting(proj)
+        assert not any("not connected" in w for w in res["warnings"])
+        assert len(res["motors"]) == 1
+        m = res["motors"][0]
+        assert m["terminal_bus"]                 # a (synthetic) terminal bus was found
+        assert m["flc_a"] > 0 and m["curves"]    # a real trajectory was produced
+
     def test_inertia_estimated_when_unset(self):
         m = _run_one(_motor_props(motor_j_kgm2=0, load_j_kgm2=0))
         assert any("estimated" in w.lower() for w in m["warnings"])

@@ -838,6 +838,17 @@ def run_dynamic_motor_starting(project: ProjectData):
     energised motor sees). Returns ``{'motors': [...], 'warnings': [...],
     'sequence': {...}}``.
     """
+    # A motor wired to its bus through a series feeder cable (or transformer)
+    # has no busbar at its own terminal, so the transparent-only bus walk in
+    # _find_motor_bus can't reach it and the motor was skipped as "not connected
+    # to a bus". Insert a synthetic terminal bus at every such dangling load —
+    # exactly as the load-flow / fault engines do — so the feeder becomes a
+    # branch and the motor's terminal is a real node (its Thevenin then correctly
+    # includes the feeder impedance). Idempotent: motors that already reach a bus
+    # (directly or through a CB/switch) and truly isolated motors are untouched.
+    from .loadflow import insert_implicit_load_buses
+    project = insert_implicit_load_buses(project)
+
     comp_map = {c.id: c for c in project.components}
     adj = _build_adjacency(project)
     freq = float(project.frequency or 50)
