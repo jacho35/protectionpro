@@ -51,6 +51,20 @@ from backend.main import app  # noqa: E402
 
 @pytest.fixture(scope="module")
 def client():
+    # Re-assert our temp DB on the shared database-module globals at fixture
+    # setup, not only at import. Another API-test module (e.g. test_plan_images)
+    # rebinds these same globals to ITS temp DB at its own fixture setup and
+    # never restores them; since it runs first, import-time rebinding alone
+    # leaves us pointed at its DB (which already has a registered admin), so the
+    # first-user registration below fails with "invite required". Rebinding here
+    # makes this fixture independent of cross-module ordering.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    _database.engine = create_engine(
+        _TEST_DB_URL, connect_args={"check_same_thread": False})
+    _database.SessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=_database.engine)
+
     # Context manager triggers the startup event (init_db on the temp engine).
     with TestClient(app) as c:
         # The API is now auth-gated; register the first user (auto-admin, no
