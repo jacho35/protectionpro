@@ -416,28 +416,33 @@ const Properties = {
     const dis = this._lockedByStandard(_comp, field.key) ? ' disabled' : '';
     const lockTitle = dis ? ' title="Set by the selected standard — choose Custom to edit"' : '';
 
-    if (field.type === 'standard_select' && field.library === 'cable') {
-      // Searchable cable selector with voltage filtering
-      const voltageFilter = this._getCableVoltageFilter(compId);
-      const filtered = voltageFilter ? STANDARD_CABLES.filter(voltageFilter.fn) : STANDARD_CABLES;
-      const selectedCable = STANDARD_CABLES.find(c => c.id === value);
-      const displayText = value ? (selectedCable ? selectedCable.name : value) : '';
+    if (field.type === 'standard_select' && (field.library === 'cable' || field.library === 'overhead')) {
+      // Searchable conductor selector. Underground cables filter the library by
+      // the connected system voltage; overhead conductors are voltage-agnostic
+      // (their rating is thermal), so the full codeword list is always shown.
+      const isOverhead = field.library === 'overhead';
+      const library = isOverhead ? STANDARD_OVERHEAD_LINES : STANDARD_CABLES;
+      const voltageFilter = isOverhead ? null : this._getCableVoltageFilter(compId);
+      const filtered = voltageFilter ? library.filter(voltageFilter.fn) : library;
+      const selectedItem = library.find(c => c.id === value);
+      const displayText = value ? (selectedItem ? selectedItem.name : value) : '';
       const hintHtml = voltageFilter ? `<div class="searchable-select-hint">Showing ${voltageFilter.label} cables</div>` : '';
+      const placeholder = isOverhead ? 'Search conductors…' : 'Search cables…';
 
       // Build option divs
       let optionsHtml = `<div class="searchable-select-option" data-value="">-- Custom --</div>`;
       // If selected cable is outside filter, include it as mismatch
       const filteredIds = new Set(filtered.map(c => c.id));
-      if (value && selectedCable && !filteredIds.has(value)) {
-        optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${escHtml(selectedCable.id)}">${escHtml(selectedCable.name)} (voltage mismatch)</div>`;
+      if (value && selectedItem && !filteredIds.has(value)) {
+        optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${escHtml(selectedItem.id)}">${escHtml(selectedItem.name)} (voltage mismatch)</div>`;
       }
-      for (const cable of filtered) {
-        const sel = cable.id === value ? ' selected' : '';
-        optionsHtml += `<div class="searchable-select-option${sel}" data-value="${escHtml(cable.id)}">${escHtml(cable.name)}</div>`;
+      for (const item of filtered) {
+        const sel = item.id === value ? ' selected' : '';
+        optionsHtml += `<div class="searchable-select-option${sel}" data-value="${escHtml(item.id)}">${escHtml(item.name)}</div>`;
       }
 
       inputHtml = `<div class="searchable-select" data-field="${field.key}" data-library="${field.library}" data-value="${escHtml(value || '')}">
-        <input type="text" class="searchable-select-input" placeholder="Search cables..." value="${escHtml(displayText)}" autocomplete="off">
+        <input type="text" class="searchable-select-input" placeholder="${placeholder}" value="${escHtml(displayText)}" autocomplete="off">
         <div class="searchable-select-dropdown">${hintHtml}${optionsHtml}</div>
       </div>`;
     } else if (field.type === 'standard_select') {
@@ -592,9 +597,15 @@ const Properties = {
     let resetHtml = '';
     if (this._currentCompType === 'cable' && cableImpedanceFields.includes(field.key)) {
       const comp = AppState.components.get(this.currentId);
-      if (comp && comp.props.standard_type) {
-        const stdCable = STANDARD_CABLES.find(c => c.id === comp.props.standard_type);
-        if (stdCable && stdCable[field.key] !== undefined) {
+      // Resolve against whichever library populated this feeder — the cable
+      // library (Underground) or the overhead-conductor library (Overhead Line).
+      const stdCable = comp && comp.props.standard_type
+        ? STANDARD_CABLES.find(c => c.id === comp.props.standard_type)
+        : (comp && comp.props.overhead_type
+          ? STANDARD_OVERHEAD_LINES.find(c => c.id === comp.props.overhead_type)
+          : null);
+      if (comp && stdCable) {
+        if (stdCable[field.key] !== undefined) {
           const currentVal = parseFloat(value);
           const defaultVal = parseFloat(stdCable[field.key]);
           if (!isNaN(currentVal) && !isNaN(defaultVal) && Math.abs(currentVal - defaultVal) > 1e-9) {
@@ -844,7 +855,7 @@ const Properties = {
     // Re-render properties when fields with conditional dependents change
     if (['vector_group', 'grounding_hv', 'grounding_lv', 'earthing_system',
          'voltage_lv_kv', 'voltage_kv', 'cb_type', 'inverter_type', 'pv_array_mode',
-         'ibr_ctrl', 'turbine_type'].includes(field)) {
+         'ibr_ctrl', 'turbine_type', 'construction'].includes(field)) {
       this.show(comp.id);
     }
 
@@ -1220,6 +1231,17 @@ const Properties = {
         comp.props.x0_per_km = cable.x0_per_km;
         comp.props.rated_amps = cable.rated_amps;
         comp.props.voltage_kv = cable.voltage_kv;
+      }
+    } else if (libraryType === 'overhead') {
+      const line = STANDARD_OVERHEAD_LINES.find(c => c.id === typeId);
+      if (line) {
+        comp.props.r_per_km = line.r_per_km;
+        comp.props.x_per_km = line.x_per_km;
+        comp.props.r0_per_km = line.r0_per_km;
+        comp.props.x0_per_km = line.x0_per_km;
+        comp.props.rated_amps = line.rated_amps;
+        // Overhead conductors are not voltage-rated — keep the feeder's voltage
+        // (set by the connected bus / user), unlike the cable library.
       }
     } else if (libraryType === 'transformer') {
       const xfmr = STANDARD_TRANSFORMERS.find(t => t.id === typeId);
@@ -1908,8 +1930,9 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
         // Restore display text to current selection
         const currentVal = wrapper.dataset.value;
         if (currentVal) {
-          const cable = STANDARD_CABLES.find(c => c.id === currentVal);
-          input.value = cable ? cable.name : currentVal;
+          const lib = libraryType === 'overhead' ? STANDARD_OVERHEAD_LINES : STANDARD_CABLES;
+          const item = lib.find(c => c.id === currentVal);
+          input.value = item ? item.name : currentVal;
         } else {
           input.value = '';
         }

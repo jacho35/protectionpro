@@ -109,6 +109,39 @@ const STANDARD_CABLES = [
   { id: 'cu_pvc_300_lv',  name: '300mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.0762, x_per_km: 0.066, r0_per_km: 0.32, x0_per_km: 0.211, rated_amps: 458 },
 ];
 
+// ─── Standard Overhead Line Conductor Library ───
+// Bare overhead conductors selected by traditional codeword (ACSR / AAAC),
+// used when a feeder's Feeder Type is set to "Overhead Line". Values are
+// representative 50 Hz per-conductor figures at ~20 °C:
+//   • r_per_km  — DC/AC positive-sequence resistance (Ω/km)
+//   • x_per_km  — positive-sequence reactance at a typical MV flat/triangular
+//                 spacing (Ω/km); higher than cables because of wide conductor
+//                 spacing in air
+//   • r0/x0     — zero-sequence with a lumped earth return (Carson): R0 ≈ R1+~0.15,
+//                 X0 ≈ 3–3.5·X1 (no earth wire). Adjust for your tower geometry.
+//   • rated_amps — steady-state thermal current in still air (~40 °C ambient,
+//                 75 °C conductor). Not voltage-specific — selection does NOT
+//                 overwrite the feeder voltage.
+// Sources: BS 215 / IEC 61089 codeword conductors, typical utility datasheets.
+const STANDARD_OVERHEAD_LINES = [
+  { id: 'acsr_squirrel', name: 'ACSR Squirrel (20 mm²)', material: 'ACSR', size_mm2: 20,  r_per_km: 1.3740, x_per_km: 0.412, r0_per_km: 1.524, x0_per_km: 1.442, rated_amps: 107 },
+  { id: 'acsr_gopher',   name: 'ACSR Gopher (26 mm²)',   material: 'ACSR', size_mm2: 26,  r_per_km: 1.0980, x_per_km: 0.400, r0_per_km: 1.248, x0_per_km: 1.400, rated_amps: 128 },
+  { id: 'acsr_weasel',   name: 'ACSR Weasel (34 mm²)',   material: 'ACSR', size_mm2: 34,  r_per_km: 0.9116, x_per_km: 0.391, r0_per_km: 1.062, x0_per_km: 1.369, rated_amps: 150 },
+  { id: 'acsr_ferret',   name: 'ACSR Ferret (42 mm²)',   material: 'ACSR', size_mm2: 42,  r_per_km: 0.6795, x_per_km: 0.383, r0_per_km: 0.830, x0_per_km: 1.341, rated_amps: 176 },
+  { id: 'acsr_rabbit',   name: 'ACSR Rabbit (55 mm²)',   material: 'ACSR', size_mm2: 55,  r_per_km: 0.5449, x_per_km: 0.371, r0_per_km: 0.695, x0_per_km: 1.299, rated_amps: 208 },
+  { id: 'acsr_mink',     name: 'ACSR Mink (65 mm²)',     material: 'ACSR', size_mm2: 65,  r_per_km: 0.4565, x_per_km: 0.366, r0_per_km: 0.607, x0_per_km: 1.281, rated_amps: 236 },
+  { id: 'acsr_dog',      name: 'ACSR Dog (100 mm²)',     material: 'ACSR', size_mm2: 100, r_per_km: 0.2733, x_per_km: 0.350, r0_per_km: 0.424, x0_per_km: 1.225, rated_amps: 305 },
+  { id: 'acsr_hare',     name: 'ACSR Hare (105 mm²)',    material: 'ACSR', size_mm2: 105, r_per_km: 0.2680, x_per_km: 0.348, r0_per_km: 0.419, x0_per_km: 1.218, rated_amps: 311 },
+  { id: 'acsr_wolf',     name: 'ACSR Wolf (158 mm²)',    material: 'ACSR', size_mm2: 158, r_per_km: 0.1871, x_per_km: 0.331, r0_per_km: 0.334, x0_per_km: 1.159, rated_amps: 405 },
+  { id: 'acsr_panther',  name: 'ACSR Panther (212 mm²)', material: 'ACSR', size_mm2: 212, r_per_km: 0.1390, x_per_km: 0.319, r0_per_km: 0.289, x0_per_km: 1.117, rated_amps: 480 },
+  { id: 'acsr_lynx',     name: 'ACSR Lynx (226 mm²)',    material: 'ACSR', size_mm2: 226, r_per_km: 0.1441, x_per_km: 0.320, r0_per_km: 0.294, x0_per_km: 1.120, rated_amps: 490 },
+  { id: 'acsr_zebra',    name: 'ACSR Zebra (428 mm²)',   material: 'ACSR', size_mm2: 428, r_per_km: 0.0674, x_per_km: 0.297, r0_per_km: 0.212, x0_per_km: 1.040, rated_amps: 730 },
+  { id: 'aaac_50',       name: 'AAAC 50 mm²',            material: 'AAAC', size_mm2: 50,  r_per_km: 0.6752, x_per_km: 0.372, r0_per_km: 0.825, x0_per_km: 1.302, rated_amps: 196 },
+  { id: 'aaac_100',      name: 'AAAC 100 mm²',           material: 'AAAC', size_mm2: 100, r_per_km: 0.3388, x_per_km: 0.351, r0_per_km: 0.489, x0_per_km: 1.229, rated_amps: 300 },
+  { id: 'aaac_150',      name: 'AAAC 150 mm²',           material: 'AAAC', size_mm2: 150, r_per_km: 0.2222, x_per_km: 0.336, r0_per_km: 0.372, x0_per_km: 1.176, rated_amps: 385 },
+  { id: 'aaac_200',      name: 'AAAC 200 mm²',           material: 'AAAC', size_mm2: 200, r_per_km: 0.1657, x_per_km: 0.325, r0_per_km: 0.316, x0_per_km: 1.138, rated_amps: 460 },
+];
+
 // ─── Standard Transformer Library ───
 // Typical distribution & power transformers per IEC 60076 / SANS 780
 const STANDARD_TRANSFORMERS = [
@@ -940,6 +973,7 @@ const FIELD_INFO = {
   'transformer.voltage_lv_kv': 'Default 11 kV — standard primary distribution voltage.\nSource: IEC 60038 — standard voltages above 1 kV.',
 
   // Cable
+  'cable.construction': 'How this feeder is built.\n• Underground Cable — insulated Cu/Al cable; the Cable Type library and the IEC 60364-5-52 installed-ampacity calculator (installation method, ambient/grouping derating) apply.\n• Overhead Line — bare ACSR/AAAC conductor; the Conductor library provides the codeword conductor with its in-air current rating and (wider-spacing) reactance. The IEC install-method ampacity derating does not apply — the library rating is the in-air thermal limit.\nBoth types feed the same R/X/rating into the fault and load-flow engines, so switching type only changes which selector + defaults you see.',
   'cable.r_per_km':    'Default R = 0.1 Ω/km — typical for 240mm² Cu XLPE cable at 90°C.\nSource: IEC 60502-2 Table 2 — conductor resistance values.',
   'cable.x_per_km':    'Default X = 0.08 Ω/km — typical reactance for XLPE cables in trefoil.\nSource: IEC 60502-2 Annex C — cable reactance values.',
   'cable.rated_amps':  'Default 400A — typical rating for medium-voltage distribution cable.\nSource: IEC 60502 / IEC 60364-5-52 — current-carrying capacity tables.',
@@ -1841,7 +1875,9 @@ const COMPONENT_DEFS = {
     height: 60,
     defaults: {
       name: 'Cable',
+      construction: 'cable',
       standard_type: '',
+      overhead_type: '',
       length_km: 0.1,
       r_per_km: 0.1,
       x_per_km: 0.08,
@@ -1855,13 +1891,15 @@ const COMPONENT_DEFS = {
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: '_flow_direction', label: 'Flow Direction', type: 'cable_direction' },
-      { key: 'standard_type', label: 'Cable Type', type: 'standard_select', library: 'cable' },
+      { key: 'construction', label: 'Feeder Type', type: 'select', options: [{ value: 'cable', label: 'Underground Cable' }, { value: 'overhead', label: 'Overhead Line' }] },
+      { key: 'standard_type', label: 'Cable Type', type: 'standard_select', library: 'cable', showWhen: { field: 'construction', values: ['cable'] } },
+      { key: 'overhead_type', label: 'Conductor', type: 'standard_select', library: 'overhead', showWhen: { field: 'construction', values: ['overhead'] } },
       { key: 'length_km', label: 'Length', type: 'number', unit: 'm', unitOptions: [{ label: 'm', mult: 0.001 }, { label: 'km', mult: 1 }] },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }] },
-      { key: 'ampacity_standard', label: 'Ampacity Standard', type: 'select', options: ['IEC', 'NEC'], section: 'cable_sizing' },
-      { key: 'num_parallel', label: 'Parallel Cables', type: 'number', min: 1, max: 20, step: 1, section: 'cable_sizing' },
-      { key: 'rated_amps', label: 'Rated Current (per cable)', type: 'number', unit: 'A', section: 'cable_sizing' },
-      { key: '_ampacity_calc', label: 'Installed Ampacity', type: 'ampacity_calc', section: 'cable_sizing' },
+      { key: 'ampacity_standard', label: 'Ampacity Standard', type: 'select', options: ['IEC', 'NEC'], section: 'cable_sizing', showWhen: { field: 'construction', values: ['cable'] } },
+      { key: 'num_parallel', label: 'Parallel Circuits', type: 'number', min: 1, max: 20, step: 1, section: 'cable_sizing' },
+      { key: 'rated_amps', label: 'Rated Current (per circuit)', type: 'number', unit: 'A', section: 'cable_sizing' },
+      { key: '_ampacity_calc', label: 'Installed Ampacity', type: 'ampacity_calc', section: 'cable_sizing', showWhen: { field: 'construction', values: ['cable'] } },
       { key: 'adiabatic_basis', label: 'Fault-withstand Basis', type: 'select', options: [{ value: '', label: 'Thermal-equiv. Iₜₕ (default)' }, { value: 'bare_isc', label: 'Bare Isc (hand-calc)' }], section: 'cable_sizing' },
       { key: 'standalone_current_a', label: 'Standalone Design Current (0 = use load flow)', type: 'number', unit: 'A', min: 0, step: 1, section: 'cable_sizing' },
       { key: 'standalone_isc_ka', label: 'Standalone Isc (0 = use fault study)', type: 'number', unit: 'kA', min: 0, step: 0.1, section: 'cable_sizing' },
