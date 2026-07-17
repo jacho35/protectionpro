@@ -628,6 +628,26 @@ const Components = {
       }
     }
 
+    // 6c. Check load voltages match their connected bus (e.g. a 400 V motor
+    // wired to an 11 kV bus). graph.loads pairs each load with the bus it sits
+    // on, walking through closed transparent devices (CB/switch/fuse) — the
+    // same node resolution the fault/load-flow engines use.
+    for (const { bus, load } of graph.loads) {
+      const busV = bus.props.voltage_kv;
+      const loadV = load.props.voltage_kv;
+      if (busV && loadV && Math.abs(busV - loadV) / busV > 0.15) {
+        const kind = load.type === 'motor_induction' ? 'Induction motor'
+          : load.type === 'motor_synchronous' ? 'Synchronous motor'
+          : load.type === 'static_load' ? 'Load'
+          : 'Component';
+        warnings.push({
+          type: 'warning',
+          msg: `${kind} ${load.props.name} rated voltage (${loadV} kV) doesn't match ${bus.props.name} voltage (${busV} kV).`,
+          compId: load.id,
+        });
+      }
+    }
+
     // 7. Check for missing/zero critical properties
     for (const comp of AppState.components.values()) {
       const p = comp.props;
