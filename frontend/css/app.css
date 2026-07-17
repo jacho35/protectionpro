@@ -2743,3 +2743,49 @@ textarea:focus-visible {
 .minimap.collapsed canvas {
   display: none;
 }
+
+/* ── Authentication + sharing (auth.js / sharing.js) ── */
+.auth-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); }
+.auth-tab {
+  flex: 1; padding: 8px 10px; background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 13px; font-weight: 600;
+  border-bottom: 2px solid transparent;
+}
+.auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.auth-error { color: var(--danger, #d32f2f); font-size: 12px; min-height: 16px; margin: 6px 0; }
+.auth-hint { color: var(--text-muted); font-size: 12px; margin: 6px 0 10px; }
+#auth-modal .form-group input,
+#account-modal .form-group input,
+#share-modal input,
+#share-modal select { width: 100%; box-sizing: border-box; }
+#auth-modal .btn-primary,
+#account-modal .btn-secondary { width: 100%; margin-top: 6px; }
+
+.share-add-row { display: flex; gap: 8px; align-items: center; }
+.share-add-row input { flex: 1; }
+.share-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.share-user { flex: 1; display: flex; flex-direction: column; font-size: 13px; color: var(--text-primary); }
+.share-user small { color: var(--text-muted); font-size: 11px; }
+.invite-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid var(--border-color); font-size: 12px;
+}
+.invite-for { flex: 1; color: var(--text-primary); }
+.invite-status { text-transform: uppercase; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; }
+.invite-unused { background: var(--accent); color: #fff; }
+.invite-used { background: var(--border-color); color: var(--text-muted); }
+
+/* File Manager access badges */
+.fm-access-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 3px; margin-left: 8px;
+  background: var(--bg-secondary); color: var(--text-muted);
+}
+.fm-access-edit { color: var(--accent); }
+.fm-access-view { color: var(--text-muted); }
+.fm-item-owner { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
+.fm-section-header { font-weight: 700; color: var(--text-secondary); margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; }
+body.readonly-project #btn-save { opacity: 0.4; pointer-events: none; }

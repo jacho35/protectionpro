@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from ..models.database import get_db, Project
 from ..models.schemas import ProjectData
+from ..auth import get_current_user, require_project
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.pdf_reports import generate_full_report, generate_arcflash_labels, generate_calculations_report
@@ -147,11 +148,9 @@ def _csv_safe(value):
 
 
 @router.get("/{project_id}/export/csv")
-def export_csv(project_id: int, db: Session = Depends(get_db)):
+def export_csv(project_id: int, ctx=Depends(require_project("view"))):
     """Export analysis results as CSV."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, _level = ctx
 
     data = ProjectData(**json.loads(project.data))
 

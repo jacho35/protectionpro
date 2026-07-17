@@ -6,13 +6,16 @@ services:
     container_name: protectionpro-backend
     environment:
       - DATABASE_URL=sqlite:////data/protectionpro.db
+      # Optional: set to pin the JWT signing secret. If unset, a random secret
+      # is generated once and persisted in the DB (tokens survive restarts).
+      - SECRET_KEY=${SECRET_KEY:-}
     volumes:
       - db-data:/data
     expose:
       - "8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/projects')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
