@@ -4,6 +4,26 @@ const API = {
   // Abort in-flight requests after this many milliseconds
   REQUEST_TIMEOUT_MS: 60000,
 
+  // ── Auth token (JWT bearer, persisted in localStorage) ──
+  _tokenKey: 'protectionpro-token',
+  getToken() {
+    try { return localStorage.getItem(this._tokenKey); } catch (_) { return null; }
+  },
+  setToken(t) {
+    try { t ? localStorage.setItem(this._tokenKey, t) : localStorage.removeItem(this._tokenKey); } catch (_) {}
+  },
+  clearToken() { this.setToken(null); },
+
+  // Shared 401 handler: an expired/invalid token clears itself and re-shows
+  // the login gate — but NOT for the /auth/* endpoints, where a 401 is a
+  // legitimate result (bad login) whose real message the caller should see.
+  _handleUnauthorized(endpoint) {
+    if (endpoint.startsWith('/auth/')) return false;
+    this.clearToken();
+    if (typeof Auth !== 'undefined' && Auth.onUnauthorized) Auth.onUnauthorized(endpoint);
+    return true;
+  },
+
   async request(endpoint, method = 'GET', body = null) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
@@ -12,11 +32,16 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
     };
+    const token = this.getToken();
+    if (token) opts.headers['Authorization'] = `Bearer ${token}`;
     if (body) opts.body = JSON.stringify(body);
 
     try {
       const resp = await fetch(`${API_BASE}${endpoint}`, opts);
       if (!resp.ok) {
+        if (resp.status === 401 && this._handleUnauthorized(endpoint)) {
+          throw new Error('Your session has expired — please sign in again.');
+        }
         let detail = `HTTP ${resp.status}`;
         try {
           const err = await resp.json();
@@ -58,14 +83,19 @@ const API = {
   async requestBlob(endpoint, { method = 'GET', body = null, errorLabel = 'Export failed' } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
-    const opts = { method, signal: controller.signal };
+    const opts = { method, headers: {}, signal: controller.signal };
+    const token = this.getToken();
+    if (token) opts.headers['Authorization'] = `Bearer ${token}`;
     if (body) {
-      opts.headers = { 'Content-Type': 'application/json' };
+      opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
     try {
       const resp = await fetch(`${API_BASE}${endpoint}`, opts);
       if (!resp.ok) {
+        if (resp.status === 401 && this._handleUnauthorized(endpoint)) {
+          throw new Error('Your session has expired — please sign in again.');
+        }
         const err = await resp.json().catch(() => ({ detail: errorLabel }));
         throw new Error(typeof err.detail === 'string' ? err.detail : errorLabel);
       }
@@ -296,6 +326,46 @@ const API = {
 
   async deleteFolder(id) {
     return this.request(`/projects/folders/${id}`, 'DELETE');
+  },
+
+  // ── Auth ──
+  async login(email, password) {
+    return this.request('/auth/login', 'POST', { email, password });
+  },
+  async register(payload) {
+    // payload: { email, password, name?, invite_code? }
+    return this.request('/auth/register', 'POST', payload);
+  },
+  async me() {
+    return this.request('/auth/me');
+  },
+  async logout() {
+    return this.request('/auth/logout', 'POST');
+  },
+
+  // ── Admin invites ──
+  async listInvites() {
+    return this.request('/auth/invites');
+  },
+  async createInvite(opts = {}) {
+    return this.request('/auth/invites', 'POST', opts);   // { email?, expires_at? }
+  },
+  async deleteInvite(id) {
+    return this.request(`/auth/invites/${id}`, 'DELETE');
+  },
+
+  // ── Project sharing (grants keyed by the collaborator's user id) ──
+  async listShares(projectId) {
+    return this.request(`/projects/${projectId}/shares`);
+  },
+  async shareProject(projectId, email, role) {
+    return this.request(`/projects/${projectId}/shares`, 'POST', { email, role });
+  },
+  async updateShare(projectId, userId, role) {
+    return this.request(`/projects/${projectId}/shares/${userId}`, 'PATCH', { role });
+  },
+  async unshareProject(projectId, userId) {
+    return this.request(`/projects/${projectId}/shares/${userId}`, 'DELETE');
   },
 
   // ── Revisions ──

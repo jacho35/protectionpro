@@ -53,6 +53,12 @@ from backend.main import app  # noqa: E402
 def client():
     # Context manager triggers the startup event (init_db on the temp engine).
     with TestClient(app) as c:
+        # The API is now auth-gated; register the first user (auto-admin, no
+        # invite needed) and send its bearer token on every request by default.
+        reg = c.post("/api/auth/register",
+                     json={"email": "test-admin@x.com", "password": "password123"})
+        assert reg.status_code == 200, reg.text
+        c.headers["Authorization"] = f"Bearer {reg.json()['access_token']}"
         yield c
 
 

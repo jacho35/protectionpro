@@ -53,6 +53,24 @@ document.addEventListener('DOMContentLoaded', () => {
   Retic.init();
   if (typeof PlanMarkup !== 'undefined') PlanMarkup.init();
   if (typeof Interlocking !== 'undefined') Interlocking.init();
+  if (typeof Sharing !== 'undefined') Sharing.init();
+  // Auth last: shows the login gate (a blocking modal) over the initialized —
+  // but not-yet-interactable-behind-the-overlay — app until a session exists.
+  if (typeof Auth !== 'undefined') Auth.init();
+
+  // File-menu "Share…" → share the currently-open owned project.
+  document.getElementById('btn-share')?.addEventListener('click', () => {
+    window.closeAllToolbarMenus?.();
+    if (!AppState.projectId) {
+      UI.toast?.('Save the project first, then share it.', 'info');
+      return;
+    }
+    if (Project._currentAccess && Project._currentAccess !== 'owner') {
+      UI.toast?.('Only the project owner can share it.', 'warning');
+      return;
+    }
+    Sharing.open(AppState.projectId, AppState.projectName);
+  });
 
   // ─── Workspace switching (SLD / Reticulation / Plan) ───
   // Single authority for the three-way tab switch. Each secondary workspace
@@ -382,9 +400,10 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'Escape': {
         window.closeAllToolbarMenus?.();
         if (typeof ContextMenu !== 'undefined') ContextMenu.close();
-        // Close the topmost open modal first, before touching the selection
+        // Close the topmost open modal first, before touching the selection.
+        // The login gate (#auth-modal) is non-dismissable — never close it.
         const openModal = [...document.querySelectorAll('.modal')].reverse()
-          .find(m => m.style.display !== 'none');
+          .find(m => m.style.display !== 'none' && m.id !== 'auth-modal');
         if (openModal) {
           if (openModal.id === 'tcc-modal' && typeof TCC !== 'undefined') {
             TCC.close();

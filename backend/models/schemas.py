@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response validation."""
 
-from pydantic import BaseModel, PrivateAttr, field_serializer, model_validator
-from typing import Optional
+from pydantic import BaseModel, PrivateAttr, field_serializer, model_validator, Field
+from typing import Optional, Literal
 from datetime import datetime
 
 
@@ -167,9 +167,85 @@ class ProjectSummary(BaseModel):
     folder_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    # Ownership / access — populated by the route (computed, not plain ORM attrs)
+    owner_id: Optional[int] = None
+    owner_email: Optional[str] = None
+    owner_name: Optional[str] = None
+    access: str = "owner"          # 'owner' | 'edit' | 'view'
 
     class Config:
         from_attributes = True
+
+
+# ── Auth / users ──
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    is_admin: bool
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8)
+    name: str = ""
+    invite_code: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+# ── Invites ──
+
+class InviteCreate(BaseModel):
+    email: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+class InviteOut(BaseModel):
+    id: int
+    code: str
+    email: Optional[str] = None
+    used_by: Optional[int] = None
+    used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Project sharing ──
+
+class ShareCreate(BaseModel):
+    email: str
+    role: Literal["view", "edit"] = "view"
+
+
+class ShareRoleUpdate(BaseModel):
+    role: Literal["view", "edit"]
+
+
+class ShareOut(BaseModel):
+    user_id: int
+    email: str
+    name: str
+    role: str
+    created_at: datetime
 
 
 # ── ADMD / reticulation demand estimation ───────────────────────────────────

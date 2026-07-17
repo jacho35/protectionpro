@@ -44,6 +44,12 @@ def client():
         autocommit=False, autoflush=False, bind=_database.engine
     )
     with TestClient(app) as c:
+        # The plan-images router is auth-gated; register the first user
+        # (auto-admin) and default its bearer token onto every request.
+        reg = c.post("/api/auth/register",
+                     json={"email": "planimg-admin@x.com", "password": "password123"})
+        assert reg.status_code == 200, reg.text
+        c.headers["Authorization"] = f"Bearer {reg.json()['access_token']}"
         yield c
 
 

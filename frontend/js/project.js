@@ -91,6 +91,8 @@ const Project = {
     RevisionTimeline.clearLocal();
     AppState.reset();
     UndoManager.clear();
+    this._currentAccess = 'owner';
+    this._applyReadOnly();
     Canvas.updateTransform();
     Canvas.render();
     Properties.clear();
@@ -100,8 +102,35 @@ const Project = {
     RevisionTimeline.hide();
   },
 
+  // Access level of the currently-open project: 'owner' | 'edit' | 'view'.
+  _currentAccess: 'owner',
+
+  // Reflect a view-only shared project in the UI: disable Save (Save As still
+  // works to fork a personal copy). A fresh/owned/editable project clears it.
+  _applyReadOnly() {
+    const readOnly = this._currentAccess === 'view';
+    AppState.readOnly = readOnly;
+    document.body.classList.toggle('readonly-project', readOnly);
+    if (readOnly) {
+      this._statusMsg('View-only shared project — use “Save As” to save your own copy.');
+    }
+  },
+
+  // Re-open the File Manager if it's currently showing (used after sign-in).
+  refreshProjectViewIfOpen() {
+    const modal = document.getElementById('calc-modal');
+    const title = document.getElementById('calc-modal-title');
+    if (modal && modal.style.display !== 'none' && title && title.textContent === 'File Manager') {
+      this.openProject();
+    }
+  },
+
   // Save to database (primary save action), falls back to JSON export
   async saveProject() {
+    if (AppState.readOnly) {
+      UI.toast('This project is shared view-only. Use “Save As” to save your own copy.', 'warning');
+      return;
+    }
     if (AppState.projectName === 'Untitled Project') {
       const name = await UI.prompt('Project name:', AppState.projectName);
       if (!name) return;
@@ -160,6 +189,9 @@ const Project = {
     try {
       const result = await API.saveProject();
       AppState.projectId = result.id;
+      // The copy is owned by the current user — clear any view-only lock.
+      this._currentAccess = 'owner';
+      this._applyReadOnly();
       // Attach any plan-markup images uploaded before this project had an id.
       if (typeof PlanImages !== 'undefined') await PlanImages.claimOrphans(result.id);
       AppState.dirty = false;
@@ -823,7 +855,11 @@ const Project = {
   _renderFileManager() {
     const folderId = this._fmCurrentFolder;
     const folders = this._fmFolders.filter(f => (f.parent_id || null) === folderId);
-    const projects = this._fmProjects.filter(p => (p.folder_id || null) === folderId);
+    // Only the caller's OWN projects live in the folder tree; projects shared
+    // with the caller are grouped in a "Shared with me" section at the root
+    // (they belong to the owner's folder namespace, not the caller's).
+    const projects = this._fmProjects.filter(
+      p => (p.access === 'owner' || p.access == null) && (p.folder_id || null) === folderId);
 
     // Breadcrumb
     const crumbs = this._buildBreadcrumbs(folderId);
@@ -867,35 +903,62 @@ const Project = {
         </div>`;
     }
 
-    // Projects
-    projects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-    for (const p of projects) {
-      listHtml += `
-        <div class="fm-item fm-project" data-project-id="${p.id}">
-          <div class="fm-item-icon">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-          </div>
-          <div class="fm-item-info">
-            <span class="fm-item-name">${this._esc(p.name)}</span>
-            <small class="fm-item-date">${new Date(p.updated_at).toLocaleDateString()}</small>
-          </div>
-          <div class="fm-item-actions">
+    // Row builder — actions depend on the caller's access level.
+    const projectRow = (p) => {
+      const access = p.access || 'owner';
+      const isOwner = access === 'owner';
+      const badge = isOwner ? ''
+        : `<span class="fm-access-badge fm-access-${this._esc(access)}">${this._esc(access)}</span>`;
+      const ownerTag = (!isOwner && p.owner_email)
+        ? `<small class="fm-item-owner">shared by ${this._esc(p.owner_email)}</small>` : '';
+      const actions = isOwner ? `
             <button class="fm-btn fm-btn-rename" data-type="project" data-id="${p.id}" title="Rename">
               <svg width="12" height="12" viewBox="0 0 16 16"><path d="M11.5 1.5l3 3L5 14H2v-3z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
             <button class="fm-btn fm-btn-move" data-type="project" data-id="${p.id}" title="Move to folder">
               <svg width="12" height="12" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 10h4M8 8v4" stroke="currentColor" stroke-width="1.2"/></svg>
             </button>
+            <button class="fm-btn fm-btn-share" data-type="project" data-id="${p.id}" title="Share">
+              <svg width="12" height="12" viewBox="0 0 16 16"><circle cx="4" cy="8" r="1.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="4" r="1.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="12" r="1.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 7.2l5-2.4M5.5 8.8l5 2.4" stroke="currentColor" stroke-width="1.3"/></svg>
+            </button>
             <button class="fm-btn fm-btn-delete" data-type="project" data-id="${p.id}" title="Delete">
               <svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
-            </button>
+            </button>` : '';
+      return `
+        <div class="fm-item fm-project" data-project-id="${p.id}">
+          <div class="fm-item-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
           </div>
+          <div class="fm-item-info">
+            <span class="fm-item-name">${this._esc(p.name)}${badge}</span>
+            <small class="fm-item-date">${new Date(p.updated_at).toLocaleDateString()}${ownerTag}</small>
+          </div>
+          <div class="fm-item-actions">${actions}</div>
         </div>`;
+    };
+
+    // Owned projects in the current folder
+    projects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    for (const p of projects) listHtml += projectRow(p);
+
+    const ownedEmpty = folders.length === 0 && projects.length === 0;
+
+    // "Shared with me" — only at the root level (shared projects aren't in the
+    // caller's folder tree).
+    let sharedHtml = '';
+    if (folderId === null) {
+      const shared = this._fmProjects.filter(p => p.access && p.access !== 'owner');
+      shared.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+      if (shared.length) {
+        sharedHtml = '<div class="fm-section-header">Shared with me</div>'
+          + shared.map(projectRow).join('');
+      }
     }
 
-    if (folders.length === 0 && projects.length === 0) {
+    if (ownedEmpty && !sharedHtml) {
       listHtml = '<p class="fm-empty">This folder is empty.</p>';
     }
+    listHtml += sharedHtml;
 
     const modal = document.getElementById('calc-modal');
     const modalContent = modal.querySelector('.modal-content');
@@ -970,6 +1033,9 @@ const Project = {
           AppState.fromJSON(data);
           UndoManager.clear();
           AppState.projectId = el.dataset.projectId;
+          const proj = this._fmProjects.find(p => String(p.id) === String(el.dataset.projectId));
+          this._currentAccess = proj ? (proj.access || 'owner') : 'owner';
+          this._applyReadOnly();
           Canvas.updateTransform();
           if (typeof renderPageTabs === 'function') renderPageTabs();
           Canvas.render();
@@ -1042,6 +1108,16 @@ const Project = {
         } catch (err) {
           UI.toast('Rename failed: ' + err.message, 'error');
         }
+      });
+    });
+
+    // Share buttons (owned projects only)
+    modal.querySelectorAll('.fm-btn-share').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        const p = this._fmProjects.find(x => x.id === id);
+        if (typeof Sharing !== 'undefined') Sharing.open(id, p ? p.name : '');
       });
     });
 
