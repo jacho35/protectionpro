@@ -817,6 +817,15 @@ const Properties = {
       this._applyVectorGroupGrounding(comp, value || 'Dyn11');
     }
 
+    // Prime mover selection auto-populates the transient-stability inertia H
+    // with a representative value for that machine class (recip sets lowest,
+    // steam turbo-sets highest). 'other' has no entry, so H is left untouched.
+    if (field === 'prime_mover' && comp.type === 'generator' &&
+        PRIME_MOVER_INERTIA_H[value] !== undefined) {
+      comp.props.inertia_h_s = PRIME_MOVER_INERTIA_H[value];
+      this.show(comp.id);
+    }
+
     // MCB curve class (or switching to MCB) sets the magnetic pickup to the
     // top of the IEC 60898-1 band (B 3–5×, C 5–10×, D 10–20×In)
     if (comp.type === 'cb' &&
