@@ -580,6 +580,29 @@ def _gen_min_load_mw(comp):
     return rated * pf * max(0.0, min(100.0, pct)) / 100.0
 
 
+def _gen_max_load_mw(comp):
+    """Maximum running load for a generator, MW (dispatch ceiling).
+
+    Caps how heavily a set is loaded — e.g. to hold spinning reserve or
+    respect a site derating. Settable via max_load_pct; the absent field
+    (or 100) means no cap (legacy-identical). Returns +inf for non-generators
+    so the merit/standby loops can apply it unconditionally. Note this ceiling
+    binds only on dispatched (merit/must-run/standby) sets — an island-slack
+    generator carries the residual set by the solve, not this plan."""
+    if comp.type != "generator":
+        return float("inf")
+    try:
+        pct = float(comp.props.get("max_load_pct", 100) or 100)
+    except (TypeError, ValueError):
+        pct = 100.0
+    pct = max(0.0, min(100.0, pct))
+    if pct >= 100.0:
+        return float("inf")   # no cap — keep legacy behaviour byte-identical
+    rated = comp.props.get("rated_mva", 10)
+    pf = comp.props.get("power_factor", 0.85)
+    return rated * pf * pct / 100.0
+
+
 def _utility_supply_capacity(util):
     """Utility supply capacity in MVA; 0 = unlimited (infinite bus)."""
     try:
@@ -939,8 +962,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
 
         for comp, bi in must_run:
             p_av, q_av, _s, _r = _source_output_mva(comp)
+            p_av = min(p_av, _gen_max_load_mw(comp))   # generator dispatch ceiling
             # Committed sequential sets run at their fill-first allocation
-            p_tgt = seq_fixed_target.get(comp.id, p_av)
+            p_tgt = min(seq_fixed_target.get(comp.id, p_av), p_av)
             plan.append([comp, bi, p_av, q_av, p_tgt, p_tgt])
 
         # A fixed (must-run/discharging) battery is committed generation just
@@ -966,6 +990,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                              if c.type == "generator")
         for comp, bi in merit:
             p_av, q_av, _s, _r = _source_output_mva(comp)
+            p_av = min(p_av, _gen_max_load_mw(comp))   # generator dispatch ceiling
             p_disp = min(p_av, max(0.0, remaining))
             remaining -= p_disp
             plan.append([comp, bi, p_av, q_av, p_disp, p_disp])
@@ -978,6 +1003,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
             shortfall = (demand_mw - sum(e[4] for e in plan) - cap) if cap is not None else 0.0
             for comp, bi in standby:
                 p_av, q_av, _s, _r = _source_output_mva(comp)
+                p_av = min(p_av, _gen_max_load_mw(comp))   # generator dispatch ceiling
                 p_disp = min(p_av, max(0.0, shortfall))
                 shortfall -= p_disp
                 if p_disp > 1e-9:

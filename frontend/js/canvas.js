@@ -1295,8 +1295,10 @@ const Canvas = {
           if (branch) {
             const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
             const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
+            const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
             lines.push({text: '───────', color: loadColor});
             lines.push({text: `P: ${pStr}`, color: loadColor});
+            lines.push({text: `Q: ${qStr}`, color: loadColor});
             if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
             if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
           }
@@ -1355,8 +1357,10 @@ const Canvas = {
           if (branch && branch.s_mva > 0) {
             const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
             const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
+            const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
             lines.push({text: '───────', color: loadColor});
             lines.push({text: `P: ${pStr}`, color: loadColor});
+            lines.push({text: `Q: ${qStr}`, color: loadColor});
             if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
             if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
           }

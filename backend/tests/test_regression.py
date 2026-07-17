@@ -908,6 +908,61 @@ class TestIslandingAndDispatch:
         assert pv.dispatched_mw == pytest.approx(0.1, abs=0.002)
         assert pv.curtailed_mw == 0
 
+    def test_generator_max_load_pct_caps_dispatch(self):
+        """max_load_pct caps a merit generator's output; the utility slack
+        carries the rest. 1 MVA / 0.85 PF gen at 50% cap = 0.425 MW ceiling,
+        so a 1.2 MW demand leaves the gen at its cap (not full 0.85 MW)."""
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+            }),
+            _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 11.0}),
+            _comp("gen-1", "generator", {
+                "name": "G1", "rated_mva": 1.0, "voltage_kv": 11.0,
+                "power_factor": 0.85, "dispatch_mode": "merit_order",
+                "min_load_pct": 0, "max_load_pct": 50,   # cap = 0.425 MW
+            }),
+            _comp("static_load-1", "static_load", {
+                "name": "L", "rated_kva": 1411.8, "power_factor": 0.85,
+                "voltage_kv": 11.0,     # 1.2 MW demand
+            }),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"), _wire("w2", "gen-1", "bus-1"),
+                 _wire("w3", "bus-1", "static_load-1")]
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        res = run_load_flow(proj, "newton_raphson")
+        assert res.converged
+        gen = next(d for d in res.dispatch if d.source_id == "gen-1")
+        assert gen.dispatched_mw == pytest.approx(0.425, abs=0.002)
+
+    def test_generator_max_load_pct_default_no_cap(self):
+        """max_load_pct=100 (default) leaves dispatch unbounded — the merit
+        gen serves the full demand up to its available output."""
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+            }),
+            _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 11.0}),
+            _comp("gen-1", "generator", {
+                "name": "G1", "rated_mva": 1.0, "voltage_kv": 11.0,
+                "power_factor": 0.85, "dispatch_mode": "merit_order",
+                "min_load_pct": 0,      # no max_load_pct => default 100%
+            }),
+            _comp("static_load-1", "static_load", {
+                "name": "L", "rated_kva": 1411.8, "power_factor": 0.85,
+                "voltage_kv": 11.0,     # 1.2 MW demand
+            }),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"), _wire("w2", "gen-1", "bus-1"),
+                 _wire("w3", "bus-1", "static_load-1")]
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        res = run_load_flow(proj, "newton_raphson")
+        assert res.converged
+        gen = next(d for d in res.dispatch if d.source_id == "gen-1")
+        assert gen.dispatched_mw == pytest.approx(0.85, abs=0.002)
+
     @staticmethod
     def _two_set_island(load_kva, g1_extra=None, g2_extra=None):
         """Two sequential 100 kVA sets (seq 1 and 2) + a load, islanded."""
