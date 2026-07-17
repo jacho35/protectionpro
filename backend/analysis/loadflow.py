@@ -880,6 +880,89 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                     _BALANCER_TYPE_RANK.get(comp.type, 0),
                     _source_output_mva(comp)[0] if comp.type != "utility" else float("inf"))
 
+        # ── Droop parallel load-sharing (islanded synchronous gensets) ──
+        # With no utility to hold the island, two or more droop-controlled
+        # generators run in parallel and share the load in proportion to their
+        # ratings — the physical behaviour of governor droop, and what the
+        # 'droop' control scheme has always promised. (The 'sequential' scheme
+        # handled above instead fills one set before starting the next.)
+        # Without this, the engine nominated a single slack machine and loaded
+        # it up to its full rating first, so the reference set could show a
+        # false overload while a parallel set sat lightly loaded.
+        #
+        # Committed sets each carry a fixed share proportional to rating; the
+        # reference (slack) set carries its own share plus the network losses
+        # via the solve. Sets are committed in dispatch-priority order until the
+        # committed capacity covers the genset-borne demand, so a lightly-loaded
+        # island doesn't parallel more sets than it needs (a must-run set is
+        # always committed). This reuses the seq_* plan variables the sequential
+        # scheme feeds — it is mutually exclusive with sequential (only runs when
+        # no sequential set has already claimed the balancer).
+        droop_share = {}   # comp_id -> proportional MW share (only when ≥2 run)
+        if seq_balancer_entry is None and not utilities:
+            droop_gens = [(c, bi, d) for c, bi, d in sources
+                          if c.type == "generator" and d
+                          and _gen_control(c) != "sequential"]
+            if len(droop_gens) >= 2:
+                renewable_mw = sum(
+                    _source_output_mva(c)[0] for c, _bi, dd in sources
+                    if dd and c.type in ("solar_pv", "wind_turbine"))
+                batt_mw = sum(p for _c, _bi, p, _bp in batt_discharge)
+                gen_borne = max(0.0, demand_mw - renewable_mw - batt_mw)
+                # Reference set (always committed): highest priority, then
+                # largest — it holds the island frequency and has the most
+                # headroom to absorb the losses on top of its share. Additional
+                # sets parallel in, most-preferred first, only while the running
+                # capacity can't yet cover the demand — so a lightly-loaded
+                # island runs a single set rather than paralleling needlessly.
+                # A must-run set is always committed.
+                ref = max(droop_gens, key=_balancer_key)
+                ordered = [ref] + sorted(
+                    [e for e in droop_gens if e[0].id != ref[0].id],
+                    key=_balancer_key, reverse=True)
+                committed, off, cap = [], [], 0.0
+                for entry in ordered:
+                    forced = _dispatch_mode(entry[0]) == "must_run"
+                    if not committed or forced or cap < gen_borne - 1e-9:
+                        committed.append(entry)
+                        cap += _source_output_mva(entry[0])[0]
+                    else:
+                        off.append(entry)
+                # Only engage proportional sharing when ≥2 sets actually run;
+                # a single committed set falls through to the ordinary
+                # single-balancer path (and any surplus set is left off there).
+                if len(committed) >= 2:
+                    share_base = sum(_source_output_mva(c)[0]
+                                     for c, _b, _d in committed)
+                    seq_balancer_entry = ref
+                    seq_fixed = [e for e in committed if e[0].id != ref[0].id]
+                    seq_off = off
+                    for c, _b, _d in committed:
+                        rated = _source_output_mva(c)[0]
+                        droop_share[c.id] = (gen_borne * rated / share_base
+                                             if share_base > 0 else 0.0)
+                    for c, _b, _d in seq_fixed:
+                        seq_fixed_target[c.id] = droop_share[c.id]
+                    shared = ", ".join(
+                        f"'{c.props.get('name', c.id)}' {_fmt_power_mw(droop_share[c.id])}"
+                        for c, _b, _d in committed)
+                    warnings.append(LoadFlowWarning(
+                        elementId=ref[0].id,
+                        element_name=str(ref[0].props.get("name", "generator")),
+                        message=(f"Droop parallel operation — island load shared "
+                                 f"in proportion to rating across {shared} (the "
+                                 "reference set also carries the network losses)."),
+                    ))
+                    if seq_off:
+                        held = ", ".join(f"'{e[0].props.get('name', e[0].id)}'"
+                                         for e in seq_off)
+                        warnings.append(LoadFlowWarning(
+                            elementId=seq_off[0][0].id,
+                            element_name=str(seq_off[0][0].props.get("name", "generator")),
+                            message=(f"Generator(s) {held} held off — the paralleled "
+                                     "set(s) already cover the island demand."),
+                        ))
+
         if utilities:
             balancers = utilities
         elif seq_balancer_entry is not None:
@@ -906,7 +989,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 swing_idx.add(uidx)
 
         bcomp = balancers[0][0]
-        if not utilities and bcomp.type == "generator":
+        if not utilities and bcomp.type == "generator" and not droop_share:
+            # (When droop sharing is active a dedicated warning already names
+            # the reference set and its parallel partners — don't double up.)
             warnings.append(LoadFlowWarning(
                 elementId=bcomp.id,
                 element_name=str(bcomp.props.get("name", bcomp.type)),

@@ -1021,6 +1021,61 @@ class TestIslandingAndDispatch:
         e2 = {d.source_id: d for d in res2.dispatch}
         assert e2["g2"].role == "off"         # 80 < 85×1.0 → set 2 held off
 
+    @staticmethod
+    def _droop_two_set_island(load_kva):
+        """A 200 kVA + 100 kVA droop genset pair on one bus, islanded (no
+        utility). Mirrors the Bouchard Findlayson topology that exposed the
+        false-overload bug: the larger set has the higher dispatch priority so
+        it is the island reference."""
+        g = {"voltage_kv": 0.4, "power_factor": 0.85, "min_load_pct": 30}
+        comps = [
+            _comp("g200", "generator", {**g, "name": "G200", "rated_mva": 0.2,
+                                        "dispatch_priority": 3, "dispatch_mode": "standby"}),
+            _comp("g100", "generator", {**g, "name": "G100", "rated_mva": 0.1,
+                                        "dispatch_priority": 2, "dispatch_mode": "standby"}),
+            _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 0.4}),
+            _comp("static_load-1", "static_load", {
+                "name": "L", "rated_kva": load_kva, "power_factor": 0.85,
+                "voltage_kv": 0.4}),
+        ]
+        wires = [_wire("w1", "g200", "bus-1"), _wire("w2", "g100", "bus-1"),
+                 _wire("w3", "bus-1", "static_load-1")]
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_droop_parallel_shares_load_proportionally(self):
+        """Two paralleled droop gensets (170 kW + 85 kW) on a 221 kW island
+        share the load in proportion to rating — neither overloads. Before the
+        droop fix the 200 kVA reference set carried the residual alone and hit
+        ~106 % while the 100 kVA set sat lightly loaded."""
+        res = run_load_flow(self._droop_two_set_island(260.0), "newton_raphson")  # 221 kW
+        assert res.converged
+        e = {d.source_id: d for d in res.dispatch}
+        assert e["g200"].role == "balancer"   # larger + higher priority = reference
+        assert e["g100"].role != "off"        # runs in parallel, not held off
+        # Proportional split: 221 kW × 170/255 ≈ 147 kW ; × 85/255 ≈ 74 kW
+        assert e["g200"].dispatched_mw == pytest.approx(0.1473, abs=0.004)
+        assert e["g100"].dispatched_mw == pytest.approx(0.0737, abs=0.004)
+        # Equal per-unit loading is the signature of proportional sharing, and
+        # crucially neither set exceeds 100 %.
+        load = {b.elementId: b.loading_pct for b in res.branches
+                if b.elementId in ("g200", "g100")}
+        assert load["g200"] < 100 and load["g100"] < 100
+        assert abs(load["g200"] - load["g100"]) < 3.0   # within 3 pp → proportional
+        assert any("Droop parallel operation" in w.message for w in res.warnings)
+
+    def test_droop_low_load_runs_single_set(self):
+        """At 85 kW — well within the 170 kW reference set alone — only the
+        reference set runs; the second set is not paralleled needlessly (no
+        proportional-sharing split, no droop warning)."""
+        res = run_load_flow(self._droop_two_set_island(100.0), "newton_raphson")  # 85 kW
+        assert res.converged
+        e = {d.source_id: d for d in res.dispatch}
+        assert e["g200"].role == "balancer"
+        assert e["g100"].dispatched_mw == pytest.approx(0.0, abs=0.001)
+        assert e["g200"].dispatched_mw == pytest.approx(0.085, abs=0.004)
+        assert not any("Droop parallel operation" in w.message for w in res.warnings)
+
     def test_distribution_board_loads_like_static_load(self):
         """A distribution_board's lumped equivalents (rated_kva, demand_factor,
         phase pcts — derived from its circuit schedule by the frontend) must
