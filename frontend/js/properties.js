@@ -1368,6 +1368,9 @@ const Properties = {
       html += `<div class="prop-row"><label>Ways</label><span class="pu-value">${circuits.length}</span></div>`;
       html += `<div class="prop-row"><label>Connected Load</label><span class="pu-value">${connected.toFixed(1)} kVA</span></div>`;
       html += `<div class="prop-row"><label>Demand (diversified)</label><span class="pu-value">${demand.toFixed(1)} kVA</span></div>`;
+      // Board PF is derived: the P/Q rollup of the per-circuit power factors.
+      const boardPf = comp.props.power_factor ?? 0.85;
+      html += `<div class="prop-row"><label>Power Factor</label><span class="pu-value" title="Rolled up from the per-circuit power factors in the schedule">${boardPf.toFixed(3)}${circuits.length ? '' : ' (default)'}</span></div>`;
       const vkv = comp.props.voltage_kv || 0;
       if (vkv > 0 && demand > 0) {
         html += `<div class="prop-row"><label>Demand Current</label><span class="pu-value">${(demand / (Math.sqrt(3) * vkv)).toFixed(1)} A</span></div>`;

@@ -3,7 +3,10 @@
  * A distribution board's ways live in comp.props.circuits:
  *   { way, description, poles ('1P'|'3P'), phase ('R'|'W'|'B'|'RWB'),
  *     breaker_a, curve ('B'|'C'|'D'), el_group, load_va, demand_factor,
- *     cable_mm2, cable_m, leakage_ma }
+ *     power_factor, cable_mm2, cable_m, leakage_ma }
+ *
+ * Each way carries its own power_factor; recompute() rolls them up (diversified
+ * P/Q vector sum) into the board-level power_factor prop the analyses read.
  *
  * comp.props.el_ratings maps EL group name → the earth-leakage unit's rated
  * residual current IΔn in mA (default 30). Standing leakage per group
@@ -26,8 +29,8 @@ const DBSchedule = {
   _selected: new Set(),   // way ids checked for bulk editing (stable across sort/render)
 
   // Lumped-load props recompute() derives from the committed fields
-  _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'phase_a_pct', 'phase_b_pct',
-    'phase_c_pct', 'phase_connection'],
+  _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'power_factor', 'phase_a_pct',
+    'phase_b_pct', 'phase_c_pct', 'phase_connection'],
 
   // Fields offered in the bulk-edit bar (applied to every selected way).
   _BULK_FIELDS: [
@@ -40,6 +43,7 @@ const DBSchedule = {
     { k: 'cable_m', label: 'Length (m)', type: 'number' },
     { k: 'load_va', label: 'Load (VA)', type: 'number' },
     { k: 'demand_factor', label: 'DF', type: 'number' },
+    { k: 'power_factor', label: 'PF', type: 'number' },
     { k: 'description', label: 'Description', type: 'text' },
   ],
 
@@ -53,6 +57,19 @@ const DBSchedule = {
   _ensureWayIds(comp) {
     if (!comp || !Array.isArray(comp.props.circuits)) return;
     for (const c of comp.props.circuits) if (!c.id) c.id = this._wayId();
+  },
+  // Lazy per-circuit power-factor migration for projects predating the PF
+  // column: seed each way's pf from the board's existing power_factor so the
+  // rollup reproduces the old board value byte-for-byte. Runs before the
+  // open-time snapshot, so it never marks the project dirty on its own.
+  _ensurePf(comp) {
+    if (!comp || !Array.isArray(comp.props.circuits)) return;
+    const fallback = Number(comp.props.power_factor) || 0.85;
+    for (const c of comp.props.circuits) {
+      if (c.power_factor === undefined || c.power_factor === null || c.power_factor === '') {
+        c.power_factor = fallback;
+      }
+    }
   },
 
   init() {
@@ -92,6 +109,7 @@ const DBSchedule = {
     this._selected = new Set();
     if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
     this._ensureWayIds(comp);   // lazy EE-7 migration for existing projects
+    this._ensurePf(comp);       // lazy per-circuit PF migration for old projects
     // Snapshot BEFORE render() (whose recompute() writes the derived props)
     this._openCommitted = JSON.stringify(this._committedFields(comp));
     this._openDerived = {};
@@ -150,6 +168,9 @@ const DBSchedule = {
   // ── Derived lumped-load equivalents ────────────────────────────────
   // rated_kva  = total connected load
   // demand_factor = (Σ way VA × way DF × board diversity) / connected
+  // power_factor = board-level PF, the diversified P/Q vector sum of each
+  //   way's own power_factor (board_diversity scales P and Q alike, so it
+  //   cancels out of the ratio)
   // phase_a/b/c_pct = share of DIVERSIFIED demand per phase (3P ways split /3)
   recompute(comp) {
     const circuits = comp.props.circuits || [];
@@ -157,12 +178,19 @@ const DBSchedule = {
     let connectedVa = 0;
     const phaseVa = { R: 0, W: 0, B: 0 };
     let demandVa = 0;
+    let sumP = 0, sumQ = 0;   // diversified real / reactive VA for the PF rollup
+    // A way with no pf yet (legacy project not opened in the editor) inherits
+    // the board's current pf, so recompute reproduces the old board value.
+    const pfFallback = Number(comp.props.power_factor) || 0.85;
     for (const c of circuits) {
       const va = Number(c.load_va) || 0;
       const df = Number(c.demand_factor) || 1;
       connectedVa += va;
       const d = va * df;
       demandVa += d;
+      const pf = Math.min(1, Math.max(0.05, Number(c.power_factor) || pfFallback));
+      sumP += d * pf;
+      sumQ += d * Math.sqrt(Math.max(0, 1 - pf * pf));
       if (c.poles === '3P' || c.phase === 'RWB') {
         phaseVa.R += d / 3; phaseVa.W += d / 3; phaseVa.B += d / 3;
       } else {
@@ -174,6 +202,11 @@ const DBSchedule = {
     comp.props.rated_kva = Math.round(connectedVa / 10) / 100;   // kVA, 2dp
     comp.props.demand_factor = connectedVa > 0
       ? Math.round((demandVa / connectedVa) * 10000) / 10000 : 1.0;
+    // Board PF = ΣP / |ΣS|; leave the fallback prop untouched for a board with
+    // no load so an empty/legacy board keeps its 0.85 default.
+    const sMag = Math.hypot(sumP, sumQ);
+    const boardPf = sMag > 0 ? Math.round((sumP / sMag) * 1000) / 1000 : null;
+    if (boardPf !== null) comp.props.power_factor = boardPf;
     const phTotal = phaseVa.R + phaseVa.W + phaseVa.B;
     if (phTotal > 0) {
       comp.props.phase_a_pct = Math.round(phaseVa.R / phTotal * 10000) / 100;
@@ -186,7 +219,10 @@ const DBSchedule = {
     }
     comp.props.phase_connection = '3P';
     // Exact figures for display (props round for the analyses)
-    return { connectedKva: connectedVa / 1000, demandKva: demandVa / 1000, phaseVa };
+    return {
+      connectedKva: connectedVa / 1000, demandKva: demandVa / 1000, phaseVa,
+      pf: boardPf !== null ? boardPf : (comp.props.power_factor || 0.85),
+    };
   },
 
   // ── Standing earth leakage per EL group ────────────────────────────
@@ -268,6 +304,7 @@ const DBSchedule = {
       cable_m: 10,
       load_va: t.va * n,
       demand_factor: t.df,
+      power_factor: t.pf ?? 0.9,
       leakage_ma: Math.round((t.leak_ma || 0) * n * 100) / 100,
     };
   },
@@ -399,6 +436,7 @@ const DBSchedule = {
         <td data-label="Len (m)"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
         <td data-label="Load (VA)"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
+        <td data-label="PF"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
         <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
       </tr>`).join('');
 
@@ -453,10 +491,11 @@ const DBSchedule = {
             <th>Way</th><th>Description</th><th>Poles</th><th>Ph</th>
             <th>Breaker (A)</th><th>Curve</th><th>EL Grp</th>
             <th title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
-            <th>Cable mm²</th><th>Len (m)</th><th>Load (VA)</th><th>DF</th><th></th>
+            <th>Cable mm²</th><th>Len (m)</th><th>Load (VA)</th><th>DF</th>
+            <th title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th><th></th>
           </tr></thead>
           <tbody id="db-rows">${rows ||
-            '<tr><td colspan="14" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
+            '<tr><td colspan="15" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -479,6 +518,7 @@ const DBSchedule = {
         <input type="file" id="db-import-file" accept=".xlsx,.xls,.csv" style="display:none">
         <span id="db-totals-strip" style="font-size:12px;">Connected: <strong>${connected.toFixed(2)} kVA</strong>
           &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}): <strong>${demand.toFixed(2)} kVA</strong> (${ampsLabel})
+          &nbsp; Board PF: <strong>${totals.pf.toFixed(3)}</strong>
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
         <button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>
       </div>`;
@@ -545,7 +585,7 @@ const DBSchedule = {
         id: this._wayId(),
         way: String(circuits.length + 1), description: '', poles: '1P',
         phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
-        el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
+        el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1, power_factor: 0.9,
         leakage_ma: 0,
       });
       this.render();
@@ -628,7 +668,8 @@ const DBSchedule = {
     // Keyboard navigation: Enter/↓ = same column next row (Enter on the last
     // row adds a way), ↑ = previous row, Tab keeps its native left/right.
     const NAV_COLS = ['way', 'description', 'poles', 'phase', 'breaker_a', 'curve',
-      'el_group', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor'];
+      'el_group', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor',
+      'power_factor'];
     this._focusCell = (row, k) => {
       const el = this.body.querySelector(`#db-rows tr[data-idx="${row}"] [data-k="${k}"]`);
       if (el) { el.focus(); if (el.select) el.select(); }
@@ -648,7 +689,7 @@ const DBSchedule = {
             id: this._wayId(),
             way: String(circuits.length + 1), description: '', poles: '1P',
             phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
-            el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
+            el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1, power_factor: 0.9,
             leakage_ma: 0,
           });
           this.render();
@@ -681,7 +722,7 @@ const DBSchedule = {
             id: this._wayId(),
             way: String(circuits.length + 1), description: '', poles: '1P',
             phase: 'R', breaker_a: 20, curve: 'C', el_group: '',
-            cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1,
+            cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1, power_factor: 0.9,
             leakage_ma: 0,
           });
         }
@@ -691,9 +732,13 @@ const DBSchedule = {
           const key = NAV_COLS[startCol + vi];
           const raw = String(vals[vi]).trim();
           if (raw === '') continue;
-          if (['breaker_a', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor'].includes(key)) {
+          if (['breaker_a', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor', 'power_factor'].includes(key)) {
             const n = parseFloat(raw);
-            if (!isNaN(n)) c[key] = key === 'demand_factor' ? Math.min(1, Math.max(0, n)) : n;
+            if (!isNaN(n)) {
+              if (key === 'demand_factor') c[key] = Math.min(1, Math.max(0, n));
+              else if (key === 'power_factor') c[key] = Math.min(1, Math.max(0.05, n));
+              else c[key] = n;
+            }
           } else if (key === 'poles') {
             c.poles = raw.toUpperCase().includes('3') ? '3P' : '1P';
             if (c.poles === '3P') c.phase = 'RWB';
@@ -736,6 +781,7 @@ const DBSchedule = {
       strip.innerHTML = `Connected: <strong>${totals.connectedKva.toFixed(2)} kVA</strong>
         &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}):
         <strong>${totals.demandKva.toFixed(2)} kVA</strong> (${ampsLabel})
+        &nbsp; Board PF: <strong>${totals.pf.toFixed(3)}</strong>
         &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong>`;
     }
   },
@@ -915,7 +961,8 @@ const DBSchedule = {
   // ── Excel export / import ───────────────────────────────────────────
 
   XLSX_HEADERS: ['Way', 'Description', 'Poles', 'Phase', 'Breaker (A)', 'Curve',
-    'EL Group', 'Leak (mA)', 'Cable (mm2)', 'Length (m)', 'Load (VA)', 'Demand Factor'],
+    'EL Group', 'Leak (mA)', 'Cable (mm2)', 'Length (m)', 'Load (VA)', 'Demand Factor',
+    'Power Factor'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
@@ -924,10 +971,12 @@ const DBSchedule = {
       (c.poles === '3P') ? 'RWB' : (c.phase ?? 'R'),
       c.breaker_a ?? '', c.curve ?? 'C', c.el_group ?? '', c.leakage_ma ?? 0,
       c.cable_mm2 ?? '', c.cable_m ?? '', c.load_va ?? '', c.demand_factor ?? 1,
+      c.power_factor ?? 0.9,
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 6 }, { wch: 11 },
-      { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 13 }];
+      { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 13 },
+      { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');
@@ -961,6 +1010,7 @@ const DBSchedule = {
         leakage_ma: col('leak'),
         cable_mm2: col('cable', 'mm'), cable_m: col('length', 'len'),
         load_va: col('load', 'va'), demand_factor: col('demand', 'df'),
+        power_factor: col('power', 'pf'),
       };
       if (idx.load_va === -1 && idx.description === -1) {
         UI.toast('Could not recognise the columns — export a schedule first to get the expected template.', 'error');
@@ -987,6 +1037,7 @@ const DBSchedule = {
           cable_m: num('cable_m', 10),
           load_va: num('load_va', 0),
           demand_factor: Math.min(1, Math.max(0, num('demand_factor', 1))),
+          power_factor: Math.min(1, Math.max(0.05, num('power_factor', 0.9))),
         });
       }
       if (circuits.length === 0) {
@@ -1015,6 +1066,7 @@ const DBSchedule = {
           ex.breaker_a = row.breaker_a; ex.curve = row.curve; ex.el_group = row.el_group;
           ex.leakage_ma = row.leakage_ma; ex.cable_mm2 = row.cable_mm2; ex.cable_m = row.cable_m;
           ex.load_va = row.load_va; ex.demand_factor = row.demand_factor;
+          ex.power_factor = row.power_factor;
           merged.push(ex);
           byWay.delete(String(row.way));
         } else {
