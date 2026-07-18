@@ -483,11 +483,16 @@ const Components = {
       }
     }
 
-    // 4b. Loads/sources behind a terminal cable/transformer (no intervening
-    // bus) never enter the analysis graph — warn so they aren't silently
-    // dropped (e.g. Bus → Cable → Motor with no bus at the motor end).
+    // 4b. Sources (and DC loads) behind a terminal cable/transformer with no
+    // intervening bus never enter the analysis graph — warn so they aren't
+    // silently dropped. AC loads in the same position are NOT flagged: the
+    // backend auto-handles them by synthesizing a terminal bus at solve time
+    // (loadflow.py `insert_implicit_load_buses`, run by every AC engine), so
+    // the load is included and the old "will be excluded" warning was stale.
+    // That synthesizer skips DC loads (they belong to the DC solver, which
+    // does not insert terminal buses), so DC loads still warrant the warning.
     {
-      const LOAD_TYPES = ['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'];
+      const DC_LOAD_TYPES = ['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'];
       const SOURCE_TYPES = ['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery'];
       const TRANSPARENT_TYPES = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector']);
       const includedIds = new Set([
@@ -495,9 +500,12 @@ const Components = {
         ...graph.sources.map(s => s.source.id),
       ]);
       for (const comp of AppState.components.values()) {
-        if (!LOAD_TYPES.includes(comp.type) && !SOURCE_TYPES.includes(comp.type)) continue;
+        const isSource = SOURCE_TYPES.includes(comp.type);
+        const isDcLoad = DC_LOAD_TYPES.includes(comp.type)
+          && String(comp.props.system || 'ac').toLowerCase() === 'dc';
+        if (!isSource && !isDcLoad) continue;
         if (includedIds.has(comp.id)) continue;
-        // Walk from the dropped load/source through transparent elements to
+        // Walk from the dropped element through transparent elements to
         // find the cable/transformer it hangs off
         const visited = new Set([comp.id]);
         const queue = [...(reachAdj.get(comp.id) || [])];
