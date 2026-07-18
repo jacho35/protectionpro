@@ -400,6 +400,27 @@ const MobileUI = {
     mobileContent.querySelectorAll('.prop-ampacity-btn').forEach((btn, i) => {
       btn.addEventListener('click', () => dAmp[i] && dAmp[i].click());
     });
+
+    // Mirror the "View Calculations" button. It lives in #calc-info, a SIBLING
+    // of #properties-content (not inside it), so the innerHTML copy above never
+    // picks it up — the button was simply absent on mobile. Clone it into the
+    // sheet, respecting its current display state (Properties.show toggles it
+    // per component type), and re-bind the click since the clone drops it.
+    mobileContent.querySelector('#mobile-calc-info')?.remove();
+    const desktopCalcInfo = document.getElementById('calc-info');
+    if (desktopCalcInfo && desktopCalcInfo.style.display !== 'none') {
+      const clone = desktopCalcInfo.cloneNode(true);
+      clone.id = 'mobile-calc-info';           // avoid a duplicate #calc-info id
+      clone.style.display = '';
+      const btn = clone.querySelector('#btn-show-calc');
+      if (btn) {
+        btn.removeAttribute('id');             // avoid a duplicate #btn-show-calc id
+        btn.addEventListener('click', () => {
+          if (typeof Properties !== 'undefined') Properties.showCalcModal();
+        });
+      }
+      mobileContent.appendChild(clone);
+    }
   },
 
   // ─── Analysis sheet ────────────────────────────────────────────────────────
