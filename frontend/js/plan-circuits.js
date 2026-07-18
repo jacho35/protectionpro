@@ -215,6 +215,7 @@ const PlanCircuits = {
       breaker_a: base.breaker_a || 10, curve: base.curve || 'B', el_group: '',
       cable_mm2: base.cable_mm2 || 1.5, cable_m: 0, load_va: 0,
       demand_factor: base.df != null ? base.df : 1,
+      power_factor: base.pf != null ? base.pf : 0.9,
       leakage_ma: 0,
     };
   },

@@ -575,13 +575,14 @@ def _render_db_schedules(pdf, components):
                 f"{c.get('cable_mm2', '—')}mm² / {c.get('cable_m', '—')}m",
                 f"{float(c.get('load_va') or 0):.0f}",
                 f"{float(c.get('demand_factor') or 1):.2f}",
+                f"{float(c.get('power_factor') or p.get('power_factor') or 0.85):.2f}",
             ])
         headers = ["Way", "Description", "Poles/Ph", "Breaker", "EL Grp",
-                   "Leak mA", "Cable", "Load (VA)", "DF"]
+                   "Leak mA", "Cable", "Load (VA)", "DF", "PF"]
         avail = pdf.w - pdf.l_margin - pdf.r_margin
-        widths = [avail * 0.05, avail * 0.25, avail * 0.09, avail * 0.11,
-                  avail * 0.07, avail * 0.08, avail * 0.14, avail * 0.11,
-                  avail * 0.10]
+        widths = [avail * 0.05, avail * 0.22, avail * 0.09, avail * 0.11,
+                  avail * 0.07, avail * 0.08, avail * 0.13, avail * 0.10,
+                  avail * 0.08, avail * 0.07]
         _table(pdf, headers, rows, widths, header_color=(46, 125, 50))
 
         # Standing earth leakage per EL group: device leakage plus cable

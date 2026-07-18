@@ -1221,20 +1221,23 @@ const FIELD_INFO = {
 // IEC 60335-1 §13 (portable Class I ≤ 0.75 mA, heating 0.75 mA/kW capped
 // at 5 mA), IEC 62368-1 (pluggable IT ≤ 3.5 mA), IEC 61851 (EV charger
 // ≤ 3.5 mA on the AC side), IEC 61347 (LED drivers, typ. 0.3–0.5 mA).
+// `pf` is each preset's typical circuit power factor. It seeds a new way's
+// per-circuit power_factor, which DBSchedule.recompute rolls up (P/Q vector
+// sum) into the board-level power_factor the analyses read.
 const DB_LOAD_TYPES = [
-  { key: 'lighting',   label: 'Lighting',          va: 100,  unit: 'point',   df: 1.0, poles: '1P', breaker_a: 10, curve: 'B', cable_mm2: 1.5, per_circuit: 10, leak_ma: 0.4 },
-  { key: 'socket',     label: 'Socket Outlet',     va: 200,  unit: 'socket',  df: 0.4, poles: '1P', breaker_a: 20, curve: 'B', cable_mm2: 2.5, per_circuit: 6,  leak_ma: 0.75 },
-  { key: 'geyser',     label: 'Geyser',            va: 3000, unit: 'geyser',  df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.25 },
-  { key: 'stove',      label: 'Stove / Oven',      va: 6000, unit: 'stove',   df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1,  leak_ma: 4.5 },
-  { key: 'aircon',     label: 'Air Conditioner',   va: 2500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5 },
-  { key: 'ev_charger', label: 'EV Charger',        va: 7400, unit: 'charger', df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1,  leak_ma: 3.5 },
-  { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5 },
-  { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.0 },
-  { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 0 },
+  { key: 'lighting',   label: 'Lighting',          va: 100,  unit: 'point',   df: 1.0, poles: '1P', breaker_a: 10, curve: 'B', cable_mm2: 1.5, per_circuit: 10, leak_ma: 0.4, pf: 0.95 },
+  { key: 'socket',     label: 'Socket Outlet',     va: 200,  unit: 'socket',  df: 0.4, poles: '1P', breaker_a: 20, curve: 'B', cable_mm2: 2.5, per_circuit: 6,  leak_ma: 0.75, pf: 0.9 },
+  { key: 'geyser',     label: 'Geyser',            va: 3000, unit: 'geyser',  df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.25, pf: 1.0 },
+  { key: 'stove',      label: 'Stove / Oven',      va: 6000, unit: 'stove',   df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1,  leak_ma: 4.5, pf: 1.0 },
+  { key: 'aircon',     label: 'Air Conditioner',   va: 2500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5, pf: 0.85 },
+  { key: 'ev_charger', label: 'EV Charger',        va: 7400, unit: 'charger', df: 1.0, poles: '1P', breaker_a: 40, curve: 'C', cable_mm2: 6,   per_circuit: 1,  leak_ma: 3.5, pf: 0.98 },
+  { key: 'heat_pump',  label: 'Heat Pump',         va: 1500, unit: 'unit',    df: 1.0, poles: '1P', breaker_a: 16, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 1.5, pf: 0.85 },
+  { key: 'motor_3ph',  label: 'Motor (3φ)',        va: 4000, unit: 'motor',   df: 0.8, poles: '3P', breaker_a: 16, curve: 'D', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 2.0, pf: 0.85 },
+  { key: 'spare',      label: 'Spare',             va: 0,    unit: 'way',     df: 1.0, poles: '1P', breaker_a: 20, curve: 'C', cable_mm2: 2.5, per_circuit: 1,  leak_ma: 0, pf: 1.0 },
   // Outgoing feeder to a downstream sub-board. Carries no lumped load itself
   // (the sub-board models its own demand); on the SLD it renders as an
   // outgoing bus below the board that the sub-board's incomer connects to.
-  { key: 'feeder_db',  label: 'Feeder to Sub-board', va: 0,  unit: 'board',   df: 1.0, poles: '3P', breaker_a: 63, curve: 'C', cable_mm2: 25,  per_circuit: 1,  leak_ma: 0 },
+  { key: 'feeder_db',  label: 'Feeder to Sub-board', va: 0,  unit: 'board',   df: 1.0, poles: '3P', breaker_a: 63, curve: 'C', cable_mm2: 25,  per_circuit: 1,  leak_ma: 0, pf: 0.9 },
 ];
 
 // Standing earth-leakage of the cable itself (insulation capacitance to
@@ -2368,6 +2371,8 @@ const COMPONENT_DEFS = {
       // The analyses read these exactly like a static load's props.
       rated_kva: 0,
       demand_factor: 1.0,
+      // power_factor is DERIVED too: the P/Q vector rollup of the per-circuit
+      // power factors (DBSchedule.recompute). 0.85 is the empty-board fallback.
       load_type: 'constant_power',
       phase_connection: '3P',
       phase_a_pct: 33.33,
@@ -2377,7 +2382,8 @@ const COMPONENT_DEFS = {
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
-      { key: 'power_factor', label: 'Power Factor', type: 'number' },
+      // power_factor is derived per-circuit → shown read-only in Calculated
+      // Values (see properties.js), not edited here.
       { key: 'board_diversity', label: 'Board Diversity', type: 'number', min: 0.1, max: 1, step: 0.05, section: 'loadflow' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'motor_fraction', label: 'Motor Fraction (0 = none)', type: 'number', min: 0, max: 1, step: 0.05, section: 'fault' },
