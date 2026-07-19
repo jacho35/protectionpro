@@ -121,6 +121,20 @@ const API = {
     return this.request('/analysis/fault', 'POST', data);
   },
 
+  // [PS-3] Companion MINIMUM-current fault study (IEC 60909-0 §5.3.1):
+  // c_min = 0.95 and hot-conductor cable resistance (default 70 °C operating
+  // temperature). Used by the compliance engine to verify earth-fault
+  // disconnection against the current that may ACTUALLY flow — checking
+  // against the maximum-current study passes circuits the standard fails.
+  async runFaultAnalysisMin(faultBusId = null, faultType = null, conductorTempC = 70) {
+    const data = AppState.toJSON();
+    if (faultBusId) data.faultBusId = faultBusId;
+    if (faultType) data.faultType = faultType;
+    data.voltageFactor = 0.95;
+    data.conductorTemperatureC = conductorTempC;
+    return this.request('/analysis/fault', 'POST', data);
+  },
+
   // Run arc flash analysis
   async runArcFlash() {
     const data = AppState.toJSON();

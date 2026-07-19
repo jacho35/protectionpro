@@ -70,7 +70,8 @@ def thermal_m_factor(kappa, duration_s, freq_hz=50.0):
 
 
 def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None,
-                       thermal_duration_s: float = 1.0, voltage_factor: float = None) -> FaultResults:
+                       thermal_duration_s: float = 1.0, voltage_factor: float = None,
+                       conductor_temperature_c: float = None) -> FaultResults:
     """Run IEC 60909 fault analysis.
 
     Args:
@@ -85,9 +86,40 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             that omit the voltage factor (e.g. bolted-fault / V=1.0 studies).
             NOTE: the transformer correction factor K_T always uses c_max=1.10
             internally per §6.3.3 regardless of this value.
+        conductor_temperature_c: [PS-3] Conductor temperature (°C) for a
+            MINIMUM short-circuit study per IEC 60909-0 §5.3.1: every cable's
+            resistance (r_per_km and, when set, r0_per_km) is scaled by
+            1 + 0.004·(θ − 20) before the study. Combine with
+            voltage_factor = 0.95 (c_min) so disconnection/protection-reach
+            checks are made against the current that may actually flow.
+            None or 20 → unchanged (maximum-current convention).
     """
     # Resolve the voltage factor once; a positive override wins, else C_MAX.
     c_resolved = voltage_factor if (voltage_factor is not None and voltage_factor > 0) else C_MAX
+
+    # [PS-3] Minimum-current mode: hot-conductor cable resistance.
+    if conductor_temperature_c is not None and abs(conductor_temperature_c - 20.0) > 1e-9:
+        import json as _json
+        temp_factor = 1.0 + 0.004 * (float(conductor_temperature_c) - 20.0)
+        if temp_factor > 0:
+            _data = _json.loads(project.model_dump_json())
+            for _c in _data.get("components", []):
+                if _c.get("type") == "cable":
+                    _props = _c.setdefault("props", {})
+                    # 0.1 Ω/km is the engine default when the prop is absent —
+                    # materialize it so the correction still applies.
+                    _r = _props.get("r_per_km", 0.1)
+                    try:
+                        _props["r_per_km"] = float(_r) * temp_factor
+                    except (TypeError, ValueError):
+                        pass
+                    _r0 = _props.get("r0_per_km")
+                    if _r0:
+                        try:
+                            _props["r0_per_km"] = float(_r0) * temp_factor
+                        except (TypeError, ValueError):
+                            pass
+            project = ProjectData(**_data)
 
     # Give any load wired behind a cable/transformer a terminal bus, so a fault
     # level is reported at that terminal too (as if the user had drawn a bus
@@ -117,8 +149,13 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     buses = [c for c in project.components
              if c.type in ("bus", "distribution_board")
              and str(c.props.get("system", "ac")).lower() != "dc"]
+    all_buses = list(buses)  # full bus set — used for nodal/Zbus solutions
     if fault_bus_id:
         buses = [c for c in buses if c.id == fault_bus_id]
+
+    # [PS-1] Bus-level sequence networks, built lazily on the first meshed
+    # fault location (radial networks never need them).
+    net_cache = None
 
     # For each bus, compute equivalent impedance seen from that bus
     results = {}
@@ -127,7 +164,9 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         i_base_ka = base_mva / (math.sqrt(3) * voltage_kv)  # kA
 
         # Collect all source paths with component trail
-        source_paths = _collect_source_paths(bus.id, components, adjacency, base_mva, c=c_resolved)
+        paths_meta = {}
+        source_paths = _collect_source_paths(bus.id, components, adjacency, base_mva,
+                                             c=c_resolved, meta=paths_meta)
 
         if not source_paths:
             # No sources connected — infinite impedance (no fault current)
@@ -146,10 +185,51 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         motor_paths = [p for p in source_paths if p.get("is_motor")]
         network_paths = [p for p in source_paths if not p.get("is_motor")]
 
-        # Parallel combination of all source impedances
-        z_eq = _parallel_impedances(z_sources)
+        # Parallel combination of all source impedances — exact for radial
+        # topologies (no element shared between paths)
+        z_eq_paths = _parallel_impedances(z_sources)
         # Negative-sequence equivalent impedance (may differ from Z1 for generators/motors)
-        z2_eq = _parallel_impedances(z2_sources)
+        z2_eq_paths = _parallel_impedances(z2_sources)
+        z_eq, z2_eq = z_eq_paths, z2_eq_paths
+
+        # [PS-1] Meshed/parallel-path topology: per-path parallel combination
+        # double-counts shared upstream impedance — solve the Thevenin
+        # impedance nodally (Zbus) instead. meshed_scale re-anchors the
+        # current-summing quantities (Ib, Ik_steady, motor split) that are
+        # built from per-path currents.
+        study_warnings = []
+        if paths_meta.get("truncated"):
+            study_warnings.append(
+                "Source-path enumeration truncated (heavily meshed network) — "
+                "per-path detail (branch contributions, Ib weighting) may omit paths.")
+        meshed = _paths_are_meshed(source_paths, components)
+        meshed_scale = 1.0
+        if meshed:
+            if net_cache is None:
+                net_cache = _build_bus_network(all_buses, components, adjacency,
+                                               base_mva, c_resolved)
+                net_cache["shunts1"] = {bid: [t[0] for t in lst]
+                                        for bid, lst in net_cache["shunts12"].items()}
+                net_cache["shunts2"] = {bid: [t[1] for t in lst]
+                                        for bid, lst in net_cache["shunts12"].items()}
+            z1_kk = _nodal_thevenin(net_cache["bus_ids"], net_cache["branches1"],
+                                    net_cache["shunts1"], bus.id)
+            z2_kk = _nodal_thevenin(net_cache["bus_ids"], net_cache["branches1"],
+                                    net_cache["shunts2"], bus.id)
+            if z1_kk is not None:
+                if abs(z_eq_paths) > 1e-15:
+                    meshed_scale = abs(z_eq_paths) / abs(z1_kk)
+                z_eq = z1_kk
+                z2_eq = z2_kk if z2_kk is not None else z1_kk
+                study_warnings.append(
+                    "Meshed/parallel-path topology: Thevenin impedance solved "
+                    "nodally (Zbus); per-branch contributions remain "
+                    "path-divider approximations.")
+            else:
+                study_warnings.append(
+                    "Meshed topology detected but the nodal solution failed — "
+                    "falling back to per-path parallel combination, which "
+                    "OVERSTATES fault current when paths share impedance.")
 
         # IEC 60909-0 Table 1 voltage factor (see C_MAX above; overridable per request)
         c_factor = c_resolved
@@ -182,6 +262,14 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 z0_detail = [t[1] for t in z0_source_tuples]
                 z0 = _parallel_impedances(z0_impedances)
                 has_z0_path = True
+            # [PS-1] Meshed topology: the zero-sequence path enumeration has
+            # the same shared-element defect — use the nodal Z0 when solvable.
+            if meshed and net_cache is not None:
+                z0_kk = _nodal_thevenin(net_cache["bus_ids"], net_cache["branches0"],
+                                        net_cache["shunts0"], bus.id)
+                if z0_kk is not None:
+                    z0 = z0_kk
+                    has_z0_path = True
 
         # SLG fault: I"k1 = 3 * c * V_n / (sqrt(3) * |Z1 + Z2 + Z0|)
         if not fault_type or fault_type == "slg":
@@ -248,8 +336,11 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
 
         ik_total_ka = ik_total_pu * i_base_ka
 
+        # Branch shares use the per-path parallel z_eq (admittance weighting)
+        # anchored to the corrected bus total — for a shared-source parallel
+        # feeder this reproduces the physical 50/50 cable split.
         branches = _compute_branch_contributions(
-            source_paths, z_eq, c_factor, i_base_ka, ik_total_ka, components, active_type, bus.id,
+            source_paths, z_eq_paths, c_factor, i_base_ka, ik_total_ka, components, active_type, bus.id,
             base_mva=base_mva, faulted_bus_voltage_kv=voltage_kv
         )
 
@@ -259,20 +350,27 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         ik3_network = None
         if motor_count > 0 and ik3_ka and ik3_ka > 0:
             # Sum motor contributions via current divider: I_motor = c / |Z_motor_path|
+            # ([PS-1] × meshed_scale when the per-path currents overstate)
             motor_pu = sum(
                 c_factor / abs(p["z_total"]) for p in motor_paths if abs(p["z_total"]) > 1e-15
-            )
+            ) * meshed_scale
             network_pu = sum(
                 c_factor / abs(p["z_total"]) for p in network_paths if abs(p["z_total"]) > 1e-15
-            )
+            ) * meshed_scale
             ik3_motor = round(motor_pu * i_base_ka, 3)
             ik3_network = round(network_pu * i_base_ka, 3)
 
         # IEC 60909 time-varying fault currents (3-phase)
         freq = project.frequency or 50  # Hz
-        ip_ka, kappa = _compute_peak_current(ik3_ka, z_eq)
+        ip_ka, kappa = _compute_peak_current(ik3_ka, z_eq, meshed=meshed, voltage_kv=voltage_kv)
         ib_ka = _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mva)
         ik_steady_ka = _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, voltage_kv)
+        # [PS-1] Per-path current sums inherit the shared-impedance overstatement
+        if meshed_scale != 1.0:
+            if ib_ka is not None:
+                ib_ka = round(ib_ka * meshed_scale, 3)
+            if ik_steady_ka is not None:
+                ik_steady_ka = round(ik_steady_ka * meshed_scale, 3)
 
         # [EE-11] Thermal-equivalent short-circuit current per IEC 60909-0 §12:
         #   Ith = Ik″ × √(m + n)
@@ -331,14 +429,14 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ib_asymmetric=ib_asym_ka,
             ik_steady=ik_steady_ka,
             branches=branches,
+            network_topology="meshed" if meshed else "radial",
+            topology_warnings=study_warnings or None,
         )
 
     # ── Voltage Depression Calculation (IEC 60909 §3.6) ──
     # Build Zbus matrix for all buses and compute retained voltage at each bus
     # during a fault at each faulted bus: V_j = 1 - Z_jk / Z_kk
-    all_buses = [c for c in project.components
-                 if c.type in ("bus", "distribution_board")
-                 and str(c.props.get("system", "ac")).lower() != "dc"]
+    # (all_buses computed above — full bus set regardless of fault_bus_id)
     if len(all_buses) >= 2:
         try:
             _compute_voltage_depression(
@@ -374,7 +472,7 @@ def _transformer_far_voltage(comp, v_near):
     return v_near
 
 
-def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
+def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta=None):
     """Walk the network from a bus and collect source paths with component trails.
 
     Uses a per-path visited set (one copy per recursion branch) so that
@@ -405,10 +503,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
         # If we hit a source, record the complete path
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva, c)
-            # Negative sequence: Z2 = Z1 * z2_z1_ratio (default 1.0)
-            # Also accept legacy "x2_ratio" key for backwards compatibility
-            z2_z1 = float(comp.props.get("z2_z1_ratio", 0) or comp.props.get("x2_ratio", 0))
-            z2_src = z_src * z2_z1 if z2_z1 > 0 else z_src
+            z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
                 "z_total": z_path + z_src,
                 "z2_total": z_path + z2_src,
@@ -418,17 +513,9 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
             })
             return
         if comp.type == "generator":
-            z_src = _generator_impedance(comp, base_mva)
+            z_src = _generator_impedance(comp, base_mva, v_kv)
             rated_mva = comp.props.get("rated_mva", 10)
-            # Negative sequence: use x2 prop if > 0, else Z2 = Z1
-            x2_val = float(comp.props.get("x2", 0))
-            if x2_val > 0:
-                xr = comp.props.get("x_r_ratio", 40)
-                x2_pu = x2_val * base_mva / rated_mva
-                r2_pu = x2_pu / xr
-                z2_src = complex(r2_pu, x2_pu)
-            else:
-                z2_src = z_src
+            z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
                 "z_total": z_path + z_src,
                 "z2_total": z_path + z2_src,
@@ -450,16 +537,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
             pf = comp.props.get("power_factor", 0.85)
             # IEC 60909-0 §3.8: S_rM = P_rM / (η × cosφ)
             motor_mva = rated_kw / (eff * pf * 1000)
-            # Negative sequence: use x2 if > 0, else Z2 = Z1
-            # Also accept legacy "x2_pu" key for backwards compatibility
-            x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
-            if x2_val > 0:
-                xr = comp.props.get("x_r_ratio", 10)
-                x2_pu = x2_val * base_mva / motor_mva
-                r2_pu = x2_pu / xr
-                z2_src = complex(r2_pu, x2_pu)
-            else:
-                z2_src = z_src
+            z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
                 "z_total": z_path + z_src,
                 "z2_total": z_path + z2_src,
@@ -473,17 +551,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
         if comp.type == "motor_synchronous":
             z_src = _motor_synchronous_impedance(comp, base_mva)
             rated_kva = comp.props.get("rated_kva", 500)
-            # Negative sequence: use x2 if > 0, else Z2 = Z1
-            # Also accept legacy "x2_pu" key for backwards compatibility
-            x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
-            if x2_val > 0:
-                rated_mva = rated_kva / 1000
-                xr = comp.props.get("x_r_ratio", 40)
-                x2_pu = x2_val * base_mva / rated_mva
-                r2_pu = x2_pu / xr
-                z2_src = complex(r2_pu, x2_pu)
-            else:
-                z2_src = z_src
+            z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
                 "z_total": z_path + z_src,
                 "z2_total": z_path + z2_src,
@@ -598,6 +666,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX):
         print(f"[fault] Warning: source path enumeration truncated for bus {bus_id} "
               f"({len(paths)} paths, {expansions[0]} expansions) — heavily meshed "
               f"network, results may omit paths")
+        if meta is not None:
+            meta["truncated"] = True
 
     return paths
 
@@ -758,14 +828,158 @@ def _utility_impedance(comp, base_mva, c=C_MAX):
     return complex(r_pu, x_pu)
 
 
-def _generator_impedance(comp, base_mva):
-    """Generator sub-transient impedance in per-unit."""
+def _generator_impedance(comp, base_mva, v_system_kv=None):
+    """Generator sub-transient impedance in per-unit, corrected per
+    IEC 60909-0 §6.6.1:
+
+        Z_GK = K_G × (R_G + jX″d),
+        K_G  = (U_n / U_rG) × c_max / (1 + x″d · sin φ_rG)     (Eq. 18)
+
+    [PS-6] U_n is the nominal system voltage at the connection point — the
+    caller's bus-inferred voltage zone when available, else assumed equal to
+    the machine rated voltage U_rG (K_G voltage ratio = 1). φ_rG is the rated
+    power-factor angle (props ``power_factor``, default 0.85).
+
+    R_G: an explicit ``x_r_ratio`` prop wins; otherwise the fictitious
+    resistances of §6.6.1 are used (they set the correct κ decay, not the
+    winding loss): R_G = 0.05·X″d (U_rG > 1 kV, S_rG ≥ 100 MVA),
+    0.07·X″d (U_rG > 1 kV, S_rG < 100 MVA), 0.15·X″d (U_rG ≤ 1 kV).
+    """
     rated_mva = comp.props.get("rated_mva", 10)
     xd_pp = comp.props.get("xd_pp", 0.15)
-    xr = comp.props.get("x_r_ratio", 40)
     x_pu = xd_pp * base_mva / rated_mva
-    r_pu = x_pu / xr
-    return complex(r_pu, x_pu)
+
+    u_rg = float(comp.props.get("voltage_kv", 0) or 0)
+    xr_prop = comp.props.get("x_r_ratio", None)
+    try:
+        xr = float(xr_prop) if xr_prop is not None else 0.0
+    except (TypeError, ValueError):
+        xr = 0.0
+    if xr > 0:
+        r_pu = x_pu / xr
+    else:
+        # IEC 60909-0 §6.6.1 fictitious resistance classes
+        if 0 < u_rg <= 1.0:
+            r_pu = 0.15 * x_pu
+        elif rated_mva >= 100:
+            r_pu = 0.05 * x_pu
+        else:
+            r_pu = 0.07 * x_pu
+
+    # Impedance correction factor K_G (Eq. 18); c_max = 1.10 per Table 1.
+    pf = float(comp.props.get("power_factor", 0.85) or 0.85)
+    pf = min(max(pf, 0.0), 1.0)
+    sin_phi = math.sqrt(max(0.0, 1.0 - pf * pf))
+    u_ratio = (v_system_kv / u_rg) if (v_system_kv and u_rg > 0) else 1.0
+    k_g = u_ratio * 1.10 / (1.0 + xd_pp * sin_phi)
+    return complex(r_pu, x_pu) * k_g
+
+
+def _source_z2(comp, z1_src, base_mva):
+    """Negative-sequence source impedance — shared by the path walker and the
+    nodal (meshed) network builder so the two can never drift ([PS-1]).
+
+    Utility: Z2 = Z1 × z2_z1_ratio (legacy "x2_ratio"), default Z1.
+    Machines: the x2 prop (legacy "x2_pu" for motors) on the machine base wins;
+    otherwise Z2 = Z1. Inverter sources: Z2 = Z1 (current-limited either way).
+    """
+    t = comp.type
+    if t == "utility":
+        z2_z1 = float(comp.props.get("z2_z1_ratio", 0) or comp.props.get("x2_ratio", 0))
+        return z1_src * z2_z1 if z2_z1 > 0 else z1_src
+    if t == "generator":
+        x2_val = float(comp.props.get("x2", 0))
+        if x2_val > 0:
+            rated_mva = comp.props.get("rated_mva", 10)
+            xr = comp.props.get("x_r_ratio", 40)
+            x2_pu = x2_val * base_mva / rated_mva
+            return complex(x2_pu / xr, x2_pu)
+        return z1_src
+    if t == "motor_induction":
+        x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
+        if x2_val > 0:
+            rated_kw = comp.props.get("rated_kw", 200)
+            eff = comp.props.get("efficiency", 0.93)
+            pf = comp.props.get("power_factor", 0.85)
+            motor_mva = rated_kw / (eff * pf * 1000)  # IEC 60909-0 §3.8
+            xr = comp.props.get("x_r_ratio", 10)
+            x2_pu = x2_val * base_mva / motor_mva
+            return complex(x2_pu / xr, x2_pu)
+        return z1_src
+    if t == "motor_synchronous":
+        x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
+        if x2_val > 0:
+            rated_mva = comp.props.get("rated_kva", 500) / 1000
+            xr = comp.props.get("x_r_ratio", 40)
+            x2_pu = x2_val * base_mva / rated_mva
+            return complex(x2_pu / xr, x2_pu)
+        return z1_src
+    return z1_src
+
+
+# Component types that carry series impedance or source internal impedance.
+# A component of one of these types appearing in MORE THAN ONE enumerated
+# source path means parallel paths share an impedance element — paralleling
+# per-path totals then double-counts the shared impedance ([PS-1]).
+_IMPEDANCE_TYPES = frozenset((
+    "cable", "transformer", "autotransformer",
+    "utility", "generator", "motor_induction", "motor_synchronous",
+    "solar_pv", "battery", "wind_turbine",
+))
+
+
+def _paths_are_meshed(source_paths, components):
+    """True when any impedance-carrying component (or source) is shared by two
+    or more enumerated source paths ([PS-1]). Shared zero-impedance elements
+    (buses, closed CBs/switches/fuses, board pass-throughs) do not invalidate
+    the per-path parallel combination and are ignored.
+    """
+    first_path_of = {}
+    for i, p in enumerate(source_paths):
+        for cid in set(p["trail"]):
+            comp = components.get(cid)
+            if not comp or comp.type not in _IMPEDANCE_TYPES:
+                continue
+            if cid in first_path_of and first_path_of[cid] != i:
+                return True
+            first_path_of.setdefault(cid, i)
+    return False
+
+
+_UNGROUNDED_VALUES = ("ungrounded", "isolated", "none", "unearthed", "")
+
+
+def _machine_neutral_z(comp, v_kv, base_mva):
+    """Neutral earthing impedance Zn (per-unit) of a machine star point,
+    from its ``grounding`` prop ([PS-2]). Returns None when the star point is
+    unearthed (no zero-sequence path), complex(0,0) when solidly earthed."""
+    grounding = str(comp.props.get("grounding", "solidly")).lower()
+    if grounding in _UNGROUNDED_VALUES:
+        return None
+    v = float(comp.props.get("voltage_kv", 0) or 0) or (v_kv or 11.0)
+    z_base = (v ** 2) / base_mva if v > 0 else 1.0
+    r_ohm = float(comp.props.get("grounding_resistance_ohm",
+                                 comp.props.get("grounding_resistance", 0)) or 0)
+    x_ohm = float(comp.props.get("grounding_reactance_ohm",
+                                 comp.props.get("grounding_reactance", 0)) or 0)
+    return complex(r_ohm / z_base, x_ohm / z_base)
+
+
+def _cable_z0(comp, base_mva, v_kv):
+    """Cable zero-sequence per-unit impedance — the walker's math, factored
+    out so the nodal Z0 network builder uses the identical formula ([PS-1]).
+    Explicit r0/x0 props win; fallback is 3.5× the positive-sequence
+    per-km values (or 3× the composite Z1 when neither r0 nor x0 is set)."""
+    r0_per_km = float(comp.props.get("r0_per_km", 0))
+    x0_per_km = float(comp.props.get("x0_per_km", 0))
+    if r0_per_km > 0 or x0_per_km > 0:
+        z_base = (v_kv ** 2) / base_mva
+        length = comp.props.get("length_km", 1)
+        n_par = max(1, int(comp.props.get("num_parallel", 1)))
+        r0 = (r0_per_km if r0_per_km > 0 else comp.props.get("r_per_km", 0.1) * 3.5) * length
+        x0 = (x0_per_km if x0_per_km > 0 else comp.props.get("x_per_km", 0.08) * 3.5) * length
+        return complex(r0 / z_base, x0 / z_base) / n_par
+    return _cable_impedance(comp, base_mva, v_kv) * 3
 
 
 def _transformer_impedance(comp, base_mva):
@@ -1005,7 +1219,15 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             return
 
         if comp.type == "generator":
-            z_src = _generator_impedance(comp, base_mva)
+            # [PS-2] A machine sources zero-sequence current only if its star
+            # point is earthed (IEC 60909-0 §6.4) — mirror the utility gate.
+            # The `grounding` prop is authoritative; default "solidly"
+            # preserves legacy results. An impedance-earthed neutral adds
+            # 3·Zn to the zero-sequence loop.
+            zn = _machine_neutral_z(comp, v_kv, base_mva)
+            if zn is None:
+                return  # unearthed star point — no Z0 path
+            z_src = _generator_impedance(comp, base_mva, v_kv)
             x0_val = float(comp.props.get("x0", 0))
             if x0_val > 0:
                 rated_mva = comp.props.get("rated_mva", 10)
@@ -1015,29 +1237,53 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                 z0_src = complex(r0_pu, x0_pu)
             else:
                 z0_src = z_src
+            z0_src = z0_src + 3 * zn
             z_total = z0_path + z0_src
             desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
 
-        if comp.type == "solar_pv":
-            z_src = _solar_pv_impedance(comp, base_mva)
-            z_total = z0_path + z_src
-            desc = " → ".join(trail + [f"Solar PV '{_comp_name(comp)}' (Z0_src={abs(z_src):.4f})"])
-            z0_sources.append((z_total, desc))
-            return
-
-        if comp.type == "battery":
-            z_src = _battery_impedance(comp, base_mva)
-            z_total = z0_path + z_src
-            desc = " → ".join(trail + [f"BESS '{_comp_name(comp)}' (Z0_src={abs(z_src):.4f})"])
-            z0_sources.append((z_total, desc))
-            return
-
-        if comp.type == "wind_turbine":
-            z_src = _wind_turbine_impedance(comp, base_mva)
-            z_total = z0_path + z_src
-            desc = " → ".join(trail + [f"Wind Turbine '{_comp_name(comp)}' (Z0_src={abs(z_src):.4f})"])
+        if comp.type in ("solar_pv", "battery", "wind_turbine"):
+            # [PS-2] Inverter-coupled sources present NO zero-sequence path by
+            # default: 3-wire or delta/ungrounded-star coupled converters (and
+            # Type 1–3 wind machine stators) have Z0 → ∞ per IEC 60909-0 §6.4
+            # — the previous positive-sequence fallback fabricated earth-fault
+            # current that the real installation cannot deliver. An
+            # installation with an effectively earthed neutral (e.g. an
+            # earthed-star coupling winding) can opt in by setting the
+            # `grounding` prop to an earthed value; Z0 then uses the x0 prop
+            # (machine base) if given, else the positive-sequence impedance,
+            # plus 3·Zn. DELIBERATE BEHAVIOUR CHANGE (2026-07 verification):
+            # SLG results on PV/BESS/wind-fed buses previously reported
+            # phantom current.
+            grounding = str(comp.props.get("grounding", "ungrounded")).lower()
+            if grounding in _UNGROUNDED_VALUES:
+                return
+            zn = _machine_neutral_z(comp, v_kv, base_mva)
+            if zn is None:
+                return
+            if comp.type == "solar_pv":
+                z_src = _solar_pv_impedance(comp, base_mva)
+                label = "Solar PV"
+            elif comp.type == "battery":
+                z_src = _battery_impedance(comp, base_mva)
+                label = "BESS"
+            else:
+                z_src = _wind_turbine_impedance(comp, base_mva)
+                label = "Wind Turbine"
+            x0_val = float(comp.props.get("x0", 0))
+            if x0_val > 0:
+                rated = {
+                    "solar_pv": comp.props.get("rated_kw", 100) * comp.props.get("num_inverters", 1) / 1000,
+                    "battery": comp.props.get("rated_kva", 100) / 1000,
+                    "wind_turbine": comp.props.get("rated_mva", 2.0) * comp.props.get("num_turbines", 1),
+                }[comp.type]
+                if rated > 1e-9:
+                    x0_pu = x0_val * base_mva / rated
+                    z_src = complex(x0_pu / 10, x0_pu)
+            z0_src = z_src + 3 * zn
+            z_total = z0_path + z0_src
+            desc = " → ".join(trail + [f"{label} '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f}, earthed)"])
             z0_sources.append((z_total, desc))
             return
 
@@ -1095,19 +1341,9 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             return
 
         if comp.type == "cable":
-            r0_per_km = float(comp.props.get("r0_per_km", 0))
-            x0_per_km = float(comp.props.get("x0_per_km", 0))
-            if r0_per_km > 0 or x0_per_km > 0:
-                # [EE-12] per-unit base from the bus-inferred voltage zone,
-                # not the cable's own voltage_kv prop
-                z_base = (v_kv ** 2) / base_mva
-                length = comp.props.get("length_km", 1)
-                n_par = max(1, int(comp.props.get("num_parallel", 1)))
-                r0 = (r0_per_km if r0_per_km > 0 else comp.props.get("r_per_km", 0.1) * 3.5) * length
-                x0 = (x0_per_km if x0_per_km > 0 else comp.props.get("x_per_km", 0.08) * 3.5) * length
-                z_cable = complex(r0 / z_base, x0 / z_base) / n_par
-            else:
-                z_cable = _cable_impedance(comp, base_mva, v_kv) * 3
+            # [EE-12] per-unit base from the bus-inferred voltage zone,
+            # not the cable's own voltage_kv prop
+            z_cable = _cable_z0(comp, base_mva, v_kv)
             new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
             # Forward the far-end port (the port by which the neighbor is
             # entered) exactly as the transparent-element branch does — a
@@ -1372,6 +1608,322 @@ def _parallel_impedances(impedances):
     return 1 / y_total
 
 
+# ─── [PS-1] Nodal (Zbus) sequence networks for meshed topologies ─────────────
+#
+# Paralleling per-path impedance totals is exact ONLY when parallel paths share
+# no element. On ring / parallel-feeder / bus-coupler networks the shared
+# upstream impedance is duplicated into each path and then halved by the
+# parallel combination, overstating fault currents (measured +58 % on two
+# parallel feeders from one utility). When _paths_are_meshed() detects sharing,
+# the headline Thevenin impedances (Z1, Z2, Z0) are instead taken from the bus
+# impedance matrix Z_kk of a nodally-built network. Radial networks never
+# enter this code path, keeping legacy results byte-identical.
+
+
+def _build_bus_network(net_buses, components, adjacency, base_mva, c):
+    """Build bus-level sequence networks: series branches between bus-like
+    nodes and source shunts at each node, for the positive/negative and zero
+    sequence. Source shunts INCLUDE the series impedance accumulated between
+    the bus and the source (a generator behind a cable keeps its cable).
+
+    Returns a dict with bus ids, branch lists and per-bus shunt lists.
+    """
+    bus_ids = [b.id for b in net_buses]
+    bus_set = set(bus_ids)
+    branches1 = []                      # (from_bus, to_bus, z1) — z2 identical for static elements
+    shunts12 = {bid: [] for bid in bus_ids}  # (z1_total, z2_total, source_id, source_type)
+    branches0 = []                      # (from_bus, to_bus, z0)
+    shunts0 = {bid: [] for bid in bus_ids}   # z0_total
+
+    def walk1(comp_id, z_path, visited, from_bus_id, v_kv):
+        if comp_id in visited:
+            return
+        visited.add(comp_id)
+        comp = components.get(comp_id)
+        if not comp:
+            return
+
+        if comp_id in bus_set:
+            if comp_id != from_bus_id:
+                z = z_path if abs(z_path) > 1e-15 else complex(1e-6, 1e-6)
+                branches1.append((from_bus_id, comp_id, z))
+            return
+
+        t = comp.type
+        if t == "utility":
+            z_src = _utility_impedance(comp, base_mva, c)
+            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            return
+        if t == "generator":
+            z_src = _generator_impedance(comp, base_mva, v_kv)
+            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            return
+        if t == "motor_induction":
+            z_src = _motor_induction_impedance(comp, base_mva)
+            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            return
+        if t == "motor_synchronous":
+            z_src = _motor_synchronous_impedance(comp, base_mva)
+            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            return
+        if t == "solar_pv":
+            z_src = _solar_pv_impedance(comp, base_mva)
+            shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, t))
+            return
+        if t == "battery":
+            z_src = _battery_impedance(comp, base_mva)
+            shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, t))
+            return
+        if t == "wind_turbine":
+            z_src = _wind_turbine_impedance(comp, base_mva)
+            shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, t))
+            return
+        if t == "static_load":
+            z_src, _mva = _static_load_motor_impedance(comp, base_mva)
+            if z_src is not None:
+                # motor-equivalent fraction — classified as a motor infeed
+                shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, "motor_induction"))
+            return
+
+        z_element = complex(0, 0)
+        v_next = v_kv
+        if t in ("transformer", "autotransformer"):
+            z_element = _transformer_impedance(comp, base_mva)
+            v_next = _transformer_far_voltage(comp, v_kv)
+        elif t == "cable":
+            z_element = _cable_impedance(comp, base_mva, v_kv)
+        elif t in ("cb", "switch"):
+            if comp.props.get("state", "closed") == "open":
+                return
+        for neighbor_id, _, _ in adjacency.get(comp_id, []):
+            walk1(neighbor_id, z_path + z_element, visited, from_bus_id, v_next)
+
+    def walk0(comp_id, z0_path, visited, from_bus_id, entry_port, v_kv):
+        if comp_id in visited:
+            return
+        visited.add(comp_id)
+        comp = components.get(comp_id)
+        if not comp:
+            return
+
+        if comp_id in bus_set:
+            if comp_id != from_bus_id:
+                z = z0_path if abs(z0_path) > 1e-15 else complex(1e-6, 1e-6)
+                branches0.append((from_bus_id, comp_id, z))
+            return
+
+        t = comp.type
+        if t == "utility":
+            grounding = str(comp.props.get("grounding", "solidly")).lower()
+            if grounding in _UNGROUNDED_VALUES:
+                return
+            z_src = _utility_impedance(comp, base_mva, c)
+            z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
+            z0_src = z_src * z0_z1 if z0_z1 > 0 else z_src
+            shunts0[from_bus_id].append(z0_path + z0_src)
+            return
+        if t == "generator":
+            zn = _machine_neutral_z(comp, v_kv, base_mva)
+            if zn is None:
+                return
+            z_src = _generator_impedance(comp, base_mva, v_kv)
+            x0_val = float(comp.props.get("x0", 0))
+            if x0_val > 0:
+                rated_mva = comp.props.get("rated_mva", 10)
+                xr = comp.props.get("x_r_ratio", 40)
+                x0_pu = x0_val * base_mva / rated_mva
+                z_src = complex(x0_pu / xr, x0_pu)
+            shunts0[from_bus_id].append(z0_path + z_src + 3 * zn)
+            return
+        if t in ("solar_pv", "battery", "wind_turbine"):
+            # [PS-2] blocked unless explicitly earthed (see the path walker)
+            grounding = str(comp.props.get("grounding", "ungrounded")).lower()
+            if grounding in _UNGROUNDED_VALUES:
+                return
+            zn = _machine_neutral_z(comp, v_kv, base_mva)
+            if zn is None:
+                return
+            if t == "solar_pv":
+                z_src = _solar_pv_impedance(comp, base_mva)
+            elif t == "battery":
+                z_src = _battery_impedance(comp, base_mva)
+            else:
+                z_src = _wind_turbine_impedance(comp, base_mva)
+            shunts0[from_bus_id].append(z0_path + z_src + 3 * zn)
+            return
+        if t == "transformer":
+            z_gnd, far_side = _transformer_zero_seq(comp, base_mva, entry_port)
+            if z_gnd is None:
+                return
+            z0_element = _transformer_impedance(comp, base_mva) + z_gnd
+            if far_side in ("delta", "magnetizing"):
+                shunts0[from_bus_id].append(z0_path + z0_element)
+                return
+            # 'grounded' — Z0 passes through to the far-side network
+            v_far = _transformer_far_voltage(comp, v_kv)
+            for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
+                walk0(neighbor_id, z0_path + z0_element, visited, from_bus_id, remote_port, v_far)
+            return
+        if t == "autotransformer":
+            z0_element = _transformer_impedance(comp, base_mva)
+            v_far = _transformer_far_voltage(comp, v_kv)
+            for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
+                walk0(neighbor_id, z0_path + z0_element, visited, from_bus_id, remote_port, v_far)
+            return
+        if t == "cable":
+            z_cable = _cable_z0(comp, base_mva, v_kv)
+            for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
+                walk0(neighbor_id, z0_path + z_cable, visited, from_bus_id, remote_port, v_kv)
+            return
+        if t in ("cb", "switch"):
+            if comp.props.get("state", "closed") == "open":
+                return
+        # Transparent element (closed CB/switch, fuse, CT/PT, …)
+        for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
+            walk0(neighbor_id, z0_path, visited, from_bus_id, remote_port, v_kv)
+
+    for b in net_buses:
+        v_start = float(b.props.get("voltage_kv", 0.4 if b.type == "distribution_board" else 11) or 11)
+        for neighbor_id, _, remote_port in adjacency.get(b.id, []):
+            walk1(neighbor_id, complex(0, 0), {b.id}, b.id, v_start)
+            walk0(neighbor_id, complex(0, 0), {b.id}, b.id, remote_port, v_start)
+        # A distribution board's own rotating load fraction is a shunt at the
+        # node itself (the path walker models it the same way).
+        if b.type == "distribution_board":
+            z_src, _mva = _static_load_motor_impedance(b, base_mva)
+            if z_src is not None:
+                shunts12[b.id].append((z_src, z_src, b.id, "motor_induction"))
+
+    def _dedupe(branch_list):
+        # Each physical chain is discovered once from each endpoint — keep the
+        # lower-ordered discovery, preserving genuinely parallel branches.
+        unique, kept_pairs = [], set()
+        for bi, bj, z in branch_list:
+            if bi < bj:
+                unique.append((bi, bj, z))
+                kept_pairs.add((bi, bj))
+        for bi, bj, z in branch_list:
+            if bi > bj and (bj, bi) not in kept_pairs:
+                unique.append((bj, bi, z))
+        return unique
+
+    return {
+        "bus_ids": bus_ids,
+        "branches1": _dedupe(branches1),
+        "shunts12": shunts12,
+        "branches0": _dedupe(branches0),
+        "shunts0": shunts0,
+    }
+
+
+def _nodal_thevenin(bus_ids, branches, shunts, faulted_id):
+    """Thevenin impedance Z_kk at faulted_id from a nodal network solution.
+
+    Restricts the solve to the connected component containing the faulted bus
+    (isolated islands would make Ybus singular). Returns None when the faulted
+    bus has no source in its component or the solve fails — callers fall back
+    to the per-path result.
+    """
+    if faulted_id not in set(bus_ids):
+        return None
+    # Connected component of the faulted bus over the branch graph
+    adj = {}
+    for bi, bj, _z in branches:
+        adj.setdefault(bi, set()).add(bj)
+        adj.setdefault(bj, set()).add(bi)
+    comp_nodes, frontier = {faulted_id}, [faulted_id]
+    while frontier:
+        nxt = frontier.pop()
+        for nb in adj.get(nxt, ()):
+            if nb not in comp_nodes:
+                comp_nodes.add(nb)
+                frontier.append(nb)
+    nodes = [bid for bid in bus_ids if bid in comp_nodes]
+    if not any(shunts.get(n) for n in nodes):
+        return None  # no source reachable — no fault current path
+    idx = {bid: i for i, bid in enumerate(nodes)}
+    n = len(nodes)
+    ybus = np.zeros((n, n), dtype=complex)
+    for bi, bj, z in branches:
+        if bi not in idx or bj not in idx or bi == bj:
+            continue
+        if abs(z) < 1e-15:
+            z = complex(1e-6, 1e-6)
+        y = 1.0 / z
+        i, j = idx[bi], idx[bj]
+        ybus[i, i] += y
+        ybus[j, j] += y
+        ybus[i, j] -= y
+        ybus[j, i] -= y
+    for bid in nodes:
+        for z_src in shunts.get(bid, []):
+            if abs(z_src) > 1e-15:
+                ybus[idx[bid], idx[bid]] += 1.0 / z_src
+    try:
+        zbus = np.linalg.inv(ybus)
+    except np.linalg.LinAlgError:
+        return None
+    z_kk = zbus[idx[faulted_id], idx[faulted_id]]
+    if not np.isfinite(z_kk) or abs(z_kk) < 1e-15 or abs(z_kk) > 1e9:
+        return None
+    return complex(z_kk)
+
+
+def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
+                       exclude_source_ids=()):
+    """Positive-sequence Thevenin impedance at a bus (p.u. on the system base
+    at the bus voltage zone), for voltage-dip / motor-starting studies.
+
+    Radial topologies use the per-path parallel combination (exact); meshed
+    topologies are solved nodally so shared upstream impedance is not
+    double-counted ([PS-1]). Motor infeeds (including the motor-equivalent
+    fraction of lumped loads) are excluded by default — they are loads, not
+    sustaining sources, for a starting study. Returns None when no
+    qualifying source feeds the bus.
+    """
+    components = {comp.id: comp for comp in project.components}
+    adjacency = {}
+    for w in project.wires:
+        adjacency.setdefault(w.fromComponent, []).append(
+            (w.toComponent, w.fromPort, w.toPort))
+        adjacency.setdefault(w.toComponent, []).append(
+            (w.fromComponent, w.toPort, w.fromPort))
+
+    excluded = set(exclude_source_ids)
+
+    def _path_ok(p):
+        if p.get("source_id") in excluded:
+            return False
+        if exclude_motor_paths and (
+                p.get("is_motor")
+                or p.get("source_type") in ("motor_induction", "motor_synchronous")):
+            return False
+        return True
+
+    paths = _collect_source_paths(bus_id, components, adjacency,
+                                  project.baseMVA, c=c)
+    keep = [p for p in paths if _path_ok(p)]
+    if not keep:
+        return None
+    z_paths = _parallel_impedances([p["z_total"] for p in keep])
+    if not _paths_are_meshed(keep, components):
+        return z_paths
+
+    net_buses = [comp for comp in project.components
+                 if comp.type in ("bus", "distribution_board")
+                 and str(comp.props.get("system", "ac")).lower() != "dc"]
+    net = _build_bus_network(net_buses, components, adjacency,
+                             project.baseMVA, c)
+    shunts = {}
+    for bid, lst in net["shunts12"].items():
+        shunts[bid] = [z1 for (z1, _z2, sid, st) in lst
+                       if sid not in excluded
+                       and not (exclude_motor_paths
+                                and st in ("motor_induction", "motor_synchronous"))]
+    z_kk = _nodal_thevenin(net["bus_ids"], net["branches1"], shunts, bus_id)
+    return z_kk if z_kk is not None else z_paths
+
+
 # ─── IEC 60909 Time-Varying Fault Currents ───────────────────────────────────
 
 
@@ -1384,18 +1936,19 @@ def _compute_kappa(r_over_x):
     return 1.02 + 0.98 * math.exp(-3 * r_over_x)
 
 
-def _compute_peak_current(ik3_ka, z_eq):
+def _compute_peak_current(ik3_ka, z_eq, meshed=False, voltage_kv=None):
     """Compute peak short-circuit current ip per IEC 60909-0 §8.1.
 
     ip = κ × √2 × I"k3
 
-    The R/X ratio is taken directly from the complex equivalent impedance
-    Z_eq at the fault point (R_eq/X_eq). This is similar to Method B
-    (§8.1.2) but WITHOUT the 1.15 safety factor, and is not the full
-    Method C equivalent-frequency procedure for meshed networks — for
-    strongly meshed systems κ may be slightly understated.
+    The R/X ratio is taken from the complex equivalent impedance Z_eq at the
+    fault point (R_eq/X_eq). For radial networks this is exact (single-path
+    κ). [PS-5] For MESHED networks IEC 60909-0 §8.1.2.2 Method b requires
+    κ_b = 1.15 × κ(R/X), capped at 1.8 for LV networks (U_n ≤ 1 kV) and 2.0
+    for HV — applied when the caller detected a meshed topology. (Method c,
+    the equivalent-frequency procedure, remains future work.)
 
-    Returns (ip_ka, kappa).
+    Returns (ip_ka, kappa) — kappa is the effective (capped) value used.
     """
     if ik3_ka is None or ik3_ka < 1e-10 or abs(z_eq) < 1e-15:
         return None, None
@@ -1404,6 +1957,9 @@ def _compute_peak_current(ik3_ka, z_eq):
     x = z_eq.imag
     r_over_x = abs(r / x) if abs(x) > 1e-15 else 10.0  # High R/X → low κ
     kappa = _compute_kappa(r_over_x)
+    if meshed:
+        cap = 1.8 if (voltage_kv is not None and voltage_kv <= 1.0) else 2.0
+        kappa = min(1.15 * kappa, cap)
     ip_ka = kappa * math.sqrt(2) * ik3_ka
     return round(ip_ka, 3), round(kappa, 3)
 
@@ -1773,7 +2329,7 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
             bus_shunts[from_bus_id].append((z_src, "utility", comp))
             return
         if comp.type == "generator":
-            z_src = _generator_impedance(comp, base_mva)
+            z_src = _generator_impedance(comp, base_mva, v_kv)
             bus_shunts[from_bus_id].append((z_src, "generator", comp))
             return
         if comp.type == "solar_pv":

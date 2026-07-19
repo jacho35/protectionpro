@@ -749,6 +749,16 @@ document.addEventListener('DOMContentLoaded', () => {
         result = await API.runFaultAnalysis(faultBusId, faultType);
         AppState.faultResults = result;
         AppState.faultedBusId = faultBusId;
+        // [PS-3] Companion minimum-current study (c_min = 0.95, hot
+        // conductors) so the compliance disconnection check uses the current
+        // that may actually flow. Non-fatal: compliance falls back (with a
+        // warning) to the maximum-current figures if this fails.
+        try {
+          AppState.faultResultsMin = await API.runFaultAnalysisMin(faultBusId, faultType);
+        } catch (minErr) {
+          AppState.faultResultsMin = null;
+          console.warn('Minimum-current fault study failed:', minErr);
+        }
         document.getElementById('status-info').textContent = `Fault analysis complete on ${scopeInfo}.`;
         Canvas.render();
         return;

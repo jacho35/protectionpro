@@ -38,7 +38,12 @@ def _build_adjacency(project):
 
 
 def _find_motor_bus(motor_id, adj, comp_map):
-    """Walk through transparent devices from motor to find the connected bus."""
+    """Walk through transparent devices from motor to find the connected bus.
+
+    [EE-12] Distribution boards count as bus-like terminals — the load flow
+    models a board as a busbar node, so a motor wired to one must read its
+    terminal voltage there (previously terminal_bus came back None and the
+    terminal voltage silently defaulted to 1.0 → false "will start")."""
     visited = {motor_id}
     stack = [nid for nid, _ in adj.get(motor_id, [])]
     while stack:
@@ -49,7 +54,7 @@ def _find_motor_bus(motor_id, adj, comp_map):
         comp = comp_map.get(nid)
         if not comp:
             continue
-        if comp.type == "bus":
+        if comp.type in ("bus", "distribution_board"):
             return nid
         if comp.type in TRANSPARENT_TYPES:
             for next_id, _ in adj.get(nid, []):
@@ -63,6 +68,40 @@ def _deep_copy_project(project):
     import json
     data = json.loads(project.model_dump_json())
     return ProjectData(**data)
+
+
+def _thevenin_z1(project, bus_id, starting_motor_id):
+    """[EE-1] Positive-sequence Thevenin impedance at the motor terminal bus,
+    INCLUDING the source internal impedance (utility fault level, generator
+    X″d) — from the shared fault-path machinery at c = 1.0, motor infeeds
+    excluded, meshed topologies solved nodally ([PS-1])."""
+    from .fault import thevenin_z1_at_bus
+    try:
+        return thevenin_z1_at_bus(project, bus_id, c=1.0,
+                                  exclude_motor_paths=True,
+                                  exclude_source_ids={starting_motor_id})
+    except Exception:
+        return None
+
+
+def _solve_pq_dip(v_pre_pu, z_th, s_start_pu):
+    """[EE-1] Terminal voltage of a constant-PQ starting load S behind the
+    Thevenin impedance: V = V_pre − Z_th·(S/V)*  (fixed-point iteration).
+    Returns |V| p.u., or None when no operating point exists (starting load
+    beyond the network's transfer capability — a genuine stall)."""
+    if v_pre_pu <= 0 or abs(z_th) < 1e-12:
+        return v_pre_pu
+    v = complex(v_pre_pu, 0)
+    for _ in range(100):
+        if abs(v) < 0.05:
+            return None  # collapsed — no physical operating point
+        i = (s_start_pu / v).conjugate()
+        v_new = complex(v_pre_pu, 0) - z_th * i
+        if abs(v_new - v) < 1e-9:
+            return abs(v_new)
+        # Mild damping keeps the fixed point stable near the nose
+        v = 0.7 * v_new + 0.3 * v
+    return None
 
 
 def run_motor_starting(project: ProjectData):
@@ -169,6 +208,11 @@ def run_motor_starting(project: ProjectData):
             # below must change with it (see
             # backend/tests/test_regression.py::TestMotorStarting).
             mod_motor.props["power_factor"] = 0.3  # Typical starting pf
+            # [EE-5] Locked-rotor current is a machine property — it does NOT
+            # scale with the running demand factor. The load model multiplies
+            # by demand_factor, so force it to 1.0 for the starting condition
+            # (a df=0.5 motor previously had its dip silently halved).
+            mod_motor.props["demand_factor"] = 1.0
             if is_sync:
                 # load flow models synchronous motors as S = rated_kva/1000 at
                 # the rated pf, so feeding S_start (in kVA) reproduces it.
@@ -195,6 +239,49 @@ def run_motor_starting(project: ProjectData):
             analysis_warnings.append(f"Load flow did not converge for motor '{motor_name}' starting.")
             continue
 
+        # [EE-1] The load flow holds the swing source at 1.0 p.u. with zero
+        # internal impedance, so its dips capture only the network (cable/
+        # transformer) drops — the SOURCE contribution (utility fault level,
+        # generator reactance), usually the dominant term, is missing and
+        # "will start" verdicts were optimistic. Recompute the terminal
+        # voltage by Thevenin superposition (same machinery as the dynamic
+        # engine): V = V_pre − Z_th·I(S_start), where Z_th includes the source
+        # internal impedance from the IEC 60909 fault-path walker at c = 1.0.
+        lf_terminal_v_pu = None
+        for bus_id, bus_result in start_lf.buses.items():
+            if bus_id == terminal_bus:
+                lf_terminal_v_pu = bus_result.voltage_pu
+        v_pre_term = baseline_voltages.get(terminal_bus, 1.0) if terminal_bus else 1.0
+
+        superposed_v_pu = None
+        if terminal_bus:
+            z_th = _thevenin_z1(project, terminal_bus, motor.id)
+            if z_th is not None:
+                s_pu = s_start_mva / project.baseMVA
+                start_pf = 0.3
+                s_cplx = s_pu * complex(start_pf, math.sqrt(1 - start_pf ** 2))
+                superposed_v_pu = _solve_pq_dip(v_pre_term, z_th, s_cplx)
+                if superposed_v_pu is None:
+                    # No converged operating point — the starting load exceeds
+                    # the network's transfer capability (voltage collapse).
+                    superposed_v_pu = 0.0
+                    analysis_warnings.append(
+                        f"Motor '{motor_name}': no converged starting operating "
+                        f"point behind the source Thevenin impedance — network "
+                        f"cannot supply the starting load (treated as stall).")
+            else:
+                analysis_warnings.append(
+                    f"Motor '{motor_name}': no non-motor source path found for "
+                    f"the Thevenin dip check — dips reflect network drops only.")
+
+        # The source-internal contribution missed by the ideal-swing load flow
+        # is the gap between the superposed terminal voltage and the load-flow
+        # terminal voltage. Apply it to every energized bus (exact for
+        # single-source radial supply, conservative otherwise).
+        src_dip_pu = 0.0
+        if superposed_v_pu is not None and lf_terminal_v_pu is not None:
+            src_dip_pu = max(0.0, lf_terminal_v_pu - superposed_v_pu)
+
         # Calculate voltage dips at all buses
         bus_dips = {}
         max_dip_pct = 0
@@ -203,7 +290,7 @@ def run_motor_starting(project: ProjectData):
 
         for bus_id, bus_result in start_lf.buses.items():
             v_pre = baseline_voltages.get(bus_id, 1.0)
-            v_start = bus_result.voltage_pu
+            v_start = max(0.0, bus_result.voltage_pu - src_dip_pu)
             if v_pre > 0:
                 dip_pct = (v_pre - v_start) / v_pre * 100
             else:
@@ -233,7 +320,7 @@ def run_motor_starting(project: ProjectData):
             bus_comp = comp_map.get(bus_id)
             if bus_comp and bus_comp.props.get("bus_type") == "PQ":
                 v_pre = baseline_voltages.get(bus_id, 1.0)
-                v_start = bus_result.voltage_pu
+                v_start = max(0.0, bus_result.voltage_pu - src_dip_pu)  # [EE-1]
                 dip = (v_pre - v_start) / v_pre * 100 if v_pre > 0 else 0
                 if dip > 10:
                     sensitive_dip_ok = False

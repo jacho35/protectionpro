@@ -1381,45 +1381,80 @@ def _get_impedance(comp, base_mva):
 
 
 def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
-    """Find transformer in a branch chain and compute its off-nominal turns ratio.
+    """Off-nominal turns ratio of a branch chain between two buses.
 
     Uses the standard transformer model where the tap is on the HV side.
     The turns ratio t accounts for both tap position and any mismatch between
     transformer rated voltages and bus base voltages.
 
-    Returns (t, hv_bus_id) where t is the per-unit turns ratio and hv_bus_id
-    is the bus on the HV (tap) side, or (1.0, None) if no transformer in chain.
+    [EE-2] A chain may contain MORE THAN ONE transformer (cascaded units
+    drawn without a bus between them). The chain ratio is the PRODUCT of
+    every transformer's oriented ratio, walked in ELECTRICAL ORDER while
+    tracking the running voltage zone. The previous implementation returned
+    on the first transformer found, so a 33/11 + 11/0.4 cascade got a single
+    unit's ratio — wrong by the other unit's full ratio (×27.5) — and
+    produced a numerically converged but physically meaningless solution.
+    Callers should pass `elems` as an electrically-ordered list from bus_a
+    to bus_b (a dict, in whatever order, is accepted for single-transformer
+    chains, e.g. the OLTC regulated-bus lookup).
+
+    Returns (t, hv_bus_id) where t is the per-unit turns ratio expressed from
+    hv_bus_id — the bus on the HV side of the first transformer met from
+    bus_a (identical to the legacy convention for single-transformer chains)
+    — or (1.0, None) if the chain has no transformer.
     """
-    for e in elems.values():
+    ordered = list(elems.values()) if isinstance(elems, dict) else list(elems)
+    xfmrs = [e for e in ordered if e.type in ("transformer", "autotransformer")]
+    if not xfmrs:
+        return 1.0, None
+
+    bus_a_comp = components.get(bus_a_id)
+    bus_b_comp = components.get(bus_b_id)
+    bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
+    bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
+
+    def _winding(e):
+        v_hv = e.props.get("voltage_hv_kv", 33)
+        v_lv = e.props.get("voltage_lv_kv", 11)
+        tap_pct = e.props.get("tap_percent", 0)
+        nominal = v_hv / v_lv if v_lv > 0 else 1.0
+        return v_hv, v_lv, nominal * (1 + tap_pct / 100)
+
+    # The tap-side bus: whichever bus faces the FIRST transformer's HV winding
+    # (walked from bus_a, tracking the voltage zone).
+    v = bus_a_v
+    hv_bus_id = None
+    for e in ordered:
         if e.type not in ("transformer", "autotransformer"):
             continue
+        v_hv, v_lv, _actual = _winding(e)
+        near_is_hv = abs(v - v_hv) <= abs(v - v_lv)
+        if hv_bus_id is None:
+            hv_bus_id = bus_a_id if near_is_hv else bus_b_id
+        v = v_lv if near_is_hv else v_hv
 
-        v_hv_rated = e.props.get("voltage_hv_kv", 33)
-        v_lv_rated = e.props.get("voltage_lv_kv", 11)
-        tap_pct = e.props.get("tap_percent", 0)
-
-        bus_a_comp = components.get(bus_a_id)
-        bus_b_comp = components.get(bus_b_id)
-        bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
-        bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
-
-        # Match buses to HV/LV sides based on voltage proximity
-        if abs(bus_a_v - v_hv_rated) <= abs(bus_b_v - v_hv_rated):
-            hv_bus_id = bus_a_id
-            base_ratio = bus_a_v / bus_b_v if bus_b_v > 0 else 1.0
+    # Accumulate the oriented ratio product walking FROM the tap-side bus, so
+    # single-transformer chains reproduce the legacy arithmetic exactly.
+    if hv_bus_id == bus_a_id:
+        seq, start_v, end_v = ordered, bus_a_v, bus_b_v
+    else:
+        seq, start_v, end_v = list(reversed(ordered)), bus_b_v, bus_a_v
+    v = start_v
+    ratio = 1.0
+    for e in seq:
+        if e.type not in ("transformer", "autotransformer"):
+            continue
+        v_hv, v_lv, actual = _winding(e)
+        if abs(v - v_hv) <= abs(v - v_lv):
+            ratio *= actual       # stepping down through this unit
+            v = v_lv
         else:
-            hv_bus_id = bus_b_id
-            base_ratio = bus_b_v / bus_a_v if bus_a_v > 0 else 1.0
+            ratio /= actual       # stepping up through this unit
+            v = v_hv
 
-        # Off-nominal turns ratio: actual ratio / base voltage ratio
-        # When base voltages match transformer ratings, this equals (1 + tap_pct/100)
-        nominal_ratio = v_hv_rated / v_lv_rated if v_lv_rated > 0 else 1.0
-        actual_ratio = nominal_ratio * (1 + tap_pct / 100)
-        t = actual_ratio / base_ratio if base_ratio > 0 else 1.0
-
-        return t, hv_bus_id
-
-    return 1.0, None
+    base_ratio = start_v / end_v if end_v > 0 else 1.0
+    t = ratio / base_ratio if base_ratio > 0 else 1.0
+    return t, hv_bus_id
 
 
 def _utility_loading_base_mva(util):
@@ -1703,6 +1738,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # A chain is a series path of cables/transformers (with transparent elements)
     # between two buses. Series impedances are summed.
     processed_chains = set()  # frozenset of element IDs to avoid duplicates
+    multi_xfmr_chain_warnings = []  # [EE-2] cascaded transformers in one chain
     branch_chains = []  # list of (elements_dict, bus_a, bus_b, admittance)
 
     for comp in project.components:
@@ -1789,8 +1825,33 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         i = bus_idx[bus_a]
         j = bus_idx[bus_b]
 
-        # Determine if chain contains a transformer and compute turns ratio
-        t, hv_bus = _get_chain_turns_ratio(all_elems, bus_a, bus_b, components)
+        # Determine if chain contains a transformer and compute turns ratio.
+        # [EE-2] Pass the chain in ELECTRICAL ORDER from bus_a to bus_b —
+        # path_a is walked seed→bus_a and path_b seed→bus_b, so the ordered
+        # chain is reversed(path_a) + path_b (seed deduplicated). Cascaded
+        # transformers then contribute their ratio PRODUCT instead of the
+        # first unit's ratio alone.
+        _seen_chain_ids = set()
+        chain_order = []
+        for e in list(reversed(path_a)) + list(path_b):
+            if e.id in _seen_chain_ids:
+                continue
+            _seen_chain_ids.add(e.id)
+            chain_order.append(e)
+        n_chain_xfmrs = sum(1 for e in chain_order
+                            if e.type in ("transformer", "autotransformer"))
+        if n_chain_xfmrs >= 2:
+            _names = ", ".join(str(e.props.get("name", e.id)) for e in chain_order
+                               if e.type in ("transformer", "autotransformer"))
+            multi_xfmr_chain_warnings.append(LoadFlowWarning(
+                elementId=chain_order[0].id,
+                element_name=_names,
+                message=(f"{n_chain_xfmrs} cascaded transformers ({_names}) share one "
+                         f"branch chain with no bus between them. The chain uses their "
+                         f"combined turns-ratio product; for per-unit accuracy (taps, "
+                         f"intermediate loading) draw a bus at the junction."),
+            ))
+        t, hv_bus = _get_chain_turns_ratio(chain_order, bus_a, bus_b, components)
 
         if hv_bus == bus_a:
             # Tap on bus_a (i) side — standard transformer pi-model
@@ -2295,10 +2356,30 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             # Report flow for each element in the series chain.
             # NOTE (display-level): every element in a series chain carries the
             # SAME branch flow, so each element row repeats the chain's
-            # p_mw/q_mvar/losses — summing rows over a chain double-counts.
+            # p_mw/q_mvar. [EE-3] LOSSES are apportioned by each element's
+            # I²R (resistance) share of the chain, so summing rows over a
+            # chain now recovers the true chain loss — previously every row
+            # repeated the FULL chain loss and the Load Flow Study Manager's
+            # summed total was a multiple of the real figure.
             # For transformer chains, compute LV-side apparent power for accurate reporting
             s_lv_mva = abs(s_ji) * base_mva if hv_bus == from_bus else s_mva
             s_hv_mva = s_mva if hv_bus == from_bus else abs(s_ji) * base_mva
+
+            # Per-element series impedance, mirroring the chain-assembly
+            # arithmetic exactly (cables in transformer chains use the
+            # bus-inferred voltage base) so the shares sum to 1.
+            _elem_z = {}
+            for elem in elems.values():
+                if elem.type == "cable" and elem.id in cable_voltages:
+                    _v = cable_voltages[elem.id]
+                    _zb = (_v ** 2) / base_mva
+                    _r = elem.props.get("r_per_km", 0.1) * elem.props.get("length_km", 1)
+                    _x = elem.props.get("x_per_km", 0.08) * elem.props.get("length_km", 1)
+                    _elem_z[elem.id] = complex(_r / _zb, _x / _zb)
+                else:
+                    _elem_z[elem.id] = _get_impedance(elem, base_mva)
+            _r_chain = sum(z.real for z in _elem_z.values())
+            _mag_chain = sum(abs(z) for z in _elem_z.values())
 
             for elem in elems.values():
                 loading = 0
@@ -2348,13 +2429,22 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     v_kv_fb = from_bus_comp.props.get("voltage_kv", 11) if from_bus_comp else 11
                     elem_i_amps = (s_mva * 1000) / (math.sqrt(3) * v_kv_fb) if v_kv_fb > 0 else 0
 
+                # [EE-3] this element's I²R share of the chain loss
+                if _r_chain > 1e-12:
+                    _share = max(0.0, _elem_z[elem.id].real) / _r_chain
+                elif _mag_chain > 1e-12:
+                    _share = abs(_elem_z[elem.id]) / _mag_chain
+                else:
+                    _share = 1.0 / max(1, len(elems))
+
                 branch_results.append(LoadFlowBranch(
                     elementId=elem.id,
                     element_name=elem.props.get("name", elem.type),
                     from_bus=row_from, to_bus=row_to,
                     p_mw=round(row_p, 4), q_mvar=round(row_q, 4),
                     s_mva=round(s_mva, 4), i_amps=round(elem_i_amps, 2),
-                    loading_pct=round(loading, 2), losses_mw=round(losses_mw, 6),
+                    loading_pct=round(loading, 2),
+                    losses_mw=round(losses_mw * _share, 6),
                 ))
 
     # ── Bus results ──
@@ -2726,6 +2816,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # Walk from each bus through transparent devices to find all components
     # on each side of the transformer and verify their voltage ratings.
     voltage_warnings = []
+    voltage_warnings.extend(multi_xfmr_chain_warnings)  # [EE-2]
     voltage_warnings.extend(dispatch["warnings"])
 
     # PV generators that hit their reactive capability: they can no longer hold

@@ -39,7 +39,8 @@ def fault_analysis(data: ProjectData):
     """Run IEC 60909 short-circuit analysis."""
     try:
         return run_fault_analysis(data, fault_bus_id=data.faultBusId, fault_type=data.faultType,
-                                  voltage_factor=data.voltageFactor)
+                                  voltage_factor=data.voltageFactor,
+                                  conductor_temperature_c=data.conductorTemperatureC)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Fault analysis error: {e}")

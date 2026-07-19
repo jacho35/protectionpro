@@ -157,6 +157,11 @@ class ProjectData(BaseModel):
     faultBusId: Optional[str] = None
     faultType: Optional[str] = None  # "3phase", "slg", "ll", "llg", or None for all
     voltageFactor: Optional[float] = None  # IEC 60909 voltage factor c; None → engine default (c_max = 1.10)
+    # [PS-3] Conductor temperature (°C) for MINIMUM short-circuit studies:
+    # cable resistance is scaled by 1 + 0.004·(θ − 20) per IEC 60909-0 §5.3.1
+    # (use with voltageFactor = 0.95 = c_min). None → 20 °C (maximum-current
+    # convention, unchanged legacy behaviour).
+    conductorTemperatureC: Optional[float] = None
     stabilityDisturbance: Optional[dict] = None  # transient-stability event spec (see transient_stability)
     dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
 
@@ -481,6 +486,20 @@ class FaultResultBus(BaseModel):
     # Motor reacceleration voltage recovery profile (post-clearing)
     # [{t_ms: float, v_pu: float}]
     motor_recovery: Optional[list] = None
+    # [EE-7 contract] frontend SLG calc-display inputs (declared here so they
+    # survive FastAPI response_model serialization — see fault.FaultResultBus)
+    z2_mag: Optional[float] = None      # |Z2| used for Ik1/IkLL (p.u.)
+    z_slg_mag: Optional[float] = None   # |Z1 + Z2 + Z0| SLG denominator (p.u.)
+    # [EE-11] Thermal-equivalent short-circuit current Ith = Ik″·√(m+n)
+    ith_ka: Optional[float] = None
+    # [PS-1] Network topology seen from this fault location: "radial" when the
+    # enumerated source paths share no impedance element (per-path parallel
+    # combination is exact), "meshed" when they do — the Thevenin impedance is
+    # then solved nodally (Zbus) instead of by paralleling path totals.
+    network_topology: Optional[str] = None
+    # [PS-1] Study warnings (meshed-network solution notes, path-enumeration
+    # truncation, …) that previously went only to the server console.
+    topology_warnings: Optional[list[str]] = None
 
 
 class FaultResults(BaseModel):

@@ -247,6 +247,7 @@ def _build_adjacency(project):
 
 
 def _find_motor_bus(motor_id, adj, comp_map):
+    # [EE-12] distribution boards are bus-like terminals (see motor_starting)
     visited = {motor_id}
     stack = [nid for nid, _ in adj.get(motor_id, [])]
     while stack:
@@ -257,7 +258,7 @@ def _find_motor_bus(motor_id, adj, comp_map):
         comp = comp_map.get(nid)
         if not comp:
             continue
-        if comp.type == "bus":
+        if comp.type in ("bus", "distribution_board"):
             return nid
         if comp.type in TRANSPARENT_TYPES:
             for next_id, _ in adj.get(nid, []):
@@ -268,27 +269,15 @@ def _find_motor_bus(motor_id, adj, comp_map):
 
 def _thevenin_at_bus(project, bus_id, exclude_motor_ids):
     """Thevenin impedance (complex, pu on system base at the bus voltage
-    zone) from all non-motor source paths, evaluated at c = 1.0."""
-    from .fault import _collect_source_paths, _parallel_impedances
+    zone) from all non-motor source paths, evaluated at c = 1.0.
 
-    components = {c.id: c for c in project.components}
-    adjacency = {}
-    for w in project.wires:
-        adjacency.setdefault(w.fromComponent, []).append(
-            (w.toComponent, w.fromPort, w.toPort))
-        adjacency.setdefault(w.toComponent, []).append(
-            (w.fromComponent, w.toPort, w.fromPort))
+    [PS-1] Delegates to fault.thevenin_z1_at_bus, which solves meshed
+    (shared-path) topologies nodally instead of paralleling path totals."""
+    from .fault import thevenin_z1_at_bus
 
-    paths = _collect_source_paths(bus_id, components, adjacency,
-                                  project.baseMVA, c=1.0)
-    keep = [p for p in paths
-            if not p.get("is_motor")
-            and p.get("source_type") not in ("motor_induction",
-                                             "motor_synchronous")
-            and p.get("source_id") not in exclude_motor_ids]
-    if not keep:
-        return None
-    return _parallel_impedances([p["z_total"] for p in keep])
+    return thevenin_z1_at_bus(project, bus_id, c=1.0,
+                              exclude_motor_paths=True,
+                              exclude_source_ids=exclude_motor_ids)
 
 
 def _baseline_voltages(project, motor_ids_off, warnings):

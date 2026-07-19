@@ -22,7 +22,9 @@ import itertools
 from ..models.schemas import (
     ProjectData, ContingencyResults, ContingencyResult, ContingencyViolation,
 )
-from .loadflow import run_load_flow, connected_bus_loads_mw
+from .loadflow import (
+    run_load_flow, connected_bus_loads_mw, is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
+)
 
 
 # Elements whose loss is a contingency.
@@ -48,10 +50,38 @@ def _project_without(project: ProjectData, remove_ids: set) -> ProjectData:
     return ProjectData(**data)
 
 
+def _bus_display_name(bid, result, components_by_id):
+    """Human name for a (possibly synthetic ``__term__*``) bus id.
+
+    [EE-4] A dangling load's terminal bus is synthetic — map it back to the
+    load component's name so the violation reads 'Load L1 (terminal)' rather
+    than leaking the internal ``__term__`` id."""
+    if bid in result.buses:
+        name = result.buses[bid].bus_name
+        if name and not is_synthetic_bus(str(name)):
+            return name
+    if is_synthetic_bus(bid):
+        load_id = bid[len(SYNTHETIC_BUS_PREFIX):]
+        comp = components_by_id.get(load_id)
+        if comp is not None:
+            return f"{_comp_name(comp)} (terminal)"
+        return f"{load_id} (terminal)"
+    return bid
+
+
 def _evaluate(project: ProjectData, method, base_loads, base_energ_ids,
-              v_min, v_max, loading_limit):
-    """Solve one network state and return (result, violations, metrics)."""
-    result = run_load_flow(project, method)
+              v_min, v_max, loading_limit, components_by_id=None):
+    """Solve one network state and return (result, violations, metrics).
+
+    [EE-4] Solved WITH synthetic load-terminal buses included: a dangling
+    load's demand is keyed under its ``__term__*`` bus by
+    ``connected_bus_loads_mw``, so loss-of-supply accounting must see those
+    buses. Previously (a) a de-energized real bus feeding a dangling load
+    reported 0 MW lost, and (b) outaging the sole feeder cable removed the
+    load from the model entirely and the case was reported SECURE.
+    """
+    components_by_id = components_by_id or {}
+    result = run_load_flow(project, method, include_synthetic=True)
     violations = []
 
     if not result.converged:
@@ -100,11 +130,15 @@ def _evaluate(project: ProjectData, method, base_loads, base_energ_ids,
     lost_ids = base_energ_ids - energ_ids
     lost_load = round(sum(base_loads.get(bid, 0.0) for bid in lost_ids), 4)
     for bid in lost_ids:
-        name = result.buses.get(bid).bus_name if bid in result.buses else bid
+        name = _bus_display_name(bid, result, components_by_id)
+        # [EE-4] a synthetic terminal bus absent from this solve means the
+        # outage physically disconnected the load itself
+        gone = bid not in result.buses
+        what = ("disconnected from the network" if gone else "de-energized")
         violations.append(ContingencyViolation(
             kind="deenergized", element_id=bid, element_name=name,
             value=round(base_loads.get(bid, 0.0), 4), limit=0.0,
-            detail=f"Bus '{name}' de-energized — {base_loads.get(bid, 0.0):.3f} MW "
+            detail=f"Bus '{name}' {what} — {base_loads.get(bid, 0.0):.3f} MW "
                    "of load lost."))
 
     metrics = {
@@ -148,11 +182,15 @@ def run_contingency(project: ProjectData, method: str = "newton_raphson",
     loading_limit = float(loading_limit_pct)
     warnings = []
 
+    components_by_id = {c.id: c for c in project.components}
     base_loads = connected_bus_loads_mw(project)
-    base = run_load_flow(project, method)
+    # [EE-4] synthetic-inclusive baseline so dangling-load terminal buses
+    # participate in the energized-set diff
+    base = run_load_flow(project, method, include_synthetic=True)
     base_energ_ids = {b.bus_id for b in base.buses.values() if b.energized}
     _br, base_violations, _bm = _evaluate(
-        project, method, base_loads, base_energ_ids, v_min, v_max, loading_limit)
+        project, method, base_loads, base_energ_ids, v_min, v_max, loading_limit,
+        components_by_id=components_by_id)
     if base_violations:
         warnings.append(f"Base case already has {len(base_violations)} "
                         "violation(s) before any outage.")
@@ -180,7 +218,8 @@ def run_contingency(project: ProjectData, method: str = "newton_raphson",
         names = ", ".join(_comp_name(by_id[cid]) for cid in combo if cid in by_id)
         p = _project_without(project, remove)
         _r, violations, metrics = _evaluate(
-            p, method, base_loads, base_energ_ids, v_min, v_max, loading_limit)
+            p, method, base_loads, base_energ_ids, v_min, v_max, loading_limit,
+            components_by_id=components_by_id)
         status = _status(metrics, violations)
         results.append((
             _severity(status, metrics, violations),
