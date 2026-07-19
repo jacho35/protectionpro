@@ -11,11 +11,15 @@ Run with:  python -m pytest backend/tests/ -v
 
 import math
 
+import numpy as np
 import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire, LoadFlowBus
 from backend.analysis.fault import run_fault_analysis
-from backend.analysis.loadflow import run_load_flow, connected_bus_loads_mw, _assess_solution
+from backend.analysis.loadflow import (
+    run_load_flow, connected_bus_loads_mw, _assess_solution,
+    _newton_raphson, _gauss_seidel, solve_with_islands,
+)
 from backend.analysis.voltage_stability import run_voltage_stability
 from backend.analysis.contingency import run_contingency
 from backend.analysis.motor_starting import run_motor_starting
@@ -2991,3 +2995,53 @@ class TestSolutionQuality:
         assert res.warnings and (
             "did not converge" in res.warnings[0].message or
             "implausibly low" in res.warnings[0].message)
+
+    # ── Singular / near-singular Jacobian trapping (original review item 3) ──
+
+    def test_singular_jacobian_caught_and_reported(self):
+        """A (near-)singular Jacobian — here a PQ bus with no admittance path but
+        a nonzero power demand — is trapped by the condition-number guard and
+        reported as reason 'singular_jacobian', never raised as an unhandled
+        LinAlgError."""
+        Y = np.array([[complex(1, -10), 0], [0, 0]], dtype=complex)
+        V, conv, iters, reason = _newton_raphson(
+            Y, np.array([0.0, 0.1]), np.array([0.0, 0.05]),
+            np.array([1.0, 1.0]), [2, 0])  # swing, PQ
+        assert conv is False and reason == "singular_jacobian"
+        # The break iteration is reported, not a misleading MAX_ITERATIONS.
+        assert iters <= 2
+
+    def test_healthy_solve_reports_no_failure_reason(self):
+        """A well-posed solve converges with an empty reason — the singular guard
+        must not false-positive on a well-conditioned Jacobian."""
+        Y = np.array([[complex(2, -20), complex(-2, 20)],
+                      [complex(-2, 20), complex(2, -20)]], dtype=complex)
+        V, conv, iters, reason = _newton_raphson(
+            Y, np.array([0.0, -0.2]), np.array([0.0, -0.1]),
+            np.array([1.0, 1.0]), [2, 0])
+        assert conv is True and reason == ""
+
+    def test_solvers_return_reason_tuple(self):
+        """Both solvers and the island wrapper return the 4-tuple contract
+        (V, converged, iterations, reason)."""
+        Y = np.array([[complex(2, -20), complex(-2, 20)],
+                      [complex(-2, 20), complex(2, -20)]], dtype=complex)
+        args = (Y, np.array([0.0, -0.1]), np.array([0.0, -0.05]),
+                np.array([1.0, 1.0]), [2, 0])
+        assert len(_newton_raphson(*args)) == 4
+        assert len(_gauss_seidel(*args)) == 4
+        gs = _gauss_seidel(*args)
+        assert gs[3] in ("", "max_iterations")
+        # Island wrapper (no dead buses) propagates the same 4-tuple.
+        assert len(solve_with_islands(*args, set(), "newton_raphson")) == 4
+
+    def test_assess_singular_message_distinct(self):
+        """The singular-Jacobian message is distinct from a plain iteration-limit
+        divergence, so the two failure modes are distinguishable to the user."""
+        b = {"b": self._bus("b", 0.0)}
+        q_sing, w_sing = _assess_solution(b, False, 1, "singular_jacobian")
+        q_iter, w_iter = _assess_solution(b, False, 100, "max_iterations")
+        assert q_sing == "non_converged" and q_iter == "non_converged"
+        assert "Jacobian is singular" in w_sing[0].message
+        assert "Jacobian is singular" not in w_iter[0].message
+        assert "did not converge" in w_iter[0].message
