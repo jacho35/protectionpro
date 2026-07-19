@@ -21,16 +21,20 @@ Already fixed despite audit claims (no action needed): C5 (undo-clear on revisio
 All Critical/High/Medium/Low findings from `audit-2026-07-09.md` are resolved, including **PROT-21** (gG fuse curve 0.1 s-gate re-fit) — see the Completed entry below.
 
 ## Arc Flash Enhancements
+- **IEEE 1584-2018 method**: the engine implements the 2002 edition only (docstring is explicit). Add the 2018 machinery — electrode-configuration-specific coefficients (VCB/VCBB/HCB/VOA/HOA), intermediate arcing currents at 600 V / 2700 V / 14.3 kV with interpolation, enclosure-size correction, arcing-current variation factor. The per-bus gap/electrode-class fields already exist, so this slots into the current structure. Highest-priority standards gap in the 2026-07 gap analysis (`FEATURE_GAP_ANALYSIS.md`).
 - ~~**Per-bus conductor gap / equipment class**: the arc-flash engine auto-selects the IEEE 1584 conductor gap from voltage only (LV fixed at 25 mm = MCC/panel, x = 1.641), so it cannot model LV *switchgear* (32 mm, x = 1.473) or non-typical gaps. Expose an equipment-class / gap field per bus so switchgear vs MCC/panel/cable is user-selectable. See `testing/case-arcflash-ieee1584/results.md`.~~ **Done** — see Completed.
 
 ## Protection Coordination Enhancements
+- **Distance (21) protection grading**: the mho characteristic is displayed on an R-X inset, but zone reaches are not calculated. Compute Z1/Z2/Z3 reach settings from line impedances with standard margins (80 % / 120 % + next-line / backup), account for infeed effect at intermediate buses, and flag under/over-reach — stepped-distance coordination as in PSS®CAPE / PowerFactory.
 
 ## Grounding (IEEE 80) Enhancements
+- **Two-layer soil model**: the engine assumes uniform soil (single ρ + crushed-rock surface layer). Add the IEEE 80 two-layer model (upper-layer ρ₁/thickness h, lower ρ₂) and a Wenner four-pin measurement interpreter to derive the layer parameters from field data — layered soil materially changes grid resistance and touch/step limits.
 - ~~**Full IEEE 80 geometric factors**: the grounding engine simplifies three IEEE 80 quantities — `n = max(n_x, n_y)` (correct only for square grids; the standard uses `n = n_a·n_b·n_c·n_d`), `K_ii = 1.0` hardcoded (correct only for grids with rods; no-rods grids use `K_ii = 1/(2n)^(2/n)`), and `L_M = L_c + L_rod` (omits the Eq. 88 rod-length weighting `[1.55 + 1.22·L_r/√(L_x²+L_y²)]·L_R`). Net effect is a mesh (touch) voltage ~5–6 % high (conservative) for square-with-rods grids, and larger error for rectangular/L-shaped or no-rods grids. Implement the full formulas so mesh voltage and non-square / no-rods geometries match IEEE 80 exactly. See `testing/case-grounding-ieee80/results.md`.~~ **Done** — see Completed.
 
 ## Fault Analysis Enhancements
 - ~~**Sequence impedance editor**: Positive, negative, zero sequence impedance entry per component~~
 - **IEC 61363 marine/offshore fault analysis**: Fault analysis for isolated marine/offshore networks
+- **Open-conductor / series & simultaneous faults**: the fault engine covers shunt faults only (3φ/SLG/LL/LLG). Add series faults — one/two open conductors (broken-conductor detection on MV feeders, single-phasing of motors) — and simultaneous fault combinations, using the existing sequence-network machinery (series faults interconnect the sequence networks in series rather than parallel).
 - ~~**Static-load fault contribution guidance**: `static_load` contributes no short-circuit current (correct per its definition), but ETAP-style studies model lumped loads with a motor component as fault contributors. Surface this to users (tooltip/warning, or an optional "motor fraction" on `static_load`) so Case-3-type networks aren't silently under-predicted. See `testing/case-3-motor-lump/results.md`.~~ **Done** — see Completed.
 
 ## Overhead Line Model Enhancements
@@ -56,6 +60,8 @@ Overhead lines are modelled as a "Feeder Type" of the Cable component (`construc
 - ~~**PV-bus generator reactive display**: at a PV bus the on-canvas generator badge shows the machine's *scheduled* reactive (capped at its MVA rating), not the solver-computed PV reactive that actually holds the setpoint voltage. The solution is unaffected (voltage held, slack Q correct) but the badge understates/misreports Q. Report the solved PV Q on the badge. See `testing/case-loadflow-3bus/results.md`.~~ **Done** — see Completed.
 - ~~**Source/generator load split**: Fix generator vs utility power split when utility is behind a source-connected transformer~~
 - ~~**Fix array reduction error**: Fix load flow crash ("zero-size array to reduction operation maximum") when all buses are swing type~~
+- **Time-series / quasi-dynamic load flow**: run the existing solver over a 24 h / 8760 h load & generation profile (per-load and per-source profiles, PV irradiance curve, BESS SoC carried between steps, OLTC/switched-cap states) — the PowerFactory QDS / PSS®E Time-Series PF / ETAP load-profile workhorse for DER, EV-charging and storage-cycling studies. The PV irradiance + BESS dispatch models already exist; the battery backup-autonomy study becomes a special case. Tier-1 item in `FEATURE_GAP_ANALYSIS.md`.
+- **OLTC auto-regulation on standard 2-winding transformers**: the load-flow OLTC iteration exists but only for autotransformers; standard transformers carry a fixed `tap_percent`. Extend the same regulate-to-setpoint loop (with tap min/max/step + deadband) to any transformer flagged as on-load tap changing.
 - **Harmonic load flow**: Frequency-domain analysis for non-linear loads
 - **Engineering-review follow-ups (P2–P5)** from the three-stage verification of the inverter-reactive/Jacobian branch (`EE_REVIEW_INVERTER_REACTIVE_JACOBIAN.md`, findings #4–#14): overhead-line `R(T)` correction (already ranked first under Overhead Line Model Enhancements) and overhead ambient-rating scaler; net co-located dispatched Q out of a regulating unit's demanded-Q attribution on mixed buses; signed-pf (absorbing) support in inverter pf mode or align the `var_mode` tooltip/UI range; clamp-latch after N PV↔PQ flips (anti-oscillation) with a reactive-limit-specific non-convergence message; advisory (not error) for converged energized buses in the 0.5–0.9 p.u. band; overhead recommend-on-fail should search an overhead conductor table; prime-mover selector should not silently overwrite a hand-tuned `inertia_h_s` (and diesel H ≈ 1.0 s, not 1.5); remove/mark-read-only the derived board `power_factor` in `LF_ATTRS`; grouped observations (per-iteration SVD cond estimate, thread `reason` into the unbalanced solver, inverter rating ÷η convention, `rated_mva` 0-vs-10 default inconsistency).
 
@@ -84,9 +90,9 @@ Overhead lines are modelled as a "Feeder Type" of the Cable component (`construc
 
 ---
 
-## ETAP Feature Parity
+## Commercial Tool Parity (ETAP / DIgSILENT PowerFactory / Siemens PSS®)
 
-Features identified by comparing ProtectionPro against ETAP's full module set.
+Features identified by comparing ProtectionPro against ETAP's full module set, extended 2026-07-19 with a DIgSILENT PowerFactory 2026 + Siemens PSS®E/SINCAL comparison — see `FEATURE_GAP_ANALYSIS.md` for the full matrix, prioritisation, and the differentiators to protect.
 
 ### Analysis Modules
 
@@ -145,6 +151,26 @@ Features identified by comparing ProtectionPro against ETAP's full module set.
 ### Platform
 
 - **AI / Natural Language Search**: Query the model and run analyses using plain-language prompts
+- **Documented automation API / Python client**: the REST endpoints are already stateless JSON-in/JSON-out, but there is no documented scripting layer (à la etapPy / PowerFactory Python / psspy) — publish a small Python client + docs for batch/parametric study runs. Cheap, high-leverage.
+
+### DIgSILENT / PSS Additions (2026-07-19 gap analysis)
+
+Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list. Domain-specific items (IEEE 1584-2018, distance grading, two-layer soil, open-conductor faults, time-series LF, 2-winding OLTC) were added to their domain sections above.
+
+- **Probabilistic / stochastic load flow**: Monte-Carlo over load & DER uncertainty (PowerFactory)
+- **Small-signal / modal / eigenvalue analysis**: oscillatory-stability screening incl. impedance-based IBR stability (PowerFactory 2026, PSS®E) — depends on a standard dynamics model library first
+- **Standard + user-defined dynamic model library**: named industry models (GENROU, EXST1, GAST…) and a user-model mechanism (DSL/Modelica/UDM equivalents) so transient studies can be reconciled with utility-supplied model data. Large sustained investment — currently the machine/AVR/governor models are fixed built-ins
+- **EMT simulation**: switching/lightning overvoltages, ferroresonance, SSR, inverter switching detail (PowerFactory EMT, PSS®NETOMAC) — different solver class; recommend explicitly declaring out of scope unless targeting IBR-interconnection work
+- **Linear sensitivities (PTDF/LODF) & transfer-limit analysis**: PSS®E Advanced Linear Analysis equivalent — transmission-planning staple, low value at LV/MV scale
+- **State estimation**: fit the model to measured feeder data (operational/digital-twin use; low priority for a design tool)
+- **Network reconfiguration / tie-open-point optimization**: distribution-planning optimizer (SINCAL/PowerFactory)
+- **Load allocation / estimation from metering**: scale modelled loads to measured feeder-head / AMI data — the standard way utilities build usable distribution models (SINCAL/PowerFactory/CYME)
+- **Harmonics refinements**: IEC 61000-3-6 phase-angle summation law (current engine sums same-order sources in phase), background/utility distortion input, interharmonics
+- **Grid-code / fault-ride-through compliance overlay**: ride-through envelope overlay + reactive-support verdicts on the existing transient-stability IBR results (ETAP 2026 Grid Code Interconnection, PowerFactory connection assessment)
+- **IEC 60287 first-principles cable ampacity**: compute ampacity from soil thermal resistivity, laying depth/arrangement and mutual heating of buried cable groups, instead of derating library table values only
+- **Variants / expansion stages**: time-phased network development ("the network as of 2028") for planning studies — scenarios + LF cases only snapshot *operating states* today
+- **Switching-procedure management**: ordered switching plans with safety checks (PowerFactory) — operations niche, low priority
+- **VFD starting profile in dynamic motor starting**: the time-domain motor study models DOL/star-delta/autotransformer/soft-starter but not a V/Hz ramp VFD start
 
 ---
 
