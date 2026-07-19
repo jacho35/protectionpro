@@ -679,13 +679,20 @@ def _compute_islands(n, bus_idx, branch_pairs):
 
 
 def plan_dispatch(project, components, adjacency, bus_idx, buses,
-                  branch_pairs, bus_load_p_mw, loss_adders=None):
+                  branch_pairs, bus_load_p_mw, loss_adders=None,
+                  regulated_q=None):
     """Island detection, per-island swing selection, and merit-order dispatch.
 
     bus_load_p_mw: per-bus-index total load MW (positive = consumption).
     loss_adders: optional {island_number: MW} added to that island's demand —
     used by the loss-compensation pass so curtailed sources also cover the
     measured network losses instead of leaving them on a no-export utility.
+    regulated_q: optional {"gen_buses": set(bus_index), "ibr_ids": set(comp_id)}
+    naming the voltage-regulating units (PV-bus generators / voltage-mode
+    inverters). Their reactive comes from the solver (PV bus) or the
+    reactive-limit clamp (fixed-Q PQ), never from the pf-split schedule, so
+    their scheduled Q is zeroed here — otherwise it would stack on top of the
+    pinned limit once the unit clamps (delivered Q = Q_limit + rated·sinφ).
 
     Returns dict with:
       swing_idx     — set of bus indices to run as Swing
@@ -1213,6 +1220,12 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
 
         for comp, bi, p_av, q_av, p_disp, p_target in plan:
             q_disp = q_av * (p_disp / p_av) if p_av > 0 else 0.0
+            # A voltage-regulating unit's Q is solver/clamp-determined (see
+            # regulated_q in the docstring) — never scheduled here.
+            if regulated_q and (
+                    (comp.type == "generator" and bi in regulated_q["gen_buses"])
+                    or comp.id in regulated_q["ibr_ids"]):
+                q_disp = 0.0
             inj = injections.setdefault(bi, [0.0, 0.0])
             inj[0] += p_disp
             inj[1] += q_disp
@@ -1908,8 +1921,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     rated_mva = float(cp.get("rated_mva", 0) or 0)
                     pf = float(cp.get("power_factor", 0.85) or 0.85)
                     q_cap = rated_mva * math.sqrt(max(0.0, 1 - pf ** 2))
-                    q_max = float(cp.get("q_max_mvar", q_cap) or q_cap)          # over-excited (supplies vars)
-                    q_min = float(cp.get("q_min_mvar", -q_cap) or -q_cap)        # under-excited (absorbs vars)
+                    # An explicit 0 is a valid limit (unity-pf machine), so only
+                    # a missing/blank prop falls back to the rated-pf capability.
+                    _qmx, _qmn = cp.get("q_max_mvar"), cp.get("q_min_mvar")
+                    q_max = float(_qmx) if _qmx not in (None, "") else q_cap     # over-excited (supplies vars)
+                    q_min = float(_qmn) if _qmn not in (None, "") else -q_cap    # under-excited (absorbs vars)
                     ge = gen_pv_units.get(i)
                     if ge is None:
                         ge = {"i": i, "id": comp.id, "name": cp.get("name", comp.id),
@@ -2030,6 +2046,15 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # the utility at ~0 kW instead of importing the losses.
     P_base, Q_base = P_spec.copy(), Q_spec.copy()
     loss_adders = {}
+    # Voltage-regulating units whose scheduled pf-split Q the dispatcher must
+    # zero (their Q comes from the solve or the reactive-limit clamp). Passing
+    # this prevents the scheduled Q from stacking on top of the pinned limit
+    # once a unit clamps PV→PQ. SVCs are not dispatched sources and need no
+    # entry here.
+    regulated_q = {
+        "gen_buses": set(gen_pv_units),
+        "ibr_ids": {cid for u in ibr_pv_units.values() for cid in u["ids"]},
+    }
     # Outer loop enforces reactive limits on voltage-regulating buses: a
     # SVC/STATCOM or a PV generator that would exceed its Q range is clamped to
     # the limit and switched from a voltage-holding PV bus to a fixed-Q PQ
@@ -2038,7 +2063,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     for _svc_pass in range(2 * (len(svc_units) + len(gen_pv_units) + len(ibr_pv_units)) + 3):
         for _pass in range(3):
             dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
-                                     branch_pairs, bus_load_p_mw, loss_adders)
+                                     branch_pairs, bus_load_p_mw, loss_adders,
+                                     regulated_q)
             for i in dispatch["swing_idx"]:
                 bus_types[i] = 2
             P_spec, Q_spec = P_base.copy(), Q_base.copy()
@@ -2714,6 +2740,21 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 message=(f"Generator hit its reactive limit at {_lim}: pinned at "
                          f"{round(u['inj_q'], 2)} MVAr and no longer holding "
                          f"{round(u['vset'], 3)} p.u. — bus voltage floats."),
+            ))
+
+    # Voltage-regulating storage inverters that hit their kVA capability circle:
+    # the same hidden-infeasibility flag as generators — a clamped inverter is
+    # pinned at its reactive limit and no longer holds its voltage setpoint.
+    for u in ibr_pv_units.values():
+        if u["clamped"] is not None:
+            _lim = ("capacitive limit (supplying vars)" if u["clamped"] == "cap"
+                    else "inductive limit (absorbing vars)")
+            voltage_warnings.append(LoadFlowWarning(
+                elementId=u["ids"][0],
+                element_name=str(u["name"]),
+                message=(f"Inverter hit its reactive capability at the {_lim}: "
+                         f"pinned at {round(u['inj_q'], 2)} MVAr and no longer "
+                         f"holding {round(u['vset'], 3)} p.u. — bus voltage floats."),
             ))
 
     warned_ids = set()  # Avoid duplicate warnings for the same component
