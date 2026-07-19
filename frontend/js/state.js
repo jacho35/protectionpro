@@ -5,7 +5,7 @@
 // over from an OLDER engine version — which a network/topology hash can't
 // detect, because the network is unchanged — is flagged stale on load.
 const RESULT_SLOTS = [
-  'faultResults', 'loadFlowResults', 'unbalancedLoadFlowResults', 'arcFlashResults',
+  'faultResults', 'faultResultsMin', 'loadFlowResults', 'unbalancedLoadFlowResults', 'arcFlashResults',
   'dcArcFlashResults', 'dcLoadFlowResults', 'dcShortCircuitResults', 'cableSizingResults',
   'motorStartingResults', 'dynamicMotorResults', 'stabilityResults', 'dutyCheckResults',
   'loadDiversityResults', 'groundingResults', 'studyManagerResults',
@@ -13,7 +13,8 @@ const RESULT_SLOTS = [
 
 // Human labels for the stale-results notice.
 const RESULT_SLOT_LABELS = {
-  faultResults: 'Short Circuit', loadFlowResults: 'Load Flow',
+  faultResults: 'Short Circuit', faultResultsMin: 'Short Circuit (minimum)',
+  loadFlowResults: 'Load Flow',
   unbalancedLoadFlowResults: 'Unbalanced Load Flow', arcFlashResults: 'Arc Flash',
   dcArcFlashResults: 'DC Arc Flash', dcLoadFlowResults: 'DC Load Flow',
   dcShortCircuitResults: 'DC Short Circuit', cableSizingResults: 'Cable Sizing',
@@ -728,6 +729,7 @@ const AppState = {
 
     this.selectedIds.clear();
     this.faultResults = null;
+    this.faultResultsMin = null;
     this.faultedBusId = null;
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
@@ -1019,6 +1021,7 @@ const AppState = {
   // Clear all results
   clearResults() {
     this.faultResults = null;
+    this.faultResultsMin = null;
     this.faultedBusId = null;
     this.loadFlowResults = null;
     this.unbalancedLoadFlowResults = null;
@@ -1214,6 +1217,7 @@ const AppState = {
         : undefined,
       // Persist analysis results so result boxes survive save/load
       faultResults: this.faultResults || undefined,
+      faultResultsMin: this.faultResultsMin || undefined,
       faultedBusId: this.faultedBusId || undefined,
       loadFlowResults: this.loadFlowResults || undefined,
       unbalancedLoadFlowResults: this.unbalancedLoadFlowResults || undefined,

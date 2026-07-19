@@ -1191,7 +1191,27 @@ const Compliance = {
     }
 
     const LV_THRESHOLD_KV = 1.0;
-    const DISCONNECTION_FACTOR = 10; // In TN system: Isc ≥ 10 × In for instantaneous CB trip (conservative threshold)
+    const DISCONNECTION_FACTOR = 10; // legacy proxy: Isc ≥ 10 × In implies instantaneous trip
+
+    // [PS-3] Disconnection must be verified against the MINIMUM earth-fault
+    // current (IEC 60909-0 §5.3.1: c_min = 0.95, hot-conductor resistance),
+    // not the maximum-current study — c_max + cold conductors overstate Ik1
+    // by ≥16 %, passing circuits the standard fails. app.js fetches the
+    // companion minimum study into AppState.faultResultsMin on every fault
+    // run; older saved results fall back to the maximum figures with a
+    // warning so the report is explicit about its basis.
+    const minBuses = AppState.faultResultsMin?.buses || null;
+    const usingMin = !!(minBuses && Object.keys(minBuses).length > 0);
+    const basisNote = usingMin
+      ? 'Basis: minimum-current study (c_min = 0.95, conductor resistance at 70 °C) per IEC 60909-0 §5.3.1'
+      : 'Basis: MAXIMUM-current study (c_max = 1.10, 20 °C) — re-run Fault Analysis to compute the minimum-current study; these PASS verdicts are optimistic';
+    if (!usingMin) {
+      section.items.push({
+        status: 'warn', component: '—',
+        message: 'Minimum earth-fault current study not available — disconnection checked against maximum-current figures.',
+        detail: 'IEC 60909-0 §5.3.1 / SANS 10142-1 Cl. 5.5.6 require disconnection to be verified with c_min = 0.95 and hot-conductor resistance. Re-run Fault Analysis (the companion minimum study is fetched automatically).',
+      });
+    }
     let checked = 0;
 
     for (const [busId, faultResult] of Object.entries(AppState.faultResults.buses)) {
@@ -1199,7 +1219,9 @@ const Compliance = {
       const nominalKV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
       if (!nominalKV || nominalKV > LV_THRESHOLD_KV) continue; // LV buses only
 
-      const islg = faultResult.ik1; // Single-line-to-ground (earth) fault current in kA
+      // Single-line-to-ground (earth) fault current in kA — minimum study
+      // where available ([PS-3]).
+      const islg = usingMin ? (minBuses[busId]?.ik1 ?? null) : faultResult.ik1;
       if (islg == null) continue;
       checked++;
 
@@ -1215,21 +1237,67 @@ const Compliance = {
         if (!in_) continue;
 
         const devName = devComp.props?.name || dev.id;
-        const requiredIscA = in_ * DISCONNECTION_FACTOR;
 
+        // [PS-3] Primary criterion: the device's actual disconnection time at
+        // the minimum earth-fault current vs the SANS 10142-1 / IEC 60364-4-41
+        // limit — 0.4 s for final circuits ≤ 32 A (230 V TN), 5 s otherwise.
+        const tLimit = in_ <= 32 ? 0.4 : 5.0;
+        let tDisc = null;
+        let devDesc;
+        if (devComp.type === 'fuse') {
+          const preArc = fuseTripTime(in_, islgA);
+          tDisc = (preArc != null && isFinite(preArc)) ? preArc * 1.2 : null;
+          devDesc = `gG fuse ${in_} A (total clearing = 1.2× pre-arc)`;
+        } else {
+          const params = {
+            cb_type: devComp.props?.cb_type || 'mccb',
+            trip_rating_a: devComp.props?.trip_rating_a || in_,
+            thermal_pickup: devComp.props?.thermal_pickup || 1.0,
+            magnetic_pickup: devComp.props?.magnetic_pickup || 10,
+            long_time_delay: devComp.props?.long_time_delay || 10,
+            short_time_pickup: devComp.props?.short_time_pickup || 0,
+            short_time_delay: devComp.props?.short_time_delay || 0,
+            instantaneous_pickup: devComp.props?.instantaneous_pickup || 0,
+          };
+          const t = cbTripTime(params, islgA);
+          tDisc = (t != null && isFinite(t)) ? t : null;
+          devDesc = `${(params.cb_type || 'mccb').toUpperCase()} trip unit, In = ${in_} A`;
+        }
+
+        if (tDisc != null) {
+          if (tDisc <= tLimit) {
+            section.items.push({
+              status: 'pass',
+              component: busName,
+              message: `${devName} disconnects in ${tDisc < 0.01 ? '<0.01' : tDisc.toFixed(2)} s at Ik1 = ${islgA.toFixed(0)} A (limit ${tLimit} s). Automatic disconnection confirmed.`,
+              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: ${devDesc} operating time evaluated at the earth-fault current vs the ${tLimit} s disconnection limit. ${basisNote}.`,
+            });
+          } else {
+            section.items.push({
+              status: 'fail',
+              component: busName,
+              message: `${devName} takes ${isFinite(tDisc) ? tDisc.toFixed(2) : '∞'} s to clear Ik1 = ${islgA.toFixed(0)} A — exceeds the ${tLimit} s disconnection limit.`,
+              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: disconnection within ${tLimit} s not achieved at the ${usingMin ? 'minimum' : 'available'} earth-fault current. Reduce loop impedance, lower the device rating/pickup, or add an RCD. ${basisNote}.`,
+            });
+          }
+          continue;
+        }
+
+        // No usable curve — fall back to the legacy 10×In screening proxy.
+        const requiredIscA = in_ * DISCONNECTION_FACTOR;
         if (islgA < requiredIscA) {
           section.items.push({
             status: 'fail',
             component: busName,
             message: `Earth fault current (${islgA.toFixed(0)} A) may be insufficient to guarantee instantaneous trip of ${devName} (In = ${in_} A).`,
-            detail: `SANS 10142-1 Cl. 5.5.6: for TN systems, single-line-to-ground fault current should be ≥ 10 × In = ${requiredIscA.toFixed(0)} A for instantaneous disconnection. Verify earth fault loop impedance and consider lower-rated or more sensitive protection.`,
+            detail: `SANS 10142-1 Cl. 5.5.6: for TN systems, single-line-to-ground fault current should be ≥ 10 × In = ${requiredIscA.toFixed(0)} A for instantaneous disconnection (device curve not evaluable). ${basisNote}.`,
           });
         } else {
           section.items.push({
             status: 'pass',
             component: busName,
             message: `Earth fault current (${islgA.toFixed(0)} A) ≥ 10 × In (${requiredIscA.toFixed(0)} A) of ${devName}. Automatic disconnection confirmed.`,
-            detail: `SANS 10142-1 Cl. 5.5.6: sufficient earth fault current for instantaneous disconnection in TN system at ${busName}.`,
+            detail: `SANS 10142-1 Cl. 5.5.6: sufficient earth fault current for instantaneous disconnection in TN system at ${busName} (device curve not evaluable). ${basisNote}.`,
           });
         }
       }
@@ -1239,7 +1307,7 @@ const Compliance = {
           status: 'warn',
           component: busName,
           message: `LV bus has no protection device — earth fault disconnection cannot be verified.`,
-          detail: `Earth fault current Islg = ${islgA.toFixed(0)} A at ${busName}. Add a circuit breaker or fuse to enable SANS 10142-1 Cl. 5.5.6 disconnection check.`,
+          detail: `Earth fault current Islg = ${islgA.toFixed(0)} A at ${busName}. Add a circuit breaker or fuse to enable SANS 10142-1 Cl. 5.5.6 disconnection check. ${basisNote}.`,
         });
       }
     }

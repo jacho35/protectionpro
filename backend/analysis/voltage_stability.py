@@ -127,10 +127,18 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
             note="Base case does not solve; increase generation or reduce load.",
         )
 
+    # [EE-6] "collapsed" means a non-solving / below-floor state was actually
+    # OBSERVED and bracketed. The previous test (lam_critical < lambda_max)
+    # also fired when the λ sweep merely overshot lambda_max without landing
+    # on it (any user step that doesn't divide the range), declaring a bus at
+    # 1.000 p.u. "collapsed". When the sweep exhausts λ without a failure the
+    # margin is a lower bound, not a nose.
+    observed_collapse = False
     if not ok(base):
         warnings.append(f"Base case solves but its weakest bus is below the "
                         f"collapse floor ({v_floor:.2f} p.u.) — no positive margin.")
         records.append((1.0, base))
+        observed_collapse = True
     else:
         records.append((1.0, base))
         last_good = 1.0
@@ -147,6 +155,7 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
                 break
         # Refine the nose by bisecting the last-good / first-bad bracket.
         if first_bad is not None:
+            observed_collapse = True
             lo, hi = last_good, first_bad
             for _ in range(BISECT_STEPS):
                 mid = (lo + hi) / 2.0
@@ -160,7 +169,7 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
 
     records.sort(key=lambda e: e[0])
     lam_critical = records[-1][0]
-    collapsed = lam_critical < lambda_max - 1e-6
+    collapsed = observed_collapse
     nose_result = records[-1][1]
 
     # Critical bus = weakest energized bus at the nose.
@@ -193,7 +202,7 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
                 f"({load_list[-1]:.2f} MW total demand); weakest bus "
                 f"'{critical_bus_name}' at {nose_v_pu:.3f} p.u.")
     else:
-        note = (f"No collapse up to λ = {lambda_max:.2f} "
+        note = (f"No collapse up to λ = {lam_critical:.2f} "
                 f"(+{margin_pct:.0f} % load) — margin is a lower bound; raise "
                 f"lambda_max to find the nose.")
 

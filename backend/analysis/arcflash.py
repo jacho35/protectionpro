@@ -75,6 +75,19 @@ _GAP_BY_CLASS = {
     "open_air": 40,
 }
 
+# [PS-4] Distance exponent x by equipment class — IEEE 1584-2002 Table 4.
+# Cables are x = 2.000 (the gap-based inference used to lump the 13 mm cable
+# gap into the MCC/panel exponent 1.641, understating incident energy ~11 %
+# at 455 mm working distance — non-conservative on a printed safety label).
+_X_BY_CLASS = {
+    "lv_switchgear": 1.473,
+    "lv_mcc_panel": 1.641,
+    "lv_cable": 2.0,
+    "mv_switchgear_5kv": 0.973,
+    "mv_switchgear_15kv": 0.973,
+    "open_air": 2.0,
+}
+
 
 def _get_gap(voltage_kv, equipment_class=None):
     """Get the conductor gap (mm) for a bus.
@@ -194,7 +207,8 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
 
 
 def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
-                         config="VCB", enclosure_mm=508, grounded=False):
+                         config="VCB", enclosure_mm=508, grounded=False,
+                         equipment_class=None):
     """Calculate incident energy per IEEE 1584-2002 Eq. 3-5.
 
     IEEE 1584-2002:
@@ -204,7 +218,7 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
     Where:
       K1 = -0.792 (open air) or -0.555 (box/enclosed)
       K2 = 0 (ungrounded/HRG) or -0.113 (grounded) — use 0 as default
-      Cf = 1.0 for V<1kV, 1.5 for V>=1kV
+      Cf = 1.5 for V≤1kV, 1.0 above (Eq. 6)
       x = distance exponent from IEEE 1584 Table 4
       En in J/cm²; E in J/cm²; convert to cal/cm² by dividing by 4.184
 
@@ -218,6 +232,11 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
         enclosure_mm: Enclosure width/depth (mm) — accepted for API
             compatibility but UNUSED: the 2002 model has no
             enclosure-size correction (that is a 1584-2018 feature)
+        equipment_class: [PS-4] IEEE 1584-2002 Table 4 equipment class key
+            (see _X_BY_CLASS). When given it selects the distance exponent x
+            AUTHORITATIVELY — the gap-based inference misclassified the cable
+            class (13 mm gap → MCC/panel x=1.641 instead of the Table 4 cable
+            value x=2.000, understating energy ~11 % at 455 mm).
 
     Returns:
         Incident energy in cal/cm²
@@ -241,11 +260,17 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
     cf = 1.5 if voc_kv <= 1.0 else 1.0
 
     # Distance exponent x (IEEE 1584-2002 Table 4)
-    # The 2002 table is keyed by equipment class; the conductor gap
-    # already encodes that class (25mm LV MCC/panel, 32mm LV switchgear,
-    # 102/153mm MV switchgear) so it is reused as the signal here.
+    # [PS-4] An explicit equipment class keys x directly (the authoritative
+    # Table 4 mapping). The gap-based fallback covers legacy calls: 25 mm LV
+    # MCC/panel, 32 mm LV switchgear, 102/153 mm MV switchgear — and ≤15 mm
+    # is the cable class, x = 2.000 at every voltage level (previously
+    # misread as MCC/panel 1.641, understating energy).
     if config in ("VOA", "HOA"):
         x_factor = 2.0  # Open air (all voltages)
+    elif equipment_class and equipment_class in _X_BY_CLASS:
+        x_factor = _X_BY_CLASS[equipment_class]
+    elif gap_mm <= 15:
+        x_factor = 2.0  # Cable class (13 mm gap), Table 4
     elif voc_kv <= 1.0:
         # LV enclosed: switchgear (gap ≥ 32mm) x=1.473; MCC/panel x=1.641
         x_factor = 1.473 if gap_mm >= 32 else 1.641
@@ -264,7 +289,8 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
 
 def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
                             config="VCB", enclosure_mm=508,
-                            threshold_cal=1.2, grounded=False):
+                            threshold_cal=1.2, grounded=False,
+                            equipment_class=None):
     """Calculate arc flash boundary distance per IEEE 1584-2002.
 
     The arc flash boundary is the distance where incident energy
@@ -291,7 +317,8 @@ def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
     for _ in range(50):
         mid = (low + high) / 2
         e = calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, mid,
-                                 config, enclosure_mm, grounded)
+                                 config, enclosure_mm, grounded,
+                                 equipment_class=equipment_class)
         if e > threshold_cal:
             low = mid
         else:
@@ -746,7 +773,8 @@ def run_arc_flash(project_data, fault_results):
         # Incident energy at working distance
         e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
                                      working_dist, electrode_config,
-                                     enclosure_mm, grounded)
+                                     enclosure_mm, grounded,
+                                     equipment_class=equipment_class)
 
         # Reduced arcing current check (IEEE 1584-2002 §5.5): the lower current
         # may sit below instantaneous pickups, slowing protection. Re-evaluate
@@ -758,7 +786,8 @@ def run_arc_flash(project_data, fault_results):
         e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
                                               t_clear_reduced, gap_mm,
                                               working_dist, electrode_config,
-                                              enclosure_mm, grounded)
+                                              enclosure_mm, grounded,
+                                              equipment_class=equipment_class)
 
         # Use worst case (higher energy)
         e_worst = max(e_cal, e_cal_reduced)
@@ -768,11 +797,13 @@ def run_arc_flash(project_data, fault_results):
         # boundary further out) and report the worst (largest) distance.
         afb_full = calc_arc_flash_boundary(iarc, voltage_kv, t_clear, gap_mm,
                                            electrode_config, enclosure_mm,
-                                           grounded=grounded)
+                                           grounded=grounded,
+                                           equipment_class=equipment_class)
         afb_reduced = calc_arc_flash_boundary(iarc_reduced, voltage_kv,
                                               t_clear_reduced, gap_mm,
                                               electrode_config, enclosure_mm,
-                                              grounded=grounded)
+                                              grounded=grounded,
+                                              equipment_class=equipment_class)
         afb = max(afb_full, afb_reduced)
 
         # PPE category
