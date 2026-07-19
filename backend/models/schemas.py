@@ -605,6 +605,13 @@ class LoadFlowResults(BaseModel):
     method: str
     dispatch: list[DispatchEntry] = []
     svc: list[dict] = []          # SVC/STATCOM reactive-output summary
+    # Solution-quality classification, distinct from raw convergence:
+    #   "ok"                — converged to a plausible operating point
+    #   "low_voltage_root"  — converged, but an energized bus sits implausibly
+    #                         low (likely the low-voltage/collapse root or an
+    #                         infeasible point presented as valid)
+    #   "non_converged"     — the solver did not converge (see `converged`)
+    solution_quality: str = "ok"
 
 
 # ── Load Flow Study Manager (named full-snapshot cases) ──────────────────────

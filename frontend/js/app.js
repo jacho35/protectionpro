@@ -586,6 +586,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let html = '';
     if (!result.converged) {
       html += '<div class="validation-item validation-error">Load flow did NOT converge — results are unreliable.</div>';
+    } else if (result.solution_quality === 'low_voltage_root') {
+      html += '<div class="validation-item validation-error">Load flow converged to an implausibly low-voltage solution — likely the collapse root or an infeasible operating point, NOT a valid result. See warning below.</div>';
     }
     if (warnings.length > 0) {
       html += '<div class="validation-section"><div class="validation-section-title warning-title">Warnings</div>';
@@ -760,9 +762,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (type === 'loadflow') {
         const deadBuses = Object.values(result.buses || {}).filter(b => b.energized === false);
         const islands = new Set((result.dispatch || []).map(d => d.island).filter(i => i > 0));
-        let status = result.converged
-          ? `Load flow converged in ${result.iterations} iteration${result.iterations === 1 ? '' : 's'}.`
-          : 'Load flow did NOT converge — results are unreliable.';
+        let status = !result.converged
+          ? 'Load flow did NOT converge — results are unreliable.'
+          : result.solution_quality === 'low_voltage_root'
+            ? `Load flow converged (${result.iterations} iter) to an implausibly low-voltage solution — likely a collapse root, not valid.`
+            : `Load flow converged in ${result.iterations} iteration${result.iterations === 1 ? '' : 's'}.`;
         if (islands.size > 1 || deadBuses.length > 0) {
           status += ` ${islands.size} island${islands.size === 1 ? '' : 's'}` +
             (deadBuses.length ? `, ${deadBuses.length} bus${deadBuses.length === 1 ? '' : 'es'} de-energized.` : '.');
