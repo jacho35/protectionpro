@@ -24,6 +24,15 @@ TOLERANCE = 1e-6
 # flagging legitimately weak-but-operable buses.
 V_IMPLAUSIBLE_PU = 0.5
 
+# Newton-Raphson Jacobian condition-number ceiling. A well-posed power-flow
+# Jacobian is well-conditioned (cond ~ 1e1–1e4); it blows up towards ∞ only when
+# the system is structurally singular (a subnetwork with no voltage reference)
+# or sitting on the voltage-collapse boundary (the P-V nose). Past this ceiling
+# the linear solve is numerical garbage, so we stop and report a singular
+# Jacobian rather than stepping on a meaningless dx or letting np.linalg.solve
+# raise an unhandled LinAlgError. Set far above any well-posed network.
+JACOBIAN_COND_LIMIT = 1e12
+
 # Components that are "transparent" — zero impedance pass-through
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
 
@@ -1247,7 +1256,13 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
             inj = injections.setdefault(bi, [0.0, 0.0])
             inj[0] += p_dis
             prev = dispatched_by_comp.get(comp.id, (0.0, 0.0))
-            dispatched_by_comp[comp.id] = (prev[0] + p_dis, prev[1])
+            # Reactive from the storage inverter (power-factor mode): follow the
+            # set pf, bounded by the kVA circle shared with any PV real output
+            # already committed (prev). This is why a hybrid inverter running on
+            # battery at zero irradiance still supplies vars.
+            q_dis = _inverter_discharge_q(comp, p_dis, prev[0], prev[1])
+            inj[1] += q_dis
+            dispatched_by_comp[comp.id] = (prev[0] + p_dis, prev[1] + q_dis)
             entries.append({
                 "source_id": comp.id,
                 "source_name": (str(comp.props.get("name", comp.type))
@@ -1289,7 +1304,11 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
 
 
 def solve_with_islands(Y, P_spec, Q_spec, V_spec, bus_types, dead_idx, method):
-    """Run NR/GS excluding de-energized buses; returns full-size V with 0 V there."""
+    """Run NR/GS excluding de-energized buses; returns full-size V with 0 V there.
+
+    Returns (V, converged, iterations, reason); `reason` propagates the solver's
+    non-convergence classification ("" | "max_iterations" | "singular_jacobian").
+    """
     n = len(P_spec)
     if not dead_idx:
         if method == "gauss_seidel":
@@ -1299,18 +1318,18 @@ def solve_with_islands(Y, P_spec, Q_spec, V_spec, bus_types, dead_idx, method):
     alive = [i for i in range(n) if i not in dead_idx]
     V = np.zeros(n, dtype=complex)
     if not alive:
-        return V, True, 0
+        return V, True, 0, ""
     idx = np.array(alive)
     Y_s = Y[np.ix_(idx, idx)]
     bt_s = [bus_types[i] for i in alive]
     if method == "gauss_seidel":
-        V_s, converged, iterations = _gauss_seidel(
+        V_s, converged, iterations, reason = _gauss_seidel(
             Y_s, P_spec[idx], Q_spec[idx], V_spec[idx], bt_s)
     else:
-        V_s, converged, iterations = _newton_raphson(
+        V_s, converged, iterations, reason = _newton_raphson(
             Y_s, P_spec[idx], Q_spec[idx], V_spec[idx], bt_s)
     V[idx] = V_s
-    return V, converged, iterations
+    return V, converged, iterations, reason
 
 
 def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
@@ -1452,6 +1471,49 @@ def _source_output_mva(comp):
     return 0.0, 0.0, 0.0, 0.0
 
 
+def _inverter_var_mode(comp):
+    """Reactive-control mode for a grid-following storage inverter (battery or
+    hybrid PV). The inverter's AC side is decoupled from its DC source, so it can
+    supply/absorb reactive power up to its kVA rating whether the energy comes
+    from the PV array or the battery:
+      • 'power_factor' (default) — follow the inverter's set power factor,
+        bounded by the kVA circle √(S²−P²);
+      • 'voltage' — regulate the bus voltage (a PV bus) up to that circle;
+      • 'unity' — inject no reactive (legacy behaviour).
+    """
+    return str(comp.props.get("var_mode", "power_factor") or "power_factor").lower()
+
+
+def _inverter_rating_mva(comp):
+    """Apparent-power (kVA) rating of a storage/PV inverter, MVA — the radius of
+    its reactive capability circle."""
+    if comp.type == "battery":
+        return float(comp.props.get("rated_kva", 100) or 0) / 1000
+    if comp.type == "solar_pv":
+        rated_kw = float(comp.props.get("rated_kw", 100) or 0)
+        n_inv = max(1, int(comp.props.get("num_inverters", 1) or 1))
+        eff = float(comp.props.get("inverter_eff", 0.97) or 0.97)
+        return rated_kw * n_inv / (eff * 1000) if eff > 0 else 0.0
+    return 0.0
+
+
+def _inverter_discharge_q(comp, p_dis, p_already, q_already):
+    """Reactive (MVAr) a storage inverter injects for its battery discharge in
+    power-factor mode, bounded by the kVA circle it shares with any PV real
+    output already committed (`p_already`/`q_already`). Voltage/unity modes inject
+    none here (voltage regulation is handled as a PV bus in the solver loop)."""
+    if _inverter_var_mode(comp) != "power_factor":
+        return 0.0
+    pf = float(comp.props.get("power_factor", 1.0) or 1.0)
+    if pf <= 0 or pf >= 1:
+        return 0.0
+    q_target = p_dis * math.sqrt(max(0.0, 1 - pf ** 2)) / pf
+    s_rated = _inverter_rating_mva(comp)
+    p_total = abs(p_already) + p_dis
+    q_room = math.sqrt(max(0.0, s_rated ** 2 - p_total ** 2)) - abs(q_already)
+    return max(0.0, min(q_target, max(0.0, q_room)))
+
+
 def connected_bus_loads_mw(project: ProjectData) -> dict:
     """Per-bus local real load (MW), gathered exactly as ``run_load_flow`` does.
 
@@ -1503,11 +1565,15 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
     return loads
 
 
-def _assess_solution(bus_results, converged, iterations):
+def _assess_solution(bus_results, converged, iterations, reason=""):
     """Classify a load-flow solution beyond raw convergence, and produce any
     solution-level warnings. Returns (quality: str, warnings: list).
 
-    Two failure modes the raw `converged` flag alone hides:
+    Three failure modes the raw `converged` flag alone hides:
+      • a singular / near-singular Jacobian — a structurally under-determined
+        network (a subnetwork with no voltage reference) or an operating point
+        exactly on the voltage-collapse boundary; caught and named, never left
+        as an unhandled solver error (`reason == "singular_jacobian"`);
       • non-convergence — surfaced with an actionable message (an infeasible
         operating point, i.e. load beyond the loadability limit / collapse,
         looks the same to the solver as any other divergence);
@@ -1516,6 +1582,16 @@ def _assess_solution(bus_results, converged, iterations):
         as a normal operating point (the "clean-looking but wrong" case).
     """
     if not converged:
+        if reason == "singular_jacobian":
+            return "non_converged", [LoadFlowWarning(
+                elementId="", element_name="Load Flow",
+                message=("Load flow could not solve: the system Jacobian is "
+                         "singular. The network is structurally under-determined "
+                         "(a subnetwork with no voltage reference / all-swing "
+                         "island) or sitting exactly on the voltage-collapse "
+                         "boundary. Check that every energized island has one "
+                         "swing/reference source and is not loaded to its "
+                         "collapse point."))]
         return "non_converged", [LoadFlowWarning(
             elementId="", element_name="Load Flow",
             message=(f"Load flow did not converge after {iterations} iterations — "
@@ -1777,6 +1853,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     bus_load_q_mvar = np.zeros(n)  # per-bus load Q, for swing-bus source badges
     svc_units = []  # FACTS shunt compensators: list of dicts (see svc branch below)
     gen_pv_units = {}  # bus index -> PV-generator reactive-limit unit (see below)
+    ibr_pv_units = {}  # bus index -> voltage-regulating storage-inverter unit
 
     for bus in buses:
         i = bus_idx[bus.id]
@@ -1844,7 +1921,26 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     if vset > 0:
                         ge["vset"] = vset
             elif comp.type in ("solar_pv", "wind_turbine", "battery"):
-                pass  # Injection set by the dispatcher / battery pass below
+                # Real-power injection comes from the dispatcher / battery pass
+                # below. A storage inverter (battery / hybrid PV) in voltage mode
+                # additionally holds its bus voltage — a PV bus — up to its
+                # reactive capability circle √(S²−P²). The limit is P-dependent
+                # (P is only known after dispatch), so it's applied in the outer
+                # loop; here we just mark the bus PV and register the unit.
+                if comp.type in ("battery", "solar_pv") and _inverter_var_mode(comp) == "voltage":
+                    s_rated = _inverter_rating_mva(comp)
+                    if s_rated > 0:
+                        vset = float(comp.props.get("v_setpoint_pu", 1.0) or 1.0)
+                        bus_types[i] = 1
+                        V_spec[i] = vset
+                        ibr = ibr_pv_units.get(i)
+                        if ibr is None:
+                            ibr = {"i": i, "name": comp.props.get("name", comp.id),
+                                   "s_rated": 0.0, "vset": vset,
+                                   "clamped": None, "inj_q": 0.0, "ids": []}
+                            ibr_pv_units[i] = ibr
+                        ibr["s_rated"] += s_rated
+                        ibr["ids"].append(comp.id)
             elif comp.type == "static_load":
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
@@ -1939,7 +2035,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # the limit and switched from a voltage-holding PV bus to a fixed-Q PQ
     # injection, then the network is re-solved (one extra pass per unit that
     # hits a limit; the bound allows a clamp and a later revert per unit).
-    for _svc_pass in range(2 * (len(svc_units) + len(gen_pv_units)) + 3):
+    for _svc_pass in range(2 * (len(svc_units) + len(gen_pv_units) + len(ibr_pv_units)) + 3):
         for _pass in range(3):
             dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
                                      branch_pairs, bus_load_p_mw, loss_adders)
@@ -1950,7 +2046,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 P_spec[i] += p_mw / base_mva
                 Q_spec[i] += q_mvar / base_mva
 
-            V, converged, iterations = solve_with_islands(
+            V, converged, iterations, solve_reason = solve_with_islands(
                 Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
             if not converged:
                 break
@@ -1986,7 +2082,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         # clamped to the limit and reverts to a fixed-Q PQ injection. A STATCOM
         # holds a constant MVAr at the limit; an SVC is susceptance-limited, so
         # its delivered Q follows Q = Q_nom·V² — refined across passes as V settles.
-        if not converged or (not svc_units and not gen_pv_units):
+        if not converged or (not svc_units and not gen_pv_units and not ibr_pv_units):
             break
         S_reg = V * np.conj(Y @ V)
         changed = False
@@ -2051,6 +2147,42 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     u["inj_q"] = 0.0
                     u["clamped"] = None
                     bus_types[bi] = 1               # restore PV regulation
+                    V_spec[bi] = u["vset"]
+                    changed = True
+
+        # Voltage-regulating storage inverter (battery / hybrid PV). Its reactive
+        # capability is the kVA circle √(S²−P²) evaluated at the inverter's
+        # dispatched real output P (recomputed each pass as P settles); clamp
+        # PV→PQ when the demanded Q exceeds it, and revert on recovery. Skipped
+        # when the inverter is its island's grid-forming swing (no Q limit).
+        for u in ibr_pv_units.values():
+            bi = u["i"]
+            if bus_types[bi] == 2:
+                continue
+            vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
+            p_inv = sum(dispatch["dispatched_by_comp"].get(cid, (0.0, 0.0))[0]
+                        for cid in u["ids"])
+            q_cap = math.sqrt(max(0.0, u["s_rated"] ** 2
+                                  - min(abs(p_inv), u["s_rated"]) ** 2))
+            if u["clamped"] is None:
+                q_ibr = S_reg[bi].imag * base_mva + bus_load_q_mvar[bi]
+                if q_ibr > q_cap + 1e-6:
+                    u["clamped"], q_lim = "cap", q_cap
+                elif q_ibr < -q_cap - 1e-6:
+                    u["clamped"], q_lim = "ind", -q_cap
+                else:
+                    continue
+                bus_types[bi] = 0                # PV → PQ at the reactive limit
+                Q_base[bi] += (q_lim - u["inj_q"]) / base_mva
+                u["inj_q"] = q_lim
+                changed = True
+            else:
+                if ((u["clamped"] == "cap" and vmag > u["vset"] + 1e-6) or
+                        (u["clamped"] == "ind" and vmag < u["vset"] - 1e-6)):
+                    Q_base[bi] -= u["inj_q"] / base_mva
+                    u["inj_q"] = 0.0
+                    u["clamped"] = None
+                    bus_types[bi] = 1
                     V_spec[bi] = u["vset"]
                     changed = True
         if not changed:
@@ -2454,9 +2586,14 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             # injection at the bus (Im{V·conj(Y·V)}) plus the local load Q —
             # and split it across the bus's generators by rating. P is
             # unchanged (NR enforced P_spec).
+            # Recover the source's true reactive from the solved bus injection
+            # whenever this bus regulates voltage — either currently a PV bus, or
+            # a voltage-regulating generator/inverter that has clamped to PQ at
+            # its reactive limit (the pinned Q lives in the solution, not in the
+            # scheduled dispatch). Otherwise use the scheduled/dispatched Q.
             pv_q_solved = None
             gen_rated_total = 0.0
-            if bus_types[bus_i] == 1:
+            if bus_types[bus_i] == 1 or bus_i in gen_pv_units or bus_i in ibr_pv_units:
                 q_inj = (V[bus_i] * np.conj(Y[bus_i, :] @ V)).imag * base_mva
                 pv_q_solved = q_inj + bus_load_q_mvar[bus_i]
                 gen_rated_total = sum(_source_output_mva(s)[3] for s in gen_sources
@@ -2724,11 +2861,16 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 br.from_bus = _unsyn(br.from_bus)
                 br.to_bus = _unsyn(br.to_bus)
 
+    # Calculated power factor of each flow (|P|/S) — shown on branch/source
+    # annotations. Zero when the apparent power is ~0 (an idle element).
+    for br in branch_results:
+        br.pf = round(abs(br.p_mw) / br.s_mva, 3) if br.s_mva > 1e-9 else 0.0
+
     # Classify the solution (non-convergence / low-voltage-collapse root) and
     # surface it at the top of the warnings so a suspect-but-converged result
     # isn't mistaken for a valid operating point.
     solution_quality, solution_warnings = _assess_solution(
-        bus_results, converged, iterations)
+        bus_results, converged, iterations, solve_reason)
     voltage_warnings = solution_warnings + voltage_warnings
 
     return LoadFlowResults(
@@ -2745,10 +2887,17 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
 
 
 def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
-    """Newton-Raphson power flow solver."""
+    """Newton-Raphson power flow solver.
+
+    Returns (V, converged, iterations, reason), where `reason` is "" on success,
+    "max_iterations" when the iteration limit is hit while still stepping, or
+    "singular_jacobian" when the Jacobian is (near-)singular and no reliable step
+    can be taken.
+    """
     n = len(P_spec)
     V = np.array(V_mag, dtype=complex)
     theta = np.zeros(n)
+    reason = "max_iterations"
 
     for iteration in range(MAX_ITERATIONS):
         # Calculate power mismatches
@@ -2779,7 +2928,7 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
         mismatch = np.concatenate([dP[non_swing], dQ[pq_idx]])
         if len(mismatch) == 0 or np.max(np.abs(mismatch)) < TOLERANCE:
             V = np.array([abs(V[i]) * np.exp(1j * theta[i]) for i in range(n)])
-            return V, True, iteration + 1
+            return V, True, iteration + 1, ""
 
         # Build Jacobian
         n_eq = len(non_swing) + len(pq_idx)
@@ -2830,10 +2979,25 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
                         Y[i, j].imag * math.cos(theta[i] - theta[j])
                     )
 
+        # Guard against a singular / near-singular Jacobian before using its
+        # solve: a subnetwork with no voltage reference, an all-swing island, or
+        # an operating point on the voltage-collapse boundary drives cond(J) → ∞,
+        # and stepping on that solve would fabricate a meaningless "solution".
+        # np.linalg.cond returns inf for an exactly singular J (it does not
+        # raise), so this also subsumes the LinAlgError case; the except below
+        # stays as a backstop.
+        if not np.all(np.isfinite(J)) or np.linalg.cond(J) > JACOBIAN_COND_LIMIT:
+            reason = "singular_jacobian"
+            break
+
         # Solve J * dx = mismatch
         try:
             dx = np.linalg.solve(J, mismatch)
         except np.linalg.LinAlgError:
+            reason = "singular_jacobian"
+            break
+        if not np.all(np.isfinite(dx)):
+            reason = "singular_jacobian"
             break
 
         # Update
@@ -2842,13 +3006,20 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
         for ii, i in enumerate(pq_idx):
             V[i] = abs(V[i]) + dx[len(non_swing) + ii]
 
-    # Rebuild complex V
+    # Rebuild complex V. Report the iteration actually reached — MAX_ITERATIONS
+    # for a genuine iteration-limit failure, or the (small) break iteration when
+    # a singular Jacobian stopped us early — so the count isn't misleading.
     V = np.array([abs(V[i]) * np.exp(1j * theta[i]) for i in range(n)])
-    return V, False, MAX_ITERATIONS
+    return V, False, iteration + 1, reason
 
 
 def _gauss_seidel(Y, P_spec, Q_spec, V_mag, bus_types):
-    """Gauss-Seidel power flow solver."""
+    """Gauss-Seidel power flow solver.
+
+    Returns (V, converged, iterations, reason) — same contract as the NR solver.
+    Gauss-Seidel builds no Jacobian, so it never reports "singular_jacobian";
+    a failure is always "max_iterations".
+    """
     n = len(P_spec)
     V = np.array(V_mag, dtype=complex)
 
@@ -2882,9 +3053,9 @@ def _gauss_seidel(Y, P_spec, Q_spec, V_mag, bus_types):
         diff = np.abs(V - V_old)
         max_diff = np.max(diff) if len(diff) > 0 else 0.0
         if max_diff < TOLERANCE:
-            return V, True, iteration + 1
+            return V, True, iteration + 1, ""
 
-    return V, False, MAX_ITERATIONS
+    return V, False, MAX_ITERATIONS, "max_iterations"
 
 
 def _utility_admittance(comp, base_mva):

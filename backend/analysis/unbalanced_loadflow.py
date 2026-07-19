@@ -576,7 +576,7 @@ def run_unbalanced_load_flow(
             P1[bus_i] -= p_pu
             Q1[bus_i] -= q_pu
 
-    V1, converged, iterations = solve_with_islands(
+    V1, converged, iterations, _solve_reason = solve_with_islands(
         Y1, P1, Q1, V_spec, bus_types, dispatch["dead_idx"], method)
 
     # ── Compute sequence current injections from unbalanced loads ──
