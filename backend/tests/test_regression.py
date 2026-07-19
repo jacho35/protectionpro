@@ -2810,3 +2810,109 @@ class TestSVC:
         base = run_load_flow(self._svc_project(with_svc=False))
         fixed = run_load_flow(self._svc_project(with_svc=True, control="fixed_q", q_fixed=15))
         assert abs(fixed.buses["bl"].voltage_pu) > abs(base.buses["bl"].voltage_pu)
+
+
+class TestGeneratorReactiveLimits:
+    """PV-generator reactive-limit (over-/under-excitation) enforcement —
+    the PV↔PQ clamp modelled on the SVC/STATCOM reactive-limit loop."""
+
+    def _pv_gen_project(self, rated_mva, pf, load_kva, load_pf, vset=1.05,
+                        q_max=None, q_min=None):
+        """Utility slack + feeder + a PV-regulating generator bus carrying a
+        local reactive load. A small machine cannot supply the load's Q and
+        must clamp; a large one holds the setpoint."""
+        gen_props = {"name": "G1", "rated_mva": rated_mva, "power_factor": pf,
+                     "voltage_setpoint_pu": vset, "dispatch_mode": "must_run",
+                     "voltage_kv": 11.0}
+        if q_max is not None:
+            gen_props["q_max_mvar"] = q_max
+        if q_min is not None:
+            gen_props["q_min_mvar"] = q_min
+        comps = [
+            _comp("utility-1", "utility", {"name": "Grid", "voltage_kv": 11.0,
+                                           "fault_mva": 500.0, "x_r_ratio": 15.0}),
+            _comp("bus-1", "bus", {"name": "Slack", "voltage_kv": 11.0}),
+            _comp("cab-1", "cable", {"name": "Feeder", "voltage_kv": 11.0,
+                                     "r_per_km": 0.2, "x_per_km": 0.3,
+                                     "length_km": 5.0, "rated_amps": 400}),
+            _comp("bus-2", "bus", {"name": "Gen Bus", "voltage_kv": 11.0,
+                                   "bus_type": "PV"}),
+            _comp("gen-1", "generator", gen_props),
+            _comp("load-1", "static_load", {"name": "L1", "rated_kva": load_kva,
+                                            "power_factor": load_pf,
+                                            "voltage_kv": 11.0}),
+        ]
+        wires = [
+            _wire("w1", "utility-1", "bus-1"),
+            _wire("w2", "bus-1", "cab-1"),
+            _wire("w3", "cab-1", "bus-2"),
+            _wire("w4", "bus-2", "gen-1"),
+            _wire("w5", "bus-2", "load-1"),
+        ]
+        return ProjectData(projectName="pvgen", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_pv_generator_holds_setpoint_within_capability(self):
+        """A large machine with ample reactive headroom holds its PV setpoint
+        and raises no reactive-limit warning."""
+        res = run_load_flow(self._pv_gen_project(rated_mva=50.0, pf=0.9,
+                                                 load_kva=200, load_pf=0.95))
+        assert res.converged
+        assert abs(res.buses["bus-2"].voltage_pu - 1.05) <= 0.005
+        assert not any("reactive limit" in w.message for w in res.warnings)
+
+    def test_pv_generator_clamps_at_q_max(self):
+        """A small machine cannot supply the local inductive load's Q: it pins
+        at its over-excitation limit (Q_max ≈ rated·sinφ), the bus falls below
+        the setpoint, and a reactive-limit warning is raised."""
+        proj = self._pv_gen_project(rated_mva=1.0, pf=0.9,
+                                    load_kva=5000, load_pf=0.5)
+        res = run_load_flow(proj)
+        assert res.converged
+        # Q_max = 1 MVA × sin(acos(0.9)) ≈ 0.436 MVAr
+        q_cap = 1.0 * math.sqrt(1 - 0.9 ** 2)
+        # Clamped ⇒ the generator can no longer hold its 1.05 setpoint.
+        assert abs(res.buses["bus-2"].voltage_pu) < 1.0
+        warn = [w for w in res.warnings if "reactive limit" in w.message
+                and w.elementId == "gen-1"]
+        assert warn, "expected a reactive-limit warning for the clamped generator"
+        assert "over-excitation" in warn[0].message
+        assert f"{round(q_cap, 2)}" in warn[0].message
+
+    def test_explicit_q_limits_override_capability_default(self):
+        """Explicit q_min_mvar tightens the box below the rated-pf default, so a
+        machine that would otherwise hold voltage now clamps. Here the generator
+        exports real power and must ABSORB reactive to hold the setpoint, so it
+        hits the under-excitation (Q_min) limit and the bus drifts off setpoint
+        (upward — the clamp can no longer pull the voltage down)."""
+        loose = run_load_flow(self._pv_gen_project(rated_mva=50.0, pf=0.9,
+                                                   load_kva=3000, load_pf=0.7))
+        tight = run_load_flow(self._pv_gen_project(rated_mva=50.0, pf=0.9,
+                                                   load_kva=3000, load_pf=0.7,
+                                                   q_max=0.5, q_min=-0.5))
+        assert not any("reactive limit" in w.message for w in loose.warnings)
+        tight_warn = [w for w in tight.warnings if "reactive limit" in w.message]
+        assert tight_warn and "under-excitation" in tight_warn[0].message
+        # Loose case holds the setpoint; the clamped case drifts off it.
+        assert abs(loose.buses["bus-2"].voltage_pu - 1.05) < 1e-2
+        assert abs(tight.buses["bus-2"].voltage_pu - 1.05) > 1e-2
+
+    def test_swing_generator_is_not_clamped(self):
+        """A generator acting as its island's swing has no Q constraint: even a
+        tiny machine islanded with a reactive load must not raise a PV-generator
+        reactive-limit warning (the slack absorbs the residual)."""
+        comps = [
+            _comp("gen-1", "generator", {"name": "G1", "rated_mva": 0.5,
+                                         "power_factor": 0.9, "voltage_kv": 11.0,
+                                         "bus_type": "Swing"}),
+            _comp("bus-1", "bus", {"name": "Island", "voltage_kv": 11.0,
+                                   "bus_type": "Swing"}),
+            _comp("load-1", "static_load", {"name": "L1", "rated_kva": 400,
+                                            "power_factor": 0.6, "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "gen-1", "bus-1"), _wire("w2", "bus-1", "load-1")]
+        proj = ProjectData(projectName="isl", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        res = run_load_flow(proj)
+        assert res.converged
+        assert not any("reactive limit" in w.message for w in res.warnings)

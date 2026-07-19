@@ -544,6 +544,33 @@
   color: #fff;
 }
 
+/* "Clear to auto" — removes an optional override prop so the engine falls back
+   to its derived default. Neutral grey to distinguish from the orange reset. */
+.prop-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--border-color, #ccc);
+  background: transparent;
+  color: var(--text-secondary, #888);
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.prop-clear-btn:hover {
+  background: #d32f2f;
+  border-color: #d32f2f;
+  color: #fff;
+}
+
 /* TCC Grading action button */
 .prop-tcc-section {
   padding: 4px 0;

@@ -316,6 +316,25 @@ const Properties = {
       });
     });
 
+    // Bind "clear to auto" buttons — delete an optional override prop so the
+    // engine falls back to its derived default (e.g. generator Q limits).
+    this.contentEl.querySelectorAll('.prop-clear-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fieldKey = btn.dataset.clearField;
+        const comp = AppState.components.get(this.currentId);
+        if (comp && fieldKey in comp.props) {
+          delete comp.props[fieldKey];
+          AppState.dirty = true;
+          this._notifyResultsCleared();
+          AppState.clearResults();
+          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+          Canvas.render();
+          this.show(comp.id);
+        }
+      });
+    });
+
     // Bind the per-cable IEC ampacity calculator launch button
     this.contentEl.querySelectorAll('.prop-ampacity-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -546,7 +565,8 @@ const Properties = {
         if (field.max !== undefined) constraints += ` max="${field.max / displayMult}"`;
         constraints += ` step="${field.step !== undefined ? field.step / displayMult : 'any'}"`;
       }
-      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${escHtml(displayValue)}"${constraints}${dis}${lockTitle}>`;
+      const placeholderHtml = field.placeholder ? ` placeholder="${escHtml(field.placeholder)}"` : '';
+      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${escHtml(displayValue)}"${placeholderHtml}${constraints}${dis}${lockTitle}>`;
     }
 
     // Unit display: selectable dropdown if unitOptions, else static text
@@ -616,6 +636,17 @@ const Properties = {
       }
     }
 
+    // "Clear to auto" affordance for optional override fields. When the field
+    // is marked `clearable` and currently holds a value, show a small ✕ button
+    // that deletes the prop so the engine reverts to its derived default. (The
+    // shared number-input handler treats an emptied input as invalid and keeps
+    // the old value, so blanking the field can't unset it — this button can.)
+    let clearHtml = '';
+    if (field.clearable && value !== '' && value !== undefined && value !== null) {
+      const revertTo = field.placeholder || 'default';
+      clearHtml = `<button class="prop-clear-btn" data-clear-field="${field.key}" title="Clear override — revert to ${escHtml(revertTo)}">&#x2715;</button>`;
+    }
+
     // CB pickup settings: show the resulting trip current in brackets
     // (TCC convention: Ir = In × thermal, Im = Ir × magnetic)
     let labelText = field.label;
@@ -679,6 +710,7 @@ const Properties = {
         ${infoHtml}
         ${defaultFlagHtml}
         ${resetHtml}
+        ${clearHtml}
       </div>${hintHtml}`;
   },
 
@@ -794,6 +826,17 @@ const Properties = {
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     }
     Canvas.render();
+
+    // Clearable override fields (e.g. generator Q limits): re-render on commit
+    // so the "clear to auto" ✕ button appears/disappears with the value's
+    // presence. Section expand state persists, so the panel doesn't jump.
+    if (commit) {
+      const _fdef = (COMPONENT_DEFS[comp.type]?.fields || []).find(f => f.key === field);
+      if (_fdef && _fdef.clearable) {
+        this.show(comp.id);
+        return;
+      }
+    }
 
     // Update component label if name changed
     if (field === 'name') {
