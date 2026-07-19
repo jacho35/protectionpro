@@ -2883,6 +2883,31 @@ class TestGeneratorReactiveLimits:
         assert "over-excitation" in warn[0].message
         assert f"{round(q_cap, 2)}" in warn[0].message
 
+    def test_clamped_generator_delivers_exactly_q_max(self):
+        """The solved network must carry the clamped machine at its limit — not
+        the limit PLUS its scheduled pf-split dispatch Q (the double-count that
+        delivered exactly 2×Q_max and optimistic post-clamp voltages). The
+        warning's pinned value and the delivered badge Q must agree."""
+        res = run_load_flow(self._pv_gen_project(rated_mva=1.0, pf=0.9,
+                                                 load_kva=5000, load_pf=0.5))
+        assert res.converged
+        q_cap = 1.0 * math.sqrt(1 - 0.9 ** 2)   # ≈ 0.436 MVAr
+        badge = next(b for b in res.branches if b.elementId == "gen-1")
+        assert badge.q_mvar == pytest.approx(q_cap, abs=0.02), \
+            "clamped generator must deliver Q_max, not Q_max + scheduled Q"
+
+    def test_explicit_zero_q_limit_is_respected(self):
+        """q_max_mvar = q_min_mvar = 0 is a valid 'no vars' (unity-pf) box, not
+        a missing prop: the machine must clamp at 0 MVAr and deliver none."""
+        res = run_load_flow(self._pv_gen_project(rated_mva=50.0, pf=0.9,
+                                                 load_kva=3000, load_pf=0.7,
+                                                 q_max=0.0, q_min=0.0))
+        assert res.converged
+        assert any("reactive limit" in w.message for w in res.warnings), \
+            "a zero-Q box must clamp, not silently widen to the rated-pf default"
+        badge = next(b for b in res.branches if b.elementId == "gen-1")
+        assert badge.q_mvar == pytest.approx(0.0, abs=0.02)
+
     def test_explicit_q_limits_override_capability_default(self):
         """Explicit q_min_mvar tightens the box below the rated-pf default, so a
         machine that would otherwise hold voltage now clamps. Here the generator
@@ -3097,7 +3122,8 @@ class TestInverterReactive:
         b = self._pv_badge(res)
         assert res.converged and abs(b.q_mvar) < 1e-6
 
-    def _hybrid_behind_cable(self, var_mode, vset=1.05, discharge_kw=20):
+    def _hybrid_behind_cable(self, var_mode, vset=1.05, discharge_kw=20,
+                             irr=0, pf=0.98, load_kva=60, load_pf=0.85):
         """Inverter on a PCC bus behind a feeder (so the utility, not the
         inverter, is the swing) — the setup where voltage regulation is meaningful."""
         return ProjectData(projectName="t", baseMVA=100.0, frequency=50, components=[
@@ -3106,10 +3132,11 @@ class TestInverterReactive:
             _comp("cab-1", "cable", {"voltage_kv": 0.4, "r_per_km": 0.5, "x_per_km": 0.3,
                                      "length_km": 0.5, "rated_amps": 200}),
             _comp("bus-2", "bus", {"name": "PCC", "voltage_kv": 0.4}),
-            _comp("load-1", "static_load", {"rated_kva": 60, "power_factor": 0.85, "voltage_kv": 0.4}),
+            _comp("load-1", "static_load", {"rated_kva": load_kva, "power_factor": load_pf,
+                                            "voltage_kv": 0.4}),
             _comp("pv-1", "solar_pv", {
                 "name": "PV", "rated_kw": 50, "num_inverters": 1, "inverter_eff": 1.0,
-                "power_factor": 0.98, "irradiance_pct": 0, "voltage_kv": 0.4,
+                "power_factor": pf, "irradiance_pct": irr, "voltage_kv": 0.4,
                 "inverter_type": "hybrid", "battery_kwh": 100, "battery_dod_pct": 90,
                 "battery_soc_pct": 95, "battery_max_charge_kw": 50,
                 "battery_max_discharge_kw": discharge_kw, "battery_mode": "discharging",
@@ -3131,6 +3158,28 @@ class TestInverterReactive:
         assert b.q_mvar > 0.001   # solved reactive is reported, not the scheduled 0
         s_rated = 0.05
         assert b.q_mvar <= math.sqrt(s_rated ** 2 - 0.02 ** 2) + 1e-3  # within the circle
+
+    def test_clamped_voltage_mode_hybrid_stays_within_circle_and_warns(self):
+        """Voltage-mode hybrid PV WITH sun (irradiance > 0, pf < 1) — the path
+        where the PV part carries a scheduled pf-split Q. When the inverter hits
+        its kVA circle the delivered Q must be the circle limit, not the limit
+        PLUS the schedule (the double-count delivered exactly 2× capability with
+        no warning). A reactive-capability warning must name the inverter."""
+        proj = self._hybrid_behind_cable("voltage", vset=1.08, discharge_kw=0,
+                                         irr=100, pf=0.9, load_kva=100, load_pf=0.7)
+        res = run_load_flow(proj)
+        assert res.converged
+        # P = 50 kW × 0.9 = 45 kW; circle headroom √(50² − 45²) ≈ 21.8 kvar.
+        p_disp = 0.05 * 0.9
+        q_circle = math.sqrt(0.05 ** 2 - p_disp ** 2)
+        b = self._pv_badge(res)
+        assert b.q_mvar == pytest.approx(q_circle, abs=1.5e-3), \
+            "clamped inverter must deliver the circle limit, not limit + scheduled Q"
+        warn = [w for w in res.warnings if "reactive capability" in w.message
+                and w.elementId == "pv-1"]
+        assert warn, "expected a reactive-capability warning for the clamped inverter"
+        # Pinned below the setpoint: the phantom voltage lift is gone.
+        assert res.buses["bus-2"].voltage_pu < 1.08
 
     def test_pf_field_populated_on_source_badge(self):
         """The branch/source badge carries a calculated power factor (|P|/S)."""
