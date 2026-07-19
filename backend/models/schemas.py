@@ -571,6 +571,7 @@ class LoadFlowBranch(BaseModel):
     i_amps: float = 0
     loading_pct: float = 0
     losses_mw: float = 0
+    pf: float = 0        # calculated power factor of the flow, |P| / S (0 if S≈0)
 
 
 class LoadFlowWarning(BaseModel):

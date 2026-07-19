@@ -729,11 +729,18 @@ const Annotations = {
     const sMVA = branch.s_mva || Math.sqrt((branch.p_mw || 0) ** 2 + (branch.q_mvar || 0) ** 2);
     const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
     const loadStr = branch.loading_pct > 0 ? `${branch.loading_pct.toFixed(1)}%` : null;
+    // Calculated power factor of the flow (|P|/S). Prefer the backend value;
+    // fall back to a client-side compute for results saved before the field.
+    const pf = branch.pf != null && branch.pf > 0
+      ? branch.pf
+      : (sMVA > 1e-9 ? Math.abs(branch.p_mw || 0) / sMVA : 0);
+    const pfStr = pf > 0 ? pf.toFixed(2) : null;
 
     const fullLines = [];
     if (pStr != null) fullLines.push(`P: ${pStr}`);
     if (qStr != null) fullLines.push(`Q: ${qStr}`);
     fullLines.push(`S: ${sStr}`);
+    if (pfStr != null) fullLines.push(`PF: ${pfStr}`);
     if (branch.i_amps > 0) fullLines.push(`I: ${branch.i_amps.toFixed(1)} A`);
     if (loadStr != null) fullLines.push(`Load: ${loadStr}`);
 

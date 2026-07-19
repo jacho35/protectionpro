@@ -3045,3 +3045,96 @@ class TestSolutionQuality:
         assert "Jacobian is singular" in w_sing[0].message
         assert "Jacobian is singular" not in w_iter[0].message
         assert "did not converge" in w_iter[0].message
+
+
+class TestInverterReactive:
+    """Storage-inverter (battery / hybrid PV) reactive power: power-factor and
+    voltage-regulating modes, bounded by the kVA capability circle."""
+
+    def _hybrid(self, irr, pf, var_mode, discharge_kw=30, rated_kw=50,
+                vset=1.0, eff=1.0):
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50, components=[
+            _comp("util-1", "utility", {"voltage_kv": 0.4, "fault_mva": 100, "x_r_ratio": 10}),
+            _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 0.4}),
+            _comp("load-1", "static_load", {"rated_kva": 40, "power_factor": 0.85, "voltage_kv": 0.4}),
+            _comp("pv-1", "solar_pv", {
+                "name": "PV", "rated_kw": rated_kw, "num_inverters": 1, "inverter_eff": eff,
+                "power_factor": pf, "irradiance_pct": irr, "voltage_kv": 0.4,
+                "inverter_type": "hybrid", "battery_kwh": 100, "battery_dod_pct": 90,
+                "battery_soc_pct": 95, "battery_max_charge_kw": 50,
+                "battery_max_discharge_kw": discharge_kw, "battery_mode": "discharging",
+                "var_mode": var_mode, "v_setpoint_pu": vset}),
+        ], wires=[_wire("w1", "util-1", "bus-1"), _wire("w2", "load-1", "bus-1"),
+                  _wire("w3", "pv-1", "bus-1")])
+
+    def _pv_badge(self, res):
+        return next((b for b in res.branches if b.elementId == "pv-1"), None)
+
+    def test_unity_mode_no_vars_legacy(self):
+        """Unity mode (legacy behaviour): the battery discharge injects zero
+        reactive even with a non-unity power factor set."""
+        res = run_load_flow(self._hybrid(0, 0.9, "unity"))
+        b = self._pv_badge(res)
+        assert res.converged and abs(b.q_mvar) < 1e-6
+
+    def test_power_factor_mode_battery_supplies_vars(self):
+        """Zero irradiance, battery-only: in power-factor mode the inverter now
+        supplies reactive at its set pf (30 kW @ 0.9 → 30·tan(acos 0.9) ≈ 14.5
+        kvar), bounded by the kVA circle — the fix for the reported issue."""
+        res = run_load_flow(self._hybrid(0, 0.9, "power_factor", discharge_kw=30))
+        b = self._pv_badge(res)
+        assert res.converged
+        expect = 0.030 * math.sqrt(1 - 0.9 ** 2) / 0.9   # ≈ 0.01453 MVAr
+        assert b.q_mvar == pytest.approx(expect, abs=5e-4)
+        assert b.pf == pytest.approx(0.9, abs=0.02)
+
+    def test_power_factor_capped_by_kva_circle(self):
+        """At full inverter loading (P = S_rated) there is no headroom for
+        reactive — the circle √(S²−P²) is zero, so Q is 0 despite pf < 1."""
+        # 50 kW discharge, 50 kW inverter @ eff 1.0 → S_rated = P = 0.05 MVA.
+        res = run_load_flow(self._hybrid(0, 0.9, "power_factor",
+                                         discharge_kw=50, rated_kw=50, eff=1.0))
+        b = self._pv_badge(res)
+        assert res.converged and abs(b.q_mvar) < 1e-6
+
+    def _hybrid_behind_cable(self, var_mode, vset=1.05, discharge_kw=20):
+        """Inverter on a PCC bus behind a feeder (so the utility, not the
+        inverter, is the swing) — the setup where voltage regulation is meaningful."""
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50, components=[
+            _comp("util-1", "utility", {"voltage_kv": 0.4, "fault_mva": 20, "x_r_ratio": 5}),
+            _comp("bus-1", "bus", {"name": "Src", "voltage_kv": 0.4}),
+            _comp("cab-1", "cable", {"voltage_kv": 0.4, "r_per_km": 0.5, "x_per_km": 0.3,
+                                     "length_km": 0.5, "rated_amps": 200}),
+            _comp("bus-2", "bus", {"name": "PCC", "voltage_kv": 0.4}),
+            _comp("load-1", "static_load", {"rated_kva": 60, "power_factor": 0.85, "voltage_kv": 0.4}),
+            _comp("pv-1", "solar_pv", {
+                "name": "PV", "rated_kw": 50, "num_inverters": 1, "inverter_eff": 1.0,
+                "power_factor": 0.98, "irradiance_pct": 0, "voltage_kv": 0.4,
+                "inverter_type": "hybrid", "battery_kwh": 100, "battery_dod_pct": 90,
+                "battery_soc_pct": 95, "battery_max_charge_kw": 50,
+                "battery_max_discharge_kw": discharge_kw, "battery_mode": "discharging",
+                "var_mode": var_mode, "v_setpoint_pu": vset}),
+        ], wires=[_wire("w1", "util-1", "bus-1"), _wire("w2", "bus-1", "cab-1"),
+                  _wire("w3", "cab-1", "bus-2"), _wire("w4", "load-1", "bus-2"),
+                  _wire("w5", "pv-1", "bus-2")])
+
+    def test_voltage_mode_regulates_and_reports_solved_q(self):
+        """Voltage mode raises the bus toward its setpoint by injecting reactive,
+        and the source badge reports the solver-computed Q (not the scheduled 0),
+        bounded by the capability circle."""
+        base = run_load_flow(self._hybrid_behind_cable("unity"))
+        volt = run_load_flow(self._hybrid_behind_cable("voltage", vset=1.05))
+        assert volt.converged
+        # Voltage regulation lifts the PCC bus above the no-var case.
+        assert volt.buses["bus-2"].voltage_pu > base.buses["bus-2"].voltage_pu + 1e-3
+        b = self._pv_badge(volt)
+        assert b.q_mvar > 0.001   # solved reactive is reported, not the scheduled 0
+        s_rated = 0.05
+        assert b.q_mvar <= math.sqrt(s_rated ** 2 - 0.02 ** 2) + 1e-3  # within the circle
+
+    def test_pf_field_populated_on_source_badge(self):
+        """The branch/source badge carries a calculated power factor (|P|/S)."""
+        res = run_load_flow(self._hybrid(0, 0.9, "power_factor", discharge_kw=30))
+        b = self._pv_badge(res)
+        assert b.pf == pytest.approx(abs(b.p_mw) / b.s_mva, abs=1e-3)
+        assert 0 < b.pf <= 1

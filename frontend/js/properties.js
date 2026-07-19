@@ -898,7 +898,7 @@ const Properties = {
     // Re-render properties when fields with conditional dependents change
     if (['vector_group', 'grounding_hv', 'grounding_lv', 'earthing_system',
          'voltage_lv_kv', 'voltage_kv', 'cb_type', 'inverter_type', 'pv_array_mode',
-         'ibr_ctrl', 'turbine_type', 'construction'].includes(field)) {
+         'ibr_ctrl', 'turbine_type', 'construction', 'var_mode'].includes(field)) {
       this.show(comp.id);
     }
 
@@ -1809,6 +1809,7 @@ I = S / (√3 × V) = ${iCalc.toFixed(2)} A</div>
 P = ${br.p_mw?.toFixed(4)} MW  (${(br.p_mw * 1000).toFixed(1)} kW)  [generation]
 Q = ${br.q_mvar?.toFixed(4)} MVAr  (${(br.q_mvar * 1000).toFixed(1)} kVAr)
 S = ${sMVA.toFixed(4)} MVA  (${(sMVA * 1000).toFixed(1)} kVA)
+PF = ${(br.pf != null && br.pf > 0 ? br.pf : (sMVA > 1e-9 ? Math.abs(br.p_mw || 0) / sMVA : 0)).toFixed(3)}${br.q_mvar > 0 ? ' (supplying VArs)' : br.q_mvar < 0 ? ' (absorbing VArs)' : ''}
 I = ${br.i_amps?.toFixed(1) || '—'} A
 ${br.loading_pct > 0 ? `Output = ${br.loading_pct.toFixed(1)}% of rated capacity${br.loading_pct > 100 ? '  ⚠ OVERLOADED' : ''}` : ''}</div>
               </div>`;
