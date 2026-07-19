@@ -24,6 +24,15 @@ TOLERANCE = 1e-6
 # flagging legitimately weak-but-operable buses.
 V_IMPLAUSIBLE_PU = 0.5
 
+# Newton-Raphson Jacobian condition-number ceiling. A well-posed power-flow
+# Jacobian is well-conditioned (cond ~ 1e1–1e4); it blows up towards ∞ only when
+# the system is structurally singular (a subnetwork with no voltage reference)
+# or sitting on the voltage-collapse boundary (the P-V nose). Past this ceiling
+# the linear solve is numerical garbage, so we stop and report a singular
+# Jacobian rather than stepping on a meaningless dx or letting np.linalg.solve
+# raise an unhandled LinAlgError. Set far above any well-posed network.
+JACOBIAN_COND_LIMIT = 1e12
+
 # Components that are "transparent" — zero impedance pass-through
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
 
@@ -1289,7 +1298,11 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
 
 
 def solve_with_islands(Y, P_spec, Q_spec, V_spec, bus_types, dead_idx, method):
-    """Run NR/GS excluding de-energized buses; returns full-size V with 0 V there."""
+    """Run NR/GS excluding de-energized buses; returns full-size V with 0 V there.
+
+    Returns (V, converged, iterations, reason); `reason` propagates the solver's
+    non-convergence classification ("" | "max_iterations" | "singular_jacobian").
+    """
     n = len(P_spec)
     if not dead_idx:
         if method == "gauss_seidel":
@@ -1299,18 +1312,18 @@ def solve_with_islands(Y, P_spec, Q_spec, V_spec, bus_types, dead_idx, method):
     alive = [i for i in range(n) if i not in dead_idx]
     V = np.zeros(n, dtype=complex)
     if not alive:
-        return V, True, 0
+        return V, True, 0, ""
     idx = np.array(alive)
     Y_s = Y[np.ix_(idx, idx)]
     bt_s = [bus_types[i] for i in alive]
     if method == "gauss_seidel":
-        V_s, converged, iterations = _gauss_seidel(
+        V_s, converged, iterations, reason = _gauss_seidel(
             Y_s, P_spec[idx], Q_spec[idx], V_spec[idx], bt_s)
     else:
-        V_s, converged, iterations = _newton_raphson(
+        V_s, converged, iterations, reason = _newton_raphson(
             Y_s, P_spec[idx], Q_spec[idx], V_spec[idx], bt_s)
     V[idx] = V_s
-    return V, converged, iterations
+    return V, converged, iterations, reason
 
 
 def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
@@ -1503,11 +1516,15 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
     return loads
 
 
-def _assess_solution(bus_results, converged, iterations):
+def _assess_solution(bus_results, converged, iterations, reason=""):
     """Classify a load-flow solution beyond raw convergence, and produce any
     solution-level warnings. Returns (quality: str, warnings: list).
 
-    Two failure modes the raw `converged` flag alone hides:
+    Three failure modes the raw `converged` flag alone hides:
+      • a singular / near-singular Jacobian — a structurally under-determined
+        network (a subnetwork with no voltage reference) or an operating point
+        exactly on the voltage-collapse boundary; caught and named, never left
+        as an unhandled solver error (`reason == "singular_jacobian"`);
       • non-convergence — surfaced with an actionable message (an infeasible
         operating point, i.e. load beyond the loadability limit / collapse,
         looks the same to the solver as any other divergence);
@@ -1516,6 +1533,16 @@ def _assess_solution(bus_results, converged, iterations):
         as a normal operating point (the "clean-looking but wrong" case).
     """
     if not converged:
+        if reason == "singular_jacobian":
+            return "non_converged", [LoadFlowWarning(
+                elementId="", element_name="Load Flow",
+                message=("Load flow could not solve: the system Jacobian is "
+                         "singular. The network is structurally under-determined "
+                         "(a subnetwork with no voltage reference / all-swing "
+                         "island) or sitting exactly on the voltage-collapse "
+                         "boundary. Check that every energized island has one "
+                         "swing/reference source and is not loaded to its "
+                         "collapse point."))]
         return "non_converged", [LoadFlowWarning(
             elementId="", element_name="Load Flow",
             message=(f"Load flow did not converge after {iterations} iterations — "
@@ -1950,7 +1977,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 P_spec[i] += p_mw / base_mva
                 Q_spec[i] += q_mvar / base_mva
 
-            V, converged, iterations = solve_with_islands(
+            V, converged, iterations, solve_reason = solve_with_islands(
                 Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
             if not converged:
                 break
@@ -2728,7 +2755,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # surface it at the top of the warnings so a suspect-but-converged result
     # isn't mistaken for a valid operating point.
     solution_quality, solution_warnings = _assess_solution(
-        bus_results, converged, iterations)
+        bus_results, converged, iterations, solve_reason)
     voltage_warnings = solution_warnings + voltage_warnings
 
     return LoadFlowResults(
@@ -2745,10 +2772,17 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
 
 
 def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
-    """Newton-Raphson power flow solver."""
+    """Newton-Raphson power flow solver.
+
+    Returns (V, converged, iterations, reason), where `reason` is "" on success,
+    "max_iterations" when the iteration limit is hit while still stepping, or
+    "singular_jacobian" when the Jacobian is (near-)singular and no reliable step
+    can be taken.
+    """
     n = len(P_spec)
     V = np.array(V_mag, dtype=complex)
     theta = np.zeros(n)
+    reason = "max_iterations"
 
     for iteration in range(MAX_ITERATIONS):
         # Calculate power mismatches
@@ -2779,7 +2813,7 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
         mismatch = np.concatenate([dP[non_swing], dQ[pq_idx]])
         if len(mismatch) == 0 or np.max(np.abs(mismatch)) < TOLERANCE:
             V = np.array([abs(V[i]) * np.exp(1j * theta[i]) for i in range(n)])
-            return V, True, iteration + 1
+            return V, True, iteration + 1, ""
 
         # Build Jacobian
         n_eq = len(non_swing) + len(pq_idx)
@@ -2830,10 +2864,25 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
                         Y[i, j].imag * math.cos(theta[i] - theta[j])
                     )
 
+        # Guard against a singular / near-singular Jacobian before using its
+        # solve: a subnetwork with no voltage reference, an all-swing island, or
+        # an operating point on the voltage-collapse boundary drives cond(J) → ∞,
+        # and stepping on that solve would fabricate a meaningless "solution".
+        # np.linalg.cond returns inf for an exactly singular J (it does not
+        # raise), so this also subsumes the LinAlgError case; the except below
+        # stays as a backstop.
+        if not np.all(np.isfinite(J)) or np.linalg.cond(J) > JACOBIAN_COND_LIMIT:
+            reason = "singular_jacobian"
+            break
+
         # Solve J * dx = mismatch
         try:
             dx = np.linalg.solve(J, mismatch)
         except np.linalg.LinAlgError:
+            reason = "singular_jacobian"
+            break
+        if not np.all(np.isfinite(dx)):
+            reason = "singular_jacobian"
             break
 
         # Update
@@ -2842,13 +2891,20 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
         for ii, i in enumerate(pq_idx):
             V[i] = abs(V[i]) + dx[len(non_swing) + ii]
 
-    # Rebuild complex V
+    # Rebuild complex V. Report the iteration actually reached — MAX_ITERATIONS
+    # for a genuine iteration-limit failure, or the (small) break iteration when
+    # a singular Jacobian stopped us early — so the count isn't misleading.
     V = np.array([abs(V[i]) * np.exp(1j * theta[i]) for i in range(n)])
-    return V, False, MAX_ITERATIONS
+    return V, False, iteration + 1, reason
 
 
 def _gauss_seidel(Y, P_spec, Q_spec, V_mag, bus_types):
-    """Gauss-Seidel power flow solver."""
+    """Gauss-Seidel power flow solver.
+
+    Returns (V, converged, iterations, reason) — same contract as the NR solver.
+    Gauss-Seidel builds no Jacobian, so it never reports "singular_jacobian";
+    a failure is always "max_iterations".
+    """
     n = len(P_spec)
     V = np.array(V_mag, dtype=complex)
 
@@ -2882,9 +2938,9 @@ def _gauss_seidel(Y, P_spec, Q_spec, V_mag, bus_types):
         diff = np.abs(V - V_old)
         max_diff = np.max(diff) if len(diff) > 0 else 0.0
         if max_diff < TOLERANCE:
-            return V, True, iteration + 1
+            return V, True, iteration + 1, ""
 
-    return V, False, MAX_ITERATIONS
+    return V, False, MAX_ITERATIONS, "max_iterations"
 
 
 def _utility_admittance(comp, base_mva):
