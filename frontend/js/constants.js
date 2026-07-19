@@ -945,6 +945,8 @@ const FIELD_INFO = {
   'generator.xd':        'Default Xd = 1.2 p.u. is typical synchronous reactance.\nSource: IEC 60034-4 Table 5 — synchronous reactance range 0.8–1.8 p.u.',
   'generator.x_r_ratio': 'Default X/R = 40 is typical for generators.\nSource: IEC 60909-0 §3.7 — generator X/R ratios are generally high (30–60).',
   'generator.power_factor': 'Default PF = 0.85 lagging, typical industrial generator rating.\nSource: IEC 60034-1 §8 — rated power factor.',
+  'generator.q_max_mvar': 'Maximum over-excited (lagging / capacitive) reactive output the machine can supply while regulating voltage on a PV bus. Leave blank to derive it automatically from the rating and rated power factor: Q = rated_MVA × sin(acos(pf)). Once the solver would demand more than this, the generator can no longer hold its setpoint — it clamps at this limit (PV→PQ) and the bus voltage drifts. Only used when the machine is on a voltage-controlled (PV) bus.\nUsed by: Load Flow.',
+  'generator.q_min_mvar': 'Maximum under-excited (leading / inductive) reactive absorption — usually negative. Leave blank to default to −Q Max (a symmetric capability box); set an explicit value for an asymmetric under-excitation limit. When the machine must absorb more than this to hold its setpoint it clamps at the limit and the bus voltage rises. Only used on a voltage-controlled (PV) bus.\nUsed by: Load Flow.',
   'generator.min_load_pct': 'Default 30% — diesel sets running below ~30% of rating for extended periods suffer wet stacking (unburned fuel/carbon build-up).\nSources: engine manufacturers recommend 30–35% minimum (typical spec range 30–50%); NFPA 110 §8.4.2 requires monthly exercising at ≥30% of nameplate kW.\nThe dispatcher curtails solar/wind so a running generator carries at least this load.',
   'generator.max_load_pct': 'Default 100% — the ceiling (% of rating) a set is loaded to when it is dispatched (merit-order / must-run / standby). Lower it to hold spinning reserve or respect a site derating; demand beyond the cap flows to other sources or the island slack.\nApplies to dispatched sets — an island-slack generator still carries whatever residual the network balance requires.',
 
@@ -1353,6 +1355,8 @@ const COMPONENT_DEFS = {
       { key: 'max_load_pct', label: 'Maximum Load', type: 'number', unit: '%', min: 0, max: 100, step: 5, section: 'loadflow' },
       { key: 'gen_control', label: 'Control Scheme', type: 'select', options: ['droop', 'sequential'], section: 'loadflow' },
       { key: 'start_threshold_pct', label: 'Start Threshold', type: 'number', unit: '%', min: 50, max: 100, step: 5, section: 'loadflow', showWhen: { field: 'gen_control', values: ['sequential'] } },
+      { key: 'q_max_mvar', label: 'Q Max (over-excited)', type: 'number', unit: 'MVAr', step: 0.1, placeholder: 'auto (rated pf)', clearable: true, section: 'loadflow' },
+      { key: 'q_min_mvar', label: 'Q Min (under-excited)', type: 'number', unit: 'MVAr', step: 0.1, placeholder: 'auto (rated pf)', clearable: true, section: 'loadflow' },
       { key: 'xd_pp', label: "Xd''", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'xd_p', label: "Xd'", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'xd', label: 'Xd', type: 'number', unit: 'p.u.', section: 'fault' },
@@ -2876,7 +2880,8 @@ const COMPONENT_DEFS = {
 const LF_ATTRS = {
   utility: ['supply_capacity_mva', 'allow_export', 'dispatch_priority', 'fault_mva'],
   generator: ['rated_mva', 'power_factor', 'dispatch_priority', 'dispatch_mode',
-              'min_load_pct', 'max_load_pct', 'gen_control', 'start_threshold_pct', 'voltage_setpoint_pu'],
+              'min_load_pct', 'max_load_pct', 'gen_control', 'start_threshold_pct',
+              'voltage_setpoint_pu', 'q_max_mvar', 'q_min_mvar'],
   solar_pv: ['rated_kw', 'num_inverters', 'inverter_eff', 'power_factor', 'irradiance_pct',
              'pv_array_mode', 'dispatch_priority', 'dispatch_mode', 'battery_mode',
              'battery_soc_pct', 'battery_max_discharge_kw', 'battery_max_charge_kw'],

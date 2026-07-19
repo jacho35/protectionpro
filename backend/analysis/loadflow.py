@@ -1728,6 +1728,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
     bus_load_q_mvar = np.zeros(n)  # per-bus load Q, for swing-bus source badges
     svc_units = []  # FACTS shunt compensators: list of dicts (see svc branch below)
+    gen_pv_units = {}  # bus index -> PV-generator reactive-limit unit (see below)
 
     for bus in buses:
         i = bus_idx[bus.id]
@@ -1769,6 +1770,31 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                              or comp.props.get("v_setpoint_pu", 0) or 0)
                 if vset > 0 and bt == "PV":
                     V_spec[i] = vset
+                # A generator on a PV bus regulates voltage with unbounded Q
+                # unless we cap it. Register its reactive capability so the outer
+                # loop can clamp it PV→PQ at Q_max/Q_min (see the SVC loop). The
+                # capability defaults to the rated-power-factor limit of the
+                # machine (a symmetric ±Q box); explicit props override. Skipped
+                # when the bus is the island swing (bus_types set to 2 below) —
+                # a slack has no Q constraint. Multiple generators on one bus
+                # sum their capability into a single unit.
+                if bt == "PV":
+                    cp = comp.props
+                    rated_mva = float(cp.get("rated_mva", 0) or 0)
+                    pf = float(cp.get("power_factor", 0.85) or 0.85)
+                    q_cap = rated_mva * math.sqrt(max(0.0, 1 - pf ** 2))
+                    q_max = float(cp.get("q_max_mvar", q_cap) or q_cap)          # over-excited (supplies vars)
+                    q_min = float(cp.get("q_min_mvar", -q_cap) or -q_cap)        # under-excited (absorbs vars)
+                    ge = gen_pv_units.get(i)
+                    if ge is None:
+                        ge = {"i": i, "id": comp.id, "name": cp.get("name", comp.id),
+                              "q_max": 0.0, "q_min": 0.0, "vset": vset if vset > 0 else 1.0,
+                              "clamped": None, "inj_q": 0.0}
+                        gen_pv_units[i] = ge
+                    ge["q_max"] += q_max
+                    ge["q_min"] += q_min
+                    if vset > 0:
+                        ge["vset"] = vset
             elif comp.type in ("solar_pv", "wind_turbine", "battery"):
                 pass  # Injection set by the dispatcher / battery pass below
             elif comp.type == "static_load":
@@ -1860,11 +1886,12 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # the utility at ~0 kW instead of importing the losses.
     P_base, Q_base = P_spec.copy(), Q_spec.copy()
     loss_adders = {}
-    # Outer loop enforces SVC/STATCOM reactive limits: a regulating unit that
-    # would exceed its Q range is clamped to the limit and switched from a
-    # voltage-holding PV bus to a fixed-Q PQ injection, then the network is
-    # re-solved (one extra pass per unit that hits a limit).
-    for _svc_pass in range(2 * len(svc_units) + 3):
+    # Outer loop enforces reactive limits on voltage-regulating buses: a
+    # SVC/STATCOM or a PV generator that would exceed its Q range is clamped to
+    # the limit and switched from a voltage-holding PV bus to a fixed-Q PQ
+    # injection, then the network is re-solved (one extra pass per unit that
+    # hits a limit; the bound allows a clamp and a later revert per unit).
+    for _svc_pass in range(2 * (len(svc_units) + len(gen_pv_units)) + 3):
         for _pass in range(3):
             dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
                                      branch_pairs, bus_load_p_mw, loss_adders)
@@ -1906,21 +1933,21 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             if not adjusted:
                 break
 
-        # SVC/STATCOM reactive-limit check on the converged solution.
-        # A regulating unit that would exceed its Q range is clamped to the
-        # limit and reverts to a fixed-Q PQ injection. A STATCOM holds a
-        # constant MVAr at the limit; an SVC is susceptance-limited, so its
-        # delivered Q follows Q = Q_nom·V² — refined across passes as V settles.
-        if not svc_units or not converged:
+        # Reactive-limit check on the converged solution (SVC/STATCOM, then PV
+        # generators). A regulating unit that would exceed its Q range is
+        # clamped to the limit and reverts to a fixed-Q PQ injection. A STATCOM
+        # holds a constant MVAr at the limit; an SVC is susceptance-limited, so
+        # its delivered Q follows Q = Q_nom·V² — refined across passes as V settles.
+        if not converged or (not svc_units and not gen_pv_units):
             break
-        S_svc = V * np.conj(Y @ V)
+        S_reg = V * np.conj(Y @ V)
         changed = False
         for u in svc_units:
             bi = u["i"]
             vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
             if u["clamped"] is None:
                 # Reactive output the PV constraint is currently demanding.
-                q_svc = S_svc[bi].imag * base_mva + bus_load_q_mvar[bi]
+                q_svc = S_reg[bi].imag * base_mva + bus_load_q_mvar[bi]
                 v2 = vmag * vmag if u["device"] == "svc" else 1.0
                 if q_svc > u["q_max"] * v2 + 1e-6:
                     u["clamped"], q_nom = "cap", u["q_max"]
@@ -1940,6 +1967,43 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 if abs(inj - u["inj_q"]) > 1e-3:
                     Q_base[bi] += (inj - u["inj_q"]) / base_mva
                     u["inj_q"] = inj
+                    changed = True
+
+        # PV-generator reactive-limit check (over-/under-excitation). A generator
+        # holding voltage with more Q than its capability box is clamped to the
+        # limit (PV → fixed-Q PQ). Once clamped it stays a constant MVAr source,
+        # but reverts to voltage regulation if the setpoint becomes holdable
+        # within limits again — the classic PV↔PQ switching heuristic.
+        for u in gen_pv_units.values():
+            bi = u["i"]
+            if bus_types[bi] == 2:
+                continue   # generator is this island's swing — no Q constraint
+            vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
+            if u["clamped"] is None:
+                q_gen = S_reg[bi].imag * base_mva + bus_load_q_mvar[bi]
+                if q_gen > u["q_max"] + 1e-6:
+                    u["clamped"], q_lim = "over", u["q_max"]
+                elif q_gen < u["q_min"] - 1e-6:
+                    u["clamped"], q_lim = "under", u["q_min"]
+                else:
+                    continue
+                bus_types[bi] = 0                # PV → PQ at the reactive limit
+                Q_base[bi] += (q_lim - u["inj_q"]) / base_mva
+                u["inj_q"] = q_lim
+                changed = True
+            else:
+                # Revert to voltage regulation when the setpoint is again
+                # holdable within limits: clamped over-excited (Q_max) but the
+                # bus has risen above setpoint ⇒ it now needs less Q; clamped
+                # under-excited (Q_min) but the bus is below setpoint ⇒ it now
+                # needs to absorb less.
+                if ((u["clamped"] == "over" and vmag > u["vset"] + 1e-6) or
+                        (u["clamped"] == "under" and vmag < u["vset"] - 1e-6)):
+                    Q_base[bi] -= u["inj_q"] / base_mva
+                    u["inj_q"] = 0.0
+                    u["clamped"] = None
+                    bus_types[bi] = 1               # restore PV regulation
+                    V_spec[bi] = u["vset"]
                     changed = True
         if not changed:
             break
@@ -2452,6 +2516,21 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # on each side of the transformer and verify their voltage ratings.
     voltage_warnings = []
     voltage_warnings.extend(dispatch["warnings"])
+
+    # PV generators that hit their reactive capability: they can no longer hold
+    # their voltage setpoint (this is exactly the "reported holding voltage
+    # while demanding Q it can't supply" failure — now flagged, not hidden).
+    for u in gen_pv_units.values():
+        if u["clamped"] is not None:
+            _lim = "over-excitation (Q_max)" if u["clamped"] == "over" else "under-excitation (Q_min)"
+            voltage_warnings.append(LoadFlowWarning(
+                elementId=u["id"],
+                element_name=str(u["name"]),
+                message=(f"Generator hit its reactive limit at {_lim}: pinned at "
+                         f"{round(u['inj_q'], 2)} MVAr and no longer holding "
+                         f"{round(u['vset'], 3)} p.u. — bus voltage floats."),
+            ))
+
     warned_ids = set()  # Avoid duplicate warnings for the same component
     tolerance = 0.15  # 15% mismatch threshold
 
