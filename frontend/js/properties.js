@@ -1773,7 +1773,7 @@ ${busResult.branches.map(br => {
           <div class="calc-step">
             <div class="calc-step-title">Load Flow — ${escHtml(busName)}</div>
             <div class="calc-formula">Method: ${lf.method === 'newton_raphson' ? 'Newton-Raphson' : 'Gauss-Seidel'}
-Converged: ${lf.converged ? 'Yes' : 'NO — results may be inaccurate'}
+Converged: ${!lf.converged ? 'NO — results may be inaccurate' : lf.solution_quality === 'low_voltage_root' ? 'Yes, but to an implausibly low-voltage (collapse) root — likely not valid' : 'Yes'}
 Iterations: ${lf.iterations}
 
 ─── Bus Voltage ───

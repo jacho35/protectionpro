@@ -13,9 +13,9 @@ import math
 
 import pytest
 
-from backend.models.schemas import Component, ProjectData, Wire
+from backend.models.schemas import Component, ProjectData, Wire, LoadFlowBus
 from backend.analysis.fault import run_fault_analysis
-from backend.analysis.loadflow import run_load_flow, connected_bus_loads_mw
+from backend.analysis.loadflow import run_load_flow, connected_bus_loads_mw, _assess_solution
 from backend.analysis.voltage_stability import run_voltage_stability
 from backend.analysis.contingency import run_contingency
 from backend.analysis.motor_starting import run_motor_starting
@@ -2916,3 +2916,78 @@ class TestGeneratorReactiveLimits:
         res = run_load_flow(proj)
         assert res.converged
         assert not any("reactive limit" in w.message for w in res.warnings)
+
+
+class TestSolutionQuality:
+    """Load-flow solution classification beyond raw convergence — the
+    non-convergence / low-voltage-collapse-root gate (`_assess_solution`)."""
+
+    @staticmethod
+    def _bus(bid, vpu, energized=True):
+        return LoadFlowBus(bus_id=bid, bus_name=bid, voltage_pu=vpu,
+                           voltage_kv=vpu * 11, angle_deg=0.0, energized=energized)
+
+    def test_healthy_solution_is_ok(self):
+        """A normal converged network reports quality 'ok' and raises no
+        collapse/divergence warning."""
+        proj = _utility_bus_project(extra_components=[
+            _comp("static_load-1", "static_load",
+                  {"name": "L", "rated_kva": 500, "power_factor": 0.9, "voltage_kv": 11})],
+            extra_wires=[_wire("wl", "bus-1", "static_load-1")])
+        res = run_load_flow(proj)
+        assert res.converged and res.solution_quality == "ok"
+        assert not any("implausibly low" in w.message or "did not converge" in w.message
+                       for w in res.warnings)
+
+    def test_assess_flags_low_voltage_root(self):
+        """A converged solution with an energized bus below the plausibility
+        floor is classified 'low_voltage_root' and names the worst bus."""
+        q, warns = _assess_solution(
+            {"b1": self._bus("b1", 1.0), "b2": self._bus("b2", 0.42)}, True, 5)
+        assert q == "low_voltage_root"
+        assert warns and warns[0].elementId == "b2" and "0.420" in warns[0].message
+
+    def test_assess_does_not_flag_weak_but_operable(self):
+        """A legitimately weak-but-operable bus (above the floor) is NOT flagged
+        — the gate must not false-positive on a valid low-voltage operating point."""
+        q, warns = _assess_solution({"b1": self._bus("b1", 0.72)}, True, 6)
+        assert q == "ok" and warns == []
+
+    def test_assess_ignores_deenergized_bus(self):
+        """A de-energized (0 V, sourceless-island) bus is expected and must not
+        be mistaken for a collapse root."""
+        q, _ = _assess_solution(
+            {"b1": self._bus("b1", 1.0), "b2": self._bus("b2", 0.0, energized=False)}, True, 4)
+        assert q == "ok"
+
+    def test_assess_nonconvergence_message(self):
+        """Non-convergence is classified 'non_converged' with an actionable
+        infeasibility message, regardless of the returned voltages."""
+        q, warns = _assess_solution({"b1": self._bus("b1", 0.3)}, False, 100)
+        assert q == "non_converged"
+        assert warns and "did not converge" in warns[0].message and "infeasible" in warns[0].message
+
+    def test_overloaded_network_flagged_not_ok(self):
+        """A network loaded past its loadability limit does not silently return
+        a clean result: it is either non-converged or a flagged low-voltage root,
+        with a solution-level warning at the top of the list."""
+        comps = [
+            _comp("utility-1", "utility", {"name": "Grid", "voltage_kv": 11.0,
+                                           "fault_mva": 200.0, "x_r_ratio": 10}),
+            _comp("bus-1", "bus", {"name": "Src", "voltage_kv": 11.0}),
+            _comp("cab-1", "cable", {"name": "Ln", "voltage_kv": 11.0, "r_per_km": 0.3,
+                                     "x_per_km": 0.4, "length_km": 30.0, "rated_amps": 300}),
+            _comp("bus-2", "bus", {"name": "End", "voltage_kv": 11.0}),
+            _comp("load-1", "static_load", {"name": "L", "rated_kva": 10000,
+                                            "power_factor": 0.85, "voltage_kv": 11}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"), _wire("w2", "bus-1", "cab-1"),
+                 _wire("w3", "cab-1", "bus-2"), _wire("w4", "bus-2", "load-1")]
+        res = run_load_flow(ProjectData(projectName="ov", baseMVA=100.0, frequency=50,
+                                        components=comps, wires=wires))
+        assert res.solution_quality in ("non_converged", "low_voltage_root")
+        assert res.solution_quality != "ok"
+        # The solution-level warning is prepended (first in the list).
+        assert res.warnings and (
+            "did not converge" in res.warnings[0].message or
+            "implausibly low" in res.warnings[0].message)

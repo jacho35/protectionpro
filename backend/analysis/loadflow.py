@@ -15,6 +15,15 @@ from ..models.schemas import (
 MAX_ITERATIONS = 100
 TOLERANCE = 1e-6
 
+# On a *converged* solve, an energized bus below this per-unit voltage is not a
+# credible operating point — normal networks run ~0.9–1.1 p.u., and even a badly
+# sagging weak feeder stays well above this. A converged solution this low is
+# almost always the low-voltage/collapse root (the lower P-V branch) or an
+# infeasible operating point that Newton-Raphson happened to settle into, and
+# must not be presented as a valid answer. Set conservatively low to avoid
+# flagging legitimately weak-but-operable buses.
+V_IMPLAUSIBLE_PU = 0.5
+
 # Components that are "transparent" — zero impedance pass-through
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
 
@@ -1494,6 +1503,45 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
     return loads
 
 
+def _assess_solution(bus_results, converged, iterations):
+    """Classify a load-flow solution beyond raw convergence, and produce any
+    solution-level warnings. Returns (quality: str, warnings: list).
+
+    Two failure modes the raw `converged` flag alone hides:
+      • non-convergence — surfaced with an actionable message (an infeasible
+        operating point, i.e. load beyond the loadability limit / collapse,
+        looks the same to the solver as any other divergence);
+      • a converged but implausibly low-voltage root — a mathematically valid
+        power-flow solution on the lower P-V branch that must not be handed back
+        as a normal operating point (the "clean-looking but wrong" case).
+    """
+    if not converged:
+        return "non_converged", [LoadFlowWarning(
+            elementId="", element_name="Load Flow",
+            message=(f"Load flow did not converge after {iterations} iterations — "
+                     "results are unreliable. The operating point may be "
+                     "infeasible: load beyond the network's loadability limit "
+                     "(voltage collapse), a source too weak for the demand, or an "
+                     "overloaded transformer. Check source strength, transformer "
+                     "ratings and total load."))]
+
+    lows = [(bid, b) for bid, b in bus_results.items()
+            if getattr(b, "energized", True) and 1e-6 < b.voltage_pu < V_IMPLAUSIBLE_PU]
+    if lows:
+        worst_id, worst = min(lows, key=lambda kv: kv[1].voltage_pu)
+        extra = (f" ({len(lows)} energized buses below {V_IMPLAUSIBLE_PU:.2f} p.u.)"
+                 if len(lows) > 1 else "")
+        return "low_voltage_root", [LoadFlowWarning(
+            elementId=worst_id, element_name=worst.bus_name,
+            message=(f"Converged to an implausibly low voltage — {worst.voltage_pu:.3f} "
+                     f"p.u. at '{worst.bus_name}'{extra}. This is almost certainly the "
+                     "low-voltage/collapse root or an infeasible operating point, not a "
+                     "normal operating solution. Verify source strength and loading; the "
+                     "network may be past its loadability limit."))]
+
+    return "ok", []
+
+
 def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                   include_synthetic: bool = False,
                   _regulate: bool = True) -> LoadFlowResults:
@@ -2676,6 +2724,13 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 br.from_bus = _unsyn(br.from_bus)
                 br.to_bus = _unsyn(br.to_bus)
 
+    # Classify the solution (non-convergence / low-voltage-collapse root) and
+    # surface it at the top of the warnings so a suspect-but-converged result
+    # isn't mistaken for a valid operating point.
+    solution_quality, solution_warnings = _assess_solution(
+        bus_results, converged, iterations)
+    voltage_warnings = solution_warnings + voltage_warnings
+
     return LoadFlowResults(
         buses=bus_results,
         branches=branch_results,
@@ -2685,6 +2740,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         method=method,
         dispatch=dispatch_results,
         svc=svc_results,
+        solution_quality=solution_quality,
     )
 
 
