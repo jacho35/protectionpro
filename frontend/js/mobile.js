@@ -127,8 +127,10 @@ const MobileUI = {
 
     // Mobile header buttons
     document.getElementById('mobile-btn-save')?.addEventListener('click', () => {
-      if (typeof Project !== 'undefined') Project.save();
-      this.showToast('Project saved');
+      // saveProject() toasts success/failure itself — no eager toast here
+      // (the old Project.save() call was a missing method: the button threw
+      // and never saved, while the unconditional toast claimed it had).
+      if (typeof Project !== 'undefined') Project.saveProject();
     });
 
     document.getElementById('mobile-btn-dark')?.addEventListener('click', () => {

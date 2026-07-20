@@ -152,6 +152,7 @@ const Project = {
       await RevisionTimeline.createRevision('Manual save');
       await RevisionTimeline.show();
       document.getElementById('status-info').textContent = 'Project saved.';
+      UI.toast('Project saved', 'success');
       setTimeout(() => {
         document.getElementById('status-info').textContent = '';
       }, 3000);
@@ -172,6 +173,7 @@ const Project = {
       ? 'backend unreachable (is the server running?)'
       : `server error: ${e.message}`;
     document.title = `ProtectionPro — ${AppState.projectName} *`;
+    UI.toast(`Save failed — ${reason}. Changes NOT saved; local backup kept.`, 'error', 6000);
     // Persistent message — intentionally NOT cleared after a timeout
     document.getElementById('status-info').textContent =
       `SAVE FAILED — ${reason}. Your changes are NOT saved to the database. ` +
@@ -199,6 +201,7 @@ const Project = {
       updateProjectNameDisplay();
       this._addRecent(result.id, AppState.projectName);
       document.getElementById('status-info').textContent = 'Project saved as new copy.';
+      UI.toast(`Saved as “${AppState.projectName}”`, 'success');
       setTimeout(() => {
         document.getElementById('status-info').textContent = '';
       }, 3000);
