@@ -1228,6 +1228,21 @@ const Compliance = {
       const busName = busComp?.props?.name || busId;
       const islgA = islg * 1000; // Convert kA → A
 
+      // [R3/PS-1 fallback] A per-path fallback on a meshed topology
+      // OVERSTATES the fault current — a disconnection PASS built on it is
+      // unreliable. Refuse to verify rather than silently pass.
+      const usedBus = usingMin ? minBuses[busId] : faultResult;
+      if (usedBus?.thevenin_basis === 'per-path-fallback'
+          || faultResult?.thevenin_basis === 'per-path-fallback') {
+        section.items.push({
+          status: 'fail',
+          component: busName,
+          message: `Disconnection cannot be verified at ${busName} — the fault current is a per-path fallback on a meshed topology (nodal solve failed) and is overstated.`,
+          detail: 'The meshed-network Thevenin solution failed and the engine fell back to the per-path combination, which overstates earth-fault current. A disconnection PASS on this basis would be non-conservative; simplify or correct the network model and re-run Fault Analysis.',
+        });
+        continue;
+      }
+
       // Find the minimum-rated upstream protection device
       const devices = this._findConnectedDevices(busId, ['cb', 'fuse']);
       for (const dev of devices) {
@@ -1240,8 +1255,32 @@ const Compliance = {
 
         // [PS-3] Primary criterion: the device's actual disconnection time at
         // the minimum earth-fault current vs the SANS 10142-1 / IEC 60364-4-41
-        // limit — 0.4 s for final circuits ≤ 32 A (230 V TN), 5 s otherwise.
-        const tLimit = in_ <= 32 ? 0.4 : 5.0;
+        // limit. [R3 Finding 12] The limit is keyed on CIRCUIT TYPE and U0
+        // (Table 41.1 / §411.3.2.2-3), not on In alone — the old `In ≤ 32`
+        // proxy was non-conservative for 33-63 A socket-outlet finals and for
+        // U0 > 230 V, and conservative for ≤32 A distribution circuits.
+        //   final_socket : Table 41.1 up to In ≤ 63 A (§411.3.2.2)
+        //   final_fixed  : Table 41.1 up to In ≤ 32 A
+        //   distribution : 5 s (§411.3.2.3)
+        //   undeclared   : assumed FINAL (conservative) up to 63 A, else 5 s
+        // Table 41.1 (TN), keyed on nominal U0 = V_LL/√3 with band tolerance:
+        // ≤120 V → 0.8 s · ≤230 V → 0.4 s · ≤400 V → 0.2 s · >400 V → 0.1 s.
+        const circuitType = devComp.props?.circuit_type || '';
+        const u0 = (nominalKV * 1000) / Math.sqrt(3);
+        const t411 = u0 <= 132 ? 0.8 : u0 <= 253 ? 0.4 : u0 <= 440 ? 0.2 : 0.1;
+        const finalCapA = circuitType === 'final_fixed' ? 32 : 63;
+        let tLimit;
+        let limitBasis;
+        if (circuitType === 'distribution') {
+          tLimit = 5.0;
+          limitBasis = 'distribution circuit — 5 s per IEC 60364-4-41 §411.3.2.3';
+        } else if (in_ > finalCapA) {
+          tLimit = 5.0;
+          limitBasis = `In = ${in_} A exceeds the §411.3.2.2 final-circuit scope (≤ ${finalCapA} A) — 5 s per §411.3.2.3`;
+        } else {
+          tLimit = t411;
+          limitBasis = `${circuitType ? (circuitType === 'final_socket' ? 'socket-outlet final circuit' : 'fixed-equipment final circuit') : 'circuit type not set — assumed final circuit (conservative)'} — Table 41.1 at U0 = ${u0.toFixed(0)} V`;
+        }
         let tDisc = null;
         let devDesc;
         if (devComp.type === 'fuse') {
@@ -1270,14 +1309,14 @@ const Compliance = {
               status: 'pass',
               component: busName,
               message: `${devName} disconnects in ${tDisc < 0.01 ? '<0.01' : tDisc.toFixed(2)} s at Ik1 = ${islgA.toFixed(0)} A (limit ${tLimit} s). Automatic disconnection confirmed.`,
-              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: ${devDesc} operating time evaluated at the earth-fault current vs the ${tLimit} s disconnection limit. ${basisNote}.`,
+              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: ${devDesc} operating time evaluated at the earth-fault current vs the ${tLimit} s disconnection limit (${limitBasis}). ${basisNote}.`,
             });
           } else {
             section.items.push({
               status: 'fail',
               component: busName,
               message: `${devName} takes ${isFinite(tDisc) ? tDisc.toFixed(2) : '∞'} s to clear Ik1 = ${islgA.toFixed(0)} A — exceeds the ${tLimit} s disconnection limit.`,
-              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: disconnection within ${tLimit} s not achieved at the ${usingMin ? 'minimum' : 'available'} earth-fault current. Reduce loop impedance, lower the device rating/pickup, or add an RCD. ${basisNote}.`,
+              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: disconnection within ${tLimit} s (${limitBasis}) not achieved at the ${usingMin ? 'minimum' : 'available'} earth-fault current. Reduce loop impedance, lower the device rating/pickup, add an RCD — or set the device's Circuit Type if this is a distribution circuit (5 s limit). ${basisNote}.`,
             });
           }
           continue;

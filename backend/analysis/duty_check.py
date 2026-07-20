@@ -117,8 +117,12 @@ def run_duty_check(project: ProjectData):
         # Get worst-case fault current from connected buses
         prospective_fault_ka = 0
         breaking_duty_ka = 0.0
+        asym_duty_ka = 0.0
+        through_fault_ka = 0.0
+        through_scale = 1.0
         duty_basis = "ik3"
         location_bus = ""
+        fallback_basis = False  # [R3/PS-1] per-path fallback on a meshed net
         kappa = 1.8  # Default peak factor
         for bid in bus_ids:
             if bid in fault_results.buses:
@@ -136,13 +140,51 @@ def run_duty_check(project: ProjectData):
                     else:
                         breaking_duty_ka = ik3
                         duty_basis = "ik3"
+                    # [PS-14a] Asymmetrical breaking current at contact
+                    # parting (fault engine: Ib_asym = √(Ib² + I_dc²) at
+                    # 100 ms with τ from the reduced Z_eq).
+                    asym_duty_ka = bus_fault.ib_asymmetric or 0.0
                     location_bus = comp_map[bid].props.get("name", bid) if bid in comp_map else bid
                     # Use kappa from fault results if available
                     if bus_fault.kappa:
                         kappa = bus_fault.kappa
+                    # [R3/PS-1 fallback] this bus's currents come from the
+                    # OVERSTATING per-path combination — flag the verdict.
+                    fallback_basis = (getattr(bus_fault, "thevenin_basis", None)
+                                      == "per-path-fallback")
+                    # [PS-R2-4] Through-current refinement: the device
+                    # interrupts its THROUGH-fault, not the whole-bus figure.
+                    # The bus's branch row for this device carries the infeed
+                    # arriving through it (from sources on its far side):
+                    #   incomer  → row ≈ upstream infeed = its true duty;
+                    #   feeder   → duty for a fault just below the device is
+                    #              the bus total minus the downstream infeed
+                    #              the row measures.
+                    # max(row, total − row) selects the correct case for both
+                    # orientations and never exceeds the bus total. Devices
+                    # with no row (no source beyond them) keep the bus figure
+                    # (row = 0 → duty = total, the legacy conservative basis).
+                    row_ka = 0.0
+                    for br in (bus_fault.branches or []):
+                        if br.element_id == device.id:
+                            row_ka = br.ik_ka or 0.0
+                            break
+                    if 0 < row_ka < ik3:
+                        through_fault_ka = max(row_ka, ik3 - row_ka)
+                    else:
+                        through_fault_ka = ik3
+                    through_scale = through_fault_ka / ik3 if ik3 > 0 else 1.0
+
+        # [PS-R2-4] Apply the through-current basis to every duty quantity
+        # (breaking, asymmetrical, peak) via the ik3 ratio; the bus figures
+        # remain reported as prospective values.
+        if through_scale < 0.999:
+            breaking_duty_ka *= through_scale
+            asym_duty_ka *= through_scale
+            duty_basis += "+through"
 
         # Calculate peak fault current: ip = κ × √2 × Ik"
-        peak_fault_ka = kappa * math.sqrt(2) * prospective_fault_ka
+        peak_fault_ka = kappa * math.sqrt(2) * prospective_fault_ka * through_scale
 
         # Get system voltage at location bus
         system_voltage_kv = 0
@@ -183,7 +225,13 @@ def run_duty_check(project: ProjectData):
                     # IEC 60947-2 Table 2: minimum ratio n = Icm/Icu
                     # varies with the ultimate breaking capacity Icu
                     icu = breaking_capacity_ka
-                    if icu <= 6:
+                    if icu <= 4.5:
+                        # [PS-14b] IEC 60947-2 Table 2 bottom rung: n = 1.41
+                        # for Icu ≤ 4.5 kA — the previous ladder lumped these
+                        # into 1.5 (~6% optimistic on assumed making capacity
+                        # for miniature breakers).
+                        n = 1.41
+                    elif icu <= 6:
                         n = 1.5
                     elif icu <= 10:
                         n = 1.7
@@ -197,6 +245,25 @@ def run_duty_check(project: ProjectData):
             making_ok = peak_fault_ka <= making_capacity_ka
             if making_capacity_ka > 0:
                 making_margin_pct = (1 - peak_fault_ka / making_capacity_ka) * 100
+
+        # ── [PS-14a] Asymmetrical breaking duty (IEC 62271-100 §4.101) ──
+        # A breaker's rated breaking capacity is defined WITH the standard
+        # DC component (τ = 45 ms evaluated at the same 100 ms contact-
+        # parting time the fault engine uses for Ib_asym); a network with a
+        # slower-decaying DC component (high X/R) presents a larger
+        # asymmetrical duty than the rating covers. Device capability:
+        # I_asym = Icu·√(1 + 2·β²) with β the rated DC fraction — from the
+        # `dc_component_pct` prop when given, else the standard τ = 45 ms
+        # value. Previously ib_asymmetric was computed but never checked.
+        asym_ok = None
+        asym_capability_ka = 0.0
+        if device_type == "cb" and breaking_capacity_ka > 0 and asym_duty_ka > 0:
+            beta_rated = float(dp.get("dc_component_pct", 0) or 0) / 100.0
+            if beta_rated <= 0:
+                beta_rated = math.exp(-0.1 / 0.045)  # ≈ 0.108 at 100 ms
+            asym_capability_ka = breaking_capacity_ka * math.sqrt(
+                1.0 + 2.0 * beta_rated ** 2)
+            asym_ok = asym_duty_ka <= asym_capability_ka
 
         # ── Continuous current check ──
         continuous_ok = True
@@ -220,6 +287,12 @@ def run_duty_check(project: ProjectData):
             issues.append(f"{duty_label} {breaking_duty_ka:.2f}kA exceeds breaking capacity {breaking_capacity_ka:.2f}kA")
         if making_ok is False:
             issues.append(f"Peak fault {peak_fault_ka:.2f}kA exceeds making capacity {making_capacity_ka:.2f}kA")
+        if asym_ok is False:
+            issues.append(
+                f"Asymmetrical breaking duty {asym_duty_ka:.2f}kA exceeds the "
+                f"rated asymmetrical capability {asym_capability_ka:.2f}kA "
+                "(IEC 62271-100 §4.101 — DC component above the standard "
+                "rated value; check the breaker's DC-component rating)")
         if making_ok and making_margin_pct is not None and making_margin_pct < 10:
             issues.append(
                 f"Making capacity margin only {making_margin_pct:.0f}% "
@@ -231,12 +304,18 @@ def run_duty_check(project: ProjectData):
             issues.append(f"Load current {load_current_a:.1f}A exceeds rated current {rated_current_a:.0f}A")
         if utilisation_pct > 80 and interrupt_ok:
             issues.append(f"High utilisation {utilisation_pct:.0f}% — close to breaking capacity")
+        if fallback_basis:
+            issues.append(
+                "Fault current basis is a per-path fallback on a meshed "
+                "topology (nodal solve failed) — duty figures may be "
+                "overstated; verdict unreliable")
 
         making_marginal = (making_ok is True and making_margin_pct is not None
                            and making_margin_pct < 10)
-        if not interrupt_ok or making_ok is False or not voltage_ok:
+        if not interrupt_ok or making_ok is False or asym_ok is False or not voltage_ok:
             status = "fail"
-        elif utilisation_pct > 80 or not continuous_ok or making_marginal:
+        elif (utilisation_pct > 80 or not continuous_ok or making_marginal
+              or fallback_basis):
             status = "warning"
         else:
             status = "pass"
@@ -248,6 +327,8 @@ def run_duty_check(project: ProjectData):
             "location_bus": location_bus,
             "prospective_fault_ka": round(prospective_fault_ka, 2),
             "breaking_duty_ka": round(breaking_duty_ka, 2),
+            "through_fault_ka": round(through_fault_ka, 2),
+            "thevenin_fallback": fallback_basis,
             "duty_basis": duty_basis,
             "peak_fault_ka": round(peak_fault_ka, 2),
             "breaking_capacity_ka": round(breaking_capacity_ka, 2),
@@ -255,6 +336,9 @@ def run_duty_check(project: ProjectData):
             "making_ok": making_ok,
             "making_capacity_ka": round(making_capacity_ka, 2),
             "making_margin_pct": round(making_margin_pct, 1) if making_margin_pct is not None else None,
+            "asym_ok": asym_ok,
+            "asym_duty_ka": round(asym_duty_ka, 2),
+            "asym_capability_ka": round(asym_capability_ka, 2),
             "continuous_ok": continuous_ok,
             "voltage_ok": voltage_ok,
             "utilisation_pct": round(utilisation_pct, 1),

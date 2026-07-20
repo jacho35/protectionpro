@@ -320,6 +320,17 @@ def _render_fault_table(pdf, fault_results, comp_map):
         ])
     _table(pdf, headers, rows, widths)
 
+    # [PS-10/PS-11] Print the engine's fixed study conventions on the report
+    # — a condition of the 2026-07 verification sign-off for signable output.
+    assumptions = fault_results.get("study_assumptions") or []
+    if assumptions:
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 5, "Study assumptions", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 8)
+        for a in assumptions:
+            pdf.multi_cell(0, 4, _pdf_safe(f"- {a}"), new_x="LMARGIN", new_y="NEXT")
+
 
 def _render_fault_branches(pdf, fault_results, comp_map):
     if not fault_results or not fault_results.get("buses"):

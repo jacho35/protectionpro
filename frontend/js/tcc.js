@@ -599,6 +599,41 @@ const TCC = {
             kFactor,
           });
         }
+      } else if (comp.type === 'motor_induction' || comp.type === 'motor_synchronous') {
+        // [PS-16/R3 Finding 14] Motor starting-current overlay — a LOAD
+        // curve (like the damage curves), so relay-vs-motor-start
+        // coordination can finally be verified graphically: the protection
+        // must sit ABOVE the start curve (no nuisance trip during
+        // acceleration) and BELOW the stall point.
+        const p = comp.props || {};
+        const isSync = comp.type === 'motor_synchronous';
+        const vkv = parseFloat(p.voltage_kv) || this._resolveDeviceVoltage(id) || 0.4;
+        const eff = parseFloat(p.efficiency) || 0.93;
+        const pf = parseFloat(p.power_factor) || (isSync ? 0.9 : 0.85);
+        const flcA = isSync
+          ? (parseFloat(p.rated_kva) || 500) / (Math.sqrt(3) * vkv)
+          : (parseFloat(p.rated_kw) || 200) / (Math.sqrt(3) * vkv * eff * pf);
+        const lrc = parseFloat(p.locked_rotor_current) || 6;
+        const method = p.starting_method || 'dol';
+        // Starter current factors — mirror backend motor_starting.py
+        const factor = ({ dol: 1.0, star_delta: 1 / 3, autotransformer: 0.64,
+                          soft_starter: 0.5, vfd: 0 })[method] ?? 1.0;
+        // VFD ramps at ≈FLC — no inrush overlay worth plotting
+        const iStartA = factor > 0 ? flcA * lrc * factor : flcA;
+        const accelS = parseFloat(p.accel_time_s) || 5;
+        const stallS = parseFloat(p.stall_time_hot_s) || 0;
+        if (flcA > 0 && vkv > 0 && iStartA > flcA) {
+          this.devices.push({
+            id: id + '__start',
+            name: (p.name || id) + ' (start)',
+            deviceType: 'motor_start',
+            color: this.palette[this.colorIndex++ % this.palette.length],
+            visible: true,
+            voltage_kv: vkv,
+            flcA, iStartA, accelS, stallS,
+            startMethod: method,
+          });
+        }
       }
     }
   },
@@ -801,6 +836,7 @@ const TCC = {
       else if (dev.deviceType === 'xfmr_thermal') this._drawXfmrThermal(ctx, dev);
       else if (dev.deviceType === 'cable_thermal') this._drawCableThermal(ctx, dev);
       else if (dev.deviceType === 'custom_curve') this._drawCustomCurve(ctx, dev);
+      else if (dev.deviceType === 'motor_start') this._drawMotorStartCurve(ctx, dev);
     }
     ctx.globalAlpha = 1.0;
     this.activeTabId = savedTabId;
@@ -1407,6 +1443,64 @@ const TCC = {
     if (scaledMI >= this.currentMin && scaledMI <= this.currentMax && mT >= this.timeMin && mT <= this.timeMax) {
       const suffix = dev.scaledCurve ? ', scaled curve' : '';
       this._drawLabel(ctx, dev, this._currentToX(scaledMI), this._timeToY(mT), `${dev.name} (${dev.fuseRating}A pre-arc${suffix})`);
+    }
+  },
+
+  _drawMotorStartCurve(ctx, dev) {
+    // [PS-16/R3] Motor starting-current profile — a LOAD curve, drawn like
+    // the damage curves (dotted, not graded): inrush at I_start from the
+    // bottom of the chart to the acceleration time, a knee down to FLC, then
+    // running current. The hot stall-time limit is marked at I_start: the
+    // upstream protection must clear a stalled start BEFORE this point but
+    // sit to the RIGHT of / above the start profile during acceleration.
+    const sc = (amps) => this._scaleCurrent(amps, dev);
+    const pts = [
+      [dev.iStartA, Math.max(this.timeMin, 0.01)],
+      [dev.iStartA, dev.accelS],
+      [dev.flcA, Math.min(dev.accelS * 1.5, this.timeMax)],
+      [dev.flcA, this.timeMax],
+    ];
+    ctx.strokeStyle = dev.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    let started = false;
+    for (const [current, time] of pts) {
+      const scaledI = sc(current);
+      if (scaledI < this.currentMin || scaledI > this.currentMax) continue;
+      const t = Math.min(Math.max(time, this.timeMin), this.timeMax);
+      const x = this._currentToX(scaledI);
+      const y = this._timeToY(t);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Hot stall-time limit point at the starting current
+    if (dev.stallS > 0) {
+      const sx = sc(dev.iStartA);
+      if (sx >= this.currentMin && sx <= this.currentMax
+          && dev.stallS >= this.timeMin && dev.stallS <= this.timeMax) {
+        const x = this._currentToX(sx);
+        const y = this._timeToY(dev.stallS);
+        ctx.fillStyle = dev.color;
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.font = '10px sans-serif';
+        ctx.fillText('stall limit', x + 6, y + 3);
+      }
+    }
+
+    // Label near the inrush segment
+    const li = sc(dev.iStartA);
+    if (li >= this.currentMin && li <= this.currentMax) {
+      const methodTag = dev.startMethod && dev.startMethod !== 'dol'
+        ? `, ${dev.startMethod.replace('_', '-')}` : '';
+      this._drawLabel(ctx, dev, this._currentToX(li),
+                      this._timeToY(Math.min(Math.max(dev.accelS * 0.4, this.timeMin), this.timeMax)),
+                      `${dev.name} (${(dev.iStartA / dev.flcA).toFixed(1)}×FLC${methodTag})`);
     }
   },
 
@@ -2083,6 +2177,8 @@ const TCC = {
         typeLabel = `Thermal limit | ${dev.sizeMm2}mm² | k=${dev.kFactor} | Ir: ${dev.ratedAmps}A`;
       } else if (dev.deviceType === 'custom_curve') {
         typeLabel = `Custom curve | ${dev.curvePoints.length} points`;
+      } else if (dev.deviceType === 'motor_start') {
+        typeLabel = `Start profile | ${(dev.iStartA / dev.flcA).toFixed(1)}×FLC | accel ${dev.accelS}s | FLC ${dev.flcA.toFixed(0)}A`;
       } else {
         typeLabel = '';
       }
@@ -2902,6 +2998,9 @@ const TCC = {
     const checkPair = (devUp, devDown, assumed) => {
       // [PROT-19] Reverse-looking 67 relays do not operate for forward faults
       if (this._isReverseDirectional(devUp) || this._isReverseDirectional(devDown)) return;
+      // Motor start profiles are LOAD curves — never time-graded (in either
+      // mode); coordination against them is visual ([PS-16/R3 Finding 14]).
+      if (devUp.deviceType === 'motor_start' || devDown.deviceType === 'motor_start') return;
       // [PROT-18] Skip damage-curve entries in assumed pairwise grading
       if (assumed && (DAMAGE_TYPES.has(devUp.deviceType) || DAMAGE_TYPES.has(devDown.deviceType))) return;
       // Mixed phase/earth pairs: grade (upstream=earth, downstream=phase) at
@@ -3034,6 +3133,17 @@ const TCC = {
         }
       }
       html += '</tbody></table>';
+    }
+
+    // [PS-15] The gG fuse model is ONE generic characteristic ratio-scaled
+    // per rating (anchored 0.1 s at 8×In), not the per-rating IEC 60269-1
+    // min/max gate corridor — surface the code-level caveat in the UI so
+    // final fuse grading is done against manufacturer curves.
+    if (visible.some(d => d.deviceType === 'fuse')) {
+      html += `<div class="tcc-coord-info" style="margin-top:6px">Fuse curves are a
+        generic gG characteristic scaled per rating (IEC 60269 screening model), not
+        manufacturer gate corridors — confirm final fuse grading against manufacturer
+        time-current data.</div>`;
     }
 
     resultsDiv.innerHTML = html;

@@ -143,17 +143,19 @@ class TestDeviceSearchBFS:
         must be referred to the CB's voltage (I_CB = Iarc·11/33).
 
         Z ≈ 100/800 + 0.10·K_T·(100/20) ≈ 0.62 pu → Ik3 ≈ 9.3 kA at 11 kV,
-        Iarc ≈ 9.1 kA. Referred to 33 kV: ≈ 3.0 kA < 6300 A instantaneous
-        pickup → LT bucket (class 10) = 1.0 s. Without referral the CB
-        would see 9.1 kA > 6.3 kA and wrongly report 0.05 s.
+        Iarc ≈ 9.1 kA. Referred to 33 kV: ≈ 3.0 kA < the 5600 A magnetic
+        pickup → thermal region t = k/(M²−1) ([PS-9] — the frontend TCC
+        model), landing well inside (0, 2) s. Without referral the CB would
+        see 9.1 kA ≥ 5.6 kA and wrongly report 0.05 s; without traversing
+        the transformer at all the bus would fall back to the 2.0 s cap.
         """
         proj = _project(
             components=[
                 _utility(800.0, kv=33.0),
                 _comp("cb-1", "cb", {
                     "name": "HV CB", "state": "closed",
-                    "trip_rating_a": 630, "magnetic_pickup": 10,
-                    "long_time_delay": 10,
+                    "trip_rating_a": 280, "magnetic_pickup": 20,
+                    "long_time_delay": 5,
                 }),
                 _comp("transformer-1", "transformer", {
                     "name": "TX1", "rated_mva": 20.0, "z_percent": 10.0,
@@ -168,10 +170,17 @@ class TestDeviceSearchBFS:
                 _wire("w3", "transformer-1", "bus-1"),
             ])
         res = _arc_flash(proj)
-        assert res.buses["bus-1"].clearing_time_s == pytest.approx(1.0), (
-            "expected the LT-delay bucket (1.0 s) — 0.05 s indicates the "
-            "arcing current was not referred across the transformer; 2.0 s "
-            "indicates the transformer was not traversed"
+        r = res.buses["bus-1"]
+        # Expected thermal time from the CB's own curve at the REFERRED
+        # current: M = Iarc·(11/33)/Ir, t = k/(M²−1) with k = class×35.
+        i_ref = r.arcing_current_ka * 1000.0 * 11.0 / 33.0
+        m = i_ref / 280.0
+        t_expected = 5 * 35 / (m * m - 1.0)
+        assert 0.1 < t_expected < 1.9, "test setup drifted out of the discriminating band"
+        assert r.clearing_time_s == pytest.approx(t_expected, abs=2e-3), (
+            "expected the referred-current thermal time — 0.05 s indicates "
+            "the arcing current was not referred across the transformer; "
+            "2.0 s indicates the transformer was not traversed"
         )
 
 

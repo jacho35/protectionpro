@@ -168,6 +168,16 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
             last_good = lo
 
     records.sort(key=lambda e: e[0])
+    # [EE-14] The bisection can land within rounding distance of an already-
+    # recorded λ (both bracket endpoints are recorded only when ok()) —
+    # drop near-duplicate points so the published curve is monotone-clean.
+    _dedup = []
+    for lam_r, res_r in records:
+        if _dedup and abs(lam_r - _dedup[-1][0]) < 1e-6:
+            _dedup[-1] = (lam_r, res_r)
+            continue
+        _dedup.append((lam_r, res_r))
+    records = _dedup
     lam_critical = records[-1][0]
     collapsed = observed_collapse
     nose_result = records[-1][1]
@@ -229,6 +239,13 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
         qv_bus_name=qv_name,
         qv_curve=qv_curve,
         qv_min_mvar=qv_min,
+        # [EE-7] Offset-free reactive margin: the distance from the operating
+        # point to the curve bottom. qv_min alone is the net-injection
+        # minimum, which at a load bus overstates the classical fictitious-
+        # condenser margin by exactly the bus's local Q load; both points
+        # shift together, so their difference is the true margin.
+        qv_margin_mvar=(round(qv_op_q - qv_min, 3)
+                        if (qv_op_q is not None and qv_min is not None) else None),
         qv_operating_v_pu=qv_op_v,
         qv_operating_mvar=qv_op_q,
         method="P-V load-scaling continuation",

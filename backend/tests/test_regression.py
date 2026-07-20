@@ -146,7 +146,12 @@ class TestFaultAnalysis:
         bus = run_fault_analysis(proj).buses["bus-1"]
         assert bus.ik3 > 0  # three-phase fault is unaffected by grounding
         assert bus.ik1 == pytest.approx(0.0, abs=1e-6)  # no earth-fault path
-        assert bus.ikLLG == pytest.approx(bus.ikLL, rel=0.02)  # degenerates to LL
+        # [PS-12] The LLG fault degenerates to line-to-line, but ikLLG is the
+        # EARTH-RETURN current I″kE2E = |3·Ia0| — with Z0 → ∞ that is exactly
+        # 0 (the phase current is reported separately as ikLL). Previously
+        # the LL phase current appeared in this earth-current field.
+        assert bus.ikLLG == 0.0
+        assert bus.ikLL and bus.ikLL > 0
 
     def test_motor_terminal_behind_cable_gets_fault_level(self):
         """A motor wired to a bus through a cable, with no busbar at its own

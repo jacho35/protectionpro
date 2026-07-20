@@ -503,6 +503,44 @@ def _leads_to_source(start_id, bus_id, components, adjacency):
     return False
 
 
+def _lv_small_transformer_exemption(bus, components, adjacency, voltage_kv):
+    """[PS-13b] IEEE 1584-2002 §9.3.2: equipment below 240 V fed from a
+    single transformer rated less than 125 kVA "need not be considered"
+    for arc-flash assessment (the arc is unlikely to sustain).
+
+    The engine conservatively computes the incident energy anyway; this
+    helper returns True when the exemption's conditions hold so the result
+    carries an advisory note. The walk stops at the first transformer or
+    source on every branch from the bus; the exemption applies only when
+    exactly one feeding transformer is found and it is < 125 kVA.
+    """
+    if voltage_kv >= 0.240:
+        return False
+    feeders = []
+    visited = {bus.id}
+    stack = [nid for nid, _, _ in adjacency.get(bus.id, [])]
+    while stack:
+        nid = stack.pop()
+        if nid in visited:
+            continue
+        visited.add(nid)
+        comp = components.get(nid)
+        if not comp:
+            continue
+        if comp.type in ("transformer", "autotransformer"):
+            feeders.append(float(comp.props.get("rated_mva", 1.0) or 1.0))
+            continue  # the transformer defines this branch's source
+        if comp.type in _SOURCE_TYPES:
+            feeders.append(float("inf"))  # direct source — no exemption
+            continue
+        if comp.type in ("cb", "switch") and comp.props.get("state") == "open":
+            continue
+        for neighbor_id, _, _ in adjacency.get(nid, []):
+            if neighbor_id not in visited:
+                stack.append(neighbor_id)
+    return len(feeders) == 1 and feeders[0] < 0.125
+
+
 def _cb_self_clearing_time(props, current_a):
     """Clearing time of a CB from its own trip-unit model.
 
@@ -516,8 +554,10 @@ def _cb_self_clearing_time(props, current_a):
                            intentional ST delay, NOT instantaneously)
       All types (MCCB magnetic / ACB fallback):
         3. magnetic:       I ≥ magnetic_pickup×Ir → 0.05 s
-        4. thermal region: long-time delay bucket heuristic (a proper
-           evaluation of the full device TCC is not implemented)
+        4. thermal region: I²t inverse-time t = k/(M²−1) with k = class×35,
+           exactly mirroring the frontend cbTripTime() TCC model ([PS-9] —
+           previously a 0.5/1.0/2.0 s bucket heuristic that diverged from
+           the device model the TCC plots).
     """
     trip_rating = float(props.get("trip_rating_a", 630))
     thermal_pickup = float(props.get("thermal_pickup", 1.0) or 1.0)
@@ -539,14 +579,18 @@ def _cb_self_clearing_time(props, current_a):
     if current_a > 0 and current_a >= inst_threshold:
         # Instantaneous trip incl. breaker operating time
         return 0.05
-    # Below instantaneous pickup: time-delayed trip estimated
-    # from the long-time delay setting (crude bucket heuristic)
-    lt_delay = float(props.get("long_time_delay", 10))
-    if lt_delay <= 5:
-        return 0.5
-    elif lt_delay <= 10:
-        return 1.0
-    return 2.0
+    # [PS-9] Thermal (long-time) region: the same I²t inverse-time
+    # characteristic the frontend TCC plots — t = k/(M²−1), k = class×35
+    # (calibrated so t(6×Ir) = class seconds; CB_TRIP_CLASSES in
+    # constants.js). Below thermal pickup the device never trips on its
+    # own — return a large time so the caller's 2 s IEEE 1584 cap (or an
+    # upstream device) governs.
+    lt_class = int(float(props.get("long_time_delay", 10) or 10))
+    k = {5: 175.0, 10: 350.0, 20: 700.0, 30: 1050.0}.get(lt_class, 350.0)
+    m = current_a / ir if ir > 0 else 0.0
+    if m <= 1.0:
+        return 10000.0  # below pickup — no thermal trip
+    return min(k / (m * m - 1.0), 10000.0)
 
 
 def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb):
@@ -755,6 +799,14 @@ def run_arc_flash(project_data, fault_results):
                 f"Gap {gap_mm}mm outside IEEE 1584-2002 incident-energy model "
                 "range (6.35-76.2mm) — results extrapolated"
             )
+        # [R3/PS-1 fallback] An overstated bolted current means a HIGHER
+        # assumed arcing current → faster assumed device clearing → LOWER
+        # incident energy: non-conservative on a printed safety label.
+        if getattr(fault_bus, "thevenin_basis", None) == "per-path-fallback":
+            validity_warnings.append(
+                "UNRELIABLE: fault current is a per-path fallback on a meshed "
+                "topology (nodal solve failed) — bolted current overstated, "
+                "incident energy may be UNDERSTATED; do not use for labels")
         warn = "; ".join(validity_warnings)
 
         # System grounding for the K2 factor (IEEE 1584-2002 Eq. 3). Unknown
@@ -805,6 +857,20 @@ def run_arc_flash(project_data, fault_results):
                                               grounded=grounded,
                                               equipment_class=equipment_class)
         afb = max(afb_full, afb_reduced)
+
+        # [PS-13b/c] Advisory notes (both are conservative directions).
+        _notes = []
+        if _lv_small_transformer_exemption(bus, components, adjacency, voltage_kv):
+            _notes.append(
+                "IEEE 1584-2002 §9.3.2: <240 V bus fed by a single "
+                "transformer <125 kVA may be exempted from arc-flash "
+                "assessment; incident energy is conservatively reported anyway")
+        if afb <= 300.0:
+            _notes.append(
+                "Arc-flash boundary reported at the 300 mm evaluation floor "
+                "(actual boundary may be smaller)")
+        if _notes:
+            warn = "; ".join(([warn] if warn else []) + _notes)
 
         # PPE category
         ppe_cat, ppe_name, ppe_desc = _get_ppe(e_worst)

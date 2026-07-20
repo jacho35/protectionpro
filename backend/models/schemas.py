@@ -500,12 +500,20 @@ class FaultResultBus(BaseModel):
     # [PS-1] Study warnings (meshed-network solution notes, path-enumeration
     # truncation, …) that previously went only to the server console.
     topology_warnings: Optional[list[str]] = None
+    # [R3] "per-path-fallback" when a meshed topology's nodal solve failed and
+    # the OVERSTATING per-path combination was used — consumers (arc flash,
+    # duty check, compliance) must annotate/refuse rather than silently trust
+    # this bus's currents. None on healthy solves.
+    thevenin_basis: Optional[str] = None
 
 
 class FaultResults(BaseModel):
     buses: dict[str, FaultResultBus]
     base_mva: float
     method: str = "IEC 60909"
+    # [PS-10/PS-11] Fixed study conventions — printed as report assumptions
+    # so signable outputs disclose the screening-level conventions used.
+    study_assumptions: Optional[list[str]] = None
 
 
 class ArcFlashBusResult(BaseModel):
@@ -981,7 +989,13 @@ class VoltageStabilityResults(BaseModel):
     qv_bus_id: str = ""
     qv_bus_name: str = ""
     qv_curve: list[QVCurvePoint] = []
-    qv_min_mvar: Optional[float] = None      # bottom of the Q-V curve (reactive margin)
+    # [EE-7] qv_min_mvar is the NET-INJECTION minimum (condenser Q minus the
+    # bus's local reactive load) — at a load bus it is offset from the
+    # classical fictitious-condenser margin by exactly the local Q load.
+    # qv_margin_mvar (operating point → curve bottom distance) is offset-free
+    # and is the figure to quote as the reactive margin.
+    qv_min_mvar: Optional[float] = None      # bottom of the Q-V curve (net injection)
+    qv_margin_mvar: Optional[float] = None   # op-point Q − curve-bottom Q (reactive margin)
     qv_operating_v_pu: Optional[float] = None
     qv_operating_mvar: Optional[float] = None
     method: str = "P-V load-scaling continuation"

@@ -121,7 +121,13 @@ def _get_load_kw(comp):
         pf = float(comp.props.get("power_factor", 0.85))
         return rated_kva * pf
     elif comp.type == "motor_induction":
-        return float(comp.props.get("rated_kw", 200))
+        # [EE-R2-5] Installed demand is the INPUT power rated_kw/η — the
+        # nameplate kW is shaft power. Returning shaft kW understated the kW
+        # summary lines by 1/η (~7%) versus the load-flow engine's
+        # P = kW/η convention (the kVA path was always correct).
+        rated_kw = float(comp.props.get("rated_kw", 200))
+        eff = float(comp.props.get("efficiency", 0.93))
+        return rated_kw / eff if eff > 0 else rated_kw
     elif comp.type == "motor_synchronous":
         rated_kva = float(comp.props.get("rated_kva", 500))
         pf = float(comp.props.get("power_factor", 0.9))
@@ -266,18 +272,59 @@ def run_load_diversity(project: ProjectData):
             if hv_kv == lv_kv or abs(v - lv_kv) < abs(v - hv_kv):
                 downstream_buses.append(c)
 
-        # Sum demand from all downstream buses
+        # [EE-13] Aggregate over the FULL downstream tree, not just the
+        # directly-connected LV buses: loads behind a feeder cable (main
+        # board → sub-board, the standard pattern) previously vanished from
+        # the transformer's demand loading (non-conservative for adequacy
+        # screening). Walk from the LV-side seed buses through cables,
+        # boards and nested transformers — but never back through THIS
+        # transformer and never past a source — so in a radial network
+        # everything reached is supplied through this unit.
+        downstream_ids = {b.id for b in downstream_buses}
+        collected_load_ids = set()
+        visited_ids = set(downstream_ids) | {xfmr.id}
+        walk_stack = list(downstream_ids)
+        while walk_stack:
+            nid = walk_stack.pop()
+            for nxt in adj.get(nid, []):
+                if nxt in visited_ids:
+                    continue
+                visited_ids.add(nxt)
+                c = comp_map.get(nxt)
+                if not c:
+                    continue
+                if c.type in ("utility", "generator", "solar_pv", "battery",
+                              "wind_turbine"):
+                    continue  # a source is a leaf — nothing is fed through it
+                if c.type in ("cb", "switch") and c.props.get("state", "closed") != "closed":
+                    continue  # open device — the branch beyond carries no load
+                if c.type == "bus":
+                    downstream_ids.add(nxt)
+                elif c.type in load_types:
+                    collected_load_ids.add(nxt)
+                walk_stack.append(nxt)
+
+        # Sum the per-bus diversified demands for downstream bus rows, then
+        # add loads reached in the tree that belong to no counted bus row
+        # (e.g. a sub-board or motor behind a feeder cable) at their own
+        # demand factor (no group coincidence — conservative).
         xfmr_installed_kva = 0
         xfmr_demand_kva = 0
         fed_bus_names = []
-
-        for db in downstream_buses:
-            for br in bus_results:
-                if br["bus_id"] == db.id:
-                    xfmr_installed_kva += br["installed_kva"]
-                    xfmr_demand_kva += br["diversified_demand_kva"]
-                    fed_bus_names.append(br["bus_name"])
-                    break
+        loads_in_counted_rows = set()
+        for br in bus_results:
+            if br["bus_id"] in downstream_ids:
+                xfmr_installed_kva += br["installed_kva"]
+                xfmr_demand_kva += br["diversified_demand_kva"]
+                fed_bus_names.append(br["bus_name"])
+                loads_in_counted_rows.update(ld["load_id"] for ld in br["loads"])
+        for lid in sorted(collected_load_ids - loads_in_counted_rows):
+            lc = comp_map[lid]
+            installed = _get_load_kva(lc)
+            df = float(lc.props.get("demand_factor", 1.0))
+            xfmr_installed_kva += installed
+            xfmr_demand_kva += installed * df
+            fed_bus_names.append(str(lc.props.get("name", lid)))
 
         installed_loading_pct = (xfmr_installed_kva / rated_kva * 100) if rated_kva > 0 else 0
         demand_loading_pct = (xfmr_demand_kva / rated_kva * 100) if rated_kva > 0 else 0
