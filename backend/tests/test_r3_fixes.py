@@ -409,3 +409,56 @@ class TestVoltageDepressionWarning:
         for b in res.buses.values():
             assert any("Voltage-depression calculation failed" in w
                        for w in (b.topology_warnings or []))
+
+
+# ── Finding 3 residual (EE-R2-2): connected_bus_loads_mvar + condenser view ──
+
+
+class TestBusLoadsMvar:
+    """[EE-R2-2] The Q sibling of connected_bus_loads_mw, and the
+    condenser-output view of the Q-V curve bottom it enables."""
+
+    def _proj(self):
+        return _project([
+            _comp("u1", "utility", {"name": "Grid", "fault_mva": 500.0,
+                                    "x_r_ratio": 15.0, "voltage_kv": 11.0}),
+            _comp("b1", "bus", {"name": "B1", "voltage_kv": 11.0}),
+            _comp("c1", "cable", {"name": "C1", "r_per_km": 0.1, "x_per_km": 0.1,
+                                  "length_km": 1.0, "voltage_kv": 11.0}),
+            _comp("b2", "bus", {"name": "B2", "voltage_kv": 11.0}),
+            _comp("l1", "static_load", {"name": "L1", "rated_kva": 1000.0,
+                                        "power_factor": 0.8, "demand_factor": 1.0}),
+            _comp("m1", "motor_induction", {"name": "M1", "rated_kw": 200.0,
+                                            "efficiency": 0.93,
+                                            "power_factor": 0.85,
+                                            "demand_factor": 1.0}),
+        ], [_wire("w1", "u1", "b1"), _wire("w2", "b1", "c1"),
+            _wire("w3", "c1", "b2"), _wire("w4", "b2", "l1"),
+            _wire("w5", "b2", "m1")])
+
+    def test_mvar_hand_value(self):
+        """1 MVA @ 0.8 pf load: Q = 0.6 MVAr. 200 kW motor (η 0.93, pf 0.85):
+        S = 0.2/(0.93·0.85) = 0.253 MVA, Q = S·√(1−0.85²) = 0.1333 MVAr."""
+        from backend.analysis.loadflow import (connected_bus_loads_mw,
+                                               connected_bus_loads_mvar)
+        proj = self._proj()
+        q = connected_bus_loads_mvar(proj)
+        s_m = 0.2 / (0.93 * 0.85)
+        q_hand = 1.0 * 0.6 + s_m * math.sqrt(1 - 0.85 ** 2)
+        assert q["b2"] == pytest.approx(q_hand, rel=1e-9)
+        # The MW helper is unchanged by the shared-walker refactor.
+        p = connected_bus_loads_mw(proj)
+        assert p["b2"] == pytest.approx(1.0 * 0.8 + 0.2 / 0.93, rel=1e-9)
+
+    def test_qv_condenser_output_view(self):
+        """qv_condenser_min_mvar = net-injection min + local Q load, so it is
+        comparable to a condenser datasheet rating; the margin is untouched."""
+        from backend.analysis.voltage_stability import run_voltage_stability
+        proj = self._proj()
+        res = run_voltage_stability(proj, step=0.5, lambda_max=2.0)
+        assert res.qv_min_mvar is not None
+        s_m = 0.2 / (0.93 * 0.85)
+        q_local = 1.0 * 0.6 + s_m * math.sqrt(1 - 0.85 ** 2)
+        assert res.qv_local_load_mvar == pytest.approx(q_local, abs=5e-4)
+        assert res.qv_condenser_min_mvar == pytest.approx(
+            res.qv_min_mvar + q_local, abs=1e-3)

@@ -29,7 +29,8 @@ import copy
 from ..models.schemas import (
     ProjectData, VoltageStabilityResults, PVBusCurve, QVCurvePoint,
 )
-from .loadflow import run_load_flow, connected_bus_loads_mw
+from .loadflow import (run_load_flow, connected_bus_loads_mw,
+                       connected_bus_loads_mvar)
 
 
 # Load component types scaled by λ in the P-V sweep (power factor preserved
@@ -220,6 +221,14 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
     qv_target = qv_bus_id or critical_bus_id
     qv_curve, qv_name, qv_min, qv_op_v, qv_op_q = _qv_curve(
         project, qv_target, method, warnings)
+    # [EE-R2-2] Condenser-output view of the curve bottom: the Q-V points are
+    # NET injection (condenser Q minus the bus's local reactive load); adding
+    # the local Q load back gives the figure comparable to a condenser / SVC
+    # datasheet rating. The margin (qv_margin_mvar) is unaffected either way.
+    qv_local_q = connected_bus_loads_mvar(project).get(qv_target, 0.0) \
+        if qv_target else 0.0
+    qv_condenser_min = (round(qv_min + qv_local_q, 3)
+                        if qv_min is not None else None)
 
     return VoltageStabilityResults(
         converged=True,
@@ -239,6 +248,8 @@ def run_voltage_stability(project: ProjectData, method: str = "newton_raphson",
         qv_bus_name=qv_name,
         qv_curve=qv_curve,
         qv_min_mvar=qv_min,
+        qv_condenser_min_mvar=qv_condenser_min,
+        qv_local_load_mvar=(round(qv_local_q, 3) if qv_curve else None),
         # [EE-7] Offset-free reactive margin: the distance from the operating
         # point to the curve bottom. qv_min alone is the net-injection
         # minimum, which at a load bus overstates the classical fictitious-

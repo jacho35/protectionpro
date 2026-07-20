@@ -1572,15 +1572,14 @@ def _inverter_discharge_q(comp, p_dis, p_already, q_already):
     return max(0.0, min(q_target, max(0.0, q_room)))
 
 
-def connected_bus_loads_mw(project: ProjectData) -> dict:
-    """Per-bus local real load (MW), gathered exactly as ``run_load_flow`` does.
-
-    Returns ``{bus_id: p_mw}`` (buses with no local load are omitted). Shared by
-    the voltage-stability engine (total demand for the P-V x-axis) and the
-    contingency engine (load lost when a bus de-energizes), so both agree with
-    the solver's own load model. Synthetic load-terminal buses are included so a
-    load wired behind a cable is still counted; their id carries the synthetic
-    prefix (see ``is_synthetic_bus``).
+def _connected_bus_loads(project: ProjectData) -> dict:
+    """Per-bus local load ``{bus_id: (p_mw, q_mvar)}``, gathered exactly as
+    ``run_load_flow`` does (P = rated·pf·df, Q = rated·√(1−pf²)·df; induction
+    motors on the S = kW/(η·pf) convention). Buses with no local load are
+    omitted. Synthetic load-terminal buses are included so a load wired behind
+    a cable is still counted; their id carries the synthetic prefix (see
+    ``is_synthetic_bus``). Capacitor banks are excluded — they are voltage-
+    dependent Q *sources* ([EE-9]), not load demand.
     """
     project = insert_implicit_load_buses(project)
     components = {c.id: c for c in project.components}
@@ -1593,18 +1592,20 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
              and str(c.props.get("system", "ac")).lower() != "dc"]
     loads = {}
     for bus in buses:
-        p = 0.0
+        p = q = 0.0
         if bus.type == "distribution_board":
             rated = bus.props.get("rated_kva", 100) / 1000
             pf = bus.props.get("power_factor", 0.85)
             df = bus.props.get("demand_factor", 1.0)
             p += rated * pf * df
+            q += rated * math.sqrt(max(0.0, 1 - pf ** 2)) * df
         for comp in _find_components_at_bus(bus.id, adjacency, components):
             if comp.type == "static_load":
                 rated = comp.props.get("rated_kva", 100) / 1000
                 pf = comp.props.get("power_factor", 0.85)
                 df = comp.props.get("demand_factor", 1.0)
                 p += rated * pf * df
+                q += rated * math.sqrt(max(0.0, 1 - pf ** 2)) * df
             elif comp.type == "motor_induction":
                 rated_kw = comp.props.get("rated_kw", 200)
                 eff = comp.props.get("efficiency", 0.93)
@@ -1613,14 +1614,38 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
                 rated_mva = (rated_kw / (eff * pf * 1000) if pf > 0
                              else rated_kw / (eff * 1000))
                 p += rated_mva * pf * df
+                q += rated_mva * math.sqrt(max(0.0, 1 - pf ** 2)) * df
             elif comp.type == "motor_synchronous":
                 rated_kva = comp.props.get("rated_kva", 500)
                 pf = comp.props.get("power_factor", 0.9)
                 df = comp.props.get("demand_factor", 1.0)
                 p += (rated_kva / 1000) * pf * df
-        if abs(p) > 1e-12:
-            loads[bus.id] = p
+                q += (rated_kva / 1000) * math.sqrt(max(0.0, 1 - pf ** 2)) * df
+        if abs(p) > 1e-12 or abs(q) > 1e-12:
+            loads[bus.id] = (p, q)
     return loads
+
+
+def connected_bus_loads_mw(project: ProjectData) -> dict:
+    """Per-bus local real load (MW), gathered exactly as ``run_load_flow`` does.
+
+    Returns ``{bus_id: p_mw}`` (buses with no local load are omitted). Shared by
+    the voltage-stability engine (total demand for the P-V x-axis) and the
+    contingency engine (load lost when a bus de-energizes), so both agree with
+    the solver's own load model.
+    """
+    return {bid: pq[0] for bid, pq in _connected_bus_loads(project).items()
+            if abs(pq[0]) > 1e-12}
+
+
+def connected_bus_loads_mvar(project: ProjectData) -> dict:
+    """[EE-R2-2] Per-bus local reactive load (MVAr) — the Q sibling of
+    ``connected_bus_loads_mw``, on the same walker and load model. Lets result
+    consumers convert a net-injection Q figure back to source/condenser output
+    (condenser Q = net injection + local Q load).
+    """
+    return {bid: pq[1] for bid, pq in _connected_bus_loads(project).items()
+            if abs(pq[1]) > 1e-12}
 
 
 def _assess_solution(bus_results, converged, iterations, reason=""):
