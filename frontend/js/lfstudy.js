@@ -41,7 +41,15 @@ const LFStudy = {
   _field(type, key) {
     const def = (typeof COMPONENT_DEFS !== 'undefined') ? COMPONENT_DEFS[type] : null;
     const f = def && Array.isArray(def.fields) ? def.fields.find(x => x.key === key) : null;
-    return f || { key, label: key, type: 'number' };
+    if (!f) return { key, label: key, type: 'number' };
+    // The grid edits raw stored prop values, so the header must show the
+    // STORAGE unit (the unitOptions entry with mult 1), not the panel's
+    // display default — cable length is stored in km but the panel shows m.
+    if (Array.isArray(f.unitOptions)) {
+      const stored = f.unitOptions.find(o => o.mult === 1);
+      if (stored && stored.label !== f.unit) return { ...f, unit: stored.label };
+    }
+    return f;
   },
 
   _typeLabel(type) {
