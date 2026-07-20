@@ -574,6 +574,17 @@ body.dark-mode .panel-expand-tab { background: var(--bg-primary); }
   width: 90vw;
 }
 
+/* Load Flow Study Manager needs extra room for the attribute grid and
+   comparison table — scoped to desktop so the mobile full-width rules
+   in mobile.css (max-width: 768px) still win on phones. */
+@media (min-width: 769px) {
+  #lf-study-modal .modal-content {
+    max-width: 1400px;
+    width: 94vw;
+    max-height: 90vh;
+  }
+}
+
 /* Settings Tabs */
 .settings-tabs {
   display: flex;
