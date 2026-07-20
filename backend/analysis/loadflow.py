@@ -14,6 +14,10 @@ from ..models.schemas import (
 
 MAX_ITERATIONS = 100
 TOLERANCE = 1e-6
+# [EE-11] Gauss-Seidel final power-mismatch acceptance (pu on the study base).
+# GS converges geometrically, so the per-sweep ΔV under-states the true error
+# by 1/(1−ρ); a converged verdict additionally requires the power balance.
+GS_MISMATCH_TOLERANCE = 1e-5
 
 # On a *converged* solve, an energized bus below this per-unit voltage is not a
 # credible operating point — normal networks run ~0.9–1.1 p.u., and even a badly
@@ -1361,7 +1365,13 @@ def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
 
 
 def _get_impedance(comp, base_mva):
-    """Get branch impedance in per-unit on common MVA base."""
+    """Get branch impedance in per-unit on common MVA base.
+
+    [EE-14] Series R + jX only — cable/line SHUNT CAPACITANCE is ignored.
+    Negligible at LV; tens of km of MV XLPE contribute a few Mvar of
+    charging that this model omits (documented scope decision — add a π-model
+    b_per_km if long-line charging ever matters).
+    """
     if comp.type in ("transformer", "autotransformer"):
         rated_mva = comp.props.get("rated_mva", 10)
         z_pct = comp.props.get("z_percent", 8)
@@ -1739,7 +1749,28 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # between two buses. Series impedances are summed.
     processed_chains = set()  # frozenset of element IDs to avoid duplicates
     multi_xfmr_chain_warnings = []  # [EE-2] cascaded transformers in one chain
+    input_warnings = []  # [EE-8] bad user props clamped instead of crashing
     branch_chains = []  # list of (elements_dict, bus_a, bus_b, admittance)
+
+    def _load_pf(pf, comp_name):
+        """[EE-8] Clamp a load power factor into (0, 1].
+
+        A pf > 1 (bad user input) previously raised an unhandled
+        ``math domain error`` from √(1−pf²) → HTTP 500 for the whole study;
+        now it is clamped with a per-component warning.
+        """
+        try:
+            pf = float(pf)
+        except (TypeError, ValueError):
+            return 0.85
+        if 0.0 < pf <= 1.0:
+            return pf
+        clamped = 1.0 if pf > 1.0 else 0.85
+        input_warnings.append(LoadFlowWarning(
+            elementId="", element_name=str(comp_name),
+            message=(f"'{comp_name}': power factor {pf:g} is outside (0, 1] "
+                     f"— clamped to {clamped:g} for this study.")))
+        return clamped
 
     for comp in project.components:
         if comp.type not in ("cable", "transformer", "autotransformer"):
@@ -1853,6 +1884,24 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             ))
         t, hv_bus = _get_chain_turns_ratio(chain_order, bus_a, bus_b, components)
 
+        # [EE-10] The off-nominal ratio wraps the LUMPED chain admittance, so
+        # a cable sharing the chain with a TAPPED transformer sits on the
+        # wrong side of the ideal transformer — its impedance is mis-referred
+        # by up to t² (≈1.21 at ±10% tap; exact at t = 1 and for cable-free
+        # chains). Warn so the user draws a bus at the transformer terminal.
+        if abs(t - 1.0) > 1e-9 and any(e.type == "cable" for e in chain_order):
+            _tx_names = ", ".join(str(e.props.get("name", e.id)) for e in chain_order
+                                  if e.type in ("transformer", "autotransformer"))
+            multi_xfmr_chain_warnings.append(LoadFlowWarning(
+                elementId=chain_order[0].id,
+                element_name=_tx_names,
+                message=(f"Tapped transformer ({_tx_names}, ratio {t:.3f}) shares a "
+                         f"branch chain with a cable and no bus between them — the "
+                         f"cable impedance is referred through the tap (error up to "
+                         f"t² on its share of the chain). For per-unit accuracy draw "
+                         f"a bus at the transformer terminal."),
+            ))
+
         if hv_bus == bus_a:
             # Tap on bus_a (i) side — standard transformer pi-model
             Y[i, i] += y / (t * t)
@@ -1926,6 +1975,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
     bus_load_q_mvar = np.zeros(n)  # per-bus load Q, for swing-bus source badges
     svc_units = []  # FACTS shunt compensators: list of dicts (see svc branch below)
+    cap_units = []  # [EE-9] capacitor banks — constant susceptance (Q ∝ V²)
     gen_pv_units = {}  # bus index -> PV-generator reactive-limit unit (see below)
     ibr_pv_units = {}  # bus index -> voltage-regulating storage-inverter unit
 
@@ -2020,7 +2070,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                         ibr["ids"].append(comp.id)
             elif comp.type == "static_load":
                 rated = comp.props.get("rated_kva", 100) / 1000
-                pf = comp.props.get("power_factor", 0.85)
+                pf = _load_pf(comp.props.get("power_factor", 0.85),
+                              comp.props.get("name", comp.id))  # [EE-8]
                 df = comp.props.get("demand_factor", 1.0)
                 P_spec[i] -= rated * pf * df / base_mva
                 Q_spec[i] -= rated * math.sqrt(1 - pf**2) * df / base_mva
@@ -2029,7 +2080,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             elif comp.type == "motor_induction":
                 rated_kw = comp.props.get("rated_kw", 200)
                 eff = comp.props.get("efficiency", 0.93)
-                pf = comp.props.get("power_factor", 0.85)
+                pf = _load_pf(comp.props.get("power_factor", 0.85),
+                              comp.props.get("name", comp.id))  # [EE-8]
                 df = comp.props.get("demand_factor", 1.0)
                 # IEC 60909-0 §3.8 / load_diversity.py convention:
                 # S = kW/(η·pf), so P = S·pf = kW/η (unchanged) and Q is
@@ -2041,7 +2093,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 bus_load_q_mvar[i] += rated_mva * math.sqrt(1 - pf**2) * df
             elif comp.type == "motor_synchronous":
                 rated_kva = comp.props.get("rated_kva", 500)
-                pf = comp.props.get("power_factor", 0.9)
+                pf = _load_pf(comp.props.get("power_factor", 0.9),
+                              comp.props.get("name", comp.id))  # [EE-8]
                 df = comp.props.get("demand_factor", 1.0)
                 rated_mva = rated_kva / 1000
                 P_spec[i] -= rated_mva * pf * df / base_mva
@@ -2049,9 +2102,19 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 bus_load_p_mw[i] += rated_mva * pf * df
                 bus_load_q_mvar[i] += rated_mva * math.sqrt(1 - pf**2) * df
             elif comp.type == "capacitor_bank":
+                # [EE-9] A capacitor bank is a constant SUSCEPTANCE, not a
+                # constant-Q source: its output falls with V² (a "4 Mvar"
+                # bank at 0.9 p.u. delivers 3.24). The previous constant-Q
+                # injection credited full output at depressed voltage —
+                # optimistic exactly where capacitors matter (P-V
+                # continuation near the nose). Seed the injection at the
+                # rated value (V = 1) and track Q = Q_rated·V² across the
+                # outer solve passes, mirroring the susceptance-limited SVC.
                 kvar = comp.props.get("rated_kvar", 100)
-                Q_spec[i] += kvar / 1000 / base_mva
-                bus_load_q_mvar[i] -= kvar / 1000  # capacitor supplies Q
+                q_rated = kvar / 1000
+                Q_spec[i] += q_rated / base_mva
+                bus_load_q_mvar[i] -= q_rated  # capacitor supplies Q
+                cap_units.append({"i": i, "q_rated": q_rated, "inj_q": q_rated})
             elif comp.type == "vfd":
                 # A VFD is a converter load: the DC link decouples the motor
                 # from the supply, so the drive draws a near-unity DISPLACEMENT
@@ -2121,7 +2184,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # the limit and switched from a voltage-holding PV bus to a fixed-Q PQ
     # injection, then the network is re-solved (one extra pass per unit that
     # hits a limit; the bound allows a clamp and a later revert per unit).
-    for _svc_pass in range(2 * (len(svc_units) + len(gen_pv_units) + len(ibr_pv_units)) + 3):
+    for _svc_pass in range(2 * (len(svc_units) + len(gen_pv_units) + len(ibr_pv_units) + len(cap_units)) + 3):
         for _pass in range(3):
             dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
                                      branch_pairs, bus_load_p_mw, loss_adders,
@@ -2169,10 +2232,25 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         # clamped to the limit and reverts to a fixed-Q PQ injection. A STATCOM
         # holds a constant MVAr at the limit; an SVC is susceptance-limited, so
         # its delivered Q follows Q = Q_nom·V² — refined across passes as V settles.
-        if not converged or (not svc_units and not gen_pv_units and not ibr_pv_units):
+        if not converged or (not svc_units and not gen_pv_units
+                             and not ibr_pv_units and not cap_units):
             break
         S_reg = V * np.conj(Y @ V)
         changed = False
+        # [EE-9] Capacitor banks: constant susceptance — the delivered Q
+        # follows Q_rated·V², refined across passes as V settles (the same
+        # treatment as a susceptance-limited SVC below). bus_load_q_mvar
+        # carries the bank as a negative load, so reporting (badges,
+        # through-flow, source attribution) sees the V²-scaled output.
+        for u in cap_units:
+            bi = u["i"]
+            vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
+            inj = u["q_rated"] * vmag * vmag
+            if abs(inj - u["inj_q"]) > 1e-3:
+                Q_base[bi] += (inj - u["inj_q"]) / base_mva
+                bus_load_q_mvar[bi] += (u["inj_q"] - inj)
+                u["inj_q"] = inj
+                changed = True
         for u in svc_units:
             bi = u["i"]
             vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
@@ -2817,6 +2895,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # on each side of the transformer and verify their voltage ratings.
     voltage_warnings = []
     voltage_warnings.extend(multi_xfmr_chain_warnings)  # [EE-2]
+    voltage_warnings.extend(input_warnings)  # [EE-8]
     voltage_warnings.extend(dispatch["warnings"])
 
     # PV generators that hit their reactive capability: they can no longer hold
@@ -3136,7 +3215,10 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
         for ii, i in enumerate(non_swing):
             theta[i] += dx[ii]
         for ii, i in enumerate(pq_idx):
-            V[i] = abs(V[i]) + dx[len(non_swing) + ii]
+            # [EE-11] Floor the magnitude at a small positive value: a
+            # violent step can drive |V| negative, and the abs() above would
+            # then silently flip the phase 180° on the next iteration.
+            V[i] = max(abs(V[i]) + dx[len(non_swing) + ii], 0.01)
 
     # Rebuild complex V. Report the iteration actually reached — MAX_ITERATIONS
     # for a genuine iteration-limit failure, or the (small) break iteration when
@@ -3185,7 +3267,20 @@ def _gauss_seidel(Y, P_spec, Q_spec, V_mag, bus_types):
         diff = np.abs(V - V_old)
         max_diff = np.max(diff) if len(diff) > 0 else 0.0
         if max_diff < TOLERANCE:
-            return V, True, iteration + 1, ""
+            # [EE-11] ΔV per sweep under-states the true error for a
+            # geometrically-converging iteration (error ≈ ΔV/(1−ρ), ρ → 1 on
+            # meshed networks) — confirm with a final power-mismatch check
+            # before reporting converged; otherwise keep sweeping.
+            S_calc = V * np.conj(Y @ V)
+            mism = 0.0
+            for i in range(n):
+                if bus_types[i] == 2:
+                    continue
+                mism = max(mism, abs(S_calc[i].real - P_spec[i]))
+                if bus_types[i] == 0:
+                    mism = max(mism, abs(S_calc[i].imag - Q_spec[i]))
+            if mism < GS_MISMATCH_TOLERANCE:
+                return V, True, iteration + 1, ""
 
     return V, False, MAX_ITERATIONS, "max_iterations"
 

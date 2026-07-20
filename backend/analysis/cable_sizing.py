@@ -526,13 +526,31 @@ def _find_upstream_cb(cable_id, adj, comp_map):
     return fallback
 
 
-def _estimate_clearing_time(cb_comp):
-    """Estimate CB clearing time from magnetic pickup setting."""
+def _estimate_clearing_time(cb_comp, fault_current_a=None):
+    """Estimate the protective device clearing time for the adiabatic check.
+
+    [EE-14] Fuses: evaluate the generic gG curve at the ACTUAL fault current
+    (total clearing = 1.2 × pre-arc, the TCC convention) instead of the old
+    fixed 10 ms — which was optimistic near the melting threshold when the
+    fault current is only a few ×In of a large upstream fuse. When the fuse
+    never melts at the given current, the adiabatic-validity cap of 5 s is
+    used (conservative for the withstand check). Without a usable current or
+    rating the legacy 10 ms convention is kept. The per-cable
+    ``clearing_time_s`` override still wins at the call site.
+    """
     if not cb_comp:
         return 0.1  # Default 100ms
     p = cb_comp.props
     if cb_comp.type == "fuse":
-        return 0.01  # Fuses typically clear in <10ms
+        rating = float(p.get("rated_current_a", 0) or 0)
+        if fault_current_a and fault_current_a > 0 and rating > 0:
+            from .arcflash import _fuse_prearc_time
+            t_pre = _fuse_prearc_time(rating, fault_current_a)
+            if t_pre is not None:
+                if t_pre == math.inf:
+                    return 5.0  # never melts here — adiabatic validity cap
+                return min(max(t_pre * 1.2, 0.004), 5.0)
+        return 0.01  # legacy convention (bolted fault ≫ fuse rating)
     # For CBs, use magnetic pickup to estimate instantaneous trip time
     mag = float(p.get("magnetic_pickup", 0))
     if mag > 0:
@@ -709,6 +727,10 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         # ── Voltage drop check ──
         # Use the actual branch power factor from load flow when available,
         # falling back to a typical 0.85
+        # [EE-14] Convention: every flow is treated as LAGGING (sin φ ≥ 0).
+        # A leading-pf branch (PV export, capacitive) actually sees a smaller
+        # drop or a rise, so the computed drop is conservative — but a report
+        # can then flag a cable that is in fact compliant.
         cos_phi = branch_pf.get(cable.id, 0.85)
         sin_phi = math.sqrt(max(0.0, 1 - cos_phi ** 2))
         # NOTE: cp["r_per_km"] comes from the project payload (frontend
@@ -744,13 +766,15 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                     fault_ka = bus_fault.ik3
                     fault_kappa = bus_fault.kappa
 
-        # Get clearing time from upstream CB
+        # Get clearing time from upstream CB/fuse, evaluated at the fault
+        # current actually flowing ([EE-14] — a fuse's clearing time depends
+        # on I/In, so apply any standalone Isc override first).
         upstream_cb = _find_upstream_cb(cable.id, adj, comp_map)
-        t_clear = _estimate_clearing_time(upstream_cb)
 
         # [gap #4] Standalone override for the fault-withstand check.
         if ov_isc_ka > 0:
             fault_ka = ov_isc_ka
+        t_clear = _estimate_clearing_time(upstream_cb, fault_ka * 1000)
         if ov_clear_s > 0:
             t_clear = ov_clear_s
 

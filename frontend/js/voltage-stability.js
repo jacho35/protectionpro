@@ -145,7 +145,7 @@ const VoltageStability = {
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px 14px;font-size:12px;margin-bottom:12px">'
       + `<div><strong>Critical bus</strong><br><span style="color:var(--text-muted,#6d6d6d)">${this._esc(r.critical_bus_name || '—')} @ ${r.nose_v_pu.toFixed(3)} p.u.</span></div>`
       + `<div><strong>λ critical</strong><br><span style="color:var(--text-muted,#6d6d6d)">${r.lambda_critical.toFixed(3)}${r.collapsed ? '' : ' (≥, capped)'}</span></div>`
-      + (r.qv_bus_name ? `<div><strong>Q-V margin (${this._esc(r.qv_bus_name)})</strong><br><span style="color:var(--text-muted,#6d6d6d)">${r.qv_min_mvar != null ? r.qv_min_mvar.toFixed(2) + ' MVAr' : '—'}</span></div>` : '')
+      + (r.qv_bus_name ? `<div><strong>Q-V margin (${this._esc(r.qv_bus_name)})</strong><br><span style="color:var(--text-muted,#6d6d6d)">${r.qv_margin_mvar != null ? r.qv_margin_mvar.toFixed(2) + ' MVAr' : (r.qv_min_mvar != null ? r.qv_min_mvar.toFixed(2) + ' MVAr (net-injection min)' : '—')}</span></div>` : '')
       + '</div>';
 
     html += `<div class="vs-chart" data-chart="pv"></div>`;

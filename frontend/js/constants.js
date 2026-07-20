@@ -1,6 +1,11 @@
 /* ProtectionPro — Constants & Configuration */
 
-const APP_VERSION = 'V4';
+// Bump on any engine change that alters analysis results — saved study
+// verdicts are provenance-stamped with this (state.js) and flagged stale on
+// load. V5: 2026-07 calculation-verification P3 remediation (capacitor Q∝V²,
+// fuse-curve clearing, CB thermal k/(M²−1), YNyn Z0 through-path, duty-check
+// asym/making, CT knee, q-factor pole pairs, GS mismatch check, …).
+const APP_VERSION = 'V5';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -457,17 +462,29 @@ function ctSaturationParams(ctProps) {
   const ct = parseCTRatio(ctProps.ratio);
   const alf = parseCTAccuracyALF(ctProps.accuracy_class);
   const burdenVA = parseFloat(ctProps.burden_va) || 15;
-  const rctOhm = parseFloat(ctProps.rct_ohm) || 0;
   const iSecRated = ct.secondary; // Rated secondary current (5A or 1A)
+  // [PS-16] Rct defaults to a typical secondary-winding resistance for the
+  // rated secondary (≈0.3 Ω for 5 A cores, ≈3 Ω for 1 A cores) instead of 0 —
+  // a zero Rct overstates the saturation-free current whenever the burden is
+  // small and the user supplies an explicit knee voltage.
+  const rctOhm = parseFloat(ctProps.rct_ohm) || (iSecRated <= 1 ? 3.0 : 0.3);
 
   // Burden in ohms: Z_burden = VA / I²
   const burdenOhm = burdenVA / (iSecRated * iSecRated);
 
-  // Knee point voltage (user override or derived from ALF)
-  // Vk ≈ ALF × I_sec_rated × (Rct + R_burden)  [IEC 61869-2]
+  // Knee point voltage (user override or derived from the accuracy class).
+  // [PS-16] The ALF defines the ACCURACY-LIMIT voltage
+  //   V_AL = ALF × I_sn × (Rct + R_burden)  [IEC 61869-2],
+  // and the knee (IEC 10%-exciting-current point) of a 5P/10P protection
+  // core sits below it: Vk ≈ 0.8·V_AL is the standard approximation. The
+  // previous model used V_AL itself as the knee, delaying the modelled
+  // saturation onset ~25% (optimistic for close-in faults). NOTE: the
+  // clipping model below stays symmetric — DC offset and remanence (the
+  // dominant saturation drivers at high X/R) are not modelled, so onset is
+  // still somewhat optimistic for fully-offset asymmetric faults.
   let kneePointV = parseFloat(ctProps.knee_point_v);
   if (!kneePointV || kneePointV <= 0) {
-    kneePointV = alf * iSecRated * (rctOhm + burdenOhm);
+    kneePointV = 0.8 * alf * iSecRated * (rctOhm + burdenOhm);
   }
 
   // Primary current at which CT begins to saturate
@@ -1013,7 +1030,7 @@ const FIELD_INFO = {
   'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current\n• P = protection application.',
   'ct.burden_va':      'Default 15 VA — typical protection CT burden.\nSource: IEC 61869-2 §2 — standard rated burden values.',
   'ct.rct_ohm':        'Default 0.3 Ω — CT secondary winding resistance, typical for a 5 A secondary CT.\nSource: IEC 61869-2 — typical Rct: 0.1–0.5 Ω (5 A CTs), 1–5 Ω (1 A CTs).\nAffects saturation onset: higher Rct means earlier saturation.',
-  'ct.knee_point_v':   'Leave 0 to auto-derive from accuracy class ALF.\nVk = ALF × I_rated × (Rct + R_burden).\nSource: IEC 61869-2 — knee point voltage defines CT saturation onset.\nManual entry overrides the calculated value.',
+  'ct.knee_point_v':   'Leave 0 to auto-derive from the accuracy class ALF.\nVk ≈ 0.8 × ALF × I_rated × (Rct + R_burden) — the knee of a 5P/10P protection core sits below the accuracy-limit voltage V_AL.\nSource: IEC 61869-2 — knee point voltage defines CT saturation onset.\nManual entry (e.g. a PX-class rated knee) overrides the calculated value.',
 
   // PT
   'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V.',
@@ -1045,6 +1062,12 @@ const FIELD_INFO = {
   'motor_induction.start_time_s': 'When this motor energises on the shared simulation timeline (0 = at the start). Stagger start times to sequence a motor group and see how each start sags the buses the others sit on. Ignored when the Sequence Role is “Already running”.',
   'motor_synchronous.start_time_s': 'When this motor energises on the shared simulation timeline (0 = at the start). Stagger start times to sequence a motor group. Ignored when the Sequence Role is “Already running”.',
   'motor_induction.rated_speed_rpm': 'Nameplate full-load speed. Sets the rated slip s = 1 − n/n_sync used to fit the rotor circuit (1480 rpm ⇒ s = 1.33% on a 50 Hz 4-pole machine).\nUsed by: Dynamic Motor Starting.',
+  'motor_induction.poles': 'Number of poles (2, 4, 6, …). When set, the breaking-current q-factor uses the IEC 60909-0 §9.1.2 argument m = rated MW per pole pair; when 0/unset the I″kM/I_rM current ratio is used as a proxy (conservative — overstates the motor Ib contribution).\nUsed by: Fault Analysis (Ib).',
+  'motor_induction.accel_time_s': 'Estimated acceleration (run-up) time for the TCC starting-current overlay — the inrush segment is drawn at LRC×FLC×(starter factor) up to this time, then steps to FLC. Use the Dynamic Motor Starting study\'s accel time when known.\nUsed by: TCC motor-start overlay (relay-vs-start coordination).',
+  'motor_synchronous.accel_time_s': 'Estimated acceleration (run-up) time for the TCC starting-current overlay — the inrush segment is drawn at the starting current up to this time, then steps to FLC.\nUsed by: TCC motor-start overlay (relay-vs-start coordination).',
+  'cb.circuit_type': 'Circuit class for the SANS 10142-1 / IEC 60364-4-41 disconnection-time limit:\n• Final — socket outlets: Table 41.1 time (0.4 s at 230 V) up to In ≤ 63 A (§411.3.2.2)\n• Final — fixed equipment: Table 41.1 time up to In ≤ 32 A\n• Distribution / sub-main: 5 s (§411.3.2.3)\n• Auto: assumed FINAL circuit up to 63 A (conservative), 5 s above.\nUsed by: Compliance (earth-fault disconnection).',
+  'fuse.circuit_type': 'Circuit class for the SANS 10142-1 / IEC 60364-4-41 disconnection-time limit:\n• Final — socket outlets: Table 41.1 time (0.4 s at 230 V) up to In ≤ 63 A (§411.3.2.2)\n• Final — fixed equipment: Table 41.1 time up to In ≤ 32 A\n• Distribution / sub-main: 5 s (§411.3.2.3)\n• Auto: assumed FINAL circuit up to 63 A (conservative), 5 s above.\nUsed by: Compliance (earth-fault disconnection).',
+  'transformer.z0_z1_ratio': 'Zero-sequence to positive-sequence impedance ratio Z₀T/Z₁T from the datasheet/test report. Typical Dyn three-limb core-type units measure ≈ 0.85; five-limb/shell/bank ≈ 1.0. 0/unset = Z₀T = Z₁T (legacy screening convention).\nUsed by: Fault Analysis (SLG/LLG).',
   'motor_induction.locked_rotor_torque_pct': 'Locked-rotor (starting) torque as % of full-load torque.\nSource: IEC 60034-12 design N: typically 70–190% depending on rating; 150% is a common medium-motor value.\nUsed with LRC to fit the deep-bar rotor model.',
   'motor_induction.motor_j_kgm2': 'Rotor moment of inertia from the motor datasheet (J = GD²/4).\nLeave 0 to auto-estimate from the rating (H ≈ 0.12·P_kW^0.15 s) — the result then carries a warning.',
   'motor_induction.load_j_kgm2': 'Driven-load moment of inertia referred to the motor shaft.\nFans/large blowers: often 3–10× motor J. Pumps: ≈0.2–1× motor J. Direct-coupled loads only — refer through the gearbox ratio² if geared.',
@@ -1801,6 +1824,7 @@ const COMPONENT_DEFS = {
       grounding_lv_reactance: 0,
       core_construction: 'three_limb',
       z0m_pu: 0,
+      z0_z1_ratio: 0,
       earthing_system: 'TN-S',
       earth_electrode_r_source: 1.0,
       earth_electrode_r_installation: 20.0,
@@ -1833,6 +1857,7 @@ const COMPONENT_DEFS = {
         showWhen: { field: 'vector_group', match: /[yz]/i }, section: 'grounding' },
       { key: 'z0m_pu', label: 'Z₀ₘ override', type: 'number', unit: 'pu',
         showWhen: { field: 'vector_group', match: /[yz]/i }, section: 'grounding' },
+      { key: 'z0_z1_ratio', label: 'Z₀/Z₁ Ratio', type: 'number', min: 0, max: 3, step: 0.05, section: 'fault' },
       { key: 'earthing_system', label: 'Earthing System (LV)', type: 'select',
         options: ['TN-S', 'TN-C', 'TN-C-S', 'TT', 'IT'],
         showWhen: { field: 'voltage_lv_kv', max: 1.0 }, section: 'grounding' },
@@ -1953,6 +1978,7 @@ const COMPONENT_DEFS = {
       rated_voltage_kv: 11,
       rated_current_a: 630,
       breaking_capacity_ka: 25,
+      circuit_type: '',
       state: 'closed',
       cb_type: 'mccb',
       mcb_curve: 'C',
@@ -1970,6 +1996,13 @@ const COMPONENT_DEFS = {
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
+      { key: 'circuit_type', label: 'Circuit Type', type: 'select',
+        options: [
+          { value: '', label: 'Auto (assume final)' },
+          { value: 'final_socket', label: 'Final — socket outlets' },
+          { value: 'final_fixed', label: 'Final — fixed equipment' },
+          { value: 'distribution', label: 'Distribution / sub-main' },
+        ], section: 'protection' },
       { key: 'state', label: 'State', type: 'select', options: ['closed', 'open'] },
       { key: 'cb_type', label: 'CB Type', type: 'select', options: ['mcb', 'mccb', 'acb'] },
       { key: 'mcb_curve', label: 'Curve (IEC 60898)', type: 'select', options: ['B', 'C', 'D'],
@@ -2010,6 +2043,7 @@ const COMPONENT_DEFS = {
       rated_current_a: 100,
       breaking_capacity_ka: 50,
       fuse_type: 'gG',
+      circuit_type: '',
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -2018,6 +2052,13 @@ const COMPONENT_DEFS = {
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
+      { key: 'circuit_type', label: 'Circuit Type', type: 'select',
+        options: [
+          { value: '', label: 'Auto (assume final)' },
+          { value: 'final_socket', label: 'Final — socket outlets' },
+          { value: 'final_fixed', label: 'Final — fixed equipment' },
+          { value: 'distribution', label: 'Distribution / sub-main' },
+        ] },
     ],
   },
   relay: {
@@ -2176,6 +2217,7 @@ const COMPONENT_DEFS = {
       demand_factor: 1.0,
       essential: 'yes',
       x2: 0,
+      poles: 0,
       rated_speed_rpm: 1480,
       locked_rotor_torque_pct: 150,
       motor_j_kgm2: 0,
@@ -2188,6 +2230,7 @@ const COMPONENT_DEFS = {
       ss_ramp_s: 10,
       ss_initial_v_pct: 30,
       stall_time_hot_s: 15,
+      accel_time_s: 5,
       sim_t_max_s: 30,
       ts_dynamic: 'on',
       uv_trip_pu: 0,
@@ -2214,6 +2257,7 @@ const COMPONENT_DEFS = {
       { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
+      { key: 'poles', label: 'Poles', type: 'number', section: 'fault', min: 0, step: 2 },
       // Start staging (dyn_role / start_time_s) is configured in the Dynamic
       // Motor Starting timeline modal, not here — the props remain as data
       // defaults so older projects seed the modal on first open.
@@ -2234,6 +2278,7 @@ const COMPONENT_DEFS = {
       { key: 'ss_ramp_s', label: 'Soft-Start Ramp', type: 'number', unit: 's', section: 'dynamic', min: 0 },
       { key: 'ss_initial_v_pct', label: 'Soft-Start Initial V', type: 'number', unit: '%', section: 'dynamic', min: 0, max: 100 },
       { key: 'stall_time_hot_s', label: 'Hot Stall Time', type: 'number', unit: 's', section: 'dynamic', min: 1 },
+      { key: 'accel_time_s', label: 'Accel Time (TCC)', type: 'number', unit: 's', section: 'dynamic', min: 0.1 },
       { key: 'sim_t_max_s', label: 'Max Simulation Time', type: 'number', unit: 's', section: 'dynamic', min: 1 },
       { key: 'uv_trip_pu', label: 'Under-voltage Trip', type: 'number', unit: 'p.u.', min: 0, max: 1, step: 0.05, section: 'protection' },
       { key: 'uv_trip_delay_s', label: 'U/V Trip Delay', type: 'number', unit: 's', min: 0, step: 0.05, section: 'protection', showWhen: { field: 'uv_trip_pu', min: 0.01 } },
@@ -2272,6 +2317,7 @@ const COMPONENT_DEFS = {
       ss_ramp_s: 10,
       ss_initial_v_pct: 30,
       stall_time_hot_s: 15,
+      accel_time_s: 5,
       sim_t_max_s: 30,
     },
     fields: [
@@ -2314,6 +2360,7 @@ const COMPONENT_DEFS = {
       { key: 'ss_ramp_s', label: 'Soft-Start Ramp', type: 'number', unit: 's', section: 'dynamic', min: 0 },
       { key: 'ss_initial_v_pct', label: 'Soft-Start Initial V', type: 'number', unit: '%', section: 'dynamic', min: 0, max: 100 },
       { key: 'stall_time_hot_s', label: 'Hot Stall Time', type: 'number', unit: 's', section: 'dynamic', min: 1 },
+      { key: 'accel_time_s', label: 'Accel Time (TCC)', type: 'number', unit: 's', section: 'dynamic', min: 0.1 },
       { key: 'sim_t_max_s', label: 'Max Simulation Time', type: 'number', unit: 's', section: 'dynamic', min: 1 },
     ],
   },

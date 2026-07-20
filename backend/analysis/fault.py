@@ -198,6 +198,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # current-summing quantities (Ib, Ik_steady, motor split) that are
         # built from per-path currents.
         study_warnings = []
+        thevenin_basis = None  # [R3] "per-path-fallback" when the nodal solve fails
         if paths_meta.get("truncated"):
             study_warnings.append(
                 "Source-path enumeration truncated (heavily meshed network) — "
@@ -226,6 +227,12 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                     "nodally (Zbus); per-branch contributions remain "
                     "path-divider approximations.")
             else:
+                # [R3/PS-1 fallback] Machine-checkable flag: consumers (arc
+                # flash, duty check, compliance) must not treat this bus's
+                # currents as a solved meshed result — the per-path number
+                # OVERSTATES the current, which is non-conservative for
+                # arc-flash clearing times and minimum-current reasoning.
+                thevenin_basis = "per-path-fallback"
                 study_warnings.append(
                     "Meshed topology detected but the nodal solution failed — "
                     "falling back to per-path parallel combination, which "
@@ -308,12 +315,15 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
                 ikLLG_angle = round(math.degrees(math.atan2(i_llg.imag, i_llg.real)), 2) if ikLLG_pu > 1e-10 else None
             else:
-                # No zero-sequence path: Z0 → ∞, Z2‖Z0 → Z2
-                # Degenerates to line-to-line fault
-                z_ll_deg = z_eq + z2_eq
-                ikLLG_pu = c_factor * math.sqrt(3) / abs(z_ll_deg) if abs(z_ll_deg) > 1e-10 else 0
-                ikLLG_ka = round(ikLLG_pu * i_base_ka, 3)
-                ikLLG_angle = round(-math.degrees(math.atan2(z_ll_deg.imag, z_ll_deg.real)), 2) if abs(z_ll_deg) > 1e-10 else None
+                # [PS-12] No zero-sequence path: Z0 → ∞ and the fault
+                # degenerates to a line-to-line fault — but ikLLG is defined
+                # as the EARTH-RETURN current I″kE2E = |3·Ia0|, which is then
+                # exactly 0. Previously the LL phase current was reported in
+                # this field; a nonzero value in an earth-current field could
+                # mislead earth-fault relay reach/sensitivity reasoning.
+                # (The phase current is available separately as ikLL.)
+                ikLLG_ka = 0.0
+                ikLLG_angle = None
 
         # Compute branch contributions using current divider
         # For selected fault type, determine total fault current in p.u.
@@ -431,6 +441,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             branches=branches,
             network_topology="meshed" if meshed else "radial",
             topology_warnings=study_warnings or None,
+            thevenin_basis=thevenin_basis,
         )
 
     # ── Voltage Depression Calculation (IEC 60909 §3.6) ──
@@ -443,12 +454,41 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 all_buses, components, adjacency, wires, base_mva, results
             )
         except Exception:
-            pass  # Non-critical — don't fail fault analysis if voltage depression fails
+            # [PS-R2-7] Non-critical (informational output, headline currents
+            # unaffected) — but don't swallow silently: say WHY the report
+            # shows no retained voltages.
+            for _r in results.values():
+                _r.topology_warnings = (_r.topology_warnings or []) + [
+                    "Voltage-depression calculation failed — retained "
+                    "voltages not available."]
 
+    # [PS-10/PS-11] Disclose the fixed study conventions on the result so
+    # reports and compliance documents can print them as assumptions — a
+    # condition of the 2026-07 verification sign-off. All are conservative
+    # or neutral screening conventions, but they belong on the record.
+    _assumptions = [
+        f"Voltage factor c = {c_resolved:.2f} applied at every voltage level "
+        "(IEC 60909-0 Table 1; the 1.05 option for legacy +6% LV systems is "
+        "not automatically selected).",
+        "Breaking current Ib evaluated at minimum breaking time "
+        "t_min = 0.1 s; asymmetrical breaking current at a fixed 100 ms "
+        "with the DC time constant from the reduced Z_eq.",
+        f"Thermal-equivalent current Ith uses Tk = {thermal_duration_s:g} s "
+        "with n = 1 (full AC heat effect — conservative upper bound).",
+        "Multi-source Ib, Ik and branch contributions sum per-path current "
+        "magnitudes arithmetically (sum of |I| exceeds |vector sum|) — "
+        "totals are conservative and branch percentages can exceed 100% "
+        "when path angles differ.",
+    ]
+    if conductor_temperature_c is not None and abs(conductor_temperature_c - 20.0) > 1e-9:
+        _assumptions.append(
+            f"Minimum-current study: cable resistances at "
+            f"{conductor_temperature_c:g} °C (IEC 60909-0 §5.3.1).")
     return FaultResults(
         buses=results,
         base_mva=base_mva,
-        method="IEC 60909 (symmetrical)"
+        method="IEC 60909 (symmetrical)",
+        study_assumptions=_assumptions,
     )
 
 
@@ -546,6 +586,11 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
                 "source_type": "motor_induction",
                 "is_motor": True,
                 "rated_mva": motor_mva,
+                # [PS-7] q-factor argument per IEC 60909-0 §9.1.2 is the
+                # rated ACTIVE power per pole pair (MW) — carried when the
+                # motor has pole data, else Ib falls back to the ratio proxy.
+                "rated_mw": rated_kw / 1000.0,
+                "pole_pairs": _motor_pole_pairs(comp),
             })
             return
         if comp.type == "motor_synchronous":
@@ -1047,6 +1092,24 @@ def _motor_induction_impedance(comp, base_mva):
     return complex(r_pu, x_pu)
 
 
+def _motor_pole_pairs(comp):
+    """[PS-7] Pole pairs from the motor's ``pole_pairs`` or ``poles`` prop.
+
+    Returns None when neither is set — the breaking-current q-factor then
+    falls back to the legacy I″kM/IrM proxy (conservative).
+    """
+    try:
+        pp = float(comp.props.get("pole_pairs", 0) or 0)
+        if pp >= 1:
+            return max(1, int(round(pp)))
+        poles = float(comp.props.get("poles", 0) or 0)
+        if poles >= 2:
+            return max(1, int(round(poles / 2.0)))
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 def _static_load_motor_impedance(comp, base_mva):
     """Motor-equivalent sub-transient impedance for the rotating fraction of a
     static/lumped load, per IEC 60909-0 §13 ([gap #2]).
@@ -1283,12 +1346,16 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                     z_src = complex(x0_pu / 10, x0_pu)
             z0_src = z_src + 3 * zn
             z_total = z0_path + z0_src
-            desc = " → ".join(trail + [f"{label} '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f}, earthed)"])
+            # [PS-R2-2] Disclose the Z0 = Z1 screening default on the detail
+            # string so an opted-in earthed inverter without an x0 prop is
+            # visibly an assumption, not a datasheet value.
+            _z0_note = ", earthed" if x0_val > 0 else ", earthed, Z0=Z1 default — set x0"
+            desc = " → ".join(trail + [f"{label} '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f}{_z0_note})"])
             z0_sources.append((z_total, desc))
             return
 
         if comp.type == "transformer":
-            z_xfmr = _transformer_impedance(comp, base_mva)
+            z_xfmr = _transformer_z0_impedance(comp, base_mva)  # [PS-8c]
             z_gnd, far_side = _transformer_zero_seq(comp, base_mva, entry_port)
             vg = comp.props.get("vector_group", "Dyn11")
             name = _comp_name(comp)
@@ -1318,11 +1385,16 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             elif far_side == 'grounded':
                 # Grounded star on far side — Z0 passes through,
                 # continue walking to find source (e.g. YNyn0).
+                # [PS-8b] Forward the far-end entry port exactly as the cable
+                # branch and the nodal walk0 do — a transformer met right
+                # after the pass-through previously received entry_port=None
+                # and fell into the "port unknown" fallback, which can
+                # classify a Dyn unit as a Z0 source from its delta side.
                 new_trail = trail + [xfmr_label + " [YN pass-through]"]
                 v_far = _transformer_far_voltage(comp, v_kv)
-                for neighbor_id, local_port, _ in adjacency.get(comp_id, []):
+                for neighbor_id, local_port, remote_port in adjacency.get(comp_id, []):
                     if neighbor_id != bus_id or comp_id == bus_id:
-                        walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited, v_far)
+                        walk(neighbor_id, z0_path + z0_element, new_trail, remote_port, path_visited, v_far)
             # else far_side == 'blocked': ungrounded star, no Z0 path
             return
 
@@ -1499,6 +1571,17 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
 
     if bus_side:
         z_gnd = _get_grounding(bus_side)
+        # [PS-8a] YNyn pass-through: both neutrals carry the same I0 loop, so
+        # the FAR-side neutral impedance is in series in the zero-sequence
+        # through path too. Previously only the bus-side 3Zn was added —
+        # optimistic Ik1 for impedance-earthed YNyn banks. Solidly earthed
+        # far neutrals contribute 0 here, so legacy solid-solid results are
+        # unchanged.
+        if far_side == 'grounded' and z_gnd is not None:
+            far_name = 'lv' if bus_side == 'hv' else 'hv'
+            z_far = _get_grounding(far_name)
+            if z_far is not None:
+                z_gnd = z_gnd + z_far
     elif lv_grounded:
         z_gnd = _get_grounding('lv')
     elif hv_grounded:
@@ -1539,6 +1622,19 @@ def _transformer_zero_seq(comp, base_mva, entry_port=None):
     return z0_seq, far_side
 
 
+def _transformer_z0_impedance(comp, base_mva):
+    """[PS-8c] Transformer zero-sequence series impedance Z0T.
+
+    Z0T = z0_z1_ratio × Z1T when the ``z0_z1_ratio`` prop is set (e.g. the
+    datasheet X0/X1 — a typical Dyn three-limb core-type unit measures
+    Z0T ≈ 0.85·Z1T; five-limb/shell/bank ≈ 1.0). Absent prop → Z0T = Z1T,
+    the legacy screening convention, so existing studies are unchanged.
+    """
+    z1 = _transformer_impedance(comp, base_mva)
+    ratio = float(comp.props.get("z0_z1_ratio", 0) or 0)
+    return z1 * ratio if ratio > 0 else z1
+
+
 def _zero_seq_magnetizing(comp, base_mva):
     """Zero-sequence magnetising impedance of a single-earthed star-star
     transformer (one neutral earthed, the other floating, no delta), in
@@ -1567,7 +1663,14 @@ def _zero_seq_magnetizing(comp, base_mva):
     # per-unit on the unit MVA base → study base
     rated_mva = float(comp.props.get("rated_mva", 1.0) or 1.0)
     z0m_study = z0m_own * base_mva / max(rated_mva, 1e-9)
-    xr = float(comp.props.get("x_r_ratio", 10) or 10)
+    # [PS-R2-3] The magnetising branch's X/R is set by tank/air return-path
+    # losses, not the winding resistance, and generally exceeds the leakage
+    # X/R. A dedicated `z0m_x_r_ratio` prop takes precedence; falling back to
+    # the leakage `x_r_ratio` keeps legacy studies byte-identical (numeric
+    # effect on |Z0m| is < 1% either way — the tank loss itself is the
+    # dominant uncertainty).
+    xr = float(comp.props.get("z0m_x_r_ratio", 0) or 0) \
+        or float(comp.props.get("x_r_ratio", 10) or 10)
     x = z0m_study
     r = x / xr if xr > 0 else 0.0
     return complex(r, x)
@@ -1749,13 +1852,26 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c):
                 z_src = _battery_impedance(comp, base_mva)
             else:
                 z_src = _wind_turbine_impedance(comp, base_mva)
+            # [R3-2] Honor the x0 prop exactly as the path walker does —
+            # previously the nodal builder ignored it, so radial and meshed
+            # SLG answers diverged for the identical earthed inverter.
+            x0_val = float(comp.props.get("x0", 0))
+            if x0_val > 0:
+                rated = {
+                    "solar_pv": comp.props.get("rated_kw", 100) * comp.props.get("num_inverters", 1) / 1000,
+                    "battery": comp.props.get("rated_kva", 100) / 1000,
+                    "wind_turbine": comp.props.get("rated_mva", 2.0) * comp.props.get("num_turbines", 1),
+                }[t]
+                if rated > 1e-9:
+                    x0_pu = x0_val * base_mva / rated
+                    z_src = complex(x0_pu / 10, x0_pu)
             shunts0[from_bus_id].append(z0_path + z_src + 3 * zn)
             return
         if t == "transformer":
             z_gnd, far_side = _transformer_zero_seq(comp, base_mva, entry_port)
             if z_gnd is None:
                 return
-            z0_element = _transformer_impedance(comp, base_mva) + z_gnd
+            z0_element = _transformer_z0_impedance(comp, base_mva) + z_gnd  # [PS-8c]
             if far_side in ("delta", "magnetizing"):
                 shunts0[from_bus_id].append(z0_path + z0_element)
                 return
@@ -1900,13 +2016,17 @@ def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
             return False
         return True
 
+    _meta = {}
     paths = _collect_source_paths(bus_id, components, adjacency,
-                                  project.baseMVA, c=c)
+                                  project.baseMVA, c=c, meta=_meta)
     keep = [p for p in paths if _path_ok(p)]
     if not keep:
         return None
     z_paths = _parallel_impedances([p["z_total"] for p in keep])
-    if not _paths_are_meshed(keep, components):
+    # [R3-3] A truncated enumeration may have dropped the path that would
+    # have revealed sharing — treat it as meshed so the nodal solve (which
+    # does not depend on path completeness) provides the answer.
+    if not _meta.get("truncated") and not _paths_are_meshed(keep, components):
         return z_paths
 
     net_buses = [comp for comp in project.components
@@ -2027,14 +2147,20 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
             # Induction motors: current decays rapidly
             # Per IEC 60909-0 §13.2, use μ × q factor
             rated_mva = path.get("rated_mva", 0.2)
-            # For LV motors, per-unit ratio based on locked-rotor.
-            # SIMPLIFICATION: the q factor argument per IEC 60909-0 §9.1.2
-            # should be m = rated active power (MW) per pole pair; the motor
-            # pole count is not modelled, so the I"kM/IrM current ratio is
-            # used as a proxy. This is an approximation of the standard.
             ik_over_ir = ik_path_pu * base_mva / rated_mva if rated_mva > 1e-6 else 6
             mu = _mu_factor(ik_over_ir, t_min)
-            q = _q_factor(ik_over_ir, t_min)
+            # [PS-7] The q-factor argument per IEC 60909-0 §9.1.2 Eq. (71)
+            # is m = rated active power PER POLE PAIR (MW). Use it when the
+            # motor carries pole data (`pole_pairs`/`poles` prop); otherwise
+            # fall back to the legacy I″kM/IrM current-ratio proxy — a
+            # documented approximation that overstates q (and hence Ib from
+            # motors), conservative for breaking duty.
+            pole_pairs = path.get("pole_pairs")
+            rated_mw = path.get("rated_mw")
+            if pole_pairs and rated_mw:
+                q = _q_factor(rated_mw / pole_pairs, t_min, proxy=False)
+            else:
+                q = _q_factor(ik_over_ir, t_min)
             ib_total += mu * q * ik_path_ka
 
         elif source_type in ("solar_pv", "battery"):
@@ -2068,7 +2194,10 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
 def _mu_factor(ik_over_ir, t_min):
     """Decay factor μ per IEC 60909-0 §9.1.1, Eq. (70)-(73).
 
-    Interpolates between standard breaking times.
+    Applies the standard's curve for the enclosing breaking-time bracket
+    (0.02 / 0.05 / 0.10 / ≥0.25 s) — stepped, NOT interpolated between
+    brackets ([PS-7] docstring correction; the implementation was always
+    stepped).
     """
     if ik_over_ir < 2:
         return 1.0  # Far from generator — no significant decay
@@ -2085,16 +2214,18 @@ def _mu_factor(ik_over_ir, t_min):
     return min(mu, 1.0)  # μ ≤ 1
 
 
-def _q_factor(ik_over_ir, t_min):
-    """Motor decay factor q per IEC 60909-0 §13.2.
+def _q_factor(m, t_min, proxy=True):
+    """Motor decay factor q per IEC 60909-0 §9.1.2 Eq. (71) / §13.2.
 
-    For induction motors, accounts for faster current decay.
-    q approaches 0 for small motors at longer breaking times.
+    The standard's argument m is the motor's rated active power per pole
+    pair in MW ([PS-7]); q approaches 0 for small motors at longer breaking
+    times. When pole data is absent the caller passes the I″kM/IrM current
+    ratio as a proxy (``proxy=True``), which keeps the legacy m < 1 → q = 1
+    short-circuit — meaningless for true MW-per-pole-pair inputs, where
+    m < 1 is the common case and the formula must be evaluated.
     """
-    if ik_over_ir < 1:
+    if m <= 0 or (proxy and m < 1):
         return 1.0
-
-    m = ik_over_ir
     if t_min <= 0.02:
         q = 1.03 + 0.12 * math.log(m) if m > 0 else 1.0
     elif t_min <= 0.05:

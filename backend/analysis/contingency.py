@@ -196,24 +196,10 @@ def run_contingency(project: ProjectData, method: str = "newton_raphson",
                         "violation(s) before any outage.")
 
     outageable = [c for c in project.components if c.type in OUTAGEABLE_TYPES]
-
-    # Build the contingency list: single elements, then optional pairs.
-    combos = [(c.id,) for c in outageable]
-    n1_count = len(combos)
-    skipped = 0
-    if include_n2:
-        pairs = list(itertools.combinations([c.id for c in outageable], 2))
-        room = max(0, max_contingencies - n1_count)
-        if len(pairs) > room:
-            skipped = len(pairs) - room
-            pairs = pairs[:room]
-            warnings.append(f"N-2: {skipped} of {len(pairs) + skipped} pairs "
-                            "skipped (contingency cap reached).")
-        combos.extend(pairs)
-
     by_id = {c.id: c for c in project.components}
     results = []
-    for combo in combos:
+
+    def _run_combo(combo):
         remove = set(combo)
         names = ", ".join(_comp_name(by_id[cid]) for cid in combo if cid in by_id)
         p = _project_without(project, remove)
@@ -221,7 +207,7 @@ def run_contingency(project: ProjectData, method: str = "newton_raphson",
             p, method, base_loads, base_energ_ids, v_min, v_max, loading_limit,
             components_by_id=components_by_id)
         status = _status(metrics, violations)
-        results.append((
+        return (
             _severity(status, metrics, violations),
             ContingencyResult(
                 id="+".join(combo),
@@ -238,7 +224,43 @@ def run_contingency(project: ProjectData, method: str = "newton_raphson",
                 max_v_pu=metrics["max_v_pu"],
                 lost_load_mw=metrics["lost_load_mw"],
                 violations=violations,
-            )))
+            ))
+
+    # N-1 first — their severities also rank the optional N-2 pair set.
+    n1_count = len(outageable)
+    skipped = 0
+    n1_score = {}  # element id → scalar severity proxy from its own N-1 case
+    for c in outageable:
+        sev, cr = _run_combo((c.id,))
+        results.append((sev, cr))
+        n1_score[c.id] = (_STATUS_RANK[cr.status] * 1000.0 + cr.lost_load_mw
+                          + cr.violation_count * 10.0 + cr.max_loading_pct / 100.0)
+
+    if include_n2:
+        pairs = list(itertools.combinations([c.id for c in outageable], 2))
+        room = max(0, max_contingencies - n1_count)
+        if len(pairs) > room:
+            # [EE-R2-4] The cap previously truncated in lexicographic
+            # `combinations` order — an arbitrary subset for a security
+            # verdict. Rank pairs by the SUM of their elements' N-1
+            # severities (already computed above) so the analysed subset is
+            # the most-likely-severe one, and name the first dropped pairs.
+            pairs.sort(key=lambda pr: n1_score.get(pr[0], 0.0)
+                       + n1_score.get(pr[1], 0.0), reverse=True)
+            skipped = len(pairs) - room
+            dropped = pairs[room:]
+            pairs = pairs[:room]
+            sample = "; ".join(
+                " + ".join(_comp_name(by_id[cid]) for cid in pr if cid in by_id)
+                for pr in dropped[:5])
+            warnings.append(
+                f"N-2: {skipped} of {len(pairs) + skipped} pairs skipped "
+                f"(cap {max_contingencies}); pairs were ranked by combined "
+                f"N-1 severity so the least-severe were dropped "
+                f"(e.g. {sample}). The N-2 verdict covers only the analysed "
+                "subset.")
+        for pr in pairs:
+            results.append(_run_combo(pr))
 
     # Worst first.
     results.sort(key=lambda e: e[0], reverse=True)

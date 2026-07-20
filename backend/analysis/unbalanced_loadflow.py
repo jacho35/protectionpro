@@ -825,6 +825,25 @@ def run_unbalanced_load_flow(
     VUF_LIMIT = 2.0   # IEC 61000-3-13 limit for industrial systems
     warnings: list[LoadFlowWarning] = []
     warnings.extend(dispatch["warnings"])
+    # [R3-1] The unbalanced engine calls the sequence solver directly and has
+    # no generator-capability registration, so a user-labelled PV bus holds
+    # its voltage with UNBOUNDED reactive power (the balanced engine's
+    # reactive-limit clamp does not run here) — non-conservative if the
+    # regulating machine cannot actually supply the Q. Surface it.
+    for bus in buses:
+        if str(bus.props.get("bus_type", "PQ")) == "PV":
+            _i = bus_idx[bus.id]
+            if _i in dispatch["dead_idx"]:
+                continue
+            warnings.append(LoadFlowWarning(
+                elementId=bus.id,
+                element_name=bus.props.get("name", bus.id),
+                message=("PV bus voltage is held with UNLIMITED reactive "
+                         "power in the unbalanced solver (no capability "
+                         "clamp) — verify the regulating machine can supply "
+                         "the implied Q, or check the setpoint with the "
+                         "balanced load flow (which enforces limits)."),
+            ))
     for bus_id, br in bus_results.items():
         if br.vuf_pct > VUF_LIMIT:
             warnings.append(LoadFlowWarning(

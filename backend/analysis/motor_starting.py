@@ -268,7 +268,10 @@ def run_motor_starting(project: ProjectData):
                     analysis_warnings.append(
                         f"Motor '{motor_name}': no converged starting operating "
                         f"point behind the source Thevenin impedance — network "
-                        f"cannot supply the starting load (treated as stall).")
+                        f"cannot supply the starting load (treated as stall "
+                        f"under the conservative constant-PQ starting-load "
+                        f"model; a constant-impedance locked rotor may still "
+                        f"accelerate at reduced voltage).")
             else:
                 analysis_warnings.append(
                     f"Motor '{motor_name}': no non-motor source path found for "
@@ -356,6 +359,12 @@ def run_motor_starting(project: ProjectData):
             "bus_dips": bus_dips,
             "status": status,
             "issues": issues,
+            # [EE-R2-3] Model disclosure: the starting load is held at
+            # constant PQ (locked-rotor S at fixed pf), which draws MORE
+            # current as the voltage falls than a true constant-impedance
+            # locked rotor — dips and stall verdicts err on the pessimistic
+            # (safe) side, especially near voltage collapse.
+            "model": "constant-PQ starting load (pessimistic near collapse)",
         })
 
     return {"motors": results, "warnings": analysis_warnings}
