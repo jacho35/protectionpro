@@ -119,8 +119,14 @@ const LFStudy = {
       #lf-study-body .lf-btn{font-size:11px;padding:3px 10px;cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit}
       #lf-study-body .lf-btn-primary{border-color:var(--accent-color,#2a78d6);background:color-mix(in srgb,var(--accent-color,#2a78d6) 16%,transparent)}
       #lf-study-body .lf-type-title{font-size:12px;font-weight:700;margin:12px 0 4px}
-      #lf-study-body table.lf-attr-table,#lf-study-body table.lf-cmp-table{border-collapse:collapse;font-size:11px;width:100%;font-variant-numeric:tabular-nums}
-      #lf-study-body .lf-attr-table th,#lf-study-body .lf-attr-table td,#lf-study-body .lf-cmp-table th,#lf-study-body .lf-cmp-table td{border:1px solid var(--border-color,#e0e0e0);padding:3px 6px;text-align:left;white-space:nowrap}
+      /* border-collapse:separate (not collapse) so each cell owns its borders —
+         collapsed borders are painted by the table and stay behind when the
+         sticky header row lifts off. Right+bottom per cell, left/top only on
+         the first column / header row, so lines never double up. */
+      #lf-study-body table.lf-attr-table,#lf-study-body table.lf-cmp-table{border-collapse:separate;border-spacing:0;font-size:11px;width:100%;font-variant-numeric:tabular-nums}
+      #lf-study-body .lf-attr-table th,#lf-study-body .lf-attr-table td,#lf-study-body .lf-cmp-table th,#lf-study-body .lf-cmp-table td{border-right:1px solid var(--border-color,#e0e0e0);border-bottom:1px solid var(--border-color,#e0e0e0);padding:3px 6px;text-align:left;white-space:nowrap}
+      #lf-study-body .lf-attr-table th:first-child,#lf-study-body .lf-attr-table td:first-child,#lf-study-body .lf-cmp-table th:first-child,#lf-study-body .lf-cmp-table td:first-child{border-left:1px solid var(--border-color,#e0e0e0)}
+      #lf-study-body .lf-attr-table thead th,#lf-study-body .lf-cmp-table thead th{position:sticky;top:0;z-index:2;border-top:1px solid var(--border-color,#e0e0e0)}
       #lf-study-body .lf-attr-table th{background:var(--bg-secondary,#f4f4f7)}
       #lf-study-body .lf-unit{color:var(--text-muted,#6d6d6d);font-weight:400}
       #lf-study-body .lf-comp-name,#lf-study-body .lf-metric{font-weight:600}
