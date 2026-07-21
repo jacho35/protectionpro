@@ -1085,6 +1085,47 @@ class TestIslandingAndDispatch:
         assert e["g200"].dispatched_mw == pytest.approx(0.085, abs=0.004)
         assert not any("Droop parallel operation" in w.message for w in res.warnings)
 
+    def test_droop_parallel_shares_network_losses(self):
+        """Droop-paralleled sets must share the NETWORK LOSSES in rating
+        proportion too, not only the load demand. The load sits behind a lossy
+        LV cable so the island has real I²R losses; before the distributed-
+        slack fix those landed entirely on the reference set, which then read
+        several points above its paralleled partner despite equal-percentage
+        droop sharing being the whole promise of the scheme."""
+        g = {"voltage_kv": 0.4, "power_factor": 0.85, "min_load_pct": 30}
+        comps = [
+            _comp("g200", "generator", {**g, "name": "G200", "rated_mva": 0.2,
+                                        "dispatch_priority": 3, "dispatch_mode": "standby"}),
+            _comp("g100", "generator", {**g, "name": "G100", "rated_mva": 0.1,
+                                        "dispatch_priority": 2, "dispatch_mode": "standby"}),
+            _comp("bus-1", "bus", {"name": "GEN", "voltage_kv": 0.4}),
+            _comp("cable-1", "cable", {
+                "name": "Feeder", "r_per_km": 0.08, "x_per_km": 0.08,
+                "length_km": 0.15, "rated_amps": 400.0, "voltage_kv": 0.4}),
+            _comp("bus-2", "bus", {"name": "LOAD", "voltage_kv": 0.4}),
+            _comp("static_load-1", "static_load", {
+                "name": "L", "rated_kva": 260.0, "power_factor": 0.85,
+                "voltage_kv": 0.4}),
+        ]
+        wires = [_wire("w1", "g200", "bus-1"), _wire("w2", "g100", "bus-1"),
+                 _wire("w3", "bus-1", "cable-1"), _wire("w4", "cable-1", "bus-2"),
+                 _wire("w5", "bus-2", "static_load-1")]
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        res = run_load_flow(proj, "newton_raphson")
+        assert res.converged
+        e = {d.source_id: d for d in res.dispatch}
+        p200, p100 = e["g200"].dispatched_mw, e["g100"].dispatched_mw
+        # Losses are real (load 221 kW, total generation must exceed it) and
+        # the 2:1 rating ratio holds on the loss-inclusive totals.
+        assert p200 + p100 > 0.221 + 0.002
+        assert p200 == pytest.approx(2 * p100, abs=0.0008)
+        # Equal per-unit loading — the loss share no longer skews the reference
+        load = {b.elementId: b.loading_pct for b in res.branches
+                if b.elementId in ("g200", "g100")}
+        assert abs(load["g200"] - load["g100"]) < 1.0
+        assert any("network losses shared" in w.message for w in res.warnings)
+
     def test_distribution_board_loads_like_static_load(self):
         """A distribution_board's lumped equivalents (rated_kva, demand_factor,
         phase pcts — derived from its circuit schedule by the frontend) must

@@ -690,7 +690,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
     bus_load_p_mw: per-bus-index total load MW (positive = consumption).
     loss_adders: optional {island_number: MW} added to that island's demand —
     used by the loss-compensation pass so curtailed sources also cover the
-    measured network losses instead of leaving them on a no-export utility.
+    measured network losses instead of leaving them on a no-export utility,
+    and so droop-paralleled gensets share the losses in rating proportion
+    instead of leaving them all on the reference set.
     regulated_q: optional {"gen_buses": set(bus_index), "ibr_ids": set(comp_id)}
     naming the voltage-regulating units (PV-bus generators / voltage-mode
     inverters). Their reactive comes from the solver (PV bus) or the
@@ -708,6 +710,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                       (balancer output is filled in post-solve by the caller)
       warnings      — list of LoadFlowWarning
       island_of     — {bus_index: island number}
+      droop_ref     — {island: {"bus_id", "share_mw"}} droop-parallel
+                      reference set's proportional share, for the caller's
+                      loss-compensation pass
     """
     n = len(buses)
     island_of = _compute_islands(n, bus_idx, branch_pairs)
@@ -717,6 +722,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
     dispatched_by_comp = {}
     swing_idx = set()
     dead_idx = set()
+    droop_ref = {}   # island -> {"bus_id", "share_mw"} of the droop reference set
 
     # ── Locate every source's connection bus ──
     # Direct sources (reachable through transparent elements only) can be
@@ -972,15 +978,23 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                                              if share_base > 0 else 0.0)
                     for c, _b, _d in seq_fixed:
                         seq_fixed_target[c.id] = droop_share[c.id]
+                    # Expose the reference set's share so the caller's
+                    # loss-compensation pass can measure the residual it
+                    # carries beyond that share (= the island's network
+                    # losses) and fold it back into the demand — which
+                    # re-splits the losses across the paralleled sets in
+                    # rating proportion (distributed slack).
+                    droop_ref[isl] = {"bus_id": buses[ref[1]].id,
+                                      "share_mw": droop_share[ref[0].id]}
                     shared = ", ".join(
                         f"'{c.props.get('name', c.id)}' {_fmt_power_mw(droop_share[c.id])}"
                         for c, _b, _d in committed)
                     warnings.append(LoadFlowWarning(
                         elementId=ref[0].id,
                         element_name=str(ref[0].props.get("name", "generator")),
-                        message=(f"Droop parallel operation — island load shared "
-                                 f"in proportion to rating across {shared} (the "
-                                 "reference set also carries the network losses)."),
+                        message=(f"Droop parallel operation — island load and "
+                                 f"network losses shared in proportion to rating "
+                                 f"across {shared}."),
                     ))
                     if seq_off:
                         held = ", ".join(f"'{e[0].props.get('name', e[0].id)}'"
@@ -1317,6 +1331,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
         "entries": entries,
         "warnings": warnings,
         "island_of": island_of,
+        "droop_ref": droop_ref,
     }
 
 
@@ -2168,6 +2183,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # a curtailed source still has headroom, add the measured losses to the
     # island demand and re-dispatch, so "PV covers the load" really leaves
     # the utility at ~0 kW instead of importing the losses.
+    # The same feedback distributes losses across droop-paralleled gensets:
+    # the reference (slack) set's solved output above its proportional share
+    # IS the island's network losses, so folding that residual into the
+    # island demand re-splits it across all paralleled sets in rating
+    # proportion (a distributed slack) instead of leaving it on one machine.
     P_base, Q_base = P_spec.copy(), Q_spec.copy()
     loss_adders = {}
     # Voltage-regulating units whose scheduled pf-split Q the dispatcher must
@@ -2223,6 +2243,22 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 elif prev > 0 and imp < -2e-4:
                     # Overshoot (losses dropped once the source supplied locally)
                     loss_adders[isl] = max(0.0, prev + imp)
+                    adjusted = True
+            # Droop-parallel islands (disjoint from the utility case above —
+            # droop only engages with no utility in the island): the reference
+            # set's residual above its proportional share is the measured
+            # network losses. Fold it into the island demand so the next
+            # dispatch splits it across the paralleled sets in rating ratio.
+            for isl, ref_info in dispatch["droop_ref"].items():
+                bi = bus_idx[ref_info["bus_id"]]
+                if bus_types[bi] != 2:
+                    continue   # user-labelled swing elsewhere — ref isn't slack
+                inj = dispatch["injections"].get(bi, (0.0, 0.0))
+                p_ref = S_tmp[bi].real * base_mva + bus_load_p_mw[bi] - inj[0]
+                resid = p_ref - ref_info["share_mw"]
+                prev = loss_adders.get(isl, 0.0)
+                if resid > 2e-4 or (prev > 0 and resid < -2e-4):
+                    loss_adders[isl] = max(0.0, prev + resid)
                     adjusted = True
             if not adjusted:
                 break
