@@ -33,6 +33,7 @@ from backend.analysis.unbalanced_loadflow import run_unbalanced_load_flow
 from backend.analysis.harmonics import (
     run_harmonics, vfd_current_spectrum, _voltage_limits, _tdd_limit,
 )
+from backend.analysis.frequency_scan import run_frequency_scan
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -538,6 +539,79 @@ class TestLoadFlow:
         # inductive (positive); the cap reduces but does not cancel it.
         assert main.q_through_mvar == pytest.approx(0.14, abs=1e-2), \
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
+
+
+class TestFrequencyScan:
+    """Impedance-vs-frequency sweep against the classical parallel-resonance
+    screening formula.
+
+    A capacitor bank Q_c on a bus fed from a source of short-circuit level
+    S_sc resonates (source L against shunt C) at harmonic order
+
+        h_r = √(S_sc / Q_c)
+
+    (e.g. IEEE 519-2014 Annex / any harmonics text). At the fundamental the
+    driving-point impedance is the source X in parallel with the capacitor:
+    Y(1) = 1/(jX_s) + jB_c → |Z(1)| = 1/(1/X_s − B_c) for a lossless source.
+    """
+
+    KV = 11.0
+    FAULT_MVA = 100.0
+    CAP_KVAR = 4000.0     # 4 Mvar → h_r = √(100/4) = 5 (250 Hz at 50 Hz)
+
+    def _project(self, with_cap=True):
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": self.KV,
+                "fault_mva": self.FAULT_MVA, "x_r_ratio": 1000.0}),
+            _comp("bus-1", "bus", {"name": "Main Bus", "voltage_kv": self.KV}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1")]
+        if with_cap:
+            comps.append(_comp("capacitor_bank-1", "capacitor_bank", {
+                "name": "PFC", "rated_kvar": self.CAP_KVAR,
+                "voltage_kv": self.KV}))
+            wires.append(_wire("w2", "bus-1", "capacitor_bank-1"))
+        return ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_parallel_resonance_at_sqrt_ssc_over_qc(self):
+        r = run_frequency_scan(self._project(), h_step=0.05)
+        assert r["converged"]
+        peaks = [x for x in r["resonances"]
+                 if x["kind"] == "parallel" and x["bus_id"] == "bus-1"]
+        assert peaks, "no parallel resonance detected on the capacitor bus"
+        h_r = math.sqrt(self.FAULT_MVA / (self.CAP_KVAR / 1000.0))
+        assert peaks[0]["h"] == pytest.approx(h_r, abs=0.1), \
+            f"resonance at h={peaks[0]['h']}, hand-calc {h_r}"
+        assert peaks[0]["f_hz"] == pytest.approx(h_r * 50.0, abs=5.0)
+        assert r["worst_h"] == pytest.approx(h_r, abs=0.1)
+
+    def test_fundamental_driving_point_impedance(self):
+        """|Z(1)| = 1/(1/X_s − B_c): X_s = 1.0 pu, B_c = 0.04 pu →
+        1.0417 pu = 1.2604 Ω at 11 kV / 100 MVA."""
+        r = run_frequency_scan(self._project(), h_max=5.0)
+        bus = next(b for b in r["buses"] if b["id"] == "bus-1")
+        z_base = self.KV ** 2 / 100.0
+        z1_exp = 1.0 / (1.0 / 1.0 - 0.04) * z_base
+        assert bus["z1_ohm"] == pytest.approx(z1_exp, rel=1e-2)
+
+    def test_no_capacitor_means_no_parallel_resonance(self):
+        """A purely inductive network rises monotonically — no peak, and the
+        engine says so."""
+        r = run_frequency_scan(self._project(with_cap=False))
+        assert r["converged"]
+        assert not [x for x in r["resonances"] if x["kind"] == "parallel"]
+        bus = next(b for b in r["buses"] if b["id"] == "bus-1")
+        assert bus["z_ohm"][-1] > bus["z_ohm"][0]
+        assert any("parallel resonance is not expected" in w
+                   for w in r["warnings"])
+
+    def test_scan_bus_filter_and_unknown_bus(self):
+        r = run_frequency_scan(self._project(), bus_ids=["bus-1"])
+        assert [b["id"] for b in r["buses"]] == ["bus-1"]
+        r2 = run_frequency_scan(self._project(), bus_ids=["nope"])
+        assert not r2["converged"]
 
 
 class TestWeakGridSourceImpedance:

@@ -6,11 +6,12 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
 from ..analysis.harmonics import run_harmonics
+from ..analysis.frequency_scan import run_frequency_scan
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -122,6 +123,24 @@ def harmonics(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Harmonic analysis error: {e}")
+
+
+@router.post("/frequency-scan", response_model=FrequencyScanResults)
+def frequency_scan(data: FrequencyScanRequest):
+    """Run the impedance-vs-frequency sweep — per-bus driving-point |Z(h)| on
+    the harmonic network model, with parallel/series resonance identification."""
+    try:
+        kwargs = {}
+        if data.scan_bus_ids:
+            kwargs["bus_ids"] = data.scan_bus_ids
+        if data.h_max is not None:
+            kwargs["h_max"] = data.h_max
+        if data.h_step is not None:
+            kwargs["h_step"] = data.h_step
+        return run_frequency_scan(data, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Frequency scan error: {e}")
 
 
 @router.post("/unbalanced-loadflow", response_model=UnbalancedLoadFlowResults)
