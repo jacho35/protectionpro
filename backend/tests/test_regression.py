@@ -540,6 +540,116 @@ class TestLoadFlow:
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
 
 
+class TestWeakGridSourceImpedance:
+    """Utility Thevenin source-impedance option (lf_grid_model='thevenin').
+
+    A constant-power load S = P + jQ fed from an EMF E behind Z = R + jX has
+    the closed-form terminal voltage (positive root of the standard two-bus
+    quadratic, e.g. Kundur "Power System Stability and Control" §2.3):
+
+        V⁴ + V²·(2(PR + QX) − E²) + (P² + Q²)·|Z|² = 0     (per-unit)
+
+    With the option ON the solver must reproduce this sag at the point of
+    supply; with it OFF (or absent — every legacy project) the utility stays
+    an ideal swing and the bus reads exactly the setpoint voltage.
+    """
+
+    KV = 11.0
+    FAULT_MVA = 100.0   # Z_Q = baseMVA/S″k = 1.0 pu — a very weak grid
+
+    def _project(self, grid_model="thevenin", xr=10.0, load_kva=10_000.0,
+                 pf=1.0, vset=None):
+        props = {"name": "Grid", "voltage_kv": self.KV,
+                 "fault_mva": self.FAULT_MVA, "x_r_ratio": xr,
+                 "lf_grid_model": grid_model}
+        if vset is not None:
+            props["v_setpoint_pu"] = vset
+        comps = [
+            _comp("utility-1", "utility", props),
+            _comp("bus-1", "bus", {"name": "Main Bus", "voltage_kv": self.KV}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": load_kva, "power_factor": pf,
+                "demand_factor": 1.0, "voltage_kv": self.KV}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"),
+                 _wire("w2", "bus-1", "static_load-1")]
+        return ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def _rx_pu(self, xr):
+        z_pu = 100.0 / self.FAULT_MVA          # on the 100 MVA base
+        x_pu = z_pu * xr / math.sqrt(1.0 + xr * xr)
+        return x_pu / xr, x_pu
+
+    @staticmethod
+    def _analytic_v(p_pu, q_pu, r_pu, x_pu, e=1.0):
+        b = 2.0 * (p_pu * r_pu + q_pu * x_pu) - e * e
+        c = (p_pu ** 2 + q_pu ** 2) * (r_pu ** 2 + x_pu ** 2)
+        return math.sqrt((-b + math.sqrt(b * b - 4.0 * c)) / 2.0)
+
+    @pytest.mark.parametrize("pf", [1.0, 0.9])
+    def test_point_of_supply_sag_matches_closed_form(self, pf):
+        """10 MVA load on a 100 MVA grid (Z = 1.0 pu, X/R 10): the supply bus
+        must sag to the two-bus closed-form voltage (≈0.9848 pu at unity pf,
+        ≈0.9402 pu at 0.9 lagging) instead of being pinned at 1.0."""
+        proj = self._project(pf=pf)
+        res = run_load_flow(proj, "newton_raphson")
+        assert res.converged
+        r_pu, x_pu = self._rx_pu(xr=10.0)
+        p_pu = 10.0 * pf / 100.0
+        q_pu = 10.0 * math.sqrt(1.0 - pf ** 2) / 100.0
+        v_exp = self._analytic_v(p_pu, q_pu, r_pu, x_pu)
+        assert res.buses["bus-1"].voltage_pu == pytest.approx(v_exp, abs=5e-4), \
+            f"expected closed-form {v_exp:.5f} pu, got {res.buses['bus-1'].voltage_pu}"
+        assert any("Thevenin source" in w.message for w in res.warnings)
+
+    def test_synthetic_pieces_collapsed_from_public_result(self):
+        """The internal EMF bus never leaks; the Z_s element row reads
+        utility → point of supply with import-positive P; the utility source
+        row and dispatch entry re-anchor to the real bus."""
+        res = run_load_flow(self._project(), "newton_raphson")
+        assert res.converged
+        assert not any(bid.startswith("__grid") for bid in res.buses), \
+            "synthetic EMF bus leaked into the public load-flow result"
+        zs = [b for b in res.branches if b.elementId.startswith("__gridz__")]
+        assert zs, "Thevenin impedance element emitted no branch row"
+        assert zs[0].from_bus == "utility-1" and zs[0].to_bus == "bus-1"
+        assert zs[0].p_mw > 9.9   # ≈ load + grid-internal loss
+        util_rows = [b for b in res.branches if b.elementId == "utility-1"]
+        assert util_rows and util_rows[0].to_bus == "bus-1"
+        util_entries = [d for d in res.dispatch if d.source_id == "utility-1"]
+        assert util_entries and util_entries[0].bus_id == "bus-1"
+
+    def test_default_remains_ideal_infinite_bus(self):
+        """Without the opt-in (every legacy project) the utility bus stays the
+        swing at exactly 1.0 pu and no synthetic pieces exist."""
+        res = run_load_flow(self._project(grid_model="infinite"),
+                            "newton_raphson")
+        assert res.converged
+        assert res.buses["bus-1"].voltage_pu == pytest.approx(1.0, abs=1e-9)
+        assert not any(b.elementId.startswith("__gridz__") for b in res.branches)
+
+    def test_utility_voltage_setpoint(self):
+        """v_setpoint_pu moves the swing reference: an ideal utility holds its
+        bus at exactly the setpoint (1.05 pu here)."""
+        res = run_load_flow(self._project(grid_model="infinite", vset=1.05),
+                            "newton_raphson")
+        assert res.converged
+        assert res.buses["bus-1"].voltage_pu == pytest.approx(1.05, abs=1e-9)
+
+    def test_voltage_stability_inherits_weak_grid(self):
+        """With the Thevenin model the P-V nose is set by the SOURCE strength:
+        an (almost) X-only 100 MVA grid feeding its bus directly collapses at
+        P_max = E²/(2X) ≈ 50 MW — the documented ideal-swing limitation
+        (loadability independent of fault level) is removed."""
+        proj = self._project(pf=1.0, load_kva=20_000.0, xr=1_000.0)
+        r = run_voltage_stability(proj, lambda_max=8.0, step=0.05)
+        assert r.collapsed, r.note
+        _r_pu, x_pu = self._rx_pu(xr=1_000.0)
+        p_max = 100.0 / (2.0 * x_pu)           # E²/(2X) on the 100 MVA base
+        assert r.lambda_critical == pytest.approx(p_max / 20.0, rel=0.03)
+
+
 class TestPlanSubBoardFeeder:
     """EE-1: a distribution board is a bus-like node that carries its own
     lumped load AND passes current through to a sub-board it feeds. Regression

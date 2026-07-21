@@ -215,7 +215,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Gauss-Seidel: simpler iteration, slower convergence
 - Transparent elements (CBs, switches, fuses) are collapsed — connected buses grouped
 - Outputs: bus voltages/angles, branch MW/MVAR flows, losses
-- The utility source is modelled as an **ideal infinite/swing bus** (held at 1.0 p.u.) — its `fault_mva` is *not* modelled in load flow, so loadability/voltage-collapse behaviour is set by the network impedance, not source strength
+- The utility source defaults to an **ideal infinite/swing bus** (held at `v_setpoint_pu`, default 1.0 p.u.) — its `fault_mva` is *not* modelled, so loadability/voltage-collapse behaviour is set by the network impedance alone. Setting the utility prop `lf_grid_model: "thevenin"` instead re-hangs it behind its Thevenin source impedance Z = U²/S″k (R+jX from `x_r_ratio`, no IEC 60909 c factor) via an internal EMF bus that becomes the swing (`_insert_grid_source_impedance`) — the point of supply then sags with load, and voltage stability / contingency / motor-starting baselines inherit the finite grid strength. The synthetic EMF bus + impedance element are collapsed out of user-facing results
 - `connected_bus_loads_mw(project)` — public helper returning per-bus local real load (MW) using the engine's own bus/load walkers; reused by voltage stability and contingency so their demand accounting matches the solver
 
 ### Voltage Stability (voltage_stability.py)
