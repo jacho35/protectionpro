@@ -1279,6 +1279,7 @@ const Canvas = {
             lines.push({text: `Q: ${qStr}`, color: loadColor});
             if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
             if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
+            if (branch.losses_mw > 0) lines.push({text: `Loss: ${this._fmtLossLine(branch.losses_mw)}`, color: loadColor});
           }
         }
         // Show fault branch contributions on cable
@@ -1306,6 +1307,7 @@ const Canvas = {
             lines.push({text: `Q: ${qStr}`, color: loadColor});
             if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
             if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
+            if (branch.losses_mw > 0) lines.push({text: `Loss: ${this._fmtLossLine(branch.losses_mw)}`, color: loadColor});
           }
         }
         // Show fault branch contributions on transformer
@@ -1494,6 +1496,13 @@ const Canvas = {
 
   _hasFaultBranchData(comp) {
     return this._findFaultBranch(comp) != null;
+  },
+
+  // Element's own series loss (sending-end minus receiving-end power) for the
+  // load-flow data label. Losses are usually well under a megawatt, so kW gets
+  // two decimals (backend resolution is 0.1 kW).
+  _fmtLossLine(lossMw) {
+    return lossMw >= 1 ? `${lossMw.toFixed(3)} MW` : `${(lossMw * 1000).toFixed(2)} kW`;
   },
 
   _appendFaultBranchLines(comp, lines) {
