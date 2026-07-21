@@ -121,7 +121,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set, e
 
 ### Analysis Modules
 
-- ~~**Transient Stability Analysis**: Time-domain simulation of system disturbances — load shedding, fast bus transfer, critical clearing time, generator start-up with speed-torque dynamics~~ **Done (classical model)** — see Completed. Follow-up: two-axis (flux-decay) machine model + AVR/exciter + turbine-governor dynamics for voltage recovery and multi-swing damping.
+- ~~**Transient Stability Analysis**: Time-domain simulation of system disturbances — load shedding, fast bus transfer, critical clearing time, generator start-up with speed-torque dynamics~~ **Done** — classical model, then extended 2026-07-13 (a451ec4) with the two-axis (flux-decay) machine model (`machine_model`, Xq/T′do/T′qo), AVR/exciter (`avr_mode` on by default, Ka/Ta + field ceiling), and turbine-governor (`gov_mode` isochronous/droop/none, droop %, servo + reset time constants) — see Completed. Remaining follow-up: sub-transient (d/q″) machine dynamics (documented in the engine docstring).
 - ~~**Harmonic Analysis (full)**: THD calculation, harmonic current/voltage sources (VFD, UPS, converters), harmonic resonance identification, filter design; extends existing harmonic load flow backlog item~~ **Done (VFD sources + IEEE 519)** — see Completed. Follow-up: passive filter sizing, frequency scan.
 - **Frequency Scan**: Impedance vs. frequency sweep across the network for resonance identification
 - ~~**DC Load Flow**: Load flow solver for DC buses (UPS, battery, telecom DC systems)~~
