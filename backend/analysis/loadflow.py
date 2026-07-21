@@ -394,6 +394,125 @@ def _expand_three_winding(project: ProjectData) -> ProjectData:
     return ProjectData(**data)
 
 
+# ── Utility Thevenin source impedance (weak-grid modelling) ─────────────
+#
+# By default the utility is an ideal infinite bus: its connection bus is the
+# swing, pinned at the setpoint voltage, and the declared fault level plays no
+# part in the load flow. Setting the utility prop `lf_grid_model` to
+# 'thevenin' re-hangs the utility behind an internal EMF bus and a series
+# impedance Z_Q = U_n²/S″_kQ (split R + jX by the utility's x_r_ratio — the
+# same Thevenin the fault engine uses, without the IEC 60909 c factor, which
+# is a fault-calculation convention, not an operating-point one). The internal
+# bus becomes the island swing, so the point of supply sags with load — and
+# every study built on run_load_flow (voltage stability, contingency, motor
+# starting baselines) inherits the finite grid strength.
+
+GRID_BUS_PREFIX = "__grid__"
+GRID_Z_PREFIX = "__gridz__"
+
+
+def is_grid_bus(bus_id):
+    """True if bus_id is the internal EMF node of a Thevenin-modelled utility."""
+    return bool(bus_id) and bus_id.startswith(GRID_BUS_PREFIX)
+
+
+def _utility_models_impedance(util):
+    """True when this utility opts into Thevenin source-impedance modelling."""
+    if str(util.props.get("lf_grid_model", "infinite") or "infinite") != "thevenin":
+        return False
+    try:
+        return float(util.props.get("fault_mva", 500) or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _insert_grid_source_impedance(project: ProjectData):
+    """Return (project, warnings) with each opted-in utility re-hung behind an
+    internal EMF bus and a series Thevenin impedance element:
+
+        utility ── [EMF bus] ── [Z_s element] ── (original neighbours)
+
+    The EMF bus is picked up as the island swing by plan_dispatch (the utility
+    connects directly to it); both synthetic pieces are collapsed out of
+    user-facing results at the end of run_load_flow.
+
+    Idempotent: a utility already wired to its EMF bus is left untouched, so
+    the OLTC re-solve loop and repeated calls are unchanged. Utilities without
+    the opt-in prop are byte-identical (legacy infinite-bus behaviour).
+    """
+    import json
+    adjacency = {}
+    for w in project.wires:
+        adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
+        adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
+    targets = []
+    for c in project.components:
+        if c.type != "utility" or not _utility_models_impedance(c):
+            continue
+        neighbors = adjacency.get(c.id, [])
+        if not neighbors:
+            continue  # unwired — nothing to re-hang
+        if any(is_grid_bus(nid) for nid in neighbors):
+            continue  # already inserted (idempotency)
+        targets.append(c)
+    if not targets:
+        return project, []
+
+    warnings = []
+    data = json.loads(project.model_dump_json())
+    wires = data["wires"]
+    for util in targets:
+        uid = util.id
+        uname = str(util.props.get("name", uid))
+        v_kv = float(util.props.get("voltage_kv", 33) or 33)
+        fault_mva = float(util.props.get("fault_mva", 500) or 500)
+        xr = max(float(util.props.get("x_r_ratio", 15) or 15), 0.01)
+        z_ohm = (v_kv ** 2) / fault_mva
+        x_ohm = z_ohm * xr / math.sqrt(1 + xr * xr)
+        r_ohm = x_ohm / xr
+        grid_id = f"{GRID_BUS_PREFIX}{uid}"
+        zs_id = f"{GRID_Z_PREFIX}{uid}"
+        # Re-hang: everything the utility used to feed now hangs off the far
+        # end of the impedance element (utility → EMF bus → Z_s → network).
+        for w in wires:
+            if w["fromComponent"] == uid:
+                w["fromComponent"], w["fromPort"] = zs_id, "to"
+            elif w["toComponent"] == uid:
+                w["toComponent"], w["toPort"] = zs_id, "to"
+        wires.append({"id": f"{GRID_BUS_PREFIX}w1_{uid}",
+                      "fromComponent": uid, "fromPort": "out",
+                      "toComponent": grid_id, "toPort": "at_0"})
+        wires.append({"id": f"{GRID_BUS_PREFIX}w2_{uid}",
+                      "fromComponent": grid_id, "fromPort": "at_1",
+                      "toComponent": zs_id, "toPort": "from"})
+        data["components"].append({
+            "id": grid_id, "type": "bus", "x": util.x, "y": util.y,
+            "rotation": 0,
+            "props": {"name": f"{uname} internal grid", "voltage_kv": v_kv,
+                      "bus_type": "PQ", "system": "ac", "synthetic": True},
+        })
+        # rated_amps sized to the full fault level so loading % reads
+        # S/S″_kQ — indicative of grid-capacity draw, and far too large to
+        # ever raise a false thermal-overload flag on the synthetic element.
+        data["components"].append({
+            "id": zs_id, "type": "cable", "x": util.x, "y": util.y,
+            "rotation": 0,
+            "props": {"name": f"{uname} source impedance", "voltage_kv": v_kv,
+                      "r_per_km": r_ohm, "x_per_km": x_ohm, "length_km": 1.0,
+                      "num_parallel": 1,
+                      "rated_amps": fault_mva * 1000 / (math.sqrt(3) * v_kv),
+                      "synthetic": True},
+        })
+        warnings.append(LoadFlowWarning(
+            elementId=uid, element_name=uname,
+            message=(f"Utility '{uname}' modelled as a Thevenin source — "
+                     f"{fault_mva:g} MVA at X/R {xr:g} ({z_ohm:.4g} Ω at "
+                     f"{v_kv:g} kV) behind the point of supply, so its "
+                     "voltage sags with load (infinite-bus model disabled)."),
+        ))
+    return ProjectData(**data), warnings
+
+
 def _autotransformer_regulated_bus(at, adjacency, components, bus_of):
     """Return (regulated_bus_id, hv_bus_id) for a regulating 2-winding
     autotransformer, or (None, None) if it does not span two buses."""
@@ -690,7 +809,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
     bus_load_p_mw: per-bus-index total load MW (positive = consumption).
     loss_adders: optional {island_number: MW} added to that island's demand —
     used by the loss-compensation pass so curtailed sources also cover the
-    measured network losses instead of leaving them on a no-export utility.
+    measured network losses instead of leaving them on a no-export utility,
+    and so droop-paralleled gensets share the losses in rating proportion
+    instead of leaving them all on the reference set.
     regulated_q: optional {"gen_buses": set(bus_index), "ibr_ids": set(comp_id)}
     naming the voltage-regulating units (PV-bus generators / voltage-mode
     inverters). Their reactive comes from the solver (PV bus) or the
@@ -708,6 +829,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                       (balancer output is filled in post-solve by the caller)
       warnings      — list of LoadFlowWarning
       island_of     — {bus_index: island number}
+      droop_ref     — {island: {"bus_id", "share_mw"}} droop-parallel
+                      reference set's proportional share, for the caller's
+                      loss-compensation pass
     """
     n = len(buses)
     island_of = _compute_islands(n, bus_idx, branch_pairs)
@@ -717,6 +841,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
     dispatched_by_comp = {}
     swing_idx = set()
     dead_idx = set()
+    droop_ref = {}   # island -> {"bus_id", "share_mw"} of the droop reference set
 
     # ── Locate every source's connection bus ──
     # Direct sources (reachable through transparent elements only) can be
@@ -972,15 +1097,23 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                                              if share_base > 0 else 0.0)
                     for c, _b, _d in seq_fixed:
                         seq_fixed_target[c.id] = droop_share[c.id]
+                    # Expose the reference set's share so the caller's
+                    # loss-compensation pass can measure the residual it
+                    # carries beyond that share (= the island's network
+                    # losses) and fold it back into the demand — which
+                    # re-splits the losses across the paralleled sets in
+                    # rating proportion (distributed slack).
+                    droop_ref[isl] = {"bus_id": buses[ref[1]].id,
+                                      "share_mw": droop_share[ref[0].id]}
                     shared = ", ".join(
                         f"'{c.props.get('name', c.id)}' {_fmt_power_mw(droop_share[c.id])}"
                         for c, _b, _d in committed)
                     warnings.append(LoadFlowWarning(
                         elementId=ref[0].id,
                         element_name=str(ref[0].props.get("name", "generator")),
-                        message=(f"Droop parallel operation — island load shared "
-                                 f"in proportion to rating across {shared} (the "
-                                 "reference set also carries the network losses)."),
+                        message=(f"Droop parallel operation — island load and "
+                                 f"network losses shared in proportion to rating "
+                                 f"across {shared}."),
                     ))
                     if seq_off:
                         held = ", ".join(f"'{e[0].props.get('name', e[0].id)}'"
@@ -1317,6 +1450,7 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
         "entries": entries,
         "warnings": warnings,
         "island_of": island_of,
+        "droop_ref": droop_ref,
     }
 
 
@@ -1721,6 +1855,9 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # Expand 3-winding autotransformers into a star node + three 2-winding legs
     # (idempotent) so the standard branch machinery handles them.
     project = _expand_three_winding(project)
+    # Re-hang each weak-grid utility behind its Thevenin source impedance
+    # (idempotent; no-op unless a utility opts in via lf_grid_model).
+    project, grid_impedance_warnings = _insert_grid_source_impedance(project)
     # Iterate OLTC taps of regulating autotransformers to their setpoint.
     if _regulate:
         regulators = [c for c in project.components
@@ -2031,11 +2168,18 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         connected = _find_components_at_bus(bus.id, adjacency, components)
         for comp in connected:
             if comp.type == "utility":
-                # Utility bus is the NR swing reference — voltage is held at 1 pu.
+                # Utility bus is the NR swing reference — voltage is held at the
+                # setpoint (v_setpoint_pu, default 1 pu; on a Thevenin-modelled
+                # utility this is the internal EMF magnitude).
                 # Do NOT add a shunt admittance: y_shunt to ground models the
                 # utility as a passive load (draining current), which is wrong.
                 # Power balance is handled by the swing-bus voltage constraint.
-                pass
+                try:
+                    _uvset = float(comp.props.get("v_setpoint_pu", 1.0) or 1.0)
+                except (TypeError, ValueError):
+                    _uvset = 1.0
+                if _uvset > 0:
+                    V_spec[i] = _uvset
             elif comp.type == "generator":
                 # Output injection comes from the merit-order dispatcher
                 # (plan_dispatch) below. Only the PV voltage setpoint is
@@ -2193,6 +2337,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # a curtailed source still has headroom, add the measured losses to the
     # island demand and re-dispatch, so "PV covers the load" really leaves
     # the utility at ~0 kW instead of importing the losses.
+    # The same feedback distributes losses across droop-paralleled gensets:
+    # the reference (slack) set's solved output above its proportional share
+    # IS the island's network losses, so folding that residual into the
+    # island demand re-splits it across all paralleled sets in rating
+    # proportion (a distributed slack) instead of leaving it on one machine.
     P_base, Q_base = P_spec.copy(), Q_spec.copy()
     loss_adders = {}
     # Voltage-regulating units whose scheduled pf-split Q the dispatcher must
@@ -2248,6 +2397,22 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 elif prev > 0 and imp < -2e-4:
                     # Overshoot (losses dropped once the source supplied locally)
                     loss_adders[isl] = max(0.0, prev + imp)
+                    adjusted = True
+            # Droop-parallel islands (disjoint from the utility case above —
+            # droop only engages with no utility in the island): the reference
+            # set's residual above its proportional share is the measured
+            # network losses. Fold it into the island demand so the next
+            # dispatch splits it across the paralleled sets in rating ratio.
+            for isl, ref_info in dispatch["droop_ref"].items():
+                bi = bus_idx[ref_info["bus_id"]]
+                if bus_types[bi] != 2:
+                    continue   # user-labelled swing elsewhere — ref isn't slack
+                inj = dispatch["injections"].get(bi, (0.0, 0.0))
+                p_ref = S_tmp[bi].real * base_mva + bus_load_p_mw[bi] - inj[0]
+                resid = p_ref - ref_info["share_mw"]
+                prev = loss_adders.get(isl, 0.0)
+                if resid > 2e-4 or (prev > 0 and resid < -2e-4):
+                    loss_adders[isl] = max(0.0, prev + resid)
                     adjusted = True
             if not adjusted:
                 break
@@ -2919,6 +3084,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # Walk from each bus through transparent devices to find all components
     # on each side of the transformer and verify their voltage ratings.
     voltage_warnings = []
+    voltage_warnings.extend(grid_impedance_warnings)  # weak-grid utilities
     voltage_warnings.extend(multi_xfmr_chain_warnings)  # [EE-2]
     voltage_warnings.extend(input_warnings)  # [EE-8]
     voltage_warnings.extend(dispatch["warnings"])
@@ -3096,6 +3262,37 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             for br in branch_results:
                 br.from_bus = _unsyn(br.from_bus)
                 br.to_bus = _unsyn(br.to_bus)
+
+    # Collapse the weak-grid synthetic pieces (internal EMF bus + Thevenin
+    # element, see _insert_grid_source_impedance): the EMF bus row disappears,
+    # rows through the Z_s element read utility → point-of-supply, and the
+    # utility's own source row / dispatch entry re-anchor to the real bus.
+    if not include_synthetic:
+        grid_ids = {bid for bid in bus_results if is_grid_bus(bid)}
+        if grid_ids:
+            util_of = {bid: bid[len(GRID_BUS_PREFIX):] for bid in grid_ids}
+            pos_of = {}  # EMF bus -> point-of-supply bus (far end of Z_s)
+            for _elems, _a, _b, *_rest in branch_chains:
+                if _a in grid_ids and _b not in grid_ids:
+                    pos_of[_a] = _b
+                elif _b in grid_ids and _a not in grid_ids:
+                    pos_of[_b] = _a
+            for bid in grid_ids:
+                bus_results.pop(bid, None)
+            for br in branch_results:
+                for _attr in ("from_bus", "to_bus"):
+                    _bid = getattr(br, _attr)
+                    if _bid not in grid_ids:
+                        continue
+                    _other = br.to_bus if _attr == "from_bus" else br.from_bus
+                    # The utility's own source row (utility → EMF bus) lands
+                    # on the point of supply; network rows land on the utility.
+                    setattr(br, _attr,
+                            pos_of.get(_bid, util_of[_bid])
+                            if _other == util_of[_bid] else util_of[_bid])
+            for de in dispatch_results:
+                if de.bus_id in grid_ids:
+                    de.bus_id = pos_of.get(de.bus_id, util_of[de.bus_id])
 
     # Calculated power factor of each flow (|P|/S) — shown on branch/source
     # annotations. Zero when the apparent power is ~0 (an idle element).

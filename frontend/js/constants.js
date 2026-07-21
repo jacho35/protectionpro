@@ -954,6 +954,8 @@ const FIELD_INFO = {
   'utility.fault_mva':   'Default 500 MVA represents a typical medium-strength distribution network.\nSource: IEC 60909-0 §2.1 — network feeder fault level.',
   'utility.x_r_ratio':   'Default X/R = 15 is typical for transmission/sub-transmission networks.\nSource: IEC 60909-0 Table 1 — X/R ratios for network feeders.',
   'utility.voltage_kv':  'Default 33 kV — standard sub-transmission voltage per IEC 60038.',
+  'utility.lf_grid_model': 'How the load flow models the grid connection:\nInfinite bus (ideal, default): the connection bus is the swing reference, pinned at the voltage setpoint regardless of load — the declared fault level plays no part.\nThevenin — impedance from fault level: the utility is placed behind its Thevenin source impedance Z = U²/S″k (R+jX split by the X/R ratio), so the point-of-supply voltage sags with load. Use for weak/rural grids, and for voltage-stability or contingency studies where finite source strength matters.\nFault analysis always uses the fault level either way (IEC 60909); this setting only affects load-flow-based studies.\nUsed by: Load Flow, Voltage Stability, Contingency, Motor Starting baselines.',
+  'utility.v_setpoint_pu': 'Voltage the utility holds at its swing reference, per-unit (default 1.0).\nWith the ideal grid model this is the connection-bus voltage; with the Thevenin model it is the internal EMF, so the point of supply sits slightly lower under load. Set e.g. 1.02–1.05 to represent an upstream system held above nominal.\nUsed by: Load Flow.',
 
   // Generator
   'generator.prime_mover': 'The generator\'s driving machine. Descriptive/documentation attribute — it does not change the electrical model, but it flags typical inertia bands: reciprocating sets (diesel/gas engine) H ≈ 1–3 s, hydro 2–4 s, and large steam/gas turbo-sets 4–9 s (set H explicitly in the Stability section).',
@@ -1295,6 +1297,8 @@ const COMPONENT_DEFS = {
       dispatch_priority: 3,
       allow_export: 'yes',
       supply_capacity_mva: 0,
+      lf_grid_model: 'infinite',
+      v_setpoint_pu: 1.0,
       earthing_system: 'TN-S',
       earth_electrode_r_source: 1.0,
       earth_electrode_r_installation: 20.0,
@@ -1316,6 +1320,12 @@ const COMPONENT_DEFS = {
       { key: 'dispatch_priority', label: 'Dispatch Priority', type: 'number', min: 1, max: 10, step: 1, section: 'loadflow' },
       { key: 'allow_export', label: 'Allow Export', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'supply_capacity_mva', label: 'Supply Capacity (0 = unlimited)', type: 'number', unit: 'MVA', min: 0, step: 0.1, section: 'loadflow' },
+      { key: 'lf_grid_model', label: 'Grid Model (Load Flow)', type: 'select',
+        options: [
+          { value: 'infinite', label: 'Infinite bus (ideal)' },
+          { value: 'thevenin', label: 'Thevenin — impedance from fault level' },
+        ], section: 'loadflow' },
+      { key: 'v_setpoint_pu', label: 'Voltage Setpoint', type: 'number', unit: 'pu', min: 0.9, max: 1.1, step: 0.005, section: 'loadflow' },
     ],
   },
   generator: {
@@ -2945,7 +2955,8 @@ const COMPONENT_DEFS = {
 // unit / options / min / max / step) in COMPONENT_DEFS[type].fields at render
 // time, so labels and input kinds stay in sync with the properties panel.
 const LF_ATTRS = {
-  utility: ['supply_capacity_mva', 'allow_export', 'dispatch_priority', 'fault_mva'],
+  utility: ['supply_capacity_mva', 'allow_export', 'dispatch_priority', 'fault_mva',
+            'lf_grid_model', 'v_setpoint_pu'],
   generator: ['rated_mva', 'power_factor', 'dispatch_priority', 'dispatch_mode',
               'min_load_pct', 'max_load_pct', 'gen_control', 'start_threshold_pct',
               'voltage_setpoint_pu', 'q_max_mvar', 'q_min_mvar'],

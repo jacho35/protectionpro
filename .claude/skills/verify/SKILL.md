@@ -71,6 +71,13 @@ Gotchas that cost time — do it this way:
   handler is on the SVG only — clicks on the sheet-tab strip, status bar, minimap,
   or properties panel do NOT open it (a "menu didn't open" check there is vacuous;
   probe within `#sld-canvas`'s bounding rect).
+- **Reading analysis results**: each study stores on its OWN AppState field
+  (`loadFlowResults`, `faultResults`, `arcFlashResults`, …) — `AppState.analysisResults`
+  does not exist at runtime despite CLAUDE.md's summary.
+- **Dispatch summary modal**: a load-flow run with any warnings/islanding pops the
+  summary modal, which intercepts all toolbar clicks afterwards. Hide open modals
+  (`document.querySelectorAll('.modal').forEach(m => m.style.display = 'none')`)
+  before driving the next menu action.
 - **Fresh state per scenario**: use a new browser context (auto-save backup lives in
   localStorage and can restore on load).
 - `node --check frontend/js/*.js` for quick syntax sanity; there are no frontend
