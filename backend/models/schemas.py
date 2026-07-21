@@ -995,6 +995,11 @@ class VoltageStabilityResults(BaseModel):
     # qv_margin_mvar (operating point → curve bottom distance) is offset-free
     # and is the figure to quote as the reactive margin.
     qv_min_mvar: Optional[float] = None      # bottom of the Q-V curve (net injection)
+    # [EE-R2-2] Condenser-output view of the curve bottom: net-injection min
+    # plus the bus's local reactive load — the figure comparable to a
+    # condenser / SVC datasheet rating.
+    qv_condenser_min_mvar: Optional[float] = None
+    qv_local_load_mvar: Optional[float] = None  # local Q load at the Q-V bus
     qv_margin_mvar: Optional[float] = None   # op-point Q − curve-bottom Q (reactive margin)
     qv_operating_v_pu: Optional[float] = None
     qv_operating_mvar: Optional[float] = None
