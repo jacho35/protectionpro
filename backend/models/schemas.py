@@ -1072,6 +1072,37 @@ class ContingencyRequest(ProjectData):
 
 # ── Harmonic Analysis (IEEE 519-2014) ──
 
+class OPFRequest(ProjectData):
+    """ProjectData plus OPF options (all optional)."""
+    objective: Optional[str] = None            # 'cost' (default) | 'loss'
+    v_min: Optional[float] = None              # voltage band (default 0.95)
+    v_max: Optional[float] = None              # (default 1.05)
+    loading_limit_pct: Optional[float] = None  # thermal limit (default 100)
+    use_dispatch: Optional[bool] = None        # economic re-dispatch (default on)
+    use_capacitors: Optional[bool] = None      # cap steps control (default on)
+    use_taps: Optional[bool] = None            # transformer taps (default on)
+    use_setpoints: Optional[bool] = None       # gen/utility V setpoints (default on)
+    max_moves: Optional[int] = None            # hill-climb move budget (default 25)
+
+
+class OPFResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    objective: str = "cost"
+    baseline: dict = {}                # {cost_per_h, losses_mw, violations[]}
+    optimized: dict = {}
+    savings_per_h: float = 0.0
+    loss_reduction_kw: float = 0.0
+    moves: list[dict] = []             # applied control moves (from → to)
+    settings: list[dict] = []          # final control values
+    dispatch: list[dict] = []          # per-source MW + cost
+    lf_evaluations: int = 0
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class BatterySizingRequest(ProjectData):
     """ProjectData plus battery-sizing options (all optional)."""
     battery_id: Optional[str] = None           # None → first battery-backed unit

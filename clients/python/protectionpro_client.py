@@ -244,6 +244,21 @@ class ProtectionPro:
         """IEC 61660 DC short circuit."""
         return self.analyze("dc-shortcircuit", project)
 
+    def opf(self, project: dict, *, objective: Optional[str] = None,
+            v_min: Optional[float] = None, v_max: Optional[float] = None,
+            loading_limit_pct: Optional[float] = None,
+            use_dispatch: Optional[bool] = None,
+            use_capacitors: Optional[bool] = None,
+            use_taps: Optional[bool] = None,
+            use_setpoints: Optional[bool] = None,
+            max_moves: Optional[int] = None) -> dict:
+        """Optimal power flow — economic dispatch + Volt/VAR optimization."""
+        return self.analyze("opf", project, objective=objective, v_min=v_min,
+                            v_max=v_max, loading_limit_pct=loading_limit_pct,
+                            use_dispatch=use_dispatch,
+                            use_capacitors=use_capacitors, use_taps=use_taps,
+                            use_setpoints=use_setpoints, max_moves=max_moves)
+
     def battery_sizing(self, project: dict, *,
                        battery_id: Optional[str] = None,
                        duty_cycle: Optional[list[dict]] = None,

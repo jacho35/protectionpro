@@ -169,8 +169,13 @@ def _shunt_admittance_at_h(comp, base_mva, h) -> complex:
         z = complex(rx.real, rx.imag * h)
         return 1 / z if abs(z) > 1e-12 else complex(0, 0)
     if comp.type == "capacitor_bank":
-        # Susceptance × h — the resonance driver.
+        # Susceptance × h — the resonance driver. Honour a switched bank's
+        # steps_in_service (absent ⇒ whole bank, legacy-identical).
         kvar = p.get("rated_kvar", 100) or 0
+        steps = max(1, int(p.get("steps", 1) or 1))
+        sis = p.get("steps_in_service")
+        if sis not in (None, ""):
+            kvar = kvar * min(steps, max(0, int(sis))) / steps
         b1 = (kvar / 1000) / base_mva            # capacitive susceptance (pu)
         return complex(0, h * b1)
     if comp.type in ("svc", "statcom"):

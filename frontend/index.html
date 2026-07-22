@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.60">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.60">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.60">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.60">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.60">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.60">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.60">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.60">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.60">
+  <link rel="stylesheet" href="css/app.css?v=3.5.61">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.61">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.61">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.61">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.61">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.61">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.61">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.61">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.61">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -229,6 +229,10 @@
             <button id="btn-frequency-scan" class="dropdown-item" title="Frequency Scan — driving-point impedance vs frequency per bus, parallel/series resonance identification">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 12h4l1.5-8 2 8H13" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 12h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
               Frequency Scan (Z vs f)
+            </button>
+            <button id="btn-opf" class="dropdown-item" title="Optimal Power Flow — economic dispatch by marginal cost + Volt/VAR optimization (capacitor steps, taps, setpoints)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 13L6 9l2.5 2L14 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 5H14v3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Optimal Power Flow
             </button>
             <button id="btn-battery-sizing" class="dropdown-item" title="Battery Sizing &amp; Discharge — duty-cycle capacity sizing (IEEE 485-style factors) + SoC / terminal-voltage discharge simulation">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="5" width="11" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M13 7h1.5v3H13" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7.5 6.5L5.5 9h2l-1.5 2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1204,6 +1208,36 @@
       </div>
       <div class="modal-body">
         <div id="fscan-body"><!-- Populated by JS --></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OPF — setup Modal -->
+  <div id="opf-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Optimal Power Flow Setup" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Optimal Power Flow — Setup</h3>
+        <button class="modal-close" id="btn-close-opf-config">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="opf-config-body"><!-- Populated by JS --></div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
+        <button class="btn" id="btn-opf-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-opf-run">Run Study</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- OPF — results Modal -->
+  <div id="opf-modal" class="modal" role="dialog" aria-modal="true" aria-label="Optimal Power Flow Results" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Optimal Power Flow</h3>
+        <button class="modal-close" id="btn-close-opf">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="opf-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -2705,64 +2739,65 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.60"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.60"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.60"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.60"></script>
-  <script src="js/constants.js?v=3.5.60"></script>
-  <script src="js/plan-defs.js?v=3.5.60"></script>
-  <script src="js/ui.js?v=3.5.60"></script>
-  <script src="js/state.js?v=3.5.60"></script>
-  <script src="js/components.js?v=3.5.60"></script>
-  <script src="js/voltage.js?v=3.5.60"></script>
-  <script src="js/symbols.js?v=3.5.60"></script>
-  <script src="js/canvas.js?v=3.5.60"></script>
-  <script src="js/sidebar.js?v=3.5.60"></script>
-  <script src="js/wiring.js?v=3.5.60"></script>
-  <script src="js/properties.js?v=3.5.60"></script>
-  <script src="js/annotations.js?v=3.5.60"></script>
-  <script src="js/api.js?v=3.5.60"></script>
-  <script src="js/auth.js?v=3.5.60"></script>
-  <script src="js/sharing.js?v=3.5.60"></script>
-  <script src="js/compliance.js?v=3.5.60"></script>
-  <script src="js/tcc.js?v=3.5.60"></script>
-  <script src="js/project.js?v=3.5.60"></script>
-  <script src="js/reports.js?v=3.5.60"></script>
-  <script src="js/verification-templates.js?v=3.5.60"></script>
-  <script src="js/templates.js?v=3.5.60"></script>
-  <script src="js/standard-data.js?v=3.5.60"></script>
-  <script src="js/undo.js?v=3.5.60"></script>
-  <script src="js/revisions.js?v=3.5.60"></script>
-  <script src="js/minimap.js?v=3.5.60"></script>
-  <script src="js/contextmenu.js?v=3.5.60"></script>
-  <script src="js/dbschedule.js?v=3.5.60"></script>
-  <script src="js/control-sim.js?v=3.5.60"></script>
-  <script src="js/dynmotor.js?v=3.5.60"></script>
-  <script src="js/transient.js?v=3.5.60"></script>
-  <script src="js/voltage-stability.js?v=3.5.60"></script>
-  <script src="js/freqscan.js?v=3.5.60"></script>
-  <script src="js/battsizing.js?v=3.5.60"></script>
-  <script src="js/contingency.js?v=3.5.60"></script>
-  <script src="js/lfstudy.js?v=3.5.60"></script>
-  <script src="js/interlocking.js?v=3.5.60"></script>
-  <script src="js/sequence.js?v=3.5.60"></script>
-  <script src="js/retic.js?v=3.5.60"></script>
-  <script src="js/retic-report.js?v=3.5.60"></script>
-  <script src="js/plan-symbols.js?v=3.5.60"></script>
-  <script src="js/plan-engine.js?v=3.5.60"></script>
-  <script src="js/plan-images.js?v=3.5.60"></script>
-  <script src="js/plan-tools.js?v=3.5.60"></script>
-  <script src="js/plan-sync.js?v=3.5.60"></script>
-  <script src="js/plan-csv.js?v=3.5.60"></script>
-  <script src="js/plan-dxf.js?v=3.5.60"></script>
-  <script src="js/plan-export.js?v=3.5.60"></script>
-  <script src="js/plan-lux.js?v=3.5.60"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.60"></script>
-  <script src="js/plan-dd-import.js?v=3.5.60"></script>
-  <script src="js/plan-circuits.js?v=3.5.60"></script>
-  <script src="js/plan-ui.js?v=3.5.60"></script>
-  <script src="js/plan.js?v=3.5.60"></script>
-  <script src="js/app.js?v=3.5.60"></script>
-  <script src="js/mobile.js?v=3.5.60"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.61"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.61"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.61"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.61"></script>
+  <script src="js/constants.js?v=3.5.61"></script>
+  <script src="js/plan-defs.js?v=3.5.61"></script>
+  <script src="js/ui.js?v=3.5.61"></script>
+  <script src="js/state.js?v=3.5.61"></script>
+  <script src="js/components.js?v=3.5.61"></script>
+  <script src="js/voltage.js?v=3.5.61"></script>
+  <script src="js/symbols.js?v=3.5.61"></script>
+  <script src="js/canvas.js?v=3.5.61"></script>
+  <script src="js/sidebar.js?v=3.5.61"></script>
+  <script src="js/wiring.js?v=3.5.61"></script>
+  <script src="js/properties.js?v=3.5.61"></script>
+  <script src="js/annotations.js?v=3.5.61"></script>
+  <script src="js/api.js?v=3.5.61"></script>
+  <script src="js/auth.js?v=3.5.61"></script>
+  <script src="js/sharing.js?v=3.5.61"></script>
+  <script src="js/compliance.js?v=3.5.61"></script>
+  <script src="js/tcc.js?v=3.5.61"></script>
+  <script src="js/project.js?v=3.5.61"></script>
+  <script src="js/reports.js?v=3.5.61"></script>
+  <script src="js/verification-templates.js?v=3.5.61"></script>
+  <script src="js/templates.js?v=3.5.61"></script>
+  <script src="js/standard-data.js?v=3.5.61"></script>
+  <script src="js/undo.js?v=3.5.61"></script>
+  <script src="js/revisions.js?v=3.5.61"></script>
+  <script src="js/minimap.js?v=3.5.61"></script>
+  <script src="js/contextmenu.js?v=3.5.61"></script>
+  <script src="js/dbschedule.js?v=3.5.61"></script>
+  <script src="js/control-sim.js?v=3.5.61"></script>
+  <script src="js/dynmotor.js?v=3.5.61"></script>
+  <script src="js/transient.js?v=3.5.61"></script>
+  <script src="js/voltage-stability.js?v=3.5.61"></script>
+  <script src="js/freqscan.js?v=3.5.61"></script>
+  <script src="js/battsizing.js?v=3.5.61"></script>
+  <script src="js/opf.js?v=3.5.61"></script>
+  <script src="js/contingency.js?v=3.5.61"></script>
+  <script src="js/lfstudy.js?v=3.5.61"></script>
+  <script src="js/interlocking.js?v=3.5.61"></script>
+  <script src="js/sequence.js?v=3.5.61"></script>
+  <script src="js/retic.js?v=3.5.61"></script>
+  <script src="js/retic-report.js?v=3.5.61"></script>
+  <script src="js/plan-symbols.js?v=3.5.61"></script>
+  <script src="js/plan-engine.js?v=3.5.61"></script>
+  <script src="js/plan-images.js?v=3.5.61"></script>
+  <script src="js/plan-tools.js?v=3.5.61"></script>
+  <script src="js/plan-sync.js?v=3.5.61"></script>
+  <script src="js/plan-csv.js?v=3.5.61"></script>
+  <script src="js/plan-dxf.js?v=3.5.61"></script>
+  <script src="js/plan-export.js?v=3.5.61"></script>
+  <script src="js/plan-lux.js?v=3.5.61"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.61"></script>
+  <script src="js/plan-dd-import.js?v=3.5.61"></script>
+  <script src="js/plan-circuits.js?v=3.5.61"></script>
+  <script src="js/plan-ui.js?v=3.5.61"></script>
+  <script src="js/plan.js?v=3.5.61"></script>
+  <script src="js/app.js?v=3.5.61"></script>
+  <script src="js/mobile.js?v=3.5.61"></script>
 </body>
 </html>
