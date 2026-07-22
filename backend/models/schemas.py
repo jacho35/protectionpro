@@ -1072,6 +1072,18 @@ class ContingencyRequest(ProjectData):
 
 # ── Harmonic Analysis (IEEE 519-2014) ──
 
+class ReliabilityResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    indices: dict = {}                 # SAIFI/SAIDI/CAIDI/ASAI/MAIFI/EENS
+    fmea: list[dict] = []              # per failure mode, ranked by SAIDI
+    load_points: list[dict] = []       # per-bus λ, unavailability, CAIDI
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class OPFRequest(ProjectData):
     """ProjectData plus OPF options (all optional)."""
     objective: Optional[str] = None            # 'cost' (default) | 'loss'

@@ -244,6 +244,10 @@ class ProtectionPro:
         """IEC 61660 DC short circuit."""
         return self.analyze("dc-shortcircuit", project)
 
+    def reliability(self, project: dict) -> dict:
+        """SAIDI/SAIFI/MAIFI reliability assessment (IEEE 1366 FMEA)."""
+        return self.analyze("reliability", project)
+
     def opf(self, project: dict, *, objective: Optional[str] = None,
             v_min: Optional[float] = None, v_max: Optional[float] = None,
             loading_limit_pct: Optional[float] = None,

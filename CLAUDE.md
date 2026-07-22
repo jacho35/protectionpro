@@ -50,6 +50,7 @@ frontend/
     ├── freqscan.js         # Frequency scan UI (Z vs f setup + log-decade chart)
     ├── battsizing.js       # Battery sizing & discharge UI (duty editor + SoC/V charts)
     ├── opf.js              # Optimal power flow UI (objective/controls setup + comparison tables)
+    ├── reliability.js      # Reliability UI (IEEE 1366 indices chips + load-point/FMEA tables)
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
@@ -73,6 +74,7 @@ backend/
 │   ├── frequency_scan.py   # Driving-point impedance vs frequency — parallel/series resonance identification
 │   ├── battery_sizing.py   # Duty-cycle battery sizing (IEEE 485-style factors) + discharge simulation
 │   ├── optimal_powerflow.py # OPF — merit-order economic dispatch + greedy discrete Volt/VAR hill climb
+│   ├── reliability.py      # SAIDI/SAIFI/MAIFI (IEEE 1366) — analytical FMEA over connectivity outages
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -151,6 +153,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/frequency-scan` | Impedance vs frequency (resonance) | Nodal Z_kk(h) sweep on the harmonics network model |
 | `/api/analysis/battery-sizing` | Duty-cycle battery sizing + discharge sim | IEEE 485-style factors, Peukert, OCV(SoC) |
 | `/api/analysis/opf` | Economic dispatch + Volt/VAR optimization | Merit order by marginal cost + LF-scored hill climb |
+| `/api/analysis/reliability` | SAIDI/SAIFI/MAIFI/EENS | IEEE 1366 indices, analytical FMEA (Billinton) |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |

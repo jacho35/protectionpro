@@ -36,6 +36,7 @@ from backend.analysis.harmonics import (
 from backend.analysis.frequency_scan import run_frequency_scan
 from backend.analysis.battery_sizing import run_battery_sizing
 from backend.analysis.optimal_powerflow import run_opf
+from backend.analysis.reliability import run_reliability
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -541,6 +542,93 @@ class TestLoadFlow:
         # inductive (positive); the cap reduces but does not cancel it.
         assert main.q_through_mvar == pytest.approx(0.14, abs=1e-2), \
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
+
+
+class TestReliability:
+    """IEEE 1366 indices against the classic radial FMEA hand calculation
+    (Billinton & Allan ch. 7 style).
+
+    utility ─ cable1 ─ [bus1: 100 cust, 1 MW] ─ cable2 ─ [bus2: 200 cust, 2 MW]
+
+    cable1 (λ=0.1/yr, r=4 h) interrupts everyone; cable2 (λ=0.2/yr, r=4 h)
+    interrupts only bus2:
+
+        SAIFI = (0.1·300 + 0.2·200)/300 = 0.23333 int/cust·yr
+        SAIDI = 4·SAIFI = 0.93333 h/cust·yr,  CAIDI = 4 h
+        EENS  = 0.1·4·3 + 0.2·4·2 = 2.8 MWh/yr
+    """
+
+    def _project(self, overhead2=False, mom2=0.0):
+        c2 = {"name": "C2", "voltage_kv": 11.0, "r_per_km": 0.2,
+              "x_per_km": 0.1, "length_km": 1.0, "rated_amps": 300.0,
+              "failure_rate_per_km_yr": 0.2, "repair_time_h": 4.0}
+        if overhead2:
+            c2["construction"] = "overhead"
+            c2["momentary_rate_per_km_yr"] = mom2
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+                "failure_rate_per_yr": 0.0}),
+            _comp("cable-1", "cable", {
+                "name": "C1", "voltage_kv": 11.0, "r_per_km": 0.2,
+                "x_per_km": 0.1, "length_km": 1.0, "rated_amps": 300.0,
+                "failure_rate_per_km_yr": 0.1, "repair_time_h": 4.0}),
+            _comp("bus-1", "bus", {"name": "LP1", "voltage_kv": 11.0,
+                                   "failure_rate_per_yr": 0.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 1000.0, "power_factor": 1.0,
+                "demand_factor": 1.0, "voltage_kv": 11.0, "customers": 100}),
+            _comp("cable-2", "cable", c2),
+            _comp("bus-2", "bus", {"name": "LP2", "voltage_kv": 11.0,
+                                   "failure_rate_per_yr": 0.0}),
+            _comp("static_load-2", "static_load", {
+                "name": "L2", "rated_kva": 2000.0, "power_factor": 1.0,
+                "demand_factor": 1.0, "voltage_kv": 11.0, "customers": 200}),
+        ]
+        wires = [_wire("w1", "utility-1", "cable-1"),
+                 _wire("w2", "cable-1", "bus-1"),
+                 _wire("w3", "bus-1", "static_load-1"),
+                 _wire("w4", "bus-1", "cable-2"),
+                 _wire("w5", "cable-2", "bus-2"),
+                 _wire("w6", "bus-2", "static_load-2")]
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_radial_fmea_hand_calc(self):
+        r = run_reliability(self._project())
+        assert r["converged"]
+        idx = r["indices"]
+        assert idx["saifi"] == pytest.approx(70.0 / 300.0, rel=1e-3)
+        assert idx["saidi_h"] == pytest.approx(280.0 / 300.0, rel=1e-3)
+        assert idx["caidi_h"] == pytest.approx(4.0, rel=1e-3)
+        assert idx["eens_mwh_yr"] == pytest.approx(2.8, rel=1e-3)
+        assert idx["customers_total"] == 300
+        # FMEA ranked by SAIDI contribution: cable2 (0.5333) above cable1 (0.4)
+        assert r["fmea"][0]["element_id"] == "cable-2"
+        assert r["fmea"][0]["saidi_contrib_h"] == pytest.approx(0.53333, rel=1e-3)
+
+    def test_load_point_indices(self):
+        r = run_reliability(self._project())
+        lp2 = next(p for p in r["load_points"] if p["bus_id"] == "bus-2")
+        assert lp2["lambda_per_yr"] == pytest.approx(0.3, rel=1e-3)
+        assert lp2["unavailability_h_yr"] == pytest.approx(1.2, rel=1e-3)
+        assert lp2["caidi_h"] == pytest.approx(4.0, rel=1e-3)
+        lp1 = next(p for p in r["load_points"] if p["bus_id"] == "bus-1")
+        assert lp1["lambda_per_yr"] == pytest.approx(0.1, rel=1e-3)
+
+    def test_maifi_from_overhead_momentary(self):
+        """Overhead cable2 with 2.0 momentary/km·yr over 200 of 300 customers:
+        MAIFI = 2.0·200/300 = 1.3333."""
+        r = run_reliability(self._project(overhead2=True, mom2=2.0))
+        assert r["indices"]["maifi"] == pytest.approx(4.0 / 3.0, rel=1e-3)
+
+    def test_no_customers_note(self):
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=[_comp("bus-1", "bus",
+                                             {"voltage_kv": 11.0})],
+                           wires=[])
+        r = run_reliability(proj)
+        assert not r["converged"] and "customers" in r["note"]
 
 
 class TestOptimalPowerFlow:

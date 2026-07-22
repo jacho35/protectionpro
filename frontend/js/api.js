@@ -217,6 +217,12 @@ const API = {
     return this.request('/analysis/voltage-stability', 'POST', data);
   },
 
+  // Run the reliability assessment (SAIDI/SAIFI/MAIFI, IEEE 1366 FMEA).
+  async runReliability() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/reliability', 'POST', data);
+  },
+
   // Run optimal power flow (economic dispatch + Volt/VAR).
   // opts: { objective, vMin, vMax, loadingLimitPct, useDispatch,
   //         useCapacitors, useTaps, useSetpoints, maxMoves } — optional.
