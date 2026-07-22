@@ -6,7 +6,7 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -14,6 +14,7 @@ from ..analysis.harmonics import run_harmonics
 from ..analysis.frequency_scan import run_frequency_scan
 from ..analysis.battery_sizing import run_battery_sizing
 from ..analysis.optimal_powerflow import run_opf
+from ..analysis.reliability import run_reliability
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -161,6 +162,17 @@ def optimal_power_flow(data: OPFRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"OPF error: {e}")
+
+
+@router.post("/reliability", response_model=ReliabilityResults)
+def reliability(data: ProjectData):
+    """Distribution reliability — SAIDI/SAIFI/MAIFI (IEEE 1366) via
+    analytical FMEA over source-connectivity outages."""
+    try:
+        return run_reliability(data)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Reliability error: {e}")
 
 
 @router.post("/battery-sizing", response_model=BatterySizingResults)

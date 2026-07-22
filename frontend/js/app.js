@@ -1273,6 +1273,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'fscan-modal') e.target.style.display = 'none';
   });
 
+  // ── Reliability Assessment ──
+  document.getElementById('btn-reliability').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running the reliability assessment.';
+      return;
+    }
+    Reliability.run();
+  });
+  document.getElementById('btn-close-rel').addEventListener('click', () => {
+    document.getElementById('rel-modal').style.display = 'none';
+  });
+  document.getElementById('rel-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'rel-modal') e.target.style.display = 'none';
+  });
+
   // ── Optimal Power Flow ──
   document.getElementById('btn-opf').addEventListener('click', () => {
     if (AppState.components.size === 0) {
