@@ -1273,6 +1273,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'fscan-modal') e.target.style.display = 'none';
   });
 
+  // ── Optimal Power Flow ──
+  document.getElementById('btn-opf').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running OPF.';
+      return;
+    }
+    OPF.openConfig();
+  });
+  document.getElementById('btn-opf-run').addEventListener('click', () => OPF.runConfigured());
+  document.getElementById('btn-opf-cancel').addEventListener('click', () => {
+    document.getElementById('opf-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-opf-config').addEventListener('click', () => {
+    document.getElementById('opf-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-opf').addEventListener('click', () => {
+    document.getElementById('opf-modal').style.display = 'none';
+  });
+  document.getElementById('opf-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'opf-modal') e.target.style.display = 'none';
+  });
+
   // ── Battery Sizing & Discharge ──
   document.getElementById('btn-battery-sizing').addEventListener('click', () => {
     if (AppState.components.size === 0) {

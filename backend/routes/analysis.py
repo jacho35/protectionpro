@@ -6,13 +6,14 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
 from ..analysis.harmonics import run_harmonics
 from ..analysis.frequency_scan import run_frequency_scan
 from ..analysis.battery_sizing import run_battery_sizing
+from ..analysis.optimal_powerflow import run_opf
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -142,6 +143,24 @@ def frequency_scan(data: FrequencyScanRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Frequency scan error: {e}")
+
+
+@router.post("/opf", response_model=OPFResults)
+def optimal_power_flow(data: OPFRequest):
+    """Optimal power flow — merit-order economic dispatch by marginal cost +
+    greedy discrete Volt/VAR optimization (caps / taps / setpoints)."""
+    try:
+        kwargs = {"method": data.loadFlowMethod or "newton_raphson"}
+        for f in ("objective", "v_min", "v_max", "loading_limit_pct",
+                  "use_dispatch", "use_capacitors", "use_taps",
+                  "use_setpoints", "max_moves"):
+            v = getattr(data, f)
+            if v is not None:
+                kwargs[f] = v
+        return run_opf(data, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"OPF error: {e}")
 
 
 @router.post("/battery-sizing", response_model=BatterySizingResults)

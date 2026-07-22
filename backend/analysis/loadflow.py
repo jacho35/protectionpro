@@ -2280,6 +2280,13 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 # rated value (V = 1) and track Q = Q_rated·V² across the
                 # outer solve passes, mirroring the susceptance-limited SVC.
                 kvar = comp.props.get("rated_kvar", 100)
+                # Switched bank: only steps_in_service/steps of the rating is
+                # connected (OPF's Volt/VAR control). Absent prop ⇒ the whole
+                # bank, exactly the legacy behaviour.
+                _steps = max(1, int(comp.props.get("steps", 1) or 1))
+                _sis = comp.props.get("steps_in_service")
+                if _sis not in (None, ""):
+                    kvar = kvar * min(_steps, max(0, int(_sis))) / _steps
                 q_rated = kvar / 1000
                 Q_spec[i] += q_rated / base_mva
                 bus_load_q_mvar[i] -= q_rated  # capacitor supplies Q

@@ -35,6 +35,7 @@ from backend.analysis.harmonics import (
 )
 from backend.analysis.frequency_scan import run_frequency_scan
 from backend.analysis.battery_sizing import run_battery_sizing
+from backend.analysis.optimal_powerflow import run_opf
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -540,6 +541,135 @@ class TestLoadFlow:
         # inductive (positive); the cap reduces but does not cancel it.
         assert main.q_through_mvar == pytest.approx(0.14, abs=1e-2), \
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
+
+
+class TestOptimalPowerFlow:
+    """OPF: economic dispatch by marginal cost + Volt/VAR hill climb.
+
+    With linear marginal costs, cost-optimal dispatch is merit order by
+    $/MWh — the cheap unit serves the load and the expensive unit is the
+    marginal balancer. Volt/VAR anchors: switching a far-end capacitor into
+    a lagging feeder reduces I²R losses; a transformer tap step clears an
+    undervoltage violation.
+    """
+
+    def test_economic_dispatch_prefers_cheap_generator(self):
+        """5 MW load, gen at 50/MWh vs utility at 200/MWh. Baseline (gen on
+        standby behind the grid) buys everything from the utility at
+        ~1000/h; OPF dispatches the generator and cuts the bill to ~250/h."""
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+                "x_r_ratio": 15.0, "cost_per_mwh": 200.0}),
+            _comp("generator-1", "generator", {
+                "name": "G1", "rated_mva": 10.0, "power_factor": 0.85,
+                "voltage_kv": 11.0, "cost_per_mwh": 50.0}),
+            _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 5882.35, "power_factor": 0.85,
+                "demand_factor": 1.0, "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"),
+                 _wire("w2", "generator-1", "bus-1"),
+                 _wire("w3", "bus-1", "static_load-1")]
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        r = run_opf(proj, use_capacitors=False, use_taps=False,
+                    use_setpoints=False)
+        assert r["converged"]
+        assert r["baseline"]["cost_per_h"] == pytest.approx(1000.0, rel=0.02)
+        assert r["optimized"]["cost_per_h"] == pytest.approx(250.0, rel=0.05)
+        assert r["savings_per_h"] == pytest.approx(750.0, rel=0.05)
+        gen = next(d for d in r["dispatch"] if d["source_id"] == "generator-1")
+        assert gen["dispatched_mw"] == pytest.approx(5.0, rel=0.02)
+
+    def _feeder_project(self, cap_kvar=2000.0, steps=2, sis=0,
+                        load_kva=5000.0, pf=0.8):
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+                "x_r_ratio": 15.0}),
+            _comp("bus-1", "bus", {"name": "Send", "voltage_kv": 11.0}),
+            _comp("cable-1", "cable", {
+                "name": "Feeder", "voltage_kv": 11.0, "r_per_km": 0.5,
+                "x_per_km": 0.35, "length_km": 5.0, "rated_amps": 400.0}),
+            _comp("bus-2", "bus", {"name": "Recv", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": load_kva, "power_factor": pf,
+                "demand_factor": 1.0, "voltage_kv": 11.0}),
+            _comp("capacitor_bank-1", "capacitor_bank", {
+                "name": "PFC", "rated_kvar": cap_kvar, "steps": steps,
+                "steps_in_service": sis, "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"),
+                 _wire("w2", "bus-1", "cable-1"),
+                 _wire("w3", "cable-1", "bus-2"),
+                 _wire("w4", "bus-2", "static_load-1"),
+                 _wire("w5", "bus-2", "capacitor_bank-1")]
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_voltvar_switches_capacitor_in_for_losses(self):
+        """An all-off 2-step bank at the lagging far end: minimising losses
+        must switch step(s) in (less reactive current through the feeder R)."""
+        r = run_opf(self._feeder_project(), objective="loss",
+                    use_dispatch=False, use_taps=False, use_setpoints=False)
+        assert r["converged"]
+        cap = next(s for s in r["settings"]
+                   if s["element_id"] == "capacitor_bank-1")
+        assert cap["value"] >= 1, "OPF left the capacitor switched out"
+        assert r["loss_reduction_kw"] > 0
+        assert any(m["element_id"] == "capacitor_bank-1" for m in r["moves"])
+
+    def test_steps_in_service_scales_capacitor_output(self):
+        """Load flow honours the switched-bank prop: 1 of 2 steps in service
+        halves the injected reactive; absent prop = full bank (legacy)."""
+        half = run_load_flow(self._feeder_project(cap_kvar=1000.0, sis=1),
+                             "newton_raphson")
+        proj_full = self._feeder_project(cap_kvar=1000.0, sis=None)
+        for c in proj_full.components:
+            c.props.pop("steps_in_service", None)
+        full = run_load_flow(proj_full, "newton_raphson")
+        q_half = half.buses["bus-2"].q_through_mvar
+        q_full = full.buses["bus-2"].q_through_mvar
+        # Load Q = 3 MVAr inductive; the bank is a constant susceptance so it
+        # nets Q_rated·V² at the (sagged) bus voltage — full 1.0·V², half 0.5·V².
+        v_full = full.buses["bus-2"].voltage_pu
+        v_half = half.buses["bus-2"].voltage_pu
+        assert q_full == pytest.approx(3.0 - 1.0 * v_full ** 2, abs=0.05)
+        assert q_half == pytest.approx(3.0 - 0.5 * v_half ** 2, abs=0.05)
+
+    def test_tap_move_clears_undervoltage(self):
+        """A 33/11 kV transformer feeding a heavy load below 0.95 pu: the
+        tap control must reduce the violation count."""
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 33.0, "fault_mva": 500.0,
+                "x_r_ratio": 15.0}),
+            _comp("bus-1", "bus", {"name": "HV", "voltage_kv": 33.0}),
+            _comp("transformer-1", "transformer", {
+                "name": "TX", "rated_mva": 5.0, "z_percent": 10.0,
+                "x_r_ratio": 10.0, "voltage_hv_kv": 33.0,
+                "voltage_lv_kv": 11.0, "tap_percent": 0.0}),
+            _comp("bus-2", "bus", {"name": "LV", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 4800.0, "power_factor": 0.8,
+                "demand_factor": 1.0, "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"),
+                 _wire("w2", "bus-1", "transformer-1"),
+                 _wire("w3", "transformer-1", "bus-2"),
+                 _wire("w4", "bus-2", "static_load-1")]
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        r = run_opf(proj, objective="loss", use_dispatch=False,
+                    use_capacitors=False, use_setpoints=False)
+        assert r["converged"]
+        assert len(r["baseline"]["violations"]) >= 1, \
+            "test setup expected an undervoltage baseline"
+        assert (len(r["optimized"]["violations"])
+                < len(r["baseline"]["violations"]))
+        assert any(m["prop"] == "tap_percent" for m in r["moves"])
 
 
 class TestBatterySizing:
