@@ -1109,6 +1109,34 @@ class FilterSizingResults(BaseModel):
     note: str = ""
 
 
+class CapacitorPlacementRequest(ProjectData):
+    """ProjectData plus capacitor-placement options (all optional)."""
+    candidate_bus_ids: Optional[list[str]] = None   # None → all energized buses
+    unit_kvar: Optional[float] = None               # standard bank unit (default 100)
+    max_kvar_per_bus: Optional[float] = None        # default 2000
+    max_total_kvar: Optional[float] = None          # default 5000
+    v_min: Optional[float] = None                   # default 0.95
+    v_max: Optional[float] = None                   # default 1.05
+
+
+class CapacitorPlacementResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    unit_kvar: float = 0.0
+    total_kvar: float = 0.0
+    placements: list[dict] = []        # per-bus recommended kvar + voltages
+    moves: list[dict] = []             # greedy placement log
+    baseline: dict = {}
+    optimized: dict = {}
+    loss_reduction_kw: float = 0.0
+    energy_savings_mwh_yr: float = 0.0
+    savings_per_yr: float = 0.0
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class OPFRequest(ProjectData):
     """ProjectData plus OPF options (all optional)."""
     objective: Optional[str] = None            # 'cost' (default) | 'loss'

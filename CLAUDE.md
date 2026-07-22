@@ -52,6 +52,7 @@ frontend/
     ├── opf.js              # Optimal power flow UI (objective/controls setup + comparison tables)
     ├── reliability.js      # Reliability UI (IEEE 1366 indices chips + load-point/FMEA tables)
     ├── filtersizing.js     # Passive filter sizing UI (setup + design/THD tables)
+    ├── capplace.js         # Optimal capacitor placement UI (budgets setup + placement tables)
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
@@ -77,6 +78,7 @@ backend/
 │   ├── optimal_powerflow.py # OPF — merit-order economic dispatch + greedy discrete Volt/VAR hill climb
 │   ├── reliability.py      # SAIDI/SAIFI/MAIFI (IEEE 1366) — analytical FMEA over connectivity outages
 │   ├── filter_sizing.py    # Passive harmonic filter sizing — single-tuned branches to IEEE 519
+│   ├── capacitor_placement.py # Optimal capacitor placement — greedy loss-sensitivity over LF solves
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -157,6 +159,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/opf` | Economic dispatch + Volt/VAR optimization | Merit order by marginal cost + LF-scored hill climb |
 | `/api/analysis/reliability` | SAIDI/SAIFI/MAIFI/EENS | IEEE 1366 indices, analytical FMEA (Billinton) |
 | `/api/analysis/filter-sizing` | Passive harmonic filter design | Single-tuned synthesis verified vs IEEE 519 |
+| `/api/analysis/capacitor-placement` | Optimal VAR placement & sizing | Greedy loss-sensitivity, LF-scored |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |

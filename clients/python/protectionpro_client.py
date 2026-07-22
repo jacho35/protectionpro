@@ -256,6 +256,21 @@ class ProtectionPro:
                             quality_factor=quality_factor,
                             max_branches=max_branches)
 
+    def capacitor_placement(self, project: dict, *,
+                            candidate_bus_ids: Optional[list[str]] = None,
+                            unit_kvar: Optional[float] = None,
+                            max_kvar_per_bus: Optional[float] = None,
+                            max_total_kvar: Optional[float] = None,
+                            v_min: Optional[float] = None,
+                            v_max: Optional[float] = None) -> dict:
+        """Optimal capacitor placement (greedy loss-sensitivity)."""
+        return self.analyze("capacitor-placement", project,
+                            candidate_bus_ids=candidate_bus_ids,
+                            unit_kvar=unit_kvar,
+                            max_kvar_per_bus=max_kvar_per_bus,
+                            max_total_kvar=max_total_kvar,
+                            v_min=v_min, v_max=v_max)
+
     def reliability(self, project: dict) -> dict:
         """SAIDI/SAIFI/MAIFI reliability assessment (IEEE 1366 FMEA)."""
         return self.analyze("reliability", project)
