@@ -244,6 +244,20 @@ class ProtectionPro:
         """IEC 61660 DC short circuit."""
         return self.analyze("dc-shortcircuit", project)
 
+    def battery_sizing(self, project: dict, *,
+                       battery_id: Optional[str] = None,
+                       duty_cycle: Optional[list[dict]] = None,
+                       aging_factor: Optional[float] = None,
+                       design_margin: Optional[float] = None,
+                       temperature_c: Optional[float] = None,
+                       autonomy_target_min: Optional[float] = None) -> dict:
+        """Duty-cycle battery sizing + discharge simulation (IEEE 485-style)."""
+        return self.analyze("battery-sizing", project, battery_id=battery_id,
+                            duty_cycle=duty_cycle, aging_factor=aging_factor,
+                            design_margin=design_margin,
+                            temperature_c=temperature_c,
+                            autonomy_target_min=autonomy_target_min)
+
     def study_manager(self, project: dict, **params) -> dict:
         """Batch-run selected studies (see study_manager engine)."""
         return self.analyze("study-manager", project, **params)

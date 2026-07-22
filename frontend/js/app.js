@@ -1273,6 +1273,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'fscan-modal') e.target.style.display = 'none';
   });
 
+  // ── Battery Sizing & Discharge ──
+  document.getElementById('btn-battery-sizing').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running battery sizing.';
+      return;
+    }
+    BatterySizing.openConfig();
+  });
+  document.getElementById('btn-bsz-run').addEventListener('click', () => BatterySizing.runConfigured());
+  document.getElementById('btn-bsz-cancel').addEventListener('click', () => {
+    document.getElementById('bsz-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-bsz-config').addEventListener('click', () => {
+    document.getElementById('bsz-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-bsz').addEventListener('click', () => {
+    document.getElementById('bsz-modal').style.display = 'none';
+  });
+  document.getElementById('bsz-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'bsz-modal') e.target.style.display = 'none';
+  });
+
   // ── Contingency Analysis (N-1 / N-2) ──
   document.getElementById('btn-contingency').addEventListener('click', () => {
     if (AppState.components.size === 0) {

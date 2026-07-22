@@ -6,12 +6,13 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
 from ..analysis.harmonics import run_harmonics
 from ..analysis.frequency_scan import run_frequency_scan
+from ..analysis.battery_sizing import run_battery_sizing
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -141,6 +142,30 @@ def frequency_scan(data: FrequencyScanRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Frequency scan error: {e}")
+
+
+@router.post("/battery-sizing", response_model=BatterySizingResults)
+def battery_sizing(data: BatterySizingRequest):
+    """Size a battery for a duty cycle (IEEE 485-style factors) and simulate
+    the discharge (SoC + terminal voltage vs time, per-chemistry model)."""
+    try:
+        kwargs = {}
+        if data.battery_id:
+            kwargs["battery_id"] = data.battery_id
+        if data.duty_cycle is not None:
+            kwargs["duty_cycle"] = data.duty_cycle
+        if data.aging_factor is not None:
+            kwargs["aging_factor"] = data.aging_factor
+        if data.design_margin is not None:
+            kwargs["design_margin"] = data.design_margin
+        if data.temperature_c is not None:
+            kwargs["temperature_c"] = data.temperature_c
+        if data.autonomy_target_min is not None:
+            kwargs["autonomy_target_min"] = data.autonomy_target_min
+        return run_battery_sizing(data, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Battery sizing error: {e}")
 
 
 @router.post("/unbalanced-loadflow", response_model=UnbalancedLoadFlowResults)

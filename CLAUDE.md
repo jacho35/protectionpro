@@ -48,6 +48,7 @@ frontend/
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
     ├── freqscan.js         # Frequency scan UI (Z vs f setup + log-decade chart)
+    ├── battsizing.js       # Battery sizing & discharge UI (duty editor + SoC/V charts)
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
@@ -69,6 +70,7 @@ backend/
 │   ├── voltage_stability.py # Steady-state voltage stability — P-V nose curves, Q-V reactive margin, loadability margin
 │   ├── contingency.py      # Contingency analysis (N-1 / N-2) — element-outage security screening
 │   ├── frequency_scan.py   # Driving-point impedance vs frequency — parallel/series resonance identification
+│   ├── battery_sizing.py   # Duty-cycle battery sizing (IEEE 485-style factors) + discharge simulation
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -145,6 +147,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/voltage-stability` | Steady-state voltage stability | P-V / Q-V continuation (loadability & collapse) |
 | `/api/analysis/contingency` | N-1 / N-2 security screening | Load-flow contingency analysis |
 | `/api/analysis/frequency-scan` | Impedance vs frequency (resonance) | Nodal Z_kk(h) sweep on the harmonics network model |
+| `/api/analysis/battery-sizing` | Duty-cycle battery sizing + discharge sim | IEEE 485-style factors, Peukert, OCV(SoC) |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |

@@ -34,6 +34,7 @@ from backend.analysis.harmonics import (
     run_harmonics, vfd_current_spectrum, _voltage_limits, _tdd_limit,
 )
 from backend.analysis.frequency_scan import run_frequency_scan
+from backend.analysis.battery_sizing import run_battery_sizing
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -539,6 +540,99 @@ class TestLoadFlow:
         # inductive (positive); the cap reduces but does not cancel it.
         assert main.q_through_mvar == pytest.approx(0.14, abs=1e-2), \
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
+
+
+class TestBatterySizing:
+    """Battery sizing & discharge against hand calculations.
+
+    Sizing: E_req = ΣP·t / η_inv / DoD · K_age · K_design · K_temp
+    (IEEE 485-style factors). Discharge: Peukert's law on lead-acid —
+    t = H / r^k for a discharge at r× the hour-rated current (k = 1.25) —
+    and exact energy bookkeeping for Li-ion (k = 1).
+    """
+
+    def _project(self, kwh=200.0, chemistry="lfp", rt_eff=0.9025, dod=80.0,
+                 max_dis_kw=100.0, hour_rating=None, load_kva=0.0):
+        props = {"name": "BESS", "rated_kva": 200.0, "voltage_kv": 0.4,
+                 "battery_kwh": kwh, "battery_dod_pct": dod,
+                 "battery_max_discharge_kw": max_dis_kw,
+                 "battery_max_charge_kw": 50.0,
+                 "battery_rt_eff": rt_eff, "battery_soc_pct": 100.0,
+                 "battery_chemistry": chemistry, "battery_nominal_v": 48.0}
+        if hour_rating is not None:
+            props["battery_hour_rating_h"] = hour_rating
+        comps = [_comp("battery-1", "battery", props),
+                 _comp("bus-1", "bus", {"name": "LV Bus", "voltage_kv": 0.4})]
+        wires = [_wire("w1", "battery-1", "bus-1")]
+        if load_kva > 0:
+            comps.append(_comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": load_kva, "power_factor": 1.0,
+                "demand_factor": 1.0, "voltage_kv": 0.4}))
+            wires.append(_wire("w2", "bus-1", "static_load-1"))
+        return ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_required_kwh_hand_calc(self):
+        """10 kW × 2 h duty, η_rt = 0.9025 → η_1way = 0.95, DoD 80 %,
+        aging 1.25, margin 1.10, 25 °C (K_temp = 1):
+        E_req = 20/0.95/0.8 × 1.25 × 1.10 = 36.184 kWh."""
+        r = run_battery_sizing(self._project(),
+                               duty_cycle=[{"duration_min": 120, "load_kw": 10}])
+        assert r["converged"]
+        e_req = 20.0 / 0.95 / 0.8 * 1.25 * 1.10
+        assert r["required_kwh"] == pytest.approx(e_req, rel=1e-3)
+        assert r["required_ah"] == pytest.approx(e_req * 1000 / 48.0, rel=1e-3)
+        assert r["sized_ok"]  # 200 kWh installed > 36.2 required
+
+    def test_liion_runtime_to_dod_floor(self):
+        """Li-ion (k = 1): 100 kWh at 19 kW AC (20 kW DC at η = 0.95) reaches
+        the 20 % SoC floor after 0.8·100/20 h = 240 min."""
+        proj = self._project(kwh=100.0)
+        r = run_battery_sizing(
+            proj, duty_cycle=[{"duration_min": 400, "load_kw": 19.0}])
+        assert r["runtime_to_floor_min"] == pytest.approx(240.0, abs=2.0)
+        assert any(v["kind"] == "capacity" for v in r["violations"])
+
+    def test_lead_acid_peukert_halving(self):
+        """Peukert: doubling the discharge rate empties a lead-acid bank in
+        H/2^k, not H/2. A C10 bank driven at 2× its hour-rated power reaches
+        0 % SoC (DoD 100 %) at 10/2^1.25 h = 252.3 min instead of 300."""
+        proj = self._project(kwh=100.0, chemistry="lead_acid", rt_eff=1.0,
+                             dod=100.0, hour_rating=10.0, max_dis_kw=100.0)
+        r = run_battery_sizing(
+            proj, duty_cycle=[{"duration_min": 400, "load_kw": 20.0}])
+        t_exp = 10.0 / (2.0 ** 1.25) * 60.0
+        assert r["runtime_to_floor_min"] == pytest.approx(t_exp, abs=3.0)
+        # sanity: the same discharge at exactly the hour rating lasts H
+        r10 = run_battery_sizing(
+            proj, duty_cycle=[{"duration_min": 700, "load_kw": 10.0}])
+        assert r10["runtime_to_floor_min"] == pytest.approx(600.0, abs=3.0)
+
+    def test_voltage_declines_and_limit_violation_flagged(self):
+        """Terminal voltage falls monotonically-ish across the discharge, and
+        a duty peak above the discharge limit is flagged."""
+        r = run_battery_sizing(
+            self._project(max_dis_kw=50.0),
+            duty_cycle=[{"duration_min": 30, "load_kw": 80.0}])
+        assert any(v["kind"] == "discharge_limit" for v in r["violations"])
+        vs = r["trajectory"]["v_pu"]
+        assert vs[0] > vs[-2]  # last point is the unloaded OCV rebound
+
+    def test_default_duty_from_island_load(self):
+        """No duty cycle given → derived from the island's essential load
+        (10 kVA at pf 1.0 = 10 kW) over the autonomy target."""
+        r = run_battery_sizing(self._project(load_kva=10.0),
+                               autonomy_target_min=60.0)
+        assert r["duty_derived"]
+        assert r["duty"] == [{"duration_min": 60.0, "load_kw": 10.0}]
+        assert r["duty_kwh"] == pytest.approx(10.0, rel=1e-6)
+
+    def test_no_battery_note(self):
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=[_comp("bus-1", "bus", {"voltage_kv": 0.4})],
+                           wires=[])
+        r = run_battery_sizing(proj)
+        assert not r["converged"] and "No battery" in r["note"]
 
 
 class TestFrequencyScan:
