@@ -973,6 +973,8 @@ const FIELD_INFO = {
   // info fallback. Deliberately spells out that dispatch is NOT the stability
   // on/off switch (that is the breaker), since the two are easily conflated.
   'dispatch_mode': 'How the LOAD FLOW commits this source (economic dispatch). It does NOT switch the machine on or off in a stability study.\n• Must-run — always committed and generating.\n• Merit order — dispatched in priority order, only up to island demand (partial loading allowed).\n• Standby — held in reserve; committed only when the higher-priority sources cannot meet demand.\nStability note: whether a machine is ONLINE in Transient Stability is set by its BREAKER, not this field — a source behind an open breaker is out of the swing entirely (no inertia); a closed-breaker set the load flow leaves idle is modelled as a synchronous condenser (~0 MW). A machine\'s pre-fault output in the stability run follows the MW dispatched here.\nUsed by: Load Flow (and it sets the Transient Stability operating point).',
+  'capacitor_bank.tuned_order': 'Turns the bank into a SINGLE-TUNED HARMONIC FILTER: a series reactor is added so the branch series-resonates at this harmonic order (design practice tunes a few % below the target, e.g. 4.7 for the 5th). The net fundamental kvar stays the rated value, so load flow is unchanged; harmonics and frequency-scan model the full C-L-R branch. 0 = plain capacitor.\nUsed by: Harmonics, Frequency Scan, Filter Sizing.',
+  'capacitor_bank.quality_factor': 'Filter quality factor Q = X_n/R at the tuning frequency — sets the damping resistor R = (X_C/h_t)/Q. Typical 30–50 for a sharp single-tuned filter; lower Q broadens and damps the response.\nUsed by: Harmonics, Frequency Scan, Filter Sizing.',
   'capacitor_bank.steps_in_service': 'How many of the bank\'s steps are switched in (0 = bank off). The load flow, harmonics and frequency-scan engines model rated kVAr × in-service/steps; the OPF study uses this as its switched-VAR control. Leave blank/absent for the whole bank (legacy behaviour).\nUsed by: Load Flow, Harmonics, Frequency Scan, OPF.',
   'cost_per_mwh': 'Marginal generation cost (per MWh, currency-neutral) — fuel/energy cost used by the OPF study: economic dispatch is merit order by ascending marginal cost, and the optimized bill is Σ dispatched MW × cost. Typical: solar/wind 0, BESS cycling ~50, grid tariff ~120, diesel genset ~180-300.\nUsed by: Optimal Power Flow.',
   'failure_rate_per_yr': 'Sustained (permanent) failure rate λ, occurrences per year — for the utility this is upstream-grid sustained interruptions/yr. Blank = typical IEEE 493 default for the component type. Set 0 to exclude from the reliability FMEA.\nUsed by: Reliability Assessment.',
@@ -2766,6 +2768,8 @@ const COMPONENT_DEFS = {
       voltage_kv: 11,
       steps: 1,
       steps_in_service: 1,
+      tuned_order: 0,
+      quality_factor: 30,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -2773,6 +2777,8 @@ const COMPONENT_DEFS = {
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'steps', label: 'Steps', type: 'number', min: 1, step: 1 },
       { key: 'steps_in_service', label: 'Steps In Service', type: 'number', min: 0, step: 1 },
+      { key: 'tuned_order', label: 'Tuned Order (0 = plain cap)', type: 'number', min: 0, step: 0.1, section: 'harmonics' },
+      { key: 'quality_factor', label: 'Quality Factor', type: 'number', min: 5, max: 150, step: 5, section: 'harmonics', showWhen: { field: 'tuned_order', min: 1.01 } },
     ],
   },
   surge_arrester: {

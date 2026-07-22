@@ -217,6 +217,17 @@ const API = {
     return this.request('/analysis/voltage-stability', 'POST', data);
   },
 
+  // Run passive filter sizing (single-tuned branches to meet IEEE 519).
+  // opts: { filterBusId, totalKvar, qualityFactor, maxBranches } — optional.
+  async runFilterSizing(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.filterBusId) data.filter_bus_id = opts.filterBusId;
+    if (opts.totalKvar != null) data.total_kvar = opts.totalKvar;
+    if (opts.qualityFactor != null) data.quality_factor = opts.qualityFactor;
+    if (opts.maxBranches != null) data.max_branches = opts.maxBranches;
+    return this.request('/analysis/filter-sizing', 'POST', data);
+  },
+
   // Run the reliability assessment (SAIDI/SAIFI/MAIFI, IEEE 1366 FMEA).
   async runReliability() {
     const data = AppState.toJSON();

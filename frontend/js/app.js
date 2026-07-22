@@ -1273,6 +1273,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'fscan-modal') e.target.style.display = 'none';
   });
 
+  // ── Passive Filter Sizing ──
+  document.getElementById('btn-filter-sizing').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running filter sizing.';
+      return;
+    }
+    FilterSizing.openConfig();
+  });
+  document.getElementById('btn-flt-run').addEventListener('click', () => FilterSizing.runConfigured());
+  document.getElementById('btn-flt-cancel').addEventListener('click', () => {
+    document.getElementById('flt-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-flt-config').addEventListener('click', () => {
+    document.getElementById('flt-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-flt').addEventListener('click', () => {
+    document.getElementById('flt-modal').style.display = 'none';
+  });
+  document.getElementById('flt-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'flt-modal') e.target.style.display = 'none';
+  });
+
   // ── Reliability Assessment ──
   document.getElementById('btn-reliability').addEventListener('click', () => {
     if (AppState.components.size === 0) {
