@@ -284,6 +284,22 @@ class ProtectionPro:
                             plt_limit=plt_limit, d_anchor_pct=d_anchor_pct,
                             exponent=exponent)
 
+    def hosting_capacity(self, project: dict, *,
+                         candidate_bus_ids: Optional[list[str]] = None,
+                         hc_power_factor: Optional[float] = None,
+                         v_min: Optional[float] = None,
+                         v_max: Optional[float] = None,
+                         loading_limit_pct: Optional[float] = None,
+                         step_mw: Optional[float] = None,
+                         max_mw_per_bus: Optional[float] = None) -> dict:
+        """Nodal hosting capacity — max DER interconnection per bus."""
+        return self.analyze("hosting-capacity", project,
+                            candidate_bus_ids=candidate_bus_ids,
+                            hc_power_factor=hc_power_factor,
+                            v_min=v_min, v_max=v_max,
+                            loading_limit_pct=loading_limit_pct,
+                            step_mw=step_mw, max_mw_per_bus=max_mw_per_bus)
+
     def opf(self, project: dict, *, objective: Optional[str] = None,
             v_min: Optional[float] = None, v_max: Optional[float] = None,
             loading_limit_pct: Optional[float] = None,

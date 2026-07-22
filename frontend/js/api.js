@@ -259,6 +259,21 @@ const API = {
     return this.request('/analysis/flicker', 'POST', data);
   },
 
+  // Run nodal hosting capacity (max DER interconnection per bus).
+  // opts: { candidateBusIds, hcPowerFactor, vMin, vMax, loadingLimitPct,
+  //         stepMw, maxMwPerBus } — optional.
+  async runHostingCapacity(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.candidateBusIds && opts.candidateBusIds.length) data.candidate_bus_ids = opts.candidateBusIds;
+    if (opts.hcPowerFactor != null) data.hc_power_factor = opts.hcPowerFactor;
+    if (opts.vMin != null) data.v_min = opts.vMin;
+    if (opts.vMax != null) data.v_max = opts.vMax;
+    if (opts.loadingLimitPct != null) data.loading_limit_pct = opts.loadingLimitPct;
+    if (opts.stepMw != null) data.step_mw = opts.stepMw;
+    if (opts.maxMwPerBus != null) data.max_mw_per_bus = opts.maxMwPerBus;
+    return this.request('/analysis/hosting-capacity', 'POST', data);
+  },
+
   // Run optimal power flow (economic dispatch + Volt/VAR).
   // opts: { objective, vMin, vMax, loadingLimitPct, useDispatch,
   //         useCapacitors, useTaps, useSetpoints, maxMoves } — optional.
