@@ -1,6 +1,6 @@
 """Regression pins for the 2026-07 independent calculation verification fixes.
 
-Each test anchors a P1/P2 finding from CALC_VERIFICATION_2026-07-19.md to a
+Each test anchors a P1/P2 finding from audit-history/CALC_VERIFICATION_2026-07-19.md to a
 hand calculation, so the fixed behaviour is pinned the same way the rest of
 the suite pins the engines. Finding IDs (PS-* protection specialist,
 EE-* senior electrical engineer) refer to that document.

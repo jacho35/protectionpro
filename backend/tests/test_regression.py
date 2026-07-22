@@ -3,7 +3,7 @@
 Each test pins an engine result to a hand calculation from the governing
 standard (IEC 60909, IEEE 1584-2002, IEEE 80) so that calculation
 regressions are caught mechanically. These were introduced after the
-2026-06 audit (see AUDIT_REPORT.md) — every Critical finding there was
+2026-06 audit (see audit-history/AUDIT_REPORT.md) — every Critical finding there was
 detectable by one of these tests.
 
 Run with:  python -m pytest backend/tests/ -v

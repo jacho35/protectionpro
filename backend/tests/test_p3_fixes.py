@@ -1,6 +1,6 @@
 """Regression pins for the 2026-07 calculation-verification P3 fixes.
 
-Each test anchors a P3 finding from CALC_VERIFICATION_2026-07-19.md (tracked
+Each test anchors a P3 finding from audit-history/CALC_VERIFICATION_2026-07-19.md (tracked
 in BACKLOG.md, "Calculation-verification P3 follow-ups") to a hand
 calculation or a directly observable behaviour change. Finding IDs (PS-*
 protection specialist, EE-* senior electrical engineer) refer to that

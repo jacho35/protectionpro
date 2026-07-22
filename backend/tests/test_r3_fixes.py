@@ -1,6 +1,6 @@
 """Regression pins for the Round-3 principal-verification fixes.
 
-Finding numbers refer to CALC_REVIEW_ROUND3_PRINCIPAL.md (2026-07-20), which
+Finding numbers refer to audit-history/CALC_REVIEW_ROUND3_PRINCIPAL.md (2026-07-20), which
 adjudicated the Round-2 findings against the post-P3 tree. Round-1 P1/P2 pins
 live in test_verification_fixes.py; Round-1 P3 pins in test_p3_fixes.py.
 """
