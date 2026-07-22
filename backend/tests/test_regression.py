@@ -23,6 +23,7 @@ from backend.analysis.loadflow import (
 from backend.analysis.voltage_stability import run_voltage_stability
 from backend.analysis.contingency import run_contingency
 from backend.analysis.motor_starting import run_motor_starting
+from backend.analysis.flicker import run_flicker_analysis, _pst_estimate
 from backend.analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from backend.analysis.transient_stability import run_transient_stability
 from backend.analysis.grounding_system import (
@@ -444,6 +445,100 @@ class TestMotorStarting:
         # …and the auto-inserted node reproduces the manual-bus reference
         assert no_bus["motor_terminal_voltage_pu"] == pytest.approx(
             with_bus["motor_terminal_voltage_pu"], rel=0.02)
+
+
+# ── Voltage flicker screening (IEC 61000-3-3 / IEC 61000-4-15) ──────────
+
+
+class TestFlickerAnalysis:
+    """Pst-estimate formula (pure hand calc) + engine-level d(%) reuse of the
+    proven motor-starting Thevenin machinery.
+    """
+
+    def test_pst_formula_hand_calc(self):
+        """Pst = (d/d_anchor)*r^exponent, calibrated so d=3% at r=1/min ⇒
+        Pst=1.0 exactly (the anchor point); linear in d; power-law in r."""
+        assert _pst_estimate(3.0, 60.0) == pytest.approx(1.0, rel=1e-9)
+        assert _pst_estimate(6.0, 60.0) == pytest.approx(2.0, rel=1e-9)  # linear in d
+        assert _pst_estimate(3.0, 600.0) == pytest.approx(10.0 ** 0.31, rel=1e-9)  # r=10/min
+        assert _pst_estimate(3.0, 0.0) == 0.0     # non-repetitive excluded
+        assert _pst_estimate(0.0, 60.0) == 0.0
+
+    def test_custom_anchor_and_exponent(self):
+        """A user-recalibrated curve (their own IEC 61000-3-3 table reading)
+        must be honoured exactly."""
+        assert _pst_estimate(5.0, 120.0, d_anchor_pct=5.0, exponent=0.5) == \
+            pytest.approx(1.0 * (2.0 ** 0.5), rel=1e-9)
+
+    def _flicker_project(self, starts_per_hour=60.0):
+        """Same fixture as TestMotorStarting.test_voltage_dip_magnitude: a
+        1000 kW motor behind a 10 MVA/10% transformer, hand-calculated dip
+        ≈7% (4-13% verified band)."""
+        xfmr = _comp("transformer-1", "transformer", {
+            "name": "TX1", "rated_mva": 10.0, "z_percent": 10.0,
+            "x_r_ratio": 10.0, "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4,
+            "vector_group": "Dyn11",
+        })
+        lv_bus = _comp("bus-2", "bus", {"name": "LV Bus", "voltage_kv": 0.4})
+        motor = _comp("motor_induction-1", "motor_induction", {
+            "name": "M1", "rated_kw": 1000.0, "voltage_kv": 0.4,
+            "efficiency": 0.95, "power_factor": 0.85,
+            "locked_rotor_current": 6.0,
+            "flicker_starts_per_hour": starts_per_hour,
+        })
+        return _utility_bus_project(
+            fault_mva=500.0,
+            extra_components=[xfmr, lv_bus, motor],
+            extra_wires=[
+                _wire("w2", "bus-1", "transformer-1"),
+                _wire("w3", "transformer-1", "bus-2"),
+                _wire("w4", "bus-2", "motor_induction-1"),
+            ])
+
+    def test_engine_reuses_motor_starting_dip(self):
+        """The flicker engine's relative voltage change must land in the same
+        hand-calculated band as the motor-starting study on the identical
+        network (both solve the same Thevenin superposition)."""
+        res = run_flicker_analysis(self._flicker_project())
+        assert res["converged"]
+        assert res["sources"], f"no sources; warnings: {res['warnings']}"
+        d = res["sources"][0]["relative_voltage_change_pct"]
+        assert 4.0 < d < 13.0, f"d={d:.2f}%, expected the ~7% hand-calc band"
+
+    def test_frequent_starts_fail_default_pst_limit(self):
+        """60 starts/hour (r=1/min) at a ~7% step is well above the 3% anchor
+        at the same rate, so Pst > 1.0 and the default limit is breached."""
+        res = run_flicker_analysis(self._flicker_project(starts_per_hour=60.0))
+        src = res["sources"][0]
+        assert src["pst"] > 1.0
+        assert not src["pst_compliant"]
+        assert not src["compliant"]
+        assert not res["compliant"]
+        assert src["plt"] == pytest.approx(src["pst"])  # stationary-source simplification
+
+    def test_infrequent_starts_pass(self):
+        """A handful of starts per day (well under 1/min) keeps Pst low
+        enough to comply even at the same ~7% voltage step."""
+        res = run_flicker_analysis(self._flicker_project(starts_per_hour=0.1))
+        src = res["sources"][0]
+        assert src["pst"] < 1.0
+        assert src["compliant"]
+
+    def test_custom_limits_and_curve_params_pass_through(self):
+        res = run_flicker_analysis(self._flicker_project(starts_per_hour=60.0),
+                                   pst_limit=5.0, plt_limit=5.0)
+        src = res["sources"][0]
+        assert src["pst_limit"] == 5.0
+        assert src["compliant"]   # same network, relaxed limit now passes
+
+    def test_no_flagged_motors_returns_clear_note(self):
+        """A motor with the default flicker_starts_per_hour=0 (once-off
+        start) is excluded — the study reports why, not an empty pass."""
+        proj = self._flicker_project(starts_per_hour=0.0)
+        res = run_flicker_analysis(proj)
+        assert not res["converged"]
+        assert "Starts per Hour" in res["note"] or "starts_per_hour" in res["note"].lower() \
+            or "repetitive" in res["note"].lower()
 
 
 # ── Load flow sanity ─────────────────────────────────────────────────────

@@ -238,6 +238,10 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 8c1.2 0 1.2-4 2.4-4S4.6 8 5.8 8 7 4 8.2 4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9 8h2M12 4v8M14 6v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
               Filter Sizing (IEEE 519)
             </button>
+            <button id="btn-flicker" class="dropdown-item" title="Voltage Flicker — IEC 61000-3-3 / IEC 61000-4-15 planning-level Pst/Plt screening for repetitively-starting motors">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1v3M8 12v3M2.5 4l2 2M11.5 10l2 2M1 8h3M12 8h3M2.5 12l2-2M11.5 6l2-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+              Voltage Flicker (IEC 61000-3-3)
+            </button>
             <button id="btn-reliability" class="dropdown-item" title="Reliability Assessment — SAIDI / SAIFI / MAIFI / EENS via analytical FMEA (IEEE 1366 indices, IEEE 493-style default rates)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2l5 2v3.5c0 3-2 5.2-5 6.5-3-1.3-5-3.5-5-6.5V4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.7 8l1.6 1.6L10.5 6.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Reliability (SAIDI/SAIFI)
@@ -1280,6 +1284,36 @@
       </div>
       <div class="modal-body">
         <div id="flt-body"><!-- Populated by JS --></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voltage Flicker — setup Modal -->
+  <div id="flk-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Flicker Setup" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Voltage Flicker — Setup</h3>
+        <button class="modal-close" id="btn-close-flk-config">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="flk-config-body"><!-- Populated by JS --></div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
+        <button class="btn" id="btn-flk-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-flk-run">Run Study</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voltage Flicker — results Modal -->
+  <div id="flk-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Flicker Results" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Voltage Flicker — IEC 61000-3-3</h3>
+        <button class="modal-close" id="btn-close-flk">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="flk-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -2863,6 +2897,7 @@
   <script src="js/battsizing.js?v=3.5.65"></script>
   <script src="js/opf.js?v=3.5.65"></script>
   <script src="js/reliability.js?v=3.5.65"></script>
+  <script src="js/flicker.js?v=3.5.65"></script>
   <script src="js/filtersizing.js?v=3.5.65"></script>
   <script src="js/capplace.js?v=3.5.65"></script>
   <script src="js/contingency.js?v=3.5.65"></script>

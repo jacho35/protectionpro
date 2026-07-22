@@ -1109,6 +1109,27 @@ class FilterSizingResults(BaseModel):
     note: str = ""
 
 
+class FlickerAnalysisRequest(ProjectData):
+    """ProjectData plus voltage-flicker screening options (all optional)."""
+    pst_limit: Optional[float] = None        # default 1.0 (IEC 61000-3-3 LV)
+    plt_limit: Optional[float] = None        # default 0.65 (IEC 61000-3-3 LV)
+    d_anchor_pct: Optional[float] = None      # curve calibration (default 3.0)
+    exponent: Optional[float] = None          # curve exponent (default 0.31)
+
+
+class FlickerAnalysisResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    sources: list[dict] = []           # per-motor Pst/Plt + compliance
+    compliant: bool = True
+    d_anchor_pct: float = 3.0
+    exponent: float = 0.31
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class CapacitorPlacementRequest(ProjectData):
     """ProjectData plus capacitor-placement options (all optional)."""
     candidate_bus_ids: Optional[list[str]] = None   # None → all energized buses

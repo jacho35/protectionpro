@@ -1066,6 +1066,7 @@ const FIELD_INFO = {
   'motor_induction.starting_method': 'Starting method — reduces the current drawn from the supply during start (I ∝ V²):\n• DOL: full locked-rotor current\n• Star-Delta: ⅓ of DOL\n• Autotransformer (80% tap): 0.64×\n• Soft Starter: ≈0.5×\n• VFD: ≈ full-load current.',
   'motor_synchronous.starting_method': 'Starting method — reduces the current drawn from the supply during the asynchronous start (I ∝ V²):\n• DOL: full locked-rotor current\n• Star-Delta: ⅓ of DOL\n• Autotransformer (80% tap): 0.64×\n• Soft Starter: ≈0.5×\n• VFD: ≈ full-load current.',
   'motor_synchronous.locked_rotor_current': 'Default 5.5×FLC — synchronous motors start asynchronously through the amortisseur winding.\nSource: IEC 60034-1 — starting current typically 4–7× FLC.',
+  'flicker_starts_per_hour': 'How often this motor starts repeatedly (a compressor, pump, or intermittent process drive) — 0 (default) means a once-off start, which does not cause flicker and is excluded from the screening. A repetitively-switched motor causes a periodic voltage-change "flicker" the human eye can perceive as lamp flutter; this rate is the r in the IEC 61000-3-3 severity estimate.\nUsed by: Voltage Flicker.',
   'generator.inertia_h_s': 'Inertia constant H (seconds) on the machine MVA base — the stored rotor kinetic energy at rated speed divided by the rating (H = ½Jω²/S). Sets how fast the rotor angle swings after a disturbance. Typical: diesel/gas gensets 1–3 s, hydro 2–4 s, large steam turbo-sets 4–9 s.\nUsed by: Transient Stability.',
   'generator.damping_pu': 'Damping coefficient D (p.u. torque per p.u. speed deviation) in the swing equation. Represents damper-winding and load damping. Leave 0 for a conservative (undamped) first-swing result; 1–3 is typical when included.\nUsed by: Transient Stability.',
   'generator.machine_model': 'Synchronous-machine dynamic model.\n• Classical — a constant voltage E′ behind X′d (the AVR, if on, varies |E′| directly). Fast and standard for first-swing studies.\n• Two-axis — d/q transient EMFs E′q and E′d decay via the open-circuit time constants T′do / T′qo and the AVR drives the field voltage E_fd, so field flux dynamics and the exciter lag are represented (equal transient reactances X′q = X′d). Needs Xd, Xq, T′do, T′qo.\nUsed by: Transient Stability.',
@@ -2289,6 +2290,7 @@ const COMPONENT_DEFS = {
       power_factor: 0.85,
       locked_rotor_current: 6,
       starting_method: 'dol',
+      flicker_starts_per_hour: 0,
       dyn_role: 'starts',
       start_time_s: 0,
       x_pp: 0.17,
@@ -2338,6 +2340,7 @@ const COMPONENT_DEFS = {
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'poles', label: 'Poles', type: 'number', section: 'fault', min: 0, step: 2 },
+      { key: 'flicker_starts_per_hour', label: 'Starts per Hour (0 = once-off)', type: 'number', min: 0, step: 0.1, section: 'flicker' },
       // Start staging (dyn_role / start_time_s) is configured in the Dynamic
       // Motor Starting timeline modal, not here — the props remain as data
       // defaults so older projects seed the modal on first open.
@@ -2379,6 +2382,7 @@ const COMPONENT_DEFS = {
       xd_p: 0.25,
       locked_rotor_current: 5.5,
       starting_method: 'dol',
+      flicker_starts_per_hour: 0,
       dyn_role: 'starts',
       start_time_s: 0,
       demand_factor: 1.0,
@@ -2421,6 +2425,7 @@ const COMPONENT_DEFS = {
       { key: 'xd_p', label: "Xd'", type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x0', label: 'X₀ (zero seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
+      { key: 'flicker_starts_per_hour', label: 'Starts per Hour (0 = once-off)', type: 'number', min: 0, step: 0.1, section: 'flicker' },
       // Start staging is configured in the Dynamic Motor Starting timeline modal
       // (see motor_induction); the dyn_role / start_time_s defaults are kept for
       // seeding older projects.

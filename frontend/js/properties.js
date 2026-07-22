@@ -15,6 +15,7 @@ const SECTION_LABELS = {
   battery: 'Battery Storage',
   pv: 'PV Array / DC Strings',
   reliability: 'Reliability',
+  flicker: 'Voltage Flicker',
 };
 
 // The result-box type/field schema lives in RESULT_TYPE_DEFS (annotations.js),
