@@ -217,6 +217,20 @@ const API = {
     return this.request('/analysis/voltage-stability', 'POST', data);
   },
 
+  // Run optimal capacitor placement (greedy loss-sensitivity).
+  // opts: { candidateBusIds, unitKvar, maxKvarPerBus, maxTotalKvar,
+  //         vMin, vMax } — optional.
+  async runCapacitorPlacement(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.candidateBusIds && opts.candidateBusIds.length) data.candidate_bus_ids = opts.candidateBusIds;
+    if (opts.unitKvar != null) data.unit_kvar = opts.unitKvar;
+    if (opts.maxKvarPerBus != null) data.max_kvar_per_bus = opts.maxKvarPerBus;
+    if (opts.maxTotalKvar != null) data.max_total_kvar = opts.maxTotalKvar;
+    if (opts.vMin != null) data.v_min = opts.vMin;
+    if (opts.vMax != null) data.v_max = opts.vMax;
+    return this.request('/analysis/capacitor-placement', 'POST', data);
+  },
+
   // Run passive filter sizing (single-tuned branches to meet IEEE 519).
   // opts: { filterBusId, totalKvar, qualityFactor, maxBranches } — optional.
   async runFilterSizing(opts = {}) {

@@ -38,6 +38,7 @@ from backend.analysis.battery_sizing import run_battery_sizing
 from backend.analysis.optimal_powerflow import run_opf
 from backend.analysis.reliability import run_reliability
 from backend.analysis.filter_sizing import run_filter_sizing, _branch_elements
+from backend.analysis.capacitor_placement import run_capacitor_placement
 from backend.analysis.harmonics import _shunt_admittance_at_h
 
 
@@ -544,6 +545,96 @@ class TestLoadFlow:
         # inductive (positive); the cap reduces but does not cancel it.
         assert main.q_through_mvar == pytest.approx(0.14, abs=1e-2), \
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
+
+
+class TestCapacitorPlacement:
+    """Greedy capacitor placement against the classical result: on a
+    resistive feeder serving a lagging load, losses ∝ (P² + Q²)·R/V², so
+    the optimum places compensation AT THE LOAD BUS and sizes it near the
+    load's reactive demand (over-compensation reverses the gain)."""
+
+    def _feeder(self, load_kva=5000.0, pf=0.8):
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+                "x_r_ratio": 15.0}),
+            _comp("bus-1", "bus", {"name": "Send", "voltage_kv": 11.0}),
+            _comp("cable-1", "cable", {
+                "name": "Feeder", "voltage_kv": 11.0, "r_per_km": 0.5,
+                "x_per_km": 0.35, "length_km": 5.0, "rated_amps": 400.0}),
+            _comp("bus-2", "bus", {"name": "Recv", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": load_kva, "power_factor": pf,
+                "demand_factor": 1.0, "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"),
+                 _wire("w2", "bus-1", "cable-1"),
+                 _wire("w3", "cable-1", "bus-2"),
+                 _wire("w4", "bus-2", "static_load-1")]
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_places_at_load_bus_near_reactive_demand(self):
+        """4 MW / 3 MVAr at the far end, voltage band relaxed so the greedy
+        is loss-driven: 500-kvar units land on the LOAD bus and stop near
+        the compensation target: the 3 Mvar load Q plus the feeder's own
+        I²X consumption (~0.35 Mvar), divided by the bank's V² derating
+        (constant susceptance at the ~0.93 pu bus) ≈ 3.7 Mvar rated —
+        the greedy stops at 3.5–4.5 Mvar, never the 5 Mvar budget."""
+        r = run_capacitor_placement(self._feeder(), unit_kvar=500.0,
+                                    max_kvar_per_bus=5000.0,
+                                    max_total_kvar=5000.0, v_min=0.85)
+        assert r["converged"]
+        assert r["placements"], "nothing placed"
+        assert r["placements"][0]["bus_id"] == "bus-2"
+        assert 3500.0 <= r["total_kvar"] <= 4500.0
+        assert r["loss_reduction_kw"] > 0
+        assert (r["optimized"]["losses_mw"]
+                < r["baseline"]["losses_mw"])
+
+    def test_voltage_support_overrides_loss_stop(self):
+        """With the default 0.95 band the same feeder starts in undervoltage,
+        and violations rank above losses: the greedy keeps adding VARs for
+        voltage support and the violation picture must improve."""
+        r = run_capacitor_placement(self._feeder(), unit_kvar=500.0,
+                                    max_kvar_per_bus=5000.0,
+                                    max_total_kvar=5000.0)
+        assert r["baseline"]["violations"], "expected an undervoltage baseline"
+        assert (len(r["optimized"]["violations"])
+                <= len(r["baseline"]["violations"]))
+        assert r["total_kvar"] > 3000.0   # beyond the pure-loss optimum
+
+    def test_result_matches_manual_bank(self):
+        """The optimized losses equal a plain load flow with the recommended
+        bank drawn at the recommended bus — the advice is reproducible."""
+        r = run_capacitor_placement(self._feeder(), unit_kvar=500.0)
+        proj = self._feeder()
+        proj.components.append(_comp("capacitor_bank-9", "capacitor_bank", {
+            "name": "Manual", "rated_kvar": r["total_kvar"],
+            "voltage_kv": 11.0, "steps": 1}))
+        proj.wires.append(_wire("w5", "bus-2", "capacitor_bank-9"))
+        lf = run_load_flow(proj, "newton_raphson")
+        manual_loss = sum(max(0.0, b.losses_mw) for b in lf.branches)
+        assert manual_loss == pytest.approx(r["optimized"]["losses_mw"],
+                                            rel=1e-3)
+
+    def test_budget_honoured(self):
+        r = run_capacitor_placement(self._feeder(), unit_kvar=500.0,
+                                    max_total_kvar=1000.0)
+        assert r["total_kvar"] <= 1000.0 + 1e-9
+
+    def test_no_gain_no_placement(self):
+        """Unity-pf load on a SHORT feeder (negligible line vars), band
+        relaxed: nothing to compensate — nothing placed. (On a long feeder
+        even a unity-pf load leaves the line's own I²X worth chasing, so
+        this needs the short line to be a true no-gain case.)"""
+        proj = self._feeder(pf=1.0)
+        next(c for c in proj.components
+             if c.id == "cable-1").props["length_km"] = 0.2
+        r = run_capacitor_placement(proj, unit_kvar=500.0, v_min=0.85)
+        assert r["converged"]
+        assert r["total_kvar"] == 0.0
+        assert any("No placement improves" in w for w in r["warnings"])
 
 
 class TestFilterSizing:

@@ -1273,6 +1273,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'fscan-modal') e.target.style.display = 'none';
   });
 
+  // ── Optimal Capacitor Placement ──
+  document.getElementById('btn-cap-placement').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running capacitor placement.';
+      return;
+    }
+    CapPlacement.openConfig();
+  });
+  document.getElementById('btn-cpl-run').addEventListener('click', () => CapPlacement.runConfigured());
+  document.getElementById('btn-cpl-cancel').addEventListener('click', () => {
+    document.getElementById('cpl-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-cpl-config').addEventListener('click', () => {
+    document.getElementById('cpl-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-cpl').addEventListener('click', () => {
+    document.getElementById('cpl-modal').style.display = 'none';
+  });
+  document.getElementById('cpl-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'cpl-modal') e.target.style.display = 'none';
+  });
+
   // ── Passive Filter Sizing ──
   document.getElementById('btn-filter-sizing').addEventListener('click', () => {
     if (AppState.components.size === 0) {
