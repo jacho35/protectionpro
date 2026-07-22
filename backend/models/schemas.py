@@ -1072,6 +1072,40 @@ class ContingencyRequest(ProjectData):
 
 # ── Harmonic Analysis (IEEE 519-2014) ──
 
+class BatterySizingRequest(ProjectData):
+    """ProjectData plus battery-sizing options (all optional)."""
+    battery_id: Optional[str] = None           # None → first battery-backed unit
+    duty_cycle: Optional[list[dict]] = None    # [{duration_min, load_kw}]; None → island load
+    aging_factor: Optional[float] = None       # default 1.25 (IEEE 485 §6.3.3)
+    design_margin: Optional[float] = None      # default 1.10 (IEEE 485 §6.3.2)
+    temperature_c: Optional[float] = None      # default 25 °C
+    autonomy_target_min: Optional[float] = None  # derived-duty duration (default 120)
+
+
+class BatterySizingResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    battery_id: str = ""
+    battery_name: str = ""
+    chemistry: str = ""
+    installed_kwh: float = 0.0
+    required_kwh: float = 0.0
+    required_ah: float = 0.0
+    sized_ok: bool = False
+    duty: list[dict] = []
+    duty_kwh: float = 0.0
+    peak_kw: float = 0.0
+    factors: dict = {}
+    violations: list[dict] = []
+    trajectory: dict = {}              # {t_min[], soc_pct[], v_pu[], load_kw[]}
+    runtime_to_floor_min: Optional[float] = None
+    min_v_pu: Optional[float] = None
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class FrequencyScanRequest(ProjectData):
     """ProjectData plus frequency-scan sweep options (all optional)."""
     scan_bus_ids: Optional[list[str]] = None   # None → all (non-synthetic) buses

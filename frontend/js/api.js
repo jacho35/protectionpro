@@ -217,6 +217,20 @@ const API = {
     return this.request('/analysis/voltage-stability', 'POST', data);
   },
 
+  // Run battery sizing & discharge simulation.
+  // opts: { batteryId, dutyCycle, agingFactor, designMargin, temperatureC,
+  //         autonomyTargetMin } — optional.
+  async runBatterySizing(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.batteryId) data.battery_id = opts.batteryId;
+    if (opts.dutyCycle) data.duty_cycle = opts.dutyCycle;
+    if (opts.agingFactor != null) data.aging_factor = opts.agingFactor;
+    if (opts.designMargin != null) data.design_margin = opts.designMargin;
+    if (opts.temperatureC != null) data.temperature_c = opts.temperatureC;
+    if (opts.autonomyTargetMin != null) data.autonomy_target_min = opts.autonomyTargetMin;
+    return this.request('/analysis/battery-sizing', 'POST', data);
+  },
+
   // Run the frequency scan (driving-point impedance vs frequency).
   // opts: { busIds, hMax, hStep } — optional.
   async runFrequencyScan(opts = {}) {
