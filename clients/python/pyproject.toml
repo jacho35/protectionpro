@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protectionpro-client"
+version = "0.1.0"
+description = "Python client for the ProtectionPro power-systems analysis REST API"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["httpx>=0.24"]
+license = { text = "MIT" }
+
+[tool.setuptools]
+py-modules = ["protectionpro_client"]

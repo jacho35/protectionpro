@@ -54,6 +54,9 @@ frontend/
     ├── minimap.js          # Scaled diagram overview widget
     └── undo.js             # Snapshot-based undo/redo (50 states max)
 
+clients/
+└── python/                 # Python API client (protectionpro_client.py, httpx) — batch/parametric scripting; see its README
+
 backend/
 ├── main.py                 # FastAPI app, CORS, static file serving, DB init
 ├── models/
