@@ -1339,6 +1339,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'flk-modal') e.target.style.display = 'none';
   });
 
+  // ── Nodal Hosting Capacity ──
+  document.getElementById('btn-hosting-capacity').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running the hosting capacity screening.';
+      return;
+    }
+    HostingCapacity.openConfig();
+  });
+  document.getElementById('btn-hc-run').addEventListener('click', () => HostingCapacity.runConfigured());
+  document.getElementById('btn-hc-cancel').addEventListener('click', () => {
+    document.getElementById('hc-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-hc-config').addEventListener('click', () => {
+    document.getElementById('hc-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-hc').addEventListener('click', () => {
+    document.getElementById('hc-modal').style.display = 'none';
+  });
+  document.getElementById('hc-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'hc-modal') e.target.style.display = 'none';
+  });
+
   // ── Reliability Assessment ──
   document.getElementById('btn-reliability').addEventListener('click', () => {
     if (AppState.components.size === 0) {

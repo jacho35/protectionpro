@@ -54,6 +54,7 @@ frontend/
     ├── filtersizing.js     # Passive filter sizing UI (setup + design/THD tables)
     ├── capplace.js         # Optimal capacitor placement UI (budgets setup + placement tables)
     ├── flicker.js          # Voltage flicker UI (IEC 61000-3-3 setup + Pst/Plt per-motor table)
+    ├── hostingcapacity.js  # Nodal hosting capacity UI (DER limits setup + per-bus MW table)
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
@@ -81,6 +82,7 @@ backend/
 │   ├── filter_sizing.py    # Passive harmonic filter sizing — single-tuned branches to IEEE 519
 │   ├── capacitor_placement.py # Optimal capacitor placement — greedy loss-sensitivity over LF solves
 │   ├── flicker.py          # Voltage flicker (IEC 61000-3-3/-4-15) — planning-level Pst/Plt screening for repetitive motor starts
+│   ├── hosting_capacity.py # Nodal DER hosting capacity — voltage-rise/thermal limited PV injection sweep per bus
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -163,6 +165,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/filter-sizing` | Passive harmonic filter design | Single-tuned synthesis verified vs IEEE 519 |
 | `/api/analysis/capacitor-placement` | Optimal VAR placement & sizing | Greedy loss-sensitivity, LF-scored |
 | `/api/analysis/flicker` | Voltage flicker (Pst/Plt) screening | IEC 61000-3-3-style curve on Thevenin d(%) — planning estimate, not a flickermeter |
+| `/api/analysis/hosting-capacity` | Nodal DER hosting capacity | Voltage/thermal-limited PV injection sweep, LF-scored |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |

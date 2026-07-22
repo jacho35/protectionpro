@@ -24,6 +24,7 @@ from backend.analysis.voltage_stability import run_voltage_stability
 from backend.analysis.contingency import run_contingency
 from backend.analysis.motor_starting import run_motor_starting
 from backend.analysis.flicker import run_flicker_analysis, _pst_estimate
+from backend.analysis.hosting_capacity import run_hosting_capacity, _with_der
 from backend.analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from backend.analysis.transient_stability import run_transient_stability
 from backend.analysis.grounding_system import (
@@ -445,6 +446,118 @@ class TestMotorStarting:
         # …and the auto-inserted node reproduces the manual-bus reference
         assert no_bus["motor_terminal_voltage_pu"] == pytest.approx(
             with_bus["motor_terminal_voltage_pu"], rel=0.02)
+
+
+# ── Nodal hosting capacity (DER interconnection screening) ──────────────
+
+
+class TestHostingCapacity:
+    """Nodal hosting-capacity search, cross-validated against DIRECT
+    run_load_flow calls at/around the reported boundary (not a hand-derived
+    closed form) — this tests the SEARCH ALGORITHM finds where the
+    voltage-rise / thermal-overload boundary actually sits, reusing the
+    already-proven load-flow physics as ground truth.
+
+    Network: a strong utility (negligible source impedance) feeds bus-1
+    (≈1.0 pu swing) through a cable to bus-2, which carries NO other load —
+    so a unity-pf DER injected at bus-2 sends 100% of its output back
+    through the cable to the source, raising bus-2's voltage above 1.0 pu
+    (the mirror image of the voltage SAG a consuming load causes).
+    """
+
+    def _der_project(self, r_per_km=0.5, x_per_km=0.1, length_km=2.0,
+                     rated_amps=400.0, bus2_props=None):
+        cable = _comp("cable-1", "cable", {
+            "name": "Feeder", "voltage_kv": 11.0, "r_per_km": r_per_km,
+            "x_per_km": x_per_km, "length_km": length_km,
+            "rated_amps": rated_amps})
+        bus2 = _comp("bus-2", "bus", dict({"name": "Candidate",
+                                           "voltage_kv": 11.0},
+                                          **(bus2_props or {})))
+        return _utility_bus_project(
+            fault_mva=100_000.0, kv=11.0,   # negligible source impedance
+            extra_components=[cable, bus2],
+            extra_wires=[_wire("w2", "bus-1", "cable-1"),
+                         _wire("w3", "cable-1", "bus-2")])
+
+    def test_voltage_rise_limited_capacity_matches_direct_loadflow(self):
+        """The reported hosting capacity must land where bus-2's voltage
+        actually crosses v_max, verified by re-running load flow directly
+        at (and just above) the reported MW."""
+        proj = self._der_project()
+        res = run_hosting_capacity(proj, v_max=1.05, loading_limit_pct=1000.0,
+                                   max_mw_per_bus=20.0)
+        assert res["converged"]
+        b2 = next(b for b in res["buses"] if b["bus_id"] == "bus-2")
+        assert not b2["capped"]
+        assert b2["limiting_factor"] == "overvoltage"
+        hc = b2["hosting_capacity_mw"]
+        assert 0.5 < hc < 15.0, f"HC {hc} MW outside a sane band for this network"
+
+        # At the reported boundary, voltage is at (or just under) v_max…
+        lf_at = run_load_flow(_with_der(proj, "bus-2", hc, 1.0), "newton_raphson")
+        v_at = lf_at.buses["bus-2"].voltage_pu
+        assert v_at <= 1.05 + 0.005
+
+        # …and a bit more DER pushes it over.
+        lf_over = run_load_flow(_with_der(proj, "bus-2", hc + 0.5, 1.0),
+                                "newton_raphson")
+        v_over = lf_over.buses["bus-2"].voltage_pu
+        assert v_over > 1.05
+
+    def test_thermal_limited_capacity_matches_direct_loadflow(self):
+        """A cable with a small rated_amps must bind on the THERMAL screen
+        well before the 5% voltage-rise limit, and the reported capacity
+        must land at the loading-limit crossing when checked directly."""
+        proj = self._der_project(rated_amps=20.0)   # rated_mva ≈ 0.381
+        res = run_hosting_capacity(proj, v_max=1.05, loading_limit_pct=100.0,
+                                   max_mw_per_bus=5.0)
+        b2 = next(b for b in res["buses"] if b["bus_id"] == "bus-2")
+        assert not b2["capped"]
+        assert b2["limiting_factor"] == "overload"
+        assert b2["limiting_element"] == "Feeder"
+        hc = b2["hosting_capacity_mw"]
+        assert 0.1 < hc < 0.6, f"HC {hc} MW outside the expected thermal band"
+
+        lf_over = run_load_flow(_with_der(proj, "bus-2", hc + 0.1, 1.0),
+                                "newton_raphson")
+        cable_br = next(br for br in lf_over.branches if br.elementId == "cable-1")
+        assert cable_br.loading_pct > 100.0
+
+    def test_capped_reports_lower_bound(self):
+        """A search cap reached without any violation is reported as a
+        capped LOWER BOUND, not a false hard limit."""
+        proj = self._der_project()
+        res = run_hosting_capacity(proj, v_max=1.5, loading_limit_pct=10000.0,
+                                   max_mw_per_bus=1.0, step_mw=0.5)
+        b2 = next(b for b in res["buses"] if b["bus_id"] == "bus-2")
+        assert b2["capped"]
+        assert b2["limiting_factor"] == "none_within_cap"
+        assert b2["hosting_capacity_mw"] == pytest.approx(1.0, abs=1e-6)
+
+    def test_baseline_violation_reports_zero(self):
+        """A bus that already violates the voltage band with ZERO DER (an
+        artificially tight v_max here) reports 0 MW hosting capacity with a
+        clear reason, not a nonsensical search result."""
+        proj = self._der_project()
+        res = run_hosting_capacity(proj, v_max=0.999, loading_limit_pct=100.0)
+        b2 = next(b for b in res["buses"] if b["bus_id"] == "bus-2")
+        assert b2["hosting_capacity_mw"] == 0.0
+        assert b2["limiting_factor"] == "baseline_violation"
+
+    def test_candidate_bus_filter(self):
+        proj = self._der_project()
+        res = run_hosting_capacity(proj, bus_ids=["bus-2"])
+        assert [b["bus_id"] for b in res["buses"]] == ["bus-2"]
+
+    def test_no_candidate_buses_note(self):
+        """A converging base case whose bus_ids filter matches nothing (not
+        an empty/non-converging network) must report the 'no candidates'
+        reason specifically, distinct from a base-case convergence failure."""
+        proj = _utility_bus_project()
+        res = run_hosting_capacity(proj, bus_ids=["does-not-exist"])
+        assert not res["converged"]
+        assert "No candidate buses" in res["note"]
 
 
 # ── Voltage flicker screening (IEC 61000-3-3 / IEC 61000-4-15) ──────────

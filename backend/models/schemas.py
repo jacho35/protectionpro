@@ -1109,6 +1109,33 @@ class FilterSizingResults(BaseModel):
     note: str = ""
 
 
+class HostingCapacityRequest(ProjectData):
+    """ProjectData plus nodal hosting-capacity options (all optional)."""
+    candidate_bus_ids: Optional[list[str]] = None  # None → all energized buses
+    hc_power_factor: Optional[float] = None    # DER power factor (default 1.0)
+    v_min: Optional[float] = None              # default 0.95
+    v_max: Optional[float] = None              # default 1.05
+    loading_limit_pct: Optional[float] = None  # default 100
+    step_mw: Optional[float] = None            # sweep resolution (default 0.5)
+    max_mw_per_bus: Optional[float] = None     # search cap (default 10.0)
+
+
+class HostingCapacityResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    buses: list[dict] = []             # per-bus hosting_capacity_mw + limiting factor
+    power_factor: float = 1.0
+    v_min: float = 0.95
+    v_max: float = 1.05
+    loading_limit_pct: float = 100.0
+    step_mw: float = 0.5
+    max_mw_per_bus: float = 10.0
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class FlickerAnalysisRequest(ProjectData):
     """ProjectData plus voltage-flicker screening options (all optional)."""
     pst_limit: Optional[float] = None        # default 1.0 (IEC 61000-3-3 LV)
