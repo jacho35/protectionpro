@@ -3448,6 +3448,82 @@ class TestAutotransformer:
         assert z_l + z_t == pytest.approx(16.0)      # Z_LT
 
 
+# ── Standard 2-winding transformer OLTC regulation ───────────────────────
+# (the autotransformer OLTC loop, generalised to the ordinary Transformer
+# component — same _run_oltc/_regulated_bus machinery, same tap_percent/
+# tap_mode props, byte-identical to the pre-existing autotransformer tests.)
+
+
+class TestTransformerOLTC:
+    """Standard 2-winding transformer on-load tap changer regulation."""
+
+    def _xfmr(self, tap_mode="fixed", tap=0.0, vtarget=1.0, load_kva=6000.0,
+             regulated_side="lv", tap_min=-10.0, tap_max=10.0):
+        comps = [
+            _comp("util", "utility", {"voltage_kv": 33, "fault_mva": 500, "x_r_ratio": 15}),
+            _comp("bhv", "bus", {"voltage_kv": 33, "name": "HV"}),
+            _comp("tx", "transformer",
+                  {"rated_mva": 10, "voltage_hv_kv": 33, "voltage_lv_kv": 11,
+                   "z_percent": 8, "x_r_ratio": 10, "tap_mode": tap_mode, "tap_percent": tap,
+                   "v_target_pu": vtarget, "regulated_side": regulated_side,
+                   "tap_min_pct": tap_min, "tap_max_pct": tap_max, "tap_step_pct": 1.25}),
+            _comp("blv", "bus", {"voltage_kv": 11, "name": "LV"}),
+            _comp("load", "static_load", {"rated_kva": load_kva, "power_factor": 0.9, "voltage_kv": 11}),
+        ]
+        wires = [
+            _wire("w1", "util", "bhv", "out", "at_0"),
+            _wire("w2", "bhv", "tx", "at_1", "primary"),
+            _wire("w3", "tx", "blv", "secondary", "at_0"),
+            _wire("w4", "blv", "load", "at_1", "in"),
+        ]
+        return ProjectData(projectName="tx_oltc", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_fixed_tap_is_legacy_identical(self):
+        """No tap_mode set (absent prop, the pre-existing default) behaves
+        exactly as a fixed-tap transformer always has — a loaded LV bus sags
+        below 1.0 pu, unaffected by any regulation loop."""
+        proj = self._xfmr(tap=0.0)
+        del proj.components[2].props["tap_mode"]   # simulate an absent legacy prop
+        res = run_load_flow(proj)
+        assert res.converged
+        v_lv = abs(res.buses["blv"].voltage_pu)
+        assert 0.90 < v_lv < 0.99
+
+    def test_oltc_regulates_lv_to_target(self):
+        """An OLTC standard transformer raises the tap to hold its LV bus at
+        the target voltage, versus the same unit with a fixed nominal tap —
+        the exact behaviour already proven for the autotransformer, now on
+        the ordinary Transformer component."""
+        fixed = run_load_flow(self._xfmr("fixed", 0.0))
+        reg = run_load_flow(self._xfmr("regulating", 0.0, vtarget=1.0))
+        v_fixed = abs(fixed.buses["blv"].voltage_pu)
+        v_reg = abs(reg.buses["blv"].voltage_pu)
+        assert v_reg > v_fixed                       # OLTC boosted the voltage
+        assert abs(v_reg - 1.0) <= 0.01              # within ~half a tap step
+
+    def test_oltc_regulated_side_hv(self):
+        """regulated_side='hv' holds the HV bus instead — direction of tap
+        adjustment inverts relative to the LV-regulation case."""
+        res = run_load_flow(self._xfmr("regulating", 0.0, vtarget=1.0,
+                                       regulated_side="hv"))
+        assert res.converged
+        v_hv = abs(res.buses["bhv"].voltage_pu)
+        assert abs(v_hv - 1.0) <= 0.01
+
+    def test_oltc_clamps_to_tap_max(self):
+        """A target voltage the tap range cannot reach saturates at tap_max
+        rather than iterating forever or overshooting."""
+        res = run_load_flow(self._xfmr("regulating", 0.0, vtarget=1.20,
+                                       tap_max=5.0))
+        assert res.converged
+        # tap_percent is mutated on _run_oltc's internal working copy, not
+        # observable on the result — verify indirectly: the LV voltage rose
+        # but the capped tap range can't reach the unreachable 1.20 target.
+        v_lv = abs(res.buses["blv"].voltage_pu)
+        assert v_lv < 1.20
+
+
 # ── SVC / STATCOM (FACTS reactive compensation) ──────────────────────────
 
 

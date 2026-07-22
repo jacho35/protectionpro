@@ -513,25 +513,28 @@ def _insert_grid_source_impedance(project: ProjectData):
     return ProjectData(**data), warnings
 
 
-def _autotransformer_regulated_bus(at, adjacency, components, bus_of):
+def _regulated_bus(xfmr, adjacency, components, bus_of):
     """Return (regulated_bus_id, hv_bus_id) for a regulating 2-winding
-    autotransformer, or (None, None) if it does not span two buses."""
-    results = _find_bus_paths(at.id, adjacency, components, bus_of)
+    transformer or autotransformer, or (None, None) if it does not span two
+    buses. Type-agnostic: both models put the tap on the HV winding and are
+    walked by the same chain/turns-ratio machinery."""
+    results = _find_bus_paths(xfmr.id, adjacency, components, bus_of)
     if len(results) < 2:
         return None, None
     ba = results[0][0]
     bb = results[1][0]
-    _t, hv = _get_chain_turns_ratio({at.id: at}, ba, bb, components)
+    _t, hv = _get_chain_turns_ratio({xfmr.id: xfmr}, ba, bb, components)
     lv = bb if hv == ba else ba
-    side = str(at.props.get("regulated_side", "lv") or "lv").lower()
+    side = str(xfmr.props.get("regulated_side", "lv") or "lv").lower()
     return (hv if side == "hv" else lv), hv
 
 
 def _run_oltc(project: ProjectData, method: str, regulators, max_passes: int = 12) -> ProjectData:
-    """Iterate the on-load tap changer of each regulating autotransformer to
-    hold its regulated bus at the target voltage. Mutates and returns a working
-    copy of *project* with the converged tap positions; each pass re-solves the
-    load flow with regulation disabled to read the controlled voltages."""
+    """Iterate the on-load tap changer of each regulating transformer or
+    autotransformer to hold its regulated bus at the target voltage. Mutates
+    and returns a working copy of *project* with the converged tap positions;
+    each pass re-solves the load flow with regulation disabled to read the
+    controlled voltages."""
     import json
     work = ProjectData(**json.loads(project.model_dump_json()))
 
@@ -548,7 +551,7 @@ def _run_oltc(project: ProjectData, method: str, regulators, max_passes: int = 1
 
     reg_info = []
     for at in regulators:
-        reg_bus, hv_bus = _autotransformer_regulated_bus(at, adjacency, components, bus_of)
+        reg_bus, hv_bus = _regulated_bus(at, adjacency, components, bus_of)
         if reg_bus is not None:
             reg_info.append((at.id, reg_bus))
     if not reg_info:
@@ -1858,10 +1861,12 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # Re-hang each weak-grid utility behind its Thevenin source impedance
     # (idempotent; no-op unless a utility opts in via lf_grid_model).
     project, grid_impedance_warnings = _insert_grid_source_impedance(project)
-    # Iterate OLTC taps of regulating autotransformers to their setpoint.
+    # Iterate OLTC taps of regulating transformers/autotransformers to their
+    # setpoint (standard 2-winding units regulate the same way — the tap sits
+    # on the HV winding in both models).
     if _regulate:
         regulators = [c for c in project.components
-                      if c.type == "autotransformer"
+                      if c.type in ("transformer", "autotransformer")
                       and str(c.props.get("tap_mode", "fixed") or "fixed").lower() == "regulating"]
         if regulators:
             project = _run_oltc(project, method, regulators)
