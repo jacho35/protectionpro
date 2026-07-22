@@ -1072,6 +1072,33 @@ class ContingencyRequest(ProjectData):
 
 # ── Harmonic Analysis (IEEE 519-2014) ──
 
+class FrequencyScanRequest(ProjectData):
+    """ProjectData plus frequency-scan sweep options (all optional)."""
+    scan_bus_ids: Optional[list[str]] = None   # None → all (non-synthetic) buses
+    h_max: Optional[float] = None              # top harmonic order (default 25)
+    h_step: Optional[float] = None             # sweep resolution (default 0.05)
+
+
+class FrequencyScanResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    f0_hz: float = 50.0
+    h_max: float = 0.0
+    h_step: float = 0.0
+    h: list[float] = []               # swept harmonic orders (x-axis)
+    buses: list[dict] = []            # per-bus {id, name, voltage_kv, z1_ohm, z_ohm[]}
+    resonances: list[dict] = []       # {bus_id, bus_name, kind, h, f_hz, z_ohm, z_pu, prominence}
+    worst_bus_id: str = ""
+    worst_bus_name: str = ""
+    worst_h: float = 0.0
+    worst_f_hz: float = 0.0
+    worst_z_ohm: float = 0.0
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class HarmonicsResults(BaseModel):
     model_config = {"extra": "allow"}
 

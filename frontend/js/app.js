@@ -1251,6 +1251,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'vstab-modal') e.target.style.display = 'none';
   });
 
+  // ── Frequency Scan (impedance vs frequency) ──
+  document.getElementById('btn-frequency-scan').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running a frequency scan.';
+      return;
+    }
+    FrequencyScan.openConfig();
+  });
+  document.getElementById('btn-fscan-run').addEventListener('click', () => FrequencyScan.runConfigured());
+  document.getElementById('btn-fscan-cancel').addEventListener('click', () => {
+    document.getElementById('fscan-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-fscan-config').addEventListener('click', () => {
+    document.getElementById('fscan-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-fscan').addEventListener('click', () => {
+    document.getElementById('fscan-modal').style.display = 'none';
+  });
+  document.getElementById('fscan-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'fscan-modal') e.target.style.display = 'none';
+  });
+
   // ── Contingency Analysis (N-1 / N-2) ──
   document.getElementById('btn-contingency').addEventListener('click', () => {
     if (AppState.components.size === 0) {
