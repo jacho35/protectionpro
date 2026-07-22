@@ -1317,6 +1317,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'flt-modal') e.target.style.display = 'none';
   });
 
+  // ── Voltage Flicker (IEC 61000-3-3) ──
+  document.getElementById('btn-flicker').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running the voltage flicker screening.';
+      return;
+    }
+    Flicker.openConfig();
+  });
+  document.getElementById('btn-flk-run').addEventListener('click', () => Flicker.runConfigured());
+  document.getElementById('btn-flk-cancel').addEventListener('click', () => {
+    document.getElementById('flk-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-flk-config').addEventListener('click', () => {
+    document.getElementById('flk-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-flk').addEventListener('click', () => {
+    document.getElementById('flk-modal').style.display = 'none';
+  });
+  document.getElementById('flk-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'flk-modal') e.target.style.display = 'none';
+  });
+
   // ── Reliability Assessment ──
   document.getElementById('btn-reliability').addEventListener('click', () => {
     if (AppState.components.size === 0) {

@@ -275,6 +275,15 @@ class ProtectionPro:
         """SAIDI/SAIFI/MAIFI reliability assessment (IEEE 1366 FMEA)."""
         return self.analyze("reliability", project)
 
+    def flicker(self, project: dict, *, pst_limit: Optional[float] = None,
+               plt_limit: Optional[float] = None,
+               d_anchor_pct: Optional[float] = None,
+               exponent: Optional[float] = None) -> dict:
+        """Voltage flicker screening (IEC 61000-3-3 / IEC 61000-4-15)."""
+        return self.analyze("flicker", project, pst_limit=pst_limit,
+                            plt_limit=plt_limit, d_anchor_pct=d_anchor_pct,
+                            exponent=exponent)
+
     def opf(self, project: dict, *, objective: Optional[str] = None,
             v_min: Optional[float] = None, v_max: Optional[float] = None,
             loading_limit_pct: Optional[float] = None,

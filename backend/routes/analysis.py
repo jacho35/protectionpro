@@ -6,7 +6,7 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -17,6 +17,7 @@ from ..analysis.optimal_powerflow import run_opf
 from ..analysis.reliability import run_reliability
 from ..analysis.filter_sizing import run_filter_sizing
 from ..analysis.capacitor_placement import run_capacitor_placement
+from ..analysis.flicker import run_flicker_analysis
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -204,6 +205,23 @@ def capacitor_placement(data: CapacitorPlacementRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500,
                             detail=f"Capacitor placement error: {e}")
+
+
+@router.post("/flicker", response_model=FlickerAnalysisResults)
+def flicker_analysis(data: FlickerAnalysisRequest):
+    """Voltage flicker screening (IEC 61000-3-3 / IEC 61000-4-15) — Pst/Plt
+    planning-level estimate for motors flagged with a repetitive starting
+    rate, from a rigorous Thevenin relative-voltage-change calculation."""
+    try:
+        kwargs = {}
+        for f in ("pst_limit", "plt_limit", "d_anchor_pct", "exponent"):
+            v = getattr(data, f)
+            if v is not None:
+                kwargs[f] = v
+        return run_flicker_analysis(data, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Flicker analysis error: {e}")
 
 
 @router.post("/reliability", response_model=ReliabilityResults)
