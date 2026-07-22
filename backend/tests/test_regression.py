@@ -37,6 +37,8 @@ from backend.analysis.frequency_scan import run_frequency_scan
 from backend.analysis.battery_sizing import run_battery_sizing
 from backend.analysis.optimal_powerflow import run_opf
 from backend.analysis.reliability import run_reliability
+from backend.analysis.filter_sizing import run_filter_sizing, _branch_elements
+from backend.analysis.harmonics import _shunt_admittance_at_h
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -542,6 +544,74 @@ class TestLoadFlow:
         # inductive (positive); the cap reduces but does not cancel it.
         assert main.q_through_mvar == pytest.approx(0.14, abs=1e-2), \
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
+
+
+class TestFilterSizing:
+    """Single-tuned filter synthesis against the textbook formulas
+    (IEEE 1531 / Arrillaga ch. 6) and an end-to-end IEEE 519 fix.
+
+    1 Mvar net at 11 kV tuned to h_t = 4.7 with Q = 30 at 50 Hz:
+      X_eff = 121 Ω, X_C = 121·4.7²/(4.7²−1) = 126.738 Ω,
+      X_L = X_C/4.7² = 5.7383 Ω, R = (X_C/4.7)/30 = 0.8988 Ω,
+      C = 1/(ω·X_C) = 25.11 µF, L = X_L/ω = 18.27 mH.
+    """
+
+    def test_branch_element_formulas(self):
+        el = _branch_elements(1000.0, 11.0, 4.7, 30.0, 50.0)
+        assert el["x_c_ohm"] == pytest.approx(126.738, rel=1e-3)
+        assert el["x_l_ohm"] == pytest.approx(5.7383, rel=1e-3)
+        assert el["r_ohm"] == pytest.approx(0.8988, rel=1e-3)
+        assert el["c_uf"] == pytest.approx(25.11, rel=2e-3)
+        assert el["l_mh"] == pytest.approx(18.266, rel=2e-3)
+
+    def test_tuned_bank_series_resonance(self):
+        """A tuned capacitor bank presents |Z| = R exactly at its tuning
+        order (series resonance): 1 Mvar @ 11 kV on 100 MVA base, h_t=4.7,
+        Q=30 → R = (104.74/4.7)/30 = 0.7429 pu; and at h=1 the net
+        susceptance matches the plain bank (load-flow equivalence)."""
+        comp = _comp("capacitor_bank-1", "capacitor_bank", {
+            "rated_kvar": 1000.0, "voltage_kv": 11.0,
+            "tuned_order": 4.7, "quality_factor": 30.0})
+        y_t = _shunt_admittance_at_h(comp, 100.0, 4.7)
+        x_eff = 100.0                       # pu: 1/b1 = base/Q
+        x_c = x_eff * 4.7 ** 2 / (4.7 ** 2 - 1)
+        assert abs(1.0 / y_t) == pytest.approx((x_c / 4.7) / 30.0, rel=1e-6)
+        y_1 = _shunt_admittance_at_h(comp, 100.0, 1.0)
+        assert y_1.imag == pytest.approx(0.01, rel=1e-3)   # b1 = 1 Mvar/100 MVA
+
+    def _vfd_project(self):
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 40.0,
+                "x_r_ratio": 15.0}),
+            _comp("bus-1", "bus", {"name": "MCC", "voltage_kv": 11.0}),
+            _comp("vfd-1", "vfd", {
+                "name": "Drive", "rated_kw": 500.0, "pulse_number": 6,
+                "input_reactor_pct": 0.0, "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"),
+                 _wire("w2", "bus-1", "vfd-1")]
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_sizing_reduces_thd(self):
+        base_thd_project = self._vfd_project()
+        r = run_filter_sizing(base_thd_project, total_kvar=300.0,
+                              max_branches=3)
+        assert r["converged"]
+        assert r["design"], "no filter branches designed"
+        assert r["design"][0]["harmonic_order"] == 5   # dominant 6-pulse order
+        assert (r["with_filter"]["worst_thd_pct"]
+                < r["baseline"]["worst_thd_pct"])
+
+    def test_no_vfd_note(self):
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=[
+                               _comp("utility-1", "utility", {"voltage_kv": 11.0}),
+                               _comp("bus-1", "bus", {"voltage_kv": 11.0})],
+                           wires=[_wire("w1", "utility-1", "bus-1")])
+        r = run_filter_sizing(proj)
+        assert not r["converged"] and "VFD" in r["note"]
 
 
 class TestReliability:

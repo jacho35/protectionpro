@@ -177,6 +177,20 @@ def _shunt_admittance_at_h(comp, base_mva, h) -> complex:
         if sis not in (None, ""):
             kvar = kvar * min(steps, max(0, int(sis))) / steps
         b1 = (kvar / 1000) / base_mva            # capacitive susceptance (pu)
+        # A tuned_order > 0 makes the bank a SINGLE-TUNED FILTER: series
+        # C-L-R sized so the net fundamental compensation still equals the
+        # rated kvar (the load flow sees the same bank), with the series
+        # resonance at h_t and damping from the quality factor Q:
+        #   X_C = X_eff·h_t²/(h_t²−1),  X_L = X_C/h_t²,  R = (X_C/h_t)/Q.
+        h_t = float(p.get("tuned_order", 0) or 0)
+        if h_t > 1.0 and b1 > 0:
+            q_fact = max(1.0, float(p.get("quality_factor", 30) or 30))
+            x_eff = 1.0 / b1                               # pu, net at h=1
+            x_c = x_eff * h_t * h_t / (h_t * h_t - 1.0)
+            x_l = x_c / (h_t * h_t)
+            r = (x_c / h_t) / q_fact
+            z = complex(r, h * x_l - x_c / h)
+            return 1.0 / z if abs(z) > 1e-12 else complex(0, 0)
         return complex(0, h * b1)
     if comp.type in ("svc", "statcom"):
         # FACTS device: model its net reactive output as an equivalent shunt.

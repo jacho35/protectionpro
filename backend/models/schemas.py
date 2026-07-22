@@ -1084,6 +1084,31 @@ class ReliabilityResults(BaseModel):
     note: str = ""
 
 
+class FilterSizingRequest(ProjectData):
+    """ProjectData plus passive-filter sizing options (all optional)."""
+    filter_bus_id: Optional[str] = None    # None → worst-THD bus
+    total_kvar: Optional[float] = None     # None → island reactive demand
+    quality_factor: Optional[float] = None # default 30
+    max_branches: Optional[int] = None     # default 3 (≤4)
+
+
+class FilterSizingResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    converged: bool = False
+    bus_id: str = ""
+    bus_name: str = ""
+    voltage_kv: float = 0.0
+    total_kvar: float = 0.0
+    design: list[dict] = []            # per branch: order, tuning, kvar, C/L/R
+    meets_ieee519: bool = False
+    baseline: dict = {}                # THD/compliance before
+    with_filter: dict = {}             # THD/compliance after
+    method: str = ""
+    warnings: list[str] = []
+    note: str = ""
+
+
 class OPFRequest(ProjectData):
     """ProjectData plus OPF options (all optional)."""
     objective: Optional[str] = None            # 'cost' (default) | 'loss'

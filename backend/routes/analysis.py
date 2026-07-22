@@ -6,7 +6,7 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -15,6 +15,7 @@ from ..analysis.frequency_scan import run_frequency_scan
 from ..analysis.battery_sizing import run_battery_sizing
 from ..analysis.optimal_powerflow import run_opf
 from ..analysis.reliability import run_reliability
+from ..analysis.filter_sizing import run_filter_sizing
 from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -162,6 +163,26 @@ def optimal_power_flow(data: OPFRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"OPF error: {e}")
+
+
+@router.post("/filter-sizing", response_model=FilterSizingResults)
+def filter_sizing(data: FilterSizingRequest):
+    """Size single-tuned passive harmonic filters to meet IEEE 519, verified
+    by re-running the harmonic penetration study with the design in place."""
+    try:
+        kwargs = {"method": data.loadFlowMethod or "newton_raphson"}
+        if data.filter_bus_id:
+            kwargs["bus_id"] = data.filter_bus_id
+        if data.total_kvar is not None:
+            kwargs["total_kvar"] = data.total_kvar
+        if data.quality_factor is not None:
+            kwargs["quality_factor"] = data.quality_factor
+        if data.max_branches is not None:
+            kwargs["max_branches"] = data.max_branches
+        return run_filter_sizing(data, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Filter sizing error: {e}")
 
 
 @router.post("/reliability", response_model=ReliabilityResults)

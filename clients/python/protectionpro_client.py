@@ -244,6 +244,18 @@ class ProtectionPro:
         """IEC 61660 DC short circuit."""
         return self.analyze("dc-shortcircuit", project)
 
+    def filter_sizing(self, project: dict, *,
+                      filter_bus_id: Optional[str] = None,
+                      total_kvar: Optional[float] = None,
+                      quality_factor: Optional[float] = None,
+                      max_branches: Optional[int] = None) -> dict:
+        """Passive harmonic filter sizing to meet IEEE 519."""
+        return self.analyze("filter-sizing", project,
+                            filter_bus_id=filter_bus_id,
+                            total_kvar=total_kvar,
+                            quality_factor=quality_factor,
+                            max_branches=max_branches)
+
     def reliability(self, project: dict) -> dict:
         """SAIDI/SAIFI/MAIFI reliability assessment (IEEE 1366 FMEA)."""
         return self.analyze("reliability", project)
