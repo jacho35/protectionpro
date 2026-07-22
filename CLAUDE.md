@@ -47,6 +47,7 @@ frontend/
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
+    ├── freqscan.js         # Frequency scan UI (Z vs f setup + log-decade chart)
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
@@ -64,6 +65,7 @@ backend/
 │   ├── loadflow_cases.py   # Load Flow Study Manager — run load flow across named network cases
 │   ├── voltage_stability.py # Steady-state voltage stability — P-V nose curves, Q-V reactive margin, loadability margin
 │   ├── contingency.py      # Contingency analysis (N-1 / N-2) — element-outage security screening
+│   ├── frequency_scan.py   # Driving-point impedance vs frequency — parallel/series resonance identification
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -139,6 +141,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/loadflow-cases` | Load flow across named full-snapshot cases | Load Flow Study Manager |
 | `/api/analysis/voltage-stability` | Steady-state voltage stability | P-V / Q-V continuation (loadability & collapse) |
 | `/api/analysis/contingency` | N-1 / N-2 security screening | Load-flow contingency analysis |
+| `/api/analysis/frequency-scan` | Impedance vs frequency (resonance) | Nodal Z_kk(h) sweep on the harmonics network model |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |

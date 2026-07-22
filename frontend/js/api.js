@@ -217,6 +217,16 @@ const API = {
     return this.request('/analysis/voltage-stability', 'POST', data);
   },
 
+  // Run the frequency scan (driving-point impedance vs frequency).
+  // opts: { busIds, hMax, hStep } — optional.
+  async runFrequencyScan(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.busIds && opts.busIds.length) data.scan_bus_ids = opts.busIds;
+    if (opts.hMax != null) data.h_max = opts.hMax;
+    if (opts.hStep != null) data.h_step = opts.hStep;
+    return this.request('/analysis/frequency-scan', 'POST', data);
+  },
+
   // Run N-1 / N-2 contingency screening.
   // opts: { includeN2, vMin, vMax, loadingLimitPct, maxContingencies } — optional.
   async runContingency(opts = {}) {

@@ -8,3 +8,4 @@ node_modules/
 
 # Personal Claude Code settings (permissions) — not shared
 .claude/settings.local.json
+core
