@@ -402,7 +402,13 @@ class TestEE9CapacitorSusceptance:
         assert 4.0 * v * v < 3.99  # V²-scaling engaged
 
 
-# ── EE-10: tapped transformer sharing a chain with a cable warns ─────────────
+# ── EE-10: tapped transformer sharing a chain with a cable ───────────────────
+# A SINGLE tapped transformer sharing its chain with a cable is now modelled
+# EXACTLY (Kron-reduced series two-port, loadflow.py::_reduce_chain_two_port)
+# instead of just warned about — see test_ee10_two_port.py for the numerical
+# cross-validation against an explicit-intermediate-bus reference network.
+# The warning now only fires for the still-open residual: TWO OR MORE cascaded
+# tapped transformers sharing a chain with a cable (n_chain_xfmrs >= 2).
 
 
 class TestEE10TappedChainWarning:
@@ -430,10 +436,14 @@ class TestEE10TappedChainWarning:
             _wire("w5", "busB", "ld"),
         ])
 
-    def test_tapped_chain_with_cable_warns(self):
+    def test_single_tapped_chain_with_cable_no_longer_warns(self):
+        """A single tapped transformer sharing a chain with one cable is now
+        exactly modelled (Kron-reduced) — the old "draw a bus" workaround
+        warning is gone for this case."""
         res = run_load_flow(self._proj(tap=5.0))
-        assert any("tap" in w.message.lower() and "cable" in w.message.lower()
-                   for w in res.warnings)
+        assert res.converged
+        assert not any("cable" in w.message.lower() and "tap" in w.message.lower()
+                       for w in res.warnings)
 
     def test_nominal_tap_stays_silent(self):
         res = run_load_flow(self._proj(tap=0.0))

@@ -1527,6 +1527,98 @@ def _get_impedance(comp, base_mva):
     return complex(0, 0)
 
 
+def _reduce_chain_two_port(chain_order, xfmr_idx, t, hv_bus_id, bus_a, bus_b,
+                           bus_a_v, bus_b_v, base_mva):
+    """[EE-10] Exact series two-port reduction of a chain containing exactly
+    ONE transformer/autotransformer plus one or more cables sharing its
+    branch (no bus between them), replacing the old "sum every element's
+    impedance, then apply ONE tap-ratio stamp to the total" approximation
+    — which mis-refers a cable's impedance by up to t² whenever the cable
+    sits on the same side the lumped stamp treats as the tap-referred side.
+
+    Builds a local admittance matrix over the chain's own internal nodes
+    (bus_a=node 0, ..., bus_b=node k, one node per element junction),
+    stamping each element in its true physical position — the transformer
+    with its own ideal-ratio pi-model, cables as plain series admittances
+    at the correct LOCAL voltage base (cables are voltage-zone-invariant,
+    so "before the transformer" is always the bus_a zone and "after" is
+    always the bus_b zone in a single-transformer chain) — then eliminates
+    every internal node via Kron reduction (Gaussian elimination of a
+    passive node with no independent injection: exact, not an approximation,
+    since no load/generation sits on an internal chain node by construction).
+
+    The resulting exact 2x2 boundary admittance block is always re-
+    expressible in the SAME (y, t, hv_bus) canonical pi-model form the
+    caller already stamps into the global Y-bus (a chain with no shunt
+    elements at its internal nodes is, from the outside, indistinguishable
+    from "one ideal transformer + one lumped series admittance" — pushing
+    z_pre/z_post through the ideal ratio and recombining with z_T always
+    reproduces exactly that form) — so no downstream consumer (branch-flow
+    reporting, per-element loss-share) needs to change.
+
+    Returns (y_eff, t_eff, hv_bus_id) matching the caller's existing tuple.
+    """
+    k = len(chain_order)
+    size = k + 1
+    Yl = np.zeros((size, size), dtype=complex)
+
+    def _series_y(z):
+        if abs(z) > 1e-15:
+            return 1.0 / z
+        return complex(0, -1e6)
+
+    for m, elem in enumerate(chain_order):
+        na, nb = m, m + 1
+        if elem.type in ("transformer", "autotransformer"):
+            y_t = _series_y(_get_impedance(elem, base_mva))
+            # hv_bus_id names the REAL boundary bus on this transformer's HV
+            # winding; cables never change voltage zone, so the HV winding
+            # faces node 0 (bus_a) iff hv_bus_id == bus_a.
+            hv_node, lv_node = (na, nb) if hv_bus_id == bus_a else (nb, na)
+            Yl[hv_node, hv_node] += y_t / (t * t)
+            Yl[lv_node, lv_node] += y_t
+            Yl[hv_node, lv_node] -= y_t / t
+            Yl[lv_node, hv_node] -= y_t / t
+        else:  # cable
+            v_kv = bus_a_v if m < xfmr_idx else bus_b_v
+            z_base = (v_kv ** 2) / base_mva if v_kv > 0 else 1.0
+            r = elem.props.get("r_per_km", 0.1) * elem.props.get("length_km", 1)
+            x = elem.props.get("x_per_km", 0.08) * elem.props.get("length_km", 1)
+            n = max(1, int(elem.props.get("num_parallel", 1)))
+            y_c = _series_y(complex(r / z_base, x / z_base) / n)
+            Yl[na, na] += y_c
+            Yl[nb, nb] += y_c
+            Yl[na, nb] -= y_c
+            Yl[nb, na] -= y_c
+
+    # Kron-reduce out every internal node (1..k-1), keeping {0, k}.
+    for internal in range(1, k):
+        piv = Yl[internal, internal]
+        if abs(piv) < 1e-15:
+            continue  # degenerate — shouldn't occur given the y-floor above
+        row = Yl[internal, :].copy()
+        col = Yl[:, internal].copy()
+        Yl -= np.outer(col, row) / piv
+        Yl[internal, :] = 0
+        Yl[:, internal] = 0
+
+    a, b, c = Yl[0, 0], Yl[k, k], -Yl[0, k]
+    if abs(c) < 1e-15:
+        # No coupling survived reduction (shouldn't occur for a connected
+        # chain) — fall back to a unity-ratio direct sum.
+        y_eff = a if abs(a) > 1e-15 else complex(0, -1e6)
+        return y_eff, 1.0, None
+    # Same canonical form as the caller's stamp: HV-side diagonal carries
+    # y/t², LV-side carries y bare — so y_eff reads straight off whichever
+    # diagonal entry is the LV side, and t_eff = y_eff / c.
+    y_eff = b if hv_bus_id == bus_a else a
+    t_eff = y_eff / c
+    t_eff = t_eff.real  # off-nominal ratio is a pure real scalar (no phase
+                        # shift possible from real series impedances) —
+                        # any imaginary residue is floating-point noise.
+    return y_eff, t_eff, hv_bus_id
+
+
 def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
     """Off-nominal turns ratio of a branch chain between two buses.
 
@@ -2051,22 +2143,34 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             ))
         t, hv_bus = _get_chain_turns_ratio(chain_order, bus_a, bus_b, components)
 
-        # [EE-10] The off-nominal ratio wraps the LUMPED chain admittance, so
-        # a cable sharing the chain with a TAPPED transformer sits on the
-        # wrong side of the ideal transformer — its impedance is mis-referred
-        # by up to t² (≈1.21 at ±10% tap; exact at t = 1 and for cable-free
-        # chains). Warn so the user draws a bus at the transformer terminal.
-        if abs(t - 1.0) > 1e-9 and any(e.type == "cable" for e in chain_order):
+        # [EE-10] A single tapped transformer sharing its chain with one or
+        # more cables is now modelled EXACTLY: Kron-reduce the chain's own
+        # internal (non-bus) nodes instead of lumping every element's
+        # impedance into one sum before applying a single tap-ratio stamp
+        # (which mis-referred a cable's impedance by up to t²). Multi-
+        # transformer chains (n_chain_xfmrs >= 2) are a separate, already-
+        # warned residual — untangling which of several tap ratios each
+        # cable sits behind needs true multi-zone voltage tracking, not
+        # just a bus_a/bus_b split; still lumped, see the warning above.
+        has_cable_in_chain = any(e.type == "cable" for e in chain_order)
+        if n_chain_xfmrs == 1 and has_cable_in_chain and abs(t - 1.0) > 1e-9:
+            xfmr_idx = next(idx for idx, e in enumerate(chain_order)
+                            if e.type in ("transformer", "autotransformer"))
+            y, t, hv_bus = _reduce_chain_two_port(
+                chain_order, xfmr_idx, t, hv_bus, bus_a, bus_b,
+                bus_a_v, bus_b_v, base_mva)
+        elif abs(t - 1.0) > 1e-9 and has_cable_in_chain:
+            # n_chain_xfmrs >= 2 — the still-open residual.
             _tx_names = ", ".join(str(e.props.get("name", e.id)) for e in chain_order
                                   if e.type in ("transformer", "autotransformer"))
             multi_xfmr_chain_warnings.append(LoadFlowWarning(
                 elementId=chain_order[0].id,
                 element_name=_tx_names,
-                message=(f"Tapped transformer ({_tx_names}, ratio {t:.3f}) shares a "
-                         f"branch chain with a cable and no bus between them — the "
-                         f"cable impedance is referred through the tap (error up to "
-                         f"t² on its share of the chain). For per-unit accuracy draw "
-                         f"a bus at the transformer terminal."),
+                message=(f"Cascaded tapped transformers ({_tx_names}) share a branch "
+                         f"chain with a cable and no bus between them — the cable "
+                         f"impedance is referred through the combined tap (error up "
+                         f"to t² on its share of the chain). For per-unit accuracy "
+                         f"draw a bus at each transformer terminal."),
             ))
 
         if hv_bus == bus_a:
