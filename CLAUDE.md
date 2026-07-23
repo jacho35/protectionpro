@@ -271,6 +271,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Calculates arcing current, incident energy at working distance
 - Determines PPE category (1-4) and arc flash boundary
 - Gap selection based on equipment type and voltage class
+- Relay/CB clearing-time evaluation (`get_clearing_time`) shares `analysis/ct_model.py` with the frontend TCC: when a relay has an `associated_ct`, the arcing current is run through the CT saturation model (knee voltage from IEC 61869-2 ALF, burden + winding resistance → waveform-clipping) before the IDMT curve is evaluated, so the backend sees the same current the relay physically measures. The IEC 60909 peak factor κ at the fault bus derates the saturation threshold as a bounded dc-offset/asymmetry proxy (not a full transient core-flux simulation — that remains out of scope). `duty_check.py` uses the same model to flag CTs whose (κ-derated) saturation threshold doesn't cover the prospective fault current at their bus ("CT Saturation Adequacy" table, protection-relay-connected CTs only).
 
 ## Keyboard Shortcuts
 

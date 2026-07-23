@@ -32,6 +32,8 @@ import math
 from collections import deque
 from dataclasses import dataclass, field
 
+from .ct_model import ct_saturation_params, ct_effective_current
+
 
 # Typical gap between conductors (mm) by voltage level
 _TYPICAL_GAP = {
@@ -422,14 +424,25 @@ _IDMT_CURVES = {
 }
 
 
-def _relay_operate_time(props, current_a):
+def _relay_operate_time(props, current_a, ct_props=None, kappa=None):
     """Operate time (s) of an overcurrent relay at current_a (primary amps).
 
     Evaluates the relay's IDMT curve (curve/pickup_a/time_dial) and its
     instantaneous (50) element (inst_pickup_a/inst_delay_s, 0 = disabled),
     matching the frontend idmtTripTime() convention. Returns None when the
     relay never trips at this current (I ≤ pickup and no instantaneous).
+
+    [PS-9 residual] When ``ct_props`` (the relay's associated CT's props)
+    are given, current_a is first passed through the CT saturation model
+    (ct_model.py) — matching the frontend TCC's ctEffectiveCurrent() step —
+    so a relay fed by an undersized/saturating CT is evaluated at the
+    current it actually measures, not the raw fault current. ``kappa`` (the
+    IEC 60909 peak factor at the fault point) further derates the
+    saturation threshold as a conservative dc-offset proxy.
     """
+    if ct_props:
+        sat = ct_saturation_params(ct_props, kappa=kappa)
+        current_a = ct_effective_current(current_a, sat)
     try:
         pickup = float(props.get("pickup_a", 100) or 0)
         tds = float(props.get("time_dial", 1.0) or 0)
@@ -593,15 +606,19 @@ def _cb_self_clearing_time(props, current_a):
     return min(k / (m * m - 1.0), 10000.0)
 
 
-def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb):
+def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,
+                          components=None, kappa=None):
     """Clearing time (s) of a single protective element at current_a
     (primary amps at the device's voltage level), capped at 2.0 s.
 
     - CT with an associated relay: the relay's curve governs
-      (relay operate time + breaker opening time).
+      (relay operate time + breaker opening time). The CT IS `comp` here,
+      so its own props are the saturation model input.
     - CB tripped by a relay (trip_cb): the relay's curve governs INSTEAD
-      of the CB's own thermal-magnetic model.
-    - CB without a relay: thermal-magnetic model.
+      of the CB's own thermal-magnetic model. The relay's associated_ct
+      (if any, resolved via `components`) feeds the same saturation model.
+    - CB without a relay: thermal-magnetic model (no external CT — the
+      trip unit's internal sensing is not modelled as a separate CT).
     - Fuse: gG pre-arcing curve evaluated at the arcing current, × 1.2
       for total clearing time (IEC 60269 practice, matching the frontend
       TCC convention); 2.0 s when the current is below the curve's
@@ -611,7 +628,8 @@ def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb):
     """
     if comp.type == "ct":
         relay = relay_by_ct.get(comp.id)
-        t = _relay_operate_time(relay.props, current_a) if relay else None
+        t = (_relay_operate_time(relay.props, current_a, comp.props, kappa)
+             if relay else None)
         if t is None:
             return _MAX_CLEARING_TIME_S
         return min(t + _BREAKER_OPENING_TIME_S, _MAX_CLEARING_TIME_S)
@@ -619,7 +637,10 @@ def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb):
     if comp.type == "cb":
         relay = relay_by_cb.get(comp.id)
         if relay is not None:
-            t = _relay_operate_time(relay.props, current_a)
+            ct_id = relay.props.get("associated_ct")
+            ct_comp = components.get(ct_id) if (ct_id and components) else None
+            ct_props = ct_comp.props if ct_comp else None
+            t = _relay_operate_time(relay.props, current_a, ct_props, kappa)
             if t is None:
                 return _MAX_CLEARING_TIME_S
             return min(t + _BREAKER_OPENING_TIME_S, _MAX_CLEARING_TIME_S)
@@ -639,8 +660,12 @@ def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb):
     return _MAX_CLEARING_TIME_S
 
 
-def get_clearing_time(bus, components, adjacency, iarc_ka=None):
+def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None):
     """Estimate fault clearing time from upstream protection devices.
+
+    ``kappa``: IEC 60909 peak factor at the faulted bus (fault_bus.kappa
+    from the prior fault-analysis call), forwarded to the CT saturation
+    model as a conservative dc-offset/asymmetry proxy — see ct_model.py.
 
     BFS from the faulted bus toward the source(s): the walk passes through
     non-device components (cables, buses, closed switches, CTs without
@@ -705,7 +730,8 @@ def get_clearing_time(bus, components, adjacency, iarc_ka=None):
             # Refer the arcing current to the device's voltage level
             i_dev = iarc_a * v_bus / v_here if v_here > 0 else iarc_a
             path_times.append(
-                _device_clearing_time(comp, i_dev, relay_by_ct, relay_by_cb))
+                _device_clearing_time(comp, i_dev, relay_by_ct, relay_by_cb,
+                                      components, kappa))
             continue  # nearest device found — stop this branch
 
         # Transparent element — keep walking; track the voltage level
@@ -820,7 +846,8 @@ def run_arc_flash(project_data, fault_results):
 
         # Estimate clearing time from upstream protection devices,
         # using the arcing current to resolve instantaneous vs delayed trips
-        t_clear = get_clearing_time(bus, components, adjacency, iarc)
+        t_clear = get_clearing_time(bus, components, adjacency, iarc,
+                                    kappa=fault_bus.kappa)
 
         # Incident energy at working distance
         e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
@@ -834,7 +861,7 @@ def run_arc_flash(project_data, fault_results):
         # scaling t_clear by a fixed heuristic — the true ratio for an IDMT
         # relay near pickup can be several×, not 1.5×.
         t_clear_reduced = get_clearing_time(bus, components, adjacency,
-                                            iarc_reduced)
+                                            iarc_reduced, kappa=fault_bus.kappa)
         e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
                                               t_clear_reduced, gap_mm,
                                               working_dist, electrode_config,
