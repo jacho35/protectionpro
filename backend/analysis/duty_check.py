@@ -7,6 +7,7 @@ Flags any device whose rating is exceeded.
 
 import math
 from ..models.schemas import ProjectData
+from .ct_model import ct_saturation_params
 
 # Transparent types that do not form a bus boundary
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
@@ -83,8 +84,6 @@ def run_duty_check(project: ProjectData):
 
     # Find all CBs and fuses
     devices = [c for c in project.components if c.type in ("cb", "fuse")]
-    if not devices:
-        return {"devices": [], "warnings": ["No circuit breakers or fuses found."]}
 
     # Build transformer loading lookup from load flow branch results
     transformer_loading = {}
@@ -97,6 +96,10 @@ def run_duty_check(project: ProjectData):
     results = []
     transformer_results = []
     analysis_warnings = []
+    if not devices:
+        # No early return — a network with only CT/relay protection (no
+        # CB/fuse) still needs the transformer + CT adequacy checks below.
+        analysis_warnings.append("No circuit breakers or fuses found.")
 
     for device in devices:
         dp = device.props
@@ -395,4 +398,81 @@ def run_duty_check(project: ProjectData):
             "issues": issues,
         })
 
-    return {"devices": results, "transformers": transformer_results, "warnings": analysis_warnings}
+    # ── CT saturation / accuracy-limit adequacy check ──
+    # [PS-16 residual] "no CT burden/ratio adequacy check": for every CT
+    # feeding an overcurrent relay, flag whether the CT's own saturation
+    # threshold (ct_model.py — ratio, accuracy-class ALF, burden, knee
+    # voltage) covers the prospective fault current at its bus. An
+    # undersized CT saturates before the relay sees the full fault
+    # magnitude, understating the current the arc-flash/relay clearing-time
+    # evaluation (and the physical relay) actually measures. Only CTs with
+    # an associated protection relay are checked — a metering CT is
+    # expected to saturate/protect its meter and is not a duty concern.
+    ct_checks = []
+    relay_ct_ids = {
+        c.props.get("associated_ct")
+        for c in project.components
+        if c.type == "relay" and c.props.get("associated_ct")
+    }
+    for ct in project.components:
+        if ct.type != "ct" or ct.id not in relay_ct_ids:
+            continue
+        ct_name = ct.props.get("name", ct.id)
+        bus_ids = _find_upstream_bus(ct.id, adj, comp_map)
+        if not bus_ids:
+            continue
+
+        ibf_ka = 0.0
+        kappa = None
+        location_bus = ""
+        for bid in bus_ids:
+            bus_fault = fault_results.buses.get(bid)
+            if bus_fault and (bus_fault.ik3 or 0) > ibf_ka:
+                ibf_ka = bus_fault.ik3 or 0
+                kappa = bus_fault.kappa
+                location_bus = comp_map[bid].props.get("name", bid) if bid in comp_map else bid
+        if ibf_ka <= 0:
+            continue
+
+        sat = ct_saturation_params(ct.props, kappa=kappa)
+        ibf_a = ibf_ka * 1000
+        i_sat = sat["i_sat_primary"]
+
+        issues = []
+        if not math.isfinite(i_sat):
+            status = "pass"
+            headroom_pct = None
+        elif ibf_a > i_sat:
+            status = "fail"
+            headroom_pct = (i_sat - ibf_a) / i_sat * 100
+            issues.append(
+                f"CT saturates at {i_sat:.0f}A primary, below the "
+                f"{ibf_a:.0f}A prospective fault current at {location_bus} "
+                "— its relay(s) may see a reduced/clipped current and "
+                "operate slower than the fault duty requires")
+        else:
+            headroom_pct = (i_sat - ibf_a) / i_sat * 100
+            if headroom_pct < 20:
+                status = "warning"
+                issues.append(
+                    f"CT saturation headroom only {headroom_pct:.0f}% "
+                    f"(saturates at {i_sat:.0f}A vs {ibf_a:.0f}A "
+                    f"prospective fault at {location_bus})")
+            else:
+                status = "pass"
+
+        ct_checks.append({
+            "device_id": ct.id,
+            "device_name": ct_name,
+            "location_bus": location_bus,
+            "ratio": ct.props.get("ratio", ""),
+            "prospective_fault_ka": round(ibf_ka, 2),
+            "i_sat_primary_a": round(i_sat, 0) if math.isfinite(i_sat) else None,
+            "headroom_pct": round(headroom_pct, 1) if headroom_pct is not None else None,
+            "dc_offset_factor": round(sat["dc_offset_factor"], 2),
+            "status": status,
+            "issues": issues,
+        })
+
+    return {"devices": results, "transformers": transformer_results,
+            "ct_checks": ct_checks, "warnings": analysis_warnings}

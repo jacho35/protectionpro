@@ -31,7 +31,9 @@ from backend.analysis.arcflash import (
     run_arc_flash,
     _fuse_prearc_time,
     _relay_operate_time,
+    _BREAKER_OPENING_TIME_S,
 )
+from backend.analysis.ct_model import ct_saturation_params, ct_effective_current
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -311,11 +313,17 @@ class TestRelayClearing:
 
     def test_relay_via_associated_ct_drives_idmt_time(self):
         """Same anchor with the relay resolved through its measuring CT on
-        the wire path (relays have no ports — association props only)."""
+        the wire path (relays have no ports — association props only).
+
+        accuracy_class 5P40 gives this CT ample saturation headroom at the
+        ~4 kA anchor current (see TestCTSaturation for the undersized-CT
+        case) — this test is about associated_ct RESOLUTION, not
+        saturation, so it deliberately isolates that variable."""
         proj = _project(
             components=[
                 _utility(77.3),
-                _comp("ct-1", "ct", {"name": "CT1", "ratio": "400/5"}),
+                _comp("ct-1", "ct", {"name": "CT1", "ratio": "400/5",
+                                      "accuracy_class": "5P40"}),
                 _comp("bus-1", "bus", {"name": "MV Bus", "voltage_kv": 11.0}),
                 _comp("relay-1", "relay",
                       {**self.RELAY_PROPS, "associated_ct": "ct-1"}),
@@ -363,3 +371,94 @@ class TestRelayClearing:
         # At/below pickup the relay never operates
         assert _relay_operate_time({**props, "curve": "IEC Standard Inverse"}, 400) is None
         assert _relay_operate_time({**props, "curve": "IEC Standard Inverse"}, 100) is None
+
+
+# ── [PS-9 residual] CT saturation now reaches the backend relay evaluation ──
+
+
+class TestCTSaturation:
+    """The backend relay/TCC clearing-time evaluation now runs the arcing
+    current through the same CT saturation model the frontend TCC applies
+    (ct_model.py) before evaluating the IDMT curve, and derates the
+    saturation threshold by the fault point's IEC 60909 peak factor kappa
+    (a bounded dc-offset/asymmetry proxy — see ct_model.py docstring).
+
+    Formula unit anchors live in test_ct_model.py; this file cross-checks
+    the WIRING — that run_arc_flash actually feeds the pipeline's own
+    kappa and arcing current into the CT model and that this measurably
+    slows (not speeds up) the reported clearing time, closing the
+    previously non-conservative gap.
+    """
+
+    RELAY_PROPS = TestRelayClearing.RELAY_PROPS
+    T_UNSATURATED = TestRelayClearing.T_EXPECTED  # ≈0.674 s, no CT in path
+
+    def _proj(self, ct_props):
+        return _project(
+            components=[
+                _utility(77.3),  # x_r_ratio=15 -> kappa ≈1.82 (see _utility())
+                _comp("ct-1", "ct", {"name": "CT1", **ct_props}),
+                _comp("bus-1", "bus", {"name": "MV Bus", "voltage_kv": 11.0}),
+                _comp("relay-1", "relay",
+                      {**self.RELAY_PROPS, "associated_ct": "ct-1"}),
+            ],
+            wires=[
+                _wire("w1", "utility-1", "ct-1"),
+                _wire("w2", "ct-1", "bus-1"),
+            ])
+
+    def test_default_ct_saturates_under_typical_xr_and_slows_clearing(self):
+        """A default 400/5 5P20 CT has ample SYMMETRIC headroom at the
+        ~4 kA anchor current (I_sat_symmetric=6400A > 4kA — this is why
+        test_relay_via_associated_ct_drives_idmt_time with the SAME ratio
+        needed an explicit 5P40 override to stay unsaturated once kappa
+        derating was added). Left at the default 5P20 with the utility's
+        default x_r_ratio=15 (kappa≈1.82), the derated threshold
+        (≈3513A) sits BELOW the ~4kA arcing current — the relay now sees
+        a clipped, reduced current and trips slower than the
+        no-saturation anchor, the non-conservative gap this closes.
+        """
+        ct_props = {"ratio": "400/5"}
+        proj = self._proj(ct_props)
+        fault_results = run_fault_analysis(proj)
+        res = run_arc_flash(proj, fault_results)
+        r = res.buses["bus-1"]
+
+        kappa = fault_results.buses["bus-1"].kappa
+        assert kappa is not None and kappa > 1.5  # sanity: meaningfully offset
+
+        sat = ct_saturation_params(ct_props, kappa=kappa)
+        assert sat["i_sat_primary"] < r.arcing_current_ka * 1000  # confirms saturating
+
+        # The fix must make clearing SLOWER (more conservative), not faster.
+        assert r.clearing_time_s > self.T_UNSATURATED + 0.005
+
+        # Cross-check the exact wiring: reproduce the pipeline's own
+        # relay-operate-time call using the actual kappa/arcing current it
+        # computed, and confirm run_arc_flash's reported clearing_time_s
+        # matches (i.e. the saturation model is genuinely in the loop, not
+        # coincidentally slower for some other reason).
+        t_relay = _relay_operate_time(self.RELAY_PROPS, r.arcing_current_ka * 1000,
+                                      ct_props, kappa)
+        expected_t_clear = min(t_relay + _BREAKER_OPENING_TIME_S, 2.0)
+        assert r.clearing_time_s == pytest.approx(expected_t_clear, abs=0.005)
+
+    def test_ample_alf_ct_matches_unsaturated_anchor(self):
+        """A well-sized 5P40 CT (same one used to isolate the association-
+        resolution test) stays within its derated threshold at this fault
+        level and reproduces the plain no-saturation anchor time."""
+        proj = self._proj({"ratio": "400/5", "accuracy_class": "5P40"})
+        res = run_arc_flash(proj, run_fault_analysis(proj))
+        assert res.buses["bus-1"].clearing_time_s == pytest.approx(
+            self.T_UNSATURATED, abs=0.02)
+
+    def test_severely_undersized_ct_hits_max_clearing_time(self):
+        """A CT with almost no accuracy headroom (5P5, high burden) clips
+        so hard the relay's effective current can fall below its pickup —
+        the path degrades toward the unprotected 2.0 s ceiling rather than
+        a modest slowdown."""
+        proj = self._proj({"ratio": "400/5", "accuracy_class": "5P5",
+                            "burden_va": 60})
+        res = run_arc_flash(proj, run_fault_analysis(proj))
+        assert res.buses["bus-1"].clearing_time_s > self.T_UNSATURATED + 0.1
+        assert res.buses["bus-1"].clearing_time_s <= 2.0

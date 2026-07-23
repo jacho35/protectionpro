@@ -1498,8 +1498,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const devices = result.devices || [];
     const transformers = result.transformers || [];
+    const ctChecks = result.ct_checks || [];
 
-    if (devices.length === 0 && transformers.length === 0) {
+    if (devices.length === 0 && transformers.length === 0 && ctChecks.length === 0) {
       body.innerHTML = '<p>No circuit breakers, fuses, or transformers found in the project.</p>';
       modal.style.display = '';
       return;
@@ -1507,7 +1508,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const failCount = devices.filter(d => d.status === 'fail').length;
     const xfmrFailCount = transformers.filter(t => t.status === 'fail').length;
-    const totalFails = failCount + xfmrFailCount;
+    const ctFailCount = ctChecks.filter(c => c.status === 'fail').length;
+    const totalFails = failCount + xfmrFailCount + ctFailCount;
 
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
@@ -1578,6 +1580,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (d.issues.length > 0) {
           html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">
             ${d.issues.join('<br>')}
+          </td></tr>`;
+        }
+      }
+      html += '</tbody></table>';
+    }
+
+    // ── CT saturation / accuracy-limit adequacy table ──
+    if (ctChecks.length > 0) {
+      html += `<h4 style="margin:12px 0 4px">CT Saturation Adequacy</h4>
+      <table class="af-table">
+        <thead><tr>
+          <th>CT</th><th>Bus</th><th>Ratio</th><th>Fault (kA)</th>
+          <th>Sat. Threshold (A)</th><th>Headroom</th><th>Status</th>
+        </tr></thead><tbody>`;
+      for (const c of ctChecks) {
+        const rowClass = c.status === 'fail' ? 'af-danger' : c.status === 'warning' ? 'af-medium' : 'af-low';
+        const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+          : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
+          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+        html += `<tr class="${rowClass}" data-device-id="${c.device_id}" style="cursor:pointer">
+          <td>${escHtml(c.device_name)}</td>
+          <td>${escHtml(c.location_bus)}</td>
+          <td>${escHtml(String(c.ratio))}</td>
+          <td>${c.prospective_fault_ka.toFixed(2)}</td>
+          <td>${c.i_sat_primary_a != null ? Math.round(c.i_sat_primary_a) : '—'}</td>
+          <td>${c.headroom_pct != null ? c.headroom_pct.toFixed(0) + '%' : '—'}</td>
+          <td>${statusBadge}</td>
+        </tr>`;
+        if (c.issues.length > 0) {
+          html += `<tr class="${rowClass}"><td colspan="7" style="padding-left:24px;font-size:11px;color:#b71c1c">
+            ${c.issues.join('<br>')}
           </td></tr>`;
         }
       }
