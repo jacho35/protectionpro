@@ -1,0 +1,233 @@
+[
+  {
+    "name": "Frequency scan: parallel resonance order h_r",
+    "predicted": 5.0,
+    "computed": 5.0,
+    "err": "0.000%",
+    "tol_pct": 3.0,
+    "ok": true,
+    "unit": "(h)",
+    "note": "S_sc=250.0 MVA, Q_c=10.0 MVAr -> h_r=sqrt(S_sc/Q_c). resonance f = 250.0 Hz",
+    "ref": "Classic resonance screening: h_r = sqrt(S_sc/Q_c)"
+  },
+  {
+    "name": "Filter sizing: series-resonance order of designed L-C branch",
+    "predicted": 4.7,
+    "computed": 4.70009729395653,
+    "err": "0.002%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "(h)",
+    "note": "design gives C=75.35 uF, L=6.087 mH -> 1/(2pi sqrt(LC)) = 235.00 Hz = 4.7001*f0",
+    "ref": "Single-tuned filter: tuned order = 1/(2pi sqrt(LC))/f0"
+  },
+  {
+    "name": "Reliability: SAIFI (radial series FMEA)",
+    "predicted": 1.104,
+    "computed": 1.104,
+    "err": "0.000%",
+    "tol_pct": 1.0,
+    "ok": true,
+    "unit": "int/cust.yr",
+    "note": "sum of series-element failure rates on the only supply path",
+    "ref": "Billinton & Allan radial FMEA; IEEE 1366"
+  },
+  {
+    "name": "Reliability: SAIDI (radial series FMEA)",
+    "predicted": 4.632,
+    "computed": 4.632,
+    "err": "0.000%",
+    "tol_pct": 1.0,
+    "ok": true,
+    "unit": "h/cust.yr",
+    "note": "sum(lambda*r) over the same path",
+    "ref": "Billinton & Allan radial FMEA; IEEE 1366"
+  },
+  {
+    "name": "Reliability: CAIDI = SAIDI/SAIFI",
+    "predicted": 4.195652173913043,
+    "computed": 4.196,
+    "err": "0.008%",
+    "tol_pct": 1.0,
+    "ok": true,
+    "unit": "h/int",
+    "note": "",
+    "ref": ""
+  },
+  {
+    "name": "Voltage stability: lambda_critical (2-bus lossless nose)",
+    "predicted": 1.890625,
+    "computed": 1.8881,
+    "err": "0.134%",
+    "tol_pct": 4.0,
+    "ok": true,
+    "unit": "",
+    "note": "X_pu=3.3058, P_max=Vs^2/(2X)=15.125 MW, P0=8.0 MW",
+    "ref": "Kundur: P_max = Vs^2/(2X) for unity-pf constant-P load"
+  },
+  {
+    "name": "Voltage stability: nose voltage V = Vs/sqrt(2)",
+    "predicted": 0.7071067811865475,
+    "computed": 0.7111,
+    "err": "0.565%",
+    "tol_pct": 6.0,
+    "ok": true,
+    "unit": "pu",
+    "note": "",
+    "ref": "Nose sits at V = Vs/sqrt(2) = 0.707 pu"
+  },
+  {
+    "name": "Hosting capacity: voltage-rise-limited PV MW",
+    "predicted": 6.352500000000005,
+    "computed": 6.3525,
+    "err": "0.000%",
+    "tol_pct": 4.0,
+    "ok": true,
+    "unit": "MW",
+    "note": "R_pu=0.8264; P_hc=(Vmax-V0)/R_pu=6.353 MW; limit=overvoltage",
+    "ref": "Feeder voltage rise dV_pu ~= P_pu*R_pu (unity pf)"
+  },
+  {
+    "name": "CT model: knee-point voltage V_k = 0.8*ALF*Isn*(Rct+Rb)",
+    "predicted": 72.0,
+    "computed": 72.0,
+    "err": "0.000%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "V",
+    "note": "",
+    "ref": "IEC 61869-2: V_AL=ALF*Isn*(Rct+Rb); Vk~=0.8*V_AL"
+  },
+  {
+    "name": "CT model: saturation primary current",
+    "predicted": 6400.0,
+    "computed": 6400.000000000001,
+    "err": "0.000%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "A",
+    "note": "",
+    "ref": "I_sat_pri = Vk/(Rct+Rb)*ratio = 0.8*ALF*I_pri_rated"
+  },
+  {
+    "name": "CT model: saturation-clipped effective current at 2x I_sat",
+    "predicted": 9050.966799187809,
+    "computed": 9050.966799187809,
+    "err": "0.000%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "A",
+    "note": "ks=0.5 -> theta=pi/2 -> eta=sqrt((pi/2)/pi)=0.7071",
+    "ref": "Waveform-clip rms: eta=sqrt((theta-sin2theta/2)/pi)"
+  },
+  {
+    "name": "Battery sizing: required energy (IEEE 485 factors)",
+    "predicted": 156.74669267967636,
+    "computed": 156.75,
+    "err": "0.002%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "kWh",
+    "note": "E=100/sqrt(.95)/0.9*1.25*1.10 ; eta_1way=0.9747",
+    "ref": "E_req = SumP.t/eta/DoD*Kage*Kdesign*Ktemp"
+  },
+  {
+    "name": "Cap placement: loss-reduction fraction from full VAR comp",
+    "predicted": 0.36,
+    "computed": 0.37899145491342484,
+    "err": "5.275%",
+    "tol_pct": 12.0,
+    "ok": true,
+    "unit": "",
+    "note": "base_loss=355.76 kW, opt_loss=220.93 kW, placed 3500.0 kvar",
+    "ref": "I^2R with Q->0: reduction = Q^2/(P^2+Q^2)"
+  },
+  {
+    "name": "OPF: cheap generator committed by merit-order dispatch",
+    "predicted": 1.0,
+    "computed": 1.0,
+    "err": "0.000%",
+    "tol_pct": 0.1,
+    "ok": true,
+    "unit": "",
+    "note": "GenCheap dispatched 8.00 MW (baseline standby)",
+    "ref": ""
+  },
+  {
+    "name": "OPF: optimized cost strictly below baseline",
+    "predicted": 1.0,
+    "computed": 1.0,
+    "err": "0.000%",
+    "tol_pct": 0.1,
+    "ok": true,
+    "unit": "",
+    "note": "baseline=1200.0 $/h -> optimized=160.0 $/h",
+    "ref": ""
+  },
+  {
+    "name": "Contingency: radial single-feed is NOT N-1 secure",
+    "predicted": 0.0,
+    "computed": 0.0,
+    "err": "0 abs",
+    "tol_pct": 0.1,
+    "ok": true,
+    "unit": "",
+    "note": "n1_secure=False; loss-of-supply contingencies=2",
+    "ref": ""
+  },
+  {
+    "name": "Contingency: MW lost on feeder outage = full load",
+    "predicted": 4.0,
+    "computed": 4.0,
+    "err": "0.000%",
+    "tol_pct": 5.0,
+    "ok": true,
+    "unit": "MW",
+    "note": "removing the only feeder de-energizes B2",
+    "ref": ""
+  },
+  {
+    "name": "EE-10: bus-b voltage, chain-reduced vs explicit-mid-bus (exact)",
+    "predicted": 0.910694,
+    "computed": 0.910694,
+    "err": "0.000%",
+    "tol_pct": 0.1,
+    "ok": true,
+    "unit": "pu",
+    "note": "tapped XFMR + cable each side; V_exact=0.91069, V_reduced=0.91069",
+    "ref": "Kron reduction must reproduce the per-element model exactly"
+  },
+  {
+    "name": "Flicker: Pst at anchor (d=3%, 1/min)",
+    "predicted": 1.0,
+    "computed": 1.0,
+    "err": "0.000%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "Pst",
+    "note": "",
+    "ref": "IEC 61000-3-3 Pst=1 borderline curve anchor"
+  },
+  {
+    "name": "Flicker: Pst linear in step size (d=6%)",
+    "predicted": 2.0,
+    "computed": 2.0,
+    "err": "0.000%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "Pst",
+    "note": "",
+    "ref": ""
+  },
+  {
+    "name": "Flicker: Pst rate roll-off (r=10/min)",
+    "predicted": 2.041737944669529,
+    "computed": 2.041737944669529,
+    "err": "0.000%",
+    "tol_pct": 0.5,
+    "ok": true,
+    "unit": "Pst",
+    "note": "",
+    "ref": "Pst ~ r^0.31 high-frequency roll-off"
+  }
+]

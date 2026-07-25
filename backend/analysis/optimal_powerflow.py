@@ -213,17 +213,40 @@ def run_opf(project: ProjectData, objective: str = "cost",
         evals += 1
         return run_load_flow(work, method)
 
-    cur_lf = apply_and_solve()
-    if not cur_lf.converged:
-        warnings.append("Economic re-dispatch did not converge — reverting "
-                        "to the user dispatch settings.")
+    base_score = _score(b_cost, b_loss, b_viol, objective)
+
+    def _revert_dispatch(reason):
+        """Roll Stage-1 back to the user's dispatch and re-solve. Returns the
+        fresh (lf, wcomps, controls, score)."""
+        nonlocal work, wcomps, controls
+        warnings.append(reason)
         work = _copy_project(project)
         wcomps = {c.id: c for c in work.components}
         controls = _build_controls(work, use_capacitors, use_taps,
                                    use_setpoints)
-        cur_lf = apply_and_solve()
-    _c0, _l0, _v0 = _metrics(cur_lf, wcomps, v_min, v_max, loading_limit_pct)
-    cur_score = _score(_c0, _l0, _v0, objective)
+        lf = apply_and_solve()
+        c_, l_, v_ = _metrics(lf, wcomps, v_min, v_max, loading_limit_pct)
+        return lf, _score(c_, l_, v_, objective)
+
+    cur_lf = apply_and_solve()
+    if not cur_lf.converged:
+        cur_lf, cur_score = _revert_dispatch(
+            "Economic re-dispatch did not converge — reverting to the user "
+            "dispatch settings.")
+    else:
+        _c0, _l0, _v0 = _metrics(cur_lf, wcomps, v_min, v_max, loading_limit_pct)
+        cur_score = _score(_c0, _l0, _v0, objective)
+        # [OPF-1] Never ship a Stage-1 dispatch that is worse than the input.
+        # Merit-order re-ranking is optimal for a grid-tied swing, but in a
+        # source-only island the balancer selection (most-expensive committed
+        # unit carries the residual + losses) can leave the re-dispatch costlier
+        # than the user's — commitment/topology optimization is out of scope, so
+        # keep the better of the two rather than regressing silently.
+        if use_dispatch and cur_score > base_score:
+            cur_lf, cur_score = _revert_dispatch(
+                "Economic re-dispatch did not improve on the existing dispatch "
+                "(e.g. an islanded network where balancer selection dominates) "
+                "— keeping the user's dispatch.")
 
     max_moves = max(0, min(100, int(max_moves)))
     for _round in range(max_moves):

@@ -1,0 +1,132 @@
+
+======================================================================
+Frequency Scan
+======================================================================
+[PASS] Frequency scan: parallel resonance order h_r
+        predicted = 5 (h)   computed = 5 (h)   err = 0.000% (tol 3.0%)
+        S_sc=250.0 MVA, Q_c=10.0 MVAr -> h_r=sqrt(S_sc/Q_c). resonance f = 250.0 Hz
+
+======================================================================
+Filter Sizing
+======================================================================
+[PASS] Filter sizing: series-resonance order of designed L-C branch
+        predicted = 4.7 (h)   computed = 4.7001 (h)   err = 0.002% (tol 0.5%)
+        design gives C=75.35 uF, L=6.087 mH -> 1/(2pi sqrt(LC)) = 235.00 Hz = 4.7001*f0
+
+======================================================================
+Reliability
+======================================================================
+[PASS] Reliability: SAIFI (radial series FMEA)
+        predicted = 1.104 int/cust.yr   computed = 1.104 int/cust.yr   err = 0.000% (tol 1.0%)
+        sum of series-element failure rates on the only supply path
+[PASS] Reliability: SAIDI (radial series FMEA)
+        predicted = 4.632 h/cust.yr   computed = 4.632 h/cust.yr   err = 0.000% (tol 1.0%)
+        sum(lambda*r) over the same path
+[PASS] Reliability: CAIDI = SAIDI/SAIFI
+        predicted = 4.19565 h/int   computed = 4.196 h/int   err = 0.008% (tol 1.0%)
+
+======================================================================
+Voltage Stability
+======================================================================
+[PASS] Voltage stability: lambda_critical (2-bus lossless nose)
+        predicted = 1.89062    computed = 1.8881    err = 0.134% (tol 4.0%)
+        X_pu=3.3058, P_max=Vs^2/(2X)=15.125 MW, P0=8.0 MW
+[PASS] Voltage stability: nose voltage V = Vs/sqrt(2)
+        predicted = 0.707107 pu   computed = 0.7111 pu   err = 0.565% (tol 6.0%)
+
+======================================================================
+Hosting Capacity
+======================================================================
+[PASS] Hosting capacity: voltage-rise-limited PV MW
+        predicted = 6.3525 MW   computed = 6.3525 MW   err = 0.000% (tol 4.0%)
+        R_pu=0.8264; P_hc=(Vmax-V0)/R_pu=6.353 MW; limit=overvoltage
+
+======================================================================
+CT Saturation
+======================================================================
+[PASS] CT model: knee-point voltage V_k = 0.8*ALF*Isn*(Rct+Rb)
+        predicted = 72 V   computed = 72 V   err = 0.000% (tol 0.5%)
+[PASS] CT model: saturation primary current
+        predicted = 6400 A   computed = 6400 A   err = 0.000% (tol 0.5%)
+[PASS] CT model: saturation-clipped effective current at 2x I_sat
+        predicted = 9050.97 A   computed = 9050.97 A   err = 0.000% (tol 0.5%)
+        ks=0.5 -> theta=pi/2 -> eta=sqrt((pi/2)/pi)=0.7071
+
+======================================================================
+Battery Sizing
+======================================================================
+[PASS] Battery sizing: required energy (IEEE 485 factors)
+        predicted = 156.747 kWh   computed = 156.75 kWh   err = 0.002% (tol 0.5%)
+        E=100/sqrt(.95)/0.9*1.25*1.10 ; eta_1way=0.9747
+
+======================================================================
+Capacitor Placement
+======================================================================
+[PASS] Cap placement: loss-reduction fraction from full VAR comp
+        predicted = 0.36    computed = 0.378991    err = 5.275% (tol 12.0%)
+        base_loss=355.76 kW, opt_loss=220.93 kW, placed 3500.0 kvar
+
+======================================================================
+Optimal Power Flow
+======================================================================
+[PASS] OPF: cheap generator committed by merit-order dispatch
+        predicted = 1    computed = 1    err = 0.000% (tol 0.1%)
+        GenCheap dispatched 8.00 MW (baseline standby)
+[PASS] OPF: optimized cost strictly below baseline
+        predicted = 1    computed = 1    err = 0.000% (tol 0.1%)
+        baseline=1200.0 $/h -> optimized=160.0 $/h
+
+======================================================================
+Contingency
+======================================================================
+[PASS] Contingency: radial single-feed is NOT N-1 secure
+        predicted = 0    computed = 0    err = 0 abs (tol 0.1%)
+        n1_secure=False; loss-of-supply contingencies=2
+[PASS] Contingency: MW lost on feeder outage = full load
+        predicted = 4 MW   computed = 4 MW   err = 0.000% (tol 5.0%)
+        removing the only feeder de-energizes B2
+
+======================================================================
+EE-10 Two-Port
+======================================================================
+[PASS] EE-10: bus-b voltage, chain-reduced vs explicit-mid-bus (exact)
+        predicted = 0.910694 pu   computed = 0.910694 pu   err = 0.000% (tol 0.1%)
+        tapped XFMR + cable each side; V_exact=0.91069, V_reduced=0.91069
+
+======================================================================
+Flicker
+======================================================================
+[PASS] Flicker: Pst at anchor (d=3%, 1/min)
+        predicted = 1 Pst   computed = 1 Pst   err = 0.000% (tol 0.5%)
+[PASS] Flicker: Pst linear in step size (d=6%)
+        predicted = 2 Pst   computed = 2 Pst   err = 0.000% (tol 0.5%)
+[PASS] Flicker: Pst rate roll-off (r=10/min)
+        predicted = 2.04174 Pst   computed = 2.04174 Pst   err = 0.000% (tol 0.5%)
+
+
+######################################################################
+SUMMARY
+######################################################################
+  PASS  Frequency scan: parallel resonance order h_r            err=0.000%
+  PASS  Filter sizing: series-resonance order of designed L-C branch err=0.002%
+  PASS  Reliability: SAIFI (radial series FMEA)                 err=0.000%
+  PASS  Reliability: SAIDI (radial series FMEA)                 err=0.000%
+  PASS  Reliability: CAIDI = SAIDI/SAIFI                        err=0.008%
+  PASS  Voltage stability: lambda_critical (2-bus lossless nose) err=0.134%
+  PASS  Voltage stability: nose voltage V = Vs/sqrt(2)          err=0.565%
+  PASS  Hosting capacity: voltage-rise-limited PV MW            err=0.000%
+  PASS  CT model: knee-point voltage V_k = 0.8*ALF*Isn*(Rct+Rb) err=0.000%
+  PASS  CT model: saturation primary current                    err=0.000%
+  PASS  CT model: saturation-clipped effective current at 2x I_sat err=0.000%
+  PASS  Battery sizing: required energy (IEEE 485 factors)      err=0.002%
+  PASS  Cap placement: loss-reduction fraction from full VAR comp err=5.275%
+  PASS  OPF: cheap generator committed by merit-order dispatch  err=0.000%
+  PASS  OPF: optimized cost strictly below baseline             err=0.000%
+  PASS  Contingency: radial single-feed is NOT N-1 secure       err=0 abs
+  PASS  Contingency: MW lost on feeder outage = full load       err=0.000%
+  PASS  EE-10: bus-b voltage, chain-reduced vs explicit-mid-bus (exact) err=0.000%
+  PASS  Flicker: Pst at anchor (d=3%, 1/min)                    err=0.000%
+  PASS  Flicker: Pst linear in step size (d=6%)                 err=0.000%
+  PASS  Flicker: Pst rate roll-off (r=10/min)                   err=0.000%
+
+  21/21 checks passed
