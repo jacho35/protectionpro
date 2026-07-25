@@ -1203,8 +1203,14 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 "available_mw": round(_source_output_mva(comp)[0], 4),
                 "dispatched_mw": 0.0, "curtailed_mw": 0.0,
             })
+        standby_origin_ids = set()
         if not utilities:
-            # Islanded from the utility: standby sources join the merit order
+            # Islanded from the utility: standby sources join the merit order.
+            # Remember which entered as 'standby' so the balancer fill-first
+            # guard below applies to them only — not to genuinely economic
+            # merit_order units (OPF re-dispatch), which must load ahead of the
+            # more-expensive balancer. [OPF-1]
+            standby_origin_ids = {c.id for c, _bi in standby}
             merit += standby
             standby = []
         merit.sort(key=_merit_key)
@@ -1228,20 +1234,30 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                                 if c.id not in balancer_ids)
 
         remaining = demand_mw - sum(e[4] for e in plan) - batt_discharge_mw
-        # The island balancer (slack) generator is already committed as the
-        # reference set, so let it carry the residual up to its own capacity
-        # before starting any additional standby/merit generator. Otherwise a
-        # standby set fires just to serve a small residual the running slack
-        # set could easily absorb (e.g. a second genset starting for a few kW
-        # when a must-run battery already meets nearly all the island load).
-        # Skipped when a sequential-commitment scheme owns the balancer.
-        if seq_balancer_entry is None:
-            remaining -= sum(_source_output_mva(c)[0] for c, _bi, _d in balancers
-                             if c.type == "generator")
+        # Balancer fill-first guard [OPF-1]: the island balancer (slack)
+        # generator is already committed as the reference set, so a *standby*
+        # set should only fire for demand beyond what the balancer can itself
+        # absorb — otherwise a standby set starts just to serve a small residual
+        # the running slack set could easily cover (e.g. a second genset
+        # starting for a few kW when a must-run battery already meets nearly all
+        # the island load). A genuine merit_order unit is economic dispatch and
+        # MUST load ahead of the balancer (which, under cost-ranked priority, is
+        # the most-expensive committed unit) — holding it back behind the
+        # balancer inverts the merit order and can return a costlier dispatch
+        # than the input. So the guard subtracts the balancer capacity only for
+        # standby-origin units. Skipped when a sequential-commitment scheme owns
+        # the balancer.
+        balancer_gen_cap = (
+            sum(_source_output_mva(c)[0] for c, _bi, _d in balancers
+                if c.type == "generator")
+            if seq_balancer_entry is None else 0.0)
         for comp, bi in merit:
             p_av, q_av, _s, _r = _source_output_mva(comp)
             p_av = min(p_av, _gen_max_load_mw(comp))   # generator dispatch ceiling
-            p_disp = min(p_av, max(0.0, remaining))
+            headroom = remaining
+            if comp.id in standby_origin_ids:
+                headroom = remaining - balancer_gen_cap
+            p_disp = min(p_av, max(0.0, headroom))
             remaining -= p_disp
             plan.append([comp, bi, p_av, q_av, p_disp, p_disp])
 

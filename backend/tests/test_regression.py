@@ -1128,6 +1128,48 @@ class TestOptimalPowerFlow:
                 < len(r["baseline"]["violations"]))
         assert any(m["prop"] == "tap_percent" for m in r["moves"])
 
+    def test_islanded_two_generators_merit_order(self):
+        """[OPF-1] Source-only island: a cheap generator ($20/MWh) and a dear
+        one ($90/MWh, both default 'standby') feeding a common 9.5 MW load.
+
+        Merit-order dispatch must load the cheap unit and leave the dear one
+        as the zero-carrying balancer — it must NOT invert the order (dear
+        unit balancing the whole load), and it must never return a dispatch
+        costlier than the input. Regression for the balancer fill-first guard
+        that previously stranded the cheap merit unit at 0 MW behind the
+        (most-expensive) balancer's full rating.
+        """
+        comps = [
+            _comp("generator-1", "generator", {
+                "name": "GenCheap", "rated_mva": 20.0, "power_factor": 0.9,
+                "voltage_kv": 11.0, "cost_per_mwh": 20.0,
+                "v_setpoint_pu": 1.0, "x_r_ratio": 10.0, "sub_x_pct": 15.0}),
+            _comp("bus-1", "bus", {"name": "Island", "voltage_kv": 11.0}),
+            _comp("generator-2", "generator", {
+                "name": "GenDear", "rated_mva": 20.0, "power_factor": 0.9,
+                "voltage_kv": 11.0, "cost_per_mwh": 90.0,
+                "v_setpoint_pu": 1.0, "x_r_ratio": 10.0, "sub_x_pct": 15.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 9500.0, "power_factor": 1.0,
+                "demand_factor": 1.0, "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "generator-1", "bus-1"),
+                 _wire("w2", "generator-2", "bus-1"),
+                 _wire("w3", "bus-1", "static_load-1")]
+        proj = ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        r = run_opf(proj, use_capacitors=False, use_taps=False,
+                    use_setpoints=False)
+        assert r["converged"]
+        # Never costlier than the input dispatch (the core OPF-1 defect).
+        assert r["optimized"]["cost_per_h"] <= r["baseline"]["cost_per_h"] + 1e-6
+        cheap = next(d for d in r["dispatch"] if d["source_id"] == "generator-1")
+        dear = next(d for d in r["dispatch"] if d["source_id"] == "generator-2")
+        # Cheap unit carries the load; dear unit is the (near-zero) balancer.
+        assert cheap["dispatched_mw"] == pytest.approx(9.5, rel=0.02)
+        assert dear["dispatched_mw"] < 0.5
+        assert r["optimized"]["cost_per_h"] == pytest.approx(190.0, rel=0.05)
+
 
 class TestBatterySizing:
     """Battery sizing & discharge against hand calculations.
