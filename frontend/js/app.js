@@ -2117,6 +2117,56 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  // Plan-view SVG of the earthing grid mesh + rods (IEEE 80 geometry).
+  // Pure geometry passthrough from the backend — no recalculation here.
+  function buildGroundingGridSVG(b) {
+    const Lx = Number(b.grid_length_m), Ly = Number(b.grid_width_m);
+    const nx = Math.max(2, parseInt(b.num_conductors_x, 10) || 2);
+    const ny = Math.max(2, parseInt(b.num_conductors_y, 10) || 2);
+    const nR = Math.max(0, parseInt(b.num_ground_rods, 10) || 0);
+    if (!(Lx > 0) || !(Ly > 0)) return '';
+
+    // Fit the grid into a fixed viewport, preserving aspect ratio.
+    const VW = 240, VH = 150, pad = 22;
+    const s = Math.min((VW - 2 * pad) / Lx, (VH - 2 * pad) / Ly);
+    const gw = Lx * s, gh = Ly * s;
+    const ox = (VW - gw) / 2, oy = (VH - gh) / 2;
+    const col = b.status === 'fail' ? '#d32f2f' : b.status === 'warning' ? '#f57c00' : '#2e7d32';
+
+    let mesh = '';
+    for (let i = 0; i < nx; i++) {           // vertical conductors (run along Ly)
+      const x = ox + (nx === 1 ? gw / 2 : (gw * i) / (nx - 1));
+      mesh += `<line x1="${x.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${x.toFixed(1)}" y2="${(oy + gh).toFixed(1)}"/>`;
+    }
+    for (let j = 0; j < ny; j++) {           // horizontal conductors (run along Lx)
+      const y = oy + (ny === 1 ? gh / 2 : (gh * j) / (ny - 1));
+      mesh += `<line x1="${ox.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(ox + gw).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+    }
+
+    // Rods distributed evenly around the grid perimeter.
+    let rods = '';
+    if (nR > 0) {
+      const perim = 2 * (gw + gh);
+      for (let k = 0; k < nR; k++) {
+        let d = (perim * k) / nR, px, py;
+        if (d < gw) { px = ox + d; py = oy; }
+        else if (d < gw + gh) { px = ox + gw; py = oy + (d - gw); }
+        else if (d < 2 * gw + gh) { px = ox + gw - (d - gw - gh); py = oy + gh; }
+        else { px = ox; py = oy + gh - (d - 2 * gw - gh); }
+        rods += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="${col}" stroke="#fff" stroke-width="0.8"/>`;
+      }
+    }
+
+    const rodTxt = nR > 0 ? ` · ${nR} rod${nR > 1 ? 's' : ''}` : '';
+    return `<svg viewBox="0 0 ${VW} ${VH}" width="100%" style="max-width:280px;background:var(--bg-secondary);border-radius:4px" role="img"
+        aria-label="Earthing grid plan: ${Lx} by ${Ly} metres, ${nx} by ${ny} conductor mesh, ${nR} rods">
+      <g stroke="${col}" stroke-width="1" opacity="0.85">${mesh}</g>
+      ${rods}
+      <text x="${(ox + gw / 2).toFixed(1)}" y="${(oy - 7).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text-secondary)">${Lx} m — ${nx}×${ny} mesh${rodTxt}</text>
+      <text x="${(ox - 7).toFixed(1)}" y="${(oy + gh / 2).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text-secondary)" transform="rotate(-90 ${(ox - 7).toFixed(1)} ${(oy + gh / 2).toFixed(1)})">${Ly} m</text>
+    </svg>`;
+  }
+
   function showGroundingResults(result) {
     const modal = document.getElementById('grounding-modal');
     const body = document.getElementById('grounding-body');
@@ -2185,6 +2235,19 @@ document.addEventListener('DOMContentLoaded', () => {
             <div>Limit: <strong>${b.tolerable_step_v.toFixed(0)} V</strong></div>
           </div>
         </div>`;
+
+      const gridSvg = buildGroundingGridSVG(b);
+      if (gridSvg) {
+        html += `<div style="margin-top:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div>${gridSvg}</div>
+          <div style="font-size:11px;color:var(--text-secondary);line-height:1.6">
+            <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">Grid arrangement (plan)</div>
+            <div>${b.num_conductors_x}×${b.num_conductors_y} conductor mesh</div>
+            <div>Spacing: ${Number(b.conductor_spacing_x_m).toFixed(1)} × ${Number(b.conductor_spacing_y_m).toFixed(1)} m</div>
+            <div>${b.num_ground_rods} ground rod${b.num_ground_rods === 1 ? '' : 's'}${b.ground_rod_length_m ? ` @ ${Number(b.ground_rod_length_m).toFixed(1)} m` : ''}</div>
+          </div>
+        </div>`;
+      }
 
       if (b.issues.length > 0) {
         html += `<div style="margin-top:6px;font-size:11px;color:#b71c1c">${b.issues.join('<br>')}</div>`;
