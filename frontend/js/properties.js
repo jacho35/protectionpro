@@ -882,6 +882,24 @@ const Properties = {
       this.show(comp.id);
     }
 
+    // Soil-type preset fills the grounding soil resistivity with a
+    // representative IEEE 80 §12.2 value; 'custom' leaves it untouched.
+    if (field === 'soil_type' && comp.type === 'bus' &&
+        SOIL_TYPE_RESISTIVITY[value] !== undefined) {
+      comp.props.soil_resistivity = SOIL_TYPE_RESISTIVITY[value];
+      this.show(comp.id);
+    }
+
+    // Rod-length preset fills the actual ground-rod length; 'custom' leaves
+    // any non-standard entered value in place.
+    if (field === 'rod_length_preset' && comp.type === 'bus' && value !== 'custom') {
+      const len = parseFloat(value);
+      if (!Number.isNaN(len)) {
+        comp.props.ground_rod_length = len;
+        this.show(comp.id);
+      }
+    }
+
     // MCB curve class (or switching to MCB) sets the magnetic pickup to the
     // top of the IEC 60898-1 band (B 3–5×, C 5–10×, D 10–20×In)
     if (comp.type === 'cb' &&
