@@ -744,6 +744,33 @@ const PRIME_MOVER_INERTIA_H = {
   wind: 3.0,
 };
 
+// Representative soil resistivity (Ω·m) per soil class — used to auto-populate
+// a bus's grounding `soil_resistivity` when the Soil Type selector changes.
+// Mid-range values from the IEEE 80 §12.2 typical bands (wet clay 20–100,
+// sandy clay 50–200, gravel/sand 200–3000, rock 1000–10000). 'custom' is
+// intentionally absent — it leaves the entered resistivity untouched.
+const SOIL_TYPE_RESISTIVITY = {
+  wet_clay: 50,
+  moist_soil: 100,
+  sandy_clay: 150,
+  gravel_sand: 1000,
+  rock: 3000,
+};
+
+// Common vertical ground-rod lengths (m) offered as a picker — used to fill
+// `ground_rod_length` when the Rod Length preset changes. 'custom' leaves the
+// entered length untouched so any non-standard value is still editable.
+const STANDARD_ROD_LENGTHS = [2.4, 3.0, 6.0];
+
+// Ground-grid conductor materials (keys match backend CONDUCTOR_MATERIALS in
+// grounding_system.py — Onderdonk/IEEE 80 Table 1 thermal constants live there).
+const GROUNDING_CONDUCTOR_MATERIALS = [
+  { value: 'copper_annealed', label: 'Copper (annealed soft-drawn)' },
+  { value: 'copper_hard', label: 'Copper (hard-drawn)' },
+  { value: 'steel_galvanized', label: 'Steel (galvanized)' },
+  { value: 'copper_clad_steel', label: 'Copper-clad steel' },
+];
+
 // ─── PV Module Library ───
 // Typical STC datasheet values for common module classes; voltages/currents
 // per module, temperature coefficients in %/°C (negative = falls with heat).
@@ -1157,15 +1184,24 @@ const FIELD_INFO = {
   'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.\nTypical: single largest motor 1.0, group of 2-4 motors 0.8, 5-10 motors 0.6.',
 
   // Grounding (IEEE 80)
+  'bus.soil_type': 'Preset soil class — fills Soil Resistivity with a representative IEEE 80 §12.2 value:\n• Wet clay ≈ 50\n• Moist soil ≈ 100\n• Sandy clay ≈ 150\n• Gravel/sand ≈ 1000\n• Rock ≈ 3000 Ω·m\nPick "Custom" to enter your own (e.g. from a Wenner four-pin measurement). Selecting a type overwrites the resistivity; you can still edit it afterwards.',
   'bus.soil_resistivity': 'Soil resistivity in Ω·m.\nSource: IEEE 80 §12.2 — typical values:\n• Wet clay: 20–100\n• Sandy clay: 50–200\n• Gravel/sand: 200–3000\n• Rock: 1000–10000',
+  'bus.crushed_rock_resistivity': 'Surface layer (crushed rock) resistivity ρ_s in Ω·m.\nA high-resistivity surface layer raises the tolerable touch/step voltages.\nSource: IEEE 80 §7.4 — typical crushed rock: 2000–5000 Ω·m (dry higher).',
+  'bus.crushed_rock_depth': 'Thickness of the surface (crushed rock) layer in metres.\nSource: IEEE 80 §7.4 — typically 0.10–0.15 m.',
   'bus.grid_length': 'Grounding grid length in metres.\nSource: IEEE 80 — grid dimensions define the protected area.',
   'bus.grid_width': 'Grounding grid width in metres.',
   'bus.grid_depth': 'Burial depth of grid conductors (typically 0.3–1.0 m).\nSource: IEEE 80 §14.3.',
   'bus.num_conductors_x': 'Number of parallel conductors in X direction.\nMore conductors reduce mesh voltage.',
   'bus.num_conductors_y': 'Number of parallel conductors in Y direction.',
+  'bus.conductor_material': 'Grid conductor material — sets the Onderdonk/IEEE 80 Table 1 thermal constants used for minimum conductor sizing.\nCopper (hard-drawn) is the usual default; galvanized steel needs a much larger section for the same fault.',
+  'bus.conductor_diameter': 'Grid conductor diameter in metres (default 0.01167 m ≈ 4/0 AWG copper).\nUsed for grid resistance and mesh-factor geometry.',
   'bus.num_ground_rods': 'Number of vertical ground rods.\nSource: IEEE 80 §14.4 — rods help reduce grid resistance.',
+  'bus.rod_length_preset': 'Common rod-length picker (2.4 m ≈ 8 ft, 3.0 m, 6.0 m) — fills Rod Length.\nPick "Custom" to keep a non-standard length entered below.',
   'bus.ground_rod_length': 'Length of each ground rod (typically 3 m).\nSource: IEEE 80 §14.4.',
-  'bus.fault_duration': 'Fault clearing time in seconds.\nSource: IEEE 80 §9.4 — determines tolerable touch/step voltages.\nTypical: 0.15–1.0 s.',
+  'bus.fault_duration': 'Shock duration t_s in seconds — the time body current flows.\nSource: IEEE 80 §8.2 — sets the tolerable touch/step voltages (∝ 1/√t_s).\nTypical: 0.15–1.0 s.',
+  'bus.fault_clearing_time': 'Conductor heating time t_c in seconds — used for the adiabatic (Onderdonk) minimum conductor size.\nOften equal to t_s, but can differ (e.g. backup-clearing time for sizing).\nSource: IEEE 80 §11.3.',
+  'bus.ambient_temp': 'Ambient temperature °C for the conductor-sizing thermal calc (reference for the allowed temperature rise).\nSource: IEEE 80 §11.3 — typically 40 °C.',
+  'bus.body_weight': 'Body weight for the tolerable touch/step voltage limits: 50 kg (k = 0.116) is more conservative, 70 kg (k = 0.157) is the IEEE 80 default.\nSource: IEEE 80 §8.3.',
   'motor_synchronous.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.',
 
   // Surge Arrester
@@ -1823,6 +1859,7 @@ const COMPONENT_DEFS = {
       conductor_gap_mm: 0,
       electrode_config: 'VCB',
       enclosure_size_mm: 508,
+      soil_type: 'custom',
       soil_resistivity: 100,
       crushed_rock_resistivity: 2500,
       crushed_rock_depth: 0.15,
@@ -1831,9 +1868,15 @@ const COMPONENT_DEFS = {
       grid_depth: 0.5,
       num_conductors_x: 6,
       num_conductors_y: 6,
+      rod_length_preset: 'custom',
       ground_rod_length: 3.0,
       num_ground_rods: 20,
+      conductor_material: 'copper_hard',
+      conductor_diameter: 0.01167,
       fault_duration: 0.5,
+      fault_clearing_time: 0.5,
+      ambient_temp: 40,
+      body_weight: 70,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -1848,15 +1891,39 @@ const COMPONENT_DEFS = {
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'], section: 'arcflash' },
       { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10, section: 'arcflash' },
       { key: 'system_grounded', label: 'System Grounding', type: 'select', options: ['unknown', 'grounded', 'ungrounded'], section: 'arcflash' },
+      { key: 'soil_type', label: 'Soil Type', type: 'select', section: 'grounding', options: [
+        { value: 'custom', label: 'Custom (use value below)' },
+        { value: 'wet_clay', label: 'Wet clay (~50 Ω·m)' },
+        { value: 'moist_soil', label: 'Moist soil (~100 Ω·m)' },
+        { value: 'sandy_clay', label: 'Sandy clay (~150 Ω·m)' },
+        { value: 'gravel_sand', label: 'Gravel / sand (~1000 Ω·m)' },
+        { value: 'rock', label: 'Rock (~3000 Ω·m)' },
+      ] },
       { key: 'soil_resistivity', label: 'Soil Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding' },
+      { key: 'crushed_rock_resistivity', label: 'Surface Layer Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding' },
+      { key: 'crushed_rock_depth', label: 'Surface Layer Depth', type: 'number', unit: 'm', step: 0.01, section: 'grounding' },
       { key: 'grid_length', label: 'Grid Length', type: 'number', unit: 'm', section: 'grounding' },
       { key: 'grid_width', label: 'Grid Width', type: 'number', unit: 'm', section: 'grounding' },
       { key: 'grid_depth', label: 'Grid Depth', type: 'number', unit: 'm', section: 'grounding' },
       { key: 'num_conductors_x', label: 'Conductors (X)', type: 'number', section: 'grounding' },
       { key: 'num_conductors_y', label: 'Conductors (Y)', type: 'number', section: 'grounding' },
+      { key: 'conductor_material', label: 'Conductor Material', type: 'select', section: 'grounding', options: GROUNDING_CONDUCTOR_MATERIALS },
+      { key: 'conductor_diameter', label: 'Conductor Diameter', type: 'number', unit: 'm', step: 0.001, section: 'grounding' },
       { key: 'num_ground_rods', label: 'Ground Rods', type: 'number', section: 'grounding' },
-      { key: 'ground_rod_length', label: 'Rod Length', type: 'number', unit: 'm', section: 'grounding' },
-      { key: 'fault_duration', label: 'Fault Duration', type: 'number', unit: 's', section: 'grounding' },
+      { key: 'rod_length_preset', label: 'Rod Length Preset', type: 'select', section: 'grounding', options: [
+        { value: 'custom', label: 'Custom (use value below)' },
+        { value: '2.4', label: '2.4 m (8 ft)' },
+        { value: '3.0', label: '3.0 m' },
+        { value: '6.0', label: '6.0 m' },
+      ] },
+      { key: 'ground_rod_length', label: 'Rod Length', type: 'number', unit: 'm', step: 0.1, section: 'grounding' },
+      { key: 'fault_duration', label: 'Fault Duration (shock, t_s)', type: 'number', unit: 's', step: 0.05, section: 'grounding' },
+      { key: 'fault_clearing_time', label: 'Clearing Time (conductor, t_c)', type: 'number', unit: 's', step: 0.05, section: 'grounding' },
+      { key: 'ambient_temp', label: 'Ambient Temperature', type: 'number', unit: '°C', section: 'grounding' },
+      { key: 'body_weight', label: 'Body Weight', type: 'select', section: 'grounding', options: [
+        { value: 50, label: '50 kg' },
+        { value: 70, label: '70 kg' },
+      ] },
     ],
   },
   transformer: {

@@ -1373,6 +1373,80 @@ def _calc_load_diversity(pdf, ld_results):
             _table(pdf, headers, rows, widths, header_color=(100, 60, 160))
 
 
+def _draw_grounding_grid(pdf, bus):
+    """Plan-view of the earthing grid mesh + perimeter rods (IEEE 80 geometry).
+
+    Draws with FPDF primitives from the geometry the engine passes through;
+    no recalculation. Silently skips if geometry is missing/degenerate.
+    """
+    Lx = bus.get("grid_length_m")
+    Ly = bus.get("grid_width_m")
+    if not Lx or not Ly or Lx <= 0 or Ly <= 0:
+        return
+    nx = max(2, int(bus.get("num_conductors_x", 0) or 0))
+    ny = max(2, int(bus.get("num_conductors_y", 0) or 0))
+    nR = max(0, int(bus.get("num_ground_rods", 0) or 0))
+
+    # Layout box (mm). Page-break if it won't fit.
+    box_w, box_h = 80.0, 55.0
+    if pdf.get_y() > pdf.h - (box_h + 20):
+        pdf.add_page()
+    x0 = pdf.get_x() if pdf.get_x() > pdf.l_margin else pdf.l_margin
+    y0 = pdf.get_y() + 2
+
+    pad = 8.0
+    s = min((box_w - 2 * pad) / Lx, (box_h - 2 * pad) / Ly)
+    gw, gh = Lx * s, Ly * s
+    ox = x0 + (box_w - gw) / 2
+    oy = y0 + (box_h - gh) / 2
+
+    status = str(bus.get("status", "pass"))
+    if status == "fail":
+        r, g, b = 211, 47, 47
+    elif status == "warning":
+        r, g, b = 245, 124, 0
+    else:
+        r, g, b = 46, 125, 50
+
+    pdf.set_draw_color(r, g, b)
+    pdf.set_line_width(0.25)
+    for i in range(nx):                       # vertical conductors
+        x = ox + (gw * i / (nx - 1) if nx > 1 else gw / 2)
+        pdf.line(x, oy, x, oy + gh)
+    for j in range(ny):                       # horizontal conductors
+        y = oy + (gh * j / (ny - 1) if ny > 1 else gh / 2)
+        pdf.line(ox, y, ox + gw, y)
+
+    # Rods evenly around the perimeter.
+    if nR > 0:
+        pdf.set_fill_color(r, g, b)
+        perim = 2 * (gw + gh)
+        for k in range(nR):
+            d = perim * k / nR
+            if d < gw:
+                px, py = ox + d, oy
+            elif d < gw + gh:
+                px, py = ox + gw, oy + (d - gw)
+            elif d < 2 * gw + gh:
+                px, py = ox + gw - (d - gw - gh), oy + gh
+            else:
+                px, py = ox, oy + gh - (d - 2 * gw - gh)
+            pdf.ellipse(px - 0.9, py - 0.9, 1.8, 1.8, style="F")
+
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(0.2)
+    # Caption line under the diagram.
+    pdf.set_xy(x0, oy + gh + 3)
+    _calc_body(
+        pdf,
+        f"  Grid plan: {Lx:g} x {Ly:g} m, {nx}x{ny} mesh, "
+        f"{nR} rod(s)"
+        + (f" @ {bus.get('ground_rod_length_m'):g} m" if bus.get("ground_rod_length_m") else ""),
+    )
+    pdf.set_y(max(oy + gh + 3, y0 + box_h))
+    pdf.ln(2)
+
+
 def _calc_grounding(pdf, grounding_results):
     pdf.add_page()
     pdf.section_title("9.  Grounding System Design — IEEE 80")
@@ -1428,6 +1502,7 @@ def _calc_grounding(pdf, grounding_results):
         issues = bus.get("issues", [])
         for iss in issues:
             _calc_body(pdf, f"  ! {iss}")
+        _draw_grounding_grid(pdf, bus)
         pdf.ln(1)
 
     warnings = grounding_results.get("warnings", [])
