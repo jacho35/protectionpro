@@ -185,6 +185,13 @@ body.dark-mode .kiosk-demand-badge { background: #3a3320; color: #f0d890; }
   background: var(--bg-primary); color: var(--text-primary);
   border: 1px solid var(--border-color); border-radius: 4px;
 }
+/* Per-minisub transformer picker — the long library labels have to stay inside
+   the narrow summary column, so cap the width and let it ellipsize. */
+.minisub-block .ms-tx {
+  max-width: 100%; min-width: 0; font-size: 11px; padding: 2px 4px;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 4px;
+}
 .ndf-input {
   width: 64px; font-size: 12px; padding: 2px 4px; text-align: right;
   background: var(--bg-primary); color: var(--text-primary);

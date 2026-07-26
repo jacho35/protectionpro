@@ -266,11 +266,14 @@ const Retic = {
     if (action === 'minisub-field') {
       const ms = this.minisubs.find(m => m.id === t.dataset.ms);
       if (!ms) return;
-      ms[t.dataset.field] = t.value;
+      const field = t.dataset.field;
+      ms[field] = t.value;
       this._snapshot();
       this._markDirty();
-      this.renderKiosks();      // Fed From dropdowns show minisub names
-      this.recompute();         // summary re-renders with the new name
+      // Only a rename affects the kiosk list (its Fed From dropdowns show
+      // minisub names); a transformer pick is summary-only.
+      if (field === 'name') this.renderKiosks();
+      this.recompute();         // summary re-renders with the new value
       return;
     }
   },
@@ -329,9 +332,77 @@ const Retic = {
 
   _closeDrawers() { this._toggleSummary(false); },
 
-  // ─── SLD bridge: add the diversified feeder demand as an equivalent load ───
-  // Lets the existing analyses (fault, load flow, cable sizing, duty check,
-  // load diversity, transformer loading) include the reticulation demand.
+  // ─── SLD bridge: push each minisub onto the diagram ───
+  // Each minisub becomes a transformer → LV bus → static load stack, so the
+  // existing analyses (fault, load flow, cable sizing, duty check, load
+  // diversity, transformer loading) see the minisub with its real source
+  // impedance behind the diversified demand — not a bare floating load.
+
+  // Find a pushed component by its back-ref (see pushToSLD). The back-refs
+  // survive undo and project save (undo.js deep-clones whole components), so
+  // repeat pushes track a minisub across renames.
+  _sldComp(minisubId, role) {
+    return [...AppState.components.values()]
+      .find(c => c.reticMinisubId === minisubId && c.reticRole === role) || null;
+  },
+
+  // Wire two pushed components together unless that connection already exists
+  // (either orientation) — so adopting a legacy load, or re-pushing after the
+  // user rewired part of the stack, doesn't stack duplicate wires.
+  _ensureWire(fromId, fromPort, toId, toPort) {
+    for (const w of AppState.wires.values()) {
+      if ((w.fromComponent === fromId && w.toComponent === toId) ||
+          (w.fromComponent === toId && w.toComponent === fromId)) return;
+    }
+    AppState.addWire(fromId, fromPort, toId, toPort, true);
+  },
+
+  // Apply a standard-library transformer entry to a component.
+  _applyTxEntry(comp, entry) {
+    if (typeof Properties !== 'undefined' && Properties.applyStandardType) {
+      Properties.applyStandardType(comp, 'transformer', entry.id);
+    } else {
+      comp.props.rated_mva = entry.rated_mva;
+      comp.props.voltage_hv_kv = entry.voltage_hv_kv;
+      comp.props.voltage_lv_kv = entry.voltage_lv_kv;
+      comp.props.z_percent = entry.z_percent;
+      comp.props.x_r_ratio = entry.x_r_ratio;
+      comp.props.vector_group = entry.vector_group;
+    }
+    comp.props.standard_type = entry.id;   // applyStandardType leaves this to the caller
+  },
+
+  // Snapshot of the design basis behind one minisub, stamped onto its pushed
+  // transformer so the on-diagram info box survives a save/reload (the ADMD
+  // results themselves are not persisted). Refreshed on every push.
+  _minisubInfo(ms, m, res, tx) {
+    const s = this.settings;
+    const byId = {};
+    for (const kr of (res.kiosks || [])) byId[kr.kioskId] = kr;
+    // Connection-weighted mean ADMD across this minisub's kiosks — honours
+    // per-kiosk overrides and the Herman-Beta derived values.
+    let admdSum = 0, admdConns = 0, worstVD = null;
+    for (const k of this.kiosks) {
+      if (this._rootOf(k.id) !== ms.id) continue;
+      const kr = byId[k.id];
+      if (kr) { admdSum += (kr.admdKVA || 0) * (kr.conns || 0); admdConns += kr.conns || 0; }
+      const vd = this._cumulativeFeederVD(k.id, byId);
+      if (vd != null && (worstVD == null || vd > worstVD)) worstVD = vd;
+    }
+    return {
+      name: ms.name || m.name || ms.id,
+      conns: m.conns, numKiosks: m.numKiosks,
+      totalKVA: m.totalKVA, currentA: m.currentA,
+      txLabel: tx ? tx.label : null, txUtil: tx ? tx.util : null,
+      loadClass: this._classLabel(s.loadClass),
+      admdKVA: admdConns ? +(admdSum / admdConns).toFixed(2) : (s.admd || null),
+      method: (res.settings && res.settings.estimationMethod) || s.estimationMethod,
+      correction: s.correctionMethod,
+      worstVD: worstVD != null ? +worstVD.toFixed(2) : null,
+      vdLimit: s.maxFeederVD,
+    };
+  },
+
   async pushToSLD() {
     const res = AppState.reticResults;
     const entries = ((res && res.minisubs) || []).filter(m => m.totalKVA > 0);
@@ -339,36 +410,91 @@ const Retic = {
       UI.alert('No diversified demand yet — add kiosks and erven first.');
       return;
     }
-    // One equivalent load per minisub (each transformer carries its own
-    // group's diversified demand). Existing bridge loads are updated in
-    // place so repeated pushes track the latest demand.
     const msgs = [];
     let firstId = null;
     entries.forEach((m, i) => {
-      const name = `Retic: ${m.name || m.minisubId}`;
-      let comp = [...AppState.components.values()]
-        .find(c => c.type === 'static_load' && c.props.name === name);
-      const updated = !!comp;
-      if (!comp) {
-        comp = AppState.addComponent('static_load', 420 + (i % 4) * 100, 320 + Math.floor(i / 4) * 100);
-        if (!comp) return;
-        comp.props.name = name;
+      const ms = this.minisubs.find(x => x.id === m.minisubId);
+      if (!ms) return;
+      const tx = this._minisubTx(ms, m.totalKVA);
+      if (!tx) return;
+      // Live state wins over the name echoed back in the results, which can lag
+      // a rename by one recompute.
+      const base = `Retic: ${ms.name || m.name || ms.id}`;
+
+      // Existing stack? Legacy projects have only a name-matched static load —
+      // adopt it (stamp the back-refs) rather than pushing a duplicate.
+      let load = this._sldComp(ms.id, 'load');
+      if (!load) {
+        load = [...AppState.components.values()]
+          .find(c => c.type === 'static_load' && !c.reticMinisubId && c.props.name === base) || null;
       }
-      comp.props.rated_kva = m.totalKVA;
-      comp.props.power_factor = 0.95;
-      comp.props.demand_factor = 1.0;     // demand is already after-diversity
-      comp.props.voltage_kv = 0.4;
-      msgs.push(`${updated ? 'Updated' : 'Added'} "${name}" — ${m.totalKVA} kVA`);
-      if (!firstId) firstId = comp.id;
+      let xfmr = this._sldComp(ms.id, 'tx');
+      let bus = this._sldComp(ms.id, 'bus');
+      const updated = !!(load || xfmr);
+
+      // Layout: one column per minisub, 4 across then wrap. Existing parts keep
+      // their coordinates — the user may have arranged the diagram.
+      const col = i % 4, row = Math.floor(i / 4);
+      const x = load ? load.x : 420 + col * 220;
+      const yLoad = load ? load.y : 320 + row * 280 + 160;
+
+      if (!xfmr) {
+        xfmr = AppState.addComponent('transformer', x, yLoad - 160);
+        if (!xfmr) return;
+      }
+      if (!bus) {
+        bus = AppState.addComponent('bus', x, yLoad - 80);
+        if (!bus) return;
+      }
+      if (!load) {
+        load = AppState.addComponent('static_load', x, yLoad);
+        if (!load) return;
+      }
+      // Primary is left unwired — the user connects it to their MV supply.
+      // Buses take free-position 'at_<offset>' attachments; 'at_0' is the bar
+      // centre, so the stack draws as one straight vertical run (the legacy
+      // 'top'/'bottom' ids resolve to the bar's left end and jog the wire).
+      this._ensureWire(xfmr.id, 'secondary', bus.id, 'at_0');
+      this._ensureWire(bus.id, 'at_0', load.id, 'in');
+
+      for (const [c, role] of [[xfmr, 'tx'], [bus, 'bus'], [load, 'load']]) {
+        c.reticMinisubId = ms.id;
+        c.reticRole = role;
+      }
+
+      // Re-apply the library entry whenever the selected rating differs from
+      // what the transformer currently holds.
+      if (xfmr.props.standard_type !== tx.entry.id) this._applyTxEntry(xfmr, tx.entry);
+      xfmr.props.name = `${base} TX`;
+
+      const lv = tx.entry.voltage_lv_kv;
+      bus.props.name = `${base} LV`;
+      bus.props.voltage_kv = lv;
+      bus.props.bus_type = 'PQ';
+
+      load.props.name = base;
+      load.props.rated_kva = m.totalKVA;
+      load.props.power_factor = 0.95;
+      load.props.demand_factor = 1.0;     // demand is already after-diversity
+      load.props.voltage_kv = lv;
+
+      xfmr.reticInfo = this._minisubInfo(ms, m, res, tx);
+      msgs.push(`${updated ? 'Updated' : 'Added'} "${base}" — ${m.totalKVA} kVA on ${tx.label}`);
+      if (!firstId) firstId = xfmr.id;
     });
+    if (!msgs.length) {
+      UI.alert('Nothing to push — no standard distribution transformer is available for the demand.');
+      return;
+    }
     AppState.dirty = true;
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     await UI.alert(msgs.join('\n')
-      + '\nWire each load to its supply bus to include the reticulation demand in your SLD studies.');
+      + '\nWire each transformer primary to its MV supply bus to include the reticulation demand in your SLD studies.');
     this.deactivate();
     if (firstId && typeof Canvas !== 'undefined') {
       AppState.selectedIds = new Set([firstId]);
       Canvas.render();
+      if (Canvas.centerOnComponent) Canvas.centerOnComponent(firstId, { onlyIfOffscreen: true });
     }
   },
 
@@ -725,10 +851,13 @@ const Retic = {
     // Rendered even with no kiosks so minisubs can be set up before building.
     const msById = {};
     if (res && res.minisubs) for (const m of res.minisubs) msById[m.minisubId] = m;
+    const txOpts = this._txOptions();
     const msBlocks = this.minisubs.map(ms => {
       const r = msById[ms.id];
       const has = r && r.totalKVA > 0;
-      const xfmr = has ? this._suggestTransformer(r.totalKVA) : null;
+      const demand = has ? r.totalKVA : 0;
+      const xfmr = this._minisubTx(ms, demand);
+      const autoTx = this._suggestTransformer(demand);
       return `
       <div class="summary-block minisub-block">
         <div class="ms-head">
@@ -737,7 +866,13 @@ const Retic = {
         </div>
         <div class="summary-row"><span class="k">Diversified demand</span><span class="v">${has ? r.totalKVA + ' kVA' : '—'}</span></div>
         <div class="summary-row"><span class="k">Current / Conns / Kiosks</span><span class="v">${has ? `${r.currentA} A / ${r.conns} / ${r.numKiosks}` : (r ? `— / ${r.conns} / ${r.numKiosks}` : '—')}</span></div>
-        <div class="summary-row"><span class="k">Suggested TX</span><span class="v">${xfmr ? `${xfmr.label} (${xfmr.util}%)` : '—'}</span></div>
+        <div class="summary-row"><span class="k">Transformer</span><span class="v">
+          <select class="ms-tx" data-action="minisub-field" data-ms="${ms.id}" data-field="txTypeId"
+            title="Minisub transformer rating pushed to the SLD. Auto picks the smallest standard unit covering the diversified demand.">
+            <option value=""${!ms.txTypeId ? ' selected' : ''}>Auto${autoTx ? ' — ' + escHtml(autoTx.label) : ''}</option>
+            ${txOpts.map(o => `<option value="${o.id}"${ms.txTypeId === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
+          </select></span></div>
+        <div class="summary-row"><span class="k">Utilisation</span><span class="v">${xfmr && xfmr.util != null ? xfmr.util + '%' : '—'}</span></div>
       </div>`;
     }).join('');
 
@@ -822,16 +957,36 @@ const Retic = {
     return any ? total : null;
   },
 
-  _suggestTransformer(demandKVA) {
-    if (!demandKVA) return null;
-    // Distribution transformers only (LV secondary)
-    const sizes = STANDARD_TRANSFORMERS
+  // Distribution transformers (LV secondary) from the standard library, smallest
+  // first. Read at call time — StandardData rewrites STANDARD_TRANSFORMERS in
+  // place when the user edits the library, so a cached list would go stale.
+  _txOptions() {
+    return STANDARD_TRANSFORMERS
       .filter(x => x.voltage_lv_kv <= 1)
-      .map(x => ({ kva: x.rated_mva * 1000, label: x.name }))
+      .map(x => ({ ...x, kva: x.rated_mva * 1000 }))
       .sort((a, b) => a.kva - b.kva);
-    const pick = sizes.find(s => s.kva >= demandKVA) || sizes[sizes.length - 1];
-    if (!pick) return null;
-    return { label: pick.label, util: Math.round(demandKVA / pick.kva * 100) };
+  },
+
+  // Resolve a minisub's transformer: its explicit txTypeId when that entry still
+  // exists in the library, otherwise the smallest unit covering the diversified
+  // demand. Returns null when there is neither a pick nor a demand to size from.
+  _minisubTx(ms, demandKVA) {
+    const opts = this._txOptions();
+    if (!opts.length) return null;
+    const picked = ms && ms.txTypeId ? opts.find(o => o.id === ms.txTypeId) : null;
+    const auto = demandKVA ? (opts.find(o => o.kva >= demandKVA) || opts[opts.length - 1]) : null;
+    const entry = picked || auto;
+    if (!entry) return null;
+    return {
+      entry, kva: entry.kva, label: entry.name, auto: !picked,
+      util: demandKVA ? Math.round(demandKVA / entry.kva * 100) : null,
+    };
+  },
+
+  // Auto-sizing only (no minisub override) — the suggestion shown as the "Auto"
+  // dropdown option and used by callers that have no minisub in hand.
+  _suggestTransformer(demandKVA) {
+    return this._minisubTx(null, demandKVA);
   },
 
   // Called by AppState.reset()/fromJSON() whenever the project (and with it

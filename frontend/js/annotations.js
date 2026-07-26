@@ -64,6 +64,13 @@ const RESULT_TYPE_DEFS = [
     { key: 'drop', label: 'Voltage drop (Δ)' },
     { key: 'load', label: 'Load (kW)' },
   ] },
+  { key: 'retic', label: 'Reticulation', prefixes: ['retic'], fields: [
+    { key: 'counts', label: 'Erven & kiosks' },
+    { key: 'demand', label: 'Diversified demand & current' },
+    { key: 'tx', label: 'Transformer & utilisation' },
+    { key: 'admd', label: 'ADMD basis (class / kVA / method)' },
+    { key: 'vd', label: 'Worst feeder volt drop' },
+  ] },
   { key: 'dcShortCircuit', label: 'DC Short-Circuit', prefixes: ['dcsc'], fields: [
     { key: 'ik', label: 'Ik' },
     { key: 'ip', label: 'ip' },
@@ -484,6 +491,20 @@ const Annotations = {
         if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 70, 90, stacks);
         html += this.renderGroundingBadge(pos.x, pos.y, busResult, key);
+        this._advanceStack(stacks, comp, pos);
+      }
+    }
+
+    // Reticulation info boxes on pushed minisub transformers. Driven by the
+    // reticInfo snapshot Retic.pushToSLD stamps on the component (the ADMD
+    // results themselves are not persisted), so these survive a reload.
+    if (AppState.showResultBoxes.retic) {
+      for (const comp of pageComps.values()) {
+        if (comp.reticRole !== 'tx' || !comp.reticInfo) continue;
+        const key = `retic:${comp.reticMinisubId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
+        const pos = this._badgePos(comp, key, 70, -10, stacks);
+        html += this.renderReticBadge(pos.x, pos.y, comp.reticInfo, key);
         this._advanceStack(stacks, comp, pos);
       }
     }
@@ -1041,6 +1062,52 @@ const Annotations = {
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DEMAND</text>
+        ${textHtml}
+      </g>`;
+  },
+
+  // Reticulation design basis behind a pushed minisub — the erf/kiosk counts and
+  // ADMD assumptions that produced the diversified demand, so the diagram can be
+  // read without opening the reticulation workspace. `info` is the snapshot
+  // written by Retic.pushToSLD (Retic._minisubInfo).
+  renderReticBadge(x, y, info, key) {
+    const fail = info.worstVD != null && info.vdLimit != null && info.worstVD > info.vdLimit;
+    const fillColor = fail ? '#f57c00' : '#00897b';
+    const lines = [];
+    if (this.fieldVisible('retic', 'counts')) {
+      lines.push(`${info.numKiosks} kiosk${info.numKiosks === 1 ? '' : 's'} · ${info.conns} erven`);
+    }
+    if (this.fieldVisible('retic', 'demand')) {
+      lines.push(`${info.totalKVA} kVA · ${info.currentA} A`);
+    }
+    if (this.fieldVisible('retic', 'tx') && info.txLabel) {
+      lines.push(`${info.txLabel}${info.txUtil != null ? ` · ${info.txUtil}%` : ''}`);
+    }
+    if (this.fieldVisible('retic', 'admd')) {
+      lines.push(`${info.loadClass}${info.admdKVA != null ? ` · ADMD ${info.admdKVA}` : ''}`);
+      lines.push(info.method + (info.correction && info.correction !== 'None' ? ` · ${info.correction}` : ''));
+    }
+    if (this.fieldVisible('retic', 'vd') && info.worstVD != null) {
+      lines.push(`VD ${info.worstVD}% (limit ${info.vdLimit}%)`);
+    }
+    if (!lines.length) return '';
+
+    const lineHeight = 14;
+    const boxH = lines.length * lineHeight + 10;
+    this._lastBoxH = boxH;
+    const boxW = 150;
+
+    // Library labels (transformer name, load class) are user-editable — escape.
+    const esc = typeof escHtml === 'function' ? escHtml : (v => String(v));
+    const textHtml = lines.map((line, i) =>
+      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}" fill="${fillColor}">${esc(line)}</text>`
+    ).join('');
+
+    return `
+      <g class="annotation-group retic-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+        <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
+              fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">RETIC</text>
         ${textHtml}
       </g>`;
   },

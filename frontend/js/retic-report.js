@@ -43,20 +43,23 @@ const ReticReport = {
     // Diversity is applied per minisub across all its downstream loads.
     if ((res.minisubs || []).length) {
       const msRows = res.minisubs.map(m => {
-        const xf = m.totalKVA > 0 ? Retic._suggestTransformer(m.totalKVA) : null;
+        // Honour the per-minisub transformer selection; "auto" marks a size that
+        // was left to the ADMD-based suggestion rather than chosen explicitly.
+        const ms = (Retic.minisubs || []).find(x => x.id === m.minisubId);
+        const xf = m.totalKVA > 0 ? Retic._minisubTx(ms, m.totalKVA) : null;
         return [
           m.name || m.minisubId,
           String(m.numKiosks),
           String(m.conns),
           m.totalKVA.toFixed(2),
           m.currentA.toFixed(1),
-          xf ? `${xf.label} (${xf.util}%)` : '—',
+          xf ? `${xf.label} (${xf.util}%)${xf.auto ? ' auto' : ''}` : '—',
         ];
       });
       doc.autoTable({
         startY: margin + 28,
         margin: { left: margin, right: margin },
-        head: [['Minisub', 'Kiosks', 'Conns', 'Diversified kVA', 'Current (A)', 'Suggested Transformer']],
+        head: [['Minisub', 'Kiosks', 'Conns', 'Diversified kVA', 'Current (A)', 'Transformer']],
         body: msRows,
         styles: { fontSize: 8, cellPadding: 1.5 },
         headStyles: { fillColor: [0, 120, 215], textColor: 255, fontStyle: 'bold' },
