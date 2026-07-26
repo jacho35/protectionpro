@@ -12,6 +12,11 @@ const Retic = {
   _computeTimer: null,
   _undoStack: [],
   _undoIndex: -1,
+  // Mobile-only disclosure state. On desktop the settings fields and the Quick
+  // Build fields are always laid out inline (CSS `display: contents`), so these
+  // flags only bite inside the phone media query.
+  _settingsOpen: false,
+  _qbOpen: false,
 
   PHASES: [
     { id: 'Red', color: '#dc2626' },
@@ -48,6 +53,7 @@ const Retic = {
 
   deactivate() {
     this._active = false;
+    this._closeDrawers();   // don't leave the mobile summary drawer open behind us
     document.getElementById('retic-workspace').style.display = 'none';
     document.getElementById('app-container').style.display = '';
     document.getElementById('btn-workspace-sld').classList.add('active');
@@ -288,7 +294,36 @@ const Retic = {
     else if (action === 'redo') this.redo();
     else if (action === 'report') this.exportReport();
     else if (action === 'push-sld') this.pushToSLD();
+    else if (action === 'toggle-settings') {
+      this._settingsOpen = !this._settingsOpen;
+      this.renderSettingsBar();
+      this.updateBadges();          // chips are re-created by the render above
+    }
+    else if (action === 'toggle-qb') {
+      // Desktop lays the Quick Build fields out inline regardless, so only
+      // re-render (and toggle) when the collapse actually applies.
+      if (!this._isMobile()) return;
+      this._qbOpen = !this._qbOpen;
+      this.renderKiosks();
+    }
+    else if (action === 'toggle-summary') this._toggleSummary();
+    else if (action === 'close-drawers') this._closeDrawers();
   },
+
+  // ─── Mobile drawer (summary slides over the kiosk list) ───
+  _isMobile() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches;
+  },
+
+  _toggleSummary(force) {
+    const panel = document.getElementById('retic-summary');
+    if (!panel) return;
+    const open = force != null ? force : !panel.classList.contains('mobile-open');
+    panel.classList.toggle('mobile-open', open);
+    document.getElementById('retic-drawer-backdrop')?.classList.toggle('on', open);
+  },
+
+  _closeDrawers() { this._toggleSummary(false); },
 
   // ─── SLD bridge: add the diversified feeder demand as an equivalent load ───
   // Lets the existing analyses (fault, load flow, cable sizing, duty check,
@@ -353,7 +388,9 @@ const Retic = {
     const corrOpts = LOAD_CLASS_CORRECTIONS.map(m =>
       `<option value="${m}" ${s.correctionMethod === m ? 'selected' : ''}>${m}</option>`).join('');
 
+    bar.classList.toggle('open', this._settingsOpen);
     bar.innerHTML = `
+      <div class="retic-settings-fields">
       <div class="retic-field">
         <label>Estimation Method</label>
         <select data-action="setting" data-field="estimationMethod">${methodOpts}</select>
@@ -384,10 +421,13 @@ const Retic = {
         <label>Max Service VD (%)</label>
         <input type="number" step="0.5" data-action="setting" data-field="maxRunVD" value="${s.maxRunVD}">
       </div>
+      </div>
       <div class="retic-totals">
         <div class="retic-chip"><span class="val" id="retic-total-kva">—</span><span class="lbl">Total kVA</span></div>
         <div class="retic-chip"><span class="val" id="retic-total-a">—</span><span class="lbl">Current A</span></div>
         <div class="retic-chip"><span class="val" id="retic-total-conns">—</span><span class="lbl">Conns</span></div>
+        <button class="retic-btn retic-mobile-only" data-action="toggle-settings"
+          title="Show/hide the design settings">${this._settingsOpen ? '✕ Setup' : '⚙ Setup'}</button>
       </div>`;
   },
 
@@ -423,8 +463,9 @@ const Retic = {
   _quickBuildBar() {
     const s = this.settings;
     return `
-      <div class="retic-quickbuild">
-        <span class="qb-title" title="Bulk-build the network: adds the kiosks and erven below in one step (one undo). The same cable/length defaults are used by + Erf and + N Erven.">⚡ Quick Build</span>
+      <div class="retic-quickbuild${this._qbOpen ? '' : ' collapsed'}">
+        <span class="qb-title" data-action="toggle-qb" title="Bulk-build the network: adds the kiosks and erven below in one step (one undo). The same cable/length defaults are used by + Erf and + N Erven.">⚡ Quick Build<span class="qb-caret retic-mobile-only">${this._qbOpen ? '▾' : '▸'}</span></span>
+        <div class="qb-fields">
         <div class="retic-field"><label>Kiosks</label>
           <input type="number" step="1" min="1" data-action="setting" data-field="quickKiosks" value="${Number(s.quickKiosks) || 1}"></div>
         <div class="retic-field"><label>Erven / Kiosk</label>
@@ -444,6 +485,7 @@ const Retic = {
         <label class="qb-chain" title="Checked: each kiosk is fed from the previous one (chain continues from the selected minisub's last kiosk). Unchecked: every kiosk is fed directly from the minisub.">
           <input type="checkbox" data-action="setting" data-field="quickChain" ${s.quickChain ? 'checked' : ''}> Daisy-chain</label>
         <button class="retic-btn primary" data-action="quick-build">Build →</button>
+        </div>
       </div>`;
   },
 
@@ -453,6 +495,7 @@ const Retic = {
     const toolbar = `
       <div class="retic-toolbar">
         <button class="retic-btn primary" data-action="add-kiosk">+ Add Kiosk</button>
+        <button class="retic-btn retic-mobile-only" data-action="toggle-summary" title="Show the minisub / network summary">▤ Summary</button>
         <button class="retic-btn" data-action="undo" title="Undo (reticulation)">↶ Undo</button>
         <button class="retic-btn" data-action="redo" title="Redo (reticulation)">Redo ↷</button>
         <button class="retic-btn" data-action="report" title="Export demand + cable schedule">Export Report</button>
@@ -521,20 +564,23 @@ const Retic = {
     }).join('');
 
     this.updateBadges();
+    this.updateVD();   // re-render replaced the cells; VD is client-side, no refetch
   },
 
   _erfRow(k, e) {
     const phaseOpts = this.PHASES.map(p =>
       `<option value="${p.id}" ${e.phase === p.id ? 'selected' : ''}>${p.id}</option>`).join('');
+    // data-cell / data-label drive the mobile card layout (grid areas + the
+    // ::before field captions that replace the hidden <thead>).
     return `
       <tr data-erf="${e.id}">
-        <td><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
-        <td><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
-        <td><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
-        <td><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
-        <td><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="ampsOverride" value="${e.ampsOverride || ''}" placeholder="0"></td>
-        <td class="vd-cell" data-erf-vd="${e.id}">—</td>
-        <td><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
+        <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
+        <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
+        <td data-cell="phase" data-label="Phase"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
+        <td data-cell="cable" data-label="Service Cable"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
+        <td data-cell="amps" data-label="Amps Override"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="ampsOverride" value="${e.ampsOverride || ''}" placeholder="0"></td>
+        <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
+        <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
       </tr>`;
   },
 
@@ -729,6 +775,7 @@ const Retic = {
       <div class="ms-toolbar">
         <h3>Minisubs</h3>
         <button class="retic-btn" data-action="add-minisub" title="Add a minisub / transformer source. ADMD diversity is applied per minisub across its downstream kiosks.">+ Minisub</button>
+        <button class="retic-btn retic-mobile-only" data-action="close-drawers" title="Close the summary">&times;</button>
       </div>
       ${msBlocks}
       ${networkBlock}

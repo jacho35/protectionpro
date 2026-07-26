@@ -44,6 +44,13 @@
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
 }
+/* Field wrappers exist only so the phone CSS can collapse them behind a
+   toggle; on desktop they dissolve and their children lay out as before. */
+.retic-settings-fields, .retic-quickbuild .qb-fields { display: contents; }
+/* Controls that only make sense on a phone (drawer/disclosure toggles). */
+.retic-mobile-only { display: none !important; }
+#retic-drawer-backdrop { display: none; }
+
 .retic-field { display: flex; flex-direction: column; gap: 3px; }
 .retic-field label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .retic-field select, .retic-field input {
