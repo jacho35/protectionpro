@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.70">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.70">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.70">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.70">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.70">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.70">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.70">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.70">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.70">
+  <link rel="stylesheet" href="css/app.css?v=3.5.71">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.71">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.71">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.71">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.71">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.71">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.71">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.71">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.71">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -1563,6 +1563,35 @@
     </div>
   </div>
 
+  <!-- Reticulation Topology Diagram Modal (populated by js/retic-diagram.js) -->
+  <div id="retic-diagram-modal" class="modal" role="dialog" aria-modal="true" aria-label="Reticulation Topology Diagram" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Reticulation Topology — Volt Drop &amp; Connections</h3>
+        <button class="modal-close" data-rdg="close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="rdg-toolbar">
+          <button class="retic-btn" data-rdg="zoom-out" title="Zoom out">&minus;</button>
+          <span id="rdg-zoom-label" class="rdg-zoom">100%</span>
+          <button class="retic-btn" data-rdg="zoom-in" title="Zoom in">+</button>
+          <button class="retic-btn" data-rdg="fit" title="Scale to fit the width">Fit</button>
+          <span class="rdg-spacer"></span>
+          <button class="retic-btn" data-rdg="png" title="Download the diagram as a PNG image">PNG</button>
+          <button class="retic-btn" data-rdg="svg" title="Download the diagram as a vector SVG">SVG</button>
+        </div>
+        <div id="retic-diagram-canvas" class="rdg-scroll"></div>
+        <div class="rdg-legend">
+          <span><i class="rdg-sw" style="background:#dc2626"></i>Red</span>
+          <span><i class="rdg-sw" style="background:#6b7280"></i>White</span>
+          <span><i class="rdg-sw" style="background:#2563eb"></i>Blue</span>
+          <span><i class="rdg-sw" style="background:#7c3aed"></i>3&Oslash; (three-phase erf)</span>
+          <span class="rdg-note">Leg labels show that segment's volt drop; the pill on each kiosk is the cumulative drop from its minisub (green/red against the Max Feeder VD setting). Downstream figures include the kiosk itself — connection counts weight a three-phase erf as 3, matching the demand engine.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Grounding System Analysis Modal -->
   <div id="grounding-modal" class="modal" role="dialog" aria-modal="true" aria-label="Grounding System Results" style="display:none">
     <div class="modal-content modal-wide">
@@ -2894,70 +2923,71 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.70"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.70"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.70"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.70"></script>
-  <script src="js/constants.js?v=3.5.70"></script>
-  <script src="js/plan-defs.js?v=3.5.70"></script>
-  <script src="js/ui.js?v=3.5.70"></script>
-  <script src="js/state.js?v=3.5.70"></script>
-  <script src="js/components.js?v=3.5.70"></script>
-  <script src="js/voltage.js?v=3.5.70"></script>
-  <script src="js/symbols.js?v=3.5.70"></script>
-  <script src="js/canvas.js?v=3.5.70"></script>
-  <script src="js/sidebar.js?v=3.5.70"></script>
-  <script src="js/wiring.js?v=3.5.70"></script>
-  <script src="js/properties.js?v=3.5.70"></script>
-  <script src="js/annotations.js?v=3.5.70"></script>
-  <script src="js/api.js?v=3.5.70"></script>
-  <script src="js/auth.js?v=3.5.70"></script>
-  <script src="js/sharing.js?v=3.5.70"></script>
-  <script src="js/compliance.js?v=3.5.70"></script>
-  <script src="js/tcc.js?v=3.5.70"></script>
-  <script src="js/project.js?v=3.5.70"></script>
-  <script src="js/reports.js?v=3.5.70"></script>
-  <script src="js/verification-templates.js?v=3.5.70"></script>
-  <script src="js/templates.js?v=3.5.70"></script>
-  <script src="js/standard-data.js?v=3.5.70"></script>
-  <script src="js/undo.js?v=3.5.70"></script>
-  <script src="js/revisions.js?v=3.5.70"></script>
-  <script src="js/minimap.js?v=3.5.70"></script>
-  <script src="js/contextmenu.js?v=3.5.70"></script>
-  <script src="js/dbschedule.js?v=3.5.70"></script>
-  <script src="js/control-sim.js?v=3.5.70"></script>
-  <script src="js/dynmotor.js?v=3.5.70"></script>
-  <script src="js/transient.js?v=3.5.70"></script>
-  <script src="js/voltage-stability.js?v=3.5.70"></script>
-  <script src="js/freqscan.js?v=3.5.70"></script>
-  <script src="js/battsizing.js?v=3.5.70"></script>
-  <script src="js/opf.js?v=3.5.70"></script>
-  <script src="js/reliability.js?v=3.5.70"></script>
-  <script src="js/flicker.js?v=3.5.70"></script>
-  <script src="js/hostingcapacity.js?v=3.5.70"></script>
-  <script src="js/filtersizing.js?v=3.5.70"></script>
-  <script src="js/capplace.js?v=3.5.70"></script>
-  <script src="js/contingency.js?v=3.5.70"></script>
-  <script src="js/lfstudy.js?v=3.5.70"></script>
-  <script src="js/interlocking.js?v=3.5.70"></script>
-  <script src="js/sequence.js?v=3.5.70"></script>
-  <script src="js/retic.js?v=3.5.70"></script>
-  <script src="js/retic-report.js?v=3.5.70"></script>
-  <script src="js/plan-symbols.js?v=3.5.70"></script>
-  <script src="js/plan-engine.js?v=3.5.70"></script>
-  <script src="js/plan-images.js?v=3.5.70"></script>
-  <script src="js/plan-tools.js?v=3.5.70"></script>
-  <script src="js/plan-sync.js?v=3.5.70"></script>
-  <script src="js/plan-csv.js?v=3.5.70"></script>
-  <script src="js/plan-dxf.js?v=3.5.70"></script>
-  <script src="js/plan-export.js?v=3.5.70"></script>
-  <script src="js/plan-lux.js?v=3.5.70"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.70"></script>
-  <script src="js/plan-dd-import.js?v=3.5.70"></script>
-  <script src="js/plan-circuits.js?v=3.5.70"></script>
-  <script src="js/plan-ui.js?v=3.5.70"></script>
-  <script src="js/plan.js?v=3.5.70"></script>
-  <script src="js/app.js?v=3.5.70"></script>
-  <script src="js/mobile.js?v=3.5.70"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.71"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.71"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.71"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.71"></script>
+  <script src="js/constants.js?v=3.5.71"></script>
+  <script src="js/plan-defs.js?v=3.5.71"></script>
+  <script src="js/ui.js?v=3.5.71"></script>
+  <script src="js/state.js?v=3.5.71"></script>
+  <script src="js/components.js?v=3.5.71"></script>
+  <script src="js/voltage.js?v=3.5.71"></script>
+  <script src="js/symbols.js?v=3.5.71"></script>
+  <script src="js/canvas.js?v=3.5.71"></script>
+  <script src="js/sidebar.js?v=3.5.71"></script>
+  <script src="js/wiring.js?v=3.5.71"></script>
+  <script src="js/properties.js?v=3.5.71"></script>
+  <script src="js/annotations.js?v=3.5.71"></script>
+  <script src="js/api.js?v=3.5.71"></script>
+  <script src="js/auth.js?v=3.5.71"></script>
+  <script src="js/sharing.js?v=3.5.71"></script>
+  <script src="js/compliance.js?v=3.5.71"></script>
+  <script src="js/tcc.js?v=3.5.71"></script>
+  <script src="js/project.js?v=3.5.71"></script>
+  <script src="js/reports.js?v=3.5.71"></script>
+  <script src="js/verification-templates.js?v=3.5.71"></script>
+  <script src="js/templates.js?v=3.5.71"></script>
+  <script src="js/standard-data.js?v=3.5.71"></script>
+  <script src="js/undo.js?v=3.5.71"></script>
+  <script src="js/revisions.js?v=3.5.71"></script>
+  <script src="js/minimap.js?v=3.5.71"></script>
+  <script src="js/contextmenu.js?v=3.5.71"></script>
+  <script src="js/dbschedule.js?v=3.5.71"></script>
+  <script src="js/control-sim.js?v=3.5.71"></script>
+  <script src="js/dynmotor.js?v=3.5.71"></script>
+  <script src="js/transient.js?v=3.5.71"></script>
+  <script src="js/voltage-stability.js?v=3.5.71"></script>
+  <script src="js/freqscan.js?v=3.5.71"></script>
+  <script src="js/battsizing.js?v=3.5.71"></script>
+  <script src="js/opf.js?v=3.5.71"></script>
+  <script src="js/reliability.js?v=3.5.71"></script>
+  <script src="js/flicker.js?v=3.5.71"></script>
+  <script src="js/hostingcapacity.js?v=3.5.71"></script>
+  <script src="js/filtersizing.js?v=3.5.71"></script>
+  <script src="js/capplace.js?v=3.5.71"></script>
+  <script src="js/contingency.js?v=3.5.71"></script>
+  <script src="js/lfstudy.js?v=3.5.71"></script>
+  <script src="js/interlocking.js?v=3.5.71"></script>
+  <script src="js/sequence.js?v=3.5.71"></script>
+  <script src="js/retic.js?v=3.5.71"></script>
+  <script src="js/retic-diagram.js?v=3.5.71"></script>
+  <script src="js/retic-report.js?v=3.5.71"></script>
+  <script src="js/plan-symbols.js?v=3.5.71"></script>
+  <script src="js/plan-engine.js?v=3.5.71"></script>
+  <script src="js/plan-images.js?v=3.5.71"></script>
+  <script src="js/plan-tools.js?v=3.5.71"></script>
+  <script src="js/plan-sync.js?v=3.5.71"></script>
+  <script src="js/plan-csv.js?v=3.5.71"></script>
+  <script src="js/plan-dxf.js?v=3.5.71"></script>
+  <script src="js/plan-export.js?v=3.5.71"></script>
+  <script src="js/plan-lux.js?v=3.5.71"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.71"></script>
+  <script src="js/plan-dd-import.js?v=3.5.71"></script>
+  <script src="js/plan-circuits.js?v=3.5.71"></script>
+  <script src="js/plan-ui.js?v=3.5.71"></script>
+  <script src="js/plan.js?v=3.5.71"></script>
+  <script src="js/app.js?v=3.5.71"></script>
+  <script src="js/mobile.js?v=3.5.71"></script>
 </body>
 </html>

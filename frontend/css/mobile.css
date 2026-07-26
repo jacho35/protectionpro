@@ -793,6 +793,13 @@
   }
   #retic-drawer-backdrop.on { display: block; }
 
+  /* Topology diagram modal — the generic .modal / .modal-wide rules below
+     already take it full-width; only the scroll surface and the zoom controls
+     need phone sizing. The SVG keeps its natural size and pans in both axes. */
+  #retic-diagram-modal .rdg-scroll { max-height: 58vh; padding: 6px; }
+  #retic-diagram-modal .rdg-toolbar .retic-btn { min-height: 36px; min-width: 40px; }
+  #retic-diagram-modal .rdg-legend { font-size: 12px; }
+
   /* ─── Plan (distribution) workspace layout ─────────── */
   /* Toolbar: a compact primary row (Parts, Props, Select, Fit, ⋯); everything
      else drops into the ⋯ overflow menu below. */
