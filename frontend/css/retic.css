@@ -191,6 +191,35 @@ body.dark-mode .kiosk-demand-badge { background: #3a3320; color: #f0d890; }
   border: 1px solid var(--border-color); border-radius: 4px;
   font-variant-numeric: tabular-nums;
 }
+/* Topology diagram modal (js/retic-diagram.js) */
+/* Wide estates need the room — scoped to desktop so the full-width mobile
+   rules in mobile.css still win on phones. */
+@media (min-width: 769px) {
+  #retic-diagram-modal .modal-content { max-width: 1500px; width: 94vw; }
+}
+.rdg-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.rdg-toolbar .rdg-spacer { flex: 1; }
+.rdg-zoom {
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  min-width: 42px; text-align: center; font-variant-numeric: tabular-nums;
+}
+/* The SVG is drawn at its natural size and scrolled rather than squeezed —
+   a wide estate stays legible instead of shrinking to unreadable. */
+.rdg-scroll {
+  overflow: auto; -webkit-overflow-scrolling: touch;
+  max-height: 62vh; padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color); border-radius: 6px;
+}
+.rdg-scroll svg { display: block; }
+.rdg-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  margin-top: 10px; font-size: 11px; color: var(--text-secondary);
+}
+.rdg-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.rdg-legend .rdg-sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.rdg-legend .rdg-note { flex: 1 1 100%; display: block; color: var(--text-muted); line-height: 1.5; }
+
 .status-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 10px; text-transform: uppercase; }
 .status-pill.pass { background: rgba(46,125,50,.15); color: var(--success); }
 .status-pill.warn { background: rgba(245,124,0,.15); color: var(--warning); }

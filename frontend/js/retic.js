@@ -54,6 +54,7 @@ const Retic = {
   deactivate() {
     this._active = false;
     this._closeDrawers();   // don't leave the mobile summary drawer open behind us
+    if (typeof ReticDiagram !== 'undefined') ReticDiagram.close();
     document.getElementById('retic-workspace').style.display = 'none';
     document.getElementById('app-container').style.display = '';
     document.getElementById('btn-workspace-sld').classList.add('active');
@@ -293,6 +294,9 @@ const Retic = {
     else if (action === 'undo') this.undo();
     else if (action === 'redo') this.redo();
     else if (action === 'report') this.exportReport();
+    else if (action === 'diagram') {
+      if (typeof ReticDiagram !== 'undefined') ReticDiagram.open();
+    }
     else if (action === 'push-sld') this.pushToSLD();
     else if (action === 'toggle-settings') {
       this._settingsOpen = !this._settingsOpen;
@@ -498,6 +502,7 @@ const Retic = {
         <button class="retic-btn retic-mobile-only" data-action="toggle-summary" title="Show the minisub / network summary">▤ Summary</button>
         <button class="retic-btn" data-action="undo" title="Undo (reticulation)">↶ Undo</button>
         <button class="retic-btn" data-action="redo" title="Redo (reticulation)">Redo ↷</button>
+        <button class="retic-btn" data-action="diagram" title="Single-line view of the minisub → kiosk topology, with per-leg and cumulative volt drop and connection counts">◱ Diagram</button>
         <button class="retic-btn" data-action="report" title="Export demand + cable schedule">Export Report</button>
       </div>` + this._quickBuildBar();
 
@@ -613,6 +618,8 @@ const Retic = {
       this.updateBadges();
       this.updateVD();
       this.renderSummary();
+      // Keep the topology diagram live while it's open (edits recompute here).
+      if (typeof ReticDiagram !== 'undefined' && ReticDiagram.isOpen()) ReticDiagram.render();
     } catch (err) {
       console.error('ADMD compute failed:', err);
     }
@@ -785,21 +792,29 @@ const Retic = {
       </div>`;
   },
 
-  // Cumulative feeder VD (%) from the source down to a kiosk: sum each segment
-  // on the path, each carrying its own subtree current (feederA). Cycle-guarded.
+  // VD (%) across the single segment feeding one kiosk — the leg from its
+  // fedFrom parent — carrying that kiosk's own subtree current (feederA).
   // Note: feederA is the diversified subtree current WITHOUT the UCF unbalance
   // factor — matching the source app, whose chain VD also uses the plain
   // diversified current (its UCF/feederCurrentA is display-only).
+  _legFeederVD(kioskId, resById) {
+    const k = this.kioskById(kioskId);
+    const kr = resById[kioskId];
+    if (!k || !kr) return null;
+    const amps = kr.feederA != null ? kr.feederA : kr.currentA;
+    return this._vdPercent(k.feederCable, amps, k.feederLength, true);
+  },
+
+  // Cumulative feeder VD (%) from the source down to a kiosk: sum each leg on
+  // the path (see _legFeederVD above). Cycle-guarded.
   _cumulativeFeederVD(kioskId, resById) {
     let total = 0, any = false, id = kioskId;
     const seen = new Set();
     while (id && id !== 'source' && !seen.has(id)) {
       seen.add(id);
       const k = this.kioskById(id);
-      const kr = resById[id];
-      if (k && kr) {
-        const amps = kr.feederA != null ? kr.feederA : kr.currentA;
-        const vd = this._vdPercent(k.feederCable, amps, k.feederLength, true);
+      if (k && resById[id]) {
+        const vd = this._legFeederVD(id, resById);
         if (vd != null) { total += vd; any = true; }
         id = k.fedFrom || 'source';
       } else break;

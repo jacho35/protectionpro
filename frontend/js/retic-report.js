@@ -129,6 +129,35 @@ const ReticReport = {
       });
     }
 
+    // ── Topology diagram (own page) ──
+    // Rasterized from the same SVG the Diagram modal shows, always in the
+    // light palette so it prints legibly. Skipped silently if unavailable.
+    const dg = (typeof ReticDiagram !== 'undefined' && ReticDiagram.rasterize)
+      ? await ReticDiagram.rasterize(2) : null;
+    if (dg) {
+      doc.addPage();
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+      doc.text('Network Topology — Volt Drop & Connections', margin, margin + 4);
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+      doc.text(
+        'Leg labels show that segment\'s volt drop; the pill on each kiosk is the cumulative drop from its minisub'
+        + ` (limit ${s.maxFeederVD}%). Downstream figures include the kiosk itself; connection counts weight a three-phase erf as 3.`,
+        margin, margin + 10);
+
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const availW = pageW - margin * 2;
+      const top = margin + 15;
+      const availH = pageH - top - margin;
+      const fit = Math.min(availW / dg.w, availH / dg.h);
+      const imgW = dg.w * fit, imgH = dg.h * fit;
+      doc.setDrawColor(200);
+      doc.rect(margin, top, imgW, imgH);
+      // 'FAST' = Flate; a flat-colour schematic compresses hard, and without it
+      // the raster lands in the PDF near-raw (megabytes for one page).
+      doc.addImage(dg.dataUrl, 'PNG', margin, top, imgW, imgH, 'retic-topology', 'FAST');
+    }
+
     const safe = projName.replace(/[^a-z0-9]+/gi, '_');
     doc.save(`${safe}_reticulation_demand.pdf`);
   },
