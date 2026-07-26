@@ -105,6 +105,7 @@ const AppState = {
     grounding: true,
     dcLoadflow: true,
     dcShortCircuit: true,
+    retic: true,
   },
 
   // Per-value visibility within each result box, keyed [type][field]. Only
