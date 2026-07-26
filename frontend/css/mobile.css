@@ -619,6 +619,180 @@
     display: none !important;
   }
 
+  /* ─── Reticulation workspace layout ────────────────── */
+  /* Phone shape: a sticky totals strip with the design settings folded behind
+     a ⚙ Setup toggle, a full-width kiosk list (erf rows become cards), and the
+     minisub/network summary as a slide-in drawer instead of a side panel. */
+  #retic-workspace .retic-mobile-only { display: inline-flex !important; }
+
+  /* Settings bar → totals chips always visible, fields on demand. */
+  .retic-settings-bar {
+    padding: 8px 10px;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .retic-settings-bar .retic-settings-fields { display: none; }
+  .retic-settings-bar.open .retic-settings-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    width: 100%;
+    order: 2;
+  }
+  .retic-settings-bar .retic-totals {
+    margin-left: 0 !important;
+    width: 100%;
+    order: 1;
+    gap: 6px;
+  }
+  .retic-settings-bar .retic-chip { flex: 1 1 0; min-width: 0; padding: 4px 6px; }
+  .retic-settings-bar .retic-totals .retic-btn { flex: 0 0 auto; align-items: center; }
+  .retic-field .retic-hint { max-width: none; }
+
+  /* Comfortable tap targets; 16px keeps iOS from zooming on focus. */
+  #retic-workspace .retic-field select,
+  #retic-workspace .retic-field input,
+  #retic-workspace .erf-table input,
+  #retic-workspace .erf-table select,
+  #retic-workspace .ms-name,
+  #retic-workspace .ndf-input {
+    font-size: 16px;
+    padding: 7px 8px;
+    min-height: 38px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  #retic-workspace .ndf-input { width: 84px; text-align: right; }
+  /* Native select arrow overlays the text at these widths — reserve room. */
+  #retic-workspace .retic-field select,
+  #retic-workspace .erf-table select { padding-right: 26px; }
+  #retic-workspace .retic-btn { padding: 9px 14px; font-size: 13px; min-height: 40px; }
+  #retic-workspace .btn-icon-del { font-size: 22px; padding: 4px 10px; min-height: 36px; }
+
+  /* Quick Build: collapsed by default (tap the title), 2-up when open. */
+  .retic-quickbuild { padding: 10px; gap: 10px; }
+  .retic-quickbuild .qb-title {
+    width: 100%; cursor: pointer; margin-right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 32px;
+  }
+  .retic-quickbuild .qb-caret { color: var(--text-muted); font-size: 11px; }
+  .retic-quickbuild.collapsed .qb-fields { display: none; }
+  .retic-quickbuild .qb-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    width: 100%;
+  }
+  .retic-quickbuild .retic-field input[type="number"] { width: 100%; }
+  .retic-quickbuild .qb-chain { padding-bottom: 0; align-self: center; }
+  .retic-quickbuild .qb-chain input[type="checkbox"] { width: 18px; height: 18px; }
+  .retic-quickbuild .retic-btn.primary { grid-column: 1 / -1; }
+
+  /* Kiosk list takes the full width; the summary is a drawer (below). */
+  .retic-kiosks { padding: 10px; }
+  .retic-toolbar { flex-wrap: wrap; gap: 6px; }
+
+  .kiosk-head { flex-wrap: wrap; padding: 10px; gap: 8px; }
+  .kiosk-head input.kiosk-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 15px;
+    padding: 6px 8px;
+    min-height: 38px;
+    border-color: var(--border-color);   /* discoverable as an editable field */
+    background: var(--bg-primary);
+  }
+  .kiosk-demand-badge {
+    order: 3;
+    flex: 1 0 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .kiosk-body { padding: 10px; }
+  .kiosk-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .kiosk-meta .retic-field select, .kiosk-meta .retic-field input { min-width: 0; }
+
+  /* Erf schedule: the 7-column table reflows into one card per erf. */
+  .erf-table, .erf-table tbody, .erf-table tr, .erf-table td { display: block; }
+  .erf-table thead { display: none; }
+  .erf-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "erf   len"
+      "phase amps"
+      "cable cable"
+      "vd    vd";
+    gap: 8px 10px;
+    position: relative;
+    padding: 10px 34px 10px 10px;   /* right gutter clears the × button */
+    margin-bottom: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+  }
+  .erf-table td {
+    border-bottom: none;
+    padding: 0;
+    min-width: 0;
+  }
+  .erf-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+  }
+  .erf-table td[data-cell="erf"]   { grid-area: erf; }
+  .erf-table td[data-cell="len"]   { grid-area: len; }
+  .erf-table td[data-cell="phase"] { grid-area: phase; }
+  .erf-table td[data-cell="amps"]  { grid-area: amps; }
+  .erf-table td[data-cell="cable"] { grid-area: cable; }
+  .erf-table td[data-cell="vd"] {
+    grid-area: vd;
+    text-align: left;
+    font-size: 13px;
+    padding-top: 4px;
+    border-top: 1px solid var(--bg-tertiary);
+  }
+  .erf-table td[data-cell="del"] {
+    position: absolute;
+    top: 4px;
+    right: 2px;
+  }
+
+  /* Summary → right-hand slide-in drawer over the kiosk list. */
+  .retic-body { position: relative; }
+  .retic-summary {
+    position: absolute;
+    top: 0; bottom: 0; right: 0; left: auto;
+    width: min(88vw, 340px);
+    z-index: 60;
+    transform: translateX(102%);
+    transition: transform .25s ease;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.35);
+  }
+  .retic-summary.mobile-open { transform: translateX(0); }
+  .retic-summary .ms-toolbar { gap: 8px; justify-content: flex-start; }
+  .retic-summary .ms-toolbar h3 { flex: 1; min-width: 0; }
+  .retic-summary .summary-row { padding: 5px 0; font-size: 13px; }
+  #retic-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.25);
+    display: none;
+  }
+  #retic-drawer-backdrop.on { display: block; }
+
   /* ─── Plan (distribution) workspace layout ─────────── */
   /* Toolbar: a compact primary row (Parts, Props, Select, Fit, ⋯); everything
      else drops into the ⋯ overflow menu below. */
