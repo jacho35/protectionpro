@@ -29,17 +29,26 @@ const PlanImages = {
     return null;
   },
 
+  // The store is behind the auth gate and an <img src> can't carry a bearer
+  // header, so fetch the bytes ourselves and hand the decoder a blob URL.
   _fetch(imageId) {
     if (this._pending.has(imageId) || this._cache.has(imageId)) return;
     this._pending.add(imageId);
-    const img = new Image();
-    img.onload = () => {
-      this._cache.set(imageId, img);
-      this._pending.delete(imageId);
-      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ bg: true });
-    };
-    img.onerror = () => { this._pending.delete(imageId); };
-    img.src = `${API_BASE}/plan-images/${imageId}`;
+    fetch(`${API_BASE}/plan-images/${imageId}`, { headers: API.authHeaders() })
+      .then(r => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          this._cache.set(imageId, img);
+          this._pending.delete(imageId);
+          if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ bg: true });
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); this._pending.delete(imageId); };
+        img.src = url;
+      })
+      .catch(() => { this._pending.delete(imageId); });
   },
 
   // Ensure every referenced plan image is cached/fetching; drop the rest.
@@ -157,7 +166,7 @@ const PlanImages = {
   // (Wired to page-nav UI in a later phase; reusable now.)
   async renderPdfPage(plan, pageNum) {
     if (!plan.sourcePdfId) return;
-    const buf = await (await fetch(`${API_BASE}/plan-images/${plan.sourcePdfId}`)).arrayBuffer();
+    const buf = await (await fetch(`${API_BASE}/plan-images/${plan.sourcePdfId}`, { headers: API.authHeaders() })).arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
     const r = await this._rasterizePdfPage(pdf, pageNum);
     const meta = await this._upload(r.blob, 'image/png', `${plan.name} p${pageNum}`, r.w, r.h, 'raster');
@@ -282,7 +291,7 @@ const PlanImages = {
     fd.append('width', String(w || 0));
     fd.append('height', String(h || 0));
     if (AppState.projectId) fd.append('project_id', String(AppState.projectId));
-    const resp = await fetch(`${API_BASE}/plan-images`, { method: 'POST', body: fd });
+    const resp = await fetch(`${API_BASE}/plan-images`, { method: 'POST', body: fd, headers: API.authHeaders() });
     if (!resp.ok) {
       let detail = `HTTP ${resp.status}`;
       try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (_) {}
@@ -296,12 +305,14 @@ const PlanImages = {
     if (!projectId) return;
     const ids = AppState.planAllPlans()
       .flatMap(p => [p.imageId, p.sourcePdfId])
+      // DXF trace-over underlays share this store and need claiming too.
+      .concat(typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.storedIds() : [])
       .filter(id => id != null);
     for (const id of ids) {
       try {
         await fetch(`${API_BASE}/plan-images/${id}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: API.authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ project_id: Number(projectId) }),
         });
       } catch (_) { /* best-effort; cleanup sweep is the backstop */ }

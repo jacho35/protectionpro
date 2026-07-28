@@ -228,17 +228,22 @@ def flicker_analysis(data: FlickerAnalysisRequest):
 @router.post("/hosting-capacity", response_model=HostingCapacityResults)
 def hosting_capacity(data: HostingCapacityRequest):
     """Nodal hosting capacity — maximum unity-pf PV interconnection at each
-    candidate bus before a voltage-rise or thermal-overload limit is hit
-    (sweep-then-bisect DER injection search, LF-scored)."""
+    candidate bus before a voltage-rise, thermal-overload or fault-level /
+    protection limit is hit (sweep-then-bisect DER injection search, LF-scored,
+    then Fault Analysis + Duty Check re-run at the discovered capacity)."""
     try:
         kwargs = {}
         if data.candidate_bus_ids:
             kwargs["bus_ids"] = data.candidate_bus_ids
+        if data.fault_screen is not None:
+            kwargs["fault_screen"] = bool(data.fault_screen)
         for req_field, kw in (("hc_power_factor", "power_factor"),
                               ("v_min", "v_min"), ("v_max", "v_max"),
                               ("loading_limit_pct", "loading_limit_pct"),
                               ("step_mw", "step_mw"),
-                              ("max_mw_per_bus", "max_mw_per_bus")):
+                              ("max_mw_per_bus", "max_mw_per_bus"),
+                              ("fault_rise_limit_pct", "fault_rise_limit_pct"),
+                              ("der_share_limit_pct", "der_share_limit_pct")):
             v = getattr(data, req_field)
             if v is not None:
                 kwargs[kw] = v

@@ -3,8 +3,9 @@
 ## Development Workflow Instructions
 
 **After building any feature**, always update `BACKLOG.md`:
-1. Mark the completed item as done in its original section (strikethrough with `~~text~~`)
-2. Add a concise entry to the `## Completed` section at the bottom
+1. Delete its line from the `## Outstanding Items — ordered` index at the top
+2. Mark the completed item as done in its original section (strikethrough with `~~text~~`)
+3. Add a concise entry to the `## Completed` section at the bottom
 
 ## What is ProtectionPro?
 

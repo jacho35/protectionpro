@@ -150,6 +150,8 @@ const PLAN_DEFS = {
           { value: 'emergency', label: 'Emergency' }, { value: 'exit', label: 'Exit Sign' },
         ] },
         { key: 'watts', label: 'Load', type: 'number', unit: 'W' },
+        { key: 'lumens', label: 'Output', type: 'number', unit: 'lm' },
+        { key: 'iesId', label: 'Photometry', type: 'ies_select' },
       ],
     },
     // Small power

@@ -287,12 +287,16 @@ const PlanSync = {
     if (bSup && !aSup) return elB;
     return null;
   },
+  // Does `startId` reach a supply component without passing through `blockId`?
+  // `blockId` may be a single id or any iterable of ids (a riser shaft blocks
+  // every other board on the shaft at once).
   _reachesSupply(startId, blockId) {
     const SUP = new Set(['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery', 'grid', 'transformer']);
     const wires = [...AppState.wires.values()];
     const neigh = (id) => wires.filter(w => w.fromComponent === id || w.toComponent === id)
       .map(w => (w.fromComponent === id ? w.toComponent : w.fromComponent));
-    const seen = new Set([startId, blockId]);
+    const blocked = (blockId && typeof blockId !== 'string' && blockId[Symbol.iterator]) ? [...blockId] : [blockId];
+    const seen = new Set([startId, ...blocked]);
     const q = [startId];
     while (q.length) {
       const cur = q.shift();
@@ -611,6 +615,12 @@ const PlanSync = {
     // Broken feeder pairs
     for (const r of feeders) if (r.sldCableId && !comps.get(r.sldCableId)) planRoutes.add(r.id);
     for (const c of comps.values()) if (c.type === 'cable' && c.planLink && !feederById[c.planLink]) sldComps.add(c.id);
+    // A riser feeder whose downstream leg was deleted in the Plan has lost the
+    // pair that defines it. The reverse (cable deleted on the SLD) is healed,
+    // not propagated — the legs are user-drawn horizontal runs in their own
+    // right, so re-syncing simply re-derives the cable.
+    const routeIds = new Set(AppState.planAllRoutes().map(r => r.id));
+    for (const c of comps.values()) if (c.type === 'cable' && c.riserLink && !routeIds.has(c.riserLink)) sldComps.add(c.id);
     // Dangling plan feeders (an endpoint board was removed)
     for (const r of feeders) if (!elById[r.fromId] || !elById[r.toId] || planEls.has(r.fromId) || planEls.has(r.toId)) planRoutes.add(r.id);
     // Cascade: a removed plan board/switchboard takes its SLD members.
@@ -648,6 +658,132 @@ const PlanSync = {
     return { planEls, planRoutes, sldComps, boards, feeders: feedersCount };
   },
 
+  // ─── Cross-floor riser feeders ───
+  // A board fed from another storey is drawn as two horizontal legs — board →
+  // riser on each floor — joined by the vertical shaft (risers sharing a name
+  // across floors, `AppState.planRiserShaft`). No single plan route can span
+  // floors, so the pair produces no SLD cable on its own. These helpers pair the
+  // legs up and emit exactly one SLD feeder cable per riser-leg pair, its length
+  // being leg A + the vertical run + leg B.
+
+  // Every board → riser leg on every floor, each measured with its own floor's
+  // scale: [{floor, level, riser, shaft, board, route, lenM}].
+  _riserLegs() {
+    const elById = this._elById();
+    const BOARD = new Set(['bd_db', 'bd_switchboard']);
+    const out = [];
+    for (const fl of AppState.planFloors()) {
+      const f = this._floorFactorFor(fl);
+      for (const r of (fl.data.routes || [])) {
+        if (r.type !== 'feeder' || !r.fromId || !r.toId) continue;
+        const a = elById[r.fromId], b = elById[r.toId];
+        if (!a || !b) continue;
+        let riser = null, board = null;
+        if (a.type === 'bd_riser' && BOARD.has(b.type)) { riser = a; board = b; }
+        else if (b.type === 'bd_riser' && BOARD.has(a.type)) { riser = b; board = a; }
+        if (!riser || !board) continue;
+        const shaft = String(riser.name || '').trim().toLowerCase();
+        if (!shaft) continue;   // an unnamed riser belongs to no shaft
+        out.push({ floor: fl, level: fl.level || 0, riser, shaft, board, route: r, lenM: f ? this._routeLenM(r, f) : 0 });
+      }
+    }
+    return out;
+  },
+
+  // Group legs by shaft name, keeping one leg per board (the shortest, so a
+  // re-routed duplicate doesn't fabricate a second feeder). Shafts reaching
+  // only one storey are dropped — nothing to feed across.
+  _riserShafts() {
+    const byShaft = new Map();
+    for (const leg of this._riserLegs()) {
+      if (!byShaft.has(leg.shaft)) byShaft.set(leg.shaft, new Map());
+      const perBoard = byShaft.get(leg.shaft);
+      const prev = perBoard.get(leg.board.id);
+      if (!prev || leg.lenM < prev.lenM) perBoard.set(leg.board.id, leg);
+    }
+    const out = [];
+    for (const [shaft, perBoard] of byShaft) {
+      const legs = [...perBoard.values()].sort((a, b) => a.level - b.level);
+      if (new Set(legs.map(l => l.level)).size < 2) continue;
+      out.push({ shaft, legs });
+    }
+    return out;
+  },
+
+  // Which leg on a shaft is the source: the one board that reaches an SLD supply
+  // with every other board on the shaft blocked. If that is ambiguous (none, or
+  // several — e.g. nothing energized yet on a first sync), the lowest storey
+  // feeds upwards, which is how a building riser is actually built. Never
+  // prompts: a shaft can carry many legs and a modal per pair would be a wall.
+  _riserSource(legs) {
+    const ids = legs.map(l => l.board.sldId).filter(Boolean);
+    const sourced = legs.filter(l => l.board.sldId &&
+      this._reachesSupply(l.board.sldId, ids.filter(id => id !== l.board.sldId)));
+    if (sourced.length === 1) return sourced[0];
+    return legs[0];   // already sorted by level ascending
+  },
+
+  // Create/refresh the SLD feeder cable for each riser-leg pair. Anchored on the
+  // downstream leg route (`sldRiserCableId`) so a re-sync updates rather than
+  // duplicates. Returns the number of cables newly created.
+  syncRiserFeeders() {
+    let made = 0;
+    for (const { shaft, legs } of this._riserShafts()) {
+      const src = this._riserSource(legs);
+      if (!src || !src.board.sldId || !AppState.components.get(src.board.sldId)) continue;
+      for (const leg of legs) {
+        if (leg === src) continue;
+        // Same-storey pairs are left to a directly-drawn feeder — the vertical
+        // run is zero, so a riser cable would only duplicate that route.
+        if (leg.level === src.level) continue;
+        if (!leg.board.sldId || !AppState.components.get(leg.board.sldId)) continue;
+        const vertM = AppState.planVerticalRunM(src.level, leg.level);
+        const lenM = +(src.lenM + vertM + leg.lenM).toFixed(2);
+        const cableType = leg.route.cableType || src.route.cableType || '';
+
+        let cable = leg.route.sldRiserCableId ? AppState.components.get(leg.route.sldRiserCableId) : null;
+        if (!cable) {
+          const sp = this._feederSourcePoint(src.board);
+          const sink = this._feederSinkPoint(leg.board);
+          if (!sp || !sink) continue;
+          const sc = AppState.components.get(sp.compId);
+          const dc = AppState.components.get(leg.board.sldId);
+          cable = AppState.addComponent('cable', sc.x, (sc.y + (dc ? dc.y : sc.y)) / 2);
+          AppState.addWire(sp.compId, sp.port, cable.id, 'from', true);
+          AppState.addWire(cable.id, 'to', sink.compId, sink.port, true);
+          leg.route.sldRiserCableId = cable.id;
+          made++;
+        }
+        // Back-refs. `riserLink` is deliberately NOT `planLink`: the generic
+        // feeder-pair deletion rules key off planLink and would read a riser
+        // cable (whose plan side is two legs, not one route) as orphaned.
+        cable.riserLink = leg.route.id;
+        cable.riserShaft = shaft;
+        if (cableType) {
+          this._applyCableElectrical(cable, cableType);
+          if (!cable.props.name || cable.props.name === 'Cable') cable.props.name = cableType;
+        }
+        // The measured length is authoritative here — unlike a reflected 2-point
+        // chord, all three segments are real measurements (two drawn legs plus
+        // the storey heights), so a shorter result is a genuine re-measure.
+        // 5 dp (1 cm), not the 4 dp used for a single drawn feeder: this length
+        // is a sum of three measurements and is also written to the DB schedule
+        // in metres at 2 dp, so 0.1 m rounding here would show up as the cable
+        // and its own schedule way disagreeing.
+        if (lenM > 0) cable.props.length_km = +(lenM / 1000).toFixed(5);
+        cable.props.riser_note = `via riser ${src.riser.name || shaft} — ${src.lenM.toFixed(1)} m + ${vertM.toFixed(1)} m vertical + ${leg.lenM.toFixed(1)} m`;
+        // The feeding DB records the cross-floor way like any other sub-board
+        // feeder (switchboards have no circuit schedule).
+        if (src.board.type === 'bd_db') {
+          const upComp = AppState.components.get(src.board.sldId);
+          const downComp = AppState.components.get(leg.board.sldId);
+          if (upComp && downComp) this._ensureFeederCircuit(upComp, downComp, cableType, lenM);
+        }
+      }
+    }
+    return made;
+  },
+
   // ─── Building distribution ↔ SLD bridge ───
   // Distribution boards drawn in the Plan become linked `distribution_board`
   // components on the SLD; feeders between boards become a Cable/Feeder
@@ -670,6 +806,9 @@ const PlanSync = {
     }
     for (const r of AppState.planAllRoutes()) {
       if (r.type === 'feeder' && r.sldCableId && !comps.get(r.sldCableId)) r.sldCableId = null;
+      // A riser leg's cable is re-derivable from the two legs + storey heights,
+      // so a stale link is always healed (never escalated to a deletion prompt).
+      if (r.sldRiserCableId && !comps.get(r.sldRiserCableId)) r.sldRiserCableId = null;
     }
 
     // ── 0b. Propagate genuine deletions (with confirmation) ──
@@ -710,7 +849,7 @@ const PlanSync = {
       for (const r of (fl.data.routes || [])) if (r.type === 'feeder' && r.fromId && r.toId) feeders.push({ r, factor: f });
     }
     const elById = this._elById();
-    const summary = { dbNew: 0, dbLinked: 0, cableNew: 0, planNew: 0 };
+    const summary = { dbNew: 0, dbLinked: 0, cableNew: 0, riserNew: 0, planNew: 0 };
 
     // Layout: map plan pixel extents into a tidy SLD region (preserve relative
     // positions), snapped to grid.
@@ -808,6 +947,9 @@ const PlanSync = {
         if (upComp && downComp) this._ensureFeederCircuit(upComp, downComp, r.cableType, lenM);
       }
     }
+    // ── Forward: riser-leg pairs → one cross-floor SLD feeder cable each ──
+    //    (runs after the same-floor pass so every board is linked first).
+    summary.riserNew = this.syncRiserFeeders();
     this._pruneEmptyOutBuses();
 
     // ── Reverse: SLD cables joining two linked plan elements → plan feeders ──
@@ -830,6 +972,7 @@ const PlanSync = {
       `Synced with SLD:\n` +
       `• ${summary.dbNew} new + ${summary.dbLinked} linked distribution board(s)\n` +
       `• ${summary.cableNew} feeder cable(s) created on the SLD\n` +
+      `• ${summary.riserNew} cross-floor riser feeder(s) created on the SLD\n` +
       `• ${summary.planNew} SLD cable(s) reflected back as plan feeders`);
   },
 

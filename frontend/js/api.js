@@ -14,6 +14,17 @@ const API = {
   },
   clearToken() { this.setToken(null); },
 
+  // Bearer header for callers that build their own fetch (multipart uploads,
+  // binary GETs) and so can't go through request()/requestBlob(). Every API
+  // router except /auth/* is behind the auth gate, so a bare fetch to API_BASE
+  // is always a 401 — use this for the headers.
+  authHeaders(extra) {
+    const h = { ...(extra || {}) };
+    const token = this.getToken();
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+  },
+
   // Shared 401 handler: an expired/invalid token clears itself and re-shows
   // the login gate — but NOT for the /auth/* endpoints, where a 401 is a
   // legitimate result (bad login) whose real message the caller should see.
@@ -271,6 +282,9 @@ const API = {
     if (opts.loadingLimitPct != null) data.loading_limit_pct = opts.loadingLimitPct;
     if (opts.stepMw != null) data.step_mw = opts.stepMw;
     if (opts.maxMwPerBus != null) data.max_mw_per_bus = opts.maxMwPerBus;
+    if (opts.faultScreen != null) data.fault_screen = !!opts.faultScreen;
+    if (opts.faultRiseLimitPct != null) data.fault_rise_limit_pct = opts.faultRiseLimitPct;
+    if (opts.derShareLimitPct != null) data.der_share_limit_pct = opts.derShareLimitPct;
     return this.request('/analysis/hosting-capacity', 'POST', data);
   },
 

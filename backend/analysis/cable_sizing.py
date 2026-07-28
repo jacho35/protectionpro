@@ -420,9 +420,16 @@ def _get_cable_props(cable):
         # library stores 20 °C values, unlike the hot insulated-cable tables).
         conductor = "Al"
         insulation = "BARE"
-        r_per_km = float(p.get("r_per_km", 0))
-        if r_per_km > 0:
-            size_mm2 = RESISTIVITY["Al"] * 1000 / r_per_km  # S = ρ₂₀×1000/R
+        # The area must come from the 20 °C resistance: RESISTIVITY["Al"] is a
+        # 20 °C resistivity, so feeding it the operating-temperature value that
+        # conductor_temp writes into r_per_km would under-report the conductor
+        # by the same ~18–22 % — and that area feeds the adiabatic
+        # fault-withstand check. `base_resistance` returns the stashed 20 °C
+        # figure, falling back to r_per_km when no correction was applied.
+        from .conductor_temp import base_resistance
+        r20_per_km = float(base_resistance(p, "r_per_km", 0.0) or 0.0)
+        if r20_per_km > 0:
+            size_mm2 = RESISTIVITY["Al"] * 1000 / r20_per_km  # S = ρ₂₀×1000/R
     else:
         # Try to resolve from standard cable library
         if std_type:
@@ -455,7 +462,10 @@ def _get_cable_props(cable):
         "insulation": insulation,
         "size_mm2": size_mm2,
         "overhead": is_overhead,
-        "r_per_km": r_per_km,
+        # Operating-temperature resistance — the right value for volt drop.
+        # (The conductor AREA above is derived from the 20 °C base instead;
+        # see the overhead branch.)
+        "r_per_km": float(p.get("r_per_km", 0)),
         "x_per_km": float(p.get("x_per_km", 0)),
         "rated_amps": float(p.get("rated_amps", 0)),
         "length_km": float(p.get("length_km", 0)),

@@ -98,6 +98,21 @@ class Component(BaseModel):
                     out[k] = rv  # unchanged since coercion → restore original
                     continue
             out[k] = v
+        # The overhead conductor-temperature correction (see
+        # analysis/conductor_temp) is an in-process modelling correction, not
+        # user data: the project must keep the library's 20 °C resistance so
+        # the properties panel still matches the conductor library and a
+        # save/load round-trip is byte-stable. Restore the base and drop the
+        # bookkeeping keys. Engines that dump-and-rebuild a project get clean
+        # 20 °C props and the correction is simply re-applied on rebuild.
+        base_r = props.get("_r20_per_km")
+        if base_r is not None:
+            out["r_per_km"] = base_r
+        base_r0 = props.get("_r0_20_per_km")
+        if base_r0 is not None:
+            out["r0_per_km"] = base_r0
+        for k in ("_r20_per_km", "_r0_20_per_km", "_r_temp_applied_c"):
+            out.pop(k, None)
         return out
 
 
@@ -164,6 +179,21 @@ class ProjectData(BaseModel):
     conductorTemperatureC: Optional[float] = None
     stabilityDisturbance: Optional[dict] = None  # transient-stability event spec (see transient_stability)
     dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
+
+    @model_validator(mode="after")
+    def _correct_overhead_resistance(self):
+        """Bring overhead-line resistance to its operating temperature.
+
+        The overhead library is quoted at 20 °C while the cable library is
+        quoted hot, so without this an overhead line ran cold in every engine
+        and its losses / voltage drop came out ~15–25 % optimistic. Correcting
+        here — once, as the project is built — means load flow, fault,
+        harmonics, unbalanced, contingency and the rest all see the same value
+        without each having to remember. Idempotent (see conductor_temp).
+        """
+        from ..analysis.conductor_temp import apply_to_components
+        apply_to_components(self.components)
+        return self
 
 
 class ProjectSummary(BaseModel):
@@ -1118,6 +1148,12 @@ class HostingCapacityRequest(ProjectData):
     loading_limit_pct: Optional[float] = None  # default 100
     step_mw: Optional[float] = None            # sweep resolution (default 0.5)
     max_mw_per_bus: Optional[float] = None     # search cap (default 10.0)
+    # Fault-level / protection screen (Fault Analysis + Duty Check re-run at
+    # each bus's discovered capacity). On by default — a hosting-capacity
+    # answer that ignores switchgear duty is not a usable answer.
+    fault_screen: Optional[bool] = None            # default True
+    fault_rise_limit_pct: Optional[float] = None   # default 10.0
+    der_share_limit_pct: Optional[float] = None    # default 10.0
 
 
 class HostingCapacityResults(BaseModel):
@@ -1131,6 +1167,9 @@ class HostingCapacityResults(BaseModel):
     loading_limit_pct: float = 100.0
     step_mw: float = 0.5
     max_mw_per_bus: float = 10.0
+    fault_screen: bool = True
+    fault_rise_limit_pct: float = 10.0
+    der_share_limit_pct: float = 10.0
     method: str = ""
     warnings: list[str] = []
     note: str = ""
