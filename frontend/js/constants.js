@@ -1066,6 +1066,7 @@ const FIELD_INFO = {
 
   // Relay
   'relay.associated_ct': 'Select the current transformer (CT) that feeds this relay.\nThe CT measurement location determines where the relay measures fault current.\nThe relay pickup should be set in primary amps (before CT ratio).',
+  'relay.associated_pt': 'Select the potential transformer (PT) that feeds this relay\'s voltage measurement (distance, directional, or voltage elements).\nUsed by: Duty Check — a PT is only checked for burden/accuracy adequacy once a relay declares it here (a metering-only PT is not a protection duty concern).',
   'relay.trip_cb': 'Select the circuit breaker that this relay trips.\nWhen the relay operates, it sends a trip signal to this CB to isolate the fault.',
   'relay.pickup_a':  'Set in PRIMARY amps (line current before the CT), not secondary/relay-terminal amps.\nWith a phase CT linked this is the phase current; with a core-balance CT it is the net residual (earth-fault, 3I0) current through the window.\nEither way the panel shows the equivalent secondary current (pickup ÷ CT ratio) the relay actually sees.\nDefault 100A — adjust to match load current and CT ratio.\nSource: IEC 60255-151 — overcurrent relay pickup setting.',
   'relay.inst_pickup_a': 'Instantaneous (50) element pickup in PRIMARY amps (line current before the CT). 0 disables it.\nWith a measuring CT linked, the panel shows the equivalent secondary current (pickup ÷ CT ratio).\nSource: IEC 60255-151.',
@@ -1088,8 +1089,9 @@ const FIELD_INFO = {
 
   // PT
   'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V.',
-  'pt.accuracy_class': 'Default 0.5 — metering grade accuracy.\nSource: IEC 61869-3 — accuracy classes: 0.1, 0.2, 0.5, 1.0, 3.0.',
-  'pt.burden_va':      'Default 30 VA — typical metering PT burden.\nSource: IEC 61869-3 §2 — standard burden values.',
+  'pt.accuracy_class': 'Default 0.5 — metering grade accuracy.\nSource: IEC 61869-3 — accuracy classes: 0.1, 0.2, 0.5, 1.0, 3.0 (measuring); 3P, 6P (protective).\nEach class sets a ratio-error / phase-displacement limit pair, e.g. 0.5 = ±0.5% / ±20\'.',
+  'pt.burden_va':      'Rated burden (VA) — the standard IEC 61869-3 value (e.g. 10/25/50/100/200/400 VA) the PT was tested and accuracy-classed at.\nUsed by: Duty Check — compared against Connected Burden below.',
+  'pt.connected_burden_va': 'Actual VA drawn by everything wired to this PT\'s secondary (relays + meters combined). Leave at 0 if unknown/not modelled — the burden adequacy check is skipped (legacy behaviour).\nSource: IEC 61869-3 — the declared accuracy class (ratio error / phase displacement) is only guaranteed between 25% and 100% of rated burden; above 100% the PT is overburdened, below 25% the classification is unproven at that loading.\nUsed by: Duty Check — "PT Burden Adequacy" (only evaluated for a PT with an associated_pt relay).',
 
   // Induction Motor
   'motor_induction.efficiency':           'Default 93% — typical for IE3 200 kW motor.\nSource: IEC 60034-30-1 Table 2 — efficiency classes for induction motors.',
@@ -2233,6 +2235,7 @@ const COMPONENT_DEFS = {
       name: 'Relay',
       relay_type: '50/51',
       associated_ct: '',
+      associated_pt: '',
       trip_cb: '',
       pickup_a: 100,
       time_dial: 1.0,
@@ -2258,6 +2261,7 @@ const COMPONENT_DEFS = {
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'relay_type', label: 'Type', type: 'select', options: ['50/51', '50N/51N', '67', '87', '21'] },
       { key: 'associated_ct', label: 'Measuring CT', type: 'component_select', filter: 'ct' },
+      { key: 'associated_pt', label: 'Measuring PT', type: 'component_select', filter: 'pt' },
       { key: 'trip_cb', label: 'Trip CB', type: 'component_select', filter: 'cb' },
       // Overcurrent (50/51, 50N/51N, 67) fields
       { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
@@ -2348,12 +2352,15 @@ const COMPONENT_DEFS = {
       ratio: '11000/110',
       accuracy_class: '0.5',
       burden_va: 30,
+      // 0 = not specified -> burden adequacy check skipped (legacy).
+      connected_burden_va: 0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'ratio', label: 'Ratio', type: 'text' },
       { key: 'accuracy_class', label: 'Accuracy', type: 'text' },
-      { key: 'burden_va', label: 'Burden', type: 'number', unit: 'VA' },
+      { key: 'burden_va', label: 'Rated Burden', type: 'number', unit: 'VA' },
+      { key: 'connected_burden_va', label: 'Connected Burden', type: 'number', unit: 'VA', min: 0, step: 1, placeholder: 'Not specified' },
     ],
   },
 
