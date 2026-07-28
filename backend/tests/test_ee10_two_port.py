@@ -8,7 +8,11 @@ Two layers of verification:
    checked against an independently hand-derived closed form (elimination
    of the single internal chain node by Gaussian elimination, worked out
    from scratch in each test's docstring/comments — not a re-run of the
-   function under test).
+   function under test). Drives `_kron_reduce_two_port`, the pure
+   matrix-algebra core, directly with hand-picked (t, orientation, cable
+   voltage) facts — independent of how `_reduce_chain_two_port` derives
+   those facts from nameplate data, so these anchors are unaffected by the
+   N>=2 generalization (test_ee10_n_port.py covers that derivation step).
 
 2. TestExactVsExplicitBus — end-to-end run_load_flow cross-validation: a
    network with the cable+transformer sharing one lumped chain (the case
@@ -28,7 +32,8 @@ import math
 import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire
-from backend.analysis.loadflow import run_load_flow, _reduce_chain_two_port
+from backend.analysis.loadflow import (run_load_flow, _reduce_chain_two_port,
+                                       _kron_reduce_two_port)
 
 
 def _comp(cid, ctype, props, x=0, y=0):
@@ -83,8 +88,9 @@ class TestReduceChainTwoPortMath:
         cable, xfmr = self._elems()
         chain = [cable, xfmr]  # cable at index 0, xfmr at index 1
         t = 1.075
-        y_eff, t_eff, hv_eff = _reduce_chain_two_port(
-            chain, 1, t, "bus_a", "bus_a", "bus_b", 1.0, 1.0, 1.0)
+        y_eff, t_eff, hv_eff = _kron_reduce_two_port(
+            chain, {1}, {1: t}, {1: True}, {0: 1.0},
+            "bus_a", "bus_a", "bus_b", 1.0)
 
         z_c = complex(0.01, 0.02)
         z_t = self._z_t()
@@ -113,8 +119,9 @@ class TestReduceChainTwoPortMath:
         cable, xfmr = self._elems()
         chain = [xfmr, cable]  # xfmr at index 0, cable at index 1
         t = 1.075
-        y_eff, t_eff, hv_eff = _reduce_chain_two_port(
-            chain, 0, t, "bus_a", "bus_a", "bus_b", 1.0, 1.0, 1.0)
+        y_eff, t_eff, hv_eff = _kron_reduce_two_port(
+            chain, {0}, {0: t}, {0: True}, {1: 1.0},
+            "bus_a", "bus_a", "bus_b", 1.0)
 
         z_c = complex(0.01, 0.02)
         z_t = self._z_t()
@@ -142,8 +149,9 @@ class TestReduceChainTwoPortMath:
         cable, xfmr = self._elems()
         chain = [cable, xfmr]
         t = 1.075
-        y_eff, t_eff, hv_eff = _reduce_chain_two_port(
-            chain, 1, t, "bus_b", "bus_a", "bus_b", 1.0, 1.0, 1.0)
+        y_eff, t_eff, hv_eff = _kron_reduce_two_port(
+            chain, {1}, {1: t}, {1: False}, {0: 1.0},
+            "bus_b", "bus_a", "bus_b", 1.0)
 
         z_c = complex(0.01, 0.02)
         z_t = self._z_t()
@@ -163,8 +171,9 @@ class TestReduceChainTwoPortMath:
         transformer's own (y, t) unchanged — no internal node to eliminate."""
         _, xfmr = self._elems()
         t = 1.075
-        y_eff, t_eff, hv_eff = _reduce_chain_two_port(
-            [xfmr], 0, t, "bus_a", "bus_a", "bus_b", 1.0, 1.0, 1.0)
+        y_eff, t_eff, hv_eff = _kron_reduce_two_port(
+            [xfmr], {0}, {0: t}, {0: True}, {},
+            "bus_a", "bus_a", "bus_b", 1.0)
         z_t = self._z_t()
         assert y_eff == pytest.approx(1 / z_t, rel=1e-9)
         assert t_eff == pytest.approx(t, rel=1e-9)
@@ -305,8 +314,11 @@ class TestExactVsExplicitBus:
 
         cable = _comp("c1", "cable", dict(self.CABLE_PROPS))
         xfmr = _comp("tx", "transformer", dict(self.XFMR_PROPS))
-        t = 1.075  # matches +7.5% tap at these voltage ratios (nominal ratio 3)
+        # t = 1.075 matches +7.5% tap at these voltage ratios (nominal ratio
+        # 3); the wrapper now derives this itself from XFMR_PROPS + bus_a_v/
+        # bus_b_v (both equal to the transformer's own nameplate here, so no
+        # base mismatch on top of the tap).
         y_eff, t_eff, hv_eff = _reduce_chain_two_port(
-            [cable, xfmr], 1, t, "bus_a", "bus_a", "bus_b", v_a, 11.0, base_mva)
+            [cable, xfmr], [1], "bus_a", "bus_a", "bus_b", v_a, 11.0, base_mva)
 
         assert abs(y_eff - y_naive) / abs(y_naive) > 0.005  # >0.5% — a real, not rounding-noise, difference

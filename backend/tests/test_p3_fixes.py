@@ -403,12 +403,18 @@ class TestEE9CapacitorSusceptance:
 
 
 # ── EE-10: tapped transformer sharing a chain with a cable ───────────────────
-# A SINGLE tapped transformer sharing its chain with a cable is now modelled
+# A SINGLE tapped transformer sharing its chain with a cable is modelled
 # EXACTLY (Kron-reduced series two-port, loadflow.py::_reduce_chain_two_port)
 # instead of just warned about — see test_ee10_two_port.py for the numerical
 # cross-validation against an explicit-intermediate-bus reference network.
-# The warning now only fires for the still-open residual: TWO OR MORE cascaded
-# tapped transformers sharing a chain with a cable (n_chain_xfmrs >= 2).
+# The reduction was later generalized to N>=2 cascaded tapped transformers
+# sharing a chain with a cable — see test_ee10_n_port.py for that anchor
+# (also an explicit-intermediate-bus cross-validation, now with two taps and
+# a bus at each transformer terminal). The residual warning this section's
+# tests check the ABSENCE of is gone for good; the only warning left for a
+# cascaded-transformer chain is the informational "no bus to attach
+# equipment at the junction" note (TestCascadedTransformerChain in
+# test_verification_fixes.py), unrelated to numerical accuracy.
 
 
 class TestEE10TappedChainWarning:
