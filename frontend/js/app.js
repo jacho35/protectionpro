@@ -1451,6 +1451,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'contingency-modal') e.target.style.display = 'none';
   });
 
+  // ── Time-Series / Quasi-Dynamic Load Flow ──
+  document.getElementById('btn-timeseries').addEventListener('click', () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add a network before running the time-series load flow.';
+      return;
+    }
+    TimeSeries.openConfig();
+  });
+  document.getElementById('btn-tsl-run').addEventListener('click', () => TimeSeries.runConfigured());
+  document.getElementById('btn-tsl-cancel').addEventListener('click', () => {
+    document.getElementById('tsl-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-tsl-config').addEventListener('click', () => {
+    document.getElementById('tsl-config-modal').style.display = 'none';
+  });
+  document.getElementById('btn-close-tsl').addEventListener('click', () => {
+    document.getElementById('tsl-modal').style.display = 'none';
+  });
+  document.getElementById('tsl-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'tsl-modal') e.target.style.display = 'none';
+  });
+
   // ── Protective Device Sequence of Operation ──
   document.getElementById('btn-sequence-op').addEventListener('click', () => {
     if (AppState.components.size === 0) {
@@ -3839,6 +3861,8 @@ document.addEventListener('DOMContentLoaded', () => {
       icon: '<path d="M2 3c3 0 4.5 4 6 6s2.2 3 3 3c1.5 0 2-2 3-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11" cy="12" r="1.1" fill="currentColor"/>' },
     { id: 'contingency', label: 'Contingency (N-1 / N-2)', category: 'Studies', btnId: 'btn-contingency',
       icon: '<path d="M8 2l6 11H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor"/>' },
+    { id: 'timeseries', label: 'Time-Series Load Flow', category: 'Studies', btnId: 'btn-timeseries',
+      icon: '<path d="M2 9c1.5-4 3-6 5-6s2 5 4 5 2-3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' },
     { id: 'sequence-op', label: 'Sequence of Operation', category: 'Studies', btnId: 'btn-sequence-op',
       icon: '<path d="M2 13h12" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><circle cx="4" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="6" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 8.3L6.7 6.7M9.3 5.4l1.4-0.8" stroke="currentColor" stroke-width="1.1"/>' },
     { id: 'duty-check', label: 'Duty Check', category: 'Studies', btnId: 'btn-duty-check',

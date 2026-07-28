@@ -222,6 +222,10 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2l6 11H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor"/></svg>
               Contingency (N-1 / N-2)
             </button>
+            <button id="btn-timeseries" class="dropdown-item" title="Time-Series Load Flow — quasi-dynamic 24h/8760h profile study with BESS SoC and OLTC state carried between steps">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 13h14M2 3v10M2 3l3 3M2 3l-1 1" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><path d="M2 9c1.5-4 3-6 5-6s2 5 4 5 2-3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              Time-Series Load Flow
+            </button>
             <button id="btn-harmonics" class="dropdown-item" title="Harmonic Analysis — VFD current-source penetration, per-bus voltage THD &amp; PCC current TDD vs IEEE 519-2014">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 8c1.5 0 1.5-5 3-5s1.5 5 3 5 1.5-5 3-5 1.5 5 3 5 1.5-3 2-3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
               Harmonics (IEEE 519)
@@ -1453,6 +1457,36 @@
       </div>
       <div class="modal-body">
         <div id="contingency-body"><!-- Populated by JS --></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Time-Series Load Flow — setup Modal -->
+  <div id="tsl-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Time-Series Load Flow Setup" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Time-Series Load Flow — Setup</h3>
+        <button class="modal-close" id="btn-close-tsl-config">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="tsl-config-body"><!-- Populated by JS --></div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
+        <button class="btn" id="btn-tsl-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-tsl-run">Run Study</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Time-Series Load Flow — results Modal -->
+  <div id="tsl-modal" class="modal" role="dialog" aria-modal="true" aria-label="Time-Series Load Flow Results" style="display:none">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Time-Series Load Flow — Quasi-Dynamic</h3>
+        <button class="modal-close" id="btn-close-tsl">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="tsl-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -2967,6 +3001,7 @@
   <script src="js/filtersizing.js?v=3.5.73"></script>
   <script src="js/capplace.js?v=3.5.73"></script>
   <script src="js/contingency.js?v=3.5.73"></script>
+  <script src="js/timeseries.js?v=3.5.73"></script>
   <script src="js/lfstudy.js?v=3.5.73"></script>
   <script src="js/interlocking.js?v=3.5.73"></script>
   <script src="js/sequence.js?v=3.5.73"></script>

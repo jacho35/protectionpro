@@ -6,10 +6,11 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
+from ..analysis.timeseries_loadflow import run_timeseries_loadflow
 from ..analysis.harmonics import run_harmonics
 from ..analysis.frequency_scan import run_frequency_scan
 from ..analysis.battery_sizing import run_battery_sizing
@@ -118,6 +119,34 @@ def contingency(data: ContingencyRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Contingency analysis error: {e}")
+
+
+@router.post("/timeseries-loadflow", response_model=TimeSeriesLoadFlowResults)
+def timeseries_loadflow(data: TimeSeriesLoadFlowRequest):
+    """Run the quasi-dynamic time-series load flow — the existing solver
+    re-run over a 24 h / 8760 h load & generation profile, with BESS state of
+    charge and OLTC tap position carried forward between steps."""
+    try:
+        method = data.loadFlowMethod or "newton_raphson"
+        kwargs = {}
+        if data.horizon_hours is not None:
+            kwargs["horizon_hours"] = data.horizon_hours
+        if data.step_minutes is not None:
+            kwargs["step_minutes"] = data.step_minutes
+        if data.default_profile:
+            kwargs["default_profile"] = data.default_profile
+        if data.profile_overrides:
+            kwargs["profile_overrides"] = data.profile_overrides
+        if data.v_min is not None:
+            kwargs["v_min"] = data.v_min
+        if data.v_max is not None:
+            kwargs["v_max"] = data.v_max
+        if data.loading_limit_pct is not None:
+            kwargs["loading_limit_pct"] = data.loading_limit_pct
+        return run_timeseries_loadflow(data, method, **kwargs)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Time-series load flow error: {e}")
 
 
 @router.post("/harmonics", response_model=HarmonicsResults)

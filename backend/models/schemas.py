@@ -1100,6 +1100,77 @@ class ContingencyRequest(ProjectData):
     max_contingencies: Optional[int] = None  # N-2 pair cap (default 400)
 
 
+# ── Time-series / quasi-dynamic load flow ──
+
+class TimeSeriesBusEnvelope(BaseModel):
+    """Min/max voltage a bus sees over the horizon, and the step each occurred."""
+    bus_id: str
+    bus_name: str = ""
+    min_v_pu: float = 0.0
+    min_v_step: int = 0
+    max_v_pu: float = 0.0
+    max_v_step: int = 0
+
+
+class TimeSeriesBranchPeak(BaseModel):
+    """Worst thermal loading a branch sees over the horizon."""
+    element_id: str
+    element_name: str = ""
+    peak_loading_pct: float = 0.0
+    peak_step: int = 0
+    peak_p_mw: float = 0.0
+
+
+class TimeSeriesBatteryTrajectory(BaseModel):
+    """SoC trajectory for one BESS / hybrid-PV battery, carried between steps."""
+    battery_id: str
+    battery_name: str = ""
+    soc_pct: list[float] = []
+    dispatched_mw: list[float] = []   # +discharge / −charge, AC side, per step
+
+
+class TimeSeriesLoadFlowResults(BaseModel):
+    """Quasi-dynamic time-series load flow — the existing balanced solver
+    re-run at each time step over a load/generation profile, with BESS state
+    of charge and OLTC tap position carried forward step-to-step (not
+    independently re-derived — that is what makes this "quasi-dynamic" rather
+    than N unrelated snapshots)."""
+    converged: bool = True                 # False only if every step failed
+    steps: int = 0
+    step_minutes: float = 60.0
+    horizon_hours: float = 24.0
+    t_hours: list[float] = []              # step timestamps, hours from t=0
+    non_converged_steps: list[int] = []
+    violation_step_count: int = 0          # steps with any V/thermal violation
+    total_losses_mwh: float = 0.0          # Σ losses_mw × dt, integrated over the horizon
+    bus_envelopes: list[TimeSeriesBusEnvelope] = []
+    branch_peaks: list[TimeSeriesBranchPeak] = []
+    battery_trajectories: list[TimeSeriesBatteryTrajectory] = []
+    # Network-wide per-step series, for the results chart:
+    # None at a non-converged step (excluded from the aggregates/chart gap).
+    min_v_pu_series: list[Optional[float]] = []
+    max_v_pu_series: list[Optional[float]] = []
+    max_loading_pct_series: list[Optional[float]] = []
+    losses_mw_series: list[Optional[float]] = []
+    limits: dict = {}
+    solve_time_s: float = 0.0
+    method: str = "newton_raphson"
+    profiles_used: dict = {}                # component_id -> profile name assigned
+    warnings: list[str] = []
+    note: str = ""
+
+
+class TimeSeriesLoadFlowRequest(ProjectData):
+    """ProjectData plus time-series sweep options (all optional)."""
+    horizon_hours: Optional[float] = None    # default 24
+    step_minutes: Optional[float] = None     # default 60
+    default_profile: Optional[str] = None    # overrides the per-type default
+    profile_overrides: dict[str, str] = {}   # component_id -> built-in profile name
+    v_min: Optional[float] = None            # default 0.95 (violation counting only)
+    v_max: Optional[float] = None            # default 1.05
+    loading_limit_pct: Optional[float] = None  # default 100
+
+
 # ── Harmonic Analysis (IEEE 519-2014) ──
 
 class ReliabilityResults(BaseModel):
