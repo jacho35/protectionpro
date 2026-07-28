@@ -57,6 +57,7 @@ frontend/
     ├── flicker.js          # Voltage flicker UI (IEC 61000-3-3 setup + Pst/Plt per-motor table)
     ├── hostingcapacity.js  # Nodal hosting capacity UI (DER limits setup + per-bus MW table)
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
+    ├── timeseries.js       # Time-series / quasi-dynamic load flow UI (horizon/step/profile setup + voltage/loading/SoC charts)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
@@ -76,6 +77,7 @@ backend/
 │   ├── loadflow_cases.py   # Load Flow Study Manager — run load flow across named network cases
 │   ├── voltage_stability.py # Steady-state voltage stability — P-V nose curves, Q-V reactive margin, loadability margin
 │   ├── contingency.py      # Contingency analysis (N-1 / N-2) — element-outage security screening
+│   ├── timeseries_loadflow.py # Time-series / quasi-dynamic load flow — 24h/8760h load & generation profiles, BESS SoC + OLTC tap carried between steps
 │   ├── frequency_scan.py   # Driving-point impedance vs frequency — parallel/series resonance identification
 │   ├── battery_sizing.py   # Duty-cycle battery sizing (IEEE 485-style factors) + discharge simulation
 │   ├── optimal_powerflow.py # OPF — merit-order economic dispatch + greedy discrete Volt/VAR hill climb
@@ -159,6 +161,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/loadflow-cases` | Load flow across named full-snapshot cases | Load Flow Study Manager |
 | `/api/analysis/voltage-stability` | Steady-state voltage stability | P-V / Q-V continuation (loadability & collapse) |
 | `/api/analysis/contingency` | N-1 / N-2 security screening | Load-flow contingency analysis |
+| `/api/analysis/timeseries-loadflow` | Quasi-dynamic time-series load flow | 24h/8760h load & generation profile, BESS SoC + OLTC tap carried between steps |
 | `/api/analysis/frequency-scan` | Impedance vs frequency (resonance) | Nodal Z_kk(h) sweep on the harmonics network model |
 | `/api/analysis/battery-sizing` | Duty-cycle battery sizing + discharge sim | IEEE 485-style factors, Peukert, OCV(SoC) |
 | `/api/analysis/opf` | Economic dispatch + Volt/VAR optimization | Merit order by marginal cost + LF-scored hill climb |
@@ -258,6 +261,13 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Outageable set: series branches (cables/transformers) + sources (utility/generator/solar/wind/battery); transparent devices and passive loads are not outaged
 - Flags per outage: thermal overloads (loading > limit), bus under/over-voltage (band configurable), and loss of supply (de-energized buses + MW lost, via `connected_bus_loads_mw`)
 - N-2 pairs are capped (default 400) with skipped pairs reported; results ranked worst-first (loss-of-supply > violations > secure). A network is **N-1 secure** when every single outage is violation-free. Results are on-demand (not persisted)
+
+### Time-Series / Quasi-Dynamic Load Flow (timeseries_loadflow.py)
+- Re-runs the existing balanced `run_load_flow` once per time step over a 24 h / 8760 h load & generation profile — a thin composition layer, no new power-flow mathematics
+- Every profile-eligible load/source (`static_load`, `motor_induction`, `motor_synchronous`, `distribution_board`, `solar_pv`, `wind_turbine`, `generator`) is assigned a named profile — a 24-point hourly shape, linearly interpolated for sub-hourly steps and tiled across the horizon — via the request's `profile_overrides` (component id → name), else the component's own `ts_profile` prop, else the request's `default_profile`, else a per-type built-in (residential/industrial for loads, clear-sky for solar, flat elsewhere). The profile multiplies the component's OWN nameplate value captured at t=0 (`demand_factor` for loads, `irradiance_pct` for solar, `wind_speed_pct` for wind, `rated_mva` for a scheduled generator) — a "flat" profile therefore reproduces the single-shot `run_load_flow` result exactly at every step
+- **Quasi-dynamic, not N independent snapshots**: BESS state of charge is integrated each step from the actual dispatched power (`LoadFlowResults.dispatch`, one-way efficiency √(round-trip η)) and carried into the next step's `battery_soc_pct` — a battery at 0%/100% clamps there (warned) rather than crossing the bound; OLTC tap position is carried forward via `loadflow._run_oltc` so each step's regulation starts from the PREVIOUS step's converged tap, not the network's static default; switched capacitor banks opting into `cap_control_mode: "auto"` get a simple voltage-hysteresis controller (on/off band) on their local bus, read from the previous step's solved voltage
+- Outputs: per-bus min/max voltage envelope (with the step each occurred), per-branch peak loading, integrated energy losses (MWh) over the horizon, count of steps with a voltage/thermal violation, and BESS SoC/dispatch trajectories. Never raises — a step whose solver diverges is recorded in `non_converged_steps` and the run continues. Results are on-demand (not persisted)
+- Performance: cost scales with step count × per-solve cost (network size). Measured: a 2-bus feeder is ~4.5s for 8760 steps, the same feeder with an OLTC-regulating transformer ~9s, a 20-bus radial feeder ~60s — comfortably under the "10 minutes" concern threshold at the network sizes this tool targets. A genuine NR solver warm start (seeding V/θ from the previous step) is the documented next mitigation if a much larger network needs it — deliberately not added to the shared `loadflow.py` core for a problem that doesn't exist at measured sizes
 
 ### Dynamic Motor Starting (dynamic_motor_starting.py)
 - Time-domain acceleration: integrates 2H·dω/dt = T_e − T_L (RK2)

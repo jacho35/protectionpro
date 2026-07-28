@@ -341,6 +341,21 @@ const API = {
     return this.request('/analysis/contingency', 'POST', data);
   },
 
+  // Run the quasi-dynamic time-series load flow over a 24h/8760h profile.
+  // opts: { horizonHours, stepMinutes, defaultProfile, profileOverrides,
+  //         vMin, vMax, loadingLimitPct } — all optional (engine defaults).
+  async runTimeSeriesLoadFlow(opts = {}) {
+    const data = AppState.toJSON();
+    if (opts.horizonHours != null) data.horizon_hours = opts.horizonHours;
+    if (opts.stepMinutes != null) data.step_minutes = opts.stepMinutes;
+    if (opts.defaultProfile) data.default_profile = opts.defaultProfile;
+    if (opts.profileOverrides) data.profile_overrides = opts.profileOverrides;
+    if (opts.vMin != null) data.v_min = opts.vMin;
+    if (opts.vMax != null) data.v_max = opts.vMax;
+    if (opts.loadingLimitPct != null) data.loading_limit_pct = opts.loadingLimitPct;
+    return this.request('/analysis/timeseries-loadflow', 'POST', data);
+  },
+
   // Run harmonic penetration analysis (IEEE 519) — VFDs as current sources
   async runHarmonics(method = 'newton_raphson') {
     const data = AppState.toJSON();

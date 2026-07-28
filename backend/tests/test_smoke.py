@@ -84,6 +84,18 @@ def test_load_flow_both_methods(project):
         assert res.converged, f"{method} did not converge"
 
 
+def test_timeseries_loadflow(project):
+    from backend.analysis.timeseries_loadflow import run_timeseries_loadflow
+    res = run_timeseries_loadflow(project, "newton_raphson", horizon_hours=24, step_minutes=60)
+    assert res.converged
+    assert res.steps == 24
+    assert res.bus_envelopes
+    assert res.branch_peaks
+    # numpy scalars must never cross the Pydantic boundary as-is
+    assert isinstance(res.total_losses_mwh, float)
+    assert isinstance(res.converged, bool)
+
+
 def test_unbalanced_load_flow(project):
     from backend.analysis.unbalanced_loadflow import run_unbalanced_load_flow
     res = run_unbalanced_load_flow(project)
