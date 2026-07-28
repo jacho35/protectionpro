@@ -8,6 +8,7 @@ Flags any device whose rating is exceeded.
 import math
 from ..models.schemas import ProjectData
 from .ct_model import ct_saturation_params
+from .pt_model import pt_burden_adequacy
 
 # Transparent types that do not form a bus boundary
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
@@ -474,5 +475,73 @@ def run_duty_check(project: ProjectData):
             "issues": issues,
         })
 
+    # ── PT burden / accuracy-class adequacy check ──
+    # [PS-16 residual] "PT parameters are used in no calculation" — the
+    # voltage-side analogue of the CT check above (pt_model.py). A PT's
+    # failure mode is burden mismatch, not saturation: IEC 61869-3 only
+    # guarantees the declared accuracy class between 25% and 100% of the
+    # PT's rated burden. Only PTs feeding a relay (associated_pt) are
+    # checked — a metering-only PT is not a protection duty concern. A PT
+    # with no connected_burden_va specified is skipped entirely (legacy
+    # behaviour: absent prop -> no check, identical output to before).
+    pt_checks = []
+    relay_pt_ids = {
+        c.props.get("associated_pt")
+        for c in project.components
+        if c.type == "relay" and c.props.get("associated_pt")
+    }
+    for pt in project.components:
+        if pt.type != "pt" or pt.id not in relay_pt_ids:
+            continue
+        adequacy = pt_burden_adequacy(pt.props)
+        if adequacy is None:
+            continue  # connected_burden_va not specified — skip (legacy)
+
+        pt_name = pt.props.get("name", pt.id)
+        bus_ids = _find_upstream_bus(pt.id, adj, comp_map)
+        location_bus = ""
+        for bid in bus_ids:
+            if bid in comp_map:
+                location_bus = comp_map[bid].props.get("name", bid)
+                break
+
+        issues = []
+        loading_pct = adequacy["loading_pct"]
+        if loading_pct is not None and loading_pct > 100:
+            status = "fail"
+            issues.append(
+                f"PT connected burden {adequacy['connected_burden_va']:.1f} VA "
+                f"exceeds its {adequacy['rated_burden_va']:.1f} VA rated burden "
+                f"({loading_pct:.0f}% loaded) — ratio/phase error may exceed "
+                f"the class {adequacy['accuracy_class']} limits "
+                f"(±{adequacy['ratio_error_pct']}%"
+                + (f", ±{adequacy['phase_error_min']:.0f}'" if adequacy['phase_error_min'] else "")
+                + ") [IEC 61869-3]")
+        elif not adequacy["within_qualified_band"]:
+            status = "warning"
+            issues.append(
+                f"PT lightly burdened ({loading_pct:.0f}% of "
+                f"{adequacy['rated_burden_va']:.1f} VA rated) — IEC 61869-3 "
+                "guarantees the declared accuracy class only between 25% and "
+                "100% of rated burden; verify accuracy at this loading")
+        else:
+            status = "pass"
+
+        pt_checks.append({
+            "device_id": pt.id,
+            "device_name": pt_name,
+            "location_bus": location_bus,
+            "ratio": pt.props.get("ratio", ""),
+            "accuracy_class": adequacy["accuracy_class"],
+            "rated_burden_va": round(adequacy["rated_burden_va"], 1),
+            "connected_burden_va": round(adequacy["connected_burden_va"], 1),
+            "loading_pct": round(loading_pct, 1) if loading_pct is not None else None,
+            "ratio_error_pct": adequacy["ratio_error_pct"],
+            "phase_error_min": adequacy["phase_error_min"],
+            "status": status,
+            "issues": issues,
+        })
+
     return {"devices": results, "transformers": transformer_results,
-            "ct_checks": ct_checks, "warnings": analysis_warnings}
+            "ct_checks": ct_checks, "pt_checks": pt_checks,
+            "warnings": analysis_warnings}
