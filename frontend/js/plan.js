@@ -66,7 +66,7 @@ const PlanMarkup = {
           </div>
           <div class="plan-tb-group">
             <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF), a DXF reference, or a Distribution Designer .json project">⬆ Import Plan</button>
-            <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.json,application/json" style="display:none">
+            <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.ies,.json,application/json" style="display:none">
             <button class="plan-tb-btn" data-action="lux" title="Toggle the lighting (lux) heatmap">💡 Lux</button>
           </div>
           <div class="plan-tb-group">
@@ -182,6 +182,7 @@ const PlanMarkup = {
       const f = e.target.files && e.target.files[0];
       if (f) {
         if (/\.dxf$/i.test(f.name) && typeof PlanDxfImport !== 'undefined') PlanDxfImport.importFile(f);
+        else if (/\.ies$/i.test(f.name) && typeof PlanIES !== 'undefined') PlanIES.importFile(f);
         else if (/\.json$/i.test(f.name) && typeof PlanDdImport !== 'undefined') PlanDdImport.importFile(f);
         else PlanImages.importFile(f);
       }
@@ -200,6 +201,7 @@ const PlanMarkup = {
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
     if (typeof PlanEngine !== 'undefined') { PlanEngine.resize(); PlanEngine.requestDraw({ all: true }); }
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
+    if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
     this.updateScaleReadout();
     this.updatePushButton();
@@ -218,6 +220,7 @@ const PlanMarkup = {
     this._undoIndex = -1;
     this._snapshot();
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
+    if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
     if (this._active) {
       if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
       this.updateScaleReadout();
@@ -313,6 +316,7 @@ const PlanMarkup = {
     if (typeof PlanTools !== 'undefined') PlanTools.cancel && PlanTools.cancel();
     this._snapshot(); this.markDirty();
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
+    if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
     this.refreshFloorBar();
     this.updateScaleReadout();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
@@ -415,6 +419,7 @@ const PlanMarkup = {
           if (!ok) return;
           AppState.removePlanFloor(id);
           if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
+          if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
           commit(true);
         });
         return;
@@ -729,6 +734,7 @@ const PlanMarkup = {
     this.selectedIds.clear();
     this.markDirty();
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
+    if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
     this.updateScaleReadout();
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });

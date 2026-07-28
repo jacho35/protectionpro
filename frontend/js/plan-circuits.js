@@ -52,6 +52,240 @@ const PlanCircuits = {
   // '1P' | '3P' — the device's declared circuit type (default single-phase).
   devicePoles(el) { return ((el && el.props && el.props.poles) === '3P') ? '3P' : '1P'; },
 
+  PHASES: ['R', 'W', 'B'],
+
+  // ── 3P+N tap phase ──
+  // A three-phase final circuit runs L1/L2/L3 + N, but a single-phase fixture on
+  // it taps ONE phase to neutral. Which one is a real design decision: get it
+  // wrong across a run of fittings and the board is left carrying a lopsided
+  // load and a neutral current that should have cancelled. `props.tapPhase`
+  // records it per fixture; empty means unassigned.
+  //
+  // A genuinely three-phase device (poles = 3P — a motor, a 3P heater) draws on
+  // all three and is never tapped.
+  deviceTapPhase(el) {
+    const p = (el && el.props) || {};
+    if (this.devicePoles(el) === '3P') return null;   // spans all three
+    const t = String(p.tapPhase || '').toUpperCase();
+    return this.PHASES.includes(t) ? t : null;
+  },
+
+  // Per-phase VA carried by one way, given the devices tagged to it.
+  //   • a 1P way sits wholly on its own phase (c.phase)
+  //   • a 3P way splits by each fixture's tap phase; a 3P device spreads evenly;
+  //     an untagged 1P fixture is reported separately rather than guessed at
+  // Returns {R, W, B, unassigned, total, imbalancePct}.
+  phaseSplit(way, devices) {
+    const out = { R: 0, W: 0, B: 0, unassigned: 0 };
+    const threePhaseWay = (way && way.poles === '3P');
+    for (const el of (devices || [])) {
+      const va = this.deviceVA(el);
+      if (!va) continue;
+      if (!threePhaseWay) {
+        const ph = this.PHASES.includes(way && way.phase) ? way.phase : 'R';
+        out[ph] += va;
+        continue;
+      }
+      if (this.devicePoles(el) === '3P') { out.R += va / 3; out.W += va / 3; out.B += va / 3; continue; }
+      const tap = this.deviceTapPhase(el);
+      if (tap) out[tap] += va; else out.unassigned += va;
+    }
+    return this._withImbalance(out);
+  },
+
+  // Imbalance as the spread between the heaviest and lightest phase, relative to
+  // the mean — the figure an inspector actually looks at. 0 % is perfectly
+  // balanced; a single-phase-only board reads 300 %.
+  _withImbalance(o) {
+    const total = o.R + o.W + o.B + (o.unassigned || 0);
+    const mean = (o.R + o.W + o.B) / 3;
+    const max = Math.max(o.R, o.W, o.B), min = Math.min(o.R, o.W, o.B);
+    return {
+      ...o,
+      total: +total.toFixed(1),
+      R: +o.R.toFixed(1), W: +o.W.toFixed(1), B: +o.B.toFixed(1),
+      unassigned: +(o.unassigned || 0).toFixed(1),
+      imbalancePct: mean > 0 ? +(((max - min) / mean) * 100).toFixed(1) : 0,
+    };
+  },
+
+  // Devices tagged to a given board, grouped by way id (falling back to the way
+  // number for devices whose tag predates stable way ids).
+  devicesByWay(dbElId) {
+    const map = new Map();
+    for (const el of AppState.planAllElements()) {
+      const p = el.props || {};
+      if (p.circuitDbId !== dbElId || p.circuitNo == null || p.circuitNo === '') continue;
+      if (!this.isCircuitDevice(el.type)) continue;
+      const key = p.circuitWid || ('n:' + String(p.circuitNo));
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(el);
+    }
+    return map;
+  },
+
+  // Devices on one way. Both keys must be merged, not tried in turn: a device
+  // tagged since the last syncLoads has no circuitWid yet and is only reachable
+  // by way number, so preferring the id group alone would hide it.
+  _wayDevices(comp, way, byWay) {
+    const byId = byWay.get(way.id) || [];
+    const byNum = byWay.get('n:' + String(way.way)) || [];
+    if (!byId.length) return byNum;
+    if (!byNum.length) return byId;
+    const seen = new Set(byId.map(e => e.id));
+    return byId.concat(byNum.filter(e => !seen.has(e.id)));
+  },
+
+  // Whole-board phase loading: every way's split summed. This is the number that
+  // matters — balance is a property of the board, not of one circuit.
+  boardPhaseLoad(dbElId) {
+    const comp = this._sldComp(this._boardById(dbElId));
+    if (!comp || !Array.isArray(comp.props.circuits)) return null;
+    const byWay = this.devicesByWay(dbElId);
+    const acc = { R: 0, W: 0, B: 0, unassigned: 0 };
+    for (const c of comp.props.circuits) {
+      if (c.type === 'feeder_db') continue;   // sub-board feeders are 3P by nature
+      const s = this.phaseSplit(c, this._wayDevices(comp, c, byWay));
+      acc.R += s.R; acc.W += s.W; acc.B += s.B; acc.unassigned += s.unassigned;
+    }
+    return this._withImbalance(acc);
+  },
+
+  // Write each way's phase split onto its schedule row, so the DB schedule, the
+  // PDF and the CSV all see it without recomputing.
+  syncPhaseSplits(dbElId) {
+    const comp = this._sldComp(this._boardById(dbElId));
+    if (!comp || !Array.isArray(comp.props.circuits)) return 0;
+    const byWay = this.devicesByWay(dbElId);
+    let n = 0;
+    for (const c of comp.props.circuits) {
+      if (c.type === 'feeder_db') continue;
+      const s = this.phaseSplit(c, this._wayDevices(comp, c, byWay));
+      c.phase_va = { R: s.R, W: s.W, B: s.B };
+      c.phase_unassigned_va = s.unassigned;
+      n++;
+    }
+    return n;
+  },
+
+  // Assign tap phases on a board's 3P ways to even the load out: fixtures are
+  // placed heaviest-first onto whichever phase is currently lightest (the
+  // greedy longest-processing-time rule — optimal enough for a few dozen
+  // fixtures, and it reproduces the electrician's habit of alternating phases
+  // along a run when every fixture is identical).
+  //
+  // Only fixtures with no tap phase are moved unless `reassign` is set, so a
+  // hand-balanced board is not silently rearranged.
+  balancePhases(dbElId, reassign) {
+    const comp = this._sldComp(this._boardById(dbElId));
+    if (!comp || !Array.isArray(comp.props.circuits)) return { assigned: 0, ways: 0 };
+    const byWay = this.devicesByWay(dbElId);
+    // Seed the running totals with everything already fixed, so a partially
+    // assigned board is completed rather than balanced in isolation.
+    const load = { R: 0, W: 0, B: 0 };
+    const pending = [];
+    let ways = 0;
+    for (const c of comp.props.circuits) {
+      if (c.type === 'feeder_db') continue;
+      const devs = this._wayDevices(comp, c, byWay);
+      if (!devs.length) continue;
+      if (c.poles !== '3P') {
+        // A 1P way's whole load sits on the way's own phase.
+        const ph = this.PHASES.includes(c.phase) ? c.phase : 'R';
+        for (const el of devs) load[ph] += this.deviceVA(el);
+        continue;
+      }
+      ways++;
+      for (const el of devs) {
+        if (this.devicePoles(el) === '3P') {
+          const va = this.deviceVA(el) / 3;
+          load.R += va; load.W += va; load.B += va;
+          continue;
+        }
+        const tap = this.deviceTapPhase(el);
+        if (tap && !reassign) load[tap] += this.deviceVA(el);
+        else pending.push(el);
+      }
+    }
+    pending.sort((a, b) => this.deviceVA(b) - this.deviceVA(a));
+    let assigned = 0;
+    for (const el of pending) {
+      let ph = 'R';
+      for (const p of this.PHASES) if (load[p] < load[ph]) ph = p;
+      el.props = el.props || {};
+      el.props.tapPhase = ph;
+      load[ph] += this.deviceVA(el);
+      assigned++;
+    }
+    this.syncPhaseSplits(dbElId);
+    if (typeof DBSchedule !== 'undefined' && DBSchedule.recompute) DBSchedule.recompute(comp);
+    return { assigned, ways, load: this._withImbalance({ ...load, unassigned: 0 }) };
+  },
+
+  // ── Splice joints at junction boxes ──
+  // Every final-circuit cable arriving at a junction box has its cores joined
+  // there. Convention (matching how a JB is actually wired and priced):
+  //   • cores  — the circuit's conductor count: 1P+N+E = 3, 3P+N+E = 5
+  //   • splices — each core is joined once inside the box, so a box with two or
+  //     more cables attached contributes `cores` splices. One cable attached is
+  //     a termination, not a splice, and contributes none.
+  //   • terminations — every cable end landed in the box: cables × cores.
+  // A junction box with no circuit route attached is reported with zero so it
+  // still shows up as drawn-but-unwired rather than vanishing from the count.
+  jbJoints() {
+    const adj = this._adjacency();
+    const elById = {};
+    for (const e of AppState.planAllElements()) elById[e.id] = e;
+    const floorMap = AppState.planEntityFloorMap();
+    // Cables landing in each box = final-circuit ROUTES referencing it. Not the
+    // adjacency degree: one route through a box may touch several devices (a
+    // clique of one edge each), and two routes may run to the same device.
+    const cableCount = new Map();
+    for (const fl of AppState.planFloors()) {
+      for (const r of (fl.data.routes || [])) {
+        if (!this.CIRCUIT_ROUTES.includes(r.type)) continue;
+        const ids = new Set();
+        if (r.fromId) ids.add(r.fromId);
+        if (r.toId) ids.add(r.toId);
+        for (const p of (r.points || [])) if (p.snappedTo) ids.add(p.snappedTo);
+        for (const id of ids) cableCount.set(id, (cableCount.get(id) || 0) + 1);
+      }
+    }
+    const out = [];
+    for (const el of AppState.planAllElements()) {
+      if (el.type !== 'bd_jb') continue;
+      const cables = cableCount.get(el.id) || 0;
+      // The circuit this box sits on decides the core count. Take it from the
+      // box's own tag if it has one, else from any tagged neighbour.
+      let poles = this.devicePoles(el);
+      if (!(el.props && el.props.poles)) {
+        for (const nb of (adj.get(el.id) || [])) {
+          const n = elById[nb];
+          if (n && n.props && n.props.poles === '3P') { poles = '3P'; break; }
+        }
+      }
+      const cores = poles === '3P' ? 5 : 3;
+      const splices = cables >= 2 ? cores : 0;
+      out.push({
+        id: el.id, name: el.name || 'JB', poles, cables, cores, splices,
+        terminations: cables * cores,
+        floor: (floorMap.get(el.id) || {}).name || '',
+      });
+    }
+    return out;
+  },
+
+  jbJointTotals() {
+    const rows = this.jbJoints();
+    return rows.reduce((t, r) => ({
+      boxes: t.boxes + 1,
+      wired: t.wired + (r.cables >= 2 ? 1 : 0),
+      unwired: t.unwired + (r.cables < 2 ? 1 : 0),
+      splices: t.splices + r.splices,
+      terminations: t.terminations + r.terminations,
+    }), { boxes: 0, wired: 0, unwired: 0, splices: 0, terminations: 0 });
+  },
+
   // ── Stable way ids (EE-7) ──
   // A schedule way's identity is a stable internal id, NOT the mutable way
   // NUMBER. Device tags reference the id (props.circuitWid) so renumbering a
@@ -424,10 +658,14 @@ const PlanCircuits = {
     return updated;
   },
 
-  // Full "Sync circuits from plan": loads first, then routed lengths.
+  // Full "Sync circuits from plan": loads, routed lengths, then the per-phase
+  // split of every board (so the schedule always reflects the current tags).
   syncAll() {
     const s = this.syncLoads();
     s.lengths = this.syncRoutedLengths();
+    s.phaseWays = 0;
+    for (const b of this.boardEls()) s.phaseWays += this.syncPhaseSplits(b.id);
+    s.joints = this.jbJointTotals();
     return s;
   },
 };

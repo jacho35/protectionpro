@@ -7,6 +7,10 @@ and zero sequence networks:
   - Negative sequence (Y2): linear solve with unbalanced load injections
   - Zero sequence (Y0):     linear solve; transformer delta windings block Z0
 
+Parallel circuits (``num_parallel`` > 1) are scaled in the zero sequence by
+``line_coupling.parallel_z0_scale``, not by a plain 1/n divide — see
+``_cable_z0_pu``.
+
 Per-phase load unbalance is specified on static_load components via:
   phase_a_pct, phase_b_pct, phase_c_pct  (% of total load, default 33.33 each)
 
@@ -35,6 +39,7 @@ from .loadflow import (
     plan_dispatch, solve_with_islands,
 )
 from .fault import _grounding_impedance
+from .line_coupling import coupling_note, parallel_z0_scale
 
 # Symmetrical component rotation operator: a = 1∠120°
 _a = np.exp(1j * 2 * math.pi / 3)
@@ -141,6 +146,61 @@ def _xfmr_z0_shunts(comp, candidate_buses, base_mva):
     return shunts
 
 
+def _cable_z0_self_per_km(elem):
+    """Zero-sequence SELF impedance of ONE circuit (Ω/km), before any parallel
+    treatment. Split out so ``_cable_z0_pu`` and the study disclosure emitted
+    at the end of the run are guaranteed to describe the same quantity.
+
+    Note this engine's fallback (3.5× the positive-sequence per-km value)
+    differs from fault.py's composite 3×Z1 — a long-standing per-engine
+    convention, deliberately left alone.
+    """
+    r0_prop = float(elem.props.get("r0_per_km", 0))
+    x0_prop = float(elem.props.get("x0_per_km", 0))
+    return complex(
+        r0_prop if r0_prop > 0 else float(elem.props.get("r_per_km", 0.1)) * 3.5,
+        x0_prop if x0_prop > 0 else float(elem.props.get("x_per_km", 0.08)) * 3.5)
+
+
+def _cable_z0_pu(elem, base_mva, v_kv, freq_hz=50.0):
+    """Cable zero-sequence per-unit impedance for the Y0 network.
+
+    Factored out of the two chain-walking branches below, which each built Z0
+    inline and — unlike Z1, where ``_get_impedance`` divides by ``num_parallel``
+    — applied no parallel treatment at all. A double-circuit line therefore
+    carried the zero-sequence impedance of a SINGLE circuit into Y0.
+
+    Parallel circuits are not a plain Z0/n divide either. Zero-sequence current
+    is in phase in all three conductors and returns through earth, so circuits
+    sharing a tower couple strongly through that common return and the mutual
+    term raises the effective Z0 well above Z0/n. ``parallel_z0_scale`` applies
+    Z0_eff = [Z0s + (n-1)·Z0m]/n — the same correction fault.py's ``_cable_z0``
+    uses, so the two engines now agree on the zero-sequence network. Single
+    circuits are untouched (scale = 1).
+
+    Second bug fixed here: the explicit-prop path used ``r0_per_km`` /
+    ``x0_per_km`` directly as total ohms, never multiplying by ``length_km`` —
+    so any cable with datasheet zero-sequence data contributed the Z0 of a
+    single kilometre regardless of its actual length (a 10 km line was 10×
+    under-impedance in Y0). The fallback path was unaffected, because it scales
+    r1/x1, which already carry the length. fault.py's ``_cable_z0`` has always
+    multiplied by length; the two engines now agree.
+
+    The r0/x0 fallback (3.5× the positive-sequence value) is this engine's own
+    long-standing rule and is deliberately kept, rather than adopting fault.py's
+    3×Z1 composite fallback — that would move results for every project with no
+    explicit r0/x0, which is a separate question from the parallel one.
+    """
+    z_base = (v_kv ** 2) / base_mva if v_kv > 0 else 1.0
+    length = float(elem.props.get("length_km", 1))
+    # Scale from the PER-KM self impedance: the coupling ratio Z0m/Z0s is
+    # length-invariant, and mutual_z0_per_km is itself a per-km quantity.
+    z0_self_per_km = _cable_z0_self_per_km(elem)
+    z0_ohm = z0_self_per_km * length * parallel_z0_scale(
+        elem.props, z0_self_per_km, freq_hz)
+    return complex(z0_ohm.real / z_base, z0_ohm.imag / z_base)
+
+
 def _add_to_ybus(Y, i, j, y, t, hv_bus_id, bus_a_id, bus_b_id):
     """Add branch admittance to Y-bus using transformer pi-model when applicable."""
     if hv_bus_id == bus_a_id:
@@ -167,6 +227,9 @@ def run_unbalanced_load_flow(
     """Run three-phase unbalanced load flow using symmetrical components."""
 
     base_mva = project.baseMVA
+    # Only the zero-sequence parallel-coupling model is frequency-dependent
+    # (Carson's earth-return depth); everything else here is at nominal.
+    freq_hz = float(project.frequency or 50)
     components = {c.id: c for c in project.components}
     wires = project.wires
 
@@ -275,15 +338,19 @@ def run_unbalanced_load_flow(
                     z_base = (v_kv ** 2) / base_mva
                     r1 = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
                     x1 = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    z1_cable = complex(r1 / z_base, x1 / z_base)
+                    # /n to match _get_impedance, which the no-transformer branch
+                    # below uses for the same cable. This branch re-derives Z1
+                    # inline (it needs the chain-resolved v_kv, not the cable's
+                    # own voltage_kv prop) and had dropped the parallel divide,
+                    # so a parallel cable sharing a chain with a transformer
+                    # carried n× its true positive-sequence impedance.
+                    n_par = max(1, int(e.props.get("num_parallel", 1) or 1))
+                    z1_cable = complex(r1 / z_base, x1 / z_base) / n_par
                     z1_total += z1_cable
                     z2_total += z1_cable
                     if not z0_blocked:
-                        r0_prop = float(e.props.get("r0_per_km", 0))
-                        x0_prop = float(e.props.get("x0_per_km", 0))
-                        r0 = r0_prop if r0_prop > 0 else r1 * 3.5
-                        x0 = x0_prop if x0_prop > 0 else x1 * 3.5
-                        z0_total = (z0_total or complex(0, 0)) + complex(r0 / z_base, x0 / z_base)
+                        z0_total = ((z0_total or complex(0, 0))
+                                    + _cable_z0_pu(e, base_mva, v_kv, freq_hz))
                 else:
                     z = _get_impedance(e, base_mva)
                     z1_total += z
@@ -298,15 +365,9 @@ def run_unbalanced_load_flow(
                 z1_total += z
                 z2_total += z
                 if e.type == "cable":
-                    v_kv = e.props.get("voltage_kv", 11)
-                    z_base = (v_kv ** 2) / base_mva
-                    r1 = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
-                    x1 = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    r0_prop = float(e.props.get("r0_per_km", 0))
-                    x0_prop = float(e.props.get("x0_per_km", 0))
-                    r0 = r0_prop if r0_prop > 0 else r1 * 3.5
-                    x0 = x0_prop if x0_prop > 0 else x1 * 3.5
-                    z0_total = (z0_total or complex(0, 0)) + complex(r0 / z_base, x0 / z_base)
+                    z0_total = ((z0_total or complex(0, 0))
+                                + _cable_z0_pu(e, base_mva,
+                                               e.props.get("voltage_kv", 11), freq_hz))
                 else:
                     z0_total = (z0_total or complex(0, 0)) + z * 3
 
@@ -851,6 +912,22 @@ def run_unbalanced_load_flow(
                 element_name=br.bus_name,
                 message=(f"High voltage unbalance: VUF = {br.vuf_pct:.2f}% "
                          f"(IEC 61000-3-13 limit: {VUF_LIMIT}%)"),
+            ))
+    # Disclose the parallel zero-sequence treatment. It moves Z0 by ~1.7x on a
+    # typical double-circuit tower, and V0 / VUF here are read straight off the
+    # Y0 network — a reviewer cannot reproduce these numbers without knowing
+    # the geometry that was assumed. One warning per cable (the reader needs to
+    # know WHICH line), unlike fault analysis, whose flat study_assumptions
+    # list has no element field and so groups by identical treatment.
+    for comp in project.components:
+        if comp.type != "cable":
+            continue
+        note = coupling_note(comp.props, _cable_z0_self_per_km(comp), freq_hz)
+        if note:
+            warnings.append(LoadFlowWarning(
+                elementId=comp.id,
+                element_name=comp.props.get("name", comp.id),
+                message=note,
             ))
 
     return UnbalancedLoadFlowResults(

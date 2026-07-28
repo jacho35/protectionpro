@@ -106,6 +106,19 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             for _c in _data.get("components", []):
                 if _c.get("type") == "cable":
                     _props = _c.setdefault("props", {})
+                    if str(_props.get("construction", "")).strip().lower() == "overhead":
+                        # An overhead line has already been corrected from its
+                        # 20 °C library value to its operating temperature, so
+                        # multiplying r_per_km again would compound the two.
+                        # Re-target the central correction at the study
+                        # temperature instead: it recomputes from the stored
+                        # 20 °C base, with the conductor's own α rather than a
+                        # flat 0.004. The ProjectData rebuild below applies it.
+                        _props["temperature_c"] = float(conductor_temperature_c)
+                        _props.pop("_r_temp_applied_c", None)
+                        continue
+                    # Underground cable: library values are already hot, so the
+                    # §5.3.1 factor applies to them directly (unchanged).
                     # 0.1 Ω/km is the engine default when the prop is absent —
                     # materialize it so the correction still applies.
                     _r = _props.get("r_per_km", 0.1)
@@ -208,7 +221,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         if meshed:
             if net_cache is None:
                 net_cache = _build_bus_network(all_buses, components, adjacency,
-                                               base_mva, c_resolved)
+                                               base_mva, c_resolved,
+                                               freq_hz=(project.frequency or 50))
                 net_cache["shunts1"] = {bid: [t[0] for t in lst]
                                         for bid, lst in net_cache["shunts12"].items()}
                 net_cache["shunts2"] = {bid: [t[1] for t in lst]
@@ -263,7 +277,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         has_z0_path = False
         z0_detail = []  # descriptive strings for each Z0 source path
         if needs_z0:
-            z0_source_tuples = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva, c=c_resolved)
+            z0_source_tuples = _collect_zero_seq_impedances(bus.id, components, adjacency, base_mva, c=c_resolved,
+                                                            freq_hz=(project.frequency or 50))
             if z0_source_tuples:
                 z0_impedances = [t[0] for t in z0_source_tuples]
                 z0_detail = [t[1] for t in z0_source_tuples]
@@ -484,6 +499,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         _assumptions.append(
             f"Minimum-current study: cable resistances at "
             f"{conductor_temperature_c:g} °C (IEC 60909-0 §5.3.1).")
+    _assumptions.extend(_coupling_assumptions(project))
     return FaultResults(
         buses=results,
         base_mva=base_mva,
@@ -1010,21 +1026,90 @@ def _machine_neutral_z(comp, v_kv, base_mva):
     return complex(r_ohm / z_base, x_ohm / z_base)
 
 
-def _cable_z0(comp, base_mva, v_kv):
-    """Cable zero-sequence per-unit impedance — the walker's math, factored
-    out so the nodal Z0 network builder uses the identical formula ([PS-1]).
-    Explicit r0/x0 props win; fallback is 3.5× the positive-sequence
-    per-km values (or 3× the composite Z1 when neither r0 nor x0 is set)."""
+def _cable_z0_self_per_km(comp):
+    """Zero-sequence SELF impedance of ONE circuit (Ω/km), before any parallel
+    treatment. Split out so ``_cable_z0`` and the study disclosure below are
+    guaranteed to describe the same quantity.
+
+    Explicit r0/x0 props win; fallback is 3.5× the positive-sequence per-km
+    value, or 3× the composite Z1 when neither r0 nor x0 is set.
+    """
     r0_per_km = float(comp.props.get("r0_per_km", 0))
     x0_per_km = float(comp.props.get("x0_per_km", 0))
     if r0_per_km > 0 or x0_per_km > 0:
-        z_base = (v_kv ** 2) / base_mva
-        length = comp.props.get("length_km", 1)
-        n_par = max(1, int(comp.props.get("num_parallel", 1)))
-        r0 = (r0_per_km if r0_per_km > 0 else comp.props.get("r_per_km", 0.1) * 3.5) * length
-        x0 = (x0_per_km if x0_per_km > 0 else comp.props.get("x_per_km", 0.08) * 3.5) * length
-        return complex(r0 / z_base, x0 / z_base) / n_par
-    return _cable_impedance(comp, base_mva, v_kv) * 3
+        return complex(
+            r0_per_km if r0_per_km > 0 else comp.props.get("r_per_km", 0.1) * 3.5,
+            x0_per_km if x0_per_km > 0 else comp.props.get("x_per_km", 0.08) * 3.5)
+    return 3.0 * complex(comp.props.get("r_per_km", 0.1),
+                         comp.props.get("x_per_km", 0.08))
+
+
+# Cap on parallel-coupling disclosure lines in study_assumptions. Lines are
+# grouped by identical treatment first, so this only bites on a project with
+# many DISTINCT coupling configurations, not merely many parallel cables.
+MAX_COUPLING_ASSUMPTIONS = 8
+
+
+def _coupling_assumptions(project):
+    """Disclosure lines for every cable whose parallel Z0 treatment is worth
+    stating — see line_coupling.coupling_note for what qualifies.
+
+    Grouped by identical note so a feeder built from twenty identically
+    configured double circuits produces one line, not twenty.
+    """
+    from .line_coupling import coupling_note
+    freq_hz = float(getattr(project, "frequency", 50) or 50)
+    grouped: dict[str, list[str]] = {}
+    for comp in project.components:
+        if comp.type != "cable":
+            continue
+        note = coupling_note(comp.props, _cable_z0_self_per_km(comp), freq_hz)
+        if note:
+            grouped.setdefault(note, []).append(
+                str(comp.props.get("name") or comp.id))
+
+    out = []
+    for note, names in list(grouped.items())[:MAX_COUPLING_ASSUMPTIONS]:
+        shown = ", ".join(names[:4])
+        if len(names) > 4:
+            shown += f" +{len(names) - 4} more"
+        out.append(f"Parallel zero-sequence coupling — {shown}: {note}")
+    if len(grouped) > MAX_COUPLING_ASSUMPTIONS:
+        out.append(
+            f"Parallel zero-sequence coupling: "
+            f"{len(grouped) - MAX_COUPLING_ASSUMPTIONS} further "
+            f"configuration(s) applied but not listed.")
+    return out
+
+
+def _cable_z0(comp, base_mva, v_kv, freq_hz=50.0):
+    """Cable zero-sequence per-unit impedance — the walker's math, factored
+    out so the nodal Z0 network builder uses the identical formula ([PS-1]).
+    Self impedance per ``_cable_z0_self_per_km``.
+
+    Parallel circuits are NOT a plain Z0/n divide. Zero-sequence current is in
+    phase in all three conductors and returns through earth, so circuits sharing
+    a tower are strongly mutually coupled through that common return and the
+    mutual term raises the effective Z0 well above Z0/n (see line_coupling).
+
+    The coupling used to be applied ONLY when explicit r0/x0 props were set —
+    the composite 3×Z1 fallback went through ``_cable_impedance``, which does
+    the plain positive-sequence /n divide. Whether the user typed an r0 value
+    is not a physical property of the tower, so a parallel overhead line with
+    no zero-sequence data silently got the naive model (and disagreed with
+    unbalanced_loadflow.py, which couples on both paths). The scale now applies
+    on both. Single circuits are bit-identical either way (scale = 1), as is
+    any cable with ``z0_coupling: none`` (scale = 1/n, the old divide).
+    """
+    from .line_coupling import parallel_z0_scale
+    if v_kv is None or v_kv <= 0:
+        v_kv = comp.props.get("voltage_kv", 11)
+    z_base = (v_kv ** 2) / base_mva
+    length = comp.props.get("length_km", 1)
+    z0_self_per_km = _cable_z0_self_per_km(comp)
+    z0_ohm = z0_self_per_km * length * parallel_z0_scale(
+        comp.props, z0_self_per_km, freq_hz)
+    return complex(z0_ohm.real / z_base, z0_ohm.imag / z_base)
 
 
 def _transformer_impedance(comp, base_mva):
@@ -1230,7 +1315,7 @@ def _wind_turbine_impedance(comp, base_mva):
     return complex(r_pu, x_pu)
 
 
-def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MAX):
+def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MAX, freq_hz=50.0):
     """Collect zero-sequence impedances from sources feeding a bus.
 
     Zero-sequence current can only flow through grounded transformer windings.
@@ -1415,7 +1500,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
         if comp.type == "cable":
             # [EE-12] per-unit base from the bus-inferred voltage zone,
             # not the cable's own voltage_kv prop
-            z_cable = _cable_z0(comp, base_mva, v_kv)
+            z_cable = _cable_z0(comp, base_mva, v_kv, freq_hz)
             new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
             # Forward the far-end port (the port by which the neighbor is
             # entered) exactly as the transparent-element branch does — a
@@ -1723,7 +1808,7 @@ def _parallel_impedances(impedances):
 # enter this code path, keeping legacy results byte-identical.
 
 
-def _build_bus_network(net_buses, components, adjacency, base_mva, c):
+def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50.0):
     """Build bus-level sequence networks: series branches between bus-like
     nodes and source shunts at each node, for the positive/negative and zero
     sequence. Source shunts INCLUDE the series impedance accumulated between
@@ -1887,7 +1972,7 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c):
                 walk0(neighbor_id, z0_path + z0_element, visited, from_bus_id, remote_port, v_far)
             return
         if t == "cable":
-            z_cable = _cable_z0(comp, base_mva, v_kv)
+            z_cable = _cable_z0(comp, base_mva, v_kv, freq_hz)
             for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
                 walk0(neighbor_id, z0_path + z_cable, visited, from_bus_id, remote_port, v_kv)
             return
@@ -2033,7 +2118,7 @@ def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
                  if comp.type in ("bus", "distribution_board")
                  and str(comp.props.get("system", "ac")).lower() != "dc"]
     net = _build_bus_network(net_buses, components, adjacency,
-                             project.baseMVA, c)
+                             project.baseMVA, c, freq_hz=(project.frequency or 50))
     shunts = {}
     for bid, lst in net["shunts12"].items():
         shunts[bid] = [z1 for (z1, _z2, sid, st) in lst

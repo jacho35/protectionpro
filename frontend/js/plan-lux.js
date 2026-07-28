@@ -1,12 +1,21 @@
 /* ProtectionPro — Plan Markup lighting (lux) heatmap.
  *
- * A first-order point-by-point horizontal-illuminance model over the plan:
- * each lighting fitting is treated as a point source of luminous intensity
- * I0 = lumens / (2π·(1−cos(β/2))) within its beam cone β, and the horizontal
- * illuminance it casts at a floor point is E = I0·cosθ / d² (cosine + inverse-
- * square law), summed over all fittings. Rendered as a translucent heatmap.
- * Requires calibration (metres). Approximate — for design guidance, not a
- * substitute for a photometric tool.
+ * Point-by-point horizontal illuminance over the plan: E = I(θ,φ)·cosθ / d²
+ * (cosine + inverse-square law) summed over every fitting, rendered as a
+ * translucent heatmap. Requires calibration (metres).
+ *
+ * The intensity I comes from one of two models, per fitting:
+ *   • measured — the fitting references an imported IES photometric file
+ *     (`props.iesId`, see plan-ies.js), so I is read from the manufacturer's
+ *     candela web at the real (vertical, azimuth) angle, rotated into the
+ *     fitting's own frame. This is the accurate path.
+ *   • cone — no IES file: the fallback treats the fitting as a point source
+ *     radiating uniformly inside a beam cone β, I0 = lumens / (2π·(1−cos(β/2))).
+ *     Fine for a first pass, but it ignores the optic entirely.
+ *
+ * Even on the measured path this is a direct-illuminance model — no
+ * interreflection, no obstruction — so it is design guidance, not a substitute
+ * for a photometric tool.
  */
 
 const PlanLux = {
@@ -24,7 +33,12 @@ const PlanLux = {
     if (btn) btn.classList.toggle('active', this.enabled);
     if (this.enabled) {
       const peak = this._grid ? this._grid.max : this._computeAndPeak();
-      if (peak != null) UI.toast(`Lux heatmap on — peak ≈ ${Math.round(peak)} lx`, 'info');
+      // Say which model produced the numbers — a cone approximation and a
+      // measured web can differ several-fold under a narrow optic.
+      const measured = this.usesPhotometry();
+      if (peak != null) UI.toast(
+        `Lux heatmap on — peak ≈ ${Math.round(peak)} lx (${measured ? 'IES photometry' : 'cone approximation — import an IES file for measured optics'})`,
+        'info');
     }
   },
 
@@ -33,19 +47,37 @@ const PlanLux = {
   _computeAndPeak() { this._compute(); return this._grid ? this._grid.max : null; },
 
   // Lighting fittings: any element in a Lighting group or carrying watts.
+  // A fitting with `props.iesId` resolves to its photometric profile; `ratio`
+  // rescales the file's candela web when the fitting's rated output differs
+  // from the tested luminaire's (same optic, different lamp/driver).
   _fittings() {
     const out = [];
+    const ies = (typeof PlanIES !== 'undefined') ? PlanIES : null;
     for (const el of AppState.planMarkup.elements) {
       const def = PLAN_DEFS.element(el.type);
       if (!def) continue;
       const isLight = def.group === 'Lighting' || (el.props && el.props.watts != null);
       if (!isLight) continue;
-      const watts = (el.props && el.props.watts != null) ? el.props.watts : (def.defaults && def.defaults.watts) || 0;
-      const lumens = (el.props && el.props.lumens) ? el.props.lumens : watts * this.settings.efficacy;
-      if (lumens > 0) out.push({ x: el.x, y: el.y, lumens });
+      const p = el.props || {};
+      const prof = (ies && p.iesId) ? ies.byId(p.iesId) : null;
+      const watts = (p.watts != null) ? p.watts : (def.defaults && def.defaults.watts) || 0;
+      // With a profile and no explicit override, the file's own flux is the
+      // best figure — it is the luminaire's measured output, not an efficacy
+      // guess off nameplate watts.
+      const lumens = p.lumens ? Number(p.lumens)
+        : (prof ? prof.lumens : watts * this.settings.efficacy);
+      if (!(lumens > 0)) continue;
+      out.push({
+        x: el.x, y: el.y, lumens, prof,
+        ratio: (prof && prof.lumens > 0) ? lumens / prof.lumens : 1,
+        rot: el.rotation || 0,
+      });
     }
     return out;
   },
+
+  // True when at least one fitting is driven by measured photometry.
+  usesPhotometry() { return this._fittings().some(f => f.prof); },
 
   _bbox(fittings) {
     const pm = AppState.planMarkup;
@@ -82,13 +114,24 @@ const PlanLux = {
         const wx = minX + (i + 0.5) * step, wy = minY + (j + 0.5) * step;
         let E = 0;
         for (const f of fittings) {
-          const rM = Math.hypot(wx - f.x, wy - f.y) * factor;   // horizontal dist (m)
+          const dx = wx - f.x, dy = wy - f.y;
+          const rM = Math.hypot(dx, dy) * factor;                // horizontal dist (m)
           const d2 = rM * rM + h * h;
           const d = Math.sqrt(d2);
           const cosT = h / d;                                    // nadir cosine
-          if (cosT < cosHalf) continue;                          // outside beam cone
-          const I0 = f.lumens / (2 * Math.PI * (1 - cosHalf) || 1e-6);
-          E += I0 * cosT / d2;
+          let I;
+          if (f.prof) {
+            // Measured web: the angle off nadir, and the azimuth taken into the
+            // fitting's own frame so a rotated asymmetric optic points where it
+            // is drawn. Canvas y grows downward, hence the negated dy.
+            const vDeg = Math.acos(Math.max(-1, Math.min(1, cosT))) * 180 / Math.PI;
+            const azim = Math.atan2(-dy, dx) * 180 / Math.PI - f.rot;
+            I = PlanIES.intensity(f.prof, vDeg, azim) * f.ratio;
+          } else {
+            if (cosT < cosHalf) continue;                        // outside beam cone
+            I = f.lumens / (2 * Math.PI * (1 - cosHalf) || 1e-6);
+          }
+          if (I > 0) E += I * cosT / d2;
         }
         vals[j * cols + i] = E;
         if (E > max) max = E;

@@ -569,7 +569,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Post-run load flow summary: generation dispatch table + solver warnings.
   // Shown automatically when the run is noteworthy (islanding, curtailment,
   // de-energized buses, non-convergence); reuses the calc modal shell.
-  function showDispatchSummary(result) {
+  // `title` is parameterized because the unbalanced solver reuses this shell
+  // for its warnings — it has no dispatch/svc of its own (both sections are
+  // guarded on length), and its warnings were previously counted in the status
+  // bar with no way to read them.
+  function showDispatchSummary(result, title = 'Load Flow — Generation Dispatch') {
     const modal = document.getElementById('calc-modal');
     const dispatch = result.dispatch || [];
     const warnings = result.warnings || [];
@@ -640,7 +644,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     html += `<div style="margin-top:16px;"><button id="dispatch-close" class="btn-small">Close</button></div>`;
 
-    modal.querySelector('#calc-modal-title').textContent = 'Load Flow — Generation Dispatch';
+    modal.querySelector('#calc-modal-title').textContent = title;
     modal.querySelector('#calc-modal-body').innerHTML = html;
     modal.style.display = '';
     document.getElementById('dispatch-close').addEventListener('click', () => {
@@ -855,6 +859,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const warnCount = result.warnings ? result.warnings.length : 0;
       statusEl.textContent = `Unbalanced load flow complete. Max VUF: ${vufMax.toFixed(2)}%` +
         (warnCount > 0 ? ` (${warnCount} warning${warnCount > 1 ? 's' : ''})` : '');
+      // The count alone was a dead end — VUF exceedances, PV-bus Q caveats and
+      // the zero-sequence coupling disclosure had no readable surface.
+      if (warnCount > 0 || !result.converged) {
+        showDispatchSummary(result, 'Unbalanced Load Flow — Warnings');
+      }
     } catch (e) {
       statusEl.textContent = 'Unbalanced load flow failed.';
       showValidationModal('Unbalanced Load Flow — Error', [{ msg: e.message || 'Unknown error' }], [], null);

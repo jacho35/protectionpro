@@ -185,6 +185,9 @@ body.dark-mode .plan-action-chip { background: rgba(30,30,46,0.96); }
 .plan-circuit-box { border-top: 1px solid var(--border-color); margin-top: 10px; padding-top: 8px; }
 .plan-circuit-h { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 2px 6px; }
 .plan-circuit-note { font-size: 11px; color: var(--text-muted); margin: 4px 2px; }
+/* A phase imbalance or an unassigned 3P+N tap is worth noticing, not muting. */
+.plan-circuit-note.plan-circuit-warn { color: #b45309; font-weight: 600; }
+body.dark-mode .plan-circuit-note.plan-circuit-warn { color: #fbbf24; }
 .plan-circuit-btn { display: block; width: 100%; margin-top: 6px; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font-size: 12px; text-align: left; }
 .plan-circuit-btn:hover { background: var(--bg-tertiary); }
 

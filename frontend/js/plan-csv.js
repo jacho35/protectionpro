@@ -101,7 +101,11 @@ const PlanCSV = {
     const vert = this._verticalRuns();
     if (vert.length) {
       rows.push([], ['=== VERTICAL RISERS (m) ==='], [...(fc ? ['Floor'] : []), 'Riser', 'From → To', '', '', 'Vertical Length (m)', '']);
-      for (const v of vert) rows.push([...(fc ? [''] : []), v.name, `L${v.fromLevel} → L${v.toLevel}`, '', '', v.length.toFixed(2), '']);
+      for (const v of vert) {
+        const span = `L${v.fromLevel} → L${v.toLevel}`;
+        const label = (v.from || v.to) ? `${v.from} → ${v.to} (${span})` : span;
+        rows.push([...(fc ? [''] : []), v.name, label, '', '', v.length.toFixed(2), '']);
+      }
     }
     rows.push([], ['=== TOTALS (m) ===']);
     for (const [t, v] of Object.entries(totals)) rows.push([(PLAN_DEFS.route(t) || {}).name || t, v]);
@@ -110,10 +114,35 @@ const PlanCSV = {
     this._download(rows, 'routes');
   },
 
-  // One entry per riser shaft (risers sharing a name across floors): the full
-  // vertical span, floor-to-floor heights × riser factor.
+  // Vertical riser cable, in metres.
+  //
+  // When boards are actually connected to the shaft (a board → riser leg on two
+  // or more storeys), each riser-leg pair is its own cable and gets its own row
+  // — matching one-for-one the cross-floor feeders PlanSync puts on the SLD, so
+  // the schedule, the BOQ and the SLD agree on how much riser cable exists. A
+  // shaft carrying three sub-boards is three vertical runs, not one.
+  //
+  // With no legs drawn (a riser marked up but not yet wired) it falls back to
+  // the shaft's full span, one row per shaft, as before.
   _verticalRuns() {
     if (!this._building()) return [];
+    if (typeof PlanSync !== 'undefined' && PlanSync._riserShafts) {
+      const out = [];
+      for (const { shaft, legs } of PlanSync._riserShafts()) {
+        const src = PlanSync._riserSource(legs);
+        if (!src) continue;
+        for (const leg of legs) {
+          if (leg === src || leg.level === src.level) continue;
+          out.push({
+            name: src.riser.name || shaft,
+            fromLevel: src.level, toLevel: leg.level,
+            length: AppState.planVerticalRunM(src.level, leg.level),
+            from: src.board.name || '', to: leg.board.name || '',
+          });
+        }
+      }
+      if (out.length) return out;
+    }
     const out = [], seen = new Set();
     for (const el of AppState.planAllElements()) {
       if (el.type !== 'bd_riser') continue;
@@ -242,7 +271,28 @@ const PlanCSV = {
       add('Equipment', (PLAN_DEFS.element(t) || {}).name || t, n, 'ea', equipRate);
     }
     for (const [k, len] of Object.entries(trLen)) add('Excavation', `${k} trench`, len, 'm', trenchRate);
+    // Splice joints at junction boxes — labour, not material, so they carry no
+    // rate by default; the count is what the estimator needs.
+    if (typeof PlanCircuits !== 'undefined' && PlanCircuits.jbJointTotals) {
+      const j = PlanCircuits.jbJointTotals();
+      if (j.splices) add('Labour', 'Junction-box splices (cores joined, 1P+N+E = 3 / 3P+N+E = 5)', j.splices, 'ea', 0);
+      if (j.terminations) add('Labour', 'Junction-box cable terminations (cable ends × cores)', j.terminations, 'ea', 0);
+    }
     rows.push([], ['', '', 'TOTAL', '', '', '', grand.toFixed(2)]);
+    // Per-box detail, so an unwired box drawn by mistake is visible rather than
+    // silently absent from the totals.
+    if (typeof PlanCircuits !== 'undefined' && PlanCircuits.jbJoints) {
+      const jbs = PlanCircuits.jbJoints();
+      if (jbs.length) {
+        rows.push([], ['=== JUNCTION-BOX JOINTS ==='],
+          ['Ref', 'Floor', 'Circuit', 'Cables in', 'Cores', 'Splices', 'Terminations']);
+        for (const b of jbs) {
+          rows.push([b.name, b.floor, b.poles === '3P' ? '3P+N+E' : '1P+N+E',
+            b.cables, b.cores, b.splices, b.terminations,
+            b.cables < 2 ? 'not spliced — fewer than two cables attached' : '']);
+        }
+      }
+    }
     this._download(rows, 'boq');
   },
 

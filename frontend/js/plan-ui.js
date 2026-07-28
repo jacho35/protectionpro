@@ -22,6 +22,8 @@ const PlanUI = {
       if (e.target.closest('[data-role="edit-schedule"]')) { this._editBoardSchedule(); return; }
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
+      if (e.target.closest('[data-role="import-ies"]')) { this._importIes(); return; }
+      if (e.target.closest('[data-role="balance-phases"]')) { this._balancePhases(); return; }
     });
   },
 
@@ -118,7 +120,17 @@ const PlanUI = {
     // Background plans: visibility, opacity, PDF page-nav, remove.
     html += `<div class="plan-plans"><div class="plan-layers-title">Background Plans
       <button class="plan-cleanup-btn" data-role="cleanup" title="Delete unclaimed/orphaned plan images on the server">Clean</button></div>`;
-    if (!pm.plans.length) html += `<div class="plan-props-empty" style="padding:2px">No plan imported.</div>`;
+    const dxf = pm.dxfUnderlay;
+    if (!pm.plans.length && !dxf) html += `<div class="plan-props-empty" style="padding:2px">No plan imported.</div>`;
+    // The DXF trace-over reference is a background layer of this floor too, and
+    // now that it persists it needs a visible way off the drawing.
+    if (dxf) {
+      html += `<div class="plan-plan-row">
+        <label class="plan-plan-vis"><input type="checkbox" data-role="dxf-vis" ${dxf.hidden ? '' : 'checked'}></label>
+        <span class="plan-plan-name" title="${escHtml(dxf.name)} — ${dxf.count} entities">◫ ${escHtml(dxf.name)}</span>
+        <button class="plan-plan-del" data-role="remove-dxf" title="Remove the DXF reference underlay">✕</button>
+      </div>`;
+    }
     for (const P of pm.plans) {
       const nav = (P.pdfPageCount > 1)
         ? `<span class="plan-pagenav"><button data-role="prev" data-plan="${escHtml(P.id)}">◀</button>${P.pdfPage}/${P.pdfPageCount}<button data-role="next" data-plan="${escHtml(P.id)}">▶</button></span>` : '';
@@ -140,7 +152,7 @@ const PlanUI = {
 
   async _cleanup() {
     try {
-      const resp = await fetch(`${API_BASE}/plan-images/cleanup`, { method: 'POST' });
+      const resp = await fetch(`${API_BASE}/plan-images/cleanup`, { method: 'POST', headers: API.authHeaders() });
       const j = await resp.json();
       UI.toast(`Cleaned ${j.deleted != null ? j.deleted : 0} orphaned plan image(s).`, 'success');
     } catch (e) {
@@ -168,6 +180,14 @@ const PlanUI = {
     if (planCtl) {
       const role = planCtl.dataset.role;
       if (role === 'cleanup') { this._cleanup(); return; }
+      if (role === 'remove-dxf') {
+        UI.confirm('Remove the DXF reference underlay from this floor?', { danger: true, okText: 'Remove' }).then(ok => {
+          if (!ok || typeof PlanDxfImport === 'undefined') return;
+          PlanDxfImport.clear();
+          this.renderPalette();
+        });
+        return;
+      }
       const p = planCtl.dataset.plan && this._planById(planCtl.dataset.plan);
       if (role === 'remove-plan' && p) {
         const pm = AppState.planMarkup;
@@ -241,6 +261,14 @@ const PlanUI = {
       } else if (role === 'vis') {
         const p = this._planById(e.target.dataset.plan);
         if (p) { p.visible = e.target.checked; PlanEngine.requestDraw({ bg: true }); }
+      } else if (role === 'dxf-vis') {
+        const d = AppState.planMarkup.dxfUnderlay;
+        if (d) {
+          d.hidden = !e.target.checked;
+          if (typeof PlanDxfImport !== 'undefined' && PlanDxfImport._overlay) PlanDxfImport._overlay.hidden = d.hidden;
+          if (typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty();
+          PlanEngine.requestDraw({ bg: true });
+        }
       }
     });
   },
@@ -344,8 +372,48 @@ const PlanUI = {
         </select></div>
       <div class="plan-field"><label class="plan-field-label" title="Auto VA conventions: a light contributes its watts (≈VA at unity PF); a socket 200 VA per outlet (double = 400); a fused spur a nominal 2000 VA. The board lump then applies PF 0.85 and the way demand factor. Type a value here to override the auto figure.">Load <span class="plan-field-unit">(VA)</span></label>
         <input type="text" inputmode="numeric" data-key="load_va" value="${escHtml(loadVal)}" placeholder="auto: ${autoVa}"></div>
+      ${this._tapPhaseField(item, poles)}
       <div class="plan-circuit-note" title="Lights use watts (≈VA); sockets 200 VA/outlet; FCU 2000 VA. Overriding Load pins this device's VA.">Effective load: ${PlanCircuits.deviceVA(item)} VA${boards.length ? '' : ' — place a Distribution Board first'}</div>
     </div>`;
+  },
+
+  // Tap phase — only meaningful for a single-phase fixture sitting on a 3P+N
+  // final circuit. A 3P device spans all three, and on a 1P way the way's own
+  // phase already decides it, so the picker is replaced by a note in both cases
+  // rather than offering a choice that does nothing.
+  _tapPhaseField(item, poles) {
+    const p = item.props || {};
+    if (poles === '3P') {
+      return `<div class="plan-circuit-note">Three-phase device — draws on R, W and B; no tap phase.</div>`;
+    }
+    const way = this._wayOf(item);
+    if (!way) {
+      return `<div class="plan-field"><label class="plan-field-label" title="Which phase this fixture taps on a 3P+N circuit. Assign the circuit first.">Tap phase</label>
+        <select data-key="tapPhase" disabled><option>— assign a circuit first —</option></select></div>`;
+    }
+    if (way.poles !== '3P') {
+      const ph = ['R', 'W', 'B'].includes(way.phase) ? way.phase : 'R';
+      return `<div class="plan-circuit-note">Way ${escHtml(String(way.way))} is single-phase — this fixture sits on phase ${escHtml(ph)}.</div>`;
+    }
+    const cur = String(p.tapPhase || '').toUpperCase();
+    const opt = (v, l) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
+    return `<div class="plan-field"><label class="plan-field-label" title="On a 3P+N final circuit each single-phase fixture taps one phase to neutral. Balancing these across the run is what keeps the board's phase loading (and neutral current) sane.">Tap phase <span class="plan-field-unit">(3P+N)</span></label>
+      <select data-key="tapPhase">
+        <option value="" ${cur ? '' : 'selected'}>— unassigned —</option>
+        ${opt('R', 'R (L1)')}${opt('W', 'W (L2)')}${opt('B', 'B (L3)')}
+      </select></div>`;
+  },
+
+  // The schedule way a tagged device belongs to (stable id first, then number).
+  _wayOf(item) {
+    const p = (item && item.props) || {};
+    if (!p.circuitDbId) return null;
+    const board = PlanCircuits.boardEls().find(b => b.id === p.circuitDbId);
+    const comp = board && board.el.sldId && AppState.components.get(board.el.sldId);
+    if (!comp || !Array.isArray(comp.props.circuits)) return null;
+    return (p.circuitWid && comp.props.circuits.find(c => c.id === p.circuitWid))
+      || comp.props.circuits.find(c => String(c.way) === String(p.circuitNo) && c.type !== 'feeder_db')
+      || null;
   },
 
   // Distribution-board panel: way count + one-click auto-distribute of connected
@@ -354,12 +422,26 @@ const PlanUI = {
     const comp = item.sldId && AppState.components.get(item.sldId);
     const ways = (comp && Array.isArray(comp.props.circuits)) ? comp.props.circuits.length : 0;
     const linked = comp ? '' : ' <span class="plan-circuit-note">(sync with the SLD to create its schedule)</span>';
+    // Per-phase loading + imbalance: the number that tells you whether the 3P+N
+    // tap assignments are actually doing their job.
+    let phase = '';
+    const ph = comp ? PlanCircuits.boardPhaseLoad(item.id) : null;
+    if (ph && ph.total > 0) {
+      const warn = ph.imbalancePct > 20 ? ' plan-circuit-warn' : '';
+      const un = ph.unassigned > 0
+        ? `<div class="plan-circuit-note plan-circuit-warn">${Math.round(ph.unassigned)} VA on 3P+N circuits has no tap phase — balance to assign it.</div>` : '';
+      phase = `<div class="plan-circuit-note${warn}" title="Per-phase connected VA across every way on this board, and the spread between the heaviest and lightest phase relative to the mean.">
+          Phase load — R ${Math.round(ph.R)} · W ${Math.round(ph.W)} · B ${Math.round(ph.B)} VA · imbalance ${ph.imbalancePct}%
+        </div>${un}
+        <button class="plan-circuit-btn" data-role="balance-phases">⚖ Balance 3P+N tap phases</button>`;
+    }
     return `<div class="plan-circuit-box">
       <div class="plan-circuit-h">Circuits</div>
       <div class="plan-circuit-note">${ways} way(s) on this board${linked}</div>
       <button class="plan-circuit-btn" data-role="edit-schedule">📋 Edit Circuit Schedule</button>
       <button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices</button>
       <button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>
+      ${phase}
     </div>`;
   },
 
@@ -376,11 +458,80 @@ const PlanUI = {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
       return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>`;
     }
+    if (f.type === 'ies_select') return this._iesField(f, v, label);
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '', f.step != null ? `step="${f.step}"` : ''].join(' ');
       return `<div class="plan-field">${label}<input type="number" data-key="${f.key}" value="${escHtml(v)}" ${attrs}></div>`;
     }
     return `<div class="plan-field">${label}<input type="text" data-key="${f.key}" value="${escHtml(v)}"></div>`;
+  },
+
+  // Balance the selected board's 3P+N tap phases. Unassigned fixtures are
+  // placed first; if there are none left to place, offer to redo the existing
+  // assignment rather than reporting "0 assigned" and leaving the user stuck.
+  async _balancePhases() {
+    const sel = [...PlanMarkup.selectedIds];
+    const el = sel.length === 1 && AppState.planMarkup.elements.find(x => x.id === sel[0]);
+    if (!el || el.type !== 'bd_db') return;
+    let r = PlanCircuits.balancePhases(el.id, false);
+    if (!r.assigned) {
+      if (!r.ways) { UI.toast('No three-phase final circuits on this board — nothing to balance.', 'info'); return; }
+      const redo = await UI.confirm(
+        'Every fixture on this board already has a tap phase. Reassign them all to even the load out?',
+        { okText: 'Reassign', cancelText: 'Leave as is' });
+      if (!redo) return;
+      r = PlanCircuits.balancePhases(el.id, true);
+    }
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    this.renderProps();
+    if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
+    UI.toast(`Balanced ${r.assigned} fixture(s) across ${r.ways} three-phase circuit(s) — R ${Math.round(r.load.R)} · W ${Math.round(r.load.W)} · B ${Math.round(r.load.B)} VA, imbalance ${r.load.imbalancePct}%.`, 'success');
+  },
+
+  // Import an IES file and attach it to the selected fitting straight away —
+  // picking the file then having to pick it again from the list is a pointless
+  // second step when there is exactly one fitting selected.
+  _importIes() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.ies,.IES,text/plain';
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file || typeof PlanIES === 'undefined') return;
+      const before = new Set(PlanIES.profiles().map(p => p.id));
+      await PlanIES.importFile(file);
+      const added = PlanIES.profiles().find(p => !before.has(p.id)) || PlanIES.profiles().slice(-1)[0];
+      const sel = [...PlanMarkup.selectedIds];
+      if (added && sel.length === 1) {
+        const el = AppState.planMarkup.elements.find(x => x.id === sel[0]);
+        if (el) {
+          el.props = el.props || {};
+          el.props.iesId = added.id;
+          if (typeof PlanLux !== 'undefined') PlanLux.invalidate();
+          PlanMarkup.snapshot(); PlanMarkup.markDirty();
+        }
+      }
+      this.renderProps();
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    });
+    input.click();
+  },
+
+  // Photometry picker: the project's imported IES profiles plus an import
+  // button. Shows the selected profile's flux/watts/peak candela so the user can
+  // tell at a glance which luminaire the heatmap is actually using.
+  _iesField(f, v, label) {
+    const libs = (typeof PlanIES !== 'undefined') ? PlanIES.profiles() : [];
+    const opts = ['<option value="">— cone approximation —</option>']
+      .concat(libs.map(p => `<option value="${escHtml(p.id)}" ${p.id === v ? 'selected' : ''}>${escHtml(p.name)}</option>`))
+      .join('');
+    const sel = libs.find(p => p.id === v);
+    const note = sel
+      ? `<div class="plan-circuit-note">${Math.round(sel.lumens)} lm · ${sel.watts || '?'} W · peak ${Math.round(sel.maxCd)} cd${sel.resampled ? ' · resampled' : ''}${sel.warning ? ` · ${escHtml(sel.warning)}` : ''}</div>`
+      : `<div class="plan-circuit-note">No photometry — the heatmap uses the beam-cone fallback.</div>`;
+    return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>
+      ${note}
+      <button class="plan-circuit-btn" data-role="import-ies">📈 Import IES file…</button>`;
   },
 
   // Build <option>s for a cable_select field. Building routes draw from the

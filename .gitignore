@@ -6,6 +6,9 @@ __pycache__/
 .env
 node_modules/
 
+# Ad-hoc verification harnesses / throwaway probes — never part of the repo
+scratch/
+
 # Personal Claude Code settings (permissions) — not shared
 .claude/settings.local.json
 core

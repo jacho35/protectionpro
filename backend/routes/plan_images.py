@@ -18,8 +18,11 @@ router = APIRouter(prefix="/plan-images", tags=["plan-images"])
 # Raster rendered from an A0/A1 PDF at high DPI can be tens of MB; cap well
 # above that but below anything that would threaten the DB.
 MAX_UPLOAD_BYTES = 60 * 1024 * 1024
-ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "application/pdf"}
-ALLOWED_KIND = {"raster", "pdf"}
+# `application/json` carries a DXF trace-over underlay: the normalised entity
+# list the DXF import already produces, stored instead of the source DXF so a
+# reload is one GET rather than another ezdxf parse.
+ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "application/pdf", "application/json"}
+ALLOWED_KIND = {"raster", "pdf", "dxf"}
 # Orphan uploads (never attached to a saved project) are swept after this.
 ORPHAN_TTL = timedelta(hours=24)
 

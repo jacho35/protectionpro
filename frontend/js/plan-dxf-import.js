@@ -6,18 +6,26 @@
  *     editable plan entities on the active floor (relinking each device's
  *     circuit to its board by name).
  *   • underlay — a third-party DXF: the backend flattens it (blocks exploded)
- *     to a normalised entity list which we draw as a grey trace-over backdrop
- *     (session-only, not persisted).
+ *     to a normalised entity list which we draw as a grey trace-over backdrop.
+ *
+ * An underlay belongs to one floor and outlives the session: the normalised
+ * entity list is uploaded to the plan-image store (kind "dxf") exactly like a
+ * background raster, and the floor keeps only the descriptor. Storing the
+ * normalised list rather than the source DXF means reloading is a single GET
+ * with no second ezdxf parse, and the project JSON — snapshotted into a
+ * Revision row on every save — stays small.
  */
 
 const PlanDxfImport = {
-  _overlay: null,   // {entities, bbox, offX, offY, scale, name}
+  _overlay: null,       // active floor's live underlay: {entities,bbox,offX,offY,scale,name}
+  _entities: new Map(), // imageId → normalised entity list (decoded, shared across floors)
+  _pending: new Set(),  // imageId currently fetching
 
   async importFile(file) {
     try {
       const fd = new FormData();
       fd.append('file', file, file.name || 'plan.dxf');
-      const resp = await fetch(`${API_BASE}/plan/dxf-import`, { method: 'POST', body: fd });
+      const resp = await fetch(`${API_BASE}/plan/dxf-import`, { method: 'POST', body: fd, headers: API.authHeaders() });
       if (!resp.ok) {
         let detail = `HTTP ${resp.status}`;
         try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (_) {}
@@ -25,7 +33,7 @@ const PlanDxfImport = {
       }
       const data = await resp.json();
       if (data.mode === 'roundtrip') this._reconstruct(data);
-      else this._setUnderlay(data.entities || [], file.name);
+      else await this._setUnderlay(data.entities || [], file.name);
     } catch (e) {
       UI.alert('DXF import failed: ' + (e && e.message ? e.message : e));
     }
@@ -124,8 +132,7 @@ const PlanDxfImport = {
   },
 
   // ── Underlay: normalised entity list (lowercase) from the backend ──
-  _setUnderlay(entities, fname) {
-    if (!entities.length) { UI.alert('No supported entities found in that DXF.'); return; }
+  _bboxOf(entities) {
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
     const acc = (x, y) => { if (x < bx0) bx0 = x; if (y < by0) by0 = y; if (x > bx1) bx1 = x; if (y > by1) by1 = y; };
     for (const e of entities) {
@@ -134,25 +141,141 @@ const PlanDxfImport = {
       else if (e.type === 'lwpolyline') (e.pts || []).forEach(p => acc(p[0], p[1]));
       else if (e.type === 'text') acc(e.x, e.y);
     }
-    if (bx0 === Infinity) { UI.alert('No drawable geometry in that DXF.'); return; }
-    const w = Math.max(1, bx1 - bx0), h = Math.max(1, by1 - by0);
-    this._overlay = { entities, bbox: { minX: bx0, minY: by0, maxX: bx1, maxY: by1 }, scale: 1000 / Math.max(w, h), offX: 0, offY: 0, name: fname || 'DXF' };
-    if (typeof PlanEngine !== 'undefined') { PlanEngine.requestDraw({ bg: true }); PlanEngine.zoomFit(); }
-    UI.toast(`Imported ${entities.length} DXF entities (session reference).`, 'success');
+    return (bx0 === Infinity) ? null : { minX: bx0, minY: by0, maxX: bx1, maxY: by1 };
   },
 
-  clear() { this._overlay = null; if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ bg: true }); },
+  async _setUnderlay(entities, fname) {
+    if (!entities.length) { UI.alert('No supported entities found in that DXF.'); return; }
+    const bbox = this._bboxOf(entities);
+    if (!bbox) { UI.alert('No drawable geometry in that DXF.'); return; }
+    const w = Math.max(1, bbox.maxX - bbox.minX), h = Math.max(1, bbox.maxY - bbox.minY);
+    const desc = {
+      imageId: null, name: fname || 'DXF', count: entities.length,
+      bbox, scale: 1000 / Math.max(w, h), offX: 0, offY: 0,
+    };
+    const fl = AppState.planActiveFloor();
+    const prev = fl && fl.data.dxfUnderlay;
+
+    // Persist the normalised list. A failed upload still leaves a usable
+    // session underlay — losing the trace-over on reload beats losing the
+    // import outright — but say so, since the user will expect it to stick.
+    let stored = true;
+    try {
+      const meta = await this._uploadEntities(entities, desc.name);
+      desc.imageId = meta.id;
+      this._entities.set(meta.id, entities);
+    } catch (e) {
+      stored = false;
+    }
+    // A floor holds one underlay; release the previous row only once the
+    // replacement is safely stored (and never the row we just wrote).
+    if (prev && prev.imageId != null && prev.imageId !== desc.imageId) this._deleteStored(prev.imageId);
+    if (fl) { fl.data.dxfUnderlay = desc; AppState.planMarkup.dxfUnderlay = desc; }
+    this._overlay = { entities, bbox: desc.bbox, scale: desc.scale, offX: 0, offY: 0, name: desc.name };
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    if (typeof PlanEngine !== 'undefined') { PlanEngine.requestDraw({ bg: true }); PlanEngine.zoomFit(); }
+    UI.toast(stored
+      ? `Imported ${entities.length} DXF entities as a trace-over reference.`
+      : `Imported ${entities.length} DXF entities (this session only — the reference could not be saved).`,
+      stored ? 'success' : 'warning');
+  },
+
+  // Point the live overlay at the active floor's underlay, fetching the stored
+  // entity list if it isn't decoded yet. Called wherever the active floor can
+  // change (workspace activate, floor switch, project load, undo restore).
+  syncFloor() {
+    const fl = AppState.planActiveFloor();
+    const desc = fl && fl.data && fl.data.dxfUnderlay;
+    if (!desc) { if (this._overlay) { this._overlay = null; this._redraw(); } return; }
+    if (desc.imageId == null) return;   // unsaved session underlay: _overlay already set
+    const ents = this._entities.get(desc.imageId);
+    if (ents) { this._apply(desc, ents); return; }
+    this._fetchEntities(desc);
+  },
+
+  _apply(desc, entities) {
+    this._overlay = {
+      entities, name: desc.name || 'DXF',
+      bbox: desc.bbox || this._bboxOf(entities),
+      scale: desc.scale || 1, offX: desc.offX || 0, offY: desc.offY || 0,
+      hidden: !!desc.hidden,
+    };
+    this._redraw();
+  },
+
+  _redraw() { if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ bg: true }); },
+
+  _fetchEntities(desc) {
+    const id = desc.imageId;
+    if (this._pending.has(id)) return;
+    this._pending.add(id);
+    fetch(`${API_BASE}/plan-images/${id}`, { headers: API.authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(list => {
+        this._pending.delete(id);
+        if (!Array.isArray(list)) return;
+        this._entities.set(id, list);
+        // The floor may have changed while the fetch was in flight.
+        const cur = AppState.planActiveFloor();
+        if (cur && cur.data.dxfUnderlay && cur.data.dxfUnderlay.imageId === id) this._apply(cur.data.dxfUnderlay, list);
+      })
+      .catch(() => { this._pending.delete(id); });
+  },
+
+  async _uploadEntities(entities, name) {
+    const blob = new Blob([JSON.stringify(entities)], { type: 'application/json' });
+    const fd = new FormData();
+    fd.append('file', new File([blob], (name || 'underlay') + '.json', { type: 'application/json' }));
+    fd.append('kind', 'dxf');
+    fd.append('name', name || '');
+    if (AppState.projectId) fd.append('project_id', String(AppState.projectId));
+    const resp = await fetch(`${API_BASE}/plan-images`, { method: 'POST', body: fd, headers: API.authHeaders() });
+    if (!resp.ok) {
+      let detail = `HTTP ${resp.status}`;
+      try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    return resp.json();
+  },
+
+  // Best-effort release; the orphan cleanup sweep is the backstop.
+  _deleteStored(imageId) {
+    this._entities.delete(imageId);
+    fetch(`${API_BASE}/plan-images/${imageId}`, { method: 'DELETE', headers: API.authHeaders() }).catch(() => {});
+  },
+
+  // Every stored underlay id in the project — for the on-save orphan claim.
+  storedIds() {
+    const out = [];
+    for (const fl of AppState.planFloors()) {
+      const d = fl.data && fl.data.dxfUnderlay;
+      if (d && d.imageId != null) out.push(d.imageId);
+    }
+    return out;
+  },
+
+  // Drop the active floor's underlay (and its stored row).
+  clear() {
+    const fl = AppState.planActiveFloor();
+    const desc = fl && fl.data.dxfUnderlay;
+    if (desc && desc.imageId != null) this._deleteStored(desc.imageId);
+    if (fl) fl.data.dxfUnderlay = null;
+    AppState.planMarkup.dxfUnderlay = null;
+    this._overlay = null;
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    this._redraw();
+  },
 
   _tx(o, x, y) { return { x: o.offX + (x - o.bbox.minX) * o.scale, y: o.offY + (o.bbox.maxY - y) * o.scale }; },
 
   extentWorld() {
-    const o = this._overlay; if (!o) return null;
+    const o = this._overlay; if (!o || o.hidden) return null;
     const a = this._tx(o, o.bbox.minX, o.bbox.maxY), b = this._tx(o, o.bbox.maxX, o.bbox.minY);
     return { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
   },
 
   draw(ctx, zoom) {
-    const o = this._overlay; if (!o) return;
+    const o = this._overlay; if (!o || o.hidden) return;
     ctx.save();
     ctx.strokeStyle = 'rgba(100,116,139,0.7)';
     ctx.fillStyle = 'rgba(100,116,139,0.7)';

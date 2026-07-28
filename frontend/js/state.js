@@ -251,7 +251,7 @@ const AppState = {
   // The per-floor drawing collections. Each floor owns its own copy of these;
   // the active floor's copies are mirrored onto planMarkup.<key> as the live
   // working set the engine + tools read/write directly (see switchFloor).
-  _PLAN_FLOOR_KEYS: ['plans', 'scale', 'cropBox', 'elements', 'routes',
+  _PLAN_FLOOR_KEYS: ['plans', 'scale', 'cropBox', 'dxfUnderlay', 'elements', 'routes',
     'trenches', 'crossings', 'rooms', 'texts', 'measurements'],
 
   // A fresh, empty per-floor data bundle.
@@ -261,6 +261,10 @@ const AppState = {
                           //   pdfPages,imgW,imgH,opacity,visible,offX,offY,rotation,scaleAdj}
       scale: null,        // {p1,p2,realDist,pxDist,factor}  factor = metres per pixel
       cropBox: null,      // {x,y,w,h}
+      dxfUnderlay: null,  // traced-over DXF reference: {imageId,name,count,bbox,
+                          //   scale,offX,offY} — entities live in the plan-image
+                          //   store, so only this descriptor is in the project
+
       elements: [],       // {id,type,x,y,rotation,name,reticId,props}
       routes: [],         // {id,type,fromId,toId,points:[{x,y,snappedTo}],cableType,curved,props}
       trenches: [],       // {id,name,excType,points:[{x,y}],widthOverride,depthOverride}
@@ -295,6 +299,8 @@ const AppState = {
       layers,             // discipline layers (filter by entity type) — shared
       activeLayerId: null,
       styles: {},         // sparse overrides merged over PLAN_DEFS defaults — shared
+      iesProfiles: [],    // imported IES photometric webs, shared across floors;
+                          //   a light fitting references one by props.iesId
       settings: {
         domain: 'retic', gridSize: 0.5,
         snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true,
@@ -495,7 +501,10 @@ const AppState = {
     const d = (floors[0] && floors[0].data) || {};
     return !((d.plans || []).length) && !((d.elements || []).length) && !((d.routes || []).length) &&
       !((d.trenches || []).length) && !((d.crossings || []).length) && !((d.texts || []).length) &&
-      !((d.measurements || []).length) && !((d.rooms || []).length) && !d.scale;
+      !((d.measurements || []).length) && !((d.rooms || []).length) && !d.scale &&
+      // An imported DXF trace-over is on its own worth persisting — it's a real
+      // import the user is about to draw on top of, not an empty workspace.
+      !d.dxfUnderlay;
   },
 
   // Add component
@@ -1428,6 +1437,7 @@ const AppState = {
         d = d || {};
         return {
           plans: arr(d.plans), scale: d.scale || null, cropBox: d.cropBox || null,
+          dxfUnderlay: d.dxfUnderlay || null,
           elements: arr(d.elements), routes: arr(d.routes), trenches: arr(d.trenches),
           crossings: arr(d.crossings), rooms: arr(d.rooms), texts: arr(d.texts),
           measurements: arr(d.measurements),
@@ -1456,6 +1466,7 @@ const AppState = {
         layers: (Array.isArray(p.layers) && p.layers.length) ? p.layers : pdef.layers,
         activeLayerId: p.activeLayerId || null,
         styles: (p.styles && typeof p.styles === 'object') ? p.styles : {},
+        iesProfiles: Array.isArray(p.iesProfiles) ? p.iesProfiles : [],
         settings,
         _seq: p._seq || 1,
         nameCounters: (p.nameCounters && typeof p.nameCounters === 'object') ? p.nameCounters : {},

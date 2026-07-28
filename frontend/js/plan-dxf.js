@@ -106,7 +106,7 @@ const PlanDXF = {
     if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(true, 'Exporting DXF…');
     try {
       const resp = await fetch(`${API_BASE}/plan/dxf-export`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        method: 'POST', headers: API.authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload),
       });
       if (!resp.ok) {
         let detail = `HTTP ${resp.status}`;
