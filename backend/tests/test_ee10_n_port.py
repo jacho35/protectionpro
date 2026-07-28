@@ -287,3 +287,92 @@ class TestEE10NPortWarnings:
         msgs = [w.message.lower() for w in res.warnings]
         assert any("cascaded transformers" in m for m in msgs)
         assert not any("combined turns-ratio product" in m for m in msgs)
+
+
+class TestCableFreeCascade:
+    """A cascade with NO cable between the two transformers.
+
+    [Review finding] The generalized reduction was originally gated on the
+    chain containing a cable, on the reasoning that a cable is what gets
+    mis-referred through a tap ratio. But cascaded transformers mis-refer
+    EACH OTHER: summing their per-unit impedances is exact only when every
+    unit sits on its nominal zone voltages, so a tapped 33/11 + 11/0.4
+    cascade drawn with no bus between them came out ~5e-4 pu away from the
+    same network drawn with an explicit intermediate bus — while the
+    cascaded-transformer warning told the user the chain was "modelled
+    exactly". N>=2 now always takes the exact path, cable or not.
+    """
+
+    U = {"voltage_kv": 33.0, "fault_mva": 500.0, "x_r_ratio": 10.0}
+    T1 = {"name": "T1", "rated_mva": 20.0, "voltage_hv_kv": 33.0,
+          "voltage_lv_kv": 11.0, "z_percent": 10.0, "x_r_ratio": 10.0,
+          "tap_percent": 5.0}
+    T2 = {"name": "T2", "rated_mva": 10.0, "voltage_hv_kv": 11.0,
+          "voltage_lv_kv": 0.4, "z_percent": 6.0, "x_r_ratio": 8.0,
+          "tap_percent": -2.5}
+    LOAD = {"name": "L", "rated_kva": 3000.0, "power_factor": 0.9}
+
+    def _lumped(self):
+        comps = [
+            _comp("u1", "utility", dict(self.U)),
+            _comp("busA", "bus", {"voltage_kv": 33.0, "name": "HV"}),
+            _comp("t1", "transformer", dict(self.T1)),
+            _comp("t2", "transformer", dict(self.T2)),
+            _comp("busB", "bus", {"voltage_kv": 0.4, "name": "LV"}),
+            _comp("ld", "static_load", dict(self.LOAD)),
+        ]
+        wires = [
+            _wire("w1", "u1", "busA", "out", "at_0"),
+            _wire("w2", "busA", "t1", "at_1", "primary"),
+            _wire("w3", "t1", "t2", "secondary", "primary"),
+            _wire("w4", "t2", "busB", "secondary", "at_0"),
+            _wire("w5", "busB", "ld", "at_1", "in"),
+        ]
+        return _project(comps, wires)
+
+    def _explicit_bus(self):
+        comps = [
+            _comp("u1", "utility", dict(self.U)),
+            _comp("busA", "bus", {"voltage_kv": 33.0, "name": "HV"}),
+            _comp("t1", "transformer", dict(self.T1)),
+            _comp("busM", "bus", {"voltage_kv": 11.0, "name": "MID"}),
+            _comp("t2", "transformer", dict(self.T2)),
+            _comp("busB", "bus", {"voltage_kv": 0.4, "name": "LV"}),
+            _comp("ld", "static_load", dict(self.LOAD)),
+        ]
+        wires = [
+            _wire("w1", "u1", "busA", "out", "at_0"),
+            _wire("w2", "busA", "t1", "at_1", "primary"),
+            _wire("w3", "t1", "busM", "secondary", "at_0"),
+            _wire("w4", "busM", "t2", "at_1", "primary"),
+            _wire("w5", "t2", "busB", "secondary", "at_0"),
+            _wire("w6", "busB", "ld", "at_1", "in"),
+        ]
+        return _project(comps, wires)
+
+    def test_cable_free_cascade_matches_explicit_bus(self):
+        """The claim the warning makes. Before the gate was widened this
+        was 0.957949 vs 0.957493 pu."""
+        lumped = run_load_flow(self._lumped())
+        ref = run_load_flow(self._explicit_bus())
+        assert lumped.converged and ref.converged
+        assert lumped.buses["busB"].voltage_pu == pytest.approx(
+            ref.buses["busB"].voltage_pu, abs=1e-6)
+        assert lumped.buses["busB"].angle_deg == pytest.approx(
+            ref.buses["busB"].angle_deg, abs=1e-4)
+
+    def test_untapped_cable_free_cascade_also_agrees(self):
+        """With every unit on its nominal zone voltages the legacy sum was
+        already exact — the widened gate must not disturb that."""
+        t1 = dict(self.T1, tap_percent=0.0)
+        t2 = dict(self.T2, tap_percent=0.0)
+        old_t1, old_t2 = self.T1, self.T2
+        try:
+            type(self).T1, type(self).T2 = t1, t2
+            lumped = run_load_flow(self._lumped())
+            ref = run_load_flow(self._explicit_bus())
+        finally:
+            type(self).T1, type(self).T2 = old_t1, old_t2
+        assert lumped.converged and ref.converged
+        assert lumped.buses["busB"].voltage_pu == pytest.approx(
+            ref.buses["busB"].voltage_pu, abs=1e-6)

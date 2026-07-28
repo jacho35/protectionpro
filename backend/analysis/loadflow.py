@@ -2240,10 +2240,18 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         # COMBINED ratio: two individual zone mismatches can cancel in the
         # product while an intermediate cable still sits on the wrong local
         # voltage base, so "combined t == 1" does not certify N>=2 chains
-        # the way it does a lone transformer.
+        # the way it does a lone transformer — and a cable is not required
+        # either. Cascaded transformers mis-refer EACH OTHER: summing their
+        # per-unit impedances is only exact when every unit sits on its
+        # nominal zone voltages, so a tapped 33/11 + 11/0.4 cascade drawn
+        # with no cable and no intervening bus was ~5e-4 pu off an
+        # explicit-bus redraw before this. N>=2 therefore always takes the
+        # exact path, which is also what makes the "modelled exactly"
+        # wording of the cascaded-transformer warning above true.
         has_cable_in_chain = any(e.type == "cable" for e in chain_order)
-        if has_cable_in_chain and n_chain_xfmrs >= 1 and (
-                n_chain_xfmrs >= 2 or abs(t - 1.0) > 1e-9):
+        if n_chain_xfmrs >= 1 and (
+                n_chain_xfmrs >= 2
+                or (has_cable_in_chain and abs(t - 1.0) > 1e-9)):
             xfmr_positions = [idx for idx, e in enumerate(chain_order)
                               if e.type in ("transformer", "autotransformer")]
             y, t, hv_bus = _reduce_chain_two_port(
