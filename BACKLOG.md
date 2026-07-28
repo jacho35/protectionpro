@@ -43,7 +43,7 @@ section and adding the `## Completed` entry.
 19. **Multiple simultaneous DER locations** — a "what's left" mode holding approved interconnections fixed, matching how DER queues are actually processed.
 20. **Smart-inverter / volt-var ride-through** — IEEE 1547-2018 droop instead of the "dumb" unity-pf inverter tripping at a hard `v_max`.
 21. **Export-direction thermal ratings** — reverse-fed distribution transformers don't share the import rating.
-22. **Stochastic (Monte Carlo) hosting capacity** — blocked on the uncertainty model in item 36.
+22. **Stochastic (Monte Carlo) hosting capacity** — blocked on the load/DER uncertainty model that **Probabilistic / stochastic load flow** would introduce.
 
 ### Modelling, standards & cable coverage
 
@@ -57,7 +57,7 @@ section and adding the `## Completed` entry.
 30. **Grid-code / fault-ride-through compliance overlay** on the existing transient-stability IBR results. *(DIgSILENT / PSS Additions)*
 31. **Network reconfiguration / tie-open-point optimization** — also closes the OPF switching-(topology)-optimization residual. *(DIgSILENT / PSS Additions)*
 32. **Load allocation / estimation from metering** — scale modelled loads to feeder-head / AMI data. *(DIgSILENT / PSS Additions)*
-33. **Probabilistic / stochastic load flow** — Monte-Carlo over load & DER uncertainty; the uncertainty model item 25 needs. *(DIgSILENT / PSS Additions)*
+33. **Probabilistic / stochastic load flow** — Monte-Carlo over load & DER uncertainty — the uncertainty model **Stochastic (Monte Carlo) hosting capacity** needs. *(DIgSILENT / PSS Additions)*
 34. **Variants / expansion stages** — time-phased network development; scenarios and LF cases snapshot operating states only. *(DIgSILENT / PSS Additions)*
 
 ### Import, export & integration
@@ -79,7 +79,7 @@ section and adding the `## Completed` entry.
 ### Large or long-horizon — scope decision needed before starting
 
 45. **Standard + user-defined dynamic model library** — GENROU/EXST1/GAST and a DSL/Modelica/UDM mechanism. Large sustained investment; machine/AVR/governor models are fixed built-ins today. *(DIgSILENT / PSS Additions)*
-46. **Small-signal / modal / eigenvalue analysis** — including impedance-based IBR stability. Depends on item 48. *(DIgSILENT / PSS Additions)*
+46. **Small-signal / modal / eigenvalue analysis** — including impedance-based IBR stability. Depends on **Linear sensitivities (PTDF/LODF) & transfer limits**. *(DIgSILENT / PSS Additions)*
 47. **EMT simulation** — switching/lightning overvoltages, ferroresonance, SSR. Different solver class; the gap analysis recommends explicitly declaring it out of scope unless targeting IBR-interconnection work. *(DIgSILENT / PSS Additions)*
 48. **Linear sensitivities (PTDF/LODF) & transfer limits** — transmission-planning staple, low value at LV/MV scale. *(DIgSILENT / PSS Additions)*
 49. **State estimation** — operational/digital-twin use; low priority for a design tool. *(DIgSILENT / PSS Additions)*
