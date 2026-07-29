@@ -12,10 +12,21 @@ callers should notice:
 
   * BESS state of charge is integrated from the *actual* dispatched power at
     each step (read back from ``LoadFlowResults.dispatch``) and carried into
-    the next step's ``battery_soc_pct``. A battery at 0% SoC cannot discharge
-    at the next step; one at 100% cannot charge — the dispatch itself already
-    enforces this (``loadflow._battery_params``), so simply feeding the
-    integrated SoC forward is suffient.
+    the next step's ``battery_soc_pct``. ``loadflow._battery_params`` gates
+    dispatch on the SoC at the START of a step (won't discharge at 0%, won't
+    charge at 100%), but that's a power-level check with no notion of step
+    duration — a coarse step can still dispatch a battery at full power for
+    the whole step even though that power x dt would draw more energy than is
+    stored. This module catches that after the fact: SoC is clamped to
+    [0, 100] and a one-time warning is emitted per battery (see the SoC
+    integration loop below) rather than re-solving the boundary step with a
+    time-limited dispatch. The practical effect: at the exact step a battery
+    empties or fills, the reported dispatched_mw/bus voltages for that step
+    reflect the FULL-step dispatch, not one trimmed to the energy actually
+    available — that one step isn't strictly energy-consistent. DEFAULT TO A
+    FINER STEP SIZE (e.g. 15-60 min rather than 1 h+) whenever a run has a
+    battery that is expected to fully deplete or fully charge mid-horizon;
+    the warning text itself also tells the caller to do this.
   * OLTC tap position is carried forward: each step's regulation
     (``loadflow._run_oltc``) starts from the PREVIOUS step's converged tap,
     not the network's static default, so the tap only moves the few steps a
