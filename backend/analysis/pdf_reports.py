@@ -630,11 +630,11 @@ def _render_arcflash(pdf, arcflash_results, comp_map):
     if not arcflash_results or not arcflash_results.get("buses"):
         return
     pdf.add_page()
-    pdf.section_title("Arc Flash Analysis — IEEE 1584-2002")
+    pdf.section_title(f"Arc Flash Analysis — {arcflash_results.get('method', 'IEEE 1584')}")
 
-    headers = ["Bus", "V (kV)", "Ibf (kA)", "Iarc (kA)", "E (cal/cm²)", "PPE Cat", "AFB (m)", "WD (mm)"]
+    headers = ["Bus", "V (kV)", "Ibf (kA)", "Iarc (kA)", "E (cal/cm²)", "PPE Cat", "AFB (m)", "WD (mm)", "Ed."]
     avail = pdf.w - pdf.l_margin - pdf.r_margin
-    widths = [avail * 0.2, avail * 0.1, avail * 0.12, avail * 0.12, avail * 0.13, avail * 0.1, avail * 0.12, avail * 0.11]
+    widths = [avail * 0.18, avail * 0.09, avail * 0.11, avail * 0.11, avail * 0.12, avail * 0.09, avail * 0.11, avail * 0.1, avail * 0.09]
 
     rows = []
     for bus_id, r in arcflash_results["buses"].items():
@@ -647,6 +647,7 @@ def _render_arcflash(pdf, arcflash_results, comp_map):
             str(r.get("ppe_category", "—")),
             f"{r.get('arc_flash_boundary_mm', 0) / 1000:.2f}",
             str(r.get("working_distance_mm", "—")),
+            r.get("method", "—").replace("IEEE 1584-", ""),
         ])
     _table(pdf, headers, rows, widths, header_color=(213, 0, 0))
 
@@ -805,7 +806,7 @@ def _calc_title(pdf, project_name, base_mva, frequency, project_details=None):
     sections = [
         "1.  Fault Analysis — IEC 60909",
         "2.  Load Flow Analysis",
-        "3.  Arc Flash Analysis — IEEE 1584-2002",
+        "3.  Arc Flash Analysis — IEEE 1584",
         "4.  Cable Sizing Calculations — IEC 60364",
         "5.  Motor Starting Analysis",
         "6.  Dynamic Motor Starting (Acceleration)",
@@ -961,35 +962,50 @@ def _calc_loadflow(pdf, loadflow_results, base_mva):
 
 def _calc_arcflash(pdf, arcflash_results):
     pdf.add_page()
-    pdf.section_title("3.  Arc Flash Analysis — IEEE 1584-2002")
+    overall_method = arcflash_results.get("method", "IEEE 1584")
+    pdf.section_title(f"3.  Arc Flash Analysis — {overall_method}")
+    methods_used = {r.get("method", "IEEE 1584-2002") for r in arcflash_results["buses"].values()}
 
-    _calc_label(pdf, "Standard: IEEE 1584-2002  (Applicable range: 208 V – 15 kV, 3-phase AC)")
-    pdf.ln(2)
-    _calc_body(pdf, "Step 1 — Arcing current (IEEE 1584-2002 Eq. 1 & 2):")
-    _calc_label(pdf, "  V <= 1 kV:  lg(I_arc) = K + 0.662*lg(I_bf) + 0.0966*V + 0.000526*G")
-    _calc_label(pdf, "                         + 0.5588*V*lg(I_bf) - 0.00304*G*lg(I_bf)")
-    _calc_label(pdf, "  V > 1 kV:   lg(I_arc) = 0.00402 + 0.983*lg(I_bf)")
-    _calc_body(pdf, "  where I_bf = bolted fault current [kA], V = system voltage [kV], G = electrode gap [mm],")
-    _calc_body(pdf, "  K = -0.153 (open air) or -0.097 (enclosed equipment).")
-    pdf.ln(2)
-    _calc_body(pdf, "Step 2 — Incident energy (normalised to 610 mm / 0.2 s, IEEE 1584-2002 Eq. 3-6):")
-    _calc_label(pdf, "  lg(E_n) = K1 + K2 + 1.081*lg(I_arc) + 0.0011*G   [E_n in J/cm^2]")
-    _calc_label(pdf, "  E = 4.184 * Cf * E_n * (t / 0.2 s) * (610^x / D^x)   [J/cm^2]")
-    _calc_body(pdf, "  where K1 = -0.792 (open air) or -0.555 (enclosed), K2 = 0 (ungrounded/HRG — assumed),")
-    _calc_body(pdf, "  Cf = 1.5 (V <= 1 kV) or 1.0 (V > 1 kV), D = working distance [mm], t = arcing duration [s],")
-    _calc_body(pdf, "  x = distance exponent per IEEE 1584-2002 Table 4.")
-    pdf.ln(2)
-    _calc_body(pdf, "Step 3 — Arc flash boundary (AFB):")
-    _calc_body(pdf, "  Distance D_B at which E = 1.2 cal/cm^2 (bare-skin threshold), solved from the Step 2")
-    _calc_body(pdf, "  distance relation by bisection.")
-    pdf.ln(2)
+    if "IEEE 1584-2002" in methods_used:
+        _calc_label(pdf, "IEEE 1584-2002  (Applicable range: 208 V - 15 kV, 3-phase AC)")
+        pdf.ln(2)
+        _calc_body(pdf, "Step 1 - Arcing current (IEEE 1584-2002 Eq. 1 & 2):")
+        _calc_label(pdf, "  V <= 1 kV:  lg(I_arc) = K + 0.662*lg(I_bf) + 0.0966*V + 0.000526*G")
+        _calc_label(pdf, "                         + 0.5588*V*lg(I_bf) - 0.00304*G*lg(I_bf)")
+        _calc_label(pdf, "  V > 1 kV:   lg(I_arc) = 0.00402 + 0.983*lg(I_bf)")
+        _calc_body(pdf, "  where I_bf = bolted fault current [kA], V = system voltage [kV], G = electrode gap [mm],")
+        _calc_body(pdf, "  K = -0.153 (open air) or -0.097 (enclosed equipment).")
+        pdf.ln(2)
+        _calc_body(pdf, "Step 2 - Incident energy (normalised to 610 mm / 0.2 s, IEEE 1584-2002 Eq. 3-6):")
+        _calc_label(pdf, "  lg(E_n) = K1 + K2 + 1.081*lg(I_arc) + 0.0011*G   [E_n in J/cm^2]")
+        _calc_label(pdf, "  E = 4.184 * Cf * E_n * (t / 0.2 s) * (610^x / D^x)   [J/cm^2]")
+        _calc_body(pdf, "  where K1 = -0.792 (open air) or -0.555 (enclosed), K2 = 0 (ungrounded/HRG - assumed),")
+        _calc_body(pdf, "  Cf = 1.5 (V <= 1 kV) or 1.0 (V > 1 kV), D = working distance [mm], t = arcing duration [s],")
+        _calc_body(pdf, "  x = distance exponent per IEEE 1584-2002 Table 4.")
+        pdf.ln(2)
+        _calc_body(pdf, "Step 3 - Arc flash boundary (AFB): distance D_B at which E = 1.2 cal/cm^2 (bare-skin")
+        _calc_body(pdf, "  threshold), solved from the Step 2 distance relation by bisection.")
+        pdf.ln(2)
+
+    if "IEEE 1584-2018" in methods_used:
+        _calc_label(pdf, "IEEE 1584-2018  (Applicable range: 208 V - 15 kV; 0.5-106 kA <=600V, 0.2-65 kA >600V)")
+        pdf.ln(2)
+        _calc_body(pdf, "Arcing current and incident energy are each regressed at three anchor voltages")
+        _calc_body(pdf, "(600 V / 2700 V / 14,300 V) with coefficients per electrode configuration")
+        _calc_body(pdf, "(VCB/VCBB/HCB/VOA/HOA), then blended by system voltage. Incident energy additionally")
+        _calc_body(pdf, "applies an equipment-enclosure-size correction factor (box configs only). Arc flash")
+        _calc_body(pdf, "boundary is a closed-form algebraic inverse at the 1.2 cal/cm^2 threshold. A second")
+        _calc_body(pdf, "pass at a voltage/configuration-dependent reduced arcing current is also evaluated")
+        _calc_body(pdf, "(replacing 2002's flat 85% check) - the worse (higher-energy) of the two is reported.")
+        pdf.ln(2)
+
     _calc_body(pdf, "PPE Category selection per NFPA 70E Table 130.7(C)(15)(c):")
     for cat, limit in [(1, "4"), (2, "8"), (3, "25"), (4, "40")]:
         _calc_body(pdf, f"  Category {cat}: E <= {limit} cal/cm^2")
     pdf.ln(4)
 
     for bus_id, r in arcflash_results["buses"].items():
-        _calc_subsection(pdf, f"Bus: {r.get('bus_name', bus_id)}  ({r.get('voltage_kv', '—')} kV)")
+        _calc_subsection(pdf, f"Bus: {r.get('bus_name', bus_id)}  ({r.get('voltage_kv', '—')} kV)  [{r.get('method', 'IEEE 1584-2002')}]")
         ibf = r.get("bolted_fault_ka", 0) or 0
         iarc = r.get("arcing_current_ka", 0) or 0
         e = r.get("incident_energy_cal", 0) or 0
@@ -1633,7 +1649,7 @@ def _draw_label(pdf, x, y, w, h, bus_name, r, project_name):
     pdf.set_font("Helvetica", "I", 5.5)
     pdf.set_text_color(100, 100, 100)
     pdf.set_xy(x + 3, y + h - 5)
-    pdf.cell(w * 0.5, 3, "NFPA 70E / IEEE 1584-2002")
+    pdf.cell(w * 0.5, 3, f"NFPA 70E / {r.get('method', 'IEEE 1584-2002')}")
     pdf.set_xy(x + w * 0.5, y + h - 5)
     pdf.cell(w * 0.5 - 3, 3, date.today().isoformat(), align="R")
     pdf.set_text_color(0, 0, 0)

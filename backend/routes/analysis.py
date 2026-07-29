@@ -351,7 +351,7 @@ def dc_short_circuit(data: ProjectData):
 
 @router.post("/arcflash", response_model=ArcFlashResults)
 def arc_flash(data: ProjectData):
-    """Run IEEE 1584-2002 arc flash analysis.
+    """Run IEEE 1584 arc flash analysis (2002 or 2018, selectable per bus).
 
     Requires fault analysis data. Runs fault analysis first if needed.
     """

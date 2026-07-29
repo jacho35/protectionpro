@@ -30,7 +30,10 @@ from backend.analysis.transient_stability import run_transient_stability
 from backend.analysis.grounding_system import (
     _compute_conductor_size, _compute_n, _compute_K_ii, _compute_L_M,
 )
-from backend.analysis.arcflash import calc_incident_energy
+from backend.analysis.arcflash import (
+    calc_incident_energy, calc_arcing_current_2018, calc_incident_energy_2018,
+    calc_arc_flash_boundary_2018, _enclosure_correction_factor_2018,
+)
 from backend.analysis.unbalanced_loadflow import run_unbalanced_load_flow
 from backend.analysis.harmonics import (
     run_harmonics, vfd_current_spectrum, _voltage_limits, _tdd_limit,
@@ -241,6 +244,79 @@ class TestArcFlash:
                                  gap_mm=32.0, dist_mm=610.0, config="VCB")
         en = 10 ** (-0.555 + 1.081 * math.log10(10.0) + 0.0011 * 32.0)
         assert e == pytest.approx(1.5 * en, rel=0.01)
+
+
+# ── IEEE 1584-2018 arc flash ─────────────────────────────────────────────
+#
+# Fixtures below are rows pulled directly from the IEEE 1584-2018 official
+# validation spreadsheet (via github.com/jgrimard/arc-flash-calculator,
+# ieee_1584_spreadsheet_results.csv — that repo's own Jest suite checks its
+# implementation against 144,000 such rows). Each fixture is exact input ->
+# exact expected output, spanning all 5 electrode configs and all 3 voltage-
+# blend regions (<=0.6kV closed-form, 0.6-2.7kV blend, >2.7kV extrapolation),
+# plus one "reduced arcing current" pass per row (the IEEE 1584-2018 analogue
+# of the 2002 model's flat-0.85 §5.5 check) — this reduced pass is NOT a
+# simple "feed the reduced current through the same formula" substitution
+# above 0.6kV (see calc_incident_energy_2018's docstring); these fixtures
+# pin that behaviour.
+
+
+class TestArcFlash2018:
+    # (config, voc_kv, ibf_ka, gap_mm, dist_mm, t_arc_ms, width_mm, height_mm,
+    #  depth_mm, iarc_max, e_joules_max, afb_mm_max, iarc_min, e_joules_min, afb_mm_min)
+    CASES = [
+        ("VCB", 0.6, 20.0, 25.0, 457.2, 100, 200.0, 200.0, 100.0,
+         16.609115379730877, 16.270117353783895, 954.2051217666947,
+         14.665568415462758, 14.443323229950611, 885.6743390699406),
+        ("HCB", 15.0, 20.0, 152.0, 914.4, 100, 200.0, 200.0, 100.0,
+         18.20060946661355, 25.71242004660451, 2458.375375209032,
+         17.98693999916595, 25.21668787498172, 2429.580869902916),
+        ("VOA", 15.0, 20.0, 152.0, 914.4, 100, 200.0, 200.0, 100.0,
+         16.854645111692243, 7.8020166844609715, 1219.9527854168903,
+         16.54112501077012, 7.930534829744054, 1232.8292380909868),
+        ("VCB", 0.4, 20.0, 25.0, 457.2, 100, 200.0, 200.0, 100.0,
+         14.098174244547922, 7.769742732490306, 600.8632349346442,
+         12.299693919378543, 6.8184650321687155, 553.7085763529843),
+        ("VCBB", 1.0, 20.0, 104.0, 457.2, 100, 200.0, 200.0, 100.0,
+         16.699589899053052, 35.61774598303941, 1365.9189960570875,
+         15.344955479700104, 34.60966736604929, 1340.5088284241328),
+        ("HOA", 0.208, 0.5, 6.35, 305.0, 10, 200.0, 200.0, 100.0,
+         0.3000224569856444, 0.034680500108350165, 25.033823788581167,
+         0.2528474791198771, 0.02902808665895283, 22.892835235385),
+    ]
+
+    @pytest.mark.parametrize("case", CASES)
+    def test_official_spreadsheet_rows(self, case):
+        (config, voc_kv, ibf_ka, gap_mm, dist_mm, t_ms, width_mm, height_mm,
+         depth_mm, exp_iarc_max, exp_e_max_j, exp_afb_max, exp_iarc_min,
+         exp_e_min_j, exp_afb_min) = case
+        t_arc_s = t_ms / 1000.0
+
+        cf = _enclosure_correction_factor_2018(config, voc_kv, width_mm, height_mm, depth_mm)
+        iarc, iarc_reduced, ratio = calc_arcing_current_2018(ibf_ka, voc_kv, gap_mm, config)
+        assert iarc == pytest.approx(exp_iarc_max, rel=1e-5)
+        assert iarc_reduced == pytest.approx(exp_iarc_min, rel=1e-5)
+
+        e_max = calc_incident_energy_2018(iarc, 1.0, ibf_ka, voc_kv, t_arc_s,
+                                          gap_mm, dist_mm, config, cf)
+        e_min = calc_incident_energy_2018(iarc_reduced, ratio, ibf_ka, voc_kv,
+                                          t_arc_s, gap_mm, dist_mm, config, cf)
+        assert e_max == pytest.approx(exp_e_max_j * 0.2390057356, rel=1e-4)
+        assert e_min == pytest.approx(exp_e_min_j * 0.2390057356, rel=1e-4)
+
+        # calc_arc_flash_boundary_2018 rounds to the nearest mm (matching the
+        # 2002 boundary function's convention, printed-label granularity) —
+        # so allow +/-1mm on top of the relative tolerance.
+        afb_max = calc_arc_flash_boundary_2018(iarc, 1.0, ibf_ka, voc_kv, t_arc_s, gap_mm, config, cf)
+        afb_min = calc_arc_flash_boundary_2018(iarc_reduced, ratio, ibf_ka, voc_kv,
+                                               t_arc_s, gap_mm, config, cf)
+        assert afb_max == pytest.approx(exp_afb_max, rel=1e-4, abs=1.0)
+        assert afb_min == pytest.approx(exp_afb_min, rel=1e-4, abs=1.0)
+
+    def test_voa_hoa_enclosure_cf_always_one(self):
+        """Open-air configs have no enclosure to correct for."""
+        assert _enclosure_correction_factor_2018("VOA", 0.48, 200, 200, 100) == 1.0
+        assert _enclosure_correction_factor_2018("HOA", 11.0, 2000, 2000, 2000) == 1.0
 
 
 # ── IEEE 80 grounding ────────────────────────────────────────────────────

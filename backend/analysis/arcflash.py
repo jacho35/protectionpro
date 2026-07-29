@@ -1,31 +1,51 @@
-"""Arc flash analysis per IEEE 1584-2002.
+"""Arc flash analysis per IEEE 1584-2002 and IEEE 1584-2018.
 
-Implements the IEEE 1584-2002 empirical model for calculating:
+Two independent, selectable models are implemented (per-bus `arc_flash_method`
+prop; absent ⇒ "IEEE 1584-2002" for byte-identical legacy behaviour on
+projects saved before the 2018 method was added — new buses default to
+"IEEE 1584-2018", the current edition):
+
+IEEE 1584-2002 (functions without a `_2018` suffix):
 - Arcing current (kA) — Eq. 1 & 2
 - Incident energy (cal/cm²) — Eq. 3-6
-- Arc flash boundary (mm)
-- PPE category per NFPA 70E Table 130.7(C)(15)(a)
+- Arc flash boundary (mm), solved by bisection
+- Electrode configuration distinguishes open-air (VOA/HOA) from enclosed
+  (VCB/VCBB/HCB) only (its K1 "open air" vs "box" factor) — no
+  enclosure-size correction, no per-configuration coefficients.
+
+IEEE 1584-2018 (`_2018`-suffixed functions): the three-current-anchor
+regression model — arcing current and incident energy are each computed at
+three fixed anchor voltages (600 V / 2700 V / 14,300 V) via per-electrode-
+-configuration (VCB/VCBB/HCB/VOA/HOA) coefficient tables, then blended by
+voltage range; incident energy additionally applies an equipment-enclosure-
+-size correction factor (CF, box configs only — VOA/HOA are always CF=1);
+arc-flash boundary has a closed-form algebraic inverse (no bisection needed).
+Coefficients were transcribed from the official IEEE 1584-2018 validation
+spreadsheet via the open-source (MIT) reference implementation
+github.com/jgrimard/arc-flash-calculator (whose own test suite checks
+144,000 rows of that spreadsheet); the arcing-current variation-factor
+polynomial (`_RATIO_2018`) is not published by that source and was instead
+fitted exactly (Vandermonde solve, residual ~1e-15) to the seven distinct
+Voc values exercised by the official spreadsheet — see
+backend/tests/test_regression.py::TestArcFlash2018 for the verified fixtures
+this was checked against (six rows spanning all 5 electrode configs and all
+3 voltage-blend regions, matched to <0.0003%).
 
 References:
 - IEEE 1584-2002 "Guide for Performing Arc-Flash Hazard Calculations"
+- IEEE 1584-2018 "Guide for Performing Arc-Flash Hazard Calculations"
 - NFPA 70E "Standard for Electrical Safety in the Workplace"
 
-Note: this engine implements the 2002 edition, NOT IEEE 1584-2018.
-The 2018 electrode-configuration machinery (VCBB/HCB-specific
-coefficients, intermediate arcing currents at 600 V / 2700 V / 14.3 kV
-with interpolation, enclosure-size correction) is not implemented.
-Electrode configuration is used only to distinguish open-air (VOA/HOA)
-from enclosed (VCB/VCBB/HCB) equipment, which is the granularity the
-2002 model supports (its K1 "open air" vs "box" factor).
-
-Valid ranges (IEEE 1584-2002 §1.2):
-  - Voltage: 208V to 15,000V (3-phase)
-  - Frequency: 50/60 Hz
+Valid ranges:
+  IEEE 1584-2002 (§1.2):
+  - Voltage: 208V to 15,000V (3-phase); frequency 50/60 Hz
   - Bolted fault current: 700A to 106,000A
   - Gap between conductors: 13mm to 152mm (empirical model derivation;
     incident-energy normalisation per Eq. 3 is bounded 6.35-76.2mm)
-  - Working distance: ≥ 305mm
-  - Fault clearing time: up to 2 seconds
+  - Working distance: ≥ 305mm; fault clearing time: up to 2 seconds
+  IEEE 1584-2018:
+  - Voltage: 208V to 15,000V (3-phase)
+  - Bolted fault current: 500A-106,000A (≤600V) or 200A-65,000A (>600V)
 """
 
 import math
@@ -138,6 +158,7 @@ class ArcFlashBusResult:
     ppe_category: int
     ppe_name: str
     ppe_description: str
+    method: str = "IEEE 1584-2002"  # per-bus arc_flash_method actually used
     warning: str = ""
     label_html: str = ""  # Pre-formatted NFPA 70E label HTML
     recommendations: list = field(default_factory=list)
@@ -326,6 +347,316 @@ def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
         else:
             high = mid
     return round((low + high) / 2, 0)
+
+
+# ── IEEE 1584-2018 model ─────────────────────────────────────────────────
+# See module docstring for provenance/verification. Electrode configurations:
+# VCB (vertical conductors, metal box), VCBB (vertical conductors, box,
+# insulating barrier), HCB (horizontal conductors, box), VOA (vertical
+# conductors, open air), HOA (horizontal conductors, open air).
+
+# Table 1 — arcing-current regression coefficients at the three anchor
+# voltages, per electrode configuration. Ia[kA] = 10^(k1+k2·lg(Ibf)+k3·lg(G))
+# × (k4·Ibf⁶+k5·Ibf⁵+k6·Ibf⁴+k7·Ibf³+k8·Ibf²+k9·Ibf+k10), Ibf in kA, G in mm.
+_TABLE1_2018 = {
+    ("600", "VCB"): dict(k1=-0.04287, k2=1.035, k3=-0.083, k4=0, k5=0, k6=-4.783e-09, k7=1.962e-06, k8=-0.000229, k9=0.003141, k10=1.092),
+    ("2700", "VCB"): dict(k1=0.0065, k2=1.001, k3=-0.024, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729),
+    ("14300", "VCB"): dict(k1=0.005795, k2=1.015, k3=-0.011, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729),
+    ("600", "VCBB"): dict(k1=-0.017432, k2=0.98, k3=-0.05, k4=0, k5=0, k6=-5.767e-09, k7=2.524e-06, k8=-0.00034, k9=0.01187, k10=1.013),
+    ("2700", "VCBB"): dict(k1=0.002823, k2=0.995, k3=-0.0125, k4=0, k5=-9.204e-11, k6=2.901e-08, k7=-3.262e-06, k8=0.0001569, k9=-0.004003, k10=0.9825),
+    ("14300", "VCBB"): dict(k1=0.014827, k2=1.01, k3=-0.01, k4=0, k5=-9.204e-11, k6=2.901e-08, k7=-3.262e-06, k8=0.0001569, k9=-0.004003, k10=0.9825),
+    ("600", "HCB"): dict(k1=0.054922, k2=0.988, k3=-0.11, k4=0, k5=0, k6=-5.382e-09, k7=2.316e-06, k8=-0.000302, k9=0.0091, k10=0.9725),
+    ("2700", "HCB"): dict(k1=0.001011, k2=1.003, k3=-0.0249, k4=0, k5=0, k6=4.859e-10, k7=-1.814e-07, k8=-9.128e-06, k9=-0.0007, k10=0.9881),
+    ("14300", "HCB"): dict(k1=0.008693, k2=0.999, k3=-0.02, k4=0, k5=-5.043e-11, k6=2.233e-08, k7=-3.046e-06, k8=0.000116, k9=-0.001145, k10=0.9839),
+    ("600", "VOA"): dict(k1=0.043785, k2=1.04, k3=-0.18, k4=0, k5=0, k6=-4.783e-09, k7=1.962e-06, k8=-0.000229, k9=0.003141, k10=1.092),
+    ("2700", "VOA"): dict(k1=-0.02395, k2=1.006, k3=-0.0188, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729),
+    ("14300", "VOA"): dict(k1=0.005371, k2=1.0102, k3=-0.029, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729),
+    ("600", "HOA"): dict(k1=0.111147, k2=1.008, k3=-0.24, k4=0, k5=0, k6=-3.895e-09, k7=1.641e-06, k8=-0.000197, k9=0.002615, k10=1.1),
+    ("2700", "HOA"): dict(k1=0.000435, k2=1.006, k3=-0.038, k4=0, k5=0, k6=7.859e-10, k7=-1.914e-07, k8=-9.128e-06, k9=-0.0007, k10=0.9981),
+    ("14300", "HOA"): dict(k1=0.000904, k2=0.999, k3=-0.02, k4=0, k5=0, k6=7.859e-10, k7=-1.914e-07, k8=-9.128e-06, k9=-0.0007, k10=0.9981),
+}
+
+# Table 3/4/5 — normalised incident-energy regression coefficients at the
+# 600 V / 2700 V / 14,300 V anchors respectively, per electrode configuration.
+_TABLE3_2018 = {  # 600 V anchor
+    "VCB": dict(k1=0.753364, k2=0.566, k3=1.752636, k4=0, k5=0, k6=-4.783e-09, k7=1.962e-06, k8=-0.000229, k9=0.003141, k10=1.092, k11=0, k12=-1.598, k13=0.957),
+    "VCBB": dict(k1=3.068459, k2=0.26, k3=-0.098107, k4=0, k5=0, k6=-5.767e-09, k7=2.524e-06, k8=-0.00034, k9=0.01187, k10=1.013, k11=-0.06, k12=-1.809, k13=1.19),
+    "HCB": dict(k1=4.073745, k2=0.344, k3=-0.370259, k4=0, k5=0, k6=-5.382e-09, k7=2.316e-06, k8=-0.000302, k9=0.0091, k10=0.9725, k11=0, k12=-2.03, k13=1.036),
+    "VOA": dict(k1=0.679294, k2=0.746, k3=1.222636, k4=0, k5=0, k6=-4.783e-09, k7=1.962e-06, k8=-0.000229, k9=0.003141, k10=1.092, k11=0, k12=-1.598, k13=0.997),
+    "HOA": dict(k1=3.470417, k2=0.465, k3=-0.261863, k4=0, k5=0, k6=-3.895e-09, k7=1.641e-06, k8=-0.000197, k9=0.002615, k10=1.1, k11=0, k12=-1.99, k13=1.04),
+}
+_TABLE4_2018 = {  # 2700 V anchor
+    "VCB": dict(k1=2.40021, k2=0.165, k3=0.354202, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729, k11=0, k12=-1.569, k13=0.9778),
+    "VCBB": dict(k1=3.870592, k2=0.185, k3=-0.736618, k4=0, k5=-9.204e-11, k6=2.901e-08, k7=-3.262e-06, k8=0.0001569, k9=-0.004003, k10=0.9825, k11=0, k12=-1.742, k13=1.09),
+    "HCB": dict(k1=3.486391, k2=0.177, k3=-0.193101, k4=0, k5=0, k6=4.859e-10, k7=-1.814e-07, k8=-9.128e-06, k9=-0.0007, k10=0.9881, k11=0.027, k12=-1.723, k13=1.055),
+    "VOA": dict(k1=3.880724, k2=0.105, k3=-1.906033, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729, k11=0, k12=-1.515, k13=1.115),
+    "HOA": dict(k1=3.616266, k2=0.149, k3=-0.761561, k4=0, k5=0, k6=7.859e-10, k7=-1.914e-07, k8=-9.128e-06, k9=-0.0007, k10=0.9981, k11=0, k12=-1.639, k13=1.078),
+}
+_TABLE5_2018 = {  # 14,300 V anchor
+    "VCB": dict(k1=3.825917, k2=0.11, k3=-0.999749, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729, k11=0, k12=-1.568, k13=0.99),
+    "VCBB": dict(k1=3.644309, k2=0.215, k3=-0.585522, k4=0, k5=-9.204e-11, k6=2.901e-08, k7=-3.262e-06, k8=0.0001569, k9=-0.004003, k10=0.9825, k11=0, k12=-1.677, k13=1.06),
+    "HCB": dict(k1=3.044516, k2=0.125, k3=0.245106, k4=0, k5=-5.043e-11, k6=2.233e-08, k7=-3.046e-06, k8=0.000116, k9=-0.001145, k10=0.9839, k11=0, k12=-1.655, k13=1.084),
+    "VOA": dict(k1=3.405454, k2=0.12, k3=-0.93245, k4=-1.557e-12, k5=4.556e-10, k6=-4.186e-08, k7=8.346e-07, k8=5.482e-05, k9=-0.003191, k10=0.9729, k11=0, k12=-1.534, k13=0.979),
+    "HOA": dict(k1=2.04049, k2=0.177, k3=1.005092, k4=0, k5=0, k6=7.859e-10, k7=-1.914e-07, k8=-9.128e-06, k9=-0.0007, k10=0.9981, k11=-0.05, k12=-1.633, k13=1.151),
+}
+
+# Table 7 — enclosure-size correction-factor CF(EES) quadratic coefficients,
+# box configs only (VOA/HOA are always CF=1). "Typical" applies except for
+# a small (<600V, <508×508×≤203.2mm) box, which uses "Shallow" (and inverts
+# the quadratic — see _enclosure_correction_factor_2018).
+_TABLE7_TYPICAL_2018 = {
+    "VCB": (-0.000302, 0.03441, 0.4325),
+    "VCBB": (-0.0002976, 0.032, 0.479),
+    "HCB": (-0.0001923, 0.01935, 0.6899),
+}
+_TABLE7_SHALLOW_2018 = {
+    "VCB": (0.002222, -0.02556, 0.6222),
+    "VCBB": (-0.002778, 0.1194, -0.2778),
+    "HCB": (-0.0005556, 0.03722, 0.4778),
+}
+_ENCLOSURE_AB_2018 = {"VCB": (4, 20), "VCBB": (10, 24), "HCB": (10, 22)}
+
+# Typical equipment gap (mm) / enclosure width,height,depth (mm) by class —
+# IEEE 1584-2018 Table 1 typical box sizes, keyed to match the existing
+# 2002-model _GAP_BY_CLASS keys (equipment_class prop) 1:1.
+_ENCLOSURE_DIMS_BY_CLASS_2018 = {
+    "lv_switchgear": (508.0, 508.0, 508.0),       # 20x20x20 in
+    "lv_mcc_panel": (355.6, 304.8, 203.2),         # 14x12x8 in (shallow-eligible)
+    "lv_cable": (355.6, 304.8, 203.2),             # cable junction box, shallow
+    "mv_switchgear_5kv": (914.4, 914.4, 914.4),    # 36x36x36 in
+    "mv_switchgear_15kv": (1143.0, 762.0, 762.0),  # 45x30x30 in
+}
+
+# Arcing-current variation ratio Iarc_min/Iarc_max as a function of system
+# voltage (kV), per electrode configuration — IEEE 1584-2018's analogue of
+# the 2002 model's fixed 0.85 "reduced arcing current" check (§5.5), except
+# here the reduction itself varies continuously with voltage and config.
+# Coefficients are a degree-6 polynomial (Horner form, highest degree first)
+# fitted EXACTLY (max residual ~1e-15) to the 7 distinct Voc values in the
+# official IEEE 1584-2018 validation spreadsheet, where this ratio is
+# confirmed (independently, by direct inspection of the spreadsheet's
+# I_arc_min/I_arc_max columns) to depend on nothing but (config, Voc) —
+# not on Ibf, gap, or working distance. See module docstring provenance note.
+_RATIO_2018 = {
+    "VCB":  (0.0, 7.1344880013806882e-07, -4.1568490876782811e-05, 9.6909998353760830e-04, -1.1182999988481407e-02, 6.3224999996645215e-02, 8.4887000000033108e-01),
+    "VCBB": (-5.6899988962564733e-07, 3.0143496996869202e-05, -6.3789997716666045e-04, 6.8889999588070197e-03, -4.0108499971186269e-02, 1.2032999999161118e-01, 8.3238000000082746e-01),
+    "HCB":  (0.0, 1.5485001592392914e-06, -8.2025001209733053e-05, 1.6804500021749386e-03, -1.6654000001514319e-02, 8.0910000000438687e-02, 8.2686499999995700e-01),
+    "VOA":  (-4.7802992275318946e-07, 2.5771497898259193e-05, -5.5804998402079217e-04, 6.2099999711778993e-03, -3.7562499979846432e-02, 1.1791999999413577e-01, 8.3152000000057802e-01),
+    "HOA":  (0.0, 1.5777505466499183e-06, -8.4100004153807138e-05, 1.7303500074748322e-03, -1.7062000005208879e-02, 7.9950000001509453e-02, 8.2685499999985179e-01),
+}
+
+
+def _get_enclosure_dims_2018(bus_props, equipment_class):
+    """Enclosure width/height/depth (mm): an explicit per-bus override (0 =
+    auto) wins, else the equipment-class typical size, else a generic 508mm
+    (20in) cube — mirroring the gap override pattern (conductor_gap_mm)."""
+    w_override = float(bus_props.get("enclosure_size_mm", 0) or 0)
+    h_override = float(bus_props.get("enclosure_height_mm", 0) or 0)
+    d_override = float(bus_props.get("enclosure_depth_mm", 0) or 0)
+    class_dims = _ENCLOSURE_DIMS_BY_CLASS_2018.get(equipment_class, (508.0, 508.0, 508.0))
+    width = w_override if w_override > 0 else class_dims[0]
+    height = h_override if h_override > 0 else class_dims[1]
+    depth = d_override if d_override > 0 else class_dims[2]
+    return width, height, depth
+
+
+def _iarc_anchor_2018(ibf_ka, gap_mm, coef):
+    """Arcing current (kA) at one Table 1 anchor voltage."""
+    log_ia = coef["k1"] + coef["k2"] * math.log10(ibf_ka) + coef["k3"] * math.log10(gap_mm)
+    poly = (coef["k4"] * ibf_ka ** 6 + coef["k5"] * ibf_ka ** 5 + coef["k6"] * ibf_ka ** 4
+            + coef["k7"] * ibf_ka ** 3 + coef["k8"] * ibf_ka ** 2 + coef["k9"] * ibf_ka + coef["k10"])
+    return (10 ** log_ia) * poly
+
+
+def _iarc_anchors_2018(ibf_ka, gap_mm, config):
+    return (
+        _iarc_anchor_2018(ibf_ka, gap_mm, _TABLE1_2018[("600", config)]),
+        _iarc_anchor_2018(ibf_ka, gap_mm, _TABLE1_2018[("2700", config)]),
+        _iarc_anchor_2018(ibf_ka, gap_mm, _TABLE1_2018[("14300", config)]),
+    )
+
+
+def _reduced_current_ratio_2018(voc_kv, config):
+    ratio = 0.0
+    for c in _RATIO_2018[config]:
+        ratio = ratio * voc_kv + c
+    return ratio
+
+
+def calc_arcing_current_2018(ibf_ka, voc_kv, gap_mm, config="VCB"):
+    """Arcing current per IEEE 1584-2018: three-anchor regression (Table 1),
+    blended by system voltage — a closed-form quadratic-in-1/Ia² combination
+    below 600V, linear extrapolation/interpolation between the 600/2700/
+    14,300V anchors above that.
+
+    Returns (iarc_ka, iarc_reduced_ka, ratio) — `ratio` (Iarc_reduced/Iarc,
+    the arcing-current variation factor at this voltage/config) is also
+    needed by calc_incident_energy_2018/calc_arc_flash_boundary_2018 for
+    their own reduced-current pass, which is NOT simply "substitute the
+    reduced current into the existing formula" (see those functions).
+    """
+    ibf = max(ibf_ka, 0.01)
+    ia600, ia2700, ia14300 = _iarc_anchors_2018(ibf, gap_mm, config)
+
+    if voc_kv <= 0.6:
+        term = ((0.6 / voc_kv) ** 2) * (1.0 / ia600 ** 2 - (0.36 - voc_kv ** 2) / (0.36 * ibf ** 2))
+        iarc = 1.0 / math.sqrt(term) if term > 0 else ia600
+    else:
+        ia_1 = (ia2700 - ia600) / 2.1 * (voc_kv - 2.7) + ia2700
+        ia_2 = (ia14300 - ia2700) / 11.6 * (voc_kv - 14.3) + ia14300
+        iarc = ia_2 if voc_kv > 2.7 else (ia_1 * (2.7 - voc_kv) / 2.1 + ia_2 * (voc_kv - 0.6) / 2.1)
+
+    iarc = min(iarc, ibf)  # clamp: arcing current cannot exceed bolted fault current
+    ratio = _reduced_current_ratio_2018(voc_kv, config)
+    return iarc, iarc * ratio, ratio
+
+
+def _enclosure_correction_factor_2018(config, voc_kv, width_mm, height_mm, depth_mm):
+    """Equipment enclosure size correction factor CF, IEEE 1584-2018.
+
+    VOA/HOA (open air) are always CF=1 — the correction only applies to
+    box configurations, whose energy scales with how much the enclosure
+    walls redirect/concentrate the arc plasma relative to the "typical"
+    test-box size the base regression (Table 3-5) was fitted at.
+    """
+    if config in ("VOA", "HOA"):
+        return 1.0
+    a, b = _ENCLOSURE_AB_2018[config]
+    shallow = voc_kv < 0.6 and width_mm < 508 and height_mm < 508 and depth_mm <= 203.2
+    width_capped = min(width_mm, 1244.6)
+    height_capped = min(height_mm, 1244.6)
+
+    def eq(dim_mm):
+        return (660.4 + (dim_mm - 660.4) * (voc_kv + a) / b) / 25.4
+
+    if width_mm < 508:
+        width_1 = 20.0 if not shallow else 0.03937 * width_mm
+    elif width_mm <= 660.4:
+        width_1 = 0.03937 * width_mm
+    elif width_mm <= 1244.6:
+        width_1 = eq(width_mm)
+    else:
+        width_1 = eq(width_capped)
+
+    # Height branches identically to width, EXCEPT that VCB (only) uses a
+    # plain mm->in conversion instead of EQ_12 above 660.4mm — an asymmetry
+    # in the source model, not a transcription simplification here.
+    if height_mm < 508:
+        height_1 = 20.0 if not shallow else 0.03937 * height_mm
+    elif height_mm <= 660.4:
+        height_1 = 0.03937 * height_mm
+    elif height_mm <= 1244.6:
+        height_1 = 0.03937 * height_mm if config == "VCB" else eq(height_mm)
+    else:
+        height_1 = 49.0 if config == "VCB" else eq(height_capped)
+
+    ees = (height_1 + width_1) / 2.0
+    b1, b2, b3 = (_TABLE7_SHALLOW_2018 if shallow else _TABLE7_TYPICAL_2018)[config]
+    poly = b1 * ees ** 2 + b2 * ees + b3
+    return (1.0 / poly) if shallow else poly
+
+
+def _e_afb_denom_2018(ibf_ka, coef):
+    return (coef["k4"] * ibf_ka ** 7 + coef["k5"] * ibf_ka ** 6 + coef["k6"] * ibf_ka ** 5
+            + coef["k7"] * ibf_ka ** 4 + coef["k8"] * ibf_ka ** 3 + coef["k9"] * ibf_ka ** 2
+            + coef["k10"] * ibf_ka)
+
+
+def _e_anchor_2018(t_ms, gap_mm, ibf_ka, dist_mm, iarc_k3, iarc_k13, cf, coef):
+    denom = _e_afb_denom_2018(ibf_ka, coef)
+    exponent = (coef["k1"] + coef["k2"] * math.log10(gap_mm)
+                + coef["k3"] * iarc_k3 / denom
+                + coef["k11"] * math.log10(ibf_ka)
+                + coef["k12"] * math.log10(dist_mm)
+                + coef["k13"] * math.log10(iarc_k13)
+                + math.log10(1.0 / cf))
+    return (12.552 / 50.0) * t_ms * (10 ** exponent)
+
+
+def calc_incident_energy_2018(iarc_ka, ratio, ibf_ka, voc_kv, t_arc_s, gap_mm,
+                              dist_mm, config="VCB", cf=1.0):
+    """Incident energy (cal/cm²) per IEEE 1584-2018.
+
+    ``iarc_ka``: the resolved arcing current for THIS pass (either the full
+    Iarc or the reduced Iarc from calc_arcing_current_2018).
+    ``ratio``: Iarc_reduced/Iarc at this voltage/config from
+    calc_arcing_current_2018 (pass 1.0 for the full-current pass).
+
+    At V<=600V there is a single 600V-anchor formula (Table 3), and
+    ``iarc_ka`` plugs directly into its current term — the reduced pass is
+    just "the same formula, fed the reduced current" as in the 2002 model.
+    Above 600V the anchor formulas (Table 3/4/5) do NOT reference the
+    blended arcing current at all in the full-current pass (each anchor's
+    OWN anchor current appears in both its terms) — so a reduced pass
+    instead re-scales EACH of the three anchor currents by ``ratio``
+    (verified empirically against the official spreadsheet's reduced-energy
+    column; substituting only the final blended current, as the <=600V case
+    might suggest by analogy, does NOT reproduce it — see
+    backend/tests/test_regression.py::TestArcFlash2018).
+    """
+    if iarc_ka <= 0 or t_arc_s <= 0:
+        return 0.0
+    ibf = max(ibf_ka, 0.01)
+    t_ms = t_arc_s * 1000.0
+    ia600, ia2700, ia14300 = _iarc_anchors_2018(ibf, gap_mm, config)
+
+    if voc_kv <= 0.6:
+        e = _e_anchor_2018(t_ms, gap_mm, ibf, dist_mm, ia600, iarc_ka, cf, _TABLE3_2018[config])
+        return max(0.0, e * 0.2390057356)
+
+    ia600, ia2700, ia14300 = ia600 * ratio, ia2700 * ratio, ia14300 * ratio
+    e600 = _e_anchor_2018(t_ms, gap_mm, ibf, dist_mm, ia600, ia600, cf, _TABLE3_2018[config])
+    e2700 = _e_anchor_2018(t_ms, gap_mm, ibf, dist_mm, ia2700, ia2700, cf, _TABLE4_2018[config])
+    e14300 = _e_anchor_2018(t_ms, gap_mm, ibf, dist_mm, ia14300, ia14300, cf, _TABLE5_2018[config])
+    if voc_kv > 2.7:
+        e = (e14300 - e2700) / 11.6 * (voc_kv - 14.3) + e14300
+    else:
+        e1 = (e2700 - e600) / 2.1 * (voc_kv - 2.7) + e2700
+        e2 = (e14300 - e2700) / 11.6 * (voc_kv - 14.3) + e14300
+        e = e1 * (2.7 - voc_kv) / 2.1 + e2 * (voc_kv - 0.6) / 2.1
+    return max(0.0, e * 0.2390057356)
+
+
+def calc_arc_flash_boundary_2018(iarc_ka, ratio, ibf_ka, voc_kv, t_arc_s, gap_mm,
+                                 config="VCB", cf=1.0, threshold_cal=1.2):
+    """Arc flash boundary (mm) per IEEE 1584-2018 — a closed-form algebraic
+    inverse of calc_incident_energy_2018 for distance D at incident energy
+    = ``threshold_cal`` (default 1.2 cal/cm², NFPA 70E bare-skin threshold),
+    so unlike the 2002 model this needs no bisection. Same ``iarc_ka``/
+    ``ratio``/reduced-pass semantics as calc_incident_energy_2018.
+    """
+    if iarc_ka <= 0 or t_arc_s <= 0 or threshold_cal <= 0:
+        return 0.0
+    ibf = max(ibf_ka, 0.01)
+    t_ms = t_arc_s * 1000.0
+    eb_const = threshold_cal * 50.0 / 3.0  # cal/cm² -> the model's internal "20" constant, generalised
+    ia600, ia2700, ia14300 = _iarc_anchors_2018(ibf, gap_mm, config)
+
+    def afb_anchor(iarc_k3, iarc_k13, coef):
+        denom = _e_afb_denom_2018(ibf, coef)
+        log_d = ((coef["k1"] + coef["k2"] * math.log10(gap_mm)
+                  + coef["k3"] * iarc_k3 / denom
+                  + coef["k11"] * math.log10(ibf)
+                  + coef["k13"] * math.log10(iarc_k13)
+                  + math.log10(1.0 / cf)
+                  - math.log10(eb_const / t_ms))
+                 / (-coef["k12"]))
+        return 10 ** log_d
+
+    if voc_kv <= 0.6:
+        return round(afb_anchor(ia600, iarc_ka, _TABLE3_2018[config]), 0)
+
+    ia600r, ia2700r, ia14300r = ia600 * ratio, ia2700 * ratio, ia14300 * ratio
+    afb600 = afb_anchor(ia600r, ia600r, _TABLE3_2018[config])
+    afb2700 = afb_anchor(ia2700r, ia2700r, _TABLE4_2018[config])
+    afb14300 = afb_anchor(ia14300r, ia14300r, _TABLE5_2018[config])
+    if voc_kv > 2.7:
+        afb = (afb14300 - afb2700) / 11.6 * (voc_kv - 14.3) + afb14300
+    else:
+        afb1 = (afb2700 - afb600) / 2.1 * (voc_kv - 2.7) + afb2700
+        afb2 = (afb14300 - afb2700) / 11.6 * (voc_kv - 14.3) + afb14300
+        afb = afb1 * (2.7 - voc_kv) / 2.1 + afb2 * (voc_kv - 0.6) / 2.1
+    return round(afb, 0)
 
 
 # Source component types — used to identify the upstream (source) side of a bus
@@ -785,12 +1116,19 @@ def run_arc_flash(project_data, fault_results):
     results = {}
     warnings = []
 
+    methods_used = set()
+
     for bus_id, bus in buses.items():
         voltage_kv = float(bus.props.get("voltage_kv", 0.4 if bus.type == "distribution_board" else 11))
         bus_name = bus.props.get("name", bus_id)
         working_dist = float(bus.props.get("working_distance_mm", 455))
         electrode_config = bus.props.get("electrode_config", "VCB")
         enclosure_mm = float(bus.props.get("enclosure_size_mm", 508))
+        # Absent ⇒ "IEEE 1584-2002" so projects saved before the 2018 method
+        # was added stay byte-identical; new buses default to 2018 (the
+        # current edition) via their constants.js COMPONENT_DEFS.
+        method = bus.props.get("arc_flash_method") or "IEEE 1584-2002"
+        methods_used.add(method)
 
         # Get bolted fault current from fault results
         fault_bus = fault_results.buses.get(bus_id)
@@ -810,21 +1148,35 @@ def run_arc_flash(project_data, fault_results):
         # Validate IEEE 1584 applicability — collect all warnings (not just the last)
         validity_warnings = []
         ibf_a = ibf_ka * 1000
-        # [EE-10] 700 A model floor per IEEE 1584-2002 §1.2 (and the module
-        # header) — the previous 500 A check under-warned
-        if ibf_a < 700:
-            validity_warnings.append("Below IEEE 1584 range (< 700A)")
-        elif ibf_a > 106000:
-            validity_warnings.append("Above IEEE 1584 range (> 106kA)")
+        if method == "IEEE 1584-2018":
+            # IEEE 1584-2018's bolted-current validity range is split by
+            # voltage class (differs from the 2002 model's flat 700A floor).
+            if voltage_kv <= 0.6:
+                if ibf_a < 500:
+                    validity_warnings.append("Below IEEE 1584-2018 range for ≤600V (< 500A)")
+                elif ibf_a > 106000:
+                    validity_warnings.append("Above IEEE 1584-2018 range (> 106kA)")
+            else:
+                if ibf_a < 200:
+                    validity_warnings.append("Below IEEE 1584-2018 range for >600V (< 200A)")
+                elif ibf_a > 65000:
+                    validity_warnings.append("Above IEEE 1584-2018 range for >600V (> 65kA)")
+        else:
+            # [EE-10] 700 A model floor per IEEE 1584-2002 §1.2 (and the module
+            # header) — the previous 500 A check under-warned
+            if ibf_a < 700:
+                validity_warnings.append("Below IEEE 1584 range (< 700A)")
+            elif ibf_a > 106000:
+                validity_warnings.append("Above IEEE 1584 range (> 106kA)")
+            if gap_mm < 6.35 or gap_mm > 76.2:
+                validity_warnings.append(
+                    f"Gap {gap_mm}mm outside IEEE 1584-2002 incident-energy model "
+                    "range (6.35-76.2mm) — results extrapolated"
+                )
         if voltage_kv > 15:
             validity_warnings.append(f"Voltage {voltage_kv}kV exceeds IEEE 1584 range (≤ 15kV)")
         if voltage_kv < 0.208:
             validity_warnings.append(f"Voltage {voltage_kv}kV below IEEE 1584 range (≥ 208V)")
-        if gap_mm < 6.35 or gap_mm > 76.2:
-            validity_warnings.append(
-                f"Gap {gap_mm}mm outside IEEE 1584-2002 incident-energy model "
-                "range (6.35-76.2mm) — results extrapolated"
-            )
         # [R3/PS-1 fallback] An overstated bolted current means a HIGHER
         # assumed arcing current → faster assumed device clearing → LOWER
         # incident energy: non-conservative on a printed safety label.
@@ -835,63 +1187,96 @@ def run_arc_flash(project_data, fault_results):
                 "incident energy may be UNDERSTATED; do not use for labels")
         warn = "; ".join(validity_warnings)
 
-        # System grounding for the K2 factor (IEEE 1584-2002 Eq. 3). Unknown
-        # → treated as ungrounded (K2=0), which is conservative.
-        grounded = str(bus.props.get("system_grounded", "unknown")).lower() in (
-            "grounded", "solidly", "effectively", "yes", "true")
+        if method == "IEEE 1584-2018":
+            width_mm, height_mm, depth_mm = _get_enclosure_dims_2018(bus.props, equipment_class)
+            cf = _enclosure_correction_factor_2018(electrode_config, voltage_kv,
+                                                   width_mm, height_mm, depth_mm)
 
-        # Calculate arcing current
-        iarc, iarc_reduced = calc_arcing_current(ibf_ka, voltage_kv, gap_mm,
-                                                  electrode_config)
+            iarc, iarc_reduced, ratio = calc_arcing_current_2018(
+                ibf_ka, voltage_kv, gap_mm, electrode_config)
 
-        # Estimate clearing time from upstream protection devices,
-        # using the arcing current to resolve instantaneous vs delayed trips
-        t_clear = get_clearing_time(bus, components, adjacency, iarc,
-                                    kappa=fault_bus.kappa)
+            t_clear = get_clearing_time(bus, components, adjacency, iarc,
+                                        kappa=fault_bus.kappa)
+            e_cal = calc_incident_energy_2018(iarc, 1.0, ibf_ka, voltage_kv,
+                                              t_clear, gap_mm, working_dist,
+                                              electrode_config, cf)
 
-        # Incident energy at working distance
-        e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
-                                     working_dist, electrode_config,
-                                     enclosure_mm, grounded,
-                                     equipment_class=equipment_class)
+            # Reduced arcing current (IEEE 1584-2018's voltage/config-dependent
+            # variation factor, replacing 2002's flat 0.85): re-evaluate the
+            # actual protective-device TCC at the reduced current too.
+            t_clear_reduced = get_clearing_time(bus, components, adjacency,
+                                                iarc_reduced, kappa=fault_bus.kappa)
+            e_cal_reduced = calc_incident_energy_2018(iarc_reduced, ratio, ibf_ka,
+                                                      voltage_kv, t_clear_reduced,
+                                                      gap_mm, working_dist,
+                                                      electrode_config, cf)
 
-        # Reduced arcing current check (IEEE 1584-2002 §5.5): the lower current
-        # may sit below instantaneous pickups, slowing protection. Re-evaluate
-        # the actual protective-device TCC at the reduced current rather than
-        # scaling t_clear by a fixed heuristic — the true ratio for an IDMT
-        # relay near pickup can be several×, not 1.5×.
-        t_clear_reduced = get_clearing_time(bus, components, adjacency,
-                                            iarc_reduced, kappa=fault_bus.kappa)
-        e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
-                                              t_clear_reduced, gap_mm,
-                                              working_dist, electrode_config,
-                                              enclosure_mm, grounded,
-                                              equipment_class=equipment_class)
+            e_worst = max(e_cal, e_cal_reduced)
 
-        # Use worst case (higher energy)
-        e_worst = max(e_cal, e_cal_reduced)
+            afb_full = calc_arc_flash_boundary_2018(iarc, 1.0, ibf_ka, voltage_kv,
+                                                     t_clear, gap_mm, electrode_config, cf)
+            afb_reduced = calc_arc_flash_boundary_2018(iarc_reduced, ratio, ibf_ka,
+                                                        voltage_kv, t_clear_reduced,
+                                                        gap_mm, electrode_config, cf)
+            afb = max(afb_full, afb_reduced)
+        else:
+            # System grounding for the K2 factor (IEEE 1584-2002 Eq. 3). Unknown
+            # → treated as ungrounded (K2=0), which is conservative.
+            grounded = str(bus.props.get("system_grounded", "unknown")).lower() in (
+                "grounded", "solidly", "effectively", "yes", "true")
 
-        # Arc flash boundary — evaluate for both the full and reduced arcing
-        # current (the reduced current clears more slowly, so it can push the
-        # boundary further out) and report the worst (largest) distance.
-        afb_full = calc_arc_flash_boundary(iarc, voltage_kv, t_clear, gap_mm,
-                                           electrode_config, enclosure_mm,
-                                           grounded=grounded,
-                                           equipment_class=equipment_class)
-        afb_reduced = calc_arc_flash_boundary(iarc_reduced, voltage_kv,
-                                              t_clear_reduced, gap_mm,
-                                              electrode_config, enclosure_mm,
-                                              grounded=grounded,
-                                              equipment_class=equipment_class)
-        afb = max(afb_full, afb_reduced)
+            # Calculate arcing current
+            iarc, iarc_reduced = calc_arcing_current(ibf_ka, voltage_kv, gap_mm,
+                                                      electrode_config)
+
+            # Estimate clearing time from upstream protection devices,
+            # using the arcing current to resolve instantaneous vs delayed trips
+            t_clear = get_clearing_time(bus, components, adjacency, iarc,
+                                        kappa=fault_bus.kappa)
+
+            # Incident energy at working distance
+            e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
+                                         working_dist, electrode_config,
+                                         enclosure_mm, grounded,
+                                         equipment_class=equipment_class)
+
+            # Reduced arcing current check (IEEE 1584-2002 §5.5): the lower current
+            # may sit below instantaneous pickups, slowing protection. Re-evaluate
+            # the actual protective-device TCC at the reduced current rather than
+            # scaling t_clear by a fixed heuristic — the true ratio for an IDMT
+            # relay near pickup can be several×, not 1.5×.
+            t_clear_reduced = get_clearing_time(bus, components, adjacency,
+                                                iarc_reduced, kappa=fault_bus.kappa)
+            e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
+                                                  t_clear_reduced, gap_mm,
+                                                  working_dist, electrode_config,
+                                                  enclosure_mm, grounded,
+                                                  equipment_class=equipment_class)
+
+            # Use worst case (higher energy)
+            e_worst = max(e_cal, e_cal_reduced)
+
+            # Arc flash boundary — evaluate for both the full and reduced arcing
+            # current (the reduced current clears more slowly, so it can push the
+            # boundary further out) and report the worst (largest) distance.
+            afb_full = calc_arc_flash_boundary(iarc, voltage_kv, t_clear, gap_mm,
+                                               electrode_config, enclosure_mm,
+                                               grounded=grounded,
+                                               equipment_class=equipment_class)
+            afb_reduced = calc_arc_flash_boundary(iarc_reduced, voltage_kv,
+                                                  t_clear_reduced, gap_mm,
+                                                  electrode_config, enclosure_mm,
+                                                  grounded=grounded,
+                                                  equipment_class=equipment_class)
+            afb = max(afb_full, afb_reduced)
 
         # [PS-13b/c] Advisory notes (both are conservative directions).
         _notes = []
         if _lv_small_transformer_exemption(bus, components, adjacency, voltage_kv):
             _notes.append(
-                "IEEE 1584-2002 §9.3.2: <240 V bus fed by a single "
-                "transformer <125 kVA may be exempted from arc-flash "
-                "assessment; incident energy is conservatively reported anyway")
+                "IEEE 1584: <240 V bus fed by a single transformer <125 kVA "
+                "may be exempted from arc-flash assessment; incident energy "
+                "is conservatively reported anyway")
         if afb <= 300.0:
             _notes.append(
                 "Arc-flash boundary reported at the 300 mm evaluation floor "
@@ -904,7 +1289,7 @@ def run_arc_flash(project_data, fault_results):
 
         # Generate NFPA 70E label
         label = _generate_label(bus_name, voltage_kv, e_worst, afb, ppe_cat,
-                                ppe_name, ppe_desc, ibf_ka, t_clear)
+                                ppe_name, ppe_desc, ibf_ka, t_clear, method)
 
         results[bus_id] = ArcFlashBusResult(
             bus_id=bus_id,
@@ -923,6 +1308,7 @@ def run_arc_flash(project_data, fault_results):
             ppe_category=ppe_cat,
             ppe_name=ppe_name,
             ppe_description=ppe_desc,
+            method=method,
             warning=warn,
             label_html=label,
         )
@@ -931,7 +1317,9 @@ def run_arc_flash(project_data, fault_results):
     for bus_id, r in results.items():
         r.recommendations = _generate_recommendations(r, buses[bus_id], components, adjacency)
 
-    return ArcFlashResults(buses=results, warnings=warnings)
+    overall_method = methods_used.pop() if len(methods_used) == 1 else (
+        "IEEE 1584-2002 / 2018 (per bus)" if methods_used else "IEEE 1584-2002")
+    return ArcFlashResults(buses=results, warnings=warnings, method=overall_method)
 
 
 def _generate_recommendations(result, bus, components, adjacency):
@@ -1041,7 +1429,7 @@ def _generate_recommendations(result, bus, components, adjacency):
 
 
 def _generate_label(bus_name, voltage_kv, energy, boundary_mm, ppe_cat,
-                    ppe_name, ppe_desc, ibf_ka, t_clear):
+                    ppe_name, ppe_desc, ibf_ka, t_clear, method="IEEE 1584-2002"):
     """Generate NFPA 70E arc flash warning label text."""
     boundary_in = round(boundary_mm / 25.4, 1)
     boundary_ft = round(boundary_in / 12, 1)
@@ -1062,6 +1450,6 @@ PPE: {ppe_name}
 {ppe_desc}
 Bolted Fault: {ibf_ka:.1f} kA
 Clearing Time: {t_clear:.3f} s
-Method: IEEE 1584-2002"""
+Method: {method}"""
 
     return label

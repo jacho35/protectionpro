@@ -891,7 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function executeArcFlash() {
-    document.getElementById('status-info').textContent = 'Running arc flash analysis (IEEE 1584-2002)...';
+    document.getElementById('status-info').textContent = 'Running arc flash analysis (IEEE 1584)...';
     _setBusy('btn-arcflash', true);
     try {
       const result = await API.runArcFlash();
@@ -2787,6 +2787,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const buses = result.buses || {};
     const entries = Object.values(buses).sort((a, b) => b.incident_energy_cal - a.incident_energy_cal);
 
+    const title = document.getElementById('arcflash-modal')?.querySelector('h3');
+    if (title) title.textContent = `Arc Flash Analysis — ${result.method || 'IEEE 1584'}`;
+
     if (entries.length === 0) {
       body.innerHTML = '<p>No buses found for arc flash analysis.</p>';
       modal.style.display = '';
@@ -2806,7 +2809,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <thead><tr>
         <th>Bus</th><th>Voltage</th><th>Bolted Fault</th><th>Arcing Current</th>
         <th>Incident Energy</th><th>AFB</th><th>Clearing Time</th>
-        <th>PPE Cat.</th><th>PPE</th>
+        <th>PPE Cat.</th><th>PPE</th><th>Method</th>
       </tr></thead><tbody>`;
 
     for (const b of entries) {
@@ -2822,10 +2825,11 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
         <td><span class="af-ppe-badge">${b.ppe_category}</span></td>
         <td>${b.ppe_name}</td>
+        <td>${escHtml((b.method || '—').replace('IEEE 1584-', ''))}</td>
       </tr>`;
       if (hasRecs) {
         html += `<tr class="${ppeClass} af-rec-row">
-          <td colspan="9">
+          <td colspan="10">
             <details class="af-rec-details">
               <summary>Recommendations to reduce PPE category (${b.recommendations.length})</summary>
               <ul class="af-rec-list">

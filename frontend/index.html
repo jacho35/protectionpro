@@ -310,9 +310,9 @@
         <div class="toolbar-menu" id="menu-safety">
           <button class="toolbar-menu-btn">Safety <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
           <div class="toolbar-menu-panel">
-            <button id="btn-arcflash" class="dropdown-item" title="Arc Flash Analysis (IEEE 1584-2002)">
+            <button id="btn-arcflash" class="dropdown-item" title="Arc Flash Analysis (IEEE 1584-2002 / 2018, selectable per bus)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
-              Arc Flash (IEEE 1584-2002)
+              Arc Flash (IEEE 1584)
             </button>
             <button id="btn-dc-arcflash" class="dropdown-item" title="DC Arc Flash Analysis (Stokes &amp; Oppenlander)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#1976d2" stroke="#0d47a1" stroke-width="0.8"/><text x="1" y="14" font-size="6" font-weight="bold" fill="currentColor">DC</text></svg>
@@ -2748,8 +2748,13 @@
         </div>
 
         <div class="help-content" id="help-tab-arcflash" style="display:none">
-          <h4>Arc Flash Analysis (IEEE 1584-2002)</h4>
-          <p>Calculates arc flash hazard at each bus per IEEE 1584-2002 and classifies PPE requirements per NFPA 70E.</p>
+          <h4>Arc Flash Analysis (IEEE 1584-2002 / 2018)</h4>
+          <p>Calculates arc flash hazard at each bus and classifies PPE requirements per NFPA 70E. Each bus selects
+          its own method via the <strong>Arc Flash Method</strong> property: <strong>IEEE 1584-2018</strong>
+          (current edition — default for new buses) uses electrode-configuration-specific coefficients, an
+          equipment-enclosure-size correction, and a voltage-dependent reduced-arcing-current check;
+          <strong>IEEE 1584-2002</strong> (default only on projects saved before 2018 support was added) is kept for
+          byte-identical reproduction of older studies/labels.</p>
 
           <h4>What is Calculated</h4>
           <ul>
@@ -2776,7 +2781,7 @@
           <ul>
             <li><strong>Working distance</strong> — Distance from the arc source to the worker (mm). Default 455mm for low-voltage switchgear (NFPA 70E Table 130.7(C)(15)(b)).</li>
             <li><strong>Electrode configuration</strong> — VCB (vertical, in box), VCBB, HCB, VOA (vertical, open air), HOA. Enclosed configurations produce higher incident energy.</li>
-            <li><strong>Enclosure size</strong> — Width/depth of the enclosure (mm). Larger enclosures slightly reduce energy concentration.</li>
+            <li><strong>Enclosure width/height/depth</strong> — IEEE 1584-2018 only (0 = auto from equipment class). A small (&lt;600V, &lt;508×508mm, ≤203.2mm deep) box gets the "shallow" correction; larger boxes typically read higher incident energy than the "typical" test-box size the base regression was fit at.</li>
           </ul>
 
           <h4>How to Reduce Arc Flash Hazard</h4>
@@ -2798,8 +2803,11 @@
             <li><strong>De-energize</strong> — For Category 4 or DANGER, de-energize before work per NFPA 70E §130.2.</li>
           </ol>
 
-          <h4>IEEE 1584-2002 Applicability</h4>
-          <p>Valid for: 208V to 15kV, 3-phase, 50/60 Hz, bolted fault current 500A to 106kA, gaps 6.35 to 76.2mm. For voltages &gt;15kV, the Ralph Lee theoretical model is used. Below 240V with fault current &lt;500A, arc flash hazard is generally minimal.</p>
+          <h4>IEEE 1584 Applicability</h4>
+          <p><strong>2002:</strong> 208V–15kV, 3-phase, 50/60Hz, bolted fault current 700A–106kA, gaps 6.35–76.2mm.
+          <strong>2018:</strong> 208V–15kV, bolted fault current 500A–106kA (≤600V) or 200A–65kA (&gt;600V), no
+          documented gap restriction. For voltages &gt;15kV, the Ralph Lee theoretical model is used (either
+          edition). Below 240V fed by a single transformer &lt;125kVA, arc flash hazard is generally minimal.</p>
 
           <h4>DC Arc Flash Analysis</h4>
           <p>Calculates DC arc flash hazard using the Stokes &amp; Oppenlander method with DGUV-I 203-077 guidelines. Available via <strong>Safety → DC Arc Flash</strong>. Applicable to DC systems including battery rooms, UPS systems, rectifiers, and solar PV DC buses.</p>

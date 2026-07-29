@@ -430,7 +430,7 @@ const Reports = {
     if (!AppState.arcFlashResults?.buses || AppState.isResultStale('arcFlashResults')) return;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('Arc Flash Analysis \u2014 IEEE 1584-2002', margin, margin + 6);
+    doc.text(`Arc Flash Analysis \u2014 ${AppState.arcFlashResults.method || 'IEEE 1584'}`, margin, margin + 6);
     doc.setFont('helvetica', 'normal');
 
     const rows = [];
@@ -445,12 +445,13 @@ const Reports = {
         r.ppe_category != null ? String(r.ppe_category) : '\u2014',
         r.arc_flash_boundary_mm != null ? (Number(r.arc_flash_boundary_mm) / 1000).toFixed(2) : '\u2014',
         r.working_distance_mm != null ? String(r.working_distance_mm) : '\u2014',
+        (r.method || '\u2014').replace('IEEE 1584-', ''),
       ]);
     }
     doc.autoTable({
       startY: margin + 12,
       margin: { left: margin, right: margin },
-      head: [['Bus', 'V (kV)', 'Ibf (kA)', 'Iarc (kA)', 'E (cal/cm\u00b2)', 'PPE Cat', 'AFB (m)', 'WD (mm)']],
+      head: [['Bus', 'V (kV)', 'Ibf (kA)', 'Iarc (kA)', 'E (cal/cm\u00b2)', 'PPE Cat', 'AFB (m)', 'WD (mm)', 'Ed.']],
       body: rows,
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [213, 0, 0], textColor: 255, fontStyle: 'bold' },
@@ -553,7 +554,7 @@ const Reports = {
     // Footer
     doc.setFontSize(6);
     doc.setTextColor(100);
-    doc.text('NFPA 70E / IEEE 1584-2002', x + 4, y + h - 2);
+    doc.text(`NFPA 70E / ${r.method || 'IEEE 1584'}`, x + 4, y + h - 2);
     doc.text(new Date().toLocaleDateString(), x + w - 4, y + h - 2, { align: 'right' });
     doc.setTextColor(0);
   },

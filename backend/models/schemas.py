@@ -563,6 +563,7 @@ class ArcFlashBusResult(BaseModel):
     ppe_category: int
     ppe_name: str
     ppe_description: str
+    method: str = "IEEE 1584-2002"
     warning: str = ""
     label_html: str = ""
     recommendations: list[str] = []  # Suggestions to reduce incident energy / PPE category

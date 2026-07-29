@@ -1179,9 +1179,13 @@ const FIELD_INFO = {
   'distribution_board.motor_fraction': 'Rotating share of the board load (0–1) that back-feeds short circuits as an induction-motor equivalent per IEC 60909-0 §13.\n0 = treat as pure static load (default).',
   'distribution_board.motor_lrc_ratio': 'Locked-rotor current ratio (I_start / I_FLC) of the board motor fraction; sets X″ ≈ 1/LRC per IEC 60909-0 §13. Typical 5–7 (default 6).',
 
-  // Arc flash equipment class (IEEE 1584-2002 Table 4)
-  'bus.equipment_class': 'Selects the IEEE 1584-2002 conductor gap and enclosure class.\n"auto" infers from voltage (LV = MCC/panel 25 mm). Choose lv_switchgear (32 mm) to model LV switchgear, mv_switchgear_5kv (104 mm) / 15kv (153 mm) for MV, or open_air.\nSource: IEEE 1584-2002 Table 4.',
-  'bus.conductor_gap_mm': 'Explicit conductor gap override in mm (0 = use the equipment class / voltage default). Valid IEEE 1584-2002 model range 6.35–76.2 mm.\nSource: IEEE 1584-2002 §5.',
+  // Arc flash equipment class (IEEE 1584 Table 1/4)
+  'bus.arc_flash_method': 'Which IEEE 1584 edition computes this bus\'s arc flash results. 2018 (current edition) adds electrode-configuration-specific coefficients, an equipment-enclosure-size correction, and a voltage-dependent reduced-arcing-current factor. 2002 is kept for byte-identical reproduction of older studies/labels.',
+  'bus.equipment_class': 'Selects the IEEE 1584 conductor gap (and, for the 2018 method, typical enclosure size).\n"auto" infers from voltage (LV = MCC/panel 25 mm). Choose lv_switchgear (32 mm) to model LV switchgear, mv_switchgear_5kv (104 mm) / 15kv (153 mm) for MV, or open_air.\nSource: IEEE 1584 Table 1/4.',
+  'bus.conductor_gap_mm': 'Explicit conductor gap override in mm (0 = use the equipment class / voltage default).\nSource: IEEE 1584 §5 / Table 1.',
+  'bus.enclosure_size_mm': 'Enclosure width in mm, IEEE 1584-2018 enclosure-size correction (0 = auto from equipment class). Unused by the 2002 method.',
+  'bus.enclosure_height_mm': 'Enclosure height in mm, IEEE 1584-2018 enclosure-size correction (0 = auto from equipment class). Unused by the 2002 method.',
+  'bus.enclosure_depth_mm': 'Enclosure depth in mm — ≤ 203.2 mm (8 in) on a <600 V box qualifies for the 2018 "shallow" enclosure correction (0 = auto from equipment class). Unused by the 2002 method.',
 
   // Cable sizing — fault-withstand basis & standalone inputs
   'cable.adiabatic_basis': 'Fault-withstand current basis.\nThermal-equiv. Iₜₕ = Ik″·√(m+n) per IEC 60909-0 §12 (default, conservative — includes the DC component).\nBare Isc uses Ik″ directly, matching the simpler adiabatic hand-calc in many design guides.',
@@ -1864,10 +1868,13 @@ const COMPONENT_DEFS = {
       bus_type: 'PQ',
       busWidth: 120,
       working_distance_mm: 455,
+      arc_flash_method: 'IEEE 1584-2018',
       equipment_class: 'auto',
       conductor_gap_mm: 0,
       electrode_config: 'VCB',
-      enclosure_size_mm: 508,
+      enclosure_size_mm: 0,
+      enclosure_height_mm: 0,
+      enclosure_depth_mm: 0,
       soil_type: 'custom',
       soil_resistivity: 100,
       crushed_rock_resistivity: 2500,
@@ -1894,11 +1901,14 @@ const COMPONENT_DEFS = {
       { key: 'voltage_dc_v', label: 'DC Voltage', type: 'number', unit: 'Vdc', min: 0, showWhen: { field: 'system', values: ['dc'] } },
       { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'], showWhen: { field: 'system', values: ['ac'] } },
       { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
+      { key: 'arc_flash_method', label: 'Arc Flash Method', type: 'select', options: ['IEEE 1584-2018', 'IEEE 1584-2002'], section: 'arcflash' },
       { key: 'working_distance_mm', label: 'Working Distance', type: 'number', unit: 'mm', min: 300, step: 5, section: 'arcflash' },
       { key: 'equipment_class', label: 'Equipment Class', type: 'select', options: ['auto', 'lv_switchgear', 'lv_mcc_panel', 'lv_cable', 'mv_switchgear_5kv', 'mv_switchgear_15kv', 'open_air'], section: 'arcflash' },
       { key: 'conductor_gap_mm', label: 'Conductor Gap (0 = auto)', type: 'number', unit: 'mm', min: 0, step: 1, section: 'arcflash' },
       { key: 'electrode_config', label: 'Electrode Config', type: 'select', options: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'], section: 'arcflash' },
-      { key: 'enclosure_size_mm', label: 'Enclosure Width', type: 'number', unit: 'mm', min: 100, step: 10, section: 'arcflash' },
+      { key: 'enclosure_size_mm', label: 'Enclosure Width (0 = auto, 2018 only)', type: 'number', unit: 'mm', min: 0, step: 10, section: 'arcflash' },
+      { key: 'enclosure_height_mm', label: 'Enclosure Height (0 = auto, 2018 only)', type: 'number', unit: 'mm', min: 0, step: 10, section: 'arcflash' },
+      { key: 'enclosure_depth_mm', label: 'Enclosure Depth (0 = auto, 2018 only)', type: 'number', unit: 'mm', min: 0, step: 10, section: 'arcflash' },
       { key: 'system_grounded', label: 'System Grounding', type: 'select', options: ['unknown', 'grounded', 'ungrounded'], section: 'arcflash' },
       { key: 'soil_type', label: 'Soil Type', type: 'select', section: 'grounding', options: [
         { value: 'custom', label: 'Custom (use value below)' },

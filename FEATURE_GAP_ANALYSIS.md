@@ -18,7 +18,7 @@ Where it is **not** competitive is (a) transmission-scale work (PSS®E territory
 |---|---|
 | Load flow | NR + GS, islanding & merit-order/droop/standby dispatch, PV Q-limits with PV↔PQ switching, SVC/STATCOM, storage-inverter var modes, autotransformer OLTC iteration, fixed transformer taps, solution-quality classification, DC load flow, unbalanced (sym-component) LF with 1P/2P/3P loads, Load Flow Study Manager (named cases + comparison) |
 | Short circuit | IEC 60909 (3φ, SLG, LL, LLG), configurable c-factor, per-component sequence impedances, motor contribution, LV earthing systems (TN-S/TN-C/TN-C-S/TT/IT), detailed transformer zero-sequence (grounding-authoritative, core construction Z₀ₘ), DC short circuit (IEC 61660), equipment duty check |
-| Arc flash | IEEE 1584-**2002** + NFPA 70E PPE, per-bus gap/electrode class, DC arc flash (Stokes & Oppenlander / DGUV-I 203-077), label PDFs |
+| Arc flash | IEEE 1584-2002 **and** 1584-2018 (selectable per bus) + NFPA 70E PPE, per-bus gap/electrode class/enclosure size, DC arc flash (Stokes & Oppenlander / DGUV-I 203-077), label PDFs |
 | Protection | TCC with mini-SLD, auto-coordination engine, miscoordination detection, Sequence-of-Operation study, 50/51/67/21(display)/EF/CBCT, CT saturation, IEC 60898 B/C/D, gG fuses, custom curve CSV import |
 | Dynamics | Transient stability (classical + opt-in two-axis, AVR, governor, GFM/GFL IBR, UFLS + in-run protective tripping, dynamic loads & induction motors, sequenced events, frequency-collapse verdicts); dynamic motor starting (coupled multi-motor, DOL/YΔ/auto-tx/soft-starter, rotor I²t) |
 | Power quality | Harmonic penetration study (VFD spectra by pulse number, THD_V/IHD, PCC TDD, IEEE 519-2014 verdicts) |
@@ -72,7 +72,7 @@ Legend: ✔ implemented · ◐ partial · ✘ missing. "E" = ETAP, "PF" = PowerF
 
 | Capability | ProtectionPro | E | PF | PSS | Notes |
 |---|---|---|---|---|---|
-| **IEEE 1584-2018** | ✘ (2002 only) | ✔ | ✔ | ◐ | The engine docstring is explicit: 2018 electrode-configuration coefficients, 600 V/2.7 kV/14.3 kV interpolation and enclosure-size correction are not implemented. 2002 is superseded — this is the single most visible standards gap for safety studies. |
+| **IEEE 1584-2018** | ✔ | ✔ | ✔ | ◐ | Selectable per bus (`arc_flash_method`); electrode-configuration coefficients, 600 V/2.7 kV/14.3 kV interpolation, and enclosure-size correction all implemented (2026-07). 2002 kept for legacy byte-identical results. |
 | DC arc flash | ✔ | ✔ | ✘ | ✘ | Ahead of PF/PSS here. |
 | **HV arc flash (>15 kV)** | ✘ | ✔ | ◐ | ✘ | EPRI/ArcPro-class methods; niche. |
 | Arc flash labels | ✔ | ✔ | ◐ | ✘ | |
@@ -145,7 +145,7 @@ Legend: ✔ implemented · ◐ partial · ✘ missing. "E" = ETAP, "PF" = PowerF
 ## 3. Shortcomings ranked (what to actually do)
 
 ### Tier 1 — gaps that undermine the tool's core "protection & safety studies" promise
-1. **IEEE 1584-2018 arc flash.** The tool is named ProtectionPro and computes arc flash to a superseded 2002 edition. Every serious competitor is on 2018 (electrode configurations, enclosure-size correction, three-current interpolation). The engine already has per-bus gap/electrode class fields — the 2018 coefficient machinery slots into the existing structure.
+1. ~~**IEEE 1584-2018 arc flash.**~~ Done (2026-07) — selectable per bus via `arc_flash_method`, electrode configurations/enclosure-size correction/three-current interpolation all implemented, 2002 kept for legacy byte-identical results.
 2. **Frequency scan.** Trivial extension of the existing harmonic Y(h) solve; unlocks resonance identification, which the harmonics report currently only infers.
 3. **Time-series / quasi-dynamic load flow.** PF QDS / PSS®E Time-Series PF / ETAP load profiles are the workhorse of modern DER studies. ProtectionPro already models PV irradiance, BESS SoC and dispatch — running the existing LF over a 24 h/8760 h profile with storage state carried between steps is a natural, high-value increment (and makes the existing battery-autonomy study a special case).
 4. **ANSI C37 short circuit** (already in backlog) — gates the entire North-American market.

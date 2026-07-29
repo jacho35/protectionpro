@@ -110,6 +110,22 @@ def test_arc_flash(project):
     assert res.method == "IEEE 1584-2002"
     for bus in res.buses.values():
         assert bus.incident_energy_cal > 0
+        assert bus.method == "IEEE 1584-2002"
+
+
+def test_arc_flash_2018_method(project):
+    """A bus opting into arc_flash_method="IEEE 1584-2018" runs the 2018
+    engine end-to-end (schema, per-bus method selection, enclosure/ratio
+    plumbing) without crashing, and reports its own method distinctly from
+    an untouched (2002-default) bus on the same project."""
+    from backend.analysis.fault import run_fault_analysis
+    from backend.analysis.arcflash import run_arc_flash
+    project.components[1].props["arc_flash_method"] = "IEEE 1584-2018"  # bus-1 (MV)
+    res = run_arc_flash(project, run_fault_analysis(project))
+    assert res.buses["bus-1"].method == "IEEE 1584-2018"
+    assert res.buses["bus-1"].incident_energy_cal > 0
+    assert res.buses["bus-2"].method == "IEEE 1584-2002"
+    assert res.method == "IEEE 1584-2002 / 2018 (per bus)"
 
 
 def test_cable_sizing(project):
