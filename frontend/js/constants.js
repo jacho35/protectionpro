@@ -5,7 +5,9 @@
 // load. V5: 2026-07 calculation-verification P3 remediation (capacitor Q∝V²,
 // fuse-curve clearing, CB thermal k/(M²−1), YNyn Z0 through-path, duty-check
 // asym/making, CT knee, q-factor pole pairs, GS mismatch check, …).
-const APP_VERSION = 'V5';
+// V6: time-series / quasi-dynamic load flow (BACKLOG item 4) — new study
+// type, no change to any existing engine's results.
+const APP_VERSION = 'V6';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
