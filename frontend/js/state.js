@@ -8,7 +8,7 @@ const RESULT_SLOTS = [
   'faultResults', 'faultResultsMin', 'loadFlowResults', 'unbalancedLoadFlowResults', 'arcFlashResults',
   'dcArcFlashResults', 'dcLoadFlowResults', 'dcShortCircuitResults', 'cableSizingResults',
   'motorStartingResults', 'dynamicMotorResults', 'stabilityResults', 'dutyCheckResults',
-  'loadDiversityResults', 'groundingResults', 'studyManagerResults',
+  'loadDiversityResults', 'groundingResults', 'studyManagerResults', 'ansiFaultResults',
 ];
 
 // Human labels for the stale-results notice.
@@ -21,7 +21,7 @@ const RESULT_SLOT_LABELS = {
   motorStartingResults: 'Motor Starting', dynamicMotorResults: 'Dynamic Motor Starting',
   stabilityResults: 'Transient Stability', dutyCheckResults: 'Duty Check',
   loadDiversityResults: 'Load Diversity', groundingResults: 'Grounding',
-  studyManagerResults: 'Study Manager',
+  studyManagerResults: 'Study Manager', ansiFaultResults: 'ANSI Fault Duty',
 };
 
 const AppState = {
@@ -1050,6 +1050,7 @@ const AppState = {
     this.loadDiversityResults = null;
     this.groundingResults = null;
     this.studyManagerResults = null;
+    this.ansiFaultResults = null;
   },
 
   // Reset entire state
@@ -1249,6 +1250,7 @@ const AppState = {
       loadDiversityResults: this.loadDiversityResults || undefined,
       groundingResults: this.groundingResults || undefined,
       studyManagerResults: this.studyManagerResults || undefined,
+      ansiFaultResults: this.ansiFaultResults || undefined,
       // Provenance for the persisted results (app version + time per slot) so a
       // result computed on an older engine version is detected as stale on load.
       resultsMeta: (this.resultsMeta && Object.keys(this.resultsMeta).length)

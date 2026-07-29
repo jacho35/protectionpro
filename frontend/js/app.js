@@ -1522,6 +1522,110 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── ANSI/IEEE C37.010 Fault Duty ──
+  document.getElementById('btn-fault-ansi').addEventListener('click', async () => {
+    if (AppState.components.size === 0) {
+      document.getElementById('status-info').textContent = 'Add components before running fault duty analysis.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running ANSI/IEEE C37.010 fault duty analysis...';
+    _setBusy('btn-fault-ansi', true);
+    try {
+      const result = await API.runAnsiFaultAnalysis();
+      AppState.ansiFaultResults = result;
+      document.getElementById('status-info').textContent = 'ANSI fault duty analysis complete.';
+      showAnsiFaultResults(result);
+    } catch (e) {
+      console.error('ANSI fault duty error:', e);
+      document.getElementById('status-info').textContent = 'ANSI fault duty analysis failed.';
+      showValidationModal('Fault Duty (ANSI) — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-fault-ansi', false);
+    }
+  });
+
+  function showAnsiFaultResults(result) {
+    const modal = document.getElementById('fault-ansi-modal');
+    const body = document.getElementById('fault-ansi-body');
+    if (!modal || !body) return;
+
+    const buses = Object.values(result.buses || {});
+    const devices = result.devices || [];
+
+    if (buses.length === 0) {
+      body.innerHTML = '<p>No buses found for fault duty analysis.</p>';
+      modal.style.display = '';
+      return;
+    }
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
+      html += '</div>';
+    }
+
+    html += `<h4 style="margin:8px 0 4px">Bus Fault Duty (E/X method, 3-phase)</h4>
+    <table class="af-table">
+      <thead><tr>
+        <th>Bus</th><th>Voltage (kV)</th><th>I sym momentary (kA)</th>
+        <th>I asym momentary / C&amp;L (kA)</th><th>I sym interrupting (kA)</th>
+        <th>X/R interrupting</th>
+      </tr></thead><tbody>`;
+    for (const b of buses) {
+      html += `<tr${b.warning ? ' class="af-medium"' : ''}>
+        <td>${escHtml(b.bus_name || b.bus_id)}</td>
+        <td>${b.voltage_kv.toFixed(2)}</td>
+        <td>${b.i_sym_momentary_ka.toFixed(2)}</td>
+        <td>${b.i_asym_momentary_ka.toFixed(2)}</td>
+        <td>${b.i_sym_interrupting_ka.toFixed(2)}</td>
+        <td>${b.x_r_interrupting != null ? b.x_r_interrupting.toFixed(1) : '—'}</td>
+      </tr>`;
+      if (b.warning) {
+        html += `<tr class="af-medium"><td colspan="6" style="padding-left:24px;font-size:11px">${escHtml(b.warning)}</td></tr>`;
+      }
+    }
+    html += '</tbody></table>';
+
+    if (devices.length > 0) {
+      html += `<h4 style="margin:12px 0 4px">Breaker Duty (vs. C37.06 rating)</h4>
+      <table class="af-table">
+        <thead><tr>
+          <th>Breaker</th><th>Bus</th><th>Rated (kA @ kV, K)</th>
+          <th>Interrupting duty / cap.</th><th>Status</th>
+          <th>Closing &amp; latching duty / cap.</th><th>Status</th>
+        </tr></thead><tbody>`;
+      for (const d of devices) {
+        const passI = d.status_interrupting === 'PASS';
+        const passL = d.status_closing_latching === 'PASS';
+        const rowClass = (!passI && !d.requires_detailed_method) || !passL ? 'af-danger'
+          : d.requires_detailed_method ? 'af-medium' : 'af-low';
+        const badge = (ok, review) => ok
+          ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
+          : review ? '<span style="color:#f57c00;font-weight:600">REVIEW</span>'
+          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
+        html += `<tr class="${rowClass}">
+          <td>${escHtml(d.device_name)}</td>
+          <td>${escHtml(d.bus_id)}</td>
+          <td>${d.rated_interrupting_ka.toFixed(1)} @ ${d.rated_max_kv.toFixed(1)}, K=${d.k_factor.toFixed(2)}</td>
+          <td>${d.duty_interrupting_ka.toFixed(2)} / ${d.capability_interrupting_ka.toFixed(2)}</td>
+          <td>${badge(passI, d.requires_detailed_method)}</td>
+          <td>${d.duty_closing_latching_ka.toFixed(2)} / ${d.capability_closing_latching_ka.toFixed(2)}</td>
+          <td>${badge(passL, false)}</td>
+        </tr>`;
+        if (d.requires_detailed_method) {
+          html += `<tr class="af-medium"><td colspan="7" style="padding-left:24px;font-size:11px">${escHtml(d.status_interrupting)}</td></tr>`;
+        }
+      }
+      html += '</tbody></table>';
+    } else {
+      html += '<p>No circuit breakers found in the project.</p>';
+    }
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   function showDutyCheckResults(result) {
     const modal = document.getElementById('duty-check-modal');
     const body = document.getElementById('duty-check-body');
@@ -3090,6 +3194,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'duty-check-modal') e.target.style.display = 'none';
   });
 
+  document.getElementById('btn-close-fault-ansi').addEventListener('click', () => {
+    document.getElementById('fault-ansi-modal').style.display = 'none';
+  });
+  document.getElementById('fault-ansi-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'fault-ansi-modal') e.target.style.display = 'none';
+  });
+
   document.getElementById('btn-close-load-diversity').addEventListener('click', () => {
     document.getElementById('load-diversity-modal').style.display = 'none';
   });
@@ -3871,6 +3982,8 @@ document.addEventListener('DOMContentLoaded', () => {
       icon: '<path d="M2 13h12" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><circle cx="4" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="6" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 8.3L6.7 6.7M9.3 5.4l1.4-0.8" stroke="currentColor" stroke-width="1.1"/>' },
     { id: 'duty-check', label: 'Duty Check', category: 'Studies', btnId: 'btn-duty-check',
       icon: '<path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+    { id: 'fault-ansi', label: 'Fault Duty (ANSI C37.010)', category: 'Studies', btnId: 'btn-fault-ansi',
+      icon: '<rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>' },
     { id: 'load-diversity', label: 'Load Diversity', category: 'Studies', btnId: 'btn-load-diversity',
       icon: '<rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/>' },
     { id: 'grounding', label: 'Grounding', category: 'Studies', btnId: 'btn-grounding',

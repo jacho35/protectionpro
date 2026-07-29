@@ -376,6 +376,12 @@ const API = {
     return this.request('/analysis/duty-check', 'POST', data);
   },
 
+  // Run ANSI/IEEE C37.010 3-phase fault duty analysis
+  async runAnsiFaultAnalysis() {
+    const data = AppState.toJSON();
+    return this.request('/analysis/fault-ansi', 'POST', data);
+  },
+
   // Run load diversity analysis
   async runLoadDiversity() {
     const data = AppState.toJSON();

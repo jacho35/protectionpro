@@ -25,6 +25,7 @@ from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
 from ..analysis.backup_autonomy import run_backup_autonomy
 from ..analysis.fault import run_fault_analysis
+from ..analysis.fault_ansi import run_ansi_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
 from ..analysis.dc_loadflow import run_dc_load_flow
@@ -453,6 +454,17 @@ def duty_check(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Duty check error: {e}")
+
+
+@router.post("/fault-ansi")
+def fault_ansi(data: ProjectData):
+    """Run ANSI/IEEE C37.010 3-phase fault-duty analysis (E/X method) and
+    compare against C37.06 circuit-breaker ratings."""
+    try:
+        return run_ansi_fault_analysis(data, fault_bus_id=data.faultBusId)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"ANSI fault duty error: {e}")
 
 
 @router.post("/load-diversity")

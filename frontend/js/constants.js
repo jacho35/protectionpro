@@ -1054,7 +1054,8 @@ const FIELD_INFO = {
   'cable.rated_amps':  'Default 400A — typical rating for medium-voltage distribution cable.\nSource: IEC 60502 / IEC 60364-5-52 — current-carrying capacity tables.',
 
   // Circuit Breaker
-  'cb.breaking_capacity_ka': 'Default 25 kA — typical for 11 kV distribution circuit breakers.\nSource: IEC 62271-100 — rated short-circuit breaking current.',
+  'cb.breaking_capacity_ka': 'Default 25 kA — typical for 11 kV distribution circuit breakers.\nSource: IEC 62271-100 — rated short-circuit breaking current. For an ANSI fault-duty study this is read as the C37.06 "rated short-circuit current" (symmetrical, at Rated Voltage as the rated max kV).',
+  'cb.k_factor': 'ANSI/IEEE C37.06 voltage-range factor. 1.0 (default) for modern "preferred ratings" breakers (~1999+) — interrupting capability is flat at Breaking Cap. for any operating voltage up to Rated Voltage. Older "total current basis" breakers have K > 1 (typically 1.0–1.65, some up to ~2.5): capability scales up as 1/V below rated voltage, CAPPED at K × Breaking Cap. Only used by the ANSI fault-duty study, not the IEC one.\nSource: ANSI/IEEE C37.010 / C37.06.',
   'cb.thermal_pickup':       'Default 1.0×In — thermal overload pickup at rated current.\nSource: IEC 60947-2 §4.7 — thermal trip characteristics.',
   'cb.magnetic_pickup':      'Default 10×In — typical magnetic instantaneous pickup for MCCB.\nSource: IEC 60947-2 Annex F — magnetic trip range:\n• Type B: 3–5×In\n• Type C: 5–10×In\n• Type D: 10–20×In',
   'cb.long_time_delay':      'Default class 10 — standard long-time delay for motor and feeder protection.\nSource: IEC 60947-2 §4.7.1 — tripping classes:\n• Class 5: fast (motor starting)\n• Class 10: standard\n• Class 20: heavy-duty motor starts\n• Class 30: very heavy-duty.',
@@ -2165,6 +2166,7 @@ const COMPONENT_DEFS = {
       short_time_pickup: 0,
       short_time_delay: 0,
       instantaneous_pickup: 0,
+      k_factor: 1.0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -2172,6 +2174,7 @@ const COMPONENT_DEFS = {
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
+      { key: 'k_factor', label: 'ANSI K Factor', type: 'number', min: 1, step: 0.01, section: 'fault' },
       { key: 'circuit_type', label: 'Circuit Type', type: 'select',
         options: [
           { value: '', label: 'Auto (assume final)' },

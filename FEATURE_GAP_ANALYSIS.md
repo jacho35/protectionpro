@@ -58,7 +58,7 @@ Legend: ✔ implemented · ◐ partial · ✘ missing. "E" = ETAP, "PF" = PowerF
 | Capability | ProtectionPro | E | PF | PSS | Notes |
 |---|---|---|---|---|---|
 | IEC 60909 | ✔ | ✔ | ✔ | ✔ | Verified against published examples incl. an ETAP cross-check. |
-| **ANSI/IEEE C37.010 short circuit** | ✘ | ✔ | ✔ | ✔ | In backlog; required for the US market. |
+| **ANSI/IEEE C37.010 short circuit** | ✔ (3-phase E/X) | ✔ | ✔ | ✔ | 2026-07: E/X method, first-cycle/interrupting duty vs. C37.06 breaker ratings. SLG/LL/LLG and the detailed E/Z (X/R>15) method remain open. |
 | IEC 61363 (marine/offshore) | ✘ | ✔ | ✔ | ◐ | In backlog. |
 | **Open-conductor / series faults, simultaneous faults** | ✘ | ✔ | ✔ | ✔ | Fault engine covers shunt faults only. Open-phase (broken conductor) matters for rural MV feeders and generator interconnects. |
 | Fault current decay / time-varying (sub-transient→steady) | ✔ | ✔ | ✔ | ✔ | |
@@ -148,7 +148,7 @@ Legend: ✔ implemented · ◐ partial · ✘ missing. "E" = ETAP, "PF" = PowerF
 1. ~~**IEEE 1584-2018 arc flash.**~~ Done (2026-07) — selectable per bus via `arc_flash_method`, electrode configurations/enclosure-size correction/three-current interpolation all implemented, 2002 kept for legacy byte-identical results.
 2. **Frequency scan.** Trivial extension of the existing harmonic Y(h) solve; unlocks resonance identification, which the harmonics report currently only infers.
 3. **Time-series / quasi-dynamic load flow.** PF QDS / PSS®E Time-Series PF / ETAP load profiles are the workhorse of modern DER studies. ProtectionPro already models PV irradiance, BESS SoC and dispatch — running the existing LF over a 24 h/8760 h profile with storage state carried between steps is a natural, high-value increment (and makes the existing battery-autonomy study a special case).
-4. **ANSI C37 short circuit** (already in backlog) — gates the entire North-American market.
+4. ~~**ANSI C37 short circuit**~~ Done (2026-07, 3-phase E/X method) — gates the entire North-American market.
 5. **Open-conductor / series faults** — real protection-engineering need (broken-conductor detection on MV feeders), fits the existing sequence-network machinery.
 
 ### Tier 2 — expected by users migrating from the big three
