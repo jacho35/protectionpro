@@ -14,6 +14,7 @@ const TimeSeries = {
     horizon_hours: 24, step_minutes: 60, default_profile: '',
     v_min: 0.95, v_max: 1.05, loading_limit_pct: 100, overrides: {},
   },
+  _defaultStepApplied: false,
 
   _PROFILE_TYPES: ['static_load', 'motor_induction', 'motor_synchronous',
     'distribution_board', 'solar_pv', 'wind_turbine', 'generator'],
@@ -47,6 +48,15 @@ const TimeSeries = {
   openConfig() {
     const comps = this._profileComponents();
     const c = this._cfg;
+    const hasBatteries = this._batteries() > 0;
+    // Battery SoC clamps at a step boundary rather than re-solving it exactly
+    // (see timeseries_loadflow.py's BESS caveat) — default to a finer step
+    // the first time the modal opens on a network with storage; never
+    // overrides a step size the user has since chosen.
+    if (!this._defaultStepApplied) {
+      this._defaultStepApplied = true;
+      if (hasBatteries) c.step_minutes = 15;
+    }
     const body = document.getElementById('tsl-config-body');
     const profOpt = (sel) => this._PROFILES.map(p =>
       `<option value="${p.v}"${p.v === sel ? ' selected' : ''}>${this._esc(p.label)}</option>`).join('');
@@ -86,7 +96,10 @@ const TimeSeries = {
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:14px 0 4px">
         A 15-minute / 8760 h combination is 35,040 solves — consider 1-hour steps
         for a full-year run. Voltage/loading limits above only count violation
-        steps; they do not change the solve.</p>
+        steps; they do not change the solve.${hasBatteries ? ' This network has'
+        + ' battery storage: a 15-minute step is preselected because SoC only'
+        + ' clamps at 0%/100% rather than re-solving the exact depletion/full-charge'
+        + ' instant within a step — a coarser step reports less precise timing.' : ''}</p>
       ${comps.length ? `
       <div style="margin-top:8px;font-size:13px"><strong>Profile assignment</strong>
         <span style="font-size:11px;color:var(--text-muted,#6d6d6d)"> — leave "Use default" for the built-in per-type shape</span></div>
