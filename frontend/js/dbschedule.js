@@ -354,8 +354,25 @@ const DBSchedule = {
     return is3P ? va / (Math.sqrt(3) * 400) : va / 230;
   },
 
+  // Base (undegraded) ampacity for a bare cable_mm2 size, looked up against
+  // the Cu/PVC LV general-wiring table (the standard already referenced by
+  // the socket-circuit minimum-size rule below) — no grouping/ambient/burial
+  // derating, that's the job of the dedicated cable_sizing engine for an
+  // explicit cable component. Exact size match, else the next size up;
+  // never credit a smaller table entry.
+  _cableAmpacityA(mm2) {
+    const sz = Number(mm2);
+    if (!sz || typeof STANDARD_CABLES === 'undefined') return null;
+    const lv = STANDARD_CABLES.filter(c => c.conductor === 'Cu' && c.insulation === 'PVC' && !(c.voltage_kv > 1));
+    const exact = lv.find(c => c.size_mm2 === sz);
+    if (exact) return exact.rated_amps;
+    const larger = lv.filter(c => c.size_mm2 > sz).sort((a, b) => a.size_mm2 - b.size_mm2)[0];
+    return larger ? larger.rated_amps : null;
+  },
+
   // Overload / undersize warnings (EE-8, EE-9): way current vs breaker,
-  // socket-way conductor vs SANS 10142-1 minimum, feeder demand vs breaker.
+  // socket-way conductor vs SANS 10142-1 minimum, feeder demand vs breaker,
+  // cable ampacity vs breaker (Iz ≥ In per SANS 10142-1 / IEC 60364-433).
   _wayWarnings(c) {
     const w = [];
     const br = Number(c.breaker_a) || 0;
@@ -364,6 +381,10 @@ const DBSchedule = {
     const isSocket = /socket/i.test(c.description || '');
     if (isSocket && Number(c.cable_mm2) > 0 && Number(c.cable_mm2) < 2.5) {
       w.push('Socket circuit cable < 2.5 mm² (SANS 10142-1)');
+    }
+    const ampacity = this._cableAmpacityA(c.cable_mm2);
+    if (ampacity != null && br > ampacity + 1e-6) {
+      w.push(`${c.cable_mm2} mm² cable (Iz ≈ ${ampacity} A) undersized for the ${br} A breaker — SANS 10142-1 Iz ≥ In`);
     }
     if (c.type === 'feeder_db' && Number(c.downstream_a) > 0 && br && c.downstream_a > br + 1e-6) {
       w.push(`Downstream demand ${Number(c.downstream_a).toFixed(1)} A exceeds the ${br} A feeder breaker`);

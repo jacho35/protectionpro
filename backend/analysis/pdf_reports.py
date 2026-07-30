@@ -7,6 +7,8 @@ import tempfile
 from datetime import date
 from fpdf import FPDF
 
+from .cable_sizing import STANDARD_CABLES as _CABLE_LIB
+
 
 def _safe(text):
     """Replace Unicode chars that core fonts can't handle."""
@@ -542,6 +544,27 @@ def _render_settings_schedule(pdf, components):
     _table(pdf, headers, rows, widths, header_color=(106, 27, 154))
 
 
+def _cable_ampacity_a(mm2):
+    """Base (undegraded) ampacity for a bare cable size, looked up against
+    the Cu/PVC LV general-wiring table shared with cable_sizing.py — no
+    grouping/ambient/burial derating, that's the job of the dedicated
+    cable-sizing engine for an explicit cable component. Exact size match,
+    else the next size up; never credit a smaller table entry."""
+    try:
+        sz = float(mm2)
+    except (TypeError, ValueError):
+        return None
+    if not sz:
+        return None
+    lv = [c for c in _CABLE_LIB
+          if c["conductor"] == "Cu" and c["insulation"] == "PVC" and not (c["voltage_kv"] > 1)]
+    exact = next((c for c in lv if c["size_mm2"] == sz), None)
+    if exact:
+        return exact["rated_amps"]
+    larger = sorted((c for c in lv if c["size_mm2"] > sz), key=lambda c: c["size_mm2"])
+    return larger[0]["rated_amps"] if larger else None
+
+
 def _render_db_schedules(pdf, components):
     """Distribution board legend cards: one schedule table per board."""
     if not components:
@@ -575,7 +598,22 @@ def _render_db_schedules(pdf, components):
         pdf.ln(2)
 
         rows = []
+        undersized = []
         for c in circuits:
+            br = c.get("breaker_a")
+            ampacity = _cable_ampacity_a(c.get("cable_mm2"))
+            cable_cell = f"{c.get('cable_mm2', '—')}mm² / {c.get('cable_m', '—')}m"
+            try:
+                br_val = float(br)
+            except (TypeError, ValueError):
+                br_val = None
+            if ampacity is not None and br_val is not None and br_val > ampacity + 1e-6:
+                cable_cell += " [undersized]"
+                undersized.append(
+                    f"Way {c.get('way', '')} ({c.get('description') or '—'}): "
+                    f"{c.get('cable_mm2')}mm2 cable (Iz ~{ampacity}A) undersized "
+                    f"for the {br_val:.0f}A breaker"
+                )
             rows.append([
                 str(c.get("way", "")),
                 str(c.get("description", "") or "—"),
@@ -583,7 +621,7 @@ def _render_db_schedules(pdf, components):
                 f"{c.get('breaker_a', '—')}A {c.get('curve', '')}",
                 str(c.get("el_group", "") or "—"),
                 f"{float(c.get('leakage_ma') or 0):.1f}",
-                f"{c.get('cable_mm2', '—')}mm² / {c.get('cable_m', '—')}m",
+                cable_cell,
                 f"{float(c.get('load_va') or 0):.0f}",
                 f"{float(c.get('demand_factor') or 1):.2f}",
                 f"{float(c.get('power_factor') or p.get('power_factor') or 0.85):.2f}",
@@ -595,6 +633,19 @@ def _render_db_schedules(pdf, components):
                   avail * 0.07, avail * 0.08, avail * 0.13, avail * 0.10,
                   avail * 0.08, avail * 0.07]
         _table(pdf, headers, rows, widths, header_color=(46, 125, 50))
+
+        # Cable adequacy vs breaker rating (Iz >= In - SANS 10142-1 /
+        # IEC 60364-433). Base Cu/PVC LV ampacity only, no derating - see
+        # _cable_ampacity_a().
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 5, "Cable adequacy (Iz >= In - SANS 10142-1):", ln=1)
+        pdf.set_font("Helvetica", "", 9)
+        if undersized:
+            for line in undersized:
+                pdf.cell(0, 5, _safe("  " + line), ln=1)
+        else:
+            pdf.cell(0, 5, "  All ways: cable adequately sized for their breaker.", ln=1)
 
         # Standing earth leakage per EL group: device leakage plus cable
         # insulation leakage (~0.5 mA per 100 m). IEC 60364-5-53 531.3.2:
