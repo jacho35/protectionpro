@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire, LoadFlowBus
-from backend.analysis.fault import run_fault_analysis
+from backend.analysis.fault import run_fault_analysis, run_open_conductor_analysis
 from backend.analysis.loadflow import (
     run_load_flow, connected_bus_loads_mw, _assess_solution,
     _newton_raphson, _gauss_seidel, solve_with_islands,
@@ -216,6 +216,80 @@ class TestFaultAnalysis:
         assert len(term) == 1, "no terminal-node fault result was reported"
         assert term[0].ik3 == pytest.approx(with_bus["bus-3"].ik3, rel=1e-6)
         assert term[0].bus_name == "M1 terminal"  # friendly name for reports
+
+
+def _open_conductor_project(fault_mva=1e7, kv=11.0, r_per_km=0.5, x_per_km=0.3,
+                            length_km=1.0, rated_kva=625.0, power_factor=0.8):
+    """Utility (near-ideal, fault_mva huge) — cable — bus — static load, with
+    no downstream source and no downstream zero-sequence return path."""
+    cable = _comp("cable-1", "cable", {
+        "name": "Feeder", "r_per_km": r_per_km, "x_per_km": x_per_km,
+        "length_km": length_km, "rated_amps": 400.0, "voltage_kv": kv,
+    })
+    bus2 = _comp("bus-2", "bus", {"name": "Load Bus", "voltage_kv": kv})
+    load = _comp("static_load-1", "static_load", {
+        "name": "Load", "rated_kva": rated_kva, "power_factor": power_factor,
+    })
+    wires = [
+        _wire("w2", "bus-1", "cable-1"),
+        _wire("w3", "cable-1", "bus-2"),
+        _wire("w4", "bus-2", "static_load-1"),
+    ]
+    return _utility_bus_project(fault_mva=fault_mva, xr=15.0, kv=kv, z0_z1=1.0,
+                                extra_components=[cable, bus2, load], extra_wires=wires)
+
+
+class TestOpenConductor:
+    """One-conductor-open (single-phasing) series fault — Stevenson/Blackburn
+    symmetrical-component method (see fault.run_open_conductor_analysis)."""
+
+    def test_one_conductor_open_degenerate_no_zero_seq(self):
+        """With NO downstream zero-sequence return path (a static load, no
+        grounded transformer beyond the break), Za0 → ∞ so Za2‖Za0 → Za2.
+        With a near-ideal source (fault_mva huge, so Zx ≈ just the cable)
+        and a passive load (Z2 = Z1 always for a passive element), Za1 = Za2
+        exactly — degenerating Ia1 = Ea1/(Za1+Za2‖Za0) to Ea1/(2·Za1), i.e.
+        Ia1 = Ia2 = I_L/2 and Ia0 ≈ 0. Pins the divider algebra and sign
+        convention independent of the load-flow engine (I_L is read back
+        from an ordinary load-flow solve of the same network, not hand
+        derived)."""
+        proj = _open_conductor_project()
+        lf = run_load_flow(proj, "newton_raphson")
+        branch = next(b for b in lf.branches if b.elementId == "cable-1")
+        il_ka = branch.i_amps / 1000.0
+        assert il_ka > 0
+
+        res = run_open_conductor_analysis(proj, "cable-1")
+        assert res.z1_pu[0] == pytest.approx(res.z2_pu[0], rel=1e-3)
+        assert res.z1_pu[1] == pytest.approx(res.z2_pu[1], rel=1e-3)
+        assert res.ia1_ka == pytest.approx(il_ka / 2.0, rel=0.02)
+        assert res.ia2_ka == pytest.approx(il_ka / 2.0, rel=0.02)
+        assert res.ia0_ka == pytest.approx(0.0, abs=max(il_ka * 0.01, 1e-6))
+        assert res.negative_seq_pct == pytest.approx(100.0, rel=0.03)
+        assert res.has_downstream_source is False
+        assert res.source_bus_id == "bus-1"
+        assert res.load_bus_id == "bus-2"
+
+    def test_rejects_non_cable_branch(self):
+        proj = _open_conductor_project()
+        with pytest.raises(ValueError):
+            run_open_conductor_analysis(proj, "bus-2")
+
+    def test_rejects_branch_without_two_bus_connections(self):
+        """A dangling cable (only one end wired) can't be open-conductor
+        analysed — needs both a source side and a load side."""
+        comps = [
+            _comp("utility-1", "utility", {"name": "Grid", "voltage_kv": 11.0,
+                                           "fault_mva": 500.0, "x_r_ratio": 15.0}),
+            _comp("bus-1", "bus", {"name": "Main Bus", "voltage_kv": 11.0}),
+            _comp("cable-1", "cable", {"name": "Stub", "r_per_km": 0.5,
+                                       "x_per_km": 0.3, "length_km": 1.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"), _wire("w2", "bus-1", "cable-1")]
+        proj = ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        with pytest.raises(ValueError):
+            run_open_conductor_analysis(proj, "cable-1")
 
 
 # ── IEEE 1584-2002 arc flash ─────────────────────────────────────────────

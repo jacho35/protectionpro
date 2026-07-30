@@ -179,6 +179,7 @@ class ProjectData(BaseModel):
     conductorTemperatureC: Optional[float] = None
     stabilityDisturbance: Optional[dict] = None  # transient-stability event spec (see transient_stability)
     dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
+    openConductorBranchId: Optional[str] = None  # cable/feeder id for open-conductor (series-fault) analysis
 
     @model_validator(mode="after")
     def _correct_overhead_resistance(self):
@@ -544,6 +545,38 @@ class FaultResults(BaseModel):
     # [PS-10/PS-11] Fixed study conventions — printed as report assumptions
     # so signable outputs disclose the screening-level conventions used.
     study_assumptions: Optional[list[str]] = None
+
+
+class OpenConductorResults(BaseModel):
+    """One-conductor-open (single-phasing) series fault on a cable branch.
+    See fault.run_open_conductor_analysis for the derivation."""
+    branch_id: str
+    branch_name: str = ""
+    source_bus_id: str = ""      # side used as the driving EMF (upstream)
+    source_bus_name: str = ""
+    load_bus_id: str = ""        # side represented as impedance only (downstream)
+    load_bus_name: str = ""
+    voltage_kv: float = 0
+    base_mva: float = 100
+    prefault_current_a: float = 0  # prefault branch current (compensation-theorem driver)
+    z1_pu: list[float] = []      # [real, imag] total positive-seq Za1 = Zx1+Zy1
+    z2_pu: list[float] = []      # [real, imag] total negative-seq Za2
+    z0_pu: list[float] = []      # [real, imag] total zero-seq Za0
+    z1_source_pu: list[float] = []  # [real, imag] Zx1 (upstream, incl. branch impedance)
+    z1_load_pu: list[float] = []    # [real, imag] Zy1 (downstream)
+    ia1_ka: float = 0            # positive-sequence current at the break (kA)
+    ia2_ka: float = 0            # negative-sequence current at the break (kA)
+    ia0_ka: float = 0            # zero-sequence current at the break (kA)
+    ib_ka: float = 0             # healthy-phase B current (kA)
+    ic_ka: float = 0             # healthy-phase C current (kA)
+    ig_ka: float = 0             # residual/ground current 3·Ia0 (kA)
+    negative_seq_pct: float = 0  # Ia2/Ia1 × 100% — NEMA MG-1 motor single-phasing stress proxy
+    downstream_va_pu: float = 0  # downstream bus phase voltages post-event (p.u.)
+    downstream_vb_pu: float = 0
+    downstream_vc_pu: float = 0
+    has_downstream_source: bool = False
+    warnings: list[str] = []
+    method: str = "Open conductor"
 
 
 class ArcFlashBusResult(BaseModel):

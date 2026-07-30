@@ -146,6 +146,13 @@ const API = {
     return this.request('/analysis/fault', 'POST', data);
   },
 
+  // Run one-conductor-open (single-phasing) series fault analysis on a cable branch
+  async runOpenConductorAnalysis(branchId) {
+    const data = AppState.toJSON();
+    data.openConductorBranchId = branchId;
+    return this.request('/analysis/open-conductor', 'POST', data);
+  },
+
   // Run arc flash analysis
   async runArcFlash() {
     const data = AppState.toJSON();

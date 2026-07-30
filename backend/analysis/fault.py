@@ -2755,3 +2755,384 @@ def _calc_motor_reacceleration(motor_data, bus_shunts, bus_idx, faulted_bus_id,
             break
 
     return profile
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Open-conductor (series) fault — one conductor open
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Unlike the shunt faults above (3φ/SLG/LL/LLG, which short sequence networks
+# together AT a bus), an open conductor is a SERIES discontinuity along a
+# branch: one phase of a cable/line opens (a broken conductor, a blown
+# single-phase cutout fuse element) while the other two phases stay intact.
+# The standard symmetrical-components treatment (Stevenson, "Elements of
+# Power System Analysis" §9.9; Blackburn & Domin, "Protective Relaying" ch.4)
+# derives the boundary conditions directly from Ia=0 (the broken phase),
+# ΔVb=0, ΔVc=0 (the two healthy phases are still solid conductors, so no
+# voltage difference develops across the break in those phases). Transformed
+# to sequence components this gives Ia0+Ia1+Ia2=0 and ΔVa0=ΔVa1=ΔVa2 — i.e.
+# the positive-, negative- and zero-sequence NETWORKS (each network being the
+# series sum of a source-side and a load-side Thevenin impedance, Za_k =
+# Zx_k + Zy_k) are connected in PARALLEL across the break, with only the
+# positive-sequence network carrying an EMF:
+#
+#   Ea1 = I_L,prefault(pu) × Za1        (compensation theorem: the open-
+#                                         circuit voltage that appears across
+#                                         a zero-impedance point carrying
+#                                         prefault current I_L, once opened,
+#                                         equals I_L × the network's own
+#                                         Thevenin impedance at that point)
+#   Ia1 = Ea1 / (Za1 + Za2‖Za0)
+#   Ia2 = -Ia1 × Za0/(Za2+Za0)
+#   Ia0 = -Ia1 × Za2/(Za2+Za0)
+#
+# These are the TOTAL (not incremental) post-event sequence currents through
+# the break — Ia0+Ia1+Ia2=0 by construction, matching Ia=0. The healthy-phase
+# currents follow by inverse transform (Ib = Ia0+a²Ia1+aIa2, etc.), and the
+# downstream (load-side) bus's sequence voltages are Vn_k = Ia_k × Zy_k
+# (voltage across the load-side impedance, which is exactly where the break's
+# far-side node sits) — the quantity that matters for assessing a downstream
+# motor's undervoltage/negative-sequence single-phasing stress.
+#
+# Scope of this first cut (BACKLOG "Open-conductor / series & simultaneous
+# faults"): ONE conductor open, on a single CABLE branch whose both ends
+# terminate directly on a bus/distribution_board (radial topology — removing
+# the branch must split the network into two pieces). Two-conductor-open and
+# simultaneous-fault combinations are follow-up work (still tracked in
+# BACKLOG.md), as is a downstream network deeper than the immediate branch's
+# far bus feeding an independent second source (handled here as a documented
+# single-infeed approximation with a warning, not full two-source
+# superposition).
+
+def _static_load_full_impedance(comp, base_mva):
+    """Full-load constant-impedance equivalent of a static/lumped load,
+    Z = V²/S* at rated (1.0 p.u.) voltage, on system base.
+
+    Used ONLY by the open-conductor engine's load-side Thevenin. Unlike a
+    shunt fault (where a passive load never SOURCES fault current, so it is
+    correctly ignored everywhere else in this module), the load is what
+    completes the current path once a conductor opens upstream of it — its
+    steady-state impedance is the physically relevant quantity here, not its
+    (absent) fault contribution.
+    """
+    # [EE-8] rated_kva/power_factor/demand_factor — the SAME props and
+    # defaults loadflow.py's static_load dispatch uses, so the impedance
+    # implied here reproduces the actual prefault operating point rather
+    # than the nameplate rating.
+    kva = float(comp.props.get("rated_kva", 100) or 0)
+    pf = float(comp.props.get("power_factor", 0.85) or 0.85)
+    df = float(comp.props.get("demand_factor", 1.0) or 1.0)
+    if kva <= 1e-9 or abs(pf) < 1e-6:
+        return None
+    kw = kva * pf * df
+    kvar = kva * math.sqrt(max(0.0, 1.0 - pf * pf)) * df
+    s_mva = complex(kw, kvar) / 1000.0  # lagging (inductive) load assumed
+    if abs(s_mva) < 1e-9:
+        return None
+    return base_mva / s_mva.conjugate()
+
+
+def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_MAX):
+    """Walk the network from a bus collecting BOTH active-source impedances
+    (utility/generator/motor/inverter, via the same per-type helpers as
+    ``_collect_source_paths``) and passive STATIC LOAD constant-impedance
+    equivalents (``_static_load_full_impedance``), all in parallel.
+
+    Deliberately a separate, leaner walk rather than a flag on
+    ``_collect_source_paths`` — that function's shunt-fault correctness
+    (static loads never source fault current) must not change; this one is
+    only ever used for the open-conductor engine's downstream Thevenin,
+    where load impedance genuinely carries current once the upstream
+    conductor opens.
+
+    Returns (z1_list, z2_list, has_active_source, total_source_mva).
+    """
+    z1_list, z2_list = [], []
+    has_source = [False]
+    source_mva = [0.0]
+    expansions = [0]
+
+    def walk(comp_id, z_path, path_visited, v_kv):
+        if expansions[0] >= MAX_FAULT_EXPANSIONS:
+            return
+        expansions[0] += 1
+        if comp_id in path_visited:
+            return
+        path_visited = path_visited | {comp_id}
+        comp = components.get(comp_id)
+        if not comp:
+            return
+
+        if comp.type == "utility":
+            z_src = _utility_impedance(comp, base_mva, c)
+            z1_list.append(z_path + z_src)
+            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            has_source[0] = True
+            source_mva[0] += float(comp.props.get("fault_mva", 500) or 500)
+            return
+        if comp.type == "generator":
+            z_src = _generator_impedance(comp, base_mva, v_kv)
+            z1_list.append(z_path + z_src)
+            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            has_source[0] = True
+            source_mva[0] += float(comp.props.get("rated_mva", 10) or 10)
+            return
+        if comp.type == "motor_induction":
+            z_src = _motor_induction_impedance(comp, base_mva)
+            z1_list.append(z_path + z_src)
+            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            has_source[0] = True
+            return
+        if comp.type == "motor_synchronous":
+            z_src = _motor_synchronous_impedance(comp, base_mva)
+            z1_list.append(z_path + z_src)
+            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            has_source[0] = True
+            return
+        if comp.type == "solar_pv":
+            z_src = _solar_pv_impedance(comp, base_mva)
+            z1_list.append(z_path + z_src)
+            z2_list.append(z_path + z_src)
+            has_source[0] = True
+            return
+        if comp.type == "battery":
+            z_src = _battery_impedance(comp, base_mva)
+            z1_list.append(z_path + z_src)
+            z2_list.append(z_path + z_src)
+            has_source[0] = True
+            return
+        if comp.type == "wind_turbine":
+            z_src = _wind_turbine_impedance(comp, base_mva)
+            z1_list.append(z_path + z_src)
+            z2_list.append(z_path + z_src)
+            has_source[0] = True
+            return
+        if comp.type in ("static_load", "distribution_board"):
+            z_load = _static_load_full_impedance(comp, base_mva)
+            if z_load is not None:
+                z1_list.append(z_path + z_load)
+                z2_list.append(z_path + z_load)
+            z_mot, _mva = _static_load_motor_impedance(comp, base_mva)
+            if z_mot is not None:
+                z1_list.append(z_path + z_mot)
+                z2_list.append(z_path + _source_z2(comp, z_mot, base_mva))
+                has_source[0] = True
+            if comp.type == "static_load":
+                return
+            # A distribution board also passes current through — continue
+            # walking downstream (sub-boards, further loads/sources).
+
+        z_element = complex(0, 0)
+        v_next = v_kv
+        if comp.type == "bus":
+            v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
+        elif comp.type in ("transformer", "autotransformer"):
+            z_element = _transformer_impedance(comp, base_mva)
+            v_next = _transformer_far_voltage(comp, v_kv)
+        elif comp.type == "cable":
+            z_element = _cable_impedance(comp, base_mva, v_kv)
+        elif comp.type in ("cb", "switch"):
+            if comp.props.get("state", "closed") == "open":
+                return
+        elif comp.type == "fuse":
+            pass
+
+        for neighbor_id, _, _ in adjacency.get(comp_id, []):
+            if neighbor_id != bus_id or comp_id == bus_id:
+                walk(neighbor_id, z_path + z_element, path_visited, v_next)
+
+    _bus_comp = components.get(bus_id)
+    _v_start = float(_bus_comp.props.get("voltage_kv", 0.4 if _bus_comp.type == "distribution_board" else 11) or 11) if _bus_comp else 11.0
+    for neighbor_id, _, _ in adjacency.get(bus_id, []):
+        walk(neighbor_id, complex(0, 0), {bus_id}, _v_start)
+
+    return z1_list, z2_list, has_source[0], source_mva[0]
+
+
+def run_open_conductor_analysis(project: ProjectData, branch_id: str,
+                                voltage_factor: float = None) -> "OpenConductorResults":
+    """One-conductor-open (single-phasing) series fault analysis on a cable
+    branch. See the module comment above for the theory and scope.
+
+    Args:
+        project: The project data.
+        branch_id: id of the CABLE component whose conductor opens. Both
+            ends must connect directly to a bus/distribution_board.
+        voltage_factor: unused for the fault-current calculation itself
+            (there is no shunt fault here) but accepted for signature
+            symmetry with the other fault entry points.
+    """
+    from .loadflow import insert_implicit_load_buses, run_load_flow
+    from ..models.schemas import OpenConductorResults
+
+    project = insert_implicit_load_buses(project)
+    base_mva = project.baseMVA
+    freq_hz = project.frequency or 50
+    c_resolved = voltage_factor if (voltage_factor is not None and voltage_factor > 0) else C_MAX
+    components = {c.id: c for c in project.components}
+
+    branch = components.get(branch_id)
+    if not branch:
+        raise ValueError(f"Component '{branch_id}' not found.")
+    if branch.type != "cable":
+        raise ValueError("Open-conductor analysis currently supports cable/feeder branches only.")
+
+    touching = [w for w in project.wires if w.fromComponent == branch_id or w.toComponent == branch_id]
+    if len(touching) != 2:
+        raise ValueError("The selected branch must have exactly two connections (one per terminal) "
+                          "to run open-conductor analysis.")
+    bus_ends = []
+    for w in touching:
+        other_id = w.toComponent if w.fromComponent == branch_id else w.fromComponent
+        other = components.get(other_id)
+        bus_ends.append(other)
+    if any(b is None or b.type not in ("bus", "distribution_board") for b in bus_ends):
+        raise ValueError("Both ends of the selected branch must connect directly to a bus or "
+                          "distribution board for open-conductor analysis.")
+    busA, busB = bus_ends[0], bus_ends[1]
+
+    # Network with the target branch's wires removed — splits the network
+    # into the source-side and load-side pieces the break creates.
+    wires_without_branch = [w for w in project.wires
+                             if w.fromComponent != branch_id and w.toComponent != branch_id]
+    adjacency = {}
+    for w in wires_without_branch:
+        adjacency.setdefault(w.fromComponent, []).append((w.toComponent, w.fromPort, w.toPort))
+        adjacency.setdefault(w.toComponent, []).append((w.fromComponent, w.toPort, w.fromPort))
+
+    warnings = []
+
+    paths_a = _collect_source_paths(busA.id, components, adjacency, base_mva, c=c_resolved)
+    paths_b = _collect_source_paths(busB.id, components, adjacency, base_mva, c=c_resolved)
+    has_a, has_b = len(paths_a) > 0, len(paths_b) > 0
+
+    if not has_a and not has_b:
+        raise ValueError("No active source (utility/generator/motor) found feeding either side of "
+                          "the selected branch — open-conductor analysis requires a source.")
+    elif has_a and has_b:
+        z1a = _parallel_impedances([p["z_total"] for p in paths_a])
+        z1b = _parallel_impedances([p["z_total"] for p in paths_b])
+        if abs(z1a) <= abs(z1b):
+            bus_up, bus_down, paths_up = busA, busB, paths_a
+        else:
+            bus_up, bus_down, paths_up = busB, busA, paths_b
+        warnings.append(
+            f"Both ends of '{branch.props.get('name', branch_id)}' have an active source — the "
+            f"analysis uses the stiffer side ('{bus_up.props.get('name', bus_up.id)}') as the "
+            f"driving EMF; the other side's own generation is represented only as an impedance "
+            f"(independent multi-infeed superposition is not modelled).")
+    elif has_a:
+        bus_up, bus_down, paths_up = busA, busB, paths_a
+    else:
+        bus_up, bus_down, paths_up = busB, busA, paths_b
+
+    v_kv_up = float(bus_up.props.get("voltage_kv", 0.4 if bus_up.type == "distribution_board" else 11) or 11)
+
+    # Source-side (upstream) Thevenin — includes the branch's own impedance
+    # (the open point is modelled at the branch's load-end terminal).
+    z1_up_net = _parallel_impedances([p["z_total"] for p in paths_up])
+    z2_up_net = _parallel_impedances([p.get("z2_total", p["z_total"]) for p in paths_up])
+    z0_up_tuples = _collect_zero_seq_impedances(bus_up.id, components, adjacency, base_mva,
+                                                c=c_resolved, freq_hz=freq_hz)
+    z0_up_net = _parallel_impedances([t[0] for t in z0_up_tuples]) if z0_up_tuples else complex(1e10, 0)
+
+    z_cable1 = _cable_impedance(branch, base_mva, v_kv_up)
+    z_cable0 = _cable_z0(branch, base_mva, v_kv_up, freq_hz)
+
+    zx1 = z1_up_net + z_cable1
+    zx2 = z2_up_net + z_cable1  # cables are passive/symmetric: Z2 = Z1
+    zx0 = z0_up_net + z_cable0
+
+    # Load-side (downstream) Thevenin — active sources beyond bus_down PLUS
+    # the passive load impedance (which is what actually completes the loop
+    # when there is no downstream source).
+    z1_down_list, z2_down_list, has_src_down, _src_mva_down = _collect_load_side_impedances(
+        bus_down.id, components, adjacency, base_mva, c=c_resolved)
+    zy1 = _parallel_impedances(z1_down_list)
+    zy2 = _parallel_impedances(z2_down_list)
+    z0_down_tuples = _collect_zero_seq_impedances(bus_down.id, components, adjacency, base_mva,
+                                                  c=c_resolved, freq_hz=freq_hz)
+    zy0 = _parallel_impedances([t[0] for t in z0_down_tuples]) if z0_down_tuples else complex(1e10, 0)
+
+    if not z1_down_list:
+        warnings.append(
+            f"No load or downstream source found beyond '{bus_down.props.get('name', bus_down.id)}' "
+            f"— the branch appears to feed a dead end, so little or no current is expected to flow "
+            f"through the break.")
+
+    za1 = zx1 + zy1
+    za2 = zx2 + zy2
+    za0 = zx0 + zy0
+
+    # Prefault current through the branch, from an ordinary (un-broken)
+    # load flow — the compensation-theorem driving quantity. Only the
+    # MAGNITUDE matters (see module comment): with I_L taken as the 0°
+    # reference, Za1/Za2/Za0 (pure impedances) carry all the phase
+    # information needed for every downstream result.
+    il_amps = 0.0
+    try:
+        lf = run_load_flow(project, "newton_raphson")
+        if not lf.converged:
+            warnings.append("Prefault load flow did not converge — prefault current through the "
+                            "branch is assumed zero, which UNDERSTATES the result.")
+        else:
+            bflow = next((b for b in lf.branches if b.elementId == branch_id), None)
+            if bflow is not None:
+                il_amps = bflow.i_amps
+            else:
+                warnings.append("Prefault load flow did not report a flow for this branch — "
+                                "prefault current assumed zero, which UNDERSTATES the result.")
+    except Exception as e:
+        warnings.append(f"Prefault load flow failed ({e}) — prefault current through the branch "
+                        "assumed zero, which UNDERSTATES the result.")
+
+    i_base_ka = base_mva / (math.sqrt(3) * v_kv_up) if v_kv_up > 0 else 0.0
+    il_pu = (il_amps / 1000.0) / i_base_ka if i_base_ka > 1e-12 else 0.0
+
+    ea1 = complex(il_pu, 0.0) * za1
+    za_sum = za2 + za0
+    za2_par_za0 = (za2 * za0) / za_sum if abs(za_sum) > 1e-15 else complex(0, 0)
+    denom = za1 + za2_par_za0
+    ia1 = ea1 / denom if abs(denom) > 1e-12 else complex(0, 0)
+    ia2 = -ia1 * za0 / za_sum if abs(za_sum) > 1e-15 else complex(0, 0)
+    ia0 = -ia1 * za2 / za_sum if abs(za_sum) > 1e-15 else complex(0, 0)
+
+    a_op = complex(-0.5, math.sqrt(3) / 2.0)
+    ib = ia0 + a_op * a_op * ia1 + a_op * ia2
+    ic = ia0 + a_op * ia1 + a_op * a_op * ia2
+
+    # Downstream (load-side) bus sequence/phase voltages: Vn_k = Ia_k × Zy_k
+    vn1, vn2, vn0 = ia1 * zy1, ia2 * zy2, ia0 * zy0
+    van = vn0 + vn1 + vn2
+    vbn = vn0 + a_op * a_op * vn1 + a_op * vn2
+    vcn = vn0 + a_op * vn1 + a_op * a_op * vn2
+
+    def _ka(i_pu):
+        return round(abs(i_pu) * i_base_ka, 4)
+
+    return OpenConductorResults(
+        branch_id=branch_id,
+        branch_name=branch.props.get("name", branch_id),
+        source_bus_id=bus_up.id,
+        source_bus_name=bus_up.props.get("name", bus_up.id),
+        load_bus_id=bus_down.id,
+        load_bus_name=bus_down.props.get("name", bus_down.id),
+        voltage_kv=v_kv_up,
+        base_mva=base_mva,
+        prefault_current_a=round(il_amps, 2),
+        z1_pu=[round(za1.real, 6), round(za1.imag, 6)],
+        z2_pu=[round(za2.real, 6), round(za2.imag, 6)],
+        z0_pu=[round(za0.real, 6), round(za0.imag, 6)],
+        z1_source_pu=[round(zx1.real, 6), round(zx1.imag, 6)],
+        z1_load_pu=[round(zy1.real, 6), round(zy1.imag, 6)],
+        ia1_ka=_ka(ia1), ia2_ka=_ka(ia2), ia0_ka=_ka(ia0),
+        ib_ka=_ka(ib), ic_ka=_ka(ic),
+        ig_ka=round(3 * abs(ia0) * i_base_ka, 4),  # residual/ground current 3·Ia0
+        negative_seq_pct=round(100.0 * abs(ia2) / max(abs(ia1), 1e-12), 2) if abs(ia1) > 1e-12 else 0.0,
+        downstream_va_pu=round(abs(van), 4),
+        downstream_vb_pu=round(abs(vbn), 4),
+        downstream_vc_pu=round(abs(vcn), 4),
+        has_downstream_source=has_src_down,
+        warnings=warnings,
+        method="Open conductor (Stevenson/Blackburn symmetrical-component series-fault method)",
+    )
