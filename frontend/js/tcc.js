@@ -3351,6 +3351,369 @@ const TCC = {
     return allPaths;
   },
 
+  // ── Distance (21) Zone Grading ──
+  //
+  // Computes Z1/Z2/Z3 reach settings from actual line/transformer impedance
+  // (primary ohms — no per-unit/MVA-base conversion needed for cables/OHLs,
+  // whose r_per_km/x_per_km props already ARE ohms/km; a transformer uses
+  // its own nameplate Z(ohm) = z% x kV^2 / MVA, NOT the IEC-60909-corrected
+  // value fault.py's _transformer_impedance applies for fault-current
+  // studies — a relay setting calc uses nameplate data). Standard textbook
+  // margins (overridable per relay): Z1 = 85% of the protected line; Z2 =
+  // line + 50% of the shortest downstream line (or a flat 120% margin when
+  // there is no downstream line to grade against); Z3 = 120% of (line +
+  // 100% of the longest downstream line). Infeed correction, when Fault
+  // Analysis has been run, uses the REAL current split from a solved fault
+  // at the remote bus (FaultResultBus.branches — the actual current through
+  // the protected line vs. the bus's total fault current) rather than a
+  // topological guess.
+
+  /**
+   * Plain wire adjacency (component id -> neighbour ids). Voltage-zone
+   * tracking through a transformer is done by comparing the working voltage
+   * to its HV/LV props (see _walkLineForward), not by wire port — so no
+   * port info is needed here.
+   */
+  _buildDistanceAdjacency() {
+    const adj = new Map();
+    for (const [, w] of AppState.wires || []) {
+      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
+      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
+      adj.get(w.fromComponent).push(w.toComponent);
+      adj.get(w.toComponent).push(w.fromComponent);
+    }
+    return adj;
+  },
+
+  /**
+   * Does a source (utility/generator) exist reachable from `startId` without
+   * passing back through `blockId`? Mirrors fault.py's _leads_to_source —
+   * used to tell which side of a relay's Trip CB is "upstream" (toward the
+   * source) vs. the protected (forward) direction.
+   */
+  _leadsToSourceDist(startId, blockId, adj) {
+    const visited = new Set([blockId, startId]);
+    const stack = [startId];
+    while (stack.length > 0) {
+      const nid = stack.pop();
+      const comp = AppState.components.get(nid);
+      if (!comp) continue;
+      if (comp.type === 'utility' || comp.type === 'generator') return true;
+      if ((comp.type === 'cb' || comp.type === 'switch') && comp.props?.state === 'open') continue;
+      for (const nb of adj.get(nid) || []) {
+        if (!visited.has(nb)) { visited.add(nb); stack.push(nb); }
+      }
+    }
+    return false;
+  },
+
+  /** Primary-ohm (r, x) of one series element, referred to voltage vKv. */
+  _seriesElementZOhm(comp, vKv) {
+    if (comp.type === 'cable') {
+      const len = parseFloat(comp.props?.length_km) || 0;
+      const rpkm = parseFloat(comp.props?.r_per_km) || 0;
+      const xpkm = parseFloat(comp.props?.x_per_km) || 0;
+      const n = Math.max(1, parseInt(comp.props?.num_parallel) || 1);
+      return { r: (rpkm * len) / n, x: (xpkm * len) / n };
+    }
+    if (comp.type === 'transformer' || comp.type === 'autotransformer') {
+      const zPct = parseFloat(comp.props?.z_percent) || 8;
+      const mva = parseFloat(comp.props?.rated_mva) || 10;
+      const xr = parseFloat(comp.props?.x_r_ratio) || 10;
+      if (!(vKv > 0) || !(mva > 0)) return { r: 0, x: 0 };
+      const zOhm = (zPct / 100) * (vKv * vKv) / mva;
+      const xOhm = zOhm * xr / Math.sqrt(1 + xr * xr);
+      return { r: xr > 0 ? xOhm / xr : 0, x: xOhm };
+    }
+    return { r: 0, x: 0 };
+  },
+
+  /**
+   * Walk from `fromId` (already "visited") via `firstHopId` through series/
+   * transparent elements until a bus (or distribution_board) is reached,
+   * accumulating impedance in ohms referred back to `vLocalKv` — a
+   * transformer crossed along the way updates the working voltage zone, and
+   * everything added AFTER it is referred back to vLocalKv via
+   * (vLocalKv/vHere)^2, so a chain spanning a voltage change is correctly
+   * referred to the relay's own CT/PT voltage base (distance protection
+   * normally stays within one voltage level — this just avoids silently
+   * producing wrong ohms on the rarer case it doesn't).
+   *
+   * Returns { busId, r, x, chain } (chain = every component id traversed,
+   * in order) or null if the walk dead-ends (a load, an open device, or a
+   * cycle) without reaching a bus.
+   */
+  _walkLineForward(fromId, firstHopId, adj, vLocalKv) {
+    const visited = new Set([fromId]);
+    let prev = fromId;
+    let node = firstHopId;
+    let vHere = vLocalKv;
+    let r = 0, x = 0;
+    const chain = [];
+    for (let hops = 0; hops < 200; hops++) {
+      if (visited.has(node)) return null; // cycle
+      visited.add(node);
+      const comp = AppState.components.get(node);
+      if (!comp) return null;
+
+      if (comp.type === 'bus' || comp.type === 'distribution_board') {
+        return { busId: node, r, x, chain };
+      }
+      if ((comp.type === 'cb' || comp.type === 'switch') && comp.props?.state === 'open') {
+        return null; // open device blocks the path
+      }
+      chain.push(node);
+      if (comp.type === 'cable') {
+        const z = this._seriesElementZOhm(comp, vHere);
+        const f = (vLocalKv > 0 && vHere > 0) ? (vLocalKv * vLocalKv) / (vHere * vHere) : 1;
+        r += z.r * f; x += z.x * f;
+      } else if (comp.type === 'transformer' || comp.type === 'autotransformer') {
+        const hv = parseFloat(comp.props?.voltage_hv_kv) || 0;
+        const lv = parseFloat(comp.props?.voltage_lv_kv) || 0;
+        const enteringFromHvSide = Math.abs(vHere - lv) > Math.abs(vHere - hv);
+        const vBefore = vHere;
+        vHere = enteringFromHvSide ? lv : hv; // voltage on the far side, for the next segment
+        const z = this._seriesElementZOhm(comp, vBefore); // nameplate Z referred to the near (entry) side
+        const f = (vLocalKv > 0 && vBefore > 0) ? (vLocalKv * vLocalKv) / (vBefore * vBefore) : 1;
+        r += z.r * f; x += z.x * f;
+      }
+      // transparent elements (ct, pt, closed cb/switch, fuse, bus_duct): no impedance
+
+      const next = (adj.get(node) || []).find(n => !visited.has(n));
+      if (!next) return null;
+      prev = node;
+      node = next;
+    }
+    return null;
+  },
+
+  /**
+   * For a distance relay, find its protected line (own impedance + remote
+   * bus) and the candidate next-line(s) beyond that bus (for Zone 2/3 reach
+   * against the shortest/longest adjacent line).
+   */
+  _analyzeDistanceRelay(relayComp) {
+    const cbId = relayComp.props?.trip_cb;
+    if (!cbId || !AppState.components.has(cbId)) {
+      return { error: 'No Trip CB configured — cannot determine the protected line.' };
+    }
+    const adj = this._buildDistanceAdjacency();
+    const cbNeighbors = adj.get(cbId) || [];
+    if (cbNeighbors.length < 2) {
+      return { error: 'Trip CB is not connected on both sides.' };
+    }
+    let forwardNeighbor = null;
+    for (const nb of cbNeighbors) {
+      if (!this._leadsToSourceDist(nb, cbId, adj)) { forwardNeighbor = nb; break; }
+    }
+    if (!forwardNeighbor) {
+      return { error: 'Could not determine the protected (forward) direction — both sides of the Trip CB lead back to a source.' };
+    }
+
+    const vLocalKv = parseFloat(relayComp.props?.voltage_kv) || this._resolveDeviceVoltage(relayComp.id) || 11;
+    const own = this._walkLineForward(cbId, forwardNeighbor, adj, vLocalKv);
+    if (!own) {
+      return { error: 'Protected line does not terminate at a bus (dead-end, or an open device blocks the path) — cannot compute a reach setting.' };
+    }
+
+    // Candidate next lines beyond the remote bus — every neighbour except
+    // back the way we came.
+    const cameFromId = own.chain.length > 0 ? own.chain[own.chain.length - 1] : cbId;
+    const nextLines = [];
+    for (const nb of adj.get(own.busId) || []) {
+      if (nb === cameFromId) continue;
+      const next = this._walkLineForward(own.busId, nb, adj, vLocalKv);
+      if (next) nextLines.push(next);
+    }
+
+    return {
+      vLocalKv, remoteBusId: own.busId, ownR: own.r, ownX: own.x,
+      ownChain: own.chain, nextLines,
+    };
+  },
+
+  /**
+   * Real (not topologically-estimated) infeed factor at `remoteBusId`:
+   * total 3-phase fault current there, divided by the current actually
+   * flowing through the protected line for that same fault — read from an
+   * already-solved fault-at-that-bus result (FaultResultBus.branches, the
+   * per-element current-divider shares fault.py's engine already computes).
+   * Returns null when no matching (fresh) fault result is available.
+   */
+  _infeedFactorFromFaultResults(remoteBusId, chainIds) {
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses || !fr.buses[remoteBusId]) return null;
+    const busResult = fr.buses[remoteBusId];
+    const ik3Total = busResult.ik3;
+    if (!(ik3Total > 0)) return null;
+    const branches = busResult.branches || [];
+    for (const elemId of chainIds) {
+      const b = branches.find(br => br.element_id === elemId);
+      if (b && b.ik_ka > 1e-6) {
+        return { factor: ik3Total / b.ik_ka, ownLineKa: b.ik_ka, totalKa: ik3Total };
+      }
+    }
+    return null;
+  },
+
+  /** Z1/Z2/Z3 computed reaches (topological + infeed-corrected where possible). */
+  _computeDistanceZones(relayComp) {
+    const analysis = this._analyzeDistanceRelay(relayComp);
+    if (analysis.error) return analysis;
+
+    const { vLocalKv, remoteBusId, ownR, ownX, ownChain, nextLines } = analysis;
+    const ownZ = Math.hypot(ownR, ownX);
+
+    const z1MarginPct = parseFloat(relayComp.props?.z1_margin_pct) || 85;
+    const z2NextPct = parseFloat(relayComp.props?.z2_next_line_pct) || 50;
+    const z3NextPct = parseFloat(relayComp.props?.z3_next_line_pct) || 100;
+    const z3MarginPct = parseFloat(relayComp.props?.z3_margin_pct) || 120;
+
+    let shortest = null, longest = null;
+    for (const nl of nextLines) {
+      const z = Math.hypot(nl.r, nl.x);
+      if (shortest === null || z < shortest.z) shortest = { r: nl.r, x: nl.x, z, chain: nl.chain };
+      if (longest === null || z > longest.z) longest = { r: nl.r, x: nl.x, z, chain: nl.chain };
+    }
+
+    const z1Computed = ownZ * (z1MarginPct / 100);
+    const z2Computed = shortest ? ownZ + shortest.z * (z2NextPct / 100) : ownZ * 1.2;
+    const z3Computed = longest
+      ? (ownZ + longest.z * (z3NextPct / 100)) * (z3MarginPct / 100)
+      : ownZ * 1.5;
+
+    const chainIds = ownChain.filter(id => {
+      const t = AppState.components.get(id)?.type;
+      return t === 'cable' || t === 'transformer' || t === 'autotransformer';
+    });
+    const infeed = this._infeedFactorFromFaultResults(remoteBusId, chainIds);
+
+    let z2Apparent = null, z3Apparent = null;
+    if (infeed) {
+      if (shortest) z2Apparent = ownZ + infeed.factor * shortest.z * (z2NextPct / 100);
+      if (longest) z3Apparent = (ownZ + infeed.factor * longest.z * (z3NextPct / 100)) * (z3MarginPct / 100);
+    }
+
+    return {
+      vLocalKv, remoteBusId, ownZ,
+      shortestNextZ: shortest ? shortest.z : null,
+      longestNextZ: longest ? longest.z : null,
+      z1Computed, z2Computed, z3Computed,
+      infeedFactor: infeed ? infeed.factor : null,
+      z2Apparent, z3Apparent,
+    };
+  },
+
+  /**
+   * Public entry point (mirrors autoCoordinate()/detectMiscoordination()):
+   * grade every distance (21) relay's CONFIGURED reach against the
+   * computed ideal, flagging over/under-reach, and render the report with
+   * a per-relay "Apply Computed Zones" action.
+   */
+  gradeDistanceZones() {
+    const relays = [];
+    for (const [, comp] of AppState.components) {
+      if (comp.type === 'relay' && comp.props?.relay_type === '21') relays.push(comp);
+    }
+    if (relays.length === 0) {
+      this._renderDistanceGradingResults('No distance (21) relays found in the project.');
+      return;
+    }
+
+    const staleFault = !AppState.faultResults ||
+      (typeof AppState.isResultStale === 'function' && AppState.isResultStale('faultResults'));
+
+    const rows = [];
+    for (const relay of relays) {
+      const result = this._computeDistanceZones(relay);
+      if (result.error) {
+        rows.push({ relay, error: result.error });
+        continue;
+      }
+      const cfg = {
+        z1: parseFloat(relay.props?.z1_reach_ohm) || 0,
+        z2: parseFloat(relay.props?.z2_reach_ohm) || 0,
+        z3: parseFloat(relay.props?.z3_reach_ohm) || 0,
+      };
+      const flags = [];
+      if (cfg.z1 > result.ownZ) {
+        flags.push(`Zone 1 (${cfg.z1.toFixed(2)}Ω) OVERREACHES the protected line (${result.ownZ.toFixed(2)}Ω) — may trip for a remote-bus/next-line fault, losing selectivity.`);
+      } else if (cfg.z1 < result.ownZ * 0.6) {
+        flags.push(`Zone 1 (${cfg.z1.toFixed(2)}Ω) is conservatively short (< 60% of the line, ${result.ownZ.toFixed(2)}Ω) — may leave a gap uncovered by an instantaneous zone.`);
+      }
+      if (result.shortestNextZ != null && cfg.z2 > result.ownZ + result.shortestNextZ) {
+        flags.push(`Zone 2 (${cfg.z2.toFixed(2)}Ω) OVERREACHES past the end of the shortest downstream line (${(result.ownZ + result.shortestNextZ).toFixed(2)}Ω) — may compromise selectivity with that line's own Zone 1.`);
+      }
+      if (result.z2Apparent != null && cfg.z2 < result.z2Apparent) {
+        flags.push(`Zone 2 (${cfg.z2.toFixed(2)}Ω) UNDERREACHES once infeed is accounted for — apparent impedance for a fault at the intended Zone-2 boundary is ${result.z2Apparent.toFixed(2)}Ω (infeed factor ${result.infeedFactor.toFixed(2)}×, from solved fault results).`);
+      }
+      if (result.z3Apparent != null && cfg.z3 < result.z3Apparent) {
+        flags.push(`Zone 3 (${cfg.z3.toFixed(2)}Ω) UNDERREACHES once infeed is accounted for — apparent impedance ${result.z3Apparent.toFixed(2)}Ω (infeed factor ${result.infeedFactor.toFixed(2)}×).`);
+      }
+      rows.push({ relay, result, cfg, flags });
+    }
+
+    this._renderDistanceGradingResults(rows, staleFault);
+  },
+
+  _renderDistanceGradingResults(rows, staleFault) {
+    const resultsDiv = document.getElementById('tcc-distance-results');
+    if (!resultsDiv) return;
+    if (typeof rows === 'string') {
+      resultsDiv.innerHTML = `<div class="tcc-coord-info">${escHtml(rows)}</div>`;
+      return;
+    }
+
+    let html = '';
+    if (staleFault) {
+      html += '<div class="tcc-coord-info">⚠ Fault results are missing or stale — infeed-corrected reach checks are skipped until Fault Analysis is (re-)run. Topological (no-infeed) reach is still shown below.</div>';
+    }
+    html += '<table class="tcc-coord-table"><thead><tr><th>Relay</th><th>Zone</th><th>Configured (Ω)</th><th>Computed (Ω)</th><th>Status</th></tr></thead><tbody>';
+    for (const row of rows) {
+      const name = escHtml(row.relay.props?.name || row.relay.id);
+      if (row.error) {
+        html += `<tr><td>${name}</td><td colspan="4" class="tcc-sev-warning">${escHtml(row.error)}</td></tr>`;
+        continue;
+      }
+      const { relay, result, cfg, flags } = row;
+      const zoneRow = (zoneName, cfgVal, compVal, hasFlag) => `<tr>
+        <td>${name}</td><td>${zoneName}</td>
+        <td>${cfgVal.toFixed(2)}</td><td>${compVal != null ? compVal.toFixed(2) : '—'}</td>
+        <td class="${hasFlag ? 'tcc-sev-warning' : 'tcc-coord-pass'}">${hasFlag ? '⚠ Review' : '✓ OK'}</td>
+      </tr>`;
+      const flagsZone = (n) => flags.some(f => f.startsWith(`Zone ${n}`));
+      html += zoneRow('Z1', cfg.z1, result.z1Computed, flagsZone(1));
+      html += zoneRow('Z2', cfg.z2, result.z2Computed, flagsZone(2));
+      html += zoneRow('Z3', cfg.z3, result.z3Computed, flagsZone(3));
+      if (flags.length > 0) {
+        html += `<tr><td colspan="5" class="tcc-sev-warning" style="white-space:pre-wrap">${flags.map(escHtml).join('\n')}</td></tr>`;
+      }
+      if (result.infeedFactor != null) {
+        html += `<tr><td colspan="5" class="tcc-coord-info">Infeed factor at remote bus: ${result.infeedFactor.toFixed(2)}× (from solved fault results)</td></tr>`;
+      }
+      html += `<tr><td colspan="5"><button class="btn-small tcc-apply-distance-zones" data-relay-id="${relay.id}" data-z1="${result.z1Computed}" data-z2="${result.z2Computed}" data-z3="${result.z3Computed}">Apply Computed Zones to ${name}</button></td></tr>`;
+    }
+    html += '</tbody></table>';
+    resultsDiv.innerHTML = html;
+
+    resultsDiv.querySelectorAll('.tcc-apply-distance-zones').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const relayId = btn.dataset.relayId;
+        const comp = AppState.components.get(relayId);
+        if (!comp) return;
+        comp.props.z1_reach_ohm = Math.round(parseFloat(btn.dataset.z1) * 100) / 100;
+        comp.props.z2_reach_ohm = Math.round(parseFloat(btn.dataset.z2) * 100) / 100;
+        comp.props.z3_reach_ohm = Math.round(parseFloat(btn.dataset.z3) * 100) / 100;
+        this._loadDevicesFromNetwork();
+        this.render();
+        if (typeof UI !== 'undefined' && UI.toast) {
+          UI.toast(`Applied computed Z1/Z2/Z3 to ${comp.props.name || relayId}.`, 'success');
+        }
+        this.gradeDistanceZones();
+      });
+    });
+  },
+
   // ── Auto-Coordination Engine ──
 
   /**

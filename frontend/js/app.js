@@ -3433,6 +3433,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-tcc-auto-coord').addEventListener('click', () => TCC.autoCoordinate());
   document.getElementById('btn-tcc-detect-miscord').addEventListener('click', () => TCC.detectMiscoordination());
   document.getElementById('btn-tcc-verify-seq').addEventListener('click', () => TCC.verifySequenceOfOperation());
+  document.getElementById('btn-tcc-grade-distance').addEventListener('click', () => TCC.gradeDistanceZones());
 
   // ─── Scenarios ───
   const scenariosModal = document.getElementById('scenarios-modal');

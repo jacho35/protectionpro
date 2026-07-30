@@ -64,7 +64,7 @@ Legend: ✔ implemented · ◐ partial · ✘ missing. "E" = ETAP, "PF" = PowerF
 | Fault current decay / time-varying (sub-transient→steady) | ✔ | ✔ | ✔ | ✔ | |
 | TCC coordination + auto-grading | ✔ | ✔ (STAR) | ✔ | ✔ (SINCAL OC / CAPE) | |
 | **Manufacturer protective-device library depth** | ◐ | ✔ (100k+ devices) | ✔ | ✔ (CAPE/SINCAL) | ProtectionPro ships generic curves + editable libraries + CSV import; the big three ship huge verified vendor libraries. Structural gap — mitigate via import tooling rather than curation. |
-| **Distance (21) protection coordination** | ◐ | ✔ | ✔ | ✔ (CAPE) | Mho characteristic is displayed on an R-X inset, but there is no zone-reach calculation/grading against line impedances or infeed. |
+| **Distance (21) protection coordination** | ✔ | ✔ | ✔ | ✔ (CAPE) | 2026-07: "Grade Distance Zones" computes Z1/Z2/Z3 from actual line/transformer impedance with standard margins, flags over/under-reach, and uses solved fault results for a real (not topological) infeed factor. Reverse-Z3 and a rigorous per-fault-point infeed calc remain open. |
 | Sequence of operation simulation | ✔ | ✔ | ◐ | ✔ | |
 | CT saturation / burden | ✔ | ✔ | ✔ | ✔ | |
 
@@ -153,7 +153,7 @@ Legend: ✔ implemented · ◐ partial · ✘ missing. "E" = ETAP, "PF" = PowerF
 
 ### Tier 2 — expected by users migrating from the big three
 6. **Passive filter sizing** (backlog) — completes the harmonics story: measure → scan → fix.
-7. **Distance-protection grading** — compute zone reaches from line impedances (Z1/Z2/Z3 with margins, infeed effect), not just draw the mho circle.
+7. ~~**Distance-protection grading**~~ Done (2026-07) — Z1/Z2/Z3 zone reaches computed from line impedances with margins and a real infeed factor, not just the mho circle display.
 8. **Documented automation API / Python client** — parametric studies, CI-style batch runs; the backend is already stateless JSON-in/JSON-out, so this is mostly packaging + docs.
 9. **PSS-E RAW / CIM / DGS import** (backlog) — the migration on-ramp.
 10. **Line/cable constants from geometry** + π-model charging (backlog, overhead section) — needed the moment users go above ~66 kV or model long cable runs.
