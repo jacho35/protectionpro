@@ -7,7 +7,7 @@
 // asym/making, CT knee, q-factor pole pairs, GS mismatch check, …).
 // V6: time-series / quasi-dynamic load flow (BACKLOG item 4) — new study
 // type, no change to any existing engine's results.
-const APP_VERSION = 'V6';
+const APP_VERSION = 'V7';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
