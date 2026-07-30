@@ -739,63 +739,6 @@ const Annotations = {
       </g>`;
   },
 
-  renderBranchFlowBadge(x, y, branch, key) {
-    // Full detail lines (P / Q / S / I / loading).
-    const pStr = branch.p_mw != null
-      ? (Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(3)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`)
-      : null;
-    const qStr = branch.q_mvar != null
-      ? (Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(3)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`)
-      : null;
-    const sMVA = branch.s_mva || Math.sqrt((branch.p_mw || 0) ** 2 + (branch.q_mvar || 0) ** 2);
-    const sStr = sMVA >= 1 ? `${sMVA.toFixed(3)} MVA` : `${(sMVA * 1000).toFixed(1)} kVA`;
-    const loadStr = branch.loading_pct > 0 ? `${branch.loading_pct.toFixed(1)}%` : null;
-    // Calculated power factor of the flow (|P|/S). Prefer the backend value;
-    // fall back to a client-side compute for results saved before the field.
-    const pf = branch.pf != null && branch.pf > 0
-      ? branch.pf
-      : (sMVA > 1e-9 ? Math.abs(branch.p_mw || 0) / sMVA : 0);
-    const pfStr = pf > 0 ? pf.toFixed(2) : null;
-
-    const fullLines = [];
-    if (pStr != null) fullLines.push(`P: ${pStr}`);
-    if (qStr != null) fullLines.push(`Q: ${qStr}`);
-    fullLines.push(`S: ${sStr}`);
-    if (pfStr != null) fullLines.push(`PF: ${pfStr}`);
-    if (branch.i_amps > 0) fullLines.push(`I: ${branch.i_amps.toFixed(1)} A`);
-    if (loadStr != null) fullLines.push(`Load: ${loadStr}`);
-
-    // Compact (default, H20): the two most useful figures — real power and
-    // loading — so the badge stays two lines and doesn't overlap neighbours.
-    // Full detail is one click away via View ▸ Detailed Branch Flow, and is
-    // always available on hover through the <title> below.
-    const detailed = typeof AppState !== 'undefined' && AppState.branchFlowDetailed;
-    let lines;
-    if (detailed) {
-      lines = fullLines;
-    } else {
-      lines = [];
-      if (pStr != null) lines.push(`P: ${pStr}`);
-      lines.push(loadStr != null ? `Load: ${loadStr}` : `S: ${sStr}`);
-    }
-
-    const lineHeight = 14;
-    const boxH = lines.length * lineHeight + 10;
-    this._lastBoxH = boxH;
-    const boxW = 120;
-
-    let textHtml = lines.map((line, i) =>
-      `<text class="annotation-text" x="${x + 6}" y="${y + 14 + i * lineHeight}">${line}</text>`
-    ).join('');
-
-    return `
-      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
-        <title>${fullLines.join(' · ')}</title>
-        <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
-        ${textHtml}
-      </g>`;
-  },
-
   renderVoltageMismatchBadge(x, y, comp, warn, key) {
     const expectedStr = warn.expected_kv >= 1 ? `${warn.expected_kv} kV` : `${(warn.expected_kv * 1000).toFixed(0)} V`;
     const actualStr = warn.actual_kv >= 1 ? `${warn.actual_kv} kV` : `${(warn.actual_kv * 1000).toFixed(0)} V`;

@@ -1268,20 +1268,7 @@ const Canvas = {
         const totalAmps = (p.rated_amps || 0) * nPar;
         if (totalAmps) lines.push(`${totalAmps} A${nPar > 1 ? ` (${nPar}×${p.rated_amps})` : ''}`);
         // Show load flow results on cable
-        if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.branches) {
-          const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
-          if (branch) {
-            const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
-            const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
-            const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
-            lines.push({text: '───────', color: loadColor});
-            lines.push({text: `P: ${pStr}`, color: loadColor});
-            lines.push({text: `Q: ${qStr}`, color: loadColor});
-            if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
-            if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
-            if (branch.losses_mw > 0) lines.push({text: `Loss: ${this._fmtLossLine(branch.losses_mw)}`, color: loadColor});
-          }
-        }
+        this._appendLoadFlowBranchLines(comp, lines, { showLoss: true });
         // Show fault branch contributions on cable
         if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
       } else if (comp.type === 'transformer') {
@@ -1296,20 +1283,7 @@ const Canvas = {
         }
         if (p.z_percent) lines.push(`Z=${p.z_percent}%`);
         // Show load flow results on transformer
-        if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.branches) {
-          const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
-          if (branch) {
-            const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
-            const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
-            const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
-            lines.push({text: '───────', color: loadColor});
-            lines.push({text: `P: ${pStr}`, color: loadColor});
-            lines.push({text: `Q: ${qStr}`, color: loadColor});
-            if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
-            if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
-            if (branch.losses_mw > 0) lines.push({text: `Loss: ${this._fmtLossLine(branch.losses_mw)}`, color: loadColor});
-          }
-        }
+        this._appendLoadFlowBranchLines(comp, lines, { showLoss: true });
         // Show fault branch contributions on transformer
         if (AppState.showResultBoxes.fault) this._appendFaultBranchLines(comp, lines);
       } else if (['generator', 'solar_pv', 'wind_turbine', 'battery'].includes(comp.type)) {
@@ -1359,19 +1333,7 @@ const Canvas = {
           if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
         }
         // Show load flow output annotation for source components
-        if (AppState.showResultBoxes.loadflow && AppState.loadFlowResults && AppState.loadFlowResults.branches) {
-          const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
-          if (branch && branch.s_mva > 0) {
-            const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
-            const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
-            const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
-            lines.push({text: '───────', color: loadColor});
-            lines.push({text: `P: ${pStr}`, color: loadColor});
-            lines.push({text: `Q: ${qStr}`, color: loadColor});
-            if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
-            if (branch.loading_pct > 0) lines.push({text: `Load: ${branch.loading_pct.toFixed(1)}%`, color: loadColor});
-          }
-        }
+        this._appendLoadFlowBranchLines(comp, lines, { requirePositiveS: true });
         defaultOY = 32;
       } else if (comp.type === 'static_load') {
         if (p.name && p.name !== 'Load') lines.push(p.name);
@@ -1503,6 +1465,33 @@ const Canvas = {
   // two decimals (backend resolution is 0.1 kW).
   _fmtLossLine(lossMw) {
     return lossMw >= 1 ? `${lossMw.toFixed(3)} MW` : `${(lossMw * 1000).toFixed(2)} kW`;
+  },
+
+  // Load-flow branch flow (P/Q/S/I/loading) for a component's label —
+  // compact (P + Load, two lines) by default, full detail (adds Q/I/Loss)
+  // when "View ▸ Detailed Branch Flow" is on (AppState.branchFlowDetailed);
+  // off by default keeps busier networks' labels from overlapping neighbours.
+  _appendLoadFlowBranchLines(comp, lines, { showLoss = false, requirePositiveS = false } = {}) {
+    if (!AppState.showResultBoxes.loadflow || !AppState.loadFlowResults || !AppState.loadFlowResults.branches) return;
+    const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
+    if (!branch) return;
+    if (requirePositiveS && !(branch.s_mva > 0)) return;
+
+    const loadColor = branch.loading_pct > 100 ? '#d32f2f' : branch.loading_pct > 80 ? '#f57c00' : '#2e7d32';
+    const pStr = Math.abs(branch.p_mw) >= 1 ? `${branch.p_mw.toFixed(2)} MW` : `${(branch.p_mw * 1000).toFixed(1)} kW`;
+    const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
+    const loadStr = branch.loading_pct > 0 ? `${branch.loading_pct.toFixed(1)}%` : null;
+
+    lines.push({text: '───────', color: loadColor});
+    lines.push({text: `P: ${pStr}`, color: loadColor});
+    if (AppState.branchFlowDetailed) {
+      lines.push({text: `Q: ${qStr}`, color: loadColor});
+      if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
+      if (loadStr != null) lines.push({text: `Load: ${loadStr}`, color: loadColor});
+      if (showLoss && branch.losses_mw > 0) lines.push({text: `Loss: ${this._fmtLossLine(branch.losses_mw)}`, color: loadColor});
+    } else if (loadStr != null) {
+      lines.push({text: `Load: ${loadStr}`, color: loadColor});
+    }
   },
 
   _appendFaultBranchLines(comp, lines) {
