@@ -153,6 +153,13 @@ const API = {
     return this.request('/analysis/open-conductor', 'POST', data);
   },
 
+  // Run two-conductors-open series fault analysis on a cable branch
+  async runTwoConductorOpenAnalysis(branchId) {
+    const data = AppState.toJSON();
+    data.twoConductorOpenBranchId = branchId;
+    return this.request('/analysis/two-conductor-open', 'POST', data);
+  },
+
   // Run arc flash analysis
   async runArcFlash() {
     const data = AppState.toJSON();

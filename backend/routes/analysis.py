@@ -6,7 +6,7 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -24,7 +24,7 @@ from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
 from ..analysis.backup_autonomy import run_backup_autonomy
-from ..analysis.fault import run_fault_analysis, run_open_conductor_analysis
+from ..analysis.fault import run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis
 from ..analysis.fault_ansi import run_ansi_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
@@ -70,6 +70,22 @@ def open_conductor(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Open-conductor analysis error: {e}")
+
+
+@router.post("/two-conductor-open", response_model=TwoConductorOpenResults)
+def two_conductor_open(data: ProjectData):
+    """Run two-conductors-open series fault analysis on the cable branch
+    identified by data.twoConductorOpenBranchId."""
+    if not data.twoConductorOpenBranchId:
+        raise HTTPException(status_code=400, detail="twoConductorOpenBranchId is required.")
+    try:
+        return run_two_conductor_open_analysis(data, data.twoConductorOpenBranchId,
+                                               voltage_factor=data.voltageFactor)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Two-conductor-open analysis error: {e}")
 
 
 @router.post("/loadflow", response_model=LoadFlowResults)

@@ -1627,6 +1627,86 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  // ── Two-Conductor Open (Series-Fault Dual of SLG) Analysis ──
+  document.getElementById('btn-two-conductor-open').addEventListener('click', async () => {
+    const sel = [...AppState.selectedIds];
+    const selComp = sel.length === 1 ? AppState.components.get(sel[0]) : null;
+    if (!selComp || selComp.type !== 'cable') {
+      document.getElementById('status-info').textContent =
+        'Select a single cable/feeder (both ends on a bus) before running two-conductor-open analysis.';
+      return;
+    }
+    document.getElementById('status-info').textContent = 'Running two-conductor-open analysis...';
+    _setBusy('btn-two-conductor-open', true);
+    try {
+      const result = await API.runTwoConductorOpenAnalysis(selComp.id);
+      AppState.twoConductorOpenResults = result;
+      document.getElementById('status-info').textContent = 'Two-conductor-open analysis complete.';
+      showTwoConductorOpenResults(result);
+    } catch (e) {
+      console.error('Two-conductor-open analysis error:', e);
+      document.getElementById('status-info').textContent = 'Two-conductor-open analysis failed.';
+      showValidationModal('Two-Conductor Open — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-two-conductor-open', false);
+    }
+  });
+
+  function showTwoConductorOpenResults(result) {
+    const modal = document.getElementById('two-conductor-open-modal');
+    const body = document.getElementById('two-conductor-open-body');
+    if (!modal || !body) return;
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
+      html += '</div>';
+    }
+
+    html += `<p style="margin:4px 0 10px;font-size:12px;opacity:0.85">
+      Two conductors open on <strong>${escHtml(result.branch_name)}</strong> — only one phase survives —
+      between <strong>${escHtml(result.source_bus_name)}</strong> (source side) and
+      <strong>${escHtml(result.load_bus_name)}</strong> (load side) — ${result.voltage_kv.toFixed(2)} kV,
+      prefault current ${result.prefault_current_a.toFixed(1)} A. ${result.method}.
+    </p>`;
+
+    html += `<h4 style="margin:8px 0 4px">Sequence &amp; Phase Currents at the Break</h4>
+    <table class="af-table">
+      <thead><tr><th>Quantity</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Positive-sequence I₁</td><td>${result.ia1_ka.toFixed(3)} kA</td></tr>
+        <tr class="af-danger"><td>Negative-sequence I₂ (motor single-phasing stress)</td><td>${result.ia2_ka.toFixed(3)} kA — ${result.negative_seq_pct.toFixed(1)}% of I₁</td></tr>
+        <tr><td>Zero-sequence I₀</td><td>${result.ia0_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Surviving phase current</td><td>${result.ia_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Residual/ground current (3·I₀)</td><td>${result.ig_ka.toFixed(3)} kA</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 4px">Downstream Bus Voltage (${escHtml(result.load_bus_name)})</h4>
+    <table class="af-table">
+      <thead><tr><th>Phase</th><th>Voltage (p.u.)</th></tr></thead>
+      <tbody>
+        <tr><td>Va (surviving)</td><td>${result.downstream_va_pu.toFixed(3)}</td></tr>
+        <tr><td>Vb</td><td>${result.downstream_vb_pu.toFixed(3)}</td></tr>
+        <tr><td>Vc</td><td>${result.downstream_vc_pu.toFixed(3)}</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 4px">Sequence Impedances (p.u., total source+load side)</h4>
+    <table class="af-table">
+      <thead><tr><th>Network</th><th>R</th><th>X</th></tr></thead>
+      <tbody>
+        <tr><td>Z1</td><td>${result.z1_pu[0].toFixed(4)}</td><td>${result.z1_pu[1].toFixed(4)}</td></tr>
+        <tr><td>Z2</td><td>${result.z2_pu[0].toFixed(4)}</td><td>${result.z2_pu[1].toFixed(4)}</td></tr>
+        <tr><td>Z0</td><td>${result.z0_pu[0].toFixed(4)}</td><td>${result.z0_pu[1].toFixed(4)}</td></tr>
+      </tbody>
+    </table>`;
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   function showAnsiFaultResults(result) {
     const modal = document.getElementById('fault-ansi-modal');
     const body = document.getElementById('fault-ansi-body');
@@ -3289,6 +3369,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('open-conductor-modal').addEventListener('click', (e) => {
     if (e.target.id === 'open-conductor-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-two-conductor-open').addEventListener('click', () => {
+    document.getElementById('two-conductor-open-modal').style.display = 'none';
+  });
+  document.getElementById('two-conductor-open-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'two-conductor-open-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-load-diversity').addEventListener('click', () => {

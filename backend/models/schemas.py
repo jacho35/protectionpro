@@ -180,6 +180,7 @@ class ProjectData(BaseModel):
     stabilityDisturbance: Optional[dict] = None  # transient-stability event spec (see transient_stability)
     dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
     openConductorBranchId: Optional[str] = None  # cable/feeder id for open-conductor (series-fault) analysis
+    twoConductorOpenBranchId: Optional[str] = None  # cable/feeder id for two-conductor-open (series-fault) analysis
 
     @model_validator(mode="after")
     def _correct_overhead_resistance(self):
@@ -577,6 +578,39 @@ class OpenConductorResults(BaseModel):
     has_downstream_source: bool = False
     warnings: list[str] = []
     method: str = "Open conductor"
+
+
+class TwoConductorOpenResults(BaseModel):
+    """Two-conductors-open (single surviving phase) series fault on a cable
+    branch — the series-connected-sequence-network dual of a bolted SLG
+    shunt fault. See fault.run_two_conductor_open_analysis for the
+    derivation."""
+    branch_id: str
+    branch_name: str = ""
+    source_bus_id: str = ""      # side used as the driving EMF (upstream)
+    source_bus_name: str = ""
+    load_bus_id: str = ""        # side represented as impedance only (downstream)
+    load_bus_name: str = ""
+    voltage_kv: float = 0
+    base_mva: float = 100
+    prefault_current_a: float = 0  # prefault branch current (compensation-theorem driver)
+    z1_pu: list[float] = []      # [real, imag] total positive-seq Za1 = Zx1+Zy1
+    z2_pu: list[float] = []      # [real, imag] total negative-seq Za2
+    z0_pu: list[float] = []      # [real, imag] total zero-seq Za0
+    z1_source_pu: list[float] = []  # [real, imag] Zx1 (upstream, incl. branch impedance)
+    z1_load_pu: list[float] = []    # [real, imag] Zy1 (downstream)
+    ia1_ka: float = 0            # positive-sequence current at the break (kA) — equals ia2, ia0
+    ia2_ka: float = 0            # negative-sequence current at the break (kA)
+    ia0_ka: float = 0            # zero-sequence current at the break (kA)
+    ia_ka: float = 0             # surviving-phase current, 3·Ia1 (kA)
+    ig_ka: float = 0             # residual/ground current 3·Ia0 (kA) — identically equals ia_ka
+    negative_seq_pct: float = 0  # Ia2/Ia1 × 100% — forced to 100% by the boundary condition
+    downstream_va_pu: float = 0  # downstream bus phase voltages post-event (p.u.)
+    downstream_vb_pu: float = 0
+    downstream_vc_pu: float = 0
+    has_downstream_source: bool = False
+    warnings: list[str] = []
+    method: str = "Two-conductor-open"
 
 
 class ArcFlashBusResult(BaseModel):

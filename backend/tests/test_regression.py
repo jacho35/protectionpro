@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire, LoadFlowBus
-from backend.analysis.fault import run_fault_analysis, run_open_conductor_analysis
+from backend.analysis.fault import run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis
 from backend.analysis.loadflow import (
     run_load_flow, connected_bus_loads_mw, _assess_solution,
     _newton_raphson, _gauss_seidel, solve_with_islands,
@@ -290,6 +290,122 @@ class TestOpenConductor:
                            components=comps, wires=wires)
         with pytest.raises(ValueError):
             run_open_conductor_analysis(proj, "cable-1")
+
+
+class TestTwoConductorOpen:
+    """Two-conductors-open series fault — the series-connected-sequence-
+    network dual of a bolted SLG shunt fault (see
+    fault.run_two_conductor_open_analysis)."""
+
+    def test_sequence_currents_identically_equal(self):
+        """Ia1=Ia2=Ia0 is an algebraic IDENTITY of the series connection
+        (not a network-dependent coincidence) — holds even in the
+        degenerate no-zero-seq-return network reused from the
+        one-conductor-open fixture. Correspondingly Ib=Ic=0 forces
+        negative_seq_pct to exactly 100% and Ig (=3·Ia0) to equal the
+        surviving phase current Ia (=3·Ia1) exactly."""
+        proj = _open_conductor_project()
+        res = run_two_conductor_open_analysis(proj, "cable-1")
+        assert res.ia1_ka == pytest.approx(res.ia2_ka, rel=1e-6)
+        assert res.ia1_ka == pytest.approx(res.ia0_ka, rel=1e-6)
+        assert res.negative_seq_pct == pytest.approx(100.0, rel=1e-3)
+        assert res.ia_ka == pytest.approx(3 * res.ia1_ka, rel=1e-3)
+        assert res.ig_ka == pytest.approx(res.ia_ka, rel=1e-3)
+
+    def test_shares_thevenin_with_one_conductor_open(self):
+        """Both engines walk the SAME source/load-side Thevenin collectors
+        (_collect_source_paths / _collect_zero_seq_impedances /
+        _collect_load_side_impedances) — only the final sequence-network
+        combination formula differs. Pins that the two-conductor-open
+        engine reuses rather than reimplements that machinery: the
+        reported Za1/Za2/Za0 (and their source/load split) and the
+        compensation-theorem prefault current must be byte-identical
+        between the two engines on the same network."""
+        proj = _open_conductor_project()
+        one = run_open_conductor_analysis(proj, "cable-1")
+        two = run_two_conductor_open_analysis(proj, "cable-1")
+        assert two.z1_pu == pytest.approx(one.z1_pu, rel=1e-9)
+        assert two.z2_pu == pytest.approx(one.z2_pu, rel=1e-9)
+        assert two.z0_pu == pytest.approx(one.z0_pu, rel=1e-9)
+        assert two.z1_source_pu == pytest.approx(one.z1_source_pu, rel=1e-9)
+        assert two.z1_load_pu == pytest.approx(one.z1_load_pu, rel=1e-9)
+        assert two.prefault_current_a == pytest.approx(one.prefault_current_a, rel=1e-9)
+        assert two.source_bus_id == one.source_bus_id
+        assert two.load_bus_id == one.load_bus_id
+
+    def test_series_formula_reproduces_reported_currents(self):
+        """Independent arithmetic check of Ia1 = Ea1/(Za1+Za2+Za0), with
+        Ea1 = I_L,prefault × Za1 (compensation theorem) — reconstructed
+        here from the engine's OWN reported Za1/Za2/Za0 and prefault
+        current fields, rather than a hand-derived network, so this pins
+        the series-combination arithmetic itself (as distinct from the
+        Thevenin collection pinned by the shared-machinery test above).
+
+        Needs a network with a REAL (non-degenerate) zero-sequence return
+        path downstream — with the blocked-Z0 fixture used elsewhere in
+        this class, Za0 dominates the series sum so hard the resulting
+        current rounds to 0.0000 kA at the API's 4-dp precision, which
+        would make this comparison vacuous. A grounded-star (Dyn11) LV
+        transformer downstream of the break supplies that path."""
+        xfmr = _comp("transformer-1", "transformer", {
+            "name": "TX1", "rated_mva": 1.0, "z_percent": 6.0,
+            "x_r_ratio": 10.0, "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4,
+            "vector_group": "Dyn11",
+        })
+        bus3 = _comp("bus-3", "bus", {"name": "LV Bus", "voltage_kv": 0.4})
+        load = _comp("static_load-1", "static_load", {
+            "name": "Load", "rated_kva": 400.0, "power_factor": 0.85,
+        })
+        cable = _comp("cable-1", "cable", {
+            "name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.3,
+            "length_km": 1.0, "rated_amps": 400.0, "voltage_kv": 11.0,
+        })
+        bus2 = _comp("bus-2", "bus", {"name": "Mid Bus", "voltage_kv": 11.0})
+        wires = [
+            _wire("w2", "bus-1", "cable-1"),
+            _wire("w3", "cable-1", "bus-2"),
+            _wire("w4", "bus-2", "transformer-1"),
+            _wire("w5", "transformer-1", "bus-3"),
+            _wire("w6", "bus-3", "static_load-1"),
+        ]
+        proj = _utility_bus_project(fault_mva=1e7, xr=15.0, kv=11.0, z0_z1=1.0,
+                                    extra_components=[cable, bus2, xfmr, bus3, load],
+                                    extra_wires=wires)
+
+        res = run_two_conductor_open_analysis(proj, "cable-1")
+        assert res.has_downstream_source is False  # transformer is passive; load is the sink
+        assert abs(res.z0_pu[0]) < 1e6 and abs(res.z0_pu[1]) < 1e6  # NOT the ~1e10 open-return default
+        assert res.ia1_ka > 1e-6  # non-vanishing, unlike the blocked-Z0 fixture
+
+        i_base_ka = res.base_mva / (math.sqrt(3) * res.voltage_kv)
+        il_pu = (res.prefault_current_a / 1000.0) / i_base_ka
+        za1 = complex(*res.z1_pu)
+        za2 = complex(*res.z2_pu)
+        za0 = complex(*res.z0_pu)
+        ea1 = complex(il_pu, 0.0) * za1
+        ia1_expected_ka = abs(ea1 / (za1 + za2 + za0)) * i_base_ka
+        # rel=1e-2: reconstructed from the API's already-rounded (4-6 dp)
+        # fields, so a bit of rounding accumulation is expected here.
+        assert res.ia1_ka == pytest.approx(ia1_expected_ka, rel=1e-2)
+
+    def test_rejects_non_cable_branch(self):
+        proj = _open_conductor_project()
+        with pytest.raises(ValueError):
+            run_two_conductor_open_analysis(proj, "bus-2")
+
+    def test_rejects_branch_without_two_bus_connections(self):
+        comps = [
+            _comp("utility-1", "utility", {"name": "Grid", "voltage_kv": 11.0,
+                                           "fault_mva": 500.0, "x_r_ratio": 15.0}),
+            _comp("bus-1", "bus", {"name": "Main Bus", "voltage_kv": 11.0}),
+            _comp("cable-1", "cable", {"name": "Stub", "r_per_km": 0.5,
+                                       "x_per_km": 0.3, "length_km": 1.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-1"), _wire("w2", "bus-1", "cable-1")]
+        proj = ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+        with pytest.raises(ValueError):
+            run_two_conductor_open_analysis(proj, "cable-1")
 
 
 # ── IEEE 1584-2002 arc flash ─────────────────────────────────────────────
