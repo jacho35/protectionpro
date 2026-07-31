@@ -33,6 +33,47 @@ First-pass "classical" model per Stevenson / Kundur ch. 13:
   V_t is the machine terminal-bus voltage recovered from the reduction; E is
   capped at the field ceiling with anti-windup. With the AVR off (or an infinite
   bus) E stays at E_0 — the classical constant-EMF model.
+* Standard governor/turbine and exciter block models (opt-in per generator via
+  ``gov_model``/``exc_model``; default ``first_order`` = the lags above,
+  byte-identical). These are standard-SHAPED reduced-order approximations for
+  qualitative OEM step-response character, not certified vendor parameter
+  sets — the droop/isochronous-reset layer above stays orthogonal (it is the
+  reference fed into whichever turbine model is selected):
+    - **DEGOV1** (diesel) — actuator lag then a transport dead-time (1st-order
+      Padé realization) — the delayed-onset signature of an electronic diesel
+      governor.
+    - **GAST** (gas turbine) — fuel-valve lag then a turbine lag, fuel capped
+      by a simplified constant limit (stands in for GAST's full temperature-
+      control loop).
+    - **TGOV1** (steam) — governor lag then a reheat lead-lag — the standard
+      IEEE steam-turbine shape.
+    - **HYGOV** (hydro) — a temporary-droop dashpot around a (deliberately
+      slow) gate-servo lag feeds the water column, whose ideal-lossless
+      transfer ΔP_m/Δgate = (1 − sT_w)/(1 + 0.5sT_w) is the textbook non-
+      minimum-phase "power dips before it rises" hydro signature. The dashpot
+      is not optional — a non-minimum-phase plant under integral (isochronous)
+      control is a textbook hard-to-damp combination, and an isochronous
+      HYGOV governor on a small/fast island is a genuinely sensitive tuning
+      problem even with it (real hydro sites lean on droop mode and site-
+      specific tuning for the same reason) — the regression suite tests the
+      water-hammer physics, not a claim of universally-stable default tuning.
+    - **SEXS** — Vt filtered by a lead-lag before the same Ka/Ta error/lag.
+    - **ST1** — fast potential-source static exciter: Vt measurement lag,
+      error lead-lag, then its own (typically much faster) output lag.
+    - **AC** — adds self-excitation K_e, an exponential core-saturation term
+      that softens the ceiling (vs. the hard E_max clip alone), and a Kf/Tf
+      rate-feedback minor loop.
+  A **power system stabiliser** (``pss_on``, any exciter model, AVR must be
+  on) adds a washout + two lead-lag stages on Δω (IEEE PSS1A shape); its
+  output V_s sums into the active exciter model's voltage-error input —
+  the engine's only oscillation-damping capability. Default lead-lag ratios
+  are deliberately mild (2:1 per stage) — a much larger compounded lead can
+  overshoot into destabilising phase territory at a typical local mode
+  (~1 Hz), turning the PSS from a damper into an exciter (verified: the
+  10:1-per-stage IEEE textbook-scale ratio destabilised the SMIB regression
+  case at every gain tested, while 2:1 damped it cleanly at every gain
+  tested) — real PSS tuning compensates the phase at the SPECIFIC machine's
+  mode, which this reduced-order default does not attempt.
 * Non-machine bus injections are frozen as constant shunt admittances at their
   pre-fault operating point, unless made dynamic: static loads take a voltage-
   dependent model (constant power / current / impedance / ZIP) and induction
@@ -113,6 +154,151 @@ FREQ_RECOVER_TOL = 0.1
 
 MACHINE_SOURCE_TYPES = ("generator", "utility")
 IBR_SOURCE_TYPES = ("solar_pv", "battery", "wind_turbine")
+
+# ── Standard governor/turbine, exciter & PSS models (opt-in per generator) ──
+# The default for every selector below is "first_order" — today's single-lag
+# governor / AVR, byte-identical when not changed. The advanced models are
+# standard-SHAPED reduced-order approximations (qualitative OEM step-response
+# character: dead-time, water-hammer, reheat lag, saturation, damping) rather
+# than certified vendor parameter sets — the same trade-off the two-axis
+# machine model already made. `gov_mode` (isochronous/droop/none — whether
+# there is integral reset) stays orthogonal to `gov_model` (what shape the
+# turbine dynamics are): the existing droop+reset target is the reference fed
+# into whichever turbine model is selected.
+GOV_MODELS = ("first_order", "degov1", "gast", "tgov1", "hygov")
+EXC_MODELS = ("first_order", "sexs", "st1", "ac")
+N_GOV_X = 3   # governor extra states: widest model (HYGOV) needs 3
+N_EXC_X = 3   # exciter extra states: widest model (AC) needs 3
+N_PSS_X = 3   # PSS states: washout + two lead-lag stages
+
+
+def _gov_advanced(gm, cmd, gx_row, pmin_i, pmax_i, p):
+    """Governor derivative + mechanical-power output for one machine on an
+    advanced (non-first-order) turbine model. ``gx_row`` is that machine's
+    current 3-slot extra-state vector; ``p`` its per-model constants dict.
+    Returns (dgx (len-3 array), pm_use) — pm_use is the value fed to the swing
+    equation this call (an algebraic combination of gx for models whose output
+    isn't itself a single integrated state, e.g. DEGOV1's dead-time / HYGOV's
+    non-minimum-phase water column)."""
+    dgx = np.zeros(3)
+    if gm == "degov1":
+        # Electric actuator (existing gov_Tg lag) then a pure transport dead-
+        # time, realized as a 1st-order Padé state (no history buffer needed):
+        # e^{-sTD} ≈ (1 − sTD/2)/(1 + sTD/2).
+        d0 = (cmd - gx_row[0]) / p["Tg"]
+        if (gx_row[0] >= pmax_i and d0 > 0) or (gx_row[0] <= pmin_i and d0 < 0):
+            d0 = 0.0
+        dgx[0] = d0
+        half_td = max(p["td"] / 2.0, 1e-3)
+        dgx[1] = (gx_row[0] - gx_row[1]) / half_td
+        pm_use = float(np.clip(2.0 * gx_row[1] - gx_row[0], pmin_i, pmax_i))
+    elif gm == "gast":
+        # Fuel-valve lag (T1, capped by a simplified constant fuel/temperature
+        # limit standing in for GAST's temperature-control loop) then a
+        # turbine lag (T2).
+        fl = p["fuel_limit"]
+        target = min(cmd, fl)
+        d0 = (target - gx_row[0]) / p["t1"]
+        if (gx_row[0] >= fl and d0 > 0) or (gx_row[0] <= 0.0 and d0 < 0):
+            d0 = 0.0
+        dgx[0] = d0
+        dgx[1] = (gx_row[0] - gx_row[1]) / p["t2"]
+        pm_use = float(gx_row[1])
+    elif gm == "tgov1":
+        # Governor lag (T1) then a reheat lead-lag (T2/T3) — the standard IEEE
+        # steam-turbine shape.
+        d0 = (cmd - gx_row[0]) / p["t1"]
+        if (gx_row[0] >= pmax_i and d0 > 0) or (gx_row[0] <= pmin_i and d0 < 0):
+            d0 = 0.0
+        dgx[0] = d0
+        dgx[1] = (gx_row[0] - gx_row[1]) / p["t3"]
+        ll = gx_row[1] + (p["t2"] / p["t3"]) * (gx_row[0] - gx_row[1])
+        pm_use = float(np.clip(ll, pmin_i, pmax_i))
+    elif gm == "hygov":
+        # Temporary-droop dashpot then a gate-servo lag then the water column.
+        # The dashpot is NOT optional: the water column's non-minimum-phase
+        # zero (1−sTw) makes a plain proportional/integral gate loop poorly
+        # damped or unstable outright (verified empirically — removing the
+        # dashpot was tried and is worse: the loop looks fine over a short
+        # window but diverges over a longer one) — the classical textbook
+        # justification for temporary droop on any real hydro governor, droop
+        # or isochronous alike. cmd is derated by rt·(gate − dashpot-lag(gate))
+        # so a FAST gate movement is transiently opposed, damping the water-
+        # hammer interaction; the dashpot washes out over dashpot_tr, so it
+        # does not add a steady-state offset.
+        dashpot_fb = p["rt"] * (gx_row[1] - gx_row[0])
+        cmd_hy = cmd - dashpot_fb
+        dgx[0] = (gx_row[1] - gx_row[0]) / p["dashpot_tr"]
+        d1 = (cmd_hy - gx_row[1]) / p["Tg"]
+        if (gx_row[1] >= pmax_i and d1 > 0) or (gx_row[1] <= pmin_i and d1 < 0):
+            d1 = 0.0
+        dgx[1] = d1
+        dgx[2] = (gx_row[1] - gx_row[2]) / max(0.5 * p["tw"], 1e-3)
+        pm_use = float(np.clip(3.0 * gx_row[2] - 2.0 * gx_row[1], pmin_i, pmax_i))
+    else:
+        pm_use = float(gx_row[0])
+    return dgx, pm_use
+
+
+def _exc_advanced(em, vt, vref_i, vs_pss, efield_i, efd_ref_i, ex_row, p):
+    """Exciter derivative dEf/dt for one machine on an advanced (non-first-
+    order) exciter model. Unlike the governor models, Ef (``efield``) stays a
+    single true integrated state for every model — only the error signal
+    driving it changes shape. Returns raw ``de`` (caller applies the shared
+    field-ceiling anti-windup, same as the first-order model)."""
+    dex = np.zeros(3)
+    if em == "sexs":
+        # Measured Vt filtered by a lead-lag (Tb/Tc) before the same Ka/Ta
+        # error/lag the first-order model already uses.
+        d0 = (vt - ex_row[0]) / p["tb"]
+        dex[0] = d0
+        vt_filt = ex_row[0] + (p["tc"] / p["tb"]) * (vt - ex_row[0])
+        err = vref_i - vt_filt + vs_pss
+        de = (p["Ka"] * err - (efield_i - efd_ref_i)) / p["Ta"]
+    elif em == "st1":
+        # Fast potential-source static exciter: Vt measurement lag (Tr), an
+        # error lead-lag (Tb/Tc), then its own (typically much faster) output
+        # lag Ta_st1 — kept as a state rather than algebraic to avoid a loop.
+        d0 = (vt - ex_row[0]) / p["tr"]
+        dex[0] = d0
+        err = vref_i - ex_row[0] + vs_pss
+        d1 = (err - ex_row[1]) / p["tb"]
+        dex[1] = d1
+        ll = ex_row[1] + (p["tc"] / p["tb"]) * (err - ex_row[1])
+        de = (p["Ka"] * ll - (efield_i - efd_ref_i)) / p["ta_st1"]
+    elif em == "ac":
+        # Rotating-rectifier style: Vt measurement lag (Tr), self-excitation
+        # Ke plus an exponential core-saturation term SE(Efd) that softens the
+        # ceiling (distinct from ST1/SEXS, which rely on the hard emax clip
+        # alone), and a rate-feedback minor loop (Kf/Tf) realized as a lag of
+        # Efd (avoids needing dEfd/dt directly — a standard washout trick).
+        d0 = (vt - ex_row[0]) / p["tr"]
+        dex[0] = d0
+        d1 = (efield_i - ex_row[1]) / p["tf"]
+        dex[1] = d1
+        vf = (p["kf"] / p["tf"]) * (efield_i - ex_row[1])
+        # ac_bias (precomputed at collection) shifts the effective reference so
+        # the self-excitation/saturation term balances at the true equilibrium.
+        err = (vref_i + p.get("ac_bias", 0.0)) - ex_row[0] + vs_pss - vf
+        se = p["sat_a"] * math.exp(p["sat_b"] * abs(efield_i))
+        de = (p["Ka"] * err - (p["ke"] + se) * efield_i) / p["ta_ac"]
+    else:
+        de = 0.0
+    return dex, de
+
+
+def _pss_output(omega_i, pssx_row, p):
+    """PSS derivative + stabilising signal Vs for one machine: washout then
+    two lead-lag stages on speed deviation (IEEE PSS1A shape). Returns
+    (dpssx (len-3 array), Vs)."""
+    d0 = (omega_i - pssx_row[0]) / p["tw"]
+    wash = omega_i - pssx_row[0]
+    d1 = (wash - pssx_row[1]) / p["t2"]
+    ll1 = pssx_row[1] + (p["t1"] / p["t2"]) * (wash - pssx_row[1])
+    d2 = (ll1 - pssx_row[2]) / p["t4"]
+    ll2 = pssx_row[2] + (p["t3"] / p["t4"]) * (ll1 - pssx_row[2])
+    vs = float(np.clip(p["kstab"] * ll2, -p["vs_limit"], p["vs_limit"]))
+    return np.array([d0, d1, d2]), vs
 
 
 def _ibr_ctrl(comp):
@@ -289,6 +475,69 @@ def _collect_machines(project, ctx, lf):
                 gmode = "isochronous"
             rated = float(comp.props.get("rated_mva", 10) or 10)
             avr_on = str(comp.props.get("avr_mode", "on") or "on").lower() != "off"
+        # Standard governor/turbine and exciter models (opt-in per generator,
+        # default "first_order" = today's single-lag model, byte-identical).
+        # Infinite buses and GFM converters never use these (no turbine/AVR
+        # block to swap in). See _gov_advanced/_exc_advanced/_pss_output.
+        gov_model, gov_params = "first_order", {}
+        exc_model, exc_params = "first_order", {}
+        pss_on, pss_params = False, {}
+        if not infinite and not is_gfm:
+            gov_model = str(comp.props.get("gov_model", "first_order") or "first_order").lower()
+            if gov_model not in GOV_MODELS:
+                gov_model = "first_order"
+            if gov_model == "degov1":
+                gov_params = {"Tg": max(float(comp.props.get("gov_time_const_s", 0.5) or 0.5), 1e-3),
+                               "td": max(float(comp.props.get("degov_td_s", 0.1) or 0.1), 1e-3)}
+            elif gov_model == "gast":
+                gov_params = {"t1": max(float(comp.props.get("gast_t1_s", 0.4) or 0.4), 1e-3),
+                               "t2": max(float(comp.props.get("gast_t2_s", 0.1) or 0.1), 1e-3),
+                               "fuel_limit": max(float(comp.props.get("gast_fuel_limit_pu", 1.15) or 1.15), 0.01)}
+            elif gov_model == "tgov1":
+                gov_params = {"t1": max(float(comp.props.get("tgov1_t1_s", 0.5) or 0.5), 1e-3),
+                               "t2": max(float(comp.props.get("tgov1_t2_s", 2.5) or 2.5), 1e-3),
+                               "t3": max(float(comp.props.get("tgov1_t3_s", 7.0) or 7.0), 1e-3)}
+            elif gov_model == "hygov":
+                # A dedicated (slower) gate-servo constant, not gov_time_const_s
+                # — real hydro gate servos move large gates and are inherently
+                # much slower than an electronic diesel/gas actuator.
+                gov_params = {"Tg": max(float(comp.props.get("hygov_gate_tg_s", 1.5) or 1.5), 1e-3),
+                               "tw": max(float(comp.props.get("hygov_tw_s", 1.0) or 1.0), 1e-3),
+                               "rt": max(float(comp.props.get("hygov_rt_pct", 40) or 40) / 100.0, 0.0),
+                               "dashpot_tr": max(float(comp.props.get("hygov_dashpot_tr_s", 6.0) or 6.0), 1e-3)}
+            exc_model = str(comp.props.get("exc_model", "first_order") or "first_order").lower()
+            if exc_model not in EXC_MODELS:
+                exc_model = "first_order"
+            avr_ka = max(float(comp.props.get("avr_gain", 25) or 25), 0.0)
+            avr_ta = max(float(comp.props.get("avr_time_const_s", 0.2) or 0.2), 1e-3)
+            if exc_model == "sexs":
+                exc_params = {"Ka": avr_ka, "Ta": avr_ta,
+                               "tb": max(float(comp.props.get("sexs_tb_s", 10) or 10), 1e-3),
+                               "tc": max(float(comp.props.get("sexs_tc_s", 1) or 1), 1e-3)}
+            elif exc_model == "st1":
+                exc_params = {"Ka": avr_ka,
+                               "tr": max(float(comp.props.get("st1_tr_s", 0.02) or 0.02), 1e-3),
+                               "tb": max(float(comp.props.get("st1_tb_s", 1) or 1), 1e-3),
+                               "tc": max(float(comp.props.get("st1_tc_s", 1) or 1), 1e-3),
+                               "ta_st1": max(float(comp.props.get("st1_ta_s", 0.02) or 0.02), 1e-3)}
+            elif exc_model == "ac":
+                exc_params = {"Ka": avr_ka,
+                               "tr": max(float(comp.props.get("ac_tr_s", 0.02) or 0.02), 1e-3),
+                               "ta_ac": max(float(comp.props.get("ac_ta_s", 0.2) or 0.2), 1e-3),
+                               "ke": float(comp.props.get("ac_ke", 1.0) or 1.0),
+                               "sat_a": max(float(comp.props.get("ac_sat_a", 0.05) or 0.05), 0.0),
+                               "sat_b": max(float(comp.props.get("ac_sat_b", 0.8) or 0.8), 0.0),
+                               "kf": max(float(comp.props.get("ac_kf", 0.03) or 0.03), 0.0),
+                               "tf": max(float(comp.props.get("ac_tf", 1.0) or 1.0), 1e-3)}
+            pss_on = avr_on and str(comp.props.get("pss_on", "off") or "off").lower() == "on"
+            if pss_on:
+                pss_params = {"kstab": float(comp.props.get("pss_kstab", 10) or 10),
+                               "tw": max(float(comp.props.get("pss_tw_s", 10) or 10), 1e-3),
+                               "t1": max(float(comp.props.get("pss_t1_s", 0.2) or 0.2), 1e-3),
+                               "t2": max(float(comp.props.get("pss_t2_s", 0.1) or 0.1), 1e-3),
+                               "t3": max(float(comp.props.get("pss_t3_s", 0.2) or 0.2), 1e-3),
+                               "t4": max(float(comp.props.get("pss_t4_s", 0.1) or 0.1), 1e-3),
+                               "vs_limit": max(float(comp.props.get("pss_vs_limit_pu", 0.1) or 0.1), 0.0)}
         E0 = abs(E_internal)
         # Two-axis (flux-decay) model, opt-in per generator. Equal transient
         # reactances X'q = X'd keep the machine a single voltage behind X'd (so
@@ -325,6 +574,17 @@ def _collect_machines(project, ctx, lf):
                    "dXd": dXd, "dXq": dXq, "tdop": tdop, "tqop": tqop}
             delta0_val = d0
             E_disp = abs(complex(epd0, epq0))
+        if exc_model == "ac":
+            # AC's self-excitation/saturation term (Ke+SE)·Efd sits inside the
+            # error loop (unlike SEXS/ST1/first_order's additive "−(Ef−Ef0)"
+            # bias), so a plain Vref = pre-fault Vt would NOT hold Ef at its
+            # equilibrium efd_ref: de/dt=0 needs Ka·err=(Ke+SE(efd_ref))·efd_ref.
+            # Pre-fault vt=vref and err's other terms (Vs, the Efd-lag washout)
+            # are 0, so bias the effective reference by that residual — solved
+            # once here at the true equilibrium, not re-solved during the run.
+            se0 = exc_params["sat_a"] * math.exp(exc_params["sat_b"] * abs(two["efd_ref"]))
+            ka_safe = max(exc_params["Ka"], 1e-6)
+            exc_params["ac_bias"] = (exc_params["ke"] + se0) * two["efd_ref"] / ka_safe
         pmax_pu = 1e9 if infinite else rated / base_mva
         # Damping D: the swing damping coefficient. For a grid-forming converter
         # the P-f droop IS the damping — at steady state Δf_pu = (Pm−Pe)/D, and
@@ -359,12 +619,19 @@ def _collect_machines(project, ctx, lf):
             "gov_Tr": max(float(comp.props.get("gov_reset_time_s", 5.0) or 5.0), 1e-3),
             "pmax": pmax_pu,
             "pmin": 0.0,
+            # Standard governor/turbine model (opt-in; "first_order" = the
+            # gov_R/gov_Tg/gov_Tr lag above, unchanged).
+            "gov_model": gov_model, "gov_params": gov_params,
             # AVR/exciter: regulate terminal voltage back to its pre-fault value
             # by varying the field EMF. Vref is the pre-fault terminal voltage.
             "avr_on": avr_on,
             "avr_Ka": max(float(comp.props.get("avr_gain", 25) or 25), 0.0),
             "avr_Ta": max(float(comp.props.get("avr_time_const_s", 0.2) or 0.2), 1e-3),
             "vref": abs(V),
+            # Standard exciter model + PSS (opt-in; "first_order" = the
+            # avr_Ka/avr_Ta error/lag above, unchanged).
+            "exc_model": exc_model, "exc_params": exc_params,
+            "pss_on": pss_on, "pss_params": pss_params,
             # Field state reference (|E'| for classical, E_fd for two-axis) and
             # its ceiling — the AVR drives the field toward this and is capped.
             "efd_ref": two["efd_ref"],
@@ -870,6 +1137,16 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     epd0 = np.array([mac.get("epd0", 0.0) for mac in machines])
     HALF_PI = math.pi / 2.0
 
+    # Standard governor/turbine, exciter & PSS models (opt-in per machine).
+    # "first_order" machines are untouched by any of this — gx/ex/pssx stay 0
+    # and _gov_advanced/_exc_advanced/_pss_output are never called for them.
+    gov_model_of = [mac.get("gov_model", "first_order") for mac in machines]
+    gov_params_of = [mac.get("gov_params", {}) for mac in machines]
+    exc_model_of = [mac.get("exc_model", "first_order") for mac in machines]
+    exc_params_of = [mac.get("exc_params", {}) for mac in machines]
+    pss_on_of = [bool(mac.get("pss_on")) for mac in machines]
+    pss_params_of = [mac.get("pss_params", {}) for mac in machines]
+
     def _eint(active, delta, efield, epq, epd):
         """Complex internal EMF per active machine (network frame). Classical:
         Ef∠δ. Two-axis: (E'd + jE'q)·e^{j(δ−π/2)}."""
@@ -960,7 +1237,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         Vbus = v["R"] @ eint_active
         return {bi: abs(Vbus[k]) for k, bi in enumerate(v["keep_bus"])}
 
-    def deriv(t, delta, omega, pm, psec, efield, epq, epd, slips, veff):
+    def deriv(t, delta, omega, pm, psec, efield, epq, epd, slips, gx, ex, pssx, veff):
         v = veff if veff is not None else variant_at(t)
         active = v["active"]
         active_set = set(active)
@@ -979,6 +1256,10 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         defield = np.zeros(m)
         depq = np.zeros(m)
         depd = np.zeros(m)
+        dgx = np.zeros((m, N_GOV_X))
+        dex = np.zeros((m, N_EXC_X))
+        dpssx = np.zeros((m, N_PSS_X))
+        pm_use = pm.copy()
         cur = {mi: Ia[pos] for pos, mi in enumerate(active)}
         for i in range(m):
             is_active = i in active_set
@@ -987,18 +1268,39 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                 # Droop is defined on the MACHINE base (R = p.u. speed per p.u.
                 # machine power), so scale the response by the machine rating
                 # (system p.u.) before comparing with Pm, which is system p.u.
+                # This droop+reset target is the reference fed into whichever
+                # turbine-dynamics model is selected (gov_model) — orthogonal
+                # to the shape of the dynamics themselves.
                 sr = pmax[i]
                 cmd = Pm0[i] + psec[i] - (dfpu / gov_R[i]) * sr
-                d = (cmd - pm[i]) / gov_Tg[i]
-                # anti-windup: don't drive Pm past the machine's capacity limits
-                if (pm[i] >= pmax[i] and d > 0) or (pm[i] <= pmin[i] and d < 0):
-                    d = 0.0
-                dpm[i] = d
                 dpsec[i] = -gov_iso[i] * (dfpu / (gov_R[i] * gov_Tr[i])) * sr
+                gm = gov_model_of[i]
+                if gm == "first_order":
+                    d = (cmd - pm[i]) / gov_Tg[i]
+                    # anti-windup: don't drive Pm past the machine's capacity limits
+                    if (pm[i] >= pmax[i] and d > 0) or (pm[i] <= pmin[i] and d < 0):
+                        d = 0.0
+                    dpm[i] = d
+                    pm_use[i] = pm[i]
+                else:
+                    dgx_row, pm_use_i = _gov_advanced(
+                        gm, cmd, gx[i], pmin[i], pmax[i], gov_params_of[i])
+                    dgx[i] = dgx_row
+                    pm_use[i] = pm_use_i
+            vs_i = 0.0
+            if pss_on_of[i] and avr_on[i] and is_active:
+                dpssx_row, vs_i = _pss_output(omega[i], pssx[i], pss_params_of[i])
+                dpssx[i] = dpssx_row
             if avr_on[i] and is_active:
                 vt = vmag.get(machines[i]["bus_idx"], 0.0)  # grounded ⇒ 0
-                de = (avr_Ka[i] * (vref[i] - vt) - (efield[i] - efd_ref[i])) / avr_Ta[i]
-                # anti-windup at the field ceiling / floor
+                em = exc_model_of[i]
+                if em == "first_order":
+                    de = (avr_Ka[i] * (vref[i] - vt + vs_i) - (efield[i] - efd_ref[i])) / avr_Ta[i]
+                else:
+                    dex_row, de = _exc_advanced(
+                        em, vt, vref[i], vs_i, efield[i], efd_ref[i], ex[i], exc_params_of[i])
+                    dex[i] = dex_row
+                # anti-windup at the field ceiling / floor (shared by every model)
                 if (efield[i] >= emax[i] and de > 0) or (efield[i] <= emin[i] and de < 0):
                     de = 0.0
                 defield[i] = de
@@ -1010,10 +1312,11 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                 Id, Iq = idq.real, idq.imag
                 depq[i] = (efield[i] - epq[i] - dXd[i] * Id) / Tdop[i]
                 depd[i] = (-epd[i] + dXq[i] * Iq) / Tqop[i]
-            # Mechanical power seen by the rotor: the governed state Pm while the
-            # machine is on line, zero once it has been tripped (removed from the
-            # active set) so it neither drives nor drags the surviving machines.
-            pm_eff = pm[i] if is_active else 0.0
+            # Mechanical power seen by the rotor: the governed state (Pm for
+            # first_order, the advanced model's algebraic output otherwise)
+            # while the machine is on line, zero once tripped (removed from
+            # the active set) so it neither drives nor drags the survivors.
+            pm_eff = pm_use[i] if is_active else 0.0
             domega[i] = ws / (2.0 * Hs[i]) * (pm_eff - Pe[i] - Ds[i] * omega[i] / ws)
         # Induction-motor slip dynamics: ds/dt = (T_L − T_e)/(2H).
         dslips = np.zeros(n_mot)
@@ -1024,7 +1327,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             te = mo["model"].torque(vm, s)
             tl = mo["load_fn"](1.0 - s)
             dslips[k] = (tl - te) / (2.0 * mo["h_s"])
-        return ddelta, domega, dpm, dpsec, defield, depq, depd, dslips
+        return ddelta, domega, dpm, dpsec, defield, depq, depd, dslips, dgx, dex, dpssx
 
     pm = Pm0.copy()          # governed mechanical power (starts at equilibrium)
     psec = np.zeros(m)       # isochronous reset (secondary) state
@@ -1032,6 +1335,23 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     epq = epq0.copy()        # two-axis q-axis transient EMF
     epd = epd0.copy()        # two-axis d-axis transient EMF
     slips = slips0.copy()    # induction-motor slips (empty when no dynamic motor)
+    gx = np.zeros((m, N_GOV_X))    # advanced-governor extra states (0 = unused)
+    ex = np.zeros((m, N_EXC_X))    # advanced-exciter extra states (0 = unused)
+    pssx = np.zeros((m, N_PSS_X))  # PSS states (0 = unused)
+    # Advanced-model states start at their pre-fault EQUILIBRIUM, not 0 — every
+    # governor model's algebraic Pm output collapses to Pm0 when every gx slot
+    # equals Pm0 (verified per-model above); every exciter's Vt-lag state starts
+    # at vref (=pre-fault Vt) and AC's Efd-lag state starts at efd_ref, so a
+    # zero-magnitude disturbance shows zero drift (same bar the two-axis model's
+    # equilibrium test holds first_order/classical to).
+    for _i in range(m):
+        if gov_model_of[_i] != "first_order":
+            gx[_i, :] = Pm0[_i]
+        _em = exc_model_of[_i]
+        if _em in ("sexs", "st1", "ac"):
+            ex[_i, 0] = vref[_i]
+        if _em == "ac":
+            ex[_i, 1] = efd_ref[_i]
 
     def _effective_variant(t, omega):
         """The reduction in force this step: the precomputed per-segment one, or
@@ -1186,7 +1506,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             else:
                 gen_trip_t[i] = 0.0
 
-    rec_t, rec_delta, rec_omega, rec_pe, rec_vbus = [], [], [], [], []
+    rec_t, rec_delta, rec_omega, rec_pe, rec_vbus, rec_pm = [], [], [], [], [], []
     bus_ids_all = None
     unstable = False
     freq_end, freq_late = {}, {}   # island COI frequency: latest, and at ~80% window
@@ -1222,6 +1542,21 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             vmap = {bi: abs((v["R"] @ eint_a)[k])
                     for k, bi in enumerate(v["keep_bus"])} if len(v["active"]) else {}
             rec_vbus.append(vmap)
+            # Mechanical power this instant, per machine — pm[i] directly for
+            # first_order (no derivative needed, just the state), else the
+            # advanced model's algebraic output from its current gx (same
+            # formula deriv() uses, evaluated here without the RK4 machinery).
+            pmt = []
+            for i in range(m):
+                if not gov_on[i] or gov_model_of[i] == "first_order":
+                    pmt.append(round(float(pm[i]), 4))
+                else:
+                    cmd_i = (Pm0[i] + psec[i]
+                             - (omega[i] / ws / gov_R[i]) * pmax[i])
+                    _, pm_use_i = _gov_advanced(
+                        gov_model_of[i], cmd_i, gx[i], pmin[i], pmax[i], gov_params_of[i])
+                    pmt.append(round(pm_use_i, 4))
+            rec_pm.append(pmt)
 
         # instability check (relative to each machine's island COI); a tripped
         # generator is off-line and coasting, so it is not judged.
@@ -1241,20 +1576,24 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
 
         if step == steps:
             break
-        # RK4 over (delta, omega, Pm, Psec, E_field, E'q, E'd, motor slips). The
-        # reduction veff is held constant across the four stages (redone next step).
-        def _f(td, dd, oo, pp, ss, ee, qq, dd2, mm2):
-            return deriv(td, dd, oo, pp, ss, ee, qq, dd2, mm2, veff)
-        k1 = _f(t, delta, omega, pm, psec, efield, epq, epd, slips)
+        # RK4 over (delta, omega, Pm, Psec, E_field, E'q, E'd, motor slips, gov
+        # extra states, exciter extra states, PSS states). The reduction veff
+        # is held constant across the four stages (redone next step).
+        def _f(td, dd, oo, pp, ss, ee, qq, dd2, mm2, gg, xx, ps):
+            return deriv(td, dd, oo, pp, ss, ee, qq, dd2, mm2, gg, xx, ps, veff)
+        k1 = _f(t, delta, omega, pm, psec, efield, epq, epd, slips, gx, ex, pssx)
         k2 = _f(t + dt / 2, delta + dt / 2 * k1[0], omega + dt / 2 * k1[1],
                 pm + dt / 2 * k1[2], psec + dt / 2 * k1[3], efield + dt / 2 * k1[4],
-                epq + dt / 2 * k1[5], epd + dt / 2 * k1[6], slips + dt / 2 * k1[7])
+                epq + dt / 2 * k1[5], epd + dt / 2 * k1[6], slips + dt / 2 * k1[7],
+                gx + dt / 2 * k1[8], ex + dt / 2 * k1[9], pssx + dt / 2 * k1[10])
         k3 = _f(t + dt / 2, delta + dt / 2 * k2[0], omega + dt / 2 * k2[1],
                 pm + dt / 2 * k2[2], psec + dt / 2 * k2[3], efield + dt / 2 * k2[4],
-                epq + dt / 2 * k2[5], epd + dt / 2 * k2[6], slips + dt / 2 * k2[7])
+                epq + dt / 2 * k2[5], epd + dt / 2 * k2[6], slips + dt / 2 * k2[7],
+                gx + dt / 2 * k2[8], ex + dt / 2 * k2[9], pssx + dt / 2 * k2[10])
         k4 = _f(t + dt, delta + dt * k3[0], omega + dt * k3[1],
                 pm + dt * k3[2], psec + dt * k3[3], efield + dt * k3[4],
-                epq + dt * k3[5], epd + dt * k3[6], slips + dt * k3[7])
+                epq + dt * k3[5], epd + dt * k3[6], slips + dt * k3[7],
+                gx + dt * k3[8], ex + dt * k3[9], pssx + dt * k3[10])
         comb = lambda a, b, c, d: dt / 6 * (a + 2 * b + 2 * c + d)
         delta = delta + comb(k1[0], k2[0], k3[0], k4[0])
         omega = omega + comb(k1[1], k2[1], k3[1], k4[1])
@@ -1266,6 +1605,9 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             epd = epd + comb(k1[6], k2[6], k3[6], k4[6])
         if n_mot:
             slips = np.clip(slips + comb(k1[7], k2[7], k3[7], k4[7]), 1e-4, 1.0)
+        gx = gx + comb(k1[8], k2[8], k3[8], k4[8])
+        ex = ex + comb(k1[9], k2[9], k3[9], k4[9])
+        pssx = pssx + comb(k1[10], k2[10], k3[10], k4[10])
         # Lag the bus voltages one step for the next voltage-dependent load / GFL
         # shunt (the GFM current limiter converges in-step, so no current lag).
         if dyn and veff is not None:
@@ -1301,11 +1643,11 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
               "freq_msgs": freq_msgs}
     if record:
         result["curves"] = _decimate_traj(rec_t, rec_delta, rec_omega, rec_pe,
-                                           rec_vbus, machines, segments)
+                                           rec_vbus, rec_pm, machines, segments)
     return result
 
 
-def _decimate_traj(rec_t, rec_delta, rec_omega, rec_pe, rec_vbus, machines, segments):
+def _decimate_traj(rec_t, rec_delta, rec_omega, rec_pe, rec_vbus, rec_pm, machines, segments):
     n = len(rec_t)
     keep = range(n)
     if n > MAX_RECORD_POINTS:
@@ -1325,6 +1667,7 @@ def _decimate_traj(rec_t, rec_delta, rec_omega, rec_pe, rec_vbus, machines, segm
         "delta_deg": [[rec_delta[i][j] for i in idx] for j in range(m)],
         "speed_hz": [[rec_omega[i][j] for i in idx] for j in range(m)],
         "pe_pu": [[rec_pe[i][j] for i in idx] for j in range(m)],
+        "pm_pu": [[rec_pm[i][j] for i in idx] for j in range(m)],
         "bus_v": {bi: [round(rec_vbus[i].get(bi, 0.0), 4) for i in idx] for bi in bus_ids},
     }
 
@@ -1746,6 +2089,7 @@ def _curves_with_names(curves, project, machines, ctx):
         "delta_deg": curves["delta_deg"],
         "speed_hz": curves["speed_hz"],
         "pe_pu": curves["pe_pu"],
+        "pm_pu": curves["pm_pu"],
         "buses": [{"bus": _bus_name(project, idx_to_bus[bi]),
                    "v_pu": curves["bus_v"][bi]}
                   for bi in curves["bus_v"]],
