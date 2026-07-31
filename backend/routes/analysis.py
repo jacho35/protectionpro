@@ -6,7 +6,7 @@ import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -24,7 +24,10 @@ from ..analysis.admd import run_admd
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
 from ..analysis.backup_autonomy import run_backup_autonomy
-from ..analysis.fault import run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis
+from ..analysis.fault import (
+    run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis,
+    run_simultaneous_fault_analysis,
+)
 from ..analysis.fault_ansi import run_ansi_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.unbalanced_loadflow import run_unbalanced_load_flow
@@ -86,6 +89,33 @@ def two_conductor_open(data: ProjectData):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Two-conductor-open analysis error: {e}")
+
+
+@router.post("/simultaneous-fault", response_model=SimultaneousFaultResults)
+def simultaneous_fault(data: ProjectData):
+    """Run a simultaneous series (open-conductor) + shunt fault analysis:
+    the branch identified by data.simultaneousFaultBranchId opens
+    (data.simultaneousFaultSeriesType) at the same time as a shunt fault
+    (data.simultaneousFaultShuntType) occurs at
+    data.simultaneousFaultBusId, elsewhere in the network."""
+    if not data.simultaneousFaultBranchId:
+        raise HTTPException(status_code=400, detail="simultaneousFaultBranchId is required.")
+    if not data.simultaneousFaultSeriesType:
+        raise HTTPException(status_code=400, detail="simultaneousFaultSeriesType is required.")
+    if not data.simultaneousFaultBusId:
+        raise HTTPException(status_code=400, detail="simultaneousFaultBusId is required.")
+    if not data.simultaneousFaultShuntType:
+        raise HTTPException(status_code=400, detail="simultaneousFaultShuntType is required.")
+    try:
+        return run_simultaneous_fault_analysis(
+            data, data.simultaneousFaultBranchId, data.simultaneousFaultSeriesType,
+            data.simultaneousFaultBusId, data.simultaneousFaultShuntType,
+            voltage_factor=data.voltageFactor)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Simultaneous fault analysis error: {e}")
 
 
 @router.post("/loadflow", response_model=LoadFlowResults)

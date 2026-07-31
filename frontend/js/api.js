@@ -160,6 +160,18 @@ const API = {
     return this.request('/analysis/two-conductor-open', 'POST', data);
   },
 
+  // Run a simultaneous series (open-conductor) + shunt fault: branchId opens
+  // (seriesType) at the same time as a shunt fault (shuntType) at busId,
+  // elsewhere in the network.
+  async runSimultaneousFaultAnalysis(branchId, seriesType, busId, shuntType) {
+    const data = AppState.toJSON();
+    data.simultaneousFaultBranchId = branchId;
+    data.simultaneousFaultSeriesType = seriesType;
+    data.simultaneousFaultBusId = busId;
+    data.simultaneousFaultShuntType = shuntType;
+    return this.request('/analysis/simultaneous-fault', 'POST', data);
+  },
+
   // Run arc flash analysis
   async runArcFlash() {
     const data = AppState.toJSON();

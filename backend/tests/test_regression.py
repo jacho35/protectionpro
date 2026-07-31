@@ -15,7 +15,10 @@ import numpy as np
 import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire, LoadFlowBus
-from backend.analysis.fault import run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis
+from backend.analysis.fault import (
+    run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis,
+    run_simultaneous_fault_analysis,
+)
 from backend.analysis.loadflow import (
     run_load_flow, connected_bus_loads_mw, _assess_solution,
     _newton_raphson, _gauss_seidel, solve_with_islands,
@@ -406,6 +409,117 @@ class TestTwoConductorOpen:
                            components=comps, wires=wires)
         with pytest.raises(ValueError):
             run_two_conductor_open_analysis(proj, "cable-1")
+
+
+def _simultaneous_fault_project(fault_mva=1e7, kv=11.0, r_per_km=0.5, x_per_km=0.3,
+                                length_km=1.0, rated_kva=625.0, power_factor=0.8,
+                                shunt_r_per_km=0.4, shunt_x_per_km=0.25, shunt_length_km=1.0):
+    """_open_conductor_project's network (utility -- bus-1 -- cable-1 --
+    bus-2 -- static_load-1) PLUS a second branch hanging off bus-1 straight
+    to a dead-end bus-3 — the shunt-fault location for the simultaneous-
+    fault engine. bus-3 is electrically DECOUPLED from the break at bus-2:
+    in a star network fed from one swing bus, the transfer impedance
+    between any two downstream nodes equals the swing's OWN self-impedance
+    (independent of the branch impedances hanging off it) — and with the
+    near-ideal utility here (fault_mva huge) that self-impedance is
+    negligible, so Z_FP ≈ 0. This is the degenerate/decoupled limit the
+    regression tests check against the two standalone series-fault engines
+    and against a standalone run_fault_analysis shunt fault."""
+    cable = _comp("cable-1", "cable", {
+        "name": "Feeder", "r_per_km": r_per_km, "x_per_km": x_per_km,
+        "length_km": length_km, "rated_amps": 400.0, "voltage_kv": kv,
+    })
+    bus2 = _comp("bus-2", "bus", {"name": "Load Bus", "voltage_kv": kv})
+    load = _comp("static_load-1", "static_load", {
+        "name": "Load", "rated_kva": rated_kva, "power_factor": power_factor,
+    })
+    cable_shunt = _comp("cable-shunt", "cable", {
+        "name": "Shunt Feeder", "r_per_km": shunt_r_per_km, "x_per_km": shunt_x_per_km,
+        "length_km": shunt_length_km, "rated_amps": 400.0, "voltage_kv": kv,
+    })
+    bus3 = _comp("bus-3", "bus", {"name": "Shunt Fault Bus", "voltage_kv": kv})
+    wires = [
+        _wire("w2", "bus-1", "cable-1"),
+        _wire("w3", "cable-1", "bus-2"),
+        _wire("w4", "bus-2", "static_load-1"),
+        _wire("w5", "bus-1", "cable-shunt"),
+        _wire("w6", "cable-shunt", "bus-3"),
+    ]
+    return _utility_bus_project(fault_mva=fault_mva, xr=15.0, kv=kv, z0_z1=1.0,
+                                extra_components=[cable, bus2, load, cable_shunt, bus3],
+                                extra_wires=wires)
+
+
+class TestSimultaneousFault:
+    """Simultaneous series (open-conductor) + shunt fault at two DIFFERENT
+    network locations — see fault.run_simultaneous_fault_analysis. Coupled
+    through the network's sequence transfer impedance; the primary
+    correctness gate is the electrically-decoupled limit reproducing the
+    two standalone single-fault-point engines exactly (see
+    _simultaneous_fault_project's docstring for why bus-3 is decoupled from
+    the break at bus-2)."""
+
+    def test_open_conductor_leg_matches_standalone_when_decoupled(self):
+        proj = _simultaneous_fault_project()
+        standalone = run_open_conductor_analysis(proj, "cable-1")
+        combined = run_simultaneous_fault_analysis(
+            proj, "cable-1", "open_conductor", "bus-3", "slg")
+        assert combined.ia1_ka == pytest.approx(standalone.ia1_ka, rel=1e-2)
+        assert combined.ia2_ka == pytest.approx(standalone.ia2_ka, rel=1e-2)
+        assert combined.ia0_ka == pytest.approx(standalone.ia0_ka, abs=1e-3)
+        assert combined.ib_ka == pytest.approx(standalone.ib_ka, rel=1e-2)
+        assert combined.ic_ka == pytest.approx(standalone.ic_ka, rel=1e-2)
+
+    def test_two_conductor_open_leg_matches_standalone_when_decoupled(self):
+        proj = _simultaneous_fault_project()
+        standalone = run_two_conductor_open_analysis(proj, "cable-1")
+        combined = run_simultaneous_fault_analysis(
+            proj, "cable-1", "two_conductor_open", "bus-3", "llg")
+        assert combined.ia1_ka == pytest.approx(standalone.ia1_ka, rel=1e-2)
+        assert combined.ia_ka == pytest.approx(standalone.ia_ka, rel=1e-2)
+
+    def test_shunt_leg_matches_standalone_fault_analysis_when_decoupled(self):
+        """In the decoupled limit, the shunt leg's own ground current should
+        match a standalone run_fault_analysis SLG at the same bus — bus-3
+        has no other source than the same utility, so Zp1/Zp0 there equal
+        what run_fault_analysis computes directly. run_fault_analysis's
+        ik1 IS already the total ground fault current (3·I1 for SLG)."""
+        proj = _simultaneous_fault_project()
+        standalone = run_fault_analysis(proj, fault_bus_id="bus-3", fault_type="slg")
+        expected_ik1 = standalone.buses["bus-3"].ik1
+        combined = run_simultaneous_fault_analysis(
+            proj, "cable-1", "open_conductor", "bus-3", "slg")
+        assert combined.ig_shunt_ka == pytest.approx(expected_ik1, rel=1e-2)
+
+    def test_rejects_shunt_bus_not_a_bus(self):
+        proj = _simultaneous_fault_project()
+        with pytest.raises(ValueError):
+            run_simultaneous_fault_analysis(proj, "cable-1", "open_conductor", "static_load-1", "slg")
+
+    def test_rejects_unknown_series_type(self):
+        proj = _simultaneous_fault_project()
+        with pytest.raises(ValueError):
+            run_simultaneous_fault_analysis(proj, "cable-1", "bogus", "bus-3", "slg")
+
+    def test_rejects_unknown_shunt_type(self):
+        proj = _simultaneous_fault_project()
+        with pytest.raises(ValueError):
+            run_simultaneous_fault_analysis(proj, "cable-1", "open_conductor", "bus-3", "bogus")
+
+    def test_coincident_break_and_shunt_fault(self):
+        """P set to the branch's own upstream terminal (bus-1) — the fully-
+        coupled limit (Z_FP == Zp, since attach_bus and P are the same
+        node). Sanity-checks the coupled formula doesn't blow up there.
+        (bus-2, the DOWNSTREAM terminal, isn't usable for this check in
+        this fixture: it has no source of its own once cable-1 is cut, so a
+        hypothetical independent fault there has no passive path to ground
+        except back through the very branch being broken — a genuinely
+        different, out-of-scope scenario, not a Z_FP→Zp edge case.)"""
+        proj = _simultaneous_fault_project()
+        res = run_simultaneous_fault_analysis(
+            proj, "cable-1", "open_conductor", "bus-1", "slg")
+        assert math.isfinite(res.ia1_ka) and res.ia1_ka >= 0
+        assert math.isfinite(res.ip1_ka) and res.ip1_ka >= 0
 
 
 # ── IEEE 1584-2002 arc flash ─────────────────────────────────────────────

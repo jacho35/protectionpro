@@ -181,6 +181,10 @@ class ProjectData(BaseModel):
     dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
     openConductorBranchId: Optional[str] = None  # cable/feeder id for open-conductor (series-fault) analysis
     twoConductorOpenBranchId: Optional[str] = None  # cable/feeder id for two-conductor-open (series-fault) analysis
+    simultaneousFaultBranchId: Optional[str] = None  # cable/feeder id for the series (open-conductor) leg
+    simultaneousFaultSeriesType: Optional[str] = None  # "open_conductor" | "two_conductor_open"
+    simultaneousFaultBusId: Optional[str] = None  # bus/board id for the shunt-fault leg, elsewhere in the network
+    simultaneousFaultShuntType: Optional[str] = None  # "3phase" | "slg" | "ll" | "llg"
 
     @model_validator(mode="after")
     def _correct_overhead_resistance(self):
@@ -611,6 +615,64 @@ class TwoConductorOpenResults(BaseModel):
     has_downstream_source: bool = False
     warnings: list[str] = []
     method: str = "Two-conductor-open"
+
+
+class SimultaneousFaultResults(BaseModel):
+    """Simultaneous series (open-conductor) + shunt fault at two DIFFERENT
+    network locations, coupled through the network's sequence transfer
+    impedance — the two-fault-point generalization of
+    OpenConductorResults/TwoConductorOpenResults. See
+    fault.run_simultaneous_fault_analysis for the derivation."""
+    # Series (break) side — same field vocabulary as OpenConductorResults/
+    # TwoConductorOpenResults; ib_ka/ic_ka apply for series_type =
+    # "open_conductor", ia_ka for "two_conductor_open".
+    branch_id: str
+    branch_name: str = ""
+    series_type: str = ""        # "open_conductor" | "two_conductor_open"
+    source_bus_id: str = ""      # upstream side of the break
+    source_bus_name: str = ""
+    load_bus_id: str = ""        # downstream side of the break
+    load_bus_name: str = ""
+    voltage_kv: float = 0        # break-point (upstream) voltage base
+    prefault_current_a: float = 0
+    ia1_ka: float = 0            # positive-seq current at the break (kA)
+    ia2_ka: float = 0
+    ia0_ka: float = 0
+    ib_ka: float = 0             # healthy-phase B current (open_conductor only)
+    ic_ka: float = 0             # healthy-phase C current (open_conductor only)
+    ia_ka: float = 0             # surviving-phase current (two_conductor_open only)
+    ig_ka: float = 0             # residual/ground current 3·Ia0 at the break (kA)
+    negative_seq_pct: float = 0  # Ia2/Ia1 × 100% at the break
+
+    # Shunt side — the second, independent fault location
+    shunt_bus_id: str = ""
+    shunt_bus_name: str = ""
+    shunt_type: str = ""         # "3phase" | "slg" | "ll" | "llg"
+    shunt_voltage_kv: float = 0
+    ip1_ka: float = 0            # positive-seq current into the shunt fault (kA)
+    ip2_ka: float = 0
+    ip0_ka: float = 0
+    ipa_ka: float = 0            # shunt-fault phase currents (kA)
+    ipb_ka: float = 0
+    ipc_ka: float = 0
+    ig_shunt_ka: float = 0       # residual/ground current 3·Ip0 at the shunt fault (kA)
+
+    base_mva: float = 100
+    # Coupling impedances (p.u.) — exposed for transparency/debugging, not
+    # normally shown to the user: [real, imag] pairs.
+    za1_pu: list[float] = []     # port-F (break) self-impedance
+    za2_pu: list[float] = []
+    za0_pu: list[float] = []
+    zp1_pu: list[float] = []     # port-P (shunt) self-impedance
+    zp2_pu: list[float] = []
+    zp0_pu: list[float] = []
+    zfp1_pu: list[float] = []    # transfer impedance between the break and the shunt fault
+    zfp2_pu: list[float] = []
+    zfp0_pu: list[float] = []
+
+    has_downstream_source: bool = False
+    warnings: list[str] = []
+    method: str = "Simultaneous series+shunt fault"
 
 
 class ArcFlashBusResult(BaseModel):

@@ -1707,6 +1707,104 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  // ── Simultaneous Series + Shunt Fault Analysis ──
+  document.getElementById('btn-simultaneous-fault').addEventListener('click', async () => {
+    const sel = [...AppState.selectedIds];
+    const selComps = sel.map(id => AppState.components.get(id)).filter(Boolean);
+    const branchComp = selComps.find(c => c.type === 'cable');
+    const busComp = selComps.find(c => c.type === 'bus' || c.type === 'distribution_board');
+    if (selComps.length !== 2 || !branchComp || !busComp) {
+      document.getElementById('status-info').textContent =
+        'Select exactly one cable/feeder (the series-fault branch) and one bus/board (the shunt-fault location) before running simultaneous fault analysis.';
+      return;
+    }
+    const seriesType = document.getElementById('simultaneous-fault-series-type').value;
+    const shuntType = document.getElementById('simultaneous-fault-shunt-type').value;
+    document.getElementById('status-info').textContent = 'Running simultaneous fault analysis...';
+    _setBusy('btn-simultaneous-fault', true);
+    try {
+      const result = await API.runSimultaneousFaultAnalysis(branchComp.id, seriesType, busComp.id, shuntType);
+      AppState.simultaneousFaultResults = result;
+      document.getElementById('status-info').textContent = 'Simultaneous fault analysis complete.';
+      showSimultaneousFaultResults(result);
+    } catch (e) {
+      console.error('Simultaneous fault analysis error:', e);
+      document.getElementById('status-info').textContent = 'Simultaneous fault analysis failed.';
+      showValidationModal('Simultaneous Series + Shunt Fault — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-simultaneous-fault', false);
+    }
+  });
+
+  function showSimultaneousFaultResults(result) {
+    const modal = document.getElementById('simultaneous-fault-modal');
+    const body = document.getElementById('simultaneous-fault-body');
+    if (!modal || !body) return;
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
+      html += '</div>';
+    }
+
+    const seriesLabel = result.series_type === 'two_conductor_open' ? 'Two conductors open' : 'One conductor open';
+    const shuntLabel = { '3phase': 'Three-phase', slg: 'Single line-ground', ll: 'Line-to-line', llg: 'Double line-ground' }[result.shunt_type] || result.shunt_type;
+
+    html += `<p style="margin:4px 0 10px;font-size:12px;opacity:0.85">
+      ${seriesLabel} on <strong>${escHtml(result.branch_name)}</strong>, between
+      <strong>${escHtml(result.source_bus_name)}</strong> (source side) and
+      <strong>${escHtml(result.load_bus_name)}</strong> (load side) — ${result.voltage_kv.toFixed(2)} kV,
+      prefault current ${result.prefault_current_a.toFixed(1)} A —
+      SIMULTANEOUS with a ${shuntLabel} fault at <strong>${escHtml(result.shunt_bus_name)}</strong>
+      (${result.shunt_voltage_kv.toFixed(2)} kV). ${result.method}.
+    </p>`;
+
+    const npsClass = result.negative_seq_pct >= 40 ? 'af-danger' : result.negative_seq_pct >= 15 ? 'af-medium' : 'af-low';
+
+    html += `<h4 style="margin:8px 0 4px">Series Fault — Sequence &amp; Phase Currents at the Break</h4>
+    <table class="af-table">
+      <thead><tr><th>Quantity</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Positive-sequence I₁</td><td>${result.ia1_ka.toFixed(3)} kA</td></tr>
+        <tr class="${npsClass}"><td>Negative-sequence I₂</td><td>${result.ia2_ka.toFixed(3)} kA — ${result.negative_seq_pct.toFixed(1)}% of I₁</td></tr>
+        <tr><td>Zero-sequence I₀</td><td>${result.ia0_ka.toFixed(3)} kA</td></tr>
+        ${result.series_type === 'two_conductor_open'
+          ? `<tr><td>Surviving phase current</td><td>${result.ia_ka.toFixed(3)} kA</td></tr>`
+          : `<tr><td>Healthy phase B current</td><td>${result.ib_ka.toFixed(3)} kA</td></tr>
+             <tr><td>Healthy phase C current</td><td>${result.ic_ka.toFixed(3)} kA</td></tr>`}
+        <tr><td>Residual/ground current (3·I₀)</td><td>${result.ig_ka.toFixed(3)} kA</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 4px">Shunt Fault — Sequence &amp; Phase Currents at ${escHtml(result.shunt_bus_name)}</h4>
+    <table class="af-table">
+      <thead><tr><th>Quantity</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Positive-sequence I₁</td><td>${result.ip1_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Negative-sequence I₂</td><td>${result.ip2_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Zero-sequence I₀</td><td>${result.ip0_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Phase A</td><td>${result.ipa_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Phase B</td><td>${result.ipb_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Phase C</td><td>${result.ipc_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Residual/ground current (3·I₀)</td><td>${result.ig_shunt_ka.toFixed(3)} kA</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 4px">Coupling Impedances (p.u.)</h4>
+    <table class="af-table">
+      <thead><tr><th>Network</th><th>Za (break, R/X)</th><th>Zp (shunt, R/X)</th><th>Z transfer (R/X)</th></tr></thead>
+      <tbody>
+        <tr><td>Seq 1</td><td>${result.za1_pu[0].toFixed(4)} / ${result.za1_pu[1].toFixed(4)}</td><td>${result.zp1_pu[0].toFixed(4)} / ${result.zp1_pu[1].toFixed(4)}</td><td>${result.zfp1_pu[0].toFixed(4)} / ${result.zfp1_pu[1].toFixed(4)}</td></tr>
+        <tr><td>Seq 2</td><td>${result.za2_pu[0].toFixed(4)} / ${result.za2_pu[1].toFixed(4)}</td><td>${result.zp2_pu[0].toFixed(4)} / ${result.zp2_pu[1].toFixed(4)}</td><td>${result.zfp2_pu[0].toFixed(4)} / ${result.zfp2_pu[1].toFixed(4)}</td></tr>
+        <tr><td>Seq 0</td><td>${result.za0_pu[0].toFixed(4)} / ${result.za0_pu[1].toFixed(4)}</td><td>${result.zp0_pu[0].toFixed(4)} / ${result.zp0_pu[1].toFixed(4)}</td><td>${result.zfp0_pu[0].toFixed(4)} / ${result.zfp0_pu[1].toFixed(4)}</td></tr>
+      </tbody>
+    </table>`;
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   function showAnsiFaultResults(result) {
     const modal = document.getElementById('fault-ansi-modal');
     const body = document.getElementById('fault-ansi-body');
@@ -3376,6 +3474,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('two-conductor-open-modal').addEventListener('click', (e) => {
     if (e.target.id === 'two-conductor-open-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-simultaneous-fault').addEventListener('click', () => {
+    document.getElementById('simultaneous-fault-modal').style.display = 'none';
+  });
+  document.getElementById('simultaneous-fault-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'simultaneous-fault-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-load-diversity').addEventListener('click', () => {

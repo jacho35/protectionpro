@@ -2017,28 +2017,38 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
     }
 
 
-def _nodal_thevenin(bus_ids, branches, shunts, faulted_id):
-    """Thevenin impedance Z_kk at faulted_id from a nodal network solution.
+def _nodal_zbus_multi(bus_ids, branches, shunts, node_ids):
+    """Full Zbus submatrix for an arbitrary set of nodes, restricted to the
+    connected component of ``node_ids[0]`` (the anchor). Generalizes the
+    single-diagonal-entry ``_nodal_thevenin`` below to also return TRANSFER
+    impedances between nodes — needed by the simultaneous series+shunt fault
+    engine to couple a series-fault break point to a shunt fault elsewhere in
+    the same sub-network (Anderson-style two-port compensation network).
 
-    Restricts the solve to the connected component containing the faulted bus
-    (isolated islands would make Ybus singular). Returns None when the faulted
-    bus has no source in its component or the solve fails — callers fall back
-    to the per-path result.
+    Returns a dict-of-dicts ``{node_id: {node_id: Z_pu}}`` covering exactly
+    ``node_ids`` (reciprocal network: ``Z[a][b] == Z[b][a]``), or None if any
+    requested node is unreachable from the anchor, the component has no
+    source, or the solve fails.
     """
-    if faulted_id not in set(bus_ids):
+    if not node_ids:
         return None
-    # Connected component of the faulted bus over the branch graph
+    anchor = node_ids[0]
+    if anchor not in set(bus_ids):
+        return None
+    # Connected component of the anchor bus over the branch graph
     adj = {}
     for bi, bj, _z in branches:
         adj.setdefault(bi, set()).add(bj)
         adj.setdefault(bj, set()).add(bi)
-    comp_nodes, frontier = {faulted_id}, [faulted_id]
+    comp_nodes, frontier = {anchor}, [anchor]
     while frontier:
         nxt = frontier.pop()
         for nb in adj.get(nxt, ()):
             if nb not in comp_nodes:
                 comp_nodes.add(nb)
                 frontier.append(nb)
+    if any(nid not in comp_nodes for nid in node_ids):
+        return None  # a requested node isn't reachable from the anchor
     nodes = [bid for bid in bus_ids if bid in comp_nodes]
     if not any(shunts.get(n) for n in nodes):
         return None  # no source reachable — no fault current path
@@ -2064,10 +2074,32 @@ def _nodal_thevenin(bus_ids, branches, shunts, faulted_id):
         zbus = np.linalg.inv(ybus)
     except np.linalg.LinAlgError:
         return None
-    z_kk = zbus[idx[faulted_id], idx[faulted_id]]
-    if not np.isfinite(z_kk) or abs(z_kk) < 1e-15 or abs(z_kk) > 1e9:
+    result = {}
+    for a in node_ids:
+        row = {}
+        for b in node_ids:
+            z_ab = zbus[idx[a], idx[b]]
+            if not np.isfinite(z_ab):
+                return None
+            row[b] = complex(z_ab)
+        result[a] = row
+    z_aa = result[anchor][anchor]
+    if abs(z_aa) < 1e-15 or abs(z_aa) > 1e9:
         return None
-    return complex(z_kk)
+    return result
+
+
+def _nodal_thevenin(bus_ids, branches, shunts, faulted_id):
+    """Thevenin impedance Z_kk at faulted_id from a nodal network solution.
+
+    Restricts the solve to the connected component containing the faulted bus
+    (isolated islands would make Ybus singular). Returns None when the faulted
+    bus has no source in its component or the solve fails — callers fall back
+    to the per-path result. Thin wrapper around ``_nodal_zbus_multi`` for the
+    single-node case.
+    """
+    zbus = _nodal_zbus_multi(bus_ids, branches, shunts, [faulted_id])
+    return zbus[faulted_id][faulted_id] if zbus is not None else None
 
 
 def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
@@ -2949,21 +2981,21 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
     return z1_list, z2_list, has_source[0], source_mva[0]
 
 
-def run_open_conductor_analysis(project: ProjectData, branch_id: str,
-                                voltage_factor: float = None) -> "OpenConductorResults":
-    """One-conductor-open (single-phasing) series fault analysis on a cable
-    branch. See the module comment above for the theory and scope.
+def _series_fault_break_thevenin(project: ProjectData, branch_id: str,
+                                 voltage_factor: float = None) -> dict:
+    """Shared preamble for the series (open-conductor) fault family: validate
+    the target branch, split the network at the break, and collect the
+    upstream/downstream sequence Thevenins plus the prefault compensation
+    current. Used by ``run_open_conductor_analysis``,
+    ``run_two_conductor_open_analysis`` and
+    ``run_simultaneous_fault_analysis`` — see the first for the
+    compensation-theorem theory.
 
-    Args:
-        project: The project data.
-        branch_id: id of the CABLE component whose conductor opens. Both
-            ends must connect directly to a bus/distribution_board.
-        voltage_factor: unused for the fault-current calculation itself
-            (there is no shunt fault here) but accepted for signature
-            symmetry with the other fault entry points.
+    Returns a dict (not a dataclass — the simultaneous-fault engine also
+    needs ``adjacency``/``components``/``bus_up``/``bus_down`` to build the
+    shunt-fault side's Zbus, which the two standalone engines don't use).
     """
     from .loadflow import insert_implicit_load_buses, run_load_flow
-    from ..models.schemas import OpenConductorResults
 
     project = insert_implicit_load_buses(project)
     base_mva = project.baseMVA
@@ -2975,12 +3007,12 @@ def run_open_conductor_analysis(project: ProjectData, branch_id: str,
     if not branch:
         raise ValueError(f"Component '{branch_id}' not found.")
     if branch.type != "cable":
-        raise ValueError("Open-conductor analysis currently supports cable/feeder branches only.")
+        raise ValueError("Series-fault analysis currently supports cable/feeder branches only.")
 
     touching = [w for w in project.wires if w.fromComponent == branch_id or w.toComponent == branch_id]
     if len(touching) != 2:
         raise ValueError("The selected branch must have exactly two connections (one per terminal) "
-                          "to run open-conductor analysis.")
+                          "to run series-fault analysis.")
     bus_ends = []
     for w in touching:
         other_id = w.toComponent if w.fromComponent == branch_id else w.fromComponent
@@ -2988,7 +3020,7 @@ def run_open_conductor_analysis(project: ProjectData, branch_id: str,
         bus_ends.append(other)
     if any(b is None or b.type not in ("bus", "distribution_board") for b in bus_ends):
         raise ValueError("Both ends of the selected branch must connect directly to a bus or "
-                          "distribution board for open-conductor analysis.")
+                          "distribution board for series-fault analysis.")
     busA, busB = bus_ends[0], bus_ends[1]
 
     # Network with the target branch's wires removed — splits the network
@@ -3008,7 +3040,7 @@ def run_open_conductor_analysis(project: ProjectData, branch_id: str,
 
     if not has_a and not has_b:
         raise ValueError("No active source (utility/generator/motor) found feeding either side of "
-                          "the selected branch — open-conductor analysis requires a source.")
+                          "the selected branch — series-fault analysis requires a source.")
     elif has_a and has_b:
         z1a = _parallel_impedances([p["z_total"] for p in paths_a])
         z1b = _parallel_impedances([p["z_total"] for p in paths_b])
@@ -3088,6 +3120,41 @@ def run_open_conductor_analysis(project: ProjectData, branch_id: str,
 
     i_base_ka = base_mva / (math.sqrt(3) * v_kv_up) if v_kv_up > 0 else 0.0
     il_pu = (il_amps / 1000.0) / i_base_ka if i_base_ka > 1e-12 else 0.0
+
+    return {
+        "branch": branch, "busA": busA, "busB": busB, "bus_up": bus_up, "bus_down": bus_down,
+        "adjacency": adjacency, "components": components, "base_mva": base_mva, "freq_hz": freq_hz,
+        "c_resolved": c_resolved, "v_kv_up": v_kv_up, "i_base_ka": i_base_ka,
+        "il_amps": il_amps, "il_pu": il_pu,
+        "zx1": zx1, "zx2": zx2, "zx0": zx0, "zy1": zy1, "zy2": zy2, "zy0": zy0,
+        "za1": za1, "za2": za2, "za0": za0,
+        "has_src_down": has_src_down, "warnings": warnings,
+    }
+
+
+def run_open_conductor_analysis(project: ProjectData, branch_id: str,
+                                voltage_factor: float = None) -> "OpenConductorResults":
+    """One-conductor-open (single-phasing) series fault analysis on a cable
+    branch. See the module comment above for the theory and scope.
+
+    Args:
+        project: The project data.
+        branch_id: id of the CABLE component whose conductor opens. Both
+            ends must connect directly to a bus/distribution_board.
+        voltage_factor: unused for the fault-current calculation itself
+            (there is no shunt fault here) but accepted for signature
+            symmetry with the other fault entry points.
+    """
+    from ..models.schemas import OpenConductorResults
+
+    t = _series_fault_break_thevenin(project, branch_id, voltage_factor)
+    branch, bus_up, bus_down = t["branch"], t["bus_up"], t["bus_down"]
+    v_kv_up, base_mva, i_base_ka = t["v_kv_up"], t["base_mva"], t["i_base_ka"]
+    zx1, zy1, zy2, zy0 = t["zx1"], t["zy1"], t["zy2"], t["zy0"]
+    za1, za2, za0 = t["za1"], t["za2"], t["za0"]
+    il_amps, il_pu = t["il_amps"], t["il_pu"]
+    warnings = t["warnings"]
+    has_src_down = t["has_src_down"]
 
     ea1 = complex(il_pu, 0.0) * za1
     za_sum = za2 + za0
@@ -3177,130 +3244,16 @@ def run_two_conductor_open_analysis(project: ProjectData, branch_id: str,
     the network in two; a source on both sides falls back to a documented
     single-infeed approximation).
     """
-    from .loadflow import insert_implicit_load_buses, run_load_flow
     from ..models.schemas import TwoConductorOpenResults
 
-    project = insert_implicit_load_buses(project)
-    base_mva = project.baseMVA
-    freq_hz = project.frequency or 50
-    c_resolved = voltage_factor if (voltage_factor is not None and voltage_factor > 0) else C_MAX
-    components = {c.id: c for c in project.components}
-
-    branch = components.get(branch_id)
-    if not branch:
-        raise ValueError(f"Component '{branch_id}' not found.")
-    if branch.type != "cable":
-        raise ValueError("Two-conductor-open analysis currently supports cable/feeder branches only.")
-
-    touching = [w for w in project.wires if w.fromComponent == branch_id or w.toComponent == branch_id]
-    if len(touching) != 2:
-        raise ValueError("The selected branch must have exactly two connections (one per terminal) "
-                          "to run two-conductor-open analysis.")
-    bus_ends = []
-    for w in touching:
-        other_id = w.toComponent if w.fromComponent == branch_id else w.fromComponent
-        other = components.get(other_id)
-        bus_ends.append(other)
-    if any(b is None or b.type not in ("bus", "distribution_board") for b in bus_ends):
-        raise ValueError("Both ends of the selected branch must connect directly to a bus or "
-                          "distribution board for two-conductor-open analysis.")
-    busA, busB = bus_ends[0], bus_ends[1]
-
-    # Network with the target branch's wires removed — splits the network
-    # into the source-side and load-side pieces the break creates.
-    wires_without_branch = [w for w in project.wires
-                             if w.fromComponent != branch_id and w.toComponent != branch_id]
-    adjacency = {}
-    for w in wires_without_branch:
-        adjacency.setdefault(w.fromComponent, []).append((w.toComponent, w.fromPort, w.toPort))
-        adjacency.setdefault(w.toComponent, []).append((w.fromComponent, w.toPort, w.fromPort))
-
-    warnings = []
-
-    paths_a = _collect_source_paths(busA.id, components, adjacency, base_mva, c=c_resolved)
-    paths_b = _collect_source_paths(busB.id, components, adjacency, base_mva, c=c_resolved)
-    has_a, has_b = len(paths_a) > 0, len(paths_b) > 0
-
-    if not has_a and not has_b:
-        raise ValueError("No active source (utility/generator/motor) found feeding either side of "
-                          "the selected branch — two-conductor-open analysis requires a source.")
-    elif has_a and has_b:
-        z1a = _parallel_impedances([p["z_total"] for p in paths_a])
-        z1b = _parallel_impedances([p["z_total"] for p in paths_b])
-        if abs(z1a) <= abs(z1b):
-            bus_up, bus_down, paths_up = busA, busB, paths_a
-        else:
-            bus_up, bus_down, paths_up = busB, busA, paths_b
-        warnings.append(
-            f"Both ends of '{branch.props.get('name', branch_id)}' have an active source — the "
-            f"analysis uses the stiffer side ('{bus_up.props.get('name', bus_up.id)}') as the "
-            f"driving EMF; the other side's own generation is represented only as an impedance "
-            f"(independent multi-infeed superposition is not modelled).")
-    elif has_a:
-        bus_up, bus_down, paths_up = busA, busB, paths_a
-    else:
-        bus_up, bus_down, paths_up = busB, busA, paths_b
-
-    v_kv_up = float(bus_up.props.get("voltage_kv", 0.4 if bus_up.type == "distribution_board" else 11) or 11)
-
-    # Source-side (upstream) Thevenin — includes the branch's own impedance
-    # (the open point is modelled at the branch's load-end terminal).
-    z1_up_net = _parallel_impedances([p["z_total"] for p in paths_up])
-    z2_up_net = _parallel_impedances([p.get("z2_total", p["z_total"]) for p in paths_up])
-    z0_up_tuples = _collect_zero_seq_impedances(bus_up.id, components, adjacency, base_mva,
-                                                c=c_resolved, freq_hz=freq_hz)
-    z0_up_net = _parallel_impedances([t[0] for t in z0_up_tuples]) if z0_up_tuples else complex(1e10, 0)
-
-    z_cable1 = _cable_impedance(branch, base_mva, v_kv_up)
-    z_cable0 = _cable_z0(branch, base_mva, v_kv_up, freq_hz)
-
-    zx1 = z1_up_net + z_cable1
-    zx2 = z2_up_net + z_cable1  # cables are passive/symmetric: Z2 = Z1
-    zx0 = z0_up_net + z_cable0
-
-    # Load-side (downstream) Thevenin — active sources beyond bus_down PLUS
-    # the passive load impedance (which is what actually completes the loop
-    # when there is no downstream source).
-    z1_down_list, z2_down_list, has_src_down, _src_mva_down = _collect_load_side_impedances(
-        bus_down.id, components, adjacency, base_mva, c=c_resolved)
-    zy1 = _parallel_impedances(z1_down_list)
-    zy2 = _parallel_impedances(z2_down_list)
-    z0_down_tuples = _collect_zero_seq_impedances(bus_down.id, components, adjacency, base_mva,
-                                                  c=c_resolved, freq_hz=freq_hz)
-    zy0 = _parallel_impedances([t[0] for t in z0_down_tuples]) if z0_down_tuples else complex(1e10, 0)
-
-    if not z1_down_list:
-        warnings.append(
-            f"No load or downstream source found beyond '{bus_down.props.get('name', bus_down.id)}' "
-            f"— the branch appears to feed a dead end, so little or no current is expected to flow "
-            f"through the surviving conductor.")
-
-    za1 = zx1 + zy1
-    za2 = zx2 + zy2
-    za0 = zx0 + zy0
-
-    # Prefault current through the branch, from an ordinary (un-broken)
-    # load flow — the compensation-theorem driving quantity (see docstring:
-    # unchanged from the one-conductor-open derivation).
-    il_amps = 0.0
-    try:
-        lf = run_load_flow(project, "newton_raphson")
-        if not lf.converged:
-            warnings.append("Prefault load flow did not converge — prefault current through the "
-                            "branch is assumed zero, which UNDERSTATES the result.")
-        else:
-            bflow = next((b for b in lf.branches if b.elementId == branch_id), None)
-            if bflow is not None:
-                il_amps = bflow.i_amps
-            else:
-                warnings.append("Prefault load flow did not report a flow for this branch — "
-                                "prefault current assumed zero, which UNDERSTATES the result.")
-    except Exception as e:
-        warnings.append(f"Prefault load flow failed ({e}) — prefault current through the branch "
-                        "assumed zero, which UNDERSTATES the result.")
-
-    i_base_ka = base_mva / (math.sqrt(3) * v_kv_up) if v_kv_up > 0 else 0.0
-    il_pu = (il_amps / 1000.0) / i_base_ka if i_base_ka > 1e-12 else 0.0
+    t = _series_fault_break_thevenin(project, branch_id, voltage_factor)
+    branch, bus_up, bus_down = t["branch"], t["bus_up"], t["bus_down"]
+    v_kv_up, base_mva, i_base_ka = t["v_kv_up"], t["base_mva"], t["i_base_ka"]
+    zx1, zy1, zy2, zy0 = t["zx1"], t["zy1"], t["zy2"], t["zy0"]
+    za1, za2, za0 = t["za1"], t["za2"], t["za0"]
+    il_amps, il_pu = t["il_amps"], t["il_pu"]
+    warnings = t["warnings"]
+    has_src_down = t["has_src_down"]
 
     ea1 = complex(il_pu, 0.0) * za1
 
@@ -3347,4 +3300,302 @@ def run_two_conductor_open_analysis(project: ProjectData, branch_id: str,
         has_downstream_source=has_src_down,
         warnings=warnings,
         method="Two-conductor-open (series dual of a bolted SLG shunt fault; Ia1=Ia2=Ia0)",
+    )
+
+
+def _series_boundary_rows(series_type):
+    """3 boundary-condition rows (coeffs on [IF1,IF2,IF0,VF1,VF2,VF0], rhs)
+    for the series (break) port of a simultaneous fault — see
+    ``run_simultaneous_fault_analysis`` for the derivation."""
+    if series_type == "open_conductor":
+        return [
+            ([1, 1, 1, 0, 0, 0], 0),   # IF1 + IF2 + IF0 = 0
+            ([0, 0, 0, 1, -1, 0], 0),  # VF1 = VF2
+            ([0, 0, 0, 0, 1, -1], 0),  # VF2 = VF0
+        ]
+    elif series_type == "two_conductor_open":
+        return [
+            ([1, -1, 0, 0, 0, 0], 0),  # IF1 = IF2
+            ([0, 1, -1, 0, 0, 0], 0),  # IF2 = IF0
+            ([0, 0, 0, 1, 1, 1], 0),   # VF1 + VF2 + VF0 = 0
+        ]
+    raise ValueError(f"Unknown series fault type '{series_type}' — expected "
+                      "'open_conductor' or 'two_conductor_open'.")
+
+
+def _shunt_boundary_rows(shunt_type):
+    """3 boundary-condition rows (coeffs on [IP1,IP2,IP0,VP1,VP2,VP0], rhs)
+    for the shunt-fault port of a simultaneous fault, bolted (Zf=0) — see
+    ``run_simultaneous_fault_analysis`` for the derivation."""
+    if shunt_type == "3phase":
+        return [
+            ([0, 0, 0, 1, 0, 0], 0),   # VP1 = 0
+            ([0, 0, 0, 0, 1, 0], 0),   # VP2 = 0
+            ([0, 0, 0, 0, 0, 1], 0),   # VP0 = 0
+        ]
+    elif shunt_type == "slg":
+        return [
+            ([1, -1, 0, 0, 0, 0], 0),  # IP1 = IP2
+            ([1, 0, -1, 0, 0, 0], 0),  # IP1 = IP0
+            ([0, 0, 0, 1, 1, 1], 0),   # VP1 + VP2 + VP0 = 0
+        ]
+    elif shunt_type == "ll":
+        return [
+            ([0, 0, 1, 0, 0, 0], 0),   # IP0 = 0
+            ([1, 1, 0, 0, 0, 0], 0),   # IP1 + IP2 = 0
+            ([0, 0, 0, 1, -1, 0], 0),  # VP1 = VP2
+        ]
+    elif shunt_type == "llg":
+        return [
+            ([1, 1, 1, 0, 0, 0], 0),   # IP1 + IP2 + IP0 = 0
+            ([0, 0, 0, 1, -1, 0], 0),  # VP1 = VP2
+            ([0, 0, 0, 0, 1, -1], 0),  # VP2 = VP0
+        ]
+    raise ValueError(f"Unknown shunt fault type '{shunt_type}' — expected "
+                      "'3phase', 'slg', 'll' or 'llg'.")
+
+
+def _solve_simultaneous_fault(za1, za2, za0, zp1, zp2, zp0, zfp1, zfp2, zfp0,
+                              ea, ep, series_type, shunt_type):
+    """Solve the coupled 12-equation boundary-value system for a series
+    (break) fault at port F simultaneous with a shunt fault at port P, given
+    each port's self-impedance, the transfer impedance between them, and
+    each port's independent driving EMF (positive-sequence only). See
+    ``run_simultaneous_fault_analysis`` for the full derivation.
+
+    Unknowns (index order): IF1,IF2,IF0, VF1,VF2,VF0, IP1,IP2,IP0, VP1,VP2,VP0.
+    Rows 0-5: the 2-port sequence-network KVL relations. Rows 6-8: the
+    series-port boundary conditions. Rows 9-11: the shunt-port boundary
+    conditions.
+    """
+    n = 12
+    A = np.zeros((n, n), dtype=complex)
+    b = np.zeros(n, dtype=complex)
+    za = (za1, za2, za0)
+    zp = (zp1, zp2, zp0)
+    zfp = (zfp1, zfp2, zfp0)
+    ea_seq = (ea, 0, 0)
+    ep_seq = (ep, 0, 0)
+    for s in range(3):
+        row = 2 * s
+        A[row, s] = za[s]        # IF,s coefficient
+        A[row, 3 + s] = 1        # VF,s coefficient
+        A[row, 6 + s] = zfp[s]   # IP,s coefficient
+        b[row] = ea_seq[s]
+        row = 2 * s + 1
+        A[row, s] = zfp[s]       # IF,s coefficient
+        A[row, 6 + s] = zp[s]    # IP,s coefficient
+        A[row, 9 + s] = 1        # VP,s coefficient
+        b[row] = ep_seq[s]
+    row = 6
+    for coeffs, rhs in _series_boundary_rows(series_type):
+        for i, c in enumerate(coeffs):
+            A[row, i] = c
+        b[row] = rhs
+        row += 1
+    for coeffs, rhs in _shunt_boundary_rows(shunt_type):
+        for i, c in enumerate(coeffs):
+            A[row, 6 + i] = c
+        b[row] = rhs
+        row += 1
+    x = np.linalg.solve(A, b)
+    return tuple(complex(v) for v in x)
+
+
+def run_simultaneous_fault_analysis(project: ProjectData, branch_id: str, series_type: str,
+                                    shunt_bus_id: str, shunt_type: str,
+                                    voltage_factor: float = None) -> "SimultaneousFaultResults":
+    """Simultaneous series (open-conductor) + shunt fault at two DIFFERENT
+    network locations — an open conductor coincident with a ground/phase
+    fault elsewhere in the network. The two shipped series-fault engines
+    (``run_open_conductor_analysis``, ``run_two_conductor_open_analysis``)
+    each model a SINGLE fault point via a one-port Thevenin/compensation
+    representation; a second, independent fault elsewhere is coupled to the
+    first through the network's sequence TRANSFER impedance, which needs a
+    genuinely different (2-port) representation (Anderson, "Analysis of
+    Faulted Power Systems", ch. 8; Blackburn & Domin, "Protective Relaying",
+    ch. 4).
+
+    Both fault points are bus-level: the series fault's own scope
+    restriction already requires both branch terminals to sit on a
+    bus/distribution_board (see ``_series_fault_break_thevenin``), and the
+    shunt fault point is a bus by definition — so no new network primitive
+    is needed beyond a 2-node reduction of the existing per-sequence bus
+    admittance network (``_build_bus_network`` / ``_nodal_zbus_multi``).
+
+    Scope (matches the two existing series engines): radial only. The
+    target branch's removal must split the network into two pieces, and the
+    shunt-fault bus must be reachable from exactly one of them. A shunt bus
+    reachable from BOTH sides (still meshed after the branch is removed)
+    falls back to the source side with a warning — the same
+    approximate-and-warn precedent the two standalone engines already use
+    for a branch fed from both ends.
+
+    Driving sources are each engine's own convention, kept independent and
+    combined by superposition on the SAME passive (all real EMFs zeroed)
+    network — the series break is driven by the compensation-theorem EMF
+    ``Ea = I_L,prefault × Za1`` (unchanged from the two standalone engines);
+    the shunt fault is driven by the IEC-60909-style equivalent voltage
+    source ``Ep = c × 1.0 pu`` (unchanged from ``run_fault_analysis``'s own
+    SLG/LL/LLG formulas). Keeping each fault's native convention — rather
+    than inventing a third hybrid — is what makes the electrically-decoupled
+    limit (Z_FP → 0) reproduce the two standalone engines exactly, which is
+    the primary regression-test correctness gate for this engine (the
+    boundary-condition tables in ``_series_boundary_rows``/
+    ``_shunt_boundary_rows`` aren't independently hand-verified against a
+    textbook worked example).
+
+    Args:
+        project: The project data.
+        branch_id: id of the CABLE component whose conductor(s) open. Both
+            ends must connect directly to a bus/distribution_board.
+        series_type: "open_conductor" (one phase opens) or
+            "two_conductor_open" (two phases open).
+        shunt_bus_id: id of the bus/distribution_board where the
+            simultaneous shunt fault occurs — must be a DIFFERENT location
+            from the branch's own terminals (use the standalone engines for
+            a fault at the break itself).
+        shunt_type: "3phase", "slg", "ll" or "llg". Bolted (no fault
+            impedance) — matches all other engines in this family.
+        voltage_factor: IEC 60909 voltage factor c for the shunt-fault
+            driving source; None → C_MAX (1.10).
+    """
+    from ..models.schemas import SimultaneousFaultResults
+
+    if series_type not in ("open_conductor", "two_conductor_open"):
+        raise ValueError("series_type must be 'open_conductor' or 'two_conductor_open'.")
+    if shunt_type not in ("3phase", "slg", "ll", "llg"):
+        raise ValueError("shunt_type must be '3phase', 'slg', 'll' or 'llg'.")
+    if shunt_bus_id == branch_id:
+        raise ValueError("The shunt fault must be at a bus, not on the series-fault branch itself.")
+
+    t = _series_fault_break_thevenin(project, branch_id, voltage_factor)
+    branch, bus_up, bus_down = t["branch"], t["bus_up"], t["bus_down"]
+    components, adjacency = t["components"], t["adjacency"]
+    base_mva, freq_hz, c_resolved = t["base_mva"], t["freq_hz"], t["c_resolved"]
+    v_kv_up, i_base_ka = t["v_kv_up"], t["i_base_ka"]
+    za1, za2, za0 = t["za1"], t["za2"], t["za0"]
+    il_amps, il_pu = t["il_amps"], t["il_pu"]
+    warnings = list(t["warnings"])
+    has_src_down = t["has_src_down"]
+
+    shunt_bus = components.get(shunt_bus_id)
+    if shunt_bus is None or shunt_bus.type not in ("bus", "distribution_board"):
+        raise ValueError("The shunt-fault location must be a bus or distribution board.")
+
+    # Bus set for the Zbus reduction must come from the SAME (implicit-load-
+    # bus-augmented) component set _series_fault_break_thevenin already
+    # built, not the caller's raw project.components — insert_implicit_load_
+    # buses returns a copy rather than mutating in place.
+    all_buses = [c for c in components.values()
+                 if c.type in ("bus", "distribution_board")
+                 and str(c.props.get("system", "ac")).lower() != "dc"]
+
+    net = _build_bus_network(all_buses, components, adjacency, base_mva, c_resolved, freq_hz=freq_hz)
+    bus_ids = net["bus_ids"]
+    shunts1 = {bid: [x[0] for x in lst] for bid, lst in net["shunts12"].items()}
+    shunts2 = {bid: [x[1] for x in lst] for bid, lst in net["shunts12"].items()}
+
+    zbus_up1 = _nodal_zbus_multi(bus_ids, net["branches1"], shunts1, [bus_up.id, shunt_bus_id])
+    zbus_down1 = _nodal_zbus_multi(bus_ids, net["branches1"], shunts1, [bus_down.id, shunt_bus_id])
+    if zbus_up1 is not None and zbus_down1 is not None:
+        warnings.append(
+            "The network remains meshed after removing the series-fault branch (the shunt-fault "
+            "bus is reachable from both the source and load side) — the source/load Thevenin split "
+            "at the break is an approximation in this case; defaulting to the source side for the "
+            "coupling calculation.")
+        attach_bus, zbus1 = bus_up, zbus_up1
+    elif zbus_up1 is not None:
+        attach_bus, zbus1 = bus_up, zbus_up1
+    elif zbus_down1 is not None:
+        attach_bus, zbus1 = bus_down, zbus_down1
+    else:
+        raise ValueError(
+            f"'{shunt_bus.props.get('name', shunt_bus_id)}' is not reachable from either side of "
+            f"the break at '{branch.props.get('name', branch_id)}' — check network connectivity.")
+
+    zbus2 = _nodal_zbus_multi(bus_ids, net["branches1"], shunts2, [attach_bus.id, shunt_bus_id])
+    zbus0 = _nodal_zbus_multi(bus_ids, net["branches0"], net["shunts0"], [attach_bus.id, shunt_bus_id])
+
+    zp1, zfp1 = zbus1[shunt_bus_id][shunt_bus_id], zbus1[attach_bus.id][shunt_bus_id]
+    if zbus2 is not None:
+        zp2, zfp2 = zbus2[shunt_bus_id][shunt_bus_id], zbus2[attach_bus.id][shunt_bus_id]
+    else:
+        zp2, zfp2 = zp1, zfp1  # defensive — same topology/source-presence as seq1, shouldn't diverge
+
+    if zbus0 is not None:
+        zp0, zfp0 = zbus0[shunt_bus_id][shunt_bus_id], zbus0[attach_bus.id][shunt_bus_id]
+    else:
+        zp0, zfp0 = complex(1e10, 0), complex(0, 0)
+        warnings.append(
+            f"No zero-sequence path found to '{shunt_bus.props.get('name', shunt_bus_id)}' from the "
+            f"break (isolating transformer winding, ungrounded source, or no source in that side's "
+            f"zero-sequence network) — treated as an open zero-sequence circuit there (no coupling).")
+
+    shunt_v_kv = float(shunt_bus.props.get("voltage_kv", 0.4 if shunt_bus.type == "distribution_board" else 11) or 11)
+    ea = complex(il_pu, 0.0) * za1
+    ep = complex(c_resolved, 0.0)
+
+    try:
+        if1, if2, if0, vf1, vf2, vf0, ip1, ip2, ip0, vp1, vp2, vp0 = _solve_simultaneous_fault(
+            za1, za2, za0, zp1, zp2, zp0, zfp1, zfp2, zfp0, ea, ep, series_type, shunt_type)
+    except np.linalg.LinAlgError:
+        raise ValueError("Simultaneous fault linear system is singular — check for a zero-impedance "
+                          "path between the break and the shunt fault, or a missing source reference.")
+
+    a_op = complex(-0.5, math.sqrt(3) / 2.0)
+
+    def _phase_currents(i1, i2, i0):
+        ia = i0 + i1 + i2
+        ib = i0 + a_op * a_op * i1 + a_op * i2
+        ic = i0 + a_op * i1 + a_op * a_op * i2
+        return ia, ib, ic
+
+    ifa, ifb, ifc = _phase_currents(if1, if2, if0)
+    ipa, ipb, ipc = _phase_currents(ip1, ip2, ip0)
+
+    def _ka(z):
+        return round(abs(z) * i_base_ka, 4)
+
+    i_base_ka_p = base_mva / (math.sqrt(3) * shunt_v_kv) if shunt_v_kv > 0 else 0.0
+
+    def _ka_p(z):
+        return round(abs(z) * i_base_ka_p, 4)
+
+    return SimultaneousFaultResults(
+        branch_id=branch_id,
+        branch_name=branch.props.get("name", branch_id),
+        series_type=series_type,
+        source_bus_id=bus_up.id,
+        source_bus_name=bus_up.props.get("name", bus_up.id),
+        load_bus_id=bus_down.id,
+        load_bus_name=bus_down.props.get("name", bus_down.id),
+        voltage_kv=v_kv_up,
+        prefault_current_a=round(il_amps, 2),
+        ia1_ka=_ka(if1), ia2_ka=_ka(if2), ia0_ka=_ka(if0),
+        ib_ka=_ka(ifb) if series_type == "open_conductor" else 0.0,
+        ic_ka=_ka(ifc) if series_type == "open_conductor" else 0.0,
+        ia_ka=_ka(ifa) if series_type == "two_conductor_open" else 0.0,
+        ig_ka=round(3 * abs(if0) * i_base_ka, 4),
+        negative_seq_pct=round(100.0 * abs(if2) / max(abs(if1), 1e-12), 2) if abs(if1) > 1e-12 else 0.0,
+        shunt_bus_id=shunt_bus_id,
+        shunt_bus_name=shunt_bus.props.get("name", shunt_bus_id),
+        shunt_type=shunt_type,
+        shunt_voltage_kv=shunt_v_kv,
+        ip1_ka=_ka_p(ip1), ip2_ka=_ka_p(ip2), ip0_ka=_ka_p(ip0),
+        ipa_ka=_ka_p(ipa), ipb_ka=_ka_p(ipb), ipc_ka=_ka_p(ipc),
+        ig_shunt_ka=round(3 * abs(ip0) * i_base_ka_p, 4),
+        base_mva=base_mva,
+        za1_pu=[round(za1.real, 6), round(za1.imag, 6)],
+        za2_pu=[round(za2.real, 6), round(za2.imag, 6)],
+        za0_pu=[round(za0.real, 6), round(za0.imag, 6)],
+        zp1_pu=[round(zp1.real, 6), round(zp1.imag, 6)],
+        zp2_pu=[round(zp2.real, 6), round(zp2.imag, 6)],
+        zp0_pu=[round(zp0.real, 6), round(zp0.imag, 6)],
+        zfp1_pu=[round(zfp1.real, 6), round(zfp1.imag, 6)],
+        zfp2_pu=[round(zfp2.real, 6), round(zfp2.imag, 6)],
+        zfp0_pu=[round(zfp0.real, 6), round(zfp0.imag, 6)],
+        has_downstream_source=has_src_down,
+        warnings=warnings,
+        method="Simultaneous series+shunt fault (2-port coupled sequence-network compensation method)",
     )
