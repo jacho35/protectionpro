@@ -918,7 +918,7 @@ const Properties = {
     // Re-render properties when fields with conditional dependents change
     if (['vector_group', 'grounding_hv', 'grounding_lv', 'earthing_system',
          'voltage_lv_kv', 'voltage_kv', 'cb_type', 'inverter_type', 'pv_array_mode',
-         'ibr_ctrl', 'turbine_type', 'construction', 'var_mode'].includes(field)) {
+         'ibr_ctrl', 'turbine_type', 'construction', 'var_mode', 'two_layer_soil'].includes(field)) {
       this.show(comp.id);
     }
 

@@ -1533,3 +1533,27 @@ class HarmonicsResults(BaseModel):
     method: str = "Frequency-domain harmonic current-injection (IEEE 519-2014)"
     warnings: list[str] = []
     note: str = ""
+
+
+class WennerReading(BaseModel):
+    """One field measurement from a Wenner four-pin test."""
+    model_config = {"extra": "allow"}
+
+    spacing_m: float                        # probe spacing a (m)
+    apparent_resistivity_ohm_m: float       # ρa measured at that spacing (Ω·m)
+
+
+class WennerTestRequest(BaseModel):
+    readings: list[WennerReading] = []
+
+
+class WennerTestResults(BaseModel):
+    model_config = {"extra": "allow"}
+
+    rho1_ohm_m: float = 0.0
+    rho2_ohm_m: float = 0.0
+    upper_layer_thickness_m: float = 0.0
+    rmse_pct: float = 0.0
+    converged: bool = False
+    points: list[dict] = []
+    method: str = "Sunde two-layer earth model, nonlinear least squares (IEEE Std 81)"

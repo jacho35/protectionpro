@@ -426,6 +426,12 @@ const API = {
     return this.request('/analysis/grounding', 'POST', data);
   },
 
+  // Interpret a Wenner four-pin soil resistivity test into a two-layer
+  // model (ρ1, ρ2, h1) — params form (readings list), not ProjectData
+  async runWennerInterpret(readings) {
+    return this.request('/analysis/wenner-interpret', 'POST', { readings });
+  },
+
   // Run lightning risk assessment (IEC 62305-2) — params form, not ProjectData
   async runLightningRisk(params) {
     return this.request('/analysis/lightning-risk', 'POST', params);

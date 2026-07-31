@@ -13,6 +13,29 @@ Key IEEE 80 equations:
   - Mesh voltage (actual touch): E_m = ρ × I_G × K_m × K_i / L_M
   - Step voltage (actual step): E_s = ρ × I_G × K_s × K_i / L_S
   - Conductor sizing (Onderdonk): A = I × √(t_c × α_r × ρ_r / (TCAP × ln(1 + (T_m - T_a) / (K_0 + T_a))))
+
+Two-layer soil model (IEEE 80 §14.5, optional, off by default):
+  The uniform-soil formulas above assume a single ρ. When the native soil is
+  layered (upper ρ1/thickness h1 over a semi-infinite lower ρ2), R_g and GPR
+  are computed using an EQUIVALENT resistivity ρ_eq derived from the classical
+  method-of-images solution for a hemispherical electrode at the boundary of
+  two-layer earth (Sunde 1949 / Tagg, "Earth Resistances") — the same image
+  physics that underlies the Wenner two-layer apparent-resistivity formula
+  used by the field-test interpreter below. ρ_eq replaces ρ only in the grid
+  RESISTANCE formula (`_compute_grid_resistance`); the mesh/step voltage
+  formulas keep using ρ1 (the layer the grid and a person's feet are actually
+  in), consistent with standard practice for two-layer analysis. See
+  `_compute_two_layer_equivalent_resistivity` for the exact form and its two
+  analytic limits (ρ_eq → ρ1 for a thick top layer, ρ_eq → ρ2 for h1 → 0),
+  used as the correctness anchor since no closed-form IEEE 80 worked example
+  is published for this case.
+
+Wenner four-pin interpreter (`interpret_wenner_test`):
+  Fits a two-layer model (ρ1, ρ2, h1) to a set of field apparent-resistivity
+  readings ρa(a) at increasing probe spacing a, using the same Sunde
+  two-layer forward model (`wenner_apparent_resistivity`) and SciPy nonlinear
+  least squares — an analytic alternative to the traditional graphical
+  curve-matching method.
 """
 
 import math
@@ -60,6 +83,9 @@ DEFAULT_PARAMS = {
     "soil_resistivity": 100.0,  # ρ (Ω·m)
     "crushed_rock_resistivity": 2500.0,  # ρ_s surface layer (Ω·m)
     "crushed_rock_depth": 0.15,  # h_s (m)
+    "two_layer_soil": "off",  # "on" enables the two-layer (ρ1/ρ2/h1) model below
+    "soil_resistivity_lower": 100.0,  # ρ2 — lower-layer resistivity (Ω·m), used only when enabled
+    "upper_layer_thickness": 3.0,  # h1 — upper-layer thickness (m), used only when enabled
     "grid_length": 30.0,  # L_x grid dimension (m)
     "grid_width": 30.0,  # L_y grid dimension (m)
     "grid_depth": 0.5,  # h burial depth (m)
@@ -112,6 +138,151 @@ def _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight=70):
     E_step = (1000 + 6.0 * C_s * rho_s) * k / sqrt_ts
 
     return E_touch, E_step
+
+
+def _two_layer_reflection_factor(rho1, rho2):
+    """Reflection factor K = (ρ2 − ρ1) / (ρ2 + ρ1) (IEEE 80 §14.5).
+
+    K > 0: lower layer more resistive (e.g. rock below topsoil) — raises the
+    equivalent resistivity above ρ1. K < 0: lower layer more conductive
+    (e.g. a water table) — lowers it. K = 0 (ρ1 = ρ2): uniform soil.
+    """
+    denom = rho1 + rho2
+    if denom <= 0:
+        return 0.0
+    return (rho2 - rho1) / denom
+
+
+def _two_layer_correction_factor(K, h_rel, r0, n_terms=100):
+    """Multiplicative correction F such that ρ_eq = ρ1 × F.
+
+    Derived from the method-of-images solution for a hemispherical electrode
+    of radius r0 sitting h_rel below (i.e. at depth h_rel into) the ρ1 layer,
+    with a ρ1/ρ2 interface a further distance below it:
+
+        F = 1 + 2 × Σ_{n=1}^N  K^n / √(1 + (2·n·h_rel/r0)²)
+
+    Two exact analytic limits anchor this formula (used as the regression
+    test in lieu of a published worked example): h_rel → ∞ (thick top layer)
+    ⇒ F → 1 ⇒ ρ_eq → ρ1; h_rel → 0 (grid sitting right at the interface)
+    ⇒ F → (1+K)/(1−K) ⇒ ρ_eq → ρ2 exactly.
+    """
+    if r0 <= 0 or abs(K) < 1e-12:
+        return 1.0
+    h_rel = max(h_rel, 0.0)
+    total = 0.0
+    for n in range(1, n_terms + 1):
+        Kn = K ** n
+        if abs(Kn) < 1e-15:
+            break
+        total += Kn / math.sqrt(1 + (2 * n * h_rel / r0) ** 2)
+    return 1.0 + 2.0 * total
+
+
+def _compute_two_layer_equivalent_resistivity(rho1, rho2, h1, grid_depth, A):
+    """Equivalent uniform resistivity ρ_eq for grid-resistance purposes.
+
+    r0 = √(A/π) is the standard IEEE 80 equivalent-hemisphere radius for a
+    grid of area A. h_rel is the thickness of ρ1 soil remaining BELOW the
+    grid before the ρ2 interface is reached (h1 measured from the surface,
+    grid buried at depth grid_depth); a grid already buried below the
+    interface (h1 ≤ grid_depth) is treated as h_rel = 0 (sitting at/below
+    the boundary — the most conservative case for a resistive lower layer).
+
+    Returns (rho_eq, K, F).
+    """
+    K = _two_layer_reflection_factor(rho1, rho2)
+    r0 = math.sqrt(A / math.pi) if A > 0 else 0.0
+    h_rel = max(h1 - grid_depth, 0.0)
+    F = _two_layer_correction_factor(K, h_rel, r0)
+    return rho1 * F, K, F
+
+
+def wenner_apparent_resistivity(rho1, rho2, h1, a, n_terms=100):
+    """Apparent resistivity ρa(a) a Wenner four-pin test would read over a
+    two-layer earth (upper ρ1/thickness h1, semi-infinite lower ρ2) at probe
+    spacing a — the classical Sunde (1949) two-layer formula, reproduced in
+    Tagg "Earth Resistances" and the informative annexes of IEEE Std 81:
+
+        ρa(a) = ρ1 × [1 + 4 × Σ_{n=1}^N ( K^n/√(1+(2nh1/a)²) − K^n/√(4+(2nh1/a)²) )]
+
+    K = (ρ2−ρ1)/(ρ2+ρ1). Reduces to ρa = ρ1 for uniform soil (K=0) and to
+    ρa → ρ2 as h1 → 0 (same identity used by `_two_layer_correction_factor`).
+    """
+    if a <= 0 or rho1 <= 0:
+        return rho1
+    K = _two_layer_reflection_factor(rho1, rho2)
+    if abs(K) < 1e-12:
+        return rho1
+    total = 0.0
+    for n in range(1, n_terms + 1):
+        Kn = K ** n
+        if abs(Kn) < 1e-15:
+            break
+        arg = (2 * n * h1 / a) ** 2
+        total += Kn / math.sqrt(1 + arg) - Kn / math.sqrt(4 + arg)
+    return rho1 * (1.0 + 4.0 * total)
+
+
+def interpret_wenner_test(measurements):
+    """Fit a two-layer soil model (ρ1, ρ2, h1) to Wenner four-pin field data.
+
+    measurements: iterable of (spacing_m, apparent_resistivity_ohm_m) pairs,
+    typically taken at increasing probe spacing a on a logarithmic sweep.
+    Needs >= 3 distinct spacings (3 unknowns). Fits via SciPy nonlinear
+    least squares on the relative residual of `wenner_apparent_resistivity`
+    against each reading — an analytic alternative to the traditional
+    graphical (Sunde master-curve) matching method.
+
+    Returns a dict: rho1_ohm_m, rho2_ohm_m, upper_layer_thickness_m,
+    rmse_pct (fit quality), converged, and per-point measured/fitted/error.
+    """
+    import numpy as np
+    from scipy.optimize import least_squares
+
+    pts = [(float(a), float(r)) for a, r in measurements if float(a) > 0 and float(r) > 0]
+    if len(pts) < 3:
+        raise ValueError("Need at least 3 Wenner readings at distinct positive spacings to fit ρ1/ρ2/h1.")
+
+    spacings = np.array([p[0] for p in pts])
+    measured = np.array([p[1] for p in pts])
+
+    rho1_0 = float(measured[np.argmin(spacings)])
+    rho2_0 = float(measured[np.argmax(spacings)])
+    h1_0 = float(np.median(spacings))
+    x0 = (max(rho1_0, 1.0), max(rho2_0, 1.0), max(h1_0, 0.1))
+
+    def residuals(x):
+        rho1, rho2, h1 = x
+        model = np.array([wenner_apparent_resistivity(rho1, rho2, h1, a) for a in spacings])
+        return (model - measured) / measured
+
+    bounds = ([0.1, 0.1, 0.01], [1.0e6, 1.0e6, 2000.0])
+    result = least_squares(residuals, x0=x0, bounds=bounds)
+    rho1, rho2, h1 = (float(v) for v in result.x)
+
+    model = np.array([wenner_apparent_resistivity(rho1, rho2, h1, a) for a in spacings])
+    err_pct = (model - measured) / measured * 100.0
+    rmse_pct = float(np.sqrt(np.mean(err_pct ** 2)))
+
+    points = [
+        {
+            "spacing_m": float(a),
+            "measured_ohm_m": float(m),
+            "fitted_ohm_m": float(f),
+            "error_pct": round(float(e), 3),
+        }
+        for a, m, f, e in zip(spacings, measured, model, err_pct)
+    ]
+
+    return {
+        "rho1_ohm_m": round(rho1, 2),
+        "rho2_ohm_m": round(rho2, 2),
+        "upper_layer_thickness_m": round(h1, 3),
+        "rmse_pct": round(rmse_pct, 3),
+        "converged": bool(result.success),
+        "points": points,
+    }
 
 
 def _compute_grid_resistance(rho, A, L_T, h, d=0.01167):
@@ -346,6 +517,9 @@ def run_grounding_analysis(project: ProjectData):
         rho = float(bp.get("soil_resistivity", DEFAULT_PARAMS["soil_resistivity"]))
         rho_s = float(bp.get("crushed_rock_resistivity", DEFAULT_PARAMS["crushed_rock_resistivity"]))
         h_s = float(bp.get("crushed_rock_depth", DEFAULT_PARAMS["crushed_rock_depth"]))
+        two_layer_enabled = str(bp.get("two_layer_soil", DEFAULT_PARAMS["two_layer_soil"])).lower() in ("on", "true", "1")
+        rho2 = float(bp.get("soil_resistivity_lower", DEFAULT_PARAMS["soil_resistivity_lower"]))
+        h1_layer = float(bp.get("upper_layer_thickness", DEFAULT_PARAMS["upper_layer_thickness"]))
         L_x = float(bp.get("grid_length", DEFAULT_PARAMS["grid_length"]))
         L_y = float(bp.get("grid_width", DEFAULT_PARAMS["grid_width"]))
         h = float(bp.get("grid_depth", DEFAULT_PARAMS["grid_depth"]))
@@ -416,8 +590,16 @@ def run_grounding_analysis(project: ProjectData):
         # Tolerable voltages
         E_touch_tol, E_step_tol = _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight)
 
+        # Two-layer soil (IEEE 80 §14.5, optional): ρ_eq replaces ρ for grid
+        # resistance/GPR only — mesh/step voltage keep using ρ1 (native `rho`,
+        # the layer the grid and a person's feet are actually in).
+        if two_layer_enabled:
+            rho_eq, two_layer_K, two_layer_F = _compute_two_layer_equivalent_resistivity(rho, rho2, h1_layer, h, A)
+        else:
+            rho_eq, two_layer_K, two_layer_F = rho, 0.0, 1.0
+
         # Grid resistance
-        R_g = _compute_grid_resistance(rho, A, L_T, h, d)
+        R_g = _compute_grid_resistance(rho_eq, A, L_T, h, d)
 
         # Ground potential rise
         GPR = I_G * R_g
@@ -464,6 +646,11 @@ def run_grounding_analysis(project: ProjectData):
             "voltage_kv": voltage_kv,
             # Inputs
             "soil_resistivity": rho,
+            "two_layer_soil_enabled": two_layer_enabled,
+            "soil_resistivity_lower": rho2 if two_layer_enabled else None,
+            "upper_layer_thickness_m": h1_layer if two_layer_enabled else None,
+            "two_layer_reflection_factor_K": round(two_layer_K, 4) if two_layer_enabled else None,
+            "equivalent_resistivity_ohm_m": round(rho_eq, 2) if two_layer_enabled else None,
             "grid_area_m2": round(A, 1),
             "grid_dimensions": f"{L_x}m × {L_y}m",
             "total_conductor_length_m": round(L_T, 1),
