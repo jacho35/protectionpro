@@ -90,6 +90,8 @@ const Transient = {
           <div><input id="ts-clear" type="number" min="0" step="0.01" value="0.15" style="width:90px"> s</div>
           <label>Trip on clear</label>
           <select id="ts-trip-branch"><option value="">— none —</option>${opt(branches)}</select>
+          <label>Auto-reclose after</label>
+          <div><input id="ts-reclose" type="number" min="0" step="0.05" value="0" style="width:90px"> s (0 = no reclose; needs Trip on clear)</div>
           <label>Find CCT</label>
           <div><input id="ts-cct" type="checkbox" checked> critical clearing time (binary search)</div>
         </div>
@@ -167,11 +169,12 @@ const Transient = {
   _addSeqRow(step) {
     const list = document.getElementById('ts-seq-list');
     if (!list) return;
-    step = step || { t: 1, action: 'trip', element: '', delta_pct: 50 };
+    step = step || { t: 1, action: 'trip', element: '', delta_pct: 50, reclose_delay_s: 0 };
     // Coerce the numeric fields to numbers before interpolating into markup (the
     // element options are escaped via _esc; these guard against a crafted case).
     const tVal = Number.isFinite(+step.t) ? +step.t : 1;
     const dVal = Number.isFinite(+step.delta_pct) ? +step.delta_pct : 50;
+    const rVal = Number.isFinite(+step.reclose_delay_s) ? +step.reclose_delay_s : 0;
     const row = document.createElement('div');
     row.className = 'ts-seq-row';
     row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:12px';
@@ -184,6 +187,7 @@ const Transient = {
       </select>
       <select class="ts-seq-el" style="flex:1;min-width:110px"></select>
       <input class="ts-seq-delta" type="number" step="5" value="${dVal}" style="width:58px;display:none" title="% change of pre-fault load"><span class="ts-seq-delta-u" style="display:none;color:var(--text-muted,#6d6d6d)">%</span>
+      <input class="ts-seq-reclose" type="number" min="0" step="0.05" value="${rVal}" style="width:58px;display:none" title="Auto-reclose after (s); 0 = no reclose"><span class="ts-seq-reclose-u" style="display:none;color:var(--text-muted,#6d6d6d)">s reclose</span>
       <button type="button" class="ts-seq-del" title="Remove step" style="cursor:pointer;border:1px solid var(--border-color,#d0d0d0);border-radius:4px;background:transparent;color:inherit;padding:0 7px">✕</button>`;
     list.appendChild(row);
     row.querySelector('.ts-seq-action').value = step.action || 'trip';
@@ -192,7 +196,7 @@ const Transient = {
     row.querySelector('.ts-seq-del').addEventListener('click', () => row.remove());
   },
 
-  // Populate a row's element picker for its action and toggle the % field.
+  // Populate a row's element picker for its action and toggle the %/reclose fields.
   _syncSeqRow(row, keepId) {
     const action = row.querySelector('.ts-seq-action').value;
     const elSel = row.querySelector('.ts-seq-el');
@@ -201,6 +205,9 @@ const Transient = {
     const isLoad = action === 'load_step';
     row.querySelector('.ts-seq-delta').style.display = isLoad ? '' : 'none';
     row.querySelector('.ts-seq-delta-u').style.display = isLoad ? '' : 'none';
+    const isTrip = action === 'trip';
+    row.querySelector('.ts-seq-reclose').style.display = isTrip ? '' : 'none';
+    row.querySelector('.ts-seq-reclose-u').style.display = isTrip ? '' : 'none';
   },
 
   _readSeqSteps() {
@@ -209,6 +216,7 @@ const Transient = {
       const step = { t: parseFloat(r.querySelector('.ts-seq-t').value) || 0, action,
                      element: r.querySelector('.ts-seq-el').value };
       if (action === 'load_step') step.delta_pct = parseFloat(r.querySelector('.ts-seq-delta').value) || 0;
+      if (action === 'trip') step.reclose_delay_s = parseFloat(r.querySelector('.ts-seq-reclose').value) || 0;
       return step;
     }).filter(s => s.element);
   },
@@ -244,6 +252,7 @@ const Transient = {
         set('#ts-fault-type', d.fault_type || '3phase');
         set('#ts-clear', d.clear_time_s);
         set('#ts-trip-branch', d.trip_element || '');
+        set('#ts-reclose', d.reclose_delay_s || 0);
         chk('#ts-cct', d.find_cct !== false);
       }
       if (d.type === 'trip') { set('#ts-trip-el', d.element); set('#ts-trip-time', d.time_s); }
@@ -284,6 +293,7 @@ const Transient = {
       const ftLabel = { slg: 'SLG', ll: 'LL', llg: 'LLG' }[d.fault_type] || '3-φ';
       return `${ftLabel} fault @ ${this._name(d.bus)}, clear ${Math.round((d.clear_time_s || 0) * 1000)} ms`
         + (d.trip_element ? `, trip ${this._name(d.trip_element)}` : '')
+        + (d.trip_element && d.reclose_delay_s ? `, reclose +${Math.round(d.reclose_delay_s * 1000)} ms` : '')
         + (d.find_cct !== false ? ', CCT' : '');
     }
     if (d.type === 'trip') return `Trip ${this._name(d.element)} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
@@ -381,6 +391,7 @@ const Transient = {
       d.fault_type = b.querySelector('#ts-fault-type').value;
       d.clear_time_s = parseFloat(b.querySelector('#ts-clear').value) || 0.15;
       d.trip_element = b.querySelector('#ts-trip-branch').value || null;
+      d.reclose_delay_s = parseFloat(b.querySelector('#ts-reclose').value) || 0;
       d.find_cct = b.querySelector('#ts-cct').checked;
     } else if (type === 'trip') {
       d.element = b.querySelector('#ts-trip-el').value;
@@ -523,6 +534,13 @@ const Transient = {
           label += ` ${s.delta_pct >= 0 ? '+' : ''}${s.delta_pct}%`;
         }
         marks.push({ t: +s.t, label, color: P.inkSec, dashed: true });
+        // Auto-reclose: the engine synthesizes a companion close step
+        // reclose_delay_s later, server-side — mirror it here so the mark
+        // shows even though it's not in the user-entered spec.steps.
+        if (s.action === 'trip' && s.reclose_delay_s > 0) {
+          marks.push({ t: +s.t + +s.reclose_delay_s, label: `reclose ${this._name(s.element)}`,
+                      color: P.inkSec, dashed: true });
+        }
       });
       return marks;
     }
@@ -541,6 +559,9 @@ const Transient = {
       marks.push({ t: +spec.clear_time_s, label: 'clear', color: P.inkSec, dashed: true });
     } else if (spec.time_s != null) {
       marks.push({ t: +spec.time_s, label: 'event', color: P.inkSec, dashed: true });
+    }
+    if (r.event && /reclosing at ([\d.]+)/.test(r.event)) {
+      marks.push({ t: parseFloat(RegExp.$1) / 1000, label: 'reclose', color: P.inkSec, dashed: true });
     }
     // Legacy/restored sequence with no spec: recover the "… @ Ns" times from the
     // backend event string ("Sequence: open X @ 1s; shed Y @ 3s").

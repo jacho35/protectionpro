@@ -141,6 +141,9 @@ from .fault import thevenin_sequence_at_bus
 INFINITE_H = 1.0e6          # utility infinite-bus inertia (angle ~frozen)
 BUS_REG = 1.0e-8            # tiny shunt to keep the elimination matrix regular
 UNSTABLE_ANGLE = math.pi    # |δ − δ_COI| beyond 180° ⇒ loss of synchronism
+ROCOF_WINDOW_S = 0.1        # s — df/dt relay measurement window (typical anti-
+                             # islanding setting); rate not reported until a
+                             # sample pair spans at least half this window
 CCT_SEARCH_MAX = 1.0        # s — upper bound for the critical-clearing search
 MAX_RECORD_POINTS = 400
 GFM_CLIM_ITERS = 8          # in-step iterations to converge the GFM current limit
@@ -682,6 +685,17 @@ def _collect_machines(project, ctx, lf):
             "trip_uv_pu": float(comp.props.get("ibr_uv_pu" if is_gfm else "trip_uv_pu", 0) or 0),
             "trip_delay_s": max(float(comp.props.get(
                 "ibr_trip_delay_s" if is_gfm else "trip_delay_s", 0.2) or 0.2), 0.0),
+            # ROCOF (df/dt) and out-of-step trips apply to any swing-state
+            # machine (real generator or GFM virtual machine). Over-excitation
+            # (V/Hz) is a real-generator-only concept (a GFM's virtual EMF has
+            # no iron core to saturate) so it has no ibr_* counterpart — it
+            # simply defaults to 0 for every non-generator component type since
+            # only the generator's field list defines the prop.
+            "trip_rocof_hzs": float(comp.props.get(
+                "ibr_rocof_hzs" if is_gfm else "trip_rocof_hzs", 0) or 0),
+            "trip_oos_deg": float(comp.props.get(
+                "ibr_oos_deg" if is_gfm else "trip_oos_deg", 0) or 0),
+            "trip_vhz_pu": float(comp.props.get("trip_vhz_pu", 0) or 0),
         })
     return machines, warnings
 
@@ -866,6 +880,7 @@ def _build_gfl(comp, project, ctx, lf, disp_map, base, bus_island, warnings):
         "uv_pu": float(comp.props.get("ibr_uv_pu", 0) or 0),
         "of_hz": float(comp.props.get("ibr_of_hz", 0) or 0),
         "uf_hz": float(comp.props.get("ibr_uf_hz", 0) or 0),
+        "rocof_hzs": float(comp.props.get("ibr_rocof_hzs", 0) or 0),
         "trip_delay": max(float(comp.props.get("ibr_trip_delay_s", 0.2) or 0.2), 0.0),
     }
 
@@ -956,15 +971,19 @@ def _dynamic_setup(project, ctx, lf, freq, warnings):
     gfm_comps = [c for c in project.components if _ibr_ctrl(c) == "gfm"]
     has_gfm = bool(gfm_comps)
     gfm_prot = any(any(float(c.props.get(k, 0) or 0) > 0
-                       for k in ("ibr_of_hz", "ibr_uf_hz", "ibr_uv_pu")) for c in gfm_comps)
+                       for k in ("ibr_of_hz", "ibr_uf_hz", "ibr_uv_pu", "ibr_rocof_hzs",
+                                 "ibr_oos_deg")) for c in gfm_comps)
     for comp in project.components:
         if comp.type == "generator" and any(float(comp.props.get(k, 0) or 0) > 0
-                                            for k in ("trip_of_hz", "trip_uf_hz", "trip_uv_pu")):
+                                            for k in ("trip_of_hz", "trip_uf_hz", "trip_uv_pu",
+                                                      "trip_rocof_hzs", "trip_oos_deg",
+                                                      "trip_vhz_pu")):
             n_gen_prot += 1
     has_protection = (n_gen_prot > 0 or gfm_prot
                       or any(d["shed_hz"] > 0 or d["uv_pu"] > 0 for d in loads)
                       or any(mo.get("uv_pu", 0) > 0 for mo in motors)
-                      or any(g["uv_pu"] > 0 or g["of_hz"] > 0 or g["uf_hz"] > 0 for g in ibrs))
+                      or any(g["uv_pu"] > 0 or g["of_hz"] > 0 or g["uf_hz"] > 0
+                             or g["rocof_hzs"] > 0 for g in ibrs))
     if not loads and not motors and not ibrs and not has_protection and not has_gfm:
         return None
     if motors:
@@ -1268,6 +1287,25 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     gen_trip_t = [0.0] * m
     need_bus_v = any_avr or n_mot > 0 or has_prot or n_gfl > 0
     vbus_prev = {}   # last-step bus-voltage magnitudes (voltage-dependent loads)
+    rocof_hist = {}  # island id -> [(t, f_hz), ...] within ROCOF_WINDOW_S, for df/dt relays
+
+    def _rocof_rates(t, isl_freq):
+        """{island: df/dt (Hz/s) | None} from a short rolling window of the same
+        island-COI frequency the UF/OF trips already use — a deliberate
+        simplification vs. a per-bus PLL measurement, consistent with how
+        frequency is observed everywhere else in this engine. None until a
+        sample pair spans at least half the window (avoids a spurious rate on
+        the first step(s))."""
+        rates = {}
+        for isl, f in isl_freq.items():
+            h = rocof_hist.setdefault(isl, [])
+            h.append((t, f))
+            cutoff = t - ROCOF_WINDOW_S
+            while len(h) > 1 and h[0][0] < cutoff:
+                h.pop(0)
+            span = h[-1][0] - h[0][0]
+            rates[isl] = (h[-1][1] - h[0][1]) / span if span >= ROCOF_WINDOW_S * 0.5 else None
+        return rates
 
     # Per-island centre of inertia. Machines in a grid-connected island are
     # anchored by the infinite bus; a governor-less genset island drifts as a
@@ -1517,13 +1555,19 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             out[isl] = freq + coi / (2.0 * math.pi)
         return out
 
-    def _check_protection(t, omega):
+    def _check_protection(t, delta, omega):
         """Advance relay timers and trip elements whose violation has persisted
         past its delay. Uses the lagged bus voltages (vbus_prev) and the current
-        speeds; a trip changes tripped_* so the next reduction reflects it."""
+        speeds/angles; a trip changes tripped_* so the next reduction reflects
+        it. ``ref`` is each machine's live island-COI angle (mirrors ``refs()``
+        used later for the stability verdict) — needed for the out-of-step
+        relay, a per-machine PROTECTIVE trip distinct from that global
+        first-swing verdict."""
         if not has_prot:
             return
         isl_freq = _island_freq(omega)
+        rocof = _rocof_rates(t, isl_freq)
+        ref = refs(delta)
         for j, d in enumerate(dyn_loads):
             if j in tripped_loads:
                 continue
@@ -1563,16 +1607,19 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                 continue
             v = vbus_prev.get(g["bus"], g["V0"])
             fr = isl_freq.get(g["island"])
+            r = rocof.get(g["island"])
             hit = ((g["uv_pu"] > 0 and v < g["uv_pu"])
                    or (fr is not None and g["of_hz"] > 0 and fr > g["of_hz"])
-                   or (fr is not None and g["uf_hz"] > 0 and fr < g["uf_hz"]))
+                   or (fr is not None and g["uf_hz"] > 0 and fr < g["uf_hz"])
+                   or (r is not None and g["rocof_hzs"] > 0 and abs(r) > g["rocof_hzs"]))
             if hit:
                 ibr_trip_t[j] += dt
                 if ibr_trip_t[j] >= g["trip_delay"]:
                     tripped_ibr.add(j)
                     why = (f"under-voltage {v:.2f} p.u." if g["uv_pu"] > 0 and v < g["uv_pu"]
                            else f"over-freq {fr:.2f} Hz" if fr is not None and g["of_hz"] > 0 and fr > g["of_hz"]
-                           else f"under-freq {fr:.2f} Hz")
+                           else f"under-freq {fr:.2f} Hz" if fr is not None and g["uf_hz"] > 0 and fr < g["uf_hz"]
+                           else f"ROCOF {r:+.2f} Hz/s")
                     trip_events.append({"t": round(t, 3), "element": g["name"],
                                         "reason": f"inverter ride-through trip ({why})"})
             else:
@@ -1582,16 +1629,25 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                 continue
             f = freq + omega[i] / (2.0 * math.pi)
             v = vbus_prev.get(mac["bus_idx"], mac.get("vref", 1.0))
+            r = rocof.get(island_of[i])
+            ang_deg = math.degrees(abs(delta[i] - ref[i]))
+            vhz = v / (f / freq) if f > 1e-6 else 0.0
             hit = ((mac["trip_of_hz"] > 0 and f > mac["trip_of_hz"])
                    or (mac["trip_uf_hz"] > 0 and f < mac["trip_uf_hz"])
-                   or (mac["trip_uv_pu"] > 0 and v < mac["trip_uv_pu"]))
+                   or (mac["trip_uv_pu"] > 0 and v < mac["trip_uv_pu"])
+                   or (r is not None and mac["trip_rocof_hzs"] > 0 and abs(r) > mac["trip_rocof_hzs"])
+                   or (mac["trip_oos_deg"] > 0 and ang_deg > mac["trip_oos_deg"])
+                   or (mac["trip_vhz_pu"] > 0 and vhz > mac["trip_vhz_pu"]))
             if hit:
                 gen_trip_t[i] += dt
                 if gen_trip_t[i] >= mac["trip_delay_s"]:
                     tripped_mach.add(i)
                     why = (f"over-freq {f:.2f} Hz" if mac["trip_of_hz"] > 0 and f > mac["trip_of_hz"]
                            else f"under-freq {f:.2f} Hz" if mac["trip_uf_hz"] > 0 and f < mac["trip_uf_hz"]
-                           else f"under-voltage {v:.2f} p.u.")
+                           else f"under-voltage {v:.2f} p.u." if mac["trip_uv_pu"] > 0 and v < mac["trip_uv_pu"]
+                           else f"ROCOF {r:+.2f} Hz/s" if r is not None and mac["trip_rocof_hzs"] > 0 and abs(r) > mac["trip_rocof_hzs"]
+                           else f"out-of-step ({ang_deg:.0f}°)" if mac["trip_oos_deg"] > 0 and ang_deg > mac["trip_oos_deg"]
+                           else f"over-excitation (V/Hz {vhz:.2f} pu)")
                     trip_events.append({"t": round(t, 3), "element": mac["name"],
                                         "reason": f"generator trip ({why})"})
             else:
@@ -1606,7 +1662,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
 
     for step in range(steps + 1):
         if has_prot:
-            _check_protection(t, omega)
+            _check_protection(t, delta, omega)
         # A finite machine dropped from the current segment's active set by a
         # disturbance/sequence generator trip is off-line: coast it and exclude
         # it from the island COI and the synchronism test, exactly like a
@@ -1837,9 +1893,21 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
             raise ValueError(f"Unknown fault_type '{fault_type}'.")
 
         post_v = variant(post_ctx["Y"], all_active, set())
-        return ([(0.0, fault_v), (t_clear, post_v)],
-                f"{type_desc} fault at {_bus_name(project, fbus)} cleared at {t_clear*1000:.0f} ms"
+        segs = [(0.0, fault_v), (t_clear, post_v)]
+        event = (f"{type_desc} fault at {_bus_name(project, fbus)} cleared at {t_clear*1000:.0f} ms"
                 + (f", tripping {_comp_name(project, trip)}" if trip else ""))
+        # Auto-reclose: only meaningful once a branch has actually been tripped
+        # on clearing. A further, precomputed segment restoring the ORIGINAL
+        # (pre-trip) topology at a fixed dead-time offset — the trip time is
+        # already known (clear_time_s), so this needs no new runtime machinery,
+        # unlike a protection-decided trip whose time isn't known in advance.
+        reclose_s = float(disturbance.get("reclose_delay_s", 0) or 0)
+        if trip and reclose_s > 0:
+            reclose_t = t_clear + reclose_s
+            reclose_v = variant(base_ybus, all_active, set())
+            segs.append((reclose_t, reclose_v))
+            event += f", reclosing at {reclose_t*1000:.0f} ms"
+        return (segs, event)
 
     if dtype == "trip":
         t_ev = float(disturbance.get("time_s", 0.1))
@@ -1911,10 +1979,30 @@ def _build_sequence(project, ctx, machines, base_ybus, load_shunt, all_active,
             continue
         steps.append({"t": max(float(s.get("t", s.get("time_s", 0.0)) or 0.0), 0.0),
                       "action": action, "element": elem,
-                      "delta_pct": float(s.get("delta_pct", 0.0) or 0.0)})
+                      "delta_pct": float(s.get("delta_pct", 0.0) or 0.0),
+                      "reclose_delay_s": float(s.get("reclose_delay_s", 0.0) or 0.0)})
     steps.sort(key=lambda s: s["t"])
     if not steps:
         raise ValueError("Sequence has no valid steps.")
+
+    # Auto-reclose: a "trip" step on a branch/breaker (not a generator or load —
+    # a generator is trip-only and a load's "close" restores demand, not
+    # topology) with reclose_delay_s > 0 gets a companion "close" step
+    # synthesized reclose_delay_s later, so the user doesn't have to hand-add a
+    # second scheduled step. The trip time is already fixed at sequence-build
+    # time, so this is just another precomputed segment — no new machinery.
+    reclose_extra = []
+    for s in steps:
+        if s["action"] != "trip" or s["reclose_delay_s"] <= 0:
+            continue
+        comp = comp_of.get(s["element"])
+        if comp is not None and comp.type not in MACHINE_SOURCE_TYPES and comp.type not in LOAD_TYPES:
+            reclose_extra.append({"t": s["t"] + s["reclose_delay_s"], "action": "close",
+                                  "element": s["element"], "delta_pct": 0.0,
+                                  "reclose_delay_s": 0.0})
+    if reclose_extra:
+        steps.extend(reclose_extra)
+        steps.sort(key=lambda s: s["t"])
 
     removed = set()       # open branch/breaker component ids (topology)
     tripped_gen = set()   # tripped generator/utility comp ids

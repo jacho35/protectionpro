@@ -2,8 +2,8 @@
 
 Status of the classical time-domain rotor-angle engine
 (`backend/analysis/transient_stability.py`) and what remains. Last updated
-2026-07-31 (after sub-transient (d/q″) machine dynamics; next up = more
-protection functions).
+2026-07-31 (after ROCOF/over-excitation/out-of-step protection + auto-reclose;
+next up = over-current/distance relay).
 
 ## Implemented
 
@@ -165,12 +165,94 @@ island** against that island's own centre of inertia.
   list gained `subtransient_on`. (`transient_stability.py`, `constants.js`,
   `properties.js`, `test_transient_stability.py`)
 
-## Next up — more protection functions
+- **ROCOF, over-excitation, out-of-step protection + auto-reclose** — the four
+  protection functions that extend the existing timer-accumulate-then-trip
+  relay pattern (`_check_protection`) without needing any new network
+  machinery, plus dead-time auto-reclose (which turned out to need none
+  either — it's one more precomputed segment on the existing branch
+  open/close mechanism). Over-current/distance relay was deliberately left
+  out of this change — see *Next up*.
+  - **ROCOF (df/dt, ANSI 81R)** — applies to generators, GFM converters (both
+    already `machines[]` entries with a swing angle) and GFL converters
+    (current-source injections). All three already had frequency-based
+    ride-through trips reading the same per-island centre-of-inertia (COI)
+    frequency (`_island_freq`), so ROCOF reuses that same observable —
+    a deliberate simplification vs. a per-bus PLL measurement, consistent
+    with how UF/OF already work engine-wide. A short rolling window
+    (`ROCOF_WINDOW_S = 0.1`, a `rocof_hist`/`_rocof_rates` closure in
+    `_simulate`) reports `None` until a sample pair spans at least half the
+    window, so there's no spurious rate on the first step(s). New fields
+    `trip_rocof_hzs`/`ibr_rocof_hzs` (generator/GFM dual-name ternary,
+    matching `trip_of_hz`/`ibr_of_hz`) and `ibr_rocof_hzs` on GFL (shared prop
+    name with GFM, matching `ibr_uv_pu` etc.).
+  - **Over-excitation / volts-per-hertz (V/Hz, ANSI 24)** — generator-only (a
+    GFM's virtual EMF has no iron core to saturate): `trip_vhz_pu` compares
+    `vhz_pu = v / (f / freq)` — the same lagged terminal voltage and local
+    frequency the UV/UF checks already read — against the threshold. Reads as
+    0 (disabled) for every other component type since only the generator's
+    field list defines the prop, so no `is_gfm` branching was needed.
+  - **Out-of-step / loss-of-synchronism (ANSI 78)** — a new **opt-in
+    per-machine protective trip**, deliberately distinct from the engine's
+    existing global first-swing `unstable`/`UNSTABLE_ANGLE` verdict (untouched
+    — still a pure CCT/stability metric, never removes anything from the
+    network). Applies to generators and GFM (both have a `delta[i]` swing
+    state); not GFL (no rotor angle). `_check_protection`'s signature grew a
+    `delta` parameter so it can compute the live island-COI angle separation
+    (`refs(delta)`, the same closure the global verdict uses) each step. New
+    fields `trip_oos_deg`/`ibr_oos_deg`. Verified empirically that a relay set
+    well inside 180° trips the machine off before a full pole-slip — which can
+    leave the global `stable` verdict `True` even on an above-CCT fault, since
+    that verdict only judges *live* machines: exactly the point of the relay,
+    not a contradiction.
+  - **Auto-reclosing** — needed **no new runtime state or architecture**.
+    Branch open/close was already only ever a *precomputed*
+    `(t_switch, variant)` segment (`_build_segments`/`_build_sequence`), never
+    a decision made from live relay state inside the RK4 loop — and a
+    dead-time reclose is just another such segment at a time that's already
+    known in advance (the trip time is fixed at build time, either
+    `clear_time_s` on a `fault` disturbance's `trip_element` or a `sequence`
+    step's own `t`). The `fault` disturbance gained `reclose_delay_s`
+    (meaningful only alongside `trip_element`): when set, a third segment
+    restores the ORIGINAL topology at `t_clear + reclose_delay_s`. A
+    `sequence` `trip` step gained its own optional `reclose_delay_s`: a
+    pre-pass synthesizes a companion `close` step at `t + reclose_delay_s` for
+    any trip step whose element resolves to a branch/breaker (not a generator
+    — trip-only per the existing feature scope — or a load), so the user
+    doesn't have to hand-schedule a second step. The existing sequence
+    execution loop needed no changes — it already handled `close` on a
+    branch.
+  - +10 tests (`TestProtection`: ROCOF trip + disabled, V/Hz trip + disabled,
+    out-of-step trip + no-trip-when-stable; `TestSequencedEvents`: sequence
+    auto-reclose matches a manual close, reclose ignored without a delay,
+    fault auto-reclose, fault no-reclose without a delay). Full backend suite
+    **694 pass** (91/91 in `test_transient_stability.py`). Frontend: `constants.js`
+    gained `trip_rocof_hzs`/`trip_oos_deg`/
+    `trip_vhz_pu` (generator) and `ibr_rocof_hzs`/`ibr_oos_deg` (every
+    IBR-capable source, the latter gated to `grid_forming` only) plus
+    tooltips; `transient.js` gained an Auto-reclose field on the fault form
+    and a per-step reclose field on sequence `trip` rows, both round-tripped
+    through save/load, the saved-case summary, and the timeline chart's event
+    markers. (`transient_stability.py`, `constants.js`, `transient.js`,
+    `test_transient_stability.py`)
 
-1. **More protection functions.** ROCOF (df/dt) tripping, out-of-step / loss-of-
-   synchronism relays, over-current / distance, generator over-excitation;
-   auto-reclosing. IBR ROCOF/vector-shift anti-islanding is a natural extension
-   of the ride-through trips now modelled.
+## Next up — over-current / distance relay
+
+1. **Over-current / distance relay.** The one remaining protection function,
+   deliberately deferred from the change above because it needs something the
+   engine genuinely doesn't have: per-branch current. `build_branch_ybus`
+   (`network_reduction.py`) folds branch admittances straight into the dense
+   bus Y-matrix and discards the per-branch `(from, to, y)` structure, so
+   computing `I_branch = y·(V_from − V_to)` each step needs that function
+   extended to retain a branch list. Tripping on it also needs a genuinely new
+   mid-simulation topology-switch mechanism: today, branch open/close is only
+   ever a *precomputed* `(t, variant)` segment (see auto-reclose above),
+   never a decision made from live relay state inside the RK4 loop — this
+   would need selecting between two pre-built Ybus variants (open/closed) per
+   step, keyed off a new `tripped_branch` state, rather than the row-masking
+   the existing `tripped_mach`/`tripped_loads`/etc. sets do on a single fixed
+   Ybus. A distinct, heavier piece of work with its own risk profile; bundling
+   it into the protection-functions change above would have increased risk
+   for no shared benefit.
 
 ## Lower value / out of scope
 
@@ -196,6 +278,9 @@ hydro water-hammer, steam reheat lag) and has its first *oscillation-damping*
 capability. With **unbalanced (SLG/LL/LLG) dynamic faults** now in place — SLG
 being the dominant real-world fault type — the engine's remaining genuine
 *capability* gap is closed. With **sub-transient (d/q″) machine dynamics** now
-in place, the machine model's own accuracy refinements are done too; everything
-left (see *Next up*) is additional protection functions, not a missing
-fault/disturbance type or machine-model fidelity gap.
+in place, the machine model's own accuracy refinements are done too. With
+**ROCOF, over-excitation, out-of-step protection and auto-reclose** now in
+place, the trip set matches most of what a real protection-coordination study
+would configure on a generator or feeder; the sole item left (see *Next up*)
+is over-current/distance relay, deliberately deferred as the one genuine
+new-architecture piece of work remaining.

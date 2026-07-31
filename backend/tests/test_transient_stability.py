@@ -502,7 +502,7 @@ class TestDynamicLoadsMotors:
 class TestProtection:
     """UFLS load shedding and generator protection tripping."""
 
-    def _island(self, shed=False, gen_uf=False):
+    def _island(self, shed=False, gen_uf=False, gen_props=None):
         shed_props = {"name": "SheddableDB", "voltage_kv": 0.4, "rated_kva": 120,
                       "power_factor": 0.9, "demand_factor": 1.0}
         if shed:
@@ -510,7 +510,8 @@ class TestProtection:
         g = lambda cid, nm: _c(cid, "generator", {
             "name": nm, "rated_mva": 0.2, "voltage_kv": 0.4, "xd_p": 0.25,
             "inertia_h_s": 2.0, "dispatch_mode": "must_run", "gov_mode": "none",
-            **({"trip_uf_hz": 48.5, "trip_delay_s": 0.2} if gen_uf else {})})
+            **({"trip_uf_hz": 48.5, "trip_delay_s": 0.2} if gen_uf else {}),
+            **(gen_props or {})})
         comps = [
             _c("busg", "bus", {"name": "GenBus", "voltage_kv": 0.4}),
             _c("busl", "bus", {"name": "LoadBus", "voltage_kv": 0.4}),
@@ -557,6 +558,70 @@ class TestProtection:
                                     {"type": "load_step", "element": "firm",
                                      "delta_pct": 30, "time_s": 1, "t_end_s": 8})
         assert any("generator trip" in tr["reason"] for tr in r["trips"])
+
+    def test_rocof_trip(self):
+        # Same governor-off islanded-genset overload as test_no_protection_no_trips
+        # (frequency "collapses freely") — a low ROCOF pickup catches the fast
+        # initial rate of decline well before frequency reaches its floor.
+        r = run_transient_stability(
+            self._island(gen_props={"trip_rocof_hzs": 0.3, "trip_delay_s": 0.1}),
+            {"type": "load_step", "element": "firm", "delta_pct": 30, "time_s": 1, "t_end_s": 8})
+        assert any("ROCOF" in tr["reason"] and "generator trip" in tr["reason"] for tr in r["trips"])
+
+    def test_rocof_no_trip_when_disabled(self):
+        r = run_transient_stability(self._island(), {"type": "load_step", "element": "firm",
+                                                      "delta_pct": 30, "time_s": 1, "t_end_s": 8})
+        assert not any("ROCOF" in tr["reason"] for tr in r["trips"])
+
+    def test_overexcitation_vhz_trip(self):
+        # Same decline as above: AVR holds terminal voltage near 1 p.u. while
+        # frequency droops, so V/Hz (p.u.) rises above 1 — the over-fluxing
+        # condition ANSI 24 is meant to catch.
+        r = run_transient_stability(
+            self._island(gen_props={"trip_vhz_pu": 1.05, "trip_delay_s": 0.1}),
+            {"type": "load_step", "element": "firm", "delta_pct": 30, "time_s": 1, "t_end_s": 8})
+        assert any("over-excitation" in tr["reason"] and "generator trip" in tr["reason"]
+                   for tr in r["trips"])
+
+    def test_overexcitation_no_trip_when_disabled(self):
+        r = run_transient_stability(self._island(), {"type": "load_step", "element": "firm",
+                                                      "delta_pct": 30, "time_s": 1, "t_end_s": 8})
+        assert not any("over-excitation" in tr["reason"] for tr in r["trips"])
+
+    def _smib_with_oos(self, oos_deg=100):
+        proj = _smib()
+        for comp in proj.components:
+            if comp.type == "generator":
+                comp.props["trip_oos_deg"] = oos_deg
+                comp.props["trip_delay_s"] = 0.05
+        return proj
+
+    def test_out_of_step_trip(self):
+        # A per-machine PROTECTIVE trip, distinct from the global first-swing
+        # ``stable`` verdict: an above-CCT fault (already known unstable per
+        # TestSMIBEqualArea, with OOS protection off) fires the out-of-step
+        # relay and removes the machine BEFORE the full 180° pole-slip — so
+        # the global verdict (which only judges live machines) can come back
+        # ``True`` even though the generator itself has tripped off; that is
+        # the point of the relay, not a contradiction.
+        cct = run_transient_stability(_smib(), {"type": "fault", "bus": "bus_gen",
+                                                "clear_time_s": 0.1, "find_cct": True,
+                                                "t_end_s": 5})["cct_s"]
+        r = run_transient_stability(self._smib_with_oos(), {"type": "fault", "bus": "bus_gen",
+                                                             "clear_time_s": cct * 1.4,
+                                                             "find_cct": False, "t_end_s": 5})
+        assert any("out-of-step" in tr["reason"] and "generator trip" in tr["reason"]
+                   for tr in r["trips"])
+
+    def test_out_of_step_no_trip_when_stable(self):
+        cct = run_transient_stability(_smib(), {"type": "fault", "bus": "bus_gen",
+                                                "clear_time_s": 0.1, "find_cct": True,
+                                                "t_end_s": 5})["cct_s"]
+        r = run_transient_stability(self._smib_with_oos(), {"type": "fault", "bus": "bus_gen",
+                                                             "clear_time_s": cct * 0.6,
+                                                             "find_cct": False, "t_end_s": 5})
+        assert r["stable"] is True
+        assert not any("out-of-step" in tr["reason"] for tr in r["trips"])
 
 
 class TestTwoAxis:
@@ -1261,6 +1326,37 @@ class TestSequencedEvents:
         r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 4, "steps": [
             {"t": 1.0, "action": "close", "element": "g1"}]})
         assert any("trip-only" in w for w in r["warnings"])
+
+    def test_sequence_auto_reclose_matches_manual(self):
+        # A "trip" step with reclose_delay_s (no manual "close" step) must
+        # synthesize the same segment a hand-scheduled close would — same
+        # voltage-recovery signature as test_feeder_trip_and_reclose.
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1", "reclose_delay_s": 3.0}]})
+        assert r["stable"] is True and r["curves"] is not None
+        assert "open Feeder1" in r["event"] and "close Feeder1" in r["event"]
+        assert self._lv(r, 2.5) < self._lv(r, 0.5) - 0.003
+        assert self._lv(r, 6.0) > self._lv(r, 2.5) + 0.003
+
+    def test_sequence_reclose_ignored_without_delay(self):
+        r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 4, "steps": [
+            {"t": 1.0, "action": "trip", "element": "f1"}]})
+        assert r["event"].count("Feeder1") == 1   # only the open, no synthesized close
+
+    def test_fault_trip_and_auto_reclose(self):
+        r = run_transient_stability(self._net(), {
+            "type": "fault", "bus": "bs", "clear_time_s": 0.1, "trip_element": "f1",
+            "reclose_delay_s": 2.0, "find_cct": False, "t_end_s": 8})
+        assert "reclosing at 2100 ms" in r["event"]
+        # single feeder after the fault-clearing trip ⇒ lower load-bus V than
+        # after the dead-time auto-reclose restores the parallel feeder
+        assert self._lv(r, 1.0) < self._lv(r, 4.0) - 0.003
+
+    def test_fault_no_reclose_without_delay(self):
+        r = run_transient_stability(self._net(), {
+            "type": "fault", "bus": "bs", "clear_time_s": 0.1, "trip_element": "f1",
+            "find_cct": False, "t_end_s": 8})
+        assert "reclosing at" not in r["event"]
 
     def test_multiple_feeders_and_load_step(self):
         r = run_transient_stability(self._net(), {"type": "sequence", "t_end_s": 8, "steps": [
