@@ -2161,6 +2161,100 @@ def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
     return z_kk if z_kk is not None else z_paths
 
 
+def thevenin_sequence_at_bus(project, bus_id, c=1.0, exclude_motor_paths=False,
+                             exclude_source_ids=()):
+    """Positive/negative/zero-sequence Thevenin impedances (Z1, Z2, Z0) at a
+    bus, for time-domain unbalanced-fault modelling (transient stability).
+
+    Sibling to ``thevenin_z1_at_bus`` — same self-contained pattern (builds its
+    own components/adjacency from ``project.wires``, no caller-supplied ctx),
+    and the same radial-exact / meshed-nodal-Zbus split ([PS-1]) used by
+    ``run_fault_analysis``. Unlike the starting-study helper, motor/IBR infeeds
+    are INCLUDED by default (``exclude_motor_paths=False``) — during a fault
+    they are legitimate fault contributors, matching ``run_fault_analysis``.
+
+    Z0 is ``complex(1e10, 0)`` (no zero-sequence return path — e.g. a bus
+    behind an unearthed delta winding) when no source provides one; callers
+    should treat that as "no ground-fault path" rather than an error, exactly
+    as ``run_fault_analysis``'s ``has_z0_path`` does.
+
+    Returns (z1, z2, z0), each a complex p.u. impedance on the system base.
+    """
+    components = {comp.id: comp for comp in project.components}
+    adjacency = {}
+    for w in project.wires:
+        adjacency.setdefault(w.fromComponent, []).append(
+            (w.toComponent, w.fromPort, w.toPort))
+        adjacency.setdefault(w.toComponent, []).append(
+            (w.fromComponent, w.toPort, w.fromPort))
+
+    excluded = set(exclude_source_ids)
+
+    def _path_ok(p):
+        if p.get("source_id") in excluded:
+            return False
+        if exclude_motor_paths and (
+                p.get("is_motor")
+                or p.get("source_type") in ("motor_induction", "motor_synchronous")):
+            return False
+        return True
+
+    base_mva = project.baseMVA
+    freq_hz = project.frequency or 50
+
+    _meta = {}
+    paths = _collect_source_paths(bus_id, components, adjacency, base_mva,
+                                  c=c, meta=_meta)
+    keep = [p for p in paths if _path_ok(p)]
+    if not keep:
+        return complex(1e10, 0), complex(1e10, 0), complex(1e10, 0)
+    z1_paths = _parallel_impedances([p["z_total"] for p in keep])
+    z2_paths = _parallel_impedances([p.get("z2_total", p["z_total"]) for p in keep])
+
+    z0_source_tuples = _collect_zero_seq_impedances(bus_id, components, adjacency,
+                                                    base_mva, c=c, freq_hz=freq_hz)
+    z0_paths = (_parallel_impedances([t[0] for t in z0_source_tuples])
+               if z0_source_tuples else complex(1e10, 0))
+
+    # [PS-1] radial-exact shortcut, mirroring thevenin_z1_at_bus: a truncated
+    # enumeration may have hidden sharing, so treat it as meshed too.
+    radial_exact = not _meta.get("truncated") and not _paths_are_meshed(keep, components)
+    if radial_exact:
+        return z1_paths, z2_paths, z0_paths
+
+    net_buses = [comp for comp in project.components
+                 if comp.type in ("bus", "distribution_board")
+                 and str(comp.props.get("system", "ac")).lower() != "dc"]
+    net = _build_bus_network(net_buses, components, adjacency, base_mva, c,
+                             freq_hz=freq_hz)
+    shunts1, shunts2, shunts0 = {}, {}, {}
+    for bid, lst in net["shunts12"].items():
+        shunts1[bid] = [z1 for (z1, _z2, sid, st) in lst
+                        if sid not in excluded
+                        and not (exclude_motor_paths
+                                 and st in ("motor_induction", "motor_synchronous"))]
+        shunts2[bid] = [z2 for (_z1, z2, sid, st) in lst
+                        if sid not in excluded
+                        and not (exclude_motor_paths
+                                 and st in ("motor_induction", "motor_synchronous"))]
+    for bid, lst in net["shunts0"].items():
+        shunts0[bid] = list(lst)
+
+    z1_kk = _nodal_thevenin(net["bus_ids"], net["branches1"], shunts1, bus_id)
+    z2_kk = _nodal_thevenin(net["bus_ids"], net["branches1"], shunts2, bus_id)
+    z0_kk = _nodal_thevenin(net["bus_ids"], net["branches0"], shunts0, bus_id)
+    # Matches run_fault_analysis's meshed branch exactly: if the nodal Z1 solve
+    # succeeds, use it (falling back to it for Z2 too if Z2's own solve fails);
+    # if the nodal Z1 solve fails outright, fall back to per-path for BOTH.
+    if z1_kk is not None:
+        z1 = z1_kk
+        z2 = z2_kk if z2_kk is not None else z1_kk
+    else:
+        z1, z2 = z1_paths, z2_paths
+    z0 = z0_kk if z0_kk is not None else z0_paths
+    return z1, z2, z0
+
+
 # ─── IEC 60909 Time-Varying Fault Currents ───────────────────────────────────
 
 

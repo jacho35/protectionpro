@@ -101,6 +101,87 @@ class TestSMIBEqualArea:
         assert undis["curves"]["pe_pu"][gi2][0] == pytest.approx(pm, abs=0.02)
 
 
+def _smib_ungrounded(h=3.5, xline_pu=0.3, gen_mva=100.0, load_mw=60.0):
+    """Same SMIB topology, but both the utility and the generator have an
+    ungrounded neutral — no zero-sequence return path exists anywhere on the
+    network (Z0 -> inf at every bus)."""
+    p = _smib(h=h, xline_pu=xline_pu, gen_mva=gen_mva, load_mw=load_mw)
+    for comp in p.components:
+        if comp.type in ("utility", "generator"):
+            comp.props["grounding"] = "ungrounded"
+    return p
+
+
+class TestUnbalancedFault:
+    """Unbalanced (SLG/LL/LLG) dynamic faults are modelled as a positive-
+    sequence shunt fault impedance Zf at the fault bus — Zf = Z2+Z0 (SLG),
+    Z2 (LL), Z2‖Z0 (LLG) — reusing fault.py's own steady-state formulas via
+    ``thevenin_sequence_at_bus``. Z1/Z2/Z0 are Thevenin equivalents computed
+    once at fault onset; the 3-phase case is untouched (still a bolted bus
+    elimination via ``grounded``, not a shunt)."""
+
+    def test_default_fault_type_is_3phase_byte_identical(self):
+        base = {"type": "fault", "bus": "bus_gen", "clear_time_s": 0.1,
+                "find_cct": True, "t_end_s": 5}
+        implicit = run_transient_stability(_smib(), dict(base))
+        explicit = run_transient_stability(_smib(), {**base, "fault_type": "3phase"})
+        assert implicit["cct_s"] == explicit["cct_s"]
+        assert implicit["cct_s"] == pytest.approx(0.6225, rel=0.01)
+
+    def test_severity_ordering_vs_3phase(self):
+        """SLG/LL/LLG are all electrically less severe than a bolted 3-phase
+        fault at the same bus (positive-sequence voltage doesn't collapse to
+        zero), so each unbalanced-fault CCT must exceed the 3-phase CCT — and
+        LLG (Z2‖Z0, the smallest Zf of the three) is more severe than plain
+        LL or SLG."""
+        base = {"type": "fault", "bus": "bus_gen", "clear_time_s": 0.05,
+                "find_cct": True, "t_end_s": 3}
+        cct = {}
+        for ft in ("3phase", "slg", "ll", "llg"):
+            res = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+                                          {**base, "fault_type": ft})
+            assert res["cct_s"] is not None
+            cct[ft] = res["cct_s"]
+        assert cct["3phase"] < cct["llg"] < cct["ll"] < cct["slg"]
+
+    def test_stable_below_and_unstable_above_slg_cct(self):
+        base = {"type": "fault", "bus": "bus_gen", "fault_type": "slg",
+                "clear_time_s": 0.05, "find_cct": True, "t_end_s": 3}
+        cct = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0), dict(base))["cct_s"]
+        assert cct is not None
+        below = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+                                        {**base, "clear_time_s": cct * 0.6, "find_cct": False})
+        above = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+                                        {**base, "clear_time_s": cct * 1.4, "find_cct": False})
+        assert below["stable"] is True
+        assert above["stable"] is False
+
+    def test_no_zero_sequence_path_does_not_crash(self):
+        """An ungrounded utility/generator gives Z0 -> inf: SLG's Zf collapses
+        toward infinite (negligible fault current) and LLG degenerates to a
+        plain LL fault (Z2‖Z0 -> Z2) — both fall out of the Zf formulas with
+        no special-casing, matching fault.py's own has_z0_path handling. Must
+        not raise or produce NaN."""
+        p = _smib_ungrounded()
+        for ft in ("slg", "llg", "ll"):
+            res = run_transient_stability(p, {"type": "fault", "bus": "bus_gen",
+                                              "fault_type": ft, "clear_time_s": 0.2,
+                                              "find_cct": False, "t_end_s": 2})
+            assert res["stable"] is True
+            assert not any("nan" in str(w).lower() for w in res["warnings"])
+
+    def test_fault_bus_voltage_is_finite_dip_not_zero(self):
+        """Unlike a bolted 3-phase fault (bus eliminated from the reduced
+        network, so its voltage effectively reads 0), an unbalanced fault's
+        positive-sequence shunt leaves the bus IN the network with a real,
+        finite dip."""
+        res = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+                                      {"type": "fault", "bus": "bus_gen", "fault_type": "slg",
+                                       "clear_time_s": 0.05, "find_cct": False, "t_end_s": 1})
+        gen_v = next(b["v_pu"] for b in res["curves"]["buses"] if b["bus"] == "GEN")
+        assert 0.1 < gen_v[0] < 0.95
+
+
 class TestDisturbances:
     def test_line_trip_runs(self):
         res = run_transient_stability(_smib(), {"type": "trip", "element": "ln",

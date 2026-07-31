@@ -2,8 +2,8 @@
 
 Status of the classical time-domain rotor-angle engine
 (`backend/analysis/transient_stability.py`) and what remains. Last updated
-2026-07-31 (after the standard governor/exciter/PSS work; next up = unbalanced
-dynamic faults).
+2026-07-31 (after unbalanced dynamic faults; next up = sub-transient dynamics /
+more protection functions).
 
 ## Implemented
 
@@ -95,16 +95,38 @@ island** against that island's own centre of inertia.
     shape tests, AC saturation, PSS damping); 71 transient-stability tests
     pass. (`transient_stability.py`, `constants.js`, `properties.js`,
     `test_transient_stability.py`)
+- **Unbalanced (SLG/LL/LLG) dynamic faults** — the `fault` disturbance gains a
+  `fault_type` selector (`3phase` default | `slg` | `ll` | `llg`, byte-identical
+  when omitted). Modelled the same way `fault.py`'s steady-state engine already
+  does an unbalanced fault, rather than carrying three sequence networks
+  through RK4: a positive-sequence **shunt fault impedance** `Zf` at the fault
+  bus, built once at fault onset from the negative/zero-sequence Thevenin
+  equivalents (`Zf = Z2+Z0` SLG, `Z2` LL, `Z2‖Z0` LLG — Anderson & Fouad /
+  Kundur's standard compensation-network treatment), added to `_reduce()`'s
+  diagonal exactly like a load shunt. The 3-phase case is untouched (still a
+  bolted bus elimination via `grounded`, Zf=0). Z1/Z2/Z0 don't change mid-fault
+  (topology only changes at clearing, same as the existing 3-phase case), so
+  this needed no change to the RK4 loop itself, the dynamic re-reduction path,
+  the CCT binary search, or any recorder/protection-trip code — all already
+  generic over "whatever the current network variant is." New
+  `fault.thevenin_sequence_at_bus()` (sibling to the existing
+  `thevenin_z1_at_bus`) supplies Z1/Z2/Z0, sharing the same radial-exact /
+  meshed-nodal-Zbus split ([PS-1]) `run_fault_analysis` already uses. A bus
+  with no zero-sequence return path (ungrounded source, delta winding) needs no
+  special-casing — Z0→∞ collapses SLG's Zf toward infinite (negligible fault)
+  and LLG's `Z2‖Z0` toward `Z2` alone (LLG degenerates to a plain LL fault),
+  both falling straight out of the formulas. +5 tests (`TestUnbalancedFault`):
+  default-stays-3phase byte-identical, SLG/LL/LLG-less-severe-than-3phase CCT
+  ordering plus the LLG<LL<SLG severity ordering among the unbalanced types,
+  stable-below/unstable-above the SLG CCT, no-zero-sequence-path doesn't
+  crash, and the faulted bus reporting a real finite voltage dip (rather than
+  the 3-phase case's bus elimination) during an unbalanced fault. Full backend
+  suite 672 pass. Frontend: `transient.js` gained a "Fault type" selector in
+  the fault disturbance setup, threaded through save/load and the saved-case
+  summary label. (`transient_stability.py`, `fault.py`, `transient.js`,
+  `test_transient_stability.py`)
 
-## Next up — unbalanced dynamic faults
-
-Only balanced 3-φ faults are modelled in the time domain; SLG / LL / LLG would
-need the sequence networks carried through the swing (reuse `fault.py`'s
-sequence impedances; apply the sequence interconnection at the faulted bus
-each step). The biggest genuine *capability* gap for a protection-focused
-tool — SLG is the dominant real fault.
-
-## Remaining — worth doing (rough priority)
+## Next up — sub-transient dynamics / more protection functions
 
 1. **Sub-transient dynamics** (d/q″: X″d/X″q, T″do/T″qo). Refinement over the
    two-axis model for the first few cycles; X″q ≠ X″d breaks the single-voltage-
@@ -135,8 +157,8 @@ frequency / synthetic-inertia response), modern PV-plus-battery sites are
 covered too. With **standard governor/exciter/PSS block models** now in place,
 the engine can also reproduce OEM-matchable step responses (diesel dead-time,
 hydro water-hammer, steam reheat lag) and has its first *oscillation-damping*
-capability.
-
-The designated **next** function is **unbalanced dynamic faults** (see
-*Next up*) — the remaining genuine capability gap for a protection-focused
-tool; the rest are accuracy refinements.
+capability. With **unbalanced (SLG/LL/LLG) dynamic faults** now in place — SLG
+being the dominant real-world fault type — the engine's remaining genuine
+*capability* gap is closed; everything left (see *Next up*) is an accuracy
+refinement (sub-transient dynamics) or additional protection functions, not a
+missing fault/disturbance type.

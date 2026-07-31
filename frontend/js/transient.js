@@ -79,6 +79,13 @@ const Transient = {
 
         <div class="ts-row ts-fault" style="display:contents">
           <label>Fault at bus</label><select id="ts-fault-bus">${opt(buses)}</select>
+          <label>Fault type</label>
+          <select id="ts-fault-type">
+            <option value="3phase">Three-phase (bolted)</option>
+            <option value="slg">Single line-to-ground (SLG)</option>
+            <option value="ll">Line-to-line (LL)</option>
+            <option value="llg">Double line-to-ground (LLG)</option>
+          </select>
           <label>Clear time</label>
           <div><input id="ts-clear" type="number" min="0" step="0.01" value="0.15" style="width:90px"> s</div>
           <label>Trip on clear</label>
@@ -234,6 +241,7 @@ const Transient = {
       set('#ts-tend', d.t_end_s);
       if (d.bus != null || d.type === 'fault') {
         set('#ts-fault-bus', d.bus);
+        set('#ts-fault-type', d.fault_type || '3phase');
         set('#ts-clear', d.clear_time_s);
         set('#ts-trip-branch', d.trip_element || '');
         chk('#ts-cct', d.find_cct !== false);
@@ -273,7 +281,8 @@ const Transient = {
   _caseSummary(d) {
     if (!d) return '';
     if (d.type === 'fault') {
-      return `Fault @ ${this._name(d.bus)}, clear ${Math.round((d.clear_time_s || 0) * 1000)} ms`
+      const ftLabel = { slg: 'SLG', ll: 'LL', llg: 'LLG' }[d.fault_type] || '3-φ';
+      return `${ftLabel} fault @ ${this._name(d.bus)}, clear ${Math.round((d.clear_time_s || 0) * 1000)} ms`
         + (d.trip_element ? `, trip ${this._name(d.trip_element)}` : '')
         + (d.find_cct !== false ? ', CCT' : '');
     }
@@ -369,6 +378,7 @@ const Transient = {
     const d = { type, t_end_s: parseFloat(b.querySelector('#ts-tend').value) || 5 };
     if (type === 'fault') {
       d.bus = b.querySelector('#ts-fault-bus').value;
+      d.fault_type = b.querySelector('#ts-fault-type').value;
       d.clear_time_s = parseFloat(b.querySelector('#ts-clear').value) || 0.15;
       d.trip_element = b.querySelector('#ts-trip-branch').value || null;
       d.find_cct = b.querySelector('#ts-cct').checked;

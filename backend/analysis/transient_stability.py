@@ -136,6 +136,7 @@ import numpy as np
 
 from .network_reduction import build_branch_ybus, _source_stub, _source_internal_z
 from .loadflow import run_load_flow, _source_output_mva
+from .fault import thevenin_sequence_at_bus
 
 INFINITE_H = 1.0e6          # utility infinite-bus inertia (angle ~frozen)
 BUS_REG = 1.0e-8            # tiny shunt to keep the elimination matrix regular
@@ -996,10 +997,15 @@ def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
 
 # ── Network reduction to the machine internal nodes ─────────────────────
 
-def _reduce(Ybus, load_shunt, machines, active, grounded, z_override=None):
+def _reduce(Ybus, load_shunt, machines, active, grounded, z_override=None, fault_shunt=None):
     """Kron-reduce to the internal nodes of the ``active`` machines.
 
     grounded: set of bus indices held at zero volts (a bolted 3-φ fault).
+    fault_shunt: optional {bus_idx: complex Y} extra shunt admittance at a bus
+    — the positive-sequence equivalent of an UNBALANCED (SLG/LL/LLG) fault,
+    added to the diagonal exactly like load_shunt (as opposed to a bolted 3-φ
+    fault, which eliminates the bus via ``grounded`` instead — Zf=0 there, so
+    there is nothing finite to add).
     z_override: optional {machine_idx: z} replacing a machine's internal→bus
     impedance for this step (the grid-forming current limiter raises a
     converter's coupling reactance when its terminal current exceeds the limit).
@@ -1007,6 +1013,7 @@ def _reduce(Ybus, load_shunt, machines, active, grounded, z_override=None):
     kept_bus_indices).
     """
     z_override = z_override or {}
+    fault_shunt = fault_shunt or {}
     n = Ybus.shape[0]
     keep_bus = [i for i in range(n) if i not in grounded]
     nb = len(keep_bus)
@@ -1015,7 +1022,7 @@ def _reduce(Ybus, load_shunt, machines, active, grounded, z_override=None):
     A = np.zeros((nb + m, nb + m), dtype=complex)
 
     for a, bi in enumerate(keep_bus):
-        A[a, a] += load_shunt[bi] + BUS_REG
+        A[a, a] += load_shunt[bi] + fault_shunt.get(bi, 0) + BUS_REG
         for c, bj in enumerate(keep_bus):
             A[a, c] += Ybus[bi, bj]
 
@@ -1384,7 +1391,8 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                            tripped_loads, tripped_motors, ibr_inj, tripped_ibr)
         gfm_active = [i for i in active if machines[i].get("ibr") == "gfm"]
         zov = {}
-        Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov)
+        Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov,
+                                fault_shunt=vd.get("fault_shunt"))
         if gfm_active:
             eint_a = _eint(active, delta, efield, epq, epd)   # EMFs fixed this step
             pos_of = {mi: p for p, mi in enumerate(active)}
@@ -1407,7 +1415,8 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                         over = True
                 if not over:
                     break
-                Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov)
+                Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov,
+                                fault_shunt=vd.get("fault_shunt"))
             Ia = Yred @ eint_a if active else np.zeros(0, dtype=complex)
             for mi in gfm_active:                         # record the bounded peak
                 imach_peak[mi] = max(imach_peak.get(mi, 0.0), abs(Ia[pos_of[mi]]))
@@ -1682,14 +1691,16 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
     load_shunt = _load_shunts(lf, ctx, machine_bus_idxs)
     all_active = list(range(len(machines)))
 
-    def variant(ybus, active, grounded, shunt=None, pm_over=None, load_scale=None):
+    def variant(ybus, active, grounded, shunt=None, pm_over=None, load_scale=None,
+                fault_shunt=None):
         Yred, R, keep = _reduce(ybus, load_shunt if shunt is None else shunt,
-                                machines, active, grounded)
+                                machines, active, grounded, fault_shunt=fault_shunt)
         Pm = np.array([machines[i]["Pm"] if (pm_over is None or i not in pm_over)
                        else pm_over[i] for i in range(len(machines))])
-        # ybus/grounded/load_scale let the dynamic path re-reduce each step.
+        # ybus/grounded/load_scale/fault_shunt let the dynamic path re-reduce each step.
         return {"Yred": Yred, "active": active, "R": R, "keep_bus": keep, "Pm": Pm,
-                "ybus": ybus, "grounded": grounded, "load_scale": load_scale}
+                "ybus": ybus, "grounded": grounded, "load_scale": load_scale,
+                "fault_shunt": fault_shunt or {}}
 
     dtype = disturbance.get("type", "fault")
 
@@ -1698,16 +1709,46 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
         if fbus not in bus_idx:
             raise ValueError("Fault bus not found in the network.")
         t_clear = float(disturbance.get("clear_time_s", 0.1))
-        grounded = {bus_idx[fbus]}
+        fault_type = str(disturbance.get("fault_type") or "3phase").lower()
+        fbus_idx = bus_idx[fbus]
         # optional branch trip on clearing
         post_ctx = ctx
         trip = disturbance.get("trip_element")
         if trip:
             post_ctx = build_branch_ybus(_project_without(project, trip))
-        fault_v = variant(base_ybus, all_active, grounded)
+
+        if fault_type == "3phase":
+            fault_v = variant(base_ybus, all_active, {fbus_idx})
+            type_desc = "3-φ"
+        elif fault_type in ("slg", "ll", "llg"):
+            # Unbalanced faults are modelled the same way fault.py's steady-
+            # state engine does: a positive-sequence shunt fault impedance Zf
+            # built from the negative/zero-sequence Thevenin equivalents at
+            # the fault bus, computed once at onset (topology — and so Z2/Z0 —
+            # only changes at clearing, same as the 3-φ case above). The bus
+            # stays IN the network (a finite dip), unlike the bolted case's
+            # bus elimination, since Zf is finite here.
+            z1, z2, z0 = thevenin_sequence_at_bus(project, fbus, c=1.0)
+            if fault_type == "slg":
+                zf, type_desc = z2 + z0, "SLG"
+            elif fault_type == "ll":
+                zf, type_desc = z2, "line-line"
+            else:  # llg
+                zf = (z2 * z0) / (z2 + z0) if abs(z2 + z0) > 1e-15 else complex(0, 0)
+                type_desc = "LLG"
+            # z0 → ~1e10 (no zero-sequence return path, e.g. behind a delta
+            # winding) makes SLG's zf huge and LLG's zf collapse to z2 alone
+            # (i.e. LLG degenerates to a plain LL fault) — both fall out of
+            # the formulas above with no special-casing needed, matching
+            # run_fault_analysis's has_z0_path handling.
+            yf = 1.0 / zf if abs(zf) > 1e-12 else complex(1e12, 0)
+            fault_v = variant(base_ybus, all_active, set(), fault_shunt={fbus_idx: yf})
+        else:
+            raise ValueError(f"Unknown fault_type '{fault_type}'.")
+
         post_v = variant(post_ctx["Y"], all_active, set())
         return ([(0.0, fault_v), (t_clear, post_v)],
-                f"3-φ fault at {_bus_name(project, fbus)} cleared at {t_clear*1000:.0f} ms"
+                f"{type_desc} fault at {_bus_name(project, fbus)} cleared at {t_clear*1000:.0f} ms"
                 + (f", tripping {_comp_name(project, trip)}" if trip else ""))
 
     if dtype == "trip":
