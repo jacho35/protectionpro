@@ -15,7 +15,10 @@ import numpy as np
 import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire, LoadFlowBus
-from backend.analysis.fault import run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis
+from backend.analysis.fault import (
+    run_fault_analysis, run_open_conductor_analysis, run_two_conductor_open_analysis,
+    run_simultaneous_fault_analysis,
+)
 from backend.analysis.loadflow import (
     run_load_flow, connected_bus_loads_mw, _assess_solution,
     _newton_raphson, _gauss_seidel, solve_with_islands,
@@ -29,6 +32,8 @@ from backend.analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from backend.analysis.transient_stability import run_transient_stability
 from backend.analysis.grounding_system import (
     _compute_conductor_size, _compute_n, _compute_K_ii, _compute_L_M,
+    _two_layer_reflection_factor, _compute_two_layer_equivalent_resistivity,
+    wenner_apparent_resistivity, interpret_wenner_test,
 )
 from backend.analysis.arcflash import (
     calc_incident_energy, calc_arcing_current_2018, calc_incident_energy_2018,
@@ -408,6 +413,117 @@ class TestTwoConductorOpen:
             run_two_conductor_open_analysis(proj, "cable-1")
 
 
+def _simultaneous_fault_project(fault_mva=1e7, kv=11.0, r_per_km=0.5, x_per_km=0.3,
+                                length_km=1.0, rated_kva=625.0, power_factor=0.8,
+                                shunt_r_per_km=0.4, shunt_x_per_km=0.25, shunt_length_km=1.0):
+    """_open_conductor_project's network (utility -- bus-1 -- cable-1 --
+    bus-2 -- static_load-1) PLUS a second branch hanging off bus-1 straight
+    to a dead-end bus-3 — the shunt-fault location for the simultaneous-
+    fault engine. bus-3 is electrically DECOUPLED from the break at bus-2:
+    in a star network fed from one swing bus, the transfer impedance
+    between any two downstream nodes equals the swing's OWN self-impedance
+    (independent of the branch impedances hanging off it) — and with the
+    near-ideal utility here (fault_mva huge) that self-impedance is
+    negligible, so Z_FP ≈ 0. This is the degenerate/decoupled limit the
+    regression tests check against the two standalone series-fault engines
+    and against a standalone run_fault_analysis shunt fault."""
+    cable = _comp("cable-1", "cable", {
+        "name": "Feeder", "r_per_km": r_per_km, "x_per_km": x_per_km,
+        "length_km": length_km, "rated_amps": 400.0, "voltage_kv": kv,
+    })
+    bus2 = _comp("bus-2", "bus", {"name": "Load Bus", "voltage_kv": kv})
+    load = _comp("static_load-1", "static_load", {
+        "name": "Load", "rated_kva": rated_kva, "power_factor": power_factor,
+    })
+    cable_shunt = _comp("cable-shunt", "cable", {
+        "name": "Shunt Feeder", "r_per_km": shunt_r_per_km, "x_per_km": shunt_x_per_km,
+        "length_km": shunt_length_km, "rated_amps": 400.0, "voltage_kv": kv,
+    })
+    bus3 = _comp("bus-3", "bus", {"name": "Shunt Fault Bus", "voltage_kv": kv})
+    wires = [
+        _wire("w2", "bus-1", "cable-1"),
+        _wire("w3", "cable-1", "bus-2"),
+        _wire("w4", "bus-2", "static_load-1"),
+        _wire("w5", "bus-1", "cable-shunt"),
+        _wire("w6", "cable-shunt", "bus-3"),
+    ]
+    return _utility_bus_project(fault_mva=fault_mva, xr=15.0, kv=kv, z0_z1=1.0,
+                                extra_components=[cable, bus2, load, cable_shunt, bus3],
+                                extra_wires=wires)
+
+
+class TestSimultaneousFault:
+    """Simultaneous series (open-conductor) + shunt fault at two DIFFERENT
+    network locations — see fault.run_simultaneous_fault_analysis. Coupled
+    through the network's sequence transfer impedance; the primary
+    correctness gate is the electrically-decoupled limit reproducing the
+    two standalone single-fault-point engines exactly (see
+    _simultaneous_fault_project's docstring for why bus-3 is decoupled from
+    the break at bus-2)."""
+
+    def test_open_conductor_leg_matches_standalone_when_decoupled(self):
+        proj = _simultaneous_fault_project()
+        standalone = run_open_conductor_analysis(proj, "cable-1")
+        combined = run_simultaneous_fault_analysis(
+            proj, "cable-1", "open_conductor", "bus-3", "slg")
+        assert combined.ia1_ka == pytest.approx(standalone.ia1_ka, rel=1e-2)
+        assert combined.ia2_ka == pytest.approx(standalone.ia2_ka, rel=1e-2)
+        assert combined.ia0_ka == pytest.approx(standalone.ia0_ka, abs=1e-3)
+        assert combined.ib_ka == pytest.approx(standalone.ib_ka, rel=1e-2)
+        assert combined.ic_ka == pytest.approx(standalone.ic_ka, rel=1e-2)
+
+    def test_two_conductor_open_leg_matches_standalone_when_decoupled(self):
+        proj = _simultaneous_fault_project()
+        standalone = run_two_conductor_open_analysis(proj, "cable-1")
+        combined = run_simultaneous_fault_analysis(
+            proj, "cable-1", "two_conductor_open", "bus-3", "llg")
+        assert combined.ia1_ka == pytest.approx(standalone.ia1_ka, rel=1e-2)
+        assert combined.ia_ka == pytest.approx(standalone.ia_ka, rel=1e-2)
+
+    def test_shunt_leg_matches_standalone_fault_analysis_when_decoupled(self):
+        """In the decoupled limit, the shunt leg's own ground current should
+        match a standalone run_fault_analysis SLG at the same bus — bus-3
+        has no other source than the same utility, so Zp1/Zp0 there equal
+        what run_fault_analysis computes directly. run_fault_analysis's
+        ik1 IS already the total ground fault current (3·I1 for SLG)."""
+        proj = _simultaneous_fault_project()
+        standalone = run_fault_analysis(proj, fault_bus_id="bus-3", fault_type="slg")
+        expected_ik1 = standalone.buses["bus-3"].ik1
+        combined = run_simultaneous_fault_analysis(
+            proj, "cable-1", "open_conductor", "bus-3", "slg")
+        assert combined.ig_shunt_ka == pytest.approx(expected_ik1, rel=1e-2)
+
+    def test_rejects_shunt_bus_not_a_bus(self):
+        proj = _simultaneous_fault_project()
+        with pytest.raises(ValueError):
+            run_simultaneous_fault_analysis(proj, "cable-1", "open_conductor", "static_load-1", "slg")
+
+    def test_rejects_unknown_series_type(self):
+        proj = _simultaneous_fault_project()
+        with pytest.raises(ValueError):
+            run_simultaneous_fault_analysis(proj, "cable-1", "bogus", "bus-3", "slg")
+
+    def test_rejects_unknown_shunt_type(self):
+        proj = _simultaneous_fault_project()
+        with pytest.raises(ValueError):
+            run_simultaneous_fault_analysis(proj, "cable-1", "open_conductor", "bus-3", "bogus")
+
+    def test_coincident_break_and_shunt_fault(self):
+        """P set to the branch's own upstream terminal (bus-1) — the fully-
+        coupled limit (Z_FP == Zp, since attach_bus and P are the same
+        node). Sanity-checks the coupled formula doesn't blow up there.
+        (bus-2, the DOWNSTREAM terminal, isn't usable for this check in
+        this fixture: it has no source of its own once cable-1 is cut, so a
+        hypothetical independent fault there has no passive path to ground
+        except back through the very branch being broken — a genuinely
+        different, out-of-scope scenario, not a Z_FP→Zp edge case.)"""
+        proj = _simultaneous_fault_project()
+        res = run_simultaneous_fault_analysis(
+            proj, "cable-1", "open_conductor", "bus-1", "slg")
+        assert math.isfinite(res.ia1_ka) and res.ia1_ka >= 0
+        assert math.isfinite(res.ip1_ka) and res.ip1_ka >= 0
+
+
 # ── IEEE 1584-2002 arc flash ─────────────────────────────────────────────
 
 
@@ -559,6 +675,83 @@ class TestGrounding:
     def test_L_M_no_rods_is_lc_plus_lrod(self):
         """Without rods Eq. 87 keeps L_M = L_c + L_rod."""
         assert _compute_L_M(1540.0, 0.0, 0.0, 70.0, 70.0, False) == 1540.0
+
+    def test_two_layer_uniform_soil_collapses_to_single_layer(self):
+        """ρ1 = ρ2 (K=0) must reproduce the existing uniform-soil ρ exactly —
+        the two-layer model must be a strict superset, never changing a
+        legacy (uniform-soil) project's result."""
+        rho_eq, K, F = _compute_two_layer_equivalent_resistivity(100.0, 100.0, 3.0, 0.5, 4900.0)
+        assert K == pytest.approx(0.0, abs=1e-9)
+        assert F == pytest.approx(1.0, abs=1e-9)
+        assert rho_eq == pytest.approx(100.0, abs=1e-6)
+
+    def test_two_layer_thin_top_layer_limit_is_rho2(self):
+        """Analytic limit (h1 → grid depth, i.e. the grid sits right at the
+        ρ1/ρ2 interface): ρ_eq → ρ2 exactly — this is the correctness anchor
+        documented in `_two_layer_correction_factor` since no published IEEE
+        80 worked example exists for the two-layer case."""
+        rho_eq, K, F = _compute_two_layer_equivalent_resistivity(100.0, 400.0, 0.5, 0.5, 4900.0)
+        assert rho_eq == pytest.approx(400.0, rel=1e-3)
+
+    def test_two_layer_thick_top_layer_limit_is_rho1(self):
+        """h1 ≫ grid size: the lower layer is effectively out of reach, so
+        ρ_eq → ρ1 (uniform-soil behaviour recovered even with ρ2 ≠ ρ1)."""
+        rho_eq, K, F = _compute_two_layer_equivalent_resistivity(100.0, 2000.0, 1.0e5, 0.5, 4900.0)
+        assert rho_eq == pytest.approx(100.0, rel=1e-2)
+
+    def test_two_layer_resistive_lower_layer_raises_equivalent_resistivity(self):
+        """A more resistive lower layer (e.g. rock under topsoil, K > 0) can
+        only ever raise ρ_eq above ρ1 — never lower it (monotonic in K)."""
+        rho_eq, K, _ = _compute_two_layer_equivalent_resistivity(100.0, 1000.0, 2.0, 0.5, 4900.0)
+        assert K > 0
+        assert rho_eq > 100.0
+
+    def test_two_layer_conductive_lower_layer_lowers_equivalent_resistivity(self):
+        """A more conductive lower layer (e.g. a water table, K < 0) lowers
+        ρ_eq below ρ1."""
+        rho_eq, K, _ = _compute_two_layer_equivalent_resistivity(100.0, 20.0, 2.0, 0.5, 4900.0)
+        assert K < 0
+        assert rho_eq < 100.0
+
+    def test_wenner_forward_model_uniform_soil(self):
+        """K=0 (ρ1=ρ2): apparent resistivity is spacing-independent and
+        equals the (single) soil resistivity, at any probe spacing."""
+        for a in (1.0, 5.0, 20.0, 100.0):
+            assert wenner_apparent_resistivity(150.0, 150.0, 3.0, a) == pytest.approx(150.0, rel=1e-9)
+
+    def test_wenner_forward_model_small_and_large_spacing_limits(self):
+        """At very small spacing (a ≪ h1) the reading is dominated by the top
+        layer (→ ρ1); at very large spacing (a ≫ h1) it approaches ρ2."""
+        rho1, rho2, h1 = 50.0, 500.0, 2.0
+        near = wenner_apparent_resistivity(rho1, rho2, h1, 0.05)
+        far = wenner_apparent_resistivity(rho1, rho2, h1, 500.0)
+        assert near == pytest.approx(rho1, rel=0.05)
+        assert far == pytest.approx(rho2, rel=0.02)
+
+    def test_wenner_interpreter_recovers_known_layers(self):
+        """Self-consistency check (same convention used elsewhere in this
+        suite — e.g. TestOpenConductor's Za1=Za2 case — checking the fit
+        against synthetic data generated by the model's own forward function,
+        not an independently hand-derived number): generate noiseless
+        readings from `wenner_apparent_resistivity` at known ρ1/ρ2/h1, then
+        confirm `interpret_wenner_test` recovers those same parameters via
+        SciPy nonlinear least squares."""
+        true_rho1, true_rho2, true_h1 = 80.0, 600.0, 2.5
+        spacings = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
+        readings = [
+            (a, wenner_apparent_resistivity(true_rho1, true_rho2, true_h1, a))
+            for a in spacings
+        ]
+        fit = interpret_wenner_test(readings)
+        assert fit["converged"]
+        assert fit["rho1_ohm_m"] == pytest.approx(true_rho1, rel=0.02)
+        assert fit["rho2_ohm_m"] == pytest.approx(true_rho2, rel=0.02)
+        assert fit["upper_layer_thickness_m"] == pytest.approx(true_h1, rel=0.05)
+        assert fit["rmse_pct"] < 1.0
+
+    def test_wenner_interpreter_rejects_too_few_readings(self):
+        with pytest.raises(ValueError):
+            interpret_wenner_test([(1.0, 100.0), (2.0, 110.0)])
 
 
 # ── Motor starting ───────────────────────────────────────────────────────

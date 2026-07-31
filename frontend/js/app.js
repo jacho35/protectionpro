@@ -1707,6 +1707,104 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = '';
   }
 
+  // ── Simultaneous Series + Shunt Fault Analysis ──
+  document.getElementById('btn-simultaneous-fault').addEventListener('click', async () => {
+    const sel = [...AppState.selectedIds];
+    const selComps = sel.map(id => AppState.components.get(id)).filter(Boolean);
+    const branchComp = selComps.find(c => c.type === 'cable');
+    const busComp = selComps.find(c => c.type === 'bus' || c.type === 'distribution_board');
+    if (selComps.length !== 2 || !branchComp || !busComp) {
+      document.getElementById('status-info').textContent =
+        'Select exactly one cable/feeder (the series-fault branch) and one bus/board (the shunt-fault location) before running simultaneous fault analysis.';
+      return;
+    }
+    const seriesType = document.getElementById('simultaneous-fault-series-type').value;
+    const shuntType = document.getElementById('simultaneous-fault-shunt-type').value;
+    document.getElementById('status-info').textContent = 'Running simultaneous fault analysis...';
+    _setBusy('btn-simultaneous-fault', true);
+    try {
+      const result = await API.runSimultaneousFaultAnalysis(branchComp.id, seriesType, busComp.id, shuntType);
+      AppState.simultaneousFaultResults = result;
+      document.getElementById('status-info').textContent = 'Simultaneous fault analysis complete.';
+      showSimultaneousFaultResults(result);
+    } catch (e) {
+      console.error('Simultaneous fault analysis error:', e);
+      document.getElementById('status-info').textContent = 'Simultaneous fault analysis failed.';
+      showValidationModal('Simultaneous Series + Shunt Fault — Error', [{ msg: e.message || 'Unknown error' }], [], null);
+    } finally {
+      _setBusy('btn-simultaneous-fault', false);
+    }
+  });
+
+  function showSimultaneousFaultResults(result) {
+    const modal = document.getElementById('simultaneous-fault-modal');
+    const body = document.getElementById('simultaneous-fault-body');
+    if (!modal || !body) return;
+
+    let html = '';
+    if (result.warnings && result.warnings.length > 0) {
+      html += '<div class="af-warnings">';
+      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
+      html += '</div>';
+    }
+
+    const seriesLabel = result.series_type === 'two_conductor_open' ? 'Two conductors open' : 'One conductor open';
+    const shuntLabel = { '3phase': 'Three-phase', slg: 'Single line-ground', ll: 'Line-to-line', llg: 'Double line-ground' }[result.shunt_type] || result.shunt_type;
+
+    html += `<p style="margin:4px 0 10px;font-size:12px;opacity:0.85">
+      ${seriesLabel} on <strong>${escHtml(result.branch_name)}</strong>, between
+      <strong>${escHtml(result.source_bus_name)}</strong> (source side) and
+      <strong>${escHtml(result.load_bus_name)}</strong> (load side) — ${result.voltage_kv.toFixed(2)} kV,
+      prefault current ${result.prefault_current_a.toFixed(1)} A —
+      SIMULTANEOUS with a ${shuntLabel} fault at <strong>${escHtml(result.shunt_bus_name)}</strong>
+      (${result.shunt_voltage_kv.toFixed(2)} kV). ${result.method}.
+    </p>`;
+
+    const npsClass = result.negative_seq_pct >= 40 ? 'af-danger' : result.negative_seq_pct >= 15 ? 'af-medium' : 'af-low';
+
+    html += `<h4 style="margin:8px 0 4px">Series Fault — Sequence &amp; Phase Currents at the Break</h4>
+    <table class="af-table">
+      <thead><tr><th>Quantity</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Positive-sequence I₁</td><td>${result.ia1_ka.toFixed(3)} kA</td></tr>
+        <tr class="${npsClass}"><td>Negative-sequence I₂</td><td>${result.ia2_ka.toFixed(3)} kA — ${result.negative_seq_pct.toFixed(1)}% of I₁</td></tr>
+        <tr><td>Zero-sequence I₀</td><td>${result.ia0_ka.toFixed(3)} kA</td></tr>
+        ${result.series_type === 'two_conductor_open'
+          ? `<tr><td>Surviving phase current</td><td>${result.ia_ka.toFixed(3)} kA</td></tr>`
+          : `<tr><td>Healthy phase B current</td><td>${result.ib_ka.toFixed(3)} kA</td></tr>
+             <tr><td>Healthy phase C current</td><td>${result.ic_ka.toFixed(3)} kA</td></tr>`}
+        <tr><td>Residual/ground current (3·I₀)</td><td>${result.ig_ka.toFixed(3)} kA</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 4px">Shunt Fault — Sequence &amp; Phase Currents at ${escHtml(result.shunt_bus_name)}</h4>
+    <table class="af-table">
+      <thead><tr><th>Quantity</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Positive-sequence I₁</td><td>${result.ip1_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Negative-sequence I₂</td><td>${result.ip2_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Zero-sequence I₀</td><td>${result.ip0_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Phase A</td><td>${result.ipa_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Phase B</td><td>${result.ipb_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Phase C</td><td>${result.ipc_ka.toFixed(3)} kA</td></tr>
+        <tr><td>Residual/ground current (3·I₀)</td><td>${result.ig_shunt_ka.toFixed(3)} kA</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 4px">Coupling Impedances (p.u.)</h4>
+    <table class="af-table">
+      <thead><tr><th>Network</th><th>Za (break, R/X)</th><th>Zp (shunt, R/X)</th><th>Z transfer (R/X)</th></tr></thead>
+      <tbody>
+        <tr><td>Seq 1</td><td>${result.za1_pu[0].toFixed(4)} / ${result.za1_pu[1].toFixed(4)}</td><td>${result.zp1_pu[0].toFixed(4)} / ${result.zp1_pu[1].toFixed(4)}</td><td>${result.zfp1_pu[0].toFixed(4)} / ${result.zfp1_pu[1].toFixed(4)}</td></tr>
+        <tr><td>Seq 2</td><td>${result.za2_pu[0].toFixed(4)} / ${result.za2_pu[1].toFixed(4)}</td><td>${result.zp2_pu[0].toFixed(4)} / ${result.zp2_pu[1].toFixed(4)}</td><td>${result.zfp2_pu[0].toFixed(4)} / ${result.zfp2_pu[1].toFixed(4)}</td></tr>
+        <tr><td>Seq 0</td><td>${result.za0_pu[0].toFixed(4)} / ${result.za0_pu[1].toFixed(4)}</td><td>${result.zp0_pu[0].toFixed(4)} / ${result.zp0_pu[1].toFixed(4)}</td><td>${result.zfp0_pu[0].toFixed(4)} / ${result.zfp0_pu[1].toFixed(4)}</td></tr>
+      </tbody>
+    </table>`;
+
+    body.innerHTML = html;
+    modal.style.display = '';
+  }
+
   function showAnsiFaultResults(result) {
     const modal = document.getElementById('fault-ansi-modal');
     const body = document.getElementById('fault-ansi-body');
@@ -2547,7 +2645,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
           <div>Grid: <strong>${b.grid_dimensions}</strong></div>
-          <div>Soil: <strong>${b.soil_resistivity} Ω·m</strong></div>
+          <div>Soil: <strong>${b.soil_resistivity} Ω·m</strong>${b.two_layer_soil_enabled ? ' <span style="color:var(--text-secondary)">(ρ₁)</span>' : ''}</div>
           <div>Fault: <strong>${b.fault_current_ka} kA</strong></div>
           <div>R<sub>grid</sub>: <strong>${b.grid_resistance_ohm.toFixed(3)} Ω</strong></div>
           <div>GPR: <strong>${b.gpr_v.toFixed(0)} V</strong></div>
@@ -2555,6 +2653,10 @@ document.addEventListener('DOMContentLoaded', () => {
           <div>Rods: <strong>${b.num_ground_rods}</strong></div>
           <div>L<sub>total</sub>: <strong>${b.total_conductor_length_m} m</strong></div>
         </div>
+        ${b.two_layer_soil_enabled ? `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">
+          Two-layer soil: ρ₁=${b.soil_resistivity} Ω·m, ρ₂=${b.soil_resistivity_lower} Ω·m, h₁=${b.upper_layer_thickness_m} m
+          → K=${b.two_layer_reflection_factor_K}, ρ<sub>eq</sub>=<strong>${b.equivalent_resistivity_ohm_m} Ω·m</strong> (used for R<sub>grid</sub>/GPR; touch/step use ρ₁)
+        </div>` : ''}
         <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div style="background:var(--bg-secondary);border-radius:4px;padding:8px;font-size:12px">
             <div style="margin-bottom:4px"><strong>Touch Voltage</strong> ${touchIcon}</div>
@@ -2590,6 +2692,115 @@ document.addEventListener('DOMContentLoaded', () => {
     body.innerHTML = html;
     modal.style.display = '';
   }
+
+  // ── Wenner Four-Pin Test Interpreter (two-layer soil ρ1/ρ2/h1 fit) ──
+  let wennerReadings = [
+    { a: 1, rhoa: '' }, { a: 2, rhoa: '' }, { a: 4, rhoa: '' }, { a: 8, rhoa: '' }, { a: 16, rhoa: '' },
+  ];
+  let wennerFit = null;
+
+  function renderWennerTable() {
+    const tbody = document.getElementById('wenner-rows');
+    if (!tbody) return;
+    tbody.innerHTML = wennerReadings.map((r, i) => `
+      <tr>
+        <td><input type="number" step="0.1" min="0" value="${r.a}" data-wenner-field="a" data-wenner-idx="${i}" style="width:90px"></td>
+        <td><input type="number" step="0.1" min="0" value="${r.rhoa}" data-wenner-field="rhoa" data-wenner-idx="${i}" style="width:110px"></td>
+        <td><button class="modal-close" style="font-size:14px" data-wenner-remove="${i}" title="Remove reading">&times;</button></td>
+      </tr>`).join('');
+  }
+
+  document.getElementById('btn-wenner').addEventListener('click', () => {
+    window.closeAllToolbarMenus?.();
+    document.getElementById('wenner-results').innerHTML = '';
+    renderWennerTable();
+    document.getElementById('wenner-modal').style.display = '';
+  });
+
+  document.getElementById('wenner-rows').addEventListener('input', (e) => {
+    const idx = e.target.getAttribute('data-wenner-idx');
+    const field = e.target.getAttribute('data-wenner-field');
+    if (idx === null || !field) return;
+    wennerReadings[+idx][field] = e.target.value;
+  });
+
+  document.getElementById('wenner-rows').addEventListener('click', (e) => {
+    const idx = e.target.getAttribute('data-wenner-remove');
+    if (idx === null) return;
+    wennerReadings.splice(+idx, 1);
+    renderWennerTable();
+  });
+
+  document.getElementById('btn-wenner-add-row').addEventListener('click', () => {
+    wennerReadings.push({ a: '', rhoa: '' });
+    renderWennerTable();
+  });
+
+  document.getElementById('btn-wenner-run').addEventListener('click', async () => {
+    const readings = wennerReadings
+      .map(r => ({ spacing_m: parseFloat(r.a), apparent_resistivity_ohm_m: parseFloat(r.rhoa) }))
+      .filter(r => r.spacing_m > 0 && r.apparent_resistivity_ohm_m > 0);
+    const resultsDiv = document.getElementById('wenner-results');
+    if (readings.length < 3) {
+      resultsDiv.innerHTML = '<div class="af-warning-item">⚠ Need at least 3 valid spacing/resistivity readings at distinct spacings.</div>';
+      return;
+    }
+    resultsDiv.innerHTML = '<p style="font-size:12px;color:var(--text-secondary)">Interpreting…</p>';
+    try {
+      const fit = await API.runWennerInterpret(readings);
+      wennerFit = fit;
+      let html = `<div style="background:var(--bg-secondary);border-radius:6px;padding:10px 14px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
+          <div>ρ₁ (upper): <strong>${fit.rho1_ohm_m} Ω·m</strong></div>
+          <div>ρ₂ (lower): <strong>${fit.rho2_ohm_m} Ω·m</strong></div>
+          <div>h₁ (thickness): <strong>${fit.upper_layer_thickness_m} m</strong></div>
+          <div>Fit RMSE: <strong>${fit.rmse_pct}%</strong></div>
+        </div>
+      </div>`;
+      html += `<table class="data-table" style="width:100%;font-size:11px;margin-bottom:10px"><thead><tr>
+        <th>a (m)</th><th>Measured (Ω·m)</th><th>Fitted (Ω·m)</th><th>Error %</th></tr></thead><tbody>`;
+      for (const p of fit.points) {
+        html += `<tr><td style="text-align:center">${p.spacing_m}</td><td style="text-align:center">${p.measured_ohm_m.toFixed(1)}</td>
+          <td style="text-align:center">${p.fitted_ohm_m.toFixed(1)}</td><td style="text-align:center">${p.error_pct}</td></tr>`;
+      }
+      html += '</tbody></table>';
+
+      const selectedBuses = [...AppState.selectedIds].map(id => AppState.components.get(id)).filter(c => c && c.type === 'bus');
+      const label = selectedBuses.length ? `${selectedBuses.length} Selected Bus${selectedBuses.length === 1 ? '' : 'es'}` : 'Selected Bus';
+      html += `<button id="btn-wenner-apply" class="btn btn-primary" style="font-size:12px" ${selectedBuses.length ? '' : 'disabled'}>Apply to ${label}</button>`;
+      if (!selectedBuses.length) html += `<span style="margin-left:10px;font-size:11px;color:var(--text-secondary)">Select one or more buses on the canvas first, then click Apply.</span>`;
+
+      resultsDiv.innerHTML = html;
+
+      const applyBtn = document.getElementById('btn-wenner-apply');
+      if (applyBtn && selectedBuses.length) {
+        applyBtn.addEventListener('click', () => {
+          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+          for (const bus of selectedBuses) {
+            bus.props.two_layer_soil = 'on';
+            bus.props.soil_type = 'custom';
+            bus.props.soil_resistivity = wennerFit.rho1_ohm_m;
+            bus.props.soil_resistivity_lower = wennerFit.rho2_ohm_m;
+            bus.props.upper_layer_thickness = wennerFit.upper_layer_thickness_m;
+          }
+          document.getElementById('status-info').textContent =
+            `Applied two-layer soil model (ρ1=${wennerFit.rho1_ohm_m}, ρ2=${wennerFit.rho2_ohm_m}, h1=${wennerFit.upper_layer_thickness_m} m) to ${selectedBuses.length} bus${selectedBuses.length === 1 ? '' : 'es'}.`;
+          if (typeof Properties !== 'undefined' && Properties.currentId) Properties.show(Properties.currentId);
+          document.getElementById('wenner-modal').style.display = 'none';
+        });
+      }
+    } catch (e) {
+      console.error('Wenner interpretation error:', e);
+      resultsDiv.innerHTML = `<div class="af-warning-item">⚠ ${escHtml(e.message || 'Interpretation failed')}</div>`;
+    }
+  });
+
+  document.getElementById('btn-close-wenner').addEventListener('click', () => {
+    document.getElementById('wenner-modal').style.display = 'none';
+  });
+  document.getElementById('wenner-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'wenner-modal') e.target.style.display = 'none';
+  });
 
   // ── Lightning Risk Assessment (IEC 62305-2) ──
   const LR_FIELDS = {
@@ -3376,6 +3587,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('two-conductor-open-modal').addEventListener('click', (e) => {
     if (e.target.id === 'two-conductor-open-modal') e.target.style.display = 'none';
+  });
+
+  document.getElementById('btn-close-simultaneous-fault').addEventListener('click', () => {
+    document.getElementById('simultaneous-fault-modal').style.display = 'none';
+  });
+  document.getElementById('simultaneous-fault-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'simultaneous-fault-modal') e.target.style.display = 'none';
   });
 
   document.getElementById('btn-close-load-diversity').addEventListener('click', () => {
