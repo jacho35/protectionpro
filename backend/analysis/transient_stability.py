@@ -144,6 +144,8 @@ UNSTABLE_ANGLE = math.pi    # |δ − δ_COI| beyond 180° ⇒ loss of synchroni
 CCT_SEARCH_MAX = 1.0        # s — upper bound for the critical-clearing search
 MAX_RECORD_POINTS = 400
 GFM_CLIM_ITERS = 8          # in-step iterations to converge the GFM current limit
+SUBTRANS_ITERS = 3          # in-step iterations to converge the sub-transient
+                             # saliency (X''d != X''q) EMF correction
 # Frequency-stability verdict: an island whose centre-of-inertia frequency ends
 # more than FREQ_UNSTABLE_BAND (Hz) off nominal AND is not recovering (its end
 # deviation is no smaller than its late-window deviation, within FREQ_RECOVER_TOL)
@@ -548,6 +550,8 @@ def _collect_machines(project, ctx, lf):
         mm = "classical"
         two = {"two_axis": False, "epq0": 0.0, "epd0": 0.0, "efd_ref": E0,
                "dXd": 0.0, "dXq": 0.0, "tdop": 6.0, "tqop": 1.0}
+        sub = {"sub_transient": False, "e2q0": 0.0, "e2d0": 0.0,
+               "dXd2": 0.0, "dXq2": 0.0, "tdopp": 0.03, "tqopp": 0.03}
         delta0_val = math.atan2(E_internal.imag, E_internal.real)
         E_disp = E0
         if not infinite and not is_gfm:
@@ -575,6 +579,29 @@ def _collect_machines(project, ctx, lf):
                    "dXd": dXd, "dXq": dXq, "tdop": tdop, "tqop": tqop}
             delta0_val = d0
             E_disp = abs(complex(epd0, epq0))
+            # Sub-transient (d/q'') dynamics, opt-in on top of two-axis. X''d and
+            # X''q generally differ (saliency); rather than reformulate the
+            # network reduction (which is built once per segment from a single
+            # SCALAR machine impedance and relies on that staying true for the
+            # fast path / CCT search / GFM current limiter), E''q/E''d are
+            # additional states that relax toward the existing E'q/E'd and are
+            # converted to an equivalent "voltage behind X'd" EMF each step via
+            # _eint_sub's in-step fixed-point correction — see module docstring.
+            # xd_pp is reused from the fault-analysis sub-transient reactance;
+            # xq_pp defaults to it (round-rotor fallback when unset).
+            if str(comp.props.get("subtransient_on", "off") or "off").lower() == "on":
+                xd_pp_m = min(max(float(comp.props.get("xd_pp", 0.15) or 0.15), 1e-3),
+                              xdp * 0.999)
+                xq_pp_m = min(max(float(comp.props.get("xq_pp", xd_pp_m) or xd_pp_m), 1e-3),
+                              xdp * 0.999)
+                tdopp = max(float(comp.props.get("tdo_pp", 0.03) or 0.03), 0.005)
+                tqopp = max(float(comp.props.get("tqo_pp", 0.03) or 0.03), 0.005)
+                dXd2 = (xdp - xd_pp_m) * base_mva / rated   # X'd − X''d (stub cancels)
+                dXq2 = (xdp - xq_pp_m) * base_mva / rated   # X'q(=X'd) − X''q
+                e2q0 = epq0 - dXd2 * Idq.real                # equilibrium: dE''q/dt = 0
+                e2d0 = epd0 + dXq2 * Idq.imag                # equilibrium: dE''d/dt = 0
+                sub = {"sub_transient": True, "e2q0": e2q0, "e2d0": e2d0,
+                       "dXd2": dXd2, "dXq2": dXq2, "tdopp": tdopp, "tqopp": tqopp}
         if exc_model == "ac":
             # AC's self-excitation/saturation term (Ke+SE)·Efd sits inside the
             # error loop (unlike SEXS/ST1/first_order's additive "−(Ef−Ef0)"
@@ -642,6 +669,11 @@ def _collect_machines(project, ctx, lf):
             "two_axis": two["two_axis"], "epq0": two["epq0"], "epd0": two["epd0"],
             "dXd": two["dXd"], "dXq": two["dXq"],
             "tdop": two["tdop"], "tqop": two["tqop"],
+            # Sub-transient (d/q'') saliency correction parameters (unused
+            # unless sub_transient — requires two_axis).
+            "sub_transient": sub["sub_transient"], "e2q0": sub["e2q0"], "e2d0": sub["e2d0"],
+            "dXd2": sub["dXd2"], "dXq2": sub["dXq2"],
+            "tdopp": sub["tdopp"], "tqopp": sub["tqopp"],
             # Protection (0 / disabled by default): over- and under-frequency and
             # under-voltage trips, each after a common delay. A GFM converter
             # rides through / trips on its own ibr_* ride-through settings.
@@ -1144,6 +1176,21 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     epd0 = np.array([mac.get("epd0", 0.0) for mac in machines])
     HALF_PI = math.pi / 2.0
 
+    # Sub-transient (d/q'') saliency correction, opt-in on top of two-axis.
+    # E''q/E''d are additional fast states relaxing toward E'q/E'd; _eint_sub
+    # below converts them to an equivalent "voltage behind X'd" EMF each step
+    # via a short in-step fixed-point loop, so the network reduction Yred
+    # (built once per segment from each machine's fixed X'd impedance) never
+    # needs to change — see module docstring / TRANSIENT_STABILITY_ROADMAP.md.
+    sub_tr = [bool(mac.get("sub_transient")) for mac in machines]
+    any_sub = any(sub_tr)
+    dXd2 = np.array([mac.get("dXd2", 0.0) for mac in machines])
+    dXq2 = np.array([mac.get("dXq2", 0.0) for mac in machines])
+    Tdopp = np.maximum(np.array([mac.get("tdopp", 0.03) for mac in machines]), 3.0 * dt)
+    Tqopp = np.maximum(np.array([mac.get("tqopp", 0.03) for mac in machines]), 3.0 * dt)
+    e2q0 = np.array([mac.get("e2q0", 0.0) for mac in machines])
+    e2d0 = np.array([mac.get("e2d0", 0.0) for mac in machines])
+
     # Standard governor/turbine, exciter & PSS models (opt-in per machine).
     # "first_order" machines are untouched by any of this — gx/ex/pssx stay 0
     # and _gov_advanced/_exc_advanced/_pss_output are never called for them.
@@ -1165,6 +1212,27 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             else:
                 out[pos] = efield[mi] * complex(math.cos(delta[mi]), math.sin(delta[mi]))
         return out
+
+    def _eint_sub(active, delta, efield, epq, epd, e2q, e2d, Yred):
+        """Like _eint, but for sub_transient machines the EMF fed to the
+        network is corrected for X''d != X''q saliency: a short in-step
+        fixed-point loop (no Yred rebuild) finds the equivalent "voltage
+        behind X'd" EMF consistent with the machine's own d/q current. No-op
+        (falls straight through to _eint) unless a machine has it enabled."""
+        if not any_sub:
+            return _eint(active, delta, efield, epq, epd)
+        epq_eff, epd_eff = epq.copy(), epd.copy()
+        for _ in range(SUBTRANS_ITERS):
+            eint_a = _eint(active, delta, efield, epq_eff, epd_eff)
+            Ia = Yred @ eint_a if len(active) else np.zeros(0, dtype=complex)
+            for pos, mi in enumerate(active):
+                if not sub_tr[mi]:
+                    continue
+                idq = Ia[pos] * complex(math.cos(HALF_PI - delta[mi]),
+                                        math.sin(HALF_PI - delta[mi]))
+                epq_eff[mi] = e2q[mi] + dXd2[mi] * idq.real
+                epd_eff[mi] = e2d[mi] - dXq2[mi] * idq.imag
+        return _eint(active, delta, efield, epq_eff, epd_eff)
 
     # Dynamic induction-motor slip state (empty unless dynamic devices exist).
     # Each motor's terminal voltage sets its air-gap torque; the slip integrates
@@ -1244,13 +1312,14 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         Vbus = v["R"] @ eint_active
         return {bi: abs(Vbus[k]) for k, bi in enumerate(v["keep_bus"])}
 
-    def deriv(t, delta, omega, pm, psec, efield, epq, epd, slips, gx, ex, pssx, veff):
+    def deriv(t, delta, omega, pm, psec, efield, epq, epd, e2q, e2d, slips, gx, ex, pssx, veff):
         v = veff if veff is not None else variant_at(t)
         active = v["active"]
         active_set = set(active)
         # Complex internal EMFs, machine currents (I = Yred·E) and electrical
-        # power P = Re(E·conj(I)) — unified across classical and two-axis.
-        eint_a = _eint(active, delta, efield, epq, epd)
+        # power P = Re(E·conj(I)) — unified across classical, two-axis and
+        # sub-transient (the latter via _eint_sub's saliency correction).
+        eint_a = _eint_sub(active, delta, efield, epq, epd, e2q, e2d, v["Yred"])
         Ia = v["Yred"] @ eint_a if len(active) else np.zeros(0, dtype=complex)
         Pe = np.zeros(m)
         for pos, mi in enumerate(active):
@@ -1263,6 +1332,8 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         defield = np.zeros(m)
         depq = np.zeros(m)
         depd = np.zeros(m)
+        de2q = np.zeros(m)
+        de2d = np.zeros(m)
         dgx = np.zeros((m, N_GOV_X))
         dex = np.zeros((m, N_EXC_X))
         dpssx = np.zeros((m, N_PSS_X))
@@ -1319,6 +1390,11 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                 Id, Iq = idq.real, idq.imag
                 depq[i] = (efield[i] - epq[i] - dXd[i] * Id) / Tdop[i]
                 depd[i] = (-epd[i] + dXq[i] * Iq) / Tqop[i]
+                if sub_tr[i]:
+                    # Sub-transient flux decay: E''q/E''d relax toward the
+                    # (already-computed) E'q/E'd transient EMFs.
+                    de2q[i] = (epq[i] - e2q[i] - dXd2[i] * Id) / Tdopp[i]
+                    de2d[i] = (-e2d[i] + epd[i] + dXq2[i] * Iq) / Tqopp[i]
             # Mechanical power seen by the rotor: the governed state (Pm for
             # first_order, the advanced model's algebraic output otherwise)
             # while the machine is on line, zero once tripped (removed from
@@ -1334,13 +1410,15 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             te = mo["model"].torque(vm, s)
             tl = mo["load_fn"](1.0 - s)
             dslips[k] = (tl - te) / (2.0 * mo["h_s"])
-        return ddelta, domega, dpm, dpsec, defield, depq, depd, dslips, dgx, dex, dpssx
+        return ddelta, domega, dpm, dpsec, defield, depq, depd, de2q, de2d, dslips, dgx, dex, dpssx
 
     pm = Pm0.copy()          # governed mechanical power (starts at equilibrium)
     psec = np.zeros(m)       # isochronous reset (secondary) state
     efield = efd_ref.copy()  # field state (|E'| classical, E_fd two-axis)
     epq = epq0.copy()        # two-axis q-axis transient EMF
     epd = epd0.copy()        # two-axis d-axis transient EMF
+    e2q = e2q0.copy()        # sub-transient q-axis EMF (0 = unused)
+    e2d = e2d0.copy()        # sub-transient d-axis EMF (0 = unused)
     slips = slips0.copy()    # induction-motor slips (empty when no dynamic motor)
     gx = np.zeros((m, N_GOV_X))    # advanced-governor extra states (0 = unused)
     ex = np.zeros((m, N_EXC_X))    # advanced-exciter extra states (0 = unused)
@@ -1394,7 +1472,11 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov,
                                 fault_shunt=vd.get("fault_shunt"))
         if gfm_active:
-            eint_a = _eint(active, delta, efield, epq, epd)   # EMFs fixed this step
+            # EMFs fixed this step (only Yred is iterated below); the
+            # sub-transient saliency correction, if any, is included here too
+            # so a GFM converter's current limit sees the same corrected EMF
+            # deriv() ultimately uses.
+            eint_a = _eint_sub(active, delta, efield, epq, epd, e2q, e2d, Yred)
             pos_of = {mi: p for p, mi in enumerate(active)}
             for _ in range(GFM_CLIM_ITERS):
                 Ia = Yred @ eint_a if active else np.zeros(0, dtype=complex)
@@ -1540,7 +1622,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             ref = refs(delta)
             rec_delta.append([round(math.degrees(delta[i] - ref[i]), 2) for i in range(m)])
             rec_omega.append([round(omega[i] / (2.0 * math.pi), 4) for i in range(m)])
-            eint_a = _eint(v["active"], delta, efield, epq, epd)
+            eint_a = _eint_sub(v["active"], delta, efield, epq, epd, e2q, e2d, v["Yred"])
             Ia = v["Yred"] @ eint_a if len(v["active"]) else np.zeros(0, dtype=complex)
             pe = [0.0] * m
             for pos, mi in enumerate(v["active"]):
@@ -1585,24 +1667,28 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
 
         if step == steps:
             break
-        # RK4 over (delta, omega, Pm, Psec, E_field, E'q, E'd, motor slips, gov
-        # extra states, exciter extra states, PSS states). The reduction veff
-        # is held constant across the four stages (redone next step).
-        def _f(td, dd, oo, pp, ss, ee, qq, dd2, mm2, gg, xx, ps):
-            return deriv(td, dd, oo, pp, ss, ee, qq, dd2, mm2, gg, xx, ps, veff)
-        k1 = _f(t, delta, omega, pm, psec, efield, epq, epd, slips, gx, ex, pssx)
+        # RK4 over (delta, omega, Pm, Psec, E_field, E'q, E'd, E''q, E''d, motor
+        # slips, gov extra states, exciter extra states, PSS states). The
+        # reduction veff is held constant across the four stages (redone next
+        # step).
+        def _f(td, dd, oo, pp, ss, ee, qq, dd2, q2, d2, mm2, gg, xx, ps):
+            return deriv(td, dd, oo, pp, ss, ee, qq, dd2, q2, d2, mm2, gg, xx, ps, veff)
+        k1 = _f(t, delta, omega, pm, psec, efield, epq, epd, e2q, e2d, slips, gx, ex, pssx)
         k2 = _f(t + dt / 2, delta + dt / 2 * k1[0], omega + dt / 2 * k1[1],
                 pm + dt / 2 * k1[2], psec + dt / 2 * k1[3], efield + dt / 2 * k1[4],
-                epq + dt / 2 * k1[5], epd + dt / 2 * k1[6], slips + dt / 2 * k1[7],
-                gx + dt / 2 * k1[8], ex + dt / 2 * k1[9], pssx + dt / 2 * k1[10])
+                epq + dt / 2 * k1[5], epd + dt / 2 * k1[6],
+                e2q + dt / 2 * k1[7], e2d + dt / 2 * k1[8], slips + dt / 2 * k1[9],
+                gx + dt / 2 * k1[10], ex + dt / 2 * k1[11], pssx + dt / 2 * k1[12])
         k3 = _f(t + dt / 2, delta + dt / 2 * k2[0], omega + dt / 2 * k2[1],
                 pm + dt / 2 * k2[2], psec + dt / 2 * k2[3], efield + dt / 2 * k2[4],
-                epq + dt / 2 * k2[5], epd + dt / 2 * k2[6], slips + dt / 2 * k2[7],
-                gx + dt / 2 * k2[8], ex + dt / 2 * k2[9], pssx + dt / 2 * k2[10])
+                epq + dt / 2 * k2[5], epd + dt / 2 * k2[6],
+                e2q + dt / 2 * k2[7], e2d + dt / 2 * k2[8], slips + dt / 2 * k2[9],
+                gx + dt / 2 * k2[10], ex + dt / 2 * k2[11], pssx + dt / 2 * k2[12])
         k4 = _f(t + dt, delta + dt * k3[0], omega + dt * k3[1],
                 pm + dt * k3[2], psec + dt * k3[3], efield + dt * k3[4],
-                epq + dt * k3[5], epd + dt * k3[6], slips + dt * k3[7],
-                gx + dt * k3[8], ex + dt * k3[9], pssx + dt * k3[10])
+                epq + dt * k3[5], epd + dt * k3[6],
+                e2q + dt * k3[7], e2d + dt * k3[8], slips + dt * k3[9],
+                gx + dt * k3[10], ex + dt * k3[11], pssx + dt * k3[12])
         comb = lambda a, b, c, d: dt / 6 * (a + 2 * b + 2 * c + d)
         delta = delta + comb(k1[0], k2[0], k3[0], k4[0])
         omega = omega + comb(k1[1], k2[1], k3[1], k4[1])
@@ -1612,15 +1698,19 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         if any_two:
             epq = epq + comb(k1[5], k2[5], k3[5], k4[5])
             epd = epd + comb(k1[6], k2[6], k3[6], k4[6])
+        if any_sub:
+            e2q = e2q + comb(k1[7], k2[7], k3[7], k4[7])
+            e2d = e2d + comb(k1[8], k2[8], k3[8], k4[8])
         if n_mot:
-            slips = np.clip(slips + comb(k1[7], k2[7], k3[7], k4[7]), 1e-4, 1.0)
-        gx = gx + comb(k1[8], k2[8], k3[8], k4[8])
-        ex = ex + comb(k1[9], k2[9], k3[9], k4[9])
-        pssx = pssx + comb(k1[10], k2[10], k3[10], k4[10])
+            slips = np.clip(slips + comb(k1[9], k2[9], k3[9], k4[9]), 1e-4, 1.0)
+        gx = gx + comb(k1[10], k2[10], k3[10], k4[10])
+        ex = ex + comb(k1[11], k2[11], k3[11], k4[11])
+        pssx = pssx + comb(k1[12], k2[12], k3[12], k4[12])
         # Lag the bus voltages one step for the next voltage-dependent load / GFL
         # shunt (the GFM current limiter converges in-step, so no current lag).
         if dyn and veff is not None:
-            vbus_prev = _bus_voltages(veff, _eint(veff["active"], delta, efield, epq, epd))
+            vbus_prev = _bus_voltages(veff, _eint_sub(
+                veff["active"], delta, efield, epq, epd, e2q, e2d, veff["Yred"]))
         t += dt
 
     # Frequency-stability verdict, per island, over the live machines. Flag an

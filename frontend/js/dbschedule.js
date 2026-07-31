@@ -58,13 +58,24 @@ const DBSchedule = {
     if (!comp || !Array.isArray(comp.props.circuits)) return;
     for (const c of comp.props.circuits) if (!c.id) c.id = this._wayId();
   },
+  // [P4] `Number(v) || fallback` treats a legitimately-stored 0 as absent —
+  // unreachable via the UI (the PF input's min="0.05" prevents entering
+  // exactly 0) but a project loaded from JSON/the API client can carry one.
+  // Only lagging (positive) pf is modelled here — a way/board has no leading
+  // mode to select, unlike an inverter's var_mode — so this only fixes the
+  // absent-vs-zero ambiguity, it doesn't add signed-pf support.
+  _pfOr(value, fallback) {
+    const n = Number(value);
+    return (value !== undefined && value !== null && value !== '' && !Number.isNaN(n)) ? n : fallback;
+  },
+
   // Lazy per-circuit power-factor migration for projects predating the PF
   // column: seed each way's pf from the board's existing power_factor so the
   // rollup reproduces the old board value byte-for-byte. Runs before the
   // open-time snapshot, so it never marks the project dirty on its own.
   _ensurePf(comp) {
     if (!comp || !Array.isArray(comp.props.circuits)) return;
-    const fallback = Number(comp.props.power_factor) || 0.85;
+    const fallback = this._pfOr(comp.props.power_factor, 0.85);
     for (const c of comp.props.circuits) {
       if (c.power_factor === undefined || c.power_factor === null || c.power_factor === '') {
         c.power_factor = fallback;
@@ -181,14 +192,14 @@ const DBSchedule = {
     let sumP = 0, sumQ = 0;   // diversified real / reactive VA for the PF rollup
     // A way with no pf yet (legacy project not opened in the editor) inherits
     // the board's current pf, so recompute reproduces the old board value.
-    const pfFallback = Number(comp.props.power_factor) || 0.85;
+    const pfFallback = this._pfOr(comp.props.power_factor, 0.85);
     for (const c of circuits) {
       const va = Number(c.load_va) || 0;
       const df = Number(c.demand_factor) || 1;
       connectedVa += va;
       const d = va * df;
       demandVa += d;
-      const pf = Math.min(1, Math.max(0.05, Number(c.power_factor) || pfFallback));
+      const pf = Math.min(1, Math.max(0.05, this._pfOr(c.power_factor, pfFallback)));
       sumP += d * pf;
       sumQ += d * Math.sqrt(Math.max(0, 1 - pf * pf));
       if (c.poles === '3P' || c.phase === 'RWB') {
@@ -221,7 +232,7 @@ const DBSchedule = {
     // Exact figures for display (props round for the analyses)
     return {
       connectedKva: connectedVa / 1000, demandKva: demandVa / 1000, phaseVa,
-      pf: boardPf !== null ? boardPf : (comp.props.power_factor || 0.85),
+      pf: boardPf !== null ? boardPf : this._pfOr(comp.props.power_factor, 0.85),
     };
   },
 

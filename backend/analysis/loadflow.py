@@ -28,6 +28,15 @@ GS_MISMATCH_TOLERANCE = 1e-5
 # flagging legitimately weak-but-operable buses.
 V_IMPLAUSIBLE_PU = 0.5
 
+# [P4] Below this, a converged energized bus is merely advisory-worthy (not
+# flagged as the low-voltage/collapse root outright): normal operation is
+# ~0.9-1.1 p.u., and a bus that converges lower — while still above
+# V_IMPLAUSIBLE_PU — is usually a genuinely weak feeder or heavy loading, but
+# with leading-pf/compensated loads a true low-voltage root can sit above the
+# 0.5 floor too. The canvas LOW badge already flags this visually; this adds
+# the same signal to the warnings list so it isn't canvas-only.
+V_ADVISORY_PU = 0.9
+
 # Newton-Raphson Jacobian condition-number ceiling. A well-posed power-flow
 # Jacobian is well-conditioned (cond ~ 1e1–1e4); it blows up towards ∞ only when
 # the system is structurally singular (a subnetwork with no voltage reference)
@@ -39,6 +48,17 @@ JACOBIAN_COND_LIMIT = 1e12
 
 # Components that are "transparent" — zero impedance pass-through
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
+
+# [P4] A PV-bus regulating unit (generator / voltage-mode storage inverter)
+# that clamps to its reactive limit and then reverts, repeatedly, is hunting
+# around an operating point exactly at its own Q boundary — each clamp/revert
+# re-seeds NR from a different bus type/injection, and enough cycles can turn
+# an otherwise-solvable case non-convergent. After this many flips (clamp OR
+# revert) a single unit is latched at its current clamped state for the rest
+# of the solve rather than left to keep hunting — a small conservatism (the
+# unit may in reality be able to briefly regulate again) traded for a stable,
+# reportable answer instead of a spurious "did not converge".
+CLAMP_FLIP_LATCH = 4
 
 
 def _is_transparent_and_closed(comp):
@@ -1812,7 +1832,9 @@ def _source_output_mva(comp):
         else:
             s_mva = rated_full * irr
         p = s_mva * abs(pf)
-        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2))
+        # [P3] Signed pf: negative pf absorbs (leading) vars, matching
+        # _inverter_discharge_q and the field's UI range (-1..1).
+        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2)) * (-1.0 if pf < 0 else 1.0)
         return p, q, s_mva, rated_full
     elif comp.type == "wind_turbine":
         rated = comp.props.get("rated_mva", 2.0)
@@ -1822,7 +1844,8 @@ def _source_output_mva(comp):
         rated_full = rated * n_turb
         s_mva = rated_full * wind_pct
         p = s_mva * abs(pf)
-        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2))
+        # [P3] Signed pf: negative pf absorbs (leading) vars.
+        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2)) * (-1.0 if pf < 0 else 1.0)
         return p, q, s_mva, rated_full
     elif comp.type == "battery":
         # Available output only in explicit 'discharging' mode; auto-mode
@@ -1865,17 +1888,26 @@ def _inverter_discharge_q(comp, p_dis, p_already, q_already):
     """Reactive (MVAr) a storage inverter injects for its battery discharge in
     power-factor mode, bounded by the kVA circle it shares with any PV real
     output already committed (`p_already`/`q_already`). Voltage/unity modes inject
-    none here (voltage regulation is handled as a PV bus in the solver loop)."""
+    none here (voltage regulation is handled as a PV bus in the solver loop).
+
+    [P3] Signed pf, matching the q_min/q_max "under-excited (absorbs vars)"
+    convention used for the generator capability box elsewhere in this module:
+    a positive pf supplies (lagging) vars, a negative pf absorbs (leading)
+    them — consistent with the field's UI range (-1..1) and the var_mode
+    tooltip's "supply/absorb reactive power" promise.
+    """
     if _inverter_var_mode(comp) != "power_factor":
         return 0.0
     pf = float(comp.props.get("power_factor", 1.0) or 1.0)
-    if pf <= 0 or pf >= 1:
+    if abs(pf) <= 0 or abs(pf) >= 1:
         return 0.0
-    q_target = p_dis * math.sqrt(max(0.0, 1 - pf ** 2)) / pf
+    q_target = p_dis * math.sqrt(max(0.0, 1 - pf ** 2)) / abs(pf)
+    if pf < 0:
+        q_target = -q_target
     s_rated = _inverter_rating_mva(comp)
     p_total = abs(p_already) + p_dis
-    q_room = math.sqrt(max(0.0, s_rated ** 2 - p_total ** 2)) - abs(q_already)
-    return max(0.0, min(q_target, max(0.0, q_room)))
+    q_room = max(0.0, math.sqrt(max(0.0, s_rated ** 2 - p_total ** 2)) - abs(q_already))
+    return max(-q_room, min(q_target, q_room))
 
 
 def _connected_bus_loads(project: ProjectData) -> dict:
@@ -1954,7 +1986,7 @@ def connected_bus_loads_mvar(project: ProjectData) -> dict:
             if abs(pq[1]) > 1e-12}
 
 
-def _assess_solution(bus_results, converged, iterations, reason=""):
+def _assess_solution(bus_results, converged, iterations, reason="", oscillation_hint=""):
     """Classify a load-flow solution beyond raw convergence, and produce any
     solution-level warnings. Returns (quality: str, warnings: list).
 
@@ -1965,7 +1997,12 @@ def _assess_solution(bus_results, converged, iterations, reason=""):
         as an unhandled solver error (`reason == "singular_jacobian"`);
       • non-convergence — surfaced with an actionable message (an infeasible
         operating point, i.e. load beyond the loadability limit / collapse,
-        looks the same to the solver as any other divergence);
+        looks the same to the solver as any other divergence); [P4] when the
+        run's reactive-limit units flipped clamp state repeatedly beforehand
+        (`oscillation_hint`, built by the caller from `CLAMP_FLIP_LATCH`
+        activity), that is named as the likely cause instead of leaving the
+        generic loadability message to misdirect a case that a wider Q range
+        would actually fix;
       • a converged but implausibly low-voltage root — a mathematically valid
         power-flow solution on the lower P-V branch that must not be handed back
         as a normal operating point (the "clean-looking but wrong" case).
@@ -1981,6 +2018,17 @@ def _assess_solution(bus_results, converged, iterations, reason=""):
                          "boundary. Check that every energized island has one "
                          "swing/reference source and is not loaded to its "
                          "collapse point."))]
+        if oscillation_hint:
+            return "non_converged", [LoadFlowWarning(
+                elementId="", element_name="Load Flow",
+                message=(f"Load flow did not converge after {iterations} iterations — "
+                         f"results are unreliable. Reactive-limit clamp/revert "
+                         f"oscillation was observed during the solve ({oscillation_hint}) "
+                         "and is the likely cause, not a loadability/collapse limit: "
+                         "the unit kept hunting between voltage-regulating and "
+                         "clamped-Q states without settling. Widen its Q range, "
+                         "check its voltage setpoint against the network it's "
+                         "regulating, or fix its output at a known value."))]
         return "non_converged", [LoadFlowWarning(
             elementId="", element_name="Load Flow",
             message=(f"Load flow did not converge after {iterations} iterations — "
@@ -2003,6 +2051,21 @@ def _assess_solution(bus_results, converged, iterations, reason=""):
                      "low-voltage/collapse root or an infeasible operating point, not a "
                      "normal operating solution. Verify source strength and loading; the "
                      "network may be past its loadability limit."))]
+
+    advisories = [(bid, b) for bid, b in bus_results.items()
+                  if getattr(b, "energized", True)
+                  and V_IMPLAUSIBLE_PU <= b.voltage_pu < V_ADVISORY_PU]
+    if advisories:
+        worst_id, worst = min(advisories, key=lambda kv: kv[1].voltage_pu)
+        extra = (f" ({len(advisories)} energized buses below {V_ADVISORY_PU:.2f} p.u.)"
+                 if len(advisories) > 1 else "")
+        return "ok", [LoadFlowWarning(
+            elementId=worst_id, element_name=worst.bus_name,
+            message=(f"Advisory: '{worst.bus_name}' converged at {worst.voltage_pu:.3f} "
+                     f"p.u.{extra} — below typical operating range (~0.9-1.1 p.u.), though "
+                     f"above the {V_IMPLAUSIBLE_PU:.2f} p.u. floor this tool treats as an "
+                     "implausible/collapse root. Usually a genuinely weak feeder or heavy "
+                     "loading; verify source strength if unexpected."))]
 
     return "ok", []
 
@@ -2392,7 +2455,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 # sum their capability into a single unit.
                 if bt == "PV":
                     cp = comp.props
-                    rated_mva = float(cp.get("rated_mva", 0) or 0)
+                    # [P5] Match _source_output_mva's rated_mva default (10):
+                    # this used to default to 0 here — a zero-Q capability box
+                    # that instant-clamps to 0 MVAr — for an API-only payload
+                    # that omits the prop (the frontend always writes it).
+                    rated_mva = float(cp.get("rated_mva", 10) or 0)
                     pf = float(cp.get("power_factor", 0.85) or 0.85)
                     q_cap = rated_mva * math.sqrt(max(0.0, 1 - pf ** 2))
                     # An explicit 0 is a valid limit (unity-pf machine), so only
@@ -2404,7 +2471,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     if ge is None:
                         ge = {"i": i, "id": comp.id, "name": cp.get("name", comp.id),
                               "q_max": 0.0, "q_min": 0.0, "vset": vset if vset > 0 else 1.0,
-                              "clamped": None, "inj_q": 0.0}
+                              "clamped": None, "inj_q": 0.0, "flips": 0, "latched": False}
                         gen_pv_units[i] = ge
                     ge["q_max"] += q_max
                     ge["q_min"] += q_min
@@ -2427,7 +2494,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                         if ibr is None:
                             ibr = {"i": i, "name": comp.props.get("name", comp.id),
                                    "s_rated": 0.0, "vset": vset,
-                                   "clamped": None, "inj_q": 0.0, "ids": []}
+                                   "clamped": None, "inj_q": 0.0, "ids": [],
+                                   "flips": 0, "latched": False}
                             ibr_pv_units[i] = ibr
                         ibr["s_rated"] += s_rated
                         ibr["ids"].append(comp.id)
@@ -2554,6 +2622,45 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         "gen_buses": set(gen_pv_units),
         "ibr_ids": {cid for u in ibr_pv_units.values() for cid in u["ids"]},
     }
+    def _demanded_q(bi, exclude):
+        """[P3] Q (MVAr) bus `bi`'s PV constraint is demanding specifically of
+        the regulating unit `exclude`, on a "mixed" bus that also carries
+        OTHER co-located regulating units. `S_reg[bi].imag*base_mva +
+        bus_load_q_mvar[bi]` alone charges the *entire* net bus injection to
+        whichever single unit asks — correct only when it's the sole
+        regulator at that node. When another co-located unit (svc/gen/ibr)
+        has ALREADY clamped to a fixed Q at this bus in an earlier pass, its
+        fixed `inj_q` is a real, solved contribution baked into `S_reg[bi]`
+        from here on (the bus is PQ from that point, so this IS enforced,
+        unlike a merely-*scheduled* pf-mode Q — see the note below) and must
+        be netted out of every other still-regulating unit's own demanded-Q
+        check, or its Q gets double-attributed and the unit clamps too soon.
+
+        NOT netted here: a co-located, non-regulating DISPATCHED source's own
+        *scheduled* Q (e.g. a pf-mode solar/battery inverter sharing a bus
+        with a still-PV-regulating generator). Its `dispatch["injections"]`
+        entry is carried in `Q_spec`, but this solver's NR formulation never
+        enforces the Q mismatch at a PV bus (`_newton_raphson` includes `dQ`
+        only for `pq_idx`) — so while the bus stays PV, that scheduled Q is
+        inert and never actually flows; S_reg[bi] already reflects the WHOLE
+        true burden landing on the regulator. Subtracting the scheduled
+        figure anyway would credit Q the co-located source never delivered,
+        letting the regulator under-report and stay unclamped past its real
+        limit — verified in-engine to reproduce a silent, un-warned,
+        physically-impossible held setpoint (the same failure class as the
+        P1 post-clamp double-count, in the opposite direction). Properly
+        crediting a co-located dispatched source would require making its
+        scheduled Q a real enforced injection at a PV bus — an architecture
+        change beyond this fix's scope.
+        """
+        total = S_reg[bi].imag * base_mva + bus_load_q_mvar[bi]
+        for group in (svc_units, gen_pv_units.values(), ibr_pv_units.values()):
+            for other in group:
+                if other is exclude or other["i"] != bi or other["clamped"] is None:
+                    continue
+                total -= other["inj_q"]
+        return total
+
     # Outer loop enforces reactive limits on voltage-regulating buses: a
     # SVC/STATCOM or a PV generator that would exceed its Q range is clamped to
     # the limit and switched from a voltage-holding PV bus to a fixed-Q PQ
@@ -2646,8 +2753,9 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             bi = u["i"]
             vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
             if u["clamped"] is None:
-                # Reactive output the PV constraint is currently demanding.
-                q_svc = S_reg[bi].imag * base_mva + bus_load_q_mvar[bi]
+                # Reactive output the PV constraint is currently demanding —
+                # see _demanded_q for the [P3] mixed-bus netting.
+                q_svc = _demanded_q(bi, u)
                 v2 = vmag * vmag if u["device"] == "svc" else 1.0
                 if q_svc > u["q_max"] * v2 + 1e-6:
                     u["clamped"], q_nom = "cap", u["q_max"]
@@ -2678,15 +2786,18 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             bi = u["i"]
             if bus_types[bi] == 2:
                 continue   # generator is this island's swing — no Q constraint
+            if u["latched"]:
+                continue   # [P4] hunting too many times — held at its clamp
             vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
             if u["clamped"] is None:
-                q_gen = S_reg[bi].imag * base_mva + bus_load_q_mvar[bi]
+                q_gen = _demanded_q(bi, u)   # [P3] mixed-bus netting
                 if q_gen > u["q_max"] + 1e-6:
                     u["clamped"], q_lim = "over", u["q_max"]
                 elif q_gen < u["q_min"] - 1e-6:
                     u["clamped"], q_lim = "under", u["q_min"]
                 else:
                     continue
+                u["flips"] += 1
                 bus_types[bi] = 0                # PV → PQ at the reactive limit
                 Q_base[bi] += (q_lim - u["inj_q"]) / base_mva
                 u["inj_q"] = q_lim
@@ -2699,6 +2810,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 # needs to absorb less.
                 if ((u["clamped"] == "over" and vmag > u["vset"] + 1e-6) or
                         (u["clamped"] == "under" and vmag < u["vset"] - 1e-6)):
+                    if u["flips"] >= CLAMP_FLIP_LATCH:
+                        u["latched"] = True   # [P4] stop hunting; hold this clamp
+                        continue
+                    u["flips"] += 1
                     Q_base[bi] -= u["inj_q"] / base_mva
                     u["inj_q"] = 0.0
                     u["clamped"] = None
@@ -2715,19 +2830,22 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             bi = u["i"]
             if bus_types[bi] == 2:
                 continue
+            if u["latched"]:
+                continue   # [P4] hunting too many times — held at its clamp
             vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
             p_inv = sum(dispatch["dispatched_by_comp"].get(cid, (0.0, 0.0))[0]
                         for cid in u["ids"])
             q_cap = math.sqrt(max(0.0, u["s_rated"] ** 2
                                   - min(abs(p_inv), u["s_rated"]) ** 2))
             if u["clamped"] is None:
-                q_ibr = S_reg[bi].imag * base_mva + bus_load_q_mvar[bi]
+                q_ibr = _demanded_q(bi, u)   # [P3] mixed-bus netting
                 if q_ibr > q_cap + 1e-6:
                     u["clamped"], q_lim = "cap", q_cap
                 elif q_ibr < -q_cap - 1e-6:
                     u["clamped"], q_lim = "ind", -q_cap
                 else:
                     continue
+                u["flips"] += 1
                 bus_types[bi] = 0                # PV → PQ at the reactive limit
                 Q_base[bi] += (q_lim - u["inj_q"]) / base_mva
                 u["inj_q"] = q_lim
@@ -2735,6 +2853,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             else:
                 if ((u["clamped"] == "cap" and vmag > u["vset"] + 1e-6) or
                         (u["clamped"] == "ind" and vmag < u["vset"] - 1e-6)):
+                    if u["flips"] >= CLAMP_FLIP_LATCH:
+                        u["latched"] = True   # [P4] stop hunting; hold this clamp
+                        continue
+                    u["flips"] += 1
                     Q_base[bi] -= u["inj_q"] / base_mva
                     u["inj_q"] = 0.0
                     u["clamped"] = None
@@ -3296,12 +3418,15 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     for u in gen_pv_units.values():
         if u["clamped"] is not None:
             _lim = "over-excitation (Q_max)" if u["clamped"] == "over" else "under-excitation (Q_min)"
+            _latch_note = (f" [P4] Clamp/revert oscillated {u['flips']} times — "
+                            "latched at this clamp for the rest of the solve rather "
+                            "than left hunting." if u["latched"] else "")
             voltage_warnings.append(LoadFlowWarning(
                 elementId=u["id"],
                 element_name=str(u["name"]),
                 message=(f"Generator hit its reactive limit at {_lim}: pinned at "
                          f"{round(u['inj_q'], 2)} MVAr and no longer holding "
-                         f"{round(u['vset'], 3)} p.u. — bus voltage floats."),
+                         f"{round(u['vset'], 3)} p.u. — bus voltage floats.{_latch_note}"),
             ))
 
     # Voltage-regulating storage inverters that hit their kVA capability circle:
@@ -3311,12 +3436,16 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         if u["clamped"] is not None:
             _lim = ("capacitive limit (supplying vars)" if u["clamped"] == "cap"
                     else "inductive limit (absorbing vars)")
+            _latch_note = (f" [P4] Clamp/revert oscillated {u['flips']} times — "
+                            "latched at this clamp for the rest of the solve rather "
+                            "than left hunting." if u["latched"] else "")
             voltage_warnings.append(LoadFlowWarning(
                 elementId=u["ids"][0],
                 element_name=str(u["name"]),
                 message=(f"Inverter hit its reactive capability at the {_lim}: "
                          f"pinned at {round(u['inj_q'], 2)} MVAr and no longer "
-                         f"holding {round(u['vset'], 3)} p.u. — bus voltage floats."),
+                         f"holding {round(u['vset'], 3)} p.u. — bus voltage floats."
+                         f"{_latch_note}"),
             ))
 
     warned_ids = set()  # Avoid duplicate warnings for the same component
@@ -3500,11 +3629,19 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     for br in branch_results:
         br.pf = round(abs(br.p_mw) / br.s_mva, 3) if br.s_mva > 1e-9 else 0.0
 
+    # [P4] Name reactive-limit clamp/revert oscillation as the likely
+    # non-convergence cause when it happened, instead of a generic
+    # loadability message. Any unit that actually flipped (clamped or
+    # reverted at least once) counts, whether or not it went on to latch.
+    _hunted = [u["name"] for u in list(gen_pv_units.values()) + list(ibr_pv_units.values())
+               if u["flips"] >= 2]
+    oscillation_hint = ", ".join(str(n) for n in _hunted) if _hunted else ""
+
     # Classify the solution (non-convergence / low-voltage-collapse root) and
     # surface it at the top of the warnings so a suspect-but-converged result
     # isn't mistaken for a valid operating point.
     solution_quality, solution_warnings = _assess_solution(
-        bus_results, converged, iterations, solve_reason)
+        bus_results, converged, iterations, solve_reason, oscillation_hint)
     voltage_warnings = solution_warnings + voltage_warnings
 
     return LoadFlowResults(
@@ -3619,7 +3756,17 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
         # and stepping on that solve would fabricate a meaningless "solution".
         # np.linalg.cond returns inf for an exactly singular J (it does not
         # raise), so this also subsumes the LinAlgError case; the except below
-        # stays as a backstop.
+        # stays as a backstop. [P5] This is an SVD, same asymptotic cost as
+        # the solve() below it — a deliberate per-iteration trade-off, not an
+        # oversight: `dx`'s own isfinite() check (further down) only catches
+        # an exactly-singular solve; a merely ILL-conditioned J can return a
+        # finite but numerically-garbage dx that would silently corrupt NR's
+        # iteration without this check. That cost compounds across the many
+        # repeated solves in voltage-stability continuation and contingency
+        # N-1/N-2 screening; not optimized further without a benchmark-backed
+        # case, since weakening it reopens the exact defect this was added to
+        # close (see the git history for "trap singular / near-singular
+        # Jacobian and classify it").
         if not np.all(np.isfinite(J)) or np.linalg.cond(J) > JACOBIAN_COND_LIMIT:
             reason = "singular_jacobian"
             break

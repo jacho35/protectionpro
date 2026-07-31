@@ -2,8 +2,8 @@
 
 Status of the classical time-domain rotor-angle engine
 (`backend/analysis/transient_stability.py`) and what remains. Last updated
-2026-07-31 (after unbalanced dynamic faults; next up = sub-transient dynamics /
-more protection functions).
+2026-07-31 (after sub-transient (d/q″) machine dynamics; next up = more
+protection functions).
 
 ## Implemented
 
@@ -125,13 +125,49 @@ island** against that island's own centre of inertia.
   the fault disturbance setup, threaded through save/load and the saved-case
   summary label. (`transient_stability.py`, `fault.py`, `transient.js`,
   `test_transient_stability.py`)
+- **Sub-transient (d/q″) machine dynamics** — opt-in refinement on top of
+  `two_axis` (`subtransient_on`, requires `machine_model: two_axis`). Real
+  machines have `X″d ≠ X″q` (saliency), which breaks the two-axis model's
+  equal-transient-reactance simplification that lets a machine sit in the
+  network's Kron reduction as one isotropic complex impedance. Rather than
+  reformulate that reduction (`Yred`, fixed per topology segment and relied on
+  by the fast path / CCT search / dynamic re-reduction / GFM current limiter),
+  sub-transient EMFs `E″q`/`E″d` are two more per-machine RK4 states that relax
+  toward the existing `E′q`/`E′d` transient states:
+  ```
+  T″do·dE″q/dt = E′q − E″q − (X′d − X″d)·Id
+  T″qo·dE″d/dt = −E″d + E′d + (X′q − X″q)·Iq
+  ```
+  and are converted to an equivalent "voltage behind X′d" EMF each step
+  (`E′q_eff = E″q + (X′d−X″d)·Id`, `E′d_eff = E″d − (X′q−X″q)·Iq`) via a new
+  closure `_eint_sub` — a short (`SUBTRANS_ITERS=3`) in-step Gauss-Seidel
+  fixed-point loop (no `Yred` rebuild, a few extra matvecs), mirroring the
+  existing GFM current-limiter's in-step iteration pattern. `_eint_sub` is a
+  drop-in replacement for `_eint` at every live-EMF call site, short-circuiting
+  to `_eint` with byte-identical numerics whenever no active machine has the
+  feature on. Reuses the existing `xd_pp` prop (previously read only by the
+  steady-state fault engine); adds `xq_pp` (defaults to `xd_pp`, round-rotor
+  fallback), `tdo_pp`, `tqo_pp` (default 0.03 s, floored at 3·dt as an
+  explicit-RK4 stability guard). Verified empirically that the saliency
+  correction has a real, continuous, monotonic effect: sweeping `Xq″` from
+  0.6×–1.4×`Xd″` at a fixed clearing time moved the first-swing peak rotor
+  angle continuously (51.06°→51.68° in the SMIB fixture) — CCT itself proved
+  too coarse a metric to assert this against directly (it can plateau across a
+  parameter range near a marginal case even while the swing trajectory moves
+  continuously). +5 tests (`TestSubTransient`): pre-fault-equilibrium no-drift,
+  `subtransient_on: off` reproduces plain two-axis exactly, an AVR-on smoke
+  test, the saliency-changes-the-swing check above, and an `Xd″ > X′d` clamp
+  doesn't crash. Full backend suite 677 pass (81/81 in
+  `test_transient_stability.py`). Frontend: `constants.js` gained a
+  `Sub-transient Dynamics` toggle in the generator's Stability section (shown
+  only under `machine_model: two_axis`) plus `Xq″`/`T″do`/`T″qo` fields (shown
+  only when the toggle is on); `properties.js`'s conditional re-render trigger
+  list gained `subtransient_on`. (`transient_stability.py`, `constants.js`,
+  `properties.js`, `test_transient_stability.py`)
 
-## Next up — sub-transient dynamics / more protection functions
+## Next up — more protection functions
 
-1. **Sub-transient dynamics** (d/q″: X″d/X″q, T″do/T″qo). Refinement over the
-   two-axis model for the first few cycles; X″q ≠ X″d breaks the single-voltage-
-   behind-X′d simplification, so it needs a saliency treatment in the reduction.
-2. **More protection functions.** ROCOF (df/dt) tripping, out-of-step / loss-of-
+1. **More protection functions.** ROCOF (df/dt) tripping, out-of-step / loss-of-
    synchronism relays, over-current / distance, generator over-excitation;
    auto-reclosing. IBR ROCOF/vector-shift anti-islanding is a natural extension
    of the ride-through trips now modelled.
@@ -159,6 +195,7 @@ the engine can also reproduce OEM-matchable step responses (diesel dead-time,
 hydro water-hammer, steam reheat lag) and has its first *oscillation-damping*
 capability. With **unbalanced (SLG/LL/LLG) dynamic faults** now in place — SLG
 being the dominant real-world fault type — the engine's remaining genuine
-*capability* gap is closed; everything left (see *Next up*) is an accuracy
-refinement (sub-transient dynamics) or additional protection functions, not a
-missing fault/disturbance type.
+*capability* gap is closed. With **sub-transient (d/q″) machine dynamics** now
+in place, the machine model's own accuracy refinements are done too; everything
+left (see *Next up*) is additional protection functions, not a missing
+fault/disturbance type or machine-model fidelity gap.

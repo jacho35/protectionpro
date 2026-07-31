@@ -876,10 +876,18 @@ const Properties = {
     // Prime mover selection auto-populates the transient-stability inertia H
     // with a representative value for that machine class (recip sets lowest,
     // steam turbo-sets highest). 'other' has no entry, so H is left untouched.
+    // [P4] Only while H is still at an auto-populated value — once the user
+    // hand-edits inertia_h_s directly (below), _inertiaAutoSet is cleared and
+    // a later prime_mover change no longer silently clobbers their figure.
     if (field === 'prime_mover' && comp.type === 'generator' &&
-        PRIME_MOVER_INERTIA_H[value] !== undefined) {
+        PRIME_MOVER_INERTIA_H[value] !== undefined &&
+        comp.props._inertiaAutoSet !== false) {
       comp.props.inertia_h_s = PRIME_MOVER_INERTIA_H[value];
+      comp.props._inertiaAutoSet = true;
       this.show(comp.id);
+    }
+    if (field === 'inertia_h_s' && comp.type === 'generator') {
+      comp.props._inertiaAutoSet = false;
     }
 
     // Soil-type preset fills the grounding soil resistivity with a
@@ -919,7 +927,8 @@ const Properties = {
     if (['vector_group', 'grounding_hv', 'grounding_lv', 'earthing_system',
          'voltage_lv_kv', 'voltage_kv', 'cb_type', 'inverter_type', 'pv_array_mode',
          'ibr_ctrl', 'turbine_type', 'construction', 'var_mode', 'two_layer_soil',
-         'machine_model', 'gov_mode', 'avr_mode', 'gov_model', 'exc_model', 'pss_on'].includes(field)) {
+         'machine_model', 'gov_mode', 'avr_mode', 'gov_model', 'exc_model', 'pss_on',
+         'subtransient_on'].includes(field)) {
       this.show(comp.id);
     }
 

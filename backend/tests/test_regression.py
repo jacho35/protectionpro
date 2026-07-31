@@ -2574,6 +2574,40 @@ class TestUnbalancedLoadFlow:
         assert bus_u.vuf_pct < 0.1
         assert bus_u.va_pu == pytest.approx(bus_b.voltage_pu, abs=0.02)
 
+    def test_non_convergence_names_the_reason(self, monkeypatch):
+        """[P5] A non-converged unbalanced solve must say WHY (singular
+        Jacobian vs ordinary non-convergence), not return silently — the
+        solver's classification was previously captured and discarded."""
+        import backend.analysis.unbalanced_loadflow as ulf
+
+        load = _comp("static_load-1", "static_load", {
+            "name": "L1", "rated_kw": 100.0, "power_factor": 0.9,
+            "voltage_kv": 11.0, "phase_connection": "3P",
+        })
+        proj = _utility_bus_project(extra_components=[load],
+                                    extra_wires=[_wire("w2", "bus-1", "static_load-1")])
+
+        real_solve = ulf.solve_with_islands
+
+        def fake_singular(Y, P, Q, V, bt, dead, method):
+            V_out, _c, it, _r = real_solve(Y, P, Q, V, bt, dead, method)
+            return V_out, False, it, "singular_jacobian"
+
+        monkeypatch.setattr(ulf, "solve_with_islands", fake_singular)
+        res = ulf.run_unbalanced_load_flow(proj)
+        assert not res.converged
+        assert res.warnings and "singular" in res.warnings[0].message.lower()
+
+        def fake_maxiter(Y, P, Q, V, bt, dead, method):
+            V_out, _c, it, _r = real_solve(Y, P, Q, V, bt, dead, method)
+            return V_out, False, it, "max_iterations"
+
+        monkeypatch.setattr(ulf, "solve_with_islands", fake_maxiter)
+        res2 = ulf.run_unbalanced_load_flow(proj)
+        assert not res2.converged
+        assert res2.warnings and "did not converge" in res2.warnings[0].message
+        assert "singular" not in res2.warnings[0].message.lower()
+
 
 # ── ADMD / NRS 034-1 load estimation ─────────────────────────────────────────
 
@@ -4468,10 +4502,31 @@ class TestSolutionQuality:
         assert warns and warns[0].elementId == "b2" and "0.420" in warns[0].message
 
     def test_assess_does_not_flag_weak_but_operable(self):
-        """A legitimately weak-but-operable bus (above the floor) is NOT flagged
-        — the gate must not false-positive on a valid low-voltage operating point."""
+        """A legitimately weak-but-operable bus (above the floor) is NOT
+        classified as a collapse/low-voltage-root defect — the gate must not
+        false-positive on a valid low-voltage operating point. [P4] It now
+        does carry an advisory (quality stays 'ok', not an error)."""
         q, warns = _assess_solution({"b1": self._bus("b1", 0.72)}, True, 6)
+        assert q == "ok"
+        assert warns and warns[0].elementId == "b1" and "Advisory" in warns[0].message
+
+    def test_assess_advisory_band_boundaries(self):
+        """[P4] The 0.5-0.9 p.u. advisory band: a bus at/above 0.9 gets no
+        advisory (normal range); one below 0.9 down to the 0.5 floor does."""
+        q, warns = _assess_solution({"b1": self._bus("b1", 0.9)}, True, 6)
         assert q == "ok" and warns == []
+        q, warns = _assess_solution({"b1": self._bus("b1", 0.55)}, True, 6)
+        assert q == "ok" and warns and "0.550" in warns[0].message
+
+    def test_assess_oscillation_hint_names_reactive_limit(self):
+        """[P4] When the caller reports reactive-limit clamp/revert activity,
+        a non-converged result names that as the likely cause instead of the
+        generic loadability message."""
+        q, warns = _assess_solution({"b1": self._bus("b1", 0.9)}, False, 100,
+                                     oscillation_hint="Gen-1")
+        assert q == "non_converged"
+        assert warns and "oscillation" in warns[0].message and "Gen-1" in warns[0].message
+        assert "hunting" in warns[0].message
 
     def test_assess_ignores_deenergized_bus(self):
         """A de-energized (0 V, sourceless-island) bus is expected and must not

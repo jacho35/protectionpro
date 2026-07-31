@@ -172,13 +172,34 @@ def _overhead_project(extra_cable_props=None):
 
 
 class TestOverheadLineSizing:
-    def test_overhead_uses_in_air_rating_without_derating(self):
-        # The library's in-air rating is used directly — no IEC 60364-5-52
-        # installation/insulation derating (which is for buried/enclosed cables).
+    def test_overhead_uses_in_air_rating_without_install_derating(self):
+        # No IEC 60364-5-52 installation-method derating (that table is for
+        # buried/enclosed cables) — at the library's own 40°C rated ambient,
+        # the in-air rating is reproduced exactly.
         c = run_cable_sizing(_overhead_project(), install_method="buried",
-                             ambient_temp_c=45)["cables"][0]
+                             ambient_temp_c=40)["cables"][0]
         assert c["derated_ampacity_a"] == 405.0
         assert c["thermal_ok"]
+
+    def test_overhead_ambient_scaler(self):
+        # [P4] A run ambient above the library's 40°C rated ambient DOES
+        # derate an overhead conductor (it previously didn't at all) — same
+        # sqrt law as insulated cables, referenced to 40°C/75°C instead of
+        # 30°C/insulation-max. A cooler-than-rated ambient credits headroom
+        # the same way the insulated-cable branch already does.
+        hot = run_cable_sizing(_overhead_project(), ambient_temp_c=45)["cables"][0]
+        assert hot["derated_ampacity_a"] == pytest.approx(405.0 * math.sqrt(30 / 35), abs=0.1)
+        assert hot["derated_ampacity_a"] < 405.0
+        cool = run_cable_sizing(_overhead_project(), ambient_temp_c=20)["cables"][0]
+        assert cool["derated_ampacity_a"] > 405.0
+
+    def test_overhead_ambient_at_conductor_max_temp_zeroes_ampacity(self):
+        # [P4] Ambient at/above the 75°C conductor max temp leaves no usable
+        # ampacity, mirroring the insulated-cable branch's same-condition fail.
+        c = run_cable_sizing(_overhead_project(), ambient_temp_c=75)["cables"][0]
+        assert c["derated_ampacity_a"] == 0
+        assert not c["thermal_ok"] and c["status"] == "fail"
+        assert "75" in c["issues"][0] and "no usable ampacity" in c["issues"][0]
 
     def test_overhead_resolves_bare_aluminium(self):
         from backend.analysis.cable_sizing import _get_cable_props
@@ -192,6 +213,22 @@ class TestOverheadLineSizing:
         # check runs, it just doesn't apply cable derating.
         c = run_cable_sizing(_overhead_project({"rated_amps": 40}))["cables"][0]
         assert not c["thermal_ok"] and c["status"] == "fail"
+
+    def test_overhead_recommend_on_fail_suggests_overhead_conductor(self):
+        # [P4] A failing overhead line's recommendation must name a real
+        # overhead conductor from STANDARD_OVERHEAD_LINES, not "no standard
+        # cable found" (STANDARD_CABLES has no BARE entries to match).
+        c = run_cable_sizing(_overhead_project({"rated_amps": 40}))["cables"][0]
+        assert c["status"] == "fail"
+        assert "no standard cable found" not in c["recommended_cable"]
+        assert c["recommended_cable"] and "mm²" in c["recommended_cable"]
+
+    def test_find_recommended_cable_overhead_names_codeword(self):
+        from backend.analysis.cable_sizing import _find_recommended_cable
+        rec = _find_recommended_cable("Al", "BARE", 11, 90, overhead=True)
+        assert rec is not None
+        assert rec["size_mm2"] == 100  # ACSR Dog is the next size >= 90 mm²
+        assert rec["name"] == "ACSR Dog (100 mm²)"
 
 
 # ── #6 PV-bus generator solved reactive ──────────────────────────────────

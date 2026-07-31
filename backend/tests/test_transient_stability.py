@@ -605,6 +605,88 @@ class TestTwoAxis:
         assert r["cct_s"] is not None and r["curves"] is not None
 
 
+class TestSubTransient:
+    """Sub-transient (d/q'') dynamics — opt-in refinement on top of two-axis.
+    E''q/E''d relax toward E'q/E'd and are folded into the network EMF each
+    step via an in-step fixed-point saliency (X''d != X''q) correction."""
+
+    def _smib(self, sub=None, xq_pp=None, xd_pp=0.15, tdo_pp=0.03, tqo_pp=0.03, avr="on"):
+        g = {"name": "G1", "rated_mva": 100, "voltage_kv": 11, "xd_p": 0.3,
+             "xd_pp": xd_pp, "x_r_ratio": 1000, "inertia_h_s": 3.5, "damping_pu": 0,
+             "dispatch_mode": "must_run", "gov_mode": "none", "avr_mode": avr,
+             "machine_model": "two_axis", "xd": 1.8, "xq": 1.7, "tdo_p": 6.0, "tqo_p": 0.4}
+        if sub is not None:
+            g["subtransient_on"] = sub
+            g["tdo_pp"] = tdo_pp
+            g["tqo_pp"] = tqo_pp
+            if xq_pp is not None:
+                g["xq_pp"] = xq_pp
+        return ProjectData(projectName="s", baseMVA=100.0, frequency=50, components=[
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 1e7, "x_r_ratio": 1000}),
+            _c("bi", "bus", {"name": "INF", "voltage_kv": 11}),
+            _c("ln", "cable", {"name": "L", "voltage_kv": 11, "r_per_km": 0.0,
+                               "x_per_km": 0.3 * (11 ** 2 / 100), "length_km": 1}),
+            _c("bg", "bus", {"name": "GEN", "voltage_kv": 11}),
+            _c("g1", "generator", g),
+            _c("ld", "static_load", {"name": "LD", "voltage_kv": 11, "rated_kva": 60000, "power_factor": 1.0}),
+        ], wires=[_w("w1", "util", "bi"), _w("w2", "bi", "ln"), _w("w3", "ln", "bg"),
+                  _w("w4", "bg", "g1"), _w("w5", "bg", "ld")])
+
+    def _peak_angle(self, project, tc=0.3):
+        r = run_transient_stability(project, {"type": "fault", "bus": "bg", "clear_time_s": tc,
+                                              "find_cct": False, "t_end_s": 3})
+        gi = r["curves"]["machines"].index("G1")
+        return max(r["curves"]["delta_deg"][gi])
+
+    def test_equilibrium_no_drift(self):
+        # a sub-transient machine at a 0% load step must hold its pre-fault
+        # angle — proves e2q0/e2d0's equilibrium derivation is exact.
+        r = run_transient_stability(self._smib(sub="on", xq_pp=0.21),
+                                    {"type": "load_step", "element": "ld",
+                                     "delta_pct": 0, "time_s": 1, "t_end_s": 5})
+        gi = r["curves"]["machines"].index("G1")
+        dd = r["curves"]["delta_deg"][gi]
+        assert max(abs(x - dd[0]) for x in dd) < 0.05
+
+    def test_default_off_matches_two_axis_exactly(self):
+        # subtransient_on left OFF must reproduce a plain two-axis project's
+        # CCT exactly, even with unrelated sub-transient fields present and
+        # set to values that would matter a lot if accidentally read.
+        plain = run_transient_stability(self._smib(sub=None),
+                                        {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
+                                         "find_cct": True, "t_end_s": 5})["cct_s"]
+        off = run_transient_stability(self._smib(sub="off", xq_pp=0.4, tdo_pp=0.01, tqo_pp=0.01),
+                                      {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
+                                       "find_cct": True, "t_end_s": 5})["cct_s"]
+        assert plain is not None and off == plain
+
+    def test_two_axis_runs_with_avr(self):
+        r = run_transient_stability(self._smib(sub="on", xq_pp=0.21, avr="on"),
+                                    {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
+                                     "find_cct": True, "t_end_s": 5})
+        assert r["cct_s"] is not None and r["curves"] is not None
+
+    def test_saliency_changes_the_swing(self):
+        # Fixed Xd'', two Xq'' values (isotropic Xq''=Xd'' vs a salient-pole-
+        # typical 1.4x split) at the SAME clearing time: the peak first-swing
+        # angle must differ beyond numerical noise, proving the in-step
+        # fixed-point saliency correction has a real, non-trivial effect
+        # rather than silently collapsing to the isotropic case. (CCT itself
+        # is too coarse a metric near a near-marginal case — it can plateau
+        # across a parameter range even though the swing trajectory moves
+        # continuously, so the peak angle is used directly.)
+        iso = self._peak_angle(self._smib(sub="on", xq_pp=0.15))
+        sal = self._peak_angle(self._smib(sub="on", xq_pp=0.21))
+        assert abs(sal - iso) > 0.1
+
+    def test_clamp_enforces_xpp_below_xp(self):
+        # xd_pp set above xd_p must clamp rather than blow up / crash.
+        r = run_transient_stability(self._smib(sub="on", xd_pp=0.5, tdo_pp=0.03, tqo_pp=0.03),
+                                    {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
+                                     "find_cct": True, "t_end_s": 5})
+        assert r["cct_s"] is not None and r["curves"] is not None
+
+
 class TestGovernorModelEquilibrium:
     """Unit-level check that every advanced governor model's algebraic Pm
     output holds exactly at Pm0 (zero derivative) when every gx slot equals

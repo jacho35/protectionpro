@@ -637,7 +637,7 @@ def run_unbalanced_load_flow(
             P1[bus_i] -= p_pu
             Q1[bus_i] -= q_pu
 
-    V1, converged, iterations, _solve_reason = solve_with_islands(
+    V1, converged, iterations, solve_reason = solve_with_islands(
         Y1, P1, Q1, V_spec, bus_types, dispatch["dead_idx"], method)
 
     # ── Compute sequence current injections from unbalanced loads ──
@@ -886,6 +886,30 @@ def run_unbalanced_load_flow(
     VUF_LIMIT = 2.0   # IEC 61000-3-13 limit for industrial systems
     warnings: list[LoadFlowWarning] = []
     warnings.extend(dispatch["warnings"])
+    # [P5] Unlike the balanced engine (_assess_solution), this schema has no
+    # solution_quality field — but a bare `converged=False` with no warning
+    # at all left a non-converged unbalanced study silent about WHY, and
+    # unable to distinguish a singular/near-singular Jacobian (structural —
+    # e.g. an island with no reference) from ordinary non-convergence (an
+    # infeasible operating point). `solve_reason` was already returned by
+    # `solve_with_islands` and previously discarded.
+    if not converged:
+        if solve_reason == "singular_jacobian":
+            warnings.insert(0, LoadFlowWarning(
+                elementId="", element_name="Unbalanced Load Flow",
+                message=("Unbalanced load flow could not solve: the positive-"
+                         "sequence Jacobian is singular. The network is "
+                         "structurally under-determined (a subnetwork with no "
+                         "voltage reference / all-swing island) or sitting "
+                         "exactly on the voltage-collapse boundary.")))
+        else:
+            warnings.insert(0, LoadFlowWarning(
+                elementId="", element_name="Unbalanced Load Flow",
+                message=(f"Unbalanced load flow did not converge after "
+                         f"{iterations} iterations — results are unreliable. "
+                         "The operating point may be infeasible: load beyond "
+                         "the network's loadability limit, a source too weak "
+                         "for the demand, or an overloaded transformer.")))
     # [R3-1] The unbalanced engine calls the sequence solver directly and has
     # no generator-capability registration, so a user-labelled PV bus holds
     # its voltage with UNBOUNDED reactive power (the balanced engine's

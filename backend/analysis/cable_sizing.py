@@ -106,6 +106,35 @@ STANDARD_CABLES = [
     {"id": "cu_pvc_300_lv", "conductor": "Cu", "insulation": "PVC", "size_mm2": 300, "voltage_kv": 0.4, "r_per_km": 0.0601, "x_per_km": 0.066, "rated_amps": 453},
 ]
 
+# [P4] Backend mirror of frontend/js/constants.js STANDARD_OVERHEAD_LINES —
+# codeword ACSR/AAAC bare conductors. STANDARD_CABLES above has no BARE/
+# overhead entries (it's all insulated cable), so the recommend-on-fail
+# search (_find_minimum_size / _find_recommended_cable) previously could
+# never suggest an overhead conductor for a failing overhead line; this
+# table lets it search the right catalogue. r_per_km/x_per_km/r0_per_km/
+# x0_per_km are at 20°C per the codeword-conductor convention (BS 215 /
+# IEC 61089), matching conductor_temp.py's documented base — resistance_at()
+# corrects to DEFAULT_OVERHEAD_TEMP_C before use, same as the main sizing
+# loop's r_per_km. Keep in sync with the frontend table if it changes.
+STANDARD_OVERHEAD_LINES = [
+    {"id": "acsr_squirrel", "name": "ACSR Squirrel (20 mm²)", "material": "ACSR", "size_mm2": 20, "r_per_km": 1.3740, "x_per_km": 0.412, "rated_amps": 107},
+    {"id": "acsr_gopher", "name": "ACSR Gopher (26 mm²)", "material": "ACSR", "size_mm2": 26, "r_per_km": 1.0980, "x_per_km": 0.400, "rated_amps": 128},
+    {"id": "acsr_weasel", "name": "ACSR Weasel (34 mm²)", "material": "ACSR", "size_mm2": 34, "r_per_km": 0.9116, "x_per_km": 0.391, "rated_amps": 150},
+    {"id": "acsr_ferret", "name": "ACSR Ferret (42 mm²)", "material": "ACSR", "size_mm2": 42, "r_per_km": 0.6795, "x_per_km": 0.383, "rated_amps": 176},
+    {"id": "acsr_rabbit", "name": "ACSR Rabbit (55 mm²)", "material": "ACSR", "size_mm2": 55, "r_per_km": 0.5449, "x_per_km": 0.371, "rated_amps": 208},
+    {"id": "acsr_mink", "name": "ACSR Mink (65 mm²)", "material": "ACSR", "size_mm2": 65, "r_per_km": 0.4565, "x_per_km": 0.366, "rated_amps": 236},
+    {"id": "acsr_dog", "name": "ACSR Dog (100 mm²)", "material": "ACSR", "size_mm2": 100, "r_per_km": 0.2733, "x_per_km": 0.350, "rated_amps": 305},
+    {"id": "acsr_hare", "name": "ACSR Hare (105 mm²)", "material": "ACSR", "size_mm2": 105, "r_per_km": 0.2680, "x_per_km": 0.348, "rated_amps": 311},
+    {"id": "acsr_wolf", "name": "ACSR Wolf (158 mm²)", "material": "ACSR", "size_mm2": 158, "r_per_km": 0.1871, "x_per_km": 0.331, "rated_amps": 405},
+    {"id": "acsr_panther", "name": "ACSR Panther (212 mm²)", "material": "ACSR", "size_mm2": 212, "r_per_km": 0.1390, "x_per_km": 0.319, "rated_amps": 480},
+    {"id": "acsr_lynx", "name": "ACSR Lynx (226 mm²)", "material": "ACSR", "size_mm2": 226, "r_per_km": 0.1441, "x_per_km": 0.320, "rated_amps": 490},
+    {"id": "acsr_zebra", "name": "ACSR Zebra (428 mm²)", "material": "ACSR", "size_mm2": 428, "r_per_km": 0.0674, "x_per_km": 0.297, "rated_amps": 730},
+    {"id": "aaac_50", "name": "AAAC 50 mm²", "material": "AAAC", "size_mm2": 50, "r_per_km": 0.6752, "x_per_km": 0.372, "rated_amps": 196},
+    {"id": "aaac_100", "name": "AAAC 100 mm²", "material": "AAAC", "size_mm2": 100, "r_per_km": 0.3388, "x_per_km": 0.351, "rated_amps": 300},
+    {"id": "aaac_150", "name": "AAAC 150 mm²", "material": "AAAC", "size_mm2": 150, "r_per_km": 0.2222, "x_per_km": 0.336, "rated_amps": 385},
+    {"id": "aaac_200", "name": "AAAC 200 mm²", "material": "AAAC", "size_mm2": 200, "r_per_km": 0.1657, "x_per_km": 0.325, "rated_amps": 460},
+]
+
 # Adiabatic withstand constant k (A√s / mm²)
 # BARE = uninsulated overhead conductor (ACSR / AAAC / AAC). Its k is computed
 # with the SAME IEC 60865 material constants as the insulated rows, but for a
@@ -123,8 +152,21 @@ K_FACTORS = {
 }
 
 # Max conductor operating temperature (°C). BARE overhead conductors are
-# short-circuit-limited to ~200 °C (aluminium annealing).
+# short-circuit-limited to ~200 °C (aluminium annealing) — a fault-withstand
+# figure, not the continuous ampacity rating (see OVERHEAD_* below).
 MAX_TEMP = {"XLPE": 90, "PVC": 70, "BARE": 200}
+
+# [P4] Overhead ampacity ambient scaler. STANDARD_OVERHEAD_LINES.rated_amps is
+# quoted at ~40°C still-air ambient / 75°C conductor (matching
+# conductor_temp.DEFAULT_OVERHEAD_TEMP_C — the temperature the library's own
+# rated_amps already assumes), so it was previously used as-is at ANY run
+# ambient — a 45-50°C run (a realistic summer ambient) silently carried the
+# same "derated" figure as a 10°C one. Apply the same sqrt derating law IEC
+# 60364-5-52 uses for insulated cables, referenced to the overhead library's
+# own base ambient/conductor-temperature pair instead of the insulated-cable
+# 30°C/insulation-max-temp pair.
+OVERHEAD_RATED_AMBIENT_C = 40.0
+OVERHEAD_MAX_TEMP_C = 75.0
 
 # Installation method derating factors
 INSTALL_DERATING = {"trefoil": 1.0, "flat": 0.95, "buried": 0.85}
@@ -677,12 +719,19 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         if cp["overhead"]:
             # Overhead line: the library's rated_amps IS the in-air thermal
             # rating (bare conductor, ~40°C ambient / 75°C conductor). The IEC
-            # 60364-5-52 installation-method and insulation-temperature derating
-            # tables are for buried/enclosed insulated cables and do not apply —
-            # use the rating directly.
+            # 60364-5-52 installation-method derating table is for
+            # buried/enclosed insulated cables and does not apply — but the
+            # run's ambient temperature still does, via the same sqrt law
+            # referenced to the overhead library's own 40°C/75°C pair. [P4]
             install_df = 1.0
-            temp_df = 1.0
-            derated_amps = rated_amps
+            if ambient_temp_c >= OVERHEAD_MAX_TEMP_C:
+                temp_df = 0.0
+            elif ambient_temp_c != OVERHEAD_RATED_AMBIENT_C:
+                temp_df = math.sqrt((OVERHEAD_MAX_TEMP_C - ambient_temp_c)
+                                    / (OVERHEAD_MAX_TEMP_C - OVERHEAD_RATED_AMBIENT_C))
+            else:
+                temp_df = 1.0
+            derated_amps = rated_amps * temp_df
         elif amp_derated_a and amp_derated_a > 0:
             # Installed rating already encodes the full IEC 60364-5-52 derating.
             install_df = float(amp_block.get("derating", 1.0) or 1.0)  # for the recommend-on-fail search
@@ -817,7 +866,8 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         issues = []
         if not thermal_ok:
             if temp_df <= 0:
-                issues.append(f"Ambient temperature {ambient_temp_c:.0f}°C at/above conductor max operating temperature ({MAX_TEMP.get(insulation, 90)}°C) — cable has no usable ampacity")
+                _max_op_temp = OVERHEAD_MAX_TEMP_C if cp["overhead"] else MAX_TEMP.get(insulation, 90)
+                issues.append(f"Ambient temperature {ambient_temp_c:.0f}°C at/above conductor max operating temperature ({_max_op_temp:.0f}°C) — cable has no usable ampacity")
             else:
                 issues.append(f"Thermal overload: {current_per_cable:.1f}A exceeds derated capacity {derated_amps:.1f}A ({thermal_loading_pct:.0f}%)")
         if not voltage_drop_ok:
@@ -879,10 +929,14 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                                      "higher voltage level, or faster fault clearing")
             else:
                 min_size_mm2 = found_size
-                # Find matching standard cable
-                rec = _find_recommended_cable(cp["conductor"], cp["insulation"], voltage_kv, min_size_mm2)
+                # Find matching standard cable [P4] — overhead searches its
+                # own codeword-conductor table, not STANDARD_CABLES.
+                rec = _find_recommended_cable(cp["conductor"], cp["insulation"], voltage_kv,
+                                              min_size_mm2, overhead=cp["overhead"])
                 if rec:
-                    recommended_cable = f"{rec['size_mm2']:.0f}mm² {rec['conductor']} {rec['insulation']} {voltage_kv}kV"
+                    recommended_cable = (rec["name"] if cp["overhead"] else
+                                         f"{rec['size_mm2']:.0f}mm² {rec['conductor']} "
+                                         f"{rec['insulation']} {voltage_kv}kV")
                     min_size_mm2 = rec["size_mm2"]
                 else:
                     recommended_cable = f"{min_size_mm2:.0f}mm² (no standard cable found)"
@@ -931,9 +985,49 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
     conductor = cp["conductor"]
     insulation = cp["insulation"]
     k = K_FACTORS.get((conductor, insulation), 143)
-    standard_sizes = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500, 630]
-
     current_per_cable = load_current / max(num_parallel, 1)
+
+    if cp["overhead"]:
+        # [P4] STANDARD_CABLES has no BARE/overhead entries, so searching it
+        # (the code below) can never suggest an overhead conductor — search
+        # STANDARD_OVERHEAD_LINES instead, applying the same ambient scaler
+        # as the main sizing loop (OVERHEAD_RATED_AMBIENT_C/MAX_TEMP_C) and
+        # correcting r_per_km from the table's 20°C base the same way the
+        # main loop's r_per_km already is (conductor_temp.resistance_at).
+        from .conductor_temp import resistance_at, DEFAULT_OVERHEAD_TEMP_C
+        for ov in sorted(STANDARD_OVERHEAD_LINES, key=lambda x: x["size_mm2"]):
+            if ambient_temp_c >= OVERHEAD_MAX_TEMP_C:
+                derated = 0.0
+            elif ambient_temp_c != OVERHEAD_RATED_AMBIENT_C:
+                derated = ov["rated_amps"] * math.sqrt(
+                    (OVERHEAD_MAX_TEMP_C - ambient_temp_c)
+                    / (OVERHEAD_MAX_TEMP_C - OVERHEAD_RATED_AMBIENT_C))
+            else:
+                derated = ov["rated_amps"]
+            if current_per_cable > derated:
+                continue
+
+            if voltage_kv > 0 and length_km > 0:
+                r = (resistance_at(ov["r_per_km"], DEFAULT_OVERHEAD_TEMP_C, ov["material"])
+                     / max(num_parallel, 1))
+                x = ov["x_per_km"] / max(num_parallel, 1)
+                v_phase = voltage_kv * 1000 / math.sqrt(3)
+                vdrop = load_current * length_km * (r * cos_phi + x * sin_phi)
+                vdrop_pct = (vdrop / v_phase) * 100 if v_phase > 0 else 0
+                if vdrop_pct > max_vdrop_pct:
+                    continue
+
+            if fault_ka > 0:
+                i_fault_a = fault_ka * 1000
+                min_size_fault = i_fault_a * math.sqrt(t_clear) / k
+                if ov["size_mm2"] < min_size_fault:
+                    continue
+
+            return ov["size_mm2"]
+
+        return None
+
+    standard_sizes = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500, 630]
 
     for size in standard_sizes:
         # Find a matching standard cable for rated_amps and impedance
@@ -982,8 +1076,21 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
     return None
 
 
-def _find_recommended_cable(conductor, insulation, voltage_kv, min_size_mm2):
-    """Find the smallest standard cable matching conductor/insulation/voltage that meets min size."""
+def _find_recommended_cable(conductor, insulation, voltage_kv, min_size_mm2, overhead=False):
+    """Find the smallest standard cable matching conductor/insulation/voltage that meets min size.
+
+    [P4] `overhead=True` searches STANDARD_OVERHEAD_LINES instead — voltage
+    isn't a selector there (an overhead codeword conductor isn't rated to a
+    specific kV the way an insulated cable's voltage class is).
+    """
+    if overhead:
+        candidates = [ov for ov in STANDARD_OVERHEAD_LINES if ov["size_mm2"] >= min_size_mm2]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda c: c["size_mm2"])
+        best = candidates[0]
+        return {"size_mm2": best["size_mm2"], "conductor": best["material"],
+                "insulation": "BARE", "name": best["name"]}
     candidates = [
         sc for sc in STANDARD_CABLES
         if sc["conductor"] == conductor

@@ -7,7 +7,12 @@
 // asym/making, CT knee, q-factor pole pairs, GS mismatch check, …).
 // V6: time-series / quasi-dynamic load flow (BACKLOG item 4) — new study
 // type, no change to any existing engine's results.
-const APP_VERSION = 'V7';
+// V8: load-flow reactive-limit netting on mixed buses + signed-pf inverter
+// mode + PV↔PQ clamp-latch (EE_REVIEW_INVERTER_REACTIVE_JACOBIAN.md #5-#7),
+// overhead cable ampacity ambient scaler (#9) — all change computed results
+// for existing projects using those features (mixed-bus regulators, negative
+// pf, overhead cables sized at a non-40°C ambient).
+const APP_VERSION = 'V8';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -737,8 +742,10 @@ const MCB_CURVE_MAGNETIC = { B: 5, C: 10, D: 20 };
 // lowest stored energy, large steam turbo-sets the highest.
 // Sources: IEEE Std 3002.3 / Kundur "Power System Stability and Control" §3.9.
 // 'other' is intentionally absent — an unknown prime mover leaves H untouched.
+// [P4] diesel was 1.5 — the TOP of the published 0.5-1.5 s band, not
+// mid-range as the comment above claims; 1.0 s is the actual midpoint.
 const PRIME_MOVER_INERTIA_H = {
-  diesel: 1.5,
+  diesel: 1.0,
   gas_engine: 1.0,
   gas_turbine: 4.0,
   steam_turbine: 6.0,
@@ -998,8 +1005,8 @@ const FIELD_INFO = {
   'utility.v_setpoint_pu': 'Voltage the utility holds at its swing reference, per-unit (default 1.0).\nWith the ideal grid model this is the connection-bus voltage; with the Thevenin model it is the internal EMF, so the point of supply sits slightly lower under load. Set e.g. 1.02–1.05 to represent an upstream system held above nominal.\nUsed by: Load Flow.',
 
   // Generator
-  'generator.prime_mover': 'The generator\'s driving machine. Descriptive/documentation attribute — it does not change the electrical model, but it flags typical inertia bands: reciprocating sets (diesel/gas engine) H ≈ 1–3 s, hydro 2–4 s, and large steam/gas turbo-sets 4–9 s (set H explicitly in the Stability section).',
-  'generator.xd_pp':     'Default Xd″ = 0.15 p.u. is typical for salient-pole synchronous generators.\nSource: IEC 60034-4 Table 5 — sub-transient reactance range 0.10–0.25 p.u.',
+  'generator.prime_mover': 'The generator\'s driving machine. Descriptive/documentation attribute with one side effect: changing it auto-fills the Stability section\'s Inertia Constant H with a representative value for that machine class — reciprocating sets (diesel/gas engine) H ≈ 1–3 s, hydro 2–4 s, and large steam/gas turbo-sets 4–9 s — but only until you edit H yourself; a hand-tuned H is never overwritten by a later Prime Mover change.',
+  'generator.xd_pp':     'Default Xd″ = 0.15 p.u. is typical for salient-pole synchronous generators.\nSource: IEC 60034-4 Table 5 — sub-transient reactance range 0.10–0.25 p.u.\nAlso read by Transient Stability when Sub-transient Dynamics is on.',
   'generator.xd_p':      'Default Xd′ = 0.25 p.u. is typical transient reactance.\nSource: IEC 60034-4 Table 5 — transient reactance range 0.15–0.35 p.u.',
   'generator.xd':        'Default Xd = 1.2 p.u. is typical synchronous reactance.\nSource: IEC 60034-4 Table 5 — synchronous reactance range 0.8–1.8 p.u.',
   'generator.x_r_ratio': 'Default X/R = 40 is typical for generators.\nSource: IEC 60909-0 §3.7 — generator X/R ratios are generally high (30–60).',
@@ -1114,6 +1121,10 @@ const FIELD_INFO = {
   'generator.xq': 'Synchronous q-axis reactance Xq (p.u. on the machine base) — used by the two-axis model for the E′d equation and the rotor-angle construction. Typical: round-rotor Xq ≈ Xd; salient-pole (diesel/hydro) Xq ≈ 0.5–0.7·Xd.\nUsed by: Transient Stability (two-axis).',
   "generator.tdo_p": "d-axis transient open-circuit time constant T'do — how fast the field flux (E′q) responds to the exciter. Typical 4–8 s.\nUsed by: Transient Stability (two-axis).",
   "generator.tqo_p": "q-axis transient open-circuit time constant T'qo — decay of the q-axis transient EMF E′d. Typical 0.5–1.5 s.\nUsed by: Transient Stability (two-axis).",
+  'generator.subtransient_on': 'Layers sub-transient (d/q″) flux dynamics on top of the two-axis model: faster EMFs E″q/E″d relax toward the existing E′q/E′d states via T″do/T″qo, refining the first few cycles after a disturbance. Unlike the transient level, X″q generally differs from X″d (saliency) — the engine handles this with an in-step correction rather than assuming a round-rotor machine. Needs Xd″ (reuses the Fault-section Xd″), Xq″, T″do, T″qo.\nUsed by: Transient Stability (two-axis).',
+  'generator.xq_pp': 'Sub-transient q-axis reactance Xq″ (p.u. on the machine base). Defaults to Xd″ if left unset (round-rotor fallback). Typical salient-pole machines: Xq″ ≈ 1.0–1.5×Xd″.\nUsed by: Transient Stability (sub-transient).',
+  'generator.tdo_pp': 'd-axis sub-transient open-circuit time constant T″do — how fast E″q relaxes toward E′q (the first-cycle "damper winding" decay). Typical 0.02–0.05 s.\nUsed by: Transient Stability (sub-transient).',
+  'generator.tqo_pp': 'q-axis sub-transient open-circuit time constant T″qo — decay of E″d toward E′d. Typical 0.02–0.05 s.\nUsed by: Transient Stability (sub-transient).',
   'generator.gov_mode': 'Turbine-governor control that restores frequency after a load change.\n• Isochronous — returns frequency to nominal (integral/reset control); use for a set holding island frequency.\n• Droop — settles at a small steady offset set by the droop %; the standard scheme for paralleled sets sharing load.\n• None — mechanical power stays fixed (classical constant-Pm model); an islanded frequency then drifts and does not recover.\nUsed by: Transient Stability.',
   'generator.gov_droop_pct': 'Governor speed droop R (% speed change from no-load to full-load). Sets the primary frequency-response gain and how paralleled sets share a load change. Typical 3–5% (default 4%).\nUsed by: Transient Stability.',
   'generator.gov_time_const_s': 'Combined governor + turbine time constant Tg (first-order lag from a speed error to a change in mechanical power). Typical diesel/gas sets 0.3–1 s (default 0.5 s).\nUsed by: Transient Stability.',
@@ -1472,12 +1483,16 @@ const COMPONENT_DEFS = {
       max_load_pct: 100,
       gen_control: 'droop',
       start_threshold_pct: 90,
-      inertia_h_s: 1.5,
+      inertia_h_s: 1.0,   // [P4] matches PRIME_MOVER_INERTIA_H.diesel — the default prime_mover
       damping_pu: 0,
       machine_model: 'classical',
       xq: 0.7,
       tdo_p: 6.0,
       tqo_p: 1.0,
+      subtransient_on: 'off',
+      xq_pp: 0.15,
+      tdo_pp: 0.03,
+      tqo_pp: 0.03,
       gov_mode: 'isochronous',
       gov_droop_pct: 4,
       gov_time_const_s: 0.5,
@@ -1559,6 +1574,10 @@ const COMPONENT_DEFS = {
       { key: 'xq', label: 'Xq (synchronous)', type: 'number', unit: 'p.u.', min: 0.1, step: 0.05, section: 'stability', showWhen: { field: 'machine_model', values: ['two_axis'] } },
       { key: 'tdo_p', label: "T'do", type: 'number', unit: 's', min: 0.1, step: 0.5, section: 'stability', showWhen: { field: 'machine_model', values: ['two_axis'] } },
       { key: 'tqo_p', label: "T'qo", type: 'number', unit: 's', min: 0.1, step: 0.5, section: 'stability', showWhen: { field: 'machine_model', values: ['two_axis'] } },
+      { key: 'subtransient_on', label: 'Sub-transient Dynamics', type: 'select', options: ['off', 'on'], section: 'stability', showWhen: { field: 'machine_model', values: ['two_axis'] } },
+      { key: 'xq_pp', label: "Xq''", type: 'number', unit: 'p.u.', min: 0.05, step: 0.01, section: 'stability', showWhen: { field: 'subtransient_on', values: ['on'] } },
+      { key: 'tdo_pp', label: "T''do", type: 'number', unit: 's', min: 0.005, step: 0.005, section: 'stability', showWhen: { field: 'subtransient_on', values: ['on'] } },
+      { key: 'tqo_pp', label: "T''qo", type: 'number', unit: 's', min: 0.005, step: 0.005, section: 'stability', showWhen: { field: 'subtransient_on', values: ['on'] } },
       { key: 'gov_mode', label: 'Governor', type: 'select', options: ['isochronous', 'droop', 'none'], section: 'stability' },
       { key: 'gov_droop_pct', label: 'Governor Droop', type: 'number', unit: '%', min: 0.5, max: 10, step: 0.5, section: 'stability', showWhen: { field: 'gov_mode', values: ['isochronous', 'droop'] } },
       { key: 'gov_time_const_s', label: 'Governor Time Const', type: 'number', unit: 's', min: 0.05, step: 0.05, section: 'stability', showWhen: { field: 'gov_mode', values: ['isochronous', 'droop'] } },
@@ -3283,7 +3302,12 @@ const LF_ATTRS = {
             'battery_max_charge_kw', 'battery_max_discharge_kw', 'dispatch_priority',
             'var_mode', 'v_setpoint_pu'],
   bus: ['system', 'voltage_kv', 'bus_type'],
-  distribution_board: ['voltage_kv', 'rated_kva', 'power_factor', 'demand_factor'],
+  // [P5] rated_kva/power_factor/demand_factor are DERIVED by DBSchedule.recompute()
+  // from the board's per-way circuit schedule (dbschedule.js _DERIVED_KEYS) — a
+  // case-level override here would silently be overwritten the next time the
+  // schedule is opened/edited, so only the genuinely independent voltage_kv
+  // is offered.
+  distribution_board: ['voltage_kv'],
   transformer: ['rated_mva', 'z_percent', 'x_r_ratio', 'voltage_hv_kv', 'voltage_lv_kv', 'tap_mode', 'tap_percent'],
   autotransformer: ['windings', 'rated_mva', 'z_percent', 'voltage_hv_kv', 'voltage_lv_kv', 'tap_mode', 'tap_percent'],
   cable: ['voltage_kv', 'r_per_km', 'x_per_km', 'length_km', 'num_parallel', 'rated_amps'],
