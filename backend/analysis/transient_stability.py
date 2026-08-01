@@ -134,9 +134,11 @@ is the framework they extend.
 import math
 import numpy as np
 
-from .network_reduction import build_branch_ybus, _source_stub, _source_internal_z
-from .loadflow import run_load_flow, _source_output_mva
+from .network_reduction import (build_branch_ybus, _source_stub, _source_internal_z,
+                                branch_current)
+from .loadflow import run_load_flow, _source_output_mva, _is_transparent_and_closed
 from .fault import thevenin_sequence_at_bus
+from .arcflash import _relay_operate_time
 
 INFINITE_H = 1.0e6          # utility infinite-bus inertia (angle ~frozen)
 BUS_REG = 1.0e-8            # tiny shunt to keep the elimination matrix regular
@@ -979,7 +981,8 @@ def _dynamic_setup(project, ctx, lf, freq, warnings):
                                                       "trip_rocof_hzs", "trip_oos_deg",
                                                       "trip_vhz_pu")):
             n_gen_prot += 1
-    has_protection = (n_gen_prot > 0 or gfm_prot
+    oc_relays = _collect_oc_relays(project, ctx, warnings)
+    has_protection = (n_gen_prot > 0 or gfm_prot or bool(oc_relays)
                       or any(d["shed_hz"] > 0 or d["uv_pu"] > 0 for d in loads)
                       or any(mo.get("uv_pu", 0) > 0 for mo in motors)
                       or any(g["uv_pu"] > 0 or g["of_hz"] > 0 or g["uf_hz"] > 0
@@ -997,8 +1000,121 @@ def _dynamic_setup(project, ctx, lf, freq, warnings):
             "converters — they hold dispatched power, support voltage on a dip and "
             "clip at their current limit (fundamentally unlike a synchronous "
             "machine's fault contribution).")
+    if oc_relays:
+        warnings.append(
+            f"{len(oc_relays)} overcurrent relay(s) will trip their breaker during "
+            "the simulation (same pickup/curve/CT settings as the arc-flash and TCC "
+            "studies) — the network is re-reduced whenever one operates.")
     return {"loads": loads, "motors": motors, "ibrs": ibrs, "base": base,
-            "has_protection": has_protection}
+            "has_protection": has_protection, "oc_relays": oc_relays}
+
+
+def _relay_branch_terminal(ct_id, adjacency, components, comp_to_branch, bus_idx):
+    """BFS from a CT through transparent pass-through devices (CB/switch/fuse/
+    CT/PT/surge_arrester/bus_duct) to the branch it's wired in series with, and
+    which of that branch's two real-bus endpoints sits on the CT's own side.
+
+    Returns ``(branch, near_bus_id)`` or ``None`` when the CT isn't adjacent —
+    through pass-through devices only — to both exactly one real bus AND
+    exactly one modelled branch (a cable/transformer chain from
+    ``build_branch_ybus``'s ``branches`` list). This covers the overwhelmingly
+    common placement (a CT in a switchgear cubicle next to a bus/breaker); a
+    CT buried mid-chain with no bus on its own side is a real but rare
+    placement this deliberately does not attempt to guess a side for.
+    """
+    from collections import deque
+    if ct_id not in components:
+        return None
+    visited = {ct_id}
+    frontier_buses = set()
+    frontier_branches = {}   # id(branch) -> branch, deduped
+    queue = deque(adjacency.get(ct_id, []))
+    while queue:
+        nid = queue.popleft()
+        if nid in visited:
+            continue
+        visited.add(nid)
+        if nid in bus_idx:
+            frontier_buses.add(nid)
+            continue
+        if nid in comp_to_branch:
+            br = comp_to_branch[nid]
+            frontier_branches[id(br)] = br
+            continue
+        comp = components.get(nid)
+        if comp and _is_transparent_and_closed(comp):
+            for nb in adjacency.get(nid, []):
+                if nb not in visited:
+                    queue.append(nb)
+    if len(frontier_buses) != 1 or len(frontier_branches) != 1:
+        return None
+    return next(iter(frontier_branches.values())), next(iter(frontier_buses))
+
+
+def _collect_oc_relays(project, ctx, warnings):
+    """Resolve each 50/51/67 overcurrent relay with a ``trip_cb`` to the branch
+    its ``associated_ct`` measures, for live tripping during the simulation.
+
+    Reuses the SAME relay/CT association (``associated_ct``/``trip_cb``) and
+    IDMT curve evaluator (``arcflash._relay_operate_time``) as the arc-flash
+    clearing-time walk and the frontend TCC plot — a relay already set up for
+    either of those already carries valid transient-stability settings, no
+    new data model needed. Relays with no CT, no trip breaker, or whose CT
+    doesn't resolve to a modelled branch are skipped with a warning (not
+    fatal — the rest of the study still runs).
+    """
+    branches = ctx.get("branches") or []
+    comp_to_branch = {cid: br for br in branches for cid in br["ids"]}
+    adjacency, components, bus_idx = ctx["adjacency"], ctx["components"], ctx["bus_idx"]
+    base_mva = ctx["base_mva"]
+
+    relays = []
+    for comp in project.components:
+        if comp.type != "relay":
+            continue
+        # str(): Component._coerce_numeric_props turns a digit-only prop
+        # value into an int/float (e.g. relay_type "67" -> 67) for every key
+        # not in _TEXTUAL_PROP_KEYS — relay_type isn't in that list, so the
+        # comparison must tolerate either representation.
+        relay_type = str(comp.props.get("relay_type", "50/51"))
+        if relay_type not in ("50/51", "67"):
+            continue
+        name = comp.props.get("name", comp.id)
+        ct_id = comp.props.get("associated_ct")
+        trip_cb = comp.props.get("trip_cb")
+        if not ct_id or not trip_cb:
+            continue  # not wired to trip anything — arc-flash/TCC-only relay
+        if trip_cb not in components:
+            warnings.append(f"Relay {name}: trip breaker '{trip_cb}' not found — "
+                            "skipped for transient-stability overcurrent tripping.")
+            continue
+        resolved = _relay_branch_terminal(ct_id, adjacency, components, comp_to_branch, bus_idx)
+        if resolved is None:
+            warnings.append(f"Relay {name}: its CT is not adjacent to both a bus "
+                            "and a modelled cable/transformer branch — skipped for "
+                            "transient-stability overcurrent tripping.")
+            continue
+        branch, near_bus = resolved
+        far_bus = branch["bus_b"] if near_bus == branch["bus_a"] else branch["bus_a"]
+        bus_comp = components.get(near_bus)
+        v_kv = float((bus_comp.props.get("voltage_kv", 11) if bus_comp else 11) or 11)
+        i_base_ka = base_mva / (math.sqrt(3) * v_kv) if v_kv > 0 else 0.0
+        ct_comp = components.get(ct_id)
+        direction = str(comp.props.get("direction", "forward")).lower()
+        rca_deg = float(comp.props.get("characteristic_angle_deg", 45) or 45)
+        cb_comp = components.get(trip_cb)
+        relays.append({
+            "name": name, "props": comp.props, "trip_cb": trip_cb,
+            "trip_cb_name": cb_comp.props.get("name", trip_cb) if cb_comp else trip_cb,
+            "branch": branch, "near_bus": near_bus, "far_bus": far_bus,
+            "a_idx": bus_idx[branch["bus_a"]], "b_idx": bus_idx[branch["bus_b"]],
+            "near_is_a": near_bus == branch["bus_a"],
+            "i_base_a": i_base_ka * 1000.0,
+            "ct_props": ct_comp.props if ct_comp else None,
+            "directional": relay_type == "67",
+            "direction": direction, "rca_deg": rca_deg,
+        })
+    return relays
 
 
 def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
@@ -1124,13 +1240,18 @@ def _p_electrical(Yred, active, machines, delta, emag=None):
 # ── Time-domain integration ─────────────────────────────────────────────
 
 def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
-              dyn=None, y0=None):
+              dyn=None, y0=None, project=None):
     """Integrate the swing equations across the network ``segments``.
 
     segments: ordered list of ``(t_switch, variant)`` where variant is
     ``{"Yred", "active", "Pm", "R", "keep_bus"}``; the variant in force is the
     last whose t_switch ≤ t. Returns a dict with the stability verdict and, when
     ``record`` is set, decimated trajectories.
+
+    project: only needed when ``dyn`` carries overcurrent relays — a relay
+    trip rebuilds the branch Ybus with its breaker removed (see
+    ``_effective_variant``'s ``ybus_trip_cache``), which needs the original
+    project to run ``build_branch_ybus`` on a modified copy.
 
     dyn/y0: when dynamic devices are present (voltage-dependent loads or dynamic
     induction motors), the load shunt is rebuilt and the network re-reduced each
@@ -1260,8 +1381,10 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     dyn_motors = dyn["motors"] if dyn else []
     dyn_loads = dyn["loads"] if dyn else []
     dyn_ibrs = dyn["ibrs"] if dyn else []
+    dyn_oc = dyn["oc_relays"] if dyn else []
     n_mot = len(dyn_motors)
     n_gfl = len(dyn_ibrs)
+    n_oc = len(dyn_oc)
     slips0 = np.array([mo["s0"] for mo in dyn_motors]) if n_mot else np.zeros(0)
 
     # Grid-forming converters: a virtual impedance bounds the terminal current at
@@ -1279,6 +1402,12 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     # from the network (re-reduced next step).
     has_prot = bool(dyn and dyn.get("has_protection"))
     tripped_loads, tripped_motors, tripped_mach, tripped_ibr = set(), set(), set(), set()
+    # tripped_branch: component ids of CBs an overcurrent relay has opened —
+    # applied via ybus_trip_cache in _effective_variant (a live topology
+    # decision, unlike the precomputed fault/sequence segments in `segments`).
+    tripped_branch = set()
+    ybus_trip_cache = {}   # frozenset(removed comp ids) -> Y, lazily built/memoized
+    oc_relay_acc = [0.0] * n_oc   # IDMT operate-time integral, Σ dt/t_op(I) → trip at 1.0
     trip_events = []
     load_shed_t = [0.0] * len(dyn_loads)
     load_uv_t = [0.0] * len(dyn_loads)
@@ -1287,6 +1416,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     gen_trip_t = [0.0] * m
     need_bus_v = any_avr or n_mot > 0 or has_prot or n_gfl > 0
     vbus_prev = {}   # last-step bus-voltage magnitudes (voltage-dependent loads)
+    vbus_complex_prev = {}   # last-step complex bus voltages (overcurrent relays only)
     rocof_hist = {}  # island id -> [(t, f_hz), ...] within ROCOF_WINDOW_S, for df/dt relays
 
     def _rocof_rates(t, isl_freq):
@@ -1507,7 +1637,20 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                            tripped_loads, tripped_motors, ibr_inj, tripped_ibr)
         gfm_active = [i for i in active if machines[i].get("ibr") == "gfm"]
         zov = {}
-        Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov,
+        # An overcurrent relay opening its breaker mid-simulation is a LIVE
+        # topology decision (unlike the precomputed segments), so it isn't
+        # baked into vd["ybus"]. Rebuild/cache the branch Ybus with the
+        # relay-tripped CB(s) removed on top of whatever this segment already
+        # removed (vd["removed"]) — a no-op (byte-identical fast path) when no
+        # relay has tripped yet.
+        base_y = vd["ybus"]
+        if tripped_branch:
+            key = frozenset(vd.get("removed") or ()) | tripped_branch
+            if key not in ybus_trip_cache:
+                c2 = build_branch_ybus(_project_without_many(project, key))
+                ybus_trip_cache[key] = c2["Y"] if c2 is not None else vd["ybus"]
+            base_y = ybus_trip_cache[key]
+        Yred, R, keep = _reduce(base_y, shunt, machines, active, vd["grounded"], zov,
                                 fault_shunt=vd.get("fault_shunt"))
         if gfm_active:
             # EMFs fixed this step (only Yred is iterated below); the
@@ -1535,7 +1678,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                         over = True
                 if not over:
                     break
-                Yred, R, keep = _reduce(vd["ybus"], shunt, machines, active, vd["grounded"], zov,
+                Yred, R, keep = _reduce(base_y, shunt, machines, active, vd["grounded"], zov,
                                 fault_shunt=vd.get("fault_shunt"))
             Ia = Yred @ eint_a if active else np.zeros(0, dtype=complex)
             for mi in gfm_active:                         # record the bounded peak
@@ -1652,6 +1795,48 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                                         "reason": f"generator trip ({why})"})
             else:
                 gen_trip_t[i] = 0.0
+        # Overcurrent (50/51/67) relays: an IDMT curve's target operate time
+        # varies continuously with current, so — unlike the fixed-delay checks
+        # above — this accumulates an OPERATE-TIME INTEGRAL each step
+        # (Σ dt/t_operate(I), trip at 1.0), the standard way to emulate an
+        # inverse-time relay against a current that itself evolves during the
+        # simulation (an induction-disk emulation; resets to 0 the instant
+        # current drops below pickup, mirroring how the delay-based relays
+        # above reset). Branch current is evaluated from the LAGGED complex
+        # bus voltages (vbus_complex_prev), consistent with every other
+        # protection check in this function reading vbus_prev one step behind.
+        for k, r in enumerate(dyn_oc):
+            if r["trip_cb"] in tripped_branch:
+                continue
+            va = vbus_complex_prev.get(r["a_idx"], 0j)
+            vb = vbus_complex_prev.get(r["b_idx"], 0j)
+            i_a, i_b = branch_current(r["branch"], va, vb)
+            i_near = i_a if r["near_is_a"] else i_b
+            current_a = abs(i_near) * r["i_base_a"]
+            if r["directional"]:
+                v_near = va if r["near_is_a"] else vb
+                # Self-polarized directional supervision: forward = real power
+                # flowing OUT of the relay's own bus into the protected branch
+                # (the normal source-to-load direction for a feeder relay).
+                # A simplified sign-of-power check, not the full RCA-rotated
+                # torque equation — adequate for a bolted/near-bolted fault's
+                # near-unity power factor; see module notes on other
+                # deliberate simplifications (e.g. ROCOF's shared COI proxy).
+                forward = (v_near * np.conj(i_near)).real >= 0
+                want_forward = r["direction"] != "reverse"
+                if forward != want_forward:
+                    oc_relay_acc[k] = 0.0
+                    continue
+            t_op = _relay_operate_time(r["props"], current_a, r["ct_props"])
+            if t_op is None or t_op <= 0:
+                oc_relay_acc[k] = 0.0
+                continue
+            oc_relay_acc[k] += dt / t_op
+            if oc_relay_acc[k] >= 1.0:
+                tripped_branch.add(r["trip_cb"])
+                trip_events.append({"t": round(t, 3), "element": r["trip_cb_name"],
+                                    "reason": f"overcurrent trip via {r['name']} "
+                                              f"at {current_a:.0f} A"})
 
     rec_t, rec_delta, rec_omega, rec_pe, rec_vbus, rec_pm = [], [], [], [], [], []
     bus_ids_all = None
@@ -1765,8 +1950,14 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         # Lag the bus voltages one step for the next voltage-dependent load / GFL
         # shunt (the GFM current limiter converges in-step, so no current lag).
         if dyn and veff is not None:
-            vbus_prev = _bus_voltages(veff, _eint_sub(
-                veff["active"], delta, efield, epq, epd, e2q, e2d, veff["Yred"]))
+            eint_a_lag = _eint_sub(veff["active"], delta, efield, epq, epd, e2q, e2d, veff["Yred"])
+            vbus_prev = _bus_voltages(veff, eint_a_lag)
+            if n_oc:
+                # Complex (not just magnitude) bus voltages, needed for branch
+                # current and directional (67) supervision — only computed
+                # when an overcurrent relay is actually present.
+                Vbus_c = veff["R"] @ eint_a_lag if veff["active"] else np.zeros(0, dtype=complex)
+                vbus_complex_prev = {bi: Vbus_c[k] for k, bi in enumerate(veff["keep_bus"])}
         t += dt
 
     # Frequency-stability verdict, per island, over the live machines. Flag an
@@ -1838,15 +2029,20 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
     all_active = list(range(len(machines)))
 
     def variant(ybus, active, grounded, shunt=None, pm_over=None, load_scale=None,
-                fault_shunt=None):
+                fault_shunt=None, removed=None):
         Yred, R, keep = _reduce(ybus, load_shunt if shunt is None else shunt,
                                 machines, active, grounded, fault_shunt=fault_shunt)
         Pm = np.array([machines[i]["Pm"] if (pm_over is None or i not in pm_over)
                        else pm_over[i] for i in range(len(machines))])
-        # ybus/grounded/load_scale/fault_shunt let the dynamic path re-reduce each step.
+        # ybus/grounded/load_scale/fault_shunt let the dynamic path re-reduce each
+        # step; removed is this segment's OWN topology change (component ids
+        # already taken out of the project to build ybus) — an overcurrent
+        # relay tripping mid-segment unions its CB into this set (see
+        # _effective_variant's ybus_trip_cache) rather than rebuilding from
+        # scratch, so a scripted trip and a live relay trip compose correctly.
         return {"Yred": Yred, "active": active, "R": R, "keep_bus": keep, "Pm": Pm,
                 "ybus": ybus, "grounded": grounded, "load_scale": load_scale,
-                "fault_shunt": fault_shunt or {}}
+                "fault_shunt": fault_shunt or {}, "removed": removed or set()}
 
     dtype = disturbance.get("type", "fault")
 
@@ -1892,7 +2088,7 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
         else:
             raise ValueError(f"Unknown fault_type '{fault_type}'.")
 
-        post_v = variant(post_ctx["Y"], all_active, set())
+        post_v = variant(post_ctx["Y"], all_active, set(), removed={trip} if trip else None)
         segs = [(0.0, fault_v), (t_clear, post_v)]
         event = (f"{type_desc} fault at {_bus_name(project, fbus)} cleared at {t_clear*1000:.0f} ms"
                 + (f", tripping {_comp_name(project, trip)}" if trip else ""))
@@ -1921,7 +2117,7 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
             desc = f"Trip generator {_comp_name(project, elem)} at {t_ev*1000:.0f} ms"
         else:
             post_ctx = build_branch_ybus(_project_without(project, elem))
-            post_v = variant(post_ctx["Y"], all_active, set())
+            post_v = variant(post_ctx["Y"], all_active, set(), removed={elem})
             desc = f"Trip {_comp_name(project, elem)} at {t_ev*1000:.0f} ms"
         return ([(0.0, pre_v), (t_ev, post_v)], desc)
 
@@ -2023,7 +2219,7 @@ def _build_sequence(project, ctx, machines, base_ybus, load_shunt, all_active,
         for lb, fr in bus_frac.items():
             shunt[lb] = shunt[lb] * fr
         return variant(ybus_for(removed), active, set(), shunt=shunt,
-                       pm_over=pm_over, load_scale=dict(bus_frac))
+                       pm_over=pm_over, load_scale=dict(bus_frac), removed=set(removed))
 
     segs = [(0.0, make_variant())]     # pre-sequence operating point at t=0
     descs = []
@@ -2240,7 +2436,7 @@ def run_transient_stability(project, disturbance=None):
 
     segments, event = _build_segments(project, ctx, lf, machines, disturbance, warnings)
     sim = _simulate(machines, segments, freq, t_end, dt, record=True,
-                    island_of=island_of, dyn=dyn, y0=y0)
+                    island_of=island_of, dyn=dyn, y0=y0, project=project)
 
     # Public stability verdict combines rotor-angle synchronism (sim["stable"])
     # with the frequency-stability check: an island frequency that collapses /
@@ -2328,7 +2524,7 @@ def _find_cct(project, ctx, lf, machines, disturbance, freq, t_end, dt, warnings
         except ValueError:
             return None
         return _simulate(machines, segs, freq, t_end, dt, record=False,
-                         island_of=island_of, dyn=dyn, y0=y0)["stable"]
+                         island_of=island_of, dyn=dyn, y0=y0, project=project)["stable"]
 
     if stable_for(hi):
         return None  # stable even at the search ceiling — no finite CCT found

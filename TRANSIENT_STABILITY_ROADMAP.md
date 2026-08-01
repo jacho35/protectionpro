@@ -235,24 +235,79 @@ island** against that island's own centre of inertia.
     markers. (`transient_stability.py`, `constants.js`, `transient.js`,
     `test_transient_stability.py`)
 
-## Next up — over-current / distance relay
+- **Over-current (50/51/67) relay** — the genuinely-new-architecture piece
+  deferred from the change above: per-branch current, and a mid-simulation
+  topology-switch decided from LIVE relay state (not a precomputed segment).
+  - **Per-branch current** (`network_reduction.py`): `build_branch_ybus`
+    previously folded every series chain's `(bus_a, bus_b, y, t, hv_bus)`
+    stamp straight into the dense bus Ybus and discarded it. Refactored the
+    stamping into a shared 2×2-stamp computation so the SAME numbers are also
+    retained in a new `branches` list (single source of truth — cannot drift
+    from what's actually in Y), plus a new `branch_current(branch, v_a, v_b)`
+    helper returning the complex current at each terminal, correctly referred
+    through the chain's own turns ratio.
+  - **Relay resolution** (`_collect_oc_relays`/`_relay_branch_terminal`): a
+    50/51/67 relay with `trip_cb` set resolves its monitored branch via
+    `associated_ct` — the SAME association arc-flash clearing-time evaluation
+    and the frontend TCC already use — via a BFS through pass-through devices
+    to the branch and which of its two real-bus endpoints sits on the CT's
+    own side. A relay already set up for arc-flash/TCC coordination therefore
+    carries valid transient-stability settings for free; no new data model.
+  - **IDMT operate-time integral** (`_check_protection`): unlike the four
+    fixed-delay relays above, an inverse-time curve's target operate time
+    varies continuously with current, so this accumulates
+    `Σ dt/t_operate(I(t))` each step (an induction-disk emulation, resetting
+    to 0 below pickup) and trips at 1.0 — evaluated via
+    `arcflash._relay_operate_time`, REUSED as-is (same curve table, same CT-
+    saturation derating) rather than reimplementing curve math. 67 gets a
+    simplified self-polarized directional check
+    (`Re(V_near·conj(I_near)) ≥ 0` = forward), not the full RCA-rotated torque
+    equation — documented as a deliberate simplification, adequate for a
+    bolted/near-bolted fault's near-unity power factor.
+  - **Live topology switching** (`_effective_variant`'s new
+    `ybus_trip_cache`): `project` is now threaded into `_simulate` so a
+    relay-tripped CB can lazily rebuild/cache `build_branch_ybus` keyed by
+    `frozenset(segment's own removed ids ∪ tripped_branch)`, reusing
+    `_build_sequence.ybus_for`'s existing memoization pattern — turned out
+    NOT to need the two-pre-built-Ybus-variant scheme originally sketched
+    below; each segment's `variant()` now just carries forward its own
+    `removed` id set so a scripted trip and a live relay trip compose
+    correctly. A no-op, byte-identical fast path whenever no relay has
+    tripped yet.
+  - **Adjacent bug found and fixed**: `Component._coerce_numeric_props`
+    coerces a digit-only prop string to a number for any key not in
+    `_TEXTUAL_PROP_KEYS` — `relay_type: "67"` silently became the int `67`,
+    so `67 not in ("50/51", "67")` filtered out every directional-overcurrent
+    relay (`arcflash._build_relay_maps` had the identical bug, pre-existing —
+    fixed there too, same `str(relay_type)` guard). Full Docker suite
+    re-verified green (702 pass) after both fixes.
+  - +8 tests (`TestOvercurrentRelay`): trip on sustained overcurrent, no-trip
+    below pickup, IDMT operate time matches the closed form, higher multiple
+    trips faster, 67 blocks reverse / trips forward, a scripted sequence trip
+    composing correctly with a live relay trip, unresolvable-CT skip.
+    Full backend suite **702 pass** (694 baseline + 8 new).
+    (`network_reduction.py`, `transient_stability.py`,
+    `test_transient_stability.py`)
 
-1. **Over-current / distance relay.** The one remaining protection function,
-   deliberately deferred from the change above because it needs something the
-   engine genuinely doesn't have: per-branch current. `build_branch_ybus`
-   (`network_reduction.py`) folds branch admittances straight into the dense
-   bus Y-matrix and discards the per-branch `(from, to, y)` structure, so
-   computing `I_branch = y·(V_from − V_to)` each step needs that function
-   extended to retain a branch list. Tripping on it also needs a genuinely new
-   mid-simulation topology-switch mechanism: today, branch open/close is only
-   ever a *precomputed* `(t, variant)` segment (see auto-reclose above),
-   never a decision made from live relay state inside the RK4 loop — this
-   would need selecting between two pre-built Ybus variants (open/closed) per
-   step, keyed off a new `tripped_branch` state, rather than the row-masking
-   the existing `tripped_mach`/`tripped_loads`/etc. sets do on a single fixed
-   Ybus. A distinct, heavier piece of work with its own risk profile; bundling
-   it into the protection-functions change above would have increased risk
-   for no shared benefit.
+## Next up — distance (21) relay
+
+1. **Distance (21) relay.** The one remaining protection function. Reuses the
+   per-branch current infrastructure and the live topology-switch mechanism
+   the over-current relay above added — the genuinely new piece is a Z=V/I
+   zone evaluator: no backend engine reads a relay's `z1_reach_ohm`/
+   `z2_reach_ohm`/`z3_reach_ohm`/`*_delay_s` props today (`arcflash.py`
+   explicitly excludes relay_type 21 from its IDMT semantics), though the
+   frontend TCC plot already has a simplified zone model
+   (`buildDistanceRelayZones`/`distanceRelayTripTime` in `constants.js`) worth
+   porting to Python rather than re-deriving. That existing frontend model
+   converts reach to an equivalent pickup CURRENT using the relay's rated
+   `voltage_kv`, not a live V/I impedance measurement, and has no
+   directionality — a transient-stability implementation could either mirror
+   that simplification for consistency with the TCC plot, or measure genuine
+   Z = V_near/I_near each step (more correct, but would read differently from
+   the TCC display for the same component); this choice, plus a
+   directionality model (a real distance relay is inherently directional),
+   are open decisions for whoever picks this up.
 
 ## Lower value / out of scope
 
@@ -281,6 +336,9 @@ being the dominant real-world fault type — the engine's remaining genuine
 in place, the machine model's own accuracy refinements are done too. With
 **ROCOF, over-excitation, out-of-step protection and auto-reclose** now in
 place, the trip set matches most of what a real protection-coordination study
-would configure on a generator or feeder; the sole item left (see *Next up*)
-is over-current/distance relay, deliberately deferred as the one genuine
-new-architecture piece of work remaining.
+would configure on a generator or feeder. With **over-current (50/51/67)
+relay** tripping now in place — the one genuine new-architecture piece of
+work (per-branch current, live mid-simulation topology switching) — the
+engine's protection-function set is essentially complete; the sole item left
+(see *Next up*) is the distance (21) relay, which reuses that same
+infrastructure and needs only its own zone evaluator.

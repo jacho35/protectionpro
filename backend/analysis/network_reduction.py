@@ -148,6 +148,10 @@ def build_branch_ybus(project):
 
     bus_of = _build_bus_groups(buses, adjacency, components, bus_idx)
     Y = np.zeros((n, n), dtype=complex)
+    branches = []   # per-chain {ids, bus_a, bus_b, y, t, hv_bus} — retained for
+                     # relay branch-current evaluation (transient_stability.py);
+                     # the stamps below are the single source of truth this list
+                     # mirrors, so it can never drift from what's actually in Y.
 
     # ── Series branch chains between buses (cables / transformers) ──
     processed_chains = set()
@@ -210,21 +214,12 @@ def build_branch_ybus(project):
         i = bus_idx[bus_a]
         j = bus_idx[bus_b]
         t, hv_bus = _get_chain_turns_ratio(all_elems, bus_a, bus_b, components)
-        if hv_bus == bus_a:
-            Y[i, i] += y / (t * t)
-            Y[j, j] += y
-            Y[i, j] -= y / t
-            Y[j, i] -= y / t
-        elif hv_bus == bus_b:
-            Y[i, i] += y
-            Y[j, j] += y / (t * t)
-            Y[i, j] -= y / t
-            Y[j, i] -= y / t
-        else:
-            Y[i, i] += y
-            Y[j, j] += y
-            Y[i, j] -= y
-            Y[j, i] -= y
+        Y[i, i] += y / (t * t) if hv_bus == bus_a else y
+        Y[j, j] += y / (t * t) if hv_bus == bus_b else y
+        Y[i, j] -= y / t if hv_bus in (bus_a, bus_b) else y
+        Y[j, i] -= y / t if hv_bus in (bus_a, bus_b) else y
+        branches.append({"ids": chain_key, "bus_a": bus_a, "bus_b": bus_b,
+                         "y": y, "t": t, "hv_bus": hv_bus})
 
     # ── Solid bus-to-bus links (through transparent elements only) ──
     linked_pairs = set()
@@ -254,7 +249,30 @@ def build_branch_ybus(project):
         Y[j, i] -= y_link
 
     return {"Y": Y, "bus_idx": bus_idx, "buses": buses, "components": components,
-            "adjacency": adjacency, "bus_of": bus_of, "base_mva": base_mva}
+            "adjacency": adjacency, "bus_of": bus_of, "base_mva": base_mva,
+            "branches": branches}
+
+
+def branch_current(branch, v_a, v_b):
+    """Complex current (system p.u.) at each terminal of a series chain branch.
+
+    ``branch`` is one entry of ``build_branch_ybus``'s ``branches`` list;
+    ``v_a``/``v_b`` are the complex bus voltages at ``branch["bus_a"]``/
+    ``["bus_b"]``. Returns ``(i_a, i_b)`` — the current flowing OUT of each
+    bus into the branch, correctly referred through the chain's own turns
+    ratio (identical magnitude at both ends when the chain has no
+    transformer, i.e. ``t == 1``). Built from exactly the same 2x2 stamp
+    ``build_branch_ybus`` applies to the bus Ybus, so it can never diverge
+    from what the load-flow/stability network actually sees.
+    """
+    y, t, hv_bus = branch["y"], branch["t"], branch["hv_bus"]
+    bus_a, bus_b = branch["bus_a"], branch["bus_b"]
+    y_aa = y / (t * t) if hv_bus == bus_a else y
+    y_bb = y / (t * t) if hv_bus == bus_b else y
+    y_ab = y / t if hv_bus in (bus_a, bus_b) else y
+    i_a = y_aa * v_a - y_ab * v_b
+    i_b = y_bb * v_b - y_ab * v_a
+    return i_a, i_b
 
 
 def source_shunt_bus(project, source_comp, ctx=None):

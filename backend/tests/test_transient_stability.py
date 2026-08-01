@@ -15,6 +15,7 @@ import pytest
 
 from backend.models.schemas import ProjectData, Component, Wire
 from backend.analysis.transient_stability import run_transient_stability
+from backend.analysis.arcflash import _relay_operate_time
 
 
 def _c(cid, ctype, props):
@@ -1377,6 +1378,134 @@ class TestSequencedEvents:
     def test_empty_sequence_raises(self):
         with pytest.raises(ValueError):
             run_transient_stability(self._net(), {"type": "sequence", "steps": []})
+
+
+class TestOvercurrentRelay:
+    """50/51/67 overcurrent relay tripping (BACKLOG #11 — the last remaining
+    transient-stability protection function). A relay resolves its monitored
+    branch via associated_ct (the SAME association arc-flash/TCC use) and
+    accumulates an operate-time integral (dt/t_operate(I), the standard
+    inverse-time-relay emulation for a current that can itself evolve during
+    the run) against arcflash._relay_operate_time's IDMT curve, tripping its
+    trip_cb once the accumulator reaches 1.0."""
+
+    def _feeder(self, pickup_a=1000, curve="Definite Time", time_dial=0.3,
+               relay_type="50/51", direction="forward", ct_ratio="50000/5",
+               parallel_feeder=False):
+        comps = [
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 1e6,
+                                   "x_r_ratio": 1000}),
+            _c("bus_src", "bus", {"name": "SRC", "voltage_kv": 11}),
+            _c("cb1", "cb", {"name": "CB1", "state": "closed", "trip_rating_a": 630,
+                             "magnetic_pickup": 100, "long_time_delay": 10}),
+            _c("ct1", "ct", {"name": "CT1", "ratio": ct_ratio}),
+            _c("cable1", "cable", {"name": "F1", "voltage_kv": 11, "r_per_km": 0.2,
+                                   "x_per_km": 0.08, "length_km": 1}),
+            _c("bus_load", "bus", {"name": "LOAD", "voltage_kv": 11}),
+            _c("ld", "static_load", {"name": "LD", "voltage_kv": 11, "rated_kva": 500,
+                                     "power_factor": 0.95, "demand_factor": 1.0}),
+            _c("relay1", "relay", {
+                "name": "R1", "relay_type": relay_type, "associated_ct": "ct1",
+                "trip_cb": "cb1", "pickup_a": pickup_a, "curve": curve,
+                "time_dial": time_dial, "inst_pickup_a": 0,
+                "direction": direction, "characteristic_angle_deg": 45}),
+        ]
+        wires = [_w("w1", "util", "bus_src"), _w("w2", "bus_src", "cb1"),
+                _w("w3", "cb1", "ct1"), _w("w4", "ct1", "cable1"),
+                _w("w5", "cable1", "bus_load"),
+                Wire(id="wl", fromComponent="ld", fromPort="in",
+                     toComponent="bus_load", toPort="at_0")]
+        if parallel_feeder:
+            comps.append(_c("cable_par", "cable", {"name": "Fpar", "voltage_kv": 11,
+                                                    "r_per_km": 0.2, "x_per_km": 0.08,
+                                                    "length_km": 1}))
+            wires += [_w("w6", "bus_src", "cable_par"), _w("w7", "cable_par", "bus_load")]
+        return ProjectData(projectName="p", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def _fault(self, extra=None):
+        d = {"type": "fault", "bus": "bus_load", "clear_time_s": 5.0,
+             "t_end_s": 1.0, "find_cct": False}
+        d.update(extra or {})
+        return d
+
+    def test_trips_on_sustained_overcurrent(self):
+        r = run_transient_stability(self._feeder(pickup_a=200), self._fault())
+        assert any(tr["element"] == "CB1" and "overcurrent" in tr["reason"]
+                   for tr in r["trips"])
+
+    def test_no_trip_below_pickup(self):
+        r = run_transient_stability(self._feeder(pickup_a=50000), self._fault())
+        assert r["trips"] == []
+
+    def test_idmt_operate_time_matches_closed_form(self):
+        # No CT saturation at this current (50000/5 CT, well above the ~29 kA
+        # fault level) so the accumulator's trip time should match
+        # _relay_operate_time's closed form directly.
+        proj = self._feeder(pickup_a=1000, curve="IEC Standard Inverse", time_dial=0.3)
+        r = run_transient_stability(proj, self._fault({"dt_s": 0.001}))
+        assert len(r["trips"]) == 1
+        t_trip = r["trips"][0]["t"]
+        current_a = float(r["trips"][0]["reason"].split("at ")[1].split(" A")[0])
+        t_expected = _relay_operate_time(
+            {"pickup_a": 1000, "curve": "IEC Standard Inverse", "time_dial": 0.3,
+             "inst_pickup_a": 0}, current_a)
+        assert t_trip == pytest.approx(t_expected, abs=0.01)
+
+    def test_higher_multiple_of_pickup_trips_faster(self):
+        r_close = run_transient_stability(
+            self._feeder(pickup_a=200, curve="IEC Very Inverse", time_dial=0.2),
+            self._fault({"dt_s": 0.001}))
+        r_far = run_transient_stability(
+            self._feeder(pickup_a=10000, curve="IEC Very Inverse", time_dial=0.2),
+            self._fault({"dt_s": 0.001, "t_end_s": 3.0}))
+        assert r_close["trips"] and r_far["trips"]
+        assert r_close["trips"][0]["t"] < r_far["trips"][0]["t"]
+
+    def test_directional_relay_blocks_reverse_flow(self):
+        r = run_transient_stability(
+            self._feeder(pickup_a=1000, curve="Definite Time", time_dial=0.2,
+                        relay_type="67", direction="reverse"),
+            self._fault())
+        assert r["trips"] == []
+
+    def test_directional_relay_trips_forward_flow(self):
+        r = run_transient_stability(
+            self._feeder(pickup_a=1000, curve="Definite Time", time_dial=0.2,
+                        relay_type="67", direction="forward"),
+            self._fault())
+        assert any("overcurrent" in tr["reason"] for tr in r["trips"])
+
+    def test_interaction_with_scripted_sequence_trip(self):
+        # A scripted trip on a DIFFERENT branch (the parallel feeder) plus a
+        # live relay trip on cb1's branch in the same run — validates that
+        # _effective_variant's ybus_trip_cache correctly unions the segment's
+        # own removed-id set with the relay-tripped CB rather than one
+        # silently overwriting the other.
+        proj = self._feeder(pickup_a=500, curve="Definite Time", time_dial=0.15,
+                            ct_ratio="2000/5", parallel_feeder=True)
+        for comp in proj.components:
+            if comp.id == "ld":
+                comp.props["rated_kva"] = 2000
+        disturbance = {"type": "sequence", "t_end_s": 1.0, "dt_s": 0.001, "steps": [
+            {"t": 0.05, "action": "trip", "element": "cable_par"},
+            {"t": 0.1, "action": "load_step", "element": "ld", "delta_pct": 900}]}
+        r = run_transient_stability(proj, disturbance)
+        assert "open Fpar" in r["event"]
+        assert any(tr["element"] == "CB1" and "overcurrent" in tr["reason"]
+                   for tr in r["trips"])
+
+    def test_unresolvable_ct_is_skipped_with_warning(self):
+        # associated_ct points to a CT that isn't wired into the network at
+        # all — no branch to resolve, so the relay is skipped (not fatal).
+        proj = self._feeder(pickup_a=200)
+        proj.components.append(_c("ct_orphan", "ct", {"name": "Orphan CT", "ratio": "400/5"}))
+        for comp in proj.components:
+            if comp.id == "relay1":
+                comp.props["associated_ct"] = "ct_orphan"
+        r = run_transient_stability(proj, self._fault())
+        assert r["trips"] == []
+        assert any("skipped" in w for w in r["warnings"])
 
 
 class TestEdgeCases:

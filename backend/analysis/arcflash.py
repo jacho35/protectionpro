@@ -813,7 +813,7 @@ def _build_relay_maps(components):
     for comp in components.values():
         if comp.type != "relay":
             continue
-        if comp.props.get("relay_type", "50/51") not in ("50/51", "67"):
+        if str(comp.props.get("relay_type", "50/51")) not in ("50/51", "67"):
             continue
         ct_id = comp.props.get("associated_ct")
         cb_id = comp.props.get("trip_cb")
