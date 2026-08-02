@@ -1085,6 +1085,9 @@ const FIELD_INFO = {
   'relay.z1_reach_ohm': 'Zone 1 forward reach in primary ohms.\nTypically set to 80-85% of protected line impedance for instantaneous tripping.\nUse "Grade Distance Zones" (TCC → Distance Grading) to compute this from the actual line/transformer impedance and the Z1 Margin % below, instead of entering it by hand.\nSource: IEEE C37.113 / IEC 60255-121.',
   'relay.z2_reach_ohm': 'Zone 2 forward reach in primary ohms.\nTypically set to the protected line + 50% of the shortest downstream line (overreaches into next section).\nOperates with a time delay (typically 0.3-0.5s).\nUse "Grade Distance Zones" to compute this and flag over/under-reach (including infeed effect at the remote bus).\nSource: IEEE C37.113.',
   'relay.z3_reach_ohm': 'Zone 3 forward reach in primary ohms.\nTypically set to 120% of (protected line + the longest downstream line), as backup.\nOperates with a longer time delay (typically 0.6-1.2s).\nUse "Grade Distance Zones" to compute this and flag over/under-reach.\nSource: IEEE C37.113.',
+  'relay.dist_fault_detect': 'Arms the distance zones only on a real disturbance — measured current above 1.25x, or voltage below 0.9x, the pre-fault value. Without it a long Zone 3 whose mho circle covers the steady load impedance simply times out and trips the feeder on load with no fault present. Used by Transient Stability; leave on unless you are deliberately studying load encroachment.',
+  'relay.dist_psb': 'Power-swing blocking (ANSI 68), used by Transient Stability. During a stable rotor swing the apparent impedance sweeps across the R-X plane and passes straight through the zones; without blocking the relay trips the line and turns a stable case into a reported instability. A fault puts the impedance inside a zone almost instantly, a swing takes far longer — the zone entry is timed against the crossing of an outer characteristic (1.5x the widest zone) and blocked if it was too slow.',
+  'relay.psb_transit_s': 'Transit time that separates a fault from a power swing: if the apparent impedance takes longer than this to travel from the outer characteristic into a tripping zone, the entry is declared a swing and that zone is blocked until the impedance leaves it. 20-50 ms is typical practice.',
   'relay.z1_margin_pct': 'Zone 1 = this % of the protected line\'s computed impedance, used by "Grade Distance Zones" (TCC → Distance Grading). 80-85% is typical practice — under 100% so CT/VT errors and fault resistance can\'t make Zone 1 overreach past the remote bus into the next line\'s own Zone 1 (loss of selectivity).',
   'relay.z2_next_line_pct': 'Zone 2 = protected line + this % of the SHORTEST downstream line\'s computed impedance, used by "Grade Distance Zones". 50% is typical — reaching further risks overlapping the next line\'s own Zone 1.',
   'relay.z3_next_line_pct': 'Zone 3 = protected line + this % of the LONGEST downstream line\'s computed impedance (before the Z3 Margin below), used by "Grade Distance Zones". 100% (the full next line) is typical backup practice.',
@@ -2434,6 +2437,13 @@ const COMPONENT_DEFS = {
       z3_delay_s: 0.8,
       z3_reverse: false,
       mho_angle_deg: 75,
+      // [D4] Zone supervision used by the transient-stability engine: a fault
+      // detector arms the zones (so steady load inside a long Z3 cannot trip
+      // it) and an ANSI 68 power-swing block drops them when the apparent
+      // impedance creeps into a zone rather than jumping into it.
+      dist_fault_detect: 'on',
+      dist_psb: 'on',
+      psb_transit_s: 0.03,
       // Zone-grading margins ("Grade Distance Zones" in the TCC modal) —
       // textbook-typical defaults, overridable per relay.
       z1_margin_pct: 85,
@@ -2469,6 +2479,9 @@ const COMPONENT_DEFS = {
       { key: 'z2_next_line_pct', label: 'Z2 Next-Line %', type: 'number', unit: '%', min: 0, max: 100, step: 1, showWhen: { field: 'relay_type', values: ['21'] }, section: 'protection' },
       { key: 'z3_next_line_pct', label: 'Z3 Next-Line %', type: 'number', unit: '%', min: 0, max: 200, step: 1, showWhen: { field: 'relay_type', values: ['21'] }, section: 'protection' },
       { key: 'z3_margin_pct', label: 'Z3 Margin', type: 'number', unit: '%', min: 100, max: 200, step: 1, showWhen: { field: 'relay_type', values: ['21'] }, section: 'protection' },
+      { key: 'dist_fault_detect', label: 'Fault Detector', type: 'select', options: ['on', 'off'], showWhen: { field: 'relay_type', values: ['21'] }, section: 'protection' },
+      { key: 'dist_psb', label: 'Power-Swing Block', type: 'select', options: ['on', 'off'], showWhen: { field: 'relay_type', values: ['21'] }, section: 'protection' },
+      { key: 'psb_transit_s', label: 'PSB Transit Time', type: 'number', unit: 's', min: 0, step: 0.005, showWhen: { field: 'relay_type', values: ['21'] }, section: 'protection' },
     ],
   },
   switch: {
