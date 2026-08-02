@@ -3,7 +3,19 @@
  * A distribution board's ways live in comp.props.circuits:
  *   { way, description, poles ('1P'|'3P'), phase ('R'|'W'|'B'|'RWB'),
  *     breaker_a, curve ('B'|'C'|'D'), el_group, load_va, demand_factor,
- *     power_factor, cable_mm2, cable_m, leakage_ma }
+ *     power_factor, cable_mm2, ecc_mm2, cable_m, leakage_ma }
+ *
+ * TWO HOSTS, ONE RENDERER. render() writes into whatever `this.body` points
+ * at, so the same grid serves both the #db-modal (quick look at one board)
+ * and the full-screen Schedules workspace (every board, board rail on the
+ * left). _setHost() switches between them; open()/close() drive the modal,
+ * openInline()/commit() drive the workspace. Only one host may hold a
+ * populated grid at a time — render() emits fixed element ids.
+ *
+ * The Iz / %VD / ECC result columns are filled from the backend
+ * db-circuit-check engine (AppState.dbCheckResults), indexed by stable way id
+ * in _resIndex and painted by _paintResults() — a text-only update that never
+ * disturbs a focused cell.
  *
  * Each way carries its own power_factor; recompute() rolls them up (diversified
  * P/Q vector sum) into the board-level power_factor prop the analyses read.
@@ -22,11 +34,14 @@
 
 const DBSchedule = {
   modal: null,
-  body: null,
+  body: null,             // the ACTIVE host container (modal body or workspace grid)
+  _modalBody: null,       // #db-modal-body, cached at init
+  mode: 'modal',          // 'modal' | 'workspace'
   currentId: null,
   _openCommitted: null,   // JSON of the committed fields at open time
   _openDerived: null,     // derived lumped-load props at open time (pre-render)
   _selected: new Set(),   // way ids checked for bulk editing (stable across sort/render)
+  _resIndex: null,        // Map(way id → backend check row), or null before any run
 
   // Lumped-load props recompute() derives from the committed fields
   _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'power_factor', 'phase_a_pct',
@@ -40,6 +55,7 @@ const DBSchedule = {
     { k: 'breaker_a', label: 'Breaker (A)', type: 'number' },
     { k: 'el_group', label: 'EL Group', type: 'text' },
     { k: 'cable_mm2', label: 'Cable mm²', type: 'number' },
+    { k: 'ecc_mm2', label: 'ECC mm²', type: 'number' },
     { k: 'cable_m', label: 'Length (m)', type: 'number' },
     { k: 'load_va', label: 'Load (VA)', type: 'number' },
     { k: 'demand_factor', label: 'DF', type: 'number' },
@@ -85,7 +101,8 @@ const DBSchedule = {
 
   init() {
     this.modal = document.getElementById('db-modal');
-    this.body = document.getElementById('db-modal-body');
+    this._modalBody = document.getElementById('db-modal-body');
+    this.body = this._modalBody;
     document.getElementById('db-modal-close').addEventListener('click', () => this.close());
     this.modal.addEventListener('click', (e) => {
       if (e.target === this.modal) this.close();
@@ -103,76 +120,137 @@ const DBSchedule = {
     });
   },
 
-  // What close() commits — diffed against the open-time copy so a read-only
-  // look at the schedule doesn't clear results or push an undo snapshot
+  // What commit() diffs against the open-time copy so a read-only look at the
+  // schedule doesn't clear results or push an undo snapshot. `circuits` covers
+  // every per-way field (including ecc_mm2); the board-level install
+  // conditions and Ze are edited in the Schedules workspace rail and must be
+  // listed explicitly or those edits would never mark the project dirty.
   _committedFields(comp) {
     return {
       circuits: comp.props.circuits || [],
       board_diversity: comp.props.board_diversity ?? 1.0,
       el_ratings: comp.props.el_ratings || {},
+      way_install: comp.props.way_install || null,
+      ze_ohm: comp.props.ze_ohm ?? null,
     };
   },
 
-  open(compId) {
+  // Point the renderer at a container. Exactly one host may hold a populated
+  // grid — render() emits fixed ids (#db-rows, #db-select-all, …), so the
+  // outgoing host is cleared first.
+  _setHost(el, mode) {
+    if (this.body && this.body !== el) this.body.innerHTML = '';
+    this.body = el;
+    this.mode = mode || 'modal';
+  },
+
+  // Status-line messages. #status-info lives inside #app-container, which
+  // switchWorkspace() hides — so in a workspace the message must go to that
+  // workspace's own chip or it is written to an invisible element.
+  _status(msg) {
+    if (this.mode === 'workspace' && typeof Schedules !== 'undefined' && Schedules._status) {
+      Schedules._status(msg);
+      return;
+    }
+    const el = document.getElementById('status-info');
+    if (el) el.textContent = msg;
+  },
+
+  // Begin an edit session on a board: lazy migrations + the diff baseline.
+  // Shared by the modal (open) and the workspace (openInline).
+  _beginEdit(compId) {
     const comp = AppState.components.get(compId);
-    if (!comp || comp.type !== 'distribution_board') return;
+    if (!comp || comp.type !== 'distribution_board') return null;
     this.currentId = compId;
     this._selected = new Set();
     if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
     this._ensureWayIds(comp);   // lazy EE-7 migration for existing projects
     this._ensurePf(comp);       // lazy per-circuit PF migration for old projects
     // Snapshot BEFORE render() (whose recompute() writes the derived props)
+    this._rebaseline(comp);
+    return comp;
+  },
+
+  // (Re)take the diff baseline. Called at the start of an edit session and
+  // again after every commit, so the next diff is against the last commit
+  // rather than against the session start.
+  _rebaseline(comp) {
     this._openCommitted = JSON.stringify(this._committedFields(comp));
     this._openDerived = {};
     for (const k of this._DERIVED_KEYS) {
       this._openDerived[k] = comp.props[k] !== undefined
         ? JSON.parse(JSON.stringify(comp.props[k])) : undefined;
     }
+  },
+
+  open(compId) {
+    const comp = this._beginEdit(compId);
+    if (!comp) return;
+    this._setHost(this._modalBody, 'modal');
     document.getElementById('db-modal-title').textContent =
       `Circuit Schedule — ${comp.props.name || compId}`;
     this.render();
     this.modal.style.display = '';
   },
 
-  close(commit = true) {
-    if (this.modal) this.modal.style.display = 'none';
-    if (commit && this.currentId) {
-      const comp = AppState.components.get(this.currentId);
-      if (comp) {
-        const unchanged = this._openCommitted != null &&
-          JSON.stringify(this._committedFields(comp)) === this._openCommitted;
-        if (unchanged) {
-          // Read-only visit: undo the derived-prop writes render()'s
-          // recompute() made and skip the commit ritual entirely (no
-          // results cleared, no dirty flag, no undo snapshot).
-          if (this._openDerived) {
-            for (const k of this._DERIVED_KEYS) {
-              if (this._openDerived[k] === undefined) delete comp.props[k];
-              else comp.props[k] = this._openDerived[k];
-            }
-          }
-        } else {
-          this.recompute(comp);
-          this._normalizeElRatings(comp);
-          AppState.dirty = true;
-          if (typeof Properties !== 'undefined') {
-            Properties._notifyResultsCleared();
-          }
-          AppState.clearResults();
-          if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
-          Canvas.render();
-          if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {
-            Properties.show(comp.id);
-          }
+  // Render the same grid into an arbitrary container (the Schedules
+  // workspace). No modal chrome, no title write — the host owns those.
+  openInline(compId, hostEl) {
+    if (!hostEl) return;
+    const comp = this._beginEdit(compId);
+    if (!comp) { hostEl.innerHTML = ''; return; }
+    this._setHost(hostEl, 'workspace');
+    this.render();
+  },
+
+  // Write the current board's edits back into the model. Diff-aware and
+  // idempotent — an unchanged board costs nothing, so a workspace may call
+  // this as often as it likes (board switch, deactivate, idle, save).
+  commit() {
+    if (!this.currentId) return false;
+    const comp = AppState.components.get(this.currentId);
+    if (!comp) return false;
+    const unchanged = this._openCommitted != null &&
+      JSON.stringify(this._committedFields(comp)) === this._openCommitted;
+    if (unchanged) {
+      // Read-only visit: undo the derived-prop writes render()'s recompute()
+      // made and skip the commit ritual entirely (no results cleared, no
+      // dirty flag, no undo snapshot).
+      if (this._openDerived) {
+        for (const k of this._DERIVED_KEYS) {
+          if (this._openDerived[k] === undefined) delete comp.props[k];
+          else comp.props[k] = this._openDerived[k];
         }
       }
+      return false;
     }
+    this.recompute(comp);
+    this._normalizeElRatings(comp);
+    AppState.dirty = true;
+    if (typeof Properties !== 'undefined') {
+      Properties._notifyResultsCleared();
+    }
+    AppState.clearResults();
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    Canvas.render();
+    if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {
+      Properties.show(comp.id);
+    }
+    this._rebaseline(comp);
+    return true;
+  },
+
+  close(commit = true) {
+    if (this.modal) this.modal.style.display = 'none';
+    if (commit) this.commit();
     this.currentId = null;
     this._openCommitted = null;
     this._openDerived = null;
     this._selected = new Set();
     // When the editor was opened from the Plan workspace, refresh its board
-    // panel so the way count reflects any edits.
+    // panel so the way count reflects any edits. Deliberately in close() and
+    // not commit() — the workspace commits often and must not poke the plan
+    // panel on every idle tick.
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
   },
 
@@ -266,6 +344,59 @@ const DBSchedule = {
     comp.props.el_ratings = ratings;
   },
 
+  // ── ECC (earth continuity conductor) ────────────────────────────────
+  // IEC 60364-5-54 Table 54.7 / SANS 10142-1 selection rule, rounded up to a
+  // preferred size. Mirrors ecc_required_mm2() in db_circuit_check.py — the
+  // frontend copy exists so the "Fill ECC" button and the blank-cell
+  // placeholder work without a round trip.
+  eccRequiredMm2(phaseMm2) {
+    const s = Number(phaseMm2);
+    if (!(s > 0)) return null;
+    const required = s <= 16 ? s : (s <= 35 ? 16 : s / 2);
+    const sizes = (typeof IEC_STANDARD_SIZES !== 'undefined')
+      ? IEC_STANDARD_SIZES : [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
+    for (const size of sizes) if (size >= required - 1e-9) return size;
+    return null;
+  },
+
+  // Set the table minimum on every way that has no ECC yet. Deliberately a
+  // BUTTON, not an on-load migration: writing props on open would break the
+  // read-only-visit guarantee that keeps a browse from dirtying the project.
+  fillEcc(comp) {
+    let n = 0;
+    for (const c of (comp.props.circuits || [])) {
+      if (c.ecc_mm2 != null && c.ecc_mm2 !== '' && Number(c.ecc_mm2) > 0) continue;
+      const req = this.eccRequiredMm2(c.cable_mm2);
+      if (req != null) { c.ecc_mm2 = req; n++; }
+    }
+    return n;
+  },
+
+  // ── Backend circuit check ───────────────────────────────────────────
+  // One call covers every board in the project, so the workspace's board rail
+  // and the current grid are populated together.
+  async runCheck() {
+    if (this._checkInFlight) { this._checkQueued = true; return; }
+    this._checkInFlight = true;
+    this._status('Checking circuits…');
+    try {
+      const res = await API.runDbCircuitCheck();
+      AppState.dbCheckResults = res;
+      this.syncResults();
+      this._paintResults();
+      if (typeof Schedules !== 'undefined' && Schedules._active) Schedules.render();
+      const s = res.summary || {};
+      this._status(`Circuit check: ${s.pass || 0} pass · ${s.warn || 0} warn · `
+        + `${s.fail || 0} fail · ${s.info || 0} not evaluated (${s.ways || 0} ways).`);
+    } catch (err) {
+      this._status(`Circuit check failed: ${err.message}`);
+      if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Circuit check failed: ${err.message}`, 'error');
+    } finally {
+      this._checkInFlight = false;
+      if (this._checkQueued) { this._checkQueued = false; this.runCheck(); }
+    }
+  },
+
   // Reassign 1P ways across R/W/B for best balance (largest-first greedy).
   // 3P ways are inherently balanced and left untouched.
   autoBalance(comp) {
@@ -281,6 +412,36 @@ const DBSchedule = {
       totals[phase] += s.va;
     }
     return singles.length;
+  },
+
+  // ── Blank way factory ───────────────────────────────────────────────
+  // The single definition of "a new empty way". This literal used to be
+  // duplicated at five sites (add-row, Enter-on-last-row, paste-append,
+  // PlanCircuits._newWay, PlanSync._ensureFeederCircuit) and had already
+  // drifted apart — the plan-sync copy omitted power_factor entirely. Every
+  // site now calls this so a new field only has to be added once.
+  // ecc_mm2 is intentionally left null: "as required by Table 54.7", which
+  // the check engine resolves. Writing a concrete default here would be an
+  // unrequested opinion about the installation.
+  newWay(index, overrides) {
+    const i = Number(index) || 0;
+    return Object.assign({
+      id: this._wayId(),
+      way: String(i + 1),
+      description: '',
+      poles: '1P',
+      phase: ['R', 'W', 'B'][i % 3],
+      breaker_a: 20,
+      curve: 'C',
+      el_group: '',
+      cable_mm2: 2.5,
+      ecc_mm2: null,
+      cable_m: 10,
+      load_va: 0,
+      demand_factor: 1,
+      power_factor: 0.9,
+      leakage_ma: 0,
+    }, overrides || {});
   },
 
   // ── Default load presets ────────────────────────────────────────────
@@ -302,22 +463,19 @@ const DBSchedule = {
   _makeCircuit(t, count, idx) {
     const n = Math.max(1, Math.round(count) || 1);
     const is3P = t.poles === '3P';
-    return {
-      id: this._wayId(),
-      way: String(idx + 1),
+    return this.newWay(idx, {
       description: this._describeLoad(t, n),
       poles: t.poles,
       phase: is3P ? 'RWB' : ['R', 'W', 'B'][idx % 3],
       breaker_a: t.breaker_a,
       curve: t.curve,
-      el_group: '',
       cable_mm2: t.cable_mm2,
-      cable_m: 10,
+      ecc_mm2: t.ecc_mm2 ?? null,
       load_va: t.va * n,
       demand_factor: t.df,
       power_factor: t.pf ?? 0.9,
       leakage_ma: Math.round((t.leak_ma || 0) * n * 100) / 100,
-    };
+    });
   },
 
   // Append `repeat` circuits of `key`, each carrying `count` units, then
@@ -334,9 +492,9 @@ const DBSchedule = {
     }
     this.render();
     const units = Math.max(1, Math.round(count) || 1);
-    document.getElementById('status-info').textContent = n > 1
+    this._status(n > 1
       ? `Added ${n} ${t.label.toLowerCase()} circuit(s).`
-      : `Added ${t.label.toLowerCase()} way (${units} ${t.unit}${units === 1 ? '' : 's'}).`;
+      : `Added ${t.label.toLowerCase()} way (${units} ${t.unit}${units === 1 ? '' : 's'}).`);
   },
 
   // ── Board incomer current (EE-16) ──
@@ -384,18 +542,28 @@ const DBSchedule = {
   // Overload / undersize warnings (EE-8, EE-9): way current vs breaker,
   // socket-way conductor vs SANS 10142-1 minimum, feeder demand vs breaker,
   // cable ampacity vs breaker (Iz ≥ In per SANS 10142-1 / IEC 60364-433).
-  _wayWarnings(c) {
+  //
+  // These are the INSTANT, client-side checks — they keep working while the
+  // backend result is pending or stale. `hasBackendRow` suppresses the two
+  // that the db-circuit-check engine states more accurately (it derates the
+  // ampacity; this lookup does not), so the tooltip doesn't say the same
+  // thing twice with two different numbers.
+  _wayWarnings(c, hasBackendRow = false) {
     const w = [];
     const br = Number(c.breaker_a) || 0;
     const I = this._wayCurrentA(c);
-    if (br && I > br + 1e-6) w.push(`Load current ${I.toFixed(1)} A exceeds the ${br} A breaker`);
+    if (!hasBackendRow && br && I > br + 1e-6) {
+      w.push(`Load current ${I.toFixed(1)} A exceeds the ${br} A breaker`);
+    }
     const isSocket = /socket/i.test(c.description || '');
     if (isSocket && Number(c.cable_mm2) > 0 && Number(c.cable_mm2) < 2.5) {
       w.push('Socket circuit cable < 2.5 mm² (SANS 10142-1)');
     }
-    const ampacity = this._cableAmpacityA(c.cable_mm2);
-    if (ampacity != null && br > ampacity + 1e-6) {
-      w.push(`${c.cable_mm2} mm² cable (Iz ≈ ${ampacity} A) undersized for the ${br} A breaker — SANS 10142-1 Iz ≥ In`);
+    if (!hasBackendRow) {
+      const ampacity = this._cableAmpacityA(c.cable_mm2);
+      if (ampacity != null && br > ampacity + 1e-6) {
+        w.push(`${c.cable_mm2} mm² cable (Iz ≈ ${ampacity} A, undegraded) undersized for the ${br} A breaker — SANS 10142-1 Iz ≥ In`);
+      }
     }
     if (c.type === 'feeder_db' && Number(c.downstream_a) > 0 && br && c.downstream_a > br + 1e-6) {
       w.push(`Downstream demand ${Number(c.downstream_a).toFixed(1)} A exceeds the ${br} A feeder breaker`);
@@ -412,10 +580,101 @@ const DBSchedule = {
     return p;
   },
 
+  // ── Backend check results ───────────────────────────────────────────
+  // AppState.dbCheckResults is the authority; _resIndex is a way-id lookup
+  // rebuilt from it. Keyed on the stable id, never the row index, because
+  // sorting by way number reorders the array under us.
+  syncResults() {
+    const res = (typeof AppState !== 'undefined') ? AppState.dbCheckResults : null;
+    this._resIndex = (res && Array.isArray(res.ways))
+      ? new Map(res.ways.filter(w => w.way_id).map(w => [w.way_id, w]))
+      : null;
+    return this._resIndex;
+  },
+
+  _resultFor(c) {
+    return (this._resIndex && c && c.id) ? this._resIndex.get(c.id) : null;
+  },
+
+  // Fill (or blank) the three result cells. Text-only, so this can run while
+  // a cell is focused without stealing the caret — same discipline as
+  // refreshTotals().
+  _paintResults() {
+    if (!this.body) return;
+    const comp = AppState.components.get(this.currentId);
+    const byId = new Map((comp ? (comp.props.circuits || []) : []).map(c => [c.id, c]));
+    this.body.querySelectorAll('td.db-res').forEach(td => {
+      const row = this._resIndex ? this._resIndex.get(td.dataset.id) : null;
+      const kind = td.dataset.res;
+      let text = '—', status = 'none', title = 'Run "Check circuits" to compute';
+      if (row) {
+        if (kind === 'iz') {
+          text = row.iz_derated_a != null ? `${row.iz_derated_a.toFixed(1)}` : '—';
+          status = this._worstStatus(row.ampacity_status, row.coordination_status);
+          title = [row.derating_detail, row.coordination_message].filter(Boolean).join(' · ');
+        } else if (kind === 'vd') {
+          const pct = row.vd_total_pct != null ? row.vd_total_pct : row.vd_pct;
+          text = pct != null ? `${pct.toFixed(2)}` : '—';
+          status = row.vd_status || 'none';
+          title = row.vd_message || '';
+        } else if (kind === 'ecc') {
+          const way = byId.get(td.dataset.id);
+          const declared = way && way.ecc_mm2 != null && way.ecc_mm2 !== '' && Number(way.ecc_mm2) > 0;
+          text = declared ? `${Number(way.ecc_mm2)}`
+            : (row.ecc_required_mm2 != null ? `${row.ecc_required_mm2} min` : '—');
+          status = row.ecc_status || 'none';
+          title = row.ecc_message || '';
+        }
+        // The earth-loop verdict has no column of its own — surface it on the
+        // Iz cell's tooltip so it is never invisible.
+        if (kind === 'iz' && row.zs_message) title += ` · ${row.zs_message}`;
+      }
+      td.textContent = text;
+      td.className = `db-res st-${status}`;
+      td.title = title;
+    });
+    // Refresh the ⚠ glyphs, whose tooltips fold in the backend messages.
+    this._repaintWarnings();
+  },
+
+  _repaintWarnings() {
+    const comp = AppState.components.get(this.currentId);
+    if (!comp || !this.body) return;
+    const circuits = comp.props.circuits || [];
+    this.body.querySelectorAll('#db-rows tr[data-idx]').forEach(tr => {
+      const cell = tr.querySelector('.db-row-actions');
+      if (!cell) return;
+      const c = circuits[parseInt(tr.dataset.idx)];
+      if (!c) return;
+      const old = cell.querySelector('.db-warn');
+      const html = this._wayWarnHtml(c);
+      if (old) old.remove();
+      if (html) cell.insertAdjacentHTML('afterbegin', html);
+    });
+  },
+
+  _worstStatus(...list) {
+    const rank = { pass: 0, none: 0, info: 1, warn: 2, fail: 3 };
+    let best = 'pass';
+    for (const s of list) if (s && (rank[s] ?? 0) > rank[best]) best = s;
+    return best;
+  },
+
+  // The ⚠ glyph's markup: local (instant) warnings plus the backend's own
+  // messages for the same way, so the tooltip stays the single place detail
+  // lives. Colour follows the backend verdict once one exists.
+  _wayWarnHtml(c) {
+    const row = this._resultFor(c);
+    const all = [...this._wayWarnings(c, !!row), ...((row && row.messages) || [])];
+    if (!all.length) return '';
+    const colour = (row && row.status === 'warn') ? '#b26a00'
+      : (row && row.status === 'info' && all.every(m => (row.messages || []).includes(m))) ? '#888'
+      : '#d32f2f';
+    return `<span class="db-warn" title="${escHtml(all.join(' · '))}" style="color:${colour};margin-right:4px;cursor:help;">⚠</span>`;
+  },
+
   _wayStatusHtml(c, i) {
-    let html = '';
-    const warns = this._wayWarnings(c);
-    if (warns.length) html += `<span class="db-warn" title="${escHtml(warns.join(' · '))}" style="color:#d32f2f;margin-right:4px;cursor:help;">⚠</span>`;
+    let html = this._wayWarnHtml(c);
     const pins = this._wayPins(c);
     if (pins.length) {
       html += `<button class="btn-small db-unpin" data-idx="${i}" title="Pinned (${escHtml(pins.join(', '))}) — your edit is protected from the plan sync. Click to unpin and let the plan drive it again." style="margin-right:2px;">📌</button>`;
@@ -441,6 +700,7 @@ const DBSchedule = {
     const comp = AppState.components.get(this.currentId);
     if (!comp) return;
     const circuits = comp.props.circuits;
+    this.syncResults();
 
     // Drop selection entries for ways that no longer exist.
     const validIds = new Set(circuits.map(c => c.id));
@@ -465,10 +725,14 @@ const DBSchedule = {
         <td data-label="EL Grp"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
         <td data-label="Leak (mA)"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
         <td data-label="Cable mm²"><input type="number" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" min="0.5" step="0.5" style="width:68px"></td>
+        <td data-label="ECC mm²"><input type="number" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" min="0.5" step="0.5" style="width:68px" placeholder="auto" title="Earth continuity conductor. Leave blank to take the IEC 60364-5-54 Table 54.7 minimum for the live conductor."></td>
         <td data-label="Len (m)"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
         <td data-label="Load (VA)"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
         <td data-label="PF"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
+        <td data-label="Iz (A)" class="db-res st-none" data-res="iz" data-id="${escHtml(c.id)}">—</td>
+        <td data-label="%VD" class="db-res st-none" data-res="vd" data-id="${escHtml(c.id)}">—</td>
+        <td data-label="ECC ✓" class="db-res st-none" data-res="ecc" data-id="${escHtml(c.id)}">—</td>
         <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
       </tr>`).join('');
 
@@ -516,18 +780,24 @@ const DBSchedule = {
       <div class="db-phase-bars">${barsHtml}</div>
       <div id="db-el-panel"></div>
       <div id="db-bulk-bar"></div>
-      <div class="library-table-wrap" style="max-height:62vh;overflow:auto;">
+      <div class="library-table-wrap db-schedule-grid">
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr>
             <th style="width:24px;text-align:center;"><input type="checkbox" id="db-select-all" title="Select / deselect all ways"></th>
             <th>Way</th><th>Description</th><th>Poles</th><th>Ph</th>
             <th>Breaker (A)</th><th>Curve</th><th>EL Grp</th>
             <th title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
-            <th>Cable mm²</th><th>Len (m)</th><th>Load (VA)</th><th>DF</th>
-            <th title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th><th></th>
+            <th>Cable mm²</th>
+            <th title="Earth continuity conductor size. Blank = the IEC 60364-5-54 Table 54.7 minimum for the live conductor.">ECC mm²</th>
+            <th>Len (m)</th><th>Load (VA)</th><th>DF</th>
+            <th title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th>
+            <th class="db-res-h" data-res="iz" title="Derated current-carrying capacity Iz (IEC 60364-5-52) — compared against the breaker rating In, since SANS 10142-1 / IEC 60364-433 requires Ib ≤ In ≤ Iz. Tooltip also carries the earth-loop (Zs) verdict.">Iz (A)</th>
+            <th class="db-res-h" data-res="vd" title="Voltage drop over this way's own length, plus upstream drop when Load Flow has been run. SANS 10142-1 Cl. 6.6: 5 % total, 3 % for lighting.">%VD</th>
+            <th class="db-res-h" data-res="ecc" title="Earth continuity conductor verdict against IEC 60364-5-54 Table 54.7. '&lt;n&gt; min' means no ECC is specified and the table minimum is assumed.">ECC ✓</th>
+            <th></th>
           </tr></thead>
           <tbody id="db-rows">${rows ||
-            '<tr><td colspan="15" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
+            '<tr><td colspan="19" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -545,6 +815,8 @@ const DBSchedule = {
       <div style="display:flex;align-items:center;gap:16px;margin-top:10px;flex-wrap:wrap;">
         <button class="btn-small" id="db-add-row">+ Add Way</button>
         <button class="btn-small" id="db-auto-balance" title="Reassign single-phase ways across R/W/B for best balance (3-phase ways untouched)">Auto Balance</button>
+        <button class="btn-small" id="db-fill-ecc" title="Set every blank ECC to the IEC 60364-5-54 Table 54.7 minimum for its live conductor">Fill ECC</button>
+        <button class="btn-small" id="db-check-circuits" title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC and earth-fault loop Zs">Check circuits</button>
         <button class="btn-small" id="db-export-xlsx" title="Export the schedule as an Excel workbook">Export Excel</button>
         <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file (replaces the current schedule)">Import Excel</button>
         <input type="file" id="db-import-file" accept=".xlsx,.xls,.csv" style="display:none">
@@ -552,11 +824,12 @@ const DBSchedule = {
           &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}): <strong>${demand.toFixed(2)} kVA</strong> (${ampsLabel})
           &nbsp; Board PF: <strong>${totals.pf.toFixed(3)}</strong>
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
-        <button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>
+        ${this.mode === 'modal' ? '<button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>' : ''}
       </div>`;
 
     this._refreshElPanel(comp);
     this._refreshBulkBar();
+    this._paintResults();
 
     // ── Bulk-selection checkboxes ──
     this.body.querySelectorAll('.db-row-sel').forEach(cb => {
@@ -600,10 +873,17 @@ const DBSchedule = {
     this.body.querySelector('#db-auto-balance').addEventListener('click', () => {
       const n = this.autoBalance(comp);
       this.render();
-      document.getElementById('status-info').textContent =
-        n > 0 ? `Auto-balanced ${n} single-phase way(s) across R/W/B.`
-              : 'No single-phase ways to balance.';
+      this._status(n > 0 ? `Auto-balanced ${n} single-phase way(s) across R/W/B.`
+                         : 'No single-phase ways to balance.');
     });
+    this.body.querySelector('#db-fill-ecc').addEventListener('click', () => {
+      const n = this.fillEcc(comp);
+      this.render();
+      this._status(n > 0
+        ? `Set the Table 54.7 minimum ECC on ${n} way(s).`
+        : 'Every way already has an ECC size.');
+    });
+    this.body.querySelector('#db-check-circuits').addEventListener('click', () => this.runCheck());
     this.body.querySelector('#db-export-xlsx').addEventListener('click', () => this.exportXlsx(comp));
     const fileInput = this.body.querySelector('#db-import-file');
     this.body.querySelector('#db-import-xlsx').addEventListener('click', () => fileInput.click());
@@ -613,16 +893,11 @@ const DBSchedule = {
       e.target.value = '';
     });
     this.body.querySelector('#db-add-row').addEventListener('click', () => {
-      circuits.push({
-        id: this._wayId(),
-        way: String(circuits.length + 1), description: '', poles: '1P',
-        phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
-        el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1, power_factor: 0.9,
-        leakage_ma: 0,
-      });
+      circuits.push(this.newWay(circuits.length));
       this.render();
     });
-    this.body.querySelector('#db-done').addEventListener('click', () => this.close());
+    const doneBtn = this.body.querySelector('#db-done');
+    if (doneBtn) doneBtn.addEventListener('click', () => this.close());
     this.body.querySelectorAll('.db-del-row').forEach(btn => {
       btn.addEventListener('click', () => {
         circuits.splice(parseInt(btn.dataset.idx), 1);
@@ -679,6 +954,7 @@ const DBSchedule = {
             c.breaker_a = t.breaker_a;
             c.curve = t.curve;
             c.cable_mm2 = t.cable_mm2;
+            c.ecc_mm2 = t.ecc_mm2 ?? null;
             c.leakage_ma = t.leak_ma || 0;
             c.poles = t.poles;
             if (t.poles === '3P') c.phase = 'RWB';
@@ -699,9 +975,11 @@ const DBSchedule = {
 
     // Keyboard navigation: Enter/↓ = same column next row (Enter on the last
     // row adds a way), ↑ = previous row, Tab keeps its native left/right.
+    // Must match the VISUAL column order — paste maps clipboard columns onto
+    // this list by position.
     const NAV_COLS = ['way', 'description', 'poles', 'phase', 'breaker_a', 'curve',
-      'el_group', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor',
-      'power_factor'];
+      'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m', 'load_va',
+      'demand_factor', 'power_factor'];
     this._focusCell = (row, k) => {
       const el = this.body.querySelector(`#db-rows tr[data-idx="${row}"] [data-k="${k}"]`);
       if (el) { el.focus(); if (el.select) el.select(); }
@@ -717,13 +995,7 @@ const DBSchedule = {
         cell.dispatchEvent(new Event('change', { bubbles: true }));
         if (row + 1 >= circuits.length && e.key === 'Enter') {
           // Enter on the last row: append a new way and land in it
-          circuits.push({
-            id: this._wayId(),
-            way: String(circuits.length + 1), description: '', poles: '1P',
-            phase: ['R', 'W', 'B'][circuits.length % 3], breaker_a: 20, curve: 'C',
-            el_group: '', cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1, power_factor: 0.9,
-            leakage_ma: 0,
-          });
+          circuits.push(this.newWay(circuits.length));
           this.render();
           this._focusCell(circuits.length - 1, k);
         } else if (row + 1 < circuits.length) {
@@ -750,13 +1022,7 @@ const DBSchedule = {
       for (let li = 0; li < lines.length; li++) {
         const rowIdx = startRow + li;
         while (rowIdx >= circuits.length) {
-          circuits.push({
-            id: this._wayId(),
-            way: String(circuits.length + 1), description: '', poles: '1P',
-            phase: 'R', breaker_a: 20, curve: 'C', el_group: '',
-            cable_mm2: 2.5, cable_m: 10, load_va: 0, demand_factor: 1, power_factor: 0.9,
-            leakage_ma: 0,
-          });
+          circuits.push(this.newWay(circuits.length, { phase: 'R' }));
         }
         const c = circuits[rowIdx];
         const vals = lines[li].split('\t');
@@ -764,7 +1030,7 @@ const DBSchedule = {
           const key = NAV_COLS[startCol + vi];
           const raw = String(vals[vi]).trim();
           if (raw === '') continue;
-          if (['breaker_a', 'leakage_ma', 'cable_mm2', 'cable_m', 'load_va', 'demand_factor', 'power_factor'].includes(key)) {
+          if (['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m', 'load_va', 'demand_factor', 'power_factor'].includes(key)) {
             const n = parseFloat(raw);
             if (!isNaN(n)) {
               if (key === 'demand_factor') c[key] = Math.min(1, Math.max(0, n));
@@ -786,8 +1052,7 @@ const DBSchedule = {
         }
       }
       this.render();
-      document.getElementById('status-info').textContent =
-        `Pasted ${lines.length} row(s) into the schedule.`;
+      this._status(`Pasted ${lines.length} row(s) into the schedule.`);
     });
   },
 
@@ -897,7 +1162,7 @@ const DBSchedule = {
     let val = input.value;
     if (f.type === 'number') {
       val = parseFloat(val);
-      if (isNaN(val)) { document.getElementById('status-info').textContent = 'Enter a value to apply.'; return; }
+      if (isNaN(val)) { this._status('Enter a value to apply.'); return; }
       if (f.k === 'demand_factor') val = Math.min(1, Math.max(0, val));
     }
     let count = 0;
@@ -922,7 +1187,7 @@ const DBSchedule = {
       count++;
     }
     this.render();
-    document.getElementById('status-info').textContent = `Set ${f.label} on ${count} way(s).`;
+    this._status(`Set ${f.label} on ${count} way(s).`);
   },
 
   _bulkDelete() {
@@ -935,7 +1200,7 @@ const DBSchedule = {
     comp.props.circuits.push(...keep);
     this._selected.clear();
     this.render();
-    document.getElementById('status-info').textContent = `Removed ${removed} selected way(s).`;
+    this._status(`Removed ${removed} selected way(s).`);
   },
 
   // ── EL group leakage panel ──────────────────────────────────────────
@@ -993,8 +1258,8 @@ const DBSchedule = {
   // ── Excel export / import ───────────────────────────────────────────
 
   XLSX_HEADERS: ['Way', 'Description', 'Poles', 'Phase', 'Breaker (A)', 'Curve',
-    'EL Group', 'Leak (mA)', 'Cable (mm2)', 'Length (m)', 'Load (VA)', 'Demand Factor',
-    'Power Factor'],
+    'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)', 'Load (VA)',
+    'Demand Factor', 'Power Factor'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
@@ -1002,13 +1267,13 @@ const DBSchedule = {
       c.way ?? '', c.description ?? '', c.poles ?? '1P',
       (c.poles === '3P') ? 'RWB' : (c.phase ?? 'R'),
       c.breaker_a ?? '', c.curve ?? 'C', c.el_group ?? '', c.leakage_ma ?? 0,
-      c.cable_mm2 ?? '', c.cable_m ?? '', c.load_va ?? '', c.demand_factor ?? 1,
-      c.power_factor ?? 0.9,
+      c.cable_mm2 ?? '', c.ecc_mm2 ?? '', c.cable_m ?? '', c.load_va ?? '',
+      c.demand_factor ?? 1, c.power_factor ?? 0.9,
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 6 }, { wch: 11 },
-      { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 13 },
-      { wch: 12 }];
+      { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 10 },
+      { wch: 10 }, { wch: 13 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');
@@ -1040,7 +1305,10 @@ const DBSchedule = {
         phase: col('phase', 'ph'), breaker_a: col('breaker', 'mcb', 'rating'),
         curve: col('curve'), el_group: col('el grp', 'el group', 'rcd'),
         leakage_ma: col('leak'),
-        cable_mm2: col('cable', 'mm'), cable_m: col('length', 'len'),
+        // 'mm' is deliberately NOT a cable_mm2 probe — it also matches the
+        // "ECC (mm2)" header. Match on the distinctive word instead.
+        cable_mm2: col('cable'), ecc_mm2: col('ecc', 'earth', 'cpc'),
+        cable_m: col('length', 'len'),
         load_va: col('load', 'va'), demand_factor: col('demand', 'df'),
         power_factor: col('power', 'pf'),
       };
@@ -1066,6 +1334,7 @@ const DBSchedule = {
           el_group: String(get('el_group') || ''),
           leakage_ma: Math.max(0, num('leakage_ma', 0)),
           cable_mm2: num('cable_mm2', 2.5),
+          ecc_mm2: (String(get('ecc_mm2')).trim() === '' ? null : num('ecc_mm2', null)),
           cable_m: num('cable_m', 10),
           load_va: num('load_va', 0),
           demand_factor: Math.min(1, Math.max(0, num('demand_factor', 1))),
@@ -1096,7 +1365,8 @@ const DBSchedule = {
         if (ex && ex.type !== 'feeder_db') {
           ex.description = row.description; ex.poles = row.poles; ex.phase = row.phase;
           ex.breaker_a = row.breaker_a; ex.curve = row.curve; ex.el_group = row.el_group;
-          ex.leakage_ma = row.leakage_ma; ex.cable_mm2 = row.cable_mm2; ex.cable_m = row.cable_m;
+          ex.leakage_ma = row.leakage_ma; ex.cable_mm2 = row.cable_mm2;
+          ex.ecc_mm2 = row.ecc_mm2; ex.cable_m = row.cable_m;
           ex.load_va = row.load_va; ex.demand_factor = row.demand_factor;
           ex.power_factor = row.power_factor;
           merged.push(ex);
@@ -1114,8 +1384,7 @@ const DBSchedule = {
       }
       comp.props.circuits = merged;
       this.render();
-      document.getElementById('status-info').textContent =
-        `Imported ${circuits.length} circuit(s) from ${file.name} (merged by way number).`;
+      this._status(`Imported ${circuits.length} circuit(s) from ${file.name} (merged by way number).`);
     };
     reader.readAsArrayBuffer(file);
   },

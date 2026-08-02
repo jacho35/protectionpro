@@ -217,6 +217,13 @@ const API = {
     return this.request('/analysis/cable-sizing', 'POST', data);
   },
 
+  // Run the distribution-board per-way circuit check (ampacity, volt drop,
+  // ECC, earth-fault loop Zs across every board's schedule)
+  async runDbCircuitCheck(options = {}) {
+    const data = { ...AppState.toJSON(), ...options };
+    return this.request('/analysis/db-circuit-check', 'POST', data);
+  },
+
   // Run motor starting voltage dip analysis
   async runMotorStarting() {
     const data = AppState.toJSON();
@@ -592,6 +599,7 @@ const API = {
       faultResults: AppState.freshResult('faultResults'),
       loadFlowResults: AppState.freshResult('loadFlowResults'),
       arcFlashResults: AppState.freshResult('arcFlashResults'),
+      dbCheckResults: AppState.freshResult('dbCheckResults'),
       projectDetails: AppState.projectDetails || {},
     };
     if (sections) body.sections = sections;

@@ -46,6 +46,8 @@ frontend/
     ├── templates.js        # Pre-built network templates (radial, ring, mesh)
     ├── tcc.js              # Time-current curve coordination plotting
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
+    ├── dbschedule.js       # DB circuit schedule grid — renders into the #db-modal OR the Schedules workspace
+    ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
     ├── freqscan.js         # Frequency scan UI (Z vs f setup + log-decade chart)
@@ -88,6 +90,8 @@ backend/
 │   ├── hosting_capacity.py # Nodal DER hosting capacity — voltage-rise/thermal limited PV injection sweep per bus
 │   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
+│   ├── db_circuit_check.py # Per-way DB circuit check — derated Iz, Ib<=In<=Iz, volt drop, ECC, earth-loop Zs
+│   ├── iec_60364_tables.py # IEC 60364-5-52 installed-ampacity + derating tables (backend twin of constants.js)
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
 │   ├── dynamic_motor_starting.py # Time-domain motor acceleration (swing equation)
 │   ├── duty_check.py       # Equipment fault current rating validation
@@ -172,6 +176,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/hosting-capacity` | Nodal DER hosting capacity | Voltage/thermal-limited PV injection sweep, LF-scored |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
+| `/api/analysis/db-circuit-check` | Per-way DB circuit schedule check | IEC 60364-5-52 Iz + 4-43 §433.1; SANS 10142-1 Cl. 6.6 volt drop; IEC 60364-5-54 Table 54.7 ECC; IEC 60364-4-41 Zs |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |
 | `/api/analysis/duty-check` | Equipment duty | Fault current ratings |

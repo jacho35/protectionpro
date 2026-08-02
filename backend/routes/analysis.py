@@ -36,6 +36,7 @@ from ..analysis.dc_shortcircuit import run_dc_short_circuit
 from ..analysis.arcflash import run_arc_flash
 from ..analysis.dc_arcflash import run_dc_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
+from ..analysis.db_circuit_check import run_db_circuit_check
 from ..analysis.motor_starting import run_motor_starting
 from ..analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from ..analysis.transient_stability import run_transient_stability
@@ -474,6 +475,40 @@ def cable_sizing(data: CableSizingRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Cable sizing error: {e}")
+
+
+class DbCircuitCheckRequest(ProjectData):
+    """Extends ProjectData with DB circuit-check options (all optional —
+    each board's own `way_install` prop, then the engine defaults, are used
+    when a field is omitted)."""
+    ambient_temp_c: Optional[float] = None
+    install_method: Optional[str] = None
+    grouping: Optional[str] = None
+    grouping_circuits: Optional[int] = None
+    vd_limit_lighting_pct: Optional[float] = None
+    vd_limit_general_pct: Optional[float] = None
+    default_ze_ohm: Optional[float] = None
+
+
+@router.post("/db-circuit-check")
+def db_circuit_check(data: DbCircuitCheckRequest):
+    """Per-way cable check for every distribution-board circuit schedule —
+    derated ampacity, Ib <= In <= Iz coordination, voltage drop, ECC size and
+    earth-fault loop impedance."""
+    try:
+        return run_db_circuit_check(
+            data,
+            ambient_temp_c=data.ambient_temp_c,
+            install_method=data.install_method,
+            grouping=data.grouping,
+            grouping_circuits=data.grouping_circuits,
+            vd_limit_lighting_pct=data.vd_limit_lighting_pct,
+            vd_limit_general_pct=data.vd_limit_general_pct,
+            default_ze_ohm=data.default_ze_ohm,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"DB circuit check error: {e}")
 
 
 @router.post("/motor-starting")

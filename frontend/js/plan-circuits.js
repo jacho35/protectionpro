@@ -442,16 +442,17 @@ const PlanCircuits = {
     const base = (typeof DB_LOAD_TYPES !== 'undefined' && DB_LOAD_TYPES.find(t => t.key === key)) || {};
     const idx = comp.props.circuits.length;
     const is3P = base.poles === '3P';
-    return {
-      id: this._genWayId(),
-      way: String(way), description: '', poles: base.poles || '1P',
+    // Built through DBSchedule.newWay so a new way field only has to be added
+    // in one place (this literal had already drifted from the editor's).
+    return DBSchedule.newWay(idx, {
+      way: String(way), poles: base.poles || '1P',
       phase: is3P ? 'RWB' : ['R', 'W', 'B'][idx % 3],
-      breaker_a: base.breaker_a || 10, curve: base.curve || 'B', el_group: '',
-      cable_mm2: base.cable_mm2 || 1.5, cable_m: 0, load_va: 0,
+      breaker_a: base.breaker_a || 10, curve: base.curve || 'B',
+      cable_mm2: base.cable_mm2 || 1.5, ecc_mm2: base.ecc_mm2 ?? null,
+      cable_m: 0,
       demand_factor: base.df != null ? base.df : 1,
       power_factor: base.pf != null ? base.pf : 0.9,
-      leakage_ma: 0,
-    };
+    });
   },
 
   _describe(classes, count) {

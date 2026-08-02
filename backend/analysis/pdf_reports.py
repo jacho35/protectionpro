@@ -101,7 +101,7 @@ def generate_full_report(project_name, base_mva, frequency,
                          fault_results=None, loadflow_results=None,
                          arcflash_results=None, components=None,
                          sections=None, diagram_image=None,
-                         project_details=None):
+                         project_details=None, db_check_results=None):
     """Generate a full analysis report PDF.
 
     Args:
@@ -141,7 +141,7 @@ def generate_full_report(project_name, base_mva, frequency,
         elif sec == "settings_schedule":
             _render_settings_schedule(pdf, components)
         elif sec == "db_schedules":
-            _render_db_schedules(pdf, components)
+            _render_db_schedules(pdf, components, db_check_results)
         elif sec == "arcflash":
             _render_arcflash(pdf, arcflash_results, comp_map)
 
@@ -565,8 +565,16 @@ def _cable_ampacity_a(mm2):
     return larger[0]["rated_amps"] if larger else None
 
 
-def _render_db_schedules(pdf, components):
-    """Distribution board legend cards: one schedule table per board."""
+def _render_db_schedules(pdf, components, db_check_results=None):
+    """Distribution board legend cards: one schedule table per board.
+
+    When ``db_check_results`` is supplied (the db-circuit-check engine's output,
+    sent through with the report request) each way carries its derated Iz,
+    voltage drop and ECC verdict, and the summary block lists every failing or
+    warned way. Without it the renderer falls back to the base (undegraded)
+    ampacity-vs-breaker check, so a report produced before the check has been
+    run still says something useful rather than nothing.
+    """
     if not components:
         return
     boards = [c for c in components
@@ -574,6 +582,15 @@ def _render_db_schedules(pdf, components):
               and (c.get("props", {}).get("circuits") or [])]
     if not boards:
         return
+
+    check_by_way = {}
+    check_boards = {}
+    if isinstance(db_check_results, dict):
+        for w in (db_check_results.get("ways") or []):
+            if w.get("way_id"):
+                check_by_way[(w.get("board_id"), w.get("way_id"))] = w
+        for b in (db_check_results.get("boards") or []):
+            check_boards[b.get("id")] = b
 
     for board in boards:
         p = board.get("props", {})
@@ -597,55 +614,104 @@ def _render_db_schedules(pdf, components):
             f"Demand (diversified): {demand_va / 1000:.2f} kVA   ({amps:.1f} A)"), ln=1)
         pdf.ln(2)
 
+        checked = bool(check_by_way)
         rows = []
-        undersized = []
+        findings = []
         for c in circuits:
             br = c.get("breaker_a")
-            ampacity = _cable_ampacity_a(c.get("cable_mm2"))
             cable_cell = f"{c.get('cable_mm2', '—')}mm² / {c.get('cable_m', '—')}m"
             try:
                 br_val = float(br)
             except (TypeError, ValueError):
                 br_val = None
-            if ampacity is not None and br_val is not None and br_val > ampacity + 1e-6:
-                cable_cell += " [undersized]"
-                undersized.append(
-                    f"Way {c.get('way', '')} ({c.get('description') or '—'}): "
-                    f"{c.get('cable_mm2')}mm2 cable (Iz ~{ampacity}A) undersized "
-                    f"for the {br_val:.0f}A breaker"
-                )
+            row = check_by_way.get((board.get("id"), c.get("id")))
+
+            if row is not None:
+                iz = row.get("iz_derated_a")
+                vd = row.get("vd_total_pct")
+                if vd is None:
+                    vd = row.get("vd_pct")
+                if row.get("ecc_mm2") is not None:
+                    ecc_cell = f"{row['ecc_mm2']:g}"
+                elif row.get("ecc_required_mm2") is not None:
+                    ecc_cell = f"{row['ecc_required_mm2']:g} min"
+                else:
+                    ecc_cell = "—"
+                extra = [f"{iz:.1f}" if iz is not None else "—",
+                         f"{vd:.2f}" if vd is not None else "—",
+                         ecc_cell]
+                if row.get("status") in ("fail", "warn"):
+                    findings.append(
+                        f"[{row['status'].upper()}] Way {c.get('way', '')} "
+                        f"({c.get('description') or '—'}): "
+                        + " ".join(row.get("messages") or []))
+            else:
+                # No engine row for this way — fall back to the base
+                # (undegraded) ampacity check so the cell is never blank.
+                ampacity = _cable_ampacity_a(c.get("cable_mm2"))
+                if ampacity is not None and br_val is not None and br_val > ampacity + 1e-6:
+                    cable_cell += " [undersized]"
+                    findings.append(
+                        f"Way {c.get('way', '')} ({c.get('description') or '—'}): "
+                        f"{c.get('cable_mm2')}mm2 cable (Iz ~{ampacity}A, undegraded) "
+                        f"undersized for the {br_val:.0f}A breaker")
+                extra = ["—", "—", "—"] if checked else []
+
             rows.append([
                 str(c.get("way", "")),
                 str(c.get("description", "") or "—"),
                 f"{c.get('poles', '1P')} {c.get('phase', '') if c.get('poles') != '3P' else 'RWB'}",
                 f"{c.get('breaker_a', '—')}A {c.get('curve', '')}",
                 str(c.get("el_group", "") or "—"),
-                f"{float(c.get('leakage_ma') or 0):.1f}",
                 cable_cell,
                 f"{float(c.get('load_va') or 0):.0f}",
                 f"{float(c.get('demand_factor') or 1):.2f}",
                 f"{float(c.get('power_factor') or p.get('power_factor') or 0.85):.2f}",
-            ])
-        headers = ["Way", "Description", "Poles/Ph", "Breaker", "EL Grp",
-                   "Leak mA", "Cable", "Load (VA)", "DF", "PF"]
+            ] + extra)
+
         avail = pdf.w - pdf.l_margin - pdf.r_margin
-        widths = [avail * 0.05, avail * 0.22, avail * 0.09, avail * 0.11,
-                  avail * 0.07, avail * 0.08, avail * 0.13, avail * 0.10,
-                  avail * 0.08, avail * 0.07]
+        if checked:
+            headers = ["Way", "Description", "Poles/Ph", "Breaker", "EL Grp",
+                       "Cable", "Load (VA)", "DF", "PF", "Iz (A)", "%VD", "ECC"]
+            widths = [avail * 0.04, avail * 0.17, avail * 0.08, avail * 0.09,
+                      avail * 0.06, avail * 0.12, avail * 0.08, avail * 0.06,
+                      avail * 0.06, avail * 0.08, avail * 0.08, avail * 0.08]
+        else:
+            headers = ["Way", "Description", "Poles/Ph", "Breaker", "EL Grp",
+                       "Cable", "Load (VA)", "DF", "PF"]
+            widths = [avail * 0.05, avail * 0.26, avail * 0.10, avail * 0.12,
+                      avail * 0.08, avail * 0.16, avail * 0.11, avail * 0.06,
+                      avail * 0.06]
         _table(pdf, headers, rows, widths, header_color=(46, 125, 50))
 
-        # Cable adequacy vs breaker rating (Iz >= In - SANS 10142-1 /
-        # IEC 60364-433). Base Cu/PVC LV ampacity only, no derating - see
-        # _cable_ampacity_a().
+        # Per-way verdicts from the circuit-check engine when the study has
+        # been run, else the base (undegraded) Iz >= In fallback.
         pdf.ln(2)
         pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(0, 5, "Cable adequacy (Iz >= In - SANS 10142-1):", ln=1)
+        pdf.cell(0, 5, "Circuit check (SANS 10142-1 / IEC 60364):" if checked
+                 else "Cable adequacy (Iz >= In - SANS 10142-1):", ln=1)
         pdf.set_font("Helvetica", "", 9)
-        if undersized:
-            for line in undersized:
-                pdf.cell(0, 5, _safe("  " + line), ln=1)
+        if findings:
+            for line in findings:
+                pdf.multi_cell(0, 5, _safe("  " + line))
+        elif checked:
+            counts = (check_boards.get(board.get("id")) or {}).get("counts") or {}
+            note = ("  All ways comply: Ib <= In <= Iz, voltage drop, "
+                    "ECC size and earth-fault loop.")
+            if counts.get("info"):
+                note += f" ({counts['info']} way(s) not fully evaluated.)"
+            pdf.cell(0, 5, _safe(note), ln=1)
         else:
             pdf.cell(0, 5, "  All ways: cable adequately sized for their breaker.", ln=1)
+
+        if checked:
+            basis = (db_check_results or {}).get("basis") or {}
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.multi_cell(0, 4, _safe(
+                "  Basis: " + str(basis.get("ampacity_basis", "IEC 60364-5-52"))
+                + ". " + str(basis.get("vd_convention", ""))
+                + " Disconnection on " + str(basis.get("fault_basis", "")) + "."))
+            pdf.set_font("Helvetica", "", 9)
 
         # Standing earth leakage per EL group: device leakage plus cable
         # insulation leakage (~0.5 mA per 100 m). IEC 60364-5-53 531.3.2:
