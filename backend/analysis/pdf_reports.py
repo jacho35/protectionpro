@@ -10,9 +10,46 @@ from fpdf import FPDF
 from .cable_sizing import STANDARD_CABLES as _CABLE_LIB
 
 
+# Unicode the core (latin-1) PDF fonts cannot encode, mapped to an ASCII
+# equivalent. The analysis engines write real symbols into their messages \u2014
+# "Ib <= In <= Iz", "IdN 30 mA", "Zs 0.8 ohm" all arrive as U+2264 / U+0394 /
+# U+03A9 \u2014 and fpdf2 raises FPDFUnicodeEncodingException on the first one it
+# meets, which took the whole report down rather than degrading one glyph.
+_UNICODE_FALLBACKS = {
+    "\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2022": "-", "\u00b7": ".",
+    "\u2500": "-", "\u2550": "=", "\u2026": "...", "\u2018": "'", "\u2019": "'",
+    "\u201c": '"', "\u201d": '"',
+    "\u00b2": "2", "\u00b3": "3", "\u2070": "0", "\u2074": "4", "\u2075": "5",
+    "\u2076": "6", "\u207b": "-", "\u2080": "0", "\u2081": "1", "\u2082": "2",
+    "\u00b0": " deg", "\u00b1": "+/-", "\u00d7": "x", "\u00f7": "/",
+    "\u00bd": "1/2", "\u00a7": "Sect. ",
+    "\u2264": "<=", "\u2265": ">=", "\u2260": "!=", "\u2248": "~=",
+    "\u2261": "=", "\u226b": ">>", "\u221d": "prop to", "\u221e": "inf",
+    "\u221a": "sqrt", "\u2220": "angle ", "\u222b": "int ", "\u2208": " in ",
+    "\u2192": "->", "\u2194": "<->", "\u21d2": "=>", "\u2016": "||",
+    "\u2032": "'", "\u2033": '"',
+    "\u0394": "d", "\u03a3": "sum", "\u03a6": "Phi", "\u03a9": " ohm",
+    "\u03b1": "alpha", "\u03b2": "beta", "\u03b3": "gamma", "\u03b4": "delta",
+    "\u03b7": "eta", "\u03b8": "theta", "\u03ba": "kappa", "\u03bb": "lambda",
+    "\u03bc": "u", "\u00b5": "u", "\u03c0": "pi", "\u03c1": "rho",
+    "\u03c3": "sigma", "\u03c4": "tau", "\u03c6": "phi", "\u03c9": "omega",
+    "\u2113": "l", "\u26a0": "!", "\u26a1": "*",
+    "\u00c9": "E", "\u00e8": "e", "\u00e9": "e",
+}
+
+
 def _safe(text):
-    """Replace Unicode chars that core fonts can't handle."""
-    return str(text).replace("\u2014", "-").replace("\u2013", "-").replace("\u00b2", "2").replace("\u00b0", " deg").replace("\u2022", "-")
+    """Replace Unicode chars that core fonts can't handle.
+
+    Anything still outside latin-1 after the table above is dropped rather than
+    raised on \u2014 a missing glyph is a cosmetic loss, a raised exception loses the
+    entire report.
+    """
+    out = str(text)
+    for bad, good in _UNICODE_FALLBACKS.items():
+        if bad in out:
+            out = out.replace(bad, good)
+    return out.encode("latin-1", "ignore").decode("latin-1")
 
 
 class SafePDF(FPDF):
@@ -101,12 +138,15 @@ def generate_full_report(project_name, base_mva, frequency,
                          fault_results=None, loadflow_results=None,
                          arcflash_results=None, components=None,
                          sections=None, diagram_image=None,
-                         project_details=None, db_check_results=None):
+                         project_details=None, db_check_results=None,
+                         db_diagrams=None):
     """Generate a full analysis report PDF.
 
     Args:
         sections: list of section IDs to include. If None, include all available.
         diagram_image: base64-encoded PNG of the single-line diagram.
+        db_diagrams: {board component id: base64 PNG} of per-board single lines,
+            rendered client-side by DBDrawing from each board's own schedule.
     """
     pd = project_details or {}
     pdf = ReportPDF(project_name=project_name, project_number=pd.get("projectNumber", ""))
@@ -142,6 +182,8 @@ def generate_full_report(project_name, base_mva, frequency,
             _render_settings_schedule(pdf, components)
         elif sec == "db_schedules":
             _render_db_schedules(pdf, components, db_check_results)
+        elif sec == "db_diagrams":
+            _render_db_diagrams(pdf, components, db_diagrams)
         elif sec == "arcflash":
             _render_arcflash(pdf, arcflash_results, comp_map)
 
@@ -565,6 +607,69 @@ def _cable_ampacity_a(mm2):
     return larger[0]["rated_amps"] if larger else None
 
 
+def _render_db_diagrams(pdf, components, db_diagrams=None):
+    """One page per distribution board single-line drawing.
+
+    The drawings are rasterized client-side (DBDrawing.rasterize) and arrive as
+    base64 PNGs keyed by board component id — this renderer only places them,
+    so the figure in the report is byte-identical to the one on screen.
+    """
+    if not db_diagrams or not components:
+        return
+    boards = [c for c in components if c.get("type") == "distribution_board"]
+    boards.sort(key=lambda c: str(c.get("props", {}).get("name") or c.get("id") or ""))
+
+    for board in boards:
+        data = db_diagrams.get(board.get("id"))
+        if not data:
+            continue
+        if "," in data:
+            data = data.split(",", 1)[1]
+        try:
+            img_bytes = base64.b64decode(data)
+        except Exception:
+            continue
+
+        p = board.get("props", {})
+        name = p.get("name", board.get("id", "DB"))
+        ways = len(p.get("circuits") or [])
+        accessories = len(p.get("accessories") or [])
+
+        import os
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(img_bytes)
+            tmp_path = tmp.name
+        try:
+            img_w_px, img_h_px = _png_dimensions(img_bytes)
+            if not img_w_px or not img_h_px:
+                continue
+            pdf.add_page()
+            pdf.section_title(f"Single Line — {name}")
+            pdf.set_font("Helvetica", "", 9)
+            caption = f"{ways} way{'' if ways == 1 else 's'}"
+            if accessories:
+                caption += f", {accessories} accessor{'y' if accessories == 1 else 'ies'}"
+            pdf.cell(0, 6, caption, new_x="LMARGIN", new_y="NEXT")
+
+            margin = pdf.l_margin
+            top_y = pdf.get_y() + 2
+            avail_w = pdf.w - margin - pdf.r_margin
+            avail_h = pdf.h - top_y - 15
+            scale = min(avail_w / img_w_px, avail_h / img_h_px)
+            w = img_w_px * scale
+            h = img_h_px * scale
+            pdf.image(tmp_path, x=margin + (avail_w - w) / 2, y=top_y, w=w, h=h)
+        except Exception:
+            pdf.set_font("Helvetica", "", 10)
+            pdf.cell(0, 8, f"Single line for {name} could not be rendered.",
+                     new_x="LMARGIN", new_y="NEXT")
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 def _render_db_schedules(pdf, components, db_check_results=None):
     """Distribution board legend cards: one schedule table per board.
 
@@ -692,8 +797,12 @@ def _render_db_schedules(pdf, components, db_check_results=None):
                  else "Cable adequacy (Iz >= In - SANS 10142-1):", ln=1)
         pdf.set_font("Helvetica", "", 9)
         if findings:
+            # new_x/new_y are not optional here: multi_cell leaves the cursor at
+            # the END of the last line it wrote, so a following full-width
+            # multi_cell computes its width from that x and fpdf raises
+            # "Not enough horizontal space to render a single character".
             for line in findings:
-                pdf.multi_cell(0, 5, _safe("  " + line))
+                pdf.multi_cell(0, 5, _safe("  " + line), new_x="LMARGIN", new_y="NEXT")
         elif checked:
             counts = (check_boards.get(board.get("id")) or {}).get("counts") or {}
             note = ("  All ways comply: Ib <= In <= Iz, voltage drop, "
@@ -710,7 +819,8 @@ def _render_db_schedules(pdf, components, db_check_results=None):
             pdf.multi_cell(0, 4, _safe(
                 "  Basis: " + str(basis.get("ampacity_basis", "IEC 60364-5-52"))
                 + ". " + str(basis.get("vd_convention", ""))
-                + " Disconnection on " + str(basis.get("fault_basis", "")) + "."))
+                + " Disconnection on " + str(basis.get("fault_basis", "")) + "."),
+                new_x="LMARGIN", new_y="NEXT")
             pdf.set_font("Helvetica", "", 9)
 
         # Standing earth leakage per EL group: device leakage plus cable

@@ -450,3 +450,61 @@ class TestIntegration:
         assert with_check.startswith(b"%PDF")
         # The checked report carries the extra columns, so it is larger.
         assert len(with_check) > len(without)
+
+    def test_pdf_renders_failing_ways(self):
+        """A board with FINDINGS renders — the branch the happy-path test misses.
+
+        The findings branch prints the engine's own verdict messages, which are
+        written with real symbols (``Ib <= In <= Iz`` as U+2264, IdN as U+0394,
+        ohm as U+03A9). fpdf2's core fonts are latin-1 and raise on the first
+        one, and its ``multi_cell`` leaves the cursor at the end of the line it
+        wrote, so the next full-width cell has no width left. Both took the
+        whole report down rather than degrading one glyph or one line.
+        """
+        from backend.analysis.pdf_reports import generate_full_report
+
+        # 1.5 mm2 on a 63 A breaker: fails ampacity, coordination and volt drop.
+        p = _board_project([_way(id="w1", cable_mm2=1.5, breaker_a=63,
+                                 cable_m=40, load_va=6000)])
+        components = [{"id": c.id, "type": c.type, "props": c.props}
+                      for c in p.components]
+        check = run_db_circuit_check(p)
+        assert check["summary"]["fail"] >= 1, "test needs a failing way"
+
+        out = generate_full_report("T", 100.0, 50, components=components,
+                                   sections=["db_schedules"],
+                                   db_check_results=check).getvalue()
+        assert out.startswith(b"%PDF")
+
+    def test_safe_maps_engine_symbols(self):
+        from backend.analysis.pdf_reports import _safe
+
+        got = _safe("Ib ≤ In ≤ Iz; IΔn 30 mA; Zs 0.8 Ω; 2.5 mm²")
+        assert got == "Ib <= In <= Iz; Idn 30 mA; Zs 0.8  ohm; 2.5 mm2"
+        got.encode("latin-1")   # must not raise
+        # Anything unmapped is dropped, never raised on.
+        assert _safe("ok 字 done").encode("latin-1") == b"ok  done"
+
+    def test_pdf_db_diagrams_section(self):
+        """The DB single-line section places one client-rendered PNG per board."""
+        from backend.analysis.pdf_reports import generate_full_report
+
+        p = _board_project([_way(id="w1")])
+        components = [{"id": c.id, "type": c.type, "props": c.props}
+                      for c in p.components]
+        # 1x1 PNG — the renderer only decodes and places, it never draws.
+        png = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+               "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+        without = generate_full_report("T", 100.0, 50, components=components,
+                                       sections=["db_diagrams"]).getvalue()
+        with_img = generate_full_report(
+            "T", 100.0, 50, components=components, sections=["db_diagrams"],
+            db_diagrams={"db-1": "data:image/png;base64," + png}).getvalue()
+        assert with_img.startswith(b"%PDF")
+        assert len(with_img) > len(without)
+        # An unknown board id is skipped rather than raising.
+        stray = generate_full_report(
+            "T", 100.0, 50, components=components, sections=["db_diagrams"],
+            db_diagrams={"no-such-board": "data:image/png;base64," + png}).getvalue()
+        assert stray.startswith(b"%PDF")

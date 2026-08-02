@@ -32,6 +32,7 @@ class ReportRequest(BaseModel):
     dbCheckResults: Optional[dict] = None  # per-way DB circuit-check verdicts
     sections: Optional[list[str]] = None  # which report sections to include
     diagramImage: Optional[str] = None  # base64-encoded PNG of the single-line diagram
+    dbDiagrams: Optional[dict] = None  # board id -> base64 PNG of its DB single line
     projectDetails: Optional[dict] = None  # project metadata for cover page
 
 
@@ -72,6 +73,7 @@ def generate_pdf_report(req: ReportRequest):
         diagram_image=req.diagramImage,
         project_details=req.projectDetails,
         db_check_results=req.dbCheckResults,
+        db_diagrams=req.dbDiagrams,
     )
     filename = f"{req.projectName.replace(' ', '_')}_report.pdf"
     return StreamingResponse(

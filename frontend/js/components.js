@@ -44,6 +44,135 @@ const Components = {
     return { fromBus: walk(def.ports[0].id), toBus: walk(def.ports[1].id) };
   },
 
+  // Resolve a distribution board's incomer from the SLD — the device that
+  // actually feeds it, rather than a rating typed onto the board a second time.
+  //
+  // Walks out of the board's 'in' port through the passive/transparent chain
+  // until it reaches whatever supplies the board (a bus, another board, a
+  // transformer or a source). The nearest circuit breaker or fuse on that path
+  // is the incomer device; a switch on the path is the board's main isolator.
+  //
+  // A board drawn only in the Plan workspace has no SLD wiring, so it falls
+  // back to the parent board's feeder way — the same `feedsDbId` relationship
+  // db_circuit_check._feeder_parent_map() chains supply impedance through.
+  //
+  // Returns { basis, device, rating_a, device_label, isolator, cable, source }
+  // with basis 'sld' | 'feeder_way' | 'unknown'. Rating is null when unknown —
+  // callers must not read that as "small enough", the >125 A SPD backup-fuse
+  // rule reports it as unevaluated instead.
+  boardIncomer(boardId) {
+    const empty = { basis: 'unknown', device: null, rating_a: null, device_label: null,
+                    isolator: null, cable: null, source: null, way: null };
+    const board = AppState.components.get(boardId);
+    if (!board) return empty;
+
+    const PASS_THROUGH = new Set(['cable', 'cb', 'fuse', 'switch', 'ct', 'pt',
+                                  'surge_arrester', 'offpage_connector', 'bus_duct']);
+    const SUPPLY = new Set(['bus', 'distribution_board', 'transformer', 'utility',
+                            'generator', 'solar_pv', 'wind_turbine', 'battery', 'ups']);
+
+    const adj = new Map();
+    for (const wire of AppState.wires.values()) {
+      if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
+      if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
+      adj.get(wire.fromComponent).push({ id: wire.toComponent, localPort: wire.fromPort });
+      adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
+    }
+
+    // Breadth-first so the supply found is the electrically nearest one; the
+    // predecessor map reconstructs the path the annotations are read off.
+    const prev = new Map();
+    const visited = new Set([boardId]);
+    const queue = (adj.get(boardId) || []).filter(n => n.localPort === 'in').map(n => n.id);
+    for (const id of queue) prev.set(id, boardId);
+    let supplyId = null;
+    while (queue.length) {
+      const id = queue.shift();
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const c = AppState.components.get(id);
+      if (!c) continue;
+      if (SUPPLY.has(c.type)) { supplyId = id; break; }
+      if (!PASS_THROUGH.has(c.type)) continue;
+      for (const n of (adj.get(id) || [])) {
+        if (visited.has(n.id)) continue;
+        if (!prev.has(n.id)) prev.set(n.id, id);
+        queue.push(n.id);
+      }
+    }
+
+    if (supplyId) {
+      const path = [];
+      for (let id = prev.get(supplyId); id && id !== boardId; id = prev.get(id)) {
+        path.push(AppState.components.get(id));
+      }
+      const chain = path.filter(Boolean);   // ordered board → supply
+      const device = chain.find(c => c.type === 'cb' || c.type === 'fuse') || null;
+      const source = AppState.components.get(supplyId);
+      return {
+        basis: 'sld',
+        device,
+        rating_a: device ? this._deviceRatingA(device) : null,
+        device_label: device ? this._deviceLabel(device) : null,
+        isolator: chain.find(c => c.type === 'switch') || null,
+        cable: this._feedCableInfo(chain.find(c => c.type === 'cable') || null),
+        source: source ? { id: source.id, name: source.props.name || source.id, type: source.type } : null,
+        way: null,
+      };
+    }
+
+    // No SLD path — is this board fed from another board's feeder way?
+    for (const parent of AppState.components.values()) {
+      if (parent.type !== 'distribution_board') continue;
+      const way = (parent.props.circuits || []).find(w => w.feedsDbId === boardId);
+      if (!way) continue;
+      const amps = Number(way.breaker_a) || null;
+      return {
+        basis: 'feeder_way',
+        device: null,
+        rating_a: amps,
+        device_label: amps ? `${amps} A ${way.curve ? 'MCB curve ' + way.curve : 'breaker'}` : null,
+        isolator: null,
+        cable: way.cable_mm2 ? { mm2: Number(way.cable_mm2) || null, m: Number(way.cable_m) || null, name: way.cable || null } : null,
+        source: { id: parent.id, name: parent.props.name || parent.id, type: 'distribution_board' },
+        way: way.way != null ? String(way.way) : null,
+      };
+    }
+
+    return empty;
+  },
+
+  // Trip setting wins over the frame/nameplate rating — an MCCB with a 250 A
+  // frame set to 160 A protects the board at 160 A.
+  _deviceRatingA(device) {
+    const p = device.props || {};
+    return Number(p.trip_rating_a) || Number(p.rated_current_a) || null;
+  },
+
+  _deviceLabel(device) {
+    const p = device.props || {};
+    const a = this._deviceRatingA(device);
+    const amps = a ? `${a} A` : '';
+    if (device.type === 'fuse') return `${p.fuse_type || 'gG'} fuse ${amps}`.trim();
+    const kind = String(p.cb_type || 'mccb').toUpperCase();
+    const curve = (p.cb_type === 'mcb' && p.mcb_curve) ? ` curve ${p.mcb_curve}` : '';
+    return `${kind} ${amps}${curve}`.trim();
+  },
+
+  // Size/length caption for the supply cable. The size lives in the cable
+  // library entry, not on the component, so it resolves through STANDARD_CABLES.
+  _feedCableInfo(cable) {
+    if (!cable) return null;
+    const p = cable.props || {};
+    const lib = (typeof STANDARD_CABLES !== 'undefined' && p.standard_type)
+      ? STANDARD_CABLES.find(c => c.name === p.standard_type) : null;
+    return {
+      mm2: lib ? lib.size_mm2 : null,
+      m: p.length_km != null ? Math.round(Number(p.length_km) * 1000) : null,
+      name: p.standard_type || p.name || null,
+    };
+  },
+
   // Get all components connected to a given component via wires
   getConnectedComponents(compId) {
     const connected = [];
