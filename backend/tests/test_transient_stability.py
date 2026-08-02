@@ -27,7 +27,21 @@ def _w(wid, a, b):
 
 
 def _smib(h=3.5, xline_pu=0.3, gen_mva=100.0, load_mw=60.0):
-    """Infinite bus — line — generator bus (+load) — generator."""
+    """Infinite bus (+load) — line — generator bus — generator.
+
+    The load hangs on the INFINITE-BUS side, not the generator bus. The
+    equal-area closed form below is a lossless single-machine-infinite-bus
+    criterion (P_e = E·V·sin δ / X), so the gen→grid transfer path has to stay
+    free of conductance: a resistive load at the machine's own terminal absorbs
+    real power during the swing and puts a real part into the reduced Y, and the
+    closed form then over-predicts the CCT by ~11 %. At the infinite bus the
+    load is bypassed by the source's ~0 internal impedance, so the anchor holds
+    exactly (measured −0.25 %) while the generator still exports its full 85 MW
+    through the line. (Before [D2] this did not matter, because a load on a
+    machine bus was silently netted off that machine's own injection instead of
+    being stamped as a network shunt at all — which is precisely the defect [D2]
+    fixed, and why these anchors moved.)
+    """
     return ProjectData(projectName="smib", baseMVA=100.0, frequency=50, components=[
         _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 1e7, "x_r_ratio": 1000}),
         _c("bus_inf", "bus", {"name": "INF", "voltage_kv": 11}),
@@ -44,7 +58,7 @@ def _smib(h=3.5, xline_pu=0.3, gen_mva=100.0, load_mw=60.0):
         _c("ld", "static_load", {"name": "LD", "voltage_kv": 11,
                                  "rated_kva": load_mw * 1000, "power_factor": 1.0}),
     ], wires=[_w("w1", "util", "bus_inf"), _w("w2", "bus_inf", "ln"), _w("w3", "ln", "bus_gen"),
-              _w("w4", "bus_gen", "g1"), _w("w5", "bus_gen", "ld")])
+              _w("w4", "bus_gen", "g1"), _w("w5", "bus_inf", "ld")])
 
 
 def _closed_form_cct(res, freq=50):
@@ -127,7 +141,12 @@ class TestUnbalancedFault:
         implicit = run_transient_stability(_smib(), dict(base))
         explicit = run_transient_stability(_smib(), {**base, "fault_type": "3phase"})
         assert implicit["cct_s"] == explicit["cct_s"]
-        assert implicit["cct_s"] == pytest.approx(0.6225, rel=0.01)
+        # 0.245 s, and it agrees with the equal-area closed form to 0.25 % (see
+        # TestSMIBEqualArea). The old 0.6225 s baseline was pinning the [D2]
+        # defect: the fixture's 60 MW load sat on the generator bus and was
+        # netted off the machine, leaving P_m at 25 MW instead of 85 MW and
+        # inflating the CCT 2.4x.
+        assert implicit["cct_s"] == pytest.approx(0.245, rel=0.02)
 
     def test_severity_ordering_vs_3phase(self):
         """SLG/LL/LLG are all electrically less severe than a bolted 3-phase
@@ -139,7 +158,7 @@ class TestUnbalancedFault:
                 "find_cct": True, "t_end_s": 3}
         cct = {}
         for ft in ("3phase", "slg", "ll", "llg"):
-            res = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+            res = run_transient_stability(_smib(xline_pu=2.0, gen_mva=40.0, load_mw=30.0),
                                           {**base, "fault_type": ft})
             assert res["cct_s"] is not None
             cct[ft] = res["cct_s"]
@@ -148,11 +167,11 @@ class TestUnbalancedFault:
     def test_stable_below_and_unstable_above_slg_cct(self):
         base = {"type": "fault", "bus": "bus_gen", "fault_type": "slg",
                 "clear_time_s": 0.05, "find_cct": True, "t_end_s": 3}
-        cct = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0), dict(base))["cct_s"]
+        cct = run_transient_stability(_smib(xline_pu=2.0, gen_mva=40.0, load_mw=30.0), dict(base))["cct_s"]
         assert cct is not None
-        below = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+        below = run_transient_stability(_smib(xline_pu=2.0, gen_mva=40.0, load_mw=30.0),
                                         {**base, "clear_time_s": cct * 0.6, "find_cct": False})
-        above = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+        above = run_transient_stability(_smib(xline_pu=2.0, gen_mva=40.0, load_mw=30.0),
                                         {**base, "clear_time_s": cct * 1.4, "find_cct": False})
         assert below["stable"] is True
         assert above["stable"] is False
@@ -176,7 +195,7 @@ class TestUnbalancedFault:
         network, so its voltage effectively reads 0), an unbalanced fault's
         positive-sequence shunt leaves the bus IN the network with a real,
         finite dip."""
-        res = run_transient_stability(_smib(xline_pu=2.0, load_mw=30.0),
+        res = run_transient_stability(_smib(xline_pu=2.0, gen_mva=40.0, load_mw=30.0),
                                       {"type": "fault", "bus": "bus_gen", "fault_type": "slg",
                                        "clear_time_s": 0.05, "find_cct": False, "t_end_s": 1})
         gen_v = next(b["v_pu"] for b in res["curves"]["buses"] if b["bus"] == "GEN")
@@ -653,16 +672,39 @@ class TestTwoAxis:
         dd = r["curves"]["delta_deg"][gi]
         assert max(abs(x - dd[0]) for x in dd) < 0.05
 
+    def _cct(self, model, xq=None, **kw):
+        p = self._smib(model, **kw)
+        if xq is not None:
+            for c in p.components:
+                if c.id == "g1":
+                    c.props["xq"] = xq
+        return run_transient_stability(p, {"type": "fault", "bus": "bg",
+                                           "clear_time_s": 0.1, "find_cct": True,
+                                           "t_end_s": 5})["cct_s"]
+
     def test_classical_limit_reproduces_cct(self):
-        # AVR off + very slow field ⇒ near-constant E' ⇒ ~classical CCT
-        classical = run_transient_stability(self._smib("classical", avr="off"),
-                                            {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
-                                             "find_cct": True, "t_end_s": 5})["cct_s"]
-        twoax = run_transient_stability(self._smib("two_axis", avr="off", tdo=1e6),
-                                        {"type": "fault", "bus": "bg", "clear_time_s": 0.1,
-                                         "find_cct": True, "t_end_s": 5})["cct_s"]
+        """AVR off + a frozen field (T'do → ∞) ⇒ constant E′. The two models are
+        then the SAME machine only when there is no transient saliency: the
+        classical δ is the angle of E′ behind X′d, the two-axis δ is the angle
+        of Eq behind the SYNCHRONOUS Xq. Drive Xq → X′d and they must agree
+        exactly."""
+        classical = self._cct("classical", xq=0.31, avr="off")
+        twoax = self._cct("two_axis", xq=0.31, avr="off", tdo=1e6)
         assert classical is not None and twoax is not None
-        assert twoax == pytest.approx(classical, rel=0.06)
+        assert twoax == pytest.approx(classical, rel=1e-6)
+
+    def test_saliency_is_the_only_source_of_divergence(self):
+        """With a real Xq the two constructions differ, and the gap closes
+        monotonically as Xq → X′d — it is the rotor-angle reference, not the
+        flux-decay dynamics. (This only became measurable after [D2] raised the
+        fixture's machine from 0.25 pu to its true 0.85 pu loading, where the
+        jXq·I term actually matters.)"""
+        classical = self._cct("classical", avr="off")
+        gaps = [abs(self._cct("two_axis", xq=xq, avr="off", tdo=1e6) - classical) / classical
+                for xq in (1.8, 0.9, 0.35)]
+        assert gaps[0] < 0.10                     # bounded even at 6:1 saliency
+        assert gaps[0] > gaps[1] > gaps[2]        # and monotone in Xq
+        assert gaps[2] < 1e-6
 
     def test_two_axis_runs_with_avr(self):
         r = run_transient_stability(self._smib("two_axis", avr="on"),
@@ -1499,6 +1541,106 @@ class TestOvercurrentRelay:
         # associated_ct points to a CT that isn't wired into the network at
         # all — no branch to resolve, so the relay is skipped (not fatal).
         proj = self._feeder(pickup_a=200)
+        proj.components.append(_c("ct_orphan", "ct", {"name": "Orphan CT", "ratio": "400/5"}))
+        for comp in proj.components:
+            if comp.id == "relay1":
+                comp.props["associated_ct"] = "ct_orphan"
+        r = run_transient_stability(proj, self._fault())
+        assert r["trips"] == []
+        assert any("skipped" in w for w in r["warnings"])
+
+
+class TestDistanceRelay:
+    """Distance (21) relay tripping (BACKLOG #11 — the last remaining
+    transient-stability protection function). Unlike the frontend TCC/arc-
+    flash path, which has no complex bus voltage to work with and so
+    converts each mho zone's ohmic reach to an equivalent current threshold
+    (buildDistanceRelayZones in constants.js), this engine evaluates the
+    real self-polarized mho characteristic (Z = V/I against a circle through
+    the origin) every step, with each zone timed independently.
+
+    Feeder: util — bus_src — cb1(+ct1) — cable1 (0.2+j0.08 Ω/km, 1 km) —
+    bus_load(+load). A bolted 3-φ fault at bus_load forces bus_load to 0 V,
+    so the relay's apparent impedance is exactly the cable impedance
+    (Z_line ≈ 0.215 Ω ∠21.8°) — the textbook close-in-fault result for a
+    radial feeder."""
+
+    def _feeder(self, z1_reach=0.0, z1_delay=0.0, z2_reach=0.0, z2_delay=0.3,
+               z3_reach=0.0, z3_delay=0.8, z3_reverse=False, mho_angle=75):
+        comps = [
+            _c("util", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 1e6,
+                                   "x_r_ratio": 1000}),
+            _c("bus_src", "bus", {"name": "SRC", "voltage_kv": 11}),
+            _c("cb1", "cb", {"name": "CB1", "state": "closed", "trip_rating_a": 630,
+                             "magnetic_pickup": 100, "long_time_delay": 10}),
+            _c("ct1", "ct", {"name": "CT1", "ratio": "2000/5"}),
+            _c("cable1", "cable", {"name": "F1", "voltage_kv": 11, "r_per_km": 0.2,
+                                   "x_per_km": 0.08, "length_km": 1}),
+            _c("bus_load", "bus", {"name": "LOAD", "voltage_kv": 11}),
+            _c("ld", "static_load", {"name": "LD", "voltage_kv": 11, "rated_kva": 500,
+                                     "power_factor": 0.95, "demand_factor": 1.0}),
+            _c("relay1", "relay", {
+                "name": "R1", "relay_type": "21", "associated_ct": "ct1",
+                "trip_cb": "cb1", "voltage_kv": 11,
+                "z1_reach_ohm": z1_reach, "z1_delay_s": z1_delay,
+                "z2_reach_ohm": z2_reach, "z2_delay_s": z2_delay,
+                "z3_reach_ohm": z3_reach, "z3_delay_s": z3_delay,
+                "z3_reverse": z3_reverse, "mho_angle_deg": mho_angle}),
+        ]
+        wires = [_w("w1", "util", "bus_src"), _w("w2", "bus_src", "cb1"),
+                _w("w3", "cb1", "ct1"), _w("w4", "ct1", "cable1"),
+                _w("w5", "cable1", "bus_load"),
+                Wire(id="wl", fromComponent="ld", fromPort="in",
+                     toComponent="bus_load", toPort="at_0")]
+        return ProjectData(projectName="p", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def _fault(self, extra=None):
+        d = {"type": "fault", "bus": "bus_load", "clear_time_s": 5.0,
+             "t_end_s": 1.0, "find_cct": False, "dt_s": 0.005}
+        d.update(extra or {})
+        return d
+
+    def test_trips_zone1_on_close_in_fault(self):
+        # Z1 reach (1.0 Ω) well beyond the ~0.215 Ω apparent line impedance.
+        r = run_transient_stability(self._feeder(z1_reach=1.0, z1_delay=0.0),
+                                    self._fault())
+        assert any(tr["element"] == "CB1" and "distance trip" in tr["reason"]
+                   and "zone Z1" in tr["reason"] for tr in r["trips"])
+
+    def test_no_trip_when_fault_beyond_all_zone_reach(self):
+        # Z1 reach (0.02 Ω) far short of the ~0.215 Ω apparent impedance;
+        # Z2/Z3 disabled (reach 0 ⇒ not modelled).
+        r = run_transient_stability(self._feeder(z1_reach=0.02, z1_delay=0.0),
+                                    self._fault())
+        assert r["trips"] == []
+
+    def test_zone2_trips_after_its_own_delay_when_beyond_zone1(self):
+        r = run_transient_stability(
+            self._feeder(z1_reach=0.02, z1_delay=0.0, z2_reach=1.0, z2_delay=0.3),
+            self._fault())
+        trips = [tr for tr in r["trips"] if tr["element"] == "CB1"]
+        assert len(trips) == 1
+        assert "zone Z2" in trips[0]["reason"]
+        assert trips[0]["t"] == pytest.approx(0.3, abs=0.02)
+
+    def test_forward_zone3_sees_the_fault_when_not_reversed(self):
+        r = run_transient_stability(
+            self._feeder(z3_reach=1.0, z3_delay=0.1, z3_reverse=False),
+            self._fault())
+        assert any("zone Z3" in tr["reason"] for tr in r["trips"])
+
+    def test_reverse_zone3_does_not_see_a_forward_fault(self):
+        # Same zone, aimed backward via z3_reverse — the mho circle's
+        # inherent directionality (it passes through the origin) must
+        # exclude a fault in front of the relay.
+        r = run_transient_stability(
+            self._feeder(z3_reach=1.0, z3_delay=0.1, z3_reverse=True),
+            self._fault())
+        assert r["trips"] == []
+
+    def test_unresolvable_ct_is_skipped_with_warning(self):
+        proj = self._feeder(z1_reach=1.0)
         proj.components.append(_c("ct_orphan", "ct", {"name": "Orphan CT", "ratio": "400/5"}))
         for comp in proj.components:
             if comp.id == "relay1":

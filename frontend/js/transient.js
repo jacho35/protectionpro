@@ -92,6 +92,9 @@ const Transient = {
           <select id="ts-trip-branch"><option value="">— none —</option>${opt(branches)}</select>
           <label>Auto-reclose after</label>
           <div><input id="ts-reclose" type="number" min="0" step="0.05" value="0" style="width:90px"> s (0 = no reclose; needs Trip on clear)</div>
+          <label>Reclose onto fault</label>
+          <div><input id="ts-reclose-onto" type="checkbox"> permanent fault — the fault is re-applied on reclose, then the branch locks out after
+            <input id="ts-second-clear" type="number" min="0" step="0.01" value="0" style="width:70px"> s (0 = same as Clear time)</div>
           <label>Find CCT</label>
           <div><input id="ts-cct" type="checkbox" checked> critical clearing time (binary search)</div>
         </div>
@@ -117,9 +120,9 @@ const Transient = {
           <p style="grid-column:1/-1;font-size:11px;color:var(--text-muted,#6d6d6d);margin:2px 0 0">
             Steps the selected (already energised) load's demand at the event time, as a percentage of
             its pre-fault value: <strong>+100%</strong> doubles it (like switching in a second identical
-            load), <strong>−100%</strong> sheds it entirely, <strong>−50%</strong> drops half. A load
-            sitting on its source's own terminal bus is folded into that machine's mechanical power and
-            can't be stepped — put it on a separate bus to switch it in or out.
+            load), <strong>−100%</strong> sheds it entirely, <strong>−50%</strong> drops half. A load on
+            a machine's own terminal bus is stepped like any other — it is modelled as a network load
+            there, not folded into the machine's mechanical power.
           </p>
         </div>
 
@@ -253,6 +256,8 @@ const Transient = {
         set('#ts-clear', d.clear_time_s);
         set('#ts-trip-branch', d.trip_element || '');
         set('#ts-reclose', d.reclose_delay_s || 0);
+        chk('#ts-reclose-onto', !!d.reclose_onto_fault);
+        set('#ts-second-clear', d.second_clear_s || 0);
         chk('#ts-cct', d.find_cct !== false);
       }
       if (d.type === 'trip') { set('#ts-trip-el', d.element); set('#ts-trip-time', d.time_s); }
@@ -293,7 +298,8 @@ const Transient = {
       const ftLabel = { slg: 'SLG', ll: 'LL', llg: 'LLG' }[d.fault_type] || '3-φ';
       return `${ftLabel} fault @ ${this._name(d.bus)}, clear ${Math.round((d.clear_time_s || 0) * 1000)} ms`
         + (d.trip_element ? `, trip ${this._name(d.trip_element)}` : '')
-        + (d.trip_element && d.reclose_delay_s ? `, reclose +${Math.round(d.reclose_delay_s * 1000)} ms` : '')
+        + (d.trip_element && d.reclose_delay_s
+            ? `, reclose +${Math.round(d.reclose_delay_s * 1000)} ms${d.reclose_onto_fault ? ' onto fault' : ''}` : '')
         + (d.find_cct !== false ? ', CCT' : '');
     }
     if (d.type === 'trip') return `Trip ${this._name(d.element)} @ ${Math.round((d.time_s || 0) * 1000)} ms`;
@@ -392,6 +398,8 @@ const Transient = {
       d.clear_time_s = parseFloat(b.querySelector('#ts-clear').value) || 0.15;
       d.trip_element = b.querySelector('#ts-trip-branch').value || null;
       d.reclose_delay_s = parseFloat(b.querySelector('#ts-reclose').value) || 0;
+      d.reclose_onto_fault = b.querySelector('#ts-reclose-onto').checked;
+      d.second_clear_s = parseFloat(b.querySelector('#ts-second-clear').value) || 0;
       d.find_cct = b.querySelector('#ts-cct').checked;
     } else if (type === 'trip') {
       d.element = b.querySelector('#ts-trip-el').value;

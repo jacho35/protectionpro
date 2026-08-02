@@ -151,6 +151,25 @@ MAX_RECORD_POINTS = 400
 GFM_CLIM_ITERS = 8          # in-step iterations to converge the GFM current limit
 SUBTRANS_ITERS = 3          # in-step iterations to converge the sub-transient
                              # saliency (X''d != X''q) EMF correction
+MIN_RELAY_CURRENT_PU = 1e-4  # below this a branch is treated as unloaded/open —
+                             # V/I is not evaluated (avoids a ~V/~0 blow-up)
+# [D6] Directional polarisation. A self-polarized element has no usable
+# polarising quantity when its own voltage collapses: for a bolted fault AT the
+# relay's bus V=0, so Z=V/I=0 sits exactly on a mho circle through the origin
+# and Re(V·conj(I))=0 passes a sign-of-power test — both elements then operate
+# for a fault BEHIND them. Real relays solve this with memory (pre-fault)
+# polarisation; below MEMORY_POL_V_PU the stored pre-fault phasor takes over.
+MEMORY_POL_V_PU = 0.10
+# [D4] Distance-zone supervision. A stepped-distance scheme is armed by a fault
+# detector (so steady load inside a long Zone 3 does not trip it) and blocked
+# on a power swing (ANSI 68), because during a stable swing the apparent
+# impedance sweeps the R-X plane straight through the zones. The swing is
+# distinguished from a fault by TRANSIT TIME: a fault puts the impedance inside
+# a zone within a cycle of the disturbance, a swing takes much longer.
+FAULT_DETECT_I_RISE = 1.25   # x pre-fault current — arms the zones
+FAULT_DETECT_V_DIP = 0.90    # x pre-fault voltage — arms the zones
+PSB_OUTER_FACTOR = 1.5       # outer characteristic = 1.5 x the largest zone
+PSB_TRANSIT_S = 0.03         # slower than this from disturbance to zone entry ⇒ swing
 # Frequency-stability verdict: an island whose centre-of-inertia frequency ends
 # more than FREQ_UNSTABLE_BAND (Hz) off nominal AND is not recovering (its end
 # deviation is no smaller than its late-window deviation, within FREQ_RECOVER_TOL)
@@ -204,14 +223,21 @@ def _gov_advanced(gm, cmd, gx_row, pmin_i, pmax_i, p):
         # Fuel-valve lag (T1, capped by a simplified constant fuel/temperature
         # limit standing in for GAST's temperature-control loop) then a
         # turbine lag (T2).
-        fl = p["fuel_limit"]
+        # [D7] gast_fuel_limit_pu is per-unit on the MACHINE base (1.15 = 115 %
+        # of rating), but `cmd` — like Pm and pmax_i — is on the SYSTEM base, so
+        # comparing them directly meant the limit never bound for any machine
+        # smaller than base MVA (a 10 MVA set on a 100 MVA base ran to 162 % of
+        # its rating). Refer the limit to the machine's own rating, and clip the
+        # turbine output like every other model here does — GAST was also the
+        # only model whose pm_use was returned unclipped.
+        fl = max(p["fuel_limit"] * pmax_i, pmin_i)
         target = min(cmd, fl)
         d0 = (target - gx_row[0]) / p["t1"]
-        if (gx_row[0] >= fl and d0 > 0) or (gx_row[0] <= 0.0 and d0 < 0):
+        if (gx_row[0] >= fl and d0 > 0) or (gx_row[0] <= pmin_i and d0 < 0):
             d0 = 0.0
         dgx[0] = d0
         dgx[1] = (gx_row[0] - gx_row[1]) / p["t2"]
-        pm_use = float(gx_row[1])
+        pm_use = float(np.clip(gx_row[1], pmin_i, fl))
     elif gm == "tgov1":
         # Governor lag (T1) then a reheat lead-lag (T2/T3) — the standard IEEE
         # steam-turbine shape.
@@ -442,6 +468,13 @@ def _collect_machines(project, ctx, lf):
         on_bus[bus_id] = on_bus.get(bus_id, 0) + 1
 
     disp = {e.source_id: e.dispatched_mw for e in getattr(lf, "dispatch", [])}
+    # [D2] Per-bus local load, gathered by the load flow's own walker so it
+    # matches what _load_shunts stamps as a shunt at the same bus.
+    from .loadflow import _connected_bus_loads
+    try:
+        local_load = _connected_bus_loads(project)
+    except Exception:
+        local_load = {}
     bus_wsum = {}      # per-bus Σ committed MW (≥0) of the machines on it
     for c_, bid, *_ in staged:
         bus_wsum[bid] = bus_wsum.get(bid, 0.0) + max(disp.get(c_.id, 0.0), 0.0)
@@ -461,7 +494,14 @@ def _collect_machines(project, ctx, lf):
             frac = max(disp.get(comp.id, 0.0), 0.0) / bus_wsum[bus_id]
         else:
             frac = 1.0 / on_bus[bus_id]
-        s_net = complex(b.p_mw, b.q_mvar) / base_mva * frac
+        # [D2] The machine's OWN output, not the bus's net injection. Any load
+        # drawn on this bus is now stamped as a network shunt by _load_shunts,
+        # so it must be added back here to recover what the machine is actually
+        # generating (net = generation − load, by definition). Previously the
+        # netted figure became the machine's P_m and set its internal EMF, so a
+        # load on a generator bus silently reduced the rotor's mechanical power.
+        p_ld, q_ld = local_load.get(bus_id, (0.0, 0.0))
+        s_net = (complex(b.p_mw, b.q_mvar) + complex(p_ld, q_ld)) / base_mva * frac
         if abs(V) < 1e-6:
             continue
         I = np.conj(s_net) / np.conj(V)
@@ -702,24 +742,49 @@ def _collect_machines(project, ctx, lf):
     return machines, warnings
 
 
-def _load_shunts(lf, ctx, machine_bus_idxs):
-    """Constant-admittance vector (system p.u.) for every non-machine bus, from
-    its pre-fault net injection: y = conj(S_load)/|V|², S_load = −S_net."""
+def _load_shunts(project, lf, ctx, machine_bus_idxs):
+    """Constant-admittance vector (system p.u.) for every bus, from its pre-fault
+    load: y = conj(S_load)/|V|².
+
+    For a bus with no synchronous machine on it the local load is exactly minus
+    the net injection, as before. [D2] A MACHINE bus used to be skipped entirely
+    — its load was left folded into the machine's own injection, which made that
+    load a constant-power quantity welded to the rotor: it never collapsed with
+    voltage during a fault, and it subtracted straight off the mechanical power.
+    A 60 MW load drawn on a generator's own bus instead of one busbar link away
+    took the machine's P_m from 85 MW to 25 MW and inflated the critical
+    clearing time by 2.4x; an islanded genset carrying its board on the same bus
+    got P_m = 0 and stopped responding to load changes at all. So the local load
+    is now stamped as a shunt on every bus, and the machine keeps its own output
+    (``_collect_machines`` adds the local load back to the bus injection to
+    recover it). Net power balance is unchanged; what changes is that the load
+    now behaves like a load.
+    """
+    from .loadflow import _connected_bus_loads
     bus_idx = ctx["bus_idx"]
     base = ctx["base_mva"]
     n = len(bus_idx)
     y = np.zeros(n, dtype=complex)
+    try:
+        local = _connected_bus_loads(project)
+    except Exception:
+        local = {}
     for bid, i in bus_idx.items():
-        if i in machine_bus_idxs:
-            continue  # machine buses inject through their internal node
         b = lf.buses.get(bid)
         if b is None or not b.energized:
             continue
         V = b.voltage_pu
         if V < 1e-6:
             continue
-        s_net = complex(b.p_mw, b.q_mvar) / base   # net injection (load ⇒ neg)
-        y[i] = np.conj(-s_net) / (V * V)
+        if i in machine_bus_idxs:
+            # Only the LOCAL load — the machine injects through its internal
+            # node, and any frozen non-machine source on the bus stays inside
+            # the net injection the machine is given.
+            p, q = local.get(bid, (0.0, 0.0))
+            s_load = complex(p, q) / base
+        else:
+            s_load = -complex(b.p_mw, b.q_mvar) / base   # net injection ⇒ load
+        y[i] = np.conj(s_load) / (V * V)
     return y
 
 
@@ -981,8 +1046,9 @@ def _dynamic_setup(project, ctx, lf, freq, warnings):
                                                       "trip_rocof_hzs", "trip_oos_deg",
                                                       "trip_vhz_pu")):
             n_gen_prot += 1
-    oc_relays = _collect_oc_relays(project, ctx, warnings)
-    has_protection = (n_gen_prot > 0 or gfm_prot or bool(oc_relays)
+    oc_relays = _collect_oc_relays(project, ctx, lf, warnings)
+    distance_relays = _collect_distance_relays(project, ctx, lf, warnings)
+    has_protection = (n_gen_prot > 0 or gfm_prot or bool(oc_relays) or bool(distance_relays)
                       or any(d["shed_hz"] > 0 or d["uv_pu"] > 0 for d in loads)
                       or any(mo.get("uv_pu", 0) > 0 for mo in motors)
                       or any(g["uv_pu"] > 0 or g["of_hz"] > 0 or g["uf_hz"] > 0
@@ -1005,8 +1071,15 @@ def _dynamic_setup(project, ctx, lf, freq, warnings):
             f"{len(oc_relays)} overcurrent relay(s) will trip their breaker during "
             "the simulation (same pickup/curve/CT settings as the arc-flash and TCC "
             "studies) — the network is re-reduced whenever one operates.")
+    if distance_relays:
+        warnings.append(
+            f"{len(distance_relays)} distance (21) relay(s) will trip their breaker "
+            "during the simulation via a true Z=V/I mho-zone evaluation (the live "
+            "complex bus voltage/branch current, not the current-only proxy the TCC "
+            "plot uses) — the network is re-reduced whenever one operates.")
     return {"loads": loads, "motors": motors, "ibrs": ibrs, "base": base,
-            "has_protection": has_protection, "oc_relays": oc_relays}
+            "has_protection": has_protection, "oc_relays": oc_relays,
+            "distance_relays": distance_relays}
 
 
 def _relay_branch_terminal(ct_id, adjacency, components, comp_to_branch, bus_idx):
@@ -1051,7 +1124,22 @@ def _relay_branch_terminal(ct_id, adjacency, components, comp_to_branch, bus_idx
     return next(iter(frontier_branches.values())), next(iter(frontier_buses))
 
 
-def _collect_oc_relays(project, ctx, warnings):
+def _relay_prefault(lf, ctx, branch, near_is_a):
+    """[D4][D6] Pre-fault (memory) complex voltage at the relay's own terminal
+    and the complex current it then measures, from the initialising load flow.
+
+    ``v_mem`` polarises the directional decision once the measured voltage
+    collapses; ``i_pre``/``v_pre`` magnitudes arm the distance fault detector.
+    Returns ``(v_mem, i_pre)`` — both 0 when the bus is dark.
+    """
+    Vc = _bus_complex_voltages(lf, [branch["bus_a"], branch["bus_b"]])
+    va = Vc.get(branch["bus_a"], 0j)
+    vb = Vc.get(branch["bus_b"], 0j)
+    i_a, i_b = branch_current(branch, va, vb)
+    return (va, i_a) if near_is_a else (vb, i_b)
+
+
+def _collect_oc_relays(project, ctx, lf, warnings):
     """Resolve each 50/51/67 overcurrent relay with a ``trip_cb`` to the branch
     its ``associated_ct`` measures, for live tripping during the simulation.
 
@@ -1103,16 +1191,184 @@ def _collect_oc_relays(project, ctx, warnings):
         direction = str(comp.props.get("direction", "forward")).lower()
         rca_deg = float(comp.props.get("characteristic_angle_deg", 45) or 45)
         cb_comp = components.get(trip_cb)
+        near_is_a = near_bus == branch["bus_a"]
+        v_mem, _i_pre = _relay_prefault(lf, ctx, branch, near_is_a)
         relays.append({
             "name": name, "props": comp.props, "trip_cb": trip_cb,
             "trip_cb_name": cb_comp.props.get("name", trip_cb) if cb_comp else trip_cb,
             "branch": branch, "near_bus": near_bus, "far_bus": far_bus,
             "a_idx": bus_idx[branch["bus_a"]], "b_idx": bus_idx[branch["bus_b"]],
-            "near_is_a": near_bus == branch["bus_a"],
+            "near_is_a": near_is_a,
             "i_base_a": i_base_ka * 1000.0,
             "ct_props": ct_comp.props if ct_comp else None,
             "directional": relay_type == "67",
             "direction": direction, "rca_deg": rca_deg,
+            # [D6] pre-fault phasor that polarises the 67 decision once the
+            # measured voltage is too collapsed to carry an angle.
+            "v_mem": v_mem,
+        })
+    return relays
+
+
+def _collect_distance_relays(project, ctx, lf, warnings):
+    """Resolve each distance (21) relay with a ``trip_cb`` to the branch its
+    ``associated_ct`` measures, building its mho zone circles for a TRUE
+    Z=V/I evaluation during the simulation.
+
+    The frontend TCC/arc-flash path (``buildDistanceRelayZones`` in
+    constants.js) has no complex bus voltage to work with, so it converts
+    each zone's ohmic reach to an equivalent CURRENT threshold (I = V_LL/
+    (√3·Z_reach)) and grades it like an overcurrent element — a documented
+    simplification for that plot. This engine has the actual complex bus
+    voltage and branch current every step, so it evaluates the real
+    self-polarized mho characteristic: a circle through the origin with
+    diameter 0 → reach·∠mho_angle (center = reach·e^{jθ}/2, radius =
+    reach/2). Passing through the origin makes the circle occupy only the
+    half-plane within ±90° of θ, so it is inherently directional (forward)
+    with no separate direction prop needed — the directionality decision
+    the current-only TCC model doesn't have to make. Zone 3 may be aimed
+    in reverse via ``z3_reverse`` (remote-backup / blocking-scheme
+    convention) by rotating its reach vector 180°.
+
+    Each zone reach (ohms) is the SAME setting the TCC zone-grading modal
+    writes to z1/z2/z3_reach_ohm — the margin/next-line-% props are only
+    consumed by that modal's "Grade Distance Zones" helper to derive the
+    reach, so they need no equivalent here.
+
+    Relays with no CT, no trip breaker, no positive zone reach, or whose CT
+    doesn't resolve to a modelled branch are skipped with a warning (not
+    fatal — the rest of the study still runs), mirroring
+    ``_collect_oc_relays``.
+    """
+    branches = ctx.get("branches") or []
+    comp_to_branch = {cid: br for br in branches for cid in br["ids"]}
+    adjacency, components, bus_idx = ctx["adjacency"], ctx["components"], ctx["bus_idx"]
+    base_mva = ctx["base_mva"]
+
+    relays = []
+    for comp in project.components:
+        if comp.type != "relay":
+            continue
+        if str(comp.props.get("relay_type", "50/51")) != "21":
+            continue
+        name = comp.props.get("name", comp.id)
+        ct_id = comp.props.get("associated_ct")
+        trip_cb = comp.props.get("trip_cb")
+        if not ct_id or not trip_cb:
+            continue  # not wired to trip anything — arc-flash/TCC-only relay
+        if trip_cb not in components:
+            warnings.append(f"Distance relay {name}: trip breaker '{trip_cb}' not found — "
+                            "skipped for transient-stability distance protection.")
+            continue
+        resolved = _relay_branch_terminal(ct_id, adjacency, components, comp_to_branch, bus_idx)
+        if resolved is None:
+            warnings.append(f"Distance relay {name}: its CT is not adjacent to both a bus "
+                            "and a modelled cable/transformer branch — skipped for "
+                            "transient-stability distance protection.")
+            continue
+        branch, near_bus = resolved
+        far_bus = branch["bus_b"] if near_bus == branch["bus_a"] else branch["bus_a"]
+        bus_comp = components.get(near_bus)
+        # [D1] Reach is in PRIMARY ohms at the protected line's own voltage, so
+        # the only correct per-unit base is the NEAR BUS's nominal voltage —
+        # exactly what _collect_oc_relays uses for its current base. The relay's
+        # own `voltage_kv` prop is a nameplate/PT-rating field that constants.js
+        # hard-defaults to 11 kV on every relay, so honouring it silently
+        # rescaled every zone by (11/V_bus)² on any non-11 kV network (a 132 kV
+        # feeder mis-reached by 144x, tripping Zone 1 on settings 43x short of
+        # the fault). Take the bus, and flag the disagreement so the data — and
+        # the frontend TCC plot, which still keys off the relay prop — get
+        # corrected rather than quietly diverging.
+        v_kv = float((bus_comp.props.get("voltage_kv", 11) if bus_comp else 11) or 11)
+        try:
+            v_kv_relay = float(comp.props.get("voltage_kv") or 0)
+        except (TypeError, ValueError):
+            v_kv_relay = 0.0
+        if v_kv_relay > 0 and abs(v_kv_relay - v_kv) > 0.1 * v_kv:
+            warnings.append(
+                f"Distance relay {name}: its Voltage (kV) is set to {v_kv_relay:g} kV but "
+                f"it measures a {v_kv:g} kV bus. Zone reaches are converted to per-unit on "
+                f"the {v_kv:g} kV bus base (the protected line's own voltage); set the "
+                "relay's Voltage (kV) to match so the TCC distance plot agrees.")
+        z_base_ohm = (v_kv * v_kv) / base_mva if base_mva > 0 else 1.0
+        mho_rad = math.radians(float(comp.props.get("mho_angle_deg", 75) or 75))
+        z3_reverse = bool(comp.props.get("z3_reverse", False))
+        zone_defs = [
+            ("Z1", comp.props.get("z1_reach_ohm"), comp.props.get("z1_delay_s"), False),
+            ("Z2", comp.props.get("z2_reach_ohm"), comp.props.get("z2_delay_s"), False),
+            ("Z3", comp.props.get("z3_reach_ohm"), comp.props.get("z3_delay_s"), z3_reverse),
+        ]
+        zones = []
+        for zname, reach_ohm, delay_s, reverse in zone_defs:
+            try:
+                reach_ohm = float(reach_ohm)
+            except (TypeError, ValueError):
+                continue
+            if reach_ohm <= 0:
+                continue
+            try:
+                delay_s = max(float(delay_s), 0.0) if delay_s is not None else 0.0
+            except (TypeError, ValueError):
+                delay_s = 0.0
+            reach_pu = reach_ohm / z_base_ohm if z_base_ohm > 0 else 0.0
+            angle = mho_rad + math.pi if reverse else mho_rad
+            reach_vec = complex(reach_pu * math.cos(angle), reach_pu * math.sin(angle))
+            zones.append({"name": zname, "delay_s": delay_s,
+                         "center": reach_vec / 2.0, "radius": abs(reach_vec) / 2.0})
+        if not zones:
+            continue
+        zones.sort(key=lambda z: z["radius"])   # smallest reach (fastest zone) first
+        cb_comp = components.get(trip_cb)
+        near_is_a = near_bus == branch["bus_a"]
+        v_mem, i_pre = _relay_prefault(lf, ctx, branch, near_is_a)
+
+        # [D4] Power-swing outer characteristic: the largest zone's mho scaled
+        # by PSB_OUTER_FACTOR. The impedance's transit time from crossing this
+        # into a tripping zone is what separates a fault (near-instant) from a
+        # swing (tens of ms or more).
+        widest = max(zones, key=lambda z: z["radius"])
+        outer_center = widest["center"] * PSB_OUTER_FACTOR
+        outer_radius = widest["radius"] * PSB_OUTER_FACTOR
+        psb_on = str(comp.props.get("dist_psb", "on") or "on").lower() != "off"
+        fd_on = str(comp.props.get("dist_fault_detect", "on") or "on").lower() != "off"
+        try:
+            psb_transit = max(float(comp.props.get("psb_transit_s", PSB_TRANSIT_S)
+                                    or PSB_TRANSIT_S), 0.0)
+        except (TypeError, ValueError):
+            psb_transit = PSB_TRANSIT_S
+
+        # [D4] Load-encroachment check against the ACTUAL pre-fault operating
+        # point: if a zone circle already contains the steady load impedance the
+        # relay will time out and trip on load with no fault present at all (the
+        # shipped 12 Ω Zone 3 default does exactly this on a loaded 11 kV
+        # feeder). The fault detector blocks it, but the setting is still wrong.
+        if abs(i_pre) > MIN_RELAY_CURRENT_PU:
+            z_load0 = v_mem / i_pre
+            for z in zones:
+                if abs(z_load0 - z["center"]) <= z["radius"]:
+                    warnings.append(
+                        f"Distance relay {name}: zone {z['name']} encloses the pre-fault "
+                        f"load impedance ({abs(z_load0) * z_base_ohm:.2f} Ω at "
+                        f"{math.degrees(math.atan2(z_load0.imag, z_load0.real)):.0f}°) — "
+                        "the reach is inside the load region. The fault detector blocks "
+                        "it here, but reduce the reach or add a load blinder; a real "
+                        "relay would trip on load.")
+                    break
+
+        relays.append({
+            "name": name, "trip_cb": trip_cb,
+            "trip_cb_name": cb_comp.props.get("name", trip_cb) if cb_comp else trip_cb,
+            "branch": branch, "near_bus": near_bus, "far_bus": far_bus,
+            "a_idx": bus_idx[branch["bus_a"]], "b_idx": bus_idx[branch["bus_b"]],
+            "near_is_a": near_is_a,
+            "z_base_ohm": z_base_ohm, "zones": zones,
+            # [D6] maximum-torque angle + pre-fault phasor for the memory-
+            # polarised directional decision.
+            "mho_rad": mho_rad, "z3_reverse": z3_reverse, "v_mem": v_mem,
+            # [D4] fault-detector references and swing-blocking characteristic.
+            "v_pre_mag": abs(v_mem), "i_pre_mag": abs(i_pre),
+            "fd_on": fd_on, "psb_on": psb_on, "psb_transit_s": psb_transit,
+            "outer_center": outer_center, "outer_radius": outer_radius,
         })
     return relays
 
@@ -1248,8 +1504,8 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     last whose t_switch ≤ t. Returns a dict with the stability verdict and, when
     ``record`` is set, decimated trajectories.
 
-    project: only needed when ``dyn`` carries overcurrent relays — a relay
-    trip rebuilds the branch Ybus with its breaker removed (see
+    project: only needed when ``dyn`` carries overcurrent or distance relays —
+    a relay trip rebuilds the branch Ybus with its breaker removed (see
     ``_effective_variant``'s ``ybus_trip_cache``), which needs the original
     project to run ``build_branch_ybus`` on a modified copy.
 
@@ -1382,9 +1638,11 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     dyn_loads = dyn["loads"] if dyn else []
     dyn_ibrs = dyn["ibrs"] if dyn else []
     dyn_oc = dyn["oc_relays"] if dyn else []
+    dyn_dist = dyn["distance_relays"] if dyn else []
     n_mot = len(dyn_motors)
     n_gfl = len(dyn_ibrs)
     n_oc = len(dyn_oc)
+    n_dist = len(dyn_dist)
     slips0 = np.array([mo["s0"] for mo in dyn_motors]) if n_mot else np.zeros(0)
 
     # Grid-forming converters: a virtual impedance bounds the terminal current at
@@ -1402,12 +1660,28 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     # from the network (re-reduced next step).
     has_prot = bool(dyn and dyn.get("has_protection"))
     tripped_loads, tripped_motors, tripped_mach, tripped_ibr = set(), set(), set(), set()
-    # tripped_branch: component ids of CBs an overcurrent relay has opened —
-    # applied via ybus_trip_cache in _effective_variant (a live topology
-    # decision, unlike the precomputed fault/sequence segments in `segments`).
+    # tripped_branch: component ids of CBs an overcurrent or distance relay has
+    # opened — applied via ybus_trip_cache in _effective_variant (a live
+    # topology decision, unlike the precomputed fault/sequence segments in
+    # `segments`).
     tripped_branch = set()
     ybus_trip_cache = {}   # frozenset(removed comp ids) -> Y, lazily built/memoized
     oc_relay_acc = [0.0] * n_oc   # IDMT operate-time integral, Σ dt/t_op(I) → trip at 1.0
+    # Distance-relay zone timers: one independent definite-time accumulator per
+    # zone per relay (mirrors the parallel Z1/Z2/Z3 timing of a real distance
+    # relay) — reset to 0 whenever the measured impedance leaves that zone's
+    # mho circle, trips its CB once a zone's own delay is reached.
+    dist_zone_acc = [[0.0] * len(r["zones"]) for r in dyn_dist]
+    # [D4] Per-zone entry latch: whether the impedance was inside last step, and
+    # whether THAT entry was judged a power swing (decided once, at entry, and
+    # held — re-deciding every step would block any time-delayed zone the moment
+    # its own delay exceeded the transit threshold). Plus the relay-level
+    # fault-detector state and the time the impedance last crossed into the
+    # outer characteristic.
+    dist_zone_in = [[False] * len(r["zones"]) for r in dyn_dist]
+    dist_zone_blk = [[False] * len(r["zones"]) for r in dyn_dist]
+    dist_outer_t = [None] * n_dist
+    dist_armed = [False] * n_dist
     trip_events = []
     load_shed_t = [0.0] * len(dyn_loads)
     load_uv_t = [0.0] * len(dyn_loads)
@@ -1416,7 +1690,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     gen_trip_t = [0.0] * m
     need_bus_v = any_avr or n_mot > 0 or has_prot or n_gfl > 0
     vbus_prev = {}   # last-step bus-voltage magnitudes (voltage-dependent loads)
-    vbus_complex_prev = {}   # last-step complex bus voltages (overcurrent relays only)
+    vbus_complex_prev = {}   # last-step complex bus voltages (overcurrent/distance relays only)
     rocof_hist = {}  # island id -> [(t, f_hz), ...] within ROCOF_WINDOW_S, for df/dt relays
 
     def _rocof_rates(t, isl_freq):
@@ -1805,8 +2079,23 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         # above reset). Branch current is evaluated from the LAGGED complex
         # bus voltages (vbus_complex_prev), consistent with every other
         # protection check in this function reading vbus_prev one step behind.
+        # [D5] Both relay models below measure `branch_current`/
+        # `vbus_complex_prev`, which are POSITIVE-SEQUENCE quantities. That is
+        # the phase quantity only for a balanced 3-φ fault. While an unbalanced
+        # (SLG/LL/LLG) fault is in force the engine represents it as a positive-
+        # sequence shunt, so V1/I1 are neither the faulted-phase current
+        # (I_a = 3·I1 for SLG, √3·I1 for LL) nor the loop impedance a ground
+        # element measures with residual compensation (V1/I1 carries the whole
+        # Z2+Z0 shunt, so a ground fault reads far beyond any zone). Rather than
+        # operate on quantities that mean something else, both elements are
+        # blocked — and their timers reset — for the duration of such a segment;
+        # they resume normally once the network is balanced again.
+        unbal_fault = bool(variant_at(t).get("fault_shunt"))
         for k, r in enumerate(dyn_oc):
             if r["trip_cb"] in tripped_branch:
+                continue
+            if unbal_fault:
+                oc_relay_acc[k] = 0.0
                 continue
             va = vbus_complex_prev.get(r["a_idx"], 0j)
             vb = vbus_complex_prev.get(r["b_idx"], 0j)
@@ -1815,14 +2104,22 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             current_a = abs(i_near) * r["i_base_a"]
             if r["directional"]:
                 v_near = va if r["near_is_a"] else vb
-                # Self-polarized directional supervision: forward = real power
-                # flowing OUT of the relay's own bus into the protected branch
-                # (the normal source-to-load direction for a feeder relay).
-                # A simplified sign-of-power check, not the full RCA-rotated
-                # torque equation — adequate for a bolted/near-bolted fault's
-                # near-unity power factor; see module notes on other
-                # deliberate simplifications (e.g. ROCOF's shared COI proxy).
-                forward = (v_near * np.conj(i_near)).real >= 0
+                # [D6] Memory-polarised directional supervision. The measured
+                # voltage polarises the decision while it still carries an
+                # angle; once it collapses (a bolted fault at or very near the
+                # relay's own bus, where the old sign-of-power test returned
+                # Re(0·conj(I)) = 0 and read as FORWARD for a fault behind the
+                # relay) the pre-fault memory phasor takes over — what a real
+                # directional element does. Now that a usable polarising
+                # quantity is guaranteed, this is the proper RCA-rotated torque
+                # equation rather than the previous sign-of-power proxy: forward
+                # when the current lies within ±90° of V_pol rotated back by the
+                # relay's own characteristic angle.
+                v_pol = v_near if abs(v_near) >= MEMORY_POL_V_PU else r["v_mem"]
+                rca = math.radians(r["rca_deg"])
+                torque = (v_pol * complex(math.cos(-rca), math.sin(-rca))
+                          * np.conj(i_near)).real
+                forward = torque > 0
                 want_forward = r["direction"] != "reverse"
                 if forward != want_forward:
                     oc_relay_acc[k] = 0.0
@@ -1837,6 +2134,101 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
                 trip_events.append({"t": round(t, 3), "element": r["trip_cb_name"],
                                     "reason": f"overcurrent trip via {r['name']} "
                                               f"at {current_a:.0f} A"})
+        # Distance (21) relays: a true Z = V/I self-polarized mho evaluation —
+        # this engine has the actual complex bus voltage/branch current every
+        # step, unlike the current-only IDMT proxy the TCC plot uses for the
+        # same relay. Each zone runs its own independent definite-time timer
+        # off the lagged complex voltages/current, consistent with every other
+        # check in this function.
+        def _dist_reset(kk):
+            for zj in range(len(dyn_dist[kk]["zones"])):
+                dist_zone_acc[kk][zj] = 0.0
+                dist_zone_in[kk][zj] = False
+                dist_zone_blk[kk][zj] = False
+
+        for k, r in enumerate(dyn_dist):
+            if r["trip_cb"] in tripped_branch:
+                continue
+            if unbal_fault:                      # [D5] see the note above
+                _dist_reset(k)
+                dist_outer_t[k] = None
+                dist_armed[k] = False
+                continue
+            va = vbus_complex_prev.get(r["a_idx"], 0j)
+            vb = vbus_complex_prev.get(r["b_idx"], 0j)
+            i_a, i_b = branch_current(r["branch"], va, vb)
+            i_near = i_a if r["near_is_a"] else i_b
+            v_near = va if r["near_is_a"] else vb
+            if abs(i_near) < MIN_RELAY_CURRENT_PU:
+                _dist_reset(k)
+                dist_outer_t[k] = None
+                continue
+            z_seen = v_near / i_near
+
+            # [D6] Memory-polarised directional supervision, for the same reason
+            # as the 67 above: at V_near = 0 the apparent impedance is exactly
+            # 0, which lies ON a mho circle through the origin and so was
+            # admitted by the inside test regardless of which side the fault was
+            # on. The circle geometry still supplies the reach; this supplies
+            # the direction, from a polarising quantity that survives a voltage
+            # collapse.
+            v_pol = v_near if abs(v_near) >= MEMORY_POL_V_PU else r["v_mem"]
+            torque = (v_pol * complex(math.cos(-r["mho_rad"]), math.sin(-r["mho_rad"]))
+                      * np.conj(i_near)).real
+            fwd = torque > 0
+
+            # [D4] Fault detector: arm only on a real disturbance (current risen
+            # or voltage dipped against the pre-fault operating point), so a long
+            # Zone 3 sitting over the load impedance cannot time out on load.
+            armed = True
+            if r["fd_on"]:
+                armed = ((abs(i_near) > FAULT_DETECT_I_RISE * r["i_pre_mag"])
+                         or (abs(v_near) < FAULT_DETECT_V_DIP * r["v_pre_mag"]))
+            if armed and not dist_armed[k]:
+                # Fresh disturbance: restart the swing-transit clock and re-
+                # decide every zone's entry, so a zone the impedance was already
+                # sitting in (load encroachment) is not latched blocked through
+                # a genuine fault that follows.
+                dist_outer_t[k] = t
+                _dist_reset(k)
+            dist_armed[k] = armed
+
+            # [D4] Outer-characteristic crossing time — the reference the zone
+            # entry below is timed against.
+            if abs(z_seen - r["outer_center"]) <= r["outer_radius"]:
+                if dist_outer_t[k] is None:
+                    dist_outer_t[k] = t
+            else:
+                dist_outer_t[k] = None
+
+            for zi, z in enumerate(r["zones"]):
+                inside = abs(z_seen - z["center"]) <= z["radius"]
+                # Zone 3 aimed backward wants a reverse fault; every other zone
+                # wants a forward one.
+                want_fwd = not (r["z3_reverse"] and z["name"] == "Z3")
+                inside = inside and (fwd == want_fwd)
+                if not inside:
+                    dist_zone_acc[k][zi] = 0.0
+                    dist_zone_in[k][zi] = False
+                    dist_zone_blk[k][zi] = False
+                    continue
+                if not dist_zone_in[k][zi]:
+                    # Entry: decide once whether this was fault-like or swing-like.
+                    dist_zone_in[k][zi] = True
+                    ref = dist_outer_t[k]
+                    slow = (r["psb_on"] and ref is not None
+                            and (t - ref) > r["psb_transit_s"])
+                    dist_zone_blk[k][zi] = (not armed) or slow
+                if dist_zone_blk[k][zi]:
+                    dist_zone_acc[k][zi] = 0.0
+                    continue
+                dist_zone_acc[k][zi] += dt
+                if dist_zone_acc[k][zi] >= z["delay_s"] and r["trip_cb"] not in tripped_branch:
+                    tripped_branch.add(r["trip_cb"])
+                    z_ohm = abs(z_seen) * r["z_base_ohm"]
+                    trip_events.append({"t": round(t, 3), "element": r["trip_cb_name"],
+                                        "reason": f"distance trip via {r['name']} "
+                                                  f"zone {z['name']} at {z_ohm:.2f} Ω"})
 
     rec_t, rec_delta, rec_omega, rec_pe, rec_vbus, rec_pm = [], [], [], [], [], []
     bus_ids_all = None
@@ -1952,10 +2344,11 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
         if dyn and veff is not None:
             eint_a_lag = _eint_sub(veff["active"], delta, efield, epq, epd, e2q, e2d, veff["Yred"])
             vbus_prev = _bus_voltages(veff, eint_a_lag)
-            if n_oc:
+            if n_oc or n_dist:
                 # Complex (not just magnitude) bus voltages, needed for branch
-                # current and directional (67) supervision — only computed
-                # when an overcurrent relay is actually present.
+                # current, directional (67) supervision and the distance (21)
+                # Z=V/I evaluation — only computed when an overcurrent or
+                # distance relay is actually present.
                 Vbus_c = veff["R"] @ eint_a_lag if veff["active"] else np.zeros(0, dtype=complex)
                 vbus_complex_prev = {bi: Vbus_c[k] for k, bi in enumerate(veff["keep_bus"])}
         t += dt
@@ -2025,7 +2418,7 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
     base_ybus = ctx["Y"]
     bus_idx = ctx["bus_idx"]
     machine_bus_idxs = {mac["bus_idx"] for mac in machines}
-    load_shunt = _load_shunts(lf, ctx, machine_bus_idxs)
+    load_shunt = _load_shunts(project, lf, ctx, machine_bus_idxs)
     all_active = list(range(len(machines)))
 
     def variant(ybus, active, grounded, shunt=None, pm_over=None, load_scale=None,
@@ -2100,9 +2493,26 @@ def _build_segments(project, ctx, lf, machines, disturbance, warnings):
         reclose_s = float(disturbance.get("reclose_delay_s", 0) or 0)
         if trip and reclose_s > 0:
             reclose_t = t_clear + reclose_s
-            reclose_v = variant(base_ybus, all_active, set())
-            segs.append((reclose_t, reclose_v))
-            event += f", reclosing at {reclose_t*1000:.0f} ms"
+            # [D8] Reclosing onto a PERMANENT fault is the case that actually
+            # matters for stability — the machine takes a second shock after
+            # having already swung once, and it is the reason auto-reclose
+            # appears in a stability study at all. Previously only the
+            # successful (healthy-line) reclose was representable, so the model
+            # could only ever produce the benign outcome.
+            onto_fault = bool(disturbance.get("reclose_onto_fault", False))
+            if onto_fault:
+                segs.append((reclose_t, fault_v))
+                # Second clearing: default to the same clearing time as the
+                # first shot, then trip the branch for good (no further reclose
+                # — a lockout after one unsuccessful shot).
+                second_s = float(disturbance.get("second_clear_s", 0) or 0) or t_clear
+                lockout_t = reclose_t + second_s
+                segs.append((lockout_t, post_v))
+                event += (f", reclosing onto the fault at {reclose_t*1000:.0f} ms, "
+                          f"locking out at {lockout_t*1000:.0f} ms")
+            else:
+                segs.append((reclose_t, variant(base_ybus, all_active, set())))
+                event += f", reclosing at {reclose_t*1000:.0f} ms"
         return (segs, event)
 
     if dtype == "trip":
@@ -2367,7 +2777,7 @@ def run_transient_stability(project, disturbance=None):
     # folded in as admittances) — that mismatch makes the rotors drift or, for
     # light high-reactance machines, run away on the slightest disturbance.
     machine_bus_idxs = {m["bus_idx"] for m in machines}
-    load_shunt0 = _load_shunts(lf, ctx, machine_bus_idxs)
+    load_shunt0 = _load_shunts(project, lf, ctx, machine_bus_idxs)
     all_idx = list(range(len(machines)))
     try:
         Yred0, _, _ = _reduce(ctx["Y"], load_shunt0, machines, all_idx, set())
@@ -2432,7 +2842,23 @@ def run_transient_stability(project, disturbance=None):
     # Dynamic loads / motors (None ⇒ classical constant-shunt fast path). y0 is
     # the base constant-Z shunt the dynamic path perturbs each step.
     dyn = _dynamic_setup(project, ctx, lf, freq, warnings)
-    y0 = _load_shunts(lf, ctx, machine_bus_idxs) if dyn else None
+    y0 = _load_shunts(project, lf, ctx, machine_bus_idxs) if dyn else None
+
+    # [D5] The over-current and distance elements measure positive-sequence
+    # quantities (see _check_protection); those are the phase quantities only
+    # while the network is balanced, so both are blocked for the duration of an
+    # unbalanced fault segment. Say so up front rather than letting a study
+    # silently report "no trip" for a relay the user configured.
+    if dyn and (dyn.get("oc_relays") or dyn.get("distance_relays")) and \
+            str(disturbance.get("fault_type") or "3phase").lower() in ("slg", "ll", "llg"):
+        warnings.append(
+            "Over-current / distance relay tripping is BLOCKED while the unbalanced "
+            "fault is applied: the engine models it as a positive-sequence shunt, so "
+            "the relays' measured V/I are sequence — not phase — quantities (the "
+            "faulted-phase current is 3·I₁ for SLG and √3·I₁ for LL, and a ground "
+            "distance loop needs residual compensation to see the line impedance). "
+            "The relays resume once the fault is cleared. Use a 3-φ fault to study "
+            "relay-driven tripping.")
 
     segments, event = _build_segments(project, ctx, lf, machines, disturbance, warnings)
     sim = _simulate(machines, segments, freq, t_end, dt, record=True,

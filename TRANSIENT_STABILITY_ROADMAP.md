@@ -2,8 +2,8 @@
 
 Status of the classical time-domain rotor-angle engine
 (`backend/analysis/transient_stability.py`) and what remains. Last updated
-2026-07-31 (after ROCOF/over-excitation/out-of-step protection + auto-reclose;
-next up = over-current/distance relay).
+2026-08-01 (after the distance (21) relay — the protection-function set is
+now complete; see *Assessment*).
 
 ## Implemented
 
@@ -289,25 +289,44 @@ island** against that island's own centre of inertia.
     (`network_reduction.py`, `transient_stability.py`,
     `test_transient_stability.py`)
 
-## Next up — distance (21) relay
-
-1. **Distance (21) relay.** The one remaining protection function. Reuses the
-   per-branch current infrastructure and the live topology-switch mechanism
-   the over-current relay above added — the genuinely new piece is a Z=V/I
-   zone evaluator: no backend engine reads a relay's `z1_reach_ohm`/
-   `z2_reach_ohm`/`z3_reach_ohm`/`*_delay_s` props today (`arcflash.py`
-   explicitly excludes relay_type 21 from its IDMT semantics), though the
-   frontend TCC plot already has a simplified zone model
-   (`buildDistanceRelayZones`/`distanceRelayTripTime` in `constants.js`) worth
-   porting to Python rather than re-deriving. That existing frontend model
-   converts reach to an equivalent pickup CURRENT using the relay's rated
-   `voltage_kv`, not a live V/I impedance measurement, and has no
-   directionality — a transient-stability implementation could either mirror
-   that simplification for consistency with the TCC plot, or measure genuine
-   Z = V_near/I_near each step (more correct, but would read differently from
-   the TCC display for the same component); this choice, plus a
-   directionality model (a real distance relay is inherently directional),
-   are open decisions for whoever picks this up.
+- **Distance (21) relay** — the last remaining protection function. Reuses
+  the per-branch current infrastructure and live topology-switch mechanism
+  the over-current relay above added, but evaluates a TRUE Z=V/I mho
+  characteristic rather than porting the frontend TCC plot's current-only
+  proxy (`buildDistanceRelayZones`/`distanceRelayTripTime`, constants.js —
+  that model converts reach to an equivalent pickup current since it has no
+  complex bus voltage to work with; this engine does, every step).
+  - **Mho zone evaluator** (`_collect_distance_relays`): resolves each
+    `relay_type: "21"` relay via the SAME `_relay_branch_terminal` BFS the
+    over-current relay uses, converts `z1/z2/z3_reach_ohm` (the identical
+    settings the TCC "Grade Distance Zones" modal already writes) to
+    per-unit reach via `Z_base = kV²/MVA_base`, and builds each zone's
+    self-polarized mho circle: diameter `0 → reach·∠mho_angle`
+    (center = `reach·e^{jθ}/2`, radius = `reach/2`).
+  - **Directionality falls out of the geometry**: a circle through the
+    origin occupies only the half-plane within ±90° of θ
+    (`|Z−C|≤r ⟺ |Z|² ≤ R·Re(Z·e^{−jθ})`, which forces
+    `Re(Z·e^{−jθ})≥0`) — the directionality decision the frontend
+    current-only model doesn't have to make, with no extra `direction` prop
+    needed. Zone 3 can be aimed in reverse via `z3_reverse` (already a
+    `constants.js` default with no prior consumer) for remote-backup /
+    blocking schemes.
+  - **Live evaluation** (`_check_protection`): each zone runs its own
+    independent definite-time timer off the lagged complex bus
+    voltage/branch current (`Z_seen = V_near/I_near`, `vbus_complex_prev`
+    now populated whenever EITHER an overcurrent or a distance relay is
+    present); trips `trip_cb` via the same `tripped_branch`/
+    `ybus_trip_cache` mechanism, so it composes with scripted sequence trips
+    and over-current relays with no new re-reduction machinery. A branch
+    current below `MIN_RELAY_CURRENT_PU` is treated as unloaded/open rather
+    than evaluating `V/~0`.
+  - +6 tests (`TestDistanceRelay`, a feeder with a 0.2+j0.08 Ω/km cable — a
+    bolted far-bus fault forces the apparent impedance to exactly the line
+    impedance): Z1 trips close-in, no trip beyond every zone's reach, Z2
+    trips after its own delay when beyond Z1, Z3 sees a forward fault, a
+    reversed Z3 does NOT (the directionality proof), unresolvable-CT skip.
+    Full backend suite **708 pass** (702 baseline + 6 new).
+    (`transient_stability.py`, `test_transient_stability.py`)
 
 ## Lower value / out of scope
 
@@ -319,6 +338,100 @@ island** against that island's own centre of inertia.
 - **Broader validation benchmarks** (e.g. an IEEE test-system two-machine
   anchor). Good for confidence, not a feature; the equal-area CCT anchor and the
   per-model regression tests already pin the engine.
+
+## Independent engineering review — findings D1–D8 (fixed)
+
+An independent EE / protection review re-derived the engine from first
+principles rather than from its own tests. The **mathematical core came through
+clean** and is now pinned by those derivations:
+
+| Checked against | Result |
+|---|---|
+| 3-curve equal-area CCT (2-parallel-line SMIB, mid-line fault + line trip, star-delta by hand) | **+0.21 %** |
+| Pre-fault rotor angle δ₀ = asin(Pm/Pmax) | 18.2400° vs 18.2408° |
+| Two-axis init E′q = Vq + X′d·Id, E′d = Vd − X′q·Iq, Efd = E′q + (Xd−X′d)Id | exact to 6 dp |
+| Sub-transient init E″q = E′q − (X′d−X″d)Id, E″d = E′d + (X′q−X″q)Iq | exact to 6 dp |
+| Air-gap identity Vd·Id + Vq·Iq = P | exact |
+| Null-disturbance equilibrium, 13 model combinations | 0.0000° drift |
+| Droop steady state Δf = −R·ΔP/P_rated | 0.0005 Hz |
+| HYGOV (1−sTw)/(1+0.5sTw) · DEGOV1 Padé · TGOV1 (1+sT2)/(1+sT3) | 2.8e-4 / 5.9e-4 / 1e-5 |
+| Mho reach along a line at φ = \|R\|·cos(θ−φ) | boundary exact, 6/6 |
+| IDMT t = TMS·0.14/(M^0.02−1), M = 21.5 | +0.19 % |
+| Sequence shunts SLG→Z2+Z0, LL→Z2, LLG→Z2∥Z0 | correct |
+
+The defects were all at the boundaries — unit bases, network bookkeeping, and
+the protection idealisations a relay engineer asks about first. All eight are
+fixed, each pinned by `backend/tests/test_review_fixes.py` (42 tests).
+
+- **[D1] Distance reach used the relay's own `voltage_kv`**, which
+  `constants.js` hard-defaults to 11 kV on every relay, so a 132 kV feeder was
+  mis-scaled 144× and Zone 1 tripped on settings 43× short of the fault (the
+  trip message's own ohms were wrong by the same factor). Now the **near bus's**
+  nominal kV — the base `_collect_oc_relays` already used — with a warning when
+  the relay prop disagrees by >10 % so the data and the TCC plot get corrected.
+- **[D7] GAST's fuel/temperature limit was in machine p.u. but compared against
+  a system-p.u. command**, so it never bound for a machine smaller than base
+  MVA; GAST was also the only turbine model returning its output unclipped. A
+  10 MVA set ran to **162 % of rating**. Limit now referred to the machine base
+  and the output clipped like every other model.
+- **[D6] Memory polarisation for the 21 and 67 elements.** Self-polarized, a
+  bolted fault at the relay's own bus gives V = 0, where Z = V/I = 0 lies
+  exactly ON a mho circle through the origin and Re(V·conj(I)) = 0 passes a
+  `>= 0` sign-of-power test — both elements operated for a fault *behind* them.
+  Below `MEMORY_POL_V_PU` the pre-fault phasor now polarises the decision, and
+  the 67 uses the proper RCA-rotated torque equation rather than the old
+  sign-of-power proxy. Reverse-looking Zone 3 still sees reverse faults.
+- **[D4] Fault detector + ANSI 68 power-swing blocking on the 21.** The shipped
+  12 Ω Zone 3 default tripped a healthy loaded 11 kV feeder at t = 0.8 s with no
+  disturbance at all, and during a genuinely stable swing tripped the line and
+  flipped the verdict to unstable. Zones are now armed only on a real
+  disturbance (current > 1.25× or voltage < 0.9× pre-fault) and a zone entry is
+  judged fault-like or swing-like **once, at entry** (transit from an outer
+  characteristic at 1.5× the widest zone), so time-delayed zones still time out
+  normally. A zone circle enclosing the pre-fault load impedance is warned.
+  Settable per relay: `dist_fault_detect`, `dist_psb`, `psb_transit_s`.
+- **[D5] Relays blocked during an unbalanced fault.** `branch_current` /
+  `vbus_complex_prev` are positive-sequence; those are phase quantities only
+  while the network is balanced. Measured against a 4.6× over-reaching Zone 1,
+  an SLG fault read ≈1.78 Ω (Z_line + Z2 + Z0) and never tripped, while the
+  50/51 saw I₁ where the faulted phase carries 3·I₁. Both elements now block —
+  with an explanatory warning — for the duration of an SLG/LL/LLG segment and
+  resume once the network is balanced. Reconstructing true phase quantities from
+  the sequence networks is the follow-on.
+- **[D2] A load on a machine bus is a network load, not part of the rotor.**
+  `_load_shunts` skipped machine buses, leaving the load folded into the
+  machine's own injection: constant power, welded to the shaft, never
+  collapsing with voltage. Moving a 60 MW load one zero-impedance busbar link
+  took P_m from 25 MW to 85 MW and the CCT from **0.6225 s to 0.2625 s** — a
+  2.4× non-conservative error decided by where the load was drawn on the SLD.
+  An islanded genset carrying its board on the same bus got P_m = 0 and ignored
+  load steps entirely. Local load is now stamped as a shunt on every bus and
+  `_collect_machines` adds it back to recover the machine's own output; net
+  power balance is unchanged.
+- **[D3] Shedding such a load injected phantom generation.** `_dyn_shunt` shed
+  with `y -= ybase`, subtracting an admittance the machine-bus branch never
+  added — a negative conductance, i.e. +40 MW of generation where 40 MW of load
+  should have gone. Falls out with D2; pinned separately.
+- **[D8] Reclose onto a permanent fault.** The reclose segment restored the
+  pre-trip topology with an empty `grounded` set, so only the benign outcome was
+  representable. `reclose_onto_fault` (+ optional `second_clear_s`, defaulting
+  to the first clearing time) now re-applies the fault on reclose and locks the
+  branch out after the second clearing.
+
+**Test-fixture consequence:** `_smib()`'s 60 MW load moved from the generator
+bus to the infinite bus. The equal-area closed form is a *lossless* SMIB
+criterion, and a resistive load at the machine terminal now correctly puts a
+real part into the reduced Y — the anchor drifted to −11.5 %. At the infinite
+bus the load is bypassed by the source's ~0 internal impedance, so the anchor
+holds at **−0.25 %** while the generator still exports its full 85 MW. The old
+0.6225 s CCT baseline in `TestUnbalancedFault` was pinning the D2 defect and is
+now 0.245 s.
+
+**Still open (documented, not fixed):** true phase-quantity reconstruction for
+relays under unbalanced faults (D5's follow-on); `SUBTRANS_ITERS = 3` is ample
+at the typical loop gain 1 − X″d/X′d ≈ 0.4 but not at the 0.999 the `xd_pp`
+clamp permits; ROCOF is measured off an island COI that steps discontinuously
+when a machine trips; V/Hz reads the machine's bus rather than its terminals.
 
 ## Assessment
 
@@ -336,9 +449,9 @@ being the dominant real-world fault type — the engine's remaining genuine
 in place, the machine model's own accuracy refinements are done too. With
 **ROCOF, over-excitation, out-of-step protection and auto-reclose** now in
 place, the trip set matches most of what a real protection-coordination study
-would configure on a generator or feeder. With **over-current (50/51/67)
-relay** tripping now in place — the one genuine new-architecture piece of
-work (per-branch current, live mid-simulation topology switching) — the
-engine's protection-function set is essentially complete; the sole item left
-(see *Next up*) is the distance (21) relay, which reuses that same
-infrastructure and needs only its own zone evaluator.
+would configure on a generator or feeder. With **over-current (50/51/67)**
+and now **distance (21)** relay tripping both in place — sharing the same
+per-branch current infrastructure and live mid-simulation topology-switch
+mechanism, the distance relay adding a true Z=V/I mho evaluator with
+geometry-derived directionality on top — the engine's protection-function
+set is complete.
