@@ -32,6 +32,12 @@
  * SA phase convention: R→A, W→B, B→C.
  */
 
+// Way fields stored as numbers. The grid can't infer this from input.type any
+// more — cable_mm2/ecc_mm2 are text inputs so they can carry a searchable
+// datalist without a number spinner — so the coercion is keyed by field name.
+const NUMERIC_KEYS = new Set(['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2',
+  'cable_m', 'load_va', 'demand_factor', 'power_factor']);
+
 const DBSchedule = {
   modal: null,
   body: null,             // the ACTIVE host container (modal body or workspace grid)
@@ -724,8 +730,8 @@ const DBSchedule = {
         <td data-label="Curve"><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
         <td data-label="EL Grp"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
         <td data-label="Leak (mA)"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
-        <td data-label="Cable mm²"><input type="number" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" min="0.5" step="0.5" style="width:68px"></td>
-        <td data-label="ECC mm²"><input type="number" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" min="0.5" step="0.5" style="width:68px" placeholder="auto" title="Earth continuity conductor. Leave blank to take the IEC 60364-5-54 Table 54.7 minimum for the live conductor."></td>
+        <td data-label="Cable mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value."></td>
+        <td data-label="ECC mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank to take the IEC 60364-5-54 Table 54.7 minimum for the live conductor."></td>
         <td data-label="Len (m)"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
         <td data-label="Load (VA)"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
@@ -775,10 +781,17 @@ const DBSchedule = {
     const datalistOptions = loadTypes.filter(t => t.va)
       .map(t => `<option value="${escHtml(t.label)}"></option>`).join('');
 
+    // Preferred conductor sizes back the cable/ECC cells as a searchable
+    // combobox — typing filters the list, but any value can still be entered
+    // (a non-preferred size is legal, just unusual).
+    const mm2Sizes = (typeof IEC_STANDARD_SIZES !== 'undefined')
+      ? IEC_STANDARD_SIZES : [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
+    const mm2Options = mm2Sizes.map(s => `<option value="${s}">${s} mm²</option>`).join('');
+
     this.body.innerHTML = `
       <datalist id="db-load-datalist">${datalistOptions}</datalist>
+      <datalist id="db-mm2-datalist">${mm2Options}</datalist>
       <div class="db-phase-bars">${barsHtml}</div>
-      <div id="db-el-panel"></div>
       <div id="db-bulk-bar"></div>
       <div class="library-table-wrap db-schedule-grid">
         <table class="library-table" style="width:100%;font-size:13px;">
@@ -825,7 +838,8 @@ const DBSchedule = {
           &nbsp; Board PF: <strong>${totals.pf.toFixed(3)}</strong>
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
         ${this.mode === 'modal' ? '<button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>' : ''}
-      </div>`;
+      </div>
+      <div id="db-el-panel"></div>`;
 
     this._refreshElPanel(comp);
     this._refreshBulkBar();
@@ -921,7 +935,17 @@ const DBSchedule = {
         if (!c) return;
         const k = e.target.dataset.k;
         const v = e.target.value;
-        c[k] = e.target.type === 'number' ? (parseFloat(v) || 0) : v;
+        // Coerce by FIELD, not by input type: the cable/ECC cells are text
+        // inputs (so they can carry a searchable datalist without a spinner)
+        // but still hold numbers. A blank ECC means "Table 54.7 minimum", so
+        // it stays null rather than collapsing to 0.
+        if (k === 'ecc_mm2') {
+          c[k] = String(v).trim() === '' ? null : (parseFloat(v) || 0);
+        } else if (NUMERIC_KEYS.has(k)) {
+          c[k] = parseFloat(v) || 0;
+        } else {
+          c[k] = v;
+        }
         // F-PIN (+ EE-14): a hand edit to a plan-derived way pins that field so
         // the next PlanCircuits.syncLoads()/syncRoutedLengths() (fired on any
         // device attribute commit) can't silently overwrite it. Only ways the
@@ -1147,7 +1171,12 @@ const DBSchedule = {
         `<option value="${o}"${o === f.def ? ' selected' : ''}>${o}</option>`).join('')}</select>`;
     }
     if (f.type === 'number') {
-      const step = f.k === 'demand_factor' ? '0.05' : (f.k === 'cable_mm2' ? '0.5' : '1');
+      // Conductor sizes get the same searchable preferred-size list as the grid
+      // cells; _applyBulk still parses the value, so free entry keeps working.
+      if (f.k === 'cable_mm2' || f.k === 'ecc_mm2') {
+        return `<input type="text" inputmode="decimal" list="db-mm2-datalist" id="db-bulk-value" style="width:88px" placeholder="mm²">`;
+      }
+      const step = f.k === 'demand_factor' ? '0.05' : '1';
       return `<input type="number" id="db-bulk-value" step="${step}" style="width:88px" placeholder="value">`;
     }
     return `<input type="text" id="db-bulk-value" style="width:150px" placeholder="value">`;
@@ -1206,17 +1235,25 @@ const DBSchedule = {
   // ── EL group leakage panel ──────────────────────────────────────────
   // One row per EL group: an IΔn selector, the group's standing leakage vs
   // its 30%-of-IΔn limit, and a nuisance-trip flag when exceeded.
+  // Collapsed by default and parked below the grid — the schedule itself is
+  // what the user works in, so the panel only claims height when opened. The
+  // summary line still carries the verdict, so an over-limit group is visible
+  // without expanding.
+  _elOpen: false,
+
   _elPanelHtml(comp) {
     const { groups, ungrouped, ratings } = this._leakageGroups(comp);
     if (groups.size === 0 && ungrouped < 0.05) return '';
     const ratingList = (typeof DB_EL_RATINGS_MA !== 'undefined')
       ? DB_EL_RATINGS_MA : [10, 30, 100, 300, 500];
+    let overCount = 0;
     const rows = [...groups.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
       .map(([g, ma]) => {
         const idn = ratings[g];
         const limit = idn * DB_EL_STANDING_LIMIT;
         const over = ma > limit;
+        if (over) overCount++;
         const opts = ratingList.map(r =>
           `<option value="${r}"${r === idn ? ' selected' : ''}>${r} mA</option>`).join('');
         return `
@@ -1232,18 +1269,29 @@ const DBSchedule = {
     const ung = ungrouped >= 0.05
       ? `<div style="font-size:12px;opacity:0.65;">No EL group: ${ungrouped.toFixed(1)} mA standing (ways without earth-leakage protection)</div>`
       : '';
+    const nGroups = groups.size;
+    const verdict = overCount > 0
+      ? `<span class="db-el-badge st-fail">⚠ ${overCount} over limit</span>`
+      : `<span class="db-el-badge st-pass">✓ all within 30% of IΔn</span>`;
     return `
-      <div style="display:flex;flex-direction:column;gap:5px;margin:8px 0;padding:8px 10px;border:1px solid var(--border-color,#ccc);border-radius:6px;">
-        <div style="font-size:12px;font-weight:600;">Standing earth leakage per EL group
-          <span style="opacity:0.6;font-weight:400;">(limit 30% of IΔn — IEC 60364-5-53 §531.3.2)</span></div>
-        ${rows}${ung}
-      </div>`;
+      <details class="db-el-details"${this._elOpen ? ' open' : ''}>
+        <summary>Standing earth leakage
+          <span class="db-el-count">${nGroups} EL group${nGroups === 1 ? '' : 's'}</span>
+          ${nGroups > 0 ? verdict : ''}
+          <span class="db-el-ref">IEC 60364-5-53 §531.3.2 — limit 30% of IΔn</span>
+        </summary>
+        <div class="db-el-body">${rows}${ung}</div>
+      </details>`;
   },
 
   _refreshElPanel(comp) {
     const wrap = this.body.querySelector('#db-el-panel');
     if (!wrap) return;
     wrap.innerHTML = this._elPanelHtml(comp);
+    const det = wrap.querySelector('details.db-el-details');
+    // Remember the open/closed state so an in-place refresh (every keystroke
+    // in the grid re-renders this panel) never collapses it under the user.
+    if (det) det.addEventListener('toggle', () => { this._elOpen = det.open; });
     wrap.querySelectorAll('select[data-elg]').forEach(sel => {
       sel.addEventListener('change', () => {
         if (!comp.props.el_ratings || typeof comp.props.el_ratings !== 'object') {
