@@ -47,26 +47,33 @@ const DBSchedule = {
   _openCommitted: null,   // JSON of the committed fields at open time
   _openDerived: null,     // derived lumped-load props at open time (pre-render)
   _selected: new Set(),   // way ids checked for bulk editing (stable across sort/render)
+  _selAnchor: null,       // way id the last plain click landed on — shift-click range origin
+  _bulkDraft: {},         // field key → typed bulk-panel value, survives re-render
   _resIndex: null,        // Map(way id → backend check row), or null before any run
 
   // Lumped-load props recompute() derives from the committed fields
   _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'power_factor', 'phase_a_pct',
     'phase_b_pct', 'phase_c_pct', 'phase_connection'],
 
-  // Fields offered in the bulk-edit bar (applied to every selected way).
+  // Fields offered in the bulk-edit panel, in the order they are laid out and
+  // APPLIED. poles precedes phase deliberately: a 1P→3P bulk change forces
+  // phase to RWB, and applying phase afterwards must be the one that settles it.
+  // `way` is absent on purpose — way numbers have to stay unique.
   _BULK_FIELDS: [
-    { k: 'poles', label: 'Poles', type: 'select', opts: ['1P', '3P'], def: '1P' },
-    { k: 'phase', label: 'Phase', type: 'select', opts: ['R', 'W', 'B'], def: 'R' },
-    { k: 'curve', label: 'Curve', type: 'select', opts: ['B', 'C', 'D'], def: 'C' },
-    { k: 'breaker_a', label: 'Breaker (A)', type: 'number' },
-    { k: 'el_group', label: 'EL Group', type: 'text' },
-    { k: 'cable_mm2', label: 'Cable mm²', type: 'number' },
-    { k: 'ecc_mm2', label: 'ECC mm²', type: 'number' },
-    { k: 'cable_m', label: 'Length (m)', type: 'number' },
-    { k: 'load_va', label: 'Load (VA)', type: 'number' },
-    { k: 'demand_factor', label: 'DF', type: 'number' },
-    { k: 'power_factor', label: 'PF', type: 'number' },
-    { k: 'description', label: 'Description', type: 'text' },
+    { k: 'poles', label: 'Poles', type: 'select', opts: ['1P', '3P'] },
+    { k: 'phase', label: 'Phase', type: 'select', opts: ['R', 'W', 'B'] },
+    { k: 'curve', label: 'Curve', type: 'select', opts: ['B', 'C', 'D'] },
+    { k: 'breaker_a', label: 'Breaker (A)', type: 'number', unit: 'A', width: 62 },
+    { k: 'el_group', label: 'EL Group', type: 'text', width: 70 },
+    { k: 'cable_mm2', label: 'Cable', type: 'number', unit: 'mm²', width: 74 },
+    { k: 'ecc_mm2', label: 'ECC', type: 'number', unit: 'mm²', width: 74,
+      title: 'Earth continuity conductor. Blank leaves it unchanged; type "auto" to clear it back to the IEC 60364-5-54 Table 54.7 minimum.' },
+    { k: 'cable_m', label: 'Length', type: 'number', unit: 'm', width: 62 },
+    { k: 'leakage_ma', label: 'Leak', type: 'number', unit: 'mA', width: 62 },
+    { k: 'load_va', label: 'Load', type: 'number', unit: 'VA', width: 80 },
+    { k: 'demand_factor', label: 'DF', type: 'number', width: 62 },
+    { k: 'power_factor', label: 'PF', type: 'number', width: 62 },
+    { k: 'description', label: 'Description', type: 'text', full: true },
   ],
 
   // Stable way id (EE-7). Mint from the shared plan sequence so plan-created
@@ -150,6 +157,17 @@ const DBSchedule = {
     this.mode = mode || 'modal';
   },
 
+  // Announce a model change the workspace can't see. Schedules listens for
+  // `change` on its grid host, which covers cell edits — but a BUTTON-driven
+  // mutation (bulk apply/delete, Auto Balance, Fill ECC, add/remove way, a
+  // preset) fires no such event, so without this the verdict columns keep
+  // showing a stale number and the idle commit is never scheduled.
+  _notifyEdited() {
+    if (this.mode === 'workspace' && typeof Schedules !== 'undefined' && Schedules._onGridEdit) {
+      Schedules._onGridEdit();
+    }
+  },
+
   // Status-line messages. #status-info lives inside #app-container, which
   // switchWorkspace() hides — so in a workspace the message must go to that
   // workspace's own chip or it is written to an invisible element.
@@ -169,6 +187,8 @@ const DBSchedule = {
     if (!comp || comp.type !== 'distribution_board') return null;
     this.currentId = compId;
     this._selected = new Set();
+    this._selAnchor = null;
+    this._bulkDraft = {};
     if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
     this._ensureWayIds(comp);   // lazy EE-7 migration for existing projects
     this._ensurePf(comp);       // lazy per-circuit PF migration for old projects
@@ -253,6 +273,8 @@ const DBSchedule = {
     this._openCommitted = null;
     this._openDerived = null;
     this._selected = new Set();
+    this._selAnchor = null;
+    this._bulkDraft = {};
     // When the editor was opened from the Plan workspace, refresh its board
     // panel so the way count reflects any edits. Deliberately in close() and
     // not commit() — the workspace commits often and must not poke the plan
@@ -497,6 +519,7 @@ const DBSchedule = {
       circuits.push(this._makeCircuit(t, count, circuits.length));
     }
     this.render();
+    this._notifyEdited();
     const units = Math.max(1, Math.round(count) || 1);
     this._status(n > 1
       ? `Added ${n} ${t.label.toLowerCase()} circuit(s).`
@@ -512,21 +535,51 @@ const DBSchedule = {
     return cc.length > 0 && cc.every(c => (c.poles || '1P') !== '3P' && c.phase !== 'RWB');
   },
   _ampsLabel(comp, totals) {
+    const vll = this._boardVll(comp);
+    const vph = vll / Math.sqrt(3);
     const ph = totals.phaseVa;
-    const worstA = (Math.max(ph.R, ph.W, ph.B)) / 230;   // VA / 230 V
-    if (this._allSinglePhase(comp)) return `${worstA.toFixed(1)} A @ 230 V`;
-    const vkv = comp.props.voltage_kv || 0.4;
-    const a3 = vkv > 0 ? totals.demandKva / (Math.sqrt(3) * vkv) : 0;
+    const worstA = vph > 0 ? (Math.max(ph.R, ph.W, ph.B)) / vph : 0;
+    if (this._allSinglePhase(comp)) return `${worstA.toFixed(1)} A @ ${Math.round(vph)} V`;
+    const a3 = vll > 0 ? (totals.demandKva * 1000) / (Math.sqrt(3) * vll) : 0;
     return `${a3.toFixed(1)} A 3φ · worst phase ${worstA.toFixed(1)} A`;
   },
 
-  // ── Per-way status: pin/auto indicator + rating warnings ────────────
-  // Diversified way current at 230 V (1P) or √3·400 V (3P).
-  _wayCurrentA(c) {
-    const va = (Number(c.load_va) || 0) * (Number(c.demand_factor) || 1);
-    if (!va) return 0;
+  // ── Way currents ────────────────────────────────────────────────────
+  // The board's own nominal line-to-line volts. Every way current is referred
+  // to this, not a hard-coded 230/400 pair — the backend twin
+  // (db_circuit_check._way_current_a) has always done so, and a 525 V or
+  // 380 V board otherwise gets client-side warnings on a different threshold
+  // than the engine verdict sitting next to them.
+  _boardVll(comp) {
+    return (Number(comp && comp.props.voltage_kv) || 0.4) * 1000;
+  },
+
+  // Volts this way is connected across: line-to-line for 3P, phase-neutral for 1P.
+  _wayVoltage(c, vll) {
     const is3P = c.poles === '3P' || c.phase === 'RWB';
-    return is3P ? va / (Math.sqrt(3) * 400) : va / 230;
+    return is3P ? Math.sqrt(3) * vll : vll / Math.sqrt(3);
+  },
+
+  // FLA — connected full-load current, WITHOUT the demand factor. This is the
+  // current the way actually draws with everything on it running, and what an
+  // electrician means by "FLA". The diversified design current Ib (below) is
+  // the smaller figure the cable/breaker coordination check is graded against.
+  _wayFlaA(c, vll) {
+    const va = Number(c.load_va) || 0;
+    const v = this._wayVoltage(c, vll);
+    let a = v > 0 ? va / v : 0;
+    // A feeder way carries the downstream board's demand (set by the plan sync).
+    if (c.type === 'feeder_db') a = Math.max(a, Number(c.downstream_a) || 0);
+    return a;
+  },
+
+  // Diversified design current Ib — mirrors db_circuit_check._way_current_a().
+  _wayCurrentA(c, vll) {
+    const va = (Number(c.load_va) || 0) * (Number(c.demand_factor) || 1);
+    const v = this._wayVoltage(c, vll);
+    let a = (va && v > 0) ? va / v : 0;
+    if (c.type === 'feeder_db') a = Math.max(a, Number(c.downstream_a) || 0);
+    return a;
   },
 
   // Base (undegraded) ampacity for a bare cable_mm2 size, looked up against
@@ -554,11 +607,15 @@ const DBSchedule = {
   // that the db-circuit-check engine states more accurately (it derates the
   // ampacity; this lookup does not), so the tooltip doesn't say the same
   // thing twice with two different numbers.
-  _wayWarnings(c, hasBackendRow = false) {
+  _wayWarnings(c, hasBackendRow = false, vll = 400) {
     const w = [];
     const br = Number(c.breaker_a) || 0;
-    const I = this._wayCurrentA(c);
-    if (!hasBackendRow && br && I > br + 1e-6) {
+    const isFeeder = c.type === 'feeder_db';
+    const I = this._wayCurrentA(c, vll);
+    // A feeder way's overload is reported by the more specific downstream
+    // message below — _wayCurrentA folds downstream_a in, so emitting both
+    // would say the same thing twice.
+    if (!hasBackendRow && !isFeeder && br && I > br + 1e-6) {
       w.push(`Load current ${I.toFixed(1)} A exceeds the ${br} A breaker`);
     }
     const isSocket = /socket/i.test(c.description || '');
@@ -571,7 +628,7 @@ const DBSchedule = {
         w.push(`${c.cable_mm2} mm² cable (Iz ≈ ${ampacity} A, undegraded) undersized for the ${br} A breaker — SANS 10142-1 Iz ≥ In`);
       }
     }
-    if (c.type === 'feeder_db' && Number(c.downstream_a) > 0 && br && c.downstream_a > br + 1e-6) {
+    if (isFeeder && Number(c.downstream_a) > 0 && br && c.downstream_a > br + 1e-6) {
       w.push(`Downstream demand ${Number(c.downstream_a).toFixed(1)} A exceeds the ${br} A feeder breaker`);
     }
     return w;
@@ -639,21 +696,64 @@ const DBSchedule = {
       td.className = `db-res st-${status}`;
       td.title = title;
     });
+    // The FLA tooltip quotes the backend's Ib once one exists.
+    this._paintFla(comp);
     // Refresh the ⚠ glyphs, whose tooltips fold in the backend messages.
     this._repaintWarnings();
+  },
+
+  // ── FLA column ──────────────────────────────────────────────────────
+  // Text + tooltip only, like _paintResults()/refreshTotals(), so it can run on
+  // every keystroke without disturbing the focused cell. Unlike the .db-res
+  // cells this is computed client-side and never goes stale — it tracks the
+  // load/poles/voltage the user is typing, with no backend round trip.
+  _paintFla(comp) {
+    if (!this.body) return;
+    const board = comp || AppState.components.get(this.currentId);
+    if (!board) return;
+    const vll = this._boardVll(board);
+    const byId = new Map((board.props.circuits || []).map(c => [c.id, c]));
+    this.body.querySelectorAll('td.db-fla').forEach(td => {
+      const c = byId.get(td.dataset.id);
+      if (!c) { td.textContent = '—'; td.title = ''; return; }
+      const fla = this._wayFlaA(c, vll);
+      td.textContent = fla > 0 ? fla.toFixed(1) : '—';
+      td.title = this._flaTitle(c, vll, fla);
+    });
+  },
+
+  _flaTitle(c, vll, fla) {
+    if (!(fla > 0)) return 'No load on this way.';
+    const is3P = c.poles === '3P' || c.phase === 'RWB';
+    const v = Math.round(this._wayVoltage(c, vll) / (is3P ? Math.sqrt(3) : 1));
+    const bits = [`${Number(c.load_va) || 0} VA at ${v} V (${is3P ? '3P' : '1P'})`];
+    if (c.type === 'feeder_db' && Number(c.downstream_a) > 0) {
+      bits.push(`Feeder to a sub-board — carries its ${Number(c.downstream_a).toFixed(1)} A demand`);
+    }
+    // The backend's Ib is the authority once a check has run; fall back to the
+    // identical local calculation before that.
+    const row = this._resultFor(c);
+    const ib = (row && row.ib_a != null) ? Number(row.ib_a) : this._wayCurrentA(c, vll);
+    const df = Number(c.demand_factor);
+    bits.push(`Diversified Ib = ${ib.toFixed(1)} A`
+      + (df > 0 && df < 1 ? ` (DF ${df.toFixed(2)})` : ''));
+    const br = Number(c.breaker_a) || 0;
+    if (br) bits.push(`${br} A breaker`);
+    return bits.join(' · ');
   },
 
   _repaintWarnings() {
     const comp = AppState.components.get(this.currentId);
     if (!comp || !this.body) return;
     const circuits = comp.props.circuits || [];
+    const vll = this._boardVll(comp);
     this.body.querySelectorAll('#db-rows tr[data-idx]').forEach(tr => {
       const cell = tr.querySelector('.db-row-actions');
       if (!cell) return;
       const c = circuits[parseInt(tr.dataset.idx)];
       if (!c) return;
       const old = cell.querySelector('.db-warn');
-      const html = this._wayWarnHtml(c);
+      const html = this._wayWarnHtml(c, vll);
       if (old) old.remove();
       if (html) cell.insertAdjacentHTML('afterbegin', html);
     });
@@ -669,9 +769,9 @@ const DBSchedule = {
   // The ⚠ glyph's markup: local (instant) warnings plus the backend's own
   // messages for the same way, so the tooltip stays the single place detail
   // lives. Colour follows the backend verdict once one exists.
-  _wayWarnHtml(c) {
+  _wayWarnHtml(c, vll = 400) {
     const row = this._resultFor(c);
-    const all = [...this._wayWarnings(c, !!row), ...((row && row.messages) || [])];
+    const all = [...this._wayWarnings(c, !!row, vll), ...((row && row.messages) || [])];
     if (!all.length) return '';
     const colour = (row && row.status === 'warn') ? '#b26a00'
       : (row && row.status === 'info' && all.every(m => (row.messages || []).includes(m))) ? '#888'
@@ -679,8 +779,8 @@ const DBSchedule = {
     return `<span class="db-warn" title="${escHtml(all.join(' · '))}" style="color:${colour};margin-right:4px;cursor:help;">⚠</span>`;
   },
 
-  _wayStatusHtml(c, i) {
-    let html = this._wayWarnHtml(c);
+  _wayStatusHtml(c, i, vll) {
+    let html = this._wayWarnHtml(c, vll);
     const pins = this._wayPins(c);
     if (pins.length) {
       html += `<button class="btn-small db-unpin" data-idx="${i}" title="Pinned (${escHtml(pins.join(', '))}) — your edit is protected from the plan sync. Click to unpin and let the plan drive it again." style="margin-right:2px;">📌</button>`;
@@ -699,6 +799,7 @@ const DBSchedule = {
       if (PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
     }
     this.render();
+    this._notifyEdited();
   },
 
   // ── Rendering ───────────────────────────────────────────────────────
@@ -711,6 +812,9 @@ const DBSchedule = {
     // Drop selection entries for ways that no longer exist.
     const validIds = new Set(circuits.map(c => c.id));
     for (const id of [...this._selected]) if (!validIds.has(id)) this._selected.delete(id);
+    if (this._selAnchor && !validIds.has(this._selAnchor)) this._selAnchor = null;
+
+    const vll = this._boardVll(comp);
 
     const opt = (v, cur, label) =>
       `<option value="${v}"${v === cur ? ' selected' : ''}>${label ?? v}</option>`;
@@ -719,8 +823,8 @@ const DBSchedule = {
     // the #db-modal card rules in mobile.css) — on desktop the labels are
     // unused and the table renders normally.
     const rows = circuits.map((c, i) => `
-      <tr data-idx="${i}">
-        <td data-label="" class="db-sel-cell" style="text-align:center;"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit"></td>
+      <tr data-idx="${i}" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' class="db-selected"' : ''}>
+        <td data-label="Select" class="db-sel-cell"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit — shift-click another row to select the range between them"></td>
         <td data-label="Way"><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
         <td data-label="Description"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%;min-width:220px"></td>
         <td data-label="Poles"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
@@ -736,10 +840,11 @@ const DBSchedule = {
         <td data-label="Load (VA)"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
         <td data-label="PF"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
+        <td data-label="FLA (A)" class="db-fla" data-id="${escHtml(c.id)}">—</td>
         <td data-label="Iz (A)" class="db-res st-none" data-res="iz" data-id="${escHtml(c.id)}">—</td>
         <td data-label="%VD" class="db-res st-none" data-res="vd" data-id="${escHtml(c.id)}">—</td>
         <td data-label="ECC ✓" class="db-res st-none" data-res="ecc" data-id="${escHtml(c.id)}">—</td>
-        <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
+        <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i, vll)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
       </tr>`).join('');
 
     // Live totals (exact, not via the rounded aggregate demand factor)
@@ -796,7 +901,7 @@ const DBSchedule = {
       <div class="library-table-wrap db-schedule-grid">
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr>
-            <th style="width:24px;text-align:center;"><input type="checkbox" id="db-select-all" title="Select / deselect all ways"></th>
+            <th class="db-sel-cell"><input type="checkbox" id="db-select-all" title="Select / deselect all ways. Shift-click a row checkbox to select a range."></th>
             <th>Way</th><th>Description</th><th>Poles</th><th>Ph</th>
             <th>Breaker (A)</th><th>Curve</th><th>EL Grp</th>
             <th title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
@@ -804,13 +909,14 @@ const DBSchedule = {
             <th title="Earth continuity conductor size. Blank = the IEC 60364-5-54 Table 54.7 minimum for the live conductor.">ECC mm²</th>
             <th>Len (m)</th><th>Load (VA)</th><th>DF</th>
             <th title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th>
+            <th class="db-fla-h" title="Full-load current — the connected load (Load VA) at this way's own voltage, WITHOUT the demand factor. This is what the circuit draws with everything on it running. Hover a cell for the diversified design current Ib the cable check is graded against.">FLA (A)</th>
             <th class="db-res-h" data-res="iz" title="Derated current-carrying capacity Iz (IEC 60364-5-52) — compared against the breaker rating In, since SANS 10142-1 / IEC 60364-433 requires Ib ≤ In ≤ Iz. Tooltip also carries the earth-loop (Zs) verdict.">Iz (A)</th>
             <th class="db-res-h" data-res="vd" title="Voltage drop over this way's own length, plus upstream drop when Load Flow has been run. SANS 10142-1 Cl. 6.6: 5 % total, 3 % for lighting.">%VD</th>
             <th class="db-res-h" data-res="ecc" title="Earth continuity conductor verdict against IEC 60364-5-54 Table 54.7. '&lt;n&gt; min' means no ECC is specified and the table minimum is assumed.">ECC ✓</th>
             <th></th>
           </tr></thead>
           <tbody id="db-rows">${rows ||
-            '<tr><td colspan="19" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
+            '<tr><td colspan="20" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -846,12 +952,32 @@ const DBSchedule = {
     this._paintResults();
 
     // ── Bulk-selection checkboxes ──
+    // `click`, not `change`: only a click event carries shiftKey, and by the
+    // time it fires the browser has already toggled cb.checked — so the box the
+    // user hit sets the intent (tick ⇒ select the range, untick ⇒ clear it),
+    // which is the spreadsheet convention.
     this.body.querySelectorAll('.db-row-sel').forEach(cb => {
-      cb.addEventListener('change', () => {
-        if (cb.checked) this._selected.add(cb.dataset.id);
-        else this._selected.delete(cb.dataset.id);
-        this._syncSelectAll();
-        this._refreshBulkBar();
+      cb.addEventListener('click', (e) => {
+        const want = cb.checked;
+        const id = cb.dataset.id;
+        const ids = circuits.map(c => c.id);
+        const anchored = e.shiftKey && this._selAnchor && this._selAnchor !== id
+          && ids.indexOf(this._selAnchor) >= 0;
+        if (anchored) {
+          const a = ids.indexOf(this._selAnchor);
+          const b = ids.indexOf(id);
+          for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+            if (want) this._selected.add(ids[i]); else this._selected.delete(ids[i]);
+          }
+        } else if (want) {
+          this._selected.add(id);
+        } else {
+          this._selected.delete(id);
+        }
+        // The anchor only moves on a PLAIN click, so successive shift-clicks
+        // keep re-extending from the same origin instead of walking it forward.
+        if (!anchored) this._selAnchor = id;
+        this._paintSelection();
       });
     });
     const selAll = this.body.querySelector('#db-select-all');
@@ -859,9 +985,8 @@ const DBSchedule = {
       selAll.addEventListener('change', () => {
         if (selAll.checked) circuits.forEach(c => this._selected.add(c.id));
         else this._selected.clear();
-        this.body.querySelectorAll('.db-row-sel').forEach(cb => { cb.checked = selAll.checked; });
-        this._syncSelectAll();
-        this._refreshBulkBar();
+        this._selAnchor = null;
+        this._paintSelection();
       });
       this._syncSelectAll();
     }
@@ -887,12 +1012,14 @@ const DBSchedule = {
     this.body.querySelector('#db-auto-balance').addEventListener('click', () => {
       const n = this.autoBalance(comp);
       this.render();
+      this._notifyEdited();
       this._status(n > 0 ? `Auto-balanced ${n} single-phase way(s) across R/W/B.`
                          : 'No single-phase ways to balance.');
     });
     this.body.querySelector('#db-fill-ecc').addEventListener('click', () => {
       const n = this.fillEcc(comp);
       this.render();
+      this._notifyEdited();
       this._status(n > 0
         ? `Set the Table 54.7 minimum ECC on ${n} way(s).`
         : 'Every way already has an ECC size.');
@@ -909,6 +1036,7 @@ const DBSchedule = {
     this.body.querySelector('#db-add-row').addEventListener('click', () => {
       circuits.push(this.newWay(circuits.length));
       this.render();
+      this._notifyEdited();
     });
     const doneBtn = this.body.querySelector('#db-done');
     if (doneBtn) doneBtn.addEventListener('click', () => this.close());
@@ -916,6 +1044,7 @@ const DBSchedule = {
       btn.addEventListener('click', () => {
         circuits.splice(parseInt(btn.dataset.idx), 1);
         this.render();
+        this._notifyEdited();
       });
     });
     this.body.querySelectorAll('.db-unpin').forEach(btn => {
@@ -928,7 +1057,11 @@ const DBSchedule = {
     // change: write through to the model. Full re-render ONLY when poles
     // changes (it toggles the phase select); otherwise refresh just the
     // bars/totals so focus and cursor position survive rapid entry.
-    this.body.querySelectorAll('#db-rows input, #db-rows select').forEach(inp => {
+    // Bound by [data-k], NOT by `#db-rows input` — the row's selection checkbox
+    // is an input inside #db-rows too, and it carries no field key, so the broad
+    // selector had every tick writing c[undefined] = "on" onto the way and
+    // dirtying the project on what is meant to be a read-only gesture.
+    this.body.querySelectorAll('#db-rows [data-k]').forEach(inp => {
       inp.addEventListener('change', (e) => {
         const tr = e.target.closest('tr');
         const c = circuits[parseInt(tr.dataset.idx)];
@@ -1076,6 +1209,7 @@ const DBSchedule = {
         }
       }
       this.render();
+      this._notifyEdited();
       this._status(`Pasted ${lines.length} row(s) into the schedule.`);
     });
   },
@@ -1084,6 +1218,7 @@ const DBSchedule = {
   // table re-render, so the focused cell keeps focus during rapid entry)
   refreshTotals(comp) {
     this._refreshElPanel(comp);
+    this._paintFla(comp);
     const totals = this.recompute(comp);
     const ph = totals.phaseVa;
     const phTotal = ph.R + ph.W + ph.B;
@@ -1128,95 +1263,169 @@ const DBSchedule = {
     selAll.indeterminate = sel > 0 && sel < total;
   },
 
-  // The bulk-edit bar appears only while ≥1 way is selected: pick a field,
-  // enter a value, apply it to every selected way (or delete them).
+  // Repaint the selection state IN PLACE — row highlight, checkbox, header
+  // tri-state and the bulk panel. Never re-renders: selection is a browsing
+  // gesture, and a full render() would throw away scroll position and the
+  // caret of whatever cell the user was mid-way through editing.
+  _paintSelection() {
+    if (!this.body) return;
+    this.body.querySelectorAll('#db-rows tr[data-id]').forEach(tr => {
+      const on = this._selected.has(tr.dataset.id);
+      tr.classList.toggle('db-selected', on);
+      const cb = tr.querySelector('.db-row-sel');
+      if (cb) cb.checked = on;
+    });
+    this._syncSelectAll();
+    this._refreshBulkBar();
+  },
+
+  // The bulk-edit panel appears only while ≥1 way is selected. Every editable
+  // field is present at once — blank means "leave unchanged" — so setting a run
+  // of ways to 20 A / curve C / 2.5 mm² / 25 m is one Apply, not four.
   _refreshBulkBar() {
     const wrap = this.body && this.body.querySelector('#db-bulk-bar');
     if (!wrap) return;
     const n = this._selected.size;
     if (n === 0) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
     wrap.style.display = '';
-    const fieldOpts = this._BULK_FIELDS
-      .map(f => `<option value="${f.k}">${escHtml(f.label)}</option>`).join('');
+
+    // Already open: only the count changed. Patch the text rather than rebuild
+    // the panel — rebuilding would blur whatever field is being typed into.
+    const countEl = wrap.querySelector('#db-bulk-count');
+    if (countEl) {
+      countEl.textContent = n;
+      const applyBtn = wrap.querySelector('#db-bulk-apply');
+      if (applyBtn) applyBtn.textContent = `Apply to ${n} way${n === 1 ? '' : 's'}`;
+      return;
+    }
+
+    const fields = this._BULK_FIELDS.map(f => this._bulkFieldHtml(f)).join('');
     wrap.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;padding:8px 10px;border:1px solid var(--accent-color,#1976d2);border-radius:6px;background:var(--hover-bg,rgba(25,118,210,0.08));">
-        <strong style="font-size:12px;"><span id="db-bulk-count">${n}</span> selected</strong>
-        <span style="font-size:12px;opacity:0.8;">Set</span>
-        <select id="db-bulk-field" title="Field to change on every selected way">${fieldOpts}</select>
-        <span id="db-bulk-value-wrap"></span>
-        <button class="btn-small" id="db-bulk-apply" title="Apply the value to all selected ways">Apply to selected</button>
-        <span style="width:1px;height:20px;background:var(--border-color,#ccc);"></span>
-        <button class="btn-small" id="db-bulk-delete" title="Remove all selected ways">Delete selected</button>
-        <button class="btn-small" id="db-bulk-clear" title="Clear the selection">Clear</button>
+      <div class="db-bulk">
+        <div class="db-bulk-head">
+          <strong><span id="db-bulk-count">${n}</span> selected</strong>
+          <span class="db-bulk-hint">blank = leave unchanged</span>
+        </div>
+        <div class="db-bulk-fields">${fields}</div>
+        <div class="db-bulk-actions">
+          <button class="btn-small btn-primary" id="db-bulk-apply"
+            title="Apply every value entered above to all selected ways">Apply to ${n} way${n === 1 ? '' : 's'}</button>
+          <span class="db-bulk-sep"></span>
+          <button class="btn-small" id="db-bulk-delete" title="Remove all selected ways">Delete selected</button>
+          <button class="btn-small" id="db-bulk-clear" title="Clear the selection">Clear</button>
+        </div>
       </div>`;
-    const valWrap = wrap.querySelector('#db-bulk-value-wrap');
-    const fieldSel = wrap.querySelector('#db-bulk-field');
-    const buildVal = () => {
-      valWrap.innerHTML = this._bulkValueControl(
-        this._BULK_FIELDS.find(f => f.k === fieldSel.value));
-    };
-    buildVal();
-    fieldSel.addEventListener('change', buildVal);
-    wrap.querySelector('#db-bulk-apply').addEventListener('click',
-      () => this._applyBulk(fieldSel.value, valWrap));
+
+    // Draft values live on the module so they survive the re-render that every
+    // Apply triggers — same reason _elOpen does (see _refreshElPanel).
+    wrap.querySelectorAll('[data-bk]').forEach(el => {
+      const k = el.dataset.bk;
+      if (this._bulkDraft[k] != null) el.value = this._bulkDraft[k];
+      const remember = () => { this._bulkDraft[k] = el.value; };
+      el.addEventListener('input', remember);
+      el.addEventListener('change', remember);
+    });
+    wrap.querySelector('#db-bulk-apply').addEventListener('click', () => this._applyBulkAll());
     wrap.querySelector('#db-bulk-delete').addEventListener('click', () => this._bulkDelete());
-    wrap.querySelector('#db-bulk-clear').addEventListener('click',
-      () => { this._selected.clear(); this.render(); });
+    wrap.querySelector('#db-bulk-clear').addEventListener('click', () => {
+      this._selected.clear();
+      this._selAnchor = null;
+      this._paintSelection();
+    });
   },
 
-  _bulkValueControl(f) {
-    if (!f) return '';
+  // One labelled control. Selects carry a leading blank "—" option so "no
+  // change" is expressible; text/number fields use empty for the same.
+  _bulkFieldHtml(f) {
+    const title = f.title ? ` title="${escHtml(f.title)}"` : '';
+    let ctl;
     if (f.type === 'select') {
-      return `<select id="db-bulk-value">${f.opts.map(o =>
-        `<option value="${o}"${o === f.def ? ' selected' : ''}>${o}</option>`).join('')}</select>`;
+      ctl = `<select data-bk="${f.k}"${title}><option value="">—</option>${f.opts
+        .map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
+    } else if (f.type === 'number' && (f.k === 'cable_mm2' || f.k === 'ecc_mm2')) {
+      // Same searchable preferred-size combobox as the grid cells.
+      ctl = `<input type="text" inputmode="decimal" list="db-mm2-datalist" data-bk="${f.k}"
+        style="width:${f.width}px" placeholder="—"${title}>`;
+    } else if (f.type === 'number') {
+      const step = (f.k === 'demand_factor' || f.k === 'power_factor') ? '0.05' : '1';
+      ctl = `<input type="number" data-bk="${f.k}" step="${step}"
+        style="width:${f.width}px" placeholder="—"${title}>`;
+    } else {
+      ctl = `<input type="text" data-bk="${f.k}"
+        style="${f.full ? 'flex:1;min-width:220px' : `width:${f.width || 120}px`}" placeholder="—"${title}>`;
     }
-    if (f.type === 'number') {
-      // Conductor sizes get the same searchable preferred-size list as the grid
-      // cells; _applyBulk still parses the value, so free entry keeps working.
-      if (f.k === 'cable_mm2' || f.k === 'ecc_mm2') {
-        return `<input type="text" inputmode="decimal" list="db-mm2-datalist" id="db-bulk-value" style="width:88px" placeholder="mm²">`;
-      }
-      const step = f.k === 'demand_factor' ? '0.05' : '1';
-      return `<input type="number" id="db-bulk-value" step="${step}" style="width:88px" placeholder="value">`;
-    }
-    return `<input type="text" id="db-bulk-value" style="width:150px" placeholder="value">`;
+    return `<label class="db-bulk-f${f.full ? ' db-bulk-f-full' : ''}">
+      <span>${escHtml(f.label)}</span>${ctl}${f.unit ? `<em>${escHtml(f.unit)}</em>` : ''}</label>`;
   },
 
-  _applyBulk(fieldKey, valWrap) {
-    const comp = AppState.components.get(this.currentId);
-    if (!comp) return;
-    const f = this._BULK_FIELDS.find(x => x.k === fieldKey);
-    const input = valWrap.querySelector('#db-bulk-value');
-    if (!f || !input) return;
-    let val = input.value;
-    if (f.type === 'number') {
-      val = parseFloat(val);
-      if (isNaN(val)) { this._status('Enter a value to apply.'); return; }
-      if (f.k === 'demand_factor') val = Math.min(1, Math.max(0, val));
+  // Write one field onto one way, applying exactly the consistency rules the
+  // per-cell change handler uses (poles↔phase, plan-sync pin flags).
+  _applyBulkField(c, key, val) {
+    c[key] = val;
+    if (key === 'poles') {
+      if (val === '3P') c.phase = 'RWB';
+      else if (c.phase === 'RWB') c.phase = 'R';
+    } else if (key === 'phase' && c.poles === '3P') {
+      c.phase = 'RWB';   // 3-phase ways stay RWB regardless of the picked phase
     }
+    // Mirror the per-cell pin behaviour so a plan sync can't overwrite the
+    // bulk edit on a plan-driven way.
+    if (Number(c.plan_qty) > 0) {
+      if (key === 'load_va') c._manualLoadOverride = true;
+      else if (key === 'cable_m') c._cableManual = true;
+      else if (key === 'description') c._nameOverride = true;
+      else if (key === 'poles' || key === 'phase') c._polesManual = true;
+    }
+  },
+
+  // Read every field that has a value, then apply them all to every selected
+  // way. _BULK_FIELDS order is the apply order — poles before phase, so a
+  // 1P→3P change doesn't get its forced RWB undone by a phase value in the
+  // same submit.
+  _applyBulkAll() {
+    const comp = AppState.components.get(this.currentId);
+    const wrap = this.body && this.body.querySelector('#db-bulk-bar');
+    if (!comp || !wrap) return;
+
+    const changes = [];
+    const rejected = [];
+    for (const f of this._BULK_FIELDS) {
+      const el = wrap.querySelector(`[data-bk="${f.k}"]`);
+      if (!el) continue;
+      const raw = String(el.value).trim();
+      if (raw === '') continue;                    // blank = leave unchanged
+      if (f.type === 'number') {
+        // A blank ECC means "Table 54.7 minimum", which blank can no longer
+        // express here (it means "no change") — so `auto` is the keyword.
+        if (f.k === 'ecc_mm2' && /^auto$/i.test(raw)) { changes.push({ f, val: null }); continue; }
+        let v = parseFloat(raw);
+        if (isNaN(v)) { rejected.push(f.label); continue; }
+        if (f.k === 'demand_factor') v = Math.min(1, Math.max(0, v));
+        else if (f.k === 'power_factor') v = Math.min(1, Math.max(0.05, v));
+        else v = Math.max(0, v);
+        changes.push({ f, val: v });
+      } else {
+        changes.push({ f, val: raw });
+      }
+    }
+    if (!changes.length) {
+      this._status(rejected.length
+        ? `Not a number: ${rejected.join(', ')}. Nothing applied.`
+        : 'Enter at least one value to apply.');
+      return;
+    }
+
     let count = 0;
     for (const c of comp.props.circuits || []) {
       if (!this._selected.has(c.id)) continue;
-      c[fieldKey] = val;
-      // Keep poles/phase consistent, matching the per-cell edit rules.
-      if (fieldKey === 'poles') {
-        if (val === '3P') c.phase = 'RWB';
-        else if (c.phase === 'RWB') c.phase = 'R';
-      } else if (fieldKey === 'phase' && c.poles === '3P') {
-        c.phase = 'RWB';   // 3-phase ways stay RWB regardless of the picked phase
-      }
-      // Mirror the per-cell pin behaviour so a plan sync can't overwrite the
-      // bulk edit on a plan-driven way.
-      if (Number(c.plan_qty) > 0) {
-        if (fieldKey === 'load_va') c._manualLoadOverride = true;
-        else if (fieldKey === 'cable_m') c._cableManual = true;
-        else if (fieldKey === 'description') c._nameOverride = true;
-        else if (fieldKey === 'poles' || fieldKey === 'phase') c._polesManual = true;
-      }
+      for (const ch of changes) this._applyBulkField(c, ch.f.k, ch.val);
       count++;
     }
-    this.render();
-    this._status(`Set ${f.label} on ${count} way(s).`);
+    this.render();          // selection and the typed draft survive on the module
+    this._notifyEdited();
+    const set = changes.map(ch => ch.f.label).join(', ');
+    this._status(`Set ${set} on ${count} way${count === 1 ? '' : 's'}.`
+      + (rejected.length ? ` Skipped ${rejected.join(', ')} — not a number.` : ''));
   },
 
   _bulkDelete() {
@@ -1228,7 +1437,9 @@ const DBSchedule = {
     comp.props.circuits.length = 0;
     comp.props.circuits.push(...keep);
     this._selected.clear();
+    this._selAnchor = null;
     this.render();
+    this._notifyEdited();
     this._status(`Removed ${removed} selected way(s).`);
   },
 
@@ -1305,23 +1516,29 @@ const DBSchedule = {
 
   // ── Excel export / import ───────────────────────────────────────────
 
+  // 'FLA (A)' is a CALCULATED trailing column — exported for the deliverable
+  // schedule, never read back. importXlsx's fuzzy header probes ('load'/'va',
+  // 'breaker'/'mcb'/'rating', …) match none of "fla (a)", so it round-trips
+  // harmlessly.
   XLSX_HEADERS: ['Way', 'Description', 'Poles', 'Phase', 'Breaker (A)', 'Curve',
     'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)', 'Load (VA)',
-    'Demand Factor', 'Power Factor'],
+    'Demand Factor', 'Power Factor', 'FLA (A)'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
+    const vll = this._boardVll(comp);
     const rows = (comp.props.circuits || []).map(c => [
       c.way ?? '', c.description ?? '', c.poles ?? '1P',
       (c.poles === '3P') ? 'RWB' : (c.phase ?? 'R'),
       c.breaker_a ?? '', c.curve ?? 'C', c.el_group ?? '', c.leakage_ma ?? 0,
       c.cable_mm2 ?? '', c.ecc_mm2 ?? '', c.cable_m ?? '', c.load_va ?? '',
       c.demand_factor ?? 1, c.power_factor ?? 0.9,
+      Math.round(this._wayFlaA(c, vll) * 10) / 10,
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 6 }, { wch: 11 },
       { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 10 },
-      { wch: 10 }, { wch: 13 }, { wch: 12 }];
+      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');
@@ -1432,6 +1649,7 @@ const DBSchedule = {
       }
       comp.props.circuits = merged;
       this.render();
+      this._notifyEdited();
       this._status(`Imported ${circuits.length} circuit(s) from ${file.name} (merged by way number).`);
     };
     reader.readAsArrayBuffer(file);

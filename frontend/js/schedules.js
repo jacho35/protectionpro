@@ -85,8 +85,8 @@ const Schedules = {
     // replaces its own innerHTML wholesale, which would drop a listener bound
     // any deeper.
     const host = ws.querySelector('#sch-grid-host');
-    host.addEventListener('change', () => this._onGridEdit());
-    host.addEventListener('input', () => this._markStale());
+    host.addEventListener('change', (e) => { if (!this._isUiOnly(e)) this._onGridEdit(); });
+    host.addEventListener('input', (e) => { if (!this._isUiOnly(e)) this._markStale(); });
 
     ws.querySelector('#sch-board-list').addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
@@ -185,6 +185,16 @@ const Schedules = {
       if (this._checkRan) this._scheduleCheck();
     }
     return changed;
+  },
+
+  // The grid-host listeners are delegated on the whole pane, so they also catch
+  // the row-selection checkboxes and the bulk-edit panel's own controls. Those
+  // change no model data — treating them as edits would dim the verdict columns
+  // and start a commit timer for nothing. The bulk panel's *Apply* does mutate,
+  // and calls DBSchedule._notifyEdited() explicitly.
+  _isUiOnly(e) {
+    const t = e && e.target;
+    return !!(t && t.closest && t.closest('#db-bulk-bar, .db-sel-cell'));
   },
 
   _onGridEdit() {
