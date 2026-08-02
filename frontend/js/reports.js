@@ -10,7 +10,7 @@ const Reports = {
       id: 'full',
       name: 'Full Analysis Report',
       builtin: true,
-      sections: ['title', 'diagram', 'fault', 'fault_branches', 'voltage_depression', 'loadflow_bus', 'loadflow_branch', 'equipment', 'db_schedules', 'arcflash'],
+      sections: ['title', 'diagram', 'fault', 'fault_branches', 'voltage_depression', 'loadflow_bus', 'loadflow_branch', 'equipment', 'db_schedules', 'db_diagrams', 'arcflash'],
     },
     {
       id: 'fault_only',
@@ -55,6 +55,7 @@ const Reports = {
     loadflow_branch: { label: 'Branch Flows & Loading',        group: 'Load Flow' },
     settings_schedule: { label: 'Protection Settings Schedule', group: 'Protection' },
     db_schedules:    { label: 'Distribution Board Schedules',  group: 'General' },
+    db_diagrams:     { label: 'DB Single Line Drawings',        group: 'General' },
     voltage_depression: { label: 'Voltage Depression',          group: 'Fault Analysis' },
     arcflash:           { label: 'Arc Flash Summary',           group: 'Arc Flash' },
   },
@@ -94,7 +95,11 @@ const Reports = {
       if (sections.includes('diagram')) {
         diagramImage = await this._rasterizeDiagram();
       }
-      const blob = await API.generateReport(sections, diagramImage);
+      let dbDiagrams = null;
+      if (sections.includes('db_diagrams')) {
+        dbDiagrams = await this._rasterizeDbDiagrams();
+      }
+      const blob = await API.generateReport(sections, diagramImage, dbDiagrams);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -118,6 +123,23 @@ const Reports = {
         resolve(canvas.toDataURL('image/png'));
       });
     });
+  },
+
+  // One single-line PNG per distribution board, keyed by component id. The
+  // drawing is generated from the board's own schedule, so this works whether
+  // or not the Schedules workspace has ever been opened.
+  async _rasterizeDbDiagrams() {
+    if (typeof DBDrawing === 'undefined') return null;
+    const boards = [...AppState.components.values()]
+      .filter(c => c.type === 'distribution_board')
+      .sort((a, b) => String(a.props.name || a.id)
+        .localeCompare(String(b.props.name || b.id), undefined, { numeric: true }));
+    const out = {};
+    for (const b of boards) {
+      const img = await DBDrawing.rasterize(2, b);
+      if (img) out[b.id] = img.dataUrl;
+    }
+    return Object.keys(out).length ? out : null;
   },
 
   // ── PDF Section Renderers ──

@@ -301,9 +301,82 @@ body.dark-mode .db-bulk { background: color-mix(in srgb, var(--accent) 14%, var(
 body.dark-mode .db-el-badge.st-pass { color: #81c784; }
 body.dark-mode .db-el-badge.st-fail { color: #ef5350; }
 
+/* ── Schedule / Single Line tabs ─────────────────────────────────────── */
+.sch-tabs { margin-left: auto; display: flex; gap: 4px; }
+.sch-tab {
+  padding: 4px 12px; font-size: 12px; cursor: pointer;
+  background: var(--bg-secondary); color: var(--text-secondary);
+  border: 1px solid var(--border-color); border-radius: 4px;
+}
+.sch-tab:hover { background: var(--bg-tertiary); }
+.sch-tab.active {
+  background: var(--accent); border-color: var(--accent);
+  color: #fff; font-weight: 600;
+}
+
+/* ── Single-line drawing view ────────────────────────────────────────── */
+.dbd-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.dbd-toolbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 12px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+.dbd-zoom { min-width: 42px; text-align: center; color: var(--text-secondary); }
+.dbd-toggle { display: flex; align-items: center; gap: 3px; white-space: nowrap; cursor: pointer; }
+.dbd-body { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.dbd-canvas {
+  flex: 1; min-width: 0; overflow: auto; padding: 6px;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 4px;
+}
+.dbd-canvas svg { display: block; }
+.dbd-side { flex: 0 0 330px; min-width: 0; overflow: auto; }
+
+/* ── Accessories editor (both mounts) ────────────────────────────────── */
+.dba-panel { border: 1px solid var(--border-color); border-radius: 4px; }
+.dba-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; font-size: 13px; font-weight: 600;
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+}
+.dba-count { font-weight: 400; color: var(--text-secondary); }
+.dba-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; }
+.dba-add { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.dba-incomer { color: var(--text-secondary); font-size: 11.5px; }
+.dba-rows { display: flex; flex-direction: column; gap: 8px; }
+.dba-empty { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.dba-row {
+  border: 1px solid var(--border-color); border-radius: 4px;
+  padding: 7px 8px; background: var(--bg-primary);
+}
+.dba-row-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.dba-kind { font-weight: 600; font-size: 11px; color: var(--text-secondary); }
+.dba-label { flex: 1 1 120px; min-width: 90px; font-size: 12px; }
+.dba-row-actions { margin-left: auto; display: flex; gap: 3px; }
+.dba-fields { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 6px; }
+.dba-field {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-secondary);
+}
+.dba-field input, .dba-field select { font-size: 11.5px; }
+.dba-field input[type="number"] { width: 62px; }
+.dba-unit { opacity: 0.7; }
+.dba-suggested {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  padding: 0 4px; border-radius: 3px;
+  background: var(--accent); color: #fff;
+}
+.dba-guide, .dba-note { font-size: 11px; line-height: 1.45; margin-top: 5px; }
+.dba-guide { color: var(--text-secondary); opacity: 0.85; }
+.dba-note.warn { color: #c62828; }
+.dba-note.info { color: var(--text-secondary); }
+body.dark-mode .dba-note.warn { color: #ef5350; }
+
 /* ── Phone ───────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .sch-body { flex-direction: column; }
+  .sch-tabs { margin-left: 0; }
+  .dbd-body { flex-direction: column; }
+  .dbd-side { flex: 0 0 auto; max-height: 40vh; }
   .db-el-ref { margin-left: 0; width: 100%; }
   /* Rows become stacked cards (mobile.css), so there is no horizontal scroll
      to pin against — and a 26px-wide cell would clip the checkbox. */

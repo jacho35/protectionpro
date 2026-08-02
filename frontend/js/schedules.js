@@ -20,6 +20,7 @@ const Schedules = {
   _active: false,
   _built: false,
   _boardId: null,
+  _tab: 'grid',         // 'grid' | 'drawing'
   _commitTimer: null,
   _checkTimer: null,
   _checkRan: false,     // has the user asked for a check at least once?
@@ -119,6 +120,7 @@ const Schedules = {
   deactivate() {
     this._active = false;
     this._commitCurrent();
+    DBDrawing.unmount();
     clearTimeout(this._commitTimer);
     clearTimeout(this._checkTimer);
   },
@@ -153,11 +155,22 @@ const Schedules = {
     this._openCurrent();
   },
 
+  // Switching tab commits first, so the drawing is always generated from
+  // committed data rather than a half-typed cell.
+  selectTab(tab) {
+    if (tab === this._tab) return;
+    this._commitCurrent();
+    this._tab = tab;
+    this.render();
+    this._openCurrent();
+  },
+
   _openCurrent() {
     const host = document.getElementById('sch-grid-host');
     if (!host) return;
     if (!this._boardId) {
       DBSchedule.currentId = null;
+      DBDrawing.unmount();
       host.innerHTML = `
         <div class="sch-empty">
           <p><strong>No distribution boards in this project.</strong></p>
@@ -169,6 +182,19 @@ const Schedules = {
       if (btn) btn.addEventListener('click', () => switchWorkspace('sld'));
       return;
     }
+    if (this._tab === 'drawing') {
+      // The edit session stays open even though the grid isn't rendered: an
+      // accessory edited on the drawing has to commit through the same
+      // diff/undo path, and commit() is a no-op without currentId. The grid is
+      // pointed at a detached node so its in-place painters (result columns,
+      // totals strip) find nothing to paint instead of touching the drawing.
+      DBSchedule._beginEdit(this._boardId);
+      DBSchedule._setHost(document.createElement('div'), 'workspace');
+      DBDrawing.mount(this._boardId, host);
+      this._readInstallFromBoard();
+      return;
+    }
+    DBDrawing.unmount();
     DBSchedule.openInline(this._boardId, host);
     this._readInstallFromBoard();
   },
@@ -194,7 +220,7 @@ const Schedules = {
   // and calls DBSchedule._notifyEdited() explicitly.
   _isUiOnly(e) {
     const t = e && e.target;
-    return !!(t && t.closest && t.closest('#db-bulk-bar, .db-sel-cell'));
+    return !!(t && t.closest && t.closest('#db-bulk-bar, .db-sel-cell, .dbd-toolbar'));
   },
 
   _onGridEdit() {
@@ -258,6 +284,8 @@ const Schedules = {
     return DBSchedule.runCheck().then(() => {
       const host = document.getElementById('sch-grid-host');
       if (host) host.classList.remove('db-res-stale');
+      // The drawing colours its way drops by the same verdicts.
+      if (this._tab === 'drawing') DBDrawing.render();
     });
   },
 
@@ -316,7 +344,17 @@ const Schedules = {
       ? `<strong>${escHtml(comp.props.name || comp.id)}</strong>
          <span style="color:var(--text-secondary);font-size:12px;">
            ${(comp.props.circuits || []).length} ways · ${Number(comp.props.voltage_kv || 0.4) * 1000} V
+         </span>
+         <span class="sch-tabs" role="tablist">
+           <button class="sch-tab${this._tab === 'grid' ? ' active' : ''}" data-sch-tab="grid"
+             role="tab" aria-selected="${this._tab === 'grid'}">Schedule</button>
+           <button class="sch-tab${this._tab === 'drawing' ? ' active' : ''}" data-sch-tab="drawing"
+             role="tab" aria-selected="${this._tab === 'drawing'}"
+             title="Single-line drawing generated from this schedule">Single Line</button>
          </span>`
       : '';
+    head.querySelectorAll('[data-sch-tab]').forEach(btn => {
+      btn.addEventListener('click', () => this.selectTab(btn.dataset.schTab));
+    });
   },
 };

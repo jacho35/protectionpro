@@ -1413,6 +1413,119 @@ const DB_EL_STANDING_LIMIT = 0.3;
 // Common earth-leakage unit rated residual currents (IΔn, mA)
 const DB_EL_RATINGS_MA = [10, 30, 100, 300, 500];
 
+// ── Board accessories ───────────────────────────────────────────────────
+// Everything mounted in a board that is NOT an outgoing circuit: indicator
+// lamps, surge arrestors, metering, enclosure utilities. They occupy no way
+// number and carry no lumped load, so they live in `props.accessories` rather
+// than `props.circuits` and are drawn by DBDrawing, not graded by the per-way
+// circuit check.
+//
+// Every kind shares the same four keys — `label`, `tap`, `fuse_a`, `fuse_type`
+// — so the editor's rules ("is this accessory protected?") stay uniform. On an
+// SPD that pair IS the backup fuse; the field is labelled accordingly.
+//
+// `tap` is where the accessory connects: 'supply' = ahead of the board main
+// switch (stays live when the board is switched off), 'busbar' = after it.
+const DB_ACCESSORY_TAPS = [
+  { value: 'busbar', label: 'Busbar (after main switch)' },
+  { value: 'supply', label: 'Supply side (before main switch)' },
+];
+
+const DB_ACCESSORY_FUSE_TYPES = ['gG', 'aM', 'HRC', 'ceramic', 'mcb', 'none'];
+
+// Backup fuse an SPD needs when the upstream device is larger than the SPD's
+// own maximum backup fuse rating. 125 A gG is the near-universal manufacturer
+// figure for a Type 2 module, and the threshold the >125 A rule is written on.
+const DB_SPD_MAX_BACKUP_FUSE_A = 125;
+
+// Where each SPD type belongs (IEC 61643-11 / IEC 62305-4). Guidance shown in
+// the editor — advisory, never a verdict.
+const DB_SPD_TYPE_GUIDANCE = {
+  1: 'Type 1 — origin of the installation where a lightning protection system or overhead supply is present (Iimp, 10/350 µs wave).',
+  2: 'Type 2 — distribution board level, downstream of a Type 1 or on a fully underground supply (In/Imax, 8/20 µs wave).',
+  3: 'Type 3 — at or near the equipment, always downstream of a Type 2 and coordinated with it.',
+};
+
+const DB_ACCESSORY_KINDS = [
+  {
+    key: 'indicator',
+    label: 'Live / phase indicators',
+    hint: 'Phase indicator lamps with their control fuses.',
+    defaults: {
+      label: 'Live indicators', tap: 'busbar', phases: 'RWB',
+      lamp_type: 'led', lamp_v: 230, fuse_a: 2, fuse_type: 'gG',
+    },
+    fields: [
+      { key: 'phases', label: 'Phases', type: 'select', options: ['RWB', 'R', 'W', 'B'] },
+      { key: 'lamp_type', label: 'Lamp', type: 'select', options: [
+        { value: 'led', label: 'LED' }, { value: 'neon', label: 'Neon' }, { value: 'filament', label: 'Filament' }] },
+      { key: 'lamp_v', label: 'Lamp V', type: 'number', unit: 'V', min: 0, step: 5 },
+      { key: 'fuse_a', label: 'Fuse', type: 'number', unit: 'A', min: 0, step: 1 },
+      { key: 'fuse_type', label: 'Fuse type', type: 'select', options: DB_ACCESSORY_FUSE_TYPES },
+    ],
+  },
+  {
+    key: 'spd',
+    label: 'Surge arrestor (SPD)',
+    hint: 'IEC 61643-11 Type 1/2/3 arrestor with its backup fuse.',
+    defaults: {
+      label: 'Surge arrestor', tap: 'busbar', spd_type: 2, spd_mode: '3+1',
+      in_ka: 20, imax_ka: 40, up_kv: 1.5, fuse_a: null, fuse_type: 'gG',
+    },
+    fields: [
+      { key: 'spd_type', label: 'Type', type: 'select', options: [
+        { value: 1, label: 'Type 1' }, { value: 2, label: 'Type 2' }, { value: 3, label: 'Type 3' }] },
+      { key: 'spd_mode', label: 'Connection', type: 'select', options: [
+        { value: '3+1', label: '3+1 (N–PE spark gap)' }, { value: '4+0', label: '4+0 (all to PE)' }] },
+      // Type 1 is rated on Iimp (10/350 µs), Types 2/3 on In (8/20 µs) — one
+      // field, one label, rather than a conditional the editor has to branch on.
+      { key: 'in_ka', label: 'In / Iimp', type: 'number', unit: 'kA', min: 0, step: 1 },
+      { key: 'imax_ka', label: 'Imax', type: 'number', unit: 'kA', min: 0, step: 1 },
+      { key: 'up_kv', label: 'Up', type: 'number', unit: 'kV', min: 0, step: 0.1 },
+      { key: 'fuse_a', label: 'Backup fuse', type: 'number', unit: 'A', min: 0, step: 1 },
+      { key: 'fuse_type', label: 'Fuse type', type: 'select', options: DB_ACCESSORY_FUSE_TYPES },
+    ],
+  },
+  {
+    key: 'metering',
+    label: 'Metering (V / A)',
+    hint: 'Voltmeter and/or ammeter with selector switches.',
+    defaults: {
+      label: 'Metering', tap: 'supply', meter: 'both', phases: 'RWB',
+      ct_ratio: '200/5', fuse_a: 2, fuse_type: 'gG',
+    },
+    fields: [
+      { key: 'meter', label: 'Instrument', type: 'select', options: [
+        { value: 'both', label: 'Voltmeter + ammeter' },
+        { value: 'voltmeter', label: 'Voltmeter' },
+        { value: 'ammeter', label: 'Ammeter' }] },
+      { key: 'phases', label: 'Phases', type: 'select', options: ['RWB', 'R', 'W', 'B'] },
+      { key: 'ct_ratio', label: 'CT ratio', type: 'text' },
+      { key: 'fuse_a', label: 'VT fuse', type: 'number', unit: 'A', min: 0, step: 1 },
+      { key: 'fuse_type', label: 'Fuse type', type: 'select', options: DB_ACCESSORY_FUSE_TYPES },
+    ],
+  },
+  {
+    key: 'utility',
+    label: 'Board utility',
+    hint: 'Enclosure socket, light, hour-run meter or control transformer.',
+    defaults: {
+      label: 'Enclosure socket', tap: 'busbar', utility_kind: 'socket',
+      phases: 'R', fuse_a: 16, fuse_type: 'mcb',
+    },
+    fields: [
+      { key: 'utility_kind', label: 'Item', type: 'select', options: [
+        { value: 'socket', label: 'Socket outlet' },
+        { value: 'light', label: 'Enclosure light' },
+        { value: 'hour_meter', label: 'Hour-run meter' },
+        { value: 'ctl_transformer', label: 'Control transformer' }] },
+      { key: 'phases', label: 'Phase', type: 'select', options: ['R', 'W', 'B', 'RWB'] },
+      { key: 'fuse_a', label: 'Protection', type: 'number', unit: 'A', min: 0, step: 1 },
+      { key: 'fuse_type', label: 'Device', type: 'select', options: DB_ACCESSORY_FUSE_TYPES },
+    ],
+  },
+];
+
 const COMPONENT_DEFS = {
   // --- Sources ---
   utility: {
@@ -2815,6 +2928,11 @@ const COMPONENT_DEFS = {
       motor_fraction: 0,
       motor_lrc_ratio: 6,
       circuits: [],             // circuit schedule (ways) — edited in DBSchedule
+      // Board accessories (indicator lamps, SPDs, metering, enclosure utilities).
+      // Deliberately NOT ways: they take no way number, carry no lumped load and
+      // are not graded by the per-way circuit check. They exist so the DB single
+      // line (DBDrawing) is an issuable drawing rather than a picture of the grid.
+      accessories: [],
       // Installation conditions the per-way cable check derates against
       // (IEC 60364-5-52). Edited in the Schedules workspace rail; absent means
       // the engine defaults (B1 / 30 °C / bunched / one circuit per group),

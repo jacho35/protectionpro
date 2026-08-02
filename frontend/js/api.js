@@ -588,7 +588,7 @@ const API = {
   },
 
   // Server-side PDF report generation (from current app state)
-  async generateReport(sections = null, diagramImage = null) {
+  async generateReport(sections = null, diagramImage = null, dbDiagrams = null) {
     const body = {
       projectName: AppState.projectName || 'Untitled Project',
       baseMVA: AppState.baseMVA,
@@ -604,6 +604,8 @@ const API = {
     };
     if (sections) body.sections = sections;
     if (diagramImage) body.diagramImage = diagramImage;
+    // { board component id -> base64 PNG } for the DB single-line section
+    if (dbDiagrams && Object.keys(dbDiagrams).length) body.dbDiagrams = dbDiagrams;
     return this.requestBlob('/reports/pdf', {
       method: 'POST', body, errorLabel: 'PDF generation failed',
     });

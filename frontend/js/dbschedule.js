@@ -137,10 +137,13 @@ const DBSchedule = {
   // schedule doesn't clear results or push an undo snapshot. `circuits` covers
   // every per-way field (including ecc_mm2); the board-level install
   // conditions and Ze are edited in the Schedules workspace rail and must be
-  // listed explicitly or those edits would never mark the project dirty.
+  // listed explicitly or those edits would never mark the project dirty. So
+  // must `accessories` — edited by DBAccessories on both the grid and the
+  // single-line view, and carrying no way of its own to ride in on.
   _committedFields(comp) {
     return {
       circuits: comp.props.circuits || [],
+      accessories: comp.props.accessories || [],
       board_diversity: comp.props.board_diversity ?? 1.0,
       el_ratings: comp.props.el_ratings || {},
       way_install: comp.props.way_install || null,
@@ -945,9 +948,11 @@ const DBSchedule = {
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
         ${this.mode === 'modal' ? '<button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>' : ''}
       </div>
-      <div id="db-el-panel"></div>`;
+      <div id="db-el-panel"></div>
+      <div id="db-accessories-panel"></div>`;
 
     this._refreshElPanel(comp);
+    this._refreshAccessories(comp);
     this._refreshBulkBar();
     this._paintResults();
 
@@ -1512,6 +1517,17 @@ const DBSchedule = {
         this._refreshElPanel(comp);
       });
     });
+  },
+
+  // ── Board accessories ───────────────────────────────────────────────
+  // Indicators, SPDs, metering and enclosure utilities — not ways, so they get
+  // their own collapsible section below the grid rather than a row. The same
+  // renderer serves the Single Line view; DBAccessories owns the markup and
+  // calls _notifyEdited() itself, so nothing here needs to re-render the grid.
+  _refreshAccessories(comp) {
+    const wrap = this.body && this.body.querySelector('#db-accessories-panel');
+    if (!wrap || typeof DBAccessories === 'undefined') return;
+    DBAccessories.render(comp, wrap, null, { mode: 'section' });
   },
 
   // ── Excel export / import ───────────────────────────────────────────
