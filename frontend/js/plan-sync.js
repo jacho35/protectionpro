@@ -451,13 +451,13 @@ const PlanSync = {
     const circuits = dbComp.props.circuits;
     let c = circuits.find(x => x.type === 'feeder_db' && x.feedsDbId === subComp.id);
     if (!c) {
-      c = {
-        id: (typeof PlanCircuits !== 'undefined' && PlanCircuits._genWayId) ? PlanCircuits._genWayId() : ('w' + (AppState.planMarkup._seq++)),
-        type: 'feeder_db', way: String(circuits.length + 1),
-        description: '', poles: '3P', phase: 'RWB', breaker_a: 63, curve: 'C',
-        el_group: '', cable_mm2: 25, cable_m: 0, load_va: 0, demand_factor: 1,
-        leakage_ma: 0, feedsDbId: subComp.id,
-      };
+      // Via DBSchedule.newWay so this stays in step with the editor's own
+      // blank way — this literal previously omitted power_factor entirely,
+      // which left the board PF rollup reading a feeder as pf 0.
+      c = DBSchedule.newWay(circuits.length, {
+        type: 'feeder_db', poles: '3P', phase: 'RWB', breaker_a: 63, curve: 'C',
+        cable_mm2: 25, ecc_mm2: 16, cable_m: 0, feedsDbId: subComp.id,
+      });
       circuits.push(c);
     }
     c.description = 'Feeder to ' + (subComp.props.name || 'Sub-board');

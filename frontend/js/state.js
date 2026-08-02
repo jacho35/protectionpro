@@ -9,6 +9,7 @@ const RESULT_SLOTS = [
   'dcArcFlashResults', 'dcLoadFlowResults', 'dcShortCircuitResults', 'cableSizingResults',
   'motorStartingResults', 'dynamicMotorResults', 'stabilityResults', 'dutyCheckResults',
   'loadDiversityResults', 'groundingResults', 'studyManagerResults', 'ansiFaultResults',
+  'dbCheckResults',
 ];
 
 // Human labels for the stale-results notice.
@@ -22,6 +23,7 @@ const RESULT_SLOT_LABELS = {
   stabilityResults: 'Transient Stability', dutyCheckResults: 'Duty Check',
   loadDiversityResults: 'Load Diversity', groundingResults: 'Grounding',
   studyManagerResults: 'Study Manager', ansiFaultResults: 'ANSI Fault Duty',
+  dbCheckResults: 'DB Circuit Check',
 };
 
 const AppState = {
@@ -1040,6 +1042,7 @@ const AppState = {
     this.dcLoadFlowResults = null;
     this.dcShortCircuitResults = null;
     this.cableSizingResults = null;
+    this.dbCheckResults = null;
     this.motorStartingResults = null;
     this.dynamicMotorResults = null;
     this.stabilityResults = null;
@@ -1237,6 +1240,7 @@ const AppState = {
       dcLoadFlowResults: this.dcLoadFlowResults || undefined,
       dcShortCircuitResults: this.dcShortCircuitResults || undefined,
       cableSizingResults: this.cableSizingResults || undefined,
+      dbCheckResults: this.dbCheckResults || undefined,
       motorStartingResults: this.motorStartingResults || undefined,
       dynamicMotorResults: this.dynamicMotorResults || undefined,
       stabilityResults: this.stabilityResults || undefined,
@@ -1573,6 +1577,9 @@ const AppState = {
     }
     if (typeof Interlocking !== 'undefined' && Interlocking.onProjectChanged) {
       Interlocking.onProjectChanged();
+    }
+    if (typeof Schedules !== 'undefined' && Schedules.onProjectChanged) {
+      Schedules.onProjectChanged();
     }
   },
 };

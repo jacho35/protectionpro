@@ -733,12 +733,76 @@ const Compliance = {
     this._sans10142_earthingSystem(section);
     this._sans10142_maxDemand(section);
     this._sans10142_earthFaultCurrent(section);
+    this._sans10142_dbCircuits(section);
 
     if (section.items.length === 0) {
       section.items.push({ status: 'info', component: '—', message: 'No SANS 10142 checks applicable to current network.', detail: 'Add LV components (cables, transformers, CBs) to enable SANS 10142 checks.' });
     }
 
     return section;
+  },
+
+  // Distribution-board circuit schedules — the per-way verdicts from the
+  // db-circuit-check engine (derated ampacity + Ib≤In≤Iz, voltage drop, ECC
+  // size, earth-fault loop Zs).
+  //
+  // Until this existed, a board's ways produced ZERO compliance items: the
+  // Cl. 5.5.2 and Cl. 5.6.3 checks above only walk `cable` SLD components, so
+  // an undersized way inside a schedule was invisible to the report.
+  MAX_DB_CIRCUIT_ITEMS: 60,
+
+  _sans10142_dbCircuits(section) {
+    const boards = [...AppState.components.values()]
+      .filter(c => c.type === 'distribution_board' && (c.props?.circuits || []).length);
+    if (boards.length === 0) return;   // not applicable, not a finding
+
+    const res = AppState.dbCheckResults;
+    if (!res || !Array.isArray(res.ways)) {
+      section.items.push({
+        status: 'info', component: '—',
+        message: 'DB circuit check not run — per-way ampacity, voltage drop, ECC and earth-loop impedance are unverified.',
+        detail: `${boards.length} distribution board(s) carry circuit schedules. Open the Schedules workspace and press "Check circuits" to verify each way against SANS 10142-1 Cl. 5.5.2 / 5.5.6 / 6.6 and IEC 60364-5-54 Table 54.7.`,
+      });
+      return;
+    }
+
+    const basis = res.basis || {};
+    const basisNote = `Basis: ${basis.ampacity_basis || 'IEC 60364-5-52'}; disconnection on ${basis.fault_basis || 'the minimum-current basis'}.`;
+    if (basis.load_flow_converged === false) {
+      section.items.push({
+        status: 'warn', component: '—',
+        message: 'Voltage drop checked without upstream drop — load flow unavailable.',
+        detail: 'SANS 10142-1 Cl. 6.6 limits the TOTAL drop from the point of supply. Run Load Flow so each way can be checked cumulatively rather than on its own length alone.',
+      });
+    }
+
+    const flagged = res.ways.filter(w => w.status === 'fail' || w.status === 'warn');
+    for (const w of flagged.slice(0, this.MAX_DB_CIRCUIT_ITEMS)) {
+      section.items.push({
+        status: w.status,
+        component: `${w.board_name} way ${w.way}${w.description ? ' — ' + w.description : ''}`,
+        message: (w.messages && w.messages[0]) || 'Circuit check finding.',
+        detail: `${(w.messages || []).join(' · ')} — ${basisNote}`,
+      });
+    }
+    if (flagged.length > this.MAX_DB_CIRCUIT_ITEMS) {
+      section.items.push({
+        status: 'info', component: '—',
+        message: `${flagged.length - this.MAX_DB_CIRCUIT_ITEMS} further circuit finding(s) not listed.`,
+        detail: 'Open the Schedules workspace for the full per-way breakdown.',
+      });
+    }
+
+    for (const b of (res.boards || [])) {
+      const c = b.counts || {};
+      if (!b.way_count || c.fail || c.warn) continue;
+      section.items.push({
+        status: 'pass',
+        component: b.name,
+        message: `All ${b.way_count} way(s) comply — Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop.`,
+        detail: `${basisNote}${c.info ? ` ${c.info} way(s) could not be fully evaluated — see the Schedules workspace.` : ''}`,
+      });
+    }
   },
 
   // SANS 10142-1 Cl. 5.3.2 / NRS 048-2: LV supply voltage tolerance ±10%
