@@ -22,6 +22,7 @@ from backend.analysis.fault import (
 from backend.analysis.loadflow import (
     run_load_flow, connected_bus_loads_mw, _assess_solution,
     _newton_raphson, _gauss_seidel, solve_with_islands,
+    insert_implicit_load_buses,
 )
 from backend.analysis.voltage_stability import run_voltage_stability
 from backend.analysis.contingency import run_contingency
@@ -38,6 +39,7 @@ from backend.analysis.grounding_system import (
 from backend.analysis.arcflash import (
     calc_incident_energy, calc_arcing_current_2018, calc_incident_energy_2018,
     calc_arc_flash_boundary_2018, _enclosure_correction_factor_2018,
+    run_arc_flash,
 )
 from backend.analysis.fault_ansi import (
     run_ansi_fault_analysis, _ansi_motor_induction_multiplier, _duty_from_paths,
@@ -242,6 +244,71 @@ def _open_conductor_project(fault_mva=1e7, kv=11.0, r_per_km=0.5, x_per_km=0.3,
     ]
     return _utility_bus_project(fault_mva=fault_mva, xr=15.0, kv=kv, z0_z1=1.0,
                                 extra_components=[cable, bus2, load], extra_wires=wires)
+
+
+class TestDeEnergizedFaultLevel:
+    """A bus with no supply has no prospective fault current.
+
+    Regression: the fault walker had no notion of energization at all, so it
+    counted motor (and lumped-load rotating-fraction) back-feed regardless of
+    whether the machine had a supply. A board isolated by an open breaker
+    therefore reported a fault level sourced entirely from motors that cannot
+    be turning — and arc flash inherited it, producing labels for dead
+    switchgear. IEC 60909-0 §13 motor contribution applies to machines RUNNING
+    immediately before the fault.
+    """
+
+    @staticmethod
+    def _project(incomer_state):
+        """utility ── bus-1 ── CB ── bus-2 ── motor, CB state parameterised."""
+        comps = [
+            _comp("cb-1", "cb", {"name": "Incomer", "state": incomer_state}),
+            _comp("bus-2", "bus", {"name": "Dead Board", "voltage_kv": 11.0}),
+            _comp("motor_induction-1", "motor_induction", {
+                "name": "M1", "rated_kw": 500.0, "voltage_kv": 11.0,
+                "efficiency": 0.93, "power_factor": 0.87,
+                "locked_rotor_current": 6.0}),
+        ]
+        wires = [_wire("w2", "bus-1", "cb-1"),
+                 _wire("w3", "cb-1", "bus-2"),
+                 _wire("w4", "bus-2", "motor_induction-1")]
+        return _utility_bus_project(fault_mva=500.0,
+                                    extra_components=comps, extra_wires=wires)
+
+    def test_motor_on_a_dead_board_contributes_nothing(self):
+        res = run_fault_analysis(self._project("open"))
+        dead = res.buses["bus-2"]
+        assert dead.ik3 == pytest.approx(0.0, abs=1e-9), \
+            "de-energized board reported a motor-fed fault level"
+        assert dead.ik1 == pytest.approx(0.0, abs=1e-9)
+        assert dead.motor_count == 0
+        note = " ".join(dead.topology_warnings or [])
+        assert "de-energized" in note
+        assert "Incomer" in note, "the isolating breaker was not named"
+
+    def test_the_same_motor_still_contributes_when_supplied(self):
+        """Guard against over-suppression: closing the breaker must restore the
+        motor infeed, so the gate keys on supply and nothing else."""
+        res = run_fault_analysis(self._project("closed"))
+        live = res.buses["bus-2"]
+        assert live.ik3 > 0
+        assert live.motor_count == 1, "motor infeed lost on a supplied board"
+        assert (live.ik3_motor or 0) > 0
+
+    def test_arc_flash_produces_no_label_for_a_dead_bus(self):
+        proj = self._project("open")
+        af = run_arc_flash(proj, run_fault_analysis(proj))
+        assert "bus-2" not in af.buses, \
+            "arc flash labelled a de-energized board"
+        assert any("de-energized" in w for w in af.warnings)
+
+    def test_live_buses_are_unaffected_by_the_gate(self):
+        """The energized side of the network must be numerically untouched."""
+        opened = run_fault_analysis(self._project("open")).buses["bus-1"]
+        # bus-1 sits on the utility, upstream of the breaker — the motor was
+        # never a meaningful contributor there, but pin it so the gate cannot
+        # silently move a live fault level.
+        assert opened.ik3 > 0
 
 
 class TestOpenConductor:
@@ -1217,6 +1284,198 @@ class TestLoadFlow:
             f"PF-corrected bus reported {main.q_through_mvar} MVAr, expected ≈ 0.14"
 
 
+class TestSourceTerminalBus:
+    """A source wired to the network through a cable/transformer with no
+    busbar at its own terminal must be modelled exactly as if the user had
+    drawn that terminal bus.
+
+    Regression: the source itself was always found (_source_connection_bus
+    walks straight through series elements, so it anchored its island and
+    dispatched normally), but the element BETWEEN it and the bus reached only
+    one bus, so the chain builder skipped it — no Y-bus stamp, no voltage
+    drop, no branch flow, no loading check. The source came out modelled as
+    if bolted directly onto the far bus. `insert_implicit_load_buses` now
+    synthesises the terminal node for sources as well as loads, which is what
+    puts the feeder back into the network.
+    """
+
+    @staticmethod
+    def _project(with_bus, source):
+        """`source ── [bus-0] ── cable ── bus-1 ── 2 MVA load`, with the
+        source-terminal bus either drawn by hand or left for the engine."""
+        comps = [
+            source,
+            _comp("cable-1", "cable", {
+                "name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.3,
+                "length_km": 1.0, "rated_amps": 400.0, "voltage_kv": 11.0,
+            }),
+            _comp("bus-1", "bus", {"name": "Load Bus", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 2000.0, "power_factor": 0.9,
+                "voltage_kv": 11.0,
+            }),
+        ]
+        wires = [_wire("w2", "cable-1", "bus-1"),
+                 _wire("w3", "bus-1", "static_load-1")]
+        if with_bus:
+            comps.append(_comp("bus-0", "bus",
+                               {"name": "Source Bus", "voltage_kv": 11.0}))
+            wires += [_wire("w0", source.id, "bus-0"),
+                      _wire("w1", "bus-0", "cable-1")]
+        else:
+            wires.append(_wire("w1", source.id, "cable-1"))
+        return ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    _GEN = _comp("generator-1", "generator", {
+        "name": "Gen3", "voltage_kv": 11.0, "rated_mva": 5.0, "xd_pp": 0.15,
+        "power_factor": 0.85, "dispatch_mode": "must_run",
+    })
+    _UTIL = _comp("utility-1", "utility", {
+        "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0,
+        "x_r_ratio": 10.0,
+    })
+
+    @pytest.mark.parametrize("source", [_GEN, _UTIL],
+                             ids=["generator", "utility"])
+    def test_load_flow_matches_hand_drawn_terminal_bus(self, source):
+        """Feeder voltage drop, current, losses and dispatch must be identical
+        to the hand-drawn-bus network. Before the fix the load bus sat at
+        exactly 1.000 pu with NO branches reported at all."""
+        no_bus = run_load_flow(self._project(False, source), "newton_raphson")
+        with_bus = run_load_flow(self._project(True, source), "newton_raphson")
+        assert no_bus.converged and with_bus.converged
+
+        # The feeder is now in the network — the load bus sags off 1.0 pu.
+        assert no_bus.buses["bus-1"].voltage_pu < 0.999, \
+            "load bus still at nominal — the feeder impedance was dropped"
+        assert no_bus.buses["bus-1"].voltage_pu == pytest.approx(
+            with_bus.buses["bus-1"].voltage_pu, rel=1e-9)
+
+        def _cable(res):
+            rows = [b for b in res.branches if b.elementId == "cable-1"]
+            assert rows, "feeder cable was not modelled as a branch"
+            return rows[0]
+
+        assert _cable(no_bus).i_amps > 0
+        assert _cable(no_bus).i_amps == pytest.approx(_cable(with_bus).i_amps, rel=1e-9)
+        assert _cable(no_bus).losses_mw == pytest.approx(_cable(with_bus).losses_mw, rel=1e-9)
+
+        d_no = {d.source_id: d.dispatched_mw for d in no_bus.dispatch}
+        d_yes = {d.source_id: d.dispatched_mw for d in with_bus.dispatch}
+        assert d_no.keys() == d_yes.keys()
+        for sid, mw in d_no.items():
+            assert mw == pytest.approx(d_yes[sid], rel=1e-9)
+
+    @pytest.mark.parametrize("source", [_GEN, _UTIL],
+                             ids=["generator", "utility"])
+    def test_synthetic_terminal_does_not_leak_into_results(self, source):
+        """The auto-inserted node is an implementation detail: no bus row, and
+        no result field may carry its raw `__term__` id."""
+        res = run_load_flow(self._project(False, source), "newton_raphson")
+        assert not any(bid.startswith("__term__") for bid in res.buses)
+        for d in res.dispatch:
+            assert not d.bus_id.startswith("__term__")
+        for b in res.branches:
+            assert not b.from_bus.startswith("__term__")
+            assert not b.to_bus.startswith("__term__")
+            # The source's own row must re-anchor to the point of supply
+            # rather than collapse to a self-loop.
+            assert b.from_bus != b.to_bus
+
+    def test_source_already_on_a_bus_is_untouched(self):
+        """Idempotency: a well-drawn network gains no synthetic node, so
+        existing projects are unchanged."""
+        before = insert_implicit_load_buses(self._project(True, self._GEN))
+        assert not any(c.id.startswith("__term__") for c in before.components)
+
+    def test_switched_out_source_is_not_given_a_terminal_bus(self):
+        """A source behind an OPEN CB also reaches no bus, but it is switched
+        out, not missing a terminal node. Synthesising one would promote it to
+        its own live one-bus island instead of leaving it offline."""
+        proj = ProjectData(
+            projectName="test", baseMVA=100.0, frequency=50,
+            components=[
+                _comp("utility-1", "utility",
+                      {"name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0}),
+                _comp("cb-1", "cb", {"name": "Incomer", "state": "open"}),
+                _comp("bus-1", "bus", {"name": "Main Bus", "voltage_kv": 11.0}),
+            ],
+            wires=[_wire("w1", "utility-1", "cb-1"),
+                   _wire("w2", "cb-1", "bus-1")])
+        out = insert_implicit_load_buses(proj)
+        assert not any(c.id.startswith("__term__") for c in out.components)
+
+    def test_fault_level_at_the_synthesised_terminal(self):
+        """Fault analysis already accumulated the cable impedance on its walk
+        outward from the faulted bus, so real-bus levels must NOT move. The
+        terminal node adds a reported fault level that matches the hand-drawn
+        bus, under a name a report reader can place."""
+        no_bus = run_fault_analysis(self._project(False, self._GEN)).buses
+        with_bus = run_fault_analysis(self._project(True, self._GEN)).buses
+
+        assert no_bus["bus-1"].ik3 == pytest.approx(with_bus["bus-1"].ik3, rel=1e-6)
+        term = [b for bid, b in no_bus.items() if bid.startswith("__term__")]
+        assert len(term) == 1, "no terminal-node fault result was reported"
+        assert term[0].ik3 == pytest.approx(with_bus["bus-0"].ik3, rel=1e-6)
+        assert term[0].bus_name == "Gen3 terminal"
+
+    def test_thevenin_impedance_seen_by_the_motor_is_unchanged(self):
+        """network_reduction's `_source_stub` already accumulated a source
+        stub's impedance correctly, so inserting the terminal node must not
+        double-count it: the dynamic motor-start engine (which reduces the
+        network to a Thevenin source at the motor bus) must see the same dip
+        either way."""
+        def _proj(with_bus):
+            gen = _comp("generator-1", "generator", {
+                "name": "Gen3", "voltage_kv": 11.0, "rated_mva": 5.0,
+                "xd_pp": 0.15, "power_factor": 0.85, "dispatch_mode": "must_run",
+            })
+            comps = [
+                gen,
+                _comp("cable-1", "cable", {
+                    "name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.3,
+                    "length_km": 1.0, "rated_amps": 400.0, "voltage_kv": 11.0,
+                }),
+                _comp("bus-1", "bus", {"name": "MV Bus", "voltage_kv": 11.0}),
+                _comp("transformer-1", "transformer", {
+                    "name": "TX1", "rated_mva": 2.0, "z_percent": 6.0,
+                    "x_r_ratio": 10.0, "voltage_hv_kv": 11.0,
+                    "voltage_lv_kv": 0.4, "vector_group": "Dyn11",
+                }),
+                _comp("bus-2", "bus", {"name": "LV Bus", "voltage_kv": 0.4}),
+                _comp("motor_induction-1", "motor_induction", {
+                    "name": "M1", "rated_kw": 200.0, "voltage_kv": 0.4,
+                    "efficiency": 0.93, "power_factor": 0.87,
+                    "locked_rotor_current": 6.5, "locked_rotor_torque_pct": 150,
+                    "rated_speed_rpm": 1480, "motor_j_kgm2": 5.0,
+                    "load_j_kgm2": 10.0, "load_torque_pct": 90,
+                    "load_torque_model": "quadratic", "starting_method": "dol",
+                }),
+            ]
+            wires = [_wire("w2", "cable-1", "bus-1"),
+                     _wire("w3", "bus-1", "transformer-1"),
+                     _wire("w4", "transformer-1", "bus-2"),
+                     _wire("w5", "bus-2", "motor_induction-1")]
+            if with_bus:
+                comps.append(_comp("bus-0", "bus",
+                                   {"name": "Source Bus", "voltage_kv": 11.0}))
+                wires += [_wire("w0", "generator-1", "bus-0"),
+                          _wire("w1", "bus-0", "cable-1")]
+            else:
+                wires.append(_wire("w1", "generator-1", "cable-1"))
+            return ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                               components=comps, wires=wires)
+
+        no_bus = run_dynamic_motor_starting(_proj(False))
+        with_bus = run_dynamic_motor_starting(_proj(True))
+        assert no_bus["motors"] and with_bus["motors"]
+        a, b = no_bus["motors"][0], with_bus["motors"][0]
+        assert a["min_v_motor_pu"] == pytest.approx(b["min_v_motor_pu"], rel=1e-6)
+        assert a["max_bus_dip_pct"] == pytest.approx(b["max_bus_dip_pct"], rel=1e-6)
+        assert a["peak_current_a"] == pytest.approx(b["peak_current_a"], rel=1e-6)
+
+
 class TestCapacitorPlacement:
     """Greedy capacitor placement against the classical result: on a
     resistive feeder serving a lagging load, losses ∝ (P² + Q²)·R/V², so
@@ -2028,6 +2287,63 @@ class TestIslandingAndDispatch:
         """Same island through the unbalanced solver."""
         res = run_unbalanced_load_flow(self._gen_island_project("open"))
         assert res.converged
+
+    def test_swing_label_does_not_fabricate_a_source(self):
+        """A bus labelled Swing whose supply is cut by an open breaker must NOT
+        act as an infinite infeed. The label says WHERE the slack sits, not
+        that generation exists.
+
+        Regression: the sourceless-island branch honoured a user Swing label,
+        so an incomer bus left labelled Swing after its utility was islanded
+        away held exactly 1.000 pu and pushed full load current down a dead
+        feeder, while every real source correctly reported 0 MW — energy from
+        nowhere. Islands that DO have sources were already guarded; this was
+        the more dangerous gap.
+        """
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0}),
+            _comp("bus-0", "bus", {"name": "Utility Bus", "voltage_kv": 11.0}),
+            _comp("cb-1", "cb", {"name": "Incomer", "state": "open"}),
+            _comp("bus-1", "bus", {"name": "Kiosk", "voltage_kv": 11.0,
+                                   "bus_type": "Swing"}),
+            _comp("cable-1", "cable", {
+                "name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.3,
+                "length_km": 1.0, "rated_amps": 400.0, "voltage_kv": 11.0}),
+            _comp("bus-2", "bus", {"name": "Load Bus", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 2000.0, "power_factor": 0.9,
+                "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-0"),
+                 _wire("w2", "bus-0", "cb-1"),
+                 _wire("w3", "cb-1", "bus-1"),
+                 _wire("w4", "bus-1", "cable-1"),
+                 _wire("w5", "cable-1", "bus-2"),
+                 _wire("w6", "bus-2", "static_load-1")]
+        res = run_load_flow(ProjectData(projectName="test", baseMVA=100.0,
+                                        frequency=50, components=comps,
+                                        wires=wires), "newton_raphson")
+        assert res.converged
+
+        # The cut-off island is dark, label or not.
+        assert not res.buses["bus-1"].energized, \
+            "Swing label re-energized a bus whose supply is open"
+        assert not res.buses["bus-2"].energized
+        assert res.buses["bus-1"].voltage_pu == pytest.approx(0.0, abs=1e-9)
+
+        # No phantom current down the dead feeder.
+        feeder = [b for b in res.branches if b.elementId == "cable-1"]
+        assert all(b.i_amps == pytest.approx(0.0, abs=1e-6) for b in feeder), \
+            "dead feeder still carries current"
+
+        # The real utility is islanded away and supplies nothing.
+        util = [d for d in res.dispatch if d.source_id == "utility-1"]
+        assert util and util[0].dispatched_mw == pytest.approx(0.0, abs=1e-9)
+
+        # And the user is told why their Swing label was ignored.
+        assert any("labelled Swing" in w.message for w in res.warnings), \
+            "ignoring the Swing label was not explained to the user"
 
     def test_closed_cb_restores_utility_as_balancer(self):
         """With the CB closed the utility is the slack again; the generator
