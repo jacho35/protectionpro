@@ -184,7 +184,7 @@ def _find_components_at_bus(bus_id, adjacency, components):
     return found
 
 
-# ── Implicit load-terminal buses ─────────────────────────────────────
+# ── Implicit terminal buses ──────────────────────────────────────────
 # A load (motor, static load, capacitor bank) wired to the network only
 # through a series element (cable/transformer) has no busbar at its own
 # terminal. The solver gathers loads by walking out from each bus through
@@ -192,9 +192,20 @@ def _find_components_at_bus(bus_id, adjacency, components):
 # silently vanishes from the solve — and the cable feeding it, reaching just
 # one bus, is dropped as a branch too. Drawing a bus between the load and its
 # cable fixes it, so we synthesise exactly that node here, transparently.
+#
+# A SOURCE in the same position fails differently but just as silently. It is
+# still found (_source_connection_bus walks straight through cables and
+# transformers, so it anchors its island and dispatches normally), but the
+# element between it and the bus reaches only ONE bus, so the chain builder
+# drops it: no Y-bus stamp, no voltage drop, no branch flow, no loading check.
+# The source ends up modelled as if bolted directly onto the far bus. The same
+# synthesised terminal node fixes that, so source types are included below.
 SYNTHETIC_BUS_PREFIX = "__term__"
 LOAD_TERMINAL_TYPES = {"motor_induction", "motor_synchronous",
                        "static_load", "capacitor_bank", "vfd", "svc"}
+SOURCE_TERMINAL_TYPES = {"utility", "generator", "solar_pv",
+                         "wind_turbine", "battery"}
+TERMINAL_BUS_TYPES = LOAD_TERMINAL_TYPES | SOURCE_TERMINAL_TYPES
 
 
 def is_synthetic_bus(bus_id):
@@ -203,7 +214,8 @@ def is_synthetic_bus(bus_id):
 
 
 def _load_reaches_bus(load_id, adjacency, components):
-    """True if a bus is reachable from a load through transparent devices only."""
+    """True if a bus is reachable from a load or source through transparent
+    devices only."""
     visited = {load_id}
     stack = list(adjacency.get(load_id, []))
     while stack:
@@ -223,15 +235,47 @@ def _load_reaches_bus(load_id, adjacency, components):
     return False
 
 
+def _reaches_series_element(comp_id, adjacency, components):
+    """True if a cable/transformer is reachable through closed transparent
+    devices only — i.e. this element genuinely hangs off a series branch.
+
+    Distinguishes "needs a terminal bus" from "switched out". A source behind
+    an OPEN CB also reaches no bus, but giving it a terminal node would turn
+    it into its own live one-bus island instead of leaving it offline.
+    """
+    visited = {comp_id}
+    stack = list(adjacency.get(comp_id, []))
+    while stack:
+        nid = stack.pop()
+        if nid in visited:
+            continue
+        visited.add(nid)
+        comp = components.get(nid)
+        if not comp:
+            continue
+        if comp.type in ("cable", "transformer", "autotransformer"):
+            return True
+        if _is_transparent_and_closed(comp):
+            for nb in adjacency.get(nid, []):
+                if nb not in visited:
+                    stack.append(nb)
+    return False
+
+
 def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
     """Return a copy of *project* with a synthetic terminal bus inserted at
-    every dangling load — one wired to the rest of the network only through a
-    series cable/transformer, with no busbar of its own.
+    every dangling load OR source — one wired to the rest of the network only
+    through a series cable/transformer, with no busbar of its own.
 
-    Idempotent: a load that already reaches a bus (directly or through a
-    CB/switch) is left untouched, so well-modelled projects and repeated calls
-    are unchanged. Synthetic buses carry an id prefix (see SYNTHETIC_BUS_PREFIX)
-    so callers can strip them from user-facing output.
+    Idempotent: a load or source that already reaches a bus (directly or
+    through a CB/switch) is left untouched, so well-modelled projects and
+    repeated calls are unchanged. Synthetic buses carry an id prefix (see
+    SYNTHETIC_BUS_PREFIX) so callers can strip them from user-facing output.
+
+    Without the source case, a `generator ── cable ── bus` drawing loses the
+    cable entirely from the solve (see the block comment above): the generator
+    is modelled as if it sat on the far bus, with no feeder voltage drop and
+    no loading check on the cable.
     """
     import json
     components = {c.id: c for c in project.components}
@@ -242,14 +286,21 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
 
     dangling = []
     for c in project.components:
-        if c.type not in LOAD_TERMINAL_TYPES:
+        if c.type not in TERMINAL_BUS_TYPES:
             continue
         if str(c.props.get("system", "ac")).lower() == "dc":
-            continue  # DC loads belong to the DC solver
+            continue  # DC loads/sources belong to the DC solver
         if not adjacency.get(c.id):
             continue  # truly isolated — nothing to attach
         if _load_reaches_bus(c.id, adjacency, components):
             continue  # already has a terminal bus
+        if (c.type in SOURCE_TERMINAL_TYPES
+                and not _reaches_series_element(c.id, adjacency, components)):
+            # Switched out (open CB) rather than needing a terminal node —
+            # leave it offline instead of promoting it to its own island.
+            # Loads are deliberately not guarded this way: their existing
+            # behaviour is pinned and a dead load island is harmless.
+            continue
         dangling.append(c)
 
     if not dangling:
@@ -257,37 +308,37 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
 
     data = json.loads(project.model_dump_json())
     wires = data["wires"]
-    for load in dangling:
-        syn_id = f"{SYNTHETIC_BUS_PREFIX}{load.id}"
-        # Terminal voltage base: the load's own rating, else a series
+    for term in dangling:
+        syn_id = f"{SYNTHETIC_BUS_PREFIX}{term.id}"
+        # Terminal voltage base: the element's own rating, else a series
         # neighbour's rating, else an LV default.
-        v_kv = load.props.get("voltage_kv")
+        v_kv = term.props.get("voltage_kv")
         if not v_kv:
-            for nb in adjacency.get(load.id, []):
+            for nb in adjacency.get(term.id, []):
                 nc = components.get(nb)
                 if nc and nc.type in ("cable", "transformer", "autotransformer"):
                     v_kv = nc.props.get("voltage_lv_kv") or nc.props.get("voltage_kv")
                     if v_kv:
                         break
-        # Rewire: the load hangs off the new bus, and everything the load used
-        # to touch now hangs off the new bus instead (load → syn → cable → …).
-        load_port = "in"
+        # Rewire: the element hangs off the new bus, and everything it used to
+        # touch now hangs off the new bus instead (elem → syn → cable → …).
+        term_port = "in"
         for w in wires:
-            if w["fromComponent"] == load.id:
-                load_port = w.get("fromPort", "in")
+            if w["fromComponent"] == term.id:
+                term_port = w.get("fromPort", "in")
                 w["fromComponent"], w["fromPort"] = syn_id, "at_0"
-            elif w["toComponent"] == load.id:
-                load_port = w.get("toPort", "in")
+            elif w["toComponent"] == term.id:
+                term_port = w.get("toPort", "in")
                 w["toComponent"], w["toPort"] = syn_id, "at_0"
         wires.append({
-            "id": f"{SYNTHETIC_BUS_PREFIX}w_{load.id}",
-            "fromComponent": load.id, "fromPort": load_port,
+            "id": f"{SYNTHETIC_BUS_PREFIX}w_{term.id}",
+            "fromComponent": term.id, "fromPort": term_port,
             "toComponent": syn_id, "toPort": "at_0",
         })
         data["components"].append({
-            "id": syn_id, "type": "bus", "x": load.x, "y": load.y, "rotation": 0,
+            "id": syn_id, "type": "bus", "x": term.x, "y": term.y, "rotation": 0,
             "props": {
-                "name": f"{load.props.get('name', load.id)} terminal",
+                "name": f"{term.props.get('name', term.id)} terminal",
                 "voltage_kv": float(v_kv or 0.4),
                 "bus_type": "PQ", "system": "ac",
                 "synthetic": True,
@@ -3580,18 +3631,39 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
 
     dispatch_results = [DispatchEntry(**e) for e in dispatch["entries"]]
 
-    # Collapse synthetic load-terminal buses out of the user-facing result:
-    # drop their bus rows and re-point any branch endpoint that lands on one
-    # back to the real load it represents (syn id = prefix + load id).
+    # Collapse synthetic terminal buses out of the user-facing result: drop
+    # their bus rows and re-point any branch endpoint that lands on one back
+    # to the real load/source it represents (syn id = prefix + component id).
+    #
+    # A SOURCE terminal needs the extra step the weak-grid block below also
+    # takes: the source's OWN row (source → its terminal bus) and its dispatch
+    # entry would otherwise collapse to a self-loop, so those re-anchor to the
+    # point of supply — the far end of the feeder — leaving the result reading
+    # exactly like the equivalent user-drawn-bus network.
     if not include_synthetic:
         syn_ids = {bid for bid in bus_results if is_synthetic_bus(bid)}
         if syn_ids:
+            comp_of = {bid: bid[len(SYNTHETIC_BUS_PREFIX):] for bid in syn_ids}
+            pos_of = {}  # terminal bus -> point-of-supply bus (far end of feeder)
+            for _elems, _a, _b, *_rest in branch_chains:
+                if _a in syn_ids and _b not in syn_ids and not is_grid_bus(_b):
+                    pos_of[_a] = _b
+                elif _b in syn_ids and _a not in syn_ids and not is_grid_bus(_a):
+                    pos_of[_b] = _a
             for bid in syn_ids:
                 bus_results.pop(bid, None)
-            _unsyn = lambda b: b[len(SYNTHETIC_BUS_PREFIX):] if is_synthetic_bus(b) else b
             for br in branch_results:
-                br.from_bus = _unsyn(br.from_bus)
-                br.to_bus = _unsyn(br.to_bus)
+                for _attr in ("from_bus", "to_bus"):
+                    _bid = getattr(br, _attr)
+                    if _bid not in syn_ids:
+                        continue
+                    _other = br.to_bus if _attr == "from_bus" else br.from_bus
+                    setattr(br, _attr,
+                            pos_of.get(_bid, comp_of[_bid])
+                            if _other == comp_of[_bid] else comp_of[_bid])
+            for de in dispatch_results:
+                if de.bus_id in syn_ids:
+                    de.bus_id = pos_of.get(de.bus_id, comp_of[de.bus_id])
 
     # Collapse the weak-grid synthetic pieces (internal EMF bus + Thevenin
     # element, see _insert_grid_source_impedance): the EMF bus row disappears,

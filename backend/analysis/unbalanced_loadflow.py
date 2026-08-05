@@ -36,7 +36,8 @@ from .loadflow import (
     _build_bus_groups, _find_bus_paths, _get_impedance, _is_transparent_and_closed,
     _find_components_at_bus, _get_chain_turns_ratio, _utility_admittance,
     _newton_raphson, _gauss_seidel,
-    plan_dispatch, solve_with_islands,
+    plan_dispatch, solve_with_islands, insert_implicit_load_buses,
+    is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
 )
 from .fault import _grounding_impedance
 from .line_coupling import coupling_note, parallel_z0_scale
@@ -226,6 +227,10 @@ def run_unbalanced_load_flow(
 ) -> UnbalancedLoadFlowResults:
     """Run three-phase unbalanced load flow using symmetrical components."""
 
+    # Give any load or source wired behind a cable/transformer a terminal bus
+    # so its demand — and the feeder's impedance — is modelled instead of
+    # silently dropped by the len(results) < 2 skip below (idempotent).
+    project = insert_implicit_load_buses(project)
     base_mva = project.baseMVA
     # Only the zero-sequence parallel-coupling model is frequency-dependent
     # (Carson's earth-return depth); everything else here is at nominal.
@@ -953,6 +958,19 @@ def run_unbalanced_load_flow(
                 element_name=comp.props.get("name", comp.id),
                 message=note,
             ))
+
+    # Collapse synthetic terminal buses out of the user-facing result, as the
+    # balanced solver does: drop their rows and re-point branch endpoints at
+    # the real load/source they stand for. Only bus-to-bus rows exist here, so
+    # no source-row re-anchoring is needed.
+    syn_ids = {bid for bid in bus_results if is_synthetic_bus(bid)}
+    if syn_ids:
+        for bid in syn_ids:
+            bus_results.pop(bid, None)
+        _unsyn = lambda b: b[len(SYNTHETIC_BUS_PREFIX):] if is_synthetic_bus(b) else b
+        for br in branch_results:
+            br.from_bus = _unsyn(br.from_bus)
+            br.to_bus = _unsyn(br.to_bus)
 
     return UnbalancedLoadFlowResults(
         buses=bus_results,
