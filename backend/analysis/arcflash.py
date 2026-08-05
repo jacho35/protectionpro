@@ -1133,7 +1133,16 @@ def run_arc_flash(project_data, fault_results):
         # Get bolted fault current from fault results
         fault_bus = fault_results.buses.get(bus_id)
         if not fault_bus or not fault_bus.ik3:
-            warnings.append(f"No fault data for bus '{bus_name}' — run fault analysis first")
+            if fault_bus is not None:
+                # A bus with a fault result but zero current is de-energized
+                # (isolated by an open device) — no arc is possible, so no
+                # label is produced for it. Saying "run fault analysis first"
+                # here would send the user chasing a study they already ran.
+                warnings.append(
+                    f"Bus '{bus_name}' is de-energized (no prospective fault "
+                    "current) — no arc flash label produced")
+            else:
+                warnings.append(f"No fault data for bus '{bus_name}' — run fault analysis first")
             continue
 
         ibf_ka = fault_bus.ik3  # 3-phase bolted fault current

@@ -166,6 +166,11 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     if fault_bus_id:
         buses = [c for c in buses if c.id == fault_bus_id]
 
+    # Which components actually have a supply. Motor / lumped-load back-feed
+    # is gated on this so dead switchgear reports 0 kA instead of a fault level
+    # sourced from machines that cannot be running (IEC 60909-0 §13).
+    energized = _energized_components(components, adjacency)
+
     # [PS-1] Bus-level sequence networks, built lazily on the first meshed
     # fault location (radial networks never need them).
     net_cache = None
@@ -179,15 +184,30 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # Collect all source paths with component trail
         paths_meta = {}
         source_paths = _collect_source_paths(bus.id, components, adjacency, base_mva,
-                                             c=c_resolved, meta=paths_meta)
+                                             c=c_resolved, meta=paths_meta,
+                                             energized=energized)
 
         if not source_paths:
-            # No sources connected — infinite impedance (no fault current)
+            # No sources connected — infinite impedance (no fault current).
+            # Distinguish "isolated by a breaker" from "nothing drawn": the
+            # first is a switching state the user chose and should recognise,
+            # and it is the case that used to report a phantom motor-fed level.
+            _note = ("No source path to this bus — no prospective fault "
+                     "current.")
+            if bus.id not in energized:
+                _cut = _isolating_devices(bus.id, components, adjacency, energized)
+                _note = ("Bus is de-energized (no supply reaches it), so there "
+                         "is no prospective fault current. Any motor on this "
+                         "island cannot be running and therefore contributes "
+                         "nothing.")
+                if _cut:
+                    _note += " Isolated by open " + ", ".join(_cut) + "."
             results[bus.id] = FaultResultBus(
                 bus_id=bus.id,
                 bus_name=bus.props.get("name", bus.id),
                 voltage_kv=voltage_kv,
-                ik3=0, ik1=0, ikLL=0, ikLLG=0
+                ik3=0, ik1=0, ikLL=0, ikLLG=0,
+                topology_warnings=[_note],
             )
             continue
 
@@ -528,7 +548,75 @@ def _transformer_far_voltage(comp, v_near):
     return v_near
 
 
-def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta=None):
+_REAL_SOURCE_TYPES = ("utility", "generator", "solar_pv", "wind_turbine", "battery")
+
+
+def _energized_components(components, adjacency):
+    """Component ids reachable from a real source through CLOSED devices.
+
+    A motor — or the rotating fraction of a lumped load — only feeds a fault if
+    it was RUNNING immediately before it (IEC 60909-0 §13). On a board isolated
+    by an open breaker nothing is spinning, so those infeeds must not be
+    counted. Without this gate the engine reported a prospective fault level on
+    dead switchgear sourced entirely from machines that cannot be turning (a
+    farm network with its incomer and generator-main both open reported ~100 A
+    on all 19 de-energized buses, from two motors on the dead island).
+
+    Real sources are seeded as energized by definition — a source behind an
+    open breaker still energizes its own side. The walk stops AT an open
+    cb/switch, so the far side of it stays dark.
+    """
+    energized = {cid for cid, comp in components.items()
+                 if comp.type in _REAL_SOURCE_TYPES}
+    stack = list(energized)
+    while stack:
+        cid = stack.pop()
+        comp = components.get(cid)
+        if (comp and comp.type in ("cb", "switch")
+                and str(comp.props.get("state", "closed")).lower() == "open"):
+            continue  # open device blocks the path onward
+        for nb, _fp, _tp in adjacency.get(cid, []):
+            if nb not in energized:
+                energized.add(nb)
+                stack.append(nb)
+    return energized
+
+
+def _isolating_devices(bus_id, components, adjacency, energized):
+    """Names of the open cb/switch devices that cut this bus off from supply.
+
+    Walks the bus's own de-energized island and returns any open device on its
+    boundary that has an energized side — i.e. the breaker(s) you would close
+    to bring the board back. Purely for the explanatory note; never affects a
+    computed value.
+    """
+    seen = {bus_id}
+    stack = [bus_id]
+    found = []
+    while stack:
+        cid = stack.pop()
+        for nb, _fp, _tp in adjacency.get(cid, []):
+            if nb in seen:
+                continue
+            seen.add(nb)
+            comp = components.get(nb)
+            if not comp:
+                continue
+            is_open = (comp.type in ("cb", "switch")
+                       and str(comp.props.get("state", "closed")).lower() == "open")
+            if is_open:
+                if any(n in energized for n, _a, _b in adjacency.get(nb, [])):
+                    name = str(comp.props.get("name", nb))
+                    if name not in found:
+                        found.append(name)
+                continue  # don't walk past it
+            if nb not in energized:
+                stack.append(nb)
+    return found
+
+
+def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta=None,
+                          energized=None):
     """Walk the network from a bus and collect source paths with component trails.
 
     Uses a per-path visited set (one copy per recursion branch) so that
@@ -541,6 +629,11 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
     transformer windings) and uses it as the per-unit base for cable
     impedances — the cable's own voltage_kv prop is never trusted here,
     mirroring loadflow.py's convention.
+
+    *energized* (from ``_energized_components``) gates motor/lumped-load
+    back-feed on whether that machine has a supply. ``None`` disables the gate
+    and counts every machine, preserving the historical behaviour for direct
+    callers.
     """
     paths = []
     expansions = [0]
@@ -585,8 +678,11 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             })
             return
 
-        # Motors contribute sub-transient fault current (IEC 60909-0 §13)
+        # Motors contribute sub-transient fault current (IEC 60909-0 §13) —
+        # but only while RUNNING, so a machine with no supply feeds nothing.
         if comp.type == "motor_induction":
+            if energized is not None and comp_id not in energized:
+                return
             z_src = _motor_induction_impedance(comp, base_mva)
             rated_kw = comp.props.get("rated_kw", 200)
             eff = comp.props.get("efficiency", 0.93)
@@ -610,6 +706,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             })
             return
         if comp.type == "motor_synchronous":
+            if energized is not None and comp_id not in energized:
+                return  # not running — no back-feed
             z_src = _motor_synchronous_impedance(comp, base_mva)
             rated_kva = comp.props.get("rated_kva", 500)
             z2_src = _source_z2(comp, z_src, base_mva)
@@ -675,8 +773,12 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
         # the fault as an induction-motor equivalent (decays for Ib like any
         # induction motor via source_type "motor_induction").
         if comp.type in ("static_load", "distribution_board"):
+            # De-energized board/load: its rotating fraction is not turning.
+            # A distribution_board still falls through below so the walk can
+            # pass along the busbar.
+            _live = energized is None or comp_id in energized
             z_src, motor_mva = _static_load_motor_impedance(comp, base_mva)
-            if z_src is not None:
+            if z_src is not None and _live:
                 paths.append({
                     "z_total": z_path + z_src,
                     "z2_total": z_path + z_src,

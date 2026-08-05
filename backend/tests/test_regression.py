@@ -39,6 +39,7 @@ from backend.analysis.grounding_system import (
 from backend.analysis.arcflash import (
     calc_incident_energy, calc_arcing_current_2018, calc_incident_energy_2018,
     calc_arc_flash_boundary_2018, _enclosure_correction_factor_2018,
+    run_arc_flash,
 )
 from backend.analysis.fault_ansi import (
     run_ansi_fault_analysis, _ansi_motor_induction_multiplier, _duty_from_paths,
@@ -243,6 +244,71 @@ def _open_conductor_project(fault_mva=1e7, kv=11.0, r_per_km=0.5, x_per_km=0.3,
     ]
     return _utility_bus_project(fault_mva=fault_mva, xr=15.0, kv=kv, z0_z1=1.0,
                                 extra_components=[cable, bus2, load], extra_wires=wires)
+
+
+class TestDeEnergizedFaultLevel:
+    """A bus with no supply has no prospective fault current.
+
+    Regression: the fault walker had no notion of energization at all, so it
+    counted motor (and lumped-load rotating-fraction) back-feed regardless of
+    whether the machine had a supply. A board isolated by an open breaker
+    therefore reported a fault level sourced entirely from motors that cannot
+    be turning — and arc flash inherited it, producing labels for dead
+    switchgear. IEC 60909-0 §13 motor contribution applies to machines RUNNING
+    immediately before the fault.
+    """
+
+    @staticmethod
+    def _project(incomer_state):
+        """utility ── bus-1 ── CB ── bus-2 ── motor, CB state parameterised."""
+        comps = [
+            _comp("cb-1", "cb", {"name": "Incomer", "state": incomer_state}),
+            _comp("bus-2", "bus", {"name": "Dead Board", "voltage_kv": 11.0}),
+            _comp("motor_induction-1", "motor_induction", {
+                "name": "M1", "rated_kw": 500.0, "voltage_kv": 11.0,
+                "efficiency": 0.93, "power_factor": 0.87,
+                "locked_rotor_current": 6.0}),
+        ]
+        wires = [_wire("w2", "bus-1", "cb-1"),
+                 _wire("w3", "cb-1", "bus-2"),
+                 _wire("w4", "bus-2", "motor_induction-1")]
+        return _utility_bus_project(fault_mva=500.0,
+                                    extra_components=comps, extra_wires=wires)
+
+    def test_motor_on_a_dead_board_contributes_nothing(self):
+        res = run_fault_analysis(self._project("open"))
+        dead = res.buses["bus-2"]
+        assert dead.ik3 == pytest.approx(0.0, abs=1e-9), \
+            "de-energized board reported a motor-fed fault level"
+        assert dead.ik1 == pytest.approx(0.0, abs=1e-9)
+        assert dead.motor_count == 0
+        note = " ".join(dead.topology_warnings or [])
+        assert "de-energized" in note
+        assert "Incomer" in note, "the isolating breaker was not named"
+
+    def test_the_same_motor_still_contributes_when_supplied(self):
+        """Guard against over-suppression: closing the breaker must restore the
+        motor infeed, so the gate keys on supply and nothing else."""
+        res = run_fault_analysis(self._project("closed"))
+        live = res.buses["bus-2"]
+        assert live.ik3 > 0
+        assert live.motor_count == 1, "motor infeed lost on a supplied board"
+        assert (live.ik3_motor or 0) > 0
+
+    def test_arc_flash_produces_no_label_for_a_dead_bus(self):
+        proj = self._project("open")
+        af = run_arc_flash(proj, run_fault_analysis(proj))
+        assert "bus-2" not in af.buses, \
+            "arc flash labelled a de-energized board"
+        assert any("de-energized" in w for w in af.warnings)
+
+    def test_live_buses_are_unaffected_by_the_gate(self):
+        """The energized side of the network must be numerically untouched."""
+        opened = run_fault_analysis(self._project("open")).buses["bus-1"]
+        # bus-1 sits on the utility, upstream of the breaker — the motor was
+        # never a meaningful contributor there, but pin it so the gate cannot
+        # silently move a live fault level.
+        assert opened.ik3 > 0
 
 
 class TestOpenConductor:
