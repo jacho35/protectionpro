@@ -986,17 +986,36 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
         utilities = [(c, bi, d) for c, bi, d in sources if c.type == "utility"]
 
         if not sources:
+            # An island with no source is de-energized, FULL STOP — a
+            # user-labelled Swing bus does not override this. The label says
+            # WHERE the slack should sit, not that generation exists: a bus is
+            # not a source. Honouring it here fabricated an infinite infeed out
+            # of nothing (a utility-incomer bus left labelled Swing after its
+            # utility is islanded away by an open breaker held the bus at
+            # exactly 1.000 pu and pushed full load current down a dead feeder,
+            # while every real source correctly reported 0 MW). The same guard
+            # already applies to islands that DO have sources — see the
+            # user_swing_islands check below; this closes the more dangerous
+            # gap where there is no source at all.
+            dead_idx.update(isl_buses)
+            _bname = buses[isl_buses[0]].props.get("name", buses[isl_buses[0]].id)
+            warnings.append(LoadFlowWarning(
+                elementId=buses[isl_buses[0]].id,
+                element_name=str(_bname),
+                message=(f"Island containing bus '{_bname}' has no connected "
+                         "source — reported de-energized (0 V)."),
+            ))
             if isl in user_swing_islands:
-                # User-forced swing with no modelled source — honour it
-                swing_idx.add(user_swing_islands[isl])
-            else:
-                dead_idx.update(isl_buses)
-                _bname = buses[isl_buses[0]].props.get("name", buses[isl_buses[0]].id)
+                _sw = buses[user_swing_islands[isl]]
+                _swname = _sw.props.get("name", _sw.id)
                 warnings.append(LoadFlowWarning(
-                    elementId=buses[isl_buses[0]].id,
-                    element_name=str(_bname),
-                    message=(f"Island containing bus '{_bname}' has no connected "
-                             "source — reported de-energized (0 V)."),
+                    elementId=_sw.id,
+                    element_name=str(_swname),
+                    message=(f"Bus '{_swname}' is labelled Swing but no source "
+                             "reaches it — the label is ignored rather than "
+                             "treated as an infeed. Check for an open breaker "
+                             "upstream, or add a utility/generator if this "
+                             "point really is supplied."),
                 ))
             continue
 

@@ -2222,6 +2222,63 @@ class TestIslandingAndDispatch:
         res = run_unbalanced_load_flow(self._gen_island_project("open"))
         assert res.converged
 
+    def test_swing_label_does_not_fabricate_a_source(self):
+        """A bus labelled Swing whose supply is cut by an open breaker must NOT
+        act as an infinite infeed. The label says WHERE the slack sits, not
+        that generation exists.
+
+        Regression: the sourceless-island branch honoured a user Swing label,
+        so an incomer bus left labelled Swing after its utility was islanded
+        away held exactly 1.000 pu and pushed full load current down a dead
+        feeder, while every real source correctly reported 0 MW — energy from
+        nowhere. Islands that DO have sources were already guarded; this was
+        the more dangerous gap.
+        """
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "Grid", "voltage_kv": 11.0, "fault_mva": 500.0}),
+            _comp("bus-0", "bus", {"name": "Utility Bus", "voltage_kv": 11.0}),
+            _comp("cb-1", "cb", {"name": "Incomer", "state": "open"}),
+            _comp("bus-1", "bus", {"name": "Kiosk", "voltage_kv": 11.0,
+                                   "bus_type": "Swing"}),
+            _comp("cable-1", "cable", {
+                "name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.3,
+                "length_km": 1.0, "rated_amps": 400.0, "voltage_kv": 11.0}),
+            _comp("bus-2", "bus", {"name": "Load Bus", "voltage_kv": 11.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L1", "rated_kva": 2000.0, "power_factor": 0.9,
+                "voltage_kv": 11.0}),
+        ]
+        wires = [_wire("w1", "utility-1", "bus-0"),
+                 _wire("w2", "bus-0", "cb-1"),
+                 _wire("w3", "cb-1", "bus-1"),
+                 _wire("w4", "bus-1", "cable-1"),
+                 _wire("w5", "cable-1", "bus-2"),
+                 _wire("w6", "bus-2", "static_load-1")]
+        res = run_load_flow(ProjectData(projectName="test", baseMVA=100.0,
+                                        frequency=50, components=comps,
+                                        wires=wires), "newton_raphson")
+        assert res.converged
+
+        # The cut-off island is dark, label or not.
+        assert not res.buses["bus-1"].energized, \
+            "Swing label re-energized a bus whose supply is open"
+        assert not res.buses["bus-2"].energized
+        assert res.buses["bus-1"].voltage_pu == pytest.approx(0.0, abs=1e-9)
+
+        # No phantom current down the dead feeder.
+        feeder = [b for b in res.branches if b.elementId == "cable-1"]
+        assert all(b.i_amps == pytest.approx(0.0, abs=1e-6) for b in feeder), \
+            "dead feeder still carries current"
+
+        # The real utility is islanded away and supplies nothing.
+        util = [d for d in res.dispatch if d.source_id == "utility-1"]
+        assert util and util[0].dispatched_mw == pytest.approx(0.0, abs=1e-9)
+
+        # And the user is told why their Swing label was ignored.
+        assert any("labelled Swing" in w.message for w in res.warnings), \
+            "ignoring the Swing label was not explained to the user"
+
     def test_closed_cb_restores_utility_as_balancer(self):
         """With the CB closed the utility is the slack again; the generator
         (standby by default) stays idle while the utility has capacity."""
