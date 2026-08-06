@@ -782,6 +782,12 @@ class DispatchEntry(BaseModel):
     available_mw: float = 0
     dispatched_mw: float = 0
     curtailed_mw: float = 0
+    # Reactive counterparts, so the results table can report apparent power
+    # (S = √(P²+Q²)) as well as real power. Default 0 keeps every consumer that
+    # only reads the MW fields unchanged.
+    available_mvar: float = 0
+    dispatched_mvar: float = 0
+    curtailed_mvar: float = 0
 
 
 class LoadFlowResults(BaseModel):

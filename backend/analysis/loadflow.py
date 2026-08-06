@@ -950,6 +950,8 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                     "role": "offline",
                     "available_mw": round(_source_output_mva(comp)[0], 4),
                     "dispatched_mw": 0.0, "curtailed_mw": 0.0,
+                    "available_mvar": round(_source_output_mva(comp)[1], 4),
+                    "dispatched_mvar": 0.0, "curtailed_mvar": 0.0,
                 })
                 continue  # Disconnected (e.g. behind an open CB)
             bi = bus_idx[conn]
@@ -1292,6 +1294,8 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 "role": "off",
                 "available_mw": round(_source_output_mva(comp)[0], 4),
                 "dispatched_mw": 0.0, "curtailed_mw": 0.0,
+                "available_mvar": round(_source_output_mva(comp)[1], 4),
+                "dispatched_mvar": 0.0, "curtailed_mvar": 0.0,
             })
         standby_origin_ids = set()
         if not utilities:
@@ -1384,6 +1388,8 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                         "role": "standby",
                         "available_mw": round(p_av, 4),
                         "dispatched_mw": 0.0, "curtailed_mw": 0.0,
+                        "available_mvar": round(q_av, 4),
+                        "dispatched_mvar": 0.0, "curtailed_mvar": 0.0,
                     })
 
         # ── Generator minimum load (wet-stacking floor) ──
@@ -1479,6 +1485,11 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
             # "Curtailed" means output was actively cut below its target;
             # a merit-order source dispatched below capacity is just partial.
             curtailed = max(0.0, p_target - p_disp)
+            # Reactive follows the same loading fraction the real dispatch was
+            # scaled by, so an apparent-power view of the row stays on the
+            # source's own power-factor line.
+            q_target = q_av * (p_target / p_av) if p_av > 0 else 0.0
+            curtailed_q = max(0.0, q_target - q_disp)
             entries.append({
                 "source_id": comp.id,
                 "source_name": str(comp.props.get("name", comp.type)),
@@ -1489,6 +1500,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 "available_mw": round(p_av, 4),
                 "dispatched_mw": round(p_disp, 4),
                 "curtailed_mw": round(curtailed, 4),
+                "available_mvar": round(q_av, 4),
+                "dispatched_mvar": round(q_disp, 4),
+                "curtailed_mvar": round(curtailed_q, 4),
             })
 
         # ── Apply storage set-points (accumulating: a hybrid PV shares its
@@ -1508,6 +1522,10 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 "role": "charging",
                 "available_mw": round(bp["max_charge_mw"], 4),
                 "dispatched_mw": round(-p_ch, 4), "curtailed_mw": 0.0,
+                # A charging unit draws no scheduled vars (inj[1] untouched),
+                # so its apparent power is its real power.
+                "available_mvar": 0.0,
+                "dispatched_mvar": 0.0, "curtailed_mvar": 0.0,
             })
         for comp, bi, p_dis, bp in batt_discharge:
             if comp.id in balancer_ids:
@@ -1532,11 +1550,18 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 "role": "discharging",
                 "available_mw": round(bp["max_discharge_mw"], 4),
                 "dispatched_mw": round(p_dis, 4), "curtailed_mw": 0.0,
+                # max_discharge_mw is the inverter's real-power rating; the
+                # scheduled vars are what the pf-mode inverter actually gives.
+                "available_mvar": 0.0,
+                "dispatched_mvar": round(q_dis, 4), "curtailed_mvar": 0.0,
             })
 
         for comp, bi, _d in balancers:
             p_av = (_source_output_mva(comp)[0] if comp.type != "utility"
                     else _utility_supply_capacity(comp))
+            # A utility's declared capacity is already an MVA figure, so it
+            # carries no separate reactive part — √(P²+0²) reproduces it.
+            q_av = (_source_output_mva(comp)[1] if comp.type != "utility" else 0.0)
             _bmode = ("sequential" if comp.type == "generator"
                       and _gen_control(comp) == "sequential" else _dispatch_mode(comp))
             entries.append({
@@ -1549,6 +1574,9 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                 "available_mw": round(p_av, 4),
                 "dispatched_mw": 0.0,   # filled post-solve from the slack solution
                 "curtailed_mw": 0.0,
+                "available_mvar": round(q_av, 4),
+                "dispatched_mvar": 0.0,  # filled post-solve, as dispatched_mw
+                "curtailed_mvar": 0.0,
             })
 
     return {
@@ -3603,8 +3631,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             isl_buses = [i for i in range(len(buses)) if island_of.get(i) == isl]
             p_out = (sum(S_bus[i].real * base_mva + bus_load_p_mw[i] for i in isl_buses)
                      - sum(dispatch["injections"].get(i, (0.0, 0.0))[0] for i in isl_buses))
+            q_out = (sum(S_bus[i].imag * base_mva + bus_load_q_mvar[i] for i in isl_buses)
+                     - sum(dispatch["injections"].get(i, (0.0, 0.0))[1] for i in isl_buses))
         else:
             p_out = S_bus[bi].real * base_mva + bus_load_p_mw[bi] - inj[0]
+            q_out = S_bus[bi].imag * base_mva + bus_load_q_mvar[bi] - inj[1]
         n_bal = len(entries_at_bus)
         weights = []
         for entry in entries_at_bus:
@@ -3618,6 +3649,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         w_total = sum(weights) or float(n_bal)
         for entry, w in zip(entries_at_bus, weights):
             entry["dispatched_mw"] = round(p_out * (w / w_total), 4)
+            entry["dispatched_mvar"] = round(q_out * (w / w_total), 4)
             # Sync the canvas badge for generator balancers — the annotation
             # pass ran before this fill and fell back to rated output
             if entry["source_type"] == "generator":

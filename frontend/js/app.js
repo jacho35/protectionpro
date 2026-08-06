@@ -572,6 +572,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  const DISPATCH_UNITS_KEY = 'protectionpro-dispatch-units';   // 'kva' (default) | 'kw'
+
   // Post-run load flow summary: generation dispatch table + solver warnings.
   // Shown automatically when the run is noteworthy (islanding, curtailment,
   // de-energized buses, non-convergence); reuses the calc modal shell.
@@ -588,10 +590,24 @@ document.addEventListener('DOMContentLoaded', () => {
       curtailed: 'Curtailed', offline: 'Disconnected', standby: 'Standby (idle)',
       off: 'Off (sequence)',
     };
-    // Adaptive units: a 200 kW PV plant should read in kW, not 0.200 MW
+    // Power units for the dispatch table: apparent (kVA/MVA, the default —
+    // it's what a source is rated and sized in) or real (kW/MW). The choice
+    // sticks across runs and sessions.
+    const unitMode = localStorage.getItem(DISPATCH_UNITS_KEY) === 'kw' ? 'kw' : 'kva';
+    // Adaptive magnitude: a 200 kW PV plant should read in kW, not 0.200 MW
     const fmtPower = (mw) => Math.abs(mw) >= 1
       ? `${mw.toFixed(2)} MW`
       : `${(mw * 1000).toFixed(0)} kW`;
+    const fmtApparent = (mva) => Math.abs(mva) >= 1
+      ? `${mva.toFixed(2)} MVA`
+      : `${(mva * 1000).toFixed(0)} kVA`;
+    // S = √(P²+Q²), signed by the real part so a charging battery still reads
+    // as a negative (absorbing) figure.
+    const fmtVal = (mw, mvar) => {
+      if (unitMode === 'kw') return fmtPower(mw);
+      const s = Math.hypot(mw || 0, mvar || 0);
+      return fmtApparent(mw < 0 ? -s : s);
+    };
 
     let html = '';
     if (!result.converged) {
@@ -607,22 +623,31 @@ document.addEventListener('DOMContentLoaded', () => {
       html += '</div>';
     }
     if (dispatch.length > 0) {
-      html += `<div class="validation-section"><div class="validation-section-title">Generation Dispatch</div>
+      html += `<div class="validation-section">
+        <div class="validation-section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <span>Generation Dispatch</span>
+          <span style="font-weight:normal;">
+            <button id="dispatch-units-kva" class="btn-small${unitMode === 'kva' ? ' active' : ''}"
+              title="Show apparent power, S = √(P²+Q²)">kVA</button><button
+              id="dispatch-units-kw" class="btn-small${unitMode === 'kw' ? ' active' : ''}"
+              title="Show real power, P">kW</button>
+          </span>
+        </div>
         <div style="overflow-x:auto;"><table class="library-table" style="width:100%;font-size:12px;">
         <thead><tr><th>Source</th><th>Island</th><th>Priority</th><th>Mode</th><th>Role</th>
         <th>Available</th><th>Dispatched</th><th>Curtailed</th></tr></thead><tbody>`;
       const sorted = [...dispatch].sort((a, b) => (a.island - b.island) || (a.priority - b.priority));
       for (const d of sorted) {
         const cur = d.curtailed_mw > 0
-          ? `<span style="color:#f57c00;">${fmtPower(d.curtailed_mw)}</span>` : '—';
+          ? `<span style="color:#f57c00;">${fmtVal(d.curtailed_mw, d.curtailed_mvar)}</span>` : '—';
         html += `<tr>
           <td>${escHtml(d.source_name || d.source_id)}</td>
           <td>${d.island > 0 ? d.island : '—'}</td>
           <td>${d.priority}</td>
           <td>${d.role === 'balancer' ? '—' : escHtml(d.mode.replace('_', ' '))}</td>
           <td>${roleLabel[d.role] || escHtml(d.role)}</td>
-          <td>${d.source_type === 'utility' && d.available_mw === 0 ? '∞' : fmtPower(d.available_mw)}</td>
-          <td>${['offline', 'standby', 'off'].includes(d.role) ? '—' : fmtPower(d.dispatched_mw)}</td>
+          <td>${d.source_type === 'utility' && d.available_mw === 0 ? '∞' : fmtVal(d.available_mw, d.available_mvar)}</td>
+          <td>${['offline', 'standby', 'off'].includes(d.role) ? '—' : fmtVal(d.dispatched_mw, d.dispatched_mvar)}</td>
           <td>${cur}</td></tr>`;
       }
       html += '</tbody></table></div></div>';
@@ -656,6 +681,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('dispatch-close').addEventListener('click', () => {
       modal.style.display = 'none';
     });
+    // Unit toggle: persist the choice and re-render this same summary in place
+    for (const [id, mode] of [['dispatch-units-kva', 'kva'], ['dispatch-units-kw', 'kw']]) {
+      const btn = document.getElementById(id);
+      if (!btn) continue;
+      btn.addEventListener('click', () => {
+        if (mode === unitMode) return;
+        localStorage.setItem(DISPATCH_UNITS_KEY, mode);
+        showDispatchSummary(result, title);
+      });
+    }
   }
 
   async function runAnalysis(type) {
