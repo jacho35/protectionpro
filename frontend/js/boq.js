@@ -4,7 +4,7 @@
  * project's rate library (rates.js):
  *
  *   demand  Demand (reticulation): kiosk feeders and erf services (cable type
- *           × length), minisubs, kiosks, LV terminations
+ *           × length), minisubs, kiosks
  *   plan    site / floor plans: routes by cable type, trenches, crossings,
  *           poles and devices, riser runs, junction-box joints
  *   sld     single-line diagram: cables, transformers, switchgear, CT/VT,
@@ -21,6 +21,12 @@
  * A feeder-to-sub-board way contributes its breaker only; its cable is the
  * sub-main cable on the SLD.
  *
+ * Terminations are itemized per cable size and type (TRM-<cable key>, one
+ * cable end each): 2 ends per counted run × parallel runs, for Demand
+ * feeders/services, SLD cables and typed plan routes. A run skipped by the
+ * counted-once rule skips its terminations too. Final-circuit (DB way)
+ * terminations are opt-in (opts.fcTerms), as those are usually priced per point.
+ *
  * Items without a rate are listed, left out of the total and flagged — never
  * priced at 0.
  */
@@ -34,6 +40,7 @@ const BOQ = {
   ],
   SECTION: {
     cable: 'Cables — by type',
+    term: 'Terminations — by cable size and type',
     equip: 'Equipment',
     prot: 'Protective devices',
     civil: 'Civils, containment & labour',
@@ -80,7 +87,7 @@ const BOQ = {
     const cat = new Map(Rates.catalogue().map(c => [c.key, c]));
     const lines = new Map();
     const warnings = [], notes = [];
-    const add = (item, qty, src, label) => {
+    const add = (item, qty, src, label, runs) => {
       if (!item || !(qty > 0) && !opts.zero) return;
       const known = cat.get(item.key) || {};
       const id = opts.merge === false ? `${item.key}|${src}` : item.key;
@@ -92,31 +99,38 @@ const BOQ = {
       l.qty += Number(qty) || 0;
       l.srcs.add(src);
       if (label && !l.from.includes(label)) l.from.push(label);
+      if (label && runs) { l.runs = l.runs || {}; l.runs[label] = (l.runs[label] || 0) + runs; }
+    };
+    // Two ends per run × parallel runs, itemized per cable size and type.
+    const term = (cableItem, runs, src, label) => {
+      if (opts.terms === false || !cableItem || !(runs > 0)) return;
+      add(Rates.termItem(cableItem), 2 * runs, src, label, runs);
     };
     const hasDemand = this._hasDemand();
 
     // ── Demand ──
     if (inc.demand && hasDemand) {
       const R = AppState.reticulation;
-      let noFeederType = 0, noSvcType = 0, terms = 0;
+      let noFeederType = 0, noSvcType = 0;
       for (const k of R.kiosks) {
         const len = Number(k.feederLength) || 0;
         if (len > 0) {
-          if (k.feederCable) add(this._cable(k.feederCable), len, 'demand', 'Demand feeders');
-          else noFeederType++;
-          terms += 2;
+          if (k.feederCable) {
+            add(this._cable(k.feederCable), len, 'demand', 'Demand feeders');
+            term(this._cable(k.feederCable), 1, 'demand', 'Demand feeders');
+          } else noFeederType++;
         }
         for (const e of (k.erfs || [])) {
           const l = Number(e.length) || 0;
           if (!(l > 0)) continue;
-          if (e.cableType) add(this._cable(e.cableType), l, 'demand', 'Demand services');
-          else noSvcType++;
-          terms += 2;
+          if (e.cableType) {
+            add(this._cable(e.cableType), l, 'demand', 'Demand services');
+            term(this._cable(e.cableType), 1, 'demand', 'Demand services');
+          } else noSvcType++;
         }
       }
       add({ key: 'EQ-MINISUB' }, (R.minisubs || []).length, 'demand', 'Demand minisubs');
       add({ key: 'EQ-KIOSK' }, R.kiosks.length, 'demand', 'Demand kiosks');
-      add({ key: 'LAB-TERM-LV' }, terms, 'demand', 'Demand feeders + services');
       if (noFeederType) warnings.push(`${noFeederType} kiosk feeder${noFeederType > 1 ? 's have' : ' has'} a length but no cable type, so ${noFeederType > 1 ? 'they are' : 'it is'} not counted.`);
       if (noSvcType) warnings.push(`${noSvcType} erf service${noSvcType > 1 ? 's have' : ' has'} a length but no cable type, so ${noSvcType > 1 ? 'they are' : 'it is'} not counted.`);
     }
@@ -170,6 +184,7 @@ const BOQ = {
           const def = PLAN_DEFS.route(et) || PLAN_DEFS.route(r.type) || {};
           const item = r.cableType ? this._cable(r.cableType) : { key: Rates.routeKey(et), desc: def.name || et, unit: 'm' };
           add(item, len, 'plan', `Plan ${(def.name || et)} routes`);
+          if (r.cableType && len > 0) term(item, 1, 'plan', `Plan ${(def.name || et)} routes`);
         }
         for (const el of (d.elements || [])) {
           if (el.type === 'minisub' || el.type === 'kiosk') {
@@ -232,9 +247,10 @@ const BOQ = {
             const nm = std ? std.name : (linked && linked.cableType) || (named && named.name) || null;
             if (nm) item = this._cable(nm);
           }
+          const typed = !!item && !String(item.key).startsWith('OHL-');
           if (!item) { item = { key: 'CBL-UNTYPED', unit: 'm' }; if (len > 0) untyped.push(p.name || c.id); }
           add(item, len, 'sld', 'SLD cables');
-          if (len > 0) add({ key: Number(p.voltage_kv) > 1 ? 'LAB-TERM-MV' : 'LAB-TERM-LV' }, 2 * Math.max(1, Number(p.num_parallel) || 1), 'sld', 'SLD cables');
+          if (typed && len > 0) term(item, Math.max(1, Number(p.num_parallel) || 1), 'sld', 'SLD cables');
         } else if (c.type === 'transformer') add(Object.assign(Rates.txItem(p), { unit: 'ea', cat: 'equip' }), 1, 'sld', 'SLD transformers');
         else if (c.type === 'cb') add(Object.assign(Rates.cbItem(p), { unit: 'ea', cat: 'prot' }), 1, 'sld', 'SLD breakers');
         else if (c.type === 'fuse') add(Object.assign(Rates.fuseItem(p), { unit: 'ea', cat: 'prot' }), 1, 'sld', 'SLD fuses');
@@ -271,8 +287,12 @@ const BOQ = {
           const spare = !(Number(w.load_va) > 0) && /spare/i.test(w.description || '');
           const m = Number(w.cable_m) || 0;
           if (spare || !(m > 0)) continue;
-          if (w.cable) add(this._cable(w.cable), m, 'db', 'DB circuits');
-          else if (Number(w.cable_mm2) > 0) add(Object.assign(Rates.fcCable(w.cable_mm2, poles), { unit: 'm', cat: 'cable' }), m, 'db', 'DB circuits');
+          const fc = w.cable ? this._cable(w.cable)
+            : Number(w.cable_mm2) > 0 ? Object.assign(Rates.fcCable(w.cable_mm2, poles), { unit: 'm', cat: 'cable' }) : null;
+          if (fc) {
+            add(fc, m, 'db', 'DB circuits');
+            if (opts.fcTerms) term(fc, 1, 'db', 'DB circuits');
+          }
         }
         if (typeof DBSchedule !== 'undefined' && DBSchedule._leakageGroups) {
           const { ratings } = DBSchedule._leakageGroups(comp);
@@ -304,7 +324,8 @@ const BOQ = {
         let qty = l.qty * (1 + w / 100);
         qty = l.unit === 'm' ? Math.round(qty * 10) / 10 : Math.ceil(qty - 1e-9);
         const amount = r.rate == null ? null : Math.round(qty * r.rate * 100) / 100;
-        return Object.assign({}, l, { measured: l.qty, qty, waste: w, rate: r.rate, amount, supplier: r.supplier });
+        const from = l.from.map(f => l.runs && l.runs[f] ? `${f} · ${l.runs[f]} run${l.runs[f] > 1 ? 's' : ''}` : f);
+        return Object.assign({}, l, { from, measured: l.qty, qty, waste: w, rate: r.rate, amount, supplier: r.supplier });
       }).filter(l => opts.zero || l.qty > 0);
       if (!ls.length) continue;
       ls.sort((a, b) => a.desc.localeCompare(b.desc, undefined, { numeric: true }));
@@ -319,7 +340,29 @@ const BOQ = {
     return out;
   },
 
-  _defaultOpts() { return { sources: this.defaultSources(), waste: true, merge: true, zero: false }; },
+  _defaultOpts() { return { sources: this.defaultSources(), waste: true, merge: true, terms: true, fcTerms: false, zero: false }; },
+
+  // Header › Quantities: counts shown beside each entry when the menu opens.
+  refreshMenuBadges() {
+    const set = (id, n, cls, word) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      b.hidden = !n;
+      b.className = 'q-badge ' + cls;
+      b.textContent = n ? `${n} ${word}` : '';
+    };
+    try {
+      const av = this.available();
+      const any = Object.values(av).some(Boolean);
+      const res = any ? this.compute(this._defaultOpts()) : null;
+      set('q-badge-boq', res ? res.missing.length : 0, 'amb', 'no rate');
+    } catch (e) { set('q-badge-boq', 0, 'amb', ''); }
+    try {
+      const rows = [...((CableSchedules.reticRows() || {}).rows || []), ...((CableSchedules.buildingRows() || {}).rows || [])];
+      const n = rows.filter(r => r.status && r.status.kind === 'bad').length;
+      set('q-badge-cables', n, 'bad', n === 1 ? 'problem' : 'problems');
+    } catch (e) { set('q-badge-cables', 0, 'bad', ''); }
+  },
 
   // ── Dialog ─────────────────────────────────────────────────────────
   open() {
@@ -408,8 +451,10 @@ const BOQ = {
       <div class="bq-sh" style="margin-top:6px">Options</div>
       ${chk('data-opt', 'waste', o.waste !== false, 'Apply each item’s waste %', 'Quantity × (1 + waste). Set per item in Rates', false)}
       ${chk('data-opt', 'merge', o.merge !== false, 'Merge the same item from different sources', 'One line per item; its sources listed on it', false)}
+      ${chk('data-opt', 'terms', o.terms !== false, 'Count terminations per cable size and type', 'Two ends per run, times parallel runs', false)}
+      ${chk('data-opt', 'fcTerms', !!o.fcTerms, 'Include final-circuit terminations', 'DB ways are usually priced per point', o.terms === false)}
       ${chk('data-opt', 'zero', !!o.zero, 'Show items with zero quantity', 'e.g. cables with no length yet', false)}
-      <div class="rt-note bq-rule">One cable is counted once. Where a run is in a schedule <b>and</b> drawn on a plan, the Demand, DB schedule or single-line length is used and the drawn route is not counted again.</div>`;
+      <div class="rt-note bq-rule">One cable is counted once. Where a run is in a schedule <b>and</b> drawn on a plan, the Demand, DB schedule or single-line length is used and the drawn route is not counted again. Its terminations follow the same rule.</div>`;
 
     const money = v => Rates.money(v);
     const qtyTxt = l => l.unit === 'm' ? Rates._group(l.qty.toFixed(1)) : Rates._group(String(l.qty));

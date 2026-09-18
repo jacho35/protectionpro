@@ -34,6 +34,11 @@ const Project = {
     document.getElementById('btn-export-template').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showTemplateEditor(); });
     document.getElementById('btn-boq').addEventListener('click', () => { window.closeAllToolbarMenus?.(); BOQ.open(); });
     document.getElementById('btn-cable-schedules').addEventListener('click', () => { window.closeAllToolbarMenus?.(); CableSchedules.open(); });
+    // Header › Quantities (every tab). Badges are counted when the menu opens.
+    document.getElementById('btn-q-boq').addEventListener('click', () => { window.closeAllToolbarMenus?.(); BOQ.open(); });
+    document.getElementById('btn-q-cables').addEventListener('click', () => { window.closeAllToolbarMenus?.(); CableSchedules.open(); });
+    document.getElementById('btn-q-rates').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Rates.open(); });
+    document.querySelector('#menu-quantities .toolbar-menu-btn').addEventListener('click', () => BOQ.refreshMenuBadges());
     document.getElementById('btn-rates').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Rates.open(); });
     document.getElementById('btn-export-settings').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportSettingsCSV(); });
     document.getElementById('btn-export-aflabels').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportArcFlashLabels(); });

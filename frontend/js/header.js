@@ -60,8 +60,8 @@ const Header = {
       return c.textContent.replace(/\s+/g, ' ').trim();
     };
     const add = (btn, where, labelOverride) => {
-      if (!btn || !btn.id || seen.has(btn.id) || btn.disabled || btn.hidden) return;
-      const label = labelOverride || text(btn);
+      if (!btn || !btn.id || seen.has(btn.id) || btn.disabled || btn.hidden || btn.hasAttribute('data-search-skip')) return;
+      const label = labelOverride || text(btn.querySelector('.q-t') || btn);   // rich items: title only
       if (!label) return;
       seen.add(btn.id);
       const sc = btn.querySelector('.dropdown-shortcut, .k');

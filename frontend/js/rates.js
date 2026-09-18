@@ -22,6 +22,7 @@
 const Rates = {
   CATS: [
     { id: 'cable', label: 'Cables' },
+    { id: 'term', label: 'Terminations' },
     { id: 'equip', label: 'Equipment' },
     { id: 'prot', label: 'Protective devices' },
     { id: 'civil', label: 'Civils & labour' },
@@ -53,6 +54,14 @@ const Rates = {
   crossingKey(size) { return 'CIV-XING-' + this.slug(size || '110'); },
   routeKey(type) { return (['conduit', 'cable_tray'].includes(type) ? 'CNT-' : 'CBL-ROUTE-') + this.slug(type); },
   accKey(kind) { return 'ACC-' + this.slug(kind); },
+
+  // Terminations are priced per cable size and type: one TRM- item per cable,
+  // for one cable end complete (gland, lugs, shroud, labour).
+  termItem(cable) {
+    const name = cable.desc || '';
+    const mv = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.some(c => c.name === name && Number(c.voltage_kv) > 1);
+    return { key: 'TRM-' + String(cable.key).replace(/^CBL-/, ''), desc: `Termination, ${name}${mv ? ' (MV)' : ''}`, unit: 'ea', cat: 'term' };
+  },
 
   // Final-circuit cable of a DB way: the building library's T+E (1P/2P) or
   // 4-core SWA (3P/4P) of that size, else a generic Cu final-circuit item.
@@ -121,6 +130,10 @@ const Rates = {
     // Cables
     for (const c of (typeof STANDARD_CABLES !== 'undefined' ? STANDARD_CABLES : [])) add(this.cableKey(c.name), c.name, 'm', 'cable');
     for (const c of (typeof BUILDING_CABLES !== 'undefined' ? BUILDING_CABLES : [])) add(this.cableKey(c.name), c.name, 'm', 'cable');
+    for (const c of [...(typeof STANDARD_CABLES !== 'undefined' ? STANDARD_CABLES : []), ...(typeof BUILDING_CABLES !== 'undefined' ? BUILDING_CABLES : [])]) {
+      const t = this.termItem({ key: this.cableKey(c.name), desc: c.name });
+      add(t.key, t.desc, 'ea', 'term');
+    }
     for (const c of (typeof STANDARD_OVERHEAD_LINES !== 'undefined' ? STANDARD_OVERHEAD_LINES : [])) add('OHL-' + this.slug(c.name), c.name + ' overhead conductor', 'm', 'cable');
     if (typeof PLAN_DEFS !== 'undefined') {
       for (const [t, d] of Object.entries(PLAN_DEFS.routes || {})) {
@@ -168,8 +181,6 @@ const Rates = {
       for (const [t, d] of Object.entries(PLAN_DEFS.trenchTypes || {})) add(this.trenchKey(t), `${d.name} (${d.width} m wide × ${d.depth} m deep)`, 'm', 'civil');
       for (const s of ((PLAN_DEFS.crossings || {}).sizes || [])) add(this.crossingKey(s), `Road crossing, ${s} mm sleeve`, 'ea', 'civil');
     }
-    add('LAB-TERM-LV', 'LV cable termination (per cable end)', 'ea', 'civil');
-    add('LAB-TERM-MV', 'MV cable termination (per cable end)', 'ea', 'civil');
     add('LAB-JB-SPLICE', 'Junction-box splice (per core joined)', 'ea', 'civil');
     add('LAB-JB-TERM', 'Junction-box cable termination', 'ea', 'civil');
     return out;
@@ -178,6 +189,7 @@ const Rates = {
   guessCat(key) {
     const k = String(key || '');
     if (/^(CBL|OHL)-/.test(k)) return 'cable';
+    if (/^TRM-/.test(k)) return 'term';
     if (/^(MCB|ELU|CB|FUSE|ACC|SW)-/.test(k)) return 'prot';
     if (/^(CIV|LAB|CNT)-/.test(k)) return 'civil';
     return 'equip';
@@ -229,7 +241,8 @@ const Rates = {
   // Keys the current project uses (from the BOQ's quantity take-off).
   usedLines() {
     if (typeof BOQ === 'undefined' || !BOQ.collect) return [];
-    try { return BOQ.collect().lines; } catch (e) { console.warn('BOQ take-off failed', e); return []; }
+    // Default take-off (not the BOQ dialog's current ticks), so "In this project" is stable.
+    try { return BOQ.collect(BOQ._defaultOpts()).lines; } catch (e) { console.warn('BOQ take-off failed', e); return []; }
   },
 
   // Catalogue ∪ imported items ∪ items the project uses ∪ stored orphans.
@@ -320,6 +333,7 @@ const Rates = {
           <div class="rt-empty" id="rt-empty" hidden></div>
         </div>
         <div class="rt-stat" id="rt-stat"></div>
+        <div class="rt-note" id="rt-term-note" hidden><b>One termination item per cable.</b> Every cable in the libraries has a matching <b>TRM-</b> key, so a cable added in Settings gets its termination item too. The rate is for one cable end, complete: gland, lugs, shroud and labour. Final-circuit wiring is only counted when the Bill of quantities option is ticked.</div>
         <div class="rt-note"><b>Editing in Excel:</b> Export, change <b>Rate</b>, <b>Waste %</b> or <b>Supplier code</b>, and import the file back. Rows are matched on <b>Key</b>, which never changes, so keep that column as it is. New keys with a description become new items. You see every change before it is applied.</div>
       </main>
       <footer class="rt-foot">
@@ -424,6 +438,7 @@ const Rates = {
     this._renderHeadTags();
     this._renderCounts();
     this._renderBanner();
+    m.querySelector('#rt-term-note').hidden = this.tab !== 'term';
     this.renderRows();
   },
 
@@ -482,7 +497,8 @@ const Rates = {
       return `<tr data-key="${escHtml(r.key)}" data-cat="${r.cat}">
         <td class="rt-ro rt-code">${escHtml(r.key)}</td><td class="rt-ro">${d}</td><td class="rt-ro">${escHtml(r.unit || '')}</td>
         <td data-td="rate" class="${v.rate == null && r.used ? 'rt-nr' : ''}"><input class="rt-gc rt-num" data-f="rate" inputmode="decimal" value="${this._rateText(v.rate)}" placeholder="No rate" aria-label="Rate for ${d}"></td>
-        <td><input class="rt-gc rt-num" data-f="waste" inputmode="decimal" value="${v.waste}" aria-label="Waste % for ${d}"></td>
+        ${r.cat === 'term' ? '<td class="rt-ro rt-num" title="Terminations are counted per cable end; no waste allowance">—</td>'
+          : `<td><input class="rt-gc rt-num" data-f="waste" inputmode="decimal" value="${v.waste}" aria-label="Waste % for ${d}"></td>`}
         <td><input class="rt-gc" data-f="supplier" value="${escHtml(v.supplier)}" aria-label="Supplier code for ${d}"></td>
         <td class="rt-ro">${pill(r)}</td></tr>`;
     }).join('');

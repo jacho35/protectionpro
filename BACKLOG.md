@@ -307,6 +307,17 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Quantities menu in the header; terminations itemized per cable (2026-09-18)
+- **Header › Quantities** (next to Project, on every tab and project type) opens Bill of quantities, Cable schedules and Rate library.
+  - Badges are counted when the menu opens: BOQ lines with no rate, and cable-schedule failures.
+  - The Output › Quantities copies on the Single-line tab stay, but are kept out of Ctrl K so each dialog is listed once.
+- **Terminations per cable size and type.**
+  - The rate library gains a Terminations tab: one `TRM-<cable key>` item per library cable, priced per cable end, with no waste.
+  - The generic `LAB-TERM-LV/MV` items are retired. A rate set on them stays visible as "Not in library".
+  - The BOQ counts 2 ends per run × parallel runs for Demand feeders/services, SLD cables and typed plan routes. Each line lists its source and run count.
+  - A run skipped by the counted-once rule skips its terminations too.
+  - Two new options: "Count terminations per cable size and type" (on) and "Include final-circuit terminations" (off; DB ways are usually priced per point).
+
 ### Rate library, Bill of quantities and Cable schedules (2026-09-18)
 - **Rate library** (`frontend/js/rates.js`, Output › Quantities › Rate Library…). Every item the app can count has a fixed Key generated from the libraries and ratings, about 490 items:
   - Cables: `CBL-95-AL-XLPE-LV` from the cable name.
