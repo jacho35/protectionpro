@@ -130,8 +130,8 @@ const PlanEngine = {
       for (const t of pm.trenches) for (const pt of t.points) acc(pt.x, pt.y);
       for (const rm of (pm.rooms || [])) for (const pt of rm.points) acc(pt.x, pt.y);
     }
-    // Fit also to a session DXF underlay if present.
-    if (typeof PlanDxfImport !== 'undefined' && PlanDxfImport._overlay) {
+    // Fit also to the floor's visible DXF drawings.
+    if (typeof PlanDxfImport !== 'undefined') {
       const ext = PlanDxfImport.extentWorld();
       if (ext) { acc(ext.minX, ext.minY); acc(ext.maxX, ext.maxY); }
     }
@@ -220,8 +220,8 @@ const PlanEngine = {
       ctx.restore();
     }
 
-    // DXF reference underlay (session-only, behind markup)
-    if (typeof PlanDxfImport !== 'undefined' && PlanDxfImport._overlay) PlanDxfImport.draw(ctx, this.view.zoom);
+    // Imported DXF drawings (behind markup)
+    if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.draw(ctx, this.view.zoom, this._visibleWorldRect());
 
     // Crop box: dim everything outside the export rectangle.
     if (pm.cropBox) {
@@ -570,6 +570,8 @@ const PlanEngine = {
       try { ctx.drawImage(img, 0, 0); } catch (e) { /* not decoded */ }
       ctx.restore();
     }
+    // DXF drawings, coloured for the export's white sheet.
+    if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.draw(ctx, scale, worldRect, { dark: false, fg: '#1f2937' });
     // Markup, same z-order as the screen (no selection/tool overlay)
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, false);
     for (const t of pm.trenches) this._drawTrench(ctx, t, false);

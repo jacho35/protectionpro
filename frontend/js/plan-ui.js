@@ -124,15 +124,20 @@ const PlanUI = {
     // Background plans: visibility, opacity, PDF page-nav, remove.
     html += `<div class="plan-plans"><div class="plan-layers-title">Background Plans
       <button class="plan-cleanup-btn" data-role="cleanup" title="Delete unclaimed/orphaned plan images on the server">Clean</button></div>`;
-    const dxf = pm.dxfUnderlay;
-    if (!pm.plans.length && !dxf) html += `<div class="plan-props-empty" style="padding:2px">No plan imported.</div>`;
-    // The DXF trace-over reference is a background layer of this floor too, and
-    // now that it persists it needs a visible way off the drawing.
-    if (dxf) {
+    const dxfs = (typeof PlanDxfImport !== 'undefined') ? PlanDxfImport.list() : [];
+    if (!pm.plans.length && !dxfs.length) html += `<div class="plan-props-empty" style="padding:2px">No plan imported.</div>`;
+    // Imported DXF drawings are background layers of this floor too.
+    for (const D of dxfs) {
+      const loaded = !!PlanDxfImport.dataOf(D);
+      const id = escHtml(D.id);
       html += `<div class="plan-plan-row">
-        <label class="plan-plan-vis"><input type="checkbox" data-role="dxf-vis" ${dxf.hidden ? '' : 'checked'}></label>
-        <span class="plan-plan-name" title="${escHtml(dxf.name)} — ${dxf.count} entities">◫ ${escHtml(dxf.name)}</span>
-        <button class="plan-plan-del" data-role="remove-dxf" title="Remove the DXF reference underlay">✕</button>
+        <label class="plan-plan-vis"><input type="checkbox" data-role="dxf-vis" data-dxf="${id}" ${D.hidden ? '' : 'checked'}></label>
+        <span class="plan-plan-name" title="${escHtml(D.name)} (DXF) — ${D.count} items${loaded ? '' : ' — loading…'}">📐 ${escHtml(D.name)}</span>
+        <input type="range" class="plan-plan-op" data-role="dxf-opacity" data-dxf="${id}" min="0.1" max="1" step="0.1" value="${(typeof D.opacity === 'number' ? D.opacity : 1)}">
+        <button class="plan-plan-mini" data-role="dxf-manage" data-dxf="${id}" title="Layers, blocks &amp; attributes — convert to plan items"${loaded ? '' : ' disabled'}>◫</button>
+        <button class="plan-plan-mini" data-role="dxf-move" data-dxf="${id}" title="Drag to reposition this DXF">✥</button>
+        <button class="plan-plan-mini" data-role="dxf-align" data-dxf="${id}" title="2-point align this DXF${D.unitM ? ' (keeps its true scale)' : ''}">⤢</button>
+        <button class="plan-plan-del" data-role="remove-dxf" data-dxf="${id}" title="Remove this DXF from the floor">✕</button>
       </div>`;
     }
     for (const P of pm.plans) {
@@ -175,6 +180,9 @@ const PlanUI = {
     } else if (role === 'opacity') {
       const p = this._planById(e.target.dataset.plan);
       if (p) { p.opacity = parseFloat(e.target.value); PlanEngine.requestDraw({ bg: true }); }
+    } else if (role === 'dxf-opacity') {
+      const d = PlanDxfImport.byId(e.target.dataset.dxf);
+      if (d) { d.opacity = parseFloat(e.target.value); PlanMarkup.markDirty(); PlanEngine.requestDraw({ bg: true }); }
     }
   },
 
@@ -184,14 +192,16 @@ const PlanUI = {
     if (planCtl) {
       const role = planCtl.dataset.role;
       if (role === 'cleanup') { this._cleanup(); return; }
-      if (role === 'remove-dxf') {
-        UI.confirm('Remove the DXF reference underlay from this floor?', { danger: true, okText: 'Remove' }).then(ok => {
-          if (!ok || typeof PlanDxfImport === 'undefined') return;
-          PlanDxfImport.clear();
-          this.renderPalette();
-        });
+      const dxf = planCtl.dataset.dxf && (typeof PlanDxfImport !== 'undefined') && PlanDxfImport.byId(planCtl.dataset.dxf);
+      if (role === 'remove-dxf' && dxf) {
+        PlanDxfImport.remove(dxf.id);
+        this.renderPalette();
+        UI.toast(`DXF "${dxf.name}" removed — press Ctrl+Z or ↶ to undo.`, 'info');
         return;
       }
+      if (role === 'dxf-manage' && dxf && typeof PlanDxfManager !== 'undefined') { PlanDxfManager.open(dxf.id); return; }
+      if (role === 'dxf-move' && dxf) { PlanTools.set('nudgeplan', { dxfId: dxf.id }); return; }
+      if (role === 'dxf-align' && dxf) { PlanTools.set('align', { dxfId: dxf.id, keepScale: !!dxf.unitM }); return; }
       const p = planCtl.dataset.plan && this._planById(planCtl.dataset.plan);
       if (role === 'remove-plan' && p) {
         const pm = AppState.planMarkup;
@@ -267,12 +277,11 @@ const PlanUI = {
         const p = this._planById(e.target.dataset.plan);
         if (p) { p.visible = e.target.checked; PlanEngine.requestDraw({ bg: true }); }
       } else if (role === 'dxf-vis') {
-        const d = AppState.planMarkup.dxfUnderlay;
+        const d = typeof PlanDxfImport !== 'undefined' && PlanDxfImport.byId(e.target.dataset.dxf);
         if (d) {
           d.hidden = !e.target.checked;
-          if (typeof PlanDxfImport !== 'undefined' && PlanDxfImport._overlay) PlanDxfImport._overlay.hidden = d.hidden;
           if (typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty();
-          PlanEngine.requestDraw({ bg: true });
+          PlanEngine.requestDraw({ all: true });
         }
       }
     });

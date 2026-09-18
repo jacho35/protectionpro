@@ -99,6 +99,11 @@ const PlanTools = {
         if (vi >= 0) return { x: r.points[vi].x, y: r.points[vi].y, snapped: 'vtx', targetId: r.id };
       }
     }
+    // imported DXF geometry (ends, mids, vertices, centres, block inserts)
+    if (s.snapDxf !== false && o.wantDxf !== false && typeof PlanDxfImport !== 'undefined') {
+      const d = PlanDxfImport.snap(pt, 10 / z);
+      if (d) return { x: d.x, y: d.y, snapped: 'dxf', dxfKind: d.kind, targetId: null };
+    }
     // grid (only when calibrated)
     if (s.snapGrid) {
       const f = PlanEngine.factor();
@@ -110,12 +115,18 @@ const PlanTools = {
     return { x: pt.x, y: pt.y, snapped: null, targetId: null };
   },
 
+  // The background being moved/aligned: a plan image or an imported DXF.
+  bgTarget(planId, dxfId) {
+    if (dxfId) return (typeof PlanDxfImport !== 'undefined') ? PlanDxfImport.byId(dxfId) : null;
+    return AppState.planMarkup.plans.find(x => x.id === planId) || null;
+  },
+
   // Draw a small ring at a snapped point (shared by tools).
   _drawSnapRing(ctx, x, y, kind, zoom) {
     if (!kind) return;
     const r = 7 / zoom;
     ctx.save();
-    ctx.strokeStyle = kind === 'el' ? '#22c55e' : (kind === 'vtx' ? '#2563eb' : '#94a3b8');
+    ctx.strokeStyle = kind === 'el' ? '#22c55e' : (kind === 'vtx' ? '#2563eb' : kind === 'dxf' ? '#d946ef' : '#94a3b8');
     ctx.lineWidth = 1.5 / zoom;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
@@ -798,10 +809,11 @@ PlanTools.register({
 // ─────────────────────────────────────────────────────────────────────────
 PlanTools.register({
   id: 'nudgeplan', cursor: 'move', _drag: null,
-  onActivate(opts) { this._planId = opts && opts.planId; this._drag = null; },
+  // opts.planId → a background image; opts.dxfId → an imported DXF drawing.
+  onActivate(opts) { this._planId = opts && opts.planId; this._dxfId = opts && opts.dxfId; this._drag = null; },
   cancel() { this._drag = null; },
   onDown(pt) {
-    const p = AppState.planMarkup.plans.find(x => x.id === this._planId);
+    const p = PlanTools.bgTarget(this._planId, this._dxfId);
     if (!p) return;
     this._drag = { p, from: pt, startX: p.offX || 0, startY: p.offY || 0 };
   },
@@ -826,20 +838,37 @@ PlanTools.register({
 // ─────────────────────────────────────────────────────────────────────────
 PlanTools.register({
   id: 'align', cursor: 'crosshair', _clicks: null, _hover: null,
+  // opts.planId → a background image; opts.dxfId → an imported DXF.
+  // opts.keepScale → rotate + move only (a true-scale DXF must not be
+  // stretched to fit a traced raster).
   onActivate(opts) {
-    this._planId = opts && opts.planId; this._clicks = []; this._hover = null;
-    UI.toast('Align: click a plan feature, then where it belongs (×2).', 'info');
+    this._planId = opts && opts.planId; this._dxfId = opts && opts.dxfId;
+    this._keepScale = !!(opts && opts.keepScale);
+    this._clicks = []; this._hover = null;
+    UI.toast(`Align${this._keepScale ? ' (keep scale)' : ''}: click a feature on the ${this._dxfId ? 'DXF' : 'plan'}, then where it belongs (×2).`, 'info');
   },
   cancel() { this._clicks = []; },
-  onMove(pt) { this._hover = pt; PlanEngine.requestDraw({ fg: true }); },
+  // Source clicks (1st, 3rd) snap to the drawing being aligned; destination
+  // clicks snap to everything else.
+  _snapClick(pt) {
+    const src = this._clicks.length % 2 === 0;
+    if (this._dxfId && typeof PlanDxfImport !== 'undefined') {
+      const d = PlanDxfImport.snap(pt, 10 / PlanEngine.view.zoom, src ? { only: this._dxfId } : { exclude: this._dxfId });
+      if (d) return { x: d.x, y: d.y, snapped: 'dxf' };
+      if (src) return { x: pt.x, y: pt.y, snapped: null };
+    }
+    return src ? { x: pt.x, y: pt.y, snapped: null } : PlanTools.snap(pt, { wantDxf: !this._dxfId });
+  },
+  onMove(pt) { this._hover = this._snapClick(pt); PlanEngine.requestDraw({ fg: true }); },
   onDown(pt) {
-    this._clicks.push({ x: pt.x, y: pt.y });
+    const s = this._snapClick(pt);
+    this._clicks.push({ x: s.x, y: s.y });
     if (this._clicks.length === 4) this._solve();
     PlanEngine.requestDraw({ fg: true });
   },
   onKey(e) { if (e.key === 'Escape') { this._clicks = []; PlanTools.set('select'); return true; } return false; },
   _solve() {
-    const p = AppState.planMarkup.plans.find(x => x.id === this._planId);
+    const p = PlanTools.bgTarget(this._planId, this._dxfId);
     const [src1, dst1, src2, dst2] = this._clicks;
     this._clicks = [];
     if (!p) return;
@@ -850,20 +879,30 @@ PlanTools.register({
     const vdx = dst2.x - dst1.x, vdy = dst2.y - dst1.y;
     const ls = Math.hypot(vsx, vsy);
     if (ls < 1e-6) { UI.toast('Pick two distinct plan features.', 'warn'); return; }
-    const scale = Math.hypot(vdx, vdy) / ls;
+    const keep = this._keepScale;
+    const scale = keep ? ((typeof p.scaleAdj === 'number' && p.scaleAdj > 0) ? p.scaleAdj : 1) : Math.hypot(vdx, vdy) / ls;
     const theta = Math.atan2(vdy, vdx) - Math.atan2(vsy, vsx);
     const c = Math.cos(theta), sn = Math.sin(theta);
-    // off = dst1 - scale·R(theta)·s1
-    p.offX = dst1.x - scale * (s1.x * c - s1.y * sn);
-    p.offY = dst1.y - scale * (s1.x * sn + s1.y * c);
+    // off = dst - scale·R(theta)·src — through the first pair, or (scale
+    // held) through the pairs' midpoints so the residual splits evenly.
+    const sa = keep ? { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 } : s1;
+    const da = keep ? { x: (dst1.x + dst2.x) / 2, y: (dst1.y + dst2.y) / 2 } : dst1;
+    p.offX = da.x - scale * (sa.x * c - sa.y * sn);
+    p.offY = da.y - scale * (sa.x * sn + sa.y * c);
     p.rotation = ((theta * 180 / Math.PI) % 360 + 360) % 360;
     p.scaleAdj = scale;
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
-    PlanEngine.requestDraw({ bg: true });
-    UI.toast('Plan aligned.', 'success');
+    PlanEngine.requestDraw({ all: true });
+    let msg = (this._dxfId ? 'DXF' : 'Plan') + ' aligned.';
+    if (keep) {
+      const err = Math.abs(Math.hypot(vdx, vdy) - ls * scale) * (PlanEngine.factor() || 0);
+      if (err > 0.05) msg += ` The two distances differ by ${err.toFixed(2)} m — check the scale of the other drawing.`;
+    }
+    UI.toast(msg, 'success');
     PlanTools.set('select');
   },
   drawOverlay(ctx, zoom) {
+    if (this._hover && this._hover.snapped) PlanTools._drawSnapRing(ctx, this._hover.x, this._hover.y, this._hover.snapped, zoom);
     const cols = ['#22c55e', '#22c55e', '#f59e0b', '#f59e0b'];
     this._clicks.forEach((p, i) => {
       ctx.save(); ctx.fillStyle = cols[i]; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1 / zoom;
