@@ -307,6 +307,18 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Lightning risk: named assessments saved in the project + PDF report (2026-09-18)
+- **Assessments saved in the project.** A project now holds any number of named lightning assessments (one per structure) in `AppState.lightningAssessments`: `{id, name, inputs, result, resultKey, resultAt}`, plus `lightningActiveId`. Inputs save to the active assessment **as they're typed** (debounced, and on close), not only on Assess. The last result is kept with the exact inputs it came from, so reopening an assessment that has a result opens on its results. An assessment picker at the top of the step list switches between them, with New, Duplicate, Rename and Delete. Old projects migrate: the single `lightningRisk` input set becomes "Assessment 1", and `lightningRisk` is still written (the active assessment's inputs) so an older build opens the project.
+- **Out-of-date results are flagged.** When the inputs differ from the ones a result was calculated with, the results page shows an "inputs have changed" banner with **Re-assess**. Export warns before producing a report that mixes new inputs with an old result.
+- **Export report (PDF)** from the results page (`LightningReport`, jsPDF + autoTable like the other reports, A4 portrait):
+  - title and project details (project number, client, engineer, checked by when set), assessment name, calculation and report dates
+  - a coloured verdict box with the minimum protection
+  - every input grouped by step, with its IEC symbol and the dialog's own labels and factors
+  - strike frequency, the risk components, the protection ladder (minimum highlighted) and the basis and simplifications
+  - page footers
+  - exponents written as 10^-5, since the PDF's built-in font has no superscripts
+- **Verified** headlessly against the real backend: legacy migration, autosave without running (and the dirty flag), a result stored on the assessment, a second assessment opening on defaults and keeping its own inputs, switching back reopening the first one's results, a save/load round trip keeping both assessments and the result, the stale banner after an edit, export (warning → download) producing a 2-page A4 PDF with the expected content, and Re-assess clearing the banner.
+
 ### Lightning risk dialog: guided, explained, verdict-first (2026-09-18)
 - The IEC 62305-2 dialog was one flat grid of 17 symbol-labelled fields (C_D, L_F, h_z, r_t, r_f, r_p, P_B, P_SPD) that never said what the study decides or what a pass is. It is now a **four-step dialog**: Structure & site → People & fire → Service lines → Existing protection → Results. There's a step list on the left and a live-estimate panel on the right.
 - **Step 1 opens with "What this assessment decides"**: R₁ (loss of human life), the tolerable limit R_T = 1 × 10⁻⁵/yr, that the study finds the lowest LPS class + SPD level that meets it, what you'll need, and the scope (single zone; R₂–R₄ not assessed).

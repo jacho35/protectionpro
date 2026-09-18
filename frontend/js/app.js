@@ -2934,23 +2934,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  document.getElementById('btn-lightning').addEventListener('click', () => {
-    // Defaults first, so a new project never inherits the previous one's
-    // values left in the dialog; then this project's saved inputs.
-    LightningUI.applyDefaults();
-    restoreLightningParams(AppState.lightningRisk);
-    document.getElementById('lightning-results').innerHTML = '';
-    document.getElementById('lightning-modal').style.display = '';
-    LightningUI.open();
-  });
+  // The dialog, its named assessments and the PDF report live in lightning.js;
+  // it reads and writes the form through these two functions.
+  LightningUI.collect = collectLightningParams;
+  LightningUI.restore = restoreLightningParams;
   LightningUI.init();
+  document.getElementById('btn-lightning').addEventListener('click', () => LightningUI.openModal());
 
   document.getElementById('btn-run-lightning').addEventListener('click', async () => {
     const params = collectLightningParams();
-    AppState.lightningRisk = params;  // persist inputs with the project
+    LightningUI.saveInputs();   // the assessment keeps what was entered, run or not
     _setBusy('btn-run-lightning', true);
     try {
       const res = await API.runLightningRisk(params);
+      LightningUI.storeResult(params, res);
       LightningUI.showResults(res);
       document.getElementById('status-info').textContent = 'Lightning risk assessment complete.';
     } catch (e) {
@@ -3663,11 +3660,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'raceway-modal') e.target.style.display = 'none';
   });
 
-  document.getElementById('btn-close-lightning').addEventListener('click', () => {
-    document.getElementById('lightning-modal').style.display = 'none';
-  });
+  // Close through LightningUI so a pending autosave of the inputs lands first.
+  document.getElementById('btn-close-lightning').addEventListener('click', () => LightningUI.close());
   document.getElementById('lightning-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'lightning-modal') e.target.style.display = 'none';
+    if (e.target.id === 'lightning-modal') LightningUI.close();
   });
 
   document.getElementById('btn-close-study-manager').addEventListener('click', () => {

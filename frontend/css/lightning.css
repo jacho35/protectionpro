@@ -116,6 +116,20 @@
 .lr-foot .btn.btn-primary:hover { background: var(--accent-hover); }
 .lr-foot [hidden] { display: none; }
 
+/* Assessment picker */
+.lr-assess { display: flex; flex-direction: column; gap: 6px; padding: 0 4px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+.lr-assess .lr-nav-h { padding: 0 4px; }
+.lr-assess-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.lr-mini { height: 24px; padding: 0 8px; border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-primary);
+  color: var(--text-secondary); font-size: 11.5px; cursor: pointer; font-family: var(--font-family); }
+.lr-mini:hover { color: var(--text-primary); border-color: var(--accent); }
+.lr-mini-danger:hover { color: var(--danger); border-color: var(--danger); }
+.lr-stale { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.4;
+  border: 1px solid rgba(245,124,0,.5); background: rgba(245,124,0,.1); }
+.lr-stale[hidden] { display: none; }
+.lr-stale button { margin-left: auto; flex-shrink: 0; }
+.lr-saved-at { font-size: 11.5px; color: var(--text-muted); }
+
 /* Results */
 .lr-verdict { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px; }
 .lr-verdict.single { grid-template-columns: 1fr; }
@@ -156,7 +170,10 @@
   .modal-content.lr-dialog { height: calc(100vh - 16px); width: calc(100vw - 16px); }
   .lr-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
   .lr-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border-color); padding: 8px; }
-  .lr-nav-h, .lr-sd { display: none; }
+  .lr-nav > .lr-nav-h, .lr-sd { display: none; }
+  .lr-assess { flex-direction: row; align-items: center; border-bottom: 0; border-right: 1px solid var(--border-color); padding: 0 8px 0 0; margin: 0; flex-shrink: 0; }
+  .lr-assess .lr-nav-h, .lr-assess-actions .lr-mini:not(#lr-assess-new) { display: none; }
+  .lr-assess .lr-sel { width: 150px; }
   .lr-step { width: auto; flex-shrink: 0; align-items: center; }
   /* The estimate becomes a compact strip so the form keeps the height. */
   .lr-rail { border-left: 0; border-top: 1px solid var(--border-color); flex-direction: row; gap: 6px; padding: 8px 10px; overflow-x: auto; }

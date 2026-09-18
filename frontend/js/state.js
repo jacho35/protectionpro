@@ -1098,7 +1098,10 @@ const AppState = {
     this.reticulation = this._defaultReticulation();
     this.reticResults = null;
     this.planMarkup = this._defaultPlanMarkup();
-    this.lightningRisk = null;   // saved IEC 62305-2 form inputs
+    // IEC 62305-2 lightning risk: named assessments (one per structure), each
+    // {id, name, inputs, result, resultKey, updatedAt} — see lightning.js.
+    this.lightningAssessments = [];
+    this.lightningActiveId = null;
     this.raceways = [];
     // Clear annotation drag offsets + hidden result boxes
     if (typeof Annotations !== 'undefined') {
@@ -1269,7 +1272,14 @@ const AppState = {
       // result computed on an older engine version is detected as stale on load.
       resultsMeta: (this.resultsMeta && Object.keys(this.resultsMeta).length)
         ? this.resultsMeta : undefined,
-      lightningRisk: this.lightningRisk || undefined,
+      lightningAssessments: (this.lightningAssessments && this.lightningAssessments.length) ? this.lightningAssessments : undefined,
+      lightningActiveId: this.lightningActiveId || undefined,
+      // Pre-assessments field (the active assessment's inputs), still written
+      // so an older build of the app opens the project with its inputs.
+      lightningRisk: (() => {
+        const a = (this.lightningAssessments || []).find(x => x.id === this.lightningActiveId) || (this.lightningAssessments || [])[0];
+        return a ? a.inputs : undefined;
+      })(),
       raceways: this.raceways.length ? this.raceways : undefined,
     };
   },
@@ -1574,7 +1584,17 @@ const AppState = {
     this.loadFlowCases = Array.isArray(data.loadFlowCases) ? data.loadFlowCases : [];
     this.interlockLogic = (data.interlockLogic && Array.isArray(data.interlockLogic.nodes))
       ? data.interlockLogic : { nodes: [], links: [] };
-    this.lightningRisk = data.lightningRisk || null;
+    // Named assessments; a project from before them carries one set of inputs
+    // (lightningRisk), which becomes "Assessment 1".
+    if (Array.isArray(data.lightningAssessments) && data.lightningAssessments.length) {
+      this.lightningAssessments = data.lightningAssessments.filter(a => a && a.id);
+    } else if (data.lightningRisk && typeof data.lightningRisk === 'object') {
+      this.lightningAssessments = [{ id: 'lra_1', name: 'Assessment 1', inputs: data.lightningRisk, result: null, resultKey: null, updatedAt: null }];
+    } else {
+      this.lightningAssessments = [];
+    }
+    this.lightningActiveId = this.lightningAssessments.some(a => a.id === data.lightningActiveId)
+      ? data.lightningActiveId : ((this.lightningAssessments[0] || {}).id || null);
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
     this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];
