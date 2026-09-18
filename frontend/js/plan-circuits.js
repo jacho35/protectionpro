@@ -40,6 +40,13 @@ const PlanCircuits = {
   INFRA: new Set(['bd_utility', 'bd_transformer', 'bd_generator', 'bd_db', 'bd_switchboard', 'bd_riser', 'bd_jb']),
 
   isLoadDevice(type) { return !!this.LOAD_TYPES[type]; },
+  // A device that puts load on its way: a load type, or any circuit device the
+  // user gave an explicit load (an isolator feeding an aircon unit). Switches,
+  // detectors, JBs etc. ride a way without being "points" on it.
+  carriesLoad(el) {
+    const p = (el && el.props) || {};
+    return this.isLoadDevice(el && el.type) || (p.load_va != null && p.load_va !== '');
+  },
   // Any building device that can be assigned to a distribution-board circuit
   // (loads plus switches/isolators/ELV points — everything but infrastructure).
   isCircuitDevice(type) { return typeof type === 'string' && type.startsWith('bd_') && !this.INFRA.has(type); },
@@ -312,6 +319,9 @@ const PlanCircuits = {
   _boardById(id) { return AppState.planAllElements().find(e => e.id === id && e.type === 'bd_db') || null; },
   // The SLD distribution_board a plan DB links to (or null when unsynced).
   _sldComp(dbEl) { return (dbEl && dbEl.sldId) ? AppState.components.get(dbEl.sldId) : null; },
+  // Any plan board with no live SLD board yet — it has no schedule to write
+  // into, so a circuit sync must link it (Sync with SLD) first.
+  hasUnlinkedBoards() { return this.boardEls().some(b => !this._sldComp(b.el)); },
 
   // ── Phase A: auto-load ──
   // Count tagged devices per (board, way), write each way's load_va + plan_qty
@@ -348,6 +358,15 @@ const PlanCircuits = {
         let c = p.circuitWid ? comp.props.circuits.find(x => x.id === p.circuitWid) : null;
         if (!c) c = comp.props.circuits.find(x => String(x.way) === num && x.type !== 'feeder_db');
         if (c) wayId = c.id;
+        // A load-less device (switch, detector…) follows its way but never
+        // mints one or counts as a point on it — tagging a switch to a spare
+        // number used to create an empty "Circuit — 1 points" row.
+        if (!this.carriesLoad(el)) {
+          if (c) { p.circuitWid = c.id; p.circuitNo = c.way; }
+          continue;
+        }
+      } else if (!this.carriesLoad(el)) {
+        continue;
       }
       const key = wayId ? ('#' + wayId) : ('n:' + num);
       if (!agg.has(p.circuitDbId)) agg.set(p.circuitDbId, new Map());
@@ -373,7 +392,7 @@ const PlanCircuits = {
         // number that has no schedule row yet → mint one.
         let c = a.wayId ? comp.props.circuits.find(x => x.id === a.wayId) : null;
         if (!c) c = comp.props.circuits.find(x => String(x.way) === a.num && x.type !== 'feeder_db');
-        if (!c) { c = this._newWay(comp, a.num, a.classes); comp.props.circuits.push(c); }
+        if (!c) { c = this._newWay(comp, a.num, a.classes); this._insertWay(comp, c); }
         if (!c.id) c.id = this._genWayId();
         // Backfill device tags with the resolved id so future renumbering can
         // never redirect their load; keep circuitNo in sync for display.
@@ -453,6 +472,17 @@ const PlanCircuits = {
       demand_factor: base.df != null ? base.df : 1,
       power_factor: base.pf != null ? base.pf : 0.9,
     });
+  },
+
+  // Place a freshly-minted way in way-number order (tagging way 3 before way 1
+  // used to leave row 3 above row 1). Inserts before the first circuit way
+  // with a higher number; existing rows are never reordered, and a
+  // non-numeric way number simply appends.
+  _insertWay(comp, c) {
+    const list = comp.props.circuits;
+    const n = parseInt(c.way, 10);
+    const at = isNaN(n) ? -1 : list.findIndex(x => x.type !== 'feeder_db' && parseInt(x.way, 10) > n);
+    if (at < 0) list.push(c); else list.splice(at, 0, c);
   },
 
   _describe(classes, count) {
@@ -563,8 +593,9 @@ const PlanCircuits = {
         ways++;
       }
     }
-    // Materialise the loads into the schedule.
+    // Materialise the loads (and any routed lengths) into the schedule.
     this.syncLoads();
+    this.syncRoutedLengths();
     return { ways, devices };
   },
 
@@ -606,7 +637,7 @@ const PlanCircuits = {
       for (const e of loads.slice(i, i + cap)) { e.props = e.props || {}; e.props.circuitDbId = board.el.id; e.props.circuitNo = way; }
       ways++;
     }
-    if (comp) this.syncLoads();
+    if (comp) { this.syncLoads(); this.syncRoutedLengths(); }
     return { tagged: loads.length, board: board.name, ways, synced: !!comp,
       crossFloor, floor: (board.floor && board.floor.name) || '' };
   },

@@ -959,6 +959,11 @@ const PlanSync = {
     this._pruneEmptyOutBuses();
     this._pruneFeederCircuits();
 
+    // Every board is linked now, so push the tagged devices into their
+    // schedules. Without this a board synced for the first time came across
+    // with no ways at all, however many devices were tagged to it.
+    const circ = (typeof PlanCircuits !== 'undefined' && PlanCircuits.syncAll) ? PlanCircuits.syncAll() : null;
+
     AppState.dirty = true;
     // UX-4: sync mutates BOTH views (SLD components + plan link fields), so
     // push a paired snapshot to each undo stack. This keeps Ctrl+Z coherent —
@@ -973,7 +978,8 @@ const PlanSync = {
       `• ${summary.dbNew} new + ${summary.dbLinked} linked distribution board(s)\n` +
       `• ${summary.cableNew} feeder cable(s) created on the SLD\n` +
       `• ${summary.riserNew} cross-floor riser feeder(s) created on the SLD\n` +
-      `• ${summary.planNew} SLD cable(s) reflected back as plan feeders`);
+      `• ${summary.planNew} SLD cable(s) reflected back as plan feeders` +
+      (circ ? `\n• ${circ.ways} circuit way(s) from ${circ.devices} tagged device(s)` : ''));
   },
 
   // Immediate rename propagation from a plan element to its schedule row.

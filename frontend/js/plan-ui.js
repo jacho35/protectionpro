@@ -603,6 +603,13 @@ const PlanUI = {
         if (key === 'circuitDbId' || key === 'circuitNo') delete item.props.circuitWid;
         if (!val && key === 'circuitDbId') delete item.props.circuitNo;   // unassign clears the way
         PlanCircuits.syncLoads();
+        if (PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
+        // A tag on a board that isn't on the SLD yet has nowhere to land —
+        // say so instead of silently writing nothing.
+        const tagBoard = item.props.circuitDbId && PlanCircuits._boardById(item.props.circuitDbId);
+        if (tagBoard && !PlanCircuits._sldComp(tagBoard)) {
+          UI.toast(`${tagBoard.name || 'This board'} isn't on the SLD yet — press → Sync with SLD to create its schedule.`, 'info');
+        }
         PlanMarkup.snapshot(); PlanMarkup.markDirty();
         if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4: pair the SLD stack
         this.renderProps();
@@ -634,12 +641,14 @@ const PlanUI = {
   },
 
   // Auto-distribute the selected board's connected untagged devices into ways.
-  _bulkAssign() {
+  async _bulkAssign() {
     const ids = [...PlanMarkup.selectedIds]; if (ids.length !== 1) return;
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found || found.kind !== 'element' || found.item.type !== 'bd_db') return;
+    // The board needs a schedule to assign into — link it rather than refuse.
     if (!found.item.sldId || !AppState.components.get(found.item.sldId)) {
-      UI.toast('Sync this board with the SLD first (it needs a circuit schedule).', 'info'); return;
+      await PlanSync.syncBuildingToSLD();
+      if (!found.item.sldId || !AppState.components.get(found.item.sldId)) return;
     }
     const r = PlanCircuits.bulkAssign(found.item.id);
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
@@ -650,7 +659,10 @@ const PlanUI = {
   },
 
   // Re-count loads + routed lengths from the plan into every linked board.
-  _syncCircuits() {
+  async _syncCircuits() {
+    // Unlinked boards have no schedule yet: the SLD sync links them and ends
+    // with the same circuit sync (and its own summary).
+    if (PlanCircuits.hasUnlinkedBoards()) { await PlanSync.syncBuildingToSLD(); this.renderProps(); return; }
     const s = PlanCircuits.syncAll();
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4
