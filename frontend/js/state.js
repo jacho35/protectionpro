@@ -309,7 +309,8 @@ const AppState = {
         showGrid: true, greyBg: false, invertBg: false, slPoleKVA: 0.15,
         floorHeight: 3.5,   // default storey height (m) for new floors
         riserFactor: 1.1,   // vertical-run slack multiplier (bends/terminations)
-        // Bill-of-quantities rates (currency-neutral; 0 until the user sets them)
+        // Legacy flat BOQ rates, superseded by AppState.rateLibrary (rates.js);
+        // kept so older projects load unchanged. Nothing reads them now.
         rates: { cablePerM: 0, equipUnit: 0, trenchPerM: 0, wasteFactorPct: 5 },
       },
       _seq: 1,            // single counter for all pm* ids
@@ -1102,6 +1103,9 @@ const AppState = {
     // {id, name, inputs, result, resultKey, updatedAt} — see lightning.js.
     this.lightningAssessments = [];
     this.lightningActiveId = null;
+    // Bill-of-quantities rate library — only the entries the user has set
+    // (rates.js builds the catalogue of item keys itself).
+    this.rateLibrary = null;
     this.raceways = [];
     // Clear annotation drag offsets + hidden result boxes
     if (typeof Annotations !== 'undefined') {
@@ -1280,6 +1284,7 @@ const AppState = {
         const a = (this.lightningAssessments || []).find(x => x.id === this.lightningActiveId) || (this.lightningAssessments || [])[0];
         return a ? a.inputs : undefined;
       })(),
+      rateLibrary: this.rateLibrary || undefined,
       raceways: this.raceways.length ? this.raceways : undefined,
     };
   },
@@ -1595,6 +1600,7 @@ const AppState = {
     }
     this.lightningActiveId = this.lightningAssessments.some(a => a.id === data.lightningActiveId)
       ? data.lightningActiveId : ((this.lightningAssessments[0] || {}).id || null);
+    this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
     this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];

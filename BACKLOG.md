@@ -307,6 +307,51 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Rate library, Bill of quantities and Cable schedules (2026-09-18)
+- **Rate library** (`frontend/js/rates.js`, Output › Quantities › Rate Library…). Every item the app can count has a fixed Key generated from the libraries and ratings, about 490 items:
+  - Cables: `CBL-95-AL-XLPE-LV` from the cable name.
+  - Protective devices: `MCB-1P-20C` from poles/rating/curve, `ELU-4P-30MA`.
+  - Boards: `EQ-DB-24W` by module count.
+  - Plan devices: `EQ-SOCKET-DOUBLE-WP`.
+  - Civils: `CIV-TRENCH-LV-SL`, `CIV-XING-110`.
+  - Labour: `LAB-TERM-LV`.
+- **What is stored.** Only what the user sets goes into the project, in `AppState.rateLibrary`: `{currency, defaultWaste, items: {KEY: {rate, waste, supplier}}, custom}`.
+- **Editing.** The table is an Excel-style grid with a count/sum/average status line. Tabs: Cables / Equipment / Protective devices / Civils & labour. Filters: All / In this project / No rate.
+- **Round trip with Excel.**
+  - Export CSV or XLSX, with a "Read me" sheet.
+  - Import matches rows on Key only. Description/Unit in the file are ignored for known keys.
+  - Before anything changes, a preview shows matched, changed, filled, new, ignored and error rows. "Add new items" is on by default; "Clear missing" is off.
+  - One-step undo after an import.
+- **My default.** "Save as my default" / "Load my default" carries rates between projects (browser localStorage, like the Settings libraries).
+- **Bill of quantities** (`frontend/js/boq.js`, Output › Quantities › Bill of Quantities…). One take-off over four sources, each switchable:
+  - Demand: feeders, services, minisubs, kiosks, terminations.
+  - Site / floor plans: routes by cable type, trenches, crossings, devices, riser runs, JB joints.
+  - Single-line diagram: cables, transformers, CB/fuse/switch, CT/VT, relays, capacitor banks, arresters.
+  - DB schedules: enclosures by module count, final-circuit cable per way, breakers by poles/rating/curve, EL units per group, accessories.
+- **One cable is counted once.** The schedule wins over the drawing:
+  - Demand feeders/services over plan LV/service routes.
+  - SLD cables made from the plan (`planLink`/`riserLink`) over those routes.
+  - DB way lengths over final-circuit routes tagged to the way.
+  - A feeder-to-sub-board way counts its breaker only.
+- **Output.** Waste % per item. Items without a rate are listed, left out of the total and flagged, with "Set rates →" opening the library on the missing items. Export CSV / Excel / PDF.
+- The plan's "Export all schedules" BOQ CSV now uses this take-off (plan only) priced from the rate library. The old flat `planMarkup.settings.rates` are no longer read.
+- **Cable schedules** (`frontend/js/cableschedules.js`, Output › Quantities › Cable Schedules…).
+  - **Reticulation:** kiosk feeders and erf services with design I, rating, loading, leg and cumulative VD. These come from the Demand workspace's own `_vdCalc` / `_cumulativeFeederVD` / `_erfDesignAmps`, so they match its badges. A service within its own limit but fed from a kiosk over the feeder limit is flagged "Feeder over limit".
+  - **Building:** sub-mains from the SLD (Ib/loading/VD from the latest load flow; protection from the feeding board's feeder way), and final circuits from the per-way circuit check, with Ib, derated Iz, VD, and which check failed. A banner button runs the circuit check if it hasn't been run.
+  - Filters: All / feeders or sub-mains / services or final circuits / Problems. A side panel shows the worst VD and measured length by cable. Export CSV / Excel / PDF.
+- Verified headless:
+  - Rate library: rate edits, paste, refused values, filters, CSV/XLSX export, import preview, apply/undo, a no-op XLSX re-import, save default.
+  - BOQ totals: retic and building, plan dedup against Demand.
+  - Cable schedules: full-stack against the backend, with Demand compute, load flow and circuit check.
+  - Dark mode.
+
+### Excel-style data-entry grid, no number spinners (2026-09-18)
+- **One shared grid for every editable table** (`frontend/js/grid.js`, `GridTable.attach(tbody, opts)`). Click selects the cell's value, typing replaces it. F2 or double-click edits in place, and Esc restores the old value. Enter/Shift+Enter move down/up, Tab/Shift+Tab move across and wrap rows, arrows move and never step a number, and Alt+Down opens a dropdown. Shift+arrows or a drag select a range. Ctrl+C copies TSV, and Ctrl+V pastes a block from Excel (a single value fills the whole range). Ctrl+D fills down, and Delete clears a range. Enter on the last row adds a row where the table supports it.
+- **Pasted numbers are read like a spreadsheet does.** "R 1 250,50", "1,250.50", "30 m" and "15%" become plain numbers. When both `.` and `,` appear, the last one is the decimal separator, and a lone comma counts as thousands only before exactly 3 digits. A value that isn't a number is refused, never read as 0: the cell is flagged red and the table keeps its old value.
+- **Spinners removed app-wide.** CSS hides them on every number input. The mouse wheel no longer changes a focused number (the input blurs instead), and ArrowUp/Down no longer step numbers outside grids either.
+- Applied to: DB schedule (it replaces the schedule's own navigation and paste code; per-column rules like 3P→RWB, curve letters and DF/PF clamps are kept, and skipped values are reported), Demand erf tables (Enter on the last erf adds one), the 5 Settings libraries (cables, load classes, transformers, CBs, fuses), Wenner readings, the Plan floors table and the time-series profile overrides.
+- Verified headless: navigation, Enter-add-row, block paste with dirty numbers, copy, fill down, range clear, refused values, select cells not changing on arrows, and no spinners.
+
 ### Lightning risk: named assessments saved in the project + PDF report (2026-09-18)
 - **Assessments saved in the project.** A project now holds any number of named lightning assessments (one per structure) in `AppState.lightningAssessments`: `{id, name, inputs, result, resultKey, resultAt}`, plus `lightningActiveId`. Inputs save to the active assessment **as they're typed** (debounced, and on close), not only on Assess. The last result is kept with the exact inputs it came from, so reopening an assessment that has a result opens on its results. An assessment picker at the top of the step list switches between them, with New, Duplicate, Rename and Delete. Old projects migrate: the single `lightningRisk` input set becomes "Assessment 1", and `lightningRisk` is still written (the active assessment's inputs) so an older build opens the project.
 - **Out-of-date results are flagged.** When the inputs differ from the ones a result was calculated with, the results page shows an "inputs have changed" banner with **Re-assess**. Export warns before producing a report that mixes new inputs with an old result.

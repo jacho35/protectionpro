@@ -380,6 +380,8 @@ const PlanMarkup = {
             <div class="ui-dialog-actions"><button class="btn-primary" data-role="close">Done</button></div>
           </div>
         </div>`;
+      // Excel-style editing of the floor list (grid.js); re-attached per render.
+      if (typeof GridTable !== 'undefined') GridTable.attach(overlay.querySelector('.plan-floor-table tbody'));
     };
     render();
     document.body.appendChild(overlay);

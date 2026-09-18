@@ -128,6 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
   ]) {
     document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
   }
+  // Numbers change only by typing or pasting: no wheel / arrow-key stepping.
+  if (typeof GridTable !== 'undefined') GridTable.initGlobal();
   // Workspace tabs follow the project type (after switchWorkspace exists).
   if (typeof Workspaces !== 'undefined') Workspaces.init();
   // Results menu contents + Ctrl K command search.
@@ -2779,6 +2781,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('wenner-modal').style.display = '';
   });
 
+  GridTable.attach(document.getElementById('wenner-rows'));   // Excel-style readings grid
   document.getElementById('wenner-rows').addEventListener('input', (e) => {
     const idx = e.target.getAttribute('data-wenner-idx');
     const field = e.target.getAttribute('data-wenner-field');

@@ -111,6 +111,9 @@ const TimeSeries = {
             <th style="text-align:left;padding:4px 6px">Profile</th></tr></thead>
           <tbody>${rows}</tbody></table>
       </div>` : '<p style="font-size:12px;color:var(--text-muted,#6d6d6d)">No profile-eligible loads/sources found — every step will run at the network\'s present values.</p>'}`;
+    // Profile overrides: Excel-style grid (paste a column of profile names).
+    const tb = document.querySelector('#tsl-config-body tbody');
+    if (tb && typeof GridTable !== 'undefined') GridTable.attach(tb, { cells: '[data-override]' });
     document.getElementById('tsl-config-modal').style.display = '';
   },
 

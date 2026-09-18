@@ -741,6 +741,26 @@ const Retic = {
 
     this.updateBadges();
     this.updateVD();   // re-render replaced the cells; VD is client-side, no refetch
+    this._attachErfGrids();
+  },
+
+  // Each kiosk's erf table is an Excel-style grid (grid.js). Enter on the last
+  // erf adds one and lands in the same column of the new row.
+  _attachErfGrids() {
+    if (typeof GridTable === 'undefined') return;
+    document.querySelectorAll('#retic-workspace .kiosk-card .erf-table tbody').forEach(tb => {
+      GridTable.attach(tb, {
+        cells: '[data-action="erf-field"]',
+        onAddRow: (cell) => {
+          const kid = cell.dataset.kiosk, field = cell.dataset.field;
+          this.addErf(kid, 1);
+          const k = this.kioskById(kid);
+          const last = k && k.erfs[k.erfs.length - 1];
+          const el = last && document.querySelector(`[data-action="erf-field"][data-erf="${last.id}"][data-field="${field}"]`);
+          if (el) { el.focus(); if (el.select) el.select(); }
+        },
+      });
+    });
   },
 
   _erfRow(k, e) {

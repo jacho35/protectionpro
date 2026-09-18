@@ -2845,3 +2845,17 @@ body.readonly-project #btn-save { opacity: 0.4; pointer-events: none; }
   .ws-type-card { min-height: 0; }
   .ws-row-note { display: none; }
 }
+
+/* ── Numbers never change by accident: no spinner arrows anywhere ─────────
+   (the mouse wheel and arrow keys are also neutralised in grid.js). */
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ── Excel-style grids (GridTable, grid.js) ─────────────────────────────── */
+.gt-grid td.gt-sel { background-color: rgba(0,120,215,.10); }
+.gt-grid td.gt-sel input, .gt-grid td.gt-sel select, .gt-grid td.gt-sel textarea { background-color: rgba(0,120,215,.08); }
+.gt-grid td.gt-act { box-shadow: inset 0 0 0 2px var(--accent); }
+.gt-grid td.gt-act input:focus, .gt-grid td.gt-act select:focus { outline: none; }
+.gt-grid td.gt-bad { box-shadow: inset 0 0 0 2px var(--danger); background-color: rgba(211,47,47,.08); }
+.gt-grid input, .gt-grid select { caret-color: var(--accent); }

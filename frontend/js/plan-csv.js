@@ -233,52 +233,10 @@ const PlanCSV = {
     this._download(rows, 'rooms');
   },
 
-  // Bill of Quantities: cable lengths (× waste), element counts, trench
-  // lengths — each with Qty/Unit/Rate/Subtotal from settings.rates.
+  // Plan-only bill of quantities, priced from the project's rate library
+  // (boq.js / rates.js), followed by the per-box junction-box detail.
   exportBOQ() {
-    const pm = AppState.planMarkup, elById = this._elById();
-    const rates = (pm.settings && pm.settings.rates) || {};
-    const cableRate = rates.cablePerM || 0, equipRate = rates.equipUnit || 0;
-    const trenchRate = rates.trenchPerM || 0, waste = 1 + (rates.wasteFactorPct || 0) / 100;
-    const rows = [['Item', 'Category', 'Description', 'Qty', 'Unit', 'Rate', 'Subtotal']];
-    let item = 0, grand = 0;
-    const add = (cat, desc, qty, unit, rate) => {
-      const sub = +(qty * rate).toFixed(2); grand += sub;
-      rows.push([++item, cat, desc, qty, unit, rate, sub.toFixed(2)]);
-    };
-    // Aggregate across every floor, each measured with its own scale factor.
-    const cableLen = {}, counts = {}, trLen = {};
-    for (const fl of this._floors()) {
-      const f = this._floorFactor(fl);
-      for (const r of (fl.data.routes || [])) {
-        const et = this._effectiveType(r, elById);
-        cableLen[et] = +((cableLen[et] || 0) + this._routeLenM(r, f)).toFixed(2);
-      }
-      for (const el of (fl.data.elements || [])) counts[el.type] = (counts[el.type] || 0) + 1;
-      for (const tr of (fl.data.trenches || [])) {
-        let px = 0; for (let i = 1; i < tr.points.length; i++) px += Math.hypot(tr.points[i].x - tr.points[i - 1].x, tr.points[i].y - tr.points[i - 1].y);
-        trLen[tr.excType] = +((trLen[tr.excType] || 0) + (f ? px * f : 0)).toFixed(2);
-      }
-    }
-    for (const [et, len] of Object.entries(cableLen)) {
-      const qty = +(len * waste).toFixed(2);
-      add('Cable', `${(PLAN_DEFS.route(et) || {}).name || et} (incl. ${rates.wasteFactorPct || 0}% waste)`, qty, 'm', cableRate);
-    }
-    // Vertical riser cable (cross-floor shafts), also subject to waste.
-    const vtot = this._verticalRuns().reduce((s, v) => s + v.length, 0);
-    if (vtot) add('Cable', `Riser cable — vertical (incl. ${rates.wasteFactorPct || 0}% waste)`, +(vtot * waste).toFixed(2), 'm', cableRate);
-    for (const [t, n] of Object.entries(counts)) {
-      add('Equipment', (PLAN_DEFS.element(t) || {}).name || t, n, 'ea', equipRate);
-    }
-    for (const [k, len] of Object.entries(trLen)) add('Excavation', `${k} trench`, len, 'm', trenchRate);
-    // Splice joints at junction boxes — labour, not material, so they carry no
-    // rate by default; the count is what the estimator needs.
-    if (typeof PlanCircuits !== 'undefined' && PlanCircuits.jbJointTotals) {
-      const j = PlanCircuits.jbJointTotals();
-      if (j.splices) add('Labour', 'Junction-box splices (cores joined, 1P+N+E = 3 / 3P+N+E = 5)', j.splices, 'ea', 0);
-      if (j.terminations) add('Labour', 'Junction-box cable terminations (cable ends × cores)', j.terminations, 'ea', 0);
-    }
-    rows.push([], ['', '', 'TOTAL', '', '', '', grand.toFixed(2)]);
+    const rows = BOQ._aoa(BOQ.compute({ sources: { demand: false, plan: true, sld: false, db: false }, waste: true, merge: true }));
     // Per-box detail, so an unwired box drawn by mistake is visible rather than
     // silently absent from the totals.
     if (typeof PlanCircuits !== 'undefined' && PlanCircuits.jbJoints) {

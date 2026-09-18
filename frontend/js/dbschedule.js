@@ -1149,16 +1149,11 @@ const DBSchedule = {
           this.refreshTotals(comp);
         }
       });
-      // select all on focus — typing immediately replaces, like a spreadsheet
-      if (inp.tagName === 'INPUT') {
-        inp.addEventListener('focus', () => inp.select());
-      }
     });
 
-    // Keyboard navigation: Enter/↓ = same column next row (Enter on the last
-    // row adds a way), ↑ = previous row, Tab keeps its native left/right.
-    // Must match the VISUAL column order — paste maps clipboard columns onto
-    // this list by position.
+    // Excel-style grid (grid.js): selection, Enter/Tab/arrow navigation,
+    // copy, fill-down, no number stepping. Column order is the VISUAL order of
+    // the [data-k] cells, which NAV_COLS mirrors for pasted blocks.
     const NAV_COLS = ['way', 'description', 'breaker_a', 'load_va', 'poles', 'phase',
       'curve', 'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m',
       'demand_factor', 'power_factor'];
@@ -1166,77 +1161,68 @@ const DBSchedule = {
       const el = this.body.querySelector(`#db-rows tr[data-idx="${row}"] [data-k="${k}"]`);
       if (el) { el.focus(); if (el.select) el.select(); }
     };
-    this.body.querySelector('#db-rows').addEventListener('keydown', (e) => {
-      const cell = e.target.closest('[data-k]');
-      if (!cell) return;
-      const tr = cell.closest('tr');
-      const row = parseInt(tr.dataset.idx);
-      const k = cell.dataset.k;
-      if (e.key === 'Enter' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        cell.dispatchEvent(new Event('change', { bubbles: true }));
-        if (row + 1 >= circuits.length && e.key === 'Enter') {
-          // Enter on the last row: append a new way and land in it
-          circuits.push(this.newWay(circuits.length));
-          this.render();
-          this._focusCell(circuits.length - 1, k);
-        } else if (row + 1 < circuits.length) {
-          this._focusCell(row + 1, k);
-        }
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        cell.dispatchEvent(new Event('change', { bubbles: true }));
-        if (row > 0) this._focusCell(row - 1, k);
-      }
+    GridTable.attach(this.body.querySelector('#db-rows'), {
+      cells: '[data-k]',
+      // Enter on the last row appends a way and lands in the same column.
+      onAddRow: (cell) => {
+        const k = cell.dataset.k;
+        circuits.push(this.newWay(circuits.length));
+        this.render();
+        this._focusCell(circuits.length - 1, k);
+      },
+      // A pasted block is applied to the circuit data directly (clamping DF/PF,
+      // the 3P ⇒ RWB rule, curve letters) and rows are appended as needed.
+      onPaste: ({ cell, rows }) => {
+        const startRow = parseInt(cell.closest('tr').dataset.idx);
+        const startCol = NAV_COLS.indexOf(cell.dataset.k);
+        if (isNaN(startRow) || startCol < 0) return false;
+        this._pasteBlock(circuits, startRow, startCol, rows, NAV_COLS);
+        return true;
+      },
     });
+  },
 
-    // Multi-cell paste from Excel/Sheets: TSV starting at the focused cell.
-    // Extra rows are appended automatically.
-    this.body.querySelector('#db-rows').addEventListener('paste', (e) => {
-      const text = (e.clipboardData || window.clipboardData).getData('text');
-      if (!text || (!text.includes('\t') && !text.includes('\n'))) return; // single value → default paste
-      const cell = e.target.closest('[data-k]');
-      if (!cell) return;
-      e.preventDefault();
-      const startRow = parseInt(cell.closest('tr').dataset.idx);
-      const startCol = NAV_COLS.indexOf(cell.dataset.k);
-      const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim() !== '');
-      for (let li = 0; li < lines.length; li++) {
-        const rowIdx = startRow + li;
-        while (rowIdx >= circuits.length) {
-          circuits.push(this.newWay(circuits.length, { phase: 'R' }));
-        }
-        const c = circuits[rowIdx];
-        const vals = lines[li].split('\t');
-        for (let vi = 0; vi < vals.length && startCol + vi < NAV_COLS.length; vi++) {
-          const key = NAV_COLS[startCol + vi];
-          const raw = String(vals[vi]).trim();
-          if (raw === '') continue;
-          if (['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m', 'load_va', 'demand_factor', 'power_factor'].includes(key)) {
-            const n = parseFloat(raw);
-            if (!isNaN(n)) {
-              if (key === 'demand_factor') c[key] = Math.min(1, Math.max(0, n));
-              else if (key === 'power_factor') c[key] = Math.min(1, Math.max(0.05, n));
-              else c[key] = n;
-            }
-          } else if (key === 'poles') {
-            c.poles = raw.toUpperCase().includes('3') ? '3P' : '1P';
-            if (c.poles === '3P') c.phase = 'RWB';
-          } else if (key === 'phase') {
-            const p = raw.toUpperCase();
-            if (p === 'RWB') { c.poles = '3P'; c.phase = 'RWB'; }
-            else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
-          } else if (key === 'curve') {
-            if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
-          } else {
-            c[key] = raw;
-          }
+  // Apply a pasted block (rows of cell strings) to the circuits, from
+  // (startRow, startCol) in NAV_COLS order, appending ways as needed. Numbers
+  // go through GridTable.cleanNumber, so "1 250,5" or "R 25" paste correctly;
+  // anything that isn't a number is skipped and reported, never read as 0.
+  _pasteBlock(circuits, startRow, startCol, lines, NAV_COLS) {
+    const NUM = ['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m', 'load_va', 'demand_factor', 'power_factor'];
+    let bad = 0;
+    for (let li = 0; li < lines.length; li++) {
+      const rowIdx = startRow + li;
+      while (rowIdx >= circuits.length) {
+        circuits.push(this.newWay(circuits.length, { phase: 'R' }));
+      }
+      const c = circuits[rowIdx];
+      const vals = lines[li];
+      for (let vi = 0; vi < vals.length && startCol + vi < NAV_COLS.length; vi++) {
+        const key = NAV_COLS[startCol + vi];
+        const raw = String(vals[vi]).trim();
+        if (raw === '') continue;
+        if (NUM.includes(key)) {
+          const n = GridTable.cleanNumber(raw);
+          if (isNaN(n)) { bad++; continue; }
+          if (key === 'demand_factor') c[key] = Math.min(1, Math.max(0, n));
+          else if (key === 'power_factor') c[key] = Math.min(1, Math.max(0.05, n));
+          else c[key] = n;
+        } else if (key === 'poles') {
+          c.poles = raw.toUpperCase().includes('3') ? '3P' : '1P';
+          if (c.poles === '3P') c.phase = 'RWB';
+        } else if (key === 'phase') {
+          const p = raw.toUpperCase();
+          if (p === 'RWB') { c.poles = '3P'; c.phase = 'RWB'; }
+          else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
+        } else if (key === 'curve') {
+          if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
+        } else {
+          c[key] = raw;
         }
       }
-      this.render();
-      this._notifyEdited();
-      this._status(`Pasted ${lines.length} row(s) into the schedule.`);
-    });
+    }
+    this.render();
+    this._notifyEdited();
+    this._status(`Pasted ${lines.length} row(s) into the schedule.` + (bad ? ` ${bad} value(s) were not numbers and were skipped.` : ''));
   },
 
   // Refresh the phase bars, EL leakage panel and totals strip in place (no

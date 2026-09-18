@@ -32,6 +32,7 @@ frontend/
 └── js/
     ├── app.js              # Entry point, keyboard shortcuts, module initialization
     ├── state.js            # Global AppState (components, wires, selection, results)
+    ├── grid.js             # GridTable — shared Excel-style table editing (keys, range select, TSV copy/paste, fill down, number cleaning); attach to every editable table
     ├── canvas.js           # SVG rendering, pan/zoom, grid, 5-layer system
     ├── sidebar.js          # Searchable component palette, drag-drop
     ├── wiring.js           # Orthogonal wire routing, port snapping
@@ -64,6 +65,9 @@ frontend/
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── timeseries.js       # Time-series / quasi-dynamic load flow UI (horizon/step/profile setup + voltage/loading/SoC charts)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
+    ├── rates.js            # Rate library — item-key catalogue, per-project rates, CSV/XLSX round trip with import preview
+    ├── boq.js              # Bill of quantities — take-off over Demand / plans / SLD / DB schedules, priced from rates.js
+    ├── cableschedules.js   # Cable schedules — retic feeders/services (Demand VD) + building sub-mains (LF) / final circuits (circuit check)
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
     └── undo.js             # Snapshot-based undo/redo (50 states max)

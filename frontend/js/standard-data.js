@@ -174,6 +174,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);
@@ -243,6 +244,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         this.loadClasses.splice(parseInt(e.target.dataset.index), 1);
@@ -310,6 +312,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);
@@ -378,6 +381,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);
@@ -442,6 +446,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);
