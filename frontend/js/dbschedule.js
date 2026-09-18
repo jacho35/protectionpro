@@ -594,7 +594,10 @@ const DBSchedule = {
   _cableAmpacityA(mm2) {
     const sz = Number(mm2);
     if (!sz || typeof STANDARD_CABLES === 'undefined') return null;
-    const lv = STANDARD_CABLES.filter(c => c.conductor === 'Cu' && c.insulation === 'PVC' && !(c.voltage_kv > 1));
+    // Armoured multicore only: the one library also holds T+E / Surfix wiring
+    // of the same sizes, which would otherwise shadow these ratings.
+    const lv = STANDARD_CABLES.filter(c => c.conductor === 'Cu' && c.insulation === 'PVC' && !(c.voltage_kv > 1)
+      && (c.construction || 'armoured') === 'armoured');
     const exact = lv.find(c => c.size_mm2 === sz);
     if (exact) return exact.rated_amps;
     const larger = lv.filter(c => c.size_mm2 > sz).sort((a, b) => a.size_mm2 - b.size_mm2)[0];

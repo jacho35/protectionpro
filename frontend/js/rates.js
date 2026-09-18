@@ -45,7 +45,18 @@ const Rates = {
       .replace(/MM²|MM2/g, '').replace(/²/g, '').replace(/\+/g, '')
       .replace(/[^A-Z0-9.]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   },
-  cableKey(name) { return 'CBL-' + this.slug(name); },
+  // A cable's key comes from its permanent library id, so renaming a cable
+  // in Settings can't disconnect its rates. A name the library doesn't know
+  // (typed elsewhere) still gets a stable key from the name.
+  cableKey(name) {
+    const c = typeof CableLib !== 'undefined' ? CableLib.byName(name) : null;
+    return c ? this.cableKeyOf(c) : 'CBL-' + this.slug(name);
+  },
+  cableKeyOf(c) { return 'CBL-' + this.slug(c.id || c.name); },
+  cableDesc(name) {
+    const c = typeof CableLib !== 'undefined' ? CableLib.byName(name) : null;
+    return c ? CableLib.label(c) : name;
+  },
   mcbKey(poles, a, curve) { return `MCB-${poles}-${a}${curve || 'C'}`; },
   elKey(poles, ma) { return `ELU-${poles}-${ma}MA`; },
   boardSize(modules) { return this.DB_SIZES.find(n => n >= modules) || this.DB_SIZES[this.DB_SIZES.length - 1]; },
@@ -59,18 +70,21 @@ const Rates = {
   // for one cable end complete (gland, lugs, shroud, labour).
   termItem(cable) {
     const name = cable.desc || '';
-    const mv = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.some(c => c.name === name && Number(c.voltage_kv) > 1);
+    const lc = typeof CableLib !== 'undefined' ? CableLib.all().find(c => this.cableKeyOf(c) === cable.key) : null;
+    const mv = !!lc && CableLib.isMV(lc);
     return { key: 'TRM-' + String(cable.key).replace(/^CBL-/, ''), desc: `Termination, ${name}${mv ? ' (MV)' : ''}`, unit: 'ea', cat: 'term' };
   },
 
-  // Final-circuit cable of a DB way: the building library's T+E (1P/2P) or
-  // 4-core SWA (3P/4P) of that size, else a generic Cu final-circuit item.
+  // Final-circuit cable of a DB way: the library's T+E (1P/2P) or 4-core Cu
+  // PVC armoured cable (3P/4P) of that size, else a generic Cu item.
   fcCable(size, poles) {
     const s = Number(size);
     const three = /^[34]P$/.test(String(poles || ''));
-    const lib = (typeof BUILDING_CABLES !== 'undefined') ? BUILDING_CABLES : [];
-    const hit = lib.find(c => Number(c.size) === s && (three ? /x4C .*SWA/.test(c.name) : /T\+E/.test(c.name)));
-    if (hit) return { key: this.cableKey(hit.name), desc: hit.name };
+    const lib = typeof CableLib !== 'undefined' ? CableLib.all().map(c => CableLib.normalize(c)) : [];
+    const hit = lib.find(c => Number(c.size_mm2) === s && (three
+      ? c.construction === 'armoured' && c.conductor === 'Cu' && c.insulation === 'PVC' && !CableLib.isMV(c) && Number(c.cores) === 4
+      : c.construction === 'te'));
+    if (hit) return { key: this.cableKeyOf(hit), desc: CableLib.label(hit) };
     const cores = three ? '4c' : '2c';
     return { key: `CBL-FC-${this.slug(String(s))}-${cores.toUpperCase()}`, desc: `${s}mm² ${cores}+E Cu final-circuit cable` };
   },
@@ -128,10 +142,10 @@ const Rates = {
     const out = [], seen = new Set();
     const add = (key, desc, unit, cat) => { if (!seen.has(key)) { seen.add(key); out.push({ key, desc, unit, cat }); } };
     // Cables
-    for (const c of (typeof STANDARD_CABLES !== 'undefined' ? STANDARD_CABLES : [])) add(this.cableKey(c.name), c.name, 'm', 'cable');
-    for (const c of (typeof BUILDING_CABLES !== 'undefined' ? BUILDING_CABLES : [])) add(this.cableKey(c.name), c.name, 'm', 'cable');
-    for (const c of [...(typeof STANDARD_CABLES !== 'undefined' ? STANDARD_CABLES : []), ...(typeof BUILDING_CABLES !== 'undefined' ? BUILDING_CABLES : [])]) {
-      const t = this.termItem({ key: this.cableKey(c.name), desc: c.name });
+    const cables = typeof CableLib !== 'undefined' ? CableLib.all() : [];
+    for (const c of cables) add(this.cableKeyOf(c), CableLib.label(c), 'm', 'cable');
+    for (const c of cables) {
+      const t = this.termItem({ key: this.cableKeyOf(c), desc: CableLib.label(c) });
       add(t.key, t.desc, 'ea', 'term');
     }
     for (const c of (typeof STANDARD_OVERHEAD_LINES !== 'undefined' ? STANDARD_OVERHEAD_LINES : [])) add('OHL-' + this.slug(c.name), c.name + ' overhead conductor', 'm', 'cable');
@@ -203,7 +217,37 @@ const Rates = {
     if (!L.custom || typeof L.custom !== 'object') L.custom = {};
     if (L.currency == null) L.currency = 'R';
     if (!(Number(L.defaultWaste) >= 0)) L.defaultWaste = 5;
+    this._migrateKeys(L);
     return L;
+  },
+
+  // Keys used before cable keys came from library ids (name-based keys, and
+  // the former building library's "x4C Cu PVC/SWA" names) → today's key.
+  // Used to move saved rates once and to match an older exported sheet.
+  legacyKeyMap() {
+    const map = {};
+    if (typeof CableLib === 'undefined') return map;
+    const put = (oldName, c) => {
+      const nw = this.cableKeyOf(c).slice(4), old = this.slug(oldName);
+      if (old === nw) return;
+      map['CBL-' + old] = 'CBL-' + nw;
+      map['TRM-' + old] = 'TRM-' + nw;
+    };
+    for (const c of CableLib.all()) put(c.name, c);
+    for (const [alias, name] of Object.entries(CableLib.ALIASES)) { const c = CableLib.byName(name); if (c) put(alias, c); }
+    return map;
+  },
+  // Move saved rates to today's keys once. A rate already on the new key is
+  // never overwritten.
+  _migrateKeys(L) {
+    if (!L || L.keysV === 2 || typeof CableLib === 'undefined') return;
+    const items = L.items || {};
+    for (const [from, to] of Object.entries(this.legacyKeyMap())) {
+      if (!items[from]) continue;
+      if (!items[to]) items[to] = items[from];
+      delete items[from];
+    }
+    L.keysV = 2;
   },
   currency() { return (AppState.rateLibrary && AppState.rateLibrary.currency) || 'R'; },
   defaultWaste(cat) { return cat === 'cable' ? Number(this.lib().defaultWaste) || 0 : 0; },
@@ -211,6 +255,7 @@ const Rates = {
   // { rate: number|null, waste: number, supplier: string }
   get(key, cat) {
     const L = AppState.rateLibrary;
+    if (L && L.keysV !== 2) this._migrateKeys(L);
     const it = (L && L.items && L.items[key]) || {};
     const c = cat || (L && L.custom && L.custom[key] && L.custom[key].cat) || this.guessCat(key);
     const rate = (it.rate === null || it.rate === undefined || it.rate === '' || isNaN(Number(it.rate))) ? null : Number(it.rate);
@@ -614,6 +659,7 @@ const Rates = {
     };
     if (C.rate < 0 && C.waste < 0 && C.supplier < 0) return { error: 'The sheet has a Key column but no Rate, Waste % or Supplier code column to import.' };
     const known = new Map(this.rows(this._used || []).filter(r => !r.orphan).map(r => [r.key, r]));
+    const legacy = this.legacyKeyMap();
     const catId = (s) => {
       const t = String(s || '').trim().toLowerCase();
       const c = this.CATS.find(x => x.label.toLowerCase() === t || x.id === t);
@@ -629,8 +675,9 @@ const Rates = {
     };
     for (let i = h + 1; i < aoa.length; i++) {
       const r = aoa[i] || [];
-      const key = String(cell(r, C.key) ?? '').trim().toUpperCase();
+      let key = String(cell(r, C.key) ?? '').trim().toUpperCase();
       if (!key) continue;
+      if (!known.has(key) && legacy[key]) key = legacy[key];   // a sheet exported before keys came from library ids
       plan.rows++;
       if (plan.seen.has(key)) { plan.ignored.push({ key, desc: '', why: 'key repeated in the file; first row used' }); continue; }
       plan.seen.add(key);

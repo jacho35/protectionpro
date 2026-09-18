@@ -209,8 +209,7 @@ const ReticDiagram = {
   // Compact cable caption for the leg label, e.g. "95mm² Al".
   _cableShort(name) {
     if (!name) return '';
-    const c = (typeof STANDARD_CABLES !== 'undefined')
-      ? STANDARD_CABLES.find(x => x.name === name) : null;
+    const c = (typeof CableLib !== 'undefined') ? CableLib.byName(name) : null;
     if (c && c.size_mm2) return `${c.size_mm2}mm² ${c.conductor || ''}`.trim();
     return this._trunc(name, 16);
   },

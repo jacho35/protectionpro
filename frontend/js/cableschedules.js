@@ -59,7 +59,7 @@ const CableSchedules = {
       else if (!kr) st = this._status('gry', 'No result', 'Demand has not been calculated');
       else st = this._judge(loading, cum, fLimit);
       feeders.push({
-        group: 'feeder', ref: `F-${k.name || k.id}`, from: nameOf(k.fedFrom), to: k.name || 'Kiosk', cable: k.feederCable || '',
+        group: 'feeder', ref: `F-${k.name || k.id}`, from: nameOf(k.fedFrom), to: k.name || 'Kiosk', cable: k.feederCable ? Rates.cableDesc(k.feederCable) : '',
         length: Number(k.feederLength) || 0, ib, rating, loading, vdLeg: leg, vdCum: cum, status: st,
       });
       for (const e of (k.erfs || [])) {
@@ -84,7 +84,7 @@ const CableSchedules = {
         }
         services.push({
           group: 'service', ref: `S-${k.name || k.id}-${e.erfNumber || e.id}`, from: k.name || 'Kiosk', to: `Erf ${e.erfNumber || ''}`.trim(),
-          cable: e.cableType || '', length: Number(e.length) || 0, ib: eib, rating: er, loading: el,
+          cable: e.cableType ? Rates.cableDesc(e.cableType) : '', length: Number(e.length) || 0, ib: eib, rating: er, loading: el,
           vdLeg: vleg, vdCum: vleg != null && cum != null ? vleg + cum : null, status: es,
         });
       }
@@ -124,9 +124,8 @@ const CableSchedules = {
     try { for (const r of AppState.planAllRoutes()) routeById[r.id] = r; } catch (e) { /* no plan */ }
     const subs = cables.map(c => {
       const p = c.props || {};
-      const std = p.standard_type && STANDARD_CABLES.find(s => s.id === p.standard_type);
-      const linked = routeById[c.planLink] || routeById[c.riserLink];
-      const type = std ? std.name : (linked && linked.cableType) || '';
+      const std = CableLib.byId(p.standard_type) || CableLib.byName((routeById[c.planLink] || routeById[c.riserLink] || {}).cableType);
+      const type = std ? CableLib.label(std) : '';
       const par = Math.max(1, Number(p.num_parallel) || 1);
       const b = br[c.id];
       const iz = (Number(p.rated_amps) || 0) * par || null;

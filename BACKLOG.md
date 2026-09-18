@@ -307,6 +307,23 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### One cable library for the whole app (2026-09-18)
+- **Merged the building cable library into the main one.** `STANDARD_CABLES` (Settings › Cables) is now the only list, read through the new `frontend/js/cablelib.js` (`CableLib`). `BUILDING_CABLES` is removed.
+  - The building "x4C Cu PVC/SWA" entries were the same cables as the main "Cu PVC LV" entries, with different data (e.g. 16 mm² 91 A / 1.4 Ω/km vs 80 A / 1.380 Ω/km). The main values are kept, and the old names are aliases, rewritten when a project loads.
+  - T+E, H07V-R singles, Surfix and control cables became library entries with fixed ids.
+- **New fields.** Every entry has `construction` (armoured / T+E / Surfix / single-core / control) and `cores`. Existing MV entries default to 3-core and LV to 4-core. There are new 2-core LV service cables (Cu/Al XLPE 16/25/35 mm², the 4-core sibling's R/X/rating). Settings shows both new columns.
+- **Pickers.**
+  - Demand (LV only, 4-core then 2-core), site-plan routes (LV/MV), floor-plan routes (by construction per route type), and the SLD (control cables excluded).
+  - New Demand settings **LV Conductor / MV Conductor** (Any/Al/Cu) list that material first. "Show all cables…" reveals the rest; a chosen cable always stays listed.
+  - An erf's service cable is flagged when its cores don't suit the phase (single-phase → 2-core, 3-phase → 4-core).
+- **Stable associations.**
+  - Rate keys come from the cable's id (`CBL-AL-XLPE-95-LV`, `TRM-…`). Name-based rates move over when a project loads, and an older exported sheet still matches on import.
+  - Renaming a cable in Settings updates the open project's references.
+  - A saved Settings library keeps its edits and gains any shipped entry it lacks, matched by id.
+  - A project stores the user-added cables it uses (`customCables`) and adds them to the library when opened elsewhere.
+  - Plan → SLD sync links the SLD cable by `standard_type` and copies the library values.
+- Verified headless: library merge with a pre-merge saved library, alias rewrite, rate-key migration, conductor preference + Show all, core/phase flag, building pickers, custom cable round trip, rename propagation, BOQ/termination/rate regressions.
+
 ### Quantities menu in the header; terminations itemized per cable (2026-09-18)
 - **Header › Quantities** (next to Project, on every tab and project type) opens Bill of quantities, Cable schedules and Rate library.
   - Badges are counted when the menu opens: BOQ lines with no rate, and cable-schedule failures.

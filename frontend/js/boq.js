@@ -79,7 +79,7 @@ const BOQ = {
 
   // Cable name → rate item. Library names give library keys; anything else
   // still gets a stable key from its name.
-  _cable(name) { return { key: Rates.cableKey(name), desc: name, unit: 'm', cat: 'cable' }; },
+  _cable(name) { return { key: Rates.cableKey(name), desc: Rates.cableDesc(name), unit: 'm', cat: 'cable' }; },
 
   collect(opts) {
     opts = opts || this.opts || {};
@@ -241,9 +241,9 @@ const BOQ = {
             const oh = (typeof STANDARD_OVERHEAD_LINES !== 'undefined') && STANDARD_OVERHEAD_LINES.find(o => o.id === p.overhead_type);
             item = oh ? { key: 'OHL-' + Rates.slug(oh.name), desc: oh.name + ' overhead conductor', unit: 'm' } : null;
           } else {
-            const std = p.standard_type && STANDARD_CABLES.find(s => s.id === p.standard_type);
+            const std = CableLib.byId(p.standard_type);
             const linked = routeById[c.planLink] || routeById[c.riserLink];
-            const named = [...STANDARD_CABLES, ...(typeof BUILDING_CABLES !== 'undefined' ? BUILDING_CABLES : [])].find(s => s.name === p.name);
+            const named = CableLib.byName(p.name);
             const nm = std ? std.name : (linked && linked.cableType) || (named && named.name) || null;
             if (nm) item = this._cable(nm);
           }

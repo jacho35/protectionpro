@@ -216,6 +216,15 @@ const Retic = {
     const t = e.target;
     const action = t.dataset.action;
     if (!action) return;
+    // "Show all cables…" only widens that picker; the model is unchanged.
+    if (t.tagName === 'SELECT' && t.value === '__all__') {
+      const f = t.dataset.field;
+      const k = t.dataset.kiosk ? this.kioskById(t.dataset.kiosk) : null;
+      const erf = k && t.dataset.erf ? k.erfs.find(x => x.id === t.dataset.erf) : null;
+      const cur = action === 'setting' ? this.settings[f] : erf ? erf[f] : k ? k[f] : '';
+      CableLib.handleShowAll(t, cur, (v) => this._cableOptions(v, true));
+      return;
+    }
 
     if (action === 'setting') {
       const key = t.dataset.field;
@@ -237,6 +246,8 @@ const Retic = {
       // Re-render on method switch (toggles correction/ADMD/riskZ enable) and
       // on riskZ edit (refreshes the risk-% hint).
       if (key === 'estimationMethod' || key === 'riskZ') this.renderSettingsBar();
+      // The project's standard conductor reorders every cable picker.
+      if (key === 'lvConductor' || key === 'mvConductor') { this.renderSettingsBar(); this.renderKiosks(); return; }
       if (key.startsWith('quick')) {
         // Quick Build defaults only affect future adds — no recompute needed;
         // quickErven also drives the per-kiosk "+ N Erven" button labels.
@@ -284,6 +295,7 @@ const Retic = {
       this._markDirty();
       // Phase / override decide the single-phase-class-on-3-phase flag and the
       // derived half of the override.
+      if (key === 'phase' || key === 'cableType') this._refreshErfCableFlag(k, erf);
       if (key === 'phase' || key === 'ampsOverride' || key === 'kvaOverride') {
         this._refreshErfPhaseFlag(k, erf);
         this._renderErfOverrideInputs(k, erf);
@@ -594,6 +606,16 @@ const Retic = {
         <label>Max Service VD (%)</label>
         <input type="number" step="0.5" data-action="setting" data-field="maxRunVD" value="${s.maxRunVD}">
       </div>
+      <div class="retic-field">
+        <label>LV Conductor</label>
+        <select data-action="setting" data-field="lvConductor" title="The project's standard LV conductor: those cables are listed first in every LV cable picker (Demand and site plan); the others stay one click away under Show all cables.">
+          ${['', 'Al', 'Cu'].map(v => `<option value="${v}"${(s.lvConductor || '') === v ? ' selected' : ''}>${v || 'Any'}</option>`).join('')}</select>
+      </div>
+      <div class="retic-field">
+        <label>MV Conductor</label>
+        <select data-action="setting" data-field="mvConductor" title="The project's standard MV conductor: those cables are listed first in MV cable pickers on the site plan.">
+          ${['', 'Al', 'Cu'].map(v => `<option value="${v}"${(s.mvConductor || '') === v ? ' selected' : ''}>${v || 'Any'}</option>`).join('')}</select>
+      </div>
       </div>
       <div class="retic-totals">
         <div class="retic-chip"><span class="val" id="retic-total-kva">—</span><span class="lbl">Total kVA</span></div>
@@ -620,14 +642,14 @@ const Retic = {
 
   // Reticulation is 230/400 V, so list LV cables first; MV kept selectable
   // below for the odd mixed library, but they're rarely what's wanted here.
-  _cableOptions(selected) {
-    const opt = (c) =>
-      `<option value="${escHtml(c.name)}" ${selected === c.name ? 'selected' : ''}>${escHtml(c.name)}</option>`;
-    const lv = STANDARD_CABLES.filter(c => !(c.voltage_kv > 1)).map(opt).join('');
-    const mv = STANDARD_CABLES.filter(c => c.voltage_kv > 1).map(opt).join('');
-    return '<option value="">— select —</option>'
-      + (lv ? `<optgroup label="LV (≤1 kV)">${lv}</optgroup>` : '')
-      + (mv ? `<optgroup label="MV">${mv}</optgroup>` : '');
+  // Demand pickers offer LV distribution cables from the one cable library
+  // (4-core, then 2-core single-phase services), the project's standard
+  // conductor first; the others after "Show all cables…".
+  _cableOptions(selected, showAll) {
+    return CableLib.options(selected, {
+      filter: CableLib.reticFilter('lv'), groups: CableLib.reticGroups(),
+      prefer: CableLib.reticPrefer('lv'), showAll: !!showAll,
+    });
   },
 
   // Quick Build panel: one click builds N kiosks × M erven with the chosen
@@ -773,7 +795,7 @@ const Retic = {
         <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
         <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
         <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
-        <td data-cell="cable" data-label="Service Cable"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
+        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
         <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
@@ -852,7 +874,7 @@ const Retic = {
 
   // ─── Voltage drop (client-side, per erf service cable) ───
   _cableRX(name) {
-    const c = STANDARD_CABLES.find(x => x.name === name);
+    const c = CableLib.byName(name);
     return c ? { r: c.r_per_km, x: c.x_per_km, rating: c.rated_amps } : null;
   },
 
@@ -920,6 +942,24 @@ const Retic = {
     const equiv = cls && STANDARD_LOAD_CLASSES.find(c => c.id === cls.id + '_3ph');
     return `Single-phase class on a 3-phase erf: its per-phase figures are applied to every phase (about 3× this household's demand). ` +
       (equiv ? `For a 3-phase household, use ${equiv.label}.` : 'For a 3-phase household, use a 3Φ class (Urban Upmarket I or II (3Φ)).');
+  },
+  // Single-phase services are 2-core, 3-phase services 4-core. Returns the
+  // warning text when the chosen cable's cores don't suit the erf, else ''.
+  _erfCableMismatch(k, e) {
+    const c = CableLib.byName(e.cableType);
+    if (!c || CableLib.isMV(c)) return '';
+    const cores = Number(CableLib.normalize(c).cores);
+    const three = this._erfIs3ph(k, e);
+    if (three && cores === 2) return `A 3-phase erf needs a 4-core service cable; ${c.name} is 2-core.`;
+    if (!three && cores === 4) return `A single-phase erf is normally served with a 2-core cable; ${c.name} is 4-core.`;
+    return '';
+  },
+  _refreshErfCableFlag(k, e) {
+    const td = document.querySelector(`tr[data-erf="${e.id}"] td[data-cell="cable"]`);
+    if (!td) return;
+    const msg = this._erfCableMismatch(k, e);
+    td.classList.toggle('erf-phase-warn', !!msg);
+    if (msg) td.title = msg; else td.removeAttribute('title');
   },
   _refreshErfPhaseFlag(k, e) {
     const td = document.querySelector(`tr[data-erf="${e.id}"] td[data-cell="phase"]`);

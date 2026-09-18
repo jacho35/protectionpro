@@ -230,6 +230,7 @@ const AppState = {
         quickServiceCable: '', quickServiceLen: 60,
         quickFeederCable: '', quickFeederLen: 100, quickChain: true,
         quickFeedFrom: 'source', networkDiversity: 1.0,
+        lvConductor: '', mvConductor: '',   // project standard conductor ('Al' | 'Cu' | '' = any): listed first in cable pickers
       },
       minisubs: [{ id: 'source', name: 'Minisub 1' }],
       kiosks: [], _kioskSeq: 1, _erfSeq: 1, _msSeq: 2,
@@ -1285,6 +1286,9 @@ const AppState = {
         return a ? a.inputs : undefined;
       })(),
       rateLibrary: this.rateLibrary || undefined,
+      // Cables from the user's own library that this project uses, so the
+      // project opens complete elsewhere (CableLib.onProjectLoaded).
+      customCables: (() => { const c = typeof CableLib !== 'undefined' ? CableLib.projectCustomCables() : []; return c.length ? c : undefined; })(),
       raceways: this.raceways.length ? this.raceways : undefined,
     };
   },
@@ -1601,9 +1605,13 @@ const AppState = {
     this.lightningActiveId = this.lightningAssessments.some(a => a.id === data.lightningActiveId)
       ? data.lightningActiveId : ((this.lightningAssessments[0] || {}).id || null);
     this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
+    // Cable rate keys come from library ids now; move name-keyed rates once.
+    if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
     this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];
+    // One cable library: bring in the project's own cables, rewrite retired names.
+    if (typeof CableLib !== 'undefined') CableLib.onProjectLoaded(data.customCables);
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data
     // (reset() above ran with the default empty reticulation).

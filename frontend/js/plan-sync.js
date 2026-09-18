@@ -425,24 +425,24 @@ const PlanSync = {
     return { compId: el.sldId, port: 'in' };
   },
 
-  // Resolve a building cable type name to its electrical parameters and copy
-  // them onto an SLD cable component (EE-4). BUILDING_CABLES first (feeders are
-  // drawn from that specialised library); falls back to STANDARD_CABLES by id.
-  // Returns the matched BUILDING_CABLES entry (or null) for downstream use.
+  // Resolve a route's cable type (a name in the one cable library) and copy
+  // its electrical parameters onto an SLD cable component (EE-4), linking it
+  // by `standard_type` so the SLD, BOQ and cable schedule all see the same
+  // cable. Returns the library entry (or null).
   _applyCableElectrical(cable, cableType) {
     if (!cableType) return null;
-    const bc = (typeof BUILDING_CABLES !== 'undefined') && BUILDING_CABLES.find(c => c.name === cableType);
-    if (bc) {
-      cable.props.r_per_km = bc.r;
-      cable.props.x_per_km = bc.x;
-      if (bc.rating) cable.props.rated_amps = bc.rating;
-      cable.props.size_mm2 = bc.size;
-      cable.props.voltage_kv = 0.4;   // building feeders are 400 V, not 11 kV
-      return bc;
-    }
-    const std = (typeof STANDARD_CABLES !== 'undefined') && STANDARD_CABLES.find(c => c.name === cableType);
-    if (std) cable.props.standard_type = std.id;
-    return null;
+    const c = CableLib.byName(cableType);
+    if (!c) return null;
+    cable.props.standard_type = c.id;
+    cable.props.r_per_km = c.r_per_km;
+    cable.props.x_per_km = c.x_per_km;
+    cable.props.r0_per_km = c.r0_per_km || 0;
+    cable.props.x0_per_km = c.x0_per_km || 0;
+    if (c.rated_amps) cable.props.rated_amps = c.rated_amps;
+    cable.props.size_mm2 = c.size_mm2;
+    // Building feeders are 400 V; an MV library cable keeps its own voltage.
+    cable.props.voltage_kv = CableLib.isMV(c) ? c.voltage_kv : 0.4;
+    return c;
   },
 
   // Record/refresh a "Feeder to Sub-board" way in the upstream DB's schedule.
@@ -464,8 +464,8 @@ const PlanSync = {
     if (cableType) {
       c.cable = cableType;
       // EE-9: size the feeder conductor from the chosen cable type.
-      const bc = (typeof BUILDING_CABLES !== 'undefined') && BUILDING_CABLES.find(x => x.name === cableType);
-      if (bc) { c.cable_mm2 = bc.size; if (bc.rating) c._cableAmps = bc.rating; }
+      const lc = CableLib.byName(cableType);
+      if (lc) { c.cable = lc.name; c.cable_mm2 = lc.size_mm2; if (lc.rated_amps) c._cableAmps = lc.rated_amps; }
     }
     if (lenM) c.cable_m = +lenM.toFixed(2);
     // EE-9: read-only downstream demand carried by this feeder, plus a warning

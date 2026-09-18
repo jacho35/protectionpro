@@ -539,39 +539,26 @@ const PlanUI = {
       <button class="plan-circuit-btn" data-role="import-ies">📈 Import IES file…</button>`;
   },
 
-  // Build <option>s for a cable_select field. Building routes draw from the
-  // specialised BUILDING_CABLES library (grouped by category, filtered by the
-  // field's `category` list); reticulation routes use the central
-  // STANDARD_CABLES library grouped LV/MV by voltage.
-  _cableOptions(selectedName, field) {
+  // Build <option>s for a cable_select field from the one cable library.
+  // Reticulation routes (`voltage` 'lv' | 'mv') offer armoured distribution
+  // cables, the project's standard conductor first (Demand › LV / MV
+  // Conductor) with "Show all cables…" for the rest; building routes offer
+  // the constructions in the field's `uses` list.
+  _cableOptions(selectedName, field, showAll) {
     field = field || {};
-    const opt = (name) => `<option value="${escHtml(name)}" ${selectedName === name ? 'selected' : ''}>${escHtml(name)}</option>`;
-    let html = '<option value="">— select —</option>';
-    if (field.library === 'building' && typeof BUILDING_CABLES !== 'undefined') {
-      const cats = field.category || null;
-      const groups = {};
-      for (const c of BUILDING_CABLES) {
-        if (cats && !cats.includes(c.category)) continue;
-        (groups[c.category] = groups[c.category] || []).push(c.name);
-      }
-      // Preserve the field's category order, then any extras.
-      const order = cats || Object.keys(groups);
-      for (const cat of order) {
-        if (!groups[cat]) continue;
-        html += `<optgroup label="${escHtml(cat)}">${groups[cat].map(opt).join('')}</optgroup>`;
-      }
-      return html;
+    if (Array.isArray(field.uses)) {
+      const want = new Set(field.uses);
+      const filter = (c) => (want.has('armoured-lv') && c.construction === 'armoured' && !CableLib.isMV(c)) || want.has(c.construction);
+      const groups = field.uses.map(u => u === 'armoured-lv'
+        ? { label: 'Armoured multicore (SWA)', test: (c) => c.construction === 'armoured' }
+        : { label: (CableLib.CONSTRUCTIONS.find(k => k.id === u) || {}).label || u, test: (c) => c.construction === u });
+      return CableLib.options(selectedName, { filter, groups });
     }
-    // Reticulation (STANDARD_CABLES) — LV/MV by voltage.
-    const voltage = field.voltage;
-    let list = STANDARD_CABLES;
-    if (voltage === 'lv') list = STANDARD_CABLES.filter(c => !(c.voltage_kv > 1));
-    else if (voltage === 'mv') list = STANDARD_CABLES.filter(c => c.voltage_kv > 1);
-    const lv = list.filter(c => !(c.voltage_kv > 1)).map(c => opt(c.name)).join('');
-    const mv = list.filter(c => c.voltage_kv > 1).map(c => opt(c.name)).join('');
-    return html
-      + (lv ? `<optgroup label="LV (≤1 kV)">${lv}</optgroup>` : '')
-      + (mv ? `<optgroup label="MV">${mv}</optgroup>` : '');
+    const v = field.voltage === 'mv' ? 'mv' : field.voltage === 'lv' ? 'lv' : '';
+    return CableLib.options(selectedName, {
+      filter: CableLib.reticFilter(v), groups: CableLib.reticGroups(),
+      prefer: v ? CableLib.reticPrefer(v) : '', showAll: !!showAll,
+    });
   },
 
   _onPropsChange(e) {
@@ -583,6 +570,13 @@ const PlanUI = {
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found) return;
     const { kind, item } = found;
+    // "Show all cables…" only widens the picker; nothing is written.
+    if (e.target.tagName === 'SELECT' && e.target.value === '__all__') {
+      const def = kind === 'route' ? PLAN_DEFS.route(item.type) : null;
+      const field = def && (def.fields || []).find(f => f.key === key);
+      CableLib.handleShowAll(e.target, item[key], (v) => this._cableOptions(v, field, true));
+      return;
+    }
     let val = e.target.value;
     if (e.target.type === 'number') val = parseFloat(val) || 0;
     if (e.target.type === 'checkbox') val = e.target.checked;

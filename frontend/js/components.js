@@ -164,12 +164,13 @@ const Components = {
   _feedCableInfo(cable) {
     if (!cable) return null;
     const p = cable.props || {};
-    const lib = (typeof STANDARD_CABLES !== 'undefined' && p.standard_type)
-      ? STANDARD_CABLES.find(c => c.name === p.standard_type) : null;
+    // standard_type is the library id (older data may hold the name).
+    const lib = (typeof CableLib !== 'undefined' && p.standard_type)
+      ? (CableLib.byId(p.standard_type) || CableLib.byName(p.standard_type)) : null;
     return {
       mm2: lib ? lib.size_mm2 : null,
       m: p.length_km != null ? Math.round(Number(p.length_km) * 1000) : null,
-      name: p.standard_type || p.name || null,
+      name: lib ? lib.name : (p.standard_type || p.name || null),
     };
   },
 

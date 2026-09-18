@@ -43,6 +43,7 @@ frontend/
     ├── project.js          # Save/load/export (JSON/SVG/PNG/CSV/PDF)
     ├── api.js              # HTTP client for backend endpoints
     ├── constants.js        # Component definitions, cable/transformer libraries
+    ├── cablelib.js         # CableLib — the ONE cable library (STANDARD_CABLES): construction/cores, name aliases, pickers (Demand/plan/SLD), project conductor preference, custom cables carried in the project
     ├── standard-data.js    # Settings modal, editable cable & transformer libraries
     ├── templates.js        # Pre-built network templates (radial, ring, mesh)
     ├── tcc.js              # Time-current curve coordination plotting
@@ -236,7 +237,7 @@ Component definitions (default props, ports, SVG dimensions) are in `constants.j
 
 ## Built-in Libraries
 
-- **Cable Library** (~70 entries): Copper/Aluminium, XLPE/PVC, 0.4-33kV, R/X per km, ampacity (per IEC 60502/SANS 1339)
+- **Cable Library** (~113 entries, the only cable library in the app — `STANDARD_CABLES`, read through `CableLib`): MV/LV armoured multicore Cu/Al XLPE/PVC 0.4-33kV (MV 3-core, LV 4-core), LV 2-core single-phase service cables, and building wiring (T+E, H07V-R singles, Surfix, control). Each entry has `construction` + `cores`. Demand, plans, SLD and DB schedules all pick from it; rate/termination keys come from the entry's id. Never add a second cable list
 - **Transformer Library** (22 entries): 100kVA-80MVA, vector groups, impedance values
 
 Both are editable via the Settings modal and can be reset to defaults.
