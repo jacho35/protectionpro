@@ -236,7 +236,7 @@ const PlanCSV = {
   // Plan-only bill of quantities, priced from the project's rate library
   // (boq.js / rates.js), followed by the per-box junction-box detail.
   exportBOQ() {
-    const rows = BOQ._aoa(BOQ.compute({ sources: { demand: false, plan: true, sld: false, db: false }, waste: true, merge: true }));
+    const rows = BOQ._aoa(BOQ.compute({ sources: { demand: false, plan: true, sld: false, db: false, rule: false }, waste: true, merge: true }));
     // Per-box detail, so an unwired box drawn by mistake is visible rather than
     // silently absent from the totals.
     if (typeof PlanCircuits !== 'undefined' && PlanCircuits.jbJoints) {
