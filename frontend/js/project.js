@@ -302,20 +302,46 @@ const Project = {
   // Returns { clone, svgW, svgH, minX, minY }
   _prepareExportSVG(pad = 50) {
     const svg = document.getElementById('sld-canvas');
-    const clone = svg.cloneNode(true);
 
-    // Bounding box from component positions
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const comp of AppState.components.values()) {
-      const def = COMPONENT_DEFS[comp.type];
-      const hw = (def.width || 60) / 2 + 80;
-      const hh = (def.height || 60) / 2 + 80;
-      minX = Math.min(minX, comp.x - hw);
-      minY = Math.min(minY, comp.y - hh);
-      maxX = Math.max(maxX, comp.x + hw);
-      maxY = Math.max(maxY, comp.y + hh);
+    // Measure the ACTUAL rendered extent — components, wires, name/data
+    // labels (freely draggable via nameLabelOffsetX/Y and labelOffsetX/Y),
+    // and result annotation badges (also freely draggable) — via getBBox()
+    // on the live, attached #diagram-layer, BEFORE cloning/detaching (a
+    // detached SVG has no layout, so getBBox() on the clone would return a
+    // zero-size box). getBBox() reports children in the group's OWN local
+    // space, i.e. excluding #diagram-layer's own pan/zoom transform — the
+    // same "world" coordinate system component.x/y live in — so the result
+    // is correct regardless of the editor's current pan/zoom. A dragged
+    // label/badge sitting far from its component is invisible to a
+    // component-position-based box and was silently clipped from every
+    // export; getBBox() catches it because it measures what's actually drawn.
+    const liveLayer = svg.querySelector('#diagram-layer');
+    let minX, minY, maxX, maxY;
+    let rendered = null;
+    if (liveLayer) {
+      try {
+        const bb = liveLayer.getBBox();
+        if (bb.width > 0 || bb.height > 0) rendered = bb;
+      } catch (e) { /* e.g. an ancestor is display:none */ }
     }
-    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+    if (rendered) {
+      minX = rendered.x; minY = rendered.y;
+      maxX = rendered.x + rendered.width; maxY = rendered.y + rendered.height;
+    } else {
+      // Fallback (empty canvas, or getBBox unavailable): reconstruct from
+      // component positions with a generous fixed pad per component.
+      minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
+      for (const comp of AppState.components.values()) {
+        const def = COMPONENT_DEFS[comp.type];
+        const hw = (def.width || 60) / 2 + 80;
+        const hh = (def.height || 60) / 2 + 80;
+        minX = Math.min(minX, comp.x - hw);
+        minY = Math.min(minY, comp.y - hh);
+        maxX = Math.max(maxX, comp.x + hw);
+        maxY = Math.max(maxY, comp.y + hh);
+      }
+      if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+    }
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
     const svgW = maxX - minX;
     const svgH = maxY - minY;
@@ -334,6 +360,8 @@ const Project = {
     // Resolve CSS variables in inline attributes (e.g. var(--bg-primary, #fff))
     // This is critical — canvas/PDF renderers cannot resolve CSS vars.
     const varPattern = /var\(\s*--[^,)]+,\s*([^)]+)\)/g;
+    const clone = svg.cloneNode(true);
+
     clone.querySelectorAll('*').forEach(el => {
       for (const attr of Array.from(el.attributes)) {
         if (varPattern.test(attr.value)) {

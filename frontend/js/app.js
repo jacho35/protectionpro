@@ -4127,28 +4127,24 @@ document.addEventListener('DOMContentLoaded', () => {
       doc.text(new Date().toLocaleDateString(), tbX + 62, tbY + 28);
     }
 
-    // Embed diagram as SVG → PNG
-    const svgEl = document.getElementById('sld-canvas');
-    const svgClone = svgEl.cloneNode(true);
-    // Remove grid for print
-    const gridBg = svgClone.querySelector('#grid-bg');
-    if (gridBg) gridBg.remove();
-    const svgData = new XMLSerializer().serializeToString(svgClone);
-    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
+    // Embed diagram as SVG → PNG, fit to the available area preserving aspect
+    // ratio. Project._prepareExportSVG gives a tight bounding box of the
+    // WHOLE diagram, independent of the editor's current pan/zoom — the same
+    // path the Diagram SVG/PNG/PDF exports already use — instead of a raw
+    // clone of the live, possibly-panned/zoomed #sld-canvas with no
+    // viewBox/intrinsic size. _rasterizeSVG then rasterizes it at a fixed
+    // pixel scale (independent of the page's physical size) and the fit
+    // below scales THAT into the page slot without stretching/distorting it.
+    const { clone, svgW, svgH } = Project._prepareExportSVG();
+    Project._rasterizeSVG(clone, svgW, svgH, 3, (canvas) => {
       const diagramArea = { w: pw - 2 * margin - 10, h: ph - 2 * margin - (showTitleBlock ? 40 : 10) };
-      canvas.width = diagramArea.w * 4;
-      canvas.height = diagramArea.h * 4;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const fitScale = Math.min(diagramArea.w / svgW, diagramArea.h / svgH);
+      const imgW = svgW * fitScale;
+      const imgH = svgH * fitScale;
+      const imgX = margin + 5 + (diagramArea.w - imgW) / 2;
+      const imgY = margin + 5 + (diagramArea.h - imgH) / 2;
       const imgData = canvas.toDataURL('image/png');
-      doc.addImage(imgData, 'PNG', margin + 5, margin + 5, diagramArea.w, diagramArea.h);
-      URL.revokeObjectURL(url);
+      doc.addImage(imgData, 'PNG', imgX, imgY, imgW, imgH);
 
       // Legend
       if (showLegend) {
@@ -4167,30 +4163,40 @@ document.addEventListener('DOMContentLoaded', () => {
       doc.save(`${title.replace(/\s+/g, '_')}_print.pdf`);
       document.getElementById('print-modal').style.display = 'none';
       document.getElementById('status-info').textContent = 'Print PDF exported.';
-    };
-    img.src = url;
+    });
   }
 
   function _printPreview() {
-    // Use browser print with a styled iframe
-    const svgEl = document.getElementById('sld-canvas');
-    const svgClone = svgEl.cloneNode(true);
-    const gridBg = svgClone.querySelector('#grid-bg');
-    if (gridBg) gridBg.setAttribute('fill', 'white');
-    const svgData = new XMLSerializer().serializeToString(svgClone);
+    // Use browser print with a styled window. Reuse the same tight,
+    // pan/zoom-independent bounding box as the other diagram exports (see
+    // _exportPrintPDF above) so the preview always shows — and prints — the
+    // whole diagram at its correct aspect ratio, not whatever happens to be
+    // panned/zoomed into view with no defined print size.
+    const pageSize = document.getElementById('print-page-size').value;
+    const orientation = document.getElementById('print-orientation').value;
+    const { clone, svgW, svgH } = Project._prepareExportSVG();
+    clone.setAttribute('width', svgW);
+    clone.setAttribute('height', svgH);
+    const svgData = new XMLSerializer().serializeToString(clone);
     const printWin = window.open('', '_blank', 'width=900,height=650');
     if (!printWin) {
       UI.toast('Print preview was blocked by the browser popup blocker. Please allow popups for this site and try again, or use "Export PDF" instead.', 'error', 6000);
       return;
     }
     printWin.document.write(`<!DOCTYPE html><html><head><title>Print Preview</title>
-      <style>body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#fff;}
-      svg{max-width:100%;max-height:100%;}</style></head>
+      <style>
+        @page { size: ${pageW}mm ${pageH}mm; margin: 10mm; }
+        body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#fff;}
+        svg{max-width:100%;max-height:100%;}
+      </style></head>
       <body>${svgData}</body></html>`);
     printWin.document.close();
     printWin.focus();
     setTimeout(() => printWin.print(), 500);
   }
+
+  // Physical page dimensions (mm) matching the #print-page-size options.
+  const _PRINT_PAGE_MM = { a4: [210, 297], a3: [297, 420], letter: [215.9, 279.4], tabloid: [279.4, 431.8] };
 
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
@@ -4204,6 +4210,8 @@ document.addEventListener('DOMContentLoaded', () => {
     Canvas.render();
   });
 
+    const [mmA, mmB] = _PRINT_PAGE_MM[pageSize] || _PRINT_PAGE_MM.a4;
+    const [pageW, pageH] = orientation === 'landscape' ? [Math.max(mmA, mmB), Math.min(mmA, mmB)] : [Math.min(mmA, mmB), Math.max(mmA, mmB)];
   // ── Layout: collapsible side panels + component ribbon ──
   const LAYOUT_KEY = 'protectionpro-layout';
   const layout = (() => {
