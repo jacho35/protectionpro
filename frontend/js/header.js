@@ -201,10 +201,6 @@ const Header = {
     if (resultsBtn) resultsBtn.addEventListener('click', () => this.syncResultsMenu());
     this.syncResultsMenu();
     document.getElementById('btn-command-search')?.addEventListener('click', () => this.openSearch());
-    document.getElementById('mobile-menu-search')?.addEventListener('click', () => {
-      if (typeof MobileUI !== 'undefined' && MobileUI.closeSheet) MobileUI.closeSheet();
-      this.openSearch();
-    });
     // Ctrl/Cmd+K anywhere, including while typing in a field.
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {

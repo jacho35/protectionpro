@@ -46,10 +46,6 @@ const Workspaces = {
     sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan',
     interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules',
   },
-  MOBILE_IDS: {
-    sld: 'mobile-ws-sld', retic: 'mobile-ws-retic', plan: 'mobile-ws-plan',
-    interlock: 'mobile-ws-interlock', schedules: 'mobile-ws-schedules',
-  },
   DESCS: {
     plan: 'Site or floor plans with devices, routes and circuits',
     retic: 'Reticulation: kiosks, erven and ADMD demand',
@@ -146,7 +142,7 @@ const Workspaces = {
   },
 
   // ── Tabs ───────────────────────────────────────────────────────────
-  // Re-order and show/hide the workspace tabs (desktop + mobile sheet), label
+  // Re-order and show/hide the workspace tabs, label
   // them for the project type, and leave a hidden active workspace for the SLD.
   refresh() {
     this._applyPlanDomain();
@@ -165,16 +161,6 @@ const Workspaces = {
       const n = this.step(ws);
       b.innerHTML = (n ? `<span class="ws-step" aria-hidden="true">${n}</span>` : '') + escHtml(this.label(ws));
       if (switcher) switcher.appendChild(b);
-      const m = document.getElementById(this.MOBILE_IDS[ws]);
-      if (m) {
-        m.hidden = !show;
-        // Keep the icon, replace the text label.
-        const svg = m.querySelector('svg');
-        m.textContent = '';
-        if (svg) m.appendChild(svg);
-        m.appendChild(document.createTextNode(' ' + (n ? n + ' · ' : '') + this.label(ws)));
-        if (m.parentElement) m.parentElement.insertBefore(m, this._mobileAnchor(m.parentElement));
-      }
     }
     const chip = document.getElementById('project-type-chip');
     if (chip) {
@@ -189,13 +175,6 @@ const Workspaces = {
     }
     if (activeHidden && typeof window.switchWorkspace === 'function') window.switchWorkspace('sld');
   },
-  // Mobile items are re-inserted just above the entries that close the
-  // workspace group ("Search Commands…", "Project Type & Workspaces…").
-  _mobileAnchor(list) {
-    return list.querySelector('#mobile-menu-search') || list.querySelector('#mobile-menu-project-type')
-      || list.querySelector('.mobile-menu-divider');
-  },
-
   onProjectChanged() { this.refresh(); },
 
   setType(type, extras) {
@@ -333,11 +312,6 @@ const Workspaces = {
     if (btn) btn.addEventListener('click', () => this.openSettings());
     const chip = document.getElementById('project-type-chip');
     if (chip) chip.addEventListener('click', () => this.openSettings());
-    const m = document.getElementById('mobile-menu-project-type');
-    if (m) m.addEventListener('click', () => {
-      if (typeof MobileUI !== 'undefined' && MobileUI.closeSheet) MobileUI.closeSheet();
-      this.openSettings();
-    });
     this.refresh();
   },
 };
