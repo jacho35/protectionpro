@@ -270,9 +270,24 @@ const Retic = {
       const key = t.dataset.field;
       let v = t.value;
       if (t.type === 'number') v = parseFloat(v) || 0;
-      erf[key] = v;
+      if (key === 'ampsOverride' || key === 'kvaOverride') {
+        // Whichever is typed becomes the entered unit; clearing it removes the override.
+        const n = Number(v) > 0 ? Number(v) : 0;
+        if (key === 'ampsOverride') { erf.overrideUnit = 'A'; erf.ampsOverride = n; delete erf.kvaOverride; }
+        else { erf.overrideUnit = 'kVA'; erf.kvaOverride = n; }
+        this._syncErfOverride(erf);
+      } else {
+        erf[key] = v;
+        if (key === 'phase') this._syncErfOverride(erf);   // a kVA entry re-derives its amps
+      }
       this._snapshot();
       this._markDirty();
+      // Phase / override decide the single-phase-class-on-3-phase flag and the
+      // derived half of the override.
+      if (key === 'phase' || key === 'ampsOverride' || key === 'kvaOverride') {
+        this._refreshErfPhaseFlag(k, erf);
+        this._renderErfOverrideInputs(k, erf);
+      }
       this.recompute();
       return;
     }
@@ -713,7 +728,7 @@ const Retic = {
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
           </div>
           <table class="erf-table">
-            <thead><tr><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th>Amps Override</th><th>Service VD</th><th></th></tr></thead>
+            <thead><tr><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th></th></tr></thead>
             <tbody>${erfRows}</tbody>
           </table>
           <div class="retic-toolbar" style="margin-top:8px">
@@ -737,13 +752,26 @@ const Retic = {
       <tr data-erf="${e.id}">
         <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
         <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
-        <td data-cell="phase" data-label="Phase"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
+        <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
         <td data-cell="cable" data-label="Service Cable"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
-        <td data-cell="amps" data-label="Amps Override"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="ampsOverride" value="${e.ampsOverride || ''}" placeholder="0"></td>
+        <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
       </tr>
       <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="7"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
+  },
+
+  // Fixed-load override cell: type amps OR kVA; the other is derived through
+  // the erf's own voltage and shown muted.
+  _erfOverrideCell(k, e) {
+    const o = this._erfOverride(e);
+    const aVal = o ? (o.unit === 'A' ? String(o.amps) : o.amps.toFixed(1)) : '';
+    const kVal = o ? (o.unit === 'kVA' ? String(o.kva) : o.kva.toFixed(2)) : '';
+    const tip = 'Fixed, undiversified load that replaces the ADMD for this erf. Enter amps or kVA; the other is calculated at the erf\'s own voltage (230 V, or √3·400 V for 3 Phase).';
+    return `<div class="erf-ov" title="${tip}">
+      <input type="number" step="any" min="0" aria-label="Override current (A)" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="ampsOverride" value="${aVal}" placeholder="A"${o && o.unit !== 'A' ? ' class="derived"' : ''}><span class="erf-ov-u">A</span>
+      <input type="number" step="any" min="0" aria-label="Override load (kVA)" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="kvaOverride" value="${kVal}" placeholder="kVA"${o && o.unit !== 'kVA' ? ' class="derived"' : ''}><span class="erf-ov-u">kVA</span>
+    </div>`;
   },
 
   _classLabel(id) {
@@ -817,7 +845,72 @@ const Retic = {
   // PHASE, and every erf on one is a 3-phase connection whatever colour it is
   // drawn — the same rule the backend engine applies (admd.py _erf_phases).
   _classIs3ph(cls) { return !!cls && Number(cls.phase) === 3; },
-  _erfIs3ph(k, e) { return e.phase === '3 Phase' || this._classIs3ph(this._kioskClass(k)); },
+  // An override replaces the class, so an override erf's own Phase setting
+  // decides; otherwise any erf on a 3Φ class is 3-phase.
+  _erfIs3ph(k, e) {
+    if (this._erfOverride(e)) return e.phase === '3 Phase';
+    return e.phase === '3 Phase' || this._classIs3ph(this._kioskClass(k));
+  },
+
+  // ── Fixed-load override: entered as amps OR kVA ──
+  // `ampsOverride` stays the value the engine reads. `overrideUnit` records
+  // which one the user typed, so it is the one kept when the erf's phase
+  // changes; the other is always derived through the erf's own voltage.
+  _erfOverrideV(e) { return e.phase === '3 Phase' ? Math.sqrt(3) * 400 : 230; },
+  _erfOverride(e) {
+    const V = this._erfOverrideV(e);
+    if (e.overrideUnit === 'kVA' && Number(e.kvaOverride) > 0) {
+      const kva = Number(e.kvaOverride);
+      return { unit: 'kVA', kva, amps: kva * 1000 / V, V };
+    }
+    if (Number(e.ampsOverride) > 0) {
+      const amps = Number(e.ampsOverride);
+      return { unit: 'A', amps, kva: amps * V / 1000, V };
+    }
+    return null;
+  },
+  // Keep the engine's ampsOverride in step with a kVA entry (phase changes
+  // move the voltage), and clear both halves when the override is removed.
+  _syncErfOverride(e) {
+    const o = this._erfOverride(e);
+    if (!o) { e.ampsOverride = 0; delete e.kvaOverride; delete e.overrideUnit; return; }
+    if (o.unit === 'kVA') e.ampsOverride = +o.amps.toFixed(3);
+  },
+  // Show the entered value as typed and the other one derived (muted).
+  _renderErfOverrideInputs(k, e) {
+    const row = document.querySelector(`tr[data-erf="${e.id}"]`);
+    if (!row) return;
+    const o = this._erfOverride(e);
+    const a = row.querySelector('[data-field="ampsOverride"]');
+    const kv = row.querySelector('[data-field="kvaOverride"]');
+    if (a && document.activeElement !== a) a.value = o ? (o.unit === 'A' ? String(o.amps) : o.amps.toFixed(1)) : '';
+    if (kv && document.activeElement !== kv) kv.value = o ? (o.unit === 'kVA' ? String(o.kva) : o.kva.toFixed(2)) : '';
+    if (a) a.classList.toggle('derived', !!o && o.unit !== 'A');
+    if (kv) kv.classList.toggle('derived', !!o && o.unit !== 'kVA');
+  },
+  // A single-phase class on an erf drawn as "3 Phase". CTEF100's figures are
+  // per phase, so the engine applies them to every phase — about 3× the
+  // demand of that household. Allowed (conservative) but flagged: a 3-phase
+  // household should use a 3Φ class, whose per-phase figures reflect the load
+  // being spread.
+  _erfPhaseMismatch(k, e) {
+    return e.phase === '3 Phase' && !this._erfOverride(e) && !this._classIs3ph(this._kioskClass(k));
+  },
+  _mixedPhaseText(cls) {
+    const equiv = cls && STANDARD_LOAD_CLASSES.find(c => c.id === cls.id + '_3ph');
+    return `Single-phase class on a 3-phase erf: its per-phase figures are applied to every phase (about 3× this household's demand). ` +
+      (equiv ? `For a 3-phase household, use ${equiv.label}.` : 'For a 3-phase household, use a 3Φ class (Urban Upmarket I or II (3Φ)).');
+  },
+  _refreshErfPhaseFlag(k, e) {
+    const td = document.querySelector(`tr[data-erf="${e.id}"] td[data-cell="phase"]`);
+    if (!td) return;
+    const on = this._erfPhaseMismatch(k, e);
+    td.classList.toggle('erf-phase-warn', on);
+    if (on) td.title = this._mixedPhaseText(this._kioskClass(k)); else td.removeAttribute('title');
+  },
+  _mixedPhaseRow(cls) {
+    return { cls: 'calc-warn', cells: ['Check', escHtml(this._mixedPhaseText(cls)), ''] };
+  },
 
   // Per-consumer design current (A) for one erf's service cable. Mirrors the
   // backend engine (and the source app's getErfVD) for a single consumer.
@@ -828,8 +921,15 @@ const Retic = {
   // never drift apart.
   _erfDesignCalc(k, e) {
     const f = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
-    if (e.ampsOverride && e.ampsOverride > 0) {
-      return { amps: e.ampsOverride, steps: [['Design current', 'amps override (fixed, undiversified)', f(e.ampsOverride, 1) + ' A']] };
+    const ov = this._erfOverride(e);
+    if (ov) {
+      const conn = e.phase === '3 Phase' ? '3-phase: √3·400 V' : 'single-phase: 230 V';
+      const steps = ov.unit === 'kVA'
+        ? [['Override', `entered as ${f(ov.kva)} kVA (fixed, undiversified; ${conn})`, f(ov.kva) + ' kVA'],
+           ['Design current', `S / V = ${f(ov.kva)}·1000 / ${f(ov.V, 1)}`, f(ov.amps) + ' A']]
+        : [['Override', `entered as ${f(ov.amps, 1)} A (fixed, undiversified; ${conn})`, f(ov.amps, 1) + ' A'],
+           ['Load', `S = I·V = ${f(ov.amps, 1)}·${f(ov.V, 1)} / 1000`, f(ov.kva) + ' kVA']];
+      return { amps: ov.amps, steps };
     }
     const s = this.settings;
     const cls = this._kioskClass(k);
@@ -865,10 +965,11 @@ const Retic = {
         return { amps: designI, steps };
       }
       if (is3ph) {
-        const kva = designI * 230 / 1000;
-        const amps = kva * 1000 / (Math.sqrt(3) * 400);
-        steps.push(['Service current', `S/(√3·400) = ${f(kva)} kVA / 692.8 V (1Φ class on a 3Φ erf)`, f(amps) + ' A']);
-        return { amps, steps };
+        // A single-phase class on a 3-phase erf: the class figures are per
+        // phase, so — like the backend's demand — each phase carries them.
+        steps.push(['Service current', 'per-phase design current, on each of R/W/B', f(designI) + ' A']);
+        steps.push(this._mixedPhaseRow(c));
+        return { amps: designI, steps };
       }
       return { amps: designI, steps };
     }
@@ -882,8 +983,10 @@ const Retic = {
       amps = admd * 1000 / 230;
       steps.push(['Service current', `ADMD/230 V per phase = ${f(admd)}·1000/230`, f(amps) + ' A']);
     } else if (is3ph) {
-      amps = admd * 1000 / (Math.sqrt(3) * 400);
-      steps.push(['Service current', `ADMD/(√3·400) = ${f(admd)}·1000/692.8`, f(amps) + ' A']);
+      // Single-phase class on a 3-phase erf: its per-phase ADMD on each phase.
+      amps = admd * 1000 / 230;
+      steps.push(['Service current', `ADMD/230 V on each of R/W/B = ${f(admd)}·1000/230`, f(amps) + ' A']);
+      steps.push(this._mixedPhaseRow(cls));
     } else {
       amps = admd * 1000 / 230;
       steps.push(['Service current', `ADMD/230 = ${f(admd)}·1000/230`, f(amps) + ' A']);
@@ -951,6 +1054,10 @@ const Retic = {
       ['Load class', `${escHtml(c.classLabel)} (${c.classOwn ? "kiosk's own class" : 'project default'})`, ''],
     ];
     if (c.threePhaseClass) head.push(['3Φ class', 'Parameters are per phase — every erf is a 3-phase connection, so each of R, W and B carries all N consumers', '']);
+    if (c.mixedPhaseErven) {
+      const cls = STANDARD_LOAD_CLASSES.find(x => x.id === c.classId);
+      head.push({ cls: 'calc-warn', cells: ['Check', `${c.mixedPhaseErven} erf${c.mixedPhaseErven === 1 ? '' : 'ven'} set to “3 Phase”. ` + escHtml(this._mixedPhaseText(cls)), ''] });
+    }
     if (!hb) {
       head.push(['ADMD', srcTxt, `${f(c.admd)} kVA${perPh}`]);
       head.push(['I<sub>ADMD</sub>', `ADMD·1000 / 230 V = ${f(c.admd)}·1000/230`, `${f(c.admd * 1000 / 230)} A`]);
@@ -974,7 +1081,13 @@ const Retic = {
     const tail = [
       ['Diversified', `Σ phases = ${sumPh}`, `${f(c.diversifiedKVA)} kVA`],
     ];
-    if (c.overrideKVA) tail.push(['+ Fixed loads', 'erven with an amps override (undiversified)', `${f(c.overrideKVA)} kVA`]);
+    if (c.overrideKVA) {
+      for (const o of (c.overrides || [])) {
+        const how = o.entered === 'kVA' ? `entered ${f(o.kva)} kVA → ${f(o.amps, 1)} A` : `entered ${f(o.amps, 1)} A × ${f(o.v, 1)} V`;
+        tail.push([`+ Erf ${escHtml(o.erf || '?')}`, `fixed override, ${escHtml(o.phase)}: ${how}`, `${f(o.kva)} kVA`]);
+      }
+      if (!(c.overrides || []).length) tail.push(['+ Fixed loads', 'erven with an override (undiversified)', `${f(c.overrideKVA)} kVA`]);
+    }
     if (c.streetLightKVA) tail.push(['+ Street lighting', 'fixed, undiversified', `${f(c.streetLightKVA)} kVA`]);
     tail.push({ cls: 'calc-total', cells: ['Kiosk demand', tail.length > 1 ? 'sum of the above' : '', `${f(c.totalKVA)} kVA`] });
     tail.push(['Current', `S / (√3·${c.vLine} V) = ${f(c.totalKVA)}·1000 / ${f(Math.sqrt(3) * c.vLine, 1)}`, `${f(c.currentA)} A`]);
@@ -995,7 +1108,7 @@ const Retic = {
   },
 
   _erfCalcHtml(k, e, design, vc, limit) {
-    const rows = design.steps.map(([a, b, c]) => [a, b, c]);
+    const rows = design.steps.slice();   // [label, formula, value] rows or {cls, cells} rows
     if (!vc) {
       const why = !this._cableRX(e.cableType) ? 'select a service cable' : !e.length ? 'enter a length' : 'no design current';
       return this._calcTable(rows) + `<div class="calc-note">Volt drop not calculated — ${why}.</div>`;

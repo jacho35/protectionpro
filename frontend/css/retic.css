@@ -183,6 +183,10 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 .calc-table tr.vd-ok td.calc-val { color: var(--success); }
 .calc-table tr.vd-fail td.calc-val { color: var(--danger); }
 .calc-note { color: var(--text-muted); font-style: italic; padding: 2px 6px; }
+.calc-table tr.calc-warn td { color: var(--warning); background: rgba(245,124,0,.08); }
+.calc-table tr.calc-warn td:first-child { color: var(--warning); font-weight: 700; }
+/* Single-phase class on an erf drawn "3 Phase" (see Retic._erfPhaseMismatch). */
+.erf-table td.erf-phase-warn select { border-color: var(--warning); box-shadow: inset 3px 0 0 var(--warning); }
 .kiosk-body { padding: 10px 12px; }
 .kiosk-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
 .kiosk-meta .retic-field select, .kiosk-meta .retic-field input { min-width: 90px; }
@@ -284,3 +288,9 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 .status-pill.pass { background: rgba(46,125,50,.15); color: var(--success); }
 .status-pill.warn { background: rgba(245,124,0,.15); color: var(--warning); }
 .status-pill.fail { background: rgba(211,47,47,.15); color: var(--danger); }
+
+/* Fixed-load override: amps and kVA side by side; the derived one is muted. */
+.erf-ov { display: flex; align-items: center; gap: 3px; }
+.erf-table .erf-ov input { width: 64px; min-width: 0; flex: 1 1 64px; }
+.erf-ov-u { font-size: 10.5px; color: var(--text-muted); }
+.erf-table .erf-ov input.derived { color: var(--text-muted); font-style: italic; background: var(--bg-secondary); }

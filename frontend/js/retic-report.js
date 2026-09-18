@@ -103,7 +103,7 @@ const ReticReport = {
     for (const k of Retic.kiosks) {
       for (const e of k.erfs) {
         if (!(e.length > 0)) continue;
-        const is3ph = Retic._erfIs3ph(k, e);   // any erf on a 3Φ class is 3-phase
+        const is3ph = Retic._erfIs3ph(k, e);   // 3Φ class ⇒ 3-phase, except an override erf (its own phase)
         const vd = Retic._vdPercent(e.cableType, Retic._erfDesignAmps(k, e), e.length, is3ph);
         erfRows.push([
           k.name || 'Kiosk',
@@ -111,7 +111,7 @@ const ReticReport = {
           e.phase || '',
           String(e.length || 0),
           e.cableType || '—',
-          e.ampsOverride ? String(e.ampsOverride) : '—',
+          (() => { const o = Retic._erfOverride(e); return o ? `${o.amps.toFixed(1)} A / ${o.kva.toFixed(2)} kVA` : '—'; })(),
           vd == null ? '—' : vd.toFixed(2) + '%',
         ]);
       }
@@ -123,7 +123,7 @@ const ReticReport = {
       doc.autoTable({
         startY: startY + 3,
         margin: { left: margin, right: margin },
-        head: [['Kiosk', 'Erf #', 'Phase', 'Length (m)', 'Service Cable', 'Amps Override', 'Service VD']],
+        head: [['Kiosk', 'Erf #', 'Phase', 'Length (m)', 'Service Cable', 'Override', 'Service VD']],
         body: erfRows,
         styles: { fontSize: 8, cellPadding: 1.5 },
         headStyles: { fillColor: [0, 120, 215], textColor: 255, fontStyle: 'bold' },

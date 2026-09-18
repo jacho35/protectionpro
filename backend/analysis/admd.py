@@ -68,21 +68,46 @@ def is_3phase_erf(erf):
     return _get(erf, "phase") == "3 Phase"
 
 
-def _has_override(erf):
-    ov = _get(erf, "ampsOverride")
-    if ov is None:
-        ov = _get(erf, "amps_override")
+def _num_or_zero(v):
     try:
-        return ov is not None and float(ov) > 0
+        return float(v) if v is not None else 0.0
     except (TypeError, ValueError):
-        return False
+        return 0.0
+
+
+def _override_kva_entered(erf):
+    """The override's kVA when the user ENTERED it in kVA (overrideUnit "kVA"),
+    else None. Used directly so a kVA entry never round-trips through amps."""
+    if _get(erf, "overrideUnit") == "kVA":
+        v = _num_or_zero(_get(erf, "kvaOverride"))
+        return v if v > 0 else None
+    return None
 
 
 def _override_amps(erf):
     ov = _get(erf, "ampsOverride")
     if ov is None:
         ov = _get(erf, "amps_override")
-    return float(ov)
+    return _num_or_zero(ov)
+
+
+def _has_override(erf):
+    """A fixed, undiversified load: an amps override, or a kVA-entered one."""
+    return _override_kva_entered(erf) is not None or _override_amps(erf) > 0
+
+
+def _override_voltage(erf):
+    """The voltage an override converts through — the erf's OWN connection,
+    never its kiosk's load class (an override replaces the class)."""
+    return math.sqrt(3) * V_3PH_LINE if is_3phase_erf(erf) else V_1PH
+
+
+def erf_override_kva(erf):
+    """Fixed kVA of an override erf: the entered kVA, else amps x its voltage."""
+    kva = _override_kva_entered(erf)
+    if kva is not None:
+        return kva
+    return _override_amps(erf) * _override_voltage(erf) / 1000.0
 
 
 def _is_active(erf):
@@ -94,8 +119,10 @@ def _is_active(erf):
 
 def count_weighted_conns(erven, force_3ph=False):
     """Total connections; a 3-phase erf counts as 3. Active erven only.
-    ``force_3ph``: every erf is 3-phase (its kiosk is on a 3-phase class)."""
-    return sum(3 if (force_3ph or is_3phase_erf(e)) else 1 for e in erven if _is_active(e))
+    ``force_3ph``: its kiosk is on a 3-phase class, so every erf the CLASS
+    describes is 3-phase; an override erf keeps its own phase setting."""
+    return sum(3 if (is_3phase_erf(e) or (force_3ph and not _has_override(e))) else 1
+               for e in erven if _is_active(e))
 
 
 def sum_override_kva(erven):
@@ -103,8 +130,7 @@ def sum_override_kva(erven):
     total = 0.0
     for e in erven:
         if _is_active(e) and _has_override(e):
-            v = math.sqrt(3) * V_3PH_LINE if is_3phase_erf(e) else V_1PH
-            total += _override_amps(e) * v / 1000.0
+            total += erf_override_kva(e)
     return total
 
 
@@ -345,7 +371,21 @@ def kiosk_demand(kiosk, settings):
             "admd": admd_val, "admdSource": admd_src,
             "buckets": buckets,
             "diversifiedKVA": _round2(diversified_kva),
+            # Erven drawn "3 Phase" on a SINGLE-phase class: the per-phase
+            # figures then land on every phase (~3x that household's demand).
+            # Computed as such (conservative) and flagged in the UI.
+            "mixedPhaseErven": 0 if three_ph else sum(
+                1 for e in erven if is_3phase_erf(e) and not _has_override(e)),
             "overrideKVA": _round2(override_kva), "streetLightKVA": _round2(sl_kva),
+            # Each fixed load, for the panel: what was entered and what it is.
+            "overrides": [{
+                "erf": _get(e, "erfNumber") or "",
+                "phase": "3 Phase" if is_3phase_erf(e) else (_get(e, "phase") or "—"),
+                "entered": "kVA" if _override_kva_entered(e) is not None else "A",
+                "amps": _round2(erf_override_kva(e) * 1000.0 / _override_voltage(e)),
+                "kva": _round2(erf_override_kva(e)),
+                "v": round(_override_voltage(e), 1),
+            } for e in erven if _has_override(e)],
             "totalKVA": total_kva, "currentA": current_a, "vLine": V_3PH_LINE,
         },
     }

@@ -3041,6 +3041,62 @@ class TestADMD:
         assert feeder_demand([k], _settings())["conns"] == 36    # 12 × 3 phases
         assert emp["admdPerPhase"] is True
 
+    @pytest.mark.parametrize("method", ["Empirical", "Herman Beta"])
+    def test_single_phase_class_on_three_phase_erf(self, method):
+        """CTEF100 figures are per phase. A SINGLE-phase class on an erf drawn
+        "3 Phase" therefore carries its per-phase figures on every phase: the
+        kiosk equals three single-phase buckets of that class (about 3x the
+        household's demand, conservative) and the calc record flags it so the
+        UI can steer the user to a 3-phase class."""
+        s = _settings(estimationMethod=method, riskZ=1.28)
+        three = kiosk_demand({"id": "K", "loadClass": "upmarket1",
+                              "erfs": [{"length": 30, "phase": "3 Phase"}]}, s)
+        one = kiosk_demand({"id": "K", "loadClass": "upmarket1",
+                            "erfs": [{"length": 30, "phase": "Red"}]}, s)
+        assert three["totalKVA"] == pytest.approx(3 * one["totalKVA"], abs=0.02)
+        assert three["calc"]["mixedPhaseErven"] == 1
+        assert one["calc"]["mixedPhaseErven"] == 0
+        # A 3-phase class is never flagged (every erf is 3-phase by definition).
+        k3 = kiosk_demand({"id": "K", "loadClass": "upmarket1_3ph",
+                           "erfs": [{"length": 30, "phase": "3 Phase"}]}, s)
+        assert k3["calc"]["mixedPhaseErven"] == 0
+        # The same household on its 3-phase class is far lighter than the
+        # mismatched single-phase class (spread load, per-phase figures).
+        assert k3["totalKVA"] < three["totalKVA"] / 2
+
+    def test_override_entered_in_kva(self):
+        """An override may be entered in kVA (overrideUnit "kVA"): that kVA is
+        the fixed load exactly — no round trip through amps — and the panel's
+        record carries both figures at the erf's own voltage."""
+        from backend.analysis.admd import erf_override_kva
+        k = {"id": "K", "erfs": [
+            {"erfNumber": "7", "length": 20, "phase": "3 Phase", "overrideUnit": "kVA", "kvaOverride": 25.0,
+             "ampsOverride": 36.084},
+            {"erfNumber": "8", "length": 20, "phase": "Red", "ampsOverride": 32},
+        ]}
+        r = kiosk_demand(k, _settings())
+        assert r["overrideKVA"] == pytest.approx(25.0 + 32 * 230 / 1000, abs=0.01)   # 25 + 7.36
+        ov = {o["erf"]: o for o in r["calc"]["overrides"]}
+        assert ov["7"]["entered"] == "kVA" and ov["7"]["kva"] == pytest.approx(25.0)
+        assert ov["7"]["amps"] == pytest.approx(25000 / (3 ** 0.5 * 400), abs=0.01)   # 36.08 A
+        assert ov["8"]["entered"] == "A" and ov["8"]["kva"] == pytest.approx(7.36)
+        # A kVA entry wins over a stale ampsOverride left on the erf.
+        assert erf_override_kva({"phase": "Red", "overrideUnit": "kVA", "kvaOverride": 5, "ampsOverride": 99}) == 5
+
+    def test_override_erf_keeps_its_own_phase_on_three_phase_class(self):
+        """An override replaces the load class, so on a 3-phase-class kiosk an
+        override erf drawn Red stays single-phase: I x 230 V, one connection.
+        (Only the erven the class describes become 3-phase.)"""
+        k = {"id": "K", "loadClass": "upmarket1_3ph", "erfs": [
+            {"length": 30, "phase": "Red", "ampsOverride": 40},
+            {"length": 30, "phase": "Red"},
+        ]}
+        s = _settings()
+        r = kiosk_demand(k, s)
+        assert r["overrideKVA"] == pytest.approx(40 * 230 / 1000)          # 9.2 kVA, not 40 x 692.8
+        assert feeder_demand([k], s)["conns"] == 1 + 3                      # override 1 + class erf 3
+        assert r["calc"]["overrides"][0]["phase"] == "Red"
+
     def test_simple_admd_three_phase_class(self):
         """Undiversified badge: a 3Φ-class consumer is 3 × per-phase ADMD."""
         from backend.analysis.admd import calc_simple_admd
