@@ -4,16 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.98">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.98">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.98">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.98">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.98">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.98">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.98">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.98">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.98">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.98">
+  <link rel="stylesheet" href="css/app.css?v=3.5.99">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.99">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.99">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.99">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.99">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.99">
+  <link rel="stylesheet" href="css/lightning.css?v=3.5.99">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.99">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.99">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.99">
+  <link rel="stylesheet" href="css/schedules.css?v=3.5.99">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -1654,114 +1655,134 @@
   </div>
 
   <!-- Lightning Risk Assessment Modal -->
-  <div id="lightning-modal" class="modal" role="dialog" aria-modal="true" aria-label="Lightning Risk Assessment" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Lightning Risk Assessment — IEC 62305-2</h3>
-        <button class="modal-close" id="btn-close-lightning">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="lightning-form">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;font-size:12px">
-            <label>Length L (m)<input type="number" id="lr-length" value="20" min="1" step="0.5"></label>
-            <label>Width W (m)<input type="number" id="lr-width" value="15" min="1" step="0.5"></label>
-            <label>Height H (m)<input type="number" id="lr-height" value="8" min="1" step="0.5"></label>
-            <label title="Ground flash density (flashes/km²/yr). SA highveld 6–12, coastal 1–4.">N<sub>G</sub> (fl/km²/yr)<input type="number" id="lr-ng" value="4" min="0.1" step="0.1"></label>
-            <label>Relative location (C<sub>D</sub>)
-              <select id="lr-location">
-                <option value="surrounded_by_taller">Surrounded by taller objects</option>
-                <option value="surrounded_same_height" selected>Surrounded, same height</option>
-                <option value="isolated">Isolated</option>
-                <option value="isolated_hilltop">Isolated on hilltop</option>
-              </select></label>
-            <label>Structure use (L<sub>F</sub>)
-              <select id="lr-use">
-                <option value="other" selected>Residential / other</option>
-                <option value="industrial_commercial">Industrial / commercial</option>
-                <option value="entertainment_church_museum">Entertainment / church / museum</option>
-                <option value="hospital_hotel_school">Hospital / hotel / school</option>
-              </select></label>
-            <label>Special hazard (h<sub>z</sub>)
-              <select id="lr-hazard">
-                <option value="none" selected>None</option>
-                <option value="low_panic">Low panic (&lt;100 people)</option>
-                <option value="average_panic">Average panic (100–1000)</option>
-                <option value="difficult_evacuation">Difficult evacuation</option>
-                <option value="high_panic">High panic (&gt;1000)</option>
-              </select></label>
-            <label>Floor surface (r<sub>t</sub>)
-              <select id="lr-floor">
-                <option value="agricultural_concrete" selected>Soil / concrete</option>
-                <option value="marble_ceramic">Marble / ceramic</option>
-                <option value="gravel_carpet">Gravel / carpet</option>
-                <option value="asphalt_wood_linoleum">Asphalt / wood</option>
-              </select></label>
-            <label>Fire risk (r<sub>f</sub>)
-              <select id="lr-fire-risk">
-                <option value="none">None</option>
-                <option value="low">Low</option>
-                <option value="ordinary" selected>Ordinary</option>
-                <option value="high">High</option>
-              </select></label>
-            <label>Fire protection (r<sub>p</sub>)
-              <select id="lr-fire-prot">
-                <option value="none" selected>None</option>
-                <option value="manual">Manual (extinguishers)</option>
-                <option value="automatic">Automatic suppression</option>
-              </select></label>
-            <label>Existing LPS class (P<sub>B</sub>)
-              <select id="lr-lps">
-                <option value="none" selected>None</option>
-                <option value="IV">Class IV</option>
-                <option value="III">Class III</option>
-                <option value="II">Class II</option>
-                <option value="I">Class I</option>
-              </select></label>
-            <label>Coordinated SPDs (P<sub>SPD</sub>)
-              <select id="lr-spd">
-                <option value="none" selected>None</option>
-                <option value="III-IV">LPL III–IV</option>
-                <option value="II">LPL II</option>
-                <option value="I">LPL I</option>
-              </select></label>
-            <label>Persons in structure<input type="number" id="lr-persons" value="10" min="1" step="1"></label>
-            <label>Occupied hours/yr<input type="number" id="lr-hours" value="8760" min="1" max="8760" step="1"></label>
-            <label title="Rated impulse withstand of internal equipment (K_S4, P_LI)">Equipment U<sub>W</sub> (kV)
-              <select id="lr-uw">
-                <option value="1">1.0</option>
-                <option value="1.5">1.5</option>
-                <option value="2.5" selected>2.5</option>
-                <option value="4">4.0</option>
-                <option value="6">6.0</option>
-              </select></label>
-            <label style="display:flex;align-items:center;gap:6px;margin-top:14px"><input type="checkbox" id="lr-explosion" style="width:auto"> Risk of explosion</label>
-          </div>
-          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <fieldset style="border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;font-size:12px">
-              <legend style="font-size:12px;padding:0 4px"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="lr-line1-en" checked style="width:auto"> Power service line</label></legend>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px">
-                <label>Length (m)<input type="number" id="lr-line1-len" value="1000" min="1"></label>
-                <label>Installation<select id="lr-line1-inst"><option value="buried" selected>Buried</option><option value="aerial">Aerial</option></select></label>
-                <label>Environment<select id="lr-line1-env"><option value="rural">Rural</option><option value="suburban" selected>Suburban</option><option value="urban">Urban</option><option value="urban_tall_buildings">Urban &gt;20 m</option></select></label>
-                <label style="display:flex;align-items:center;gap:6px;margin-top:12px"><input type="checkbox" id="lr-line1-tx" checked style="width:auto"> HV/LV transformer</label>
+  <div id="lightning-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="lr-title" style="display:none">
+    <div class="modal-content lr-dialog">
+      <header class="lr-head">
+        <span class="lr-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M9 1.8L4 9h3.6l-.8 5.2L12 7H8.4z"/></svg></span>
+        <div class="lr-head-text"><h3 id="lr-title">Lightning risk assessment</h3><div class="lr-head-sub" id="lr-head-sub">Step 1 of 4 — tell us about the structure</div></div>
+        <span class="lr-tag">IEC 62305-2:2010</span><span class="lr-tag">Risk to life, R<sub>1</sub></span>
+        <button class="modal-close" id="btn-close-lightning" aria-label="Close">&times;</button>
+      </header>
+      <div class="lr-body">
+        <nav class="lr-nav" aria-label="Assessment steps">
+          <div class="lr-nav-h">Steps</div>
+          <button type="button" class="lr-step" data-lr-go="1"><span class="lr-n">1</span><span><span class="lr-st">Structure &amp; site</span><span class="lr-sd">Size, surroundings, lightning density</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="2"><span class="lr-n">2</span><span><span class="lr-st">People &amp; fire</span><span class="lr-sd">Who is inside and what can burn</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="3"><span class="lr-n">3</span><span><span class="lr-st">Service lines</span><span class="lr-sd">Power and telecom lines entering</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="4"><span class="lr-n">4</span><span><span class="lr-st">Existing protection</span><span class="lr-sd">LPS and surge protection in place</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="5"><span class="lr-n">5</span><span><span class="lr-st">Results</span><span class="lr-sd">Verdict and the protection needed</span></span></button>
+        </nav>
+        <div class="lr-main">
+          <section class="lr-panel" data-lr-panel="1">
+            <div class="lr-about">
+              <div class="lr-about-h"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 4.9v.1"/></svg>What this assessment decides</div>
+              <ul>
+                <li>It estimates <b>R<sub>1</sub></b>, the yearly risk that lightning causes <b>loss of human life</b> in or at this structure, through shock, fire, or (for hospitals, hotels, schools and explosion risks) failure of internal systems.</li>
+                <li>It compares R<sub>1</sub> with the <b>tolerable risk R<sub>T</sub> = 1 × 10⁻⁵ per year</b> (IEC 62305-2, Table 7).</li>
+                <li>If R<sub>1</sub> is too high, it finds the <b>lowest lightning protection system (LPS) class and surge protection (SPD) level</b> that bring it below R<sub>T</sub>.</li>
+              </ul>
+              <div class="lr-about-meta">
+                <div><b>You’ll need:</b> the building’s size, the site’s lightning ground flash density, how many people use it and for how long, and the power and telecom lines that enter it.</div>
+                <div><b>Scope:</b> one structure, assessed as a single zone. Not assessed: loss of public service (R<sub>2</sub>), cultural heritage (R<sub>3</sub>) or economic loss (R<sub>4</sub>).</div>
               </div>
-            </fieldset>
-            <fieldset style="border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;font-size:12px">
-              <legend style="font-size:12px;padding:0 4px"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="lr-line2-en" style="width:auto"> Telecom line</label></legend>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px">
-                <label>Length (m)<input type="number" id="lr-line2-len" value="1000" min="1"></label>
-                <label>Installation<select id="lr-line2-inst"><option value="buried">Buried</option><option value="aerial" selected>Aerial</option></select></label>
-                <label>Environment<select id="lr-line2-env"><option value="rural">Rural</option><option value="suburban" selected>Suburban</option><option value="urban">Urban</option><option value="urban_tall_buildings">Urban &gt;20 m</option></select></label>
-                <label style="display:flex;align-items:center;gap:6px;margin-top:12px"><input type="checkbox" id="lr-line2-shield" style="width:auto"> Shielded &amp; bonded</label>
+            </div>
+            <div><h4 class="lr-h">1 · Structure &amp; site</h4><p class="lr-lead">How big the building is and how exposed its site is sets how often lightning strikes it, or strikes close enough to matter.</p></div>
+            <div class="lr-sec-h">Building dimensions</div>
+            <div class="lr-dims">
+              <div class="lr-grid-3">
+                <div class="lr-fld"><label class="lr-fl" for="lr-length">Length <span class="lr-sym">L</span></label><div class="lr-in"><input type="number" id="lr-length" min="1" step="0.5"><span class="lr-u">m</span></div><div class="lr-hp">Longest side of the footprint.</div></div>
+                <div class="lr-fld"><label class="lr-fl" for="lr-width">Width <span class="lr-sym">W</span></label><div class="lr-in"><input type="number" id="lr-width" min="1" step="0.5"><span class="lr-u">m</span></div><div class="lr-hp">Shorter side of the footprint.</div></div>
+                <div class="lr-fld"><label class="lr-fl" for="lr-height">Height <span class="lr-sym">H</span></label><div class="lr-in"><input type="number" id="lr-height" min="1" step="0.5"><span class="lr-u">m</span></div><div class="lr-hp">To the highest point of the roof.</div></div>
               </div>
-            </fieldset>
-          </div>
-          <div style="margin-top:12px;text-align:right">
-            <button id="btn-run-lightning" class="btn btn-primary">Assess Risk</button>
-          </div>
+              <figure class="lr-plan" aria-hidden="true"><svg width="150" height="84" viewBox="0 0 160 88" fill="none" stroke-linecap="round"><rect x="44" y="22" width="72" height="44" rx="2" class="lr-plan-bld"/><rect x="18" y="4" width="124" height="80" rx="24" stroke-dasharray="4 3" class="lr-plan-band"/></svg><figcaption class="lr-hp">Strikes inside the dashed band (3H from the walls) hit the building.</figcaption></figure>
+            </div>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr-ng">Lightning ground flash density <span class="lr-sym">N<sub>G</sub></span></label><div class="lr-in"><input type="number" id="lr-ng" min="0.1" step="0.1"><span class="lr-u">flashes / km² / yr</span></div><div class="lr-hp">How many lightning flashes strike each km² of ground per year at this site. Take it from the national lightning ground flash density map. South Africa, typically: coastal 1–4, Highveld 6–12.</div></div>
+            </div>
+            <div class="lr-sec-h">Surroundings <span class="lr-sym">C<sub>D</sub></span><span class="lr-hp lr-inline">Taller objects nearby intercept strikes; an exposed building attracts more.</span></div>
+            <input type="hidden" id="lr-location"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Surroundings" data-lr-target="lr-location"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="surrounded_by_taller"><span class="lr-card-t">Among taller objects</span><span class="lr-card-d">Trees or buildings nearby are higher than this one.</span><span class="lr-card-f">C<sub>D</sub> = 0.25</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="surrounded_same_height"><span class="lr-card-t">Among similar or lower</span><span class="lr-card-d">Surrounding objects are the same height or lower.</span><span class="lr-card-f">C<sub>D</sub> = 0.5</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="isolated"><span class="lr-card-t">Isolated</span><span class="lr-card-d">No other objects in the vicinity (within 3H).</span><span class="lr-card-f">C<sub>D</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="isolated_hilltop"><span class="lr-card-t">Isolated on a hilltop</span><span class="lr-card-d">Exposed on a hill or knoll.</span><span class="lr-card-f">C<sub>D</sub> = 2</span></button></div>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="2" hidden>
+            <div><h4 class="lr-h">2 · People &amp; fire</h4><p class="lr-lead">Who is inside, for how long, and how a strike could become a fire decide how much a strike would cost in lives.</p></div>
+            <div class="lr-sec-h">Type of structure <span class="lr-sym">L<sub>F</sub></span><span class="lr-hp lr-inline">Typical loss of life from fire, IEC 62305-2 Table C.2.</span></div>
+            <input type="hidden" id="lr-use"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Type of structure" data-lr-target="lr-use"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="other"><span class="lr-card-t">Residential / other</span><span class="lr-card-d">Homes and anything not listed.</span><span class="lr-card-f">L<sub>F</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="industrial_commercial"><span class="lr-card-t">Industrial / commercial</span><span class="lr-card-d">Factories, shops, offices.</span><span class="lr-card-f">L<sub>F</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="entertainment_church_museum"><span class="lr-card-t">Public assembly</span><span class="lr-card-d">Entertainment venues, churches, museums.</span><span class="lr-card-f">L<sub>F</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="hospital_hotel_school"><span class="lr-card-t">Hospital / hotel / school</span><span class="lr-card-d">Also counts failure of internal systems (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>) as a risk to life.</span><span class="lr-card-f">L<sub>F</sub> = 0.1</span></button></div>
+            <div class="lr-sec-h">Occupancy</div>
+            <div class="lr-grid-3">
+              <div class="lr-fld"><label class="lr-fl" for="lr-persons">People in the structure <span class="lr-sym">n<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr-persons" min="1" step="1"><span class="lr-u">people</span></div><div class="lr-hp">Typical number present when it is in use.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-hours">Hours occupied per year <span class="lr-sym">t<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr-hours" min="1" max="8760" step="1"><span class="lr-u">h / yr</span></div><div class="lr-hp">8,760 = always occupied. A school term timetable is about 2,000.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-hazard">Panic / evacuation <span class="lr-sym">h<sub>z</sub></span></label><select id="lr-hazard" class="lr-sel"><option value="none">None</option><option value="low_panic">Low: up to 2 floors, under 100 people</option><option value="average_panic">Average: 100–1,000 people</option><option value="difficult_evacuation">Difficult evacuation (e.g. immobile patients)</option><option value="high_panic">High: over 1,000 people</option></select><div class="lr-hp">Raises the fire loss when escape is hard.</div></div>
+            </div>
+            <div class="lr-sec-h">Fire risk <span class="lr-sym">r<sub>f</sub></span><span class="lr-hp lr-inline">From the specific fire load of the contents.</span></div>
+            <input type="hidden" id="lr-fire-risk"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Fire risk" data-lr-target="lr-fire-risk"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">Nothing that can sustain a fire.</span><span class="lr-card-f">r<sub>f</sub> = 0</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="low"><span class="lr-card-t">Low</span><span class="lr-card-d">Fire load under 400 MJ/m².</span><span class="lr-card-f">r<sub>f</sub> = 0.001</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="ordinary"><span class="lr-card-t">Ordinary</span><span class="lr-card-d">Fire load 400–800 MJ/m². Most offices, classrooms, homes.</span><span class="lr-card-f">r<sub>f</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="high"><span class="lr-card-t">High</span><span class="lr-card-d">Fire load over 800 MJ/m², e.g. stores, archives.</span><span class="lr-card-f">r<sub>f</sub> = 0.1</span></button></div>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><span class="lr-fl">Fire protection <span class="lr-sym">r<sub>p</sub></span></span>
+                <input type="hidden" id="lr-fire-prot"><div class="lr-seg" role="radiogroup" aria-label="Fire protection" data-lr-target="lr-fire-prot"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="none">None</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="manual">Manual (× 0.5)</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="automatic">Automatic (× 0.2)</button></div>
+                <div class="lr-hp">Manual: extinguishers, hydrants, manual alarms, escape routes. Automatic: fixed extinguishing or alarm installations.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-floor">Floor surface <span class="lr-sym">r<sub>t</sub></span></label><select id="lr-floor" class="lr-sel"><option value="agricultural_concrete">Soil or concrete (× 0.01)</option><option value="marble_ceramic">Marble or ceramic (× 0.001)</option><option value="gravel_carpet">Gravel or carpet (× 0.0001)</option><option value="asphalt_wood_linoleum">Asphalt, wood or linoleum (× 0.00001)</option></select><div class="lr-hp">Insulating floors reduce the chance of injury from step and touch voltage.</div></div>
+            </div>
+            <label class="lr-chk"><input type="checkbox" id="lr-explosion"> <span><b>Risk of explosion</b> (hazardous-area zones present). Treats fire as certain and counts internal-system failure as a risk to life.</span></label>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="3" hidden>
+            <div><h4 class="lr-h">3 · Service lines</h4><p class="lr-lead">Lightning also enters through the lines connected to the building: strikes on a line cause shock and fire (R<sub>U</sub>, R<sub>V</sub>), and strikes near it induce surges (R<sub>W</sub>, R<sub>Z</sub>). Leave a line unticked if the building has no such connection.</p></div>
+            <section class="lr-line" aria-label="Power supply line">
+            <div class="lr-line-h"><label class="lr-chk lr-chk-strong"><input type="checkbox" id="lr-line1-en"> Power supply line</label><span class="lr-hp">LV supply cable into the building</span></div>
+            <div class="lr-grid-3">
+              <div class="lr-fld"><label class="lr-fl" for="lr-line1-len">Length to the next node <span class="lr-sym">L<sub>L</sub></span></label><div class="lr-in"><input type="number" id="lr-line1-len" min="1" step="1"><span class="lr-u">m</span></div><div class="lr-hp">To the substation, transformer or exchange. Unknown? The standard’s default is 1,000 m.</div></div>
+              <div class="lr-fld"><span class="lr-fl">Installation <span class="lr-sym">C<sub>I</sub></span></span>
+                <input type="hidden" id="lr-line1-inst"><div class="lr-seg" role="radiogroup" aria-label="Installation" data-lr-target="lr-line1-inst"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="buried">Buried</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="aerial">Aerial</button></div>
+                <div class="lr-hp">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-line1-env">Line environment <span class="lr-sym">C<sub>E</sub></span></label><select id="lr-line1-env" class="lr-sel"><option value="rural">Rural (CE = 1)</option><option value="suburban">Suburban (CE = 0.5)</option><option value="urban">Urban (CE = 0.1)</option><option value="urban_tall_buildings">Urban, buildings over 20 m (CE = 0.01)</option></select><div class="lr-hp">Buildings along the route shield the line.</div></div>
+            </div>
+            <label class="lr-chk"><input type="checkbox" id="lr-line1-tx"> <span><b>HV/LV transformer at the building end</b> (C<sub>T</sub> = 0.2). A transformer between the line and the building blocks much of the surge.</span></label>
+          </section>
+            <section class="lr-line" aria-label="Telecom line">
+            <div class="lr-line-h"><label class="lr-chk lr-chk-strong"><input type="checkbox" id="lr-line2-en"> Telecom line</label><span class="lr-hp">Copper telephone or data line</span></div>
+            <div class="lr-grid-3">
+              <div class="lr-fld"><label class="lr-fl" for="lr-line2-len">Length to the next node <span class="lr-sym">L<sub>L</sub></span></label><div class="lr-in"><input type="number" id="lr-line2-len" min="1" step="1"><span class="lr-u">m</span></div><div class="lr-hp">To the substation, transformer or exchange. Unknown? The standard’s default is 1,000 m.</div></div>
+              <div class="lr-fld"><span class="lr-fl">Installation <span class="lr-sym">C<sub>I</sub></span></span>
+                <input type="hidden" id="lr-line2-inst"><div class="lr-seg" role="radiogroup" aria-label="Installation" data-lr-target="lr-line2-inst"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="buried">Buried</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="aerial">Aerial</button></div>
+                <div class="lr-hp">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-line2-env">Line environment <span class="lr-sym">C<sub>E</sub></span></label><select id="lr-line2-env" class="lr-sel"><option value="rural">Rural (CE = 1)</option><option value="suburban">Suburban (CE = 0.5)</option><option value="urban">Urban (CE = 0.1)</option><option value="urban_tall_buildings">Urban, buildings over 20 m (CE = 0.01)</option></select><div class="lr-hp">Buildings along the route shield the line.</div></div>
+            </div>
+            <label class="lr-chk"><input type="checkbox" id="lr-line2-shield"> <span><b>Shielded and bonded</b> The cable screen is bonded at the entrance, which reduces induced surges.</span></label>
+          </section>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr-uw">Impulse withstand of equipment inside <span class="lr-sym">U<sub>W</sub></span></label><select id="lr-uw" class="lr-sel"><option value="1">1.0 kV: sensitive electronics</option><option value="1.5">1.5 kV: electronic equipment</option><option value="2.5">2.5 kV: typical final-circuit appliances</option><option value="4">4.0 kV: distribution boards, fixed installation</option><option value="6">6.0 kV: equipment at the origin of the installation</option></select><div class="lr-hp">The surge voltage the weakest internal equipment survives. Lower U<sub>W</sub> means more failures from induced surges.</div></div>
+            </div>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="4" hidden>
+            <div><h4 class="lr-h">4 · Existing protection</h4><p class="lr-lead">Leave both at <b>None</b> to assess the building as it stands. The results then recommend the minimum protection it needs. Set them if protection is already installed, to check it is enough.</p></div>
+            <div class="lr-sec-h">Lightning protection system (LPS) <span class="lr-sym">P<sub>B</sub></span><span class="lr-hp lr-inline">Air terminals, down conductors and earthing, per IEC 62305-3.</span></div>
+            <input type="hidden" id="lr-lps"><div class="lr-cards lr-cols-5" role="radiogroup" aria-label="Lightning protection system" data-lr-target="lr-lps"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">No LPS installed.</span><span class="lr-card-f">P<sub>B</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="IV"><span class="lr-card-t">Class IV</span><span class="lr-card-d">Least protective.</span><span class="lr-card-f">P<sub>B</sub> = 0.2</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III"><span class="lr-card-t">Class III</span><span class="lr-card-f">P<sub>B</sub> = 0.1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">Class II</span><span class="lr-card-f">P<sub>B</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">Class I</span><span class="lr-card-d">Most protective.</span><span class="lr-card-f">P<sub>B</sub> = 0.02</span></button></div>
+            <div class="lr-sec-h">Coordinated surge protection (SPD) <span class="lr-sym">P<sub>SPD</sub></span><span class="lr-hp lr-inline">A coordinated SPD system on the incoming lines and inside, per IEC 62305-4.</span></div>
+            <input type="hidden" id="lr-spd"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Coordinated surge protection" data-lr-target="lr-spd"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">No coordinated SPD system.</span><span class="lr-card-f">P<sub>SPD</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III-IV"><span class="lr-card-t">LPL III–IV</span><span class="lr-card-f">P<sub>SPD</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">LPL II</span><span class="lr-card-f">P<sub>SPD</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">LPL I</span><span class="lr-card-d">Highest lightning protection level.</span><span class="lr-card-f">P<sub>SPD</sub> = 0.01</span></button></div>
+            <div class="lr-hp">Surge protection is what reduces the internal-system risks (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>). An LPS alone does not.</div>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="5" hidden>
+            <div id="lightning-results"></div>
+          </section>
         </div>
-        <div id="lightning-results" style="margin-top:14px"></div>
+        <aside class="lr-rail" aria-label="Live estimate" aria-live="polite">
+          <div class="lr-rail-h">Live estimate</div>
+          <div class="lr-stat"><span class="lr-stat-k">Collection area <i>A</i><sub>D</sub></span><span class="lr-stat-v" id="lr-live-ad">—</span><span class="lr-stat-e">The building plus a band of 3H around it</span></div>
+          <div class="lr-stat"><span class="lr-stat-k">Direct strikes <i>N</i><sub>D</sub></span><span class="lr-stat-v" id="lr-live-nd">—</span><span class="lr-stat-e" id="lr-live-nd-e"></span></div>
+          <div class="lr-stat"><span class="lr-stat-k">Strikes within 500 m <i>N</i><sub>M</sub></span><span class="lr-stat-v" id="lr-live-nm">—</span><span class="lr-stat-e">Nearby strikes induce surges in internal wiring</span></div>
+          <div class="lr-stat"><span class="lr-stat-k">Tolerable risk <i>R</i><sub>T</sub></span><span class="lr-stat-v">1 × 10⁻⁵ <small>/ yr</small></span><span class="lr-stat-e">IEC 62305-2 Table 7</span></div>
+          <div class="lr-note">These update as you type, so you can see what each input does before running the assessment. Inputs are saved with the project.</div>
+        </aside>
       </div>
+      <footer class="lr-foot">
+        <button type="button" class="btn" id="lr-back">‹ Back</button>
+        <span class="lr-foot-pg" id="lr-foot-pg">Step 1 of 4</span>
+        <span class="lr-grow"></span>
+        <button type="button" class="btn" id="lr-cancel">Close</button>
+        <button type="button" class="btn btn-primary" id="lr-next">Next ›</button>
+        <button type="button" class="btn btn-primary" id="btn-run-lightning">Assess risk</button>
+      </footer>
     </div>
   </div>
 
@@ -2971,78 +2992,79 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.98"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.98"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.98"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.98"></script>
-  <script src="js/constants.js?v=3.5.98"></script>
-  <script src="js/plan-defs.js?v=3.5.98"></script>
-  <script src="js/ui.js?v=3.5.98"></script>
-  <script src="js/state.js?v=3.5.98"></script>
-  <script src="js/components.js?v=3.5.98"></script>
-  <script src="js/voltage.js?v=3.5.98"></script>
-  <script src="js/symbols.js?v=3.5.98"></script>
-  <script src="js/canvas.js?v=3.5.98"></script>
-  <script src="js/sidebar.js?v=3.5.98"></script>
-  <script src="js/wiring.js?v=3.5.98"></script>
-  <script src="js/properties.js?v=3.5.98"></script>
-  <script src="js/annotations.js?v=3.5.98"></script>
-  <script src="js/api.js?v=3.5.98"></script>
-  <script src="js/auth.js?v=3.5.98"></script>
-  <script src="js/sharing.js?v=3.5.98"></script>
-  <script src="js/compliance.js?v=3.5.98"></script>
-  <script src="js/tcc.js?v=3.5.98"></script>
-  <script src="js/project.js?v=3.5.98"></script>
-  <script src="js/reports.js?v=3.5.98"></script>
-  <script src="js/verification-templates.js?v=3.5.98"></script>
-  <script src="js/templates.js?v=3.5.98"></script>
-  <script src="js/standard-data.js?v=3.5.98"></script>
-  <script src="js/undo.js?v=3.5.98"></script>
-  <script src="js/revisions.js?v=3.5.98"></script>
-  <script src="js/minimap.js?v=3.5.98"></script>
-  <script src="js/contextmenu.js?v=3.5.98"></script>
-  <script src="js/dbschedule.js?v=3.5.98"></script>
-  <script src="js/control-sim.js?v=3.5.98"></script>
-  <script src="js/dynmotor.js?v=3.5.98"></script>
-  <script src="js/transient.js?v=3.5.98"></script>
-  <script src="js/voltage-stability.js?v=3.5.98"></script>
-  <script src="js/freqscan.js?v=3.5.98"></script>
-  <script src="js/battsizing.js?v=3.5.98"></script>
-  <script src="js/opf.js?v=3.5.98"></script>
-  <script src="js/reliability.js?v=3.5.98"></script>
-  <script src="js/flicker.js?v=3.5.98"></script>
-  <script src="js/hostingcapacity.js?v=3.5.98"></script>
-  <script src="js/filtersizing.js?v=3.5.98"></script>
-  <script src="js/capplace.js?v=3.5.98"></script>
-  <script src="js/contingency.js?v=3.5.98"></script>
-  <script src="js/timeseries.js?v=3.5.98"></script>
-  <script src="js/lfstudy.js?v=3.5.98"></script>
-  <script src="js/interlocking.js?v=3.5.98"></script>
-  <script src="js/sequence.js?v=3.5.98"></script>
-  <script src="js/retic.js?v=3.5.98"></script>
-  <script src="js/schedules.js?v=3.5.98"></script>
-  <script src="js/workspaces.js?v=3.5.98"></script>
-  <script src="js/header.js?v=3.5.98"></script>
-  <script src="js/dbaccessories.js?v=3.5.98"></script>
-  <script src="js/dbdrawing.js?v=3.5.98"></script>
-  <script src="js/retic-diagram.js?v=3.5.98"></script>
-  <script src="js/retic-report.js?v=3.5.98"></script>
-  <script src="js/plan-symbols.js?v=3.5.98"></script>
-  <script src="js/plan-engine.js?v=3.5.98"></script>
-  <script src="js/plan-images.js?v=3.5.98"></script>
-  <script src="js/plan-tools.js?v=3.5.98"></script>
-  <script src="js/plan-sync.js?v=3.5.98"></script>
-  <script src="js/plan-csv.js?v=3.5.98"></script>
-  <script src="js/plan-dxf.js?v=3.5.98"></script>
-  <script src="js/plan-export.js?v=3.5.98"></script>
-  <script src="js/plan-lux.js?v=3.5.98"></script>
-  <script src="js/plan-ies.js?v=3.5.98"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.98"></script>
-  <script src="js/plan-dd-import.js?v=3.5.98"></script>
-  <script src="js/plan-circuits.js?v=3.5.98"></script>
-  <script src="js/plan-ui.js?v=3.5.98"></script>
-  <script src="js/plan.js?v=3.5.98"></script>
-  <script src="js/app.js?v=3.5.98"></script>
-  <script src="js/mobile.js?v=3.5.98"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.99"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.99"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.99"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.99"></script>
+  <script src="js/constants.js?v=3.5.99"></script>
+  <script src="js/plan-defs.js?v=3.5.99"></script>
+  <script src="js/ui.js?v=3.5.99"></script>
+  <script src="js/state.js?v=3.5.99"></script>
+  <script src="js/components.js?v=3.5.99"></script>
+  <script src="js/voltage.js?v=3.5.99"></script>
+  <script src="js/symbols.js?v=3.5.99"></script>
+  <script src="js/canvas.js?v=3.5.99"></script>
+  <script src="js/sidebar.js?v=3.5.99"></script>
+  <script src="js/wiring.js?v=3.5.99"></script>
+  <script src="js/properties.js?v=3.5.99"></script>
+  <script src="js/annotations.js?v=3.5.99"></script>
+  <script src="js/api.js?v=3.5.99"></script>
+  <script src="js/auth.js?v=3.5.99"></script>
+  <script src="js/sharing.js?v=3.5.99"></script>
+  <script src="js/compliance.js?v=3.5.99"></script>
+  <script src="js/tcc.js?v=3.5.99"></script>
+  <script src="js/project.js?v=3.5.99"></script>
+  <script src="js/reports.js?v=3.5.99"></script>
+  <script src="js/verification-templates.js?v=3.5.99"></script>
+  <script src="js/templates.js?v=3.5.99"></script>
+  <script src="js/standard-data.js?v=3.5.99"></script>
+  <script src="js/undo.js?v=3.5.99"></script>
+  <script src="js/revisions.js?v=3.5.99"></script>
+  <script src="js/minimap.js?v=3.5.99"></script>
+  <script src="js/contextmenu.js?v=3.5.99"></script>
+  <script src="js/dbschedule.js?v=3.5.99"></script>
+  <script src="js/control-sim.js?v=3.5.99"></script>
+  <script src="js/dynmotor.js?v=3.5.99"></script>
+  <script src="js/transient.js?v=3.5.99"></script>
+  <script src="js/voltage-stability.js?v=3.5.99"></script>
+  <script src="js/freqscan.js?v=3.5.99"></script>
+  <script src="js/battsizing.js?v=3.5.99"></script>
+  <script src="js/opf.js?v=3.5.99"></script>
+  <script src="js/reliability.js?v=3.5.99"></script>
+  <script src="js/flicker.js?v=3.5.99"></script>
+  <script src="js/hostingcapacity.js?v=3.5.99"></script>
+  <script src="js/filtersizing.js?v=3.5.99"></script>
+  <script src="js/capplace.js?v=3.5.99"></script>
+  <script src="js/contingency.js?v=3.5.99"></script>
+  <script src="js/timeseries.js?v=3.5.99"></script>
+  <script src="js/lfstudy.js?v=3.5.99"></script>
+  <script src="js/interlocking.js?v=3.5.99"></script>
+  <script src="js/sequence.js?v=3.5.99"></script>
+  <script src="js/retic.js?v=3.5.99"></script>
+  <script src="js/schedules.js?v=3.5.99"></script>
+  <script src="js/workspaces.js?v=3.5.99"></script>
+  <script src="js/header.js?v=3.5.99"></script>
+  <script src="js/lightning.js?v=3.5.99"></script>
+  <script src="js/dbaccessories.js?v=3.5.99"></script>
+  <script src="js/dbdrawing.js?v=3.5.99"></script>
+  <script src="js/retic-diagram.js?v=3.5.99"></script>
+  <script src="js/retic-report.js?v=3.5.99"></script>
+  <script src="js/plan-symbols.js?v=3.5.99"></script>
+  <script src="js/plan-engine.js?v=3.5.99"></script>
+  <script src="js/plan-images.js?v=3.5.99"></script>
+  <script src="js/plan-tools.js?v=3.5.99"></script>
+  <script src="js/plan-sync.js?v=3.5.99"></script>
+  <script src="js/plan-csv.js?v=3.5.99"></script>
+  <script src="js/plan-dxf.js?v=3.5.99"></script>
+  <script src="js/plan-export.js?v=3.5.99"></script>
+  <script src="js/plan-lux.js?v=3.5.99"></script>
+  <script src="js/plan-ies.js?v=3.5.99"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.99"></script>
+  <script src="js/plan-dd-import.js?v=3.5.99"></script>
+  <script src="js/plan-circuits.js?v=3.5.99"></script>
+  <script src="js/plan-ui.js?v=3.5.99"></script>
+  <script src="js/plan.js?v=3.5.99"></script>
+  <script src="js/app.js?v=3.5.99"></script>
+  <script src="js/mobile.js?v=3.5.99"></script>
 </body>
 </html>

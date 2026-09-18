@@ -2935,65 +2935,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.getElementById('btn-lightning').addEventListener('click', () => {
+    // Defaults first, so a new project never inherits the previous one's
+    // values left in the dialog; then this project's saved inputs.
+    LightningUI.applyDefaults();
     restoreLightningParams(AppState.lightningRisk);
     document.getElementById('lightning-results').innerHTML = '';
     document.getElementById('lightning-modal').style.display = '';
+    LightningUI.open();
   });
+  LightningUI.init();
 
   document.getElementById('btn-run-lightning').addEventListener('click', async () => {
     const params = collectLightningParams();
     AppState.lightningRisk = params;  // persist inputs with the project
-    const out = document.getElementById('lightning-results');
-    out.innerHTML = '<p style="font-size:12px;color:var(--text-secondary)">Assessing…</p>';
     _setBusy('btn-run-lightning', true);
     try {
       const res = await API.runLightningRisk(params);
-      renderLightningResults(res, out);
+      LightningUI.showResults(res);
       document.getElementById('status-info').textContent = 'Lightning risk assessment complete.';
     } catch (e) {
       console.error('Lightning risk error:', e);
-      out.innerHTML = `<div class="af-warning-item">⚠ ${escHtml(e.message || 'Assessment failed')}</div>`;
+      LightningUI.showError(e.message || 'Assessment failed');
     } finally {
       _setBusy('btn-run-lightning', false);
     }
   });
-
-  function renderLightningResults(res, out) {
-    const fmtR = v => v === 0 ? '0' : (v * 1e5).toFixed(3);  // in units of 1e-5/yr
-    const color = res.compliant ? '#4caf50' : '#d32f2f';
-    let html = '';
-    for (const w of res.warnings || []) {
-      html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-    }
-    html += `<div style="background:${color}11;border:1px solid ${color};border-radius:6px;padding:10px 14px;margin:10px 0">
-      <strong style="color:${color}">R1 = ${fmtR(res.r1)} ×10⁻⁵ /yr — ${res.compliant ? 'TOLERABLE' : 'EXCEEDS'} R_T = 1.0 ×10⁻⁵ /yr</strong>
-      <div style="font-size:12px;margin-top:4px">${escHtml(res.recommendation)}</div>
-    </div>`;
-    html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px;margin-bottom:12px">
-      <div>A<sub>D</sub>: <strong>${res.collection_area_m2.toLocaleString()} m²</strong></div>
-      <div>A<sub>M</sub>: <strong>${Math.round(res.collection_area_near_m2).toLocaleString()} m²</strong></div>
-      <div>N<sub>D</sub>: <strong>${res.flashes_to_structure_per_year.toExponential(2)} /yr</strong></div>
-      <div>N<sub>M</sub>: <strong>${res.flashes_near_structure_per_year.toFixed(3)} /yr</strong></div>
-    </div>`;
-    // Component breakdown
-    html += '<table class="result-table" style="width:100%;font-size:12px;margin-bottom:12px"><thead><tr><th>Component</th><th>Description</th><th style="text-align:right">×10⁻⁵ /yr</th><th style="width:30%">Share</th></tr></thead><tbody>';
-    for (const c of res.components) {
-      if (c.value === 0 && !res.systems_life_risk && ['RC', 'RM', 'RW', 'RZ'].includes(c.code)) continue;
-      html += `<tr><td><strong>${c.code}</strong></td><td>${escHtml(c.description)}</td>
-        <td style="text-align:right">${fmtR(c.value)}</td>
-        <td><div style="background:var(--accent);height:8px;border-radius:4px;width:${Math.max(1, c.share_pct).toFixed(1)}%;opacity:0.7"></div></td></tr>`;
-    }
-    html += '</tbody></table>';
-    // Protection ladder
-    html += '<table class="result-table" style="width:100%;font-size:12px"><thead><tr><th>Protection measures</th><th style="text-align:right">R1 (×10⁻⁵ /yr)</th><th>Meets R_T</th></tr></thead><tbody>';
-    for (const o of res.options) {
-      html += `<tr><td>${escHtml(o.label)}</td><td style="text-align:right">${fmtR(o.r1)}</td>
-        <td>${o.compliant ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>'}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:8px">Single-zone assessment per IEC 62305-2 Ed. 2. R_C/R_M/R_W/R_Z included only where internal-system failure endangers life (hospitals, explosion risk). No spatial-shielding credit (K_S1 = K_S2 = 1).</p>';
-    out.innerHTML = html;
-  }
 
   // ── Raceway / Conduit Fill ──
   const CONDUIT_SIZES = [20, 25, 32, 40, 50, 63, 75, 90, 110, 125, 160];
