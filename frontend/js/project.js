@@ -86,6 +86,13 @@ const Project = {
     if (AppState.dirty) {
       if (!(await UI.confirm('You have unsaved changes. Create new project?', { danger: true }))) return;
     }
+    // The project type decides which workspaces the new project shows.
+    // Cancelling here abandons the new project and leaves the current one.
+    let projectType = null;
+    if (typeof Workspaces !== 'undefined' && Workspaces.chooseType) {
+      projectType = await Workspaces.chooseType();
+      if (!projectType) return;
+    }
     // Different project from here on — drop the outgoing project's local
     // revisions before reset() rotates the revision namespace.
     RevisionTimeline.clearLocal();
@@ -98,6 +105,13 @@ const Project = {
     Properties.clear();
     document.title = 'ProtectionPro — New Project';
     updateProjectNameDisplay('Untitled Project');
+    if (projectType) {
+      AppState.projectType = projectType;
+      Workspaces.refresh();
+      // Open on the first step of the chosen type (e.g. the site plan).
+      const first = Workspaces.visible()[0];
+      if (first && typeof window.switchWorkspace === 'function') window.switchWorkspace(first);
+    }
     if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
     RevisionTimeline.hide();
   },
@@ -177,7 +191,7 @@ const Project = {
     // Persistent message — intentionally NOT cleared after a timeout
     document.getElementById('status-info').textContent =
       `SAVE FAILED — ${reason}. Your changes are NOT saved to the database. ` +
-      'A local backup was kept; use File → Export JSON to save a copy.';
+      'A local backup was kept; use Output → Project (JSON) to save a copy.';
   },
 
   // Save As: prompt for new name and save as a new project
@@ -346,6 +360,8 @@ const Project = {
     const svgW = maxX - minX;
     const svgH = maxY - minY;
 
+    const clone = svg.cloneNode(true);
+
     clone.setAttribute('viewBox', `${minX} ${minY} ${svgW} ${svgH}`);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
 
@@ -360,8 +376,6 @@ const Project = {
     // Resolve CSS variables in inline attributes (e.g. var(--bg-primary, #fff))
     // This is critical — canvas/PDF renderers cannot resolve CSS vars.
     const varPattern = /var\(\s*--[^,)]+,\s*([^)]+)\)/g;
-    const clone = svg.cloneNode(true);
-
     clone.querySelectorAll('*').forEach(el => {
       for (const attr of Array.from(el.attributes)) {
         if (varPattern.test(attr.value)) {

@@ -99,6 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // (FABs, selection bar, Components/Analysis nav) and fits the workspace
     // between the mobile header and bottom nav.
     document.body.classList.toggle('mobile-ws-secondary', name !== 'sld');
+    // Desktop: row 2 of the header is the single-line toolbar; the other
+    // workspaces bring their own, so the header drops to one row there.
+    document.body.classList.toggle('ws-secondary-active', name !== 'sld');
+    if (typeof window.closeAllToolbarMenus === 'function') window.closeAllToolbarMenus();
 
     const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan', interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules' };
     for (const [key, id] of Object.entries(tabs)) {
@@ -124,6 +128,10 @@ document.addEventListener('DOMContentLoaded', () => {
   ]) {
     document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
   }
+  // Workspace tabs follow the project type (after switchWorkspace exists).
+  if (typeof Workspaces !== 'undefined') Workspaces.init();
+  // Results menu contents + Ctrl K command search.
+  if (typeof Header !== 'undefined') Header.init();
 
   // Templates button
   document.getElementById('btn-templates').addEventListener('click', () => NetworkTemplates.show());
@@ -213,6 +221,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnSelect.addEventListener('click', () => setMode(MODE.SELECT));
   btnWire.addEventListener('click', () => setMode(MODE.WIRE));
+
+  // Edit menu items that previously existed only as shortcuts. Each replays
+  // its key through the one keydown handler below, so menu and keyboard can
+  // never drift apart (same guards, same status messages, same undo).
+  for (const [id, key, ctrl] of [
+    ['btn-edit-cut', 'x', true], ['btn-edit-copy', 'c', true], ['btn-edit-paste', 'v', true],
+    ['btn-edit-duplicate', 'd', true], ['btn-edit-select-all', 'a', true], ['btn-edit-rotate', 'r', false],
+  ]) {
+    document.getElementById(id)?.addEventListener('click', () => {
+      window.closeAllToolbarMenus();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: ctrl, bubbles: true, cancelable: true }));
+    });
+  }
   btnDelete.addEventListener('click', () => {
     AppState.deleteSelected();
     Canvas.render();
@@ -4166,6 +4187,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Physical page dimensions (mm) matching the #print-page-size options.
+  const _PRINT_PAGE_MM = { a4: [210, 297], a3: [297, 420], letter: [215.9, 279.4], tabloid: [279.4, 431.8] };
+
   function _printPreview() {
     // Use browser print with a styled window. Reuse the same tight,
     // pan/zoom-independent bounding box as the other diagram exports (see
@@ -4183,6 +4207,8 @@ document.addEventListener('DOMContentLoaded', () => {
       UI.toast('Print preview was blocked by the browser popup blocker. Please allow popups for this site and try again, or use "Export PDF" instead.', 'error', 6000);
       return;
     }
+    const [mmA, mmB] = _PRINT_PAGE_MM[pageSize] || _PRINT_PAGE_MM.a4;
+    const [pageW, pageH] = orientation === 'landscape' ? [Math.max(mmA, mmB), Math.min(mmA, mmB)] : [Math.min(mmA, mmB), Math.max(mmA, mmB)];
     printWin.document.write(`<!DOCTYPE html><html><head><title>Print Preview</title>
       <style>
         @page { size: ${pageW}mm ${pageH}mm; margin: 10mm; }
@@ -4194,9 +4220,6 @@ document.addEventListener('DOMContentLoaded', () => {
     printWin.focus();
     setTimeout(() => printWin.print(), 500);
   }
-
-  // Physical page dimensions (mm) matching the #print-page-size options.
-  const _PRINT_PAGE_MM = { a4: [210, 297], a3: [297, 420], letter: [215.9, 279.4], tabloid: [279.4, 431.8] };
 
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
@@ -4210,8 +4233,6 @@ document.addEventListener('DOMContentLoaded', () => {
     Canvas.render();
   });
 
-    const [mmA, mmB] = _PRINT_PAGE_MM[pageSize] || _PRINT_PAGE_MM.a4;
-    const [pageW, pageH] = orientation === 'landscape' ? [Math.max(mmA, mmB), Math.min(mmA, mmB)] : [Math.min(mmA, mmB), Math.max(mmA, mmB)];
   // ── Layout: collapsible side panels + component ribbon ──
   const LAYOUT_KEY = 'protectionpro-layout';
   const layout = (() => {

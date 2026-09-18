@@ -1060,6 +1060,10 @@ const AppState = {
   reset() {
     this.projectId = null;
     this.projectName = 'Untitled Project';
+    // Project type ('retic' | 'building' | 'network') decides the workspace
+    // tabs (workspaces.js). null = never chosen: inferred from the content.
+    this.projectType = null;
+    this.extraWorkspaces = [];   // workspaces switched on beyond the type's own
     this.dirty = false;
     this.projectDetails = {
       projectNumber: '', client: '', company: '', engineerName: '',
@@ -1115,6 +1119,10 @@ const AppState = {
     // Plan Markup workspace: same — re-baseline its local undo + image cache
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
       PlanMarkup.onProjectChanged();
+    }
+    // Workspace tabs follow the (now cleared) project type.
+    if (typeof Workspaces !== 'undefined' && Workspaces.onProjectChanged) {
+      Workspaces.onProjectChanged();
     }
   },
 
@@ -1204,6 +1212,8 @@ const AppState = {
       // operating-temperature resistance (was 20°C DC in v1).
       dataVersion: 2,
       projectName: this.projectName,
+      projectType: this.projectType || undefined,
+      extraWorkspaces: (this.extraWorkspaces && this.extraWorkspaces.length) ? this.extraWorkspaces : undefined,
       projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
       frequency: this.frequency,
@@ -1566,6 +1576,8 @@ const AppState = {
       ? data.interlockLogic : { nodes: [], links: [] };
     this.lightningRisk = data.lightningRisk || null;
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
+    this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
+    this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data
     // (reset() above ran with the default empty reticulation).
@@ -1580,6 +1592,10 @@ const AppState = {
     }
     if (typeof Schedules !== 'undefined' && Schedules.onProjectChanged) {
       Schedules.onProjectChanged();
+    }
+    // Last: the tabs depend on the loaded type and on which workspaces hold data.
+    if (typeof Workspaces !== 'undefined' && Workspaces.onProjectChanged) {
+      Workspaces.onProjectChanged();
     }
   },
 };

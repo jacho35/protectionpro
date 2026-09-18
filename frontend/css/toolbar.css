@@ -83,7 +83,7 @@
 }
 
 /* ─── Right-side icon buttons (Dark, Settings, Help, Fit, 1:1) ─── */
-#toolbar .toolbar-right button,
+#toolbar .app-bar .toolbar-right > button,
 #toolbar #btn-zoom-fit,
 #toolbar #btn-zoom-reset {
   display: flex;
@@ -99,18 +99,18 @@
   font-family: var(--font-family);
   white-space: nowrap;
 }
-#toolbar .toolbar-right button:hover,
+#toolbar .app-bar .toolbar-right > button:hover,
 #toolbar #btn-zoom-fit:hover,
 #toolbar #btn-zoom-reset:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
-#toolbar .toolbar-right button.active {
+#toolbar .app-bar .toolbar-right > button.active {
   background: rgba(0,120,215,0.1);
   border-color: var(--accent);
   color: var(--accent);
 }
-#toolbar .toolbar-right button svg {
+#toolbar .app-bar .toolbar-right > button svg {
   flex-shrink: 0;
 }
 
@@ -485,4 +485,170 @@
 .sld-component.lf-preview-override .symbol-cb rect,
 .sld-component.lf-preview-override .symbol-switch {
   filter: drop-shadow(0 0 2px var(--accent, #2a78d6));
+}
+
+/* ═══ Two-row header (top-menu redesign, phase B) ═══════════════════════════
+   Row 1 (.app-bar): the whole project — title, project menu, workspace
+   switcher, save state, preferences, help, account. Same in every workspace.
+   Row 2 (#sld-toolbar): the single-line workspace's own tools. Hidden on the
+   other workspaces, which keep their own toolbars right under row 1 — so the
+   layout height (--toolbar-height) drops to one row there. */
+:root { --app-bar-height: 44px; --ws-bar-height: 40px; }
+#toolbar .toolbar-row.app-bar { height: var(--app-bar-height); gap: 12px; }
+#toolbar .toolbar-row.ws-bar {
+  height: var(--ws-bar-height);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  gap: 12px;
+}
+body.ws-secondary-active #sld-toolbar { display: none; }
+body.ws-secondary-active { --toolbar-height: var(--app-bar-height); }
+
+/* Workspace switcher sits in the middle of the app bar. */
+#toolbar .app-bar .workspace-switch { margin: 0 auto; }
+#toolbar .app-bar .toolbar-left,
+#toolbar .app-bar .toolbar-right { min-width: 0; }
+
+/* Visually hidden text: kept for screen readers on icon-only buttons. */
+.tb-sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+/* Auto-save doubles as the save-state chip. */
+#toolbar .app-bar #btn-auto-save.tb-status { font-size: 12px; }
+
+/* Row 2 controls */
+.ws-bar .toolbar-left, .ws-bar .toolbar-right { gap: 4px; }
+.tb-segmented {
+  display: flex; padding: 2px; border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+.tb-seg {
+  display: flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 10px; border: 0; border-radius: 4px;
+  background: none; cursor: pointer; white-space: nowrap;
+  font-size: 12px; font-family: var(--font-family); color: var(--text-secondary);
+}
+.tb-seg .dropdown-shortcut { padding-left: 2px; margin-left: 0; }
+.tb-seg:hover { color: var(--text-primary); }
+.tb-seg.active {
+  background: var(--bg-primary); color: var(--text-primary); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,.14);
+}
+.tb-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0; border: 0; border-radius: 4px;
+  background: none; color: var(--text-secondary); cursor: pointer;
+}
+.tb-icon:hover:not(:disabled) { background: var(--bg-tertiary); color: var(--text-primary); }
+.tb-icon:disabled { opacity: .35; cursor: default; }
+.tb-btn {
+  display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 1px solid var(--border-color); border-radius: 5px;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: 12px; font-family: var(--font-family); cursor: pointer; white-space: nowrap;
+}
+.tb-btn:hover { border-color: var(--accent); }
+.ws-bar .toolbar-menu-btn { font-size: 12.5px; color: var(--text-primary); }
+/* The primary entry point of the SLD row. */
+.toolbar-menu-btn.tb-primary {
+  background: var(--accent); color: #fff; font-weight: 600; padding: 4px 12px;
+}
+.toolbar-menu-btn.tb-primary:hover,
+.toolbar-menu.open .toolbar-menu-btn.tb-primary { background: var(--accent-hover); color: #fff; }
+/* Right-aligned menus open leftward so they stay on screen. */
+.toolbar-menu-panel.panel-right { left: auto; right: 0; }
+.tb-zoom { display: flex; align-items: center; gap: 2px; }
+
+/* Quick access: the pinned-tools slot beside Analyse (no longer a centred bar). */
+.ws-bar #quick-access-bar { flex: 0 1 auto; justify-content: flex-start; margin: 0 0 0 4px; }
+
+/* Analyse: every analysis in one grouped panel, centred on the viewport. */
+.toolbar-menu-panel.mega-panel {
+  position: fixed;
+  top: calc(var(--app-bar-height) + var(--ws-bar-height) - 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1180px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--app-bar-height) - var(--ws-bar-height) - 16px);
+  overflow-y: auto;
+  padding: 8px 6px;
+  box-sizing: border-box;
+}
+.toolbar-menu.open .toolbar-menu-panel.mega-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 6px;
+}
+.mega-col { min-width: 0; }
+.mega-col .dropdown-label { padding-top: 10px; }
+.mega-col .dropdown-label:first-child { padding-top: 4px; }
+.mega-panel .dropdown-item { white-space: normal !important; line-height: 1.3; }
+.mega-panel .dropdown-compound .dropdown-item { flex: 1 1 auto; min-width: 0; }
+.mega-panel .dropdown-compound .dropdown-inline-select { max-width: 110px; }
+
+/* Narrower screens: the left group may shrink (the pinned tools scroll
+   inside #quick-access-items) and pinned tools drop to icons + tooltip. */
+.ws-bar .toolbar-left { flex-shrink: 1; min-width: 0; }
+.ws-bar #quick-access-bar { min-width: 0; }
+@media (max-width: 1360px) {
+  .ws-bar .quick-access-btn span { display: none; }
+  .ws-bar .quick-access-btn { padding: 3px 6px; }
+}
+
+/* ═══ Phase C: Results menu + command search ═══════════════════════════════ */
+.dropdown-item[hidden], .dropdown-note[hidden] { display: none !important; }
+.dropdown-note {
+  display: block; max-width: 240px; padding: 4px 14px 6px;
+  font-size: 11.5px; line-height: 1.4; color: var(--text-muted); white-space: normal;
+}
+.cmd-kbd {
+  font-family: var(--font-mono); font-size: 10.5px; line-height: 1;
+  padding: 2px 5px; border: 1px solid var(--border-color); border-radius: 4px;
+  background: var(--bg-primary); color: var(--text-secondary); white-space: nowrap;
+}
+#toolbar .app-bar .toolbar-right > button.cmd-search-btn {
+  gap: 8px; min-width: 190px; padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border-color); border-radius: 6px;
+  background: var(--bg-secondary); color: var(--text-muted);
+}
+#toolbar .app-bar .toolbar-right > button.cmd-search-btn .cmd-kbd { margin-left: auto; }
+@media (max-width: 1360px) {
+  #toolbar .app-bar .toolbar-right > button.cmd-search-btn { min-width: 0; }
+  #toolbar .app-bar .toolbar-right > button.cmd-search-btn > span { display: none; }
+}
+.modal.cmd-search-overlay {
+  align-items: flex-start; justify-content: center;
+  padding-top: 12vh; z-index: 3500;
+}
+.cmd-search {
+  width: min(640px, calc(100vw - 32px));
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  display: flex; flex-direction: column; overflow: hidden;
+  font-family: var(--font-family);
+}
+.cmd-search-input-row {
+  display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 14px;
+  border-bottom: 1px solid var(--border-color); color: var(--text-muted);
+}
+.cmd-search-input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: none;
+  font-size: 15px; font-family: inherit; color: var(--text-primary);
+}
+.cmd-search-list { list-style: none; margin: 0; padding: 6px; max-height: 52vh; overflow-y: auto; }
+.cmd-search-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 6px; cursor: pointer;
+}
+.cmd-search-item.sel { background: var(--bg-tertiary); }
+.cmd-search-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.cmd-search-label { font-size: 13px; }
+.cmd-search-where { font-size: 11.5px; color: var(--text-muted); }
+.cmd-search-empty { padding: 14px 10px; font-size: 13px; color: var(--text-muted); }
+.cmd-search-foot {
+  display: flex; gap: 16px; padding: 8px 14px;
+  border-top: 1px solid var(--border-color); background: var(--bg-secondary);
+  font-size: 11.5px; color: var(--text-muted);
 }

@@ -40,15 +40,19 @@ const PlanUI = {
     const domain = pm.settings.domain || 'retic';
     const filter = (this._search || '').toLowerCase();
     const groups = PLAN_DEFS.paletteGroups(domain);
+    // The project type normally fixes the plan's domain (workspaces.js); the
+    // selector only appears when it doesn't — a Network project with a plan,
+    // or a plan whose content is the other domain's.
+    const domainLocked = typeof Workspaces !== 'undefined' && Workspaces.planDomainLocked && Workspaces.planDomainLocked();
     let html = `
       <div class="plan-pal-header">
-        <label class="plan-domain-field" title="Plan type — Site reticulation or Building floor plan">
+        ${domainLocked ? '' : `<label class="plan-domain-field" title="Plan type — Site reticulation or Building floor plan">
           <span class="plan-domain-cap">Plan type</span>
           <select class="plan-domain-select" data-role="domain" aria-label="Plan type"
             title="Plan type — Site reticulation or Building floor plan">
             ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
           </select>
-        </label>
+        </label>`}
         <input type="search" class="plan-pal-search" data-role="search" placeholder="Filter…" value="${escHtml(this._search || '')}" aria-label="Filter parts">
       </div>`;
     // Placement mode (building only): Single drop / grid Array / along a Path.
@@ -256,6 +260,7 @@ const PlanUI = {
       if (role === 'domain') {
         AppState.planMarkup.settings.domain = e.target.value;
         this.renderPalette();
+        if (typeof Workspaces !== 'undefined' && Workspaces.refresh) Workspaces.refresh();
         if (typeof PlanMarkup !== 'undefined' && PlanMarkup.updatePushButton) PlanMarkup.updatePushButton();
         if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshFloorBar) PlanMarkup.refreshFloorBar();
       } else if (role === 'vis') {

@@ -20,6 +20,17 @@
 .workspace-tab + .workspace-tab { border-left: 1px solid var(--border-color); }
 .workspace-tab.active { background: var(--accent); color: #fff; }
 .workspace-tab:hover:not(.active) { background: var(--bg-tertiary); }
+.workspace-tab[hidden] { display: none; }
+/* Workflow step number on a Reticulation / Building project's core tabs. */
+.workspace-tab { display: inline-flex; align-items: center; gap: 5px; }
+.ws-step {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 50%;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.workspace-tab.active .ws-step { background: rgba(255,255,255,.25); color: #fff; }
+.mobile-menu-item[hidden] { display: none; }
 
 /* Workspace shell — occupies the area below the toolbar */
 #retic-workspace {
@@ -130,17 +141,6 @@
 }
 body.dark-mode .kiosk-demand-badge { background: #3a3320; color: #f0d890; }
 .kiosk-demand-badge .sep { opacity: .4; }
-.kiosk-body { padding: 10px 12px; }
-.kiosk-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
-.kiosk-meta .retic-field select, .kiosk-meta .retic-field input { min-width: 90px; }
-
-/* Erf schedule table */
-.erf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.erf-table th {
-  text-align: left; font-size: 10px; text-transform: uppercase; color: var(--text-muted);
-  padding: 4px 6px; border-bottom: 1px solid var(--border-color); font-weight: 600;
-}
-.erf-table td { padding: 2px 6px; border-bottom: 1px solid var(--bg-tertiary); }
 /* The badge is a button: it opens the demand calculation panel. */
 button.kiosk-demand-badge { border: 0; font-family: inherit; cursor: pointer; }
 button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0 0 1px currentColor; }
@@ -183,6 +183,17 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 .calc-table tr.vd-ok td.calc-val { color: var(--success); }
 .calc-table tr.vd-fail td.calc-val { color: var(--danger); }
 .calc-note { color: var(--text-muted); font-style: italic; padding: 2px 6px; }
+.kiosk-body { padding: 10px 12px; }
+.kiosk-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+.kiosk-meta .retic-field select, .kiosk-meta .retic-field input { min-width: 90px; }
+
+/* Erf schedule table */
+.erf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.erf-table th {
+  text-align: left; font-size: 10px; text-transform: uppercase; color: var(--text-muted);
+  padding: 4px 6px; border-bottom: 1px solid var(--border-color); font-weight: 600;
+}
+.erf-table td { padding: 2px 6px; border-bottom: 1px solid var(--bg-tertiary); }
 .erf-table input, .erf-table select {
   width: 100%; font-size: 12px; padding: 3px 4px; box-sizing: border-box;
   background: var(--bg-primary); color: var(--text-primary);

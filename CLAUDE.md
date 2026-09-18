@@ -48,6 +48,8 @@ frontend/
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
     ├── dbschedule.js       # DB circuit schedule grid — renders into the #db-modal OR the Schedules workspace
     ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)
+    ├── workspaces.js       # Project type (Reticulation / Building / Network) → which workspace tabs show, in workflow order; New-project + type dialogs
+    ├── header.js           # Two-row header behaviours: Results menu lists only studies with results; Ctrl K command search (index built from the menus)
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
     ├── freqscan.js         # Frequency scan UI (Z vs f setup + log-decade chart)
@@ -298,6 +300,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 | V | Select mode |
 | W | Wire mode |
 | Delete | Delete selected |
+| Ctrl+K | Search every command, analysis, export and setting |
 | Ctrl+S | Save project |
 | Ctrl+Z | Undo |
 | Ctrl+Shift+Z | Redo |

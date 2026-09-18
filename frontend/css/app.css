@@ -8,7 +8,7 @@
 :root {
   --sidebar-width: 260px;
   --properties-width: 300px;
-  --toolbar-height: 66px;
+  --toolbar-height: 84px;   /* app bar (44) + single-line toolbar (40); one row on other workspaces */
   --toolbar-row-height: 32px;
   --status-height: 28px;
   --bg-primary: #ffffff;
@@ -2800,3 +2800,48 @@ textarea:focus-visible {
 .fm-item-owner { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
 .fm-section-header { font-weight: 700; color: var(--text-secondary); margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; }
 body.readonly-project #btn-save { opacity: 0.4; pointer-events: none; }
+
+/* ── Project type chip (toolbar) + Project type & workspaces dialogs ── */
+.project-type-chip {
+  margin-left: 6px; padding: 1px 8px; border-radius: 10px;
+  border: 1px solid transparent; background: var(--bg-tertiary);
+  color: var(--text-secondary); font-size: 11px; font-weight: 600;
+  font-family: inherit; cursor: pointer; white-space: nowrap;
+}
+.project-type-chip:hover { border-color: var(--border-color); color: var(--text-primary); }
+.ws-dialog { width: min(760px, calc(100vw - 32px)); max-width: none; }
+.ws-dialog .modal-body { display: flex; flex-direction: column; gap: 10px; }
+.ws-dialog-lead { margin: 0; color: var(--text-secondary); }
+.ws-dialog-note { margin: 0; font-size: 12px; color: var(--text-muted); }
+.ws-dialog-sub { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-top: 4px; }
+.ws-dialog-hint { font-weight: 400; color: var(--text-muted); }
+.ws-type-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ws-type-card {
+  display: flex; flex-direction: column; gap: 8px; text-align: left;
+  padding: 12px; min-height: 150px; box-sizing: border-box;
+  border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: inherit; cursor: pointer;
+}
+.ws-type-card:hover { border-color: var(--accent); }
+.ws-type-card[aria-pressed="true"] { border: 2px solid var(--accent); padding: 11px; background: var(--bg-secondary); }
+.ws-type-name { font-size: 14px; font-weight: 700; }
+.ws-type-desc { font-size: 12px; line-height: 1.45; color: var(--text-secondary); }
+.ws-type-flow { margin-top: auto; font-size: 11.5px; font-weight: 600; color: var(--accent); }
+.ws-rows { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.ws-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-bottom: 1px solid var(--bg-tertiary); cursor: pointer;
+}
+.ws-row:last-child { border-bottom: 0; }
+.ws-row.locked { cursor: default; }
+.ws-row input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+.ws-row-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ws-row-name { font-weight: 600; font-size: 13px; }
+.ws-row-desc { font-size: 11.5px; color: var(--text-muted); }
+.ws-row-note { margin-left: auto; font-size: 11.5px; color: var(--text-muted); text-align: right; }
+@media (max-width: 768px) {
+  .ws-type-cards { grid-template-columns: 1fr; }
+  .ws-type-card { min-height: 0; }
+  .ws-row-note { display: none; }
+}
