@@ -27,9 +27,10 @@
 19. [Project Management](#project-management)
 20. [Settings & Libraries](#settings--libraries)
 21. [Export & Reports](#export--reports)
-22. [Keyboard Shortcuts](#keyboard-shortcuts)
-23. [Component Reference](#component-reference)
-24. [Roadmap — Future Features](#roadmap--future-features)
+22. [Bill of Quantities & Rates](#bill-of-quantities--rates)
+23. [Keyboard Shortcuts](#keyboard-shortcuts)
+24. [Component Reference](#component-reference)
+25. [Roadmap — Future Features](#roadmap--future-features)
 
 ---
 
@@ -1077,6 +1078,45 @@ Generates a multi-page PDF report containing:
 - Page numbers and project name footer on every page
 
 Requires running fault analysis and/or load flow first. All export is done client-side using jsPDF.
+
+---
+
+## Bill of Quantities & Rates
+
+Header › **Quantities** opens the **Bill of quantities** and the **Rate library**.
+
+### What the bill counts
+- **Demand**: kiosk feeders, erf services, kiosks and minisubs. **Plans**: routes, trenches, crossings and devices. **Single-line diagram**: cables and switchgear. **DB schedules**: boards, breakers and final-circuit cable. Tick the sources on the left.
+- One cable is counted once. Where a run is in a schedule *and* drawn on a plan, the schedule length is used.
+- **Rules (not drawn)** covers items nobody draws. They are counted from the project's totals (below).
+
+### Material and labour
+Every rate item has a **Material rate** and a **Labour rate**, both per unit. An item is priced when either is entered. An item with neither is flagged **No rate** and left out of the total, never priced at 0.
+
+- **Qty** is the measured (net) quantity.
+- **Waste %** is added to material only: material = qty × (1 + waste) × material rate. Hover a material amount to see how much is bought.
+- Labour = qty × labour rate.
+- **Price**: *Supply & install*, *Supply only* or *Install only* prices only that part and hides the other columns (e.g. when the client supplies the material).
+- Rates entered before labour was split out count as material.
+
+### Quantity from (rules)
+In the Rate library, **Quantity from** sets how an item is counted:
+- **Measured**: counted from the drawings and schedules.
+- A **project count × Factor**: erven (all, single-phase or three-phase), kiosks, minisubs, LV feeder runs, service connections, LV / MV / service cable metres, trench metres (all or per trench type), road crossings, distribution boards, DB ways, light points, socket outlets, switches or floors. For example, *0.02 × Trench, m* gives one route marker per 50 m, rounded up.
+- **Fixed quantity (lump sum)**: the factor is the quantity, e.g. testing & commissioning.
+
+Each rule line shows its working in the bill, e.g. *Rule: 2 × Kiosks (3)*. If an item has a rule and is also measured, the measured quantity is used and a warning says so. Starter items (meter boxes, warning tape, route markers, earth electrodes, minisub earthing, testing & commissioning, COC per DB) come with rules but no rates. Change the rule or the factor per project. The status column shows **Rule · 165 m** for what a rule counts here, and **Not counted** for an item that has a rate but no rule and nothing in the project measures it.
+
+**Add item** creates your own item: category, unit, description, a key (suggested, and it must be unique), its Quantity from, and optionally its rates.
+
+### Preliminaries & allowances
+Percentage lines (P&G, contingency, your own) sit on their own tab. Enter a **%** to switch one on, and use **Percentage of** to pick the total or chosen sections, and material + labour, material only or labour only. They come last in the bill, after **Total before allowances**. They are a percentage of the priced sections only, never of another allowance, so they don't compound.
+
+### Excel round trip
+**Export** the rate library, then edit *Material rate*, *Labour rate*, *Waste %*, *Supplier code* or *Quantity from*, and **Import** it back. Rows match on **Key**. Quantity from is written as text: `measured`, `fixed 1`, `1 x erven`, `0.02 x LV cable, m`, `8% of total`, `5% of cables, civils`, `3% of labour in total`, or `default` (back to the starter rule). Leave it blank for no change. The import shows every change first, and a row with a bad rule still applies its other fields. A sheet with a single *Rate* column still imports, as material (or as labour for `LAB-` items).
+
+### Export
+The bill exports to CSV, Excel and a landscape PDF, with both rates and both amounts on every line.
 
 ---
 

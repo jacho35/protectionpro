@@ -66,8 +66,8 @@ frontend/
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── timeseries.js       # Time-series / quasi-dynamic load flow UI (horizon/step/profile setup + voltage/loading/SoC charts)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
-    ├── rates.js            # Rate library — item-key catalogue, per-project rates, CSV/XLSX round trip with import preview
-    ├── boq.js              # Bill of quantities — take-off over Demand / plans / SLD / DB schedules, priced from rates.js
+    ├── rates.js            # Rate library — item-key catalogue, per-project material + labour rates, "Quantity from" rules (getRule/ruleText/parseRule), starter items, Add item, CSV/XLSX round trip with import preview
+    ├── boq.js              # Bill of quantities — take-off over Demand / plans / SLD / DB schedules + rule lines from BOQ.BASES counts, material/labour split, % allowances; priced from rates.js
     ├── cableschedules.js   # Cable schedules — retic feeders/services (Demand VD) + building sub-mains (LF) / final circuits (circuit check)
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
