@@ -17,6 +17,9 @@ const Retic = {
   // flags only bite inside the phone media query.
   _settingsOpen: false,
   _qbOpen: false,
+  // Open calculation panels (view state only, never saved): 'k:<kiosk id>'
+  // kiosk demand, 'e:<erf id>' service VD, 'f:<kiosk id>' feeder VD.
+  _calcOpen: new Set(),
 
   PHASES: [
     { id: 'Red', color: '#dc2626' },
@@ -213,6 +216,15 @@ const Retic = {
     const t = e.target;
     const action = t.dataset.action;
     if (!action) return;
+    // "Show all cables…" only widens that picker; the model is unchanged.
+    if (t.tagName === 'SELECT' && t.value === '__all__') {
+      const f = t.dataset.field;
+      const k = t.dataset.kiosk ? this.kioskById(t.dataset.kiosk) : null;
+      const erf = k && t.dataset.erf ? k.erfs.find(x => x.id === t.dataset.erf) : null;
+      const cur = action === 'setting' ? this.settings[f] : erf ? erf[f] : k ? k[f] : '';
+      CableLib.handleShowAll(t, cur, (v) => this._cableOptions(v, true));
+      return;
+    }
 
     if (action === 'setting') {
       const key = t.dataset.field;
@@ -220,11 +232,22 @@ const Retic = {
       if (t.type === 'number') v = parseFloat(v) || 0;
       if (t.type === 'checkbox') v = t.checked;
       this.settings[key] = v;
+      // A new default class brings its own ADMD — the Empirical method reads
+      // settings.admd, so leaving the old value made the class switch a no-op.
+      // Still editable afterwards; kiosks on "Default" show it as placeholder.
+      if (key === 'loadClass') {
+        const cls = STANDARD_LOAD_CLASSES.find(c => c.id === v);
+        if (cls && cls.admd) this.settings.admd = cls.admd;
+        this.renderSettingsBar();
+        this.renderKiosks();
+      }
       this._snapshot();
       this._markDirty();
       // Re-render on method switch (toggles correction/ADMD/riskZ enable) and
       // on riskZ edit (refreshes the risk-% hint).
       if (key === 'estimationMethod' || key === 'riskZ') this.renderSettingsBar();
+      // The project's standard conductor reorders every cable picker.
+      if (key === 'lvConductor' || key === 'mvConductor') { this.renderSettingsBar(); this.renderKiosks(); return; }
       if (key.startsWith('quick')) {
         // Quick Build defaults only affect future adds — no recompute needed;
         // quickErven also drives the per-kiosk "+ N Erven" button labels.
@@ -244,6 +267,8 @@ const Retic = {
       k[key] = v;
       this._snapshot();
       this._markDirty();
+      // The kiosk's class sets its effective ADMD — refresh the placeholder.
+      if (key === 'loadClass') this.renderKiosks();
       this.recompute();
       return;
     }
@@ -256,9 +281,25 @@ const Retic = {
       const key = t.dataset.field;
       let v = t.value;
       if (t.type === 'number') v = parseFloat(v) || 0;
-      erf[key] = v;
+      if (key === 'ampsOverride' || key === 'kvaOverride') {
+        // Whichever is typed becomes the entered unit; clearing it removes the override.
+        const n = Number(v) > 0 ? Number(v) : 0;
+        if (key === 'ampsOverride') { erf.overrideUnit = 'A'; erf.ampsOverride = n; delete erf.kvaOverride; }
+        else { erf.overrideUnit = 'kVA'; erf.kvaOverride = n; }
+        this._syncErfOverride(erf);
+      } else {
+        erf[key] = v;
+        if (key === 'phase') this._syncErfOverride(erf);   // a kVA entry re-derives its amps
+      }
       this._snapshot();
       this._markDirty();
+      // Phase / override decide the single-phase-class-on-3-phase flag and the
+      // derived half of the override.
+      if (key === 'phase' || key === 'cableType') this._refreshErfCableFlag(k, erf);
+      if (key === 'phase' || key === 'ampsOverride' || key === 'kvaOverride') {
+        this._refreshErfPhaseFlag(k, erf);
+        this._renderErfOverrideInputs(k, erf);
+      }
       this.recompute();
       return;
     }
@@ -290,6 +331,20 @@ const Retic = {
     else if (action === 'add-erf') this.addErf(btn.dataset.kiosk, 1);
     else if (action === 'add-erf-n') this.addErf(btn.dataset.kiosk, Math.max(1, Math.round(this.settings.quickErven || 5)));
     else if (action === 'del-erf') this.deleteErf(btn.dataset.kiosk, btn.dataset.erf);
+    else if (action === 'toggle-calc') {
+      // Show/hide a calculation panel in place — no re-render, so focus and
+      // scroll stay put. Panels are always kept filled by the update passes.
+      e.stopPropagation();
+      const key = btn.dataset.calc;
+      const open = !this._calcOpen.has(key);
+      if (open) this._calcOpen.add(key); else this._calcOpen.delete(key);
+      document.querySelectorAll(`[data-calc-panel="${key}"]`).forEach(p => { p.hidden = !open; });
+      document.querySelectorAll(`[data-calc="${key}"]`).forEach(b => {
+        b.setAttribute('aria-expanded', String(open));
+        const caret = b.querySelector('.calc-caret');
+        if (caret) caret.textContent = open ? '▴' : '▾';
+      });
+    }
     else if (action === 'toggle-kiosk') {
       const k = this.kioskById(btn.dataset.kiosk);
       if (k) { k.collapsed = !k.collapsed; this.render(); }
@@ -534,7 +589,7 @@ const Retic = {
         <select data-action="setting" data-field="loadClass">${classOpts}</select>
       </div>
       <div class="retic-field">
-        <label>Default ADMD (kVA)</label>
+        <label>Default ADMD (kVA${this._classIs3ph(STANDARD_LOAD_CLASSES.find(c => c.id === s.loadClass)) ? '/phase' : ''})</label>
         <input type="number" step="0.01" data-action="setting" data-field="admd" value="${s.admd}" ${isHB ? 'disabled' : ''} title="${isHB ? 'ADMD is derived from the load class in Herman-Beta' : 'Empirical per-consumer ADMD'}">
       </div>
       <div class="retic-field">
@@ -550,6 +605,16 @@ const Retic = {
       <div class="retic-field">
         <label>Max Service VD (%)</label>
         <input type="number" step="0.5" data-action="setting" data-field="maxRunVD" value="${s.maxRunVD}">
+      </div>
+      <div class="retic-field">
+        <label>LV Conductor</label>
+        <select data-action="setting" data-field="lvConductor" title="The project's standard LV conductor: those cables are listed first in every LV cable picker (Demand and site plan); the others stay one click away under Show all cables.">
+          ${['', 'Al', 'Cu'].map(v => `<option value="${v}"${(s.lvConductor || '') === v ? ' selected' : ''}>${v || 'Any'}</option>`).join('')}</select>
+      </div>
+      <div class="retic-field">
+        <label>MV Conductor</label>
+        <select data-action="setting" data-field="mvConductor" title="The project's standard MV conductor: those cables are listed first in MV cable pickers on the site plan.">
+          ${['', 'Al', 'Cu'].map(v => `<option value="${v}"${(s.mvConductor || '') === v ? ' selected' : ''}>${v || 'Any'}</option>`).join('')}</select>
       </div>
       </div>
       <div class="retic-totals">
@@ -577,14 +642,14 @@ const Retic = {
 
   // Reticulation is 230/400 V, so list LV cables first; MV kept selectable
   // below for the odd mixed library, but they're rarely what's wanted here.
-  _cableOptions(selected) {
-    const opt = (c) =>
-      `<option value="${escHtml(c.name)}" ${selected === c.name ? 'selected' : ''}>${escHtml(c.name)}</option>`;
-    const lv = STANDARD_CABLES.filter(c => !(c.voltage_kv > 1)).map(opt).join('');
-    const mv = STANDARD_CABLES.filter(c => c.voltage_kv > 1).map(opt).join('');
-    return '<option value="">— select —</option>'
-      + (lv ? `<optgroup label="LV (≤1 kV)">${lv}</optgroup>` : '')
-      + (mv ? `<optgroup label="MV">${mv}</optgroup>` : '');
+  // Demand pickers offer LV distribution cables from the one cable library
+  // (4-core, then 2-core single-phase services), the project's standard
+  // conductor first; the others after "Show all cables…".
+  _cableOptions(selected, showAll) {
+    return CableLib.options(selected, {
+      filter: CableLib.reticFilter('lv'), groups: CableLib.reticGroups(),
+      prefer: CableLib.reticPrefer('lv'), showAll: !!showAll,
+    });
   },
 
   // Quick Build panel: one click builds N kiosks × M erven with the chosen
@@ -663,9 +728,11 @@ const Retic = {
         <div class="kiosk-head" data-action="toggle-kiosk" data-kiosk="${k.id}">
           <span class="toggle">${k.collapsed ? '▸' : '▾'}</span>
           <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${k.id}" data-field="name" value="${escHtml(k.name)}" onclick="event.stopPropagation()">
-          <span class="kiosk-demand-badge" data-kiosk="${k.id}">— kVA</span>
+          <button type="button" class="kiosk-demand-badge" data-kiosk="${k.id}" data-action="toggle-calc" data-calc="k:${k.id}"
+            aria-expanded="${this._calcOpen.has('k:' + k.id)}" title="Show how this demand is calculated">— kVA</button>
           <button class="btn-icon-del" data-action="del-kiosk" data-kiosk="${k.id}" title="Delete kiosk">&times;</button>
         </div>
+        <div class="calc-panel" data-calc-panel="k:${k.id}"${this._calcOpen.has('k:' + k.id) ? '' : ' hidden'}></div>
         ${k.collapsed ? '' : `
         <div class="kiosk-body">
           <div class="kiosk-meta">
@@ -673,8 +740,8 @@ const Retic = {
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="fedFrom">${fedFromOptsFor(k)}</select></div>
             <div class="retic-field"><label>Load Class</label>
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="loadClass">${classOptsFor(k.loadClass)}</select></div>
-            <div class="retic-field"><label>ADMD Override (kVA)</label>
-              <input type="number" step="0.01" data-action="kiosk-field" data-kiosk="${k.id}" data-field="admdOverride" value="${k.admdOverride || ''}" placeholder="${s.admd}"></div>
+            <div class="retic-field"><label>ADMD Override (kVA${this._classIs3ph(this._kioskClass(k)) ? '/phase' : ''})</label>
+              <input type="number" step="0.01" data-action="kiosk-field" data-kiosk="${k.id}" data-field="admdOverride" value="${k.admdOverride || ''}" placeholder="${this._kioskAdmd(k, true)}"></div>
             <div class="retic-field"><label>Street Lighting (kVA)</label>
               <input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="streetLightKVA" value="${k.streetLightKVA || ''}" placeholder="0" title="Fixed, undiversified street-lighting load"></div>
             <div class="retic-field"><label>Feeder Cable</label>
@@ -683,7 +750,7 @@ const Retic = {
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
           </div>
           <table class="erf-table">
-            <thead><tr><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th>Amps Override</th><th>Service VD</th><th></th></tr></thead>
+            <thead><tr><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th></th></tr></thead>
             <tbody>${erfRows}</tbody>
           </table>
           <div class="retic-toolbar" style="margin-top:8px">
@@ -696,6 +763,26 @@ const Retic = {
 
     this.updateBadges();
     this.updateVD();   // re-render replaced the cells; VD is client-side, no refetch
+    this._attachErfGrids();
+  },
+
+  // Each kiosk's erf table is an Excel-style grid (grid.js). Enter on the last
+  // erf adds one and lands in the same column of the new row.
+  _attachErfGrids() {
+    if (typeof GridTable === 'undefined') return;
+    document.querySelectorAll('#retic-workspace .kiosk-card .erf-table tbody').forEach(tb => {
+      GridTable.attach(tb, {
+        cells: '[data-action="erf-field"]',
+        onAddRow: (cell) => {
+          const kid = cell.dataset.kiosk, field = cell.dataset.field;
+          this.addErf(kid, 1);
+          const k = this.kioskById(kid);
+          const last = k && k.erfs[k.erfs.length - 1];
+          const el = last && document.querySelector(`[data-action="erf-field"][data-erf="${last.id}"][data-field="${field}"]`);
+          if (el) { el.focus(); if (el.select) el.select(); }
+        },
+      });
+    });
   },
 
   _erfRow(k, e) {
@@ -707,12 +794,26 @@ const Retic = {
       <tr data-erf="${e.id}">
         <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
         <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
-        <td data-cell="phase" data-label="Phase"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
-        <td data-cell="cable" data-label="Service Cable"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
-        <td data-cell="amps" data-label="Amps Override"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="ampsOverride" value="${e.ampsOverride || ''}" placeholder="0"></td>
+        <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
+        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
+        <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
-      </tr>`;
+      </tr>
+      <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="7"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
+  },
+
+  // Fixed-load override cell: type amps OR kVA; the other is derived through
+  // the erf's own voltage and shown muted.
+  _erfOverrideCell(k, e) {
+    const o = this._erfOverride(e);
+    const aVal = o ? (o.unit === 'A' ? String(o.amps) : o.amps.toFixed(1)) : '';
+    const kVal = o ? (o.unit === 'kVA' ? String(o.kva) : o.kva.toFixed(2)) : '';
+    const tip = 'Fixed, undiversified load that replaces the ADMD for this erf. Enter amps or kVA; the other is calculated at the erf\'s own voltage (230 V, or √3·400 V for 3 Phase).';
+    return `<div class="erf-ov" title="${tip}">
+      <input type="number" step="any" min="0" aria-label="Override current (A)" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="ampsOverride" value="${aVal}" placeholder="A"${o && o.unit !== 'A' ? ' class="derived"' : ''}><span class="erf-ov-u">A</span>
+      <input type="number" step="any" min="0" aria-label="Override load (kVA)" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="kvaOverride" value="${kVal}" placeholder="kVA"${o && o.unit !== 'kVA' ? ' class="derived"' : ''}><span class="erf-ov-u">kVA</span>
+    </div>`;
   },
 
   _classLabel(id) {
@@ -759,7 +860,9 @@ const Retic = {
     document.querySelectorAll('.kiosk-demand-badge[data-kiosk]').forEach(el => {
       const kr = byId[el.dataset.kiosk];
       if (!kr) { el.textContent = '— kVA'; return; }
-      el.innerHTML = `${kr.totalKVA} kVA <span class="sep">|</span> ${kr.currentA} A <span class="sep">|</span> ${kr.conns} conns <span class="sep">|</span> ADMD ${kr.admdKVA}`;
+      el.innerHTML = `${kr.totalKVA} kVA <span class="sep">|</span> ${kr.currentA} A <span class="sep">|</span> ${kr.conns} conns <span class="sep">|</span> ADMD ${kr.admdKVA}${kr.admdPerPhase ? '/ph' : ''} <span class="calc-caret">${this._calcOpen.has('k:' + kr.kioskId) ? '▴' : '▾'}</span>`;
+      const panel = document.querySelector(`.calc-panel[data-calc-panel="k:${kr.kioskId}"]`);
+      if (panel) panel.innerHTML = this._kioskCalcHtml(kr);
     });
     const tk = document.getElementById('retic-total-kva');
     const ta = document.getElementById('retic-total-a');
@@ -771,41 +874,195 @@ const Retic = {
 
   // ─── Voltage drop (client-side, per erf service cable) ───
   _cableRX(name) {
-    const c = STANDARD_CABLES.find(x => x.name === name);
+    const c = CableLib.byName(name);
     return c ? { r: c.r_per_km, x: c.x_per_km, rating: c.rated_amps } : null;
   },
 
-  // Per-consumer design current (A) from ADMD/class for a single erf.
-  // Mirrors the backend engine (and the source app's getErfVD): the single-
-  // consumer design kVA divided by the service voltage of the erf's phase.
-  _erfDesignAmps(k, e) {
-    if (e.ampsOverride && e.ampsOverride > 0) return e.ampsOverride;
+  // The kiosk's effective load class (its own, else the project default).
+  _kioskClass(k) {
+    const id = k.loadClass || this.settings.loadClass;
+    return STANDARD_LOAD_CLASSES.find(c => c.id === id) || null;
+  },
+  // 3-phase classes (Urban Upmarket I/II 3Φ) tabulate their parameters PER
+  // PHASE, and every erf on one is a 3-phase connection whatever colour it is
+  // drawn — the same rule the backend engine applies (admd.py _erf_phases).
+  _classIs3ph(cls) { return !!cls && Number(cls.phase) === 3; },
+  // An override replaces the class, so an override erf's own Phase setting
+  // decides; otherwise any erf on a 3Φ class is 3-phase.
+  _erfIs3ph(k, e) {
+    if (this._erfOverride(e)) return e.phase === '3 Phase';
+    return e.phase === '3 Phase' || this._classIs3ph(this._kioskClass(k));
+  },
+
+  // ── Fixed-load override: entered as amps OR kVA ──
+  // `ampsOverride` stays the value the engine reads. `overrideUnit` records
+  // which one the user typed, so it is the one kept when the erf's phase
+  // changes; the other is always derived through the erf's own voltage.
+  _erfOverrideV(e) { return e.phase === '3 Phase' ? Math.sqrt(3) * 400 : 230; },
+  _erfOverride(e) {
+    const V = this._erfOverrideV(e);
+    if (e.overrideUnit === 'kVA' && Number(e.kvaOverride) > 0) {
+      const kva = Number(e.kvaOverride);
+      return { unit: 'kVA', kva, amps: kva * 1000 / V, V };
+    }
+    if (Number(e.ampsOverride) > 0) {
+      const amps = Number(e.ampsOverride);
+      return { unit: 'A', amps, kva: amps * V / 1000, V };
+    }
+    return null;
+  },
+  // Keep the engine's ampsOverride in step with a kVA entry (phase changes
+  // move the voltage), and clear both halves when the override is removed.
+  _syncErfOverride(e) {
+    const o = this._erfOverride(e);
+    if (!o) { e.ampsOverride = 0; delete e.kvaOverride; delete e.overrideUnit; return; }
+    if (o.unit === 'kVA') e.ampsOverride = +o.amps.toFixed(3);
+  },
+  // Show the entered value as typed and the other one derived (muted).
+  _renderErfOverrideInputs(k, e) {
+    const row = document.querySelector(`tr[data-erf="${e.id}"]`);
+    if (!row) return;
+    const o = this._erfOverride(e);
+    const a = row.querySelector('[data-field="ampsOverride"]');
+    const kv = row.querySelector('[data-field="kvaOverride"]');
+    if (a && document.activeElement !== a) a.value = o ? (o.unit === 'A' ? String(o.amps) : o.amps.toFixed(1)) : '';
+    if (kv && document.activeElement !== kv) kv.value = o ? (o.unit === 'kVA' ? String(o.kva) : o.kva.toFixed(2)) : '';
+    if (a) a.classList.toggle('derived', !!o && o.unit !== 'A');
+    if (kv) kv.classList.toggle('derived', !!o && o.unit !== 'kVA');
+  },
+  // A single-phase class on an erf drawn as "3 Phase". CTEF100's figures are
+  // per phase, so the engine applies them to every phase — about 3× the
+  // demand of that household. Allowed (conservative) but flagged: a 3-phase
+  // household should use a 3Φ class, whose per-phase figures reflect the load
+  // being spread.
+  _erfPhaseMismatch(k, e) {
+    return e.phase === '3 Phase' && !this._erfOverride(e) && !this._classIs3ph(this._kioskClass(k));
+  },
+  _mixedPhaseText(cls) {
+    const equiv = cls && STANDARD_LOAD_CLASSES.find(c => c.id === cls.id + '_3ph');
+    return `Single-phase class on a 3-phase erf: its per-phase figures are applied to every phase (about 3× this household's demand). ` +
+      (equiv ? `For a 3-phase household, use ${equiv.label}.` : 'For a 3-phase household, use a 3Φ class (Urban Upmarket I or II (3Φ)).');
+  },
+  // Single-phase services are 2-core, 3-phase services 4-core. Returns the
+  // warning text when the chosen cable's cores don't suit the erf, else ''.
+  _erfCableMismatch(k, e) {
+    const c = CableLib.byName(e.cableType);
+    if (!c || CableLib.isMV(c)) return '';
+    const cores = Number(CableLib.normalize(c).cores);
+    const three = this._erfIs3ph(k, e);
+    if (three && cores === 2) return `A 3-phase erf needs a 4-core service cable; ${c.name} is 2-core.`;
+    if (!three && cores === 4) return `A single-phase erf is normally served with a 2-core cable; ${c.name} is 4-core.`;
+    return '';
+  },
+  _refreshErfCableFlag(k, e) {
+    const td = document.querySelector(`tr[data-erf="${e.id}"] td[data-cell="cable"]`);
+    if (!td) return;
+    const msg = this._erfCableMismatch(k, e);
+    td.classList.toggle('erf-phase-warn', !!msg);
+    if (msg) td.title = msg; else td.removeAttribute('title');
+  },
+  _refreshErfPhaseFlag(k, e) {
+    const td = document.querySelector(`tr[data-erf="${e.id}"] td[data-cell="phase"]`);
+    if (!td) return;
+    const on = this._erfPhaseMismatch(k, e);
+    td.classList.toggle('erf-phase-warn', on);
+    if (on) td.title = this._mixedPhaseText(this._kioskClass(k)); else td.removeAttribute('title');
+  },
+  _mixedPhaseRow(cls) {
+    return { cls: 'calc-warn', cells: ['Check', escHtml(this._mixedPhaseText(cls)), ''] };
+  },
+
+  // Per-consumer design current (A) for one erf's service cable. Mirrors the
+  // backend engine (and the source app's getErfVD) for a single consumer.
+  _erfDesignAmps(k, e) { return this._erfDesignCalc(k, e).amps; },
+
+  // …with its working: {amps, steps:[[label, formula, value]]}. The steps are
+  // what the Service VD panel shows, so the number and its explanation can
+  // never drift apart.
+  _erfDesignCalc(k, e) {
+    const f = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
+    const ov = this._erfOverride(e);
+    if (ov) {
+      const conn = e.phase === '3 Phase' ? '3-phase: √3·400 V' : 'single-phase: 230 V';
+      const steps = ov.unit === 'kVA'
+        ? [['Override', `entered as ${f(ov.kva)} kVA (fixed, undiversified; ${conn})`, f(ov.kva) + ' kVA'],
+           ['Design current', `S / V = ${f(ov.kva)}·1000 / ${f(ov.V, 1)}`, f(ov.amps) + ' A']]
+        : [['Override', `entered as ${f(ov.amps, 1)} A (fixed, undiversified; ${conn})`, f(ov.amps, 1) + ' A'],
+           ['Load', `S = I·V = ${f(ov.amps, 1)}·${f(ov.V, 1)} / 1000`, f(ov.kva) + ' kVA']];
+      return { amps: ov.amps, steps };
+    }
     const s = this.settings;
-    const is3ph = e.phase === '3 Phase';
-    const clsId = k.loadClass || s.loadClass;
+    const cls = this._kioskClass(k);
+    const cls3 = this._classIs3ph(cls);
+    const is3ph = this._erfIs3ph(k, e);
+    const steps = [];
     if (s.estimationMethod === 'Herman Beta') {
-      const cls = STANDARD_LOAD_CLASSES.find(c => c.id === clsId)
-        || STANDARD_LOAD_CLASSES[2] || STANDARD_LOAD_CLASSES[0];
+      const c = cls || STANDARD_LOAD_CLASSES[2] || STANDARD_LOAD_CLASSES[0];
       const z = s.riskZ || 1.28;
       let designI;
-      if (cls.a > 0 && cls.b > 0 && cls.c > 0) {
+      steps.push(['Load class', `${c.label}${cls3 ? ' — parameters per phase' : ''}`, `Herman-Beta, z = ${z}`]);
+      if (c.a > 0 && c.b > 0 && c.c > 0) {
         // Beta(α,β)·c → µ,σ,γ₁ with Cornish-Fisher-corrected z at N=1
         // (same formulae as backend beta_params/herman_beta_demand).
-        const ab = cls.a + cls.b;
-        const mean = cls.a / ab * cls.c;
-        const sigma = cls.c * Math.sqrt(cls.a * cls.b / (ab * ab * (ab + 1)));
-        const skew = 2 * (cls.b - cls.a) * Math.sqrt(ab + 1) / ((ab + 2) * Math.sqrt(cls.a * cls.b));
+        const ab = c.a + c.b;
+        const mean = c.a / ab * c.c;
+        const sigma = c.c * Math.sqrt(c.a * c.b / (ab * ab * (ab + 1)));
+        const skew = 2 * (c.b - c.a) * Math.sqrt(ab + 1) / ((ab + 2) * Math.sqrt(c.a * c.b));
         const zcf = z + (z * z - 1) / 6 * skew;
         designI = mean + zcf * sigma;
+        steps.push(['Mean µ', `a/(a+b)·c = ${c.a}/(${c.a}+${c.b})·${c.c}`, f(mean) + ' A']);
+        steps.push(['Std dev σ', `c·√(ab/((a+b)²(a+b+1)))`, f(sigma) + ' A']);
+        steps.push(['Skewness γ', `2(b−a)√(a+b+1) / ((a+b+2)√(ab))`, f(skew, 3)]);
+        steps.push(['z (Cornish-Fisher, N=1)', `z + (z²−1)/6·γ = ${z} + (${f(z * z, 3)}−1)/6·${f(skew, 3)}`, f(zcf, 3)]);
+        steps.push(['Design current / phase', `µ + z_cf·σ = ${f(mean)} + ${f(zcf, 3)}·${f(sigma)}`, f(designI) + ' A']);
       } else {
         // Custom class without valid Beta params: Normal approximation.
-        designI = (cls.mu || 0) + z * (cls.sigma || 0);
+        designI = (c.mu || 0) + z * (c.sigma || 0);
+        steps.push(['Design current / phase', `µ + z·σ = ${c.mu} + ${z}·${c.sigma} (Normal approx.)`, f(designI) + ' A']);
       }
-      const kva = designI * 230 * (Number(cls.phase) === 3 ? 3 : 1) / 1000;
-      return kva * 1000 / (is3ph ? Math.sqrt(3) * 400 : 230);
+      if (cls3) {
+        steps.push(['Service current', '3Φ class: the per-phase design current, on each of R/W/B', f(designI) + ' A']);
+        return { amps: designI, steps };
+      }
+      if (is3ph) {
+        // A single-phase class on a 3-phase erf: the class figures are per
+        // phase, so — like the backend's demand — each phase carries them.
+        steps.push(['Service current', 'per-phase design current, on each of R/W/B', f(designI) + ' A']);
+        steps.push(this._mixedPhaseRow(c));
+        return { amps: designI, steps };
+      }
+      return { amps: designI, steps };
     }
-    const admd = (k.admdOverride && k.admdOverride > 0) ? k.admdOverride : s.admd;
-    return admd * 1000 / (is3ph ? Math.sqrt(3) * 400 : 230);
+    // Empirical: the consumer's ADMD.
+    const admd = this._kioskAdmd(k);
+    const src = (k.admdOverride && k.admdOverride > 0) ? 'kiosk override'
+      : (k.loadClass && cls && cls.admd) ? `${cls.label} class` : 'project default';
+    steps.push(['ADMD', `${src}${cls3 ? ' — per phase (3Φ class)' : ''}`, f(admd) + ' kVA']);
+    let amps;
+    if (cls3) {
+      amps = admd * 1000 / 230;
+      steps.push(['Service current', `ADMD/230 V per phase = ${f(admd)}·1000/230`, f(amps) + ' A']);
+    } else if (is3ph) {
+      // Single-phase class on a 3-phase erf: its per-phase ADMD on each phase.
+      amps = admd * 1000 / 230;
+      steps.push(['Service current', `ADMD/230 V on each of R/W/B = ${f(admd)}·1000/230`, f(amps) + ' A']);
+      steps.push(this._mixedPhaseRow(cls));
+    } else {
+      amps = admd * 1000 / 230;
+      steps.push(['Service current', `ADMD/230 = ${f(admd)}·1000/230`, f(amps) + ' A']);
+    }
+    return { amps, steps };
+  },
+
+  // Empirical per-consumer ADMD (kVA) for a kiosk — mirrors the backend's
+  // resolve_demand_param: override, else the kiosk's OWN class ADMD, else the
+  // project default. `ignoreOverride` gives the value the override replaces.
+  // For a 3-phase class the value is per phase.
+  _kioskAdmd(k, ignoreOverride) {
+    if (!ignoreOverride && k.admdOverride && k.admdOverride > 0) return k.admdOverride;
+    const cls = k.loadClass && STANDARD_LOAD_CLASSES.find(c => c.id === k.loadClass);
+    if (cls && cls.admd) return cls.admd;
+    return this.settings.admd;
   },
 
   // Volt drop % for a cable run at a given current and length.
@@ -813,13 +1070,151 @@ const Retic = {
   // full R·cosφ + X·sinφ impedance drop (pf 0.95) instead of R-only, and no
   // snaking/additional-length allowances are added — enter total run length.
   _vdPercent(cableName, amps, lengthM, is3ph) {
+    const c = this._vdCalc(cableName, amps, lengthM, is3ph);
+    return c ? c.vd : null;
+  },
+  // …with every intermediate value, for the transparency panels.
+  _vdCalc(cableName, amps, lengthM, is3ph) {
     const rx = this._cableRX(cableName);
     if (!rx || !lengthM || !amps) return null;
     const pf = 0.95, sinphi = Math.sqrt(1 - pf * pf);
     const Lkm = lengthM / 1000;
     const v = is3ph ? 400 : 230;
-    const drop = (is3ph ? Math.sqrt(3) : 2) * amps * Lkm * (rx.r * pf + rx.x * sinphi);
-    return drop / v * 100;
+    const kf = is3ph ? Math.sqrt(3) : 2;
+    const zeff = rx.r * pf + rx.x * sinphi;          // Ω/km
+    const drop = kf * amps * Lkm * zeff;
+    return { vd: drop / v * 100, drop, v, kf, Lkm, zeff, pf, sinphi, r: rx.r, x: rx.x, amps, is3ph, cable: cableName };
+  },
+
+  // ─── Calculation transparency panels ───
+  // Every displayed demand / volt-drop figure can be expanded to show its
+  // working. Kiosk demand is rendered from the backend's own `calc` record
+  // (admd.py kiosk_demand), so the panel shows the engine's numbers, not a
+  // client-side re-derivation; VD panels come from _vdCalc/_erfDesignCalc, the
+  // same functions that produce the displayed percentages.
+  _fmt(n, d = 2) {
+    if (n == null || !isFinite(n)) return '—';
+    return (Math.round(n * 10 ** d) / 10 ** d).toString();
+  },
+  _calcTable(rows, head) {
+    const h = head ? `<thead><tr>${head.map(x => `<th>${x}</th>`).join('')}</tr></thead>` : '';
+    return `<table class="calc-table">${h}<tbody>${rows.map(r =>
+      `<tr${r.cls ? ` class="${r.cls}"` : ''}>${(r.cells || r).map((c, i) => `<td${i === (r.cells || r).length - 1 ? ' class="calc-val"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  },
+
+  _kioskCalcHtml(kr) {
+    const c = kr && kr.calc;
+    if (!c) return '<div class="calc-note">No calculation available.</div>';
+    const f = (n, d) => this._fmt(n, d);
+    const hb = c.method === 'Herman Beta';
+    const perPh = c.threePhaseClass ? '/phase' : '';
+    const srcTxt = { override: 'kiosk ADMD override', class: `${escHtml(c.classLabel)} class`, default: 'project Default ADMD' }[c.admdSource] || '';
+    const head = [
+      ['Method', hb ? `Herman-Beta — I = N·µ + z<sub>cf</sub>·√N·σ per phase, risk z = ${c.riskZ}` : `Empirical — I = N·I<sub>ADMD</sub>·DCF(N) per phase, ${escHtml(c.correction)} correction`, ''],
+      ['Load class', `${escHtml(c.classLabel)} (${c.classOwn ? "kiosk's own class" : 'project default'})`, ''],
+    ];
+    if (c.threePhaseClass) head.push(['3Φ class', 'Parameters are per phase — every erf is a 3-phase connection, so each of R, W and B carries all N consumers', '']);
+    if (c.mixedPhaseErven) {
+      const cls = STANDARD_LOAD_CLASSES.find(x => x.id === c.classId);
+      head.push({ cls: 'calc-warn', cells: ['Check', `${c.mixedPhaseErven} erf${c.mixedPhaseErven === 1 ? '' : 'ven'} set to “3 Phase”. ` + escHtml(this._mixedPhaseText(cls)), ''] });
+    }
+    if (!hb) {
+      head.push(['ADMD', srcTxt, `${f(c.admd)} kVA${perPh}`]);
+      head.push(['I<sub>ADMD</sub>', `ADMD·1000 / 230 V = ${f(c.admd)}·1000/230`, `${f(c.admd * 1000 / 230)} A`]);
+      const dcfF = { AMEU: '1 + 2/N', British: `1 + ${c.admd <= 5 ? 8 : 12}/(ADMD·N)`, None: '1' }[c.correction] || '1 + 2/N';
+      head.push(['DCF(N)', `${escHtml(c.correction)}: ${dcfF}`, '']);
+    } else if (c.buckets.length) {
+      const b = c.buckets[0];
+      head.push(['Beta parameters', `a = ${b.a}, b = ${b.b}, c = ${b.c} A`, '']);
+      head.push(['Mean µ', `a/(a+b)·c`, `${f(b.mean)} A`]);
+      head.push(['Std dev σ', `c·√(ab/((a+b)²(a+b+1)))`, `${f(b.sigma)} A`]);
+      head.push(['Skewness γ', `2(b−a)√(a+b+1) / ((a+b+2)√(ab))`, f(b.skewness, 3)]);
+    }
+    const bucketRows = c.buckets.map(b => hb
+      ? [b.phase, b.n, `${f(b.gamma1, 3)}`, `${c.riskZ} + (${f(c.riskZ * c.riskZ, 3)}−1)/6·${f(b.gamma1, 3)} = ${f(b.zcf, 3)}`,
+        `${b.n}·${f(b.mean)} + ${f(b.zcf, 3)}·√${b.n}·${f(b.sigma)} = ${f(b.designI)} A`, `${f(b.kva)} kVA`]
+      : [b.phase, b.n, f(b.dcf, 3), `${b.n}·${f(b.iAdmd)}·${f(b.dcf, 3)} = ${f(b.totalI)} A`, `${f(b.kva)} kVA`]);
+    const bucketHead = hb
+      ? ['Phase', 'N', 'γ₁ = γ/√N', 'z<sub>cf</sub> = z + (z²−1)/6·γ₁', 'I = N·µ + z<sub>cf</sub>·√N·σ', 'S = I·230 V']
+      : ['Phase', 'N', 'DCF', 'I = N·I<sub>ADMD</sub>·DCF', 'S = I·230 V'];
+    const sumPh = c.buckets.map(b => f(b.kva)).join(' + ') || '0';
+    const tail = [
+      ['Diversified', `Σ phases = ${sumPh}`, `${f(c.diversifiedKVA)} kVA`],
+    ];
+    if (c.overrideKVA) {
+      for (const o of (c.overrides || [])) {
+        const how = o.entered === 'kVA' ? `entered ${f(o.kva)} kVA → ${f(o.amps, 1)} A` : `entered ${f(o.amps, 1)} A × ${f(o.v, 1)} V`;
+        tail.push([`+ Erf ${escHtml(o.erf || '?')}`, `fixed override, ${escHtml(o.phase)}: ${how}`, `${f(o.kva)} kVA`]);
+      }
+      if (!(c.overrides || []).length) tail.push(['+ Fixed loads', 'erven with an override (undiversified)', `${f(c.overrideKVA)} kVA`]);
+    }
+    if (c.streetLightKVA) tail.push(['+ Street lighting', 'fixed, undiversified', `${f(c.streetLightKVA)} kVA`]);
+    tail.push({ cls: 'calc-total', cells: ['Kiosk demand', tail.length > 1 ? 'sum of the above' : '', `${f(c.totalKVA)} kVA`] });
+    tail.push(['Current', `S / (√3·${c.vLine} V) = ${f(c.totalKVA)}·1000 / ${f(Math.sqrt(3) * c.vLine, 1)}`, `${f(c.currentA)} A`]);
+    return this._calcTable(head)
+      + (c.buckets.length ? this._calcTable(bucketRows, bucketHead) : '<div class="calc-note">No active erven (an erf needs a length &gt; 0 to count).</div>')
+      + this._calcTable(tail);
+  },
+
+  _vdRows(vc, limit, limitLabel) {
+    const f = (n, d) => this._fmt(n, d);
+    const ok = vc.vd <= limit;
+    return [
+      ['Cable', `${escHtml(vc.cable)}: R = ${vc.r} Ω/km, X = ${vc.x} Ω/km`, ''],
+      ['Z<sub>eff</sub>', `R·cosφ + X·sinφ = ${vc.r}·${vc.pf} + ${vc.x}·${f(vc.sinphi, 3)} (pf ${vc.pf})`, `${f(vc.zeff, 4)} Ω/km`],
+      ['ΔV', `${vc.is3ph ? '√3' : '2'}·I·L·Z<sub>eff</sub> = ${f(vc.kf, 3)}·${f(vc.amps)}·${f(vc.Lkm, 3)}·${f(vc.zeff, 4)}${vc.is3ph ? ' (3Φ)' : ' (1Φ, out and return)'}`, `${f(vc.drop)} V`],
+      { cls: 'calc-total ' + (ok ? 'vd-ok' : 'vd-fail'), cells: ['VD', `ΔV / ${vc.v} V · 100 — ${limitLabel} ${limit}% → ${ok ? 'pass' : 'FAIL'}`, `${f(vc.vd)}%`] },
+    ];
+  },
+
+  _erfCalcHtml(k, e, design, vc, limit) {
+    const rows = design.steps.slice();   // [label, formula, value] rows or {cls, cells} rows
+    if (!vc) {
+      const why = !this._cableRX(e.cableType) ? 'select a service cable' : !e.length ? 'enter a length' : 'no design current';
+      return this._calcTable(rows) + `<div class="calc-note">Volt drop not calculated — ${why}.</div>`;
+    }
+    rows.push(['Length', `${e.length} m`, `${this._fmt(vc.Lkm, 3)} km`]);
+    return this._calcTable(rows.concat(this._vdRows(vc, limit, 'Max Service VD')));
+  },
+
+  // Feeder VD: each leg from the minisub down to this kiosk, with the subtree
+  // current that leg carries, then the cumulative sum.
+  _feederCalcHtml(kioskId, byId) {
+    const f = (n, d) => this._fmt(n, d);
+    const legs = [];
+    const seen = new Set();
+    let id = kioskId;
+    while (id && id !== 'source' && !seen.has(id)) {
+      seen.add(id);
+      const k = this.kioskById(id), kr = byId[id];
+      if (!k || !kr) break;
+      legs.unshift({ k, kr });
+      id = k.fedFrom || 'source';
+    }
+    const limit = this.settings.maxFeederVD;
+    let html = '', total = 0;
+    for (const { k, kr } of legs) {
+      const amps = kr.feederA != null ? kr.feederA : kr.currentA;
+      const kva = kr.feederKVA != null ? kr.feederKVA : kr.totalKVA;
+      const head = [
+        { cls: 'calc-leg', cells: [`Leg → ${escHtml(k.name || 'Kiosk')}`, `${kr.subtreeKiosks || 1} kiosk(s) downstream, ${kr.subtreeConns != null ? kr.subtreeConns : kr.conns} conns — diversified together`, `${f(kva)} kVA`] },
+        ['Current', `S / (√3·400 V) = ${f(kva)}·1000 / 692.8`, `${f(amps)} A`],
+      ];
+      const vc = this._vdCalc(k.feederCable, amps, k.feederLength, true);
+      if (!vc) {
+        html += this._calcTable(head) + `<div class="calc-note">Leg not counted — ${!this._cableRX(k.feederCable) ? 'no feeder cable selected' : 'no feeder length'}.</div>`;
+        continue;
+      }
+      total += vc.vd;
+      head.push(['Length', `${k.feederLength} m`, `${f(vc.Lkm, 3)} km`]);
+      const rows = this._vdRows(vc, limit, 'leg');
+      rows[rows.length - 1] = ['Leg VD', `ΔV / 400 V · 100`, `${f(vc.vd)}%`];
+      html += this._calcTable(head.concat(rows));
+    }
+    const ok = total <= limit;
+    html += this._calcTable([{ cls: 'calc-total ' + (ok ? 'vd-ok' : 'vd-fail'),
+      cells: ['Cumulative VD', `Σ legs from the minisub — Max Feeder VD ${limit}% → ${ok ? 'pass' : 'FAIL'}`, `${f(total)}%`] }]);
+    return html;
   },
 
   updateVD() {
@@ -828,11 +1223,15 @@ const Retic = {
       for (const e of k.erfs) {
         const cell = document.querySelector(`.vd-cell[data-erf-vd="${e.id}"]`);
         if (!cell) continue;
-        const is3ph = e.phase === '3 Phase';
-        const amps = this._erfDesignAmps(k, e);
-        const vd = this._vdPercent(e.cableType, amps, e.length, is3ph);
-        if (vd == null) { cell.textContent = '—'; cell.className = 'vd-cell'; continue; }
-        cell.textContent = vd.toFixed(2) + '%';
+        const is3ph = this._erfIs3ph(k, e);
+        const design = this._erfDesignCalc(k, e);
+        const vc = this._vdCalc(e.cableType, design.amps, e.length, is3ph);
+        const body = document.querySelector(`.calc-panel[data-calc-body="e:${e.id}"]`);
+        if (body) body.innerHTML = this._erfCalcHtml(k, e, design, vc, limit);
+        if (!vc) { cell.textContent = '—'; cell.className = 'vd-cell'; continue; }
+        const vd = vc.vd;
+        const open = this._calcOpen.has('e:' + e.id);
+        cell.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${e.id}" aria-expanded="${open}" title="Show how this volt drop is calculated">${vd.toFixed(2)}% <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
         cell.className = 'vd-cell ' + (vd > limit ? 'vd-fail' : 'vd-ok');
       }
     }
@@ -903,8 +1302,10 @@ const Retic = {
         const cls = cum == null ? '' : (cum > this.settings.maxFeederVD ? 'fail' : 'pass');
         const vdTxt = cum == null ? '—' : cum.toFixed(2) + '%';
         const feederKva = kr.feederKVA != null ? kr.feederKVA : kr.totalKVA;
+        const key = 'f:' + kr.kioskId, open = this._calcOpen.has(key);
         return `<div class="summary-row"><span class="k">${escHtml(kr.name || 'Kiosk')} <span style="color:var(--text-muted)">(${feederKva} kVA feed)</span></span>
-          <span class="v">${cum == null ? '—' : `<span class="status-pill ${cls}">${vdTxt}</span>`}</span></div>`;
+          <span class="v">${cum == null ? '—' : `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="${key}" aria-expanded="${open}" title="Show how this volt drop is calculated"><span class="status-pill ${cls}">${vdTxt}</span> <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`}</span></div>
+          ${cum == null ? '' : `<div class="calc-panel" data-calc-panel="${key}"${open ? '' : ' hidden'}>${this._feederCalcHtml(kr.kioskId, byId)}</div>`}`;
       }).join('');
       feederBlock = `
       <div class="summary-block">

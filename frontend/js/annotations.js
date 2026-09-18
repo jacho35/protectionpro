@@ -184,14 +184,15 @@ const Annotations = {
     document.body.removeChild(ta);
   },
 
-  // Show/hide the top-bar "Restore results" button based on hidden count.
+  // The Results menu's "Restore hidden boxes" item: always listed, enabled only
+  // while something is hidden, with the count in its label.
   _syncRestoreButton() {
     const btn = document.getElementById('btn-restore-results');
     if (!btn) return;
     const n = this.hiddenResultBoxes.size;
-    btn.style.display = n > 0 ? '' : 'none';
+    btn.disabled = n === 0;
     const label = btn.querySelector('span');
-    if (label) label.textContent = n === 1 ? 'Restore result (1)' : `Restore results (${n})`;
+    if (label) label.textContent = n ? `Restore hidden boxes (${n})` : 'Restore hidden boxes';
   },
 
   // ── Auto-stacking of badges per component (no user offset) ──

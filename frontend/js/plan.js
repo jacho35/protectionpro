@@ -134,6 +134,13 @@ const PlanMarkup = {
         else PlanSync.pushToSchedules();
       }
       else if (act.dataset.action === 'circuits' && typeof PlanCircuits !== 'undefined') {
+        // An unlinked board has no schedule to write into: link it first. The
+        // SLD sync ends with the same circuit sync, and reports it.
+        if (PlanCircuits.hasUnlinkedBoards() && typeof PlanSync !== 'undefined') {
+          PlanSync.syncBuildingToSLD().then(() => { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); });
+          if (this._isMobile()) this._closeOverflow();
+          return;
+        }
         const s = PlanCircuits.syncAll();
         if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
         this.markDirty(); this._snapshot();
@@ -373,6 +380,8 @@ const PlanMarkup = {
             <div class="ui-dialog-actions"><button class="btn-primary" data-role="close">Done</button></div>
           </div>
         </div>`;
+      // Excel-style editing of the floor list (grid.js); re-attached per render.
+      if (typeof GridTable !== 'undefined') GridTable.attach(overlay.querySelector('.plan-floor-table tbody'));
     };
     render();
     document.body.appendChild(overlay);

@@ -763,6 +763,11 @@
     padding-top: 4px;
     border-top: 1px solid var(--bg-tertiary);
   }
+  /* The calculation row under a card is a plain block, not another card. */
+  .erf-table tr.calc-row {
+    display: block; padding: 0; margin: -4px 0 8px; border: 0; background: none;
+  }
+  .erf-table tr.calc-row > td { border: 0; padding: 0; }
   .erf-table td[data-cell="del"] {
     position: absolute;
     top: 4px;

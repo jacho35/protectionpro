@@ -32,6 +32,7 @@ frontend/
 └── js/
     ├── app.js              # Entry point, keyboard shortcuts, module initialization
     ├── state.js            # Global AppState (components, wires, selection, results)
+    ├── grid.js             # GridTable — shared Excel-style table editing (keys, range select, TSV copy/paste, fill down, number cleaning); attach to every editable table
     ├── canvas.js           # SVG rendering, pan/zoom, grid, 5-layer system
     ├── sidebar.js          # Searchable component palette, drag-drop
     ├── wiring.js           # Orthogonal wire routing, port snapping
@@ -42,12 +43,16 @@ frontend/
     ├── project.js          # Save/load/export (JSON/SVG/PNG/CSV/PDF)
     ├── api.js              # HTTP client for backend endpoints
     ├── constants.js        # Component definitions, cable/transformer libraries
+    ├── cablelib.js         # CableLib — the ONE cable library (STANDARD_CABLES): construction/cores, name aliases, pickers (Demand/plan/SLD), project conductor preference, custom cables carried in the project
     ├── standard-data.js    # Settings modal, editable cable & transformer libraries
     ├── templates.js        # Pre-built network templates (radial, ring, mesh)
     ├── tcc.js              # Time-current curve coordination plotting
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
     ├── dbschedule.js       # DB circuit schedule grid — renders into the #db-modal OR the Schedules workspace
     ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)
+    ├── workspaces.js       # Project type (Reticulation / Building / Network) → which workspace tabs show, in workflow order; New-project + type dialogs
+    ├── header.js           # Two-row header behaviours: Results menu lists only studies with results; Ctrl K command search (index built from the menus)
+    ├── lightning.js        # Lightning risk (IEC 62305-2): named assessments saved in the project (AppState.lightningAssessments), 4 guided steps, live strike estimate, verdict-first results, PDF report (LightningReport)
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
     ├── freqscan.js         # Frequency scan UI (Z vs f setup + log-decade chart)
@@ -61,6 +66,9 @@ frontend/
     ├── contingency.js      # Contingency analysis UI (N-1 / N-2 setup + ranked violations table)
     ├── timeseries.js       # Time-series / quasi-dynamic load flow UI (horizon/step/profile setup + voltage/loading/SoC charts)
     ├── reports.js          # Client-side PDF via jsPDF + autoTable
+    ├── rates.js            # Rate library — item-key catalogue, per-project rates, CSV/XLSX round trip with import preview
+    ├── boq.js              # Bill of quantities — take-off over Demand / plans / SLD / DB schedules, priced from rates.js
+    ├── cableschedules.js   # Cable schedules — retic feeders/services (Demand VD) + building sub-mains (LF) / final circuits (circuit check)
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
     └── undo.js             # Snapshot-based undo/redo (50 states max)
@@ -229,7 +237,7 @@ Component definitions (default props, ports, SVG dimensions) are in `constants.j
 
 ## Built-in Libraries
 
-- **Cable Library** (~70 entries): Copper/Aluminium, XLPE/PVC, 0.4-33kV, R/X per km, ampacity (per IEC 60502/SANS 1339)
+- **Cable Library** (~113 entries, the only cable library in the app — `STANDARD_CABLES`, read through `CableLib`): MV/LV armoured multicore Cu/Al XLPE/PVC 0.4-33kV (MV 3-core, LV 4-core), LV 2-core single-phase service cables, and building wiring (T+E, H07V-R singles, Surfix, control). Each entry has `construction` + `cores`. Demand, plans, SLD and DB schedules all pick from it; rate/termination keys come from the entry's id. Never add a second cable list
 - **Transformer Library** (22 entries): 100kVA-80MVA, vector groups, impedance values
 
 Both are editable via the Settings modal and can be reset to defaults.
@@ -298,6 +306,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 | V | Select mode |
 | W | Wire mode |
 | Delete | Delete selected |
+| Ctrl+K | Search every command, analysis, export and setting |
 | Ctrl+S | Save project |
 | Ctrl+Z | Undo |
 | Ctrl+Shift+Z | Redo |

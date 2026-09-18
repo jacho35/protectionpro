@@ -99,6 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // (FABs, selection bar, Components/Analysis nav) and fits the workspace
     // between the mobile header and bottom nav.
     document.body.classList.toggle('mobile-ws-secondary', name !== 'sld');
+    // Desktop: row 2 of the header is the single-line toolbar; the other
+    // workspaces bring their own, so the header drops to one row there.
+    document.body.classList.toggle('ws-secondary-active', name !== 'sld');
+    if (typeof window.closeAllToolbarMenus === 'function') window.closeAllToolbarMenus();
 
     const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan', interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules' };
     for (const [key, id] of Object.entries(tabs)) {
@@ -124,6 +128,12 @@ document.addEventListener('DOMContentLoaded', () => {
   ]) {
     document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
   }
+  // Numbers change only by typing or pasting: no wheel / arrow-key stepping.
+  if (typeof GridTable !== 'undefined') GridTable.initGlobal();
+  // Workspace tabs follow the project type (after switchWorkspace exists).
+  if (typeof Workspaces !== 'undefined') Workspaces.init();
+  // Results menu contents + Ctrl K command search.
+  if (typeof Header !== 'undefined') Header.init();
 
   // Templates button
   document.getElementById('btn-templates').addEventListener('click', () => NetworkTemplates.show());
@@ -213,6 +223,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnSelect.addEventListener('click', () => setMode(MODE.SELECT));
   btnWire.addEventListener('click', () => setMode(MODE.WIRE));
+
+  // Edit menu items that previously existed only as shortcuts. Each replays
+  // its key through the one keydown handler below, so menu and keyboard can
+  // never drift apart (same guards, same status messages, same undo).
+  for (const [id, key, ctrl] of [
+    ['btn-edit-cut', 'x', true], ['btn-edit-copy', 'c', true], ['btn-edit-paste', 'v', true],
+    ['btn-edit-duplicate', 'd', true], ['btn-edit-select-all', 'a', true], ['btn-edit-rotate', 'r', false],
+  ]) {
+    document.getElementById(id)?.addEventListener('click', () => {
+      window.closeAllToolbarMenus();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: ctrl, bubbles: true, cancelable: true }));
+    });
+  }
   btnDelete.addEventListener('click', () => {
     AppState.deleteSelected();
     Canvas.render();
@@ -2758,6 +2781,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('wenner-modal').style.display = '';
   });
 
+  GridTable.attach(document.getElementById('wenner-rows'));   // Excel-style readings grid
   document.getElementById('wenner-rows').addEventListener('input', (e) => {
     const idx = e.target.getAttribute('data-wenner-idx');
     const field = e.target.getAttribute('data-wenner-field');
@@ -2913,66 +2937,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  document.getElementById('btn-lightning').addEventListener('click', () => {
-    restoreLightningParams(AppState.lightningRisk);
-    document.getElementById('lightning-results').innerHTML = '';
-    document.getElementById('lightning-modal').style.display = '';
-  });
+  // The dialog, its named assessments and the PDF report live in lightning.js;
+  // it reads and writes the form through these two functions.
+  LightningUI.collect = collectLightningParams;
+  LightningUI.restore = restoreLightningParams;
+  LightningUI.init();
+  document.getElementById('btn-lightning').addEventListener('click', () => LightningUI.openModal());
 
   document.getElementById('btn-run-lightning').addEventListener('click', async () => {
     const params = collectLightningParams();
-    AppState.lightningRisk = params;  // persist inputs with the project
-    const out = document.getElementById('lightning-results');
-    out.innerHTML = '<p style="font-size:12px;color:var(--text-secondary)">Assessing…</p>';
+    LightningUI.saveInputs();   // the assessment keeps what was entered, run or not
     _setBusy('btn-run-lightning', true);
     try {
       const res = await API.runLightningRisk(params);
-      renderLightningResults(res, out);
+      LightningUI.storeResult(params, res);
+      LightningUI.showResults(res);
       document.getElementById('status-info').textContent = 'Lightning risk assessment complete.';
     } catch (e) {
       console.error('Lightning risk error:', e);
-      out.innerHTML = `<div class="af-warning-item">⚠ ${escHtml(e.message || 'Assessment failed')}</div>`;
+      LightningUI.showError(e.message || 'Assessment failed');
     } finally {
       _setBusy('btn-run-lightning', false);
     }
   });
-
-  function renderLightningResults(res, out) {
-    const fmtR = v => v === 0 ? '0' : (v * 1e5).toFixed(3);  // in units of 1e-5/yr
-    const color = res.compliant ? '#4caf50' : '#d32f2f';
-    let html = '';
-    for (const w of res.warnings || []) {
-      html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-    }
-    html += `<div style="background:${color}11;border:1px solid ${color};border-radius:6px;padding:10px 14px;margin:10px 0">
-      <strong style="color:${color}">R1 = ${fmtR(res.r1)} ×10⁻⁵ /yr — ${res.compliant ? 'TOLERABLE' : 'EXCEEDS'} R_T = 1.0 ×10⁻⁵ /yr</strong>
-      <div style="font-size:12px;margin-top:4px">${escHtml(res.recommendation)}</div>
-    </div>`;
-    html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px;margin-bottom:12px">
-      <div>A<sub>D</sub>: <strong>${res.collection_area_m2.toLocaleString()} m²</strong></div>
-      <div>A<sub>M</sub>: <strong>${Math.round(res.collection_area_near_m2).toLocaleString()} m²</strong></div>
-      <div>N<sub>D</sub>: <strong>${res.flashes_to_structure_per_year.toExponential(2)} /yr</strong></div>
-      <div>N<sub>M</sub>: <strong>${res.flashes_near_structure_per_year.toFixed(3)} /yr</strong></div>
-    </div>`;
-    // Component breakdown
-    html += '<table class="result-table" style="width:100%;font-size:12px;margin-bottom:12px"><thead><tr><th>Component</th><th>Description</th><th style="text-align:right">×10⁻⁵ /yr</th><th style="width:30%">Share</th></tr></thead><tbody>';
-    for (const c of res.components) {
-      if (c.value === 0 && !res.systems_life_risk && ['RC', 'RM', 'RW', 'RZ'].includes(c.code)) continue;
-      html += `<tr><td><strong>${c.code}</strong></td><td>${escHtml(c.description)}</td>
-        <td style="text-align:right">${fmtR(c.value)}</td>
-        <td><div style="background:var(--accent);height:8px;border-radius:4px;width:${Math.max(1, c.share_pct).toFixed(1)}%;opacity:0.7"></div></td></tr>`;
-    }
-    html += '</tbody></table>';
-    // Protection ladder
-    html += '<table class="result-table" style="width:100%;font-size:12px"><thead><tr><th>Protection measures</th><th style="text-align:right">R1 (×10⁻⁵ /yr)</th><th>Meets R_T</th></tr></thead><tbody>';
-    for (const o of res.options) {
-      html += `<tr><td>${escHtml(o.label)}</td><td style="text-align:right">${fmtR(o.r1)}</td>
-        <td>${o.compliant ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>'}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:8px">Single-zone assessment per IEC 62305-2 Ed. 2. R_C/R_M/R_W/R_Z included only where internal-system failure endangers life (hospitals, explosion risk). No spatial-shielding credit (K_S1 = K_S2 = 1).</p>';
-    out.innerHTML = html;
-  }
 
   // ── Raceway / Conduit Fill ──
   const CONDUIT_SIZES = [20, 25, 32, 40, 50, 63, 75, 90, 110, 125, 160];
@@ -3676,11 +3663,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'raceway-modal') e.target.style.display = 'none';
   });
 
-  document.getElementById('btn-close-lightning').addEventListener('click', () => {
-    document.getElementById('lightning-modal').style.display = 'none';
-  });
+  // Close through LightningUI so a pending autosave of the inputs lands first.
+  document.getElementById('btn-close-lightning').addEventListener('click', () => LightningUI.close());
   document.getElementById('lightning-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'lightning-modal') e.target.style.display = 'none';
+    if (e.target.id === 'lightning-modal') LightningUI.close();
   });
 
   document.getElementById('btn-close-study-manager').addEventListener('click', () => {
@@ -4127,28 +4113,24 @@ document.addEventListener('DOMContentLoaded', () => {
       doc.text(new Date().toLocaleDateString(), tbX + 62, tbY + 28);
     }
 
-    // Embed diagram as SVG → PNG
-    const svgEl = document.getElementById('sld-canvas');
-    const svgClone = svgEl.cloneNode(true);
-    // Remove grid for print
-    const gridBg = svgClone.querySelector('#grid-bg');
-    if (gridBg) gridBg.remove();
-    const svgData = new XMLSerializer().serializeToString(svgClone);
-    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
+    // Embed diagram as SVG → PNG, fit to the available area preserving aspect
+    // ratio. Project._prepareExportSVG gives a tight bounding box of the
+    // WHOLE diagram, independent of the editor's current pan/zoom — the same
+    // path the Diagram SVG/PNG/PDF exports already use — instead of a raw
+    // clone of the live, possibly-panned/zoomed #sld-canvas with no
+    // viewBox/intrinsic size. _rasterizeSVG then rasterizes it at a fixed
+    // pixel scale (independent of the page's physical size) and the fit
+    // below scales THAT into the page slot without stretching/distorting it.
+    const { clone, svgW, svgH } = Project._prepareExportSVG();
+    Project._rasterizeSVG(clone, svgW, svgH, 3, (canvas) => {
       const diagramArea = { w: pw - 2 * margin - 10, h: ph - 2 * margin - (showTitleBlock ? 40 : 10) };
-      canvas.width = diagramArea.w * 4;
-      canvas.height = diagramArea.h * 4;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const fitScale = Math.min(diagramArea.w / svgW, diagramArea.h / svgH);
+      const imgW = svgW * fitScale;
+      const imgH = svgH * fitScale;
+      const imgX = margin + 5 + (diagramArea.w - imgW) / 2;
+      const imgY = margin + 5 + (diagramArea.h - imgH) / 2;
       const imgData = canvas.toDataURL('image/png');
-      doc.addImage(imgData, 'PNG', margin + 5, margin + 5, diagramArea.w, diagramArea.h);
-      URL.revokeObjectURL(url);
+      doc.addImage(imgData, 'PNG', imgX, imgY, imgW, imgH);
 
       // Legend
       if (showLegend) {
@@ -4167,25 +4149,37 @@ document.addEventListener('DOMContentLoaded', () => {
       doc.save(`${title.replace(/\s+/g, '_')}_print.pdf`);
       document.getElementById('print-modal').style.display = 'none';
       document.getElementById('status-info').textContent = 'Print PDF exported.';
-    };
-    img.src = url;
+    });
   }
 
+  // Physical page dimensions (mm) matching the #print-page-size options.
+  const _PRINT_PAGE_MM = { a4: [210, 297], a3: [297, 420], letter: [215.9, 279.4], tabloid: [279.4, 431.8] };
+
   function _printPreview() {
-    // Use browser print with a styled iframe
-    const svgEl = document.getElementById('sld-canvas');
-    const svgClone = svgEl.cloneNode(true);
-    const gridBg = svgClone.querySelector('#grid-bg');
-    if (gridBg) gridBg.setAttribute('fill', 'white');
-    const svgData = new XMLSerializer().serializeToString(svgClone);
+    // Use browser print with a styled window. Reuse the same tight,
+    // pan/zoom-independent bounding box as the other diagram exports (see
+    // _exportPrintPDF above) so the preview always shows — and prints — the
+    // whole diagram at its correct aspect ratio, not whatever happens to be
+    // panned/zoomed into view with no defined print size.
+    const pageSize = document.getElementById('print-page-size').value;
+    const orientation = document.getElementById('print-orientation').value;
+    const { clone, svgW, svgH } = Project._prepareExportSVG();
+    clone.setAttribute('width', svgW);
+    clone.setAttribute('height', svgH);
+    const svgData = new XMLSerializer().serializeToString(clone);
     const printWin = window.open('', '_blank', 'width=900,height=650');
     if (!printWin) {
       UI.toast('Print preview was blocked by the browser popup blocker. Please allow popups for this site and try again, or use "Export PDF" instead.', 'error', 6000);
       return;
     }
+    const [mmA, mmB] = _PRINT_PAGE_MM[pageSize] || _PRINT_PAGE_MM.a4;
+    const [pageW, pageH] = orientation === 'landscape' ? [Math.max(mmA, mmB), Math.min(mmA, mmB)] : [Math.min(mmA, mmB), Math.max(mmA, mmB)];
     printWin.document.write(`<!DOCTYPE html><html><head><title>Print Preview</title>
-      <style>body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#fff;}
-      svg{max-width:100%;max-height:100%;}</style></head>
+      <style>
+        @page { size: ${pageW}mm ${pageH}mm; margin: 10mm; }
+        body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#fff;}
+        svg{max-width:100%;max-height:100%;}
+      </style></head>
       <body>${svgData}</body></html>`);
     printWin.document.close();
     printWin.focus();

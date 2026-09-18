@@ -594,7 +594,10 @@ const DBSchedule = {
   _cableAmpacityA(mm2) {
     const sz = Number(mm2);
     if (!sz || typeof STANDARD_CABLES === 'undefined') return null;
-    const lv = STANDARD_CABLES.filter(c => c.conductor === 'Cu' && c.insulation === 'PVC' && !(c.voltage_kv > 1));
+    // Armoured multicore only: the one library also holds T+E / Surfix wiring
+    // of the same sizes, which would otherwise shadow these ratings.
+    const lv = STANDARD_CABLES.filter(c => c.conductor === 'Cu' && c.insulation === 'PVC' && !(c.voltage_kv > 1)
+      && (c.construction || 'armoured') === 'armoured');
     const exact = lv.find(c => c.size_mm2 === sz);
     if (exact) return exact.rated_amps;
     const larger = lv.filter(c => c.size_mm2 > sz).sort((a, b) => a.size_mm2 - b.size_mm2)[0];
@@ -660,6 +663,23 @@ const DBSchedule = {
 
   _resultFor(c) {
     return (this._resIndex && c && c.id) ? this._resIndex.get(c.id) : null;
+  },
+
+  // The frozen left band (Way/Description/Breaker/Load) and the frozen right
+  // band (FLA/Iz/%VD/ECC✓/actions) hide the scrollable middle columns off
+  // screen with no native cue — toggle a shadow on the inner edge of each
+  // band so it's obvious there's more to scroll to. render() replaces the
+  // whole grid markup each time, so this must be rewired on every render.
+  _wireScrollShadow(el) {
+    if (!el) return;
+    const update = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      el.classList.toggle('db-scroll-l', el.scrollLeft > 0);
+      el.classList.toggle('db-scroll-r', el.scrollLeft < max - 1);
+    };
+    el.addEventListener('scroll', update, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(update).observe(el);
+    update();
   },
 
   // Fill (or blank) the three result cells. Text-only, so this can run while
@@ -828,19 +848,19 @@ const DBSchedule = {
     const rows = circuits.map((c, i) => `
       <tr data-idx="${i}" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' class="db-selected"' : ''}>
         <td data-label="Select" class="db-sel-cell"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit — shift-click another row to select the range between them"></td>
-        <td data-label="Way"><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
-        <td data-label="Description"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%;min-width:220px"></td>
+        <td data-label="Way" class="db-col-way"><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
+        <td data-label="Description" class="db-col-desc"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%"></td>
+        <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
+        <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="Poles"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
         <td data-label="Phase"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
           ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
-        <td data-label="Breaker (A)"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
         <td data-label="Curve"><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
         <td data-label="EL Grp"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
         <td data-label="Leak (mA)"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
         <td data-label="Cable mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value."></td>
         <td data-label="ECC mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank to take the IEC 60364-5-54 Table 54.7 minimum for the live conductor."></td>
         <td data-label="Len (m)"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
-        <td data-label="Load (VA)"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
         <td data-label="PF"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
         <td data-label="FLA (A)" class="db-fla" data-id="${escHtml(c.id)}">—</td>
@@ -905,12 +925,14 @@ const DBSchedule = {
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr>
             <th class="db-sel-cell"><input type="checkbox" id="db-select-all" title="Select / deselect all ways. Shift-click a row checkbox to select a range."></th>
-            <th>Way</th><th>Description</th><th>Poles</th><th>Ph</th>
-            <th>Breaker (A)</th><th>Curve</th><th>EL Grp</th>
+            <th class="db-col-way">Way</th><th class="db-col-desc">Description</th>
+            <th class="db-col-breaker">Breaker (A)</th><th class="db-col-load">Load (VA)</th>
+            <th>Poles</th><th>Ph</th>
+            <th>Curve</th><th>EL Grp</th>
             <th title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
             <th>Cable mm²</th>
             <th title="Earth continuity conductor size. Blank = the IEC 60364-5-54 Table 54.7 minimum for the live conductor.">ECC mm²</th>
-            <th>Len (m)</th><th>Load (VA)</th><th>DF</th>
+            <th>Len (m)</th><th>DF</th>
             <th title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th>
             <th class="db-fla-h" title="Full-load current — the connected load (Load VA) at this way's own voltage, WITHOUT the demand factor. This is what the circuit draws with everything on it running. Hover a cell for the diversified design current Ib the cable check is graded against.">FLA (A)</th>
             <th class="db-res-h" data-res="iz" title="Derated current-carrying capacity Iz (IEC 60364-5-52) — compared against the breaker rating In, since SANS 10142-1 / IEC 60364-433 requires Ib ≤ In ≤ Iz. Tooltip also carries the earth-loop (Zs) verdict.">Iz (A)</th>
@@ -955,6 +977,7 @@ const DBSchedule = {
     this._refreshAccessories(comp);
     this._refreshBulkBar();
     this._paintResults();
+    this._wireScrollShadow(this.body.querySelector('.db-schedule-grid'));
 
     // ── Bulk-selection checkboxes ──
     // `click`, not `change`: only a click event carries shiftKey, and by the
@@ -1129,94 +1152,80 @@ const DBSchedule = {
           this.refreshTotals(comp);
         }
       });
-      // select all on focus — typing immediately replaces, like a spreadsheet
-      if (inp.tagName === 'INPUT') {
-        inp.addEventListener('focus', () => inp.select());
-      }
     });
 
-    // Keyboard navigation: Enter/↓ = same column next row (Enter on the last
-    // row adds a way), ↑ = previous row, Tab keeps its native left/right.
-    // Must match the VISUAL column order — paste maps clipboard columns onto
-    // this list by position.
-    const NAV_COLS = ['way', 'description', 'poles', 'phase', 'breaker_a', 'curve',
-      'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m', 'load_va',
+    // Excel-style grid (grid.js): selection, Enter/Tab/arrow navigation,
+    // copy, fill-down, no number stepping. Column order is the VISUAL order of
+    // the [data-k] cells, which NAV_COLS mirrors for pasted blocks.
+    const NAV_COLS = ['way', 'description', 'breaker_a', 'load_va', 'poles', 'phase',
+      'curve', 'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m',
       'demand_factor', 'power_factor'];
     this._focusCell = (row, k) => {
       const el = this.body.querySelector(`#db-rows tr[data-idx="${row}"] [data-k="${k}"]`);
       if (el) { el.focus(); if (el.select) el.select(); }
     };
-    this.body.querySelector('#db-rows').addEventListener('keydown', (e) => {
-      const cell = e.target.closest('[data-k]');
-      if (!cell) return;
-      const tr = cell.closest('tr');
-      const row = parseInt(tr.dataset.idx);
-      const k = cell.dataset.k;
-      if (e.key === 'Enter' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        cell.dispatchEvent(new Event('change', { bubbles: true }));
-        if (row + 1 >= circuits.length && e.key === 'Enter') {
-          // Enter on the last row: append a new way and land in it
-          circuits.push(this.newWay(circuits.length));
-          this.render();
-          this._focusCell(circuits.length - 1, k);
-        } else if (row + 1 < circuits.length) {
-          this._focusCell(row + 1, k);
-        }
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        cell.dispatchEvent(new Event('change', { bubbles: true }));
-        if (row > 0) this._focusCell(row - 1, k);
-      }
+    GridTable.attach(this.body.querySelector('#db-rows'), {
+      cells: '[data-k]',
+      // Enter on the last row appends a way and lands in the same column.
+      onAddRow: (cell) => {
+        const k = cell.dataset.k;
+        circuits.push(this.newWay(circuits.length));
+        this.render();
+        this._focusCell(circuits.length - 1, k);
+      },
+      // A pasted block is applied to the circuit data directly (clamping DF/PF,
+      // the 3P ⇒ RWB rule, curve letters) and rows are appended as needed.
+      onPaste: ({ cell, rows }) => {
+        const startRow = parseInt(cell.closest('tr').dataset.idx);
+        const startCol = NAV_COLS.indexOf(cell.dataset.k);
+        if (isNaN(startRow) || startCol < 0) return false;
+        this._pasteBlock(circuits, startRow, startCol, rows, NAV_COLS);
+        return true;
+      },
     });
+  },
 
-    // Multi-cell paste from Excel/Sheets: TSV starting at the focused cell.
-    // Extra rows are appended automatically.
-    this.body.querySelector('#db-rows').addEventListener('paste', (e) => {
-      const text = (e.clipboardData || window.clipboardData).getData('text');
-      if (!text || (!text.includes('\t') && !text.includes('\n'))) return; // single value → default paste
-      const cell = e.target.closest('[data-k]');
-      if (!cell) return;
-      e.preventDefault();
-      const startRow = parseInt(cell.closest('tr').dataset.idx);
-      const startCol = NAV_COLS.indexOf(cell.dataset.k);
-      const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim() !== '');
-      for (let li = 0; li < lines.length; li++) {
-        const rowIdx = startRow + li;
-        while (rowIdx >= circuits.length) {
-          circuits.push(this.newWay(circuits.length, { phase: 'R' }));
-        }
-        const c = circuits[rowIdx];
-        const vals = lines[li].split('\t');
-        for (let vi = 0; vi < vals.length && startCol + vi < NAV_COLS.length; vi++) {
-          const key = NAV_COLS[startCol + vi];
-          const raw = String(vals[vi]).trim();
-          if (raw === '') continue;
-          if (['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m', 'load_va', 'demand_factor', 'power_factor'].includes(key)) {
-            const n = parseFloat(raw);
-            if (!isNaN(n)) {
-              if (key === 'demand_factor') c[key] = Math.min(1, Math.max(0, n));
-              else if (key === 'power_factor') c[key] = Math.min(1, Math.max(0.05, n));
-              else c[key] = n;
-            }
-          } else if (key === 'poles') {
-            c.poles = raw.toUpperCase().includes('3') ? '3P' : '1P';
-            if (c.poles === '3P') c.phase = 'RWB';
-          } else if (key === 'phase') {
-            const p = raw.toUpperCase();
-            if (p === 'RWB') { c.poles = '3P'; c.phase = 'RWB'; }
-            else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
-          } else if (key === 'curve') {
-            if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
-          } else {
-            c[key] = raw;
-          }
+  // Apply a pasted block (rows of cell strings) to the circuits, from
+  // (startRow, startCol) in NAV_COLS order, appending ways as needed. Numbers
+  // go through GridTable.cleanNumber, so "1 250,5" or "R 25" paste correctly;
+  // anything that isn't a number is skipped and reported, never read as 0.
+  _pasteBlock(circuits, startRow, startCol, lines, NAV_COLS) {
+    const NUM = ['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m', 'load_va', 'demand_factor', 'power_factor'];
+    let bad = 0;
+    for (let li = 0; li < lines.length; li++) {
+      const rowIdx = startRow + li;
+      while (rowIdx >= circuits.length) {
+        circuits.push(this.newWay(circuits.length, { phase: 'R' }));
+      }
+      const c = circuits[rowIdx];
+      const vals = lines[li];
+      for (let vi = 0; vi < vals.length && startCol + vi < NAV_COLS.length; vi++) {
+        const key = NAV_COLS[startCol + vi];
+        const raw = String(vals[vi]).trim();
+        if (raw === '') continue;
+        if (NUM.includes(key)) {
+          const n = GridTable.cleanNumber(raw);
+          if (isNaN(n)) { bad++; continue; }
+          if (key === 'demand_factor') c[key] = Math.min(1, Math.max(0, n));
+          else if (key === 'power_factor') c[key] = Math.min(1, Math.max(0.05, n));
+          else c[key] = n;
+        } else if (key === 'poles') {
+          c.poles = raw.toUpperCase().includes('3') ? '3P' : '1P';
+          if (c.poles === '3P') c.phase = 'RWB';
+        } else if (key === 'phase') {
+          const p = raw.toUpperCase();
+          if (p === 'RWB') { c.poles = '3P'; c.phase = 'RWB'; }
+          else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
+        } else if (key === 'curve') {
+          if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
+        } else {
+          c[key] = raw;
         }
       }
-      this.render();
-      this._notifyEdited();
-      this._status(`Pasted ${lines.length} row(s) into the schedule.`);
-    });
+    }
+    this.render();
+    this._notifyEdited();
+    this._status(`Pasted ${lines.length} row(s) into the schedule.` + (bad ? ` ${bad} value(s) were not numbers and were skipped.` : ''));
   },
 
   // Refresh the phase bars, EL leakage panel and totals strip in place (no
@@ -1536,24 +1545,24 @@ const DBSchedule = {
   // schedule, never read back. importXlsx's fuzzy header probes ('load'/'va',
   // 'breaker'/'mcb'/'rating', …) match none of "fla (a)", so it round-trips
   // harmlessly.
-  XLSX_HEADERS: ['Way', 'Description', 'Poles', 'Phase', 'Breaker (A)', 'Curve',
-    'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)', 'Load (VA)',
+  XLSX_HEADERS: ['Way', 'Description', 'Breaker (A)', 'Load (VA)', 'Poles', 'Phase',
+    'Curve', 'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)',
     'Demand Factor', 'Power Factor', 'FLA (A)'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
     const vll = this._boardVll(comp);
     const rows = (comp.props.circuits || []).map(c => [
-      c.way ?? '', c.description ?? '', c.poles ?? '1P',
-      (c.poles === '3P') ? 'RWB' : (c.phase ?? 'R'),
-      c.breaker_a ?? '', c.curve ?? 'C', c.el_group ?? '', c.leakage_ma ?? 0,
-      c.cable_mm2 ?? '', c.ecc_mm2 ?? '', c.cable_m ?? '', c.load_va ?? '',
+      c.way ?? '', c.description ?? '', c.breaker_a ?? '', c.load_va ?? '',
+      c.poles ?? '1P', (c.poles === '3P') ? 'RWB' : (c.phase ?? 'R'),
+      c.curve ?? 'C', c.el_group ?? '', c.leakage_ma ?? 0,
+      c.cable_mm2 ?? '', c.ecc_mm2 ?? '', c.cable_m ?? '',
       c.demand_factor ?? 1, c.power_factor ?? 0.9,
       Math.round(this._wayFlaA(c, vll) * 10) / 10,
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
-    ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 6 }, { wch: 11 },
-      { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 10 },
+    ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 11 }, { wch: 10 }, { wch: 6 },
+      { wch: 6 }, { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 },
       { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');

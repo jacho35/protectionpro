@@ -47,10 +47,14 @@ Gotchas that cost time — do it this way:
   the device port to any point on the bar. To wire FROM a bus, press W first and
   drag from the bar. Legacy `top_i/bottom_i` ids still resolve and are migrated
   to `at_<x>` on project load.
-- **Running analyses**: the buttons (`#btn-run-fault`, `#btn-run-loadflow`, …) are
-  `.dropdown-item`s inside toolbar menus — click the `.toolbar-menu-btn` with the
-  right text ("Analysis", "Studies") first, then the button. Pre-run validation may
-  open a modal: click `#validation-proceed` ("Continue Anyway") when warnings exist.
+- **Running analyses**: every analysis button (`#btn-run-fault`, `#btn-run-loadflow`,
+  `#btn-arcflash`, …) is a `.dropdown-item` in the one grouped **Analyse** menu on
+  the single-line toolbar (header row 2): click `#menu-analyse .toolbar-menu-btn`
+  first, then the button. Other menus by id: `#menu-file` (labelled "Project"),
+  `#menu-edit`, `#menu-view`, `#menu-results`, `#menu-scenario`, `#menu-export`
+  ("Output"). Row 2 (`#sld-toolbar`) is hidden on the other workspaces. Pre-run
+  validation may open a modal: click `#validation-proceed` ("Continue Anyway")
+  when warnings exist.
 - **Selecting a component**: `page.mouse.click` at
   `Canvas.worldToScreen(comp.x, comp.y)` — this now works for buses too (the bar
   has a fat hit-line and no port circles). Verify via `[...AppState.selectedIds][0]`.

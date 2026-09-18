@@ -59,7 +59,13 @@ const StandardData = {
       const raw = localStorage.getItem(this._STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
-      if (Array.isArray(data.cables)) this.cables = data.cables;
+      if (Array.isArray(data.cables)) {
+        // One cable library: a saved copy keeps the user's edits, and any
+        // shipped entry it doesn't have yet (matched by id — e.g. the building
+        // wiring and 2-core service cables merged in 2026-09) is appended.
+        const have = new Set(data.cables.map(c => c && c.id));
+        this.cables = data.cables.concat(this._defaults.cables.filter(c => !have.has(c.id)).map(c => JSON.parse(JSON.stringify(c))));
+      }
       if (Array.isArray(data.transformers)) this.transformers = data.transformers;
       if (Array.isArray(data.cbs)) this.cbs = data.cbs;
       if (Array.isArray(data.fuses)) this.fuses = data.fuses;
@@ -122,7 +128,7 @@ const StandardData = {
       this.cables.push({
         id, name: 'New Cable', conductor: 'Cu', insulation: 'XLPE',
         size_mm2: 0, voltage_kv: 11, r_per_km: 0, x_per_km: 0,
-        r0_per_km: 0, x0_per_km: 0, rated_amps: 0,
+        r0_per_km: 0, x0_per_km: 0, rated_amps: 0, cores: 3, construction: 'armoured',
       });
       this.renderCableTable();
       this.syncCableLibrary();
@@ -150,6 +156,8 @@ const StandardData = {
           <option value="PVC" ${c.insulation === 'PVC' ? 'selected' : ''}>PVC</option>
           <option value="EPR" ${c.insulation === 'EPR' ? 'selected' : ''}>EPR</option>
         </select></td>
+        <td><select data-key="construction">${CableLib.CONSTRUCTIONS.map(k => `<option value="${k.id}" ${(c.construction || 'armoured') === k.id ? 'selected' : ''}>${escHtml(k.label)}</option>`).join('')}</select></td>
+        <td><input type="number" value="${c.cores || ''}" data-key="cores" step="1" min="1"></td>
         <td><input type="number" value="${c.size_mm2}" data-key="size_mm2" step="any"></td>
         <td><input type="number" value="${c.voltage_kv}" data-key="voltage_kv" step="any"></td>
         <td><input type="number" value="${c.r_per_km}" data-key="r_per_km" step="any"></td>
@@ -169,11 +177,18 @@ const StandardData = {
         const key = e.target.dataset.key;
         let val = e.target.value;
         if (e.target.type === 'number') val = parseFloat(val) || 0;
+        const old = this.cables[idx][key];
         this.cables[idx][key] = val;
         this.syncCableLibrary();
+        // A renamed cable keeps its references (and its rates, which key off the id).
+        if (key === 'name' && typeof CableLib !== 'undefined') {
+          const n = CableLib.renameInProject(old, val);
+          if (n && typeof UI !== 'undefined') UI.toast(`Renamed in this project too (${n} reference${n === 1 ? '' : 's'}).`, 'info');
+        }
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);
@@ -187,7 +202,7 @@ const StandardData = {
   syncCableLibrary() {
     // Update the global STANDARD_CABLES array in-place
     STANDARD_CABLES.length = 0;
-    for (const c of this.cables) STANDARD_CABLES.push(c);
+    for (const c of this.cables) STANDARD_CABLES.push(typeof CableLib !== 'undefined' ? CableLib.normalize(c) : c);
     this._persist();
   },
 
@@ -243,6 +258,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         this.loadClasses.splice(parseInt(e.target.dataset.index), 1);
@@ -310,6 +326,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);
@@ -378,6 +395,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);
@@ -442,6 +460,7 @@ const StandardData = {
       });
     });
 
+    if (typeof GridTable !== 'undefined') GridTable.attach(tbody);   // Excel-style editing
     tbody.querySelectorAll('.btn-delete-row').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const idx = parseInt(e.target.dataset.index);

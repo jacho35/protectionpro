@@ -40,15 +40,19 @@ const PlanUI = {
     const domain = pm.settings.domain || 'retic';
     const filter = (this._search || '').toLowerCase();
     const groups = PLAN_DEFS.paletteGroups(domain);
+    // The project type normally fixes the plan's domain (workspaces.js); the
+    // selector only appears when it doesn't — a Network project with a plan,
+    // or a plan whose content is the other domain's.
+    const domainLocked = typeof Workspaces !== 'undefined' && Workspaces.planDomainLocked && Workspaces.planDomainLocked();
     let html = `
       <div class="plan-pal-header">
-        <label class="plan-domain-field" title="Plan type — Site reticulation or Building floor plan">
+        ${domainLocked ? '' : `<label class="plan-domain-field" title="Plan type — Site reticulation or Building floor plan">
           <span class="plan-domain-cap">Plan type</span>
           <select class="plan-domain-select" data-role="domain" aria-label="Plan type"
             title="Plan type — Site reticulation or Building floor plan">
             ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
           </select>
-        </label>
+        </label>`}
         <input type="search" class="plan-pal-search" data-role="search" placeholder="Filter…" value="${escHtml(this._search || '')}" aria-label="Filter parts">
       </div>`;
     // Placement mode (building only): Single drop / grid Array / along a Path.
@@ -256,6 +260,7 @@ const PlanUI = {
       if (role === 'domain') {
         AppState.planMarkup.settings.domain = e.target.value;
         this.renderPalette();
+        if (typeof Workspaces !== 'undefined' && Workspaces.refresh) Workspaces.refresh();
         if (typeof PlanMarkup !== 'undefined' && PlanMarkup.updatePushButton) PlanMarkup.updatePushButton();
         if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshFloorBar) PlanMarkup.refreshFloorBar();
       } else if (role === 'vis') {
@@ -534,39 +539,26 @@ const PlanUI = {
       <button class="plan-circuit-btn" data-role="import-ies">📈 Import IES file…</button>`;
   },
 
-  // Build <option>s for a cable_select field. Building routes draw from the
-  // specialised BUILDING_CABLES library (grouped by category, filtered by the
-  // field's `category` list); reticulation routes use the central
-  // STANDARD_CABLES library grouped LV/MV by voltage.
-  _cableOptions(selectedName, field) {
+  // Build <option>s for a cable_select field from the one cable library.
+  // Reticulation routes (`voltage` 'lv' | 'mv') offer armoured distribution
+  // cables, the project's standard conductor first (Demand › LV / MV
+  // Conductor) with "Show all cables…" for the rest; building routes offer
+  // the constructions in the field's `uses` list.
+  _cableOptions(selectedName, field, showAll) {
     field = field || {};
-    const opt = (name) => `<option value="${escHtml(name)}" ${selectedName === name ? 'selected' : ''}>${escHtml(name)}</option>`;
-    let html = '<option value="">— select —</option>';
-    if (field.library === 'building' && typeof BUILDING_CABLES !== 'undefined') {
-      const cats = field.category || null;
-      const groups = {};
-      for (const c of BUILDING_CABLES) {
-        if (cats && !cats.includes(c.category)) continue;
-        (groups[c.category] = groups[c.category] || []).push(c.name);
-      }
-      // Preserve the field's category order, then any extras.
-      const order = cats || Object.keys(groups);
-      for (const cat of order) {
-        if (!groups[cat]) continue;
-        html += `<optgroup label="${escHtml(cat)}">${groups[cat].map(opt).join('')}</optgroup>`;
-      }
-      return html;
+    if (Array.isArray(field.uses)) {
+      const want = new Set(field.uses);
+      const filter = (c) => (want.has('armoured-lv') && c.construction === 'armoured' && !CableLib.isMV(c)) || want.has(c.construction);
+      const groups = field.uses.map(u => u === 'armoured-lv'
+        ? { label: 'Armoured multicore (SWA)', test: (c) => c.construction === 'armoured' }
+        : { label: (CableLib.CONSTRUCTIONS.find(k => k.id === u) || {}).label || u, test: (c) => c.construction === u });
+      return CableLib.options(selectedName, { filter, groups });
     }
-    // Reticulation (STANDARD_CABLES) — LV/MV by voltage.
-    const voltage = field.voltage;
-    let list = STANDARD_CABLES;
-    if (voltage === 'lv') list = STANDARD_CABLES.filter(c => !(c.voltage_kv > 1));
-    else if (voltage === 'mv') list = STANDARD_CABLES.filter(c => c.voltage_kv > 1);
-    const lv = list.filter(c => !(c.voltage_kv > 1)).map(c => opt(c.name)).join('');
-    const mv = list.filter(c => c.voltage_kv > 1).map(c => opt(c.name)).join('');
-    return html
-      + (lv ? `<optgroup label="LV (≤1 kV)">${lv}</optgroup>` : '')
-      + (mv ? `<optgroup label="MV">${mv}</optgroup>` : '');
+    const v = field.voltage === 'mv' ? 'mv' : field.voltage === 'lv' ? 'lv' : '';
+    return CableLib.options(selectedName, {
+      filter: CableLib.reticFilter(v), groups: CableLib.reticGroups(),
+      prefer: v ? CableLib.reticPrefer(v) : '', showAll: !!showAll,
+    });
   },
 
   _onPropsChange(e) {
@@ -578,6 +570,13 @@ const PlanUI = {
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found) return;
     const { kind, item } = found;
+    // "Show all cables…" only widens the picker; nothing is written.
+    if (e.target.tagName === 'SELECT' && e.target.value === '__all__') {
+      const def = kind === 'route' ? PLAN_DEFS.route(item.type) : null;
+      const field = def && (def.fields || []).find(f => f.key === key);
+      CableLib.handleShowAll(e.target, item[key], (v) => this._cableOptions(v, field, true));
+      return;
+    }
     let val = e.target.value;
     if (e.target.type === 'number') val = parseFloat(val) || 0;
     if (e.target.type === 'checkbox') val = e.target.checked;
@@ -603,6 +602,13 @@ const PlanUI = {
         if (key === 'circuitDbId' || key === 'circuitNo') delete item.props.circuitWid;
         if (!val && key === 'circuitDbId') delete item.props.circuitNo;   // unassign clears the way
         PlanCircuits.syncLoads();
+        if (PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
+        // A tag on a board that isn't on the SLD yet has nowhere to land —
+        // say so instead of silently writing nothing.
+        const tagBoard = item.props.circuitDbId && PlanCircuits._boardById(item.props.circuitDbId);
+        if (tagBoard && !PlanCircuits._sldComp(tagBoard)) {
+          UI.toast(`${tagBoard.name || 'This board'} isn't on the SLD yet — press → Sync with SLD to create its schedule.`, 'info');
+        }
         PlanMarkup.snapshot(); PlanMarkup.markDirty();
         if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4: pair the SLD stack
         this.renderProps();
@@ -634,12 +640,14 @@ const PlanUI = {
   },
 
   // Auto-distribute the selected board's connected untagged devices into ways.
-  _bulkAssign() {
+  async _bulkAssign() {
     const ids = [...PlanMarkup.selectedIds]; if (ids.length !== 1) return;
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found || found.kind !== 'element' || found.item.type !== 'bd_db') return;
+    // The board needs a schedule to assign into — link it rather than refuse.
     if (!found.item.sldId || !AppState.components.get(found.item.sldId)) {
-      UI.toast('Sync this board with the SLD first (it needs a circuit schedule).', 'info'); return;
+      await PlanSync.syncBuildingToSLD();
+      if (!found.item.sldId || !AppState.components.get(found.item.sldId)) return;
     }
     const r = PlanCircuits.bulkAssign(found.item.id);
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
@@ -650,7 +658,10 @@ const PlanUI = {
   },
 
   // Re-count loads + routed lengths from the plan into every linked board.
-  _syncCircuits() {
+  async _syncCircuits() {
+    // Unlinked boards have no schedule yet: the SLD sync links them and ends
+    // with the same circuit sync (and its own summary).
+    if (PlanCircuits.hasUnlinkedBoards()) { await PlanSync.syncBuildingToSLD(); this.renderProps(); return; }
     const s = PlanCircuits.syncAll();
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4

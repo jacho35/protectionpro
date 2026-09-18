@@ -32,6 +32,14 @@ const Project = {
     document.getElementById('btn-export-csv').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportResultsCSV(); });
     document.getElementById('btn-export-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPDF(); });
     document.getElementById('btn-export-template').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showTemplateEditor(); });
+    document.getElementById('btn-boq').addEventListener('click', () => { window.closeAllToolbarMenus?.(); BOQ.open(); });
+    document.getElementById('btn-cable-schedules').addEventListener('click', () => { window.closeAllToolbarMenus?.(); CableSchedules.open(); });
+    // Header › Quantities (every tab). Badges are counted when the menu opens.
+    document.getElementById('btn-q-boq').addEventListener('click', () => { window.closeAllToolbarMenus?.(); BOQ.open(); });
+    document.getElementById('btn-q-cables').addEventListener('click', () => { window.closeAllToolbarMenus?.(); CableSchedules.open(); });
+    document.getElementById('btn-q-rates').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Rates.open(); });
+    document.querySelector('#menu-quantities .toolbar-menu-btn').addEventListener('click', () => BOQ.refreshMenuBadges());
+    document.getElementById('btn-rates').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Rates.open(); });
     document.getElementById('btn-export-settings').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportSettingsCSV(); });
     document.getElementById('btn-export-aflabels').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.exportArcFlashLabels(); });
     document.getElementById('btn-export-compare').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showComparisonDialog(); });
@@ -86,6 +94,13 @@ const Project = {
     if (AppState.dirty) {
       if (!(await UI.confirm('You have unsaved changes. Create new project?', { danger: true }))) return;
     }
+    // The project type decides which workspaces the new project shows.
+    // Cancelling here abandons the new project and leaves the current one.
+    let projectType = null;
+    if (typeof Workspaces !== 'undefined' && Workspaces.chooseType) {
+      projectType = await Workspaces.chooseType();
+      if (!projectType) return;
+    }
     // Different project from here on — drop the outgoing project's local
     // revisions before reset() rotates the revision namespace.
     RevisionTimeline.clearLocal();
@@ -98,6 +113,13 @@ const Project = {
     Properties.clear();
     document.title = 'ProtectionPro — New Project';
     updateProjectNameDisplay('Untitled Project');
+    if (projectType) {
+      AppState.projectType = projectType;
+      Workspaces.refresh();
+      // Open on the first step of the chosen type (e.g. the site plan).
+      const first = Workspaces.visible()[0];
+      if (first && typeof window.switchWorkspace === 'function') window.switchWorkspace(first);
+    }
     if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
     RevisionTimeline.hide();
   },
@@ -177,7 +199,7 @@ const Project = {
     // Persistent message — intentionally NOT cleared after a timeout
     document.getElementById('status-info').textContent =
       `SAVE FAILED — ${reason}. Your changes are NOT saved to the database. ` +
-      'A local backup was kept; use File → Export JSON to save a copy.';
+      'A local backup was kept; use Output → Project (JSON) to save a copy.';
   },
 
   // Save As: prompt for new name and save as a new project
@@ -302,23 +324,51 @@ const Project = {
   // Returns { clone, svgW, svgH, minX, minY }
   _prepareExportSVG(pad = 50) {
     const svg = document.getElementById('sld-canvas');
-    const clone = svg.cloneNode(true);
 
-    // Bounding box from component positions
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const comp of AppState.components.values()) {
-      const def = COMPONENT_DEFS[comp.type];
-      const hw = (def.width || 60) / 2 + 80;
-      const hh = (def.height || 60) / 2 + 80;
-      minX = Math.min(minX, comp.x - hw);
-      minY = Math.min(minY, comp.y - hh);
-      maxX = Math.max(maxX, comp.x + hw);
-      maxY = Math.max(maxY, comp.y + hh);
+    // Measure the ACTUAL rendered extent — components, wires, name/data
+    // labels (freely draggable via nameLabelOffsetX/Y and labelOffsetX/Y),
+    // and result annotation badges (also freely draggable) — via getBBox()
+    // on the live, attached #diagram-layer, BEFORE cloning/detaching (a
+    // detached SVG has no layout, so getBBox() on the clone would return a
+    // zero-size box). getBBox() reports children in the group's OWN local
+    // space, i.e. excluding #diagram-layer's own pan/zoom transform — the
+    // same "world" coordinate system component.x/y live in — so the result
+    // is correct regardless of the editor's current pan/zoom. A dragged
+    // label/badge sitting far from its component is invisible to a
+    // component-position-based box and was silently clipped from every
+    // export; getBBox() catches it because it measures what's actually drawn.
+    const liveLayer = svg.querySelector('#diagram-layer');
+    let minX, minY, maxX, maxY;
+    let rendered = null;
+    if (liveLayer) {
+      try {
+        const bb = liveLayer.getBBox();
+        if (bb.width > 0 || bb.height > 0) rendered = bb;
+      } catch (e) { /* e.g. an ancestor is display:none */ }
     }
-    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+    if (rendered) {
+      minX = rendered.x; minY = rendered.y;
+      maxX = rendered.x + rendered.width; maxY = rendered.y + rendered.height;
+    } else {
+      // Fallback (empty canvas, or getBBox unavailable): reconstruct from
+      // component positions with a generous fixed pad per component.
+      minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
+      for (const comp of AppState.components.values()) {
+        const def = COMPONENT_DEFS[comp.type];
+        const hw = (def.width || 60) / 2 + 80;
+        const hh = (def.height || 60) / 2 + 80;
+        minX = Math.min(minX, comp.x - hw);
+        minY = Math.min(minY, comp.y - hh);
+        maxX = Math.max(maxX, comp.x + hw);
+        maxY = Math.max(maxY, comp.y + hh);
+      }
+      if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+    }
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
     const svgW = maxX - minX;
     const svgH = maxY - minY;
+
+    const clone = svg.cloneNode(true);
 
     clone.setAttribute('viewBox', `${minX} ${minY} ${svgW} ${svgH}`);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');

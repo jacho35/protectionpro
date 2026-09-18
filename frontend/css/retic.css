@@ -20,6 +20,17 @@
 .workspace-tab + .workspace-tab { border-left: 1px solid var(--border-color); }
 .workspace-tab.active { background: var(--accent); color: #fff; }
 .workspace-tab:hover:not(.active) { background: var(--bg-tertiary); }
+.workspace-tab[hidden] { display: none; }
+/* Workflow step number on a Reticulation / Building project's core tabs. */
+.workspace-tab { display: inline-flex; align-items: center; gap: 5px; }
+.ws-step {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 50%;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.workspace-tab.active .ws-step { background: rgba(255,255,255,.25); color: #fff; }
+.mobile-menu-item[hidden] { display: none; }
 
 /* Workspace shell — occupies the area below the toolbar */
 #retic-workspace {
@@ -130,6 +141,52 @@
 }
 body.dark-mode .kiosk-demand-badge { background: #3a3320; color: #f0d890; }
 .kiosk-demand-badge .sep { opacity: .4; }
+/* The badge is a button: it opens the demand calculation panel. */
+button.kiosk-demand-badge { border: 0; font-family: inherit; cursor: pointer; }
+button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0 0 1px currentColor; }
+
+/* ── Calculation transparency panels (kiosk demand, service + feeder VD) ── */
+.calc-caret { font-size: 9px; opacity: .7; }
+.calc-link {
+  border: 0; background: none; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.calc-link:hover { text-decoration-style: solid; }
+.calc-panel {
+  margin: 6px 12px 8px; padding: 8px 10px;
+  border: 1px solid var(--border-color); border-left: 3px solid #d97706;
+  border-radius: 5px; background: var(--bg-primary);
+  font-size: 11.5px; overflow-x: auto;
+}
+.calc-panel[hidden], .calc-row[hidden] { display: none !important; }
+.erf-table .calc-row > td { padding: 0 0 6px; border-bottom: 1px solid var(--bg-tertiary); }
+.erf-table .calc-row .calc-panel { margin: 0; }
+.retic-summary .calc-panel { margin: 2px 0 8px; padding: 6px; font-size: 10.5px; }
+/* The summary drawer is narrow: let the label column wrap and tighten cells
+   so the value column is never pushed out of view. */
+.retic-summary .calc-table { table-layout: fixed; }
+.retic-summary .calc-table td { padding: 2px 3px; overflow-wrap: anywhere; }
+.retic-summary .calc-table td:first-child { white-space: normal; width: 24%; }
+.retic-summary .calc-table td.calc-val { width: 26%; white-space: normal; }
+.calc-table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+.calc-table:last-child { margin-bottom: 0; }
+.calc-table th {
+  text-align: left; font-size: 10px; font-weight: 600; color: var(--text-muted);
+  padding: 2px 6px; border-bottom: 1px solid var(--border-color); white-space: nowrap;
+}
+.calc-table td { padding: 2px 6px; vertical-align: top; color: var(--text-primary); }
+.calc-table td:first-child { color: var(--text-muted); white-space: nowrap; }
+.calc-table td.calc-val { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.calc-table tr.calc-total td { border-top: 1px solid var(--border-color); font-weight: 700; }
+.calc-table tr.calc-total td:first-child { color: var(--text-primary); }
+.calc-table tr.calc-leg td { font-weight: 600; color: var(--text-primary); padding-top: 4px; }
+.calc-table tr.vd-ok td.calc-val { color: var(--success); }
+.calc-table tr.vd-fail td.calc-val { color: var(--danger); }
+.calc-note { color: var(--text-muted); font-style: italic; padding: 2px 6px; }
+.calc-table tr.calc-warn td { color: var(--warning); background: rgba(245,124,0,.08); }
+.calc-table tr.calc-warn td:first-child { color: var(--warning); font-weight: 700; }
+/* Single-phase class on an erf drawn "3 Phase" (see Retic._erfPhaseMismatch). */
+.erf-table td.erf-phase-warn select { border-color: var(--warning); box-shadow: inset 3px 0 0 var(--warning); }
 .kiosk-body { padding: 10px 12px; }
 .kiosk-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
 .kiosk-meta .retic-field select, .kiosk-meta .retic-field input { min-width: 90px; }
@@ -231,3 +288,9 @@ body.dark-mode .kiosk-demand-badge { background: #3a3320; color: #f0d890; }
 .status-pill.pass { background: rgba(46,125,50,.15); color: var(--success); }
 .status-pill.warn { background: rgba(245,124,0,.15); color: var(--warning); }
 .status-pill.fail { background: rgba(211,47,47,.15); color: var(--danger); }
+
+/* Fixed-load override: amps and kVA side by side; the derived one is muted. */
+.erf-ov { display: flex; align-items: center; gap: 3px; }
+.erf-table .erf-ov input { width: 64px; min-width: 0; flex: 1 1 64px; }
+.erf-ov-u { font-size: 10.5px; color: var(--text-muted); }
+.erf-table .erf-ov input.derived { color: var(--text-muted); font-style: italic; background: var(--bg-secondary); }

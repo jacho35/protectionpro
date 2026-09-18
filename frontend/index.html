@@ -4,21 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.90">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.90">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.90">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.90">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.90">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.90">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.90">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.90">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.90">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.90">
+  <link rel="stylesheet" href="css/app.css?v=3.5.103">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.103">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.103">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.103">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.103">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.103">
+  <link rel="stylesheet" href="css/lightning.css?v=3.5.103">
+  <link rel="stylesheet" href="css/rates.css?v=3.5.103">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.103">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.103">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.103">
+  <link rel="stylesheet" href="css/schedules.css?v=3.5.103">
 </head>
 <body>
   <!-- Top Toolbar -->
   <header id="toolbar">
-    <div class="toolbar-row">
+    <!-- Row 1 — app bar: everything true for the whole project, identical in
+         every workspace (project menu, workspace switcher, save state, prefs). -->
+    <div class="toolbar-row app-bar">
       <div class="toolbar-left">
         <span class="app-title-block" id="app-title-block" title="Click to hard-refresh the app">
           <span class="app-title">ProtectionPro</span>
@@ -26,139 +30,164 @@
         </span>
         <span class="project-name-separator">—</span>
         <span class="project-name" id="project-name-display" title="Click to rename">Untitled Project</span>
-
-        <!-- Workspace switcher: SLD canvas vs Reticulation module -->
-        <div class="workspace-switch" role="tablist" aria-label="Workspace">
+        <button type="button" class="project-type-chip" id="project-type-chip" title="Project type — click to change the type or add workspaces">Network / plant</button>
+        <div class="toolbar-menu" id="menu-file"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Project <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><button id="btn-new" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              New Project
+            </button><button id="btn-open" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Open Project
+            </button><button id="btn-templates" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              Templates
+            </button><div class="dropdown-divider"></div><span class="dropdown-label">Recent Projects</span><div id="recent-projects-list"></div><div class="dropdown-divider"></div><button id="btn-save" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Save <span class="dropdown-shortcut">Ctrl+S</span>
+            </button><button id="btn-save-as" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="9" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg>
+              Save As
+            </button><div class="dropdown-divider"></div><button id="btn-share" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="4" cy="8" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="4" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 7.1l4.8-2.4M5.6 8.9l4.8 2.4" stroke="currentColor" stroke-width="1.4"/></svg>
+              Share…
+            </button><button id="btn-project-type" class="dropdown-item" title="Choose the project type and which workspaces the project shows">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1.5" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="10.5" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.5"/></svg>
+              Project Type &amp; Workspaces…
+            </button></div></div><div class="toolbar-menu" id="menu-quantities"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu" title="Bill of quantities, cable schedules and the rate library"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg> Quantities <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel q-panel" role="menu" aria-label="Quantities"><button id="btn-q-boq" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg></span><span class="q-txt"><span class="q-t">Bill of quantities…</span><span class="q-d">Priced take-off from Demand, plans, single-line and DB schedules</span></span><span class="q-badge" id="q-badge-boq" hidden></span></button><button id="btn-q-cables" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-amb"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h5a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h3"/><circle cx="2.5" cy="5" r="1"/><circle cx="13.5" cy="11" r="1"/></svg></span><span class="q-txt"><span class="q-t">Cable schedules…</span><span class="q-d">Every feeder and service with current, loading and volt drop</span></span><span class="q-badge" id="q-badge-cables" hidden></span></button><div class="dropdown-divider"></div><button id="btn-q-rates" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v12M11 4.5c0-1.2-1.3-2-3-2s-3 .8-3 2 1.3 1.8 3 2.2 3 1 3 2.3-1.3 2-3 2-3-.8-3-2"/></svg></span><span class="q-txt"><span class="q-t">Rate library…</span><span class="q-d">Rates, waste % and supplier codes · round trip with Excel</span></span></button><div class="q-foot"><span>On every tab</span><span>Also in <kbd>Ctrl K</kbd></span></div></div></div>
+      </div>
+      <div class="workspace-switch" role="tablist" aria-label="Workspace">
           <button id="btn-workspace-sld" class="workspace-tab active" role="tab" aria-selected="true">SLD</button>
           <button id="btn-workspace-retic" class="workspace-tab" role="tab" aria-selected="false" title="LV reticulation / ADMD demand design">Reticulation</button>
           <button id="btn-workspace-plan" class="workspace-tab" role="tab" aria-selected="false" title="Plan markup — site &amp; floor-plan drawings">Plan</button>
           <button id="btn-workspace-interlock" class="workspace-tab" role="tab" aria-selected="false" title="Circuit-breaker interlocking logic — boolean gates + simulation">Interlock</button>
           <button id="btn-workspace-schedules" class="workspace-tab" role="tab" aria-selected="false" title="Distribution-board circuit schedules — full-screen editor for every board, with per-way cable checks">Schedules</button>
         </div>
-
-        <!-- File Menu -->
-        <div class="toolbar-menu" id="menu-file">
-          <button class="toolbar-menu-btn">File <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
-          <div class="toolbar-menu-panel">
-            <button id="btn-new" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1h7l3 3v9a2 2 0 01-2 2H3a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              New Project
-            </button>
-            <button id="btn-open" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4h4l2 2h6v7a1 1 0 01-1 1H2a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Open Project
-            </button>
-            <button id="btn-share" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="4" cy="8" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="4" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 7.1l4.8-2.4M5.6 8.9l4.8 2.4" stroke="currentColor" stroke-width="1.4"/></svg>
-              Share…
-            </button>
-            <button id="btn-templates" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-              Templates
-            </button>
-            <div class="dropdown-divider"></div>
-            <span class="dropdown-label">Recent Projects</span>
-            <div id="recent-projects-list"></div>
-            <div class="dropdown-divider"></div>
-            <button id="btn-save" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Save <span class="dropdown-shortcut">Ctrl+S</span>
-            </button>
-            <button id="btn-save-as" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 1h9l3 3v9a2 2 0 01-2 2H2a2 2 0 01-2-2V3a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="1" width="6" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="9" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg>
-              Save As
-            </button>
-            <div class="dropdown-divider"></div>
-            <button id="btn-print" class="dropdown-item">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
-              Print / Page Layout
-            </button>
-          </div>
-        </div>
-
-        <!-- Export Menu — single home for every export/report destination
-             (H22): diagram images, the project file, and results/reports. -->
-        <div class="toolbar-menu" id="menu-export">
-          <button class="toolbar-menu-btn">Export <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
-          <div class="toolbar-menu-panel">
-            <span class="dropdown-label">Diagram</span>
-            <button id="btn-export-svg" class="dropdown-item">Diagram (SVG)</button>
-            <button id="btn-export-png" class="dropdown-item">Diagram (PNG)</button>
-            <button id="btn-export-diagram-pdf" class="dropdown-item">Diagram (PDF)</button>
-            <div class="dropdown-divider"></div>
-            <span class="dropdown-label">Project File</span>
-            <button id="btn-export-json" class="dropdown-item">Project (JSON)</button>
-            <div class="dropdown-divider"></div>
-            <span class="dropdown-label">Results &amp; Reports</span>
-            <button id="btn-export-pdf" class="dropdown-item">Analysis Report (PDF)</button>
-            <button id="btn-export-calculations" class="dropdown-item">Detailed Calculations (PDF)</button>
-            <button id="btn-export-csv" class="dropdown-item">Results (CSV)</button>
-            <button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button>
-            <button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button>
-            <div class="dropdown-divider"></div>
-            <button id="btn-export-template" class="dropdown-item">Report Templates...</button>
-            <button id="btn-export-compare" class="dropdown-item">Compare Scenarios...</button>
-          </div>
-        </div>
-
-        <!-- Edit Menu -->
-        <div class="toolbar-menu" id="menu-edit">
-          <button class="toolbar-menu-btn">Edit <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
-          <div class="toolbar-menu-panel">
-            <button id="btn-select" class="dropdown-item active">
+      <div class="toolbar-right">
+        <button type="button" id="btn-command-search" class="cmd-search-btn" title="Search every command, analysis, export and setting (Ctrl K)">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+          <span>Search…</span><kbd class="cmd-kbd">Ctrl K</kbd>
+        </button>
+        <button class="tb-status" id="btn-auto-save" title="Toggle Auto Save (every 2 minutes)">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1v6l3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Auto Save</span>
+        </button><button aria-label="Toggle dark mode" id="btn-dark-mode" title="Toggle Dark Mode">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A5 5 0 018 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span class="tb-sr">Dark</span>
+        </button><button aria-label="Settings" id="btn-settings" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13.4 6.5l-.8-.2a4.8 4.8 0 00-.5-1.2l.4-.7a.5.5 0 00-.1-.6l-.7-.7a.5.5 0 00-.6-.1l-.7.4a4.8 4.8 0 00-1.2-.5l-.2-.8a.5.5 0 00-.5-.4h-1a.5.5 0 00-.5.4l-.2.8a4.8 4.8 0 00-1.2.5l-.7-.4a.5.5 0 00-.6.1l-.7.7a.5.5 0 00-.1.6l.4.7a4.8 4.8 0 00-.5 1.2l-.8.2a.5.5 0 00-.4.5v1a.5.5 0 00.4.5l.8.2a4.8 4.8 0 00.5 1.2l-.4.7a.5.5 0 00.1.6l.7.7a.5.5 0 00.6.1l.7-.4a4.8 4.8 0 001.2.5l.2.8a.5.5 0 00.5.4h1a.5.5 0 00.5-.4l.2-.8a4.8 4.8 0 001.2-.5l.7.4a.5.5 0 00.6-.1l.7-.7a.5.5 0 00.1-.6l-.4-.7a4.8 4.8 0 00.5-1.2l.8-.2a.5.5 0 00.4-.5v-1a.5.5 0 00-.4-.5z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+          <span class="tb-sr">Settings</span>
+        </button><button aria-label="Help & documentation" id="btn-help" title="Help &amp; Documentation">
+          <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 6.5a2 2 0 013.5 1.3c0 1.2-1.5 1.2-1.5 2.2M8 12v.5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+          <span class="tb-sr">Help</span>
+        </button><button id="btn-account" title="Account">
+          <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 14a5.5 5.5 0 0111 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span id="account-email">Account</span>
+        </button>
+      </div>
+    </div>
+    <!-- Row 2 — the single-line workspace's own tools; hidden on the other
+         workspaces, which keep their own toolbars directly below row 1. -->
+    <div class="toolbar-row ws-bar" id="sld-toolbar" role="toolbar" aria-label="Single-line diagram">
+      <div class="toolbar-left">
+        <div class="tb-segmented" role="group" aria-label="Canvas mode"><button id="btn-select" class="tb-seg active">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1l10 7-5 1-2 5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Select Mode <span class="dropdown-shortcut">V</span>
-            </button>
-            <button id="btn-wire" class="dropdown-item">
+              Select <span class="dropdown-shortcut">V</span>
+            </button><button id="btn-wire" class="tb-seg">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 14L8 8l6-6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Wire Mode <span class="dropdown-shortcut">W</span>
+              Wire <span class="dropdown-shortcut">W</span>
+            </button></div>
+        <span class="toolbar-separator"></span>
+        <button id="btn-undo" class="tb-icon" title="Undo (Ctrl+Z)" disabled>
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 7l-3-3 3-3M1 4h9a4 4 0 010 8H6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              <span class="tb-sr">Undo</span>
+            </button><button id="btn-redo" class="tb-icon" title="Redo (Ctrl+Shift+Z)" disabled>
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M12 7l3-3-3-3M15 4H6a4 4 0 000 8h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              <span class="tb-sr">Redo</span>
             </button>
-            <div class="dropdown-divider"></div>
-            <button id="btn-delete" class="dropdown-item">
+        <span class="toolbar-separator"></span>
+        <div class="toolbar-menu" id="menu-edit"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Edit <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><button type="button" id="btn-edit-cut" class="dropdown-item">Cut <span class="dropdown-shortcut">Ctrl+X</span></button><button type="button" id="btn-edit-copy" class="dropdown-item">Copy <span class="dropdown-shortcut">Ctrl+C</span></button><button type="button" id="btn-edit-paste" class="dropdown-item">Paste <span class="dropdown-shortcut">Ctrl+V</span></button><button type="button" id="btn-edit-duplicate" class="dropdown-item">Duplicate <span class="dropdown-shortcut">Ctrl+D</span></button><button type="button" id="btn-edit-select-all" class="dropdown-item">Select all <span class="dropdown-shortcut">Ctrl+A</span></button><button type="button" id="btn-edit-rotate" class="dropdown-item">Rotate 90° <span class="dropdown-shortcut">R</span></button><div class="dropdown-divider"></div><button id="btn-delete" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
               Delete Selected <span class="dropdown-shortcut">Del</span>
-            </button>
-            <button id="btn-group" class="dropdown-item">
+            </button><div class="dropdown-divider"></div><button id="btn-group" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2"/><rect x="3" y="4" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
               Group <span class="dropdown-shortcut">Ctrl+G</span>
-            </button>
-            <button id="btn-ungroup" class="dropdown-item">
+            </button><button id="btn-ungroup" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2" opacity="0.3"/><rect x="2" y="3" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
               Ungroup <span class="dropdown-shortcut">Ctrl+Shift+G</span>
-            </button>
-            <div class="dropdown-divider"></div>
-            <button id="btn-undo" class="dropdown-item" disabled>
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 7l-3-3 3-3M1 4h9a4 4 0 010 8H6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Undo <span class="dropdown-shortcut">Ctrl+Z</span>
-            </button>
-            <button id="btn-redo" class="dropdown-item" disabled>
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M12 7l3-3-3-3M15 4H6a4 4 0 000 8h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Redo <span class="dropdown-shortcut">Ctrl+Shift+Z</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Analysis Menu -->
-        <div class="toolbar-menu" id="menu-analysis">
-          <button class="toolbar-menu-btn">Analysis <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
-          <div class="toolbar-menu-panel">
-            <div class="dropdown-compound">
-              <button id="btn-run-fault" class="dropdown-item" title="Run Fault Analysis (select a bus first for single-bus analysis)">
-                <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                Fault Analysis
-              </button>
-              <select id="fault-type" class="dropdown-inline-select" title="Fault Type">
-                <option value="">All Types</option>
-                <option value="3phase">3-Phase</option>
-                <option value="slg">Single Line-Ground</option>
-                <option value="ll">Line-to-Line</option>
-                <option value="llg">Double Line-Ground</option>
+            </button></div></div>
+        <div class="toolbar-menu" id="menu-view"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">View <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><span class="dropdown-label">Diagram layers</span><button id="btn-toggle-labels" class="dropdown-item active" title="Toggle Cable Labels">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12h12M2 8h8M2 4h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+              Cable Labels
+            </button><button id="btn-toggle-devices" class="dropdown-item active" title="Toggle CB/Fuse Labels">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
+              Device Labels
+            </button><button id="btn-toggle-ribbon" class="dropdown-item" title="Show the component palette as a compact ribbon below the toolbar instead of the sidebar">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="9" width="14" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2,1.5"/></svg>
+              Component Ribbon
+            </button><button id="btn-toggle-warnings" class="dropdown-item active" title="Toggle Connection Warnings">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11v0.5" stroke="currentColor" stroke-width="1.5"/></svg>
+              Connection Warnings
+            </button><button id="btn-toggle-angles" class="dropdown-item" title="Toggle Fault Current Angles &amp; Voltage">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 13L13 13L3 3Z" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="7" y="11" font-size="7" fill="currentColor">∠</text></svg>
+              Fault Angles &amp; Voltage
+            </button><button id="btn-toggle-branch-detail" class="dropdown-item" title="Show full P / Q / I / loading on load-flow branch-flow labels. Off (default) shows just P and loading, to avoid overlapping nearby components on busier networks.">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 3h5M2 13h5" stroke="currentColor" stroke-width="1.2"/></svg>
+              Detailed Branch Flow
+            </button><button id="btn-toggle-rating-flags" class="dropdown-item active" title="Show/Hide on-diagram warnings for under-rated devices (rated current below load, breaking capacity below fault level, or rated voltage below the bus)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.5L15 14H1z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 6v3.5" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="11.6" r="0.8" fill="currentColor"/></svg>
+              Under-rated Device Flags
+            </button><div class="dropdown-divider"></div><div class="dropdown-compound">
+              <span class="dropdown-label">Wire Routing</span>
+              <select id="wire-route-mode" class="dropdown-inline-select" title="Wire routing mode">
+                <option value="orthogonal">Orthogonal</option>
+                <option value="diagonal">Diagonal</option>
+                <option value="spline">Spline</option>
               </select>
-            </div>
-            <label class="dropdown-checkbox" title="Show fault current flow arrows on wires">
-              <input type="checkbox" id="chk-fault-arrows"> Show fault flow arrows
-            </label>
-            <div class="dropdown-compound">
+            </div></div></div>
+        <div class="toolbar-menu" id="menu-results"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Results <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><span class="dropdown-label">Result boxes</span><button id="btn-toggle-results-all" class="dropdown-item active" title="Show/Hide all result boxes (H)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 8h8M4 10h5" stroke="currentColor" stroke-width="1"/></svg>
+              All Result Boxes
+            </button><button id="btn-toggle-results-fault" class="dropdown-item active" title="Show/Hide Fault result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Fault Results
+            </button><button id="btn-toggle-results-loadflow" class="dropdown-item active" title="Show/Hide Load Flow result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Load Flow Results
+            </button><button id="btn-toggle-results-unbalanced" class="dropdown-item active" title="Show/Hide Unbalanced Load Flow result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              Unbalanced LF Results
+            </button><button id="btn-toggle-results-arcflash" class="dropdown-item active" title="Show/Hide Arc Flash result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/></svg>
+              Arc Flash Results
+            </button><button id="btn-toggle-results-cable" class="dropdown-item active" title="Show/Hide Cable Sizing result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+              Cable Sizing Results
+            </button><button id="btn-toggle-results-motor" class="dropdown-item active" title="Show/Hide Motor Starting result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
+              Motor Starting Results
+            </button><button id="btn-toggle-results-dynmotor" class="dropdown-item active" title="Show/Hide Dynamic Motor Starting result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Dynamic Motor Results
+            </button><button id="btn-toggle-results-duty" class="dropdown-item active" title="Show/Hide Duty Check result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              Duty Check Results
+            </button><button id="btn-toggle-results-loaddiversity" class="dropdown-item active" title="Show/Hide Load Diversity result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/></svg>
+              Load Diversity Results
+            </button><button id="btn-toggle-results-grounding" class="dropdown-item active" title="Show/Hide Grounding result boxes">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/></svg>
+              Grounding Results
+            </button><div class="dropdown-divider"></div><button class="dropdown-item" id="btn-restore-results" title="Restore result boxes hidden via right-click" disabled>
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8a6 6 0 1 1 6 6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 5v3h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="6" y="6" width="7" height="4.5" rx="0.6" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+          <span>Restore results</span>
+        </button><button id="btn-reset-annotation-positions" class="dropdown-item" title="Reset all result boxes to default positions">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4a6 6 0 1 1 0 8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 1L2 4l3 3" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="6" width="6" height="4" rx="0.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+              Reset Result Box Positions
+            </button><div class="dropdown-divider"></div><button id="btn-show-dispatch" class="dropdown-item" title="Show the Generation Dispatch summary from the last load flow">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="8" width="3" height="6" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6.5" y="5" width="3" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="2" width="3" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Generation Dispatch
+            </button></div></div>
+        <span class="toolbar-separator"></span>
+        <div class="toolbar-menu" id="menu-analyse"><button type="button" class="toolbar-menu-btn tb-primary" aria-haspopup="menu">Analyse <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel mega-panel"><div class="mega-col"><span class="dropdown-label">Power flow</span><div class="dropdown-compound">
               <button id="btn-run-loadflow" class="dropdown-item" title="Run Load Flow">
                 <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
                 Load Flow
@@ -167,128 +196,47 @@
                 <option value="newton_raphson">Newton-Raphson</option>
                 <option value="gauss_seidel">Gauss-Seidel</option>
               </select>
-            </div>
-            <label class="dropdown-checkbox" title="Show load flow direction arrows on wires">
+            </div><label class="dropdown-checkbox" title="Show load flow direction arrows on wires">
               <input type="checkbox" id="chk-loadflow-arrows"> Show load flow arrows
-            </label>
-            <button id="btn-show-dispatch" class="dropdown-item" title="Show the Generation Dispatch summary from the last load flow">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="8" width="3" height="6" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6.5" y="5" width="3" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="2" width="3" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Generation Dispatch
-            </button>
-            <button id="btn-run-unbalanced-loadflow" class="dropdown-item" title="Run Unbalanced 3-Phase Load Flow">
+            </label><button id="btn-run-unbalanced-loadflow" class="dropdown-item" title="Run Unbalanced 3-Phase Load Flow">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               Unbalanced Load Flow
-            </button>
-            <div class="dropdown-divider"></div>
-            <button id="btn-dc-loadflow" class="dropdown-item" title="Run DC Load Flow on the DC bus network (set a bus's System to DC)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="0" y="6" font-size="6" font-weight="bold" fill="#e65100">DC</text></svg>
-              DC Load Flow
-            </button>
-            <button id="btn-dc-shortcircuit" class="dropdown-item" title="Run DC Short Circuit (IEC 61660-1) on the DC bus network">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="#e65100" stroke-width="1.5"/><text x="0" y="6" font-size="6" font-weight="bold" fill="#e65100">DC</text></svg>
-              DC Short Circuit (IEC 61660)
-            </button>
-            <div class="dropdown-divider"></div>
-            <button id="btn-control-sim" class="dropdown-item" title="Toggle live control-circuit simulation — operate pushbuttons and switches on the schematic (Esc to exit)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="5" y="5" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v4M8 11v4M1 8h4M11 8h4" stroke="currentColor" stroke-width="1.3"/></svg>
-              Control Simulation
-            </button>
-          </div>
-        </div>
-
-        <!-- Studies Menu -->
-        <div class="toolbar-menu" id="menu-studies">
-          <button class="toolbar-menu-btn">Studies <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
-          <div class="toolbar-menu-panel">
-            <button id="btn-cable-sizing" class="dropdown-item" title="Cable Sizing Calculator">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/></svg>
-              Cable Sizing
-            </button>
-            <button id="btn-motor-starting" class="dropdown-item" title="Motor Starting Voltage Dip Analysis">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
-              Motor Starting
-            </button>
-            <button id="btn-dynamic-motor" class="dropdown-item" title="Dynamic Motor Starting — time-domain acceleration simulation">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Dynamic Motor Starting
-            </button>
-            <button id="btn-transient-stability" class="dropdown-item" title="Transient Stability — classical multi-machine rotor-angle simulation">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12c1.5 0 2-8 4-8s2 10 4 10 2-6 4-6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Transient Stability
-            </button>
-            <button id="btn-voltage-stability" class="dropdown-item" title="Voltage Stability — P-V nose curves, Q-V reactive margin, loadability margin &amp; collapse point">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3c3 0 4.5 4 6 6s2.2 3 3 3c1.5 0 2-2 3-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11" cy="12" r="1.1" fill="currentColor"/></svg>
-              Voltage Stability (P-V / Q-V)
-            </button>
-            <button id="btn-contingency" class="dropdown-item" title="Contingency Analysis — N-1 / N-2 security screening (overloads, voltage, loss of supply)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2l6 11H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor"/></svg>
-              Contingency (N-1 / N-2)
-            </button>
-            <button id="btn-timeseries" class="dropdown-item" title="Time-Series Load Flow — quasi-dynamic 24h/8760h profile study with BESS SoC and OLTC state carried between steps">
+            </button><button id="btn-timeseries" class="dropdown-item" title="Time-Series Load Flow — quasi-dynamic 24h/8760h profile study with BESS SoC and OLTC state carried between steps">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 13h14M2 3v10M2 3l3 3M2 3l-1 1" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><path d="M2 9c1.5-4 3-6 5-6s2 5 4 5 2-3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
               Time-Series Load Flow
-            </button>
-            <button id="btn-harmonics" class="dropdown-item" title="Harmonic Analysis — VFD current-source penetration, per-bus voltage THD &amp; PCC current TDD vs IEEE 519-2014">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 8c1.5 0 1.5-5 3-5s1.5 5 3 5 1.5-5 3-5 1.5 5 3 5 1.5-3 2-3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Harmonics (IEEE 519)
-            </button>
-            <button id="btn-frequency-scan" class="dropdown-item" title="Frequency Scan — driving-point impedance vs frequency per bus, parallel/series resonance identification">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 12h4l1.5-8 2 8H13" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 12h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Frequency Scan (Z vs f)
-            </button>
-            <button id="btn-cap-placement" class="dropdown-item" title="Optimal Capacitor Placement — greedy loss-sensitivity placement of standard VAR units (voltage violations first, then losses)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 13h12" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><path d="M4 13V9M8 13V5M12 13V7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11 3h2M12 2v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Capacitor Placement
-            </button>
-            <button id="btn-filter-sizing" class="dropdown-item" title="Passive Filter Sizing — single-tuned LC(R) branches designed to meet IEEE 519 THD limits, verified in the harmonics study">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 8c1.2 0 1.2-4 2.4-4S4.6 8 5.8 8 7 4 8.2 4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9 8h2M12 4v8M14 6v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Filter Sizing (IEEE 519)
-            </button>
-            <button id="btn-flicker" class="dropdown-item" title="Voltage Flicker — IEC 61000-3-3 / IEC 61000-4-15 planning-level Pst/Plt screening for repetitively-starting motors">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1v3M8 12v3M2.5 4l2 2M11.5 10l2 2M1 8h3M12 8h3M2.5 12l2-2M11.5 6l2-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-              Voltage Flicker (IEC 61000-3-3)
-            </button>
-            <button id="btn-hosting-capacity" class="dropdown-item" title="Nodal Hosting Capacity — max DER (PV) interconnection per bus before a voltage-rise or thermal-overload limit is hit">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.2 3.2l1 1M11.8 11.8l1 1M3.2 12.8l1-1M11.8 4.2l1-1" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
-              Hosting Capacity (DER)
-            </button>
-            <button id="btn-reliability" class="dropdown-item" title="Reliability Assessment — SAIDI / SAIFI / MAIFI / EENS via analytical FMEA (IEEE 1366 indices, IEEE 493-style default rates)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2l5 2v3.5c0 3-2 5.2-5 6.5-3-1.3-5-3.5-5-6.5V4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.7 8l1.6 1.6L10.5 6.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Reliability (SAIDI/SAIFI)
-            </button>
-            <button id="btn-opf" class="dropdown-item" title="Optimal Power Flow — economic dispatch by marginal cost + Volt/VAR optimization (capacitor steps, taps, setpoints)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 13L6 9l2.5 2L14 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 5H14v3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Optimal Power Flow
-            </button>
-            <button id="btn-battery-sizing" class="dropdown-item" title="Battery Sizing &amp; Discharge — duty-cycle capacity sizing (IEEE 485-style factors) + SoC / terminal-voltage discharge simulation">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="5" width="11" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M13 7h1.5v3H13" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7.5 6.5L5.5 9h2l-1.5 2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Battery Sizing &amp; Discharge
-            </button>
-            <button id="btn-sequence-op" class="dropdown-item" title="Protective Device Sequence of Operation — simulate &amp; verify the relay/CB/fuse trip sequence and clearing times for a fault">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 13h12" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><circle cx="4" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="6" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 8.3L6.7 6.7M9.3 5.4l1.4-0.8" stroke="currentColor" stroke-width="1.1"/></svg>
-              Sequence of Operation
-            </button>
-            <button id="btn-lf-study" class="dropdown-item" title="Load Flow Study Manager — edit component attributes into cases and compare load flow">
+            </button><button id="btn-lf-study" class="dropdown-item" title="Load Flow Study Manager — edit component attributes into cases and compare load flow">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 2v12M2 8h12" stroke="currentColor" stroke-width="1"/></svg>
               Load Flow Study Manager
-            </button>
-            <button id="btn-duty-check" class="dropdown-item" title="Equipment Duty Check">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Duty Check
-            </button>
-            <button id="btn-fault-ansi" class="dropdown-item" title="ANSI/IEEE C37.010 3-phase fault duty (E/X method) vs. breaker ratings">
+            </button><button id="btn-opf" class="dropdown-item" title="Optimal Power Flow — economic dispatch by marginal cost + Volt/VAR optimization (capacitor steps, taps, setpoints)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 13L6 9l2.5 2L14 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 5H14v3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Optimal Power Flow
+            </button><button id="btn-dc-loadflow" class="dropdown-item" title="Run DC Load Flow on the DC bus network (set a bus's System to DC)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="0" y="6" font-size="6" font-weight="bold" fill="#e65100">DC</text></svg>
+              DC Load Flow
+            </button><span class="dropdown-label">Short circuit</span><div class="dropdown-compound">
+              <button id="btn-run-fault" class="dropdown-item" title="Run Fault Analysis (select a bus first for single-bus analysis)">
+                <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                Short Circuit (IEC 60909)
+              </button>
+              <select id="fault-type" class="dropdown-inline-select" title="Fault Type">
+                <option value="">All Types</option>
+                <option value="3phase">3-Phase</option>
+                <option value="slg">Single Line-Ground</option>
+                <option value="ll">Line-to-Line</option>
+                <option value="llg">Double Line-Ground</option>
+              </select>
+            </div><label class="dropdown-checkbox" title="Show fault current flow arrows on wires">
+              <input type="checkbox" id="chk-fault-arrows"> Show fault flow arrows
+            </label><button id="btn-fault-ansi" class="dropdown-item" title="ANSI/IEEE C37.010 3-phase fault duty (E/X method) vs. breaker ratings">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="3.5" y="11.5" font-size="7" font-weight="bold" fill="currentColor">US</text></svg>
               Fault Duty (ANSI C37.010)
-            </button>
-            <button id="btn-open-conductor" class="dropdown-item" title="Open-Conductor (Single-Phasing) Analysis — select one cable, then run: one-phase-open series fault, sequence networks per Stevenson/Blackburn">
+            </button><button id="btn-open-conductor" class="dropdown-item" title="Open-Conductor (Single-Phasing) Analysis — select one cable, then run: one-phase-open series fault, sequence networks per Stevenson/Blackburn">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h4.5M9.5 8H14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M6.7 6.7l2.6 2.6M9.3 6.7L6.7 9.3" stroke="#d32f2f" stroke-width="1.3" stroke-linecap="round"/></svg>
               Open Conductor (Single-Phasing)
-            </button>
-            <button id="btn-two-conductor-open" class="dropdown-item" title="Two-Conductor Open Analysis — select one cable, then run: two-phases-open series fault (series dual of an SLG shunt fault, Ia1=Ia2=Ia0)">
+            </button><button id="btn-two-conductor-open" class="dropdown-item" title="Two-Conductor Open Analysis — select one cable, then run: two-phases-open series fault (series dual of an SLG shunt fault, Ia1=Ia2=Ia0)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h4.5M9.5 8H14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M5.5 5.5l2.5 2.5L5.5 10.5M10.5 5.5L8 8l2.5 2.5" stroke="#d32f2f" stroke-width="1.3" stroke-linecap="round"/></svg>
               Two Conductor Open
-            </button>
-            <div class="dropdown-compound">
+            </button><div class="dropdown-compound">
               <button id="btn-simultaneous-fault" class="dropdown-item" title="Simultaneous Series + Shunt Fault — select one cable AND one bus/board (the shunt-fault location, elsewhere in the network), then run: an open conductor on the cable coincident with a ground/phase fault at the bus">
                 <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h4.5M9.5 8H12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M6.7 6.7l2.6 2.6M9.3 6.7L6.7 9.3" stroke="#d32f2f" stroke-width="1.1" stroke-linecap="round"/><path d="M13 3L11 9h2l-1 4 4-6h-2z" fill="#d32f2f"/></svg>
                 Simultaneous Series + Shunt Fault
@@ -303,203 +251,113 @@
                 <option value="ll">LL</option>
                 <option value="llg">LLG</option>
               </select>
-            </div>
-            <button id="btn-backup-study" class="dropdown-item" title="Grid-outage backup adequacy &amp; battery autonomy (hybrid PV / BESS)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="5" width="10" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="6" y1="3.5" x2="6" y2="5" stroke="currentColor" stroke-width="1.3"/><line x1="10" y1="3.5" x2="10" y2="5" stroke="currentColor" stroke-width="1.3"/><path d="M8.6 6.5L6.8 9h1.6l-1 2 2.8-3H8.6z" fill="currentColor"/></svg>
-              Backup Autonomy
-            </button>
-            <button id="btn-load-diversity" class="dropdown-item" title="Load Diversity &amp; Demand Factor Calculator">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/><path d="M2 9 L8 5 L14 2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-              Load Diversity
-            </button>
-            <button id="btn-grounding" class="dropdown-item" title="Grounding System Analysis (IEEE 80)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/></svg>
-              Grounding (IEEE 80)
-            </button>
-            <button id="btn-wenner" class="dropdown-item" title="Wenner Four-Pin Test Interpreter — fit a two-layer soil model (ρ1/ρ2/h1) from field readings">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="2.5" cy="8" r="1.2" fill="currentColor"/><circle cx="6" cy="8" r="1.2" fill="currentColor"/><circle cx="10" cy="8" r="1.2" fill="currentColor"/><circle cx="13.5" cy="8" r="1.2" fill="currentColor"/><path d="M2.5 8Q6 2 6 8" fill="none" stroke="currentColor" stroke-width="1" opacity="0.6"/><path d="M10 8Q13.5 2 13.5 8" fill="none" stroke="currentColor" stroke-width="1" opacity="0.6"/></svg>
-              Wenner Test Interpreter
-            </button>
-            <button id="btn-lightning" class="dropdown-item" title="Lightning Risk Assessment (IEC 62305-2)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L3 9h4l-1 6 7-9H8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-              Lightning Risk (IEC 62305-2)
-            </button>
-            <button id="btn-raceway" class="dropdown-item" title="Raceway / Conduit Fill &amp; Grouping Derating">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="10" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="8" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1"/></svg>
-              Raceway / Conduit Fill
-            </button>
-            <div class="dropdown-divider"></div>
-            <button id="btn-study-manager" class="dropdown-item" title="Run All Studies — batch run enabled analyses">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/></svg>
-              Run All Studies
-            </button>
-            <button id="btn-scenarios" class="dropdown-item" title="Manage Scenarios">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
-              Scenarios
-            </button>
-          </div>
-        </div>
-
-        <!-- Safety Menu -->
-        <div class="toolbar-menu" id="menu-safety">
-          <button class="toolbar-menu-btn">Safety <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
-          <div class="toolbar-menu-panel">
-            <button id="btn-arcflash" class="dropdown-item" title="Arc Flash Analysis (IEEE 1584-2002 / 2018, selectable per bus)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
-              Arc Flash (IEEE 1584)
-            </button>
-            <button id="btn-dc-arcflash" class="dropdown-item" title="DC Arc Flash Analysis (Stokes &amp; Oppenlander)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#1976d2" stroke="#0d47a1" stroke-width="0.8"/><text x="1" y="14" font-size="6" font-weight="bold" fill="currentColor">DC</text></svg>
-              DC Arc Flash
-            </button>
-            <button id="btn-tcc" class="dropdown-item" title="Time-Current Curves (TCC)">
+            </div><button id="btn-dc-shortcircuit" class="dropdown-item" title="Run DC Short Circuit (IEC 61660-1) on the DC bus network">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="#e65100" stroke-width="1.5"/><text x="0" y="6" font-size="6" font-weight="bold" fill="#e65100">DC</text></svg>
+              DC Short Circuit (IEC 61660)
+            </button></div><div class="mega-col"><span class="dropdown-label">Protection &amp; safety</span><button id="btn-tcc" class="dropdown-item" title="Time-Current Curves (TCC)">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 12 C5 10, 6 6, 7 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 12 C8.5 9, 10 5, 12 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
               Time-Current Curves (TCC)
-            </button>
-            <button id="btn-compliance" class="dropdown-item" title="Generate Compliance Report">
+            </button><button id="btn-sequence-op" class="dropdown-item" title="Protective Device Sequence of Operation — simulate &amp; verify the relay/CB/fuse trip sequence and clearing times for a fault">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 13h12" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><circle cx="4" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="6" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 8.3L6.7 6.7M9.3 5.4l1.4-0.8" stroke="currentColor" stroke-width="1.1"/></svg>
+              Sequence of Operation
+            </button><button id="btn-arcflash" class="dropdown-item" title="Arc Flash Analysis (IEEE 1584-2002 / 2018, selectable per bus)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/><circle cx="7" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+              Arc Flash (IEEE 1584)
+            </button><button id="btn-dc-arcflash" class="dropdown-item" title="DC Arc Flash Analysis (Stokes &amp; Oppenlander)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#1976d2" stroke="#0d47a1" stroke-width="0.8"/><text x="1" y="14" font-size="6" font-weight="bold" fill="currentColor">DC</text></svg>
+              DC Arc Flash
+            </button><button id="btn-duty-check" class="dropdown-item" title="Equipment Duty Check">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              Duty Check
+            </button><button id="btn-compliance" class="dropdown-item" title="Generate Compliance Report">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 8l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
               Compliance Report
-            </button>
-          </div>
-        </div>
-
-        <!-- View Menu -->
-        <div class="toolbar-menu" id="menu-view">
-          <button class="toolbar-menu-btn">View <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
-          <div class="toolbar-menu-panel">
-            <span class="dropdown-label">Display</span>
-            <button id="btn-toggle-labels" class="dropdown-item active" title="Toggle Cable Labels">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12h12M2 8h8M2 4h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-              Cable Labels
-            </button>
-            <button id="btn-toggle-devices" class="dropdown-item active" title="Toggle CB/Fuse Labels">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
-              Device Labels
-            </button>
-            <button id="btn-toggle-ribbon" class="dropdown-item" title="Show the component palette as a compact ribbon below the toolbar instead of the sidebar">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="9" width="14" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2,1.5"/></svg>
-              Component Ribbon
-            </button>
-            <button id="btn-toggle-warnings" class="dropdown-item active" title="Toggle Connection Warnings">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11v0.5" stroke="currentColor" stroke-width="1.5"/></svg>
-              Connection Warnings
-            </button>
-            <button id="btn-toggle-angles" class="dropdown-item" title="Toggle Fault Current Angles &amp; Voltage">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 13L13 13L3 3Z" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="7" y="11" font-size="7" fill="currentColor">∠</text></svg>
-              Fault Angles &amp; Voltage
-            </button>
-            <button id="btn-toggle-branch-detail" class="dropdown-item" title="Show full P / Q / I / loading on load-flow branch-flow labels. Off (default) shows just P and loading, to avoid overlapping nearby components on busier networks.">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 3h5M2 13h5" stroke="currentColor" stroke-width="1.2"/></svg>
-              Detailed Branch Flow
-            </button>
-            <div class="dropdown-divider"></div>
-            <span class="dropdown-label">Result Boxes</span>
-            <button id="btn-toggle-results-all" class="dropdown-item active" title="Show/Hide all result boxes (H)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 8h8M4 10h5" stroke="currentColor" stroke-width="1"/></svg>
-              All Result Boxes
-            </button>
-            <button id="btn-toggle-results-fault" class="dropdown-item active" title="Show/Hide Fault result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Fault Results
-            </button>
-            <button id="btn-toggle-results-loadflow" class="dropdown-item active" title="Show/Hide Load Flow result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Load Flow Results
-            </button>
-            <button id="btn-toggle-results-unbalanced" class="dropdown-item active" title="Show/Hide Unbalanced Load Flow result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              Unbalanced LF Results
-            </button>
-            <button id="btn-toggle-results-arcflash" class="dropdown-item active" title="Show/Hide Arc Flash result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/></svg>
-              Arc Flash Results
-            </button>
-            <button id="btn-toggle-results-cable" class="dropdown-item active" title="Show/Hide Cable Sizing result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-              Cable Sizing Results
-            </button>
-            <button id="btn-toggle-results-motor" class="dropdown-item active" title="Show/Hide Motor Starting result boxes">
+            </button><span class="dropdown-label">Stability &amp; dynamics</span><button id="btn-motor-starting" class="dropdown-item" title="Motor Starting Voltage Dip Analysis">
               <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
-              Motor Starting Results
-            </button>
-            <button id="btn-toggle-results-dynmotor" class="dropdown-item active" title="Show/Hide Dynamic Motor Starting result boxes">
+              Motor Starting
+            </button><button id="btn-dynamic-motor" class="dropdown-item" title="Dynamic Motor Starting — time-domain acceleration simulation">
               <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Dynamic Motor Results
-            </button>
-            <button id="btn-toggle-results-duty" class="dropdown-item active" title="Show/Hide Duty Check result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-              Duty Check Results
-            </button>
-            <button id="btn-toggle-results-loaddiversity" class="dropdown-item active" title="Show/Hide Load Diversity result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/></svg>
-              Load Diversity Results
-            </button>
-            <button id="btn-toggle-results-grounding" class="dropdown-item active" title="Show/Hide Grounding result boxes">
+              Dynamic Motor Starting
+            </button><button id="btn-transient-stability" class="dropdown-item" title="Transient Stability — classical multi-machine rotor-angle simulation">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12c1.5 0 2-8 4-8s2 10 4 10 2-6 4-6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Transient Stability
+            </button><button id="btn-voltage-stability" class="dropdown-item" title="Voltage Stability — P-V nose curves, Q-V reactive margin, loadability margin &amp; collapse point">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3c3 0 4.5 4 6 6s2.2 3 3 3c1.5 0 2-2 3-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11" cy="12" r="1.1" fill="currentColor"/></svg>
+              Voltage Stability (P-V / Q-V)
+            </button><button id="btn-control-sim" class="dropdown-item" title="Toggle live control-circuit simulation — operate pushbuttons and switches on the schematic (Esc to exit)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="5" y="5" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v4M8 11v4M1 8h4M11 8h4" stroke="currentColor" stroke-width="1.3"/></svg>
+              Control Simulation
+            </button></div><div class="mega-col"><span class="dropdown-label">Power quality</span><button id="btn-harmonics" class="dropdown-item" title="Harmonic Analysis — VFD current-source penetration, per-bus voltage THD &amp; PCC current TDD vs IEEE 519-2014">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 8c1.5 0 1.5-5 3-5s1.5 5 3 5 1.5-5 3-5 1.5 5 3 5 1.5-3 2-3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Harmonics (IEEE 519)
+            </button><button id="btn-frequency-scan" class="dropdown-item" title="Frequency Scan — driving-point impedance vs frequency per bus, parallel/series resonance identification">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 12h4l1.5-8 2 8H13" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 12h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Frequency Scan (Z vs f)
+            </button><button id="btn-filter-sizing" class="dropdown-item" title="Passive Filter Sizing — single-tuned LC(R) branches designed to meet IEEE 519 THD limits, verified in the harmonics study">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1 8c1.2 0 1.2-4 2.4-4S4.6 8 5.8 8 7 4 8.2 4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9 8h2M12 4v8M14 6v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Filter Sizing (IEEE 519)
+            </button><button id="btn-flicker" class="dropdown-item" title="Voltage Flicker — IEC 61000-3-3 / IEC 61000-4-15 planning-level Pst/Plt screening for repetitively-starting motors">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1v3M8 12v3M2.5 4l2 2M11.5 10l2 2M1 8h3M12 8h3M2.5 12l2-2M11.5 6l2-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+              Voltage Flicker (IEC 61000-3-3)
+            </button><span class="dropdown-label">Planning &amp; reliability</span><button id="btn-contingency" class="dropdown-item" title="Contingency Analysis — N-1 / N-2 security screening (overloads, voltage, loss of supply)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2l6 11H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor"/></svg>
+              Contingency (N-1 / N-2)
+            </button><button id="btn-hosting-capacity" class="dropdown-item" title="Nodal Hosting Capacity — max DER (PV) interconnection per bus before a voltage-rise or thermal-overload limit is hit">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.2 3.2l1 1M11.8 11.8l1 1M3.2 12.8l1-1M11.8 4.2l1-1" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+              Hosting Capacity (DER)
+            </button><button id="btn-cap-placement" class="dropdown-item" title="Optimal Capacitor Placement — greedy loss-sensitivity placement of standard VAR units (voltage violations first, then losses)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 13h12" stroke="currentColor" stroke-width="1.1" opacity="0.5"/><path d="M4 13V9M8 13V5M12 13V7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11 3h2M12 2v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              Capacitor Placement
+            </button><button id="btn-reliability" class="dropdown-item" title="Reliability Assessment — SAIDI / SAIFI / MAIFI / EENS via analytical FMEA (IEEE 1366 indices, IEEE 493-style default rates)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2l5 2v3.5c0 3-2 5.2-5 6.5-3-1.3-5-3.5-5-6.5V4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.7 8l1.6 1.6L10.5 6.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Reliability (SAIDI/SAIFI)
+            </button></div><div class="mega-col"><span class="dropdown-label">Sizing &amp; installation</span><button id="btn-cable-sizing" class="dropdown-item" title="Cable Sizing Calculator">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v6M11 5v6" stroke="currentColor" stroke-width="1.3"/></svg>
+              Cable Sizing
+            </button><button id="btn-battery-sizing" class="dropdown-item" title="Battery Sizing &amp; Discharge — duty-cycle capacity sizing (IEEE 485-style factors) + SoC / terminal-voltage discharge simulation">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="5" width="11" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M13 7h1.5v3H13" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7.5 6.5L5.5 9h2l-1.5 2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Battery Sizing &amp; Discharge
+            </button><button id="btn-backup-study" class="dropdown-item" title="Grid-outage backup adequacy &amp; battery autonomy (hybrid PV / BESS)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="5" width="10" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="6" y1="3.5" x2="6" y2="5" stroke="currentColor" stroke-width="1.3"/><line x1="10" y1="3.5" x2="10" y2="5" stroke="currentColor" stroke-width="1.3"/><path d="M8.6 6.5L6.8 9h1.6l-1 2 2.8-3H8.6z" fill="currentColor"/></svg>
+              Backup Autonomy
+            </button><button id="btn-load-diversity" class="dropdown-item" title="Load Diversity &amp; Demand Factor Calculator">
+              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/><path d="M2 9 L8 5 L14 2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              Load Diversity
+            </button><button id="btn-raceway" class="dropdown-item" title="Raceway / Conduit Fill &amp; Grouping Derating">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="10" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="8" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+              Raceway / Conduit Fill
+            </button><span class="dropdown-label">Earthing &amp; lightning</span><button id="btn-grounding" class="dropdown-item" title="Grounding System Analysis (IEEE 80)">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/></svg>
-              Grounding Results
-            </button>
-            <div class="dropdown-divider"></div>
-            <span class="dropdown-label">Diagnostics</span>
-            <button id="btn-toggle-rating-flags" class="dropdown-item active" title="Show/Hide on-diagram warnings for under-rated devices (rated current below load, breaking capacity below fault level, or rated voltage below the bus)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.5L15 14H1z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 6v3.5" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="11.6" r="0.8" fill="currentColor"/></svg>
-              Under-rated Device Flags
-            </button>
-            <div class="dropdown-divider"></div>
-            <span class="dropdown-label">Layout</span>
-            <button id="btn-reset-annotation-positions" class="dropdown-item" title="Reset all result boxes to default positions">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4a6 6 0 1 1 0 8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 1L2 4l3 3" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="6" width="6" height="4" rx="0.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
-              Reset Result Box Positions
-            </button>
-            <div class="dropdown-divider"></div>
-            <div class="dropdown-compound">
-              <span class="dropdown-label">Wire Routing</span>
-              <select id="wire-route-mode" class="dropdown-inline-select" title="Wire routing mode">
-                <option value="orthogonal">Orthogonal</option>
-                <option value="diagonal">Diagonal</option>
-                <option value="spline">Spline</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick Access Bar -->
-      <div id="quick-access-bar">
+              Grounding (IEEE 80)
+            </button><button id="btn-wenner" class="dropdown-item" title="Wenner Four-Pin Test Interpreter — fit a two-layer soil model (ρ1/ρ2/h1) from field readings">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="2.5" cy="8" r="1.2" fill="currentColor"/><circle cx="6" cy="8" r="1.2" fill="currentColor"/><circle cx="10" cy="8" r="1.2" fill="currentColor"/><circle cx="13.5" cy="8" r="1.2" fill="currentColor"/><path d="M2.5 8Q6 2 6 8" fill="none" stroke="currentColor" stroke-width="1" opacity="0.6"/><path d="M10 8Q13.5 2 13.5 8" fill="none" stroke="currentColor" stroke-width="1" opacity="0.6"/></svg>
+              Wenner Test Interpreter
+            </button><button id="btn-lightning" class="dropdown-item" title="Lightning Risk Assessment (IEC 62305-2)">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L3 9h4l-1 6 7-9H8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              Lightning Risk (IEC 62305-2)
+            </button></div></div></div>
+        <div id="quick-access-bar">
         <div id="quick-access-items"></div>
         <button id="btn-quick-access-edit" class="quick-access-edit-btn" title="Edit Quick Access">
           <svg width="12" height="12" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
       </div>
-
+      </div>
       <div class="toolbar-right">
-        <button id="btn-restore-results" title="Restore result boxes hidden via right-click" style="display:none">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8a6 6 0 1 1 6 6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 5v3h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="6" y="6" width="7" height="4.5" rx="0.6" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
-          <span>Restore results</span>
-        </button>
-        <button id="btn-auto-save" title="Toggle Auto Save (every 2 minutes)">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1v6l3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-          <span>Auto Save</span>
-        </button>
-        <button id="btn-dark-mode" title="Toggle Dark Mode">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A5 5 0 018 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-          <span>Dark</span>
-        </button>
-        <button id="btn-settings" title="Settings">
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13.4 6.5l-.8-.2a4.8 4.8 0 00-.5-1.2l.4-.7a.5.5 0 00-.1-.6l-.7-.7a.5.5 0 00-.6-.1l-.7.4a4.8 4.8 0 00-1.2-.5l-.2-.8a.5.5 0 00-.5-.4h-1a.5.5 0 00-.5.4l-.2.8a4.8 4.8 0 00-1.2.5l-.7-.4a.5.5 0 00-.6.1l-.7.7a.5.5 0 00-.1.6l.4.7a4.8 4.8 0 00-.5 1.2l-.8.2a.5.5 0 00-.4.5v1a.5.5 0 00.4.5l.8.2a4.8 4.8 0 00.5 1.2l-.4.7a.5.5 0 00.1.6l.7.7a.5.5 0 00.6.1l.7-.4a4.8 4.8 0 001.2.5l.2.8a.5.5 0 00.5.4h1a.5.5 0 00.5-.4l.2-.8a4.8 4.8 0 001.2-.5l.7.4a.5.5 0 00.6-.1l.7-.7a.5.5 0 00.1-.6l-.4-.7a4.8 4.8 0 00.5-1.2l.8-.2a.5.5 0 00.4-.5v-1a.5.5 0 00-.4-.5z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-          <span>Settings</span>
-        </button>
-        <button id="btn-help" title="Help &amp; Documentation">
-          <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 6.5a2 2 0 013.5 1.3c0 1.2-1.5 1.2-1.5 2.2M8 12v.5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
-          <span>Help</span>
-        </button>
-        <button id="btn-account" title="Account">
-          <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 14a5.5 5.5 0 0111 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          <span id="account-email">Account</span>
-        </button>
-        <div class="toolbar-separator"></div>
-        <span id="zoom-display">100%</span>
-        <button id="btn-zoom-fit" title="Zoom to Fit">Fit</button>
-        <button id="btn-zoom-reset" title="Reset Zoom">1:1</button>
+        <div class="toolbar-menu" id="menu-scenario"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Scenarios <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><button id="btn-scenarios" class="dropdown-item" title="Manage Scenarios">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M13 10.5v1.5h1.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+              Manage Scenarios…
+            </button><button id="btn-export-compare" class="dropdown-item">Compare Scenarios…</button></div></div>
+        <button id="btn-study-manager" class="tb-btn" title="Run All Studies — batch run enabled analyses">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/></svg>
+              Run All Studies
+            </button>
+        <div class="toolbar-menu" id="menu-export"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Output <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel panel-right"><span class="dropdown-label">Reports</span><button id="btn-export-pdf" class="dropdown-item">Analysis Report (PDF)</button><button id="btn-export-calculations" class="dropdown-item">Detailed Calculations (PDF)</button><button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button><button id="btn-export-template" class="dropdown-item">Report Templates…</button><div class="dropdown-divider"></div><span class="dropdown-label">Quantities</span><button id="btn-boq" class="dropdown-item" data-search-skip>Bill of Quantities…</button><button id="btn-cable-schedules" class="dropdown-item" data-search-skip>Cable Schedules…</button><button id="btn-rates" class="dropdown-item" data-search-skip>Rate Library…</button><div class="dropdown-divider"></div><span class="dropdown-label">Data</span><button id="btn-export-csv" class="dropdown-item">Results (CSV)</button><button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button><button id="btn-export-json" class="dropdown-item">Project (JSON)</button><div class="dropdown-divider"></div><span class="dropdown-label">Drawing</span><button id="btn-export-diagram-pdf" class="dropdown-item">Diagram (PDF)</button><button id="btn-export-png" class="dropdown-item">Diagram (PNG)</button><button id="btn-export-svg" class="dropdown-item">Diagram (SVG)</button><button id="btn-print" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
+              Print / Page Layout
+            </button></div></div>
+        <span class="toolbar-separator"></span>
+        <div class="tb-zoom"><span id="zoom-display">100%</span><button id="btn-zoom-fit" title="Zoom to Fit">Fit</button><button id="btn-zoom-reset" title="Reset Zoom">1:1</button></div>
       </div>
     </div>
   </header>
@@ -586,7 +444,7 @@
       <!-- Empty-canvas hint (toggled by Canvas.render) -->
       <div id="canvas-empty-hint" class="canvas-empty-hint" style="display:none">
         Drag a component from the left palette to start drawing,<br>
-        or open <strong>File &rarr; Templates</strong> for a pre-built network.
+        or open <strong>Project &rarr; Templates</strong> for a pre-built network.
       </div>
       <!-- Page Tab Bar -->
       <div id="page-tab-bar">
@@ -905,6 +763,14 @@
         <li id="mobile-ws-schedules" class="mobile-menu-item" data-workspace="schedules">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12"/></svg>
           Circuit Schedules
+        </li>
+        <li id="mobile-menu-search" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+          Search Commands…
+        </li>
+        <li id="mobile-menu-project-type" class="mobile-menu-item">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3" width="4" height="10" rx="1"/><rect x="6" y="3" width="4" height="10" rx="1"/><rect x="10.5" y="3" width="4" height="10" rx="1" stroke-dasharray="2 1.5"/></svg>
+          Project Type &amp; Workspaces…
         </li>
         <div class="mobile-menu-divider"></div>
         <li id="mobile-menu-new" class="mobile-menu-item">
@@ -1790,114 +1656,145 @@
   </div>
 
   <!-- Lightning Risk Assessment Modal -->
-  <div id="lightning-modal" class="modal" role="dialog" aria-modal="true" aria-label="Lightning Risk Assessment" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Lightning Risk Assessment — IEC 62305-2</h3>
-        <button class="modal-close" id="btn-close-lightning">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="lightning-form">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;font-size:12px">
-            <label>Length L (m)<input type="number" id="lr-length" value="20" min="1" step="0.5"></label>
-            <label>Width W (m)<input type="number" id="lr-width" value="15" min="1" step="0.5"></label>
-            <label>Height H (m)<input type="number" id="lr-height" value="8" min="1" step="0.5"></label>
-            <label title="Ground flash density (flashes/km²/yr). SA highveld 6–12, coastal 1–4.">N<sub>G</sub> (fl/km²/yr)<input type="number" id="lr-ng" value="4" min="0.1" step="0.1"></label>
-            <label>Relative location (C<sub>D</sub>)
-              <select id="lr-location">
-                <option value="surrounded_by_taller">Surrounded by taller objects</option>
-                <option value="surrounded_same_height" selected>Surrounded, same height</option>
-                <option value="isolated">Isolated</option>
-                <option value="isolated_hilltop">Isolated on hilltop</option>
-              </select></label>
-            <label>Structure use (L<sub>F</sub>)
-              <select id="lr-use">
-                <option value="other" selected>Residential / other</option>
-                <option value="industrial_commercial">Industrial / commercial</option>
-                <option value="entertainment_church_museum">Entertainment / church / museum</option>
-                <option value="hospital_hotel_school">Hospital / hotel / school</option>
-              </select></label>
-            <label>Special hazard (h<sub>z</sub>)
-              <select id="lr-hazard">
-                <option value="none" selected>None</option>
-                <option value="low_panic">Low panic (&lt;100 people)</option>
-                <option value="average_panic">Average panic (100–1000)</option>
-                <option value="difficult_evacuation">Difficult evacuation</option>
-                <option value="high_panic">High panic (&gt;1000)</option>
-              </select></label>
-            <label>Floor surface (r<sub>t</sub>)
-              <select id="lr-floor">
-                <option value="agricultural_concrete" selected>Soil / concrete</option>
-                <option value="marble_ceramic">Marble / ceramic</option>
-                <option value="gravel_carpet">Gravel / carpet</option>
-                <option value="asphalt_wood_linoleum">Asphalt / wood</option>
-              </select></label>
-            <label>Fire risk (r<sub>f</sub>)
-              <select id="lr-fire-risk">
-                <option value="none">None</option>
-                <option value="low">Low</option>
-                <option value="ordinary" selected>Ordinary</option>
-                <option value="high">High</option>
-              </select></label>
-            <label>Fire protection (r<sub>p</sub>)
-              <select id="lr-fire-prot">
-                <option value="none" selected>None</option>
-                <option value="manual">Manual (extinguishers)</option>
-                <option value="automatic">Automatic suppression</option>
-              </select></label>
-            <label>Existing LPS class (P<sub>B</sub>)
-              <select id="lr-lps">
-                <option value="none" selected>None</option>
-                <option value="IV">Class IV</option>
-                <option value="III">Class III</option>
-                <option value="II">Class II</option>
-                <option value="I">Class I</option>
-              </select></label>
-            <label>Coordinated SPDs (P<sub>SPD</sub>)
-              <select id="lr-spd">
-                <option value="none" selected>None</option>
-                <option value="III-IV">LPL III–IV</option>
-                <option value="II">LPL II</option>
-                <option value="I">LPL I</option>
-              </select></label>
-            <label>Persons in structure<input type="number" id="lr-persons" value="10" min="1" step="1"></label>
-            <label>Occupied hours/yr<input type="number" id="lr-hours" value="8760" min="1" max="8760" step="1"></label>
-            <label title="Rated impulse withstand of internal equipment (K_S4, P_LI)">Equipment U<sub>W</sub> (kV)
-              <select id="lr-uw">
-                <option value="1">1.0</option>
-                <option value="1.5">1.5</option>
-                <option value="2.5" selected>2.5</option>
-                <option value="4">4.0</option>
-                <option value="6">6.0</option>
-              </select></label>
-            <label style="display:flex;align-items:center;gap:6px;margin-top:14px"><input type="checkbox" id="lr-explosion" style="width:auto"> Risk of explosion</label>
+  <div id="lightning-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="lr-title" style="display:none">
+    <div class="modal-content lr-dialog">
+      <header class="lr-head">
+        <span class="lr-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M9 1.8L4 9h3.6l-.8 5.2L12 7H8.4z"/></svg></span>
+        <div class="lr-head-text"><h3 id="lr-title">Lightning risk assessment</h3><div class="lr-head-sub" id="lr-head-sub">Step 1 of 4 — tell us about the structure</div></div>
+        <span class="lr-tag">IEC 62305-2:2010</span><span class="lr-tag">Risk to life, R<sub>1</sub></span>
+        <button class="modal-close" id="btn-close-lightning" aria-label="Close">&times;</button>
+      </header>
+      <div class="lr-body">
+        <nav class="lr-nav" aria-label="Assessment steps">
+          <div class="lr-assess">
+            <label class="lr-nav-h" for="lr-assess-select">Assessment</label>
+            <select id="lr-assess-select" class="lr-sel" title="Each assessment is one structure, saved with the project"></select>
+            <div class="lr-assess-actions">
+              <button type="button" class="lr-mini" id="lr-assess-new" title="Start a new assessment from the defaults">New</button>
+              <button type="button" class="lr-mini" id="lr-assess-dup" title="Copy this assessment's inputs into a new one">Duplicate</button>
+              <button type="button" class="lr-mini" id="lr-assess-rename">Rename</button>
+              <button type="button" class="lr-mini lr-mini-danger" id="lr-assess-del">Delete</button>
+            </div>
           </div>
-          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <fieldset style="border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;font-size:12px">
-              <legend style="font-size:12px;padding:0 4px"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="lr-line1-en" checked style="width:auto"> Power service line</label></legend>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px">
-                <label>Length (m)<input type="number" id="lr-line1-len" value="1000" min="1"></label>
-                <label>Installation<select id="lr-line1-inst"><option value="buried" selected>Buried</option><option value="aerial">Aerial</option></select></label>
-                <label>Environment<select id="lr-line1-env"><option value="rural">Rural</option><option value="suburban" selected>Suburban</option><option value="urban">Urban</option><option value="urban_tall_buildings">Urban &gt;20 m</option></select></label>
-                <label style="display:flex;align-items:center;gap:6px;margin-top:12px"><input type="checkbox" id="lr-line1-tx" checked style="width:auto"> HV/LV transformer</label>
+          <div class="lr-nav-h">Steps</div>
+          <button type="button" class="lr-step" data-lr-go="1"><span class="lr-n">1</span><span><span class="lr-st">Structure &amp; site</span><span class="lr-sd">Size, surroundings, lightning density</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="2"><span class="lr-n">2</span><span><span class="lr-st">People &amp; fire</span><span class="lr-sd">Who is inside and what can burn</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="3"><span class="lr-n">3</span><span><span class="lr-st">Service lines</span><span class="lr-sd">Power and telecom lines entering</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="4"><span class="lr-n">4</span><span><span class="lr-st">Existing protection</span><span class="lr-sd">LPS and surge protection in place</span></span></button>
+          <button type="button" class="lr-step" data-lr-go="5"><span class="lr-n">5</span><span><span class="lr-st">Results</span><span class="lr-sd">Verdict and the protection needed</span></span></button>
+        </nav>
+        <div class="lr-main">
+          <section class="lr-panel" data-lr-panel="1">
+            <div class="lr-about">
+              <div class="lr-about-h"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 4.9v.1"/></svg>What this assessment decides</div>
+              <ul>
+                <li>It estimates <b>R<sub>1</sub></b>, the yearly risk that lightning causes <b>loss of human life</b> in or at this structure, through shock, fire, or (for hospitals, hotels, schools and explosion risks) failure of internal systems.</li>
+                <li>It compares R<sub>1</sub> with the <b>tolerable risk R<sub>T</sub> = 1 × 10⁻⁵ per year</b> (IEC 62305-2, Table 7).</li>
+                <li>If R<sub>1</sub> is too high, it finds the <b>lowest lightning protection system (LPS) class and surge protection (SPD) level</b> that bring it below R<sub>T</sub>.</li>
+              </ul>
+              <div class="lr-about-meta">
+                <div><b>You’ll need:</b> the building’s size, the site’s lightning ground flash density, how many people use it and for how long, and the power and telecom lines that enter it.</div>
+                <div><b>Scope:</b> one structure, assessed as a single zone. Not assessed: loss of public service (R<sub>2</sub>), cultural heritage (R<sub>3</sub>) or economic loss (R<sub>4</sub>).</div>
               </div>
-            </fieldset>
-            <fieldset style="border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;font-size:12px">
-              <legend style="font-size:12px;padding:0 4px"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="lr-line2-en" style="width:auto"> Telecom line</label></legend>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px">
-                <label>Length (m)<input type="number" id="lr-line2-len" value="1000" min="1"></label>
-                <label>Installation<select id="lr-line2-inst"><option value="buried">Buried</option><option value="aerial" selected>Aerial</option></select></label>
-                <label>Environment<select id="lr-line2-env"><option value="rural">Rural</option><option value="suburban" selected>Suburban</option><option value="urban">Urban</option><option value="urban_tall_buildings">Urban &gt;20 m</option></select></label>
-                <label style="display:flex;align-items:center;gap:6px;margin-top:12px"><input type="checkbox" id="lr-line2-shield" style="width:auto"> Shielded &amp; bonded</label>
+            </div>
+            <div><h4 class="lr-h">1 · Structure &amp; site</h4><p class="lr-lead">How big the building is and how exposed its site is sets how often lightning strikes it, or strikes close enough to matter.</p></div>
+            <div class="lr-sec-h">Building dimensions</div>
+            <div class="lr-dims">
+              <div class="lr-grid-3">
+                <div class="lr-fld"><label class="lr-fl" for="lr-length">Length <span class="lr-sym">L</span></label><div class="lr-in"><input type="number" id="lr-length" min="1" step="0.5"><span class="lr-u">m</span></div><div class="lr-hp">Longest side of the footprint.</div></div>
+                <div class="lr-fld"><label class="lr-fl" for="lr-width">Width <span class="lr-sym">W</span></label><div class="lr-in"><input type="number" id="lr-width" min="1" step="0.5"><span class="lr-u">m</span></div><div class="lr-hp">Shorter side of the footprint.</div></div>
+                <div class="lr-fld"><label class="lr-fl" for="lr-height">Height <span class="lr-sym">H</span></label><div class="lr-in"><input type="number" id="lr-height" min="1" step="0.5"><span class="lr-u">m</span></div><div class="lr-hp">To the highest point of the roof.</div></div>
               </div>
-            </fieldset>
-          </div>
-          <div style="margin-top:12px;text-align:right">
-            <button id="btn-run-lightning" class="btn btn-primary">Assess Risk</button>
-          </div>
+              <figure class="lr-plan" aria-hidden="true"><svg width="150" height="84" viewBox="0 0 160 88" fill="none" stroke-linecap="round"><rect x="44" y="22" width="72" height="44" rx="2" class="lr-plan-bld"/><rect x="18" y="4" width="124" height="80" rx="24" stroke-dasharray="4 3" class="lr-plan-band"/></svg><figcaption class="lr-hp">Strikes inside the dashed band (3H from the walls) hit the building.</figcaption></figure>
+            </div>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr-ng">Lightning ground flash density <span class="lr-sym">N<sub>G</sub></span></label><div class="lr-in"><input type="number" id="lr-ng" min="0.1" step="0.1"><span class="lr-u">flashes / km² / yr</span></div><div class="lr-hp">How many lightning flashes strike each km² of ground per year at this site. Take it from the national lightning ground flash density map. South Africa, typically: coastal 1–4, Highveld 6–12.</div></div>
+            </div>
+            <div class="lr-sec-h">Surroundings <span class="lr-sym">C<sub>D</sub></span><span class="lr-hp lr-inline">Taller objects nearby intercept strikes; an exposed building attracts more.</span></div>
+            <input type="hidden" id="lr-location"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Surroundings" data-lr-target="lr-location"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="surrounded_by_taller"><span class="lr-card-t">Among taller objects</span><span class="lr-card-d">Trees or buildings nearby are higher than this one.</span><span class="lr-card-f">C<sub>D</sub> = 0.25</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="surrounded_same_height"><span class="lr-card-t">Among similar or lower</span><span class="lr-card-d">Surrounding objects are the same height or lower.</span><span class="lr-card-f">C<sub>D</sub> = 0.5</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="isolated"><span class="lr-card-t">Isolated</span><span class="lr-card-d">No other objects in the vicinity (within 3H).</span><span class="lr-card-f">C<sub>D</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="isolated_hilltop"><span class="lr-card-t">Isolated on a hilltop</span><span class="lr-card-d">Exposed on a hill or knoll.</span><span class="lr-card-f">C<sub>D</sub> = 2</span></button></div>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="2" hidden>
+            <div><h4 class="lr-h">2 · People &amp; fire</h4><p class="lr-lead">Who is inside, for how long, and how a strike could become a fire decide how much a strike would cost in lives.</p></div>
+            <div class="lr-sec-h">Type of structure <span class="lr-sym">L<sub>F</sub></span><span class="lr-hp lr-inline">Typical loss of life from fire, IEC 62305-2 Table C.2.</span></div>
+            <input type="hidden" id="lr-use"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Type of structure" data-lr-target="lr-use"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="other"><span class="lr-card-t">Residential / other</span><span class="lr-card-d">Homes and anything not listed.</span><span class="lr-card-f">L<sub>F</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="industrial_commercial"><span class="lr-card-t">Industrial / commercial</span><span class="lr-card-d">Factories, shops, offices.</span><span class="lr-card-f">L<sub>F</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="entertainment_church_museum"><span class="lr-card-t">Public assembly</span><span class="lr-card-d">Entertainment venues, churches, museums.</span><span class="lr-card-f">L<sub>F</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="hospital_hotel_school"><span class="lr-card-t">Hospital / hotel / school</span><span class="lr-card-d">Also counts failure of internal systems (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>) as a risk to life.</span><span class="lr-card-f">L<sub>F</sub> = 0.1</span></button></div>
+            <div class="lr-sec-h">Occupancy</div>
+            <div class="lr-grid-3">
+              <div class="lr-fld"><label class="lr-fl" for="lr-persons">People in the structure <span class="lr-sym">n<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr-persons" min="1" step="1"><span class="lr-u">people</span></div><div class="lr-hp">Typical number present when it is in use.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-hours">Hours occupied per year <span class="lr-sym">t<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr-hours" min="1" max="8760" step="1"><span class="lr-u">h / yr</span></div><div class="lr-hp">8,760 = always occupied. A school term timetable is about 2,000.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-hazard">Panic / evacuation <span class="lr-sym">h<sub>z</sub></span></label><select id="lr-hazard" class="lr-sel"><option value="none">None</option><option value="low_panic">Low: up to 2 floors, under 100 people</option><option value="average_panic">Average: 100–1,000 people</option><option value="difficult_evacuation">Difficult evacuation (e.g. immobile patients)</option><option value="high_panic">High: over 1,000 people</option></select><div class="lr-hp">Raises the fire loss when escape is hard.</div></div>
+            </div>
+            <div class="lr-sec-h">Fire risk <span class="lr-sym">r<sub>f</sub></span><span class="lr-hp lr-inline">From the specific fire load of the contents.</span></div>
+            <input type="hidden" id="lr-fire-risk"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Fire risk" data-lr-target="lr-fire-risk"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">Nothing that can sustain a fire.</span><span class="lr-card-f">r<sub>f</sub> = 0</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="low"><span class="lr-card-t">Low</span><span class="lr-card-d">Fire load under 400 MJ/m².</span><span class="lr-card-f">r<sub>f</sub> = 0.001</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="ordinary"><span class="lr-card-t">Ordinary</span><span class="lr-card-d">Fire load 400–800 MJ/m². Most offices, classrooms, homes.</span><span class="lr-card-f">r<sub>f</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="high"><span class="lr-card-t">High</span><span class="lr-card-d">Fire load over 800 MJ/m², e.g. stores, archives.</span><span class="lr-card-f">r<sub>f</sub> = 0.1</span></button></div>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><span class="lr-fl">Fire protection <span class="lr-sym">r<sub>p</sub></span></span>
+                <input type="hidden" id="lr-fire-prot"><div class="lr-seg" role="radiogroup" aria-label="Fire protection" data-lr-target="lr-fire-prot"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="none">None</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="manual">Manual (× 0.5)</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="automatic">Automatic (× 0.2)</button></div>
+                <div class="lr-hp">Manual: extinguishers, hydrants, manual alarms, escape routes. Automatic: fixed extinguishing or alarm installations.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-floor">Floor surface <span class="lr-sym">r<sub>t</sub></span></label><select id="lr-floor" class="lr-sel"><option value="agricultural_concrete">Soil or concrete (× 0.01)</option><option value="marble_ceramic">Marble or ceramic (× 0.001)</option><option value="gravel_carpet">Gravel or carpet (× 0.0001)</option><option value="asphalt_wood_linoleum">Asphalt, wood or linoleum (× 0.00001)</option></select><div class="lr-hp">Insulating floors reduce the chance of injury from step and touch voltage.</div></div>
+            </div>
+            <label class="lr-chk"><input type="checkbox" id="lr-explosion"> <span><b>Risk of explosion</b> (hazardous-area zones present). Treats fire as certain and counts internal-system failure as a risk to life.</span></label>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="3" hidden>
+            <div><h4 class="lr-h">3 · Service lines</h4><p class="lr-lead">Lightning also enters through the lines connected to the building: strikes on a line cause shock and fire (R<sub>U</sub>, R<sub>V</sub>), and strikes near it induce surges (R<sub>W</sub>, R<sub>Z</sub>). Leave a line unticked if the building has no such connection.</p></div>
+            <section class="lr-line" aria-label="Power supply line">
+            <div class="lr-line-h"><label class="lr-chk lr-chk-strong"><input type="checkbox" id="lr-line1-en"> Power supply line</label><span class="lr-hp">LV supply cable into the building</span></div>
+            <div class="lr-grid-3">
+              <div class="lr-fld"><label class="lr-fl" for="lr-line1-len">Length to the next node <span class="lr-sym">L<sub>L</sub></span></label><div class="lr-in"><input type="number" id="lr-line1-len" min="1" step="1"><span class="lr-u">m</span></div><div class="lr-hp">To the substation, transformer or exchange. Unknown? The standard’s default is 1,000 m.</div></div>
+              <div class="lr-fld"><span class="lr-fl">Installation <span class="lr-sym">C<sub>I</sub></span></span>
+                <input type="hidden" id="lr-line1-inst"><div class="lr-seg" role="radiogroup" aria-label="Installation" data-lr-target="lr-line1-inst"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="buried">Buried</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="aerial">Aerial</button></div>
+                <div class="lr-hp">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-line1-env">Line environment <span class="lr-sym">C<sub>E</sub></span></label><select id="lr-line1-env" class="lr-sel"><option value="rural">Rural (CE = 1)</option><option value="suburban">Suburban (CE = 0.5)</option><option value="urban">Urban (CE = 0.1)</option><option value="urban_tall_buildings">Urban, buildings over 20 m (CE = 0.01)</option></select><div class="lr-hp">Buildings along the route shield the line.</div></div>
+            </div>
+            <label class="lr-chk"><input type="checkbox" id="lr-line1-tx"> <span><b>HV/LV transformer at the building end</b> (C<sub>T</sub> = 0.2). A transformer between the line and the building blocks much of the surge.</span></label>
+          </section>
+            <section class="lr-line" aria-label="Telecom line">
+            <div class="lr-line-h"><label class="lr-chk lr-chk-strong"><input type="checkbox" id="lr-line2-en"> Telecom line</label><span class="lr-hp">Copper telephone or data line</span></div>
+            <div class="lr-grid-3">
+              <div class="lr-fld"><label class="lr-fl" for="lr-line2-len">Length to the next node <span class="lr-sym">L<sub>L</sub></span></label><div class="lr-in"><input type="number" id="lr-line2-len" min="1" step="1"><span class="lr-u">m</span></div><div class="lr-hp">To the substation, transformer or exchange. Unknown? The standard’s default is 1,000 m.</div></div>
+              <div class="lr-fld"><span class="lr-fl">Installation <span class="lr-sym">C<sub>I</sub></span></span>
+                <input type="hidden" id="lr-line2-inst"><div class="lr-seg" role="radiogroup" aria-label="Installation" data-lr-target="lr-line2-inst"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="buried">Buried</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="aerial">Aerial</button></div>
+                <div class="lr-hp">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-line2-env">Line environment <span class="lr-sym">C<sub>E</sub></span></label><select id="lr-line2-env" class="lr-sel"><option value="rural">Rural (CE = 1)</option><option value="suburban">Suburban (CE = 0.5)</option><option value="urban">Urban (CE = 0.1)</option><option value="urban_tall_buildings">Urban, buildings over 20 m (CE = 0.01)</option></select><div class="lr-hp">Buildings along the route shield the line.</div></div>
+            </div>
+            <label class="lr-chk"><input type="checkbox" id="lr-line2-shield"> <span><b>Shielded and bonded</b> The cable screen is bonded at the entrance, which reduces induced surges.</span></label>
+          </section>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr-uw">Impulse withstand of equipment inside <span class="lr-sym">U<sub>W</sub></span></label><select id="lr-uw" class="lr-sel"><option value="1">1.0 kV: sensitive electronics</option><option value="1.5">1.5 kV: electronic equipment</option><option value="2.5">2.5 kV: typical final-circuit appliances</option><option value="4">4.0 kV: distribution boards, fixed installation</option><option value="6">6.0 kV: equipment at the origin of the installation</option></select><div class="lr-hp">The surge voltage the weakest internal equipment survives. Lower U<sub>W</sub> means more failures from induced surges.</div></div>
+            </div>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="4" hidden>
+            <div><h4 class="lr-h">4 · Existing protection</h4><p class="lr-lead">Leave both at <b>None</b> to assess the building as it stands. The results then recommend the minimum protection it needs. Set them if protection is already installed, to check it is enough.</p></div>
+            <div class="lr-sec-h">Lightning protection system (LPS) <span class="lr-sym">P<sub>B</sub></span><span class="lr-hp lr-inline">Air terminals, down conductors and earthing, per IEC 62305-3.</span></div>
+            <input type="hidden" id="lr-lps"><div class="lr-cards lr-cols-5" role="radiogroup" aria-label="Lightning protection system" data-lr-target="lr-lps"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">No LPS installed.</span><span class="lr-card-f">P<sub>B</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="IV"><span class="lr-card-t">Class IV</span><span class="lr-card-d">Least protective.</span><span class="lr-card-f">P<sub>B</sub> = 0.2</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III"><span class="lr-card-t">Class III</span><span class="lr-card-f">P<sub>B</sub> = 0.1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">Class II</span><span class="lr-card-f">P<sub>B</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">Class I</span><span class="lr-card-d">Most protective.</span><span class="lr-card-f">P<sub>B</sub> = 0.02</span></button></div>
+            <div class="lr-sec-h">Coordinated surge protection (SPD) <span class="lr-sym">P<sub>SPD</sub></span><span class="lr-hp lr-inline">A coordinated SPD system on the incoming lines and inside, per IEC 62305-4.</span></div>
+            <input type="hidden" id="lr-spd"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Coordinated surge protection" data-lr-target="lr-spd"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">No coordinated SPD system.</span><span class="lr-card-f">P<sub>SPD</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III-IV"><span class="lr-card-t">LPL III–IV</span><span class="lr-card-f">P<sub>SPD</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">LPL II</span><span class="lr-card-f">P<sub>SPD</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">LPL I</span><span class="lr-card-d">Highest lightning protection level.</span><span class="lr-card-f">P<sub>SPD</sub> = 0.01</span></button></div>
+            <div class="lr-hp">Surge protection is what reduces the internal-system risks (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>). An LPS alone does not.</div>
+          </section>
+
+          <section class="lr-panel" data-lr-panel="5" hidden>
+            <div id="lightning-results"></div>
+          </section>
         </div>
-        <div id="lightning-results" style="margin-top:14px"></div>
+        <aside class="lr-rail" aria-label="Live estimate" aria-live="polite">
+          <div class="lr-rail-h">Live estimate</div>
+          <div class="lr-stat"><span class="lr-stat-k">Collection area <i>A</i><sub>D</sub></span><span class="lr-stat-v" id="lr-live-ad">—</span><span class="lr-stat-e">The building plus a band of 3H around it</span></div>
+          <div class="lr-stat"><span class="lr-stat-k">Direct strikes <i>N</i><sub>D</sub></span><span class="lr-stat-v" id="lr-live-nd">—</span><span class="lr-stat-e" id="lr-live-nd-e"></span></div>
+          <div class="lr-stat"><span class="lr-stat-k">Strikes within 500 m <i>N</i><sub>M</sub></span><span class="lr-stat-v" id="lr-live-nm">—</span><span class="lr-stat-e">Nearby strikes induce surges in internal wiring</span></div>
+          <div class="lr-stat"><span class="lr-stat-k">Tolerable risk <i>R</i><sub>T</sub></span><span class="lr-stat-v">1 × 10⁻⁵ <small>/ yr</small></span><span class="lr-stat-e">IEC 62305-2 Table 7</span></div>
+          <div class="lr-note">These update as you type, so you can see what each input does before running the assessment. Everything you enter is saved to this assessment in the project as you go.</div>
+        </aside>
       </div>
+      <footer class="lr-foot">
+        <button type="button" class="btn" id="lr-back">‹ Back</button>
+        <span class="lr-foot-pg" id="lr-foot-pg">Step 1 of 4</span>
+        <span class="lr-grow"></span>
+        <button type="button" class="btn" id="lr-export" hidden>Export report (PDF)</button>
+        <button type="button" class="btn" id="lr-cancel">Close</button>
+        <button type="button" class="btn btn-primary" id="lr-next">Next ›</button>
+        <button type="button" class="btn btn-primary" id="btn-run-lightning">Assess risk</button>
+      </footer>
     </div>
   </div>
 
@@ -2266,6 +2163,8 @@
                   <th>Name</th>
                   <th>Conductor</th>
                   <th>Insulation</th>
+                  <th>Construction</th>
+                  <th>Cores</th>
                   <th>Size (mm²)</th>
                   <th>Voltage (kV)</th>
                   <th>R₁ (Ω/km)</th>
@@ -2669,11 +2568,11 @@
             <li><strong>Add components</strong> — Drag components from the left sidebar palette onto the canvas. Use the search box to filter components. Categories include sources, distribution, protection, instruments, loads, DC systems, and other.</li>
             <li><strong>Connect components</strong> — Click a connection port (small circle) on one component and drag to a port on another to draw a wire. Alternatively, press <kbd>W</kbd> for Wire mode.</li>
             <li><strong>Configure properties</strong> — Click a component to select it. Edit its electrical properties in the right-hand properties panel (voltage, impedance, ratings, etc.). Sequence impedances (positive, negative, zero) can be entered for sources, cables, and motors.</li>
-            <li><strong>Run analysis</strong> — Use the Analysis, Studies, and Safety menus in the toolbar to run fault analysis, load flow, arc flash, cable sizing, and more.</li>
+            <li><strong>Run analysis</strong> — Open the <strong>Analyse</strong> menu on the single-line toolbar: every analysis (short circuit, load flow, arc flash, cable sizing and more) is grouped there by discipline. Press <strong>Ctrl K</strong> to find any command by name.</li>
           </ol>
 
           <h4>Templates</h4>
-          <p>Use <strong>File → Templates</strong> to start from a pre-built network: substation, industrial plant, residential distribution, or generator installation. Templates provide a fully wired and configured starting point.</p>
+          <p>Use <strong>Project → Templates</strong> to start from a pre-built network: substation, industrial plant, residential distribution, or generator installation. Templates provide a fully wired and configured starting point.</p>
 
           <h4>Canvas Navigation</h4>
           <ul>
@@ -2709,7 +2608,7 @@
           </ul>
 
           <h4>Scenarios</h4>
-          <p>Use <strong>Studies → Scenarios</strong> to save named network configuration snapshots. Compare scenarios side-by-side via <strong>Reports → Compare Scenarios</strong> to evaluate different operating conditions or design alternatives.</p>
+          <p>Use <strong>Scenarios → Manage Scenarios</strong> to save named network configuration snapshots. Compare scenarios side-by-side via <strong>Scenarios → Compare Scenarios</strong> to evaluate different operating conditions or design alternatives.</p>
 
           <h4>Mobile Support</h4>
           <p>ProtectionPro includes a responsive mobile interface with bottom navigation, slide-up component/analysis/properties panels, pinch-to-zoom and pan touch gestures, floating action buttons for mode switching, and tap-to-place components.</p>
@@ -2952,7 +2851,7 @@
           edition). Below 240V fed by a single transformer &lt;125kVA, arc flash hazard is generally minimal.</p>
 
           <h4>DC Arc Flash Analysis</h4>
-          <p>Calculates DC arc flash hazard using the Stokes &amp; Oppenlander method with DGUV-I 203-077 guidelines. Available via <strong>Safety → DC Arc Flash</strong>. Applicable to DC systems including battery rooms, UPS systems, rectifiers, and solar PV DC buses.</p>
+          <p>Calculates DC arc flash hazard using the Stokes &amp; Oppenlander method with DGUV-I 203-077 guidelines. Available via <strong>Analyse → Protection &amp; safety → DC Arc Flash</strong>. Applicable to DC systems including battery rooms, UPS systems, rectifiers, and solar PV DC buses.</p>
           <ul>
             <li><strong>DC arcing current</strong> — Sustained DC arc current based on system voltage and gap</li>
             <li><strong>Incident energy</strong> — Thermal energy at working distance (cal/cm²)</li>
@@ -3107,76 +3006,84 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.90"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.90"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.90"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.90"></script>
-  <script src="js/constants.js?v=3.5.90"></script>
-  <script src="js/plan-defs.js?v=3.5.90"></script>
-  <script src="js/ui.js?v=3.5.90"></script>
-  <script src="js/state.js?v=3.5.90"></script>
-  <script src="js/components.js?v=3.5.90"></script>
-  <script src="js/voltage.js?v=3.5.90"></script>
-  <script src="js/symbols.js?v=3.5.90"></script>
-  <script src="js/canvas.js?v=3.5.90"></script>
-  <script src="js/sidebar.js?v=3.5.90"></script>
-  <script src="js/wiring.js?v=3.5.90"></script>
-  <script src="js/properties.js?v=3.5.90"></script>
-  <script src="js/annotations.js?v=3.5.90"></script>
-  <script src="js/api.js?v=3.5.90"></script>
-  <script src="js/auth.js?v=3.5.90"></script>
-  <script src="js/sharing.js?v=3.5.90"></script>
-  <script src="js/compliance.js?v=3.5.90"></script>
-  <script src="js/tcc.js?v=3.5.90"></script>
-  <script src="js/project.js?v=3.5.90"></script>
-  <script src="js/reports.js?v=3.5.90"></script>
-  <script src="js/verification-templates.js?v=3.5.90"></script>
-  <script src="js/templates.js?v=3.5.90"></script>
-  <script src="js/standard-data.js?v=3.5.90"></script>
-  <script src="js/undo.js?v=3.5.90"></script>
-  <script src="js/revisions.js?v=3.5.90"></script>
-  <script src="js/minimap.js?v=3.5.90"></script>
-  <script src="js/contextmenu.js?v=3.5.90"></script>
-  <script src="js/dbschedule.js?v=3.5.90"></script>
-  <script src="js/control-sim.js?v=3.5.90"></script>
-  <script src="js/dynmotor.js?v=3.5.90"></script>
-  <script src="js/transient.js?v=3.5.90"></script>
-  <script src="js/voltage-stability.js?v=3.5.90"></script>
-  <script src="js/freqscan.js?v=3.5.90"></script>
-  <script src="js/battsizing.js?v=3.5.90"></script>
-  <script src="js/opf.js?v=3.5.90"></script>
-  <script src="js/reliability.js?v=3.5.90"></script>
-  <script src="js/flicker.js?v=3.5.90"></script>
-  <script src="js/hostingcapacity.js?v=3.5.90"></script>
-  <script src="js/filtersizing.js?v=3.5.90"></script>
-  <script src="js/capplace.js?v=3.5.90"></script>
-  <script src="js/contingency.js?v=3.5.90"></script>
-  <script src="js/timeseries.js?v=3.5.90"></script>
-  <script src="js/lfstudy.js?v=3.5.90"></script>
-  <script src="js/interlocking.js?v=3.5.90"></script>
-  <script src="js/sequence.js?v=3.5.90"></script>
-  <script src="js/retic.js?v=3.5.90"></script>
-  <script src="js/schedules.js?v=3.5.90"></script>
-  <script src="js/dbaccessories.js?v=3.5.90"></script>
-  <script src="js/dbdrawing.js?v=3.5.90"></script>
-  <script src="js/retic-diagram.js?v=3.5.90"></script>
-  <script src="js/retic-report.js?v=3.5.90"></script>
-  <script src="js/plan-symbols.js?v=3.5.90"></script>
-  <script src="js/plan-engine.js?v=3.5.90"></script>
-  <script src="js/plan-images.js?v=3.5.90"></script>
-  <script src="js/plan-tools.js?v=3.5.90"></script>
-  <script src="js/plan-sync.js?v=3.5.90"></script>
-  <script src="js/plan-csv.js?v=3.5.90"></script>
-  <script src="js/plan-dxf.js?v=3.5.90"></script>
-  <script src="js/plan-export.js?v=3.5.90"></script>
-  <script src="js/plan-lux.js?v=3.5.90"></script>
-  <script src="js/plan-ies.js?v=3.5.90"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.90"></script>
-  <script src="js/plan-dd-import.js?v=3.5.90"></script>
-  <script src="js/plan-circuits.js?v=3.5.90"></script>
-  <script src="js/plan-ui.js?v=3.5.90"></script>
-  <script src="js/plan.js?v=3.5.90"></script>
-  <script src="js/app.js?v=3.5.90"></script>
-  <script src="js/mobile.js?v=3.5.90"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.103"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.103"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.103"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.103"></script>
+  <script src="js/constants.js?v=3.5.103"></script>
+  <script src="js/cablelib.js?v=3.5.103"></script>
+  <script src="js/plan-defs.js?v=3.5.103"></script>
+  <script src="js/ui.js?v=3.5.103"></script>
+  <script src="js/state.js?v=3.5.103"></script>
+  <script src="js/grid.js?v=3.5.103"></script>
+  <script src="js/components.js?v=3.5.103"></script>
+  <script src="js/voltage.js?v=3.5.103"></script>
+  <script src="js/symbols.js?v=3.5.103"></script>
+  <script src="js/canvas.js?v=3.5.103"></script>
+  <script src="js/sidebar.js?v=3.5.103"></script>
+  <script src="js/wiring.js?v=3.5.103"></script>
+  <script src="js/properties.js?v=3.5.103"></script>
+  <script src="js/annotations.js?v=3.5.103"></script>
+  <script src="js/api.js?v=3.5.103"></script>
+  <script src="js/auth.js?v=3.5.103"></script>
+  <script src="js/sharing.js?v=3.5.103"></script>
+  <script src="js/compliance.js?v=3.5.103"></script>
+  <script src="js/tcc.js?v=3.5.103"></script>
+  <script src="js/project.js?v=3.5.103"></script>
+  <script src="js/reports.js?v=3.5.103"></script>
+  <script src="js/verification-templates.js?v=3.5.103"></script>
+  <script src="js/templates.js?v=3.5.103"></script>
+  <script src="js/standard-data.js?v=3.5.103"></script>
+  <script src="js/undo.js?v=3.5.103"></script>
+  <script src="js/revisions.js?v=3.5.103"></script>
+  <script src="js/minimap.js?v=3.5.103"></script>
+  <script src="js/contextmenu.js?v=3.5.103"></script>
+  <script src="js/dbschedule.js?v=3.5.103"></script>
+  <script src="js/control-sim.js?v=3.5.103"></script>
+  <script src="js/dynmotor.js?v=3.5.103"></script>
+  <script src="js/transient.js?v=3.5.103"></script>
+  <script src="js/voltage-stability.js?v=3.5.103"></script>
+  <script src="js/freqscan.js?v=3.5.103"></script>
+  <script src="js/battsizing.js?v=3.5.103"></script>
+  <script src="js/opf.js?v=3.5.103"></script>
+  <script src="js/reliability.js?v=3.5.103"></script>
+  <script src="js/flicker.js?v=3.5.103"></script>
+  <script src="js/hostingcapacity.js?v=3.5.103"></script>
+  <script src="js/filtersizing.js?v=3.5.103"></script>
+  <script src="js/capplace.js?v=3.5.103"></script>
+  <script src="js/contingency.js?v=3.5.103"></script>
+  <script src="js/timeseries.js?v=3.5.103"></script>
+  <script src="js/lfstudy.js?v=3.5.103"></script>
+  <script src="js/interlocking.js?v=3.5.103"></script>
+  <script src="js/sequence.js?v=3.5.103"></script>
+  <script src="js/retic.js?v=3.5.103"></script>
+  <script src="js/schedules.js?v=3.5.103"></script>
+  <script src="js/workspaces.js?v=3.5.103"></script>
+  <script src="js/header.js?v=3.5.103"></script>
+  <script src="js/lightning.js?v=3.5.103"></script>
+  <script src="js/rates.js?v=3.5.103"></script>
+  <script src="js/boq.js?v=3.5.103"></script>
+  <script src="js/cableschedules.js?v=3.5.103"></script>
+  <script src="js/dbaccessories.js?v=3.5.103"></script>
+  <script src="js/dbdrawing.js?v=3.5.103"></script>
+  <script src="js/retic-diagram.js?v=3.5.103"></script>
+  <script src="js/retic-report.js?v=3.5.103"></script>
+  <script src="js/plan-symbols.js?v=3.5.103"></script>
+  <script src="js/plan-engine.js?v=3.5.103"></script>
+  <script src="js/plan-images.js?v=3.5.103"></script>
+  <script src="js/plan-tools.js?v=3.5.103"></script>
+  <script src="js/plan-sync.js?v=3.5.103"></script>
+  <script src="js/plan-csv.js?v=3.5.103"></script>
+  <script src="js/plan-dxf.js?v=3.5.103"></script>
+  <script src="js/plan-export.js?v=3.5.103"></script>
+  <script src="js/plan-lux.js?v=3.5.103"></script>
+  <script src="js/plan-ies.js?v=3.5.103"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.103"></script>
+  <script src="js/plan-dd-import.js?v=3.5.103"></script>
+  <script src="js/plan-circuits.js?v=3.5.103"></script>
+  <script src="js/plan-ui.js?v=3.5.103"></script>
+  <script src="js/plan.js?v=3.5.103"></script>
+  <script src="js/app.js?v=3.5.103"></script>
+  <script src="js/mobile.js?v=3.5.103"></script>
 </body>
 </html>

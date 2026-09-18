@@ -119,6 +119,51 @@ const STANDARD_CABLES = [
   { id: 'cu_pvc_185_lv',  name: '185mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1212, x_per_km: 0.068, r0_per_km: 0.509, x0_per_km: 0.218, rated_amps: 341 },
   { id: 'cu_pvc_240_lv',  name: '240mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.0937, x_per_km: 0.067, r0_per_km: 0.3935, x0_per_km: 0.214, rated_amps: 400 },
   { id: 'cu_pvc_300_lv',  name: '300mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.0762, x_per_km: 0.066, r0_per_km: 0.32, x0_per_km: 0.211, rated_amps: 458 },
+
+  // ── Unified library additions (2026-09-18) ────────────────────────────
+  // One cable library for the whole app. Existing entries above are armoured
+  // multicore (MV 3-core, LV 4-core); `cores` / `construction` default in
+  // cablelib.js. The 2-core LV entries are single-phase service cables (a
+  // 3-phase service uses the 4-core entry); their R/X/rating are the 4-core
+  // sibling's values (conservative rating). The building-wiring entries
+  // (T+E, H07V-R, Surfix, control) come from the former building library;
+  // R0/X0 = 0 means "not tabulated": the fault engine then uses 3.5 × R1.
+  // Building "x4C Cu PVC/SWA" names are aliases of the Cu PVC LV entries above.
+  { id: 'cu_xlpe_16_lv_2c', name: '16mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.466, x_per_km: 0.082, r0_per_km: 5.572, x0_per_km: 0.230, rated_amps: 91, cores: 2, construction: 'armoured' },
+  { id: 'cu_xlpe_25_lv_2c', name: '25mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 0.9269, x_per_km: 0.079, r0_per_km: 3.523, x0_per_km: 0.221, rated_amps: 116, cores: 2, construction: 'armoured' },
+  { id: 'cu_xlpe_35_lv_2c', name: '35mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 0.6681, x_per_km: 0.077, r0_per_km: 2.539, x0_per_km: 0.216, rated_amps: 140, cores: 2, construction: 'armoured' },
+  { id: 'al_xlpe_16_lv_2c', name: '16mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.449, x_per_km: 0.082, r0_per_km: 8.325, x0_per_km: 0.230, rated_amps: 70, cores: 2, construction: 'armoured' },
+  { id: 'al_xlpe_25_lv_2c', name: '25mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 1.538, x_per_km: 0.079, r0_per_km: 5.231, x0_per_km: 0.221, rated_amps: 90, cores: 2, construction: 'armoured' },
+  { id: 'al_xlpe_35_lv_2c', name: '35mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.113, x_per_km: 0.077, r0_per_km: 3.783, x0_per_km: 0.216, rated_amps: 110, cores: 2, construction: 'armoured' },
+  { id: 'te_cu_1.5', name: '1.5mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.6, x_per_km: 0.1, r0_per_km: 0, x0_per_km: 0, rated_amps: 16, cores: 2, construction: 'te' },
+  { id: 'te_cu_2.5', name: '2.5mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.7, x_per_km: 0.095, r0_per_km: 0, x0_per_km: 0, rated_amps: 22, cores: 2, construction: 'te' },
+  { id: 'te_cu_4', name: '4mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.5, x_per_km: 0.093, r0_per_km: 0, x0_per_km: 0, rated_amps: 30, cores: 2, construction: 'te' },
+  { id: 'te_cu_6', name: '6mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.6, x_per_km: 0.09, r0_per_km: 0, x0_per_km: 0, rated_amps: 38, cores: 2, construction: 'te' },
+  { id: 'te_cu_10', name: '10mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 10, voltage_kv: 0.4, r_per_km: 2.2, x_per_km: 0.084, r0_per_km: 0, x0_per_km: 0, rated_amps: 52, cores: 2, construction: 'te' },
+  { id: 'te_cu_16', name: '16mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.4, x_per_km: 0.08, r0_per_km: 0, x0_per_km: 0, rated_amps: 69, cores: 2, construction: 'te' },
+  { id: 'h07vr_cu_1.5', name: '1.5mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.6, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 17, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_2.5', name: '2.5mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.7, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 24, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_4', name: '4mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.5, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 32, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_6', name: '6mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.6, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 41, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_10', name: '10mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 10, voltage_kv: 0.4, r_per_km: 2.2, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 57, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_16', name: '16mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.4, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 76, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_25', name: '25mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 25, voltage_kv: 0.4, r_per_km: 0.87, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 101, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_35', name: '35mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 35, voltage_kv: 0.4, r_per_km: 0.63, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 125, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_50', name: '50mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 50, voltage_kv: 0.4, r_per_km: 0.46, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 151, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_70', name: '70mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 70, voltage_kv: 0.4, r_per_km: 0.32, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 192, cores: 1, construction: 'single' },
+  { id: 'h07vr_cu_95', name: '95mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 95, voltage_kv: 0.4, r_per_km: 0.24, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 232, cores: 1, construction: 'single' },
+  { id: 'surfix_2c_1.5', name: '1.5mm² Surfix 2C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.6, x_per_km: 0.1, r0_per_km: 0, x0_per_km: 0, rated_amps: 20, cores: 2, construction: 'surfix' },
+  { id: 'surfix_2c_2.5', name: '2.5mm² Surfix 2C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.7, x_per_km: 0.095, r0_per_km: 0, x0_per_km: 0, rated_amps: 27, cores: 2, construction: 'surfix' },
+  { id: 'surfix_2c_4', name: '4mm² Surfix 2C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.5, x_per_km: 0.093, r0_per_km: 0, x0_per_km: 0, rated_amps: 36, cores: 2, construction: 'surfix' },
+  { id: 'surfix_2c_6', name: '6mm² Surfix 2C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.6, x_per_km: 0.09, r0_per_km: 0, x0_per_km: 0, rated_amps: 46, cores: 2, construction: 'surfix' },
+  { id: 'surfix_3c_1.5', name: '1.5mm² Surfix 3C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.6, x_per_km: 0.1, r0_per_km: 0, x0_per_km: 0, rated_amps: 16, cores: 3, construction: 'surfix' },
+  { id: 'surfix_3c_2.5', name: '2.5mm² Surfix 3C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.7, x_per_km: 0.095, r0_per_km: 0, x0_per_km: 0, rated_amps: 22, cores: 3, construction: 'surfix' },
+  { id: 'surfix_3c_4', name: '4mm² Surfix 3C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.5, x_per_km: 0.093, r0_per_km: 0, x0_per_km: 0, rated_amps: 30, cores: 3, construction: 'surfix' },
+  { id: 'dali_2c_0.5', name: '0.5mm² x2C DALI', conductor: 'Cu', insulation: 'PVC', size_mm2: 0.5, voltage_kv: 0.4, r_per_km: 39, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 0, cores: 2, construction: 'control' },
+  { id: 'dali_2c_1', name: '1mm² x2C DALI', conductor: 'Cu', insulation: 'PVC', size_mm2: 1, voltage_kv: 0.4, r_per_km: 19.5, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 0, cores: 2, construction: 'control' },
+  { id: 'dali_2c_1.5', name: '1.5mm² x2C DALI', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.5, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 0, cores: 2, construction: 'control' },
+  { id: 'sig010v_2c_1', name: '1.0mm² x2C 0-10V Signal', conductor: 'Cu', insulation: 'PVC', size_mm2: 1, voltage_kv: 0.4, r_per_km: 21.8, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 0, cores: 2, construction: 'control' },
+  { id: 'bms_2c_1.5', name: '1.5mm² x2C Screened BMS', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.5, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 0, cores: 2, construction: 'control' },
 ];
 
 // ─── Standard Overhead Line Conductor Library ───
@@ -1257,7 +1302,7 @@ const FIELD_INFO = {
   'bus.soil_resistivity': 'Soil resistivity in Ω·m.\nSource: IEEE 80 §12.2 — typical values:\n• Wet clay: 20–100\n• Sandy clay: 50–200\n• Gravel/sand: 200–3000\n• Rock: 1000–10000',
   'bus.crushed_rock_resistivity': 'Surface layer (crushed rock) resistivity ρ_s in Ω·m.\nA high-resistivity surface layer raises the tolerable touch/step voltages.\nSource: IEEE 80 §7.4 — typical crushed rock: 2000–5000 Ω·m (dry higher).',
   'bus.crushed_rock_depth': 'Thickness of the surface (crushed rock) layer in metres.\nSource: IEEE 80 §7.4 — typically 0.10–0.15 m.',
-  'bus.two_layer_soil': 'Model the NATIVE soil as two layers (upper ρ₁/thickness h₁ over a semi-infinite lower ρ₂) instead of uniform — distinct from the crushed-rock surface layer above. When "on", grid resistance and GPR use an equivalent resistivity ρ_eq derived from the two-layer geometry; touch/step voltage keep using ρ₁ (Soil Resistivity, the layer the grid and a person\'s feet are in). Off (default) reproduces the uniform-soil result exactly. Use the Wenner Test Interpreter (Studies menu) to derive ρ₁/ρ₂/h₁ from field four-pin readings.\nSource: IEEE 80 §14.5.',
+  'bus.two_layer_soil': 'Model the NATIVE soil as two layers (upper ρ₁/thickness h₁ over a semi-infinite lower ρ₂) instead of uniform — distinct from the crushed-rock surface layer above. When "on", grid resistance and GPR use an equivalent resistivity ρ_eq derived from the two-layer geometry; touch/step voltage keep using ρ₁ (Soil Resistivity, the layer the grid and a person\'s feet are in). Off (default) reproduces the uniform-soil result exactly. Use the Wenner Test Interpreter (Analyse menu › Earthing & lightning) to derive ρ₁/ρ₂/h₁ from field four-pin readings.\nSource: IEEE 80 §14.5.',
   'bus.soil_resistivity_lower': 'Lower-layer resistivity ρ₂ in Ω·m (below the ρ₁/h₁ interface). ρ₂ > ρ₁ (e.g. rock under topsoil) raises the equivalent resistivity used for grid resistance/GPR; ρ₂ < ρ₁ (e.g. a water table) lowers it.\nSource: IEEE 80 §14.5.',
   'bus.upper_layer_thickness': 'Thickness h₁ of the upper (ρ₁) soil layer, in metres, measured from the ground surface. A thin h₁ relative to the grid size pulls the equivalent resistivity toward ρ₂; a thick h₁ recovers the uniform-soil (ρ₁-only) result.\nSource: IEEE 80 §14.5.',
   'bus.grid_length': 'Grounding grid length in metres.\nSource: IEEE 80 — grid dimensions define the protected area.',

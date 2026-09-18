@@ -230,6 +230,7 @@ const AppState = {
         quickServiceCable: '', quickServiceLen: 60,
         quickFeederCable: '', quickFeederLen: 100, quickChain: true,
         quickFeedFrom: 'source', networkDiversity: 1.0,
+        lvConductor: '', mvConductor: '',   // project standard conductor ('Al' | 'Cu' | '' = any): listed first in cable pickers
       },
       minisubs: [{ id: 'source', name: 'Minisub 1' }],
       kiosks: [], _kioskSeq: 1, _erfSeq: 1, _msSeq: 2,
@@ -309,7 +310,8 @@ const AppState = {
         showGrid: true, greyBg: false, invertBg: false, slPoleKVA: 0.15,
         floorHeight: 3.5,   // default storey height (m) for new floors
         riserFactor: 1.1,   // vertical-run slack multiplier (bends/terminations)
-        // Bill-of-quantities rates (currency-neutral; 0 until the user sets them)
+        // Legacy flat BOQ rates, superseded by AppState.rateLibrary (rates.js);
+        // kept so older projects load unchanged. Nothing reads them now.
         rates: { cablePerM: 0, equipUnit: 0, trenchPerM: 0, wasteFactorPct: 5 },
       },
       _seq: 1,            // single counter for all pm* ids
@@ -1060,6 +1062,10 @@ const AppState = {
   reset() {
     this.projectId = null;
     this.projectName = 'Untitled Project';
+    // Project type ('retic' | 'building' | 'network') decides the workspace
+    // tabs (workspaces.js). null = never chosen: inferred from the content.
+    this.projectType = null;
+    this.extraWorkspaces = [];   // workspaces switched on beyond the type's own
     this.dirty = false;
     this.projectDetails = {
       projectNumber: '', client: '', company: '', engineerName: '',
@@ -1094,7 +1100,13 @@ const AppState = {
     this.reticulation = this._defaultReticulation();
     this.reticResults = null;
     this.planMarkup = this._defaultPlanMarkup();
-    this.lightningRisk = null;   // saved IEC 62305-2 form inputs
+    // IEC 62305-2 lightning risk: named assessments (one per structure), each
+    // {id, name, inputs, result, resultKey, updatedAt} — see lightning.js.
+    this.lightningAssessments = [];
+    this.lightningActiveId = null;
+    // Bill-of-quantities rate library — only the entries the user has set
+    // (rates.js builds the catalogue of item keys itself).
+    this.rateLibrary = null;
     this.raceways = [];
     // Clear annotation drag offsets + hidden result boxes
     if (typeof Annotations !== 'undefined') {
@@ -1115,6 +1127,10 @@ const AppState = {
     // Plan Markup workspace: same — re-baseline its local undo + image cache
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
       PlanMarkup.onProjectChanged();
+    }
+    // Workspace tabs follow the (now cleared) project type.
+    if (typeof Workspaces !== 'undefined' && Workspaces.onProjectChanged) {
+      Workspaces.onProjectChanged();
     }
   },
 
@@ -1204,6 +1220,8 @@ const AppState = {
       // operating-temperature resistance (was 20°C DC in v1).
       dataVersion: 2,
       projectName: this.projectName,
+      projectType: this.projectType || undefined,
+      extraWorkspaces: (this.extraWorkspaces && this.extraWorkspaces.length) ? this.extraWorkspaces : undefined,
       projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
       frequency: this.frequency,
@@ -1259,7 +1277,18 @@ const AppState = {
       // result computed on an older engine version is detected as stale on load.
       resultsMeta: (this.resultsMeta && Object.keys(this.resultsMeta).length)
         ? this.resultsMeta : undefined,
-      lightningRisk: this.lightningRisk || undefined,
+      lightningAssessments: (this.lightningAssessments && this.lightningAssessments.length) ? this.lightningAssessments : undefined,
+      lightningActiveId: this.lightningActiveId || undefined,
+      // Pre-assessments field (the active assessment's inputs), still written
+      // so an older build of the app opens the project with its inputs.
+      lightningRisk: (() => {
+        const a = (this.lightningAssessments || []).find(x => x.id === this.lightningActiveId) || (this.lightningAssessments || [])[0];
+        return a ? a.inputs : undefined;
+      })(),
+      rateLibrary: this.rateLibrary || undefined,
+      // Cables from the user's own library that this project uses, so the
+      // project opens complete elsewhere (CableLib.onProjectLoaded).
+      customCables: (() => { const c = typeof CableLib !== 'undefined' ? CableLib.projectCustomCables() : []; return c.length ? c : undefined; })(),
       raceways: this.raceways.length ? this.raceways : undefined,
     };
   },
@@ -1564,8 +1593,25 @@ const AppState = {
     this.loadFlowCases = Array.isArray(data.loadFlowCases) ? data.loadFlowCases : [];
     this.interlockLogic = (data.interlockLogic && Array.isArray(data.interlockLogic.nodes))
       ? data.interlockLogic : { nodes: [], links: [] };
-    this.lightningRisk = data.lightningRisk || null;
+    // Named assessments; a project from before them carries one set of inputs
+    // (lightningRisk), which becomes "Assessment 1".
+    if (Array.isArray(data.lightningAssessments) && data.lightningAssessments.length) {
+      this.lightningAssessments = data.lightningAssessments.filter(a => a && a.id);
+    } else if (data.lightningRisk && typeof data.lightningRisk === 'object') {
+      this.lightningAssessments = [{ id: 'lra_1', name: 'Assessment 1', inputs: data.lightningRisk, result: null, resultKey: null, updatedAt: null }];
+    } else {
+      this.lightningAssessments = [];
+    }
+    this.lightningActiveId = this.lightningAssessments.some(a => a.id === data.lightningActiveId)
+      ? data.lightningActiveId : ((this.lightningAssessments[0] || {}).id || null);
+    this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
+    // Cable rate keys come from library ids now; move name-keyed rates once.
+    if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
+    this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
+    this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];
+    // One cable library: bring in the project's own cables, rewrite retired names.
+    if (typeof CableLib !== 'undefined') CableLib.onProjectLoaded(data.customCables);
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data
     // (reset() above ran with the default empty reticulation).
@@ -1580,6 +1626,10 @@ const AppState = {
     }
     if (typeof Schedules !== 'undefined' && Schedules.onProjectChanged) {
       Schedules.onProjectChanged();
+    }
+    // Last: the tabs depend on the loaded type and on which workspaces hold data.
+    if (typeof Workspaces !== 'undefined' && Workspaces.onProjectChanged) {
+      Workspaces.onProjectChanged();
     }
   },
 };

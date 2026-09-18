@@ -444,7 +444,9 @@ const Properties = {
       const isOverhead = field.library === 'overhead';
       const library = isOverhead ? STANDARD_OVERHEAD_LINES : STANDARD_CABLES;
       const voltageFilter = isOverhead ? null : this._getCableVoltageFilter(compId);
-      const filtered = voltageFilter ? library.filter(voltageFilter.fn) : library;
+      // Control / signal cables (DALI, 0-10 V) are never a power branch.
+      const filtered = (voltageFilter ? library.filter(voltageFilter.fn) : library)
+        .filter(c => isOverhead || c.construction !== 'control');
       const selectedItem = library.find(c => c.id === value);
       const displayText = value ? (selectedItem ? selectedItem.name : value) : '';
       const hintHtml = voltageFilter ? `<div class="searchable-select-hint">Showing ${voltageFilter.label} cables</div>` : '';
