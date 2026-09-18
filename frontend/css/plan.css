@@ -244,3 +244,63 @@ body.dark-mode .plan-stage {
 }
 body.dark-mode .plan-info,
 body.dark-mode .plan-status { background: rgba(30,30,46,0.85); color: #c0c0d0; }
+
+/* DXF manager (layers / blocks / conversion) */
+.dxfm-content { max-width: 980px; width: 94vw; max-height: 88vh; display: flex; flex-direction: column; }
+.dxfm-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.dxfm-head h3 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
+.dxfm-tabs { display: flex; gap: 4px; margin-left: auto; }
+.dxfm-tab { border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.dxfm-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dxfm-body { overflow: auto; flex: 1; min-height: 200px; }
+.dxfm-foot { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border-color); }
+.dxfm-summary { flex: 1; font-size: 12px; color: var(--text-secondary); }
+.dxfm-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.dxfm-filter { padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); min-width: 180px; }
+.dxfm-hint { font-size: 12px; color: var(--text-muted); }
+.dxfm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dxfm-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 4px 6px; border-bottom: 1px solid var(--border-color); position: sticky; top: -16px; background: var(--bg-primary); z-index: 1; }
+.dxfm-table td { padding: 5px 6px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.dxfm-table tr.dxfm-mapped td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.dxfm-table select { max-width: 200px; padding: 2px 4px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; }
+.dxfm-table input[type=color] { width: 28px; height: 20px; padding: 0; border: 1px solid var(--border-color); background: none; vertical-align: middle; }
+.dxfm-prev { width: 44px; }
+.dxfm-preview { width: 40px; height: 40px; color: var(--text-primary); background: var(--bg-secondary); border-radius: 4px; display: block; }
+.dxfm-preview path { vector-effect: non-scaling-stroke; stroke-width: 1.2px; }
+.dxfm-nopreview { color: var(--text-muted); }
+.dxfm-bname, .dxfm-lname { font-weight: 600; word-break: break-all; }
+.dxfm-num { text-align: right; white-space: nowrap; }
+.dxfm-muted { color: var(--text-muted); font-size: 11px; }
+.dxfm-sug { display: inline-block; margin-left: 6px; font-size: 10px; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--warning) 22%, transparent); color: var(--text-primary); }
+.dxfm-variant { display: block; margin-top: 4px; color: var(--text-secondary); }
+.dxfm-attr { display: flex; align-items: center; gap: 6px; margin: 2px 0; flex-wrap: wrap; }
+.dxfm-attr code { font-size: 11px; background: var(--bg-secondary); padding: 0 4px; border-radius: 3px; }
+.dxfm-vals { color: var(--text-muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dxfm-link { border: none; background: none; color: var(--accent); cursor: pointer; padding: 0 4px; font-size: 12px; }
+.dxfm-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; margin-bottom: 12px; }
+.dxfm-form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-secondary); }
+.dxfm-form input:not([type=range]), .dxfm-form select { padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
+.dxfm-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.dxfm-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 12px; margin: 12px 0; }
+.dxfm-facts dt { color: var(--text-muted); }
+.dxfm-facts dd { margin: 0; }
+.dxfm-danger { color: var(--danger); }
+.dxfm-empty { color: var(--text-muted); padding: 20px; text-align: center; }
+@media (max-width: 640px) {
+  .dxfm-head h3 { max-width: 100%; }
+  .dxfm-tabs { margin-left: 0; }
+  .dxfm-table th:nth-child(1), .dxfm-table td.dxfm-prev { display: none; }
+  .dxfm-table select { max-width: 130px; }
+}
+/* Phone: each block / layer row becomes a card */
+@media (max-width: 640px) {
+  .dxfm-content { width: 100vw; max-height: 92vh; }
+  .dxfm-table thead { display: none; }
+  .dxfm-table, .dxfm-table tbody, .dxfm-table tr, .dxfm-table td { display: block; width: 100%; box-sizing: border-box; }
+  .dxfm-table tr { border-bottom: 1px solid var(--border-color); padding: 6px 0; }
+  .dxfm-table td { border: none; padding: 2px 4px; }
+  .dxfm-table td.dxfm-num { text-align: left; }
+  .dxfm-table td.dxfm-num::before { content: 'Refs / items: '; color: var(--text-muted); }
+  .dxfm-table select { max-width: 100%; }
+  .dxfm-foot { flex-wrap: wrap; }
+}

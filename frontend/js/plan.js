@@ -74,6 +74,7 @@ const PlanMarkup = {
             <label class="plan-snap-pill"><input type="checkbox" data-snap="snapGrid" checked> Snap grid</label>
             <label class="plan-snap-pill"><input type="checkbox" data-snap="snapEl" checked> Snap comp</label>
             <label class="plan-snap-pill"><input type="checkbox" data-snap="snapVtx" checked> Snap vtx</label>
+            <label class="plan-snap-pill" title="Snap to imported DXF geometry: line/polyline ends, midpoints and vertices, circle/arc centres and block insertion points"><input type="checkbox" data-snap="snapDxf" checked> Snap DXF</label>
             <label class="plan-tb-field">Grid (m) <input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"></label>
           </div>
           <div class="plan-tb-group">
@@ -617,7 +618,7 @@ const PlanMarkup = {
     switch (id) {
       case 'select': {
         const pm = AppState.planMarkup;
-        if (!pm.plans.length && !pm.elements.length) {
+        if (!pm.plans.length && !pm.elements.length && !(pm.dxfs || []).length) {
           return 'Import a plan, calibrate the scale, then place components and draw routes.';
         }
         return 'Select — tap to edit, drag to move. Arrow keys nudge; R rotates.';

@@ -75,26 +75,29 @@ const PlanDXF = {
       const rdef = PLAN_DEFS.route(r.type) || {};
       const lname = layer('RT_' + String(r.type).toUpperCase(), rdef.color || '#3b82f6');
       const lenM = this._routeLenM(r, factor);
+      // type/cable/end names travel as XDATA so a re-import rebuilds the
+      // route exactly (the layer alone can't carry a mixed-case type key).
       routes.push({
-        layer: lname, curved: !!r.curved, cable: r.cableType || '',
+        layer: lname, type: r.type, curved: !!r.curved, cable: r.cableType || '',
+        fromName: r.fromId ? boardName(r.fromId) : '', toName: r.toId ? boardName(r.toId) : '',
         label: `${r.cableType ? r.cableType + ' ' : ''}${lenM.toFixed(2)} m`,
         pts: r.points.map(p => [p.x, p.y]),
       });
     }
 
     const trenches = (pm.trenches || []).filter(t => t.points && t.points.length >= 2)
-      .map(t => ({ pts: t.points.map(p => [p.x, p.y]) }));
+      .map(t => ({ pts: t.points.map(p => [p.x, p.y]), excType: t.excType || '', name: t.name || '' }));
     const rooms = (pm.rooms || []).filter(rm => rm.points && rm.points.length >= 3)
       .map(rm => ({ label: rm.name || '', pts: rm.points.map(p => [p.x, p.y]) }));
     const measurements = (pm.measurements || []).filter(m => m.points && m.points.length >= 2)
       .map(m => ({ pts: m.points.map(p => [p.x, p.y]) }));
     const crossings = (pm.crossings || []).filter(c => c.p1 && c.p2)
-      .map(c => ({ p1: [c.p1.x, c.p1.y], p2: [c.p2.x, c.p2.y] }));
+      .map(c => ({ p1: [c.p1.x, c.p1.y], p2: [c.p2.x, c.p2.y], size: c.size || '', name: c.name || '' }));
     const texts = (pm.texts || []).map(t => ({ x: t.x, y: t.y, h: t.fontSize || 14, text: t.text || '' }));
 
     const af = (typeof AppState.planActiveFloor === 'function') && AppState.planActiveFloor();
     const payload = {
-      factor, floorName: (af && af.name) || '',
+      factor, floorName: (af && af.name) || '', domain: pm.settings.domain || '',
       fileName: ((AppState.projectName || 'plan').replace(/[^\w-]+/g, '_')) + (af && af.name ? '_' + af.name.replace(/[^\w-]+/g, '_') : ''),
       layers: Object.entries(layers).map(([name, color]) => ({ name, color })),
       blocks, elements, routes, trenches, rooms, measurements, crossings, texts,

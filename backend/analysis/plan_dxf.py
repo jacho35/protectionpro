@@ -114,6 +114,33 @@ def _attr_color(p):
     return {}
 
 
+def _set_meta(entity, fields: Dict[str, Any]):
+    """Carry our own per-entity attributes as XDATA (APPID group, KEY=value
+    strings) so a curve round-trips with its type/cable/etc. — a plain DXF
+    reader simply ignores them."""
+    tags = []
+    for k, v in fields.items():
+        if v is None or v == "":
+            continue
+        tags.append((1000, f"{k}={v}"[:255]))
+    if tags:
+        entity.set_xdata(APPID, tags)
+
+
+def _get_meta(entity) -> Dict[str, str]:
+    try:
+        if not entity.has_xdata(APPID):
+            return {}
+        out = {}
+        for code, value in entity.get_xdata(APPID):
+            if code == 1000 and "=" in str(value):
+                k, v = str(value).split("=", 1)
+                out[k] = v
+        return out
+    except Exception:
+        return {}
+
+
 def build_dxf(payload: Dict[str, Any]) -> bytes:
     factor = payload.get("factor")
     if not factor or factor <= 0:
@@ -160,9 +187,12 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
             continue
         layer = r.get("layer", "PP_ROUTES")
         if r.get("curved") and len(pts) >= 3:
-            msp.add_spline(fit_points=[(x, y, 0) for x, y in pts], dxfattribs={"layer": layer})
+            ent = msp.add_spline(fit_points=[(x, y, 0) for x, y in pts], dxfattribs={"layer": layer})
         else:
-            msp.add_lwpolyline(pts, dxfattribs={"layer": layer})
+            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": layer})
+        _set_meta(ent, {"KIND": "route", "TYPE": r.get("type"), "CABLE": r.get("cable"),
+                        "CURVED": "1" if r.get("curved") else "0",
+                        "FROM": r.get("fromName"), "TO": r.get("toName")})
         label = r.get("label")
         if label:
             mid = pts[len(pts) // 2]
@@ -172,11 +202,13 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
     for t in payload.get("trenches", []):
         pts = [(X(p[0]), Y(p[1])) for p in t.get("pts", [])]
         if len(pts) >= 2:
-            msp.add_lwpolyline(pts, dxfattribs={"layer": "PP_TRENCH"})
+            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": "PP_TRENCH"})
+            _set_meta(ent, {"KIND": "trench", "EXC": t.get("excType"), "NAME": t.get("name")})
     for rm in payload.get("rooms", []):
         pts = [(X(p[0]), Y(p[1])) for p in rm.get("pts", [])]
         if len(pts) >= 3:
-            msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": "PP_ROOMS"})
+            ent = msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": "PP_ROOMS"})
+            _set_meta(ent, {"KIND": "room", "NAME": rm.get("label")})
         if rm.get("label") and pts:
             cx = sum(p[0] for p in pts) / len(pts)
             cy = sum(p[1] for p in pts) / len(pts)
@@ -188,7 +220,8 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
     for c in payload.get("crossings", []):
         p1, p2 = c.get("p1"), c.get("p2")
         if p1 and p2:
-            msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": "PP_TRENCH"})
+            ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": "PP_TRENCH"})
+            _set_meta(ent, {"KIND": "crossing", "SIZE": c.get("size"), "NAME": c.get("name")})
     for tx in payload.get("texts", []):
         msp.add_text(str(tx.get("text", "")), dxfattribs={
             "height": max(0.05, tx.get("h", 2) * factor), "layer": "PP_TEXT",
@@ -199,26 +232,47 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
         mb = doc.blocks.new(META_BLOCK)
         mb.add_attdef("FACTOR", dxfattribs={"height": 0.001, "invisible": 1}).set_placement((0, 0))
         mb.add_attdef("FLOOR", dxfattribs={"height": 0.001, "invisible": 1}).set_placement((0, -0.001))
+        mb.add_attdef("DOMAIN", dxfattribs={"height": 0.001, "invisible": 1}).set_placement((0, -0.002))
     mref = msp.add_blockref(META_BLOCK, (0, 0), dxfattribs={"layer": META_BLOCK})
-    mref.add_auto_attribs({"FACTOR": repr(float(factor)), "FLOOR": str(payload.get("floorName", ""))})
+    mref.add_auto_attribs({"FACTOR": repr(float(factor)), "FLOOR": str(payload.get("floorName", "")),
+                           "DOMAIN": str(payload.get("domain", ""))})
+    # Real-world units: the file is drawn in metres.
+    doc.header["$INSUNITS"] = 6
 
     out = io.StringIO()
     doc.write(out)
-    return out.getvalue().encode("utf-8")
+    # Encode in the drawing's own code page (R2000 → cp1252, with \U+XXXX
+    # escapes for anything outside it). Writing UTF-8 bytes under an ANSI_1252
+    # header garbled "mm²" in AutoCAD and on our own re-import.
+    return doc.encode(out.getvalue())
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # Import
 # ─────────────────────────────────────────────────────────────────────────
-def _meta_factor(msp):
+# $INSUNITS code → metres per drawing unit (0 = unitless → None).
+_UNIT_M = {
+    1: 0.0254, 2: 0.3048, 3: 1609.344, 4: 0.001, 5: 0.01, 6: 1.0, 7: 1000.0,
+    8: 2.54e-8, 9: 2.54e-5, 10: 0.9144, 13: 1e-6, 14: 0.1, 15: 10.0, 16: 100.0,
+}
+_UNIT_NAME = {1: "in", 2: "ft", 3: "mi", 4: "mm", 5: "cm", 6: "m", 7: "km", 10: "yd", 14: "dm"}
+
+# Hard ceiling on emitted primitives — a guard against pathological files
+# (a 60 MB survey with hatching everywhere), not a normal-use limit.
+MAX_PRIMS = 600_000
+
+
+def _meta_block(msp):
     for e in msp.query("INSERT"):
         if e.dxf.name == META_BLOCK:
             vals = {a.dxf.tag: a.dxf.text for a in e.attribs}
             try:
-                return float(vals.get("FACTOR", "0")), vals.get("FLOOR", "")
+                return float(vals.get("FACTOR", "0")), vals.get("FLOOR", ""), vals.get("DOMAIN", "")
             except ValueError:
-                return None, ""
-    return None, ""
+                return None, "", ""
+    return None, "", ""
 
 
 def _spline_pts(e):
@@ -234,91 +288,600 @@ def _spline_pts(e):
         return []
 
 
-def parse_dxf(data: bytes) -> Dict[str, Any]:
-    """Read a DXF. If it's one of ours (has PP_META + PP_* blocks) reconstruct
-    native devices/routes; otherwise flatten it to a reference-underlay entity
-    list (foreign blocks exploded to real geometry)."""
-    text = data.decode("utf-8", errors="replace")
-    doc = ezdxf.read(io.StringIO(text))
-    msp = doc.modelspace()
-    factor, floor_name = _meta_factor(msp)
-    ours = factor is not None and factor > 0
+def _hex(rgb):
+    return "#%02x%02x%02x" % tuple(int(c) for c in rgb)
 
-    if ours:
-        def to_px(x, y):
-            return [x / factor, -y / factor]
 
-        devices, routes, trenches, rooms, texts, measurements = [], [], [], [], [], []
-        for e in msp.query("INSERT"):
-            name = e.dxf.name or ""
-            if name == META_BLOCK or not name.startswith("PP_bd_"):
-                continue
-            attrs = {a.dxf.tag: a.dxf.text for a in e.attribs}
-            px = to_px(e.dxf.insert.x, e.dxf.insert.y)
-            devices.append({
-                "type": attrs.get("TYPE") or name,
-                "block": name,
-                "x": px[0], "y": px[1],
-                "rotation": (-float(e.dxf.rotation)) % 360,
-                "name": attrs.get("NAME", ""),
-                "attrs": attrs,
-            })
-        for e in msp:
-            t = e.dxftype()
-            layer = e.dxf.layer
-            if t == "SPLINE":
-                pts = [to_px(x, y) for x, y in _spline_pts(e)]
-                if len(pts) >= 2:
-                    routes.append({"curved": True, "layer": layer, "pts": pts})
-            elif t == "LWPOLYLINE":
-                pts = [to_px(p[0], p[1]) for p in e.get_points("xy")]
-                if len(pts) < 2:
-                    continue
-                if layer == "PP_TRENCH":
-                    trenches.append({"pts": pts})
-                elif layer == "PP_ROOMS":
-                    rooms.append({"pts": pts})
-                elif layer == "PP_DIM":
-                    measurements.append({"pts": pts})
-                else:
-                    routes.append({"curved": False, "layer": layer, "pts": pts})
-            elif t == "TEXT" and layer == "PP_TEXT":
-                p = to_px(e.dxf.insert.x, e.dxf.insert.y)
-                texts.append({"x": p[0], "y": p[1], "text": e.dxf.text})
-        return {"mode": "roundtrip", "factor": factor, "floorName": floor_name,
-                "devices": devices, "routes": routes, "trenches": trenches,
-                "rooms": rooms, "texts": texts, "measurements": measurements}
+def _entity_color(e):
+    """Explicit entity colour: '#rrggbb', 'B' (ByBlock) or None (ByLayer)."""
+    try:
+        if e.dxf.hasattr("true_color"):
+            return _hex(e.rgb)
+        aci = e.dxf.get("color", 256)
+    except Exception:
+        return None
+    if aci == 0:
+        return "B"
+    if aci == 256 or aci is None:
+        return None
+    try:
+        from ezdxf.colors import aci2rgb
+        return _hex(aci2rgb(abs(int(aci))))
+    except Exception:
+        return None
 
-    # Foreign DXF → flatten (explode blocks) into a reference-underlay list.
-    ents = []
 
-    def emit(e):
-        t = e.dxftype()
+def _layer_table(doc):
+    from ezdxf.colors import aci2rgb
+    out = {}
+    for ly in doc.layers:
+        name = ly.dxf.name
         try:
-            if t == "LINE":
-                ents.append({"type": "line", "x1": e.dxf.start.x, "y1": e.dxf.start.y, "x2": e.dxf.end.x, "y2": e.dxf.end.y})
-            elif t == "CIRCLE":
-                ents.append({"type": "circle", "cx": e.dxf.center.x, "cy": e.dxf.center.y, "r": e.dxf.radius})
-            elif t == "ARC":
-                ents.append({"type": "arc", "cx": e.dxf.center.x, "cy": e.dxf.center.y, "r": e.dxf.radius, "a0": e.dxf.start_angle, "a1": e.dxf.end_angle})
-            elif t == "LWPOLYLINE":
-                ents.append({"type": "lwpolyline", "pts": [[p[0], p[1]] for p in e.get_points("xy")], "closed": bool(e.closed)})
-            elif t == "POLYLINE":
-                ents.append({"type": "lwpolyline", "pts": [[v.dxf.location.x, v.dxf.location.y] for v in e.vertices], "closed": bool(e.is_closed)})
-            elif t in ("TEXT", "MTEXT"):
-                ins = e.dxf.insert if e.dxf.hasattr("insert") else (e.dxf.get("insert", (0, 0, 0)))
-                txt = e.plain_text() if t == "MTEXT" else e.dxf.text
-                ents.append({"type": "text", "x": ins[0], "y": ins[1], "h": getattr(e.dxf, "height", 2) or 2, "text": txt})
+            aci = abs(int(ly.dxf.get("color", 7))) or 7
+            col = _hex(ly.rgb) if ly.dxf.hasattr("true_color") and ly.rgb else _hex(aci2rgb(aci))
+        except Exception:
+            aci, col = 7, "#ffffff"
+        out[name] = {
+            "name": name, "color": col, "aci7": aci == 7,
+            "on": not ly.is_off(), "frozen": bool(ly.is_frozen()),
+            "n": 0,
+        }
+    return out
+
+
+def _effective_block_name(doc, name):
+    """Dynamic blocks are referenced through anonymous '*U##' copies; the
+    original name is recorded as a handle in the anonymous BLOCK_RECORD's
+    AcDbBlockRepBTag XDATA. Fall back to the stored name."""
+    if not name or not name.startswith("*"):
+        return name
+    try:
+        br = doc.blocks.get(name).block_record
+        if br.has_xdata("AcDbBlockRepBTag"):
+            for code, value in br.get_xdata("AcDbBlockRepBTag"):
+                if code == 1005:
+                    orig = doc.entitydb.get(value)
+                    if orig is not None and orig.dxf.hasattr("name"):
+                        return orig.dxf.name
+    except Exception:
+        pass
+    return name
+
+
+_H_ALIGN = {"LEFT": "l", "CENTER": "c", "RIGHT": "r", "MIDDLE": "c", "ALIGNED": "l", "FIT": "l"}
+
+
+def _text_align(align):
+    n = align.name  # e.g. MIDDLE_CENTER, TOP_LEFT, LEFT, CENTER
+    if "_" in n:
+        v, h = n.split("_", 1)
+        return h[0].lower(), {"BOTTOM": "b", "MIDDLE": "m", "TOP": "t"}.get(v, "a")
+    if n == "MIDDLE":
+        return "c", "m"
+    return _H_ALIGN.get(n, "l"), "a"   # 'a' = alphabetic baseline
+
+
+def _insert_xform(e):
+    """INSERT placement in WCS: (x, y, rotation°, sx, sy). A block mirrored in
+    CAD is often stored with extrusion (0,0,-1) — its insert point is then in
+    OCS (x mirrored), which is the same as rotation → -rotation, sx → -sx."""
+    ins = e.dxf.insert
+    r = e.dxf.get("rotation", 0.0) or 0.0
+    sx, sy = e.dxf.get("xscale", 1.0) or 1.0, e.dxf.get("yscale", 1.0) or 1.0
+    try:
+        z = e.dxf.get("extrusion", (0, 0, 1))
+        if not (abs(z[0]) < 1e-9 and abs(z[1]) < 1e-9 and z[2] > 0):
+            w = e.ocs().to_wcs(ins)
+            if abs(z[0]) < 1e-9 and abs(z[1]) < 1e-9:
+                return w.x, w.y, -r, -sx, sy
+            return w.x, w.y, r, sx, sy
+    except Exception:
+        pass
+    return ins.x, ins.y, r, sx, sy
+
+
+class _Reader:
+    """Normalises one DXF document into the compact underlay structure.
+
+    Coordinates are kept in DXF drawing units. Model-space geometry is shifted
+    by `origin` (the extents' lower-left) so large survey coordinates
+    (e.g. Lo29 ≈ 3 000 000 m) keep full precision once they reach a canvas;
+    block definitions stay in their own local coordinates.
+
+    Entity records (short keys keep the stored JSON small):
+      {t:'l', p:[x1,y1,x2,y2]}                      line
+      {t:'p', p:[x,y,x,y,…], c:closed, f:[…]?}      polyline (curves flattened;
+                                                     SPLINE keeps fit points in f)
+      {t:'c', p:[cx,cy,r]}                          circle
+      {t:'a', p:[cx,cy,r,a0,a1]}                    arc, CCW degrees
+      {t:'x', p:[x,y], h, r, s, ha, va}             text (rotation deg CCW)
+      {t:'o', p:[x,y]}                              point
+      {t:'i', b, p:[x,y], r, sx, sy}                nested insert (blocks only)
+    Every record carries l (layer) and optionally k (colour: '#hex' | 'B').
+    Top-level model-space records also carry h (handle) and, for curves, g
+    (source type) so they can be converted to routes later.
+    """
+
+    def __init__(self, doc):
+        from ezdxf import path as ezpath
+        self.ezpath = ezpath
+        self.doc = doc
+        self.layers = _layer_table(doc)
+        self.blocks: Dict[str, dict] = {}
+        self.prims = 0
+        self.truncated = False
+        self.skipped: Dict[str, int] = {}
+        ext_span = self._raw_span()
+        # Flattening tolerance ~ 1/20000 of the drawing — sub-mm on a building.
+        self.tol = max(ext_span / 20000.0, 1e-9)
+
+    def _raw_span(self):
+        try:
+            lo, hi = self.doc.header.get("$EXTMIN"), self.doc.header.get("$EXTMAX")
+            span = max(hi[0] - lo[0], hi[1] - lo[1])
+            if 0 < span < 1e12:
+                return span
         except Exception:
             pass
+        try:
+            from ezdxf import bbox
+            b = bbox.extents(self.doc.modelspace(), fast=True)
+            if b.has_data:
+                return max(b.size.x, b.size.y, 1e-6)
+        except Exception:
+            pass
+        return 1000.0
 
-    for e in msp:
-        if e.dxftype() == "INSERT":
+    def _count(self, n=1):
+        self.prims += n
+        if self.prims > MAX_PRIMS:
+            self.truncated = True
+            return False
+        return True
+
+    # ── one entity → list of records ──
+    def convert(self, e, out: List[dict], top: bool):
+        t = e.dxftype()
+        base = {"l": e.dxf.get("layer", "0")}
+        k = _entity_color(e)
+        if k:
+            base["k"] = k
+        if top:
             try:
-                for ve in e.virtual_entities():
-                    emit(ve)
+                base["h"] = e.dxf.handle
             except Exception:
                 pass
+        try:
+            if t == "LINE":
+                s, en = e.dxf.start, e.dxf.end
+                self._emit(out, {**base, "t": "l", "p": [s.x, s.y, en.x, en.y]})
+            elif t in ("CIRCLE", "ARC") and self._is_planar(e):
+                c = e.dxf.center
+                if t == "CIRCLE":
+                    self._emit(out, {**base, "t": "c", "p": [c.x, c.y, abs(e.dxf.radius)]})
+                else:
+                    self._emit(out, {**base, "t": "a", "g": "ARC",
+                                     "p": [c.x, c.y, abs(e.dxf.radius), e.dxf.start_angle, e.dxf.end_angle]})
+            elif t == "LWPOLYLINE" and self._is_planar(e) and not any(b for *_, b in e.get_points("xyb")):
+                pts = [c for p in e.get_points("xy") for c in (p[0], p[1])]
+                if len(pts) >= 4:
+                    self._emit(out, {**base, "t": "p", "g": t, "p": pts, "c": bool(e.closed)})
+            elif t in ("LWPOLYLINE", "POLYLINE", "SPLINE", "ELLIPSE", "CIRCLE", "ARC",
+                       "SOLID", "TRACE", "3DFACE", "HELIX"):
+                if t == "POLYLINE" and (e.is_poly_face_mesh or e.is_polygon_mesh):
+                    for ve in e.virtual_entities():
+                        self.convert(ve, out, False)
+                    return
+                p = self.ezpath.make_path(e)
+                closed = t in ("SOLID", "TRACE", "3DFACE") or (t == "CIRCLE") or \
+                    (t in ("LWPOLYLINE", "POLYLINE") and bool(getattr(e, "is_closed", False) or getattr(e, "closed", False)))
+                for sp in (p.sub_paths() if p.has_sub_paths else [p]):
+                    pts = [c for v in sp.flattening(self.tol) for c in (v.x, v.y)]
+                    if len(pts) >= 4:
+                        rec = {**base, "t": "p", "g": t, "p": pts, "c": closed}
+                        if t == "SPLINE":
+                            rec["f"] = [c for x, y in _spline_pts(e) for c in (x, y)]
+                        self._emit(out, rec)
+            elif t == "HATCH" or t == "MPOLYGON":
+                for p in self.ezpath.from_hatch(e):
+                    for sp in (p.sub_paths() if p.has_sub_paths else [p]):
+                        pts = [c for v in sp.flattening(self.tol) for c in (v.x, v.y)]
+                        if len(pts) >= 4:
+                            self._emit(out, {**base, "t": "p", "g": "HATCH", "p": pts, "c": True})
+            elif t == "POINT":
+                loc = e.dxf.location
+                self._emit(out, {**base, "t": "o", "p": [loc.x, loc.y]})
+            elif t in ("TEXT", "ATTRIB", "ATTDEF"):
+                self._emit_text(out, base, e)
+            elif t == "MTEXT":
+                ins = e.dxf.insert
+                ap = int(e.dxf.get("attachment_point", 1))
+                ha = "lcr"[(ap - 1) % 3]
+                va = "tmb"[(ap - 1) // 3]
+                try:
+                    rot = e.get_rotation()
+                except Exception:
+                    rot = e.dxf.get("rotation", 0.0)
+                txt = e.plain_text()
+                if txt and txt.strip():
+                    self._emit(out, {**base, "t": "x", "p": [ins.x, ins.y], "h": e.dxf.get("char_height", 1.0) or 1.0,
+                                     "r": rot, "s": txt, "ha": ha, "va": va})
+            elif t in ("DIMENSION", "ARC_DIMENSION", "LARGE_RADIAL_DIMENSION", "LEADER",
+                       "MULTILEADER", "MLEADER", "ACAD_TABLE", "MLINE", "ACAD_PROXY_ENTITY"):
+                for ve in e.virtual_entities():
+                    self.convert(ve, out, False)
+            elif t == "INSERT":
+                # Only reached for inserts nested inside a block definition, or
+                # inside a dimension's virtual entities.
+                self._nested_insert(out, base, e)
+            else:
+                self.skipped[t] = self.skipped.get(t, 0) + 1
+        except Exception:
+            self.skipped[t] = self.skipped.get(t, 0) + 1
+
+    @staticmethod
+    def _is_planar(e):
+        try:
+            z = e.dxf.get("extrusion", (0, 0, 1))
+            return abs(z[0]) < 1e-9 and abs(z[1]) < 1e-9 and z[2] > 0
+        except Exception:
+            return True
+
+    def _emit(self, out, rec):
+        if self._count():
+            out.append(rec)
+
+    def _emit_text(self, out, base, e):
+        txt = e.dxf.get("text", "")
+        if not txt or not str(txt).strip():
+            return
+        try:
+            if e.dxftype() in ("ATTRIB", "ATTDEF") and e.is_invisible:
+                return
+        except Exception:
+            pass
+        align, p1, p2 = e.get_placement()
+        ha, va = _text_align(align)
+        pt = p2 if (p2 is not None and align.name not in ("LEFT", "ALIGNED", "FIT")) else p1
+        try:
+            txt = e.plain_text()
+        except Exception:
+            pass
+        self._emit(out, {**base, "t": "x", "p": [pt.x, pt.y], "h": e.dxf.get("height", 1.0) or 1.0,
+                         "r": e.dxf.get("rotation", 0.0), "s": str(txt), "ha": ha, "va": va})
+
+    def _nested_insert(self, out, base, e):
+        name = e.dxf.name
+        if not self.block(name):
+            return
+        x, y, r, sx, sy = _insert_xform(e)
+        rec = {**base, "t": "i", "b": name, "p": [x, y], "r": r, "sx": sx, "sy": sy}
+        rec.pop("h", None)
+        self._emit(out, rec)
+        for a in getattr(e, "attribs", []):
+            self._emit_text(out, {"l": a.dxf.get("layer", base["l"])}, a)
+
+    # ── block definitions (lazily, once per name) ──
+    def block(self, name):
+        if name in self.blocks:
+            return self.blocks[name]
+        try:
+            layout = self.doc.blocks.get(name)
+        except Exception:
+            layout = None
+        if layout is None:
+            return None
+        rec = {"name": name, "n": _effective_block_name(self.doc, name), "e": [], "tags": [],
+               "bp": [0.0, 0.0], "xref": False}
+        self.blocks[name] = rec  # registered before recursion: guards self-reference
+        try:
+            bp = layout.block.dxf.base_point
+            rec["bp"] = [bp.x, bp.y]
+            rec["xref"] = bool(layout.block.is_xref)
+        except Exception:
+            pass
+        for be in layout:
+            if be.dxftype() == "ATTDEF":
+                rec["tags"].append(be.dxf.tag)
+                continue      # attribute templates: values come from the INSERT
+            self.convert(be, rec["e"], False)
+        return rec
+
+    # ── model-space insert → placed block record (with attributes) ──
+    def insert(self, e, handle):
+        name = e.dxf.name
+        blk = self.block(name)
+        if blk is None:
+            return None
+        x, y, r, sx, sy = _insert_xform(e)
+        attrs, at = {}, []
+        for a in getattr(e, "attribs", []):
+            attrs[a.dxf.tag] = a.dxf.text
+            self._emit_text(at, {"l": a.dxf.get("layer", e.dxf.layer), **({"k": _entity_color(a)} if _entity_color(a) else {})}, a)
+        rec = {"h": handle, "b": name, "l": e.dxf.get("layer", "0"), "p": [x, y],
+               "r": r, "sx": sx, "sy": sy, "a": attrs}
+        k = _entity_color(e)
+        if k:
+            rec["k"] = k
+        if at:
+            rec["at"] = at
+        self._count()
+        return rec
+
+
+def _rec_points(rec):
+    t, p = rec["t"], rec.get("p", [])
+    if t == "c" or t == "a":
+        return [(p[0] - p[2], p[1] - p[2]), (p[0] + p[2], p[1] + p[2])]
+    if t in ("x", "o", "i"):
+        return [(p[0], p[1])]
+    return [(p[i], p[i + 1]) for i in range(0, len(p) - 1, 2)]
+
+
+def _block_bbox(rd, name, memo, depth=0):
+    if name in memo:
+        return memo[name]
+    memo[name] = None
+    blk = rd.blocks.get(name)
+    if not blk or depth > 12:
+        return None
+    xs, ys = [], []
+    for r in blk["e"]:
+        if r["t"] == "i":
+            sub = _block_bbox(rd, r["b"], memo, depth + 1)
+            if sub:
+                for cx, cy in _corners(sub, r, rd.blocks.get(r["b"], {}).get("bp", [0, 0])):
+                    xs.append(cx); ys.append(cy)
         else:
-            emit(e)
-    return {"mode": "underlay", "entities": ents}
+            for x, y in _rec_points(r):
+                xs.append(x); ys.append(y)
+    bb = [min(xs), min(ys), max(xs), max(ys)] if xs else None
+    blk["bb"] = bb
+    memo[name] = bb
+    return bb
+
+
+def _corners(bb, ins, bp):
+    th = math.radians(ins.get("r", 0.0) or 0.0)
+    c, s = math.cos(th), math.sin(th)
+    sx, sy = ins.get("sx", 1.0) or 1.0, ins.get("sy", 1.0) or 1.0
+    out = []
+    for x, y in ((bb[0], bb[1]), (bb[2], bb[1]), (bb[2], bb[3]), (bb[0], bb[3])):
+        lx, ly = (x - bp[0]) * sx, (y - bp[1]) * sy
+        out.append((ins["p"][0] + lx * c - ly * s, ins["p"][1] + lx * s + ly * c))
+    return out
+
+
+def _shift(rec, ox, oy):
+    """Translate a model-space record by (-ox, -oy) in place."""
+    t, p = rec["t"], rec.get("p")
+    if not p:
+        return
+    if t in ("c", "a", "x", "o", "i"):
+        p[0] -= ox; p[1] -= oy
+    else:
+        for i in range(0, len(p) - 1, 2):
+            p[i] -= ox; p[i + 1] -= oy
+        f = rec.get("f")
+        if f:
+            for i in range(0, len(f) - 1, 2):
+                f[i] -= ox; f[i + 1] -= oy
+
+
+def _round(rec, nd):
+    for key in ("p", "f"):
+        v = rec.get(key)
+        if v:
+            rec[key] = [round(c, nd) for c in v]
+
+
+def _parse_foreign(doc) -> Dict[str, Any]:
+    msp = doc.modelspace()
+    rd = _Reader(doc)
+    entities, inserts = [], []
+    for e in msp:
+        t = e.dxftype()
+        if t == "INSERT":
+            try:
+                if e.mcount > 1:   # MINSERT array → one placed record per cell
+                    for i, ve in enumerate(e.multi_insert()):
+                        rec = rd.insert(ve, f"{e.dxf.handle}:{i}")
+                        if rec:
+                            inserts.append(rec)
+                else:
+                    rec = rd.insert(e, e.dxf.handle)
+                    if rec:
+                        inserts.append(rec)
+            except Exception:
+                rd.skipped["INSERT"] = rd.skipped.get("INSERT", 0) + 1
+        else:
+            rd.convert(e, entities, True)
+        if rd.truncated:
+            break
+
+    # Extents over what was actually read (not $EXTMIN, which is often stale).
+    xs, ys = [], []
+    for r in entities:
+        for x, y in _rec_points(r):
+            xs.append(x); ys.append(y)
+    memo: Dict[str, Any] = {}
+    for ins in inserts:
+        bb = _block_bbox(rd, ins["b"], memo)
+        pts = _corners(bb, ins, rd.blocks[ins["b"]]["bp"]) if bb else [tuple(ins["p"])]
+        for x, y in pts:
+            xs.append(x); ys.append(y)
+        for r in ins.get("at", []):
+            xs.append(r["p"][0]); ys.append(r["p"][1])
+    for name in list(rd.blocks):
+        _block_bbox(rd, name, memo)
+    if not xs:
+        return {"mode": "underlay", "format": 2, "empty": True, "skipped": rd.skipped}
+    ox, oy = min(xs), min(ys)
+    for r in entities:
+        _shift(r, ox, oy)
+    for ins in inserts:
+        ins["p"][0] -= ox; ins["p"][1] -= oy
+        for r in ins.get("at", []):
+            _shift(r, ox, oy)
+    # Round coordinates to a tenth of the flattening tolerance — invisible at
+    # any zoom, and it roughly halves the stored JSON.
+    nd = max(0, min(9, -int(math.floor(math.log10(rd.tol / 10.0)))))
+    for r in entities:
+        _round(r, nd)
+    for ins in inserts:
+        _round(ins, nd)
+        for r in ins.get("at", []):
+            _round(r, nd)
+    for blk in rd.blocks.values():
+        for r in blk["e"]:
+            _round(r, nd)
+
+    # Layer usage counts (model space + block contents via their inserts).
+    def bump(name, n=1):
+        ly = rd.layers.get(name)
+        if ly is None:
+            ly = rd.layers[name] = {"name": name, "color": "#ffffff", "aci7": True, "on": True, "frozen": False, "n": 0}
+        ly["n"] += n
+    for r in entities:
+        bump(r["l"])
+    for ins in inserts:
+        bump(ins["l"])
+    for blk in rd.blocks.values():
+        for r in blk["e"]:
+            if r["l"] != "0":
+                bump(r["l"], 0)   # make sure the layer is listed
+
+    insunits = int(doc.header.get("$INSUNITS", 0) or 0)
+    return {
+        "mode": "underlay", "format": 2,
+        "units": {"code": insunits, "m": _UNIT_M.get(insunits), "name": _UNIT_NAME.get(insunits, ""),
+                  "metric": int(doc.header.get("$MEASUREMENT", 1) or 0) == 1},
+        "origin": [ox, oy],
+        "bbox": [0.0, 0.0, max(xs) - ox, max(ys) - oy],
+        "layers": [ly for ly in rd.layers.values()],
+        "blocks": {k: v for k, v in rd.blocks.items()},
+        "inserts": inserts,
+        "entities": entities,
+        "count": len(entities) + len(inserts),
+        "truncated": rd.truncated,
+        "skipped": rd.skipped,
+    }
+
+
+def _parse_ours(doc, factor, floor_name, domain) -> Dict[str, Any]:
+    msp = doc.modelspace()
+
+    def to_px(x, y):
+        return [x / factor, -y / factor]
+
+    devices, routes, trenches, rooms, texts, measurements, crossings = [], [], [], [], [], [], []
+    for e in msp.query("INSERT"):
+        name = e.dxf.name or ""
+        if name == META_BLOCK or not name.startswith("PP_"):
+            continue
+        attrs = {a.dxf.tag: a.dxf.text for a in e.attribs}
+        px = to_px(e.dxf.insert.x, e.dxf.insert.y)
+        devices.append({
+            "type": attrs.get("TYPE") or name[3:],
+            "block": name,
+            "x": px[0], "y": px[1],
+            "rotation": (-float(e.dxf.rotation)) % 360,
+            "name": attrs.get("NAME", ""),
+            "attrs": attrs,
+        })
+    for e in msp:
+        t = e.dxftype()
+        layer = e.dxf.layer
+        meta = _get_meta(e)
+        kind = meta.get("KIND")
+        if t == "SPLINE":
+            pts = [to_px(x, y) for x, y in _spline_pts(e)]
+            if len(pts) >= 2:
+                routes.append({"curved": True, "layer": layer, "pts": pts, "meta": meta})
+        elif t == "LWPOLYLINE":
+            pts = [to_px(p[0], p[1]) for p in e.get_points("xy")]
+            if len(pts) < 2:
+                continue
+            if kind == "trench" or (not kind and layer == "PP_TRENCH"):
+                trenches.append({"pts": pts, "meta": meta})
+            elif kind == "room" or (not kind and layer == "PP_ROOMS"):
+                rooms.append({"pts": pts, "meta": meta})
+            elif layer == "PP_DIM":
+                measurements.append({"pts": pts})
+            else:
+                routes.append({"curved": meta.get("CURVED") == "1", "layer": layer, "pts": pts, "meta": meta})
+        elif t == "LINE" and kind == "crossing":
+            crossings.append({"p1": to_px(e.dxf.start.x, e.dxf.start.y), "p2": to_px(e.dxf.end.x, e.dxf.end.y), "meta": meta})
+        elif t == "TEXT" and layer == "PP_TEXT":
+            p = to_px(e.dxf.insert.x, e.dxf.insert.y)
+            texts.append({"x": p[0], "y": p[1], "text": e.dxf.text})
+        elif t == "TEXT" and layer == "PP_ROOMS":
+            # Room label: attach to the room polygon that contains it (older
+            # files carry no NAME xdata on the polyline).
+            p = to_px(e.dxf.insert.x, e.dxf.insert.y)
+            texts.append({"x": p[0], "y": p[1], "text": e.dxf.text, "roomLabel": True})
+    # Resolve room labels onto rooms lacking a NAME.
+    labels = [t for t in texts if t.get("roomLabel")]
+    texts = [t for t in texts if not t.get("roomLabel")]
+    for rm in rooms:
+        if rm["meta"].get("NAME"):
+            rm["label"] = rm["meta"]["NAME"]
+            continue
+        for lb in labels:
+            if _pip(lb["x"], lb["y"], rm["pts"]):
+                rm["label"] = lb["text"]
+                break
+    if not domain:
+        domain = "building" if any(d["type"].startswith("bd_") for d in devices) or not devices else "retic"
+    return {"mode": "roundtrip", "factor": factor, "floorName": floor_name, "domain": domain,
+            "devices": devices, "routes": routes, "trenches": trenches, "crossings": crossings,
+            "rooms": rooms, "texts": texts, "measurements": measurements}
+
+
+def _pip(x, y, pts):
+    inside = False
+    n = len(pts)
+    for i in range(n):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % n]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / ((y2 - y1) or 1e-12) + x1:
+            inside = not inside
+    return inside
+
+
+def _read_doc(data: bytes):
+    """Load DXF bytes the way ezdxf reads a file: it sniffs binary vs ASCII,
+    honours $DWGCODEPAGE for pre-2007 files and copes with CRLF line endings
+    (a decoded str in a StringIO keeps the '\r' and silently parses to an
+    empty drawing — most AutoCAD files on Windows are CRLF). Damaged files
+    fall back to the recover loader."""
+    import os
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix=".dxf")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        try:
+            return ezdxf.readfile(path)
+        except Exception:
+            from ezdxf import recover
+            doc, _auditor = recover.readfile(path)
+            return doc
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def parse_dxf(data: bytes) -> Dict[str, Any]:
+    """Read a DXF. One of ours (PP_META block) → native plan entities
+    ('roundtrip'); anything else → the structured underlay ('underlay'):
+    layers, block definitions, placed blocks with their attributes, and
+    model-space geometry with every curve type resolved."""
+    doc = _read_doc(data)
+    msp = doc.modelspace()
+    factor, floor_name, domain = _meta_block(msp)
+    if factor is not None and factor > 0:
+        return _parse_ours(doc, factor, floor_name, domain)
+    return _parse_foreign(doc)
