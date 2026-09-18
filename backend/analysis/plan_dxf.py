@@ -26,8 +26,24 @@ import io
 import math
 from typing import Any, Dict, List
 
+import logging
+
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
+
+
+class _NoFontWarning(logging.Filter):
+    """The backend image has no system fonts, so ezdxf warns "no default font
+    found" once per text it measures while rendering DIMENSION/MTEXT virtual
+    entities — dozens of lines per import. Glyph metrics don't matter here (we
+    keep text as text, not outlines), so drop just that message and let every
+    other ezdxf warning through."""
+
+    def filter(self, record):
+        return not str(record.getMessage()).startswith("no default font found")
+
+
+logging.getLogger("ezdxf").addFilter(_NoFontWarning())
 
 APPID = "PROTECTIONPRO"
 META_BLOCK = "PP_META"

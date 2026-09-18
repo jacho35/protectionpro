@@ -136,6 +136,20 @@ def test_mirrored_arc_via_negative_extrusion_is_resolved_in_wcs():
     assert max(xs) - min(xs) == pytest.approx(10, abs=0.05)
 
 
+def test_font_warning_is_silenced_but_other_ezdxf_warnings_are_not(caplog):
+    import logging
+    doc = _foreign()
+    doc.modelspace().add_mtext("A\\PB", dxfattribs={"char_height": 100})
+    dim = doc.modelspace().add_linear_dim(base=(0, 500), p1=(0, 0), p2=(3000, 0))
+    dim.render()
+    with caplog.at_level(logging.WARNING, logger="ezdxf"):
+        parse_dxf(_bytes(doc))
+        logging.getLogger("ezdxf").warning("something else")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert not any(m.startswith("no default font found") for m in msgs)
+    assert "something else" in msgs
+
+
 def test_dimension_and_text_rotation():
     doc = _foreign()
     msp = doc.modelspace()
