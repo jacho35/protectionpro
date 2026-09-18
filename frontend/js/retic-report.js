@@ -103,7 +103,7 @@ const ReticReport = {
     for (const k of Retic.kiosks) {
       for (const e of k.erfs) {
         if (!(e.length > 0)) continue;
-        const is3ph = e.phase === '3 Phase';
+        const is3ph = Retic._erfIs3ph(k, e);   // any erf on a 3Φ class is 3-phase
         const vd = Retic._vdPercent(e.cableType, Retic._erfDesignAmps(k, e), e.length, is3ph);
         erfRows.push([
           k.name || 'Kiosk',

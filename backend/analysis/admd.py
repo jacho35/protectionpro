@@ -14,7 +14,16 @@ methods used for South African LV reticulation design:
 Aggregation up the network uses per-phase superposition: erven are bucketed into
 Red/White/Blue (a 3-phase erf counts as three single-phase connections; erven with
 no assigned phase are spread conservatively across all three), demand is computed
-per bucket, and the bucket kVAs are summed. Erven with an ``ampsOverride`` are a
+per bucket, and the bucket kVAs are summed.
+
+Three-phase load classes (``phase: 3``, e.g. Urban Upmarket I/II 3Φ) tabulate
+their parameters PER PHASE (Upmarket I 3Φ: 1.99 kVA/phase = 5.97 kVA/consumer).
+Every erf on such a class is therefore a 3-phase connection — one per-phase
+variable in each of R/W/B, whatever colour the erf is drawn — and the per-phase
+formulae are NEVER multiplied by 3 again. (The source app did both: a ×3 in
+Herman-Beta on top of the three buckets gave 3× the demand for "3 Phase" erven,
+while R/W/B-coloured erven got too little diversity in Herman-Beta and a third of
+the load in Empirical.) Erven with an ``ampsOverride`` are a
 fixed, undiversified load and are added on top.
 
 Conventions (from the source app): single-phase 230 V, three-phase line 400 V,
@@ -83,9 +92,10 @@ def _is_active(erf):
         return False
 
 
-def count_weighted_conns(erven):
-    """Total connections; a 3-phase erf counts as 3. Active erven only."""
-    return sum(3 if is_3phase_erf(e) else 1 for e in erven if _is_active(e))
+def count_weighted_conns(erven, force_3ph=False):
+    """Total connections; a 3-phase erf counts as 3. Active erven only.
+    ``force_3ph``: every erf is 3-phase (its kiosk is on a 3-phase class)."""
+    return sum(3 if (force_3ph or is_3phase_erf(e)) else 1 for e in erven if _is_active(e))
 
 
 def sum_override_kva(erven):
@@ -108,11 +118,18 @@ def resolve_classes(load_class_lib=None):
 
 
 def resolve_demand_param(est_method, cls_id, project_admd=DEFAULT_ADMD,
-                         kiosk_admd_override=None, load_class_lib=None):
+                         kiosk_admd_override=None, load_class_lib=None,
+                         kiosk_cls_id=None):
     """Resolve the demand parameter for a kiosk.
 
     Herman-Beta → the load-class object (by id, defaulting to urban1).
-    Empirical    → an ADMD number (kiosk override, else project default).
+    Empirical    → an ADMD number: the kiosk's override, else the ADMD of the
+                   kiosk's OWN load class (``kiosk_cls_id``), else the project
+                   default. A kiosk left on "Default" deliberately takes the
+                   project ADMD rather than its class's, since the user may
+                   have typed that value. The number (not the class object) is
+                   returned: empirical totalKVA is N·ADMD·DCF either way, and
+                   network aggregation buckets by the numeric ADMD.
     """
     if est_method == "Herman Beta":
         classes = resolve_classes(load_class_lib)
@@ -123,7 +140,26 @@ def resolve_demand_param(est_method, cls_id, project_admd=DEFAULT_ADMD,
         return by_id.get(cls_id) or by_id.get("urban1") or fallback
     if kiosk_admd_override and kiosk_admd_override > 0:
         return kiosk_admd_override
+    if kiosk_cls_id:
+        cls = next((c for c in resolve_classes(load_class_lib) if c["id"] == kiosk_cls_id), None)
+        if cls and cls.get("admd"):
+            return cls["admd"]
     return project_admd if project_admd else DEFAULT_ADMD
+
+
+def class_is_3ph(cls_id, load_class_lib=None):
+    """True when the load class tabulates per-phase parameters (phase = 3)."""
+    cls = next((c for c in resolve_classes(load_class_lib) if c["id"] == cls_id), None)
+    return bool(cls) and cls.get("phase") == 3
+
+
+def _erf_phases(erf, force_3ph=False):
+    """The phase buckets one erf loads: all three for a 3-phase connection (or
+    any erf on a 3-phase class, or an erf with no valid phase), else its own."""
+    ph = _get(erf, "phase")
+    if force_3ph or ph == "3 Phase" or ph not in _PHASE_COLORS:
+        return _PHASE_COLORS
+    return (ph,)
 
 
 # ── core demand formulae ─────────────────────────────────────────────────────
@@ -147,13 +183,10 @@ def herman_beta_demand(n_consumers, cls, risk_z=DEFAULT_RISK_Z):
     """Herman-Beta diversified demand for N consumers of one class/phase.
 
     Design_I = N·µ + z_cf·√N·σ, with z_cf the Cornish-Fisher-corrected risk
-    factor. Parameters are per-phase; a 3-phase class multiplies kVA by 3.
-
-    Known source-app quirk (kept for fidelity): an erf assigned phase
-    "3 Phase" is bucketed once into each of R/W/B by the aggregators, so a
-    3-phase *class* (phase=3) on a "3 Phase" erf gets both the ×3 here and
-    the three buckets — 9× the per-phase kVA. Use single-phase colours for
-    erven of 3-phase classes, exactly as the source app expects.
+    factor. This is ONE phase: N is the consumers on that phase and the result
+    is that phase's current and kVA. A 3-phase class's parameters are already
+    per phase and its erven are spread over all three buckets by the
+    aggregators, so no ×3 is applied here (see the module docstring).
     """
     if not n_consumers or n_consumers <= 0:
         return {"totalKVA": 0, "currentA": 0, "admdKVA": 0}
@@ -162,42 +195,47 @@ def herman_beta_demand(n_consumers, cls, risk_z=DEFAULT_RISK_Z):
     gamma1 = bp["skewness"] / math.sqrt(n_consumers)          # skewness ~ γ₁/√N
     z_cf = z + (z * z - 1) / 6 * gamma1                        # Cornish-Fisher 1st order
     design_i = n_consumers * bp["mean"] + z_cf * math.sqrt(n_consumers) * bp["sigma"]
-    phase_mult = 3 if bp["phase"] == 3 else 1
     return {
-        "totalKVA": _round2(design_i * V_1PH * phase_mult / 1000.0),
+        "totalKVA": _round2(design_i * V_1PH / 1000.0),
         "currentA": _round2(design_i),
         "admdKVA": bp["admdKVA"],
         "designI": _round2(design_i),
+        # Working, for the transparency panel.
+        "calc": {"n": n_consumers, "a": bp["a"], "b": bp["b"], "c": bp["c"],
+                 "mean": round(bp["mean"], 4), "sigma": round(bp["sigma"], 4),
+                 "skewness": round(bp["skewness"], 4), "gamma1": round(gamma1, 4),
+                 "z": z, "zcf": round(z_cf, 4), "designI": round(design_i, 3),
+                 "v": V_1PH},
     }
 
 
 def empirical_demand(n_consumers, cls_or_admd, corr_method="AMEU"):
     """Empirical diversified demand = N × ADMD × DCF(N).
 
-    ``cls_or_admd`` may be an ADMD number or a class object (whose ``admd`` and
-    ``phase`` are used). UCF is returned as ``feederCurrentA`` for distributor
-    volt-drop only; it is NOT included in the kVA/current totals.
+    ``cls_or_admd`` may be an ADMD number or a class object (its ``admd``).
+    Like Herman-Beta this is ONE phase — a 3-phase class's ADMD is per phase —
+    so the per-consumer current is ADMD/230 V. UCF is returned as
+    ``feederCurrentA`` for distributor volt-drop only; it is NOT included in
+    the kVA/current totals.
     """
     if not n_consumers or n_consumers <= 0:
         return {"totalKVA": 0, "currentA": 0, "admdKVA": 0}
-    if isinstance(cls_or_admd, (int, float)):
-        admd = cls_or_admd
-        phase_mult = 1
-    else:
-        admd = cls_or_admd["admd"]
-        phase_mult = 3 if cls_or_admd.get("phase") == 3 else 1
-    i_admd = admd * 1000.0 / (V_1PH * phase_mult)             # per-consumer current
+    admd = cls_or_admd if isinstance(cls_or_admd, (int, float)) else cls_or_admd["admd"]
+    i_admd = admd * 1000.0 / V_1PH                            # per-consumer current
     corr = CORRECTION_METHODS.get(corr_method) or CORRECTION_METHODS["AMEU"]
     dcf = corr["dcf"](n_consumers, admd)
     ucf = corr["ucf"](n_consumers)
     total_i = n_consumers * i_admd * dcf
     return {
-        "totalKVA": _round2(total_i * V_1PH * phase_mult / 1000.0),
+        "totalKVA": _round2(total_i * V_1PH / 1000.0),
         "currentA": _round2(total_i),
         "admdKVA": _round2(admd),
         "dcf": _round2(dcf),
         "ucf": _round2(ucf),
         "feederCurrentA": _round2(total_i * ucf),
+        "calc": {"n": n_consumers, "admd": admd, "iAdmd": round(i_admd, 4),
+                 "corr": corr_method if corr_method in CORRECTION_METHODS else "AMEU",
+                 "dcf": round(dcf, 4), "totalI": round(total_i, 3), "v": V_1PH},
     }
 
 
@@ -210,10 +248,12 @@ def calc_demand(n_consumers, est_method, corr_method, cls_or_admd,
 
 
 def calc_simple_admd(n_consumers, cls):
-    """Undiversified badge demand = N × class ADMD (no diversity)."""
+    """Undiversified badge demand = N × class ADMD (no diversity). A 3-phase
+    class's ADMD is per phase, so each consumer is 3 × ADMD."""
     if not n_consumers or n_consumers <= 0:
         return {"totalKVA": 0, "currentA": 0, "admdKVA": 0}
-    total_kva = _round2(n_consumers * cls["admd"])
+    phases = 3 if cls.get("phase") == 3 else 1
+    total_kva = _round2(n_consumers * cls["admd"] * phases)
     return {
         "totalKVA": total_kva,
         "currentA": _round2(total_kva * 1000.0 / (math.sqrt(3) * V_3PH_LINE)),
@@ -223,22 +263,19 @@ def calc_simple_admd(n_consumers, cls):
 
 # ── per-phase aggregation ────────────────────────────────────────────────────
 
-def _bucket_by_phase(erven):
+def _bucket_by_phase(erven, force_3ph=False):
     """Count active, non-override erven per R/W/B phase.
 
     A 3-phase erf contributes one connection to each phase; an erf with no valid
-    phase is spread conservatively across all three phases.
+    phase is spread conservatively across all three phases. ``force_3ph``: the
+    kiosk is on a 3-phase class, so every erf is a 3-phase connection.
     """
     by_phase = {}
     for e in erven:
         if not _is_active(e) or _has_override(e):
             continue
-        ph = _get(e, "phase")
-        if ph == "3 Phase" or ph not in _PHASE_COLORS:
-            for p in _PHASE_COLORS:
-                by_phase[p] = by_phase.get(p, 0) + 1
-        else:
-            by_phase[ph] = by_phase.get(ph, 0) + 1
+        for p in _erf_phases(e, force_3ph):
+            by_phase[p] = by_phase.get(p, 0) + 1
     return by_phase
 
 
@@ -257,20 +294,36 @@ def kiosk_demand(kiosk, settings):
 
     erven = [e for e in _get(kiosk, "erfs", []) if _is_active(e)]
     conns = len(erven)
-    cls_id = _get(kiosk, "loadClass") or default_cls
-    param = resolve_demand_param(est, cls_id, project_admd,
-                                 _get(kiosk, "admdOverride"), lib)
+    own_cls = _get(kiosk, "loadClass")
+    cls_id = own_cls or default_cls
+    override = _get(kiosk, "admdOverride")
+    param = resolve_demand_param(est, cls_id, project_admd, override, lib, own_cls)
     admd_val = param if isinstance(param, (int, float)) else param["admd"]
+    three_ph = class_is_3ph(cls_id, lib)
+    if est == "Herman Beta":
+        admd_src = "class"
+    elif override and override > 0:
+        admd_src = "override"
+    elif own_cls and param != project_admd:
+        admd_src = "class"
+    else:
+        admd_src = "default"
 
     total_kva = 0.0
-    for n in _bucket_by_phase(erven).values():
-        total_kva += calc_demand(n, est, corr, param, risk_z)["totalKVA"]
+    buckets = []
+    for ph, n in sorted(_bucket_by_phase(erven, three_ph).items(),
+                        key=lambda kv: _PHASE_COLORS.index(kv[0])):
+        r = calc_demand(n, est, corr, param, risk_z)
+        total_kva += r["totalKVA"]
+        buckets.append({"phase": ph, "kva": r["totalKVA"], "currentA": r["currentA"], **r.get("calc", {})})
     override_kva = sum_override_kva(erven)
     # Street lighting is a fixed, undiversified load on the kiosk.
     sl_kva = float(_get(kiosk, "streetLightKVA", 0) or 0)
+    diversified_kva = total_kva
     total_kva = _round2(total_kva + override_kva + sl_kva)
     current_a = _round2(total_kva * 1000.0 / (math.sqrt(3) * V_3PH_LINE)) if total_kva else 0
     cls_label = param["label"] if isinstance(param, dict) else f"ADMD {admd_val} kVA"
+    cls_obj = next((c for c in resolve_classes(lib) if c["id"] == cls_id), None)
 
     return {
         "totalKVA": total_kva,
@@ -283,6 +336,18 @@ def kiosk_demand(kiosk, settings):
         "streetLightKVA": _round2(sl_kva),
         "cls": cls_label,
         "clsId": cls_id,
+        "admdPerPhase": three_ph,
+        # Full working for the kiosk header's calculation panel.
+        "calc": {
+            "method": est, "correction": corr, "riskZ": risk_z,
+            "classId": cls_id, "classLabel": cls_obj["label"] if cls_obj else cls_id,
+            "classOwn": bool(own_cls), "threePhaseClass": three_ph,
+            "admd": admd_val, "admdSource": admd_src,
+            "buckets": buckets,
+            "diversifiedKVA": _round2(diversified_kva),
+            "overrideKVA": _round2(override_kva), "streetLightKVA": _round2(sl_kva),
+            "totalKVA": total_kva, "currentA": current_a, "vLine": V_3PH_LINE,
+        },
     }
 
 
@@ -300,7 +365,8 @@ def feeder_demand(kiosks, settings):
       * per-phase superposition (so a single-kiosk feeder equals that kiosk's
         own demand — the source undercounted it), and
       * the Empirical path resolves each kiosk's own ADMD (honouring
-        admdOverride), where the source used only the project default.
+        admdOverride, then the kiosk's own load class), where the source used
+        only the project default.
     """
     est = settings.get("estimationMethod", "Empirical")
     corr = settings.get("correctionMethod", "AMEU")
@@ -319,18 +385,18 @@ def feeder_demand(kiosks, settings):
         buckets = {}
         for k in kiosks:
             erven = [e for e in _get(k, "erfs", []) if _is_active(e)]
-            total_conns += count_weighted_conns(erven)
+            cls_id = _get(k, "loadClass") or default_cls
+            three_ph = class_is_3ph(cls_id, lib)
+            total_conns += count_weighted_conns(erven, three_ph)
             override_kva += sum_override_kva(erven)
             sl_kva += float(_get(k, "streetLightKVA", 0) or 0)
-            cls_id = _get(k, "loadClass") or default_cls
             param = resolve_demand_param(est, cls_id, project_admd,
-                                         _get(k, "admdOverride"), lib)
+                                         _get(k, "admdOverride"), lib,
+                                         _get(k, "loadClass"))
             for e in erven:
                 if _has_override(e):
                     continue
-                ph = _get(e, "phase")
-                phases = _PHASE_COLORS if (ph == "3 Phase" or ph not in _PHASE_COLORS) else (ph,)
-                for p in phases:
+                for p in _erf_phases(e, three_ph):
                     key = f"{cls_id}|{p}"
                     if key not in buckets:
                         buckets[key] = {"count": 0, "param": param}
@@ -346,18 +412,18 @@ def feeder_demand(kiosks, settings):
         by_admd_phase = {}
         for k in kiosks:
             erven = [e for e in _get(k, "erfs", []) if _is_active(e)]
-            total_conns += count_weighted_conns(erven)
+            cls_id = _get(k, "loadClass") or default_cls
+            three_ph = class_is_3ph(cls_id, lib)
+            total_conns += count_weighted_conns(erven, three_ph)
             override_kva += sum_override_kva(erven)
             sl_kva += float(_get(k, "streetLightKVA", 0) or 0)
-            cls_id = _get(k, "loadClass") or default_cls
             admd = resolve_demand_param(est, cls_id, project_admd,
-                                        _get(k, "admdOverride"), lib)
+                                        _get(k, "admdOverride"), lib,
+                                        _get(k, "loadClass"))
             for e in erven:
                 if _has_override(e):
                     continue
-                ph = _get(e, "phase")
-                phases = _PHASE_COLORS if (ph == "3 Phase" or ph not in _PHASE_COLORS) else (ph,)
-                for p in phases:
+                for p in _erf_phases(e, three_ph):
                     key = (admd, p)
                     by_admd_phase[key] = by_admd_phase.get(key, 0) + 1
         for (admd, _p), n in by_admd_phase.items():

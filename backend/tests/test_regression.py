@@ -3005,11 +3005,61 @@ class TestADMD:
         assert british == pytest.approx(1.2, abs=0.01)      # 1+8/(4.04·10)
         assert ameu != pytest.approx(0)                     # sanity
 
-    def test_three_phase_class_multiplies_kva(self):
-        """A 3-phase class applies a ×3 phase multiplier on per-phase params."""
+    def test_three_phase_class_formulae_are_per_phase(self):
+        """A 3-phase class's parameters are per phase: the single-bucket
+        formulae give ONE phase and never multiply by 3 (the aggregators spread
+        its erven over R/W/B instead). Upmarket I 3Φ: ADMD 1.99 kVA/phase."""
         cls3 = next(c for c in LOAD_CLASSES if c["id"] == "upmarket1_3ph")
-        r = empirical_demand(1, cls3, "AMEU")
-        assert r["totalKVA"] == pytest.approx(5.97, abs=0.02)
+        e = empirical_demand(1, cls3, "AMEU")
+        assert e["calc"]["iAdmd"] == pytest.approx(1990 / 230, abs=0.01)   # 8.65 A, not /690
+        assert e["totalKVA"] == pytest.approx(1.99 * 3.0, abs=0.02)         # N·ADMD·DCF(1)=3
+        hb = herman_beta_demand(1, cls3, 1.28)
+        assert hb["totalKVA"] == pytest.approx(hb["designI"] * 0.23, abs=0.01)
+
+    @pytest.mark.parametrize("cid,hb_ref,emp_ref", [
+        ("upmarket1_3ph", 101.2, 83.58),
+        ("upmarket2_3ph", 133.9, 111.30),
+    ])
+    @pytest.mark.parametrize("phases", [["3 Phase"] * 12, ["Red", "White", "Blue"] * 4])
+    def test_three_phase_class_hand_calc(self, cid, hb_ref, emp_ref, phases):
+        """12 consumers on a 3Φ upmarket class. Hand calc: every phase carries
+        all 12 per-phase variables, total = 3 × one phase —
+          HB:        3 · (12µ + z_cf·√12·σ) · 230 V,  z_cf = z + (z²−1)/6 · γ/√12
+          Empirical: 3 · 12 · ADMD · (1 + 2/12)   (AMEU)
+        The erf colour must not matter: any erf on a 3Φ class is 3-phase.
+        (Before the fix: HB ×3.00 for "3 Phase" erven, ×1.23 for R/W/B;
+        Empirical ×0.43 for R/W/B.)"""
+        k = {"id": "K", "loadClass": cid, "erfs": [{"length": 30, "phase": p} for p in phases]}
+        hb = kiosk_demand(k, _settings(estimationMethod="Herman Beta", riskZ=1.28))
+        emp = kiosk_demand(k, _settings())
+        assert hb["totalKVA"] == pytest.approx(hb_ref, abs=0.1)
+        assert emp["totalKVA"] == pytest.approx(emp_ref, abs=0.05)
+        # The feeder aggregation agrees with the kiosk for a single kiosk.
+        assert feeder_demand([k], _settings())["totalKVA"] == pytest.approx(emp_ref, abs=0.05)
+        assert feeder_demand([k], _settings(estimationMethod="Herman Beta"))["totalKVA"] == \
+            pytest.approx(hb_ref, abs=0.1)
+        assert feeder_demand([k], _settings())["conns"] == 36    # 12 × 3 phases
+        assert emp["admdPerPhase"] is True
+
+    def test_simple_admd_three_phase_class(self):
+        """Undiversified badge: a 3Φ-class consumer is 3 × per-phase ADMD."""
+        from backend.analysis.admd import calc_simple_admd
+        cls3 = next(c for c in LOAD_CLASSES if c["id"] == "upmarket1_3ph")
+        assert calc_simple_admd(12, cls3)["totalKVA"] == pytest.approx(71.64, abs=0.01)
+        assert calc_simple_admd(12, _urban1())["totalKVA"] == pytest.approx(48.48, abs=0.01)
+
+    def test_kiosk_calc_breakdown(self):
+        """The kiosk result carries its working: per-phase buckets whose kVA
+        sum (plus fixed loads) is the total shown in the header."""
+        k = {"id": "K", "streetLightKVA": 0.5,
+             "erfs": [{"length": 30, "phase": p} for p in ("Red", "Red", "White")]}
+        r = kiosk_demand(k, _settings())
+        c = r["calc"]
+        assert [b["phase"] for b in c["buckets"]] == ["Red", "White"]
+        assert [b["n"] for b in c["buckets"]] == [2, 1]
+        assert c["admdSource"] == "default"
+        assert sum(b["kva"] for b in c["buckets"]) + c["streetLightKVA"] == \
+            pytest.approx(r["totalKVA"], abs=0.02)
 
     def test_kiosk_three_phase_erf_counts_as_three(self):
         """One 3-phase erf = 3 single-phase connections (one per R/W/B)."""
@@ -3174,6 +3224,34 @@ class TestADMD:
         assert len(res["minisubs"]) == 1
         assert res["total"]["totalKVA"] == pytest.approx(
             feeder_demand(kiosks, s)["totalKVA"], abs=0.01)
+
+    def test_empirical_kiosk_class_sets_its_admd(self):
+        """Empirical: a kiosk's OWN load class sets its ADMD (it used to be
+        ignored — only admdOverride or the project default counted). Order is
+        override > own class > project default; a kiosk on "Default" keeps the
+        project ADMD the user may have typed."""
+        erfs = [{"length": 30, "phase": "Red"}] * 4
+        s = _settings(admd=4.04)
+        # Own class urban2 (ADMD 5.31) → N·5.31·DCF, same as passing 5.31 directly.
+        own = kiosk_demand({"id": "K", "loadClass": "urban2", "erfs": erfs}, s)
+        assert own["admdKVA"] == pytest.approx(5.31)
+        assert own["totalKVA"] == pytest.approx(empirical_demand(4, 5.31)["totalKVA"], abs=0.01)
+        # An explicit override still wins over the class.
+        ovr = kiosk_demand({"id": "K", "loadClass": "urban2", "admdOverride": 3.0, "erfs": erfs}, s)
+        assert ovr["admdKVA"] == pytest.approx(3.0)
+        # No own class → the project default, even if it differs from urban1's 4.04.
+        dflt = kiosk_demand({"id": "K", "erfs": erfs}, _settings(admd=6.5))
+        assert dflt["admdKVA"] == pytest.approx(6.5)
+
+    def test_empirical_feeder_mixes_kiosk_classes(self):
+        """Feeder aggregation keeps each kiosk's class ADMD apart: two kiosks
+        of different classes on one feeder sum as two ADMD buckets."""
+        erfs = [{"length": 30, "phase": "Red"}] * 3
+        k1 = {"id": "K1", "loadClass": "urban2", "erfs": erfs}
+        k2 = {"id": "K2", "loadClass": "informal", "erfs": erfs}
+        s = _settings()
+        expect = empirical_demand(3, 5.31)["totalKVA"] + empirical_demand(3, 1.46)["totalKVA"]
+        assert feeder_demand([k1, k2], s)["totalKVA"] == pytest.approx(expect, abs=0.02)
 
 
 # ── IEC 62305-2 lightning risk ───────────────────────────────────────────
