@@ -442,6 +442,34 @@ const AppState = {
   // Vertical cable run (metres) between two storey levels, through the riser
   // shaft: the floor-to-floor heights spanned, inflated by the riser factor for
   // bends/terminations. Mirrors Distribution Designer's riser breakdown.
+  // Drawn length of a plan route in plan pixels. A curved route is a
+  // Catmull-Rom spline (same control points as PlanEngine._pathPoly), so it is
+  // measured by sampling the spline — summing the chords understates it.
+  planRoutePx(r) {
+    const pts = (r && r.points) || [];
+    if (pts.length < 2) return 0;
+    if (!r.curved || pts.length < 3) {
+      let px = 0;
+      for (let i = 1; i < pts.length; i++) px += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      return px;
+    }
+    const N = 16;
+    let px = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+      let px0 = p1.x, py0 = p1.y;
+      for (let k = 1; k <= N; k++) {
+        const t = k / N, u = 1 - t;
+        const x = u * u * u * p1.x + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * p2.x;
+        const y = u * u * u * p1.y + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * p2.y;
+        px += Math.hypot(x - px0, y - py0); px0 = x; py0 = y;
+      }
+    }
+    return px;
+  },
+
   planVerticalRunM(levelA, levelB) {
     const p = this.planMarkup;
     const lo = Math.min(levelA, levelB), hi = Math.max(levelA, levelB);

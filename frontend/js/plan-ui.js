@@ -379,7 +379,7 @@ const PlanUI = {
         <select data-key="circuitDbId">${opts}</select></div>
       <div class="plan-field"><label class="plan-field-label">Way (circuit no.)</label>
         <input type="number" min="1" step="1" data-key="circuitNo" value="${escHtml(p.circuitNo != null ? p.circuitNo : '')}"></div>
-      <div class="plan-field"><label class="plan-field-label">Phase</label>
+      <div class="plan-field"><label class="plan-field-label" title="Single-phase or three-phase (3P+N) fixture">Poles</label>
         <select data-key="poles">
           <option value="1P"${poles === '1P' ? ' selected' : ''}>Single-phase (1P)</option>
           <option value="3P"${poles === '3P' ? ' selected' : ''}>Three-phase (3P)</option>

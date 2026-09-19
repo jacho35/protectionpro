@@ -3,7 +3,7 @@
 **Date:** 2026-07-12
 **Scope:** The Plan Markup / Distribution Plan workspace and its plan↔SLD integration, built over roughly the last 60 commits (PRs #139–#144): floor-plan device placement, array/path placement, per-device circuit attributes, auto-circuiting, DB schedule editing from the plan, plan↔SLD sync (From-SLD adoption, plan-first feeders, DB→DB feeding), DXF round-trip, DD import, mobile toolbar.
 **Method:** Three independent passes — a UI/UX expert review of the new interfaces, an electrical-engineering review of the plan↔SLD data flow, and an adversarial senior-developer verification of every finding against the code (every cited line opened; "never written" claims grep-verified; cable-library name intersection computed programmatically; EE-1 reproduced empirically in the backend Docker image).
-**Status:** Findings only — **no changes have been implemented.** Severities below are the post-challenge adjusted calls. Line numbers are as of commit `e85601f`.
+**Status:** Audited against the code 2026-09-19 — every finding is now fixed (the last three, EE-13 spline length, EE-14 "Poles" label and EE-7 way-number uniqueness, closed in the follow-up PR). Original status when written: findings only. Severities below are the post-challenge adjusted calls. Line numbers are as of commit `e85601f`.
 
 ---
 
