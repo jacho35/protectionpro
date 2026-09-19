@@ -452,6 +452,14 @@ body.dark-mode .symbol-db { stroke: #c0c0d0; }
 body.dark-mode .symbol-db .symbol-text { fill: #c0c0d0; }
 .symbol-capacitor { stroke: #0097a7; stroke-width: 1.5; fill: none; }
 
+/* IEC 60617 set (AppState.symbolSet === 'iec'): solid arrowheads take the
+   symbol's stroke colour; switching-device outlines stay unfilled. */
+.symbol-iec.symbol-cb, .symbol-iec.symbol-switch { fill: none; }
+.symbol-load .iec-solid { fill: #555; }
+.symbol-arrester .iec-solid { fill: #2e7d32; }
+body.dark-mode .symbol-load .iec-solid { fill: #a8a8c0; }
+body.dark-mode .symbol-arrester .iec-solid { fill: #66bb6a; }
+
 /* DC system enclosures need an outline in both themes (fill-only otherwise) */
 .symbol-ups rect, .symbol-rectifier rect, .symbol-charger rect {
   stroke: #555;

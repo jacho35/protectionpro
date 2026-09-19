@@ -30,6 +30,7 @@ const AppState = {
   // Project
   projectId: null,
   projectName: 'Untitled Project',
+  symbolSet: 'iec',          // SLD symbol set — see reset()
   dirty: false,
 
   // Project details for report covers
@@ -1087,6 +1088,11 @@ const AppState = {
     // Project type ('retic' | 'building' | 'network') decides the workspace
     // tabs (workspaces.js). null = never chosen: inferred from the content.
     this.projectType = null;
+    // SLD symbol set: 'iec' (IEC 60617 contacts/qualifiers) or 'classic'.
+    // New projects start IEC; fromJSON keeps a save without the field on
+    // 'classic' so drawings issued before the setting don't change.
+    this.symbolSet = 'iec';
+    if (typeof Sidebar !== 'undefined') Sidebar.syncSymbolSet();
     this.extraWorkspaces = [];   // workspaces switched on beyond the type's own
     this.dirty = false;
     this.projectDetails = {
@@ -1243,6 +1249,7 @@ const AppState = {
       dataVersion: 2,
       projectName: this.projectName,
       projectType: this.projectType || undefined,
+      symbolSet: this.symbolSet,
       extraWorkspaces: (this.extraWorkspaces && this.extraWorkspaces.length) ? this.extraWorkspaces : undefined,
       projectDetails: this.projectDetails,
       baseMVA: this.baseMVA,
@@ -1349,6 +1356,8 @@ const AppState = {
     this._validateProjectData(data);
     this.reset();
     this.projectName = data.projectName || 'Untitled Project';
+    this.symbolSet = data.symbolSet === 'iec' ? 'iec' : 'classic';
+    if (typeof Sidebar !== 'undefined') Sidebar.syncSymbolSet();
     if (data.projectDetails) {
       this.projectDetails = {
         projectNumber: data.projectDetails.projectNumber || '',

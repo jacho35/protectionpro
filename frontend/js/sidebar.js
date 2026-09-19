@@ -12,7 +12,17 @@ const Sidebar = {
     this.ribbonEl = document.getElementById('component-ribbon');
     this.renderPalette();
     this.renderRibbon();
+    this._iconSet = AppState.symbolSet;
     this.bindEvents();
+  },
+
+  // Redraw the palette icons when the project's symbol set changed
+  // (settings toggle, or loading a project saved with the other set).
+  syncSymbolSet() {
+    if (!this.paletteEl || this._iconSet === AppState.symbolSet) return;
+    this._iconSet = AppState.symbolSet;
+    this.renderPalette(this.searchEl ? this.searchEl.value : '');
+    this.renderRibbon();
   },
 
   // Compact horizontal palette shown below the toolbar (View → Component
