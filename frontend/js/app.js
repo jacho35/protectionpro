@@ -3264,7 +3264,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (key === 'fault') {
       return `${counts.buses} buses analysed`;
     } else if (key === 'arcflash') {
-      return `${counts.buses} buses, max PPE category ${counts.max_ppe_category}`;
+      return `${counts.buses} buses, max PPE category ${counts.max_ppe_category}`
+        + (counts.danger > 0 ? `, ${counts.danger} above 40 cal/cm² (DANGER)` : '');
     } else if (key === 'cable_sizing') {
       return `${counts.total} cables: ${counts.pass} pass, ${counts.warning} warn, ${counts.fail} fail`;
     } else if (key === 'motor_starting') {

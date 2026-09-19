@@ -5,6 +5,7 @@ motor starting, duty check) in a single call and returns a consolidated
 report with per-study results, timing, and a summary.
 """
 
+import dataclasses
 import time
 import traceback
 from ..models.schemas import ProjectData
@@ -129,9 +130,13 @@ def run_study_manager(project: ProjectData, enabled_studies: list[str] | None = 
             result = _run_single_study(key, project)
             elapsed = time.time() - study_start
 
-            # Serialize pydantic models to dict
+            # Serialize to plain dicts: pydantic models, and the dataclass
+            # results arc flash / DC arc flash return (asdict recurses into
+            # the nested per-bus dataclasses the status extraction reads).
             if hasattr(result, "model_dump"):
                 result_data = result.model_dump()
+            elif dataclasses.is_dataclass(result) and not isinstance(result, type):
+                result_data = dataclasses.asdict(result)
             elif isinstance(result, dict):
                 result_data = result
             else:
@@ -207,9 +212,13 @@ def _extract_study_status(key: str, result_data) -> dict:
     elif key == "arcflash":
         buses = result_data.get("buses", {})
         n_buses = len(buses)
-        max_ppe = max((b.get("ppe_category", 0) for b in buses.values()), default=0)
-        counts = {"buses": n_buses, "max_ppe_category": max_ppe}
-        if max_ppe >= 4:
+        # ppe_category -1 is "DANGER" (> 40 cal/cm², no PPE category is
+        # adequate) — the MOST severe result, so it must not rank below 0.
+        cats = [b.get("ppe_category", 0) for b in buses.values()]
+        danger = sum(1 for c in cats if c < 0)
+        max_ppe = max((c for c in cats if c >= 0), default=0)
+        counts = {"buses": n_buses, "max_ppe_category": max_ppe, "danger": danger}
+        if danger or max_ppe >= 4:
             return {"status": "fail", "counts": counts}
         if max_ppe >= 3:
             return {"status": "warning", "counts": counts}

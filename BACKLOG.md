@@ -308,11 +308,16 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Study Manager arc flash fixed (2026-09-19)
+- **Crash.** Arc flash failed on every network (`'ArcFlashResults' object has no attribute 'get'`): arc flash and DC arc flash return dataclasses, and the manager only converted pydantic results to dicts. Dataclass results now go through `dataclasses.asdict`.
+- **Wrong verdict behind it.** A bus above 40 cal/cm² is PPE category −1 (DANGER), and the summary took `max()` over categories, so an all-DANGER network would have reported **pass**. DANGER buses now fail the study and are counted (`counts.danger`, shown as "N above 40 cal/cm² (DANGER)"); the max category ignores −1.
+- Pinned by `test_smoke.py` (every Study Manager study runs on the smoke network; DANGER ranking) and the changeover Study Manager test, which now includes arc flash.
+
 ### Changeover switch — 3-port component, all engines (2026-09-19)
 - **Component.** `changeover` (Protection palette): ports `in_1` / `in_2` on the top edge (±20 px), `out` bottom-centre; `state` = in_1 / off / in_2; types: manual I–0–II (default), manual I–II, ATS (motor operator + transfer/retransfer delays) and interlocked breaker pair (two CBs, mechanical interlock, common output). Contact duty (switch-disconnector / load-break / disconnector) sets the IEC qualifier. IEC and classic symbols in every position, with input labels (Mains / Gen). Right-click picks the position; LF cases, scenarios and the case preview carry it; BOQ counts it (`SW-CHANGEOVER` / `SW-ATS` / `SW-CO-BREAKER-PAIR-<A>A`).
 - **Engines.** `backend/analysis/changeover.py` rewrites each changeover into 2-terminal devices (its own id wired selected-input → out, open stub on the other input; CBs for a breaker pair) in one route class wrapping every `/api/analysis/*` endpoint, inside Load Flow Study Manager cases, and in the CSV export. No engine changed. Pinned by `test_changeover.py`: load side follows the selected supply in load flow and fault for every type, off de-energises it, cases and the Study Manager run clean. Every analysis endpoint returns the same status as a plain-switch baseline.
 - **Frontend topology.** `Components.topologyWires()` / `isOpenSwitching()` give validation, bus graph, board incomer, voltage-zone, LF badges, TCC distance paths, compliance and terminal-bus walkers the same semantics; validation warns on a manual I–II set to 0 and on an unwired output.
-- Found, not fixed: the Study Manager's arc-flash status extraction fails on every network (`'ArcFlashResults' object has no attribute 'get'`), independent of changeovers.
+- Found here, fixed separately: the Study Manager's arc-flash step failed on every network (see the entry above).
 
 ### IEC 60617 symbol set for the single-line diagram (2026-09-19)
 - **New symbols.** `Symbols.iec` redraws the non-standard glyphs. Circuit breaker, switch and fuse-type devices are a switch contact with a fixed-contact qualifier (× breaker, bar disconnector, ring load-break, bar + ring switch-disconnector); the blade shows the state (in line = closed, rotated 30° = open). Also fuse (conductor through the body), relay (function box from `relay_type`: I>, I_E>, I>→, ΔI, Z<), utility (hatched infeed), surge arrester, CT (conductor through the ring), VT (two circles), load (filled arrow), and G ~ / M 3~ / MS 3~. Transformer, capacitor, bus, cable and the DC/PV/BESS glyphs are unchanged. Same boxes and ports, so switching sets is render-only.

@@ -154,18 +154,9 @@ class TestRoutesAndCases:
         assert disp["utility-2"] == pytest.approx(1.0, rel=0.02)
 
     def test_study_manager_runs_every_study(self):
-        """No engine trips over the rewritten devices or their synthetic ids.
-
-        Arc flash is run directly: the Study Manager's arc-flash status
-        extraction fails on any network (it calls .get on a results model),
-        independent of changeovers."""
-        from backend.analysis.study_manager import STUDY_DEFS
-        from backend.analysis.arcflash import run_arc_flash
-        project = expand_changeovers(_network("in_1"))
-        keys = [d[0] for d in STUDY_DEFS if d[0] != "arcflash"]
-        out = run_study_manager(project, enabled_studies=keys)
+        """No engine trips over the rewritten devices or their synthetic ids."""
+        out = run_study_manager(expand_changeovers(_network("in_1")))
         failed = {k: v.get("error") for k, v in out["studies"].items()
                   if isinstance(v, dict) and v.get("status") == "error"}
         assert not failed, failed
-        af = run_arc_flash(project, run_fault_analysis(project))
-        assert "bus-e" in af.buses
+        assert "bus-e" in out["studies"]["arcflash"]["result"]["buses"]
