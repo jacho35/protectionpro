@@ -1305,7 +1305,7 @@ const Canvas = {
             const strings = Math.max(1, Math.round(p.pv_strings || 1));
             const pps = Math.max(1, Math.round(p.pv_panels_per_string || 1));
             const dcKw = (p.pv_panel_w || 0) * pps * strings * nInv / 1000;
-            lines.push(`${strings}S×${pps}P = ${dcKw >= 1000 ? (dcKw / 1000).toFixed(2) + ' MWp' : dcKw.toFixed(1) + ' kWp'}`);
+            lines.push(`${pps}S×${strings}P = ${dcKw >= 1000 ? (dcKw / 1000).toFixed(2) + ' MWp' : dcKw.toFixed(1) + ' kWp'}`);
             const rawKw = dcKw * irr / 100;
             const outKw = Math.min(rawKw, totalKw);
             if (irr < 100 || rawKw > totalKw) {
@@ -1314,6 +1314,11 @@ const Canvas = {
           } else if (irr < 100) {
             // Show the availability-scaled output when below full irradiance
             lines.push(`@ ${irr}% → ${fmtKw(totalKw * irr / 100)}`);
+          }
+          if (p.inverter_type === 'hybrid' && p.battery_kwh > 0) {
+            // DC-coupled battery: capacity (per inverter) · discharge limit
+            const kwh = p.battery_kwh >= 1000 ? `${(p.battery_kwh / 1000).toFixed(1)} MWh` : `${p.battery_kwh} kWh`;
+            lines.push(`BESS ${nInv > 1 ? nInv + '×' : ''}${kwh}${p.battery_max_discharge_kw ? ` · ${p.battery_max_discharge_kw} kW` : ''}`);
           }
           if (p.voltage_kv) lines.push(`${p.voltage_kv} kV`);
         } else if (comp.type === 'wind_turbine') {

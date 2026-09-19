@@ -44,7 +44,7 @@ const Symbols = {
           <line x1="${gx}" y1="${gy + gh / 2}" x2="${gx + gw}" y2="${gy + gh / 2}"/>
           <line x1="${gx + gw}" y1="${gy + gh / 2}" x2="${-r * 0.7}" y2="${-r * 0.7}"/>
           <text x="${gx + gw / 2}" y="${gy + gh + 7}" text-anchor="middle" font-size="6"
-            fill="#e67700" stroke="none" font-family="sans-serif">${strings}S×${pps}P</text>
+            fill="#e67700" stroke="none" font-family="sans-serif">${pps}S×${strings}P</text>
         </g>`;
     }
     return `
@@ -1010,6 +1010,99 @@ const Symbols = {
 
     generator(w, h) {
       return this._machine(h, Math.min(w, h) * 0.38, 'G', '~', '#2e7d32', 'symbol-generator');
+    },
+
+    // ── Inverter-based sources ──
+    // A PV plant / BESS draws as its parts, each shown only when a prop turns
+    // it on: PV generator (cell field + incident-light arrows) → DC link →
+    // DC/AC converter (box, diagonal, = over ~) → AC lead to the port. Hybrid
+    // adds a battery on the DC link (DC side of the inverter, as modelled);
+    // num_inverters > 1 stacks a second box with an N× tag. String fuses,
+    // combiner and isolators aren't modelled, so they aren't drawn.
+
+    _arrow(x1, y1, x2, y2) {
+      const a = Math.atan2(y2 - y1, x2 - x1), L = 2.6, W = 1.3;
+      const bx = x2 - L * Math.cos(a), by = y2 - L * Math.sin(a);
+      const px = -Math.sin(a) * W, py = Math.cos(a) * W;
+      return `<line x1="${x1}" y1="${y1}" x2="${bx}" y2="${by}"/>
+        <polygon points="${x2},${y2} ${bx + px},${by + py} ${bx - px},${by - py}" fill="#e67700" stroke="none"/>`;
+    },
+
+    _pvGenerator(y0) {
+      const w = 20, h = 10, x0 = -w / 2;
+      return `
+        <rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="var(--bg-primary, #fff)"/>
+        <line x1="${x0 + w / 3}" y1="${y0}" x2="${x0 + w / 3}" y2="${y0 + h}" stroke-width="1"/>
+        <line x1="${x0 + 2 * w / 3}" y1="${y0}" x2="${x0 + 2 * w / 3}" y2="${y0 + h}" stroke-width="1"/>
+        <line x1="${x0}" y1="${y0 + h / 2}" x2="${x0 + w}" y2="${y0 + h / 2}" stroke-width="1"/>
+        <g stroke="#e67700" stroke-width="1">
+          ${this._arrow(x0 - 8.5, y0 - 5.5, x0 - 2.2, y0 + 0.6)}
+          ${this._arrow(x0 - 5, y0 - 7.5, x0 + 1.3, y0 - 1.4)}
+        </g>`;
+    },
+
+    // DC/AC converter box, top at y0, side sz; `stacked` draws a second box
+    // behind it for several identical inverters.
+    _converter(y0, sz, stacked) {
+      const x0 = -sz / 2;
+      const back = stacked
+        ? `<rect x="${x0 + 2.4}" y="${y0 - 2.4}" width="${sz}" height="${sz}" fill="var(--bg-primary, #fff)"/>` : '';
+      return `${back}
+        <rect x="${x0}" y="${y0}" width="${sz}" height="${sz}" fill="var(--bg-primary, #fff)"/>
+        <line x1="${x0}" y1="${y0 + sz}" x2="${x0 + sz}" y2="${y0}" stroke-width="1"/>
+        <line x1="${x0 + 2}" y1="${y0 + 3.2}" x2="${x0 + 6}" y2="${y0 + 3.2}" stroke-width="1"/>
+        <line x1="${x0 + 2}" y1="${y0 + 5.2}" x2="${x0 + 6}" y2="${y0 + 5.2}" stroke-width="1"/>
+        <path d="M${x0 + sz - 7.2},${y0 + sz - 3.6} q1,-1.8 2,0 t2,0" stroke-width="1"/>`;
+    },
+
+    // Battery cells (long + short plate) stacked down from ytop, centred on cx.
+    _cells(cx, ytop, n) {
+      let s = '', y = ytop;
+      for (let i = 0; i < n; i++) {
+        s += `<line x1="${cx - 5}" y1="${y}" x2="${cx + 5}" y2="${y}" stroke-width="1.6"/>
+          <line x1="${cx - 2.6}" y1="${y + 2.6}" x2="${cx + 2.6}" y2="${y + 2.6}"/>`;
+        if (i < n - 1) s += `<line x1="${cx}" y1="${y + 2.6}" x2="${cx}" y2="${y + 4.6}"/>`;
+        y += 4.6;
+      }
+      return s;
+    },
+
+    solar_pv(w, h, comp) {
+      const p = (comp && comp.props) || {};
+      const hh = h / 2;
+      const nInv = Math.max(1, Math.round(p.num_inverters || 1));
+      const hybrid = p.inverter_type === 'hybrid';
+      let s = this._pvGenerator(-19);
+      s += `<line x1="0" y1="-9" x2="0" y2="-5"/>`;
+      if (p.mppt_tracking === 'tracking') {
+        s += `<g stroke="#e67700" stroke-width="1"><path d="M-9,-7.3 q9,3 18,0"/>
+          <polygon points="9,-7.3 6.6,-8.5 7.2,-6.2" fill="#e67700" stroke="none"/></g>`;
+      }
+      if (hybrid) {
+        s += `<line x1="0" y1="-7" x2="17" y2="-7"/><line x1="17" y1="-7" x2="17" y2="-2"/>
+          <g class="symbol-pv-battery" stroke="#7b1fa2">${this._cells(17, -2, 1)}
+            <line x1="17" y1="0.6" x2="17" y2="3.6"/><line x1="14.2" y1="3.6" x2="19.8" y2="3.6"/></g>`;
+      }
+      s += this._converter(-5, 17, nInv > 1);
+      s += `<line x1="0" y1="12" x2="0" y2="${hh}"/>`;
+      const tag = (x, y, t, size) => `<text x="${x}" y="${y}" text-anchor="end" font-size="${size}" font-weight="600" fill="#e67700" stroke="none" font-family="sans-serif">${t}</text>`;
+      if (nInv > 1) s += tag(-10.8, 10.6, `${nInv}×`, 6);
+      if (p.pv_array_mode === 'array') {
+        const strings = Math.max(1, Math.round(p.pv_strings || 1));
+        const pps = Math.max(1, Math.round(p.pv_panels_per_string || 1));
+        s += tag(-11.5, -12.2, `${pps}S×${strings}P`, 5);
+      }
+      return `<g class="symbol-solar-pv symbol-iec" stroke="currentColor" stroke-width="1.3" fill="none">${s}</g>`;
+    },
+
+    battery(w, h) {
+      // Battery bank feeding its PCS — the same converter box as a PV inverter
+      return `
+        <g class="symbol-battery symbol-iec" stroke="currentColor" stroke-width="1.3" fill="none">
+          <g stroke="#7b1fa2">${this._cells(0, -19, 2)}<line x1="0" y1="-11.8" x2="0" y2="-5"/></g>
+          ${this._converter(-5, 17, false)}
+          <line x1="0" y1="12" x2="0" y2="${h / 2}"/>
+        </g>`;
     },
 
     motor_induction(w, h) {

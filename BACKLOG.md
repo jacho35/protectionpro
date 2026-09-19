@@ -308,6 +308,11 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Solar PV and BESS drawn as their parts in the IEC symbol set (2026-09-19)
+- **Why.** `solar_pv` models a PV array, MPPT window, one or more inverters and (hybrid) a DC-coupled battery, but drew one circle: no inverter, hybrid identical to grid-tied, inverter count only in the label, and the array-mode glyph started at x = −35 in a ±30 box.
+- **IEC symbols** (`Symbols.iec.solar_pv` / `.battery`, same 60 × 50 box and port, render-only): PV generator (cell field + light arrows) → DC link → IEC DC/AC converter (box, diagonal, = / ~) → AC lead. Hybrid adds a battery on the DC link; `num_inverters` > 1 stacks a second box with an `N×` tag; array mode puts the `S×P` tag inside the box; `mppt_tracking: tracking` adds an arc. BESS = battery bank over the same converter box. String fuses, combiner and isolators aren't modelled, so they aren't drawn. Classic set unchanged apart from the label fix.
+- **Label fixes.** String tag and canvas label printed `strings S × panels P` (18 panels × 12 strings → `12S×18P`); now series × parallel (`18S×12P`) in both sets. Hybrid PV gets a `BESS <N×>kWh · discharge kW` label line. Cache-bust 3.5.110.
+
 ### Study Manager arc flash fixed (2026-09-19)
 - **Crash.** Arc flash failed on every network (`'ArcFlashResults' object has no attribute 'get'`): arc flash and DC arc flash return dataclasses, and the manager only converted pydantic results to dicts. Dataclass results now go through `dataclasses.asdict`.
 - **Wrong verdict behind it.** A bus above 40 cal/cm² is PPE category −1 (DANGER), and the summary took `max()` over categories, so an all-DANGER network would have reported **pass**. DANGER buses now fail the study and are counted (`counts.danger`, shown as "N above 40 cal/cm² (DANGER)"); the max category ignores −1.
