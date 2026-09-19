@@ -744,6 +744,33 @@ const Symbols = {
       </g>`;
   },
 
+  // Changeover switch (classic): common pivot dot at the bottom, a contact
+  // circle per input (filled = the one the blade sits on). Ports: in_1 at
+  // (-20, top), in_2 at (+20, top), out at (0, bottom).
+  changeover(w, h, comp) {
+    const p = (comp && comp.props) || {};
+    const pos = ['in_1', 'off', 'in_2'].includes(p.state) ? p.state : 'in_1';
+    const hh = h / 2, px = 20, fix = -hh * 0.45, piv = hh * 0.5;
+    const tip = pos === 'in_1' ? [-px, fix] : pos === 'in_2' ? [px, fix] : [0, -hh * 0.2];
+    const dot = (x, y, on) => `<circle cx="${x}" cy="${y}" r="3" ${on ? 'fill="currentColor" stroke="none"' : 'fill="var(--bg-primary, #fff)"'}/>`;
+    return `
+      <g class="symbol-changeover ${pos === 'off' ? 'symbol-open' : 'symbol-closed'}" fill="none">
+        <line x1="${-px}" y1="${-hh}" x2="${-px}" y2="${fix}"/>
+        <line x1="${px}" y1="${-hh}" x2="${px}" y2="${fix}"/>
+        <line x1="0" y1="${hh}" x2="0" y2="${piv}"/>
+        <line x1="0" y1="${piv}" x2="${tip[0]}" y2="${tip[1]}"/>
+        ${dot(0, piv, true)}${dot(-px, fix, pos === 'in_1')}${dot(px, fix, pos === 'in_2')}
+        ${this._changeoverLabels(w, h, p)}
+      </g>`;
+  },
+
+  // Input labels (e.g. "Mains" / "Gen") beside the two incoming leads.
+  _changeoverLabels(w, h, p) {
+    const y = -h / 2 + 7;
+    const t = (x, anchor, s) => s ? `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="7" fill="#888" stroke="none" font-family="sans-serif">${escHtml(String(s))}</text>` : '';
+    return t(-24, 'end', p.input_1_label) + t(24, 'start', p.input_2_label);
+  },
+
   offpage_connector(w, h, comp) {
     const r = w * 0.45;
     const label = (comp && comp.props && comp.props.name) || 'X';
@@ -924,6 +951,53 @@ const Symbols = {
         </g>`;
     },
 
+    // Changeover: a two-way contact pivoting on the common (out) terminal.
+    // The blade sits on input I or II, or mid-way for position 0. Contact
+    // duty sets the fixed-contact qualifier like a switch; an ATS adds a motor
+    // operator (M) on a dashed mechanical link; a breaker pair is drawn as two
+    // breakers with a mechanical interlock (dashed + ▼) and a common output.
+    changeover(w, h, comp) {
+      const p = (comp && comp.props) || {};
+      const pos = ['in_1', 'off', 'in_2'].includes(p.state) ? p.state : 'in_1';
+      const cls = `symbol-changeover symbol-iec ${pos === 'off' ? 'symbol-open' : 'symbol-closed'}`;
+      const labels = Symbols._changeoverLabels(w, h, p);
+      if (p.co_type === 'breaker_pair') {
+        return `<g class="${cls}" fill="none">${this._breakerPair(h, pos)}${labels}</g>`;
+      }
+      const hh = h / 2, px = 20, piv = hh * 0.5, fix = -hh * 0.45;
+      const kind = ['disconnector', 'load_break'].includes(p.contact_duty) ? p.contact_duty : 'switch_disconnector';
+      const ringed = kind !== 'disconnector';
+      const tip = pos === 'in_1' ? [-px, fix] : pos === 'in_2' ? [px, fix] : [0, -hh * 0.2];
+      let s = '';
+      for (const x of [-px, px]) {
+        s += `<line x1="${x}" y1="${-hh}" x2="${x}" y2="${ringed ? fix - 4.8 : fix}"/>`;
+        s += `<g transform="translate(${x} 0)">${this._qualifier(h, kind)}</g>`;
+      }
+      s += `<line x1="0" y1="${hh}" x2="0" y2="${piv}"/>`;
+      s += `<line x1="0" y1="${piv}" x2="${tip[0]}" y2="${tip[1]}"/>`;
+      if (p.co_type === 'ats') {
+        const my = (piv + tip[1]) / 2, mx = tip[0] / 2;
+        s += `<line x1="${mx}" y1="${my}" x2="23.5" y2="${my}" stroke-dasharray="2.2,1.8" stroke-width="0.9"/>`;
+        s += `<rect x="23.5" y="${my - 5}" width="10" height="10" fill="var(--bg-primary, #fff)"/>`;
+        s += `<text x="28.5" y="${my + 3}" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" stroke="none" font-family="sans-serif">M</text>`;
+      }
+      return `<g class="${cls}">${s}${labels}</g>`;
+    },
+
+    _breakerPair(h, pos) {
+      const hh = h / 2, px = 20, piv = hh * 0.4, fix = -hh * 0.45, a = 3.3, busY = hh * 0.75;
+      let s = `<line x1="0" y1="${hh}" x2="0" y2="${busY}"/><line x1="${-px}" y1="${busY}" x2="${px}" y2="${busY}"/>`;
+      for (const [x, on] of [[-px, pos === 'in_1'], [px, pos === 'in_2']]) {
+        const blade = `<line x1="${x}" y1="${piv}" x2="${x}" y2="${fix}"/>`;
+        s += `<line x1="${x}" y1="${-hh}" x2="${x}" y2="${fix}"/><line x1="${x}" y1="${busY}" x2="${x}" y2="${piv}"/>`;
+        s += on ? blade : `<g transform="rotate(-30 ${x} ${piv})">${blade}</g>`;
+        s += `<line x1="${x - a}" y1="${fix - a}" x2="${x + a}" y2="${fix + a}"/><line x1="${x + a}" y1="${fix - a}" x2="${x - a}" y2="${fix + a}"/>`;
+      }
+      s += `<line x1="${-px + 6}" y1="0" x2="${px - 6}" y2="0" stroke-dasharray="2.2,1.8" stroke-width="0.9"/>`;
+      s += `<polygon class="iec-solid" points="-2.6,-2.2 2.6,-2.2 0,2.2" stroke="none"/>`;
+      return s;
+    },
+
     _machine(h, r, letter, kind, colour, cls) {
       return `
         <g class="${cls} symbol-iec">
@@ -972,7 +1046,7 @@ const Symbols = {
     // (without touching the live component). Matched by component id.
     let renderComp = comp;
     let lfPreviewOverride = false;
-    if ((comp.type === 'cb' || comp.type === 'switch') &&
+    if ((comp.type === 'cb' || comp.type === 'switch' || comp.type === 'changeover') &&
         typeof AppState !== 'undefined' && AppState.lfPreviewCaseId &&
         Array.isArray(AppState.loadFlowCases)) {
       const pcase = AppState.loadFlowCases.find(c => c.id === AppState.lfPreviewCaseId);

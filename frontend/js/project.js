@@ -276,6 +276,8 @@ const Project = {
       .symbol-cable { stroke: #555; stroke-width: 2; fill: none; }
       .symbol-cb { stroke: #d32f2f; stroke-width: 1.5; }
       .symbol-switch { stroke: #333; stroke-width: 1.5; }
+      .symbol-changeover { stroke: #333; stroke-width: 1.5; fill: none; }
+      .symbol-changeover .iec-solid { fill: #333; }
       .symbol-fuse { stroke: #e65100; stroke-width: 1.5; fill: none; }
       .symbol-relay { stroke: #1565c0; stroke-width: 1.5; fill: none; }
       .symbol-ct { stroke: #555; stroke-width: 1.5; fill: none; }
@@ -285,7 +287,7 @@ const Project = {
       .symbol-capacitor { stroke: #0097a7; stroke-width: 1.5; fill: none; }
       .symbol-db { stroke: #555; stroke-width: 1.5; fill: none; }
       .symbol-db .symbol-text { stroke: none; fill: #555; }
-      .symbol-cb.symbol-open, .symbol-switch.symbol-open { stroke: #999; }
+      .symbol-cb.symbol-open, .symbol-switch.symbol-open, .symbol-changeover.symbol-open { stroke: #999; }
       .symbol-iec.symbol-cb, .symbol-iec.symbol-switch { fill: none; }
       .symbol-load .iec-solid { fill: #555; }
       .symbol-arrester .iec-solid { fill: #2e7d32; }

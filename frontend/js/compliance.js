@@ -520,7 +520,7 @@ const Compliance = {
 
     // Check CB and fuse rated voltages match bus voltage
     for (const [id, comp] of AppState.components) {
-      if (comp.type !== 'cb' && comp.type !== 'fuse' && comp.type !== 'switch') continue;
+      if (!['cb', 'fuse', 'switch', 'changeover'].includes(comp.type)) continue;
       const name = comp.props?.name || id;
       const ratedV = comp.props?.rated_voltage_kv;
       if (!ratedV) continue;
@@ -1461,7 +1461,7 @@ const Compliance = {
 
     // Rated voltage below the connected bus voltage
     for (const [id, comp] of AppState.components) {
-      if (!['cb', 'fuse', 'switch'].includes(comp.type)) continue;
+      if (!['cb', 'fuse', 'switch', 'changeover'].includes(comp.type)) continue;
       const ratedV = parseFloat(comp.props?.rated_voltage_kv);
       if (!(ratedV > 0)) continue;
       for (const b of this._findConnectedDevices(id, ['bus'])) {
@@ -1546,7 +1546,7 @@ const Compliance = {
     const visited = new Set([compId]);
     const queue = [compId];
     const adj = this._getAdjacency();
-    const transparent = ['cb', 'fuse', 'switch', 'ct', 'pt', 'surge_arrester'];
+    const transparent = ['cb', 'fuse', 'switch', 'changeover', 'ct', 'pt', 'surge_arrester'];
 
     while (queue.length > 0) {
       const current = queue.shift();
@@ -1649,7 +1649,7 @@ const Compliance = {
   // device is found, it dedicatedly protects this motor.
   _motorProtectiveDevices(motorId) {
     const adj = this._getAdjacency();
-    const traversable = new Set(['bus', 'cable', 'transformer', 'switch', 'ct', 'pt', 'surge_arrester']);
+    const traversable = new Set(['bus', 'cable', 'transformer', 'switch', 'changeover', 'ct', 'pt', 'surge_arrester']);
     const loadTypes = new Set(['motor_induction', 'motor_synchronous', 'static_load', 'capacitor_bank']);
     const visited = new Set([motorId]);
     const queue = [motorId];

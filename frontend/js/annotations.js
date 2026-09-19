@@ -222,12 +222,13 @@ const Annotations = {
 
   // Transparent device types a solid bus-link can pass through — mirrors the
   // backend load-flow solid-link walk (loadflow.py: TRANSPARENT_TYPES).
-  _LF_TRANSPARENT: new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']),
+  _LF_TRANSPARENT: new Set(['cb', 'switch', 'changeover', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']),
 
   _lfPassable(comp) {
     if (!comp || !this._LF_TRANSPARENT.has(comp.type)) return false;
-    // An open CB/switch/fuse breaks the node — the two sides are then distinct.
-    return !(comp.props && comp.props.state === 'open');
+    // An open CB/switch/fuse (or a changeover at 0) breaks the node — the two
+    // sides are then distinct.
+    return !(comp.props && comp.props.state === 'open') && !Components.isOpenSwitching(comp);
   },
 
   // A distribution board wired straight onto a busbar (directly, or through a
@@ -242,7 +243,7 @@ const Annotations = {
     const suppressed = new Set();
     const adj = new Map();
     const add = (a, b) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push(b); };
-    for (const w of AppState.wires.values()) {
+    for (const w of Components.topologyWires()) {
       if (pageComps.has(w.fromComponent) && pageComps.has(w.toComponent)) {
         add(w.fromComponent, w.toComponent);
         add(w.toComponent, w.fromComponent);

@@ -962,7 +962,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'protection',
     name: 'Protection Devices',
-    items: ['cb', 'fuse', 'relay', 'switch'],
+    items: ['cb', 'fuse', 'relay', 'switch', 'changeover'],
   },
   {
     id: 'instruments',
@@ -2677,6 +2677,68 @@ const COMPONENT_DEFS = {
       { key: 'state', label: 'State', type: 'select', options: ['closed', 'open'] },
     ],
   },
+  // Changeover switch: THREE terminals — two supplies (in_1, in_2) and one
+  // common output (out). `state` selects which input is wired through
+  // (in_1 / off / in_2). The backend rewrites it into two-terminal devices
+  // before analysis (backend/analysis/changeover.py); frontend walkers use
+  // Components.topologyWires() / isOpenSwitching() for the same semantics.
+  changeover: {
+    name: 'Changeover Switch',
+    category: 'protection',
+    ports: [
+      { id: 'in_1', side: 'top', offset: -20 },
+      { id: 'in_2', side: 'top', offset: 20 },
+      { id: 'out', side: 'bottom', offset: 0 },
+    ],
+    width: 60,
+    height: 40,
+    defaults: {
+      name: 'CO',
+      co_type: 'manual_i_0_ii',
+      state: 'in_1',
+      contact_duty: 'switch_disconnector',
+      input_1_label: 'Mains',
+      input_2_label: 'Gen',
+      rated_voltage_kv: 0.4,
+      rated_current_a: 630,
+      breaking_capacity_ka: 25,
+      transfer_delay_s: 5,
+      retransfer_delay_s: 300,
+    },
+    fields: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'co_type', label: 'Type', type: 'select',
+        options: [
+          { value: 'manual_i_0_ii', label: 'Manual I–0–II (centre off)' },
+          { value: 'manual_i_ii', label: 'Manual I–II (no off)' },
+          { value: 'ats', label: 'Automatic transfer (ATS)' },
+          { value: 'breaker_pair', label: 'Interlocked breaker pair' },
+        ] },
+      { key: 'state', label: 'Position', type: 'select',
+        options: [
+          { value: 'in_1', label: 'I — input 1' },
+          { value: 'off', label: '0 — off' },
+          { value: 'in_2', label: 'II — input 2' },
+        ] },
+      { key: 'input_1_label', label: 'Input 1 Label', type: 'text' },
+      { key: 'input_2_label', label: 'Input 2 Label', type: 'text' },
+      { key: 'contact_duty', label: 'Contact Duty', type: 'select',
+        options: [
+          { value: 'switch_disconnector', label: 'Switch-disconnector' },
+          { value: 'load_break', label: 'Load-break switch' },
+          { value: 'disconnector', label: 'Disconnector (off-load)' },
+        ],
+        showWhen: { field: 'co_type', values: ['manual_i_0_ii', 'manual_i_ii', 'ats'] } },
+      { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
+      { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
+      { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA',
+        showWhen: { field: 'co_type', values: ['breaker_pair'] } },
+      { key: 'transfer_delay_s', label: 'Transfer Delay', type: 'number', unit: 's',
+        showWhen: { field: 'co_type', values: ['ats'] } },
+      { key: 'retransfer_delay_s', label: 'Retransfer Delay', type: 'number', unit: 's',
+        showWhen: { field: 'co_type', values: ['ats'] } },
+    ],
+  },
 
   // --- Instrument Transformers ---
   ct: {
@@ -3547,4 +3609,5 @@ const LF_ATTRS = {
   svc: ['device_mode', 'control_mode', 'v_setpoint_pu', 'q_max_mvar', 'q_min_mvar'],
   cb: ['state'],
   switch: ['state'],
+  changeover: ['state'],
 };

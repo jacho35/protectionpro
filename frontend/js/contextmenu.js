@@ -98,6 +98,21 @@ const ContextMenu = {
       items.push('---');
     }
 
+    // Changeover: pick the position — I / 0 / II (no 0 on a manual I–II)
+    if (comp.type === 'changeover') {
+      const p = comp.props;
+      const positions = [
+        ['in_1', `Position I${p.input_1_label ? ` — ${p.input_1_label}` : ''}`],
+        ['off', 'Position 0 — Off'],
+        ['in_2', `Position II${p.input_2_label ? ` — ${p.input_2_label}` : ''}`],
+      ].filter(([pos]) => !(pos === 'off' && p.co_type === 'manual_i_ii'));
+      for (const [pos, label] of positions) {
+        items.push({ label, checked: (p.state || 'in_1') === pos,
+          action: () => this._setChangeoverPosition(comp, pos, label) });
+      }
+      items.push('---');
+    }
+
     if (comp.type === 'bus') {
       items.push({
         label: 'Run Fault Analysis Here',
@@ -428,6 +443,26 @@ const ContextMenu = {
 
   // Open/close a CB or switch with the same commit ritual as a
   // properties-panel edit (results cleared, undo snapshot, re-render)
+  _setChangeoverPosition(comp, pos, label) {
+    if (typeof LFStudy !== 'undefined' && LFStudy.clearPreview && AppState.lfPreviewCaseId) {
+      LFStudy.clearPreview();
+    }
+    if ((comp.props.state || 'in_1') === pos) return;
+    comp.props.state = pos;
+    AppState.dirty = true;
+    if (typeof Properties !== 'undefined' && Properties._notifyResultsCleared) {
+      Properties._notifyResultsCleared();
+    }
+    AppState.clearResults();
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    Canvas.render();
+    if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {
+      Properties.show(comp.id);
+    }
+    document.getElementById('status-info').textContent =
+      `${comp.props.name || 'Changeover'} set to ${label} — re-run studies to update results.`;
+  },
+
   _toggleSwitchgear(comp) {
     // Editing the live network while a load-flow case is previewed would be
     // masked: the diagram draws the case's breaker state, so a live toggle

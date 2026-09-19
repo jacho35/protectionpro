@@ -106,6 +106,7 @@ backend/
 │   ├── load_diversity.py   # Load demand factor analysis
 │   ├── grounding_system.py # IEEE 80 grounding grid design
 │   ├── study_manager.py    # Batch analysis orchestration
+│   ├── changeover.py       # Changeover switch → 2-terminal devices, applied by every analysis route before any engine runs
 │   └── pdf_reports.py      # ReportLab PDF generation
 └── routes/
     ├── analysis.py         # POST /api/analysis/* endpoints
@@ -228,7 +229,7 @@ DB path: `DATABASE_URL` env var, defaults to `sqlite:///./protectionpro.db`
 |---|---|
 | **Sources** | Utility Source, Generator, Solar PV, Wind Turbine |
 | **Distribution** | Bus, Transformer, Cable/Feeder |
-| **Protection** | Circuit Breaker, Fuse, Relay, Switch |
+| **Protection** | Circuit Breaker, Fuse, Relay, Switch, Changeover Switch (3-port: in_1 / in_2 / out) |
 | **Instruments** | Current Transformer (CT), Potential Transformer (PT) |
 | **Loads** | Induction Motor, Synchronous Motor, Static Load |
 | **Other** | Capacitor Bank, Surge Arrester, Off-page Connector |
@@ -258,6 +259,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Newton-Raphson: builds Jacobian, iterates until convergence
 - Gauss-Seidel: simpler iteration, slower convergence
 - Transparent elements (CBs, switches, fuses) are collapsed — connected buses grouped
+- **Changeover switches** (`changeover`, 3 ports, `state` = `in_1` / `off` / `in_2`, `co_type` manual I–0–II / manual I–II / ATS / interlocked breaker pair) never reach an engine: every `/api/analysis/*` route (route class in `routes/analysis.py`, incl. Load Flow Study Manager case snapshots) and the CSV export call `expand_changeovers`, which rewrites each into its own id as a switch (a CB for a breaker pair) wired selected-input → out, plus an open stub `<id>__in_k` on the other input. Engines build component-level adjacency and only know 2-terminal switching devices, so do not add `changeover` to engine code — extend the rewrite. Frontend walkers use `Components.topologyWires()` (drops wires on the unselected input) and `Components.isOpenSwitching()` for the same semantics
 - `insert_implicit_load_buses(project)` is an idempotent pre-pass run by every AC engine: any **load or source** wired to the network only through a series cable/transformer, with no busbar at its own terminal, gets a synthetic `__term__` bus so the feeding element becomes a real two-bus branch. Without it the element reaches only one bus and the chain builder drops it — no Y-bus stamp, no voltage drop, no branch flow, no loading check — silently modelling the load/source as if it sat on the far bus. A **source behind an open CB** is deliberately excluded (`_reaches_series_element`): it reaches no bus because it is switched out, and giving it a terminal node would promote it to its own live island instead of leaving it offline. Synthetic buses are stripped from load-flow output (`is_synthetic_bus`) — the source's own row and dispatch entry re-anchor to the point of supply so nothing collapses to a self-loop — but are **kept** in fault results, where the terminal fault level is the useful output
 - Outputs: bus voltages/angles, branch MW/MVAR flows, losses
 - The utility source defaults to an **ideal infinite/swing bus** (held at `v_setpoint_pu`, default 1.0 p.u.) — its `fault_mva` is *not* modelled, so loadability/voltage-collapse behaviour is set by the network impedance alone. Setting the utility prop `lf_grid_model: "thevenin"` instead re-hangs it behind its Thevenin source impedance Z = U²/S″k (R+jX from `x_r_ratio`, no IEC 60909 c factor) via an internal EMF bus that becomes the swing (`_insert_grid_source_impedance`) — the point of supply then sags with load, and voltage stability / contingency / motor-starting baselines inherit the finite grid strength. The synthetic EMF bus + impedance element are collapsed out of user-facing results
