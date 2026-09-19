@@ -1242,9 +1242,9 @@ const Properties = {
   // backend inserts for a load wired behind a cable/transformer (matches
   // loadflow.insert_implicit_load_buses / SYNTHETIC_BUS_PREFIX).
   _terminalBusId(compId) {
-    const transparent = new Set(['cb', 'fuse', 'switch', 'ct', 'pt', 'surge_arrester']);
+    const transparent = new Set(['cb', 'fuse', 'switch', 'changeover', 'ct', 'pt', 'surge_arrester']);
     const adj = {};
-    for (const w of AppState.wires.values()) {
+    for (const w of Components.topologyWires()) {
       (adj[w.fromComponent] = adj[w.fromComponent] || []).push(w.toComponent);
       (adj[w.toComponent] = adj[w.toComponent] || []).push(w.fromComponent);
     }

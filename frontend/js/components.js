@@ -1,6 +1,41 @@
 /* ProtectionPro — Component Helpers & Validation */
 
 const Components = {
+  // ── Changeover switches (3 terminals: in_1 / in_2 / out) ──
+  // Walkers build component-level adjacency from wires, which can't say
+  // "out joins in_1 but not in_2". So, mirroring the backend rewrite
+  // (analysis/changeover.py): a wire on the input a changeover is NOT set to
+  // carries nothing (topologyWires drops it), and the changeover itself is a
+  // switching device that is open only in position 0 (isOpenSwitching).
+  SWITCHING_TYPES: new Set(['cb', 'switch', 'changeover']),
+
+  // True for a wire end on a changeover input the blade isn't on. In
+  // position 0 both inputs stay wired — the open device blocks them.
+  isDeadChangeoverEnd(compId, portId) {
+    const c = AppState.components.get(compId);
+    if (!c || c.type !== 'changeover' || !(portId === 'in_1' || portId === 'in_2')) return false;
+    const pos = (c.props && c.props.state) || 'in_1';
+    return pos !== 'off' && portId !== pos;
+  },
+
+  // Wires as the network actually conducts them (see above).
+  topologyWires() {
+    const out = [];
+    for (const w of AppState.wires.values()) {
+      if (this.isDeadChangeoverEnd(w.fromComponent, w.fromPort)
+          || this.isDeadChangeoverEnd(w.toComponent, w.toPort)) continue;
+      out.push(w);
+    }
+    return out;
+  },
+
+  // An open CB / switch, or a changeover in position 0.
+  isOpenSwitching(c) {
+    if (!c || !c.props) return false;
+    if (c.type === 'changeover') return c.props.state === 'off';
+    return (c.type === 'cb' || c.type === 'switch') && c.props.state === 'open';
+  },
+
   // Get all buses from the network
   getBuses() {
     return [...AppState.components.values()].filter(c => c.type === 'bus');
@@ -17,15 +52,14 @@ const Components = {
     if (!def || !def.ports || def.ports.length < 2) return { fromBus: null, toBus: null };
 
     const adj = new Map(); // id -> [{ id, localPort }]
-    for (const wire of AppState.wires.values()) {
+    for (const wire of this.topologyWires()) {
       if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
       if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
       adj.get(wire.fromComponent).push({ id: wire.toComponent, localPort: wire.fromPort });
       adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
     }
-    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']);
-    const isClosed = (c) => TRANSPARENT.has(c.type)
-      && !((c.type === 'cb' || c.type === 'switch') && c.props.state === 'open');
+    const TRANSPARENT = new Set(['cb', 'switch', 'changeover', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']);
+    const isClosed = (c) => TRANSPARENT.has(c.type) && !this.isOpenSwitching(c);
 
     const walk = (portId) => {
       const visited = new Set([compId]);
@@ -66,13 +100,13 @@ const Components = {
     const board = AppState.components.get(boardId);
     if (!board) return empty;
 
-    const PASS_THROUGH = new Set(['cable', 'cb', 'fuse', 'switch', 'ct', 'pt',
+    const PASS_THROUGH = new Set(['cable', 'cb', 'fuse', 'switch', 'changeover', 'ct', 'pt',
                                   'surge_arrester', 'offpage_connector', 'bus_duct']);
     const SUPPLY = new Set(['bus', 'distribution_board', 'transformer', 'utility',
                             'generator', 'solar_pv', 'wind_turbine', 'battery', 'ups']);
 
     const adj = new Map();
-    for (const wire of AppState.wires.values()) {
+    for (const wire of this.topologyWires()) {
       if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
       if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
       adj.get(wire.fromComponent).push({ id: wire.toComponent, localPort: wire.fromPort });
@@ -114,7 +148,7 @@ const Components = {
         device,
         rating_a: device ? this._deviceRatingA(device) : null,
         device_label: device ? this._deviceLabel(device) : null,
-        isolator: chain.find(c => c.type === 'switch') || null,
+        isolator: chain.find(c => c.type === 'switch' || c.type === 'changeover') || null,
         cable: this._feedCableInfo(chain.find(c => c.type === 'cable') || null),
         source: source ? { id: source.id, name: source.props.name || source.id, type: source.type } : null,
         way: null,
@@ -348,16 +382,10 @@ const Components = {
     };
 
     // "Transparent" elements: zero-impedance pass-through components
-    const TRANSPARENT = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']);
+    const TRANSPARENT = new Set(['cb', 'switch', 'changeover', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']);
 
     // Check if a component is transparent and in closed state
-    const isTransparentClosed = (comp) => {
-      if (!TRANSPARENT.has(comp.type)) return false;
-      if (comp.type === 'cb' || comp.type === 'switch') {
-        if (comp.props.state === 'open') return false;
-      }
-      return true;
-    };
+    const isTransparentClosed = (comp) => TRANSPARENT.has(comp.type) && !this.isOpenSwitching(comp);
 
     for (const comp of AppState.components.values()) {
       if (comp.type === 'bus') {
@@ -367,7 +395,7 @@ const Components = {
 
     // Build adjacency from wires: compId -> [{id, localPort}]
     const adj = new Map();
-    for (const wire of AppState.wires.values()) {
+    for (const wire of this.topologyWires()) {
       if (!adj.has(wire.fromComponent)) adj.set(wire.fromComponent, []);
       if (!adj.has(wire.toComponent)) adj.set(wire.toComponent, []);
       adj.get(wire.fromComponent).push({ id: wire.toComponent, localPort: wire.fromPort });
@@ -517,6 +545,21 @@ const Components = {
       return { errors, warnings };
     }
 
+    // 1b. Changeovers: a manual I–II has no off position, and a supply wired
+    // to both inputs from the same bus makes the changeover pointless.
+    for (const c of AppState.components.values()) {
+      if (c.type !== 'changeover') continue;
+      const name = c.props.name || 'Changeover';
+      if (c.props.co_type === 'manual_i_ii' && c.props.state === 'off') {
+        warnings.push({ type: 'warning', compId: c.id,
+          msg: `${name} is a manual I–II changeover (no off position) but is set to 0 — its load side is modelled de-energized.` });
+      }
+      if (!this.isPortConnected(c.id, 'out')) {
+        warnings.push({ type: 'warning', compId: c.id,
+          msg: `${name} has nothing wired to its output — it feeds no load.` });
+      }
+    }
+
     // 2. Check for isolated components (no connections at all)
     for (const comp of AppState.components.values()) {
       if (comp.type === 'relay') continue;
@@ -563,7 +606,7 @@ const Components = {
 
     // Build simple adjacency (component id -> [neighbor ids]) for reachability
     const reachAdj = new Map();
-    for (const wire of AppState.wires.values()) {
+    for (const wire of this.topologyWires()) {
       if (!reachAdj.has(wire.fromComponent)) reachAdj.set(wire.fromComponent, []);
       if (!reachAdj.has(wire.toComponent)) reachAdj.set(wire.toComponent, []);
       reachAdj.get(wire.fromComponent).push(wire.toComponent);
@@ -588,9 +631,7 @@ const Components = {
       if (comp.type === 'bus') busesWithSource.add(id);
 
       // Walk through everything except open CBs/switches
-      if (comp.type === 'cb' || comp.type === 'switch') {
-        if (comp.props.state === 'open') continue; // open device blocks path
-      }
+      if (this.isOpenSwitching(comp)) continue; // open device blocks path
 
       for (const nid of (reachAdj.get(id) || [])) {
         if (!reachVisited.has(nid)) {
@@ -624,7 +665,7 @@ const Components = {
     // does not insert terminal buses), so DC loads still warrant the warning.
     {
       const DC_LOAD_TYPES = ['static_load', 'motor_induction', 'motor_synchronous', 'capacitor_bank'];
-      const TRANSPARENT_TYPES = new Set(['cb', 'switch', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']);
+      const TRANSPARENT_TYPES = new Set(['cb', 'switch', 'changeover', 'fuse', 'ct', 'pt', 'surge_arrester', 'offpage_connector', 'bus_duct']);
       const includedIds = new Set(graph.loads.map(l => l.load.id));
       for (const comp of AppState.components.values()) {
         const isDcLoad = DC_LOAD_TYPES.includes(comp.type)

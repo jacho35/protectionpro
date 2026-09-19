@@ -440,6 +440,9 @@ body.dark-mode .comp-data-label {
 .symbol-cb.symbol-open { stroke: #999; }
 .symbol-switch { stroke: #333; stroke-width: 1.5; }
 .symbol-switch.symbol-open { stroke: #999; }
+.symbol-changeover { stroke: #333; stroke-width: 1.5; fill: none; }
+.symbol-changeover.symbol-open { stroke: #999; }
+.symbol-changeover .iec-solid { fill: #333; }
 .symbol-fuse { stroke: #e65100; stroke-width: 1.5; fill: none; }
 .symbol-relay { stroke: #1565c0; stroke-width: 1.5; fill: none; }
 .symbol-ct { stroke: #555; stroke-width: 1.5; fill: none; }
@@ -479,7 +482,9 @@ body.dark-mode .symbol-transformer circle,
 body.dark-mode .symbol-transformer text,
 body.dark-mode .grounding-symbol,
 body.dark-mode .grounding-symbol line,
-body.dark-mode .symbol-switch { stroke: #c0c0d0; }
+body.dark-mode .symbol-switch,
+body.dark-mode .symbol-changeover { stroke: #c0c0d0; }
+body.dark-mode .symbol-changeover .iec-solid { fill: #c0c0d0; }
 body.dark-mode .symbol-cable,
 body.dark-mode .symbol-ct,
 body.dark-mode .symbol-pt,
@@ -491,7 +496,8 @@ body.dark-mode .symbol-generator,
 body.dark-mode .symbol-arrester { stroke: #66bb6a; }
 body.dark-mode .symbol-cb { stroke: #ef5350; }
 body.dark-mode .symbol-cb.symbol-open,
-body.dark-mode .symbol-switch.symbol-open { stroke: #999; }
+body.dark-mode .symbol-switch.symbol-open,
+body.dark-mode .symbol-changeover.symbol-open { stroke: #999; }
 body.dark-mode .symbol-capacitor { stroke: #4dd0e1; }
 body.dark-mode .symbol-ups rect,
 body.dark-mode .symbol-rectifier rect,

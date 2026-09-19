@@ -24,6 +24,7 @@ const VoltagePropagation = {
     cb:                'rated_voltage_kv',
     fuse:              'rated_voltage_kv',
     switch:            'rated_voltage_kv',
+    changeover:        'rated_voltage_kv',
     surge_arrester:    'rated_voltage_kv',
     // DC system AC-side voltages
     ups:               'voltage_in_kv',

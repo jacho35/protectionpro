@@ -3376,7 +3376,7 @@ const TCC = {
    */
   _buildDistanceAdjacency() {
     const adj = new Map();
-    for (const [, w] of AppState.wires || []) {
+    for (const w of Components.topologyWires()) {
       if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
       if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
       adj.get(w.fromComponent).push(w.toComponent);
@@ -3399,7 +3399,7 @@ const TCC = {
       const comp = AppState.components.get(nid);
       if (!comp) continue;
       if (comp.type === 'utility' || comp.type === 'generator') return true;
-      if ((comp.type === 'cb' || comp.type === 'switch') && comp.props?.state === 'open') continue;
+      if (Components.isOpenSwitching(comp)) continue;
       for (const nb of adj.get(nid) || []) {
         if (!visited.has(nb)) { visited.add(nb); stack.push(nb); }
       }
@@ -3459,7 +3459,7 @@ const TCC = {
       if (comp.type === 'bus' || comp.type === 'distribution_board') {
         return { busId: node, r, x, chain };
       }
-      if ((comp.type === 'cb' || comp.type === 'switch') && comp.props?.state === 'open') {
+      if (Components.isOpenSwitching(comp)) {
         return null; // open device blocks the path
       }
       chain.push(node);

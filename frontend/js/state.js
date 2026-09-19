@@ -762,7 +762,7 @@ const AppState = {
     if (!scenario) return false;
     const applies = scenario.applies || { switching: true, settings: true, layout: true };
     const full = applies.switching && applies.settings && applies.layout;
-    const SWITCHING_TYPES = new Set(['cb', 'switch']);
+    const SWITCHING_TYPES = new Set(['cb', 'switch', 'changeover']);
 
     this.selectedIds.clear();
     this.faultResults = null;

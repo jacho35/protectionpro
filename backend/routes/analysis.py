@@ -2,9 +2,11 @@
 motor starting, equipment duty check, load diversity, grounding system,
 and study manager."""
 
+import functools
 import traceback
 from typing import Optional
 from fastapi import APIRouter, HTTPException
+from fastapi.routing import APIRoute
 from pydantic import BaseModel
 from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
@@ -44,8 +46,27 @@ from ..analysis.duty_check import run_duty_check
 from ..analysis.load_diversity import run_load_diversity
 from ..analysis.grounding_system import run_grounding_analysis, interpret_wenner_test
 from ..analysis.study_manager import run_study_manager
+from ..analysis.changeover import expand_changeovers
 
-router = APIRouter(prefix="/analysis", tags=["analysis"])
+
+def _with_changeovers_expanded(endpoint):
+    """Rewrite changeover switches (3 terminals) into the 2-terminal devices
+    every engine understands before the endpoint sees the project — see
+    analysis/changeover.py. Signature is preserved for FastAPI."""
+    @functools.wraps(endpoint)
+    def wrapper(*args, **kwargs):
+        kwargs = {k: expand_changeovers(v) if isinstance(v, ProjectData) else v
+                  for k, v in kwargs.items()}
+        return endpoint(*args, **kwargs)
+    return wrapper
+
+
+class _AnalysisRoute(APIRoute):
+    def __init__(self, path, endpoint, **kwargs):
+        super().__init__(path, _with_changeovers_expanded(endpoint), **kwargs)
+
+
+router = APIRouter(prefix="/analysis", tags=["analysis"], route_class=_AnalysisRoute)
 
 
 @router.post("/fault", response_model=FaultResults)

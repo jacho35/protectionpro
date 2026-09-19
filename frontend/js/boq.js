@@ -108,7 +108,7 @@ const BOQ = {
     } catch (e) { return false; }
   },
   _hasSLD() {
-    for (const c of AppState.components.values()) if (['cable', 'transformer', 'cb', 'fuse', 'switch', 'distribution_board'].includes(c.type)) return true;
+    for (const c of AppState.components.values()) if (['cable', 'transformer', 'cb', 'fuse', 'switch', 'changeover', 'distribution_board'].includes(c.type)) return true;
     return false;
   },
   _hasDB() {
@@ -329,6 +329,12 @@ const BOQ = {
         else if (c.type === 'switch') {
           const a = Number(p.rated_current_a) || 0;
           add({ key: `SW-ISOLATOR-${a}A`, desc: `Isolator / switch ${a} A`, unit: 'ea', cat: 'prot' }, 1, 'sld', 'SLD switches');
+        } else if (c.type === 'changeover') {
+          const a = Number(p.rated_current_a) || 0;
+          const [k, d] = p.co_type === 'ats' ? ['SW-ATS', 'Automatic transfer switch']
+            : p.co_type === 'breaker_pair' ? ['SW-CO-BREAKER-PAIR', 'Changeover breaker pair (interlocked)']
+            : ['SW-CHANGEOVER', 'Changeover switch'];
+          add({ key: `${k}-${a}A`, desc: `${d} ${a} A`, unit: 'ea', cat: 'prot' }, 1, 'sld', 'SLD changeovers');
         } else if (c.type === 'ct') add({ key: 'EQ-CT' }, 1, 'sld', 'SLD CTs');
         else if (c.type === 'pt') add({ key: 'EQ-VT' }, 1, 'sld', 'SLD VTs');
         else if (c.type === 'relay') add({ key: 'EQ-RELAY' }, 1, 'sld', 'SLD relays');
