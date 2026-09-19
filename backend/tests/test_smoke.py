@@ -195,3 +195,36 @@ def test_ring_network_terminates(project):
     from backend.analysis.fault import run_fault_analysis
     res = run_fault_analysis(proj)
     assert all(b.ik3 > 0 for b in res.buses.values())
+
+
+def test_study_manager_runs_every_study(project):
+    """Every Study Manager study completes on the smoke network. Arc flash
+    and DC arc flash return dataclasses (not pydantic models); the manager
+    used to pass them to the status extraction unconverted, so arc flash
+    failed on every network with "'ArcFlashResults' object has no attribute
+    'get'"."""
+    from backend.analysis.study_manager import run_study_manager
+    out = run_study_manager(project)
+    errors = {k: v["error"] for k, v in out["studies"].items() if v["status"] == "error"}
+    assert not errors, errors
+    af = out["studies"]["arcflash"]
+    assert af["counts"]["buses"] == 3
+    assert set(af["result"]["buses"]) == {"bus-1", "bus-2", "bus-3"}
+    # A DANGER bus (ppe_category -1, > 40 cal/cm²) is the worst result: it
+    # must fail the study, not rank below category 0 and pass.
+    cats = [b["ppe_category"] for b in af["result"]["buses"].values()]
+    assert af["counts"]["danger"] == sum(1 for c in cats if c < 0)
+    if af["counts"]["danger"]:
+        assert af["status"] == "fail"
+
+
+def test_study_manager_arcflash_danger_fails():
+    """Status extraction alone: all-DANGER buses fail; categories rank 0-4."""
+    from backend.analysis.study_manager import _extract_study_status
+    bus = lambda c: {"ppe_category": c}
+    st = _extract_study_status("arcflash", {"buses": {"a": bus(-1), "b": bus(-1)}})
+    assert st["status"] == "fail" and st["counts"]["danger"] == 2
+    st = _extract_study_status("arcflash", {"buses": {"a": bus(-1), "b": bus(1)}})
+    assert st["status"] == "fail" and st["counts"]["max_ppe_category"] == 1
+    assert _extract_study_status("arcflash", {"buses": {"a": bus(3)}})["status"] == "warning"
+    assert _extract_study_status("arcflash", {"buses": {"a": bus(2)}})["status"] == "pass"
