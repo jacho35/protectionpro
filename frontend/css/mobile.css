@@ -2,10 +2,20 @@
 
 /* ─── Mobile variables ────────────────────────────────── */
 :root {
-  --mobile-header-height: 52px;
-  --mobile-nav-height: 56px;
-  --mobile-sheet-radius: 16px;
-  --mobile-fab-size: 48px;
+  --mobile-header-height: 56px;
+  --mobile-nav-height: calc(58px + env(safe-area-inset-bottom, 0px));
+  --mobile-sheet-radius: 18px;
+  --mobile-fab-size: 44px;
+  --mobile-tint: #e8f2fc;          /* accent-tinted fill for selected rows */
+  --mobile-warn-bg: #fff4e5;
+  --mobile-warn-border: #f0b35c;
+  --mobile-warn-text: #7a4100;
+}
+body.dark-mode {
+  --mobile-tint: #0d2a4a;
+  --mobile-warn-bg: #3a2a10;
+  --mobile-warn-border: #8a6420;
+  --mobile-warn-text: #ffd48a;
 }
 
 @media (max-width: 768px) {
@@ -48,7 +58,6 @@
   #mobile-header {
     display: flex !important;
     align-items: center;
-    justify-content: space-between;
     position: fixed;
     top: 0;
     left: 0;
@@ -56,66 +65,68 @@
     height: var(--mobile-header-height);
     background: var(--bg-primary);
     border-bottom: 1px solid var(--border-color);
-    padding: 0 12px;
+    padding: 0 4px 0 12px;
     z-index: 500;
-    gap: 8px;
+    gap: 0;
   }
 
-  #mobile-header .mobile-title-block {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    line-height: 1.05;
+  /* Title = workspace switcher: current workspace over the project name. */
+  .mobile-ws-switch {
     flex: 1;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    text-align: left;
     cursor: pointer;
-    user-select: none;
     -webkit-tap-highlight-color: transparent;
   }
-
-  #mobile-header .mobile-title {
-    font-size: 15px;
+  .mobile-ws-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 1px;
+  }
+  .mobile-ws-label {
+    font-size: 16px;
     font-weight: 700;
-    color: var(--accent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-  }
-
-  #mobile-header .mobile-app-version {
-    font-size: 9px;
-    font-weight: 600;
-    color: var(--text-muted);
-    letter-spacing: 0.4px;
-  }
-
-  #mobile-header .mobile-project-name {
-    font-size: 11px;
-    color: var(--text-muted);
-    max-width: 120px;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .mobile-ws-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-ws-switch svg { flex-shrink: 0; }
 
   .mobile-header-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     border: none;
     background: transparent;
     color: var(--text-primary);
-    border-radius: 8px;
+    border-radius: 10px;
     cursor: pointer;
     flex-shrink: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
   }
-
-  .mobile-header-btn:active {
-    background: var(--bg-tertiary);
-  }
+  .mobile-header-btn:active { background: var(--bg-tertiary); }
+  .mobile-header-btn:disabled { color: var(--text-muted); opacity: 0.45; cursor: default; }
+  .mobile-header-btn:disabled:active { background: transparent; }
 
   /* ─── Canvas container ────────────────────────────── */
   #canvas-container {
@@ -132,69 +143,83 @@
     height: 100%;
   }
 
-  /* ─── Floating Action Buttons ─────────────────────── */
+  /* ─── Canvas mode toggle (top-left) ───────────────── */
+  #mobile-mode-toggle {
+    display: flex !important;
+    position: fixed;
+    top: calc(var(--mobile-header-height) + 10px);
+    left: 10px;
+    padding: 3px;
+    gap: 2px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(20, 20, 40, 0.1);
+    z-index: 450;
+  }
+  #mobile-mode-toggle button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 38px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #mobile-mode-toggle button.fab-active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* ─── View buttons (top-right) ────────────────────── */
   #mobile-fab-group {
     display: flex !important;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     position: fixed;
-    right: 14px;
-    bottom: calc(var(--mobile-nav-height) + 14px);
+    right: 10px;
+    top: calc(var(--mobile-header-height) + 10px);
     z-index: 450;
   }
 
   .mobile-fab {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     width: var(--mobile-fab-size);
     height: var(--mobile-fab-size);
-    border-radius: 50%;
-    border: none;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 1px 4px rgba(20, 20, 40, 0.1);
+    transition: transform 0.15s;
+    -webkit-tap-highlight-color: transparent;
   }
-
-  .mobile-fab:active {
-    transform: scale(0.92);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-  }
-
-  #fab-mode-select {
+  .mobile-fab:active { transform: scale(0.94); }
+  .fab-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 9px;
     background: var(--accent);
     color: #fff;
-  }
-
-  #fab-mode-wire {
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1.5px solid var(--border-color);
-  }
-
-  #fab-zoom-fit {
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1.5px solid var(--border-color);
-  }
-
-  /* Active state for mode FABs */
-  #fab-mode-select.fab-active {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-  }
-
-  #fab-mode-wire.fab-active {
-    background: #e3f2fd;
-    color: var(--accent);
-    border-color: var(--accent);
-  }
-
-  body.dark-mode #fab-mode-wire.fab-active {
-    background: #0d2a4a;
-    color: var(--accent);
-    border-color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
   }
 
   /* ─── Bottom navigation ───────────────────────────── */
@@ -206,13 +231,17 @@
     left: 0;
     right: 0;
     height: var(--mobile-nav-height);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
     background: var(--bg-primary);
     border-top: 1px solid var(--border-color);
-    z-index: 500;
+    z-index: 800;   /* above sheets, so the tabs stay reachable */
   }
 
   .mobile-nav-btn {
+    position: relative;
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -222,19 +251,26 @@
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 10px;
+    font-size: 11px;
+    font-weight: 600;
     padding: 6px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: color 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
-
-  .mobile-nav-btn.active {
-    color: var(--accent);
-  }
-
-  .mobile-nav-btn svg {
-    width: 22px;
-    height: 22px;
+  .mobile-nav-btn.active { color: var(--accent); }
+  .mobile-nav-btn svg { width: 22px; height: 22px; flex-shrink: 0; }
+  .nav-dot {
+    position: absolute;
+    top: 7px;
+    left: calc(50% + 8px);
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--success);
+    border: 2px solid var(--bg-primary);
   }
 
   /* ─── Bottom sheet backdrop ───────────────────────── */
@@ -242,7 +278,8 @@
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.4);
+    bottom: var(--mobile-nav-height);
+    background: rgba(0, 0, 0, 0.4);
     z-index: 600;
     opacity: 0;
     transition: opacity 0.25s;
@@ -254,21 +291,35 @@
   }
 
   /* ─── Bottom sheets ───────────────────────────────── */
+  /* Sheets sit above the bottom nav, so switching tabs never needs a close. */
   .mobile-sheet {
     display: none;
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--mobile-nav-height);
     background: var(--bg-primary);
     border-radius: var(--mobile-sheet-radius) var(--mobile-sheet-radius) 0 0;
     z-index: 700;
-    max-height: 80vh;
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
-    transform: translateY(100%);
+    max-height: calc(100% - var(--mobile-nav-height) - 24px);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+    transform: translateY(110%);
     transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
     overflow: hidden;
     flex-direction: column;
+  }
+  /* Browsing sheets (Studies, Results, More) open tall so lists have room. */
+  .mobile-sheet.mobile-sheet-tall {
+    height: calc(100% - var(--mobile-nav-height) - 24px);
+  }
+  /* Properties is a full screen of its own, over the nav. */
+  .mobile-sheet.mobile-sheet-full {
+    top: 0;
+    bottom: 0;
+    max-height: none;
+    border-radius: 0;
+    z-index: 900;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .mobile-sheet.open {
@@ -277,11 +328,11 @@
   }
 
   .mobile-sheet-handle {
-    width: 36px;
-    height: 4px;
+    width: 40px;
+    height: 5px;
     background: var(--border-color);
-    border-radius: 2px;
-    margin: 10px auto 4px;
+    border-radius: 3px;
+    margin: 8px auto 2px;
     flex-shrink: 0;
   }
 
@@ -289,67 +340,484 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 16px 12px;
+    gap: 8px;
+    padding: 4px 12px 8px 16px;
     flex-shrink: 0;
   }
 
   .mobile-sheet-title {
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 700;
     color: var(--text-primary);
+  }
+  .mobile-sheet-title-block {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mobile-sheet-title-block .mobile-sheet-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-sheet-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .mobile-sheet-close {
-    width: 28px;
-    height: 28px;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
     border: none;
-    background: var(--bg-tertiary);
+    background: transparent;
     border-radius: 50%;
-    font-size: 16px;
+    font-size: 24px;
     color: var(--text-secondary);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
   }
+
+  .mobile-sheet-sub {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 16px 10px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .mobile-sheet-sub:empty { display: none; }
 
   .mobile-sheet-body {
     overflow-y: auto;
     flex: 1;
     -webkit-overflow-scrolling: touch;
-    padding: 0 12px 16px;
+    overscroll-behavior: contain;
+    padding: 0 16px 16px;
+  }
+  .mobile-sheet-body.mobile-sheet-body-flush { padding: 0 0 16px; }
+
+  .mobile-sheet-footer {
+    flex-shrink: 0;
+    padding: 10px 16px 14px;
+    border-top: 1px solid var(--border-color);
   }
 
-  /* ─── Components sheet ────────────────────────────── */
+  .mobile-hint {
+    margin: 0 16px 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .mobile-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .mobile-empty p { margin: 0 0 16px; }
+
+  /* Buttons */
+  .mobile-primary-btn,
+  .mobile-secondary-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 50px;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-primary-btn {
+    border: none;
+    background: var(--accent);
+    color: #fff;
+  }
+  .mobile-primary-btn:active { background: var(--accent-hover); }
+  .mobile-secondary-btn {
+    min-height: 44px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
+  /* Chips (study groups, studies with results) — one scrolling row */
+  .mobile-chips {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -16px;
+    padding: 0 16px;
+  }
+  .mobile-chips::-webkit-scrollbar { display: none; }
+  .mobile-chip {
+    flex: 0 0 auto;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 18px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-chip.active {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* On/off switch — a styled checkbox (native semantics kept) */
+  .mobile-switch,
+  .mobile-switch-ui {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    flex: 0 0 auto;
+    width: 46px;
+    height: 28px;
+    margin: 0;
+    border-radius: 14px;
+    background: var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .mobile-switch::after,
+  .mobile-switch-ui::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: transform 0.2s;
+  }
+  .mobile-switch:checked,
+  .mobile-switch-ui.on { background: var(--accent); }
+  .mobile-switch:checked::after,
+  .mobile-switch-ui.on::after { transform: translateX(18px); }
+  .mobile-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Option rows (study setup, wire routing, show on diagram) */
+  .mopt {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .mopt-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .mopt-select {
+    height: 46px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 16px;   /* 16px keeps iOS from zooming on focus */
+  }
+  .mopt.mopt-switch {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 48px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .mopt-switch .mopt-label { font-size: 15px; font-weight: 500; }
+  #mobile-study-options { padding-top: 4px; }
+  #mobile-study-run { margin-top: 8px; }
+
+  /* ─── List rows (Studies, More, Sheets, Workspaces) ─── */
+  .mm-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 16px 16px 6px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .mm-subhead {
+    margin: 0;
+    padding: 10px 16px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .mm-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 52px;
+    padding: 6px 16px;
+    box-sizing: border-box;
+    border: none;
+    border-bottom: 1px solid var(--bg-tertiary);
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mm-item:active { background: var(--bg-secondary); }
+  .mm-item > svg { flex-shrink: 0; color: var(--text-muted); }
+  .mm-item.active { color: var(--accent); }
+  .mm-item.active > svg { color: var(--accent); }
+  .mm-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mm-label { font-size: 15px; font-weight: 500; }
+  .mm-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .mm-row { display: flex; align-items: stretch; }
+  .mm-row .mm-item { flex: 1; }
+  .mm-icon-btn {
+    width: 52px;
+    flex-shrink: 0;
+    border: none;
+    border-bottom: 1px solid var(--bg-tertiary);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .mm-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    padding: 0 6px;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .mm-select-row { padding: 12px 16px 4px; margin: 0; }
+
+  .mstudy-done {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--success);
+  }
+  .mstudy-opts {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* Workspace switcher + the More sheet's workflow steps */
+  .mws-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 60px;
+    padding: 8px 4px;
+    border: none;
+    border-bottom: 1px solid var(--bg-tertiary);
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+  }
+  .mws-item.active { color: var(--accent); }
+  .mws-item.active .mws-step { background: var(--accent); color: #fff; }
+  .mws-step {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .mws-item .mws-step:empty { display: none; }
+  .mws-settings { padding-left: 4px; padding-right: 4px; }
+  .mws-steps {
+    display: flex;
+    gap: 4px;
+    margin: 0 16px 4px;
+    padding: 4px;
+    border-radius: 14px;
+    background: var(--bg-tertiary);
+  }
+  .mws-step-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 58px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: none;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .mws-step-btn > span:last-child {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mws-step-btn.active {
+    background: var(--bg-primary);
+    color: var(--accent);
+    box-shadow: 0 1px 3px rgba(20, 20, 40, 0.15);
+  }
+  .mws-step-btn.active .mws-step { background: var(--accent); color: #fff; }
+
+  /* ─── Results sheet ───────────────────────────────── */
+  .mresults-toggle { margin: 0; min-height: 44px; }
+  .mobile-results-body {
+    background: var(--bg-secondary);
+    padding-top: 12px;
+  }
+  .mres-note {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  #mobile-results-content .mm-head { padding: 12px 0 6px; }
+  .mres-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--bg-primary);
+  }
+  .mres-card.flagged { border-color: var(--mobile-warn-border); }
+  .mres-head { display: flex; align-items: center; gap: 8px; }
+  .mres-title { font-size: 15px; font-weight: 700; }
+  .mres-cells {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .mres-cells > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .mres-k { font-size: 11px; color: var(--text-muted); }
+  .mres-v {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mres-flag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mobile-warn-text);
+  }
+  .mres-flag svg { flex-shrink: 0; }
+  .mres-banner {
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border-radius: 12px;
+    background: var(--mobile-warn-bg);
+    font-weight: 500;
+  }
+  .mresults-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .mresults-more { text-align: center; margin-top: 6px; }
+
+  /* ─── Parts sheet ─────────────────────────────────── */
   #mobile-sheet-components .mobile-sheet-body {
     padding: 0 0 16px;
   }
 
   .mobile-component-search {
-    margin: 0 12px 8px;
-    padding: 8px 12px;
-    width: calc(100% - 24px);
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 44px;
+    padding: 0 12px;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 12px;
     background: var(--bg-secondary);
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 16px;
     outline: none;
   }
-
-  .mobile-component-search:focus {
-    border-color: var(--accent);
+  #mobile-sheet-components .mobile-component-search {
+    margin: 0 16px 8px;
+    width: calc(100% - 32px);
   }
+  .mobile-component-search:focus { border-color: var(--accent); }
 
   .mobile-category-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px 6px;
-    font-size: 11px;
-    font-weight: 600;
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 16px 6px;
+    border: none;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     color: var(--text-muted);
     cursor: pointer;
   }
@@ -364,9 +832,9 @@
 
   .mobile-component-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    padding: 0 8px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 16px;
   }
 
   .mobile-component-grid.hidden {
@@ -380,22 +848,19 @@
     justify-content: center;
     padding: 10px 4px 8px;
     gap: 5px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     transition: background 0.15s, border-color 0.15s;
-    min-height: 72px;
+    min-height: 76px;
   }
 
   .mobile-component-item:active {
-    background: #e3f2fd;
+    background: var(--mobile-tint);
     border-color: var(--accent);
-  }
-
-  body.dark-mode .mobile-component-item:active {
-    background: #0d2a4a;
   }
 
   .mobile-component-item svg {
@@ -404,106 +869,66 @@
   }
 
   .mobile-component-label {
-    font-size: 9px;
+    font-size: 11px;
     text-align: center;
     color: var(--text-secondary);
     line-height: 1.2;
-    max-width: 60px;
-    word-break: break-word;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
 
-  /* ─── Analysis sheet ──────────────────────────────── */
-  .mobile-analysis-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+  /* ─── Properties (full screen) ────────────────────── */
+  .mobile-prop-header {
+    height: var(--mobile-header-height);
+    padding: 0 4px;
+    gap: 2px;
+    border-bottom: 1px solid var(--border-color);
   }
-
-  .mobile-analysis-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 14px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    text-align: center;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.15s, border-color 0.15s;
-    line-height: 1.3;
-  }
-
-  .mobile-analysis-btn:active {
-    background: #e3f2fd;
-    border-color: var(--accent);
-  }
-
-  body.dark-mode .mobile-analysis-btn:active {
-    background: #0d2a4a;
-  }
-
-  .mobile-analysis-btn svg {
-    width: 24px;
-    height: 24px;
-    color: var(--accent);
-  }
-
-  .mobile-section-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-    margin: 12px 0 6px;
-  }
-
-  /* ─── Properties sheet ────────────────────────────── */
+  .mobile-prop-header .mobile-sheet-close { font-size: inherit; color: var(--text-primary); }
+  #mobile-sheet-properties .mobile-sheet-title { font-size: 16px; }
+  #mobile-sheet-properties .mobile-sheet-subtitle { font-size: 12px; }
   #mobile-sheet-properties .mobile-sheet-body {
     padding: 0 0 16px;
   }
 
   #mobile-properties-content {
-    padding: 0 12px;
+    padding: 0 16px;
   }
 
   #mobile-properties-content .no-selection {
     padding: 24px;
     text-align: center;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 14px;
   }
 
   /* Copy desktop properties styles into mobile sheet */
   #mobile-properties-content .prop-section-title {
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-muted);
-    margin: 14px 0 6px;
+    margin: 16px 0 6px;
   }
 
   #mobile-properties-content .prop-section-header {
-    min-height: 36px;
-    padding: 8px 0 4px;
+    min-height: 44px;
+    padding: 10px 0 6px;
   }
 
   #mobile-properties-content .prop-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
+    gap: 10px;
+    margin-bottom: 8px;
   }
 
   #mobile-properties-content .prop-label {
-    min-width: 90px;
-    font-size: 12px;
+    min-width: 110px;
+    max-width: 42%;
+    font-size: 13px;
     color: var(--text-secondary);
     flex-shrink: 0;
   }
@@ -511,14 +936,22 @@
   #mobile-properties-content input,
   #mobile-properties-content select {
     flex: 1;
-    padding: 7px 8px;
+    min-width: 0;
+    padding: 8px 10px;
     border: 1px solid var(--border-color);
-    border-radius: 5px;
-    background: var(--bg-secondary);
+    border-radius: 8px;
+    background: var(--bg-primary);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: 16px;   /* 16px keeps iOS from zooming on focus */
     outline: none;
-    min-height: 36px;
+    min-height: 44px;
+  }
+  #mobile-properties-content input[type="checkbox"],
+  #mobile-properties-content input[type="radio"] {
+    flex: 0 0 auto;
+    width: 22px;
+    min-height: 22px;
+    height: 22px;
   }
 
   #mobile-properties-content input:focus,
@@ -539,52 +972,7 @@
     border-radius: 0 0 5px 5px;
   }
   #mobile-properties-content .searchable-select-option {
-    padding: 10px 10px;   /* larger touch targets in the list */
-  }
-
-  /* ─── Menu sheet ──────────────────────────────────── */
-  .mobile-menu-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-
-  .mobile-menu-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 13px 4px;
-    border-bottom: 1px solid var(--bg-tertiary);
-    font-size: 14px;
-    color: var(--text-primary);
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .mobile-menu-item:last-child {
-    border-bottom: none;
-  }
-
-  .mobile-menu-item:active {
-    background: var(--bg-secondary);
-    border-radius: 6px;
-  }
-
-  .mobile-menu-item svg {
-    width: 20px;
-    height: 20px;
-    color: var(--accent);
-    flex-shrink: 0;
-  }
-
-  .mobile-menu-divider {
-    height: 1px;
-    background: var(--bg-tertiary);
-    margin: 4px 0;
-  }
-  .mobile-menu-subhead {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-    color: var(--text-muted); padding: 6px 4px 2px; list-style: none;
+    padding: 12px 10px;   /* larger touch targets in the list */
   }
 
   /* ─── Secondary workspaces (Reticulation, Plan) on mobile ─────────
@@ -613,9 +1001,13 @@
   #interlock-workspace .il-btn { padding: 8px 10px; }  /* larger tap targets */
   #interlock-workspace .il-title { width: 100%; }
   body.mobile-ws-secondary #mobile-fab-group,
+  body.mobile-ws-secondary #mobile-mode-toggle,
   body.mobile-ws-secondary #mobile-selection-bar,
+  body.mobile-ws-secondary #mobile-btn-undo,
+  body.mobile-ws-secondary #mobile-btn-redo,
   body.mobile-ws-secondary #mobile-nav .mobile-nav-btn[data-tab="components"],
-  body.mobile-ws-secondary #mobile-nav .mobile-nav-btn[data-tab="analysis"] {
+  body.mobile-ws-secondary #mobile-nav .mobile-nav-btn[data-tab="studies"],
+  body.mobile-ws-secondary #mobile-nav .mobile-nav-btn[data-tab="results"] {
     display: none !important;
   }
 
@@ -897,44 +1289,80 @@
     display: block;
   }
 
-  /* ─── Delete bar (selection toolbar) ─────────────── */
+  /* Shared UI.toast: under the header, clear of the nav and selection card. */
+  #toast-container {
+    top: calc(var(--mobile-header-height) + 60px);
+    bottom: auto;
+    width: calc(100% - 32px);
+  }
+
+  /* ─── Selection card ──────────────────────────────── */
+  /* Overlays the canvas above the nav (position: fixed) — it must never
+     resize the canvas container: selection changes on pointer-down, and
+     moving the svg mid-gesture corrupts the drag's coordinate mapping. */
   #mobile-selection-bar {
     display: none;
     position: fixed;
-    top: var(--mobile-header-height);
-    left: 0;
-    right: 0;
-    height: 40px;
-    background: var(--accent);
-    color: #fff;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 12px;
+    left: 10px;
+    right: 10px;
+    bottom: calc(var(--mobile-nav-height) + 10px);
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 8px 8px 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: 0 6px 24px rgba(20, 20, 40, 0.16);
     z-index: 460;
-    font-size: 13px;
   }
 
   #mobile-selection-bar.visible {
     display: flex !important;
   }
 
-  #mobile-selection-bar .sel-actions {
-    display: flex;
-    gap: 8px;
+  .msel-head { display: flex; align-items: center; gap: 8px; }
+  .msel-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .msel-text .sel-count {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .msel-sub { font-size: 12px; color: var(--text-muted); }
+  .msel-sub:empty { display: none; }
+  #mobile-sel-deselect { color: var(--text-muted); }
+
+  .msel-actions {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    margin-left: -6px;
   }
 
   .sel-action-btn {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border: 1px solid rgba(255,255,255,0.4);
-    border-radius: 6px;
+    justify-content: center;
+    gap: 3px;
+    min-height: 52px;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
     background: transparent;
-    color: #fff;
-    font-size: 12px;
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 600;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
+  .sel-action-btn:active { background: var(--bg-tertiary); }
+  .sel-action-btn.sel-primary { background: var(--mobile-tint); color: var(--accent); }
+  .sel-action-btn.sel-danger { color: var(--danger); }
+  .sel-action-btn:disabled { opacity: 0.35; cursor: default; }
+  .sel-action-btn:disabled:active { background: transparent; }
 
   /* ─── Ensure modals work on mobile ───────────────── */
   .modal {
@@ -1045,12 +1473,10 @@
 /* ─── Elements hidden on desktop ─────────────────────── */
 #mobile-header,
 #mobile-nav,
+#mobile-mode-toggle,
 #mobile-fab-group,
 #mobile-sheet-backdrop,
-#mobile-sheet-components,
-#mobile-sheet-analysis,
-#mobile-sheet-properties,
-#mobile-sheet-menu,
+.mobile-sheet,
 #mobile-toast,
 #mobile-selection-bar {
   display: none;
