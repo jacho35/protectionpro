@@ -421,6 +421,9 @@ const NetworkTemplates = {
         }
         const data = this.generate(id);
         if (!data) return;
+        // A template starts a new project, so it takes the new-project
+        // symbol set (fromJSON reads a missing field as a legacy save).
+        if (!data.symbolSet) data.symbolSet = 'iec';
         if (typeof RevisionTimeline !== 'undefined') RevisionTimeline.clearLocal();
         AppState.fromJSON(data);
         UndoManager.clear();

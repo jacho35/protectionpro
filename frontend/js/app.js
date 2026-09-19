@@ -4352,6 +4352,15 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('settings-modal').style.display = 'none';
     }
   });
+  // Symbol set is display-only: applies live and leaves analysis results alone
+  // (Apply below clears them, which a drawing-style change must not do).
+  document.getElementById('use-iec-symbols').addEventListener('change', (e) => {
+    AppState.symbolSet = e.target.checked ? 'iec' : 'classic';
+    AppState.dirty = true;
+    Canvas.render();
+    if (typeof Sidebar !== 'undefined') Sidebar.syncSymbolSet();
+    if (Properties.currentId) Properties.show(Properties.currentId);
+  });
   document.getElementById('btn-save-settings').addEventListener('click', () => {
     AppState.baseMVA = parseFloat(document.getElementById('base-mva').value) || DEFAULT_BASE_MVA;
     AppState.frequency = parseInt(document.getElementById('base-freq').value) || DEFAULT_FREQUENCY;

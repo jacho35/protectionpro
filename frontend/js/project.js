@@ -285,6 +285,10 @@ const Project = {
       .symbol-capacitor { stroke: #0097a7; stroke-width: 1.5; fill: none; }
       .symbol-db { stroke: #555; stroke-width: 1.5; fill: none; }
       .symbol-db .symbol-text { stroke: none; fill: #555; }
+      .symbol-cb.symbol-open, .symbol-switch.symbol-open { stroke: #999; }
+      .symbol-iec.symbol-cb, .symbol-iec.symbol-switch { fill: none; }
+      .symbol-load .iec-solid { fill: #555; }
+      .symbol-arrester .iec-solid { fill: #2e7d32; }
       .symbol-control { stroke: #455a64; stroke-width: 1.5; fill: none; }
       .symbol-control .symbol-text { stroke: none; fill: #455a64; }
       .ctl-mv-no { transform: rotate(-28deg); }

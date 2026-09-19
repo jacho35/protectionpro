@@ -483,6 +483,7 @@
   outline: none;
 }
 .sld-component.lf-preview-override .symbol-cb rect,
+.sld-component.lf-preview-override .symbol-cb.symbol-iec,
 .sld-component.lf-preview-override .symbol-switch {
   filter: drop-shadow(0 0 2px var(--accent, #2a78d6));
 }

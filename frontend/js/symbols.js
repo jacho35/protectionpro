@@ -754,6 +754,209 @@ const Symbols = {
       </g>`;
   },
 
+  // ── IEC 60617 symbol set ──
+  // Drawn when AppState.symbolSet === 'iec' (the default for new projects;
+  // projects saved before the setting existed stay 'classic'). Same boxes and
+  // port positions as the classic glyphs, so switching sets is render-only.
+  // Types without an entry here are already IEC and draw the same in both.
+  //
+  // Switching devices share one blade: moving contact pivots at +0.5·hh, fixed
+  // contact at −0.45·hh. Closed = blade in line; open = blade rotated −30°
+  // about the pivot. The qualifier on the fixed contact says what the device
+  // is: × breaker, bar disconnector, ring load-break, bar + ring
+  // switch-disconnector.
+  iec: {
+    _blade(h, isOpen, inner = '') {
+      const hh = h / 2, piv = hh * 0.5, fix = -hh * 0.45;
+      const g = `<line x1="0" y1="${piv}" x2="0" y2="${fix}"/>${inner}`;
+      return isOpen ? `<g transform="rotate(-30 0 ${piv})">${g}</g>` : g;
+    },
+
+    _qualifier(h, kind) {
+      const fix = -h / 2 * 0.45;
+      const bar = `<line x1="-4.5" y1="${fix}" x2="4.5" y2="${fix}"/>`;
+      const ring = (cy) => `<circle cx="0" cy="${cy}" r="2.3" fill="var(--bg-primary, #fff)"/>`;
+      if (kind === 'cb') {
+        const a = 3.3;
+        return `<line x1="${-a}" y1="${fix - a}" x2="${a}" y2="${fix + a}"/>
+          <line x1="${a}" y1="${fix - a}" x2="${-a}" y2="${fix + a}"/>`;
+      }
+      if (kind === 'disconnector') return bar;
+      if (kind === 'load_break') return ring(fix - 2.3);
+      return bar + ring(fix - 2.6);   // switch_disconnector
+    },
+
+    // Fixed-contact lead stops short of a ring qualifier so the ring reads open.
+    _contact(h, isOpen, kind, inner = '') {
+      const hh = h / 2, piv = hh * 0.5, fix = -hh * 0.45;
+      const topEnd = (kind === 'load_break' || kind === 'switch_disconnector') ? fix - 4.8 : fix;
+      return `<line x1="0" y1="${-hh}" x2="0" y2="${topEnd}"/>
+        <line x1="0" y1="${hh}" x2="0" y2="${piv}"/>
+        ${this._blade(h, isOpen, inner)}
+        ${this._qualifier(h, kind)}`;
+    },
+
+    // Withdrawable (plug-in) breaker: a pair of chevrons at each terminal,
+    // pointing away from the device.
+    _withdrawable(h) {
+      const hh = h / 2;
+      const chev = (y, dir) => `<polyline points="-3.5,${y - 2.5 * dir} 0,${y} 3.5,${y - 2.5 * dir}" fill="none"/>`;
+      return chev(-(hh - 1), -1) + chev(-(hh - 3.5), -1) + chev(hh - 1, 1) + chev(hh - 3.5, 1);
+    },
+
+    cb(w, h, comp) {
+      const p = (comp && comp.props) || {};
+      const isOpen = p.state === 'open';
+      return `
+        <g class="symbol-cb symbol-iec ${isOpen ? 'symbol-open' : 'symbol-closed'}" fill="none">
+          ${this._contact(h, isOpen, 'cb')}
+          ${p.mounting === 'withdrawable' ? this._withdrawable(h) : ''}
+        </g>`;
+    },
+
+    switch(w, h, comp) {
+      const p = (comp && comp.props) || {};
+      const isOpen = p.state === 'open';
+      const kind = ['disconnector', 'load_break'].includes(p.switch_type) ? p.switch_type : 'switch_disconnector';
+      return `
+        <g class="symbol-switch symbol-iec ${isOpen ? 'symbol-open' : 'symbol-closed'}" fill="none">
+          ${this._contact(h, isOpen, kind)}
+        </g>`;
+    },
+
+    fuse(w, h) {
+      // Conductor runs lengthwise through the fuse body
+      const hh = h / 2, fw = Math.min(4.5, w * 0.25), fh = hh * 0.5;
+      return `
+        <g class="symbol-fuse symbol-iec">
+          <rect x="${-fw}" y="${-fh}" width="${fw * 2}" height="${fh * 2}" fill="var(--bg-primary, #fff)"/>
+          <line x1="0" y1="${-hh}" x2="0" y2="${hh}"/>
+        </g>`;
+    },
+
+    relay(w, h, comp) {
+      // Box carrying the measured quantity + function (IEC 60617 qualifying
+      // symbols) instead of a bare "R".
+      const s = Math.min(w, h) * 0.42;
+      const t = String((comp && comp.props && comp.props.relay_type) || '50/51');
+      const LABELS = {
+        '50/51': 'I&gt;', '50N/51N': 'I<tspan font-size="7" dy="2">E</tspan><tspan dy="-2">&gt;</tspan>',
+        '67': 'I&gt;→', '87': 'ΔI', '21': 'Z&lt;',
+      };
+      const label = LABELS[t] || escHtml(t);
+      return `
+        <g class="symbol-relay symbol-iec">
+          <rect x="${-s}" y="${-s * 0.72}" width="${s * 2}" height="${s * 1.44}" fill="var(--bg-primary, #fff)"/>
+          <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="600" fill="#1565c0" stroke="none" font-family="sans-serif">${label}</text>
+        </g>`;
+    },
+
+    utility(w, h) {
+      // Network infeed: hatched box on a lead to the supply port
+      const hh = h / 2, b = Math.min(w, h) * 0.44;
+      const x0 = -b / 2, x1 = b / 2, y0 = -hh, y1 = -hh + b;
+      let hatch = '';
+      for (let c = x0 + y0 + 5.5; c < x1 + y1; c += 5.5) {
+        // clip the line x + y = c to the box
+        const pts = [];
+        for (const x of [x0, x1]) { const y = c - x; if (y >= y0 && y <= y1) pts.push([x, y]); }
+        for (const y of [y0, y1]) { const x = c - y; if (x >= x0 && x <= x1) pts.push([x, y]); }
+        if (pts.length < 2) continue;
+        pts.sort((a, b2) => a[0] - b2[0]);
+        const [a, z] = [pts[0], pts[pts.length - 1]];
+        hatch += `<line x1="${a[0]}" y1="${a[1]}" x2="${z[0]}" y2="${z[1]}" stroke-width="0.8"/>`;
+      }
+      return `
+        <g class="symbol-utility symbol-iec">
+          <rect x="${x0}" y="${y0}" width="${b}" height="${b}" fill="none"/>
+          ${hatch}
+          <line x1="0" y1="${y1}" x2="0" y2="${hh}"/>
+        </g>`;
+    },
+
+    surge_arrester(w, h) {
+      // Rectangle with an internal arrow, to earth
+      const hh = h / 2, rw = 4, rt = -hh * 0.4, rb = hh * 0.25;
+      return `
+        <g class="symbol-arrester symbol-iec">
+          <line x1="0" y1="${-hh}" x2="0" y2="${rt}"/>
+          <rect x="${-rw}" y="${rt}" width="${rw * 2}" height="${rb - rt}" fill="var(--bg-primary, #fff)"/>
+          <line x1="0" y1="${rt + 3}" x2="0" y2="${rb - 5}"/>
+          <polygon class="iec-solid" points="-2.2,${rb - 6} 2.2,${rb - 6} 0,${rb - 2}" stroke="none"/>
+          <line x1="0" y1="${rb}" x2="0" y2="${hh * 0.5}"/>
+          <line x1="-7" y1="${hh * 0.5}" x2="7" y2="${hh * 0.5}"/>
+          <line x1="-4.5" y1="${hh * 0.65}" x2="4.5" y2="${hh * 0.65}"/>
+          <line x1="-2" y1="${hh * 0.8}" x2="2" y2="${hh * 0.8}"/>
+        </g>`;
+    },
+
+    ct(w, h, comp) {
+      // Primary conductor passes through the ring
+      const hh = h / 2, r = Math.min(w, h) * 0.3;
+      const cbct = comp && comp.props && comp.props.ct_type === 'core_balance';
+      return `
+        <g class="symbol-ct symbol-iec${cbct ? ' symbol-cbct' : ''}">
+          <line x1="0" y1="${-hh}" x2="0" y2="${hh}"/>
+          <circle cx="0" cy="0" r="${cbct ? r * 1.2 : r}"/>
+          ${cbct ? `<circle cx="0" cy="0" r="${r * 0.7}"/>` : ''}
+        </g>`;
+    },
+
+    pt(w, h) {
+      // Voltage transformer: small two-winding transformer
+      const hh = h / 2, r = Math.min(w, h) * 0.22, d = r * 0.7;
+      return `
+        <g class="symbol-pt symbol-iec">
+          <line x1="0" y1="${-hh}" x2="0" y2="${-d - r}"/>
+          <circle cx="0" cy="${-d}" r="${r}"/>
+          <circle cx="0" cy="${d}" r="${r}"/>
+          <line x1="0" y1="${d + r}" x2="0" y2="${hh}"/>
+        </g>`;
+    },
+
+    static_load(w, h) {
+      // Filled arrowhead on the feeder
+      const hh = h / 2, aw = Math.min(w, h) * 0.14;
+      return `
+        <g class="symbol-load symbol-iec">
+          <line x1="0" y1="${-hh}" x2="0" y2="${hh * 0.1}"/>
+          <polygon class="iec-solid" points="${-aw},${-hh * 0.05} ${aw},${-hh * 0.05} 0,${hh * 0.6}" stroke="none"/>
+        </g>`;
+    },
+
+    _machine(h, r, letter, kind, colour, cls) {
+      return `
+        <g class="${cls} symbol-iec">
+          <circle cx="0" cy="0" r="${r}"/>
+          <text x="0" y="${-r * 0.05}" text-anchor="middle" font-size="${letter.length > 1 ? 11 : 13}" font-weight="bold" fill="${colour}" stroke="none" font-family="serif">${letter}</text>
+          <text x="0" y="${r * 0.62}" text-anchor="middle" font-size="8" font-weight="bold" fill="${colour}" stroke="none" font-family="sans-serif">${kind}</text>
+          <line x1="0" y1="${-r}" x2="0" y2="${-h / 2}"/>
+        </g>`;
+    },
+
+    generator(w, h) {
+      return this._machine(h, Math.min(w, h) * 0.38, 'G', '~', '#2e7d32', 'symbol-generator');
+    },
+
+    motor_induction(w, h) {
+      return this._machine(h, Math.min(w, h) * 0.38, 'M', '3~', '#6a1b9a', 'symbol-motor');
+    },
+
+    motor_synchronous(w, h) {
+      return this._machine(h, Math.min(w, h) * 0.38, 'MS', '3~', '#6a1b9a', 'symbol-motor');
+    },
+  },
+
+  // The drawing function for a type under the active symbol set, called with
+  // `this` bound to its owner (the iec table's helpers live on it).
+  _symbolFor(type) {
+    const useIec = typeof AppState !== 'undefined' && AppState.symbolSet === 'iec';
+    if (useIec && type[0] !== '_' && typeof this.iec[type] === 'function') {
+      return this.iec[type].bind(this.iec);
+    }
+    return typeof this[type] === 'function' ? this[type].bind(this) : null;
+  },
+
   // Render a component on the canvas SVG
   renderComponent(comp) {
     const def = COMPONENT_DEFS[comp.type];
@@ -761,7 +964,7 @@ const Symbols = {
     const isBus = comp.type === 'bus';
     const w = isBus ? ((comp.props && comp.props.busWidth) || def.width) : def.width;
     const h = def.height;
-    const symbolFn = this[comp.type];
+    const symbolFn = this._symbolFor(comp.type);
     if (!symbolFn) return '';
 
     // Load-flow case preview: when a saved case is being viewed on the diagram,
@@ -781,7 +984,7 @@ const Symbols = {
       }
     }
 
-    const symbolSvg = symbolFn.call(this, w, h, renderComp);
+    const symbolSvg = symbolFn(w, h, renderComp);
     let portsHtml;
     if (isBus) {
       // Free-position attachments: no port hit-circles (they blocked bus
@@ -876,9 +1079,9 @@ const Symbols = {
     if (!def) return '';
     const w = 32, h = 32;
     const scale = Math.min(32 / def.width, 32 / def.height) * 0.8;
-    const symbolFn = this[type];
+    const symbolFn = this._symbolFor(type);
     if (!symbolFn) return '';
-    const svg = symbolFn.call(this, def.width, def.height);
+    const svg = symbolFn(def.width, def.height);
     return `<svg viewBox="${-20} ${-20} 40 40" width="32" height="32">
       <g transform="scale(${scale})">${svg}</g>
     </svg>`;
