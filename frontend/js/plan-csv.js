@@ -40,9 +40,7 @@ const PlanCSV = {
   },
 
   _routeLenM(r, f) {
-    let px = 0;
-    for (let i = 1; i < r.points.length; i++) px += Math.hypot(r.points[i].x - r.points[i - 1].x, r.points[i].y - r.points[i - 1].y);
-    return f ? +(px * f).toFixed(2) : 0;
+    return f ? +(AppState.planRoutePx(r) * f).toFixed(2) : 0;
   },
 
   _effectiveType(r, elById) {

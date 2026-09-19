@@ -20,9 +20,7 @@ const PlanSync = {
   },
 
   _routeLenM(r, factor) {
-    let px = 0;
-    for (let i = 1; i < r.points.length; i++) px += Math.hypot(r.points[i].x - r.points[i - 1].x, r.points[i].y - r.points[i - 1].y);
-    return factor ? +(px * factor).toFixed(2) : 0;
+    return factor ? +(AppState.planRoutePx(r) * factor).toFixed(2) : 0;
   },
 
   // Building sync spans every floor; reticulation is a single implicit floor,

@@ -669,7 +669,7 @@ const PlanCircuits = {
       for (const r of (fl.data.routes || [])) {
         if (!this.CIRCUIT_ROUTES.includes(r.type)) continue;
         const w = routeWay(r); if (!w) continue;
-        let px = 0; for (let i = 1; i < (r.points || []).length; i++) px += Math.hypot(r.points[i].x - r.points[i - 1].x, r.points[i].y - r.points[i - 1].y);
+        const px = AppState.planRoutePx(r);
         const key = `${w.dbId}|${w.wid || ('n:' + w.way)}`;
         const rec = lenByWay.get(key) || { dbId: w.dbId, way: w.way, wid: w.wid, m: 0 };
         rec.m += px * f;

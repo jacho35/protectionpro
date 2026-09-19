@@ -1095,7 +1095,14 @@ const DBSchedule = {
         const c = circuits[parseInt(tr.dataset.idx)];
         if (!c) return;
         const k = e.target.dataset.k;
-        const v = e.target.value;
+        let v = e.target.value;
+        // Way numbers are how the schedule and plan devices are read back, so a
+        // number already used by another way is refused (EE-7).
+        if (k === 'way' && circuits.some(o => o !== c && String(o.way) === String(v).trim())) {
+          e.target.value = e.target.defaultValue;
+          if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Way ${String(v).trim()} already exists on this board.`, 'warning');
+          return;
+        }
         // Coerce by FIELD, not by input type: the cable/ECC cells are text
         // inputs (so they can carry a searchable datalist without a spinner)
         // but still hold numbers. A blank ECC means "Table 54.7 minimum", so
