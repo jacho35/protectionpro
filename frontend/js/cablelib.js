@@ -63,6 +63,19 @@ const CableLib = {
   isMV(c) { return Number(c.voltage_kv) > 1; },
   isDistribution(c) { return (c.construction || 'armoured') === 'armoured'; },
   isWiring(c) { return ['te', 'surfix', 'single'].includes(c.construction); },
+  // Can this cable be a power branch on the SLD? Only armoured distribution
+  // cable. Building wiring (T+E, singles, Surfix) and control/signal pairs
+  // (DALI, 0-10 V, BMS) are final-circuit cables: they belong in a DB
+  // schedule or on a plan, not as an SLD branch. They also carry no
+  // r0/x0 data, so putting one on the SLD silently drops the fault
+  // engines onto their zero-sequence fallbacks — see the backend
+  // line_coupling.z0_source_note disclosure.
+  isSldEligible(c) { return !!c && this.isDistribution(c); },
+  // Why a cable is not SLD-eligible, for a picker label / warning.
+  sldIneligibleReason(c) {
+    if (!c || this.isSldEligible(c)) return '';
+    return c.construction === 'control' ? 'control/signal cable' : 'building wiring';
+  },
 
   // "95mm² Al XLPE LV" → "95mm² Al XLPE LV, 4-core". Names that already say
   // how many cores (2c, x4C, T+E, 2C+E, H07V-R single) are left as they are.

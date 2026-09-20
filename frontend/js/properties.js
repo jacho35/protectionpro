@@ -444,9 +444,13 @@ const Properties = {
       const isOverhead = field.library === 'overhead';
       const library = isOverhead ? STANDARD_OVERHEAD_LINES : STANDARD_CABLES;
       const voltageFilter = isOverhead ? null : this._getCableVoltageFilter(compId);
-      // Control / signal cables (DALI, 0-10 V) are never a power branch.
+      // Only armoured distribution cable can be an SLD power branch — building
+      // wiring (T+E, singles, Surfix) and control/signal pairs are final-circuit
+      // cables that belong in a DB schedule or on a plan. They also carry no
+      // r0/x0, so using one here drops the fault engines onto their
+      // zero-sequence fallbacks.
       const filtered = (voltageFilter ? library.filter(voltageFilter.fn) : library)
-        .filter(c => isOverhead || c.construction !== 'control');
+        .filter(c => isOverhead || CableLib.isSldEligible(c));
       const selectedItem = library.find(c => c.id === value);
       const displayText = value ? (selectedItem ? selectedItem.name : value) : '';
       const hintHtml = voltageFilter ? `<div class="searchable-select-hint">Showing ${voltageFilter.label} cables</div>` : '';
@@ -457,7 +461,12 @@ const Properties = {
       // If selected cable is outside filter, include it as mismatch
       const filteredIds = new Set(filtered.map(c => c.id));
       if (value && selectedItem && !filteredIds.has(value)) {
-        optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${escHtml(selectedItem.id)}">${escHtml(selectedItem.name)} (voltage mismatch)</div>`;
+        // Keep an already-set out-of-filter cable visible rather than silently
+        // dropping it (legacy projects, or a Plan sync that carried one over),
+        // and say WHY it is out of the list.
+        const why = isOverhead ? '' : CableLib.sldIneligibleReason(selectedItem);
+        const tag = why ? `not for SLD use — ${why}` : 'voltage mismatch';
+        optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${escHtml(selectedItem.id)}">${escHtml(selectedItem.name)} (${escHtml(tag)})</div>`;
       }
       for (const item of filtered) {
         const sel = item.id === value ? ' selected' : '';

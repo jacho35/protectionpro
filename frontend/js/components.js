@@ -784,6 +784,22 @@ const Components = {
           compId: cable.id,
         });
       }
+      // Only armoured distribution cable belongs on the SLD. The picker now
+      // filters these out, so this catches what the picker cannot: projects
+      // saved before the filter, and cables carried over by a Plan sync.
+      // Beyond being the wrong cable class, none of them carry r0/x0, so the
+      // fault engines fall back to an assumed zero-sequence impedance.
+      if (typeof CableLib !== 'undefined' && cable.props.standard_type) {
+        const std = CableLib.byId(cable.props.standard_type);
+        const why = std ? CableLib.sldIneligibleReason(std) : '';
+        if (why) {
+          warnings.push({
+            type: 'warning',
+            msg: `${cable.props.name} uses ${std.name}, a ${why} cable — not intended as an SLD power branch. It carries no zero-sequence data, so fault studies will assume one. Use an armoured distribution cable here, and keep final circuits in the DB schedule.`,
+            compId: cable.id,
+          });
+        }
+      }
     }
 
     // 6b. Check generator and utility source voltages match their connected bus

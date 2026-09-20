@@ -5663,6 +5663,14 @@ class TestZ0SourceDisclosure:
         assert "unbalanced load flow uses 3.5x" in fault_lines[0]
         assert "fault analysis uses 3x the composite Z1" in unbal_lines[0]
 
+        # The remedy must not over-promise. 29 of the 113 library cables (the
+        # building-wiring and control entries) carry no r0/x0 of their own, so
+        # "pick a library cable" is only true for the armoured distribution
+        # set — which is also all the SLD cable picker now offers.
+        for line in (fault_lines[0], unbal_lines[0]):
+            assert "armoured distribution cable" in line
+            assert "building-wiring entries" in line
+
     def test_partial_z0_props_disclose_agreement(self):
         """One prop set ⇒ both engines use 3.5x for the other ⇒ they agree."""
         project = _z0_cable_project(r0=1.05, x0=0.0)
