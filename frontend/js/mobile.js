@@ -63,7 +63,9 @@ const MobileUI = {
     groundingResults: ['btn-toggle-results-grounding', 'grounding'],
   },
   // Desktop-only controls left out of More.
-  MENU_SKIP: new Set(['btn-toggle-ribbon', 'btn-boq', 'btn-cable-schedules', 'btn-rates']),
+  // Also left out because the header (Save) and the selection bar (copy, duplicate, rotate, delete) already have them.
+  MENU_SKIP: new Set(['btn-toggle-ribbon', 'btn-boq', 'btn-cable-schedules', 'btn-rates',
+    'btn-save', 'btn-edit-copy', 'btn-edit-duplicate', 'btn-edit-rotate', 'btn-delete']),
 
   init() {
     this.isMobile = window.matchMedia('(max-width: 768px)').matches;
@@ -337,7 +339,7 @@ const MobileUI = {
       if (tab === 'canvas') { this.closeSheet(); return; }
       if (tab === 'studies') this.renderStudies();
       if (tab === 'results') this.renderResults();
-      if (tab === 'menu') this.renderMenu();
+      if (tab === 'menu') { this._menuPage = 'home'; this._menuQuery = ''; this.renderMenu(); }
       this.toggleSheet(sheets[tab]);
     });
   },
@@ -989,81 +991,78 @@ const MobileUI = {
   },
 
   // ─── More (built from the desktop menus) ───────────────────────────────────
+  //
+  // A short home (search, project tiles, four drill-in pages, app switches) instead of one flat
+  // list of every desktop menu item. Rows are still made from the desktop menus, so ids and click
+  // handling are unchanged; each page just chooses which menus it shows.
+
+  _menuPage: 'home',      // 'home' | 'export' | 'display' | 'quantities' | 'edit'
+  _menuQuery: '',
+  MENU_PAGES: {
+    export:     { title: 'Export & reports',       sub: 'PDF, CSV, JSON, diagram images', menus: ['menu-export'] },
+    display:    { title: 'Diagram display',        sub: 'Labels, flags, wire routing',    menus: ['menu-view'], route: true },
+    quantities: { title: 'Quantities & scenarios', sub: 'BOQ, cable schedules, cases',    menus: ['menu-quantities', 'menu-scenario'] },
+    edit:       { title: 'Edit',                   sub: 'Paste, select all, group',       menus: ['menu-edit'] },
+  },
+  MENU_TILES: [
+    ['btn-new', 'New', '<path d="M12 5v14M5 12h14"/>'],
+    ['btn-open', 'Open', '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'],
+    ['btn-templates', 'Templates', '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 14v7M14 17.5h7"/>'],
+    ['btn-save-as', 'Save as', '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'],
+    ['btn-share', 'Share', '<path d="M12 16V4M7 9l5-5 5 5M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/>'],
+    ['btn-project-type', 'Type', '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'],
+  ],
+  MENU_GROUP_NAMES: { Drawing: 'Diagram' },
+
+  // Every usable item of one desktop menu: { el, label, sub, group, toggle }
+  _menuItems(menuId) {
+    const menu = document.getElementById(menuId);
+    if (!menu) return [];
+    const out = [];
+    let group = '';
+    for (const el of menu.querySelectorAll('.dropdown-label, .dropdown-item')) {
+      if (el.closest('.toolbar-menu') !== menu) continue;   // nested menus list themselves
+      if (el.classList.contains('dropdown-label')) { group = el.textContent.trim(); continue; }
+      if (el.hidden || el.disabled || el.classList.contains('disabled') || this.MENU_SKIP.has(el.id)) continue;
+      if (!el.id && !el.classList.contains('recent-project-item')) continue;
+      const label = this._text(el.querySelector('.q-t') || el);
+      if (!label) continue;
+      const d = el.querySelector('.q-d');
+      out.push({ el, label, sub: d ? d.textContent.trim() : '', group: this.MENU_GROUP_NAMES[group] || group,
+        toggle: /^btn-toggle-/.test(el.id) ? el.classList.contains('active') : undefined,
+        recent: el.classList.contains('recent-project-item') });
+    }
+    return out;
+  },
+
+  _pageItems(page) {
+    const def = this.MENU_PAGES[page];
+    return def.menus.flatMap(m => this._menuItems(m));
+  },
+
+  // The app rows at the bottom of the home, as { el|run, label, toggle?, page } (also feeds search)
+  _appItems() {
+    const byId = (id) => document.getElementById(id);
+    const out = [];
+    if (byId('btn-auto-save')) out.push({ el: byId('btn-auto-save'), label: 'Auto save', toggle: byId('btn-auto-save').classList.contains('active') });
+    if (byId('btn-dark-mode')) out.push({ el: byId('btn-dark-mode'), label: 'Dark mode', toggle: document.body.classList.contains('dark-mode') });
+    for (const [id, label, sub] of [['btn-settings', 'Settings', 'Base MVA, libraries, symbols'], ['btn-help', 'Help', 'Calculations & tools'], ['btn-account', 'Account', 'Sign in, sync, sharing']]) {
+      if (byId(id) && !byId(id).hidden) out.push({ el: byId(id), label, sub, nav: true });
+    }
+    return out;
+  },
 
   renderMenu() {
     const box = document.getElementById('mobile-menu-content');
     if (!box) return;
-    const els = [];
-    const row = (el, label, opts = {}) => {
-      const i = els.push(el) - 1;
-      const sub = opts.sub ? `<span class="mm-sub">${escHtml(opts.sub)}</span>` : '';
-      const trail = opts.toggle !== undefined
-        ? `<span class="mobile-switch-ui${opts.toggle ? ' on' : ''}" aria-hidden="true"></span>`
-        : '';
-      const role = opts.toggle !== undefined ? ` role="switch" aria-checked="${!!opts.toggle}"` : '';
-      return `<button class="mm-item" data-k="${i}"${role}><span class="mm-text"><span class="mm-label">${escHtml(label)}</span>${sub}</span>${trail}</button>`;
-    };
-    const isToggle = (el) => /^btn-toggle-/.test(el.id);
-    const section = (title, menuId) => {
-      const menu = document.getElementById(menuId);
-      if (!menu) return '';
-      let html = '';
-      let group = '';
-      for (const el of menu.querySelectorAll('.dropdown-label, .dropdown-item')) {
-        if (el.closest('.toolbar-menu') !== menu) continue;   // nested menus list themselves
-        if (el.classList.contains('dropdown-label')) { group = el.textContent.trim(); continue; }
-        if (el.hidden || el.disabled || el.classList.contains('disabled') || this.MENU_SKIP.has(el.id)) continue;
-        if (!el.id && !el.classList.contains('recent-project-item')) continue;
-        if (el.classList.contains('recent-project-item') && group !== 'Recent') {
-          group = 'Recent';
-          html += `<h4 class="mm-subhead">Recent projects</h4>`;
-        }
-        const label = this._text(el.querySelector('.q-t') || el);
-        if (!label) continue;
-        const d = el.querySelector('.q-d');
-        html += row(el, label, { sub: d ? d.textContent.trim() : '', toggle: isToggle(el) ? el.classList.contains('active') : undefined });
-      }
-      return html ? `<h3 class="mm-head">${escHtml(title)}</h3>${html}` : '';
-    };
-
-    let html = '';
-    // Workflow: the project type's workspaces, in order.
-    if (typeof Workspaces !== 'undefined') {
-      const cur = this.currentWorkspace();
-      html += `<h3 class="mm-head">Workflow · ${escHtml(Workspaces.TYPES[Workspaces.type()].label)}</h3>
-        <nav class="mws-steps" aria-label="Workspaces">${Workspaces.visible().map(ws => {
-          const n = Workspaces.step(ws);
-          return `<button class="mws-step-btn${ws === cur ? ' active' : ''}" data-ws="${ws}"${ws === cur ? ' aria-current="true"' : ''}>
-            ${n ? `<span class="mws-step">${n}</span>` : ''}<span>${escHtml(this._wsLabel(ws))}</span></button>`;
-        }).join('')}</nav>`;
-    }
-    html += section('Project', 'menu-file');
-    html += section('Edit', 'menu-edit');
-    html += section('Quantities', 'menu-quantities');
-    html += section('Scenarios', 'menu-scenario');
-    html += section('Output', 'menu-export');
-    html += section('Diagram layers', 'menu-view');
-    const route = document.getElementById('wire-route-mode');
-    if (route) {
-      html += `<label class="mopt mm-select-row"><span class="mopt-label">Wire routing</span>
-        <select class="mopt-select" data-route>${[...route.options].map(o =>
-          `<option value="${escHtml(o.value)}"${o.value === route.value ? ' selected' : ''}>${escHtml(o.textContent.trim())}</option>`).join('')}</select></label>`;
-    }
-    const byId = (id) => document.getElementById(id);
-    html += '<h3 class="mm-head">App</h3>';
-    if (typeof Header !== 'undefined') html += row({ run: () => Header.openSearch() }, 'Search commands');
-    if (byId('btn-auto-save')) html += row(byId('btn-auto-save'), 'Auto save', { toggle: byId('btn-auto-save').classList.contains('active') });
-    if (byId('btn-dark-mode')) html += row(byId('btn-dark-mode'), 'Dark mode', { toggle: document.body.classList.contains('dark-mode') });
-    for (const [id, label] of [['btn-settings', 'Settings'], ['btn-help', 'Help'], ['btn-account', 'Account']]) {
-      if (byId(id) && !byId(id).hidden) html += row(byId(id), label);
-    }
-    if (byId('app-title-block')) {
-      html += row(byId('app-title-block'), 'Reload app', { sub: typeof APP_VERSION !== 'undefined' ? String(APP_VERSION) : '' });
-    }
-    box.innerHTML = html;
-    this._menuEls = els;
+    box.innerHTML = `<div class="mm-searchbar"><input type="search" class="mm-search" placeholder="Search commands" aria-label="Search commands" autocomplete="off" value="${escHtml(this._menuQuery || '')}"></div><div id="mm-body"></div>`;
+    box.querySelector('.mm-search').addEventListener('input', (e) => { this._menuQuery = e.target.value; this._renderMenuBody(); });
+    const back = document.getElementById('mobile-menu-back');
+    if (back && !back._bound) { back._bound = true; back.addEventListener('click', () => { this._menuPage = 'home'; this._menuQuery = ''; this.renderMenu(); }); }
 
     box.onclick = (e) => {
+      const go = e.target.closest('[data-page]');
+      if (go) { this._menuPage = go.dataset.page; this._menuQuery = ''; this.renderMenu(); return; }
       const ws = e.target.closest('[data-ws]');
       if (ws) {
         this.closeSheet();
@@ -1078,7 +1077,7 @@ const MobileUI = {
       // Switches flip in place and keep the sheet open.
       if (b.getAttribute('role') === 'switch') {
         el.click();
-        this.renderMenu();
+        this._renderMenuBody();
         return;
       }
       this.closeSheet();
@@ -1089,11 +1088,99 @@ const MobileUI = {
       el.click();
     };
     box.onchange = (e) => {
+      const route = document.getElementById('wire-route-mode');
       if (e.target.matches('[data-route]') && route) {
         route.value = e.target.value;
         route.dispatchEvent(new Event('change', { bubbles: true }));
       }
     };
+    this._renderMenuBody();
+    // Search keeps focus when the body re-renders; on open it is left alone so the keyboard stays closed
+  },
+
+  _renderMenuBody() {
+    const body = document.getElementById('mm-body');
+    if (!body) return;
+    const els = [];
+    const row = (el, label, opts = {}) => {
+      const i = els.push(el) - 1;
+      const sub = opts.sub ? `<span class="mm-sub">${escHtml(opts.sub)}</span>` : '';
+      const trail = opts.toggle !== undefined
+        ? `<span class="mobile-switch-ui${opts.toggle ? ' on' : ''}" aria-hidden="true"></span>`
+        : (opts.chev ? '<span class="mm-chev" aria-hidden="true">›</span>' : '');
+      const role = opts.toggle !== undefined ? ` role="switch" aria-checked="${!!opts.toggle}"` : '';
+      return `<button class="mm-item" data-k="${i}"${role}><span class="mm-text"><span class="mm-label">${escHtml(label)}</span>${sub}</span>${trail}</button>`;
+    };
+    const page = this._menuPage;
+    const q = (this._menuQuery || '').trim().toLowerCase();
+
+    // Page title and back arrow in the sheet header
+    const title = document.querySelector('#mobile-sheet-menu .mobile-sheet-title');
+    const back = document.getElementById('mobile-menu-back');
+    const inPage = !q && page !== 'home';
+    if (title) title.textContent = inPage ? this.MENU_PAGES[page].title : 'More';
+    if (back) back.hidden = !inPage;
+
+    let html = '';
+    if (q) {
+      // Search: every command in More, with where it lives
+      const hits = [];
+      const add = (items, where) => items.forEach(it => {
+        const hay = `${it.label} ${it.sub || ''} ${where} ${it.group || ''}`.toLowerCase();
+        if (hay.includes(q)) hits.push({ it, where });
+      });
+      add(this._menuItems('menu-file').filter(i => !i.recent), 'Project');
+      for (const def of Object.values(this.MENU_PAGES)) add(def.menus.flatMap(m => this._menuItems(m)), def.title);
+      add(this._appItems(), 'App');
+      html += `<div class="mm-count">${hits.length ? hits.length + (hits.length === 1 ? ' command' : ' commands') : 'Nothing matches'}</div>`;
+      html += hits.map(({ it, where }) => row(it.el, it.label, { sub: it.group && it.group !== where ? `${where} › ${it.group}` : where, toggle: it.toggle })).join('');
+      html += `<div class="mm-foot">Not here? <button class="mm-link-btn" data-k="${els.push({ run: () => Header.openSearch() }) - 1}">Search every command</button> (the same list as Ctrl K on desktop).</div>`;
+    } else if (page === 'home') {
+      // Project tiles
+      const tiles = this.MENU_TILES.filter(([id]) => { const e = document.getElementById(id); return e && !e.hidden && !e.disabled; })
+        .map(([id, label, path]) => {
+          const i = els.push(document.getElementById(id)) - 1;
+          return `<button class="mm-tile" data-k="${i}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg><span>${label}</span></button>`;
+        });
+      html += `<h3 class="mm-head">Project</h3><div class="mm-tiles">${tiles.join('')}</div>`;
+      const recents = this._menuItems('menu-file').filter(i => i.recent).slice(0, 3);
+      if (recents.length) {
+        html += `<h3 class="mm-head">Recent</h3>` + recents.map(r => row(r.el, r.label, { chev: true })).join('');
+      }
+      // Drill-in pages
+      html += '<h3 class="mm-head">Tools</h3><div class="mm-card">';
+      for (const [key, def] of Object.entries(this.MENU_PAGES)) {
+        const n = this._pageItems(key).length + (def.route && document.getElementById('wire-route-mode') ? 1 : 0);
+        if (!n) continue;
+        html += `<button class="mm-item mm-nav" data-page="${key}"><span class="mm-text"><span class="mm-label">${escHtml(def.title)}</span><span class="mm-sub">${escHtml(def.sub)}</span></span><span class="mm-count-badge">${n}</span><span class="mm-chev" aria-hidden="true">›</span></button>`;
+      }
+      html += '</div>';
+      // App
+      const app = this._appItems();
+      html += '<h3 class="mm-head">App</h3><div class="mm-card">' +
+        app.map(a => row(a.el, a.label, { sub: a.nav ? a.sub : '', toggle: a.toggle, chev: !!a.nav })).join('') + '</div>';
+      const ver = typeof APP_VERSION !== 'undefined' ? String(APP_VERSION) : '';
+      const titleBlock = document.getElementById('app-title-block');
+      html += `<div class="mm-footer"><span class="mm-version">${escHtml(ver)}</span>${titleBlock ? `<button class="mm-link-btn" data-k="${els.push(titleBlock) - 1}">Reload app</button>` : ''}</div>`;
+    } else {
+      // A drill-in page: the desktop menu's own groups become sub-headings
+      const def = this.MENU_PAGES[page];
+      const items = this._pageItems(page);
+      let last = null;
+      const multi = new Set(items.map(i => i.group)).size > 1;
+      for (const it of items) {
+        if (multi && it.group !== last) { html += `<h4 class="mm-subhead">${escHtml(it.group || 'Other')}</h4>`; last = it.group; }
+        html += row(it.el, it.label, { sub: it.sub, toggle: it.toggle });
+      }
+      const route = document.getElementById('wire-route-mode');
+      if (def.route && route) {
+        html += `<label class="mopt mm-select-row"><span class="mopt-label">Wire routing</span>
+          <select class="mopt-select" data-route>${[...route.options].map(o =>
+            `<option value="${escHtml(o.value)}"${o.value === route.value ? ' selected' : ''}>${escHtml(o.textContent.trim())}</option>`).join('')}</select></label>`;
+      }
+    }
+    body.innerHTML = html;
+    this._menuEls = els;
   },
 
   // ─── Toast notifications ───────────────────────────────────────────────────
