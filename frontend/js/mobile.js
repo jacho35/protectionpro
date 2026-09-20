@@ -28,6 +28,7 @@ function mIcon(name, size = 18) {
 }
 
 const MobileUI = {
+  multiSelect: false, // taps add to the selection instead of replacing it
   isMobile: false,
   activeSheet: null,
   toastTimer: null,
@@ -502,6 +503,15 @@ const MobileUI = {
         this._queueSync();
       });
     }
+    document.getElementById('mobile-sel-multi')?.addEventListener('click', () => {
+      this.setMultiSelect(!this.multiSelect);
+      this.showToast(this.multiSelect ? 'Multi-select on: tap parts to add or remove them' : 'Multi-select off');
+    });
+    document.getElementById('mobile-sel-arrange')?.addEventListener('click', () => {
+      this._menuPage = 'edit'; this._menuQuery = '';
+      this.renderMenu();
+      this.openSheet('mobile-sheet-menu');
+    });
     document.getElementById('mobile-sel-delete')?.addEventListener('click', () => {
       AppState.deleteSelected();   // removes connected wires and snapshots undo
       Canvas.render();
@@ -509,6 +519,7 @@ const MobileUI = {
       this.updateSelectionBar();
     });
     document.getElementById('mobile-sel-deselect')?.addEventListener('click', () => {
+      this.setMultiSelect(false);
       AppState.clearSelection();
       Canvas.render();
       Properties.clear();
@@ -518,6 +529,12 @@ const MobileUI = {
       const ids = [...AppState.selectedIds];
       if (ids.length === 1 && AppState.components.has(ids[0])) this.showPropertiesSheet(ids[0]);
     });
+  },
+
+  setMultiSelect(on) {
+    this.multiSelect = !!on;
+    const b = document.getElementById('mobile-sel-multi');
+    if (b) { b.classList.toggle('sel-primary', this.multiSelect); b.setAttribute('aria-pressed', String(this.multiSelect)); }
   },
 
   _compName(comp) {
@@ -531,6 +548,7 @@ const MobileUI = {
     if (!bar) return;
     const ids = [...(AppState.selectedIds || [])];
     if (!ids.length || this.currentWorkspace() !== 'sld') {
+      if (!ids.length) this.setMultiSelect(false);
       bar.classList.remove('visible');
       document.body.classList.remove('mobile-has-selection');
       return;
@@ -1002,7 +1020,7 @@ const MobileUI = {
     export:     { title: 'Export & reports',       sub: 'PDF, CSV, JSON, diagram images', menus: ['menu-export'] },
     display:    { title: 'Diagram display',        sub: 'Labels, flags, wire routing',    menus: ['menu-view'], route: true },
     quantities: { title: 'Quantities & scenarios', sub: 'BOQ, cable schedules, cases',    menus: ['menu-quantities', 'menu-scenario'] },
-    edit:       { title: 'Edit',                   sub: 'Paste, select all, group',       menus: ['menu-edit'] },
+    edit:       { title: 'Edit',                   sub: 'Paste, select all, arrange, group',       menus: ['menu-edit'] },
   },
   MENU_TILES: [
     ['btn-new', 'New', '<path d="M12 5v14M5 12h14"/>'],
