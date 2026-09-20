@@ -3194,3 +3194,78 @@ body.dark-mode .tcc-coord-generic { background: #3a2a10; color: #ffd48a; }
   padding: 6px 8px; font-size: 12px; color: var(--text-primary);
 }
 .tcc-coord-group-toggle:hover { background: var(--bg-primary); }
+
+/* ── TCC saved views: bar, picker, save dialog ── */
+.tcc-modal-content { position: relative; }
+.tcc-view-bar {
+  position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+}
+.tcc-view-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
+.tcc-view-btn {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 240px; max-width: 360px;
+  padding: 5px 10px; font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer;
+  border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary);
+}
+.tcc-view-btn[aria-expanded="true"] { border-color: var(--accent); }
+.tcc-view-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcc-view-dirty { width: 8px; height: 8px; border-radius: 50%; background: #c47a00; flex-shrink: 0; }
+.tcc-view-dirty[hidden] { display: none; }
+.tcc-view-status { font-size: 12px; font-weight: 500; color: #8a4b00; white-space: nowrap; }
+.tcc-view-meta { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tcc-view-bar .btn-small[hidden] { display: none; }
+.tcc-view-backdrop { display: none; }
+.tcc-view-menu {
+  position: absolute; top: calc(100% + 4px); left: 50px; width: 460px; max-width: calc(100vw - 24px);
+  max-height: 60vh; overflow-y: auto; z-index: 40;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.22);
+}
+.tcc-view-menu[hidden] { display: none; }
+.tcc-view-menu-head { padding: 10px 12px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
+.tcc-view-empty { padding: 10px 12px 14px; font-size: 12.5px; color: var(--text-muted); }
+.tcc-view-row { display: flex; align-items: center; }
+.tcc-view-row:hover, .tcc-view-row:focus-within { background: var(--bg-secondary); }
+.tcc-view-row.active { background: rgba(0,120,215,0.08); }
+.tcc-view-pick {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: none; border: none; cursor: pointer; font: inherit; text-align: left; color: var(--text-primary);
+}
+.tcc-view-check { width: 16px; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+.tcc-view-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.tcc-view-rowname { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcc-view-rowsub { font-size: 11.5px; color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcc-view-rowacts { display: none; gap: 2px; padding-right: 6px; flex-shrink: 0; }
+.tcc-view-row:hover .tcc-view-rowacts, .tcc-view-row:focus-within .tcc-view-rowacts { display: flex; }
+.tcc-view-rowacts button { background: none; border: none; cursor: pointer; padding: 6px 7px; font-size: 12px; color: var(--text-secondary); border-radius: 4px; }
+.tcc-view-rowacts button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.tcc-view-rowacts button.danger { color: var(--danger); }
+.tcc-view-menu-foot { border-top: 1px solid var(--border-color); padding: 6px; }
+.tcc-view-menu-foot button {
+  display: block; width: 100%; text-align: left; padding: 9px 10px; background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--text-primary); border-radius: 6px;
+}
+.tcc-view-menu-foot button:hover:not(:disabled) { background: var(--bg-secondary); }
+.tcc-view-menu-foot button:disabled { color: var(--text-muted); cursor: default; }
+.tcc-view-menu-foot button[data-view-foot="new"], .tcc-view-menu-foot button[data-view-foot="update"] { color: var(--accent); font-weight: 500; }
+
+.tcc-save-view { position: absolute; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); padding: 12px; }
+.tcc-save-view[hidden] { display: none; }
+.tcc-save-card {
+  width: 520px; max-width: 100%; max-height: 100%; overflow-y: auto; padding: 22px 26px;
+  background: var(--bg-primary); color: var(--text-primary); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+.tcc-save-card h3 { margin: 0 0 14px; font-size: 18px; }
+.tcc-sv-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
+.tcc-save-card input[type="text"] { width: 100%; box-sizing: border-box; padding: 9px 10px; font-size: 14px; border: 1px solid var(--accent); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); }
+.tcc-sv-hint { font-size: 12px; color: var(--text-muted); margin: 4px 0 12px; }
+.tcc-sv-include { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); border-top: 1px solid var(--border-color); padding-top: 10px; }
+.tcc-sv-check { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; cursor: pointer; }
+.tcc-sv-check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+.tcc-sv-check span { display: flex; flex-direction: column; line-height: 1.35; }
+.tcc-sv-check strong { font-size: 13.5px; font-weight: 500; }
+.tcc-sv-check small { font-size: 12px; color: var(--text-secondary); }
+.tcc-sv-note { font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 9px 11px; margin-top: 8px; }
+.tcc-sv-error { min-height: 18px; font-size: 12.5px; color: var(--danger); margin-top: 8px; }
+.tcc-sv-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.tcc-sv-actions .btn-small[hidden] { display: none; }

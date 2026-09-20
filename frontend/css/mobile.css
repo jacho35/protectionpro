@@ -1647,3 +1647,30 @@ body.dark-mode {
 .tcc-sheet .tcc-device-item .tcc-device-solo { min-width: 44px; min-height: 44px; }
 .tcc-sheet .tcc-group-toggle, .tcc-sheet .tcc-group-act { min-height: 44px; min-width: 44px; font-size: 12px; }
 .tcc-sheet .tcc-devices-tools input[type="search"] { min-height: 44px; }
+
+/* TCC saved views on the compact layout: the picker is a bottom sheet */
+#tcc-modal.tcc-compact .tcc-view-bar { padding: 4px 8px; gap: 6px; }
+#tcc-modal.tcc-compact .tcc-view-label,
+#tcc-modal.tcc-compact .tcc-view-meta,
+#tcc-modal.tcc-compact .tcc-view-status,
+#tcc-modal.tcc-compact #btn-tcc-view-saveas { display: none; }
+#tcc-modal.tcc-compact .tcc-view-btn { flex: 1 1 auto; max-width: none; min-width: 0; min-height: 44px; font-size: 14px; }
+#tcc-modal.tcc-compact .tcc-view-backdrop {
+  display: block; position: fixed; inset: 0; z-index: 39; background: rgba(20,20,19,0.4);
+}
+#tcc-modal.tcc-compact .tcc-view-backdrop[hidden] { display: none; }
+#tcc-modal.tcc-compact .tcc-view-menu {
+  position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-width: none;
+  max-height: 72vh; max-height: 72dvh; border-radius: 16px 16px 0 0; z-index: 40;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+#tcc-modal.tcc-compact .tcc-view-row { min-height: 60px; flex-wrap: wrap; }
+#tcc-modal.tcc-compact .tcc-view-rowacts { display: flex; width: 100%; padding: 0 12px 8px 36px; }
+#tcc-modal.tcc-compact .tcc-view-rowacts button { min-height: 44px; min-width: 44px; }
+#tcc-modal.tcc-compact .tcc-view-menu-foot button { min-height: 48px; font-size: 15px; }
+#tcc-modal.tcc-compact .tcc-view-pick { min-height: 56px; }
+#tcc-modal.tcc-compact .tcc-save-card { padding: 18px 16px; }
+#tcc-modal.tcc-compact .tcc-sv-check { min-height: 44px; }
+#tcc-modal.tcc-compact .tcc-sv-actions .btn-small { flex: 1 1 auto; }
+
+#tcc-modal.tcc-compact .tcc-view-bar .tcc-toolbar-spacer { display: none; }

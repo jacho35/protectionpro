@@ -1160,6 +1160,13 @@ const AppState = {
     // {id, name, inputs, result, resultKey, updatedAt} — see lightning.js.
     this.lightningAssessments = [];
     this.lightningActiveId = null;
+    // Time-current curves: named chart arrangements ("views": grading point, visible
+    // curves, zoom, colours…), the last one used, user-added relays/fuses/breakers/
+    // curves, and the grading margin — see tcc.js.
+    this.tccViews = [];
+    this.tccActiveViewId = null;
+    this.tccCustomDevices = [];
+    this.tccGradingMargin = null;
     // Bill-of-quantities rate library — only the entries the user has set
     // (rates.js builds the catalogue of item keys itself).
     this.rateLibrary = null;
@@ -1336,6 +1343,10 @@ const AppState = {
         ? this.resultsMeta : undefined,
       lightningAssessments: (this.lightningAssessments && this.lightningAssessments.length) ? this.lightningAssessments : undefined,
       lightningActiveId: this.lightningActiveId || undefined,
+      tccViews: (this.tccViews && this.tccViews.length) ? this.tccViews : undefined,
+      tccActiveViewId: this.tccActiveViewId || undefined,
+      tccCustomDevices: (this.tccCustomDevices && this.tccCustomDevices.length) ? this.tccCustomDevices : undefined,
+      tccGradingMargin: (typeof this.tccGradingMargin === 'number') ? this.tccGradingMargin : undefined,
       // Pre-assessments field (the active assessment's inputs), still written
       // so an older build of the app opens the project with its inputs.
       lightningRisk: (() => {
@@ -1663,6 +1674,10 @@ const AppState = {
     }
     this.lightningActiveId = this.lightningAssessments.some(a => a.id === data.lightningActiveId)
       ? data.lightningActiveId : ((this.lightningAssessments[0] || {}).id || null);
+    this.tccViews = Array.isArray(data.tccViews) ? data.tccViews.filter(v => v && v.id && v.name) : [];
+    this.tccActiveViewId = this.tccViews.some(v => v.id === data.tccActiveViewId) ? data.tccActiveViewId : null;
+    this.tccCustomDevices = Array.isArray(data.tccCustomDevices) ? data.tccCustomDevices.filter(d => d && d.id && d.deviceType) : [];
+    this.tccGradingMargin = (typeof data.tccGradingMargin === 'number' && data.tccGradingMargin > 0) ? data.tccGradingMargin : null;
     this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
     // Cable rate keys come from library ids now; move name-keyed rates once.
     if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);

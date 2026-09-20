@@ -3850,7 +3850,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // TCC grading margin update
   document.getElementById('tcc-grading-margin').addEventListener('change', (e) => {
-    TCC.gradingMargin = parseFloat(e.target.value) || 0.3;
+    TCC.setGradingMargin(parseFloat(e.target.value) || 0.3);
     TCC._runCoordinationCheck();
   });
 

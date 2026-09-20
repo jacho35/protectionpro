@@ -343,6 +343,30 @@ const TCC = {
     bind('btn-tcc-zoom-out', () => this._zoomAt(0.5, 0.5, 1 / 1.5, { x: true, y: true }));
     bind('btn-tcc-fit', () => this.fitView());
 
+    // Saved views: picker, bar buttons, save dialog
+    bind('btn-tcc-view', (e) => {
+      const menu = document.getElementById('tcc-view-menu');
+      this._openViewMenu(menu.hidden);
+    });
+    bind('tcc-view-backdrop', () => this._openViewMenu(false));
+    bind('btn-tcc-view-save', () => this.updateActiveView());
+    bind('btn-tcc-view-saveas', () => this._openSaveDialog());
+    bind('btn-tcc-sv-cancel', () => { document.getElementById('tcc-save-view').hidden = true; });
+    bind('btn-tcc-sv-new', () => this._submitSaveDialog(false));
+    bind('btn-tcc-sv-replace', () => this._submitSaveDialog(true));
+    document.getElementById('tcc-sv-name')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._submitSaveDialog(false); });
+    document.addEventListener('click', (e) => {
+      const menu = document.getElementById('tcc-view-menu');
+      if (menu && !menu.hidden && !e.target.closest('#tcc-view-menu, #btn-tcc-view')) this._openViewMenu(false);
+    });
+    document.getElementById('tcc-modal').addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const dlg = document.getElementById('tcc-save-view');
+      const menu = document.getElementById('tcc-view-menu');
+      if (dlg && !dlg.hidden) { dlg.hidden = true; e.stopPropagation(); }
+      else if (menu && !menu.hidden) { this._openViewMenu(false); e.stopPropagation(); }
+    });
+
     // Device search and path-only chip
     document.getElementById('tcc-device-filter')?.addEventListener('input', (e) => {
       this._deviceFilter = e.target.value;
@@ -492,6 +516,7 @@ const TCC = {
     logMin = Math.max(logLo, Math.min(logHi - span, logMin));
     this[minKey] = Math.pow(10, logMin);
     this[maxKey] = Math.pow(10, logMin + span);
+    this._zoomedSinceFit = true; // fitView() clears this once it has set the axes
   },
 
   _zoomAt(fx, fy, factor, axes) {
@@ -589,6 +614,7 @@ const TCC = {
     }
     if (pts.length === 0) {
       this.currentMin = 1; this.currentMax = 1e5; this.timeMin = 0.001; this.timeMax = 1000;
+      this._zoomedSinceFit = false;
       this.render();
       return;
     }
@@ -608,6 +634,7 @@ const TCC = {
     const [tA, tS] = fit(tLo, tHi, 0.25, 1.5);
     this._setAxis('currentMin', 'currentMax', cA, cS, L.iMin, L.iMax);
     this._setAxis('timeMin', 'timeMax', tA, tS, L.tMin, L.tMax);
+    this._zoomedSinceFit = false;
     this._tooltip = null;
     this.render();
   },
@@ -763,7 +790,480 @@ const TCC = {
     }
   },
 
+  // ── Saved views: named chart arrangements stored in the project ──
+  //
+  // A view remembers HOW the chart is arranged — grading point + path filter, which
+  // curves are shown, zoom, colours / label positions, optionally cursor + reference
+  // voltage and the grading margin. Device settings stay on the diagram components,
+  // so a view always shows the current settings. Devices are referenced by id only.
+
+  _viewId: null,            // the saved view this arrangement came from (null = unsaved)
+  _zoomedSinceFit: false,   // true once the user zoomed / panned away from Fit
+  _viewBarKey: '',          // last rendered view-bar state (avoids needless DOM writes)
+  VIEW_DEFAULT_INCLUDE: { path: true, curves: true, zoom: true, style: true, cursor: false, margin: true },
+
+  _views() { return AppState.tccViews || (AppState.tccViews = []); },
+  _activeView() { return this._views().find(v => v.id === this._viewId) || null; },
+  _round6(v) { return Number(Number(v).toPrecision(6)); },
+
+  _defaultVisible(dev) {
+    return !(this.devices.length > 14 &&
+      (dev.deviceType === 'cable_thermal' || dev.deviceType === 'xfmr_thermal' || dev.deviceType === 'motor_start'));
+  },
+
+  // The arrangement on screen, limited to the parts in `inc`
+  _captureView(inc) {
+    const d = { tabId: this.activeTabId };
+    if (inc.path) {
+      const ep = this.devices[this._miniSLDEndpointDeviceIdx];
+      d.endpointId = ep ? ep.id : null;
+      d.pathOnly = !!(ep && this._pathOnly);
+    }
+    if (inc.curves) {
+      d.visible = {};
+      for (const dev of this.devices) d.visible[dev.id] = !!dev.visible;
+    }
+    if (inc.zoom) {
+      d.fit = !this._zoomedSinceFit;
+      // A view saved on Fit re-fits when opened, so its range would only ever go stale
+      if (!d.fit) d.range = [this.currentMin, this.currentMax, this.timeMin, this.timeMax].map(v => this._round6(v));
+    }
+    if (inc.style) {
+      d.style = {};
+      for (const dev of this.devices) {
+        d.style[dev.id] = { color: dev.color, lx: Math.round(dev.labelOffsetX || 0), ly: Math.round(dev.labelOffsetY || 0) };
+      }
+    }
+    if (inc.cursor) {
+      d.cursor = this._cursor != null ? this._round6(this._cursor) : null;
+      d.refVoltage = this.referenceVoltage;
+    }
+    if (inc.margin) d.gradingMargin = this.gradingMargin;
+    return d;
+  },
+
+  // Put the chart into a saved arrangement. Returns how many referenced devices no longer exist.
+  _applyView(view, { markDirty = true } = {}) {
+    const d = view.data || {}, inc = view.include || {};
+    const byId = new Map(this.devices.map((dev, i) => [dev.id, i]));
+    let missing = 0;
+
+    if (d.tabId && this.tabs.some(t => t.id === d.tabId)) this.activeTabId = d.tabId;
+    if (inc.cursor) {
+      this.referenceVoltage = (d.refVoltage && (this._voltageOptions || []).includes(d.refVoltage)) ? d.refVoltage : null;
+      this._renderVoltageSelector();
+    }
+    this._soloIdx = -1;
+    this._soloBackup = null;
+    if (inc.path) {
+      const idx = d.endpointId && byId.has(d.endpointId) ? byId.get(d.endpointId) : -1;
+      if (d.endpointId && idx < 0) missing++;
+      this._miniSLDEndpointDeviceIdx = idx;
+      this._pathSetCache = null;
+      this._pathOnly = idx >= 0 && !!d.pathOnly;
+    }
+    if (inc.curves && d.visible) {
+      for (const dev of this.devices) {
+        dev.visible = Object.prototype.hasOwnProperty.call(d.visible, dev.id) ? !!d.visible[dev.id] : this._defaultVisible(dev);
+      }
+      missing += Object.keys(d.visible).filter(id => !byId.has(id)).length;
+    }
+    if (inc.style && d.style) {
+      for (const [id, st] of Object.entries(d.style)) {
+        const dev = this.devices[byId.get(id)];
+        if (!dev) continue;
+        if (st.color) dev.color = st.color;
+        dev.labelOffsetX = st.lx || 0;
+        dev.labelOffsetY = st.ly || 0;
+      }
+    }
+    if (inc.margin && typeof d.gradingMargin === 'number') this.setGradingMargin(d.gradingMargin, false);
+    if (inc.cursor) {
+      if (d.cursor != null) { this._setCursorMode(true); this._cursor = d.cursor; }
+      else this._setCursorMode(false);
+    }
+    this._viewId = view.id;
+    if (markDirty && AppState.tccActiveViewId !== view.id) AppState.dirty = true;
+    AppState.tccActiveViewId = view.id;
+    this._pairFocus = null;
+
+    if (inc.zoom && d.range && !d.fit) {
+      [this.currentMin, this.currentMax, this.timeMin, this.timeMax] = d.range;
+      this._zoomedSinceFit = true;
+    } else if (inc.zoom) {
+      this.fitView();
+    }
+    this._refreshAfterView();
+    return missing;
+  },
+
+  _refreshAfterView() {
+    this._renderTabs();
+    this._renderDeviceList();
+    this._renderSelectedDeviceSettings();
+    this._runCoordinationCheck();
+    this._renderMiniSLD();
+    this.render();
+  },
+
+  // Does the arrangement on screen differ from the active view?
+  _viewIsModified(view) {
+    const cur = this._captureView(view.include || {});
+    return JSON.stringify(cur) !== JSON.stringify(view.data);
+  },
+
+  _newViewId() {
+    let n = 0;
+    for (const v of this._views()) n = Math.max(n, parseInt(String(v.id).replace(/\D/g, '')) || 0);
+    return 'tccv_' + (n + 1);
+  },
+
+  _uniqueViewName(base, ignoreId) {
+    const taken = new Set(this._views().filter(v => v.id !== ignoreId).map(v => v.name.toLowerCase()));
+    let name = (base || 'View').trim() || 'View';
+    if (!taken.has(name.toLowerCase())) return name;
+    for (let i = 2; ; i++) if (!taken.has(`${name} (${i})`.toLowerCase())) return `${name} (${i})`;
+  },
+
+  // Save the arrangement on screen; `replaceId` overwrites that view, otherwise a new one is added
+  saveView(name, inc, replaceId) {
+    const data = this._captureView(inc);
+    const now = new Date().toISOString();
+    let view = replaceId ? this._views().find(v => v.id === replaceId) : null;
+    if (view) {
+      view.include = { ...inc };
+      view.data = data;
+      view.updatedAt = now;
+    } else {
+      view = { id: this._newViewId(), name: this._uniqueViewName(name), include: { ...inc }, data, createdAt: now, updatedAt: now };
+      this._views().push(view);
+    }
+    this._viewId = view.id;
+    AppState.tccActiveViewId = view.id;
+    AppState.dirty = true;
+    this._updateViewBar();
+    return view;
+  },
+
+  updateActiveView() {
+    const v = this._activeView();
+    if (!v) return;
+    this.saveView(v.name, v.include, v.id);
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Saved changes to “${v.name}”.`, 'success');
+  },
+
+  async renameView(id) {
+    const v = this._views().find(x => x.id === id);
+    if (!v) return;
+    const name = await UI.prompt('View name:', v.name);
+    if (!name || !name.trim()) return;
+    v.name = this._uniqueViewName(name, v.id);
+    v.updatedAt = new Date().toISOString();
+    AppState.dirty = true;
+    this._updateViewBar();
+    this._renderViewMenu();
+  },
+
+  duplicateView(id) {
+    const v = this._views().find(x => x.id === id);
+    if (!v) return;
+    const copy = JSON.parse(JSON.stringify(v));
+    copy.id = this._newViewId();
+    copy.name = this._uniqueViewName(v.name + ' copy');
+    copy.createdAt = copy.updatedAt = new Date().toISOString();
+    this._views().push(copy);
+    AppState.dirty = true;
+    this._renderViewMenu();
+  },
+
+  async deleteView(id) {
+    const v = this._views().find(x => x.id === id);
+    if (!v) return;
+    if (!(await UI.confirm(`Delete the view “${v.name}”? The chart itself is not changed.`, { okText: 'Delete', danger: true }))) return;
+    AppState.tccViews = this._views().filter(x => x.id !== id);
+    if (this._viewId === id) this._viewId = null;
+    if (AppState.tccActiveViewId === id) AppState.tccActiveViewId = null;
+    AppState.dirty = true;
+    this._updateViewBar();
+    this._renderViewMenu();
+  },
+
+  // Re-apply the last used view when the modal opens (skipped for the focused-device open)
+  _applyActiveViewOnOpen() {
+    this._viewId = null;
+    const v = this._views().find(x => x.id === AppState.tccActiveViewId);
+    if (v) this._applyView(v, { markDirty: false });
+    else this._updateViewBar();
+  },
+
+  // ── View bar, picker and save dialog ──
+
+  _updateViewBar() {
+    const nameEl = document.getElementById('tcc-view-name');
+    if (!nameEl) return;
+    const v = this._activeView();
+    const modified = !!(v && this._viewIsModified(v));
+    const ep = this.devices[this._miniSLDEndpointDeviceIdx];
+    const shown = this.devices.filter(d => d.visible).length;
+    const meta = `${ep ? '→ ' + ep.name + ' · ' : ''}${shown} curve${shown === 1 ? '' : 's'}${this._pathOnly ? ' · path only' : ''}`;
+    const key = [v ? v.id + v.name : '', modified, meta, this._views().length].join('|');
+    if (key === this._viewBarKey) return;
+    this._viewBarKey = key;
+    nameEl.textContent = v ? v.name : 'Unsaved arrangement';
+    const dot = document.getElementById('tcc-view-dirty');
+    if (dot) dot.hidden = !modified;
+    const status = document.getElementById('tcc-view-status');
+    if (status) status.textContent = modified ? 'Modified since saved' : '';
+    const metaEl = document.getElementById('tcc-view-meta');
+    if (metaEl) metaEl.textContent = meta;
+    const save = document.getElementById('btn-tcc-view-save');
+    if (save) save.hidden = !modified;
+  },
+
+  _openViewMenu(open) {
+    const menu = document.getElementById('tcc-view-menu');
+    const btn = document.getElementById('btn-tcc-view');
+    const backdrop = document.getElementById('tcc-view-backdrop');
+    if (!menu || !btn) return;
+    if (open) this._renderViewMenu();
+    menu.hidden = !open;
+    if (backdrop) backdrop.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  },
+
+  _renderViewMenu() {
+    const menu = document.getElementById('tcc-view-menu');
+    if (!menu) return;
+    const views = this._views();
+    const active = this._activeView();
+    const modified = !!(active && this._viewIsModified(active));
+    const rows = views.map(v => {
+      const d = v.data || {};
+      const ep = d.endpointId ? this.devices.find(x => x.id === d.endpointId) : null;
+      const n = d.visible ? Object.values(d.visible).filter(Boolean).length : null;
+      const sub = [ep ? '→ ' + ep.name : (d.endpointId ? '→ (device removed)' : 'All devices'),
+        n != null ? `${n} curve${n === 1 ? '' : 's'}` : null, d.pathOnly ? 'path only' : null].filter(Boolean).join(' · ');
+      const on = v.id === this._viewId;
+      return `<div class="tcc-view-row ${on ? 'active' : ''}" role="option" aria-selected="${on}">
+        <button class="tcc-view-pick" data-view="${v.id}"><span class="tcc-view-check">${on ? '✓' : ''}</span>
+          <span class="tcc-view-text"><span class="tcc-view-rowname">${escHtml(v.name)}</span><span class="tcc-view-rowsub">${escHtml(sub)}</span></span></button>
+        <span class="tcc-view-rowacts">
+          <button data-view-act="rename" data-view="${v.id}" aria-label="Rename ${escHtml(v.name)}">Rename</button>
+          <button data-view-act="duplicate" data-view="${v.id}" aria-label="Duplicate ${escHtml(v.name)}">Duplicate</button>
+          <button data-view-act="delete" data-view="${v.id}" class="danger" aria-label="Delete ${escHtml(v.name)}">Delete</button>
+        </span></div>`;
+    }).join('');
+    menu.innerHTML = `<div class="tcc-view-menu-head">Saved views · ${views.length}</div>` +
+      (rows || '<div class="tcc-view-empty">No saved views yet. Arrange the chart, then save it here.</div>') +
+      `<div class="tcc-view-menu-foot">
+        ${modified ? `<button data-view-foot="update">Update “${escHtml(active.name)}” with these changes</button>` : ''}
+        <button data-view-foot="new">＋ Save current arrangement as a new view…</button>
+        <button data-view-foot="feeders">Create a view for every feeder…</button>
+        <button data-view-foot="export" ${views.length ? '' : 'disabled'}>Export all views as PDF…</button>
+      </div>`;
+    menu.querySelectorAll('.tcc-view-pick').forEach(b => b.addEventListener('click', () => {
+      const v = views.find(x => x.id === b.dataset.view);
+      this._openViewMenu(false);
+      if (v) {
+        const missing = this._applyView(v);
+        if (missing && UI.toast) UI.toast(`${missing} device${missing === 1 ? '' : 's'} in this view no longer exist${missing === 1 ? 's' : ''} and were skipped.`, 'info');
+      }
+    }));
+    menu.querySelectorAll('[data-view-act]').forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = b.dataset.view, act = b.dataset.viewAct;
+      if (act === 'rename') this.renameView(id);
+      else if (act === 'duplicate') this.duplicateView(id);
+      else this.deleteView(id);
+    }));
+    menu.querySelectorAll('[data-view-foot]').forEach(b => b.addEventListener('click', () => {
+      const act = b.dataset.viewFoot;
+      this._openViewMenu(false);
+      if (act === 'update') this.updateActiveView();
+      else if (act === 'new') this._openSaveDialog();
+      else if (act === 'feeders') this.createFeederViews();
+      else this.exportAllViewsPDF();
+    }));
+  },
+
+  _openSaveDialog() {
+    const dlg = document.getElementById('tcc-save-view');
+    if (!dlg) return;
+    const ep = this.devices[this._miniSLDEndpointDeviceIdx];
+    const active = this._activeView();
+    const base = ep ? `→ ${ep.name}` : (active ? `${active.name} copy` : 'View');
+    document.getElementById('tcc-sv-name').value = this._uniqueViewName(base);
+    document.getElementById('tcc-sv-error').textContent = '';
+    const inc = active ? active.include : this.VIEW_DEFAULT_INCLUDE;
+    const shown = this.devices.filter(d => d.visible).length;
+    const fmt = (v, u) => this._formatValue(this._round6(v), u);
+    const notes = {
+      path: ep ? `${ep.name}${this._pathOnly ? ', Path only on' : ''}` : 'No grading point set',
+      curves: `${shown} shown, ${this.devices.length - shown} hidden`,
+      zoom: this._zoomedSinceFit ? `${fmt(this.currentMin, 'A')} – ${fmt(this.currentMax, 'A')} · ${fmt(this.timeMin, 's')} – ${fmt(this.timeMax, 's')}` : 'Fit to the curves',
+      style: 'Keeps the same colour per device in reports',
+      cursor: this._cursor != null ? `${Math.round(this._cursor)} A cursor${this.referenceVoltage ? ', ' + this.referenceVoltage + ' kV reference' : ''}` : 'Cursor off, no scaling',
+      margin: `${this.gradingMargin} s`,
+    };
+    for (const k of Object.keys(notes)) {
+      const cb = document.getElementById('tcc-sv-' + k);
+      if (cb) cb.checked = !!inc[k];
+      const n = document.getElementById('tcc-sv-' + k + '-note');
+      if (n) n.textContent = notes[k];
+    }
+    const replace = document.getElementById('btn-tcc-sv-replace');
+    if (replace) {
+      replace.hidden = !active;
+      if (active) replace.textContent = `Replace “${active.name}”`;
+    }
+    dlg.hidden = false;
+    document.getElementById('tcc-sv-name').focus();
+    document.getElementById('tcc-sv-name').select();
+  },
+
+  _saveDialogInclude() {
+    const inc = {};
+    for (const k of Object.keys(this.VIEW_DEFAULT_INCLUDE)) inc[k] = !!document.getElementById('tcc-sv-' + k)?.checked;
+    return inc;
+  },
+
+  _submitSaveDialog(replace) {
+    const err = document.getElementById('tcc-sv-error');
+    const name = document.getElementById('tcc-sv-name').value.trim();
+    const inc = this._saveDialogInclude();
+    if (!name) { err.textContent = 'Give the view a name.'; return; }
+    if (!Object.values(inc).some(Boolean)) { err.textContent = 'Include at least one thing to remember.'; return; }
+    let view;
+    if (replace) {
+      const active = this._activeView();
+      if (!active) return;
+      view = this.saveView(active.name, inc, active.id);
+    } else {
+      if (this._views().some(v => v.name.toLowerCase() === name.toLowerCase())) {
+        err.textContent = 'A view with that name already exists. Choose another name, or replace it.';
+        return;
+      }
+      view = this.saveView(name, inc, null);
+    }
+    document.getElementById('tcc-save-view').hidden = true;
+    if (UI.toast) UI.toast(`Saved view “${view.name}”.`, 'success');
+  },
+
+  // One path view per feeder end: the last protection device on each source → load path
+  createFeederViews() {
+    const leaves = new Map();
+    for (const path of this._buildProtectionPaths()) {
+      const last = path[path.length - 1];
+      if (last && !leaves.has(last.id)) leaves.set(last.id, last);
+    }
+    const have = new Set(this._views().map(v => v.data && v.data.endpointId));
+    const todo = [...leaves.values()].filter(dev => !have.has(dev.id));
+    if (todo.length === 0) {
+      if (UI.toast) UI.toast(leaves.size ? 'Every feeder already has a view.' : 'No source-to-load paths found to make views from.', 'info');
+      return;
+    }
+    UI.confirm(`Create ${todo.length} view${todo.length === 1 ? '' : 's'}, one per feeder end? Each shows the path from the sources to that device.`, { okText: 'Create' }).then(ok => {
+      if (!ok) return;
+      const savedState = { ep: this._miniSLDEndpointDeviceIdx, po: this._pathOnly, viewId: this._viewId };
+      const inc = { ...this.VIEW_DEFAULT_INCLUDE, cursor: false, margin: false, zoom: true };
+      let made = 0;
+      for (const dev of todo) {
+        this._miniSLDEndpointDeviceIdx = this.devices.indexOf(dev);
+        this._pathOnly = true;
+        this._pathSetCache = null;
+        const set = this._pathIdSet();
+        const visible = {};
+        for (const d of this.devices) visible[d.id] = !!set && this._inPathView(d, set) && d.deviceType !== 'motor_start';
+        const now = new Date().toISOString();
+        const data = { tabId: 'all', endpointId: dev.id, pathOnly: true, visible, fit: true,
+          style: Object.fromEntries(this.devices.map(d => [d.id, { color: d.color, lx: 0, ly: 0 }])) };
+        this._views().push({ id: this._newViewId(), name: this._uniqueViewName(`→ ${dev.name}`), include: inc, data, createdAt: now, updatedAt: now });
+        made++;
+      }
+      // Leave the chart the way it was
+      this._miniSLDEndpointDeviceIdx = savedState.ep;
+      this._pathOnly = savedState.po;
+      this._pathSetCache = null;
+      this._viewId = savedState.viewId;
+      AppState.dirty = true;
+      this._updateViewBar();
+      if (UI.toast) UI.toast(`Created ${made} view${made === 1 ? '' : 's'}. Open the Views menu to use them.`, 'success');
+    });
+  },
+
+  // One printed page per saved view: the chart plus a list of the curves shown
+  exportAllViewsPDF() {
+    const views = this._views();
+    if (!views.length || !this.canvas) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    // Remember where we are, render each view, then put everything back
+    const here = this._captureView({ ...this.VIEW_DEFAULT_INCLUDE, cursor: true });
+    const hereView = { id: this._viewId, include: { ...this.VIEW_DEFAULT_INCLUDE, cursor: true }, data: here };
+    const wasCompare = this.compareMode;
+    this.compareMode = false;
+    const pages = [];
+    for (const v of views) {
+      this._applyView(v, { markDirty: false });
+      const ep = this.devices[this._miniSLDEndpointDeviceIdx];
+      const rows = this.devices.filter(d => d.visible && this._inPathView(d, this._pathIdSet()))
+        .map(d => `<tr><td><span style="display:inline-block;width:10px;height:10px;background:${d.color};border-radius:2px"></span></td><td>${escHtml(d.name)}</td><td>${escHtml(this._deviceSummary(d))}</td></tr>`).join('');
+      pages.push(`<section><h2>${escHtml(v.name)}</h2><p>${ep ? 'Grading point: ' + escHtml(ep.name) : 'All devices'}${this._pathOnly ? ' · path only' : ''}</p>` +
+        `<img src="${this.canvas.toDataURL('image/png')}"><table>${rows}</table></section>`);
+    }
+    this._applyView(hereView, { markDirty: false });
+    this._viewId = hereView.id;
+    this.compareMode = wasCompare;
+    this._refreshAfterView();
+    this._updateViewBar();
+    win.document.write(`<!DOCTYPE html><html><head><title>TCC views</title><style>
+      body{font-family:sans-serif;margin:0} section{page-break-after:always;padding:16px}
+      h2{margin:0 0 2px} p{margin:0 0 8px;color:#555;font-size:13px} img{width:100%;max-height:70vh;object-fit:contain}
+      table{font-size:12px;border-collapse:collapse;margin-top:8px} td{padding:2px 10px 2px 0}
+      @media print{@page{size:landscape;margin:10mm}}</style></head><body>${pages.join('')}
+      <script>window.onload=function(){window.print();}<\/script></body></html>`);
+    win.document.close();
+  },
+
+  // ── Persisted extras: custom devices and the grading margin ──
+
+  _persistCustomDevice(dev) {
+    if (!AppState.tccCustomDevices) AppState.tccCustomDevices = [];
+    AppState.tccCustomDevices.push(dev); // same object: later edits are saved with the project
+    AppState.dirty = true;
+  },
+
+  _loadCustomDevices() {
+    for (const dev of (AppState.tccCustomDevices || [])) {
+      if (!this.devices.some(d => d.id === dev.id)) {
+        if (!dev.color) dev.color = this._nextColor();
+        this.devices.push(dev);
+      }
+    }
+  },
+
+  async _deleteCustomDevice(dev) {
+    if (!(await UI.confirm(`Delete the custom device “${dev.name}” from this project?`, { okText: 'Delete', danger: true }))) return;
+    AppState.tccCustomDevices = (AppState.tccCustomDevices || []).filter(d => d !== dev);
+    this.devices = this.devices.filter(d => d !== dev);
+    this.selectedDeviceIndex = -1;
+    AppState.dirty = true;
+    this._refreshAfterView();
+  },
+
+  setGradingMargin(v, save = true) {
+    const n = parseFloat(v);
+    if (!(n > 0)) return;
+    this.gradingMargin = n;
+    const input = document.getElementById('tcc-grading-margin');
+    if (input && parseFloat(input.value) !== n) input.value = n;
+    if (save) { AppState.tccGradingMargin = n; AppState.dirty = true; }
+  },
+
   _resetTransientState() {
+    this._viewId = null;
+    this._viewBarKey = '';
+    this._zoomedSinceFit = false;
     this._pathOnly = false;
     this._pathSetCache = null;
     this._deviceFilter = '';
@@ -1033,10 +1533,12 @@ const TCC = {
       this._saveDisplayState();
     }
     this._resetTransientState();
+    this.setGradingMargin(typeof AppState.tccGradingMargin === 'number' ? AppState.tccGradingMargin : 0.3, false);
     this.devices = [];
     this.colorIndex = 0;
     this.selectedDeviceIndex = -1;
     this._loadDevicesFromNetwork();
+    this._loadCustomDevices();
     this._applyLargeNetworkDefaults();
     this._restoreDisplayState();
     // Validate endpoint device index against new device list
@@ -1055,6 +1557,7 @@ const TCC = {
         this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
         this._renderMiniSLD();
+        this._applyActiveViewOnOpen();
         this._afterOpenCompact(false);
       });
     });
@@ -1073,6 +1576,7 @@ const TCC = {
     this._focusedMode = true;
     this._focusedCompId = compId;
     this._resetTransientState();
+    this.setGradingMargin(typeof AppState.tccGradingMargin === 'number' ? AppState.tccGradingMargin : 0.3, false);
     this.devices = [];
     this.colorIndex = 0;
     this.selectedDeviceIndex = -1;
@@ -1080,6 +1584,7 @@ const TCC = {
     // Trace upstream protection devices and load only those
     const filterSet = Components.traceUpstreamProtection(compId);
     this._loadDevicesFromNetwork(filterSet);
+    this._loadCustomDevices();
     this._applyLargeNetworkDefaults();
     this._restoreDisplayState();
 
@@ -1109,12 +1614,16 @@ const TCC = {
         this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
         this._renderMiniSLD();
+        this._updateViewBar(); // a focused open starts as an unsaved arrangement
         this._afterOpenCompact(true);
       });
     });
   },
 
   close() {
+    this._openViewMenu(false);
+    const sv = document.getElementById('tcc-save-view');
+    if (sv) sv.hidden = true;
     if (this._autoPreview) this._revertAutoPreview();
     this._closeAddPopover();
     this._saveDisplayState();
@@ -1504,31 +2013,6 @@ const TCC = {
     }
   },
 
-  addCustomTab(name) {
-    const id = 'custom_' + Date.now();
-    this.tabs.push({ id, name: name || 'Custom', isVoltageTab: false, voltage_kv: null });
-    this._renderTabs();
-  },
-
-  moveDeviceToTab(devIndex, targetTabId) {
-    const dev = this.devices[devIndex];
-    if (!dev) return;
-    // "All" tab means remove custom tab assignment (device returns to its voltage tab or all-only)
-    if (targetTabId === 'all') {
-      if (dev.voltage_kv) {
-        dev.tabId = `v_${dev.voltage_kv}`;
-      } else {
-        dev.tabId = null;
-      }
-    } else {
-      dev.tabId = targetTabId;
-    }
-    this._renderDeviceList();
-    this.render();
-    this._runCoordinationCheck();
-    this._renderMiniSLD();
-  },
-
   // ── Voltage reference scaling ──
 
   _scaleCurrent(amps, dev) {
@@ -1607,6 +2091,7 @@ const TCC = {
     }
 
     if (this._cursor) this._renderCursorPanel();
+    this._updateViewBar();
 
     const range = document.getElementById('tcc-view-range');
     if (range) {
@@ -3202,7 +3687,7 @@ const TCC = {
       }
       const selected = i === this.selectedDeviceIndex;
       const isEndpoint = i === this._miniSLDEndpointDeviceIdx;
-      return `${groupHeader}<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" draggable="true" title="${escHtml(dev.name + (typeLabel ? ' \u2014 ' + typeLabel : ''))}">
+      return `${groupHeader}<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" title="${escHtml(dev.name + (typeLabel ? ' \u2014 ' + typeLabel : ''))}">
         <div class="tcc-device-color" style="background:${dev.color}"></div>
         <div class="tcc-device-info">
           <div class="tcc-device-name">${escHtml(dev.name)}</div>
@@ -3269,21 +3754,6 @@ const TCC = {
       item.addEventListener('click', () => {
         const idx = parseInt(item.dataset.index);
         this.selectDevice(idx);
-      });
-    });
-
-    // Drag device to move between tabs
-    list.querySelectorAll('.tcc-device-item').forEach(item => {
-      item.addEventListener('dragstart', (e) => {
-        const idx = item.dataset.index;
-        e.dataTransfer.setData('text/plain', idx);
-        e.dataTransfer.effectAllowed = 'move';
-        item.classList.add('tcc-dragging');
-      });
-      item.addEventListener('dragend', () => {
-        item.classList.remove('tcc-dragging');
-        // Remove drop highlights from tabs
-        document.querySelectorAll('.tcc-view-tab').forEach(t => t.classList.remove('tcc-drop-target'));
       });
     });
   },
@@ -3519,7 +3989,11 @@ const TCC = {
         </div>`;
     }
 
+    if (String(dev.id).startsWith('custom_')) {
+      html += '<div style="margin-top:10px"><button type="button" class="btn-small" id="btn-tcc-delete-custom">Delete custom device</button></div>';
+    }
     container.innerHTML = html;
+    document.getElementById('btn-tcc-delete-custom')?.addEventListener('click', () => this._deleteCustomDevice(dev));
 
     // Wire up change events
     container.querySelectorAll('[data-sel-field]').forEach(el => {
@@ -3640,7 +4114,7 @@ const TCC = {
   // ── Add custom device ──
 
   addCustomRelay(name, pickup, tds, curveName) {
-    this.devices.push({
+    const dev = {
       id: 'custom_' + Date.now(),
       name: name || `Relay ${this.devices.length + 1}`,
       deviceType: 'relay',
@@ -3649,13 +4123,15 @@ const TCC = {
       curveName: curveName || 'IEC Standard Inverse',
       pickup: pickup || 100,
       tds: tds || 1.0,
-    });
+    };
+    this.devices.push(dev);
+    this._persistCustomDevice(dev);
     this._afterAddDevice();
   },
 
   addCustomFuse(name, ratingA) {
     const nearest = this._nearestFuseRating(ratingA || 100);
-    this.devices.push({
+    const dev = {
       id: 'custom_' + Date.now(),
       name: name || `Fuse ${this.devices.length + 1}`,
       deviceType: 'fuse',
@@ -3664,12 +4140,14 @@ const TCC = {
       fuseRating: nearest || ratingA || 100,
       actualRating: ratingA || 100,
       scaledCurve: !nearest,
-    });
+    };
+    this.devices.push(dev);
+    this._persistCustomDevice(dev);
     this._afterAddDevice();
   },
 
   addCustomCB(name, cbParams) {
-    this.devices.push({
+    const dev = {
       id: 'custom_' + Date.now(),
       name: name || `CB ${this.devices.length + 1}`,
       deviceType: 'cb',
@@ -3686,7 +4164,9 @@ const TCC = {
         short_time_delay: cbParams.short_time_delay || 0,
         instantaneous_pickup: cbParams.instantaneous_pickup || 0,
       },
-    });
+    };
+    this.devices.push(dev);
+    this._persistCustomDevice(dev);
     this._afterAddDevice();
   },
 
@@ -3770,14 +4250,16 @@ const TCC = {
     // Sort by current ascending
     points.sort((a, b) => a[0] - b[0]);
 
-    this.devices.push({
+    const dev = {
       id: 'custom_curve_' + Date.now(),
       name: name || `Custom ${this.devices.length + 1}`,
       deviceType: 'custom_curve',
       color: this._nextColor(),
       visible: true,
       curvePoints: points,
-    });
+    };
+    this.devices.push(dev);
+    this._persistCustomDevice(dev);
 
     this._afterAddDevice();
     return true;
@@ -5635,13 +6117,11 @@ const TCC = {
       return;
     }
     container.style.display = '';
-    container.innerHTML = this.tabs.map(tab => {
-      const isCustom = tab.id.startsWith('custom_');
-      const closeBtn = isCustom ? `<span class="tcc-tab-close" data-tab-id="${tab.id}" title="Delete tab">\u00D7</span>` : '';
-      return `<button class="tcc-view-tab ${tab.id === this.activeTabId ? 'active' : ''}" data-tab-id="${tab.id}">${escHtml(tab.name)}${closeBtn}</button>`;
-    }).join('') + '<button class="tcc-view-tab tcc-add-custom-tab" title="Add custom tab">+</button>';
-
-    container.querySelectorAll('.tcc-view-tab:not(.tcc-add-custom-tab)').forEach(btn => {
+    // Voltage tabs come from the data; arrangements you want to keep are saved as views
+    container.innerHTML = this.tabs.map(tab =>
+      `<button class="tcc-view-tab ${tab.id === this.activeTabId ? 'active' : ''}" data-tab-id="${tab.id}">${escHtml(tab.name)}</button>`
+    ).join('');
+    container.querySelectorAll('.tcc-view-tab').forEach(btn => {
       btn.addEventListener('click', (e) => {
         this.activeTabId = e.currentTarget.dataset.tabId;
         this._renderTabs();
@@ -5650,63 +6130,7 @@ const TCC = {
         this._runCoordinationCheck();
         this._renderMiniSLD();
       });
-
-      // Drop target: accept device drags onto tabs
-      btn.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        btn.classList.add('tcc-drop-target');
-      });
-      btn.addEventListener('dragleave', () => {
-        btn.classList.remove('tcc-drop-target');
-      });
-      btn.addEventListener('drop', (e) => {
-        e.preventDefault();
-        btn.classList.remove('tcc-drop-target');
-        const devIdx = parseInt(e.dataTransfer.getData('text/plain'));
-        const targetTabId = btn.dataset.tabId;
-        if (!isNaN(devIdx) && targetTabId && this.devices[devIdx]) {
-          this.moveDeviceToTab(devIdx, targetTabId);
-        }
-      });
     });
-    // Delete custom tabs
-    container.querySelectorAll('.tcc-tab-close').forEach(span => {
-      span.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const tabId = span.dataset.tabId;
-        this._deleteTab(tabId);
-      });
-    });
-
-    const addBtn = container.querySelector('.tcc-add-custom-tab');
-    if (addBtn) {
-      addBtn.addEventListener('click', async () => {
-        const name = await UI.prompt('Tab name:');
-        if (name) this.addCustomTab(name);
-      });
-    }
-  },
-
-  _deleteTab(tabId) {
-    const idx = this.tabs.findIndex(t => t.id === tabId);
-    if (idx < 0) return;
-    // Reassign devices on this tab back to their voltage tab or null
-    for (const dev of this.devices) {
-      if (dev.tabId === tabId) {
-        dev.tabId = dev.voltage_kv ? `v_${dev.voltage_kv}` : null;
-      }
-    }
-    this.tabs.splice(idx, 1);
-    // Switch to 'all' if deleted tab was active
-    if (this.activeTabId === tabId) {
-      this.activeTabId = 'all';
-    }
-    this._renderTabs();
-    this._renderDeviceList();
-    this.render();
-    this._runCoordinationCheck();
-    this._renderMiniSLD();
   },
 
   _renderVoltageSelector() {
