@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.121">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.121">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.121">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.121">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.121">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.121">
-  <link rel="stylesheet" href="css/lightning.css?v=3.5.121">
-  <link rel="stylesheet" href="css/rates.css?v=3.5.121">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.121">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.121">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.121">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.121">
-  <link rel="stylesheet" href="css/help.css?v=3.5.121">
+  <link rel="stylesheet" href="css/app.css?v=3.5.122">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.122">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.122">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.122">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.122">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.122">
+  <link rel="stylesheet" href="css/lightning.css?v=3.5.122">
+  <link rel="stylesheet" href="css/rates.css?v=3.5.122">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.122">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.122">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.122">
+  <link rel="stylesheet" href="css/schedules.css?v=3.5.122">
+  <link rel="stylesheet" href="css/help.css?v=3.5.122">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -2660,15 +2660,18 @@
   <div id="help-modal" class="modal" role="dialog" aria-modal="true" aria-label="Help and Documentation" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
-        <h3>ProtectionPro — Help &amp; Documentation</h3>
+        <button class="help-back" id="btn-help-back" aria-label="Back" hidden>&lsaquo;</button>
+        <h3 id="help-title">ProtectionPro — Help &amp; Documentation</h3>
         <button class="modal-close" id="btn-close-help">&times;</button>
       </div>
+      <div class="help-home" id="help-home" hidden></div>
       <div class="modal-body help-body">
         <div class="help-tabs">
           <button class="help-tab active" data-tab="getting-started">Getting Started</button>
           <button class="help-tab" data-tab="components">Components</button>
           <button class="help-tab" data-tab="reference">Calculations &amp; tools</button>
           <button class="help-tab" data-tab="verification">Verification</button>
+          <button class="help-tab help-tab-touch" data-tab="touch">Touch &amp; gestures</button>
           <button class="help-tab" data-tab="shortcuts">Shortcuts</button>
         </div>
 
@@ -2676,7 +2679,7 @@
           <h4>Welcome to ProtectionPro</h4>
           <p>ProtectionPro is a browser-based power systems engineering tool for building single-line diagrams (SLDs) and performing electrical analysis — a lightweight, web-based alternative to ETAP.</p>
 
-          <h4>Building a Single-Line Diagram</h4>
+          <div class="help-mouse-only"><h4>Building a Single-Line Diagram</h4>
           <ol>
             <li><strong>Add components</strong> — Drag components from the left sidebar palette onto the canvas. Use the search box to filter components. Categories include sources, distribution, protection, instruments, loads, DC systems, and other.</li>
             <li><strong>Connect components</strong> — Click a connection port (small circle) on one component and drag to a port on another to draw a wire. Alternatively, press <kbd>W</kbd> for Wire mode.</li>
@@ -2684,10 +2687,21 @@
             <li><strong>Run analysis</strong> — Open the <strong>Analyse</strong> menu on the single-line toolbar: every analysis (short circuit, load flow, arc flash, cable sizing and more) is grouped there by discipline. Press <strong>Ctrl K</strong> to find any command by name.</li>
           </ol>
 
+          </div>
+          <div class="help-touch-only">
+          <h4>Building a Single-Line Diagram</h4>
+          <ol>
+            <li><strong>Add parts</strong> — Tap <strong>Parts</strong> in the bottom bar, then tap a part to drop it in the middle of the view. Drag it where you want it. The search box filters the list.</li>
+            <li><strong>Connect them</strong> — Switch to <strong>Wire</strong> with the toggle at the top left of the diagram, then drag from one connection port (small circle) to another. Switch back to <strong>Select</strong> when you are done.</li>
+            <li><strong>Set the properties</strong> — Tap a component, then <strong>Properties</strong> on the card that appears at the bottom.</li>
+            <li><strong>Run an analysis</strong> — Open <strong>Studies</strong> in the bottom bar and choose one (short circuit, load flow, arc flash, cable sizing and more). Read the answers under <strong>Results</strong>.</li>
+          </ol>
+          </div>
+
           <h4>Templates</h4>
           <p>Use <strong>Project → Templates</strong> to start from a pre-built network: substation, industrial plant, residential distribution, or generator installation. Templates provide a fully wired and configured starting point.</p>
 
-          <h4>Canvas Navigation</h4>
+          <div class="help-mouse-only"><h4>Canvas Navigation</h4>
           <ul>
             <li><strong>Pan</strong> — Middle-click drag or hold Space + left-click drag</li>
             <li><strong>Zoom</strong> — Mouse scroll wheel, or use Fit / 1:1 buttons in the toolbar</li>
@@ -2695,6 +2709,18 @@
             <li><strong>Multi-select</strong> — Hold Shift and click to add/remove from selection</li>
             <li><strong>Dark mode</strong> — Toggle via the Dark button in the top-right toolbar</li>
           </ul>
+
+          </div>
+          <div class="help-touch-only">
+          <h4>Moving around the diagram</h4>
+          <ul>
+            <li><strong>Pan</strong> — Drag empty space with one finger</li>
+            <li><strong>Zoom</strong> — Pinch with two fingers, or tap <strong>Zoom to fit</strong></li>
+            <li><strong>Select</strong> — Tap a component; tap empty space to deselect</li>
+            <li><strong>Move a label</strong> — Press and hold a name or result label, then drag</li>
+            <li><strong>Dark mode</strong> — <strong>More</strong> › App › Dark mode</li>
+          </ul>
+          </div>
 
           <h4>Multi-Page Diagrams</h4>
           <p>Use the page tab bar below the canvas to add, rename, and switch between diagram sheets. Double-click a tab to rename it. To move devices to another sheet, cut them (<kbd>Ctrl+X</kbd>), switch sheets, and paste (<kbd>Ctrl+V</kbd>). Use off-page connectors to link electrical connections across pages — connectors with the same label are electrically joined.</p>
@@ -2708,7 +2734,7 @@
           <h4>Wire Routing</h4>
           <p>Choose between orthogonal (right-angle), diagonal, or spline wire routing via <strong>View → Wire Routing</strong>. Double-click a wire to add bend points for custom routing. Directional flow arrows on wires show power flow direction after running load flow analysis.</p>
 
-          <h4>Saving &amp; Exporting</h4>
+          <div class="help-mouse-only"><h4>Saving &amp; Exporting</h4>
           <p>Use <kbd>Ctrl+S</kbd> to save your project. Projects can be saved to the server or exported in multiple formats via the <strong>Reports</strong> menu:</p>
           <ul>
             <li><strong>JSON</strong> — Full project data (re-importable)</li>
@@ -2726,6 +2752,12 @@
           <h4>Mobile Support</h4>
           <p>On a phone, ProtectionPro has its own layout. The header switches workspace and holds undo, redo and save. The bottom tabs are <b>Parts</b> (tap to place), <b>Diagram</b>, <b>Studies</b> (every analysis, searchable, with its options before you run it), <b>Results</b> (per-bus results, worst first, with Locate) and <b>More</b> (project, edit, quantities, scenarios, output, diagram layers and settings). Selecting a component shows a card with Edit, Rotate, Duplicate, Copy and Delete; Edit opens the full-screen properties editor, which steps through components with ‹ ›. Pinch to zoom, drag to pan, and use the layers button to switch sheets.</p>
         </div>
+          <div class="help-touch-only">
+          <h4>Saving &amp; exporting</h4>
+          <p>Tap the <strong>Save</strong> icon at the top right to save the project, or use <strong>More</strong> › Save as. <strong>More › Export &amp; reports</strong> holds the PDF reports, CSV and JSON data files, and diagram images.</p>
+          </div>
+
+          </div>
 
         <div class="help-content" id="help-tab-components" style="display:none">
           <h4>Component Reference (40 Types)</h4>
@@ -2868,6 +2900,32 @@
           </table>
         </div>
 
+        <div class="help-content" id="help-tab-touch" style="display:none">
+          <h4>Touch &amp; gestures</h4>
+          <table class="help-ref-table">
+            <thead><tr><th>Do this</th><th>To</th></tr></thead>
+            <tbody>
+              <tr><td>Tap a component</td><td>Select it (a card with Properties, Copy, Duplicate, Rotate and Delete appears)</td></tr>
+              <tr><td>Tap empty space</td><td>Deselect</td></tr>
+              <tr><td>Drag a component</td><td>Move it</td></tr>
+              <tr><td>Drag empty space</td><td>Pan the diagram</td></tr>
+              <tr><td>Pinch two fingers</td><td>Zoom in or out</td></tr>
+              <tr><td>Zoom to fit button</td><td>Fit the whole diagram in view</td></tr>
+              <tr><td>Wire mode, drag port to port</td><td>Draw a connection</td></tr>
+              <tr><td>Press and hold a label, then drag</td><td>Move a name or result label</td></tr>
+              <tr><td>Sheets button</td><td>Switch, add or rename diagram sheets</td></tr>
+            </tbody>
+          </table>
+          <h4>Bottom bar</h4>
+          <ul>
+            <li><strong>Parts</strong> — tap a part to place it in the middle of the view</li>
+            <li><strong>Diagram</strong> — back to the drawing</li>
+            <li><strong>Studies</strong> — run any analysis</li>
+            <li><strong>Results</strong> — see what has been run</li>
+            <li><strong>More</strong> — project, export, diagram display, settings, help</li>
+          </ul>
+        </div>
+
         <div class="help-content" id="help-tab-shortcuts" style="display:none">
           <h4>Keyboard Shortcuts</h4>
           <table class="help-ref-table">
@@ -2990,93 +3048,93 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.121"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.121"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.121"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.121"></script>
-  <script src="js/constants.js?v=3.5.121"></script>
-  <script src="js/cablelib.js?v=3.5.121"></script>
-  <script src="js/plan-defs.js?v=3.5.121"></script>
-  <script src="js/ui.js?v=3.5.121"></script>
-  <script src="js/state.js?v=3.5.121"></script>
-  <script src="js/grid.js?v=3.5.121"></script>
-  <script src="js/components.js?v=3.5.121"></script>
-  <script src="js/voltage.js?v=3.5.121"></script>
-  <script src="js/symbols.js?v=3.5.121"></script>
-  <script src="js/canvas.js?v=3.5.121"></script>
-  <script src="js/sidebar.js?v=3.5.121"></script>
-  <script src="js/wiring.js?v=3.5.121"></script>
-  <script src="js/properties.js?v=3.5.121"></script>
-  <script src="js/annotations.js?v=3.5.121"></script>
-  <script src="js/api.js?v=3.5.121"></script>
-  <script src="js/auth.js?v=3.5.121"></script>
-  <script src="js/sharing.js?v=3.5.121"></script>
-  <script src="js/compliance.js?v=3.5.121"></script>
-  <script src="js/tcc.js?v=3.5.121"></script>
-  <script src="js/project.js?v=3.5.121"></script>
-  <script src="js/reports.js?v=3.5.121"></script>
-  <script src="js/verification-templates.js?v=3.5.121"></script>
-  <script src="js/templates.js?v=3.5.121"></script>
-  <script src="js/standard-data.js?v=3.5.121"></script>
-  <script src="js/undo.js?v=3.5.121"></script>
-  <script src="js/revisions.js?v=3.5.121"></script>
-  <script src="js/minimap.js?v=3.5.121"></script>
-  <script src="js/contextmenu.js?v=3.5.121"></script>
-  <script src="js/dbschedule.js?v=3.5.121"></script>
-  <script src="js/control-sim.js?v=3.5.121"></script>
-  <script src="js/dynmotor.js?v=3.5.121"></script>
-  <script src="js/transient.js?v=3.5.121"></script>
-  <script src="js/voltage-stability.js?v=3.5.121"></script>
-  <script src="js/freqscan.js?v=3.5.121"></script>
-  <script src="js/battsizing.js?v=3.5.121"></script>
-  <script src="js/opf.js?v=3.5.121"></script>
-  <script src="js/reliability.js?v=3.5.121"></script>
-  <script src="js/flicker.js?v=3.5.121"></script>
-  <script src="js/hostingcapacity.js?v=3.5.121"></script>
-  <script src="js/filtersizing.js?v=3.5.121"></script>
-  <script src="js/capplace.js?v=3.5.121"></script>
-  <script src="js/contingency.js?v=3.5.121"></script>
-  <script src="js/timeseries.js?v=3.5.121"></script>
-  <script src="js/lfstudy.js?v=3.5.121"></script>
-  <script src="js/interlocking.js?v=3.5.121"></script>
-  <script src="js/sequence.js?v=3.5.121"></script>
-  <script src="js/retic.js?v=3.5.121"></script>
-  <script src="js/schedules.js?v=3.5.121"></script>
-  <script src="js/workspaces.js?v=3.5.121"></script>
-  <script src="js/header.js?v=3.5.121"></script>
-  <script src="js/lightning.js?v=3.5.121"></script>
-  <script src="js/rates.js?v=3.5.121"></script>
-  <script src="js/boq.js?v=3.5.121"></script>
-  <script src="js/cableschedules.js?v=3.5.121"></script>
-  <script src="js/dbaccessories.js?v=3.5.121"></script>
-  <script src="js/dbdrawing.js?v=3.5.121"></script>
-  <script src="js/retic-diagram.js?v=3.5.121"></script>
-  <script src="js/retic-report.js?v=3.5.121"></script>
-  <script src="js/plan-symbols.js?v=3.5.121"></script>
-  <script src="js/plan-engine.js?v=3.5.121"></script>
-  <script src="js/plan-images.js?v=3.5.121"></script>
-  <script src="js/plan-tools.js?v=3.5.121"></script>
-  <script src="js/plan-sync.js?v=3.5.121"></script>
-  <script src="js/plan-csv.js?v=3.5.121"></script>
-  <script src="js/plan-dxf.js?v=3.5.121"></script>
-  <script src="js/plan-export.js?v=3.5.121"></script>
-  <script src="js/plan-lux.js?v=3.5.121"></script>
-  <script src="js/plan-ies.js?v=3.5.121"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.121"></script>
-  <script src="js/plan-dxf-manager.js?v=3.5.121"></script>
-  <script src="js/plan-dd-import.js?v=3.5.121"></script>
-  <script src="js/plan-circuits.js?v=3.5.121"></script>
-  <script src="js/plan-ui.js?v=3.5.121"></script>
-  <script src="js/plan.js?v=3.5.121"></script>
-  <script src="js/help.js?v=3.5.121"></script>
-  <script src="js/help-faults.js?v=3.5.121"></script>
-  <script src="js/help-flow.js?v=3.5.121"></script>
-  <script src="js/help-dynamics.js?v=3.5.121"></script>
-  <script src="js/help-protect.js?v=3.5.121"></script>
-  <script src="js/help-cables.js?v=3.5.121"></script>
-  <script src="js/help-design.js?v=3.5.121"></script>
-  <script src="js/help-workflow.js?v=3.5.121"></script>
-  <script src="js/app.js?v=3.5.121"></script>
-  <script src="js/mobile.js?v=3.5.121"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.122"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.122"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.122"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.122"></script>
+  <script src="js/constants.js?v=3.5.122"></script>
+  <script src="js/cablelib.js?v=3.5.122"></script>
+  <script src="js/plan-defs.js?v=3.5.122"></script>
+  <script src="js/ui.js?v=3.5.122"></script>
+  <script src="js/state.js?v=3.5.122"></script>
+  <script src="js/grid.js?v=3.5.122"></script>
+  <script src="js/components.js?v=3.5.122"></script>
+  <script src="js/voltage.js?v=3.5.122"></script>
+  <script src="js/symbols.js?v=3.5.122"></script>
+  <script src="js/canvas.js?v=3.5.122"></script>
+  <script src="js/sidebar.js?v=3.5.122"></script>
+  <script src="js/wiring.js?v=3.5.122"></script>
+  <script src="js/properties.js?v=3.5.122"></script>
+  <script src="js/annotations.js?v=3.5.122"></script>
+  <script src="js/api.js?v=3.5.122"></script>
+  <script src="js/auth.js?v=3.5.122"></script>
+  <script src="js/sharing.js?v=3.5.122"></script>
+  <script src="js/compliance.js?v=3.5.122"></script>
+  <script src="js/tcc.js?v=3.5.122"></script>
+  <script src="js/project.js?v=3.5.122"></script>
+  <script src="js/reports.js?v=3.5.122"></script>
+  <script src="js/verification-templates.js?v=3.5.122"></script>
+  <script src="js/templates.js?v=3.5.122"></script>
+  <script src="js/standard-data.js?v=3.5.122"></script>
+  <script src="js/undo.js?v=3.5.122"></script>
+  <script src="js/revisions.js?v=3.5.122"></script>
+  <script src="js/minimap.js?v=3.5.122"></script>
+  <script src="js/contextmenu.js?v=3.5.122"></script>
+  <script src="js/dbschedule.js?v=3.5.122"></script>
+  <script src="js/control-sim.js?v=3.5.122"></script>
+  <script src="js/dynmotor.js?v=3.5.122"></script>
+  <script src="js/transient.js?v=3.5.122"></script>
+  <script src="js/voltage-stability.js?v=3.5.122"></script>
+  <script src="js/freqscan.js?v=3.5.122"></script>
+  <script src="js/battsizing.js?v=3.5.122"></script>
+  <script src="js/opf.js?v=3.5.122"></script>
+  <script src="js/reliability.js?v=3.5.122"></script>
+  <script src="js/flicker.js?v=3.5.122"></script>
+  <script src="js/hostingcapacity.js?v=3.5.122"></script>
+  <script src="js/filtersizing.js?v=3.5.122"></script>
+  <script src="js/capplace.js?v=3.5.122"></script>
+  <script src="js/contingency.js?v=3.5.122"></script>
+  <script src="js/timeseries.js?v=3.5.122"></script>
+  <script src="js/lfstudy.js?v=3.5.122"></script>
+  <script src="js/interlocking.js?v=3.5.122"></script>
+  <script src="js/sequence.js?v=3.5.122"></script>
+  <script src="js/retic.js?v=3.5.122"></script>
+  <script src="js/schedules.js?v=3.5.122"></script>
+  <script src="js/workspaces.js?v=3.5.122"></script>
+  <script src="js/header.js?v=3.5.122"></script>
+  <script src="js/lightning.js?v=3.5.122"></script>
+  <script src="js/rates.js?v=3.5.122"></script>
+  <script src="js/boq.js?v=3.5.122"></script>
+  <script src="js/cableschedules.js?v=3.5.122"></script>
+  <script src="js/dbaccessories.js?v=3.5.122"></script>
+  <script src="js/dbdrawing.js?v=3.5.122"></script>
+  <script src="js/retic-diagram.js?v=3.5.122"></script>
+  <script src="js/retic-report.js?v=3.5.122"></script>
+  <script src="js/plan-symbols.js?v=3.5.122"></script>
+  <script src="js/plan-engine.js?v=3.5.122"></script>
+  <script src="js/plan-images.js?v=3.5.122"></script>
+  <script src="js/plan-tools.js?v=3.5.122"></script>
+  <script src="js/plan-sync.js?v=3.5.122"></script>
+  <script src="js/plan-csv.js?v=3.5.122"></script>
+  <script src="js/plan-dxf.js?v=3.5.122"></script>
+  <script src="js/plan-export.js?v=3.5.122"></script>
+  <script src="js/plan-lux.js?v=3.5.122"></script>
+  <script src="js/plan-ies.js?v=3.5.122"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.122"></script>
+  <script src="js/plan-dxf-manager.js?v=3.5.122"></script>
+  <script src="js/plan-dd-import.js?v=3.5.122"></script>
+  <script src="js/plan-circuits.js?v=3.5.122"></script>
+  <script src="js/plan-ui.js?v=3.5.122"></script>
+  <script src="js/plan.js?v=3.5.122"></script>
+  <script src="js/help.js?v=3.5.122"></script>
+  <script src="js/help-faults.js?v=3.5.122"></script>
+  <script src="js/help-flow.js?v=3.5.122"></script>
+  <script src="js/help-dynamics.js?v=3.5.122"></script>
+  <script src="js/help-protect.js?v=3.5.122"></script>
+  <script src="js/help-cables.js?v=3.5.122"></script>
+  <script src="js/help-design.js?v=3.5.122"></script>
+  <script src="js/help-workflow.js?v=3.5.122"></script>
+  <script src="js/app.js?v=3.5.122"></script>
+  <script src="js/mobile.js?v=3.5.122"></script>
 </body>
 </html>
