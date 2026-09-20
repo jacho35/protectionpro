@@ -180,13 +180,16 @@ def build_branch_ybus(project):
         processed_chains.add(chain_key)
 
         has_xfmr = any(e.type == "transformer" for e in all_elems.values())
+        # Zone voltages are needed by BOTH branches: the transformer branch
+        # assigns each cable to its own side's zone, the no-transformer branch
+        # puts every cable in the single zone these buses bound.
+        bus_a_comp = components.get(bus_a)
+        bus_b_comp = components.get(bus_b)
+        bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
+        bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
         if has_xfmr:
             path_a_ids = {e.id for e in path_a}
             path_b_ids = {e.id for e in path_b}
-            bus_a_comp = components.get(bus_a)
-            bus_b_comp = components.get(bus_b)
-            bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
-            bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
             z_total = complex(0, 0)
             for e in all_elems.values():
                 if e.type == "transformer":
@@ -203,11 +206,19 @@ def build_branch_ybus(project):
                     z_base = (v_kv ** 2) / base_mva
                     r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
                     x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    z_total += complex(r / z_base, x / z_base)
+                    # /n to match _get_impedance and _source_stub above — this
+                    # branch re-derives Z inline for the chain-resolved v_kv and
+                    # had dropped the parallel divide.
+                    npar = max(1, int(e.props.get("num_parallel", 1) or 1))
+                    z_total += complex(r / z_base, x / z_base) / npar
                 else:
                     z_total += _get_impedance(e, base_mva)
         else:
-            z_total = sum((_get_impedance(e, base_mva) for e in all_elems.values()),
+            # No transformer ⇒ one voltage zone, bounded by these buses. Pass
+            # that zone voltage so a stale cable voltage_kv prop cannot set the
+            # per-unit base ([EE-12 mirror], see loadflow._get_impedance).
+            z_total = sum((_get_impedance(e, base_mva, v_kv=bus_a_v)
+                           for e in all_elems.values()),
                           complex(0, 0))
 
         y = 1 / z_total if abs(z_total) > 1e-15 else complex(0, -1e6)

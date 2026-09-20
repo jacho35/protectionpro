@@ -273,7 +273,12 @@ def _branch_chains(project, base_mva):
                 if has_xfmr:
                     v_kv = va if e.id in path_a_ids else vb
                 else:
-                    v_kv = e.props.get("voltage_kv", va) or va
+                    # No transformer ⇒ one voltage zone, bounded by these
+                    # buses. The cable's own voltage_kv prop must NOT win: a
+                    # present-but-stale 11 kV default (the palette value) would
+                    # otherwise set the per-unit base for a 0.4 kV run
+                    # ([EE-12 mirror], see loadflow._get_impedance).
+                    v_kv = va
                 z_base = (v_kv ** 2) / base_mva if v_kv > 0 else 1.0
                 r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
                 x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)

@@ -5368,3 +5368,196 @@ class TestAnsiFaultDuty:
 
         assert with_motor["i_sym_interrupting_ka"] == pytest.approx(
             without_motor["i_sym_interrupting_ka"], rel=1e-9)
+
+
+# ── Cable per-unit base & parallel divide (audit 2026-09-20) ─────────────
+
+
+def _lv_cable_only(cable_vkv, bus_kv=0.4, length_km=0.05, r=0.3, x=0.08):
+    """utility(0.4 kV) → bus-1 → cable → bus-2 → load, no transformer.
+
+    `cable_vkv` is the cable's OWN voltage_kv prop: 11 reproduces the stale
+    palette default (COMPONENT_DEFS.cable, frontend/js/constants.js), while
+    `bus_kv` is the voltage the zone actually imposes.
+    """
+    comps = [
+        _comp("utility-1", "utility", {
+            "name": "U", "voltage_kv": bus_kv, "fault_mva": 500, "x_r_ratio": 10}),
+        _comp("bus-1", "bus", {"name": "B1", "voltage_kv": bus_kv}),
+        _comp("cable-1", "cable", {
+            "name": "C1", "length_km": length_km, "r_per_km": r, "x_per_km": x,
+            "voltage_kv": cable_vkv, "rated_amps": 400}),
+        _comp("bus-2", "bus", {"name": "B2", "voltage_kv": bus_kv}),
+        _comp("load-1", "static_load", {
+            "name": "L", "rated_kva": 50, "power_factor": 0.9, "demand_factor": 1.0}),
+    ]
+    wires = [
+        _wire("w1", "utility-1", "bus-1", "out", "in"),
+        _wire("w2", "bus-1", "cable-1", "out", "from"),
+        _wire("w3", "cable-1", "bus-2", "to", "in"),
+        _wire("w4", "bus-2", "load-1", "out", "in"),
+    ]
+    return ProjectData(projectName="cable-zone-base", baseMVA=100.0, frequency=50,
+                       components=comps, wires=wires)
+
+
+def _xfmr_cable_chain(num_parallel, voltage_lv_kv=0.4, with_load=True):
+    """11 kV utility → bus-1 → 1 MVA 11/0.4 transformer → cable → bus-2 (→ load).
+
+    `voltage_lv_kv` selects the code path under test:
+      0.4  → chain turns ratio t == 1 → LEGACY z_total sum
+      0.42 → t != 1                   → EXACT _reduce_chain_two_port path
+    """
+    comps = [
+        _comp("utility-1", "utility", {
+            "name": "U", "voltage_kv": 11, "fault_mva": 500, "x_r_ratio": 10}),
+        _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 11}),
+        _comp("transformer-1", "transformer", {
+            "name": "T", "rated_mva": 1.0, "z_percent": 5, "x_r_ratio": 10,
+            "voltage_hv_kv": 11, "voltage_lv_kv": voltage_lv_kv,
+            "tap_position": 0, "tap_step_pct": 2.5, "vector_group": "Dyn11"}),
+        _comp("cable-1", "cable", {
+            "name": "C1", "length_km": 0.1, "r_per_km": 0.3, "x_per_km": 0.08,
+            "voltage_kv": 0.4, "rated_amps": 400, "num_parallel": num_parallel}),
+        _comp("bus-2", "bus", {"name": "B2", "voltage_kv": 0.4}),
+    ]
+    wires = [
+        _wire("w1", "utility-1", "bus-1", "out", "in"),
+        _wire("w2", "bus-1", "transformer-1", "out", "primary"),
+        _wire("w3", "transformer-1", "cable-1", "secondary", "from"),
+        _wire("w4", "cable-1", "bus-2", "to", "in"),
+    ]
+    if with_load:
+        comps.append(_comp("load-1", "static_load", {
+            "name": "L", "rated_kva": 100, "power_factor": 0.9, "demand_factor": 1.0}))
+        wires.append(_wire("w5", "bus-2", "load-1", "out", "in"))
+    return ProjectData(projectName="parallel-divide", baseMVA=100.0, frequency=50,
+                       components=comps, wires=wires)
+
+
+
+class TestCableZoneBase:
+    """[EE-12 mirror] A cable's per-unit base is the BUS-inferred zone voltage,
+    never its own (often stale) voltage_kv prop.
+
+    Regression for the 2026-09-20 calculation audit: on a chain with NO
+    transformer every builder summed `_get_impedance(e)` directly, so an LV
+    cable still carrying the 11 kV palette default was referred to the wrong
+    base by (11/0.4)² = 756.25×, understating the voltage drop ~798×.
+    """
+
+    # z_base = 0.4²/100 = 0.0016; r = 0.3 × 0.05 = 0.015 Ω → 9.375 pu
+    #                             x = 0.08 × 0.05 = 0.004 Ω → 2.5  pu
+    HAND_Z_PU = complex(9.375, 2.5)
+
+    def test_stale_cable_prop_does_not_move_load_flow(self):
+        """The stale 11 kV prop must give the same answer as a correct 0.4."""
+        stale = run_load_flow(_lv_cable_only(11))
+        correct = run_load_flow(_lv_cable_only(0.4))
+        assert stale.converged and correct.converged
+
+        v_stale = stale.buses["bus-2"].voltage_pu
+        assert v_stale == pytest.approx(correct.buses["bus-2"].voltage_pu, rel=1e-12)
+        # The 0.4 kV-zone answer, NOT the 0.999994 the stale 11 kV base gave.
+        assert v_stale == pytest.approx(0.995213, abs=2e-6)
+
+    def test_stale_cable_prop_does_not_move_branch_current(self):
+        stale = run_load_flow(_lv_cable_only(11))
+        cable = next(b for b in stale.branches if b.elementId == "cable-1")
+        # 72.52 A on the 0.4 kV zone, not the 2.62 A the 11 kV base gave.
+        assert cable.i_amps == pytest.approx(72.52, abs=0.05)
+
+    def test_branch_ybus_chain_z_uses_zone_base(self):
+        """Reaches transient_stability.py via build_branch_ybus."""
+        from backend.analysis.network_reduction import build_branch_ybus
+
+        for prop_kv in (11, 0.4):
+            ctx = build_branch_ybus(_lv_cable_only(prop_kv))
+            bi = ctx["bus_idx"]
+            z = -1 / ctx["Y"][bi["bus-1"], bi["bus-2"]]
+            assert z == pytest.approx(self.HAND_Z_PU, rel=1e-9), (
+                f"cable voltage_kv={prop_kv} moved the chain impedance")
+
+    def test_port_zbus_uses_zone_base(self):
+        """Reaches dynamic_motor_starting.py via build_port_zbus."""
+        from backend.analysis.network_reduction import build_port_zbus
+
+        zth = [build_port_zbus(_lv_cable_only(v), ["bus-2"])["Z"][0, 0]
+               for v in (11, 0.4)]
+        assert zth[0] == pytest.approx(zth[1], rel=1e-9)
+        # Source + cable: dominated by the hand-checked 9.375 + j2.5 pu cable.
+        assert zth[0].real == pytest.approx(9.3949, abs=1e-3)
+
+    def test_unbalanced_load_flow_uses_zone_base(self):
+        """Covers BOTH halves: Z1 via _get_impedance and Z0 via _cable_z0_pu."""
+        va = []
+        for prop_kv in (11, 0.4):
+            res = run_unbalanced_load_flow(_lv_cable_only(prop_kv))
+            buses = res.buses.values() if hasattr(res.buses, "values") else res.buses
+            va.append(next(b for b in buses if b.bus_id == "bus-2").va_pu)
+        assert va[0] == pytest.approx(va[1], rel=1e-9)
+        assert va[0] == pytest.approx(0.995214, abs=2e-6)
+
+
+class TestCableParallelDivide:
+    """`num_parallel` must divide the cable impedance on EVERY chain-assembly
+    path, not only the ones that call `_get_impedance`.
+
+    Regression for the 2026-09-20 audit: the has-transformer branches
+    re-derive the cable impedance inline (they need the chain-resolved zone
+    voltage) and had dropped the divide, so voltage drop / losses / Thevenin
+    impedance were overstated up to n× — while loading-%, which uses
+    rated_amps × num_parallel, looked correct beside it.
+    """
+
+    def test_legacy_path_voltage_varies_with_parallel_count(self):
+        """t == 1 → legacy z_total sum. V must RISE as circuits are added."""
+        v = {}
+        for n in (1, 2, 4):
+            res = run_load_flow(_xfmr_cable_chain(n, voltage_lv_kv=0.4))
+            assert res.converged
+            v[n] = res.buses["bus-2"].voltage_pu
+
+        assert v[1] < v[2] < v[4], f"voltage did not improve with parallel cables: {v}"
+        assert v[1] == pytest.approx(0.977838, abs=2e-6)
+        assert v[2] == pytest.approx(0.987702, abs=2e-6)
+        assert v[4] == pytest.approx(0.992559, abs=2e-6)
+
+    def test_port_zbus_thevenin_varies_with_parallel_count(self):
+        """network_reduction has no exact-path alternative — always affected."""
+        from backend.analysis.network_reduction import build_port_zbus
+
+        zth = {}
+        for n in (1, 2, 4):
+            project = _xfmr_cable_chain(n, voltage_lv_kv=0.4, with_load=False)
+            zth[n] = build_port_zbus(project, ["bus-2"])["Z"][0, 0]
+
+        assert abs(zth[1]) > abs(zth[2]) > abs(zth[4]), (
+            f"Thevenin impedance did not fall with parallel cables: {zth}")
+        # Only the cable halves/quarters — transformer and source do not.
+        # Cable R = 0.3 × 0.1 / (0.4²/100) = 18.75 pu.
+        assert zth[2].real == pytest.approx(zth[1].real - 18.75 / 2, abs=1e-6)
+        assert zth[4].real == pytest.approx(zth[1].real - 18.75 * 3 / 4, abs=1e-6)
+
+    def test_legacy_path_agrees_with_explicit_bus_redraw(self):
+        """The legacy path is exact at t == 1 ([EE-10] rationale, loadflow.py).
+
+        Drawing the same network with a real bus at the transformer secondary
+        takes a different code path entirely — the two must still agree.
+        """
+        for n in (1, 2):
+            lumped = run_load_flow(_xfmr_cable_chain(n, voltage_lv_kv=0.4))
+            v_lumped = lumped.buses["bus-2"].voltage_pu
+
+            explicit = _xfmr_cable_chain(n, voltage_lv_kv=0.4)
+            explicit.components.append(
+                _comp("bus-mid", "bus", {"name": "BM", "voltage_kv": 0.4}))
+            for w in explicit.wires:
+                if w.id == "w3":
+                    w.toComponent, w.toPort = "bus-mid", "in"
+            explicit.wires.append(_wire("w3b", "bus-mid", "cable-1", "out", "from"))
+            redrawn = run_load_flow(explicit)
+            v_redrawn = redrawn.buses["bus-2"].voltage_pu
+
+            assert v_lumped == pytest.approx(v_redrawn, abs=1e-6), (
+                f"num_parallel={n}: lumped {v_lumped} vs explicit-bus {v_redrawn}")

@@ -1635,8 +1635,12 @@ def _find_source_side_neighbor(elem_id, bus_id, adjacency, bus_of):
     return elem_id  # fallback: use the element itself
 
 
-def _get_impedance(comp, base_mva):
+def _get_impedance(comp, base_mva, v_kv=None):
     """Get branch impedance in per-unit on common MVA base.
+
+    v_kv — optional bus-inferred zone voltage used as the per-unit base for
+    CABLES (see [EE-12 mirror] below). Default None keeps the legacy
+    behaviour of reading the cable's own voltage_kv prop.
 
     [EE-14] Series R + jX only — cable/line SHUNT CAPACITANCE is ignored.
     Negligible at LV; tens of km of MV XLPE contribute a few Mvar of
@@ -1652,7 +1656,15 @@ def _get_impedance(comp, base_mva):
         r_pu = x_pu / xr
         return complex(r_pu, x_pu)
     elif comp.type == "cable":
-        v_kv = comp.props.get("voltage_kv", 11)
+        # [EE-12 mirror] Callers that walk the network pass the BUS-inferred
+        # voltage of the zone the cable sits in (v_kv) as the per-unit base —
+        # the cable's own voltage_kv prop may be stale/defaulted (e.g. the
+        # 11 kV palette default left on a 0.4 kV run, which near-zeroes its
+        # impedance by (11/0.4)² ≈ 756×). Same convention as
+        # fault.py::_cable_impedance. The prop is only a fallback when no
+        # network context is available.
+        if v_kv is None or v_kv <= 0:
+            v_kv = comp.props.get("voltage_kv", 11)
         z_base = (v_kv ** 2) / base_mva
         r = comp.props.get("r_per_km", 0.1) * comp.props.get("length_km", 1)
         x = comp.props.get("x_per_km", 0.08) * comp.props.get("length_km", 1)
@@ -2309,13 +2321,17 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         has_xfmr = any(e.type in ("transformer", "autotransformer") for e in all_elems.values())
         cable_voltages = {}  # elem_id -> effective voltage_kv
 
+        # Zone voltages are needed by BOTH branches: the transformer branch
+        # assigns each cable to its own side's zone, and the no-transformer
+        # branch puts every cable in the single zone bounded by these buses.
+        bus_a_comp = components.get(bus_a)
+        bus_b_comp = components.get(bus_b)
+        bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
+        bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
+
         if has_xfmr:
             path_a_ids = {e.id for e in path_a}
             path_b_ids = {e.id for e in path_b}
-            bus_a_comp = components.get(bus_a)
-            bus_b_comp = components.get(bus_b)
-            bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
-            bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
 
             z_total = complex(0, 0)
             for e in all_elems.values():
@@ -2336,11 +2352,27 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     z_base = (v_kv ** 2) / base_mva
                     r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
                     x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    z_total += complex(r / z_base, x / z_base)
+                    # /n to match _get_impedance, which the no-transformer
+                    # branch below uses for the same cable. This branch
+                    # re-derives Z inline (it needs the chain-resolved v_kv,
+                    # not the cable's own voltage_kv prop) and had dropped the
+                    # parallel divide, so a parallel cable sharing a chain with
+                    # a transformer carried n× its true impedance.
+                    npar = max(1, int(e.props.get("num_parallel", 1) or 1))
+                    z_total += complex(r / z_base, x / z_base) / npar
                 else:
                     z_total += _get_impedance(e, base_mva)
         else:
-            z_total = sum((_get_impedance(e, base_mva) for e in all_elems.values()), complex(0, 0))
+            # No transformer ⇒ the whole chain sits in ONE voltage zone, the
+            # one its bounding buses define. Pass that zone voltage so a cable
+            # carrying a stale voltage_kv prop is still referred to the right
+            # per-unit base ([EE-12 mirror], see _get_impedance).
+            for e in all_elems.values():
+                if e.type == "cable":
+                    cable_voltages[e.id] = bus_a_v
+            z_total = sum(
+                (_get_impedance(e, base_mva, v_kv=bus_a_v) for e in all_elems.values()),
+                complex(0, 0))
 
         if abs(z_total) > 1e-15:
             y = 1 / z_total
@@ -3064,7 +3096,12 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     _zb = (_v ** 2) / base_mva
                     _r = elem.props.get("r_per_km", 0.1) * elem.props.get("length_km", 1)
                     _x = elem.props.get("x_per_km", 0.08) * elem.props.get("length_km", 1)
-                    _elem_z[elem.id] = complex(_r / _zb, _x / _zb)
+                    # /n exactly as the chain assembly above and _get_impedance
+                    # do — without it a parallel cable's I²R share is n× too
+                    # large and the chain's losses are mis-apportioned against
+                    # the transformer sharing its chain.
+                    _npar = max(1, int(elem.props.get("num_parallel", 1) or 1))
+                    _elem_z[elem.id] = complex(_r / _zb, _x / _zb) / _npar
                 else:
                     _elem_z[elem.id] = _get_impedance(elem, base_mva)
             _r_chain = sum(z.real for z in _elem_z.values())
