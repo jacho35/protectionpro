@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.113">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.113">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.113">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.113">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.113">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.113">
-  <link rel="stylesheet" href="css/lightning.css?v=3.5.113">
-  <link rel="stylesheet" href="css/rates.css?v=3.5.113">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.113">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.113">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.113">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.113">
-  <link rel="stylesheet" href="css/help.css?v=3.5.113">
+  <link rel="stylesheet" href="css/app.css?v=3.5.114">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.114">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.114">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.114">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.114">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.114">
+  <link rel="stylesheet" href="css/lightning.css?v=3.5.114">
+  <link rel="stylesheet" href="css/rates.css?v=3.5.114">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.114">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.114">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.114">
+  <link rel="stylesheet" href="css/schedules.css?v=3.5.114">
+  <link rel="stylesheet" href="css/help.css?v=3.5.114">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -1927,24 +1927,59 @@
         <!-- Side panel -->
         <div class="tcc-side-panel">
           <div class="tcc-panel-section">
-            <h4>Devices</h4>
+            <div class="tcc-panel-heading">
+              <h4>Devices</h4>
+              <button id="btn-tcc-add-device" class="btn-small" aria-haspopup="dialog" aria-expanded="false" title="Add a relay, fuse, breaker or imported curve">+ Add device</button>
+            </div>
             <div id="tcc-device-list" class="tcc-device-list">
               <!-- Populated by JS -->
             </div>
           </div>
-          <div class="tcc-panel-section" id="tcc-selected-section" style="display:none">
-            <h4 id="tcc-selected-title">Selected Device</h4>
+          <div class="tcc-panel-section tcc-inspector" id="tcc-selected-section">
+            <h4 id="tcc-selected-title">Selected device</h4>
             <div id="tcc-selected-settings">
               <!-- Populated by JS -->
             </div>
           </div>
           <div class="tcc-panel-section">
-            <h4>Add Custom Device</h4>
+            <h4>Coordination Check</h4>
+            <div class="tcc-form-row">
+              <label for="tcc-grading-margin">Grading Margin (s)</label>
+              <input type="number" id="tcc-grading-margin" value="0.3" min="0.1" max="1.0" step="0.05">
+            </div>
+            <div class="tcc-coord-actions">
+              <button id="btn-tcc-auto-coord" class="btn-small btn-primary" title="Automatically adjust relay/CB settings for correct grading">Auto-Coordinate</button>
+              <button id="btn-tcc-detect-miscord" class="btn-small" title="Detect devices that won't trip in correct sequence">Detect Miscoordination</button>
+              <button id="btn-tcc-verify-seq" class="btn-small" title="Verify primary→backup→final trip sequence at each faulted bus">Verify Sequence</button>
+            </div>
+            <div id="tcc-coord-results" class="tcc-coord-results">
+              <!-- Populated by JS -->
+            </div>
+            <div id="tcc-seq-results" class="tcc-coord-results">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+          <div class="tcc-panel-section">
+            <h4>Distance Grading (21)</h4>
+            <div class="tcc-coord-actions">
+              <button id="btn-tcc-grade-distance" class="btn-small btn-primary" title="Compute Z1/Z2/Z3 reaches from line/transformer impedances and infeed, and check every distance relay's configured settings against them">Grade Distance Zones</button>
+            </div>
+            <div id="tcc-distance-results" class="tcc-coord-results">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+        <!-- Add-device popover (opened from the Devices header) -->
+        <div class="tcc-add-popover" id="tcc-add-popover" role="dialog" aria-label="Add device" style="display:none">
+          <div class="tcc-add-popover-header">
+            <h4>Add device</h4>
+            <button class="tcc-add-popover-close" id="btn-tcc-add-close" aria-label="Close add device">&times;</button>
+          </div>
             <div class="tcc-add-tabs">
               <button class="tcc-add-tab active" data-tcc-add="relay">Relay</button>
               <button class="tcc-add-tab" data-tcc-add="fuse">Fuse</button>
               <button class="tcc-add-tab" data-tcc-add="cb">CB</button>
-              <button class="tcc-add-tab" data-tcc-add="custom">Custom</button>
+              <button class="tcc-add-tab" data-tcc-add="custom">CSV curve</button>
             </div>
             <!-- Add Relay Form -->
             <div id="tcc-add-relay" class="tcc-add-form">
@@ -2071,34 +2106,6 @@
               <textarea id="tcc-csv-paste" rows="5" placeholder="100, 10.5&#10;200, 4.2&#10;500, 1.1&#10;1000, 0.35&#10;5000, 0.02"></textarea>
               <button id="btn-tcc-add-custom" class="btn-small btn-primary">Add Custom Curve</button>
             </div>
-          </div>
-          <div class="tcc-panel-section">
-            <h4>Coordination Check</h4>
-            <div class="tcc-form-row">
-              <label for="tcc-grading-margin">Grading Margin (s)</label>
-              <input type="number" id="tcc-grading-margin" value="0.3" min="0.1" max="1.0" step="0.05">
-            </div>
-            <div class="tcc-coord-actions">
-              <button id="btn-tcc-auto-coord" class="btn-small btn-primary" title="Automatically adjust relay/CB settings for correct grading">Auto-Coordinate</button>
-              <button id="btn-tcc-detect-miscord" class="btn-small" title="Detect devices that won't trip in correct sequence">Detect Miscoordination</button>
-              <button id="btn-tcc-verify-seq" class="btn-small" title="Verify primary→backup→final trip sequence at each faulted bus">Verify Sequence</button>
-            </div>
-            <div id="tcc-coord-results" class="tcc-coord-results">
-              <!-- Populated by JS -->
-            </div>
-            <div id="tcc-seq-results" class="tcc-coord-results">
-              <!-- Populated by JS -->
-            </div>
-          </div>
-          <div class="tcc-panel-section">
-            <h4>Distance Grading (21)</h4>
-            <div class="tcc-coord-actions">
-              <button id="btn-tcc-grade-distance" class="btn-small btn-primary" title="Compute Z1/Z2/Z3 reaches from line/transformer impedances and infeed, and check every distance relay's configured settings against them">Grade Distance Zones</button>
-            </div>
-            <div id="tcc-distance-results" class="tcc-coord-results">
-              <!-- Populated by JS -->
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -2883,93 +2890,93 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.113"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.113"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.113"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.113"></script>
-  <script src="js/constants.js?v=3.5.113"></script>
-  <script src="js/cablelib.js?v=3.5.113"></script>
-  <script src="js/plan-defs.js?v=3.5.113"></script>
-  <script src="js/ui.js?v=3.5.113"></script>
-  <script src="js/state.js?v=3.5.113"></script>
-  <script src="js/grid.js?v=3.5.113"></script>
-  <script src="js/components.js?v=3.5.113"></script>
-  <script src="js/voltage.js?v=3.5.113"></script>
-  <script src="js/symbols.js?v=3.5.113"></script>
-  <script src="js/canvas.js?v=3.5.113"></script>
-  <script src="js/sidebar.js?v=3.5.113"></script>
-  <script src="js/wiring.js?v=3.5.113"></script>
-  <script src="js/properties.js?v=3.5.113"></script>
-  <script src="js/annotations.js?v=3.5.113"></script>
-  <script src="js/api.js?v=3.5.113"></script>
-  <script src="js/auth.js?v=3.5.113"></script>
-  <script src="js/sharing.js?v=3.5.113"></script>
-  <script src="js/compliance.js?v=3.5.113"></script>
-  <script src="js/tcc.js?v=3.5.113"></script>
-  <script src="js/project.js?v=3.5.113"></script>
-  <script src="js/reports.js?v=3.5.113"></script>
-  <script src="js/verification-templates.js?v=3.5.113"></script>
-  <script src="js/templates.js?v=3.5.113"></script>
-  <script src="js/standard-data.js?v=3.5.113"></script>
-  <script src="js/undo.js?v=3.5.113"></script>
-  <script src="js/revisions.js?v=3.5.113"></script>
-  <script src="js/minimap.js?v=3.5.113"></script>
-  <script src="js/contextmenu.js?v=3.5.113"></script>
-  <script src="js/dbschedule.js?v=3.5.113"></script>
-  <script src="js/control-sim.js?v=3.5.113"></script>
-  <script src="js/dynmotor.js?v=3.5.113"></script>
-  <script src="js/transient.js?v=3.5.113"></script>
-  <script src="js/voltage-stability.js?v=3.5.113"></script>
-  <script src="js/freqscan.js?v=3.5.113"></script>
-  <script src="js/battsizing.js?v=3.5.113"></script>
-  <script src="js/opf.js?v=3.5.113"></script>
-  <script src="js/reliability.js?v=3.5.113"></script>
-  <script src="js/flicker.js?v=3.5.113"></script>
-  <script src="js/hostingcapacity.js?v=3.5.113"></script>
-  <script src="js/filtersizing.js?v=3.5.113"></script>
-  <script src="js/capplace.js?v=3.5.113"></script>
-  <script src="js/contingency.js?v=3.5.113"></script>
-  <script src="js/timeseries.js?v=3.5.113"></script>
-  <script src="js/lfstudy.js?v=3.5.113"></script>
-  <script src="js/interlocking.js?v=3.5.113"></script>
-  <script src="js/sequence.js?v=3.5.113"></script>
-  <script src="js/retic.js?v=3.5.113"></script>
-  <script src="js/schedules.js?v=3.5.113"></script>
-  <script src="js/workspaces.js?v=3.5.113"></script>
-  <script src="js/header.js?v=3.5.113"></script>
-  <script src="js/lightning.js?v=3.5.113"></script>
-  <script src="js/rates.js?v=3.5.113"></script>
-  <script src="js/boq.js?v=3.5.113"></script>
-  <script src="js/cableschedules.js?v=3.5.113"></script>
-  <script src="js/dbaccessories.js?v=3.5.113"></script>
-  <script src="js/dbdrawing.js?v=3.5.113"></script>
-  <script src="js/retic-diagram.js?v=3.5.113"></script>
-  <script src="js/retic-report.js?v=3.5.113"></script>
-  <script src="js/plan-symbols.js?v=3.5.113"></script>
-  <script src="js/plan-engine.js?v=3.5.113"></script>
-  <script src="js/plan-images.js?v=3.5.113"></script>
-  <script src="js/plan-tools.js?v=3.5.113"></script>
-  <script src="js/plan-sync.js?v=3.5.113"></script>
-  <script src="js/plan-csv.js?v=3.5.113"></script>
-  <script src="js/plan-dxf.js?v=3.5.113"></script>
-  <script src="js/plan-export.js?v=3.5.113"></script>
-  <script src="js/plan-lux.js?v=3.5.113"></script>
-  <script src="js/plan-ies.js?v=3.5.113"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.113"></script>
-  <script src="js/plan-dxf-manager.js?v=3.5.113"></script>
-  <script src="js/plan-dd-import.js?v=3.5.113"></script>
-  <script src="js/plan-circuits.js?v=3.5.113"></script>
-  <script src="js/plan-ui.js?v=3.5.113"></script>
-  <script src="js/plan.js?v=3.5.113"></script>
-  <script src="js/help.js?v=3.5.113"></script>
-  <script src="js/help-faults.js?v=3.5.113"></script>
-  <script src="js/help-flow.js?v=3.5.113"></script>
-  <script src="js/help-dynamics.js?v=3.5.113"></script>
-  <script src="js/help-protect.js?v=3.5.113"></script>
-  <script src="js/help-cables.js?v=3.5.113"></script>
-  <script src="js/help-design.js?v=3.5.113"></script>
-  <script src="js/help-workflow.js?v=3.5.113"></script>
-  <script src="js/app.js?v=3.5.113"></script>
-  <script src="js/mobile.js?v=3.5.113"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.114"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.114"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.114"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.114"></script>
+  <script src="js/constants.js?v=3.5.114"></script>
+  <script src="js/cablelib.js?v=3.5.114"></script>
+  <script src="js/plan-defs.js?v=3.5.114"></script>
+  <script src="js/ui.js?v=3.5.114"></script>
+  <script src="js/state.js?v=3.5.114"></script>
+  <script src="js/grid.js?v=3.5.114"></script>
+  <script src="js/components.js?v=3.5.114"></script>
+  <script src="js/voltage.js?v=3.5.114"></script>
+  <script src="js/symbols.js?v=3.5.114"></script>
+  <script src="js/canvas.js?v=3.5.114"></script>
+  <script src="js/sidebar.js?v=3.5.114"></script>
+  <script src="js/wiring.js?v=3.5.114"></script>
+  <script src="js/properties.js?v=3.5.114"></script>
+  <script src="js/annotations.js?v=3.5.114"></script>
+  <script src="js/api.js?v=3.5.114"></script>
+  <script src="js/auth.js?v=3.5.114"></script>
+  <script src="js/sharing.js?v=3.5.114"></script>
+  <script src="js/compliance.js?v=3.5.114"></script>
+  <script src="js/tcc.js?v=3.5.114"></script>
+  <script src="js/project.js?v=3.5.114"></script>
+  <script src="js/reports.js?v=3.5.114"></script>
+  <script src="js/verification-templates.js?v=3.5.114"></script>
+  <script src="js/templates.js?v=3.5.114"></script>
+  <script src="js/standard-data.js?v=3.5.114"></script>
+  <script src="js/undo.js?v=3.5.114"></script>
+  <script src="js/revisions.js?v=3.5.114"></script>
+  <script src="js/minimap.js?v=3.5.114"></script>
+  <script src="js/contextmenu.js?v=3.5.114"></script>
+  <script src="js/dbschedule.js?v=3.5.114"></script>
+  <script src="js/control-sim.js?v=3.5.114"></script>
+  <script src="js/dynmotor.js?v=3.5.114"></script>
+  <script src="js/transient.js?v=3.5.114"></script>
+  <script src="js/voltage-stability.js?v=3.5.114"></script>
+  <script src="js/freqscan.js?v=3.5.114"></script>
+  <script src="js/battsizing.js?v=3.5.114"></script>
+  <script src="js/opf.js?v=3.5.114"></script>
+  <script src="js/reliability.js?v=3.5.114"></script>
+  <script src="js/flicker.js?v=3.5.114"></script>
+  <script src="js/hostingcapacity.js?v=3.5.114"></script>
+  <script src="js/filtersizing.js?v=3.5.114"></script>
+  <script src="js/capplace.js?v=3.5.114"></script>
+  <script src="js/contingency.js?v=3.5.114"></script>
+  <script src="js/timeseries.js?v=3.5.114"></script>
+  <script src="js/lfstudy.js?v=3.5.114"></script>
+  <script src="js/interlocking.js?v=3.5.114"></script>
+  <script src="js/sequence.js?v=3.5.114"></script>
+  <script src="js/retic.js?v=3.5.114"></script>
+  <script src="js/schedules.js?v=3.5.114"></script>
+  <script src="js/workspaces.js?v=3.5.114"></script>
+  <script src="js/header.js?v=3.5.114"></script>
+  <script src="js/lightning.js?v=3.5.114"></script>
+  <script src="js/rates.js?v=3.5.114"></script>
+  <script src="js/boq.js?v=3.5.114"></script>
+  <script src="js/cableschedules.js?v=3.5.114"></script>
+  <script src="js/dbaccessories.js?v=3.5.114"></script>
+  <script src="js/dbdrawing.js?v=3.5.114"></script>
+  <script src="js/retic-diagram.js?v=3.5.114"></script>
+  <script src="js/retic-report.js?v=3.5.114"></script>
+  <script src="js/plan-symbols.js?v=3.5.114"></script>
+  <script src="js/plan-engine.js?v=3.5.114"></script>
+  <script src="js/plan-images.js?v=3.5.114"></script>
+  <script src="js/plan-tools.js?v=3.5.114"></script>
+  <script src="js/plan-sync.js?v=3.5.114"></script>
+  <script src="js/plan-csv.js?v=3.5.114"></script>
+  <script src="js/plan-dxf.js?v=3.5.114"></script>
+  <script src="js/plan-export.js?v=3.5.114"></script>
+  <script src="js/plan-lux.js?v=3.5.114"></script>
+  <script src="js/plan-ies.js?v=3.5.114"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.114"></script>
+  <script src="js/plan-dxf-manager.js?v=3.5.114"></script>
+  <script src="js/plan-dd-import.js?v=3.5.114"></script>
+  <script src="js/plan-circuits.js?v=3.5.114"></script>
+  <script src="js/plan-ui.js?v=3.5.114"></script>
+  <script src="js/plan.js?v=3.5.114"></script>
+  <script src="js/help.js?v=3.5.114"></script>
+  <script src="js/help-faults.js?v=3.5.114"></script>
+  <script src="js/help-flow.js?v=3.5.114"></script>
+  <script src="js/help-dynamics.js?v=3.5.114"></script>
+  <script src="js/help-protect.js?v=3.5.114"></script>
+  <script src="js/help-cables.js?v=3.5.114"></script>
+  <script src="js/help-design.js?v=3.5.114"></script>
+  <script src="js/help-workflow.js?v=3.5.114"></script>
+  <script src="js/app.js?v=3.5.114"></script>
+  <script src="js/mobile.js?v=3.5.114"></script>
 </body>
 </html>
