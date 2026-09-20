@@ -48,6 +48,8 @@ const StandardData = {
     this.bindFuseTable();
     this.bindLoadClassTable();
     this.bindIECStandards();
+    this._initLibraryUI();
+    this._initCompact();
 
     // Persist only edits made after init
     this._initialized = true;
@@ -102,6 +104,275 @@ const StandardData = {
     }
   },
 
+
+  // ═══════════════════════════════════════════════════════
+  // ─── Library rows: search, cards, duplicate ───
+  // ═══════════════════════════════════════════════════════
+  // The libraries are editable tables. On a phone each row becomes a card (name + one-line
+  // summary) that expands into a labelled form; the same inputs stay in the DOM, so the
+  // existing change handlers keep working. Search and filter chips work at every width.
+
+  _LIB: {
+    'cable-library-body': { tab: 'cables', arr: 'cables', render: 'renderCableTable', sync: 'syncCableLibrary', prefix: 'custom_cable_', nameKey: 'name',
+      sum: g => [g('conductor'), g('insulation'), g('size_mm2') + ' mm²', g('voltage_kv') + ' kV', g('rated_amps') + ' A'] },
+    'xfmr-library-body': { tab: 'transformers', arr: 'transformers', render: 'renderTransformerTable', sync: 'syncTransformerLibrary', prefix: 'custom_xfmr_', nameKey: 'name',
+      sum: g => [g('rated_mva') + ' MVA', g('voltage_hv_kv') + '/' + g('voltage_lv_kv') + ' kV', g('z_percent') + ' %', g('vector_group')] },
+    'cb-library-body': { tab: 'cbs', arr: 'cbs', render: 'renderCBTable', sync: 'syncCBLibrary', prefix: 'custom_cb_', nameKey: 'name',
+      sum: g => [String(g('cb_type')).toUpperCase(), g('trip_rating_a') + ' A', g('rated_voltage_kv') + ' kV', g('breaking_ka') + ' kA'] },
+    'fuse-library-body': { tab: 'fuses', arr: 'fuses', render: 'renderFuseTable', sync: 'syncFuseLibrary', prefix: 'custom_fuse_', nameKey: 'name',
+      sum: g => [g('fuse_type'), g('rated_current_a') + ' A', g('rated_voltage_kv') + ' kV', g('breaking_ka') + ' kA'] },
+    'loadclass-library-body': { tab: 'load-classes', arr: 'loadClasses', render: 'renderLoadClassTable', sync: 'syncLoadClassLibrary', prefix: 'custom_class_', nameKey: 'label',
+      sum: g => [g('lsm') ? 'LSM ' + g('lsm') : '', 'ADMD ' + g('admd'), String(g('phase')).replace(/Φ/, '') + 'Φ'] },
+  },
+  _libOpen: {},      // tbody id → index of the expanded card
+  _libFilter: {},    // tbody id → { q, kv, cond }
+
+  _initLibraryUI() {
+    // Every render*Table rebuilds its tbody: decorate the rows again afterwards
+    for (const [bodyId, cfg] of Object.entries(this._LIB)) {
+      const orig = this[cfg.render];
+      this[cfg.render] = function (...args) {
+        const r = orig.apply(this, args);
+        this._decorateLibrary(bodyId);
+        return r;
+      };
+    }
+    // Search box (and cable filter chips) above each library table
+    for (const [bodyId, cfg] of Object.entries(this._LIB)) {
+      const wrap = document.getElementById(bodyId)?.closest('.library-table-wrap');
+      if (!wrap) continue;
+      const bar = document.createElement('div');
+      bar.className = 'lib-searchbar';
+      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div>`;
+      wrap.parentNode.insertBefore(bar, wrap);
+      bar.querySelector('.lib-search').addEventListener('input', (e) => {
+        (this._libFilter[bodyId] = this._libFilter[bodyId] || {}).q = e.target.value.trim().toLowerCase();
+        this._applyLibraryFilter(bodyId);
+      });
+    }
+  },
+
+  _rowGetter(tr) {
+    return (key) => {
+      const el = tr.querySelector(`[data-key="${key}"]`);
+      if (!el) return '';
+      if (el.tagName === 'SELECT') return el.options[el.selectedIndex]?.text || el.value;
+      return el.value;
+    };
+  },
+
+  _rowSummary(bodyId, tr) {
+    const cfg = this._LIB[bodyId];
+    return cfg.sum(this._rowGetter(tr)).filter(x => x && !/^\s*(undefined|null)/.test(x)).join(' · ');
+  },
+
+  // Turn each table row into a card: labelled cells, a head with name + summary, Duplicate
+  _decorateLibrary(bodyId) {
+    const tbody = document.getElementById(bodyId);
+    const cfg = this._LIB[bodyId];
+    if (!tbody || !cfg) return;
+    const heads = [...tbody.closest('table').querySelectorAll('thead th')].map(th => th.textContent.trim());
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const cells = [...tr.children];
+      cells.forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; else td.classList.add('lib-del'); });
+      const nameInput = tr.querySelector(`[data-key="${cfg.nameKey}"]`);
+      const head = document.createElement('td');
+      head.className = 'lib-head';
+      head.innerHTML = `<button type="button" class="lib-toggle" aria-expanded="false"><span class="lib-title"></span><span class="lib-sum"></span><span class="lib-chev" aria-hidden="true">›</span></button>`;
+      tr.insertBefore(head, tr.firstChild);
+      const refresh = () => {
+        head.querySelector('.lib-title').textContent = nameInput ? nameInput.value : '';
+        head.querySelector('.lib-sum').textContent = this._rowSummary(bodyId, tr);
+      };
+      refresh();
+      tr.addEventListener('change', refresh);
+      head.querySelector('.lib-toggle').addEventListener('click', () => this._toggleLibraryRow(bodyId, tr));
+      // Duplicate sits beside Delete in the expanded card
+      const del = tr.querySelector('.lib-del');
+      if (del) {
+        const dup = document.createElement('button');
+        dup.type = 'button'; dup.className = 'btn-dup-row'; dup.textContent = 'Duplicate';
+        dup.addEventListener('click', () => this._duplicateLibraryRow(bodyId, parseInt(tr.dataset.index)));
+        del.insertBefore(dup, del.firstChild);
+        const delBtn = del.querySelector('.btn-delete-row');
+        if (delBtn) delBtn.setAttribute('aria-label', 'Delete');
+      }
+    });
+    const open = this._libOpen[bodyId];
+    if (open != null) {
+      const tr = tbody.querySelector(`tr[data-index="${open}"]`);
+      if (tr) this._toggleLibraryRow(bodyId, tr, true);
+    }
+    this._renderLibraryChips(bodyId);
+    this._applyLibraryFilter(bodyId);
+  },
+
+  _toggleLibraryRow(bodyId, tr, forceOpen) {
+    const tbody = document.getElementById(bodyId);
+    const willOpen = forceOpen || !tr.classList.contains('lib-open');
+    tbody.querySelectorAll('tr.lib-open').forEach(r => { r.classList.remove('lib-open'); r.querySelector('.lib-toggle')?.setAttribute('aria-expanded', 'false'); });
+    this._libOpen[bodyId] = willOpen ? parseInt(tr.dataset.index) : null;
+    if (willOpen) {
+      tr.classList.add('lib-open');
+      tr.querySelector('.lib-toggle')?.setAttribute('aria-expanded', 'true');
+      if (this._compactOn && !forceOpen) tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  },
+
+  _duplicateLibraryRow(bodyId, idx) {
+    const cfg = this._LIB[bodyId];
+    const src = this[cfg.arr][idx];
+    if (!src) return;
+    const copy = JSON.parse(JSON.stringify(src));
+    copy.id = cfg.prefix + Date.now();
+    copy[cfg.nameKey] = `${src[cfg.nameKey]} copy`;
+    this[cfg.arr].splice(idx + 1, 0, copy);
+    this._libOpen[bodyId] = idx + 1;
+    this[cfg.render]();
+    this[cfg.sync]();
+    document.getElementById(bodyId).querySelector(`tr[data-index="${idx + 1}"]`)?.scrollIntoView({ block: 'nearest' });
+  },
+
+  // A row added with "+ Add" opens straight away so it can be filled in
+  _openLastRow(bodyId) {
+    const cfg = this._LIB[bodyId];
+    this._libOpen[bodyId] = this[cfg.arr].length - 1;
+  },
+
+  _renderLibraryChips(bodyId) {
+    const box = document.querySelector(`.lib-chips[data-lib="${bodyId}"]`);
+    if (!box || bodyId !== 'cable-library-body') return;
+    const f = this._libFilter[bodyId] = this._libFilter[bodyId] || {};
+    const kvs = [...new Set(this.cables.map(c => c.voltage_kv))].sort((a, b) => a - b);
+    const conds = [...new Set(this.cables.map(c => c.conductor))];
+    const chip = (grp, val, text, on) => `<button type="button" class="lib-chip${on ? ' active' : ''}" data-grp="${grp}" data-val="${val}" aria-pressed="${on}">${text}</button>`;
+    box.innerHTML = chip('kv', '', 'All voltages', f.kv == null) + kvs.map(v => chip('kv', v, v + ' kV', String(f.kv) === String(v))).join('') +
+      conds.map(c => chip('cond', c, c, f.cond === c)).join('');
+    box.querySelectorAll('.lib-chip').forEach(b => b.addEventListener('click', () => {
+      const grp = b.dataset.grp, val = b.dataset.val;
+      if (grp === 'kv') f.kv = val === '' ? null : val;
+      else f.cond = (f.cond === val) ? null : val;
+      this._renderLibraryChips(bodyId);
+      this._applyLibraryFilter(bodyId);
+    }));
+  },
+
+  _applyLibraryFilter(bodyId) {
+    const tbody = document.getElementById(bodyId);
+    if (!tbody) return;
+    const f = this._libFilter[bodyId] || {};
+    const q = f.q || '';
+    let shown = 0;
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const g = this._rowGetter(tr);
+      let ok = true;
+      if (q) ok = (g('name') + ' ' + g('label') + ' ' + this._rowSummary(bodyId, tr)).toLowerCase().includes(q);
+      if (ok && f.kv != null) ok = String(parseFloat(g('voltage_kv'))) === String(parseFloat(f.kv));
+      if (ok && f.cond != null) ok = g('conductor') === f.cond;
+      tr.hidden = !ok;
+      if (ok) shown++;
+    });
+    let none = tbody.parentNode.querySelector('.lib-none');
+    if (!shown) {
+      if (!none) { none = document.createElement('div'); none.className = 'lib-none'; tbody.closest('.library-table-wrap').appendChild(none); }
+      none.textContent = 'Nothing matches.';
+    } else if (none) none.remove();
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // ─── Phone layout: section list + one screen per section ───
+  // ═══════════════════════════════════════════════════════
+
+  _compactOn: false,
+  _screen: 'home',
+
+  _SECTIONS: [
+    { group: 'General', tab: 'system', sub: () => `${AppState.baseMVA} MVA · ${AppState.frequency} Hz · c = ${(AppState.voltageFactor ?? DEFAULT_VOLTAGE_FACTOR).toFixed(2)}` },
+    { group: 'Libraries', tab: 'cables', sub: () => 'Sizes, resistance, ratings', count: s => s.cables.length },
+    { group: 'Libraries', tab: 'transformers', sub: () => 'Ratings, vector groups, impedance', count: s => s.transformers.length },
+    { group: 'Libraries', tab: 'cbs', sub: () => 'Frames, trip units, ratings', count: s => s.cbs.length },
+    { group: 'Libraries', tab: 'fuses', sub: () => 'Ratings and breaking capacity', count: s => s.fuses.length },
+    { group: 'Reference', tab: 'load-classes', sub: () => 'Demand parameters (NRS 034-1)', count: s => s.loadClasses.length },
+    { group: 'Reference', tab: 'iec-standards', sub: () => 'Ampacity, sizing and derating tables' },
+  ],
+
+  _initCompact() {
+    this._compactMQ = window.matchMedia('(max-width: 768px)');
+    this._compactMQ.addEventListener('change', () => this._applyCompact());
+    document.getElementById('btn-settings-back')?.addEventListener('click', () => this._showScreen('home'));
+    document.getElementById('btn-settings-more')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const m = document.getElementById('settings-more-menu');
+      m.hidden = !m.hidden;
+    });
+    document.getElementById('settings-more-menu')?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-more]');
+      if (!b) return;
+      document.getElementById('settings-more-menu').hidden = true;
+      if (b.dataset.more === 'reset') {
+        const map = { cables: 'btn-reset-cables', transformers: 'btn-reset-xfmrs', cbs: 'btn-reset-cbs', fuses: 'btn-reset-fuses', 'load-classes': 'btn-reset-loadclasses' };
+        document.getElementById(map[this._screen])?.click(); // keeps the existing confirmation
+      }
+    });
+    document.addEventListener('click', () => { const m = document.getElementById('settings-more-menu'); if (m) m.hidden = true; });
+    this._applyCompact();
+  },
+
+  _applyCompact() {
+    const modal = document.getElementById('settings-modal');
+    if (!modal) return;
+    const on = this._compactMQ.matches;
+    modal.classList.toggle('settings-compact', on);
+    this._compactOn = on;
+    if (on) {
+      this._showScreen(this._screen === 'home' ? 'home' : this._screen);
+    } else {
+      modal.removeAttribute('data-screen');
+      document.getElementById('settings-home').hidden = true;
+      document.getElementById('btn-settings-back').hidden = true;
+      document.getElementById('btn-settings-more').hidden = true;
+      document.getElementById('settings-title').textContent = 'Settings';
+    }
+  },
+
+  _buildHome() {
+    const home = document.getElementById('settings-home');
+    let html = '', last = '';
+    for (const sec of this._SECTIONS) {
+      const tab = document.querySelector(`.settings-tab[data-tab="${sec.tab}"]`);
+      if (!tab) continue;
+      if (sec.group !== last) { html += `<div class="settings-home-group">${sec.group}</div>`; last = sec.group; }
+      const n = sec.count ? sec.count(this) : null;
+      html += `<button type="button" class="settings-home-row" data-go="${sec.tab}"><span class="settings-home-text"><span class="settings-home-title">${escHtml(tab.textContent.trim())}</span><span class="settings-home-sub">${escHtml(sec.sub())}</span></span>${n != null ? `<span class="settings-home-count">${n}</span>` : ''}<span class="settings-home-chev" aria-hidden="true">›</span></button>`;
+    }
+    home.innerHTML = html;
+    home.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => this._showScreen(b.dataset.go)));
+  },
+
+  _showScreen(name) {
+    if (!this._compactOn) return;
+    const modal = document.getElementById('settings-modal');
+    const home = document.getElementById('settings-home');
+    this._screen = name;
+    modal.setAttribute('data-screen', name === 'home' ? 'home' : 'section');
+    document.getElementById('settings-more-menu').hidden = true;
+    if (name === 'home') {
+      this._buildHome();
+      home.hidden = false;
+      document.getElementById('btn-settings-back').hidden = true;
+      document.getElementById('btn-settings-more').hidden = true;
+      document.getElementById('settings-title').textContent = 'Settings';
+      return;
+    }
+    home.hidden = true;
+    const tab = document.querySelector(`.settings-tab[data-tab="${name}"]`);
+    if (tab) tab.click(); // activates the pane and renders its table
+    document.getElementById('btn-settings-back').hidden = false;
+    document.getElementById('settings-title').textContent = tab ? tab.textContent.trim() : 'Settings';
+    document.getElementById('btn-settings-more').hidden = !['cables', 'transformers', 'cbs', 'fuses', 'load-classes'].includes(name);
+    document.querySelector('#settings-modal .modal-body')?.scrollTo(0, 0);
+  },
+
   // ─── Tab Switching ───
   bindTabs() {
     document.querySelectorAll('.settings-tab').forEach(tab => {
@@ -130,6 +401,7 @@ const StandardData = {
         size_mm2: 0, voltage_kv: 11, r_per_km: 0, x_per_km: 0,
         r0_per_km: 0, x0_per_km: 0, rated_amps: 0, cores: 3, construction: 'armoured',
       });
+      this._openLastRow('cable-library-body');
       this.renderCableTable();
       this.syncCableLibrary();
     });
@@ -214,6 +486,7 @@ const StandardData = {
         id, label: 'New Class', lsm: '', a: 1.0, b: 3.0, c: 60,
         admd: 4.0, mu: 17.4, sigma: 12.0, phase: 1,
       });
+      this._openLastRow('loadclass-library-body');
       this.renderLoadClassTable();
       this.syncLoadClassLibrary();
     });
@@ -283,6 +556,7 @@ const StandardData = {
         id, name: 'New Transformer', rated_mva: 0, voltage_hv_kv: 11,
         voltage_lv_kv: 0.42, z_percent: 5, x_r_ratio: 10, vector_group: 'Dyn11',
       });
+      this._openLastRow('xfmr-library-body');
       this.renderTransformerTable();
       this.syncTransformerLibrary();
     });
@@ -352,6 +626,7 @@ const StandardData = {
         rated_voltage_kv: 0.4, breaking_ka: 25, thermal_pickup: 1.0,
         magnetic_pickup: 10, long_time_delay: 10,
       });
+      this._openLastRow('cb-library-body');
       this.renderCBTable();
       this.syncCBLibrary();
     });
@@ -420,6 +695,7 @@ const StandardData = {
         id, name: 'New Fuse', fuse_type: 'gG', rated_current_a: 100,
         rated_voltage_kv: 0.4, breaking_ka: 80,
       });
+      this._openLastRow('fuse-library-body');
       this.renderFuseTable();
       this.syncFuseLibrary();
     });
@@ -492,6 +768,7 @@ const StandardData = {
     else if (activeTab.dataset.tab === 'cbs') this.renderCBTable();
     else if (activeTab.dataset.tab === 'fuses') this.renderFuseTable();
     else if (activeTab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
+    if (this._compactOn) this._showScreen('home');
   },
 
   // ═══════════════════════════════════════════════════════
