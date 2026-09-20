@@ -88,13 +88,22 @@ const Arrange = {
   // Arrange the selection (2+ components) or, with no selection, every
   // component on the active page. Pinned parts stay where they are. The
   // result is a live preview with Keep / Cancel; nothing is undoable until Keep.
-  autoArrange() {
+  autoArrange(fromSelection = false) {
     this._closePreview(true);
     const sel = this._selected();
-    const pool = (sel.length >= 2
-      ? sel
-      : [...AppState.components.values()].filter(c => !c.pageId || c.pageId === AppState.activePageId)
-    ).filter(c => !c.pinned);
+    let rootId = null;
+    let candidates;
+    if (fromSelection) {
+      const bus = sel.length === 1 ? sel[0] : null;
+      if (!bus) return UI.toast('Select one bus (or part) to arrange from.', 'warning');
+      rootId = bus.id;
+      candidates = this._downstream(bus);
+    } else {
+      candidates = sel.length >= 2
+        ? sel
+        : [...AppState.components.values()].filter(c => !c.pageId || c.pageId === AppState.activePageId);
+    }
+    const pool = candidates.filter(c => !c.pinned || c.id === rootId);
     if (pool.length < 2) return this._need(2);
     const ids = new Set(pool.map(c => c.id));
     const wires = [];
@@ -102,6 +111,7 @@ const Arrange = {
       if (w.fromComponent !== w.toComponent && (ids.has(w.fromComponent) || ids.has(w.toComponent))) wires.push(w);
     }
     this._session = {
+      root: rootId,
       ids,
       wires,
       orig: pool.map(c => ({ c, x: c.x, y: c.y, rotation: c.rotation, busWidth: c.props?.busWidth })),
@@ -109,6 +119,37 @@ const Arrange = {
     };
     this._run();
     this._showPreview();
+  },
+
+  // The selected part plus everything it feeds: walk away from the sources
+  // (the same distance ordering the layout uses) over this page's wires.
+  _downstream(start) {
+    const page = [...AppState.components.values()].filter(c => !c.pageId || c.pageId === AppState.activePageId);
+    const ids = new Set(page.map(c => c.id));
+    const adj = new Map(page.map(c => [c.id, []]));
+    for (const w of AppState.wires.values()) {
+      if (w.fromComponent === w.toComponent || !ids.has(w.fromComponent) || !ids.has(w.toComponent)) continue;
+      adj.get(w.fromComponent).push(w.toComponent);
+      adj.get(w.toComponent).push(w.fromComponent);
+    }
+    const sources = page.filter(c => this.SOURCE_TYPES.has(c.type)).map(c => c.id);
+    const dist = new Map(sources.map(id => [id, 0]));
+    const queue = [...sources];
+    while (queue.length) {
+      const id = queue.shift();
+      for (const n of adj.get(id)) if (!dist.has(n)) { dist.set(n, dist.get(id) + 1); queue.push(n); }
+    }
+    const order = new Map(page.map((c, i) => [c.id, i]));
+    const rank = id => (dist.has(id) ? dist.get(id) : 1e3) * 1e6 + order.get(id);
+    const seen = new Set([start.id]);
+    const stack = [start.id];
+    while (stack.length) {
+      const id = stack.pop();
+      for (const n of adj.get(id)) {
+        if (!seen.has(n) && rank(n) > rank(id) && !this.SOURCE_TYPES.has(AppState.components.get(n).type)) { seen.add(n); stack.push(n); }
+      }
+    }
+    return [...seen].map(id => AppState.components.get(id));
   },
 
   _restore() {
@@ -155,8 +196,7 @@ const Arrange = {
     for (const c of pool) {
       c.rotation = this._opts.direction === 'right' ? 270 : 0;
       if (c.type === 'bus') {
-        const links = this._layerLinks(c.id, adj);
-        c.props.busWidth = Math.max(120, Math.ceil(links * this.BUS_PER_LINK / 20) * 20);
+        c.props.busWidth = Math.max(120, Math.ceil(adj.get(c.id).size * 60 / 20) * 20);
       }
     }
 
@@ -170,7 +210,12 @@ const Arrange = {
     const placed = pool.map(c => ({ c, e: this._extent(c) }));
     const lx = Math.min(...placed.map(p => p.c.x - p.e.hw));
     const ly = Math.min(...placed.map(p => p.c.y - p.e.hh));
-    const dx = snapToGrid(minX0 - lx), dy = snapToGrid(minY0 - ly);
+    let dx = snapToGrid(minX0 - lx), dy = snapToGrid(minY0 - ly);
+    if (s.root) {
+      // Keep the chosen part where it is; the rest hangs from it.
+      const r = s.orig.find(o => o.c.id === s.root);
+      dx = snapToGrid(r.x - r.c.x); dy = snapToGrid(r.y - r.c.y);
+    }
     for (const p of placed) { p.c.x += dx; p.c.y += dy; }
 
     // Buses: re-attach each wire under/over (or beside) the part it feeds.
@@ -252,72 +297,89 @@ const Arrange = {
     UI.toast(`${pin ? 'Pinned' : 'Unpinned'} ${comps.length} component${comps.length > 1 ? 's' : ''}.`, 'success');
   },
 
-  // Number of links a node has to one side of it, whichever side is larger
-  // (drives the bus width estimate). Uses the BFS layers of its group.
-  _layerLinks(id, adj) {
-    const n = adj.get(id).size;
-    return Math.max(1, Math.ceil(n / 2) + (n > 3 ? 1 : 0));
-  },
+  // Two-terminal parts that sit in a feeder run (they get tight vertical spacing).
+  LINK_TYPES: new Set(['cb', 'cable', 'fuse', 'switch', 'ct', 'pt', 'relay', 'bus_duct', 'surge_arrester']),
 
-  // Lay one connected group out starting at x = startX; returns {maxX}.
+  // Lay one connected group out starting at across = startX; returns {maxX}
+  // (the far edge across the layers).
   _layoutGroup(grp, adj, startX) {
     const comps = new Map(grp.map(id => [id, AppState.components.get(id)]));
     const ext = new Map(grp.map(id => [id, this._extent(comps.get(id))]));
     const vert = this._opts.direction !== 'right';
+    const isBus = id => comps.get(id).type === 'bus';
+    const busW = new Map(grp.filter(isBus).map(id => [id, comps.get(id).props.busWidth || 120]));
     // Lateral = across a layer, flow = along the source-to-load direction.
-    const lat = id => (vert ? ext.get(id).hw : ext.get(id).hh);
-    const flow = id => (vert ? ext.get(id).hh : ext.get(id).hw);
-    const width = id => lat(id) * 2;
+    const lat = id => (isBus(id) ? busW.get(id) / 2 : vert ? ext.get(id).hw : ext.get(id).hh);
+    const flow = id => (isBus(id) ? 4 : vert ? ext.get(id).hh : ext.get(id).hw);
+    const isSource = id => this.SOURCE_TYPES.has(comps.get(id).type);
 
-    // 1. Layers: BFS distance from the sources (or the top-most part).
-    let roots = grp.filter(id => this.SOURCE_TYPES.has(comps.get(id).type));
+    // 1. Layers. Orient every edge away from the sources (BFS distance, ties
+    // broken by id) so the graph is acyclic, then take the LONGEST path from
+    // the sources: every wire then runs downhill, however many routes feed a
+    // part, and feeders from a second supply stretch rather than fold back.
+    const rootId = this._session && this._session.root;
+    let roots = rootId && grp.includes(rootId) ? [rootId] : grp.filter(isSource);
     if (!roots.length) {
       roots = [[...grp].sort((a, b) => comps.get(a).y - comps.get(b).y || comps.get(a).x - comps.get(b).x)[0]];
     }
-    const layerOf = new Map(roots.map(id => [id, 0]));
+    const dist = new Map(roots.map(id => [id, 0]));
     const queue = [...roots];
     while (queue.length) {
       const id = queue.shift();
+      for (const n of adj.get(id)) if (!dist.has(n)) { dist.set(n, dist.get(id) + 1); queue.push(n); }
+    }
+    const rank = id => dist.get(id) * 1e6 + grp.indexOf(id);
+    const down = new Map(grp.map(id => [id, []])); // id -> parts fed from it
+    const indeg = new Map(grp.map(id => [id, 0]));
+    for (const id of grp) {
       for (const n of adj.get(id)) {
-        if (!layerOf.has(n)) { layerOf.set(n, layerOf.get(id) + 1); queue.push(n); }
+        if (rank(id) < rank(n) && !(isSource(id) && isSource(n))) { down.get(id).push(n); indeg.set(n, indeg.get(n) + 1); }
+      }
+    }
+    const layerOf = new Map(grp.map(id => [id, 0]));
+    const topo = grp.filter(id => indeg.get(id) === 0);
+    while (topo.length) {
+      const id = topo.shift();
+      for (const n of down.get(id)) {
+        layerOf.set(n, Math.max(layerOf.get(n), layerOf.get(id) + 1));
+        indeg.set(n, indeg.get(n) - 1);
+        if (indeg.get(n) === 0) topo.push(n);
       }
     }
     const depth = Math.max(...layerOf.values()) + 1;
     const layers = Array.from({ length: depth }, () => []);
     for (const id of grp) layers[layerOf.get(id)].push(id);
-    // Start from the order the user drew, left to right.
-    for (const l of layers) l.sort((a, b) => comps.get(a).x - comps.get(b).x);
+    for (const l of layers) l.sort((a, b) => comps.get(a).x - comps.get(b).x); // keep the drawn left-right order
+    // Edges to the layer above / below only (long edges are still pulled toward).
+    const up = new Map(grp.map(id => [id, []]));
+    for (const id of grp) for (const n of down.get(id)) up.get(n).push(id);
 
     // 2. Order within layers: barycentre sweeps.
-    const posIn = () => {
-      const m = new Map();
-      layers.forEach(l => l.forEach((id, i) => m.set(id, i)));
-      return m;
-    };
-    const sweep = (i, ref) => {
-      const pos = posIn();
+    const sweep = (i, nbrs) => {
+      const pos = new Map();
+      layers.forEach(l => l.forEach((id, k) => pos.set(id, k / Math.max(1, l.length - 1))));
       const key = new Map();
-      layers[i].forEach((id, idx) => {
-        const ns = [...adj.get(id)].filter(n => layerOf.get(n) === ref);
-        key.set(id, ns.length ? ns.reduce((s, n) => s + pos.get(n), 0) / ns.length : idx);
+      layers[i].forEach((id, k) => {
+        const ns = nbrs.get(id);
+        key.set(id, ns.length ? ns.reduce((sum, n) => sum + pos.get(n), 0) / ns.length : pos.get(id));
       });
       layers[i].sort((a, b) => key.get(a) - key.get(b));
     };
-    for (let it = 0; it < 4; it++) {
-      for (let i = 1; i < depth; i++) sweep(i, i - 1);
-      for (let i = depth - 2; i >= 0; i--) sweep(i, i + 1);
+    for (let it = 0; it < 6; it++) {
+      for (let i = 1; i < depth; i++) sweep(i, up);
+      for (let i = depth - 2; i >= 0; i--) sweep(i, down);
     }
 
-    // 3. X placement: pack each layer, then pull parts toward their
-    // neighbours while keeping order and minimum spacing.
+    // 3. X placement: pack, then pull each part toward its neighbours,
+    // sizing every bus to span the parts it feeds, keeping order + spacing.
     const x = new Map();
     for (const l of layers) {
-      const total = l.reduce((s, id) => s + width(id), 0) + this._gaps()[0] * (l.length - 1);
+      const total = l.reduce((sum, id) => sum + lat(id) * 2, 0) + this._gaps()[0] * (l.length - 1);
       let cur = -total / 2;
-      for (const id of l) { x.set(id, cur + width(id) / 2); cur += width(id) + this._gaps()[0]; }
+      for (const id of l) { x.set(id, cur + lat(id)); cur += lat(id) * 2 + this._gaps()[0]; }
     }
     const spread = l => {
-      for (let pass = 0; pass < 30; pass++) {
+      for (let pass = 0; pass < 40; pass++) {
         let moved = false;
         for (let i = 1; i < l.length; i++) {
           const need = lat(l[i - 1]) + lat(l[i]) + this._gaps()[0];
@@ -332,23 +394,42 @@ const Arrange = {
         if (!moved) break;
       }
     };
-    const pull = (i, refs) => {
+    const fitBus = id => {
+      const ns = [...up.get(id), ...down.get(id)];
+      if (!ns.length) return;
+      const reach = Math.max(...ns.map(n => Math.abs(x.get(n) - x.get(id))));
+      // Capped by the link count so spreading a crowded layer can't feed back into ever-wider buses.
+      const cap = 120 + 160 * ns.length;
+      busW.set(id, Math.min(cap, Math.max(120, Math.ceil((reach * 2 + 40) / 20) * 20)));
+    };
+    const pull = (i, nbrs) => {
       for (const id of layers[i]) {
-        const ns = [...adj.get(id)].filter(n => refs.includes(layerOf.get(n)));
-        if (ns.length) x.set(id, ns.reduce((s, n) => s + x.get(n), 0) / ns.length);
+        const ns = nbrs.get(id);
+        if (!ns.length) continue;
+        // A bus centres on the extremes of what it feeds; other parts on the mean.
+        x.set(id, isBus(id)
+          ? (Math.min(...ns.map(n => x.get(n))) + Math.max(...ns.map(n => x.get(n)))) / 2
+          : ns.reduce((sum, n) => sum + x.get(n), 0) / ns.length);
       }
+      for (const id of layers[i]) if (isBus(id)) fitBus(id);
       spread(layers[i]);
     };
-    for (let it = 0; it < 6; it++) {
-      for (let i = 1; i < depth; i++) pull(i, [i - 1]);
-      for (let i = depth - 2; i >= 0; i--) pull(i, [i + 1]);
+    // Sweep against everything the part connects to, up and down.
+    const both = new Map(grp.map(id => [id, [...up.get(id), ...down.get(id)]]));
+    for (let it = 0; it < 8; it++) {
+      for (let i = 1; i < depth; i++) pull(i, it % 2 ? both : up);
+      for (let i = depth - 2; i >= 0; i--) pull(i, it % 2 ? both : down);
     }
+    for (const id of busW.keys()) comps.get(id).props.busWidth = busW.get(id);
 
-    // 4. Y placement and write-back, snapped to the grid.
+    // 4. Flow placement. Runs of two-terminal parts (breaker, cable, ...)
+    // need far less room than a bus or a load, so layers made only of them
+    // sit close to their neighbours.
+    const slim = l => l.every(id => this.LINK_TYPES.has(comps.get(id).type));
     let minX = Infinity;
     for (const id of grp) minX = Math.min(minX, x.get(id) - lat(id));
     let y = 0, maxX = startX;
-    for (const l of layers) {
+    layers.forEach((l, i) => {
       const h = Math.max(...l.map(id => flow(id) * 2));
       for (const id of l) {
         const c = comps.get(id);
@@ -358,8 +439,10 @@ const Arrange = {
         c.y = vert ? along : across;
         maxX = Math.max(maxX, across + lat(id));
       }
-      y += h + this._gaps()[1];
-    }
+      const [, vg] = this._gaps();
+      const next = layers[i + 1];
+      y += h + (next && (slim(l) || slim(next)) ? Math.round(vg * (slim(l) && slim(next) ? 0.4 : 0.6)) : vg);
+    });
     return { maxX };
   },
 
@@ -385,6 +468,7 @@ const Arrange = {
       'btn-arrange-dist-h': () => this.distribute('h'),
       'btn-arrange-dist-v': () => this.distribute('v'),
       'btn-arrange-auto': () => this.autoArrange(),
+      'btn-arrange-below': () => this.autoArrange(true),
       'btn-arrange-pin': () => this.togglePin(),
     };
     for (const [id, fn] of Object.entries(map)) {
