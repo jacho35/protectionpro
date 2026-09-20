@@ -328,12 +328,19 @@ const Arrange = {
       const id = queue.shift();
       for (const n of adj.get(id)) if (!dist.has(n)) { dist.set(n, dist.get(id) + 1); queue.push(n); }
     }
-    const rank = id => dist.get(id) * 1e6 + grp.indexOf(id);
     const down = new Map(grp.map(id => [id, []])); // id -> parts fed from it
     const indeg = new Map(grp.map(id => [id, 0]));
     for (const id of grp) {
       for (const n of adj.get(id)) {
-        if (rank(id) < rank(n) && !(isSource(id) && isSource(n))) { down.get(id).push(n); indeg.set(n, indeg.get(n) + 1); }
+        // Equal distance = the two halves of an interconnector between supplies:
+        // both hang from their own side and are joined laterally.
+        if (dist.get(id) === dist.get(n)) {
+          // A breaker/cable meeting a busbar at equal distance feeds it (from above).
+          const idLink = this.LINK_TYPES.has(comps.get(id).type), nLink = this.LINK_TYPES.has(comps.get(n).type);
+          if (idLink && !nLink) { down.get(id).push(n); indeg.set(n, indeg.get(n) + 1); }
+          continue;
+        }
+        if (dist.get(id) < dist.get(n) && !(isSource(id) && isSource(n))) { down.get(id).push(n); indeg.set(n, indeg.get(n) + 1); }
       }
     }
     const layerOf = new Map(grp.map(id => [id, 0]));
@@ -350,77 +357,145 @@ const Arrange = {
     const layers = Array.from({ length: depth }, () => []);
     for (const id of grp) layers[layerOf.get(id)].push(id);
     for (const l of layers) l.sort((a, b) => comps.get(a).x - comps.get(b).x); // keep the drawn left-right order
-    // Edges to the layer above / below only (long edges are still pulled toward).
     const up = new Map(grp.map(id => [id, []]));
     for (const id of grp) for (const n of down.get(id)) up.get(n).push(id);
 
-    // 2. Order within layers: barycentre sweeps.
-    const sweep = (i, nbrs) => {
-      const pos = new Map();
-      layers.forEach(l => l.forEach((id, k) => pos.set(id, k / Math.max(1, l.length - 1))));
-      const key = new Map();
-      layers[i].forEach((id, k) => {
-        const ns = nbrs.get(id);
-        key.set(id, ns.length ? ns.reduce((sum, n) => sum + pos.get(n), 0) / ns.length : pos.get(id));
-      });
-      layers[i].sort((a, b) => key.get(a) - key.get(b));
+    // 2. Tree. Every part hangs from ONE parent: the feeder nearest its
+    // supply (ties: the one drawn closest). A tree can always be drawn without
+    // crossings, and it makes each breaker/cable a straight drop from its
+    // parent. Extra supplies into a part are the only non-tree wires.
+    const origX = id => comps.get(id).x;
+    const parent = new Map();
+    for (const id of grp) {
+      const ups = up.get(id);
+      if (!ups.length) continue;
+      // Nearest supply first; on a tie prefer a busbar (it can take the wire
+      // anywhere along its length), then the one drawn closest.
+      const hub = k => (this.LINK_TYPES.has(comps.get(k).type) ? 1 : 0);
+      ups.sort((a, b) => dist.get(a) - dist.get(b) || hub(a) - hub(b) || Math.abs(origX(a) - origX(id)) - Math.abs(origX(b) - origX(id)));
+      parent.set(id, ups[0]);
+    }
+    const kids = new Map(grp.map(id => [id, []]));
+    for (const [id, pr] of parent) kids.get(pr).push(id);
+    // A part fed by several independent supply chains (e.g. three generators
+    // into one busbar): the chains fan in side by side above it, rather than
+    // one being its 'parent' and the rest reaching across the diagram.
+    const mean0 = id => origX(id);
+    const joinChains = new Map(); // join id -> [[chain nodes, part-nearest first]]
+    const inChain = new Set();
+    for (const J of [...grp].sort((a, b) => layerOf.get(a) - layerOf.get(b))) {
+      const ups = up.get(J);
+      if (ups.length < 2) continue;
+      const chains = [];
+      let ok = true;
+      for (const p of ups) {
+        const path = [];
+        let cur = p;
+        for (;;) {
+          path.push(cur);
+          const pr = parent.get(cur);
+          if (!pr) break;
+          // Each part up the chain must feed only the next one down.
+          if (kids.get(pr).length !== 1 || pr === J) { ok = false; break; }
+          cur = pr;
+        }
+        // The chain's last part may feed only J.
+        if (ok && kids.get(p).filter(k => k !== J).length) ok = false;
+        if (!ok) break;
+        chains.push(path);
+      }
+      if (!ok) continue;
+      const pr = parent.get(J);
+      if (pr) { kids.set(pr, kids.get(pr).filter(k => k !== J)); parent.delete(J); }
+      const tops = chains.map(path => path[path.length - 1]).sort((a, b) => mean0(a) - mean0(b));
+      joinChains.set(J, tops);
+      for (const t of tops) inChain.add(t);
+    }
+    // Keep the drawn left-to-right order: sort by where each branch was drawn.
+    const meanX = new Map();
+    const mean = id => {
+      if (meanX.has(id)) return meanX.get(id);
+      const ks = kids.get(id);
+      const v = ks.length ? (origX(id) + ks.reduce((t, k) => t + mean(k), 0) / ks.length) / 2 : origX(id);
+      meanX.set(id, v);
+      return v;
     };
-    for (let it = 0; it < 6; it++) {
-      for (let i = 1; i < depth; i++) sweep(i, up);
-      for (let i = depth - 2; i >= 0; i--) sweep(i, down);
+    for (const id of grp) kids.get(id).sort((a, b) => mean(a) - mean(b));
+    const treeRoots = grp.filter(id => !parent.has(id) && !inChain.has(id)).sort((a, b) => mean(a) - mean(b));
+
+    // Trees joined by a second supply or a lateral link go side by side, so
+    // those wires stay short and don't run across other branches.
+    const rootOf = new Map();
+    const mark = (id, r) => {
+      rootOf.set(id, r);
+      kids.get(id).forEach(k => mark(k, r));
+      for (const t of joinChains.get(id) || []) mark(t, r);
+    };
+    treeRoots.forEach(r => mark(r, r));
+    const links = new Map(treeRoots.map(r => [r, new Set()]));
+    for (const id of grp) {
+      for (const n of adj.get(id)) {
+        const a = rootOf.get(id), b = rootOf.get(n);
+        if (a !== b) { links.get(a).add(b); links.get(b).add(a); }
+      }
+    }
+    for (let it = 0; it < 8; it++) {
+      const idx = new Map(treeRoots.map((r, i) => [r, i]));
+      const key = new Map(treeRoots.map(r => {
+        const ns = [...links.get(r)];
+        return [r, ns.length ? (idx.get(r) + ns.reduce((t, n) => t + idx.get(n), 0)) / (1 + ns.length) : idx.get(r)];
+      }));
+      treeRoots.sort((a, b) => key.get(a) - key.get(b) || idx.get(a) - idx.get(b));
     }
 
-    // 3. X placement: pack, then pull each part toward its neighbours,
-    // sizing every bus to span the parts it feeds, keeping order + spacing.
+    // 3. X placement, bottom-up: each branch owns a block of width; a parent
+    // sits centred over its children (a single child sits straight under it).
+    const gap = this._gaps()[0];
+    const blockW = new Map(), cx = new Map(), rel = new Map(), chainRel = new Map();
+    const build = id => {
+      const ks = kids.get(id);
+      ks.forEach(build);
+      const own = isBus(id) ? 120 : lat(id) * 2;
+      const chains = joinChains.get(id) || [];
+      chains.forEach(build);
+      const chainWs = chains.map(t => blockW.get(t));
+      const chainsW = chains.length ? chainWs.reduce((t, v) => t + v, 0) + gap * (chains.length - 1) : 0;
+      if (!ks.length && !chains.length) { blockW.set(id, own); cx.set(id, own / 2); return; }
+      let cur = 0;
+      const kx = [];
+      for (const k of ks) { rel.set(k, cur); kx.push(cur + cx.get(k)); cur += blockW.get(k) + gap; }
+      const childW = ks.length ? cur - gap : 0;
+      const w = Math.max(childW, chainsW, own);
+      const shift = (w - childW) / 2;
+      for (const k of ks) rel.set(k, rel.get(k) + shift);
+      blockW.set(id, w);
+      if (chains.length) {
+        // Chains fan in across the top; the join sits centred under them.
+        let c0 = (w - chainsW) / 2;
+        chainRel.set(id, chains.map((t, i) => { const r = c0; c0 += chainWs[i] + gap; return r; }));
+        cx.set(id, w / 2);
+      } else {
+        cx.set(id, (kx[0] + kx[kx.length - 1]) / 2 + shift);
+      }
+    };
+    treeRoots.forEach(build);
     const x = new Map();
-    for (const l of layers) {
-      const total = l.reduce((sum, id) => sum + lat(id) * 2, 0) + this._gaps()[0] * (l.length - 1);
-      let cur = -total / 2;
-      for (const id of l) { x.set(id, cur + lat(id)); cur += lat(id) * 2 + this._gaps()[0]; }
+    const place = (id, left) => {
+      x.set(id, left + cx.get(id));
+      for (const k of kids.get(id)) place(k, left + rel.get(k));
+      (joinChains.get(id) || []).forEach((t, i) => place(t, left + chainRel.get(id)[i]));
+    };
+    let cursor = 0;
+    for (const r of treeRoots) { place(r, cursor); cursor += blockW.get(r) + gap * 2; }
+    // Buses span everything wired to them (second supplies included).
+    for (const id of busW.keys()) {
+      const ns = [...up.get(id), ...down.get(id)].map(n => x.get(n));
+      if (!ns.length) continue;
+      const lo = Math.min(...ns), hi = Math.max(...ns);
+      x.set(id, (lo + hi) / 2);
+      busW.set(id, Math.max(120, Math.ceil((hi - lo + 40) / 20) * 20));
+      comps.get(id).props.busWidth = busW.get(id);
     }
-    const spread = l => {
-      for (let pass = 0; pass < 40; pass++) {
-        let moved = false;
-        for (let i = 1; i < l.length; i++) {
-          const need = lat(l[i - 1]) + lat(l[i]) + this._gaps()[0];
-          const gap = x.get(l[i]) - x.get(l[i - 1]);
-          if (gap < need - 0.01) {
-            const d = (need - gap) / 2;
-            x.set(l[i - 1], x.get(l[i - 1]) - d);
-            x.set(l[i], x.get(l[i]) + d);
-            moved = true;
-          }
-        }
-        if (!moved) break;
-      }
-    };
-    const fitBus = id => {
-      const ns = [...up.get(id), ...down.get(id)];
-      if (!ns.length) return;
-      const reach = Math.max(...ns.map(n => Math.abs(x.get(n) - x.get(id))));
-      // Capped by the link count so spreading a crowded layer can't feed back into ever-wider buses.
-      const cap = 120 + 160 * ns.length;
-      busW.set(id, Math.min(cap, Math.max(120, Math.ceil((reach * 2 + 40) / 20) * 20)));
-    };
-    const pull = (i, nbrs) => {
-      for (const id of layers[i]) {
-        const ns = nbrs.get(id);
-        if (!ns.length) continue;
-        // A bus centres on the extremes of what it feeds; other parts on the mean.
-        x.set(id, isBus(id)
-          ? (Math.min(...ns.map(n => x.get(n))) + Math.max(...ns.map(n => x.get(n)))) / 2
-          : ns.reduce((sum, n) => sum + x.get(n), 0) / ns.length);
-      }
-      for (const id of layers[i]) if (isBus(id)) fitBus(id);
-      spread(layers[i]);
-    };
-    // Sweep against everything the part connects to, up and down.
-    const both = new Map(grp.map(id => [id, [...up.get(id), ...down.get(id)]]));
-    for (let it = 0; it < 8; it++) {
-      for (let i = 1; i < depth; i++) pull(i, it % 2 ? both : up);
-      for (let i = depth - 2; i >= 0; i--) pull(i, it % 2 ? both : down);
-    }
-    for (const id of busW.keys()) comps.get(id).props.busWidth = busW.get(id);
 
     // 4. Flow placement. Runs of two-terminal parts (breaker, cable, ...)
     // need far less room than a bus or a load, so layers made only of them
