@@ -89,29 +89,43 @@ const TCC = {
     const ro = new ResizeObserver(() => this.render());
     ro.observe(container);
 
-    // Tooltip on hover + curve drag move
-    this.canvas.addEventListener('mousemove', (e) => {
-      if (this._curveDrag) {
+    // Pointer Events: mouse, touch and pen share one path. The canvas captures the
+    // pointer on press so drags keep tracking outside it; two touches pinch-zoom.
+    this.canvas.tabIndex = 0;
+    this.canvas.setAttribute('aria-label', 'Time-current chart. Arrow keys nudge the selected device\u2019s handles.');
+    this._pointers = new Map(); // pointerId -> { x, y } (client px)
+
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._pinch) {
+        this._pinchMove();
+      } else if (this._curveDrag) {
         this._handleCurveDragMove(e);
       } else if (this._labelDrag) {
         this._handleLabelDragMove(e);
       } else if (this._pan) {
         this._panMove(e);
-      } else {
+      } else if (e.pointerType === 'mouse') {
         this._handleHover(e);
       }
     });
-    this.canvas.addEventListener('mouseleave', () => {
+    this.canvas.addEventListener('pointerleave', (e) => {
+      if (e.pointerType !== 'mouse' || this.canvas.hasPointerCapture?.(e.pointerId)) return;
       this._tooltip = null;
-      this._labelDrag = null;
-      this._curveDrag = null;
-      this._pan = null;
-      this.canvas.style.cursor = '';
       this.render();
     });
 
-    // Mouse down: curve drag, label drag, or (empty plot) pan / click-to-select
-    this.canvas.addEventListener('mousedown', (e) => {
+    // Press: curve handle drag, label drag, or (empty plot) pan / click-to-select
+    this.canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointers */ }
+      this.canvas.focus({ preventScroll: true });
+      if (this._pointers.size === 2 && !(this.compareMode && this.compareTabId)) {
+        this._pinchStart();
+        return;
+      }
+      if (this._pointers.size > 1) return;
       if (!this._handleCurveDragStart(e)) {
         this._handleLabelDragStart(e);
         if (!this._labelDrag) {
@@ -119,7 +133,12 @@ const TCC = {
         }
       }
     });
-    this.canvas.addEventListener('mouseup', (e) => {
+    const release = (e) => {
+      this._pointers.delete(e.pointerId);
+      if (this._pinch) {
+        if (this._pointers.size < 2) this._pinch = null;
+        return;
+      }
       if (this._curveDrag) {
         this._finishCurveDrag();
         this._curveDrag = null;
@@ -133,9 +152,16 @@ const TCC = {
         const moved = this._pan.moved;
         this._pan = null;
         this.canvas.style.cursor = '';
-        // A press without movement is a click: select the nearest curve
-        if (!moved) this._handleCurveSelect(e);
+        // A press without movement is a tap/click: select the nearest curve
+        if (!moved && e.type === 'pointerup') this._handleCurveSelect(e);
       }
+    };
+    this.canvas.addEventListener('pointerup', release);
+    this.canvas.addEventListener('pointercancel', release);
+
+    // Keyboard: arrow keys nudge the selected device's handles
+    this.canvas.addEventListener('keydown', (e) => {
+      if (this._nudgeSelected(e)) e.preventDefault();
     });
 
     // Wheel zoom about the cursor (Shift: current only, Alt: time only)
@@ -158,6 +184,22 @@ const TCC = {
     bind('btn-tcc-zoom-out', () => this._zoomAt(0.5, 0.5, 1 / 1.5, { x: true, y: true }));
     bind('btn-tcc-fit', () => this.fitView());
 
+    // Add-device popover
+    const addBtn = document.getElementById('btn-tcc-add-device');
+    const addPop = document.getElementById('tcc-add-popover');
+    if (addBtn && addPop) {
+      addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!this._closeAddPopover()) this._openAddPopover();
+      });
+      document.getElementById('btn-tcc-add-close')?.addEventListener('click', () => { this._closeAddPopover(); addBtn.focus(); });
+      addPop.addEventListener('click', (e) => e.stopPropagation());
+      document.addEventListener('click', () => this._closeAddPopover());
+      document.getElementById('tcc-modal').addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && addPop.style.display !== 'none') { this._closeAddPopover(); e.stopPropagation(); addBtn.focus(); }
+      });
+    }
+
     // Export menu
     const menuBtn = document.getElementById('btn-tcc-export-menu');
     const menuPanel = document.getElementById('tcc-export-menu-panel');
@@ -176,6 +218,65 @@ const TCC = {
   },
 
   // ── View: zoom / pan / fit ──
+
+  // Two-finger pinch: zoom both axes about the midpoint
+  _pinchStart() {
+    this._curveDrag = null; this._labelDrag = null; this._pan = null; this._tooltip = null;
+    const [a, b] = [...this._pointers.values()];
+    this._pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, last: 1 };
+  },
+
+  _pinchMove() {
+    const pts = [...this._pointers.values()];
+    if (pts.length < 2) return;
+    const [a, b] = pts;
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const ratio = d / this._pinch.d0;
+    const step = ratio / this._pinch.last;
+    this._pinch.last = ratio;
+    const rect = this.canvas.getBoundingClientRect();
+    const fx = ((a.x + b.x) / 2 - rect.left - this.plotLeft) / this.plotWidth;
+    const fy = 1 - ((a.y + b.y) / 2 - rect.top - this.plotTop) / this.plotHeight;
+    this._zoomAt(Math.max(0, Math.min(1, fx)), Math.max(0, Math.min(1, fy)), step, { x: true, y: true });
+  },
+
+  // Keyboard nudge of the selected device's drag-handle settings. Returns true if handled.
+  //  relay: ←/→ pickup, ↑/↓ time dial · breaker: ←/→ magnetic pickup, Alt+←/→ thermal pickup
+  // Shift = 5× step. Mirrors the clamps of the pointer drag.
+  _nudgeSelected(e) {
+    const dev = this.devices[this.selectedDeviceIndex];
+    if (!dev || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return false;
+    if (e.ctrlKey || e.metaKey) return false;
+    const dir = (e.key === 'ArrowRight' || e.key === 'ArrowUp') ? 1 : -1;
+    const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+    const k = e.shiftKey ? 5 : 1;
+    let mode = null;
+    if (dev.deviceType === 'relay') {
+      if (horizontal) {
+        dev.pickup = Math.max(1, Math.round(dev.pickup + dir * Math.max(1, Math.round(dev.pickup * 0.02)) * k));
+        mode = 'pickup';
+      } else {
+        dev.tds = Math.max(0.05, Math.min(10, Math.round((dev.tds + dir * 0.05 * k) * 20) / 20));
+        mode = 'tds';
+      }
+    } else if (dev.deviceType === 'cb' && horizontal) {
+      const p = dev.cbParams;
+      if (e.altKey) {
+        p.thermal_pickup = Math.max(0.4, Math.min(1.0, Math.round((p.thermal_pickup + dir * 0.05 * k) * 20) / 20));
+        mode = 'thermal';
+      } else {
+        p.magnetic_pickup = Math.max(2, Math.min(20, Math.round((p.magnetic_pickup + dir * 0.5 * k) * 2) / 2));
+        mode = 'magnetic';
+      }
+    }
+    if (!mode) return false;
+    this._syncDeviceToSLD(dev, mode);
+    this._runCoordinationCheck();
+    this._renderDeviceList();
+    this._renderSelectedDeviceSettings();
+    this.render();
+    return true;
+  },
 
   // Zoom one log axis about the fractional position `frac` (0 = min edge, 1 = max edge).
   _zoomAxis(minKey, maxKey, frac, factor, lo, hi) {
@@ -348,12 +449,14 @@ const TCC = {
     for (const h of this._curveHandles) {
       let hit = false;
       const dx = mx - h.x, dy = my - h.y;
-      if (dx * dx + dy * dy <= h.r * h.r) {
+      const slop = e.pointerType === 'touch' ? 12 : e.pointerType === 'pen' ? 6 : 3;
+      const hr2 = (h.r + slop) * (h.r + slop);
+      if (dx * dx + dy * dy <= hr2) {
         hit = true;
       } else if (h.hitRect) {
         // Extended hit zone along a line segment
         const hr = h.hitRect;
-        if (mx >= hr.x1 && mx <= hr.x2 && Math.abs(my - hr.y) <= hr.tolerance) {
+        if (mx >= hr.x1 && mx <= hr.x2 && Math.abs(my - hr.y) <= hr.tolerance + (e.pointerType === 'touch' ? 10 : 0)) {
           hit = true;
         }
       }
@@ -421,18 +524,24 @@ const TCC = {
     // Sync dragged settings back to the SLD component
     const drag = this._curveDrag;
     const dev = this.devices[drag.devIndex];
+    this._syncDeviceToSLD(dev, drag.mode);
+    this._runCoordinationCheck();
+    this._renderSelectedDeviceSettings();
+  },
+
+  _syncDeviceToSLD(dev, mode) {
     const comp = AppState.components.get(dev.id);
     if (!comp) return;
 
-    if (drag.mode === 'pickup' && comp.props) {
+    if (mode === 'pickup' && comp.props) {
       comp.props.pickup_a = dev.pickup;
-    } else if (drag.mode === 'tds' && comp.props) {
+    } else if (mode === 'tds' && comp.props) {
       comp.props.time_dial = dev.tds;
-    } else if (drag.mode === 'magnetic' && comp.props) {
+    } else if (mode === 'magnetic' && comp.props) {
       comp.props.magnetic_pickup = dev.cbParams.magnetic_pickup;
-    } else if (drag.mode === 'thermal' && comp.props) {
+    } else if (mode === 'thermal' && comp.props) {
       comp.props.thermal_pickup = dev.cbParams.thermal_pickup;
-    } else if (drag.mode.startsWith('zone_') && comp.props) {
+    } else if (mode.startsWith('zone_') && comp.props) {
       // Sync zone reaches back to SLD component
       const zoneKeys = [
         ['z1_reach_ohm', 'z1_delay_s'],
@@ -444,7 +553,6 @@ const TCC = {
         comp.props[zoneKeys[i][1]] = dev.zones[i].delay_s;
       }
     }
-    this._runCoordinationCheck();
   },
 
   // ── Persisted display state across open/close ──
@@ -557,6 +665,7 @@ const TCC = {
   },
 
   close() {
+    this._closeAddPopover();
     this._saveDisplayState();
     document.getElementById('tcc-modal').style.display = 'none';
     // Refresh properties panel if we were in focused grading mode
@@ -2285,11 +2394,13 @@ const TCC = {
     for (const h of this._curveHandles) {
       let hovering = false;
       const dx = mx - h.x, dy = my - h.y;
-      if (dx * dx + dy * dy <= h.r * h.r) {
+      const slop = e.pointerType === 'touch' ? 12 : e.pointerType === 'pen' ? 6 : 3;
+      const hr2 = (h.r + slop) * (h.r + slop);
+      if (dx * dx + dy * dy <= hr2) {
         hovering = true;
       } else if (h.hitRect) {
         const hr = h.hitRect;
-        if (mx >= hr.x1 && mx <= hr.x2 && Math.abs(my - hr.y) <= hr.tolerance) {
+        if (mx >= hr.x1 && mx <= hr.x2 && Math.abs(my - hr.y) <= hr.tolerance + (e.pointerType === 'touch' ? 10 : 0)) {
           hovering = true;
         }
       }
@@ -2552,11 +2663,14 @@ const TCC = {
     if (!section || !container) return;
 
     if (this.selectedDeviceIndex < 0 || this.selectedDeviceIndex >= this.devices.length) {
-      section.style.display = 'none';
+      section.classList.add('tcc-inspector-empty');
+      title.textContent = 'Selected device';
+      container.innerHTML = '<div class="tcc-inspector-hint">Select a device \u2014 click its row or its curve \u2014 to edit its settings here. With a curve selected, arrow keys nudge its handles.</div>';
       return;
     }
 
     const dev = this.devices[this.selectedDeviceIndex];
+    section.classList.remove('tcc-inspector-empty');
     section.style.display = '';
     title.textContent = dev.name;
 
@@ -2851,9 +2965,7 @@ const TCC = {
       pickup: pickup || 100,
       tds: tds || 1.0,
     });
-    this._renderDeviceList();
-    this.render();
-    this._runCoordinationCheck();
+    this._afterAddDevice();
   },
 
   addCustomFuse(name, ratingA) {
@@ -2868,9 +2980,7 @@ const TCC = {
       actualRating: ratingA || 100,
       scaledCurve: !nearest,
     });
-    this._renderDeviceList();
-    this.render();
-    this._runCoordinationCheck();
+    this._afterAddDevice();
   },
 
   addCustomCB(name, cbParams) {
@@ -2892,9 +3002,7 @@ const TCC = {
         instantaneous_pickup: cbParams.instantaneous_pickup || 0,
       },
     });
-    this._renderDeviceList();
-    this.render();
-    this._runCoordinationCheck();
+    this._afterAddDevice();
   },
 
   // ── Custom curve: user-defined TCC data points ──
@@ -2986,9 +3094,35 @@ const TCC = {
       curvePoints: points,
     });
 
+    this._afterAddDevice();
+    return true;
+  },
+
+  // Select the device just added (so the inspector shows it), close the popover, refresh
+  _afterAddDevice() {
+    this.selectedDeviceIndex = this.devices.length - 1;
+    this._closeAddPopover();
     this._renderDeviceList();
+    this._renderSelectedDeviceSettings();
     this.render();
     this._runCoordinationCheck();
+    this._renderMiniSLD();
+  },
+
+  _openAddPopover() {
+    const pop = document.getElementById('tcc-add-popover');
+    if (!pop) return;
+    pop.style.display = '';
+    document.getElementById('btn-tcc-add-device')?.setAttribute('aria-expanded', 'true');
+    pop.querySelector('input:not([type=file]), select')?.focus();
+  },
+
+  _closeAddPopover() {
+    const pop = document.getElementById('tcc-add-popover');
+    if (!pop || pop.style.display === 'none') return false;
+    pop.style.display = 'none';
+    const btn = document.getElementById('btn-tcc-add-device');
+    btn?.setAttribute('aria-expanded', 'false');
     return true;
   },
 

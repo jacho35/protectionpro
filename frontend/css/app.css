@@ -1583,6 +1583,7 @@ body.dark-mode .compliance-row.compliance-pass td { background: #1f321f; }
 }
 
 .tcc-body {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -1870,7 +1871,7 @@ body.dark-mode .compliance-row.compliance-pass td { background: #1f321f; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 44vh;
+  max-height: 30vh;
   overflow-y: auto;
 }
 
@@ -2965,3 +2966,67 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .gt-grid td.gt-act input:focus, .gt-grid td.gt-act select:focus { outline: none; }
 .gt-grid td.gt-bad { box-shadow: inset 0 0 0 2px var(--danger); background-color: rgba(211,47,47,.08); }
 .gt-grid input, .gt-grid select { caret-color: var(--accent); }
+
+/* Devices heading row + add-device popover */
+.tcc-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tcc-panel-heading h4 { margin: 0; }
+.tcc-add-popover {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 300px;
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  z-index: 15;
+  padding: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+.tcc-add-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.tcc-add-popover-header h4 { margin: 0; }
+.tcc-add-popover-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.tcc-add-popover-close:hover { background: var(--bg-secondary); }
+
+/* Inspector: the selected device's settings */
+.tcc-inspector {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px;
+}
+.tcc-inspector.tcc-inspector-empty { border-left-color: var(--border-color); }
+.tcc-inspector-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+#tcc-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tcc-inspector .tcc-form-row input,
+.tcc-inspector .tcc-form-row select {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
