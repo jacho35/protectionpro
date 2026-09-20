@@ -1755,7 +1755,7 @@ body.dark-mode .compliance-row.compliance-pass td { background: #1f321f; }
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
   flex-shrink: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .tcc-zoom-group {
   display: flex;
@@ -1768,6 +1768,7 @@ body.dark-mode .compliance-row.compliance-pass td { background: #1f321f; }
 .tcc-zoom-group .btn-small:first-child { border-radius: 4px 0 0 4px; }
 .tcc-zoom-group .btn-small:last-child { border-radius: 0 4px 4px 0; }
 .tcc-view-range {
+  flex-shrink: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
   color: var(--text-secondary);
@@ -3269,3 +3270,39 @@ body.dark-mode .tcc-coord-generic { background: #3a2a10; color: #ffd48a; }
 .tcc-sv-error { min-height: 18px; font-size: 12.5px; color: var(--danger); margin-top: 8px; }
 .tcc-sv-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .tcc-sv-actions .btn-small[hidden] { display: none; }
+
+/* ── TCC fault-level display: Faults menu, Fault levels tab ── */
+.tcc-chart-area { position: relative; }
+.tcc-split { display: inline-flex; }
+.tcc-split .btn-small:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tcc-split .btn-small:last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 4px 8px; }
+.tcc-fault-backdrop { display: none; }
+.tcc-fault-menu {
+  position: absolute; top: 42px; right: 12px; width: 380px; max-width: calc(100% - 24px);
+  max-height: calc(100% - 60px); overflow-y: auto; z-index: 30;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.22); padding: 10px 14px 12px;
+}
+.tcc-fault-menu[hidden] { display: none; }
+.tcc-fo-head {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);
+  padding: 8px 0 3px; border-top: 1px solid var(--border-color); margin-top: 6px;
+}
+.tcc-fo-head:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.tcc-fo-row { display: flex; gap: 10px; align-items: flex-start; padding: 4px 0; cursor: pointer; font-size: 13px; }
+.tcc-fo-row input { width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--accent); flex-shrink: 0; }
+.tcc-fo-row span { display: flex; flex-direction: column; line-height: 1.3; }
+.tcc-fo-row small { font-size: 11.5px; color: var(--text-secondary); }
+.tcc-fo-row input:disabled + span { opacity: 0.5; }
+
+.tcc-fault-note { font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin-bottom: 8px; }
+.tcc-fault-title { display: flex; align-items: center; gap: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); margin: 10px 0 6px; }
+.tcc-fault-title .btn-small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.tcc-fault-table td, .tcc-fault-table th { white-space: nowrap; }
+.tcc-fault-row { cursor: pointer; }
+.tcc-fault-row:hover td { background: var(--bg-tertiary); }
+.tcc-fault-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tcc-ft-bad { color: #b71c1c; font-weight: 600; }
+.tcc-ft-slow { color: #8a4b00; font-weight: 600; }
+body.dark-mode .tcc-ft-bad { color: #ef9a9a; }
+body.dark-mode .tcc-ft-slow { color: #ffcc80; }
