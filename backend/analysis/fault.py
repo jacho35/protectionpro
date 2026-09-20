@@ -520,6 +520,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             f"Minimum-current study: cable resistances at "
             f"{conductor_temperature_c:g} °C (IEC 60909-0 §5.3.1).")
     _assumptions.extend(_coupling_assumptions(project))
+    _assumptions.extend(_z0_source_assumptions(project))
     return FaultResults(
         buses=results,
         base_mva=base_mva,
@@ -1181,6 +1182,43 @@ def _coupling_assumptions(project):
             f"Parallel zero-sequence coupling: "
             f"{len(grouped) - MAX_COUPLING_ASSUMPTIONS} further "
             f"configuration(s) applied but not listed.")
+    return out
+
+
+def _z0_source_assumptions(project):
+    """Disclosure lines for cables whose Z0 was INFERRED rather than read from
+    explicit r0/x0 props.
+
+    The fallback is not a detail: with neither prop set this engine uses a
+    composite 3xZ1 while the unbalanced solver uses 3.5x per component, so the
+    same network yields earth-fault quantities from two different Z0 networks.
+    Neither convention is wrong and neither is being changed — but a study that
+    leaned on one is not reproducible unless it says so.
+
+    Grouped by identical note and capped exactly as _coupling_assumptions does,
+    so a feeder of twenty identically under-specified cables is one line.
+    """
+    from .line_coupling import z0_source_note
+    grouped: dict[str, list[str]] = {}
+    for comp in project.components:
+        if comp.type != "cable":
+            continue
+        note = z0_source_note(comp.props, composite_fallback=True)
+        if note:
+            grouped.setdefault(note, []).append(
+                str(comp.props.get("name") or comp.id))
+
+    out = []
+    for note, names in list(grouped.items())[:MAX_COUPLING_ASSUMPTIONS]:
+        shown = ", ".join(names[:4])
+        if len(names) > 4:
+            shown += f" +{len(names) - 4} more"
+        out.append(f"{shown}: {note}")
+    if len(grouped) > MAX_COUPLING_ASSUMPTIONS:
+        out.append(
+            f"Zero-sequence data: "
+            f"{len(grouped) - MAX_COUPLING_ASSUMPTIONS} further "
+            f"configuration(s) inferred but not listed.")
     return out
 
 

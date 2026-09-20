@@ -5588,3 +5588,101 @@ class TestCableZoneWarning:
         res = run_load_flow(_lv_cable_only(0.4))
         assert not [w for w in res.warnings
                     if w.elementId == "cable-1" and "Voltage mismatch" in w.message]
+
+
+# ── Zero-sequence data provenance (audit F-3) ────────────────────────────
+
+
+def _z0_cable_project(r0=0.0, x0=0.0):
+    """utility → bus-1 → cable → bus-2 → load, at 11 kV.
+
+    r0/x0 select which Z0 fallback the engines take: 0/0 is the palette
+    default (COMPONENT_DEFS.cable), which is what a hand-configured cable
+    carries when no library entry was picked.
+    """
+    comps = [
+        _comp("utility-1", "utility", {
+            "name": "U", "voltage_kv": 11, "fault_mva": 500, "x_r_ratio": 10}),
+        _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 11}),
+        _comp("cable-1", "cable", {
+            "name": "C1", "length_km": 0.5, "r_per_km": 0.3, "x_per_km": 0.1,
+            "r0_per_km": r0, "x0_per_km": x0,
+            "voltage_kv": 11, "rated_amps": 400}),
+        _comp("bus-2", "bus", {"name": "B2", "voltage_kv": 11}),
+        _comp("load-1", "static_load", {
+            "name": "L", "rated_kva": 500, "power_factor": 0.9,
+            "demand_factor": 1.0}),
+    ]
+    wires = [
+        _wire("w1", "utility-1", "bus-1", "out", "in"),
+        _wire("w2", "bus-1", "cable-1", "out", "from"),
+        _wire("w3", "cable-1", "bus-2", "to", "in"),
+        _wire("w4", "bus-2", "load-1", "out", "in"),
+    ]
+    return ProjectData(projectName="z0-source", baseMVA=100.0, frequency=50,
+                       components=comps, wires=wires)
+
+
+class TestZ0SourceDisclosure:
+    """A cable with no explicit r0/x0 gets its Z0 from a per-engine fallback,
+    and the two engines' fallbacks differ (audit F-3).
+
+    fault.py uses a composite 3×Z1 when NEITHER prop is set; the unbalanced
+    solver stays on 3.5× per component — ~17% apart. Both conventions are
+    deliberate and neither is changed here; the study must simply say which
+    one it used, because the numbers are not reproducible otherwise.
+
+    This is reachable from the UI, not just from API payloads: the palette
+    default is `r0_per_km: 0, x0_per_km: 0` with no `standard_type`, so any
+    cable configured by hand rather than picked from the library lands here.
+    """
+
+    def _fault_z0_lines(self, project):
+        return [a for a in run_fault_analysis(project).study_assumptions
+                if "ero-sequence" in a]
+
+    def _unbalanced_z0_lines(self, project):
+        return [w.message for w in run_unbalanced_load_flow(project).warnings
+                if "ero-sequence" in w.message]
+
+    def test_no_z0_props_discloses_divergent_fallback(self):
+        """The case the audit dismissed as API-only — it is the palette default."""
+        project = _z0_cable_project(r0=0.0, x0=0.0)
+
+        fault_lines = self._fault_z0_lines(project)
+        assert fault_lines, "fault analysis disclosed nothing for an inferred Z0"
+        assert "3x the composite Z1" in fault_lines[0]
+        assert "C1" in fault_lines[0], "the line must name the cable"
+
+        unbal_lines = self._unbalanced_z0_lines(project)
+        assert unbal_lines, "unbalanced load flow disclosed nothing"
+        assert "3.5x each of r1 and x1" in unbal_lines[0]
+
+        # Each must name the OTHER engine's convention — that divergence is
+        # the whole point of the disclosure.
+        assert "unbalanced load flow uses 3.5x" in fault_lines[0]
+        assert "fault analysis uses 3x the composite Z1" in unbal_lines[0]
+
+    def test_partial_z0_props_disclose_agreement(self):
+        """One prop set ⇒ both engines use 3.5x for the other ⇒ they agree."""
+        project = _z0_cable_project(r0=1.05, x0=0.0)
+
+        for lines in (self._fault_z0_lines(project),
+                      self._unbalanced_z0_lines(project)):
+            assert lines, "an inferred x0 was not disclosed"
+            assert "x0_per_km not set" in lines[0]
+            assert "so the two studies agree" in lines[0]
+
+    def test_explicit_z0_props_disclose_nothing(self):
+        """A library cable carries both props — nothing is inferred."""
+        project = _z0_cable_project(r0=1.05, x0=0.35)
+        assert not self._fault_z0_lines(project)
+        assert not self._unbalanced_z0_lines(project)
+
+    def test_disclosure_does_not_move_any_result(self):
+        """Pure disclosure: the Z0 conventions themselves are unchanged."""
+        project = _z0_cable_project(r0=0.0, x0=0.0)
+        res = run_fault_analysis(project)
+        # 3x composite Z1 fallback still in force for the fault engine.
+        assert res.buses["bus-2"].ik1 is not None
+        assert res.buses["bus-2"].ik1 > 0

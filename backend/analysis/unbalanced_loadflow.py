@@ -40,7 +40,8 @@ from .loadflow import (
     is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
 )
 from .fault import _grounding_impedance
-from .line_coupling import coupling_note, parallel_z0_scale
+from .line_coupling import (coupling_note, parallel_z0_scale,
+                            z0_source_note)
 
 # Symmetrical component rotation operator: a = 1∠120°
 _a = np.exp(1j * 2 * math.pi / 3)
@@ -965,6 +966,17 @@ def run_unbalanced_load_flow(
                 elementId=comp.id,
                 element_name=comp.props.get("name", comp.id),
                 message=note,
+            ))
+        # Where Z0 came from. Same per-cable granularity and for the same
+        # reason: V0 / VUF are read straight off the Y0 network, so a reviewer
+        # needs to know which cable's Z0 was inferred rather than supplied —
+        # and that this engine's fallback is not the one fault analysis uses.
+        z0_note = z0_source_note(comp.props, composite_fallback=False)
+        if z0_note:
+            warnings.append(LoadFlowWarning(
+                elementId=comp.id,
+                element_name=comp.props.get("name", comp.id),
+                message=z0_note,
             ))
 
     # Collapse synthetic terminal buses out of the user-facing result, as the
