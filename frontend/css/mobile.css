@@ -1674,3 +1674,30 @@ body.dark-mode {
 #tcc-modal.tcc-compact .tcc-sv-actions .btn-small { flex: 1 1 auto; }
 
 #tcc-modal.tcc-compact .tcc-view-bar .tcc-toolbar-spacer { display: none; }
+
+/* Faults menu and Fault levels tab on the compact layout */
+#tcc-modal.tcc-compact .tcc-fault-backdrop { display: block; position: fixed; inset: 0; z-index: 44; background: rgba(20,20,19,0.4); }
+#tcc-modal.tcc-compact .tcc-fault-backdrop[hidden] { display: none; }
+#tcc-modal.tcc-compact .tcc-fault-menu {
+  position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-width: none;
+  max-height: 78vh; max-height: 78dvh; border-radius: 16px 16px 0 0; z-index: 45;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+#tcc-modal.tcc-compact .tcc-fo-row { min-height: 44px; align-items: center; font-size: 14px; }
+#tcc-modal.tcc-compact .tcc-fo-row input { width: 22px; height: 22px; }
+#tcc-modal.tcc-compact .tcc-split .btn-small:last-child { min-width: 44px; }
+#tcc-modal.tcc-compact .tcc-fault-table,
+#tcc-modal.tcc-compact .tcc-fault-table tbody { display: block; }
+#tcc-modal.tcc-compact .tcc-fault-table thead { display: none; }
+#tcc-modal.tcc-compact .tcc-fault-table tr {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 10px 12px; margin-bottom: 8px; min-height: 44px;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px;
+}
+#tcc-modal.tcc-compact .tcc-fault-table td { display: block; border: 0; padding: 0; background: none !important; font-size: 13px; white-space: normal; }
+#tcc-modal.tcc-compact .tcc-fault-table td:first-child { grid-column: 1 / -1; font-weight: 600; }
+#tcc-modal.tcc-compact .tcc-fault-table td[data-label]::before {
+  content: attr(data-label); display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted);
+}
+#tcc-modal.tcc-compact .tcc-fault-table td[data-label="Device"]::before,
+#tcc-modal.tcc-compact .tcc-fault-table td[data-label="Show"]::before { display: none; }
+#tcc-modal.tcc-compact .tcc-fault-table input[type="checkbox"] { width: 22px; height: 22px; }

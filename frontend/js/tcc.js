@@ -343,6 +343,15 @@ const TCC = {
     bind('btn-tcc-zoom-out', () => this._zoomAt(0.5, 0.5, 1 / 1.5, { x: true, y: true }));
     bind('btn-tcc-fit', () => this.fitView());
 
+    // Faults menu
+    bind('btn-tcc-fault-menu', () => this._openFaultMenu(document.getElementById('tcc-fault-menu').hidden));
+    bind('tcc-fault-backdrop', () => this._openFaultMenu(false));
+    document.getElementById('tcc-fault-menu')?.addEventListener('change', () => this._readFaultMenu());
+    document.addEventListener('click', (e) => {
+      const m = document.getElementById('tcc-fault-menu');
+      if (m && !m.hidden && !e.target.closest('#tcc-fault-menu, #btn-tcc-fault-menu')) this._openFaultMenu(false);
+    });
+
     // Saved views: picker, bar buttons, save dialog
     bind('btn-tcc-view', (e) => {
       const menu = document.getElementById('tcc-view-menu');
@@ -363,6 +372,8 @@ const TCC = {
       if (e.key !== 'Escape') return;
       const dlg = document.getElementById('tcc-save-view');
       const menu = document.getElementById('tcc-view-menu');
+      const fm = document.getElementById('tcc-fault-menu');
+      if (fm && !fm.hidden) { this._openFaultMenu(false); e.stopPropagation(); return; }
       if (dlg && !dlg.hidden) { dlg.hidden = true; e.stopPropagation(); }
       else if (menu && !menu.hidden) { this._openViewMenu(false); e.stopPropagation(); }
     });
@@ -565,31 +576,6 @@ const TCC = {
     this.render();
   },
 
-  // Fault levels (display amps, after any reference-voltage scaling) relevant to the active tab
-  _faultLevelsForView() {
-    const fr = AppState.faultResults;
-    if (!fr || !fr.buses) return [];
-    const tab = this.tabs.find(t => t.id === this.activeTabId);
-    const out = [];
-    for (const [busId, r] of Object.entries(fr.buses)) {
-      const comp = AppState.components.get(busId);
-      const busName = comp?.props?.name || r.bus_name || busId;
-      const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
-      if (tab && tab.isVoltageTab && vkv && Math.abs(vkv - tab.voltage_kv) > 0.01) continue;
-      for (const [ka, kind] of [[r.ik3, '3Φ'], [r.ik1, 'SLG']]) {
-        if (ka == null || !(ka > 0)) continue;
-        let amps = ka * 1000;
-        if (this.referenceVoltage && vkv) amps *= vkv / this.referenceVoltage;
-        out.push({ amps, label: `${busName} ${kind} ${ka.toFixed(2)} kA` });
-      }
-    }
-    return out;
-  },
-
-  _faultAmpsForView() {
-    return this.showFaultMarkers ? this._faultLevelsForView().map(f => f.amps) : [];
-  },
-
   // Fit the view to the visible curves (pickup → fault level) with a little padding.
   fitView() {
     const devs = this._getVisibleDevicesForTab().filter(d => d.visible);
@@ -621,6 +607,7 @@ const TCC = {
     const iLo = Math.min(...pts.map(p => p.i));
     // Right edge: the highest fault level on this tab if there is one, else the curves' own extent
     let iHi = faults.length ? Math.max(...faults) : Math.max(...pts.map(p => p.i));
+    const iLoFit = faults.length ? Math.min(iLo, Math.min(...faults)) : iLo;
     iHi = Math.max(iHi, iLo * 3);
     const inRange = pts.filter(p => p.i >= iLo && p.i <= iHi);
     const tLo = Math.min(...inRange.map(p => p.t));
@@ -630,7 +617,7 @@ const TCC = {
       if (b - a < minSpan) { const m = (a + b) / 2; a = m - minSpan / 2; b = m + minSpan / 2; }
       return [a, b - a];
     };
-    const [cA, cS] = fit(iLo, iHi, 0.15, 1.5);
+    const [cA, cS] = fit(iLoFit, iHi, 0.15, 1.5);
     const [tA, tS] = fit(tLo, tHi, 0.25, 1.5);
     this._setAxis('currentMin', 'currentMax', cA, cS, L.iMin, L.iMax);
     this._setAxis('timeMin', 'timeMax', tA, tS, L.tMin, L.tMax);
@@ -800,7 +787,7 @@ const TCC = {
   _viewId: null,            // the saved view this arrangement came from (null = unsaved)
   _zoomedSinceFit: false,   // true once the user zoomed / panned away from Fit
   _viewBarKey: '',          // last rendered view-bar state (avoids needless DOM writes)
-  VIEW_DEFAULT_INCLUDE: { path: true, curves: true, zoom: true, style: true, cursor: false, margin: true },
+  VIEW_DEFAULT_INCLUDE: { path: true, curves: true, zoom: true, style: true, faults: true, cursor: false, margin: true },
 
   _views() { return AppState.tccViews || (AppState.tccViews = []); },
   _activeView() { return this._views().find(v => v.id === this._viewId) || null; },
@@ -839,6 +826,7 @@ const TCC = {
       d.refVoltage = this.referenceVoltage;
     }
     if (inc.margin) d.gradingMargin = this.gradingMargin;
+    if (inc.faults) d.faults = { show: !!this.showFaultMarkers, ...this._fo(), extra: [...this._fo().extra] };
     return d;
   },
 
@@ -859,7 +847,7 @@ const TCC = {
       const idx = d.endpointId && byId.has(d.endpointId) ? byId.get(d.endpointId) : -1;
       if (d.endpointId && idx < 0) missing++;
       this._miniSLDEndpointDeviceIdx = idx;
-      this._pathSetCache = null;
+      this._pathSetCache = null; this._pathNodeCache = null;
       this._pathOnly = idx >= 0 && !!d.pathOnly;
     }
     if (inc.curves && d.visible) {
@@ -878,6 +866,14 @@ const TCC = {
       }
     }
     if (inc.margin && typeof d.gradingMargin === 'number') this.setGradingMargin(d.gradingMargin, false);
+    if (inc.faults && d.faults) {
+      const { show, ...opts } = d.faults;
+      this.faultOpts = { ...this._faultOptsDefault(), ...opts, extra: [...(opts.extra || [])] };
+      this.showFaultMarkers = show !== false;
+      const fb = document.getElementById('btn-tcc-fault-markers');
+      if (fb) { fb.classList.toggle('active', this.showFaultMarkers); fb.setAttribute('aria-pressed', this.showFaultMarkers); }
+      this._syncFaultMenu();
+    }
     if (inc.cursor) {
       if (d.cursor != null) { this._setCursorMode(true); this._cursor = d.cursor; }
       else this._setCursorMode(false);
@@ -1104,6 +1100,7 @@ const TCC = {
       style: 'Keeps the same colour per device in reports',
       cursor: this._cursor != null ? `${Math.round(this._cursor)} A cursor${this.referenceVoltage ? ', ' + this.referenceVoltage + ' kV reference' : ''}` : 'Cursor off, no scaling',
       margin: `${this.gradingMargin} s`,
+      faults: this.showFaultMarkers ? `${this._fo().scope === 'path' ? 'This path' : this._fo().scope === 'voltage' ? 'Same voltage' : 'Every bus'} \u00B7 ${this._faultStripKinds().map(k => k.label).join(' ')}` : 'Faults hidden',
     };
     for (const k of Object.keys(notes)) {
       const cb = document.getElementById('tcc-sv-' + k);
@@ -1170,7 +1167,7 @@ const TCC = {
       for (const dev of todo) {
         this._miniSLDEndpointDeviceIdx = this.devices.indexOf(dev);
         this._pathOnly = true;
-        this._pathSetCache = null;
+        this._pathSetCache = null; this._pathNodeCache = null;
         const set = this._pathIdSet();
         const visible = {};
         for (const d of this.devices) visible[d.id] = !!set && this._inPathView(d, set) && d.deviceType !== 'motor_start';
@@ -1183,7 +1180,7 @@ const TCC = {
       // Leave the chart the way it was
       this._miniSLDEndpointDeviceIdx = savedState.ep;
       this._pathOnly = savedState.po;
-      this._pathSetCache = null;
+      this._pathSetCache = null; this._pathNodeCache = null;
       this._viewId = savedState.viewId;
       AppState.dirty = true;
       this._updateViewBar();
@@ -1261,11 +1258,14 @@ const TCC = {
   },
 
   _resetTransientState() {
+    this.faultOpts = null; // re-read from the project
+    this._faultTip = null;
+    this._faultPaneAll = false;
     this._viewId = null;
     this._viewBarKey = '';
     this._zoomedSinceFit = false;
     this._pathOnly = false;
-    this._pathSetCache = null;
+    this._pathSetCache = null; this._pathNodeCache = null;
     this._deviceFilter = '';
     this._soloIdx = -1;
     this._soloBackup = null;
@@ -1373,6 +1373,139 @@ const TCC = {
     }).join('') : '<div class="tcc-coord-info">No visible devices.</div>';
   },
 
+  // ── Faults menu and the Fault levels tab ──
+
+  _openFaultMenu(open) {
+    const menu = document.getElementById('tcc-fault-menu');
+    const btn = document.getElementById('btn-tcc-fault-menu');
+    const backdrop = document.getElementById('tcc-fault-backdrop');
+    if (!menu || !btn) return;
+    if (open) this._syncFaultMenu();
+    menu.hidden = !open;
+    if (backdrop) backdrop.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  },
+
+  _syncFaultMenu() {
+    const o = this._fo();
+    for (const k of ['ik3', 'ik1', 'ip', 'strip', 'lines', 'range', 'tmax', 'tmin']) {
+      const el = document.getElementById('tcc-fo-' + k);
+      if (el) el.checked = !!o[k];
+    }
+    const counts = {
+      path: this._pathNodeIds() ? this._faultEntriesFor('path').filter(e => !e.extra).length : null,
+      voltage: this._faultEntriesFor('voltage').filter(e => !e.extra).length,
+      all: this._faultEntriesFor('all').filter(e => !e.extra).length,
+    };
+    const effective = (o.scope === 'path' && counts.path == null) ? 'voltage' : o.scope;
+    document.querySelectorAll('input[name="tcc-fo-scope"]').forEach(r => { r.checked = r.value === effective; });
+    const note = (id, txt) => { const n = document.getElementById(id); if (n) n.textContent = txt; };
+    note('tcc-fo-scope-path-note', counts.path != null ? `${counts.path} bus${counts.path === 1 ? '' : 'es'} · follows Path only` : 'Set a grading point (⇥) to use this');
+    note('tcc-fo-scope-voltage-note', `${counts.voltage} buses at the voltage of the visible curves`);
+    note('tcc-fo-scope-all-note', `${counts.all} buses, mixed voltages`);
+    const path = document.getElementById('tcc-fo-scope-path');
+    if (path) path.disabled = counts.path == null;
+    const hasMin = !!(AppState.faultResultsMin && AppState.faultResultsMin.buses);
+    note('tcc-fo-tmin-note', hasMin ? 'Uses the minimum-fault study' : 'No minimum study: uses the lowest of Ik1 and Ik″ 3-phase from the maximum study');
+  },
+
+  _readFaultMenu() {
+    const o = this._fo();
+    for (const k of ['ik3', 'ik1', 'ip', 'strip', 'lines', 'range', 'tmax', 'tmin']) {
+      const el = document.getElementById('tcc-fo-' + k);
+      if (el) o[k] = el.checked;
+    }
+    const r = document.querySelector('input[name="tcc-fo-scope"]:checked');
+    if (r) o.scope = r.value;
+    this._afterFaultOptsChange();
+  },
+
+  _afterFaultOptsChange() {
+    this._saveFaultOpts();
+    this._faultTip = null;
+    this._renderFaultPane();
+    this._syncFaultMenu();
+    this.render();
+  },
+
+  _toggleFaultBus(id, on) {
+    const o = this._fo();
+    const set = new Set(o.extra);
+    if (on) set.add(id); else set.delete(id);
+    o.extra = [...set];
+    this._afterFaultOptsChange();
+  },
+
+  // Trip times at the highest and the lowest fault for every visible device the study reaches,
+  // then the fault levels themselves with a Show checkbox per bus
+  _renderFaultPane() {
+    const host = document.getElementById('tcc-fault-pane');
+    if (!host) return;
+    const pane = document.getElementById('tcc-drawer-pane-fault');
+    if (pane && pane.hidden) return; // drawn when the tab is shown
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses) {
+      host.innerHTML = '<div class="tcc-coord-info">No fault study in this project. Run Fault Analysis to see fault levels, and trip times at the highest and lowest fault.</div>';
+      return;
+    }
+    const o = this._fo();
+    const hasMin = !!(AppState.faultResultsMin && AppState.faultResultsMin.buses);
+    const fmtT = (t) => this._fmtTime(t);
+    const cellT = (t, minCol, limit) => {
+      // Cables and transformers show how long they can withstand the current, not a trip time
+      if (limit) return `<td data-label="Withstand">${t == null || !isFinite(t) ? 'ok' : fmtT(t)} <span class="tcc-coord-info">limit</span></td>`;
+      if (t == null || !isFinite(t) || t <= 0) return `<td class="tcc-ft-bad" data-label="Trip time">no trip</td>`;
+      const slow = minCol && t > this.MIN_FAULT_SLOW_S;
+      return `<td class="${slow ? 'tcc-ft-slow' : ''}" data-label="Trip time">${fmtT(t)}${slow ? ' ⚠' : ''}</td>`;
+    };
+    // Trip times
+    const devs = this._getVisibleDevicesForTab().filter(d => d.visible && d.deviceType !== 'motor_start' && d.deviceType !== 'custom_curve')
+      .map(d => ({ d, r: this._deviceFaultRange(d) })).filter(x => x.r)
+      .sort((a, b) => this._depthOf(a.d) - this._depthOf(b.d) || a.d.name.localeCompare(b.d.name));
+    let html = `<div class="tcc-fault-note">Ik″ from the last Fault Analysis. ${hasMin
+      ? 'Minimum fault from the minimum-fault study.'
+      : 'No minimum-fault study, so the minimum shown is the lowest of Ik1 and Ik″ 3-phase from the maximum study — an estimate. Run Fault Analysis to refresh it.'}</div>`;
+    html += `<div class="tcc-fault-title">Trip time at the highest and the lowest fault <span class="tcc-coord-info">(\u26A0 = slower than ${this.MIN_FAULT_SLOW_S} s at the lowest fault)</span></div>`;
+    if (!devs.length) {
+      html += '<div class="tcc-coord-info">No visible device is reached by the study.</div>';
+    } else {
+      html += `<table class="tcc-coord-table tcc-fault-table"><thead><tr><th>Device</th><th>Lowest fault</th><th>Trip time</th><th>Highest fault</th><th>Trip time</th></tr></thead><tbody>`;
+      for (const { d, r } of devs) {
+        const tMin = this._deviceTripTime(d, r.iMin), tMax = this._deviceTripTime(d, r.iMax);
+        const idx = this.devices.indexOf(d);
+        const limit = d.deviceType === 'cable_thermal' || d.deviceType === 'xfmr_thermal';
+        html += `<tr class="tcc-fault-row" data-dev="${idx}" tabindex="0" role="button" aria-label="Select ${escHtml(d.name)}">
+          <td data-label="Device"><span class="tcc-device-color" style="display:inline-block;margin-right:6px;background:${d.color}"></span>${escHtml(d.name)}</td>
+          <td data-label="Lowest fault">${this._fmtKA(r.iMin)} <span class="tcc-coord-info">${escHtml(r.minBus)} ${r.minKind}</span></td>${cellT(tMin, true, limit)}
+          <td data-label="Highest fault">${this._fmtKA(r.iMax)} <span class="tcc-coord-info">${escHtml(r.maxBus)}</span></td>${cellT(tMax, false, limit)}</tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    // Fault levels
+    const entries = this._faultEntriesFor(this._faultPaneAll ? 'all' : undefined).sort((a, b) => (b.ik3 || 0) - (a.ik3 || 0));
+    const extra = new Set(o.extra);
+    html += `<div class="tcc-fault-title">Fault levels <button class="btn-small" id="btn-tcc-fault-all" aria-pressed="${this._faultPaneAll}">${this._faultPaneAll ? 'Buses in scope' : 'All buses'}</button></div>`;
+    if (!entries.length) {
+      html += '<div class="tcc-coord-info">No buses in scope.</div>';
+    } else {
+      html += `<table class="tcc-coord-table tcc-fault-table"><thead><tr><th>Show</th><th>Bus</th><th>kV</th><th>Ik″ 3Φ</th><th>Ik1</th>${hasMin ? '<th>Ik1 min</th>' : ''}<th>ip</th></tr></thead><tbody>`;
+      for (const e of entries) {
+        html += `<tr class="tcc-fault-bus"><td data-label="Show"><input type="checkbox" data-fault-bus="${escHtml(e.id)}" ${extra.has(e.id) ? 'checked' : ''} aria-label="Show ${escHtml(e.name)} on the chart"></td>
+          <td data-label="Bus">${escHtml(e.name)}${e.inScope ? '' : ' <span class="tcc-coord-info">off scope</span>'}</td><td data-label="kV">${e.kv ?? ''}</td>
+          <td data-label="Ik″ 3Φ">${e.ik3 ? e.ik3.toFixed(2) : '—'}</td><td data-label="Ik1">${e.ik1 ? e.ik1.toFixed(2) : '—'}</td>${hasMin ? `<td data-label="Ik1 min">${e.mn1 ? e.mn1.toFixed(2) : '—'}</td>` : ''}<td data-label="ip">${e.ip ? e.ip.toFixed(2) : '—'}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    host.innerHTML = html;
+    host.querySelectorAll('.tcc-fault-row').forEach(tr => {
+      const go = () => this.selectDevice(parseInt(tr.dataset.dev));
+      tr.addEventListener('click', go);
+      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    });
+    host.querySelectorAll('[data-fault-bus]').forEach(cb => cb.addEventListener('change', () => this._toggleFaultBus(cb.dataset.faultBus, cb.checked)));
+    document.getElementById('btn-tcc-fault-all')?.addEventListener('click', () => { this._faultPaneAll = !this._faultPaneAll; this._renderFaultPane(); });
+  },
+
   // ── Checks drawer (tabs, collapse) ──
 
   _showDrawerTab(tab) {
@@ -1381,10 +1514,11 @@ const TCC = {
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    for (const t of ['coord', 'seq', 'dist']) {
+    for (const t of ['coord', 'seq', 'dist', 'fault']) {
       const pane = document.getElementById('tcc-drawer-pane-' + t);
       if (pane) pane.hidden = t !== tab;
     }
+    if (tab === 'fault') this._renderFaultPane();
     document.querySelectorAll('[data-drawer-for]').forEach(b => { b.style.display = b.dataset.drawerFor === tab ? '' : 'none'; });
     this._setDrawerOpen(true);
   },
@@ -1622,6 +1756,7 @@ const TCC = {
 
   close() {
     this._openViewMenu(false);
+    this._openFaultMenu(false);
     const sv = document.getElementById('tcc-save-view');
     if (sv) sv.hidden = true;
     if (this._autoPreview) this._revertAutoPreview();
@@ -1987,7 +2122,7 @@ const TCC = {
 
   _setPathOnly(on) {
     this._pathOnly = !!on && this._miniSLDEndpointDeviceIdx >= 0;
-    this._pathSetCache = null;
+    this._pathSetCache = null; this._pathNodeCache = null;
     if (this._pathOnly) {
       // Damage curves on the path are the point of the view — make sure they show
       const set = this._pathIdSet();
@@ -2113,8 +2248,10 @@ const TCC = {
     // Compute plot area (tighter margins, no axis titles on narrow charts)
     const m = this._plotMargins(cw, h);
     this._narrowPlot = m.narrow;
+    this._faultEntries = this._faultEntriesNow();
+    const stripOn = this._fo().strip && this._faultEntries.length > 0 && this._faultStripKinds().length > 0;
     this.plotLeft = ox + m.left;
-    this.plotTop = m.top;
+    this.plotTop = m.top + (stripOn ? 30 : 0);
     this.plotRight = ox + cw - m.right;
     this.plotBottom = h - m.bottom;
     this.plotWidth = this.plotRight - this.plotLeft;
@@ -2179,6 +2316,7 @@ const TCC = {
       this._drawCursor(ctx, tabDevices);
     }
     ctx.restore();
+    if (single) this._drawFaultStrip(ctx); else this._faultTicks = [];
     if (single && this._cursor) this._drawCursorLabel(ctx);
 
     // Draw mho characteristic inset for distance relays
@@ -2188,6 +2326,7 @@ const TCC = {
     if (this._tooltip) {
       this._drawTooltip(ctx, this._tooltip);
     }
+    if (this._faultTip && single) this._drawFaultTip(ctx, this._faultTip);
 
     // Title (the modal header already says what this is on a narrow chart)
     if (this._narrowPlot) return;
@@ -3090,61 +3229,406 @@ const TCC = {
 
   // ── Fault current markers from analysis results ──
 
-  _drawFaultMarkers(ctx) {
-    if (!this.showFaultMarkers) return;
-    const fr = AppState.faultResults;
-    if (!fr || !fr.buses) return;
+  // ── Fault-level display ──
+  //
+  // Instead of a line + rotated label for every bus and kind, the chart shows the
+  // fault levels the selected PATH needs: two summary lines (highest and lowest in
+  // scope), a grouped strip above the plot for the rest, the part of each curve that
+  // lies between the lowest and highest fault at the buses it protects, and the trip
+  // time at the highest and at the MINIMUM fault (the dependability check).
 
-    const markers = []; // { current_ka, label, bus, voltage_kv, color }
+  MIN_FAULT_SLOW_S: 5, // amber above this trip time at minimum fault (SANS 10142-1 distribution-circuit disconnection time)
+  FAULT_KINDS: [
+    { key: 'ik3', label: '3Φ', name: 'Ik″ 3-phase', color: '#d32f2f' },
+    { key: 'ik1', label: 'SLG', name: 'Ik1 earth fault', color: '#1565c0' },
+    { key: 'ip', label: 'ip', name: 'ip peak', color: '#f57c00' },
+  ],
+
+  _faultOptsDefault() {
+    return { ik3: true, ik1: true, ip: false, scope: 'path', strip: true, lines: true, range: true, tmax: true, tmin: true, extra: [] };
+  },
+  faultOpts: null,       // set in init / from the project
+  _faultEntries: [],     // buses in scope for the current render
+  _faultTicks: [],       // strip hit-rects for the hover / tap readout
+  _faultTip: null,
+  _faultPaneAll: false,  // Fault levels tab: list every bus, not just those in scope
+
+  _fo() { return this.faultOpts || (this.faultOpts = { ...this._faultOptsDefault(), ...(AppState.tccFaultOpts || {}) }); },
+  _saveFaultOpts() { AppState.tccFaultOpts = { ...this._fo(), extra: [...this._fo().extra] }; AppState.dirty = true; },
+
+  // Every component id on any source → endpoint path (all types, so distribution boards count)
+  _pathNodeIds() {
+    if (!this._pathOnly) return null;
+    const ep = this.devices[this._miniSLDEndpointDeviceIdx];
+    if (!ep) return null;
+    const key = `${this._miniSLDEndpointDeviceIdx}|${AppState.wires.size}|${AppState.components.size}`;
+    if (this._pathNodeCache && this._pathNodeCache.key === key) return this._pathNodeCache.set;
+    const target = this._endpointCompId(ep);
+    const adj = this._wireAdjacency();
+    const sourceSet = this._sourceIdSet();
+    const set = new Set();
+    let expansions = 0;
+    for (const [srcId, comp] of AppState.components) {
+      if (comp.type !== 'utility' && comp.type !== 'generator') continue;
+      const stack = [{ node: srcId, trail: [srcId] }];
+      while (stack.length && expansions < 20000) {
+        expansions++;
+        const { node, trail } = stack.pop();
+        if (node === target) { for (const id of trail) set.add(id); continue; }
+        for (const n of adj.get(node) || []) {
+          if (trail.includes(n) || sourceSet.has(n)) continue;
+          stack.push({ node: n, trail: [...trail, n] });
+        }
+      }
+    }
+    this._pathNodeCache = { key, set: set.size ? set : null };
+    return this._pathNodeCache.set;
+  },
+
+  _wireAdjacency() {
+    const adj = new Map();
+    for (const [, w] of AppState.wires) {
+      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
+      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
+      adj.get(w.fromComponent).push(w.toComponent);
+      adj.get(w.toComponent).push(w.fromComponent);
+    }
+    return adj;
+  },
+
+  // What each element carries in the fault study: element id → [{ node, i3 }], where i3 is the
+  // 3-phase through-current (kA, already at the element's own voltage) for a fault at `node`.
+  // Taken from the study's branch contributions, so a device is only credited with the
+  // buses whose fault current actually flows through it (a generator breaker does not
+  // carry the utility's fault current, and a bus upstream of a device is not "its" fault).
+  _faultReach() {
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses) return new Map();
+    if (this._reachCache && this._reachCache.fr === fr) return this._reachCache.map;
+    const map = new Map();
+    for (const [node, r] of Object.entries(fr.buses)) {
+      for (const br of (r.branches || [])) {
+        if (!br.element_id || !(br.ik_ka > 0)) continue;
+        if (!map.has(br.element_id)) map.set(br.element_id, []);
+        map.get(br.element_id).push({ node, i3: br.ik_ka });
+      }
+    }
+    this._reachCache = { fr, map };
+    return map;
+  },
+
+  _faultAmps(kA, kv) {
+    let a = kA * 1000;
+    if (this.referenceVoltage && kv) a *= kv / this.referenceVoltage;
+    return a;
+  },
+
+  // Buses in scope for the fault display (with study values). `scope` overrides the option.
+  _faultEntriesFor(scope) {
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses) return [];
+    const o = this._fo();
+    const frMin = (AppState.faultResultsMin && AppState.faultResultsMin.buses) || null;
+    let allow = null;                       // Set of node ids, or null = no id filter
+    let kvs = null;                         // voltages of the visible curves
+    scope = scope || o.scope;
+    if (scope === 'path') {
+      allow = this._pathNodeIds();
+      if (!allow) scope = 'voltage';        // no path chosen: fall back to the curves' voltage
+    }
+    if (scope !== 'all' && !this.referenceVoltage) {
+      kvs = new Set(this._getVisibleDevicesForTab().filter(d => d.visible && d.voltage_kv).map(d => d.voltage_kv));
+    }
+    const extra = new Set(o.extra);
+    const out = [];
     for (const [busId, r] of Object.entries(fr.buses)) {
       const comp = AppState.components.get(busId);
-      const busName = comp?.props?.name || r.bus_name || busId;
-      const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
-
-      if (r.ik3 != null) markers.push({ current_ka: r.ik3, label: `${busName} 3Φ`, voltage_kv: vkv, color: '#d32f2f' });
-      if (r.ik1 != null) markers.push({ current_ka: r.ik1, label: `${busName} SLG`, voltage_kv: vkv, color: '#1565c0' });
-      // ip is the asymmetric peak — not directly comparable to the RMS TCC axis
-      if (r.ip != null) markers.push({ current_ka: r.ip, label: `${busName} ip (asym peak)`, voltage_kv: vkv, color: '#f57c00' });
+      const kv = r.voltage_kv || comp?.props?.voltage_kv || null;
+      const isExtra = extra.has(busId);
+      let inScope = true;
+      if (scope === 'path' && allow) inScope = allow.has(busId);
+      // Without a reference voltage the curves are in their own amps, so a fault level on
+      // another voltage would sit at a meaningless place: keep to the curves' voltage(s)
+      if (inScope && kvs && kvs.size) inScope = !kv || [...kvs].some(v => Math.abs(v - kv) < 0.01);
+      if (!inScope && !isExtra) continue;
+      const m = frMin && frMin[busId];
+      const e = {
+        id: busId, name: comp?.props?.name || r.bus_name || busId, kv, extra: isExtra && !inScope, inScope,
+        ik3: r.ik3 > 0 ? r.ik3 : null, ik1: r.ik1 > 0 ? r.ik1 : null, ip: r.ip > 0 ? r.ip : null,
+        mn3: m && m.ik3 > 0 ? m.ik3 : null, mn1: m && m.ik1 > 0 ? m.ik1 : null,
+      };
+      if (e.ik3 || e.ik1) out.push(e);
     }
+    return out;
+  },
 
-    if (markers.length === 0) return;
+  _faultEntriesNow() {
+    return this.showFaultMarkers ? this._faultEntriesFor() : [];
+  },
+
+  // Highest and lowest fault current over `entries` for the enabled kinds
+  _faultExtremes(entries) {
+    const o = this._fo();
+    let hi = null, lo = null;
+    const haveMin = !!(AppState.faultResultsMin && AppState.faultResultsMin.buses);
+    for (const e of entries) {
+      if (e.extra) continue;
+      const vals = [];
+      if (o.ik3 && e.ik3) vals.push({ kA: e.ik3, kind: '3Φ', min: false });
+      if (o.ik1 && e.ik1) vals.push({ kA: e.ik1, kind: 'SLG', min: false });
+      for (const v of vals) {
+        if (!hi || this._faultAmps(v.kA, e.kv) > hi.amps) hi = { amps: this._faultAmps(v.kA, e.kv), kA: v.kA, kind: v.kind, name: e.name };
+      }
+      // Lowest: minimum study when there is one, else the lowest value of the maximum study
+      const lows = [];
+      if (o.ik3 && (e.mn3 || e.ik3)) lows.push({ kA: e.mn3 || e.ik3, kind: '3Φ' });
+      if (o.ik1 && (e.mn1 || e.ik1)) lows.push({ kA: e.mn1 || e.ik1, kind: 'SLG' });
+      for (const v of lows) {
+        const a = this._faultAmps(v.kA, e.kv);
+        if (!lo || a < lo.amps) lo = { amps: a, kA: v.kA, kind: v.kind, name: e.name, fromMin: haveMin && !!(e.mn3 || e.mn1) };
+      }
+    }
+    return { hi, lo };
+  },
+
+  // The fault range one device has to work across, in the device's own amps: the highest and
+  // the lowest through-current over the buses it clears. Ik1 through-currents are the study's
+  // 3-phase branch current scaled by that bus's Ik1/Ik\u2033 ratio. The lowest uses the
+  // minimum study when there is one, else the lowest value in the maximum study.
+  _deviceFaultRange(dev) {
+    const fr = AppState.faultResults;
+    if (!fr || !fr.buses) return null;
+    const list = this._faultReach().get(this._endpointCompId(dev));
+    if (!list || !list.length) return null;
+    const o = this._fo();
+    const frMin = (AppState.faultResultsMin && AppState.faultResultsMin.buses) || null;
+    let iMax = 0, iMin = Infinity, maxBus = '', minBus = '', minKind = '', usedMin = false;
+    for (const { node, i3 } of list) {
+      const r = fr.buses[node];
+      const name = AppState.components.get(node)?.props?.name || r.bus_name || node;
+      const ratio1 = r.ik3 > 0 && r.ik1 > 0 ? r.ik1 / r.ik3 : null;
+      const hi = o.ik3 ? i3 : (o.ik1 && ratio1 ? i3 * ratio1 : 0);
+      if (hi * 1000 > iMax) { iMax = hi * 1000; maxBus = name; }
+      const m = frMin && frMin[node];
+      const mb = m && (m.branches || []).find(x => x.element_id === this._endpointCompId(dev));
+      const i3m = mb && mb.ik_ka > 0 ? mb.ik_ka : null;
+      const ratio1m = m && m.ik3 > 0 && m.ik1 > 0 ? m.ik1 / m.ik3 : ratio1;
+      const cands = [];
+      if (o.ik3) cands.push({ kA: i3m != null ? i3m : i3, kind: '3\u03A6', min: i3m != null });
+      if (o.ik1 && ratio1m) cands.push({ kA: (i3m != null ? i3m : i3) * ratio1m, kind: 'SLG', min: i3m != null });
+      for (const c of cands) {
+        if (c.kA * 1000 < iMin) { iMin = c.kA * 1000; minBus = name; minKind = c.kind; usedMin = c.min; }
+      }
+    }
+    if (!(iMax > 0) || !isFinite(iMin)) return null;
+    return { iMax, iMin: Math.min(iMin, iMax), maxBus, minBus, minKind, usedMin };
+  },
+
+  _fmtTime(t) {
+    if (t == null || !isFinite(t)) return 'no trip';
+    return t >= 1 ? t.toFixed(2) + ' s' : (t * 1000).toFixed(t < 0.01 ? 1 : 0) + ' ms';
+  },
+  _fmtKA(a) { return a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 1 : 2) + ' kA' : Math.round(a) + ' A'; },
+
+  // Same fault sets the strip / lines draw, as {amps, label} for Fit and the cursor jump list
+  _faultLevelsForView() {
+    const o = this._fo();
+    const out = [];
+    for (const e of this._faultEntriesNow()) {
+      for (const k of this.FAULT_KINDS) {
+        if (k.key === 'ip' || !o[k.key] || !e[k.key]) continue;
+        out.push({ amps: this._faultAmps(e[k.key], e.kv), label: `${e.name} ${k.label} ${e[k.key].toFixed(2)} kA` });
+        const mn = k.key === 'ik3' ? e.mn3 : e.mn1;
+        if (mn) out.push({ amps: this._faultAmps(mn, e.kv), label: `${e.name} ${k.label} min ${mn.toFixed(2)} kA` });
+      }
+    }
+    return out;
+  },
+
+  _faultAmpsForView() {
+    return this._faultLevelsForView().map(f => f.amps);
+  },
+
+  // ── Drawing ──
+
+  _faultStripKinds() {
+    const o = this._fo();
+    return this.FAULT_KINDS.filter(k => o[k.key]);
+  },
+
+  _drawFaultMarkers(ctx) {
+    const entries = this._faultEntries;
+    if (!this.showFaultMarkers || !entries.length) return;
+    const o = this._fo();
+    const { hi, lo } = this._faultExtremes(entries);
+    const inX = (a) => { const x = this._currentToX(a); return x >= this.plotLeft && x <= this.plotRight ? x : null; };
 
     ctx.save();
-    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
-
-    for (const m of markers) {
-      let amps = m.current_ka * 1000; // kA to A
-      // Apply voltage reference scaling if active
-      if (this.referenceVoltage && m.voltage_kv) {
-        amps = amps * (m.voltage_kv / this.referenceVoltage);
+    // Working range on each curve + trip times at the highest and the lowest fault
+    if (o.range || o.tmax || o.tmin) {
+      const selIdx = this.selectedDeviceIndex;
+      for (const dev of this._getVisibleDevicesForTab()) {
+        if (!dev.visible || dev.deviceType === 'motor_start' || dev.deviceType === 'custom_curve') continue;
+        const rng = this._deviceFaultRange(dev);
+        if (!rng) continue;
+        const devIdx = this.devices.indexOf(dev);
+        const emphasise = !this._busy || devIdx === selIdx || devIdx === this._hoverDevIdx;
+        if (o.range && (emphasise || !this._busy)) {
+          ctx.beginPath();
+          let started = false;
+          for (let k = 0; k <= 40; k++) {
+            const i = rng.iMin * Math.pow(rng.iMax / rng.iMin, k / 40);
+            const t = this._deviceTripTime(dev, i);
+            if (!isFinite(t) || t <= 0) { started = false; continue; }
+            const x = this._currentToX(this._scaleCurrent(i, dev)), y = this._timeToY(t);
+            if (started) ctx.lineTo(x, y); else { ctx.moveTo(x, y); started = true; }
+          }
+          ctx.strokeStyle = dev.color; ctx.lineWidth = 5; ctx.globalAlpha = this._busy ? 0.5 : 0.85; ctx.lineCap = 'round';
+          ctx.stroke();
+          ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+        }
+        const dots = [];
+        if (o.tmax) dots.push({ i: rng.iMax, tag: 'max' });
+        if (o.tmin && rng.iMin < rng.iMax * 0.999) dots.push({ i: rng.iMin, tag: 'min' });
+        for (const d of dots) {
+          const t = this._deviceTripTime(dev, d.i);
+          const x = this._currentToX(this._scaleCurrent(d.i, dev));
+          if (x < this.plotLeft || x > this.plotRight) continue;
+          if (!isFinite(t) || t <= 0) {
+            // Does not trip at this current: a red cross on the axis at that current
+            if (d.tag === 'min' && emphasise) {
+              ctx.strokeStyle = '#c62828'; ctx.lineWidth = 2;
+              ctx.beginPath(); ctx.moveTo(x - 4, this.plotBottom - 12); ctx.lineTo(x + 4, this.plotBottom - 4);
+              ctx.moveTo(x + 4, this.plotBottom - 12); ctx.lineTo(x - 4, this.plotBottom - 4); ctx.stroke();
+            }
+            continue;
+          }
+          const y = this._timeToY(t);
+          if (y < this.plotTop || y > this.plotBottom) continue;
+          ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = d.tag === 'max' ? dev.color : '#ffffff'; ctx.fill();
+          ctx.strokeStyle = dev.color; ctx.lineWidth = d.tag === 'max' ? 1.5 : 2.2; ctx.stroke();
+          if (emphasise) {
+            const txt = `${this._fmtTime(t)}${d.tag === 'min' ? ' @min' : ''}`;
+            ctx.font = '600 10px -apple-system, BlinkMacSystemFont, sans-serif';
+            const w = ctx.measureText(txt).width;
+            const lx = d.tag === 'max' ? x + 7 : x - 7 - w;
+            ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(lx - 2, y - 7, w + 4, 13);
+            ctx.fillStyle = dev.color; ctx.textAlign = 'left'; ctx.fillText(txt, lx, y + 3);
+          }
+        }
       }
-      if (amps < this.currentMin || amps > this.currentMax) continue;
-
-      const x = this._currentToX(amps);
-      if (x < this.plotLeft || x > this.plotRight) continue;
-
-      // Dashed vertical line
-      ctx.setLineDash([3, 4]);
-      ctx.strokeStyle = m.color;
-      ctx.lineWidth = 1.2;
-      ctx.globalAlpha = 0.6;
-      ctx.beginPath();
-      ctx.moveTo(x, this.plotTop);
-      ctx.lineTo(x, this.plotBottom);
-      ctx.stroke();
-
-      // Label at top (rotated)
-      ctx.globalAlpha = 0.85;
-      ctx.setLineDash([]);
-      ctx.save();
-      ctx.translate(x + 3, this.plotTop + 4);
-      ctx.rotate(Math.PI / 2);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = m.color;
-      ctx.fillText(`${m.label} ${m.current_ka.toFixed(2)} kA`, 0, 0);
-      ctx.restore();
     }
 
+    // Summary lines: highest and lowest fault in scope
+    const drawLine = (amps, color, text, yOff, dash) => {
+      const x = inX(amps);
+      if (x == null) return null;
+      ctx.setLineDash(dash || [5, 4]); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(x, this.plotTop); ctx.lineTo(x, this.plotBottom); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+      const w = ctx.measureText(text).width + 10;
+      const right = x + 6 + w <= this.plotRight;
+      const bx = right ? x + 4 : x - 4 - w, by = this.plotTop + 4 + yOff;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fillRect(bx, by, w, 17);
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(bx, by, w, 17);
+      ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.fillText(text, bx + 5, by + 12.5);
+      return x;
+    };
+    if (o.lines) {
+      let xHi = null;
+      if (hi) xHi = drawLine(hi.amps, '#b71c1c', `Ik″ max ${this._fmtKA(hi.amps)} · ${hi.name}`, 0);
+      if (lo && (!hi || Math.abs(lo.amps - hi.amps) > 1)) {
+        const xLo = inX(lo.amps);
+        const close = xHi != null && xLo != null && Math.abs(xLo - xHi) < 230;
+        drawLine(lo.amps, '#0d47a1', `Ik min ${this._fmtKA(lo.amps)} · ${lo.name} ${lo.kind}${lo.fromMin ? '' : ' (est.)'}`, close ? 22 : 0);
+      }
+    }
+    // Buses ticked in the Fault levels tab get their own line
+    for (const e of entries) {
+      if (!this._fo().extra.includes(e.id)) continue;
+      for (const k of this.FAULT_KINDS) {
+        if (!o[k.key] || !e[k.key]) continue;
+        drawLine(this._faultAmps(e[k.key], e.kv), k.color, `${e.name} ${k.label} ${e[k.key].toFixed(2)} kA`, 44 + (k.key === 'ik1' ? 20 : 0), [2, 3]);
+      }
+    }
+    ctx.restore();
+  },
+
+  // Strip above the plot: one tick per fault level; levels within a few pixels merge into a counted group
+  _drawFaultStrip(ctx) {
+    this._faultTicks = [];
+    const entries = this._faultEntries;
+    const o = this._fo();
+    if (!this.showFaultMarkers || !o.strip || !entries.length) return;
+    const kinds = this._faultStripKinds();
+    if (!kinds.length) return;
+    const laneTop = this.plotTop - 28, laneH = 24;
+    const rowH = laneH / kinds.length;
+    ctx.save();
+    ctx.fillStyle = 'rgba(120,120,120,0.07)'; ctx.fillRect(this.plotLeft, laneTop, this.plotWidth, laneH);
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1; ctx.strokeRect(this.plotLeft + 0.5, laneTop + 0.5, this.plotWidth - 1, laneH - 1);
+    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+    kinds.forEach((k, ki) => {
+      const y0 = laneTop + ki * rowH;
+      ctx.fillStyle = k.color; ctx.textAlign = 'right';
+      ctx.fillText(k.label, this.plotLeft - 6, y0 + rowH / 2 + 3);
+      const pts = [];
+      for (const e of entries) {
+        if (!e[k.key]) continue;
+        const x = this._currentToX(this._faultAmps(e[k.key], e.kv));
+        if (x < this.plotLeft || x > this.plotRight) continue;
+        pts.push({ x, name: e.name, kA: e[k.key] });
+      }
+      pts.sort((a, b) => a.x - b.x);
+      const groups = [];
+      for (const p of pts) {
+        const g = groups[groups.length - 1];
+        if (g && p.x - g.xMax < 6) { g.items.push(p); g.xMax = p.x; } else groups.push({ xMin: p.x, xMax: p.x, items: [p] });
+      }
+      for (const g of groups) {
+        const cx = (g.xMin + g.xMax) / 2;
+        ctx.globalAlpha = 0.28; ctx.fillStyle = k.color;
+        if (g.xMax - g.xMin > 2) ctx.fillRect(g.xMin, y0 + rowH / 2 - 2.5, g.xMax - g.xMin, 5);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = k.color; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(g.xMin, y0 + 2); ctx.lineTo(g.xMin, y0 + rowH - 2);
+        if (g.xMax > g.xMin) { ctx.moveTo(g.xMax, y0 + 2); ctx.lineTo(g.xMax, y0 + rowH - 2); }
+        ctx.stroke();
+        if (g.items.length > 1) {
+          ctx.beginPath(); ctx.arc(cx, y0 + rowH / 2, 6.5, 0, Math.PI * 2); ctx.fillStyle = k.color; ctx.fill();
+          ctx.fillStyle = '#fff'; ctx.font = '600 9px -apple-system, BlinkMacSystemFont, sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText(String(g.items.length), cx, y0 + rowH / 2 + 3.2);
+        }
+        this._faultTicks.push({ x: g.xMin - 5, y: y0, w: g.xMax - g.xMin + 10, h: rowH, kind: k, items: g.items });
+      }
+    });
+    ctx.restore();
+  },
+
+  _faultTipAt(mx, my) {
+    for (const t of this._faultTicks) {
+      if (mx >= t.x && mx <= t.x + t.w && my >= t.y - 2 && my <= t.y + t.h + 2) {
+        const items = [...t.items].sort((a, b) => b.kA - a.kA);
+        return { x: mx, y: my, title: `${t.kind.name} · ${items.length} bus${items.length === 1 ? '' : 'es'}`,
+          lines: items.slice(0, 10).map(i => `${i.name}  ${i.kA.toFixed(2)} kA`), more: Math.max(0, items.length - 10), color: t.kind.color };
+      }
+    }
+    return null;
+  },
+
+  _drawFaultTip(ctx, tip) {
+    const lines = [tip.title, ...tip.lines];
+    if (tip.more) lines.push(`+${tip.more} more`);
+    ctx.save();
+    ctx.font = '10px "SF Mono", Consolas, monospace';
+    const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + 12, h = lines.length * 14 + 10;
+    let tx = tip.x + 10, ty = tip.y + 14;
+    if (tx + w > this.plotRight + 20) tx = tip.x - w - 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.beginPath(); ctx.roundRect(tx, ty, w, h, 4); ctx.fill();
+    ctx.textAlign = 'left';
+    lines.forEach((l, i) => { ctx.fillStyle = i === 0 ? tip.color : '#fff'; ctx.fillText(l, tx + 6, ty + 5 + (i + 1) * 14 - 3); });
     ctx.restore();
   },
 
@@ -3374,9 +3858,11 @@ const TCC = {
     if (mx < this.plotLeft || mx > this.plotRight || my < this.plotTop || my > this.plotBottom) {
       this._tooltip = null;
       this._hoverDevIdx = -1;
+      this._faultTip = this._faultTipAt(mx, my);
       this.render();
       return;
     }
+    this._faultTip = null;
 
     // On a busy chart the curve under the pointer is emphasised (and labelled)
     this._hoverDevIdx = this._busy ? this._nearestDeviceAt(mx, my, 10) : -1;
@@ -3793,9 +4279,15 @@ const TCC = {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
+    if (my < this.plotTop && this._faultTicks.length) {
+      this._faultTip = this._faultTipAt(mx, my); // tap a strip tick: name the buses
+      this.render();
+      return;
+    }
     if (mx < this.plotLeft || mx > this.plotRight || my < this.plotTop || my > this.plotBottom) {
       return;
     }
+    if (this._faultTip) this._faultTip = null;
 
     const bestIdx = this._nearestDeviceAt(mx, my, 20);
 
@@ -4737,6 +5229,7 @@ const TCC = {
 
     resultsDiv.innerHTML = html;
     this._bindCoordResults(resultsDiv);
+    this._renderFaultPane();
     if (this._pairFocus) this.render(); // keep the margin band in step with edits
   },
 
