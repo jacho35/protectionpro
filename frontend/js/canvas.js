@@ -458,11 +458,14 @@ const Canvas = {
       return;
     }
 
+    // Shift on desktop, the Multi toggle on phones: add to the selection
+    const additive = e.shiftKey || (typeof MobileUI !== 'undefined' && MobileUI.multiSelect);
+
     // Check if clicked on a group bounding box
     const groupEl = e.target.closest('.sld-group');
     if (groupEl && groupEl.dataset.groupId) {
       const gid = groupEl.dataset.groupId;
-      if (!e.shiftKey) AppState.clearSelection();
+      if (!additive) AppState.clearSelection();
       AppState.selectGroup(gid);
       this.render();
       return;
@@ -473,7 +476,7 @@ const Canvas = {
     if (compEl) {
       const id = compEl.dataset.id;
       const comp = AppState.components.get(id);
-      if (e.shiftKey) {
+      if (additive) {
         AppState.toggleSelect(id);
       } else if (!AppState.selectedIds.has(id)) {
         AppState.select(id);
@@ -501,7 +504,7 @@ const Canvas = {
     const wireEl = e.target.closest('.sld-wire');
     if (wireEl) {
       const id = wireEl.dataset.id;
-      if (e.shiftKey) {
+      if (additive) {
         AppState.toggleSelect(id);
       } else {
         AppState.select(id);
@@ -526,7 +529,7 @@ const Canvas = {
     }
 
     // Click on empty canvas: start selection box or clear selection
-    if (e.shiftKey) {
+    if (additive) {
       // Shift+drag: remember current selection to preserve it
       this.selBoxBaseIds = new Set(AppState.selectedIds);
     } else {
