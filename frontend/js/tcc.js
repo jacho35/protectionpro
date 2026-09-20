@@ -84,6 +84,137 @@ const TCC = {
     this.ctx = this.canvas.getContext('2d');
     this._bindEvents();
     this._initMiniSLD();
+    this._initCompact();
+  },
+
+  // ── Compact layout (phones, short landscape screens) ──
+  // One bottom sheet (Devices · Settings · Checks · Path) replaces the side panel,
+  // the checks drawer and the mini-SLD column. The existing sections are MOVED into
+  // the sheet (not rebuilt) so every id and listener keeps working; leaving compact
+  // mode moves them back. CSS lives in mobile.css, keyed on .tcc-compact.
+  _compactOn: false,
+  _sheetTab: 'devices',
+
+  _initCompact() {
+    this._compactMQ = window.matchMedia('(max-width: 768px), (max-height: 520px)');
+    this._landscapeMQ = window.matchMedia('(orientation: landscape)');
+    this._coarseMQ = window.matchMedia('(pointer: coarse)');
+    for (const mq of [this._compactMQ, this._landscapeMQ]) mq.addEventListener('change', () => this._applyCompact());
+    document.querySelectorAll('.tcc-sheet-tab').forEach(b =>
+      b.addEventListener('click', () => this._showSheetTab(b.dataset.sheetTab)));
+    this._applyCompact();
+  },
+
+  _applyCompact() {
+    const modal = document.getElementById('tcc-modal');
+    if (!modal) return;
+    const compact = this._compactMQ.matches;
+    const landscape = compact && this._landscapeMQ.matches;
+    modal.classList.toggle('tcc-compact', compact);
+    modal.classList.toggle('tcc-compact-landscape', landscape);
+    if (compact && !this._compactOn) this._moveIntoSheet();
+    else if (!compact && this._compactOn) this._moveOutOfSheet();
+    this._compactOn = compact;
+
+    // Compare needs the width: not offered on a portrait phone
+    if (compact && !landscape && this.compareMode) {
+      this.compareMode = false;
+      this.compareTabId = null;
+      const btn = document.getElementById('btn-tcc-compare');
+      if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); }
+      const sec = document.getElementById('tcc-compare-section');
+      if (sec) sec.style.display = 'none';
+    }
+    if (compact) this._showSheetTab(this._sheetTab);
+    else modal.classList.remove('tcc-sheet-tall');
+    requestAnimationFrame(() => this.render());
+  },
+
+  _moveIntoSheet() {
+    this._placeholders = [];
+    const moves = [
+      ['tcc-devices-section', 'tcc-sheet-pane-devices'],
+      ['tcc-selected-section', 'tcc-sheet-pane-settings'],
+      ['tcc-drawer', 'tcc-sheet-pane-checks'],
+      ['tcc-mini-sld', 'tcc-sheet-pane-path'],
+    ];
+    const chartArea = document.querySelector('.tcc-chart-area');
+    const cursor = document.getElementById('tcc-cursor-panel'); // sits under the chart as a chip row
+    for (const [id, paneId] of moves) {
+      const node = document.getElementById(id), pane = document.getElementById(paneId);
+      if (node && pane) this._movePlaced(node, pane);
+    }
+    if (cursor && chartArea) this._movePlaced(cursor, chartArea);
+    this._setDrawerOpen(true);
+    document.getElementById('tcc-sheet').hidden = false;
+  },
+
+  _moveOutOfSheet() {
+    document.getElementById('tcc-sheet').hidden = true;
+    for (const { node, ph } of (this._placeholders || []).reverse()) {
+      if (ph.parentNode) { ph.parentNode.insertBefore(node, ph); ph.remove(); }
+    }
+    this._placeholders = [];
+  },
+
+  _movePlaced(node, target) {
+    const ph = document.createComment('tcc-placeholder');
+    node.parentNode.insertBefore(ph, node);
+    target.appendChild(node);
+    this._placeholders.push({ node, ph });
+  },
+
+  _showSheetTab(tab) {
+    this._sheetTab = tab;
+    document.querySelectorAll('.tcc-sheet-tab').forEach(b => {
+      const on = b.dataset.sheetTab === tab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    for (const t of ['devices', 'settings', 'checks', 'path']) {
+      const pane = document.getElementById('tcc-sheet-pane-' + t);
+      if (pane) pane.hidden = t !== tab;
+    }
+    // Settings and Checks get a taller sheet; the chart keeps its minimum height
+    document.getElementById('tcc-modal')?.classList.toggle('tcc-sheet-tall', tab === 'settings' || tab === 'checks');
+    if (tab === 'path') requestAnimationFrame(() => this._renderMiniSLD());
+  },
+
+  // After a (re)open: start the touch cursor, and land on the right sheet tab
+  _afterOpenCompact(fromDevice) {
+    if (!this._compactOn) return;
+    if (this._cursor == null) this._setCursorMode(true);
+    this._showSheetTab(fromDevice ? 'settings' : (this._sheetTab || 'devices'));
+    this.render();
+  },
+
+  // − / + buttons around number inputs (touch has no arrow keys)
+  _addSteppers(container) {
+    if (!container || !(this._compactOn || (this._coarseMQ && this._coarseMQ.matches))) return;
+    container.querySelectorAll('input[type="number"]').forEach(input => {
+      if (input.parentNode.classList.contains('tcc-stepper')) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'tcc-stepper';
+      input.parentNode.insertBefore(wrap, input);
+      input.setAttribute('inputmode', 'decimal');
+      const mk = (txt, label, dir) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = txt; b.setAttribute('aria-label', label);
+        b.addEventListener('click', () => {
+          const step = parseFloat(input.step) || 1;
+          const decimals = (String(input.step || '1').split('.')[1] || '').length;
+          let v = (parseFloat(input.value) || 0) + dir * step;
+          if (input.min !== '') v = Math.max(parseFloat(input.min), v);
+          if (input.max !== '') v = Math.min(parseFloat(input.max), v);
+          input.value = v.toFixed(decimals);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        return b;
+      };
+      const lbl = input.closest('.tcc-form-row')?.querySelector('label')?.textContent?.trim() || 'value';
+      wrap.append(mk('−', `Decrease ${lbl}`, -1), input, mk('+', `Increase ${lbl}`, 1));
+    });
   },
 
   // Label drag state
@@ -251,7 +382,7 @@ const TCC = {
   _pinchStart() {
     this._curveDrag = null; this._labelDrag = null; this._pan = null; this._tooltip = null;
     const [a, b] = [...this._pointers.values()];
-    this._pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, last: 1 };
+    this._pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, last: 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
   },
 
   _pinchMove() {
@@ -262,6 +393,16 @@ const TCC = {
     const ratio = d / this._pinch.d0;
     const step = ratio / this._pinch.last;
     this._pinch.last = ratio;
+    // Two-finger pan: the midpoint drags the view (content follows the fingers)
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const dx = mid.x - this._pinch.mid.x, dy = mid.y - this._pinch.mid.y;
+    this._pinch.mid = mid;
+    if (dx || dy) {
+      const L = this._viewLimits;
+      const cSpan = Math.log10(this.currentMax / this.currentMin), tSpan = Math.log10(this.timeMax / this.timeMin);
+      this._setAxis('currentMin', 'currentMax', Math.log10(this.currentMin) - dx / this.plotWidth * cSpan, cSpan, L.iMin, L.iMax);
+      this._setAxis('timeMin', 'timeMax', Math.log10(this.timeMin) + dy / this.plotHeight * tSpan, tSpan, L.tMin, L.tMax);
+    }
     const rect = this.canvas.getBoundingClientRect();
     const fx = ((a.x + b.x) / 2 - rect.left - this.plotLeft) / this.plotWidth;
     const fy = 1 - ((a.y + b.y) / 2 - rect.top - this.plotTop) / this.plotHeight;
@@ -344,6 +485,8 @@ const TCC = {
     }
     this._pan = {
       x0: mx, y0: my, moved: false,
+      // With the cursor on, a finger/pen drag moves the cursor (two fingers pan and pinch)
+      cursorDrag: this._cursor != null && e.pointerType !== 'mouse',
       logCMin: Math.log10(this.currentMin), cSpan: Math.log10(this.currentMax / this.currentMin),
       logTMin: Math.log10(this.timeMin), tSpan: Math.log10(this.timeMax / this.timeMin),
     };
@@ -356,6 +499,10 @@ const TCC = {
     const dy = e.clientY - rect.top - pan.y0;
     if (!pan.moved && Math.hypot(dx, dy) < 4) return;
     pan.moved = true;
+    if (pan.cursorDrag) {
+      this.setCursor(this._xToCurrent(e.clientX - rect.left));
+      return;
+    }
     this.canvas.style.cursor = 'grabbing';
     this._tooltip = null;
     const L = this._viewLimits;
@@ -482,7 +629,7 @@ const TCC = {
     for (const h of this._curveHandles) {
       let hit = false;
       const dx = mx - h.x, dy = my - h.y;
-      const slop = e.pointerType === 'touch' ? 12 : e.pointerType === 'pen' ? 6 : 3;
+      const slop = e.pointerType === 'touch' ? 16 : e.pointerType === 'pen' ? 6 : 3;
       const hr2 = (h.r + slop) * (h.r + slop);
       if (dx * dx + dy * dy <= hr2) {
         hit = true;
@@ -870,6 +1017,7 @@ const TCC = {
         this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
         this._renderMiniSLD();
+        this._afterOpenCompact(false);
       });
     });
   },
@@ -922,6 +1070,7 @@ const TCC = {
         this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
         this._renderMiniSLD();
+        this._afterOpenCompact(true);
       });
     });
   },
@@ -1340,6 +1489,7 @@ const TCC = {
     // Background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
+    if (w < 120 || h < 100) return; // hidden or collapsed: nothing sensible to draw
 
     if (this.compareMode && this.compareTabId) {
       // ── Comparison mode: two charts side-by-side ──
@@ -1359,15 +1509,22 @@ const TCC = {
     }
   },
 
+  _plotMargins(cw, h) {
+    if (cw < 600 || h < 260) return { left: 44, top: 12, right: 10, bottom: 26, narrow: true };
+    return { left: 70, top: 30, right: 20, bottom: 40, narrow: false };
+  },
+
   _renderSingleChart(ctx, w, h, tabId, offsetX, chartWidth) {
     const ox = offsetX || 0;
     const cw = chartWidth || w;
 
-    // Compute plot area
-    this.plotLeft = ox + 70;
-    this.plotTop = 30;
-    this.plotRight = ox + cw - 20;
-    this.plotBottom = h - 40;
+    // Compute plot area (tighter margins, no axis titles on narrow charts)
+    const m = this._plotMargins(cw, h);
+    this._narrowPlot = m.narrow;
+    this.plotLeft = ox + m.left;
+    this.plotTop = m.top;
+    this.plotRight = ox + cw - m.right;
+    this.plotBottom = h - m.bottom;
     this.plotWidth = this.plotRight - this.plotLeft;
     this.plotHeight = this.plotBottom - this.plotTop;
 
@@ -1433,7 +1590,8 @@ const TCC = {
       this._drawTooltip(ctx, this._tooltip);
     }
 
-    // Title
+    // Title (the modal header already says what this is on a narrow chart)
+    if (this._narrowPlot) return;
     ctx.fillStyle = '#333';
     ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
@@ -1527,7 +1685,8 @@ const TCC = {
     ctx.strokeRect(this.plotLeft, this.plotTop, this.plotWidth, this.plotHeight);
 
     ctx.fillStyle = '#555';
-    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+    const tickFont = (this._narrowPlot ? 11 : 10) + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.font = tickFont;
 
     // X axis labels (current) — add 2/5 (or every digit) when zoomed in
     ctx.textAlign = 'center';
@@ -1541,12 +1700,14 @@ const TCC = {
       ctx.fillText(this._formatValue(val, 'A'), x, this.plotBottom + 14);
     }
 
-    // X axis title
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText('Current (A)', (this.plotLeft + this.plotRight) / 2, this.plotBottom + 30);
+    // X axis title (tick labels already carry the unit on a narrow chart)
+    if (!this._narrowPlot) {
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText('Current (A)', (this.plotLeft + this.plotRight) / 2, this.plotBottom + 30);
+    }
 
     // Y axis labels (time)
-    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.font = tickFont;
     ctx.textAlign = 'right';
     const tSpan = Math.log10(this.timeMax / this.timeMin);
     let lastY = Infinity;
@@ -1558,6 +1719,7 @@ const TCC = {
     }
 
     // Y axis title
+    if (this._narrowPlot) return;
     ctx.save();
     ctx.translate(14, (this.plotTop + this.plotBottom) / 2);
     ctx.rotate(-Math.PI / 2);
@@ -2278,6 +2440,7 @@ const TCC = {
   // ── Interactive curve handles (drawn as circles on relay/CB curves) ──
 
   _drawCurveHandles(ctx) {
+    const R = (h) => h.r + (this._coarseMQ && this._coarseMQ.matches ? 4 : 0); // bigger targets for fingers
     for (const h of this._curveHandles) {
       if (h.hitRect) {
         // Draw handle circle at the vertical drop midpoint with left-right arrows
@@ -2285,7 +2448,7 @@ const TCC = {
         ctx.globalAlpha = 1;
         // Draw handle circle
         ctx.beginPath();
-        ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+        ctx.arc(h.x, h.y, R(h), 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.fill();
         ctx.strokeStyle = h.color || '#333';
@@ -2307,7 +2470,7 @@ const TCC = {
         ctx.restore();
       } else {
         ctx.beginPath();
-        ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+        ctx.arc(h.x, h.y, R(h), 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.fill();
         ctx.strokeStyle = h.color || '#333';
@@ -2670,7 +2833,7 @@ const TCC = {
     for (const h of this._curveHandles) {
       let hovering = false;
       const dx = mx - h.x, dy = my - h.y;
-      const slop = e.pointerType === 'touch' ? 12 : e.pointerType === 'pen' ? 6 : 3;
+      const slop = e.pointerType === 'touch' ? 16 : e.pointerType === 'pen' ? 6 : 3;
       const hr2 = (h.r + slop) * (h.r + slop);
       if (dx * dx + dy * dy <= hr2) {
         hovering = true;
@@ -2945,6 +3108,7 @@ const TCC = {
 
     if (this.selectedDeviceIndex < 0 || this.selectedDeviceIndex >= this.devices.length) {
       section.classList.add('tcc-inspector-empty');
+      document.querySelector('.tcc-sheet-tab[data-sheet-tab="settings"]')?.classList.remove('has-selection');
       title.textContent = 'Selected device';
       container.innerHTML = '<div class="tcc-inspector-hint">Select a device \u2014 click its row or its curve \u2014 to edit its settings here. With a curve selected, arrow keys nudge its handles.</div>';
       return;
@@ -2952,6 +3116,7 @@ const TCC = {
 
     const dev = this.devices[this.selectedDeviceIndex];
     section.classList.remove('tcc-inspector-empty');
+    document.querySelector('.tcc-sheet-tab[data-sheet-tab="settings"]')?.classList.add('has-selection');
     section.style.display = '';
     title.textContent = dev.name;
 
@@ -3124,6 +3289,7 @@ const TCC = {
       el.addEventListener('change', handler);
       if (el.tagName === 'INPUT') el.addEventListener('input', handler);
     });
+    this._addSteppers(container);
   },
 
   _applySelectedDeviceSetting(el) {
@@ -3793,13 +3959,13 @@ const TCC = {
         let cells;
         if (r.ratioRule) {
           const ratioTxt = r.ratio > 0 ? `${r.ratio.toFixed(2)}:1` : '?:1';
-          cells = `<td>—</td><td class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">fuse ratio ${ratioTxt}</td><td>≥ 1.6:1 (2:1 rec.)</td>`;
+          cells = `<td data-label="At current">—</td><td data-label="Margin" class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">fuse ratio ${ratioTxt}</td><td data-label="Required">≥ 1.6:1 (2:1 rec.)</td>`;
         } else {
           const bus = r.tp.busId ? AppState.components.get(r.tp.busId)?.props?.name : null;
           const where = bus ? ` <span class="tcc-coord-info">${escHtml(bus)} ${r.tp.earth ? 'SLG' : '3Φ'}</span>` : '';
-          cells = `<td>${fmtI(r.tp.amps)}${where}</td><td class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">${fmtDt(r.margin)}</td><td>${fmtDt(r.required)}</td>`;
+          cells = `<td data-label="At current">${fmtI(r.tp.amps)}${where}</td><td data-label="Margin" class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">${fmtDt(r.margin)}</td><td data-label="Required">${fmtDt(r.required)}</td>`;
         }
-        html += `<tr class="tcc-coord-row${focus}" data-key="${escHtml(r.key)}" tabindex="0" role="button" aria-label="Show ${escHtml(r.down.name)} and ${escHtml(r.up.name)} on the chart"><td>${pill[r.status]}</td><td>${escHtml(r.down.name)}</td><td>${escHtml(r.up.name)}</td>${cells}</tr>`;
+        html += `<tr class="tcc-coord-row${focus}" data-key="${escHtml(r.key)}" tabindex="0" role="button" aria-label="Show ${escHtml(r.down.name)} and ${escHtml(r.up.name)} on the chart"><td>${pill[r.status]}</td><td data-label="Downstream">${escHtml(r.down.name)}</td><td data-label="Upstream">${escHtml(r.up.name)}</td>${cells}</tr>`;
       }
       html += '</tbody></table>';
     }
