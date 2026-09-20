@@ -311,13 +311,17 @@ def run_unbalanced_load_flow(
         z0_total: complex | None = complex(0, 0)
         z0_blocked = False
 
+        # Zone voltages are needed by BOTH branches: the transformer branch
+        # assigns each cable to its own side's zone, the no-transformer branch
+        # puts every cable in the single zone these buses bound.
+        bus_a_v = (components[bus_a].props.get("voltage_kv", 11)
+                   if bus_a in components else 11)
+        bus_b_v = (components[bus_b].props.get("voltage_kv", 11)
+                   if bus_b in components else 11)
+
         if has_xfmr:
             path_a_ids = {e.id for e in path_a}
             path_b_ids = {e.id for e in path_b}
-            bus_a_v = (components[bus_a].props.get("voltage_kv", 11)
-                       if bus_a in components else 11)
-            bus_b_v = (components[bus_b].props.get("voltage_kv", 11)
-                       if bus_b in components else 11)
 
             for e in all_elems.values():
                 if e.type == "transformer":
@@ -364,15 +368,19 @@ def run_unbalanced_load_flow(
                         z0_total = (z0_total or complex(0, 0)) + z
 
         else:
-            # No transformer — all cables
+            # No transformer — all cables, and the whole chain sits in ONE
+            # voltage zone, the one its bounding buses define. Both the Z1 and
+            # the Z0 base take that zone voltage, so a cable carrying a stale
+            # voltage_kv prop is still referred to the right per-unit base
+            # ([EE-12 mirror], see loadflow._get_impedance).
             for e in all_elems.values():
-                z = _get_impedance(e, base_mva)
+                z = _get_impedance(e, base_mva, v_kv=bus_a_v)
                 z1_total += z
                 z2_total += z
                 if e.type == "cable":
+                    cable_voltages[e.id] = bus_a_v
                     z0_total = ((z0_total or complex(0, 0))
-                                + _cable_z0_pu(e, base_mva,
-                                               e.props.get("voltage_kv", 11), freq_hz))
+                                + _cable_z0_pu(e, base_mva, bus_a_v, freq_hz))
                 else:
                     z0_total = (z0_total or complex(0, 0)) + z * 3
 
