@@ -61,6 +61,13 @@ const TCC = {
   compareMode: false,
   compareTabId: null, // second tab ID for comparison
 
+  // ── Coordination rows / focus, pinned cursor, auto-coordinate preview ──
+  _coordRows: [],         // graded pairs from the last coordination check
+  _pairFocus: null,       // key of the row highlighted on the chart
+  _cursor: null,          // pinned cursor current (display amps) or null
+  _autoPreview: null,     // { before: Map(dev -> settings), changes, failures } while previewing
+  _autoNote: null,        // one-shot message shown above the coordination table
+
   // ── View limits + pan state ──
   _viewLimits: { iMin: 0.1, iMax: 1e7, tMin: 1e-4, tMax: 1e5 },
   _pan: null,        // { x0, y0, cMin, cMax, tMin, tMax, moved } while dragging empty plot
@@ -183,6 +190,27 @@ const TCC = {
     bind('btn-tcc-zoom-in', () => this._zoomAt(0.5, 0.5, 1.5, { x: true, y: true }));
     bind('btn-tcc-zoom-out', () => this._zoomAt(0.5, 0.5, 1 / 1.5, { x: true, y: true }));
     bind('btn-tcc-fit', () => this.fitView());
+
+    // Checks drawer: tabs + collapse
+    document.querySelectorAll('.tcc-drawer-tab').forEach(b => b.addEventListener('click', () => this._showDrawerTab(b.dataset.drawerTab)));
+    bind('btn-tcc-drawer-toggle', () => {
+      const drawer = document.getElementById('tcc-drawer');
+      this._setDrawerOpen(drawer.classList.contains('tcc-drawer-collapsed'));
+    });
+    this._showDrawerTab('coord');
+
+    // Pinned cursor
+    bind('btn-tcc-cursor', () => { this._setCursorMode(this._cursor == null); this.render(); });
+    bind('btn-tcc-cursor-close', () => { this._setCursorMode(false); this.render(); });
+    document.getElementById('tcc-cursor-amps')?.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (v > 0) this.setCursor(v);
+    });
+    document.getElementById('tcc-cursor-fault')?.addEventListener('change', (e) => {
+      const v = parseFloat(e.target.value);
+      if (v > 0) this.setCursor(v);
+      e.target.value = '';
+    });
 
     // Add-device popover
     const addBtn = document.getElementById('btn-tcc-add-device');
@@ -338,23 +366,28 @@ const TCC = {
   },
 
   // Fault levels (display amps, after any reference-voltage scaling) relevant to the active tab
-  _faultAmpsForView() {
+  _faultLevelsForView() {
     const fr = AppState.faultResults;
-    if (!this.showFaultMarkers || !fr || !fr.buses) return [];
+    if (!fr || !fr.buses) return [];
     const tab = this.tabs.find(t => t.id === this.activeTabId);
     const out = [];
     for (const [busId, r] of Object.entries(fr.buses)) {
       const comp = AppState.components.get(busId);
+      const busName = comp?.props?.name || r.bus_name || busId;
       const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
       if (tab && tab.isVoltageTab && vkv && Math.abs(vkv - tab.voltage_kv) > 0.01) continue;
-      for (const ka of [r.ik3, r.ik1]) {
+      for (const [ka, kind] of [[r.ik3, '3Φ'], [r.ik1, 'SLG']]) {
         if (ka == null || !(ka > 0)) continue;
         let amps = ka * 1000;
         if (this.referenceVoltage && vkv) amps *= vkv / this.referenceVoltage;
-        out.push(amps);
+        out.push({ amps, label: `${busName} ${kind} ${ka.toFixed(2)} kA` });
       }
     }
     return out;
+  },
+
+  _faultAmpsForView() {
+    return this.showFaultMarkers ? this._faultLevelsForView().map(f => f.amps) : [];
   },
 
   // Fit the view to the visible curves (pickup → fault level) with a little padding.
@@ -555,6 +588,233 @@ const TCC = {
     }
   },
 
+  _resetTransientState() {
+    this._pairFocus = null;
+    this._coordRows = [];
+    this._autoPreview = null;
+    this._setCursorMode(false);
+  },
+
+  // ── Pinned current cursor ──
+
+  _setCursorMode(on) {
+    const btn = document.getElementById('btn-tcc-cursor');
+    const panel = document.getElementById('tcc-cursor-panel');
+    if (btn) { btn.classList.toggle('active', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    if (!on) {
+      this._cursor = null;
+      if (panel) panel.style.display = 'none';
+      return;
+    }
+    if (this._cursor == null) {
+      // Start at the highest fault level in view, else the middle of the current axis
+      const inView = this._faultLevelsForView().map(f => f.amps).filter(a => a >= this.currentMin && a <= this.currentMax);
+      this._cursor = inView.length ? Math.max(...inView) : Math.sqrt(this.currentMin * this.currentMax);
+    }
+    if (panel) panel.style.display = '';
+    this._renderCursorFaultOptions();
+  },
+
+  setCursor(amps) {
+    if (!(amps > 0)) return;
+    this._cursor = Math.max(this._viewLimits.iMin, Math.min(this._viewLimits.iMax, amps));
+    this.render();
+  },
+
+  _renderCursorFaultOptions() {
+    const sel = document.getElementById('tcc-cursor-fault');
+    if (!sel) return;
+    const levels = this._faultLevelsForView();
+    sel.style.display = levels.length ? '' : 'none';
+    sel.innerHTML = '<option value="">Fault level…</option>' +
+      levels.map(f => `<option value="${f.amps}">${escHtml(f.label)}</option>`).join('');
+  },
+
+  // Trip time of every visible device at the cursor current (display amps)
+  _cursorTimes(tabDevices) {
+    const rows = [];
+    for (const dev of tabDevices) {
+      if (!dev.visible || dev.deviceType === 'motor_start') continue;
+      const t = this._deviceTripTime(dev, this._scaleCurrentInverse(this._cursor, dev));
+      rows.push({ dev, t: (isFinite(t) && t > 0) ? t : null });
+    }
+    return rows;
+  },
+
+  _drawCursor(ctx, tabDevices) {
+    if (this._cursor == null) return;
+    const x = this._currentToX(this._cursor);
+    if (x < this.plotLeft || x > this.plotRight) return;
+    ctx.save();
+    ctx.strokeStyle = '#00695c'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x, this.plotTop); ctx.lineTo(x, this.plotBottom); ctx.stroke();
+    for (const { dev, t } of this._cursorTimes(tabDevices)) {
+      if (t == null) continue;
+      const y = this._timeToY(t);
+      if (y < this.plotTop || y > this.plotBottom) continue;
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = dev.color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    ctx.restore();
+  },
+
+  _drawCursorLabel(ctx) {
+    const x = this._currentToX(this._cursor);
+    if (x < this.plotLeft || x > this.plotRight) return;
+    ctx.save();
+    ctx.fillStyle = '#00695c';
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    const txt = this._cursor >= 1000 ? (this._cursor / 1000).toFixed(2) + ' kA' : Math.round(this._cursor) + ' A';
+    ctx.fillText(txt, x, this.plotTop + 12);
+    ctx.restore();
+  },
+
+  _renderCursorPanel() {
+    const rowsEl = document.getElementById('tcc-cursor-rows');
+    const input = document.getElementById('tcc-cursor-amps');
+    if (!rowsEl || !input || this._cursor == null) return;
+    if (document.activeElement !== input) input.value = String(Number(this._cursor.toPrecision(5)));
+    const single = !(this.compareMode && this.compareTabId);
+    if (!single) { rowsEl.innerHTML = '<div class="tcc-coord-info">Cursor is off in compare mode.</div>'; return; }
+    const fmt = (t) => t >= 1 ? t.toFixed(2) + ' s' : (t * 1000).toFixed(0) + ' ms';
+    const rows = this._cursorTimes(this._getVisibleDevicesForTab())
+      .sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity));
+    rowsEl.innerHTML = rows.length ? rows.map(({ dev, t }) => {
+      const limit = dev.deviceType === 'xfmr_thermal' || dev.deviceType === 'cable_thermal';
+      return `<div class="tcc-cursor-row"><span class="tcc-device-color" style="background:${dev.color}"></span>` +
+        `<span class="tcc-cursor-name">${escHtml(dev.name)}</span>` +
+        (t == null ? '<span class="tcc-cursor-time tcc-muted">no trip</span>'
+                   : `<span class="tcc-cursor-time">${limit ? 'limit ' : ''}${fmt(t)}</span>`) + '</div>';
+    }).join('') : '<div class="tcc-coord-info">No visible devices.</div>';
+  },
+
+  // ── Checks drawer (tabs, collapse) ──
+
+  _showDrawerTab(tab) {
+    document.querySelectorAll('.tcc-drawer-tab').forEach(b => {
+      const on = b.dataset.drawerTab === tab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    for (const t of ['coord', 'seq', 'dist']) {
+      const pane = document.getElementById('tcc-drawer-pane-' + t);
+      if (pane) pane.hidden = t !== tab;
+    }
+    document.querySelectorAll('[data-drawer-for]').forEach(b => { b.style.display = b.dataset.drawerFor === tab ? '' : 'none'; });
+    this._setDrawerOpen(true);
+  },
+
+  _setDrawerOpen(open) {
+    const drawer = document.getElementById('tcc-drawer');
+    const btn = document.getElementById('btn-tcc-drawer-toggle');
+    if (!drawer) return;
+    drawer.classList.toggle('tcc-drawer-collapsed', !open);
+    if (btn) {
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.setAttribute('aria-label', open ? 'Collapse checks panel' : 'Expand checks panel');
+      btn.innerHTML = open ? '&#9662;' : '&#9652;';
+    }
+  },
+
+  // ── Auto-coordinate preview: apply on the chart, then Keep or Revert ──
+
+  // Settings auto-coordinate can change, for every relay / breaker
+  _captureAutoSettings() {
+    const snap = new Map();
+    for (const dev of this.devices) {
+      if (dev.deviceType !== 'relay' && dev.deviceType !== 'cb') continue;
+      const comp = AppState.components.get(dev.id);
+      snap.set(dev, {
+        tds: dev.tds,
+        ltd: dev.cbParams?.long_time_delay,
+        compTds: comp?.props?.time_dial,
+        compLtd: comp?.props?.long_time_delay,
+      });
+    }
+    return snap;
+  },
+
+  _restoreAutoSettings(snap) {
+    for (const [dev, v] of snap) {
+      const comp = AppState.components.get(dev.id);
+      if (dev.deviceType === 'relay') {
+        dev.tds = v.tds;
+        if (comp?.props) comp.props.time_dial = v.compTds;
+      } else if (dev.cbParams) {
+        dev.cbParams.long_time_delay = v.ltd;
+        if (comp?.props) comp.props.long_time_delay = v.compLtd;
+      }
+    }
+  },
+
+  _autoPreviewHtml() {
+    const pv = this._autoPreview;
+    if (!pv) return '';
+    const li = pv.changes.map(c => `<li>${escHtml(c)}</li>`).join('');
+    const fails = pv.failures.length
+      ? `<div class="tcc-preview-fail">Could not coordinate ${pv.failures.length} pair(s):<ul>${pv.failures.map(f => `<li>${escHtml(f)}</li>`).join('')}</ul></div>` : '';
+    return `<div class="tcc-preview-banner" role="group" aria-label="Auto-coordinate preview">
+      <strong>Auto-coordinate preview</strong> — ${pv.changes.length} setting change(s) shown on the chart (previous curves dashed). Nothing is kept until you confirm.
+      <ul>${li}</ul>${fails}
+      <div class="tcc-preview-actions">
+        <button class="btn-small btn-primary" data-preview-action="keep">Keep changes</button>
+        <button class="btn-small" data-preview-action="revert">Revert</button>
+      </div></div>`;
+  },
+
+  _keepAutoPreview() {
+    if (!this._autoPreview) return;
+    this._autoPreview = null;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    this._renderDeviceList();
+    this._renderSelectedDeviceSettings();
+    this.render();
+    this._runCoordinationCheck();
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast('Auto-coordination kept — undo with Ctrl+Z on the diagram.', 'success');
+  },
+
+  _revertAutoPreview() {
+    const pv = this._autoPreview;
+    if (!pv) return;
+    this._restoreAutoSettings(pv.before);
+    this._autoPreview = null;
+    this._renderDeviceList();
+    this._renderSelectedDeviceSettings();
+    this.render();
+    this._runCoordinationCheck();
+  },
+
+  // Previous curve of each device the preview changed, as a faint dotted line
+  _drawPreviewGhosts(ctx, tabDevices) {
+    const pv = this._autoPreview;
+    if (!pv) return;
+    for (const dev of tabDevices) {
+      const old = pv.before.get(dev);
+      if (!old || !dev.visible) continue;
+      const cur = dev.deviceType === 'relay' ? { tds: dev.tds } : { ltd: dev.cbParams.long_time_delay };
+      const changed = dev.deviceType === 'relay' ? old.tds !== cur.tds : old.ltd !== cur.ltd;
+      if (!changed) continue;
+      // Evaluate with the old setting, then put the new one back
+      if (dev.deviceType === 'relay') dev.tds = old.tds; else dev.cbParams.long_time_delay = old.ltd;
+      ctx.save();
+      ctx.strokeStyle = dev.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 2; ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      let started = false;
+      const lo = Math.log10(this.currentMin), span = Math.log10(this.currentMax / this.currentMin);
+      for (let k = 0; k <= 300; k++) {
+        const disp = Math.pow(10, lo + span * k / 300);
+        const t = this._deviceTripTime(dev, this._scaleCurrentInverse(disp, dev));
+        if (!isFinite(t) || t < this.timeMin || t > this.timeMax) { started = false; continue; }
+        const x = this._currentToX(disp), y = this._timeToY(t);
+        if (started) ctx.lineTo(x, y); else { ctx.moveTo(x, y); started = true; }
+      }
+      ctx.stroke();
+      ctx.restore();
+      if (dev.deviceType === 'relay') dev.tds = cur.tds; else dev.cbParams.long_time_delay = cur.ltd;
+    }
+  },
+
   // ── Persisted display state across open/close ──
   _savedDisplayState: {}, // keyed by device id: { visible, color, labelOffsetX, labelOffsetY }
 
@@ -588,6 +848,7 @@ const TCC = {
     if (this.devices.length > 0) {
       this._saveDisplayState();
     }
+    this._resetTransientState();
     this.devices = [];
     this.colorIndex = 0;
     this.selectedDeviceIndex = -1;
@@ -625,6 +886,7 @@ const TCC = {
 
     this._focusedMode = true;
     this._focusedCompId = compId;
+    this._resetTransientState();
     this.devices = [];
     this.colorIndex = 0;
     this.selectedDeviceIndex = -1;
@@ -665,6 +927,7 @@ const TCC = {
   },
 
   close() {
+    if (this._autoPreview) this._revertAutoPreview();
     this._closeAddPopover();
     this._saveDisplayState();
     document.getElementById('tcc-modal').style.display = 'none';
@@ -1086,6 +1349,8 @@ const TCC = {
       this._renderSingleChart(ctx, w, h, this.activeTabId);
     }
 
+    if (this._cursor) this._renderCursorPanel();
+
     const range = document.getElementById('tcc-view-range');
     if (range) {
       const f = (v, u) => this._formatValue(Number(v.toPrecision(3)), u);
@@ -1125,11 +1390,14 @@ const TCC = {
     // Dim non-selected curves when a device is selected
     const selIdx = this.selectedDeviceIndex;
     const hasSelection = selIdx >= 0 && selIdx < this.devices.length;
+    const single = !(this.compareMode && this.compareTabId);
+    const focusRow = single ? this._focusRow() : null;
 
     for (const dev of tabDevices) {
       if (!dev.visible) continue;
       const isSelected = this.devices.indexOf(dev) === selIdx;
-      ctx.globalAlpha = hasSelection && !isSelected ? 0.3 : 1.0;
+      if (focusRow) ctx.globalAlpha = (dev === focusRow.up || dev === focusRow.down) ? 1.0 : 0.25;
+      else ctx.globalAlpha = hasSelection && !isSelected ? 0.3 : 1.0;
       if (dev.deviceType === 'relay') this._drawRelayCurve(ctx, dev);
       else if (dev.deviceType === 'distance_relay') this._drawDistanceRelayCurve(ctx, dev);
       else if (dev.deviceType === 'fuse') this._drawFuseCurve(ctx, dev);
@@ -1147,7 +1415,15 @@ const TCC = {
 
     // Draw fault current markers
     this._drawFaultMarkers(ctx);
+
+    // Auto-coordinate preview: previous curves as faint dashes, pair margin band, pinned cursor
+    if (single) {
+      this._drawPreviewGhosts(ctx, tabDevices);
+      if (focusRow) this._drawMarginBand(ctx, focusRow);
+      this._drawCursor(ctx, tabDevices);
+    }
     ctx.restore();
+    if (single && this._cursor) this._drawCursorLabel(ctx);
 
     // Draw mho characteristic inset for distance relays
     this._drawMhoInset(ctx, tabDevices);
@@ -2615,6 +2891,7 @@ const TCC = {
 
   selectDevice(idx) {
     this.selectedDeviceIndex = (idx === this.selectedDeviceIndex) ? -1 : idx;
+    if (this._pairFocus) { this._pairFocus = null; this._syncPairFocusUI(); }
     this._renderDeviceList();
     this._renderSelectedDeviceSettings();
     this.render();
@@ -2651,6 +2928,10 @@ const TCC = {
       }
     }
 
+    if (bestIdx < 0 && this._cursor != null && !(this.compareMode && this.compareTabId)) {
+      this.setCursor(this._xToCurrent(mx)); // empty plot click moves the pinned cursor
+      return;
+    }
     this.selectDevice(bestIdx >= 0 ? bestIdx : -1);
   },
 
@@ -3363,9 +3644,16 @@ const TCC = {
     const resultsDiv = document.getElementById('tcc-coord-results');
     if (!resultsDiv) return;
 
+    let preview = this._autoPreviewHtml();
+    if (this._autoNote) {
+      preview += `<div class="${this._autoNote.ok ? 'tcc-coord-pass' : 'tcc-coord-info'}" style="white-space:pre-wrap;margin-bottom:8px">${escHtml(this._autoNote.msg)}</div>`;
+      this._autoNote = null;
+    }
     const visible = this.devices.filter(d => d.visible);
     if (visible.length < 2) {
-      resultsDiv.innerHTML = '<div class="tcc-coord-info">Add at least 2 visible devices to check coordination.</div>';
+      this._coordRows = [];
+      resultsDiv.innerHTML = preview + '<div class="tcc-coord-info">Add at least 2 visible devices to check coordination.</div>';
+      this._bindCoordResults(resultsDiv);
       return;
     }
 
@@ -3382,7 +3670,20 @@ const TCC = {
     const seriesPairs = this._seriesDevicePairs(paths, visSet);
     const hasTopology = seriesPairs.length > 0;
 
-    const issues = [];
+    // One row per graded pair — the tightest test point, whether it passes or not.
+    // Rows drive the results table and the on-chart highlight / margin band.
+    const rowMap = new Map();
+    const noteRow = (up, down, tp, margin, required, relevant, assumed) => {
+      const key = `${up.id}|${down.id}`;
+      const slack = margin - required;
+      const cur = rowMap.get(key);
+      // Prefer points where a trip actually matters (< 10 s), then the smallest slack
+      if (cur && (cur.relevant && !relevant || (cur.relevant === relevant && cur.slack <= slack))) return;
+      rowMap.set(key, {
+        key, up, down, tp, margin, required, slack, relevant, assumed,
+        status: (margin < required && relevant) ? 'fail' : 'pass',
+      });
+    };
     // [PROT-18] Damage/withstand curves are limits, not operating devices —
     // they must not be pairwise time-graded in assumed (no-topology) mode.
     // (In topology mode they never appear on protection paths.)
@@ -3421,13 +3722,11 @@ const TCC = {
           if (rB > rA) { fUp = devDown; fDown = devUp; }
         }
         const sel = this._fuseFuseSelectivity(fDown, fUp);
-        if (sel.status !== 'pass') {
-          issues.push({
-            devA: fDown.name, devB: fUp.name,
-            current: null, margin: null, tFast: null, tSlow: null,
-            ratioRule: true, ratioSeverity: sel.status, ratio: sel.ratio, assumed,
-          });
-        }
+        rowMap.set(`${fUp.id}|${fDown.id}`, {
+          key: `${fUp.id}|${fDown.id}`, up: fUp, down: fDown, tp: null,
+          ratioRule: true, ratio: sel.ratio, assumed, slack: sel.status === 'pass' ? 1 : -1,
+          status: sel.status === 'pass' ? 'pass' : sel.status === 'warning' ? 'warn' : 'fail',
+        });
         return;
       }
 
@@ -3447,28 +3746,15 @@ const TCC = {
           const tA = this._deviceTripTime(devUp, this._referCurrent(tp.amps, tp.voltageKv, devUp));
           const tB = this._deviceTripTime(devDown, this._referCurrent(tp.amps, tp.voltageKv, devDown));
           if (!isFinite(tA) || !isFinite(tB) || tA <= 0 || tB <= 0) continue;
-          const margin = Math.abs(tA - tB);
-          const tFast = Math.min(tA, tB);
-          if (margin < required && tFast < 10) {
-            const fasterFirst = tA < tB;
-            issues.push({
-              devA: fasterFirst ? devUp.name : devDown.name,
-              devB: fasterFirst ? devDown.name : devUp.name,
-              current: tp.amps, margin, tFast, tSlow: Math.max(tA, tB),
-              assumed: true,
-            });
-          }
+          const fasterFirst = tA < tB;
+          // Faster device is reported as downstream, slower as upstream
+          const up = fasterFirst ? devDown : devUp;
+          const down = fasterFirst ? devUp : devDown;
+          noteRow(up, down, tp, Math.abs(tA - tB), required, Math.min(tA, tB) < 10, true);
         } else {
           const { tUp, tDown } = this._seriesPairTripTimes(devUp, devDown, tp);
           if (!isFinite(tUp) || !isFinite(tDown) || tUp <= 0 || tDown <= 0) continue;
-          const margin = tUp - tDown;
-          if (margin < required && Math.min(tUp, tDown) < 10) {
-            issues.push({
-              devA: devDown.name, devB: devUp.name,
-              current: tp.amps, margin: Math.abs(margin), tFast: tDown, tSlow: tUp,
-              assumed: false,
-            });
-          }
+          noteRow(devUp, devDown, tp, tUp - tDown, required, Math.min(tUp, tDown) < 10, false);
         }
       }
     };
@@ -3483,47 +3769,37 @@ const TCC = {
       }
     }
 
-    // Deduplicate issues (keep worst per pair)
-    const pairMap = new Map();
-    for (const iss of issues) {
-      const key = `${iss.devA}|${iss.devB}`;
-      const existing = pairMap.get(key);
-      if (!existing || iss.ratioRule || (existing.margin != null && iss.margin < existing.margin)) {
-        pairMap.set(key, iss);
-      }
-    }
+    const order = { fail: 0, warn: 1, pass: 2 };
+    const rows = [...rowMap.values()].sort((a, b) => order[a.status] - order[b.status] || a.slack - b.slack);
+    this._coordRows = rows;
+    if (this._pairFocus && !rows.some(r => r.key === this._pairFocus)) this._pairFocus = null;
 
-    const fmtT = (t) => t >= 1 ? t.toFixed(2) + 's' : (t * 1000).toFixed(0) + 'ms';
-    const fmtI = (a) => a >= 1000 ? (a / 1000).toFixed(1) + 'kA' : Math.round(a) + 'A';
+    const fmtDt = (t) => t >= 1 ? t.toFixed(2) + ' s' : (t * 1000).toFixed(0) + ' ms';
+    const fmtI = (a) => a >= 1000 ? (a / 1000).toFixed(1) + ' kA' : Math.round(a) + ' A';
     const orderNote = hasTopology ? '' : ' <span class="tcc-coord-info">(assumed order — no source-to-load topology found)</span>';
+    const nFail = rows.filter(r => r.status === 'fail').length;
+    const nWarn = rows.filter(r => r.status === 'warn').length;
+    const nPass = rows.length - nFail - nWarn;
+    const pill = { pass: '<span class="tcc-status tcc-status-pass">✓ Pass</span>', warn: '<span class="tcc-status tcc-status-warn">! Note</span>', fail: '<span class="tcc-status tcc-status-fail">✗ Fail</span>' };
 
-    let html = '';
-    if (pairMap.size === 0) {
-      html = `<div class="tcc-coord-pass">All ${hasTopology ? 'in-series' : 'visible'} device pairs have adequate grading margin.${orderNote}</div>`;
+    let html = preview;
+    if (rows.length === 0) {
+      html += `<div class="tcc-coord-info">No ${hasTopology ? 'in-series' : 'comparable'} device pairs to grade.${orderNote}</div>`;
     } else {
-      html = `<div class="tcc-coord-title">Coordination Issues${orderNote}</div>`;
-      html += `<table class="tcc-coord-table"><thead><tr><th>Downstream${hasTopology ? '' : ' (assumed)'}</th><th>Upstream${hasTopology ? '' : ' (assumed)'}</th><th>At Current</th><th>Margin</th></tr></thead><tbody>`;
-      for (const [, iss] of pairMap) {
-        if (iss.ratioRule) {
-          // [PROT-17] Tiered fuse-fuse verdict: <1.6 critical, 1.6-2.0 advisory
-          const ratioTxt = iss.ratio > 0 ? `${iss.ratio.toFixed(2)}:1` : '?:1';
-          const cell = iss.ratioSeverity === 'warning'
-            ? `<td class="tcc-sev-warning">fuse ratio ${ratioTxt} meets IEC 60269 1.6:1 minimum — 2:1 recommended</td>`
-            : `<td class="tcc-margin-fail">fuse ratio ${ratioTxt} &lt; 1.6:1 IEC 60269 minimum (I²t overlap)</td>`;
-          html += `<tr>
-            <td>${escHtml(iss.devA)}</td>
-            <td>${escHtml(iss.devB)}</td>
-            <td>—</td>
-            ${cell}
-          </tr>`;
+      html += `<div class="tcc-coord-summary"><strong>${nFail}</strong> fail · ${nWarn} note · ${nPass} pass${orderNote} — click a row to show the pair on the chart.</div>`;
+      html += `<table class="tcc-coord-table"><thead><tr><th>Status</th><th>Downstream${hasTopology ? '' : ' (assumed)'}</th><th>Upstream${hasTopology ? '' : ' (assumed)'}</th><th>At current</th><th>Margin</th><th>Required</th></tr></thead><tbody>`;
+      for (const r of rows) {
+        const focus = r.key === this._pairFocus ? ' tcc-row-focus' : '';
+        let cells;
+        if (r.ratioRule) {
+          const ratioTxt = r.ratio > 0 ? `${r.ratio.toFixed(2)}:1` : '?:1';
+          cells = `<td>—</td><td class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">fuse ratio ${ratioTxt}</td><td>≥ 1.6:1 (2:1 rec.)</td>`;
         } else {
-          html += `<tr>
-            <td>${escHtml(iss.devA)} (${fmtT(iss.tFast)})</td>
-            <td>${escHtml(iss.devB)} (${fmtT(iss.tSlow)})</td>
-            <td>${fmtI(iss.current)}</td>
-            <td class="tcc-margin-fail">${iss.margin >= 1 ? iss.margin.toFixed(2) + 's' : (iss.margin * 1000).toFixed(0) + 'ms'}</td>
-          </tr>`;
+          const bus = r.tp.busId ? AppState.components.get(r.tp.busId)?.props?.name : null;
+          const where = bus ? ` <span class="tcc-coord-info">${escHtml(bus)} ${r.tp.earth ? 'SLG' : '3Φ'}</span>` : '';
+          cells = `<td>${fmtI(r.tp.amps)}${where}</td><td class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">${fmtDt(r.margin)}</td><td>${fmtDt(r.required)}</td>`;
         }
+        html += `<tr class="tcc-coord-row${focus}" data-key="${escHtml(r.key)}" tabindex="0" role="button" aria-label="Show ${escHtml(r.down.name)} and ${escHtml(r.up.name)} on the chart"><td>${pill[r.status]}</td><td>${escHtml(r.down.name)}</td><td>${escHtml(r.up.name)}</td>${cells}</tr>`;
       }
       html += '</tbody></table>';
     }
@@ -3540,6 +3816,105 @@ const TCC = {
     }
 
     resultsDiv.innerHTML = html;
+    this._bindCoordResults(resultsDiv);
+    if (this._pairFocus) this.render(); // keep the margin band in step with edits
+  },
+
+  // Row click / Enter: focus the pair on the chart (click again to clear)
+  _bindCoordResults(container) {
+    container.querySelectorAll('.tcc-coord-row').forEach(tr => {
+      const go = () => this._focusPair(tr.dataset.key);
+      tr.addEventListener('click', go);
+      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    });
+    container.querySelectorAll('[data-preview-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.previewAction === 'keep') this._keepAutoPreview();
+        else this._revertAutoPreview();
+      });
+    });
+  },
+
+  _focusPair(key) {
+    this._pairFocus = (this._pairFocus === key) ? null : key;
+    this._syncPairFocusUI();
+    const row = this._focusRow();
+    if (row && row.tp) {
+      // Bring the pair into view if the current view has scrolled away from it
+      const p = this._rowPoint(row);
+      if (p && (p.x < this.plotLeft || p.x > this.plotRight || p.y < this.plotTop || p.y > this.plotBottom)) {
+        this.fitView();
+        return;
+      }
+    }
+    this.render();
+  },
+
+  _syncPairFocusUI() {
+    document.querySelectorAll('#tcc-coord-results .tcc-coord-row').forEach(tr => {
+      tr.classList.toggle('tcc-row-focus', tr.dataset.key === this._pairFocus);
+    });
+  },
+
+  _focusRow() {
+    if (!this._pairFocus) return null;
+    return (this._coordRows || []).find(r => r.key === this._pairFocus) || null;
+  },
+
+  // Live trip times for a row's pair at its test current (recomputed so drags/nudges update the band)
+  _rowTimes(row) {
+    if (row.assumed) {
+      const tA = this._deviceTripTime(row.up, this._referCurrent(row.tp.amps, row.tp.voltageKv, row.up));
+      const tB = this._deviceTripTime(row.down, this._referCurrent(row.tp.amps, row.tp.voltageKv, row.down));
+      return { tUp: Math.max(tA, tB), tDown: Math.min(tA, tB) };
+    }
+    return this._seriesPairTripTimes(row.up, row.down, row.tp);
+  },
+
+  _rowPoint(row) {
+    const { tUp, tDown } = this._rowTimes(row);
+    if (!isFinite(tUp) || !isFinite(tDown) || tUp <= 0 || tDown <= 0) return null;
+    const iDown = this._referCurrent(row.tp.amps, row.tp.voltageKv, row.down);
+    return { x: this._currentToX(this._scaleCurrent(iDown, row.down)), y: this._timeToY(tDown), tUp, tDown };
+  },
+
+  // Shaded time gap between the pair's curves at the test current, labelled with Δt vs required
+  _drawMarginBand(ctx, row) {
+    if (!row.tp || row.ratioRule) return;
+    const p = this._rowPoint(row);
+    if (!p || p.x < this.plotLeft || p.x > this.plotRight) return;
+    const yUp = this._timeToY(p.tUp), yDown = this._timeToY(p.tDown);
+    const margin = p.tUp - p.tDown;
+    const ok = margin >= row.required;
+    const col = ok ? '#2e7d32' : '#c62828';
+    const top = Math.max(this.plotTop, Math.min(yUp, yDown)), bot = Math.min(this.plotBottom, Math.max(yUp, yDown));
+
+    ctx.save();
+    ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.globalAlpha = 0.7;
+    ctx.beginPath(); ctx.moveTo(p.x, this.plotTop); ctx.lineTo(p.x, this.plotBottom); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.25; ctx.fillStyle = col;
+    ctx.fillRect(p.x - 5, top, 10, Math.max(2, bot - top));
+    ctx.globalAlpha = 1;
+    for (const [dev, y] of [[row.up, yUp], [row.down, yDown]]) {
+      if (y < this.plotTop || y > this.plotBottom) continue;
+      ctx.beginPath(); ctx.arc(p.x, y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = dev.color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    const fmt = (t) => t >= 1 ? t.toFixed(2) + ' s' : (t * 1000).toFixed(0) + ' ms';
+    const line1 = `Δt ${fmt(margin)}`;
+    const line2 = `${ok ? '≥' : '<'} ${fmt(row.required)} required ${ok ? '✓' : '✗'}`;
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 14;
+    const bx = (p.x + 12 + w > this.plotRight) ? p.x - 12 - w : p.x + 12;
+    const by = Math.max(this.plotTop + 2, Math.min(this.plotBottom - 34, (top + bot) / 2 - 17));
+    ctx.fillStyle = 'rgba(255,255,255,0.94)'; ctx.strokeStyle = col; ctx.lineWidth = 1;
+    ctx.fillRect(bx, by, w, 32); ctx.strokeRect(bx, by, w, 32);
+    ctx.fillStyle = col; ctx.textAlign = 'left';
+    ctx.fillText(line1, bx + 7, by + 13);
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(line2, bx + 7, by + 26);
+    ctx.restore();
   },
 
   _deviceTripTime(dev, currentA) {
@@ -4004,6 +4379,7 @@ const TCC = {
    * a per-relay "Apply Computed Zones" action.
    */
   gradeDistanceZones() {
+    this._showDrawerTab('dist');
     const relays = [];
     for (const [, comp] of AppState.components) {
       if (comp.type === 'relay' && comp.props?.relay_type === '21') relays.push(comp);
@@ -4120,6 +4496,9 @@ const TCC = {
    *    below it by at least the grading margin at the maximum fault current
    */
   autoCoordinate() {
+    this._showDrawerTab('coord');
+    if (this._autoPreview) { this._runCoordinationCheck(); return; } // already previewing — Keep or Revert first
+    const before = this._captureAutoSettings();
     const busMap = new Map();
     const paths = this._buildProtectionPaths(busMap);
     if (paths.length === 0) {
@@ -4130,10 +4509,8 @@ const TCC = {
     // Test points: actual fault-study currents pinned to their faulted bus
     // voltage when available (so they can be referred across transformers);
     // otherwise a generic default range
-    const testPoints = this._buildCoordinationTestPoints([5000, 7500, 10000]);
+    const testPoints = this._buildCoordinationTestPoints(); // same points as the live check, so 'coordinated' means the table agrees
 
-    let adjustments = 0;
-    const changes = [];
     // [PROT-14] Pairs that could not be coordinated (setting range exhausted)
     // are reported instead of silently swallowed.
     const failures = [];
@@ -4193,8 +4570,6 @@ const TCC = {
             if (newTDS > upstream.tds && newTDS <= 10) {
               const oldTDS = upstream.tds;
               upstream.tds = Math.round(newTDS * 20) / 20; // round to 0.05
-              adjustments++;
-              changes.push(`${upstream.name}: TDS ${oldTDS.toFixed(2)} \u2192 ${upstream.tds.toFixed(2)}`);
               // Sync to SLD
               const comp = AppState.components.get(upstream.id);
               if (comp?.props) comp.props.time_dial = upstream.tds;
@@ -4219,8 +4594,6 @@ const TCC = {
               const newT = this._deviceTripTime(upstream, iUp);
               if (isFinite(newT) && newT >= requiredTime) {
                 coordinated = true;
-                adjustments++;
-                changes.push(`${upstream.name}: LT delay class ${currentClass} \u2192 ${cls}`);
                 const comp = AppState.components.get(upstream.id);
                 if (comp?.props) comp.props.long_time_delay = cls;
                 break;
@@ -4236,19 +4609,28 @@ const TCC = {
       }
     }
 
-    // Report results (including pairs that could not be coordinated [PROT-14])
-    if (adjustments === 0 && failures.length === 0) {
-      this._showCoordMessage('All protection paths are already coordinated. No adjustments needed.');
-    } else {
-      let msg = adjustments > 0
-        ? `Auto-coordination adjusted ${adjustments} device(s):\n` +
-          changes.map(c => `  \u2022 ${c}`).join('\n')
-        : 'Auto-coordination made no setting adjustments.';
-      if (failures.length > 0) {
-        msg += `\nCould not coordinate ${failures.length} pair(s):\n` +
-          failures.map(f => `  \u2717 ${f}`).join('\n');
+    // Report results (including pairs that could not be coordinated [PROT-14]).
+    // Changes stay applied as a PREVIEW (previous curves dashed on the chart)
+    // until the user keeps or reverts them.
+    // Net change per device (the loop above may step a setting several times)
+    const netChanges = [];
+    for (const [dev, old] of before) {
+      if (dev.deviceType === 'relay' && dev.tds !== old.tds) {
+        netChanges.push(`${dev.name}: TDS ${old.tds.toFixed(2)} \u2192 ${dev.tds.toFixed(2)}`);
+      } else if (dev.deviceType === 'cb' && dev.cbParams.long_time_delay !== old.ltd) {
+        netChanges.push(`${dev.name}: LT delay class ${old.ltd} \u2192 ${dev.cbParams.long_time_delay}`);
       }
-      this._showCoordMessage(msg, failures.length === 0 ? 'success' : undefined);
+    }
+    if (netChanges.length === 0 && failures.length === 0) {
+      this._autoNote = { msg: 'All protection paths are already coordinated. No adjustments needed.', ok: true };
+    } else if (netChanges.length > 0) {
+      this._autoPreview = { before, changes: netChanges, failures };
+    } else {
+      this._autoNote = {
+        msg: 'Auto-coordination made no setting adjustments.\nCould not coordinate ' + failures.length + ' pair(s):\n' +
+          failures.map(f => `  \u2717 ${f}`).join('\n'),
+        ok: false,
+      };
     }
 
     this._renderDeviceList();
@@ -4268,6 +4650,7 @@ const TCC = {
    * "did the right things trip in the right order?"
    */
   verifySequenceOfOperation() {
+    this._showDrawerTab('seq');
     const { buses, paths, error } = this.computeSequenceOfOperation();
     this._showSequenceResults(buses, paths, error);
   },
@@ -4628,6 +5011,7 @@ const TCC = {
    * should trip first (closest downstream device) and flags violations.
    */
   detectMiscoordination() {
+    this._showDrawerTab('coord');
     const busMap = new Map();
     const paths = this._buildProtectionPaths(busMap);
     if (paths.length === 0) {
