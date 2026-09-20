@@ -12,7 +12,7 @@
 // overhead cable ampacity ambient scaler (#9) — all change computed results
 // for existing projects using those features (mixed-bus regulators, negative
 // pf, overhead cables sized at a non-40°C ambient).
-const APP_VERSION = 'V8';
+const APP_VERSION = 'v1b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
