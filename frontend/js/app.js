@@ -3734,14 +3734,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // TCC fault markers toggle
   document.getElementById('btn-tcc-fault-markers').addEventListener('click', (e) => {
     TCC.showFaultMarkers = !TCC.showFaultMarkers;
-    e.target.classList.toggle('active', TCC.showFaultMarkers);
+    e.currentTarget.classList.toggle('active', TCC.showFaultMarkers);
+    e.currentTarget.setAttribute('aria-pressed', TCC.showFaultMarkers);
     TCC.render();
   });
 
   // TCC compare mode toggle
   document.getElementById('btn-tcc-compare').addEventListener('click', (e) => {
     TCC.compareMode = !TCC.compareMode;
-    e.target.classList.toggle('active', TCC.compareMode);
+    e.currentTarget.classList.toggle('active', TCC.compareMode);
+    e.currentTarget.setAttribute('aria-pressed', TCC.compareMode);
     const section = document.getElementById('tcc-compare-section');
     section.style.display = TCC.compareMode ? '' : 'none';
     if (TCC.compareMode) {

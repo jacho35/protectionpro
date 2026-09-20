@@ -61,6 +61,10 @@ const TCC = {
   compareMode: false,
   compareTabId: null, // second tab ID for comparison
 
+  // ── View limits + pan state ──
+  _viewLimits: { iMin: 0.1, iMax: 1e7, tMin: 1e-4, tMax: 1e5 },
+  _pan: null,        // { x0, y0, cMin, cMax, tMin, tMax, moved } while dragging empty plot
+
   // ── Curve drag state ──
   _curveDrag: null,  // { devIndex, mode: 'pickup'|'tds'|'magnetic', startX, startY, origValue }
   _curveHandles: [], // { devIndex, mode, x, y, r } for hit-testing
@@ -91,6 +95,8 @@ const TCC = {
         this._handleCurveDragMove(e);
       } else if (this._labelDrag) {
         this._handleLabelDragMove(e);
+      } else if (this._pan) {
+        this._panMove(e);
       } else {
         this._handleHover(e);
       }
@@ -99,19 +105,21 @@ const TCC = {
       this._tooltip = null;
       this._labelDrag = null;
       this._curveDrag = null;
+      this._pan = null;
+      this.canvas.style.cursor = '';
       this.render();
     });
 
-    // Mouse down: curve drag, label drag, or select curve
+    // Mouse down: curve drag, label drag, or (empty plot) pan / click-to-select
     this.canvas.addEventListener('mousedown', (e) => {
       if (!this._handleCurveDragStart(e)) {
         this._handleLabelDragStart(e);
         if (!this._labelDrag) {
-          this._handleCurveSelect(e);
+          this._panStart(e);
         }
       }
     });
-    this.canvas.addEventListener('mouseup', () => {
+    this.canvas.addEventListener('mouseup', (e) => {
       if (this._curveDrag) {
         this._finishCurveDrag();
         this._curveDrag = null;
@@ -121,7 +129,178 @@ const TCC = {
         this._labelDrag = null;
         this.canvas.style.cursor = '';
       }
+      if (this._pan) {
+        const moved = this._pan.moved;
+        this._pan = null;
+        this.canvas.style.cursor = '';
+        // A press without movement is a click: select the nearest curve
+        if (!moved) this._handleCurveSelect(e);
+      }
     });
+
+    // Wheel zoom about the cursor (Shift: current only, Alt: time only)
+    this.canvas.addEventListener('wheel', (e) => {
+      if (this.compareMode && this.compareTabId) return;
+      const rect = this.canvas.getBoundingClientRect();
+      const fx = (e.clientX - rect.left - this.plotLeft) / this.plotWidth;
+      const fy = 1 - (e.clientY - rect.top - this.plotTop) / this.plotHeight;
+      e.preventDefault();
+      const delta = Math.max(-300, Math.min(300, e.deltaY || e.deltaX));
+      const factor = Math.exp(-delta * 0.0015);
+      this._zoomAt(Math.max(0, Math.min(1, fx)), Math.max(0, Math.min(1, fy)), factor,
+        { x: !e.altKey, y: !e.shiftKey });
+    }, { passive: false });
+    this.canvas.addEventListener('dblclick', () => this.fitView());
+
+    // Toolbar: zoom / fit
+    const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+    bind('btn-tcc-zoom-in', () => this._zoomAt(0.5, 0.5, 1.5, { x: true, y: true }));
+    bind('btn-tcc-zoom-out', () => this._zoomAt(0.5, 0.5, 1 / 1.5, { x: true, y: true }));
+    bind('btn-tcc-fit', () => this.fitView());
+
+    // Export menu
+    const menuBtn = document.getElementById('btn-tcc-export-menu');
+    const menuPanel = document.getElementById('tcc-export-menu-panel');
+    if (menuBtn && menuPanel) {
+      const setOpen = (open) => {
+        menuPanel.style.display = open ? '' : 'none';
+        menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      menuBtn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(menuPanel.style.display === 'none'); });
+      menuPanel.addEventListener('click', () => setOpen(false));
+      document.addEventListener('click', () => setOpen(false));
+      document.getElementById('tcc-modal').addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && menuPanel.style.display !== 'none') { setOpen(false); e.stopPropagation(); menuBtn.focus(); }
+      });
+    }
+  },
+
+  // ── View: zoom / pan / fit ──
+
+  // Zoom one log axis about the fractional position `frac` (0 = min edge, 1 = max edge).
+  _zoomAxis(minKey, maxKey, frac, factor, lo, hi) {
+    const logMin = Math.log10(this[minKey]);
+    const logMax = Math.log10(this[maxKey]);
+    const span = logMax - logMin;
+    const newSpan = Math.max(0.3, Math.min(Math.log10(hi / lo), span / factor));
+    const anchor = logMin + frac * span;
+    this._setAxis(minKey, maxKey, anchor - frac * newSpan, newSpan, lo, hi);
+  },
+
+  // Set an axis from a log10 origin + span, shifted (never squeezed) to stay within [lo, hi].
+  _setAxis(minKey, maxKey, logMin, span, lo, hi) {
+    const logLo = Math.log10(lo), logHi = Math.log10(hi);
+    span = Math.min(span, logHi - logLo);
+    logMin = Math.max(logLo, Math.min(logHi - span, logMin));
+    this[minKey] = Math.pow(10, logMin);
+    this[maxKey] = Math.pow(10, logMin + span);
+  },
+
+  _zoomAt(fx, fy, factor, axes) {
+    const L = this._viewLimits;
+    if (axes.x) this._zoomAxis('currentMin', 'currentMax', fx, factor, L.iMin, L.iMax);
+    if (axes.y) this._zoomAxis('timeMin', 'timeMax', fy, factor, L.tMin, L.tMax);
+    this._tooltip = null;
+    this.render();
+  },
+
+  _panStart(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (mx < this.plotLeft || mx > this.plotRight || my < this.plotTop || my > this.plotBottom) return;
+    if (this.compareMode && this.compareTabId) {
+      this._handleCurveSelect(e); // panning shares one axis across both charts; keep click-to-select only
+      return;
+    }
+    this._pan = {
+      x0: mx, y0: my, moved: false,
+      logCMin: Math.log10(this.currentMin), cSpan: Math.log10(this.currentMax / this.currentMin),
+      logTMin: Math.log10(this.timeMin), tSpan: Math.log10(this.timeMax / this.timeMin),
+    };
+  },
+
+  _panMove(e) {
+    const pan = this._pan;
+    const rect = this.canvas.getBoundingClientRect();
+    const dx = e.clientX - rect.left - pan.x0;
+    const dy = e.clientY - rect.top - pan.y0;
+    if (!pan.moved && Math.hypot(dx, dy) < 4) return;
+    pan.moved = true;
+    this.canvas.style.cursor = 'grabbing';
+    this._tooltip = null;
+    const L = this._viewLimits;
+    // Content follows the pointer: drag right → view moves to lower current; drag down → higher time
+    this._setAxis('currentMin', 'currentMax', pan.logCMin - dx / this.plotWidth * pan.cSpan, pan.cSpan, L.iMin, L.iMax);
+    this._setAxis('timeMin', 'timeMax', pan.logTMin + dy / this.plotHeight * pan.tSpan, pan.tSpan, L.tMin, L.tMax);
+    this.render();
+  },
+
+  // Fault levels (display amps, after any reference-voltage scaling) relevant to the active tab
+  _faultAmpsForView() {
+    const fr = AppState.faultResults;
+    if (!this.showFaultMarkers || !fr || !fr.buses) return [];
+    const tab = this.tabs.find(t => t.id === this.activeTabId);
+    const out = [];
+    for (const [busId, r] of Object.entries(fr.buses)) {
+      const comp = AppState.components.get(busId);
+      const vkv = r.voltage_kv || comp?.props?.voltage_kv || null;
+      if (tab && tab.isVoltageTab && vkv && Math.abs(vkv - tab.voltage_kv) > 0.01) continue;
+      for (const ka of [r.ik3, r.ik1]) {
+        if (ka == null || !(ka > 0)) continue;
+        let amps = ka * 1000;
+        if (this.referenceVoltage && vkv) amps *= vkv / this.referenceVoltage;
+        out.push(amps);
+      }
+    }
+    return out;
+  },
+
+  // Fit the view to the visible curves (pickup → fault level) with a little padding.
+  fitView() {
+    const devs = this._getVisibleDevicesForTab().filter(d => d.visible);
+    const faults = this._faultAmpsForView();
+    const L = this._viewLimits;
+    const CAP = 1e5; // display amps — same as the default chart width
+    const steps = 240;
+    const pts = []; // { i, t } in display amps / seconds
+    for (const dev of devs) {
+      if (dev.deviceType === 'motor_start') {
+        if (dev.iStartA > 0 && dev.accelS > 0) {
+          pts.push({ i: this._scaleCurrent(dev.iStartA, dev), t: dev.accelS });
+          if (dev.flcA > 0) pts.push({ i: this._scaleCurrent(dev.flcA, dev), t: dev.accelS });
+        }
+        continue;
+      }
+      for (let k = 0; k <= steps; k++) {
+        const disp = Math.pow(10, Math.log10(CAP) * k / steps);
+        const t = this._deviceTripTime(dev, this._scaleCurrentInverse(disp, dev));
+        if (isFinite(t) && t >= 1e-3 && t <= 1e4) pts.push({ i: disp, t });
+      }
+    }
+    if (pts.length === 0) {
+      this.currentMin = 1; this.currentMax = 1e5; this.timeMin = 0.001; this.timeMax = 1000;
+      this.render();
+      return;
+    }
+    const iLo = Math.min(...pts.map(p => p.i));
+    // Right edge: the highest fault level on this tab if there is one, else the curves' own extent
+    let iHi = faults.length ? Math.max(...faults) : Math.max(...pts.map(p => p.i));
+    iHi = Math.max(iHi, iLo * 3);
+    const inRange = pts.filter(p => p.i >= iLo && p.i <= iHi);
+    const tLo = Math.min(...inRange.map(p => p.t));
+    const tHi = Math.max(...inRange.map(p => p.t));
+    const fit = (lo, hi, padDec, minSpan) => {
+      let a = Math.log10(lo) - padDec, b = Math.log10(hi) + padDec;
+      if (b - a < minSpan) { const m = (a + b) / 2; a = m - minSpan / 2; b = m + minSpan / 2; }
+      return [a, b - a];
+    };
+    const [cA, cS] = fit(iLo, iHi, 0.15, 1.5);
+    const [tA, tS] = fit(tLo, tHi, 0.25, 1.5);
+    this._setAxis('currentMin', 'currentMax', cA, cS, L.iMin, L.iMax);
+    this._setAxis('timeMin', 'timeMax', tA, tS, L.tMin, L.tMax);
+    this._tooltip = null;
+    this.render();
   },
 
   _handleLabelDragStart(e) {
@@ -317,7 +496,7 @@ const TCC = {
       requestAnimationFrame(() => {
         this._renderTabs();
         this._renderVoltageSelector();
-        this.render();
+        this.fitView();
         this._renderDeviceList();
         this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
@@ -368,7 +547,7 @@ const TCC = {
       requestAnimationFrame(() => {
         this._renderTabs();
         this._renderVoltageSelector();
-        this.render();
+        this.fitView();
         this._renderDeviceList();
         this._renderSelectedDeviceSettings();
         this._runCoordinationCheck();
@@ -797,6 +976,13 @@ const TCC = {
       // ── Normal single-chart mode ──
       this._renderSingleChart(ctx, w, h, this.activeTabId);
     }
+
+    const range = document.getElementById('tcc-view-range');
+    if (range) {
+      const f = (v, u) => this._formatValue(Number(v.toPrecision(3)), u);
+      range.textContent = `${f(this.currentMin, 'A')} \u2013 ${f(this.currentMax, 'A')}` +
+        ` \u00B7 ${f(this.timeMin, 's')} \u2013 ${f(this.timeMax, 's')}`;
+    }
   },
 
   _renderSingleChart(ctx, w, h, tabId, offsetX, chartWidth) {
@@ -820,6 +1006,12 @@ const TCC = {
     const savedTabId = this.activeTabId;
     this.activeTabId = tabId;
     const tabDevices = this._getVisibleDevicesForTab();
+
+    // Keep curves, handles and markers inside the plot when zoomed in
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(this.plotLeft, this.plotTop, this.plotWidth, this.plotHeight);
+    ctx.clip();
 
     // Dim non-selected curves when a device is selected
     const selIdx = this.selectedDeviceIndex;
@@ -846,6 +1038,7 @@ const TCC = {
 
     // Draw fault current markers
     this._drawFaultMarkers(ctx);
+    ctx.restore();
 
     // Draw mho characteristic inset for distance relays
     this._drawMhoInset(ctx, tabDevices);
@@ -951,13 +1144,15 @@ const TCC = {
     ctx.fillStyle = '#555';
     ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
 
-    // X axis labels (current)
+    // X axis labels (current) — add 2/5 (or every digit) when zoomed in
     ctx.textAlign = 'center';
-    const logCMin = Math.log10(this.currentMin);
-    const logCMax = Math.log10(this.currentMax);
-    for (let decade = Math.ceil(logCMin); decade <= Math.floor(logCMax); decade++) {
-      const val = Math.pow(10, decade);
+    const cSpan = Math.log10(this.currentMax / this.currentMin);
+    const subs = this._labelSubs(cSpan);
+    let lastX = -Infinity;
+    for (const val of this._axisTicks(this.currentMin, this.currentMax, subs)) {
       const x = this._currentToX(val);
+      if (x - lastX < 34) continue; // skip labels that would overlap
+      lastX = x;
       ctx.fillText(this._formatValue(val, 'A'), x, this.plotBottom + 14);
     }
 
@@ -968,11 +1163,12 @@ const TCC = {
     // Y axis labels (time)
     ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'right';
-    const logTMin = Math.log10(this.timeMin);
-    const logTMax = Math.log10(this.timeMax);
-    for (let decade = Math.ceil(logTMin); decade <= Math.floor(logTMax); decade++) {
-      const val = Math.pow(10, decade);
+    const tSpan = Math.log10(this.timeMax / this.timeMin);
+    let lastY = Infinity;
+    for (const val of this._axisTicks(this.timeMin, this.timeMax, this._labelSubs(tSpan))) {
       const y = this._timeToY(val);
+      if (lastY - y < 14) continue;
+      lastY = y;
       ctx.fillText(this._formatValue(val, 's'), this.plotLeft - 6, y + 3);
     }
 
@@ -986,11 +1182,31 @@ const TCC = {
     ctx.restore();
   },
 
+  // Which mantissas get a tick label: decades only when zoomed out, more as the view narrows
+  _labelSubs(spanDecades) {
+    if (spanDecades <= 1.2) return [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    if (spanDecades <= 3) return [1, 2, 5];
+    return [1];
+  },
+
+  // Ascending tick values within [min, max] for the given mantissas
+  _axisTicks(min, max, subs) {
+    const out = [];
+    for (let d = Math.floor(Math.log10(min)); d <= Math.ceil(Math.log10(max)); d++) {
+      for (const m of subs) {
+        const v = Number((m * Math.pow(10, d)).toPrecision(12));
+        if (v >= min * 0.9999 && v <= max * 1.0001) out.push(v);
+      }
+    }
+    return out;
+  },
+
   _formatValue(val, unit) {
+    val = Number(val.toPrecision(6));
     if (val >= 1000) return (val / 1000) + 'k' + unit;
     if (val >= 1) return val + unit;
-    if (val >= 0.001) return (val * 1000).toFixed(0) + 'ms';
-    return val.toExponential(0) + unit;
+    if (val >= 0.001) return Number((val * 1000).toPrecision(3)) + 'ms';
+    return Number((val * 1000).toPrecision(2)) + 'ms';
   },
 
   _drawRelayCurve(ctx, dev) {
@@ -2130,6 +2346,36 @@ const TCC = {
 
   // ── Device List UI ──
 
+  // Short one-line summary for the device list (full detail is in the row tooltip)
+  _deviceSummary(dev) {
+    switch (dev.deviceType) {
+      case 'relay': {
+        let t = `${dev.pickup} A \u00B7 TDS ${dev.tds}`;
+        if (dev.instPickup > 0) t += ' \u00B7 50';
+        if (dev.directional) t = `67 ${dev.direction === 'reverse' ? '\u2190' : '\u2192'} \u00B7 ` + t;
+        return t;
+      }
+      case 'distance_relay':
+        return `21 \u00B7 ${dev.zones.map(z => `${z.reach_ohm}\u03A9`).join(' / ')}`;
+      case 'fuse':
+        return `gG ${dev.fuseRating} A`;
+      case 'cb': {
+        const p = dev.cbParams;
+        return `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a} A` + (p.cb_type === 'mcb' ? ` \u00B7 ${p.mcb_curve || 'C'}` : '');
+      }
+      case 'xfmr_thermal':
+        return `${dev.mva} MVA \u00B7 Ir ${dev.ratedA.toFixed(0)} A`;
+      case 'cable_thermal':
+        return `${dev.sizeMm2} mm\u00B2 \u00B7 Ir ${dev.ratedAmps} A`;
+      case 'custom_curve':
+        return `${dev.curvePoints.length} points`;
+      case 'motor_start':
+        return `${(dev.iStartA / dev.flcA).toFixed(1)}\u00D7FLC \u00B7 ${dev.accelS} s`;
+      default:
+        return '';
+    }
+  },
+
   _renderDeviceList() {
     const list = document.getElementById('tcc-device-list');
     if (!list) return;
@@ -2141,8 +2387,21 @@ const TCC = {
       return;
     }
 
-    list.innerHTML = tabDevices.map((dev, _) => {
+    const groupOf = (dev) => {
+      if (dev.deviceType === 'xfmr_thermal' || dev.deviceType === 'cable_thermal') return 1;
+      if (dev.deviceType === 'motor_start') return 2;
+      return 0;
+    };
+    const groupNames = ['Protection', 'Damage limits', 'Load'];
+    const ordered = tabDevices.map(d => ({ d, g: groupOf(d) })).sort((a, b) => a.g - b.g);
+    const eyeOn = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const eyeOff = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.1-5.9M9.9 5.1A10.4 10.4 0 0 1 12 5c7 0 11 7 11 7a19.9 19.9 0 0 1-3.2 4.2M1 1l22 22"/></svg>';
+    let lastGroup = -1;
+
+    list.innerHTML = ordered.map(({ d: dev, g }) => {
       const i = this.devices.indexOf(dev);
+      const groupHeader = g !== lastGroup ? `<div class="tcc-device-group">${groupNames[g]}</div>` : '';
+      lastGroup = g;
       let typeLabel;
       if (dev.deviceType === 'relay') {
         const dirPrefix = dev.directional ? `67 ${dev.direction === 'reverse' ? '\u2190Rev' : '\u2192Fwd'} | ` : '';
@@ -2184,14 +2443,14 @@ const TCC = {
       }
       const selected = i === this.selectedDeviceIndex;
       const isEndpoint = i === this._miniSLDEndpointDeviceIdx;
-      return `<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" draggable="true">
+      return `${groupHeader}<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" draggable="true" title="${escHtml(dev.name + (typeLabel ? ' \u2014 ' + typeLabel : ''))}">
         <div class="tcc-device-color" style="background:${dev.color}"></div>
         <div class="tcc-device-info">
           <div class="tcc-device-name">${escHtml(dev.name)}</div>
-          <div class="tcc-device-detail">${escHtml(typeLabel)}</div>
+          <div class="tcc-device-detail">${escHtml(this._deviceSummary(dev))}</div>
         </div>
-        <button class="tcc-device-endpoint ${isEndpoint ? 'active' : ''}" data-index="${i}" title="${isEndpoint ? 'Clear path endpoint' : 'Set as furthest grading point — mini-SLD shows path from source to this device'}">\u21E5</button>
-        <button class="tcc-device-toggle" data-index="${i}" title="Toggle visibility">${dev.visible ? '\u25CF' : '\u25CB'}</button>
+        <button class="tcc-device-endpoint ${isEndpoint ? 'active' : ''}" data-index="${i}" aria-pressed="${isEndpoint}" aria-label="Furthest grading point" title="${isEndpoint ? 'Clear path endpoint' : 'Set as furthest grading point — the Protection Path panel shows the path from source to this device'}">\u21E5</button>
+        <button class="tcc-device-toggle" data-index="${i}" aria-pressed="${dev.visible}" aria-label="${dev.visible ? 'Hide' : 'Show'} ${escHtml(dev.name)} curve" title="${dev.visible ? 'Hide curve' : 'Show curve'}">${dev.visible ? eyeOn : eyeOff}</button>
       </div>`;
     }).join('');
 
@@ -2199,7 +2458,7 @@ const TCC = {
     list.querySelectorAll('.tcc-device-toggle').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const idx = parseInt(e.target.dataset.index);
+        const idx = parseInt(e.currentTarget.dataset.index);
         this.devices[idx].visible = !this.devices[idx].visible;
         this._renderDeviceList();
         this.render();
@@ -2212,7 +2471,7 @@ const TCC = {
     list.querySelectorAll('.tcc-device-endpoint').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const idx = parseInt(e.target.dataset.index);
+        const idx = parseInt(e.currentTarget.dataset.index);
         this._miniSLDEndpointDeviceIdx = (this._miniSLDEndpointDeviceIdx === idx) ? -1 : idx;
         this._renderDeviceList();
         this._renderMiniSLD();
@@ -4398,10 +4657,10 @@ const TCC = {
 
     container.querySelectorAll('.tcc-view-tab:not(.tcc-add-custom-tab)').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        this.activeTabId = e.target.dataset.tabId;
+        this.activeTabId = e.currentTarget.dataset.tabId;
         this._renderTabs();
         this._renderDeviceList();
-        this.render();
+        this.fitView();
         this._runCoordinationCheck();
         this._renderMiniSLD();
       });
