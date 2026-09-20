@@ -45,6 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
   StandardData.init();
   TCC.init();
   UndoManager.init();
+  Arrange.init();
   RevisionTimeline.init();
   MiniMap.init();
   ContextMenu.init();

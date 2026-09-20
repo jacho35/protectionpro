@@ -114,7 +114,7 @@
             </button><button id="btn-ungroup" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2" opacity="0.3"/><rect x="2" y="3" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="8" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
               Ungroup <span class="dropdown-shortcut">Ctrl+Shift+G</span>
-            </button></div></div>
+            </button><div class="dropdown-divider"></div><span class="dropdown-label">Arrange selection</span><button type="button" id="btn-arrange-left" class="dropdown-item">Align left</button><button type="button" id="btn-arrange-center" class="dropdown-item">Align centre</button><button type="button" id="btn-arrange-right" class="dropdown-item">Align right</button><button type="button" id="btn-arrange-top" class="dropdown-item">Align top</button><button type="button" id="btn-arrange-middle" class="dropdown-item">Align middle</button><button type="button" id="btn-arrange-bottom" class="dropdown-item">Align bottom</button><button type="button" id="btn-arrange-dist-h" class="dropdown-item">Distribute horizontally</button><button type="button" id="btn-arrange-dist-v" class="dropdown-item">Distribute vertically</button><button type="button" id="btn-arrange-auto" class="dropdown-item" title="Lay out the selection, or the whole page, in layers from source to load">Auto-arrange diagram</button><button type="button" id="btn-arrange-pin" class="dropdown-item" title="Pinned parts stay put when the diagram is auto-arranged">Pin / unpin selection</button></div></div>
         <div class="toolbar-menu" id="menu-view"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">View <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><span class="dropdown-label">Diagram layers</span><button id="btn-toggle-labels" class="dropdown-item active" title="Toggle Cable Labels">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 12h12M2 8h8M2 4h10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
               Cable Labels
@@ -3077,6 +3077,7 @@
   <script src="js/templates.js?v=3.5.122"></script>
   <script src="js/standard-data.js?v=3.5.122"></script>
   <script src="js/undo.js?v=3.5.122"></script>
+  <script src="js/arrange.js?v=3.5.122"></script>
   <script src="js/revisions.js?v=3.5.122"></script>
   <script src="js/minimap.js?v=3.5.122"></script>
   <script src="js/contextmenu.js?v=3.5.122"></script>
