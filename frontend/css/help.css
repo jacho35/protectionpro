@@ -125,3 +125,126 @@
 .hc-rgroup { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted, #666); }
 .hc-snip { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.4; color: var(--text-secondary, #555); font-weight: 400; }
 .hc-body mark.hc-hit, .hc-list mark { background: rgba(255,200,0,.45); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+/* ── Help on phones ─────────────────────────────────────────────────────────
+   Pointer-based wording: mouse text on fine pointers, touch text on coarse ones. */
+.help-back, .help-home { display: none; }
+.help-touch-only { display: none; }
+.help-tab-touch { display: none; }
+.hc-cards, .hc-comp-search { display: none; }
+@media (pointer: coarse) {
+  .help-mouse-only { display: none; }
+  .help-touch-only { display: block; }
+  .help-tab-touch { display: inline-block; }
+}
+.hc-eq { position: relative; }
+.hc-eq .katex-display { overflow-x: auto; overflow-y: hidden; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.hc-eq.hc-eq-more::after {
+  content: '›'; position: absolute; right: 0; top: 0; bottom: 0; width: 28px;
+  display: flex; align-items: center; justify-content: flex-end; padding-right: 4px;
+  font-size: 20px; color: var(--text-muted, #666); pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--bg-primary, #fff) 70%);
+}
+
+#help-modal.help-compact { padding: 0; align-items: stretch; justify-content: stretch; }
+#help-modal.help-compact .modal-content {
+  width: 100vw; max-width: none; height: 100vh; height: 100dvh; max-height: none; margin: 0; border-radius: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#help-modal.help-compact .modal-header { padding: 4px; min-height: 56px; gap: 2px; flex-shrink: 0; justify-content: flex-start; }
+#help-modal.help-compact .modal-header h3 {
+  flex: 1 1 auto; min-width: 0; margin: 0 0 0 12px; font-size: 17px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#help-modal.help-compact .help-back:not([hidden]) + h3 { margin-left: 0; }
+#help-modal.help-compact .help-back, #help-modal.help-compact .modal-close {
+  flex: 0 0 auto; min-width: 48px; min-height: 48px; background: none; border: 0; color: inherit; cursor: pointer;
+}
+#help-modal.help-compact .help-back { display: block; font-size: 30px; line-height: 1; }
+#help-modal.help-compact .help-back[hidden] { display: none; }
+#help-modal.help-compact .help-tabs { display: none; }
+#help-modal.help-compact .help-body { flex: 1 1 auto; min-height: 0; padding: 0; overflow-y: auto; overflow-x: hidden; }
+#help-modal.help-compact .help-content { max-height: none; overflow-y: visible; }
+#help-modal.help-compact .help-content:not(.help-ref) { padding: 12px 16px 28px; max-width: 100%; box-sizing: border-box; overflow-x: hidden; }
+#help-modal.help-compact[data-screen="home"] .help-body { display: none; }
+#help-modal.help-compact[data-screen="home"] .help-home {
+  display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 24px;
+}
+#help-modal.help-compact .help-content img, #help-modal.help-compact .help-content pre,
+#help-modal.help-compact .help-content table { max-width: 100%; }
+#help-modal.help-compact .help-content table:not(.hc-cardified) { display: block; overflow-x: auto; }
+#help-modal.help-compact .help-content pre { overflow-x: auto; }
+
+/* Home */
+.help-home-search { padding: 12px 16px 6px; }
+.help-home-search input {
+  width: 100%; box-sizing: border-box; min-height: 44px; padding: 8px 12px; font-size: 16px;
+  border: 1px solid var(--border-color, #ccc); border-radius: 8px;
+  background: var(--bg-primary, #fff); color: var(--text-primary, #222);
+}
+.help-home-chips { display: flex; gap: 8px; padding: 6px 16px 4px; overflow-x: auto; flex-wrap: nowrap; }
+.help-chip {
+  flex: 0 0 auto; min-height: 36px; padding: 0 14px; border-radius: 18px; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--border-color, #ccc); background: var(--bg-secondary, #f5f6f8); color: var(--text-primary, #222);
+}
+.help-home-group {
+  padding: 16px 16px 6px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted, #666);
+}
+.help-home-count-line { padding: 10px 16px 0; font-size: 12px; color: var(--text-muted, #666); }
+.help-home-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; min-height: 56px;
+  padding: 10px 16px; text-align: left; cursor: pointer; border: 0; border-bottom: 1px solid var(--border-color, #e3e3e3);
+  background: none; color: var(--text-primary, #222); font: inherit;
+}
+.help-home-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.help-home-title { font-size: 15px; font-weight: 600; }
+.help-home-sub { font-size: 12.5px; color: var(--text-muted, #666); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.help-home-count { font-size: 12px; color: var(--text-muted, #666); }
+.help-home-chev { font-size: 22px; color: var(--text-muted, #666); }
+
+/* Reference: list and article are separate screens */
+#help-modal.help-compact .help-content.help-ref { height: auto; min-height: 100%; display: flex; flex-direction: column; overflow: visible; }
+#help-modal.help-compact #help-tab-reference:not(.hc-reading) .hc-article { display: none; }
+#help-modal.help-compact #help-tab-reference.hc-reading .hc-nav { display: none; }
+#help-modal.help-compact .hc-nav { flex: 1 1 auto; border: 0; }
+#help-modal.help-compact .hc-search { font-size: 16px; min-height: 44px; }
+#help-modal.help-compact .hc-list { overflow: visible; }
+#help-modal.help-compact .hc-item, #help-modal.help-compact .hc-result { min-height: 44px; }
+#help-modal.help-compact .hc-article { flex: 1 1 auto; overflow: visible; padding: 14px 16px 12px; max-width: 100%; box-sizing: border-box; min-width: 0; }
+#help-modal.help-compact .hc-body { overflow-wrap: anywhere; }
+#help-modal.help-compact .hc-body table { display: block; overflow-x: auto; max-width: 100%; }
+#help-modal.help-compact .hc-body table td:first-child { white-space: normal; }
+#help-modal.help-compact .hc-pager {
+  position: sticky; bottom: 0; display: flex; justify-content: space-between; gap: 8px; margin: 16px -16px 0; padding: 8px 12px;
+  background: var(--bg-primary, #fff); border-top: 1px solid var(--border-color, #ddd);
+}
+#help-modal.help-compact .hc-pager a {
+  display: flex; align-items: center; min-height: 44px; max-width: 48%; font-size: 13px; overflow: hidden;
+}
+
+/* Components: expandable cards */
+#help-modal.help-compact #help-tab-components table.hc-cardified { display: none; }
+#help-modal.help-compact .hc-cards, #help-modal.help-compact .hc-comp-search { display: block; }
+#help-modal.help-compact .hc-comp-search {
+  width: 100%; box-sizing: border-box; min-height: 44px; padding: 8px 12px; margin: 4px 0 8px; font-size: 16px;
+  border: 1px solid var(--border-color, #ccc); border-radius: 8px; background: var(--bg-primary, #fff); color: var(--text-primary, #222);
+}
+#help-modal.help-compact .hc-group-toggle {
+  display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin: 8px 0 0; cursor: pointer;
+}
+#help-modal.help-compact .hc-group-toggle::after { content: attr(data-count) '  ⌃'; font-size: 12px; font-weight: 400; color: var(--text-muted, #666); }
+#help-modal.help-compact .hc-group-toggle.closed::after { content: attr(data-count) '  ⌄'; }
+#help-modal.help-compact .hc-group-toggle.closed + table + .hc-cards { display: none; }
+#help-modal.help-compact .hc-comp { border-bottom: 1px solid var(--border-color, #e3e3e3); }
+#help-modal.help-compact .hc-comp-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 56px; padding: 8px 0; text-align: left; cursor: pointer;
+  background: none; border: 0; color: inherit; font: inherit;
+}
+#help-modal.help-compact .hc-comp-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#help-modal.help-compact .hc-comp-desc { font-size: 12.5px; color: var(--text-muted, #666); }
+#help-modal.help-compact .hc-comp-chev { font-size: 20px; color: var(--text-muted, #666); transition: transform .15s; }
+#help-modal.help-compact .hc-comp.open .hc-comp-chev { transform: rotate(90deg); }
+#help-modal.help-compact .hc-comp-props { display: none; padding: 0 0 12px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+#help-modal.help-compact .hc-comp.open .hc-comp-props { display: block; }
+#help-modal.help-compact .hc-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted, #666); margin-bottom: 2px; }

@@ -62,6 +62,20 @@ const HelpCenter = {
     });
   },
 
+  // Wide display equations scroll inside a box with a fade + chevron at the edge that says so
+  _wrapEquations(el) {
+    el.querySelectorAll('.katex-display').forEach(d => {
+      if (d.parentElement.classList.contains('hc-eq')) return;
+      const box = document.createElement('div');
+      box.className = 'hc-eq';
+      d.replaceWith(box);
+      box.appendChild(d);
+      const upd = () => box.classList.toggle('hc-eq-more', d.scrollWidth > d.clientWidth + 2 && d.scrollLeft + d.clientWidth < d.scrollWidth - 2);
+      d.addEventListener('scroll', upd, { passive: true });
+      requestAnimationFrame(upd);
+    });
+  },
+
   _renderMath(el) {
     if (this._katex !== 'ready' || typeof renderMathInElement !== 'function') return;
     renderMathInElement(el, {
@@ -72,6 +86,7 @@ const HelpCenter = {
       throwOnError: false,
       ignoredTags: ['script', 'style', 'textarea', 'pre', 'code'],
     });
+    this._wrapEquations(el);
   },
 
   // ── UI ──
@@ -108,7 +123,7 @@ const HelpCenter = {
       this.show(a.dataset.help);
     });
     this._renderList();
-    this.show(HELP_ARTICLES[0]?.id);
+    this.show(HELP_ARTICLES[0]?.id, { initial: true });
   },
 
   // ── Search ──
@@ -258,6 +273,17 @@ const HelpCenter = {
       `</button>`).join('');
   },
 
+  // Top article matches for a query (used by the phone home's single search field)
+  searchArticles(q, limit = 8) {
+    const words = this._terms(q);
+    const terms = words.length > 1 ? words.filter(w => w.length > 1) : words;
+    if (!terms.length) return [];
+    this._phrase = words.join(' ');
+    return HELP_ARTICLES.map(a => this._score(a, terms)).filter(Boolean)
+      .sort((x, y) => y.score - x.score || HELP_ARTICLES.indexOf(x.a) - HELP_ARTICLES.indexOf(y.a))
+      .slice(0, limit).map(r => r.a);
+  },
+
   _moveCursor(d) {
     if (!this._results.length) return;
     this._cursor = (this._cursor + d + this._results.length) % this._results.length;
@@ -289,10 +315,13 @@ const HelpCenter = {
     root.querySelector('.hc-hit')?.scrollIntoView({ block: 'center' });
   },
 
-  async show(id) {
+  async show(id, opts = {}) {
     const a = HELP_ARTICLES.find(x => x.id === id);
     if (!a || !this._article) return;
     this._current = id;
+    // Phone layout: the list and the article are separate screens
+    if (!opts.initial) document.getElementById('help-tab-reference')?.classList.add('hc-reading');
+    if (typeof HelpMobile !== 'undefined') HelpMobile.syncTitle();
     const i = HELP_ARTICLES.indexOf(a);
     const prev = HELP_ARTICLES[i - 1], next = HELP_ARTICLES[i + 1];
     const g = HELP_GROUPS.find(x => x.id === a.group);
@@ -332,3 +361,195 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('.help-tab[data-tab="reference"]')
     ?.addEventListener('click', () => HelpCenter.onTab());
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phone layout: a home list, then one full-screen topic at a time. The five existing
+// panes are reused (a tab click shows the pane), so nothing about the content changes.
+// ─────────────────────────────────────────────────────────────────────────────
+const HelpMobile = {
+  on: false,
+  TOPICS: [
+    { group: 'Start here', tab: 'getting-started', sub: 'Draw, connect and analyse, the phone way' },
+    { group: 'Start here', tab: 'touch', sub: 'Pan, pinch, tap, modes, labels' },
+    { group: 'Reference', tab: 'reference', sub: 'Formulas, standards, worked examples', count: () => HELP_ARTICLES.length },
+    { group: 'Reference', tab: 'components', sub: 'What every symbol is and what it needs', count: () => document.querySelectorAll('#help-tab-components tbody tr').length },
+    { group: 'Reference', tab: 'verification', sub: 'How the engines are checked' },
+    { group: 'Desktop', tab: 'shortcuts', sub: 'Shown when a keyboard is attached', keyboard: true },
+  ],
+  CHIPS: [['Short circuit', 'short circuit'], ['Load flow', 'load flow'], ['Cable sizing', 'cable sizing'], ['Arc flash', 'arc flash']],
+
+  init() {
+    this._mq = window.matchMedia('(max-width: 768px)');
+    this._mq.addEventListener('change', () => this._apply());
+    document.getElementById('btn-help-back')?.addEventListener('click', () => this.back());
+    // Opening Help lands on the home; opening a tab from anywhere (Ctrl K, an article link) enters that screen
+    document.getElementById('btn-help')?.addEventListener('click', () => { if (this.on) this.home(); });
+    document.querySelectorAll('.help-tab').forEach(t => t.addEventListener('click', () => this._entered(t.dataset.tab)));
+    this._cardify();
+    this._apply();
+  },
+
+  _apply() {
+    const modal = document.getElementById('help-modal');
+    if (!modal) return;
+    this.on = this._mq.matches;
+    modal.classList.toggle('help-compact', this.on);
+    if (this.on) { if (!modal.dataset.screen) this.home(); }
+    else {
+      modal.removeAttribute('data-screen');
+      document.getElementById('help-home').hidden = true;
+      document.getElementById('btn-help-back').hidden = true;
+      document.getElementById('help-title').textContent = 'ProtectionPro — Help & Documentation';
+    }
+  },
+
+  home() {
+    const modal = document.getElementById('help-modal');
+    modal.dataset.screen = 'home';
+    document.getElementById('help-tab-reference')?.classList.remove('hc-reading');
+    document.getElementById('btn-help-back').hidden = true;
+    document.getElementById('help-title').textContent = 'Help';
+    this._buildHome();
+    document.getElementById('help-home').hidden = false;
+  },
+
+  _entered(tab) {
+    if (!this.on) return;
+    document.getElementById('help-modal').dataset.screen = 'section';
+    document.getElementById('help-home').hidden = true;
+    document.getElementById('btn-help-back').hidden = false;
+    this._tab = tab;
+    this.syncTitle();
+    document.querySelector('#help-modal .modal-body')?.scrollTo(0, 0);
+  },
+
+  syncTitle() {
+    if (!this.on) return;
+    const title = document.getElementById('help-title');
+    const tab = this._tab || document.querySelector('.help-tab.active')?.dataset.tab;
+    const label = (document.querySelector(`.help-tab[data-tab="${tab}"]`)?.textContent || 'Help').trim();
+    const reading = document.getElementById('help-tab-reference')?.classList.contains('hc-reading');
+    const art = HELP_ARTICLES.find(a => a.id === HelpCenter._current);
+    title.textContent = (tab === 'reference' && reading && art) ? art.title : label;
+  },
+
+  back() {
+    const ref = document.getElementById('help-tab-reference');
+    if (this._tab === 'reference' && ref?.classList.contains('hc-reading') && document.getElementById('help-modal').dataset.screen === 'section') {
+      ref.classList.remove('hc-reading');
+      this.syncTitle();
+      return;
+    }
+    this.home();
+  },
+
+  _buildHome() {
+    const home = document.getElementById('help-home');
+    const fine = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    let html = `<div class="help-home-search"><input type="search" id="help-home-q" placeholder="Search ${HELP_ARTICLES.length} articles and components" aria-label="Search help" autocomplete="off"></div>
+      <div class="help-home-chips">${this.CHIPS.map(([l, q]) => `<button type="button" class="help-chip" data-q="${q}">${l}</button>`).join('')}</div>
+      <div id="help-home-body">`;
+    let last = '';
+    for (const t of this.TOPICS) {
+      if (t.keyboard && !fine) continue;
+      const btn = document.querySelector(`.help-tab[data-tab="${t.tab}"]`);
+      if (!btn) continue;
+      if (t.group !== last) { html += `<div class="help-home-group">${t.group}</div>`; last = t.group; }
+      html += `<button type="button" class="help-home-row" data-go="${t.tab}"><span class="help-home-text"><span class="help-home-title">${btn.textContent.trim()}</span><span class="help-home-sub">${t.sub}</span></span>${t.count ? `<span class="help-home-count">${t.count()}</span>` : ''}<span class="help-home-chev" aria-hidden="true">›</span></button>`;
+    }
+    home.innerHTML = html + '</div>';
+    home.querySelector('#help-home-q').addEventListener('input', (e) => this._search(e.target.value));
+    home.addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-q]');
+      if (chip) { const q = home.querySelector('#help-home-q'); q.value = chip.dataset.q; this._search(chip.dataset.q); return; }
+      const go = e.target.closest('[data-go]');
+      if (go) { document.querySelector(`.help-tab[data-tab="${go.dataset.go}"]`).click(); return; }
+      const art = e.target.closest('[data-article]');
+      if (art) { HelpCenter.open(art.dataset.article); return; }
+      const comp = e.target.closest('[data-comp]');
+      if (comp) this._openComponent(+comp.dataset.comp);
+    }, { once: false });
+  },
+
+  // One search over the articles and the component descriptions
+  _search(q) {
+    const body = document.getElementById('help-home-body');
+    const query = q.trim().toLowerCase();
+    if (!query) { this._buildHome(); document.getElementById('help-home-q').focus(); return; }
+    const arts = HelpCenter.searchArticles(query, 8);
+    const comps = [...document.querySelectorAll('#help-tab-components .hc-comp')]
+      .map((el, i) => ({ el, i })).filter(({ el }) => el.textContent.toLowerCase().includes(query)).slice(0, 8);
+    let html = `<div class="help-home-count-line">${arts.length + comps.length ? `${arts.length} article${arts.length === 1 ? '' : 's'} · ${comps.length} component${comps.length === 1 ? '' : 's'}` : 'Nothing matches'}</div>`;
+    if (arts.length) {
+      html += '<div class="help-home-group">Articles</div>' + arts.map(a => {
+        const g = (HELP_GROUPS.find(x => x.id === a.group) || {}).title || '';
+        return `<button type="button" class="help-home-row" data-article="${a.id}"><span class="help-home-text"><span class="help-home-title">${a.title}</span><span class="help-home-sub">${g}</span></span><span class="help-home-chev">›</span></button>`;
+      }).join('');
+    }
+    if (comps.length) {
+      html += '<div class="help-home-group">Components</div>' + comps.map(({ el, i }) =>
+        `<button type="button" class="help-home-row" data-comp="${i}"><span class="help-home-text"><span class="help-home-title">${el.querySelector('.hc-comp-name').textContent}</span><span class="help-home-sub">${el.querySelector('.hc-comp-desc').textContent}</span></span><span class="help-home-chev">›</span></button>`).join('');
+    }
+    body.innerHTML = html;
+  },
+
+  // ── Components: each table row becomes a card that opens to its key properties ──
+  _cardify() {
+    const pane = document.getElementById('help-tab-components');
+    if (!pane || pane.dataset.cardified) return;
+    pane.dataset.cardified = '1';
+    const search = document.createElement('input');
+    search.type = 'search'; search.className = 'hc-comp-search'; search.placeholder = 'Search components'; search.setAttribute('aria-label', 'Search components');
+    pane.insertBefore(search, pane.firstChild);
+    pane.querySelectorAll('table.help-ref-table').forEach(tb => {
+      const head = tb.previousElementSibling;
+      if (!head || head.tagName !== 'H4') return;
+      const wrap = document.createElement('div');
+      wrap.className = 'hc-cards';
+      tb.querySelectorAll('tbody tr').forEach(tr => {
+        const c = tr.children;
+        const card = document.createElement('div');
+        card.className = 'hc-comp';
+        card.innerHTML = `<button type="button" class="hc-comp-head" aria-expanded="false"><span class="hc-comp-text"><span class="hc-comp-name">${c[0].innerHTML}</span><span class="hc-comp-desc">${c[1] ? c[1].innerHTML : ''}</span></span><span class="hc-comp-chev" aria-hidden="true">›</span></button><div class="hc-comp-props"><span class="hc-label">Key properties</span>${c[2] ? c[2].innerHTML : ''}</div>`;
+        card.querySelector('.hc-comp-head').addEventListener('click', () => {
+          const open = !card.classList.contains('open');
+          card.classList.toggle('open', open);
+          card.querySelector('.hc-comp-head').setAttribute('aria-expanded', open);
+        });
+        wrap.appendChild(card);
+      });
+      tb.after(wrap);
+      tb.classList.add('hc-cardified');
+      head.classList.add('hc-group-toggle');
+      head.setAttribute('tabindex', '0'); head.setAttribute('role', 'button');
+      const n = wrap.children.length;
+      head.dataset.count = n;
+      const toggle = () => head.classList.toggle('closed');
+      head.addEventListener('click', toggle);
+      head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+      head.classList.add('closed');
+    });
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      pane.querySelectorAll('.hc-cards').forEach(w => {
+        let shown = 0;
+        w.querySelectorAll('.hc-comp').forEach(card => { const ok = !q || card.textContent.toLowerCase().includes(q); card.hidden = !ok; if (ok) shown++; });
+        const head = w.previousElementSibling.previousElementSibling;
+        if (head) { head.hidden = !!q && !shown; if (q) head.classList.toggle('closed', !shown); }
+      });
+    });
+  },
+
+  _openComponent(i) {
+    document.querySelector('.help-tab[data-tab="components"]').click();
+    const card = document.querySelectorAll('#help-tab-components .hc-comp')[i];
+    if (!card) return;
+    card.closest('.hc-cards').previousElementSibling.previousElementSibling?.classList.remove('closed');
+    card.classList.add('open');
+    card.querySelector('.hc-comp-head').setAttribute('aria-expanded', 'true');
+    requestAnimationFrame(() => card.scrollIntoView({ block: 'center' }));
+  },
+};
+
+document.addEventListener('DOMContentLoaded', () => HelpMobile.init());
