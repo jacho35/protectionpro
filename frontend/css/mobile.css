@@ -1638,3 +1638,12 @@ body.dark-mode {
   #tcc-modal .tcc-device-toggle, #tcc-modal .tcc-device-endpoint { min-width: 44px; min-height: 44px; }
   #tcc-modal .tcc-coord-row { min-height: 44px; }
 }
+
+/* Large-network additions on the compact layout */
+#tcc-modal.tcc-compact .tcc-coord-group,
+#tcc-modal.tcc-compact .tcc-coord-group td { display: block; }
+#tcc-modal.tcc-compact .tcc-coord-group { margin: 0 0 6px; border-radius: 8px; overflow: hidden; }
+#tcc-modal.tcc-compact .tcc-coord-group-toggle { min-height: 44px; }
+.tcc-sheet .tcc-device-item .tcc-device-solo { min-width: 44px; min-height: 44px; }
+.tcc-sheet .tcc-group-toggle, .tcc-sheet .tcc-group-act { min-height: 44px; min-width: 44px; font-size: 12px; }
+.tcc-sheet .tcc-devices-tools input[type="search"] { min-height: 44px; }

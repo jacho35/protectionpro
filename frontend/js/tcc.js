@@ -61,6 +61,27 @@ const TCC = {
   compareMode: false,
   compareTabId: null, // second tab ID for comparison
 
+  // Ten hand-picked colours, then evenly spaced hues (golden angle) so a large
+  // network never repeats a colour
+  _nextColor() {
+    const i = this.colorIndex++;
+    if (i < this.palette.length) return this.palette[i];
+    return `hsl(${Math.round((i * 137.508) % 360)}, 62%, ${i % 2 ? 40 : 48}%)`;
+  },
+
+  // ── Large-network state ──
+  _pathOnly: false,            // chart / list / checks limited to the source → endpoint path
+  _pathSetCache: null,
+  _deviceFilter: '',           // device-list search text
+  _collapsedGroups: new Set(), // device-list group indexes collapsed by the user
+  _soloIdx: -1,                // device shown alone (solo), with _soloBackup to restore
+  _soloBackup: null,
+  _hoverDevIdx: -1,            // curve under the pointer (busy charts)
+  _busy: false,                // more visible curves than can be read at once
+  _coordShowAll: false,        // ungroup the coordination results
+  _coordFailsOnly: false,
+  _coordOpen: new Set(),       // upstream device names expanded in the grouped results
+
   // ── Coordination rows / focus, pinned cursor, auto-coordinate preview ──
   _coordRows: [],         // graded pairs from the last coordination check
   _pairFocus: null,       // key of the row highlighted on the chart
@@ -321,6 +342,13 @@ const TCC = {
     bind('btn-tcc-zoom-in', () => this._zoomAt(0.5, 0.5, 1.5, { x: true, y: true }));
     bind('btn-tcc-zoom-out', () => this._zoomAt(0.5, 0.5, 1 / 1.5, { x: true, y: true }));
     bind('btn-tcc-fit', () => this.fitView());
+
+    // Device search and path-only chip
+    document.getElementById('tcc-device-filter')?.addEventListener('input', (e) => {
+      this._deviceFilter = e.target.value;
+      this._renderDeviceList();
+    });
+    bind('btn-tcc-path-only', () => this._setPathOnly(!this._pathOnly));
 
     // Checks drawer: tabs + collapse
     document.querySelectorAll('.tcc-drawer-tab').forEach(b => b.addEventListener('click', () => this._showDrawerTab(b.dataset.drawerTab)));
@@ -736,6 +764,15 @@ const TCC = {
   },
 
   _resetTransientState() {
+    this._pathOnly = false;
+    this._pathSetCache = null;
+    this._deviceFilter = '';
+    this._soloIdx = -1;
+    this._soloBackup = null;
+    this._coordShowAll = false;
+    this._coordFailsOnly = false;
+    this._coordOpen = new Set();
+    this._depthCache = null;
     this._pairFocus = null;
     this._coordRows = [];
     this._autoPreview = null;
@@ -1000,6 +1037,7 @@ const TCC = {
     this.colorIndex = 0;
     this.selectedDeviceIndex = -1;
     this._loadDevicesFromNetwork();
+    this._applyLargeNetworkDefaults();
     this._restoreDisplayState();
     // Validate endpoint device index against new device list
     if (this._miniSLDEndpointDeviceIdx >= this.devices.length) {
@@ -1042,6 +1080,7 @@ const TCC = {
     // Trace upstream protection devices and load only those
     const filterSet = Components.traceUpstreamProtection(compId);
     this._loadDevicesFromNetwork(filterSet);
+    this._applyLargeNetworkDefaults();
     this._restoreDisplayState();
 
     // Auto-select the target device
@@ -1152,7 +1191,7 @@ const TCC = {
           name: comp.props?.name || id,
           deviceType: 'relay',
           relayType: comp.props?.relay_type,
-          color: this.palette[this.colorIndex++ % this.palette.length],
+          color: this._nextColor(),
           visible: true,
           voltage_kv: this._resolveDeviceVoltage(measureAt),
           associated_ct: ctId || null,
@@ -1179,7 +1218,7 @@ const TCC = {
             id,
             name: comp.props?.name || id,
             deviceType: 'distance_relay',
-            color: this.palette[this.colorIndex++ % this.palette.length],
+            color: this._nextColor(),
             visible: true,
             voltage_kv: vkv,
             zones,  // [{ name, reach_ohm, delay_s, pickup_a }]
@@ -1195,7 +1234,7 @@ const TCC = {
           id,
           name: comp.props?.name || id,
           deviceType: 'fuse',
-          color: this.palette[this.colorIndex++ % this.palette.length],
+          color: this._nextColor(),
           visible: true,
           voltage_kv: this._resolveDeviceVoltage(id),
           fuseRating: nearestRating || ratingA,
@@ -1207,7 +1246,7 @@ const TCC = {
           id,
           name: comp.props?.name || id,
           deviceType: 'cb',
-          color: this.palette[this.colorIndex++ % this.palette.length],
+          color: this._nextColor(),
           visible: true,
           voltage_kv: this._resolveDeviceVoltage(id),
           cbParams: {
@@ -1237,7 +1276,7 @@ const TCC = {
             name: (comp.props?.name || id) + ' E/F',
             deviceType: 'relay',
             relayType: '50N/51N',
-            color: this.palette[this.colorIndex++ % this.palette.length],
+            color: this._nextColor(),
             visible: true,
             voltage_kv: this._resolveDeviceVoltage(id),
             associated_ct: efCtId,
@@ -1265,7 +1304,7 @@ const TCC = {
             id,
             name: (comp.props?.name || id) + ' (thermal)',
             deviceType: 'xfmr_thermal',
-            color: this.palette[this.colorIndex++ % this.palette.length],
+            color: this._nextColor(),
             visible: true,
             voltage_kv: lvKv,
             ratedA,
@@ -1291,7 +1330,7 @@ const TCC = {
             id,
             name: (comp.props?.name || id) + ' (thermal)',
             deviceType: 'cable_thermal',
-            color: this.palette[this.colorIndex++ % this.palette.length],
+            color: this._nextColor(),
             visible: true,
             voltage_kv: this._resolveDeviceVoltage(id),
             ratedAmps,
@@ -1327,7 +1366,7 @@ const TCC = {
             id: id + '__start',
             name: (p.name || id) + ' (start)',
             deviceType: 'motor_start',
-            color: this.palette[this.colorIndex++ % this.palette.length],
+            color: this._nextColor(),
             visible: true,
             voltage_kv: vkv,
             flcA, iStartA, accelS, stallS,
@@ -1393,8 +1432,76 @@ const TCC = {
   },
 
   _getVisibleDevicesForTab() {
-    if (this.activeTabId === 'all') return this.devices;
-    return this.devices.filter(d => d.tabId === this.activeTabId || d.tabId === null);
+    const list = this.activeTabId === 'all'
+      ? this.devices
+      : this.devices.filter(d => d.tabId === this.activeTabId || d.tabId === null);
+    const set = this._pathIdSet();
+    return set ? list.filter(d => this._inPathView(d, set)) : list;
+  },
+
+  // ── Path view: only the devices between a source and the furthest grading point ──
+
+  // SLD component id a device sits at on a path (a relay acts at the breaker it trips)
+  _endpointCompId(dev) {
+    if (!dev) return null;
+    if (dev.deviceType === 'relay' || dev.deviceType === 'distance_relay') return dev.trip_cb || dev.associated_ct || dev.id;
+    return String(dev.id).split('__')[0];
+  },
+
+  // Component ids on every source → endpoint path, or null when path view is off
+  _pathIdSet() {
+    if (!this._pathOnly) return null;
+    const ep = this.devices[this._miniSLDEndpointDeviceIdx];
+    if (!ep) return null;
+    const key = `${this._miniSLDEndpointDeviceIdx}|${this.devices.length}|${AppState.wires.size}|${AppState.components.size}`;
+    if (this._pathSetCache && this._pathSetCache.key === key) return this._pathSetCache.set;
+    const target = this._endpointCompId(ep);
+    const set = new Set();
+    for (const path of this._buildMiniSLDPaths()) {
+      const end = path.findIndex(n => n.compId === target);
+      if (end >= 0) for (let k = 0; k <= end; k++) set.add(path[k].compId);
+    }
+    this._pathSetCache = { key, set: set.size ? set : null };
+    return this._pathSetCache.set;
+  },
+
+  _inPathView(dev, set) {
+    if (!set) return true;
+    if (String(dev.id).startsWith('custom_')) return true; // user-added curves are never hidden by the path
+    const base = String(dev.id).split('__')[0];
+    if (set.has(base)) return true;
+    if (dev.deviceType === 'relay' || dev.deviceType === 'distance_relay') {
+      return set.has(dev.trip_cb) || set.has(dev.associated_ct);
+    }
+    return false;
+  },
+
+  _setPathOnly(on) {
+    this._pathOnly = !!on && this._miniSLDEndpointDeviceIdx >= 0;
+    this._pathSetCache = null;
+    if (this._pathOnly) {
+      // Damage curves on the path are the point of the view — make sure they show
+      const set = this._pathIdSet();
+      for (const d of this.devices) {
+        if ((d.deviceType === 'cable_thermal' || d.deviceType === 'xfmr_thermal') && set && this._inPathView(d, set)) d.visible = true;
+      }
+    }
+    const btn = document.getElementById('btn-tcc-path-only');
+    if (btn) { btn.classList.toggle('active', this._pathOnly); btn.setAttribute('aria-pressed', this._pathOnly ? 'true' : 'false'); }
+    if (this._pathOnly) this.fitView();
+    this._renderDeviceList();
+    this._runCoordinationCheck();
+    this.render();
+  },
+
+  // Big diagrams start readable: damage limits and motor-start profiles stay hidden
+  // until asked for (devices the user already toggled keep their saved state)
+  _applyLargeNetworkDefaults() {
+    if (this.devices.length <= 14) return;
+    for (const d of this.devices) {
+      if (this._savedDisplayState[d.id]) continue;
+      if (d.deviceType === 'cable_thermal' || d.deviceType === 'xfmr_thermal' || d.deviceType === 'motor_start') d.visible = false;
+    }
   },
 
   addCustomTab(name) {
@@ -1549,12 +1656,18 @@ const TCC = {
     const hasSelection = selIdx >= 0 && selIdx < this.devices.length;
     const single = !(this.compareMode && this.compareTabId);
     const focusRow = single ? this._focusRow() : null;
+    // Busy = more curves than can be read at once: quieter defaults (no labels or handles
+    // except for the selected / hovered curve, harder dimming)
+    this._busy = tabDevices.filter(d => d.visible).length > 8;
+    const hoverIdx = this._busy ? this._hoverDevIdx : -1;
 
     for (const dev of tabDevices) {
       if (!dev.visible) continue;
       const isSelected = this.devices.indexOf(dev) === selIdx;
       if (focusRow) ctx.globalAlpha = (dev === focusRow.up || dev === focusRow.down) ? 1.0 : 0.25;
-      else ctx.globalAlpha = hasSelection && !isSelected ? 0.3 : 1.0;
+      else if (hasSelection) ctx.globalAlpha = isSelected ? 1.0 : (this._busy ? 0.13 : 0.3);
+      else if (hoverIdx >= 0) ctx.globalAlpha = this.devices.indexOf(dev) === hoverIdx ? 1.0 : 0.3;
+      else ctx.globalAlpha = 1.0;
       if (dev.deviceType === 'relay') this._drawRelayCurve(ctx, dev);
       else if (dev.deviceType === 'distance_relay') this._drawDistanceRelayCurve(ctx, dev);
       else if (dev.deviceType === 'fuse') this._drawFuseCurve(ctx, dev);
@@ -1567,7 +1680,8 @@ const TCC = {
     ctx.globalAlpha = 1.0;
     this.activeTabId = savedTabId;
 
-    // Draw interactive curve handles
+    // Draw interactive curve handles (busy chart: only the selected device's)
+    if (this._busy) this._curveHandles = this._curveHandles.filter(h => h.devIndex === selIdx);
     this._drawCurveHandles(ctx);
 
     // Draw fault current markers
@@ -2423,6 +2537,10 @@ const TCC = {
     const ly = baseY + oy - 4;
 
     if (lx < this.plotLeft || lx > this.plotRight - 10) return;
+    if (this._busy) {
+      const i = this.devices.indexOf(dev);
+      if (i !== this.selectedDeviceIndex && i !== this._hoverDevIdx) return; // label only the curve you are on
+    }
 
     ctx.fillStyle = dev.color;
     ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
@@ -2770,9 +2888,13 @@ const TCC = {
 
     if (mx < this.plotLeft || mx > this.plotRight || my < this.plotTop || my > this.plotBottom) {
       this._tooltip = null;
+      this._hoverDevIdx = -1;
       this.render();
       return;
     }
+
+    // On a busy chart the curve under the pointer is emphasised (and labelled)
+    this._hoverDevIdx = this._busy ? this._nearestDeviceAt(mx, my, 10) : -1;
 
     const displayCurrent = this._xToCurrent(mx); // current in reference voltage frame
     const lines = [];
@@ -2822,7 +2944,13 @@ const TCC = {
       }
     }
 
-    if (lines.length > 0) {
+    if (lines.length > 6 && this._busy) {
+      // Too many to read: keep the six curves nearest the pointer
+      lines.sort((a, b) => Math.abs(this._timeToY(a.time) - my) - Math.abs(this._timeToY(b.time) - my));
+      const more = lines.length - 6;
+      lines.length = 6;
+      this._tooltip = { x: mx, y: my, current: displayCurrent, lines, more };
+    } else if (lines.length > 0) {
       this._tooltip = { x: mx, y: my, current: displayCurrent, lines };
     } else {
       this._tooltip = null;
@@ -2868,6 +2996,7 @@ const TCC = {
     for (const l of tip.lines) {
       lines.push(`${l.name}: ${l.time >= 1 ? l.time.toFixed(2) + 's' : (l.time * 1000).toFixed(1) + 'ms'}`);
     }
+    if (tip.more) lines.push(`+${tip.more} more \u2014 select a device or use Path only`);
 
     ctx.font = '10px "SF Mono", Consolas, monospace';
     const maxW = Math.max(...lines.map(l => ctx.measureText(l).width));
@@ -2926,6 +3055,65 @@ const TCC = {
     }
   },
 
+  _afterVisibilityChange() {
+    this._renderDeviceList();
+    this.render();
+    this._runCoordinationCheck();
+    this._renderMiniSLD();
+  },
+
+  _soloDevice(idx) {
+    if (this._soloIdx === idx && this._soloBackup) {
+      for (const [d, v] of this._soloBackup) d.visible = v;
+      this._soloIdx = -1;
+      this._soloBackup = null;
+    } else {
+      if (!this._soloBackup) this._soloBackup = new Map(this.devices.map(d => [d, d.visible]));
+      this._soloIdx = idx;
+      this.devices.forEach((d, i) => { d.visible = i === idx; });
+    }
+    this._afterVisibilityChange();
+  },
+
+  // Search box + Path-only chip state
+  _syncDeviceTools() {
+    const pb = document.getElementById('btn-tcc-path-only');
+    if (pb) {
+      pb.style.display = this._miniSLDEndpointDeviceIdx >= 0 ? '' : 'none';
+      pb.classList.toggle('active', this._pathOnly);
+      pb.setAttribute('aria-pressed', this._pathOnly ? 'true' : 'false');
+    }
+  },
+
+  // Hops from the nearest source to each SLD component (drives source → load ordering)
+  _depthMap() {
+    const key = `${AppState.wires.size}|${AppState.components.size}`;
+    if (this._depthCache && this._depthCache.key === key) return this._depthCache.map;
+    const adj = new Map();
+    for (const [, w] of AppState.wires) {
+      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
+      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
+      adj.get(w.fromComponent).push(w.toComponent);
+      adj.get(w.toComponent).push(w.fromComponent);
+    }
+    const map = new Map();
+    const queue = [];
+    for (const [id, comp] of AppState.components) {
+      if (comp.type === 'utility' || comp.type === 'generator') { map.set(id, 0); queue.push(id); }
+    }
+    for (let qi = 0; qi < queue.length; qi++) {
+      const id = queue[qi];
+      for (const n of adj.get(id) || []) if (!map.has(n)) { map.set(n, map.get(id) + 1); queue.push(n); }
+    }
+    this._depthCache = { key, map };
+    return map;
+  },
+
+  _depthOf(dev) {
+    const d = this._depthMap().get(this._endpointCompId(dev));
+    return d === undefined ? 9999 : d;
+  },
+
   _renderDeviceList() {
     const list = document.getElementById('tcc-device-list');
     if (!list) return;
@@ -2943,15 +3131,36 @@ const TCC = {
       return 0;
     };
     const groupNames = ['Protection', 'Damage limits', 'Load'];
-    const ordered = tabDevices.map(d => ({ d, g: groupOf(d) })).sort((a, b) => a.g - b.g);
+    // Filter by the search box, then group and sort source → load (hops from the nearest source)
+    const q = (this._deviceFilter || '').trim().toLowerCase();
+    const matches = (d) => !q || d.name.toLowerCase().includes(q) || this._deviceSummary(d).toLowerCase().includes(q);
+    const ordered = tabDevices.filter(matches).map(d => ({ d, g: groupOf(d) }))
+      .sort((a, b) => (a.g - b.g) || (this._depthOf(a.d) - this._depthOf(b.d)) || a.d.name.localeCompare(b.d.name));
+    if (ordered.length === 0) {
+      list.innerHTML = '<div class="tcc-no-devices">No devices match \u201C' + escHtml(this._deviceFilter) + '\u201D.</div>';
+      this._syncDeviceTools();
+      return;
+    }
+    const groupTotals = [0, 0, 0], groupShown = [0, 0, 0];
+    for (const { d, g } of ordered) { groupTotals[g]++; if (d.visible) groupShown[g]++; }
     const eyeOn = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
     const eyeOff = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.1-5.9M9.9 5.1A10.4 10.4 0 0 1 12 5c7 0 11 7 11 7a19.9 19.9 0 0 1-3.2 4.2M1 1l22 22"/></svg>';
     let lastGroup = -1;
 
     list.innerHTML = ordered.map(({ d: dev, g }) => {
       const i = this.devices.indexOf(dev);
-      const groupHeader = g !== lastGroup ? `<div class="tcc-device-group">${groupNames[g]}</div>` : '';
+      let groupHeader = '';
+      if (g !== lastGroup) {
+        const collapsed = this._collapsedGroups.has(g);
+        groupHeader = `<div class="tcc-device-group" data-group="${g}">
+          <button class="tcc-group-toggle" data-group="${g}" aria-expanded="${!collapsed}">${collapsed ? '\u25B8' : '\u25BE'} ${groupNames[g]} <span class="tcc-group-count">${groupShown[g]}/${groupTotals[g]}</span></button>
+          <span class="tcc-group-actions">
+            <button class="tcc-group-act" data-group="${g}" data-act="show" title="Show every ${groupNames[g].toLowerCase()} curve in this list">Show all</button>
+            <button class="tcc-group-act" data-group="${g}" data-act="hide" title="Hide every ${groupNames[g].toLowerCase()} curve in this list">Hide all</button>
+          </span></div>`;
+      }
       lastGroup = g;
+      if (this._collapsedGroups.has(g)) return groupHeader;
       let typeLabel;
       if (dev.deviceType === 'relay') {
         const dirPrefix = dev.directional ? `67 ${dev.direction === 'reverse' ? '\u2190Rev' : '\u2192Fwd'} | ` : '';
@@ -3000,6 +3209,7 @@ const TCC = {
           <div class="tcc-device-detail">${escHtml(this._deviceSummary(dev))}</div>
         </div>
         <button class="tcc-device-endpoint ${isEndpoint ? 'active' : ''}" data-index="${i}" aria-pressed="${isEndpoint}" aria-label="Furthest grading point" title="${isEndpoint ? 'Clear path endpoint' : 'Set as furthest grading point — the Protection Path panel shows the path from source to this device'}">\u21E5</button>
+        <button class="tcc-device-solo ${i === this._soloIdx ? 'active' : ''}" data-index="${i}" aria-pressed="${i === this._soloIdx}" aria-label="Show only ${escHtml(dev.name)}" title="${i === this._soloIdx ? 'Restore the other curves' : 'Show only this curve'}">\u25CE</button>
         <button class="tcc-device-toggle" data-index="${i}" aria-pressed="${dev.visible}" aria-label="${dev.visible ? 'Hide' : 'Show'} ${escHtml(dev.name)} curve" title="${dev.visible ? 'Hide curve' : 'Show curve'}">${dev.visible ? eyeOn : eyeOff}</button>
       </div>`;
     }).join('');
@@ -3017,16 +3227,42 @@ const TCC = {
       });
     });
 
-    // Set/clear grading endpoint for mini-SLD path
+    // Set/clear grading endpoint: the path panel follows it, and the chart, list and
+    // checks narrow to the source → endpoint path ("Path only" can switch that off)
     list.querySelectorAll('.tcc-device-endpoint').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const idx = parseInt(e.currentTarget.dataset.index);
         this._miniSLDEndpointDeviceIdx = (this._miniSLDEndpointDeviceIdx === idx) ? -1 : idx;
-        this._renderDeviceList();
+        this._setPathOnly(this._miniSLDEndpointDeviceIdx >= 0);
         this._renderMiniSLD();
       });
     });
+
+    // Show only one device (click again to restore)
+    list.querySelectorAll('.tcc-device-solo').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._soloDevice(parseInt(e.currentTarget.dataset.index));
+      });
+    });
+
+    // Group headers: collapse / show all / hide all
+    list.querySelectorAll('.tcc-group-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const g = parseInt(btn.dataset.group);
+        if (this._collapsedGroups.has(g)) this._collapsedGroups.delete(g); else this._collapsedGroups.add(g);
+        this._renderDeviceList();
+      });
+    });
+    list.querySelectorAll('.tcc-group-act').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const g = parseInt(btn.dataset.group), show = btn.dataset.act === 'show';
+        for (const { d, g: dg } of ordered) if (dg === g) d.visible = show;
+        this._afterVisibilityChange();
+      });
+    });
+    this._syncDeviceTools();
 
     // Click to select device
     list.querySelectorAll('.tcc-device-item').forEach(item => {
@@ -3063,6 +3299,25 @@ const TCC = {
 
   // ── Curve click-to-select on canvas ──
 
+  // Index of the visible curve nearest (vertically) to a point on the plot, or -1
+  _nearestDeviceAt(mx, my, threshold = 20) {
+    const clickCurrent = this._xToCurrent(mx);
+    let bestIdx = -1;
+    let bestDist = threshold;
+    for (const dev of this._getVisibleDevicesForTab()) {
+      if (!dev.visible) continue;
+      const current = this._scaleCurrentInverse(clickCurrent, dev);
+      const t = this._deviceTripTime(dev, current);
+      if (!isFinite(t) || t <= 0) continue;
+      const dist = Math.abs(my - this._timeToY(t));
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = this.devices.indexOf(dev);
+      }
+    }
+    return bestIdx;
+  },
+
   _handleCurveSelect(e) {
     const rect = this.canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -3072,24 +3327,7 @@ const TCC = {
       return;
     }
 
-    const clickCurrent = this._xToCurrent(mx);
-    const tabDevices = this._getVisibleDevicesForTab().filter(d => d.visible);
-    let bestIdx = -1;
-    let bestDist = 20; // pixel threshold
-
-    for (const dev of tabDevices) {
-      const globalIdx = this.devices.indexOf(dev);
-      const current = this._scaleCurrentInverse(clickCurrent, dev);
-      const t = this._deviceTripTime(dev, current);
-      if (!isFinite(t) || t <= 0) continue;
-
-      const curveY = this._timeToY(t);
-      const dist = Math.abs(my - curveY);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIdx = globalIdx;
-      }
-    }
+    const bestIdx = this._nearestDeviceAt(mx, my, 20);
 
     if (bestIdx < 0 && this._cursor != null && !(this.compareMode && this.compareTabId)) {
       this.setCursor(this._xToCurrent(mx)); // empty plot click moves the pinned cursor
@@ -3406,7 +3644,7 @@ const TCC = {
       id: 'custom_' + Date.now(),
       name: name || `Relay ${this.devices.length + 1}`,
       deviceType: 'relay',
-      color: this.palette[this.colorIndex++ % this.palette.length],
+      color: this._nextColor(),
       visible: true,
       curveName: curveName || 'IEC Standard Inverse',
       pickup: pickup || 100,
@@ -3421,7 +3659,7 @@ const TCC = {
       id: 'custom_' + Date.now(),
       name: name || `Fuse ${this.devices.length + 1}`,
       deviceType: 'fuse',
-      color: this.palette[this.colorIndex++ % this.palette.length],
+      color: this._nextColor(),
       visible: true,
       fuseRating: nearest || ratingA || 100,
       actualRating: ratingA || 100,
@@ -3435,7 +3673,7 @@ const TCC = {
       id: 'custom_' + Date.now(),
       name: name || `CB ${this.devices.length + 1}`,
       deviceType: 'cb',
-      color: this.palette[this.colorIndex++ % this.palette.length],
+      color: this._nextColor(),
       visible: true,
       cbParams: {
         cb_type: cbParams.cb_type || 'mccb',
@@ -3536,7 +3774,7 @@ const TCC = {
       id: 'custom_curve_' + Date.now(),
       name: name || `Custom ${this.devices.length + 1}`,
       deviceType: 'custom_curve',
-      color: this.palette[this.colorIndex++ % this.palette.length],
+      color: this._nextColor(),
       visible: true,
       curvePoints: points,
     });
@@ -3815,7 +4053,8 @@ const TCC = {
       preview += `<div class="${this._autoNote.ok ? 'tcc-coord-pass' : 'tcc-coord-info'}" style="white-space:pre-wrap;margin-bottom:8px">${escHtml(this._autoNote.msg)}</div>`;
       this._autoNote = null;
     }
-    const visible = this.devices.filter(d => d.visible);
+    const pathSet = this._pathIdSet();
+    const visible = this.devices.filter(d => d.visible && this._inPathView(d, pathSet));
     if (visible.length < 2) {
       this._coordRows = [];
       resultsDiv.innerHTML = preview + '<div class="tcc-coord-info">Add at least 2 visible devices to check coordination.</div>';
@@ -3947,27 +4186,60 @@ const TCC = {
     const nWarn = rows.filter(r => r.status === 'warn').length;
     const nPass = rows.length - nFail - nWarn;
     const pill = { pass: '<span class="tcc-status tcc-status-pass">✓ Pass</span>', warn: '<span class="tcc-status tcc-status-warn">! Note</span>', fail: '<span class="tcc-status tcc-status-fail">✗ Fail</span>' };
+    const generic = testPoints.every(tp => tp.busId == null);
+
+    const rowHtml = (r) => {
+      const focus = r.key === this._pairFocus ? ' tcc-row-focus' : '';
+      let cells;
+      if (r.ratioRule) {
+        const ratioTxt = r.ratio > 0 ? `${r.ratio.toFixed(2)}:1` : '?:1';
+        cells = `<td data-label="At current">—</td><td data-label="Margin" class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">fuse ratio ${ratioTxt}</td><td data-label="Required">≥ 1.6:1 (2:1 rec.)</td>`;
+      } else {
+        const bus = r.tp.busId ? AppState.components.get(r.tp.busId)?.props?.name : null;
+        const where = bus ? ` <span class="tcc-coord-info">${escHtml(bus)} ${r.tp.earth ? 'SLG' : '3Φ'}</span>` : '';
+        cells = `<td data-label="At current">${fmtI(r.tp.amps)}${where}</td><td data-label="Margin" class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">${fmtDt(r.margin)}</td><td data-label="Required">${fmtDt(r.required)}</td>`;
+      }
+      return `<tr class="tcc-coord-row${focus}" data-key="${escHtml(r.key)}" tabindex="0" role="button" aria-label="Show ${escHtml(r.down.name)} and ${escHtml(r.up.name)} on the chart"><td>${pill[r.status]}</td><td data-label="Downstream">${escHtml(r.down.name)}</td><td data-label="Upstream">${escHtml(r.up.name)}</td>${cells}</tr>`;
+    };
 
     let html = preview;
+    if (generic) {
+      html += `<div class="tcc-coord-generic">No fault study in this project \u2014 pairs are graded at generic test currents (500 A \u2013 20 kA). Run Fault Analysis to grade at the real fault levels.</div>`;
+    }
     if (rows.length === 0) {
-      html += `<div class="tcc-coord-info">No ${hasTopology ? 'in-series' : 'comparable'} device pairs to grade.${orderNote}</div>`;
+      html += `<div class="tcc-coord-info">No ${hasTopology ? 'in-series' : 'comparable'} device pairs to grade${pathSet ? ' on this path' : ''}.${orderNote}</div>`;
     } else {
-      html += `<div class="tcc-coord-summary"><strong>${nFail}</strong> fail · ${nWarn} note · ${nPass} pass${orderNote} — click a row to show the pair on the chart.</div>`;
-      html += `<table class="tcc-coord-table"><thead><tr><th>Status</th><th>Downstream${hasTopology ? '' : ' (assumed)'}</th><th>Upstream${hasTopology ? '' : ' (assumed)'}</th><th>At current</th><th>Margin</th><th>Required</th></tr></thead><tbody>`;
-      for (const r of rows) {
-        const focus = r.key === this._pairFocus ? ' tcc-row-focus' : '';
-        let cells;
-        if (r.ratioRule) {
-          const ratioTxt = r.ratio > 0 ? `${r.ratio.toFixed(2)}:1` : '?:1';
-          cells = `<td data-label="At current">—</td><td data-label="Margin" class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">fuse ratio ${ratioTxt}</td><td data-label="Required">≥ 1.6:1 (2:1 rec.)</td>`;
+      const shownRows = this._coordFailsOnly ? rows.filter(r => r.status !== 'pass') : rows;
+      const grouped = !this._coordShowAll && shownRows.length > 12;
+      html += `<div class="tcc-coord-summary"><strong>${nFail}</strong> fail · ${nWarn} note · ${nPass} pass${pathSet ? ' on this path' : ''}${orderNote} — click a row to show the pair on the chart.</div>`;
+      html += `<div class="tcc-coord-controls">
+        <button class="btn-small ${this._coordFailsOnly ? 'active' : ''}" data-coord-act="fails" aria-pressed="${this._coordFailsOnly}">Fails only</button>
+        ${shownRows.length > 12 || this._coordShowAll ? `<button class="btn-small ${grouped ? 'active' : ''}" data-coord-act="group" aria-pressed="${grouped}" title="Group the pairs under their upstream device">Group by upstream</button>` : ''}
+        ${!pathSet && this._miniSLDEndpointDeviceIdx < 0 && rows.length > 12 ? '<span class="tcc-coord-info">Tip: set a furthest grading point (\u21E5) to check one path at a time.</span>' : ''}
+      </div>`;
+      if (shownRows.length === 0) {
+        html += '<div class="tcc-coord-info">No failing pairs.</div>';
+      } else {
+        html += `<table class="tcc-coord-table"><thead><tr><th>Status</th><th>Downstream${hasTopology ? '' : ' (assumed)'}</th><th>Upstream${hasTopology ? '' : ' (assumed)'}</th><th>At current</th><th>Margin</th><th>Required</th></tr></thead><tbody>`;
+        if (grouped) {
+          // One block per upstream device: its worst pair, the rest on demand
+          const groups = new Map();
+          for (const r of shownRows) {
+            if (!groups.has(r.up.name)) groups.set(r.up.name, []);
+            groups.get(r.up.name).push(r);
+          }
+          for (const [up, list] of groups) {
+            const open = this._coordOpen.has(up);
+            const fails = list.filter(r => r.status === 'fail').length;
+            html += `<tr class="tcc-coord-group"><td colspan="6"><button class="tcc-coord-group-toggle" data-coord-up="${escHtml(up)}" aria-expanded="${open}">${open ? '\u25BE' : '\u25B8'} Upstream <strong>${escHtml(up)}</strong> \u2014 ${list.length} pair${list.length > 1 ? 's' : ''}${fails ? ` \u00B7 ${fails} fail` : ''}${!open && list.length > 1 ? ` <span class="tcc-coord-info">(worst shown, ${list.length - 1} more)</span>` : ''}</button></td></tr>`;
+            html += rowHtml(list[0]);
+            if (open) for (const r of list.slice(1)) html += rowHtml(r);
+          }
         } else {
-          const bus = r.tp.busId ? AppState.components.get(r.tp.busId)?.props?.name : null;
-          const where = bus ? ` <span class="tcc-coord-info">${escHtml(bus)} ${r.tp.earth ? 'SLG' : '3Φ'}</span>` : '';
-          cells = `<td data-label="At current">${fmtI(r.tp.amps)}${where}</td><td data-label="Margin" class="${r.status === 'fail' ? 'tcc-margin-fail' : ''}">${fmtDt(r.margin)}</td><td data-label="Required">${fmtDt(r.required)}</td>`;
+          for (const r of shownRows) html += rowHtml(r);
         }
-        html += `<tr class="tcc-coord-row${focus}" data-key="${escHtml(r.key)}" tabindex="0" role="button" aria-label="Show ${escHtml(r.down.name)} and ${escHtml(r.up.name)} on the chart"><td>${pill[r.status]}</td><td data-label="Downstream">${escHtml(r.down.name)}</td><td data-label="Upstream">${escHtml(r.up.name)}</td>${cells}</tr>`;
+        html += '</tbody></table>';
       }
-      html += '</tbody></table>';
     }
 
     // [PS-15] The gG fuse model is ONE generic characteristic ratio-scaled
@@ -3992,6 +4264,20 @@ const TCC = {
       const go = () => this._focusPair(tr.dataset.key);
       tr.addEventListener('click', go);
       tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    });
+    container.querySelectorAll('[data-coord-act]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.coordAct === 'fails') this._coordFailsOnly = !this._coordFailsOnly;
+        else this._coordShowAll = !this._coordShowAll; // 'group' toggles between grouped and every pair
+        this._runCoordinationCheck();
+      });
+    });
+    container.querySelectorAll('[data-coord-up]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const up = btn.dataset.coordUp;
+        if (this._coordOpen.has(up)) this._coordOpen.delete(up); else this._coordOpen.add(up);
+        this._runCoordinationCheck();
+      });
     });
     container.querySelectorAll('[data-preview-action]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -4131,6 +4417,14 @@ const TCC = {
    * Reverse-looking directional (67) relays do not operate for forward
    * (source-to-load) faults and are excluded from the paths [PROT-19].
    */
+  _sourceIdSet() {
+    const out = new Set();
+    for (const [id, comp] of AppState.components) {
+      if (['utility', 'generator', 'solar_pv', 'wind_turbine', 'battery'].includes(comp.type)) out.add(id);
+    }
+    return out;
+  },
+
   _buildProtectionPaths(busMap = null) {
     const wires = AppState.wires;
     if (!wires || wires.size === 0) return [];
@@ -4152,6 +4446,11 @@ const TCC = {
       }
     }
     if (sources.length === 0) return [];
+
+    // Every generating source. A path must never run THROUGH another source: a
+    // generator/PV breaker on the same bus is not downstream of the utility
+    // feeder — no load current flows from one source into another's terminals.
+    const sourceSet = this._sourceIdSet();
 
     // Protection device types that appear on TCC
     const protTypes = new Set(['relay', 'fuse', 'cb']);
@@ -4265,9 +4564,12 @@ const TCC = {
         // If this is a load or dead-end with protection devices, record the path
         const isLoad = comp && (comp.type === 'static_load' || comp.type === 'motor_induction' ||
                                 comp.type === 'motor_synchronous');
-        const unvisitedNeighbors = neighbors.filter(n => !visited.has(n));
+        const rawUnvisited = neighbors.filter(n => !visited.has(n));
+        const unvisitedNeighbors = rawUnvisited.filter(n => !sourceSet.has(n));
 
-        if ((isLoad || unvisitedNeighbors.length === 0) && currentPath.length >= 2) {
+        // A true dead end has no neighbours at all; a node whose only way on is
+        // another source leads INTO that source and is not a load path
+        if ((isLoad || rawUnvisited.length === 0) && currentPath.length >= 2) {
           allPaths.push(currentPath.map(e => e.dev));
           if (allPaths.length >= MAX_PATHS) break;
         }
@@ -5554,6 +5856,7 @@ const TCC = {
       if (comp.type === 'utility' || comp.type === 'generator') sources.push(id);
     }
     if (sources.length === 0) return [];
+    const sourceSet = this._sourceIdSet(); // paths never run through another source
 
     // Map SLD IDs to TCC device objects and indices
     const tccDevMap = new Map();
@@ -5601,9 +5904,10 @@ const TCC = {
 
         const neighbors = adj.get(node) || [];
         const isLoad = comp.type === 'static_load' || comp.type === 'motor_induction' || comp.type === 'motor_synchronous';
-        const unvisitedNeighbors = neighbors.filter(n => !visited.has(n));
+        const rawUnvisited = neighbors.filter(n => !visited.has(n));
+        const unvisitedNeighbors = rawUnvisited.filter(n => !sourceSet.has(n));
 
-        if ((isLoad || unvisitedNeighbors.length === 0) && currentPath.length >= 2) {
+        if ((isLoad || rawUnvisited.length === 0) && currentPath.length >= 2) {
           allPaths.push(currentPath);
         }
 
@@ -5684,7 +5988,7 @@ const TCC = {
 
     if (this._miniSLDEndpointDeviceIdx >= 0 && this._miniSLDEndpointDeviceIdx < this.devices.length) {
       // Grading endpoint set — find path containing that device and truncate to it
-      const endpointId = this.devices[this._miniSLDEndpointDeviceIdx].id;
+      const endpointId = this._endpointCompId(this.devices[this._miniSLDEndpointDeviceIdx]);
       for (const p of paths) {
         const endIdx = p.findIndex(n => n.compId === endpointId);
         if (endIdx >= 0) {
