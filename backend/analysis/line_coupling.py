@@ -275,5 +275,7 @@ def z0_source_note(props: dict, composite_fallback: bool) -> str | None:
             f"other uses - {counterpart}, about "
             f"{abs(Z0_COMPONENT_FALLBACK / Z0_COMPOSITE_FALLBACK - 1) * 100:.0f}% "
             f"apart - so earth-fault results from the two studies are built on "
-            f"different Z0 networks. Set r0_per_km / x0_per_km, or pick a "
-            f"library cable (which carries them), to make them agree.")
+            f"different Z0 networks. Set r0_per_km / x0_per_km, or pick an "
+            f"armoured distribution cable from the library, to make them agree "
+            f"- note the building-wiring entries (T+E, singles, Surfix, "
+            f"control) carry no zero-sequence data of their own.")
