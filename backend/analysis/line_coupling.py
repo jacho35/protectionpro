@@ -226,3 +226,54 @@ def coupling_note(props: dict, z0_self_per_km: complex,
 def phase_angle_deg(z: complex) -> float:
     """Convenience for reporting."""
     return math.degrees(cmath.phase(z))
+
+
+# ── Zero-sequence data provenance ────────────────────────────────────────
+# Fallback multipliers each engine applies when a cable carries no explicit
+# zero-sequence data. They agree per-component (3.5x) but diverge when NEITHER
+# r0 nor x0 is set: fault.py switches to a composite 3xZ1, the unbalanced
+# solver stays on 3.5x. Both are defensible conventions and neither is being
+# changed here — but a study whose Z0 came from one of them is not reproducible
+# by a reviewer who does not know which was used, so say so.
+Z0_COMPONENT_FALLBACK = 3.5   # per-component, both engines
+Z0_COMPOSITE_FALLBACK = 3.0   # whole Z1, fault.py only when neither prop set
+
+
+def z0_source_note(props: dict, composite_fallback: bool) -> str | None:
+    """One-line disclosure of where a cable's zero-sequence impedance came
+    from, or None when the cable carries full explicit r0/x0 data.
+
+    ``composite_fallback`` selects the calling engine's neither-prop rule:
+    True for fault.py (3xZ1 composite), False for the unbalanced solver
+    (3.5x per-component). The sentence carries no element name — callers hold
+    that, exactly as ``coupling_note`` leaves it to them.
+    """
+    r0 = _num(props.get("r0_per_km"), 0.0)
+    x0 = _num(props.get("x0_per_km"), 0.0)
+    if r0 > 0 and x0 > 0:
+        return None  # fully specified — nothing inferred, nothing to disclose
+
+    if r0 > 0 or x0 > 0:
+        missing = "x0_per_km" if r0 > 0 else "r0_per_km"
+        other = "x1" if r0 > 0 else "r1"
+        return (f"Zero-sequence data incomplete: {missing} not set, inferred as "
+                f"{Z0_COMPONENT_FALLBACK:g}x {other}. Both the fault and "
+                f"unbalanced engines use this same multiplier, so the two "
+                f"studies agree; supply the datasheet value to remove the "
+                f"assumption.")
+
+    used = (f"{Z0_COMPOSITE_FALLBACK:g}x the composite Z1"
+            if composite_fallback
+            else f"{Z0_COMPONENT_FALLBACK:g}x each of r1 and x1")
+    counterpart = (f"the unbalanced load flow uses "
+                   f"{Z0_COMPONENT_FALLBACK:g}x instead"
+                   if composite_fallback
+                   else f"fault analysis uses "
+                        f"{Z0_COMPOSITE_FALLBACK:g}x the composite Z1 instead")
+    return (f"No zero-sequence data (r0_per_km / x0_per_km both unset): Z0 "
+            f"inferred as {used}. This engine's fallback is not the one the "
+            f"other uses - {counterpart}, about "
+            f"{abs(Z0_COMPONENT_FALLBACK / Z0_COMPOSITE_FALLBACK - 1) * 100:.0f}% "
+            f"apart - so earth-fault results from the two studies are built on "
+            f"different Z0 networks. Set r0_per_km / x0_per_km, or pick a "
+            f"library cable (which carries them), to make them agree.")
