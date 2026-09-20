@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/mobile.css?v=3.5.111">
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.111">
   <link rel="stylesheet" href="css/schedules.css?v=3.5.111">
+  <link rel="stylesheet" href="css/help.css?v=3.5.111">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -2547,9 +2548,7 @@
         <div class="help-tabs">
           <button class="help-tab active" data-tab="getting-started">Getting Started</button>
           <button class="help-tab" data-tab="components">Components</button>
-          <button class="help-tab" data-tab="analysis">Analysis</button>
-          <button class="help-tab" data-tab="studies">Studies</button>
-          <button class="help-tab" data-tab="arcflash">Arc Flash</button>
+          <button class="help-tab" data-tab="reference">Calculations &amp; tools</button>
           <button class="help-tab" data-tab="verification">Verification</button>
           <button class="help-tab" data-tab="shortcuts">Shortcuts</button>
         </div>
@@ -2610,7 +2609,8 @@
         </div>
 
         <div class="help-content" id="help-tab-components" style="display:none">
-          <h4>Component Reference (22 Types)</h4>
+          <h4>Component Reference (40 Types)</h4>
+          <p>Every component's equations are in <strong>Calculations &amp; tools</strong>; the properties below are the ones the engines read.</p>
 
           <h4>Sources</h4>
           <table class="help-ref-table">
@@ -2620,6 +2620,7 @@
               <tr><td><strong>Generator</strong></td><td>Synchronous generator source</td><td>Rated MVA, voltage, Xd''/Xd'/Xd, X₂, X₀, X/R ratio, power factor</td></tr>
               <tr><td><strong>Solar PV</strong></td><td>Photovoltaic inverter-based generation</td><td>Rated kW, number of inverters, efficiency, fault contribution (p.u.), irradiance</td></tr>
               <tr><td><strong>Wind Turbine</strong></td><td>Wind turbine generator (Type 1-4: SCIG, WRIG, DFIG, FRC)</td><td>Rated MVA, turbine type, Xd'', fault contribution, wind output</td></tr>
+              <tr><td><strong>Battery Energy Storage (BESS)</strong></td><td>Grid-connected battery with inverter; charges, discharges or idles under dispatch</td><td>Rated kVA, kWh, DoD, max charge / discharge kW, round-trip efficiency, state of charge, chemistry, mode, VAR mode, grid-forming / following control</td></tr>
             </tbody>
           </table>
 
@@ -2628,8 +2629,10 @@
             <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
             <tbody>
               <tr><td><strong>Bus</strong></td><td>Electrical busbar — the node where components connect. Resizable with dynamic ports.</td><td>Voltage (kV), bus width, electrode config, working distance, enclosure size</td></tr>
-              <tr><td><strong>Transformer</strong></td><td>Power transformer (2-winding)</td><td>Rated MVA, HV/LV voltages, impedance (%Z), vector group, tap position</td></tr>
-              <tr><td><strong>Cable / Feeder</strong></td><td>Power cable or overhead line. Select from built-in library (~70 types) or enter custom values. Parallel cables supported.</td><td>Length, R/X per km, R₀/X₀ per km, rated current, cable size, number of parallel runs</td></tr>
+              <tr><td><strong>Transformer</strong></td><td>Power transformer (2- or 3-winding)</td><td>Rated MVA, HV/LV voltages, impedance (%Z), X/R, vector group, grounding per winding, core construction, tap position / OLTC regulation</td></tr>
+              <tr><td><strong>Autotransformer</strong></td><td>Autotransformer with a common winding</td><td>2 or 3 windings, rated MVA, HV/LV(/tertiary) voltages, %Z (HL, HT, LT), X/R, tap mode and range, regulation target</td></tr>
+              <tr><td><strong>Bus Duct</strong></td><td>Busway run, treated as a low-impedance connection</td><td>Rated current, length</td></tr>
+              <tr><td><strong>Cable / Feeder</strong></td><td>Power cable or overhead line. Select from the built-in library (~113 types: MV/LV armoured, service cables, building wiring) or enter custom values. Parallel cables supported.</td><td>Length, R/X per km, R₀/X₀ per km, rated current, cable size, number of parallel runs</td></tr>
             </tbody>
           </table>
 
@@ -2641,6 +2644,7 @@
               <tr><td><strong>Fuse</strong></td><td>Overcurrent protective device</td><td>Rated amps, fuse type (HRC, NH, K, T), breaking capacity</td></tr>
               <tr><td><strong>Relay</strong></td><td>Protection relay (50/51, 67 directional). Links to associated CT and trip CB.</td><td>CT ratio, pickup current, TDS, curve type (IEC/IEEE), directional setting</td></tr>
               <tr><td><strong>Switch</strong></td><td>Manual or motorized switching device (no protection function)</td><td>Rated current, voltage, switch state (open/closed)</td></tr>
+              <tr><td><strong>Changeover Switch</strong></td><td>Three-port transfer device (in 1 / in 2 / out)</td><td>State (in 1 / off / in 2), type (manual I-0-II, manual I-II, ATS, interlocked breaker pair), ratings, transfer / re-transfer delays</td></tr>
             </tbody>
           </table>
 
@@ -2659,7 +2663,10 @@
             <tbody>
               <tr><td><strong>Induction Motor</strong></td><td>Induction motor (contributes to fault current)</td><td>Rated kW, voltage, efficiency, Xd'', X₂, X₀, locked-rotor multiplier</td></tr>
               <tr><td><strong>Synchronous Motor</strong></td><td>Synchronous motor (steady-state VAR control)</td><td>Rated kW, voltage, Xd''/Xd'/Xd, power factor, excitation mode</td></tr>
-              <tr><td><strong>Static Load</strong></td><td>Passive electrical load / demand</td><td>Rated kVA, power factor, load type (constant power/impedance/current)</td></tr>
+              <tr><td><strong>Static Load</strong></td><td>Passive electrical load / demand</td><td>Rated kVA, power factor, load type (constant power/impedance/current), demand factor, motor fraction, per-phase split</td></tr>
+              <tr><td><strong>Distribution Board</strong></td><td>Board with a per-way circuit schedule; a bus-like node in every study</td><td>Ways (breaker, cable, length, load), supply voltage, earth-loop Ze, demand factor and diversity, essential flag, accessories, phase split</td></tr>
+              <tr><td><strong>Variable Frequency Drive</strong></td><td>Harmonic-current source for power-quality studies</td><td>Rated kW, efficiency, load %, displacement pf, rectifier pulse number, front end (or AFE), input reactor %, demand factor</td></tr>
+              <tr><td><strong>DC Load</strong></td><td>Constant-power or resistive load on a DC bus</td><td>Load model (constant power / resistive), kW or A, resistance, nominal voltage</td></tr>
             </tbody>
           </table>
 
@@ -2670,6 +2677,7 @@
               <tr><td><strong>UPS</strong></td><td>Uninterruptible power supply for battery-backed systems</td><td>Rated kVA, input/output voltage, battery autonomy, efficiency</td></tr>
               <tr><td><strong>Rectifier</strong></td><td>AC/DC rectifier for DC bus supply</td><td>Rated kW, input AC / output DC voltage, efficiency</td></tr>
               <tr><td><strong>Battery Charger</strong></td><td>Charger for battery-backed DC systems</td><td>Rated kW, DC output voltage, charge current, battery capacity</td></tr>
+              <tr><td><strong>DC Battery Bank</strong></td><td>Battery on a DC bus (floats on the converter; supplies the load when it is lost)</td><td>Nominal voltage, EMF, Ah capacity, internal R (mΩ) and L (µH), maximum discharge current</td></tr>
             </tbody>
           </table>
 
@@ -2677,182 +2685,33 @@
           <table class="help-ref-table">
             <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
             <tbody>
-              <tr><td><strong>Capacitor Bank</strong></td><td>Reactive power compensation</td><td>Rated MVAR, voltage, connection type (star/delta)</td></tr>
+              <tr><td><strong>Capacitor Bank</strong></td><td>Reactive power compensation (optionally tuned as a harmonic filter)</td><td>Rated MVAR, voltage, steps, tuning order, quality factor, auto control</td></tr>
+              <tr><td><strong>SVC / STATCOM</strong></td><td>Shunt reactive-power compensator</td><td>Device mode (SVC / STATCOM), control mode, voltage set-point, rated Mvar, Q limits (capacitive / inductive)</td></tr>
               <tr><td><strong>Surge Arrester</strong></td><td>Overvoltage protection device</td><td>Rated voltage, protection level, energy class</td></tr>
               <tr><td><strong>Off-Page Connector</strong></td><td>Links electrical connections across diagram pages</td><td>Label (matched across pages), target page</td></tr>
             </tbody>
           </table>
-        </div>
 
-        <div class="help-content" id="help-tab-analysis" style="display:none">
-          <h4>Fault Analysis (IEC 60909)</h4>
-          <p>Calculates short-circuit currents at each bus per IEC 60909. Select a fault type from the dropdown or run all types at once. Results include:</p>
-          <ul>
-            <li><strong>I"k3</strong> — Initial symmetrical 3-phase fault current (kA)</li>
-            <li><strong>ip</strong> — Peak short-circuit current (kA)</li>
-            <li><strong>Ib</strong> — Symmetrical breaking current (kA)</li>
-            <li><strong>Ith</strong> — Thermal equivalent short-circuit current (kA)</li>
-            <li><strong>I"k1</strong> — Single line-to-ground (SLG) fault current</li>
-            <li><strong>I"kLL</strong> — Line-to-line fault current</li>
-            <li><strong>I"kLLG</strong> — Double line-to-ground fault current</li>
-          </ul>
-          <p>Select a single bus before running to analyze only that bus, or run on all buses. Motor fault contribution, branch contributions, and fault current angles are included. Use <strong>View → Fault Angles &amp; Voltage</strong> to toggle angle/voltage display on the diagram.</p>
-
-          <h4>Voltage Depression During Fault</h4>
-          <p>When a single bus is faulted, ProtectionPro calculates the <strong>retained voltage</strong> at all other buses using the Zbus impedance matrix method (V<sub>j</sub> = 1 − Z<sub>jk</sub>/Z<sub>kk</sub>). Three time periods are computed per IEC 60909:</p>
-          <ul>
-            <li><strong>Sub-transient</strong> (0–5 cycles) — generators at Xd'', motors contributing</li>
-            <li><strong>Transient</strong> (~5 cycles to 0.5s) — generators at Xd', motors decayed</li>
-            <li><strong>Steady-state</strong> (&gt;0.5s) — generators at Xd, motors fully decayed</li>
-          </ul>
-          <p>Buses are color-coded on the diagram: green (&gt;80%), yellow (50–80%), orange (30–50%), red (&lt;30%). A detailed table shows all bus voltages and a motor reacceleration voltage recovery chart shows how voltage recovers after fault clearing as motors re-speed.</p>
-
-          <h4>Load Flow (Newton-Raphson / Gauss-Seidel)</h4>
-          <p>Calculates steady-state power flow through the network. Choose between Newton-Raphson (faster convergence) or Gauss-Seidel (simpler iteration) via the method dropdown. Results include bus voltages, angles, branch MW/MVAR flows, currents, and loading percentages. Voltage violations and mismatched ratings are flagged as warnings. Directional flow arrows appear on wires after analysis.</p>
-
-          <h4>Unbalanced Load Flow</h4>
-          <p>Three-phase asymmetric network analysis using the symmetrical component method. Calculates per-phase voltages and currents for unbalanced distribution systems where load or source imbalance exists. Results show phase-A/B/C voltages, unbalance factor, and negative/zero sequence components at each bus.</p>
-
-          <h4>Time-Current Curves (TCC)</h4>
-          <p>Plots protective device operating curves on a log-log time-current chart. Features include:</p>
-          <ul>
-            <li>Fault overlay markers showing where fault currents intersect device curves</li>
-            <li>CB instantaneous line dragging — adjust magnetic pickup directly on the chart</li>
-            <li>Editable settings panel for selected curves (pickup, TDS, curve type)</li>
-            <li>Comparison mode — side-by-side before/after coordination view</li>
-            <li>Distance relay (21) mho characteristic curves with R-X inset diagram</li>
-            <li>Directional overcurrent relay (67) curves</li>
-            <li>User-defined curve data import via CSV</li>
-            <li>Drag devices between TCC tabs for custom grouping</li>
-            <li>CT saturation modeling showing effect of CT burden on relay operating times</li>
-            <li>Auto-coordination engine: topology-aware relay/CB grading with miscoordination detection</li>
-          </ul>
-
-          <h4>Compliance Report</h4>
-          <p>Checks the network against standard requirements and generates a pass/fail/warning report. Verifications include:</p>
-          <ul>
-            <li>Cable sizing adequacy (thermal, voltage drop, fault withstand)</li>
-            <li>Protection coordination and grading margins</li>
-            <li>Voltage drop limits</li>
-            <li>Breaking capacity adequacy</li>
-            <li>SANS 10142 wiring rules (LV voltage tolerance, cable protection, minimum conductor sizes, neutral earthing, maximum demand, earth fault disconnection)</li>
-          </ul>
-        </div>
-
-        <div class="help-content" id="help-tab-studies" style="display:none">
-          <h4>Engineering Studies</h4>
-          <p>ProtectionPro includes specialized engineering studies available via the <strong>Studies</strong> menu. All studies can be run individually or as a batch using <strong>Run All Studies</strong>.</p>
-
-          <h4>Cable Sizing (IEC 60364)</h4>
-          <p>Evaluates cables against three criteria per IEC 60364:</p>
-          <ul>
-            <li><strong>Thermal rating</strong> — Checks cable ampacity against load current with derating factors</li>
-            <li><strong>Voltage drop</strong> — Verifies voltage drop is within acceptable limits (typically 3-5%)</li>
-            <li><strong>Fault withstand</strong> — Checks adiabatic heating during short-circuit (I²t &le; k²S²)</li>
-          </ul>
-          <p>Results show pass/fail per criterion with recommended cable sizes. Both IEC 60364 and NEC Article 310.16 ampacity tables are supported.</p>
-
-          <h4>Motor Starting</h4>
-          <p>Analyzes voltage dip during motor starting (locked-rotor current conditions). Calculates:</p>
-          <ul>
-            <li>Starting current (locked-rotor multiplier × rated current)</li>
-            <li>Voltage dip at the motor bus and upstream buses</li>
-            <li>Pass/fail against typical 15% voltage dip limit</li>
-          </ul>
-
-          <h4>Equipment Duty Check</h4>
-          <p>Validates that protective equipment fault current ratings exceed calculated fault levels. Checks circuit breakers (breaking capacity), fuses (breaking capacity), and busbar (short-time withstand) against fault analysis results. Equipment is flagged as pass, marginal, or fail.</p>
-
-          <h4>Load Diversity</h4>
-          <p>Calculates demand factors and diversified maximum demand for the network. Uses standard demand factors by load category to determine the actual loading versus connected load. Results show demand factor, coincidence factor, and diversified demand at each bus level.</p>
-
-          <h4>Grounding System Analysis (IEEE 80)</h4>
-          <p>Designs and validates grounding grids per IEEE 80. Calculates:</p>
-          <ul>
-            <li><strong>Grid resistance</strong> — Earth resistance of the grounding grid</li>
-            <li><strong>Touch voltage</strong> — Voltage between grid and 1m away, compared to tolerable limits</li>
-            <li><strong>Step voltage</strong> — Voltage between feet 1m apart, compared to tolerable limits</li>
-            <li><strong>Ground potential rise (GPR)</strong> — Maximum grid voltage during fault</li>
-          </ul>
-          <p>Configure soil resistivity, grid dimensions, conductor size, and fault clearing time in the bus properties.</p>
-
-          <h4>Run All Studies (Study Manager)</h4>
-          <p>Batch-runs all enabled studies in a single operation. Select which studies to include and review combined results. Useful for comprehensive design validation.</p>
-
-          <h4>Scenarios</h4>
-          <p>Save named network configuration snapshots to compare different operating conditions — e.g., normal vs emergency, summer vs winter loading, future expansion. Use <strong>Reports → Compare Scenarios</strong> for side-by-side comparison reports.</p>
-        </div>
-
-        <div class="help-content" id="help-tab-arcflash" style="display:none">
-          <h4>Arc Flash Analysis (IEEE 1584-2002 / 2018)</h4>
-          <p>Calculates arc flash hazard at each bus and classifies PPE requirements per NFPA 70E. Each bus selects
-          its own method via the <strong>Arc Flash Method</strong> property: <strong>IEEE 1584-2018</strong>
-          (current edition — default for new buses) uses electrode-configuration-specific coefficients, an
-          equipment-enclosure-size correction, and a voltage-dependent reduced-arcing-current check;
-          <strong>IEEE 1584-2002</strong> (default only on projects saved before 2018 support was added) is kept for
-          byte-identical reproduction of older studies/labels.</p>
-
-          <h4>What is Calculated</h4>
-          <ul>
-            <li><strong>Arcing current</strong> — Current that sustains the arc (typically less than bolted fault current)</li>
-            <li><strong>Incident energy</strong> — Thermal energy at the working distance (cal/cm²), determines PPE requirement</li>
-            <li><strong>Arc flash boundary (AFB)</strong> — Distance where incident energy drops to 1.2 cal/cm² (onset of second-degree burn)</li>
-            <li><strong>PPE category</strong> — NFPA 70E hazard category (0-4, or DANGER if &gt;40 cal/cm²)</li>
-          </ul>
-
-          <h4>PPE Categories (NFPA 70E)</h4>
+          <h4>Control circuits (IEC 60617 schematic)</h4>
           <table class="help-ref-table">
-            <thead><tr><th>Category</th><th>Energy (cal/cm²)</th><th>Required PPE</th></tr></thead>
+            <thead><tr><th>Component</th><th>Description</th><th>Key Properties</th></tr></thead>
             <tbody>
-              <tr class="af-low"><td>0</td><td>&lt; 1.2</td><td>No arc-rated PPE required</td></tr>
-              <tr class="af-low"><td>1</td><td>1.2 – 4.0</td><td>Arc-rated shirt, pants, safety glasses</td></tr>
-              <tr class="af-medium"><td>2</td><td>4.0 – 8.0</td><td>Arc-rated shirt, pants, flash suit hood, hard hat</td></tr>
-              <tr class="af-high"><td>3</td><td>8.0 – 25.0</td><td>Arc flash suit, hard hat, balaclava</td></tr>
-              <tr class="af-danger"><td>4</td><td>25.0 – 40.0</td><td>Multi-layer arc flash suit</td></tr>
-              <tr class="af-danger"><td>DANGER</td><td>&gt; 40.0</td><td>Do not work energized</td></tr>
+              <tr><td><strong>Control Supply, Control Breaker</strong></td><td>The L / N rails and the MCB feeding a control circuit</td><td>Supply type; breaker state and rating</td></tr>
+              <tr><td><strong>Pushbutton NO / NC, Selector Switch</strong></td><td>Operator devices, momentary or maintained</td><td>Tag, state (selector: contact type)</td></tr>
+              <tr><td><strong>Contact NO / NC</strong></td><td>Contact bound to a coil by its tag</td><td>Tag (for example K1)</td></tr>
+              <tr><td><strong>Coil / Relay, Pilot Lamp</strong></td><td>Loads energised through closed contacts; coils can be timers</td><td>Tag, coil type (relay or timer) and delay; lamp colour</td></tr>
             </tbody>
           </table>
+          <p>See <a href="#" onclick="HelpCenter.open('wf-control');return false;">Control-circuit simulation</a>.</p>
+        </div>
 
-          <h4>Key Bus Properties for Arc Flash</h4>
-          <ul>
-            <li><strong>Working distance</strong> — Distance from the arc source to the worker (mm). Default 455mm for low-voltage switchgear (NFPA 70E Table 130.7(C)(15)(b)).</li>
-            <li><strong>Electrode configuration</strong> — VCB (vertical, in box), VCBB, HCB, VOA (vertical, open air), HOA. Enclosed configurations produce higher incident energy.</li>
-            <li><strong>Enclosure width/height/depth</strong> — IEEE 1584-2018 only (0 = auto from equipment class). A small (&lt;600V, &lt;508×508mm, ≤203.2mm deep) box gets the "shallow" correction; larger boxes typically read higher incident energy than the "typical" test-box size the base regression was fit at.</li>
-          </ul>
-
-          <h4>How to Reduce Arc Flash Hazard</h4>
-          <p>The analysis generates bus-specific recommendations. General strategies in order of effectiveness:</p>
-          <ol>
-            <li><strong>Reduce clearing time</strong> — The single most effective measure. Incident energy is directly proportional to arc duration.
-              <ul>
-                <li>Enable instantaneous trip on upstream circuit breakers</li>
-                <li>Install arc flash detection relays (light/pressure sensors) for &lt;35ms clearing</li>
-                <li>Use bus differential protection (87B) for sub-cycle clearing</li>
-                <li>Implement zone-selective interlocking (ZSI)</li>
-                <li>Use maintenance mode switches to lower trip thresholds during work</li>
-              </ul>
-            </li>
-            <li><strong>Increase working distance</strong> — Incident energy follows an inverse-square relationship with distance. Moving from 455mm to 610mm significantly reduces exposure.</li>
-            <li><strong>Reduce available fault current</strong> — Use current-limiting fuses or reactors to reduce the energy source.</li>
-            <li><strong>Change electrode configuration</strong> — Open-air configurations (VOA, HOA) produce less concentrated energy than enclosed (VCB, HCB).</li>
-            <li><strong>Remote operation</strong> — Remote racking and switching eliminates personnel exposure entirely.</li>
-            <li><strong>De-energize</strong> — For Category 4 or DANGER, de-energize before work per NFPA 70E §130.2.</li>
-          </ol>
-
-          <h4>IEEE 1584 Applicability</h4>
-          <p><strong>2002:</strong> 208V–15kV, 3-phase, 50/60Hz, bolted fault current 700A–106kA, gaps 6.35–76.2mm.
-          <strong>2018:</strong> 208V–15kV, bolted fault current 500A–106kA (≤600V) or 200A–65kA (&gt;600V), no
-          documented gap restriction. For voltages &gt;15kV, the Ralph Lee theoretical model is used (either
-          edition). Below 240V fed by a single transformer &lt;125kVA, arc flash hazard is generally minimal.</p>
-
-          <h4>DC Arc Flash Analysis</h4>
-          <p>Calculates DC arc flash hazard using the Stokes &amp; Oppenlander method with DGUV-I 203-077 guidelines. Available via <strong>Analyse → Protection &amp; safety → DC Arc Flash</strong>. Applicable to DC systems including battery rooms, UPS systems, rectifiers, and solar PV DC buses.</p>
-          <ul>
-            <li><strong>DC arcing current</strong> — Sustained DC arc current based on system voltage and gap</li>
-            <li><strong>Incident energy</strong> — Thermal energy at working distance (cal/cm²)</li>
-            <li><strong>PPE category</strong> — Hazard category per NFPA 70E</li>
-            <li><strong>Arc flash boundary</strong> — Safe working distance</li>
-          </ul>
+        <div class="help-content help-ref" id="help-tab-reference" style="display:none">
+          <div class="hc-nav">
+            <input type="search" class="hc-search" placeholder="Search: e.g. sag, earth fault, ampacity…" aria-label="Search help articles" autocomplete="off" spellcheck="false">
+            <div class="hc-count" aria-live="polite"></div>
+            <div class="hc-list" role="list"></div>
+          </div>
+          <div class="hc-article" tabindex="0"></div>
         </div>
 
         <div class="help-content" id="help-tab-verification" style="display:none">
@@ -3090,6 +2949,14 @@
   <script src="js/plan-circuits.js?v=3.5.111"></script>
   <script src="js/plan-ui.js?v=3.5.111"></script>
   <script src="js/plan.js?v=3.5.111"></script>
+  <script src="js/help.js?v=3.5.111"></script>
+  <script src="js/help-faults.js?v=3.5.111"></script>
+  <script src="js/help-flow.js?v=3.5.111"></script>
+  <script src="js/help-dynamics.js?v=3.5.111"></script>
+  <script src="js/help-protect.js?v=3.5.111"></script>
+  <script src="js/help-cables.js?v=3.5.111"></script>
+  <script src="js/help-design.js?v=3.5.111"></script>
+  <script src="js/help-workflow.js?v=3.5.111"></script>
   <script src="js/app.js?v=3.5.111"></script>
   <script src="js/mobile.js?v=3.5.111"></script>
 </body>
