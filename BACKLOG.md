@@ -313,6 +313,12 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Help rewritten as a searchable calculation reference (2026-09-20)
+- **51 articles, each with the working shown** in typeset maths (KaTeX, vendored under `frontend/js/lib/katex`, woff2 only, lazy-loaded on first open): short circuit (IEC 60909, ANSI C37.010, DC, series/simultaneous faults, zero-sequence & earthing, line coupling), load flow and every network study, motors/stability/power quality, protection & safety (TCC, CT/PT, arc flash 2002/2018/DC, IEEE 80, lightning, compliance), cables & circuits, reticulation/plans/BOQ, and the logic tools. Symbols are defined, constants are the engines' own, and most articles carry a worked example checked against the engine.
+- **Search** ranks title > keywords > headings > body, matches word starts, understands aliases (sag/dip, earth/ground, vd…), shows snippets, supports up/down/Enter, and highlights hits in the opened article. TeX source is excluded from the index.
+- The old static Analysis / Studies / Arc Flash tabs are replaced by the **Calculations & tools** tab; the Components tab now lists all 40 types.
+- Files: `help.js` (viewer), `help-{faults,flow,dynamics,protect,cables,design,workflow}.js` (article data), `css/help.css`. All 807 expressions render under KaTeX strict mode.
+
 ### Building-wiring cables restricted to their own workspaces; Z0 guidance corrected (2026-09-20)
 *(Follow-up to the Z0 provenance disclosure — the remedy it suggested was only partly true.)*
 - **The Z0 warning over-promised.** It told the user to "pick a library cable (which carries them)", but **29 of the 113 `STANDARD_CABLES` entries have neither `r0_per_km` nor `x0_per_km`** — T+E (6), H07V-R singles (11), Surfix (7) and control/signal pairs (5). All 84 armoured distribution cables do carry both. The message now names the armoured distribution set specifically and states that the building-wiring entries have no zero-sequence data of their own.
