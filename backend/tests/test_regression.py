@@ -5561,3 +5561,30 @@ class TestCableParallelDivide:
 
             assert v_lumped == pytest.approx(v_redrawn, abs=1e-6), (
                 f"num_parallel={n}: lumped {v_lumped} vs explicit-bus {v_redrawn}")
+
+
+class TestCableZoneWarning:
+    """A cable whose voltage_kv prop disagrees with its zone must still be
+    reported, even though the engine no longer believes the prop.
+
+    The 15% mismatch warning could never fire on a cable-only chain: the loop
+    skipped every chain with `hv_bus is None`, which is precisely the chain
+    with no transformer.
+    """
+
+    def test_stale_cable_prop_still_warns(self):
+        """The engine is now correct regardless, but a stale prop means the
+        DRAWING disagrees with the network — and the frontend guards
+        (voltage.js propagation, Components.validate) do not exist for API /
+        Python-client payloads. Cable-only chains must still warn."""
+        res = run_load_flow(_lv_cable_only(11))
+        stale = [w for w in res.warnings
+                 if w.elementId == "cable-1" and "Voltage mismatch" in w.message]
+        assert stale, "no mismatch warning for an 11 kV cable in a 0.4 kV zone"
+        assert stale[0].expected_kv == pytest.approx(0.4)
+        assert stale[0].actual_kv == pytest.approx(11.0)
+
+    def test_correct_cable_prop_does_not_warn(self):
+        res = run_load_flow(_lv_cable_only(0.4))
+        assert not [w for w in res.warnings
+                    if w.elementId == "cable-1" and "Voltage mismatch" in w.message]

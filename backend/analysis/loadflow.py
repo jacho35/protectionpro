@@ -3587,8 +3587,38 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     tolerance = 0.15  # 15% mismatch threshold
 
     for elems, from_bus, to_bus, y, t, hv_bus, cvs in branch_chains:
-        if elems is None or hv_bus is None:
-            continue  # Skip bus links and non-transformer chains
+        if elems is None:
+            continue  # Skip bus links — they carry no elements
+
+        if hv_bus is None:
+            # Cable-only chain: no transformer, so there is no boundary to
+            # walk — the whole chain sits in ONE voltage zone, and the chain
+            # builder has already resolved it into cvs. The engine now refers
+            # every cable to that zone's base whatever its own voltage_kv prop
+            # says ([EE-12 mirror], see _get_impedance), so this warning is
+            # about the DRAWING disagreeing with the network, not about a
+            # wrong answer. It still earns its place: the frontend guards
+            # (voltage.js zone propagation, Components.validate's own 15%
+            # cable-vs-bus check) do not exist for API / Python-client
+            # payloads, and the bus-change dialog can be dismissed.
+            for eid, e in elems.items():
+                if e.type != "cable" or eid in warned_ids:
+                    continue
+                expected_v = cvs.get(eid, 0) or 0
+                actual_v = e.props.get("voltage_kv", 0) or 0
+                if expected_v <= 0 or actual_v <= 0:
+                    continue
+                if abs(actual_v - expected_v) / expected_v > tolerance:
+                    warned_ids.add(eid)
+                    voltage_warnings.append(LoadFlowWarning(
+                        elementId=eid,
+                        element_name=e.props.get("name", e.type),
+                        message=(f"Voltage mismatch: rated {actual_v} kV, "
+                                 f"expected {expected_v} kV from connected bus"),
+                        expected_kv=round(expected_v, 3),
+                        actual_kv=round(actual_v, 3),
+                    ))
+            continue
 
         # Determine bus voltages for each side
         from_v = components[from_bus].props.get("voltage_kv", 0) if from_bus in components else 0

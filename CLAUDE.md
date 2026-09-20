@@ -96,7 +96,7 @@ backend/
 │   ├── capacitor_placement.py # Optimal capacitor placement — greedy loss-sensitivity over LF solves
 │   ├── flicker.py          # Voltage flicker (IEC 61000-3-3/-4-15) — planning-level Pst/Plt screening for repetitive motor starts
 │   ├── hosting_capacity.py # Nodal DER hosting capacity — voltage-rise/thermal limited PV injection sweep per bus
-│   ├── arcflash.py         # IEEE 1584-2002 arc flash incident energy
+│   ├── arcflash.py         # Arc flash incident energy — IEEE 1584-2002 and 1584-2018
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── db_circuit_check.py # Per-way DB circuit check — derated Iz, Ib<=In<=Iz, volt drop, ECC, earth-loop Zs
 │   ├── iec_60364_tables.py # IEC 60364-5-52 installed-ampacity + derating tables (backend twin of constants.js)
@@ -183,7 +183,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/capacitor-placement` | Optimal VAR placement & sizing | Greedy loss-sensitivity, LF-scored |
 | `/api/analysis/flicker` | Voltage flicker (Pst/Plt) screening | IEC 61000-3-3-style curve on Thevenin d(%) — planning estimate, not a flickermeter |
 | `/api/analysis/hosting-capacity` | Nodal DER hosting capacity | Voltage/thermal-limited PV injection sweep, LF-scored |
-| `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 |
+| `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 and IEEE 1584-2018 (per-bus `arc_flash_method`) |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/db-circuit-check` | Per-way DB circuit schedule check | IEC 60364-5-52 Iz + 4-43 §433.1; SANS 10142-1 Cl. 6.6 volt drop; IEC 60364-5-54 Table 54.7 ECC; IEC 60364-4-41 Zs |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
@@ -295,8 +295,9 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Reports accel time, stall, peak current, voltage dip trajectory, rotor I²t thermal use
 
 ### Arc Flash (arcflash.py)
-- IEEE 1584-2002 method (the engine docstring is explicit; 2018 is not implemented)
-- Calculates arcing current, incident energy at working distance
+- **Both editions are implemented**, selected per bus by the `arc_flash_method` prop. Absent ⇒ `IEEE 1584-2002`, so projects saved before the 2018 method was added stay byte-identical; **new buses default to `IEEE 1584-2018`** (`frontend/js/constants.js`), the current edition.
+- **IEEE 1584-2002** (functions without a `_2018` suffix): arcing current (Eq. 1-2), incident energy (Eq. 3-6), arc flash boundary by bisection. Its electrode model distinguishes open-air from enclosed only (the K1 factor) — no enclosure-size correction.
+- **IEEE 1584-2018** (`_2018`-suffixed): the three-current-anchor regression model — arcing current and incident energy computed at 600 V / 2700 V / 14,300 V via per-electrode-configuration (VCB/VCBB/HCB/VOA/HOA) coefficient tables, then blended by voltage range, plus an enclosure-size correction factor (box configs only) and a closed-form arc-flash-boundary inverse. Coefficients were transcribed from the official IEEE 1584-2018 validation spreadsheet via the MIT-licensed reference implementation `github.com/jgrimard/arc-flash-calculator`. **One caveat worth disclosing:** the arcing-current variation-factor polynomial (`_RATIO_2018`) is not published by that source and was instead **Vandermonde-fitted** (residual ~1e-15) to the seven distinct Voc values the official spreadsheet exercises — not transcribed from it. Verified against six spreadsheet fixtures spanning all 5 electrode configs and all 3 blend regions (`test_regression.py::TestArcFlash2018`, matched to <0.0003%).
 - Determines PPE category (1-4) and arc flash boundary
 - Gap selection based on equipment type and voltage class
 - Relay/CB clearing-time evaluation (`get_clearing_time`) shares `analysis/ct_model.py` with the frontend TCC: when a relay has an `associated_ct`, the arcing current is run through the CT saturation model (knee voltage from IEC 61869-2 ALF, burden + winding resistance → waveform-clipping) before the IDMT curve is evaluated, so the backend sees the same current the relay physically measures. The IEC 60909 peak factor κ at the fault bus derates the saturation threshold as a bounded dc-offset/asymmetry proxy (not a full transient core-flux simulation — that remains out of scope). `duty_check.py` uses the same model to flag CTs whose (κ-derated) saturation threshold doesn't cover the prospective fault current at their bus ("CT Saturation Adequacy" table, protection-relay-connected CTs only).
@@ -340,7 +341,7 @@ None currently implemented. CORS allows all origins. Auth is in the backlog.
 
 ## Testing
 
-Backend regression tests live in `backend/tests/test_regression.py` — standards-anchored hand calculations (IEC 60909, IEEE 1584-2002, IEEE 80) that pin the analysis engines. Run them inside the backend Docker image:
+Backend regression tests live in `backend/tests/test_regression.py` — standards-anchored hand calculations (IEC 60909, IEEE 1584-2002 and 1584-2018, IEEE 80) that pin the analysis engines. Run them inside the backend Docker image:
 
 ```bash
 docker run --rm -v "$PWD":/work -w /work protectionpro-backend \
