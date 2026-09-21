@@ -47,15 +47,17 @@ from ..analysis.load_diversity import run_load_diversity
 from ..analysis.grounding_system import run_grounding_analysis, interpret_wenner_test
 from ..analysis.study_manager import run_study_manager
 from ..analysis.changeover import expand_changeovers
+from ..analysis.offpage import expand_offpage_links
 
 
 def _with_changeovers_expanded(endpoint):
     """Rewrite changeover switches (3 terminals) into the 2-terminal devices
-    every engine understands before the endpoint sees the project — see
-    analysis/changeover.py. Signature is preserved for FastAPI."""
+    every engine understands, and join linked off-page connectors, before the
+    endpoint sees the project — see analysis/changeover.py and offpage.py.
+    Signature is preserved for FastAPI."""
     @functools.wraps(endpoint)
     def wrapper(*args, **kwargs):
-        kwargs = {k: expand_changeovers(v) if isinstance(v, ProjectData) else v
+        kwargs = {k: expand_offpage_links(expand_changeovers(v)) if isinstance(v, ProjectData) else v
                   for k, v in kwargs.items()}
         return endpoint(*args, **kwargs)
     return wrapper

@@ -601,6 +601,10 @@ const AppState = {
         this.wires.delete(wid);
       }
     }
+    // Drop off-page links that pointed at the removed connector
+    for (const c of this.components.values()) {
+      if (c.type === 'offpage_connector' && c.props && c.props.linked_to === id) c.props.linked_to = '';
+    }
     this.components.delete(id);
     this.selectedIds.delete(id);
     this.dirty = true;
