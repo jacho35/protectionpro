@@ -3353,3 +3353,5 @@ body.dark-mode .tcc-ft-slow { color: #ffcc80; }
 .sl-pick { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; }
 .sl-pick span { font-size: 12px; color: var(--text-secondary); min-width: 110px; }
 .lib-name-badge { display: block; width: fit-content; margin: 4px 0 0; }
+.sl-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+.sl-field input { padding: 6px 8px; }

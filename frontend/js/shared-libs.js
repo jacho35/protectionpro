@@ -43,7 +43,8 @@ const SharedLibs = {
         <div class="sl-sub">${isOwner ? 'Owned by you' : 'Owner: ' + escHtml(L.owner_email)} · ${escHtml(this._counts(L))}</div>
         <div class="sl-actions">
           ${canEdit ? `<button type="button" class="btn-small${editing ? ' btn-primary' : ''}" data-act="edit">${editing ? 'Editing this library ✓ (stop)' : 'Edit its entries'}</button>
-                       <button type="button" class="btn-small" data-act="publish">Publish my entries…</button>` : ''}
+                       <button type="button" class="btn-small" data-act="publish">Publish my entries…</button>
+                       <button type="button" class="btn-small" data-act="seed" title="Copy the shipped cables, transformers, breakers, fuses and load classes into this library so they can be edited here">Add default entries</button>` : ''}
           ${isOwner ? '<button type="button" class="btn-small" data-act="rename">Rename</button><button type="button" class="btn-small" data-act="members">Members</button><button type="button" class="btn-small btn-danger-text" data-act="delete">Delete</button>'
                     : (L.is_company_default ? '' : '<button type="button" class="btn-small" data-act="leave">Leave</button>')}
           ${admin ? `<label class="sl-company"><input type="checkbox" data-act="company" ${L.is_company_default ? 'checked' : ''}> Company standard</label>` : ''}
@@ -79,11 +80,21 @@ const SharedLibs = {
     const done = async () => { await StandardData.reloadShared(); };
     try {
       if (act === 'new') {
-        const name = await UI.prompt('Name of the new shared library', '');
-        if (name && name.trim()) { await API.createSharedLibrary(name.trim()); await done(); }
+        const r = await this._newDialog();
+        if (r) {
+          const lib = await API.createSharedLibrary(r.name);
+          if (r.seed) await this._seedDefaults(lib.id);
+          await done();
+        }
       } else if (act === 'reload') { await done(); UI.toast('Shared libraries reloaded.', 'info', 2500); }
       else if (act === 'edit') { await StandardData.setEditTarget(StandardData._editTarget && StandardData._editTarget.id === id ? null : id); }
       else if (act === 'publish') await this._publish(L);
+      else if (act === 'seed') {
+        if (await UI.confirm(`Add the shipped default entries to “${L.name}”?\nEntries that already exist there are left as they are. Copies override the shipped ones for everyone who uses this library, so later corrections to the shipped values will not reach them.`, { okText: 'Add defaults' })) {
+          const n = await this._seedDefaults(L.id); await done();
+          UI.toast(`Added ${n} default entries.`, 'success', 4000);
+        }
+      }
       else if (act === 'rename') {
         const name = await UI.prompt('Rename shared library', L.name);
         if (name && name.trim() && name.trim() !== L.name) { await API.renameSharedLibrary(id, name.trim()); await done(); }
@@ -116,6 +127,41 @@ const SharedLibs = {
       UI.toast(e.message || String(e), 'error', 6000);
       StandardData.reloadShared().catch(() => {});      // show what the server really holds
     }
+  },
+
+  // Name + "start with the shipped defaults" (on by default).
+  _newDialog() {
+    return new Promise(resolve => {
+      const SD = StandardData;
+      const n = SD._LIBKEYS.reduce((a, k) => a + SD._defaults[k].length, 0);
+      const m = document.createElement('div');
+      m.className = 'modal'; m.id = 'sl-new-modal'; m.style.display = 'flex'; m.style.zIndex = '3000';
+      m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+      m.innerHTML = `<div class="modal-content" style="max-width:520px;width:92vw">
+        <div class="modal-header"><h3>New shared library</h3></div>
+        <div class="modal-body">
+          <label class="sl-field">Name<input type="text" data-f="name" placeholder="e.g. Company standard" maxlength="255"></label>
+          <label class="sl-pick"><input type="checkbox" data-f="seed" checked> <span style="min-width:0">Start with the ${n} shipped default entries (cables, transformers, breakers, fuses, load classes)</span></label>
+          <p class="sl-note" style="margin:6px 0 0">Copies can be edited by the team here. They override the shipped ones for everyone who uses this library, so later corrections to the shipped values will not reach them. Untick to start empty and add only your own entries.</p>
+        </div>
+        <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="btn-small" data-a="cancel">Cancel</button><button type="button" class="btn-primary" data-a="ok">Create</button></div></div>`;
+      document.body.appendChild(m);
+      const end = v => { m.remove(); resolve(v); };
+      const ok = () => { const name = m.querySelector('[data-f="name"]').value.trim(); if (name) end({ name, seed: m.querySelector('[data-f="seed"]').checked }); else m.querySelector('[data-f="name"]').focus(); };
+      m.addEventListener('click', ev => { const a = ev.target.closest('[data-a]'); if (!a) return; if (a.dataset.a === 'cancel') end(null); else ok(); });
+      m.addEventListener('keydown', ev => { if (ev.key === 'Escape') end(null); else if (ev.key === 'Enter' && ev.target.tagName === 'INPUT' && ev.target.type === 'text') ok(); });
+      m.querySelector('[data-f="name"]').focus();
+    });
+  },
+
+  // Copy the shipped entries into a library (create-only: ids already there are skipped).
+  async _seedDefaults(libraryId) {
+    const SD = StandardData;
+    const entries = [];
+    for (const key of SD._LIBKEYS) for (const e of SD._defaults[key]) entries.push({ kind: key, data: SD._strip(SD._plain(key, e)) });
+    const r = await API.importSharedEntries(libraryId, entries);
+    return r.created.length;
   },
 
   // Copy your own new entries into a library you can edit (create-only: existing ids are skipped).
