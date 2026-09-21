@@ -49,21 +49,19 @@ const DBDrawing = {
     cable: true, load: true, phase: true, elgroups: true,
     bars: true, status: true, accessories: true,
   },
-  _detailKey: 'protectionpro-dbdrawing-detail',
 
   // ── Detail toggles ──────────────────────────────────────────────────
+  // Saved with the project (AppState.dbDrawingDetail holds only the switches that
+  // differ from DETAIL_DEFAULTS), so everyone opening it gets the same drawing.
   detail() {
-    if (this._detail) return this._detail;
-    let stored = null;
-    try { stored = JSON.parse(localStorage.getItem(this._detailKey) || 'null'); } catch (e) { stored = null; }
-    this._detail = Object.assign({}, this.DETAIL_DEFAULTS, stored || {});
-    return this._detail;
+    return Object.assign({}, this.DETAIL_DEFAULTS, AppState.dbDrawingDetail || {});
   },
 
   setDetail(key, on) {
-    const d = this.detail();
-    d[key] = !!on;
-    try { localStorage.setItem(this._detailKey, JSON.stringify(d)); } catch (e) { /* private mode */ }
+    if (!AppState.dbDrawingDetail) AppState.dbDrawingDetail = {};
+    if (!!on === this.DETAIL_DEFAULTS[key]) delete AppState.dbDrawingDetail[key];
+    else AppState.dbDrawingDetail[key] = !!on;
+    AppState.dirty = true;
   },
 
   // ── Mounting ────────────────────────────────────────────────────────

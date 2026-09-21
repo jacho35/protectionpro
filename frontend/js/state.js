@@ -9,7 +9,7 @@ const RESULT_SLOTS = [
   'dcArcFlashResults', 'dcLoadFlowResults', 'dcShortCircuitResults', 'cableSizingResults',
   'motorStartingResults', 'dynamicMotorResults', 'stabilityResults', 'dutyCheckResults',
   'loadDiversityResults', 'groundingResults', 'studyManagerResults', 'ansiFaultResults',
-  'dbCheckResults',
+  'dbCheckResults', 'reticResults',
 ];
 
 // Human labels for the stale-results notice.
@@ -23,7 +23,7 @@ const RESULT_SLOT_LABELS = {
   stabilityResults: 'Transient Stability', dutyCheckResults: 'Duty Check',
   loadDiversityResults: 'Load Diversity', groundingResults: 'Grounding',
   studyManagerResults: 'Study Manager', ansiFaultResults: 'ANSI Fault Duty',
-  dbCheckResults: 'DB Circuit Check',
+  dbCheckResults: 'DB Circuit Check', reticResults: 'Reticulation (ADMD)',
 };
 
 const AppState = {
@@ -93,6 +93,12 @@ const AppState = {
     loadflow: false,
     fault: false,
   },
+
+  // Other per-project display choices (saved in `viewSettings`): units of the load-flow
+  // dispatch summary ('kva' | 'kw') and the DB-drawing detail switches that differ from
+  // DBDrawing.DETAIL_DEFAULTS.
+  dispatchUnits: 'kva',
+  dbDrawingDetail: {},
 
   // Result box visibility — per analysis type
   showResultBoxes: {
@@ -187,7 +193,7 @@ const AppState = {
     _erfSeq: 1,
     _msSeq: 2,
   },
-  reticResults: null,   // latest /api/analysis/admd response
+  // reticResults (latest /api/analysis/admd response) is a RESULT_SLOTS accessor: saved with the project
 
   // Plan Markup workspace: geographic markup over an imported site/floor plan.
   // Geometry is stored in plan-image pixels; metres derived via scale.factor.
@@ -1155,6 +1161,7 @@ const AppState = {
     this.wireRouteMode = 'orthogonal';
     this.reticulation = this._defaultReticulation();
     this.reticResults = null;
+    this._applyViewSettings(null);   // display toggles back to their defaults
     // Entries brought in "for this project only" belong to the project being left.
     if (typeof StandardData !== 'undefined') StandardData.clearProjectOnly();
     this.planMarkup = this._defaultPlanMarkup();
@@ -1280,6 +1287,42 @@ const AppState = {
   },
 
   // Export to JSON
+  // The display toggles are project settings (a teammate opening the project sees the diagram
+  // as it was left). Only values that differ from the defaults are written.
+  _viewSettingsToJSON() {
+    const out = {};
+    if (!this.showCableLabels) out.showCableLabels = false;
+    if (!this.showDeviceLabels) out.showDeviceLabels = false;
+    if (!this.showWarnings) out.showWarnings = false;
+    if (this.showFaultAngles) out.showFaultAngles = true;
+    if (!this.showRatingFlags) out.showRatingFlags = false;
+    if (this.branchFlowDetailed) out.branchFlowDetailed = true;
+    const fa = {};
+    if (this.showFlowArrows.fault) fa.fault = true;
+    if (this.showFlowArrows.loadflow) fa.loadflow = true;
+    if (Object.keys(fa).length) out.showFlowArrows = fa;
+    if (this.dispatchUnits === 'kw') out.dispatchUnits = 'kw';
+    if (this.dbDrawingDetail && Object.keys(this.dbDrawingDetail).length) out.dbDrawingDetail = { ...this.dbDrawingDetail };
+    return Object.keys(out).length ? out : undefined;
+  },
+  _applyViewSettings(v) {
+    v = (v && typeof v === 'object') ? v : {};
+    this.showCableLabels = v.showCableLabels !== false;
+    this.showDeviceLabels = v.showDeviceLabels !== false;
+    this.showWarnings = v.showWarnings !== false;
+    this.showFaultAngles = v.showFaultAngles === true;
+    this.showRatingFlags = v.showRatingFlags !== false;
+    this.branchFlowDetailed = v.branchFlowDetailed === true;
+    this.showFlowArrows = {
+      fault: !!(v.showFlowArrows && v.showFlowArrows.fault),
+      loadflow: !!(v.showFlowArrows && v.showFlowArrows.loadflow),
+    };
+    this.dispatchUnits = v.dispatchUnits === 'kw' ? 'kw' : 'kva';
+    this.dbDrawingDetail = (v.dbDrawingDetail && typeof v.dbDrawingDetail === 'object' && !Array.isArray(v.dbDrawingDetail))
+      ? { ...v.dbDrawingDetail } : {};
+    if (typeof syncViewToggles === 'function') syncViewToggles();
+  },
+
   toJSON() {
     return {
       // Schema version. v2: cable r_per_km/r0_per_km store conductor
@@ -1296,6 +1339,7 @@ const AppState = {
       defaultLengthUnit: this.defaultLengthUnit,
       voltageDisplayUnit: this.voltageDisplayUnit,
       showResultBoxes: { ...this.showResultBoxes },
+      viewSettings: this._viewSettingsToJSON(),
       resultBoxFields: (this.resultBoxFields && Object.keys(this.resultBoxFields).length)
         ? this.resultBoxFields : undefined,
       components: [...this.components.values()],
@@ -1326,6 +1370,7 @@ const AppState = {
       dcShortCircuitResults: this.dcShortCircuitResults || undefined,
       cableSizingResults: this.cableSizingResults || undefined,
       dbCheckResults: this.dbCheckResults || undefined,
+      reticResults: this.reticResults || undefined,
       motorStartingResults: this.motorStartingResults || undefined,
       dynamicMotorResults: this.dynamicMotorResults || undefined,
       stabilityResults: this.stabilityResults || undefined,
@@ -1428,6 +1473,7 @@ const AppState = {
     if (data.showResultBoxes && typeof data.showResultBoxes === 'object') {
       Object.assign(this.showResultBoxes, data.showResultBoxes);
     }
+    this._applyViewSettings(data.viewSettings);
     // Per-value visibility: replace wholesale (absent ⇒ all fields shown, so a
     // project saved without the setting clears any previous project's choices).
     this.resultBoxFields = (data.resultBoxFields && typeof data.resultBoxFields === 'object'

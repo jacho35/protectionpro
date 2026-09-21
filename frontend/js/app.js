@@ -596,8 +596,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  const DISPATCH_UNITS_KEY = 'protectionpro-dispatch-units';   // 'kva' (default) | 'kw'
-
   // Post-run load flow summary: generation dispatch table + solver warnings.
   // Shown automatically when the run is noteworthy (islanding, curtailment,
   // de-energized buses, non-convergence); reuses the calc modal shell.
@@ -617,7 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Power units for the dispatch table: apparent (kVA/MVA, the default —
     // it's what a source is rated and sized in) or real (kW/MW). The choice
     // sticks across runs and sessions.
-    const unitMode = localStorage.getItem(DISPATCH_UNITS_KEY) === 'kw' ? 'kw' : 'kva';
+    const unitMode = AppState.dispatchUnits === 'kw' ? 'kw' : 'kva';   // saved with the project
     // Adaptive magnitude: a 200 kW PV plant should read in kW, not 0.200 MW
     const fmtPower = (mw) => Math.abs(mw) >= 1
       ? `${mw.toFixed(2)} MW`
@@ -711,7 +709,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!btn) continue;
       btn.addEventListener('click', () => {
         if (mode === unitMode) return;
-        localStorage.setItem(DISPATCH_UNITS_KEY, mode);
+        AppState.dispatchUnits = mode;
+        AppState.dirty = true;
         showDispatchSummary(result, title);
       });
     }
@@ -888,10 +887,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Flow arrow toggle checkboxes
   document.getElementById('chk-fault-arrows').addEventListener('change', (e) => {
     AppState.showFlowArrows.fault = e.target.checked;
+    AppState.dirty = true;
     Canvas.render();
   });
   document.getElementById('chk-loadflow-arrows').addEventListener('change', (e) => {
     AppState.showFlowArrows.loadflow = e.target.checked;
+    AppState.dirty = true;
     Canvas.render();
   });
 
@@ -4193,11 +4194,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Display toggles
   document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
     AppState.showCableLabels = !AppState.showCableLabels;
+    AppState.dirty = true;
     e.currentTarget.classList.toggle('active', AppState.showCableLabels);
     Canvas.render();
   });
   document.getElementById('btn-toggle-devices').addEventListener('click', (e) => {
     AppState.showDeviceLabels = !AppState.showDeviceLabels;
+    AppState.dirty = true;
     e.currentTarget.classList.toggle('active', AppState.showDeviceLabels);
     Canvas.render();
   });
@@ -4243,16 +4246,19 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-toggle-warnings').addEventListener('click', (e) => {
     AppState.showWarnings = !AppState.showWarnings;
+    AppState.dirty = true;
     e.currentTarget.classList.toggle('active', AppState.showWarnings);
     Canvas.render();
   });
   document.getElementById('btn-toggle-angles').addEventListener('click', (e) => {
     AppState.showFaultAngles = !AppState.showFaultAngles;
+    AppState.dirty = true;
     e.currentTarget.classList.toggle('active', AppState.showFaultAngles);
     Canvas.render();
   });
   document.getElementById('btn-toggle-branch-detail').addEventListener('click', (e) => {
     AppState.branchFlowDetailed = !AppState.branchFlowDetailed;
+    AppState.dirty = true;
     e.currentTarget.classList.toggle('active', AppState.branchFlowDetailed);
     Canvas.render();
   });
@@ -4265,6 +4271,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     Canvas.render();
   }
+
+  // Put the toolbar toggles in step with AppState (after a project loads or resets).
+  function syncViewToggles() {
+    const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('active', !!v); };
+    on('btn-toggle-labels', AppState.showCableLabels);
+    on('btn-toggle-devices', AppState.showDeviceLabels);
+    on('btn-toggle-warnings', AppState.showWarnings);
+    on('btn-toggle-angles', AppState.showFaultAngles);
+    on('btn-toggle-branch-detail', AppState.branchFlowDetailed);
+    on('btn-toggle-rating-flags', AppState.showRatingFlags);
+    const fa = document.getElementById('chk-fault-arrows'); if (fa) fa.checked = !!AppState.showFlowArrows.fault;
+    const la = document.getElementById('chk-loadflow-arrows'); if (la) la.checked = !!AppState.showFlowArrows.loadflow;
+    _syncResultToggleButtons();
+  }
+  window.syncViewToggles = syncViewToggles;
 
   function _syncResultToggleButtons() {
     const rb = AppState.showResultBoxes;
@@ -4313,6 +4334,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (_ratingFlagsBtn) {
     _ratingFlagsBtn.addEventListener('click', () => {
       AppState.showRatingFlags = !AppState.showRatingFlags;
+      AppState.dirty = true;
       _ratingFlagsBtn.classList.toggle('active', AppState.showRatingFlags);
       Canvas.render();
       document.getElementById('status-info').textContent =
