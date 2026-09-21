@@ -130,33 +130,11 @@ const CableLib = {
     }
     return [...out];
   },
-  // Cables the user added to their own library that this project uses —
-  // saved with the project so it opens complete on another computer.
-  projectCustomCables() {
-    const shipped = new Set(((typeof StandardData !== 'undefined' && StandardData._defaults) ? StandardData._defaults.cables : []).map(c => c.id));
-    if (!shipped.size) return [];
-    return this._usedEntries().filter(c => !shipped.has(c.id)).map(c => JSON.parse(JSON.stringify(c)));
-  },
-  // A project just loaded: add its custom cables that this library lacks
-  // (matched by id; a local cable with the same id is kept as it is), then
-  // rewrite former building-library names to the one library's names.
-  onProjectLoaded(customCables) {
-    let added = 0;
-    if (Array.isArray(customCables) && typeof StandardData !== 'undefined' && Array.isArray(StandardData.cables)) {
-      const have = new Set(StandardData.cables.map(c => c.id));
-      for (const c of customCables) {
-        if (!c || !c.id || !c.name || have.has(c.id)) continue;
-        StandardData.cables.push(JSON.parse(JSON.stringify(c)));
-        have.add(c.id);
-        added++;
-      }
-      if (added) StandardData.syncCableLibrary();
-    }
+  // A project just loaded: rewrite former building-library names to the one
+  // library's names. Its custom cables are NOT added here — StandardData compares
+  // them with the user's library and asks (reviewProjectLibraries).
+  onProjectLoaded() {
     for (const [from, to] of Object.entries(this.ALIASES)) this.renameInProject(from, to);
-    if (added && typeof UI !== 'undefined') {
-      setTimeout(() => UI.toast(`This project uses ${added} cable${added === 1 ? '' : 's'} that ${added === 1 ? 'was' : 'were'} not in your library; ${added === 1 ? 'it has' : 'they have'} been added (Settings › Cables).`, 'info', 6000), 800);
-    }
-    return added;
   },
 
   // ── Pickers ────────────────────────────────────────────────────────
