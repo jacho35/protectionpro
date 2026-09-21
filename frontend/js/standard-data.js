@@ -8,12 +8,7 @@ const StandardData = {
   fuses: [],
   loadClasses: [],
 
-  // Libraries belong to the PROJECT (state.js toJSON `libraries`): only the
-  // differences from the shipped defaults are saved, so anyone opening the
-  // project gets the same libraries. The old localStorage copy is read once as
-  // a seed for projects saved before this (no `libraries` field) and never
-  // written again.
-  _LIBKEYS: ['cables', 'transformers', 'cbs', 'fuses', 'loadClasses'],
+  // localStorage key for persisted library customizations
   _STORAGE_KEY: 'protectionpro-custom-libraries',
   // Bump when shipped default library DATA changes (e.g. corrected cable
   // resistances). A persisted payload with an older version still loads the
@@ -93,70 +88,192 @@ const StandardData = {
     }
   },
 
-  // A library was edited: the change is part of the project now, so mark it
-  // unsaved (nothing is written to this browser).
   _persist() {
-    if (!this._initialized || this._applying) return;
-    if (typeof AppState !== 'undefined') AppState.dirty = true;
+    if (!this._initialized) return;
+    try {
+      localStorage.setItem(this._STORAGE_KEY, JSON.stringify({
+        version: this._DATA_VERSION,
+        cables: this._persistable('cables'),
+        transformers: this._persistable('transformers'),
+        cbs: this._persistable('cbs'),
+        fuses: this._persistable('fuses'),
+        loadClasses: this._persistable('loadClasses'),
+      }));
+    } catch (e) {
+      console.error('Failed to persist custom libraries:', e);
+    }
   },
 
-  // The project's library overrides: per library, the entries that are new or
-  // differ from the shipped default (matched by id) and the shipped ids that
-  // were deleted. undefined when every library is still the shipped default.
-  projectLibraries() {
-    if (!this._defaults) return undefined;
+
+  // ═══════════════════════════════════════════════════════
+  // ─── Project ↔ library: what a project needs from your libraries ───
+  // ═══════════════════════════════════════════════════════
+  // The libraries belong to the USER (the Settings modal), never to a project. A
+  // project records the library entries it uses that are not the shipped ones
+  // (`libraryItems`), and on open they are compared with YOUR libraries: entries
+  // you lack, or that differ, are listed and you decide. Nothing overwrites your
+  // library without asking. "This project only" entries live in the working copy
+  // flagged `_projectOnly` (or `_orig` = yours, when it stands in for one of
+  // yours) and are never persisted; they go when the next project opens.
+
+  _LIBKEYS: ['cables', 'transformers', 'cbs', 'fuses', 'loadClasses'],
+  _LIBNAME: { cables: 'Cable', transformers: 'Transformer', cbs: 'Circuit breaker', fuses: 'Fuse', loadClasses: 'Load class' },
+
+  _clone(e) { return JSON.parse(JSON.stringify(e)); },
+  _label(e) { return e.name || e.label || e.id; },
+  // Entry as a plain comparable record (no internal flags; cables completed the way
+  // CableLib.normalize does to the working copies).
+  _plain(key, e) {
+    const o = {};
+    for (const k of Object.keys(e)) if (k[0] !== '_') o[k] = e[k];
+    if (key === 'cables' && typeof CableLib !== 'undefined') CableLib.normalize(o);
+    return o;
+  },
+  _same(key, a, b) {
+    const x = this._plain(key, a), y = this._plain(key, b);
+    const ks = new Set([...Object.keys(x), ...Object.keys(y)]);
+    for (const k of ks) if (JSON.stringify(x[k]) !== JSON.stringify(y[k])) return false;
+    return true;
+  },
+  // What is saved to this browser: your library, without project-only entries.
+  _persistable(key) {
+    return this[key].map(e => e._orig ? e._orig : e).filter(e => !e._projectOnly);
+  },
+
+  // Library entries this project uses that differ from the shipped defaults
+  // (custom or edited), saved with the project. Undefined when there are none.
+  usedLibraryItems() {
+    if (!this._defaults || typeof AppState === 'undefined') return undefined;
+    const ids = { cables: new Set(), transformers: new Set(), cbs: new Set(), fuses: new Set(), loadClasses: new Set() };
+    const typeKey = { transformer: 'transformers', cb: 'cbs', fuse: 'fuses' };
+    for (const c of AppState.components.values()) {
+      const k = typeKey[c.type];
+      if (k && c.props && c.props.standard_type) ids[k].add(c.props.standard_type);
+    }
+    if (typeof CableLib !== 'undefined') for (const c of CableLib._usedEntries()) ids.cables.add(c.id);
+    const R = AppState.reticulation;
+    if (R) {
+      if (R.settings && R.settings.loadClass) ids.loadClasses.add(R.settings.loadClass);
+      for (const k of R.kiosks || []) {
+        if (k.loadClass) ids.loadClasses.add(k.loadClass);
+        for (const e of k.erfs || []) if (e.classId) ids.loadClasses.add(e.classId);
+      }
+      for (const id of [...ids.loadClasses]) ids.loadClasses.add(id + '_3ph');   // 3-phase twin is read alongside
+    }
     const out = {};
     for (const key of this._LIBKEYS) {
-      // Working cables were completed by CableLib.normalize (construction, cores);
-      // complete the shipped ones the same way before comparing.
-      const norm = e => (key === 'cables' && typeof CableLib !== 'undefined') ? CableLib.normalize(JSON.parse(JSON.stringify(e))) : e;
-      const def = new Map(this._defaults[key].map(e => [e.id, JSON.stringify(norm(e))]));
-      const have = new Set();
-      const set = [];
-      for (const e of this[key]) {
-        have.add(e.id);
-        if (def.get(e.id) !== JSON.stringify(e)) set.push(JSON.parse(JSON.stringify(e)));
+      const shipped = new Map(this._defaults[key].map(e => [e.id, e]));
+      const list = [];
+      for (const id of ids[key]) {
+        const src = this[key].find(e => e.id === id);            // the entry in effect (yours, or this project's own)
+        if (!src) continue;
+        const ship = shipped.get(id);
+        if (ship && this._same(key, ship, src)) continue;        // shipped as-is: everyone has it
+        list.push(this._plain(key, this._clone(src)));
       }
-      const removed = [...def.keys()].filter(id => !have.has(id));
-      if (set.length || removed.length) out[key] = { set, removed };
+      if (list.length) out[key] = list;
     }
     return Object.keys(out).length ? out : undefined;
   },
 
-  // Make the working libraries what the project says: shipped defaults with the
-  // project's overrides on top. A project without `libraries` (saved before they
-  // travelled with it) gets the defaults plus this browser's old localStorage
-  // copy, read-only, so nothing it relied on disappears.
-  applyProjectLibraries(libs) {
+  // A different project is opening (or a new one): drop the previous project's
+  // project-only entries and put back the entries of yours they stood in for.
+  clearProjectOnly() {
     if (!this._defaults) return;
-    this._applying = true;
-    try {
-      for (const key of this._LIBKEYS) this[key] = JSON.parse(JSON.stringify(this._defaults[key]));
-      if (libs && typeof libs === 'object') {
-        for (const key of this._LIBKEYS) {
-          const o = libs[key];
-          if (!o) continue;
-          const removed = new Set(Array.isArray(o.removed) ? o.removed : []);
-          const set = new Map((Array.isArray(o.set) ? o.set : []).filter(e => e && e.id).map(e => [e.id, e]));
-          const next = this[key].filter(e => !removed.has(e.id)).map(e => set.has(e.id) ? JSON.parse(JSON.stringify(set.get(e.id))) : e);
-          const have = new Set(next.map(e => e.id));
-          for (const [id, e] of set) if (!have.has(id) && !removed.has(id)) next.push(JSON.parse(JSON.stringify(e)));
-          this[key] = next;
-        }
-      } else {
-        this._loadPersisted();
+    if (!this._LIBKEYS.some(k => this[k].some(e => e._projectOnly || e._orig))) return;
+    for (const k of this._LIBKEYS) this[k] = this._persistable(k).map(e => this._clone(e));
+    this._syncAll();
+  },
+  _syncAll() {
+    this.syncCableLibrary(); this.syncTransformerLibrary(); this.syncCBLibrary();
+    this.syncFuseLibrary(); this.syncLoadClassLibrary();
+    for (const [bodyId, cfg] of Object.entries(this._LIB)) if (document.getElementById(bodyId)) this[cfg.render]();
+  },
+
+  // Compare a just-opened project's entries with this user's libraries. Silent when
+  // everything is there and identical; otherwise ask, item by item.
+  async reviewProjectLibraries(items) {
+    if (!this._defaults || !items || typeof items !== 'object') return;
+    const rows = [];
+    for (const key of this._LIBKEYS) {
+      for (const e of Array.isArray(items[key]) ? items[key] : []) {
+        if (!e || !e.id) continue;
+        const mine = this[key].find(x => x.id === e.id);
+        if (!mine) { rows.push({ key, e, kind: 'missing' }); continue; }
+        if (mine._projectOnly) continue;                          // already brought in this session
+        if (this._same(key, mine, e)) continue;
+        const a = this._plain(key, mine), b = this._plain(key, e);
+        const diffs = [...new Set([...Object.keys(a), ...Object.keys(b)])]
+          .filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]))
+          .map(k => ({ k, mine: a[k], proj: b[k] }));
+        rows.push({ key, e, kind: 'differs', diffs });
       }
-      this.syncCableLibrary();
-      this.syncTransformerLibrary();
-      this.syncCBLibrary();
-      this.syncFuseLibrary();
-      this.syncLoadClassLibrary();
-      // Settings tables show the new content next time they are drawn; redraw
-      // now if they already exist.
-      for (const [bodyId, cfg] of Object.entries(this._LIB)) {
-        if (document.getElementById(bodyId)) this[cfg.render]();
+    }
+    if (!rows.length) return;
+    const choices = await this._reviewDialog(rows);
+    if (!choices) return;
+    let added = 0, only = 0, swapped = 0;
+    rows.forEach((r, i) => {
+      const c = choices[i];
+      const arr = this[r.key];
+      if (r.kind === 'missing') {
+        if (c === 'add') { arr.push(this._clone(r.e)); added++; }
+        else if (c === 'project') { arr.push({ ...this._clone(r.e), _projectOnly: true }); only++; }
+      } else if (c === 'project') {
+        const at = arr.findIndex(x => x.id === r.e.id);
+        if (at >= 0) { arr[at] = { ...this._clone(r.e), _projectOnly: true, _orig: this._clone(arr[at]) }; swapped++; }
       }
-    } finally { this._applying = false; }
+    });
+    if (added || only || swapped) this._syncAll();
+    if ((added || only || swapped) && typeof UI !== 'undefined') {
+      const bits = [];
+      if (added) bits.push(`${added} added to your library`);
+      if (only) bits.push(`${only} used in this project only`);
+      if (swapped) bits.push(`${swapped} of your entries replaced by the project's for this project only`);
+      UI.toast('Libraries: ' + bits.join(', ') + '.', 'info', 6000);
+    }
+  },
+
+  _fmt(v) { return v === undefined ? '—' : String(v); },
+  _reviewDialog(rows) {
+    return new Promise(resolve => {
+      const m = document.createElement('div');
+      m.className = 'modal';
+      m.id = 'lib-review-modal';
+      m.style.display = 'flex'; m.style.zIndex = '3000';
+      m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+      const missing = rows.filter(r => r.kind === 'missing').length;
+      const differs = rows.length - missing;
+      const opts = r => r.kind === 'missing'
+        ? '<option value="add">Add to my library</option><option value="project">Use in this project only</option><option value="skip">Skip</option>'
+        : '<option value="keep">Keep mine</option><option value="project">Use the project\'s (this project only)</option>';
+      const body = rows.map((r, i) => {
+        const what = r.kind === 'missing'
+          ? '<span style="color:var(--warning,#b45309)">not in your library</span>'
+          : '<span style="color:var(--warning,#b45309)">differs from yours</span>' + '<div style="font-size:12px;opacity:.8">' + r.diffs.slice(0, 4).map(d => `${escHtml(d.k)}: yours ${escHtml(this._fmt(d.mine))} · project ${escHtml(this._fmt(d.proj))}`).join('<br>') + (r.diffs.length > 4 ? `<br>+${r.diffs.length - 4} more` : '') + '</div>';
+        return `<tr><td>${this._LIBNAME[r.key]}</td><td><b>${escHtml(this._label(r.e))}</b><div style="font-size:12px;opacity:.7">${escHtml(r.e.id)}</div></td><td>${what}</td><td><select data-i="${i}">${opts(r)}</select></td></tr>`;
+      }).join('');
+      m.innerHTML = `<div class="modal-content" style="max-width:820px;width:92vw;max-height:86vh;display:flex;flex-direction:column">
+        <div class="modal-header"><h3>This project uses library items you don't have as-is</h3></div>
+        <div class="modal-body" style="overflow:auto">
+          <p style="margin:0 0 12px">${missing ? `${missing} not in your library` : ''}${missing && differs ? ', ' : ''}${differs ? `${differs} differ from yours` : ''}. Your libraries are never changed unless you choose to. Values already placed on the diagram are unaffected; this decides what the pickers and library-driven calculations (e.g. ADMD load classes) use.</p>
+          <table class="props-table" style="width:100%;border-collapse:collapse"><thead><tr><th align="left">Library</th><th align="left">Item</th><th align="left">Status</th><th align="left">What to do</th></tr></thead><tbody>${body}</tbody></table>
+        </div>
+        <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="btn-small" data-a="skip">Leave everything as it is</button>
+          <button type="button" class="btn-primary" data-a="ok">Apply choices</button>
+        </div></div>`;
+      document.body.appendChild(m);
+      const done = (v) => { m.remove(); resolve(v); };
+      m.addEventListener('click', ev => {
+        const a = ev.target.closest('[data-a]');
+        if (!a) return;
+        if (a.dataset.a === 'skip') return done(null);
+        done([...m.querySelectorAll('select[data-i]')].map(s => s.value));
+      });
+      m.addEventListener('keydown', ev => { if (ev.key === 'Escape') done(null); });
+      const first = m.querySelector('[data-a="ok"]'); if (first) first.focus();
+    });
   },
 
   // ═══════════════════════════════════════════════════════

@@ -1155,8 +1155,8 @@ const AppState = {
     this.wireRouteMode = 'orthogonal';
     this.reticulation = this._defaultReticulation();
     this.reticResults = null;
-    // A new / cleared project starts from the shipped libraries, not the previous project's.
-    if (typeof StandardData !== 'undefined') StandardData.applyProjectLibraries(null);
+    // Entries brought in "for this project only" belong to the project being left.
+    if (typeof StandardData !== 'undefined') StandardData.clearProjectOnly();
     this.planMarkup = this._defaultPlanMarkup();
     // IEC 62305-2 lightning risk: named assessments (one per structure), each
     // {id, name, inputs, result, resultKey, updatedAt} — see lightning.js.
@@ -1358,12 +1358,11 @@ const AppState = {
         return a ? a.inputs : undefined;
       })(),
       rateLibrary: this.rateLibrary || undefined,
-      // Cable / transformer / CB / fuse / load-class library edits (differences
-      // from the shipped defaults) so every user opening the project has them.
-      libraries: (typeof StandardData !== 'undefined') ? StandardData.projectLibraries() : undefined,
-      // Cables from the user's own library that this project uses, so the
-      // project opens complete elsewhere (CableLib.onProjectLoaded).
-      customCables: (() => { const c = typeof CableLib !== 'undefined' ? CableLib.projectCustomCables() : []; return c.length ? c : undefined; })(),
+      // Library entries this project uses that are custom/edited (your libraries
+      // stay yours; on open they are compared and you choose — see StandardData).
+      libraryItems: (typeof StandardData !== 'undefined') ? StandardData.usedLibraryItems() : undefined,
+      // Same cables as libraryItems.cables, still written for older builds.
+      customCables: (() => { const c = typeof StandardData !== 'undefined' ? (StandardData.usedLibraryItems() || {}).cables : undefined; return c && c.length ? c : undefined; })(),
       raceways: this.raceways.length ? this.raceways : undefined,
     };
   },
@@ -1692,10 +1691,13 @@ const AppState = {
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
     this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];
-    // Libraries travel with the project; older files fall back to the local copy.
-    if (typeof StandardData !== 'undefined') StandardData.applyProjectLibraries(data.libraries);
-    // One cable library: bring in the project's own cables, rewrite retired names.
-    if (typeof CableLib !== 'undefined') CableLib.onProjectLoaded(data.customCables);
+    // One cable library: rewrite retired names. Custom/edited library entries the project
+    // uses are compared with YOUR libraries and offered, never applied silently.
+    if (typeof CableLib !== 'undefined') CableLib.onProjectLoaded();
+    if (typeof StandardData !== 'undefined') {
+      const items = data.libraryItems || (Array.isArray(data.customCables) ? { cables: data.customCables } : null);
+      if (items) setTimeout(() => StandardData.reviewProjectLibraries(items), 600);
+    }
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data
     // (reset() above ran with the default empty reticulation).
