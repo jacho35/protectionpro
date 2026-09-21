@@ -424,8 +424,24 @@ const StandardData = {
 
   // Library entries this project uses that differ from the shipped defaults
   // (custom or edited), saved with the project. Undefined when there are none.
-  usedLibraryItems() {
-    if (!this._defaults || typeof AppState === 'undefined') return undefined;
+  usedLibraryItems() { return this._collectUsed().items; },
+  // Where each of those entries came from, saved beside them (`libraryOrigins`) so whoever opens
+  // the project can be told: { key: { id: {kind:'custom'|'override'|'shared'|'company'|'shipped', of?, library?} } }
+  usedLibraryOrigins() { return this._collectUsed().origins; },
+
+  _originDescriptor(key, src) {
+    const o = this.originOf(key, src);
+    if (o.origin === 'company') return { kind: 'company', library: { id: o.libraryId, name: o.name } };
+    if (o.origin === 'shared') return { kind: 'shared', library: { id: o.libraryId, name: o.name } };
+    if (o.origin === 'shipped') return { kind: 'shipped' };
+    const under = (this._baseSrc[key] || {})[src.id];       // your own entry: new, or an edit of a lower layer's
+    if (!under) return { kind: 'custom' };
+    return under.name ? { kind: 'override', of: under.origin, library: { id: under.libraryId, name: under.name } } : { kind: 'override', of: 'shipped' };
+  },
+
+  _collectUsed() {
+    const none = { items: undefined, origins: undefined };
+    if (!this._defaults || typeof AppState === 'undefined') return none;
     const ids = { cables: new Set(), transformers: new Set(), cbs: new Set(), fuses: new Set(), loadClasses: new Set() };
     const typeKey = { transformer: 'transformers', cb: 'cbs', fuse: 'fuses' };
     for (const c of AppState.components.values()) {
@@ -442,10 +458,11 @@ const StandardData = {
       }
       for (const id of [...ids.loadClasses]) ids.loadClasses.add(id + '_3ph');   // 3-phase twin is read alongside
     }
-    const out = {};
+    const out = {}, origins = {};
     for (const key of this._LIBKEYS) {
       const shipped = new Map(this._defaults[key].map(e => [e.id, e]));
       const list = [];
+      const org = {};
       for (const id of ids[key]) {
         const src = this[key].find(e => e.id === id);            // the entry in effect (yours, or this project's own)
         if (!src) continue;
@@ -454,10 +471,11 @@ const StandardData = {
         // later correction to a shipped class would silently change this project's results.
         if (ship && key !== 'loadClasses' && this._same(key, ship, src)) continue;
         list.push(this._plain(key, this._clone(src)));
+        org[id] = this._originDescriptor(key, src);
       }
-      if (list.length) out[key] = list;
+      if (list.length) { out[key] = list; origins[key] = org; }
     }
-    return Object.keys(out).length ? out : undefined;
+    return Object.keys(out).length ? { items: out, origins } : none;
   },
 
   // A different project is opening (or a new one): drop the previous project's
@@ -476,7 +494,7 @@ const StandardData = {
 
   // Compare a just-opened project's entries with this user's libraries. Silent when
   // everything is there and identical; otherwise ask, item by item.
-  async reviewProjectLibraries(items) {
+  async reviewProjectLibraries(items, origins) {
     if (!this._defaults || !items || typeof items !== 'object') return;
     await this.ready;                      // compare with the user's libraries, not the defaults they replace
     const rows = [];
@@ -484,7 +502,8 @@ const StandardData = {
       for (const e of Array.isArray(items[key]) ? items[key] : []) {
         if (!e || !e.id) continue;
         const mine = this[key].find(x => x.id === e.id);
-        if (!mine) { rows.push({ key, e, kind: 'missing' }); continue; }
+        const org = origins && origins[key] && origins[key][e.id];
+        if (!mine) { rows.push({ key, e, kind: 'missing', org }); continue; }
         if (mine._projectOnly) continue;                          // already brought in this session
         if (this._same(key, mine, e)) continue;
         const a = this._plain(key, mine), b = this._plain(key, e);
@@ -498,31 +517,40 @@ const StandardData = {
           : o.origin === 'company' ? `differs from the company standard (${o.name})`
           : o.origin === 'shared' ? `differs from shared library "${o.name}"`
           : 'differs from your own edit';
-        rows.push({ key, e, kind: 'differs', diffs, why, origin: o.origin });
+        rows.push({ key, e, kind: 'differs', diffs, why, origin: o.origin, org });
       }
     }
     if (!rows.length) return;
     const choices = await this._reviewDialog(rows);
     if (!choices) return;
     let added = 0, only = 0, swapped = 0;
+    const toPublish = {};          // shared library id → entries
     rows.forEach((r, i) => {
       const c = choices[i];
       const arr = this[r.key];
       if (r.kind === 'missing') {
-        if (c === 'add') { arr.push(this._clone(r.e)); added++; }
+        if (typeof c === 'string' && c.startsWith('pub:')) (toPublish[c.slice(4)] = toPublish[c.slice(4)] || []).push({ kind: r.key, data: this._strip(r.e) });
+        else if (c === 'add') { arr.push(this._clone(r.e)); added++; }
         else if (c === 'project') { arr.push({ ...this._clone(r.e), _projectOnly: true }); only++; }
       } else if (c === 'project') {
         const at = arr.findIndex(x => x.id === r.e.id);
         if (at >= 0) { arr[at] = { ...this._clone(r.e), _projectOnly: true, _orig: this._clone(arr[at]) }; swapped++; }
       }
     });
+    let published = 0;
+    for (const [libId, entries] of Object.entries(toPublish)) {
+      try { const r = await API.importSharedEntries(parseInt(libId), entries); published += r.created.length; }
+      catch (e) { if (typeof UI !== 'undefined') UI.toast('Could not publish to the shared library: ' + e.message, 'error', 8000); }
+    }
+    if (published) await this.reloadShared();          // they now arrive through the shared layer
     if (added || only || swapped) {
       const t = this._editTarget; this._editTarget = null;   // your library, never the shared one being edited
       this._syncAll();
       this._editTarget = t; this._takeSnap();
     }
-    if ((added || only || swapped) && typeof UI !== 'undefined') {
+    if ((added || only || swapped || published) && typeof UI !== 'undefined') {
       const bits = [];
+      if (published) bits.push(`${published} published to a shared library`);
       if (added) bits.push(`${added} added to your library`);
       if (only) bits.push(`${only} used in this project only`);
       if (swapped) bits.push(`${swapped} of your entries replaced by the project's for this project only`);
@@ -531,6 +559,31 @@ const StandardData = {
   },
 
   _fmt(v) { return v === undefined ? '—' : String(v); },
+
+  // Plain-words provenance of a project's entry (from `libraryOrigins`), for the review dialog.
+  _describeOrigin(r) {
+    const o = r.org;
+    if (!o) return '';
+    const lib = o.library ? `“${o.library.name}”` : '';
+    const member = o.library && this._sharedLayers.some(l => l.id === o.library.id);
+    if (o.kind === 'shared' || o.kind === 'company') {
+      const what = o.kind === 'company' ? `the company standard ${lib}` : `shared library ${lib}`;
+      return `Comes from ${what}. ` + (member ? 'You have access to it, but this entry is not there (or has changed since).'
+        : (o.kind === 'company' ? 'It is not set as the company standard for you.' : 'You are not a member — ask its owner to add you.'));
+    }
+    if (o.kind === 'override') {
+      if (o.of === 'shipped') {
+        const ship = this._defaults[r.key].find(x => x.id === r.e.id);
+        const d = ship ? Object.keys(this._plain(r.key, r.e)).filter(k => JSON.stringify(this._plain(r.key, ship)[k]) !== JSON.stringify(this._plain(r.key, r.e)[k])).slice(0, 4)
+          .map(k => `${k}: shipped ${this._fmt(this._plain(r.key, ship)[k])} · project ${this._fmt(this._plain(r.key, r.e)[k])}`) : [];
+        return 'An edited copy of a shipped entry' + (d.length ? ': ' + d.join('; ') : '') + '.';
+      }
+      return `An edited copy of ${lib} entry.`;
+    }
+    if (o.kind === 'custom') return 'A custom entry added by whoever built this project.';
+    if (o.kind === 'shipped') return 'A shipped entry, kept with the project because calculations read it live.';
+    return '';
+  },
   _reviewDialog(rows) {
     return new Promise(resolve => {
       const m = document.createElement('div');
@@ -542,14 +595,16 @@ const StandardData = {
       const differs = rows.length - missing;
       // A shipped load class that was corrected changes ADMD results, so reproduce the project by default.
       const reproduce = r => r.kind === 'differs' && r.key === 'loadClasses' && r.origin === 'shipped';
+      const editable = this._sharedLayers.filter(l => l.role === 'owner' || l.role === 'edit');
+      const pub = r => editable.map(l => `<option value="pub:${l.id}">Publish to shared library “${escHtml(l.name)}”</option>`).join('');
       const opts = r => r.kind === 'missing'
-        ? '<option value="add">Add to my library</option><option value="project">Use in this project only</option><option value="skip">Skip</option>'
+        ? '<option value="add">Add to my library</option><option value="project">Use in this project only</option>' + pub(r) + '<option value="skip">Skip</option>'
         : `<option value="keep"${reproduce(r) ? '' : ' selected'}>Keep mine</option><option value="project"${reproduce(r) ? ' selected' : ''}>Use the project's (this project only)</option>`;
       const body = rows.map((r, i) => {
         const what = r.kind === 'missing'
           ? '<span style="color:var(--warning,#b45309)">not in your library</span>'
           : `<span style="color:var(--warning,#b45309)">${escHtml(r.why)}</span>` + '<div style="font-size:12px;opacity:.8">' + r.diffs.slice(0, 4).map(d => `${escHtml(d.k)}: yours ${escHtml(this._fmt(d.mine))} · project ${escHtml(this._fmt(d.proj))}`).join('<br>') + (r.diffs.length > 4 ? `<br>+${r.diffs.length - 4} more` : '') + '</div>';
-        return `<tr><td>${this._LIBNAME[r.key]}</td><td><b>${escHtml(this._label(r.e))}</b><div style="font-size:12px;opacity:.7">${escHtml(r.e.id)}</div></td><td>${what}</td><td><select data-i="${i}">${opts(r)}</select></td></tr>`;
+        return `<tr><td>${this._LIBNAME[r.key]}</td><td><b>${escHtml(this._label(r.e))}</b><div style="font-size:12px;opacity:.7">${escHtml(r.e.id)}</div>${r.org ? `<div style="font-size:12px;margin-top:4px">${escHtml(this._describeOrigin(r))}</div>` : ''}</td><td>${what}</td><td><select data-i="${i}">${opts(r)}</select></td></tr>`;
       }).join('');
       m.innerHTML = `<div class="modal-content" style="max-width:820px;width:92vw;max-height:86vh;display:flex;flex-direction:column">
         <div class="modal-header"><h3>This project uses library items you don't have as-is</h3></div>

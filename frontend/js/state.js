@@ -1406,6 +1406,8 @@ const AppState = {
       // Library entries this project uses that are custom/edited (your libraries
       // stay yours; on open they are compared and you choose — see StandardData).
       libraryItems: (typeof StandardData !== 'undefined') ? StandardData.usedLibraryItems() : undefined,
+      // Where each of those entries came from (custom / edited shipped / shared library / company)
+      libraryOrigins: (typeof StandardData !== 'undefined') ? StandardData.usedLibraryOrigins() : undefined,
       // Same cables as libraryItems.cables, still written for older builds.
       customCables: (() => { const c = typeof StandardData !== 'undefined' ? (StandardData.usedLibraryItems() || {}).cables : undefined; return c && c.length ? c : undefined; })(),
       raceways: this.raceways.length ? this.raceways : undefined,
@@ -1742,7 +1744,7 @@ const AppState = {
     if (typeof CableLib !== 'undefined') CableLib.onProjectLoaded();
     if (typeof StandardData !== 'undefined') {
       const items = data.libraryItems || (Array.isArray(data.customCables) ? { cables: data.customCables } : null);
-      if (items) setTimeout(() => StandardData.reviewProjectLibraries(items), 600);
+      if (items) setTimeout(() => StandardData.reviewProjectLibraries(items, data.libraryOrigins), 600);
     }
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data
