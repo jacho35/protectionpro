@@ -1359,17 +1359,45 @@ const Rates = {
     setTimeout(() => { const f = m.querySelector('[data-ri="apply"]:not([disabled])') || m.querySelector('[data-ri="cancel"]'); if (f) f.focus(); }, 30);
   },
 
-  // ── My default rates (this browser) ────────────────────────────────
-  _readDefault() {
-    try { const raw = localStorage.getItem(this.DEFAULT_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
-  },
-  saveDefault() {
-    const L = this.lib();
+  // ── My default rates (saved in the user's account) ─────────────────
+  // The banner reads the default synchronously, so it is cached here once the user's
+  // copy has been fetched after sign-in (Auth → loadDefaultFromServer).
+  _default: null,
+  _defaultFor: null,
+  _readDefault() { return this._default; },
+  async loadDefaultFromServer(userId) {
+    if (this._defaultFor === userId) return;
+    this._default = null;                    // never show the previous user's
     try {
-      localStorage.setItem(this.DEFAULT_KEY, JSON.stringify({
-        currency: L.currency, defaultWaste: L.defaultWaste, items: L.items, custom: L.custom, savedAt: new Date().toISOString(),
-      }));
+      const res = await API.getUserDefaultRates();
+      let d = res && res.data ? res.data : null;
+      if (!d) {
+        // Moved once from this browser's old copy into the account.
+        let legacy = null;
+        try { const raw = localStorage.getItem(this.DEFAULT_KEY); legacy = raw ? JSON.parse(raw) : null; } catch (e) { legacy = null; }
+        if (legacy) {
+          try {
+            await API.saveUserDefaultRates(legacy);
+            try { localStorage.removeItem(this.DEFAULT_KEY); } catch (e) { /* private mode */ }
+            d = legacy;
+            if (typeof UI !== 'undefined') UI.toast('Your default rates were moved from this browser into your account.', 'info', 6000);
+          } catch (e) { d = legacy; }   // keep the browser copy; usable now, retried next sign-in
+        }
+      }
+      this._default = d;
+      this._defaultFor = userId;
+      if (document.getElementById('rt-banner')) this._renderBanner();
+    } catch (e) {
+      console.error('Could not load default rates:', e);
+    }
+  },
+  async saveDefault() {
+    const L = this.lib();
+    const doc = { currency: L.currency, defaultWaste: L.defaultWaste, items: L.items, custom: L.custom, savedAt: new Date().toISOString() };
+    try {
+      await API.saveUserDefaultRates(doc);
     } catch (e) { UI.toast('Could not save your default rates: ' + e.message, 'error'); return; }
+    this._default = doc;
     UI.toast(`Saved ${Object.keys(L.items).length} rates as your default. New projects can load them.`, 'success');
     this._renderBanner();
   },

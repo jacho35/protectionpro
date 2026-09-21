@@ -481,6 +481,9 @@ const API = {
   async getUserLibraries() { return this.request('/user-libraries'); },
   async saveUserLibraries(data) { return this.request('/user-libraries', 'PUT', { data }); },
   async resetUserLibraries() { return this.request('/user-libraries', 'DELETE'); },
+  // The signed-in user's saved default rates (seed for a new project's rate library)
+  async getUserDefaultRates() { return this.request('/user-libraries/default-rates'); },
+  async saveUserDefaultRates(data) { return this.request('/user-libraries/default-rates', 'PUT', { data }); },
 
   // List projects
   async listProjects() {

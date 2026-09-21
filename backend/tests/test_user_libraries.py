@@ -84,3 +84,27 @@ def test_reset(client):
     client.put("/api/user-libraries", json={"data": LIB}, headers=h)
     assert client.delete("/api/user-libraries", headers=h).status_code == 200
     assert client.get("/api/user-libraries", headers=h).json()["data"] is None
+
+
+RATES = {"currency": "R", "defaultWaste": 5, "items": {"CB-mcb_b6": {"material": 12.5}}, "custom": {}}
+
+
+def test_default_rates_roundtrip_and_isolation(client):
+    a = _login(client, "rates-a@x.com")
+    b = _login(client, "rates-b@x.com")
+    assert client.get("/api/user-libraries/default-rates", headers=a).json()["data"] is None
+    assert client.put("/api/user-libraries/default-rates", json={"data": RATES}, headers=a).json()["data"] == RATES
+    assert client.get("/api/user-libraries/default-rates", headers=a).json()["data"] == RATES
+    assert client.get("/api/user-libraries/default-rates", headers=b).json()["data"] is None
+    # independent of the library document
+    client.put("/api/user-libraries", json={"data": LIB}, headers=a)
+    assert client.get("/api/user-libraries/default-rates", headers=a).json()["data"] == RATES
+    client.delete("/api/user-libraries", headers=a)
+    assert client.get("/api/user-libraries/default-rates", headers=a).json()["data"] == RATES
+    assert client.delete("/api/user-libraries/default-rates", headers=a).status_code == 200
+    assert client.get("/api/user-libraries/default-rates", headers=a).json()["data"] is None
+
+
+def test_default_rates_validation(client):
+    h = _login(client, "rates-v@x.com")
+    assert client.put("/api/user-libraries/default-rates", json={"data": {"items": []}}, headers=h).status_code == 422

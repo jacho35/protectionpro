@@ -229,6 +229,11 @@ class UserLibraryOut(BaseModel):
     updated_at: datetime | None = None
 
 
+class UserDefaultRatesOut(BaseModel):
+    data: dict | None = None
+    updated_at: datetime | None = None
+
+
 # ── Auth / users ──
 
 class UserOut(BaseModel):

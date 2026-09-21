@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
-from ..models.database import get_db, User, UserLibrary
-from ..models.schemas import UserLibraryIn, UserLibraryOut
+from ..models.database import get_db, User, UserLibrary, UserDefaultRates
+from ..models.schemas import UserLibraryIn, UserLibraryOut, UserDefaultRatesOut
 
 router = APIRouter(prefix="/user-libraries", tags=["user-libraries"])
 
@@ -63,5 +63,46 @@ def save_my_libraries(body: UserLibraryIn, user: User = Depends(get_current_user
 def reset_my_libraries(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Forget the user's saved libraries (back to the shipped defaults)."""
     db.query(UserLibrary).filter(UserLibrary.user_id == user.id).delete()
+    db.commit()
+    return {"ok": True}
+
+
+# ── The user's default rates (seed for a new project's rate library) ──
+
+def _validate_rates(data: dict) -> str:
+    if not isinstance(data.get("items", {}), dict) or not isinstance(data.get("custom", {}), dict):
+        raise HTTPException(status_code=422, detail="Default rates need 'items' and 'custom' objects")
+    raw = json.dumps(data, separators=(",", ":"))
+    if len(raw.encode()) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Rate data too large")
+    return raw
+
+
+@router.get("/default-rates", response_model=UserDefaultRatesOut)
+def get_my_default_rates(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.query(UserDefaultRates).filter(UserDefaultRates.user_id == user.id).first()
+    if row is None:
+        return UserDefaultRatesOut(data=None, updated_at=None)
+    return UserDefaultRatesOut(data=json.loads(row.data), updated_at=row.updated_at)
+
+
+@router.put("/default-rates", response_model=UserDefaultRatesOut)
+def save_my_default_rates(body: UserLibraryIn, user: User = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
+    raw = _validate_rates(body.data)
+    row = db.query(UserDefaultRates).filter(UserDefaultRates.user_id == user.id).first()
+    if row is None:
+        row = UserDefaultRates(user_id=user.id, data=raw)
+        db.add(row)
+    else:
+        row.data = raw
+    db.commit()
+    db.refresh(row)
+    return UserDefaultRatesOut(data=json.loads(row.data), updated_at=row.updated_at)
+
+
+@router.delete("/default-rates")
+def delete_my_default_rates(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(UserDefaultRates).filter(UserDefaultRates.user_id == user.id).delete()
     db.commit()
     return {"ok": True}
