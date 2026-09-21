@@ -873,7 +873,7 @@ const Annotations = {
     const titleEl = tooltipText ? `<title>${tooltipText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</title>` : '';
 
     return `
-      <g class="annotation-group cable-sizing-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group cable-sizing-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${cable.cable_id}" cursor="move">
         ${titleEl}
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
