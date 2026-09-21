@@ -112,6 +112,8 @@ backend/
 └── routes/
     ├── analysis.py         # POST /api/analysis/* endpoints
     ├── projects.py         # CRUD /api/projects endpoints
+    ├── user_libraries.py   # GET/PUT/DELETE /api/user-libraries (+ /default-rates) — the signed-in user's own libraries and default rates
+    ├── shared_libraries.py # /api/shared-libraries — team libraries: members (view/edit), per-entry versioned saves (409 on stale), admin company standard
     └── reports.py          # CSV & PDF export endpoints
 ```
 
@@ -208,13 +210,19 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 - `PUT /api/user-libraries` — replace the whole document (last write wins); `DELETE` — back to shipped defaults
 - `GET/PUT/DELETE /api/user-libraries/default-rates` — the user's saved default rates (seed for a new project's rate library; "Save as my default" in the rate library)
 
+### Shared (team) libraries
+- `GET /api/shared-libraries` — every library the caller can read (owned, member, or the company standard) with its entries
+- `POST` create; `PATCH /{id}` rename; `DELETE /{id}` (owner); `PUT /{id}/company-default` (admin only, one at a time; everyone then reads it read-only)
+- `GET/POST /{id}/members`, `PATCH|DELETE /{id}/members/{user_id}` — owner manages view/edit roles; a member may remove themselves
+- `PUT /{id}/entries/{kind}/{entry_id}` with `base_version` (omit to create) — **409 with the current entry if someone changed it first**; `DELETE` (optional `base_version`); `POST /{id}/entries/import` (create-only bulk)
+
 ### Reports
 - `POST /api/reports/pdf` — generate full PDF report
 - `POST /api/reports/arcflash-labels` — generate arc flash warning labels
 
 ## Database
 
-SQLite; the main table is `Project` (plus users, folders, revisions, shares, plan images and `user_libraries` — one row per user):
+SQLite; the main table is `Project` (plus users, folders, revisions, shares, plan images and `user_libraries`, `user_default_rates` — one row per user — and `shared_libraries` / `shared_library_members` / `shared_library_entries`):
 
 ```
 Project:
