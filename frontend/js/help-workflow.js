@@ -31,7 +31,7 @@ $$\text{changeover}\ \longrightarrow\ \text{2-terminal switch (a CB for a breake
 <h4>Voltage zones</h4>
 <p>A <em>voltage zone</em> is the set of components at one voltage, bounded by transformers. When components are wired together or a bus voltage changes, the nominal voltage is propagated through the zone (each component type has the property that carries it), and a transformer sets the voltage on its two sides from its HV/LV ratings. The engines take each cable's per-unit base from its zone's bus voltage, so a stale default on a cable cannot mis-scale its impedance.</p>
 <h4>Off-page connectors and pages</h4>
-<p>Connectors with the same label on different diagram pages are electrically joined; the network the engines see is the union of every page.</p>` },
+<p>Select an off-page connector and pick its partner from <em>Links to</em>, which lists the connectors on the other pages. The link is made from both ends, and a connector has one partner. Linked connectors are electrically joined, so the network is the union of every page. Projects saved before links existed still join connectors that share a label.</p>` },
 
 { id: 'wf-interlock', group: 'workflow', title: 'Interlocking logic',
   std: 'Interlock workspace',

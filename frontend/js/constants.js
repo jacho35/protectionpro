@@ -3381,13 +3381,11 @@ const COMPONENT_DEFS = {
     height: 40,
     defaults: {
       name: 'X1',
-      target_page: '',
-      target_label: '',
+      linked_to: '',   // id of the connector on another page this one is joined to
     },
     fields: [
       { key: 'name', label: 'Label', type: 'text' },
-      { key: 'target_page', label: 'Target Page', type: 'text' },
-      { key: 'target_label', label: 'Target Label', type: 'text' },
+      { key: 'linked_to', label: 'Links to', type: 'offpage_link' },
     ],
   },
 

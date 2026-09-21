@@ -500,6 +500,25 @@ const Properties = {
         options.push(`<option value="${id}" ${value === id ? 'selected' : ''}>${escHtml(name)}</option>`);
       }
       inputHtml = `<select data-field="${field.key}">${options.join('')}</select>`;
+    } else if (field.type === 'offpage_link') {
+      // Connectors on OTHER pages, grouped by page. A connector already joined
+      // to a third one is tagged; picking it re-links (see _linkOffpage).
+      const self = AppState.components.get(compId);
+      const groups = AppState.pages.filter(p => p.id !== (self && self.pageId || AppState.activePageId)).map(pg => {
+        const opts = [...AppState.components.values()]
+          .filter(c => c.type === 'offpage_connector' && c.id !== compId && (c.pageId || 'page_1') === pg.id)
+          .map(c => {
+            const other = c.props.linked_to && c.props.linked_to !== compId ? AppState.components.get(c.props.linked_to) : null;
+            const tag = other ? ` (linked to ${escHtml(other.props.name || other.id)})` : '';
+            return `<option value="${escHtml(c.id)}" ${value === c.id ? 'selected' : ''}>${escHtml(c.props.name || c.id)}${tag}</option>`;
+          });
+        return opts.length ? `<optgroup label="${escHtml(pg.name)}">${opts.join('')}</optgroup>` : '';
+      }).join('');
+      const target = value ? AppState.components.get(value) : null;
+      const status = target
+        ? `<div class="prop-ampacity-summary">Joined to ${escHtml(target.props.name || target.id)} on ${escHtml((AppState.pages.find(p => p.id === (target.pageId || 'page_1')) || {}).name || '?')}</div>`
+        : `<div class="prop-ampacity-summary prop-ampacity-summary--empty">Not linked — studies stop at this connector</div>`;
+      inputHtml = `<select data-field="${field.key}"><option value="" ${target ? '' : 'selected'}>-- Not linked --</option>${groups}</select>${status}`;
     } else if (field.type === 'ampacity_calc') {
       // Launch button for the per-cable IEC 60364-5-52 ampacity calculator.
       // Not a real prop — shows a summary of the applied derating (if any)
@@ -730,6 +749,23 @@ const Properties = {
   // commit=false: live (debounced) keystroke update — applies the value to
   // state/canvas only. commit=true: completed edit — also clears results and
   // takes a single undo snapshot.
+  // Join two off-page connectors from either end. Each connector has at most
+  // one partner, so any previous partner of either side is released first.
+  _linkOffpage(comp, targetId) {
+    const get = id => AppState.components.get(id);
+    const release = c => {
+      const p = c && get(c.props.linked_to);
+      if (p && p.props.linked_to === c.id) p.props.linked_to = '';
+      if (c) c.props.linked_to = '';
+    };
+    release(comp);
+    const target = targetId ? get(targetId) : null;
+    if (!target || target.type !== 'offpage_connector') return;
+    release(target);
+    comp.props.linked_to = target.id;
+    target.props.linked_to = comp.id;
+  },
+
   onFieldChange(e, comp, commit = true) {
     const field = e.target.dataset.field;
     let value = e.target.value;
@@ -753,6 +789,17 @@ const Properties = {
       AppState.clearResults();
       Canvas.render();
       this.show(comp.id); // re-render to show filled values
+      return;
+    }
+
+    if (field === 'linked_to' && comp.type === 'offpage_connector') {
+      this._linkOffpage(comp, value);
+      AppState.dirty = true;
+      this._notifyResultsCleared();
+      AppState.clearResults();
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      Canvas.render();
+      this.show(comp.id);
       return;
     }
 

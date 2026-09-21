@@ -9,6 +9,40 @@ const Components = {
   // switching device that is open only in position 0 (isOpenSwitching).
   SWITCHING_TYPES: new Set(['cb', 'switch', 'changeover']),
 
+  // Off-page connector pairs [idA, idB]. A connector joins the one it links to
+  // (`linked_to`, set from either end). Projects saved before links existed
+  // paired connectors by identical label; connectors with no link at either
+  // end still do, so those projects keep their connections.
+  offpagePairs() {
+    const conns = [...AppState.components.values()].filter(c => c.type === 'offpage_connector');
+    const byId = new Map(conns.map(c => [c.id, c]));
+    const pairs = [];
+    const seen = new Set();
+    const linked = new Set();
+    for (const c of conns) {
+      const t = c.props && c.props.linked_to;
+      if (!t || !byId.has(t) || t === c.id) continue;
+      linked.add(c.id); linked.add(t);
+      const key = [c.id, t].sort().join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push([c.id, t]);
+    }
+    const byLabel = new Map();
+    for (const c of conns) {
+      if (linked.has(c.id) || (c.props && c.props.linked_to)) continue;
+      const lbl = (c.props && c.props.name) || '';
+      if (!byLabel.has(lbl)) byLabel.set(lbl, []);
+      byLabel.get(lbl).push(c.id);
+    }
+    for (const ids of byLabel.values()) {
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) pairs.push([ids[i], ids[j]]);
+      }
+    }
+    return pairs;
+  },
+
   // True for a wire end on a changeover input the blade isn't on. In
   // position 0 both inputs stay wired — the open device blocks them.
   isDeadChangeoverEnd(compId, portId) {
@@ -402,25 +436,12 @@ const Components = {
       adj.get(wire.toComponent).push({ id: wire.fromComponent, localPort: wire.toPort });
     }
 
-    // Link matched off-page connectors as virtual wires (same label = same node)
-    const offpageByLabel = new Map();
-    for (const comp of AppState.components.values()) {
-      if (comp.type === 'offpage_connector') {
-        const lbl = comp.props.name || '';
-        if (!offpageByLabel.has(lbl)) offpageByLabel.set(lbl, []);
-        offpageByLabel.get(lbl).push(comp);
-      }
-    }
-    for (const [, connectors] of offpageByLabel) {
-      for (let i = 0; i < connectors.length; i++) {
-        for (let j = i + 1; j < connectors.length; j++) {
-          const a = connectors[i].id, b = connectors[j].id;
-          if (!adj.has(a)) adj.set(a, []);
-          if (!adj.has(b)) adj.set(b, []);
-          adj.get(a).push({ id: b, localPort: 'port' });
-          adj.get(b).push({ id: a, localPort: 'port' });
-        }
-      }
+    // Join linked off-page connectors as virtual wires
+    for (const [a, b] of this.offpagePairs()) {
+      if (!adj.has(a)) adj.set(a, []);
+      if (!adj.has(b)) adj.set(b, []);
+      adj.get(a).push({ id: b, localPort: 'port' });
+      adj.get(b).push({ id: a, localPort: 'port' });
     }
 
     // BFS from a component port through transparent elements to find a bus

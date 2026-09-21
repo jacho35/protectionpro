@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..models.database import get_db, Project
 from ..models.schemas import ProjectData
 from ..analysis.changeover import expand_changeovers
+from ..analysis.offpage import expand_offpage_links
 from ..auth import get_current_user, require_project
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
@@ -157,7 +158,7 @@ def export_csv(project_id: int, ctx=Depends(require_project("view"))):
     """Export analysis results as CSV."""
     project, _level = ctx
 
-    data = expand_changeovers(ProjectData(**json.loads(project.data)))
+    data = expand_offpage_links(expand_changeovers(ProjectData(**json.loads(project.data))))
 
     # Run analyses
     fault = run_fault_analysis(data)

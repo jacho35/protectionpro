@@ -109,6 +109,7 @@ backend/
 │   ├── grounding_system.py # IEEE 80 grounding grid design
 │   ├── study_manager.py    # Batch analysis orchestration
 │   ├── changeover.py       # Changeover switch → 2-terminal devices, applied by every analysis route before any engine runs
+│   ├── offpage.py          # Linked off-page connector pairs → closed switches + a joining wire (props.linked_to; legacy same-name), applied after changeover
 │   └── pdf_reports.py      # ReportLab PDF generation
 └── routes/
     ├── analysis.py         # POST /api/analysis/* endpoints
