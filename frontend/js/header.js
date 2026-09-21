@@ -100,9 +100,52 @@ const Header = {
     return out;
   },
 
+  // Placed devices, searchable by name / type / page. Only shown once the user
+  // types (they would drown the command list otherwise).
+  _deviceIndex() {
+    const pageName = (id) => (AppState.pages.find(p => p.id === id) || {}).name || '';
+    const out = [];
+    for (const c of AppState.components.values()) {
+      const def = COMPONENT_DEFS[c.type];
+      const name = (c.props && c.props.name) || c.id;
+      const typeName = def ? def.name : c.type;
+      const page = pageName(c.pageId || 'page_1');
+      let where = typeName + (AppState.pages.length > 1 && page ? ' · ' + page : '');
+      if (c.type === 'offpage_connector' && c.props.linked_to) {
+        const t = AppState.components.get(c.props.linked_to);
+        if (t) where += ' → ' + ((t.props && t.props.name) || t.id) + ' on ' + pageName(t.pageId || 'page_1');
+      }
+      out.push({
+        device: c.id, label: name, where, shortcut: '',
+        hay: (name + ' ' + c.id + ' ' + typeName + ' ' + page).toLowerCase(),
+      });
+    }
+    return out;
+  },
+
+  // Take the user to a placed device: its workspace, its page, selected + centred.
+  locateComponent(id) {
+    const comp = AppState.components.get(id);
+    if (!comp) return;
+    if (document.body.classList.contains('ws-secondary-active') && typeof window.switchWorkspace === 'function') {
+      window.switchWorkspace('sld');
+    }
+    const page = comp.pageId || 'page_1';
+    if (page !== AppState.activePageId) {
+      AppState.activePageId = page;
+      if (typeof window.renderPageTabs === 'function') window.renderPageTabs();
+    }
+    AppState.select(id);
+    Canvas.render();
+    Canvas.centerOnComponent(id);
+    Properties.show(id);
+    const st = document.getElementById('status-info');
+    if (st) st.textContent = `Found ${(comp.props && comp.props.name) || comp.id}.`;
+  },
+
   _rank(items, q) {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return items.slice(0, 60);
+    if (!words.length) return items.filter(it => !it.device).slice(0, 60);
     const scored = [];
     for (const it of items) {
       if (!words.every(w => it.hay.includes(w))) continue;
@@ -117,7 +160,7 @@ const Header = {
   openSearch() {
     if (document.getElementById('cmd-search')) return;
     if (typeof window.closeAllToolbarMenus === 'function') window.closeAllToolbarMenus();
-    const items = this._index();
+    const items = this._index().concat(this._deviceIndex());
     const prevFocus = document.activeElement;
     // A `.modal` overlay: the global shortcut handler already stands down while
     // one is open, so typing here can never edit the diagram behind it.
@@ -129,12 +172,12 @@ const Header = {
       <div class="cmd-search" role="dialog" aria-modal="true" aria-label="Search commands">
         <div class="cmd-search-input-row">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-          <input type="text" class="cmd-search-input" placeholder="Search commands, analyses, exports, settings…"
+          <input type="text" class="cmd-search-input" placeholder="Search commands, analyses, exports, settings, devices…"
             aria-label="Search commands" role="combobox" aria-expanded="true" aria-controls="cmd-search-list" aria-autocomplete="list">
           <kbd class="cmd-kbd">Esc</kbd>
         </div>
         <ul class="cmd-search-list" id="cmd-search-list" role="listbox"></ul>
-        <div class="cmd-search-foot"><span><kbd class="cmd-kbd">↑</kbd> <kbd class="cmd-kbd">↓</kbd> move</span><span><kbd class="cmd-kbd">↵</kbd> run</span><span><kbd class="cmd-kbd">Esc</kbd> close</span></div>
+        <div class="cmd-search-foot"><span><kbd class="cmd-kbd">↑</kbd> <kbd class="cmd-kbd">↓</kbd> move</span><span><kbd class="cmd-kbd">↵</kbd> run / go to</span><span><kbd class="cmd-kbd">Esc</kbd> close</span></div>
       </div>`;
     document.body.appendChild(overlay);
     const input = overlay.querySelector('.cmd-search-input');
@@ -145,7 +188,7 @@ const Header = {
       shown = this._rank(items, input.value);
       sel = Math.min(sel, Math.max(0, shown.length - 1));
       if (!shown.length) {
-        list.innerHTML = `<li class="cmd-search-empty">No command matches “${escHtml(input.value)}”.</li>`;
+        list.innerHTML = `<li class="cmd-search-empty">Nothing matches “${escHtml(input.value)}”.</li>`;
         input.removeAttribute('aria-activedescendant');
         return;
       }
@@ -167,6 +210,7 @@ const Header = {
     const run = (it) => {
       if (!it) return;
       close();
+      if (it.device) { this.locateComponent(it.device); return; }
       const btn = document.getElementById(it.id);
       if (!btn) return;
       // Row-2 buttons belong to the Single-line workspace.
