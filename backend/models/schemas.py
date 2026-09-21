@@ -234,6 +234,69 @@ class UserDefaultRatesOut(BaseModel):
     updated_at: datetime | None = None
 
 
+# ── Shared (team) libraries ──
+
+class SharedLibraryCreate(BaseModel):
+    name: str
+
+
+class SharedLibraryRename(BaseModel):
+    name: str
+
+
+class SharedLibraryCompanyFlag(BaseModel):
+    value: bool
+
+
+class LibraryMemberAdd(BaseModel):
+    email: str
+    role: Literal["view", "edit"] = "view"
+
+
+class LibraryMemberRole(BaseModel):
+    role: Literal["view", "edit"]
+
+
+class LibraryMemberOut(BaseModel):
+    user_id: int
+    email: str
+    name: str
+    role: str
+
+
+class LibraryEntryIn(BaseModel):
+    data: dict
+    base_version: int | None = None    # None = create; else the version being replaced
+
+
+class LibraryEntryOut(BaseModel):
+    kind: str
+    id: str
+    data: dict
+    version: int
+    updated_by: str | None = None
+    updated_at: datetime | None = None
+
+
+class LibraryBulkItem(BaseModel):
+    kind: str
+    data: dict
+
+
+class LibraryBulkIn(BaseModel):
+    entries: list[LibraryBulkItem]
+
+
+class SharedLibraryOut(BaseModel):
+    id: int
+    name: str
+    owner_id: int
+    owner_email: str
+    role: str                          # 'owner' | 'edit' | 'view'
+    is_company_default: bool
+    entries: list[LibraryEntryOut] = []
+
+
 # ── Auth / users ──
 
 class UserOut(BaseModel):

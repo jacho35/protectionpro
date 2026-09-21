@@ -192,6 +192,71 @@ class UserDefaultRates(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class SharedLibrary(Base):
+    """A named component library shared between users (cables, transformers, CBs,
+    fuses, load classes). Owned by one user; members get view/edit like project
+    shares. At most one library is the admin-designated company standard, which
+    every user reads without being a member."""
+    __tablename__ = "shared_libraries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, default="Shared library")
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                      nullable=False, index=True)
+    is_company_default = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    owner = relationship("User")
+    members = relationship("SharedLibraryMember", back_populates="library",
+                           cascade="all, delete-orphan", passive_deletes=True)
+    entries = relationship("SharedLibraryEntry", back_populates="library",
+                           cascade="all, delete-orphan", passive_deletes=True)
+
+
+class SharedLibraryMember(Base):
+    """A grant of access to a shared library for a specific (non-owner) user."""
+    __tablename__ = "shared_library_members"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    library_id = Column(Integer, ForeignKey("shared_libraries.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    role = Column(String(8), nullable=False, default="view")   # 'view' | 'edit'
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint("library_id", "user_id",
+                                       name="uq_libmember_library_user"),)
+
+    library = relationship("SharedLibrary", back_populates="members")
+    user = relationship("User")
+
+
+class SharedLibraryEntry(Base):
+    """One library entry. Stored per entry (not as one document) with a version so
+    concurrent edits by different members are detected instead of overwritten."""
+    __tablename__ = "shared_library_entries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    library_id = Column(Integer, ForeignKey("shared_libraries.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    kind = Column(String(16), nullable=False)       # cables|transformers|cbs|fuses|loadClasses
+    entry_id = Column(String(128), nullable=False)  # the entry's own id
+    data = Column(Text, nullable=False)              # entry JSON
+    version = Column(Integer, nullable=False, default=1)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint("library_id", "kind", "entry_id",
+                                       name="uq_libentry_library_kind_id"),)
+
+    library = relationship("SharedLibrary", back_populates="entries")
+    editor = relationship("User", foreign_keys=[updated_by])
+
+
 class AppSetting(Base):
     """Tiny key/value store — persists the JWT secret across restarts."""
     __tablename__ = "app_settings"
