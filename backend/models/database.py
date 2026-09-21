@@ -181,6 +181,17 @@ class UserLibrary(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class UserDefaultRates(Base):
+    """A user's own "default rates" — the starting rate set they can load into a new
+    project's rate library. One JSON document per user, replaced whole."""
+    __tablename__ = "user_default_rates"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    data = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class AppSetting(Base):
     """Tiny key/value store — persists the JWT secret across restarts."""
     __tablename__ = "app_settings"

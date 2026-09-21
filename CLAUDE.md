@@ -206,6 +206,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 ### User libraries
 - `GET /api/user-libraries` — the user's cable/transformer/CB/fuse/load-class libraries (`data: null` until first save)
 - `PUT /api/user-libraries` — replace the whole document (last write wins); `DELETE` — back to shipped defaults
+- `GET/PUT/DELETE /api/user-libraries/default-rates` — the user's saved default rates (seed for a new project's rate library; "Save as my default" in the rate library)
 
 ### Reports
 - `POST /api/reports/pdf` — generate full PDF report
@@ -342,7 +343,7 @@ Access at `http://localhost:8000`
 
 ## Authentication
 
-None currently implemented. CORS allows all origins. Auth is in the backlog.
+JWT bearer auth (`backend/auth.py`, `routes/auth.py`, frontend `auth.js` login gate). Every `/api/*` route except `/api/auth/*` and `/api/health` needs `Authorization: Bearer <token>`. The first registered user is the admin; further users register with an admin-minted invite code. Projects are owned per user and can be shared (`/api/projects/{id}/shares`, view/edit). CORS allows all origins.
 
 ## Testing
 
