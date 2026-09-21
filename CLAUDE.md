@@ -44,7 +44,7 @@ frontend/
     ├── api.js              # HTTP client for backend endpoints
     ├── constants.js        # Component definitions, cable/transformer libraries
     ├── cablelib.js         # CableLib — the ONE cable library (STANDARD_CABLES): construction/cores, name aliases, pickers (Demand/plan/SLD), project conductor preference, custom cables carried in the project
-    ├── standard-data.js    # Settings modal, editable cable & transformer libraries
+    ├── standard-data.js    # Settings modal, editable cable/transformer/CB/fuse/load-class libraries (edits saved IN the project as `libraries` — diffs vs shipped defaults; never localStorage)
     ├── templates.js        # Pre-built network templates (radial, ring, mesh)
     ├── tcc.js              # Time-current curve coordination plotting
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts

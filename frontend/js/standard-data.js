@@ -8,7 +8,12 @@ const StandardData = {
   fuses: [],
   loadClasses: [],
 
-  // localStorage key for persisted library customizations
+  // Libraries belong to the PROJECT (state.js toJSON `libraries`): only the
+  // differences from the shipped defaults are saved, so anyone opening the
+  // project gets the same libraries. The old localStorage copy is read once as
+  // a seed for projects saved before this (no `libraries` field) and never
+  // written again.
+  _LIBKEYS: ['cables', 'transformers', 'cbs', 'fuses', 'loadClasses'],
   _STORAGE_KEY: 'protectionpro-custom-libraries',
   // Bump when shipped default library DATA changes (e.g. corrected cable
   // resistances). A persisted payload with an older version still loads the
@@ -88,22 +93,71 @@ const StandardData = {
     }
   },
 
+  // A library was edited: the change is part of the project now, so mark it
+  // unsaved (nothing is written to this browser).
   _persist() {
-    if (!this._initialized) return;
-    try {
-      localStorage.setItem(this._STORAGE_KEY, JSON.stringify({
-        version: this._DATA_VERSION,
-        cables: this.cables,
-        transformers: this.transformers,
-        cbs: this.cbs,
-        fuses: this.fuses,
-        loadClasses: this.loadClasses,
-      }));
-    } catch (e) {
-      console.error('Failed to persist custom libraries:', e);
-    }
+    if (!this._initialized || this._applying) return;
+    if (typeof AppState !== 'undefined') AppState.dirty = true;
   },
 
+  // The project's library overrides: per library, the entries that are new or
+  // differ from the shipped default (matched by id) and the shipped ids that
+  // were deleted. undefined when every library is still the shipped default.
+  projectLibraries() {
+    if (!this._defaults) return undefined;
+    const out = {};
+    for (const key of this._LIBKEYS) {
+      // Working cables were completed by CableLib.normalize (construction, cores);
+      // complete the shipped ones the same way before comparing.
+      const norm = e => (key === 'cables' && typeof CableLib !== 'undefined') ? CableLib.normalize(JSON.parse(JSON.stringify(e))) : e;
+      const def = new Map(this._defaults[key].map(e => [e.id, JSON.stringify(norm(e))]));
+      const have = new Set();
+      const set = [];
+      for (const e of this[key]) {
+        have.add(e.id);
+        if (def.get(e.id) !== JSON.stringify(e)) set.push(JSON.parse(JSON.stringify(e)));
+      }
+      const removed = [...def.keys()].filter(id => !have.has(id));
+      if (set.length || removed.length) out[key] = { set, removed };
+    }
+    return Object.keys(out).length ? out : undefined;
+  },
+
+  // Make the working libraries what the project says: shipped defaults with the
+  // project's overrides on top. A project without `libraries` (saved before they
+  // travelled with it) gets the defaults plus this browser's old localStorage
+  // copy, read-only, so nothing it relied on disappears.
+  applyProjectLibraries(libs) {
+    if (!this._defaults) return;
+    this._applying = true;
+    try {
+      for (const key of this._LIBKEYS) this[key] = JSON.parse(JSON.stringify(this._defaults[key]));
+      if (libs && typeof libs === 'object') {
+        for (const key of this._LIBKEYS) {
+          const o = libs[key];
+          if (!o) continue;
+          const removed = new Set(Array.isArray(o.removed) ? o.removed : []);
+          const set = new Map((Array.isArray(o.set) ? o.set : []).filter(e => e && e.id).map(e => [e.id, e]));
+          const next = this[key].filter(e => !removed.has(e.id)).map(e => set.has(e.id) ? JSON.parse(JSON.stringify(set.get(e.id))) : e);
+          const have = new Set(next.map(e => e.id));
+          for (const [id, e] of set) if (!have.has(id) && !removed.has(id)) next.push(JSON.parse(JSON.stringify(e)));
+          this[key] = next;
+        }
+      } else {
+        this._loadPersisted();
+      }
+      this.syncCableLibrary();
+      this.syncTransformerLibrary();
+      this.syncCBLibrary();
+      this.syncFuseLibrary();
+      this.syncLoadClassLibrary();
+      // Settings tables show the new content next time they are drawn; redraw
+      // now if they already exist.
+      for (const [bodyId, cfg] of Object.entries(this._LIB)) {
+        if (document.getElementById(bodyId)) this[cfg.render]();
+      }
+    } finally { this._applying = false; }
+  },
 
   // ═══════════════════════════════════════════════════════
   // ─── Library rows: search, cards, duplicate ───

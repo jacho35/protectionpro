@@ -1155,6 +1155,8 @@ const AppState = {
     this.wireRouteMode = 'orthogonal';
     this.reticulation = this._defaultReticulation();
     this.reticResults = null;
+    // A new / cleared project starts from the shipped libraries, not the previous project's.
+    if (typeof StandardData !== 'undefined') StandardData.applyProjectLibraries(null);
     this.planMarkup = this._defaultPlanMarkup();
     // IEC 62305-2 lightning risk: named assessments (one per structure), each
     // {id, name, inputs, result, resultKey, updatedAt} — see lightning.js.
@@ -1356,6 +1358,9 @@ const AppState = {
         return a ? a.inputs : undefined;
       })(),
       rateLibrary: this.rateLibrary || undefined,
+      // Cable / transformer / CB / fuse / load-class library edits (differences
+      // from the shipped defaults) so every user opening the project has them.
+      libraries: (typeof StandardData !== 'undefined') ? StandardData.projectLibraries() : undefined,
       // Cables from the user's own library that this project uses, so the
       // project opens complete elsewhere (CableLib.onProjectLoaded).
       customCables: (() => { const c = typeof CableLib !== 'undefined' ? CableLib.projectCustomCables() : []; return c.length ? c : undefined; })(),
@@ -1687,6 +1692,8 @@ const AppState = {
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
     this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];
+    // Libraries travel with the project; older files fall back to the local copy.
+    if (typeof StandardData !== 'undefined') StandardData.applyProjectLibraries(data.libraries);
     // One cable library: bring in the project's own cables, rewrite retired names.
     if (typeof CableLib !== 'undefined') CableLib.onProjectLoaded(data.customCables);
     this.dirty = false;
