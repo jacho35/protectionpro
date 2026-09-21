@@ -108,3 +108,36 @@ def test_default_rates_roundtrip_and_isolation(client):
 def test_default_rates_validation(client):
     h = _login(client, "rates-v@x.com")
     assert client.put("/api/user-libraries/default-rates", json={"data": {"items": []}}, headers=h).status_code == 422
+
+
+OVR = {"version": 2, "format": "overrides",
+       "transformers": {"set": [{"id": "custom_xfmr_1", "name": "Team 2MVA"}], "removed": ["xfmr_16kva"]},
+       "cables": {"set": [], "removed": []}}
+
+
+def test_overrides_format_roundtrip(client):
+    h = _login(client, "ovr@x.com")
+    assert client.put("/api/user-libraries", json={"data": OVR}, headers=h).status_code == 200
+    assert client.get("/api/user-libraries", headers=h).json()["data"] == OVR
+
+
+@pytest.mark.parametrize("bad", [
+    {"format": "nope"},
+    {"format": "overrides", "cables": []},                                  # not {set, removed}
+    {"format": "overrides", "cables": {"set": [{"name": "no id"}], "removed": []}},
+    {"format": "overrides", "cables": {"set": [], "removed": [1]}},         # removed must be ids
+    {"format": "overrides", "nope": {"set": [], "removed": []}},            # unknown library
+])
+def test_overrides_validation(client, bad):
+    h = _login(client, "ovr-v@x.com")
+    assert client.put("/api/user-libraries", json={"data": bad}, headers=h).status_code == 422
+
+
+def test_old_client_cannot_flatten_overrides(client):
+    h = _login(client, "ovr-old@x.com")
+    # v2 first (allowed), then upgraded to overrides, then an old tab tries to save v2 again
+    assert client.put("/api/user-libraries", json={"data": LIB}, headers=h).status_code == 200
+    assert client.put("/api/user-libraries", json={"data": OVR}, headers=h).status_code == 200
+    r = client.put("/api/user-libraries", json={"data": LIB}, headers=h)
+    assert r.status_code == 409 and "reload" in r.json()["detail"].lower()
+    assert client.get("/api/user-libraries", headers=h).json()["data"] == OVR     # untouched

@@ -35,6 +35,7 @@ const StandardData = {
 
     // Working copies start as the shipped defaults; the user's own libraries are
     // loaded from their account once signed in (loadFromServer).
+    this._buildBase();
     this.syncCableLibrary();
     this.syncTransformerLibrary();
     this.syncCBLibrary();
@@ -65,23 +66,100 @@ const StandardData = {
   _loadedFor: null,         // user id the working copies belong to
   ready: Promise.resolve(), // settles when the user's libraries are loaded (or failed)
 
-  // Turn a stored document into working copies (defaults are the base).
-  _applyPayload(data) {
-    if (!data || typeof data !== 'object') return;
-    if (Array.isArray(data.cables)) {
-      // One cable library: a saved copy keeps the user's edits, and any
-      // shipped entry it doesn't have yet (matched by id — e.g. the building
-      // wiring and 2-core service cables merged in 2026-09) is appended.
-      const have = new Set(data.cables.map(c => c && c.id));
-      this.cables = data.cables.concat(this._defaults.cables.filter(c => !have.has(c.id)).map(c => JSON.parse(JSON.stringify(c))));
+  // ─── Layers ───
+  // The effective library of each kind is built in layers, later ones winning by entry id:
+  //   shipped defaults → company standard (admin-designated) → shared libraries you belong to
+  //   → YOUR OWN overrides (entries you added or changed, and shipped/shared ids you deleted).
+  // The Settings tables edit the effective list (this[key]); on save only the difference to
+  // the layers underneath is stored (`_ownOverrides`), so corrections to the shipped defaults
+  // and edits made by teammates in shared libraries reach you without you re-copying anything.
+  _sharedLayers: [],        // [{ id, name, role, is_company_default, entries: [{kind, id, data, version}] }]
+  _base: {},                // key → entries below your overrides (defaults + company + shared)
+  _baseSrc: {},             // key → id → { origin: 'shipped'|'company'|'shared', name, libraryId }
+
+  _strip(e) { const o = {}; for (const k of Object.keys(e)) if (k[0] !== '_') o[k] = this._clone(e[k]); return o; },
+
+  _buildBase() {
+    this._base = {}; this._baseSrc = {};
+    // company standard first, then the rest by name
+    const layers = [...this._sharedLayers].sort((a, b) =>
+      (b.is_company_default ? 1 : 0) - (a.is_company_default ? 1 : 0) || String(a.name).localeCompare(String(b.name)));
+    for (const key of this._LIBKEYS) {
+      const list = this._defaults[key].map(e => this._clone(e));
+      const src = {};
+      for (const e of list) src[e.id] = { origin: 'shipped' };
+      for (const L of layers) {
+        for (const en of L.entries) {
+          if (en.kind !== key || !en.data || !en.data.id) continue;
+          const at = list.findIndex(x => x.id === en.data.id);
+          const e = this._clone(en.data);
+          if (at >= 0) list[at] = e; else list.push(e);
+          src[e.id] = { origin: L.is_company_default ? 'company' : 'shared', name: L.name, libraryId: L.id };
+        }
+      }
+      this._base[key] = list; this._baseSrc[key] = src;
     }
-    if (Array.isArray(data.transformers)) this.transformers = data.transformers;
-    if (Array.isArray(data.cbs)) this.cbs = data.cbs;
-    if (Array.isArray(data.fuses)) this.fuses = data.fuses;
-    if (Array.isArray(data.loadClasses)) this.loadClasses = data.loadClasses;
+  },
+
+  // Where an entry in the effective library comes from now: your own edit, or the layer below.
+  originOf(key, entry) {
+    const b = (this._base[key] || []).find(x => x.id === entry.id);
+    if (!b || !this._same(key, b, entry)) return { origin: 'own' };
+    return (this._baseSrc[key] || {})[entry.id] || { origin: 'shipped' };
+  },
+
+  // Working copies = base + own overrides.
+  _applyOverrides(key, ov) {
+    const removed = new Set((ov && Array.isArray(ov.removed)) ? ov.removed : []);
+    const set = new Map(((ov && Array.isArray(ov.set)) ? ov.set : []).filter(e => e && e.id).map(e => [e.id, e]));
+    const next = this._base[key].filter(e => !removed.has(e.id)).map(e => set.has(e.id) ? this._clone(set.get(e.id)) : this._clone(e));
+    const have = new Set(next.map(e => e.id));
+    for (const [id, e] of set) if (!have.has(id) && !removed.has(id)) next.push(this._clone(e));
+    this[key] = next;
+  },
+
+  // The difference between the effective library and the layers below it.
+  _ownOverrides(key) {
+    const eff = this._persistable(key);          // project-only stand-ins are not yours
+    const base = new Map(this._base[key].map(e => [e.id, e]));
+    const set = [];
+    for (const e of eff) { const b = base.get(e.id); if (!b || !this._same(key, b, e)) set.push(this._strip(e)); }
+    const have = new Set(eff.map(e => e.id));
+    const removed = [...base.keys()].filter(id => !have.has(id));
+    return { set, removed };
+  },
+
+  _payload() {
+    const doc = { version: this._DATA_VERSION, format: 'overrides' };
+    for (const key of this._LIBKEYS) doc[key] = this._ownOverrides(key);
+    return doc;
+  },
+
+  // A pre-layering document stored FULL copies of each library. Convert it to overrides with
+  // the rules the old loader effectively had: cables — shipped cables missing from the copy
+  // were appended, so they are not deletions; the other libraries — a missing shipped id
+  // was a deletion.
+  _overridesFromFull(key, list) {
+    const base = new Map(this._base[key].map(e => [e.id, e]));
+    const ids = new Set(list.map(e => e && e.id));
+    const set = list.filter(e => e && e.id && (!base.has(e.id) || !this._same(key, base.get(e.id), e))).map(e => this._strip(e));
+    const removed = key === 'cables' ? [] : this._defaults[key].map(e => e.id).filter(id => !ids.has(id));
+    return { set, removed };
+  },
+  _applyStored(doc) {
+    if (!doc || typeof doc !== 'object') {          // nothing saved yet: the layers as they are
+      for (const key of this._LIBKEYS) this._applyOverrides(key, null);
+      return false;
+    }
+    const overrides = doc.format === 'overrides';
+    for (const key of this._LIBKEYS) {
+      if (overrides) this._applyOverrides(key, doc[key]);
+      else if (Array.isArray(doc[key])) this._applyOverrides(key, this._overridesFromFull(key, doc[key]));
+      else this._applyOverrides(key, null);
+    }
     // Keep the user's customizations, but if the shipped defaults have been
     // revised since they were saved, let them know they can adopt the update.
-    if ((data.version || 1) < this._DATA_VERSION) {
+    if ((doc.version || 1) < this._DATA_VERSION) {
       const msg = 'Component libraries: the shipped defaults have been updated '
         + '(e.g. corrected cable resistances) since your customisations were saved. '
         + 'Use "Reset to Defaults" in Settings to adopt them.';
@@ -90,17 +168,7 @@ const StandardData = {
         if (el) el.textContent = msg;
       }, 1500);
     }
-  },
-
-  _payload() {
-    return {
-      version: this._DATA_VERSION,
-      cables: this._persistable('cables'),
-      transformers: this._persistable('transformers'),
-      cbs: this._persistable('cbs'),
-      fuses: this._persistable('fuses'),
-      loadClasses: this._persistable('loadClasses'),
-    };
+    return !overrides;   // true = came from the old format and should be re-saved as overrides
   },
 
   // Old browser-only copy (before libraries lived in the account), if any.
@@ -108,9 +176,15 @@ const StandardData = {
     try { const raw = localStorage.getItem(this._STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
   },
 
-  // Signed in: load THIS user's libraries. A user with none on the server yet gets
-  // this browser's old copy moved into their account (once); otherwise the defaults.
-  // Same user again (e.g. after a session expiry) keeps the working copies as they are.
+  // "Reset to Defaults": drop YOUR overrides for one library; the shipped/company/shared layers stay.
+  _resetLibrary(key) {
+    this[key] = this._base[key].map(e => this._clone(e));
+  },
+
+  // Signed in: load THIS user's libraries and the shared ones they can read. A user with none
+  // on the server yet gets this browser's old copy moved into their account (once); an old-format
+  // document is converted to overrides and saved once. Same user again (e.g. after a session
+  // expiry) keeps the working copies as they are.
   loadFromServer(userId) {
     if (!this._defaults) return this.ready;
     if (this._serverReady && this._loadedFor === userId) return this.ready;
@@ -120,26 +194,31 @@ const StandardData = {
   async _loadFromServer(userId) {
     this._serverReady = false;
     try {
-      const res = await API.getUserLibraries();
-      for (const k of this._LIBKEYS) this[k] = JSON.parse(JSON.stringify(this._defaults[k]));
-      let migrate = null;
+      // Both must load: saving overrides against an incomplete base would lose deletions.
+      const [res, shared] = await Promise.all([API.getUserLibraries(), API.getSharedLibraries()]);
+      this._sharedLayers = Array.isArray(shared) ? shared : [];
+      this._buildBase();
+      let resave = false, migrate = false;
       if (res && res.data) {
-        this._applyPayload(res.data);
+        resave = this._applyStored(res.data);
       } else {
         const legacy = this._readLegacyLocal();
-        if (legacy) { this._applyPayload(legacy); migrate = legacy; }
+        if (legacy) { this._applyStored(legacy); resave = migrate = true; }
+        else this._applyStored(null);
       }
       this._loadedFor = userId;
       this._serverReady = true;
       this._syncAllQuiet();
-      if (migrate) {
+      if (resave) {
         try {
           await API.saveUserLibraries(this._payload());
-          try { localStorage.removeItem(this._STORAGE_KEY); } catch (e) { /* private mode */ }
-          if (typeof UI !== 'undefined') UI.toast('Your component libraries were moved from this browser into your account.', 'info', 6000);
+          if (migrate) {
+            try { localStorage.removeItem(this._STORAGE_KEY); } catch (e) { /* private mode */ }
+            if (typeof UI !== 'undefined') UI.toast('Your component libraries were moved from this browser into your account.', 'info', 6000);
+          }
         } catch (e) {
-          // Keep the browser copy; the next library edit saves the account copy.
-          if (typeof UI !== 'undefined') UI.toast('Could not move your libraries into your account yet: ' + e.message, 'warning', 8000);
+          // Keep any browser copy; the next library edit saves the account copy.
+          if (typeof UI !== 'undefined') UI.toast('Could not save your libraries to your account yet: ' + e.message, 'warning', 8000);
         }
       }
     } catch (e) {
@@ -234,7 +313,9 @@ const StandardData = {
         const src = this[key].find(e => e.id === id);            // the entry in effect (yours, or this project's own)
         if (!src) continue;
         const ship = shipped.get(id);
-        if (ship && this._same(key, ship, src)) continue;        // shipped as-is: everyone has it
+        // Shipped as-is: everyone has it — except load classes, which calculations read LIVE, so a
+        // later correction to a shipped class would silently change this project's results.
+        if (ship && key !== 'loadClasses' && this._same(key, ship, src)) continue;
         list.push(this._plain(key, this._clone(src)));
       }
       if (list.length) out[key] = list;
@@ -273,7 +354,14 @@ const StandardData = {
         const diffs = [...new Set([...Object.keys(a), ...Object.keys(b)])]
           .filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]))
           .map(k => ({ k, mine: a[k], proj: b[k] }));
-        rows.push({ key, e, kind: 'differs', diffs });
+        // Why it differs: the layer your value comes from says whether it is your own edit, a
+        // teammate's/company's, or the shipped default having been corrected since this was built.
+        const o = this.originOf(key, mine);
+        const why = o.origin === 'shipped' ? 'the shipped value has changed since this project was built'
+          : o.origin === 'company' ? `differs from the company standard (${o.name})`
+          : o.origin === 'shared' ? `differs from shared library "${o.name}"`
+          : 'differs from your own edit';
+        rows.push({ key, e, kind: 'differs', diffs, why, origin: o.origin });
       }
     }
     if (!rows.length) return;
@@ -311,13 +399,15 @@ const StandardData = {
       m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
       const missing = rows.filter(r => r.kind === 'missing').length;
       const differs = rows.length - missing;
+      // A shipped load class that was corrected changes ADMD results, so reproduce the project by default.
+      const reproduce = r => r.kind === 'differs' && r.key === 'loadClasses' && r.origin === 'shipped';
       const opts = r => r.kind === 'missing'
         ? '<option value="add">Add to my library</option><option value="project">Use in this project only</option><option value="skip">Skip</option>'
-        : '<option value="keep">Keep mine</option><option value="project">Use the project\'s (this project only)</option>';
+        : `<option value="keep"${reproduce(r) ? '' : ' selected'}>Keep mine</option><option value="project"${reproduce(r) ? ' selected' : ''}>Use the project's (this project only)</option>`;
       const body = rows.map((r, i) => {
         const what = r.kind === 'missing'
           ? '<span style="color:var(--warning,#b45309)">not in your library</span>'
-          : '<span style="color:var(--warning,#b45309)">differs from yours</span>' + '<div style="font-size:12px;opacity:.8">' + r.diffs.slice(0, 4).map(d => `${escHtml(d.k)}: yours ${escHtml(this._fmt(d.mine))} · project ${escHtml(this._fmt(d.proj))}`).join('<br>') + (r.diffs.length > 4 ? `<br>+${r.diffs.length - 4} more` : '') + '</div>';
+          : `<span style="color:var(--warning,#b45309)">${escHtml(r.why)}</span>` + '<div style="font-size:12px;opacity:.8">' + r.diffs.slice(0, 4).map(d => `${escHtml(d.k)}: yours ${escHtml(this._fmt(d.mine))} · project ${escHtml(this._fmt(d.proj))}`).join('<br>') + (r.diffs.length > 4 ? `<br>+${r.diffs.length - 4} more` : '') + '</div>';
         return `<tr><td>${this._LIBNAME[r.key]}</td><td><b>${escHtml(this._label(r.e))}</b><div style="font-size:12px;opacity:.7">${escHtml(r.e.id)}</div></td><td>${what}</td><td><select data-i="${i}">${opts(r)}</select></td></tr>`;
       }).join('');
       m.innerHTML = `<div class="modal-content" style="max-width:820px;width:92vw;max-height:86vh;display:flex;flex-direction:column">
@@ -645,8 +735,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-cables').addEventListener('click', async () => {
-      if (!(await UI.confirm('Reset the cable library to defaults?\nAll your custom cables and edits will be permanently discarded.', { danger: true }))) return;
-      this.cables = JSON.parse(JSON.stringify(this._defaults.cables));
+      if (!(await UI.confirm('Reset the cable library?\nYour own cables and edits are discarded; the shipped (and any company or shared) entries stay.', { danger: true }))) return;
+      this._resetLibrary('cables');
       this.renderCableTable();
       this.syncCableLibrary();
     });
@@ -730,8 +820,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-loadclasses').addEventListener('click', async () => {
-      if (!(await UI.confirm('Reset the load-class library to defaults?\nAll your custom classes and edits will be permanently discarded.', { danger: true }))) return;
-      this.loadClasses = JSON.parse(JSON.stringify(this._defaults.loadClasses));
+      if (!(await UI.confirm('Reset the load-class library?\nYour own classes and edits are discarded; the shipped (and any company or shared) entries stay.', { danger: true }))) return;
+      this._resetLibrary('loadClasses');
       this.renderLoadClassTable();
       this.syncLoadClassLibrary();
     });
@@ -800,8 +890,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-xfmrs').addEventListener('click', async () => {
-      if (!(await UI.confirm('Reset the transformer library to defaults?\nAll your custom transformers and edits will be permanently discarded.', { danger: true }))) return;
-      this.transformers = JSON.parse(JSON.stringify(this._defaults.transformers));
+      if (!(await UI.confirm('Reset the transformer library?\nYour own transformers and edits are discarded; the shipped (and any company or shared) entries stay.', { danger: true }))) return;
+      this._resetLibrary('transformers');
       this.renderTransformerTable();
       this.syncTransformerLibrary();
     });
@@ -870,8 +960,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-cbs').addEventListener('click', async () => {
-      if (!(await UI.confirm('Reset the circuit breaker library to defaults?\nAll your custom breakers and edits will be permanently discarded.', { danger: true }))) return;
-      this.cbs = JSON.parse(JSON.stringify(this._defaults.cbs));
+      if (!(await UI.confirm('Reset the circuit breaker library?\nYour own breakers and edits are discarded; the shipped (and any company or shared) entries stay.', { danger: true }))) return;
+      this._resetLibrary('cbs');
       this.renderCBTable();
       this.syncCBLibrary();
     });
@@ -939,8 +1029,8 @@ const StandardData = {
     });
 
     document.getElementById('btn-reset-fuses').addEventListener('click', async () => {
-      if (!(await UI.confirm('Reset the fuse library to defaults?\nAll your custom fuses and edits will be permanently discarded.', { danger: true }))) return;
-      this.fuses = JSON.parse(JSON.stringify(this._defaults.fuses));
+      if (!(await UI.confirm('Reset the fuse library?\nYour own fuses and edits are discarded; the shipped (and any company or shared) entries stay.', { danger: true }))) return;
+      this._resetLibrary('fuses');
       this.renderFuseTable();
       this.syncFuseLibrary();
     });
