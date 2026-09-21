@@ -193,6 +193,7 @@ const StandardData = {
   },
   async _loadFromServer(userId) {
     this._serverReady = false;
+    this._editTarget = null;
     try {
       // Both must load: saving overrides against an incomplete base would lose deletions.
       const [res, shared] = await Promise.all([API.getUserLibraries(), API.getSharedLibraries()]);
@@ -209,6 +210,9 @@ const StandardData = {
       this._loadedFor = userId;
       this._serverReady = true;
       this._syncAllQuiet();
+      this._takeSnap();
+      this._renderEditBanners();
+      if (typeof SharedLibs !== 'undefined') SharedLibs.render();
       if (resave) {
         try {
           await API.saveUserLibraries(this._payload());
@@ -233,11 +237,19 @@ const StandardData = {
     try { this._syncAll(); } finally { this._initialized = was; }
   },
 
-  // An edit was made: save this user's libraries (debounced).
+  // An edit was made: save (debounced). With a shared library as the edit target the changes
+  // go to that library first (per entry), then your own overrides are re-diffed and saved.
   _persist() {
     if (!this._initialized || !this._serverReady) return;
     clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => this._saveNow(), 800);
+    this._saveTimer = setTimeout(() => this._flush(), 800);
+  },
+  async _flush() {
+    clearTimeout(this._saveTimer);
+    if (!this._serverReady) return;
+    if (this._editTarget) await this._saveSharedEdits();
+    await this._saveNow();
+    this._takeSnap();
   },
   async _saveNow() {
     try {
@@ -248,6 +260,131 @@ const StandardData = {
       if (!this._saveFailed && typeof UI !== 'undefined') UI.toast('Could not save your component libraries: ' + e.message, 'error', 8000);
       this._saveFailed = true;
     }
+  },
+
+  // ─── Editing a shared library ───
+  // While a shared library is the edit target, what you change in the tables is written to it
+  // (per entry, with the version you loaded) for everyone who uses it, instead of becoming your
+  // own override. Only entries that belong to that library, and new ones, can be edited here.
+  _editTarget: null,        // { id, name } — a shared library you can edit, or null (= My library)
+  _snap: {},                // key → effective entries at the last save: the "before" for per-entry diffs
+  _takeSnap() { this._snap = {}; for (const k of this._LIBKEYS) this._snap[k] = this._persistable(k).map(e => this._clone(e)); },
+
+  async setEditTarget(libraryId) {
+    await this._flush();
+    const L = libraryId == null ? null : this._sharedLayers.find(l => l.id === libraryId);
+    this._editTarget = (L && (L.role === 'owner' || L.role === 'edit')) ? { id: L.id, name: L.name } : null;
+    this._takeSnap();
+    this._renderEditBanners();
+    for (const [bodyId, cfg] of Object.entries(this._LIB)) if (document.getElementById(bodyId)) this[cfg.render]();
+    if (typeof SharedLibs !== 'undefined') SharedLibs.render();
+  },
+  _renderEditBanners() {
+    const T = this._editTarget;
+    document.querySelectorAll('.lib-target').forEach(b => {
+      b.hidden = !T;
+      if (T) b.innerHTML = `<span>Editing shared library <b>${escHtml(T.name)}</b> — changes are saved to it for everyone who uses it.</span> <button type="button" class="btn-small" data-stop-edit>Back to my library</button>`;
+    });
+  },
+
+  async _saveSharedEdits() {
+    const T = this._editTarget;
+    const layer = T && this._sharedLayers.find(l => l.id === T.id);
+    if (!layer) return;
+    const denied = [];
+    let changed = false;
+    for (const key of this._LIBKEYS) {
+      const cur = this._persistable(key), prev = this._snap[key] || [];
+      const prevMap = new Map(prev.map(e => [e.id, e]));
+      const curIds = new Set(cur.map(e => e.id));
+      const ops = [];
+      for (const e of cur) { const p = prevMap.get(e.id); if (!p || !this._same(key, p, e)) ops.push({ id: e.id, put: e }); }
+      for (const p of prev) if (!curIds.has(p.id)) ops.push({ id: p.id, del: true });
+      for (const op of ops) {
+        const inLayer = layer.entries.find(x => x.kind === key && x.data.id === op.id);
+        // Writable here: entries of this library, and brand-new ones. Anything else (shipped, company,
+        // another shared library, or one of YOUR entries that already existed) is not published by
+        // an edit — that needs an explicit "Publish".
+        if (!inLayer && !(op.put && !prevMap.has(op.id))) {
+          denied.push(op.id);
+          const at = this[key].findIndex(x => x.id === op.id);
+          const before = prevMap.get(op.id);
+          if (op.put && before) this[key][at] = this._clone(before);
+          else if (op.del && before) this[key].splice(Math.min(prev.findIndex(x => x.id === op.id), this[key].length), 0, this._clone(before));
+          continue;
+        }
+        if (await this._writeShared(layer, key, op, inLayer)) changed = true;
+      }
+    }
+    this._buildBase();
+    // Own overrides are recomputed against the new base at save time; refresh the tables.
+    this._syncAllQuiet();
+    if (denied.length && typeof UI !== 'undefined') {
+      UI.toast(`Not saved to “${layer.name}”: ${denied.length === 1 ? 'that entry does' : 'those entries do'} not belong to it. Switch back to your own library to change ${denied.length === 1 ? 'it' : 'them'}, or use Publish to add your own entries.`, 'warning', 8000);
+    }
+    return changed;
+  },
+
+  // One entry to the shared library. Returns true when the server took the change.
+  async _writeShared(layer, key, op, inLayer, forceVersion) {
+    const version = forceVersion !== undefined ? forceVersion : (inLayer ? inLayer.version : null);
+    try {
+      if (op.del) {
+        if (inLayer) { await API.deleteSharedEntry(layer.id, key, op.id, version); layer.entries = layer.entries.filter(x => x !== inLayer); }
+      } else {
+        const data = this._strip(op.put);
+        const r = await API.putSharedEntry(layer.id, key, op.id, data, version);
+        if (inLayer) { inLayer.data = r.data; inLayer.version = r.version; }
+        else layer.entries.push({ kind: key, id: op.id, data: r.data, version: r.version });
+      }
+      return true;
+    } catch (e) {
+      if (e.status === 409 && e.body && e.body.detail && typeof e.body.detail === 'object') {
+        const d = e.body.detail, cur = d.current;
+        const keepMine = await UI.confirm(`${d.message}\n\nKeep your edit (replaces theirs), or use theirs and discard yours?`,
+          { okText: 'Keep my edit', cancelText: 'Use theirs' });
+        if (keepMine) return this._writeShared(layer, key, op, inLayer, cur ? cur.version : null);
+        // Use theirs: adopt the server's entry (or drop it if it was deleted meanwhile).
+        const at = this[key].findIndex(x => x.id === op.id);
+        layer.entries = layer.entries.filter(x => !(x.kind === key && x.data.id === op.id));
+        if (cur) {
+          layer.entries.push({ kind: key, id: op.id, data: cur.data, version: cur.version });
+          if (at >= 0) this[key][at] = this._clone(cur.data); else this[key].push(this._clone(cur.data));
+        } else if (at >= 0) this[key].splice(at, 1);
+        return false;
+      }
+      console.error('Failed to save to the shared library:', e);
+      if (typeof UI !== 'undefined') UI.toast(`Could not save to “${layer.name}”: ${e.message}`, 'error', 8000);
+      const at = this[key].findIndex(x => x.id === op.id);
+      const before = (this._snap[key] || []).find(x => x.id === op.id);      // put it back as it was
+      if (before && at >= 0) this[key][at] = this._clone(before);
+      return false;
+    }
+  },
+
+  // Re-read the shared libraries (a teammate may have changed them) and rebuild the effective
+  // libraries, keeping your own overrides and this project's project-only entries.
+  async reloadShared() {
+    if (!this._serverReady) return;
+    await this._flush();
+    const shared = await API.getSharedLibraries();
+    const own = {}, keep = {};
+    for (const k of this._LIBKEYS) { own[k] = this._ownOverrides(k); keep[k] = this[k].filter(e => e._projectOnly); }
+    this._sharedLayers = Array.isArray(shared) ? shared : [];
+    if (this._editTarget && !this._sharedLayers.some(l => l.id === this._editTarget.id && (l.role === 'owner' || l.role === 'edit'))) this._editTarget = null;
+    this._buildBase();
+    for (const k of this._LIBKEYS) {
+      this._applyOverrides(k, own[k]);
+      for (const e of keep[k]) {
+        const at = this[k].findIndex(x => x.id === e.id);
+        if (at >= 0) this[k][at] = { ...e, _orig: this[k][at] }; else this[k].push(e);
+      }
+    }
+    this._syncAllQuiet();
+    this._takeSnap();
+    this._renderEditBanners();
+    if (typeof SharedLibs !== 'undefined') SharedLibs.render();
+    this._persist();     // entries that just moved into a shared library drop out of your own overrides
   },
 
   // ═══════════════════════════════════════════════════════
@@ -379,7 +516,11 @@ const StandardData = {
         if (at >= 0) { arr[at] = { ...this._clone(r.e), _projectOnly: true, _orig: this._clone(arr[at]) }; swapped++; }
       }
     });
-    if (added || only || swapped) this._syncAll();
+    if (added || only || swapped) {
+      const t = this._editTarget; this._editTarget = null;   // your library, never the shared one being edited
+      this._syncAll();
+      this._editTarget = t; this._takeSnap();
+    }
     if ((added || only || swapped) && typeof UI !== 'undefined') {
       const bits = [];
       if (added) bits.push(`${added} added to your library`);
@@ -471,13 +612,30 @@ const StandardData = {
       if (!wrap) continue;
       const bar = document.createElement('div');
       bar.className = 'lib-searchbar';
-      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div>`;
+      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><div class="lib-target" hidden></div>`;
+      bar.querySelector('.lib-target').addEventListener('click', (e) => { if (e.target.closest('[data-stop-edit]')) this.setEditTarget(null); });
       wrap.parentNode.insertBefore(bar, wrap);
       bar.querySelector('.lib-search').addEventListener('input', (e) => {
         (this._libFilter[bodyId] = this._libFilter[bodyId] || {}).q = e.target.value.trim().toLowerCase();
         this._applyLibraryFilter(bodyId);
       });
     }
+  },
+
+  // Where a row's entry comes from, for its badge. Shipped entries carry none.
+  _badgeFor(key, entry) {
+    if (!entry) return null;
+    if (entry._projectOnly) return { t: 'This project', cls: 'proj', tip: 'Brought in for this project only; not saved to your library' };
+    const o = this.originOf(key, entry);
+    const T = this._editTarget;
+    if (o.origin === 'company') return { t: 'Company', cls: 'company', tip: 'Company standard: ' + (o.name || '') };
+    if (o.origin === 'shared') return { t: o.name, cls: 'shared' + (T && T.id === o.libraryId ? ' editing' : ''), tip: 'Shared library: ' + o.name };
+    if (o.origin === 'own') {
+      const under = (this._baseSrc[key] || {})[entry.id];
+      if (!under) return { t: 'Mine', cls: 'own', tip: 'Added by you' };
+      return { t: 'Edited', cls: 'own', tip: 'Your override of the ' + (under.origin === 'shipped' ? 'shipped' : under.name) + ' entry' };
+    }
+    return null;
   },
 
   _rowGetter(tr) {
@@ -506,11 +664,21 @@ const StandardData = {
       const nameInput = tr.querySelector(`[data-key="${cfg.nameKey}"]`);
       const head = document.createElement('td');
       head.className = 'lib-head';
-      head.innerHTML = `<button type="button" class="lib-toggle" aria-expanded="false"><span class="lib-title"></span><span class="lib-sum"></span><span class="lib-chev" aria-hidden="true">›</span></button>`;
+      head.innerHTML = `<button type="button" class="lib-toggle" aria-expanded="false"><span class="lib-title"></span><span class="lib-badge" hidden></span><span class="lib-sum"></span><span class="lib-chev" aria-hidden="true">›</span></button>`;
       tr.insertBefore(head, tr.firstChild);
+      const nameTd = nameInput && nameInput.closest('td');
+      const nameBadge = nameTd ? nameTd.appendChild(document.createElement('span')) : null;
+      if (nameBadge) nameBadge.hidden = true;
       const refresh = () => {
         head.querySelector('.lib-title').textContent = nameInput ? nameInput.value : '';
         head.querySelector('.lib-sum').textContent = this._rowSummary(bodyId, tr);
+        const bd = this._badgeFor(cfg.arr, this[cfg.arr][parseInt(tr.dataset.index)]);
+        // The card header (phone layout) and, on desktop where the header is hidden, a badge under the name field
+        for (const el of [head.querySelector('.lib-badge'), nameBadge]) {
+          if (!el) continue;
+          el.hidden = !bd;
+          if (bd) { el.textContent = bd.t; el.className = 'lib-badge ' + bd.cls + (el === nameBadge ? ' lib-name-badge' : ''); el.title = bd.tip || ''; }
+        }
       };
       refresh();
       tr.addEventListener('change', refresh);
@@ -569,16 +737,26 @@ const StandardData = {
 
   _renderLibraryChips(bodyId) {
     const box = document.querySelector(`.lib-chips[data-lib="${bodyId}"]`);
-    if (!box || bodyId !== 'cable-library-body') return;
+    if (!box) return;
+    const cfg = this._LIB[bodyId];
     const f = this._libFilter[bodyId] = this._libFilter[bodyId] || {};
-    const kvs = [...new Set(this.cables.map(c => c.voltage_kv))].sort((a, b) => a - b);
-    const conds = [...new Set(this.cables.map(c => c.conductor))];
     const chip = (grp, val, text, on) => `<button type="button" class="lib-chip${on ? ' active' : ''}" data-grp="${grp}" data-val="${val}" aria-pressed="${on}">${text}</button>`;
-    box.innerHTML = chip('kv', '', 'All voltages', f.kv == null) + kvs.map(v => chip('kv', v, v + ' kV', String(f.kv) === String(v))).join('') +
-      conds.map(c => chip('cond', c, c, f.cond === c)).join('');
+    let html = '';
+    if (bodyId === 'cable-library-body') {
+      const kvs = [...new Set(this.cables.map(c => c.voltage_kv))].sort((a, b) => a - b);
+      const conds = [...new Set(this.cables.map(c => c.conductor))];
+      html += chip('kv', '', 'All voltages', f.kv == null) + kvs.map(v => chip('kv', v, v + ' kV', String(f.kv) === String(v))).join('') +
+        conds.map(c => chip('cond', c, c, f.cond === c)).join('');
+    }
+    // Source chips appear once something other than shipped entries exists
+    const origins = new Set(this[cfg.arr].map(e => this.originOf(cfg.arr, e).origin));
+    const srcs = [['own', 'Mine'], ['shared', 'Shared'], ['company', 'Company']].filter(([o]) => origins.has(o));
+    if (srcs.length) html += chip('src', '', 'All sources', f.src == null) + srcs.map(([o, t]) => chip('src', o, t, f.src === o)).join('');
+    box.innerHTML = html;
     box.querySelectorAll('.lib-chip').forEach(b => b.addEventListener('click', () => {
       const grp = b.dataset.grp, val = b.dataset.val;
       if (grp === 'kv') f.kv = val === '' ? null : val;
+      else if (grp === 'src') f.src = val === '' ? null : val;
       else f.cond = (f.cond === val) ? null : val;
       this._renderLibraryChips(bodyId);
       this._applyLibraryFilter(bodyId);
@@ -597,6 +775,7 @@ const StandardData = {
       if (q) ok = (g('name') + ' ' + g('label') + ' ' + this._rowSummary(bodyId, tr)).toLowerCase().includes(q);
       if (ok && f.kv != null) ok = String(parseFloat(g('voltage_kv'))) === String(parseFloat(f.kv));
       if (ok && f.cond != null) ok = g('conductor') === f.cond;
+      if (ok && f.src != null) ok = this.originOf(this._LIB[bodyId].arr, this[this._LIB[bodyId].arr][parseInt(tr.dataset.index)] || {}).origin === f.src;
       tr.hidden = !ok;
       if (ok) shown++;
     });
@@ -620,6 +799,7 @@ const StandardData = {
     { group: 'Libraries', tab: 'transformers', sub: () => 'Ratings, vector groups, impedance', count: s => s.transformers.length },
     { group: 'Libraries', tab: 'cbs', sub: () => 'Frames, trip units, ratings', count: s => s.cbs.length },
     { group: 'Libraries', tab: 'fuses', sub: () => 'Ratings and breaking capacity', count: s => s.fuses.length },
+    { group: 'Libraries', tab: 'shared-libs', sub: () => 'Company standard and team libraries', count: s => s._sharedLayers.length },
     { group: 'Reference', tab: 'load-classes', sub: () => 'Demand parameters (NRS 034-1)', count: s => s.loadClasses.length },
     { group: 'Reference', tab: 'iec-standards', sub: () => 'Ampacity, sizing and derating tables' },
   ],
@@ -716,6 +896,7 @@ const StandardData = {
         if (tab.dataset.tab === 'fuses') this.renderFuseTable();
         if (tab.dataset.tab === 'load-classes') this.renderLoadClassTable();
         if (tab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
+        if (tab.dataset.tab === 'shared-libs' && typeof SharedLibs !== 'undefined') SharedLibs.render();
       });
     });
   },

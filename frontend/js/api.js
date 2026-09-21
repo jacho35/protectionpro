@@ -54,8 +54,10 @@ const API = {
           throw new Error('Your session has expired — please sign in again.');
         }
         let detail = `HTTP ${resp.status}`;
+        let body = null;
         try {
           const err = await resp.json();
+          body = err;
           // FastAPI returns {detail: "..."} for HTTPException
           // and {detail: [{msg: "...", ...}]} for validation errors
           if (typeof err.detail === 'string') {
@@ -72,7 +74,10 @@ const API = {
             if (text.length < 300) detail = text;
           } catch (_2) { /* use default */ }
         }
-        throw new Error(detail);
+        const failure = new Error(detail);
+        failure.status = resp.status;   // callers can react to e.g. 409 (edit conflict)
+        failure.body = body;
+        throw failure;
       }
       return await resp.json();
     } catch (e) {
@@ -483,6 +488,24 @@ const API = {
   async resetUserLibraries() { return this.request('/user-libraries', 'DELETE'); },
   // Shared (team) libraries the signed-in user can read (owned, member, company standard), with entries
   async getSharedLibraries() { return this.request('/shared-libraries'); },
+  async createSharedLibrary(name) { return this.request('/shared-libraries', 'POST', { name }); },
+  async renameSharedLibrary(id, name) { return this.request(`/shared-libraries/${id}`, 'PATCH', { name }); },
+  async deleteSharedLibrary(id) { return this.request(`/shared-libraries/${id}`, 'DELETE'); },
+  async setCompanyLibrary(id, value) { return this.request(`/shared-libraries/${id}/company-default`, 'PUT', { value }); },
+  async getLibraryMembers(id) { return this.request(`/shared-libraries/${id}/members`); },
+  async addLibraryMember(id, email, role) { return this.request(`/shared-libraries/${id}/members`, 'POST', { email, role }); },
+  async setLibraryMemberRole(id, userId, role) { return this.request(`/shared-libraries/${id}/members/${userId}`, 'PATCH', { role }); },
+  async removeLibraryMember(id, userId) { return this.request(`/shared-libraries/${id}/members/${userId}`, 'DELETE'); },
+  // baseVersion: the version being replaced (omit/null to create). 409 = someone changed it first.
+  async putSharedEntry(id, kind, entryId, data, baseVersion) {
+    return this.request(`/shared-libraries/${id}/entries/${kind}/${encodeURIComponent(entryId)}`, 'PUT',
+      { data, base_version: baseVersion == null ? null : baseVersion });
+  },
+  async deleteSharedEntry(id, kind, entryId, baseVersion) {
+    const q = baseVersion == null ? '' : `?base_version=${baseVersion}`;
+    return this.request(`/shared-libraries/${id}/entries/${kind}/${encodeURIComponent(entryId)}${q}`, 'DELETE');
+  },
+  async importSharedEntries(id, entries) { return this.request(`/shared-libraries/${id}/entries/import`, 'POST', { entries }); },
   // The signed-in user's saved default rates (seed for a new project's rate library)
   async getUserDefaultRates() { return this.request('/user-libraries/default-rates'); },
   async saveUserDefaultRates(data) { return this.request('/user-libraries/default-rates', 'PUT', { data }); },

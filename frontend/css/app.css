@@ -3324,3 +3324,32 @@ body.dark-mode .tcc-ft-slow { color: #ffcc80; }
 .lib-none { padding: 14px; text-align: center; font-size: 12px; color: var(--text-muted); }
 .library-table td.lib-head, .btn-dup-row { display: none; }
 .library-table tr[hidden] { display: none; }
+
+/* ── Library source badges + shared libraries panel ── */
+.lib-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; line-height: 1.5; white-space: nowrap; vertical-align: middle; background: var(--bg-tertiary, #eee); color: var(--text-secondary); border: 1px solid var(--border-color); }
+.lib-badge[hidden] { display: none; }
+.lib-badge.own { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: var(--accent); color: var(--accent); }
+.lib-badge.shared { border-color: #2e7d32; color: #2e7d32; background: color-mix(in srgb, #2e7d32 12%, transparent); }
+.lib-badge.shared.editing { background: #2e7d32; color: #fff; }
+.lib-badge.company { border-color: #6a1b9a; color: #6a1b9a; background: color-mix(in srgb, #6a1b9a 12%, transparent); }
+.lib-badge.proj { border-style: dashed; }
+.lib-target { flex: 1 1 100%; margin-top: 8px; padding: 8px 12px; border-radius: 6px; border: 1px solid #2e7d32; background: color-mix(in srgb, #2e7d32 10%, transparent); font-size: 13px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.lib-target[hidden] { display: none; }
+.sl-intro, .sl-note { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; }
+.sl-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.sl-card { border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.sl-card.sl-editing { border-color: #2e7d32; box-shadow: 0 0 0 1px #2e7d32 inset; }
+.sl-head { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.sl-role { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
+.sl-sub { font-size: 12px; color: var(--text-secondary); margin: 2px 0 10px; }
+.sl-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sl-company { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+.btn-danger-text { color: #c62828; }
+.sl-members { margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 10px; }
+.sl-member { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.sl-member > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sl-add { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.sl-add input { flex: 1 1 220px; min-width: 0; }
+.sl-pick { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; }
+.sl-pick span { font-size: 12px; color: var(--text-secondary); min-width: 110px; }
+.lib-name-badge { display: block; width: fit-content; margin: 4px 0 0; }
