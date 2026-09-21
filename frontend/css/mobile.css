@@ -1892,3 +1892,5 @@ body.dark-mode {
 .mm-version { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .mm-link-btn { background: none; border: none; padding: 8px 4px; min-height: 44px; font: inherit; font-weight: 500; color: var(--accent); cursor: pointer; }
 .mm-foot .mm-link-btn { min-height: 0; padding: 0; }
+
+#settings-modal.settings-compact .lib-name-badge { display: none; }

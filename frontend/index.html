@@ -2233,6 +2233,7 @@
         <button class="settings-tab" data-tab="cbs">CB Library</button>
         <button class="settings-tab" data-tab="fuses">Fuse Library</button>
         <button class="settings-tab" data-tab="load-classes">Load Classes</button>
+        <button class="settings-tab" data-tab="shared-libs">Shared Libraries</button>
         <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
       </div>
       <div class="modal-body">
@@ -2381,6 +2382,12 @@
           </div>
         </div>
         <!-- Load Classes Tab (NRS 034-1 / CTEF100 ADMD) -->
+        <!-- Shared (team) libraries Tab -->
+        <div id="settings-tab-shared-libs" class="settings-tab-content">
+          <p class="sl-intro">Libraries shared with you or by you. Their entries appear in the library tabs (badged) under your own edits, which always win. The <b>company standard</b>, if your admin has set one, is read-only for everyone.</p>
+          <div id="shared-libs-panel"></div>
+        </div>
+
         <div id="settings-tab-load-classes" class="settings-tab-content">
           <div class="library-source-ref">
             Load classes per CTEF100 Appendix A1 (CoCT-modified NRS 034-1 Table 3, 15-year) and NRS 034-1 Table 3a. Used by the Reticulation workspace for ADMD demand estimation. α/β/c are Herman-Beta parameters; ADMD is per-consumer after-diversity maximum demand.
@@ -3084,6 +3091,7 @@
   <script src="js/verification-templates.js?v=3.5.122"></script>
   <script src="js/templates.js?v=3.5.122"></script>
   <script src="js/standard-data.js?v=3.5.122"></script>
+  <script src="js/shared-libs.js?v=3.5.122"></script>
   <script src="js/undo.js?v=3.5.122"></script>
   <script src="js/arrange.js?v=3.5.122"></script>
   <script src="js/revisions.js?v=3.5.122"></script>
