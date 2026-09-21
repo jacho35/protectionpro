@@ -633,6 +633,13 @@ const Components = {
       reachAdj.get(wire.fromComponent).push(wire.toComponent);
       reachAdj.get(wire.toComponent).push(wire.fromComponent);
     }
+    // Linked off-page connectors join their two ends like a wire
+    for (const [a, b] of this.offpagePairs()) {
+      if (!reachAdj.has(a)) reachAdj.set(a, []);
+      if (!reachAdj.has(b)) reachAdj.set(b, []);
+      reachAdj.get(a).push(b);
+      reachAdj.get(b).push(a);
+    }
 
     // BFS from all sources through the full wire graph
     const busesWithSource = new Set();
