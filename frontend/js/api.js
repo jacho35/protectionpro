@@ -477,6 +477,11 @@ const API = {
     return this.request(`/projects/${id}`);
   },
 
+  // The signed-in user's component libraries (cables, transformers, CBs, fuses, load classes)
+  async getUserLibraries() { return this.request('/user-libraries'); },
+  async saveUserLibraries(data) { return this.request('/user-libraries', 'PUT', { data }); },
+  async resetUserLibraries() { return this.request('/user-libraries', 'DELETE'); },
+
   // List projects
   async listProjects() {
     return this.request('/projects');

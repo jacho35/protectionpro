@@ -169,6 +169,18 @@ class Invite(Base):
     consumer = relationship("User", foreign_keys=[used_by])
 
 
+class UserLibrary(Base):
+    """A user's own component libraries (cables, transformers, CBs, fuses, load
+    classes) — the app-level library, not part of any project. One row per user;
+    `data` is the whole JSON document the Settings modal edits."""
+    __tablename__ = "user_libraries"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    data = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class AppSetting(Base):
     """Tiny key/value store — persists the JWT secret across restarts."""
     __tablename__ = "app_settings"

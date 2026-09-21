@@ -44,7 +44,7 @@ frontend/
     ├── api.js              # HTTP client for backend endpoints
     ├── constants.js        # Component definitions, cable/transformer libraries
     ├── cablelib.js         # CableLib — the ONE cable library (STANDARD_CABLES): construction/cores, name aliases, pickers (Demand/plan/SLD), project conductor preference, custom cables carried in the project
-    ├── standard-data.js    # Settings modal, editable cable/transformer/CB/fuse/load-class libraries (the user's own; a project stores only the custom/edited entries it uses as `libraryItems` and, on open, is compared with the user's libraries and asks — never overwrites them)
+    ├── standard-data.js    # Settings modal, editable cable/transformer/CB/fuse/load-class libraries (the user's own, saved to their account via `/api/user-libraries`; a project stores only the custom/edited entries it uses as `libraryItems` and, on open, is compared with the user's libraries and asks — never overwrites them)
     ├── templates.js        # Pre-built network templates (radial, ring, mesh)
     ├── tcc.js              # Time-current curve coordination plotting
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
@@ -203,13 +203,17 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 - `GET /api/projects/{id}/export/json` — export JSON
 - `GET /api/projects/{id}/export/csv` — export CSV
 
+### User libraries
+- `GET /api/user-libraries` — the user's cable/transformer/CB/fuse/load-class libraries (`data: null` until first save)
+- `PUT /api/user-libraries` — replace the whole document (last write wins); `DELETE` — back to shipped defaults
+
 ### Reports
 - `POST /api/reports/pdf` — generate full PDF report
 - `POST /api/reports/arcflash-labels` — generate arc flash warning labels
 
 ## Database
 
-SQLite with one table:
+SQLite; the main table is `Project` (plus users, folders, revisions, shares, plan images and `user_libraries` — one row per user):
 
 ```
 Project:

@@ -218,6 +218,17 @@ class ProjectSummary(BaseModel):
         from_attributes = True
 
 
+# ── Per-user libraries ──
+
+class UserLibraryIn(BaseModel):
+    data: dict
+
+
+class UserLibraryOut(BaseModel):
+    data: dict | None = None
+    updated_at: datetime | None = None
+
+
 # ── Auth / users ──
 
 class UserOut(BaseModel):

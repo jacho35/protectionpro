@@ -33,8 +33,8 @@ const StandardData = {
     this.fuses = JSON.parse(JSON.stringify(STANDARD_FUSES));
     this.loadClasses = JSON.parse(JSON.stringify(STANDARD_LOAD_CLASSES));
 
-    // Restore persisted customizations, if any
-    this._loadPersisted();
+    // Working copies start as the shipped defaults; the user's own libraries are
+    // loaded from their account once signed in (loadFromServer).
     this.syncCableLibrary();
     this.syncTransformerLibrary();
     this.syncCBLibrary();
@@ -55,55 +55,121 @@ const StandardData = {
     this._initialized = true;
   },
 
-  // ─── Library Persistence (localStorage) ───
-  _loadPersisted() {
-    try {
-      const raw = localStorage.getItem(this._STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      if (Array.isArray(data.cables)) {
-        // One cable library: a saved copy keeps the user's edits, and any
-        // shipped entry it doesn't have yet (matched by id — e.g. the building
-        // wiring and 2-core service cables merged in 2026-09) is appended.
-        const have = new Set(data.cables.map(c => c && c.id));
-        this.cables = data.cables.concat(this._defaults.cables.filter(c => !have.has(c.id)).map(c => JSON.parse(JSON.stringify(c))));
-      }
-      if (Array.isArray(data.transformers)) this.transformers = data.transformers;
-      if (Array.isArray(data.cbs)) this.cbs = data.cbs;
-      if (Array.isArray(data.fuses)) this.fuses = data.fuses;
-      if (Array.isArray(data.loadClasses)) this.loadClasses = data.loadClasses;
-      // Keep the user's customizations, but if the shipped defaults have been
-      // revised since they were saved, let them know they can adopt the update.
-      if ((data.version || 1) < this._DATA_VERSION) {
-        const msg = 'Component libraries: the shipped defaults have been updated '
-          + '(e.g. corrected cable resistances) since your customisations were saved. '
-          + 'Use "Reset to Defaults" in Settings to adopt them.';
-        setTimeout(() => {
-          const el = document.getElementById('status-info');
-          if (el) el.textContent = msg;
-        }, 1500);
-      }
-    } catch (e) {
-      console.error('Failed to load custom libraries from localStorage:', e);
+  // ─── Library persistence: the user's account (server), not this browser ───
+  // The libraries are the user's own (one JSON document per user, /api/user-libraries).
+  // Nothing is saved until the user's libraries have been LOADED — otherwise the shipped
+  // defaults would overwrite them. The pre-server localStorage copy is only read once,
+  // to move it into the account (see loadFromServer).
+
+  _serverReady: false,      // this user's libraries are loaded; edits are saved
+  _loadedFor: null,         // user id the working copies belong to
+  ready: Promise.resolve(), // settles when the user's libraries are loaded (or failed)
+
+  // Turn a stored document into working copies (defaults are the base).
+  _applyPayload(data) {
+    if (!data || typeof data !== 'object') return;
+    if (Array.isArray(data.cables)) {
+      // One cable library: a saved copy keeps the user's edits, and any
+      // shipped entry it doesn't have yet (matched by id — e.g. the building
+      // wiring and 2-core service cables merged in 2026-09) is appended.
+      const have = new Set(data.cables.map(c => c && c.id));
+      this.cables = data.cables.concat(this._defaults.cables.filter(c => !have.has(c.id)).map(c => JSON.parse(JSON.stringify(c))));
+    }
+    if (Array.isArray(data.transformers)) this.transformers = data.transformers;
+    if (Array.isArray(data.cbs)) this.cbs = data.cbs;
+    if (Array.isArray(data.fuses)) this.fuses = data.fuses;
+    if (Array.isArray(data.loadClasses)) this.loadClasses = data.loadClasses;
+    // Keep the user's customizations, but if the shipped defaults have been
+    // revised since they were saved, let them know they can adopt the update.
+    if ((data.version || 1) < this._DATA_VERSION) {
+      const msg = 'Component libraries: the shipped defaults have been updated '
+        + '(e.g. corrected cable resistances) since your customisations were saved. '
+        + 'Use "Reset to Defaults" in Settings to adopt them.';
+      setTimeout(() => {
+        const el = document.getElementById('status-info');
+        if (el) el.textContent = msg;
+      }, 1500);
     }
   },
 
+  _payload() {
+    return {
+      version: this._DATA_VERSION,
+      cables: this._persistable('cables'),
+      transformers: this._persistable('transformers'),
+      cbs: this._persistable('cbs'),
+      fuses: this._persistable('fuses'),
+      loadClasses: this._persistable('loadClasses'),
+    };
+  },
+
+  // Old browser-only copy (before libraries lived in the account), if any.
+  _readLegacyLocal() {
+    try { const raw = localStorage.getItem(this._STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  },
+
+  // Signed in: load THIS user's libraries. A user with none on the server yet gets
+  // this browser's old copy moved into their account (once); otherwise the defaults.
+  // Same user again (e.g. after a session expiry) keeps the working copies as they are.
+  loadFromServer(userId) {
+    if (!this._defaults) return this.ready;
+    if (this._serverReady && this._loadedFor === userId) return this.ready;
+    this.ready = this._loadFromServer(userId);
+    return this.ready;
+  },
+  async _loadFromServer(userId) {
+    this._serverReady = false;
+    try {
+      const res = await API.getUserLibraries();
+      for (const k of this._LIBKEYS) this[k] = JSON.parse(JSON.stringify(this._defaults[k]));
+      let migrate = null;
+      if (res && res.data) {
+        this._applyPayload(res.data);
+      } else {
+        const legacy = this._readLegacyLocal();
+        if (legacy) { this._applyPayload(legacy); migrate = legacy; }
+      }
+      this._loadedFor = userId;
+      this._serverReady = true;
+      this._syncAllQuiet();
+      if (migrate) {
+        try {
+          await API.saveUserLibraries(this._payload());
+          try { localStorage.removeItem(this._STORAGE_KEY); } catch (e) { /* private mode */ }
+          if (typeof UI !== 'undefined') UI.toast('Your component libraries were moved from this browser into your account.', 'info', 6000);
+        } catch (e) {
+          // Keep the browser copy; the next library edit saves the account copy.
+          if (typeof UI !== 'undefined') UI.toast('Could not move your libraries into your account yet: ' + e.message, 'warning', 8000);
+        }
+      }
+    } catch (e) {
+      this._serverReady = false;
+      console.error('Could not load user libraries:', e);
+      if (typeof UI !== 'undefined') UI.toast('Could not load your component libraries from the server — showing the shipped defaults; library edits will not be saved until you reload.', 'error', 8000);
+    }
+  },
+  // Rebuild the global arrays + Settings tables without treating it as an edit.
+  _syncAllQuiet() {
+    const was = this._initialized; this._initialized = false;
+    try { this._syncAll(); } finally { this._initialized = was; }
+  },
+
+  // An edit was made: save this user's libraries (debounced).
   _persist() {
-    if (!this._initialized) return;
+    if (!this._initialized || !this._serverReady) return;
+    clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => this._saveNow(), 800);
+  },
+  async _saveNow() {
     try {
-      localStorage.setItem(this._STORAGE_KEY, JSON.stringify({
-        version: this._DATA_VERSION,
-        cables: this._persistable('cables'),
-        transformers: this._persistable('transformers'),
-        cbs: this._persistable('cbs'),
-        fuses: this._persistable('fuses'),
-        loadClasses: this._persistable('loadClasses'),
-      }));
+      await API.saveUserLibraries(this._payload());
+      this._saveFailed = false;
     } catch (e) {
-      console.error('Failed to persist custom libraries:', e);
+      console.error('Failed to save libraries:', e);
+      if (!this._saveFailed && typeof UI !== 'undefined') UI.toast('Could not save your component libraries: ' + e.message, 'error', 8000);
+      this._saveFailed = true;
     }
   },
-
 
   // ═══════════════════════════════════════════════════════
   // ─── Project ↔ library: what a project needs from your libraries ───
@@ -194,6 +260,7 @@ const StandardData = {
   // everything is there and identical; otherwise ask, item by item.
   async reviewProjectLibraries(items) {
     if (!this._defaults || !items || typeof items !== 'object') return;
+    await this.ready;                      // compare with the user's libraries, not the defaults they replace
     const rows = [];
     for (const key of this._LIBKEYS) {
       for (const e of Array.isArray(items[key]) ? items[key] : []) {
