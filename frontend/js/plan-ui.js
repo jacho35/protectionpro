@@ -348,6 +348,7 @@ const PlanUI = {
       if (comp) html += `<div class="plan-linked-note" title="This item is linked to an SLD component">🔗 Linked to SLD: ${escHtml((comp.props && comp.props.name) || comp.type)}</div>`;
     }
     for (const f of fields) html += this._field(f, getVal(f.key));
+    html += this._sldLinkField(item, kind);
     // Building auto-circuiting: circuit-tag editor on load devices; bulk-assign
     // on distribution boards.
     if (kind === 'element' && typeof PlanCircuits !== 'undefined' &&
@@ -570,7 +571,40 @@ const PlanUI = {
     });
   },
 
+  // "Link to SLD" picker for a drawn board/transformer/generator/utility/feeder:
+  // attach it to an existing SLD component after the fact (or detach it).
+  _sldLinkField(item, kind) {
+    if (AppState.planMarkup.settings.domain !== 'building' || typeof PlanSync === 'undefined') return '';
+    if (kind !== 'element' && kind !== 'route') return '';
+    const cands = PlanSync.linkCandidates(item, kind);
+    const isRoute = kind === 'route';
+    if (isRoute ? item.type !== 'feeder' : !Object.values(PLAN_DEFS.sldLinkTypes || {}).includes(item.type)) return '';
+    const cur = isRoute ? item.sldCableId : item.sldId;
+    const live = cur && AppState.components.get(cur);
+    if (cur && live && !cands.some(c => c.id === cur)) cands.push({ id: cur, label: (live.props && live.props.name) || live.type });
+    let opts = `<option value=""${live ? '' : ' selected'}>— not linked —</option>`;
+    for (const c of cands.sort((a, b) => a.label.localeCompare(b.label))) {
+      opts += `<option value="${escHtml(c.id)}"${live && c.id === cur ? ' selected' : ''}>${escHtml(c.label)}</option>`;
+    }
+    return `<div class="plan-field"><label class="plan-field-label">Link to SLD</label>
+      <select data-role="sld-link" title="Attach this drawn item to an existing SLD component${isRoute ? ' (cable)' : ''}">${opts}</select></div>`;
+  },
+
+  _onSldLink(e) {
+    if (e.type !== 'change') return;
+    const ids = [...PlanMarkup.selectedIds];
+    if (ids.length !== 1) return;
+    const found = PlanMarkup.findEntityById(ids[0]);
+    if (!found) return;
+    PlanSync.linkItemToSld(found.item, found.kind, e.target.value || null);
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    this.renderProps();
+    this.renderPalette();   // "From SLD (unplaced)" list changes
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
+
   _onPropsChange(e) {
+    if (e.target.dataset && e.target.dataset.role === 'sld-link') { this._onSldLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'delete') return;
     const key = e.target.dataset ? e.target.dataset.key : null;
     if (!key) return;

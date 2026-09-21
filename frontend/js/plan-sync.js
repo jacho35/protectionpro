@@ -591,6 +591,85 @@ const PlanSync = {
     return el;
   },
 
+  // ─── Manual linking of an already-drawn plan item to an SLD component ───
+  // Candidates are SLD components of the matching type that no other (live)
+  // plan item already owns. Returns [{ id, label }].
+  linkCandidates(item, kind) {
+    const comps = AppState.components;
+    const out = [];
+    if (kind === 'route') {
+      if (item.type !== 'feeder') return out;
+      const rtIds = new Set(AppState.planAllRoutes().map(r => r.id));
+      for (const c of comps.values()) {
+        if (c.type !== 'cable') continue;
+        if (c.planLink && c.planLink !== item.id && rtIds.has(c.planLink)) continue;
+        if (c.riserLink) continue;
+        out.push({ id: c.id, label: (c.props && c.props.name) || 'Cable' });
+      }
+      return out;
+    }
+    const sldType = Object.keys(PLAN_DEFS.sldLinkTypes || {}).find(k => PLAN_DEFS.sldLinkTypes[k] === item.type);
+    if (!sldType) return out;
+    const elIds = new Set(AppState.planAllElements().map(e => e.id));
+    const owned = (c, link) => link && link !== item.id && elIds.has(link);
+    if (sldType === 'bus') {
+      for (const g of this.sldSwitchboardGroups()) {
+        const prim = comps.get(g.primaryBusId);
+        if (prim && owned(prim, prim.swLink)) continue;
+        out.push({ id: g.primaryBusId, label: g.name });
+      }
+      return out;
+    }
+    for (const c of comps.values()) {
+      if (c.type !== sldType || owned(c, c.planLink)) continue;
+      out.push({ id: c.id, label: (c.props && c.props.name) || (COMPONENT_DEFS[c.type] && COMPONENT_DEFS[c.type].name) || c.type });
+    }
+    return out;
+  },
+
+  // Link (sldId set) or unlink (falsy) a drawn plan item. The SLD name wins on
+  // link so the next sync doesn't overwrite it with the plan's label.
+  linkItemToSld(item, kind, sldId) {
+    const comps = AppState.components;
+    if (kind === 'route') {
+      const old = item.sldCableId && comps.get(item.sldCableId);
+      if (old && old.planLink === item.id) old.planLink = null;
+      item.sldCableId = null;
+      if (sldId) {
+        const cab = comps.get(sldId);
+        if (!cab) return;
+        item.sldCableId = cab.id;
+        cab.planLink = item.id;
+        item._autoReflected = false;   // a user-drawn route, not an auto chord
+        if (cab.props && cab.props.name && !item.cableType) item.cableType = cab.props.name;
+      }
+      return;
+    }
+    const isSb = item.type === 'bd_switchboard';
+    const old = item.sldId && comps.get(item.sldId);
+    if (old && old.planLink === item.id) old.planLink = null;
+    if (isSb) {
+      for (const c of comps.values()) if (c.swLink === item.id) c.swLink = null;
+      item.sldBuses = item.sldMembers = null;
+    }
+    item.sldId = null;
+    if (!sldId) return;
+    const comp = comps.get(sldId);
+    if (!comp) return;
+    if (isSb) {
+      const g = this.sldSwitchboardGroup(sldId);
+      item.sldId = g.primaryBusId; item.sldBuses = g.busIds; item.sldMembers = g.members;
+      item.sections = g.busIds.length; item.props = item.props || {}; item.props.sections = g.busIds.length;
+      for (const mid of g.members) { const c = comps.get(mid); if (c) c.swLink = item.id; }
+      item.name = g.name;
+    } else {
+      item.sldId = comp.id;
+      comp.planLink = item.id;
+      if (comp.props && comp.props.name) item.name = comp.props.name;
+    }
+    this.reflectSldFeeders();
+  },
+
   // Collect entities on each side whose linked partner was deleted in the
   // other view — the set that deletion-propagation would remove. Cascades:
   // removing a board removes its feeders; removing a feeder removes its cable.
