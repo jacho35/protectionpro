@@ -432,18 +432,28 @@ class _Reader:
         self.tol = max(ext_span / 20000.0, 1e-9)
 
     def _raw_span(self):
+        # The real modelspace geometry, not $EXTMIN/$EXTMAX, is the trustworthy
+        # source — the header is frequently stale (never refreshed after a ZOOM
+        # EXTENTS, or left over from a purged xref) and, taken at face value on
+        # a real-world site plan, can overstate the drawing's actual span by
+        # orders of magnitude. That inflates the flattening/round tolerance
+        # below until curves and small features round away to nothing — a
+        # "successful" import that renders as a blank canvas. Fall back to the
+        # header only when the geometry scan itself is unavailable.
+        try:
+            from ezdxf import bbox
+            b = bbox.extents(self.doc.modelspace(), fast=True)
+            if b.has_data:
+                span = max(b.size.x, b.size.y)
+                if 0 < span < 1e12:
+                    return span
+        except Exception:
+            pass
         try:
             lo, hi = self.doc.header.get("$EXTMIN"), self.doc.header.get("$EXTMAX")
             span = max(hi[0] - lo[0], hi[1] - lo[1])
             if 0 < span < 1e12:
                 return span
-        except Exception:
-            pass
-        try:
-            from ezdxf import bbox
-            b = bbox.extents(self.doc.modelspace(), fast=True)
-            if b.has_data:
-                return max(b.size.x, b.size.y, 1e-6)
         except Exception:
             pass
         return 1000.0

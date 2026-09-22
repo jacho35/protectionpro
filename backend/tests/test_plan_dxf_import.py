@@ -5,6 +5,7 @@ Fixtures are built in-test with ezdxf so each case pins exactly one feature.
 """
 import io
 import math
+import re
 
 import ezdxf
 import pytest
@@ -85,6 +86,39 @@ def test_bulged_polyline_is_flattened_through_its_arc():
     radii = [math.hypot(x - 1000.0, y - pts[0][1]) for x, y in pts]
     assert max(radii) == pytest.approx(1000, abs=1.0)
     assert min(radii) == pytest.approx(1000, abs=1.0)
+
+
+def _with_stale_extents(doc, lo, hi):
+    # ezdxf's own writer always emits the "unset" sentinel (±1e20) for
+    # $EXTMIN/$EXTMAX unless something explicitly recomputes them, so a
+    # doc.header assignment doesn't survive doc.write(). Real CAD software
+    # (AutoCAD, Civil3D, BricsCAD, …) *does* write a real — often stale —
+    # header value, so patch the serialized text directly to reproduce that.
+    raw = _bytes(doc).decode("utf-8")
+
+    def patch(text, var, pt):
+        pat = re.compile(r"(\$" + var + r"\s*\n\s*10\n)[^\n]*\n(\s*20\n)[^\n]*\n(\s*30\n)[^\n]*")
+        return pat.sub(lambda m: f"{m.group(1)}{pt[0]}\n{m.group(2)}{pt[1]}\n{m.group(3)}{pt[2]}", text, count=1)
+
+    raw = patch(raw, "EXTMIN", lo)
+    raw = patch(raw, "EXTMAX", hi)
+    return raw.encode("utf-8")
+
+
+def test_stale_bloated_extents_header_does_not_collapse_small_geometry():
+    # A real CAD export can leave $EXTMIN/$EXTMAX stale after a purged xref or
+    # a ZOOM EXTENTS that was never re-run — claiming a multi-kilometre span
+    # while the actual drawing is a normal-sized site plan. The flattening
+    # tolerance must come from the real geometry, not that stale header, or
+    # curves round away to nothing on import (a "successful" import that
+    # renders as a blank canvas).
+    doc = _foreign()
+    # Semicircle of radius 1000 from (0,0) to (2000,0): bulge = tan(180°/4) = 1
+    doc.modelspace().add_lwpolyline([(0, 0, 1.0), (2000, 0, 0)], format="xyb")
+    raw = _with_stale_extents(doc, (0.0, 0.0, 0.0), (3_000_000.0, 3_000_000.0, 0.0))
+    (rec,) = parse_dxf(raw)["entities"]
+    pts = _poly_pts(rec)
+    assert len(pts) > 10, "arc segment must not collapse under a stale-header tolerance"
 
 
 def test_spline_keeps_fit_points_and_flattened_shape():
