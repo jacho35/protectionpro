@@ -5,6 +5,7 @@ Fixtures are built in-test with ezdxf so each case pins exactly one feature.
 """
 import io
 import math
+import random
 import re
 
 import ezdxf
@@ -119,6 +120,37 @@ def test_stale_bloated_extents_header_does_not_collapse_small_geometry():
     (rec,) = parse_dxf(raw)["entities"]
     pts = _poly_pts(rec)
     assert len(pts) > 10, "arc segment must not collapse under a stale-header tolerance"
+
+
+def test_isolated_far_off_entity_does_not_blow_out_the_bbox():
+    # A real-world pattern: a dense site plan plus one record dumped kilometres
+    # away (an unresolved XREF insertion point, a schedule/legend table left
+    # off in space). Naive min/max makes $bbox$ (and the initial zoom-to-fit
+    # it drives) span that whole distance, so the actual drawing renders as an
+    # imperceptible speck — a "successful" import that looks blank.
+    doc = _foreign()
+    msp = doc.modelspace()
+    random.seed(0)
+    for _ in range(30):
+        x, y = random.uniform(0, 1000), random.uniform(0, 1000)
+        msp.add_line((x, y), (x + 10, y + 10))
+    msp.add_line((5_000_000, 500), (5_000_010, 510))   # the isolated outlier
+    r = parse_dxf(_bytes(doc))
+    assert len(r["entities"]) == 31, "the outlier is still parsed and rendered, just not fit to"
+    assert r["bbox"][2] < 2000 and r["bbox"][3] < 2000, "bbox should track the dense cluster, not the outlier"
+    xs = [c for e in r["entities"] for c in (e["p"][0], e["p"][2])]
+    assert max(xs) > 4_000_000, "the outlier's own coordinates are untouched"
+
+
+def test_small_file_is_never_trimmed():
+    # Below the robust-trim threshold, behaviour must be byte-identical to
+    # plain min/max — most real drawings (and every other fixture in this
+    # file) have far fewer than 20 points.
+    doc = _foreign()
+    doc.modelspace().add_line((0, 0), (10, 0))
+    doc.modelspace().add_line((0, 0), (5_000_000, 5_000_000))
+    r = parse_dxf(_bytes(doc))
+    assert r["bbox"][2] == pytest.approx(5_000_000) and r["bbox"][3] == pytest.approx(5_000_000)
 
 
 def test_spline_keeps_fit_points_and_flattened_shape():

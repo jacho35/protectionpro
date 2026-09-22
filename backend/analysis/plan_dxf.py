@@ -400,9 +400,12 @@ class _Reader:
     """Normalises one DXF document into the compact underlay structure.
 
     Coordinates are kept in DXF drawing units. Model-space geometry is shifted
-    by `origin` (the extents' lower-left) so large survey coordinates
-    (e.g. Lo29 ≈ 3 000 000 m) keep full precision once they reach a canvas;
-    block definitions stay in their own local coordinates.
+    by `origin` — the lower-left of the *robust* extent (see
+    `_robust_bounds`), not necessarily the true lower-left — so large survey
+    coordinates (e.g. Lo29 ≈ 3 000 000 m) keep full precision once they reach
+    a canvas, and an isolated far-off record (a stray XREF insertion point, a
+    legend table left off in space) doesn't drag `origin`/`bbox` out to meet
+    it. Block definitions stay in their own local coordinates.
 
     Entity records (short keys keep the stored JSON small):
       {t:'l', p:[x1,y1,x2,y2]}                      line
@@ -694,6 +697,63 @@ def _shift(rec, ox, oy):
                 f[i] -= ox; f[i + 1] -= oy
 
 
+# A real site plan is legitimately large and often clustered (separate
+# buildings, feeder runs kilometres apart) — that must never be mistaken for
+# an outlier. What genuinely breaks the initial view is a handful of records
+# sitting far beyond everything else: an unresolved XREF's insertion point,
+# a schedule/legend table block left off in space, a misplaced grip-edit.
+# _robust_bounds finds that kind of isolated tail and excludes it from the
+# origin/bbox that drives the importer's initial placement and zoom-to-fit —
+# the records themselves are never dropped, so panning out still finds them.
+_ROBUST_MIN_N = 20        # below this, every point counts: never trim
+_ROBUST_OUTER_FRAC = 0.02 # only look for a cut within the outer ~2% of points
+_ROBUST_OUTER_MIN = 3
+_ROBUST_OUTER_MAX = 40
+_ROBUST_ISOLATION = 10.0  # the cut gap must dwarf (10x) the typical local gap
+
+
+def _robust_bounds(values):
+    """min/max of `values`, but excluding a small isolated tail at either end
+    (see module comment above). Falls back to plain min/max when there's
+    nothing to work with or nothing anomalous to trim."""
+    if not values:
+        return None
+    v = sorted(values)
+    n = len(v)
+    if n < _ROBUST_MIN_N:
+        return v[0], v[-1]
+    gaps = [v[i] - v[i - 1] for i in range(1, n)]
+    nonzero = [g for g in gaps if g > 0]
+    if not nonzero:
+        return v[0], v[-1]
+    nonzero.sort()
+    typical = nonzero[len(nonzero) // 2]  # median gap: robust to the rare huge one
+    if typical <= 0:
+        return v[0], v[-1]
+    outer = max(_ROBUST_OUTER_MIN, min(_ROBUST_OUTER_MAX, int(n * _ROBUST_OUTER_FRAC)))
+    lo, hi = 0, n - 1
+    # Largest gap within the outer window at the top: if it dwarfs the
+    # typical gap, cut there — everything above is an isolated tail.
+    start = max(0, n - 1 - outer)
+    best_i, best_g = None, 0.0
+    for i in range(start, n - 1):
+        if gaps[i] > best_g:
+            best_g, best_i = gaps[i], i
+    if best_i is not None and best_g > _ROBUST_ISOLATION * typical:
+        hi = best_i
+    # Symmetric check at the bottom.
+    end = min(n - 1, outer)
+    best_i, best_g = None, 0.0
+    for i in range(0, end):
+        if gaps[i] > best_g:
+            best_g, best_i = gaps[i], i
+    if best_i is not None and best_g > _ROBUST_ISOLATION * typical:
+        lo = best_i + 1
+    if lo >= hi:
+        return v[0], v[-1]
+    return v[lo], v[hi]
+
+
 def _round(rec, nd):
     for key in ("p", "f"):
         v = rec.get(key)
@@ -742,7 +802,7 @@ def _parse_foreign(doc) -> Dict[str, Any]:
         _block_bbox(rd, name, memo)
     if not xs:
         return {"mode": "underlay", "format": 2, "empty": True, "skipped": rd.skipped}
-    ox, oy = min(xs), min(ys)
+    (ox, hix), (oy, hiy) = _robust_bounds(xs), _robust_bounds(ys)
     for r in entities:
         _shift(r, ox, oy)
     for ins in inserts:
@@ -783,7 +843,7 @@ def _parse_foreign(doc) -> Dict[str, Any]:
         "units": {"code": insunits, "m": _UNIT_M.get(insunits), "name": _UNIT_NAME.get(insunits, ""),
                   "metric": int(doc.header.get("$MEASUREMENT", 1) or 0) == 1},
         "origin": [ox, oy],
-        "bbox": [0.0, 0.0, max(xs) - ox, max(ys) - oy],
+        "bbox": [0.0, 0.0, hix - ox, hiy - oy],
         "layers": [ly for ly in rd.layers.values()],
         "blocks": {k: v for k, v in rd.blocks.items()},
         "inserts": inserts,
