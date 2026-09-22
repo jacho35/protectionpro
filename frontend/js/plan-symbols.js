@@ -90,6 +90,41 @@ const PlanSymbols = {
     bd_wap: { size: 22, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'AP', size: 7, f: 'col', bold: 1 }] },
     bd_sensor: { size: 24, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'PIR', size: 6, f: 'col', bold: 1 }] },
     bd_dali: { size: 30, prims: [{ k: 'r', x: 6, y: 10, w: 28, h: 20, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'DALI', size: 7, f: 'col', bold: 1 }] },
+    // Outlet point — round outlet box + centre dot (matches AutoCAD LISP's OUTLETPOINT).
+    bd_outlet: { size: 18, prims: [{ k: 'c', cx: 20, cy: 20, r: 8, s: 'col', lw: 1.4 }, { k: 'c', cx: 20, cy: 20, r: 2.2, f: 'col' }] },
+    // Fire / security additions
+    bd_firecombo: { size: 24, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'S/H', size: 6.5, f: 'col', bold: 1 }] },
+    bd_firedetector: { size: 24, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'FD', size: 7, f: 'col', bold: 1 }] },
+    bd_strobe: { size: 22, prims: [
+      { k: 'r', x: 9, y: 9, w: 22, h: 22, f: 'faint', s: 'col', lw: 1.4 },
+      { k: 'l', x1: 20, y1: 4, x2: 20, y2: 9, s: 'col', lw: 1.1 },
+      { k: 'l', x1: 20, y1: 31, x2: 20, y2: 36, s: 'col', lw: 1.1 },
+      { k: 'l', x1: 4, y1: 20, x2: 9, y2: 20, s: 'col', lw: 1.1 },
+      { k: 'l', x1: 31, y1: 20, x2: 36, y2: 20, s: 'col', lw: 1.1 },
+    ] },
+    bd_sounder: { size: 22, prims: [{ k: 'r', x: 9, y: 9, w: 22, h: 22, f: 'faint', s: 'col', lw: 1.4 }, { k: 't', x: 20, y: 20, str: 'SND', size: 6, f: 'col', bold: 1 }] },
+    bd_soundersstrobe: { size: 24, prims: [
+      { k: 'r', x: 8, y: 8, w: 24, h: 24, f: 'faint', s: 'col', lw: 1.4 },
+      { k: 'l', x1: 20, y1: 2, x2: 20, y2: 8, s: 'col', lw: 1 },
+      { k: 'l', x1: 20, y1: 32, x2: 20, y2: 38, s: 'col', lw: 1 },
+      { k: 'l', x1: 2, y1: 20, x2: 8, y2: 20, s: 'col', lw: 1 },
+      { k: 'l', x1: 32, y1: 20, x2: 38, y2: 20, s: 'col', lw: 1 },
+      { k: 't', x: 20, y: 20, str: 'S/S', size: 5.5, f: 'col', bold: 1 },
+    ] },
+    bd_nvr: { size: 26, prims: [{ k: 'r', x: 6, y: 12, w: 28, h: 16, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'NVR', size: 6, f: 'col', bold: 1 }] },
+    // Earthing — IEC earth symbol (stem + decreasing horizontal bars).
+    bd_groundbar: { size: 28, prims: [
+      { k: 'r', x: 6, y: 15, w: 28, h: 5, f: 'col' },
+      { k: 'l', x1: 12, y1: 25, x2: 28, y2: 25, s: 'col', lw: 1.3 },
+      { k: 'l', x1: 15, y1: 29, x2: 25, y2: 29, s: 'col', lw: 1.1 },
+      { k: 'l', x1: 18, y1: 33, x2: 22, y2: 33, s: 'col', lw: 0.9 },
+    ] },
+    bd_groundpoint: { size: 20, prims: [
+      { k: 'l', x1: 20, y1: 8, x2: 20, y2: 20, s: 'col', lw: 1.5 },
+      { k: 'l', x1: 12, y1: 20, x2: 28, y2: 20, s: 'col', lw: 1.4 },
+      { k: 'l', x1: 15, y1: 24, x2: 25, y2: 24, s: 'col', lw: 1.1 },
+      { k: 'l', x1: 18, y1: 28, x2: 22, y2: 28, s: 'col', lw: 0.9 },
+    ] },
   },
 
   // Glyph extent (world px). Parametric families size by their variant.

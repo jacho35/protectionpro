@@ -37,21 +37,33 @@ const PlanDxfManager = {
       [/BULKHEAD|WALL ?LIGHT|WALL ?LT/, 'bd_light', { kind: 'wall' }],
       [/LIGHT|LUM|LAMP|LTG|FITTING|\bLED\b|PANEL|CEIL/, 'bd_light', { kind: 'ceiling' }],
       [/USB/, 'bd_socket', { outlets: 'double_usb' }],
+      // OUTLETPOINT before the generic OUTLET→socket rule below (it's a substring match).
+      [/OUTLET.?POINT/, 'bd_outlet'],
       [/(DOUBLE|DSSO|TWIN|2G|2 ?GANG).*(SOCK|SSO|S\/?O|PLUG|OUTLET)|(SOCK|SSO|PLUG|OUTLET).*(DOUBLE|TWIN|2G)|DSSO/, 'bd_socket', { outlets: 'double' }],
       [/SOCKET|\bSSO\b|PLUG|\bGPO\b|OUTLET|\bS\/?O\b/, 'bd_socket', { outlets: 'single' }],
       [/ISOL/, 'bd_isolator'],
       [/FCU|FUSED|SPUR/, 'bd_fcu'],
       [/SWITCH|\bSW\b|^SW/, 'bd_switch'],
+      // Combo/generic fire-alarm rules before the plain SMOKE/HEAT rules they'd
+      // otherwise be swallowed by (first-match-wins).
+      [/SMOKE.?HEAT|HEAT.?SMOKE|COMBO/, 'bd_firecombo'],
       [/SMOKE|\bSD\b/, 'bd_smoke'],
       [/HEAT/, 'bd_heat'],
+      [/FIRE.?DETECT|\bFD\b/, 'bd_firedetector'],
       [/CALL ?POINT|\bMCP\b|\bBGU\b/, 'bd_call'],
+      [/SOUNDER.?STROBE|STROBE.?SOUNDER/, 'bd_soundersstrobe'],
+      [/STROBE/, 'bd_strobe'],
+      [/SOUNDER/, 'bd_sounder'],
       [/CCTV|CAMERA|\bCAM\b/, 'bd_cctv'],
+      [/\bNVR\b/, 'bd_nvr'],
       [/WIFI|\bWAP\b|ACCESS ?POINT/, 'bd_wap'],
       [/DATA|RJ45|NETWORK|CAT ?6|CAT ?5/, 'bd_datapoint'],
       [/PIR|OCCUP|SENSOR|MOTION/, 'bd_sensor'],
       [/DALI/, 'bd_dali'],
       [/RISER/, 'bd_riser'],
       [/JUNCTION|\bJB\b/, 'bd_jb'],
+      [/EARTH.?BAR|GROUND.?BAR/, 'bd_groundbar'],
+      [/EARTH.?POINT|GROUND.?POINT|GROUND.?ROD|EARTH.?ROD/, 'bd_groundpoint'],
       [/GENERATOR|\bGEN\b/, 'bd_generator'],
       [/TRANSF|\bTX\b|XFMR/, 'bd_transformer'],
     ],
@@ -69,11 +81,16 @@ const PlanDxfManager = {
   _TAG_RULES: [
     [/^(NAME|TAG|REF|ID|NO|NUM|NUMBER|LABEL|DESIG|DESIGNATION|DEVICE_?ID|ERF|ERF_?NO|ERF_?NUM(BER)?|STAND|STAND_?NO|PLOT|PLOT_?NO|POLE_?NO|KIOSK|KIOSK_?NO)$/, 'name'],
     [/^(CCT|CIRCUIT|CIRC|CCT_?NO|CIRCUIT_?NO|CIRCUIT_?NUM(BER)?|WAY|WAY_?NO)$/, 'circuitNo'],
-    [/^(DB|DBOARD|D_?BOARD|BOARD|PANEL|FED_?FROM|SOURCE|SUPPLY)$/, '_dboard'],
+    [/^(DB|DBOARD|D_?BOARD|BOARD|PANEL|FED_?FROM|DBFED|SOURCE|SUPPLY)$/, '_dboard'],
     [/^(W|WATT|WATTS|WATTAGE|POWER|LAMP_?W)$/, 'watts'],
-    [/^(VA|LOAD|LOAD_?VA|KVA)$/, 'load_va'],
+    [/^(VA|LOAD|LOAD_?VA|LOAD_?W|KVA)$/, 'load_va'],
     [/^(LM|LUMEN|LUMENS|FLUX)$/, 'lumens'],
     [/^(CABLE|CABLE_?TYPE|CABLE_?SIZE)$/, 'cableType'],
+    [/^(PHASE|PH)$/, 'tapPhase'],
+    [/^(ZONE)$/, 'zone'],
+    [/^(HEIGHT|MOUNT(ING)?_?HT|AFF)$/, 'height'],
+    [/^(SIZE)$/, 'size'],
+    [/^(CONDUCTOR|COND)$/, 'conductor'],
   ],
 
   _domain() { return AppState.planMarkup.settings.domain === 'building' ? 'building' : 'retic'; },
@@ -113,6 +130,7 @@ const PlanDxfManager = {
       out.push({ key: '_dboard', label: 'Board (by name)', kind: 'text' });
       out.push({ key: 'load_va', label: 'Load (VA)', kind: 'number' });
       out.push({ key: 'cableType', label: 'Cable', kind: 'text' });
+      out.push({ key: 'tapPhase', label: 'Tap phase (R/W/B)', kind: 'text' });
     }
     return out;
   },
