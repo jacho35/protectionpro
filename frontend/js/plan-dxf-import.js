@@ -234,8 +234,21 @@ const PlanDxfImport = {
       if (!unitM) return;   // cancelled
       guessed = true;
     }
+    // A layer off/frozen in the source file starts hidden here too — but a
+    // CAD session's layer state is often just whatever was toggled while the
+    // last person worked on it, not a deliberate "never show this" choice.
+    // Silently honouring it can hide most of a drawing with zero indication
+    // why, so count how much content that affects and flag it below.
     const layers = {};
-    for (const ly of data.layers) if (!ly.on || ly.frozen) layers[ly.name] = { hidden: true };
+    let hiddenLayers = 0, hiddenRecords = 0, totalRecords = 0;
+    for (const ly of data.layers) {
+      totalRecords += ly.n || 0;
+      if (!ly.on || ly.frozen) {
+        layers[ly.name] = { hidden: true };
+        hiddenLayers++;
+        hiddenRecords += ly.n || 0;
+      }
+    }
     const desc = {
       id: AppState.planGenId('pmdxf'), imageId: null, name, count: data.count || 0,
       unitM, unitsGuessed: guessed, origin: data.origin || [0, 0], bbox: data.bbox,
@@ -268,7 +281,12 @@ const PlanDxfImport = {
     if (placedHow) msg.push(placedHow);
     if (data.truncated) msg.push('The drawing is very large — only the first part was read.');
     if (!stored) msg.push('It could not be saved to the server — it will be lost on reload.');
-    UI.toast(msg.join(' '), stored && !data.truncated ? 'success' : 'warning', 6000);
+    const hiddenFrac = totalRecords > 0 ? hiddenRecords / totalRecords : 0;
+    const mostlyHidden = hiddenFrac >= 0.2 && hiddenRecords > 0;
+    if (mostlyHidden) {
+      msg.push(`${hiddenLayers} of ${data.layers.length} layers (${Math.round(hiddenFrac * 100)}% of the drawing) came in off/frozen and start hidden — ◫ Background Plans → Layers → "Show all" to see everything.`);
+    }
+    UI.toast(msg.join(' '), (!stored || data.truncated || mostlyHidden) ? 'warning' : 'success', mostlyHidden ? 9000 : 6000);
     if (data.inserts.length && typeof PlanDxfManager !== 'undefined') {
       UI.toast('Open ◫ in Background Plans to map its blocks to plan devices.', 'info', 5000);
     }
@@ -478,16 +496,95 @@ const PlanDxfImport = {
   // Plan pixels per drawing unit, all scale factors included.
   _pxPerUnit(desc) { return desc.k * ((typeof desc.scaleAdj === 'number' && desc.scaleAdj > 0) ? desc.scaleAdj : 1); },
 
+  // Local (drawing-unit) points of an entity record, matching the backend's
+  // _rec_points — used so a fit can consider only currently-visible layers.
+  _recLocalPoints(r) {
+    const p = r.p || [];
+    if (r.t === 'c' || r.t === 'a') return [[p[0] - p[2], p[1] - p[2]], [p[0] + p[2], p[1] + p[2]]];
+    if (r.t === 'x' || r.t === 'o') return [[p[0], p[1]]];
+    const pts = [];
+    for (let i = 0; i < p.length - 1; i += 2) pts.push([p[i], p[i + 1]]);
+    return pts;
+  },
+
+  // min/max of `values`, excluding a small isolated tail at either end —
+  // the same idea as the backend's _robust_bounds (backend/analysis/
+  // plan_dxf.py), reproduced here because a per-layer-visible fit collects
+  // a point set the backend never sees (a still-visible layer can still
+  // hold one isolated far-off record, e.g. a stray XREF insertion point).
+  _robustBounds(values) {
+    const MIN_N = 20, OUTER_FRAC = 0.02, OUTER_MIN = 3, OUTER_MAX = 40, ISOLATION = 10;
+    const v = values.slice().sort((a, b) => a - b);
+    const n = v.length;
+    if (n < MIN_N) return [v[0], v[n - 1]];
+    const gaps = [];
+    for (let i = 1; i < n; i++) gaps.push(v[i] - v[i - 1]);
+    const nz = gaps.filter((g) => g > 0).sort((a, b) => a - b);
+    if (!nz.length) return [v[0], v[n - 1]];
+    const typical = nz[Math.floor(nz.length / 2)];
+    if (typical <= 0) return [v[0], v[n - 1]];
+    const outer = Math.max(OUTER_MIN, Math.min(OUTER_MAX, Math.floor(n * OUTER_FRAC)));
+    let lo = 0, hi = n - 1;
+    const start = Math.max(0, n - 1 - outer);
+    let bestI = -1, bestG = 0;
+    for (let i = start; i < n - 1; i++) if (gaps[i] > bestG) { bestG = gaps[i]; bestI = i; }
+    if (bestI >= 0 && bestG > ISOLATION * typical) hi = bestI;
+    const end = Math.min(n - 1, outer);
+    bestI = -1; bestG = 0;
+    for (let i = 0; i < end; i++) if (gaps[i] > bestG) { bestG = gaps[i]; bestI = i; }
+    if (bestI >= 0 && bestG > ISOLATION * typical) lo = bestI + 1;
+    if (lo >= hi) return [v[0], v[n - 1]];
+    return [v[lo], v[hi]];
+  },
+
   extentWorld() {
     let box = null;
+    const grow = (minX, minY, maxX, maxY) => {
+      if (!box) box = { minX, minY, maxX, maxY };
+      else { box.minX = Math.min(box.minX, minX); box.minY = Math.min(box.minY, minY); box.maxX = Math.max(box.maxX, maxX); box.maxY = Math.max(box.maxY, maxY); }
+    };
     for (const d of this.list()) {
       if (d.hidden || !d.bbox) continue;
-      const [x0, y0, x1, y1] = d.bbox;
-      for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) {
-        const w = this.worldOf(d, x, y);
-        if (!box) box = { minX: w.x, minY: w.y, maxX: w.x, maxY: w.y };
-        else { box.minX = Math.min(box.minX, w.x); box.minY = Math.min(box.minY, w.y); box.maxX = Math.max(box.maxX, w.x); box.maxY = Math.max(box.maxY, w.y); }
+      const data = this.dataOf(d);
+      const anyLayerHidden = data && d.layers && Object.values(d.layers).some((st) => st && st.hidden);
+      if (!data || !anyLayerHidden) {
+        // Fast path (no per-layer hiding in play): the whole DXF's
+        // already-robust bbox (backend/analysis/plan_dxf.py:_robust_bounds).
+        const [x0, y0, x1, y1] = d.bbox;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) {
+          const w = this.worldOf(d, x, y);
+          minX = Math.min(minX, w.x); minY = Math.min(minY, w.y);
+          maxX = Math.max(maxX, w.x); maxY = Math.max(maxY, w.y);
+        }
+        grow(minX, minY, maxX, maxY);
+        continue;
       }
+      // Some layers are hidden (default-off/frozen in the source file, or
+      // toggled off by the user) — a "fit" should aim at what's actually on
+      // screen, not the whole drawing including switched-off content that
+      // can otherwise leave the visible part a barely-visible speck. Collect
+      // every visible point in world space, then robust-bound it the same
+      // way the backend robust-bounds the full drawing, so one still-visible
+      // isolated record (a stray insert on an otherwise-fine layer) can't
+      // reintroduce the same blow-out this whole fix is for.
+      const xs = [], ys = [];
+      for (const r of data.entities) {
+        if (this.layerHidden(d, r.l)) continue;
+        for (const [lx, ly] of this._recLocalPoints(r)) {
+          const w = this.worldOf(d, lx, ly);
+          xs.push(w.x); ys.push(w.y);
+        }
+      }
+      for (const ins of data.inserts) {
+        if (this.layerHidden(d, ins.l)) continue;
+        const w = this.worldOf(d, ins.p[0], ins.p[1]);
+        xs.push(w.x); ys.push(w.y);
+      }
+      if (!xs.length) continue;
+      const [minX, maxX] = this._robustBounds(xs);
+      const [minY, maxY] = this._robustBounds(ys);
+      grow(minX, minY, maxX, maxY);
     }
     return box;
   },

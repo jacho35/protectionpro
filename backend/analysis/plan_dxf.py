@@ -710,6 +710,10 @@ _ROBUST_OUTER_FRAC = 0.02 # only look for a cut within the outer ~2% of points
 _ROBUST_OUTER_MIN = 3
 _ROBUST_OUTER_MAX = 40
 _ROBUST_ISOLATION = 10.0  # the cut gap must dwarf (10x) the typical local gap
+# Below this span (drawing units — mm on a typical file), a corner-anchored
+# origin already keeps every local coordinate small: no reason to disturb the
+# established (0,0)-at-the-corner convention small fixtures/tests rely on.
+_MEDIAN_ORIGIN_SPAN = 50_000
 
 
 def _robust_bounds(values):
@@ -802,7 +806,23 @@ def _parse_foreign(doc) -> Dict[str, Any]:
         _block_bbox(rd, name, memo)
     if not xs:
         return {"mode": "underlay", "format": 2, "empty": True, "skipped": rd.skipped}
-    (ox, hix), (oy, hiy) = _robust_bounds(xs), _robust_bounds(ys)
+    (lox, hix), (loy, hiy) = _robust_bounds(xs), _robust_bounds(ys)
+    if len(xs) >= _ROBUST_MIN_N and max(hix - lox, hiy - loy) > _MEDIAN_ORIGIN_SPAN:
+        # Anchor the shift to the MEDIAN, not a bbox corner: a real site plan's
+        # dense, relevant content can sit far from the corner of its own
+        # bounding box (a second building cluster kilometres away, an outlying
+        # legend). Shifting by a corner then leaves the majority of the
+        # drawing's local coordinates in the millions — exactly the magnitude
+        # a canvas's transform pipeline (commonly single-precision internally)
+        # loses enough precision over that geometry silently fails to paint,
+        # even though the origin/bbox fit (above) is already correct and the
+        # entities parse without error. The median sits inside the densest
+        # cluster by construction, so most of the drawing gets small,
+        # precise local coordinates; a genuinely isolated minority pays the
+        # precision cost instead.
+        ox, oy = sorted(xs)[len(xs) // 2], sorted(ys)[len(ys) // 2]
+    else:
+        ox, oy = lox, loy
     for r in entities:
         _shift(r, ox, oy)
     for ins in inserts:
@@ -843,7 +863,7 @@ def _parse_foreign(doc) -> Dict[str, Any]:
         "units": {"code": insunits, "m": _UNIT_M.get(insunits), "name": _UNIT_NAME.get(insunits, ""),
                   "metric": int(doc.header.get("$MEASUREMENT", 1) or 0) == 1},
         "origin": [ox, oy],
-        "bbox": [0.0, 0.0, hix - ox, hiy - oy],
+        "bbox": [lox - ox, loy - oy, hix - ox, hiy - oy],
         "layers": [ly for ly in rd.layers.values()],
         "blocks": {k: v for k, v in rd.blocks.items()},
         "inserts": inserts,
