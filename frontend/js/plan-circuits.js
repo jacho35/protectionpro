@@ -37,7 +37,8 @@ const PlanCircuits = {
 
   // Supply / infrastructure — these are boards & sources, not things that sit
   // ON a final circuit, so they don't get the circuit-attribute editor.
-  INFRA: new Set(['bd_utility', 'bd_transformer', 'bd_generator', 'bd_db', 'bd_switchboard', 'bd_riser', 'bd_jb']),
+  INFRA: new Set(['bd_utility', 'bd_transformer', 'bd_generator', 'bd_db', 'bd_switchboard', 'bd_riser', 'bd_jb',
+    'bd_groundbar', 'bd_groundpoint']),
 
   isLoadDevice(type) { return !!this.LOAD_TYPES[type]; },
   // A device that puts load on its way: a load type, or any circuit device the

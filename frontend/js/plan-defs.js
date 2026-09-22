@@ -136,18 +136,33 @@ const PLAN_DEFS = {
           { value: 'pir', label: 'PIR / Occupancy' }, { value: 'key', label: 'Key switch' },
           { value: 'timer', label: 'Timer' }, { value: 'photocell', label: 'Photocell' },
         ] },
+        { key: 'height', label: 'Mounting height (AFF)', type: 'number', unit: 'mm' },
       ],
     },
+    // Circuit-device outlet point — round outlet box carrying full circuit data
+    // (mirrors AutoCAD LISP's OUTLETPOINT), used where a socket/switch symbol
+    // doesn't fit (e.g. a floor box or an isolator-style connection point that
+    // still needs to participate in a circuit).
+    bd_outlet: { name: 'Outlet Point', domain: 'building', group: 'Small Power', color: '#0284c7', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'OP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // ELV / fire / security
-    bd_smoke: { name: 'Smoke Detector', domain: 'building', group: 'ELV & Fire', color: '#dc2626', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_heat: { name: 'Heat Detector', domain: 'building', group: 'ELV & Fire', color: '#b91c1c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'HD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_call: { name: 'Call Point', domain: 'building', group: 'ELV & Fire', color: '#991b1b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'CP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    bd_smoke: { name: 'Smoke Detector', domain: 'building', group: 'ELV & Fire', color: '#dc2626', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_heat: { name: 'Heat Detector', domain: 'building', group: 'ELV & Fire', color: '#b91c1c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'HD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_firecombo: { name: 'Smoke/Heat Combo Detector', domain: 'building', group: 'ELV & Fire', color: '#c2410c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SHD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_firedetector: { name: 'Fire Detector (generic)', domain: 'building', group: 'ELV & Fire', color: '#ea580c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'FD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_call: { name: 'Call Point', domain: 'building', group: 'ELV & Fire', color: '#991b1b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'CP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_strobe: { name: 'Strobe', domain: 'building', group: 'ELV & Fire', color: '#f97316', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'STR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_sounder: { name: 'Sounder', domain: 'building', group: 'ELV & Fire', color: '#fb923c', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SND', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_soundersstrobe: { name: 'Sounder/Strobe', domain: 'building', group: 'ELV & Fire', color: '#f59e0b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SS', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_nvr: { name: 'NVR', domain: 'building', group: 'ELV & Fire', color: '#6d28d9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'NVR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_datapoint: { name: 'Data Outlet', domain: 'building', group: 'ELV & Fire', color: '#0891b2', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_wap: { name: 'Wireless AP', domain: 'building', group: 'ELV & Fire', color: '#0e7490', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'AP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // Control
     bd_sensor: { name: 'Occupancy Sensor', domain: 'building', group: 'Control', color: '#e11d48', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'PIR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_dali: { name: 'DALI Controller', domain: 'building', group: 'Control', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'DAL', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    // Earthing
+    bd_groundbar: { name: 'Earth Bar', domain: 'building', group: 'Earthing', color: '#65a30d', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'EB', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'size', label: 'Size', type: 'text' }] },
+    bd_groundpoint: { name: 'Earth Point', domain: 'building', group: 'Earthing', color: '#4d7c0f', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'EP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'conductor', label: 'Conductor', type: 'text' }] },
   },
 
   // Linear routes (polyline; endpoints may snap to elements).
@@ -196,6 +211,7 @@ const PLAN_DEFS = {
     data_cable: { name: 'Data Cable', domain: 'building', color: '#0891b2', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'DATA', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     fire_cable: { name: 'Fire Cable', domain: 'building', color: '#dc2626', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'FIRE', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     dali_bus: { name: 'DALI Bus', domain: 'building', color: '#db2777', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'CONTROL', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['control'] }] },
+    ground_conductor: { name: 'Earth Conductor', domain: 'building', color: '#65a30d', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'GROUNDING', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
   },
 
   // Trench excavation bands (open polyline drawn as a band of real width).
@@ -367,12 +383,18 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'b_elv', name: 'ELV & Fire', discipline: 'building', color: '#7c3aed',
-    visibleElementTypes: ['bd_smoke', 'bd_heat', 'bd_call', 'bd_cctv', 'bd_datapoint', 'bd_wap'],
+    visibleElementTypes: ['bd_smoke', 'bd_heat', 'bd_firecombo', 'bd_firedetector', 'bd_call', 'bd_strobe',
+      'bd_sounder', 'bd_soundersstrobe', 'bd_cctv', 'bd_nvr', 'bd_datapoint', 'bd_wap'],
     routeTypes: ['data_cable', 'fire_cable'], trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
   {
     id: 'b_control', name: 'Control', discipline: 'building', color: '#db2777',
     visibleElementTypes: ['bd_sensor', 'bd_dali'], routeTypes: ['dali_bus'],
+    trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
+  },
+  {
+    id: 'b_earthing', name: 'Earthing', discipline: 'building', color: '#65a30d',
+    visibleElementTypes: ['bd_groundbar', 'bd_groundpoint'], routeTypes: ['ground_conductor'],
     trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
 ];
