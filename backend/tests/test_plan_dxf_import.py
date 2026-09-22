@@ -137,9 +137,34 @@ def test_isolated_far_off_entity_does_not_blow_out_the_bbox():
     msp.add_line((5_000_000, 500), (5_000_010, 510))   # the isolated outlier
     r = parse_dxf(_bytes(doc))
     assert len(r["entities"]) == 31, "the outlier is still parsed and rendered, just not fit to"
-    assert r["bbox"][2] < 2000 and r["bbox"][3] < 2000, "bbox should track the dense cluster, not the outlier"
+    bx0, by0, bx1, by1 = r["bbox"]
+    assert (bx1 - bx0) < 2000 and (by1 - by0) < 2000, "bbox should track the dense cluster, not the outlier"
     xs = [c for e in r["entities"] for c in (e["p"][0], e["p"][2])]
     assert max(xs) > 4_000_000, "the outlier's own coordinates are untouched"
+
+
+def test_dense_cluster_keeps_small_local_coordinates_despite_a_distant_minority():
+    # The bbox/fit fix above isn't enough on its own: a corner-anchored origin
+    # still leaves the DENSE cluster's own local coordinates in the millions
+    # whenever a smaller, more extreme minority sits at one edge — and a
+    # canvas's transform pipeline (commonly single-precision internally) can
+    # silently fail to paint geometry at that magnitude even though it parses
+    # and the view is aimed at the right place. The origin must anchor to the
+    # dense cluster (median), not to whichever corner is numerically lowest.
+    doc = _foreign()
+    msp = doc.modelspace()
+    random.seed(1)
+    for _ in range(200):   # the dense cluster: most of the drawing
+        x, y = random.uniform(2_000_000, 2_001_000), random.uniform(0, 1000)
+        msp.add_line((x, y), (x + 1, y))
+    for _ in range(20):    # a smaller, separate cluster far to one side
+        x, y = random.uniform(0, 1000), random.uniform(0, 1000)
+        msp.add_line((x, y), (x + 1, y))
+    r = parse_dxf(_bytes(doc))
+    xs = [c for e in r["entities"] for c in (e["p"][0], e["p"][2])]
+    xs.sort()
+    median_local_x = xs[len(xs) // 2]
+    assert abs(median_local_x) < 2000, "the dense cluster (median) must land near local zero"
 
 
 def test_small_file_is_never_trimmed():
