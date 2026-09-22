@@ -315,6 +315,13 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Plan Markup: trenches, power skirting and fibre duct enabled for the Building domain (2026-09-22)
+*(PR2 of the AutoCAD-LISP-interop build-out, following PR1's tag-fix/new-element-type work — see that entry for the initiative's context.)*
+- **Trenches and road crossings un-hidden for the Building domain** (`plan-defs.js` `paletteGroups()`) — the LISP toolkit routinely uses trenching for building-electrical civil work, but ProtectionPro's Plan Markup previously reserved the "Trenches" and "Road Crossing" palette groups for the Reticulation domain only. Retic behaviour is unchanged (regression-checked: still exactly 4 trench types offered there).
+- **Two new Building routes**: `power_skirting` (dado/skirting trunking) and `fibre_duct` (physical duct containment, kept separate from the `data_cable` route — the cable riding inside it — matching how the LISP toolkit models the two independently). Both added to the "Cable Containment" discipline layer alongside `conduit`/`cable_tray`, which also now carries the newly-enabled building trench types and road crossings.
+- No `plan-tools.js`/`plan-engine.js` changes needed — route placement and rendering are fully generic over the `PLAN_DEFS.routes` registry. Verified headlessly: palette groups, route defs, and discipline-layer wiring all correct, zero console errors. Cache-bust `3.5.130 → 3.5.131`.
+- Still to come (PR3–4): rename Plan Markup's DXF layer/block/attribute-tag convention to match the AutoCAD LISP toolkit's names; a "Generate SLD from Schedule" function for distribution boards.
+
 ### Plan Markup: DXF tag-import bugs fixed, 9 new Building element types added (2026-09-22)
 *(PR1 of an AutoCAD-LISP-interop build-out, from an ad-hoc audit comparing the user's own AutoCAD electrical LISP toolkit against Plan Markup's DXF import. Full plan: 4-PR sequence — this is PR1 of 4.)*
 - **6 confirmed tag-drop bugs fixed** in `plan-dxf-manager.js`'s `_TAG_RULES`/`_fieldTargets()`: `DBFED` now resolves to the board-name target, `LOAD_W` to `load_va`, and three tags that had no target at all now do — `PHASE` maps to the existing tap-phase field (`tapPhase`, reusing the circuit-tag editor's own R/W/B picker rather than inventing new UI), `ZONE` and `HEIGHT` map to new fields added to the relevant element types.

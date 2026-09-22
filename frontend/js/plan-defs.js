@@ -212,6 +212,10 @@ const PLAN_DEFS = {
     fire_cable: { name: 'Fire Cable', domain: 'building', color: '#dc2626', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'FIRE', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     dali_bus: { name: 'DALI Bus', domain: 'building', color: '#db2777', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'CONTROL', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['control'] }] },
     ground_conductor: { name: 'Earth Conductor', domain: 'building', color: '#65a30d', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'GROUNDING', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    // Power skirting / dado trunking, and fibre duct containment — separate
+    // from the data_cable route, which is the cable riding inside the duct.
+    power_skirting: { name: 'Power Skirting', domain: 'building', color: '#78716c', width: 2.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'E-POWER-SKIRTING', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    fibre_duct: { name: 'Fibre Duct', domain: 'building', color: '#a855f7', width: 3, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'E-FIBRE-DUCT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
   },
 
   // Trench excavation bands (open polyline drawn as a band of real width).
@@ -290,7 +294,7 @@ const PLAN_DEFS = {
       if (def.domain !== domain) continue;
       push('Routes', { type, kind: 'route', name: def.name, color: def.color });
     }
-    if (domain === 'retic') {
+    if (domain === 'retic' || domain === 'building') {
       for (const [type, def] of Object.entries(this.trenchTypes)) {
         push('Trenches', { type, kind: 'trench', name: def.name, color: def.color });
       }
@@ -378,8 +382,8 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'b_containment', name: 'Cable Containment', discipline: 'building', color: '#475569',
-    visibleElementTypes: ['bd_riser', 'bd_jb'], routeTypes: ['conduit', 'cable_tray'],
-    trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
+    visibleElementTypes: ['bd_riser', 'bd_jb'], routeTypes: ['conduit', 'cable_tray', 'power_skirting', 'fibre_duct'],
+    trenchTypes: ['MV', 'LV/SL', 'MV/LV/SL', 'FI'], showCrossings: true, drawingNo: '', revision: '',
   },
   {
     id: 'b_elv', name: 'ELV & Fire', discipline: 'building', color: '#7c3aed',
