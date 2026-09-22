@@ -51,6 +51,8 @@ const Schedules = {
         <span class="sch-sep"></span>
         <button class="btn-small btn-primary" id="sch-run-check"
           title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop Zs">Check circuits</button>
+        <button class="btn-small" id="sch-generate-sld"
+          title="Build a bus + one breaker + one feeder per way for the selected board on the main SLD canvas — safe to re-run after schedule edits">Generate SLD</button>
         <span class="sch-sep"></span>
         <label title="Ambient temperature used for the IEC 60364-5-52 derating">Ambient
           <input type="number" id="sch-ambient" value="30" min="10" max="60" step="5"> °C</label>
@@ -75,6 +77,11 @@ const Schedules = {
       </div>`;
 
     ws.querySelector('#sch-run-check').addEventListener('click', () => this.runCheck(true));
+    ws.querySelector('#sch-generate-sld').addEventListener('click', () => {
+      if (!this._boardId) { if (typeof UI !== 'undefined') UI.alert('Select a board first.'); return; }
+      this._commitCurrent();
+      if (typeof SLDGen !== 'undefined') SLDGen.generateForBoard(this._boardId);
+    });
     for (const id of ['sch-ambient', 'sch-method', 'sch-grouping', 'sch-group-n']) {
       ws.querySelector('#' + id).addEventListener('change', () => {
         this._writeInstallToBoard();
