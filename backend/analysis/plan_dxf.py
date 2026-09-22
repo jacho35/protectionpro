@@ -47,8 +47,15 @@ logging.getLogger("ezdxf").addFilter(_NoFontWarning())
 
 APPID = "PROTECTIONPRO"
 META_BLOCK = "PP_META"
-# Attribute tags carried on every device blockref.
-ATTR_TAGS = ["NAME", "TYPE", "DBOARD", "CIRCUIT", "PHASE", "LOAD_VA", "CABLE"]
+# Core attribute tags carried on every device blockref. REF/TYPE/DBFED/
+# CIRCUIT/PHASE/CABLE match the AutoCAD LISP toolkit's own block-attribute
+# vocabulary directly (see CLAUDE.md's Plan Markup DXF notes); LOAD_VA is
+# ProtectionPro's own (a computed VA figure — the LISP side has no single
+# equivalent tag, it varies per block and is in raw watts, not VA). A
+# LISP-block-named element (frontend `dxfBlock`) may carry additional
+# per-field tags (WATTS/LUMENS/ZONE/HEIGHT/SIZE/CONDUCTOR/PP_VARIANT) — see
+# `blocks[name].attrTags` in the payload from plan-dxf.js.
+ATTR_TAGS = ["REF", "TYPE", "DBFED", "CIRCUIT", "PHASE", "LOAD_VA", "CABLE"]
 
 
 def _hex_to_rgb(h: str):
@@ -73,11 +80,13 @@ def _ensure_layer(doc, name: str, color_hex: str | None):
 
 
 # ── Block geometry from art-box (0..40) primitives ──
-def _build_block(doc, name: str, prims: List[dict], size_world: float, factor: float):
+def _build_block(doc, name: str, prims: List[dict], size_world: float, factor: float, attr_tags: List[str] | None = None):
     """Create a block whose geometry (in metres) matches the on-screen glyph.
 
     Art box is 0..40 centred on (20,20); a glyph spans `size_world` px, so one
     art unit = size_world/40 px = size_world/40*factor metres. Y is flipped.
+    `attr_tags` (default ATTR_TAGS) is this block's own attribute-definition
+    list — a LISP-named block carries extra per-field tags beyond the core set.
     """
     blk = doc.blocks.new(name=name)
     s = (size_world / 40.0) * factor  # metres per art unit
@@ -112,7 +121,7 @@ def _build_block(doc, name: str, prims: List[dict], size_world: float, factor: f
 
     # Attribute definitions (filled per-INSERT). Stacked below the glyph.
     yoff = -(size_world * 0.5 * factor) - 0.001
-    for i, tag in enumerate(ATTR_TAGS):
+    for i, tag in enumerate(attr_tags or ATTR_TAGS):
         ad = blk.add_attdef(tag, dxfattribs={"height": max(0.001, size_world / 40.0 * factor * 3),
                                              "invisible": 1})
         ad.set_placement((0, yoff - i * 0.001), align=TextEntityAlignment.MIDDLE_CENTER)
@@ -178,10 +187,13 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
     def Y(y):
         return -y * factor
 
-    # Symbol blocks (one per variant).
+    # Symbol blocks (one per variant, or one per LISP-named type).
     variants = payload.get("blocks", {})
+    block_attr_tags: Dict[str, List[str]] = {}
     for name, v in variants.items():
-        _build_block(doc, name, v.get("prims", []), v.get("sizeWorld", 24), factor)
+        tags = v.get("attrTags") or ATTR_TAGS
+        block_attr_tags[name] = tags
+        _build_block(doc, name, v.get("prims", []), v.get("sizeWorld", 24), factor, tags)
 
     # Devices → blockref + attributes.
     for el in payload.get("elements", []):
@@ -194,7 +206,8 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
             "rotation": rot,
         })
         attrs = el.get("attrs", {}) or {}
-        ref.add_auto_attribs({t: str(attrs.get(t, "")) for t in ATTR_TAGS})
+        tags = block_attr_tags.get(name, ATTR_TAGS)
+        ref.add_auto_attribs({t: str(attrs.get(t, "")) for t in tags})
 
     # Routes → SPLINE (curved) or LWPOLYLINE (straight), + a cable label.
     for r in payload.get("routes", []):
@@ -883,16 +896,20 @@ def _parse_ours(doc, factor, floor_name, domain) -> Dict[str, Any]:
     devices, routes, trenches, rooms, texts, measurements, crossings = [], [], [], [], [], [], []
     for e in msp.query("INSERT"):
         name = e.dxf.name or ""
-        if name == META_BLOCK or not name.startswith("PP_"):
+        # Round-trip mode is already gated on the PP_META block (parse_dxf);
+        # every other INSERT in one of our own files is a device — LISP-named
+        # blocks (LUMINAIRE, DB, ...) no longer carry a "PP_" prefix, so that
+        # can't gate device recognition any more.
+        if name == META_BLOCK:
             continue
         attrs = {a.dxf.tag: a.dxf.text for a in e.attribs}
         px = to_px(e.dxf.insert.x, e.dxf.insert.y)
         devices.append({
-            "type": attrs.get("TYPE") or name[3:],
+            "type": attrs.get("TYPE") or (name[3:] if name.startswith("PP_") else name),
             "block": name,
             "x": px[0], "y": px[1],
             "rotation": (-float(e.dxf.rotation)) % 360,
-            "name": attrs.get("NAME", ""),
+            "name": attrs.get("REF") or attrs.get("NAME", ""),
             "attrs": attrs,
         })
     for e in msp:

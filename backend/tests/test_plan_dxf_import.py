@@ -366,9 +366,9 @@ def _payload(domain):
                   "PP_erf": {"sizeWorld": 24, "prims": [{"k": "c", "cx": 20, "cy": 20, "r": 8, "s": "col"}]}}
         elements = [
             {"block": "PP_kiosk", "type": "kiosk", "x": 100, "y": 50, "rotation": 90, "layer": "EL_PLANT",
-             "attrs": {"NAME": "K1", "TYPE": "kiosk"}},
+             "attrs": {"REF": "K1", "TYPE": "kiosk"}},
             {"block": "PP_erf", "type": "erf", "x": 300, "y": 50, "rotation": 0, "layer": "EL_CONSUMERS",
-             "attrs": {"NAME": "1234", "TYPE": "erf"}},
+             "attrs": {"REF": "1234", "TYPE": "erf"}},
         ]
         routes = [{"layer": "RT_SERVICE", "type": "service", "curved": True, "cable": "16mm² 2c Al",
                    "fromName": "K1", "toName": "1234", "label": "x", "pts": [[100, 50], [200, 80], [300, 50]]}]
@@ -378,7 +378,7 @@ def _payload(domain):
     else:
         blocks = {"PP_bd_db": {"sizeWorld": 24, "prims": [{"k": "r", "x": 8, "y": 8, "w": 24, "h": 24, "s": "col"}]}}
         elements = [{"block": "PP_bd_db", "type": "bd_db", "x": 10, "y": 10, "rotation": 0, "layer": "EL_POWER",
-                     "attrs": {"NAME": "DB1", "TYPE": "bd_db"}}]
+                     "attrs": {"REF": "DB1", "TYPE": "bd_db"}}]
         routes = [{"layer": "RT_CIRCUIT", "type": "circuit", "curved": False, "cable": "2.5mm² T+E",
                    "label": "x", "pts": [[10, 10], [50, 10]]}]
         trenches, crossings = [], []
@@ -421,6 +421,61 @@ def test_legacy_roundtrip_without_domain_infers_it():
     p.pop("domain")
     r = parse_dxf(build_dxf(p))
     assert r["domain"] == "building"
+
+
+def test_roundtrip_lisp_named_block_carries_extra_field_tags_and_variant():
+    """A Building element with a LISP block-name counterpart (dxfBlock, e.g.
+    bd_light -> LUMINAIRE) sends per-field tags (WATTS/LUMENS/...) and a
+    PP_VARIANT tag beyond the core set — the backend must build ATTDEFs for
+    exactly the block's own `attrTags` list and read them all back."""
+    blocks = {"LUMINAIRE": {"sizeWorld": 24, "attrTags": ["REF", "TYPE", "DBFED", "CIRCUIT", "PHASE",
+                                                            "LOAD_VA", "CABLE", "WATTS", "LUMENS", "PP_VARIANT"],
+                             "prims": [{"k": "c", "cx": 20, "cy": 20, "r": 8, "s": "col"}]}}
+    elements = [{"block": "LUMINAIRE", "type": "bd_light", "x": 10, "y": 10, "rotation": 0, "layer": "E-LIGHTING",
+                 "attrs": {"REF": "L1", "TYPE": "bd_light", "WATTS": "36", "LUMENS": "3200", "PP_VARIANT": "downlight"}}]
+    payload = {"factor": 0.05, "floorName": "Ground", "domain": "building", "layers": [], "blocks": blocks,
+               "elements": elements, "routes": [], "trenches": [], "rooms": [], "measurements": [], "crossings": [], "texts": []}
+    r = parse_dxf(build_dxf(payload))
+    (d,) = r["devices"]
+    assert d["type"] == "bd_light" and d["name"] == "L1" and d["block"] == "LUMINAIRE"
+    assert d["attrs"]["WATTS"] == "36" and d["attrs"]["LUMENS"] == "3200" and d["attrs"]["PP_VARIANT"] == "downlight"
+
+
+def test_roundtrip_accepts_lisp_block_names_without_pp_prefix():
+    """Device recognition no longer gates on a 'PP_' block-name prefix — a
+    LISP-named block (no prefix at all) must still round-trip as a device."""
+    blocks = {"DB": {"sizeWorld": 24, "prims": [{"k": "r", "x": 8, "y": 8, "w": 24, "h": 24, "s": "col"}]}}
+    elements = [{"block": "DB", "type": "bd_db", "x": 10, "y": 10, "rotation": 0, "layer": "E-DB",
+                 "attrs": {"REF": "DB2", "TYPE": "bd_db"}}]
+    payload = {"factor": 0.05, "floorName": "Ground", "domain": "building", "layers": [], "blocks": blocks,
+               "elements": elements, "routes": [], "trenches": [], "rooms": [], "measurements": [], "crossings": [], "texts": []}
+    r = parse_dxf(build_dxf(payload))
+    (d,) = r["devices"]
+    assert d["type"] == "bd_db" and d["name"] == "DB2" and d["block"] == "DB"
+
+
+def test_legacy_name_attribute_still_read_as_device_name():
+    """Backward compatibility: a file exported before the REF rename (a
+    NAME-only ATTDEF, no REF) still resolves its device name on re-import —
+    hand-built at the ezdxf level since build_dxf() only ever writes REF now."""
+    import backend.analysis.plan_dxf as pdx
+    doc = ezdxf.new("R2000", setup=True)
+    msp = doc.modelspace()
+    blk = doc.blocks.new("PP_bd_db")
+    blk.add_attdef("NAME", dxfattribs={"height": 0.1})
+    blk.add_attdef("TYPE", dxfattribs={"height": 0.1})
+    ref = msp.add_blockref("PP_bd_db", (0, 0))
+    ref.add_auto_attribs({"NAME": "DB1", "TYPE": "bd_db"})
+    mb = doc.blocks.new(pdx.META_BLOCK)
+    mb.add_attdef("FACTOR", dxfattribs={"height": 0.001})
+    mb.add_attdef("FLOOR", dxfattribs={"height": 0.001})
+    mb.add_attdef("DOMAIN", dxfattribs={"height": 0.001})
+    mref = msp.add_blockref(pdx.META_BLOCK, (0, 0))
+    mref.add_auto_attribs({"FACTOR": "0.05", "FLOOR": "Ground", "DOMAIN": "building"})
+    r = parse_dxf(_bytes(doc))
+    assert r["mode"] == "roundtrip"
+    (d,) = r["devices"]
+    assert d["name"] == "DB1" and d["type"] == "bd_db"
 
 
 def test_export_is_audit_clean():

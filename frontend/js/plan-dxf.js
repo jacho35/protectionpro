@@ -8,6 +8,13 @@
  * it, and downloads the returned file.
  */
 
+// Core ATTRIB/XDATA tags carried on every device blockref — the AutoCAD LISP
+// toolkit's own vocabulary (REF/TYPE/DBFED/CIRCUIT/PHASE/CABLE all match its
+// block attribute names directly; LOAD_VA is ours — the LISP side keys its
+// equivalent per block as WATTS/LOAD_W/LOAD_KW/LOAD_EST, so there's no single
+// tag name to adopt). Must match backend `ATTR_TAGS` (plan_dxf.py) exactly.
+const PLAN_DXF_CORE_ATTRS = ['REF', 'TYPE', 'DBFED', 'CIRCUIT', 'PHASE', 'LOAD_VA', 'CABLE'];
+
 const PlanDXF = {
   _factor() { const s = AppState.planMarkup.scale; return (s && s.factor) ? s.factor : null; },
 
@@ -22,7 +29,32 @@ const PlanDXF = {
       default: return '';
     }
   },
-  _blockName(el) { const v = this._variantKey(el); return 'PP_' + el.type + (v ? '_' + v : ''); },
+  // A type with a `dxfBlock` uses the LISP toolkit's own fixed block name
+  // (one shared symbol for every variant, matching how the LISP toolkit
+  // itself has no visual permutation for e.g. LUMINAIRE) — the variant
+  // (kind/outlets/gangs) instead round-trips via the PP_VARIANT tag. A type
+  // with no LISP counterpart keeps the old PP_<type>_<variant> scheme, one
+  // block definition per variant, so its glyph stays variant-accurate.
+  _blockName(el) {
+    const def = PLAN_DEFS.element(el.type) || {};
+    if (def.dxfBlock) return def.dxfBlock;
+    const v = this._variantKey(el);
+    return 'PP_' + el.type + (v ? '_' + v : '');
+  },
+  // Extra ATTRIB tags a block needs beyond the core set: LISP-named tags for
+  // any declared field with a PLAN_DXF_FIELD_TAGS entry, plus PP_VARIANT for
+  // the parametric families (own round-trip fidelity only).
+  _extraAttrTags(type) {
+    const def = PLAN_DEFS.element(type);
+    if (!def || !def.dxfBlock) return [];
+    const tags = [];
+    for (const f of (def.fields || [])) {
+      const t = PLAN_DXF_FIELD_TAGS[f.key];
+      if (t && !tags.includes(t)) tags.push(t);
+    }
+    if (['bd_light', 'bd_socket', 'bd_switch', 'bd_switchboard'].includes(type)) tags.push('PP_VARIANT');
+    return tags;
+  },
 
   _routeLenM(r, f) {
     let px = 0;
@@ -39,33 +71,43 @@ const PlanDXF = {
     const layers = {};
     const layer = (name, color) => { if (name && !layers[name]) layers[name] = color || '#333333'; return name; };
 
-    // Symbol blocks (one per variant) + device instances with attributes.
+    // Symbol blocks (one per variant, or one per type when it has a fixed
+    // LISP block name) + device instances with attributes.
     const blocks = {}, elements = [];
     for (const el of pm.elements) {
       const def = PLAN_DEFS.element(el.type) || {};
       const name = this._blockName(el);
       if (!blocks[name]) {
-        let prims = (typeof PlanSymbols !== 'undefined' && PlanSymbols.prims) ? PlanSymbols.prims(el.type, el.props) : null;
+        // A LISP-named block is one shared symbol for every variant — glyph
+        // from the type's OWN defaults, not whichever instance is placed
+        // first, so the block definition is deterministic.
+        const glyphProps = def.dxfBlock ? PLAN_DEFS.defaults(el.type) : el.props;
+        let prims = (typeof PlanSymbols !== 'undefined' && PlanSymbols.prims) ? PlanSymbols.prims(el.type, glyphProps) : null;
         if (!prims || !prims.length) prims = [{ k: 'r', x: 8, y: 8, w: 24, h: 24, s: 'col' }];
-        const sizeWorld = (typeof PlanSymbols !== 'undefined' && PlanSymbols.size) ? PlanSymbols.size(el.type, el.props) : (def.dxf ? def.dxf.sizeM * 20 : 24);
-        blocks[name] = { sizeWorld, prims };
+        const sizeWorld = (typeof PlanSymbols !== 'undefined' && PlanSymbols.size) ? PlanSymbols.size(el.type, glyphProps) : (def.dxf ? def.dxf.sizeM * 20 : 24);
+        const attrTags = PLAN_DXF_CORE_ATTRS.concat(this._extraAttrTags(el.type));
+        blocks[name] = { sizeWorld, prims, attrTags };
       }
-      const grp = (def.group || 'MISC').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
-      const lname = layer('EL_' + grp, def.color);
-      const load = (typeof PlanCircuits !== 'undefined' && PlanCircuits.isCircuitDevice && PlanCircuits.isCircuitDevice(el.type))
-        ? PlanCircuits.deviceVA(el) : '';
+      const lname = layer(def.dxfLayer || ('EL_' + (def.group || 'MISC').toUpperCase().replace(/[^A-Z0-9]+/g, '_')), def.color);
+      const isCircuit = typeof PlanCircuits !== 'undefined' && PlanCircuits.isCircuitDevice && PlanCircuits.isCircuitDevice(el.type);
+      const load = isCircuit ? PlanCircuits.deviceVA(el) : '';
       const p = el.props || {};
-      elements.push({
-        block: name, type: el.type, x: el.x, y: el.y, rotation: el.rotation || 0, layer: lname,
-        attrs: {
-          NAME: el.name || '', TYPE: el.type,
-          DBOARD: p.circuitDbId ? boardName(p.circuitDbId) : '',
-          CIRCUIT: (p.circuitNo != null ? p.circuitNo : ''),
-          PHASE: PlanCircuits && PlanCircuits.isCircuitDevice && PlanCircuits.isCircuitDevice(el.type) ? (p.poles === '3P' ? '3P' : '1P') : '',
-          LOAD_VA: load === '' ? '' : String(load),
-          CABLE: p.cableType || '',
-        },
-      });
+      const attrs = {
+        REF: el.name || '', TYPE: el.type,
+        DBFED: p.circuitDbId ? boardName(p.circuitDbId) : '',
+        CIRCUIT: (p.circuitNo != null ? p.circuitNo : ''),
+        PHASE: isCircuit ? (p.poles === '3P' ? '3P' : '1P') : '',
+        LOAD_VA: load === '' ? '' : String(load),
+        CABLE: p.cableType || '',
+      };
+      for (const f of (def.fields || [])) {
+        const tag = PLAN_DXF_FIELD_TAGS[f.key];
+        if (tag && p[f.key] != null && p[f.key] !== '') attrs[tag] = String(p[f.key]);
+      }
+      if (def.dxfBlock && ['bd_light', 'bd_socket', 'bd_switch', 'bd_switchboard'].includes(el.type)) {
+        attrs.PP_VARIANT = this._variantKey(el);
+      }
+      elements.push({ block: name, type: el.type, x: el.x, y: el.y, rotation: el.rotation || 0, layer: lname, attrs });
     }
 
     // Routes (curved flag preserved) + cable/length label.
@@ -73,7 +115,7 @@ const PlanDXF = {
     for (const r of pm.routes) {
       if (!r.points || r.points.length < 2) continue;
       const rdef = PLAN_DEFS.route(r.type) || {};
-      const lname = layer('RT_' + String(r.type).toUpperCase(), rdef.color || '#3b82f6');
+      const lname = layer(rdef.dxfLayer || ('RT_' + String(r.type).toUpperCase()), rdef.color || '#3b82f6');
       const lenM = this._routeLenM(r, factor);
       // type/cable/end names travel as XDATA so a re-import rebuilds the
       // route exactly (the layer alone can't carry a mixed-case type key).

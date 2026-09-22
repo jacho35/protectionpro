@@ -164,16 +164,35 @@ const PlanDxfImport = {
   },
 
   // Restore variant + electrical props from the device's block name + attrs.
+  // A LISP-named block (def.dxfBlock) carries its variant in the PP_VARIANT
+  // tag instead of a block-name suffix (see plan-dxf.js); legacy files
+  // (pre-rename, or no XDATA at all) fall back to the old suffix parse.
   _propsFor(d) {
     const props = {};
-    const type = d.type, v = (d.block && d.block.indexOf('PP_' + type + '_') === 0) ? d.block.slice(('PP_' + type + '_').length) : '';
+    const type = d.type;
+    const a = d.attrs || {};
+    const def = PLAN_DEFS.element(type);
+    const v = a.PP_VARIANT || ((d.block && d.block.indexOf('PP_' + type + '_') === 0) ? d.block.slice(('PP_' + type + '_').length) : '');
     if (type === 'bd_light') props.kind = v || 'ceiling';
     else if (type === 'bd_socket') { const m = /^(double_usb|double|single)(wp)?$/.exec(v); if (m) { props.outlets = m[1]; if (m[2]) props.weatherproof = true; } }
     else if (type === 'bd_switch') { const m = /^(.+)g(\d)$/.exec(v); if (m) { props.kind = m[1]; props.gangs = m[2]; } }
     else if (type === 'bd_switchboard') { const m = /^s(\d+)$/.exec(v); if (m) props.sections = +m[1]; }
-    const a = d.attrs || {};
     if (a.CIRCUIT) props.circuitNo = a.CIRCUIT;
     if (a.PHASE) props.poles = (a.PHASE === '3P') ? '3P' : '1P';
+    if (a.CABLE) props.cableType = a.CABLE;
+    const dboard = a.DBFED || a.DBOARD;   // DBFED is current; DBOARD is the pre-rename tag name
+    if (dboard) props._dboard = dboard;   // transient; relinked to circuitDbId
+    // Per-type fields with a LISP tag (WATTS/LUMENS/ZONE/HEIGHT/SIZE/CONDUCTOR)
+    // — resolved before the LOAD_VA auto-vs-override check below, since a
+    // light's auto VA is derived from its OWN watts value.
+    if (def && def.dxfBlock) {
+      for (const f of (def.fields || [])) {
+        const tag = PLAN_DXF_FIELD_TAGS[f.key];
+        if (tag && a[tag] != null && a[tag] !== '') {
+          props[f.key] = (f.type === 'number') ? Number(a[tag]) : a[tag];
+        }
+      }
+    }
     // EE-12: the export writes every device's EFFECTIVE VA to LOAD_VA. Storing
     // it verbatim pins a 20 W light at 20 VA forever; only keep it as an
     // explicit override when it actually differs from the recomputed auto VA.
@@ -183,8 +202,6 @@ const PlanDxfImport = {
         ? PlanCircuits.deviceVA({ type, props: { ...props } }) : NaN;
       if (!(Number.isFinite(lv) && lv === auto)) props.load_va = a.LOAD_VA;
     }
-    if (a.CABLE) props.cableType = a.CABLE;
-    if (a.DBOARD) props._dboard = a.DBOARD;   // transient; relinked to circuitDbId
     return props;
   },
 

@@ -17,6 +17,23 @@ const PLAN_DOMAINS = [
   { id: 'building', name: 'Building Distribution' },
 ];
 
+// Element-field key → AutoCAD LISP ATTRIB tag name. Applied generically by
+// the DXF exporter/importer to any element whose type has a `dxfBlock` (a
+// direct LISP block counterpart), on top of the core REF/TYPE/DBFED/CIRCUIT/
+// PHASE/LOAD_VA/CABLE attribute set every device carries. A field with no
+// entry here (kind/outlets/gangs/weatherproof — LISP has no attribute
+// equivalent for these) isn't written as a LISP-style tag; ProtectionPro's
+// own round-trip instead recovers them from a `PP_VARIANT` tag (see
+// plan-dxf.js), which a plain AutoCAD/LISP reader simply ignores.
+const PLAN_DXF_FIELD_TAGS = {
+  watts: 'WATTS',
+  lumens: 'LUMENS',
+  zone: 'ZONE',
+  height: 'HEIGHT',
+  size: 'SIZE',
+  conductor: 'CONDUCTOR',
+};
+
 /* Cables for every route come from the one cable library (STANDARD_CABLES,
  * Settings › Cables) via CableLib. A route's cable_select field names which
  * kinds it offers: `voltage` 'lv' | 'mv' (reticulation: armoured distribution
@@ -81,8 +98,8 @@ const PLAN_DEFS = {
     bd_utility: { name: 'Utility Intake', domain: 'building', group: 'Power', color: '#ef4444', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.8 }, rotatable: true, schedule: null, namePrefix: 'UT', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_transformer: { name: 'Transformer', domain: 'building', group: 'Power', color: '#f59e0b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 1.2 }, rotatable: true, schedule: null, namePrefix: 'TX', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     bd_generator: { name: 'Generator', domain: 'building', group: 'Power', color: '#22c55e', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 1.0 }, rotatable: true, schedule: null, namePrefix: 'GEN', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
-    bd_db: { name: 'Distribution Board', domain: 'building', group: 'Power', color: '#8b5cf6', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.7 }, rotatable: true, schedule: null, namePrefix: 'DB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
-    bd_riser: { name: 'Riser', domain: 'building', group: 'Power', color: '#6366f1', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.4 }, rotatable: false, schedule: null, namePrefix: 'RS', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
+    bd_db: { name: 'Distribution Board', domain: 'building', group: 'Power', color: '#8b5cf6', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.7 }, rotatable: true, schedule: null, namePrefix: 'DB', dxfBlock: 'DB', dxfLayer: 'E-DB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
+    bd_riser: { name: 'Riser', domain: 'building', group: 'Power', color: '#6366f1', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.4 }, rotatable: false, schedule: null, namePrefix: 'RS', dxfBlock: 'RISER', dxfLayer: 'E-DB', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
     // Switchboard = an SLD bus (+ its CBs/fuses, possibly multi-section joined
     // by a coupler/bus-duct) grouped as one board. Adopt-only (created by
     // picking a bus in "From SLD"), so it's not offered in the palette.
@@ -92,6 +109,7 @@ const PLAN_DEFS = {
     bd_light: {
       name: 'Light Fitting', domain: 'building', group: 'Lighting', color: '#d29922', scale: 1,
       symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'L',
+      dxfBlock: 'LUMINAIRE', dxfLayer: 'E-LIGHTING',
       defaults: { kind: 'ceiling', watts: 20 },
       fields: [
         { key: 'name', label: 'Ref', type: 'text' },
@@ -110,6 +128,7 @@ const PLAN_DEFS = {
     bd_socket: {
       name: 'Socket Outlet', domain: 'building', group: 'Small Power', color: '#3b82f6', scale: 1,
       symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'S',
+      dxfBlock: 'SOCKET', dxfLayer: 'E-SOCKET',
       defaults: { outlets: 'single', weatherproof: false },
       fields: [
         { key: 'name', label: 'Ref', type: 'text' },
@@ -119,12 +138,13 @@ const PLAN_DEFS = {
         { key: 'weatherproof', label: 'Weatherproof', type: 'checkbox' },
       ],
     },
-    bd_isolator: { name: 'Isolator', domain: 'building', group: 'Small Power', color: '#0ea5e9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'IS', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    bd_isolator: { name: 'Isolator', domain: 'building', group: 'Small Power', color: '#0ea5e9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'IS', dxfBlock: 'ISOLATOR', dxfLayer: 'E-ISOLATOR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_fcu: { name: 'Fused Spur (FCU)', domain: 'building', group: 'Small Power', color: '#06b6d4', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'FCU', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // Switches — one dynamic-block family; `gangs` + `kind` render the permutation.
     bd_switch: {
       name: 'Switch', domain: 'building', group: 'Switches', color: '#10b981', scale: 1,
       symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SW',
+      dxfBlock: 'SWITCH', dxfLayer: 'E-SWITCH',
       defaults: { gangs: '1', kind: 'standard' },
       fields: [
         { key: 'name', label: 'Ref', type: 'text' },
@@ -143,26 +163,26 @@ const PLAN_DEFS = {
     // (mirrors AutoCAD LISP's OUTLETPOINT), used where a socket/switch symbol
     // doesn't fit (e.g. a floor box or an isolator-style connection point that
     // still needs to participate in a circuit).
-    bd_outlet: { name: 'Outlet Point', domain: 'building', group: 'Small Power', color: '#0284c7', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'OP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    bd_outlet: { name: 'Outlet Point', domain: 'building', group: 'Small Power', color: '#0284c7', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'OP', dxfBlock: 'OUTLETPOINT', dxfLayer: 'E-OUTLET', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // ELV / fire / security
-    bd_smoke: { name: 'Smoke Detector', domain: 'building', group: 'ELV & Fire', color: '#dc2626', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_heat: { name: 'Heat Detector', domain: 'building', group: 'ELV & Fire', color: '#b91c1c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'HD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_firecombo: { name: 'Smoke/Heat Combo Detector', domain: 'building', group: 'ELV & Fire', color: '#c2410c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SHD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_firedetector: { name: 'Fire Detector (generic)', domain: 'building', group: 'ELV & Fire', color: '#ea580c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'FD', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_smoke: { name: 'Smoke Detector', domain: 'building', group: 'ELV & Fire', color: '#dc2626', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SD', dxfBlock: 'SMOKE-DETECTOR', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_heat: { name: 'Heat Detector', domain: 'building', group: 'ELV & Fire', color: '#b91c1c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'HD', dxfBlock: 'HEAT-DETECTOR', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_firecombo: { name: 'Smoke/Heat Combo Detector', domain: 'building', group: 'ELV & Fire', color: '#c2410c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'SHD', dxfBlock: 'SMOKE-HEAT-DETECTOR', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_firedetector: { name: 'Fire Detector (generic)', domain: 'building', group: 'ELV & Fire', color: '#ea580c', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'FD', dxfBlock: 'FIRE-DETECTOR', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_call: { name: 'Call Point', domain: 'building', group: 'ELV & Fire', color: '#991b1b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'CP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_strobe: { name: 'Strobe', domain: 'building', group: 'ELV & Fire', color: '#f97316', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'STR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_sounder: { name: 'Sounder', domain: 'building', group: 'ELV & Fire', color: '#fb923c', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SND', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_soundersstrobe: { name: 'Sounder/Strobe', domain: 'building', group: 'ELV & Fire', color: '#f59e0b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SS', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_nvr: { name: 'NVR', domain: 'building', group: 'ELV & Fire', color: '#6d28d9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'NVR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_strobe: { name: 'Strobe', domain: 'building', group: 'ELV & Fire', color: '#f97316', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'STR', dxfBlock: 'STROBE', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_sounder: { name: 'Sounder', domain: 'building', group: 'ELV & Fire', color: '#fb923c', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SND', dxfBlock: 'SOUNDER', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_soundersstrobe: { name: 'Sounder/Strobe', domain: 'building', group: 'ELV & Fire', color: '#f59e0b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SS', dxfBlock: 'SOUNDER-STROBE', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', dxfBlock: 'CCTV', dxfLayer: 'E-CCTV', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_nvr: { name: 'NVR', domain: 'building', group: 'ELV & Fire', color: '#6d28d9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'NVR', dxfBlock: 'NVR', dxfLayer: 'E-CCTV', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_datapoint: { name: 'Data Outlet', domain: 'building', group: 'ELV & Fire', color: '#0891b2', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_wap: { name: 'Wireless AP', domain: 'building', group: 'ELV & Fire', color: '#0e7490', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'AP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // Control
     bd_sensor: { name: 'Occupancy Sensor', domain: 'building', group: 'Control', color: '#e11d48', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'PIR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_dali: { name: 'DALI Controller', domain: 'building', group: 'Control', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'DAL', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // Earthing
-    bd_groundbar: { name: 'Earth Bar', domain: 'building', group: 'Earthing', color: '#65a30d', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'EB', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'size', label: 'Size', type: 'text' }] },
-    bd_groundpoint: { name: 'Earth Point', domain: 'building', group: 'Earthing', color: '#4d7c0f', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'EP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'conductor', label: 'Conductor', type: 'text' }] },
+    bd_groundbar: { name: 'Earth Bar', domain: 'building', group: 'Earthing', color: '#65a30d', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'EB', dxfBlock: 'GROUNDBAR', dxfLayer: 'E-GROUNDING', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'size', label: 'Size', type: 'text' }] },
+    bd_groundpoint: { name: 'Earth Point', domain: 'building', group: 'Earthing', color: '#4d7c0f', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'EP', dxfBlock: 'GROUNDPOINT', dxfLayer: 'E-GROUNDING', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'conductor', label: 'Conductor', type: 'text' }] },
   },
 
   // Linear routes (polyline; endpoints may snap to elements).
@@ -203,15 +223,21 @@ const PLAN_DEFS = {
     },
     // ── building domain routes ── (cables from the one library, filtered by
     //    construction per route type — see the cable_select `uses`)
-    feeder: { name: 'Feeder', domain: 'building', color: '#ef4444', width: 2.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'POWER', schedule: null, requiresEndpoints: true, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['armoured-lv', 'single'] }] },
+    // dxfLayer values below match the AutoCAD LISP toolkit's E-* discipline
+    // layers where a direct counterpart exists (see CLAUDE.md's Plan Markup
+    // DXF notes). `circuit` deliberately keeps its own PP-style name — the
+    // LISP toolkit splits final circuits by parent device (E-LIGHTING-CIRCUIT
+    // vs E-SOCKET-CIRC vs E-ISOLATOR-CIRC) while this route type is generic
+    // across device kinds, so there is no single correct LISP-name target.
+    feeder: { name: 'Feeder', domain: 'building', color: '#ef4444', width: 2.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'E-CABLE', schedule: null, requiresEndpoints: true, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['armoured-lv', 'single'] }] },
     circuit: { name: 'Final Circuit', domain: 'building', color: '#3b82f6', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'FINAL_CIRCUITS', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['te', 'single', 'surfix', 'armoured-lv'] }] },
-    lighting_ckt: { name: 'Lighting Circuit', domain: 'building', color: '#eab308', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'LIGHTING', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['te', 'surfix', 'single'] }] },
-    conduit: { name: 'Conduit', domain: 'building', color: '#64748b', width: 2, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'CONTAINMENT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
-    cable_tray: { name: 'Cable Tray', domain: 'building', color: '#475569', width: 3, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'CONTAINMENT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    lighting_ckt: { name: 'Lighting Circuit', domain: 'building', color: '#eab308', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'E-LIGHTING-CIRCUIT', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['te', 'surfix', 'single'] }] },
+    conduit: { name: 'Conduit', domain: 'building', color: '#64748b', width: 2, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'E-CONDUIT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    cable_tray: { name: 'Cable Tray', domain: 'building', color: '#475569', width: 3, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'E-CABLETRAY', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     data_cable: { name: 'Data Cable', domain: 'building', color: '#0891b2', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'DATA', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
-    fire_cable: { name: 'Fire Cable', domain: 'building', color: '#dc2626', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'FIRE', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    fire_cable: { name: 'Fire Cable', domain: 'building', color: '#dc2626', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'E-FIRE-CABLE', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     dali_bus: { name: 'DALI Bus', domain: 'building', color: '#db2777', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'CONTROL', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['control'] }] },
-    ground_conductor: { name: 'Earth Conductor', domain: 'building', color: '#65a30d', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'GROUNDING', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    ground_conductor: { name: 'Earth Conductor', domain: 'building', color: '#65a30d', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'E-GROUNDING', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     // Power skirting / dado trunking, and fibre duct containment — separate
     // from the data_cable route, which is the cable riding inside the duct.
     power_skirting: { name: 'Power Skirting', domain: 'building', color: '#78716c', width: 2.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'E-POWER-SKIRTING', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
