@@ -825,6 +825,39 @@ class TestGrounding:
 
 
 class TestMotorStarting:
+    def test_superposition_uses_motor_off_prestart_voltage(self):
+        """The Thevenin dip check must start from the terminal voltage with
+        the starting motor OFF, not the running baseline.
+
+        1500 kW motor (η=0.95, pf=0.9, LRC 6×) at 6.6 kV behind a 0.0722 +
+        j0.7224 Ω feeder from a 99 999 MVA (effectively infinite) source.
+        Independent 2-bus constant-PQ solve (S_start = 10.53 MVA at pf 0.3,
+        V = 1 − Z·(S/V)*): V_term = 0.7781 p.u.; the source bus stays at
+        ~1.0. Before the fix the superposition started from the baseline
+        with the motor already running (0.984 p.u.), counting its load twice
+        → V_term 0.7555 and a spurious 2.27 % dip on the infinite source
+        bus (testing/case-motor-starting).
+        """
+        util = _comp("utility-1", "utility", {
+            "name": "Grid", "voltage_kv": 6.6, "fault_mva": 99999, "x_r_ratio": 10})
+        src = _comp("bus-1", "bus", {"name": "Src", "voltage_kv": 6.6})
+        feeder = _comp("cable-1", "cable", {
+            "name": "SysZ", "r_per_km": 0.0722, "x_per_km": 0.7224,
+            "length_km": 1.0, "voltage_kv": 6.6, "rated_amps": 600})
+        mbus = _comp("bus-2", "bus", {"name": "MotorBus", "voltage_kv": 6.6})
+        motor = _comp("motor_induction-1", "motor_induction", {
+            "name": "M1", "rated_kw": 1500.0, "voltage_kv": 6.6,
+            "efficiency": 0.95, "power_factor": 0.9,
+            "locked_rotor_current": 6.0, "starting_method": "dol"})
+        proj = ProjectData(
+            projectName="test", baseMVA=100.0, frequency=50,
+            components=[util, src, feeder, mbus, motor],
+            wires=[_wire("w1", "utility-1", "bus-1"), _wire("w2", "bus-1", "cable-1"),
+                   _wire("w3", "cable-1", "bus-2"), _wire("w4", "bus-2", "motor_induction-1")])
+        m = run_motor_starting(proj)["motors"][0]
+        assert m["motor_terminal_voltage_pu"] == pytest.approx(0.7781, abs=5e-4)
+        assert m["bus_dips"]["Src"] < 0.1
+
     def test_voltage_dip_magnitude(self):
         """AUDIT C4: the starting load must equal the full locked-rotor MVA.
 

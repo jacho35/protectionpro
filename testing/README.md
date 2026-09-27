@@ -1,6 +1,7 @@
 # ProtectionPro Verification — vs. standards / textbook / first-principles
 
-Cross-checks of **all twelve** ProtectionPro analysis engines against published standards (IEC 60909, 60364,
+Cross-checks of ProtectionPro's analysis engines — **31 of 39 analyses have an independent numerical reference,
+8 are pinned by consistency tests only; see [Coverage](#coverage)** — against published standards (IEC 60909, 60364,
 61660; IEEE 1584, 80), textbook worked examples (Glover load flow, Ammerman DC arc flash), published IEC/ETAP
 figures, and exact first-principles / hand calculations. The short-circuit work began from the worked examples at
 [powerprojectsindia.com](https://powerprojectsindia.com/); site survey of candidate examples:
@@ -153,10 +154,62 @@ Detail: [`case-duty-check/`](case-duty-check/results.md) · [`case-load-diversit
 - Tinghir 225/60/11 kV E3S paper — real-project case study missing branch impedances: [`reference/tinghir-e3s-paper-survey.md`](reference/tinghir-e3s-paper-survey.md).
 
 ## Coverage
-**All twelve analysis engines are now cross-checked** against published standards, textbook examples, or exact
-first-principles / hand calculations: fault (IEC 60909), cable sizing (IEC 60364), load flow (NR), arc flash
-(IEEE 1584-2002), grounding (IEEE 80), motor starting, DC load flow, DC short circuit (IEC 61660-1), equipment
-duty check, load diversity, DC arc flash (Stokes & Oppenlander), and unbalanced load flow. The two previously
-qualified items (grounding mesh voltage, DC-SC battery factors) are now **resolved** — every discrepancy-register
-modelling simplification has been implemented. The only remaining refinement is a full IEEE 13-bus abc-frame
-unbalanced comparison, which is out of scope for the simplified sequence-based engine and non-blocking.
+
+One table for every analysis the app runs (the Study Manager only orchestrates these and is not counted). The same
+list is in the in-app report (`frontend/verification.html#coverage`) — keep the two in step.
+
+**Independent reference** = the expected number was produced without the engine (published example, the standard's
+equations worked by hand, or an independent closed-form solve). **Consistency only** = tests pin behaviour
+(direction of change, limiting cases, agreement with another verified engine) but no independent number.
+
+| Analysis | Engine | Reference | Where |
+|---|---|---|---|
+| Short circuit (4 networks, 16 points) | `fault.py` | IEC 60909 — powerprojectsindia / ETAP | case-1/2/3, case-sc2 + template |
+| LV cable sizing | `cable_sizing.py` | IEC 60364 article (qualified) | case-cable-sizing-lv + template |
+| Load flow (NR) | `loadflow.py` | Glover / ESE 470 3-bus | case-loadflow-3bus + template |
+| Unbalanced load flow | `unbalanced_loadflow.py` | Balanced limit, pos-seq = NR, transform identities (no published unbalanced example) | case-unbalanced-loadflow + template |
+| Arc flash, IEEE 1584-2002 | `arcflash.py` | Standard Eq. 1–5 hand calc | case-arcflash-ieee1584 + template |
+| Arc flash, IEEE 1584-2018 | `arcflash.py` | Official IEEE validation spreadsheet (6 fixtures) | `TestArcFlash2018` |
+| Grounding | `grounding_system.py` | IEEE 80 hand calc | case-grounding-ieee80 + template |
+| Motor starting | `motor_starting.py` | Hand calc + independent 2-bus solve | case-motor-starting + template |
+| Duty check | `duty_check.py` | κ·√2·I″k / making / breaking hand calc | case-duty-check + template |
+| Load diversity | `load_diversity.py` | Demand-aggregation hand calc | case-load-diversity + template |
+| DC load flow | `dc_loadflow.py` | Exact resistive circuit | case-dc-loadflow + template |
+| DC short circuit | `dc_shortcircuit.py` | IEC 61660-1 published example | case-dc-shortcircuit + template |
+| DC arc flash | `dc_arcflash.py` | Ammerman / CED published method | case-dc-arcflash + template |
+| Transient stability | `transient_stability.py` | Equal-area CCT | `TestTransientStabilitySMIB` |
+| Voltage stability | `voltage_stability.py` | Closed-form P-V nose | `TestVoltageStabilityNose` + harness |
+| Contingency | `contingency.py` | Independent 2-bus solve | `TestContingencyWorkedExample` + harness |
+| Dynamic motor starting | `dynamic_motor_starting.py` | Chapman / IEEE 3002.7 hand calc | `TestDynamicMotorStarting`, `test_dynamic_motor_starting.py` |
+| ANSI fault duty | `fault_ansi.py` | C37.010-1979 worked examples | `TestAnsiFaultDuty` |
+| Frequency scan | `frequency_scan.py` | Closed-form resonance | harness |
+| Filter sizing | `filter_sizing.py` | Closed-form tuning | harness |
+| Reliability | `reliability.py` | Hand FMEA (IEEE 1366) | harness |
+| Hosting capacity | `hosting_capacity.py` | Exact 2-bus voltage rise | harness |
+| CT saturation model | `ct_model.py` | IEC 61869-2 knee / clip | harness |
+| Battery sizing | `battery_sizing.py` | IEEE 485 energy method | harness |
+| Capacitor placement | `capacitor_placement.py` | Closed-form loss drop (5.3 % discrete-bank residual) | harness |
+| Optimal power flow | `optimal_powerflow.py` | Merit-order dispatch + cost hand calc | harness + `TestOptimalPowerFlow` |
+| Flicker | `flicker.py` | IEC 61000-3-3 Pst curve | harness |
+| Lightning risk | `lightning_risk.py` | IEC 62305-2 Eq. A.2 / A.4, R1 hand calc | `TestLightningRisk` |
+| Raceway | `raceway.py` | NEC fill, IEC 60364-5-52 B.52.17 hand calc | `TestRaceway` |
+| Backup autonomy | `backup_autonomy.py` | Usable-energy hand calc | `TestBackupAutonomy` |
+| DB circuit check | `db_circuit_check.py` | IEC 60364-5-52 table values, VD / Zs hand calc | `test_db_circuit_check.py` |
+| *Consistency only* | | | |
+| Harmonic penetration | `harmonics.py` | Trends + IEEE 519 limit tables | `TestHarmonics` |
+| SVC / STATCOM | `loadflow.py` | Set-point hold, Q clamp, Q ∝ V² | `TestSVC` |
+| Autotransformer & OLTC | `loadflow.py` | Regulation direction, clamping, star identity | `TestAutotransformer`, `TestTransformerOLTC` |
+| Time-series load flow | `timeseries_loadflow.py` | Flat profile = single-shot LF, SoC conservation | `test_timeseries_loadflow.py` |
+| Load Flow Study Manager | `loadflow_cases.py` | Current case = direct LF | `test_loadflow_cases.py` |
+| Series & simultaneous faults | `fault.py` | Sequence identities, decoupled limits | `TestOpenConductor`, `TestTwoConductorOpen`, `TestSimultaneousFault` |
+| Wenner interpretation | `grounding_system.py` | Recovers its own forward model | `TestGrounding` (Wenner) |
+| ADMD | `admd.py` | Source-app formulas as ported | `TestADMD` |
+
+"case-… + template" rows are also in-app templates; `backend/tests/test_verification_templates.py` re-runs every
+template through its analysis route in CI and asserts the headline numbers (the single source for those numbers is
+`EXPECTED` in `build_verification_templates.py`). "harness" = `case-new-features-verification/verify_new_features.py`,
+also run in CI. The headless-app screenshots are an archived manual channel (July 2026).
+
+The two previously qualified items (grounding mesh voltage, DC-SC battery factors) are **resolved**. The only
+remaining refinement for the case set is a full IEEE 13-bus abc-frame unbalanced comparison — out of scope for the
+simplified sequence-based engine and non-blocking.

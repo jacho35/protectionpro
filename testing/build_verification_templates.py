@@ -1,7 +1,18 @@
+"""Generate frontend/js/verification-templates.js from the testing/case-*
+projects.
+
+EXPECTED is the one source for each template's headline numbers: the
+generator formats them into the template instructions, and
+backend/tests/test_verification_templates.py runs every template through its
+analysis route and asserts the engine still produces them — so a template can
+never silently show a stale "Expected …" value.
+
+Run from anywhere:  python testing/build_verification_templates.py
+"""
 import json, os
 
-BASE = "/root/protectionpro/testing"
-OUT = "/root/protectionpro/frontend/js/verification-templates.js"
+BASE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.join(os.path.dirname(BASE), "frontend", "js", "verification-templates.js")
 
 # Ordered curated metadata. Each: (case_dir, id, name, preview, description)
 CASES = [
@@ -79,24 +90,100 @@ VOLTAGE_FACTOR = {
     "ver_sc_220_33": 1.10,
 }
 
+# Headline results each template must reproduce, as {template id: (analysis
+# route, {name: (result path, expected[, rel tol])})}. Paths are dotted into
+# the route's JSON response (list indices as integers). Values are the
+# engine-verified numbers from each case's results.md; floats are checked to
+# rel 1e-3 unless a tolerance is given, anything else exactly.
+EXPECTED = {
+    "ver_sc_case1": ("fault", {"ik3": ("buses.bus-4.ik3", 12.881)}),
+    "ver_sc_case2": ("fault", {"ik3": ("buses.bus-7.ik3", 14.811)}),
+    "ver_sc_case3": ("fault", {"ik3": ("buses.bus-5.ik3", 20.949)}),
+    "ver_sc_220_33": ("fault", {"ik3": ("buses.bus-2.ik3", 2.296)}),
+    "ver_cable_lv": ("cable-sizing", {
+        "vd": ("cables.0.voltage_drop_pct", 2.08),
+        "i_load": ("cables.0.load_current_a", 167.15),
+        "size": ("cables.0.min_size_mm2", 120),
+    }),
+    "ver_lf_3bus": ("loadflow", {
+        "v2": ("buses.bus-2.voltage_pu", 1.0500),
+        "a2": ("buses.bus-2.angle_deg", -2.06, 2e-3),
+        "v3": ("buses.bus-3.voltage_pu", 0.9782),
+        "a3": ("buses.bus-3.angle_deg", -8.78, 2e-3),
+        "iters": ("iterations", 4),
+    }),
+    "ver_arcflash": ("arcflash", {
+        "e": ("buses.bus-1.incident_energy_cal", 12.82),
+        "ppe": ("buses.bus-1.ppe_category", 3),
+        "afb_mm": ("buses.bus-1.arc_flash_boundary_mm", 1927.0),
+    }),
+    "ver_grounding": ("grounding", {
+        "rg": ("buses.0.grid_resistance_ohm", 2.7526),
+        "gpr": ("buses.0.gpr_v", 5252.0),
+        "em": ("buses.0.mesh_voltage_v", 749.0),
+        "etouch": ("buses.0.tolerable_touch_v", 841.0),
+    }),
+    # Dip hand calc (independent 2-bus constant-PQ solve) is 20.92 %; the
+    # engine's 20.94 % adds the 99 999 MVA source's own impedance.
+    "ver_motor_start": ("motor-starting", {
+        "i_start": ("motors.0.start_current_a", 920.8),
+        "vt": ("motors.0.motor_terminal_voltage_pu", 0.7782),
+        "dip": ("motors.0.max_system_dip_pct", 20.92, 2e-3),
+        "starts": ("motors.0.motor_will_start", False),
+    }),
+    "ver_dc_lf": ("dc-loadflow", {
+        "v_rect": ("buses.bus-1.voltage_v", 124.46),
+        "v_load": ("buses.bus-2.voltage_v", 115.83),
+        "drop": ("buses.bus-2.drop_pct", 7.34),
+        "i_cable": ("branches.0.current_a", 86.34),
+    }),
+    "ver_dc_sc": ("dc-shortcircuit", {"ip_ka": ("buses.bus-2.ip_ka", 5.422)}),
+    "ver_duty": ("duty-check", {
+        "ik": ("devices.0.prospective_fault_ka", 20.0),
+        "icu": ("devices.0.breaking_capacity_ka", 25.0),
+        "ip": ("devices.0.peak_fault_ka", 49.38),
+        "icm": ("devices.0.making_capacity_ka", 62.5),
+        "status": ("devices.0.status", "pass"),
+    }),
+    "ver_diversity": ("load-diversity", {
+        "installed": ("buses.0.installed_kva", 255.26),
+        "ks": ("buses.0.diversity_factor", 0.85),
+        "demand": ("buses.0.diversified_demand_kva", 199.97),
+        "i_demand": ("buses.0.demand_current_a", 288.6),
+    }),
+    "ver_dc_arcflash": ("dc-arcflash", {
+        "i_arc": ("buses.bus-1.dc_arcing_current_a", 6196.3),
+        "e": ("buses.bus-1.incident_energy_cal", 10.82),
+        "afb_mm": ("buses.bus-1.arc_flash_boundary_mm", 1366.0),
+        "ppe": ("buses.bus-1.ppe_category", 3),
+    }),
+    "ver_unbalanced_lf": ("unbalanced-loadflow", {
+        "vuf": ("buses.bus-2.vuf_pct", 0.7618),
+        "va": ("buses.bus-2.va_pu", 0.96146),
+        "vb": ("buses.bus-2.vb_pu", 1.00489),
+        "vc": ("buses.bus-2.vc_pu", 0.98922),
+    }),
+}
+
 # Per-template usage instructions, shown in the app's Project Details →
 # Description text box when the template is loaded. Says which analysis to run,
 # the pre-set voltage factor, the expected headline result, and any caveat.
+# {name} fields are filled from EXPECTED — never type a result number here.
 INSTRUCTIONS = {
     "ver_sc_case1":
         "VERIFICATION TEMPLATE — IEC 60909 short circuit (source: powerprojectsindia / ETAP). "
         "Voltage factor c = 1.0 is pre-set to match the reference. "
-        "RUN: Fault analysis, fault at Bus4. Expected I″k3 ≈ 12.88 kA (ETAP 12.881, ≤0.01 %). "
+        "RUN: Fault analysis, fault at Bus4. Expected I″k3 ≈ {ik3:.2f} kA (ETAP 12.881). "
         "Full working: Help → Verification.",
     "ver_sc_case2":
         "VERIFICATION TEMPLATE — IEC 60909 short circuit with a 5 MW induction-motor contribution "
         "(source: powerprojectsindia / ETAP). Voltage factor c = 1.0 pre-set. "
-        "RUN: Fault analysis, fault at Bus7. Expected I″k3 ≈ 14.81 kA (ETAP 14.824). "
+        "RUN: Fault analysis, fault at Bus7. Expected I″k3 ≈ {ik3:.2f} kA (ETAP 14.824). "
         "Full working: Help → Verification.",
     "ver_sc_case3":
         "VERIFICATION TEMPLATE — IEC 60909 short circuit: 5 MW motor + 18 MVA lump load "
         "(source: powerprojectsindia / ETAP). Voltage factor c = 1.0 pre-set. "
-        "RUN: Fault analysis, fault at Bus5. Expected I″k3 ≈ 20.95 kA (ETAP 20.976). "
+        "RUN: Fault analysis, fault at Bus5. Expected I″k3 ≈ {ik3:.2f} kA (ETAP 20.976). "
         "NOTE: 'Lump2' is an 18 MVA LOAD modelled as a motor so it contributes to the FAULT (per IEC 60909) — "
         "it is not a real motor. Do NOT run Motor Starting on this template: starting a 15 MW 'motor' collapses "
         "the network voltage and the load flow will not converge (this is expected, not a bug). "
@@ -104,61 +191,71 @@ INSTRUCTIONS = {
     "ver_sc_220_33":
         "VERIFICATION TEMPLATE — IEC 60909 short circuit, 220/33 kV 10 MVA Dyn1 (source: powerprojectsindia / ETAP). "
         "Voltage factor c = 1.10 (the app default) pre-set to match the reference ETAP screenshots. "
-        "RUN: Fault analysis, fault at Bus2. Expected I″k3 = 2.296 kA (matches ETAP exactly). "
+        "RUN: Fault analysis, fault at Bus2. Expected I″k3 = {ik3:.3f} kA (ETAP 2.296). "
         "Full working: Help → Verification.",
     "ver_cable_lv":
         "VERIFICATION TEMPLATE — IEC 60364 LV cable sizing (source: powerprojectsindia). "
-        "RUN: Cable Sizing study. The voltage-drop and adiabatic fault-withstand formulas reproduce the article "
+        "RUN: Cable Sizing study. Expected running volt drop {vd:.2f} % at {i_load:.1f} A load-flow current, "
+        "minimum size {size} mm². The voltage-drop and adiabatic fault-withstand formulas reproduce the article "
         "exactly; the engine sizes conservatively for the IEC 60909-0 thermal-equivalent current I_th = I″k·√(m+n), "
-        "so it recommends a larger conductor than the article's bare-Isc value. Full working: Help → Verification.",
+        "so it recommends a larger conductor than the article's bare-Isc 95 mm². Full working: Help → Verification.",
     "ver_lf_3bus":
         "VERIFICATION TEMPLATE — Newton-Raphson load flow (Glover / ESE 470 3-bus example). "
-        "RUN: Load Flow (Newton-Raphson). Expected V2 = 1.050∠−2.06°, V3 = 0.978∠−8.78°, converges in 4 iterations. "
-        "Full working: Help → Verification.",
+        "Gen2's reactive limits are opened up (q_max/q_min ±9999 Mvar) because the textbook PV bus is unlimited — "
+        "it needs ~267 Mvar to hold 1.05 p.u., beyond a 250 MVA / 0.8 pf machine's capability. "
+        "RUN: Load Flow (Newton-Raphson). Expected V2 = {v2:.3f}∠{a2:.2f}°, V3 = {v3:.3f}∠{a3:.2f}°, "
+        "converges in {iters} iterations. Full working: Help → Verification.",
     "ver_arcflash":
         "VERIFICATION TEMPLATE — IEEE 1584-2002 arc flash, 480 V MCC. "
-        "RUN: Arc Flash analysis. Expected E ≈ 12.82 cal/cm², PPE Cat 3, arc-flash boundary 1.93 m. "
+        "RUN: Arc Flash analysis. Expected E ≈ {e:.2f} cal/cm², PPE Cat {ppe}, arc-flash boundary {afb_mm:.0f} mm. "
         "Clearing time is derived from the upstream protective device (engineered to 0.2 s here). "
         "Full working: Help → Verification.",
     "ver_grounding":
         "VERIFICATION TEMPLATE — IEEE 80 grounding grid (70 × 70 m, 11 × 11 conductors, 20 rods). "
-        "RUN: Grounding study. Expected grid resistance R_g = 2.75 Ω, GPR = 5252 V, mesh (touch) voltage 749 V "
-        "≤ 841 V tolerable. Full working: Help → Verification.",
+        "RUN: Grounding study. Expected grid resistance R_g = {rg:.2f} Ω, GPR = {gpr:.0f} V, mesh (touch) voltage "
+        "{em:.0f} V ≤ {etouch:.0f} V tolerable. Full working: Help → Verification.",
     "ver_motor_start":
         "VERIFICATION TEMPLATE — motor starting voltage dip: 1500 kW motor on a weak (~60 MVA) source, DOL. "
-        "RUN: Motor Starting study. Expected DOL start current 921 A, terminal voltage 0.778 p.u., max dip 20.9 %, "
-        "Will Start = NO (a deliberately weak system). Full working: Help → Verification.",
+        "RUN: Motor Starting study. Expected DOL start current {i_start:.0f} A, terminal voltage {vt:.3f} p.u., "
+        "max dip {dip:.1f} %, Will Start = NO (a deliberately weak system). Full working: Help → Verification.",
     "ver_dc_lf":
         "VERIFICATION TEMPLATE — DC load flow (exact resistive-circuit reference). "
-        "RUN: Load Flow. Expected rectifier bus 124.5 V, load bus 115.8 V (7.34 % drop), cable current 86.3 A. "
-        "Full working: Help → Verification.",
+        "RUN: Load Flow. Expected rectifier bus {v_rect:.1f} V, load bus {v_load:.1f} V ({drop:.2f} % drop), "
+        "cable current {i_cable:.1f} A. Full working: Help → Verification.",
     "ver_dc_sc":
         "VERIFICATION TEMPLATE — DC short circuit, IEC 61660-1 battery (CED E03-035 Example 1). "
-        "RUN: Fault analysis. Expected battery peak i_p = 5422 A from nameplate; converter I_k = 300 A, i_p = 315 A. "
+        "RUN: Fault analysis. Expected battery peak i_p = {ip_ka:.3f} kA at bus Brk, from nameplate "
+        "(the converter current-limit check in the case notes is a separate hand calc — no converter here). "
         "Full working: Help → Verification.",
     "ver_duty":
         "VERIFICATION TEMPLATE — equipment duty check over the verified fault engine. "
-        "RUN: Duty Check study. Expected fault 20 kA vs 25 kA breaking capacity, peak 49.38 kA ≤ 62.5 kA making "
-        "→ PASS. Full working: Help → Verification.",
+        "RUN: Duty Check study. Expected fault {ik:.0f} kA vs {icu:.0f} kA breaking capacity, peak {ip:.2f} kA "
+        "≤ {icm:.1f} kA making → PASS. Full working: Help → Verification.",
     "ver_diversity":
         "VERIFICATION TEMPLATE — load diversity / demand factors (IEC 60439). "
-        "RUN: Load Diversity study. Expected installed 255 kVA, coincidence factor Ks = 0.85, diversified demand "
-        "200 kVA, demand current 288.6 A. Full working: Help → Verification.",
+        "RUN: Load Diversity study. Expected installed {installed:.0f} kVA, coincidence factor Ks = {ks:.2f}, "
+        "diversified demand {demand:.0f} kVA, demand current {i_demand:.1f} A. Full working: Help → Verification.",
     "ver_dc_arcflash":
         "VERIFICATION TEMPLATE — DC arc flash (Stokes & Oppenländer / Ammerman-CED). "
-        "RUN: DC Arc Flash analysis. Expected arc current 6196 A, incident energy 10.82 cal/cm², boundary 1.37 m, "
-        "PPE Cat 3. The DC bolted fault is set via dc_bolted_fault_ka on the bus. Full working: Help → Verification.",
+        "RUN: DC Arc Flash analysis. Expected arc current {i_arc:.0f} A, incident energy {e:.2f} cal/cm², "
+        "boundary {afb_mm:.0f} mm, PPE Cat {ppe}. The DC bolted fault is set via dc_bolted_fault_ka on the bus. "
+        "Full working: Help → Verification.",
     "ver_unbalanced_lf":
         "VERIFICATION TEMPLATE — unbalanced load flow (symmetrical components), phase split 60/20/20. "
-        "RUN: Load Flow (unbalanced). Expected VUF 0.76 %, Va/Vb/Vc = 0.962 / 1.005 / 0.989 p.u. "
+        "RUN: Load Flow (unbalanced). Expected VUF {vuf:.2f} %, Va/Vb/Vc = {va:.3f} / {vb:.3f} / {vc:.3f} p.u. "
         "Full working: Help → Verification.",
 }
 
-meta = []
-data = {}
-for case_dir, tid, name, preview, desc in CASES:
-    path = os.path.join(BASE, case_dir, "project.json")
-    with open(path) as f:
+
+def instructions(tid):
+    """The template's instruction text with its EXPECTED values filled in."""
+    values = {name: spec[1] for name, spec in EXPECTED[tid][1].items()}
+    return INSTRUCTIONS[tid].format(**values)
+
+
+def template_project(case_dir, tid, name):
+    """The project exactly as the template embeds it."""
+    with open(os.path.join(BASE, case_dir, "project.json")) as f:
         proj = json.load(f)
     # Freeze exactly as verified: prevent the fromJSON dataVersion<2 cable
     # resistance migration from rescaling raw/hot r_per_km values.
@@ -170,33 +267,44 @@ for case_dir, tid, name, preview, desc in CASES:
     # Usage instructions shown in the app's Project Details → Description box.
     if tid in INSTRUCTIONS:
         proj.setdefault("projectDetails", {})
-        proj["projectDetails"]["description"] = INSTRUCTIONS[tid]
-    meta.append({"id": tid, "name": name, "category": "Verification / Standards",
-                 "preview": preview, "description": desc})
-    data[tid] = proj
+        proj["projectDetails"]["description"] = instructions(tid)
+    return proj
 
-lines = []
-lines.append("/* ProtectionPro — Verification example projects.")
-lines.append(" *")
-lines.append(" * Ready-to-load SLDs reproducing the standards-anchored V&V cases in")
-lines.append(" * testing/ (IEC 60909 / 60364 / 61660, IEEE 1584-2002 / 80, textbook &")
-lines.append(" * first-principles examples). Each project is embedded verbatim from its")
-lines.append(" * testing case project.json and stamped dataVersion:2 so loading it")
-lines.append(" * reproduces the verified numbers exactly (no cable-resistance migration).")
-lines.append(" *")
-lines.append(" * GENERATED — do not hand-edit. Regenerate from the testing case files.")
-lines.append(" */")
-lines.append("")
-lines.append("const VerificationTemplates = {")
-lines.append("  meta: " + json.dumps(meta, indent=2).replace("\n", "\n  ") + ",")
-lines.append("")
-lines.append("  data: " + json.dumps(data, indent=2, ensure_ascii=False).replace("\n", "\n  ") + ",")
-lines.append("};")
-lines.append("")
 
-with open(OUT, "w") as f:
-    f.write("\n".join(lines))
+def render():
+    """The full verification-templates.js source."""
+    meta = []
+    data = {}
+    for case_dir, tid, name, preview, desc in CASES:
+        meta.append({"id": tid, "name": name, "category": "Verification / Standards",
+                     "preview": preview, "description": desc})
+        data[tid] = template_project(case_dir, tid, name)
 
-print("Wrote", OUT)
-print("Cases:", len(meta))
-print("Size:", os.path.getsize(OUT), "bytes")
+    lines = []
+    lines.append("/* ProtectionPro — Verification example projects.")
+    lines.append(" *")
+    lines.append(" * Ready-to-load SLDs reproducing the standards-anchored V&V cases in")
+    lines.append(" * testing/ (IEC 60909 / 60364 / 61660, IEEE 1584-2002 / 80, textbook &")
+    lines.append(" * first-principles examples). Each project is embedded verbatim from its")
+    lines.append(" * testing case project.json and stamped dataVersion:2 so loading it")
+    lines.append(" * reproduces the verified numbers exactly (no cable-resistance migration).")
+    lines.append(" *")
+    lines.append(" * GENERATED — do not hand-edit. Regenerate with")
+    lines.append(" * `python testing/build_verification_templates.py`.")
+    lines.append(" */")
+    lines.append("")
+    lines.append("const VerificationTemplates = {")
+    lines.append("  meta: " + json.dumps(meta, indent=2).replace("\n", "\n  ") + ",")
+    lines.append("")
+    lines.append("  data: " + json.dumps(data, indent=2, ensure_ascii=False).replace("\n", "\n  ") + ",")
+    lines.append("};")
+    lines.append("")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    with open(OUT, "w") as f:
+        f.write(render())
+    print("Wrote", OUT)
+    print("Cases:", len(CASES))
+    print("Size:", os.path.getsize(OUT), "bytes")

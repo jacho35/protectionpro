@@ -39,6 +39,14 @@ The engine substitutes the starting motor as a constant-PQ load (S_start at 0.3 
 | Max voltage dip (vs baseline) | 20.92 % | 20.92 % | 0.00 % |
 | Motor will start (≥ 0.8 pu) | No | No | — |
 
+
+> **2026-09-27:** the EE-1 source-impedance superposition (2026-07-19) started from the *running* baseline
+> (0.984 p.u., motor already drawing load) and subtracted the full starting current again — double-counting the
+> motor. This case drifted to 0.7555 p.u. / 23.2 % dip with a spurious 2.3 % dip on the 99 999 MVA source bus. Fixed
+> to use the motor-off pre-start voltage (the dynamic engine's basis); back to 0.7781 p.u. / 20.94 % (the 0.02 %
+> over the hand calc is the source's own impedance). Pinned by
+> `TestMotorStarting::test_superposition_uses_motor_off_prestart_voltage` and `test_verification_templates.py`.
+
 ## Model characterization vs textbook methods
 The engine models the locked rotor as **constant-PQ** (the code notes this is intentionally, slightly
 conservative vs a true constant-impedance rotor). For this **weak** system (S_start/S_sc ≈ 0.18):

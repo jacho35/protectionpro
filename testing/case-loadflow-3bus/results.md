@@ -36,6 +36,11 @@ L1-2/L2-3 = 2.447 + j25.07 Ω, L1-3 = 3.297 + j33.37 Ω. Slack = utility; PV bus
 **All bus voltages, angles, slack power, and the iteration count match the published solution** to within the
 2–3 significant figures the notes report (worst case 0.4 % on slack Q). ✅ PASS (tolerance ±2 %).
 
+> **2026-09-27:** since generator reactive-capability limits were enforced (EE inverter/reactive review,
+> 2026-07-19) the 250 MVA / 0.8 pf Gen2 caps at 150 Mvar and can no longer hold 1.05 p.u. (V₂ fell to 1.014).
+> The textbook PV bus is unlimited, so the project now sets `q_max_mvar`/`q_min_mvar` = ±9999 on Gen2; the table
+> above is reproduced again and pinned by `backend/tests/test_verification_templates.py`.
+
 ## Screenshot (real app, Newton-Raphson)
 ![load flow result](screenshots/loadflow-result.png)
 

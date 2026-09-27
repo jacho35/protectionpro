@@ -37,7 +37,7 @@ frontend/
     ├── sidebar.js          # Searchable component palette, drag-drop
     ├── wiring.js           # Orthogonal wire routing, port snapping
     ├── components.js       # Network graph validation, adjacency, cycle detection
-    ├── symbols.js          # IEC-standard SVG symbol generators (18 types)
+    ├── symbols.js          # IEC-standard SVG symbol generators (40 types)
     ├── properties.js       # Dynamic property editor per component type
     ├── annotations.js      # Draggable fault/loadflow result badges
     ├── project.js          # Save/load/export (JSON/SVG/PNG/CSV/PDF)
@@ -148,13 +148,15 @@ AppState = {
   wires: [],               // Array of {id, fromComponent, fromPort, toComponent, toPort}
   selection: Set,           // Selected component/wire IDs
   clipboard: [],            // Copy/paste buffer
-  mode: 'select',          // MODE.SELECT | MODE.WIRE | MODE.PLACE (lowercase values)
-  analysisResults: {},      // Latest fault/loadflow/arcflash results
+  mode: 'select',          // MODE.SELECT | MODE.WIRE | MODE.PLACE | MODE.PAN ('select'/'wire'/'place'/'pan')
+  faultResults: null,       // One field PER STUDY — loadFlowResults, arcFlashResults, cableSizingResults,
+  loadFlowResults: null,    //   motorStartingResults, stabilityResults, dbCheckResults, … (see the
+  // …                      //   RESULT_SLOTS in state.js). There is no analysisResults.
   projectName: string,
   baseMVA: 100,
   frequency: 50,
   scenarios: [],            // Named network configuration snapshots
-  nextId: int               // Auto-incrementing component ID counter
+  nextId: int               // Counter behind genId(prefix) → string ids like 'bus_3', 'motor_induction_7'
 }
 ```
 
@@ -239,16 +241,18 @@ Project:
 
 DB path: `DATABASE_URL` env var, defaults to `sqlite:///./protectionpro.db`
 
-## Component Types (18)
+## Component Types (40 — 31 power + 9 control-circuit)
 
 | Category | Components |
 |---|---|
-| **Sources** | Utility Source, Generator, Solar PV, Wind Turbine |
-| **Distribution** | Bus, Transformer, Cable/Feeder |
+| **Sources** | Utility Source, Generator, Solar PV, Wind Turbine, Battery Storage |
+| **Distribution** | Bus, Transformer, Autotransformer, Cable/Feeder, Bus Duct |
 | **Protection** | Circuit Breaker, Fuse, Relay, Switch, Changeover Switch (3-port: in_1 / in_2 / out) |
 | **Instruments** | Current Transformer (CT), Potential Transformer (PT) |
-| **Loads** | Induction Motor, Synchronous Motor, Static Load |
-| **Other** | Capacitor Bank, Surge Arrester, Off-page Connector |
+| **Loads** | Induction Motor, Synchronous Motor, Static Load, Distribution Board, DC Load, Variable Frequency Drive |
+| **DC systems** | UPS, Rectifier, Battery Charger, DC Battery |
+| **Other** | SVC / STATCOM, Capacitor Bank, Surge Arrester, Off-page Connector |
+| **Control** | Control Supply, Control Breaker (MCB), Pushbutton NO / NC, Selector Switch, Contact NO / NC, Coil / Relay, Pilot Lamp |
 
 Component definitions (default props, ports, SVG dimensions) are in `constants.js` under `COMPONENT_DEFS`.
 
@@ -357,21 +361,21 @@ JWT bearer auth (`backend/auth.py`, `routes/auth.py`, frontend `auth.js` login g
 
 ## Testing
 
-Backend regression tests live in `backend/tests/test_regression.py` — standards-anchored hand calculations (IEC 60909, IEEE 1584-2002 and 1584-2018, IEEE 80) that pin the analysis engines. Run them inside the backend Docker image:
+Backend tests live in `backend/tests/` (35 modules, ~920 tests; CI runs all of them). The core is `test_regression.py` — standards-anchored hand calculations (IEC 60909, IEEE 1584-2002 and 1584-2018, IEEE 80, …) that pin the analysis engines; the other modules cover specific engines, review-finding fixes, auth, projects and libraries. `test_verification_templates.py` re-runs every in-app verification template (built from `testing/case-*/project.json`) and asserts its expected numbers, which live in `EXPECTED` in `testing/build_verification_templates.py` — change them there and regenerate `frontend/js/verification-templates.js` with `python testing/build_verification_templates.py`, never by hand. Which analyses have an independent reference and which only consistency tests: `testing/README.md` → Coverage. Run the suite inside the backend Docker image:
 
 ```bash
 docker run --rm -v "$PWD":/work -w /work protectionpro-backend \
   sh -c "pip install pytest httpx -q && python -m pytest backend/tests/ -q"
 ```
 
-Run these after any change to `backend/analysis/`. Frontend testing is still manual via the browser UI; `node --check frontend/js/*.js` catches syntax errors.
+Run these after any change to `backend/analysis/`. Frontend testing is still manual via the browser UI; `node --check frontend/js/*.js` catches syntax errors. The `verify` skill (`.claude/skills/verify/SKILL.md`) is the playbook for driving the app headlessly. CI also runs `testing/case-new-features-verification/verify_new_features.py --no-results` (21 closed-form checks of the newer engines; exits 1 on any FAIL).
 
 ## Key Conventions
 
 - Frontend uses vanilla JS modules with ES6 imports — no build step
 - All analysis requests send the full ProjectData JSON to the backend
-- Results are stored in `AppState.analysisResults` and rendered as SVG annotations
-- Component IDs are auto-incrementing integers prefixed by type (e.g., `bus-1`, `transformer-2`)
+- Each study's results are stored on their own AppState field (`faultResults`, `loadFlowResults`, …) and rendered as SVG annotations
+- Component IDs are strings from `AppState.genId(type)`: type + `_` + the `nextId` counter (e.g. `bus_1`, `transformer_2`)
 - The undo system takes full state snapshots (not diffs)
 - Dark mode preference persists via `localStorage` key `'protectionpro-dark-mode'`
 

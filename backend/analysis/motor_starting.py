@@ -251,10 +251,25 @@ def run_motor_starting(project: ProjectData):
         for bus_id, bus_result in start_lf.buses.items():
             if bus_id == terminal_bus:
                 lf_terminal_v_pu = bus_result.voltage_pu
-        v_pre_term = baseline_voltages.get(terminal_bus, 1.0) if terminal_bus else 1.0
-
         superposed_v_pu = None
         if terminal_bus:
+            # Superposition needs the pre-start voltage with THIS motor off:
+            # the baseline has it running, and subtracting the full starting
+            # current from that point counts the motor's load twice (and the
+            # excess src_dip_pu then leaks onto every bus, even a stiff
+            # source). Same basis as the dynamic engine's _baseline_voltages.
+            v_pre_term = baseline_voltages.get(terminal_bus, 1.0)
+            pre_off = _deep_copy_project(project)
+            for c in pre_off.components:
+                if c.id == motor.id:
+                    c.props["demand_factor"] = 0.0
+            try:
+                off_lf = run_load_flow(pre_off, "newton_raphson", include_synthetic=True)
+                if off_lf.converged and terminal_bus in off_lf.buses:
+                    v_pre_term = off_lf.buses[terminal_bus].voltage_pu
+            except Exception:
+                pass
+
             z_th = _thevenin_z1(project, terminal_bus, motor.id)
             if z_th is not None:
                 s_pu = s_start_mva / project.baseMVA

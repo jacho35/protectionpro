@@ -179,9 +179,11 @@
   <div class="wrap">
     <p class="eyebrow">Verification &amp; Validation</p>
     <h1>ProtectionPro Analysis Engines — Worked Examples</h1>
-    <p class="lead">Every one of ProtectionPro's sixteen analysis engines is cross-checked against a published
-      standard, a textbook worked example, or an exact first-principles / hand calculation. This page shows each
-      example as it was worked, the reference figures, ProtectionPro's result, and the source.</p>
+    <p class="lead">31 of ProtectionPro's 39 analyses are cross-checked against a published standard, a textbook
+      worked example, or an exact first-principles / hand calculation; the other 8 are pinned by consistency and
+      behaviour tests only. This page works through the sixteen analyses with full worked examples — the reference
+      figures, ProtectionPro's result, and the source — and the <a href="#coverage">coverage table</a> at the end
+      lists all 39.</p>
     <a class="backlink" href="index.html">&larr; Back to ProtectionPro</a>
   </div>
 </header>
@@ -192,8 +194,10 @@
     <h2>How each example was verified</h2>
     <p>Each reference example is rebuilt as a reproducible ProtectionPro project and solved <strong>two ways that
       must agree to within display rounding</strong>: (1) a direct call to the backend <span class="mono">analysis</span>
-      engine (authoritative), and (2) the real application driven headlessly, so the on-diagram result badges are
-      genuine renders. The pass criterion is a match to within <strong>&plusmn;2 %</strong> of the reference; anything
+      engine (authoritative), and (2) for the in-app template cases, the real application driven headlessly, so the
+      on-diagram result badges are genuine renders (screenshots archived July 2026; this channel is re-run by hand).
+      Every template's expected result is re-checked against the engine automatically on each change
+      (<span class="mono">test_verification_templates.py</span>). The pass criterion is a match to within <strong>&plusmn;2 %</strong> of the reference; anything
       beyond that is investigated and qualified. Where a case notes a "qualified" result, the governing formulas
       reproduce the reference exactly and the difference is a documented, more-conservative modelling choice — not a
       defect.</p>
@@ -211,7 +215,8 @@
 
   <h2 class="section">Scorecard</h2>
   <div class="metrics">
-    <div class="metric"><div class="big">16 / 16</div><div class="lbl">engines cross-checked</div></div>
+    <div class="metric"><div class="big">31 / 39</div><div class="lbl">analyses independently cross-checked</div></div>
+    <div class="metric"><div class="big">16</div><div class="lbl">worked examples on this page</div></div>
     <div class="metric"><div class="big">16 / 16</div><div class="lbl">short-circuit points PASS</div></div>
     <div class="metric"><div class="big">0.13 %</div><div class="lbl">worst-case SC error</div></div>
     <div class="metric"><div class="big">&plusmn;2 %</div><div class="lbl">pass tolerance</div></div>
@@ -661,8 +666,48 @@
       via <span class="mono">dc_bolted_fault_ka</span> — a genuine DC bus has no 3-φ fault.</p>
   </article>
 
+  <!-- ───────────── COVERAGE ───────────── -->
+  <h2 class="section" id="coverage">Coverage — every analysis</h2>
+  <p class="note">"Independent reference" means the expected number was produced without the engine: a published
+    example, the standard's own equations worked by hand, or an independent closed-form solve. "Consistency only"
+    means the tests pin behaviour (direction of change, limiting cases, agreement with another verified engine) but
+    no independent number. The Study Manager only orchestrates the analyses below and is not counted.</p>
+  <div class="summary scroll">
+    <table>
+      <thead><tr><th>Analysis</th><th>Reference</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td colspan="3"><strong>Independent reference — 31</strong></td></tr>
+        <tr><td>Short circuit (IEC 60909), LV cable sizing, load flow, unbalanced load flow, arc flash (IEEE 1584-2002), grounding, motor starting, duty check, load diversity, DC load flow, DC short circuit, DC arc flash, transient stability, voltage stability, contingency, dynamic motor starting (16)</td><td>See each worked example above</td><td>This page</td></tr>
+        <tr><td>Arc flash — IEEE 1584-2018 method</td><td>Six fixtures from the official IEEE 1584-2018 validation spreadsheet (all 5 electrode configs, all 3 voltage blends)</td><td>Regression suite</td></tr>
+        <tr><td>ANSI fault duty (C37.010)</td><td>C37.010-1979 worked examples (§5 Figs 5–7, Fig. 16)</td><td>Regression suite</td></tr>
+        <tr><td>Frequency scan</td><td>Closed-form parallel/series resonance</td><td>Verification harness</td></tr>
+        <tr><td>Passive filter sizing</td><td>Closed-form single-tuned branch design</td><td>Verification harness</td></tr>
+        <tr><td>Reliability (IEEE 1366)</td><td>Hand FMEA of SAIFI / SAIDI</td><td>Verification harness</td></tr>
+        <tr><td>Hosting capacity</td><td>Closed-form voltage-rise limit</td><td>Verification harness</td></tr>
+        <tr><td>CT saturation model</td><td>IEC 61869-2 knee-point / burden hand calc</td><td>Verification harness</td></tr>
+        <tr><td>Battery sizing</td><td>IEEE 485-style duty-cycle hand calc</td><td>Verification harness</td></tr>
+        <tr><td>Capacitor placement</td><td>Closed-form loss reduction (discrete-bank residual ≤5.3 %)</td><td>Verification harness</td></tr>
+        <tr><td>Optimal power flow</td><td>Merit-order dispatch and cost hand calc (whole load on the cheapest unit)</td><td>Harness + regression suite</td></tr>
+        <tr><td>Voltage flicker</td><td>IEC 61000-3-3 Pst curve hand calc</td><td>Verification harness</td></tr>
+        <tr><td>Lightning risk (IEC 62305-2)</td><td>Eq. A.2 / A.4 collection area and events, R1 hand calc</td><td>Regression suite</td></tr>
+        <tr><td>Raceway fill &amp; grouping</td><td>NEC fill limits, IEC 60364-5-52 Table B.52.17 hand calc</td><td>Regression suite</td></tr>
+        <tr><td>Backup autonomy</td><td>Usable-energy / load hand calc</td><td>Regression suite</td></tr>
+        <tr><td>DB circuit check</td><td>IEC 60364-5-52 table values, volt-drop and Zs hand calcs</td><td>Regression suite</td></tr>
+        <tr><td colspan="3"><strong>Consistency only — 8</strong></td></tr>
+        <tr><td>Harmonic penetration (VFD)</td><td>Characteristic orders, pulse-number / reactor / resonance trends; IEEE 519 limit tables</td><td>Regression suite</td></tr>
+        <tr><td>SVC / STATCOM</td><td>Holds set-point, clamps at Q limit, SVC Q ∝ V²</td><td>Regression suite</td></tr>
+        <tr><td>Autotransformer &amp; OLTC</td><td>Tap regulation direction and clamping, star-impedance identity</td><td>Regression suite</td></tr>
+        <tr><td>Time-series load flow</td><td>Flat profile reproduces single-shot load flow; SoC conservation</td><td>Regression suite</td></tr>
+        <tr><td>Load Flow Study Manager cases</td><td>Current case equals a direct load flow</td><td>Regression suite</td></tr>
+        <tr><td>Open-conductor, two-conductor-open, simultaneous faults</td><td>Sequence identities and decoupled limits</td><td>Regression suite</td></tr>
+        <tr><td>Wenner soil interpretation</td><td>Recovers layers from its own forward model</td><td>Regression suite</td></tr>
+        <tr><td>ADMD (NRS 034 / CTEF100)</td><td>Formulas as ported from the source app; no published worked example</td><td>Regression suite</td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <footer class="page">
-    ProtectionPro Verification &amp; Validation · pass tolerance ±2 %, dual-channel (backend engine + headless app) ·
+    ProtectionPro Verification &amp; Validation · pass tolerance ±2 % ·
     the full working, project files and screenshots live in the repository's <span class="mono">testing/</span> directory.
   </footer>
 

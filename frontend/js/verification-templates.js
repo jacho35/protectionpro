@@ -6,7 +6,8 @@
  * testing case project.json and stamped dataVersion:2 so loading it
  * reproduces the verified numbers exactly (no cable-resistance migration).
  *
- * GENERATED — do not hand-edit. Regenerate from the testing case files.
+ * GENERATED — do not hand-edit. Regenerate with
+ * `python testing/build_verification_templates.py`.
  */
 
 const VerificationTemplates = {
@@ -209,7 +210,7 @@ const VerificationTemplates = {
       "dataVersion": 2,
       "voltageFactor": 1.0,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — IEC 60909 short circuit (source: powerprojectsindia / ETAP). Voltage factor c = 1.0 is pre-set to match the reference. RUN: Fault analysis, fault at Bus4. Expected I″k3 ≈ 12.88 kA (ETAP 12.881, ≤0.01 %). Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — IEC 60909 short circuit (source: powerprojectsindia / ETAP). Voltage factor c = 1.0 is pre-set to match the reference. RUN: Fault analysis, fault at Bus4. Expected I″k3 ≈ 12.88 kA (ETAP 12.881). Full working: Help → Verification."
       }
     },
     "ver_sc_case2": {
@@ -644,7 +645,7 @@ const VerificationTemplates = {
       "dataVersion": 2,
       "voltageFactor": 1.1,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — IEC 60909 short circuit, 220/33 kV 10 MVA Dyn1 (source: powerprojectsindia / ETAP). Voltage factor c = 1.10 (the app default) pre-set to match the reference ETAP screenshots. RUN: Fault analysis, fault at Bus2. Expected I″k3 = 2.296 kA (matches ETAP exactly). Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — IEC 60909 short circuit, 220/33 kV 10 MVA Dyn1 (source: powerprojectsindia / ETAP). Voltage factor c = 1.10 (the app default) pre-set to match the reference ETAP screenshots. RUN: Fault analysis, fault at Bus2. Expected I″k3 = 2.296 kA (ETAP 2.296). Full working: Help → Verification."
       }
     },
     "ver_cable_lv": {
@@ -757,7 +758,7 @@ const VerificationTemplates = {
       "nextId": 100,
       "dataVersion": 2,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — IEC 60364 LV cable sizing (source: powerprojectsindia). RUN: Cable Sizing study. The voltage-drop and adiabatic fault-withstand formulas reproduce the article exactly; the engine sizes conservatively for the IEC 60909-0 thermal-equivalent current I_th = I″k·√(m+n), so it recommends a larger conductor than the article's bare-Isc value. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — IEC 60364 LV cable sizing (source: powerprojectsindia). RUN: Cable Sizing study. Expected running volt drop 2.08 % at 167.2 A load-flow current, minimum size 120 mm². The voltage-drop and adiabatic fault-withstand formulas reproduce the article exactly; the engine sizes conservatively for the IEC 60909-0 thermal-equivalent current I_th = I″k·√(m+n), so it recommends a larger conductor than the article's bare-Isc 95 mm². Full working: Help → Verification."
       }
     },
     "ver_lf_3bus": {
@@ -806,7 +807,9 @@ const VerificationTemplates = {
             "xd_pp": 0.2,
             "x_r_ratio": 40,
             "dispatch_mode": "must_run",
-            "voltage_setpoint_pu": 1.05
+            "voltage_setpoint_pu": 1.05,
+            "q_max_mvar": 9999,
+            "q_min_mvar": -9999
           }
         },
         {
@@ -976,7 +979,7 @@ const VerificationTemplates = {
       ],
       "nextId": 100,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — Newton-Raphson load flow (Glover / ESE 470 3-bus example). RUN: Load Flow (Newton-Raphson). Expected V2 = 1.050∠−2.06°, V3 = 0.978∠−8.78°, converges in 4 iterations. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — Newton-Raphson load flow (Glover / ESE 470 3-bus example). Gen2's reactive limits are opened up (q_max/q_min ±9999 Mvar) because the textbook PV bus is unlimited — it needs ~267 Mvar to hold 1.05 p.u., beyond a 250 MVA / 0.8 pf machine's capability. RUN: Load Flow (Newton-Raphson). Expected V2 = 1.050∠-2.06°, V3 = 0.978∠-8.78°, converges in 4 iterations. Full working: Help → Verification."
       }
     },
     "ver_arcflash": {
@@ -1060,7 +1063,7 @@ const VerificationTemplates = {
       "nextId": 100,
       "dataVersion": 2,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — IEEE 1584-2002 arc flash, 480 V MCC. RUN: Arc Flash analysis. Expected E ≈ 12.82 cal/cm², PPE Cat 3, arc-flash boundary 1.93 m. Clearing time is derived from the upstream protective device (engineered to 0.2 s here). Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — IEEE 1584-2002 arc flash, 480 V MCC. RUN: Arc Flash analysis. Expected E ≈ 12.82 cal/cm², PPE Cat 3, arc-flash boundary 1927 mm. Clearing time is derived from the upstream protective device (engineered to 0.2 s here). Full working: Help → Verification."
       }
     },
     "ver_grounding": {
@@ -1432,7 +1435,7 @@ const VerificationTemplates = {
       "nextId": 50,
       "dataVersion": 2,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — DC short circuit, IEC 61660-1 battery (CED E03-035 Example 1). RUN: Fault analysis. Expected battery peak i_p = 5422 A from nameplate; converter I_k = 300 A, i_p = 315 A. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — DC short circuit, IEC 61660-1 battery (CED E03-035 Example 1). RUN: Fault analysis. Expected battery peak i_p = 5.422 kA at bus Brk, from nameplate (the converter current-limit check in the case notes is a separate hand calc — no converter here). Full working: Help → Verification."
       }
     },
     "ver_duty": {
@@ -1636,7 +1639,7 @@ const VerificationTemplates = {
       "nextId": 50,
       "dataVersion": 2,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — DC arc flash (Stokes & Oppenländer / Ammerman-CED). RUN: DC Arc Flash analysis. Expected arc current 6196 A, incident energy 10.82 cal/cm², boundary 1.37 m, PPE Cat 3. The DC bolted fault is set via dc_bolted_fault_ka on the bus. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — DC arc flash (Stokes & Oppenländer / Ammerman-CED). RUN: DC Arc Flash analysis. Expected arc current 6196 A, incident energy 10.82 cal/cm², boundary 1366 mm, PPE Cat 3. The DC bolted fault is set via dc_bolted_fault_ka on the bus. Full working: Help → Verification."
       }
     },
     "ver_unbalanced_lf": {
@@ -1755,7 +1758,7 @@ const VerificationTemplates = {
       ],
       "nextId": 50,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — unbalanced load flow (symmetrical components), phase split 60/20/20. RUN: Load Flow (unbalanced). Expected VUF 0.76 %, Va/Vb/Vc = 0.962 / 1.005 / 0.989 p.u. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — unbalanced load flow (symmetrical components), phase split 60/20/20. RUN: Load Flow (unbalanced). Expected VUF 0.76 %, Va/Vb/Vc = 0.961 / 1.005 / 0.989 p.u. Full working: Help → Verification."
       }
     }
   },

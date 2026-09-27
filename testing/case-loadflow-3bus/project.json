@@ -44,7 +44,9 @@
         "xd_pp": 0.2,
         "x_r_ratio": 40,
         "dispatch_mode": "must_run",
-        "voltage_setpoint_pu": 1.05
+        "voltage_setpoint_pu": 1.05,
+        "q_max_mvar": 9999,
+        "q_min_mvar": -9999
       }
     },
     {
