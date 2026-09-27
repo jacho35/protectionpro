@@ -28,3 +28,12 @@ jobs:
 
       - name: Run regression tests
         run: python -m pytest backend/tests/ -q
+
+      # Independent closed-form cross-checks of the newer engines (frequency
+      # scan, filter, reliability, voltage stability, hosting capacity, CT,
+      # battery, cap placement, OPF, contingency, EE-10, flicker). Exits 1 on
+      # any FAIL; --no-results keeps the checked-in results.json untouched.
+      - name: Run new-features verification harness
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python testing/case-new-features-verification/verify_new_features.py --no-results

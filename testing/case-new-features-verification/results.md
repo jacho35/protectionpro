@@ -21,6 +21,8 @@ docker run --rm -v "$PWD":/work -w /work -e PYTHONPATH=/work \
   python testing/case-new-features-verification/verify_new_features.py
 ```
 
+CI runs this harness on every PR / push to main (`--no-results`; it exits 1 on any FAIL).
+
 Baseline regression suite was also run clean beforehand: **495 passed**.
 
 ## Result: 21/21 independent checks pass

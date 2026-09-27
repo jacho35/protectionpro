@@ -8,11 +8,15 @@ Run inside the backend Docker image from the repo root:
     protectionpro-backend \
     python testing/case-new-features-verification/verify_new_features.py
 
-Writes results.json next to this script. See results.md for the write-up.
+Writes results.json next to this script (--results PATH to write elsewhere,
+--no-results to skip — CI uses the latter so a run never dirties the tree).
+Exits 1 if any check fails or crashes. See results.md for the write-up.
 """
+import argparse
 import math
 import json
 import os
+import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -514,7 +518,13 @@ def check_flicker():
            unit="Pst", ref="Pst ~ r^0.31 high-frequency roll-off")
 
 
-def main():
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--results", default=os.path.join(_HERE, "results.json"),
+                    help="where to write results.json (default: next to this script)")
+    ap.add_argument("--no-results", action="store_true",
+                    help="don't write results.json")
+    args = ap.parse_args(argv)
     checks = [
         ("Frequency Scan", check_frequency_scan),
         ("Filter Sizing", check_filter_tuning),
@@ -550,9 +560,11 @@ def main():
     for r in RESULTS:
         print(f"  {'PASS' if r['ok'] else 'FAIL'}  {r['name']:<55} err={r['err']}")
     print(f"\n  {npass}/{len(RESULTS)} checks passed")
-    with open(os.path.join(_HERE, "results.json"), "w") as f:
-        json.dump(RESULTS, f, indent=2, default=str)
+    if not args.no_results:
+        with open(args.results, "w") as f:
+            json.dump(RESULTS, f, indent=2, default=str)
+    return 0 if RESULTS and npass == len(RESULTS) else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
