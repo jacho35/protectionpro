@@ -897,6 +897,15 @@ class TestMotorStarting:
             f"voltage dip {dip:.2f}% outside the hand-calculated 4-13% band "
             f"(≈7% expected; ≈2.5% indicates the 0.3× starting-load bug)"
         )
+        # Point value (review V-6): exact 2-bus constant-PQ solves, pf 0.3
+        # start / 0.85 run, S_run = 1000/(0.95·0.85) = 1.238 MVA, S_start = 6×.
+        #   Baseline (ideal swing, transformer nameplate z_T = 1.0 pu, X/R 10,
+        #   motor running):                          V_run   = 0.99235 pu
+        #   Start (Thevenin at c = 1.0: grid 0.2 pu X/R 15 + K_T·z_T with
+        #   K_T = 0.95·1.1/(1 + 0.6·0.0995) = 0.98613, V_pre motor-off = 1.0):
+        #                                            V_start = 0.90452 pu
+        #   dip = (V_run − V_start)/V_run = 8.852 %
+        assert dip == pytest.approx(8.85, abs=0.01)
 
     def _motor_dip(self, starting_method):
         xfmr = _comp("transformer-1", "transformer", {
@@ -1179,6 +1188,11 @@ class TestFlickerAnalysis:
         assert res["sources"], f"no sources; warnings: {res['warnings']}"
         d = res["sources"][0]["relative_voltage_change_pct"]
         assert 4.0 < d < 13.0, f"d={d:.2f}%, expected the ~7% hand-calc band"
+        # Point value (review V-6): d = ΔU/U from motor-OFF (V_pre = 1.0) to
+        # the starting point V_start = 0.90452 pu — same exact solve as
+        # TestMotorStarting.test_voltage_dip_magnitude → d = 9.548 %. (Before
+        # 2026-09-27 V_pre carried the motor's running load and d read 9.714 %.)
+        assert d == pytest.approx(9.548, abs=0.005)
 
     def test_frequent_starts_fail_default_pst_limit(self):
         """60 starts/hour (r=1/min) at a ~7% step is well above the 3% anchor

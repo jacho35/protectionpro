@@ -37,3 +37,50 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python testing/case-new-features-verification/verify_new_features.py --no-results
+
+  ui-templates:
+    # Loads every Verification / Standards template in the real app (headless
+    # Chromium), runs its analysis from the Analyse menu and asserts the
+    # headline numbers — testing/ui/verify_templates_ui.mjs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install backend
+        run: pip install -r backend/requirements.txt
+
+      - name: Install Playwright + Chromium
+        working-directory: testing/ui
+        run: npm install && npx playwright install --with-deps chromium
+
+      - name: Start app on a throwaway database
+        env:
+          DATABASE_URL: sqlite:////tmp/pp-ui.db
+          SECRET_KEY: ci-ui-verify-only
+        run: |
+          nohup python -m uvicorn backend.main:app --port 8000 > /tmp/uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/api/health && break; sleep 1; done
+
+      - name: Verify templates through the UI
+        working-directory: testing/ui
+        run: node verify_templates_ui.mjs
+
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-failures
+          path: |
+            testing/ui/ui-failures/
+            /tmp/uvicorn.log
+          if-no-files-found: ignore

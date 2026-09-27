@@ -208,7 +208,9 @@ equations worked by hand, or an independent closed-form solve). **Consistency on
 "case-… + template" rows are also in-app templates; `backend/tests/test_verification_templates.py` re-runs every
 template through its analysis route in CI and asserts the headline numbers (the single source for those numbers is
 `EXPECTED` in `build_verification_templates.py`). "harness" = `case-new-features-verification/verify_new_features.py`,
-also run in CI. The headless-app screenshots are an archived manual channel (July 2026).
+also run in CI. The UI channel is automated too: `testing/ui/verify_templates_ui.mjs` loads every template through
+Project → Templates in headless Chromium, runs its study from the Analyse menu and asserts the same numbers on the
+result stored for the diagram badges (CI job `ui-templates`). The `case-*/screenshots/` are the July 2026 archive.
 
 The two previously qualified items (grounding mesh voltage, DC-SC battery factors) are **resolved**. The only
 remaining refinement for the case set is a full IEEE 13-bus abc-frame unbalanced comparison — out of scope for the

@@ -195,9 +195,10 @@
     <p>Each reference example is rebuilt as a reproducible ProtectionPro project and solved <strong>two ways that
       must agree to within display rounding</strong>: (1) a direct call to the backend <span class="mono">analysis</span>
       engine (authoritative), and (2) for the in-app template cases, the real application driven headlessly, so the
-      on-diagram result badges are genuine renders (screenshots archived July 2026; this channel is re-run by hand).
-      Every template's expected result is re-checked against the engine automatically on each change
-      (<span class="mono">test_verification_templates.py</span>). The pass criterion is a match to within <strong>&plusmn;2 %</strong> of the reference; anything
+      on-diagram result badges are genuine renders. Both channels re-run automatically on every change: each
+      template's expected result is checked against the engine (<span class="mono">test_verification_templates.py</span>)
+      and through the app itself — loaded from Templates, run from the Analyse menu in headless Chromium
+      (<span class="mono">testing/ui/verify_templates_ui.mjs</span>). The pass criterion is a match to within <strong>&plusmn;2 %</strong> of the reference; anything
       beyond that is investigated and qualified. Where a case notes a "qualified" result, the governing formulas
       reproduce the reference exactly and the difference is a documented, more-conservative modelling choice — not a
       defect.</p>

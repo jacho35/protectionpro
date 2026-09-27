@@ -1,0 +1,302 @@
+{
+  "ver_sc_case1": {
+    "route": "fault",
+    "checks": {
+      "ik3": [
+        "buses.bus-4.ik3",
+        12.881,
+        0.001
+      ]
+    }
+  },
+  "ver_sc_case2": {
+    "route": "fault",
+    "checks": {
+      "ik3": [
+        "buses.bus-7.ik3",
+        14.811,
+        0.001
+      ]
+    }
+  },
+  "ver_sc_case3": {
+    "route": "fault",
+    "checks": {
+      "ik3": [
+        "buses.bus-5.ik3",
+        20.949,
+        0.001
+      ]
+    }
+  },
+  "ver_sc_220_33": {
+    "route": "fault",
+    "checks": {
+      "ik3": [
+        "buses.bus-2.ik3",
+        2.296,
+        0.001
+      ]
+    }
+  },
+  "ver_cable_lv": {
+    "route": "cable-sizing",
+    "checks": {
+      "vd": [
+        "cables.0.voltage_drop_pct",
+        2.08,
+        0.001
+      ],
+      "i_load": [
+        "cables.0.load_current_a",
+        167.15,
+        0.001
+      ],
+      "size": [
+        "cables.0.min_size_mm2",
+        120,
+        0.001
+      ]
+    }
+  },
+  "ver_lf_3bus": {
+    "route": "loadflow",
+    "checks": {
+      "v2": [
+        "buses.bus-2.voltage_pu",
+        1.05,
+        0.001
+      ],
+      "a2": [
+        "buses.bus-2.angle_deg",
+        -2.06,
+        0.002
+      ],
+      "v3": [
+        "buses.bus-3.voltage_pu",
+        0.9782,
+        0.001
+      ],
+      "a3": [
+        "buses.bus-3.angle_deg",
+        -8.78,
+        0.002
+      ],
+      "iters": [
+        "iterations",
+        4,
+        0.001
+      ]
+    }
+  },
+  "ver_arcflash": {
+    "route": "arcflash",
+    "checks": {
+      "e": [
+        "buses.bus-1.incident_energy_cal",
+        12.82,
+        0.001
+      ],
+      "ppe": [
+        "buses.bus-1.ppe_category",
+        3,
+        0.001
+      ],
+      "afb_mm": [
+        "buses.bus-1.arc_flash_boundary_mm",
+        1927.0,
+        0.001
+      ]
+    }
+  },
+  "ver_grounding": {
+    "route": "grounding",
+    "checks": {
+      "rg": [
+        "buses.0.grid_resistance_ohm",
+        2.7526,
+        0.001
+      ],
+      "gpr": [
+        "buses.0.gpr_v",
+        5252.0,
+        0.001
+      ],
+      "em": [
+        "buses.0.mesh_voltage_v",
+        749.0,
+        0.001
+      ],
+      "etouch": [
+        "buses.0.tolerable_touch_v",
+        841.0,
+        0.001
+      ]
+    }
+  },
+  "ver_motor_start": {
+    "route": "motor-starting",
+    "checks": {
+      "i_start": [
+        "motors.0.start_current_a",
+        920.8,
+        0.001
+      ],
+      "vt": [
+        "motors.0.motor_terminal_voltage_pu",
+        0.7782,
+        0.001
+      ],
+      "dip": [
+        "motors.0.max_system_dip_pct",
+        20.92,
+        0.002
+      ],
+      "starts": [
+        "motors.0.motor_will_start",
+        false,
+        0.001
+      ]
+    }
+  },
+  "ver_dc_lf": {
+    "route": "dc-loadflow",
+    "checks": {
+      "v_rect": [
+        "buses.bus-1.voltage_v",
+        124.46,
+        0.001
+      ],
+      "v_load": [
+        "buses.bus-2.voltage_v",
+        115.83,
+        0.001
+      ],
+      "drop": [
+        "buses.bus-2.drop_pct",
+        7.34,
+        0.001
+      ],
+      "i_cable": [
+        "branches.0.current_a",
+        86.34,
+        0.001
+      ]
+    }
+  },
+  "ver_dc_sc": {
+    "route": "dc-shortcircuit",
+    "checks": {
+      "ip_ka": [
+        "buses.bus-2.ip_ka",
+        5.422,
+        0.001
+      ]
+    }
+  },
+  "ver_duty": {
+    "route": "duty-check",
+    "checks": {
+      "ik": [
+        "devices.0.prospective_fault_ka",
+        20.0,
+        0.001
+      ],
+      "icu": [
+        "devices.0.breaking_capacity_ka",
+        25.0,
+        0.001
+      ],
+      "ip": [
+        "devices.0.peak_fault_ka",
+        49.38,
+        0.001
+      ],
+      "icm": [
+        "devices.0.making_capacity_ka",
+        62.5,
+        0.001
+      ],
+      "status": [
+        "devices.0.status",
+        "pass",
+        0.001
+      ]
+    }
+  },
+  "ver_diversity": {
+    "route": "load-diversity",
+    "checks": {
+      "installed": [
+        "buses.0.installed_kva",
+        255.26,
+        0.001
+      ],
+      "ks": [
+        "buses.0.diversity_factor",
+        0.85,
+        0.001
+      ],
+      "demand": [
+        "buses.0.diversified_demand_kva",
+        199.97,
+        0.001
+      ],
+      "i_demand": [
+        "buses.0.demand_current_a",
+        288.6,
+        0.001
+      ]
+    }
+  },
+  "ver_dc_arcflash": {
+    "route": "dc-arcflash",
+    "checks": {
+      "i_arc": [
+        "buses.bus-1.dc_arcing_current_a",
+        6196.3,
+        0.001
+      ],
+      "e": [
+        "buses.bus-1.incident_energy_cal",
+        10.82,
+        0.001
+      ],
+      "afb_mm": [
+        "buses.bus-1.arc_flash_boundary_mm",
+        1366.0,
+        0.001
+      ],
+      "ppe": [
+        "buses.bus-1.ppe_category",
+        3,
+        0.001
+      ]
+    }
+  },
+  "ver_unbalanced_lf": {
+    "route": "unbalanced-loadflow",
+    "checks": {
+      "vuf": [
+        "buses.bus-2.vuf_pct",
+        0.7618,
+        0.001
+      ],
+      "va": [
+        "buses.bus-2.va_pu",
+        0.96146,
+        0.001
+      ],
+      "vb": [
+        "buses.bus-2.vb_pu",
+        1.00489,
+        0.001
+      ],
+      "vc": [
+        "buses.bus-2.vc_pu",
+        0.98922,
+        0.001
+      ]
+    }
+  }
+}

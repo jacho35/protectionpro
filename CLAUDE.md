@@ -368,7 +368,7 @@ docker run --rm -v "$PWD":/work -w /work protectionpro-backend \
   sh -c "pip install pytest httpx -q && python -m pytest backend/tests/ -q"
 ```
 
-Run these after any change to `backend/analysis/`. Frontend testing is still manual via the browser UI; `node --check frontend/js/*.js` catches syntax errors. The `verify` skill (`.claude/skills/verify/SKILL.md`) is the playbook for driving the app headlessly. CI also runs `testing/case-new-features-verification/verify_new_features.py --no-results` (21 closed-form checks of the newer engines; exits 1 on any FAIL).
+Run these after any change to `backend/analysis/`. Frontend testing is mostly manual via the browser UI; `node --check frontend/js/*.js` catches syntax errors. The one automated UI check is `testing/ui/verify_templates_ui.mjs` (CI job `ui-templates`): it loads every verification template through Project → Templates in headless Chromium, runs its study from the Analyse menu and asserts the expected numbers — run it against a full stack on a throwaway DB (see its header). The `verify` skill (`.claude/skills/verify/SKILL.md`) is the playbook for driving the app headlessly. CI also runs `testing/case-new-features-verification/verify_new_features.py --no-results` (21 closed-form checks of the newer engines; exits 1 on any FAIL).
 
 ## Key Conventions
 

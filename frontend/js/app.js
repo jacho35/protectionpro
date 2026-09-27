@@ -29,8 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
       window.closeAllToolbarMenus();
       if (!isOpen) menu.classList.add('open');
     });
-    // Keep menu open when clicking inside it (e.g. selects)
-    menu.querySelector('.toolbar-menu-panel').addEventListener('click', (e) => e.stopPropagation());
+    // Keep menu open when clicking inside it (e.g. selects, View toggles).
+    // Analyse items run a study, so they close it — left open, the panel sat
+    // over the pre-run validation dialog and hid its Continue Anyway button.
+    menu.querySelector('.toolbar-menu-panel').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (menu.id === 'menu-analyse' && e.target.closest('button.dropdown-item')) window.closeAllToolbarMenus();
+    });
   });
   document.addEventListener('click', () => window.closeAllToolbarMenus());
 

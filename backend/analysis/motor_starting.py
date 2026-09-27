@@ -84,6 +84,30 @@ def _thevenin_z1(project, bus_id, starting_motor_id):
         return None
 
 
+def _prestart_voltage(project, motor_id, bus_id, fallback):
+    """Terminal-bus voltage just before ``motor_id`` starts, i.e. with that
+    motor OFF (demand_factor = 0) and everything else as drawn.
+
+    The Thevenin superposition V = V_pre − Z_th·I_start subtracts the full
+    starting current, so V_pre must not already carry the same motor's
+    running load — that counts the motor twice (the running baseline is
+    still the right reference for reporting the dip). Same basis as the
+    dynamic engine's _baseline_voltages. Returns ``fallback`` if the flow
+    fails."""
+    from .loadflow import run_load_flow
+    pre_off = _deep_copy_project(project)
+    for c in pre_off.components:
+        if c.id == motor_id:
+            c.props["demand_factor"] = 0.0
+    try:
+        lf = run_load_flow(pre_off, "newton_raphson", include_synthetic=True)
+        if lf.converged and bus_id in lf.buses:
+            return lf.buses[bus_id].voltage_pu
+    except Exception:
+        pass
+    return fallback
+
+
 def _solve_pq_dip(v_pre_pu, z_th, s_start_pu):
     """[EE-1] Terminal voltage of a constant-PQ starting load S behind the
     Thevenin impedance: V = V_pre − Z_th·(S/V)*  (fixed-point iteration).
@@ -253,22 +277,8 @@ def run_motor_starting(project: ProjectData):
                 lf_terminal_v_pu = bus_result.voltage_pu
         superposed_v_pu = None
         if terminal_bus:
-            # Superposition needs the pre-start voltage with THIS motor off:
-            # the baseline has it running, and subtracting the full starting
-            # current from that point counts the motor's load twice (and the
-            # excess src_dip_pu then leaks onto every bus, even a stiff
-            # source). Same basis as the dynamic engine's _baseline_voltages.
-            v_pre_term = baseline_voltages.get(terminal_bus, 1.0)
-            pre_off = _deep_copy_project(project)
-            for c in pre_off.components:
-                if c.id == motor.id:
-                    c.props["demand_factor"] = 0.0
-            try:
-                off_lf = run_load_flow(pre_off, "newton_raphson", include_synthetic=True)
-                if off_lf.converged and terminal_bus in off_lf.buses:
-                    v_pre_term = off_lf.buses[terminal_bus].voltage_pu
-            except Exception:
-                pass
+            v_pre_term = _prestart_voltage(project, motor.id, terminal_bus,
+                                           baseline_voltages.get(terminal_bus, 1.0))
 
             z_th = _thevenin_z1(project, terminal_bus, motor.id)
             if z_th is not None:
