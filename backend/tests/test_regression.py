@@ -825,6 +825,45 @@ class TestGrounding:
 
 
 class TestMotorStarting:
+    def test_voltage_dip_thevenin_uses_nameplate_impedance(self):
+        """Voltage-dip studies see nameplate impedances; fault studies keep
+        the IEC 60909 correction factors.
+
+        10 MVA, 10 %, X/R 10 transformer on a 100 MVA base: nameplate
+        |z_T| = 1.0 pu. IEC 60909 K_T = 0.95·1.1/(1 + 0.6·0.0995) = 0.98613
+        applies to short circuit only. Generator 10 MVA, X″d 0.2, pf 0.85:
+        nameplate |X″d| = 2.0 pu; K_G = 1.1/(1 + 0.2·0.5268) = 0.99518.
+        """
+        from backend.analysis.fault import thevenin_z1_at_bus, run_fault_analysis
+        xfmr = _comp("transformer-1", "transformer", {
+            "name": "TX1", "rated_mva": 10.0, "z_percent": 10.0, "x_r_ratio": 10.0,
+            "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4, "vector_group": "Dyn11"})
+        lv_bus = _comp("bus-2", "bus", {"name": "LV Bus", "voltage_kv": 0.4})
+        proj = _utility_bus_project(
+            fault_mva=1e9, extra_components=[xfmr, lv_bus],
+            extra_wires=[_wire("w2", "bus-1", "transformer-1"),
+                         _wire("w3", "transformer-1", "bus-2")])
+        z_np = thevenin_z1_at_bus(proj, "bus-2", nameplate=True)
+        z_sc = thevenin_z1_at_bus(proj, "bus-2")
+        assert abs(z_np) == pytest.approx(1.0, rel=1e-4)
+        assert abs(z_sc) == pytest.approx(0.98613, rel=1e-4)
+        # The nameplate switch is scoped to that call: a fault run afterwards
+        # still applies K_T: I″k3 = c·S_base/(√3·U·|K_T·z_T|) with the default
+        # c = 1.1 → 161.0 kA (nameplate would give 158.8 kA).
+        ik3 = run_fault_analysis(proj).buses["bus-2"].ik3
+        assert ik3 == pytest.approx(1.1 * 100 / (math.sqrt(3) * 0.4 * abs(z_sc)), rel=2e-3)
+
+        gen = _comp("generator-1", "generator", {
+            "name": "G1", "rated_mva": 10.0, "voltage_kv": 11.0, "xd_pp": 0.2,
+            "x_r_ratio": 20, "power_factor": 0.85})
+        gproj = ProjectData(
+            projectName="test", baseMVA=100.0, frequency=50,
+            components=[gen, _comp("bus-1", "bus", {"name": "Gen Bus", "voltage_kv": 11.0})],
+            wires=[_wire("w1", "generator-1", "bus-1")])
+        k_g = 1.1 / (1 + 0.2 * math.sqrt(1 - 0.85 ** 2))
+        assert abs(thevenin_z1_at_bus(gproj, "bus-1", nameplate=True)) == pytest.approx(2.0, rel=5e-3)
+        assert abs(thevenin_z1_at_bus(gproj, "bus-1")) == pytest.approx(2.0 * k_g, rel=5e-3)
+
     def test_superposition_uses_motor_off_prestart_voltage(self):
         """The Thevenin dip check must start from the terminal voltage with
         the starting motor OFF, not the running baseline.
@@ -901,11 +940,11 @@ class TestMotorStarting:
         # start / 0.85 run, S_run = 1000/(0.95·0.85) = 1.238 MVA, S_start = 6×.
         #   Baseline (ideal swing, transformer nameplate z_T = 1.0 pu, X/R 10,
         #   motor running):                          V_run   = 0.99235 pu
-        #   Start (Thevenin at c = 1.0: grid 0.2 pu X/R 15 + K_T·z_T with
-        #   K_T = 0.95·1.1/(1 + 0.6·0.0995) = 0.98613, V_pre motor-off = 1.0):
-        #                                            V_start = 0.90452 pu
-        #   dip = (V_run − V_start)/V_run = 8.852 %
-        assert dip == pytest.approx(8.85, abs=0.01)
+        #   Start (Thevenin at c = 1.0: grid 0.2 pu X/R 15 + nameplate z_T —
+        #   no IEC 60909 K_T, a short-circuit-only correction; V_pre
+        #   motor-off = 1.0):                        V_start = 0.90326 pu
+        #   dip = (V_run − V_start)/V_run = 8.978 %
+        assert dip == pytest.approx(8.978, abs=0.01)
 
     def _motor_dip(self, starting_method):
         xfmr = _comp("transformer-1", "transformer", {
@@ -1189,10 +1228,11 @@ class TestFlickerAnalysis:
         d = res["sources"][0]["relative_voltage_change_pct"]
         assert 4.0 < d < 13.0, f"d={d:.2f}%, expected the ~7% hand-calc band"
         # Point value (review V-6): d = ΔU/U from motor-OFF (V_pre = 1.0) to
-        # the starting point V_start = 0.90452 pu — same exact solve as
-        # TestMotorStarting.test_voltage_dip_magnitude → d = 9.548 %. (Before
-        # 2026-09-27 V_pre carried the motor's running load and d read 9.714 %.)
-        assert d == pytest.approx(9.548, abs=0.005)
+        # the starting point V_start = 0.90326 pu — same exact nameplate solve
+        # as TestMotorStarting.test_voltage_dip_magnitude → d = 9.674 %.
+        # (Before 2026-09-27 V_pre carried the motor's running load, and the
+        # transformer carried K_T.)
+        assert d == pytest.approx(9.674, abs=0.005)
 
     def test_frequent_starts_fail_default_pst_limit(self):
         """60 starts/hour (r=1/min) at a ~7% step is well above the 3% anchor

@@ -13,6 +13,7 @@ Includes motor contribution per IEC 60909-0 §13:
 Per-unit method on a common MVA base.
 """
 
+import contextvars
 import math
 import re
 from typing import Optional
@@ -992,6 +993,13 @@ def _utility_impedance(comp, base_mva, c=C_MAX):
     return complex(r_pu, x_pu)
 
 
+# IEC 60909 impedance correction factors (K_T, K_G) belong to short-circuit
+# calculations only. Voltage-dip studies (motor starting, flicker, dynamic
+# motor starting) ask thevenin_z1_at_bus for NAMEPLATE impedances instead;
+# the flag is context-local, so a concurrent fault run is unaffected.
+_NAMEPLATE_IMPEDANCE = contextvars.ContextVar("_NAMEPLATE_IMPEDANCE", default=False)
+
+
 def _generator_impedance(comp, base_mva, v_system_kv=None):
     """Generator sub-transient impedance in per-unit, corrected per
     IEC 60909-0 §6.6.1:
@@ -1036,6 +1044,8 @@ def _generator_impedance(comp, base_mva, v_system_kv=None):
     sin_phi = math.sqrt(max(0.0, 1.0 - pf * pf))
     u_ratio = (v_system_kv / u_rg) if (v_system_kv and u_rg > 0) else 1.0
     k_g = u_ratio * 1.10 / (1.0 + xd_pp * sin_phi)
+    if _NAMEPLATE_IMPEDANCE.get():
+        return complex(r_pu, x_pu)
     return complex(r_pu, x_pu) * k_g
 
 
@@ -1276,6 +1286,8 @@ def _transformer_impedance(comp, base_mva):
     # standard practice) as well as for MV/HV.
     c_max = 1.10
     k_t = 0.95 * c_max / (1 + 0.6 * x_t)
+    if _NAMEPLATE_IMPEDANCE.get():
+        return complex(r_pu, x_pu)
 
     return complex(r_pu * k_t, x_pu * k_t)
 
@@ -2243,7 +2255,7 @@ def _nodal_thevenin(bus_ids, branches, shunts, faulted_id):
 
 
 def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
-                       exclude_source_ids=()):
+                       exclude_source_ids=(), nameplate=False):
     """Positive-sequence Thevenin impedance at a bus (p.u. on the system base
     at the bus voltage zone), for voltage-dip / motor-starting studies.
 
@@ -2253,7 +2265,20 @@ def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
     fraction of lumped loads) are excluded by default — they are loads, not
     sustaining sources, for a starting study. Returns None when no
     qualifying source feeds the bus.
+
+    ``nameplate=True`` drops the IEC 60909 short-circuit correction factors
+    (transformer K_T, generator K_G) so the impedance is the equipment's
+    nameplate value — what a voltage-dip study wants.
     """
+    token = _NAMEPLATE_IMPEDANCE.set(bool(nameplate))
+    try:
+        return _thevenin_z1_at_bus(project, bus_id, c, exclude_motor_paths,
+                                   exclude_source_ids)
+    finally:
+        _NAMEPLATE_IMPEDANCE.reset(token)
+
+
+def _thevenin_z1_at_bus(project, bus_id, c, exclude_motor_paths, exclude_source_ids):
     components = {comp.id: comp for comp in project.components}
     adjacency = {}
     for w in project.wires:

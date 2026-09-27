@@ -74,12 +74,15 @@ def _thevenin_z1(project, bus_id, starting_motor_id):
     """[EE-1] Positive-sequence Thevenin impedance at the motor terminal bus,
     INCLUDING the source internal impedance (utility fault level, generator
     X″d) — from the shared fault-path machinery at c = 1.0, motor infeeds
-    excluded, meshed topologies solved nodally ([PS-1])."""
+    excluded, meshed topologies solved nodally ([PS-1]). Nameplate
+    impedances: the IEC 60909 K_T / K_G short-circuit corrections do not
+    apply to a voltage-dip study."""
     from .fault import thevenin_z1_at_bus
     try:
         return thevenin_z1_at_bus(project, bus_id, c=1.0,
                                   exclude_motor_paths=True,
-                                  exclude_source_ids={starting_motor_id})
+                                  exclude_source_ids={starting_motor_id},
+                                  nameplate=True)
     except Exception:
         return None
 
