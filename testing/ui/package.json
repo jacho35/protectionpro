@@ -1,0 +1,12 @@
+{
+  "name": "protectionpro-ui-verify",
+  "private": true,
+  "description": "Headless-UI check of the Verification / Standards templates (see verify_templates_ui.mjs)",
+  "type": "module",
+  "scripts": {
+    "verify": "node verify_templates_ui.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

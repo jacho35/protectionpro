@@ -34,6 +34,15 @@ between documents, **the latest round is authoritative**:
    scoped specifically to the Plan Markup module (UI/UX + EE + adversarial
    dev verification), independent of the calculation-engine chain above.
 7. **`auditverify.md`** — "Open Items Fix Worklist" derived from verifying `BACKLOG.md` against the source tree (2026-07-09); a 9-item confirmation list, not a fresh findings doc.
+8. **2026-09-20 calculation audit** — `CALC_AUDIT_2026-09-20.md` (first-principles audit of every
+   engine), reviewed by **`CALC_AUDIT_REVIEW_2026-09-20.md`** (corrects it: adds N-1, R-1…R-5,
+   downgrades F-5), settled by **`CALC_AUDIT_IMPLEMENTATION_RECOMMENDATIONS_2026-09-20.md`** — the
+   final word for this round. Reproduction probes in `probes-2026-09-20/`; fixes pinned by
+   `TestCableZoneBase`, `TestCableParallelDivide`, `TestCableZoneWarning`, `TestZ0SourceDisclosure`.
+   All findings closed (BACKLOG, 2026-09-20 remediation entries).
+9. **`VERIFICATION_SYSTEM_REVIEW_2026-09-27.md`** — third-party review of the verification system
+   itself (claims, test quality, artifact sync, coverage honesty), V-1…V-8. All closed 2026-09-27
+   (PR #321 and its follow-up); see BACKLOG "Verification-system review".
 
 Do not act on a raw EE/PS finding without checking whether Round 3 Principal
 revised or closed it.

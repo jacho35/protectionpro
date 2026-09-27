@@ -6,7 +6,8 @@ number to expect. Those expected numbers live in one table (EXPECTED in
 testing/build_verification_templates.py); this test runs each template's
 project through the same analysis route the app calls and asserts the engine
 still produces them, and that the shipped frontend/js/verification-templates.js
-is exactly what the generator renders today.
+and testing/ui/verification-expected.json are exactly what the generator
+renders today.
 
 A failure here means either an engine changed a verified result (investigate
 before touching the table) or the templates file is stale (regenerate it with
@@ -72,4 +73,13 @@ def test_templates_file_matches_generator():
     shipped = (ROOT / "frontend" / "js" / "verification-templates.js").read_text()
     assert shipped == gen.render(), (
         "frontend/js/verification-templates.js is stale — run "
+        "`python testing/build_verification_templates.py`")
+
+
+def test_ui_expected_json_matches_generator():
+    """testing/ui/verification-expected.json feeds the headless-UI check the
+    same EXPECTED values this module asserts."""
+    shipped = (ROOT / "testing" / "ui" / "verification-expected.json").read_text()
+    assert shipped == gen.render_expected(), (
+        "testing/ui/verification-expected.json is stale — run "
         "`python testing/build_verification_templates.py`")

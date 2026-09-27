@@ -49,7 +49,7 @@ import math
 from ..models.schemas import ProjectData
 from .loadflow import run_load_flow, insert_implicit_load_buses
 from .motor_starting import (
-    _build_adjacency, _find_motor_bus, _thevenin_z1, _solve_pq_dip,
+    _build_adjacency, _find_motor_bus, _thevenin_z1, _solve_pq_dip, _prestart_voltage,
     _STARTING_METHODS,
 )
 
@@ -155,7 +155,11 @@ def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
                             "Thevenin voltage-step calculation, skipped.")
             continue
 
-        v_pre_term = v_pre.get(terminal_bus, 1.0)
+        # d is the step from motor-off to starting (IEC 61000-3-3 ΔU/U), so
+        # V_pre is with THIS motor off — the running baseline would count its
+        # load twice (see motor_starting._prestart_voltage).
+        v_pre_term = _prestart_voltage(project, motor.id, terminal_bus,
+                                       v_pre.get(terminal_bus, 1.0))
         s_pu = s_start_mva / project.baseMVA
         start_pf = 0.3
         s_cplx = s_pu * complex(start_pf, math.sqrt(1 - start_pf ** 2))

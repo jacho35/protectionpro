@@ -2,10 +2,12 @@
 projects.
 
 EXPECTED is the one source for each template's headline numbers: the
-generator formats them into the template instructions, and
-backend/tests/test_verification_templates.py runs every template through its
-analysis route and asserts the engine still produces them — so a template can
-never silently show a stale "Expected …" value.
+generator formats them into the template instructions and writes them to
+testing/ui/verification-expected.json; backend/tests/test_verification_templates.py
+runs every template through its analysis route, and
+testing/ui/verify_templates_ui.mjs through the real app UI, asserting the
+engine still produces them — so a template can never silently show a stale
+"Expected …" value.
 
 Run from anywhere:  python testing/build_verification_templates.py
 """
@@ -13,6 +15,8 @@ import json, os
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(BASE), "frontend", "js", "verification-templates.js")
+# EXPECTED as JSON for the headless-UI check (testing/ui/verify_templates_ui.mjs).
+OUT_EXPECTED = os.path.join(BASE, "ui", "verification-expected.json")
 
 # Ordered curated metadata. Each: (case_dir, id, name, preview, description)
 CASES = [
@@ -302,9 +306,21 @@ def render():
     return "\n".join(lines)
 
 
+def render_expected():
+    """EXPECTED as JSON: {id: {"route", "checks": {name: [path, value, rel]}}}."""
+    out = {}
+    for tid, (route, checks) in EXPECTED.items():
+        out[tid] = {"route": route, "checks": {
+            name: [spec[0], spec[1], spec[2] if len(spec) > 2 else 1e-3]
+            for name, spec in checks.items()}}
+    return json.dumps(out, indent=2, ensure_ascii=False) + "\n"
+
+
 if __name__ == "__main__":
     with open(OUT, "w") as f:
         f.write(render())
-    print("Wrote", OUT)
+    with open(OUT_EXPECTED, "w") as f:
+        f.write(render_expected())
+    print("Wrote", OUT, "and", OUT_EXPECTED)
     print("Cases:", len(CASES))
     print("Size:", os.path.getsize(OUT), "bytes")
