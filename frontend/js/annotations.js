@@ -901,7 +901,11 @@ const Annotations = {
     const fillColor = motor.status === 'fail' ? '#d32f2f' : motor.status === 'warning' ? '#f57c00' : '#4caf50';
     const icon = motor.motor_will_start ? '✓' : '✗';
     const lines = [];
-    if (this.fieldVisible('motor', 'voltage')) lines.push(`${icon} ${(motor.motor_terminal_voltage_pu * 100).toFixed(1)}%`);
+    // A voltage collapse has no terminal voltage to show; an estimate (the
+    // network solve failed, Thevenin value only) is marked with ≈.
+    if (this.fieldVisible('motor', 'voltage')) lines.push(motor.collapse
+      ? `${icon} collapse`
+      : `${icon} ${motor.estimate ? '≈' : ''}${(motor.motor_terminal_voltage_pu * 100).toFixed(1)}%`);
 
     const lineHeight = 14;
     const boxH = lines.length * lineHeight + 10;

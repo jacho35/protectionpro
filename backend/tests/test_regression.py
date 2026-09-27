@@ -825,6 +825,59 @@ class TestGrounding:
 
 
 class TestMotorStarting:
+    def _big_motor_on_weak_supply(self):
+        """600 kW DOL motor at 0.4 kV behind a 315 kVA, 4 % transformer from
+        a 5 MVA grid: S_start ≈ 6·600/(0.93·0.85)/1000 ≈ 4.6 MVA — far past
+        what the supply can deliver, so the starting solve collapses."""
+        xfmr = _comp("transformer-1", "transformer", {
+            "name": "TX1", "rated_mva": 0.315, "z_percent": 4.0, "x_r_ratio": 5.0,
+            "voltage_hv_kv": 11.0, "voltage_lv_kv": 0.4, "vector_group": "Dyn11"})
+        lv_bus = _comp("bus-2", "bus", {"name": "LV Bus", "voltage_kv": 0.4})
+        motor = _comp("motor_induction-1", "motor_induction", {
+            "name": "M1", "rated_kw": 600.0, "voltage_kv": 0.4,
+            "efficiency": 0.93, "power_factor": 0.85, "locked_rotor_current": 6.0,
+            "demand_factor": 0.0})
+        return _utility_bus_project(
+            fault_mva=5.0, extra_components=[xfmr, lv_bus, motor],
+            extra_wires=[_wire("w2", "bus-1", "transformer-1"),
+                         _wire("w3", "transformer-1", "bus-2"),
+                         _wire("w4", "bus-2", "motor_induction-1")])
+
+    def test_collapse_is_reported_not_dropped(self):
+        """A starting load flow with no solution is a result: the motor must
+        come back as a voltage-collapse FAIL. Previously it was dropped with
+        only a 'did not converge' warning, which read as nothing wrong."""
+        res = run_motor_starting(self._big_motor_on_weak_supply())
+        assert len(res["motors"]) == 1, res["warnings"]
+        m = res["motors"][0]
+        assert m["status"] == "fail" and m["motor_will_start"] is False
+        assert m["collapse"] is True and m["estimate"] is False
+        assert m["motor_terminal_voltage_pu"] == 0.0
+        assert "voltage collapse" in m["issues"][0]
+        assert not any("did not converge" in w for w in res["warnings"])
+
+    def test_unsolved_network_reports_thevenin_estimate(self, monkeypatch):
+        """If only the network solve fails while the Thevenin superposition
+        still has an operating point, the terminal voltage is that estimate
+        (flagged) and other-bus dips are left out. Same network and exact
+        solve as test_voltage_dip_magnitude: V_start = 0.90326 pu."""
+        from backend.analysis import loadflow
+        real = loadflow.run_load_flow
+
+        def starting_lf_diverges(project, *a, **k):
+            res = real(project, *a, **k)
+            starting = any(c.type == "motor_induction" and c.props.get("power_factor") == 0.3
+                           for c in project.components)
+            return res.model_copy(update={"converged": False}) if starting else res
+
+        monkeypatch.setattr(loadflow, "run_load_flow", starting_lf_diverges)
+        m = run_motor_starting(TestFlickerAnalysis()._flicker_project())["motors"][0]
+        assert m["estimate"] is True and m["collapse"] is False
+        assert m["motor_terminal_voltage_pu"] == pytest.approx(0.90326, abs=5e-4)
+        assert m["motor_will_start"] is True and m["status"] == "warning"
+        assert list(m["bus_dips"]) == ["LV Bus"]
+        assert any("Thevenin estimate" in i for i in m["issues"])
+
     def test_voltage_dip_thevenin_uses_nameplate_impedance(self):
         """Voltage-dip studies see nameplate impedances; fault studies keep
         the IEC 60909 correction factors.
