@@ -1225,22 +1225,23 @@ document.addEventListener('DOMContentLoaded', () => {
         <div>Rated: <strong>${m.rated_kw} kW</strong>${m.motor_type ? ` (${m.motor_type})` : ''}</div>
         <div>Start Current: <strong>${m.start_current_a.toFixed(0)} A</strong>${m.starting_method ? ` (${m.starting_method})` : ''}</div>
         <div>Terminal Bus: <strong>${escHtml(m.terminal_bus)}</strong></div>
-        <div>Terminal V: <strong>${m.motor_terminal_voltage_pu.toFixed(3)} p.u.</strong></div>
+        <div>Terminal V: <strong>${m.collapse ? 'voltage collapse' : `${m.estimate ? '≈ ' : ''}${m.motor_terminal_voltage_pu.toFixed(3)} p.u.`}</strong></div>
         <div>Will Start: ${willStartIcon}</div>
-        <div>Max Dip: <strong>${m.max_system_dip_pct.toFixed(1)}%</strong> at ${m.max_dip_bus}</div>
+        <div>Max Dip: <strong>${m.collapse ? '—' : `${m.max_system_dip_pct.toFixed(1)}%`}</strong>${m.collapse ? '' : ` at ${escHtml(m.max_dip_bus)}`}</div>
       </div>`;
 
       if (m.issues.length > 0) {
-        html += '<div style="color:#b71c1c;font-size:11px;margin-bottom:8px">' + m.issues.join('<br>') + '</div>';
+        html += '<div style="color:#b71c1c;font-size:11px;margin-bottom:8px">' + m.issues.map(escHtml).join('<br>') + '</div>';
       }
 
       // Bus dips table (top 5 worst)
-      const sortedDips = Object.entries(m.bus_dips).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      // No dip table for a collapse — there is no operating point to tabulate.
+      const sortedDips = m.collapse ? [] : Object.entries(m.bus_dips).sort((a, b) => b[1] - a[1]).slice(0, 5);
       if (sortedDips.length > 0) {
         html += `<table class="af-table" style="font-size:11px"><thead><tr><th>Bus</th><th>Voltage Dip (%)</th></tr></thead><tbody>`;
         for (const [bus, dip] of sortedDips) {
           const dipColor = dip > 15 ? '#d32f2f' : dip > 10 ? '#f57c00' : dip > 5 ? '#fbc02d' : '#4caf50';
-          html += `<tr><td>${bus}</td><td style="color:${dipColor};font-weight:600">${dip.toFixed(2)}%</td></tr>`;
+          html += `<tr><td>${escHtml(bus)}</td><td style="color:${dipColor};font-weight:600">${dip.toFixed(2)}%</td></tr>`;
         }
         html += '</tbody></table>';
       }

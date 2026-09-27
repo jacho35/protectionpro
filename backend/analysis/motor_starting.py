@@ -111,6 +111,86 @@ def _prestart_voltage(project, motor_id, bus_id, fallback):
     return fallback
 
 
+def _unsolved_start_row(project, motor, motor_name, terminal_bus, terminal_bus_name,
+                        rated_kw, is_sync, method_label, start_current_a, s_start_mva,
+                        baseline_voltages, lf_failed):
+    """Result row for a motor whose starting load flow failed or did not
+    converge. The Thevenin superposition decides what that means:
+
+    * no operating point there either → voltage collapse: the network cannot
+      supply the starting load. Reported as a stall (terminal V 0.0 p.u.,
+      the same convention as the converged-LF collapse path) with
+      ``collapse: True`` so the UI can say so instead of printing 0.000.
+    * a Thevenin operating point exists → the network solve failed for
+      another reason; the terminal voltage is that estimate
+      (``estimate: True``) and dips at other buses are not available.
+    """
+    what = "failed" if lf_failed else "did not converge"
+    s_txt = (f"{s_start_mva * 1000:.0f} kVA" if s_start_mva < 1
+             else f"{s_start_mva:.2f} MVA")
+    bus_label = terminal_bus_name or terminal_bus or ""
+    v_base = baseline_voltages.get(terminal_bus, 1.0) if terminal_bus else 1.0
+
+    z_th = _thevenin_z1(project, terminal_bus, motor.id) if terminal_bus else None
+    v_est = None
+    if z_th is not None:
+        v_pre = _prestart_voltage(project, motor.id, terminal_bus, v_base)
+        s_pu = s_start_mva / project.baseMVA
+        v_est = _solve_pq_dip(v_pre, z_th, s_pu * complex(0.3, math.sqrt(1 - 0.3 ** 2)))
+
+    collapse = z_th is not None and v_est is None
+    if collapse:
+        v_term = 0.0
+        issues = [
+            f"No starting operating point: the {s_txt} starting load (pf 0.3) is more "
+            f"than the network can supply — voltage collapse. The motor will not start "
+            f"{method_label} on this network.",
+            "Consider a reduced-voltage starter (star-delta, soft starter, VFD) or a "
+            "stronger supply. Constant-PQ starting model, pessimistic near collapse — "
+            "Dynamic Motor Starting gives the time-domain check.",
+        ]
+    elif v_est is not None:
+        v_term = v_est
+        issues = [f"The network load flow {what} with the motor starting, so dips at "
+                  f"other buses were not computed; terminal voltage is the Thevenin "
+                  f"estimate only."]
+        if v_term < 0.8:
+            issues.insert(0, f"Terminal voltage {v_term:.3f} p.u. < 0.80 p.u. — motor "
+                             f"may not accelerate")
+    else:
+        v_term = 0.0
+        issues = [f"The network load flow {what} with the motor starting and no "
+                  f"source path was found for a Thevenin estimate — no result for "
+                  f"this motor. Check the network solves in Load Flow first."]
+
+    has_v = collapse or v_est is not None
+    will_start = v_est is not None and v_term >= 0.8
+    dip = (v_base - v_term) / v_base * 100 if (has_v and v_base > 0) else 0.0
+    if v_est is not None and dip > 15:
+        issues.append(f"Max system voltage dip {dip:.1f}% > 15% at {bus_label}")
+    status = "fail" if not will_start else "warning"
+
+    return {
+        "motor_id": motor.id,
+        "motor_name": motor_name,
+        "terminal_bus": bus_label,
+        "rated_kw": round(rated_kw, 1),
+        "motor_type": "synchronous" if is_sync else "induction",
+        "starting_method": method_label,
+        "start_current_a": round(start_current_a, 1),
+        "motor_terminal_voltage_pu": round(v_term, 4),
+        "motor_will_start": will_start,
+        "max_system_dip_pct": round(dip, 2),
+        "max_dip_bus": bus_label if has_v else "",
+        "bus_dips": {bus_label: round(dip, 2)} if (bus_label and has_v) else {},
+        "status": status,
+        "issues": issues,
+        "collapse": collapse,
+        "estimate": v_est is not None,
+        "model": "constant-PQ starting load (pessimistic near collapse)",
+    }
+
+
 def _solve_pq_dip(v_pre_pu, z_th, s_start_pu):
     """[EE-1] Terminal voltage of a constant-PQ starting load S behind the
     Thevenin impedance: V = V_pre − Z_th·(S/V)*  (fixed-point iteration).
@@ -259,11 +339,16 @@ def run_motor_starting(project: ProjectData):
             try:
                 start_lf = run_load_flow(modified, "gauss_seidel", include_synthetic=True)
             except Exception:
-                analysis_warnings.append(f"Load flow failed for motor '{motor_name}' starting.")
-                continue
+                start_lf = None
 
-        if not start_lf.converged:
-            analysis_warnings.append(f"Load flow did not converge for motor '{motor_name}' starting.")
+        if start_lf is None or not start_lf.converged:
+            # No starting solution is itself a result — usually the starting
+            # load is beyond what the network can deliver. Report the motor
+            # (never drop it with only a warning, which read as "no problem").
+            results.append(_unsolved_start_row(
+                project, motor, motor_name, terminal_bus, terminal_bus_name,
+                rated_kw, is_sync, method_label, start_current_a, s_start_mva,
+                baseline_voltages, lf_failed=start_lf is None))
             continue
 
         # [EE-1] The load flow holds the swing source at 1.0 p.u. with zero
@@ -279,6 +364,7 @@ def run_motor_starting(project: ProjectData):
             if bus_id == terminal_bus:
                 lf_terminal_v_pu = bus_result.voltage_pu
         superposed_v_pu = None
+        thevenin_collapse = False
         if terminal_bus:
             v_pre_term = _prestart_voltage(project, motor.id, terminal_bus,
                                            baseline_voltages.get(terminal_bus, 1.0))
@@ -293,6 +379,7 @@ def run_motor_starting(project: ProjectData):
                     # No converged operating point — the starting load exceeds
                     # the network's transfer capability (voltage collapse).
                     superposed_v_pu = 0.0
+                    thevenin_collapse = True
                     analysis_warnings.append(
                         f"Motor '{motor_name}': no converged starting operating "
                         f"point behind the source Thevenin impedance — network "
@@ -387,6 +474,8 @@ def run_motor_starting(project: ProjectData):
             "bus_dips": bus_dips,
             "status": status,
             "issues": issues,
+            "collapse": thevenin_collapse,
+            "estimate": False,
             # [EE-R2-3] Model disclosure: the starting load is held at
             # constant PQ (locked-rotor S at fixed pf), which draws MORE
             # current as the voltage falls than a true constant-impedance
