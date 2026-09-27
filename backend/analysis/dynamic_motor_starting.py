@@ -269,7 +269,9 @@ def _find_motor_bus(motor_id, adj, comp_map):
 
 def _thevenin_at_bus(project, bus_id, exclude_motor_ids):
     """Thevenin impedance (complex, pu on system base at the bus voltage
-    zone) from all non-motor source paths, evaluated at c = 1.0.
+    zone) from all non-motor source paths, evaluated at c = 1.0 with
+    nameplate impedances (no IEC 60909 K_T / K_G — those are short-circuit
+    corrections, not part of a voltage-dip model).
 
     [PS-1] Delegates to fault.thevenin_z1_at_bus, which solves meshed
     (shared-path) topologies nodally instead of paralleling path totals."""
@@ -277,7 +279,8 @@ def _thevenin_at_bus(project, bus_id, exclude_motor_ids):
 
     return thevenin_z1_at_bus(project, bus_id, c=1.0,
                               exclude_motor_paths=True,
-                              exclude_source_ids=exclude_motor_ids)
+                              exclude_source_ids=exclude_motor_ids,
+                              nameplate=True)
 
 
 def _baseline_voltages(project, motor_ids_off, warnings):

@@ -309,7 +309,7 @@ Both are editable via the Settings modal and can be reset to defaults.
 - Time-domain acceleration: integrates 2H·dω/dt = T_e − T_L (RK2)
 - Single-cage equivalent circuit + magnetizing branch, linear deep-bar R₂(s),
   fitted to nameplate LRC / LRT / rated point (IEEE 3002.7 methodology)
-- Network as Thevenin superposition (Z_th from the fault-path walker at c=1.0,
+- Network as Thevenin superposition (Z_th from the fault-path walker at c=1.0 with nameplate impedances — `thevenin_z1_at_bus(..., nameplate=True)` drops the IEC 60909 K_T/K_G short-circuit corrections; static motor starting and flicker use the same,
   motor infeeds excluded; V_pre from a baseline load flow with the motor off)
 - Starters: DOL, star-delta, autotransformer, soft starter (current-limited); VFD not simulated
 - Reports accel time, stall, peak current, voltage dip trajectory, rotor I²t thermal use
