@@ -768,6 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
         case 'gr':   if (AppState.groundingResults) showGroundingResults(AppState.groundingResults); break;
         case 'dclf': if (AppState.dcLoadFlowResults) showDCLoadFlowResults(AppState.dcLoadFlowResults); break;
         case 'dcsc': if (AppState.dcShortCircuitResults) showDCShortCircuitResults(AppState.dcShortCircuitResults); break;
+        case 'dcaf': if (AppState.dcArcFlashResults) showDCArcFlashResults(AppState.dcArcFlashResults); break;
         case 'lf': case 'warn': if (AppState.loadFlowResults) showDispatchSummary(AppState.loadFlowResults); break;
         default:
           // fault, vdep, ulf, ulf-warn — no dedicated modal; open the detailed

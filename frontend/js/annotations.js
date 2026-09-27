@@ -29,7 +29,7 @@ const RESULT_TYPE_DEFS = [
     { key: 'sequence', label: 'Sequence (V1/V2/V0)' },
     { key: 'vuf', label: 'VUF' },
   ] },
-  { key: 'arcflash', label: 'Arc Flash', prefixes: ['af'], fields: [
+  { key: 'arcflash', label: 'Arc Flash', prefixes: ['af', 'dcaf'], fields: [
     { key: 'energy', label: 'Incident energy' },
     { key: 'ppe', label: 'PPE category' },
     { key: 'afb', label: 'Arc flash boundary' },
@@ -414,6 +414,21 @@ const Annotations = {
         if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 70, 50, stacks);
         html += this.renderArcFlashBadge(pos.x, pos.y, result, key);
+        this._advanceStack(stacks, comp, pos);
+      }
+    }
+
+    // DC arc flash annotations on DC buses — same result type (toggle and
+    // value ticks) as AC arc flash; arcing current arrives in A, shown in kA.
+    if (AppState.showResultBoxes.arcflash && AppState.dcArcFlashResults && AppState.dcArcFlashResults.buses) {
+      for (const [busId, result] of Object.entries(AppState.dcArcFlashResults.buses)) {
+        const comp = pageComps.get(busId);
+        if (!comp) continue;
+        const key = `dcaf:${busId}`;
+        if (this.hiddenResultBoxes.has(key)) continue;
+        const pos = this._badgePos(comp, key, 70, 50, stacks);
+        html += this.renderArcFlashBadge(pos.x, pos.y,
+          { ...result, arcing_current_ka: (result.dc_arcing_current_a || 0) / 1000 }, key, 'DC ARC FLASH');
         this._advanceStack(stacks, comp, pos);
       }
     }
@@ -810,7 +825,7 @@ const Annotations = {
       </g>`;
   },
 
-  renderArcFlashBadge(x, y, result, key) {
+  renderArcFlashBadge(x, y, result, key, title = 'ARC FLASH') {
     const lines = [];
     if (this.fieldVisible('arcflash', 'energy')) lines.push(`${result.incident_energy_cal.toFixed(2)} cal/cm²`);
     if (this.fieldVisible('arcflash', 'ppe')) lines.push(`PPE: Cat ${result.ppe_category}`);
@@ -840,7 +855,7 @@ const Annotations = {
       <g class="annotation-group arcflash-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
         <rect class="annotation-badge af-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.15" stroke="${fillColor}" stroke-width="1.5"/>
-        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">ARC FLASH — ${busLabel}</text>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">${title} — ${busLabel}</text>
         ${textHtml}
       </g>`;
   },
