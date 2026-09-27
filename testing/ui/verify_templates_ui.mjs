@@ -48,8 +48,6 @@ const RUN = {
   'dc-shortcircuit': ['#btn-dc-shortcircuit', 'dcShortCircuitResults'],
   'dc-arcflash': ['#btn-dc-arcflash', 'dcArcFlashResults'],
 };
-// Studies that report in a modal only and draw no diagram badges.
-const NO_BADGES = new Set(['dc-arcflash']);
 
 async function token() {
   const post = (path, body) => fetch(`${BASE_URL}/api/auth/${path}`, {
@@ -128,7 +126,7 @@ async function checkTemplate(browser, jwt, tid) {
       }
       // The run must also have drawn its result badges on the diagram.
       const badges = await page.locator('.annotation-badge').count();
-      if (!badges && !NO_BADGES.has(route)) errors.push('no result annotations rendered on the diagram');
+      if (!badges) errors.push('no result annotations rendered on the diagram');
     }
     if (consoleErrors.length) errors.push(`page errors: ${consoleErrors.join(' | ')}`);
     if (process.env.SHOTS_DIR || errors.length) {
