@@ -1327,7 +1327,7 @@ const FIELD_INFO = {
   // Solar PV — inverter & plant
   'solar_pv.rated_kw':      'AC nameplate of ONE inverter. Total plant = rated kW × No. of Inverters.\nIn array mode the output additionally clips at this value when the DC array out-produces it.',
   'solar_pv.num_inverters': 'Number of identical inverters; multiplies the rated power, DC array and battery limits.',
-  'solar_pv.inverter_eff':  'DC→AC conversion efficiency. Default 0.97 — typical peak efficiency of modern string inverters (datasheet "max efficiency" 96–98.5%).',
+  'solar_pv.inverter_eff':  'DC→AC conversion efficiency. Default 0.97 — typical peak efficiency of modern string inverters (datasheet "max efficiency" 96–98.5%).\nApplied in array mode (AC output = DC array × irradiance × efficiency, clipped at the rated kW). In rated mode the rated kW is already the AC output, so efficiency does not change it.',
   'solar_pv.power_factor':  'Displacement power factor at the AC terminals. Default 1.0 — inverters normally export at unity unless the utility requires reactive support (e.g. 0.95 under grid codes).',
   'solar_pv.mppt_tracking': 'Informational: fixed-tilt vs tracking mounting. Does not change the electrical model — capture the yield difference via Irradiance %.',
   'solar_pv.irradiance_pct':'Availability scaling of the DC resource: 100% = STC full sun, 0% = night.\nUse it to study partial output (cloud, morning/evening) — in array mode output = min(DC × irradiance, inverter rating).',

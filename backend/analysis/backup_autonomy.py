@@ -30,7 +30,7 @@ load but contain no battery-backed source are reported as unbacked.
 import math
 
 from ..models.schemas import ProjectData
-from .loadflow import _battery_params, _source_output_mva
+from .loadflow import _battery_params, _source_output_mva, _prop_float
 
 # Traversal is blocked by these when open; everything else conducts
 _SWITCHING_TYPES = ("cb", "switch")
@@ -160,7 +160,7 @@ def run_backup_autonomy(project: ProjectData) -> dict:
                 "max_discharge_kw": round(dis_kw, 2),
                 "available_kwh": round(bp["available_kwh"], 2),
                 "pv_kw_now": round(unit_pv, 2),
-                "soc_pct": float(c.props.get("battery_soc_pct", 100) or 100),
+                "soc_pct": _prop_float(c.props, "battery_soc_pct", 100),
             })
 
         has_backup = len(sources) > 0

@@ -1540,20 +1540,19 @@ const Properties = {
       if (irr < 100) {
         html += `<div class="prop-row"><label>Available Output</label><span class="pu-value">${fmtKw(total * irr / 100)} @ ${irr}%</span></div>`;
       }
-      // Full load current at the plant's rated apparent power (engine
-      // convention: S = kW × inverters / efficiency), independent of irradiance
+      // Full load current at the plant's AC nameplate (engine convention:
+      // S = rated kW × inverters — rated kW is the AC output, so efficiency
+      // does not enlarge it), independent of irradiance
       const pvKv = comp.props.voltage_kv || 0;
-      const eff = comp.props.inverter_eff || 0.97;
-      if (pvKv > 0 && eff > 0) {
-        const sKva = total / eff;
-        html += `<div class="prop-row"><label>Full Load Current</label><span class="pu-value">${(sKva / (Math.sqrt(3) * pvKv)).toFixed(1)} A</span></div>`;
+      if (pvKv > 0) {
+        html += `<div class="prop-row"><label>Full Load Current</label><span class="pu-value">${(total / (Math.sqrt(3) * pvKv)).toFixed(1)} A</span></div>`;
       }
       if (comp.props.pv_array_mode === 'array') {
         const rows = this._pvArraySummaryRows(comp.props, total);
         if (rows) html += rows;
       }
       if (comp.props.inverter_type === 'hybrid') {
-        const rows = this._batterySummaryRows(comp.props, eff > 0 ? total / eff : total);
+        const rows = this._batterySummaryRows(comp.props, total);
         if (rows) html += rows;
       }
     } else if (comp.type === 'wind_turbine') {

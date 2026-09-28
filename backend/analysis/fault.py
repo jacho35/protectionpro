@@ -1402,11 +1402,11 @@ def _solar_pv_impedance(comp, base_mva):
     num_inv = comp.props.get("num_inverters", 1)
     voltage_kv = comp.props.get("voltage_kv", 0.4)
     fault_pu = comp.props.get("fault_contribution_pu", 1.1)
-    eff = comp.props.get("inverter_eff", 0.97)
 
-    # Total rated apparent power (assume PF=1 for sizing)
+    # Total rated apparent power (assume PF=1 for sizing). rated_kw is the
+    # inverter's AC nameplate, so the DC→AC efficiency does not enlarge it.
     total_kw = rated_kw * num_inv
-    rated_mva = total_kw / (eff * 1000)
+    rated_mva = total_kw / 1000
 
     if rated_mva < 1e-10:
         return complex(1e6, 1e6)  # Effectively infinite impedance

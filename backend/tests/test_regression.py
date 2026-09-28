@@ -2562,7 +2562,7 @@ class TestIslandingAndDispatch:
             }),
             _comp("bus-1", "bus", {"name": "Main Bus", "voltage_kv": 0.4}),
             _comp("solar-1", "solar_pv", {
-                "name": "PV1", "rated_kw": 1940.0, "voltage_kv": 0.4,
+                "name": "PV1", "rated_kw": 2000.0, "voltage_kv": 0.4,
                 "inverter_eff": 0.97, "power_factor": 1.0,
             }),
             _comp("static_load-1", "static_load", {
@@ -2584,7 +2584,7 @@ class TestIslandingAndDispatch:
         res = run_load_flow(self._solar_utility_project("yes"), "newton_raphson")
         assert res.converged
         pv = next(d for d in res.dispatch if d.source_id == "solar-1")
-        assert pv.dispatched_mw == pytest.approx(2.0, abs=0.01)  # 1940/0.97/1000
+        assert pv.dispatched_mw == pytest.approx(2.0, abs=0.01)  # AC nameplate, not ÷η
         assert pv.curtailed_mw == 0
 
     def test_solar_curtailed_when_export_disallowed(self):
@@ -2695,8 +2695,8 @@ class TestIslandingAndDispatch:
             }),
             _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 0.4}),
             _comp("solar-1", "solar_pv", {
-                "name": "PV", "rated_kw": 97, "voltage_kv": 0.4,
-                "inverter_eff": 0.97, "power_factor": 1.0,  # 100 kW avail
+                "name": "PV", "rated_kw": 100, "voltage_kv": 0.4,
+                "inverter_eff": 0.97, "power_factor": 1.0,  # 100 kW AC avail
             }),
             _comp("static_load-1", "static_load", {
                 "name": "L", "rated_kva": 141.2, "power_factor": 0.85,
@@ -2724,7 +2724,7 @@ class TestIslandingAndDispatch:
             }),
             _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 0.4}),
             _comp("solar-1", "solar_pv", {
-                "name": "PV", "rated_kw": 97, "voltage_kv": 0.4,
+                "name": "PV", "rated_kw": 100, "voltage_kv": 0.4,
                 "inverter_eff": 0.97, "power_factor": 1.0,
             }),
             _comp("static_load-1", "static_load", {

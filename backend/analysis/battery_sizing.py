@@ -40,7 +40,7 @@ from __future__ import annotations
 import math
 
 from ..models.schemas import ProjectData
-from .loadflow import _battery_params
+from .loadflow import _battery_params, _prop_float
 from .backup_autonomy import _island_map, _load_kw_kvar
 
 DT_MIN = 1.0            # simulation step (minutes)
@@ -149,7 +149,7 @@ def run_battery_sizing(project: ProjectData, battery_id: str = "",
     dod = min(1.0, max(0.05, float(p.get("battery_dod_pct", 90) or 90) / 100.0))
     eta_1way = math.sqrt(min(1.0, max(0.05, float(
         p.get("battery_rt_eff", 0.95) or 0.95))))
-    soc0 = min(1.0, max(0.0, float(p.get("battery_soc_pct", 100) or 100) / 100.0))
+    soc0 = min(1.0, max(0.0, _prop_float(p, "battery_soc_pct", 100) / 100.0))
     hour_rating = max(0.5, float(p.get("battery_hour_rating_h", 10 if chem_key == "lead_acid" else 1) or 1))
     nominal_v = float(p.get("battery_nominal_v", 48) or 48)
 
