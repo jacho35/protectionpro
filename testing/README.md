@@ -25,7 +25,7 @@ substation E3S paper (real-project ETAP case study missing the branch-impedance 
 | Equipment duty check | Hand-calc over verified fault engine | `duty_check.py` | **PASS** — peak / making / breaking-duty comparisons exact |
 | Load diversity | Exact demand-aggregation hand-calc | `load_diversity.py` | **PASS** — demand factors, IEC Ks, diversified demand exact |
 | DC arc flash (Stokes & Oppenlander) | Published Ammerman/CED DC method | `dc_arcflash.py` | **PASS** — arc operating point + incident energy exact (≤0.06 %) |
-| Unbalanced load flow (symmetrical comp.) | Balanced-limit + pos-seq anchor + transform | `unbalanced_loadflow.py` | **PASS** — balanced limit, pos-seq = balanced NR, VUF & A/A⁻¹ transform exact |
+| Unbalanced load flow (symmetrical comp.) | Independent phase-domain solve + balanced limit | `unbalanced_loadflow.py` | **PASS** — phase voltages & VUF match a phase-domain (Zabc) solve exactly; balanced limit |
 
 - **Plan & decisions:** [`PLAN.md`](PLAN.md)
 - **Main SC reference data:** [`reference/etap-golden-values.md`](reference/etap-golden-values.md)
@@ -112,9 +112,10 @@ inductance is unknown), and the converter current-limit is exact. Detail:
   demand factor and demand current all exact.
 - **DC arc flash** — the Stokes & Oppenlander arc operating point and the spherical incident-energy / boundary
   reproduce the published Ammerman/CED DC method exactly (≤0.06 %, calorie rounding).
-- **Unbalanced load flow** — collapses to the exact balanced solution when balanced; its positive sequence
-  exactly equals the verified Newton-Raphson balanced LF; the phase↔sequence transform and VUF = |V2|/|V1| are
-  exact. (A full IEEE 13-bus abc-frame match is out of scope for this simplified sequence-based engine.)
+- **Unbalanced load flow** — phase voltages and VUF match an independent phase-domain solve (Zabc =
+  A·diag(Z0,Z1,Z2)·A⁻¹, load currents iterated at the actual phase voltages) exactly, and it collapses to the
+  balanced solution when balanced. Before 2026-09-28 a single-pass solve understated this case's VUF by ~5 %
+  (0.76 vs 0.80 %). (A full IEEE 13-bus abc-frame match is out of scope for this sequence-based engine.)
 
 Detail: [`case-duty-check/`](case-duty-check/results.md) · [`case-load-diversity/`](case-load-diversity/results.md) · [`case-dc-arcflash/`](case-dc-arcflash/results.md) · [`case-unbalanced-loadflow/`](case-unbalanced-loadflow/results.md).
 
@@ -167,7 +168,7 @@ equations worked by hand, or an independent closed-form solve). **Consistency on
 | Short circuit (4 networks, 16 points) | `fault.py` | IEC 60909 — powerprojectsindia / ETAP | case-1/2/3, case-sc2 + template |
 | LV cable sizing | `cable_sizing.py` | IEC 60364 article (qualified) | case-cable-sizing-lv + template |
 | Load flow (NR) | `loadflow.py` | Glover / ESE 470 3-bus | case-loadflow-3bus + template |
-| Unbalanced load flow | `unbalanced_loadflow.py` | Balanced limit, pos-seq = NR, transform identities (no published unbalanced example) | case-unbalanced-loadflow + template |
+| Unbalanced load flow | `unbalanced_loadflow.py` | Independent phase-domain solve (Zabc = A·diag(Z0,Z1,Z2)·A⁻¹) — exact; balanced limit | case-unbalanced-loadflow + template + `test_unbalanced_lf_sequence_iteration.py` |
 | Arc flash, IEEE 1584-2002 | `arcflash.py` | Standard Eq. 1–5 hand calc | case-arcflash-ieee1584 + template |
 | Arc flash, IEEE 1584-2018 | `arcflash.py` | Official IEEE validation spreadsheet (6 fixtures) | `TestArcFlash2018` |
 | Grounding | `grounding_system.py` | IEEE 80 hand calc | case-grounding-ieee80 + template |
