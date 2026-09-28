@@ -382,14 +382,19 @@ SERIES_TYPES = ("cable", "transformer", "autotransformer")
 def insert_junction_buses(project: ProjectData) -> ProjectData:
     """Return a copy of *project* with a junction bus at every port node where
     three or more elements meet, at least two of them series elements
-    (cable/transformer), with no bus, board or switching device among them.
+    (cable/transformer), with no bus or board among them.
 
     Port nodes are built from the wires' (component, port) endpoints, so two
-    wires landing on the same port of one element share a node. Nodes holding
-    a transparent device (CB/switch/fuse/…) are left alone: an open device
-    must keep separating its two sides, and API payloads that reuse a generic
-    port name on both sides of a breaker would otherwise be merged. Idempotent:
-    after insertion the node contains a bus and is skipped.
+    wires landing on the same port of one element share a node. A switching
+    device (CB/switch/fuse/…) may be one of the members — a tee made through
+    a breaker (c1 → CB → {c2, c3}) gets its junction on the breaker's far
+    side, so the breaker still sits between c1 and the junction and an OPEN
+    breaker still isolates c1. The device must be a proper two-port here,
+    though: one also wired on another port. A device whose every wire lands
+    on this one port (an API payload reusing a generic port name for both
+    sides) is ambiguous, and the node is left alone rather than risk
+    bridging an open breaker. Idempotent: after insertion the node contains
+    a bus and is skipped.
     """
     import json
     components = {c.id: c for c in project.components}
@@ -409,15 +414,25 @@ def insert_junction_buses(project: ProjectData) -> ProjectData:
     nodes = {}
     for key in list(parent):
         nodes.setdefault(find(key), []).append(key)
+    ports_used = {}
+    for w in project.wires:
+        ports_used.setdefault(w.fromComponent, set()).add(w.fromPort)
+        ports_used.setdefault(w.toComponent, set()).add(w.toPort)
 
     junctions = []   # (endpoints, member components)
     for endpoints in nodes.values():
         members = [components[cid] for cid, _p in endpoints if cid in components]
         if len(members) < 3:
             continue
-        if any(m.type in ("bus", "distribution_board") or m.type in TRANSPARENT_TYPES
-               or m.type in ("cb", "switch", "changeover") for m in members):
+        if any(m.type in ("bus", "distribution_board", "changeover") for m in members):
             continue
+        node_ports = {}
+        for cid, port in endpoints:
+            node_ports.setdefault(cid, set()).add(port)
+        if any((m.type in TRANSPARENT_TYPES or m.type in ("cb", "switch"))
+               and not (ports_used.get(m.id, set()) - node_ports.get(m.id, set()))
+               for m in members):
+            continue   # a switching device wired on this port only — ambiguous
         if str(members[0].props.get("system", "ac")).lower() == "dc":
             continue
         if sum(1 for m in members if m.type in SERIES_TYPES) < 2:
@@ -1389,6 +1404,23 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
 
         if utilities:
             balancers = utilities
+            if len(utilities) > 1:
+                # Every utility holds its own connection bus at its setpoint
+                # and angle 0°, so the island has several stiff references and
+                # the split between them is set by the network impedance alone
+                # — not by any real grid dispatch. Say so rather than let the
+                # per-utility figures read as a planned share.
+                _unames = ", ".join(f"'{u.props.get('name', u.id)}'" for u, _b, _d in utilities)
+                warnings.append(LoadFlowWarning(
+                    elementId=utilities[0][0].id,
+                    element_name=str(utilities[0][0].props.get("name", "Utility")),
+                    message=(f"{len(utilities)} utilities ({_unames}) supply one island, "
+                             "each held as a fixed voltage reference at 0°. The power "
+                             "split between them follows the network impedance only — "
+                             "a real split depends on the upstream grid (angle "
+                             "difference, source impedance). Open a bus coupler to "
+                             "study each supply alone, or model one as a Thevenin "
+                             "source (lf_grid_model).")))
         elif seq_balancer_entry is not None:
             balancers = [seq_balancer_entry]
         else:
@@ -3310,6 +3342,44 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     def _vpu(k):
         return abs(V[k]) if abs(V[k]) > 1e-6 else 1.0
 
+    # Bus ducts between a bus and a series branch (bus ─ duct ─ … ─ cable):
+    # transparent, so they sit inside the bus group, but they carry that
+    # branch's current at the bus end and have their own rating. Map each to
+    # (bus, first series element) so the branch loop can report it. Ducts on
+    # a bus-to-bus link are reported with the link instead (link_ducts).
+    _link_duct_ids = {d.id for ds in link_ducts.values() for d in ds}
+
+    def _duct_side(duct_id, port):
+        """(bus_id, series_elem_id) first met from one port of a duct,
+        walking closed transparent devices only; either may be None."""
+        seen = {duct_id}
+        queue = list(adjacency_ports.get((duct_id, port), []))
+        while queue:
+            nid = queue.pop(0)
+            if nid in seen:
+                continue
+            seen.add(nid)
+            if nid in bus_idx:
+                return nid, None
+            c = components.get(nid)
+            if not c:
+                continue
+            if c.type in ("cable", "transformer", "autotransformer"):
+                return None, nid
+            if _is_transparent_and_closed(c):
+                queue.extend(nb for nb in adjacency.get(nid, []) if nb not in seen)
+        return None, None
+
+    duct_on_branch = {}   # series elem id -> [(duct comp, bus id)]
+    for c in project.components:
+        if c.type != "bus_duct" or c.id in _link_duct_ids:
+            continue
+        (b1, e1), (b2, e2) = _duct_side(c.id, "from"), _duct_side(c.id, "to")
+        if b1 and e2:
+            duct_on_branch.setdefault(e2, []).append((c, b1))
+        elif b2 and e1:
+            duct_on_branch.setdefault(e1, []).append((c, b2))
+
     branch_results = []
     for elems, from_bus, to_bus, y, t, hv_bus, cable_voltages in branch_chains:
         i = bus_idx[from_bus]
@@ -3408,6 +3478,24 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             _mag_chain = sum(abs(z) for z in _elem_z.values())
 
             for elem in elems.values():
+                for duct, duct_bus in duct_on_branch.get(elem.id, []):
+                    if duct_bus not in (from_bus, to_bus):
+                        continue
+                    # The branch's flow at the duct's bus end, at that bus's
+                    # actual voltage.
+                    k_end = i if duct_bus == from_bus else j
+                    s_end = abs(s_ij if duct_bus == from_bus else s_ji) * base_mva
+                    kv_end = components[duct_bus].props.get("voltage_kv", 11) or 11
+                    i_duct = s_end * 1000 / (math.sqrt(3) * kv_end * _vpu(k_end))
+                    rated_d = _prop_float(duct.props, "rated_current_a", 0)
+                    branch_results.append(LoadFlowBranch(
+                        elementId=duct.id, element_name=duct.props.get("name", duct.type),
+                        from_bus=from_bus, to_bus=to_bus,
+                        p_mw=round(p_mw, 4), q_mvar=round(q_mvar, 4),
+                        s_mva=round(s_end, 4), i_amps=round(i_duct, 2),
+                        loading_pct=round(i_duct / rated_d * 100, 2) if rated_d > 0 else 0,
+                        losses_mw=0,
+                    ))
                 loading = 0
                 # Row-local reporting direction; may be flipped for standalone
                 # cables (see below). Magnitudes (s_mva, i_amps, losses) are
@@ -3570,11 +3658,47 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 _utility_tx_ids.add(tx.id)
 
     # Non-utility source-connected TXs (generator incomers, etc.)
+    def _live_source_beyond(tx, bus_id):
+        """True if a source is reachable from *tx* away from its bus through
+        closed devices and series elements. A live source behind a
+        transformer normally gets its own terminal bus (insert_implicit_load_
+        buses), making the unit a two-bus branch — so a transformer left here
+        with no live source beyond is OPEN-ENDED (e.g. a generator incomer
+        behind an open breaker) and carries no power."""
+        seen = {cid for cid, mapped in bus_of.items() if mapped == bus_id} | {tx.id}
+        queue = [nb for nb in adjacency.get(tx.id, []) if nb not in seen]
+        while queue:
+            nid = queue.pop(0)
+            if nid in seen:
+                continue
+            seen.add(nid)
+            c = components.get(nid)
+            if not c:
+                continue
+            if c.type in DISPATCHABLE_SOURCE_TYPES or c.type in ("battery", "utility"):
+                return True
+            if _is_transparent_and_closed(c) or c.type in ("cable", "transformer", "autotransformer"):
+                queue.extend(nb for nb in adjacency.get(nid, []) if nb not in seen)
+        return False
+
     for bus_id, tx_list in source_tx_by_bus.items():
         non_util_txs = [tx for tx in tx_list if tx.id not in _utility_tx_ids]
         if not non_util_txs:
             continue
         bus_i = bus_idx[bus_id]
+        # Open-ended units carry nothing: report them at zero rather than
+        # handing them a share of the bus injection (which on a swing bus
+        # is the whole island's supply — a dead incomer read 40 % loaded).
+        for tx in [t for t in non_util_txs if not _live_source_beyond(t, bus_id)]:
+            branch_results.append(LoadFlowBranch(
+                elementId=tx.id, element_name=tx.props.get("name", tx.type),
+                from_bus=_find_source_side_neighbor(tx.id, bus_id, adjacency, bus_of),
+                to_bus=bus_id, p_mw=0.0, q_mvar=0.0, s_mva=0.0, i_amps=0.0,
+                loading_pct=0.0, losses_mw=0,
+            ))
+        non_util_txs = [t for t in non_util_txs if _live_source_beyond(t, bus_id)]
+        if not non_util_txs:
+            continue
         n_sources = len(non_util_txs)
         s_net_pu = S_bus[bus_i] - complex(P_spec[bus_i], Q_spec[bus_i])
         s_net_mva = abs(s_net_pu) * base_mva
