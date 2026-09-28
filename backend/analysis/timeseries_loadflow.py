@@ -94,7 +94,7 @@ from ..models.schemas import (
     ProjectData, TimeSeriesLoadFlowResults, TimeSeriesBusEnvelope,
     TimeSeriesBranchPeak, TimeSeriesBatteryTrajectory,
 )
-from .loadflow import run_load_flow, _run_oltc, _is_transparent_and_closed
+from .loadflow import run_load_flow, _run_oltc, _is_transparent_and_closed, _prop_float
 
 
 # ── Built-in daily shapes: 24 hourly multipliers (0..1), index = hour of day ──
@@ -235,7 +235,7 @@ def run_timeseries_loadflow(project: ProjectData, method: str = "newton_raphson"
         kwh_nameplate[bid] = float(comp.props.get("battery_kwh", 0) or 0)
         rt = float(comp.props.get("battery_rt_eff", 0.95) or 0.95)
         eta_1way[bid] = math.sqrt(min(1.0, max(0.05, rt)))
-        soc[bid] = min(100.0, max(0.0, float(comp.props.get("battery_soc_pct", 100) or 100)))
+        soc[bid] = min(100.0, max(0.0, _prop_float(comp.props, "battery_soc_pct", 100)))
     soc_traj = {bid: [] for bid in batt_ids}
     dispatch_traj = {bid: [] for bid in batt_ids}
 

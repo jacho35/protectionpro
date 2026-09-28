@@ -38,6 +38,8 @@ from .loadflow import (
     _get_impedance,
     _get_chain_turns_ratio,
     _is_transparent_and_closed,
+    chain_cable_zones,
+    chain_order_from_paths,
 )
 from .fault import (
     _utility_impedance,
@@ -188,29 +190,14 @@ def build_branch_ybus(project):
         bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
         bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
         if has_xfmr:
-            path_a_ids = {e.id for e in path_a}
-            path_b_ids = {e.id for e in path_b}
+            # Zone by chain POSITION, not walk-path membership (which depends
+            # on the seed element — see loadflow._walk_chain_zones).
+            zones = chain_cable_zones(chain_order_from_paths(path_a, path_b),
+                                      bus_a_v, bus_b_v)
             z_total = complex(0, 0)
             for e in all_elems.values():
-                if e.type == "transformer":
-                    z_total += _get_impedance(e, base_mva)
-                elif e.type == "cable":
-                    in_a = e.id in path_a_ids
-                    in_b = e.id in path_b_ids
-                    if in_a and not in_b:
-                        v_kv = bus_a_v
-                    elif in_b and not in_a:
-                        v_kv = bus_b_v
-                    else:
-                        v_kv = bus_a_v if len(path_a) <= len(path_b) else bus_b_v
-                    z_base = (v_kv ** 2) / base_mva
-                    r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
-                    x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    # /n to match _get_impedance and _source_stub above — this
-                    # branch re-derives Z inline for the chain-resolved v_kv and
-                    # had dropped the parallel divide.
-                    npar = max(1, int(e.props.get("num_parallel", 1) or 1))
-                    z_total += complex(r / z_base, x / z_base) / npar
+                if e.type == "cable":
+                    z_total += _get_impedance(e, base_mva, v_kv=zones[e.id])
                 else:
                     z_total += _get_impedance(e, base_mva)
         else:

@@ -266,12 +266,15 @@ def _branch_chains(project, base_mva):
         bb = components.get(bus_b)
         va = ba.props.get("voltage_kv", 11) if ba else 11
         vb = bb.props.get("voltage_kv", 11) if bb else 11
-        path_a_ids = {e.id for e in path_a}
+        # Zone by chain POSITION, not walk-path membership (which depends on
+        # the seed element — see loadflow._walk_chain_zones).
+        zones = (_lf.chain_cable_zones(_lf.chain_order_from_paths(path_a, path_b), va, vb)
+                 if has_xfmr else {})
         z_total = complex(0, 0)
         for e in all_elems.values():
             if e.type == "cable":
                 if has_xfmr:
-                    v_kv = va if e.id in path_a_ids else vb
+                    v_kv = zones[e.id]
                 else:
                     # No transformer ⇒ one voltage zone, bounded by these
                     # buses. The cable's own voltage_kv prop must NOT win: a

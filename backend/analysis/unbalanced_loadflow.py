@@ -37,6 +37,7 @@ from .loadflow import (
     _find_components_at_bus, _get_chain_turns_ratio, _utility_admittance,
     _newton_raphson, _gauss_seidel,
     plan_dispatch, solve_with_islands, insert_implicit_load_buses,
+    chain_cable_zones, chain_order_from_paths,
     is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
 )
 from .fault import _grounding_impedance
@@ -321,8 +322,10 @@ def run_unbalanced_load_flow(
                    if bus_b in components else 11)
 
         if has_xfmr:
-            path_a_ids = {e.id for e in path_a}
-            path_b_ids = {e.id for e in path_b}
+            # Zone by chain POSITION, not walk-path membership (which depends
+            # on the seed element — see loadflow._walk_chain_zones).
+            zones = chain_cable_zones(chain_order_from_paths(path_a, path_b),
+                                      bus_a_v, bus_b_v)
 
             for e in all_elems.values():
                 if e.type == "transformer":
@@ -339,11 +342,7 @@ def run_unbalanced_load_flow(
                         z0_total = (z0_total or complex(0, 0)) + z
 
                 elif e.type == "cable":
-                    in_a = e.id in path_a_ids and e.id not in path_b_ids
-                    in_b = e.id in path_b_ids and e.id not in path_a_ids
-                    v_kv = (bus_a_v if in_a else
-                            bus_b_v if in_b else
-                            (bus_a_v if len(path_a) <= len(path_b) else bus_b_v))
+                    v_kv = zones[e.id]
                     cable_voltages[e.id] = v_kv
                     z_base = (v_kv ** 2) / base_mva
                     r1 = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
