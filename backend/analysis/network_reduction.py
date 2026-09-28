@@ -38,8 +38,9 @@ from .loadflow import (
     _get_impedance,
     _get_chain_turns_ratio,
     _is_transparent_and_closed,
-    chain_cable_zones,
+    chain_element_zones,
     chain_order_from_paths,
+    element_impedance_in_zone,
 )
 from .fault import (
     _utility_impedance,
@@ -99,13 +100,18 @@ def _source_stub(source_id, adjacency, components, bus_of, base_mva):
             # to stay consistent with the load-flow-derived pre-start voltages.
             for e in reversed(path):
                 if e.type == "transformer":
-                    z += _get_impedance(e, base_mva)
+                    # Re-based to the bus zone when that zone is the LV side
+                    # (nameplate ≠ bus voltage — see loadflow._get_impedance).
+                    hv_n = float(e.props.get("voltage_hv_kv", 33) or 33)
+                    lv_n = float(e.props.get("voltage_lv_kv", 11) or 11)
+                    lv_zone = v if abs(v - lv_n) <= abs(v - hv_n) else None
+                    z += _get_impedance(e, base_mva, v_lv_kv=lv_zone)
                     v = _transformer_far_voltage(e, v)
                 elif e.type == "cable":
                     z_base = (v ** 2) / base_mva
                     r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
                     x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    npar = max(1, int(e.props.get("num_parallel", 1)))
+                    npar = max(1, int(e.props.get("num_parallel", 1) or 1))
                     z += complex(r / z_base, x / z_base) / npar
             return bus_id, z
         comp = components.get(nid)
@@ -189,17 +195,14 @@ def build_branch_ybus(project):
         bus_b_comp = components.get(bus_b)
         bus_a_v = bus_a_comp.props.get("voltage_kv", 11) if bus_a_comp else 11
         bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
+        chain_order = chain_order_from_paths(path_a, path_b)
         if has_xfmr:
             # Zone by chain POSITION, not walk-path membership (which depends
-            # on the seed element — see loadflow._walk_chain_zones).
-            zones = chain_cable_zones(chain_order_from_paths(path_a, path_b),
-                                      bus_a_v, bus_b_v)
-            z_total = complex(0, 0)
-            for e in all_elems.values():
-                if e.type == "cable":
-                    z_total += _get_impedance(e, base_mva, v_kv=zones[e.id])
-                else:
-                    z_total += _get_impedance(e, base_mva)
+            # on the seed element — see loadflow._walk_chain_zones); each
+            # transformer re-based to its LV zone.
+            zones = chain_element_zones(chain_order, bus_a_v, bus_b_v)
+            z_total = sum((element_impedance_in_zone(e, base_mva, zones)
+                           for e in all_elems.values()), complex(0, 0))
         else:
             # No transformer ⇒ one voltage zone, bounded by these buses. Pass
             # that zone voltage so a stale cable voltage_kv prop cannot set the
@@ -211,7 +214,9 @@ def build_branch_ybus(project):
         y = 1 / z_total if abs(z_total) > 1e-15 else complex(0, -1e6)
         i = bus_idx[bus_a]
         j = bus_idx[bus_b]
-        t, hv_bus = _get_chain_turns_ratio(all_elems, bus_a, bus_b, components)
+        # Electrical order, so cascaded transformers multiply their ratios in
+        # the order they are met (a dict gives graph-walk order).
+        t, hv_bus = _get_chain_turns_ratio(chain_order, bus_a, bus_b, components)
         Y[i, i] += y / (t * t) if hv_bus == bus_a else y
         Y[j, j] += y / (t * t) if hv_bus == bus_b else y
         Y[i, j] -= y / t if hv_bus in (bus_a, bus_b) else y

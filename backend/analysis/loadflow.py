@@ -1962,13 +1962,24 @@ def chain_order_from_paths(path_a, path_b):
     return order
 
 
-def chain_cable_zones(chain_order, bus_a_v, bus_b_v):
-    """{cable_id: zone voltage_kv} for every cable in an ordered chain — the
-    per-unit base each cable's impedance must be referred to. Shared by every
-    engine that builds branch chains (load flow, unbalanced, harmonics,
-    network reduction) so they agree on one zone rule."""
+def chain_element_zones(chain_order, bus_a_v, bus_b_v):
+    """{element_id: zone voltage_kv} for every element of an ordered chain —
+    a cable's own zone, and a transformer's LV-side zone. These are the
+    per-unit bases the impedances must be referred to: pass a cable's as
+    _get_impedance(v_kv=…) and a transformer's as _get_impedance(v_lv_kv=…).
+    Shared by every engine that builds branch chains (load flow, unbalanced,
+    harmonics, network reduction) so they agree on one zone rule."""
     _t, _nh, zone_v = _walk_chain_zones(chain_order, bus_a_v, bus_b_v)
-    return {e.id: zone_v[m] for m, e in enumerate(chain_order) if e.type == "cable"}
+    return {e.id: zone_v[m] for m, e in enumerate(chain_order)}
+
+
+def element_impedance_in_zone(elem, base_mva, zones):
+    """Series impedance of a chain element on its zone base (see
+    chain_element_zones): cables at their zone voltage, transformers re-based
+    to their LV zone."""
+    if elem.type in ("transformer", "autotransformer"):
+        return _get_impedance(elem, base_mva, v_lv_kv=zones.get(elem.id))
+    return _get_impedance(elem, base_mva, v_kv=zones.get(elem.id))
 
 
 def _kron_reduce_two_port(chain_order, xfmr_set, t_local, near_hv, cable_v_kv,
@@ -2587,15 +2598,9 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
 
         if has_xfmr:
-            _t_loc, _nh, _zone_v = _walk_chain_zones(chain_order, bus_a_v, bus_b_v)
-            cable_voltages = {e.id: _zone_v[m] for m, e in enumerate(chain_order)}
-            z_total = complex(0, 0)
-            for e in all_elems.values():
-                if e.type in ("transformer", "autotransformer"):
-                    z_total += _get_impedance(e, base_mva, v_lv_kv=cable_voltages[e.id])
-                else:
-                    # A cable (the only other chain element) at its zone base.
-                    z_total += _get_impedance(e, base_mva, v_kv=cable_voltages[e.id])
+            cable_voltages = chain_element_zones(chain_order, bus_a_v, bus_b_v)
+            z_total = sum((element_impedance_in_zone(e, base_mva, cable_voltages)
+                           for e in all_elems.values()), complex(0, 0))
         else:
             # No transformer ⇒ the whole chain sits in ONE voltage zone, the
             # one its bounding buses define. Pass that zone voltage so a cable
@@ -3931,7 +3936,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         # Find the transformer to use as the walk boundary
         xfmr_id = None
         for eid, e in elems.items():
-            if e.type == "transformer":
+            if e.type in ("transformer", "autotransformer"):
                 xfmr_id = eid
                 break
         if not xfmr_id:

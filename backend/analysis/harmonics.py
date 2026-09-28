@@ -267,8 +267,9 @@ def _branch_chains(project, base_mva):
         va = ba.props.get("voltage_kv", 11) if ba else 11
         vb = bb.props.get("voltage_kv", 11) if bb else 11
         # Zone by chain POSITION, not walk-path membership (which depends on
-        # the seed element — see loadflow._walk_chain_zones).
-        zones = (_lf.chain_cable_zones(_lf.chain_order_from_paths(path_a, path_b), va, vb)
+        # the seed element — see loadflow._walk_chain_zones). A transformer's
+        # entry is its LV zone, to which its nameplate z% is re-based.
+        zones = (_lf.chain_element_zones(_lf.chain_order_from_paths(path_a, path_b), va, vb)
                  if has_xfmr else {})
         z_total = complex(0, 0)
         for e in all_elems.values():
@@ -288,7 +289,7 @@ def _branch_chains(project, base_mva):
                 npar = max(1, int(e.props.get("num_parallel", 1) or 1))
                 z_total += complex(r / z_base, x / z_base) / npar
             else:
-                z_total += _lf._get_impedance(e, base_mva)
+                z_total += _lf._get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
         if abs(z_total) < 1e-12:
             z_total = complex(0, 1e-6)
         chains.append((bus_a, bus_b, z_total.real, z_total.imag))
@@ -338,7 +339,9 @@ def run_harmonics(project, method: str = "newton_raphson"):
     """Run the harmonic penetration study. Returns a dict matching
     HarmonicsResults."""
     base_mva = project.baseMVA or 100.0
-    project = _lf.insert_implicit_load_buses(project)
+    # Same topology pre-passes as the load flow: a node at every cable tee
+    # the drawing left without a bus, then load/source terminal buses.
+    project = _lf.insert_implicit_load_buses(_lf.insert_junction_buses(project))
 
     # 1. Fundamental load flow → per-bus fundamental voltage magnitude.
     v1 = {}

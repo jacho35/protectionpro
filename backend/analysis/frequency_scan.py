@@ -81,7 +81,7 @@ def run_frequency_scan(project, bus_ids=None, h_max: float = 25.0,
     f0 = float(project.frequency or 50)
     h_max = max(2.0, min(100.0, float(h_max or 25.0)))
     h_step = max(0.01, min(1.0, float(h_step or 0.05)))
-    project = _lf.insert_implicit_load_buses(project)
+    project = _lf.insert_implicit_load_buses(_lf.insert_junction_buses(project))
 
     chains, buses, bus_idx, adjacency, components, bus_of = \
         _branch_chains(project, base_mva)
