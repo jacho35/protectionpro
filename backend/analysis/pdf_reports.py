@@ -1273,7 +1273,10 @@ def _calc_cable(pdf, cable_results):
     _calc_label(pdf, "  dV% = (I * (R*cos(phi) + X*sin(phi)) * L * 2) / U_n * 100%")
     _calc_body(pdf, "  (single-phase: factor 2; three-phase: factor sqrt(3); limit: 3% for final, 5% total)")
     pdf.ln(1)
-    _calc_body(pdf, "Fault withstand (adiabatic method, IEC 60364-5-54):")
+    _calc_body(pdf, "Overload protection (LV, IEC 60364-4-43 §433.1): Ib <= In <= Iz and I2 <= 1.45 Iz.")
+    _calc_body(pdf, "Voltage drop is limited from the origin of the installation (IEC 60364-5-52 §525).")
+    _calc_body(pdf, "Fault withstand (adiabatic method, IEC 60364-4-43 §434.5.2), at the largest fault")
+    _calc_body(pdf, "current (any type) and at the minimum far-end fault (c_min), each with its own clearing time:")
     _calc_label(pdf, "  S >= sqrt(I^2 * t) / k  [mm^2]")
     _calc_body(pdf, "  where k = material constant (115 for Cu/PVC, 143 for Cu/XLPE), t = fault clearing time [s].")
     pdf.ln(4)
@@ -1294,8 +1297,18 @@ def _calc_cable(pdf, cable_results):
 
         _calc_body(pdf, f"  Load current:              I_load  = {i_load:.2f} A")
         _calc_body(pdf, f"  Thermal loading:           {thermal_pct:.1f}%   {'[OK]' if thermal_ok else '[FAIL]'}")
-        _calc_body(pdf, f"  Voltage drop:              {vd_pct:.2f}%   {'[OK]' if vd_ok else '[FAIL]'}")
-        _calc_body(pdf, f"  Fault withstand:           {'[OK]' if fw_ok else '[FAIL]'}")
+        cum = cable.get("cumulative_voltage_drop_pct")
+        if cum is not None:
+            _calc_body(pdf, f"  Voltage drop:              {vd_pct:.2f}% (cable), {cum:.2f}% from "
+                            f"{_pdf_safe(cable.get('voltage_drop_origin') or 'origin')}   {'[OK]' if vd_ok else '[FAIL]'}")
+        else:
+            _calc_body(pdf, f"  Voltage drop:              {vd_pct:.2f}%   {'[OK]' if vd_ok else '[FAIL]'}")
+        ol = cable.get("overload_protection_ok")
+        if ol is not None:
+            _calc_body(pdf, f"  Overload protection:       {_pdf_safe(cable.get('overload_protection_note', ''))}   {'[OK]' if ol else '[FAIL]'}")
+        t_cl = cable.get("clearing_time_s")
+        _calc_body(pdf, f"  Fault withstand:           {'[OK]' if fw_ok else '[FAIL]'}"
+                        + (f"  (cleared in {t_cl * 1000:.0f} ms)" if t_cl else ""))
         _calc_body(pdf, f"  Overall status:            {status.upper()}")
         if rec:
             _calc_body(pdf, f"  Recommended cable:         {rec}")

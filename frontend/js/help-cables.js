@@ -5,7 +5,7 @@ HELP_ARTICLES.push(
   std: 'IEC 60364-5-52 · IEC 60364-4-43 · IEC 60949 · NEC 310.16 · Analyse ▸ Sizing & installation',
   kw: 'cable sizing ampacity derating voltage drop adiabatic fault withstand k factor i2t thermal equivalent recommended size nec',
   html: String.raw`
-<p>Every cable on the single-line diagram is checked against three independent criteria, and the smallest standard size that passes all three is recommended. It reads the branch current and power factor from the load flow and the fault current from the fault study, unless you enter design values directly on the cable (<em>standalone override</em>).</p>
+<p>Every cable on the single-line diagram is checked against four criteria — thermal rating, overload protection, voltage drop and fault withstand — and the smallest standard size that passes them all is recommended. It reads the branch current and power factor from the load flow and the fault current from the fault study, unless you enter design values directly on the cable (<em>standalone override</em>).</p>
 
 <h4>1 · Thermal rating</h4>
 <p>The design current per cable (divided across parallel runs) must not exceed the derated ampacity:</p>
@@ -14,24 +14,28 @@ $$\frac{I_b}{n_{par}}\le I_z=I_{tab}\cdot k_{inst}\cdot k_{amb}\ \ (\cdot\,k_{gr
 <ol>
 <li><strong>An applied installed-ampacity calculation</strong> on the cable (set in the properties panel, see <a href="#" data-help="cable-ampacity">Installed ampacity</a>) — its derated current is used directly and never derated again.</li>
 <li><strong>NEC:</strong> $I_z=I_{310.16}\cdot k_{temp}\cdot k_{count}$ with the ambient correction (310.15(B)(1)) and the current-carrying-conductor adjustment (310.15(C)(1)) for $3n_{par}$ conductors.</li>
-<li><strong>IEC (library value):</strong> $k_{inst}$ = 1.0 trefoil, 0.95 flat, 0.85 buried, and the ambient correction
-$$k_{amb}=\sqrt{\frac{\theta_{max}-\theta_{amb}}{\theta_{max}-30}}$$
-with $\theta_{max}=90$ °C (XLPE) or 70 °C (PVC). If the ambient is at or above $\theta_{max}$ the cable has no usable ampacity and fails.</li>
+<li><strong>IEC (library value):</strong> the library rating times the ambient correction $k_{amb}$ from IEC 60364-5-52 Table B.52.14 (air, 30 °C reference) — or B.52.15 (ground, 20 °C reference) for a buried run — interpolated. No installation-method or grouping factor is applied on this route, and the result says so: use the installed-ampacity calculator for those. If the ambient is at or above the insulation's maximum (90 °C XLPE, 70 °C PVC) the cable has no usable ampacity and fails.</li>
 </ol>
-<p>Overhead conductors use the same square-root law referenced to the library's own 40 °C ambient / 75 °C conductor pair; the installation-method table does not apply to bare conductors.</p>
+<p>Overhead conductors scale the library's in-air rating with a square-root law referenced to its own 40 °C ambient / 75 °C conductor pair. IEC 60364 does not cover bare conductors; this approximates a heat-balance rating (IEEE 738) and is labelled as such in the result.</p>
 
-<h4>2 · Voltage drop</h4>
-<p>All flows are treated as lagging ($\sin\varphi\ge0$), the conservative direction:</p>
+<h4>2 · Overload protection (LV)</h4>
+<p>IEC 60364-4-43 §433.1: the protective device must suit the cable,</p>
+$$I_b\le I_n\le I_z,\qquad I_2\le1.45\,I_z$$
+<p>with $I_z$ the installed rating of all parallel conductors (§433.4), $I_n$ a breaker's current setting $I_r$ (trip rating × thermal pickup) or a fuse's rating, and $I_2$ the conventional operating current: 1.45 $I_n$ for an IEC 60898 MCB, 1.30 $I_n$ for an IEC 60947-2 MCCB/ACB, 1.6 $I_n$ for a gG fuse ≥ 16 A (1.9 for 4–16 A). Checked for cables up to 1 kV protected by a breaker's own trip unit or a fuse; a relay-tripped breaker is shown as not applicable.</p>
+
+<h4>3 · Voltage drop</h4>
+<p>The drop across the cable itself, with all flows treated as lagging ($\sin\varphi\ge0$):</p>
 $$\Delta V_{ph}=I\,\ell\,(r\cos\varphi+x\sin\varphi),\qquad \Delta V\,[\%]=\frac{\Delta V_{ph}}{U_n/\sqrt3}\times100$$
-<p>$\ell$ in km, $r,x$ in Ω/km. The power factor is the branch's own from the load flow (default 0.85). Limit default 5 %; a warning is raised between 3 % and the limit.</p>
+<p>$\ell$ in km, $r,x$ in Ω/km, and $U_n$ the nominal voltage of the buses the cable connects — not the cable's own voltage class (an 11 kV-class cable on a 3.3 kV feeder drops against 3.3 kV). The limit, though, applies from the <strong>origin of the installation</strong> (IEC 60364-5-52 §525, Table G.52.1: 3 % lighting / 5 % other from a public LV supply, 6 % / 8 % from a private transformer): the drop from the bus fed by the source or transformer down to the cable's far end, read from the load-flow voltages and shown as Σ. Default limit 5 %; a warning is raised above 60 % of it.</p>
 
-<h4>3 · Fault withstand — the adiabatic equation</h4>
+<h4>4 · Fault withstand — the adiabatic equation</h4>
 <p>During the fault the conductor heats with no time to lose heat, so the minimum cross-section is</p>
 $$S\ \ge\ \frac{I_{th}\sqrt{t}}{k},\qquad I_{th}=I''_k\sqrt{m+n}$$
-<p>$t$ is the clearing time of the upstream device, taken at the fault current actually flowing: for a fuse, $1.2\times$ its pre-arcing time on the gG curve (capped at 5 s, the adiabatic validity limit); for a breaker, 50 ms (MCB/MCCB) or 80 ms (ACB) in the instantaneous region, else 100 ms. $m$ is the DC heat factor from the governing bus's $\kappa$ (see <a href="#" data-help="fault-iec60909">Short circuit</a>; default $\kappa=1.8$ when none is available), and $n=1$. Using $I_{th}$ rather than the bare $I''_k$ matters: at fuse and MCCB clearing times the DC component adds 20–45 % heat, so $I''_k$ alone under-sizes the cable by 18–29 %. A per-cable option (<code>bare_isc</code>) uses $I''_k$ directly for the simpler hand-calculation basis.</p>
-<table class="help-ref-table"><thead><tr><th>$k$ (A·√s/mm²)</th><th>XLPE (90 °C)</th><th>PVC (70 °C)</th><th>Bare (200 °C)</th></tr></thead><tbody>
-<tr><td>Copper</td><td>143</td><td>115</td><td>129</td></tr>
-<tr><td>Aluminium</td><td>94</td><td>76</td><td>84</td></tr></tbody></table>
+<p>IEC 60364-4-43 §434.5.2 requires this for a fault at <em>any</em> point, so it is checked twice: at the <strong>largest</strong> fault current of any type (three-phase, earth fault, line-to-line, double-earth) at the cable's ends, and at the <strong>smallest</strong> far-end fault (IEC 60909 $c_{min}$), where a time-inverse device is slowest. $t$ is the upstream device's clearing time at each current, from the same device models as the protection and arc-flash studies: an overcurrent relay's IEC 60255-151 curve through its CT plus breaker opening time, a breaker's own trip unit (instantaneous, short-time or long-time region), or $1.2\times$ a gG fuse's pre-arcing time. A fault the device does not clear within 5 s (the adiabatic validity limit) fails — except at the far end when overload protection is coordinated (§435.1). With no device modelled, 100 ms is assumed and flagged. $m$ is the DC heat factor from the governing bus's $\kappa$ (see <a href="#" data-help="fault-iec60909">Short circuit</a>; default $\kappa=1.8$ when none is available), and $n=1$. Using $I_{th}$ rather than the bare $I''_k$ matters: at fuse and MCCB clearing times the DC component adds 20–45 % heat, so $I''_k$ alone under-sizes the cable by 18–29 %. A per-cable option (<code>bare_isc</code>) uses $I''_k$ directly for the simpler hand-calculation basis.</p>
+<table class="help-ref-table"><thead><tr><th>$k$ (A·√s/mm²)</th><th>XLPE (90 °C)</th><th>PVC ≤ 300 mm²</th><th>PVC &gt; 300 mm²</th><th>Bare (200 °C)</th></tr></thead><tbody>
+<tr><td>Copper</td><td>143</td><td>115</td><td>103</td><td>129</td></tr>
+<tr><td>Aluminium</td><td>94</td><td>76</td><td>68</td><td>84</td></tr></tbody></table>
+<p>An insulation outside the table takes the conductor's PVC value (the lowest), with a warning.</p>
 
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>20 kA fault, XLPE copper, cleared in 0.5 s at $\kappa=1.8$, 50 Hz.</p>
@@ -40,8 +44,8 @@ $$S_{min}=\frac{20\,877\times\sqrt{0.5}}{143}=\mathbf{103\ mm^2}\ \Rightarrow\ \
 
 <h4>Verdict</h4>
 <ul>
-<li><strong>Fail</strong> — any criterion breached. The recommendation is the smallest library size (same conductor and insulation) satisfying thermal, voltage drop and withstand.</li>
-<li><strong>Warning</strong> — thermal loading above 80 %, or voltage drop within 3 % of the limit.</li>
+<li><strong>Fail</strong> — any criterion breached. The recommendation is the smallest library size (same conductor, insulation and voltage class) satisfying all four.</li>
+<li><strong>Warning</strong> — thermal loading above 80 %, or voltage drop from the origin above 60 % of the limit.</li>
 <li><strong>Unknown</strong> — ampacity unset or load flow not run; never a silent pass.</li>
 </ul>
 <p>Cable resistance in the library is hot (90 °C XLPE, 70 °C PVC): $R_{op}=R_{20}[1+\alpha(\theta-20)]$ with $\alpha_{Cu}=0.00393$, $\alpha_{Al}=0.00403$ per K, i.e. ×1.275 (Cu) / ×1.282 (Al) at 90 °C and ×1.20 at 70 °C.</p>` },
