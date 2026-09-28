@@ -988,6 +988,10 @@ class UnbalancedLoadFlowResults(BaseModel):
     warnings: list[LoadFlowWarning] = []
     converged: bool
     iterations: int
+    # Passes of the sequence-network fixed-point iteration (load currents at
+    # the actual phase voltages ↔ V0/V1/V2); `iterations` is the final
+    # positive-sequence solve's.
+    sequence_iterations: int = 0
     method: str = "Sequence Component (Unbalanced)"
 
 

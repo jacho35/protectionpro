@@ -1,11 +1,20 @@
 # Unbalanced Load Flow (Symmetrical Components) — Results
 
-**Method:** the engine solves the positive sequence via Newton-Raphson (the already-verified balanced solver),
-and the negative/zero sequences as linear injections from the per-phase load unbalance, then reconstructs
-`[Va,Vb,Vc] = A·[V0,V1,V2]` and reports VUF = |V2|/|V1|. Verified by a balanced-limit check, a positive-sequence
-anchor to the balanced load flow, the exact phase↔sequence transform, and the VUF definition. A full IEEE 13-bus
-abc-frame comparison is out of scope — this is a simplified sequence-based unbalanced LF, not a multi-phase
-distribution solver with regulators/laterals. Model: [`project.json`](project.json).
+**Method:** the engine iterates the three sequence networks to a consistent solution: phase voltages from the
+latest V0/V1/V2 → each constant-power load's phase currents at those voltages → I0/I1/I2 → Y2·V2 = I2, Y0·V0 = I0,
+and the loads' positive-sequence power V1·conj(I1) fed back into the Newton-Raphson positive-sequence solve, until the
+sequence voltages stop moving. It then reports `[Va,Vb,Vc] = A·[V0,V1,V2]` and VUF = |V2|/|V1|.
+
+**Independent reference (2026-09-28):** the same feeder solved directly in the **phase domain**. The line's phase
+impedance matrix is Zabc = A·diag(Z0, Z1, Z1)·A⁻¹, the source an ideal balanced 1 p.u. (the engine's swing), and the
+load's phase currents are iterated to V_B = V_A + Zabc·I(V_B). There are no sequence networks and no Newton-Raphson, so
+it shares no code with the engine. Engine and reference agree to every reported digit.
+
+**Correction:** before 2026-09-28 the engine solved the sequences in a single pass, with load currents taken at phase
+voltages *assumed balanced*. On this case it reported VUF 0.7618 % and Va 0.96146 pu. The phase-domain solve gives
+**0.8045 %** and **0.95967 pu**: the old answer understated the unbalance by ~5 % and was optimistic on the loaded
+phase. The earlier "V1 equals the balanced load flow exactly" check was a symptom of the flaw: with unbalanced
+constant-power loads, V1 is *not* the balanced result. The case, template and EXPECTED values were updated.
 
 ## Case
 Utility (11 kV swing) → line (Z1 = 0.5+j1.0, Z0 = 1.5+j3.0 Ω/km) → load bus → 2000 kVA / 0.9 PF static load.
@@ -20,29 +29,29 @@ Utility (11 kV swing) → line (Z1 = 0.5+j1.0, Z0 = 1.5+j3.0 Ω/km) → load bus
 → the sequence machinery correctly collapses to the balanced solution when the load is balanced.
 
 ## Unbalanced case (phase split 60 / 20 / 20)
-| Quantity | Engine |
-|---|---|
-| Va | 0.96146 ∠−1.75° |
-| Vb | 1.00489 ∠−120.72° |
-| Vc | 0.98922 ∠+120.47° |
-| V1 / V2 / V0 | 0.98507 / 0.00750 / 0.02251 pu |
-| VUF | 0.7618 % |
+| Quantity | Engine | Phase-domain reference |
+|---|---|---|
+| Va | 0.95967 | 0.959671 |
+| Vb | 1.00541 | 1.005410 |
+| Vc | 0.98975 | 0.989750 |
+| VUF | 0.8045 % | 0.8045 % |
 
 | Check | Result |
 |---|---|
-| VUF = \|V2\|/\|V1\| | 0.00750/0.98507 = **0.7618 %** = engine (exact) |
-| Phase↔sequence transform: A⁻¹·[Va,Vb,Vc] | \|V0\|=0.02251, \|V1\|=0.98507, \|V2\|=0.00750 — **matches reported V0/V1/V2 exactly** |
-| Positive-sequence anchor: V1 vs balanced LF \|V\| | 0.98507 vs 0.98507 — **+0.000 %** |
+| Phase voltages vs independent phase-domain solve | **exact** (all three phases, 6 d.p.) |
+| VUF = \|V2\|/\|V1\| vs reference | **0.8045 % = 0.8045 %** |
+| Same case at a 1 MVA base (solver tolerance 1 W instead of 100 W) | identical — the model, not the tolerance, sets the answer |
+
+Regression: `backend/tests/test_unbalanced_lf_sequence_iteration.py` pins the same phase-domain reference for a
+1-phase, a line-to-line and an uneven 3-phase load on a 0.4 kV feeder.
 
 ## Screenshot (real app — on-canvas per-phase badges)
 ![unbalanced load flow](screenshots/unbalanced-canvas.png)
 
-Src bus (swing): Va=Vb=Vc=1.0000, VUF 0.00 %. LoadBus: Va 0.9615∠−1.7°, Vb 1.0049∠−120.7°, Vc 0.9892∠+120.5°,
-V1 0.9851 / V2 0.0075 / V0 0.0225, VUF 0.76 % — matching.
+*(Screenshot predates the 2026-09-28 correction; it shows the old single-pass values VUF 0.76 %, Va 0.9615.)*
 
 ## Verdict
-The unbalanced load flow is verified: it collapses to the exact balanced solution when balanced, its positive
-sequence **exactly equals the verified Newton-Raphson balanced load flow**, the phase↔sequence (A / A⁻¹)
-transform is internally exact, and VUF = |V2|/|V1| is exact. (A full IEEE 13-bus feeder — voltage regulators,
-single-phase laterals, distributed loads — exceeds this simplified sequence-based engine's model and was not
-attempted.)
+The unbalanced load flow is verified against an **independent phase-domain solution**: all three phase voltages and the
+VUF agree exactly, and it collapses to the balanced solution when the load is balanced. It remains a sequence-based
+engine: a full IEEE 13-bus feeder (voltage regulators, single-phase laterals, distributed loads) is outside its model
+and was not attempted.

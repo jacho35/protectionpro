@@ -56,13 +56,14 @@ $$V_i^{(k+1)}=\frac{1}{Y_{ii}}\left[\frac{P_i-jQ_i}{V_i^{(k)*}}-\sum_{j\ne i}Y_{
 <p>Solves a three-phase network whose loads or sources are unbalanced, using the symmetrical-component method. Per-phase load is entered on static loads as <code>phase_a_pct / phase_b_pct / phase_c_pct</code> (default 33.33 % each), or as single-phase and line-to-line loads.</p>
 <h4>Method</h4>
 <ol>
-<li><strong>Positive sequence.</strong> The balanced load-flow solver runs on $Y_1$ with the total three-phase power, giving $V_1$ at every bus.</li>
-<li><strong>Sequence current injection.</strong> Each unbalanced load's per-phase complex power is converted to phase currents at the phase voltages implied by $V_1$, then to sequence currents with $a=e^{j120^\circ}$:
+<li><strong>Positive sequence.</strong> The balanced load-flow solver runs on $Y_1$. On the first pass every load's total three-phase power sits in the positive sequence; afterwards each phase-domain load contributes its positive-sequence power $S_1=V_1\,\overline{I_1}$. Motors stay positive-sequence constant-power loads, with their $Z_2$ as a negative-sequence shunt.</li>
+<li><strong>Sequence current injection.</strong> Each unbalanced load's per-phase complex power is converted to phase currents at the <em>actual</em> phase voltages $[V_a,V_b,V_c]^T=A\,[V_0,V_1,V_2]^T$ from the latest pass, then to sequence currents with $a=e^{j120^\circ}$:
 $$I_{ph}=3\,\overline{\left(\frac{S_{ph}}{V_{ph}}\right)},\qquad
 \begin{bmatrix}I_0\\I_1\\I_2\end{bmatrix}=\frac13\begin{bmatrix}1&1&1\\1&a&a^2\\1&a^2&a\end{bmatrix}\begin{bmatrix}I_a\\I_b\\I_c\end{bmatrix}$$
 The factor 3 arises because per-phase power is per-unit on the three-phase base while voltage is per-unit line-to-neutral. A line-to-line (2P) load uses the line voltage and produces $I_0=0$ exactly; a line-to-neutral (1P) load produces zero-sequence current.</li>
 <li><strong>Negative and zero sequence.</strong> Two linear solves: $Y_2V_2=I_2$ and $Y_0V_0=I_0$. Transformer delta or zigzag windings block $I_0$ (they appear as zero-sequence shunts to earth at the winding), and parallel circuits use the mutual-coupling zero-sequence scale of <a href="#" data-help="fault-line-coupling">line coupling</a>.</li>
-<li><strong>Recombine.</strong> Phase voltages and currents follow from $[V_a,V_b,V_c]^T=A\,[V_0,V_1,V_2]^T$, and neutral current is $I_n=3I_0$.</li>
+<li><strong>Iterate.</strong> Steps 1–3 repeat until no sequence voltage moves by more than $10^{-9}$ p.u. A heavily loaded phase sags, which raises its current and so its own sag. A single pass at balanced voltages misses that feedback: it understated the verification case's VUF by about 5 % (0.76 against 0.80 %). The pass count is reported, and a solve that does not settle is flagged as not converged.</li>
+<li><strong>Recombine.</strong> Phase voltages and currents follow from $[V_a,V_b,V_c]^T=A\,[V_0,V_1,V_2]^T$, and neutral current is $I_n=3I_0$. Checked against an independent phase-domain solve ($Z_{abc}=A\,\mathrm{diag}(Z_0,Z_1,Z_2)\,A^{-1}$), which it matches exactly.</li>
 </ol>
 <h4>Voltage unbalance factor</h4>
 $$\text{VUF}=\frac{|V_2|}{|V_1|}\times100\%$$

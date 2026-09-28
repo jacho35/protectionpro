@@ -229,6 +229,12 @@ def _add_to_ybus(Y, i, j, y, t, hv_bus_id, bus_a_id, bus_b_id):
         Y[j, i] -= y
 
 
+# Sequence-network fixed-point iteration (S#1-F18): passes and the largest
+# change in any sequence voltage (p.u.) between passes that counts as settled.
+SEQ_MAX_ITERATIONS = 50
+SEQ_TOLERANCE = 1e-9
+
+
 def run_unbalanced_load_flow(
     project: ProjectData,
     method: str = "newton_raphson",
@@ -480,6 +486,12 @@ def run_unbalanced_load_flow(
     # P_phase[i, ph] and Q_phase[i, ph] in per-unit on base_mva (positive = generation)
     P_phase = np.zeros((n, 3))
     Q_phase = np.zeros((n, 3))
+    # The motors' share of P_phase/Q_phase. A motor is a positive-sequence
+    # constant-power load with its own Z2 shunt (in Y2) — not a per-phase
+    # constant-power load — so the sequence iteration below leaves it in the
+    # positive sequence instead of re-evaluating it at unbalanced phase voltages.
+    P_mot = np.zeros((n, 3))
+    Q_mot = np.zeros((n, 3))
     bus_types = []
     V_spec = np.ones(n)
     bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
@@ -591,6 +603,8 @@ def run_unbalanced_load_flow(
                 q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
+                P_mot[i, :] -= p
+                Q_mot[i, :] -= q
                 bus_load_p_mw[i] += rated_mva * pf * df
                 # Induction motor internal impedance for neg sequence network
                 x_pp = comp.props.get("x_pp", 0.17)
@@ -617,6 +631,8 @@ def run_unbalanced_load_flow(
                 q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
+                P_mot[i, :] -= p
+                Q_mot[i, :] -= q
                 bus_load_p_mw[i] += rated_mva * pf * df
                 # Synchronous motor internal impedance for neg/zero sequence networks
                 xd_pp = comp.props.get("xd_pp", 0.15)
@@ -666,101 +682,74 @@ def run_unbalanced_load_flow(
     for i in dispatch["swing_idx"]:
         bus_types[i] = 2
 
-    # ── Solve positive sequence (Newton-Raphson or Gauss-Seidel) ──
-    P1 = P_phase.sum(axis=1)
-    Q1 = Q_phase.sum(axis=1)
-
-    # Dispatched source injections (balanced across the three phases)
+    # ── Sequence networks, iterated to a consistent solution (S#1-F18) ──
+    # Constant-power loads draw phase currents set by their ACTUAL phase (or
+    # line) voltages, and those voltages depend on the negative/zero-sequence
+    # voltages the currents themselves create. Each pass:
+    #   1. phase voltages from the latest V0/V1/V2,
+    #   2. every phase-domain load's phase currents at those voltages → I0/I1/I2,
+    #   3. Y2·V2 = I2 and Y0·V0 = I0, and the loads' positive-sequence power
+    #      S1 = V1·conj(I1) fed back into the positive-sequence solve,
+    # until V0/V1/V2 stop moving. The first pass is the old single-pass model
+    # (all load power in the positive sequence, balanced phase voltages), so a
+    # balanced network converges on pass 2 with an unchanged answer. Motors
+    # stay in the positive sequence (P_mot) with their Z2 shunt; dispatched
+    # sources inject balanced (positive-sequence) power.
+    P_ld = P_phase - P_mot          # phase-domain constant-power loads (3P splits, caps)
+    Q_ld = Q_phase - Q_mot
+    P1_fixed = P_mot.sum(axis=1)
+    Q1_fixed = Q_mot.sum(axis=1)
     for i, (p_mw, q_mvar) in dispatch["injections"].items():
-        P1[i] += p_mw / base_mva
-        Q1[i] += q_mvar / base_mva
+        P1_fixed[i] += p_mw / base_mva
+        Q1_fixed[i] += q_mvar / base_mva
 
-    # Add special load (2P/1P) contributions to positive-sequence power balance
+    # Pass-1 positive-sequence load power: the full three-phase power.
+    S1_loads = P_ld.sum(axis=1) + 1j * Q_ld.sum(axis=1)
     for bus_i, loads in special_bus_loads.items():
         for _ph, p_pu, q_pu in loads:
-            P1[bus_i] -= p_pu
-            Q1[bus_i] -= q_pu
+            S1_loads[bus_i] -= complex(p_pu, q_pu)
 
-    V1, converged, iterations, solve_reason = solve_with_islands(
-        Y1, P1, Q1, V_spec, bus_types, dispatch["dead_idx"], method)
+    def _load_seq_currents(V0_, V1_, V2_):
+        """Sequence current injections of the phase-domain loads at the phase
+        voltages built from (V0_, V1_, V2_). Per-unit convention: S is p.u.
+        of the THREE-PHASE base and V p.u. line-to-neutral, so the phase
+        current is I_pu = 3·conj(S_phase/V) (a balanced load S at 1 p.u.
+        gives Ia = S, matching the balanced solver). 2P loads use the line
+        voltage (I0 = 0 exactly); 1P loads the phase voltage (I0 ≠ 0)."""
+        I0_ = np.zeros(n, dtype=complex)
+        I1_ = np.zeros(n, dtype=complex)
+        I2_ = np.zeros(n, dtype=complex)
+        for i in range(n):
+            if abs(V1_[i]) < 1e-10:
+                continue   # de-energized bus — its loads draw nothing
+            Va_i = V0_[i] + V1_[i] + V2_[i]
+            Vb_i = V0_[i] + (_a ** 2) * V1_[i] + _a * V2_[i]
+            Vc_i = V0_[i] + _a * V1_[i] + (_a ** 2) * V2_[i]
+            I_abc = np.zeros(3, dtype=complex)
+            for ph, v_ph in enumerate((Va_i, Vb_i, Vc_i)):
+                s_ph = complex(P_ld[i, ph], Q_ld[i, ph])
+                if abs(s_ph) > 0 and abs(v_ph) > 1e-10:
+                    I_abc[ph] += 3 * np.conj(s_ph / v_ph)
+            for phase_conn, total_p_pu, total_q_pu in special_bus_loads.get(i, []):
+                S_consumed = complex(total_p_pu, total_q_pu)  # positive = consumed
+                if phase_conn in ("2P-AB", "2P-BC", "2P-CA"):
+                    k_from, k_to = {"2P-AB": (0, 1), "2P-BC": (1, 2), "2P-CA": (2, 0)}[phase_conn]
+                    v_ll = (Va_i, Vb_i, Vc_i)[k_from] - (Va_i, Vb_i, Vc_i)[k_to]
+                    if abs(v_ll) > 1e-10:
+                        i_load = 3 * np.conj(S_consumed / v_ll)
+                        # Current leaves on the first phase, returns on the second
+                        I_abc[k_from] -= i_load
+                        I_abc[k_to] += i_load
+                elif phase_conn in ("1P-A", "1P-B", "1P-C"):
+                    k = {"1P-A": 0, "1P-B": 1, "1P-C": 2}[phase_conn]
+                    v_ph = (Va_i, Vb_i, Vc_i)[k]
+                    if abs(v_ph) > 1e-10:
+                        I_abc[k] -= 3 * np.conj(S_consumed / v_ph)
+            I_seq = _A_inv @ I_abc
+            I0_[i], I1_[i], I2_[i] = I_seq[0], I_seq[1], I_seq[2]
+        return I0_, I1_, I2_
 
-    # ── Compute sequence current injections from unbalanced loads ──
-    # For 3P loads: decompose per-phase S into sequence currents.
-    # For 2P (line-to-line) loads: use line voltage — gives I0 = 0 exactly.
-    # For 1P (line-to-neutral) loads: use phase voltage — gives I0 ≠ 0.
-    I2_inj = np.zeros(n, dtype=complex)
-    I0_inj = np.zeros(n, dtype=complex)
-
-    for i, bus in enumerate(buses):
-        v1_i = V1[i]
-        if abs(v1_i) < 1e-10:
-            continue
-
-        # Approximate phase voltages using positive-sequence result
-        Va_i = v1_i
-        Vb_i = (_a ** 2) * v1_i
-        Vc_i = _a * v1_i
-
-        # 3P loads: per-phase complex power → sequence currents.
-        # Per-phase powers are p.u. of the THREE-PHASE base while voltages
-        # are p.u. line-to-neutral, so I_base = S_base/(3·V_LN) and the
-        # per-unit phase current is I_pu = 3·conj(S_phase_pu/V_phase_pu).
-        # (Check: a balanced load S_tot gives Ia = 3·conj(S_tot/3) = S_tot,
-        # matching the balanced solver's I_pu = S_pu at V = 1 p.u.)
-        Sa = complex(P_phase[i, 0], Q_phase[i, 0])
-        Sb = complex(P_phase[i, 1], Q_phase[i, 1])
-        Sc = complex(P_phase[i, 2], Q_phase[i, 2])
-
-        Ia = 3 * np.conj(Sa / Va_i) if abs(Va_i) > 1e-10 else complex(0)
-        Ib = 3 * np.conj(Sb / Vb_i) if abs(Vb_i) > 1e-10 else complex(0)
-        Ic = 3 * np.conj(Sc / Vc_i) if abs(Vc_i) > 1e-10 else complex(0)
-
-        I_abc = np.array([Ia, Ib, Ic], dtype=complex)
-        I_seq = _A_inv @ I_abc
-
-        I0_inj[i] = I_seq[0]
-        I2_inj[i] = I_seq[2]
-
-        # 2P / 1P loads: compute using the correct terminal voltage.
-        # Same per-unit convention as the 3P case above: S is p.u. of the
-        # three-phase base, V is p.u. line-to-neutral, so I_pu = 3·conj(S/V).
-        for phase_conn, total_p_pu, total_q_pu in special_bus_loads.get(i, []):
-            S_consumed = complex(total_p_pu, total_q_pu)  # positive = consumed by load
-
-            if phase_conn == "2P-AB":
-                V_ll = Va_i - Vb_i
-                I_load = 3 * np.conj(S_consumed / V_ll) if abs(V_ll) > 1e-10 else complex(0)
-                # Current exits A, returns through B → Ia=-I, Ib=+I, Ic=0 → I0=0 exactly
-                Ia_s, Ib_s, Ic_s = -I_load, I_load, complex(0)
-            elif phase_conn == "2P-BC":
-                V_ll = Vb_i - Vc_i
-                I_load = 3 * np.conj(S_consumed / V_ll) if abs(V_ll) > 1e-10 else complex(0)
-                Ia_s, Ib_s, Ic_s = complex(0), -I_load, I_load
-            elif phase_conn == "2P-CA":
-                V_ll = Vc_i - Va_i
-                I_load = 3 * np.conj(S_consumed / V_ll) if abs(V_ll) > 1e-10 else complex(0)
-                Ia_s, Ib_s, Ic_s = I_load, complex(0), -I_load
-            elif phase_conn == "1P-A":
-                I_load = 3 * np.conj(S_consumed / Va_i) if abs(Va_i) > 1e-10 else complex(0)
-                Ia_s, Ib_s, Ic_s = -I_load, complex(0), complex(0)
-            elif phase_conn == "1P-B":
-                I_load = 3 * np.conj(S_consumed / Vb_i) if abs(Vb_i) > 1e-10 else complex(0)
-                Ia_s, Ib_s, Ic_s = complex(0), -I_load, complex(0)
-            elif phase_conn == "1P-C":
-                I_load = 3 * np.conj(S_consumed / Vc_i) if abs(Vc_i) > 1e-10 else complex(0)
-                Ia_s, Ib_s, Ic_s = complex(0), complex(0), -I_load
-            else:
-                continue
-
-            I_abc_s = np.array([Ia_s, Ib_s, Ic_s], dtype=complex)
-            I_seq_s = _A_inv @ I_abc_s
-            I0_inj[i] += I_seq_s[0]
-            I2_inj[i] += I_seq_s[2]
-
-    # ── Solve negative sequence: Y2 * V2 = I2_inj ──
     swing_idx = [i for i, bt in enumerate(bus_types) if bt == 2]
-    V2 = np.zeros(n, dtype=complex)
-    V0 = np.zeros(n, dtype=complex)
 
     def _solve_seq(Y_mat, I_inj):
         """Solve sequence network with swing buses forced to zero voltage.
@@ -806,8 +795,34 @@ def run_unbalanced_load_flow(
                 pass
         return V_out
 
-    V2 = _solve_seq(Y2, I2_inj)
-    V0 = _solve_seq(Y0, I0_inj)
+    V2 = np.zeros(n, dtype=complex)
+    V0 = np.zeros(n, dtype=complex)
+    V1_prev = None
+    seq_converged = False
+    seq_iterations = 0
+    for seq_iterations in range(1, SEQ_MAX_ITERATIONS + 1):
+        P1 = P1_fixed + S1_loads.real
+        Q1 = Q1_fixed + S1_loads.imag
+        V1, converged, iterations, solve_reason = solve_with_islands(
+            Y1, P1, Q1, V_spec, bus_types, dispatch["dead_idx"], method)
+        if not converged:
+            break
+        I0_inj, I1_inj, I2_inj = _load_seq_currents(V0, V1, V2)
+        V2_new = _solve_seq(Y2, I2_inj)
+        V0_new = _solve_seq(Y0, I0_inj)
+        change = max(float(np.max(np.abs(V2_new - V2), initial=0.0)),
+                     float(np.max(np.abs(V0_new - V0), initial=0.0)),
+                     float(np.max(np.abs(V1 - V1_prev), initial=0.0))
+                     if V1_prev is not None else float("inf"))
+        V2, V0, V1_prev = V2_new, V0_new, V1
+        # The loads' positive-sequence power at this pass's voltages.
+        S1_loads = V1 * np.conj(I1_inj)
+        if change < SEQ_TOLERANCE:
+            seq_converged = True
+            break
+    if converged and not seq_converged:
+        converged = False
+        solve_reason = "sequence_iterations"
 
     # ── Reconstruct phase voltages ──
     # [Va, Vb, Vc] = A * [V0, V1, V2]
@@ -964,6 +979,15 @@ def run_unbalanced_load_flow(
                          "structurally under-determined (a subnetwork with no "
                          "voltage reference / all-swing island) or sitting "
                          "exactly on the voltage-collapse boundary.")))
+        elif solve_reason == "sequence_iterations":
+            warnings.insert(0, LoadFlowWarning(
+                elementId="", element_name="Unbalanced Load Flow",
+                message=(f"Unbalanced load flow: the sequence networks did not "
+                         f"settle after {seq_iterations} passes — the load "
+                         "currents and the phase voltages they create are not "
+                         "yet consistent, so results are unreliable. This "
+                         "happens with very heavy single-phase loading on a "
+                         "weak feeder (phase voltage near collapse).")))
         else:
             warnings.insert(0, LoadFlowWarning(
                 elementId="", element_name="Unbalanced Load Flow",
@@ -1046,5 +1070,6 @@ def run_unbalanced_load_flow(
         warnings=warnings,
         converged=converged,
         iterations=iterations,
+        sequence_iterations=seq_iterations,
         method="Sequence Component (Unbalanced)",
     )
