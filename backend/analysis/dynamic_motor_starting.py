@@ -60,7 +60,8 @@ from .network_reduction import build_port_zbus
 
 # ── Simulation constants ────────────────────────────────────────────────
 MAX_RECORD_POINTS = 400      # decimated output arrays
-STALL_HOLD_S = 0.5           # dω/dt ≤ 0 sustained this long ⇒ stalled
+STALL_HOLD_S = 0.5           # not accelerating this long ⇒ stalled
+ACCEL_EPS = 1e-4             # dω/dt (pu/s) below this is "not accelerating"
 SYNC_PULLIN_SPEED = 0.95     # sync motors: damper start succeeds at 95 %
 MAGNETIZING_I_PU = 0.30      # assumed no-load magnetizing current (×FLC)
 R1_TO_R2S = 0.5              # assumed stator/locked-rotor resistance ratio
@@ -235,7 +236,9 @@ def _load_torque_fn(model, t_load_rated, breakaway_frac, omega_rated):
 
 # ── Network helpers (shared conventions with motor_starting.py) ─────────
 
-TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester"}
+# [N4] Shared with motor_starting — this copy lacked "bus_duct", so a motor
+# fed through a bus duct found no terminal bus and was skipped.
+from .motor_starting import TRANSPARENT_TYPES  # noqa: E402
 
 
 def _build_adjacency(project):
@@ -459,10 +462,15 @@ def _prepare_unit(motor, comp_map, adj, freq, project, analysis_warnings,
         "flc_a": flc_a, "s_base_mva": s_base_mva,
         "voltage_kv": voltage_kv, "bus_kv": bus_kv, "m_i": m_i,
         "stall_time_hot": float(mp.get("stall_time_hot_s", 15)),
+        "s_bd": bdt_slip,   # [MG3] breakdown slip (voltage-independent here)
         "start_time": start_time, "role": role,
         # System→motor admittance base factor: Y_sys = Y_motor · y_base_factor
         # (so Z_sys·Y_sys = z_motor·y_motor, the base-invariant divider product).
         "y_base_factor": (s_base_mva / project.baseMVA) * (bus_kv / voltage_kv) ** 2,
+        # [MG9] Bus p.u. → motor p.u.: the motor's own model (torque, current
+        # ×FLC, winding voltage) is on ITS rated voltage, so a 415 V motor on a
+        # 400 V bus sees 0.964 p.u., not 1.0.
+        "v_ratio": bus_kv / voltage_kv,
         "warnings": warnings,
         "opts": {
             "t_max_s": float(mp.get("sim_t_max_s", 30)),
@@ -496,7 +504,7 @@ def _soft_alpha(unit, s, v_bus, t):
     i_lim = o["ss_current_limit_xflc"]
     t_local = max(0.0, t - unit["start_time"])
     alpha_ramp = min(1.0, v0 + (1.0 - v0) * (t_local / ramp if ramp > 0 else 1.0))
-    denom = abs(v_bus * unit["model"].y_in(s))
+    denom = abs(v_bus * unit.get("v_ratio", 1.0) * unit["model"].y_in(s))   # [MG9]
     alpha_lim = (i_lim / denom) if denom > 1e-9 else 1.0
     return max(0.0, min(alpha_ramp, alpha_lim))
 
@@ -518,7 +526,11 @@ def _unit_y_eff_motorbase(unit, s, v_bus, t):
 
 def _unit_electrical(unit, s, v_bus, t):
     """(air-gap torque pu, line current ×FLC, motor winding voltage pu) at the
-    given terminal-bus voltage magnitude. Line current = |V_bus·Y_eff|."""
+    given terminal-bus voltage magnitude. Line current = |V·Y_eff|, with V the
+    bus voltage re-expressed on the motor's rated voltage ([MG9]: the bus p.u.
+    was used as the motor's own, so torque was 7.6 % high for a 415 V motor on
+    a 400 V bus and ~11 % low for a 380 V one)."""
+    v_bus = v_bus * unit.get("v_ratio", 1.0)
     m = unit["model"]
     y_m = m.y_in(s)
     method = unit["method"]
@@ -533,6 +545,48 @@ def _unit_electrical(unit, s, v_bus, t):
         v_m = alpha * v_bus
         return m.torque(v_m, s), abs(v_m * y_m), v_m
     return m.torque(v_bus, s), abs(v_bus * y_m), v_bus
+
+
+def _running_slip(unit, v_bus):
+    """[N5] Stable-branch slip where the running motor's torque meets its load
+    at bus voltage ``v_bus`` (bus p.u.). Returns the breakdown slip when the
+    load exceeds the breakdown torque (the motor cannot run there — the stall
+    test then catches it)."""
+    m, tl = unit["model"], unit["load_fn"]
+    v = v_bus * unit.get("v_ratio", 1.0)
+    s_hi = unit["s_bd"] if not unit["is_sync"] else 1.0 - SYNC_PULLIN_SPEED
+    f = lambda s: m.torque(v, s) - tl(1.0 - s)
+    if f(s_hi) <= 0:
+        return s_hi
+    a, b = 1e-7, s_hi
+    for _ in range(80):
+        mid = 0.5 * (a + b)
+        if f(mid) < 0:
+            a = mid
+        else:
+            b = mid
+    return 0.5 * (a + b)
+
+
+def _winding_current_xflc(unit, i_line):
+    """[MG2] Current in the motor's own windings, as a multiple of the rated
+    winding current — the quantity that heats the rotor. The I²t check used the
+    SUPPLY line current, which a reduced-voltage starter divides further than
+    the winding current:
+
+    * star (of a star-delta): windings see V/√3, so winding current is 1/√3 of
+      DOL while the line current is 1/3 → winding = √3 × line (heat 1/3 of
+      DOL, not 1/9 — the check was 3× optimistic);
+    * autotransformer at tap a: motor current a·I_DOL, line a²·I_DOL → winding
+      = line / a (heat a², not a⁴);
+    * soft starter / DOL / after changeover: no transformation, winding = line.
+    """
+    method = unit["method"]
+    if method == "star_delta" and unit["in_reduced"]:
+        return i_line * math.sqrt(3.0)
+    if method == "autotransformer" and unit["in_reduced"]:
+        return i_line / AUTO_TX_TAP
+    return i_line
 
 
 # ── Coupled shared-timeline simulation ──────────────────────────────────
@@ -579,10 +633,13 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
         u["in_reduced"] = u["method"] in ("star_delta", "autotransformer") \
             and u["role"] != "running"
         u["transition"] = None
-        u["finished"] = (u["role"] == "running")
+        # [N5] A running motor is integrated too (it slows during another
+        # start and can stall); it is never "finished" by the start logic.
+        u["finished"] = False
         u["sim_status"] = "running" if u["role"] == "running" else "not_started"
         u["i2t"] = 0.0
         u["stall_timer"] = 0.0
+        u["crawl"] = False
         u["accel_time"] = None
         u["port"] = port_of.get(u["terminal_bus"], -1)
         u["_alpha"] = 1.0
@@ -599,7 +656,7 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
         # Loads the network while energised, unless it has tripped on stall.
         return energized(u, t) and u["sim_status"] != "stalled"
 
-    def solve_V(t, slip_of):
+    def solve_V(t, slip_of, running_only=False):
         if Z is None:
             return np.abs(Vpre)
         Vabs = np.abs(Vpre)
@@ -607,6 +664,8 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
             D = np.zeros(npv, dtype=complex)
             for u in units:
                 if u["port"] < 0 or not connected(u, t):
+                    continue
+                if running_only and u["role"] != "running":
                     continue
                 D[u["port"]] += (_unit_y_eff_motorbase(u, slip_of[id(u)],
                                                        float(Vabs[u["port"]]), t)
@@ -623,6 +682,32 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
     t = 0.0
     steps = 0
 
+    # [MG6] Pre-start voltage each motor is measured against: the simulated bus
+    # voltage just before it energises — with the running motors (and any
+    # earlier-staged starts) already on the network. Seeded from the running-
+    # only solve for a t = 0 start; updated below while a unit waits to start.
+    # [N5] Running motors start at their torque-balance slip at the running-
+    # only voltage (fixed point: the slip sets the draw, the draw the voltage),
+    # so the undisturbed network stays exactly still. They used to be pinned
+    # at rated slip for the whole run — optimistic for re-acceleration.
+    running = [u for u in units if u["role"] == "running"]
+    V_run0 = solve_V(0.0, {id(u): max(1.0 - u["omega"], 1e-6) for u in units},
+                     running_only=True)
+    for _ in range(30):
+        moved = 0.0
+        for u in running:
+            vb = float(V_run0[u["port"]]) if (u["port"] >= 0 and npv) else 1.0
+            s_eq = _running_slip(u, vb)
+            moved = max(moved, abs((1.0 - s_eq) - u["omega"]))
+            u["omega"] = 1.0 - s_eq
+        V_run0 = solve_V(0.0, {id(u): max(1.0 - u["omega"], 1e-6) for u in units},
+                         running_only=True)
+        if moved < 1e-10:
+            break
+    for u in units:
+        u["v_pre_sim"] = (float(V_run0[u["port"]]) if (u["port"] >= 0 and npv)
+                          else float(abs(Vpre[0])) if npv else 1.0)
+
     while t <= t_end + 1e-9:
         slip_now = {id(u): max(1.0 - u["omega"], 1e-6) for u in units}
         Vabs = solve_V(t, slip_now)
@@ -630,6 +715,7 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
         for u in units:
             vb = float(Vabs[u["port"]]) if (u["port"] >= 0 and npv) else 1.0
             if not energized(u, t):
+                u["v_pre_sim"] = vb   # [MG6] latest voltage before this start
                 u["rt"].append(round(t, 4)); u["rspd"].append(0.0)
                 u["ri"].append(0.0); u["rvb"].append(round(vb, 4))
                 u["rvm"].append(round(vb, 4)); u["rte"].append(0.0); u["rtl"].append(0.0)
@@ -647,7 +733,8 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
             if u["finished"]:
                 continue
             accel[id(u)] = (t_e - t_l) / (2.0 * u["model"].h_s)
-            u["i2t"] += i_line * i_line * dt
+            i_heat = _winding_current_xflc(u, i_line)
+            u["i2t"] += i_heat * i_heat * dt
             if u["in_reduced"] and u["omega"] >= u["opts"]["transition_speed_pct"] / 100.0:
                 u["in_reduced"] = False
                 u["transition"] = {"t_s": round(t - u["start_time"], 3),
@@ -669,28 +756,59 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
                 done = True
             elif (not u["is_sync"]) and omega >= 0.999 * omega_rated:
                 done = True
-            elif (not u["is_sync"]) and omega > 0.5 * omega_rated and abs(a) < 1e-4 \
+            # [MG3] "Settled" only counts as started on the STABLE side of the
+            # torque curve — past breakdown, where torque falls with speed.
+            # This model's torque is ∝ V², so the breakdown slip s_bd does not
+            # move with voltage. The old test (above 50 % speed, a ≈ 0, T_e ≥
+            # T_L) also accepted a motor hung on the rising part of the curve:
+            # a 120 % linear load on a weak supply settled at 52.8 % speed and
+            # was reported "started" with a 14 s acceleration time.
+            stable_speed = SYNC_PULLIN_SPEED if u["is_sync"] else (1.0 - u["s_bd"])
+            if u["role"] == "running":
+                # [N5] no start to complete — only a stall can end it
+                if a < ACCEL_EPS and omega < stable_speed:
+                    u["stall_timer"] += dt
+                    if u["stall_timer"] >= STALL_HOLD_S:
+                        u["sim_status"] = "stalled"; u["finished"] = True
+                else:
+                    u["stall_timer"] = 0.0
+                continue
+            if u["is_sync"] and omega >= SYNC_PULLIN_SPEED:
+                done = True
+            elif (not u["is_sync"]) and omega >= 0.999 * omega_rated:
+                done = True
+            elif (not u["is_sync"]) and omega >= stable_speed and abs(a) < ACCEL_EPS \
                     and u["rte"][-1] >= u["rtl"][-1]:
                 done = True
             if done:
                 u["sim_status"] = "started"; u["finished"] = True
                 u["accel_time"] = t - u["start_time"]
                 continue
-            if a <= 0.0 and omega < 0.9 * target:
+            # [MG3] Not accelerating (a < ACCEL_EPS, i.e. > 10⁴ s to full speed)
+            # below the stable speed is a stall — a crawl as much as a standstill.
+            # A soft starter still on its voltage ramp is exempt: it is meant to
+            # sit low until the ramp builds torque.
+            ramping = (u["method"] == "soft_starter"
+                       and (t - u["start_time"]) < u["opts"]["ss_ramp_s"])
+            if a < ACCEL_EPS and omega < stable_speed and not ramping:
                 u["stall_timer"] += dt
                 if u["stall_timer"] >= STALL_HOLD_S:
                     u["sim_status"] = "stalled"; u["finished"] = True
+                    u["crawl"] = omega > 0.02
             else:
                 u["stall_timer"] = 0.0
             if not u["finished"] and (t - u["start_time"]) >= u["opts"]["t_max_s"]:
                 u["sim_status"] = "not_started"; u["finished"] = True
 
-        if all(u["finished"] for u in units) and t >= t_start_max - 1e-9:
+        # [N5] …and the running motors have settled back after the starts
+        if all(u["finished"] for u in units if u["role"] != "running") \
+                and all(u["finished"] or abs(accel.get(id(u), 0.0)) < 10 * ACCEL_EPS
+                        for u in units if u["role"] == "running") \
+                and t >= t_start_max - 1e-9:
             break
 
         # RK2 midpoint: advance the accelerating units together
-        integ = [u for u in units
-                 if energized(u, t) and not u["finished"] and u["role"] != "running"]
+        integ = [u for u in units if energized(u, t) and not u["finished"]]
         if integ:
             omega_mid, slip_mid = {}, {}
             for u in units:
@@ -724,13 +842,19 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
             "current_a": [round(i * u["flc_a"], 1) for i in ri],
         }
 
-        v_pre = v_pre_by_bus.get(u["terminal_bus"], 1.0) or 1.0
+        v_pre = u["v_pre_sim"] or 1.0   # [MG6] with running motors connected
         # Metrics over the motor's own energised window (ignore the pre-start
         # flat segment so peak current / dip reflect the actual start).
         act = [k for k, tv in enumerate(u["rt"]) if tv >= u["start_time"] - 1e-9]
         peak_i = max((u["ri"][k] for k in act), default=0.0)
         min_v_bus = min((u["rvb"][k] for k in act), default=1.0)
         min_v_motor = min((u["rvm"][k] for k in act), default=1.0)
+        # [MG10] The < 0.80 p.u. check is a SUPPLY criterion: the voltage at the
+        # starter's line terminals, on the motor's rating. It used the winding
+        # voltage, which a reduced-voltage starter lowers on purpose (0.577 in
+        # star, 0.8 on the autotransformer tap, 30 % at a soft-start's first
+        # instant), so every such start was flagged as a dip.
+        min_v_supply = min((u["rvb"][k] for k in act), default=1.0) * u["v_ratio"]
         max_dip_pct = (v_pre - min_v_bus) / v_pre * 100.0 if v_pre > 0 else 0.0
 
         thermal_capacity = u["m_i"] * u["m_i"] * u["stall_time_hot"]
@@ -740,14 +864,19 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
 
         issues = []
         if u["sim_status"] == "stalled":
-            issues.append(f"Motor stalls at {final_speed_pct:.0f}% speed — "
-                          f"accelerating torque falls below load torque.")
+            if u["crawl"]:
+                issues.append(f"Motor hangs at {final_speed_pct:.0f}% speed, below its "
+                              f"breakdown speed — load torque meets motor torque on "
+                              f"the rising part of the curve, so it cannot run up.")
+            else:
+                issues.append(f"Motor stalls at {final_speed_pct:.0f}% speed — "
+                              f"accelerating torque falls below load torque.")
         elif u["sim_status"] == "not_started":
             issues.append(f"Motor did not reach full speed within the "
                           f"{u['opts']['t_max_s']:.0f} s simulation window.")
-        if min_v_motor < 0.8:
-            issues.append(f"Motor terminal voltage drops to {min_v_motor:.3f} p.u. "
-                          f"(< 0.80 p.u.) during start.")
+        if min_v_supply < 0.8:
+            issues.append(f"Supply voltage at the motor terminals drops to "
+                          f"{min_v_supply:.3f} p.u. (< 0.80 p.u.) during start.")
         if thermal_used_pct > 100.0:
             issues.append(f"Start consumes {thermal_used_pct:.0f}% of the rotor "
                           f"thermal withstand (I²t vs {u['stall_time_hot']:.0f} s "
@@ -756,10 +885,14 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
             issues.append(f"Start consumes {thermal_used_pct:.0f}% of the rotor "
                           f"thermal withstand — marginal for repeated starts.")
 
-        if u["sim_status"] in ("stalled", "not_started") or thermal_used_pct > 100.0:
+        if u["role"] == "running":
+            # [N5] a running motor passes unless the sequence stalls it
+            issues = ([f"Running motor stalls at {final_speed_pct:.0f}% speed during "
+                       f"the sequence — another start pulls its voltage too low."]
+                      if u["sim_status"] == "stalled" else [])
+            status = "fail" if u["sim_status"] == "stalled" else "pass"
+        elif u["sim_status"] in ("stalled", "not_started") or thermal_used_pct > 100.0:
             status = "fail"
-        elif u["role"] == "running":
-            status = "pass"
         elif issues:
             status = "warning"
         else:
@@ -794,6 +927,7 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
             "v_prestart_pu": round(v_pre, 4),
             "min_v_bus_pu": round(min_v_bus, 4),
             "min_v_motor_pu": round(min_v_motor, 4),
+            "min_v_supply_pu": round(min_v_supply, 4),
             "max_bus_dip_pct": round(max_dip_pct, 2),
             "thermal_used_pct": round(thermal_used_pct, 1),
             "stall_time_hot_s": u["stall_time_hot"],
@@ -873,8 +1007,27 @@ def run_dynamic_motor_starting(project: ProjectData):
     if not units:
         return {"motors": passthrough, "warnings": analysis_warnings, "sequence": None}
 
-    motor_ids_off = [u["motor_id"] for u in units if u["role"] != "running"]
+    # [MG6] Switch EVERY simulated motor off in the baseline, running ones
+    # included: the simulation loads all of them onto the Thevenin network
+    # (running motors from t = 0), so a running motor left in the baseline was
+    # counted twice — a 1.5 % "dip" with nothing starting at all. Each motor's
+    # current now enters once, through Z.
+    motor_ids_off = [u["motor_id"] for u in units]
     v_pre_by_bus = _baseline_voltages(project, motor_ids_off, analysis_warnings)
+    # [N5] A motor on a de-energised bus has no supply: skip it. ``v or 1.0``
+    # downstream used to read the dead bus's 0.0 p.u. as a healthy 1.0.
+    if v_pre_by_bus:
+        live = []
+        for u in units:
+            if v_pre_by_bus.get(u["terminal_bus"], 1.0) < 1e-6:
+                analysis_warnings.append(
+                    f"Motor '{u['motor_name']}' is on a de-energised bus "
+                    f"({u['terminal_bus_name'] or u['terminal_bus']}) — not simulated.")
+            else:
+                live.append(u)
+        units = live
+    if not units:
+        return {"motors": passthrough, "warnings": analysis_warnings, "sequence": None}
 
     port_buses = list(dict.fromkeys(u["terminal_bus"] for u in units))
     zres = build_port_zbus(project, port_buses, c=1.0)

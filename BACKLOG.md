@@ -318,6 +318,31 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Generator & motor review: MG1–MG10 fixed (2026-09-28)
+- **Review.** `GENERATOR_MOTOR_REVIEW.md` — motor starting (static + dynamic), the transient-stability machine/motor models, motor/sync-motor load flow and generator Z0, checked against hand solves and physical invariants (`testing/generator-motor-review/`). Ten defects and eight lesser notes, all fixed.
+- **Fixed, worst first:**
+  - **MG1.** Transient stability: the dynamic induction motor now starts exactly at the load-flow point (demand factor included). A zero-size disturbance used to swing a genset island 0.25–0.63 Hz, or run it away as "unstable" with the governor off.
+  - **MG2.** Dynamic starting: rotor I²t uses winding current — star-delta heating was 3× low, autotransformer 1.56× low.
+  - **MG3.** Dynamic starting: a motor hung below breakdown speed is a stall, not a start (was "started" at 52.8 % speed).
+  - **MG4.** Generator with no `x0`: Z0 = 0.5·Z1 (typical), disclosed per machine; was Z0 = Z1, understating Ik1 16–22 %.
+  - **MG5.** Synchronous motors get `pf_mode` (leading/lagging); leading motors now supply vars in load flow, unbalanced LF and backup autonomy. Pre-existing motors stay lagging with a warning.
+  - **MG6.** Dynamic starting: running motors were counted twice (1.5 % phantom dip).
+  - **MG7.** Static starting: the source dip is applied only to buses galvanically connected to the motor.
+  - **MG8.** Soft starter start current follows `ss_current_limit_xflc` in static starting, flicker and the TCC overlay (was 0.5 × LRC).
+  - **MG9.** Motor rated voltage ≠ bus voltage is now referred properly in dynamic starting, transient stability, static starting and flicker (±7–11 % torque).
+  - **MG10.** Dynamic starting's < 0.80 p.u. check reads the supply at the motor terminals (`min_v_supply_pu`), not the deliberately reduced winding voltage.
+- **Lesser notes N1–N8 also fixed:**
+  - **N1.** Static starting: the locked rotor is a constant impedance (closed-form divider), not constant PQ — no more false "voltage collapse" (400 kW on 1 MVA: 0.74 p.u., was collapse). Soft starter constant-current, VFD constant-power; flicker shares the model.
+  - **N2.** VFD start at the drive's pf 0.95 (was 0.3).
+  - **N3.** Locked-rotor pf from new prop `locked_rotor_pf`, else the nameplate fit; new torque run-up check (a star-delta start against a heavy constant load now fails).
+  - **N4.** Dynamic starting finds a motor's bus through a bus duct.
+  - **N5.** Dynamic starting: running motors are simulated (slow during starts, stall reported); motors on a dead bus are skipped.
+  - **N6.** Synchronous-motor fault impedance gets K_G and the IEC fictitious resistance.
+  - **N7.** New generators have no fixed X/R 40, so the IEC 60909 fictitious R_G applies.
+  - **N8.** Induction-motor X″ derives from LRC (IEC 60909-0 §3.8.2) unless `x_pp` is set; new motors carry no `x_pp`.
+- **Behaviour change for saved projects.** Re-run transient stability, dynamic/static motor starting, flicker, generator SLG fault studies and fault studies with synchronous motors. The `ver_motor_start` verification template moved to the constant-Z anchor (0.8529 p.u.).
+- `backend/tests/test_generator_motor_review_fixes.py`: 44 tests.
+
 ### Fault engine review: F1–F9 fixed (2026-09-28)
 - **Review.** `FAULT_ENGINE_REVIEW.md` — `fault.py` checked against IEC 60909 hand calculations and an independent phase-domain solve (`testing/fault-review/` scripts). Core Ik3/Ik1/Ik2/IkE2E/ip exact; nine defects found.
 - **Fixed, worst first:**

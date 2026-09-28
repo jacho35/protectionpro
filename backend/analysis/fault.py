@@ -1338,9 +1338,8 @@ def _source_z2(comp, z1_src, base_mva):
         x2_val = float(comp.props.get("x2", 0) or comp.props.get("x2_pu", 0))
         if x2_val > 0:
             rated_mva = comp.props.get("rated_kva", 500) / 1000
-            xr = comp.props.get("x_r_ratio", 40)
             x2_pu = x2_val * base_mva / rated_mva
-            return complex(x2_pu / xr, x2_pu)
+            return complex(x2_pu * _sync_motor_r_over_x(comp), x2_pu)   # [N6]
         return z1_src
     return z1_src
 
@@ -1376,6 +1375,14 @@ def _paths_are_meshed(source_paths, components):
 
 
 _UNGROUNDED_VALUES = ("ungrounded", "isolated", "none", "unearthed", "")
+
+# [MG4] Generator zero-sequence impedance when no ``x0`` is given, as a
+# fraction of the (K_G-corrected) positive-sequence Z1. A synchronous machine's
+# X0 is set by stator slot leakage only and is typically 0.3–0.6·X″d; the old
+# fallback Z0 = Z1 made Ik1 = Ik3 at a solidly earthed genset and understated
+# the earth-fault current 16–22 % against a datasheet X0 of 0.05–0.08 p.u.
+# Shared by the path walker, the nodal builder and unbalanced load flow.
+GEN_Z0_Z1_DEFAULT = 0.5
 
 
 def _machine_neutral_z(comp, v_kv, base_mva):
@@ -1444,6 +1451,15 @@ def _converter_assumptions(project):
 def _steady_state_assumptions(project):
     """[F9] Name the machines whose steady-state inputs were defaulted."""
     out = []
+    no_x0 = [str(c.props.get("name") or c.id) for c in project.components
+             if c.type == "generator"
+             and str(c.props.get("grounding", "solidly")).lower() not in _UNGROUNDED_VALUES
+             and not float(c.props.get("x0", 0) or 0)]
+    if no_x0:
+        shown = ", ".join(no_x0[:4]) + (f" +{len(no_x0) - 4} more" if len(no_x0) > 4 else "")
+        out.append(f"{shown}: no zero-sequence reactance X0 given — taken as "
+                   f"{GEN_Z0_Z1_DEFAULT:g}·Z1 (typical machine X0 is 0.3–0.6·X″d). "
+                   "Enter X0 from the machine datasheet for earth-fault duty.")
     no_scr = [str(c.props.get("name") or c.id) for c in project.components
               if c.type in ("generator", "motor_synchronous")
               and not float(c.props.get("scr", 0) or 0)]
@@ -1617,6 +1633,27 @@ def _cable_impedance(comp, base_mva, v_kv=None):
     return complex(r / z_base, x / z_base) / n
 
 
+def induction_motor_x_pp(props, xr):
+    """[N8] Induction motor X″ on its own base. An explicit ``x_pp`` wins;
+    otherwise IEC 60909-0 §3.8.2 from the locked-rotor current the user
+    enters: |Z_M| = 1/(I_LR/I_rM), X_M = |Z_M|/√(1 + (R/X)²). The palette
+    used to carry a fixed x_pp 0.17 beside the LRC field, so editing LRC
+    (shown under Fault) never moved a fault result. Shared by the IEC and
+    ANSI fault engines, harmonics and unbalanced load flow."""
+    try:
+        x = float(props.get("x_pp", 0) or 0)
+    except (TypeError, ValueError):
+        x = 0.0
+    if x > 0:
+        return x
+    try:
+        lrc = float(props.get("locked_rotor_current", 6.0) or 6.0)
+    except (TypeError, ValueError):
+        lrc = 6.0
+    r_x = 1.0 / xr if xr and xr > 0 else 0.0
+    return (1.0 / max(lrc, 1e-3)) / math.sqrt(1.0 + r_x * r_x)
+
+
 def _motor_induction_impedance(comp, base_mva):
     """Induction motor sub-transient impedance per IEC 60909-0 §13.
 
@@ -1626,8 +1663,8 @@ def _motor_induction_impedance(comp, base_mva):
     rated_kw = comp.props.get("rated_kw", 200)
     efficiency = comp.props.get("efficiency", 0.93)
     pf = comp.props.get("power_factor", 0.85)
-    x_pp = comp.props.get("x_pp", 0.17)  # Sub-transient reactance p.u. on motor base
     xr = comp.props.get("x_r_ratio", 10)
+    x_pp = induction_motor_x_pp(comp.props, xr)  # [N8] X″ p.u. on motor base
 
     rated_mva = rated_kw / (efficiency * pf * 1000)  # Input apparent power (MVA)
     x_pu = x_pp * base_mva / rated_mva
@@ -1679,20 +1716,50 @@ def _static_load_motor_impedance(comp, base_mva):
     return complex(r_pu, x_pu), motor_mva
 
 
+def _sync_motor_r_over_x(comp):
+    """[N6] R/X of a synchronous motor: an explicit ``x_r_ratio`` wins, else
+    the IEC 60909-0 §6.6.1 fictitious resistance classes it shares with
+    generators (§3.8.1 treats synchronous motors as generators):
+    0.15 (≤ 1 kV), 0.07 (> 1 kV, < 100 MVA), 0.05 (> 1 kV, ≥ 100 MVA). The
+    palette carries no X/R for a synchronous motor, so the old X/R 40
+    fallback applied to every one of them."""
+    xr_prop = comp.props.get("x_r_ratio", None)
+    try:
+        xr = float(xr_prop) if xr_prop is not None else 0.0
+    except (TypeError, ValueError):
+        xr = 0.0
+    if xr > 0:
+        return 1.0 / xr
+    u_r = float(comp.props.get("voltage_kv", 0) or 0)
+    rated_mva = float(comp.props.get("rated_kva", 500) or 500) / 1000.0
+    if 0 < u_r <= 1.0:
+        return 0.15
+    return 0.05 if rated_mva >= 100 else 0.07
+
+
 def _motor_synchronous_impedance(comp, base_mva):
     """Synchronous motor sub-transient impedance per IEC 60909-0 §13.
 
     Uses X"d (sub-transient reactance) on motor base, converted to system base.
-    Treated identically to a synchronous generator for fault contribution.
+    Treated as a synchronous generator (IEC 60909-0 §3.8.1) — [N6] including
+    the K_G correction of Eq. 18, K = c_max/(1 + x″d·sin φ_rM) with the
+    motor's rated power factor (U_n = U_rM), and the fictitious resistance
+    classes when no X/R is given. The correction is short-circuit only:
+    voltage-dip studies (nameplate context) get the bare impedance.
     """
     rated_kva = comp.props.get("rated_kva", 500)
     xd_pp = comp.props.get("xd_pp", 0.15)
-    xr = comp.props.get("x_r_ratio", 40)
 
     rated_mva = rated_kva / 1000
     x_pu = xd_pp * base_mva / rated_mva
-    r_pu = x_pu / xr
-    return complex(r_pu, x_pu)
+    r_pu = x_pu * _sync_motor_r_over_x(comp)
+    z = complex(r_pu, x_pu)
+    if _NAMEPLATE_IMPEDANCE.get():
+        return z
+    pf = float(comp.props.get("power_factor", 0.9) or 0.9)
+    pf = min(max(abs(pf), 0.0), 1.0)
+    k = 1.10 / (1.0 + float(xd_pp) * math.sqrt(max(0.0, 1.0 - pf * pf)))
+    return z * k
 
 
 def _solar_pv_impedance(comp, base_mva):
@@ -1849,7 +1916,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                 r0_pu = x0_pu / xr
                 z0_src = complex(r0_pu, x0_pu)
             else:
-                z0_src = z_src
+                z0_src = GEN_Z0_Z1_DEFAULT * z_src   # [MG4]
             z0_src = z0_src + 3 * zn
             z_total = z0_path + s * z0_src
             desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
@@ -2414,6 +2481,8 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
                 xr = comp.props.get("x_r_ratio", 40)
                 x0_pu = x0_val * base_mva / rated_mva
                 z_src = complex(x0_pu / xr, x0_pu)
+            else:
+                z_src = GEN_Z0_Z1_DEFAULT * z_src   # [MG4] same as the path walker
             shunts0[from_bus_id].append(z0_path + s * (z_src + 3 * zn))
             return
         if t in ("solar_pv", "battery", "wind_turbine"):

@@ -1478,7 +1478,7 @@ const Properties = {
       // S = P / (η·cosφ) per IEC 60909-0 §3.8 (matches the backend engines)
       const kva = (comp.props.rated_kw || 200) /
         ((comp.props.efficiency || 0.93) * (comp.props.power_factor || 0.85));
-      const Xpu = (comp.props.x_pp || 0.17) * base / (kva / 1000);
+      const Xpu = inductionMotorXpp(comp.props, comp.props.x_r_ratio || 10) * base / (kva / 1000);
       html += `<div class="prop-row"><label>X" (p.u.)</label><span class="pu-value">${Xpu.toFixed(4)}</span></div>`;
     } else if (comp.type === 'motor_synchronous') {
       const Xpu = (comp.props.xd_pp || 0.15) * base / ((comp.props.rated_kva || 500) / 1000);
@@ -2218,7 +2218,9 @@ R = ${Rohm.toFixed(4)} Ω,  X = ${Xohm.toFixed(4)} Ω</div>
       const xdpp = comp.props.xd_pp || 0.15;
       const xdp = comp.props.xd_p || 0.25;
       const xd = comp.props.xd || 1.2;
-      const xr = comp.props.x_r_ratio || 40;
+      // [N7] No X/R set → IEC 60909-0 §6.6.1 fictitious R_G (mirrors fault.py)
+      const xr = parseFloat(comp.props.x_r_ratio)
+        || (vkv <= 1 ? 1 / 0.15 : (rated >= 100 ? 1 / 0.05 : 1 / 0.07));
       const Xpu = xdpp * base / rated;
       const Rpu = Xpu / xr;
       const Zbase = (vkv * vkv) / base;
@@ -2362,8 +2364,8 @@ Voltage drop (at rated) ≈ √3 × I × R_eff / V
       const vkv = comp.props.voltage_kv || 0.4;
       const eff = comp.props.efficiency || 0.93;
       const pf = comp.props.power_factor || 0.85;
-      const xpp = comp.props.x_pp || 0.17;
       const xr = comp.props.x_r_ratio || 10;
+      const xpp = inductionMotorXpp(comp.props, xr);   // [N8] x_pp, else 1/LRC
       const lrc = comp.props.locked_rotor_current || 6;
       // S = P / (η·cosφ) per IEC 60909-0 §3.8 (matches the backend engines)
       const kva = kw / (eff * pf);

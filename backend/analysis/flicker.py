@@ -49,8 +49,9 @@ import math
 from ..models.schemas import ProjectData
 from .loadflow import run_load_flow, insert_implicit_load_buses
 from .motor_starting import (
-    _build_adjacency, _find_motor_bus, _thevenin_z1, _solve_pq_dip, _prestart_voltage,
-    _STARTING_METHODS,
+    _build_adjacency, _find_motor_bus, _thevenin_z1, _prestart_voltage,
+    starting_current_xflc, bus_voltage_ratio,
+    _solve_start_v, _locked_rotor_pf, _nameplate_unit, VFD_SUPPLY_PF,
 )
 
 DEFAULT_PST_LIMIT = 1.0
@@ -137,15 +138,16 @@ def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
                 continue
             flc_a = rated_kw / (math.sqrt(3) * voltage_kv * efficiency * power_factor)
 
-        method_key = str(mp.get("starting_method", "dol")).lower()
-        factor, method_label = _STARTING_METHODS.get(method_key, _STARTING_METHODS["dol"])
-        start_current_a = flc_a if factor is None else flc_a * lrc * factor
-        s_start_mva = voltage_kv * start_current_a * math.sqrt(3) / 1000.0
+        mult, method_label = starting_current_xflc(mp, lrc)   # [MG8] shared
+        start_current_a = flc_a * mult
 
         terminal_bus = _find_motor_bus(motor.id, adj, comp_map)
         if terminal_bus is None:
             warnings.append(f"Motor '{name}': no terminal bus found, skipped.")
             continue
+        vr = bus_voltage_ratio(terminal_bus, comp_map, voltage_kv)   # [MG9]
+        start_current_a *= vr
+        s_start_mva = voltage_kv * vr * start_current_a * math.sqrt(3) / 1000.0
         bus_comp = comp_map.get(terminal_bus)
         bus_name = str(bus_comp.props.get("name", terminal_bus)) if bus_comp else terminal_bus
 
@@ -160,10 +162,18 @@ def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
         # load twice (see motor_starting._prestart_voltage).
         v_pre_term = _prestart_voltage(project, motor.id, terminal_bus,
                                        v_pre.get(terminal_bus, 1.0))
+        # [N1] Same starting-load model as the motor-starting study: a locked
+        # rotor is a constant impedance at its locked-rotor pf, a soft starter
+        # a constant current, a VFD constant power at pf 0.95.
         s_pu = s_start_mva / project.baseMVA
-        start_pf = 0.3
+        method_key = str(mp.get("starting_method", "dol")).lower()
+        if method_key == "vfd":
+            start_pf = VFD_SUPPLY_PF
+        else:
+            start_pf = _locked_rotor_pf(mp, _nameplate_unit(motor, comp_map, adj, project))
         s_cplx = s_pu * complex(start_pf, math.sqrt(1 - start_pf ** 2))
-        v_start = _solve_pq_dip(v_pre_term, z_th, s_cplx)
+        kind = {"soft_starter": "i", "vfd": "pq"}.get(method_key, "z")
+        v_start = _solve_start_v(kind, v_pre_term, z_th, s_cplx)
         if v_start is None:
             warnings.append(f"Motor '{name}': starting load exceeds the "
                             "network's transfer capability (voltage "

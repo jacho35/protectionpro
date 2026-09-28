@@ -933,7 +933,8 @@ const Annotations = {
       lines.push(started ? `✓ ${motor.accel_time_s.toFixed(1)}s start` : (motor.sim_status === 'stalled' ? '✗ STALL' : '✗ no start'));
     }
     if (this.fieldVisible('dynMotor', 'iv')) {
-      lines.push(`I ${motor.peak_current_xflc.toFixed(1)}× V ${(motor.min_v_motor_pu * 100).toFixed(0)}%`);
+      const vMin = motor.min_v_supply_pu ?? motor.min_v_motor_pu;   // [MG10] supply side
+      lines.push(`I ${motor.peak_current_xflc.toFixed(1)}× V ${(vMin * 100).toFixed(0)}%`);
     }
 
     const lineHeight = 14;

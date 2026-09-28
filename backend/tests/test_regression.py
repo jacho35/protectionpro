@@ -843,11 +843,36 @@ class TestMotorStarting:
                          _wire("w3", "transformer-1", "bus-2"),
                          _wire("w4", "bus-2", "motor_induction-1")])
 
+    def test_weak_supply_dol_is_deep_dip_not_collapse(self):
+        """[N1] A locked rotor is a constant IMPEDANCE, so it always has an
+        operating point: the old constant-PQ model reported this start as
+        "voltage collapse" (V = 0). It is a deep dip and a FAIL, at the
+        constant-Z divider V = V_pre/(1 + Z_th·Y) — the textbook impedance
+        method — with Y from the starting kVA at the start pf."""
+        from backend.analysis.fault import thevenin_z1_at_bus
+        proj = self._big_motor_on_weak_supply()
+        res = run_motor_starting(proj)
+        assert len(res["motors"]) == 1, res["warnings"]
+        m = res["motors"][0]
+        assert m["collapse"] is False
+        assert m["status"] == "fail" and m["motor_will_start"] is False
+        s_mva = 6 * 600 / (0.93 * 0.85) / 1000
+        pf = m["start_pf"]
+        y = (s_mva / 100 * complex(pf, math.sqrt(1 - pf * pf))).conjugate()
+        z = thevenin_z1_at_bus(proj, "bus-2", nameplate=True)
+        assert m["motor_terminal_voltage_pu"] == pytest.approx(abs(1 / (1 + z * y)), abs=2e-3)
+        assert m["motor_terminal_voltage_pu"] < 0.6
+
     def test_collapse_is_reported_not_dropped(self):
-        """A starting load flow with no solution is a result: the motor must
-        come back as a voltage-collapse FAIL. Previously it was dropped with
-        only a 'did not converge' warning, which read as nothing wrong."""
-        res = run_motor_starting(self._big_motor_on_weak_supply())
+        """A constant-current start (soft starter at its limit) CAN have no
+        operating point: |Z_th·I| ≈ 1.2 here. That is a result — the motor
+        comes back as a voltage-collapse FAIL, never dropped with only a
+        'did not converge' warning, which read as nothing wrong."""
+        proj = self._big_motor_on_weak_supply()
+        for c in proj.components:
+            if c.type == "motor_induction":
+                c.props.update(starting_method="soft_starter", ss_current_limit_xflc=5.0)
+        res = run_motor_starting(proj)
         assert len(res["motors"]) == 1, res["warnings"]
         m = res["motors"][0]
         assert m["status"] == "fail" and m["motor_will_start"] is False
@@ -860,20 +885,22 @@ class TestMotorStarting:
         """If only the network solve fails while the Thevenin superposition
         still has an operating point, the terminal voltage is that estimate
         (flagged) and other-bus dips are left out. Same network and exact
-        solve as test_voltage_dip_magnitude: V_start = 0.90326 pu."""
+        solve as test_voltage_dip_magnitude: V_start = 0.91967 pu (constant-Z
+        locked rotor [N1]; 0.90326 under the old constant-PQ model)."""
         from backend.analysis import loadflow
         real = loadflow.run_load_flow
 
         def starting_lf_diverges(project, *a, **k):
             res = real(project, *a, **k)
-            starting = any(c.type == "motor_induction" and c.props.get("power_factor") == 0.3
+            # the starting substitute is the only motor with efficiency 1.0
+            starting = any(c.type == "motor_induction" and c.props.get("efficiency") == 1.0
                            for c in project.components)
             return res.model_copy(update={"converged": False}) if starting else res
 
         monkeypatch.setattr(loadflow, "run_load_flow", starting_lf_diverges)
         m = run_motor_starting(TestFlickerAnalysis()._flicker_project())["motors"][0]
         assert m["estimate"] is True and m["collapse"] is False
-        assert m["motor_terminal_voltage_pu"] == pytest.approx(0.90326, abs=5e-4)
+        assert m["motor_terminal_voltage_pu"] == pytest.approx(0.91967, abs=5e-4)
         assert m["motor_will_start"] is True and m["status"] == "warning"
         assert list(m["bus_dips"]) == ["LV Bus"]
         assert any("Thevenin estimate" in i for i in m["issues"])
@@ -923,9 +950,10 @@ class TestMotorStarting:
 
         1500 kW motor (η=0.95, pf=0.9, LRC 6×) at 6.6 kV behind a 0.0722 +
         j0.7224 Ω feeder from a 99 999 MVA (effectively infinite) source.
-        Independent 2-bus constant-PQ solve (S_start = 10.53 MVA at pf 0.3,
-        V = 1 − Z·(S/V)*): V_term = 0.7781 p.u.; the source bus stays at
-        ~1.0. Before the fix the superposition started from the baseline
+        Independent constant-Z divider (S_start = 10.53 MVA at locked-rotor
+        pf 0.3, V = 1/(1 + Z·Y), [N1]): V_term = 0.85294 p.u. (0.7781 under
+        the old constant-PQ rotor); the source bus stays at ~1.0. Before the
+        fix the superposition started from the baseline
         with the motor already running (0.984 p.u.), counting its load twice
         → V_term 0.7555 and a spurious 2.27 % dip on the infinite source
         bus (testing/case-motor-starting).
@@ -940,14 +968,15 @@ class TestMotorStarting:
         motor = _comp("motor_induction-1", "motor_induction", {
             "name": "M1", "rated_kw": 1500.0, "voltage_kv": 6.6,
             "efficiency": 0.95, "power_factor": 0.9,
-            "locked_rotor_current": 6.0, "starting_method": "dol"})
+            "locked_rotor_current": 6.0, "starting_method": "dol",
+            "locked_rotor_pf": 0.3})
         proj = ProjectData(
             projectName="test", baseMVA=100.0, frequency=50,
             components=[util, src, feeder, mbus, motor],
             wires=[_wire("w1", "utility-1", "bus-1"), _wire("w2", "bus-1", "cable-1"),
                    _wire("w3", "cable-1", "bus-2"), _wire("w4", "bus-2", "motor_induction-1")])
         m = run_motor_starting(proj)["motors"][0]
-        assert m["motor_terminal_voltage_pu"] == pytest.approx(0.7781, abs=5e-4)
+        assert m["motor_terminal_voltage_pu"] == pytest.approx(0.85294, abs=5e-4)
         assert m["bus_dips"]["Src"] < 0.1
 
     def test_voltage_dip_magnitude(self):
@@ -971,7 +1000,7 @@ class TestMotorStarting:
         motor = _comp("motor_induction-1", "motor_induction", {
             "name": "M1", "rated_kw": 1000.0, "voltage_kv": 0.4,
             "efficiency": 0.95, "power_factor": 0.85,
-            "locked_rotor_current": 6.0,
+            "locked_rotor_current": 6.0, "locked_rotor_pf": 0.3,
         })
         proj = _utility_bus_project(
             fault_mva=500.0,
@@ -989,15 +1018,17 @@ class TestMotorStarting:
             f"voltage dip {dip:.2f}% outside the hand-calculated 4-13% band "
             f"(≈7% expected; ≈2.5% indicates the 0.3× starting-load bug)"
         )
-        # Point value (review V-6): exact 2-bus constant-PQ solves, pf 0.3
-        # start / 0.85 run, S_run = 1000/(0.95·0.85) = 1.238 MVA, S_start = 6×.
+        # Point value (review V-6): pf 0.3 start / 0.85 run,
+        # S_run = 1000/(0.95·0.85) = 1.238 MVA, S_start = 6×.
         #   Baseline (ideal swing, transformer nameplate z_T = 1.0 pu, X/R 10,
-        #   motor running):                          V_run   = 0.99235 pu
-        #   Start (Thevenin at c = 1.0: grid 0.2 pu X/R 15 + nameplate z_T —
-        #   no IEC 60909 K_T, a short-circuit-only correction; V_pre
-        #   motor-off = 1.0):                        V_start = 0.90326 pu
-        #   dip = (V_run − V_start)/V_run = 8.978 %
-        assert dip == pytest.approx(8.978, abs=0.01)
+        #   motor running, constant PQ):             V_run   = 0.99235 pu
+        #   Start — [N1] constant-Z locked rotor, V = V_pre/(1 + Z_th·Y),
+        #   Z_th at c = 1.0: grid 0.2 pu X/R 15 + nameplate z_T (no IEC 60909
+        #   K_T, a short-circuit-only correction); V_pre motor-off = 1.0:
+        #                                            V_start = 0.91967 pu
+        #   dip = (V_run − V_start)/V_run = 7.324 %
+        #   (8.978 % under the old constant-PQ rotor model)
+        assert dip == pytest.approx(7.324, abs=0.01)
 
     def _motor_dip(self, starting_method):
         xfmr = _comp("transformer-1", "transformer", {
@@ -1259,7 +1290,7 @@ class TestFlickerAnalysis:
         motor = _comp("motor_induction-1", "motor_induction", {
             "name": "M1", "rated_kw": 1000.0, "voltage_kv": 0.4,
             "efficiency": 0.95, "power_factor": 0.85,
-            "locked_rotor_current": 6.0,
+            "locked_rotor_current": 6.0, "locked_rotor_pf": 0.3,
             "flicker_starts_per_hour": starts_per_hour,
         })
         return _utility_bus_project(
@@ -1281,11 +1312,11 @@ class TestFlickerAnalysis:
         d = res["sources"][0]["relative_voltage_change_pct"]
         assert 4.0 < d < 13.0, f"d={d:.2f}%, expected the ~7% hand-calc band"
         # Point value (review V-6): d = ΔU/U from motor-OFF (V_pre = 1.0) to
-        # the starting point V_start = 0.90326 pu — same exact nameplate solve
-        # as TestMotorStarting.test_voltage_dip_magnitude → d = 9.674 %.
-        # (Before 2026-09-27 V_pre carried the motor's running load, and the
-        # transformer carried K_T.)
-        assert d == pytest.approx(9.674, abs=0.005)
+        # the starting point V_start = 0.91967 pu — the same constant-Z divider
+        # as TestMotorStarting.test_voltage_dip_magnitude → d = 8.033 %.
+        # (9.674 % under the old constant-PQ rotor [N1]; before 2026-09-27 V_pre
+        # carried the motor's running load, and the transformer carried K_T.)
+        assert d == pytest.approx(8.033, abs=0.005)
 
     def test_frequent_starts_fail_default_pst_limit(self):
         """60 starts/hour (r=1/min) at a ~7% step is well above the 3% anchor

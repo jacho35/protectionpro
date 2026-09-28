@@ -144,17 +144,17 @@
       ],
       "vt": [
         "motors.0.motor_terminal_voltage_pu",
-        0.7782,
+        0.8529,
         0.001
       ],
       "dip": [
         "motors.0.max_system_dip_pct",
-        20.92,
+        13.33,
         0.002
       ],
       "starts": [
         "motors.0.motor_will_start",
-        false,
+        true,
         0.001
       ]
     }

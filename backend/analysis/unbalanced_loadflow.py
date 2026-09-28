@@ -40,6 +40,7 @@ from .loadflow import (
     chain_element_zones, chain_order_from_paths, insert_junction_buses,
     _reduce_chain_two_port,
     is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
+    sync_motor_q_sign as _lf_sync_q_sign,
 )
 from .fault import _grounding_impedance
 from .line_coupling import (coupling_note, parallel_z0_scale,
@@ -549,14 +550,17 @@ def run_unbalanced_load_flow(
                 else:
                     y2_gen = 1 / z1_gen if abs(z1_gen) > 1e-15 else 0
                 Y2[i, i] += y2_gen
-                # Zero sequence: use x0 if > 0, else Z0 = Z1
+                # Zero sequence: use x0 if > 0, else [MG4] the typical
+                # machine ratio Z0 = GEN_Z0_Z1_DEFAULT·Z1 (shared with fault.py)
                 x0_val = float(comp.props.get("x0", 0))
                 if x0_val > 0:
                     x0_pu = x0_val * base_mva / rated
                     r0_pu = x0_pu / xr
                     y0_gen = 1 / complex(r0_pu, x0_pu)
                 else:
-                    y0_gen = 1 / z1_gen if abs(z1_gen) > 1e-15 else 0
+                    from .fault import GEN_Z0_Z1_DEFAULT
+                    y0_gen = (1 / (GEN_Z0_Z1_DEFAULT * z1_gen)
+                              if abs(z1_gen) > 1e-15 else 0)
                 Y0[i, i] += y0_gen
 
             elif comp.type in ("solar_pv", "wind_turbine"):
@@ -600,15 +604,18 @@ def run_unbalanced_load_flow(
                 # IEC 60909-0 §3.8: S = kW/(η·pf) — P = S·pf = kW/η unchanged
                 rated_mva = rated_kw / (eff * pf * 1000) if pf > 0 else rated_kw / (eff * 1000)
                 p = rated_mva * pf * df / base_mva / 3
-                q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
+                # [MG5] leading (over-excited) motors supply vars
+                q = (_lf_sync_q_sign(comp.props) * rated_mva
+                     * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3)
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
                 P_mot[i, :] -= p
                 Q_mot[i, :] -= q
                 bus_load_p_mw[i] += rated_mva * pf * df
                 # Induction motor internal impedance for neg sequence network
-                x_pp = comp.props.get("x_pp", 0.17)
                 xr = comp.props.get("x_r_ratio", 10)
+                from .fault import induction_motor_x_pp
+                x_pp = induction_motor_x_pp(comp.props, xr)   # [N8]
                 x1_pu = x_pp * base_mva / rated_mva
                 r1_pu = x1_pu / xr
                 z1_mot = complex(r1_pu, x1_pu)
@@ -628,7 +635,9 @@ def run_unbalanced_load_flow(
                 df = comp.props.get("demand_factor", 1.0)
                 rated_mva = rated_kva / 1000
                 p = rated_mva * pf * df / base_mva / 3
-                q = rated_mva * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3
+                # [MG5] leading (over-excited) motors supply vars
+                q = (_lf_sync_q_sign(comp.props) * rated_mva
+                     * math.sqrt(max(0, 1 - pf ** 2)) * df / base_mva / 3)
                 P_phase[i, :] -= p
                 Q_phase[i, :] -= q
                 P_mot[i, :] -= p

@@ -1054,7 +1054,7 @@ const FIELD_INFO = {
   'generator.xd_pp':     'Default Xd″ = 0.15 p.u. is typical for salient-pole synchronous generators.\nSource: IEC 60034-4 Table 5 — sub-transient reactance range 0.10–0.25 p.u.\nAlso read by Transient Stability when Sub-transient Dynamics is on.',
   'generator.xd_p':      'Default Xd′ = 0.25 p.u. is typical transient reactance.\nSource: IEC 60034-4 Table 5 — transient reactance range 0.15–0.35 p.u.',
   'generator.xd':        'Default Xd = 1.2 p.u. is typical synchronous reactance.\nSource: IEC 60034-4 Table 5 — synchronous reactance range 0.8–1.8 p.u.',
-  'generator.x_r_ratio': 'Default X/R = 40 is typical for generators.\nSource: IEC 60909-0 §3.7 — generator X/R ratios are generally high (30–60).',
+  'generator.x_r_ratio': 'Leave blank to use the IEC 60909-0 §6.6.1 fictitious stator resistance for short circuit: R_G = 0.15·X″d (≤ 1 kV), 0.07·X″d (> 1 kV, < 100 MVA), 0.05·X″d (≥ 100 MVA) — the values the standard uses to set the peak current. Enter a datasheet X/R to override (it is also used by load flow and stability studies, which assume 40 when blank).\nSource: IEC 60909-0 §6.6.1.',
   'generator.power_factor': 'Default PF = 0.85 lagging, typical industrial generator rating.\nSource: IEC 60034-1 §8 — rated power factor.',
   'generator.q_max_mvar': 'Maximum over-excited (lagging / capacitive) reactive output the machine can supply while regulating voltage on a PV bus. Leave blank to derive it automatically from the rating and rated power factor: Q = rated_MVA × sin(acos(pf)). Once the solver would demand more than this, the generator can no longer hold its setpoint — it clamps at this limit (PV→PQ) and the bus voltage drifts. Only used when the machine is on a voltage-controlled (PV) bus.\nUsed by: Load Flow.',
   'generator.q_min_mvar': 'Maximum under-excited (leading / inductive) reactive absorption — usually negative. Leave blank to default to −Q Max (a symmetric capability box); set an explicit value for an asymmetric under-excitation limit. When the machine must absorb more than this to hold its setpoint it clamps at the limit and the bus voltage rises. Only used on a voltage-controlled (PV) bus.\nUsed by: Load Flow.',
@@ -1250,7 +1250,7 @@ const FIELD_INFO = {
   'motor_synchronous.ss_initial_v_pct': 'Soft starter initial (pedestal) voltage, % of supply.',
   'motor_synchronous.stall_time_hot_s': 'Permissible stall time from hot (damper thermal limit). The study integrates I²t over the start against this withstand.',
   'motor_synchronous.sim_t_max_s': 'Simulation window. Starts not reaching pull-in speed within this time are flagged.',
-  'motor_induction.x_pp':                 'Default X″ = 0.17 p.u. — sub-transient reactance for fault contribution.\nSource: IEC 60909-0 Table 3 — motor sub-transient reactance 0.12–0.25 p.u.',
+  'motor_induction.x_pp':                 'Sub-transient reactance X″ for fault contribution. Leave blank to derive it from the LRC field per IEC 60909-0 §3.8.2: |Z| = 1/LRC, X = |Z|/√(1+(R/X)²) (LRC 6 → ≈ 0.155 p.u. at X/R 2.4). Enter a datasheet value to override.\nUsed by: Short Circuit (IEC & ANSI), Harmonics, Unbalanced Load Flow.',
 
   // Synchronous Motor
   'generator.trip_of_hz': 'Over-frequency protection: the generator trips if its frequency stays above this for the trip delay (0 = disabled). Typical 51–52 Hz on a 50 Hz system.\nUsed by: Transient Stability.',
@@ -1267,10 +1267,13 @@ const FIELD_INFO = {
   'motor_induction.uv_trip_pu': 'Contactor drop-out / under-voltage trip: the motor is disconnected if its terminal voltage stays below this for the trip delay (0 = disabled). Contactors typically drop out around 0.5–0.7 p.u.\nUsed by: Transient Stability.',
   'motor_induction.uv_trip_delay_s': 'Delay an under-voltage condition must persist before the motor trips (default 0.2 s; contactor drop-out is fast, ~0.05–0.2 s).\nUsed by: Transient Stability.',
   'static_load.load_type': 'Voltage dependence of the load in Transient Stability (load flow / fault use the rated draw).\n• Constant power — draws the same kW/kvar as voltage varies (current rises as V falls); the most onerous, can drive voltage collapse.\n• Constant current — magnitude holds, power falls with voltage.\n• Constant impedance — a fixed admittance; power falls with V² (the classical model, most benign).\nUsed by: Transient Stability.',
-  'motor_induction.ts_dynamic': 'Transient-stability motor model.\n• On — a single-cage dynamic model: the motor slows on a voltage dip, drawing more current and possibly stalling (fitted from the nameplate LRC/LRT, speed, inertia and load-torque fields below).\n• Off — the motor is frozen as a constant-impedance load at its pre-fault operating point (the classical model).\nUsed by: Transient Stability.',
+  'motor_induction.ts_dynamic': 'Transient-stability motor model.\n• On — a single-cage dynamic model: the motor slows on a voltage dip, drawing more current and possibly stalling (fitted from the nameplate LRC/LRT, speed and inertia; the load-torque curve shape and breakaway come from the fields below, its size is set so the motor starts at exactly the load-flow operating point, demand factor included).\n• Off — the motor is frozen as a constant-impedance load at its pre-fault operating point (the classical model).\nUsed by: Transient Stability.',
   'motor_synchronous.xd_pp': 'Default Xd″ = 0.15 p.u. — sub-transient reactance.\nSource: IEC 60034-4 Table 5 — synchronous motor Xd″ range 0.10–0.25 p.u.',
   'motor_synchronous.xd_p':  'Default Xd′ = 0.25 p.u. — transient reactance.\nSource: IEC 60034-4 Table 5 — synchronous motor Xd′ range 0.15–0.35 p.u.',
   'motor_synchronous.power_factor': 'Default PF = 0.9 leading — synchronous motors often operate at leading PF.\nSource: IEC 60034-1 — rated at unity or leading PF.',
+  'motor_induction.locked_rotor_pf': 'Power factor of the locked-rotor (starting) current. 0 = derived from the nameplate fit (LRC, LRT, speed) that Dynamic Motor Starting uses; enter the datasheet value if you have it. Typical: 0.4–0.5 small LV motors, 0.15–0.25 large MV motors.\nUsed by: Motor Starting (the locked rotor is modelled as this constant impedance).',
+  'motor_synchronous.locked_rotor_pf': 'Power factor of the starting (damper-cage) current. 0 = derived from the nameplate fit; enter the datasheet value if you have it.\nUsed by: Motor Starting.',
+  'motor_synchronous.pf_mode': 'Whether the motor runs over-excited (Leading — it SUPPLIES reactive power, the usual rating and the reason to fit one for power-factor correction) or under-excited (Lagging — it absorbs vars like an induction motor).\nMotors saved before this setting existed are treated as Lagging, with a load-flow warning.\nUsed by: Load Flow and every study built on it, Unbalanced Load Flow, Backup Autonomy.',
 
   // Static Load
   'static_load.power_factor': 'Default PF = 0.85 lagging — typical mixed commercial/industrial load.\nSource: General practice — power factor range 0.7–0.95 depending on load type.',
@@ -1648,7 +1651,6 @@ const COMPONENT_DEFS = {
       xd_pp: 0.15,
       xd_p: 0.25,
       xd: 1.2,
-      x_r_ratio: 40,
       power_factor: 0.85,
       x2: 0,
       x0: 0,
@@ -1751,7 +1753,7 @@ const COMPONENT_DEFS = {
       { key: 'xd', label: 'Xd', type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'x0', label: 'X₀ (zero seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
-      { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
+      { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', placeholder: 'auto (IEC 60909 R_G)', clearable: true, section: 'fault' },
       { key: 'rotor_type', label: 'Rotor Type', type: 'select', options: [{ value: 'cylindrical', label: 'Cylindrical (turbo)' }, { value: 'salient', label: 'Salient-pole' }], section: 'fault' },
       { key: 'scr', label: 'Short-Circuit Ratio (0 = use Xd)', type: 'number', min: 0, step: 0.05, section: 'fault' },
       { key: 'excitation_series', label: 'Excitation Ceiling', type: 'select', options: [{ value: 1, label: 'Series 1 (1.3× turbo / 1.6× salient)' }, { value: 2, label: 'Series 2 (1.6× turbo / 2.0× salient)' }], section: 'fault' },
@@ -2836,7 +2838,6 @@ const COMPONENT_DEFS = {
       flicker_starts_per_hour: 0,
       dyn_role: 'starts',
       start_time_s: 0,
-      x_pp: 0.17,
       x_r_ratio: 2.4, // IEC 60909-0: X/R ≈ 2.4 typical for LV motor groups (10 was a large-MV-motor value)
       demand_factor: 1.0,
       essential: 'yes',
@@ -2871,6 +2872,7 @@ const COMPONENT_DEFS = {
       { key: 'customers', label: 'Customers Served', type: 'number', min: 0, step: 1, section: 'reliability' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number', section: 'fault' },
+      { key: 'locked_rotor_pf', label: 'Locked-rotor PF (0 = from LRC/LRT)', type: 'number', min: 0, max: 1, step: 0.01, section: 'fault' },
       { key: 'starting_method', label: 'Starting Method', type: 'select',
         options: [
           { value: 'dol',             label: 'Direct-on-Line (DOL)' },
@@ -2879,7 +2881,7 @@ const COMPONENT_DEFS = {
           { value: 'soft_starter',    label: 'Soft Starter' },
           { value: 'vfd',             label: 'VFD' },
         ], section: 'fault' },
-      { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.', section: 'fault' },
+      { key: 'x_pp', label: "X''", type: 'number', unit: 'p.u.', placeholder: 'auto (1/LRC)', clearable: true, section: 'fault' },
       { key: 'x_r_ratio', label: 'X/R Ratio', type: 'number', section: 'fault' },
       { key: 'x2', label: 'X₂ (neg. seq.)', type: 'number', unit: 'p.u.', section: 'fault' },
       { key: 'poles', label: 'Poles', type: 'number', section: 'fault', min: 0, step: 2 },
@@ -2921,6 +2923,7 @@ const COMPONENT_DEFS = {
       rated_kva: 500,
       voltage_kv: 3.3,
       power_factor: 0.9,
+      pf_mode: 'leading',
       xd_pp: 0.15,
       xd_p: 0.25,
       locked_rotor_current: 5.5,
@@ -2954,10 +2957,12 @@ const COMPONENT_DEFS = {
       { key: 'rated_kva', label: 'Rating', type: 'number', unit: 'kVA' },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV' },
       { key: 'power_factor', label: 'Power Factor', type: 'number' },
+      { key: 'pf_mode', label: 'PF Mode', type: 'select', options: [{ value: 'leading', label: 'Leading (over-excited, supplies vars)' }, { value: 'lagging', label: 'Lagging (absorbs vars)' }] },
       { key: 'demand_factor', label: 'Demand Factor', type: 'number' },
       { key: 'customers', label: 'Customers Served', type: 'number', min: 0, step: 1, section: 'reliability' },
       { key: 'essential', label: 'Essential (Backup) Load', type: 'select', options: ['yes', 'no'], section: 'loadflow' },
       { key: 'locked_rotor_current', label: 'LRC (x FLC)', type: 'number', section: 'fault' },
+      { key: 'locked_rotor_pf', label: 'Locked-rotor PF (0 = from LRC/LRT)', type: 'number', min: 0, max: 1, step: 0.01, section: 'fault' },
       { key: 'starting_method', label: 'Starting Method', type: 'select',
         options: [
           { value: 'dol',             label: 'Direct-on-Line (DOL)' },
@@ -3631,7 +3636,7 @@ const LF_ATTRS = {
   cable: ['voltage_kv', 'r_per_km', 'x_per_km', 'length_km', 'num_parallel', 'rated_amps'],
   static_load: ['rated_kva', 'power_factor', 'demand_factor'],
   motor_induction: ['rated_kw', 'efficiency', 'power_factor', 'demand_factor'],
-  motor_synchronous: ['rated_kva', 'power_factor', 'demand_factor'],
+  motor_synchronous: ['rated_kva', 'power_factor', 'pf_mode', 'demand_factor'],
   vfd: ['rated_kw', 'voltage_kv', 'displacement_pf', 'pulse_number', 'front_end', 'demand_factor'],
   capacitor_bank: ['rated_kvar'],
   svc: ['device_mode', 'control_mode', 'v_setpoint_pu', 'q_max_mvar', 'q_min_mvar'],
@@ -3639,3 +3644,14 @@ const LF_ATTRS = {
   switch: ['state'],
   changeover: ['state'],
 };
+
+// [N8] Induction motor X″ on its own base — mirrors fault.induction_motor_x_pp:
+// an explicit x_pp wins, else IEC 60909-0 §3.8.2 from the locked-rotor current,
+// |Z| = 1/LRC, X = |Z|/√(1 + (R/X)²).
+function inductionMotorXpp(props, xr) {
+  const x = parseFloat(props && props.x_pp);
+  if (x > 0) return x;
+  const lrc = parseFloat(props && props.locked_rotor_current) || 6;
+  const rx = xr > 0 ? 1 / xr : 0;
+  return (1 / Math.max(lrc, 1e-3)) / Math.sqrt(1 + rx * rx);
+}

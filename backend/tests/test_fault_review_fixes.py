@@ -120,6 +120,10 @@ class TestF1SimultaneousCouplingSign:
     @pytest.mark.parametrize("shunt", ["3phase", "slg"])
     def test_matches_phase_domain(self, monkeypatch, side, series, shunt):
         ibase = BASE / (math.sqrt(3) * self.KV)
+        # The reference needs Z0 = Z1 at every element. The generator used to
+        # get that from its no-x0 fallback; [MG4] made that fallback 0.5·Z1
+        # (typical machine X0), so pin the assumption here explicitly.
+        monkeypatch.setattr(F, "GEN_Z0_Z1_DEFAULT", 1.0)
         import backend.analysis.loadflow as lf
         monkeypatch.setattr(lf, "run_load_flow", lambda *a, **k: types.SimpleNamespace(
             converged=True,
