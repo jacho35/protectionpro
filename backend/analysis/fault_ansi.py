@@ -56,6 +56,7 @@ import math
 from .fault import (
     MAX_FAULT_PATHS, MAX_FAULT_EXPANSIONS, _paths_are_meshed,
     _parallel_impedances, _transformer_far_voltage, _cable_impedance,
+    _zone_scale, _transformer_rated_step,
     _solar_pv_impedance, _battery_impedance, _wind_turbine_impedance,
 )
 
@@ -208,7 +209,7 @@ def _collect_ansi_source_paths(bus_id, components, adjacency, base_mva, duty, me
     paths = []
     expansions = [0]
 
-    def walk(comp_id, z_path, trail, path_visited, v_kv):
+    def walk(comp_id, z_path, trail, path_visited, v_kv, rho=1.0):
         if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -218,48 +219,50 @@ def _collect_ansi_source_paths(bus_id, components, adjacency, base_mva, duty, me
         comp = components.get(comp_id)
         if not comp:
             return
+        # This zone → fault bus through the rated ratios (see fault._zone_scale).
+        s = _zone_scale(v_kv, rho, v_start)
 
         t = comp.type
         if t == "utility":
             z_src = _ansi_utility_z1(comp, base_mva)
-            paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+            paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                           "source_id": comp_id, "source_type": t})
             return
         if t == "generator":
             z_src = _ansi_generator_z1(comp, base_mva, duty)
-            paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+            paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                           "source_id": comp_id, "source_type": t})
             return
         if t == "motor_synchronous":
             z_src = _ansi_motor_sync_z1(comp, base_mva, duty)
-            paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+            paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                           "source_id": comp_id, "source_type": t})
             return
         if t == "motor_induction":
             z_src = _ansi_motor_induction_z1(comp, base_mva, duty)
             if z_src is not None:
-                paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+                paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                               "source_id": comp_id, "source_type": t})
             return
         if t == "solar_pv":
             z_src = _solar_pv_impedance(comp, base_mva)
-            paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+            paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                           "source_id": comp_id, "source_type": t})
             return
         if t == "battery":
             z_src = _battery_impedance(comp, base_mva)
-            paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+            paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                           "source_id": comp_id, "source_type": t})
             return
         if t == "wind_turbine":
             z_src = _ansi_wind_turbine_z1(comp, base_mva, duty)
-            paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+            paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                           "source_id": comp_id, "source_type": t})
             return
         if t in ("static_load", "distribution_board"):
             z_src, _mva = _ansi_static_load_motor_z1(comp, base_mva, duty)
             if z_src is not None:
-                paths.append({"z_total": z_path + z_src, "trail": trail + [comp_id],
+                paths.append({"z_total": z_path + s * z_src, "trail": trail + [comp_id],
                               "source_id": comp_id, "source_type": "motor_induction"})
             if t == "static_load":
                 return
@@ -267,13 +270,16 @@ def _collect_ansi_source_paths(bus_id, components, adjacency, base_mva, duty, me
 
         z_element = complex(0, 0)
         v_next = v_kv
+        rho_next = rho
         if t == "bus":
             v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
         elif t in ("transformer", "autotransformer"):
-            z_element = _ansi_transformer_z1(comp, base_mva)
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z_element = _ansi_transformer_z1(comp, base_mva) * _zone_scale(u_near, rho, v_start)
             v_next = _transformer_far_voltage(comp, v_kv)
+            rho_next = rho * u_near / u_far
         elif t == "cable":
-            z_element = _cable_impedance(comp, base_mva, v_kv)
+            z_element = _cable_impedance(comp, base_mva, v_kv) * s
         elif t in ("cb", "switch"):
             if comp.props.get("state", "closed") == "open":
                 return
@@ -282,7 +288,7 @@ def _collect_ansi_source_paths(bus_id, components, adjacency, base_mva, duty, me
 
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited, v_next)
+                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited, v_next, rho_next)
 
     bus_comp = components.get(bus_id)
     v_start = float(bus_comp.props.get("voltage_kv", 0.4 if bus_comp.type == "distribution_board" else 11) or 11) if bus_comp else 11.0

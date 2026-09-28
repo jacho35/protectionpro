@@ -22,6 +22,7 @@ $$Z_b=\frac{U_b^{2}}{S_b},\qquad I_b=\frac{S_b}{\sqrt3\,U_b},\qquad z_{pu}=\frac
 <tr><td>Induction motor (§13)</td><td>$x=x''\dfrac{S_b}{S_{rM}}$ with $S_{rM}=\dfrac{P_r}{\eta\cos\varphi}$; $r=x/(X/R)$</td></tr>
 <tr><td>Solar PV / inverter (TR 60909-4)</td><td>Current-limited: $x=\dfrac{1}{k_{fc}}\dfrac{S_b}{S_{inv}}$, $X/R=10$, with $k_{fc}$ the fault-contribution multiple (default 1.1 pu)</td></tr>
 </tbody></table>
+<p>Impedances are referred to the fault location through each transformer's <strong>rated</strong> ratio $t_r=U_{rTHV}/U_{rTLV}$, not the ratio of the drawn bus voltages. When a nameplate differs from its bus — an 11/0.42 kV unit on a 0.4 kV bus — the transformer and everything beyond it are scaled by $(U_r/U_b)^2$ as seen from the fault, here $(0.42/0.4)^2=1.1025$ from the LV side; in a meshed network the branch carries the matching off-nominal ratio. When every nameplate matches its buses the factor is exactly 1.</p>
 <p>The voltage factor $c$ is <strong>1.10</strong> for maximum-current studies ($c_{max}$) and 0.95 for the minimum-current basis used when checking earth-fault disconnection ($c_{min}$).</p>
 
 <h4>3 · Fault currents</h4>
