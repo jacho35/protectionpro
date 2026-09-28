@@ -1748,9 +1748,10 @@ Ib = ${busResult.ib.toFixed(3)} kA (symmetrical, t_min = 0.1s)${busResult.ib_asy
 Ib_asym = √(Ib² + i_DC²) = ${busResult.ib_asymmetric.toFixed(3)} kA (asymmetric)` : ''}
 ${busResult.ib < busResult.ik3 ? `Decay: μ/q factors applied to generator/motor contributions` : `No decay (far-from-generator fault)`}` : ''}
 ${busResult.ik_steady != null ? `
-─── Steady-State Current Ik (§10) ───
-Ik = ${busResult.ik_steady.toFixed(3)} kA
-${busResult.ik_steady < busResult.ik3 ? `Generators use Xd (synchronous), induction motors contribute 0` : `Network-fed: Ik ≈ I"k (no decay)`}` : ''}
+─── Steady-State Current Ik (IEC 60909-0 §4.6) ───
+Ik_max = ${busResult.ik_steady.toFixed(3)} kA${busResult.ik_steady_min != null ? `
+Ik_min = ${busResult.ik_steady_min.toFixed(3)} kA (c_min, motors neglected)` : ''}
+Generators: λ·I_rG (λ_max TR 60909-1 Eq. 88, λ_min figs. 18/19); network feeders Ik = I"k; induction motors 0` : ''}
 ${busResult.motor_count > 0 ? `
 ─── Motor Contribution (§13) ───
 Motors contributing: ${busResult.motor_count}

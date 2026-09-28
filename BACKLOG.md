@@ -318,6 +318,28 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Fault engine review: F1–F9 fixed (2026-09-28)
+- **Review.** `FAULT_ENGINE_REVIEW.md` — `fault.py` checked against IEC 60909 hand calculations and an independent phase-domain solve (`testing/fault-review/` scripts). Core Ik3/Ik1/Ik2/IkE2E/ip exact; nine defects found.
+- **Fixed, worst first:**
+  - **F1.** Simultaneous fault: the coupling sign was wrong for a shunt bus downstream of the break (break current −18 %).
+  - **F3.** A board's own motor fraction is now counted when the fault is at that board (−16 %).
+  - **F4.** Voltage depression is solved per island, so a spare bus no longer wipes it for every bus.
+  - **F2.** Bus-less tees get a junction node (`insert_junction_buses`, shared with load flow); they were +23 %.
+  - **F5.** UPS, VFD, rectifier and charger are no longer zero-impedance links.
+    - Diode VFDs block motor back-feed; an AFE drive contributes per IEC 60909-0 §13.2.1.
+    - A fault on a drive or UPS output is current-limited (new `fault_contribution_pu`).
+    - An online UPS with `static_bypass: no` is inverter-limited.
+  - **F7.** Branch kA across off-nominal transformers now uses the rated ratio (was −4.8 %).
+  - **F6.** Radial multi-infeed ip = Σ ip,i (was −4.4 %).
+  - **F8.** The motor re-acceleration curve now uses the island's running motors and the transformer-inclusive Zbus; it was flat at 1.0 p.u.
+  - **F9.** Steady-state Ik replaced by IEC 60909-0:2001 §4.6. Every run now reports Ik_max (`ik_steady`) and Ik_min (`ik_steady_min`).
+    - λ_max uses IEC TR 60909-1 Eq. 88, the closed form behind figs. 18/19; λ_min follows the figures' curve.
+    - Special cases: a terminal-fed static exciter gives 0 for a fault at its terminals; compound excitation uses Eq. 80 with I_kP; a power-station unit refers I_rG to the HV side; meshed buses use Eqs. 84/85; minimum currents use c_min with motors neglected.
+    - New generator props `rotor_type`, `scr`, `excitation_series`, `excitation_type`, `ikp_pu`; synchronous motors get `voltage_regulated` and `scr`.
+    - The old c/Xd value was 58% below λ_max and 76% above λ_min at x_d 1.2, and it has been removed.
+- **Behaviour change for saved projects.** Re-run fault studies where any of the above apply.
+- `backend/tests/test_fault_review_fixes.py`: 45 tests. Each finding's tests fail on the pre-fix engine; the F9 set is anchored to IEC 60909-0 figs. 18/19 and TR 60909-1 Eq. 88.
+
 ### Unbalanced load flow iterates its sequence networks (S#1-F18) (2026-09-28)
 - **The fix.** The engine used to solve the positive sequence once with every load's full power, take each load's current at phase voltages *assumed balanced* (Va = V1, Vb = a²V1, Vc = aV1), solve V2/V0 once and stop. It now iterates to a fixed point, until no sequence voltage moves by more than 1e-9 pu:
   - phase voltages from the latest V0/V1/V2;
