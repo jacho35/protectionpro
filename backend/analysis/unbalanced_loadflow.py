@@ -37,7 +37,7 @@ from .loadflow import (
     _find_components_at_bus, _get_chain_turns_ratio, _utility_admittance,
     _newton_raphson, _gauss_seidel,
     plan_dispatch, solve_with_islands, insert_implicit_load_buses,
-    chain_cable_zones, chain_order_from_paths,
+    chain_element_zones, chain_order_from_paths, insert_junction_buses,
     is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
 )
 from .fault import _grounding_impedance
@@ -125,7 +125,7 @@ def _xfmr_z0_shunts(comp, candidate_buses, base_mva):
 
     v_hv = comp.props.get("voltage_hv_kv", 33)
     v_lv = comp.props.get("voltage_lv_kv", 11)
-    z_t0 = _get_impedance(comp, base_mva)  # Z_T0 ≈ Z_T1
+    z_t0_nameplate = _get_impedance(comp, base_mva)  # Z_T0 ≈ Z_T1, on the nameplate voltage
 
     shunts = []
     for side in sides:
@@ -143,6 +143,11 @@ def _xfmr_z0_shunts(comp, candidate_buses, base_mva):
         z_n = _grounding_impedance(grounding_cfg, comp, side, z_base_side)
         if z_n is None:
             continue  # Winding set ungrounded — no zero-sequence path
+        # Re-base the nameplate impedance to the bus it is stamped at when the
+        # winding voltage differs from that bus (see loadflow._get_impedance).
+        v_bus = candidate_buses[bus_id]
+        z_t0 = (z_t0_nameplate * (v_side / v_bus) ** 2
+                if v_side and v_bus and v_bus > 0 else z_t0_nameplate)
         z_shunt = z_t0 + 3 * z_n
         if abs(z_shunt) > 1e-15:
             shunts.append((bus_id, 1 / z_shunt))
@@ -232,7 +237,9 @@ def run_unbalanced_load_flow(
     # Give any load or source wired behind a cable/transformer a terminal bus
     # so its demand — and the feeder's impedance — is modelled instead of
     # silently dropped by the len(results) < 2 skip below (idempotent).
-    project = insert_implicit_load_buses(project)
+    # A node at every cable tee the drawing left without a bus (same pre-pass
+    # as the balanced load flow), so no cable is shared between two chains.
+    project = insert_implicit_load_buses(insert_junction_buses(project))
     base_mva = project.baseMVA
     # Only the zero-sequence parallel-coupling model is frequency-dependent
     # (Carson's earth-return depth); everything else here is at nominal.
@@ -321,15 +328,16 @@ def run_unbalanced_load_flow(
         bus_b_v = (components[bus_b].props.get("voltage_kv", 11)
                    if bus_b in components else 11)
 
+        chain_order = chain_order_from_paths(path_a, path_b)
         if has_xfmr:
             # Zone by chain POSITION, not walk-path membership (which depends
-            # on the seed element — see loadflow._walk_chain_zones).
-            zones = chain_cable_zones(chain_order_from_paths(path_a, path_b),
-                                      bus_a_v, bus_b_v)
+            # on the seed element — see loadflow._walk_chain_zones). A
+            # transformer's entry is its LV zone, to which z% is re-based.
+            zones = chain_element_zones(chain_order, bus_a_v, bus_b_v)
 
             for e in all_elems.values():
                 if e.type == "transformer":
-                    z = _get_impedance(e, base_mva)
+                    z = _get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
                     z1_total += z
                     z2_total += z           # Z2 = Z1 for transformer (passive element)
                     if _xfmr_blocks_zero_seq(e):
@@ -392,7 +400,9 @@ def run_unbalanced_load_flow(
               else ((1 / z0_total) if abs(z0_total) > 1e-15 else complex(0, -1e6)))
         y0 = complex(y0)
 
-        t, hv_bus = _get_chain_turns_ratio(all_elems, bus_a, bus_b, components)
+        # Electrical order, so cascaded transformers multiply their ratios in
+        # the order they are met (a dict gives graph-walk order).
+        t, hv_bus = _get_chain_turns_ratio(chain_order, bus_a, bus_b, components)
         branch_chains.append((all_elems, bus_a, bus_b, y1, y2, y0, t, hv_bus, cable_voltages))
 
     # ── Initialise Y matrices ──
@@ -844,56 +854,74 @@ def run_unbalanced_load_flow(
             I2_br = (V2[i] - V2[j]) * y2
         I0_br = (V0[i] - V0[j]) * y0
 
-        # Phase currents: [Ia, Ib, Ic] = A * [I0, I1, I2]
-        I_seq_br = np.array([I0_br, I1_br, I2_br], dtype=complex)
-        I_abc_br = _A @ I_seq_br
+        # The same branch seen from its bus_b end. Through a transformer the
+        # current differs by the turns ratio (and a cable on the far side of
+        # it carries the far-side current), so each element below is reported
+        # at the end — and on the current base — of its own voltage zone.
+        if hv_bus == bus_a:
+            I1_b = (y1 / t) * V1[i] - y1 * V1[j]
+            I2_b = (y2 / t) * V2[i] - y2 * V2[j]
+        elif hv_bus == bus_b:
+            I1_b = (y1 / t) * V1[i] - (y1 / (t ** 2)) * V1[j]
+            I2_b = (y2 / t) * V2[i] - (y2 / (t ** 2)) * V2[j]
+        else:
+            I1_b, I2_b = I1_br, I2_br
+        I0_b = I0_br
 
-        # Convert to amperes
-        from_comp = components.get(bus_a)
-        v_kv_from = from_comp.props.get("voltage_kv", 11) if from_comp else 11
-        i_base = (base_mva * 1e6) / (math.sqrt(3) * v_kv_from * 1e3) if v_kv_from > 0 else 1e3
+        def _end_amps(bus_id, i0, i1, i2):
+            """Phase/sequence amps of a branch current at one end, on that
+            end's bus base (I_base = S_base / (√3·U_base))."""
+            comp = components.get(bus_id)
+            v_kv = comp.props.get("voltage_kv", 11) if comp else 11
+            i_base = (base_mva * 1e6) / (math.sqrt(3) * v_kv * 1e3) if v_kv > 0 else 1e3
+            i_abc = _A @ np.array([i0, i1, i2], dtype=complex)
+            return {
+                "v_kv": v_kv,
+                "ia": abs(i_abc[0]) * i_base, "ib": abs(i_abc[1]) * i_base,
+                "ic": abs(i_abc[2]) * i_base,
+                "in": abs(i_abc[0] + i_abc[1] + i_abc[2]) * i_base,
+                "i1": abs(i1) * i_base, "i2": abs(i2) * i_base, "i0": abs(i0) * i_base,
+            }
 
-        ia_a = abs(I_abc_br[0]) * i_base
-        ib_a = abs(I_abc_br[1]) * i_base
-        ic_a = abs(I_abc_br[2]) * i_base
-        in_a = abs(I_abc_br[0] + I_abc_br[1] + I_abc_br[2]) * i_base
-        i1_a = abs(I1_br) * i_base
-        i2_a = abs(I2_br) * i_base
-        i0_a = abs(I0_br) * i_base
+        end_a = _end_amps(bus_a, I0_br, I1_br, I2_br)
+        end_b = _end_amps(bus_b, I0_b, I1_b, I2_b) if hv_bus is not None else end_a
 
-        i_max = max(ia_a, ib_a, ic_a)
+        def _row(elem_id, name, amps, loading):
+            return UnbalancedLoadFlowBranch(
+                elementId=elem_id, element_name=name,
+                from_bus=bus_a, to_bus=bus_b,
+                ia_amps=round(amps["ia"], 2), ib_amps=round(amps["ib"], 2),
+                ic_amps=round(amps["ic"], 2), in_amps=round(amps["in"], 2),
+                i1_amps=round(amps["i1"], 2), i2_amps=round(amps["i2"], 2),
+                i0_amps=round(amps["i0"], 2),
+                loading_pct=round(loading, 2),
+            )
 
         if elems is None:
-            branch_results.append(UnbalancedLoadFlowBranch(
-                elementId=f"link_{bus_a}_{bus_b}",
-                element_name="Bus Link",
-                from_bus=bus_a, to_bus=bus_b,
-                ia_amps=round(ia_a, 2), ib_amps=round(ib_a, 2), ic_amps=round(ic_a, 2),
-                in_amps=round(in_a, 2),
-                i1_amps=round(i1_a, 2), i2_amps=round(i2_a, 2), i0_amps=round(i0_a, 2),
-                loading_pct=0,
-            ))
+            branch_results.append(_row(f"link_{bus_a}_{bus_b}", "Bus Link", end_a, 0))
         else:
+            v_a, v_b = end_a["v_kv"], end_b["v_kv"]
             for elem in elems.values():
                 loading = 0.0
-                if elem.type == "cable":
-                    rated_a = (elem.props.get("rated_amps", 400)
-                               * max(1, int(elem.props.get("num_parallel", 1))))
-                    loading = (i_max / rated_a * 100) if rated_a > 0 else 0.0
-                elif elem.type == "transformer":
+                if elem.type in ("transformer", "autotransformer"):
+                    # Reported on its LV side (the higher current), like the
+                    # balanced engine; loading is S against the MVA rating.
+                    amps = end_b if v_b < v_a else end_a
+                    i_max = max(amps["ia"], amps["ib"], amps["ic"])
                     rated_mva_xfmr = elem.props.get("rated_mva", 10)
-                    s_mva = i_max * v_kv_from * math.sqrt(3) / 1e3
+                    s_mva = i_max * amps["v_kv"] * math.sqrt(3) / 1e3
                     loading = (s_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0.0
-
-                branch_results.append(UnbalancedLoadFlowBranch(
-                    elementId=elem.id,
-                    element_name=elem.props.get("name", elem.type),
-                    from_bus=bus_a, to_bus=bus_b,
-                    ia_amps=round(ia_a, 2), ib_amps=round(ib_a, 2), ic_amps=round(ic_a, 2),
-                    in_amps=round(in_a, 2),
-                    i1_amps=round(i1_a, 2), i2_amps=round(i2_a, 2), i0_amps=round(i0_a, 2),
-                    loading_pct=round(loading, 2),
-                ))
+                else:
+                    # A cable: the end whose voltage zone it sits in.
+                    zone = cable_voltages.get(elem.id, v_a)
+                    amps = end_b if abs(zone - v_b) < abs(zone - v_a) else end_a
+                    if elem.type == "cable":
+                        i_max = max(amps["ia"], amps["ib"], amps["ic"])
+                        rated_a = (elem.props.get("rated_amps", 400)
+                                   * max(1, int(elem.props.get("num_parallel", 1) or 1)))
+                        loading = (i_max / rated_a * 100) if rated_a > 0 else 0.0
+                branch_results.append(_row(elem.id, elem.props.get("name", elem.type),
+                                           amps, loading))
 
     # ── Warnings: high VUF ──
     VUF_LIMIT = 2.0   # IEC 61000-3-13 limit for industrial systems
