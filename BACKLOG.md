@@ -318,6 +318,19 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Cable sizing review: CS1–CS5 and lesser notes fixed (2026-09-28)
+- **Review.** `CABLE_SIZING_REVIEW.md` — `cable_sizing.py` against IEC 60364-5-52, IEC 60364-4-43, IEC 60949, IEC 60255-151 and IEC 60909-0 §12 (`testing/cable-sizing-review/`). Volt-drop formula, k values, R(θ) and m exact; five defects.
+- **Fixed, worst first:**
+  - **CS1.** Voltage drop uses the buses' nominal voltage, not the cable's own `voltage_kv` (its rated class or the 11 kV default — an LV cable read 0.35 % for a 9.49 % drop).
+  - **CS2.** Fault-withstand clearing time from the real device: relay IEC 60255-151 curve through its CT, breaker trip unit, gG fuse — at the largest fault current and at the far-end minimum (c_min). Was 50 ms for every palette breaker (a relay-fed 35 mm² that needed ~70 mm² passed).
+  - **CS3.** New overload-protection check, IEC 60364-4-43 §433.1: Ib ≤ In ≤ Iz and I2 ≤ 1.45·Iz (LV; MCB 1.45, MCCB/ACB 1.30, gG fuse 1.6/1.9/2.1).
+  - **CS4.** Voltage drop limited from the origin of the installation (§525), read from load-flow voltages and shown as Σ.
+  - **CS5.** Withstand sized on the largest fault current of any type.
+- **Lesser notes:** nominal `size_mm2` used (N1); k 103/68 for PVC > 300 mm² (N2); unlisted insulation takes the PVC k (N3); non-IEC install factors removed, buried uses the 20 °C ground table (N4); IEC temperature tables used directly (N5 withdrawn — the √ law was already within 0.5 %); overhead rating labelled approximate (N6). Recommendation honours all four checks and uses the system voltage class for untyped cables.
+- UI: cable-sizing table gains a Protection column, Σ drop and clearing time; PDF report and Help updated.
+- **Behaviour change for saved projects.** Re-run cable sizing.
+- `backend/tests/test_cable_sizing_review_fixes.py`: 27 tests.
+
 ### Generator & motor review: MG1–MG10 fixed (2026-09-28)
 - **Review.** `GENERATOR_MOTOR_REVIEW.md` — motor starting (static + dynamic), the transient-stability machine/motor models, motor/sync-motor load flow and generator Z0, checked against hand solves and physical invariants (`testing/generator-motor-review/`). Ten defects and eight lesser notes, all fixed.
 - **Fixed, worst first:**

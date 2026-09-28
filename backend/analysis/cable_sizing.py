@@ -168,11 +168,57 @@ MAX_TEMP = {"XLPE": 90, "PVC": 70, "BARE": 200}
 OVERHEAD_RATED_AMBIENT_C = 40.0
 OVERHEAD_MAX_TEMP_C = 75.0
 
-# Installation method derating factors
-INSTALL_DERATING = {"trefoil": 1.0, "flat": 0.95, "buried": 0.85}
+# [N4] The run-level installation method no longer carries a derating of its
+# own: the old {"flat": 0.95, "buried": 0.85} factors were not from IEC
+# 60364-5-52 (flat-touching single cores in air are rated slightly ABOVE
+# trefoil there, and burial is a different reference method, not a factor).
+# "buried" now only selects the ground ambient-temperature table (20 °C
+# reference, Table B.52.15); grouping, soil and depth come from the per-cable
+# IEC 60364-5-52 calculator (props.ampacity).
+BURIED_METHODS = {"buried"}
 
 # Resistivity at 20°C (Ω·mm²/m)
 RESISTIVITY = {"Cu": 0.0175, "Al": 0.0282}
+
+
+def _k_factor(conductor, insulation, size_mm2, warn=None, name=""):
+    """Adiabatic k (A·√s/mm²), IEC 60364-4-43 Table 43A / 60364-5-54.
+
+    [N2] PVC above 300 mm² has a lower final temperature (140 °C, not
+    160 °C): k = 103 Cu / 68 Al. [N3] An insulation not in the table used to
+    fall back to 143 — the Cu-XLPE value even for aluminium (52 % high);
+    it now takes the conductor's PVC value, the lowest insulated k, and
+    says so."""
+    cond = "Al" if str(conductor).strip().lower().startswith("al") else "Cu"
+    ins = str(insulation).strip().upper()
+    if ins == "PVC" and size_mm2 and size_mm2 > 300:
+        return 68.0 if cond == "Al" else 103.0
+    k = K_FACTORS.get((cond, ins))
+    if k is None:
+        if warn is not None:
+            warn.append(f"Cable '{name}': insulation '{insulation}' not in IEC "
+                        f"60364-4-43 Table 43A — using the {cond}/PVC k (conservative).")
+        return float(K_FACTORS[(cond, "PVC")])
+    return float(k)
+
+
+def _ambient_factor(insulation, ambient_c, buried):
+    """[N5] Ambient-temperature correction, IEC 60364-5-52 Table B.52.14 (air,
+    30 °C reference) or B.52.15 (ground, 20 °C reference), interpolated — the
+    √((θmax−θa)/(θmax−θref)) law it replaces was up to 3 % optimistic (PVC,
+    25 °C). 0.0 at or above the insulation's maximum temperature."""
+    from .iec_60364_tables import IEC_TEMP_CORRECTION, interpolate_factor
+    ins = "pvc" if str(insulation).strip().upper() == "PVC" else "xlpe"
+    if ambient_c >= MAX_TEMP.get(ins.upper(), 90):
+        return 0.0
+    table = IEC_TEMP_CORRECTION["ground" if buried else "air"][ins]
+    top = max(float(t) for t in table)
+    if ambient_c > top:
+        # Beyond the table: the √ law between the last row and θmax
+        f_top = float(table[max(table, key=float)])
+        tmax = MAX_TEMP.get(ins.upper(), 90)
+        return f_top * math.sqrt(max(tmax - ambient_c, 0.0) / (tmax - top))
+    return interpolate_factor(table, float(ambient_c))
 
 
 def _temp_correction(conductor, insulation):
@@ -470,7 +516,13 @@ def _get_cable_props(cable):
         # figure, falling back to r_per_km when no correction was applied.
         from .conductor_temp import base_resistance
         r20_per_km = float(base_resistance(p, "r_per_km", 0.0) or 0.0)
-        if r20_per_km > 0:
+        try:
+            size_prop = float(p.get("size_mm2", 0) or 0)   # [N1]
+        except (TypeError, ValueError):
+            size_prop = 0.0
+        if size_prop > 0:
+            size_mm2 = size_prop
+        elif r20_per_km > 0:
             size_mm2 = RESISTIVITY["Al"] * 1000 / r20_per_km  # S = ρ₂₀×1000/R
     else:
         # Try to resolve from standard cable library
@@ -488,7 +540,17 @@ def _get_cable_props(cable):
         if "insulation" in p:
             insulation = p["insulation"]
 
-        # Derive size from r_per_km if not known
+        # [N1] The cable's own nominal area wins — back-calculating it from
+        # r_per_km (IEC 60228 maximum resistances) under-reported every
+        # library cable the backend table lacks (95 mm² Al read as 88.1).
+        try:
+            size_prop = float(p.get("size_mm2", 0) or 0)
+        except (TypeError, ValueError):
+            size_prop = 0.0
+        if size_prop > 0:
+            size_mm2 = size_prop
+
+        # Derive size from r_per_km if still not known
         r_per_km = float(p.get("r_per_km", 0))
         if size_mm2 == 0 and r_per_km > 0:
             # Payload r_per_km values are at conductor OPERATING temperature
@@ -579,7 +641,11 @@ def _find_upstream_cb(cable_id, adj, comp_map):
 
 
 def _estimate_clearing_time(cb_comp, fault_current_a=None):
-    """Estimate the protective device clearing time for the adiabatic check.
+    """LEGACY — no longer used by run_cable_sizing, which takes the device's
+    real curve via _device_trip_time ([CS2]). Kept for callers/tests of the
+    old estimate.
+
+    Estimate the protective device clearing time for the adiabatic check.
 
     [EE-14] Fuses: evaluate the generic gG curve at the ACTUAL fault current
     (total clearing = 1.2 × pre-arc, the TCC convention) instead of the old
@@ -612,11 +678,166 @@ def _estimate_clearing_time(cb_comp, fault_current_a=None):
     return 0.1
 
 
+# ─── Protection: clearing time (CS2) and overload coordination (CS3) ─────
+
+ADIABATIC_LIMIT_S = 5.0     # IEC 60364-4-43 §434.5.2: valid up to 5 s
+NO_DEVICE_CLEARING_S = 0.1  # legacy assumption when no device is modelled
+
+
+def _find_protective_device(cable_id, adj, comp_map, relay_by_ct):
+    """Nearest SOURCE-SIDE protective element for the cable: a CB, a fuse, or
+    a CT whose associated overcurrent relay measures the path ([CS2] — the
+    old walk knew only CBs and fuses, so a relay-protected feeder looked
+    unprotected or took the CB's own 50 ms magnetic figure). Falls back to a
+    load-side device when no source-side one is found, as before."""
+    visited = {cable_id}
+    stack = list(adj.get(cable_id, []))
+    fallback = None
+    while stack:
+        nid, _ = stack.pop()
+        if nid in visited:
+            continue
+        visited.add(nid)
+        comp = comp_map.get(nid)
+        if not comp:
+            continue
+        if comp.type in ("cb", "fuse") or (comp.type == "ct" and nid in relay_by_ct):
+            if _leads_to_source(nid, cable_id, adj, comp_map):
+                return comp
+            if fallback is None:
+                fallback = comp
+            continue
+        if comp.type in TRANSPARENT_TYPES or comp.type in ("bus", "distribution_board"):
+            for next_id, w in adj.get(nid, []):
+                if next_id not in visited:
+                    stack.append((next_id, w))
+    return fallback
+
+
+def _device_trip_time(dev, current_a, relay_by_ct, relay_by_cb, comp_map, kappa=None):
+    """[CS2] Clearing time (s) of ``dev`` at ``current_a``, from the same
+    device models the arc-flash and TCC studies use: an overcurrent relay's
+    IEC 60255-151 curve (through its CT) + breaker opening time, a breaker's
+    own trip unit (instantaneous / short-time / I²t long-time region), a gG
+    fuse's pre-arc curve × 1.2. Unlike the arc-flash evaluator it is NOT
+    capped at 2 s (the IEEE 1584 limit) — the adiabatic check needs the real
+    time up to its 5 s validity limit. ``math.inf`` = never operates."""
+    from .arcflash import (_relay_operate_time, _cb_self_clearing_time,
+                           _fuse_prearc_time, _BREAKER_OPENING_TIME_S)
+    if dev is None or not current_a or current_a <= 0:
+        return math.inf
+    relay, ct_props = None, None
+    if dev.type == "ct":
+        relay, ct_props = relay_by_ct.get(dev.id), dev.props
+    elif dev.type == "cb" and dev.id in relay_by_cb:
+        relay = relay_by_cb[dev.id]
+        ct = comp_map.get(relay.props.get("associated_ct") or "")
+        ct_props = ct.props if ct else None
+    if relay is not None:
+        t = _relay_operate_time(relay.props, current_a, ct_props, kappa)
+        return math.inf if t is None else t + _BREAKER_OPENING_TIME_S
+    if dev.type == "cb":
+        t = _cb_self_clearing_time(dev.props, current_a)
+        return math.inf if t >= 10000.0 else t
+    if dev.type == "fuse":
+        rating = float(dev.props.get("rated_current_a", 0) or 0)
+        t_pre = _fuse_prearc_time(rating, current_a) if rating > 0 else None
+        if t_pre is None or math.isinf(t_pre):
+            return math.inf
+        return t_pre * 1.2
+    return math.inf
+
+
+def _overload_device(dev, relay_by_cb):
+    """[CS3] (In, I2/In, label) of a device that gives IEC 60364-4-43 §433
+    overload protection, or None when it doesn't (no device, a relay-tripped
+    breaker, or no rating).
+
+    In: a breaker's current setting Ir = trip_rating_a × thermal_pickup; a
+    fuse's rated current. Conventional operating current I2 (× In):
+    IEC 60898-1 MCB 1.45; IEC 60947-2 MCCB/ACB 1.30; IEC 60269 gG fuse
+    1.6 (In ≥ 16 A), 1.9 (4–16 A), 2.1 (< 4 A)."""
+    if dev is None:
+        return None
+    p = dev.props
+    if dev.type == "fuse":
+        i_n = float(p.get("rated_current_a", 0) or 0)
+        if i_n <= 0:
+            return None
+        f = 1.6 if i_n >= 16 else (1.9 if i_n >= 4 else 2.1)
+        return i_n, f, f"fuse {i_n:g} A"
+    if dev.type == "cb" and dev.id not in relay_by_cb:
+        trip = float(p.get("trip_rating_a", 0) or p.get("rated_current_a", 0) or 0)
+        i_n = trip * float(p.get("thermal_pickup", 1.0) or 1.0)
+        if i_n <= 0:
+            return None
+        cb_type = str(p.get("cb_type", "mccb")).lower()
+        f = 1.45 if cb_type == "mcb" else 1.30
+        return i_n, f, f"{cb_type.upper()} Ir {i_n:g} A"
+    return None
+
+
+# ─── Cumulative voltage drop from the origin (CS4) ────────────────────────
+
+_ORIGIN_NEIGHBOURS = {"transformer", "autotransformer", "utility", "generator",
+                      "solar_pv", "wind_turbine", "battery", "ups", "rectifier",
+                      "vfd", "battery_charger"}
+
+
+def _zone_origin(bus_id, adj, comp_map, lf_buses):
+    """[CS4] Origin of the installation for ``bus_id``: walking the same
+    voltage zone (buses joined by cables and closed switchgear, never across
+    a transformer or converter), the bus that is fed directly from a source
+    or transformer. With several such buses, the one at the highest load-flow
+    voltage (nearest the supply) is taken."""
+    from .loadflow import _is_transparent_and_closed
+    seen, zone, stack = {bus_id}, [bus_id], [bus_id]
+    origins = []
+    while stack:
+        nid = stack.pop()
+        comp = comp_map.get(nid)
+        if comp is not None and comp.type in ("bus", "distribution_board"):
+            # fed from a source/transformer through closed switchgear only?
+            inner, istack = {nid}, [nid]
+            while istack:
+                x = istack.pop()
+                for y, _ in adj.get(x, []):
+                    if y in inner:
+                        continue
+                    cy = comp_map.get(y)
+                    if cy is None:
+                        continue
+                    if cy.type in _ORIGIN_NEIGHBOURS:
+                        origins.append(nid)
+                        istack = []
+                        break
+                    if _is_transparent_and_closed(cy):
+                        inner.add(y); istack.append(y)
+        for y, _ in adj.get(nid, []):
+            if y in seen:
+                continue
+            cy = comp_map.get(y)
+            if cy is None:
+                continue
+            if cy.type in ("bus", "distribution_board", "cable") or _is_transparent_and_closed(cy):
+                seen.add(y); stack.append(y)
+    origins = [o for o in dict.fromkeys(origins) if o in lf_buses]
+    if not origins:
+        return None
+    return max(origins, key=lambda b: lf_buses[b].voltage_pu)
+
+
 def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                      install_method: str = "trefoil",
                      max_voltage_drop_pct: float = 5.0,
                      adiabatic_basis: str = "thermal_equivalent"):
     """Run cable sizing analysis for all cables in the project.
+
+    Checks per IEC 60364: installed current-carrying capacity (5-52),
+    overload protection Ib ≤ In ≤ Iz and I2 ≤ 1.45·Iz (4-43 §433.1, LV),
+    voltage drop from the origin of the installation (5-52 §525 / Annex G)
+    and short-circuit withstand t ≤ (k·S/I)² at the largest and the smallest
+    fault current (4-43 §434.5.2).
 
     adiabatic_basis selects the fault-withstand current basis ([gap #4]):
       - "thermal_equivalent" (default): I_th = Ik″·√(m+n) per IEC 60909-0 §12
@@ -627,32 +848,58 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
     ({design_current_a, isc_ka, clearing_time_s}) so a standalone check can be
     run with hand-entered values instead of the network load-flow/fault solve.
 
+    ``max_voltage_drop_pct`` is the limit from the origin of the installation
+    (IEC 60364-5-52 Table G.52.1: 3 % lighting / 5 % other on a public LV
+    supply; 6 % / 8 % from a private transformer).
+
     Returns dict with 'cables' list and 'warnings' list.
     """
-    from .loadflow import run_load_flow
+    from .loadflow import run_load_flow, insert_implicit_load_buses
     from .fault import run_fault_analysis, thermal_m_factor
+    from .arcflash import _build_relay_maps
 
+    # [CS4] A cable feeding a load/motor directly gets a synthetic terminal
+    # bus (as load flow does internally), so its far-end voltage — and the
+    # cumulative drop from the origin — can be read from the load flow.
+    project = insert_implicit_load_buses(project)
     comp_map = {c.id: c for c in project.components}
     adj = _build_adjacency(project)
+    relay_by_ct, relay_by_cb = _build_relay_maps(comp_map)
+    buried = str(install_method).lower() in BURIED_METHODS
 
     # Run load flow to get branch currents
     lf_results = None
     try:
-        lf_results = run_load_flow(project, "newton_raphson")
+        lf_results = run_load_flow(project, "newton_raphson", include_synthetic=True)
     except Exception:
         pass
 
-    # Run fault analysis to get fault currents at buses
+    # [CS5] Every fault type — §434.5.2 needs the LARGEST fault current, and
+    # near a Dyn transformer the earth fault can exceed the three-phase one.
     fault_results = None
     try:
-        fault_results = run_fault_analysis(project, fault_bus_id=None, fault_type="3phase")
+        fault_results = run_fault_analysis(project, fault_bus_id=None, fault_type=None)
     except Exception:
         pass
+
+    # [CS2] Minimum fault currents (IEC 60909-0 c_min: 0.95 LV, 1.0 MV) for
+    # the far-end check — a time-inverse device is slowest there.
+    min_runs = {}
+
+    def _min_fault(c_min):
+        if c_min not in min_runs:
+            try:
+                min_runs[c_min] = run_fault_analysis(
+                    project, fault_bus_id=None, fault_type=None, voltage_factor=c_min)
+            except Exception:
+                min_runs[c_min] = None
+        return min_runs[c_min]
 
     # Build branch current and power-factor lookups from load flow
     branch_currents = {}
     branch_pf = {}
     lf_converged = bool(lf_results and getattr(lf_results, "converged", False))
+    lf_buses = (lf_results.buses if (lf_converged and lf_results.buses) else {}) or {}
     if lf_results and lf_results.branches:
         for br in lf_results.branches:
             branch_currents[br.elementId] = br.i_amps
@@ -667,17 +914,38 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         cp = _get_cable_props(cable)
         cable_name = cable.props.get("name", cable.id)
 
-        # Find connected buses
+        # Find connected buses; the source-side one first
         bus_ids = _find_cable_buses(cable.id, adj, comp_map)
+        if len(bus_ids) == 2 and not _leads_to_source(bus_ids[0], cable.id, adj, comp_map) \
+                and _leads_to_source(bus_ids[1], cable.id, adj, comp_map):
+            bus_ids = [bus_ids[1], bus_ids[0]]
         from_bus = bus_ids[0] if len(bus_ids) > 0 else ""
         to_bus = bus_ids[1] if len(bus_ids) > 1 else ""
         from_bus_name = comp_map[from_bus].props.get("name", from_bus) if from_bus and from_bus in comp_map else from_bus
         to_bus_name = comp_map[to_bus].props.get("name", to_bus) if to_bus and to_bus in comp_map else to_bus
 
-        # [gap #4] Standalone override — hand-entered design/fault values let a
-        # cable be checked without a converged network load-flow/fault solve.
-        # Accepts flat per-cable props (from the properties panel) or a nested
-        # sizing_override block.
+        # [CS1] The voltage the cable RUNS at is its buses' nominal voltage.
+        # Its own voltage_kv is the cable's rated class (an 11 kV-class cable
+        # on a 3.3 kV feeder) or the palette default of 11 kV — dividing the
+        # drop by it understated an LV cable's drop 27×.
+        system_kv = 0.0
+        for bid in bus_ids:
+            try:
+                system_kv = float(comp_map[bid].props.get("voltage_kv", 0) or 0)
+            except (KeyError, TypeError, ValueError):
+                system_kv = 0.0
+            if system_kv > 0:
+                break
+        if system_kv <= 0:
+            system_kv = cp["voltage_kv"]
+        # Voltage CLASS for the recommendation: the chosen library type's, or
+        # — for a cable never given a type (voltage_kv is then only the
+        # palette default) — the system's.
+        class_kv = (cp["voltage_kv"] if (cp["standard_type"] and cp["voltage_kv"] > 0)
+                    else system_kv)
+        is_lv = 0 < system_kv <= 1.0
+
+        # [gap #4] Standalone override
         override = cable.props.get("sizing_override") or {}
         ov_current = float(override.get("design_current_a", 0)
                            or cable.props.get("standalone_current_a", 0) or 0)
@@ -686,7 +954,6 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         ov_clear_s = float(override.get("clearing_time_s", 0)
                            or cable.props.get("standalone_clearing_s", 0) or 0)
 
-        # Get load current
         load_current = ov_current if ov_current > 0 else branch_currents.get(cable.id, 0)
         num_parallel = max(cp["num_parallel"], 1)
         current_per_cable = load_current / num_parallel
@@ -695,14 +962,8 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         ampacity_standard = cp["ampacity_standard"]
         rated_amps = cp["rated_amps"]
         insulation = cp["insulation"]
+        warning_reasons = []
 
-        # Per-cable installed ampacity (IEC 60364-5-52): when the cable carries
-        # an applied `ampacity` block (set by the properties-panel calculator),
-        # its rated current is already derated for the real install conditions
-        # (method / ambient / grouping / soil resistivity / burial depth). Use
-        # that derated rating directly and DO NOT re-apply the run-level
-        # derating, which would double-count. Legacy cables (no block) keep the
-        # previous run-level behaviour.
         amp_block = cable.props.get("ampacity")
         if not isinstance(amp_block, dict) or not amp_block.get("applied"):
             amp_block = None
@@ -716,13 +977,12 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             if amp_derated_a and amp_derated_a > 0:
                 amp_conditions = _format_ampacity_conditions(amp_block)
 
+        conductor_df = 1.0
         if cp["overhead"]:
-            # Overhead line: the library's rated_amps IS the in-air thermal
-            # rating (bare conductor, ~40°C ambient / 75°C conductor). The IEC
-            # 60364-5-52 installation-method derating table is for
-            # buried/enclosed insulated cables and does not apply — but the
-            # run's ambient temperature still does, via the same sqrt law
-            # referenced to the overhead library's own 40°C/75°C pair. [P4]
+            # Library in-air rating scaled for ambient by the √ law about its
+            # own 40 °C / 75 °C basis. [N6] IEC 60364-5-52 does not cover bare
+            # conductors; this is an approximation of a heat-balance rating
+            # (IEEE 738 / IEC TR 61597) and is disclosed as such.
             install_df = 1.0
             if ambient_temp_c >= OVERHEAD_MAX_TEMP_C:
                 temp_df = 0.0
@@ -732,172 +992,226 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             else:
                 temp_df = 1.0
             derated_amps = rated_amps * temp_df
+            amp_conditions = (f"bare conductor: library in-air rating × √-law ambient "
+                              f"factor {temp_df:.2f} (approximate — no heat-balance model)")
         elif amp_derated_a and amp_derated_a > 0:
-            # Installed rating already encodes the full IEC 60364-5-52 derating.
-            install_df = float(amp_block.get("derating", 1.0) or 1.0)  # for the recommend-on-fail search
+            install_df = float(amp_block.get("derating", 1.0) or 1.0)
             temp_df = 1.0
             derated_amps = amp_derated_a
         elif ampacity_standard == "NEC":
-            # NEC 310.16 ampacity lookup
             if cp["size_mm2"] > 0:
                 nec_amps = _nec_ampacity(cp["size_mm2"], cp["conductor"], cp["insulation"])
                 if nec_amps > 0:
                     rated_amps = nec_amps
-
-            # NEC 310.15(B)(1) ambient temperature correction
             temp_df = _nec_temp_correction_factor(ambient_temp_c, insulation)
-
-            # NEC 310.15(C)(1) conductor count adjustment
-            # num_parallel × 3 phases = current-carrying conductors in raceway
             num_conductors = num_parallel * 3
             conductor_df = _nec_conductor_count_factor(num_conductors)
-
-            install_df = 1.0  # NEC uses conductor count factor instead of installation method
+            install_df = 1.0
             derated_amps = rated_amps * temp_df * conductor_df
         else:
-            # IEC derating
-            install_df = INSTALL_DERATING.get(install_method, 1.0)
-
-            # IEC ambient temperature derating
-            max_temp = MAX_TEMP.get(insulation, 90)
-            if ambient_temp_c >= max_temp:
-                # Ambient at/above conductor operating temperature — the
-                # cable has NO usable ampacity (must fail, not silently
-                # pass with derating = 1.0)
-                temp_df = 0.0
-            elif ambient_temp_c != 30:
-                temp_df = math.sqrt((max_temp - ambient_temp_c) / (max_temp - 30))
-            else:
-                temp_df = 1.0
-
-            derated_amps = rated_amps * install_df * temp_df
+            # [N4][N5] Library rating × the IEC ambient-temperature factor
+            # (air Table B.52.14, or ground B.52.15 for "buried"). Grouping,
+            # soil and depth are NOT applied on this path — the per-cable
+            # IEC 60364-5-52 calculator does that.
+            install_df = 1.0
+            temp_df = _ambient_factor(insulation, ambient_temp_c, buried)
+            derated_amps = rated_amps * temp_df
+            if rated_amps > 0:
+                warning_reasons.append(
+                    "Installed ampacity not set — library rating × IEC ambient factor "
+                    "only; installation method and grouping not applied (use the "
+                    "IEC 60364-5-52 calculator on the cable)")
         thermal_ok = current_per_cable <= derated_amps if derated_amps > 0 else True
         thermal_loading_pct = (current_per_cable / derated_amps * 100) if derated_amps > 0 else 0
-        # [EE-9] Unset/zero ampacity (and no NEC lookup either) means the
-        # thermal check cannot be performed — the cable must surface as
-        # "unknown" below, not silently pass with 0% loading. (When temp_df
-        # wipes out the capacity, that is a genuine FAIL handled next.)
         ampacity_known = derated_amps > 0 or temp_df <= 0
         if temp_df <= 0:
-            # Ambient derating wiped out all capacity (IEC or NEC table)
             thermal_ok = False
             thermal_loading_pct = 999.9
 
-        # ── Voltage drop check ──
-        # Use the actual branch power factor from load flow when available,
-        # falling back to a typical 0.85
-        # [EE-14] Convention: every flow is treated as LAGGING (sin φ ≥ 0).
-        # A leading-pf branch (PV export, capacitive) actually sees a smaller
-        # drop or a rise, so the computed drop is conservative — but a report
-        # can then flag a cable that is in fact compliant.
+        # ── Protective device ──
+        device = _find_protective_device(cable.id, adj, comp_map, relay_by_ct)
+
+        # ── [CS3] Overload protection, IEC 60364-4-43 §433.1 (LV only) ──
+        # Ib ≤ In ≤ Iz and I2 ≤ 1.45·Iz, with Iz the installed rating of all
+        # parallel conductors (§433.4). This is also what covers low-current
+        # faults at the far end (§435.1).
+        overload_ok = None
+        overload_note = ""
+        iz_total = derated_amps * num_parallel
+        ol = _overload_device(device, relay_by_cb) if (is_lv and not cp["overhead"]) else None
+        if ol is not None and iz_total > 0:
+            i_n, f_i2, dev_label = ol
+            i2 = f_i2 * i_n
+            reasons = []
+            if load_current > i_n * (1 + 1e-9):
+                reasons.append(f"Ib {load_current:.1f} A > In {i_n:g} A")
+            if i_n > iz_total * (1 + 1e-9):
+                reasons.append(f"In {i_n:g} A > Iz {iz_total:.0f} A")
+            if i2 > 1.45 * iz_total * (1 + 1e-9):
+                reasons.append(f"I2 = {f_i2:g}·In = {i2:.0f} A > 1.45·Iz = {1.45 * iz_total:.0f} A")
+            overload_ok = not reasons
+            overload_note = (f"{dev_label}: " + "; ".join(reasons)) if reasons else \
+                f"{dev_label}: Ib ≤ In ≤ Iz, I2 ≤ 1.45·Iz"
+
+        # ── Voltage drop ──
         cos_phi = branch_pf.get(cable.id, 0.85)
         sin_phi = math.sqrt(max(0.0, 1 - cos_phi ** 2))
-        # NOTE: cp["r_per_km"] comes from the project payload (frontend
-        # library stores operating-temperature values) — no further
-        # temperature correction is applied here to avoid double-correcting.
         r_per_km = cp["r_per_km"] / num_parallel
         x_per_km = cp["x_per_km"] / num_parallel
         length_km = cp["length_km"]
-        voltage_kv = cp["voltage_kv"]
-
-        if voltage_kv > 0 and length_km > 0:
-            v_phase = voltage_kv * 1000 / math.sqrt(3)
+        if system_kv > 0 and length_km > 0:
+            v_phase = system_kv * 1000 / math.sqrt(3)
             vdrop_v = load_current * length_km * (r_per_km * cos_phi + x_per_km * sin_phi)
             voltage_drop_pct = (vdrop_v / v_phase) * 100 if v_phase > 0 else 0
         else:
             voltage_drop_pct = 0
 
-        voltage_drop_ok = voltage_drop_pct <= max_voltage_drop_pct
+        # [CS4] IEC 60364-5-52 §525 limits the drop from the ORIGIN of the
+        # installation to the equipment, not per cable: two cables of 2.7 %
+        # and 3.2 % both passed a 5 % limit with 5.9 % at the load.
+        cumulative_pct = None
+        origin_name = ""
+        down = to_bus if to_bus else ""
+        if lf_buses and down in lf_buses:
+            origin = _zone_origin(down, adj, comp_map, lf_buses)
+            if origin is not None:
+                cumulative_pct = max(0.0, (lf_buses[origin].voltage_pu
+                                           - lf_buses[down].voltage_pu) * 100)
+                origin_name = comp_map[origin].props.get("name", origin) if origin in comp_map else origin
+        drop_for_limit = cumulative_pct if cumulative_pct is not None else voltage_drop_pct
+        voltage_drop_ok = drop_for_limit <= max_voltage_drop_pct
 
-        # ── Fault withstand check (adiabatic equation I²t ≤ k²S²) ──
+        # ── Fault withstand, IEC 60364-4-43 §434.5.2: t ≤ (k·S/I)² ──
         conductor = cp["conductor"]
-        k = K_FACTORS.get((conductor, insulation), 143)
         size_mm2 = cp["size_mm2"]
-        fault_withstand_ok = True
+        k = _k_factor(conductor, insulation, size_mm2, warnings, cable_name)
+        freq = project.frequency or 50
+        basis = str(cable.props.get("adiabatic_basis") or adiabatic_basis)
 
-        # Get fault current at upstream bus — capture the κ of the governing bus
-        fault_ka = 0
+        def _ith(i_ka, kappa, t):
+            if basis == "bare_isc":
+                return i_ka, 1.0
+            kap = kappa if kappa and kappa > 1.0 else 1.8
+            f = math.sqrt(thermal_m_factor(kap, t, freq) + 1.0)
+            return i_ka * f, f
+
+        # (a) the LARGEST fault current (any type) at the cable's ends
+        fault_ka = 0.0
         fault_kappa = None
         for bid in bus_ids:
-            if fault_results and bid in fault_results.buses:
-                bus_fault = fault_results.buses[bid]
-                if bus_fault.ik3 and bus_fault.ik3 > fault_ka:
-                    fault_ka = bus_fault.ik3
-                    fault_kappa = bus_fault.kappa
-
-        # Get clearing time from upstream CB/fuse, evaluated at the fault
-        # current actually flowing ([EE-14] — a fuse's clearing time depends
-        # on I/In, so apply any standalone Isc override first).
-        upstream_cb = _find_upstream_cb(cable.id, adj, comp_map)
-
-        # [gap #4] Standalone override for the fault-withstand check.
+            fb = fault_results.buses.get(bid) if fault_results else None
+            if not fb:
+                continue
+            for i_ka in (fb.ik3, fb.ik1, fb.ikLL, fb.ikLLG):
+                if i_ka and i_ka > fault_ka:
+                    fault_ka, fault_kappa = float(i_ka), fb.kappa
         if ov_isc_ka > 0:
             fault_ka = ov_isc_ka
-        t_clear = _estimate_clearing_time(upstream_cb, fault_ka * 1000)
         if ov_clear_s > 0:
             t_clear = ov_clear_s
-
-        # [EE-5] Adiabatic sizing must use the thermal-equivalent current
-        # Ith = Ik″·√(m+n) per IEC 60909-0 §12, not the bare Ik″ — at the
-        # short clearing times of fuses/MCCBs the DC component adds 20-45%
-        # heat that Ik″ alone misses (non-conservative by 18-29% on area).
-        # m from the governing bus's κ (fault payload); conservative default
-        # κ = 1.8 when the payload carries no κ. n = 1 assumed (far-from-
-        # generator, Ik = Ik″) — the upper bound since n ≤ 1.
-        freq = project.frequency or 50
-        kappa = fault_kappa if fault_kappa and fault_kappa > 1.0 else 1.8
-        m_dc = thermal_m_factor(kappa, t_clear, freq)
-        # [gap #4] "bare_isc" uses Ik″ directly (simpler hand-calc basis);
-        # the default "thermal_equivalent" applies the IEC 60909-0 §12 √(m+n).
-        # A per-cable prop overrides the run-level default.
-        basis = str(cable.props.get("adiabatic_basis") or adiabatic_basis)
-        sqrt_mn = 1.0 if basis == "bare_isc" else math.sqrt(m_dc + 1.0)
-        ith_ka = fault_ka * sqrt_mn
-
-        if fault_ka > 0 and size_mm2 > 0:
-            # Required: I_th(A) × sqrt(t) / k ≤ S
-            i_th_a = ith_ka * 1000
-            min_size_for_fault = i_th_a * math.sqrt(t_clear) / k
-            fault_withstand_ok = size_mm2 >= min_size_for_fault
+        elif device is None:
+            t_clear = NO_DEVICE_CLEARING_S
+            if fault_ka > 0:
+                warning_reasons.append(
+                    f"No protective device found on the source side — fault "
+                    f"withstand assumes {NO_DEVICE_CLEARING_S * 1000:.0f} ms clearing")
         else:
-            min_size_for_fault = 0
+            t_clear = _device_trip_time(device, fault_ka * 1000, relay_by_ct,
+                                        relay_by_cb, comp_map, fault_kappa)
 
-        # ── Determine issues ──
         issues = []
+        min_size_for_fault = 0.0
+        fault_withstand_ok = True
+        s_req_max = 0.0              # area needed at the largest fault current
+        far_needs_overload = False   # far end only clears via §433/§435.1
+        ith_ka, sqrt_mn = fault_ka, 1.0
+        if fault_ka > 0 and size_mm2 > 0:
+            if t_clear >= ADIABATIC_LIMIT_S:
+                fault_withstand_ok = False
+                issues.append(
+                    f"Fault withstand: the {fault_ka:.2f} kA fault is not cleared within "
+                    f"{ADIABATIC_LIMIT_S:g} s by {device.props.get('name', device.id) if device else 'the protection'} "
+                    f"(IEC 60364-4-43 §434.5.2)")
+                min_size_for_fault = math.inf
+            else:
+                ith_ka, sqrt_mn = _ith(fault_ka, fault_kappa, t_clear)
+                min_size_for_fault = ith_ka * 1000 * math.sqrt(t_clear) / k
+                s_req_max = min_size_for_fault
+                if size_mm2 < min_size_for_fault:
+                    fault_withstand_ok = False
+                    issues.append(
+                        f"Fault withstand: {size_mm2:.0f}mm² insufficient, need "
+                        f"{min_size_for_fault:.0f}mm² for Ith {ith_ka:.2f}kA "
+                        f"(Ik {fault_ka:.2f}kA × √(m+n) = {sqrt_mn:.3f}) / {t_clear*1000:.0f}ms")
+
+        # (b) [CS2] the SMALLEST fault current, at the far end, for a device
+        # whose time depends on current (not for hand-entered overrides)
+        far_ka = 0.0
+        far_t = None
+        if device is not None and ov_clear_s <= 0 and ov_isc_ka <= 0 and to_bus:
+            mr = _min_fault(0.95 if is_lv else 1.0)
+            fb = mr.buses.get(to_bus) if mr else None
+            if fb:
+                vals = [float(v) for v in (fb.ik3_network or fb.ik3, fb.ikLL, fb.ik1) if v and v > 0]
+                far_ka = min(vals) if vals else 0.0
+                far_kappa = fb.kappa
+            if far_ka > 0 and size_mm2 > 0:
+                far_t = _device_trip_time(device, far_ka * 1000, relay_by_ct,
+                                          relay_by_cb, comp_map, far_kappa)
+                if far_t >= ADIABATIC_LIMIT_S:
+                    if overload_ok:
+                        pass  # §435.1: coordinated overload protection covers it
+                    else:
+                        fault_withstand_ok = False
+                        min_size_for_fault = math.inf
+                        # a size that restores §433.1 also restores §435.1
+                        far_needs_overload = overload_ok is False
+                        issues.append(
+                            f"Fault withstand: the minimum fault at the far end "
+                            f"({far_ka * 1000:.0f} A, c_min) is not cleared within "
+                            f"{ADIABATIC_LIMIT_S:g} s (IEC 60364-4-43 §434.5.2)")
+                else:
+                    ith_far, _ = _ith(far_ka, far_kappa, far_t)
+                    s_far = ith_far * 1000 * math.sqrt(far_t) / k
+                    if s_far > min_size_for_fault:
+                        min_size_for_fault = s_far
+                    if size_mm2 < s_far:
+                        fault_withstand_ok = False
+                        issues.append(
+                            f"Fault withstand at the far end: {size_mm2:.0f}mm² insufficient, "
+                            f"need {s_far:.0f}mm² for {far_ka * 1000:.0f} A (c_min) cleared "
+                            f"in {far_t * 1000:.0f}ms")
+
+        # ── Issues ──
         if not thermal_ok:
             if temp_df <= 0:
                 _max_op_temp = OVERHEAD_MAX_TEMP_C if cp["overhead"] else MAX_TEMP.get(insulation, 90)
-                issues.append(f"Ambient temperature {ambient_temp_c:.0f}°C at/above conductor max operating temperature ({_max_op_temp:.0f}°C) — cable has no usable ampacity")
+                issues.insert(0, f"Ambient temperature {ambient_temp_c:.0f}°C at/above conductor max operating temperature ({_max_op_temp:.0f}°C) — cable has no usable ampacity")
             else:
-                issues.append(f"Thermal overload: {current_per_cable:.1f}A exceeds derated capacity {derated_amps:.1f}A ({thermal_loading_pct:.0f}%)")
+                issues.insert(0, f"Thermal overload: {current_per_cable:.1f}A exceeds derated capacity {derated_amps:.1f}A ({thermal_loading_pct:.0f}%)")
+        if overload_ok is False:
+            issues.append(f"Overload protection (IEC 60364-4-43 §433.1): {overload_note}")
         if not voltage_drop_ok:
-            issues.append(f"Voltage drop {voltage_drop_pct:.2f}% exceeds limit {max_voltage_drop_pct}%")
-        if not fault_withstand_ok:
-            issues.append(
-                f"Fault withstand: {size_mm2:.0f}mm² insufficient, need "
-                f"{min_size_for_fault:.0f}mm² for Ith {ith_ka:.2f}kA "
-                f"(Ik″ {fault_ka:.2f}kA × √(m+n) = {sqrt_mn:.3f}) / {t_clear*1000:.0f}ms")
+            if cumulative_pct is not None:
+                issues.append(f"Voltage drop from {origin_name} {cumulative_pct:.2f}% exceeds "
+                              f"limit {max_voltage_drop_pct}% (this cable {voltage_drop_pct:.2f}%)")
+            else:
+                issues.append(f"Voltage drop {voltage_drop_pct:.2f}% exceeds limit {max_voltage_drop_pct}%")
 
         # ── Status ──
-        # When load flow failed/diverged or reports no current for this
-        # cable, the thermal and voltage-drop checks are meaningless — mark
-        # the cable "unknown" instead of silently passing it (M6).
         current_known = (ov_current > 0) or (
             lf_converged and cable.id in branch_currents and load_current > 0)
-        if not thermal_ok or not voltage_drop_ok or not fault_withstand_ok:
+        if not thermal_ok or not voltage_drop_ok or not fault_withstand_ok or overload_ok is False:
             status = "fail"
         elif not current_known or not ampacity_known:
-            # [EE-9] no rated ampacity → the thermal check never ran
             status = "unknown"
-        elif thermal_loading_pct > 80 or (3.0 < voltage_drop_pct <= max_voltage_drop_pct):
+        elif thermal_loading_pct > 80 or (0.6 * max_voltage_drop_pct < drop_for_limit <= max_voltage_drop_pct):
             status = "warning"
         else:
             status = "pass"
 
-        # ── Warning reason (for warning status — cable passes but is near limits) ──
-        warning_reasons = []
         if not current_known:
-            warning_reasons.append(
+            warning_reasons.insert(0,
                 "Load current unknown (load flow unavailable, not converged, or zero "
                 "current) — thermal and voltage-drop checks need a converged load flow")
         if not ampacity_known:
@@ -906,37 +1220,37 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                 "thermal check not performed")
         if thermal_loading_pct > 80 and thermal_ok:
             warning_reasons.append(f"Thermal loading at {thermal_loading_pct:.0f}% (>80% of derated capacity {derated_amps:.0f}A)")
-        if 3.0 < voltage_drop_pct <= max_voltage_drop_pct:
-            warning_reasons.append(f"Voltage drop at {voltage_drop_pct:.1f}% (approaching {max_voltage_drop_pct}% limit)")
+        if 0.6 * max_voltage_drop_pct < drop_for_limit <= max_voltage_drop_pct:
+            warning_reasons.append(f"Voltage drop at {drop_for_limit:.1f}% (approaching {max_voltage_drop_pct}% limit)")
 
         # ── Recommended cable ──
         min_size_mm2 = size_mm2
         recommended_cable = ""
         if status == "fail":
-            conductor_df = _nec_conductor_count_factor(num_parallel * 3) if ampacity_standard == "NEC" else 1.0
+            s_req = s_req_max if far_needs_overload else min_size_for_fault
             found_size = _find_minimum_size(
-                cp, load_current, num_parallel, length_km, voltage_kv,
-                cos_phi, sin_phi, max_voltage_drop_pct, ith_ka, t_clear,
-                install_df, temp_df, ambient_temp_c,
-                ampacity_standard=ampacity_standard, conductor_df=conductor_df,
+                cp, load_current, num_parallel, length_km, system_kv, class_kv,
+                cos_phi, sin_phi, max_voltage_drop_pct,
+                s_req, temp_df, conductor_df, ampacity_standard,
+                ambient_temp_c,
+                other_drop_pct=((cumulative_pct - voltage_drop_pct)
+                                if cumulative_pct is not None else 0.0),
+                overload=(ol if overload_ok is not None else None),
+                load_ib=load_current,
             )
             if found_size is None:
-                # No standard size passes all checks — return a clear failure
-                # recommendation instead of echoing the existing failing size
                 min_size_mm2 = 0
                 recommended_cable = ("No standard cable size satisfies all checks — "
                                      "consider parallel cables, a shorter route, a "
                                      "higher voltage level, or faster fault clearing")
             else:
                 min_size_mm2 = found_size
-                # Find matching standard cable [P4] — overhead searches its
-                # own codeword-conductor table, not STANDARD_CABLES.
-                rec = _find_recommended_cable(cp["conductor"], cp["insulation"], voltage_kv,
+                rec = _find_recommended_cable(cp["conductor"], cp["insulation"], class_kv,
                                               min_size_mm2, overhead=cp["overhead"])
                 if rec:
                     recommended_cable = (rec["name"] if cp["overhead"] else
                                          f"{rec['size_mm2']:.0f}mm² {rec['conductor']} "
-                                         f"{rec['insulation']} {voltage_kv}kV")
+                                         f"{rec['insulation']} {class_kv:g}kV")
                     min_size_mm2 = rec["size_mm2"]
                 else:
                     recommended_cable = f"{min_size_mm2:.0f}mm² (no standard cable found)"
@@ -950,18 +1264,22 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             "thermal_ok": thermal_ok,
             "thermal_loading_pct": round(thermal_loading_pct, 1),
             "voltage_drop_pct": round(voltage_drop_pct, 2),
+            "cumulative_voltage_drop_pct": (round(cumulative_pct, 2)
+                                            if cumulative_pct is not None else None),
+            "voltage_drop_origin": origin_name,
             "voltage_drop_ok": voltage_drop_ok,
+            "system_kv": system_kv,
+            "overload_protection_ok": overload_ok,
+            "overload_protection_note": overload_note,
             "fault_withstand_ok": fault_withstand_ok,
-            "min_size_mm2": round(min_size_mm2, 1),
+            "clearing_time_s": (round(t_clear, 4) if math.isfinite(t_clear) else None),
+            "min_size_mm2": (round(min_size_mm2, 1) if math.isfinite(min_size_mm2) else 0),
             "recommended_cable": recommended_cable,
             "status": status,
             "issues": issues,
             "warning_reasons": warning_reasons,
             "ampacity_standard": ampacity_standard,
             "nec_rating": _nec_ampacity_lookup(cp["size_mm2"], cp["conductor"], '75C'),
-            # Installed (derated) ampacity used for the thermal check, plus the
-            # per-cable install conditions when set via the IEC 60364-5-52
-            # calculator (empty string / False otherwise).
             "derated_ampacity_a": round(derated_amps, 1) if derated_amps else 0,
             "ampacity_derated": bool(amp_derated_a and amp_derated_a > 0),
             "ampacity_conditions": amp_conditions,
@@ -970,30 +1288,39 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
     return {"cables": results, "warnings": warnings}
 
 
-def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
-                       cos_phi, sin_phi, max_vdrop_pct, fault_ka, t_clear,
-                       install_df, temp_df, ambient_temp_c,
-                       ampacity_standard='IEC', conductor_df=1.0):
-    """Find the minimum cable size (mm²) that satisfies all three checks.
+def _find_minimum_size(cp, load_current, num_parallel, length_km, system_kv, class_kv,
+                       cos_phi, sin_phi, max_vdrop_pct, s_req_fault, temp_df,
+                       conductor_df, ampacity_standard, ambient_temp_c,
+                       other_drop_pct=0.0, overload=None, load_ib=0.0):
+    """Smallest standard size passing every check the cable failed.
 
-    fault_ka must be the THERMAL-EQUIVALENT current Ith = Ik″·√(m+n)
-    (IEC 60909-0 §12) — the caller applies the m/n factors ([EE-5]).
-
-    Returns None when NO standard cable size passes — callers must report a
-    clear failure rather than recommending a size that also fails.
+    ``s_req_fault``: the area the fault-withstand check needs (already from
+    the governing current, clearing time and √(m+n)); math.inf when the
+    protection does not clear within 5 s — no size fixes that.
+    ``other_drop_pct``: drop from the origin up to this cable ([CS4]).
+    ``overload``: (In, I2/In, label) when §433.1 applies ([CS3]).
+    Returns None when no standard size passes.
     """
-    conductor = cp["conductor"]
-    insulation = cp["insulation"]
-    k = K_FACTORS.get((conductor, insulation), 143)
+    if not math.isfinite(s_req_fault):
+        return None
     current_per_cable = load_current / max(num_parallel, 1)
+    n = max(num_parallel, 1)
+
+    def _drop_ok(r_km, x_km):
+        if system_kv <= 0 or length_km <= 0:
+            return True
+        v_phase = system_kv * 1000 / math.sqrt(3)
+        vdrop = load_current * length_km * (r_km / n * cos_phi + x_km / n * sin_phi)
+        return other_drop_pct + vdrop / v_phase * 100 <= max_vdrop_pct
+
+    def _overload_ok(derated):
+        if overload is None:
+            return True
+        i_n, f_i2, _ = overload
+        iz = derated * n
+        return load_ib <= i_n and i_n <= iz and f_i2 * i_n <= 1.45 * iz
 
     if cp["overhead"]:
-        # [P4] STANDARD_CABLES has no BARE/overhead entries, so searching it
-        # (the code below) can never suggest an overhead conductor — search
-        # STANDARD_OVERHEAD_LINES instead, applying the same ambient scaler
-        # as the main sizing loop (OVERHEAD_RATED_AMBIENT_C/MAX_TEMP_C) and
-        # correcting r_per_km from the table's 20°C base the same way the
-        # main loop's r_per_km already is (conductor_temp.resistance_at).
         from .conductor_temp import resistance_at, DEFAULT_OVERHEAD_TEMP_C
         for ov in sorted(STANDARD_OVERHEAD_LINES, key=lambda x: x["size_mm2"]):
             if ambient_temp_c >= OVERHEAD_MAX_TEMP_C:
@@ -1006,73 +1333,44 @@ def _find_minimum_size(cp, load_current, num_parallel, length_km, voltage_kv,
                 derated = ov["rated_amps"]
             if current_per_cable > derated:
                 continue
-
-            if voltage_kv > 0 and length_km > 0:
-                r = (resistance_at(ov["r_per_km"], DEFAULT_OVERHEAD_TEMP_C, ov["material"])
-                     / max(num_parallel, 1))
-                x = ov["x_per_km"] / max(num_parallel, 1)
-                v_phase = voltage_kv * 1000 / math.sqrt(3)
-                vdrop = load_current * length_km * (r * cos_phi + x * sin_phi)
-                vdrop_pct = (vdrop / v_phase) * 100 if v_phase > 0 else 0
-                if vdrop_pct > max_vdrop_pct:
-                    continue
-
-            if fault_ka > 0:
-                i_fault_a = fault_ka * 1000
-                min_size_fault = i_fault_a * math.sqrt(t_clear) / k
-                if ov["size_mm2"] < min_size_fault:
-                    continue
-
+            if not _drop_ok(resistance_at(ov["r_per_km"], DEFAULT_OVERHEAD_TEMP_C, ov["material"]),
+                            ov["x_per_km"]):
+                continue
+            if ov["size_mm2"] < s_req_fault:
+                continue
             return ov["size_mm2"]
-
         return None
 
+    conductor = cp["conductor"]
+    insulation = cp["insulation"]
     standard_sizes = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500, 630]
-
     for size in standard_sizes:
-        # Find a matching standard cable for rated_amps and impedance
         match = None
         for sc in STANDARD_CABLES:
             if (sc["conductor"] == conductor and sc["insulation"] == insulation
-                    and abs(sc["voltage_kv"] - voltage_kv) < 1.0 and sc["size_mm2"] == size):
+                    and abs(sc["voltage_kv"] - class_kv) < 1.0 and sc["size_mm2"] == size):
                 match = sc
                 break
         if not match:
             continue
-
-        # Thermal check
         if ampacity_standard == "NEC":
-            # Use NEC 310.16 ampacity for this size
             nec_amps = _nec_ampacity(size, conductor, insulation)
             base_amps = nec_amps if nec_amps > 0 else match["rated_amps"]
             derated = base_amps * temp_df * conductor_df
         else:
-            derated = match["rated_amps"] * install_df * temp_df
-        if current_per_cable > derated:
+            derated = match["rated_amps"] * temp_df
+        if current_per_cable > derated or not _overload_ok(derated):
             continue
-
-        # Voltage drop check — the internal STANDARD_CABLES table stores
-        # 20°C DC resistance (IEC 60228), so correct to conductor operating
-        # temperature here (H12)
-        if voltage_kv > 0 and length_km > 0:
-            r = match["r_per_km"] * _temp_correction(conductor, insulation) / max(num_parallel, 1)
-            x = match["x_per_km"] / max(num_parallel, 1)
-            v_phase = voltage_kv * 1000 / math.sqrt(3)
-            vdrop = load_current * length_km * (r * cos_phi + x * sin_phi)
-            vdrop_pct = (vdrop / v_phase) * 100 if v_phase > 0 else 0
-            if vdrop_pct > max_vdrop_pct:
-                continue
-
-        # Fault withstand check
-        if fault_ka > 0:
-            i_fault_a = fault_ka * 1000
-            min_size_fault = i_fault_a * math.sqrt(t_clear) / k
-            if size < min_size_fault:
-                continue
-
+        # backend table: 20 °C DC resistance → operating temperature (H12)
+        if not _drop_ok(match["r_per_km"] * _temp_correction(conductor, insulation),
+                        match["x_per_km"]):
+            continue
+        # [N2] the size's own k (PVC > 300 mm²)
+        k_here = _k_factor(conductor, insulation, size)
+        k_cur = _k_factor(conductor, insulation, cp["size_mm2"])
+        if size < s_req_fault * (k_cur / k_here):
+            continue
         return size
-
-    # No standard size satisfies all checks
     return None
 
 
