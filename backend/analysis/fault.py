@@ -141,7 +141,13 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     # flow, these nodes are kept in the results — the terminal fault level is
     # the useful output. A single-bus fault (fault_bus_id set to a real bus)
     # never computes them, since the bus filter below drops them.
-    from .loadflow import insert_implicit_load_buses
+    from .loadflow import insert_implicit_load_buses, insert_junction_buses
+    # [F2] A node at every cable tee the drawing left without a bus (shared
+    # with load flow). Without it the nodal builders reach two buses through
+    # one tee leg and stamp each PAIR of legs as its own bus-to-bus branch —
+    # not the star — overstating Ik3 at a teed bus by ~23 %. The tee node is
+    # kept in the results: its fault level is a real, useful figure.
+    project = insert_junction_buses(project)
     project = insert_implicit_load_buses(project)
 
     base_mva = project.baseMVA
@@ -175,6 +181,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     # [PS-1] Bus-level sequence networks, built lazily on the first meshed
     # fault location (radial networks never need them).
     net_cache = None
+    net_cache_min = {}   # [F9] c_min → bus network, for meshed Ik_min
 
     # For each bus, compute equivalent impedance seen from that bus
     results = {}
@@ -409,14 +416,63 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         # IEC 60909 time-varying fault currents (3-phase)
         freq = project.frequency or 50  # Hz
         ip_ka, kappa = _compute_peak_current(ik3_ka, z_eq, meshed=meshed, voltage_kv=voltage_kv)
+        # [F6] IEC 60909-0 §8.1.2: a fault fed from a NON-meshed network
+        # through several independent branches has ip = Σ ip,i, each branch
+        # with its own κ_i. One κ from the combined R/X understated ip when
+        # the branches' X/R differ (−4.4 % for a weak X/R 3 grid in parallel
+        # with an X/R 40 generator). κ is reported as the equivalent
+        # ip / (√2·I″k3). Single-path and meshed buses are unchanged.
+        if ip_ka is not None and not meshed and len(source_paths) > 1:
+            ip_sum = 0.0
+            for _p in source_paths:
+                _z = _p["z_total"]
+                if abs(_z) < 1e-15:
+                    continue
+                _rx = abs(_z.real / _z.imag) if abs(_z.imag) > 1e-15 else 10.0
+                ip_sum += _compute_kappa(_rx) * math.sqrt(2) * c_factor / abs(_z) * i_base_ka
+            ip_ka = round(ip_sum, 3)
+            kappa = round(ip_sum / (math.sqrt(2) * ik3_ka), 3)
         ib_ka = _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mva)
-        ik_steady_ka = _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, voltage_kv)
         # [PS-1] Per-path current sums inherit the shared-impedance overstatement
-        if meshed_scale != 1.0:
-            if ib_ka is not None:
-                ib_ka = round(ib_ka * meshed_scale, 3)
-            if ik_steady_ka is not None:
-                ik_steady_ka = round(ik_steady_ka * meshed_scale, 3)
+        if meshed_scale != 1.0 and ib_ka is not None:
+            ib_ka = round(ib_ka * meshed_scale, 3)
+
+        # [F9] Steady-state short-circuit current, IEC 60909-0:2001 §4.6 —
+        # both the maximum (study c) and the minimum (Table 1 c_min, motors
+        # neglected per §2.5) on every run.
+        c_min_bus = _c_min(voltage_kv)
+        ik_steady_ka = ik_steady_min_ka = None
+        if meshed and net_cache is not None:
+            # §4.6.3 Eq. (84)/(85): Ik_max ≈ I″k without asynchronous motors,
+            # Ik_min ≈ I″k_min (c_min, all motors neglected).
+            sh_max = {bid: [t[0] for t in lst if t[3] != "motor_induction"]
+                      for bid, lst in net_cache["shunts12"].items()}
+            z_max = _nodal_thevenin(net_cache["bus_ids"], net_cache["branches1"], sh_max, bus.id)
+            if z_max is not None and abs(z_max) > 1e-12:
+                ik_steady_ka = round(c_factor / abs(z_max) * i_base_ka, 3)
+            if c_min_bus not in net_cache_min:
+                net_cache_min[c_min_bus] = _build_bus_network(
+                    all_buses, components, adjacency, base_mva, c_min_bus,
+                    freq_hz=(project.frequency or 50))
+            nm = net_cache_min[c_min_bus]
+            sh_min = {bid: [t[0] for t in lst if t[3] not in ("motor_induction", "motor_synchronous")]
+                      for bid, lst in nm["shunts12"].items()}
+            z_min = _nodal_thevenin(nm["bus_ids"], nm["branches1"], sh_min, bus.id)
+            if z_min is not None and abs(z_min) > 1e-12:
+                ik_steady_min_ka = round(c_min_bus / abs(z_min) * i_base_ka, 3)
+        if ik_steady_ka is None or ik_steady_min_ka is None:
+            # §4.6.2 non-meshed: Ik = Σ Ik,i (also the fallback if the nodal
+            # solve failed)
+            if ik_steady_ka is None:
+                ik_steady_ka = _compute_steady_state_current(
+                    source_paths, c_factor, i_base_ka, base_mva, voltage_kv, mode="max")
+            if ik_steady_min_ka is None:
+                paths_min = [p for p in _collect_source_paths(
+                                 bus.id, components, adjacency, base_mva, c=c_min_bus,
+                                 energized=energized)
+                             if not p.get("is_motor")]
+                ik_steady_min_ka = _compute_steady_state_current(
+                    paths_min, c_min_bus, i_base_ka, base_mva, voltage_kv, mode="min")
 
         # [EE-11] Thermal-equivalent short-circuit current per IEC 60909-0 §12:
         #   Ith = Ik″ × √(m + n)
@@ -474,6 +530,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             ith_ka=ith_ka,
             ib_asymmetric=ib_asym_ka,
             ik_steady=ik_steady_ka,
+            ik_steady_min=ik_steady_min_ka,
             branches=branches,
             network_topology="meshed" if meshed else "radial",
             topology_warnings=study_warnings or None,
@@ -487,7 +544,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     if len(all_buses) >= 2:
         try:
             _compute_voltage_depression(
-                all_buses, components, adjacency, wires, base_mva, results
+                all_buses, components, adjacency, wires, base_mva, results,
+                energized=energized,
             )
         except Exception:
             # [PS-R2-7] Non-critical (informational output, headline currents
@@ -509,6 +567,14 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         "Breaking current Ib evaluated at minimum breaking time "
         "t_min = 0.1 s; asymmetrical breaking current at a fixed 100 ms "
         "with the DC time constant from the reduced Z_eq.",
+        "Steady-state Ik per IEC 60909-0:2001 §4.6: synchronous machines "
+        "λ·I_rG (λ_max from IEC TR 60909-1 Eq. 88 with each machine's own "
+        "x″d and cos φ; λ_min from the figs. 18/19 curve); network feeders "
+        "and converter sources Ik = I″k; asynchronous motors 0. Meshed "
+        "buses: Ik_max ≈ I″k without asynchronous motors, Ik_min ≈ I″k_min "
+        "(§4.6.3). Ik_min uses c_min (Table 1) with motors neglected (§2.5) "
+        "and the study's conductor temperature. Unbalanced steady-state "
+        "currents equal the initial values (§4.6.4).",
         f"Thermal-equivalent current Ith uses Tk = {thermal_duration_s:g} s "
         "with n = 1 (full AC heat effect — conservative upper bound).",
         "Multi-source Ib, Ik and branch contributions sum per-path current "
@@ -520,6 +586,8 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         _assumptions.append(
             f"Minimum-current study: cable resistances at "
             f"{conductor_temperature_c:g} °C (IEC 60909-0 §5.3.1).")
+    _assumptions.extend(_converter_assumptions(project))
+    _assumptions.extend(_steady_state_assumptions(project))
     _assumptions.extend(_coupling_assumptions(project))
     _assumptions.extend(_z0_source_assumptions(project))
     return FaultResults(
@@ -602,6 +670,90 @@ def _transformer_far_voltage(comp, v_near):
 
 
 _REAL_SOURCE_TYPES = ("utility", "generator", "solar_pv", "wind_turbine", "battery")
+
+# [F5] Power-electronic two-ports. Before this they fell through every walker
+# as zero-impedance links: a UPS output bus reported the full upstream fault
+# level and a motor behind a VFD back-fed an upstream fault.
+_CONVERTER_TYPES = ("ups", "vfd", "rectifier", "charger")
+_UPS_IN_PORTS = ("ac_in",)
+_UPS_OUT_PORTS = ("ac_out",)
+
+
+def _ups_is_pass_through(comp):
+    """A UPS passes fault current like a closed link unless it is an online
+    double-conversion unit with no static bypass. Offline / line-interactive
+    units feed the load straight from the mains in normal operation, and a
+    static bypass transfers the load (and the upstream fault level) to the
+    mains on an output fault — the max-duty assumption."""
+    topo = str(comp.props.get("topology", "online_double")).lower()
+    bypass = str(comp.props.get("static_bypass", "yes")).lower()
+    return topo != "online_double" or bypass not in ("no", "false", "0")
+
+
+def _converter_action(comp, entry_port, base_mva, c=C_MAX):
+    """How a fault walk treats a converter entered through *entry_port*.
+
+    Returns None for "not a converter / behaves as a closed link" (the legacy
+    treatment, also used when the entry port is unknown), "block" when no
+    fault current passes, or a source dict {z, rated_mva, source_type,
+    is_motor[, rated_mw]} when the converter itself feeds the fault from the
+    side the walk came from:
+
+    - VFD entered on its supply side ('in'): IEC 60909-0 §13.2.1 — a motor fed
+      through a static converter contributes only if the converter can return
+      braking energy. A diode front end blocks; an active front end ('afe')
+      contributes as a motor with I_LR/I_rM = 3 and R_M/X_M = 0.10.
+    - VFD entered on its output ('out', fault on the motor side): the drive's
+      output is current-limited to fault_contribution_pu × I_r (default 1.5).
+    - Online double-conversion UPS without a static bypass: blocks from the
+      input side; from the output side the inverter is current-limited to
+      fault_contribution_pu × I_r (default 2.0). Otherwise a closed link.
+    - Rectifier / charger: an AC fault walk never passes to the DC side.
+    """
+    t = comp.type
+    if t not in _CONVERTER_TYPES:
+        return None
+    if t in ("rectifier", "charger"):
+        return "block"
+    port = str(entry_port or "")
+    if t == "ups":
+        if _ups_is_pass_through(comp) or port not in _UPS_IN_PORTS + _UPS_OUT_PORTS:
+            return None
+        if port in _UPS_IN_PORTS:
+            return "block"
+        s_mva = float(comp.props.get("rated_kva", 100) or 0) / 1000.0
+        k = float(comp.props.get("fault_contribution_pu", 2.0) or 2.0)
+        return _converter_source(s_mva, k, base_mva, "converter", c=c)
+    # vfd
+    if port not in ("in", "out"):
+        return None
+    eff = float(comp.props.get("efficiency", 0.96) or 0.96)
+    s_mva = float(comp.props.get("rated_kw", 200) or 0) / 1000.0 / max(eff, 1e-3)
+    if port == "out":
+        k = float(comp.props.get("fault_contribution_pu", 1.5) or 1.5)
+        return _converter_source(s_mva, k, base_mva, "converter", c=c)
+    if str(comp.props.get("front_end", "diode")).lower() != "afe":
+        return "block"
+    # IEC 60909-0 §13.2.1: Z_M = (1/3)·U_rM²/S_rM, R_M/X_M = 0.10
+    src = _converter_source(s_mva, 3.0, base_mva, "motor_induction", xr=10.0)
+    if isinstance(src, dict):
+        src["is_motor"] = True
+        src["rated_mw"] = s_mva * eff
+    return src
+
+
+def _converter_source(s_mva, k, base_mva, source_type, xr=10.0, c=1.0):
+    """Current-limited equivalent, X/R = xr. For a converter current limit
+    (c passed) |Z| = c/k on the unit base, so the walkers' c/|Z| reproduces
+    exactly k × I_r at the terminals — a current limit is a current, not a
+    voltage behind an impedance, so the IEC voltage factor must not scale it.
+    The AFE motor equivalent (I_LR/I_rM) keeps c = 1, like any motor."""
+    if s_mva <= 1e-9:
+        return "block"
+    z_mag = c / max(k, 0.1) * base_mva / s_mva
+    x = z_mag * xr / math.hypot(1.0, xr)
+    return {"z": complex(x / xr, x), "rated_mva": s_mva,
+            "source_type": source_type, "is_motor": False}
 
 
 def _energized_components(components, adjacency):
@@ -691,7 +843,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
     paths = []
     expansions = [0]
 
-    def walk(comp_id, z_path, trail, path_visited, v_kv, rho=1.0):
+    def walk(comp_id, z_path, trail, path_visited, v_kv, rho=1.0, entry_port=None):
         if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -702,6 +854,28 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
         if not comp:
             return
         s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
+
+        # [F5] Converters: block, feed a current-limited contribution, or pass
+        conv = _converter_action(comp, entry_port, base_mva, c)
+        if conv == "block":
+            return
+        if isinstance(conv, dict):
+            if conv["is_motor"] and energized is not None and comp_id not in energized:
+                return  # drive not running — no regenerative contribution
+            path = {
+                "z_total": z_path + s * conv["z"],
+                "z2_total": z_path + s * conv["z"],
+                "trail": trail + [comp_id],
+                "source_id": comp_id,
+                "source_type": conv["source_type"],
+                "rated_mva": conv["rated_mva"],
+            }
+            if conv["is_motor"]:
+                path["is_motor"] = True
+                path["rated_mw"] = conv.get("rated_mw")
+                path["pole_pairs"] = None
+            paths.append(path)
+            return
 
         # If we hit a source, record the complete path
         if comp.type == "utility":
@@ -725,6 +899,15 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "generator",
+                # [F9] IEC 60909-0 §4.6 steady-state inputs: the machine part
+                # of z_total, the zone scale, the cumulative RATED ratio from
+                # the faulted bus (I at the machine = I at the fault × rho)
+                # and the machine's own rated voltage.
+                "z_src_scaled": s * z_src,
+                "zone_scale": s,
+                "rho": rho,
+                "u_rg_kv": float(comp.props.get("voltage_kv", 0) or 0) or v_kv,
+                "props": comp.props,
                 "xd_pp": comp.props.get("xd_pp", 0.15),
                 "xd_p": comp.props.get("xd_p", 0.25),
                 "xd": comp.props.get("xd", 1.2),
@@ -771,6 +954,11 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "motor_synchronous",
+                "z_src_scaled": s * z_src,   # [F9] see the generator branch
+                "zone_scale": s,
+                "rho": rho,
+                "u_rg_kv": float(comp.props.get("voltage_kv", 0) or 0) or v_kv,
+                "props": comp.props,
                 "is_motor": True,
                 "xd_pp": comp.props.get("xd_pp", 0.15),
                 "xd_p": comp.props.get("xd_p", 0.25),
@@ -872,15 +1060,35 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             pass  # Zero impedance for fault calc
 
         # Continue walking
-        for neighbor_id, _, _ in adjacency.get(comp_id, []):
+        for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited, v_next, rho_next)
+                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited, v_next, rho_next,
+                     remote_port)
 
     # Start from bus's neighbors at the faulted bus's voltage
     _bus_comp = components.get(bus_id)
     _v_start = float(_bus_comp.props.get("voltage_kv", 0.4 if _bus_comp.type == "distribution_board" else 11) or 11) if _bus_comp else 11.0
-    for neighbor_id, _, _ in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0), [], {bus_id}, _v_start)
+    # [F3] A faulted distribution board's OWN rotating-load fraction feeds the
+    # fault directly (zero series impedance). The walk below starts at the
+    # board's neighbours, so without this seed the board's motors counted for
+    # every other bus but not for the board itself (−16 % at a board with a
+    # 50 % motor fraction), and the nodal builder — which does add it — gave
+    # a different answer on meshed networks.
+    if (_bus_comp is not None and _bus_comp.type == "distribution_board"
+            and (energized is None or bus_id in energized)):
+        z_own, mva_own = _static_load_motor_impedance(_bus_comp, base_mva)
+        if z_own is not None:
+            paths.append({
+                "z_total": z_own,
+                "z2_total": z_own,
+                "trail": [],
+                "source_id": bus_id,
+                "source_type": "motor_induction",
+                "is_motor": True,
+                "rated_mva": mva_own,
+            })
+    for neighbor_id, _, remote_port in adjacency.get(bus_id, []):
+        walk(neighbor_id, complex(0, 0), [], {bus_id}, _v_start, 1.0, remote_port)
 
     if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
         print(f"[fault] Warning: source path enumeration truncated for bus {bus_id} "
@@ -934,7 +1142,7 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
     element_current_pu = {}  # element_id -> total per-unit current
     element_z_path = {}   # element_id -> z_path of first path containing it (for display)
     element_source = {}   # element_id -> source names
-    element_voltage = {}  # element_id -> operating voltage in kV
+    element_rho = {}      # element_id -> current ratio vs the faulted bus ([F7])
     # Track from_bus (source side) and to_bus (faulted bus side) for each element
     # Trail is ordered from faulted bus outward, so trail[k-1] is toward the fault
     element_from_bus = {}  # element_id -> source-side neighbor
@@ -947,39 +1155,35 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
         source_comp = components.get(source_id)
         source_name = source_comp.props.get("name", source_id) if source_comp else source_id
 
-        # Determine voltage zone for each element along this trail.
-        # Walk from faulted bus outward, tracking voltage through transformers.
-        current_voltage = faulted_bus_voltage_kv or 0
-        trail_voltages = {}
+        # Current ratio for each element along this trail. [F7] Across a
+        # transformer the current scales by the RATED ratio (ampere-turn
+        # balance), not by the ratio of the drawn bus voltages: an 11/0.42 kV
+        # unit on a 0.4 kV bus carries I_LV × 0.42/11 on its HV side. rho is
+        # the cumulative U_near/U_far product since the faulted bus, so the
+        # element's kA = (per-unit current on the faulted-bus base) ×
+        # I_base(faulted bus) × rho. Exactly the old bus-voltage conversion
+        # when every nameplate matches its buses.
+        current_voltage = float(faulted_bus_voltage_kv or 0)
+        rho_cum = 1.0
+        trail_rho = {}
         for k, elem_id in enumerate(trail):
             comp = components.get(elem_id)
-            if not comp:
-                trail_voltages[elem_id] = current_voltage
-                continue
-            if comp.type == "bus":
-                current_voltage = comp.props.get("voltage_kv", current_voltage)
-                trail_voltages[elem_id] = current_voltage
-            elif comp.type in ("transformer", "autotransformer"):
-                # Determine which winding faces the fault side vs the source side
-                hv = comp.props.get("voltage_hv_kv", 11)
-                lv = comp.props.get("voltage_lv_kv", 0.4)
-                # Current voltage is the fault-side winding; source side is the other
-                if abs(current_voltage - lv) < abs(current_voltage - hv):
-                    source_side_voltage = hv
-                else:
-                    source_side_voltage = lv
-                # Show transformer current at source side (upstream of fault)
-                trail_voltages[elem_id] = source_side_voltage
-                current_voltage = source_side_voltage
-            else:
-                trail_voltages[elem_id] = current_voltage
+            if comp and comp.type == "bus":
+                current_voltage = float(comp.props.get("voltage_kv", current_voltage) or current_voltage)
+            elif comp and comp.type in ("transformer", "autotransformer") and current_voltage > 0:
+                u_near, u_far = _transformer_rated_step(comp, current_voltage)
+                if u_near > 0 and u_far > 0:
+                    rho_cum *= u_near / u_far
+                current_voltage = _transformer_far_voltage(comp, current_voltage)
+            # Transformer current is shown on its source side (after crossing)
+            trail_rho[elem_id] = rho_cum
 
         for k, elem_id in enumerate(trail):
             if elem_id not in element_current_pu:
                 element_current_pu[elem_id] = 0
                 element_z_path[elem_id] = path["z_total"]
                 element_source[elem_id] = set()
-                element_voltage[elem_id] = trail_voltages.get(elem_id, faulted_bus_voltage_kv or 0)
+                element_rho[elem_id] = trail_rho.get(elem_id, 1.0)
                 # to_bus: faulted-bus side (trail[k-1] or faulted_bus_id if first in trail)
                 element_to_bus[elem_id] = trail[k - 1] if k > 0 else faulted_bus_id
                 # from_bus: source side (trail[k+1] or source_id if last in trail)
@@ -1000,13 +1204,8 @@ def _compute_branch_contributions(source_paths, z_eq, c_factor, i_base_ka, ik_to
         z_path = element_z_path[elem_id]
         contribution_pct = (ik_pu / ik_total_pu * 100) if ik_total_pu > 1e-10 else 0
 
-        # Convert per-unit current to actual kA at element's voltage level
-        elem_v = element_voltage.get(elem_id, faulted_bus_voltage_kv or 0)
-        if base_mva and elem_v and elem_v > 1e-6:
-            i_base_elem = base_mva / (math.sqrt(3) * elem_v)
-        else:
-            i_base_elem = i_base_ka  # fallback to faulted bus base
-        ik_ka = ik_pu * i_base_elem
+        # Per-unit current on the faulted-bus base → kA in the element ([F7])
+        ik_ka = ik_pu * i_base_ka * element_rho.get(elem_id, 1.0)
 
         branches.append(FaultBranchContribution(
             element_id=elem_id,
@@ -1154,6 +1353,7 @@ _IMPEDANCE_TYPES = frozenset((
     "cable", "transformer", "autotransformer",
     "utility", "generator", "motor_induction", "motor_synchronous",
     "solar_pv", "battery", "wind_turbine",
+    "ups", "vfd",   # [F5] converter-limited contributions
 ))
 
 
@@ -1216,6 +1416,57 @@ def _cable_z0_self_per_km(comp):
 # grouped by identical treatment first, so this only bites on a project with
 # many DISTINCT coupling configurations, not merely many parallel cables.
 MAX_COUPLING_ASSUMPTIONS = 8
+
+
+def _converter_assumptions(project):
+    """[F5] Disclose how converters were treated, when the project has any."""
+    out = []
+    types = {c.type for c in project.components}
+    if "vfd" in types:
+        out.append(
+            "VFDs (IEC 60909-0 §13.2.1): a motor behind a diode-front-end drive "
+            "does not feed a supply-side fault; an active front end contributes "
+            "as a motor with I_LR/I_rM = 3, R/X = 0.1. A fault on the drive output "
+            "is fed at fault_contribution_pu × I_r (default 1.5).")
+    ups = [c for c in project.components if c.type == "ups"]
+    if any(_ups_is_pass_through(c) for c in ups):
+        out.append(
+            "UPS with a static bypass (or offline / line-interactive): the "
+            "upstream fault level passes to the output — maximum-duty assumption.")
+    if any(not _ups_is_pass_through(c) for c in ups):
+        out.append(
+            "Online UPS without static bypass: output faults fed by the inverter "
+            "at fault_contribution_pu × I_r (default 2.0); input-side faults see "
+            "no contribution from the output side.")
+    return out
+
+
+def _steady_state_assumptions(project):
+    """[F9] Name the machines whose steady-state inputs were defaulted."""
+    out = []
+    no_scr = [str(c.props.get("name") or c.id) for c in project.components
+              if c.type in ("generator", "motor_synchronous")
+              and not float(c.props.get("scr", 0) or 0)]
+    if no_scr:
+        shown = ", ".join(no_scr[:4]) + (f" +{len(no_scr) - 4} more" if len(no_scr) > 4 else "")
+        out.append(f"{shown}: no short-circuit ratio given — x_dsat taken as Xd "
+                   "(unsaturated; understates λ). Enter the saturated SCR from the "
+                   "machine datasheet.")
+    unreg = [str(c.props.get("name") or c.id) for c in project.components
+             if c.type == "motor_synchronous"
+             and str(c.props.get("voltage_regulated", "no")).lower() not in ("yes", "true", "1")]
+    if unreg:
+        out.append(", ".join(unreg[:4]) + ": synchronous motor without voltage "
+                   "regulation — steady-state contribution held at constant "
+                   "excitation (λ_min curve) for Ik_max (IEC 60909-0 §3.6.2).")
+    no_ikp = [str(c.props.get("name") or c.id) for c in project.components
+              if c.type == "generator"
+              and str(c.props.get("excitation_type", "")).lower() == "compound"
+              and not float(c.props.get("ikp_pu", 0) or 0)]
+    if no_ikp:
+        out.append(", ".join(no_ikp[:4]) + ": compound excitation without I_kP — "
+                   "Ik_min falls back to the λ_min curve instead of Eq. (80).")
+    return out
 
 
 def _coupling_assumptions(project):
@@ -1554,6 +1805,11 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
         if not comp:
             return
         s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
+
+        # [F5] A converter that is not a closed link neither passes nor
+        # sources zero-sequence current (3-wire / isolated DC link).
+        if _converter_action(comp, entry_port, base_mva) is not None:
+            return
 
         if comp.type == "utility":
             # A zero-sequence source only exists if the utility neutral is
@@ -2041,7 +2297,7 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
     branches0 = []                      # (from_bus, to_bus, z0, k)
     shunts0 = {bid: [] for bid in bus_ids}   # z0_total
 
-    def walk1(comp_id, z_path, visited, from_bus_id, v_kv, v_ref, rho=1.0):
+    def walk1(comp_id, z_path, visited, from_bus_id, v_kv, v_ref, rho=1.0, entry_port=None):
         if comp_id in visited:
             return
         visited.add(comp_id)
@@ -2049,6 +2305,14 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
         if not comp:
             return
         s = _zone_scale(v_kv, rho, v_ref)   # this zone → reference bus, rated ratios
+
+        conv = _converter_action(comp, entry_port, base_mva, c)   # [F5]
+        if conv == "block":
+            return
+        if isinstance(conv, dict):
+            st = "motor_induction" if conv["is_motor"] else conv["source_type"]
+            shunts12[from_bus_id].append((z_path + s * conv["z"], z_path + s * conv["z"], comp_id, st))
+            return
 
         if comp_id in bus_set:
             if comp_id != from_bus_id:
@@ -2106,8 +2370,9 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
         elif t in ("cb", "switch"):
             if comp.props.get("state", "closed") == "open":
                 return
-        for neighbor_id, _, _ in adjacency.get(comp_id, []):
-            walk1(neighbor_id, z_path + z_element, visited, from_bus_id, v_next, v_ref, rho_next)
+        for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
+            walk1(neighbor_id, z_path + z_element, visited, from_bus_id, v_next, v_ref, rho_next,
+                  remote_port)
 
     def walk0(comp_id, z0_path, visited, from_bus_id, entry_port, v_kv, v_ref, rho=1.0):
         if comp_id in visited:
@@ -2117,6 +2382,9 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
         if not comp:
             return
         s = _zone_scale(v_kv, rho, v_ref)   # this zone → reference bus, rated ratios
+
+        if _converter_action(comp, entry_port, base_mva) is not None:
+            return  # [F5] no zero-sequence path through / from a converter
 
         if comp_id in bus_set:
             if comp_id != from_bus_id:
@@ -2216,7 +2484,7 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
     for b in net_buses:
         v_start = float(b.props.get("voltage_kv", 0.4 if b.type == "distribution_board" else 11) or 11)
         for neighbor_id, _, remote_port in adjacency.get(b.id, []):
-            walk1(neighbor_id, complex(0, 0), {b.id}, b.id, v_start, v_start)
+            walk1(neighbor_id, complex(0, 0), {b.id}, b.id, v_start, v_start, 1.0, remote_port)
             walk0(neighbor_id, complex(0, 0), {b.id}, b.id, remote_port, v_start, v_start)
         # A distribution board's own rotating load fraction is a shunt at the
         # node itself (the path walker models it the same way).
@@ -2360,6 +2628,8 @@ def thevenin_z1_at_bus(project, bus_id, c=1.0, exclude_motor_paths=True,
 
 
 def _thevenin_z1_at_bus(project, bus_id, c, exclude_motor_paths, exclude_source_ids):
+    from .loadflow import insert_junction_buses
+    project = insert_junction_buses(project)   # [F2] tees get a node
     components = {comp.id: comp for comp in project.components}
     adjacency = {}
     for w in project.wires:
@@ -2426,6 +2696,8 @@ def thevenin_sequence_at_bus(project, bus_id, c=1.0, exclude_motor_paths=False,
 
     Returns (z1, z2, z0), each a complex p.u. impedance on the system base.
     """
+    from .loadflow import insert_junction_buses
+    project = insert_junction_buses(project)   # [F2] tees get a node
     components = {comp.id: comp for comp in project.components}
     adjacency = {}
     for w in project.wires:
@@ -2620,7 +2892,7 @@ def _compute_breaking_current(ik3_ka, source_paths, c_factor, i_base_ka, base_mv
                 q = _q_factor(ik_over_ir, t_min)
             ib_total += mu * q * ik_path_ka
 
-        elif source_type in ("solar_pv", "battery"):
+        elif source_type in ("solar_pv", "battery", "converter"):
             # Inverter-based: no decay, current-limited at fault contribution level
             ib_total += ik_path_ka
 
@@ -2695,63 +2967,170 @@ def _q_factor(m, t_min, proxy=True):
     return max(min(q, 1.0), 0.0)  # 0 ≤ q ≤ 1
 
 
-def _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, voltage_kv):
-    """Compute steady-state short-circuit current Ik per IEC 60909-0 §10.
+# ─── [F9] Steady-state short-circuit current Ik (IEC 60909-0:2001 §4.6) ─────
+#
+# λ_max: IEC TR 60909-1:2002 §2.6.2.2 Eq. (88)–(90) — the closed form the
+# IEC 60909-0 figures 18/19 were drawn from (with x″d = 0.2, cos φ = 0.85):
+#
+#   λ_max = u_fmax·√(1 + 2·x_dsat·sin φ + x_dsat²)
+#           / (x_dsat − x″d + (1 + x″d·sin φ)·I_rG/I″kG)
+#
+# evaluated here with the machine's own x″d and power factor, and limited to
+# λ ≤ I″kG/I_rG (the steady-state current cannot exceed the initial current —
+# the figures' curves join the λ = I″kG/I_rG line at low ratios).
+#
+# λ_min: the figures give ONE curve per rotor type (constant no-load
+# excitation, no regulator). TR 60909-1 gives no closed form for it; the curve
+# is reproduced to reading accuracy by the same structure with no-load EMF 1
+# and a fixed x_dsat (2.0 turbo, 0.97 salient), with the figures' x″d = 0.2 and
+# cos φ = 0.85. It is the standard's single curve, deliberately NOT the
+# machine's own x_dsat (that would give λ_min ≈ 0.88 at x_dsat 1.2 against the
+# standard's 0.52 — non-conservative for protection reach).
 
-    Ik depends on source type:
-    - Utility/network: Ik = I"k (no decay for far-from-generator faults)
-    - Generator: Ik = c × V / (√3 × Xd × Z_base) — uses synchronous Xd
-    - Synchronous motor: similar to generator with Xd
-    - Induction motor: Ik = 0 (current decays to zero within ~200ms)
+_U_FMAX = {("cylindrical", 1): 1.3, ("cylindrical", 2): 1.6,   # TR 60909-1 §2.6.2.2
+           ("salient", 1): 1.6, ("salient", 2): 2.0}
+_LAMBDA_MIN_X_REF = {"cylindrical": 2.0, "salient": 0.97}
+_LAMBDA_MIN_E_PP = 1.0 + 0.2 * math.sqrt(1 - 0.85 ** 2)           # figures' E″
 
-    Returns Ik in kA.
+
+def _c_min(voltage_kv):
+    """IEC 60909-0 Table 1 c_min: 0.95 for LV (≤ 1 kV), 1.00 above."""
+    return 0.95 if (voltage_kv or 0) <= 1.0 else 1.00
+
+
+def _machine_steady_data(props, default_rotor="cylindrical"):
+    """(rotor, x_dsat, x″d, sin φ, u_fmax, excitation_type) from machine props."""
+    rotor = "salient" if str(props.get("rotor_type", default_rotor)).lower().startswith("salient") \
+        else "cylindrical"
+    try:
+        scr = float(props.get("scr", 0) or 0)
+    except (TypeError, ValueError):
+        scr = 0.0
+    x_dsat = 1.0 / scr if scr > 0 else float(props.get("xd", 1.2) or 1.2)
+    xd_pp = float(props.get("xd_pp", 0.15) or 0.15)
+    pf = min(max(float(props.get("power_factor", 0.85) or 0.85), 0.0), 1.0)
+    sin_phi = math.sqrt(max(0.0, 1.0 - pf * pf))
+    try:
+        series = 2 if int(float(props.get("excitation_series", 1) or 1)) == 2 else 1
+    except (TypeError, ValueError):
+        series = 1
+    exc = str(props.get("excitation_type", "rotating")).lower()
+    return rotor, x_dsat, xd_pp, sin_phi, _U_FMAX[(rotor, series)], exc
+
+
+def _lambda_max(r, x_dsat, xd_pp, sin_phi, u_fmax):
+    """TR 60909-1 Eq. (88), limited to λ ≤ r = I″kG/I_rG."""
+    if r <= 0:
+        return 0.0
+    denom = x_dsat - xd_pp + (1.0 + xd_pp * sin_phi) / r
+    if denom <= 1e-9:
+        return r
+    lam = u_fmax * math.sqrt(1.0 + 2.0 * x_dsat * sin_phi + x_dsat ** 2) / denom
+    return min(r, lam)
+
+
+def _lambda_min(r, rotor):
+    """IEC 60909-0 figs. 18/19 λ_min curve (see block comment), λ ≤ r."""
+    if r <= 0:
+        return 0.0
+    lam = 1.0 / (_LAMBDA_MIN_X_REF[rotor] - 0.2 + _LAMBDA_MIN_E_PP / r)
+    return min(r, lam)
+
+
+def _machine_steady_ka(path, c_factor, i_base_ka, base_mva, mode):
+    """Steady-state contribution (kA at the faulted bus) of one synchronous
+    machine path — IEC 60909-0 §4.6.1 / §4.6.2 (Ik,i = λ·I_rGt).
+
+    I″kG/I_rG is taken at the machine (the fault-side path current × rho,
+    rho = cumulative rated ratio), and λ·I_rG is referred back to the fault
+    side through the same ratios (I_rGt, §4.6.2). mode "max" / "min".
     """
-    ik_total = 0
+    props = path.get("props") or {}
+    z_path = path["z_total"]
+    if abs(z_path) < 1e-15:
+        return 0.0
+    rho = path.get("rho", 1.0) or 1.0
+    s_mva = float(path.get("rated_mva", 0) or 0)
+    u_rg = float(path.get("u_rg_kv", 0) or 0)
+    if s_mva <= 0 or u_rg <= 0:
+        return 0.0
+    i_rg_ka = s_mva / (math.sqrt(3) * u_rg)                 # at the machine
+    i_kg_ka = c_factor / abs(z_path) * i_base_ka * rho      # I″kG at the machine
+    r = i_kg_ka / i_rg_ka
+    is_sync_motor = path.get("source_type") == "motor_synchronous"
+    rotor, x_dsat, xd_pp, sin_phi, u_fmax, exc = _machine_steady_data(
+        props, "salient" if is_sync_motor else "cylindrical")
 
+    z_m = path.get("z_src_scaled")
+    at_terminals = z_m is not None and abs(z_path - z_m) < 1e-9
+    if exc == "static_terminal" and at_terminals:
+        return 0.0          # §4.6.1.1: field voltage collapses with the terminals
+
+    regulated = (not is_sync_motor
+                 or str(props.get("voltage_regulated", "no")).lower() in ("yes", "true", "1"))
+
+    if mode == "max":
+        # §3.6.2: a synchronous motor WITH voltage regulation is treated like a
+        # generator; without it, "additional considerations" apply — held here
+        # at constant excitation (the λ_min curve), disclosed.
+        lam = (_lambda_max(r, x_dsat, xd_pp, sin_phi, u_fmax) if regulated
+               else _lambda_min(r, rotor))
+        return lam * i_rg_ka / rho
+
+    # mode == "min"
+    if exc == "compound" and z_m is not None:
+        # §4.6.1.2 Eq. (80)/(81): c_min·U_n/(√3·|Z_k|) with the machine's
+        # reactance replaced by X_dP = U_rG/(√3·I_kP) (I_kP from the maker).
+        try:
+            ikp = float(props.get("ikp_pu", 0) or 0)
+        except (TypeError, ValueError):
+            ikp = 0.0
+        if ikp > 0:
+            x_dp_sys = (1.0 / ikp) * base_mva / s_mva
+            z_k = z_path - z_m + (path.get("zone_scale", 1.0) or 1.0) * complex(0, x_dp_sys)
+            return c_factor / abs(z_k) * i_base_ka if abs(z_k) > 1e-12 else 0.0
+    return _lambda_min(r, rotor) * i_rg_ka / rho
+
+
+def _compute_steady_state_current(source_paths, c_factor, i_base_ka, base_mva, voltage_kv,
+                                  mode="max"):
+    """Steady-state short-circuit current Ik (kA), IEC 60909-0:2001 §4.6, for a
+    NON-meshed network: Ik = Σ Ik,i (§4.6.2, Eq. 82).
+
+    - Network feeders (also in series with transformers): Ik = I″k.
+    - Synchronous generators / compensators: λ·I_rGt (§4.6.1, see
+      _machine_steady_ka); synchronous motors per §3.6.2.
+    - Asynchronous motors: 0 (§4.6.2, Table 3 Eq. 99).
+    - Converter-limited sources (PV, BESS, Type 4 wind, UPS/VFD output):
+      hold their current limit, Ik = I″k.
+
+    mode "min": call with c_factor = c_min and motor paths already removed
+    (§2.5: motors are neglected for minimum currents); machines use λ_min, or
+    Eq. (80) for compound excitation.
+    """
+    ik_total = 0.0
     for path in source_paths:
         z_path = path["z_total"]
         if abs(z_path) < 1e-15:
             continue
-
-        ik_path_pu = c_factor / abs(z_path)
-        ik_path_ka = ik_path_pu * i_base_ka
+        ik_path_ka = c_factor / abs(z_path) * i_base_ka
         source_type = path.get("source_type", "utility")
-
-        if source_type == "utility":
-            # Network source: Ik = I"k (sustained)
+        if source_type in ("utility", "solar_pv", "battery", "converter"):
             ik_total += ik_path_ka
-
-        elif source_type == "generator":
-            # Generator: steady-state uses Xd (synchronous reactance)
-            xd = path.get("xd", 1.2)
-            xd_pp = path.get("xd_pp", 0.15)
-            rated_mva = path.get("rated_mva", 10)
-            # Scale: Ik_gen = I"k × (X"d / Xd) approximately
-            # More precisely: Ik = c / (Xd × base_mva/rated_mva) × i_base
-            xd_sys = xd * base_mva / rated_mva
-            ik_steady_pu = c_factor / xd_sys if xd_sys > 1e-10 else 0
-            ik_total += ik_steady_pu * i_base_ka
-
-        elif source_type == "motor_synchronous":
-            # Synchronous motor: reduced steady-state contribution
-            xd_p = path.get("xd_p", 0.25)
-            rated_mva = path.get("rated_mva", 0.5)
-            # Use transient reactance for conservative steady-state estimate
-            xd_p_sys = xd_p * base_mva / rated_mva
-            ik_steady_pu = c_factor / xd_p_sys if xd_p_sys > 1e-10 else 0
-            ik_total += ik_steady_pu * i_base_ka
-
-        elif source_type == "motor_induction":
-            # Induction motor: current decays to zero — no steady-state contribution
-            pass
-
+        elif source_type == "wind_turbine":
+            if path.get("turbine_type") == "type4_frc":
+                ik_total += ik_path_ka
+        elif source_type in ("generator", "motor_synchronous"):
+            ik_total += _machine_steady_ka(path, c_factor, i_base_ka, base_mva, mode)
+        # motor_induction (incl. lumped-load and AFE-drive equivalents): 0
     return round(ik_total, 3) if ik_total > 1e-10 else None
 
 
 # ─── Voltage Depression (IEC 60909 §3.6 / Zbus Method) ──────────────────────
 
 
-def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mva, results):
+def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mva, results,
+                                energized=None):
     """Compute voltage depression at all buses during fault at each faulted bus.
 
     Builds the bus admittance matrix (Ybus) from branch impedances and source
@@ -2798,6 +3177,30 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
         if bi > bj and (bj, bi) not in kept_pairs:
             unique_branches.append((bi, bj, z, k))
 
+    # [F4] Connected islands over the branch graph (index lists)
+    _nbr = {i: set() for i in range(n)}
+    for bi, bj, _z, _k in unique_branches:
+        if bi in bus_idx and bj in bus_idx and bi != bj:
+            _nbr[bus_idx[bi]].add(bus_idx[bj])
+            _nbr[bus_idx[bj]].add(bus_idx[bi])
+    islands, _seen = [], set()
+    for start in range(n):
+        if start in _seen:
+            continue
+        stack, members = [start], []
+        _seen.add(start)
+        while stack:
+            u = stack.pop()
+            members.append(u)
+            for v in _nbr[u]:
+                if v not in _seen:
+                    _seen.add(v)
+                    stack.append(v)
+        islands.append(sorted(members))
+
+    island_of = {i: n_i for n_i, isl in enumerate(islands) for i in isl}
+    zbus_by_mode = {}
+
     # Build Ybus and compute Zbus for three impedance modes
     modes = ["subtransient", "transient", "steadystate"]
     for mode in modes:
@@ -2819,24 +3222,41 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
             ybus[j, i] -= y * k
 
         # Add source shunt admittances (mode-dependent)
+        shunt_y = np.zeros(n, dtype=complex)
         for bid in bus_ids:
             i = bus_idx[bid]
             for z_src, src_type, comp in bus_shunts[bid]:
                 z_mode = _get_mode_impedance(z_src, src_type, comp, base_mva, mode)
                 if z_mode is not None and abs(z_mode) > 1e-15:
                     ybus[i, i] += 1.0 / z_mode
+                    shunt_y[i] += 1.0 / z_mode
 
-        # Invert Ybus to get Zbus
-        try:
-            zbus = np.linalg.inv(ybus)
-        except np.linalg.LinAlgError:
-            continue  # Singular matrix — skip this mode
+        # [F4] Solve each connected island on its own. One Ybus for the whole
+        # project is singular as soon as ANY island has no source admittance
+        # (a spare board, a board behind an open breaker), and the old single
+        # inversion then skipped the mode for every bus, silently. A bus in an
+        # unsourced island is dead: it is left out of the table rather than
+        # reported at a fictitious retained voltage.
+        zbus = np.zeros((n, n), dtype=complex)
+        solved = np.zeros(n, dtype=bool)
+        for island in islands:
+            sub = np.ix_(island, island)
+            if not any(abs(shunt_y[i]) > 1e-15 for i in island):
+                continue  # no source in this island for this mode
+            try:
+                zbus[sub] = np.linalg.inv(ybus[sub])
+            except np.linalg.LinAlgError:
+                continue
+            solved[island] = True
+        zbus_by_mode[mode] = (zbus, solved)
 
         # Compute retained voltage: V_j = 1 - Z_jk / Z_kk
         for faulted_bus_id, fault_result in results.items():
             if faulted_bus_id not in bus_idx:
                 continue
             k = bus_idx[faulted_bus_id]
+            if not solved[k]:
+                continue
             z_kk = zbus[k, k]
             if abs(z_kk) < 1e-15:
                 continue
@@ -2851,6 +3271,8 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
 
             for other_bus in all_buses:
                 j = bus_idx[other_bus.id]
+                if not solved[j]:
+                    continue  # [F4] dead island — no voltage to retain
                 z_jk = zbus[j, k]
                 v_retained_pu = abs(1.0 - z_jk / z_kk)
                 # Clamp to [0, 1.2] — can exceed 1.0 due to voltage factor
@@ -2868,35 +3290,38 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
                     v_retained_pu * v_kv, 3
                 )
 
-    # Motor reacceleration recovery for each faulted bus
+    # Motor reacceleration recovery for each faulted bus.
+    # [F8] Only RUNNING motors in the faulted bus's own island take part, and
+    # their re-acceleration current depresses the voltage through the
+    # post-fault (transient-mode) network: ΔV_k = Σ_j |Z_kj|·|I_j(t)|. The old
+    # version summed every motor in the project against the impedance of a
+    # utility wired DIRECTLY to the faulted bus — zero for any bus fed through
+    # a transformer, so the curve was flat at 1.0 p.u. — and guessed the
+    # clearing time from a breaker's long-time delay. Clearing time is now the
+    # fixed 0.1 s used for Ib (t_min).
+    zt = zbus_by_mode.get("transient")
+    if zt is None:
+        return
+    zbus_t, solved_t = zt
     for faulted_bus_id, fault_result in results.items():
-        if faulted_bus_id not in bus_idx:
+        k = bus_idx.get(faulted_bus_id)
+        if k is None or not solved_t[k]:
             continue
-        motor_data = _collect_motor_data(faulted_bus_id, all_buses, components, adjacency, base_mva)
+        motor_data = [
+            m for m in _collect_motor_data(faulted_bus_id, all_buses, components, adjacency, base_mva)
+            if island_of.get(bus_idx[m["bus_id"]]) == island_of.get(k)
+            and (energized is None or m["comp_id"] in energized)
+        ]
         if motor_data:
-            clearing_time = 0.1  # Default 100ms
-            # Try to get from arc flash or CB data
-            for nid, _, _ in adjacency.get(faulted_bus_id, []):
-                comp = components.get(nid)
-                if comp and comp.type == "cb":
-                    lt_delay = comp.props.get("long_time_delay", 10)
-                    if lt_delay <= 5:
-                        clearing_time = 0.05
-                    elif lt_delay <= 10:
-                        clearing_time = 0.1
-                    break
-
             fault_result.motor_recovery = _calc_motor_reacceleration(
-                motor_data, bus_shunts, bus_idx, faulted_bus_id,
-                all_buses, base_mva, clearing_time
-            )
+                motor_data, zbus_t, bus_idx, faulted_bus_id, base_mva, clearing_time=0.1)
 
 
 def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branches, bus_shunts, base_mva):
     """Walk from a bus to find connected buses (through transformers/cables) and sources."""
     bus_set = set(all_bus_ids)
 
-    def walk(comp_id, z_path, visited, from_bus_id, v_kv, rho=1.0):
+    def walk(comp_id, z_path, visited, from_bus_id, v_kv, rho=1.0, entry_port=None):
         if comp_id in visited:
             return
         visited.add(comp_id)
@@ -2904,6 +3329,14 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
         if not comp:
             return
         s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
+
+        conv = _converter_action(comp, entry_port, base_mva)   # [F5]
+        if conv == "block":
+            return
+        if isinstance(conv, dict):
+            st = "motor_induction" if conv["is_motor"] else conv["source_type"]
+            bus_shunts[from_bus_id].append((z_path + s * conv["z"], st, comp))
+            return
 
         # Hit another bus-like node (bus or distribution board) — record branch
         if comp_id in bus_set and comp_id != from_bus_id:
@@ -2968,14 +3401,14 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
             if state == "open":
                 return
         # Continue walking
-        for neighbor_id, _, _ in adjacency.get(comp_id, []):
-            walk(neighbor_id, z_path + z_element, visited, from_bus_id, v_next, rho_next)
+        for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
+            walk(neighbor_id, z_path + z_element, visited, from_bus_id, v_next, rho_next, remote_port)
 
     visited = {start_bus_id}
     _start_comp = components.get(start_bus_id)
     _v_start = float(_start_comp.props.get("voltage_kv", 0.4 if _start_comp.type == "distribution_board" else 11) or 11) if _start_comp else 11.0
-    for neighbor_id, _, _ in adjacency.get(start_bus_id, []):
-        walk(neighbor_id, complex(0, 0), set(visited), start_bus_id, _v_start)
+    for neighbor_id, _, remote_port in adjacency.get(start_bus_id, []):
+        walk(neighbor_id, complex(0, 0), set(visited), start_bus_id, _v_start, 1.0, remote_port)
 
 
 def _get_mode_impedance(z_subtransient, source_type, comp, base_mva, mode):
@@ -3064,75 +3497,39 @@ def _collect_motor_data(faulted_bus_id, all_buses, components, adjacency, base_m
     return motors
 
 
-def _calc_motor_reacceleration(motor_data, bus_shunts, bus_idx, faulted_bus_id,
-                                all_buses, base_mva, clearing_time):
-    """Calculate post-fault voltage recovery considering motor reacceleration.
+def _calc_motor_reacceleration(motor_data, zbus_t, bus_idx, faulted_bus_id,
+                                base_mva, clearing_time):
+    """Post-fault voltage recovery at the faulted bus while motors re-accelerate.
 
-    During fault: motors decelerate (speed drops based on H constant and voltage).
-    After clearing: motors draw high reacceleration current (near LRA),
-    which decays exponentially as they recover speed.
+    During the fault each motor decelerates by Δω ≈ t_clear/(2H) (capped at
+    80 %); after clearing it draws ≈ LRA × Δω, decaying with τ ≈ 2H. Each
+    motor's current flows into the post-fault network (transient-mode Zbus:
+    generators behind X′d, motors removed as sources), so the dip at the
+    faulted bus k is Σ_j |Z_kj|·|I_j| — magnitudes added (in-phase
+    assumption, conservative). Screening estimate, not a dynamic simulation.
 
     Returns list of {t_ms, v_pu} points for 0 to 5 seconds post-clearing.
     """
     if not motor_data:
         return None
-
-    # Total motor reacceleration current at t=0 (post-clearing)
-    # I_reaccel(0) ≈ LRA × (1 - speed_remaining)
-    # Speed drop during fault: Δω/ω ≈ t_fault / (2H) for voltage ≈ 0 at motor
-    total_motor_mva = sum(m["rated_mva"] for m in motor_data)
-    if total_motor_mva < 1e-6:
-        return None
-
-    # Calculate aggregate reacceleration current envelope
-    # Motor reacceleration time constant τ ≈ 2H × V² / (T_load)
-    # Simplified: τ = 2H (seconds) for full-voltage restart
+    k = bus_idx[faulted_bus_id]
     profile = []
-    dt_ms = 50  # 50ms steps
-    max_t_ms = 5000  # 5 seconds
-
+    dt_ms = 50
+    max_t_ms = 5000
     for t_ms in range(0, max_t_ms + dt_ms, dt_ms):
         t_s = t_ms / 1000.0
-        total_i_reaccel_pu = 0
-
+        v_drop = 0.0
         for motor in motor_data:
             h = motor["h_constant"]
-            lra = motor["lra_multiplier"]
-            s_motor = motor["rated_mva"]
-
-            # Speed drop during fault: Δω ≈ clearing_time / (2H)
-            speed_drop = min(clearing_time / (2 * h), 0.8)  # Cap at 80% speed loss
-            # Reacceleration current decays as motor regains speed
-            # τ_reaccel ≈ 2H (time to recover speed)
-            tau = 2 * h
-            i_reaccel = lra * speed_drop * math.exp(-t_s / tau) * (s_motor / base_mva)
-            total_i_reaccel_pu += i_reaccel
-
-        # Voltage depression from reacceleration current
-        # V ≈ 1.0 - Z_network × I_reaccel (simplified)
-        # Use average network impedance (from bus shunts)
-        # For a more accurate calc, would use Zbus diagonal at faulted bus
-        # Approximate Z_network from source shunts
-        z_net_pu = complex(0, 0)
-        if faulted_bus_id in bus_shunts:
-            shunt_y = sum(
-                1.0 / z for z, st, _ in bus_shunts[faulted_bus_id]
-                if st == "utility" and abs(z) > 1e-15
-            )
-            if abs(shunt_y) > 1e-15:
-                z_net_pu = 1.0 / shunt_y
-
-        v_drop = abs(z_net_pu) * total_i_reaccel_pu
+            speed_drop = min(clearing_time / (2 * h), 0.8)
+            i_pu = (motor["lra_multiplier"] * speed_drop * math.exp(-t_s / (2 * h))
+                    * motor["rated_mva"] / base_mva)
+            v_drop += abs(zbus_t[k, bus_idx[motor["bus_id"]]]) * i_pu
         v_pu = max(0.0, min(1.0 - v_drop, 1.05))
-
         profile.append({"t_ms": t_ms, "v_pu": round(v_pu, 4)})
-
-        # Stop early if voltage has recovered to >0.98 p.u.
         if t_ms > 500 and v_pu >= 0.98:
-            # Add final point at full recovery
             profile.append({"t_ms": t_ms + dt_ms, "v_pu": 1.0})
             break
-
     return profile
 
 
@@ -3231,7 +3628,7 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
     source_mva = [0.0]
     expansions = [0]
 
-    def walk(comp_id, z_path, path_visited, v_kv, rho=1.0):
+    def walk(comp_id, z_path, path_visited, v_kv, rho=1.0, entry_port=None):
         if expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -3242,6 +3639,15 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
         if not comp:
             return
         s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
+
+        conv = _converter_action(comp, entry_port, base_mva, c)   # [F5]
+        if conv == "block":
+            return
+        if isinstance(conv, dict):
+            z1_list.append(z_path + s * conv["z"])
+            z2_list.append(z_path + s * conv["z"])
+            has_source[0] = True
+            return
 
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva, c)
@@ -3320,14 +3726,27 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
         elif comp.type == "fuse":
             pass
 
-        for neighbor_id, _, _ in adjacency.get(comp_id, []):
+        for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element, path_visited, v_next, rho_next)
+                walk(neighbor_id, z_path + z_element, path_visited, v_next, rho_next, remote_port)
 
     _bus_comp = components.get(bus_id)
     _v_start = float(_bus_comp.props.get("voltage_kv", 0.4 if _bus_comp.type == "distribution_board" else 11) or 11) if _bus_comp else 11.0
-    for neighbor_id, _, _ in adjacency.get(bus_id, []):
-        walk(neighbor_id, complex(0, 0), {bus_id}, _v_start)
+    # [F3] A distribution board at the load-side terminal carries its own
+    # lumped load (and rotating fraction) — the walk starts at its
+    # neighbours, so add them here or the break sees an open circuit.
+    if _bus_comp is not None and _bus_comp.type == "distribution_board":
+        z_load = _static_load_full_impedance(_bus_comp, base_mva)
+        if z_load is not None:
+            z1_list.append(z_load)
+            z2_list.append(z_load)
+        z_mot, _mva = _static_load_motor_impedance(_bus_comp, base_mva)
+        if z_mot is not None:
+            z1_list.append(z_mot)
+            z2_list.append(z_mot)
+            has_source[0] = True
+    for neighbor_id, _, remote_port in adjacency.get(bus_id, []):
+        walk(neighbor_id, complex(0, 0), {bus_id}, _v_start, 1.0, remote_port)
 
     return z1_list, z2_list, has_source[0], source_mva[0]
 
@@ -3346,8 +3765,9 @@ def _series_fault_break_thevenin(project: ProjectData, branch_id: str,
     needs ``adjacency``/``components``/``bus_up``/``bus_down`` to build the
     shunt-fault side's Zbus, which the two standalone engines don't use).
     """
-    from .loadflow import insert_implicit_load_buses, run_load_flow
+    from .loadflow import insert_implicit_load_buses, insert_junction_buses, run_load_flow
 
+    project = insert_junction_buses(project)   # [F2]
     project = insert_implicit_load_buses(project)
     base_mva = project.baseMVA
     freq_hz = project.frequency or 50
@@ -3887,9 +4307,20 @@ def run_simultaneous_fault_analysis(project: ProjectData, branch_id: str, series
     ea = complex(il_pu, 0.0) * za1
     ep = complex(c_resolved, 0.0)
 
+    # [F1] Sign of the coupling term. The series-port current IF leaves the
+    # branch-removed network at bus_up and re-enters it at bus_down, so the
+    # break voltage and the shunt-bus voltage couple through (Z_up,P − Z_down,P).
+    # With the network split radially only one of those is nonzero: +Z_up,P
+    # for a shunt bus on the source side, −Z_down,P on the load side. Using +
+    # for both left a downstream shunt fault with the wrong relative phase
+    # between the break EMF and the shunt EMF (break current ~18 % low).
+    # Invisible with zero prefault current — the series-port boundary
+    # conditions are invariant under (IF, VF) → (−IF, −VF).
+    k_sign = 1.0 if attach_bus.id == bus_up.id else -1.0
     try:
         if1, if2, if0, vf1, vf2, vf0, ip1, ip2, ip0, vp1, vp2, vp0 = _solve_simultaneous_fault(
-            za1, za2, za0, zp1, zp2, zp0, zfp1, zfp2, zfp0, ea, ep, series_type, shunt_type)
+            za1, za2, za0, zp1, zp2, zp0, k_sign * zfp1, k_sign * zfp2, k_sign * zfp0,
+            ea, ep, series_type, shunt_type)
     except np.linalg.LinAlgError:
         raise ValueError("Simultaneous fault linear system is singular — check for a zero-impedance "
                           "path between the break and the shunt fault, or a missing source reference.")

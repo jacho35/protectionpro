@@ -593,7 +593,8 @@ class FaultResultBus(BaseModel):
     kappa: Optional[float] = None  # Peak factor κ (1.02–2.0)
     ib: Optional[float] = None  # Symmetrical breaking current (kA) at t_min
     ib_asymmetric: Optional[float] = None  # Asymmetric breaking current (kA)
-    ik_steady: Optional[float] = None  # Steady-state short-circuit current Ik (kA)
+    ik_steady: Optional[float] = None  # Maximum steady-state short-circuit current Ik_max (kA), IEC 60909-0 §4.6
+    ik_steady_min: Optional[float] = None  # Minimum steady-state current Ik_min (kA): c_min, motors neglected
     branches: list[FaultBranchContribution] = []
     # Voltage depression at all buses when THIS bus is faulted
     # {bus_id: {subtransient_pu, transient_pu, steadystate_pu, retained_kv}}
