@@ -18,16 +18,30 @@ Strong utility (swing, 1.0 pu) → cable representing the system source impedanc
 | Starting current (DOL) | 920.8 A | 920.8 A | 0.00 % |
 | Starting MVA | 10.526 MVA | — | — |
 
-### Starting-method factors (I_start = FLC × LRC × factor; VFD → FLC)
+### Starting-method factors (I_start = FLC × LRC × factor; soft starter → its current limit; VFD → FLC)
 | Method | Factor | Expected | App | Diff |
 |---|---|---|---|---|
 | Direct-on-Line | 1.0 | 920.8 A | 920.8 A | 0.00 % |
 | Star-Delta | 1/3 | 306.9 A | 306.9 A | 0.00 % |
 | Autotransformer (80 %) | 0.64 | 589.3 A | 589.3 A | 0.00 % |
-| Soft Starter | 0.5 | 460.4 A | 460.4 A | 0.00 % |
+| Soft Starter | limit 3.5 × FLC (`ss_current_limit_xflc`) | 537.1 A | 537.1 A | 0.00 % |
 | VFD | — (≈ FLC) | 153.5 A | 153.5 A | 0.00 % |
 
-## Voltage dip (engine's constant-PQ model — exact)
+## Voltage dip — constant-impedance locked rotor (2026-09-28, [N1])
+The engine now models the locked rotor as what it physically is, a constant impedance, and solves it behind the
+source Thevenin impedance: `V = V_pre / (1 + Z·Y)`, `Y = conj(S_start)` at 1.0 p.u. — the textbook impedance
+(voltage-divider) method. The case pins `locked_rotor_pf: 0.3` so the anchor is hand-computable:
+
+| Quantity | Hand (constant-Z divider) | App | Diff |
+|---|---|---|---|
+| Baseline terminal V (running) | 0.9841 pu | 0.9841 pu | — |
+| Starting terminal V | 0.85294 pu | 0.8529 pu | 0.00 % |
+| Max voltage dip (vs baseline) | 13.33 % | 13.33 % | 0.00 % |
+| Motor will start (≥ 0.8 pu, torque clears) | Yes | Yes | — |
+
+The rest of this section is the superseded constant-PQ characterization, kept for history.
+
+## Voltage dip (old constant-PQ model — superseded)
 The engine substitutes the starting motor as a constant-PQ load (S_start at 0.3 PF) and re-runs the
 (independently-verified Newton-Raphson) load flow. Solving that exact 2-bus equation by hand
 (`x² − x + (y² + P·R + Q·X) = 0`, upper root) reproduces the engine:
@@ -73,7 +87,7 @@ same motor) the three methods converge:
 ## Screenshot (real app)
 ![motor starting result](screenshots/motor-starting-result.png)
 
-Shows Start Current 921 A (DOL), Terminal V 0.778 pu, Will Start **NO**, Max Dip 20.9 % — matching.
+Shows Start Current 921 A (DOL), Terminal V 0.778 pu, Will Start **NO**, Max Dip 20.9 % — matching the constant-PQ model of the time (screenshot predates [N1]; the app now shows 0.853 pu / 13.3 % / Yes).
 
 ## Verdict
 ProtectionPro's motor-starting engine computes full-load current, starting current for all five starting

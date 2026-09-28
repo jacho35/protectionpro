@@ -23,9 +23,41 @@ _STARTING_METHODS = {
     "dol":             (1.0,  "Direct-on-Line"),
     "star_delta":      (1.0 / 3.0, "Star-Delta"),
     "autotransformer": (0.64, "Autotransformer (80% tap)"),
-    "soft_starter":    (0.5,  "Soft Starter"),
+    "soft_starter":    (None, "Soft Starter"),   # [MG8] its own current limit
     "vfd":             (None, "VFD"),
 }
+
+
+def starting_current_xflc(props, lrc):
+    """Starting line current as a multiple of FLC, and the starter's label —
+    shared by motor starting and flicker so the two can never drift.
+
+    [MG8] A soft starter holds line current at its set limit, so the starting
+    current IS that limit (never more than the DOL locked-rotor current). It
+    was a fixed 0.5 × LRC (3.0 × FLC at LRC 6) whatever ss_current_limit_xflc
+    said — and the dynamic study, which honours the setting (default 3.5),
+    disagreed out of the box. VFD: the drive holds supply current ≈ FLC."""
+    method_key = str(props.get("starting_method", "dol")).lower()
+    factor, label = _STARTING_METHODS.get(method_key, _STARTING_METHODS["dol"])
+    if method_key == "soft_starter":
+        i_lim = float(props.get("ss_current_limit_xflc", 3.5) or 3.5)
+        return min(max(i_lim, 0.0), lrc), label
+    if factor is None:
+        return 1.0, label
+    return lrc * factor, label
+
+
+def bus_voltage_ratio(bus_id, comp_map, motor_kv):
+    """[MG9] Bus nominal kV ÷ motor rated kV. A locked rotor is an impedance,
+    so at 1.0 p.u. on the BUS a motor rated for a different voltage draws its
+    nameplate current × ratio and kVA × ratio² (a 415 V motor on a 400 V bus
+    sees 0.964 p.u.). 1.0 when either voltage is unknown."""
+    bus = comp_map.get(bus_id) if bus_id else None
+    try:
+        bus_kv = float(bus.props.get("voltage_kv", 0) or 0) if bus else 0.0
+    except (TypeError, ValueError):
+        bus_kv = 0.0
+    return bus_kv / motor_kv if (bus_kv > 0 and motor_kv > 0) else 1.0
 
 
 def _build_adjacency(project):
@@ -61,6 +93,34 @@ def _find_motor_bus(motor_id, adj, comp_map):
                 if next_id not in visited:
                     stack.append(next_id)
     return None
+
+
+# Series elements a disturbance propagates through (besides closed switchgear).
+_SERIES_TYPES = {"cable", "transformer", "autotransformer"}
+
+
+def _galvanic_buses(start_bus, adj, comp_map):
+    """[MG7] Every bus/board galvanically connected to ``start_bus``: walk the
+    wiring through closed switching devices and series cables/transformers.
+    Open CBs/switches bound the walk, as does anything else (sources, loads,
+    converters), so a separate island — or a bus behind an open breaker —
+    is excluded."""
+    from .loadflow import _is_transparent_and_closed
+    seen, out = {start_bus}, {start_bus}
+    stack = [start_bus]
+    while stack:
+        nid = stack.pop()
+        for nxt, _ in adj.get(nid, []):
+            if nxt in seen:
+                continue
+            comp = comp_map.get(nxt)
+            if comp is None:
+                continue
+            if comp.type in ("bus", "distribution_board"):
+                seen.add(nxt); out.add(nxt); stack.append(nxt)
+            elif comp.type in _SERIES_TYPES or _is_transparent_and_closed(comp):
+                seen.add(nxt); stack.append(nxt)
+    return out
 
 
 def _deep_copy_project(project):
@@ -111,19 +171,18 @@ def _prestart_voltage(project, motor_id, bus_id, fallback):
     return fallback
 
 
-def _unsolved_start_row(project, motor, motor_name, terminal_bus, terminal_bus_name,
+def _unsolved_start_row(motor, motor_name, terminal_bus, terminal_bus_name,
                         rated_kw, is_sync, method_label, start_current_a, s_start_mva,
-                        baseline_voltages, lf_failed):
-    """Result row for a motor whose starting load flow failed or did not
-    converge. The Thevenin superposition decides what that means:
+                        baseline_voltages, lf_failed, v_est, collapse, kind, start_pf):
+    """Result row for a motor whose starting load flow failed or did not run.
 
-    * no operating point there either → voltage collapse: the network cannot
-      supply the starting load. Reported as a stall (terminal V 0.0 p.u.,
-      the same convention as the converged-LF collapse path) with
-      ``collapse: True`` so the UI can say so instead of printing 0.000.
-    * a Thevenin operating point exists → the network solve failed for
-      another reason; the terminal voltage is that estimate
-      (``estimate: True``) and dips at other buses are not available.
+    * ``collapse`` → the Thevenin solve found no operating point. Only a
+      constant-current (soft starter) or constant-power (VFD) start can do
+      that — a locked rotor is an impedance and always has one ([N1]).
+      Reported as a stall (terminal V 0.0 p.u.) with ``collapse: True``.
+    * ``v_est`` given → the network solve failed for another reason; the
+      terminal voltage is the Thevenin estimate (``estimate: True``) and dips
+      at other buses are not available.
     """
     what = "failed" if lf_failed else "did not converge"
     s_txt = (f"{s_start_mva * 1000:.0f} kVA" if s_start_mva < 1
@@ -131,23 +190,14 @@ def _unsolved_start_row(project, motor, motor_name, terminal_bus, terminal_bus_n
     bus_label = terminal_bus_name or terminal_bus or ""
     v_base = baseline_voltages.get(terminal_bus, 1.0) if terminal_bus else 1.0
 
-    z_th = _thevenin_z1(project, terminal_bus, motor.id) if terminal_bus else None
-    v_est = None
-    if z_th is not None:
-        v_pre = _prestart_voltage(project, motor.id, terminal_bus, v_base)
-        s_pu = s_start_mva / project.baseMVA
-        v_est = _solve_pq_dip(v_pre, z_th, s_pu * complex(0.3, math.sqrt(1 - 0.3 ** 2)))
-
-    collapse = z_th is not None and v_est is None
     if collapse:
         v_term = 0.0
         issues = [
-            f"No starting operating point: the {s_txt} starting load (pf 0.3) is more "
-            f"than the network can supply — voltage collapse. The motor will not start "
-            f"{method_label} on this network.",
-            "Consider a reduced-voltage starter (star-delta, soft starter, VFD) or a "
-            "stronger supply. Constant-PQ starting model, pessimistic near collapse — "
-            "Dynamic Motor Starting gives the time-domain check.",
+            f"No starting operating point: the {s_txt} starting demand ({method_label}, "
+            f"held constant by the starter) is more than the network can supply — "
+            f"voltage collapse. The motor will not start {method_label} on this network.",
+            "Consider a stronger supply or a lower starter current limit — Dynamic "
+            "Motor Starting gives the time-domain check.",
         ]
     elif v_est is not None:
         v_term = v_est
@@ -187,8 +237,119 @@ def _unsolved_start_row(project, motor, motor_name, terminal_bus, terminal_bus_n
         "issues": issues,
         "collapse": collapse,
         "estimate": v_est is not None,
-        "model": "constant-PQ starting load (pessimistic near collapse)",
+        "start_pf": round(start_pf, 3),
+        "torque_ok": None,
+        "model": _MODEL_LABEL[kind],
     }
+
+
+# [N2] A VFD's supply current is set by its front end (diode bridge + DC
+# link), not by the rotor: displacement pf ≈ 0.95, not a locked rotor's 0.3.
+VFD_SUPPLY_PF = 0.95
+
+_MODEL_LABEL = {
+    "z": "constant-impedance locked rotor",
+    "i": "constant-current starter (current limit)",
+    "pq": "constant-power drive (VFD)",
+}
+
+
+def _nameplate_unit(motor, comp_map, adj, project):
+    """[N3] The dynamic study's nameplate model for ``motor`` (fitted from
+    LRC, LRT, speed; load-torque curve), or None for a VFD / unfittable
+    nameplate. Reused so both studies describe the same machine."""
+    from .dynamic_motor_starting import _prepare_unit
+    if str(motor.props.get("starting_method", "dol")).lower() == "vfd":
+        return None
+    try:
+        u = _prepare_unit(motor, comp_map, adj, float(project.frequency or 50),
+                          project, [], None)
+    except Exception:
+        return None
+    if not u or "passthrough" in u:
+        return None
+    return u
+
+
+def _locked_rotor_pf(props, unit):
+    """[N3] Locked-rotor power factor: the ``locked_rotor_pf`` prop when given
+    (datasheet), else from the fitted nameplate model at s = 1
+    (P/|S| = Re Y/|Y|), else the old typical 0.3. A fixed 0.3 over-stated the
+    reactive draw of small LV motors (typically 0.4–0.5) and under-stated
+    large MV ones (0.15–0.2)."""
+    try:
+        lp = float(props.get("locked_rotor_pf", 0) or 0)
+    except (TypeError, ValueError):
+        lp = 0.0
+    if 0.0 < lp <= 1.0:
+        return lp
+    if unit is not None:
+        y = unit["model"].y_in(1.0)
+        if abs(y) > 1e-12:
+            return max(0.05, min(1.0, y.real / abs(y)))
+    return 0.3
+
+
+def _solve_start_v(kind, v_pre_pu, z_th, s0):
+    """[N1] Terminal |V| of the starting load behind Z_th from V_pre.
+
+    ``s0`` is the starting demand at 1.0 p.u. (system base). Returns None when
+    no operating point exists (possible only for 'i' / 'pq').
+      z  — constant impedance Y = conj(s0):  V = V_pre / (1 + Z_th·Y)
+      i  — constant current |I| = |s0| at the demand's pf, tracking V's angle
+      pq — constant power (see _solve_pq_dip)
+    """
+    if v_pre_pu <= 0 or abs(z_th) < 1e-12:
+        return v_pre_pu
+    if kind == "z":
+        return abs(v_pre_pu / (1.0 + z_th * s0.conjugate()))
+    if kind == "i":
+        v = complex(v_pre_pu, 0.0)
+        for _ in range(200):
+            if abs(v) < 0.05:
+                return None
+            i = s0.conjugate() * (v / abs(v))
+            v_new = complex(v_pre_pu, 0.0) - z_th * i
+            if abs(v_new - v) < 1e-10:
+                return abs(v_new) if abs(v_new) >= 0.05 else None
+            v = 0.7 * v_new + 0.3 * v
+        return None
+    return _solve_pq_dip(v_pre_pu, z_th, s0)
+
+
+def _torque_shortfall(unit, v_start_bus, v_dol_bus):
+    """[N3] First speed (% of synchronous) where the motor's air-gap torque,
+    at the starting voltage held constant, fails to exceed the load torque on
+    the way to breakdown speed; None if it clears everywhere.
+
+    Starters as in the dynamic study: star-delta T/3 and autotransformer at
+    a·V up to the changeover speed, then the DOL voltage; soft starter scaled
+    to its current limit. Holding the locked-rotor voltage is conservative —
+    it recovers as the current falls."""
+    from .dynamic_motor_starting import SYNC_PULLIN_SPEED, AUTO_TX_TAP
+    m, tl = unit["model"], unit["load_fn"]
+    vr = unit.get("v_ratio", 1.0)
+    vm, vd = v_start_bus * vr, v_dol_bus * vr
+    method = unit["method"]
+    trans = unit["opts"]["transition_speed_pct"] / 100.0
+    w_end = SYNC_PULLIN_SPEED if unit["is_sync"] else max(0.0, 1.0 - unit["s_bd"])
+    for k in range(0, 101):
+        w = w_end * k / 100.0
+        s = max(1.0 - w, 1e-6)
+        if method == "star_delta":
+            te = m.torque(vm, s) / 3.0 if w < trans else m.torque(vd, s)
+        elif method == "autotransformer":
+            te = m.torque(AUTO_TX_TAP * vm, s) if w < trans else m.torque(vd, s)
+        elif method == "soft_starter":
+            i_lim = unit["opts"]["ss_current_limit_xflc"]
+            den = abs(vm * m.y_in(s))
+            alpha = min(1.0, i_lim / den) if den > 1e-9 else 1.0
+            te = m.torque(alpha * vm, s)
+        else:
+            te = m.torque(vm, s)
+        if te <= tl(w):
+            return w * 100.0
+    return None
 
 
 def _solve_pq_dip(v_pre_pu, z_th, s_start_pu):
@@ -281,15 +442,11 @@ def run_motor_starting(project: ProjectData):
             flc_a = rated_kw / (math.sqrt(3) * voltage_kv * efficiency * power_factor)
 
         # Apply the starting-method current reduction
+        mult, method_label = starting_current_xflc(mp, lrc)
+        start_current_a = flc_a * mult
         method_key = str(mp.get("starting_method", "dol")).lower()
-        factor, method_label = _STARTING_METHODS.get(method_key, _STARTING_METHODS["dol"])
-        if factor is None:  # VFD — drive limits supply current to ≈ full-load
-            start_current_a = flc_a
-        else:
-            start_current_a = flc_a * lrc * factor
-
-        # Calculate starting MVA
-        s_start_mva = voltage_kv * start_current_a * math.sqrt(3) / 1000
+        if method_key not in _STARTING_METHODS:
+            method_key = "dol"
 
         # Find terminal bus
         terminal_bus = _find_motor_bus(motor.id, adj, comp_map)
@@ -297,108 +454,120 @@ def run_motor_starting(project: ProjectData):
         if terminal_bus and terminal_bus in comp_map:
             terminal_bus_name = comp_map[terminal_bus].props.get("name", terminal_bus)
 
-        # Create modified project: replace motor with constant impedance load
+        # Calculate starting MVA at the bus's nominal voltage ([MG9], see
+        # bus_voltage_ratio)
+        vr = bus_voltage_ratio(terminal_bus, comp_map, voltage_kv)
+        start_current_a *= vr
+        s_start_mva = voltage_kv * vr * start_current_a * math.sqrt(3) / 1000
+        s_dol_mva = voltage_kv * vr * (flc_a * lrc * vr) * math.sqrt(3) / 1000
+
+        # [N3] The nameplate model the dynamic study fits (LRC, LRT, speed):
+        # it gives the locked-rotor power factor and the torque curve for the
+        # run-up check. None for a VFD or an unfittable nameplate.
+        unit = _nameplate_unit(motor, comp_map, adj, project)
+        start_pf = _locked_rotor_pf(mp, unit)
+        if method_key == "vfd":
+            start_pf = VFD_SUPPLY_PF        # [N2] drive front end, not a rotor
+        sin_pf = math.sqrt(max(0.0, 1.0 - start_pf ** 2))
+        base = project.baseMVA
+
+        # [N1] Starting load model per starter, solved behind Z_th:
+        #   DOL / star-delta / autotransformer — the locked rotor is a constant
+        #     IMPEDANCE (S ∝ V²), closed form V = V_pre / (1 + Z_th·Y);
+        #   soft starter — constant CURRENT at its limit;
+        #   VFD — constant POWER (the drive regulates it).
+        # The old constant-PQ rotor had no solution past the nose and reported
+        # "voltage collapse" for starts a real rotor survives (400 kW on 1 MVA:
+        # collapse vs 0.74 p.u.).
+        kind = {"soft_starter": "i", "vfd": "pq"}.get(method_key, "z")
+        s0 = s_start_mva / base * complex(start_pf, sin_pf)   # at 1.0 p.u. bus
+        superposed_v_pu = None
+        thevenin_collapse = False
+        z_th = None
+        v_pre_term = baseline_voltages.get(terminal_bus, 1.0) if terminal_bus else 1.0
+        if terminal_bus:
+            v_pre_term = _prestart_voltage(project, motor.id, terminal_bus, v_pre_term)
+            z_th = _thevenin_z1(project, terminal_bus, motor.id)
+            if z_th is not None:
+                superposed_v_pu = _solve_start_v(kind, v_pre_term, z_th, s0)
+                if superposed_v_pu is None:
+                    superposed_v_pu = 0.0
+                    thevenin_collapse = True
+            else:
+                analysis_warnings.append(
+                    f"Motor '{motor_name}': no non-motor source path found for "
+                    f"the Thevenin dip check — dips reflect network drops only.")
+        v_draw = superposed_v_pu if (superposed_v_pu or 0) > 0 else v_pre_term
+        s_eff = {"z": s0 * v_draw ** 2, "i": s0 * v_draw}.get(kind, s0)
+
+        # Create modified project: the motor becomes the starting load it
+        # draws at its solved terminal voltage (so every bus sees it).
         modified = _deep_copy_project(project)
         mod_comp_map = {c.id: c for c in modified.components}
-
-        if motor.id in mod_comp_map:
+        if motor.id in mod_comp_map and not thevenin_collapse:
             mod_motor = mod_comp_map[motor.id]
-            # Replace the motor with a starting load drawing the full starting
-            # MVA at a low (locked-rotor) power factor.
-            #
-            # NOTE: this models the locked rotor as a constant-PQ load, which is
-            # an approximation. A locked rotor is physically a constant impedance
-            # (S ∝ V²), so the constant-PQ model draws somewhat more current at
-            # the depressed voltage than the true locked-rotor impedance would —
-            # a conservative (slightly pessimistic) bias for voltage-dip results.
-            # If the load-flow motor convention changes, the reconstruction
-            # below must change with it (see
-            # backend/tests/test_regression.py::TestMotorStarting).
-            mod_motor.props["power_factor"] = 0.3  # Typical starting pf
+            s_eff_mva = abs(s_eff) * base
+            pf_eff = s_eff.real / abs(s_eff) if abs(s_eff) > 0 else start_pf
+            mod_motor.props["power_factor"] = pf_eff
             # [EE-5] Locked-rotor current is a machine property — it does NOT
-            # scale with the running demand factor. The load model multiplies
-            # by demand_factor, so force it to 1.0 for the starting condition
-            # (a df=0.5 motor previously had its dip silently halved).
+            # scale with the running demand factor.
             mod_motor.props["demand_factor"] = 1.0
             if is_sync:
-                # load flow models synchronous motors as S = rated_kva/1000 at
-                # the rated pf, so feeding S_start (in kVA) reproduces it.
-                mod_motor.props["rated_kva"] = s_start_mva * 1000
+                # load flow: S = rated_kva/1000 at the rated pf. A starting
+                # synchronous motor runs up on its cage — absorbing vars — so
+                # its [MG5] leading setting must not apply here.
+                mod_motor.props["rated_kva"] = s_eff_mva * 1000
+                mod_motor.props["pf_mode"] = "lagging"
             else:
-                # load flow computes S = rated_kw/(eff·pf)/1000, so with
-                # eff = 1.0 and pf = 0.3 the active-power prop must be S_start·pf
-                # for the drawn apparent power to equal the full starting MVA.
-                mod_motor.props["rated_kw"] = s_start_mva * 1000 * 0.3  # = S_start × pf
-                mod_motor.props["efficiency"] = 1.0  # Direct impedance model
+                # load flow: S = rated_kw/(eff·pf)/1000 → with eff = 1 the
+                # active-power prop is S·pf.
+                mod_motor.props["rated_kw"] = s_eff_mva * 1000 * pf_eff
+                mod_motor.props["efficiency"] = 1.0
 
         # Run load flow with motor in starting condition
         start_lf = None
-        try:
-            start_lf = run_load_flow(modified, "newton_raphson", include_synthetic=True)
-        except Exception:
+        if not thevenin_collapse:
             try:
-                start_lf = run_load_flow(modified, "gauss_seidel", include_synthetic=True)
+                start_lf = run_load_flow(modified, "newton_raphson", include_synthetic=True)
             except Exception:
-                start_lf = None
+                try:
+                    start_lf = run_load_flow(modified, "gauss_seidel", include_synthetic=True)
+                except Exception:
+                    start_lf = None
 
         if start_lf is None or not start_lf.converged:
-            # No starting solution is itself a result — usually the starting
-            # load is beyond what the network can deliver. Report the motor
-            # (never drop it with only a warning, which read as "no problem").
+            # No starting solution is itself a result. Report the motor (never
+            # drop it with only a warning, which read as "no problem").
             results.append(_unsolved_start_row(
-                project, motor, motor_name, terminal_bus, terminal_bus_name,
-                rated_kw, is_sync, method_label, start_current_a, s_start_mva,
-                baseline_voltages, lf_failed=start_lf is None))
+                motor, motor_name, terminal_bus, terminal_bus_name, rated_kw,
+                is_sync, method_label, start_current_a, s_start_mva,
+                baseline_voltages, lf_failed=start_lf is None,
+                v_est=None if thevenin_collapse else superposed_v_pu,
+                collapse=thevenin_collapse, kind=kind, start_pf=start_pf))
             continue
 
         # [EE-1] The load flow holds the swing source at 1.0 p.u. with zero
         # internal impedance, so its dips capture only the network (cable/
         # transformer) drops — the SOURCE contribution (utility fault level,
-        # generator reactance), usually the dominant term, is missing and
-        # "will start" verdicts were optimistic. Recompute the terminal
-        # voltage by Thevenin superposition (same machinery as the dynamic
-        # engine): V = V_pre − Z_th·I(S_start), where Z_th includes the source
-        # internal impedance from the IEC 60909 fault-path walker at c = 1.0.
+        # generator reactance), usually the dominant term, is missing. The
+        # Thevenin solve above includes it (Z_th from the IEC 60909 fault-path
+        # walker at c = 1.0, nameplate impedances).
         lf_terminal_v_pu = None
         for bus_id, bus_result in start_lf.buses.items():
             if bus_id == terminal_bus:
                 lf_terminal_v_pu = bus_result.voltage_pu
-        superposed_v_pu = None
-        thevenin_collapse = False
-        if terminal_bus:
-            v_pre_term = _prestart_voltage(project, motor.id, terminal_bus,
-                                           baseline_voltages.get(terminal_bus, 1.0))
-
-            z_th = _thevenin_z1(project, terminal_bus, motor.id)
-            if z_th is not None:
-                s_pu = s_start_mva / project.baseMVA
-                start_pf = 0.3
-                s_cplx = s_pu * complex(start_pf, math.sqrt(1 - start_pf ** 2))
-                superposed_v_pu = _solve_pq_dip(v_pre_term, z_th, s_cplx)
-                if superposed_v_pu is None:
-                    # No converged operating point — the starting load exceeds
-                    # the network's transfer capability (voltage collapse).
-                    superposed_v_pu = 0.0
-                    thevenin_collapse = True
-                    analysis_warnings.append(
-                        f"Motor '{motor_name}': no converged starting operating "
-                        f"point behind the source Thevenin impedance — network "
-                        f"cannot supply the starting load (treated as stall "
-                        f"under the conservative constant-PQ starting-load "
-                        f"model; a constant-impedance locked rotor may still "
-                        f"accelerate at reduced voltage).")
-            else:
-                analysis_warnings.append(
-                    f"Motor '{motor_name}': no non-motor source path found for "
-                    f"the Thevenin dip check — dips reflect network drops only.")
 
         # The source-internal contribution missed by the ideal-swing load flow
         # is the gap between the superposed terminal voltage and the load-flow
-        # terminal voltage. Apply it to every energized bus (exact for
-        # single-source radial supply, conservative otherwise).
+        # terminal voltage. Apply it to every bus galvanically connected to the
+        # motor (exact for single-source radial supply, conservative
+        # otherwise). [MG7] Only those: it was subtracted from EVERY bus, so a
+        # plant on a separate grid showed a 3.1 % dip from a start it cannot see.
         src_dip_pu = 0.0
         if superposed_v_pu is not None and lf_terminal_v_pu is not None:
             src_dip_pu = max(0.0, lf_terminal_v_pu - superposed_v_pu)
+        linked = (_galvanic_buses(terminal_bus, adj, comp_map)
+                  if terminal_bus else set())
 
         # Calculate voltage dips at all buses
         bus_dips = {}
@@ -408,7 +577,8 @@ def run_motor_starting(project: ProjectData):
 
         for bus_id, bus_result in start_lf.buses.items():
             v_pre = baseline_voltages.get(bus_id, 1.0)
-            v_start = max(0.0, bus_result.voltage_pu - src_dip_pu)
+            v_start = max(0.0, bus_result.voltage_pu
+                          - (src_dip_pu if bus_id in linked else 0.0))
             if v_pre > 0:
                 dip_pct = (v_pre - v_start) / v_pre * 100
             else:
@@ -427,7 +597,16 @@ def run_motor_starting(project: ProjectData):
                 motor_terminal_v_pu = v_start
 
         # Acceptance criteria
-        motor_will_start = motor_terminal_v_pu >= 0.8
+        voltage_ok = motor_terminal_v_pu >= 0.8
+        # [N3] Torque: at the starting voltage the motor's torque must exceed
+        # the load's all the way to breakdown speed (a star-delta start has a
+        # third of the torque and can pass on voltage alone yet never run up).
+        torque_fail = None
+        if unit is not None and z_th is not None:
+            v_dol = _solve_start_v("z", v_pre_term, z_th,
+                                   s_dol_mva / base * complex(start_pf, sin_pf))
+            torque_fail = _torque_shortfall(unit, motor_terminal_v_pu, v_dol or 0.0)
+        motor_will_start = voltage_ok and torque_fail is None
         system_dip_ok = max_dip_pct <= 15
 
         # Check sensitive buses (PQ buses with loads)
@@ -438,15 +617,22 @@ def run_motor_starting(project: ProjectData):
             bus_comp = comp_map.get(bus_id)
             if bus_comp and bus_comp.props.get("bus_type") == "PQ":
                 v_pre = baseline_voltages.get(bus_id, 1.0)
-                v_start = max(0.0, bus_result.voltage_pu - src_dip_pu)  # [EE-1]
+                v_start = max(0.0, bus_result.voltage_pu
+                              - (src_dip_pu if bus_id in linked else 0.0))  # [EE-1] [MG7]
                 dip = (v_pre - v_start) / v_pre * 100 if v_pre > 0 else 0
                 if dip > 10:
                     sensitive_dip_ok = False
 
         # Determine status and issues
         issues = []
-        if not motor_will_start:
+        if not voltage_ok:
             issues.append(f"Terminal voltage {motor_terminal_v_pu:.3f} p.u. < 0.80 p.u. — motor may not accelerate")
+        if torque_fail is not None:
+            issues.append(
+                f"Motor torque at the starting voltage falls below the load torque "
+                f"at {torque_fail:.0f}% speed — it may not run up ({method_label}; "
+                f"voltage held at its locked-rotor value, conservative). Check "
+                f"with Dynamic Motor Starting.")
         if not system_dip_ok:
             issues.append(f"Max system voltage dip {max_dip_pct:.1f}% > 15% at {max_dip_bus}")
         if not sensitive_dip_ok:
@@ -476,12 +662,9 @@ def run_motor_starting(project: ProjectData):
             "issues": issues,
             "collapse": thevenin_collapse,
             "estimate": False,
-            # [EE-R2-3] Model disclosure: the starting load is held at
-            # constant PQ (locked-rotor S at fixed pf), which draws MORE
-            # current as the voltage falls than a true constant-impedance
-            # locked rotor — dips and stall verdicts err on the pessimistic
-            # (safe) side, especially near voltage collapse.
-            "model": "constant-PQ starting load (pessimistic near collapse)",
+            "start_pf": round(start_pf, 3),
+            "torque_ok": torque_fail is None if unit is not None else None,
+            "model": _MODEL_LABEL[kind],   # [N1]
         })
 
     return {"motors": results, "warnings": analysis_warnings}

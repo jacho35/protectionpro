@@ -284,12 +284,16 @@ class TestMotorStartingSourceImpedance:
         assert 0.88 < r["motor_terminal_voltage_pu"] < 0.94
         assert r["max_system_dip_pct"] > 5.0
 
-    def test_ee1_weak_transformer_start_fails(self):
-        """[EE-1] 200 kW DOL start behind a 1 MVA/5 % TX on a 20 MVA grid is at/
-        below the 0.80 p.u. accept threshold — previously reported 0.913/pass."""
-        r = run_motor_starting(self._tx_project())["motors"][0]
-        assert r["motor_terminal_voltage_pu"] < 0.85
-        assert not r["motor_will_start"]
+    def test_ee1_weak_transformer_includes_source(self):
+        """[EE-1] 200 kW DOL start behind a 1 MVA/5 % TX on a 20 MVA grid: the
+        ideal-swing load flow reported 0.913 p.u. (transformer drop only). With
+        the 20 MVA source included, the constant-Z divider (locked-rotor pf
+        0.3, V = 1/(1 + Z·Y), Z = 5∠atan5 + 5∠atan8 pu) gives 0.85993 p.u.
+        Re-baselined for [N1]: the old constant-PQ rotor put this start below
+        0.80 p.u. ("< 0.85, fails"); a real locked rotor is an impedance and
+        holds 0.86 — above the acceptance threshold."""
+        r = run_motor_starting(self._tx_project({"locked_rotor_pf": 0.3}))["motors"][0]
+        assert r["motor_terminal_voltage_pu"] == pytest.approx(0.85993, abs=5e-4)
 
     def test_ee5_demand_factor_does_not_scale_locked_rotor(self):
         r_full = run_motor_starting(self._tx_project())["motors"][0]

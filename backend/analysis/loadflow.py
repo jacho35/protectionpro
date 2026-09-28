@@ -2297,6 +2297,21 @@ def _inverter_discharge_q(comp, p_dis, p_already, q_already):
     return max(-q_room, min(q_target, q_room))
 
 
+def sync_motor_q_sign(props) -> float:
+    """[MG5] Sign of a synchronous motor's reactive DRAW: +1 lagging (absorbs
+    vars, like an induction motor), −1 leading (over-excited — supplies vars).
+
+    ``power_factor`` is a magnitude, so the direction needs its own prop,
+    ``pf_mode``. The engine always read it as lagging, while the UI documents
+    the default 0.9 as LEADING — the usual rating for a synchronous motor, and
+    its whole point for power-factor correction — so every such motor had the
+    wrong-signed Q. New motors carry ``pf_mode: 'leading'``; a motor saved
+    before the prop existed keeps the old lagging reading (results unchanged)
+    and the load flow warns about it."""
+    mode = str((props or {}).get("pf_mode", "lagging") or "lagging").lower()
+    return -1.0 if mode == "leading" else 1.0
+
+
 def _connected_bus_loads(project: ProjectData) -> dict:
     """Per-bus local load ``{bus_id: (p_mw, q_mvar)}``, gathered exactly as
     ``run_load_flow`` does (P = rated·pf·df, Q = rated·√(1−pf²)·df; induction
@@ -2345,7 +2360,8 @@ def _connected_bus_loads(project: ProjectData) -> dict:
                 pf = comp.props.get("power_factor", 0.9)
                 df = comp.props.get("demand_factor", 1.0)
                 p += (rated_kva / 1000) * pf * df
-                q += (rated_kva / 1000) * math.sqrt(max(0.0, 1 - pf ** 2)) * df
+                q += (sync_motor_q_sign(comp.props) * (rated_kva / 1000)
+                      * math.sqrt(max(0.0, 1 - pf ** 2)) * df)   # [MG5]
         if abs(p) > 1e-12 or abs(q) > 1e-12:
             loads[bus.id] = (p, q)
     return loads
@@ -2932,10 +2948,19 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                               comp.props.get("name", comp.id))  # [EE-8]
                 df = comp.props.get("demand_factor", 1.0)
                 rated_mva = rated_kva / 1000
+                # [MG5] a leading (over-excited) motor supplies its vars
+                q_sgn = sync_motor_q_sign(comp.props)
+                if "pf_mode" not in comp.props:
+                    input_warnings.append(LoadFlowWarning(
+                        elementId=comp.id, element_name=str(comp.props.get("name", comp.id)),
+                        message=(f"'{comp.props.get('name', comp.id)}': synchronous motor "
+                                 f"has no leading/lagging setting — treated as LAGGING "
+                                 f"(absorbing vars). Set 'PF Mode' to Leading if it runs "
+                                 f"over-excited.")))
                 P_spec[i] -= rated_mva * pf * df / base_mva
-                Q_spec[i] -= rated_mva * math.sqrt(1 - pf**2) * df / base_mva
+                Q_spec[i] -= q_sgn * rated_mva * math.sqrt(1 - pf**2) * df / base_mva
                 bus_load_p_mw[i] += rated_mva * pf * df
-                bus_load_q_mvar[i] += rated_mva * math.sqrt(1 - pf**2) * df
+                bus_load_q_mvar[i] += q_sgn * rated_mva * math.sqrt(1 - pf**2) * df
             elif comp.type == "capacitor_bank":
                 # [EE-9] A capacitor bank is a constant SUSCEPTANCE, not a
                 # constant-Q source: its output falls with V² (a "4 Mvar"

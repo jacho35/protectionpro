@@ -146,8 +146,9 @@ def _machine_rx(comp, base_mva) -> complex | None:
         eff = p.get("efficiency", 0.93) or 0.93
         pf = p.get("power_factor", 0.85) or 0.85
         rated_mva = kw / (eff * pf * 1000) if pf > 0 else kw / (eff * 1000)
-        xpp = p.get("x_pp", 0.17) or 0.17
         xr = p.get("x_r_ratio", 2.4) or 2.4
+        from .fault import induction_motor_x_pp
+        xpp = induction_motor_x_pp(p, xr)   # [N8] explicit x_pp or 1/LRC
         x = xpp * base_mva / rated_mva if rated_mva > 0 else 0
         return complex(x / xr, x) if x > 0 else None
     if comp.type == "motor_synchronous":

@@ -138,8 +138,9 @@ def _ansi_motor_induction_z1(comp, base_mva, duty):
     eff = float(comp.props.get("efficiency", 0.93) or 0.93)
     pf = float(comp.props.get("power_factor", 0.85) or 0.85)
     rated_mva = rated_kw / max(eff * pf * 1000.0, 1e-9)
-    x_pp = float(comp.props.get("x_pp", 0.17) or 0.17)
     xr = float(comp.props.get("x_r_ratio", 10) or 10)
+    from .fault import induction_motor_x_pp
+    x_pp = induction_motor_x_pp(comp.props, xr)   # [N8] explicit x_pp or 1/LRC
     x_pu = mult * x_pp * base_mva / max(rated_mva, 1e-9)
     r_pu = x_pu / xr if xr > 0 else 0.0
     return complex(r_pu, x_pu)

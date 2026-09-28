@@ -13,14 +13,15 @@ $$I_{start}=k_m\cdot LRC\cdot I_{FL},\qquad S_{start}=\sqrt3\,U\,I_{start}$$
 <tr><td>Direct-on-line</td><td>1</td></tr>
 <tr><td>Star-delta</td><td>$1/3$</td></tr>
 <tr><td>Autotransformer (80 % tap)</td><td>$0.8^2=0.64$ (reduced-voltage current $\propto V^2$)</td></tr>
-<tr><td>Soft starter</td><td>0.5</td></tr>
+<tr><td>Soft starter</td><td>its current limit: $I_{start}=\min(I_{lim},LRC)\cdot I_{FL}$ (default $I_{lim}=3.5$)</td></tr>
 <tr><td>VFD</td><td>the drive limits line current to about $I_{FL}$, so $LRC$ does not apply</td></tr></tbody></table>
 <h4>Terminal voltage — Thevenin superposition</h4>
-<p>The starting motor is a constant-$PQ$ load at a low power factor (0.3) drawing $S_{start}$. Behind the network's Thevenin impedance $Z_{th}$ (source internal impedance included, evaluated at $c=1.0$) the terminal voltage $V$ satisfies</p>
-$$V=V_{pre}-Z_{th}\left(\frac{S_{start}}{V}\right)^{*}$$
-<p>solved by damped fixed-point iteration. If no solution exists — the start demands more than the network can transfer — the motor is reported as a genuine stall. The dip at any bus $b$ is</p>
+<p>The starting load depends on the starter. A locked rotor (DOL, star-delta, autotransformer) is a constant <em>impedance</em> — its admittance $Y=S_{start}^{*}$ at 1.0 p.u., at the locked-rotor power factor (the <code>locked_rotor_pf</code> prop, else the nameplate fit the dynamic study uses). Behind the network's Thevenin impedance $Z_{th}$ (source internal impedance included, $c=1.0$) the terminal voltage is the divider</p>
+$$V=\frac{V_{pre}}{1+Z_{th}\,Y}$$
+<p>which always has a solution. A soft starter at its current limit is a constant-current load and a VFD a constant-power load at pf 0.95, both solved by damped fixed-point iteration; only these can have no operating point, which is reported as a voltage collapse. The motor must also out-pull the load: with the voltage held at its starting value (conservative) its torque must exceed the load torque all the way to breakdown speed — a star-delta start has a third of the torque.</p>
+<p>The dip at any bus $b$ is</p>
 $$\text{dip}_b\,[\%]=\frac{V_{pre,b}-V_{start,b}}{V_{pre,b}}\times100$$
-<p>where $V_{start,b}$ is the load-flow voltage with the motor in its starting state less the source drop that the load-flow's ideal swing bus cannot show.</p>
+<p>where $V_{start,b}$ is the load-flow voltage with the motor in its starting state less the source drop that the load-flow's ideal swing bus cannot show (applied only to buses galvanically connected to the motor).</p>
 <h4>Verdict</h4>
 <ul><li>System dip: pass at ≤ <strong>15 %</strong> at every bus.</li><li>Sensitive (PQ) buses: pass at ≤ <strong>10 %</strong>.</li></ul>
 <div class="hc-example"><span class="hc-label">Rule-of-thumb check</span>

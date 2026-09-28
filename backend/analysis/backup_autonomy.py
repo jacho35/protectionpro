@@ -90,6 +90,10 @@ def _load_kw_kvar(comp):
     elif comp.type == "motor_synchronous":
         s_kva = float(p.get("rated_kva", 500) or 0) * float(p.get("demand_factor", 1.0) or 1.0)
         pf = float(p.get("power_factor", 0.9) or 0.9)
+        pf = min(1.0, max(0.0, abs(pf)))
+        from .loadflow import sync_motor_q_sign   # [MG5] leading motors supply vars
+        return (s_kva * pf,
+                sync_motor_q_sign(p) * s_kva * math.sqrt(max(0.0, 1 - pf * pf)))
     else:
         return 0.0, 0.0
     pf = min(1.0, max(0.0, abs(pf)))

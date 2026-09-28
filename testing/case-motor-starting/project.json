@@ -75,7 +75,8 @@
         "efficiency": 0.95,
         "power_factor": 0.9,
         "locked_rotor_current": 6.0,
-        "starting_method": "dol"
+        "starting_method": "dol",
+        "locked_rotor_pf": 0.3
       }
     }
   ],

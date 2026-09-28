@@ -73,7 +73,7 @@ const VerificationTemplates = {
       "name": "Motor Starting Voltage Dip",
       "category": "Verification / Standards",
       "preview": "DOL/star-delta/AT/soft \u2014 dip at bus",
-      "description": "Motor starting voltage-dip study. Full-load and starting current for all five starting methods (DOL, star-delta, autotransformer, soft-starter, VFD) and the terminal voltage dip match hand calculations / an independent 2-bus solve exactly (constant-PQ rotor model, conservative for weak systems)."
+      "description": "Motor starting voltage-dip study. Full-load and starting current for all five starting methods (DOL, star-delta, autotransformer, soft-starter, VFD) and the terminal voltage dip match hand calculations exactly; the terminal voltage matches the textbook constant-impedance divider V = V_pre/(1 + Z\u00b7Y) (locked rotor at pf 0.3)."
     },
     {
       "id": "ver_dc_lf",
@@ -1206,7 +1206,8 @@ const VerificationTemplates = {
             "efficiency": 0.95,
             "power_factor": 0.9,
             "locked_rotor_current": 6.0,
-            "starting_method": "dol"
+            "starting_method": "dol",
+            "locked_rotor_pf": 0.3
           }
         }
       ],
@@ -1242,7 +1243,7 @@ const VerificationTemplates = {
       ],
       "nextId": 100,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — motor starting voltage dip: 1500 kW motor on a weak (~60 MVA) source, DOL. RUN: Motor Starting study. Expected DOL start current 921 A, terminal voltage 0.778 p.u., max dip 20.9 %, Will Start = NO (a deliberately weak system). Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — motor starting voltage dip: 1500 kW motor on a weak (~60 MVA) source, DOL. RUN: Motor Starting study. Expected DOL start current 921 A, terminal voltage 0.853 p.u., max dip 13.3 %, Will Start = NO (a deliberately weak system). Full working: Help → Verification."
       }
     },
     "ver_dc_lf": {

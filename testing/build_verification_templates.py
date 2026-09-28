@@ -55,7 +55,7 @@ CASES = [
     ("case-motor-starting", "ver_motor_start",
      "Motor Starting Voltage Dip",
      "DOL/star-delta/AT/soft — dip at bus",
-     "Motor starting voltage-dip study. Full-load and starting current for all five starting methods (DOL, star-delta, autotransformer, soft-starter, VFD) and the terminal voltage dip match hand calculations / an independent 2-bus solve exactly (constant-PQ rotor model, conservative for weak systems)."),
+     "Motor starting voltage-dip study. Full-load and starting current for all five starting methods (DOL, star-delta, autotransformer, soft-starter, VFD) and the terminal voltage dip match hand calculations exactly; the terminal voltage matches the textbook constant-impedance divider V = V_pre/(1 + Z·Y) (locked rotor at pf 0.3)."),
     ("case-dc-loadflow", "ver_dc_lf",
      "DC Load Flow (first-principles)",
      "DC source → cables → loads",
@@ -131,9 +131,13 @@ EXPECTED = {
     # engine's 20.94 % adds the 99 999 MVA source's own impedance.
     "ver_motor_start": ("motor-starting", {
         "i_start": ("motors.0.start_current_a", 920.8),
-        "vt": ("motors.0.motor_terminal_voltage_pu", 0.7782),
-        "dip": ("motors.0.max_system_dip_pct", 20.92, 2e-3),
-        "starts": ("motors.0.motor_will_start", False),
+        # [N1] constant-Z locked rotor at pf 0.3: V = 1/(1 + Z·Y) = 0.85294;
+        # dip vs the 0.9841 running baseline = 13.33 % (was 0.7782 / 20.92 %
+        # under the old constant-PQ rotor — an exact solve of the engine's own
+        # model, not an independent anchor).
+        "vt": ("motors.0.motor_terminal_voltage_pu", 0.8529),
+        "dip": ("motors.0.max_system_dip_pct", 13.33, 2e-3),
+        "starts": ("motors.0.motor_will_start", True),
     }),
     "ver_dc_lf": ("dc-loadflow", {
         "v_rect": ("buses.bus-1.voltage_v", 124.46),

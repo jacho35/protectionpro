@@ -251,7 +251,8 @@ class TestMotorStartModelDisclosure:
         ], [_wire("w1", "u1", "busA"), _wire("w2", "busA", "m1")])
         res = run_motor_starting(proj)
         assert res["motors"], "motor study returned no rows"
-        assert all("constant-PQ" in m["model"] for m in res["motors"])
+        # [N1] a DOL locked rotor is a constant impedance
+        assert all(m["model"] == "constant-impedance locked rotor" for m in res["motors"])
 
 
 # ── R3-1: unbalanced engine warns on unclamped PV buses ──────────────────────

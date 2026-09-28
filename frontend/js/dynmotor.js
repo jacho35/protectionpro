@@ -96,7 +96,7 @@ const DynMotor = {
       <div id="dynms-cfg-list"></div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:8px 0 0">
         Each motor either <strong>starts</strong> at its time (a cold start — its inrush sags every other energised motor)
-        or is <strong>already running</strong> (a steady background load present in the pre-start voltage). Stagger start
+        or is <strong>already running</strong> (at its steady load from t = 0 — it slows while the others start and is reported if it stalls). Stagger start
         times to sequence a motor group and see how each start sags the buses the others sit on. VFD-started motors are
         reported without a network transient regardless of this setting.
       </p>`;
@@ -372,7 +372,9 @@ const DynMotor = {
       ['Peak current', `${m.peak_current_a.toFixed(0)} A (${m.peak_current_xflc.toFixed(2)}×FLC)`],
       ['Pre-start bus V', m.v_prestart_pu.toFixed(3) + ' p.u.'],
       ['Min bus V', `${m.min_v_bus_pu.toFixed(3)} p.u. (dip ${m.max_bus_dip_pct.toFixed(1)}%)`],
-      ['Min motor terminal V', m.min_v_motor_pu.toFixed(3) + ' p.u.'],
+      ...(m.min_v_supply_pu != null
+        ? [['Min supply V at motor', m.min_v_supply_pu.toFixed(3) + ' p.u. (motor rating)']] : []),
+      ['Min winding V', m.min_v_motor_pu.toFixed(3) + ' p.u.'],
       ['Rotor thermal used', `${m.thermal_used_pct.toFixed(0)}% of ${m.stall_time_hot_s.toFixed(0)} s hot-stall I²t`],
     ];
     if (m.transition) {

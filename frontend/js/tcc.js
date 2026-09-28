@@ -1998,11 +1998,14 @@ const TCC = {
           : (parseFloat(p.rated_kw) || 200) / (Math.sqrt(3) * vkv * eff * pf);
         const lrc = parseFloat(p.locked_rotor_current) || 6;
         const method = p.starting_method || 'dol';
-        // Starter current factors — mirror backend motor_starting.py
+        // Starter current factors — mirror backend motor_starting.py. A soft
+        // starter holds its own current limit (capped at LRC) — [MG8].
         const factor = ({ dol: 1.0, star_delta: 1 / 3, autotransformer: 0.64,
-                          soft_starter: 0.5, vfd: 0 })[method] ?? 1.0;
+                          vfd: 0 })[method] ?? 1.0;
+        const ssLim = parseFloat(p.ss_current_limit_xflc) || 3.5;
         // VFD ramps at ≈FLC — no inrush overlay worth plotting
-        const iStartA = factor > 0 ? flcA * lrc * factor : flcA;
+        const iStartA = method === 'soft_starter' ? flcA * Math.min(ssLim, lrc)
+          : (factor > 0 ? flcA * lrc * factor : flcA);
         const accelS = parseFloat(p.accel_time_s) || 5;
         const stallS = parseFloat(p.stall_time_hot_s) || 0;
         if (flcA > 0 && vkv > 0 && iStartA > flcA) {

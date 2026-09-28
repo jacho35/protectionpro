@@ -823,28 +823,6 @@ def _zip_of(props):
     return _LOAD_ZIP.get(model, (1.0, 0.0, 0.0))
 
 
-def _solve_motor_slip(model, load_fn, v):
-    """Equilibrium slip where air-gap torque meets load torque at voltage v, on
-    the stable (below-breakdown) branch."""
-    sbd, tbd = 0.05, -1.0
-    for k in range(1, 201):
-        s = k / 200.0
-        t = model.torque(v, s)
-        if t > tbd:
-            tbd, sbd = t, s
-    a, b = 1e-4, sbd
-    f = lambda s: model.torque(v, s) - load_fn(1.0 - s)
-    if f(a) > 0:
-        return a
-    for _ in range(60):
-        mid = 0.5 * (a + b)
-        if f(a) * f(mid) <= 0:
-            b = mid
-        else:
-            a = mid
-    return 0.5 * (a + b)
-
-
 def _build_ts_motor(comp, project, ctx, lf, freq, base, warnings):
     """Single-cage dynamic model for one induction motor, or None to leave it as
     a constant-admittance load (missing ratings, or an unfittable nameplate)."""
@@ -864,6 +842,12 @@ def _build_ts_motor(comp, project, ctx, lf, freq, base, warnings):
     if b is None or not b.energized or b.voltage_pu < 1e-6:
         return None
     V0 = b.voltage_pu
+    # [MG9] The fitted model is on the motor's rated voltage; the network works
+    # in bus p.u. Re-express the bus voltage on the motor base (vr) and refer
+    # its admittance to the bus base (× vr²) — as dynamic motor starting does.
+    bus_comp = ctx["components"].get(idx_to_bus[bi])
+    bus_kv = float((bus_comp.props.get("voltage_kv", 0) if bus_comp else 0) or voltage_kv)
+    vr = bus_kv / voltage_kv
     s_base_mva = rated_kw / (eff * pf) / 1000.0
     m_i = float(mp.get("locked_rotor_current", 6.0) or 6.0)
     rpm = float(mp.get("rated_speed_rpm", 0) or 0)
@@ -886,21 +870,75 @@ def _build_ts_motor(comp, project, ctx, lf, freq, base, warnings):
     except ValueError as e:
         warnings.append(f"Motor '{name}': {e} — modelled as a constant impedance.")
         return None
-    load_pct = float(mp.get("load_torque_pct", 90) or 90)
-    breakaway = float(mp.get("load_breakaway_pct", 10) or 10) / 100.0
-    load_fn = _load_torque_fn(str(mp.get("load_torque_model", "quadratic")),
-                              load_pct / 100.0 * t_fl_pu, breakaway, 1.0 - s_rated)
     # Constant-Z admittance the load flow used for this motor, to remove from the
-    # base shunt before adding the dynamic one (no double counting).
-    df = float(mp.get("demand_factor", 1.0) or 1.0)
+    # base shunt before adding the dynamic one (no double counting). Read the
+    # demand factor exactly as the load flow does — ``x or 1.0`` turned a
+    # switched-off (df = 0) motor back into a full-load one.
+    try:
+        df = float(mp.get("demand_factor", 1.0))
+    except (TypeError, ValueError):
+        df = 1.0
+    if df <= 0:
+        return None   # not running in the load flow — nothing to model
     rated_mva = rated_kw / (eff * pf * 1000.0)
     q = math.sqrt(max(0.0, 1.0 - pf * pf))
     slf = complex(rated_mva * pf * df, rated_mva * q * df) / base
+    yrem = np.conj(slf) / (V0 * V0)
+    ratio = s_base_mva / base * vr * vr     # [MG9] motor → system/bus base
+
+    # [MG1] Start the motor AT the load-flow operating point. The fitted circuit
+    # at the nameplate load torque drew P 0.733 / Q 0.391 p.u. (motor base)
+    # where the load flow had 0.850 / 0.527, and it ignored demand_factor, so
+    # t = 0 was not an equilibrium: a zero-size disturbance swung a genset
+    # island by 0.25–0.63 Hz, and ran it away ("unstable") with the governor
+    # off. The load flow is the pre-fault state, so: (1) solve the slip s0 on
+    # the stable branch where the model's electrical power equals the load-flow
+    # P; (2) scale the load-torque curve (keeping its shape) to meet the air-gap
+    # torque there; (3) carry what is left of the load-flow admittance (the
+    # reactive difference — the nameplate magnetizing current is assumed) as a
+    # fixed shunt that goes with the motor if it trips.
+    p_target = (slf.real / ratio) / (V0 * V0)      # Re(Y_in) needed, motor base
+    s0 = _slip_for_conductance(model, p_target)
+    if s0 is None:
+        warnings.append(
+            f"Motor '{name}': its load-flow demand is beyond the fitted torque "
+            "curve's breakdown point — modelled as a constant impedance.")
+        return None
+    breakaway = float(mp.get("load_breakaway_pct", 10) or 10) / 100.0
+    shape = _load_torque_fn(str(mp.get("load_torque_model", "quadratic")),
+                            1.0, breakaway, 1.0 - s_rated)
+    t_load_rated = model.torque(V0 * vr, s0) / max(shape(1.0 - s0), 1e-9)
+    load_fn = _load_torque_fn(str(mp.get("load_torque_model", "quadratic")),
+                              t_load_rated, breakaway, 1.0 - s_rated)
+    y_fix = yrem - model.y_in(s0) * ratio
     return {
         "bus": bi, "model": model, "load_fn": load_fn, "h_s": h_s,
-        "ratio": s_base_mva / base, "yrem": np.conj(slf) / (V0 * V0),
-        "s0": _solve_motor_slip(model, load_fn, V0), "name": name,
+        "ratio": ratio, "yrem": yrem, "y_fix": y_fix, "vr": vr,
+        "s0": s0, "name": name,
     }
+
+
+def _slip_for_conductance(model, g_target):
+    """[MG1] Slip on the stable (below-breakdown) branch where the motor's input
+    conductance Re(Y_in) equals ``g_target`` (so P = V²·g). Re(Y_in) rises
+    monotonically from 0 at s = 0 to its peak near breakdown. None if the
+    target is beyond the peak."""
+    s_pk, g_pk = 1e-4, 0.0
+    for k in range(1, 401):
+        s = k / 400.0
+        g = model.y_in(s).real
+        if g > g_pk:
+            g_pk, s_pk = g, s
+    if g_target > g_pk:
+        return None
+    a, b = 1e-7, s_pk
+    for _ in range(80):
+        mid = 0.5 * (a + b)
+        if model.y_in(mid).real < g_target:
+            a = mid
+        else:
+            b = mid
+    return 0.5 * (a + b)
 
 
 def _build_gfl(comp, project, ctx, lf, disp_map, base, bus_island, warnings):
@@ -1403,7 +1441,8 @@ def _dyn_shunt(dyn, y0, vbus_mag, slips, load_scale=None,
             y[bi] -= mo["yrem"]           # tripped: remove its const-Z (in y0)
             continue
         s = min(max(slips[k], 1e-4), 1.0)
-        y[bi] += mo["model"].y_in(s) * mo["ratio"] - mo["yrem"]
+        # [MG1] y_fix makes this exactly zero at the pre-fault slip s0.
+        y[bi] += mo["model"].y_in(s) * mo["ratio"] + mo.get("y_fix", 0.0) - mo["yrem"]
     for j, g in enumerate(dyn.get("ibrs", [])):
         bi = g["bus"]
         y[bi] -= g["ybase"]               # remove the frozen const-Z (in y0)
@@ -1849,7 +1888,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
             mo = dyn_motors[k]
             s = min(max(slips[k], 1e-4), 1.0)
             vm = vmag.get(mo["bus"], 0.0)
-            te = mo["model"].torque(vm, s)
+            te = mo["model"].torque(vm * mo.get("vr", 1.0), s)   # [MG9]
             tl = mo["load_fn"](1.0 - s)
             dslips[k] = (tl - te) / (2.0 * mo["h_s"])
         return ddelta, domega, dpm, dpsec, defield, depq, depd, de2q, de2d, dslips, dgx, dex, dpssx
