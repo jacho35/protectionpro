@@ -540,6 +540,57 @@ MAX_FAULT_PATHS = 200
 MAX_FAULT_EXPANSIONS = 20000
 
 
+def _bus_kv(bus_comp):
+    """Nominal kV of a bus-like node (the per-unit base the walks use)."""
+    return float(bus_comp.props.get(
+        "voltage_kv", 0.4 if bus_comp.type == "distribution_board" else 11) or 11)
+
+
+def _zone_scale(v_kv, rho, v_ref):
+    """Factor referring a per-unit impedance on zone base *v_kv* to the
+    reference (faulted / from) bus, base *v_ref*, through the RATED ratios
+    crossed so far.
+
+    IEC 60909 refers impedances through the transformers' rated transformation
+    ratios (U_rTHV/U_rTLV), not the ratio of the drawn bus voltages. The walks
+    keep each element on its own zone base, so *rho* carries the product of the
+    rated ratios (near/far) met since the reference bus; the ohms of an element
+    on zone base v_kv, referred to the reference side, are then (v_kv·rho/v_ref)²
+    times its per-unit value on the reference base. An 11/0.42 kV unit feeding a
+    0.4 kV bus therefore adds (0.42/0.4)² to its own impedance AND to the grid
+    behind it, as seen from the LV fault. When every nameplate matches its buses
+    this is exactly 1 and is snapped to 1, so those results are unchanged.
+    """
+    if not v_kv or not v_ref or v_kv <= 0 or v_ref <= 0:
+        return 1.0
+    f = (v_kv * rho / v_ref) ** 2
+    return 1.0 if abs(f - 1.0) < 1e-9 else f
+
+
+def _transformer_rated_step(comp, v_near):
+    """(U_r near, U_r far): the transformer's rated voltages on the winding
+    entered from zone *v_near* and on the opposite winding (the same side
+    choice as _transformer_far_voltage). The unit's own z% (and neutral
+    impedances) are on its rated voltages, so it refers to the reference side
+    as _zone_scale(U_r near, rho, v_ref); crossing it multiplies rho by
+    U_r near / U_r far."""
+    hv = float(comp.props.get("voltage_hv_kv", 11) or 0)
+    lv = float(comp.props.get("voltage_lv_kv", 0.4) or 0)
+    if hv > 0 and lv > 0:
+        return (lv, hv) if abs(v_near - lv) < abs(v_near - hv) else (hv, lv)
+    return v_near, v_near
+
+
+def _branch_ratio(v_to, rho, v_from):
+    """Off-nominal ratio k of a nodal branch from bus *v_from* to bus *v_to*
+    through rated ratio *rho*: 1 pu at the to-bus is k pu on the from-bus side
+    of the branch impedance. Exactly 1 (snapped) when nameplates match buses."""
+    if not v_to or not v_from or v_to <= 0 or v_from <= 0:
+        return 1.0
+    k = v_to * rho / v_from
+    return 1.0 if abs(k - 1.0) < 1e-9 else k
+
+
 def _transformer_far_voltage(comp, v_near):
     """Voltage (kV) of the transformer winding OPPOSITE the side entered at
     voltage v_near — used to track the voltage zone across a walk."""
@@ -640,7 +691,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
     paths = []
     expansions = [0]
 
-    def walk(comp_id, z_path, trail, path_visited, v_kv):
+    def walk(comp_id, z_path, trail, path_visited, v_kv, rho=1.0):
         if len(paths) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -650,14 +701,15 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
         comp = components.get(comp_id)
         if not comp:
             return
+        s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
 
         # If we hit a source, record the complete path
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva, c)
             z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
-                "z_total": z_path + z_src,
-                "z2_total": z_path + z2_src,
+                "z_total": z_path + s * z_src,
+                "z2_total": z_path + s * z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "utility",
@@ -668,8 +720,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             rated_mva = comp.props.get("rated_mva", 10)
             z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
-                "z_total": z_path + z_src,
-                "z2_total": z_path + z2_src,
+                "z_total": z_path + s * z_src,
+                "z2_total": z_path + s * z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "generator",
@@ -693,8 +745,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             motor_mva = rated_kw / (eff * pf * 1000)
             z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
-                "z_total": z_path + z_src,
-                "z2_total": z_path + z2_src,
+                "z_total": z_path + s * z_src,
+                "z2_total": z_path + s * z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "motor_induction",
@@ -714,8 +766,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             rated_kva = comp.props.get("rated_kva", 500)
             z2_src = _source_z2(comp, z_src, base_mva)
             paths.append({
-                "z_total": z_path + z_src,
-                "z2_total": z_path + z2_src,
+                "z_total": z_path + s * z_src,
+                "z2_total": z_path + s * z2_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "motor_synchronous",
@@ -732,8 +784,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             rated_kw = comp.props.get("rated_kw", 100)
             n_inv = comp.props.get("num_inverters", 1)
             paths.append({
-                "z_total": z_path + z_src,
-                "z2_total": z_path + z_src,
+                "z_total": z_path + s * z_src,
+                "z2_total": z_path + s * z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "solar_pv",
@@ -745,8 +797,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
         if comp.type == "battery":
             z_src = _battery_impedance(comp, base_mva)
             paths.append({
-                "z_total": z_path + z_src,
-                "z2_total": z_path + z_src,
+                "z_total": z_path + s * z_src,
+                "z2_total": z_path + s * z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "battery",
@@ -761,8 +813,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             n_turb = comp.props.get("num_turbines", 1)
             t_type = comp.props.get("turbine_type", "type3_dfig")
             paths.append({
-                "z_total": z_path + z_src,
-                "z2_total": z_path + z_src,
+                "z_total": z_path + s * z_src,
+                "z2_total": z_path + s * z_src,
                 "trail": trail + [comp_id],
                 "source_id": comp_id,
                 "source_type": "wind_turbine",
@@ -782,8 +834,8 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
             z_src, motor_mva = _static_load_motor_impedance(comp, base_mva)
             if z_src is not None and _live:
                 paths.append({
-                    "z_total": z_path + z_src,
-                    "z2_total": z_path + z_src,
+                    "z_total": z_path + s * z_src,
+                    "z2_total": z_path + s * z_src,
                     "trail": trail + [comp_id],
                     "source_id": comp_id,
                     "source_type": "motor_induction",
@@ -802,13 +854,16 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
         # voltage zone for cable per-unit conversion ([EE-12])
         z_element = complex(0, 0)
         v_next = v_kv
+        rho_next = rho
         if comp.type == "bus":
             v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
         elif comp.type in ("transformer", "autotransformer"):
-            z_element = _transformer_impedance(comp, base_mva)
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z_element = _transformer_impedance(comp, base_mva) * _zone_scale(u_near, rho, _v_start)
             v_next = _transformer_far_voltage(comp, v_kv)
+            rho_next = rho * u_near / u_far
         elif comp.type == "cable":
-            z_element = _cable_impedance(comp, base_mva, v_kv)
+            z_element = _cable_impedance(comp, base_mva, v_kv) * s
         elif comp.type in ("cb", "switch"):
             state = comp.props.get("state", "closed")
             if state == "open":
@@ -819,7 +874,7 @@ def _collect_source_paths(bus_id, components, adjacency, base_mva, c=C_MAX, meta
         # Continue walking
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited, v_next)
+                walk(neighbor_id, z_path + z_element, trail + [comp_id], path_visited, v_next, rho_next)
 
     # Start from bus's neighbors at the faulted bus's voltage
     _bus_comp = components.get(bus_id)
@@ -1487,7 +1542,8 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
     def _comp_name(comp):
         return comp.props.get("name", comp.id) if comp else "?"
 
-    def walk(comp_id, z0_path, trail, entry_port=None, path_visited=frozenset(), v_kv=11.0):
+    def walk(comp_id, z0_path, trail, entry_port=None, path_visited=frozenset(), v_kv=11.0,
+             rho=1.0):
         if len(z0_sources) >= MAX_FAULT_PATHS or expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -1497,6 +1553,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
         comp = components.get(comp_id)
         if not comp:
             return
+        s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
 
         if comp.type == "utility":
             # A zero-sequence source only exists if the utility neutral is
@@ -1513,7 +1570,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             # Use z0_z1_ratio to derive Z0 from Z1, with legacy "x0_ratio" fallback
             z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
             z0_src = z_src * z0_z1 if z0_z1 > 0 else z_src
-            z_total = z0_path + z0_src
+            z_total = z0_path + s * z0_src
             desc = " → ".join(trail + [f"Utility '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
@@ -1538,7 +1595,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             else:
                 z0_src = z_src
             z0_src = z0_src + 3 * zn
-            z_total = z0_path + z0_src
+            z_total = z0_path + s * z0_src
             desc = " → ".join(trail + [f"Generator '{_comp_name(comp)}' (Z0_src={abs(z0_src):.4f})"])
             z0_sources.append((z_total, desc))
             return
@@ -1582,7 +1639,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                     x0_pu = x0_val * base_mva / rated
                     z_src = complex(x0_pu / 10, x0_pu)
             z0_src = z_src + 3 * zn
-            z_total = z0_path + z0_src
+            z_total = z0_path + s * z0_src
             # [PS-R2-2] Disclose the Z0 = Z1 screening default on the detail
             # string so an opted-in earthed inverter without an x0 prop is
             # visibly an assumption, not a datasheet value.
@@ -1598,7 +1655,10 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             name = _comp_name(comp)
             if z_gnd is None:
                 return  # No zero-sequence path through this transformer
-            z0_element = z_xfmr + z_gnd
+            # Winding and neutral impedances are on the unit's rated
+            # voltages — refer them through the rated ratio.
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z0_element = (z_xfmr + z_gnd) * _zone_scale(u_near, rho, _v_start)
             es_lv = str(comp.props.get("earthing_system", "") or "").upper()
             es_tag = f", {es_lv}" if es_lv == 'TT' and comp.props.get("voltage_lv_kv", 11) <= 1.0 else ""
             xfmr_label = f"Xfmr '{name}' ({vg}{es_tag}, Z0={abs(z0_element):.4f})"
@@ -1631,7 +1691,8 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
                 v_far = _transformer_far_voltage(comp, v_kv)
                 for neighbor_id, local_port, remote_port in adjacency.get(comp_id, []):
                     if neighbor_id != bus_id or comp_id == bus_id:
-                        walk(neighbor_id, z0_path + z0_element, new_trail, remote_port, path_visited, v_far)
+                        walk(neighbor_id, z0_path + z0_element, new_trail, remote_port, path_visited, v_far,
+                             rho * u_near / u_far)
             # else far_side == 'blocked': ungrounded star, no Z0 path
             return
 
@@ -1641,18 +1702,20 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             # transformer, which needs a grounded-star/delta path). Screening
             # model — Z0 ≈ the positive-sequence impedance, continue through
             # it with the winding voltage transformation.
-            z0_element = _transformer_impedance(comp, base_mva)
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z0_element = _transformer_impedance(comp, base_mva) * _zone_scale(u_near, rho, _v_start)
             v_far = _transformer_far_voltage(comp, v_kv)
             new_trail = trail + [f"AutoXfmr '{_comp_name(comp)}' (Z0≈{abs(z0_element):.4f})"]
             for neighbor_id, _lp, _ in adjacency.get(comp_id, []):
                 if neighbor_id != bus_id or comp_id == bus_id:
-                    walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited, v_far)
+                    walk(neighbor_id, z0_path + z0_element, new_trail, None, path_visited, v_far,
+                         rho * u_near / u_far)
             return
 
         if comp.type == "cable":
             # [EE-12] per-unit base from the bus-inferred voltage zone,
             # not the cable's own voltage_kv prop
-            z_cable = _cable_z0(comp, base_mva, v_kv, freq_hz)
+            z_cable = _cable_z0(comp, base_mva, v_kv, freq_hz) * s
             new_trail = trail + [f"Cable '{_comp_name(comp)}' (Z0={abs(z_cable):.4f})"]
             # Forward the far-end port (the port by which the neighbor is
             # entered) exactly as the transparent-element branch does — a
@@ -1661,7 +1724,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             # "port unknown" fallback and a Dyn unit behind a cable becomes
             # a phantom Z0 source as seen from its delta side.
             for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
-                walk(neighbor_id, z0_path + z_cable, new_trail, remote_port, path_visited, v_kv)
+                walk(neighbor_id, z0_path + z_cable, new_trail, remote_port, path_visited, v_kv, rho)
             return
 
         if comp.type in ("cb", "switch"):
@@ -1674,7 +1737,7 @@ def _collect_zero_seq_impedances(bus_id, components, adjacency, base_mva, c=C_MA
             v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
         for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z0_path, trail, remote_port, path_visited, v_next)
+                walk(neighbor_id, z0_path, trail, remote_port, path_visited, v_next, rho)
 
     _bus_comp = components.get(bus_id)
     _v_start = float(_bus_comp.props.get("voltage_kv", 0.4 if _bus_comp.type == "distribution_board" else 11) or 11) if _bus_comp else 11.0
@@ -1970,86 +2033,96 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
     """
     bus_ids = [b.id for b in net_buses]
     bus_set = set(bus_ids)
-    branches1 = []                      # (from_bus, to_bus, z1) — z2 identical for static elements
+    # Branches are (from_bus, to_bus, z, k): z on the from-bus side, and an
+    # ideal off-nominal ratio k (1 pu at to-bus = k pu on the from side) for a
+    # transformer whose rated ratio differs from its buses' — see _branch_ratio.
+    branches1 = []                      # (from_bus, to_bus, z1, k) — z2 identical for static elements
     shunts12 = {bid: [] for bid in bus_ids}  # (z1_total, z2_total, source_id, source_type)
-    branches0 = []                      # (from_bus, to_bus, z0)
+    branches0 = []                      # (from_bus, to_bus, z0, k)
     shunts0 = {bid: [] for bid in bus_ids}   # z0_total
 
-    def walk1(comp_id, z_path, visited, from_bus_id, v_kv):
+    def walk1(comp_id, z_path, visited, from_bus_id, v_kv, v_ref, rho=1.0):
         if comp_id in visited:
             return
         visited.add(comp_id)
         comp = components.get(comp_id)
         if not comp:
             return
+        s = _zone_scale(v_kv, rho, v_ref)   # this zone → reference bus, rated ratios
 
         if comp_id in bus_set:
             if comp_id != from_bus_id:
                 z = z_path if abs(z_path) > 1e-15 else complex(1e-6, 1e-6)
-                branches1.append((from_bus_id, comp_id, z))
+                branches1.append((from_bus_id, comp_id, z,
+                                  _branch_ratio(_bus_kv(comp), rho, v_ref)))
             return
 
         t = comp.type
         if t == "utility":
             z_src = _utility_impedance(comp, base_mva, c)
-            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * _source_z2(comp, z_src, base_mva), comp_id, t))
             return
         if t == "generator":
             z_src = _generator_impedance(comp, base_mva, v_kv)
-            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * _source_z2(comp, z_src, base_mva), comp_id, t))
             return
         if t == "motor_induction":
             z_src = _motor_induction_impedance(comp, base_mva)
-            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * _source_z2(comp, z_src, base_mva), comp_id, t))
             return
         if t == "motor_synchronous":
             z_src = _motor_synchronous_impedance(comp, base_mva)
-            shunts12[from_bus_id].append((z_path + z_src, z_path + _source_z2(comp, z_src, base_mva), comp_id, t))
+            shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * _source_z2(comp, z_src, base_mva), comp_id, t))
             return
         if t == "solar_pv":
             z_src = _solar_pv_impedance(comp, base_mva)
-            shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, t))
+            shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * z_src, comp_id, t))
             return
         if t == "battery":
             z_src = _battery_impedance(comp, base_mva)
-            shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, t))
+            shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * z_src, comp_id, t))
             return
         if t == "wind_turbine":
             z_src = _wind_turbine_impedance(comp, base_mva)
-            shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, t))
+            shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * z_src, comp_id, t))
             return
         if t == "static_load":
             z_src, _mva = _static_load_motor_impedance(comp, base_mva)
             if z_src is not None:
                 # motor-equivalent fraction — classified as a motor infeed
-                shunts12[from_bus_id].append((z_path + z_src, z_path + z_src, comp_id, "motor_induction"))
+                shunts12[from_bus_id].append((z_path + s * z_src, z_path + s * z_src, comp_id, "motor_induction"))
             return
 
         z_element = complex(0, 0)
         v_next = v_kv
+        rho_next = rho
         if t in ("transformer", "autotransformer"):
-            z_element = _transformer_impedance(comp, base_mva)
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z_element = _transformer_impedance(comp, base_mva) * _zone_scale(u_near, rho, v_ref)
             v_next = _transformer_far_voltage(comp, v_kv)
+            rho_next = rho * u_near / u_far
         elif t == "cable":
-            z_element = _cable_impedance(comp, base_mva, v_kv)
+            z_element = _cable_impedance(comp, base_mva, v_kv) * s
         elif t in ("cb", "switch"):
             if comp.props.get("state", "closed") == "open":
                 return
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
-            walk1(neighbor_id, z_path + z_element, visited, from_bus_id, v_next)
+            walk1(neighbor_id, z_path + z_element, visited, from_bus_id, v_next, v_ref, rho_next)
 
-    def walk0(comp_id, z0_path, visited, from_bus_id, entry_port, v_kv):
+    def walk0(comp_id, z0_path, visited, from_bus_id, entry_port, v_kv, v_ref, rho=1.0):
         if comp_id in visited:
             return
         visited.add(comp_id)
         comp = components.get(comp_id)
         if not comp:
             return
+        s = _zone_scale(v_kv, rho, v_ref)   # this zone → reference bus, rated ratios
 
         if comp_id in bus_set:
             if comp_id != from_bus_id:
                 z = z0_path if abs(z0_path) > 1e-15 else complex(1e-6, 1e-6)
-                branches0.append((from_bus_id, comp_id, z))
+                branches0.append((from_bus_id, comp_id, z,
+                                  _branch_ratio(_bus_kv(comp), rho, v_ref)))
             return
 
         t = comp.type
@@ -2060,7 +2133,7 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
             z_src = _utility_impedance(comp, base_mva, c)
             z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
             z0_src = z_src * z0_z1 if z0_z1 > 0 else z_src
-            shunts0[from_bus_id].append(z0_path + z0_src)
+            shunts0[from_bus_id].append(z0_path + s * z0_src)
             return
         if t == "generator":
             zn = _machine_neutral_z(comp, v_kv, base_mva)
@@ -2073,7 +2146,7 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
                 xr = comp.props.get("x_r_ratio", 40)
                 x0_pu = x0_val * base_mva / rated_mva
                 z_src = complex(x0_pu / xr, x0_pu)
-            shunts0[from_bus_id].append(z0_path + z_src + 3 * zn)
+            shunts0[from_bus_id].append(z0_path + s * (z_src + 3 * zn))
             return
         if t in ("solar_pv", "battery", "wind_turbine"):
             # [PS-2] blocked unless explicitly earthed (see the path walker)
@@ -2102,44 +2175,49 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
                 if rated > 1e-9:
                     x0_pu = x0_val * base_mva / rated
                     z_src = complex(x0_pu / 10, x0_pu)
-            shunts0[from_bus_id].append(z0_path + z_src + 3 * zn)
+            shunts0[from_bus_id].append(z0_path + s * (z_src + 3 * zn))
             return
         if t == "transformer":
             z_gnd, far_side = _transformer_zero_seq(comp, base_mva, entry_port)
             if z_gnd is None:
                 return
-            z0_element = _transformer_z0_impedance(comp, base_mva) + z_gnd  # [PS-8c]
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z0_element = ((_transformer_z0_impedance(comp, base_mva) + z_gnd)  # [PS-8c]
+                          * _zone_scale(u_near, rho, v_ref))
             if far_side in ("delta", "magnetizing"):
                 shunts0[from_bus_id].append(z0_path + z0_element)
                 return
             # 'grounded' — Z0 passes through to the far-side network
             v_far = _transformer_far_voltage(comp, v_kv)
             for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
-                walk0(neighbor_id, z0_path + z0_element, visited, from_bus_id, remote_port, v_far)
+                walk0(neighbor_id, z0_path + z0_element, visited, from_bus_id, remote_port, v_far,
+                      v_ref, rho * u_near / u_far)
             return
         if t == "autotransformer":
-            z0_element = _transformer_impedance(comp, base_mva)
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z0_element = _transformer_impedance(comp, base_mva) * _zone_scale(u_near, rho, v_ref)
             v_far = _transformer_far_voltage(comp, v_kv)
             for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
-                walk0(neighbor_id, z0_path + z0_element, visited, from_bus_id, remote_port, v_far)
+                walk0(neighbor_id, z0_path + z0_element, visited, from_bus_id, remote_port, v_far,
+                      v_ref, rho * u_near / u_far)
             return
         if t == "cable":
-            z_cable = _cable_z0(comp, base_mva, v_kv, freq_hz)
+            z_cable = _cable_z0(comp, base_mva, v_kv, freq_hz) * s
             for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
-                walk0(neighbor_id, z0_path + z_cable, visited, from_bus_id, remote_port, v_kv)
+                walk0(neighbor_id, z0_path + z_cable, visited, from_bus_id, remote_port, v_kv, v_ref, rho)
             return
         if t in ("cb", "switch"):
             if comp.props.get("state", "closed") == "open":
                 return
         # Transparent element (closed CB/switch, fuse, CT/PT, …)
         for neighbor_id, _, remote_port in adjacency.get(comp_id, []):
-            walk0(neighbor_id, z0_path, visited, from_bus_id, remote_port, v_kv)
+            walk0(neighbor_id, z0_path, visited, from_bus_id, remote_port, v_kv, v_ref, rho)
 
     for b in net_buses:
         v_start = float(b.props.get("voltage_kv", 0.4 if b.type == "distribution_board" else 11) or 11)
         for neighbor_id, _, remote_port in adjacency.get(b.id, []):
-            walk1(neighbor_id, complex(0, 0), {b.id}, b.id, v_start)
-            walk0(neighbor_id, complex(0, 0), {b.id}, b.id, remote_port, v_start)
+            walk1(neighbor_id, complex(0, 0), {b.id}, b.id, v_start, v_start)
+            walk0(neighbor_id, complex(0, 0), {b.id}, b.id, remote_port, v_start, v_start)
         # A distribution board's own rotating load fraction is a shunt at the
         # node itself (the path walker models it the same way).
         if b.type == "distribution_board":
@@ -2149,15 +2227,17 @@ def _build_bus_network(net_buses, components, adjacency, base_mva, c, freq_hz=50
 
     def _dedupe(branch_list):
         # Each physical chain is discovered once from each endpoint — keep the
-        # lower-ordered discovery, preserving genuinely parallel branches.
+        # lower-ordered discovery, preserving genuinely parallel branches. A
+        # branch kept from its far end is re-expressed from the near end:
+        # the impedance moves across the ideal ratio (z/k²) and k inverts.
         unique, kept_pairs = [], set()
-        for bi, bj, z in branch_list:
+        for bi, bj, z, k in branch_list:
             if bi < bj:
-                unique.append((bi, bj, z))
+                unique.append((bi, bj, z, k))
                 kept_pairs.add((bi, bj))
-        for bi, bj, z in branch_list:
+        for bi, bj, z, k in branch_list:
             if bi > bj and (bj, bi) not in kept_pairs:
-                unique.append((bj, bi, z))
+                unique.append((bj, bi, z / (k * k), 1.0 / k) if k != 1.0 else (bj, bi, z, 1.0))
         return unique
 
     return {
@@ -2189,7 +2269,7 @@ def _nodal_zbus_multi(bus_ids, branches, shunts, node_ids):
         return None
     # Connected component of the anchor bus over the branch graph
     adj = {}
-    for bi, bj, _z in branches:
+    for bi, bj, *_rest in branches:
         adj.setdefault(bi, set()).add(bj)
         adj.setdefault(bj, set()).add(bi)
     comp_nodes, frontier = {anchor}, [anchor]
@@ -2207,17 +2287,18 @@ def _nodal_zbus_multi(bus_ids, branches, shunts, node_ids):
     idx = {bid: i for i, bid in enumerate(nodes)}
     n = len(nodes)
     ybus = np.zeros((n, n), dtype=complex)
-    for bi, bj, z in branches:
+    for bi, bj, z, *rest in branches:
         if bi not in idx or bj not in idx or bi == bj:
             continue
+        k = rest[0] if rest else 1.0   # off-nominal ratio (see _build_bus_network)
         if abs(z) < 1e-15:
             z = complex(1e-6, 1e-6)
         y = 1.0 / z
         i, j = idx[bi], idx[bj]
         ybus[i, i] += y
-        ybus[j, j] += y
-        ybus[i, j] -= y
-        ybus[j, i] -= y
+        ybus[j, j] += y * k * k
+        ybus[i, j] -= y * k
+        ybus[j, i] -= y * k
     for bid in nodes:
         for z_src in shunts.get(bid, []):
             if abs(z_src) > 1e-15:
@@ -2692,7 +2773,7 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
     bus_voltage = {b.id: b.props.get("voltage_kv", 11) for b in all_buses}
 
     # Build adjacency info: find branches between buses and sources at buses
-    branches = []   # (bus_i_id, bus_j_id, z_branch)
+    branches = []   # (bus_i_id, bus_j_id, z_branch, k) — k: off-nominal ratio (_branch_ratio)
     bus_shunts = {bid: [] for bid in bus_ids}  # bus_id -> [(z_source, source_type, comp)]
 
     # Find bus-to-bus connections through transformers/cables
@@ -2707,15 +2788,15 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
     # into Ybus below.
     unique_branches = []
     kept_pairs = set()
-    for bi, bj, z in branches:
+    for bi, bj, z, k in branches:
         if bi < bj:
-            unique_branches.append((bi, bj, z))
+            unique_branches.append((bi, bj, z, k))
             kept_pairs.add((bi, bj))
     # Defensive: keep reverse-direction entries whose pair was never seen
     # from the lower-ordered side (asymmetric discovery).
-    for bi, bj, z in branches:
+    for bi, bj, z, k in branches:
         if bi > bj and (bj, bi) not in kept_pairs:
-            unique_branches.append((bi, bj, z))
+            unique_branches.append((bi, bj, z, k))
 
     # Build Ybus and compute Zbus for three impedance modes
     modes = ["subtransient", "transient", "steadystate"]
@@ -2723,17 +2804,19 @@ def _compute_voltage_depression(all_buses, components, adjacency, wires, base_mv
         ybus = np.zeros((n, n), dtype=complex)
 
         # Add branch admittances
-        for bi, bj, z in unique_branches:
+        for bi, bj, z, k in unique_branches:
             if bi not in bus_idx or bj not in bus_idx:
                 continue
             i, j = bus_idx[bi], bus_idx[bj]
             if abs(z) < 1e-15:
                 z = complex(1e-6, 1e-6)  # Avoid division by zero
             y = 1.0 / z
+            # z on bi's side, ideal off-nominal ratio k toward bj (k = 1
+            # unless a transformer's rated ratio differs from its buses').
             ybus[i, i] += y
-            ybus[j, j] += y
-            ybus[i, j] -= y
-            ybus[j, i] -= y
+            ybus[j, j] += y * k * k
+            ybus[i, j] -= y * k
+            ybus[j, i] -= y * k
 
         # Add source shunt admittances (mode-dependent)
         for bid in bus_ids:
@@ -2813,75 +2896,80 @@ def _find_bus_branches(start_bus_id, all_bus_ids, components, adjacency, branche
     """Walk from a bus to find connected buses (through transformers/cables) and sources."""
     bus_set = set(all_bus_ids)
 
-    def walk(comp_id, z_path, visited, from_bus_id, v_kv):
+    def walk(comp_id, z_path, visited, from_bus_id, v_kv, rho=1.0):
         if comp_id in visited:
             return
         visited.add(comp_id)
         comp = components.get(comp_id)
         if not comp:
             return
+        s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
 
         # Hit another bus-like node (bus or distribution board) — record branch
         if comp_id in bus_set and comp_id != from_bus_id:
+            k = _branch_ratio(_bus_kv(comp), rho, _v_start)
             if abs(z_path) > 1e-15:
-                branches.append((from_bus_id, comp_id, z_path))
+                branches.append((from_bus_id, comp_id, z_path, k))
             else:
                 # Direct bus coupler — very low impedance
-                branches.append((from_bus_id, comp_id, complex(1e-6, 1e-6)))
+                branches.append((from_bus_id, comp_id, complex(1e-6, 1e-6), k))
             return
 
         # Source — record as shunt on the originating bus
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva)
-            bus_shunts[from_bus_id].append((z_src, "utility", comp))
+            bus_shunts[from_bus_id].append((s * z_src, "utility", comp))
             return
         if comp.type == "generator":
             z_src = _generator_impedance(comp, base_mva, v_kv)
-            bus_shunts[from_bus_id].append((z_src, "generator", comp))
+            bus_shunts[from_bus_id].append((s * z_src, "generator", comp))
             return
         if comp.type == "solar_pv":
             z_src = _solar_pv_impedance(comp, base_mva)
-            bus_shunts[from_bus_id].append((z_src, "solar_pv", comp))
+            bus_shunts[from_bus_id].append((s * z_src, "solar_pv", comp))
             return
         if comp.type == "battery":
             z_src = _battery_impedance(comp, base_mva)
-            bus_shunts[from_bus_id].append((z_src, "battery", comp))
+            bus_shunts[from_bus_id].append((s * z_src, "battery", comp))
             return
         if comp.type == "wind_turbine":
             z_src = _wind_turbine_impedance(comp, base_mva)
-            bus_shunts[from_bus_id].append((z_src, "wind_turbine", comp))
+            bus_shunts[from_bus_id].append((s * z_src, "wind_turbine", comp))
             return
         if comp.type in ("motor_induction", "motor_synchronous"):
             if comp.type == "motor_induction":
                 z_src = _motor_induction_impedance(comp, base_mva)
             else:
                 z_src = _motor_synchronous_impedance(comp, base_mva)
-            bus_shunts[from_bus_id].append((z_src, comp.type, comp))
+            bus_shunts[from_bus_id].append((s * z_src, comp.type, comp))
             return
         if comp.type in ("static_load", "distribution_board"):
             # [gap #2] rotating fraction of a lumped load contributes like a
             # motor to the fault-induced voltage depression
             z_src, _mva = _static_load_motor_impedance(comp, base_mva)
             if z_src is not None:
-                bus_shunts[from_bus_id].append((z_src, "motor_induction", comp))
+                bus_shunts[from_bus_id].append((s * z_src, "motor_induction", comp))
             return
 
         # Accumulate impedance through branch elements, tracking the voltage
         # zone for cable per-unit conversion ([EE-12])
         z_element = complex(0, 0)
         v_next = v_kv
+        rho_next = rho
         if comp.type in ("transformer", "autotransformer"):
-            z_element = _transformer_impedance(comp, base_mva)
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z_element = _transformer_impedance(comp, base_mva) * _zone_scale(u_near, rho, _v_start)
             v_next = _transformer_far_voltage(comp, v_kv)
+            rho_next = rho * u_near / u_far
         elif comp.type == "cable":
-            z_element = _cable_impedance(comp, base_mva, v_kv)
+            z_element = _cable_impedance(comp, base_mva, v_kv) * s
         elif comp.type in ("cb", "switch"):
             state = comp.props.get("state", "closed")
             if state == "open":
                 return
         # Continue walking
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
-            walk(neighbor_id, z_path + z_element, visited, from_bus_id, v_next)
+            walk(neighbor_id, z_path + z_element, visited, from_bus_id, v_next, rho_next)
 
     visited = {start_bus_id}
     _start_comp = components.get(start_bus_id)
@@ -3143,7 +3231,7 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
     source_mva = [0.0]
     expansions = [0]
 
-    def walk(comp_id, z_path, path_visited, v_kv):
+    def walk(comp_id, z_path, path_visited, v_kv, rho=1.0):
         if expansions[0] >= MAX_FAULT_EXPANSIONS:
             return
         expansions[0] += 1
@@ -3153,60 +3241,61 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
         comp = components.get(comp_id)
         if not comp:
             return
+        s = _zone_scale(v_kv, rho, _v_start)   # this zone → reference bus, rated ratios
 
         if comp.type == "utility":
             z_src = _utility_impedance(comp, base_mva, c)
-            z1_list.append(z_path + z_src)
-            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            z1_list.append(z_path + s * z_src)
+            z2_list.append(z_path + s * _source_z2(comp, z_src, base_mva))
             has_source[0] = True
             source_mva[0] += float(comp.props.get("fault_mva", 500) or 500)
             return
         if comp.type == "generator":
             z_src = _generator_impedance(comp, base_mva, v_kv)
-            z1_list.append(z_path + z_src)
-            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            z1_list.append(z_path + s * z_src)
+            z2_list.append(z_path + s * _source_z2(comp, z_src, base_mva))
             has_source[0] = True
             source_mva[0] += float(comp.props.get("rated_mva", 10) or 10)
             return
         if comp.type == "motor_induction":
             z_src = _motor_induction_impedance(comp, base_mva)
-            z1_list.append(z_path + z_src)
-            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            z1_list.append(z_path + s * z_src)
+            z2_list.append(z_path + s * _source_z2(comp, z_src, base_mva))
             has_source[0] = True
             return
         if comp.type == "motor_synchronous":
             z_src = _motor_synchronous_impedance(comp, base_mva)
-            z1_list.append(z_path + z_src)
-            z2_list.append(z_path + _source_z2(comp, z_src, base_mva))
+            z1_list.append(z_path + s * z_src)
+            z2_list.append(z_path + s * _source_z2(comp, z_src, base_mva))
             has_source[0] = True
             return
         if comp.type == "solar_pv":
             z_src = _solar_pv_impedance(comp, base_mva)
-            z1_list.append(z_path + z_src)
-            z2_list.append(z_path + z_src)
+            z1_list.append(z_path + s * z_src)
+            z2_list.append(z_path + s * z_src)
             has_source[0] = True
             return
         if comp.type == "battery":
             z_src = _battery_impedance(comp, base_mva)
-            z1_list.append(z_path + z_src)
-            z2_list.append(z_path + z_src)
+            z1_list.append(z_path + s * z_src)
+            z2_list.append(z_path + s * z_src)
             has_source[0] = True
             return
         if comp.type == "wind_turbine":
             z_src = _wind_turbine_impedance(comp, base_mva)
-            z1_list.append(z_path + z_src)
-            z2_list.append(z_path + z_src)
+            z1_list.append(z_path + s * z_src)
+            z2_list.append(z_path + s * z_src)
             has_source[0] = True
             return
         if comp.type in ("static_load", "distribution_board"):
             z_load = _static_load_full_impedance(comp, base_mva)
             if z_load is not None:
-                z1_list.append(z_path + z_load)
-                z2_list.append(z_path + z_load)
+                z1_list.append(z_path + s * z_load)
+                z2_list.append(z_path + s * z_load)
             z_mot, _mva = _static_load_motor_impedance(comp, base_mva)
             if z_mot is not None:
-                z1_list.append(z_path + z_mot)
-                z2_list.append(z_path + _source_z2(comp, z_mot, base_mva))
+                z1_list.append(z_path + s * z_mot)
+                z2_list.append(z_path + s * _source_z2(comp, z_mot, base_mva))
                 has_source[0] = True
             if comp.type == "static_load":
                 return
@@ -3215,13 +3304,16 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
 
         z_element = complex(0, 0)
         v_next = v_kv
+        rho_next = rho
         if comp.type == "bus":
             v_next = float(comp.props.get("voltage_kv", v_kv) or v_kv)
         elif comp.type in ("transformer", "autotransformer"):
-            z_element = _transformer_impedance(comp, base_mva)
+            u_near, u_far = _transformer_rated_step(comp, v_kv)
+            z_element = _transformer_impedance(comp, base_mva) * _zone_scale(u_near, rho, _v_start)
             v_next = _transformer_far_voltage(comp, v_kv)
+            rho_next = rho * u_near / u_far
         elif comp.type == "cable":
-            z_element = _cable_impedance(comp, base_mva, v_kv)
+            z_element = _cable_impedance(comp, base_mva, v_kv) * s
         elif comp.type in ("cb", "switch"):
             if comp.props.get("state", "closed") == "open":
                 return
@@ -3230,7 +3322,7 @@ def _collect_load_side_impedances(bus_id, components, adjacency, base_mva, c=C_M
 
         for neighbor_id, _, _ in adjacency.get(comp_id, []):
             if neighbor_id != bus_id or comp_id == bus_id:
-                walk(neighbor_id, z_path + z_element, path_visited, v_next)
+                walk(neighbor_id, z_path + z_element, path_visited, v_next, rho_next)
 
     _bus_comp = components.get(bus_id)
     _v_start = float(_bus_comp.props.get("voltage_kv", 0.4 if _bus_comp.type == "distribution_board" else 11) or 11) if _bus_comp else 11.0

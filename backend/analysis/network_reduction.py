@@ -41,6 +41,7 @@ from .loadflow import (
     chain_element_zones,
     chain_order_from_paths,
     element_impedance_in_zone,
+    _reduce_chain_two_port,
 )
 from .fault import (
     _utility_impedance,
@@ -187,7 +188,7 @@ def build_branch_ybus(project):
             continue
         processed_chains.add(chain_key)
 
-        has_xfmr = any(e.type == "transformer" for e in all_elems.values())
+        has_xfmr = any(e.type in ("transformer", "autotransformer") for e in all_elems.values())
         # Zone voltages are needed by BOTH branches: the transformer branch
         # assigns each cable to its own side's zone, the no-transformer branch
         # puts every cable in the single zone these buses bound.
@@ -217,6 +218,20 @@ def build_branch_ybus(project):
         # Electrical order, so cascaded transformers multiply their ratios in
         # the order they are met (a dict gives graph-walk order).
         t, hv_bus = _get_chain_turns_ratio(chain_order, bus_a, bus_b, components)
+        # [EE-10] The balanced engine's exact chain reduction, so this Ybus
+        # really does mirror loadflow's: cascaded transformers (or a tapped one
+        # sharing its chain with a cable) are Kron-reduced with each unit's
+        # own local ratio rather than summed under one combined ratio.
+        n_chain_xfmrs = sum(1 for e in chain_order
+                            if e.type in ("transformer", "autotransformer"))
+        if n_chain_xfmrs >= 1 and (
+                n_chain_xfmrs >= 2
+                or (any(e.type == "cable" for e in chain_order) and abs(t - 1.0) > 1e-9)):
+            xfmr_positions = [m for m, e in enumerate(chain_order)
+                              if e.type in ("transformer", "autotransformer")]
+            y, t, hv_bus = _reduce_chain_two_port(
+                chain_order, xfmr_positions, hv_bus, bus_a, bus_b,
+                bus_a_v, bus_b_v, base_mva)
         Y[i, i] += y / (t * t) if hv_bus == bus_a else y
         Y[j, j] += y / (t * t) if hv_bus == bus_b else y
         Y[i, j] -= y / t if hv_bus in (bus_a, bus_b) else y

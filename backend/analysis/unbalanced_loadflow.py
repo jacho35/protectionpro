@@ -38,6 +38,7 @@ from .loadflow import (
     _newton_raphson, _gauss_seidel,
     plan_dispatch, solve_with_islands, insert_implicit_load_buses,
     chain_element_zones, chain_order_from_paths, insert_junction_buses,
+    _reduce_chain_two_port,
     is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
 )
 from .fault import _grounding_impedance
@@ -312,7 +313,7 @@ def run_unbalanced_load_flow(
             continue
         processed_chains.add(chain_key)
 
-        has_xfmr = any(e.type == "transformer" for e in all_elems.values())
+        has_xfmr = any(e.type in ("transformer", "autotransformer") for e in all_elems.values())
         cable_voltages: dict[str, float] = {}
 
         z1_total = complex(0, 0)
@@ -369,7 +370,9 @@ def run_unbalanced_load_flow(
                         z0_total = ((z0_total or complex(0, 0))
                                     + _cable_z0_pu(e, base_mva, v_kv, freq_hz))
                 else:
-                    z = _get_impedance(e, base_mva)
+                    # An autotransformer: metallic HV–LV path, so Z0 passes
+                    # through; re-based to its LV zone like a transformer.
+                    z = _get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
                     z1_total += z
                     z2_total += z
                     if not z0_blocked:
@@ -403,6 +406,24 @@ def run_unbalanced_load_flow(
         # Electrical order, so cascaded transformers multiply their ratios in
         # the order they are met (a dict gives graph-walk order).
         t, hv_bus = _get_chain_turns_ratio(chain_order, bus_a, bus_b, components)
+        # [EE-10] Same exact chain reduction as the balanced engine: cascaded
+        # transformers (or a tapped one sharing its chain with a cable) are
+        # Kron-reduced with each unit's own local ratio instead of summing
+        # every impedance under one combined ratio, which mis-refers anything
+        # on the tap-referred side by up to t². Positive and negative sequence
+        # share it (passive elements, Z2 = Z1); the zero-sequence stamp keeps
+        # its own simplified t = 1 model below.
+        n_chain_xfmrs = sum(1 for e in chain_order
+                            if e.type in ("transformer", "autotransformer"))
+        if n_chain_xfmrs >= 1 and (
+                n_chain_xfmrs >= 2
+                or (any(e.type == "cable" for e in chain_order) and abs(t - 1.0) > 1e-9)):
+            xfmr_positions = [m for m, e in enumerate(chain_order)
+                              if e.type in ("transformer", "autotransformer")]
+            y1, t, hv_bus = _reduce_chain_two_port(
+                chain_order, xfmr_positions, hv_bus, bus_a, bus_b,
+                bus_a_v, bus_b_v, base_mva)
+            y2 = y1
         branch_chains.append((all_elems, bus_a, bus_b, y1, y2, y0, t, hv_bus, cable_voltages))
 
     # ── Initialise Y matrices ──
