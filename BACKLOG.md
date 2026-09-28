@@ -75,6 +75,7 @@ section and adding the `## Completed` entry.
 50. **Linear sensitivities (PTDF/LODF) & transfer limits** — transmission-planning staple, low value at LV/MV scale. *(DIgSILENT / PSS Additions)*
 51. **State estimation** — operational/digital-twin use; low priority for a design tool. *(DIgSILENT / PSS Additions)*
 52. **Switching-procedure management** — ordered switching plans with safety checks; operations niche. *(DIgSILENT / PSS Additions)*
+53. **Gauss-Seidel: flag the split between regulating units on tied buses** — two generators/SVCs on buses joined by a closed breaker share one voltage, so their Q split is undetermined; GS assigns it all to one. Warn, as the utility case now does. Low value. *(Load Flow Enhancements)*
 
 ---
 
@@ -182,6 +183,7 @@ Overhead lines are modelled as a "Feeder Type" of the Cable component (`construc
 - ~~**Full IEC 61660-1 battery factors**: the DC short-circuit engine uses a simplified battery model (`i_p = E_B/R_BBr`, `I_k = 0.95·E_B/R_BBr`, `τ = L/R`) that omits the standard's refinements — the **0.9 factor on R_B** for the peak, **E_B = 1.05·U_nB** when the open-circuit EMF is unknown, the **+0.1·R_B** term in the I_k denominator, and the **T_B = 30 ms** battery time constant in the rise-time/`1/δ`. Fed raw nameplate inputs the engine reads ~5–12 % **low** (non-conservative) on the battery peak/quasi-steady-state currents. Apply these factors internally so nameplate inputs give the full-standard result. Verified: the core `E_B/R_BBr` + superposition reproduces the published IEC 61660 peak exactly when the preprocessed values are supplied. See `testing/case-dc-shortcircuit/results.md`.~~ **Done** — see Completed.
 
 ## Load Flow Enhancements
+- **Gauss-Seidel — regulating units on tied buses**: `_gauss_seidel` solves buses joined by a zero-impedance link as one supernode; when two or more of them regulate voltage (PV generator, SVC, voltage-mode inverter), their individual reactive outputs are physically undetermined (0 Ω between them), and the link-current recovery gives the whole share to the reference member. Newton-Raphson splits it by the 1e6 pu link instead — equally arbitrary. Add a warning naming the units, like the several-utilities-in-one-island warning.
 - ~~**Unbalanced load flow — exact cascaded-transformer reduction**: `unbalanced_loadflow.py` sums every transformer's impedance in a bus-less cascade and stamps one combined turns ratio, so a cable or unit on the tap-referred side is mis-referred by up to t² — the defect the balanced engine fixed with `_reduce_chain_two_port` (EE-10). Port the Kron reduction to the positive/negative-sequence stamps (zero sequence is blocked or passed per unit, so it needs its own treatment). Measured gap: 0.894 vs 0.896 pu at the LV end of a 66/33/11/0.4 kV cascade with a +5 % tap on the middle unit. Workaround: draw a bus between cascaded transformers.~~ **Done** — see Completed.
 - **Unbalanced load flow — V1-only sequence-current injection (S#1-F18)**: `unbalanced_loadflow.py` (~L655-720) derives each bus's negative/zero-sequence injection currents from phase voltages *approximated from the positive-sequence result alone* (`Va=V1, Vb=a²V1, Vc=aV1`), then solves Y2·V2 and Y0·V0 once. The unbalanced voltages are never fed back, so a single-phase-heavy load sees the wrong phase voltage and its I2/I0 are mis-stated; VUF is understated (adjudicated est. 20-40 % for severe single-phase loading). Deferred 2026-07-09 (`EE_REVIEW_PRINCIPAL_ADJUDICATION.md` §7) because the proper fix is a V1/V2/V0 convergence loop — rebuild phase voltages from the latest V0/V1/V2, recompute injections, repeat to a mismatch tolerance (with a converged flag and iteration count on the result) — i.e. a solver change, not a patch. Test anchor: a hand-solved 2-bus feeder with one heavily loaded phase.
 - ~~**Generation Dispatch kVA / kW toggle**: the dispatch summary reported real power only, while sources are rated in kVA. Carry the reactive counterparts on `DispatchEntry` and add a kVA-default unit toggle to the table.~~ **Done** — see Completed.
@@ -316,6 +318,14 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 ---
 
 ## Completed
+
+### Load-flow gap cleanup (2026-09-28)
+- **Open-ended transformer read as fully loaded.** A transformer whose far side goes only to an open breaker (e.g. a generator incomer switched out) was handed a share of its bus injection. On a swing bus that is the whole island's supply: 0.8 MVA / 40 % on a unit carrying nothing. It now reports zero flow when no live source lies beyond it.
+- **Cable tees made through a breaker** (c1 → CB → {c2, c3}) now get a junction node on the breaker's far side, so an open breaker still isolates. A device wired on one port only (ambiguous API payloads) still leaves the node alone.
+- **Network reduction** runs the same junction pre-pass, so transient stability no longer stamps a shared tee cable twice.
+- **Bus ducts between a bus and a branch** now report that branch's current at the bus end, checked against `rated_current_a`. Previously only ducts linking two buses were checked.
+- **Several utilities in one island** now raise a warning: each is a fixed reference at 0°, so their split follows the network impedance only.
+- `backend/tests/test_loadflow_gap_cleanup.py`: 6 tests, 5 failing on the pre-fix code; the sixth is an open-breaker isolation control.
 
 ### Fault engines refer through rated transformer ratios; exact cascade reduction everywhere (2026-09-28)
 - **IEC 60909 and ANSI fault levels behind a transformer whose nameplate differs from its bus.** An 11/0.42 kV unit on a 0.4 kV bus used to read ~10 % high: 25.3 instead of 23.0 kA. The walkers referred impedances through the drawn bus-voltage ratio instead of the rated ratio, so both the unit's own impedance and the grid behind it lost (0.42/0.4)².

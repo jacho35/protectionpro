@@ -42,6 +42,7 @@ from .loadflow import (
     chain_order_from_paths,
     element_impedance_in_zone,
     _reduce_chain_two_port,
+    insert_junction_buses,
 )
 from .fault import (
     _utility_impedance,
@@ -140,6 +141,10 @@ def build_branch_ybus(project):
     ``{Y, bus_idx, buses, components, adjacency, bus_of, base_mva}`` — or ``None``
     if the network has no AC buses.
     """
+    # A node at every cable tee the drawing left without a bus — the same
+    # pre-pass the load flow runs, so the two build the same network (and a
+    # shared tee cable is not stamped twice) (idempotent).
+    project = insert_junction_buses(project)
     base_mva = project.baseMVA
     components = {c_.id: c_ for c_ in project.components}
     buses = [c_ for c_ in project.components
