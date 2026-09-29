@@ -172,11 +172,12 @@ class ProjectData(BaseModel):
     faultBusId: Optional[str] = None
     faultType: Optional[str] = None  # "3phase", "slg", "ll", "llg", or None for all
     voltageFactor: Optional[float] = None  # IEC 60909 voltage factor c; None → engine default (c_max = 1.10)
-    # [PS-3] Conductor temperature (°C) for MINIMUM short-circuit studies:
-    # cable resistance is scaled by 1 + 0.004·(θ − 20) per IEC 60909-0 §5.3.1
-    # (use with voltageFactor = 0.95 = c_min). None → 20 °C (maximum-current
-    # convention, unchanged legacy behaviour).
-    conductorTemperatureC: Optional[float] = None
+    # [PS-3] Line temperature for MINIMUM short-circuit studies: R_L =
+    # [1 + 0.004·(θ − 20)]·R_L20 per IEC 60909-0 §2.5 eq. (3) (use with
+    # voltageFactor = 0.95 = c_min). A number → every line at θ; "final" →
+    # each line at its own end-of-fault temperature [CT2]. None → maximum
+    # study, lines at 20 °C (§2.4, [CT1]). See fault._lines_at_study_temperature.
+    conductorTemperatureC: Optional[float | Literal["final"]] = None
     stabilityDisturbance: Optional[dict] = None  # transient-stability event spec (see transient_stability)
     dynamicMotorSchedule: Optional[dict] = None  # dynamic motor-start timeline: {"motors": [{"id","role","start_time_s"}]}
     openConductorBranchId: Optional[str] = None  # cable/feeder id for open-conductor (series-fault) analysis

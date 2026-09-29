@@ -72,14 +72,16 @@ def _sub_main():
 
 
 class TestCableSizingMinimumStudyHot:
-    def test_far_end_minimum_at_70c(self):
+    def test_far_end_minimum_at_end_of_fault_temperature(self):
+        # [CT2] was 70 °C applied on top of the hot library value; now each
+        # line at its end-of-fault temperature (PVC 160 °C) on its 20 °C R.
         p = _sub_main()
-        hot = run_fault_analysis(p, voltage_factor=0.95, conductor_temperature_c=70).buses["bB"]
+        hot = run_fault_analysis(p, voltage_factor=0.95, conductor_temperature_c="final").buses["bB"]
         cold = run_fault_analysis(p, voltage_factor=0.95).buses["bB"]
         i_hot = min(v for v in (hot.ik3, hot.ikLL, hot.ik1) if v and v > 0) * 1000
         i_cold = min(v for v in (cold.ik3, cold.ikLL, cold.ik1) if v and v > 0) * 1000
         assert i_hot < i_cold * 0.9            # hot conductors: materially lower
         row = run_cable_sizing(p)["cables"][0]
         msg = " ".join(row["issues"])
-        assert f"({i_hot:.0f} A, c_min, 70 °C)" in msg, msg
+        assert f"({i_hot:.0f} A, c_min, lines at end-of-fault temperature)" in msg, msg
         assert f"({i_cold:.0f} A" not in msg

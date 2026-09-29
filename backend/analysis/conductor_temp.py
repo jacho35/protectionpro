@@ -27,6 +27,12 @@ same corrected value without each having to remember.
 Underground cables are deliberately left alone: their library values are
 already at operating temperature, and re-correcting them would double-count.
 
+The short-circuit study is the exception: IEC 60909-0 takes lines at 20 °C
+for maximum currents (§2.4) and at their end-of-fault temperature for minimum
+currents (§2.5 eq. 3). ``fault._lines_at_study_temperature`` re-targets every
+line for that study, using ``insulated_hot_factor`` to take an insulated
+cable back to 20 °C and ``final_temp_c`` for θe ([CT1], [CT2]).
+
 The correction is idempotent — the untouched 20 °C value is kept in
 ``_r20_per_km`` / ``_r0_20_per_km`` and the applied temperature in
 ``_r_temp_applied_c``, so re-validating a project (or round-tripping it through
@@ -55,6 +61,92 @@ DEFAULT_ALPHA = 0.00403          # aluminium — every conductor in the OH libra
 # line with `temperature_c`.
 DEFAULT_OVERHEAD_TEMP_C = 75.0
 BASE_TEMP_C = 20.0
+
+
+# [CT2] Conductor temperature at the end of a short circuit, θe — the
+# temperature IEC 60909-0 §2.5 eq. (3) takes for a MINIMUM-current study.
+# Insulated cables: the final short-circuit temperature of IEC 60364-4-43
+# Table 43A / IEC 60949 (PVC 160 °C, 140 °C above 300 mm²; XLPE/EPR 250 °C).
+# Bare overhead conductors: the recommended maximum temperature during a
+# short circuit of IEC 60865-1 Table 6 (Cu, Al, Al alloy, ACSR: 200 °C).
+FINAL_TEMP_C = {"PVC": 160.0, "XLPE": 250.0, "EPR": 250.0}
+PVC_LARGE_FINAL_TEMP_C = 140.0
+OVERHEAD_FINAL_TEMP_C = 200.0
+
+# Sentinel for ``run_fault_analysis(conductor_temperature_c=...)``: every line
+# at its own θe instead of one study temperature.
+END_OF_FAULT = "final"
+
+# [CT1] Operating-temperature factor baked into the insulated-cable library
+# (constants.js STANDARD_CABLES): R_lib = R20 × factor (× the AC skin factor
+# from 150 mm² up). 90 °C XLPE: 1 + 0.00393·70 Cu / 1 + 0.00403·70 Al;
+# 70 °C PVC: ×1.20. A cable with no library type is taken as the palette's
+# documented basis (FIELD_INFO 'cable.r_per_km': Cu XLPE at 90 °C).
+_HOT_FACTOR = {("Cu", "XLPE"): 1.275, ("Al", "XLPE"): 1.282,
+               ("Cu", "PVC"): 1.20, ("Al", "PVC"): 1.20}
+# Library ids that are PVC-insulated building wiring without "pvc" in the id.
+_PVC_WIRING_PREFIXES = ("te_", "h07vr_", "surfix_", "dali_", "sig", "bms_")
+
+
+def is_overhead(props: dict) -> bool:
+    return str((props or {}).get("construction", "")).strip().lower() == "overhead"
+
+
+def insulated_conductor_and_insulation(props: dict) -> tuple[str, str]:
+    """(conductor 'Cu'|'Al', insulation 'XLPE'|'PVC'|'EPR') of an insulated cable.
+
+    [L2] The properties panel copies only r/x/rating from the library, not
+    ``conductor`` / ``insulation`` — so the library id (``standard_type``,
+    e.g. ``al_xlpe_95_lv``, ``cu_pvc_16_lv``, ``te_cu_2.5``) is the reliable
+    source; explicit props win when present."""
+    props = props or {}
+    sid = str(props.get("standard_type") or "").strip().lower()
+    cond = props.get("conductor")
+    if cond:
+        cond = "Al" if str(cond).strip().lower().startswith("al") else "Cu"
+    else:
+        cond = "Al" if sid.startswith("al_") else "Cu"
+    ins = str(props.get("insulation") or "").strip().upper()
+    if ins not in ("XLPE", "PVC", "EPR"):
+        ins = "PVC" if ("pvc" in sid or sid.startswith(_PVC_WIRING_PREFIXES)) else "XLPE"
+    return cond, ins
+
+
+def insulated_hot_factor(props: dict) -> float:
+    """R_lib / R20 for an insulated cable (see _HOT_FACTOR)."""
+    cond, ins = insulated_conductor_and_insulation(props)
+    if ins == "EPR":
+        ins = "XLPE"   # same 90 °C rating
+    return _HOT_FACTOR.get((cond, ins), 1.275)
+
+
+def final_temp_c(props: dict) -> float:
+    """[CT2] θe for a minimum-current study (see FINAL_TEMP_C)."""
+    if is_overhead(props):
+        return OVERHEAD_FINAL_TEMP_C
+    _cond, ins = insulated_conductor_and_insulation(props)
+    if ins == "PVC":
+        size = _num((props or {}).get("size_mm2"))
+        if size is None:
+            m = [p for p in str(props.get("standard_type") or "").split("_")
+                 if p.replace(".", "", 1).isdigit()]
+            size = float(m[0]) if m else None
+        if size is not None and size > 300:
+            return PVC_LARGE_FINAL_TEMP_C
+    return FINAL_TEMP_C.get(ins, FINAL_TEMP_C["PVC"])
+
+
+def overhead_material(props: dict) -> str | None:
+    """[L1] Material of an overhead conductor. The panel copies only r/x/rating
+    from the library, not ``material``, so fall back to the library id
+    (``overhead_type`` = ``acsr_dog``, ``aaac_100``, …)."""
+    props = props or {}
+    mat = props.get("material") or props.get("conductor_material")
+    if mat:
+        return mat
+    oid = str(props.get("overhead_type") or props.get("standard_type") or "").strip().lower()
+    prefix = oid.split("_", 1)[0].upper()
+    return prefix if prefix in TEMP_COEFF else None
 
 
 def alpha_for(material: str | None) -> float:
@@ -93,7 +185,7 @@ def apply_to_props(props: dict) -> bool:
     temp = _num(props.get("temperature_c"), DEFAULT_OVERHEAD_TEMP_C)
     if temp is None:
         temp = DEFAULT_OVERHEAD_TEMP_C
-    material = props.get("material") or props.get("conductor_material")
+    material = overhead_material(props)   # [L1]
 
     applied = _num(props.get("_r_temp_applied_c"))
     if applied is not None and abs(applied - temp) < 1e-9:

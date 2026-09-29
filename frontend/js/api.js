@@ -137,12 +137,14 @@ const API = {
     return this.request('/analysis/fault', 'POST', data);
   },
 
-  // [PS-3] Companion MINIMUM-current fault study (IEC 60909-0 §5.3.1):
-  // c_min = 0.95 and hot-conductor cable resistance (default 70 °C operating
-  // temperature). Used by the compliance engine to verify earth-fault
-  // disconnection against the current that may ACTUALLY flow — checking
-  // against the maximum-current study passes circuits the standard fails.
-  async runFaultAnalysisMin(faultBusId = null, faultType = null, conductorTempC = 70) {
+  // [PS-3] Companion MINIMUM-current fault study (IEC 60909-0 §2.5):
+  // c_min = 0.95 and [CT2] each line at its end-of-fault temperature
+  // ('final': eq. 3 on the 20 °C resistance — PVC 160 °C, XLPE 250 °C, bare
+  // overhead 200 °C; a number puts every line at that temperature). Used by
+  // the compliance engine to verify earth-fault disconnection against the
+  // current that may ACTUALLY flow — checking against the maximum-current
+  // study passes circuits the standard fails.
+  async runFaultAnalysisMin(faultBusId = null, faultType = null, conductorTempC = 'final') {
     const data = AppState.toJSON();
     if (faultBusId) data.faultBusId = faultBusId;
     if (faultType) data.faultType = faultType;

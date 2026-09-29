@@ -70,9 +70,73 @@ def thermal_m_factor(kappa, duration_s, freq_hz=50.0):
     return (math.exp(4.0 * ft * x) - 1.0) / (2.0 * ft * x)
 
 
+def _lines_at_study_temperature(project: ProjectData, conductor_temperature_c) -> ProjectData:
+    """Every cable and overhead line at the resistance temperature of the study.
+
+    [CT1] IEC 60909-0 §2.4: a MAXIMUM-current study takes line resistance at
+    20 °C. The insulated-cable library (and the palette's documented basis for
+    a typed value) is quoted hot — 90 °C XLPE / 70 °C PVC — and the central
+    overhead correction (``conductor_temp``) runs overhead lines at their 75 °C
+    operating temperature, which is right for load flow but made every maximum
+    Ik″ 6–21 % low: non-conservative for breaking duty, withstand and arc flash.
+
+    [CT2] IEC 60909-0 §2.5 eq. (3): a MINIMUM-current study takes
+    R_L = [1 + 0.004·(θe − 20)]·R_L20 — the factor multiplies the 20 °C
+    resistance. It used to multiply the hot library value, so "70 °C" really
+    ran XLPE cable at R20 × 1.53 (≈152 °C). ``conductor_temperature_c``:
+
+      * None / 20 → maximum study, every line at 20 °C;
+      * a number → every line at that θe;
+      * ``conductor_temp.END_OF_FAULT`` ("final") → each line at its own θe:
+        IEC 60364-4-43 Table 43A for insulated cables (PVC 160 °C, XLPE/EPR
+        250 °C), IEC 60865-1 for bare overhead conductors (200 °C).
+
+    Overhead lines are re-targeted through the central correction (their own
+    α, from the stored 20 °C base); insulated cables have the library factor
+    divided back out first. Returns a rebuilt project; the caller's is untouched.
+    """
+    import json as _json
+    from .conductor_temp import (END_OF_FAULT, final_temp_c, insulated_hot_factor,
+                                 is_overhead)
+
+    mode_final = conductor_temperature_c == END_OF_FAULT
+    fixed_temp = None
+    if not mode_final:
+        fixed_temp = 20.0 if conductor_temperature_c is None else float(conductor_temperature_c)
+
+    data = _json.loads(project.model_dump_json())
+    for c in data.get("components", []):
+        if c.get("type") != "cable":
+            continue
+        props = c.setdefault("props", {})
+        theta = final_temp_c(props) if mode_final else fixed_temp
+        if is_overhead(props):
+            # model_dump restored the 20 °C base; the rebuild re-applies the
+            # correction at the study temperature.
+            props["temperature_c"] = theta
+            props.pop("_r_temp_applied_c", None)
+            continue
+        factor = (1.0 + 0.004 * (theta - 20.0)) / insulated_hot_factor(props)
+        if factor <= 0:
+            continue
+        # 0.1 Ω/km is the engine default when the prop is absent — materialize
+        # it so the correction still applies.
+        try:
+            props["r_per_km"] = float(props.get("r_per_km", 0.1)) * factor
+        except (TypeError, ValueError):
+            pass
+        r0 = props.get("r0_per_km")
+        if r0:
+            try:
+                props["r0_per_km"] = float(r0) * factor
+            except (TypeError, ValueError):
+                pass
+    return ProjectData(**data)
+
+
 def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None,
                        thermal_duration_s: float = 1.0, voltage_factor: float = None,
-                       conductor_temperature_c: float = None) -> FaultResults:
+                       conductor_temperature_c=None) -> FaultResults:
     """Run IEC 60909 fault analysis.
 
     Args:
@@ -87,53 +151,20 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             that omit the voltage factor (e.g. bolted-fault / V=1.0 studies).
             NOTE: the transformer correction factor K_T always uses c_max=1.10
             internally per §6.3.3 regardless of this value.
-        conductor_temperature_c: [PS-3] Conductor temperature (°C) for a
-            MINIMUM short-circuit study per IEC 60909-0 §5.3.1: every cable's
-            resistance (r_per_km and, when set, r0_per_km) is scaled by
-            1 + 0.004·(θ − 20) before the study. Combine with
+        conductor_temperature_c: [PS-3] Line resistance temperature.
+            None or 20 → maximum study, every line at 20 °C (IEC 60909-0
+            §2.4, [CT1]). A number, or "final" (each line at its own
+            end-of-fault temperature, [CT2]) → a MINIMUM study per §2.5
+            eq. (3): R_L = [1 + 0.004·(θe − 20)]·R_L20. Combine with
             voltage_factor = 0.95 (c_min) so disconnection/protection-reach
             checks are made against the current that may actually flow.
-            None or 20 → unchanged (maximum-current convention).
+            See _lines_at_study_temperature.
     """
     # Resolve the voltage factor once; a positive override wins, else C_MAX.
     c_resolved = voltage_factor if (voltage_factor is not None and voltage_factor > 0) else C_MAX
 
-    # [PS-3] Minimum-current mode: hot-conductor cable resistance.
-    if conductor_temperature_c is not None and abs(conductor_temperature_c - 20.0) > 1e-9:
-        import json as _json
-        temp_factor = 1.0 + 0.004 * (float(conductor_temperature_c) - 20.0)
-        if temp_factor > 0:
-            _data = _json.loads(project.model_dump_json())
-            for _c in _data.get("components", []):
-                if _c.get("type") == "cable":
-                    _props = _c.setdefault("props", {})
-                    if str(_props.get("construction", "")).strip().lower() == "overhead":
-                        # An overhead line has already been corrected from its
-                        # 20 °C library value to its operating temperature, so
-                        # multiplying r_per_km again would compound the two.
-                        # Re-target the central correction at the study
-                        # temperature instead: it recomputes from the stored
-                        # 20 °C base, with the conductor's own α rather than a
-                        # flat 0.004. The ProjectData rebuild below applies it.
-                        _props["temperature_c"] = float(conductor_temperature_c)
-                        _props.pop("_r_temp_applied_c", None)
-                        continue
-                    # Underground cable: library values are already hot, so the
-                    # §5.3.1 factor applies to them directly (unchanged).
-                    # 0.1 Ω/km is the engine default when the prop is absent —
-                    # materialize it so the correction still applies.
-                    _r = _props.get("r_per_km", 0.1)
-                    try:
-                        _props["r_per_km"] = float(_r) * temp_factor
-                    except (TypeError, ValueError):
-                        pass
-                    _r0 = _props.get("r0_per_km")
-                    if _r0:
-                        try:
-                            _props["r0_per_km"] = float(_r0) * temp_factor
-                        except (TypeError, ValueError):
-                            pass
-            project = ProjectData(**_data)
+    project_in = project
+    project = _lines_at_study_temperature(project, conductor_temperature_c)
 
     # Give any load wired behind a cable/transformer a terminal bus, so a fault
     # level is reported at that terminal too (as if the user had drawn a bus
@@ -182,6 +213,25 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     # fault location (radial networks never need them).
     net_cache = None
     net_cache_min = {}   # [F9] c_min → bus network, for meshed Ik_min
+
+    # [CT2] Ik_min (§4.6, with §2.5's conditions) needs the lines at their
+    # end-of-fault temperature. A minimum study already has them; a maximum
+    # study (lines at 20 °C, [CT1]) builds that companion set once, lazily.
+    _is_max_study = (conductor_temperature_c is None
+                     or (conductor_temperature_c != "final"
+                         and abs(float(conductor_temperature_c) - 20.0) < 1e-9))
+    _comps_min_cache = []
+
+    def _components_min():
+        if not _is_max_study:
+            return components
+        if not _comps_min_cache:
+            from .conductor_temp import END_OF_FAULT
+            pm = insert_implicit_load_buses(insert_junction_buses(
+                _lines_at_study_temperature(project_in, END_OF_FAULT)))
+            cm = {c.id: c for c in pm.components}
+            _comps_min_cache.append(cm if cm.keys() == components.keys() else components)
+        return _comps_min_cache[0]
 
     # For each bus, compute equivalent impedance seen from that bus
     results = {}
@@ -452,7 +502,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                 ik_steady_ka = round(c_factor / abs(z_max) * i_base_ka, 3)
             if c_min_bus not in net_cache_min:
                 net_cache_min[c_min_bus] = _build_bus_network(
-                    all_buses, components, adjacency, base_mva, c_min_bus,
+                    all_buses, _components_min(), adjacency, base_mva, c_min_bus,
                     freq_hz=(project.frequency or 50))
             nm = net_cache_min[c_min_bus]
             sh_min = {bid: [t[0] for t in lst if t[3] not in ("motor_induction", "motor_synchronous")]
@@ -468,7 +518,7 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
                     source_paths, c_factor, i_base_ka, base_mva, voltage_kv, mode="max")
             if ik_steady_min_ka is None:
                 paths_min = [p for p in _collect_source_paths(
-                                 bus.id, components, adjacency, base_mva, c=c_min_bus,
+                                 bus.id, _components_min(), adjacency, base_mva, c=c_min_bus,
                                  energized=energized)
                              if not p.get("is_motor")]
                 ik_steady_min_ka = _compute_steady_state_current(
@@ -582,10 +632,21 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
         "totals are conservative and branch percentages can exceed 100% "
         "when path angles differ.",
     ]
-    if conductor_temperature_c is not None and abs(conductor_temperature_c - 20.0) > 1e-9:
+    if _is_max_study:
         _assumptions.append(
-            f"Minimum-current study: cable resistances at "
-            f"{conductor_temperature_c:g} °C (IEC 60909-0 §5.3.1).")
+            "Line resistances at 20 °C for the maximum currents (IEC 60909-0 "
+            "§2.4); Ik_min takes each line at its end-of-fault temperature "
+            "(§2.5 eq. 3: PVC 160 °C, XLPE/EPR 250 °C, bare overhead 200 °C).")
+    elif conductor_temperature_c == "final":
+        _assumptions.append(
+            "Minimum-current study: each line at its end-of-fault temperature "
+            "(IEC 60909-0 §2.5 eq. 3; IEC 60364-4-43 Table 43A: PVC 160 °C, "
+            "140 °C above 300 mm², XLPE/EPR 250 °C; bare overhead 200 °C, "
+            "IEC 60865-1).")
+    else:
+        _assumptions.append(
+            f"Minimum-current study: line resistances at "
+            f"{float(conductor_temperature_c):g} °C (IEC 60909-0 §2.5 eq. 3).")
     _assumptions.extend(_converter_assumptions(project))
     _assumptions.extend(_steady_state_assumptions(project))
     _assumptions.extend(_coupling_assumptions(project))
@@ -3836,6 +3897,10 @@ def _series_fault_break_thevenin(project: ProjectData, branch_id: str,
     """
     from .loadflow import insert_implicit_load_buses, insert_junction_buses, run_load_flow
 
+    # [CT1] Fault impedances with lines at 20 °C (IEC 60909-0 §2.4), like the
+    # shunt study; the prefault load flow keeps operating temperatures.
+    project_lf = insert_implicit_load_buses(insert_junction_buses(project))
+    project = _lines_at_study_temperature(project, None)
     project = insert_junction_buses(project)   # [F2]
     project = insert_implicit_load_buses(project)
     base_mva = project.baseMVA
@@ -3943,7 +4008,7 @@ def _series_fault_break_thevenin(project: ProjectData, branch_id: str,
     # information needed for every downstream result.
     il_amps = 0.0
     try:
-        lf = run_load_flow(project, "newton_raphson")
+        lf = run_load_flow(project_lf, "newton_raphson")
         if not lf.converged:
             warnings.append("Prefault load flow did not converge — prefault current through the "
                             "branch is assumed zero, which UNDERSTATES the result.")

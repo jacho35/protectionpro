@@ -42,7 +42,7 @@ from ..models.schemas import (
     ProjectData, DCShortCircuitResults, DCShortCircuitBus,
     DCShortCircuitContribution, LoadFlowWarning,
 )
-from .conductor_temp import base_resistance
+from .conductor_temp import base_resistance, insulated_hot_factor
 from .dc_loadflow import (
     _num, _is_dc_bus, _bus_nominal_v, _build_bus_groups, _find_dc_branches,
     _attached_group, _transparent_closed, SOURCE_TYPES,
@@ -61,14 +61,6 @@ _C_MAX_LV = 1.10     # IEC 60909-0 Table 1, LV with +10 % tolerance (app convent
 
 # ── conductors ────────────────────────────────────────────────────────────
 
-def _hot_factor(props):
-    """Operating-temperature factor baked into the insulated-cable library
-    (`constants.js`: 20 °C DC × 1.275 Cu / 1.282 Al at 90 °C XLPE, ×1.20 PVC)."""
-    if str(props.get("insulation", "")).upper() == "PVC":
-        return 1.20
-    return 1.282 if str(props.get("conductor", "")).upper() == "AL" else 1.275
-
-
 def _r20_per_km(props):
     """[DC4] Conductor resistance at 20 °C (Ω/km per conductor).
 
@@ -78,7 +70,10 @@ def _r20_per_km(props):
     divided back out."""
     if str(props.get("construction", "")).strip().lower() == "overhead":
         return float(base_resistance(props, "r_per_km", 0.1) or 0.0)
-    return _num(props.get("r_per_km", 0.1), 0.1) / _hot_factor(props)
+    # [L2 conductor-temp review] factor from the library id: the panel never
+    # copies `conductor` / `insulation`, so PVC and Al cables were divided by
+    # the Cu XLPE 1.275.
+    return _num(props.get("r_per_km", 0.1), 0.1) / insulated_hot_factor(props)
 
 
 def _npar(comp):

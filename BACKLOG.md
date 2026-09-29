@@ -321,6 +321,13 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Conductor temperature review: fault study at 20 °C / end-of-fault temperature, CT1–CT2 (2026-09-29)
+- **Review.** `CONDUCTOR_TEMP_REVIEW.md` checks `conductor_temp.py` and which resistance temperature each study sees, against IEC 60909-0 §2.4 / §2.5 eq. (3) (in `IEC Standards/`), IEC 60228 and IEC 60364-4-43 Table 43A. The α values and the library bases are correct: armoured cables are exactly R20 × 1.275 / 1.282 / 1.20 across all 113 entries.
+- **CT1 (non-conservative).** The maximum-current study used the hot cable library (90 °C / 70 °C) and overhead lines at 75 °C, where §2.4 requires 20 °C. Far-end Ik″ was up to 21 % low (16 mm² Cu XLPE, 100 m), feeding duty, withstand, arc flash and grounding. Fixed in `fault._lines_at_study_temperature`, also for the open-conductor / simultaneous faults.
+- **CT2.** The minimum study multiplied the *hot* value by 1 + 0.004(θ − 20), so "70 °C" really ran XLPE at about 152 °C. It is now eq. (3) on R20 with θe per insulation (PVC 160 °C, 140 °C above 300 mm²; XLPE/EPR 250 °C; bare overhead 200 °C). The request's `conductorTemperatureC: "final"` selects it; compliance and cable sizing send it. `ik_steady_min` in the maximum study uses the same θe.
+- **L1** AAAC now gets its own α (the library id is read, since `material` is never copied). **L2** the DC engine's hot factor is taken from the library id (PVC was divided by 1.275).
+- Results change: on the 15 live projects the maximum Ik3 rose by a median of 3 % and up to 25 %; minimum-study currents for XLPE fall. Stored results are not recomputed, so re-run them. +29 tests in `test_conductor_temp_review_fixes.py`; 7 fixtures re-based (they stored 20 °C ohms as the hot `r_per_km`). Cache-bust `3.5.150 → 3.5.151`.
+
 ### Lightning risk review: IEC 62305-2:2024 added, 2010 fixes LR1–LR7 (2026-09-29)
 - **Review.** `LIGHTNING_RISK_REVIEW.md` checks `lightning_risk.py` + `lightning.js` against IEC 62305-2 (2010 tables; the 2024 edition and 62305-1:2024 in `IEC Standards/`). The 2010 R1 arithmetic was exact across 55,296 input combinations; the defects were table values and categories. The finding with the biggest effect was the edition itself (**E1**): on the 2024 standard's own house example, the engine said no protection was needed, where 2024 requires SPDs (about 12× apart).
 - **Added — IEC 62305-2:2024 (Ed. 3)**, `backend/analysis/lightning_risk_2024.py`, picked per assessment (`edition`; absent ⇒ 2010 so saved assessments reproduce; new assessments default to 2024):

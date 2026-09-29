@@ -910,11 +910,12 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         pass
 
     # [CS2] Minimum fault currents (IEC 60909-0 c_min: 0.95 LV, 1.0 MV) for
-    # the far-end check — a time-inverse device is slowest there. Cable
-    # resistance at 70 °C, the §5.3.1 hot-conductor basis app.js uses for the
-    # compliance minimum study: at 20 °C the far end of a 200 m 35 mm² sub-
-    # main read 1222 A instead of 1026 A (COMPLIANCE_REVIEW.md §4).
-    MIN_STUDY_CONDUCTOR_C = 70.0
+    # the far-end check — a time-inverse device is slowest there. [CT2] Each
+    # line at its end-of-fault temperature (IEC 60909-0 §2.5 eq. 3 on the
+    # 20 °C resistance; PVC 160 °C, XLPE 250 °C), the same basis app.js uses
+    # for the compliance minimum study.
+    from .conductor_temp import END_OF_FAULT
+    MIN_STUDY_CONDUCTOR_C = END_OF_FAULT
     min_runs = {}
 
     def _min_fault(c_min):
@@ -1219,7 +1220,7 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                         far_needs_overload = overload_ok is False
                         issues.append(
                             f"Fault withstand: the minimum fault at the far end "
-                            f"({far_ka * 1000:.0f} A, c_min, 70 °C) is not cleared within "
+                            f"({far_ka * 1000:.0f} A, c_min, lines at end-of-fault temperature) is not cleared within "
                             f"{ADIABATIC_LIMIT_S:g} s (IEC 60364-4-43 §434.5.2)")
                 else:
                     ith_far, _ = _ith(far_ka, far_kappa, far_t)
@@ -1230,7 +1231,7 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                         fault_withstand_ok = False
                         issues.append(
                             f"Fault withstand at the far end: {size_mm2:.0f}mm² insufficient, "
-                            f"need {s_far:.0f}mm² for {far_ka * 1000:.0f} A (c_min, 70 °C) cleared "
+                            f"need {s_far:.0f}mm² for {far_ka * 1000:.0f} A (c_min, lines at end-of-fault temperature) cleared "
                             f"in {far_t * 1000:.0f}ms")
 
         # ── Issues ──
