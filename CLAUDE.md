@@ -53,6 +53,7 @@ frontend/
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
     ├── dbschedule.js       # DB circuit schedule grid — renders into the #db-modal OR the Schedules workspace
     ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)
+    ├── sl-diagram.js       # Street lighting circuit schematic (SLDiagram): source → main run, spurs on rows below, per-pole phase/VD/Zs, span length/current/neutral; zoom, PNG/SVG export
     ├── streetlight.js      # Street lighting workspace (Reticulation): circuits fed from a kiosk/minisub as a tree of poles (3Φ R-W-B rotation, spurs carry it on, or 1Φ string), pole grid, results, Quick calc, Sync from plan; circuit kVA → source streetLightKVA (streetLightFromCircuits)
     ├── workspaces.js       # Project type (Reticulation / Building / Network) → which workspace tabs show, in workflow order; New-project + type dialogs
     ├── help.js             # Help 'Calculations & tools' viewer: ranked search, KaTeX (js/lib/katex) lazy-loaded; articles are data in help-{faults,flow,dynamics,protect,cables,design,workflow}.js (TeX between $…$ / $$…$$; never a literal $ in text)

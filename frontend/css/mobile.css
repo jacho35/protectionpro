@@ -1193,9 +1193,11 @@ body.dark-mode {
   /* Topology diagram modal — the generic .modal / .modal-wide rules below
      already take it full-width; only the scroll surface and the zoom controls
      need phone sizing. The SVG keeps its natural size and pans in both axes. */
-  #retic-diagram-modal .rdg-scroll { max-height: 58vh; padding: 6px; }
-  #retic-diagram-modal .rdg-toolbar .retic-btn { min-height: 36px; min-width: 40px; }
-  #retic-diagram-modal .rdg-legend { font-size: 12px; }
+  #retic-diagram-modal .rdg-scroll, #sl-diagram-modal .rdg-scroll { max-height: 58vh; padding: 6px; }
+  #retic-diagram-modal .rdg-toolbar .retic-btn, #sl-diagram-modal .rdg-toolbar .retic-btn { min-height: 40px; min-width: 40px; }
+  #retic-diagram-modal .rdg-legend, #sl-diagram-modal .rdg-legend { font-size: 12px; }
+  #sl-diagram-modal .rdg-toolbar { flex-wrap: wrap; }
+  #sl-diagram-modal #sldg-circuit { flex: 1 1 100%; min-height: 40px; font-size: 14px; }
 
   /* ─── Plan (distribution) workspace layout ─────────── */
   /* Toolbar: a compact primary row (Parts, Props, Select, Fit, ⋯); everything
