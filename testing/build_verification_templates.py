@@ -63,7 +63,7 @@ CASES = [
     ("case-dc-shortcircuit", "ver_dc_sc",
      "DC Short Circuit (IEC 61660-1)",
      "Battery + converter DC fault",
-     "IEC 61660-1 DC short circuit. Reproduces the published battery peak (5422 A) exactly from raw nameplate inputs — the full standard factors (E_B = 1.05·U_nB, 0.9·R_B peak, +0.1·R_B for I_k, T_B = 30 ms) are applied internally; converter current-limit is exact."),
+     "IEC 61660-1 DC short circuit. Reproduces the published battery peak (5422 A) exactly from raw nameplate inputs — the standard factors (E_B = 1.05·U_nB, 0.9·R_B peak, +0.1·R_B for I_k) are applied internally, with cable resistance referred to 20 °C and the rise from 1/δ = 2/(R/L + 1/T_B)."),
     ("case-duty-check", "ver_duty",
      "Equipment Duty Check",
      "Breaker peak / making / breaking duty",

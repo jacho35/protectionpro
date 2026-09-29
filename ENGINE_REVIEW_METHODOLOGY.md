@@ -272,6 +272,7 @@ can still be worthwhile, at lower priority than an unreviewed module.
 
 | Module | Review | Findings | Outcome |
 |---|---|---|---|
+| `dc_shortcircuit.py` | DC1–DC6, 2026-09-29 | 6 fixed | `DC_SHORTCIRCUIT_REVIEW.md`. Battery exact vs IEC 61660-1 Example 1; rectifier procedure (Annex A eq. 54–56) exact vs hand calc through a drawn AC network. +15 tests in `test_dc_shortcircuit_review_fixes.py` |
 | `transient_stability.py` (+ `network_reduction.branch_current`) | D1–D8, 2026-08-01 | 8 fixed | PR #260. Core verified to 0.21 % (equal-area), 6 dp (machine init), 1e-5 (turbine transfer functions). +42 tests in `test_review_fixes.py`. Open items recorded in `TRANSIENT_STABILITY_ROADMAP.md` |
 
 ### Reviewed in earlier rounds (not by this method)
@@ -316,7 +317,6 @@ planning engines, then support modules.
 
 | Module | Anchor to use |
 |---|---|
-| `dc_shortcircuit.py` | IEC 61660 worked examples |
 | `dc_arcflash.py` | Stokes & Oppenlander / NFPA 70E DC incident energy |
 | `dc_loadflow.py` | Hand 2-bus DC solution; power balance |
 | `harmonics.py` | IEEE 519 limits; hand harmonic penetration on a 2-bus case |

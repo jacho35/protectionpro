@@ -37,7 +37,7 @@
       "rotation": 0,
       "props": {
         "name": "cbl",
-        "r_per_km": 0.006498,
+        "r_per_km": 0.00828495,
         "x_per_km": 0.004398,
         "length_km": 0.5,
         "num_parallel": 1,

@@ -4014,8 +4014,12 @@ class TestDCShortCircuit:
             _comp("bat-1", "dc_battery",
                   {"name": "Bank", "nominal_v": 120, "internal_r_mohm": 100}),
             _dc_bus("bus-a", "DC A"),
+            # [DC4] Library-style hot resistance: 0.5 Ω/km at 20 °C × 1.275
+            # (Cu XLPE at 90 °C). IEC 61660-1 refers it back to 20 °C, so the
+            # loop is 2·0.5·0.1 = 0.1 Ω. (Was r_per_km 0.5 read as-is — the
+            # fixture fed a hot value into a 20 °C calculation.)
             _comp("cbl-1", "cable",
-                  {"name": "Feeder", "r_per_km": 0.5, "x_per_km": 0.08,
+                  {"name": "Feeder", "r_per_km": 0.5 * 1.275, "x_per_km": 0.08,
                    "length_km": 0.1, "num_parallel": 1, "rated_amps": 100}),
             _dc_bus("bus-b", "DC B"),
         ]
@@ -4025,8 +4029,11 @@ class TestDCShortCircuit:
             _wire("w3", "cbl-1", "bus-b"),
         ]
         if add_charger:
+            # [DC1] Only a switch-mode charger is current-limited; a diode /
+            # thyristor bridge follows the IEC 61660-1 rectifier procedure.
             comps.append(_comp("chg-1", "charger",
-                               {"name": "Chg", "rated_a": 200, "float_voltage_v": 130}))
+                               {"name": "Chg", "rated_a": 200, "float_voltage_v": 130,
+                                "bridge_type": "switch_mode"}))
             wires.append(_wire("w4", "chg-1", "bus-a"))
         return ProjectData(projectName="dc", components=comps, wires=wires)
 
@@ -4066,9 +4073,10 @@ class TestDCShortCircuit:
             _comp("bat-1", "dc_battery",
                   {"name": "Bank", "nominal_v": 120, "internal_r_mohm": 18.6}),
             _dc_bus("bus-a", "DC A"),
-            # loop R = 2·r·ℓ = 2·0.06498·0.05 = 0.006498 Ω (connectors + cable)
+            # loop R = 2·r·ℓ = 2·0.06498·0.05 = 0.006498 Ω at 20 °C (connectors
+            # + cable), entered library-style at 90 °C (× 1.275) — [DC4]
             _comp("cbl-1", "cable",
-                  {"name": "Feeder", "r_per_km": 0.06498, "x_per_km": 0.0,
+                  {"name": "Feeder", "r_per_km": 0.06498 * 1.275, "x_per_km": 0.0,
                    "length_km": 0.05, "num_parallel": 1, "rated_amps": 6000}),
             _dc_bus("bus-b", "DC B"),
         ]

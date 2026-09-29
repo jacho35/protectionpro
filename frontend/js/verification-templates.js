@@ -87,7 +87,7 @@ const VerificationTemplates = {
       "name": "DC Short Circuit (IEC 61660-1)",
       "category": "Verification / Standards",
       "preview": "Battery + converter DC fault",
-      "description": "IEC 61660-1 DC short circuit. Reproduces the published battery peak (5422 A) exactly from raw nameplate inputs \u2014 the full standard factors (E_B = 1.05\u00b7U_nB, 0.9\u00b7R_B peak, +0.1\u00b7R_B for I_k, T_B = 30 ms) are applied internally; converter current-limit is exact."
+      "description": "IEC 61660-1 DC short circuit. Reproduces the published battery peak (5422 A) exactly from raw nameplate inputs \u2014 the standard factors (E_B = 1.05\u00b7U_nB, 0.9\u00b7R_B peak, +0.1\u00b7R_B for I_k) are applied internally, with cable resistance referred to 20 \u00b0C and the rise from 1/\u03b4 = 2/(R/L + 1/T_B)."
     },
     {
       "id": "ver_duty",
@@ -1390,7 +1390,7 @@ const VerificationTemplates = {
           "rotation": 0,
           "props": {
             "name": "cbl",
-            "r_per_km": 0.006498,
+            "r_per_km": 0.00828495,
             "x_per_km": 0.004398,
             "length_km": 0.5,
             "num_parallel": 1,

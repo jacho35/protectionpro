@@ -6,7 +6,7 @@ Module-by-module status of the independent engine reviews. Each review follows
 from the module's own tests; report, then fix with `[ID]` markers and one
 regression test per finding.
 
-*Created 2026-09-28; last updated 2026-09-29 (compliance review). Update this
+*Created 2026-09-28; last updated 2026-09-29 (DC short-circuit review). Update this
 file when a review lands (status, date, PR, write-up).*
 
 **Status:** ✅ reviewed · 🟡 partly reviewed · ⬜ not reviewed
@@ -34,6 +34,7 @@ standard, or first principles only); the review checks against that instead.
 | `pt_model.py` (+ duty-check PT table, `constants.js` PT props) | ✅ 2026-09-29 | Direct | IEC 61869-3:2011 (Tables 301/302/303, burden ranges I/II), IEC 61869-1 / IEC 60071-1 (earth fault factor) | Class limits, burden band per range, rated primary vs bus voltage (80–120 %), rated voltage factor vs the bus earth fault factor from the fault study's Z1/Z0, ratio and class parsing | `PT_MODEL_REVIEW.md` (PT1–PT4, L1–L2), PR #339. **Not covered:** VT equivalent circuit (actual ratio/phase error), ferroresonance, CVTs (IEC 61869-5 — no model in the app), residual-winding rating |
 | `tcc.js` curve functions (`constants.js` IDMT / gG / CB / distance, mirrored in `arcflash.py`) | ✅ 2026-09-29 | Direct | IEC 60255-151, IEEE C37.112, IEC 60269-1 (Tables 2/3/7), IEC 60898-1 Table 7, IEC 60947-2 Table 6, IEC 60364-4-43 Table 43A, IEEE C57.109 / IEC 60076-5 | IDMT constants and range (G_D = 20·Gs), gG gates and 0.01 s I²t, MCB/MCCB conventional currents, MCB magnetic bands, fuse selectivity ratio, cable k, transformer damage, distance-relay voltage base; frontend/backend parity | `TCC_REVIEW.md` (TC1–TC4, L1–L5), PR #338. **Not covered:** drawing/interaction, auto-coordinate search, sequence-of-operation topology, user CSV curves |
 | `compliance.js` (frontend, + `deviceRatingFlags` diagram markers) | ✅ 2026-09-29 | Direct | IEC 60364-4-41 (§411.3.2, Table 41.1, §411.4.5, §411.5.3), IEC 60364-4-43 (§433.1, §434.5.2, §435.1, Table 43A), IEC 60909-0 §5.3.1 / §12, IEC 60076-1, IEC 62271-1 / IEC 60038; SANS 10142-1 | Earth-fault disconnection per circuit at its far end, cable withstand at largest and minimum current, §433.1 incl. I2, earthing system per LV installation, LV neutral from the vector group, maximum demand, rated voltage vs Um, diagram flag basis, HV-side device current | `COMPLIANCE_REVIEW.md` (C1–C9, L1–L5, cross-module X1 Cable Sizing minimum at 70 °C, X2 IEEE 1584 instantaneous clearing times on both sides), PR #340. **Not covered:** NRS 048-2 band above 500 V, Al minimum size, IT second fault, ELV |
+| `dc_shortcircuit.py` | ✅ 2026-09-29 | Direct | IEC 61660-1:1997 (Figure 10, Annex A eq. 54–56; battery clauses and worked Examples 1 and 3 as published in CED E03-035) | Battery peak / quasi-steady / 1/δ / t_pB, τ_1B (Figure 10), rectifier λ_D, κ_D, t_pD, τ_1D from the AC supply impedance, superposition with a common branch, source lead cables, parallel cables, 20 °C conductor resistance | `DC_SHORTCIRCUIT_REVIEW.md` (DC1–DC6, L1–L7). **Not covered:** minimum current, capacitor and DC-motor sources, 60 Hz rectifier time forms |
 | `loadflow.py` | ✅ 2026-09-28 | Partial | IEC 60038 voltage bands, IEC 60076-1 tap/ratio conventions; method from first principles (hand 2/3-bus, power balance) | Voltage zones in transformer chains, tees, PV/PQ handling, reactive limits, SoC, branch currents; sync-motor pf sign (MG5) | Load-flow review PR #326 (16 findings) + sibling alignment `baffd40`; PR #332 (MG5) |
 
 ## Partly reviewed
@@ -50,7 +51,6 @@ standard, or first principles only); the review checks against that instead.
 
 | # | Module | IEC fit | Standard(s) | Review scope |
 |---|---|---|---|---|
-| 9 | `dc_shortcircuit.py` | Direct | IEC 61660-1 (battery, rectifier, capacitor, motor sources) and its Annex worked examples | Peak and quasi-steady currents, time constants τ1/τ2, rise time, superposition of sources, correction factors |
 | 10 | `lightning_risk.py` + `lightning.js` | Direct | IEC 62305-2:2010 (R1, collection areas A_D/A_M/A_L/A_I, N_D, P_x, L_x) | Collection-area formulas, location / environment factors, probabilities per LPL, loss values, tolerable risk 10⁻⁵; Annex worked example |
 | 11 | `conductor_temp.py` | Direct | IEC 60228 (R20, α), IEC 60287-1-1 (operating temperature) | R(θ) = R20·(1 + α(θ − 20)) with the right α for Cu/Al; library reference temperatures; which studies use 20 °C vs operating temperature (IEC 60909 uses 20 °C for max, θe for min) |
 | 12 | `line_coupling.py` | Direct | IEC TR 60909-2 (line data), IEC 60909-3 (earth currents), Carson's equations | Mutual Z0 between parallel circuits against the Carson closed form; earth-return depth vs soil resistivity; effect on SLG results |
