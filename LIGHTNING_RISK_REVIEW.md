@@ -201,7 +201,7 @@ LPS I + SPD I: 8.84 × 10⁻⁶ from the engine, 1.08 × 10⁻⁵ correct. That 
 "Install LPS class I + SPDs LPL I" is shown as sufficient when it isn't. For
 these cases the engine should warn that LPS + SPD alone cannot reach R_T.
 
-**Fix:** 0.15 → 0.2 (`[LR3]`), subject to the source caveat above.
+**Fix:** 0.15 → 0.2 (`[LR3]`). Confirmed from the 2010 text (see the source note at the top).
 
 ### LR4 — Hospital intensive care and operating theatres use L_O = 10⁻³; Table C.2 gives 10⁻² — **medium, non-conservative**
 
