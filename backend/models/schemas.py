@@ -1006,10 +1006,75 @@ class LightningLine(BaseModel):
     installation: str = "buried"        # aerial | buried (C_I, Table A.2)
     environment: str = "suburban"       # rural | suburban | urban | urban_tall_buildings (C_E)
     has_transformer: bool = True        # HV/LV transformer at entrance (C_T = 0.2)
-    shielded: bool = False              # shielded line bonded at equipment (P_LD)
+    shielded: bool = False              # legacy: shielded + bonded (read as bonded, R_S <= 1)
+    # [LR5] screen: unshielded | not_bonded | bonded_rs_le1 | bonded_rs_1_5 | bonded_rs_5_20
+    screen: Optional[str] = None
+
+
+# ── IEC 62305-2:2024 (Ed. 3) inputs — lightning_risk_2024.py ──
+
+class Lightning2024Section(BaseModel):
+    """One section of an external line (A.4): the sections between the
+    structure and the first node."""
+    length_m: float = 1000.0            # L_L; 1000 m when unknown (A.4)
+    installation: str = "buried"        # aerial | buried | buried_meshed (C_I, Table A.2)
+    line_type: str = "lv"               # lv | hv (HV with HV/LV transformer, C_T = 0.2, Table A.3)
+    environment: str = "suburban"       # rural | suburban | urban | urban_tall_buildings (C_E)
+
+
+class Lightning2024Line(BaseModel):
+    name: str = "Power supply"
+    type: str = "power"                 # power | telecom
+    sections: list[Lightning2024Section] = []
+    # Table B.9 / B.11: unshielded | not_bonded | bonded_rs_le1 | bonded_rs_1_5 |
+    # bonded_rs_5_20 | protective_conduit | multi_grounded_neutral | isolating_interface
+    shield: str = "unshielded"
+
+
+class Lightning2024System(BaseModel):
+    """An internal system in a zone (power or telecom)."""
+    type: str = "power"                 # power | telecom
+    line: Optional[str] = None          # name of the external line it connects to; None = none / optical
+    uw_kv: float = 2.5                  # U_W of its weakest equipment
+    wiring: str = "none"                # K_S3 key (Table B.10)
+    spd_level: str = "none"             # coordinated SPD: none | III-IV | II | I | better
+
+
+class Lightning2024Zone(BaseModel):
+    name: str = "Inside the building"
+    kind: str = "inside"                # inside | exposed (roof / open area next to the structure)
+    hours_present: float = 8760.0       # t_z (P_P = t_z/8760, B.14)
+    equipment_hours: float = 8760.0     # t_e (P_e, B.15)
+    floor: str = "agricultural_concrete"  # r_t (Table B.2)
+    touch_measure: str = "none"         # P_am (Table B.1)
+    persons_exposed: bool = False       # P_O (exposed zones: people on the structure, R_AD)
+    fire_risk: str = "ordinary"         # r_f: none | low | ordinary | high | explosion_z2 | explosion_z1 | explosion_z0
+    fire_protection: str = "none"       # r_p (Table B.5)
+    lithium_ion: bool = False           # r_p = 1 (B.4)
+    loss_class: str = "normal"          # low | normal | high | very_high (Table C.2)
+    life_critical: bool = False         # failure of internal systems endangers life (R_C1…R_Z1)
+    loss_overrides: dict[str, float] = {}  # any of lt, ld, lf1, lf2, lo1, lo2
+    ks2_mesh_m: float = 0.0             # spatial shield inside the structure, mesh width (0 = none)
+    systems: list[Lightning2024System] = []
+    tolerable_frequency: float = 0.1    # F_T (9.3 Note 1: 0.1 critical, 1 non-critical)
+
+
+class Lightning2024Input(BaseModel):
+    strike_density: float = 8.0         # N_SG, strike points / km² / yr
+    k: float = 2.0                      # N_SG = k·N_G (A.1); also divides N_M, N_I
+    construction: str = "masonry"       # masonry | rc_frame (P_S, Table B.4; natural LPS)
+    ks1_mesh_m: float = 0.0             # grid-like LPS / frame spacing (K_S1 = 0.12·w), 0 = none
+    lps_class: str = "none"             # none | IV | III | II | I | I_natural | I_metal_roof (Table B.3)
+    eb_level: str = "none"              # entrance SPDs, P_EB (Table B.13)
+    lines: list[Lightning2024Line] = []
+    zones: list[Lightning2024Zone] = []
 
 
 class LightningRiskRequest(BaseModel):
+    # Edition: "2010" (Ed. 2, default — saved assessments reproduce) or "2024"
+    edition: str = "2010"
+    tolerable_risk: float = 1e-5        # R_T (2010 Table 4 / 2024 7.3 Note 1)
+    v2024: Optional[Lightning2024Input] = None
     # Structure geometry & site
     length_m: float = 20.0
     width_m: float = 15.0
@@ -1049,9 +1114,36 @@ class LightningProtectionOption(BaseModel):
     label: str
     r1: float
     compliant: bool
+    eb_level: str = ""                  # 2024: entrance SPDs
+    frequency: float = 0.0              # 2024: worst zone F with this option
+    frequency_compliant: bool = True
+
+
+class LightningZoneComponent(BaseModel):
+    code: str                           # RAT, RAD, RB, RC, RM, RU, RV, RW, RZ / FC, FM, FW, FZ
+    description: str
+    value: float
+    share_pct: float
+    loss_of_life: float = 0.0           # the L1 part of a risk component (2024)
+
+
+class LightningZoneResult(BaseModel):
+    name: str
+    kind: str
+    risk: float
+    compliant: bool
+    components: list[LightningZoneComponent]
+    risk_life: float = 0.0              # R_L1 (eq. 7)
+    risk_damage: float = 0.0            # R_L2 (eq. 8)
+    has_systems: bool = False
+    frequency: float = 0.0              # F (eq. 12)
+    tolerable_frequency: float = 0.0
+    frequency_compliant: bool = True
+    frequency_components: list[LightningZoneComponent] = []
 
 
 class LightningRiskResult(BaseModel):
+    edition: str = "2010"
     collection_area_m2: float           # A_D
     collection_area_near_m2: float      # A_M
     flashes_to_structure_per_year: float   # N_D
@@ -1064,6 +1156,12 @@ class LightningRiskResult(BaseModel):
     recommendation: str
     systems_life_risk: bool
     warnings: list[str] = []
+    # 2024 only
+    zones: list[LightningZoneResult] = []
+    governing_zone: str = ""
+    frequency_compliant: bool = True
+    frequency_recommendation: str = ""
+    lines_events: list[dict] = []       # per line: name, nl, ni
 
 
 # ── Raceway / Conduit Fill Analysis ──

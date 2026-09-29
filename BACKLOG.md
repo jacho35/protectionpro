@@ -321,6 +321,31 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Lightning risk review: IEC 62305-2:2024 added, 2010 fixes LR1–LR7 (2026-09-29)
+- **Review.** `LIGHTNING_RISK_REVIEW.md` checks `lightning_risk.py` + `lightning.js` against IEC 62305-2 (2010 tables; the 2024 edition and 62305-1:2024 in `IEC Standards/`). The 2010 R1 arithmetic was exact across 55,296 input combinations; the defects were table values and categories. The finding with the biggest effect was the edition itself (**E1**): on the 2024 standard's own house example, the engine said no protection was needed, where 2024 requires SPDs (about 12× apart).
+- **Added — IEC 62305-2:2024 (Ed. 3)**, `backend/analysis/lightning_risk_2024.py`, picked per assessment (`edition`; absent ⇒ 2010 so saved assessments reproduce; new assessments default to 2024):
+  - a single risk R = R_L1 + R_L2 per risk zone;
+  - the frequency of damage F against F_T;
+  - N_SG = k·N_G;
+  - r_M / r_I from U_W;
+  - loss classes;
+  - internal systems per zone;
+  - HV + LV line sections, and screens by R_S.
+
+  The engine takes any number of zones. It is pinned to the standard's Annex F house, office and hospital examples, unprotected and protected, component by component, for both R and F. The dialog adds an edition switch and the 2024 inputs (loss class, construction, explosion zones, touch measures, an optional exposed roof or outside zone, internal-system U_W and wiring, entrance SPDs, F_T). The results show a row per zone and the F verdict, and the PDF follows the edition.
+- **Fixed (2010 path):**
+  - **LR1.** Hotels and schools no longer count internal-system failure as a risk to life. A typical hotel was 47× too high and was sent to LPS class I; SPDs at LPL III–IV alone meet R_T. The old combined card reads as *Hospital*.
+  - **LR2.** Risk of explosion: L_F = 0.1 and r_p = 1 (R_B was 25× low).
+  - **LR3.** Telecom P_LI at 2.5 kV changed from 0.15 to 0.2. This is the one value still to confirm against a 2010 copy.
+  - **LR4.** New *intensive care / theatres* card, L_O = 0.01.
+  - **LR5.** Line screen by R_S and U_W (Table B.8) replaces the flat 0.2.
+  - **LR6.** P_C combines over the lines, and is 0 with none.
+  - **LR7.** The recommendation evaluates every LPS × SPD pair.
+  - R_T is now an input, and the tolerable-risk table is cited as Table 4.
+- **Existing results change:** saved 2010 assessments recalculate differently for hotel / school / hospital, explosion-risk, telecom-line and multi-line cases, and the ladder may recommend lighter protection. Stored results are not recomputed; re-assess them.
+- **Open:** the multi-zone dialog (the engine already takes zones); thunderstorm warning systems (P_TWS); adjacent structures (N_DJ); Annex E environmental loss; confirmation of the 2010 Table B.9 TLC value.
+- **Tests:** `backend/tests/test_lightning_review_fixes.py` (2010 fixes plus Annex F.2/F.3/F.4); `test_regression.py` explosion test re-based on LR6 (it asserted R_C on a structure with no lines).
+
 ### DC short-circuit review: DC1–DC6 and lesser notes (2026-09-29)
 - **Review.** `DC_SHORTCIRCUIT_REVIEW.md` checks `dc_shortcircuit.py` against IEC 61660-1 (Annex A eq. 54–56; the battery clauses and worked Examples 1 and 3 as published in CED E03-035) and circuit first principles. The battery peak and quasi steady-state currents were already exact; the defects were in everything around them.
 - **Fixed:**
@@ -720,7 +745,7 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 - **Results lead with the verdict** (R₁ as a multiple of R_T) and the **minimum protection that meets R_T**. A "why" panel names what drives the risk (e.g. internal-system surges, and how much SPDs alone cut it). Then the components ranked with bars, the protection ladder with the minimum tagged, and the basis and simplifications.
 - Frontend only (new `frontend/js/lightning.js`, `frontend/css/lightning.css`). Every input keeps its `lr-*` id: cards and segmented buttons write a hidden input, so the request, the engine and the saved project data are unchanged. New: the dialog resets to defaults before restoring a project's inputs, so it no longer shows the previous project's values.
 - **Verified** headlessly against the real backend: defaults and live estimate (3,790 m², matching the hand calculation); the school example entered through the real controls gives R₁ = 7.3 × 10⁻⁴ (73 × R_T), minimum LPS Class I + SPDs LPL I at 7.6 × 10⁻⁶, matching the engine run; inputs save and restore with the cards highlighted; dark mode; phone (fits 390 px, estimate collapses to a strip). Design: `https://claude.ai/artifact/P8VpPV2MV6se9HrtDZtJdC`.
-- **Open question (engine, not changed):** the engine counts internal-system failure (R_C/R_M/R_W/R_Z) as a risk to life for the whole hospital/hotel/school category. IEC 62305-2's note applies it to hospitals and explosion risks. For the school example those components are 88% of R₁ and set the verdict, so consider splitting hospitals from hotels/schools.
+- ~~**Open question (engine, not changed):** the engine counts internal-system failure (R_C/R_M/R_W/R_Z) as a risk to life for the whole hospital/hotel/school category. IEC 62305-2's note applies it to hospitals and explosion risks. For the school example those components are 88% of R₁ and set the verdict, so consider splitting hospitals from hotels/schools.~~ Resolved 2026-09-29 by the lightning review (LR1): hospitals are split from hotels/schools.
 
 ### Reticulation: erf override in amps OR kVA, and override erven keep their own phase (2026-09-18)
 - **Override entry in A or kVA.** The erf's override cell now has two inputs. Type either one and the other is calculated at the erf's own voltage (230 V for Red/White/Blue, √3·400 V for 3 Phase) and shown muted. The typed value is the one kept: change a kVA-entered erf's phase and its amps re-derive (25 kVA → 36.1 A on 3 Phase, 108.7 A on Red). Clearing the field removes the override. Stored as `overrideUnit` + `kvaOverride`, with `ampsOverride` kept in step for the engine, so existing projects are unchanged. The backend uses an entered kVA as-is (no round trip through amps). The report's column shows both.

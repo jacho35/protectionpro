@@ -77,6 +77,8 @@
 
 /* Option cards (radio groups) */
 .lr-cards { display: grid; gap: 8px; }
+.lr-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lr-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .lr-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .lr-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .lr-card { display: flex; flex-direction: column; gap: 5px; padding: 10px 11px; border: 1px solid var(--border-color); border-radius: 8px;
@@ -183,6 +185,14 @@
   .lr-foot-pg { display: none; }
   .lr-foot .btn { white-space: nowrap; }
   .lr-grid-3, .lr-grid-2, .lr-dims, .lr-about-meta, .lr-verdict { grid-template-columns: 1fr; }
-  .lr-cols-4, .lr-cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lr-cols-3, .lr-cols-4, .lr-cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lr-head .lr-tag { display: none; }
 }
+
+/* Edition switch; fields that belong to one edition only (data-lr-ed) are
+   hidden by LightningUI.syncEdition(). */
+.lr-ed-pick { padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+.lr-tight { margin-top: 6px; max-width: 140px; }
+[data-lr-ed][hidden] { display: none !important; }
+/* 2024 results: one row per risk zone */
+.lr-zone-bad td:nth-child(2), .lr-zone-bad td:nth-child(4) { color: #b3261e; font-weight: 600; }

@@ -3552,7 +3552,14 @@ class TestLightningRisk:
         """Explosion risk ⇒ internal-system failure endangers life:
         R_C = N_D·P_SPD·L_O with L_O = 1e-1 dominates R1 and forces a
         non-compliant verdict for an unprotected structure."""
-        res = run_lightning_risk(_lr_request(explosion_risk=True))
+        # [LR6] With no external line C_LD = 0 (Table B.4, stand-alone
+        # systems) and R_C = 0; this test used to assert R_C = N_D·L_O on a
+        # structure with no lines, which encoded that defect. One power line
+        # gives the internal system its C_LD = 1, so P_C = P_SPD = 1.
+        line = LightningLine(name="Incomer", type="power", length_m=1000.0,
+                             installation="buried", environment="suburban",
+                             has_transformer=True)
+        res = run_lightning_risk(_lr_request(explosion_risk=True, lines=[line]))
         assert res.systems_life_risk
         rc = next(c for c in res.components if c.code == "RC")
         nd = res.flashes_to_structure_per_year
