@@ -97,11 +97,16 @@ const Compliance = {
       const ik3 = faultResult.ik3;
       if (ik3 == null) continue;
 
-      // Breaking duty: compare the symmetrical breaking current Ib when the
-      // engine provides it (IEC 60909 §9); fall back to I"k3 (conservative)
-      const ibKA = faultResult.ib != null ? faultResult.ib : ik3;
-      const ibLabel = faultResult.ib != null ? 'Ib' : 'I"k3';
-      const ipKA = faultResult.ip; // Peak (making) current
+      // Breaking duty, mirroring backend duty_check.py [DU1][DU2]: the largest
+      // PHASE current of any fault type (I"k3, I"k1, I"kLL — ikLLG is the
+      // earth current I"kE2E, not a pole current). Only an MV breaker
+      // (IEC 62271-100) may take the decayed Ib for the balanced fault; LV
+      // breakers (IEC 60947-2) and fuses (IEC 60269) are rated against the
+      // prospective I"k.
+      const unbal = Math.max(faultResult.ik1 || 0, faultResult.ikLL || 0);
+      const ikMax = Math.max(ik3, unbal);
+      const busKv = faultResult.voltage_kv || busComp?.props?.voltage_kv || 0;
+      const ipKA = faultResult.ip != null ? faultResult.ip * (ik3 > 0 ? ikMax / ik3 : 1) : null;
 
       // Find protection devices connected to this bus (walk through wires)
       const connectedDevices = this._findConnectedDevices(busId, ['cb', 'fuse']);
@@ -112,6 +117,9 @@ const Compliance = {
         const devName = devComp.props?.name || dev.id;
         const breakingKA = devComp.props?.breaking_capacity_ka;
 
+        const mvCb = devComp.type === 'cb' && busKv > 1.0;
+        const ibKA = (mvCb && faultResult.ib != null) ? Math.max(faultResult.ib, unbal) : ikMax;
+        const ibLabel = (mvCb && faultResult.ib != null && faultResult.ib >= unbal) ? 'Ib' : 'largest I"k';
         if (breakingKA == null || breakingKA <= 0) {
           section.items.push({
             status: 'warn',
@@ -163,7 +171,7 @@ const Compliance = {
             factorLabel = `${makingFactor}× breaking, IEC 62271-100 at ${freq} Hz`;
           } else {
             const icu = breakingKA;
-            makingFactor = icu <= 6 ? 1.5 : icu <= 10 ? 1.7 : icu <= 20 ? 2.0 : icu <= 50 ? 2.1 : 2.2;
+            makingFactor = icu <= 4.5 ? 1.41 : icu <= 6 ? 1.5 : icu <= 10 ? 1.7 : icu <= 20 ? 2.0 : icu <= 50 ? 2.1 : 2.2;
             factorLabel = `${makingFactor}× breaking, IEC 60947-2`;
           }
           const makingKA = explicitMaking || breakingKA * makingFactor;

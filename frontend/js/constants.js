@@ -1152,6 +1152,10 @@ const FIELD_INFO = {
   'cb.ef_delay_s':           'Definite-time delay of the integral earth-fault trip (s). 0 = instantaneous.\nGrade against downstream earth-fault devices at the single-line-to-ground fault current.',
 
   // Fuse
+  'cb.rated_voltage_kv': 'Rated voltage Ur. For MV equipment IEC 62271-1 requires Ur ≥ Um, the highest voltage of the system (IEC 60038: 12 kV for an 11 kV system, 24 kV for 22 kV, 36 kV for 33 kV) — enter the IEC rated value, not the system nominal. LV: Ue ≥ the system voltage.\nUsed by: Equipment Duty Check.',
+  'cb.icw_ka': 'Rated short-time withstand current Icw (IEC 60947-2, category B breakers) and its time. With a short-time delay the breaker carries the fault for that delay: the duty check verifies I²·t_delay ≤ Icw²·t_cw. Blank = not checked (a warning says so).',
+  'cb.icw_time_s': 'Time for which Icw is rated (IEC 60947-2 preferred 0.05, 0.1, 0.25, 0.5, 1 s). Default 1 s.',
+  'cb.contact_parting_s': 'MV breaker contact-parting time (minimum relay time + minimum opening time). The fault study evaluates the breaking current Ib and its DC component at 0.1 s; a faster breaker parts earlier, so below 0.1 s the duty check uses the undecayed I″k and re-evaluates the DC component at this time (IEC 62271-100 §4.101). Blank = 0.1 s.',
   'fuse.breaking_capacity_ka': 'Default 50 kA — typical for gG fuse-links.\nSource: IEC 60269-1 — rated breaking capacity for HRC fuses.',
   'fuse.fuse_type':            'Default gG — general purpose fuse for overload and short-circuit protection.\nSource: IEC 60269-1:\n• gG: general purpose full-range\n• aM: motor circuit partial-range (short-circuit only).',
 
@@ -2534,7 +2538,7 @@ const COMPONENT_DEFS = {
     height: 40,
     defaults: {
       name: 'CB',
-      rated_voltage_kv: 11,
+      rated_voltage_kv: 12,
       rated_current_a: 630,
       breaking_capacity_ka: 25,
       circuit_type: '',
@@ -2584,6 +2588,11 @@ const COMPONENT_DEFS = {
         showWhen: { field: 'cb_type', values: ['acb'] }, section: 'protection' },
       { key: 'instantaneous_pickup', label: 'Instantaneous', type: 'number', unit: '×Ir',
         showWhen: { field: 'cb_type', values: ['acb'] }, section: 'protection' },
+      { key: 'icw_ka', label: 'Icw (short-time)', type: 'number', unit: 'kA', min: 0, step: 1,
+        showWhen: { field: 'cb_type', values: ['acb'] }, section: 'fault' },
+      { key: 'icw_time_s', label: 'Icw Time', type: 'number', unit: 's', min: 0.05, step: 0.05,
+        showWhen: { field: 'cb_type', values: ['acb'] }, section: 'fault' },
+      { key: 'contact_parting_s', label: 'Contact Parting Time', type: 'number', unit: 's', min: 0, step: 0.01, section: 'fault' },
       // Integral earth-fault (shunt-trip) release — a core-balance CT can trip
       // an MCCB/ACB directly, without a separate relay. Enabled by picking the
       // measuring CBCT; residual pickup + definite-time delay define the element.
@@ -2606,7 +2615,7 @@ const COMPONENT_DEFS = {
     height: 40,
     defaults: {
       name: 'Fuse',
-      rated_voltage_kv: 11,
+      rated_voltage_kv: 12,
       rated_current_a: 100,
       breaking_capacity_ka: 50,
       fuse_type: 'gG',

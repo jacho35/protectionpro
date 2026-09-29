@@ -84,15 +84,19 @@ $$\Delta t=t_{clear,backup}-t_{clear,primary}\ \ge\ \Delta t_{min}$$</li>
 <div class="hc-note"><span class="hc-label">Tip</span>Run it for the <em>minimum</em> fault too. A backup that grades well at maximum fault can fail to operate at all — or take tens of seconds — when the fault is at the far end of a long, high-impedance feeder.</div>` },
 
 { id: 'prot-duty', group: 'protect', title: 'Equipment duty check',
-  std: 'IEC 62271-100 · IEC 60947-2 · Analyse ▸ Protection & safety',
+  std: 'IEC 62271-100 · IEC 62271-1 · IEC 60947-2 · IEC 60269 · IEC 60038 · Analyse ▸ Protection & safety',
   kw: 'breaking capacity making capacity icu icm asymmetrical duty transformer loading busbar',
   html: String.raw`
 <p>Compares the calculated fault current with the rated withstand of every protective device, and flags any that is under-rated.</p>
 <h4>Circuit breakers and fuses</h4>
 <table class="help-ref-table"><thead><tr><th>Check</th><th>Duty</th><th>Capability</th></tr></thead><tbody>
-<tr><td>Breaking</td><td>$I_b$ at the device's bus (with motor contribution)</td><td>rated breaking capacity $I_{cu}$ / $I_{cs}$</td></tr>
-<tr><td>Making</td><td>peak current $i_p$</td><td>$I_{cm}$ — see below</td></tr>
-<tr><td>Asymmetrical breaking</td><td>$I_{b,asym}=\sqrt{I_b^2+i_{dc}^2}$ at 100 ms</td><td>$I_{cu}\sqrt{1+2\beta^{2}}$</td></tr></tbody></table>
+<tr><td>Breaking — LV breaker, fuse</td><td>largest <em>prospective</em> phase current of any fault type, $\max(I''_{k3},I''_{k1},I''_{kLL})$ — IEC 60947-2 and IEC 60269 rate against the prospective current, with no decay credit</td><td>$I_{cu}$ / fuse breaking capacity</td></tr>
+<tr><td>Breaking — MV breaker</td><td>$\max(I_b,\ I''_{k1},\ I''_{kLL})$ — the decayed breaking current for the balanced fault (IEC 62271-100); unbalanced faults take $I_b=I''_k$ (IEC 60909-0 §9)</td><td>rated short-circuit breaking current</td></tr>
+<tr><td>Making</td><td>peak $i_p=\kappa\sqrt2\,I''_{k,max}$</td><td>$I_{cm}$ — see below</td></tr>
+<tr><td>Asymmetrical breaking (MV only)</td><td>$\sqrt{I_b^2+i_{dc}^2}$ at contact parting</td><td>$I_{sc}\sqrt{1+2\beta^{2}}$</td></tr>
+<tr><td>Short-time withstand (ACB with a short-time delay)</td><td>$I^2 t_{sd}$</td><td>$I_{cw}^2\,t_{cw}$ (IEC 60947-2)</td></tr>
+<tr><td>Voltage</td><td>system voltage; for MV the highest voltage $U_m$ (IEC 60038: 12 kV for 11 kV, 24 for 22, 36 for 33)</td><td>rated voltage — fail below the nominal, warning below $U_m$</td></tr></tbody></table>
+<p>The double-line-to-ground field of the fault study is the earth current $3I_0$, not a current any pole interrupts, so it is not used. A device on a distribution board is checked at the board's fault level. Contact parting defaults to 0.1 s, where the fault study evaluates $I_b$; a faster MV breaker (<em>Contact Parting Time</em> below 0.1 s) is checked on the undecayed $I''_k$ with its DC component re-evaluated at that time.</p>
 <p>When no making rating is entered it is assumed:</p>
 <ul>
 <li><strong>MV</strong> (IEC 62271-100): $I_{cm}=2.5\,I_{cu}$ at 50 Hz, $2.6\,I_{cu}$ at 60 Hz.</li>
@@ -102,7 +106,7 @@ $$\Delta t=t_{clear,backup}-t_{clear,primary}\ \ge\ \Delta t_{min}$$</li>
 <h4>Verdicts</h4>
 <ul>
 <li><strong>Fail</strong> — duty exceeds capability.</li>
-<li><strong>Warning</strong> — utilisation above 80 %, continuous rating exceeded, or making margin under 10 %.</li>
+<li><strong>Warning</strong> — utilisation above 80 %, continuous rating exceeded, making margin under 10 %, or an MV rated voltage below $U_m$.</li>
 <li><strong>Pass</strong> otherwise.</li>
 </ul>
 <h4>Transformers and busbars</h4>

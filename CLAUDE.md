@@ -195,7 +195,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/db-circuit-check` | Per-way DB circuit schedule check | IEC 60364-5-52 Iz + 4-43 §433.1; volt drop from the origin per 5-52 Table G.52.1 / SANS 10142-1 Cl. 6.6; IEC 60364-5-54 §543.1 ECC (Table 54.7 or adiabatic); IEC 60364-4-41 Zs (magnetic / RCD TN·TT / declared time) |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |
-| `/api/analysis/duty-check` | Equipment duty | Fault current ratings |
+| `/api/analysis/duty-check` | Equipment duty | IEC 60947-2 / IEC 60269 (LV breakers, fuses: largest prospective I″k), IEC 62271-100 (MV: Ib, asymmetry, making), Icw, Ur ≥ Um |
 | `/api/analysis/load-diversity` | Demand factors | Load diversity |
 | `/api/analysis/grounding` | Grounding grid | IEEE 80 |
 | `/api/analysis/study-manager` | Batch all studies | Runs selected analyses |

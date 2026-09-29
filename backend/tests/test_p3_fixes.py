@@ -302,14 +302,20 @@ class TestPS13bExemptionNote:
 
 
 class TestPS14DutyCheck:
-    def _proj(self, icu_ka, x_r=40.0):
+    def _proj(self, icu_ka, x_r=40.0, mv=False):
+        # Re-baselined in the duty-check review [L4]: the IEC 62271-100
+        # asymmetrical check applies to MV breakers only (an IEC 60947-2 LV
+        # breaker covers asymmetry through its Table 2 test pf / making
+        # ratio), so the asymmetry tests now run at 11 kV with the same
+        # 28.87 kA (550 MVA); the LV making-ratio test stays at 0.4 kV.
+        kv = 11.0 if mv else 0.4
         return _project([
-            _comp("u1", "utility", {"name": "Grid", "fault_mva": 20.0,
-                                    "x_r_ratio": x_r, "voltage_kv": 0.4}),
-            _comp("busA", "bus", {"name": "A", "voltage_kv": 0.4}),
+            _comp("u1", "utility", {"name": "Grid", "fault_mva": 550.0 if mv else 20.0,
+                                    "x_r_ratio": x_r, "voltage_kv": kv}),
+            _comp("busA", "bus", {"name": "A", "voltage_kv": kv}),
             _comp("cb1", "cb", {"name": "CB1", "breaking_capacity_ka": icu_ka,
                                 "rated_current_a": 630.0,
-                                "rated_voltage_kv": 0.69}),
+                                "rated_voltage_kv": 12.0 if mv else 0.69}),
             _comp("ld", "static_load", {"name": "L", "rated_kva": 100.0,
                                         "power_factor": 0.9}),
         ], [
@@ -322,9 +328,9 @@ class TestPS14DutyCheck:
         """High-X/R network (τ ≈ 127 ms): Ib_asym ≈ 1.19·Ib exceeds the
         standard-DC-component capability 1.012·Icu even though the
         symmetrical breaking duty passes — previously never checked."""
-        proj = self._proj(icu_ka=30.0, x_r=40.0)
+        proj = self._proj(icu_ka=30.0, x_r=40.0, mv=True)
         fr = run_fault_analysis(proj).buses["busA"]
-        # Ik = c·S_f/(c·base)·I_base = 20/(√3·0.4) = 28.87 kA = Ib (μ = 1);
+        # Ik = 550/(√3·11) = 28.87 kA = Ib (μ = 1);
         # τ = 40/ω ≈ 127 ms → Ib_asym ≈ 34.3 kA > 30·1.012 = 30.35 kA.
         assert fr.ib_asymmetric > 30.4
         res = run_duty_check(proj)
@@ -339,7 +345,7 @@ class TestPS14DutyCheck:
         assert any("62271-100" in i for i in row["issues"])
 
     def test_ps14a_low_xr_passes(self):
-        proj = self._proj(icu_ka=30.0, x_r=5.0)  # τ ≈ 16 ms — DC long gone
+        proj = self._proj(icu_ka=30.0, x_r=5.0, mv=True)  # τ ≈ 16 ms — DC long gone
         res = run_duty_check(proj)
         row = next(r for r in res["devices"] if r["device_id"] == "cb1")
         assert row["asym_ok"] is True
