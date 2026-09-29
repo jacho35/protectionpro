@@ -318,6 +318,16 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Equipment duty check review: DU1–DU3 and lesser notes fixed (2026-09-29)
+- **Review.** `DUTY_CHECK_REVIEW.md` — `duty_check.py` against IEC 60947-2, IEC 60269, IEC 62271-100/-1, IEC 60038 and IEC 60909-0. Making factors, asymmetry method and through-current refinement correct; three defects.
+- **Fixed:**
+  - **DU1.** LV breakers and fuses are judged on the prospective I″k (no decay credit); only MV breakers use Ib — a 58.6 kA MCCB/fuse at a 65 kA motor bus had passed on Ib.
+  - **DU2.** Duty = largest phase current of any fault type (Ik3, Ik1, IkLL; the LLG earth current excluded) — a genset ACB was judged 45 % low.
+  - **DU3.** Devices on distribution boards are checked (were skipped).
+  - Lesser: Ur vs Um (IEC 60038) with 12 kV defaults (L1); Icw short-time withstand for delayed ACBs (L2); per-breaker contact-parting time (L3); IEC 62271-100 asymmetry check MV-only (L4). `compliance.js` mirrors the breaking basis.
+- **Behaviour change for saved projects.** Re-run the duty check.
+- `backend/tests/test_duty_check_review_fixes.py`: 18 tests.
+
 ### DB circuit check review: DB1–DB4 and lesser notes fixed (2026-09-29)
 - **Review.** `DB_CIRCUIT_CHECK_REVIEW.md` — `db_circuit_check.py` against IEC 60364-4-41, -4-43, -5-52 Annex G, -5-54 §543.1 and IEC 60228. Ze, R1, volt-drop formula and Table 54.7 exact; four defects.
 - **Fixed:**

@@ -42,7 +42,9 @@ def _find_upstream_bus(device_id, adj, comp_map):
             comp = comp_map.get(nid)
             if not comp:
                 continue
-            if comp.type == "bus":
+            # [DU3] A distribution board is a bus-like node with its own fault
+            # level; devices wired to one were skipped as "no connected bus".
+            if comp.type in ("bus", "distribution_board"):
                 buses.append(nid)
                 break
             if comp.type in TRANSPARENT_TYPES:
@@ -50,6 +52,36 @@ def _find_upstream_bus(device_id, adj, comp_map):
                     if next_id not in v:
                         stack.append(next_id)
     return buses
+
+
+# [L1] IEC 62271-1 / IEC 60038: the rated voltage of MV equipment must be at
+# least the HIGHEST voltage for equipment Um of the system, not its nominal.
+IEC_UM_KV = [3.6, 7.2, 12, 17.5, 24, 36, 40.5, 52, 72.5, 100, 123, 145, 170,
+             245, 300, 362, 420, 550, 800]
+
+
+def highest_system_voltage_kv(un_kv):
+    """IEC 60038 Um for a nominal system voltage above 1 kV (the smallest
+    standard Um ≥ 1.05·Un: 11 → 12, 22 → 24, 33 → 36, 132 → 145 kV)."""
+    if un_kv <= 1.0:
+        return un_kv
+    for um in IEC_UM_KV:
+        if um >= 1.05 * un_kv - 1e-9:
+            return um
+    return un_kv * 1.1
+
+
+def _largest_fault_ka(bus_fault):
+    """[DU2] Largest initial symmetrical PHASE current of any fault type at a
+    bus. IEC 60947-2 Icu, IEC 60269 fuse breaking capacity and IEC 62271-100
+    Isc must cover it — an earth fault near a Dyn transformer or an LV genset
+    can exceed the three-phase current (Ik1 15.3 vs Ik3 12.75 kA at a 1 MVA
+    set). ``ikLLG`` is deliberately excluded: the fault engine reports the
+    EARTH-return current I″kE2E = |3·I0| there, not a current any breaker
+    pole interrupts; per IEC 60909-0 §1 the largest phase current is the
+    three-phase or the line-to-earth one."""
+    vals = [getattr(bus_fault, k, None) for k in ("ik3", "ik1", "ikLL")]
+    return max([float(v) for v in vals if v], default=0.0)
 
 
 def run_duty_check(project: ProjectData):
@@ -66,7 +98,8 @@ def run_duty_check(project: ProjectData):
     # Run fault analysis (3-phase) to get prospective fault currents
     fault_results = None
     try:
-        fault_results = run_fault_analysis(project, fault_bus_id=None, fault_type="3phase")
+        # [DU2] every fault type — the duty is the largest of them
+        fault_results = run_fault_analysis(project, fault_bus_id=None, fault_type=None)
     except Exception:
         return {"devices": [], "warnings": ["Fault analysis failed — cannot perform duty check."]}
 
@@ -118,8 +151,19 @@ def run_duty_check(project: ProjectData):
             analysis_warnings.append(f"Device '{device_name}' has no connected bus, skipped.")
             continue
 
+        system_kv_guess = 0.0
+        for bid in bus_ids:
+            if bid in comp_map:
+                system_kv_guess = max(system_kv_guess, float(comp_map[bid].props.get("voltage_kv", 0) or 0))
+        is_mv_device = (system_kv_guess or rated_voltage_kv) > 1.0
+        # [L3] Contact-parting time of an MV breaker: Ib and the DC component
+        # are evaluated at 0.1 s by the fault engine; a faster breaker parts
+        # earlier, when less has decayed.
+        t_cp = float(dp.get("contact_parting_s", 0) or 0)
+
         # Get worst-case fault current from connected buses
         prospective_fault_ka = 0
+        largest_fault_ka = 0.0
         breaking_duty_ka = 0.0
         asym_duty_ka = 0.0
         through_fault_ka = 0.0
@@ -138,12 +182,25 @@ def run_duty_check(project: ProjectData):
                     # current Ib (IEC 60909 §9 — decayed at contact parting)
                     # when the engine provides it, falling back to I"k3
                     # (conservative) — matching frontend compliance.js.
-                    if bus_fault.ib and bus_fault.ib > 0:
-                        breaking_duty_ka = bus_fault.ib
-                        duty_basis = "ib"
+                    # [DU1] Only an MV breaker (IEC 62271-100) is rated against
+                    # the decayed breaking current Ib. An LV breaker (IEC
+                    # 60947-2 Icu) and a fuse (IEC 60269) interrupt within the
+                    # first cycles and are rated against the PROSPECTIVE I″k —
+                    # crediting decay understated their duty 20 % at a motor
+                    # bus. [DU2] Unbalanced faults: IEC 60909-0 §9 takes
+                    # Ib = I″k (no decay), so they enter at their I″k.
+                    largest_fault_ka = _largest_fault_ka(bus_fault)
+                    others = max([float(v) for v in (bus_fault.ik1, bus_fault.ikLL) if v],
+                                 default=0.0)
+                    use_ib = (device_type == "cb" and is_mv_device
+                              and bus_fault.ib and bus_fault.ib > 0
+                              and not (0 < t_cp < 0.1))
+                    if use_ib:
+                        breaking_duty_ka = max(bus_fault.ib, others)
+                        duty_basis = "ib" if bus_fault.ib >= others else "ik_unbalanced"
                     else:
-                        breaking_duty_ka = ik3
-                        duty_basis = "ik3"
+                        breaking_duty_ka = largest_fault_ka
+                        duty_basis = "ik_max"
                     # [PS-14a] Asymmetrical breaking current at contact
                     # parting (fault engine: Ib_asym = √(Ib² + I_dc²) at
                     # 100 ms with τ from the reduced Z_eq).
@@ -178,6 +235,14 @@ def run_duty_check(project: ProjectData):
                     else:
                         through_fault_ka = ik3
                     through_scale = through_fault_ka / ik3 if ik3 > 0 else 1.0
+                    # [L3] asymmetry at the breaker's own contact parting
+                    if 0 < t_cp < 0.1 and asym_duty_ka > 0 and bus_fault.ib:
+                        i_dc01 = math.sqrt(max(asym_duty_ka ** 2 - bus_fault.ib ** 2, 0.0))
+                        ratio = i_dc01 / (math.sqrt(2) * ik3) if ik3 > 0 else 0.0
+                        if 0 < ratio < 1:
+                            tau = -0.1 / math.log(ratio)
+                            i_dc = math.sqrt(2) * ik3 * math.exp(-t_cp / tau)
+                            asym_duty_ka = math.sqrt(ik3 ** 2 + i_dc ** 2)
 
         # [PS-R2-4] Apply the through-current basis to every duty quantity
         # (breaking, asymmetrical, peak) via the ik3 ratio; the bus figures
@@ -187,8 +252,9 @@ def run_duty_check(project: ProjectData):
             asym_duty_ka *= through_scale
             duty_basis += "+through"
 
-        # Calculate peak fault current: ip = κ × √2 × Ik"
-        peak_fault_ka = kappa * math.sqrt(2) * prospective_fault_ka * through_scale
+        # Calculate peak fault current: ip = κ × √2 × Ik" — [DU2] of the
+        # largest fault type, since the making duty covers every closing fault
+        peak_fault_ka = kappa * math.sqrt(2) * max(prospective_fault_ka, largest_fault_ka) * through_scale
 
         # Get system voltage at location bus
         system_voltage_kv = 0
@@ -261,10 +327,13 @@ def run_duty_check(project: ProjectData):
         # value. Previously ib_asymmetric was computed but never checked.
         asym_ok = None
         asym_capability_ka = 0.0
-        if device_type == "cb" and breaking_capacity_ka > 0 and asym_duty_ka > 0:
+        # [L4] MV only: an IEC 60947-2 LV breaker's rating covers asymmetry
+        # through its Table 2 test power factor and making ratio instead.
+        if device_type == "cb" and is_mv_device and breaking_capacity_ka > 0 and asym_duty_ka > 0:
             beta_rated = float(dp.get("dc_component_pct", 0) or 0) / 100.0
             if beta_rated <= 0:
-                beta_rated = math.exp(-0.1 / 0.045)  # ≈ 0.108 at 100 ms
+                t_eval = t_cp if 0 < t_cp < 0.1 else 0.1
+                beta_rated = math.exp(-t_eval / 0.045)  # ≈ 0.108 at 100 ms
             asym_capability_ka = breaking_capacity_ka * math.sqrt(
                 1.0 + 2.0 * beta_rated ** 2)
             asym_ok = asym_duty_ka <= asym_capability_ka
@@ -275,9 +344,37 @@ def run_duty_check(project: ProjectData):
             continuous_ok = load_current_a <= rated_current_a
 
         # ── Voltage rating check ──
+        # [L1] MV: IEC 62271-1 requires Ur ≥ Um (IEC 60038 highest voltage
+        # for equipment — 12 kV on an 11 kV system); below the nominal is a
+        # fail, between nominal and Um a warning (a nominal typed as the
+        # rating is common). LV: Ue ≥ Un.
         voltage_ok = True
+        voltage_marginal = False
+        um_kv = highest_system_voltage_kv(system_voltage_kv) if system_voltage_kv > 0 else 0.0
         if rated_voltage_kv > 0 and system_voltage_kv > 0:
-            voltage_ok = system_voltage_kv <= rated_voltage_kv
+            voltage_ok = system_voltage_kv <= rated_voltage_kv + 1e-9
+            voltage_marginal = voltage_ok and system_voltage_kv > 1.0 and rated_voltage_kv < um_kv - 1e-9
+
+        # ── [L2] Short-time withstand (IEC 60947-2 Icw, category B) ──
+        # A breaker with a short-time delay carries the fault for that delay;
+        # its Icw (for t_cw, default 1 s) must cover it: I²·t_sd ≤ Icw²·t_cw.
+        icw_ok = None
+        icw_ka = float(dp.get("icw_ka", 0) or 0)
+        st_delay = float(dp.get("short_time_delay", 0) or 0)
+        st_pickup = float(dp.get("short_time_pickup", 0) or 0)
+        i_st_ka = max(prospective_fault_ka, largest_fault_ka) * through_scale
+        if device_type == "cb" and st_delay > 0 and st_pickup > 0 and i_st_ka > 0:
+            ir = float(dp.get("trip_rating_a", rated_current_a) or rated_current_a or 0) * \
+                float(dp.get("thermal_pickup", 1.0) or 1.0)
+            inst = float(dp.get("instantaneous_pickup", 0) or 0) * ir
+            if not (inst > 0 and i_st_ka * 1000 >= inst):
+                if icw_ka > 0:
+                    t_cw = float(dp.get("icw_time_s", 1.0) or 1.0)
+                    icw_ok = i_st_ka ** 2 * st_delay <= icw_ka ** 2 * t_cw + 1e-9
+                else:
+                    analysis_warnings.append(
+                        f"Device '{device_name}' has a short-time delay but no Icw rating — "
+                        "short-time withstand (IEC 60947-2) not checked.")
 
         # ── Utilisation ──
         utilisation_pct = 0
@@ -287,7 +384,8 @@ def run_duty_check(project: ProjectData):
         # ── Status ──
         issues = []
         if not interrupt_ok:
-            duty_label = "Breaking duty Ib" if duty_basis == "ib" else "Prospective fault I\"k3"
+            duty_label = {"ib": "Breaking duty Ib", "ik_unbalanced": "Unbalanced fault I\"k",
+                          }.get(duty_basis.split("+")[0], "Largest prospective fault I\"k")
             issues.append(f"{duty_label} {breaking_duty_ka:.2f}kA exceeds breaking capacity {breaking_capacity_ka:.2f}kA")
         if making_ok is False:
             issues.append(f"Peak fault {peak_fault_ka:.2f}kA exceeds making capacity {making_capacity_ka:.2f}kA")
@@ -304,6 +402,13 @@ def run_duty_check(project: ProjectData):
             )
         if not voltage_ok:
             issues.append(f"System voltage {system_voltage_kv}kV exceeds device rated voltage {rated_voltage_kv}kV")
+        elif voltage_marginal:
+            issues.append(f"Rated voltage {rated_voltage_kv}kV is below Um {um_kv:g}kV, the highest "
+                          f"voltage of a {system_voltage_kv}kV system (IEC 60038) — IEC 62271-1 "
+                          f"requires Ur ≥ Um; enter the device's IEC rated voltage")
+        if icw_ok is False:
+            issues.append(f"Short-time withstand: {i_st_ka:.2f}kA for the {st_delay:g}s delay exceeds "
+                          f"Icw {icw_ka:g}kA for {float(dp.get('icw_time_s', 1.0) or 1.0):g}s (IEC 60947-2)")
         if not continuous_ok:
             issues.append(f"Load current {load_current_a:.1f}A exceeds rated current {rated_current_a:.0f}A")
         if utilisation_pct > 80 and interrupt_ok:
@@ -316,10 +421,11 @@ def run_duty_check(project: ProjectData):
 
         making_marginal = (making_ok is True and making_margin_pct is not None
                            and making_margin_pct < 10)
-        if not interrupt_ok or making_ok is False or asym_ok is False or not voltage_ok:
+        if (not interrupt_ok or making_ok is False or asym_ok is False or not voltage_ok
+                or icw_ok is False):
             status = "fail"
         elif (utilisation_pct > 80 or not continuous_ok or making_marginal
-              or fallback_basis):
+              or fallback_basis or voltage_marginal):
             status = "warning"
         else:
             status = "pass"
@@ -345,6 +451,9 @@ def run_duty_check(project: ProjectData):
             "asym_capability_ka": round(asym_capability_ka, 2),
             "continuous_ok": continuous_ok,
             "voltage_ok": voltage_ok,
+            "um_kv": round(um_kv, 1) if um_kv else None,
+            "icw_ok": icw_ok,
+            "largest_fault_ka": round(largest_fault_ka, 2),
             "utilisation_pct": round(utilisation_pct, 1),
             "status": status,
             "issues": issues,
