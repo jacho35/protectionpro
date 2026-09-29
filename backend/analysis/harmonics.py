@@ -86,7 +86,8 @@ def vfd_current_spectrum(comp) -> dict[int, float]:
 
 # ── IEEE 519-2014 limits ──────────────────────────────────────────────────────
 def _voltage_limits(v_kv: float) -> tuple[float, float]:
-    """(individual harmonic %, total THD %) voltage limits by bus voltage."""
+    """(individual harmonic %, total THD %) voltage limits by bus voltage
+    (IEEE 519-2014 Table 1)."""
     if v_kv <= 1.0:
         return 5.0, 8.0
     if v_kv <= 69.0:
@@ -96,27 +97,106 @@ def _voltage_limits(v_kv: float) -> tuple[float, float]:
     return 1.0, 1.5
 
 
-def _tdd_limit(isc_il: float, v_kv: float) -> float:
-    """Total demand distortion (current) limit % at the PCC.
+# [H1][H5] IEEE 519-2014 Tables 2, 3 and 4 — maximum harmonic current
+# distortion in % of I_L. Each row: (Isc/IL upper bound, individual ODD-order
+# limits for the bands 3≤h<11, 11≤h<17, 17≤h<23, 23≤h<35, 35≤h≤50, TDD).
+# Even orders are limited to 25 % of the odd limit of their band (note b).
+# Table 4 (> 161 kV) has its own rows at 25 / 50 — it is not a scaled Table 2.
+_INF = float("inf")
+_IEEE519_T2 = ((20, (4.0, 2.0, 1.5, 0.6, 0.3), 5.0),          # 120 V – 69 kV
+               (50, (7.0, 3.5, 2.5, 1.0, 0.5), 8.0),
+               (100, (10.0, 4.5, 4.0, 1.5, 0.7), 12.0),
+               (1000, (12.0, 5.5, 5.0, 2.0, 1.0), 15.0),
+               (_INF, (15.0, 7.0, 6.0, 2.5, 1.4), 20.0))
+_IEEE519_T3 = ((20, (2.0, 1.0, 0.75, 0.3, 0.15), 2.5),        # 69 – 161 kV
+               (50, (3.5, 1.75, 1.25, 0.5, 0.25), 4.0),
+               (100, (5.0, 2.25, 2.0, 0.75, 0.35), 6.0),
+               (1000, (6.0, 2.75, 2.5, 1.0, 0.5), 7.5),
+               (_INF, (7.5, 3.5, 3.0, 1.25, 0.7), 10.0))
+_IEEE519_T4 = ((25, (1.0, 0.5, 0.38, 0.15, 0.1), 1.5),        # > 161 kV
+               (50, (2.0, 1.0, 0.75, 0.3, 0.15), 2.5),
+               (_INF, (3.0, 1.5, 1.15, 0.45, 0.22), 3.75))
 
-    IEEE 519-2014 Table 2 (120 V – 69 kV). Higher-voltage tables are stricter;
-    we apply a conservative scale for >69 kV.
-    """
-    if isc_il < 20:
-        base = 5.0
-    elif isc_il < 50:
-        base = 8.0
-    elif isc_il < 100:
-        base = 12.0
-    elif isc_il < 1000:
-        base = 15.0
-    else:
-        base = 20.0
-    if v_kv > 161.0:
-        return base * 0.25
-    if v_kv > 69.0:
-        return base * 0.5
-    return base
+
+def _ieee519_current_row(isc_il: float, v_kv: float):
+    table = (_IEEE519_T2 if v_kv <= 69.0 else
+             _IEEE519_T3 if v_kv <= 161.0 else _IEEE519_T4)
+    for bound, individual, tdd in table:
+        if isc_il < bound:
+            return individual, tdd
+    return table[-1][1], table[-1][2]
+
+
+def _tdd_limit(isc_il: float, v_kv: float) -> float:
+    """Total demand distortion (current) limit % at the PCC — IEEE 519-2014
+    Table 2 (≤ 69 kV), Table 3 (69–161 kV) or Table 4 (> 161 kV)."""
+    return _ieee519_current_row(isc_il, v_kv)[1]
+
+
+def _current_limit(h: int, isc_il: float, v_kv: float) -> float | None:
+    """[H1] Individual harmonic current limit (% of I_L) at order h; even
+    orders 25 % of the odd limit. None above h = 50 (outside the tables)."""
+    if h > 50:
+        return None
+    individual = _ieee519_current_row(isc_il, v_kv)[0]
+    band = 0 if h < 11 else 1 if h < 17 else 2 if h < 23 else 3 if h < 35 else 4
+    lim = individual[band]
+    return lim * 0.25 if h % 2 == 0 else lim
+
+
+# ── IEC voltage limits ────────────────────────────────────────────────────────
+# Offered as the alternative basis (study setting harmonicsLimits = "iec").
+#   LV (≤ 1 kV): IEC 61000-2-4 Class 2 compatibility levels (the same values
+#     as IEC 61000-2-2 for public LV networks) — Table 2 / 3 / 4, THD 8 %.
+#   MV (1–35 kV) and HV-EHV (> 35 kV): IEC 61000-3-6:2008 Table 2 indicative
+#     planning levels, THD 6.5 % (MV) / 3 % (HV-EHV).
+# No licensed IEC 61000 copy was available to the 2026-09-29 review; these
+# are the published values as the reviewer read them (HARMONICS_REVIEW.md).
+def _iec_ihd_limit(h: int, v_kv: float) -> float:
+    if v_kv <= 1.0:                                   # IEC 61000-2-4 Class 2
+        if h % 2 == 0:
+            return {2: 2.0, 4: 1.0, 6: 0.5, 8: 0.5}.get(h, 0.25 * 10 / h + 0.25)
+        if h % 3 == 0:
+            return {3: 5.0, 9: 1.5, 15: 0.4, 21: 0.3}.get(h, 0.2)
+        return {5: 6.0, 7: 5.0, 11: 3.5, 13: 3.0}.get(h, 2.27 * 17 / h - 0.27)
+    if v_kv <= 35.0:                                  # IEC 61000-3-6 MV
+        if h % 2 == 0:
+            return {2: 1.8, 4: 1.0, 6: 0.5}.get(h, 0.25 * 10 / h + 0.22)
+        if h % 3 == 0:
+            return {3: 4.0, 9: 1.2, 15: 0.3, 21: 0.2}.get(h, 0.2)
+        return {5: 5.0, 7: 4.0, 11: 3.0, 13: 2.5}.get(h, 1.9 * 17 / h - 0.2)
+    if h % 2 == 0:                                    # IEC 61000-3-6 HV-EHV
+        return {2: 1.4, 4: 0.8, 6: 0.4}.get(h, 0.19 * 10 / h + 0.16)
+    if h % 3 == 0:
+        return {3: 2.0, 9: 1.0, 15: 0.3, 21: 0.2}.get(h, 0.2)
+    return {5: 2.0, 7: 2.0, 11: 1.5, 13: 1.5}.get(h, 1.2 * 17 / h)
+
+
+def _iec_thd_limit(v_kv: float) -> float:
+    return 8.0 if v_kv <= 1.0 else 6.5 if v_kv <= 35.0 else 3.0
+
+
+def _iec_basis(v_kv: float) -> str:
+    if v_kv <= 1.0:
+        return "IEC 61000-2-4 Class 2"
+    return "IEC 61000-3-6 " + ("MV" if v_kv <= 35.0 else "HV-EHV") + " planning"
+
+
+def _bus_voltage_limits(h: int, v_kv: float, standard: str) -> float:
+    return (_iec_ihd_limit(h, v_kv) if standard == "iec"
+            else _voltage_limits(v_kv)[0])
+
+
+def _num(p, key, default):
+    """A numeric prop where an explicit 0 means 0 ([H6]: `or default` turned
+    demand_factor 0 into 1 here while the load flow read it as 0)."""
+    v = p.get(key)
+    if v in (None, ""):
+        return float(default)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float(default)
 
 
 # ── Network impedance helpers (fundamental R + X, per-unit on system base) ─────
@@ -161,8 +241,43 @@ def _machine_rx(comp, base_mva) -> complex | None:
     return None
 
 
-def _shunt_admittance_at_h(comp, base_mva, h) -> complex:
-    """Shunt admittance to ground of one component at harmonic order h (pu)."""
+def _lumped_load_admittance(p, base_mva, h) -> complex:
+    """Shunt admittance of a lumped load (static load or a distribution
+    board's own load) at harmonic order h (pu).
+
+    The static share is the parallel R–L model: R from P (constant), L from Q
+    (reactance × h). [L3] A rotating share (``motor_fraction``, the prop the
+    fault study already reads) is an induction-motor equivalent X″ = 1/LRC on
+    its own kVA — a harmonic sink, the same model as a drawn motor — instead of
+    the R–L branch. Demand factor scales both, as in the load flow."""
+    kva = _num(p, "rated_kva", 100)
+    pf = p.get("power_factor", 0.85) or 0.85
+    df = _num(p, "demand_factor", 1.0)
+    s = (kva / 1000) * df / base_mva
+    if s <= 0:
+        return complex(0, 0)
+    mf = min(1.0, max(0.0, _num(p, "motor_fraction", 0)))
+    y = complex(0, 0)
+    if mf > 0:
+        lrc = _num(p, "motor_lrc_ratio", 6) or 6
+        xr = _num(p, "x_r_ratio", 10) or 10
+        x = (1.0 / max(lrc, 1e-3)) / (s * mf)          # X″ on the system base
+        y += 1 / complex(x / xr, h * x)
+    s_static = s * (1 - mf)
+    pmw = s_static * pf
+    qmw = s_static * math.sqrt(max(0.0, 1 - pf * pf))
+    if pmw > 0:
+        y += pmw                                  # G = P (V ≈ 1 pu)
+    if qmw > 0:
+        y += 1 / complex(0, h / qmw)              # X_L = 1/Q at fundamental
+    return y
+
+
+def _shunt_admittance_at_h(comp, base_mva, h, solved_q_mvar=None) -> complex:
+    """Shunt admittance to ground of one component at harmonic order h (pu).
+
+    ``solved_q_mvar`` — an SVC's reactive output from the fundamental load
+    flow (voltage-regulating mode has no fixed Q of its own)."""
     p = comp.props or {}
     # Grounded sources & rotating machines: series R + jX, reactance × h
     rx = _source_rx(comp, base_mva) or _machine_rx(comp, base_mva)
@@ -194,32 +309,57 @@ def _shunt_admittance_at_h(comp, base_mva, h) -> complex:
             return 1.0 / z if abs(z) > 1e-12 else complex(0, 0)
         return complex(0, h * b1)
     if comp.type in ("svc", "statcom"):
-        # FACTS device: model its net reactive output as an equivalent shunt.
-        # Capacitive (positive Q) behaves like a capacitor bank (× h); inductive
-        # like a reactor (÷ h). Uses the last-solved / rated Q if present.
-        q = float(p.get("q_output_mvar", 0) or 0)
-        if q == 0:
-            q = float(p.get("rated_mvar", 0) or 0)   # assume full capacitive
+        mode = str(p.get("device_mode", "statcom") or "statcom").lower()
+        if comp.type == "statcom" or mode == "statcom":
+            # [H3] A STATCOM is a voltage-source converter: at harmonic
+            # frequencies it is its coupling reactance (phase reactor +
+            # transformer) to an internal source that holds no harmonic
+            # voltage — an inductive shunt X·h, whatever its fundamental Q.
+            # It was modelled as a capacitor of its whole rating (a default
+            # STATCOM = a 50 Mvar bank), fabricating a parallel resonance.
+            # Rating from the Q limits the user edits; rated_mvar is a hidden
+            # palette value (50) that only seeds them, as in the load flow.
+            rated = (max(abs(_num(p, "q_max_mvar", 0)), abs(_num(p, "q_min_mvar", 0)))
+                     or abs(_num(p, "rated_mvar", 0)))
+            x_c = _num(p, "coupling_x_pu", 0.15)
+            if rated <= 0 or x_c <= 0:
+                return complex(0, 0)
+            return 1 / complex(0, h * x_c * base_mva / rated)
+        # SVC (thyristor-controlled): its net susceptance at the operating
+        # point — capacitive behaves like a capacitor bank (× h), inductive
+        # like a reactor (÷ h). [H3] Voltage-regulating mode takes the output
+        # the load flow solved, never the rating ("assume full capacitive").
+        if solved_q_mvar is not None:
+            q = float(solved_q_mvar)
+        elif str(p.get("control_mode", "") or "").lower() == "fixed_q":
+            q = _num(p, "q_output_mvar", 0)
+        else:
+            q = 0.0
         b1 = q / base_mva
         if b1 >= 0:
             return complex(0, h * b1)
         return complex(0, b1 / h)
     if comp.type == "static_load":
-        # Parallel R–L: R from P (constant), L from Q (reactance × h).
-        kva = p.get("rated_kva", 100) or 0
-        pf = p.get("power_factor", 0.85) or 0.85
-        df = p.get("demand_factor", 1.0) or 1.0
-        s = (kva / 1000) * df / base_mva
-        pmw = s * pf
-        qmw = s * math.sqrt(max(0.0, 1 - pf * pf))
-        y = complex(0, 0)
-        if pmw > 0:
-            y += 1 / (1.0 / pmw)                 # G = P (V≈1 pu)
-        if qmw > 0:
-            xl = 1.0 / qmw                        # X_L at fundamental
-            y += 1 / complex(0, h * xl)
-        return y
+        return _lumped_load_admittance(p, base_mva, h)
     return complex(0, 0)
+
+
+def bus_shunt_admittance(bus, comps_at_bus, base_mva, h, svc_q=None) -> complex:
+    """Total shunt admittance at one bus at order h: every shunt component
+    found at the bus plus — [H2] — a distribution board's OWN lumped load
+    (the board is a node, so the component walk never finds it; the load flow
+    injects it explicitly the same way). VFDs are current sources, not
+    shunts. Shared with the frequency scan so both see the same network."""
+    acc = complex(0, 0)
+    if bus.type == "distribution_board":
+        # An older board without rated_kva reads 100 kVA, as in the load flow.
+        acc += _lumped_load_admittance(bus.props or {}, base_mva, h)
+    svc_q = svc_q or {}
+    for comp in comps_at_bus:
+        if comp.type == "vfd":
+            continue
+        acc += _shunt_admittance_at_h(comp, base_mva, h, svc_q.get(comp.id))
+    return acc
 
 
 def _branch_chains(project, base_mva):
@@ -336,51 +476,89 @@ def _build_yh(chains, shunts, bus_idx, h):
     return Y
 
 
-def run_harmonics(project, method: str = "newton_raphson"):
+_METHOD = {
+    "ieee519": "Frequency-domain harmonic current-injection (IEEE 519-2014)",
+    "iec": ("Frequency-domain harmonic current-injection (IEC 61000-3-6 "
+            "planning levels / IEC 61000-2-4 Class 2)"),
+}
+
+
+def _limits_standard(value) -> str:
+    return "iec" if str(value or "").lower() == "iec" else "ieee519"
+
+
+def _lumped_kva(p, default_kva=100.0) -> float:
+    return _num(p, "rated_kva", default_kva) * _num(p, "demand_factor", 1.0)
+
+
+def run_harmonics(project, method: str = "newton_raphson", limits: str | None = None):
     """Run the harmonic penetration study. Returns a dict matching
-    HarmonicsResults."""
+    HarmonicsResults.
+
+    limits — "ieee519" (default) or "iec"; None reads the project's
+    ``harmonicsLimits`` setting."""
+    standard = _limits_standard(limits if limits is not None
+                                else getattr(project, "harmonicsLimits", None))
     base_mva = project.baseMVA or 100.0
     # Same topology pre-passes as the load flow: a node at every cable tee
     # the drawing left without a bus, then load/source terminal buses.
-    project = _lf.insert_implicit_load_buses(_lf.insert_junction_buses(project))
+    project = _lf.insert_junction_buses(project)
+    project = _lf.insert_implicit_load_buses(project)
 
-    # 1. Fundamental load flow → per-bus fundamental voltage magnitude.
+    # 1. Fundamental load flow → per-bus fundamental voltage magnitude,
+    #    which buses are live, and each SVC's solved reactive output.
     v1 = {}
+    energized = {}
+    svc_q = {}
     fundamental_converged = False
     try:
         lf = _lf.run_load_flow(project, method, include_synthetic=True)
         fundamental_converged = bool(lf.converged)
         for bid, b in (lf.buses or {}).items():
             v1[bid] = float(abs(b.voltage_pu)) if getattr(b, "voltage_pu", None) else 1.0
+            energized[bid] = bool(getattr(b, "energized", True))
+        for u in (lf.svc or []):
+            if u.get("id") is not None and u.get("q_mvar") is not None:
+                # As a susceptance: Q at 1 pu = Q / V² (the shunt model is B).
+                vu = float(u.get("v_pu") or 1.0) or 1.0
+                svc_q[u["id"]] = float(u["q_mvar"]) / (vu * vu)
     except Exception:
         fundamental_converged = False
+
+    def live(bus_id):
+        # [H4] A bus in a sourceless island carries no fundamental current,
+        # so no drive on it runs and it is not a harmonic study result. Absent
+        # (load flow failed) ⇒ treat as live, the legacy behaviour.
+        return energized.get(bus_id, True)
 
     chains, buses, bus_idx, adjacency, components, bus_of = _branch_chains(project, base_mva)
     n = len(buses)
     warnings = []
     if n == 0:
-        return _empty_result("No AC buses in the network.")
+        return _empty_result("No AC buses in the network.", standard)
+    comps_at = {b.id: _lf._find_components_at_bus(b.id, adjacency, components)
+                for b in buses}
 
     # 2. Locate VFD sources + their fundamental current, grouped by bus.
     vfds = [c for c in project.components if c.type == "vfd"]
     vfd_infos = []
     inj_by_bus_order = {}          # bus_id -> {order: summed current (pu)}
+    dead_vfds = []
     total_load_mva = 0.0
     for comp in vfds:
         # which bus does this VFD sit on?
-        bus_id = None
-        for b in buses:
-            if comp in _lf._find_components_at_bus(b.id, adjacency, components):
-                bus_id = b.id
-                break
+        bus_id = next((b.id for b in buses if comp in comps_at[b.id]), None)
         if bus_id is None:
             continue
         p = comp.props or {}
+        if not live(bus_id):
+            dead_vfds.append(str(p.get("name", comp.id)))
+            continue
         rated_kw = p.get("rated_kw", 200) or 200
         eff = p.get("efficiency", 0.96) or 0.96
         load = float(p.get("load_pct", 100) or 0) / 100.0
         dpf = float(p.get("displacement_pf", 0.98) or 0.98)
-        df = p.get("demand_factor", 1.0) or 1.0
+        df = _num(p, "demand_factor", 1.0)
         p_mw = rated_kw * load / (eff * 1000)
         s_mva = p_mw / dpf if dpf > 0 else p_mw
         s_pu = s_mva * df / base_mva
@@ -401,49 +579,59 @@ def run_harmonics(project, method: str = "newton_raphson"):
             "current_thd_pct": round(
                 100 * math.sqrt(sum(v * v for v in spectrum.values())), 1),
         })
+    if dead_vfds:
+        warnings.append("De-energised (no source reaches the bus), not "
+                        "modelled as harmonic sources: " + ", ".join(dead_vfds) + ".")
 
     if not vfd_infos:
-        return _empty_result("No VFD (harmonic-source) components in the network.")
+        return _empty_result("No energised VFD (harmonic-source) components in "
+                             "the network." if dead_vfds else
+                             "No VFD (harmonic-source) components in the network.",
+                             standard, warnings)
 
     orders = sorted({o for d in inj_by_bus_order.values() for o in d})
 
-    # add every load/source's total demand for a rough IL (max-demand current).
+    # Every live load's demand for I_L (the maximum-demand current basis):
+    # demand-factored, as the load flow applies it.
     for b in buses:
-        for comp in _lf._find_components_at_bus(b.id, adjacency, components):
+        if not live(b.id):
+            continue
+        if b.type == "distribution_board":            # [H2] the board's own load
+            total_load_mva += _lumped_kva(b.props or {}) / 1000
+        for comp in comps_at[b.id]:
             p = comp.props or {}
             if comp.type == "static_load":
-                total_load_mva += (p.get("rated_kva", 0) or 0) / 1000 * (p.get("demand_factor", 1.0) or 1.0)
+                total_load_mva += _lumped_kva(p, 0) / 1000
             elif comp.type == "motor_induction":
-                total_load_mva += (p.get("rated_kw", 0) or 0) / ((p.get("efficiency", 0.93) or 0.93) * (p.get("power_factor", 0.85) or 0.85) * 1000)
+                total_load_mva += (p.get("rated_kw", 0) or 0) / ((p.get("efficiency", 0.93) or 0.93) * (p.get("power_factor", 0.85) or 0.85) * 1000) * _num(p, "demand_factor", 1.0)
             elif comp.type == "motor_synchronous":
-                total_load_mva += (p.get("rated_kva", 0) or 0) / 1000
+                total_load_mva += (p.get("rated_kva", 0) or 0) / 1000 * _num(p, "demand_factor", 1.0)
 
     # 3. Shunt-admittance provider (per harmonic order).
     def shunts(h):
         out = {}
         for b in buses:
-            acc = complex(0, 0)
-            for comp in _lf._find_components_at_bus(b.id, adjacency, components):
-                if comp.type == "vfd":
-                    continue
-                acc += _shunt_admittance_at_h(comp, base_mva, h)
+            acc = bus_shunt_admittance(b, comps_at[b.id], base_mva, h, svc_q)
             if acc != 0:
                 out[b.id] = acc
         return out
 
-    # source (PCC) admittance at fundamental for Isc, and PCC bus id.
-    pcc_bus = None
-    isc_pu = 0.0
-    for b in buses:
-        for comp in _lf._find_components_at_bus(b.id, adjacency, components):
-            if comp.type == "utility":
-                pcc_bus = b.id
-                isc_pu = (comp.props.get("fault_mva", 500) or 500) / base_mva
+    # PCC: the utility connection bus. [L2] With several utilities the first
+    # one drawn is evaluated and the others are named in a warning.
+    utilities = [(b.id, comp) for b in buses for comp in comps_at[b.id]
+                 if comp.type == "utility"]
+    pcc_bus, pcc_util = (utilities[0] if utilities else (None, None))
+    isc_pu = ((pcc_util.props.get("fault_mva", 500) or 500) / base_mva
+              if pcc_util is not None else 0.0)
+    if len(utilities) > 1:
+        warnings.append("Several utility connections — the PCC current is "
+                        f"evaluated at '{pcc_util.props.get('name', pcc_util.id)}' "
+                        "only.")
     il_pu = (total_load_mva / base_mva) if total_load_mva > 0 else 1e-6
 
     # 4. Solve at each harmonic order.
     bus_ihd = {b.id: {} for b in buses}      # bus -> {order: |V_h| pu}
-    pcc_i_h = {}                             # order -> |I| into source (pu)
+    pcc_i_h = {}                             # order -> |I| into utility (pu)
     for h in orders:
         Yh = _build_yh(chains, shunts, bus_idx, h)
         Ih = np.zeros(n, dtype=complex)
@@ -462,39 +650,50 @@ def run_harmonics(project, method: str = "newton_raphson"):
                 continue
         for b in buses:
             bus_ihd[b.id][h] = float(abs(Vh[bus_idx[b.id]]))
-        if pcc_bus is not None:
-            # harmonic current into the source shunt at the PCC
-            ys = complex(0, 0)
-            for comp in _lf._find_components_at_bus(pcc_bus, adjacency, components):
-                if comp.type in ("utility", "generator"):
-                    ys += _shunt_admittance_at_h(comp, base_mva, h)
+        if pcc_util is not None:
+            # [L1] The PCC current is what flows into the UTILITY — a
+            # generator on the same bus is on the customer's side of it.
+            ys = _shunt_admittance_at_h(pcc_util, base_mva, h)
             pcc_i_h[h] = float(abs(Vh[bus_idx[pcc_bus]] * ys))
 
-    # 5. Per-bus THD_V + IEEE 519 voltage compliance.
+    # 5. Per-bus THD_V + voltage compliance.
     bus_results = []
     worst = {"thd": -1.0, "id": "", "name": ""}
     overall_compliant = True
     for b in buses:
-        if _lf.is_synthetic_bus(b.id):
+        if _lf.is_synthetic_bus(b.id) or not live(b.id):
             continue
         vf = v1.get(b.id, 1.0) or 1.0
-        ihd = {}
+        v_kv = b.props.get("voltage_kv", 11) or 11
+        ihd, ihd_lims = {}, {}
         ss = 0.0
+        crit_h, crit_ratio = None, -1.0
         for h, vmag in bus_ihd[b.id].items():
             pct = float(100 * vmag / vf) if vf > 0 else 0.0
+            lim = _bus_voltage_limits(h, v_kv, standard)
             ihd[str(h)] = round(pct, 3)
+            ihd_lims[str(h)] = round(lim, 3)
             ss += pct * pct
+            ratio = pct / lim if lim > 0 else 0.0
+            if ratio > crit_ratio:
+                crit_h, crit_ratio = h, ratio
         thd = math.sqrt(ss)
-        v_kv = b.props.get("voltage_kv", 11) or 11
-        ihd_lim, thd_lim = _voltage_limits(v_kv)
+        thd_lim = _iec_thd_limit(v_kv) if standard == "iec" else _voltage_limits(v_kv)[1]
         max_ihd = float(max(ihd.values(), default=0.0))
-        compliant = bool(thd <= thd_lim + 1e-6 and max_ihd <= ihd_lim + 1e-6)
+        compliant = bool(thd <= thd_lim + 1e-6 and crit_ratio <= 1.0 + 1e-6)
         overall_compliant = bool(overall_compliant and compliant)
         bus_results.append({
             "id": b.id, "name": b.props.get("name", b.id),
             "voltage_kv": v_kv, "v1_pu": round(vf, 4),
             "thd_v_pct": round(thd, 2), "max_ihd_pct": round(max_ihd, 2),
-            "ihd": ihd, "thd_limit_pct": thd_lim, "ihd_limit_pct": ihd_lim,
+            "ihd": ihd, "ihd_limits": ihd_lims, "thd_limit_pct": thd_lim,
+            # The order nearest its own limit (IEC limits vary by order).
+            "critical_order": crit_h,
+            "critical_ihd_pct": ihd.get(str(crit_h), 0.0) if crit_h else 0.0,
+            "ihd_limit_pct": ihd_lims.get(str(crit_h), 0.0) if crit_h else
+                             round(_bus_voltage_limits(5, v_kv, standard), 3),
+            "limit_basis": (_iec_basis(v_kv) if standard == "iec"
+                            else "IEEE 519-2014 Table 1"),
             "compliant": compliant,
         })
         if thd > worst["thd"]:
@@ -502,7 +701,7 @@ def run_harmonics(project, method: str = "newton_raphson"):
 
     bus_results.sort(key=lambda r: r["thd_v_pct"], reverse=True)
 
-    # 6. PCC current TDD.
+    # 6. PCC current TDD + individual harmonic currents.
     pcc = None
     if pcc_bus is not None and pcc_i_h:
         i_thd_num = math.sqrt(sum(v * v for v in pcc_i_h.values()))
@@ -511,16 +710,33 @@ def run_harmonics(project, method: str = "newton_raphson"):
         pb = components.get(pcc_bus)
         v_kv = pb.props.get("voltage_kv", 11) if pb else 11
         pcc_name = pb.props.get("name", pcc_bus) if pb else pcc_bus
-        tdd_lim = _tdd_limit(isc_il, v_kv)
-        i_compliant = bool(tdd <= tdd_lim + 1e-6)
-        overall_compliant = bool(overall_compliant and i_compliant)
+        harm_pct = {h: 100 * i / il_pu for h, i in sorted(pcc_i_h.items())}
         pcc = {
             "bus_id": pcc_bus, "name": pcc_name, "voltage_kv": v_kv,
             "i_tdd_pct": round(tdd, 2), "isc_il": round(isc_il, 1),
-            "tdd_limit_pct": tdd_lim, "compliant": i_compliant,
-            "harmonics": {str(h): round(100 * i / il_pu, 3)
-                          for h, i in sorted(pcc_i_h.items())},
+            "harmonics": {str(h): round(v, 3) for h, v in harm_pct.items()},
         }
+        if standard == "ieee519":
+            tdd_lim = _tdd_limit(isc_il, v_kv)
+            # [H1] Table 2/3/4 limit each order, not just the total: a
+            # 12-pulse drive's 11th can exceed its 5.5 % while TDD passes.
+            lims = {h: _current_limit(h, isc_il, v_kv) for h in harm_pct}
+            over = [h for h, v in harm_pct.items()
+                    if lims[h] is not None and v > lims[h] + 1e-6]
+            i_compliant = bool(tdd <= tdd_lim + 1e-6 and not over)
+            overall_compliant = bool(overall_compliant and i_compliant)
+            pcc.update({
+                "tdd_limit_pct": tdd_lim, "compliant": i_compliant,
+                "harmonic_limits": {str(h): l for h, l in lims.items() if l is not None},
+                "exceeding_orders": over,
+            })
+        else:
+            # IEC 61000-3-6 allocates emission to each customer from planning
+            # data (agreed power, supply capacity, transfer coefficients) the
+            # model does not hold; the current is reported, the verdict rests
+            # on the voltage levels.
+            pcc.update({"tdd_limit_pct": None, "compliant": None,
+                        "harmonic_limits": {}, "exceeding_orders": []})
     else:
         warnings.append("No utility source found — PCC current TDD not evaluated.")
 
@@ -539,17 +755,18 @@ def run_harmonics(project, method: str = "newton_raphson"):
         "pcc": pcc,
         "vfd_sources": vfd_infos,
         "compliant": overall_compliant,
-        "method": "Frequency-domain harmonic current-injection (IEEE 519-2014)",
+        "limits_standard": standard,
+        "method": _METHOD[standard],
         "warnings": warnings,
         "note": "",
     }
 
 
-def _empty_result(note):
+def _empty_result(note, standard="ieee519", warnings=None):
     return {
         "converged": False, "fundamental_converged": False, "orders": [],
         "buses": [], "worst_thd_pct": 0.0, "worst_bus_id": "", "worst_bus_name": "",
         "pcc": None, "vfd_sources": [], "compliant": True,
-        "method": "Frequency-domain harmonic current-injection (IEEE 519-2014)",
-        "warnings": [], "note": note,
+        "limits_standard": standard, "method": _METHOD[standard],
+        "warnings": list(warnings or []), "note": note,
     }

@@ -2536,23 +2536,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ── Harmonic Analysis (IEEE 519) ──
-  document.getElementById('btn-harmonics').addEventListener('click', async () => {
-    window.closeAllToolbarMenus?.();
-    const hasVfd = [...AppState.components.values()].some(c => c.type === 'vfd');
-    if (!hasVfd) {
-      showValidationModal('Harmonic Analysis',
-        [], [{ msg: 'Add a Variable Frequency Drive (VFD) — the harmonic study needs at least one harmonic current source.' }], null);
-      return;
-    }
-    document.getElementById('status-info').textContent = 'Running harmonic analysis (IEEE 519)...';
+  // ── Harmonic Analysis (IEEE 519-2014 or IEC 61000) ──
+  const _harmStdName = (std) => std === 'iec' ? 'IEC 61000-3-6 / 61000-2-4' : 'IEEE 519-2014';
+
+  async function runHarmonicsStudy() {
+    const std = AppState.harmonicsLimits === 'iec' ? 'iec' : 'ieee519';
+    document.getElementById('status-info').textContent = `Running harmonic analysis (${_harmStdName(std)})...`;
     _setBusy('btn-harmonics', true);
     try {
       const result = await API.runHarmonics(document.getElementById('loadflow-method')?.value || 'newton_raphson');
       AppState.harmonicsResults = result;
       document.getElementById('status-info').textContent =
-        result.compliant ? 'Harmonic analysis complete — IEEE 519 compliant.'
-                          : 'Harmonic analysis complete — IEEE 519 limits exceeded.';
+        `Harmonic analysis complete — ${_harmStdName(result.limits_standard)} `
+        + (result.compliant ? 'compliant.' : 'limits exceeded.');
       showHarmonicsResults(result);
     } catch (e) {
       console.error('Harmonic analysis error:', e);
@@ -2561,6 +2557,17 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       _setBusy('btn-harmonics', false);
     }
+  }
+
+  document.getElementById('btn-harmonics').addEventListener('click', async () => {
+    window.closeAllToolbarMenus?.();
+    const hasVfd = [...AppState.components.values()].some(c => c.type === 'vfd');
+    if (!hasVfd) {
+      showValidationModal('Harmonic Analysis',
+        [], [{ msg: 'Add a Variable Frequency Drive (VFD) — the harmonic study needs at least one harmonic current source.' }], null);
+      return;
+    }
+    await runHarmonicsStudy();
   });
 
   function showHarmonicsResults(result) {
@@ -2568,35 +2575,68 @@ document.addEventListener('DOMContentLoaded', () => {
     const body = document.getElementById('harmonics-body');
     if (!modal || !body) return;
     const ok = (v) => v ? '<span style="color:#4caf50">✓ PASS</span>' : '<span style="color:#d32f2f">✗ FAIL</span>';
-    let html = '';
+    const std = result.limits_standard === 'iec' ? 'iec' : 'ieee519';
+    const title = document.getElementById('harmonics-title');
+    if (title) title.textContent = `Harmonic Analysis — ${_harmStdName(std)}`;
+    // Limit basis — saved with the project; changing it re-runs the study.
+    let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px">
+      <label for="harmonics-limits">Limits:</label>
+      <select id="harmonics-limits">
+        <option value="ieee519"${std === 'ieee519' ? ' selected' : ''}>IEEE 519-2014 (voltage + PCC current)</option>
+        <option value="iec"${std === 'iec' ? ' selected' : ''}>IEC 61000-3-6 planning levels (MV/HV) · IEC 61000-2-4 Class 2 (LV)</option>
+      </select></div>`;
+    const warnHtml = () => {
+      if (!(result.warnings && result.warnings.length)) return '';
+      let w = '<div class="af-warnings">';
+      for (const m of result.warnings) w += `<div class="af-warning-item">⚠ ${escHtml(m)}</div>`;
+      return w + '</div>';
+    };
+    const bindLimits = () => {
+      const sel = document.getElementById('harmonics-limits');
+      if (sel) sel.addEventListener('change', async () => {
+        AppState.harmonicsLimits = sel.value === 'iec' ? 'iec' : null;
+        AppState.dirty = true;
+        await runHarmonicsStudy();
+      });
+    };
 
-    if (result.note) { body.innerHTML = `<p>${escHtml(result.note)}</p>`; modal.style.display = ''; return; }
+    if (result.note) {
+      body.innerHTML = html + `<p>${escHtml(result.note)}</p>` + warnHtml();
+      bindLimits();
+      modal.style.display = '';
+      return;
+    }
 
     // Banner
     const bColor = result.compliant ? '#4caf50' : '#d32f2f';
     html += `<div style="background:${bColor}11;border:1px solid ${bColor};border-radius:6px;padding:10px 14px;margin-bottom:14px">
-      <strong style="color:${bColor}">${result.compliant ? 'IEEE 519-2014 compliant' : 'IEEE 519-2014 limits exceeded'}</strong>
+      <strong style="color:${bColor}">${_harmStdName(std)} ${result.compliant ? 'compliant' : 'limits exceeded'}</strong>
       <span style="margin-left:12px">Worst bus THD<sub>V</sub>: <strong>${result.worst_thd_pct}%</strong> at ${escHtml(result.worst_bus_name || '—')}</span>
       <span style="margin-left:12px;color:var(--text-secondary)">Orders analysed: ${(result.orders || []).join(', ')}</span>
     </div>`;
+    html += warnHtml();
 
-    if (result.warnings && result.warnings.length) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      html += '</div>';
-    }
-
-    // PCC current TDD
+    // PCC current TDD + individual orders
     const pcc = result.pcc;
     if (pcc) {
+      const graded = pcc.compliant !== null && pcc.compliant !== undefined;
+      const border = !graded ? 'var(--border-color)' : (pcc.compliant ? '#4caf50' : '#d32f2f');
+      const lims = pcc.harmonic_limits || {};
+      const over = new Set((pcc.exceeding_orders || []).map(String));
+      const cells = Object.entries(pcc.harmonics || {}).map(([h, v]) => {
+        const l = lims[h];
+        const bad = over.has(h);
+        return `<span style="white-space:nowrap${bad ? ';color:#d32f2f;font-weight:600' : ''}">h${h}: ${v}%${l != null ? ` / ${l}%` : ''}</span>`;
+      }).join('&nbsp;&nbsp; ');
       html += `<h4 style="margin:14px 0 6px">Point of Common Coupling — Current Distortion</h4>
-        <div style="border:1px solid var(--border-color);border-radius:6px;padding:12px 14px;margin-bottom:6px;border-left:4px solid ${pcc.compliant ? '#4caf50' : '#d32f2f'}">
+        <div style="border:1px solid var(--border-color);border-radius:6px;padding:12px 14px;margin-bottom:6px;border-left:4px solid ${border}">
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
             <div>PCC bus: <strong>${escHtml(pcc.name)} (${pcc.voltage_kv} kV)</strong></div>
             <div>I<sub>SC</sub>/I<sub>L</sub>: <strong>${pcc.isc_il}</strong></div>
             <div>Current TDD: <strong>${pcc.i_tdd_pct}%</strong></div>
-            <div>Limit / verdict: <strong>${pcc.tdd_limit_pct}%</strong> ${ok(pcc.compliant)}</div>
+            <div>${graded ? `TDD limit: <strong>${pcc.tdd_limit_pct}%</strong> · PCC ${ok(pcc.compliant)}${(pcc.exceeding_orders || []).length ? ` <span style="color:#d32f2f">(h${pcc.exceeding_orders.join(', h')} over its limit)</span>` : ''}` : 'Not graded (IEC: emission allocation needs planning data)'}</div>
           </div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:6px">I<sub>h</sub> % of I<sub>L</sub>${graded ? ' / IEEE 519 individual limit' : ''}: ${cells}</div>
         </div>`;
     }
 
@@ -2604,15 +2644,19 @@ document.addEventListener('DOMContentLoaded', () => {
     html += `<h4 style="margin:14px 0 6px">Bus Voltage Distortion</h4>
       <table class="data-table" style="width:100%;font-size:12px"><thead><tr>
       <th style="text-align:left">Bus</th><th>kV</th><th>THD<sub>V</sub> %</th><th>Limit %</th>
-      <th>Max IHD %</th><th>IHD limit %</th><th>Verdict</th></tr></thead><tbody>`;
+      <th>Critical order</th><th>IHD %</th><th>IHD limit %</th><th>Basis</th><th>Verdict</th></tr></thead><tbody>`;
     for (const b of (result.buses || [])) {
       const c = b.compliant ? '' : 'background:#d32f2f11';
+      const crit = b.critical_order != null ? b.critical_order : '—';
+      const ihd = b.critical_order != null ? b.critical_ihd_pct : b.max_ihd_pct;
       html += `<tr style="${c}"><td style="text-align:left">${escHtml(b.name)}</td>
         <td style="text-align:center">${b.voltage_kv}</td>
         <td style="text-align:center"><strong>${b.thd_v_pct}</strong></td>
         <td style="text-align:center">${b.thd_limit_pct}</td>
-        <td style="text-align:center">${b.max_ihd_pct}</td>
+        <td style="text-align:center">${crit}</td>
+        <td style="text-align:center">${ihd}</td>
         <td style="text-align:center">${b.ihd_limit_pct}</td>
+        <td style="text-align:center;font-size:11px">${escHtml(b.limit_basis || '')}</td>
         <td style="text-align:center">${ok(b.compliant)}</td></tr>`;
     }
     html += '</tbody></table>';
@@ -2630,9 +2674,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     html += `<p style="font-size:11px;color:var(--text-secondary);margin-top:12px">${escHtml(result.method)}. `
-      + `Multiple sources of the same order summed in phase (conservative). Transformer/line tap ratios not applied at harmonic frequencies.</p>`;
+      + `Critical order = the order nearest its own limit. `
+      + (std === 'iec' ? 'IEC 61000-3-6 planning levels are indicative network-operator targets; the LV basis is the IEC 61000-2-4 Class 2 compatibility level. ' : 'IEEE 519 limits apply at the PCC; internal buses are screened against the same table. ')
+      + `Multiple sources of the same order summed in phase (conservative). Transformer/line tap ratios and phase shifts not applied at harmonic frequencies.</p>`;
 
     body.innerHTML = html;
+    bindLimits();
     modal.style.display = '';
   }
 

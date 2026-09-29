@@ -328,6 +328,14 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Harmonics review: IEEE 519 per-order limits, boards, STATCOM, IEC limit option, H1–H6 (2026-09-29)
+- **Review.** `HARMONICS_REVIEW.md` checks `harmonics.py` against IEEE 519-2014 Tables 1–4 and an independent nodal solve. The solve, THD_V, TDD, Isc/IL, the Table 1 voltage limits and the tuned-filter synthesis were exact.
+- **H1.** Only TDD was graded. The per-order current limits of Tables 2–4 (even orders 25 %) are now checked: a 12-pulse drive's 11th at 7.5 % of I_L against 5.5 % had passed. **H5.** > 161 kV now uses Table 4 itself, not Table 2 × 0.25.
+- **H2.** A distribution board's own load was ignored as harmonic damping and in I_L (same 1000 kVA: THD 98 % vs 11.3 %). Now shared with the frequency scan via `bus_shunt_admittance`. **H3.** A STATCOM (the palette default) was a capacitor of its full rating. It is now its coupling reactance (new `coupling_x_pu`, 0.15 pu); an SVC uses the solved load-flow Q. **H4.** A drive on a de-energised island injected into it (THD up to 3e9 %); it is now left out and warned. **H6.** `demand_factor: 0` read as 1.
+- **L1/L3.** The PCC current is the utility's only; a lumped load's `motor_fraction` is an X″ sink.
+- **IEC option.** Results modal ▸ Limits: IEEE 519-2014, or IEC (IEC 61000-3-6 planning levels at MV/HV, IEC 61000-2-4 Class 2 at LV, per order), saved as `harmonicsLimits`. Filter sizing stays on IEEE 519.
+- No saved project has a VFD. +15 tests in `test_harmonics_review_fixes.py`. Cache-bust `3.5.152 → 3.5.153`.
+
 ### Line coupling review: drawn parallel overhead feeders coupled, LC1 (2026-09-29)
 - **Review.** `LINE_COUPLING_REVIEW.md` checks `line_coupling.py` against IEC 60909-3 eq. (34)–(36) / Table 2 and an independent 6-conductor phase-domain Carson model. The Carson depth, earth-return resistance and Z0_eff = [Z0s + (n−1)·Z0m]/n were exact (≤0.08 % vs phase domain on a 132 kV tower and 11/22 kV poles).
 - **LC1.** A double circuit drawn as two overhead feeders between the same buses got no zero-sequence coupling, so Ik1 was 36 % higher than the same line as `num_parallel = 2` (10 km Dog, 11 kV). Overhead feeders reaching the same two buses through closed switchgear are now coupled automatically (opt out with `z0_coupling: none`). The exact uncoupled equivalents are Z_i′ = 1/(Z⁻¹·1)_i, matching the phase domain for a non-identical pair to 0.03 %. Applied in fault analysis, the sequence Thevenin and unbalanced load flow, and disclosed.

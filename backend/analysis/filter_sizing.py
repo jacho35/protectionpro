@@ -111,7 +111,7 @@ def run_filter_sizing(project: ProjectData, bus_id: str = "",
     quality_factor = max(5.0, min(150.0, float(quality_factor or 30.0)))
     max_branches = max(1, min(MAX_BRANCHES, int(max_branches or 3)))
 
-    base = run_harmonics(_copy(project), method)
+    base = run_harmonics(_copy(project), method, limits="ieee519")
     if not base.get("converged"):
         return {"converged": False, "note": base.get("note")
                 or "Harmonics baseline did not run.",
@@ -159,7 +159,7 @@ def run_filter_sizing(project: ProjectData, bus_id: str = "",
                      "quality_factor": quality_factor, "kvar": kvar_each}
                     for o in sorted(orders)]
         trial = run_harmonics(_with_filters(project, target_bus, branches),
-                              method)
+                              method, limits="ieee519")
         cand = {"n": n, "branches": branches, "result": trial,
                 "worst": trial.get("worst_thd_pct", 999.0),
                 "compliant": bool(trial.get("compliant", False))}

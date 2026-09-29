@@ -186,6 +186,9 @@ class ProjectData(BaseModel):
     simultaneousFaultSeriesType: Optional[str] = None  # "open_conductor" | "two_conductor_open"
     simultaneousFaultBusId: Optional[str] = None  # bus/board id for the shunt-fault leg, elsewhere in the network
     simultaneousFaultShuntType: Optional[str] = None  # "3phase" | "slg" | "ll" | "llg"
+    # Harmonics study limit basis: "ieee519" (IEEE 519-2014, default) or "iec"
+    # (IEC 61000-3-6 planning levels at MV/HV, IEC 61000-2-4 Class 2 at LV).
+    harmonicsLimits: Optional[str] = None
 
     @model_validator(mode="after")
     def _correct_overhead_resistance(self):
@@ -1719,6 +1722,7 @@ class HarmonicsResults(BaseModel):
     pcc: Optional[dict] = None        # PCC current TDD + IEEE 519 verdict
     vfd_sources: list[dict] = []      # per-VFD current spectrum
     compliant: bool = True
+    limits_standard: str = "ieee519"      # "ieee519" | "iec"
     method: str = "Frequency-domain harmonic current-injection (IEEE 519-2014)"
     warnings: list[str] = []
     note: str = ""

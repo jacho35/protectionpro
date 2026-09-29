@@ -272,6 +272,7 @@ can still be worthwhile, at lower priority than an unreviewed module.
 
 | Module | Review | Findings | Outcome |
 |---|---|---|---|
+| `harmonics.py` (+ `frequency_scan.py` shunts) | H1–H6, L1–L8, 2026-09-29 | 6 fixed + IEC option | `HARMONICS_REVIEW.md`. Nodal solve exact vs a hand 2-bus solve (1e-3 %); IEEE 519 Tables 2–4 now held in full and graded per order; boards, STATCOM/SVC and dead islands corrected. Tests in `test_harmonics_review_fixes.py` |
 | `line_coupling.py` | LC1, 2026-09-29 | 1 fixed + 3 lesser | `LINE_COUPLING_REVIEW.md`. Z0_eff exact vs a 6-conductor phase-domain Carson solve (≤0.08 %); drawn parallel feeders now coupled (exact equivalents). Tests in `test_line_coupling_review_fixes.py` |
 | `conductor_temp.py` (+ fault-study line resistance) | CT1–CT2, L1–L2, 2026-09-29 | 2 fixed + 2 lesser | `CONDUCTOR_TEMP_REVIEW.md`. Maximum study now exact vs a hand IEC 60909 calculation at 20 °C; minimum study eq. (3) at θe to 0.03 %. Tests in `test_conductor_temp_review_fixes.py` |
 | `lightning_risk.py` (+ new `lightning_risk_2024.py`) | E1, LR1–LR7, 2026-09-29 | 7 fixed + 2024 edition added | `LIGHTNING_RISK_REVIEW.md`. 2010 R1 exact (4.7e-16) over 55,296 combinations; 2024 engine reproduces the standard's Annex F house/office/hospital tables. Tests in `test_lightning_review_fixes.py` |
@@ -322,7 +323,6 @@ planning engines, then support modules.
 |---|---|
 | `dc_arcflash.py` | Stokes & Oppenlander / NFPA 70E DC incident energy |
 | `dc_loadflow.py` | Hand 2-bus DC solution; power balance |
-| `harmonics.py` | IEEE 519 limits; hand harmonic penetration on a 2-bus case |
 | `raceway.py` | IEC 60364 / SANS 10142-1 fill and grouping factors |
 | `db_circuit_check.py` | Per-way chain by hand: derated Iz (IEC 60364-5-52 tables × grouping/temperature factors), Ib ≤ In ≤ Iz (60364-4-43 §433.1), single-phase loop vs three-phase volt drop (SANS 10142-1 Cl. 6.6 — the 2× loop is the classic slip), ECC from 60364-5-54 Table 54.7, Zs against the breaker's magnetic trip (60364-4-41). Check it agrees with `cable_sizing.py` on an identical cable |
 | `iec_60364_tables.py` | **Transcription**, not physics: spot-check every table against the published IEC 60364-5-52 values, and check parity with its frontend twin in `constants.js` (the two must not drift) |

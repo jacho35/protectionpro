@@ -1125,6 +1125,7 @@ const FIELD_INFO = {
   'svc.control_mode': 'Voltage regulating: holds the connected bus at the voltage setpoint by injecting/absorbing reactive power, within the Q Min/Max limits (a PV bus that reverts to fixed-Q when a limit is reached).\nFixed reactive output: injects a set MVAr (like a controllable capacitor/reactor).',
   'svc.v_setpoint_pu': 'Target voltage (per-unit) the compensator holds at its bus while it has reactive headroom. Once it hits Q Max (capacitive) or Q Min (inductive) it can no longer hold the setpoint and the bus voltage drifts.',
   'svc.q_max_mvar': 'Maximum capacitive (voltage-supporting) reactive output. For an SVC this is the full-susceptance rating at 1.0 pu — the available MVAr scales with V².',
+  'svc.coupling_x_pu': 'STATCOM phase reactor + coupling transformer reactance, per-unit on the converter rating (the larger of Q Max / Q Min). At harmonic frequencies a STATCOM is this reactance to a source holding no harmonic voltage — an inductive shunt X·h, not a capacitor. Typical 0.10–0.20 pu.\nUsed by: Harmonics, Frequency Scan.',
   'svc.q_min_mvar': 'Maximum inductive (voltage-lowering) reactive absorption — usually negative. Used to hold voltage down under light load / leading conditions.',
 
   // Autotransformer
@@ -3531,6 +3532,7 @@ const COMPONENT_DEFS = {
       q_max_mvar: 50,
       q_min_mvar: -50,
       q_output_mvar: 0,
+      coupling_x_pu: 0.15,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -3541,6 +3543,7 @@ const COMPONENT_DEFS = {
       { key: 'q_output_mvar', label: 'Reactive Output', type: 'number', unit: 'MVAr', showWhen: { field: 'control_mode', values: ['fixed_q'] } },
       { key: 'q_max_mvar', label: 'Q Max (capacitive)', type: 'number', unit: 'MVAr', section: 'loadflow' },
       { key: 'q_min_mvar', label: 'Q Min (inductive)', type: 'number', unit: 'MVAr', section: 'loadflow' },
+      { key: 'coupling_x_pu', label: 'Coupling Reactance', type: 'number', unit: 'pu', min: 0.01, max: 1, step: 0.01, section: 'harmonics', showWhen: { field: 'device_mode', values: ['statcom'] } },
     ],
   },
   capacitor_bank: {
