@@ -364,7 +364,7 @@ must be the identity for every entity type in both plan domains.
 **Frontend** (`frontend/js/`, 76 modules) — the physics-bearing ones are
 `constants.js` (component defaults and library data — archetype 2 lives here),
 `tcc.js` (curve maths and distance zone grading — curves reviewed 2026-09-29, `TCC_REVIEW.md`), `compliance.js` (standards
-rules), `dbschedule.js`, `retic.js`, `plan-lux.js`. The rest are UI and follow
+rules — reviewed 2026-09-29, `COMPLIANCE_REVIEW.md`), `dbschedule.js`, `retic.js`, `plan-lux.js`. The rest are UI and follow
 the frontend verification path in the `verify` skill instead.
 
 ---

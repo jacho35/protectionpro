@@ -56,24 +56,29 @@ const Compliance = {
     const section = { title: 'Network Validation', standard: 'General', items: [] };
     const { errors, warnings } = Components.validate();
 
+    // [L5] validate() keys the component as compId, not id
+    const who = (x) => {
+      const id = x.compId || x.id;
+      return id ? (AppState.components.get(id)?.props?.name || id) : '—';
+    };
     for (const e of errors) {
-      section.items.push({ status: 'fail', component: e.id || '—', message: e.msg, detail: 'Must be resolved before analysis.' });
+      section.items.push({ status: 'fail', component: who(e), message: e.msg, detail: 'Must be resolved before analysis.' });
     }
     for (const w of warnings) {
-      section.items.push({ status: 'warn', component: w.id || '—', message: w.msg, detail: 'May affect results accuracy.' });
+      section.items.push({ status: 'warn', component: who(w), message: w.msg, detail: 'May affect results accuracy.' });
     }
 
     if (errors.length === 0 && warnings.length === 0) {
       section.items.push({ status: 'pass', component: '—', message: 'Network topology is valid.', detail: 'All components connected, sources and buses present.' });
     }
 
-    // Check swing bus
-    let hasSwing = false;
-    for (const comp of AppState.components.values()) {
-      if (comp.type === 'bus' && comp.props?.bus_type === 'Swing') hasSwing = true;
-    }
-    if (!hasSwing) {
-      section.items.push({ status: 'warn', component: '—', message: 'No Swing (slack) bus defined.', detail: 'Load flow requires a Swing bus as voltage reference. One bus will be assumed.' });
+    // [L1] The load flow picks each island's slack from its sources (the
+    // utility, else the largest machine) — a bus labelled Swing is optional,
+    // so its absence is not a finding. A network with no source at all is.
+    const hasSource = [...AppState.components.values()]
+      .some(c => this._SOURCE_TYPES.includes(c.type) || c.type === 'battery');
+    if (!hasSource) {
+      section.items.push({ status: 'warn', component: '—', message: 'No source in the network.', detail: 'Add a utility, generator, PV, wind or battery source — load flow and fault studies have no infeed without one.' });
     }
 
     return section;
@@ -345,10 +350,20 @@ const Compliance = {
   },
 
   // ── 5. Cable Short-Circuit Withstand (IEC 60364-4-43 §434.5.2) ──
-  // Adiabatic criterion: the protective device must clear a through-fault
-  // before the conductor exceeds its final short-circuit temperature, i.e.
-  // t_clear ≤ k²·S²/I², with k per IEC 60364-5-54 for the conductor material
-  // and insulation, S the cross-section in mm² and I the through-fault current.
+  // Adiabatic criterion: the protective device must clear a fault before the
+  // conductor exceeds its final short-circuit temperature, i.e.
+  // t_clear ≤ k²·S²/Ith², with k per IEC 60364-4-43 Table 43A.
+  //
+  // [C2] Checked at BOTH ends of the fault-current range, as the reviewed
+  // Cable Sizing study does ([CS2]/[CS5]): (a) the LARGEST current of any
+  // fault type at either end, as the IEC 60909-0 §12 thermal-equivalent
+  // Ith = I″k·√(m+1) — the fast, high-energy case; (b) the SMALLEST current
+  // at the far end from the minimum study (c_min, hot conductors) — a
+  // time-inverse device is slowest there. The old check used only the
+  // far-end I″k3 of the MAXIMUM study, which is neither: it passed a cable
+  // that fails at the source-end Ik1 and one a slow device overheats at
+  // the far-end minimum. Only the supply-side device counts — a load-side
+  // device sees no current for a fault in the cable.
   _checkCableWithstand() {
     const section = { title: 'Cable Short-Circuit Withstand', standard: 'IEC 60364-4-43 / SANS 10142-1', items: [] };
 
@@ -357,22 +372,19 @@ const Compliance = {
       return section;
     }
 
-    const faultBuses = AppState.faultResults.buses;
+    const maxB = AppState.faultResults.buses;
+    const minB = AppState.faultResultsMin?.buses || null;
+    const freq = Number(AppState.frequency) || 50;
     const fmtT = (t) => (t >= 100 ? t.toFixed(0) : t >= 10 ? t.toFixed(1) : t >= 1 ? t.toFixed(2) : t.toFixed(3));
+    const T_ADIABATIC = 5.0; // §434.5.2 is valid up to 5 s
     let anyCable = false;
+    let farSkipped = false;
 
     for (const [cableId, comp] of AppState.components) {
       if (comp.type !== 'cable') continue;
       anyCable = true;
       const cableName = comp.props?.name || cableId;
-
-      // Resolve cross-section, conductor material and insulation: library
-      // entry first, cable props as fallback (same resolution as the TCC
-      // cable thermal damage curve)
-      const stdCable = STANDARD_CABLES.find(c => c.id === (comp.props?.standard_type || ''));
-      const sizeMm2 = stdCable ? stdCable.size_mm2 : (comp.props?.size_mm2 || 0);
-      const conductor = stdCable ? stdCable.conductor : (comp.props?.conductor || 'Cu');
-      const insulation = stdCable ? stdCable.insulation : (comp.props?.insulation || 'XLPE');
+      const { size: sizeMm2, conductor, insulation } = this._cableBasics(comp);
 
       if (!(sizeMm2 > 0)) {
         section.items.push({
@@ -383,138 +395,102 @@ const Compliance = {
         });
         continue;
       }
+      const kFactor = this._kFactor(conductor, insulation, sizeMm2);
+      const kDesc = `k = ${kFactor} (${conductor}/${insulation}${insulation === 'PVC' && sizeMm2 > 300 ? ' > 300 mm²' : ''}), S = ${sizeMm2} mm²`;
 
-      // Adiabatic k factor per IEC 60364-5-54 (same values as the TCC damage
-      // curve): Cu/XLPE 143, Cu/PVC 115, Al/XLPE 94, Al/PVC 76
-      let kFactor = 143;
-      if (conductor === 'Cu' && insulation === 'PVC') kFactor = 115;
-      else if (conductor === 'Al' && insulation === 'XLPE') kFactor = 94;
-      else if (conductor === 'Al' && insulation === 'PVC') kFactor = 76;
-
-      // Through-fault current: a fault at the cable's remote (downstream) end
-      // flows through the whole cable. Of the connected buses with fault
-      // results, the lower-I"k3 end is the downstream end.
-      const buses = this._findConnectedDevices(cableId, ['bus']);
-      let faultKA = null;
-      let faultBusName = null;
-      for (const b of buses) {
-        const fr = faultBuses[b.id];
-        if (!fr || fr.ik3 == null) continue;
-        if (faultKA == null || fr.ik3 < faultKA) {
-          faultKA = fr.ik3;
-          faultBusName = AppState.components.get(b.id)?.props?.name || b.id;
-        }
-      }
-
-      if (faultKA == null) {
+      const ends = this._faultNodes(cableId, this._TRANSPARENT).filter(e => maxB[e.key]);
+      if (ends.length === 0) {
         section.items.push({
           status: 'info',
           component: cableName,
           message: 'No fault result at a connected bus — short-circuit withstand not verified.',
-          detail: `k = ${kFactor} (${conductor}/${insulation}), S = ${sizeMm2} mm². Ensure the cable's buses are included in the fault study.`,
+          detail: `${kDesc}. Ensure the cable's buses are included in the fault study.`,
         });
         continue;
       }
 
-      const faultI = faultKA * 1000; // A
-      const tMax = Math.pow((kFactor * sizeMm2) / faultI, 2); // k²S²/I² in seconds
-      const basisStr = `k = ${kFactor} (${conductor}/${insulation}), S = ${sizeMm2} mm², I = ${faultKA.toFixed(2)} kA (I"k3 at ${faultBusName}) → withstand t = k²S²/I² = ${fmtT(tMax)} s`;
-
-      const devices = this._findConnectedDevices(cableId, ['cb', 'fuse']);
-      if (devices.length === 0) {
+      const dev = this._cableDevice(cableId);
+      if (!dev) {
         section.items.push({
           status: 'info',
           component: cableName,
           message: 'No protective device found for cable — clearing time cannot be evaluated.',
-          detail: `${basisStr}. Add an upstream circuit breaker or fuse to enable the check.`,
+          detail: `${kDesc}. Add an upstream circuit breaker or fuse to enable the check.`,
         });
         continue;
       }
+      const devName = dev.props?.name || dev.id;
 
-      for (const dev of devices) {
-        const devComp = AppState.components.get(dev.id);
-        if (!devComp) continue;
-        const devName = devComp.props?.name || dev.id;
-        let tClear;
-        let devDesc;
-
-        if (devComp.type === 'fuse') {
-          const ratingA = devComp.props?.rated_current_a;
-          if (!ratingA) {
-            section.items.push({
-              status: 'info',
-              component: devName,
-              message: `No fuse rating specified — cannot evaluate clearing time for cable ${cableName}.`,
-              detail: `${basisStr}.`,
-            });
-            continue;
-          }
-          // Total clearing ≈ 1.2 × pre-arcing time (IEC 60269 practice, as in TCC grading)
-          const preArc = fuseTripTime(ratingA, faultI);
-          tClear = (preArc != null && isFinite(preArc)) ? preArc * 1.2 : preArc;
-          devDesc = `gG fuse ${ratingA} A, total clearing (1.2× pre-arc)`;
-        } else {
-          const params = {
-            cb_type: devComp.props?.cb_type || 'mccb',
-            trip_rating_a: devComp.props?.trip_rating_a || devComp.props?.rated_current_a,
-            thermal_pickup: devComp.props?.thermal_pickup || 1.0,
-            magnetic_pickup: devComp.props?.magnetic_pickup || 10,
-            long_time_delay: devComp.props?.long_time_delay || 10,
-            short_time_pickup: devComp.props?.short_time_pickup || 0,
-            short_time_delay: devComp.props?.short_time_delay || 0,
-            instantaneous_pickup: devComp.props?.instantaneous_pickup || 0,
-          };
-          if (!params.trip_rating_a) {
-            section.items.push({
-              status: 'info',
-              component: devName,
-              message: `No trip rating specified — cannot evaluate clearing time for cable ${cableName}.`,
-              detail: `${basisStr}.`,
-            });
-            continue;
-          }
-          tClear = cbTripTime(params, faultI);
-          devDesc = `${(params.cb_type || 'mccb').toUpperCase()} trip unit`;
-        }
-
-        if (tClear == null || !isFinite(tClear)) {
-          section.items.push({
-            status: 'fail',
-            component: devName,
-            message: `Device does NOT operate at the through-fault current — cable ${cableName} is unprotected against short circuit.`,
-            detail: `${basisStr}. ${devDesc}: no trip at ${faultKA.toFixed(2)} kA, so the conductor exceeds its adiabatic limit. Lower the pickup or use a more sensitive device.`,
-          });
-          continue;
-        }
-
-        if (tClear > tMax) {
-          section.items.push({
-            status: 'fail',
-            component: devName,
-            message: `Clearing time ${fmtT(tClear)} s EXCEEDS cable ${cableName} withstand ${fmtT(tMax)} s.`,
-            detail: `${basisStr}. ${devDesc} clears in ${fmtT(tClear)} s — IEC 60364-4-43 §434.5.2 requires t_clear ≤ k²S²/I². Upsize the conductor or speed up the protection.`,
-          });
-        } else {
-          const marginPct = (tMax / tClear - 1) * 100;
-          if (marginPct < 20) {
-            section.items.push({
-              status: 'warn',
-              component: devName,
-              message: `Clearing time ${fmtT(tClear)} s within cable ${cableName} withstand ${fmtT(tMax)} s, but margin is only ${marginPct.toFixed(0)}%.`,
-              detail: `${basisStr}. ${devDesc}. Curve tolerance or a higher fault level could exceed the adiabatic limit.`,
-            });
-          } else {
-            section.items.push({
-              status: 'pass',
-              component: devName,
-              message: `Clearing time ${fmtT(tClear)} s ≤ cable ${cableName} withstand ${fmtT(tMax)} s.`,
-              detail: `${basisStr}. ${devDesc}. Complies with IEC 60364-4-43 §434.5.2.`,
-            });
-          }
+      // (a) the largest current of any fault type at either end (max study)
+      let iMaxKA = 0, kappa = null, atName = '', atType = '';
+      for (const e of ends) {
+        const r = maxB[e.key];
+        for (const [v, lbl] of [[r.ik3, 'I"k3'], [r.ik1, 'I"k1'], [r.ikLL, 'I"kLL'], [r.ikLLG, 'I"kLLG']]) {
+          if (v > iMaxKA) { iMaxKA = v; kappa = r.kappa; atName = e.name; atType = lbl; }
         }
       }
+      const ta = this._deviceClearTime(dev, iMaxKA * 1000);
+      if (ta.t === null) {
+        section.items.push({
+          status: 'info', component: devName,
+          message: `${ta.why} — withstand of cable ${cableName} not evaluated here.`,
+          detail: `${kDesc}. Run the Cable Sizing study, which evaluates the relay curve through its CT.`,
+        });
+        continue;
+      }
+      this._pushWithstand(section, {
+        devName, cableName, kDesc, kFactor, sizeMm2, freq, fmtT, T_ADIABATIC,
+        iKA: iMaxKA, kappa, t: ta.t, devDesc: ta.desc,
+        where: `${atType} = ${iMaxKA.toFixed(2)} kA at ${atName} (largest fault current, maximum study)`,
+      });
+
+      // (b) the smallest current at the far end (minimum study)
+      let far = ends.filter(e => !this._leadsToSource(e.compId, cableId));
+      if (ends.length > 1 && (far.length === 0 || far.length === ends.length)) {
+        // supply side not resolved (a ring, generation at both ends, or no
+        // source modelled) — the lower-I"k3 end is the far end
+        far = [[...ends].sort((a, b) => maxB[a.key].ik3 - maxB[b.key].ik3)[0]];
+      }
+      if (far.length === 0) continue;
+      if (!minB) { farSkipped = true; continue; }
+      let iMinKA = Infinity, kapFar = null, farName = '';
+      for (const e of far) {
+        const r = minB[e.key];
+        if (!r) continue;
+        for (const v of [r.ik3, r.ikLL, r.ik1]) {
+          if (v > 0 && v < iMinKA) { iMinKA = v; kapFar = r.kappa; farName = e.name; }
+        }
+      }
+      if (!isFinite(iMinKA)) continue;
+      const tb = this._deviceClearTime(dev, iMinKA * 1000);
+      if (tb.t === null) continue;
+      if (!isFinite(tb.t) || tb.t >= T_ADIABATIC) {
+        // §435.1: a device that gives §433 overload protection also covers
+        // the conductor on its load side against short circuit
+        const iz = (parseFloat(comp.props?.rated_amps) || 0) * this._cableBasics(comp).n;
+        const ol = this._overloadCoord(dev, iz);
+        const covered = ol && ol.ok1 && ol.ok2;
+        section.items.push({
+          status: covered ? 'pass' : 'fail', component: devName,
+          message: covered
+            ? `Minimum far-end fault (${(iMinKA * 1000).toFixed(0)} A at ${farName}) is cleared by the overload element — cable ${cableName} covered by §435.1.`
+            : `Minimum far-end fault (${(iMinKA * 1000).toFixed(0)} A at ${farName}) is not cleared within ${T_ADIABATIC} s — cable ${cableName} is not protected against short circuit.`,
+          detail: covered
+            ? `${kDesc}. ${tb.desc} takes ${isFinite(tb.t) ? fmtT(tb.t) + ' s' : '∞'}, but it satisfies IEC 60364-4-43 §433.1 for this cable (In ${ol.In.toFixed(0)} A ≤ Iz ${iz.toFixed(0)} A, I2 ${ol.I2.toFixed(0)} A ≤ 1.45·Iz), so §435.1 applies. Basis: minimum study (c_min).`
+            : `${kDesc}. ${tb.desc} takes ${isFinite(tb.t) ? fmtT(tb.t) + ' s' : '∞'} at the minimum fault current (IEC 60364-4-43 §434.5.2, valid to ${T_ADIABATIC} s) and does not give §433.1 overload protection of the cable. Lower the pickup, shorten the run or upsize the conductor.`,
+        });
+        continue;
+      }
+      this._pushWithstand(section, {
+        devName, cableName, kDesc, kFactor, sizeMm2, freq, fmtT, T_ADIABATIC,
+        iKA: iMinKA, kappa: kapFar, t: tb.t, devDesc: tb.desc,
+        where: `${(iMinKA * 1000).toFixed(0)} A at ${farName} (smallest fault current, minimum study)`,
+      });
     }
 
+    if (farSkipped) {
+      section.items.push({ status: 'warn', component: '—', message: 'Minimum fault study not available — the far-end (smallest current) withstand check was skipped.', detail: 'Re-run Fault Analysis: the companion minimum-current study (c_min, hot conductors) is fetched automatically.' });
+    }
     if (!anyCable) {
       section.items.push({ status: 'info', component: '—', message: 'No cables in the network for short-circuit withstand check.', detail: 'IEC 60364-4-43 §434.5.2 applies to cables protected by an upstream overcurrent device.' });
     }
@@ -522,39 +498,82 @@ const Compliance = {
     return section;
   },
 
+  // One §434.5.2 verdict: t_clear ≤ (k·S/Ith)², Ith = I·√(m+1) per IEC 60909-0 §12
+  _pushWithstand(section, a) {
+    const f = Math.sqrt(this._thermalM(a.kappa, a.t, a.freq) + 1);
+    const ithA = a.iKA * 1000 * f;
+    const tMax = Math.pow((a.kFactor * a.sizeMm2) / ithA, 2);
+    const basis = `${a.kDesc}, ${a.where}, Ith = I·√(m+1) = ${(ithA / 1000).toFixed(2)} kA → withstand k²S²/Ith² = ${a.fmtT(tMax)} s`;
+    if (!isFinite(a.t) || a.t >= a.T_ADIABATIC) {
+      section.items.push({
+        status: 'fail', component: a.devName,
+        message: `Device does not clear ${(a.iKA * 1000).toFixed(0)} A within ${a.T_ADIABATIC} s — cable ${a.cableName} is unprotected against short circuit.`,
+        detail: `${basis}. ${a.devDesc}: ${isFinite(a.t) ? a.fmtT(a.t) + ' s' : 'no trip'}. Lower the pickup or use a more sensitive device.`,
+      });
+    } else if (a.t > tMax) {
+      section.items.push({
+        status: 'fail', component: a.devName,
+        message: `Clearing time ${a.fmtT(a.t)} s EXCEEDS cable ${a.cableName} withstand ${a.fmtT(tMax)} s.`,
+        detail: `${basis}. ${a.devDesc} clears in ${a.fmtT(a.t)} s — IEC 60364-4-43 §434.5.2 requires t ≤ k²S²/I². Upsize the conductor or speed up the protection.`,
+      });
+    } else {
+      const marginPct = (tMax / a.t - 1) * 100;
+      section.items.push({
+        status: marginPct < 20 ? 'warn' : 'pass', component: a.devName,
+        message: marginPct < 20
+          ? `Clearing time ${a.fmtT(a.t)} s within cable ${a.cableName} withstand ${a.fmtT(tMax)} s, but margin is only ${marginPct.toFixed(0)}%.`
+          : `Clearing time ${a.fmtT(a.t)} s ≤ cable ${a.cableName} withstand ${a.fmtT(tMax)} s.`,
+        detail: `${basis}. ${a.devDesc}.${marginPct < 20 ? ' Curve tolerance or a higher fault level could exceed the adiabatic limit.' : ' Complies with IEC 60364-4-43 §434.5.2.'}`,
+      });
+    }
+  },
+
   // ── 6. Protection Device Checks ──
   _checkProtectionDevices() {
     const section = { title: 'Protection Device Ratings', standard: 'IEC 62271 / IEC 60947', items: [] };
 
-    // Check CB and fuse rated voltages match bus voltage
+    // Check CB and fuse rated voltages against the bus voltage
     for (const [id, comp] of AppState.components) {
       if (!['cb', 'fuse', 'switch', 'changeover'].includes(comp.type)) continue;
       const name = comp.props?.name || id;
-      const ratedV = comp.props?.rated_voltage_kv;
-      if (!ratedV) continue;
+      const ratedV = parseFloat(comp.props?.rated_voltage_kv);
+      if (!(ratedV > 0)) continue;
 
       // Find the bus this device is connected to
       const buses = this._findConnectedDevices(id, ['bus']);
       for (const b of buses) {
         const busComp = AppState.components.get(b.id);
         if (!busComp) continue;
-        const busV = busComp.props?.voltage_kv || busComp.props?.voltage;
-        if (!busV) continue;
+        const busV = parseFloat(busComp.props?.voltage_kv || busComp.props?.voltage);
+        if (!(busV > 0)) continue;
         const busName = busComp.props?.name || b.id;
+        // [C7] MV: IEC 62271-1 requires the rated voltage Ur ≥ Um, the IEC
+        // 60038 highest voltage for equipment (12 kV on an 11 kV system) —
+        // as the Duty Check does ([L1]). Below nominal fails; between
+        // nominal and Um warns (a nominal typed as the rating is common).
+        const um = this._highestSystemVoltageKv(busV);
 
-        if (ratedV < busV) {
+        if (ratedV < busV - 1e-9) {
           section.items.push({
             status: 'fail',
             component: name,
             message: `Rated voltage (${ratedV} kV) is BELOW bus voltage (${busV} kV).`,
             detail: `Connected to bus ${busName}. Device is under-rated for the system voltage.`,
           });
+        } else if (busV > 1.0 && ratedV < um - 1e-9) {
+          section.items.push({
+            status: 'warn',
+            component: name,
+            message: `Rated voltage (${ratedV} kV) is below Um = ${um} kV of the ${busV} kV system.`,
+            detail: `Connected to bus ${busName}. IEC 62271-1 requires Ur ≥ Um (IEC 60038 highest voltage for equipment). Enter the device's IEC rated voltage (e.g. 12 kV for 11 kV).`,
+          });
+          break;
         } else {
           section.items.push({
             status: 'pass',
             component: name,
             message: `Rated voltage (${ratedV} kV) adequate for bus voltage (${busV} kV).`,
-            detail: `Connected to bus ${busName}.`,
+            detail: `Connected to bus ${busName}.${busV > 1.0 ? ` Ur ≥ Um = ${um} kV (IEC 62271-1).` : ''}`,
           });
           break; // One pass check per device is enough
         }
@@ -648,8 +667,8 @@ const Compliance = {
         const trip = this._deviceMagneticTripA(dev);
         if (trip && iStart > trip.a) {
           section.items.push({ status: 'warn', component: dname,
-            message: `Starting current ≈ ${iStart.toFixed(0)} A (${start.label}) exceeds the device magnetic trip (~${trip.a.toFixed(0)} A, ${trip.desc}).`,
-            detail: `Likely nuisance-trips when motor ${name} starts. Use a higher trip curve (C/D), raise the instantaneous pickup, or size the device for starting.` });
+            message: `Starting current ≈ ${iStart.toFixed(0)} A (${start.label}) exceeds the magnetic no-trip limit (${trip.a.toFixed(0)} A, ${trip.desc}).`,
+            detail: `The breaker is not guaranteed to hold when motor ${name} starts (the RMS starting current is inside or above its magnetic tolerance band; the first-cycle asymmetric peak is higher still). Use a higher trip curve (C/D), raise the instantaneous pickup, or size the device for starting.` });
           any = true;
         }
       }
@@ -863,20 +882,29 @@ const Compliance = {
     }
   },
 
-  // SANS 10142-1 Cl. 5.5.2: Overcurrent protection coordination — In ≤ Iz (device rating ≤ cable ampacity)
+  // SANS 10142-1 Cl. 5.5.2 / IEC 60364-4-43 §433.1: overload coordination.
+  // [C3] Both conditions: In ≤ Iz AND I2 ≤ 1.45·Iz, with I2 the device's
+  // conventional operating current (gG fuse 1.6 In above 16 A, so a fuse
+  // needs In ≤ 0.91·Iz). In is a breaker's current SETTING Ir (trip rating ×
+  // thermal pickup), not its frame, and Iz covers every parallel run — as
+  // in the Cable Sizing study ([CS3]).
   _sans10142_cableProtection(section) {
     let checked = 0;
 
     for (const [cableId, comp] of AppState.components) {
       if (comp.type !== 'cable') continue;
       const cableName = comp.props?.name || cableId;
-      const iz = comp.props?.rated_amps; // Cable ampacity (Iz)
+      const izOne = parseFloat(comp.props?.rated_amps); // Cable ampacity (Iz), per run
       const cableVoltageKV = this._resolveCableVoltage(cableId, comp);
 
-      if (!iz || !cableVoltageKV || cableVoltageKV > 1.0) continue; // Only LV cables
+      if (!(izOne > 0) || !cableVoltageKV || cableVoltageKV > 1.0) continue; // Only LV cables
       checked++;
+      const n = this._cableBasics(comp).n;
+      const iz = izOne * n;
+      const izDesc = n > 1 ? `${n} × ${izOne} A = ${iz} A` : `${iz} A`;
 
-      // Find upstream protective devices (CBs, fuses) connected to this cable
+      // Protective devices at either end of the cable (§433.2.2 allows the
+      // overload device anywhere along a run without branches)
       const devices = this._findConnectedDevices(cableId, ['cb', 'fuse']);
 
       if (devices.length === 0) {
@@ -884,7 +912,7 @@ const Compliance = {
           status: 'warn',
           component: cableName,
           message: `LV cable has no upstream overcurrent protection device.`,
-          detail: `Cable ampacity Iz = ${iz} A. SANS 10142-1 Cl. 5.5.2 requires every LV circuit to be protected against overcurrent.`,
+          detail: `Cable ampacity Iz = ${izDesc}. SANS 10142-1 Cl. 5.5.2 requires every LV circuit to be protected against overcurrent.`,
         });
         continue;
       }
@@ -893,31 +921,40 @@ const Compliance = {
         const devComp = AppState.components.get(dev.id);
         if (!devComp) continue;
         const devName = devComp.props?.name || dev.id;
-        const in_ = devComp.props?.rated_current_a; // Device nominal current (In)
+        const ol = this._overloadCoord(devComp, iz);
 
-        if (in_ == null || in_ <= 0) {
+        if (!ol) {
           section.items.push({
             status: 'warn',
             component: devName,
-            message: `No rated current specified; cannot verify In ≤ Iz for cable ${cableName}.`,
-            detail: `SANS 10142-1 Cl. 5.5.2: protection device rated current In must not exceed cable ampacity Iz = ${iz} A.`,
+            message: this._relayTripping(dev.id)
+              ? `Relay-tripped breaker — overload coordination with cable ${cableName} not evaluated here.`
+              : `No rated current specified; cannot verify In ≤ Iz for cable ${cableName}.`,
+            detail: `IEC 60364-4-43 §433.1 / SANS 10142-1 Cl. 5.5.2: In ≤ Iz = ${izDesc} and I2 ≤ 1.45·Iz. See the Cable Sizing study.`,
           });
           continue;
         }
-
-        if (in_ > iz) {
+        const i2Str = `I2 = ${ol.f}·In = ${ol.I2.toFixed(0)} A`;
+        if (!ol.ok1) {
           section.items.push({
             status: 'fail',
             component: devName,
-            message: `Protection rating In (${in_} A) EXCEEDS cable ampacity Iz (${iz} A). Cable ${cableName} is unprotected.`,
-            detail: `SANS 10142-1 Cl. 5.5.2 requires In ≤ Iz. Reduce device rating to ≤ ${iz} A or upsize cable.`,
+            message: `Protection rating In (${ol.In.toFixed(0)} A) EXCEEDS cable ampacity Iz (${izDesc}). Cable ${cableName} is unprotected.`,
+            detail: `IEC 60364-4-43 §433.1 / SANS 10142-1 Cl. 5.5.2 require In ≤ Iz (${ol.label}). Reduce the rating/setting or upsize the cable.`,
+          });
+        } else if (!ol.ok2) {
+          section.items.push({
+            status: 'fail',
+            component: devName,
+            message: `${i2Str} EXCEEDS 1.45·Iz = ${(1.45 * iz).toFixed(0)} A for cable ${cableName} (In ${ol.In.toFixed(0)} A ≤ Iz ${izDesc}).`,
+            detail: `IEC 60364-4-43 §433.1(b): the conventional operating current I2 must not exceed 1.45·Iz (${ol.label}). Use a device of In ≤ ${(1.45 * iz / ol.f).toFixed(0)} A or upsize the cable.`,
           });
         } else {
           section.items.push({
             status: 'pass',
             component: devName,
-            message: `In (${in_} A) ≤ Iz (${iz} A) for cable ${cableName}. Cable is adequately protected.`,
-            detail: `Complies with SANS 10142-1 Cl. 5.5.2. Protection margin: ${(((iz / in_) - 1) * 100).toFixed(1)}%.`,
+            message: `In (${ol.In.toFixed(0)} A) ≤ Iz (${izDesc}) and ${i2Str} ≤ 1.45·Iz for cable ${cableName}.`,
+            detail: `Complies with IEC 60364-4-43 §433.1 / SANS 10142-1 Cl. 5.5.2 (${ol.label}). Protection margin: ${(((iz / ol.In) - 1) * 100).toFixed(1)}%.`,
           });
         }
       }
@@ -939,7 +976,10 @@ const Compliance = {
       const cableVoltageKV = this._resolveCableVoltage(cableId, comp);
       if (!cableVoltageKV || cableVoltageKV > 1.0) continue; // Only LV
 
-      const sizeMm2 = comp.props?.size_mm2;
+      // [L2] Size from the library entry / ampacity calculator too — a
+      // library pick does not write size_mm2, so the check skipped every
+      // library cable.
+      const sizeMm2 = this._cableBasics(comp).size;
       if (!sizeMm2) continue;
       checked++;
 
@@ -985,24 +1025,36 @@ const Compliance = {
       checked++;
 
       const xfName = comp.props?.name || xfId;
-      const vectorGroup = (comp.props?.vector_group || '').toLowerCase();
-      const groundingLv = comp.props?.grounding_lv || '';
+      const vgStr = String(comp.props?.vector_group || 'Dyn11');
+      const groundingLv = comp.props?.grounding_lv;
       const earthingSystem = comp.props?.earthing_system || 'TN-S';
 
-      // LV neutral is accessible when vector group contains 'yn' or 'zn' on LV side
-      // e.g. Dyn11 → LV is yn → neutral accessible and earthed
-      const lvNeutralAccessible = /yn|zn/.test(vectorGroup);
-      const lvSolidlyEarthed = groundingLv === 'solidly_grounded';
-      const lvUngrounded = groundingLv === 'ungrounded';
+      // [C5] IEC 60076-1 vector-group notation is case-sensitive: CAPITALS
+      // are the HV winding, lower case the LV. Lower-casing the whole string
+      // read the HV "YN" of a YNd11 as an earthed LV neutral (PASS for a
+      // delta LV winding). As in the fault engine, the LV letter only says
+      // delta (no neutral) or star/zigzag; for a star/zigzag winding the
+      // grounding_lv prop is authoritative (a Dy11 with its neutral solidly
+      // earthed is earthed), with the 'n' letter as the fallback when the
+      // prop is absent.
+      const lvPart = vgStr.replace(/^[A-Z]+/, '');        // "Dyn11" → "yn11", "YNd11" → "d11"
+      const lvDelta = /^d/i.test(lvPart);
+      const g = groundingLv == null ? null : String(groundingLv).toLowerCase();
+      const lvEarthed = !lvDelta && (g == null
+        ? /^(yn|zn)/i.test(lvPart)
+        : !['ungrounded', 'isolated', 'none', 'unearthed'].includes(g));
+      const lvSolidlyEarthed = lvEarthed && (g == null || g === 'solidly_grounded');
 
-      if (!lvNeutralAccessible && !lvSolidlyEarthed) {
+      if (lvDelta) {
         section.items.push({
-          status: 'info',
+          status: earthingSystem === 'IT' ? 'info' : 'warn',
           component: xfName,
-          message: `LV winding vector group '${comp.props?.vector_group || '?'}' — no accessible LV neutral.`,
-          detail: `SANS 10142-1 Cl. 8.3.1: TN/TT systems require an earthed neutral at the LV source. Consider Dyn11 configuration with solidly earthed neutral.`,
+          message: `LV winding is delta (${vgStr}) — no LV neutral${earthingSystem === 'IT' ? ', consistent with the declared IT system' : `, but ${earthingSystem} is declared`}.`,
+          detail: earthingSystem === 'IT'
+            ? 'SANS 10142-1 Cl. 8.3.1: IT systems have an unearthed source; an insulation-monitoring device is required. See the earthing-system check.'
+            : `SANS 10142-1 Cl. 8.3.1: TN/TT systems require an earthed neutral at the LV source. Use a Dyn/Dzn winding, add an earthing transformer, or declare the system IT.`,
         });
-      } else if (lvUngrounded) {
+      } else if (!lvEarthed) {
         // An ungrounded LV neutral is a fault for TN/TT, but is exactly what an
         // IT system declares — treat it as consistent when IT is selected.
         if (earthingSystem === 'IT') {
@@ -1016,23 +1068,23 @@ const Compliance = {
           section.items.push({
             status: 'fail',
             component: xfName,
-            message: `LV neutral is ungrounded on a distribution transformer with accessible neutral (declared ${earthingSystem}).`,
+            message: `LV neutral is ungrounded (${vgStr}, declared ${earthingSystem}).`,
             detail: `SANS 10142-1 Cl. 8.3.1: the LV neutral must be earthed (solidly or via low-resistance) for TN/TT systems. Ungrounded LV is only permitted for IT systems with insulation monitoring.`,
           });
         }
-      } else if (lvNeutralAccessible && lvSolidlyEarthed) {
+      } else if (lvSolidlyEarthed) {
         section.items.push({
           status: 'pass',
           component: xfName,
-          message: `LV neutral solidly earthed (${comp.props?.vector_group || '—'}) — ${earthingSystem} earthing confirmed.`,
+          message: `LV neutral solidly earthed (${vgStr}) — ${earthingSystem} earthing confirmed.`,
           detail: `SANS 10142-1 Cl. 8.3.1: earthed neutral at LV source provides automatic disconnection capability.`,
         });
       } else {
-        // Neutral accessible but grounding not solidly set (resistance / reactance grounded)
+        // Neutral earthed through an impedance (resistance / reactance grounded)
         section.items.push({
           status: 'warn',
           component: xfName,
-          message: `LV neutral earthed via impedance (${groundingLv.replace(/_/g, ' ')}). Verify disconnection times.`,
+          message: `LV neutral earthed via impedance (${g.replace(/_/g, ' ')}). Verify disconnection times.`,
           detail: `SANS 10142-1 Cl. 8.3.1: impedance-earthed LV neutrals increase earth fault loop impedance. Verify that disconnection times for all circuits comply with Cl. 5.5.6.`,
         });
       }
@@ -1044,9 +1096,13 @@ const Compliance = {
   },
 
   // Collect the declared earthing system of every LV source (transformer with
-  // an LV secondary ≤1 kV, or a utility supplying at ≤1 kV).
+  // an LV secondary ≤1 kV, or a utility supplying at ≤1 kV), each with its
+  // LV zone ([C4]): every component reachable from the source without
+  // crossing a transformer or entering a bus above 1 kV. The earthing system
+  // — and the RCDs that serve it — belong to that zone, not the project.
   _lvEarthingSources() {
     const out = [];
+    const adj = this._getAdjacency();
     for (const [id, comp] of AppState.components) {
       let lvKV = null;
       if (comp.type === 'transformer') {
@@ -1057,8 +1113,40 @@ const Compliance = {
         continue;
       }
       if (!lvKV || lvKV > 1.0) continue;
+
+      // A transformer enters its zone through its LV port only
+      let start = adj.get(id) || [];
+      if (comp.type === 'transformer') {
+        const lvPort = comp.props?.winding_config === 'step_up' ? 'primary' : 'secondary';
+        start = [];
+        for (const w of AppState.wires.values()) {
+          if (w.fromComponent === id && w.fromPort === lvPort) start.push(w.toComponent);
+          if (w.toComponent === id && w.toPort === lvPort) start.push(w.fromComponent);
+        }
+      }
+      const zone = new Set([id]);
+      const queue = [];
+      for (const nb of start) {
+        const c = AppState.components.get(nb);
+        if (!c || zone.has(nb) || c.type === 'transformer' || c.type === 'autotransformer') continue;
+        zone.add(nb);
+        queue.push(nb);
+      }
+      while (queue.length) {
+        const cur = queue.shift();
+        if (this._isOpen(AppState.components.get(cur))) continue;
+        for (const nb of adj.get(cur) || []) {
+          if (zone.has(nb)) continue;
+          const c = AppState.components.get(nb);
+          if (!c || c.type === 'transformer' || c.type === 'autotransformer') continue;
+          if (c.type === 'bus' && parseFloat(c.props?.voltage_kv) > 1.0) continue;
+          zone.add(nb);
+          queue.push(nb);
+        }
+      }
+
       out.push({
-        id, comp,
+        id, comp, zone,
         system: comp.props?.earthing_system || 'TN-S',
         r_a: Number(comp.props?.earth_electrode_r_installation) || 0,
         r_b: Number(comp.props?.earth_electrode_r_source) || 0,
@@ -1067,35 +1155,41 @@ const Compliance = {
     return out;
   },
 
-  // Any residual-current / earth-leakage device present: a distribution board
-  // with a grouped earth-leakage way, or a CB with a core-balance (residual)
-  // CT driving an integral earth-fault release.
-  _hasResidualDevice() {
-    for (const [, comp] of AppState.components) {
-      if (comp.type === 'distribution_board') {
-        const circuits = comp.props?.circuits || [];
-        if (circuits.some(c => String(c.el_group || '').trim())) return true;
-      }
-      if (comp.type === 'cb' && comp.props?.ef_trip_ct) return true;
-    }
-    return false;
+  // Earthing systems of the LV zones containing compId (empty when no LV
+  // source reaches it — treated as TN-S, the engine default)
+  _earthingOf(compId, sources) {
+    return [...new Set(sources.filter(s => s.zone.has(compId)).map(s => s.system))];
   },
 
-  // Largest declared RCD sensitivity IΔn (amps) across all board EL groups.
-  // Falls back to 0.3 A (a general-purpose 300 mA RCD) when earth-leakage is
-  // present but no explicit sensitivity is set.
-  _maxRcdIdnAmps() {
-    let maxMa = 0;
-    for (const [, comp] of AppState.components) {
-      if (comp.type !== 'distribution_board') continue;
-      const ratings = (comp.props?.el_ratings && typeof comp.props.el_ratings === 'object')
-        ? comp.props.el_ratings : {};
-      for (const v of Object.values(ratings)) {
-        const ma = Number(v) || 0;
-        if (ma > maxMa) maxMa = ma;
+  // [C4] Residual-current devices in an LV zone and the largest IΔn (A):
+  // a distribution board's earth-leakage groups (el_ratings, mA; 300 mA
+  // assumed when a group has no rating) and a CB's integral earth-fault
+  // release (ef_trip_ct, pickup ef_pickup_a in A). The old check read only
+  // board ratings project-wide and took 300 mA for a CB release — a 5 A
+  // release on R_A = 20 Ω (100 V) passed as 6 V.
+  _residualDevices(zone) {
+    let present = false;
+    let idnA = 0;
+    const unset = [];
+    for (const id of zone) {
+      const comp = AppState.components.get(id);
+      if (!comp) continue;
+      if (comp.type === 'distribution_board') {
+        const groups = new Set((comp.props?.circuits || [])
+          .map(c => String(c.el_group || '').trim()).filter(Boolean));
+        if (!groups.size) continue;
+        present = true;
+        const ratings = (comp.props?.el_ratings && typeof comp.props.el_ratings === 'object')
+          ? comp.props.el_ratings : {};
+        for (const g of groups) idnA = Math.max(idnA, (Number(ratings[g]) || 300) / 1000);
+      } else if (comp.type === 'cb' && comp.props?.ef_trip_ct) {
+        present = true;
+        const a = parseFloat(comp.props?.ef_pickup_a);
+        if (a > 0) idnA = Math.max(idnA, a);
+        else unset.push(comp.props?.name || id);
       }
     }
-    return (maxMa > 0 ? maxMa : 300) / 1000;
+    return { present, idnA, unset };
   },
 
   // SANS 10142-1 Cl. 6 / IEC 60364-1 §312: LV earthing-system arrangement and
@@ -1107,9 +1201,9 @@ const Compliance = {
       section.items.push({ status: 'info', component: '—', message: 'No LV sources (≤1 kV) found for earthing-system check.', detail: 'IEC 60364-1 §312 applies to LV installations supplied by a transformer or utility at ≤1 kV.' });
       return;
     }
-    const hasRcd = this._hasResidualDevice();
     for (const s of sources) {
       const name = s.comp.props?.name || s.id;
+      const rcd = this._residualDevices(s.zone);
       switch (s.system) {
         case 'TN-S':
           section.items.push({
@@ -1127,28 +1221,34 @@ const Compliance = {
           break;
         case 'TN-C':
           section.items.push({
-            status: hasRcd ? 'fail' : 'warn', component: name,
-            message: hasRcd
-              ? `TN-C with a residual-current device present — an RCD cannot operate on a combined PEN.`
+            status: rcd.present ? 'fail' : 'warn', component: name,
+            message: rcd.present
+              ? `TN-C with a residual-current device in its installation — an RCD cannot operate on a combined PEN.`
               : `TN-C: combined PEN throughout — RCD protection is not possible.`,
-            detail: `IEC 60364-1 §312.2.1.2 / SANS 10142-1: RCDs are not permitted in TN-C. Ensure PEN continuity and adequate cross-section. Use TN-S or TN-C-S where earth-leakage protection is required.`,
+            detail: `IEC 60364-4-41 §411.4.5 / SANS 10142-1: RCDs are not permitted in TN-C. Ensure PEN continuity and adequate cross-section. Use TN-S or TN-C-S where earth-leakage protection is required.`,
           });
           break;
         case 'TT':
-          if (!hasRcd) {
+          if (!rcd.present) {
             section.items.push({
               status: 'fail', component: name,
-              message: `TT system without an RCD — overcurrent devices cannot guarantee earth-fault disconnection.`,
-              detail: `IEC 60364-1 §411.5 / SANS 10142-1: TT earth-fault current returns through soil (R_A + R_B), so an RCD is mandatory. Add an earth-leakage device.`,
+              message: `TT system without an RCD in its installation — overcurrent devices cannot guarantee earth-fault disconnection.`,
+              detail: `IEC 60364-4-41 §411.5 / SANS 10142-1: TT earth-fault current returns through soil (R_A + R_B), so an RCD is required. Add an earth-leakage device.`,
+            });
+          } else if (rcd.idnA <= 0) {
+            section.items.push({
+              status: 'warn', component: name,
+              message: `TT with an earth-fault release whose pickup is not set (${rcd.unset.join(', ')}) — R_A·IΔn ≤ 50 V cannot be verified.`,
+              detail: `IEC 60364-4-41 §411.5.3: set the E/F pickup of the breaker's earth-fault release.`,
             });
           } else {
-            const idn = this._maxRcdIdnAmps();
-            const touch = s.r_a * idn;
+            const touch = s.r_a * rcd.idnA;
             const ok = touch <= 50;
+            const idnStr = rcd.idnA < 1 ? `${(rcd.idnA * 1000).toFixed(0)} mA` : `${rcd.idnA.toFixed(1)} A`;
             section.items.push({
               status: ok ? 'pass' : 'fail', component: name,
-              message: `TT with RCD: R_A·IΔn = ${s.r_a.toFixed(1)} Ω × ${(idn * 1000).toFixed(0)} mA = ${touch.toFixed(1)} V ${ok ? '≤' : '>'} 50 V.`,
-              detail: `IEC 60364-1 §411.5.3 / SANS 10142-1: R_A·IΔn ≤ 50 V is required. ${ok ? 'Complies.' : 'Reduce R_A (improve the installation earth electrode) or fit a more sensitive RCD.'}`,
+              message: `TT with RCD: R_A·IΔn = ${s.r_a.toFixed(1)} Ω × ${idnStr} = ${touch.toFixed(1)} V ${ok ? '≤' : '>'} 50 V.`,
+              detail: `IEC 60364-4-41 §411.5.3 / SANS 10142-1: R_A·IΔn ≤ 50 V is required (the least sensitive residual device in this installation).${rcd.unset.length ? ` Earth-fault release pickup not set: ${rcd.unset.join(', ')}.` : ''} ${ok ? 'Complies.' : 'Reduce R_A (improve the installation earth electrode) or fit a more sensitive RCD.'}`,
             });
           }
           break;
@@ -1156,7 +1256,7 @@ const Compliance = {
           section.items.push({
             status: 'warn', component: name,
             message: `IT system: source unearthed / high-impedance — the first earth fault does not disconnect.`,
-            detail: `IEC 60364-1 §411.6 / SANS 10142-1: IT installations require an insulation-monitoring device (IMD); a second earth fault is cleared as in TN/TT. Permitted only where continuity of supply is justified.`,
+            detail: `IEC 60364-4-41 §411.6 / SANS 10142-1: IT installations require an insulation-monitoring device (IMD); a second earth fault is cleared as in TN/TT. Permitted only where continuity of supply is justified.`,
           });
           break;
         default:
@@ -1169,13 +1269,12 @@ const Compliance = {
     }
   },
 
-  // SANS 10142-1 Appendix B / NRS 034: Maximum demand vs supply capacity
+  // SANS 10142-1 Appendix B / NRS 034: Maximum demand vs supply capacity.
+  // [C6] Nameplate-based (no load flow needed): the diversified rating of
+  // every LV load against the installed LV transformer capacity. The old
+  // check read p_mw / rated_mw / rated_mva — props no load has — so it
+  // summed zero and never produced a result.
   _sans10142_maxDemand(section) {
-    if (!this._hasLoadFlow()) {
-      section.items.push({ status: 'info', component: '—', message: 'Maximum demand check: load flow not run.', detail: 'Run Load Flow to compare total LV demand against supply authority capacity.' });
-      return;
-    }
-
     // Sum rated MVA of all LV-side transformers (supply to premises)
     let totalXfMVA = 0;
     const xfNames = [];
@@ -1183,87 +1282,108 @@ const Compliance = {
       if (comp.type !== 'transformer') continue;
       const lvKV = comp.props?.voltage_lv_kv ?? comp.props?.voltage_lv;
       if (!lvKV || lvKV > 1.0) continue;
-      const mva = comp.props?.rated_mva || 0;
+      const mva = parseFloat(comp.props?.rated_mva) || 0;
       totalXfMVA += mva;
       xfNames.push(comp.props?.name || 'unnamed');
     }
 
-    // Collect total LV load from load flow (sum of loads at LV buses)
-    let totalLoadMW = 0;
-    let totalLoadMVAR = 0;
+    // Diversified LV demand, P and Q summed as vectors
+    let totalKW = 0;
+    let totalKVAR = 0;
     for (const comp of AppState.components.values()) {
-      if (!['static_load', 'motor_induction', 'motor_synchronous'].includes(comp.type)) continue;
-      // Check if this load is on an LV bus
-      const connBuses = this._findConnectedDevices(comp.id || comp.props?.name, ['bus']);
-      for (const b of connBuses) {
-        const busComp = AppState.components.get(b.id);
-        const busV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
-        if (!busV || busV > 1.0) continue;
-        const p = comp.props?.p_mw || (comp.props?.rated_mw) || ((comp.props?.rated_mva || 0) * (comp.props?.power_factor || 0.85));
-        totalLoadMW += p;
-        const q = comp.props?.q_mvar || ((comp.props?.rated_mva || 0) * Math.sqrt(1 - Math.pow(comp.props?.power_factor || 0.85, 2)));
-        totalLoadMVAR += q;
-        break;
+      const d = this._loadDemandKva(comp);
+      if (!d) continue;
+      let v = parseFloat(comp.props?.voltage_kv);
+      if (!(v > 0)) {
+        const b = this._findConnectedDevices(comp.id, ['bus'])[0];
+        v = parseFloat(b && AppState.components.get(b.id)?.props?.voltage_kv);
       }
+      if (!(v > 0) || v > 1.0) continue;
+      totalKW += d.kva * d.pf;
+      totalKVAR += d.kva * Math.sqrt(Math.max(0, 1 - d.pf * d.pf));
     }
-    const totalLoadMVA = Math.sqrt(totalLoadMW ** 2 + totalLoadMVAR ** 2);
+    const totalLoadMVA = Math.sqrt(totalKW ** 2 + totalKVAR ** 2) / 1000;
 
     if (totalXfMVA > 0 && totalLoadMVA > 0) {
       const utilPct = (totalLoadMVA / totalXfMVA) * 100;
+      const basis = 'Nameplate demand × demand factor of each LV load (induction motors at input kVA = kW/(η·pf)).';
       if (utilPct > 100) {
         section.items.push({
           status: 'fail',
           component: '—',
           message: `Total LV load (${totalLoadMVA.toFixed(3)} MVA) EXCEEDS installed LV transformer capacity (${totalXfMVA.toFixed(3)} MVA).`,
-          detail: `Utilisation: ${utilPct.toFixed(1)}%. SANS 10142-1 Appendix B / NRS 034: maximum demand must not exceed supply capacity. Increase transformer rating or reduce demand.`,
+          detail: `Utilisation: ${utilPct.toFixed(1)}%. ${basis} SANS 10142-1 Appendix B / NRS 034: maximum demand must not exceed supply capacity. Increase transformer rating or reduce demand.`,
         });
       } else if (utilPct > 80) {
         section.items.push({
           status: 'warn',
           component: '—',
           message: `LV demand (${totalLoadMVA.toFixed(3)} MVA) is ${utilPct.toFixed(1)}% of transformer capacity (${totalXfMVA.toFixed(3)} MVA).`,
-          detail: `Above 80% utilisation. SANS 10142-1 Appendix B: consider diversity factors and apply demand factor analysis. Limited capacity for load growth or derating.`,
+          detail: `Above 80% utilisation. ${basis} SANS 10142-1 Appendix B: consider diversity factors and apply demand factor analysis. Limited capacity for load growth or derating.`,
         });
       } else {
         section.items.push({
           status: 'pass',
           component: '—',
           message: `LV maximum demand (${totalLoadMVA.toFixed(3)} MVA) within transformer capacity (${totalXfMVA.toFixed(3)} MVA).`,
-          detail: `Utilisation: ${utilPct.toFixed(1)}%. Complies with SANS 10142-1 Appendix B supply capacity requirement. Transformers: ${xfNames.join(', ')}.`,
+          detail: `Utilisation: ${utilPct.toFixed(1)}%. ${basis} Complies with SANS 10142-1 Appendix B supply capacity requirement. Transformers: ${xfNames.join(', ')}.`,
         });
       }
     } else if (totalXfMVA === 0 && totalLoadMVA === 0) {
       section.items.push({ status: 'info', component: '—', message: 'No LV transformers or LV loads found for maximum demand check.', detail: 'SANS 10142-1 Appendix B: supply capacity analysis requires LV transformers and LV loads.' });
     } else if (totalXfMVA === 0) {
       section.items.push({ status: 'info', component: '—', message: 'No LV distribution transformer found; cannot evaluate maximum demand against supply capacity.', detail: 'Add a transformer with an LV secondary (≤1 kV) to enable this check.' });
+    } else {
+      section.items.push({ status: 'info', component: '—', message: 'No rated LV loads found for maximum demand check.', detail: 'Set the rating of the LV loads (kVA, or kW for induction motors) to compare demand against transformer capacity.' });
     }
   },
 
-  // SANS 10142-1 Cl. 5.5.6: Minimum earth fault current for automatic disconnection on LV TN systems
+  // Diversified apparent demand {kva, pf} of a load from its nameplate
+  _loadDemandKva(comp) {
+    const p = comp.props || {};
+    const df = p.demand_factor != null && p.demand_factor !== '' ? (parseFloat(p.demand_factor) || 0) : 1;
+    const pf = Math.min(1, Math.abs(parseFloat(p.power_factor)) || 0.85);
+    if (comp.type === 'static_load' || comp.type === 'distribution_board' || comp.type === 'motor_synchronous') {
+      const kva = parseFloat(p.rated_kva) || 0;
+      return kva > 0 ? { kva: kva * df, pf } : null;
+    }
+    if (comp.type === 'motor_induction') {
+      const kw = parseFloat(p.rated_kw) || 0;
+      const eff = parseFloat(p.efficiency) || 0.93;
+      return kw > 0 ? { kva: kw / (eff * pf) * df, pf } : null;
+    }
+    return null;
+  },
+
+  // SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41 §411.4: automatic disconnection
+  // on LV TN systems — the device must clear the earth fault at the END of
+  // the circuit it protects within the Table 41.1 / §411.3.2.3 time.
+  //
+  // [C1] Each device is judged at the far end of its circuit: the node with
+  // the smallest minimum-study Ik1 among the buses (or bus-less load
+  // terminals) on its load side, reached through its cable and non-
+  // protective series devices. The old check looped over buses and judged
+  // every device on a bus at THAT bus's Ik1 — an outgoing feeder breaker at
+  // its supply-end fault level, where it always trips instantaneously. A
+  // 32 A type-C MCB on 60 m of 4 mm² (Ik1 287 A at the socket end, 1.98 s)
+  // passed at the board's 1026 A.
+  //
+  // [C4] The TN criterion applies per LV installation: devices in a TT or
+  // IT zone are covered by the earthing-system check; a TT source elsewhere
+  // in the project no longer switches the check off for the TN parts.
   _sans10142_earthFaultCurrent(section) {
     if (!this._hasFault()) {
       section.items.push({ status: 'info', component: '—', message: 'Earth fault disconnection check: fault analysis not run.', detail: 'Run Fault Analysis to verify minimum earth fault current for disconnection per SANS 10142-1 Cl. 5.5.6.' });
       return;
     }
 
-    // The 10·In overcurrent criterion is a TN construct (metallic earth-fault
-    // return). TT relies on an RCD (R_A·IΔn ≤ 50 V) and IT on insulation
-    // monitoring — both verified in _sans10142_earthingSystem — so defer to
-    // that check when any LV source declares a non-TN system.
-    const srcs = this._lvEarthingSources();
-    const sysSet = new Set(srcs.map(s => s.system));
-    const tnMode = srcs.length === 0 || [...sysSet].every(s => String(s).startsWith('TN'));
-    if (!tnMode) {
-      section.items.push({
-        status: 'info', component: '—',
-        message: `Earth-fault disconnection assessed per earthing system (${[...sysSet].join(', ')}).`,
-        detail: `SANS 10142-1: the 10·In overcurrent criterion applies to TN systems. TT (RCD, R_A·IΔn ≤ 50 V) and IT (insulation monitoring) are verified in the earthing-system check above.`,
-      });
-      return;
-    }
-
     const LV_THRESHOLD_KV = 1.0;
     const DISCONNECTION_FACTOR = 10; // legacy proxy: Isc ≥ 10 × In implies instantaneous trip
+    const sources = this._lvEarthingSources();
+    const isTN = (compId) => {
+      const sys = this._earthingOf(compId, sources);
+      return sys.length === 0 || sys.every(x => String(x).startsWith('TN'));
+    };
 
     // [PS-3] Disconnection must be verified against the MINIMUM earth-fault
     // current (IEC 60909-0 §5.3.1: c_min = 0.95, hot-conductor resistance),
@@ -1272,8 +1392,10 @@ const Compliance = {
     // companion minimum study into AppState.faultResultsMin on every fault
     // run; older saved results fall back to the maximum figures with a
     // warning so the report is explicit about its basis.
+    const maxBuses = AppState.faultResults.buses;
     const minBuses = AppState.faultResultsMin?.buses || null;
     const usingMin = !!(minBuses && Object.keys(minBuses).length > 0);
+    const useBuses = usingMin ? minBuses : maxBuses;
     const basisNote = usingMin
       ? 'Basis: minimum-current study (c_min = 0.95, conductor resistance at 70 °C) per IEC 60909-0 §5.3.1'
       : 'Basis: MAXIMUM-current study (c_max = 1.10, 20 °C) — re-run Fault Analysis to compute the minimum-current study; these PASS verdicts are optimistic';
@@ -1284,147 +1406,177 @@ const Compliance = {
         detail: 'IEC 60909-0 §5.3.1 / SANS 10142-1 Cl. 5.5.6 require disconnection to be verified with c_min = 0.95 and hot-conductor resistance. Re-run Fault Analysis (the companion minimum study is fetched automatically).',
       });
     }
+    const nodeKv = (n) => {
+      const bc = AppState.components.get(n.key);
+      const v = parseFloat(bc?.props?.voltage_kv ?? bc?.props?.voltage);
+      return v > 0 ? v : (parseFloat(maxBuses[n.key]?.voltage_kv) || 0);
+    };
+
     let checked = 0;
+    const covered = new Set();
+    const nonTN = new Set();
 
-    for (const [busId, faultResult] of Object.entries(AppState.faultResults.buses)) {
-      const busComp = AppState.components.get(busId);
-      const nominalKV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
-      if (!nominalKV || nominalKV > LV_THRESHOLD_KV) continue; // LV buses only
+    for (const [devId, devComp] of AppState.components) {
+      if (devComp.type !== 'cb' && devComp.type !== 'fuse') continue;
+      if (this._isOpen(devComp)) continue;
 
-      // Single-line-to-ground (earth) fault current in kA — minimum study
-      // where available ([PS-3]).
-      const islg = usingMin ? (minBuses[busId]?.ik1 ?? null) : faultResult.ik1;
-      if (islg == null) continue;
+      // The device's circuit: every fault node reached through its cable and
+      // non-protective series devices; the load side is what it protects.
+      const zone = this._faultNodes(devId, this._ZONE_TYPES).filter(n => useBuses[n.key]);
+      if (zone.length === 0) continue;
+      if (!zone.every(n => { const v = nodeKv(n); return v > 0 && v <= LV_THRESHOLD_KV; })) continue;
+      let loadSide = zone.filter(n => !this._leadsToSource(n.compId, devId));
+      if (loadSide.length === 0) loadSide = zone; // supply side not resolved
+      const tnSide = loadSide.filter(n => isTN(n.compId));
+      for (const n of loadSide) if (!isTN(n.compId)) this._earthingOf(n.compId, sources).forEach(x => nonTN.add(x));
+      if (tnSide.length === 0) continue;
+
+      let far = null;
+      for (const n of tnSide) {
+        const ik1 = useBuses[n.key]?.ik1;
+        if (ik1 == null) continue;
+        if (!far || ik1 < far.ik1) far = { ...n, ik1 };
+      }
+      if (!far) continue;
+      tnSide.forEach(n => covered.add(n.key));
       checked++;
 
-      const busName = busComp?.props?.name || busId;
-      const islgA = islg * 1000; // Convert kA → A
+      const devName = devComp.props?.name || devId;
+      const farName = far.name;
+      const islgA = far.ik1 * 1000;
+      const nominalKV = nodeKv(far);
 
       // [R3/PS-1 fallback] A per-path fallback on a meshed topology
       // OVERSTATES the fault current — a disconnection PASS built on it is
       // unreliable. Refuse to verify rather than silently pass.
-      const usedBus = usingMin ? minBuses[busId] : faultResult;
-      if (usedBus?.thevenin_basis === 'per-path-fallback'
-          || faultResult?.thevenin_basis === 'per-path-fallback') {
+      if (useBuses[far.key]?.thevenin_basis === 'per-path-fallback'
+          || maxBuses[far.key]?.thevenin_basis === 'per-path-fallback') {
         section.items.push({
           status: 'fail',
-          component: busName,
-          message: `Disconnection cannot be verified at ${busName} — the fault current is a per-path fallback on a meshed topology (nodal solve failed) and is overstated.`,
+          component: devName,
+          message: `Disconnection cannot be verified at ${farName} — the fault current is a per-path fallback on a meshed topology (nodal solve failed) and is overstated.`,
           detail: 'The meshed-network Thevenin solution failed and the engine fell back to the per-path combination, which overstates earth-fault current. A disconnection PASS on this basis would be non-conservative; simplify or correct the network model and re-run Fault Analysis.',
         });
         continue;
       }
 
-      // Find the minimum-rated upstream protection device
-      const devices = this._findConnectedDevices(busId, ['cb', 'fuse']);
-      for (const dev of devices) {
-        const devComp = AppState.components.get(dev.id);
-        if (!devComp) continue;
-        const in_ = devComp.props?.rated_current_a;
-        if (!in_) continue;
+      const in_ = parseFloat(devComp.props?.rated_current_a);
+      if (!(in_ > 0)) continue;
 
-        const devName = devComp.props?.name || dev.id;
-
-        // [PS-3] Primary criterion: the device's actual disconnection time at
-        // the minimum earth-fault current vs the SANS 10142-1 / IEC 60364-4-41
-        // limit. [R3 Finding 12] The limit is keyed on CIRCUIT TYPE and U0
-        // (Table 41.1 / §411.3.2.2-3), not on In alone — the old `In ≤ 32`
-        // proxy was non-conservative for 33-63 A socket-outlet finals and for
-        // U0 > 230 V, and conservative for ≤32 A distribution circuits.
-        //   final_socket : Table 41.1 up to In ≤ 63 A (§411.3.2.2)
-        //   final_fixed  : Table 41.1 up to In ≤ 32 A
-        //   distribution : 5 s (§411.3.2.3)
-        //   undeclared   : assumed FINAL (conservative) up to 63 A, else 5 s
-        // Table 41.1 (TN), keyed on nominal U0 = V_LL/√3 with band tolerance:
-        // ≤120 V → 0.8 s · ≤230 V → 0.4 s · ≤400 V → 0.2 s · >400 V → 0.1 s.
-        const circuitType = devComp.props?.circuit_type || '';
-        const u0 = (nominalKV * 1000) / Math.sqrt(3);
-        const t411 = u0 <= 132 ? 0.8 : u0 <= 253 ? 0.4 : u0 <= 440 ? 0.2 : 0.1;
-        const finalCapA = circuitType === 'final_fixed' ? 32 : 63;
-        let tLimit;
-        let limitBasis;
-        if (circuitType === 'distribution') {
-          tLimit = 5.0;
-          limitBasis = 'distribution circuit — 5 s per IEC 60364-4-41 §411.3.2.3';
-        } else if (in_ > finalCapA) {
-          tLimit = 5.0;
-          limitBasis = `In = ${in_} A exceeds the §411.3.2.2 final-circuit scope (≤ ${finalCapA} A) — 5 s per §411.3.2.3`;
-        } else {
-          tLimit = t411;
-          limitBasis = `${circuitType ? (circuitType === 'final_socket' ? 'socket-outlet final circuit' : 'fixed-equipment final circuit') : 'circuit type not set — assumed final circuit (conservative)'} — Table 41.1 at U0 = ${u0.toFixed(0)} V`;
-        }
-        let tDisc = null;
-        let devDesc;
-        if (devComp.type === 'fuse') {
-          const preArc = fuseTripTime(in_, islgA);
-          tDisc = (preArc != null && isFinite(preArc)) ? preArc * 1.2 : null;
-          devDesc = `gG fuse ${in_} A (total clearing = 1.2× pre-arc)`;
-        } else {
-          const params = {
-            cb_type: devComp.props?.cb_type || 'mccb',
-            trip_rating_a: devComp.props?.trip_rating_a || in_,
-            thermal_pickup: devComp.props?.thermal_pickup || 1.0,
-            magnetic_pickup: devComp.props?.magnetic_pickup || 10,
-            long_time_delay: devComp.props?.long_time_delay || 10,
-            short_time_pickup: devComp.props?.short_time_pickup || 0,
-            short_time_delay: devComp.props?.short_time_delay || 0,
-            instantaneous_pickup: devComp.props?.instantaneous_pickup || 0,
-          };
-          const t = cbTripTime(params, islgA);
-          tDisc = (t != null && isFinite(t)) ? t : null;
-          devDesc = `${(params.cb_type || 'mccb').toUpperCase()} trip unit, In = ${in_} A`;
-        }
-
-        if (tDisc != null) {
-          if (tDisc <= tLimit) {
-            section.items.push({
-              status: 'pass',
-              component: busName,
-              message: `${devName} disconnects in ${tDisc < 0.01 ? '<0.01' : tDisc.toFixed(2)} s at Ik1 = ${islgA.toFixed(0)} A (limit ${tLimit} s). Automatic disconnection confirmed.`,
-              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: ${devDesc} operating time evaluated at the earth-fault current vs the ${tLimit} s disconnection limit (${limitBasis}). ${basisNote}.`,
-            });
-          } else {
-            section.items.push({
-              status: 'fail',
-              component: busName,
-              message: `${devName} takes ${isFinite(tDisc) ? tDisc.toFixed(2) : '∞'} s to clear Ik1 = ${islgA.toFixed(0)} A — exceeds the ${tLimit} s disconnection limit.`,
-              detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: disconnection within ${tLimit} s (${limitBasis}) not achieved at the ${usingMin ? 'minimum' : 'available'} earth-fault current. Reduce loop impedance, lower the device rating/pickup, add an RCD — or set the device's Circuit Type if this is a distribution circuit (5 s limit). ${basisNote}.`,
-            });
-          }
-          continue;
-        }
-
-        // No usable curve — fall back to the legacy 10×In screening proxy.
-        const requiredIscA = in_ * DISCONNECTION_FACTOR;
-        if (islgA < requiredIscA) {
-          section.items.push({
-            status: 'fail',
-            component: busName,
-            message: `Earth fault current (${islgA.toFixed(0)} A) may be insufficient to guarantee instantaneous trip of ${devName} (In = ${in_} A).`,
-            detail: `SANS 10142-1 Cl. 5.5.6: for TN systems, single-line-to-ground fault current should be ≥ 10 × In = ${requiredIscA.toFixed(0)} A for instantaneous disconnection (device curve not evaluable). ${basisNote}.`,
-          });
-        } else {
-          section.items.push({
-            status: 'pass',
-            component: busName,
-            message: `Earth fault current (${islgA.toFixed(0)} A) ≥ 10 × In (${requiredIscA.toFixed(0)} A) of ${devName}. Automatic disconnection confirmed.`,
-            detail: `SANS 10142-1 Cl. 5.5.6: sufficient earth fault current for instantaneous disconnection in TN system at ${busName} (device curve not evaluable). ${basisNote}.`,
-          });
-        }
+      // [PS-3] Primary criterion: the device's actual disconnection time at
+      // the minimum earth-fault current vs the SANS 10142-1 / IEC 60364-4-41
+      // limit. [R3 Finding 12] The limit is keyed on CIRCUIT TYPE and U0
+      // (Table 41.1 / §411.3.2.2-3), not on In alone — the old `In ≤ 32`
+      // proxy was non-conservative for 33-63 A socket-outlet finals and for
+      // U0 > 230 V, and conservative for ≤32 A distribution circuits.
+      //   final_socket : Table 41.1 up to In ≤ 63 A (§411.3.2.2)
+      //   final_fixed  : Table 41.1 up to In ≤ 32 A
+      //   distribution : 5 s (§411.3.2.3)
+      //   undeclared   : assumed FINAL (conservative) up to 63 A, else 5 s
+      // Table 41.1 (TN), keyed on nominal U0 = V_LL/√3 with band tolerance:
+      // ≤120 V → 0.8 s · ≤230 V → 0.4 s · ≤400 V → 0.2 s · >400 V → 0.1 s.
+      const circuitType = devComp.props?.circuit_type || '';
+      const u0 = (nominalKV * 1000) / Math.sqrt(3);
+      const t411 = u0 <= 132 ? 0.8 : u0 <= 253 ? 0.4 : u0 <= 440 ? 0.2 : 0.1;
+      const finalCapA = circuitType === 'final_fixed' ? 32 : 63;
+      let tLimit;
+      let limitBasis;
+      if (circuitType === 'distribution') {
+        tLimit = 5.0;
+        limitBasis = 'distribution circuit — 5 s per IEC 60364-4-41 §411.3.2.3';
+      } else if (in_ > finalCapA) {
+        tLimit = 5.0;
+        limitBasis = `In = ${in_} A exceeds the §411.3.2.2 final-circuit scope (≤ ${finalCapA} A) — 5 s per §411.3.2.3`;
+      } else {
+        tLimit = t411;
+        limitBasis = `${circuitType ? (circuitType === 'final_socket' ? 'socket-outlet final circuit' : 'fixed-equipment final circuit') : 'circuit type not set — assumed final circuit (conservative)'} — Table 41.1 at U0 = ${u0.toFixed(0)} V`;
       }
 
-      if (devices.length === 0) {
+      const ct = this._deviceClearTime(devComp, islgA, true);
+      if (ct.t === null) {
         section.items.push({
-          status: 'warn',
-          component: busName,
-          message: `LV bus has no protection device — earth fault disconnection cannot be verified.`,
-          detail: `Earth fault current Islg = ${islgA.toFixed(0)} A at ${busName}. Add a circuit breaker or fuse to enable SANS 10142-1 Cl. 5.5.6 disconnection check. ${basisNote}.`,
+          status: 'info', component: devName,
+          message: `${ct.why} — earth-fault disconnection at ${farName} (Ik1 = ${islgA.toFixed(0)} A) not evaluated here.`,
+          detail: `Check the relay's operating time at ${islgA.toFixed(0)} A against the ${tLimit} s limit (${limitBasis}) in the TCC view. ${basisNote}.`,
+        });
+        continue;
+      }
+      const tDisc = ct.t;
+      const where = `at the far end ${farName}`;
+
+      if (tDisc != null && isFinite(tDisc)) {
+        if (tDisc <= tLimit) {
+          section.items.push({
+            status: 'pass',
+            component: devName,
+            message: `Disconnects in ${tDisc < 0.01 ? '<0.01' : tDisc.toFixed(2)} s at Ik1 = ${islgA.toFixed(0)} A ${where} (limit ${tLimit} s). Automatic disconnection confirmed.`,
+            detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: ${ct.desc} operating time evaluated at the earth-fault current at the end of its circuit vs the ${tLimit} s disconnection limit (${limitBasis}). ${basisNote}.`,
+          });
+        } else {
+          section.items.push({
+            status: 'fail',
+            component: devName,
+            message: `Takes ${tDisc.toFixed(2)} s to clear Ik1 = ${islgA.toFixed(0)} A ${where} — exceeds the ${tLimit} s disconnection limit.`,
+            detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: disconnection within ${tLimit} s (${limitBasis}) not achieved at the ${usingMin ? 'minimum' : 'available'} earth-fault current at the end of the circuit. Reduce loop impedance, lower the device rating/pickup, add an RCD — or set the device's Circuit Type if this is a distribution circuit (5 s limit). ${basisNote}.`,
+          });
+        }
+        continue;
+      }
+      if (tDisc === Infinity) {
+        section.items.push({
+          status: 'fail',
+          component: devName,
+          message: `Does not operate at Ik1 = ${islgA.toFixed(0)} A ${where} — the ${tLimit} s disconnection limit is not met.`,
+          detail: `SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41: ${ct.desc} does not trip at the earth-fault current at the end of its circuit (${limitBasis}). Reduce loop impedance, lower the pickup or add an RCD. ${basisNote}.`,
+        });
+        continue;
+      }
+
+      // No usable curve — fall back to the legacy 10×In screening proxy.
+      const requiredIscA = in_ * DISCONNECTION_FACTOR;
+      if (islgA < requiredIscA) {
+        section.items.push({
+          status: 'fail',
+          component: devName,
+          message: `Earth fault current (${islgA.toFixed(0)} A ${where}) may be insufficient to guarantee instantaneous trip (In = ${in_} A).`,
+          detail: `SANS 10142-1 Cl. 5.5.6: for TN systems, single-line-to-ground fault current should be ≥ 10 × In = ${requiredIscA.toFixed(0)} A for instantaneous disconnection (device curve not evaluable). ${basisNote}.`,
+        });
+      } else {
+        section.items.push({
+          status: 'pass',
+          component: devName,
+          message: `Earth fault current (${islgA.toFixed(0)} A ${where}) ≥ 10 × In (${requiredIscA.toFixed(0)} A). Automatic disconnection confirmed.`,
+          detail: `SANS 10142-1 Cl. 5.5.6: sufficient earth fault current for instantaneous disconnection in TN system (device curve not evaluable). ${basisNote}.`,
         });
       }
     }
 
-    if (checked === 0 && this._hasFault()) {
-      section.items.push({ status: 'info', component: '—', message: 'No LV buses with earth fault data found for disconnection check.', detail: 'SANS 10142-1 Cl. 5.5.6 applies to LV TN system buses (nominal voltage ≤ 1 kV).' });
+    // LV TN buses no device's circuit reaches — nothing verifiable disconnects them
+    for (const [busId, fr] of Object.entries(maxBuses)) {
+      const busComp = AppState.components.get(busId);
+      if (!busComp || busComp.type !== 'bus' || covered.has(busId)) continue;
+      const v = parseFloat(busComp.props?.voltage_kv ?? busComp.props?.voltage);
+      if (!(v > 0) || v > LV_THRESHOLD_KV || fr.ik1 == null || !isTN(busId)) continue;
+      checked++;
+      const busName = busComp.props?.name || busId;
+      section.items.push({
+        status: 'warn',
+        component: busName,
+        message: `No LV protective device found on the circuit feeding this bus — earth fault disconnection cannot be verified.`,
+        detail: `Earth fault current Ik1 = ${((useBuses[busId]?.ik1 ?? fr.ik1) * 1000).toFixed(0)} A at ${busName}. Add a circuit breaker or fuse (e.g. an LV incomer) to enable the SANS 10142-1 Cl. 5.5.6 disconnection check. ${basisNote}.`,
+      });
+    }
+
+    if (nonTN.size) {
+      section.items.push({
+        status: 'info', component: '—',
+        message: `Circuits in ${[...nonTN].join(', ')} installations are assessed by the earthing-system check.`,
+        detail: `SANS 10142-1: the overcurrent disconnection criterion applies to TN systems. TT (RCD, R_A·IΔn ≤ 50 V) and IT (insulation monitoring) are verified in the earthing-system check above.`,
+      });
+    }
+
+    if (checked === 0) {
+      section.items.push({ status: 'info', component: '—', message: 'No LV TN circuits with earth fault data found for disconnection check.', detail: 'SANS 10142-1 Cl. 5.5.6 applies to LV TN system circuits (nominal voltage ≤ 1 kV).' });
     }
   },
 
@@ -1447,6 +1599,221 @@ const Compliance = {
   },
 
   // ── Helpers ──
+
+  // Series devices the protection walkers cross (backend TRANSPARENT_TYPES)
+  _TRANSPARENT: ['cb', 'fuse', 'switch', 'changeover', 'ct', 'pt', 'surge_arrester'],
+  // A protective device's own circuit: its cable and non-protective series
+  // devices — another CB/fuse starts another circuit, a transformer another
+  // system
+  _ZONE_TYPES: ['switch', 'changeover', 'ct', 'pt', 'surge_arrester', 'cable', 'bus_duct'],
+  // As cable_sizing._SOURCE_TYPES
+  _SOURCE_TYPES: ['utility', 'generator', 'solar_pv', 'wind_turbine'],
+
+  _isOpen(c) {
+    return !!c && (c.type === 'cb' || c.type === 'switch') && c.props?.state === 'open';
+  },
+
+  // True when a source is reachable from startId without passing back
+  // through excludeId — startId lies on the supply side of excludeId.
+  // Mirrors cable_sizing._leads_to_source; open CBs/switches are not crossed.
+  _leadsToSource(startId, excludeId) {
+    const adj = this._getAdjacency();
+    const visited = new Set([excludeId, startId]);
+    const stack = [startId];
+    while (stack.length) {
+      const id = stack.pop();
+      const c = AppState.components.get(id);
+      if (!c) continue;
+      if (this._SOURCE_TYPES.includes(c.type)) return true;
+      if (this._isOpen(c)) continue;
+      for (const nb of adj.get(id) || []) {
+        if (!visited.has(nb)) { visited.add(nb); stack.push(nb); }
+      }
+    }
+    return false;
+  },
+
+  // Fault-result nodes at the boundary of a walk from startId through the
+  // `through` component types: buses, and the synthetic terminal node the
+  // fault engine gives a load/source fed through a cable with no bus of its
+  // own (`__term__<id>`, kept in fault results). → [{ key, compId, name }]
+  _faultNodes(startId, through) {
+    const adj = this._getAdjacency();
+    const results = AppState.faultResults?.buses || {};
+    const visited = new Set([startId]);
+    const queue = [startId];
+    const out = [];
+    while (queue.length) {
+      for (const nb of adj.get(queue.shift()) || []) {
+        if (visited.has(nb)) continue;
+        visited.add(nb);
+        const c = AppState.components.get(nb);
+        if (!c) continue;
+        if (c.type === 'bus') { out.push({ key: nb, compId: nb, name: c.props?.name || nb }); continue; }
+        const term = '__term__' + nb;
+        if (results[term]) { out.push({ key: term, compId: nb, name: `${c.props?.name || nb} terminals` }); continue; }
+        if (through.includes(c.type) && !this._isOpen(c)) queue.push(nb);
+      }
+    }
+    return out;
+  },
+
+  // [C2] The device that clears a fault in the cable: the nearest CB/fuse on
+  // its supply side (cable_sizing._find_protective_device). Falls back to a
+  // load-side device when no supply side resolves (no source modelled).
+  _cableDevice(cableId) {
+    const adj = this._getAdjacency();
+    const visited = new Set([cableId]);
+    const stack = [...(adj.get(cableId) || [])];
+    let fallback = null;
+    while (stack.length) {
+      const id = stack.pop();
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const c = AppState.components.get(id);
+      if (!c) continue;
+      if (c.type === 'cb' || c.type === 'fuse') {
+        if (this._leadsToSource(id, cableId)) return c;
+        if (!fallback) fallback = c;
+        continue;
+      }
+      if ((this._TRANSPARENT.includes(c.type) || c.type === 'bus' || c.type === 'distribution_board')
+          && !this._isOpen(c)) {
+        for (const nb of adj.get(id) || []) if (!visited.has(nb)) stack.push(nb);
+      }
+    }
+    return fallback;
+  },
+
+  // An overcurrent relay set to trip this breaker (relay.trip_cb)
+  _relayTripping(cbId) {
+    for (const c of AppState.components.values()) {
+      if (c.type === 'relay' && c.props?.trip_cb === cbId) return c;
+    }
+    return null;
+  },
+
+  _cbParams(dev) {
+    const p = dev.props || {};
+    return {
+      cb_type: p.cb_type || 'mccb',
+      trip_rating_a: p.trip_rating_a || p.rated_current_a,
+      thermal_pickup: p.thermal_pickup || 1.0,
+      magnetic_pickup: p.magnetic_pickup || 10,
+      long_time_delay: p.long_time_delay || 10,
+      short_time_pickup: p.short_time_pickup || 0,
+      short_time_delay: p.short_time_delay || 0,
+      instantaneous_pickup: p.instantaneous_pickup || 0,
+    };
+  },
+
+  // Clearing time of a CB/fuse at currentA, from the TCC curve models (a gG
+  // fuse's total clearing = 1.2 × pre-arc). → { t, desc, why }:
+  //   t number  — seconds (Infinity: never operates)
+  //   t null    — relay-tripped breaker: its time is the relay's, through
+  //               its CT (evaluated by the Cable Sizing study and the TCC)
+  //   t undefined — no rating, no curve
+  // earthFault: a breaker's integral earth-fault release (ef_trip_ct,
+  // ef_pickup_a, ef_delay_s) also acts.
+  _deviceClearTime(dev, currentA, earthFault = false) {
+    const p = dev.props || {};
+    if (dev.type === 'fuse') {
+      const In = parseFloat(p.rated_current_a);
+      const desc = `gG fuse ${In} A (total clearing = 1.2× pre-arc)`;
+      if (!(In > 0)) return { t: undefined, desc };
+      const pre = fuseTripTime(In, currentA);
+      if (pre == null) return { t: undefined, desc };
+      return { t: isFinite(pre) ? pre * 1.2 : Infinity, desc };
+    }
+    const relay = this._relayTripping(dev.id);
+    if (relay) return { t: null, desc: '', why: `Breaker tripped by relay ${relay.props?.name || relay.id}` };
+    const params = this._cbParams(dev);
+    const desc = `${String(params.cb_type).toUpperCase()} trip unit, Ir = ${(params.trip_rating_a * params.thermal_pickup)} A`;
+    if (!params.trip_rating_a) return { t: undefined, desc };
+    let t = cbTripTime(params, currentA);
+    if (t == null) t = Infinity;
+    if (earthFault && p.ef_trip_ct) {
+      const efA = parseFloat(p.ef_pickup_a);
+      if (efA > 0 && currentA >= efA) {
+        const tef = (parseFloat(p.ef_delay_s) || 0) + 0.02;
+        if (tef < t) return { t: tef, desc: `earth-fault release ${efA} A / ${parseFloat(p.ef_delay_s) || 0} s` };
+      }
+    }
+    return { t, desc };
+  },
+
+  // Cable construction: cross-section, conductor, insulation, parallel runs.
+  // Library entry first, then the ampacity-calculator block, then props.
+  _cableBasics(comp) {
+    const p = comp.props || {};
+    const std = STANDARD_CABLES.find(c => c.id === (p.standard_type || ''));
+    const amp = (p.ampacity && p.ampacity.applied) ? p.ampacity : null;
+    const size = Number((std && std.size_mm2) || (amp && amp.size_mm2) || p.size_mm2) || 0;
+    const cond = String((std && std.conductor) || (amp && amp.conductor) || p.conductor || 'Cu');
+    const ins = String((std && std.insulation) || (amp && amp.insulation) || p.insulation || 'XLPE').toUpperCase();
+    return {
+      size,
+      conductor: cond.toLowerCase().startsWith('al') ? 'Al' : 'Cu',
+      insulation: ins,
+      n: Math.max(1, parseInt(p.num_parallel, 10) || 1),
+    };
+  },
+
+  // Adiabatic k, IEC 60364-4-43 Table 43A (as cable_sizing._k_factor): PVC
+  // above 300 mm² has a 140 °C final temperature — 103 Cu / 68 Al; an
+  // insulation not in the table takes the conductor's PVC value.
+  _kFactor(conductor, insulation, size) {
+    const al = conductor === 'Al';
+    if (insulation === 'XLPE' || insulation === 'EPR') return al ? 94 : 143;
+    if (insulation === 'BARE') return al ? 84 : 129;
+    if (insulation === 'PVC' && size > 300) return al ? 68 : 103;
+    return al ? 76 : 115;
+  },
+
+  // IEC 60909-0 §12 dc heat factor m (as fault.thermal_m_factor)
+  _thermalM(kappa, t, f) {
+    if (!kappa || kappa <= 1 + 1e-9 || !(t > 0) || !(f > 0)) return 0;
+    const x = Math.log(Math.min(kappa, 2) - 1);
+    if (Math.abs(x) < 1e-9) return 2;
+    const ft = f * t;
+    return (Math.exp(4 * ft * x) - 1) / (2 * ft * x);
+  },
+
+  // [C3] IEC 60364-4-43 §433.1 overload coordination of a device with a
+  // cable of installed rating izTotal (as cable_sizing._overload_device):
+  // In = a breaker's setting Ir (trip rating × thermal pickup) or a fuse's
+  // rating; I2 = 1.45 In (IEC 60898-1 MCB), 1.30 Ir (IEC 60947-2 MCCB/ACB),
+  // 1.6 / 1.9 / 2.1 In (IEC 60269 gG, In ≥ 16 / ≥ 4 / < 4 A). null when not
+  // evaluable (no rating, relay-tripped breaker).
+  _overloadCoord(dev, izTotal) {
+    const p = dev.props || {};
+    let In, f, label;
+    if (dev.type === 'fuse') {
+      In = parseFloat(p.rated_current_a);
+      f = In >= 16 ? 1.6 : In >= 4 ? 1.9 : 2.1;
+      label = `gG fuse, I2 = ${f}·In (IEC 60269)`;
+    } else {
+      if (this._relayTripping(dev.id)) return null;
+      In = (parseFloat(p.trip_rating_a) || parseFloat(p.rated_current_a)) * (parseFloat(p.thermal_pickup) || 1);
+      const mcb = String(p.cb_type || 'mccb').toLowerCase() === 'mcb';
+      f = mcb ? 1.45 : 1.30;
+      label = mcb ? 'MCB, I2 = 1.45·In (IEC 60898-1)' : `${String(p.cb_type || 'mccb').toUpperCase()} setting Ir, I2 = 1.30·Ir (IEC 60947-2)`;
+    }
+    if (!(In > 0) || !(izTotal > 0)) return null;
+    const I2 = f * In;
+    return { In, I2, f, label, ok1: In <= izTotal * (1 + 1e-9), ok2: I2 <= 1.45 * izTotal * (1 + 1e-9) };
+  },
+
+  // IEC 60038 Um for a nominal system voltage above 1 kV (as
+  // duty_check.highest_system_voltage_kv: smallest standard Um ≥ 1.05·Un)
+  _highestSystemVoltageKv(unKv) {
+    if (unKv <= 1.0) return unKv;
+    for (const um of [3.6, 7.2, 12, 17.5, 24, 36, 40.5, 52, 72.5, 100, 123, 145, 170, 245, 300, 362, 420, 550, 800]) {
+      if (um >= 1.05 * unKv - 1e-9) return um;
+    }
+    return unKv * 1.1;
+  },
+
 
   _hasFault() {
     return !!(AppState.faultResults && AppState.faultResults.buses && Object.keys(AppState.faultResults.buses).length > 0);
@@ -1504,8 +1871,17 @@ const Compliance = {
         if (!(kaRating > 0)) continue;
         for (const b of this._findConnectedDevices(id, ['bus'])) {
           const r = AppState.faultResults.buses[b.id];
-          if (r && r.ik3 != null && r.ik3 > kaRating + 1e-9) {
-            add(id, 'fail', `Breaking capacity ${kaRating} kA below fault level ${r.ik3.toFixed(1)} kA`);
+          if (!r || r.ik3 == null) continue;
+          // [C8] Same basis as the report ([DU1]/[DU2]): the largest phase
+          // current of any fault type — Ik1 exceeds Ik3 near a Dyn
+          // transformer. An MV breaker may use the decayed Ib for the
+          // balanced fault (IEC 62271-100).
+          const busKv = parseFloat(r.voltage_kv) || parseFloat(AppState.components.get(b.id)?.props?.voltage_kv) || 0;
+          const unbal = Math.max(r.ik1 || 0, r.ikLL || 0);
+          const duty = (comp.type === 'cb' && busKv > 1.0 && r.ib != null)
+            ? Math.max(r.ib, unbal) : Math.max(r.ik3, unbal);
+          if (duty > kaRating + 1e-9) {
+            add(id, 'fail', `Breaking capacity ${kaRating} kA below fault level ${duty.toFixed(1)} kA`);
             break;
           }
         }
@@ -1588,11 +1964,27 @@ const Compliance = {
 
     // Find cables/transformers connected through this device
     const connBranches = this._findConnectedDevices(deviceId, ['cable', 'transformer']);
+    // [C9] A transformer branch reports its LV-side current. A device on
+    // the HV side carries S/(√3·U_HV) — comparing it with the LV current
+    // failed every HV breaker feeding a transformer (1 MVA 11/0.4 kV:
+    // 1443 A against a 630 A breaker that carries 52 A).
+    let devKv = 0;
+    for (const b of this._findConnectedDevices(deviceId, ['bus'])) {
+      devKv = parseFloat(AppState.components.get(b.id)?.props?.voltage_kv) || 0;
+      if (devKv > 0) break;
+    }
     for (const cb of connBranches) {
       const br = branches.find(b => b.elementId === cb.id);
       if (br && br.i_amps > 0) {
         const comp = AppState.components.get(cb.id);
-        results.push({ branchName: comp?.props?.name || cb.id, current: br.i_amps });
+        let current = br.i_amps;
+        if (comp?.type === 'transformer' && devKv > 0 && br.s_mva > 0) {
+          const lvKv = parseFloat(comp.props?.voltage_lv_kv) || 0;
+          if (lvKv > 0 && Math.abs(devKv - lvKv) / lvKv > 0.2) {
+            current = br.s_mva * 1000 / (Math.sqrt(3) * devKv);
+          }
+        }
+        results.push({ branchName: comp?.props?.name || cb.id, current });
       }
     }
     return results;
@@ -1633,21 +2025,25 @@ const Compliance = {
     }
   },
 
-  // Guaranteed magnetic/instantaneous trip current (A) of a breaker. MCBs use
-  // their curve's upper bound (B 5×, C 10×, D 20× In); MCCB/ACB use the
-  // instantaneous/magnetic pickup multiple. Returns null when not assessable
-  // (fuses — time-current, not a fixed threshold; or no data).
+  // [L4] Largest current a breaker's magnetic/instantaneous element is
+  // guaranteed NOT to trip at — the bottom of its tolerance band, which is
+  // what a starting current must stay under: IEC 60898-1 MCB B 3×, C 5×,
+  // D 10× In (the band tops 5/10/20× are where it is certain to trip);
+  // IEC 60947-2 §8.3.3.1.2 instantaneous release ±20 % of its setting.
+  // Returns null when not assessable (fuses — time-current, not a fixed
+  // threshold; or no data).
   _deviceMagneticTripA(dev) {
     const p = dev.props || {};
     const In = parseFloat(p.rated_current_a);
     if (!(In > 0) || dev.type === 'fuse') return null;
     if (String(p.cb_type || 'mccb').toLowerCase() === 'mcb') {
       const curve = String(p.mcb_curve || 'C').toUpperCase();
-      const mult = curve === 'B' ? 5 : curve === 'D' ? 20 : 10;
-      return { a: mult * In, desc: `Type-${curve} MCB, ${mult}× In` };
+      const lo = curve === 'B' ? 3 : curve === 'D' ? 10 : 5;
+      const hi = curve === 'B' ? 5 : curve === 'D' ? 20 : 10;
+      return { a: lo * In, desc: `Type-${curve} MCB, no-trip limit ${lo}× In (band ${lo}–${hi}× In)` };
     }
     const inst = parseFloat(p.instantaneous_pickup) || parseFloat(p.magnetic_pickup) || 0;
-    return inst > 0 ? { a: inst * In, desc: `instantaneous ${inst}× In` } : null;
+    return inst > 0 ? { a: 0.8 * inst * In, desc: `instantaneous ${inst}× In −20 % tolerance` } : null;
   },
 
   // Devices at the boundary of a motor's dedicated feeder, and any OTHER loads

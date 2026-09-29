@@ -1,0 +1,1250 @@
+{
+ "project": {
+  "projectName": "compliance-review",
+  "projectDetails": null,
+  "baseMVA": 100.0,
+  "frequency": 50,
+  "components": [
+   {
+    "id": "u",
+    "type": "utility",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "Grid",
+     "voltage_kv": 11,
+     "fault_mva": 250,
+     "x_r_ratio": 10
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "b11",
+    "type": "bus",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "MV",
+     "voltage_kv": 11
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "t",
+    "type": "transformer",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "T1",
+     "rated_mva": 1.0,
+     "voltage_hv_kv": 11,
+     "voltage_lv_kv": 0.42,
+     "z_percent": 5,
+     "x_r_ratio": 8,
+     "vector_group": "Dyn11",
+     "grounding_hv": "ungrounded",
+     "grounding_lv": "solidly_grounded",
+     "earthing_system": "TN-S"
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "bA",
+    "type": "bus",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "MSB",
+     "voltage_kv": 0.4
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "cbF",
+    "type": "cb",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "CB-SubMain",
+     "cb_type": "mccb",
+     "rated_current_a": 160,
+     "trip_rating_a": 160,
+     "magnetic_pickup": 10,
+     "thermal_pickup": 1,
+     "long_time_delay": 10,
+     "rated_voltage_kv": 0.4,
+     "breaking_capacity_ka": 36,
+     "circuit_type": "distribution"
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "cF",
+    "type": "cable",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "C-SubMain",
+     "conductor": "Cu",
+     "insulation": "PVC",
+     "size_mm2": 35,
+     "r_per_km": 0.524,
+     "x_per_km": 0.08,
+     "length_km": 0.2,
+     "voltage_kv": 0.4,
+     "rated_amps": 140,
+     "num_parallel": 1
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "bB",
+    "type": "bus",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "DB-1",
+     "voltage_kv": 0.4
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "cbS",
+    "type": "cb",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "MCB-Sockets",
+     "cb_type": "mcb",
+     "mcb_curve": "C",
+     "rated_current_a": 32,
+     "trip_rating_a": 32,
+     "magnetic_pickup": 10,
+     "thermal_pickup": 1,
+     "long_time_delay": 10,
+     "rated_voltage_kv": 0.4,
+     "breaking_capacity_ka": 6,
+     "circuit_type": "final_socket"
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "cS",
+    "type": "cable",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "C-Sockets",
+     "conductor": "Cu",
+     "insulation": "PVC",
+     "size_mm2": 4,
+     "r_per_km": 4.61,
+     "x_per_km": 0.1,
+     "length_km": 0.06,
+     "voltage_kv": 0.4,
+     "rated_amps": 36,
+     "num_parallel": 1
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   },
+   {
+    "id": "bC",
+    "type": "bus",
+    "x": 0.0,
+    "y": 0.0,
+    "rotation": 0.0,
+    "props": {
+     "name": "Sockets",
+     "voltage_kv": 0.4
+    },
+    "labelOffsetX": null,
+    "labelOffsetY": null,
+    "nameLabelOffsetX": null,
+    "nameLabelOffsetY": null
+   }
+  ],
+  "wires": [
+   {
+    "id": "1",
+    "fromComponent": "u",
+    "fromPort": "bottom",
+    "toComponent": "b11",
+    "toPort": "top"
+   },
+   {
+    "id": "2",
+    "fromComponent": "b11",
+    "fromPort": "bottom",
+    "toComponent": "t",
+    "toPort": "primary"
+   },
+   {
+    "id": "3",
+    "fromComponent": "t",
+    "fromPort": "secondary",
+    "toComponent": "bA",
+    "toPort": "top"
+   },
+   {
+    "id": "4",
+    "fromComponent": "bA",
+    "fromPort": "bottom",
+    "toComponent": "cbF",
+    "toPort": "top"
+   },
+   {
+    "id": "5",
+    "fromComponent": "cbF",
+    "fromPort": "bottom",
+    "toComponent": "cF",
+    "toPort": "top"
+   },
+   {
+    "id": "6",
+    "fromComponent": "cF",
+    "fromPort": "bottom",
+    "toComponent": "bB",
+    "toPort": "top"
+   },
+   {
+    "id": "7",
+    "fromComponent": "bB",
+    "fromPort": "bottom",
+    "toComponent": "cbS",
+    "toPort": "top"
+   },
+   {
+    "id": "8",
+    "fromComponent": "cbS",
+    "fromPort": "bottom",
+    "toComponent": "cS",
+    "toPort": "top"
+   },
+   {
+    "id": "9",
+    "fromComponent": "cS",
+    "fromPort": "bottom",
+    "toComponent": "bC",
+    "toPort": "top"
+   }
+  ],
+  "nextId": 1,
+  "scenarios": [],
+  "loadFlowMethod": null,
+  "faultBusId": null,
+  "faultType": null,
+  "voltageFactor": null,
+  "conductorTemperatureC": null,
+  "stabilityDisturbance": null,
+  "dynamicMotorSchedule": null,
+  "openConductorBranchId": null,
+  "twoConductorOpenBranchId": null,
+  "simultaneousFaultBranchId": null,
+  "simultaneousFaultSeriesType": null,
+  "simultaneousFaultBusId": null,
+  "simultaneousFaultShuntType": null
+ },
+ "faultResults": {
+  "buses": {
+   "b11": {
+    "bus_id": "b11",
+    "bus_name": "MV",
+    "voltage_kv": 11.0,
+    "ik3": 13.122,
+    "ik3_angle": -84.29,
+    "ik1": 13.122,
+    "ik1_angle": -84.29,
+    "ikLL": 11.364,
+    "ikLL_angle": -114.29,
+    "ikLLG": 13.122,
+    "ikLLG_angle": 95.71,
+    "z_eq_real": 0.043782,
+    "z_eq_imag": 0.437816,
+    "z_eq_mag": 0.44,
+    "z0_real": 0.043782,
+    "z0_imag": 0.437816,
+    "z0_mag": 0.44,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Utility 'Grid' (Z0_src=0.4400)"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 32.401,
+    "kappa": 1.746,
+    "ib": 13.122,
+    "ib_asymmetric": 13.146,
+    "ik_steady": 13.122,
+    "ik_steady_min": 13.122,
+    "branches": [
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 13.122,
+      "z_path_real": 0.043782,
+      "z_path_imag": 0.437816,
+      "z_path_mag": 0.44,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.05,
+      "retained_kv": 0.02,
+      "transient_pu": 0.05,
+      "steadystate_pu": 0.05
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.05,
+      "retained_kv": 0.02,
+      "transient_pu": 0.05,
+      "steadystate_pu": 0.05
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.05,
+      "retained_kv": 0.02,
+      "transient_pu": 0.05,
+      "steadystate_pu": 0.05
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 0.44,
+    "z_slg_mag": 1.32,
+    "ith_ka": 13.344,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   },
+   "bA": {
+    "bus_id": "bA",
+    "bus_name": "MSB",
+    "voltage_kv": 0.4,
+    "ik3": 26.118,
+    "ik3_angle": -82.99,
+    "ik1": 26.832,
+    "ik1_angle": -82.95,
+    "ikLL": 22.619,
+    "ikLL_angle": -112.99,
+    "ikLLG": 27.585,
+    "ikLLG_angle": 97.09,
+    "z_eq_real": 0.742124,
+    "z_eq_imag": 6.033532,
+    "z_eq_mag": 6.079001,
+    "z0_real": 0.693855,
+    "z0_imag": 5.550839,
+    "z0_mag": 5.594037,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Xfmr 'T1' (Dyn11, Z0=5.5940) [\u0394 provides Z0 return]"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 62.703,
+    "kappa": 1.698,
+    "ib": 26.118,
+    "ib_asymmetric": 26.129,
+    "ik_steady": 26.118,
+    "ik_steady_min": 22.805,
+    "branches": [
+     {
+      "element_id": "t",
+      "element_name": "T1",
+      "element_type": "transformer",
+      "from_bus": "b11",
+      "to_bus": "bA",
+      "ik_ka": 0.997,
+      "z_path_real": 0.742124,
+      "z_path_imag": 6.033532,
+      "z_path_mag": 6.079001,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 0.997,
+      "z_path_real": 0.742124,
+      "z_path_imag": 6.033532,
+      "z_path_mag": 6.079001,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.924,
+      "retained_kv": 10.164,
+      "transient_pu": 0.924,
+      "steadystate_pu": 0.924
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 6.079001,
+    "z_slg_mag": 17.752032,
+    "ith_ka": 26.479,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   },
+   "bB": {
+    "bus_id": "bB",
+    "bus_name": "DB-1",
+    "voltage_kv": 0.4,
+    "ik3": 2.33,
+    "ik3_angle": -13.61,
+    "ik1": 1.415,
+    "ik1_angle": -11.59,
+    "ikLL": 2.017,
+    "ikLL_angle": -43.61,
+    "ikLLG": 1.016,
+    "ikLLG_angle": 169.29,
+    "z_eq_real": 66.242124,
+    "z_eq_imag": 16.033532,
+    "z_eq_mag": 68.15492,
+    "z0_real": 197.193855,
+    "z0_imag": 35.550839,
+    "z0_mag": 200.372849,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Cable 'C-SubMain' (Z0=198.7769) \u2192 Xfmr 'T1' (Dyn11, Z0=5.5940) [\u0394 provides Z0 return]"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 3.361,
+    "kappa": 1.02,
+    "ib": 2.33,
+    "ib_asymmetric": 2.33,
+    "ik_steady": 2.33,
+    "ik_steady_min": 2.013,
+    "branches": [
+     {
+      "element_id": "cF",
+      "element_name": "C-SubMain",
+      "element_type": "cable",
+      "from_bus": "cbF",
+      "to_bus": "bB",
+      "ik_ka": 2.33,
+      "z_path_real": 66.242124,
+      "z_path_imag": 16.033532,
+      "z_path_mag": 68.15492,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cbF",
+      "element_name": "CB-SubMain",
+      "element_type": "cb",
+      "from_bus": "bA",
+      "to_bus": "cF",
+      "ik_ka": 2.33,
+      "z_path_real": 66.242124,
+      "z_path_imag": 16.033532,
+      "z_path_mag": 68.15492,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "t",
+      "element_name": "T1",
+      "element_type": "transformer",
+      "from_bus": "b11",
+      "to_bus": "bA",
+      "ik_ka": 0.089,
+      "z_path_real": 66.242124,
+      "z_path_imag": 16.033532,
+      "z_path_mag": 68.15492,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 0.089,
+      "z_path_real": 66.242124,
+      "z_path_imag": 16.033532,
+      "z_path_mag": 68.15492,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.9978,
+      "retained_kv": 10.976,
+      "transient_pu": 0.9978,
+      "steadystate_pu": 0.9978
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.9722,
+      "retained_kv": 0.389,
+      "transient_pu": 0.9722,
+      "steadystate_pu": 0.9722
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 68.15492,
+    "z_slg_mag": 336.540982,
+    "ith_ka": 2.333,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   },
+   "bC": {
+    "bus_id": "bC",
+    "bus_name": "Sockets",
+    "voltage_kv": 0.4,
+    "ik3": 0.662,
+    "ik3_angle": -4.73,
+    "ik1": 0.398,
+    "ik1_angle": -4.14,
+    "ikLL": 0.573,
+    "ikLL_angle": -34.73,
+    "ikLLG": 0.284,
+    "ikLLG_angle": 176.12,
+    "z_eq_real": 239.117124,
+    "z_eq_imag": 19.783532,
+    "z_eq_mag": 239.934131,
+    "z0_real": 715.818855,
+    "z0_imag": 46.800839,
+    "z0_mag": 717.347163,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Cable 'C-Sockets' (Z0=518.7470) \u2192 Cable 'C-SubMain' (Z0=198.7769) \u2192 Xfmr 'T1' (Dyn11, Z0=5.5940) [\u0394 provides Z0 return]"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 0.955,
+    "kappa": 1.02,
+    "ib": 0.662,
+    "ib_asymmetric": 0.662,
+    "ik_steady": 0.662,
+    "ik_steady_min": 0.572,
+    "branches": [
+     {
+      "element_id": "cS",
+      "element_name": "C-Sockets",
+      "element_type": "cable",
+      "from_bus": "cbS",
+      "to_bus": "bC",
+      "ik_ka": 0.662,
+      "z_path_real": 239.117124,
+      "z_path_imag": 19.783532,
+      "z_path_mag": 239.934131,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cbS",
+      "element_name": "MCB-Sockets",
+      "element_type": "cb",
+      "from_bus": "bB",
+      "to_bus": "cS",
+      "ik_ka": 0.662,
+      "z_path_real": 239.117124,
+      "z_path_imag": 19.783532,
+      "z_path_mag": 239.934131,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cF",
+      "element_name": "C-SubMain",
+      "element_type": "cable",
+      "from_bus": "cbF",
+      "to_bus": "bB",
+      "ik_ka": 0.662,
+      "z_path_real": 239.117124,
+      "z_path_imag": 19.783532,
+      "z_path_mag": 239.934131,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cbF",
+      "element_name": "CB-SubMain",
+      "element_type": "cb",
+      "from_bus": "bA",
+      "to_bus": "cF",
+      "ik_ka": 0.662,
+      "z_path_real": 239.117124,
+      "z_path_imag": 19.783532,
+      "z_path_mag": 239.934131,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "t",
+      "element_name": "T1",
+      "element_type": "transformer",
+      "from_bus": "b11",
+      "to_bus": "bA",
+      "ik_ka": 0.025,
+      "z_path_real": 239.117124,
+      "z_path_imag": 19.783532,
+      "z_path_mag": 239.934131,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 0.025,
+      "z_path_real": 239.117124,
+      "z_path_imag": 19.783532,
+      "z_path_mag": 239.934131,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.9997,
+      "retained_kv": 10.996,
+      "transient_pu": 0.9997,
+      "steadystate_pu": 0.9997
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.9952,
+      "retained_kv": 0.398,
+      "transient_pu": 0.9952,
+      "steadystate_pu": 0.9952
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.7207,
+      "retained_kv": 0.288,
+      "transient_pu": 0.7207,
+      "steadystate_pu": 0.7207
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 239.934131,
+    "z_slg_mag": 1197.172598,
+    "ith_ka": 0.663,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   }
+  },
+  "base_mva": 100.0,
+  "method": "IEC 60909 (symmetrical)",
+  "study_assumptions": [
+   "Voltage factor c = 1.10 applied at every voltage level (IEC 60909-0 Table 1; the 1.05 option for legacy +6% LV systems is not automatically selected).",
+   "Breaking current Ib evaluated at minimum breaking time t_min = 0.1 s; asymmetrical breaking current at a fixed 100 ms with the DC time constant from the reduced Z_eq.",
+   "Steady-state Ik per IEC 60909-0:2001 \u00a74.6: synchronous machines \u03bb\u00b7I_rG (\u03bb_max from IEC TR 60909-1 Eq. 88 with each machine's own x\u2033d and cos \u03c6; \u03bb_min from the figs. 18/19 curve); network feeders and converter sources Ik = I\u2033k; asynchronous motors 0. Meshed buses: Ik_max \u2248 I\u2033k without asynchronous motors, Ik_min \u2248 I\u2033k_min (\u00a74.6.3). Ik_min uses c_min (Table 1) with motors neglected (\u00a72.5) and the study's conductor temperature. Unbalanced steady-state currents equal the initial values (\u00a74.6.4).",
+   "Thermal-equivalent current Ith uses Tk = 1 s with n = 1 (full AC heat effect \u2014 conservative upper bound).",
+   "Multi-source Ib, Ik and branch contributions sum per-path current magnitudes arithmetically (sum of |I| exceeds |vector sum|) \u2014 totals are conservative and branch percentages can exceed 100% when path angles differ.",
+   "C-SubMain, C-Sockets: No zero-sequence data (r0_per_km / x0_per_km both unset): Z0 inferred as 3x the composite Z1. This engine's fallback is not the one the other uses - the unbalanced load flow uses 3.5x instead, about 17% apart - so earth-fault results from the two studies are built on different Z0 networks. Set r0_per_km / x0_per_km, or pick an armoured distribution cable from the library, to make them agree - note the building-wiring entries (T+E, singles, Surfix, control) carry no zero-sequence data of their own."
+  ]
+ },
+ "faultResultsMin": {
+  "buses": {
+   "b11": {
+    "bus_id": "b11",
+    "bus_name": "MV",
+    "voltage_kv": 11.0,
+    "ik3": 13.122,
+    "ik3_angle": -84.29,
+    "ik1": 13.122,
+    "ik1_angle": -84.29,
+    "ikLL": 11.364,
+    "ikLL_angle": -114.29,
+    "ikLLG": 13.122,
+    "ikLLG_angle": 95.71,
+    "z_eq_real": 0.037811,
+    "z_eq_imag": 0.378114,
+    "z_eq_mag": 0.38,
+    "z0_real": 0.037811,
+    "z0_imag": 0.378114,
+    "z0_mag": 0.38,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Utility 'Grid' (Z0_src=0.3800)"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 32.401,
+    "kappa": 1.746,
+    "ib": 13.122,
+    "ib_asymmetric": 13.146,
+    "ik_steady": 13.122,
+    "ik_steady_min": 13.122,
+    "branches": [
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 13.122,
+      "z_path_real": 0.037811,
+      "z_path_imag": 0.378114,
+      "z_path_mag": 0.38,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.05,
+      "retained_kv": 0.02,
+      "transient_pu": 0.05,
+      "steadystate_pu": 0.05
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.05,
+      "retained_kv": 0.02,
+      "transient_pu": 0.05,
+      "steadystate_pu": 0.05
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.05,
+      "retained_kv": 0.02,
+      "transient_pu": 0.05,
+      "steadystate_pu": 0.05
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 0.38,
+    "z_slg_mag": 1.14,
+    "ith_ka": 13.344,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   },
+   "bA": {
+    "bus_id": "bA",
+    "bus_name": "MSB",
+    "voltage_kv": 0.4,
+    "ik3": 22.805,
+    "ik3_angle": -82.97,
+    "ik1": 23.347,
+    "ik1_angle": -82.94,
+    "ikLL": 19.749,
+    "ikLL_angle": -112.97,
+    "ikLLG": 23.915,
+    "ikLLG_angle": 97.09,
+    "z_eq_real": 0.735542,
+    "z_eq_imag": 5.96771,
+    "z_eq_mag": 6.012869,
+    "z0_real": 0.693855,
+    "z0_imag": 5.550839,
+    "z0_mag": 5.594037,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Xfmr 'T1' (Dyn11, Z0=5.5940) [\u0394 provides Z0 return]"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 54.733,
+    "kappa": 1.697,
+    "ib": 22.805,
+    "ib_asymmetric": 22.815,
+    "ik_steady": 22.805,
+    "ik_steady_min": 22.805,
+    "branches": [
+     {
+      "element_id": "t",
+      "element_name": "T1",
+      "element_type": "transformer",
+      "from_bus": "b11",
+      "to_bus": "bA",
+      "ik_ka": 0.871,
+      "z_path_real": 0.735542,
+      "z_path_imag": 5.96771,
+      "z_path_mag": 6.012869,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 0.871,
+      "z_path_real": 0.735542,
+      "z_path_imag": 5.96771,
+      "z_path_mag": 6.012869,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.924,
+      "retained_kv": 10.164,
+      "transient_pu": 0.924,
+      "steadystate_pu": 0.924
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 6.012869,
+    "z_slg_mag": 17.619769,
+    "ith_ka": 23.119,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   },
+   "bB": {
+    "bus_id": "bB",
+    "bus_name": "DB-1",
+    "voltage_kv": 0.4,
+    "ik3": 1.694,
+    "ik3_angle": -11.38,
+    "ik1": 1.026,
+    "ik1_angle": -9.69,
+    "ikLL": 1.467,
+    "ikLL_angle": -41.38,
+    "ikLLG": 0.736,
+    "ikLLG_angle": 171.04,
+    "z_eq_real": 79.335542,
+    "z_eq_imag": 15.96771,
+    "z_eq_mag": 80.926485,
+    "z0_real": 236.493855,
+    "z0_imag": 35.550839,
+    "z0_mag": 239.15101,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Cable 'C-SubMain' (Z0=237.7007) \u2192 Xfmr 'T1' (Dyn11, Z0=5.5940) [\u0394 provides Z0 return]"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 2.444,
+    "kappa": 1.02,
+    "ib": 1.694,
+    "ib_asymmetric": 1.694,
+    "ik_steady": 1.694,
+    "ik_steady_min": 1.694,
+    "branches": [
+     {
+      "element_id": "cF",
+      "element_name": "C-SubMain",
+      "element_type": "cable",
+      "from_bus": "cbF",
+      "to_bus": "bB",
+      "ik_ka": 1.694,
+      "z_path_real": 79.335542,
+      "z_path_imag": 15.96771,
+      "z_path_mag": 80.926485,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cbF",
+      "element_name": "CB-SubMain",
+      "element_type": "cb",
+      "from_bus": "bA",
+      "to_bus": "cF",
+      "ik_ka": 1.694,
+      "z_path_real": 79.335542,
+      "z_path_imag": 15.96771,
+      "z_path_mag": 80.926485,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "t",
+      "element_name": "T1",
+      "element_type": "transformer",
+      "from_bus": "b11",
+      "to_bus": "bA",
+      "ik_ka": 0.065,
+      "z_path_real": 79.335542,
+      "z_path_imag": 15.96771,
+      "z_path_mag": 80.926485,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 0.065,
+      "z_path_real": 79.335542,
+      "z_path_imag": 15.96771,
+      "z_path_mag": 80.926485,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.9983,
+      "retained_kv": 10.982,
+      "transient_pu": 0.9983,
+      "steadystate_pu": 0.9983
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.9788,
+      "retained_kv": 0.392,
+      "transient_pu": 0.9788,
+      "steadystate_pu": 0.9788
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 80.926485,
+    "z_slg_mag": 400.886174,
+    "ith_ka": 1.696,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   },
+   "bC": {
+    "bus_id": "bC",
+    "bus_name": "Sockets",
+    "voltage_kv": 0.4,
+    "ik3": 0.477,
+    "ik3_angle": -3.93,
+    "ik1": 0.287,
+    "ik1_angle": -3.45,
+    "ikLL": 0.413,
+    "ikLL_angle": -33.93,
+    "ikLLG": 0.205,
+    "ikLLG_angle": 176.76,
+    "z_eq_real": 286.785542,
+    "z_eq_imag": 19.71771,
+    "z_eq_mag": 287.462581,
+    "z0_real": 858.843855,
+    "z0_imag": 46.800839,
+    "z0_mag": 860.118065,
+    "z0_source_count": 1,
+    "z0_sources_detail": [
+     "Cable 'C-Sockets' (Z0=622.4517) \u2192 Cable 'C-SubMain' (Z0=237.7007) \u2192 Xfmr 'T1' (Dyn11, Z0=5.5940) [\u0394 provides Z0 return]"
+    ],
+    "motor_count": 0,
+    "ik3_motor": null,
+    "ik3_network": null,
+    "ip": 0.688,
+    "kappa": 1.02,
+    "ib": 0.477,
+    "ib_asymmetric": 0.477,
+    "ik_steady": 0.477,
+    "ik_steady_min": 0.477,
+    "branches": [
+     {
+      "element_id": "cS",
+      "element_name": "C-Sockets",
+      "element_type": "cable",
+      "from_bus": "cbS",
+      "to_bus": "bC",
+      "ik_ka": 0.477,
+      "z_path_real": 286.785542,
+      "z_path_imag": 19.71771,
+      "z_path_mag": 287.462581,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cbS",
+      "element_name": "MCB-Sockets",
+      "element_type": "cb",
+      "from_bus": "bB",
+      "to_bus": "cS",
+      "ik_ka": 0.477,
+      "z_path_real": 286.785542,
+      "z_path_imag": 19.71771,
+      "z_path_mag": 287.462581,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cF",
+      "element_name": "C-SubMain",
+      "element_type": "cable",
+      "from_bus": "cbF",
+      "to_bus": "bB",
+      "ik_ka": 0.477,
+      "z_path_real": 286.785542,
+      "z_path_imag": 19.71771,
+      "z_path_mag": 287.462581,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "cbF",
+      "element_name": "CB-SubMain",
+      "element_type": "cb",
+      "from_bus": "bA",
+      "to_bus": "cF",
+      "ik_ka": 0.477,
+      "z_path_real": 286.785542,
+      "z_path_imag": 19.71771,
+      "z_path_mag": 287.462581,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "t",
+      "element_name": "T1",
+      "element_type": "transformer",
+      "from_bus": "b11",
+      "to_bus": "bA",
+      "ik_ka": 0.018,
+      "z_path_real": 286.785542,
+      "z_path_imag": 19.71771,
+      "z_path_mag": 287.462581,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     },
+     {
+      "element_id": "u",
+      "element_name": "Grid",
+      "element_type": "utility",
+      "from_bus": "u",
+      "to_bus": "b11",
+      "ik_ka": 0.018,
+      "z_path_real": 286.785542,
+      "z_path_imag": 19.71771,
+      "z_path_mag": 287.462581,
+      "contribution_pct": 100.0,
+      "source_name": "Grid"
+     }
+    ],
+    "voltage_depression": {
+     "b11": {
+      "bus_name": "MV",
+      "voltage_kv": 11,
+      "subtransient_pu": 0.9997,
+      "retained_kv": 10.997,
+      "transient_pu": 0.9997,
+      "steadystate_pu": 0.9997
+     },
+     "bA": {
+      "bus_name": "MSB",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.9962,
+      "retained_kv": 0.398,
+      "transient_pu": 0.9962,
+      "steadystate_pu": 0.9962
+     },
+     "bB": {
+      "bus_name": "DB-1",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.7217,
+      "retained_kv": 0.289,
+      "transient_pu": 0.7217,
+      "steadystate_pu": 0.7217
+     },
+     "bC": {
+      "bus_name": "Sockets",
+      "voltage_kv": 0.4,
+      "subtransient_pu": 0.0,
+      "retained_kv": 0.0,
+      "transient_pu": 0.0,
+      "steadystate_pu": 0.0
+     }
+    },
+    "motor_recovery": null,
+    "z2_mag": 287.462581,
+    "z_slg_mag": 1435.008449,
+    "ith_ka": 0.478,
+    "network_topology": "radial",
+    "topology_warnings": null,
+    "thevenin_basis": null
+   }
+  },
+  "base_mva": 100.0,
+  "method": "IEC 60909 (symmetrical)",
+  "study_assumptions": [
+   "Voltage factor c = 0.95 applied at every voltage level (IEC 60909-0 Table 1; the 1.05 option for legacy +6% LV systems is not automatically selected).",
+   "Breaking current Ib evaluated at minimum breaking time t_min = 0.1 s; asymmetrical breaking current at a fixed 100 ms with the DC time constant from the reduced Z_eq.",
+   "Steady-state Ik per IEC 60909-0:2001 \u00a74.6: synchronous machines \u03bb\u00b7I_rG (\u03bb_max from IEC TR 60909-1 Eq. 88 with each machine's own x\u2033d and cos \u03c6; \u03bb_min from the figs. 18/19 curve); network feeders and converter sources Ik = I\u2033k; asynchronous motors 0. Meshed buses: Ik_max \u2248 I\u2033k without asynchronous motors, Ik_min \u2248 I\u2033k_min (\u00a74.6.3). Ik_min uses c_min (Table 1) with motors neglected (\u00a72.5) and the study's conductor temperature. Unbalanced steady-state currents equal the initial values (\u00a74.6.4).",
+   "Thermal-equivalent current Ith uses Tk = 1 s with n = 1 (full AC heat effect \u2014 conservative upper bound).",
+   "Multi-source Ib, Ik and branch contributions sum per-path current magnitudes arithmetically (sum of |I| exceeds |vector sum|) \u2014 totals are conservative and branch percentages can exceed 100% when path angles differ.",
+   "Minimum-current study: cable resistances at 70 \u00b0C (IEC 60909-0 \u00a75.3.1).",
+   "C-SubMain, C-Sockets: No zero-sequence data (r0_per_km / x0_per_km both unset): Z0 inferred as 3x the composite Z1. This engine's fallback is not the one the other uses - the unbalanced load flow uses 3.5x instead, about 17% apart - so earth-fault results from the two studies are built on different Z0 networks. Set r0_per_km / x0_per_km, or pick an armoured distribution cable from the library, to make them agree - note the building-wiring entries (T+E, singles, Surfix, control) carry no zero-sequence data of their own."
+  ]
+ }
+}
