@@ -12,7 +12,7 @@ HELP_ARTICLES.push(
 $$\frac{I_b}{n_{par}}\le I_z=I_{tab}\cdot k_{inst}\cdot k_{amb}\ \ (\cdot\,k_{grp})$$
 <p>Three routes, in order of preference:</p>
 <ol>
-<li><strong>An applied installed-ampacity calculation</strong> on the cable (set in the properties panel, see <a href="#" data-help="cable-ampacity">Installed ampacity</a>) — its derated current is used directly and never derated again.</li>
+<li><strong>An applied installed-ampacity calculation</strong> on the cable (set in the properties panel, see <a href="#" data-help="cable-ampacity">Installed ampacity</a>) — the study recomputes it from the saved installation conditions with the IEC 60364-5-52 tables (so a rating saved before a table correction updates itself, with a note) and never derates it again.</li>
 <li><strong>NEC:</strong> $I_z=I_{310.16}\cdot k_{temp}\cdot k_{count}$ with the ambient correction (310.15(B)(1)) and the current-carrying-conductor adjustment (310.15(C)(1)) for $3n_{par}$ conductors.</li>
 <li><strong>IEC (library value):</strong> the library rating times the ambient correction $k_{amb}$ from IEC 60364-5-52 Table B.52.14 (air, 30 °C reference) — or B.52.15 (ground, 20 °C reference) for a buried run — interpolated. No installation-method or grouping factor is applied on this route, and the result says so: use the installed-ampacity calculator for those. If the ambient is at or above the insulation's maximum (90 °C XLPE, 70 °C PVC) the cable has no usable ampacity and fails.</li>
 </ol>
@@ -51,31 +51,36 @@ $$S_{min}=\frac{20\,877\times\sqrt{0.5}}{143}=\mathbf{103\ mm^2}\ \Rightarrow\ \
 <p>Cable resistance in the library is hot (90 °C XLPE, 70 °C PVC): $R_{op}=R_{20}[1+\alpha(\theta-20)]$ with $\alpha_{Cu}=0.00393$, $\alpha_{Al}=0.00403$ per K, i.e. ×1.275 (Cu) / ×1.282 (Al) at 90 °C and ×1.20 at 70 °C.</p>` },
 
 { id: 'cable-ampacity', group: 'cables', title: 'Installed ampacity (IEC 60364-5-52)',
-  std: 'IEC 60364-5-52 Tables B.52.2–B.52.5, B.52.14, B.52.15, B.52.17 · Cable properties ▸ Ampacity',
-  kw: 'installed current carrying capacity derating installation method a1 b1 c d1 d2 e f g ambient grouping soil resistivity depth',
+  std: 'IEC 60364-5-52 Tables B.52.2–B.52.5, B.52.10–B.52.19 · Cable properties ▸ Ampacity',
+  kw: 'installed current carrying capacity derating installation method a1 a2 b1 b2 c d1 d2 e f g ambient grouping soil resistivity loaded conductors single phase three phase',
   html: String.raw`
 <p>A cable's tabulated current-carrying capacity assumes reference conditions. The installed ampacity corrects it for the real ones by multiplying <em>independent</em> factors:</p>
-$$I_z=I_{tab}(S,\ \text{method},\ \text{conductor},\ \text{insulation})\cdot k_{temp}\cdot k_{grp}\cdot k_{soil}\cdot k_{depth}$$
+$$I_z=I_{tab}(S,\ \text{method},\ \text{conductor},\ \text{insulation},\ n_{loaded})\cdot k_{temp}\cdot k_{grp}\cdot k_{soil}$$
 <p>Reference conditions: 30 °C ambient air, 20 °C ground, soil thermal resistivity 2.5 K·m/W, burial depth 0.7 m.</p>
+<h4>Loaded conductors</h4>
+<p>The standard tabulates each method twice: <strong>two loaded conductors</strong> for a single-phase circuit (Tables B.52.2 PVC, B.52.3 XLPE) and <strong>three</strong> for a three-phase circuit (B.52.4, B.52.5) — a three-phase cable runs hotter, so its rating is roughly 10–15 % lower. SLD cables are three-phase; a DB way uses two or three by its pole count. Methods E–G come from Tables B.52.10–B.52.13.</p>
 <h4>Installation methods (Table B.52.1)</h4>
 <table class="help-ref-table"><thead><tr><th>Method</th><th>Description</th><th>Environment</th></tr></thead><tbody>
-<tr><td>A1 / A2</td><td>Conductors / multicore cable in conduit in a thermally insulating wall</td><td>air</td></tr>
-<tr><td>B1 / B2</td><td>Conductors / multicore cable in conduit on a wall or in trunking</td><td>air</td></tr>
+<tr><td>A1 / A2</td><td>Conductors / multi-core cable in conduit in a thermally insulated wall</td><td>air</td></tr>
+<tr><td>B1 / B2</td><td>Conductors / multi-core cable in conduit on a wall or in trunking</td><td>air</td></tr>
 <tr><td>C</td><td>Cable clipped direct to a wall</td><td>air</td></tr>
-<tr><td>D1 / D2</td><td>Multicore cable in underground duct / direct buried</td><td>ground</td></tr>
-<tr><td>E / F / G</td><td>Single-core cables on perforated tray touching / spaced / spaced from wall</td><td>air</td></tr></tbody></table>
+<tr><td>D1 / D2</td><td>Cable in ducts in the ground / direct in the ground</td><td>ground</td></tr>
+<tr><td>E</td><td>Multi-core cable in free air</td><td>air</td></tr>
+<tr><td>F</td><td>Single-core cables touching in free air (trefoil for three loaded)</td><td>air</td></tr>
+<tr><td>G</td><td>Single-core cables spaced in free air (three loaded only)</td><td>air</td></tr></tbody></table>
+<p>Where the standard has no value (methods A–D above 300 mm², F and G below 25 mm², G single-phase) the calculator says so rather than inventing one.</p>
 <h4>The correction factors</h4>
 <ul>
-<li>$k_{temp}$ — ambient air temperature (or ground temperature for D1/D2), per insulation: PVC 1.22 at 10 °C, 1.00 at 30 °C, 0.87 at 40 °C, 0.71 at 50 °C, 0.50 at 60 °C; XLPE is flatter. Linearly interpolated between table points.</li>
-<li>$k_{grp}$ — grouping. Per arrangement (bunched, single layer on wall / floor / tray touching / tray spaced, trefoil): for bunched, 1 circuit 1.00, 2 → 0.80, 3 → 0.70, 4 → 0.65, 5 → 0.60, 6 → 0.57, 9 → 0.50, 12 → 0.45, 20 → 0.38.</li>
-<li>$k_{soil}$ — soil thermal resistivity (buried only), relative to 2.5 K·m/W.</li>
-<li>$k_{depth}$ — burial depth (buried only), relative to 0.7 m.</li>
+<li>$k_{temp}$ — ambient air temperature (Table B.52.14), or ground temperature for D1/D2 (B.52.15), per insulation: PVC 1.22 at 10 °C, 1.00 at 30 °C, 0.87 at 40 °C, 0.71 at 50 °C, 0.50 at 60 °C; XLPE is flatter. Linearly interpolated between table points.</li>
+<li>$k_{grp}$ — grouping, from the table for the method: <strong>B.52.17</strong> in air (bunched; single layer on wall/floor; under a wooden ceiling; on perforated tray; on ladder or cleats), <strong>B.52.18</strong> direct in the ground (touching, one diameter, 0.125 / 0.25 / 0.5 m apart), <strong>B.52.19</strong> in ducts (multi- or single-core, touching to 1 m apart). Bunched: 1 circuit 1.00, 2 → 0.80, 3 → 0.70, 6 → 0.57, 9 → 0.50, 12 → 0.45, 20 → 0.38. A count between listed values takes the <em>next listed count up</em> (10 circuits use the 12-circuit factor) — the standard does not interpolate.</li>
+<li>$k_{soil}$ — soil thermal resistivity (buried only), relative to 2.5 K·m/W, Table B.52.16. Its values are for cables in ducts; for cables direct in the ground IEC notes they would be higher, so using them there is conservative.</li>
 </ul>
-<p>The result panel prints where the number came from, for example <code>B1 · PVC · 40 °C air ×0.87 · 3 circuit(s) bunched ×0.70 · combined ×0.609</code>, so a derated ampacity is never a bare number.</p>
+<p>IEC 60364-5-52 has no depth-of-laying factor, so none is applied.</p>
+<p>The result panel prints where the number came from, for example <code>3 loaded conductors · B1 · PVC · 40 °C air ×0.87 · 3 circuit(s) Bunched ×0.70 · combined ×0.609</code>, so a derated ampacity is never a bare number.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
-<p>16 mm² PVC copper, method B1 (base 76 A), 40 °C ambient, three circuits bunched together:</p>
-$$I_z=76\times0.87\times0.70=76\times0.609=\mathbf{46.3\ A}$$
-<p>A 50 A breaker would violate $I_n\le I_z$; a 40 A breaker is the largest standard rating that complies.</p></div>
+<p>16 mm² PVC copper, method B1, 40 °C ambient, three circuits bunched together ($k=0.87\times0.70=0.609$):</p>
+$$\text{single-phase (B.52.2, 76 A):}\ I_z=76\times0.609=\mathbf{46.3\ A}\qquad \text{three-phase (B.52.4, 68 A):}\ I_z=68\times0.609=\mathbf{41.4\ A}$$
+<p>On the single-phase circuit a 40 A breaker is the largest standard rating that satisfies $I_n\le I_z$; on the three-phase circuit it still does (40 ≤ 41.4), with far less margin.</p></div>
 <p>This table family is installed <em>current capacity</em>. It is different from the conductor R/X library used for volt drop and fault current, and values must never be copied between them.</p>` },
 
 { id: 'cable-dbcheck', group: 'cables', title: 'Distribution-board circuit check',

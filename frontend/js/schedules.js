@@ -36,13 +36,11 @@ const Schedules = {
   buildDOM() {
     const ws = document.getElementById('schedules-workspace');
     if (!ws || this._built) return;
-    const methodOpts = (typeof IEC_INSTALLATION_METHODS !== 'undefined'
-      ? IEC_INSTALLATION_METHODS : [])
+    const methodOpts = IEC_INSTALLATION_METHODS
       .map(m => `<option value="${m.code}"${m.code === 'B1' ? ' selected' : ''}>${escHtml(m.code)} — ${escHtml(m.description)}</option>`)
       .join('');
-    const groupOpts = (typeof IEC_GROUPING_FACTORS !== 'undefined'
-      ? Object.keys(IEC_GROUPING_FACTORS) : ['bunched'])
-      .map(k => `<option value="${k}">${escHtml(k.replace(/_/g, ' '))}</option>`)
+    const groupOpts = IecAmpacity.groupingOptions('B1')
+      .map(([k, l]) => `<option value="${k}">${escHtml(l)}</option>`)
       .join('');
 
     ws.innerHTML = `
@@ -84,6 +82,10 @@ const Schedules = {
     });
     for (const id of ['sch-ambient', 'sch-method', 'sch-grouping', 'sch-group-n']) {
       ws.querySelector('#' + id).addEventListener('change', () => {
+        if (id === 'sch-method') {
+          const c = this._installControls();
+          this._fillGrouping(c.method.value, c.grouping.value);
+        }
         this._writeInstallToBoard();
         this._scheduleCheck();
       });
@@ -262,8 +264,18 @@ const Schedules = {
       ? comp.props.way_install : {};
     c.ambient.value = inst.ambient_c ?? 30;
     c.method.value = inst.method || 'B1';
-    c.grouping.value = inst.grouping || 'bunched';
+    this._fillGrouping(c.method.value, inst.grouping || 'bunched');
     c.groupN.value = inst.circuits ?? 0;
+  },
+
+  // Grouping rows for the method's family (air B.52.17, ducts B.52.19, direct
+  // burial B.52.18); a saved legacy / other-family name maps onto its IEC row.
+  _fillGrouping(method, wanted) {
+    const sel = this._installControls().grouping;
+    if (!sel) return;
+    const keep = IecAmpacity.resolveGrouping(wanted || 'bunched', method).name;
+    sel.innerHTML = IecAmpacity.groupingOptions(method)
+      .map(([k, l]) => `<option value="${k}"${k === keep ? ' selected' : ''}>${escHtml(l)}</option>`).join('');
   },
 
   // Writes only when something actually differs, so merely visiting a board

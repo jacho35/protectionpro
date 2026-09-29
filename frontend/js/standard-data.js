@@ -1354,6 +1354,7 @@ const StandardData = {
     // Ampacity filter changes
     document.getElementById('iec-amp-conductor').addEventListener('change', () => this.renderAmpacityTable());
     document.getElementById('iec-amp-insulation').addEventListener('change', () => this.renderAmpacityTable());
+    document.getElementById('iec-amp-loaded').addEventListener('change', () => this.renderAmpacityTable());
 
     // Derating environment filter
     document.getElementById('iec-derating-env').addEventListener('change', () => this.renderTempTable());
@@ -1367,8 +1368,9 @@ const StandardData = {
       methodSelect.appendChild(opt);
     }
 
-    // Show/hide soil & depth fields based on method
+    // Soil field and grouping rows depend on the method (air / ducts / direct burial)
     methodSelect.addEventListener('change', () => this._updateBuriedFields());
+    this._updateBuriedFields();
 
     // Calculator button
     document.getElementById('btn-iec-calculate').addEventListener('click', () => this.calculateCableSize());
@@ -1376,9 +1378,11 @@ const StandardData = {
 
   _updateBuriedFields() {
     const method = document.getElementById('iec-calc-method').value;
-    const isBuried = method.startsWith('D');
-    document.getElementById('iec-soil-group').style.display = isBuried ? '' : 'none';
-    document.getElementById('iec-depth-group').style.display = isBuried ? '' : 'none';
+    document.getElementById('iec-soil-group').style.display = IecAmpacity.isBuried(method) ? '' : 'none';
+    const sel = document.getElementById('iec-calc-grouping');
+    const keep = IecAmpacity.resolveGrouping(sel.value || 'bunched', method).name;
+    sel.innerHTML = IecAmpacity.groupingOptions(method)
+      .map(([v, l]) => `<option value="${v}"${v === keep ? ' selected' : ''}>${l}</option>`).join('');
   },
 
   renderIECActiveSection() {
@@ -1386,7 +1390,7 @@ const StandardData = {
     if (!active) return;
     const section = active.dataset.iec;
     if (section === 'ampacity') this.renderAmpacityTable();
-    else if (section === 'derating') { this.renderTempTable(); this.renderGroupTable(); this.renderSoilTable(); this.renderDepthTable(); }
+    else if (section === 'derating') { this.renderTempTable(); this.renderGroupTable(); this.renderSoilTable(); }
     else if (section === 'voltage-factors') this.renderVoltageFactors();
   },
 
@@ -1394,30 +1398,21 @@ const StandardData = {
   renderAmpacityTable() {
     const conductor = document.getElementById('iec-amp-conductor').value;  // cu | al
     const insulation = document.getElementById('iec-amp-insulation').value; // xlpe | pvc
-    const key = `${insulation}_${conductor}`;  // e.g. 'xlpe_cu'
+    const loaded = parseInt(document.getElementById('iec-amp-loaded').value, 10) === 2 ? 2 : 3;
 
-    // Determine which methods have data for this combo
-    const allMethods = ['A1', 'B1', 'C', 'D1', 'D2', 'E', 'F'];
-    const methods = allMethods.filter(m => {
-      // Check if any size has data for this method+key combo
-      return Object.values(IEC_AMPACITY_TABLE).some(row => row[m] && row[m][key] != null);
-    });
+    // Methods the standard tabulates for this combination
+    const methods = IEC_INSTALLATION_METHODS.map(m => m.code)
+      .filter(m => IEC_STANDARD_SIZES.some(sz => IecAmpacity.base(sz, m, conductor, insulation, loaded) != null));
 
-    // Header
     const thead = document.getElementById('iec-ampacity-head');
-    thead.innerHTML = `<tr><th>Size (mm&sup2;)</th>${methods.map(m => `<th>${m}</th>`).join('')}</tr>`;
+    thead.innerHTML = `<tr><th>Size (mm&sup2;)</th>${methods.map(m => `<th title="${IecAmpacity.method(m).description}">${m}</th>`).join('')}</tr>`;
 
-    // Body
     const tbody = document.getElementById('iec-ampacity-body');
     const rows = [];
     for (const size of IEC_STANDARD_SIZES) {
-      const sizeData = IEC_AMPACITY_TABLE[size];
-      if (!sizeData) continue;
-      const cells = methods.map(m => {
-        const val = sizeData[m] ? sizeData[m][key] : null;
-        return `<td class="num-cell">${val != null ? val : '—'}</td>`;
-      });
-      rows.push(`<tr><td class="num-cell"><strong>${size}</strong></td>${cells.join('')}</tr>`);
+      const vals = methods.map(m => IecAmpacity.base(size, m, conductor, insulation, loaded));
+      if (vals.every(v => v == null)) continue;
+      rows.push(`<tr><td class="num-cell"><strong>${size}</strong></td>${vals.map(v => `<td class="num-cell">${v != null ? v : '—'}</td>`).join('')}</tr>`);
     }
     tbody.innerHTML = rows.join('');
   },
@@ -1451,33 +1446,18 @@ const StandardData = {
 
   // ─── Grouping Factor Table ───
   renderGroupTable() {
-    const arrangements = Object.keys(IEC_GROUPING_FACTORS);
-    const labels = {
-      bunched: 'Bunched / conduit',
-      single_layer_wall: 'Single layer on wall',
-      single_layer_floor: 'Single layer on floor',
-      single_layer_tray_touching: 'Single layer tray (touching)',
-      single_layer_tray_spaced: 'Single layer tray (spaced)',
-      trefoil_tray_touching: 'Trefoil tray (touching)',
-    };
-
-    // Collect all circuit counts
+    const rows = Object.keys(IEC_GROUPING);
     const counts = new Set();
-    for (const arr of arrangements) {
-      for (const n of Object.keys(IEC_GROUPING_FACTORS[arr])) counts.add(Number(n));
-    }
+    for (const r of rows) for (const n of Object.keys(IEC_GROUPING[r].factors)) counts.add(Number(n));
     const sorted = Array.from(counts).sort((a, b) => a - b);
 
     const thead = document.getElementById('iec-group-head');
-    thead.innerHTML = `<tr><th>Circuits</th>${arrangements.map(a => `<th>${labels[a] || a}</th>`).join('')}</tr>`;
+    thead.innerHTML = `<tr><th>Arrangement</th>${sorted.map(n => `<th>${n}</th>`).join('')}</tr>`;
 
     const tbody = document.getElementById('iec-group-body');
-    tbody.innerHTML = sorted.map(n => {
-      const cells = arrangements.map(a => {
-        const val = IEC_GROUPING_FACTORS[a][n];
-        return `<td class="num-cell">${val != null ? val.toFixed(2) : '—'}</td>`;
-      });
-      return `<tr><td class="num-cell">${n}</td>${cells.join('')}</tr>`;
+    tbody.innerHTML = rows.map(r => {
+      const f = IEC_GROUPING[r].factors;
+      return `<tr><td>${IEC_GROUPING_LABELS[r] || r}</td>${sorted.map(n => `<td class="num-cell">${f[n] != null ? f[n].toFixed(2) : '—'}</td>`).join('')}</tr>`;
     }).join('');
   },
 
@@ -1487,15 +1467,6 @@ const StandardData = {
     tbody.innerHTML = Object.entries(IEC_SOIL_RESISTIVITY_FACTORS).map(([r, f]) => {
       const refClass = Number(r) === 2.5 ? ' class="iec-ref-row"' : '';
       return `<tr${refClass}><td class="num-cell">${r}</td><td class="num-cell">${f.toFixed(2)}</td></tr>`;
-    }).join('');
-  },
-
-  // ─── Depth of Laying Table ───
-  renderDepthTable() {
-    const tbody = document.getElementById('iec-depth-body');
-    tbody.innerHTML = Object.entries(IEC_DEPTH_FACTORS).map(([d, f]) => {
-      const refClass = Number(d) === 0.7 ? ' class="iec-ref-row"' : '';
-      return `<tr${refClass}><td class="num-cell">${d}</td><td class="num-cell">${f.toFixed(2)}</td></tr>`;
     }).join('');
   },
 
@@ -1521,55 +1492,31 @@ const StandardData = {
     const Ib = parseFloat(document.getElementById('iec-calc-current').value) || 0;
     const conductor = document.getElementById('iec-calc-conductor').value;
     const insulation = document.getElementById('iec-calc-insulation').value;
+    const loaded = parseInt(document.getElementById('iec-calc-loaded').value, 10) === 2 ? 2 : 3;
     const method = document.getElementById('iec-calc-method').value;
     const ambientTemp = parseFloat(document.getElementById('iec-calc-temp').value) || 30;
     const numCircuits = parseInt(document.getElementById('iec-calc-circuits').value) || 1;
     const groupArrangement = document.getElementById('iec-calc-grouping').value;
-    const isBuried = method.startsWith('D');
+    const isBuried = IecAmpacity.isBuried(method);
     const soilRes = isBuried ? parseFloat(document.getElementById('iec-calc-soil').value) : 2.5;
-    const depth = isBuried ? parseFloat(document.getElementById('iec-calc-depth').value) : 0.7;
 
-    const key = `${insulation}_${conductor}`;
-
-    // ── Calculate derating factors ──
-
-    // 1. Temperature correction
-    const env = isBuried ? 'ground' : 'air';
-    const tempData = IEC_TEMP_CORRECTION[env][insulation];
-    const tempFactor = this._interpolateFactor(tempData, ambientTemp);
-
-    // 2. Grouping correction
-    const groupData = IEC_GROUPING_FACTORS[groupArrangement] || IEC_GROUPING_FACTORS.bunched;
-    const groupFactor = this._interpolateFactor(groupData, numCircuits);
-
-    // 3. Soil resistivity correction (buried only)
-    const soilFactor = isBuried ? this._interpolateFactor(IEC_SOIL_RESISTIVITY_FACTORS, soilRes) : 1.0;
-
-    // 4. Depth correction (buried only)
-    const depthFactor = isBuried ? this._interpolateFactor(IEC_DEPTH_FACTORS, depth) : 1.0;
-
-    // Combined derating
-    const totalDerating = tempFactor * groupFactor * soilFactor * depthFactor;
-
-    // Required base ampacity: Iz = Ib / (k1 × k2 × k3 × k4)
+    const d = IecAmpacity.derating({ method, ambient: ambientTemp, insulation, grouping: groupArrangement,
+                                     circuits: numCircuits, soil: soilRes });
+    const env = d.env;
+    const tempFactor = d.temp, groupFactor = d.group, soilFactor = d.soil;
+    const totalDerating = d.combined;
     const requiredIz = Ib / totalDerating;
 
     // ── Find suitable cable size ──
     const results = [];
     let selectedSize = null;
     let selectedIz = null;
-
     for (const size of IEC_STANDARD_SIZES) {
-      const sizeData = IEC_AMPACITY_TABLE[size];
-      if (!sizeData || !sizeData[method]) continue;
-      const baseAmpacity = sizeData[method][key];
+      const baseAmpacity = IecAmpacity.base(size, method, conductor, insulation, loaded);
       if (baseAmpacity == null) continue;
-
       const deratedAmpacity = baseAmpacity * totalDerating;
       const adequate = deratedAmpacity >= Ib;
-
       results.push({ size, baseAmpacity, deratedAmpacity, adequate });
-
       if (adequate && !selectedSize) {
         selectedSize = size;
         selectedIz = baseAmpacity;
@@ -1581,17 +1528,16 @@ const StandardData = {
     resultsDiv.style.display = '';
 
     if (results.length === 0) {
-      resultsDiv.innerHTML = `<div class="iec-calc-error">No ampacity data available for method <strong>${method}</strong> with <strong>${insulation.toUpperCase()} ${conductor === 'cu' ? 'Copper' : 'Aluminium'}</strong>. Try a different installation method.</div>`;
+      resultsDiv.innerHTML = `<div class="iec-calc-error">IEC 60364-5-52 tabulates no values for method <strong>${method}</strong> with <strong>${insulation.toUpperCase()} ${conductor === 'cu' ? 'Copper' : 'Aluminium'}</strong>, <strong>${loaded} loaded conductors</strong>. Try a different installation method.</div>`;
       return;
     }
 
     const factorRows = [
       ['Temperature', `${ambientTemp}°C ${env}`, tempFactor.toFixed(3)],
-      ['Grouping', `${numCircuits} circuit(s), ${groupArrangement.replace(/_/g, ' ')}`, groupFactor.toFixed(3)],
+      ['Grouping', `${numCircuits} circuit(s), ${IEC_GROUPING_LABELS[d.groupName] || d.groupName}${d.beyond ? ' — beyond the table, last factor used' : ''}`, groupFactor.toFixed(3)],
     ];
     if (isBuried) {
-      factorRows.push(['Soil resistivity', `${soilRes} K·m/W`, soilFactor.toFixed(3)]);
-      factorRows.push(['Depth of laying', `${depth} m`, depthFactor.toFixed(3)]);
+      factorRows.push(['Soil resistivity', `${soilRes} K·m/W (B.52.16)`, soilFactor.toFixed(3)]);
     }
 
     let html = `
@@ -1622,7 +1568,7 @@ const StandardData = {
     }
 
     html += `
-      <h4>All Cable Sizes — Method ${method}</h4>
+      <h4>All Cable Sizes — Method ${method}, ${loaded} loaded conductors</h4>
       <table class="library-table iec-ref-table iec-compact">
         <thead><tr><th>Size (mm&sup2;)</th><th>Base I<sub>z</sub> (A)</th><th>Derated I<sub>z</sub> (A)</th><th>Status</th></tr></thead>
         <tbody>

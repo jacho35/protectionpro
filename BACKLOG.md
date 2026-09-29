@@ -318,6 +318,19 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### IEC 60364-5-52 tables review: T1–T5 and lesser notes fixed (2026-09-29)
+- **Review.** `IEC_60364_TABLES_REVIEW.md` — `iec_60364_tables.py` and its frontend twin checked cell by cell against IEC 60364-5-52 Annex B (published reproduction, cross-checked). Temperature and soil tables were right; the capacities were not.
+- **Fixed:**
+  - **T1.** Capacities replaced by the standard's (old C / PVC-Cu / 16 mm² 94 A → 85 A single-phase, 76 A three-phase; most columns had been above even the single-phase values).
+  - **T2.** Loaded conductors: two (single-phase) or three (three-phase) — the old table had one value, rating three-phase circuits 12–36 % high. SLD cables three-phase; DB ways by pole count; both calculators ask.
+  - **T3.** All ten Table B.52.1 methods (A2, B2, G added); E/F/G were shifted by one.
+  - **T4.** Grouping rows as B.52.17 prints them; buried cables use B.52.18 / B.52.19; legacy names map to their IEC row.
+  - **T5.** The unsourced depth factor removed (IEC 60364-5-52 has none).
+  - L1 grouping steps up to the next listed count; L2 soil factors disclosed as duct values; L3 aluminium from 2.5 mm².
+- One reference file generates `backend/analysis/iec_60364_data.py` and `frontend/js/iec-60364-data.js` (`testing/iec-60364-tables-review/build_iec_tables.py`); both calculators share `IecAmpacity` (constants.js).
+- **Behaviour change for saved projects.** Ratings fall; cable sizing recomputes saved calculator blocks from their conditions (with a note). Re-run cable sizing and the circuit check.
+- `backend/tests/test_iec_60364_tables_review_fixes.py`: 29 tests.
+
 ### Cable sizing review: CS1–CS5 and lesser notes fixed (2026-09-28)
 - **Review.** `CABLE_SIZING_REVIEW.md` — `cable_sizing.py` against IEC 60364-5-52, IEC 60364-4-43, IEC 60949, IEC 60255-151 and IEC 60909-0 §12 (`testing/cable-sizing-review/`). Volt-drop formula, k values, R(θ) and m exact; five defects.
 - **Fixed, worst first:**

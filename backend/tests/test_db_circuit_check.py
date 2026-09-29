@@ -89,18 +89,29 @@ def _rows(result):
 
 class TestIecTables:
     def test_iz_base_matches_table(self):
-        # Table B.52.4 spot values, method B1, 2 loaded conductors.
-        assert base_ampacity_a(1.5, "B1", "Cu", "PVC") == 17.5
-        assert base_ampacity_a(2.5, "B1", "Cu", "PVC") == 24
-        assert base_ampacity_a(4, "B1", "Cu", "PVC") == 32
-        assert base_ampacity_a(10, "C", "Cu", "PVC") == 70
-        assert base_ampacity_a(25, "B1", "Cu", "XLPE") == 133
+        # IEC 60364-5-52 spot values. Re-baselined in the tables review [T1][T2]:
+        # the old test cited "B.52.4" (three loaded) for two-loaded values and
+        # pinned method C 10 mm² PVC-Cu at 70 A, which is in neither table
+        # (B.52.2: 63 A, B.52.4: 57 A).
+        # Two loaded conductors — Tables B.52.2 / B.52.3:
+        assert base_ampacity_a(1.5, "B1", "Cu", "PVC", loaded=2) == 17.5
+        assert base_ampacity_a(2.5, "B1", "Cu", "PVC", loaded=2) == 24
+        assert base_ampacity_a(4, "B1", "Cu", "PVC", loaded=2) == 32
+        assert base_ampacity_a(10, "C", "Cu", "PVC", loaded=2) == 63
+        assert base_ampacity_a(25, "B1", "Cu", "XLPE", loaded=2) == 133
+        # Three loaded conductors — Tables B.52.4 / B.52.5 (and the default):
+        assert base_ampacity_a(1.5, "B1", "Cu", "PVC", loaded=3) == 15.5
+        assert base_ampacity_a(10, "C", "Cu", "PVC") == 57
+        assert base_ampacity_a(25, "B1", "Cu", "XLPE") == 117
 
     def test_absent_combination_is_none_not_zero(self):
-        # Aluminium below 16 mm² is not tabulated — must be None so the caller
-        # can report "info", not a silent 0 A pass.
-        assert base_ampacity_a(2.5, "B1", "Al", "PVC") is None
-        assert base_ampacity_a(1.5, "E", "Cu", "PVC") is None
+        # Combinations IEC does not tabulate must be None so the caller can
+        # report "info", not a silent 0 A pass: aluminium below 2.5 mm²,
+        # methods A–D above 300 mm², F below 25 mm², G with two loaded.
+        assert base_ampacity_a(1.5, "B1", "Al", "PVC", loaded=2) is None
+        assert base_ampacity_a(400, "A1", "Cu", "PVC") is None
+        assert base_ampacity_a(16, "F", "Cu", "PVC") is None
+        assert base_ampacity_a(95, "G", "Cu", "PVC", loaded=2) is None
         assert base_ampacity_a(0, "B1", "Cu", "PVC") is None
 
     def test_reference_conditions_give_unity_derating(self):
@@ -122,7 +133,7 @@ class TestIecTables:
         assert interpolate_factor(t, 20) == pytest.approx(2.0)   # exact
 
     def test_installed_ampacity_applies_derating(self):
-        amp = installed_ampacity(2.5, "B1", "Cu", "PVC", 40.0, "bunched", 6)
+        amp = installed_ampacity(2.5, "B1", "Cu", "PVC", 40.0, "bunched", 6, loaded=2)
         assert amp["base_a"] == 24
         assert amp["derated_a"] == pytest.approx(24 * 0.87 * 0.57)
 

@@ -101,7 +101,7 @@ backend/
 │   ├── arcflash.py         # Arc flash incident energy — IEEE 1584-2002 and 1584-2018
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── db_circuit_check.py # Per-way DB circuit check — derated Iz, Ib<=In<=Iz, volt drop, ECC, earth-loop Zs
-│   ├── iec_60364_tables.py # IEC 60364-5-52 installed-ampacity + derating tables (backend twin of constants.js)
+│   ├── iec_60364_tables.py # IEC 60364-5-52 installed-ampacity lookups + ambient/soil tables; capacities (2/3 loaded conductors, methods A1–G) and grouping (B.52.17–19) live in the GENERATED iec_60364_data.py / frontend js/iec-60364-data.js — edit testing/iec-60364-tables-review/iec_60364_5_52_data.json and run build_iec_tables.py, never by hand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
 │   ├── dynamic_motor_starting.py # Time-domain motor acceleration (swing equation)
 │   ├── duty_check.py       # Equipment fault current rating validation
