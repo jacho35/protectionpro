@@ -318,6 +318,17 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### DB circuit check review: DB1–DB4 and lesser notes fixed (2026-09-29)
+- **Review.** `DB_CIRCUIT_CHECK_REVIEW.md` — `db_circuit_check.py` against IEC 60364-4-41, -4-43, -5-52 Annex G, -5-54 §543.1 and IEC 60228. Ze, R1, volt-drop formula and Table 54.7 exact; four defects.
+- **Fixed:**
+  - **DB1.** A blank ECC no longer assumes the Table 54.7 size (which understated Zs for twin-and-earth): it assumes the smallest compliant size and warns when the twin-and-earth CPC would fail.
+  - **DB2.** ECC complies by Table 54.7 **or** the §543.1.2 adiabatic check (k per Table 54.3) — a 20 m 2.5/1.5 mm² T+E now passes.
+  - **DB3.** Cumulative volt drop from the installation origin (V_origin − V_board), not from 1.0 pu (a 5.9 % drop read as 1.1 % with the source at 1.05 pu).
+  - **DB4.** Aluminium ways use aluminium resistance (was copper, ~40 % low).
+  - Lesser: TN RCD rule Zs·IΔn ≤ U0 (L1); per-way disconnection time from the device curve (L2); complex Zs (L3); demand factor 0 kept (L4); public/private supply volt-drop limits per Table G.52.1 (L5).
+- **Behaviour change for saved projects.** Re-run the circuit check.
+- `backend/tests/test_db_circuit_check_review_fixes.py`: 14 tests.
+
 ### IEC 60364-5-52 tables review: T1–T5 and lesser notes fixed (2026-09-29)
 - **Review.** `IEC_60364_TABLES_REVIEW.md` — `iec_60364_tables.py` and its frontend twin checked cell by cell against IEC 60364-5-52 Annex B (published reproduction, cross-checked). Temperature and soil tables were right; the capacities were not.
 - **Fixed:**

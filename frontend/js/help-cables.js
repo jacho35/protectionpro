@@ -84,7 +84,7 @@ $$\text{single-phase (B.52.2, 76 A):}\ I_z=76\times0.609=\mathbf{46.3\ A}\qquad 
 <p>This table family is installed <em>current capacity</em>. It is different from the conductor R/X library used for volt drop and fault current, and values must never be copied between them.</p>` },
 
 { id: 'cable-dbcheck', group: 'cables', title: 'Distribution-board circuit check',
-  std: 'IEC 60364-5-52 · 4-43 §433.1 · 4-41 · 5-54 Table 54.7 · SANS 10142-1 Cl. 5.5.2, 5.5.6, 6.6 · Schedules ▸ Check circuits',
+  std: 'IEC 60364-5-52 Annex G · 4-43 §433.1 · 4-41 §411.4/411.5 · 5-54 §543.1, Tables 54.3/54.7 · SANS 10142-1 Cl. 5.5.2, 5.5.6, 6.6 · Schedules ▸ Check circuits',
   kw: 'db board way circuit schedule ib in iz ecc zs earth loop rcd magnetic trip breaker curve b c d voltage drop',
   html: String.raw`
 <p>Checks every way of every board in the Schedules workspace. The SLD cable sizing only looks at cables on the diagram; this closes the gap for the tens of ways behind each board. Four verdicts per way — <em>ampacity &amp; coordination</em>, <em>voltage drop</em>, <em>earth conductor</em> and <em>earth-fault loop</em> — combine to the worst.</p>
@@ -98,11 +98,14 @@ $$I_b\ \le\ I_n\ \le\ I_z$$
 <p>A single-phase way is a two-conductor loop, so it doubles; a three-phase way uses the $\sqrt3$ line-to-line form. With $z_{eff}=r\cos\varphi+x\sin\varphi$ (lagging, default $\cos\varphi=0.9$):</p>
 $$\Delta V_{3\phi}=\sqrt3\,I_b\,\ell\,z_{eff},\ \ \%=\frac{\Delta V}{U_{LL}}\times100;\qquad
 \Delta V_{1\phi}=2\,I_b\,\ell\,z_{eff},\ \ \%=\frac{\Delta V}{U_{ph}}\times100$$
-<p>The gate is the <em>total</em> from the point of supply — this way plus the upstream drop from the load flow when it has been run — against 3 % (lighting) or 5 % (general); otherwise the way alone is shown, with a note to run load flow for the cumulative figure. Warning within 10 % of the limit.</p>
+<p>The gate is the <em>total</em> from the <strong>origin of the installation</strong> — the bus of the board's voltage zone fed by the source or transformer — i.e. this way plus $V_{origin}-V_{board}$ from the load flow (not the drop from 1.0 p.u., which would count MV and transformer drop, or miss drop when the supply sits above 1.0 p.u.). Limits per IEC 60364-5-52 Table G.52.1, chosen per board in the Schedules toolbar: public LV supply 3 % lighting / 5 % other, private supply (own transformer or generator) 6 % / 8 %. Without a load flow the way alone is shown, with a note. Warning within 10 % of the limit.</p>
 
-<h4>3 · Earth continuity conductor (Table 54.7)</h4>
+<h4>3 · Earth continuity conductor (IEC 60364-5-54 §543.1)</h4>
+<p>An ECC complies by either route. The <em>selection</em> rule, Table 54.7:</p>
 $$S_{ECC}\ge\begin{cases}S & S\le16\ \text{mm}^2\\ 16 & 16<S\le35\\ S/2\ (\text{rounded up to a preferred size}) & S>35\end{cases}$$
-<p>This is the <em>selection</em> rule. The adiabatic alternative (§543.1.1) is not yet evaluated.</p>
+<p>or the <em>adiabatic</em> calculation, §543.1.2 — which is how the reduced earth of a twin-and-earth cable (2.5/1.5, 4/1.5, 6/2.5 mm²) complies:</p>
+$$S_{ECC}\ge\frac{\sqrt{I^2t}}{k},\qquad I=\frac{c_{max}U_0}{Z_s},\quad t=\begin{cases}0.1\ \text{s} & \text{MCB instantaneous trip reached}\\ 0.3\ \text{s} & \text{earth-leakage unit}\\ \text{declared} & \text{time from the device's curve}\end{cases}$$
+<p>$k$ from Table 54.3 for a conductor in the cable: 115 Cu/PVC, 143 Cu/XLPE, 76 Al/PVC, 94 Al/XLPE. If the protection does not operate there is no $t$ and only the table can pass the conductor. With no ECC entered the check assumes the smallest size that complies by either route, and warns when the twin-and-earth CPC for that cable size would fail the loop check — enter the installed ECC.</p>
 
 <h4>4 · Earth-fault loop and disconnection</h4>
 <p>For a TN single-line-to-ground fault, $I_{k1}=\sqrt3\,c\,U_n/|Z_1+Z_2+Z_0|$ and the loop impedance the standard means is $Z_s=U_0/I_{k1}$; with $U_0=U_n/\sqrt3$ that is exactly</p>
@@ -111,7 +114,7 @@ $$Z_s=\frac{|Z_1+Z_2+Z_0|}{3}$$
 $$Z_s=Z_{supply}+r_{ph}\,\ell+r_{ECC}\,\ell,\qquad I_{ef}=\frac{c_{min}\,U_0}{Z_s},\quad c_{min}=0.95$$
 <p>Disconnection within the IEC 60364-4-41 time (0.4 s final circuits ≤ 32 A; 5 s distribution circuits) is guaranteed when the breaker's <em>instantaneous</em> trip current is reached. The upper limit of each IEC 60898-1 magnetic band is used — the current at which operation is <em>guaranteed</em>, not merely possible:</p>
 $$I_a=k_{mag}\,I_n,\quad k_{mag}=5\ (\text{B}),\ 10\ (\text{C}),\ 20\ (\text{D});\qquad \text{pass if }I_{ef}\ge I_a\iff Z_s\le Z_{s,max}=\frac{c_{min}U_0}{I_a}$$
-<p>If the magnetic trip is not reached, an <strong>RCD</strong> on the way is the alternative route: it complies when $Z_s\le50\,\text{V}/I_{\Delta n}$. The report states which route passed. When no ECC is declared the required minimum is assumed — the highest-resistance compliant conductor, so a pass on the assumption holds for whatever is installed.</p>
+<p>If the magnetic trip is not reached, an <strong>RCD</strong> on the way is the alternative route. In a TN system (§411.4.4) it complies when $Z_s\,I_{\Delta n}\le U_0$; in a TT system (§411.5.3) when $R_A\,I_{\Delta n}\le50$ V — tested on $Z_s$, which is never less than $R_A$. The earthing system is taken from the source or transformer feeding the board. For a way that reaches neither, a disconnection time read off the device's curve (entered per way) passes if it is within the limit — IEC 60898-1 alone guarantees operation only at its conventional points, so the thermal region is not credited without it. The report states which route passed. $Z_s$ adds the way's $R_1+R_2$ to the complex supply impedance.</p>
 <p>Conductor resistance is the hot value (operating temperature), and fault current uses the <em>minimum</em> basis (IEC 60909-0 §5.3.1) — a maximum-current basis overstates $I_{ef}$ and passes circuits the standard fails.</p>
 
 <div class="hc-example"><span class="hc-label">Worked example</span>

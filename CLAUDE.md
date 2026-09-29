@@ -192,7 +192,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/hosting-capacity` | Nodal DER hosting capacity | Voltage/thermal-limited PV injection sweep, LF-scored |
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 and IEEE 1584-2018 (per-bus `arc_flash_method`) |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
-| `/api/analysis/db-circuit-check` | Per-way DB circuit schedule check | IEC 60364-5-52 Iz + 4-43 §433.1; SANS 10142-1 Cl. 6.6 volt drop; IEC 60364-5-54 Table 54.7 ECC; IEC 60364-4-41 Zs |
+| `/api/analysis/db-circuit-check` | Per-way DB circuit schedule check | IEC 60364-5-52 Iz + 4-43 §433.1; volt drop from the origin per 5-52 Table G.52.1 / SANS 10142-1 Cl. 6.6; IEC 60364-5-54 §543.1 ECC (Table 54.7 or adiabatic); IEC 60364-4-41 Zs (magnetic / RCD TN·TT / declared time) |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |
 | `/api/analysis/duty-check` | Equipment duty | Fault current ratings |
