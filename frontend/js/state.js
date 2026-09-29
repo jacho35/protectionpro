@@ -1181,6 +1181,7 @@ const AppState = {
     this.tccCustomDevices = [];
     this.tccGradingMargin = null;
     this.tccFaultOpts = null;      // fault-level display options (kinds, scope, extra buses)
+    this.harmonicsLimits = null;   // harmonics limit basis: null/'ieee519' (IEEE 519-2014) or 'iec'
     // Bill-of-quantities rate library — only the entries the user has set
     // (rates.js builds the catalogue of item keys itself).
     this.rateLibrary = null;
@@ -1400,6 +1401,7 @@ const AppState = {
       tccCustomDevices: (this.tccCustomDevices && this.tccCustomDevices.length) ? this.tccCustomDevices : undefined,
       tccGradingMargin: (typeof this.tccGradingMargin === 'number') ? this.tccGradingMargin : undefined,
       tccFaultOpts: this.tccFaultOpts || undefined,
+      harmonicsLimits: this.harmonicsLimits === 'iec' ? 'iec' : undefined,
       // Pre-assessments field (the active assessment's inputs), still written
       // so an older build of the app opens the project with its inputs.
       lightningRisk: (() => {
@@ -1737,6 +1739,7 @@ const AppState = {
     this.tccCustomDevices = Array.isArray(data.tccCustomDevices) ? data.tccCustomDevices.filter(d => d && d.id && d.deviceType) : [];
     this.tccGradingMargin = (typeof data.tccGradingMargin === 'number' && data.tccGradingMargin > 0) ? data.tccGradingMargin : null;
     this.tccFaultOpts = (data.tccFaultOpts && typeof data.tccFaultOpts === 'object') ? data.tccFaultOpts : null;
+    this.harmonicsLimits = data.harmonicsLimits === 'iec' ? 'iec' : null;
     this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
     // Cable rate keys come from library ids now; move name-keyed rates once.
     if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);

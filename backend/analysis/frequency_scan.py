@@ -29,7 +29,7 @@ import math
 import numpy as np
 
 from . import loadflow as _lf
-from .harmonics import _branch_chains, _shunt_admittance_at_h, _build_yh
+from .harmonics import _branch_chains, bus_shunt_admittance, _build_yh
 
 # Peak/dip detection: a local extremum is a resonance only when it stands out
 # from the valley floor (or ceiling) around it by this ratio — filters the
@@ -102,9 +102,7 @@ def run_frequency_scan(project, bus_ids=None, h_max: float = 25.0,
     def shunts(h):
         out = {}
         for b in buses:
-            acc = complex(0, 0)
-            for comp in comps_at[b.id]:
-                acc += _shunt_admittance_at_h(comp, base_mva, h)
+            acc = bus_shunt_admittance(b, comps_at[b.id], base_mva, h)
             if acc != 0:
                 out[b.id] = acc
         return out
@@ -114,7 +112,11 @@ def run_frequency_scan(project, bus_ids=None, h_max: float = 25.0,
             "No grounded shunt elements (source, machine, load or capacitor) "
             "— the impedance scan has no reference to ground.")
 
-    has_cap = any(c.type in ("capacitor_bank", "svc", "statcom")
+    # A STATCOM is an inductive shunt at harmonic orders ([H3] in
+    # harmonics.py), so only capacitor banks and SVCs can resonate.
+    has_cap = any(c.type == "capacitor_bank"
+                  or (c.type == "svc" and str((c.props or {}).get(
+                      "device_mode", "statcom")).lower() == "svc")
                   for c in project.components)
     if not has_cap:
         warnings.append(

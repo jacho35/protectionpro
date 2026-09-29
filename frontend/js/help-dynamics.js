@@ -101,35 +101,48 @@ $$P_{st}\approx\frac{d}{d_{anchor}}\,r^{\,0.31},\qquad d_{anchor}=3.0\ \%$$
 $$P_{st}\approx\frac{2.4}{3.0}\times6^{0.31}=0.8\times1.743=\mathbf{1.39}$$
 <p>which exceeds 1.0: reduce $d$ (soft start, stiffer supply) or the repetition rate. At 1 per minute the same step gives $0.8$ and passes.</p></div>` },
 
-{ id: 'dyn-harmonics', group: 'dynamics', title: 'Harmonic analysis (IEEE 519)',
-  std: 'IEEE 519-2014 · Analyse ▸ Power quality',
-  kw: 'thd tdd vfd pulse 12-pulse ihd harmonic current injection distortion pcc rectifier',
+{ id: 'dyn-harmonics', group: 'dynamics', title: 'Harmonic analysis (IEEE 519 / IEC 61000)',
+  std: 'IEEE 519-2014 · IEC 61000-3-6 · IEC 61000-2-4 · Analyse ▸ Power quality',
+  kw: 'thd tdd vfd pulse 12-pulse ihd harmonic current injection distortion pcc rectifier iec 61000 planning level compatibility statcom',
   html: String.raw`
 <p>A frequency-domain harmonic-current-injection study. Non-linear loads (chiefly variable-frequency drives) are harmonic current sources; the network is re-solved at each harmonic order to find the voltage distortion that appears on every bus.</p>
 <h4>Method</h4>
-<p>At each characteristic order $h$ a drive injects $I_h=(I_h/I_1)\,I_1$ into its bus, with the spectrum taken from typical manufacturer values by rectifier pulse number and input reactor (6-pulse, 12-pulse cancelling 5th/7th, 18-pulse cancelling 11th/13th, or an active front end). The network is rebuilt at frequency $h\,f_1$ — all reactances scaled by $h$ — and solved as a nodal admittance system:</p>
+<p>At each characteristic order $h$ a drive injects $I_h=(I_h/I_1)\,I_1$ into its bus, with the spectrum taken from typical manufacturer values by rectifier pulse number and input reactor (6-pulse, 12-pulse cancelling 5th/7th, 18-pulse cancelling 11th/13th, or an active front end). A drive on a de-energised bus (no source reaches it) is left out and named in a warning. The network is rebuilt at frequency $h\,f_1$ — all reactances scaled by $h$ — and solved as a nodal admittance system:</p>
 $$\mathbf{Y}_h\,\mathbf{V}_h=\mathbf{I}_h$$
 <table class="help-ref-table"><thead><tr><th>Element</th><th>Harmonic model at order $h$</th></tr></thead><tbody>
 <tr><td>Utility, generator, machines</td><td>shunt $R+jhX''$ to ground (sub-transient / short-circuit reactance)</td></tr>
 <tr><td>Capacitor bank</td><td>susceptance $jhB$ — the usual driver of parallel resonance</td></tr>
 <tr><td>Tuned capacitor bank</td><td>series C-L-R branch</td></tr>
-<tr><td>Static load</td><td>parallel R-L (CIGRÉ type 2), giving frequency-dependent damping</td></tr>
+<tr><td>Static load, distribution board</td><td>parallel R-L (CIGRÉ type 2) on the demand-factored kVA; a <em>motor fraction</em> share is an induction-motor $X''=1/\text{LRC}$ instead</td></tr>
+<tr><td>STATCOM</td><td>its coupling reactance $jhX_c$ (a voltage-source converter holds no harmonic voltage)</td></tr>
+<tr><td>SVC</td><td>its solved fundamental output: capacitive $jhB$, inductive $B/h$</td></tr>
 <tr><td>Cable, transformer</td><td>series $R+jhX$ (leakage reactance, without the off-nominal tap ratio)</td></tr></tbody></table>
 <p>Sources of the same order are summed in phase (no diversity) — the conservative screening assumption.</p>
 <h4>Distortion indices</h4>
 $$\text{IHD}_h=\frac{|V_h|}{|V_1|}\times100\%,\qquad
 \text{THD}_V=\sqrt{\sum_{h\ge2}\text{IHD}_h^{\,2}},\qquad
 \text{TDD}=\frac{\sqrt{\sum_{h\ge2}I_h^{2}}}{I_L}\times100\%$$
-<p>$I_L$ is the maximum demand load current at the point of common coupling.</p>
-<h4>IEEE 519-2014 limits used</h4>
+<p>$I_L$ is the demand-factored load current at the point of common coupling (the utility connection); $I_h$ is the current that flows into the utility.</p>
+<h4>IEEE 519-2014 limits (default)</h4>
 <table class="help-ref-table"><thead><tr><th>Bus voltage</th><th>Individual $V_h$</th><th>$\text{THD}_V$</th></tr></thead><tbody>
 <tr><td>≤ 1 kV</td><td>5 %</td><td>8 %</td></tr>
 <tr><td>1 – 69 kV</td><td>3 %</td><td>5 %</td></tr>
 <tr><td>69 – 161 kV</td><td>1.5 %</td><td>2.5 %</td></tr>
 <tr><td>&gt; 161 kV</td><td>1.0 %</td><td>1.5 %</td></tr></tbody></table>
-<table class="help-ref-table"><thead><tr><th>$I_{sc}/I_L$ at the PCC</th><th>TDD limit</th></tr></thead><tbody>
-<tr><td>&lt; 20</td><td>5 %</td></tr><tr><td>20 – 50</td><td>8 %</td></tr><tr><td>50 – 100</td><td>12 %</td></tr><tr><td>100 – 1000</td><td>15 %</td></tr><tr><td>&gt; 1000</td><td>20 %</td></tr></tbody></table>
-<p>The current limits are Table 2 (120 V–69 kV); above 69 kV a stricter scale (×0.5, or ×0.25 above 161 kV) is applied conservatively.</p>` },
+<p>Current at the PCC, % of $I_L$ — Table 2 (120 V – 69 kV). Table 3 (69 – 161 kV) halves every value; Table 4 (&gt; 161 kV) has its own rows (Isc/IL &lt; 25: TDD 1.5 %, 25 – 50: 2.5 %, ≥ 50: 3.75 %). Every order is checked, not only the total; even orders are limited to 25 % of the odd limit.</p>
+<table class="help-ref-table"><thead><tr><th>$I_{sc}/I_L$</th><th>3 ≤ h &lt; 11</th><th>11 ≤ h &lt; 17</th><th>17 ≤ h &lt; 23</th><th>23 ≤ h &lt; 35</th><th>35 ≤ h ≤ 50</th><th>TDD</th></tr></thead><tbody>
+<tr><td>&lt; 20</td><td>4.0</td><td>2.0</td><td>1.5</td><td>0.6</td><td>0.3</td><td>5.0</td></tr>
+<tr><td>20 – 50</td><td>7.0</td><td>3.5</td><td>2.5</td><td>1.0</td><td>0.5</td><td>8.0</td></tr>
+<tr><td>50 – 100</td><td>10.0</td><td>4.5</td><td>4.0</td><td>1.5</td><td>0.7</td><td>12.0</td></tr>
+<tr><td>100 – 1000</td><td>12.0</td><td>5.5</td><td>5.0</td><td>2.0</td><td>1.0</td><td>15.0</td></tr>
+<tr><td>&gt; 1000</td><td>15.0</td><td>7.0</td><td>6.0</td><td>2.5</td><td>1.4</td><td>20.0</td></tr></tbody></table>
+<p>IEEE 519 places its limits at the PCC; the study screens every internal bus against the same voltage table.</p>
+<h4>IEC limits (Limits ▸ IEC in the results)</h4>
+<table class="help-ref-table"><thead><tr><th>Bus voltage</th><th>Basis</th><th>h5 / h7 / h11 / h13</th><th>17 ≤ h ≤ 49 (odd, non-triplen)</th><th>$\text{THD}_V$</th></tr></thead><tbody>
+<tr><td>≤ 1 kV</td><td>IEC 61000-2-4 Class 2 compatibility level</td><td>6 / 5 / 3.5 / 3 %</td><td>$2.27\cdot17/h-0.27$</td><td>8 %</td></tr>
+<tr><td>1 – 35 kV</td><td>IEC 61000-3-6 MV planning level</td><td>5 / 4 / 3 / 2.5 %</td><td>$1.9\cdot17/h-0.2$</td><td>6.5 %</td></tr>
+<tr><td>&gt; 35 kV</td><td>IEC 61000-3-6 HV-EHV planning level</td><td>2 / 2 / 1.5 / 1.5 %</td><td>$1.2\cdot17/h$</td><td>3 %</td></tr></tbody></table>
+<p>Triplen and even orders follow the standards' own tables. Every order is checked against its own limit; the results show the <em>critical order</em>, the one nearest its limit. IEC 61000-3-6 allocates current emission to each customer from planning data (agreed power, supply capacity) the model does not hold, so in IEC mode the PCC current is reported but not graded.</p>` },
 
 { id: 'dyn-freqscan', group: 'dynamics', title: 'Frequency scan (resonance)',
   std: 'Analyse ▸ Power quality',
