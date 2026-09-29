@@ -321,6 +321,12 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Line coupling review: drawn parallel overhead feeders coupled, LC1 (2026-09-29)
+- **Review.** `LINE_COUPLING_REVIEW.md` checks `line_coupling.py` against IEC 60909-3 eq. (34)–(36) / Table 2 and an independent 6-conductor phase-domain Carson model. The Carson depth, earth-return resistance and Z0_eff = [Z0s + (n−1)·Z0m]/n were exact (≤0.08 % vs phase domain on a 132 kV tower and 11/22 kV poles).
+- **LC1.** A double circuit drawn as two overhead feeders between the same buses got no zero-sequence coupling, so Ik1 was 36 % higher than the same line as `num_parallel = 2` (10 km Dog, 11 kV). Overhead feeders reaching the same two buses through closed switchgear are now coupled automatically (opt out with `z0_coupling: none`). The exact uncoupled equivalents are Z_i′ = 1/(Z⁻¹·1)_i, matching the phase domain for a non-identical pair to 0.03 %. Applied in fault analysis, the sequence Thevenin and unbalanced load flow, and disclosed.
+- **L1/L2** tooltips: 8 m spacing is a tower figure (about 2 m on an MV pole); soil resistivity only enters Z0m, so enter the ρ that Z0 was calculated at. **L3** (library x0 = 3.5·x1, no earth wires) is left for the library check.
+- No saved project has an overhead line. +15 tests in `test_line_coupling_review_fixes.py`. Cache-bust `3.5.151 → 3.5.152`.
+
 ### Conductor temperature review: fault study at 20 °C / end-of-fault temperature, CT1–CT2 (2026-09-29)
 - **Review.** `CONDUCTOR_TEMP_REVIEW.md` checks `conductor_temp.py` and which resistance temperature each study sees, against IEC 60909-0 §2.4 / §2.5 eq. (3) (in `IEC Standards/`), IEC 60228 and IEC 60364-4-43 Table 43A. The α values and the library bases are correct: armoured cables are exactly R20 × 1.275 / 1.282 / 1.20 across all 113 entries.
 - **CT1 (non-conservative).** The maximum-current study used the hot cable library (90 °C / 70 °C) and overhead lines at 75 °C, where §2.4 requires 20 °C. Far-end Ik″ was up to 21 % low (16 mm² Cu XLPE, 100 m), feeding duty, withstand, arc flash and grounding. Fixed in `fault._lines_at_study_temperature`, also for the open-conductor / simultaneous faults.
