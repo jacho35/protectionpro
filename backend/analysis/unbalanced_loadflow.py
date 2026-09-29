@@ -43,7 +43,8 @@ from .loadflow import (
     sync_motor_q_sign as _lf_sync_q_sign,
 )
 from .fault import _grounding_impedance
-from .line_coupling import (coupling_note, parallel_z0_scale,
+from .line_coupling import (coupling_note, parallel_z0_scale, equivalent_z0_ohm,
+                            set_drawn_coupling, drawn_coupling_scope, drawn_coupling_note,
                             z0_source_note)
 
 # Symmetrical component rotation operator: a = 1∠120°
@@ -205,9 +206,11 @@ def _cable_z0_pu(elem, base_mva, v_kv, freq_hz=50.0):
     length = float(elem.props.get("length_km", 1))
     # Scale from the PER-KM self impedance: the coupling ratio Z0m/Z0s is
     # length-invariant, and mutual_z0_per_km is itself a per-km quantity.
-    z0_self_per_km = _cable_z0_self_per_km(elem)
-    z0_ohm = z0_self_per_km * length * parallel_z0_scale(
-        elem.props, z0_self_per_km, freq_hz)
+    z0_ohm = equivalent_z0_ohm(elem.id)   # [LC1] drawn parallel group
+    if z0_ohm is None:
+        z0_self_per_km = _cable_z0_self_per_km(elem)
+        z0_ohm = z0_self_per_km * length * parallel_z0_scale(
+            elem.props, z0_self_per_km, freq_hz)
     return complex(z0_ohm.real / z_base, z0_ohm.imag / z_base)
 
 
@@ -236,6 +239,7 @@ SEQ_MAX_ITERATIONS = 50
 SEQ_TOLERANCE = 1e-9
 
 
+@drawn_coupling_scope
 def run_unbalanced_load_flow(
     project: ProjectData,
     method: str = "newton_raphson",
@@ -277,6 +281,10 @@ def run_unbalanced_load_flow(
         adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
 
     bus_of = _build_bus_groups(buses, adjacency, components, bus_idx)
+
+    # [LC1] Overhead feeders drawn in parallel between the same two buses
+    # share a tower — same coupled equivalents as fault analysis.
+    drawn_groups = set_drawn_coupling(components, adjacency, _cable_z0_self_per_km, freq_hz)
 
     # ── Discover branch chains ──
     processed_chains: set = set()
@@ -1038,6 +1046,13 @@ def run_unbalanced_load_flow(
     # the geometry that was assumed. One warning per cable (the reader needs to
     # know WHICH line), unlike fault analysis, whose flat study_assumptions
     # list has no element field and so groups by identical treatment.
+    for g in drawn_groups:
+        for comp in g:
+            warnings.append(LoadFlowWarning(
+                elementId=comp.id,
+                element_name=comp.props.get("name", comp.id),
+                message=drawn_coupling_note(g),
+            ))
     for comp in project.components:
         if comp.type != "cable":
             continue

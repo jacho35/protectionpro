@@ -32,6 +32,8 @@ with D_m the geometric mean distance between the two circuits' conductors.
 from __future__ import annotations
 
 import cmath
+import contextvars
+import functools
 import math
 
 # Default geometric mean distance between two circuits on a shared tower (m).
@@ -221,6 +223,152 @@ def coupling_note(props: dict, z0_self_per_km: complex,
     if vs:
         parts.append(f"; effective Z0 is {vs:.2f}× the uncoupled Z0/{n}")
     return "".join(parts) + "."
+
+
+# ── [LC1] Parallel circuits drawn as separate lines ───────────────────────
+# ``num_parallel`` couples the circuits of ONE feeder component. The same
+# double-circuit line drawn as two feeders between the same two buses used to
+# get no coupling at all — Z0 = Z0s/2 again, the naive divide this module
+# exists to replace (+36 % earth-fault current on a 10 km 11 kV Dog line).
+# Overhead feeders that reach the same pair of buses (through closed
+# switchgear only) are now taken to share a tower, the same physical default
+# as ``num_parallel``, unless either says ``z0_coupling: none``.
+#
+# Exact equivalent for k coupled branches joined at both ends: with the k×k
+# zero-sequence matrix Z (Z_ii each feeder's own Z0 incl. its num_parallel
+# treatment, Z_ij = Z0m·min(L_i, L_j)) and a common voltage V across all of
+# them, I = Z⁻¹·1·V, so feeder i behaves as an UNCOUPLED branch of
+# Z_i′ = 1 / (Z⁻¹·1)_i. The Z_i′ reproduce both the group impedance and each
+# feeder's current share, so the engines keep their ordinary per-branch
+# stamping. For two identical feeders Z_i′ = Z0s + Z0m (group = [Z0s+Z0m]/2,
+# exactly the num_parallel formula). The equivalents are held in a per-call
+# context (``drawn_coupling_scope``), never written into the project.
+
+_DRAWN_Z0 = contextvars.ContextVar("drawn_parallel_z0", default=None)
+_NODE_TYPES = ("bus", "distribution_board")
+_PASS_TYPES = ("cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct")
+
+
+def drawn_coupling_scope(fn):
+    """Run ``fn`` in its own context so equivalents it sets never leak out."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        return contextvars.copy_context().run(fn, *args, **kwargs)
+    return wrapper
+
+
+def equivalent_z0_ohm(comp_id: str) -> complex | None:
+    """[LC1] Uncoupled-equivalent Z0 (Ω, whole feeder) for a feeder in a drawn
+    parallel group of the current scope, else None."""
+    eq = _DRAWN_Z0.get()
+    return eq.get(comp_id) if eq else None
+
+
+def _is_overhead(props: dict) -> bool:
+    return str(props.get("construction", "")).strip().lower() == "overhead"
+
+
+def _nbr_ids(adjacency: dict, cid: str) -> list:
+    """Neighbour ids; adjacency entries may be ids or (id, port, port) tuples."""
+    return [a[0] if isinstance(a, (tuple, list)) else a for a in adjacency.get(cid, [])]
+
+
+def _end_node(start_id: str, via_id: str, components: dict, adjacency: dict):
+    """Bus reached from feeder ``via_id`` through ``start_id`` along closed
+    two-terminal switchgear, or None (open device, branch, or anything else)."""
+    prev, cur = via_id, start_id
+    for _ in range(50):
+        comp = components.get(cur)
+        if comp is None:
+            return None
+        if comp.type in _NODE_TYPES:
+            return cur
+        if comp.type not in _PASS_TYPES:
+            return None
+        if comp.type in ("cb", "switch") and comp.props.get("state", "closed") == "open":
+            return None
+        nxt = [n for n in _nbr_ids(adjacency, cur) if n != prev]
+        if len(nxt) != 1:
+            return None
+        prev, cur = cur, nxt[0]
+    return None
+
+
+def drawn_parallel_groups(components: dict, adjacency: dict) -> list[list]:
+    """Overhead feeders joined at both ends to the same pair of buses, grouped."""
+    by_ends: dict[tuple, list] = {}
+    for comp in components.values():
+        if comp.type != "cable" or not _is_overhead(comp.props):
+            continue
+        if coupling_mode(comp.props) == "none":
+            continue
+        nbrs = _nbr_ids(adjacency, comp.id)
+        if len(nbrs) != 2:
+            continue
+        ends = [_end_node(n, comp.id, components, adjacency) for n in nbrs]
+        if None in ends or ends[0] == ends[1]:
+            continue
+        by_ends.setdefault(tuple(sorted(ends)), []).append(comp)
+    return [g for g in by_ends.values() if len(g) > 1]
+
+
+def _pair_mutual_per_km(pa: dict, pb: dict, za: complex, zb: complex,
+                        freq_hz: float) -> complex:
+    """Z0m (Ω/km) between two feeders of a drawn group."""
+    if coupling_mode(pa) == "manual" and coupling_mode(pb) == "manual":
+        ka = min(max(_num(pa.get("z0_mutual_factor", 0.0), 0.0), 0.0), MAX_COUPLING_RATIO)
+        kb = min(max(_num(pb.get("z0_mutual_factor", 0.0), 0.0), 0.0), MAX_COUPLING_RATIO)
+        zm = 0.5 * (ka + kb) * 0.5 * (za + zb)
+    else:
+        spacing = 0.5 * (_num(pa.get("circuit_spacing_m"), DEFAULT_CIRCUIT_SPACING_M)
+                         + _num(pb.get("circuit_spacing_m"), DEFAULT_CIRCUIT_SPACING_M))
+        rho = 0.5 * (_num(pa.get("soil_resistivity_ohm_m"), DEFAULT_SOIL_RESISTIVITY)
+                     + _num(pb.get("soil_resistivity_ohm_m"), DEFAULT_SOIL_RESISTIVITY))
+        zm = mutual_z0_per_km(spacing, rho, freq_hz)
+    lim = MAX_COUPLING_RATIO * min(abs(za), abs(zb))
+    if abs(zm) > lim > 0:
+        zm = zm * (lim / abs(zm))
+    return zm
+
+
+def set_drawn_coupling(components: dict, adjacency: dict, self_z0_per_km,
+                       freq_hz: float = 50.0) -> list[list]:
+    """[LC1] Compute the uncoupled equivalents for every drawn parallel group
+    and make them visible to ``equivalent_z0_ohm`` for the rest of the current
+    scope. ``self_z0_per_km(comp)`` is the calling engine's own Z0 rule (the
+    two engines' fallbacks differ). Returns the groups (for disclosure)."""
+    import numpy as np
+    eq: dict[str, complex] = {}
+    groups = drawn_parallel_groups(components, adjacency)
+    for g in groups:
+        k = len(g)
+        zs = [complex(self_z0_per_km(c)) for c in g]
+        lens = [max(0.0, _num(c.props.get("length_km", 1), 1.0)) for c in g]
+        Z = np.zeros((k, k), dtype=complex)
+        for i, c in enumerate(g):
+            Z[i, i] = zs[i] * lens[i] * parallel_z0_scale(c.props, zs[i], freq_hz)
+            for j in range(i + 1, k):
+                zm = _pair_mutual_per_km(c.props, g[j].props, zs[i], zs[j], freq_hz)
+                Z[i, j] = Z[j, i] = zm * min(lens[i], lens[j])
+        try:
+            y = np.linalg.solve(Z, np.ones(k, dtype=complex))
+        except np.linalg.LinAlgError:
+            continue
+        if np.any(np.abs(y) < 1e-12):
+            continue
+        for i, c in enumerate(g):
+            eq[c.id] = complex(1.0 / y[i])
+    _DRAWN_Z0.set(eq or None)
+    return groups
+
+
+def drawn_coupling_note(group) -> str:
+    """One-line disclosure for a drawn parallel group (no element names)."""
+    k = len(group)
+    return (f"{k} overhead feeders between the same two buses are taken to share "
+            f"a tower: zero-sequence mutual coupling applied (Carson earth return; "
+            f"exact uncoupled equivalents for the paralleled group). Set "
+            f"z0_coupling: none on a feeder that runs on its own route.")
 
 
 def phase_angle_deg(z: complex) -> float:

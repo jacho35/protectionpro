@@ -134,6 +134,10 @@ def _lines_at_study_temperature(project: ProjectData, conductor_temperature_c) -
     return ProjectData(**data)
 
 
+from .line_coupling import drawn_coupling_scope
+
+
+@drawn_coupling_scope
 def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_type: str = None,
                        thermal_duration_s: float = 1.0, voltage_factor: float = None,
                        conductor_temperature_c=None) -> FaultResults:
@@ -192,6 +196,12 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
             (w.toComponent, w.fromPort, w.toPort))
         adjacency.setdefault(w.toComponent, []).append(
             (w.fromComponent, w.toPort, w.fromPort))
+
+    # [LC1] Overhead feeders drawn in parallel between the same two buses
+    # share a tower: exact coupled equivalents for the zero-sequence network.
+    from .line_coupling import set_drawn_coupling
+    _drawn_groups = set_drawn_coupling(components, adjacency, _cable_z0_self_per_km,
+                                       float(project.frequency or 50))
 
     # Identify buses — filter to selected bus if specified
     # distribution_board is treated as a bus-like node (busbar + lumped load),
@@ -650,6 +660,12 @@ def run_fault_analysis(project: ProjectData, fault_bus_id: str = None, fault_typ
     _assumptions.extend(_converter_assumptions(project))
     _assumptions.extend(_steady_state_assumptions(project))
     _assumptions.extend(_coupling_assumptions(project))
+    if _drawn_groups:
+        from .line_coupling import drawn_coupling_note
+        for _g in _drawn_groups[:MAX_COUPLING_ASSUMPTIONS]:
+            _names = ", ".join(str(c.props.get("name") or c.id) for c in _g)
+            _assumptions.append(f"Parallel zero-sequence coupling — {_names}: "
+                                f"{drawn_coupling_note(_g)}")
     _assumptions.extend(_z0_source_assumptions(project))
     return FaultResults(
         buses=results,
@@ -1639,9 +1655,12 @@ def _cable_z0(comp, base_mva, v_kv, freq_hz=50.0):
         v_kv = comp.props.get("voltage_kv", 11)
     z_base = (v_kv ** 2) / base_mva
     length = comp.props.get("length_km", 1)
-    z0_self_per_km = _cable_z0_self_per_km(comp)
-    z0_ohm = z0_self_per_km * length * parallel_z0_scale(
-        comp.props, z0_self_per_km, freq_hz)
+    from .line_coupling import equivalent_z0_ohm
+    z0_ohm = equivalent_z0_ohm(comp.id)   # [LC1] drawn parallel group
+    if z0_ohm is None:
+        z0_self_per_km = _cable_z0_self_per_km(comp)
+        z0_ohm = z0_self_per_km * length * parallel_z0_scale(
+            comp.props, z0_self_per_km, freq_hz)
     return complex(z0_ohm.real / z_base, z0_ohm.imag / z_base)
 
 
@@ -2807,6 +2826,7 @@ def _thevenin_z1_at_bus(project, bus_id, c, exclude_motor_paths, exclude_source_
     return z_kk if z_kk is not None else z_paths
 
 
+@drawn_coupling_scope
 def thevenin_sequence_at_bus(project, bus_id, c=1.0, exclude_motor_paths=False,
                              exclude_source_ids=()):
     """Positive/negative/zero-sequence Thevenin impedances (Z1, Z2, Z0) at a
@@ -2835,6 +2855,10 @@ def thevenin_sequence_at_bus(project, bus_id, c=1.0, exclude_motor_paths=False,
             (w.toComponent, w.fromPort, w.toPort))
         adjacency.setdefault(w.toComponent, []).append(
             (w.fromComponent, w.toPort, w.fromPort))
+
+    from .line_coupling import set_drawn_coupling
+    set_drawn_coupling(components, adjacency, _cable_z0_self_per_km,   # [LC1]
+                       float(getattr(project, "frequency", 50) or 50))
 
     excluded = set(exclude_source_ids)
 
