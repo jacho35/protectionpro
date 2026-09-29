@@ -318,6 +318,24 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### Compliance report review: C1–C9 and lesser notes fixed (2026-09-29)
+- **Review.** `COMPLIANCE_REVIEW.md` checks every rule in `compliance.js` against IEC 60364-4-41 / 4-43, IEC 60909-0, IEC 60076-1, IEC 62271-1 and SANS 10142-1. The evidence runs the real module on real fault-engine results (`testing/compliance-review/`). The Table 41.1 times, the circuit-type scope, the minimum-current basis and the breaking basis were already correct; nine defects were found.
+- **Fixed:**
+  - **C1.** Earth-fault disconnection is judged at the far end of each device's own circuit. It used to be judged at the device's own bus, where an outgoing feeder always trips instantly. A C32 MCB on 60 m of 4 mm² passed at 1026 A; it takes 1.98 s at the far end's 287 A.
+  - **C2.** Cable withstand is now checked at the largest current (any fault type, Ith) and at the far-end minimum, using the supply-side device only, as the Cable Sizing study does. It used to be checked at the far-end Ik3 of the maximum study only.
+  - **C3.** §433.1 now also checks I2 ≤ 1.45·Iz (a gG fuse needs In ≤ 0.91·Iz). In is the breaker's setting Ir, and Iz covers parallel runs.
+  - **C4.** Earthing is judged per LV installation. A TT source elsewhere no longer turns off the TN checks, and RCDs count only in their own installation. A breaker earth-fault release's pickup counts as IΔn.
+  - **C5.** The vector group is case-sensitive: YNd11 has no LV neutral. For a star winding, the LV grounding setting decides.
+  - **C6.** The maximum-demand check reads real load props. It had never produced a result.
+  - **C7.** MV Ur is compared with Um.
+  - **C8.** The on-diagram breaking flag uses the report's basis.
+  - **C9.** An HV-side device carries the HV current of a transformer branch.
+  - Lesser: no spurious "no Swing bus" warning (L1); library cables are size-checked (L2); clause citations fixed (L3); the motor start check uses the bottom of the magnetic band (L4); validation rows name their component (L5). Relay-tripped breakers now point to Cable Sizing / TCC instead of passing on a default trip unit.
+- **Behaviour change for saved projects.** Re-open the Compliance Report. Expect new earth-fault and withstand failures on long circuits, new I2 failures for fuses, and fewer false failures for adjustable breakers and parallel runs.
+  - Cross-module (X1, X2): Cable Sizing's far-end minimum study now uses 70 °C conductors (IEC 60909-0 §5.3.1), where it had used 20 °C and read 1222 A instead of 1026 A. A breaker's instantaneous clearing time now follows IEEE 1584 Table 1 in both frontend and backend: 0.025 s for MCB/MCCB, 0.05 s for ACB. It had been 20 ms in the frontend and 50 ms in the backend, so the two studies disagreed on the same cable.
+- **Behaviour change (X1, X2).** Re-run Cable Sizing and arc flash. Arcing time halves at buses cleared by MCB/MCCB instantaneous trips.
+- `frontend/tests/test_compliance.mjs`: 35 assertions, now in CI. `backend/tests/test_compliance_review_followups.py`: 6 tests. Four tests that had pinned the old 50 ms figure were re-baselined.
+
 ### PT (voltage transformer) model review: PT1–PT4 and lesser notes fixed (2026-09-29)
 - **Review.** `PT_MODEL_REVIEW.md` — `pt_model.py` and the duty-check PT table against IEC 61869-3:2011 (Tables 301–303, burden ranges) and IEC 61869-1 (earth fault factor). Class limits and the range II burden band correct; four defects.
 - **Fixed:**

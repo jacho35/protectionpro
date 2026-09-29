@@ -41,7 +41,8 @@ jobs:
   frontend-unit:
     # Node tests that evaluate the real frontend modules in a vm sandbox:
     # TCC curves against the IEC gates (TCC review TC1-TC3) and distance
-    # zone grading. (frontend/tests/test_migration.mjs is not wired in yet —
+    # zone grading, and the compliance rules (compliance review C1-C9).
+    # (frontend/tests/test_migration.mjs is not wired in yet —
     # it needs a DEFAULT_VOLTAGE_FACTOR stub.)
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +54,8 @@ jobs:
         run: node frontend/tests/test_tcc_curves.mjs
       - name: Distance zone grading
         run: node frontend/tests/test_distance_grading.mjs
+      - name: Compliance rules
+        run: node frontend/tests/test_compliance.mjs
 
   ui-templates:
     # Loads every Verification / Standards template in the real app (headless

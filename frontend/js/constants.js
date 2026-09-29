@@ -801,7 +801,7 @@ const FUSE_RATINGS_GG = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250
 //
 // Thermal region model: t = k / ((I/Ir)^2 - 1)
 // where k = long_time_delay class factor, Ir = trip_rating × thermal_pickup
-// Magnetic region: fixed trip time (typically 20ms for MCCB, configurable for ACB)
+// Magnetic region: fixed total clearing time per type (CB_INSTANTANEOUS_CLEAR_S)
 
 const CB_TRIP_CLASSES = {
   // Long-time delay band factors emulating generic electronic-trip-unit LTD bands.
@@ -827,6 +827,17 @@ const CB_CONV_NON_TRIP = { mcb: 1.13, mccb: 1.05, acb: 1.05 };
 // gave 64–66 s, outside it. t(1.45 In) = 190 s (< 1 h).
 const MCB_THERMAL_K = 30 * (2.55 * 2.55 - 1.13 * 1.13);
 
+// Total clearing time (s) of a breaker's own instantaneous element, IEEE 1584
+// Table 1: moulded-case integral trip 1.5 cycles = 0.025 s (MCB, MCCB), LV
+// power / insulated-case breaker 3 cycles = 0.050 s (ACB). Mirrored by
+// arcflash._CB_INSTANTANEOUS_CLEAR_S — the frontend used 20 ms for every
+// type and the backend 50 ms, so compliance and Cable Sizing disagreed on
+// the same cable near the adiabatic limit.
+const CB_INSTANTANEOUS_CLEAR_S = { mcb: 0.025, mccb: 0.025, acb: 0.05 };
+function cbInstantaneousClearTime(cbType) {
+  return CB_INSTANTANEOUS_CLEAR_S[cbType] || CB_INSTANTANEOUS_CLEAR_S.mccb;
+}
+
 /**
  * Calculate CB trip time for a given current.
  * @param {object} params - { cb_type, trip_rating_a, thermal_pickup, magnetic_pickup,
@@ -851,7 +862,7 @@ function cbTripTime(params, currentA) {
 
     // Instantaneous region (highest priority)
     if (instPickup > 0 && currentA >= instPickup) {
-      return 0.02;  // 20ms instantaneous
+      return cbInstantaneousClearTime('acb');
     }
     // Short-time region
     if (stPickup > 0 && currentA >= stPickup) {
@@ -861,7 +872,7 @@ function cbTripTime(params, currentA) {
 
   // MCCB magnetic instantaneous
   if (currentA >= Im) {
-    return 0.02;  // 20ms magnetic trip
+    return cbInstantaneousClearTime(cbType);
   }
 
   // Thermal (long-time) region: I²t inverse-time characteristic with its

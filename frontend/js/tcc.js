@@ -3076,7 +3076,7 @@ const TCC = {
     }
     ctx.stroke();
 
-    const magTime = 0.02;  // 20ms
+    const magTime = cbInstantaneousClearTime(p.cb_type);
 
     if (!hasST) {
       // --- Magnetic (instantaneous) region: vertical drop + horizontal line ---
@@ -3146,11 +3146,11 @@ const TCC = {
         if (xInst >= this.plotLeft && xInst <= this.plotRight) {
           ctx.beginPath();
           ctx.moveTo(xInst, this._timeToY(stDelay));
-          ctx.lineTo(xInst, this._timeToY(0.02));
+          ctx.lineTo(xInst, this._timeToY(cbInstantaneousClearTime('acb')));
           ctx.stroke();
-          // Horizontal at 20ms
+          // Horizontal at the instantaneous clearing time
           ctx.beginPath();
-          const y20 = this._timeToY(0.02);
+          const y20 = this._timeToY(cbInstantaneousClearTime('acb'));
           ctx.moveTo(xInst, y20);
           ctx.lineTo(this.plotRight, y20);
           ctx.stroke();
@@ -3711,7 +3711,7 @@ const TCC = {
     }
 
     // Magnetic pickup handle: on the vertical drop at Im (midpoint between thermal and instantaneous)
-    const magTime = (p.cb_type === 'acb') ? 0.01 : 0.02;
+    const magTime = cbInstantaneousClearTime(p.cb_type);
     const scaledIm = this._scaleCurrent(Im, dev);
     const mx = this._currentToX(scaledIm);
     // Compute vertical drop range: from thermal curve down to magnetic flat line

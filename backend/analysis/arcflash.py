@@ -668,6 +668,19 @@ _SOURCE_TYPES = {"utility", "generator", "solar_pv", "wind_turbine"}
 # time — a typical 3-5 cycle breaker opens in 60-100 ms.
 _BREAKER_OPENING_TIME_S = 0.08
 
+# Total clearing time (s) of a breaker's own instantaneous element, IEEE 1584
+# Table 1: moulded-case integral trip 1.5 cycles = 0.025 s (MCB, MCCB), LV
+# power / insulated-case breaker 3 cycles = 0.050 s (ACB). Mirrors
+# CB_INSTANTANEOUS_CLEAR_S in constants.js — this used 50 ms for every type
+# and the frontend 20 ms, so Cable Sizing and compliance disagreed.
+_CB_INSTANTANEOUS_CLEAR_S = {"mcb": 0.025, "mccb": 0.025, "acb": 0.05}
+
+
+def _cb_instantaneous_clear_time(cb_type):
+    return _CB_INSTANTANEOUS_CLEAR_S.get(str(cb_type or "mccb").lower(),
+                                         _CB_INSTANTANEOUS_CLEAR_S["mccb"])
+
+
 # Maximum clearing time per IEEE 1584 (2 s arc-sustainability assumption)
 _MAX_CLEARING_TIME_S = 2.0
 
@@ -988,13 +1001,14 @@ def _cb_self_clearing_time(props, current_a):
     [PROT-11] Mirrors the frontend cbTripTime() priority (constants.js):
 
       ACB (electronic trip unit), referenced to Ir = trip_rating × thermal_pickup:
-        1. instantaneous:  instantaneous_pickup > 0 and I ≥ Ii×Ir → ~0.05 s
+        1. instantaneous:  instantaneous_pickup > 0 and I ≥ Ii×Ir → 0.05 s
         2. short-time:     short_time_pickup > 0 and I ≥ Isd×Ir
                            → short_time_delay + breaker opening time
                            (an ST-only ZSI/selectivity setup clears at the
                            intentional ST delay, NOT instantaneously)
       All types (MCCB magnetic / ACB fallback):
-        3. magnetic:       I ≥ magnetic_pickup×Ir → 0.05 s
+        3. magnetic:       I ≥ magnetic_pickup×Ir → 0.025 s MCB/MCCB,
+                           0.05 s ACB (IEEE 1584 Table 1)
         4. thermal region: I²t inverse-time t = k/(M²−Mnt²) ([TC3]),
            exactly mirroring the frontend cbTripTime() TCC model ([PS-9] —
            previously a 0.5/1.0/2.0 s bucket heuristic that diverged from
@@ -1011,15 +1025,15 @@ def _cb_self_clearing_time(props, current_a):
         st_pickup = float(props.get("short_time_pickup", 0) or 0) * ir
         st_delay = float(props.get("short_time_delay", 0.1) or 0.1)
         if inst_pickup > 0 and current_a >= inst_pickup:
-            return 0.05  # instantaneous incl. breaker operating time
+            return _cb_instantaneous_clear_time("acb")
         if st_pickup > 0 and current_a >= st_pickup:
             # Intentional short-time delay + breaker opening time
             return st_delay + _BREAKER_OPENING_TIME_S
 
     inst_threshold = ir * magnetic_pickup  # primary amps
     if current_a > 0 and current_a >= inst_threshold:
-        # Instantaneous trip incl. breaker operating time
-        return 0.05
+        # Instantaneous trip, total clearing per IEEE 1584 Table 1
+        return _cb_instantaneous_clear_time(props.get("cb_type", "mccb"))
     # [PS-9] Thermal (long-time) region: the same I²t inverse-time
     # characteristic the frontend TCC plots (cbTripTime in constants.js).
     # [TC3] Asymptote at the conventional non-tripping current — 1.13 In for

@@ -133,7 +133,9 @@ class TestCS2ClearingTimeFromTheDevice:
         from backend.analysis.cable_sizing import _device_trip_time
         cb = _c("cb", "cb", {"trip_rating_a": 160, "magnetic_pickup": 10,
                              "cb_type": "mccb", "long_time_delay": 10})
-        assert _device_trip_time(cb, 5000.0, {}, {}, {}) == pytest.approx(0.05)
+        # MCCB instantaneous total clearing, IEEE 1584 Table 1 (was 0.05, the
+        # ACB figure — re-baselined in the compliance-review follow-up)
+        assert _device_trip_time(cb, 5000.0, {}, {}, {}) == pytest.approx(0.025)
         assert _device_trip_time(cb, 800.0, {}, {}, {}) > 10.0
 
 

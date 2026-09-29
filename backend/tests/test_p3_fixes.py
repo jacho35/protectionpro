@@ -250,7 +250,10 @@ class TestPS9CBThermalRegion:
         assert _cb_self_clearing_time(self.PROPS, 50.0) == 10000.0
 
     def test_magnetic_region_unchanged(self):
-        assert _cb_self_clearing_time(self.PROPS, 1500.0) == 0.05
+        # Re-baselined by the compliance-review follow-up: an MCCB's integral
+        # instantaneous trip clears in 1.5 cycles = 0.025 s (IEEE 1584 Table
+        # 1); 0.05 s was the ACB / insulated-case figure applied to every type.
+        assert _cb_self_clearing_time(self.PROPS, 1500.0) == 0.025
 
     def test_class_5_band(self):
         props = dict(self.PROPS, long_time_delay=5)

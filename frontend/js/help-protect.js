@@ -281,23 +281,23 @@ $$L_A=r_tL_T\frac{n_z}{n_t}\frac{t_z}{8760},\qquad L_B=r_pr_fh_zL_F\frac{n_z}{n_
 <p>Cross-checks the analysis results against standards limits and produces a pass / warning / fail report. Each section says what to run first; a check whose input is missing reports <em>info</em> with how to supply it, never a silent pass.</p>
 <h4>Sections</h4>
 <table class="help-ref-table"><thead><tr><th>Section</th><th>Test</th></tr></thead><tbody>
-<tr><td>Network validation</td><td>topology is valid: components connected, sources and buses present, a swing bus defined</td></tr>
+<tr><td>Network validation</td><td>topology is valid: components connected, sources and buses present (the load flow picks each island's slack from its sources, so a bus labelled Swing is optional)</td></tr>
 <tr><td>Fault duty (IEC 60909)</td><td>breaking / making capability against $I_b$ and $i_p$ — see <a href="#" data-help="prot-duty">Duty check</a></td></tr>
 <tr><td>Voltage compliance (IEC 60038)</td><td>bus voltage within ±10 % of nominal (LV: SANS 10142-1 Cl. 5.3.2 / NRS 048-2)</td></tr>
 <tr><td>Thermal loading</td><td>$|I|/I_{rated}$ for cables, $|S|/S_r$ for transformers</td></tr>
-<tr><td>Cable short-circuit withstand</td><td>adiabatic $S\ge I_{th}\sqrt t/k$ — see <a href="#" data-help="cable-sizing">Cable sizing</a></td></tr>
-<tr><td>Protection device ratings</td><td>rated current, voltage and breaking capacity</td></tr>
+<tr><td>Cable short-circuit withstand (IEC 60364-4-43 §434.5.2)</td><td>adiabatic $t\le(kS/I_{th})^2$ with $I_{th}=I\sqrt{m+1}$, checked twice with the supply-side device's own curve: at the <em>largest</em> fault current of any type at either end, and at the <em>smallest</em> far-end current of the minimum study. A far-end fault the device does not clear within 5 s passes only if the device gives §433.1 overload protection of the cable (§435.1). $k$ per Table 43A (PVC above 300 mm²: 103 Cu / 68 Al). Relay-tripped breakers are evaluated by <a href="#" data-help="cable-sizing">Cable sizing</a></td></tr>
+<tr><td>Protection device ratings</td><td>rated current against the load current on the device's side of any transformer; rated voltage — MV $U_r\ge U_m$ (IEC 62271-1: 12 kV on an 11 kV system), LV $U_e\ge U_n$</td></tr>
 <tr><td>Motor circuit protection (IEC 60947-4-1)</td><td>protective device against motor full-load current, on dedicated single-motor feeders only (a shared feeder can legitimately be rated below the sum of its loads)</td></tr>
 <tr><td>PV DC string design (IEC 62548)</td><td>string $V_{oc}$ at the coldest site temperature and $V_{mp}$ at the hottest cell temperature against the inverter's DC-maximum and MPPT windows; MPPT input current with a 1.25 factor</td></tr>
 <tr><td>SANS 10142-1</td><td>see below</td></tr></tbody></table>
 <h4>SANS 10142-1 checks</h4>
 <ul>
-<li><strong>Cl. 5.5.2 — overcurrent coordination:</strong> $I_n\le I_z$ (device rating not above cable ampacity).</li>
+<li><strong>Cl. 5.5.2 / IEC 60364-4-43 §433.1 — overload coordination:</strong> $I_n\le I_z$ and $I_2\le1.45\,I_z$. $I_n$ is a breaker's setting $I_r$ (not its frame), $I_z$ covers all parallel runs; $I_2$ = 1.45 $I_n$ (MCB), 1.30 $I_r$ (MCCB/ACB), 1.6 $I_n$ (gG fuse ≥ 16 A — so a fuse needs $I_n\le0.91\,I_z$).</li>
 <li><strong>Cl. 5.6.3 — minimum conductor size:</strong> 1.5 mm² Cu for fixed wiring; 2.5 mm² for socket-outlet circuits.</li>
-<li><strong>Cl. 8.3.1 — neutral earthing:</strong> LV source neutral earthed for TN/TT; insulation monitoring for IT.</li>
-<li><strong>Cl. 6 / IEC 60364-1 §312 — earthing system:</strong> RCD not permitted on a PEN (TN-C); RCD mandatory on TT with $R_A\,I_{\Delta n}\le50$ V; IMD required on IT.</li>
-<li><strong>Appendix B / NRS 034 — maximum demand:</strong> demand must not exceed supply capacity; warning above 80 % utilisation.</li>
-<li><strong>Cl. 5.5.6 — earth-fault disconnection:</strong> the device's operating time evaluated at the earth-fault current must meet the limit — 0.4 s for final circuits up to 32 A, 5 s for distribution circuits. Uses the <em>minimum</em> current basis ($c_{min}=0.95$, hot conductors; IEC 60909-0 §5.3.1). For TN with no evaluable curve, the criterion falls back to $I_{k1}\ge10\,I_n$.</li>
+<li><strong>Cl. 8.3.1 — neutral earthing:</strong> LV source neutral earthed for TN/TT; insulation monitoring for IT. The LV winding is read from the lower-case letters of the vector group (Dyn11 → yn, YNd11 → d: no LV neutral); for a star winding the LV grounding setting decides.</li>
+<li><strong>Cl. 6 / IEC 60364-1 §312 — earthing system:</strong> RCD not permitted on a PEN (TN-C); RCD required on TT with $R_A\,I_{\Delta n}\le50$ V (IEC 60364-4-41 §411.5.3); IMD required on IT. Each LV source is judged with the residual devices of its own installation (everything reachable without crossing a transformer): board earth-leakage groups and breaker earth-fault releases, whose pickup counts as $I_{\Delta n}$.</li>
+<li><strong>Appendix B / NRS 034 — maximum demand:</strong> the nameplate demand of the LV loads (× demand factor; induction motors at input kVA) must not exceed the installed LV transformer capacity; warning above 80 % utilisation.</li>
+<li><strong>Cl. 5.5.6 — earth-fault disconnection:</strong> each breaker or fuse is judged at the <em>far end of its own circuit</em> — the lowest earth-fault current among the buses (or bus-less load terminals) on its load side — and its operating time there must meet the limit: Table 41.1 for final circuits (0.4 s at 230 V; socket circuits up to 63 A, fixed equipment up to 32 A), 5 s for distribution circuits. Uses the <em>minimum</em> current basis ($c_{min}=0.95$, hot conductors; IEC 60909-0 §5.3.1). Applies to circuits in TN installations; TT and IT circuits are covered by the earthing-system check. A breaker's earth-fault release counts. For TN with no evaluable curve, the criterion falls back to $I_{k1}\ge10\,I_n$.</li>
 <li><strong>Cl. 6.6 — voltage drop:</strong> total from the point of supply (3 % lighting, 5 % general); the per-way check is in <a href="#" data-help="cable-dbcheck">DB circuit check</a>.</li>
 </ul>` }
 
