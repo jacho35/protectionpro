@@ -675,28 +675,28 @@ _MAX_CLEARING_TIME_S = 2.0
 # Pre-arcing (minimum melting) time-current points: [current_A, time_s].
 # Ported VERBATIM from frontend/js/constants.js FUSE_CURVES_GG so the arc
 # flash engine and the frontend TCC display evaluate the same characteristic.
-# One generic gG shape scaled per rating; the fast end is anchored so the
-# pre-arcing time reaches 0.1 s at 8x In, satisfying the IEC 60269-1 0.1 s
-# pre-arcing gate (previously ~0.17 s at the gate). Not the per-rating min/max
-# corridor of IEC 60269-1 Table 4 — use manufacturer data for precise grading.
+# [TC1] Fitted per rating to the IEC 60269-1 Table 3 gG gates
+# (testing/tcc-review/build_gg_curves.py) — the previous single scaled shape
+# pre-arced faster than Imin(0.1 s) for every rating from 100 A, understating
+# the arc-flash clearing time. See constants.js for the construction.
 _FUSE_CURVES_GG = {
-    16:  [[25, 600], [32, 100], [40, 30], [50, 8], [80, 1.5], [100, 0.5], [125, 0.1], [160, 0.04], [250, 0.01], [400, 0.004]],
-    20:  [[32, 600], [40, 100], [50, 30], [63, 8], [100, 1.5], [125, 0.5], [160, 0.1], [200, 0.04], [315, 0.01], [500, 0.004]],
-    25:  [[40, 600], [50, 100], [63, 30], [80, 8], [125, 1.5], [160, 0.5], [200, 0.1], [250, 0.04], [400, 0.01], [630, 0.004]],
-    32:  [[50, 600], [63, 100], [80, 30], [100, 8], [160, 1.5], [200, 0.5], [250, 0.1], [315, 0.04], [500, 0.01], [800, 0.004]],
-    40:  [[63, 600], [80, 100], [100, 30], [125, 8], [200, 1.5], [250, 0.5], [315, 0.1], [400, 0.04], [630, 0.01], [1000, 0.004]],
-    50:  [[80, 600], [100, 100], [125, 30], [160, 8], [250, 1.5], [315, 0.5], [400, 0.1], [500, 0.04], [800, 0.01], [1250, 0.004]],
-    63:  [[100, 600], [125, 100], [160, 30], [200, 8], [315, 1.5], [400, 0.5], [500, 0.1], [630, 0.04], [1000, 0.01], [1600, 0.004]],
-    80:  [[125, 600], [160, 100], [200, 30], [250, 8], [400, 1.5], [500, 0.5], [630, 0.1], [800, 0.04], [1250, 0.01], [2000, 0.004]],
-    100: [[160, 600], [200, 100], [250, 30], [315, 8], [500, 1.5], [630, 0.5], [800, 0.1], [1000, 0.04], [1600, 0.01], [2500, 0.004]],
-    125: [[200, 600], [250, 100], [315, 30], [400, 8], [630, 1.5], [800, 0.5], [1000, 0.1], [1250, 0.04], [2000, 0.01], [3150, 0.004]],
-    160: [[250, 600], [315, 100], [400, 30], [500, 8], [800, 1.5], [1000, 0.5], [1250, 0.1], [1600, 0.04], [2500, 0.01], [4000, 0.004]],
-    200: [[315, 600], [400, 100], [500, 30], [630, 8], [1000, 1.5], [1250, 0.5], [1600, 0.1], [2000, 0.04], [3150, 0.01], [5000, 0.004]],
-    250: [[400, 600], [500, 100], [630, 30], [800, 8], [1250, 1.5], [1600, 0.5], [2000, 0.1], [2500, 0.04], [4000, 0.01], [6300, 0.004]],
-    315: [[500, 600], [630, 100], [800, 30], [1000, 8], [1600, 1.5], [2000, 0.5], [2500, 0.1], [3150, 0.04], [5000, 0.01], [8000, 0.004]],
-    400: [[630, 600], [800, 100], [1000, 30], [1250, 8], [2000, 1.5], [2500, 0.5], [3150, 0.1], [4000, 0.04], [6300, 0.01], [10000, 0.004]],
-    500: [[800, 600], [1000, 100], [1250, 30], [1600, 8], [2500, 1.5], [3150, 0.5], [4000, 0.1], [5000, 0.04], [8000, 0.01], [12500, 0.004]],
-    630: [[1000, 600], [1250, 100], [1600, 30], [2000, 8], [3150, 1.5], [4000, 0.5], [5000, 0.1], [6300, 0.04], [10000, 0.01], [16000, 0.004]],
+    16:  [(25.6, 600), (46.3, 7.07), (113, 0.1), (141, 0.04), (226, 0.01), (353, 0.004)],
+    20:  [(32, 600), (59.7, 7.07), (148, 0.1), (185, 0.04), (297, 0.01), (464, 0.004)],
+    25:  [(40, 600), (75.6, 7.07), (197, 0.1), (247, 0.04), (395, 0.01), (617, 0.004)],
+    32:  [(51.2, 600), (106, 7.07), (265, 0.1), (331, 0.04), (529, 0.01), (827, 0.004)],
+    40:  [(64, 600), (134, 7.07), (342, 0.1), (428, 0.04), (684, 0.01), (1070, 0.004)],
+    50:  [(80, 600), (177, 7.07), (462, 0.1), (578, 0.04), (924, 0.01), (1440, 0.004)],
+    63:  [(101, 600), (226, 7.07), (607, 0.1), (759, 0.04), (1210, 0.01), (1900, 0.004)],
+    80:  [(128, 600), (302, 7.07), (819, 0.1), (1020, 0.04), (1640, 0.01), (2560, 0.004)],
+    100: [(160, 600), (410, 7.07), (1090, 0.1), (1360, 0.04), (2180, 0.01), (3410, 0.004)],
+    125: [(200, 600), (504, 7.07), (1450, 0.1), (1810, 0.04), (2900, 0.01), (4530, 0.004)],
+    160: [(256, 600), (661, 7.07), (1940, 0.1), (2420, 0.04), (3880, 0.01), (6060, 0.004)],
+    200: [(320, 600), (873, 7.07), (2560, 0.1), (3190, 0.04), (5110, 0.01), (7990, 0.004)],
+    250: [(400, 600), (1110, 7.07), (3410, 0.1), (4270, 0.04), (6830, 0.01), (10700, 0.004)],
+    315: [(504, 600), (1520, 7.07), (4530, 0.1), (5660, 0.04), (9060, 0.01), (14200, 0.004)],
+    400: [(640, 600), (2010, 7.07), (6020, 0.1), (7530, 0.04), (12000, 0.01), (18800, 0.004)],
+    500: [(800, 600), (2600, 7.07), (7970, 0.1), (9970, 0.04), (15900, 0.01), (24900, 0.004)],
+    630: [(1010, 600), (3350, 7.07), (10700, 0.1), (13300, 0.04), (21400, 0.01), (33400, 0.004)],
 }
 
 _FUSE_RATINGS_GG = sorted(_FUSE_CURVES_GG)
@@ -755,10 +755,16 @@ _IDMT_CURVES = {
     "IEEE Very Inverse": (19.61, 2.0, 0.491),
     "IEEE Extremely Inverse": (28.2, 2.0, 0.1217),
 }
+_IDMT_DEFAULT_MAX_MULTIPLE = 20.0
+
+# [TC3] Conventional non-tripping current (x Ir) and the MCB thermal constant,
+# mirroring constants.js CB_CONV_NON_TRIP / MCB_THERMAL_K.
+_CB_CONV_NON_TRIP = {"mcb": 1.13, "mccb": 1.05, "acb": 1.05}
+_MCB_THERMAL_K = 30.0 * (2.55 ** 2 - 1.13 ** 2)  # [TC2] mirrors constants.js IDMT_MAX_MULTIPLE
 
 
 def _relay_settings(props):
-    """(pickup, tds, inst_pickup, inst_delay, curve) or None if unparseable."""
+    """(pickup, tds, inst_pickup, inst_delay, curve, max_multiple) or None."""
     try:
         pickup = float(props.get("pickup_a", 100) or 0)
         tds = float(props.get("time_dial", 1.0) or 0)
@@ -767,24 +773,36 @@ def _relay_settings(props):
         return None
     inst_delay = props.get("inst_delay_s")
     inst_delay = 0.05 if inst_delay is None else float(inst_delay)
-    return pickup, tds, inst_pickup, inst_delay, props.get("curve", "IEC Standard Inverse")
+    # [TC2] IEC 60255-151 specifies the inverse characteristic up to G_D
+    # (20 x Gs as shipped by relay manufacturers); above it the operate
+    # time is held at t(G_D). 0 = no limit (pure equation). Absent -> 20.
+    raw = props.get("idmt_max_multiple")
+    try:
+        max_multiple = _IDMT_DEFAULT_MAX_MULTIPLE if raw is None or raw == "" else float(raw)
+    except (TypeError, ValueError):
+        max_multiple = _IDMT_DEFAULT_MAX_MULTIPLE
+    return (pickup, tds, inst_pickup, inst_delay,
+            props.get("curve", "IEC Standard Inverse"), max_multiple)
 
 
 def _idmt_time(settings, current_a):
     """Time-overcurrent (51) element operate time at a steady current, or None."""
-    pickup, tds, _, _, curve = settings
+    pickup, tds, _, _, curve, max_multiple = settings
     if pickup > 0 and current_a > pickup:
         if curve == "Definite Time":
             return tds  # time_dial is the fixed operate delay in seconds
         if curve in _IDMT_CURVES:
             k, a, c = _IDMT_CURVES[curve]
-            return tds * (k / ((current_a / pickup) ** a - 1) + c)
+            m = current_a / pickup
+            if max_multiple and max_multiple > 1:
+                m = min(m, max_multiple)  # [TC2] held at t(G_D) above G_D
+            return tds * (k / (m ** a - 1) + c)
     return None
 
 
 def _static_operate_time(settings, current_a):
     t = _idmt_time(settings, current_a)
-    _, _, inst_pickup, inst_delay, _ = settings
+    _, _, inst_pickup, inst_delay, _, _ = settings
     # Instantaneous (50) element overrides when picked up
     if inst_pickup > 0 and current_a >= inst_pickup:
         t = inst_delay if t is None else min(t, inst_delay)
@@ -800,7 +818,7 @@ def _dynamic_operate_time(settings, series):
     definition, integral of dt / t(I) = 1); the 50 element is a definite
     timer that resets on drop-off. Past _DYN_T_MAX_S the last measured value
     is extrapolated (the dc offset has decayed by then). None = no trip."""
-    _, _, inst_pickup, inst_delay, _ = settings
+    _, _, inst_pickup, inst_delay, _, _ = settings
     acc = 0.0
     inst_timer = 0.0
     t_prev = 0.0
@@ -977,7 +995,7 @@ def _cb_self_clearing_time(props, current_a):
                            intentional ST delay, NOT instantaneously)
       All types (MCCB magnetic / ACB fallback):
         3. magnetic:       I ≥ magnetic_pickup×Ir → 0.05 s
-        4. thermal region: I²t inverse-time t = k/(M²−1) with k = class×35,
+        4. thermal region: I²t inverse-time t = k/(M²−Mnt²) ([TC3]),
            exactly mirroring the frontend cbTripTime() TCC model ([PS-9] —
            previously a 0.5/1.0/2.0 s bucket heuristic that diverged from
            the device model the TCC plots).
@@ -1003,17 +1021,27 @@ def _cb_self_clearing_time(props, current_a):
         # Instantaneous trip incl. breaker operating time
         return 0.05
     # [PS-9] Thermal (long-time) region: the same I²t inverse-time
-    # characteristic the frontend TCC plots — t = k/(M²−1), k = class×35
-    # (calibrated so t(6×Ir) = class seconds; CB_TRIP_CLASSES in
-    # constants.js). Below thermal pickup the device never trips on its
-    # own — return a large time so the caller's 2 s IEEE 1584 cap (or an
-    # upstream device) governs.
-    lt_class = int(float(props.get("long_time_delay", 10) or 10))
-    k = {5: 175.0, 10: 350.0, 20: 700.0, 30: 1050.0}.get(lt_class, 350.0)
+    # characteristic the frontend TCC plots (cbTripTime in constants.js).
+    # [TC3] Asymptote at the conventional non-tripping current — 1.13 In for
+    # an MCB (IEC 60898-1 Table 7), 1.05 Ir for MCCB/ACB (IEC 60947-2
+    # Table 6): t = k/(M² − Mnt²), k = class × (36 − Mnt²) so t(6×Ir) =
+    # class seconds; an MCB is calibrated to t(2.55 In) = 30 s at class 10.
+    # Below it the device never trips on its own — return a large time so
+    # the caller's 2 s IEEE 1584 cap (or an upstream device) governs.
+    cb_type = props.get("cb_type", "mccb") or "mccb"
+    mnt = _CB_CONV_NON_TRIP.get(cb_type, _CB_CONV_NON_TRIP["mccb"])
+    try:
+        lt_class = float(props.get("long_time_delay", 10) or 10)
+    except (TypeError, ValueError):
+        lt_class = 10.0
+    if cb_type == "mcb":
+        k = _MCB_THERMAL_K * (lt_class / 10.0)
+    else:
+        k = lt_class * (36.0 - mnt * mnt)
     m = current_a / ir if ir > 0 else 0.0
-    if m <= 1.0:
-        return 10000.0  # below pickup — no thermal trip
-    return min(k / (m * m - 1.0), 10000.0)
+    if m <= mnt:
+        return 10000.0  # below conventional non-tripping current — no trip
+    return min(k / (m * m - mnt * mnt), 10000.0)
 
 
 def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,

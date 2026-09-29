@@ -263,24 +263,31 @@ def check_ct_saturation():
     props = {"ratio": "400/5", "accuracy_class": "5P20", "burden_va": 15.0,
              "rct_ohm": 0.3}
     sp = ct_saturation_params(props)
-    # burden_ohm = 15/25 = 0.6 ; total_z=0.9 ; Vk=0.8*ALF*Isn*totalZ=0.8*20*5*0.9=72
-    vk_pred = 0.8 * 20 * 5 * (0.3 + 15 / 25.0)
-    # I_sat_primary = 0.8*ALF*primary = 0.8*20*400 = 6400 A
-    isat_pred = 0.8 * 20 * 400.0
-    record("CT model: knee-point voltage V_k = 0.8*ALF*Isn*(Rct+Rb)",
+    # burden_ohm = 15/25 = 0.6 ; total_z = 0.9 ; saturation EMF = the IEC
+    # 61869-2 accuracy-limit EMF E_AL = ALF*Isn*(Rct+Rb) = 20*5*0.9 = 90 V
+    # (CT review L1: the old 0.8*E_AL knee proxy understated it by 20 %).
+    vk_pred = 20 * 5 * (0.3 + 15 / 25.0)
+    # I_sat_primary = ALF*I_pri_rated at rated burden = 20*400 = 8000 A
+    isat_pred = 20 * 400.0
+    record("CT model: saturation EMF E_AL = ALF*Isn*(Rct+Rb)",
            vk_pred, sp["knee_point_v"], 0.5, unit="V",
-           ref="IEC 61869-2: V_AL=ALF*Isn*(Rct+Rb); Vk~=0.8*V_AL")
+           ref="IEC 61869-2: E_AL = ALF*Isn*(Rct+Rb) (class 5P20 at rated burden)")
     record("CT model: saturation primary current",
            isat_pred, sp["i_sat_primary"], 0.5, unit="A",
-           ref="I_sat_pri = Vk/(Rct+Rb)*ratio = 0.8*ALF*I_pri_rated")
-    # Effective current at 2x saturation: ks=0.5 -> eta=sqrt(0.5)=0.7071
+           ref="I_sat_pri = E_AL/(Rct+Rb)*ratio = ALF*I_pri_rated")
+    # Effective current at 2x saturation: ks = 0.5 -> theta = pi/2. The relay
+    # measures the FUNDAMENTAL of the clipped wave (CT review C1), Fourier
+    # a1/b1 of the square-loop clipped half-cycle:
+    #   eta1 = sqrt((theta - sin(2theta)/2)^2 + sin(theta)^4) / pi
     i_test = 2.0 * isat_pred
-    eff_pred = i_test * math.sqrt(0.5)
+    th = math.acos(1 - 2 * 0.5)
+    eta1 = math.hypot(th - math.sin(2 * th) / 2, math.sin(th) ** 2) / math.pi
+    eff_pred = i_test * eta1
     eff_comp = ct_effective_current(i_test, sp)
-    record("CT model: saturation-clipped effective current at 2x I_sat",
+    record("CT model: saturation-clipped fundamental at 2x I_sat",
            eff_pred, eff_comp, 0.5, unit="A",
-           note="ks=0.5 -> theta=pi/2 -> eta=sqrt((pi/2)/pi)=0.7071",
-           ref="Waveform-clip rms: eta=sqrt((theta-sin2theta/2)/pi)")
+           note="ks=0.5 -> theta=pi/2 -> eta1=sqrt((pi/2)^2+1)/pi=0.5927",
+           ref="Fundamental of the clipped wave (relays filter to the fundamental)")
 
 
 # =====================================================================

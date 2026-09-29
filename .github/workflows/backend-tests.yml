@@ -38,6 +38,22 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: python testing/case-new-features-verification/verify_new_features.py --no-results
 
+  frontend-unit:
+    # Node tests that evaluate the real frontend modules in a vm sandbox:
+    # TCC curves against the IEC gates (TCC review TC1-TC3) and distance
+    # zone grading. (frontend/tests/test_migration.mjs is not wired in yet —
+    # it needs a DEFAULT_VOLTAGE_FACTOR stub.)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: TCC curves
+        run: node frontend/tests/test_tcc_curves.mjs
+      - name: Distance zone grading
+        run: node frontend/tests/test_distance_grading.mjs
+
   ui-templates:
     # Loads every Verification / Standards template in the real app (headless
     # Chromium), runs its analysis from the Analyse menu and asserts the

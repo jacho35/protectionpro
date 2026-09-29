@@ -20,6 +20,7 @@ $$t=\text{TDS}\left(\frac{A}{M^{p}-1}+B\right)$$
 <tr><td>IEEE Very Inverse</td><td>$A=19.61,\ p=2.0,\ B=0.491$</td></tr>
 <tr><td>IEEE Extremely Inverse</td><td>$A=28.2,\ p=2.0,\ B=0.1217$</td></tr>
 <tr><td>Definite time</td><td>$t=\text{TDS}$ (fixed delay above pickup)</td></tr></tbody></table>
+<p>IEC 60255-151 specifies the inverse characteristic up to $G_D=20\times$ the setting, and relays hold the operate time at $t(20)$ above it. The chart does the same, so the curve goes flat beyond 20× pickup. The relay's <em>Curve Limit</em> changes the multiple, and 0 removes the limit. Without the hold an Extremely Inverse curve would be 84 % faster at 50× than at 20×.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>IEC Standard Inverse, TDS = 0.3, pickup 400 A, fault 4 kA: $M=10$.</p>
 $$t=0.3\times\frac{0.14}{10^{0.02}-1}=0.3\times\frac{0.14}{0.04713}=\mathbf{0.891\ s}$$</div>
@@ -27,8 +28,8 @@ $$t=0.3\times\frac{0.14}{10^{0.02}-1}=0.3\times\frac{0.14}{0.04713}=\mathbf{0.89
 <p>A relay's pickup is set in secondary amps; the chart refers it to primary through the CT ratio, $I_{pickup,pri}=I_{set}\times\dfrac{I_{CT,pri}}{I_{CT,sec}}$. A CT that saturates changes the current the relay actually sees — see <a href="#" data-help="prot-ct-pt">CT saturation &amp; PT burden</a>.</p>
 <h4>Other characteristics</h4>
 <ul>
-<li><strong>Circuit breakers</strong> — long-time (thermal) and short-time regions plus an instantaneous (magnetic) pickup, which can be dragged directly on the chart.</li>
-<li><strong>Fuses</strong> — generic gG (IEC 60269) pre-arcing curves scaled per rating: one shape, anchored so pre-arcing reaches 0.1 s at $8\times I_n$. Total clearing time is taken as $1.2\times$ the pre-arcing time. Not the per-rating min/max corridor of IEC 60269-1 — use manufacturer data for precise grading.</li>
+<li><strong>Circuit breakers</strong> — long-time (thermal) and short-time regions plus an instantaneous (magnetic) pickup, which can be dragged directly on the chart. The thermal region is $t=k/(M^2-M_{nt}^2)$, with its asymptote at the conventional non-tripping current: $M_{nt}=1.13$ for an MCB (IEC 60898-1) and 1.05 for an MCCB or ACB (IEC 60947-2). For an MCCB or ACB, $k=\text{class}\times(36-M_{nt}^2)$, so the class is the trip time in seconds at $6\times I_r$. An MCB trips in 30 s at $2.55\,I_n$, the middle of the IEC 60898-1 1–60 s band.</li>
+<li><strong>Fuses</strong> — representative gG (IEC 60269) pre-arcing curves, fitted per rating to the IEC 60269-1 gates. The curve passes $1.6\,I_n$ at 600 s and the geometric middle of the 10 s / 5 s gate currents at 7.07 s. It also passes the geometric middle of the two 0.1 s gate currents at 0.1 s. Below 0.1 s it steepens to 0.01 s at twice that current, which keeps the 0.01 s pre-arcing $I^2t$ inside the standard's corridor. Total clearing time is taken as $1.2\times$ the pre-arcing time. This is a mid-corridor curve, not a manufacturer's; use manufacturer data for precise grading.</li>
 <li><strong>Directional (67)</strong> — overcurrent curves qualified by a direction setting.</li>
 <li><strong>Distance (21)</strong> — mho characteristics in a primary-referred R-X inset diagram.</li>
 <li><strong>User curves</strong> — import a time-current table from CSV.</li>

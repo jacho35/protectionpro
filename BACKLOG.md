@@ -318,6 +318,18 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### TCC curve review: TC1–TC4 and lesser notes (2026-09-29)
+- **Review.** `TCC_REVIEW.md` covers the TCC curve functions (`constants.js`, mirrored in `arcflash.py`). They were checked against IEC 60255-151, IEEE C37.112, the IEC 60269-1 gG gates and Table 7 I²t, IEC 60898-1, IEC 60947-2, IEC 60364-4-43 and IEEE C57.109. The IDMT constants are exact; four defects were found.
+- **Fixed:**
+  - **TC1.** The gG fuse table is refitted per rating to the IEC 60269-1 gates (`testing/tcc-review/build_gg_curves.py`). Nine of 17 ratings had pre-arced faster than allowed; for example, 100 A melted in 0.090 s at its 820 A I_min(0.1 s). The PROT-21 refit had misread that gate.
+  - **TC2.** IDMT curves are held at t(20·Gs) (IEC 60255-151 G_D). Before, EI was 84 % faster at 50× than at 20×. New relay prop `idmt_max_multiple`.
+  - **TC3.** The MCB/MCCB thermal asymptote now sits at the conventional non-tripping current (1.13·In / 1.05·Ir). Before, an MCB tripped at 1.13·In in 21 min. The MCB meets the 2.55·In gate.
+  - **TC4.** The distance-relay TCC and zone grading use the voltage where the relay measures, not its 11 kV default prop.
+  - Lesser: cable k for PVC above 300 mm² (103 / 68), and a k entered in the TCC is now honoured (L2).
+  - Side fixes: `test_distance_grading.mjs` was crashing (`Components` stub) and is now in CI, alongside the new `test_tcc_curves.mjs`. The `verify_new_features.py` CT checks now reflect the CT review, which had left CI red on main since #337.
+- **Behaviour change for saved projects.** Re-run arc flash, the TCC checks and compliance.
+- `backend/tests/test_tcc_review_fixes.py`: 20 tests. `frontend/tests/test_tcc_curves.mjs`: 60 assertions.
+
 ### CT saturation model review: C1–C4 and lesser notes fixed (2026-09-29)
 - **Review.** `CT_MODEL_REVIEW.md` — `ct_model.py` and its `constants.js` mirror, the arc-flash relay timing and the duty-check CT table, reviewed against IEC 61869-2, IEEE C37.110, IEEE C57.13 and IEC 60255-151 with an independent time-domain square-loop CT (`testing/ct-model-review/`). The clipping law is exact; four defects.
 - **Fixed:**

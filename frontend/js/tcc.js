@@ -1776,6 +1776,28 @@ const TCC = {
 
   // ── Resolve voltage at a component by tracing wires to a bus ──
 
+  /**
+   * [TC4] Voltage (kV) a distance relay's reaches are converted at. Reaches
+   * are primary ohms on the protected line, so the voltage is the one where
+   * the relay MEASURES — its CT / PT / tripped CB location — exactly as the
+   * transient-stability engine does since [D1]. A relay has no ports, so
+   * _resolveDeviceVoltage(relay.id) finds nothing, and the relay's own
+   * voltage_kv prop is hard-defaulted to 11 kV on every relay: it used to
+   * win, so a 132 kV relay left at the default had every zone pickup current
+   * 12x too low. The prop is now only the fallback when the relay is not
+   * associated with anything on the diagram.
+   */
+  _distanceRelayVoltage(comp) {
+    for (const key of ['associated_ct', 'associated_pt', 'trip_cb']) {
+      const ref = comp.props?.[key];
+      if (ref && AppState.components.has(ref)) {
+        const v = parseFloat(this._resolveDeviceVoltage(ref));
+        if (v > 0) return v;
+      }
+    }
+    return parseFloat(comp.props?.voltage_kv) || 11;
+  },
+
   _resolveDeviceVoltage(compId) {
     // BFS through wires to find the nearest bus/source with a known voltage.
     // Tracks the port through which each component is entered so that when the
@@ -1845,6 +1867,7 @@ const TCC = {
           curveName: comp.props?.curve || 'IEC Standard Inverse',
           pickup: comp.props?.pickup_a || 100,
           tds: comp.props?.time_dial || 1.0,
+          idmtMax: comp.props?.idmt_max_multiple, // [TC2] undefined -> 20
           // Instantaneous (50) element: 0 = disabled
           instPickup: comp.props?.inst_pickup_a || 0,
           instDelay: comp.props?.inst_delay_s ?? 0.05,
@@ -1855,7 +1878,7 @@ const TCC = {
         });
       } else if (comp.type === 'relay' && comp.props?.relay_type === '21') {
         // Distance relay — zone impedance reaches converted to current thresholds
-        const vkv = comp.props?.voltage_kv || this._resolveDeviceVoltage(id) || 11;
+        const vkv = this._distanceRelayVoltage(comp);
         const zones = buildDistanceRelayZones({ ...comp.props, voltage_kv: vkv });
         if (zones.length > 0) {
           this.devices.push({
@@ -1964,12 +1987,19 @@ const TCC = {
         const ratedAmps = comp.props?.rated_amps || (stdCable ? stdCable.rated_amps : 0);
         const conductor = stdCable ? stdCable.conductor : (comp.props?.conductor || 'Cu');
         if (ratedAmps > 0 && sizeMm2 > 0) {
-          // k factor: Cu XLPE=143, Cu PVC=115, Al XLPE=94, Al PVC=76
+          // k factor (IEC 60364-4-43 Table 43A): Cu XLPE=143, Cu PVC=115,
+          // Al XLPE=94, Al PVC=76. [TC-L2] PVC above 300 mm² is 103 (Cu) /
+          // 68 (Al) — its lower permitted final temperature (140 °C, not 160 °C).
+          // A k entered in the TCC settings card (props.k_factor) wins; it
+          // used to be saved but ignored on the next open.
           const insulation = stdCable ? stdCable.insulation : (comp.props?.insulation || 'XLPE');
+          const bigPvc = insulation === 'PVC' && sizeMm2 > 300;
           let kFactor = 143; // Cu XLPE default
-          if (conductor === 'Cu' && insulation === 'PVC') kFactor = 115;
+          if (conductor === 'Cu' && insulation === 'PVC') kFactor = bigPvc ? 103 : 115;
           else if (conductor === 'Al' && insulation === 'XLPE') kFactor = 94;
-          else if (conductor === 'Al' && insulation === 'PVC') kFactor = 76;
+          else if (conductor === 'Al' && insulation === 'PVC') kFactor = bigPvc ? 68 : 76;
+          const kProp = parseFloat(comp.props?.k_factor);
+          if (kProp > 0) kFactor = kProp;
           this.devices.push({
             id,
             name: (comp.props?.name || id) + ' (thermal)',
@@ -2515,7 +2545,7 @@ const TCC = {
       const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
       const current = Math.pow(10, logI); // actual device amps
       const M = current / dev.pickup;
-      const t = idmtTripTime(dev.curveName, M, dev.tds);
+      const t = idmtTripTime(dev.curveName, M, dev.tds, dev.idmtMax);
 
       if (t <= 0 || !isFinite(t) || t > this.timeMax || t < this.timeMin) continue;
 
@@ -2537,7 +2567,7 @@ const TCC = {
       if (yInst >= this.plotTop && yInst <= this.plotBottom) {
         // Vertical drop from the IDMT curve down to the inst delay
         if (xInst >= this.plotLeft && xInst <= this.plotRight) {
-          const tIdmtAtInst = idmtTripTime(dev.curveName, dev.instPickup / dev.pickup, dev.tds);
+          const tIdmtAtInst = idmtTripTime(dev.curveName, dev.instPickup / dev.pickup, dev.tds, dev.idmtMax);
           const yTop = this._timeToY(Math.min(isFinite(tIdmtAtInst) ? tIdmtAtInst : this.timeMax, this.timeMax));
           ctx.beginPath();
           ctx.moveTo(xInst, Math.max(yTop, this.plotTop));
@@ -2571,7 +2601,7 @@ const TCC = {
 
     // Label (with direction suffix for 67 relays)
     const labelI = dev.pickup * 3;
-    const labelT = idmtTripTime(dev.curveName, 3, dev.tds);
+    const labelT = idmtTripTime(dev.curveName, 3, dev.tds, dev.idmtMax);
     if (isFinite(labelT) && labelT > this.timeMin && labelT < this.timeMax) {
       let labelText = dev.name;
       if (dev.directional) {
@@ -2627,7 +2657,7 @@ const TCC = {
       const actualCurrent = Math.pow(10, logI); // actual primary amps
       const effectiveCurrent = ctEffectiveCurrent(actualCurrent, sat);
       const M = effectiveCurrent / dev.pickup;
-      let t = idmtTripTime(dev.curveName, M, dev.tds);
+      let t = idmtTripTime(dev.curveName, M, dev.tds, dev.idmtMax);
       // Instantaneous element operates on the (saturated) relay-seen current
       if (dev.instPickup > 0 && effectiveCurrent >= dev.instPickup) {
         t = Math.min(t, dev.instDelay ?? 0.05);
@@ -2684,7 +2714,7 @@ const TCC = {
 
     for (const m of multiples) {
       const current = dev.pickup * m;
-      const t = idmtTripTime(dev.curveName, m, dev.tds);
+      const t = idmtTripTime(dev.curveName, m, dev.tds, dev.idmtMax);
       if (!isFinite(t) || t <= 0 || t > this.timeMax || t < this.timeMin) continue;
 
       const x = this._currentToX(this._scaleCurrent(current, dev));
@@ -3650,7 +3680,7 @@ const TCC = {
 
     // TDS handle: on the curve at 3× pickup
     const tdsI = dev.pickup * 3;
-    const tdsT = idmtTripTime(dev.curveName, 3, dev.tds);
+    const tdsT = idmtTripTime(dev.curveName, 3, dev.tds, dev.idmtMax);
     if (isFinite(tdsT) && tdsT > this.timeMin && tdsT < this.timeMax) {
       const scaledI = this._scaleCurrent(tdsI, dev);
       const tx = this._currentToX(scaledI);
@@ -3880,7 +3910,7 @@ const TCC = {
       let t = null;
       if (dev.deviceType === 'relay') {
         const M = current / dev.pickup;
-        t = idmtTripTime(dev.curveName, M, dev.tds);
+        t = idmtTripTime(dev.curveName, M, dev.tds, dev.idmtMax);
         // Instantaneous (50) element
         if (dev.instPickup > 0 && current >= dev.instPickup) {
           t = Math.min(t, dev.instDelay ?? 0.05);
@@ -3889,7 +3919,7 @@ const TCC = {
         if (dev.ctSat && current > dev.ctSat.iSatPrimary) {
           const effCurrent = ctEffectiveCurrent(current, dev.ctSat);
           const Msat = effCurrent / dev.pickup;
-          let tSat = idmtTripTime(dev.curveName, Msat, dev.tds);
+          let tSat = idmtTripTime(dev.curveName, Msat, dev.tds, dev.idmtMax);
           if (dev.instPickup > 0 && effCurrent >= dev.instPickup) {
             tSat = Math.min(tSat, dev.instDelay ?? 0.05);
           }
@@ -5219,14 +5249,14 @@ const TCC = {
       }
     }
 
-    // [PS-15] The gG fuse model is ONE generic characteristic ratio-scaled
-    // per rating (anchored 0.1 s at 8×In), not the per-rating IEC 60269-1
-    // min/max gate corridor — surface the code-level caveat in the UI so
-    // final fuse grading is done against manufacturer curves.
+    // [PS-15] The gG fuse model is a representative mid-corridor curve per
+    // rating, fitted to the IEC 60269-1 gates ([TC1]), not a manufacturer's
+    // — surface the caveat in the UI so final fuse grading is done against
+    // manufacturer curves.
     if (visible.some(d => d.deviceType === 'fuse')) {
       html += `<div class="tcc-coord-info" style="margin-top:6px">Fuse curves are a
-        generic gG characteristic scaled per rating (IEC 60269 screening model), not
-        manufacturer gate corridors — confirm final fuse grading against manufacturer
+        representative gG characteristic fitted to the IEC 60269-1 gates, not a
+        manufacturer's curve — confirm final fuse grading against manufacturer
         time-current data.</div>`;
     }
 
@@ -5352,7 +5382,7 @@ const TCC = {
       // Account for CT saturation: relay sees reduced current when CT saturates
       const effectiveA = dev.ctSat ? ctEffectiveCurrent(currentA, dev.ctSat) : currentA;
       const M = effectiveA / dev.pickup;
-      let t = idmtTripTime(dev.curveName, M, dev.tds);
+      let t = idmtTripTime(dev.curveName, M, dev.tds, dev.idmtMax);
       // Instantaneous (50) element: definite-time trip above its pickup
       if (dev.instPickup > 0 && effectiveA >= dev.instPickup) {
         t = Math.min(t, dev.instDelay ?? 0.05);
@@ -5724,7 +5754,7 @@ const TCC = {
       return { error: 'Could not determine the protected (forward) direction — both sides of the Trip CB lead back to a source.' };
     }
 
-    const vLocalKv = parseFloat(relayComp.props?.voltage_kv) || this._resolveDeviceVoltage(relayComp.id) || 11;
+    const vLocalKv = this._distanceRelayVoltage(relayComp);
     const own = this._walkLineForward(cbId, forwardNeighbor, adj, vLocalKv);
     if (!own) {
       return { error: 'Protected line does not terminate at a bus (dead-end, or an open device blocks the path) — cannot compute a reach setting.' };
@@ -6010,7 +6040,7 @@ const TCC = {
             const M = iUp / upstream.pickup;
             if (M <= 1) continue;
             // t = TDS * f(M) → TDS = t / f(M)
-            const tAtTDS1 = idmtTripTime(upstream.curveName, M, 1.0);
+            const tAtTDS1 = idmtTripTime(upstream.curveName, M, 1.0, upstream.idmtMax);
             if (!isFinite(tAtTDS1) || tAtTDS1 <= 0) continue;
             const newTDS = Math.max(upstream.tds, requiredTime / tAtTDS1);
             if (newTDS > upstream.tds && newTDS <= 10) {
