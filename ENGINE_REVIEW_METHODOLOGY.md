@@ -272,6 +272,7 @@ can still be worthwhile, at lower priority than an unreviewed module.
 
 | Module | Review | Findings | Outcome |
 |---|---|---|---|
+| `frequency_scan.py` (+ harmonic-network turns ratio) | FS1–FS5, L1–L8, 2026-09-29 | 5 fixed + 3 warnings | `FREQUENCY_SCAN_REVIEW.md`. Z(h) exact vs closed-form RLC and a hand ohmic solve with an ideal transformer; resonances refined to the true extremum and ranked in per unit; dead islands dropped, regulating SVC from the load flow. Tests in `test_frequency_scan_review_fixes.py` |
 | `harmonics.py` (+ `frequency_scan.py` shunts) | H1–H6, L1–L8, 2026-09-29 | 6 fixed + IEC option | `HARMONICS_REVIEW.md`. Nodal solve exact vs a hand 2-bus solve (1e-3 %); IEEE 519 Tables 2–4 now held in full and graded per order; boards, STATCOM/SVC and dead islands corrected. Tests in `test_harmonics_review_fixes.py` |
 | `line_coupling.py` | LC1, 2026-09-29 | 1 fixed + 3 lesser | `LINE_COUPLING_REVIEW.md`. Z0_eff exact vs a 6-conductor phase-domain Carson solve (≤0.08 %); drawn parallel feeders now coupled (exact equivalents). Tests in `test_line_coupling_review_fixes.py` |
 | `conductor_temp.py` (+ fault-study line resistance) | CT1–CT2, L1–L2, 2026-09-29 | 2 fixed + 2 lesser | `CONDUCTOR_TEMP_REVIEW.md`. Maximum study now exact vs a hand IEC 60909 calculation at 20 °C; minimum study eq. (3) at θe to 0.03 %. Tests in `test_conductor_temp_review_fixes.py` |
@@ -334,7 +335,6 @@ planning engines, then support modules.
 | `battery_sizing.py` | IEEE 485 worked duty-cycle example; Peukert |
 | `filter_sizing.py` | Single-tuned filter resonance `h = 1/(2π√(LC))`; IEEE 519 verification |
 | `capacitor_placement.py` | Exhaustive enumeration on a small feeder vs the greedy result |
-| `frequency_scan.py` | Analytic parallel/series resonance of an RLC network |
 | `hosting_capacity.py` | Hand voltage-rise `ΔV ≈ (P·R + Q·X)/V` |
 | `flicker.py` | IEC 61000-3-3 curve points; Pst from a known dip magnitude/rate |
 | `reliability.py` | IEEE 1366 indices by hand on a small radial feeder |
