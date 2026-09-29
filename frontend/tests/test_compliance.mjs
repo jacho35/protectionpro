@@ -120,10 +120,10 @@ function lvNet({ cF = {}, cS = {}, xf = {}, extra = [], extraWires = [] } = {}) 
 {
   state(lvNet());
   const w = items(/CB-SubMain/, 'Cable Short');
-  // (a) largest: I"kLLG 27.6 kA at the MSB, 20 ms magnetic, Ith = I·√(m+1)
+  // (a) largest: I"kLLG 27.6 kA at the MSB, 25 ms magnetic (IEEE 1584 Table 1), Ith = I·√(m+1)
   const m = (k, t) => { const x = Math.log(k - 1); return (Math.exp(4 * 50 * t * x) - 1) / (2 * 50 * t * x); };
-  const allow = Math.pow(115 * 35 / (27585 * Math.sqrt(m(1.698, 0.02) + 1)), 2);
-  assert(allow < 0.02, `C2 reference: 35 mm² PVC withstand at 27.6 kA (Ith) = ${allow.toFixed(4)} s < 0.02 s`);
+  const allow = Math.pow(115 * 35 / (27585 * Math.sqrt(m(1.698, 0.025) + 1)), 2);
+  assert(allow < 0.025, `C2 reference: 35 mm² PVC withstand at 27.6 kA (Ith) = ${allow.toFixed(4)} s < 0.025 s (MCCB instantaneous)`);
   assert(w.some(i => i.status === 'fail' && /EXCEEDS/.test(i.message)), 'C2(a): near-end largest current fails the 35 mm² sub-main (was PASS at the far-end Ik3)');
   // (b) smallest: 1026 A at DB-1 is not cleared within 5 s and the MCCB (Ir 160 A) does not give §433.1 overload protection of Iz 140 A
   assert(w.some(i => i.status === 'fail' && /Minimum far-end fault \(1026 A at DB-1\) is not cleared/.test(i.message)),

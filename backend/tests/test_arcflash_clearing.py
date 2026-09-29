@@ -28,6 +28,7 @@ import pytest
 from backend.models.schemas import Component, ProjectData, Wire
 from backend.analysis.fault import run_fault_analysis
 from backend.analysis.arcflash import (
+    _cb_instantaneous_clear_time,
     run_arc_flash,
     _fuse_prearc_time,
     _relay_operate_time,
@@ -75,7 +76,8 @@ class TestDeviceSearchBFS:
         back to 2.0 s.
 
         fault_mva = 350 → Ik3 ≈ 1.10·5.2486·3.5 ≈ 20.2 kA → Iarc ≈ 19.4 kA,
-        far above the 630 A × 10 instantaneous pickup → 0.05 s.
+        far above the 630 A × 10 instantaneous pickup → the MCCB instantaneous
+        clearing time (0.025 s, IEEE 1584 Table 1).
         """
         proj = _project(
             components=[
@@ -98,7 +100,7 @@ class TestDeviceSearchBFS:
             ])
         res = _arc_flash(proj)
         t = res.buses["bus-1"].clearing_time_s
-        assert t == pytest.approx(0.05, abs=0.005), (
+        assert t == pytest.approx(_cb_instantaneous_clear_time("mccb"), abs=0.005), (
             f"clearing time {t}s — 2.0 s indicates the one-hop device "
             "search regression (EE-6/PROT-3)"
         )
@@ -138,7 +140,8 @@ class TestDeviceSearchBFS:
         # source → unprotected utility infeed governs at 2.0 s
         assert res.buses["bus-1"].clearing_time_s == pytest.approx(2.0)
         # bus-2 is cleared by cb-1 (closed, upstream of it)
-        assert res.buses["bus-2"].clearing_time_s == pytest.approx(0.05, abs=0.005)
+        assert res.buses["bus-2"].clearing_time_s == pytest.approx(
+            _cb_instantaneous_clear_time("mccb"), abs=0.005)
 
     def test_primary_cb_found_through_transformer_with_current_referral(self):
         """utility(33 kV) — CB — transformer 33/11 kV — bus(11 kV): the

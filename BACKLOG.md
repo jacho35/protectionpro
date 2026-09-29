@@ -332,7 +332,9 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
   - **C9.** An HV-side device carries the HV current of a transformer branch.
   - Lesser: no spurious "no Swing bus" warning (L1); library cables are size-checked (L2); clause citations fixed (L3); the motor start check uses the bottom of the magnetic band (L4); validation rows name their component (L5). Relay-tripped breakers now point to Cable Sizing / TCC instead of passing on a default trip unit.
 - **Behaviour change for saved projects.** Re-open the Compliance Report. Expect new earth-fault and withstand failures on long circuits, new I2 failures for fuses, and fewer false failures for adjustable breakers and parallel runs.
-- `frontend/tests/test_compliance.mjs`: 35 assertions, now in CI. Follow-ups are recorded in the review: Cable Sizing's minimum study runs at 20 °C, and magnetic clearing is 20 ms in the frontend vs 50 ms in the backend.
+  - Cross-module (X1, X2): Cable Sizing's far-end minimum study now uses 70 °C conductors (IEC 60909-0 §5.3.1), where it had used 20 °C and read 1222 A instead of 1026 A. A breaker's instantaneous clearing time now follows IEEE 1584 Table 1 in both frontend and backend: 0.025 s for MCB/MCCB, 0.05 s for ACB. It had been 20 ms in the frontend and 50 ms in the backend, so the two studies disagreed on the same cable.
+- **Behaviour change (X1, X2).** Re-run Cable Sizing and arc flash. Arcing time halves at buses cleared by MCB/MCCB instantaneous trips.
+- `frontend/tests/test_compliance.mjs`: 35 assertions, now in CI. `backend/tests/test_compliance_review_followups.py`: 6 tests. Four tests that had pinned the old 50 ms figure were re-baselined.
 
 ### PT (voltage transformer) model review: PT1–PT4 and lesser notes fixed (2026-09-29)
 - **Review.** `PT_MODEL_REVIEW.md` — `pt_model.py` and the duty-check PT table against IEC 61869-3:2011 (Tables 301–303, burden ranges) and IEC 61869-1 (earth fault factor). Class limits and the range II burden band correct; four defects.

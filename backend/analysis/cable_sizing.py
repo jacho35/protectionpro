@@ -910,14 +910,19 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         pass
 
     # [CS2] Minimum fault currents (IEC 60909-0 c_min: 0.95 LV, 1.0 MV) for
-    # the far-end check — a time-inverse device is slowest there.
+    # the far-end check — a time-inverse device is slowest there. Cable
+    # resistance at 70 °C, the §5.3.1 hot-conductor basis app.js uses for the
+    # compliance minimum study: at 20 °C the far end of a 200 m 35 mm² sub-
+    # main read 1222 A instead of 1026 A (COMPLIANCE_REVIEW.md §4).
+    MIN_STUDY_CONDUCTOR_C = 70.0
     min_runs = {}
 
     def _min_fault(c_min):
         if c_min not in min_runs:
             try:
                 min_runs[c_min] = run_fault_analysis(
-                    project, fault_bus_id=None, fault_type=None, voltage_factor=c_min)
+                    project, fault_bus_id=None, fault_type=None, voltage_factor=c_min,
+                    conductor_temperature_c=MIN_STUDY_CONDUCTOR_C)
             except Exception:
                 min_runs[c_min] = None
         return min_runs[c_min]
@@ -1214,7 +1219,7 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                         far_needs_overload = overload_ok is False
                         issues.append(
                             f"Fault withstand: the minimum fault at the far end "
-                            f"({far_ka * 1000:.0f} A, c_min) is not cleared within "
+                            f"({far_ka * 1000:.0f} A, c_min, 70 °C) is not cleared within "
                             f"{ADIABATIC_LIMIT_S:g} s (IEC 60364-4-43 §434.5.2)")
                 else:
                     ith_far, _ = _ith(far_ka, far_kappa, far_t)
@@ -1225,7 +1230,7 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                         fault_withstand_ok = False
                         issues.append(
                             f"Fault withstand at the far end: {size_mm2:.0f}mm² insufficient, "
-                            f"need {s_far:.0f}mm² for {far_ka * 1000:.0f} A (c_min) cleared "
+                            f"need {s_far:.0f}mm² for {far_ka * 1000:.0f} A (c_min, 70 °C) cleared "
                             f"in {far_t * 1000:.0f}ms")
 
         # ── Issues ──

@@ -6,7 +6,8 @@ IEC 60364-4-43 (§433.1, §434.5.2, §435.1, Table 43A), IEC 60909-0 (§5.3.1
 minimum currents, §12 thermal equivalent current), IEC 60076-1 (vector-group
 notation), IEC 62271-1 / IEC 60038 (Ur ≥ Um), IEC 60898-1 / IEC 60947-2
 (conventional currents, magnetic bands) and SANS 10142-1. Findings C1–C9 and
-lesser notes L1–L5 are all fixed.*
+lesser notes L1–L5 are all fixed, as are the two cross-module
+items X1–X2 the review turned up.*
 
 Scope: `frontend/js/compliance.js`, meaning every rule in the Compliance
 Report and the on-diagram device-rating flags (`deviceRatingFlags`). The
@@ -77,21 +78,30 @@ Relay-tripped breakers are no longer evaluated on the breaker's own
 now points to the Cable Sizing study and the TCC, which evaluate the relay
 through its CT.
 
-## 4. Cross-module notes (not changed here)
+## 4. Cross-module fixes (follow-ups, same PR)
 
-- **Cable Sizing's far-end minimum ignores hot conductors.**
-  `cable_sizing._min_fault` runs the fault study at c_min but at 20 °C. The
-  compliance minimum study (`app.js`) uses 70 °C per IEC 60909-0 §5.3.1. On
-  the test network the far end of the sub-main is 1222 A there and 1026 A
-  here. The Cable Sizing figure is optimistic. It is a one-line change
-  (`conductor_temperature_c=70`), but it moves reviewed results, so it is
-  left for a follow-up.
-- **Magnetic clearing time.** The frontend curves take 20 ms in the
-  instantaneous region; the backend takes 50 ms (`arcflash._cb_self_clearing_time`).
-  Near the limit the two studies can disagree: for the 4 mm² socket run,
-  Cable Sizing fails it at 50 ms and compliance passes it at 20 ms. A
-  current-limiting MCB clears in well under 10 ms, so 20 ms is not
-  optimistic for an MCB. For an ACB, 50 ms is closer.
+| # | Defect | Fix |
+|---|---|---|
+| X1 | **Cable Sizing's far-end minimum used cold conductors.** `cable_sizing._min_fault` applied c_min but left cables at 20 °C. IEC 60909-0 §5.3.1 requires the conductor resistance at the end-of-fault temperature, which the compliance minimum study (`app.js`) takes as 70 °C. At the far end of the 200 m 35 mm² sub-main this gave 1222 A instead of 1026 A, which is optimistic for a time-inverse device. | The minimum study now runs at 70 °C (`MIN_STUDY_CONDUCTOR_C`), and its messages say so. |
+| X2 | **The instantaneous clearing time depended on which study ran.** The frontend curves (TCC, compliance) used 20 ms for every breaker type; the backend (arc flash, Cable Sizing) used 50 ms. On the 4 mm² socket run, Cable Sizing failed a cable that compliance passed. Neither value is the published one for a moulded-case breaker. | Both sides now use IEEE 1584 Table 1 total clearing times: 1.5 cycles = 0.025 s for MCB and MCCB (integral trip), 3 cycles = 0.050 s for ACB. These live in `CB_INSTANTANEOUS_CLEAR_S` (`constants.js`) and `arcflash._CB_INSTANTANEOUS_CLEAR_S`, and a test checks they match. The TCC plots the same line. |
+
+On the review network the two studies now agree. Both use 1026 A at the far end of the sub-main and 25 ms for its instantaneous region. Both fail the sub-main at its source-end Ith and at the far-end minimum, and both pass the 4 mm² socket run.
+
+**Behaviour change (X1, X2).**
+- Re-run Cable Sizing: far-end minimum currents drop by about 15 % on long LV cables, so some far-end verdicts turn to fail.
+- Re-run arc flash: at buses cleared by an MCB or MCCB instantaneous trip, the arcing time halves (50 → 25 ms), and incident energy and the arc-flash boundary fall with it. ACB and relay-tripped buses are unchanged.
+- The TCC magnetic plateau moves from 20 to 25 ms (MCB/MCCB) and 50 ms (ACB).
+
+Re-baselined tests, which had pinned the old 50 ms MCCB figure:
+- `test_p3_fixes.py::test_magnetic_region_unchanged`
+- `test_cable_sizing_review_fixes.py::test_breaker_below_magnetic_uses_long_time_region`
+- `test_arcflash_clearing.py` (two device-search tests; they now read the constant)
+
+New tests: `backend/tests/test_compliance_review_followups.py` (6).
+
+Left as it is: an ACB short-time band adds the 80 ms opening time in the
+backend but not on the TCC plot. The two disagree only inside the
+short-time band.
 
 Observations, left unchanged:
 - NRS 048-2 may set ±5 % rather than ±10 % from 500 V (525 V and 690 V
