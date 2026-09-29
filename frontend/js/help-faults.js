@@ -166,7 +166,7 @@ $$I_{sym}=\frac{E}{X},\qquad I_{mom}=1.6\,I_{sym,\,mom},\qquad I_{int}=I_{sym,\,
 <p>Scope: three-phase symmetrical duty only, which is what a breaker's ANSI nameplate is expressed in. * Hydro generators without amortisseurs (0.75 $X'_d$) are not distinguished.</p>` },
 
 { id: 'fault-dc', group: 'faults', title: 'DC short circuit & DC load flow',
-  std: 'IEC 61660-1 · IEC TR 60909-4 · Analyse ▸ Power flow ▸ DC load flow; Short circuit ▸ DC short circuit',
+  std: 'IEC 61660-1 · Analyse ▸ Power flow ▸ DC load flow; Short circuit ▸ DC short circuit',
   kw: 'dc battery rectifier charger converter ups substation auxiliary nodal',
   html: String.raw`
 <h4>DC load flow</h4>
@@ -174,12 +174,14 @@ $$I_{sym}=\frac{E}{X},\qquad I_{mom}=1.6\,I_{sym,\,mom},\qquad I_{int}=I_{sym,\,
 $$\big(\mathbf{G}+\mathbf{G}_s\big)\,\mathbf{V}=\mathbf{I}_{Norton}-\mathbf{I}_{load},\qquad G_{cable}=\frac{1}{2\,r\,\ell},\quad I_{Norton}=\frac{E}{R_s}$$
 <p>DC cables use the <em>loop</em> resistance $2r\ell$ (go and return). A constant-power load is linearised as $I=P/V$ and the solve repeated until the voltages settle. In normal operation an active rectifier or charger holds the bus and the battery floats at about 0 A; only when an island has no converter does the battery become the source. This avoids the non-physical charger↔battery circulating current of a naive two-EMF solve.</p>
 <h4>DC short circuit</h4>
-<p>The IEC 61660-1 superposition method for the two source types that dominate stationary DC systems.</p>
-<p><strong>Battery</strong> — an EMF $E_B$ behind the branch resistance and inductance to the fault:</p>
-$$I_{kB}=\frac{0.95\,E_B}{R_{BBr}},\qquad i_{pB}=\frac{E_B}{R_{BBr}},\qquad \tau_B=\frac{L_{BBr}}{R_{BBr}}$$
-<p><strong>Converter</strong> (rectifier, charger) — current-limited, so independent of downstream resistance:</p>
-$$I_{kC}=k_{dc}\,I_{rated,DC},\qquad i_{pC}\approx1.05\,I_{kC}$$
-<p>Each source's branch resistance to the fault is its internal resistance plus the effective (Laplacian) resistance of the passive cable network between the source bus and the faulted bus. Partial currents are summed at the fault, which is a conservative peak.</p>
-<div class="hc-warn">Converters are treated as current-limited rather than run through IEC 61660's rectifier sub-procedure (which needs the feeding AC network's data). Capacitor and DC-motor contributions are not modelled.</div>` }
+<p>IEC 61660-1 maximum short-circuit current, for the source types that dominate stationary DC systems. Conductor resistance is taken at 20 °C (the cable library stores operating-temperature values, which are referred back).</p>
+<p><strong>Battery</strong> — an EMF $E_B = 1.05\,U_{nB}$ (or the measured open-circuit EMF) behind the branch resistance to the fault, with $R_{BBr}$ using $0.9\,R_B$:</p>
+$$i_{pB}=\frac{E_B}{R_{BBr}},\qquad I_{kB}=\frac{0.95\,E_B}{R_{BBr}+0.1\,R_B},\qquad \frac{1}{\delta}=\frac{2}{R_{BBr}/L_{BBr}+1/T_B},\ T_B=30\text{ ms}$$
+<p>The time to peak $t_{pB}$ and rise time constant $\tau_{1B}$ are read from the standard's battery curve against $1/\delta$.</p>
+<p><strong>Rectifier / charger (diode or thyristor bridge)</strong> — the IEC 61660-1 rectifier procedure. The AC-side impedance $Z_N$ is the IEC 60909 maximum-fault impedance at the AC bus feeding the converter, plus its supply cable and the converter transformer, referred to the transformer secondary. Current-limiting controls do not count for the maximum current:</p>
+$$I_{kD}=\lambda_D\,\frac{3\sqrt2}{\pi}\,\frac{c\,U_n}{\sqrt3\,Z_N}\frac{U_{rTLV}}{U_{rTHV}},\qquad i_{pD}=\kappa_D\,I_{kD}$$
+<p>with $\lambda_D$ and $\kappa_D$ from Annex A (functions of $R_N/X_N$, $R_{DBr}/R_N$ and $L_{DBr}/L_N$). A <strong>switch-mode</strong> converter is instead current-limited at its short-circuit limit × rated current, as a source that cannot exceed its own voltage.</p>
+<p><strong>Several sources.</strong> IEC 61660-1 corrects each partial current with a factor $\sigma_j$ where sources share a common branch. The resistive network is solved nodally with every source as its Thevenin branch and the fault at 0 V, so each contribution is its exact share and the contributions sum to the total. A battery or converter wired to its board through its own cable has that cable in its branch. The bus peak is the sum of the partial peaks (conservative — they occur at different times).</p>
+<div class="hc-warn">Capacitor and DC-motor sources are not modelled, and only the maximum current is calculated (not the IEC 61660-1 minimum for protection sensitivity). Rectifier times use the standard's 50 Hz forms, scaled by 50/f.</div>` }
 
 );

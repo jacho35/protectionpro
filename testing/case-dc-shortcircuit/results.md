@@ -17,7 +17,7 @@ into the branch = 6.498 mΩ), the engine applies E_B = 1.05·120 = 126 V and 0.9
 | Quantity | Published (IEC 61660) | Engine (nameplate) | Diff |
 |---|---|---|---|
 | Peak i_pB = E_B/(0.9·R_B + R_net) = 126/(0.9·0.0186 + 0.006498) | 5422 A | **5422 A** | **0.00 %** |
-| Quasi-steady I_kB = 0.95·E_B/(R_B + R_net) = 0.95·126/0.025098 | 4796 A | 4769 A | −0.6 % (input rounding) |
+| Quasi-steady I_kB = 0.95·E_B/(R_B + R_net) = 0.95·126/0.025098 | 4796 A | 4769 A | −0.6 % (the published figure uses 0.95 × 120 V instead of 0.95·E_B; the engine follows IEC 61660-1) |
 
 → the peak now reproduces the published value **exactly from nameplate** — no manual preprocessing needed. The
 quasi-steady matches to within the source's mΩ input rounding. Pinned by
@@ -26,8 +26,19 @@ quasi-steady matches to within the source's mΩ input rounding. Pinned by
 **Before the fix** the simplified model (no factors) read the peak ~11.8 % **low** (4781 A) — non-conservative;
 this is now resolved.
 
-## Converter (charger) — exact
-Charger rated 200 A, default DC short-circuit factor 1.5 (IEC TR 60909-4):
+**Cable resistance at 20 °C.** IEC 61660-1 takes conductor resistance at 20 °C for the maximum current, and
+the app's cable library stores operating-temperature (90 °C) values, which the engine refers back (÷ 1.275 for
+Cu XLPE). The model's cable therefore stores the published 20 °C loop value × 1.275
+(`r_per_km` 0.00828495), so the engine sees the published 6.498 mΩ (review DC4, `DC_SHORTCIRCUIT_REVIEW.md`).
+
+**Rise.** 1/δ = 2/(R_BBr/L_BBr + 1/T_B): 1.56 ms at the terminals, 2.37 ms at the breaker (published 2.40).
+t_pB and τ_1B come from IEC 61660-1 Figure 10 (t_pB = 3.055·(1/δ)^0.928, τ_1B = 0.497·(1/δ)^1.019, digitised):
+breaker 6.8 ms / 1.19 ms. The source quotes 5.4 / 1.3 ms, but 5.4 ms is a misreading of Figure 10 — the figure
+gives 6.8 ms at 1/δ = 2.37 ms.
+
+## Converter (charger, switch-mode) — exact
+Switch-mode charger rated 200 A, default short-circuit limit 1.5 × rated. A diode / thyristor bridge instead
+follows the IEC 61660-1 rectifier procedure from its AC supply (review DC1):
 
 | Quantity | Expected | Engine |
 |---|---|---|

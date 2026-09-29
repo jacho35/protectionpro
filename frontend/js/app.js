@@ -2343,7 +2343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     html += `<table class="af-table"><thead><tr>
-      <th>Bus</th><th>Nom. (V)</th><th>I<sub>k</sub> (kA)</th><th>i<sub>p</sub> (kA)</th><th>t<sub>p</sub> (ms)</th><th>τ (ms)</th><th>Sources</th>
+      <th>Bus</th><th>Nom. (V)</th><th>I<sub>k</sub> (kA)</th><th>i<sub>p</sub> (kA)</th><th>t<sub>p</sub> (ms)</th><th>τ<sub>1</sub> (ms)</th><th>Sources</th>
       </tr></thead><tbody>`;
     for (const b of buses) {
       const none = !b.contributions || b.contributions.length === 0;
@@ -2373,7 +2373,7 @@ document.addEventListener('DOMContentLoaded', () => {
       html += '</tbody></table>';
     }
 
-    html += `<p style="font-size:11px;opacity:0.7;margin-top:12px">IEC 61660-1 superposition. Battery: I<sub>k</sub> = 0.95·E<sub>B</sub>/R<sub>BBr</sub>, i<sub>p</sub> = E<sub>B</sub>/R<sub>BBr</sub>. Converters (rectifier / charger) treated as current-limited per IEC TR 60909-4. Capacitor and DC-motor sources are not yet modelled.</p>`;
+    html += `<p style="font-size:11px;opacity:0.7;margin-top:12px">IEC 61660-1 maximum, conductors at 20 °C. Battery: i<sub>p</sub> = E<sub>B</sub>/R<sub>BBr</sub>, I<sub>k</sub> = 0.95·E<sub>B</sub>/(R<sub>BBr</sub> + 0.1·R<sub>B</sub>). Diode / thyristor rectifiers and chargers: the IEC rectifier procedure from their AC supply; switch-mode converters: current-limited. Contributions are superposition shares of a nodal solve and sum to the total. Capacitor and DC-motor sources are not modelled.</p>`;
     for (const w of warnings) {
       html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(w.message)}</p>`;
     }

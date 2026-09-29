@@ -180,6 +180,9 @@ Overhead lines are modelled as a "Feeder Type" of the Cable component (`construc
 
 ## DC Analysis Enhancements
 - ~~**Full IEC 61660-1 battery factors**: the DC short-circuit engine uses a simplified battery model (`i_p = E_B/R_BBr`, `I_k = 0.95·E_B/R_BBr`, `τ = L/R`) that omits the standard's refinements — the **0.9 factor on R_B** for the peak, **E_B = 1.05·U_nB** when the open-circuit EMF is unknown, the **+0.1·R_B** term in the I_k denominator, and the **T_B = 30 ms** battery time constant in the rise-time/`1/δ`. Fed raw nameplate inputs the engine reads ~5–12 % **low** (non-conservative) on the battery peak/quasi-steady-state currents. Apply these factors internally so nameplate inputs give the full-standard result. Verified: the core `E_B/R_BBr` + superposition reproduces the published IEC 61660 peak exactly when the preprocessed values are supplied. See `testing/case-dc-shortcircuit/results.md`.~~ **Done** — see Completed.
+- **IEC 61660-1 minimum short-circuit current** (review L3): discharged battery EMF, hot conductors, c_min on the rectifier supply — the current DC protection sensitivity needs. Only the maximum is calculated today.
+- **Capacitor and DC-motor sources** (review L4): IEC 61660-1 clauses for charged capacitors (Annex A eq. 57–59, κ_C / t_pC) and DC motors are not modelled; a UPS DC link is not a source either.
+- **DC load flow drops a source wired through its own lead cable** (found in the DC short-circuit review, DC2): `_attached_group` only walks closed switching devices, so a battery → cable → board with no bus at the battery is not a source in `dc_loadflow.py`. The short-circuit engine now folds the lead in (`_source_lead`); load flow needs the same.
 
 ## Load Flow Enhancements
 - **Gauss-Seidel — regulating units on tied buses**: `_gauss_seidel` solves buses joined by a zero-impedance link as one supernode; when two or more of them regulate voltage (PV generator, SVC, voltage-mode inverter), their individual reactive outputs are physically undetermined (0 Ω between them), and the link-current recovery gives the whole share to the reference member. Newton-Raphson splits it by the 1e6 pu link instead — equally arbitrary. Add a warning naming the units, like the several-utilities-in-one-island warning.
@@ -317,6 +320,20 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 ---
 
 ## Completed
+
+### DC short-circuit review: DC1–DC6 and lesser notes (2026-09-29)
+- **Review.** `DC_SHORTCIRCUIT_REVIEW.md` checks `dc_shortcircuit.py` against IEC 61660-1 (Annex A eq. 54–56; the battery clauses and worked Examples 1 and 3 as published in CED E03-035) and circuit first principles. The battery peak and quasi steady-state currents were already exact; the defects were in everything around them.
+- **Fixed:**
+  - **DC1.** Diode / thyristor rectifiers and chargers follow the IEC rectifier procedure from their AC supply: the IEC 60909 maximum impedance at the feeding AC bus + supply cable + converter transformer (new fault-section fields). They were capped at 3× / 1.5× rated — the published example gives 22× (−86 %). Switch-mode converters stay current-limited, with the limit now a field.
+  - **DC2.** A source wired to its board through its own cable is no longer dropped (it contributed 0 A).
+  - **DC3.** Parallel cables between two buses add their conductances, whatever direction they were drawn (was −26 %).
+  - **DC4.** Cable resistance is referred to 20 °C, the IEC 61660-1 maximum-current basis (library values are hot; was up to −22 %).
+  - **DC5.** Sources sharing a common branch are solved nodally; the contributions are superposition shares that sum to the total (was +36 %).
+  - **DC6.** The battery rise uses 1/δ = 2/(R_BBr/L_BBr + 1/T_B) and IEC 61660-1 Figure 10, digitised as t_pB = 3.055·(1/δ)^0.928, τ_1B = 0.497·(1/δ)^1.019 ms; no 30 ms / 50 ms fallback when there is no inductance. Time to peak was −50 % at the published example's breaker.
+  - **L1.** A current-limited converter cannot drive more than U/R.
+- **Existing results change:** saved DC short-circuit results need re-running, especially any network with a rectifier or charger. The verification template's cable now stores its hot resistance (20 °C × 1.275); expected peak unchanged at 5422 A.
+- **Open:** the IEC 61660-1 minimum current (L3); capacitor and DC-motor sources (L4). DC load flow shares the lead-cable gap (DC2) — tracked for its own review.
+- **Tests:** `backend/tests/test_dc_shortcircuit_review_fixes.py` (one class per finding).
 
 ### Compliance report review: C1–C9 and lesser notes fixed (2026-09-29)
 - **Review.** `COMPLIANCE_REVIEW.md` checks every rule in `compliance.js` against IEC 60364-4-41 / 4-43, IEC 60909-0, IEC 60076-1, IEC 62271-1 and SANS 10142-1. The evidence runs the real module on real fault-engine results (`testing/compliance-review/`). The Table 41.1 times, the circuit-type scope, the minimum-current basis and the breaking basis were already correct; nine defects were found.

@@ -92,9 +92,19 @@ def _build_bus_groups(dc_buses, adjacency, components, bus_ids):
     return bus_of
 
 
-def _find_dc_branches(components, adjacency, bus_of, bus_ids):
+def _cable_loop_r(c):
+    """Go-and-return loop resistance of one DC cable (Ω), parallel runs included."""
+    npar = max(1, int(_num(c.props.get("num_parallel", 1), 1)))
+    return 2.0 * _num(c.props.get("r_per_km", 0.1), 0.1) \
+        * _num(c.props.get("length_km", 0.1), 0.1) / npar
+
+
+def _find_dc_branches(components, adjacency, bus_of, bus_ids, r_of=None, l_of=None):
     """Find cable branches between two DC bus groups. Series cables joined by
-    transparent devices are summed. Returns (comp, group_a, group_b, R_loop, amp)."""
+    transparent devices are summed. Returns (comp, group_a, group_b, R_loop, amp);
+    with ``l_of`` a sixth element, the summed ``l_of(cable)`` of the chain.
+    ``r_of`` overrides the per-cable loop resistance (default ``_cable_loop_r``)."""
+    r_of = r_of or _cable_loop_r
     branches = []
     seen = set()
     for comp in components.values():
@@ -139,16 +149,19 @@ def _find_dc_branches(components, adjacency, bus_of, bus_ids):
             continue
         seen |= cable_ids
         r_loop = 0.0
+        l_loop = 0.0
         amp = None
         rep = comp
         for cid in cable_ids:
             c = chain[cid]
             npar = max(1, int(_num(c.props.get("num_parallel", 1), 1)))
-            r_loop += 2.0 * _num(c.props.get("r_per_km", 0.1), 0.1) \
-                * _num(c.props.get("length_km", 0.1), 0.1) / npar
+            r_loop += r_of(c)
+            if l_of is not None:
+                l_loop += l_of(c)
             a = _num(c.props.get("rated_amps", 0), 0) * npar
             amp = a if amp is None else min(amp, a)
-        branches.append((rep, ga, gb, max(r_loop, 1e-9), amp or 0.0))
+        row = (rep, ga, gb, max(r_loop, 1e-9), amp or 0.0)
+        branches.append(row + (l_loop,) if l_of is not None else row)
     return branches
 
 
