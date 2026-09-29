@@ -7,6 +7,8 @@
 2. Mark the completed item as done in its original section (strikethrough with `~~text~~`)
 3. Add a concise entry to the `## Completed` section at the bottom
 
+**Every PR sets the app version to its own PR number**: `APP_VERSION = '1.<PR number>b'` in `frontend/js/constants.js` (PR #348 → `1.348b`). The number is only known once the PR exists, so open the PR, then push a commit that bumps `APP_VERSION` to it. Bump the `?v=` cache-bust in `index.html` in the same commit.
+
 ## What is ProtectionPro?
 
 A browser-based power systems engineering tool for designing single-line diagrams (SLDs) and running electrical analysis. Think of it as a lightweight, web-based alternative to ETAP.
