@@ -46,17 +46,18 @@ $$t_{up}(I)\ \ge\ t_{down}(I)+\Delta t$$
   html: String.raw`
 <h4>CT saturation</h4>
 <p>Relay operating times are only right if the CT delivers the primary current faithfully. When a CT saturates, the secondary waveform clips and the relay sees less current — so it operates <em>slower</em> and arc-flash incident energy is <em>higher</em>. The same model is used by the TCC chart, the arc-flash clearing time and the duty check.</p>
-<p>Knee-point voltage comes from the accuracy class if not entered directly. For a protection core such as 5P20 (accuracy-limit factor $ALF=20$):</p>
-$$V_{AL}=ALF\cdot I_{sn}\,(R_{ct}+R_b),\qquad V_k\approx0.8\,V_{AL},\qquad R_b=\frac{VA_{burden}}{I_{sn}^{2}}$$
-<p>$R_{ct}$ defaults to about 0.3 Ω for 5 A secondaries and 3 Ω for 1 A. The primary current at which the core begins to saturate is</p>
-$$I_{sat}=\frac{V_k}{R_{ct}+R_b}\times\frac{I_{pri}}{I_{sec}}$$
-<p>Above $I_{sat}$ the effective rms current is reduced by a saturation-angle waveform-clipping model. With $k_s=\dfrac{V_k}{I_{sec,ideal}(R_{ct}+R_b)}<1$:</p>
-$$\theta=\arccos(1-2k_s),\qquad \eta=\sqrt{\frac{\theta-\tfrac12\sin2\theta}{\pi}},\qquad I_{eff}=I\cdot\max(\eta,0.05)$$
-<p>The floor of 5 % keeps a fully saturated CT from reporting zero.</p>
+<p>The core is modelled as an ideal square loop: the CT reproduces the current until the secondary EMF reaches the saturation EMF $V_{sat}$, then delivers nothing for the rest of the half-cycle. From a protection class such as 5P20 ($ALF=20$), $V_{sat}$ is the IEC 61869-2 accuracy-limit EMF at <em>rated</em> burden; an entered knee point (e.g. class PX) is used directly, and an IEEE C-class gives $V_C+20\,I_{sn}R_{ct}$:</p>
+$$V_{sat}=ALF\cdot I_{sn}\,(R_{ct}+R_{b,rated}),\qquad R_b=\frac{VA}{I_{sn}^{2}}$$
+<p>The CT drives its <em>connected</em> burden (relay plus leads), so saturation starts at</p>
+$$I_{sat}=\frac{V_{sat}}{R_{ct}+R_{b,conn}}\times\frac{I_{pri}}{I_{sec}},\qquad ALF'=ALF\,\frac{R_{ct}+R_{b,rated}}{R_{ct}+R_{b,conn}}$$
+<p>$R_{ct}$ defaults to about 0.3 Ω for 5 A secondaries and 3 Ω for 1 A; connected burden defaults to rated. Long leads on a 5 A secondary can halve $ALF'$.</p>
+<p>Above $I_{sat}$ the secondary is clipped. A numerical relay measures the <em>fundamental</em> (DFT) of the clipped wave, which is lower than its rms. With $k_s=\dfrac{V_{sat}}{I_{sec,ideal}(R_{ct}+R_{b,conn})}<1$:</p>
+$$\theta=\arccos(1-2k_s),\qquad \eta_1=\frac{\sqrt{\left(\theta-\tfrac12\sin2\theta\right)^2+\sin^4\theta}}{\pi},\qquad I_{eff}=I\cdot\max(\eta_1,0.05)$$
+<p>This symmetrical model is what the TCC chart plots.</p>
 <h5>DC offset</h5>
-<p>The IEC 60909 peak factor $\kappa$ at the fault bus derates the knee voltage, $V_k\to V_k/\kappa$. This is a bounded proxy for first-peak asymmetry: a fully offset fault demands $\kappa$ times the flux of a symmetrical one, so the CT saturates sooner. It is <em>not</em> a time-domain flux simulation — no remanence, no saturation recovery mid-fault.</p>
+<p>A fully offset fault needs far more flux than a symmetrical one: the IEC 61869-2 transient factor is $K_{tf}=1+\omega T_p\,(1-e^{-t/T_p})$, up to $1+X/R$. Arc-flash clearing time therefore simulates the square-loop CT in the time domain under a fully offset fault ($X/R$ from the bus $\kappa$, zero remanence), runs the relay over the measured fundamental, and adds the extra operate time compared with a symmetrical fault. A CT can saturate transiently even when it is ample symmetrically. Remanence is not modelled; it can only make saturation earlier.</p>
 <h5>Adequacy check</h5>
-<p>Each protection-relay CT is flagged when its (offset-derated) saturation threshold does not cover the prospective fault current at its bus: $I_{sat}<I''_k$. It is listed in the duty check's "CT Saturation Adequacy" table.</p>
+<p>Each protection-relay CT is flagged when $I_{sat}<I''_k$ at its bus (Ik1 for a core-balance CT) — the class criterion, $ALF'\ge I''_k/I_{pn}$ — with a warning under 20 % headroom. The table also gives the time a fully offset fault takes to saturate the core, $t_s=-T_p\ln\!\left(1-\dfrac{K_s-1}{\omega T_p}\right)$ with $K_s=V_{sat}/(I_{sec}Z)$ (IEEE C37.110). Differential (87) and distance (21) relays need transient dimensioning (Ktd), which is flagged but not checked. Guessed accuracy classes (PX without a knee, metering cores, unrecognised strings) warn.</p>
 <h4>PT burden</h4>
 <p>A PT is never driven near saturation in service; its failure mode is <em>burden mismatch</em>. IEC 61869-3 only guarantees the declared accuracy class within 25–100 % of rated burden (at 80–120 % rated voltage). With connected burden $S_b$ and rated burden $S_r$:</p>
 $$\text{loading}=\frac{S_b}{S_r}\times100\%$$

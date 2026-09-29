@@ -7,7 +7,7 @@ Flags any device whose rating is exceeded.
 
 import math
 from ..models.schemas import ProjectData
-from .ct_model import ct_saturation_params
+from .ct_model import ct_saturation_params, ct_time_to_saturation, x_r_from_kappa
 from .pt_model import pt_burden_adequacy
 
 # Transparent types that do not form a bus boundary
@@ -518,37 +518,53 @@ def run_duty_check(project: ProjectData):
     # evaluation (and the physical relay) actually measures. Only CTs with
     # an associated protection relay are checked — a metering CT is
     # expected to saturate/protect its meter and is not a duty concern.
+    #
+    # [C3] The verdict is the symmetrical criterion — the IEC 61869-2 class
+    # definition (effective ALF' >= I_f / I_pn) and what overcurrent-relay
+    # manufacturers require. The dc offset is reported as the time to
+    # saturation (IEC 61869-2 Ktf / IEEE C37.110), not folded into the
+    # threshold: a kappa derating (the previous "dc_offset_factor") is not
+    # the flux demand of an offset current, which reaches 1 + X/R.
     ct_checks = []
-    relay_ct_ids = {
-        c.props.get("associated_ct")
-        for c in project.components
-        if c.type == "relay" and c.props.get("associated_ct")
-    }
+    relay_types_by_ct = {}
+    for c in project.components:
+        if c.type == "relay" and c.props.get("associated_ct"):
+            relay_types_by_ct.setdefault(c.props["associated_ct"], set()).add(
+                str(c.props.get("relay_type", "50/51")))
+    freq_hz = float(getattr(project, "frequency", 50) or 50)
     for ct in project.components:
-        if ct.type != "ct" or ct.id not in relay_ct_ids:
+        if ct.type != "ct" or ct.id not in relay_types_by_ct:
             continue
         ct_name = ct.props.get("name", ct.id)
         bus_ids = _find_upstream_bus(ct.id, adj, comp_map)
         if not bus_ids:
             continue
 
+        # [L3] A core-balance CT measures the residual (earth-fault)
+        # current, so its duty is the single-line-to-ground fault, not Ik3.
+        residual = str(ct.props.get("ct_type", "phase")) == "core_balance"
         ibf_ka = 0.0
         kappa = None
         location_bus = ""
         for bid in bus_ids:
             bus_fault = fault_results.buses.get(bid)
-            if bus_fault and (bus_fault.ik3 or 0) > ibf_ka:
-                ibf_ka = bus_fault.ik3 or 0
+            if not bus_fault:
+                continue
+            ik = (getattr(bus_fault, "ik1", None) if residual else bus_fault.ik3) or 0
+            if ik > ibf_ka:
+                ibf_ka = ik
                 kappa = bus_fault.kappa
                 location_bus = comp_map[bid].props.get("name", bid) if bid in comp_map else bid
         if ibf_ka <= 0:
             continue
 
-        sat = ct_saturation_params(ct.props, kappa=kappa)
+        sat = ct_saturation_params(ct.props)
         ibf_a = ibf_ka * 1000
         i_sat = sat["i_sat_primary"]
+        x_r = x_r_from_kappa(kappa)
+        t_sat = ct_time_to_saturation(ibf_a, sat, x_r, freq_hz)
 
-        issues = []
+        issues = list(sat["warnings"])
         if not math.isfinite(i_sat):
             status = "pass"
             headroom_pct = None
@@ -570,6 +586,21 @@ def run_duty_check(project: ProjectData):
                     f"prospective fault at {location_bus})")
             else:
                 status = "pass"
+        # [C4] a guessed accuracy class (PX without knee, metering core,
+        # unrecognised string) cannot pass silently.
+        if status == "pass" and sat["warnings"]:
+            status = "warning"
+        # [L3] Differential and distance protection need the CT dimensioned
+        # for the transient (Ktd), which this symmetrical check does not do.
+        needs_ktd = sorted(t for t in relay_types_by_ct[ct.id]
+                           if t.startswith("87") or t.startswith("21"))
+        if needs_ktd:
+            issues.append(
+                f"{'/'.join(needs_ktd)} protection needs transient dimensioning "
+                "(IEC 61869-2 Ktd, relay manufacturer's requirement) — not "
+                "checked here")
+            if status == "pass":
+                status = "warning"
 
         ct_checks.append({
             "device_id": ct.id,
@@ -577,9 +608,17 @@ def run_duty_check(project: ProjectData):
             "location_bus": location_bus,
             "ratio": ct.props.get("ratio", ""),
             "prospective_fault_ka": round(ibf_ka, 2),
+            "fault_basis": "Ik1" if residual else "Ik3",
             "i_sat_primary_a": round(i_sat, 0) if math.isfinite(i_sat) else None,
+            "alf_effective": (round(sat["alf_effective"], 1)
+                              if math.isfinite(sat["alf_effective"]) else None),
             "headroom_pct": round(headroom_pct, 1) if headroom_pct is not None else None,
-            "dc_offset_factor": round(sat["dc_offset_factor"], 2),
+            "x_r": round(x_r, 1),
+            # IEC 61869-2 / IEEE C37.110 time for a fully offset fault to
+            # saturate the core (0 = saturates symmetrically, None = never).
+            "time_to_saturation_ms": (round(t_sat * 1000, 1)
+                                      if math.isfinite(t_sat) else None),
+            "dc_offset_factor": 1.0,  # legacy field; kappa no longer derates
             "status": status,
             "issues": issues,
         })

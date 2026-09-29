@@ -52,7 +52,9 @@ import math
 from collections import deque
 from dataclasses import dataclass, field
 
-from .ct_model import ct_saturation_params, ct_effective_current
+from .ct_model import (ct_saturation_params, ct_effective_current,
+                       ct_fundamental_series, ct_transient_saturates,
+                       x_r_from_kappa)
 
 
 # Typical gap between conductors (mm) by voltage level
@@ -755,25 +757,8 @@ _IDMT_CURVES = {
 }
 
 
-def _relay_operate_time(props, current_a, ct_props=None, kappa=None):
-    """Operate time (s) of an overcurrent relay at current_a (primary amps).
-
-    Evaluates the relay's IDMT curve (curve/pickup_a/time_dial) and its
-    instantaneous (50) element (inst_pickup_a/inst_delay_s, 0 = disabled),
-    matching the frontend idmtTripTime() convention. Returns None when the
-    relay never trips at this current (I ≤ pickup and no instantaneous).
-
-    [PS-9 residual] When ``ct_props`` (the relay's associated CT's props)
-    are given, current_a is first passed through the CT saturation model
-    (ct_model.py) — matching the frontend TCC's ctEffectiveCurrent() step —
-    so a relay fed by an undersized/saturating CT is evaluated at the
-    current it actually measures, not the raw fault current. ``kappa`` (the
-    IEC 60909 peak factor at the fault point) further derates the
-    saturation threshold as a conservative dc-offset proxy.
-    """
-    if ct_props:
-        sat = ct_saturation_params(ct_props, kappa=kappa)
-        current_a = ct_effective_current(current_a, sat)
+def _relay_settings(props):
+    """(pickup, tds, inst_pickup, inst_delay, curve) or None if unparseable."""
     try:
         pickup = float(props.get("pickup_a", 100) or 0)
         tds = float(props.get("time_dial", 1.0) or 0)
@@ -782,20 +767,114 @@ def _relay_operate_time(props, current_a, ct_props=None, kappa=None):
         return None
     inst_delay = props.get("inst_delay_s")
     inst_delay = 0.05 if inst_delay is None else float(inst_delay)
-    curve = props.get("curve", "IEC Standard Inverse")
+    return pickup, tds, inst_pickup, inst_delay, props.get("curve", "IEC Standard Inverse")
 
-    t = None
+
+def _idmt_time(settings, current_a):
+    """Time-overcurrent (51) element operate time at a steady current, or None."""
+    pickup, tds, _, _, curve = settings
     if pickup > 0 and current_a > pickup:
         if curve == "Definite Time":
-            t = tds  # time_dial is the fixed operate delay in seconds
-        elif curve in _IDMT_CURVES:
+            return tds  # time_dial is the fixed operate delay in seconds
+        if curve in _IDMT_CURVES:
             k, a, c = _IDMT_CURVES[curve]
-            m = current_a / pickup
-            t = tds * (k / (m ** a - 1) + c)
+            return tds * (k / ((current_a / pickup) ** a - 1) + c)
+    return None
+
+
+def _static_operate_time(settings, current_a):
+    t = _idmt_time(settings, current_a)
+    _, _, inst_pickup, inst_delay, _ = settings
     # Instantaneous (50) element overrides when picked up
     if inst_pickup > 0 and current_a >= inst_pickup:
         t = inst_delay if t is None else min(t, inst_delay)
     return t
+
+
+_DYN_T_MAX_S = 2.0   # IEEE 1584 clearing-time cap — nothing beyond matters
+
+
+def _dynamic_operate_time(settings, series):
+    """[C3] Operate time over a time-varying measured current: the 51
+    element integrates its characteristic (IEC 60255-151 dynamic
+    definition, integral of dt / t(I) = 1); the 50 element is a definite
+    timer that resets on drop-off. Past _DYN_T_MAX_S the last measured value
+    is extrapolated (the dc offset has decayed by then). None = no trip."""
+    _, _, inst_pickup, inst_delay, _ = settings
+    acc = 0.0
+    inst_timer = 0.0
+    t_prev = 0.0
+    i_meas = 0.0
+    for t, i_meas in series:
+        dt = t - t_prev
+        t_prev = t
+        t51 = _idmt_time(settings, i_meas)
+        if t51:
+            acc += dt / t51
+            if acc >= 1.0:
+                return t
+        if inst_pickup > 0 and i_meas >= inst_pickup:
+            inst_timer += dt
+            if inst_timer >= inst_delay:
+                return t
+        else:
+            inst_timer = 0.0
+        if t >= _DYN_T_MAX_S:
+            break
+    rem = []
+    t51 = _idmt_time(settings, i_meas)
+    if t51:
+        rem.append((1.0 - acc) * t51)
+    if inst_pickup > 0 and i_meas >= inst_pickup:
+        rem.append(max(inst_delay - inst_timer, 0.0))
+    return t_prev + min(rem) if rem else None
+
+
+def _ct_dc_offset_delay(settings, current_a, sat, x_r, freq_hz):
+    """[C3] Extra operate time caused by the dc offset: the relay's
+    operate time over a fully offset fault minus over the symmetrical one,
+    both through the same time-domain square-loop CT and one-cycle DFT (so
+    the measuring window cancels). 0 when the core cannot saturate
+    transiently (peak flux demand (1 + X/R) I Z <= V_sat)."""
+    if x_r <= 0 or not ct_transient_saturates(current_a, sat, x_r):
+        return 0.0
+    t_off = _dynamic_operate_time(
+        settings, ct_fundamental_series(current_a, sat, x_r, freq_hz, offset=True))
+    t_sym = _dynamic_operate_time(
+        settings, ct_fundamental_series(current_a, sat, x_r, freq_hz, offset=False))
+    if t_off is None or t_sym is None:
+        return 0.0
+    return max(t_off - t_sym, 0.0)
+
+
+def _relay_operate_time(props, current_a, ct_props=None, kappa=None, freq_hz=50.0):
+    """Operate time (s) of an overcurrent relay at current_a (primary amps).
+
+    Evaluates the relay's IDMT curve (curve/pickup_a/time_dial) and its
+    instantaneous (50) element (inst_pickup_a/inst_delay_s, 0 = disabled),
+    matching the frontend idmtTripTime() convention. Returns None when the
+    relay never trips at this current (I ≤ pickup and no instantaneous).
+
+    [PS-9 residual] When ``ct_props`` (the relay's associated CT's props)
+    are given, current_a is first passed through the symmetrical CT
+    saturation model (ct_model.py) — the TCC's ctEffectiveCurrent() step —
+    so a relay fed by an undersized CT is evaluated at the fundamental it
+    actually measures. [C3] ``kappa`` (IEC 60909 peak factor at the fault
+    point) gives the X/R for the dc offset: the delay a fully offset fault
+    adds through the time-domain CT is added on top (it replaced a kappa
+    derating of the knee, which is not how dc saturation works).
+    """
+    settings = _relay_settings(props)
+    if settings is None:
+        return None
+    if not ct_props:
+        return _static_operate_time(settings, current_a)
+    sat = ct_saturation_params(ct_props)
+    t = _static_operate_time(settings, ct_effective_current(current_a, sat))
+    if t is None:
+        return None
+    return t + _ct_dc_offset_delay(settings, current_a, sat,
+                                   x_r_from_kappa(kappa), freq_hz)
 
 
 def _build_relay_maps(components):
@@ -938,7 +1017,7 @@ def _cb_self_clearing_time(props, current_a):
 
 
 def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,
-                          components=None, kappa=None):
+                          components=None, kappa=None, freq_hz=50.0):
     """Clearing time (s) of a single protective element at current_a
     (primary amps at the device's voltage level), capped at 2.0 s.
 
@@ -959,7 +1038,7 @@ def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,
     """
     if comp.type == "ct":
         relay = relay_by_ct.get(comp.id)
-        t = (_relay_operate_time(relay.props, current_a, comp.props, kappa)
+        t = (_relay_operate_time(relay.props, current_a, comp.props, kappa, freq_hz)
              if relay else None)
         if t is None:
             return _MAX_CLEARING_TIME_S
@@ -971,7 +1050,7 @@ def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,
             ct_id = relay.props.get("associated_ct")
             ct_comp = components.get(ct_id) if (ct_id and components) else None
             ct_props = ct_comp.props if ct_comp else None
-            t = _relay_operate_time(relay.props, current_a, ct_props, kappa)
+            t = _relay_operate_time(relay.props, current_a, ct_props, kappa, freq_hz)
             if t is None:
                 return _MAX_CLEARING_TIME_S
             return min(t + _BREAKER_OPENING_TIME_S, _MAX_CLEARING_TIME_S)
@@ -991,12 +1070,14 @@ def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,
     return _MAX_CLEARING_TIME_S
 
 
-def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None):
+def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None,
+                      freq_hz=50.0):
     """Estimate fault clearing time from upstream protection devices.
 
     ``kappa``: IEC 60909 peak factor at the faulted bus (fault_bus.kappa
-    from the prior fault-analysis call), forwarded to the CT saturation
-    model as a conservative dc-offset/asymmetry proxy — see ct_model.py.
+    from the prior fault-analysis call); it gives the X/R for the CT's
+    dc-offset (transient) saturation delay — see ct_model.py. ``freq_hz``:
+    system frequency for that time-domain CT evaluation.
 
     BFS from the faulted bus toward the source(s): the walk passes through
     non-device components (cables, buses, closed switches, CTs without
@@ -1062,7 +1143,7 @@ def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None):
             i_dev = iarc_a * v_bus / v_here if v_here > 0 else iarc_a
             path_times.append(
                 _device_clearing_time(comp, i_dev, relay_by_ct, relay_by_cb,
-                                      components, kappa))
+                                      components, kappa, freq_hz))
             continue  # nearest device found — stop this branch
 
         # Transparent element — keep walking; track the voltage level
@@ -1115,6 +1196,10 @@ def run_arc_flash(project_data, fault_results):
 
     results = {}
     warnings = []
+    try:
+        freq_hz = float(getattr(project_data, "frequency", 50) or 50)
+    except (TypeError, ValueError):
+        freq_hz = 50.0
 
     methods_used = set()
 
@@ -1205,7 +1290,7 @@ def run_arc_flash(project_data, fault_results):
                 ibf_ka, voltage_kv, gap_mm, electrode_config)
 
             t_clear = get_clearing_time(bus, components, adjacency, iarc,
-                                        kappa=fault_bus.kappa)
+                                        kappa=fault_bus.kappa, freq_hz=freq_hz)
             e_cal = calc_incident_energy_2018(iarc, 1.0, ibf_ka, voltage_kv,
                                               t_clear, gap_mm, working_dist,
                                               electrode_config, cf)
@@ -1214,7 +1299,7 @@ def run_arc_flash(project_data, fault_results):
             # variation factor, replacing 2002's flat 0.85): re-evaluate the
             # actual protective-device TCC at the reduced current too.
             t_clear_reduced = get_clearing_time(bus, components, adjacency,
-                                                iarc_reduced, kappa=fault_bus.kappa)
+                                                iarc_reduced, kappa=fault_bus.kappa, freq_hz=freq_hz)
             e_cal_reduced = calc_incident_energy_2018(iarc_reduced, ratio, ibf_ka,
                                                       voltage_kv, t_clear_reduced,
                                                       gap_mm, working_dist,
@@ -1241,7 +1326,7 @@ def run_arc_flash(project_data, fault_results):
             # Estimate clearing time from upstream protection devices,
             # using the arcing current to resolve instantaneous vs delayed trips
             t_clear = get_clearing_time(bus, components, adjacency, iarc,
-                                        kappa=fault_bus.kappa)
+                                        kappa=fault_bus.kappa, freq_hz=freq_hz)
 
             # Incident energy at working distance
             e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
@@ -1255,7 +1340,7 @@ def run_arc_flash(project_data, fault_results):
             # scaling t_clear by a fixed heuristic — the true ratio for an IDMT
             # relay near pickup can be several×, not 1.5×.
             t_clear_reduced = get_clearing_time(bus, components, adjacency,
-                                                iarc_reduced, kappa=fault_bus.kappa)
+                                                iarc_reduced, kappa=fault_bus.kappa, freq_hz=freq_hz)
             e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
                                                   t_clear_reduced, gap_mm,
                                                   working_dist, electrode_config,

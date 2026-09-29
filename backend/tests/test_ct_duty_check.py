@@ -4,8 +4,10 @@ backend/analysis/duty_check.py.
 
 For every CT with an associated overcurrent relay, flags whether the CT's
 own saturation threshold (ct_model.py: ratio, accuracy class ALF, burden,
-knee voltage, kappa-derated for dc offset) covers the prospective 3-phase
-fault current at its bus. Metering CTs (no associated relay) are not
+knee voltage, connected burden) covers the prospective fault current at
+its bus. [CT review C3] The verdict is symmetrical (the IEC 61869-2 class
+criterion); the dc offset is reported as the time to saturation, no longer
+as a kappa derating of the threshold. Metering CTs (no associated relay) are not
 checked — saturating to protect a meter is by design, not a duty concern.
 
 Run with:  python -m pytest backend/tests/test_ct_duty_check.py -v
@@ -66,9 +68,9 @@ def _proj_with_ct(ct_props, fault_mva=77.3, include_cb=True):
 
 class TestCTAdequacyCheck:
     def test_undersized_ct_flagged_fail(self):
-        """400/5 5P10, default 15VA burden -> I_sat_symmetric=3200A; at
-        11kV/77.3MVA the bolted fault is ~4.06kA (~4060A) >> 3200A even
-        before kappa derating — clearly inadequate."""
+        """400/5 5P10, default 15VA burden -> I_sat = ALF x I_pn = 4000 A;
+        at 11kV/77.3MVA the IEC 60909 I''k is c*S/(sqrt3 U) = 4.46 kA > 4000 A
+        — inadequate, and it saturates symmetrically (t_sat = 0)."""
         proj = _proj_with_ct({"ratio": "400/5", "accuracy_class": "5P10"})
         res = run_duty_check(proj)
         row = next(r for r in res["ct_checks"] if r["device_id"] == "ct-1")
@@ -76,7 +78,8 @@ class TestCTAdequacyCheck:
         assert row["i_sat_primary_a"] is not None
         assert row["prospective_fault_ka"] * 1000 > row["i_sat_primary_a"]
         assert any("saturates" in i for i in row["issues"])
-        assert row["dc_offset_factor"] > 1.0  # kappa derating engaged
+        assert row["time_to_saturation_ms"] == 0.0
+        assert row["x_r"] > 5  # the utility's X/R = 15 recovered from kappa
 
     def test_well_sized_ct_passes(self):
         """400/5 5P40 with a smaller fault level (5 MVA) has ample
@@ -89,18 +92,18 @@ class TestCTAdequacyCheck:
         assert row["headroom_pct"] is not None and row["headroom_pct"] >= 20
 
     def test_marginal_ct_flagged_warning(self):
-        """Tuned so the prospective fault sits just under the derated
-        saturation threshold (< 20% headroom) — a real design ought to
-        catch this before it's built, not just when it outright fails."""
-        # 400/5 5P20 (ALF=20, default burden) at a fault level chosen to
-        # land within the low-headroom band around its derated threshold.
+        """Prospective fault just under the saturation threshold (< 20%
+        headroom). 400/5 5P20 -> I_sat 8000 A; 130 MVA at 11 kV ->
+        I''k = 1.1*130/(sqrt3*11) = 7.51 kA -> headroom 6 %. It does not
+        saturate symmetrically but a fully offset fault saturates it within
+        the first cycle (finite, non-zero t_sat)."""
         proj = _proj_with_ct({"ratio": "400/5", "accuracy_class": "5P20"},
-                              fault_mva=60.0)
+                              fault_mva=130.0)
         res = run_duty_check(proj)
         row = next(r for r in res["ct_checks"] if r["device_id"] == "ct-1")
-        assert row["status"] in ("warning", "fail")
-        if row["status"] == "warning":
-            assert row["headroom_pct"] < 20
+        assert row["status"] == "warning"
+        assert 0 < row["headroom_pct"] < 20
+        assert 0 < row["time_to_saturation_ms"] < 20
 
     def test_ct_without_relay_not_checked(self):
         """A metering-style CT with no associated relay is out of scope —

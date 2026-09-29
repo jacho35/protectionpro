@@ -2069,8 +2069,8 @@ document.addEventListener('DOMContentLoaded', () => {
       html += `<h4 style="margin:12px 0 4px">CT Saturation Adequacy</h4>
       <table class="af-table">
         <thead><tr>
-          <th>CT</th><th>Bus</th><th>Ratio</th><th>Fault (kA)</th>
-          <th>Sat. Threshold (A)</th><th>Headroom</th><th>Status</th>
+          <th>CT</th><th>Bus</th><th>Ratio</th><th>Fault (kA)</th><th>ALF'</th>
+          <th>Sat. Threshold (A)</th><th>Headroom</th><th title="Time for a fully offset fault to saturate the core (IEC 61869-2 Ktf / IEEE C37.110); 0 = saturates symmetrically">t sat (ms)</th><th>Status</th>
         </tr></thead><tbody>`;
       for (const c of ctChecks) {
         const rowClass = c.status === 'fail' ? 'af-danger' : c.status === 'warning' ? 'af-medium' : 'af-low';
@@ -2081,14 +2081,16 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${escHtml(c.device_name)}</td>
           <td>${escHtml(c.location_bus)}</td>
           <td>${escHtml(String(c.ratio))}</td>
-          <td>${c.prospective_fault_ka.toFixed(2)}</td>
+          <td>${c.prospective_fault_ka.toFixed(2)}${c.fault_basis === 'Ik1' ? ' (Ik1)' : ''}</td>
+          <td>${c.alf_effective != null ? c.alf_effective.toFixed(1) : '—'}</td>
           <td>${c.i_sat_primary_a != null ? Math.round(c.i_sat_primary_a) : '—'}</td>
           <td>${c.headroom_pct != null ? c.headroom_pct.toFixed(0) + '%' : '—'}</td>
+          <td>${c.time_to_saturation_ms != null ? c.time_to_saturation_ms.toFixed(1) : '—'}</td>
           <td>${statusBadge}</td>
         </tr>`;
         if (c.issues.length > 0) {
-          html += `<tr class="${rowClass}"><td colspan="7" style="padding-left:24px;font-size:11px;color:#b71c1c">
-            ${c.issues.join('<br>')}
+          html += `<tr class="${rowClass}"><td colspan="9" style="padding-left:24px;font-size:11px;color:#b71c1c">
+            ${c.issues.map(escHtml).join('<br>')}
           </td></tr>`;
         }
       }

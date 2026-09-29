@@ -33,7 +33,8 @@ from backend.analysis.arcflash import (
     _relay_operate_time,
     _BREAKER_OPENING_TIME_S,
 )
-from backend.analysis.ct_model import ct_saturation_params, ct_effective_current
+from backend.analysis.ct_model import (ct_saturation_params, ct_effective_current,
+                                        ct_transient_saturates, x_r_from_kappa)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -315,15 +316,17 @@ class TestRelayClearing:
         """Same anchor with the relay resolved through its measuring CT on
         the wire path (relays have no ports — association props only).
 
-        accuracy_class 5P40 gives this CT ample saturation headroom at the
-        ~4 kA anchor current (see TestCTSaturation for the undersized-CT
-        case) — this test is about associated_ct RESOLUTION, not
-        saturation, so it deliberately isolates that variable."""
+        This test is about associated_ct RESOLUTION, not saturation, so the
+        CT is dimensioned for the transient: [CT review C3] a 5P40 core is
+        symmetrically ample (16 kA) but a fully offset 4 kA fault at X/R 15
+        needs (1 + 15) x 4 = 64 kA of flux capacity and adds ~28 ms. A 1000 V
+        knee (88.9 kA symmetrical) never saturates."""
         proj = _project(
             components=[
                 _utility(77.3),
                 _comp("ct-1", "ct", {"name": "CT1", "ratio": "400/5",
-                                      "accuracy_class": "5P40"}),
+                                      "accuracy_class": "5P40",
+                                      "knee_point_v": 1000}),
                 _comp("bus-1", "bus", {"name": "MV Bus", "voltage_kv": 11.0}),
                 _comp("relay-1", "relay",
                       {**self.RELAY_PROPS, "associated_ct": "ct-1"}),
@@ -378,10 +381,11 @@ class TestRelayClearing:
 
 class TestCTSaturation:
     """The backend relay/TCC clearing-time evaluation now runs the arcing
-    current through the same CT saturation model the frontend TCC applies
-    (ct_model.py) before evaluating the IDMT curve, and derates the
-    saturation threshold by the fault point's IEC 60909 peak factor kappa
-    (a bounded dc-offset/asymmetry proxy — see ct_model.py docstring).
+    current through the same symmetrical CT saturation model the frontend
+    TCC applies (ct_model.py) before evaluating the IDMT curve, then adds
+    the delay a fully offset fault causes through a time-domain square-loop
+    CT, with X/R recovered from the fault point's IEC 60909 kappa
+    ([CT review C3] — replaced a kappa derating of the knee).
 
     Formula unit anchors live in test_ct_model.py; this file cross-checks
     the WIRING — that run_arc_flash actually feeds the pipeline's own
@@ -409,14 +413,11 @@ class TestCTSaturation:
 
     def test_default_ct_saturates_under_typical_xr_and_slows_clearing(self):
         """A default 400/5 5P20 CT has ample SYMMETRIC headroom at the
-        ~4 kA anchor current (I_sat_symmetric=6400A > 4kA — this is why
-        test_relay_via_associated_ct_drives_idmt_time with the SAME ratio
-        needed an explicit 5P40 override to stay unsaturated once kappa
-        derating was added). Left at the default 5P20 with the utility's
-        default x_r_ratio=15 (kappa≈1.82), the derated threshold
-        (≈3513A) sits BELOW the ~4kA arcing current — the relay now sees
-        a clipped, reduced current and trips slower than the
-        no-saturation anchor, the non-conservative gap this closes.
+        ~4 kA anchor current (I_sat = ALF x I_pn = 8000 A > 4 kA), but with
+        the utility's x_r_ratio = 15 a fully offset fault needs
+        (1 + X/R) x 4 kA = 64 kA of flux capacity — it saturates
+        transiently and the relay trips slower than the no-saturation
+        anchor, the non-conservative gap this closes.
         """
         ct_props = {"ratio": "400/5"}
         proj = self._proj(ct_props)
@@ -427,8 +428,10 @@ class TestCTSaturation:
         kappa = fault_results.buses["bus-1"].kappa
         assert kappa is not None and kappa > 1.5  # sanity: meaningfully offset
 
-        sat = ct_saturation_params(ct_props, kappa=kappa)
-        assert sat["i_sat_primary"] < r.arcing_current_ka * 1000  # confirms saturating
+        sat = ct_saturation_params(ct_props)
+        i_arc = r.arcing_current_ka * 1000
+        assert sat["i_sat_primary"] > i_arc  # symmetrically fine ...
+        assert ct_transient_saturates(i_arc, sat, x_r_from_kappa(kappa))  # ... not transiently
 
         # The fix must make clearing SLOWER (more conservative), not faster.
         assert r.clearing_time_s > self.T_UNSATURATED + 0.005
@@ -439,15 +442,15 @@ class TestCTSaturation:
         # matches (i.e. the saturation model is genuinely in the loop, not
         # coincidentally slower for some other reason).
         t_relay = _relay_operate_time(self.RELAY_PROPS, r.arcing_current_ka * 1000,
-                                      ct_props, kappa)
+                                      ct_props, kappa, 50.0)
         expected_t_clear = min(t_relay + _BREAKER_OPENING_TIME_S, 2.0)
         assert r.clearing_time_s == pytest.approx(expected_t_clear, abs=0.005)
 
     def test_ample_alf_ct_matches_unsaturated_anchor(self):
-        """A well-sized 5P40 CT (same one used to isolate the association-
-        resolution test) stays within its derated threshold at this fault
-        level and reproduces the plain no-saturation anchor time."""
-        proj = self._proj({"ratio": "400/5", "accuracy_class": "5P40"})
+        """A CT dimensioned for the transient (knee above (1 + X/R) I Z)
+        never saturates and reproduces the plain no-saturation anchor time."""
+        proj = self._proj({"ratio": "400/5", "accuracy_class": "5P40",
+                           "knee_point_v": 1000})
         res = run_arc_flash(proj, run_fault_analysis(proj))
         assert res.buses["bus-1"].clearing_time_s == pytest.approx(
             self.T_UNSATURATED, abs=0.02)

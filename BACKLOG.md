@@ -318,6 +318,17 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### CT saturation model review: C1–C4 and lesser notes fixed (2026-09-29)
+- **Review.** `CT_MODEL_REVIEW.md` — `ct_model.py` and its `constants.js` mirror, the arc-flash relay timing and the duty-check CT table, reviewed against IEC 61869-2, IEEE C37.110, IEEE C57.13 and IEC 60255-151 with an independent time-domain square-loop CT (`testing/ct-model-review/`). The clipping law is exact; four defects.
+- **Fixed:**
+  - **C1.** The relay now sees the clipped wave's fundamental, not its RMS. RMS had understated the saturation delay by 38–49 %.
+  - **C2.** New `connected_burden_va`, giving ALF′ = ALF·(Rct + R_rated)/(Rct + R_conn). Before this, burden and Rct cancelled out and the onset never moved.
+  - **C3.** The κ derating of the knee is replaced. Arc flash now simulates the CT in the time domain under a fully offset fault and adds the extra relay delay: within 8 ms of the reference, 1.8 ms per evaluation. The duty check reports time to saturation.
+  - **C4.** Accuracy classes are parsed properly (5PR10, C-class, PX/TPx, metering FS) instead of being silently read as ALF 20.
+  - **Lesser notes.** L1: saturation EMF = E_AL (class-consistent). L2: `rct_ohm` 0 now means typical for the secondary. L3: core-balance CTs are judged on Ik1; 87/21 relays warn that Ktd is not checked.
+- **Behaviour change for saved projects.** Re-run arc flash and the duty check. CT-fed relay times and CT verdicts change.
+- `backend/tests/test_ct_model_review_fixes.py`: 27 tests.
+
 ### Equipment duty check review: DU1–DU3 and lesser notes fixed (2026-09-29)
 - **Review.** `DUTY_CHECK_REVIEW.md` — `duty_check.py` against IEC 60947-2, IEC 60269, IEC 62271-100/-1, IEC 60038 and IEC 60909-0. Making factors, asymmetry method and through-current refinement correct; three defects.
 - **Fixed:**

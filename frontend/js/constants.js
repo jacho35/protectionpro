@@ -532,69 +532,105 @@ function parseCTRatio(ratioStr) {
 }
 
 /**
- * Parse IEC 61869-2 accuracy class like "5P20" → ALF = 20
- * Format: <error%>P<ALF> (e.g. 5P20, 10P10, 5P30)
+ * Classify a CT accuracy class — mirrors backend ct_model.parse_ct_accuracy_class.
+ * [C4] IEC 61869-2 5P20 / 10P10 / 5PR10 (low remanence), PX / PXR / TPx
+ * (knee point must be entered), IEEE C-class (C200), measuring classes
+ * (0.5, 0.2S, 0.5FS5 — FS is the limit factor). Guessed kinds carry a warning.
+ * @returns {{kind: string, alf: number, cVoltage: number|null, warning: string|null}}
  */
+function parseCTAccuracyClass(accuracyClass) {
+  const s = typeof accuracyClass === 'string' ? accuracyClass.trim() : '';
+  if (!s) return { kind: 'P', alf: 20, cVoltage: null, warning: null };
+  let m = s.match(/(\d+(?:\.\d+)?)\s*P\s*(R?)\s*(\d+)/i);
+  if (m) return { kind: 'P', alf: parseFloat(m[3]), cVoltage: null, warning: null };
+  m = s.match(/^\s*[CK]\s*(\d+)\s*$/i);
+  if (m) return { kind: 'C', alf: 20, cVoltage: parseFloat(m[1]), warning: null };
+  if (/^\s*(PXR?|TP[XYZ])\s*$/i.test(s)) {
+    return { kind: 'PX', alf: 20, cVoltage: null,
+      warning: `class ${s} is specified by its knee-point EMF — enter the knee point voltage; ALF 20 assumed` };
+  }
+  m = s.match(/^\s*(\d+(?:\.\d+)?)\s*S?\s*(?:FS\s*(\d+))?\s*$/i);
+  if (m) {
+    const fs = m[2] ? parseFloat(m[2]) : null;
+    return { kind: 'metering', alf: fs || 5, cVoltage: null,
+      warning: `measuring class ${s} feeding a protection relay — a metering core is designed to saturate early` +
+        (fs ? '' : '; FS 5 assumed') };
+  }
+  return { kind: 'unknown', alf: 20, cVoltage: null,
+    warning: `accuracy class '${s}' not recognised — ALF 20 assumed` };
+}
+
+/** ALF of an accuracy class like "5P20" → 20 (see parseCTAccuracyClass). */
 function parseCTAccuracyALF(accuracyClass) {
-  if (!accuracyClass || typeof accuracyClass !== 'string') return 20;
-  const m = accuracyClass.match(/(\d+)P(\d+)/i);
-  return m ? parseInt(m[2]) : 20;
+  return parseCTAccuracyClass(accuracyClass).alf;
 }
 
 /**
- * Calculate CT saturation parameters.
- * @param {object} ctProps - CT component props (ratio, accuracy_class, burden_va, knee_point_v, rct_ohm)
- * @returns {object} { ratio, iSatPrimary, kneePointV, rctOhm, burdenOhm, alf }
+ * Calculate CT saturation parameters — mirrors backend ct_model.ct_saturation_params.
+ * Square-loop core: the CT reproduces the current until the secondary EMF
+ * reaches the saturation EMF V_sat, then clips. Symmetrical (steady-state)
+ * only — the dc offset is evaluated in the time domain by the backend
+ * arc-flash clearing time, not here (a chart cannot show a transient).
+ * @param {object} ctProps - CT component props (ratio, accuracy_class, burden_va,
+ *   connected_burden_va, knee_point_v, rct_ohm)
+ * @returns {object} { ratio, iSatPrimary, kneePointV, rctOhm, burdenOhm, alf, alfEffective, totalZ, warnings }
  */
 function ctSaturationParams(ctProps) {
   const ct = parseCTRatio(ctProps.ratio);
-  const alf = parseCTAccuracyALF(ctProps.accuracy_class);
+  const cls = parseCTAccuracyClass(ctProps.accuracy_class);
+  const alf = cls.alf;
   const burdenVA = parseFloat(ctProps.burden_va) || 15;
   const iSecRated = ct.secondary; // Rated secondary current (5A or 1A)
   // [PS-16] Rct defaults to a typical secondary-winding resistance for the
-  // rated secondary (≈0.3 Ω for 5 A cores, ≈3 Ω for 1 A cores) instead of 0 —
-  // a zero Rct overstates the saturation-free current whenever the burden is
-  // small and the user supplies an explicit knee voltage.
+  // rated secondary (≈0.3 Ω for 5 A cores, ≈3 Ω for 1 A cores).
   const rctOhm = parseFloat(ctProps.rct_ohm) || (iSecRated <= 1 ? 3.0 : 0.3);
 
-  // Burden in ohms: Z_burden = VA / I²
+  // Burden in ohms: Z = VA / I². [C2] The class is defined at the RATED
+  // burden, but the CT drives its CONNECTED burden (relay + lead loop):
+  // ALF' = ALF·(Rct + R_rated)/(Rct + R_connected). Using one burden for
+  // both made them cancel — the onset never moved with the burden.
   const burdenOhm = burdenVA / (iSecRated * iSecRated);
+  const connVA = parseFloat(ctProps.connected_burden_va) || 0;
+  const connOhm = connVA > 0 ? connVA / (iSecRated * iSecRated) : burdenOhm;
 
-  // Knee point voltage (user override or derived from the accuracy class).
-  // [PS-16] The ALF defines the ACCURACY-LIMIT voltage
-  //   V_AL = ALF × I_sn × (Rct + R_burden)  [IEC 61869-2],
-  // and the knee (IEC 10%-exciting-current point) of a 5P/10P protection
-  // core sits below it: Vk ≈ 0.8·V_AL is the standard approximation. The
-  // previous model used V_AL itself as the knee, delaying the modelled
-  // saturation onset ~25% (optimistic for close-in faults). NOTE: the
-  // clipping model below stays symmetric — DC offset and remanence (the
-  // dominant saturation drivers at high X/R) are not modelled, so onset is
-  // still somewhat optimistic for fully-offset asymmetric faults.
+  let warnings = cls.warning ? [cls.warning] : [];
   let kneePointV = parseFloat(ctProps.knee_point_v);
-  if (!kneePointV || kneePointV <= 0) {
-    kneePointV = 0.8 * alf * iSecRated * (rctOhm + burdenOhm);
+  if (kneePointV > 0) {
+    // A rated (PX) knee sits below the saturation EMF — conservative.
+    warnings = warnings.filter(w => !w.startsWith('class '));
+  } else if (cls.kind === 'C') {
+    // [C4] IEEE C57.13: V_C at the terminals at 20·I_sn → EMF = V_C + 20·I_sn·Rct
+    kneePointV = cls.cVoltage + 20 * iSecRated * rctOhm;
+  } else {
+    // [L1] Class-derived: the saturation EMF is the accuracy-limit EMF
+    // E_AL = ALF·I_sn·(Rct + R_rated) [IEC 61869-2]. The previous 0.8·E_AL
+    // clipped a 5P20 core by 7.4 % at 20·I_n on rated burden, where the
+    // class guarantees ≤ 5 % composite error.
+    kneePointV = alf * iSecRated * (rctOhm + burdenOhm);
   }
 
-  // Primary current at which CT begins to saturate
-  // I_sat_sec = Vk / (Rct + R_burden)
-  const totalZ = rctOhm + burdenOhm;
+  // Primary current at which the CT begins to saturate: V_sat / (Rct + R_connected)
+  const totalZ = rctOhm + connOhm;
   const iSatSecondary = totalZ > 0 ? kneePointV / totalZ : Infinity;
   const iSatPrimary = iSatSecondary * ct.ratio;
 
   return { ratio: ct.ratio, primary: ct.primary, secondary: ct.secondary,
-           iSatPrimary, kneePointV, rctOhm, burdenOhm, alf, totalZ };
+           iSatPrimary, kneePointV, rctOhm, burdenOhm, connectedBurdenOhm: connOhm, alf,
+           alfEffective: iSatSecondary / iSecRated, totalZ, classKind: cls.kind, warnings };
 }
 
 /**
  * Calculate effective primary current accounting for CT saturation.
- * Below saturation knee point: I_eff = I_primary (no effect).
- * Above: waveform clipping reduces effective RMS current.
+ * Below saturation: I_eff = I_primary (no effect).
+ * Above: the FUNDAMENTAL of the clipped waveform — [C1] what a numerical
+ * relay measures (DFT); the true RMS is 1.1–1.8× higher and understated
+ * the saturation delay by up to half.
  *
  * Uses saturation angle model:
- *   Ks = Vk / (I_sec_ideal × Z_total)
+ *   Ks = V_sat / (I_sec_ideal × Z_total)
  *   θ  = arccos(1 - 2·Ks)
- *   η  = √((θ - sin(2θ)/2) / π)
- *   I_eff = I_primary × η
+ *   η₁ = √((θ - sin(2θ)/2)² + sin⁴θ) / π
+ *   I_eff = I_primary × η₁
  *
  * @param {number} iPrimary - Actual primary fault current (A)
  * @param {object} satParams - From ctSaturationParams()
@@ -612,8 +648,8 @@ function ctEffectiveCurrent(iPrimary, satParams) {
 
   // Saturation angle (portion of cycle the CT is not saturated)
   const theta = Math.acos(1 - 2 * ks);
-  // RMS reduction factor
-  const eta = Math.sqrt((theta - Math.sin(2 * theta) / 2) / Math.PI);
+  // Fundamental reduction factor (Fourier b1, a1 of the clipped half-wave)
+  const eta = Math.hypot(theta - Math.sin(2 * theta) / 2, Math.sin(theta) ** 2) / Math.PI;
 
   return iPrimary * Math.max(eta, 0.05); // floor at 5% to avoid zero
 }
@@ -1184,10 +1220,11 @@ const FIELD_INFO = {
   // CT
   'ct.ct_type':        'Phase: a per-phase measurement/protection CT feeding an overcurrent element.\nCore balance (residual): a window/toroidal CT that encircles all phase conductors and measures the residual (zero-sequence) current directly — used for sensitive earth-fault protection.\nAssociate a core-balance CT with a 50N/51N relay, or with an MCCB/ACB earth-fault (shunt-trip) release.',
   'ct.ratio':          'Default 400/5 — standard 5A secondary CT.\nSource: IEC 61869-2 — standard CT secondary current: 1A or 5A.\nCore-balance CTs use low ratios for sensitive earth fault (e.g. 100/1, 50/1).',
-  'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current\n• P = protection application.',
-  'ct.burden_va':      'Default 15 VA — typical protection CT burden.\nSource: IEC 61869-2 §2 — standard rated burden values.',
-  'ct.rct_ohm':        'Default 0.3 Ω — CT secondary winding resistance, typical for a 5 A secondary CT.\nSource: IEC 61869-2 — typical Rct: 0.1–0.5 Ω (5 A CTs), 1–5 Ω (1 A CTs).\nAffects saturation onset: higher Rct means earlier saturation.',
-  'ct.knee_point_v':   'Leave 0 to auto-derive from the accuracy class ALF.\nVk ≈ 0.8 × ALF × I_rated × (Rct + R_burden) — the knee of a 5P/10P protection core sits below the accuracy-limit voltage V_AL.\nSource: IEC 61869-2 — knee point voltage defines CT saturation onset.\nManual entry (e.g. a PX-class rated knee) overrides the calculated value.',
+  'ct.accuracy_class': 'Default 5P20 — protection class.\nSource: IEC 61869-2:\n• 5P20: 5% composite error at 20× rated current (on rated burden)\n• 5PR10: low-remanence protection class\n• PX / TPX / TPY / TPZ: enter the knee point voltage\n• C200 (IEEE C57.13): 200 V at the terminals at 20× rated current\n• Measuring classes (0.5, 0.2S, 0.5FS5) are flagged when they feed a relay.',
+  'ct.burden_va':      'RATED burden — the burden the accuracy class is defined at.\nSource: IEC 61869-2 — standard rated burden values (2.5–30 VA).\nEnter what the CT actually drives under Connected Burden.',
+  'ct.connected_burden_va': 'Burden the CT actually drives: relay input plus the lead loop (I²·R_lead; one-way leads for phase faults, the full loop for earth faults).\nLeave 0 to assume the rated burden.\nThe effective limit factor is ALF\' = ALF × (Rct + R_rated) / (Rct + R_connected) — long leads on a 5 A secondary can halve it.\nUsed by: TCC saturation, arc-flash clearing time, Duty Check CT adequacy.',
+  'ct.rct_ohm':        'CT secondary winding resistance. Leave 0 for a typical value: 0.3 Ω for a 5 A secondary, 3 Ω for a 1 A secondary.\nSource: IEC 61869-2 — typical Rct: 0.1–0.5 Ω (5 A CTs), 1–5 Ω (1 A CTs).\nA higher Rct (or a connected burden above rated) means earlier saturation.',
+  'ct.knee_point_v':   'Leave 0 to derive the saturation EMF from the accuracy class: the accuracy-limit EMF E_AL = ALF × I_rated × (Rct + R_rated burden) [IEC 61869-2].\nManual entry (e.g. a PX-class rated knee) overrides it; the knee sits below true saturation, so this is conservative.\nThe dc offset of a fault is evaluated in the time domain by the arc-flash clearing time, not by this value.',
 
   // PT
   'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V.',
@@ -2822,9 +2859,10 @@ const COMPONENT_DEFS = {
       ct_type: 'phase',
       ratio: '400/5',
       accuracy_class: '5P20',
-      burden_va: 15,
-      rct_ohm: 0.3, // typical for a 5 A secondary CT (1 A CTs run 1–5 Ω)
-      knee_point_v: 0,  // 0 = auto-derive from ALF
+      burden_va: 15,           // RATED burden (the class is defined at it)
+      connected_burden_va: 0,  // [C2] burden actually driven (relay + leads); 0 = rated
+      rct_ohm: 0,  // [L2] 0 = typical for the secondary (0.3 Ω at 5 A, 3 Ω at 1 A)
+      knee_point_v: 0,  // 0 = auto-derive from the accuracy class
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -2834,8 +2872,9 @@ const COMPONENT_DEFS = {
       ] },
       { key: 'ratio', label: 'Ratio', type: 'text' },
       { key: 'accuracy_class', label: 'Accuracy', type: 'text' },
-      { key: 'burden_va', label: 'Burden', type: 'number', unit: 'VA' },
-      { key: 'rct_ohm', label: 'Winding Resistance', type: 'number', unit: '\u03A9', min: 0, step: 0.1 },
+      { key: 'burden_va', label: 'Rated Burden', type: 'number', unit: 'VA' },
+      { key: 'connected_burden_va', label: 'Connected Burden', type: 'number', unit: 'VA', min: 0, step: 0.5, placeholder: 'Same as rated' },
+      { key: 'rct_ohm', label: 'Winding Resistance', type: 'number', unit: '\u03A9', min: 0, step: 0.1, placeholder: 'Typical for secondary' },
       { key: 'knee_point_v', label: 'Knee Point Voltage', type: 'number', unit: 'V', min: 0, step: 1, placeholder: 'Auto from ALF' },
     ],
   },
