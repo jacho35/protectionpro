@@ -498,18 +498,29 @@ const IDMT_CURVES = {
   'Definite Time':            { std: 'DT' },
 };
 
+// [TC2] IEC 60255-151 specifies the inverse characteristic between 2 and
+// G_D = 20 x Gs (the value relay manufacturers ship); above G_D the operate
+// time is held at t(G_D). Without the hold the pure equation keeps falling —
+// IEC EI is 84 % faster at 50x than at 20x — understating arc-flash clearing
+// and a downstream relay's time in grading. Per relay: idmt_max_multiple
+// (0 = no limit). Mirrored in backend/analysis/arcflash.py.
+const IDMT_MAX_MULTIPLE = 20;
+
 // Calculate relay trip time for a given current multiple M and TDS
-function idmtTripTime(curveName, M, TDS) {
+function idmtTripTime(curveName, M, TDS, maxMultiple = IDMT_MAX_MULTIPLE) {
   if (M <= 1) return Infinity;
   const c = IDMT_CURVES[curveName];
   if (!c) return Infinity;
   if (c.std === 'DT') {
     return TDS; // Definite time: time_dial is the fixed operate delay in seconds
-  } else if (c.std === 'IEC') {
-    return TDS * (c.k / (Math.pow(M, c.a) - 1) + c.c);
-  } else {
-    return TDS * (c.A / (Math.pow(M, c.p) - 1) + c.B);
   }
+  const lim = (maxMultiple === undefined || maxMultiple === null || maxMultiple === '')
+    ? IDMT_MAX_MULTIPLE : Number(maxMultiple);
+  if (lim > 1) M = Math.min(M, lim);
+  if (c.std === 'IEC') {
+    return TDS * (c.k / (Math.pow(M, c.a) - 1) + c.c);
+  }
+  return TDS * (c.A / (Math.pow(M, c.p) - 1) + c.B);
 }
 
 // ─── CT Saturation Model ───
@@ -701,35 +712,39 @@ function buildDistanceRelayZones(props) {
 // ─── IEC 60269 Fuse Curves (gG General Purpose) ───
 // Pre-arcing (minimum melting) time-current points: [current_A, time_s].
 //
-// One generic gG characteristic shape scaled per rating (I/In multiples):
-//   1.6→600s  2→100s  2.5→30s  3.15→8s  5→1.5s  6.3→0.5s
-//   8→0.1s    10→0.04s  16→0.01s  25→0.004s
-// The fast end is anchored so the pre-arcing time reaches 0.1 s at 8×In,
-// satisfying the IEC 60269-1 0.1 s pre-arcing gate (e.g. a 100 A gG link
-// clears in ≤0.1 s by its ~820 A gate current). The previous shape only
-// reached 0.1 s near 10×In and interpolated ~0.17 s at the gate.
-// NOTE: this is a single representative family, not the per-rating min/max
-// gate corridor of IEC 60269-1 Table 4; use manufacturer data for precise
-// grading. Currents are R10 standard values (= multiple × In rounded).
+// [TC1] Fitted per rating to the IEC 60269-1 Table 3 gG gates (built by
+// testing/tcc-review/build_gg_curves.py): 1.6·In (If) -> 600 s; the geometric
+// mid of Imin(10 s)/Imax(5 s) -> 7.07 s; the geometric mid of the two 0.1 s
+// gate currents -> 0.1 s; then 0.04 / 0.01 / 0.004 s at 1.25x / 2x / 3.125x
+// that current (the old table's tail shape), which puts the 0.01 s pre-arcing
+// I²t inside the IEC 60269-1 Table 7 corridor for every rating. The previous table was one shape scaled by I/In with 0.1 s at
+// 8·In — it read Imin(0.1 s) (the current at which the link must NOT melt
+// within 0.1 s) as a "clears by" limit, so every rating from 100 A pre-arced
+// faster than the standard allows (100 A: 0.090 s at 820 A), and from 200 A
+// it also broke the 10 s gate; the large ratings' 0.01 s I²t fell below the
+// Table 7 minimum pre-arcing I²t (400 A: 0.40e6 vs 0.76e6 A²s). Too fast = understated arc-flash energy and
+// optimistic downstream selectivity. Log-log interpolation between points.
+// NOTE: a representative mid-corridor curve, not a manufacturer's; use
+// manufacturer data for precise grading.
 // Mirrored VERBATIM in backend/analysis/arcflash.py `_FUSE_CURVES_GG`.
 const FUSE_CURVES_GG = {
-  16:  [[25,600],[32,100],[40,30],[50,8],[80,1.5],[100,0.5],[125,0.1],[160,0.04],[250,0.01],[400,0.004]],
-  20:  [[32,600],[40,100],[50,30],[63,8],[100,1.5],[125,0.5],[160,0.1],[200,0.04],[315,0.01],[500,0.004]],
-  25:  [[40,600],[50,100],[63,30],[80,8],[125,1.5],[160,0.5],[200,0.1],[250,0.04],[400,0.01],[630,0.004]],
-  32:  [[50,600],[63,100],[80,30],[100,8],[160,1.5],[200,0.5],[250,0.1],[315,0.04],[500,0.01],[800,0.004]],
-  40:  [[63,600],[80,100],[100,30],[125,8],[200,1.5],[250,0.5],[315,0.1],[400,0.04],[630,0.01],[1000,0.004]],
-  50:  [[80,600],[100,100],[125,30],[160,8],[250,1.5],[315,0.5],[400,0.1],[500,0.04],[800,0.01],[1250,0.004]],
-  63:  [[100,600],[125,100],[160,30],[200,8],[315,1.5],[400,0.5],[500,0.1],[630,0.04],[1000,0.01],[1600,0.004]],
-  80:  [[125,600],[160,100],[200,30],[250,8],[400,1.5],[500,0.5],[630,0.1],[800,0.04],[1250,0.01],[2000,0.004]],
-  100: [[160,600],[200,100],[250,30],[315,8],[500,1.5],[630,0.5],[800,0.1],[1000,0.04],[1600,0.01],[2500,0.004]],
-  125: [[200,600],[250,100],[315,30],[400,8],[630,1.5],[800,0.5],[1000,0.1],[1250,0.04],[2000,0.01],[3150,0.004]],
-  160: [[250,600],[315,100],[400,30],[500,8],[800,1.5],[1000,0.5],[1250,0.1],[1600,0.04],[2500,0.01],[4000,0.004]],
-  200: [[315,600],[400,100],[500,30],[630,8],[1000,1.5],[1250,0.5],[1600,0.1],[2000,0.04],[3150,0.01],[5000,0.004]],
-  250: [[400,600],[500,100],[630,30],[800,8],[1250,1.5],[1600,0.5],[2000,0.1],[2500,0.04],[4000,0.01],[6300,0.004]],
-  315: [[500,600],[630,100],[800,30],[1000,8],[1600,1.5],[2000,0.5],[2500,0.1],[3150,0.04],[5000,0.01],[8000,0.004]],
-  400: [[630,600],[800,100],[1000,30],[1250,8],[2000,1.5],[2500,0.5],[3150,0.1],[4000,0.04],[6300,0.01],[10000,0.004]],
-  500: [[800,600],[1000,100],[1250,30],[1600,8],[2500,1.5],[3150,0.5],[4000,0.1],[5000,0.04],[8000,0.01],[12500,0.004]],
-  630: [[1000,600],[1250,100],[1600,30],[2000,8],[3150,1.5],[4000,0.5],[5000,0.1],[6300,0.04],[10000,0.01],[16000,0.004]],
+  16:  [[25.6,600],[46.3,7.07],[113,0.1],[141,0.04],[226,0.01],[353,0.004]],
+  20:  [[32,600],[59.7,7.07],[148,0.1],[185,0.04],[297,0.01],[464,0.004]],
+  25:  [[40,600],[75.6,7.07],[197,0.1],[247,0.04],[395,0.01],[617,0.004]],
+  32:  [[51.2,600],[106,7.07],[265,0.1],[331,0.04],[529,0.01],[827,0.004]],
+  40:  [[64,600],[134,7.07],[342,0.1],[428,0.04],[684,0.01],[1070,0.004]],
+  50:  [[80,600],[177,7.07],[462,0.1],[578,0.04],[924,0.01],[1440,0.004]],
+  63:  [[101,600],[226,7.07],[607,0.1],[759,0.04],[1210,0.01],[1900,0.004]],
+  80:  [[128,600],[302,7.07],[819,0.1],[1020,0.04],[1640,0.01],[2560,0.004]],
+  100: [[160,600],[410,7.07],[1090,0.1],[1360,0.04],[2180,0.01],[3410,0.004]],
+  125: [[200,600],[504,7.07],[1450,0.1],[1810,0.04],[2900,0.01],[4530,0.004]],
+  160: [[256,600],[661,7.07],[1940,0.1],[2420,0.04],[3880,0.01],[6060,0.004]],
+  200: [[320,600],[873,7.07],[2560,0.1],[3190,0.04],[5110,0.01],[7990,0.004]],
+  250: [[400,600],[1110,7.07],[3410,0.1],[4270,0.04],[6830,0.01],[10700,0.004]],
+  315: [[504,600],[1520,7.07],[4530,0.1],[5660,0.04],[9060,0.01],[14200,0.004]],
+  400: [[640,600],[2010,7.07],[6020,0.1],[7530,0.04],[12000,0.01],[18800,0.004]],
+  500: [[800,600],[2600,7.07],[7970,0.1],[9970,0.04],[15900,0.01],[24900,0.004]],
+  630: [[1010,600],[3350,7.07],[10700,0.1],[13300,0.04],[21400,0.01],[33400,0.004]],
 };
 
 // Get the gG pre-arcing curve points for an arbitrary rating.
@@ -790,7 +805,7 @@ const FUSE_RATINGS_GG = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250
 
 const CB_TRIP_CLASSES = {
   // Long-time delay band factors emulating generic electronic-trip-unit LTD bands.
-  // t = k / (M² − 1), calibrated so t(6×Ir) = class seconds → k = class × (6² − 1) = class × 35.
+  // t = k / (M² − Mnt²), calibrated so t(6×Ir) = class seconds → k = class × (36 − Mnt²).
   // Note: these are NOT the IEC 60947-4-1 motor-starter trip classes; they are
   // representative LTD time bands (class = seconds at 6× pickup).
   // Higher k = slower thermal trip at same overload.
@@ -799,6 +814,18 @@ const CB_TRIP_CLASSES = {
   20:  { k: 700 },
   30:  { k: 1050 },
 };
+
+// [TC3] Conventional non-tripping current (× Ir): the device must NOT trip
+// within the conventional time (1 h, 2 h above 63 A) at this current —
+// IEC 60898-1 Table 7 (MCB, 1.13 In) and IEC 60947-2 Table 6 (MCCB/ACB,
+// 1.05 Ir). The thermal curve's asymptote sits here, not at 1.0: the old
+// k/(M²−1) tripped an MCB at 1.13 In in 21 min and an MCCB at 1.05 Ir in
+// 57 min.
+const CB_CONV_NON_TRIP = { mcb: 1.13, mccb: 1.05, acb: 1.05 };
+// [TC3] MCB thermal constant at class 10: t(2.55 In) = 30 s, inside the
+// IEC 60898-1 1–60 s gate (1–120 s above 32 A); the class-at-6× calibration
+// gave 64–66 s, outside it. t(1.45 In) = 190 s (< 1 h).
+const MCB_THERMAL_K = 30 * (2.55 * 2.55 - 1.13 * 1.13);
 
 /**
  * Calculate CB trip time for a given current.
@@ -811,10 +838,10 @@ function cbTripTime(params, currentA) {
   const Ir = (params.trip_rating_a || 630) * (params.thermal_pickup || 1.0);
   const Im = Ir * (params.magnetic_pickup || 10);  // Magnetic pickup in amps
   const M = currentA / Ir;  // Current as multiple of thermal pickup
+  const cbType = params.cb_type || 'mccb';
+  const Mnt = CB_CONV_NON_TRIP[cbType] || CB_CONV_NON_TRIP.mccb;
 
   if (M <= 1.0) return Infinity;  // Below thermal pickup — no trip
-
-  const cbType = params.cb_type || 'mccb';
 
   // ACB with short-time and instantaneous regions
   if (cbType === 'acb') {
@@ -837,11 +864,14 @@ function cbTripTime(params, currentA) {
     return 0.02;  // 20ms magnetic trip
   }
 
-  // Thermal (long-time) region: I²t inverse-time characteristic
+  // Thermal (long-time) region: I²t inverse-time characteristic with its
+  // asymptote at the conventional non-tripping current [TC3]
+  if (M <= Mnt) return Infinity;
   const ltClass = params.long_time_delay || 10;
-  const classData = CB_TRIP_CLASSES[ltClass] || CB_TRIP_CLASSES[10];
-  const k = classData.k;
-  const t = k / (M * M - 1);
+  const k = cbType === 'mcb'
+    ? MCB_THERMAL_K * (ltClass / 10)
+    : ltClass * (36 - Mnt * Mnt);
+  const t = k / (M * M - Mnt * Mnt);
 
   // Clamp to reasonable range
   return Math.min(t, 10000);
@@ -1197,6 +1227,8 @@ const FIELD_INFO = {
 
   // Relay
   'relay.associated_ct': 'Select the current transformer (CT) that feeds this relay.\nThe CT measurement location determines where the relay measures fault current.\nThe relay pickup should be set in primary amps (before CT ratio).',
+  'relay.voltage_kv': 'Distance (21) relay: the voltage its zone reaches (primary ohms) are converted at.\nOnly used when the relay has no Measuring CT, Measuring PT or Trip CB on the diagram; otherwise the voltage where it measures is used.',
+  'relay.idmt_max_multiple': 'Current multiple (× pickup) above which the inverse curve stops getting faster — the operate time is held at its value there.\nDefault 20 — IEC 60255-151 specifies IDMT accuracy between 2 and 20 × the setting, and most relays hold the 20× time above it. Check the relay manual (some use 30× or 40×).\n0 = no limit (pure curve equation).\nUsed by: TCC, coordination checks, arc-flash clearing time.',
   'relay.associated_pt': 'Select the potential transformer (PT) that feeds this relay\'s voltage measurement (distance, directional, or voltage elements).\nUsed by: Duty Check — a PT is only checked for burden/accuracy adequacy once a relay declares it here (a metering-only PT is not a protection duty concern).',
   'relay.trip_cb': 'Select the circuit breaker that this relay trips.\nWhen the relay operates, it sends a trip signal to this CB to isolate the fault.',
   'relay.pickup_a':  'Set in PRIMARY amps (line current before the CT), not secondary/relay-terminal amps.\nWith a phase CT linked this is the phase current; with a core-balance CT it is the net residual (earth-fault, 3I0) current through the window.\nEither way the panel shows the equivalent secondary current (pickup ÷ CT ratio) the relay actually sees.\nDefault 100A — adjust to match load current and CT ratio.\nSource: IEC 60255-151 — overcurrent relay pickup setting.',
@@ -2689,6 +2721,7 @@ const COMPONENT_DEFS = {
       pickup_a: 100,
       time_dial: 1.0,
       curve: 'IEC Standard Inverse',
+      idmt_max_multiple: 20, // [TC2] operate time held at t(20×) above 20× pickup
       // Instantaneous (50) element: 0 = disabled
       inst_pickup_a: 0,
       inst_delay_s: 0.05,
@@ -2729,6 +2762,7 @@ const COMPONENT_DEFS = {
       { key: 'pickup_a', label: 'Pickup', type: 'number', unit: 'A', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
       { key: 'time_dial', label: 'Time Dial', type: 'number', showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
       { key: 'curve', label: 'Curve', type: 'select', options: ['IEC Standard Inverse', 'IEC Very Inverse', 'IEC Extremely Inverse', 'IEC Long Time Inverse', 'IEEE Moderately Inverse', 'IEEE Very Inverse', 'IEEE Extremely Inverse', 'Definite Time'], showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
+      { key: 'idmt_max_multiple', label: 'Curve Limit', type: 'number', unit: '× pickup', min: 0, step: 1, showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
       { key: 'inst_pickup_a', label: 'Inst. (50) Pickup', type: 'number', unit: 'A', min: 0, step: 1, showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
       { key: 'inst_delay_s', label: 'Inst. Delay', type: 'number', unit: 's', min: 0, step: 0.01, showWhen: { field: 'relay_type', values: ['50/51', '50N/51N', '67'] }, section: 'protection' },
       // Directional overcurrent (67) fields

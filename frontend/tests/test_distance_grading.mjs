@@ -46,10 +46,25 @@ function makeSandbox() {
     escHtml: (s) => String(s),
     document: { getElementById: () => ({ innerHTML: '', querySelectorAll: () => [] }) },
     UI: { toast: () => {} },
+    // Minimal Components stub (the real one lives in components.js; the
+    // changeover work made tcc.js call these). No changeovers in these
+    // fixtures, so every wire is live.
+    Components: componentsStub(wires),
   };
   vm.createContext(sandbox);
   const { TCC } = vm.runInContext(`${tccSrc}\n;({ TCC });`, sandbox);
   return { TCC, components, wires };
+}
+
+// Minimal Components stub (the real one lives in components.js; the
+// changeover work made tcc.js call these). No changeovers in these fixtures,
+// so every wire is live.
+function componentsStub(wires) {
+  return {
+    topologyWires: () => [...wires.values()],
+    isOpenSwitching: (c) => !!c && !!c.props
+      && (c.type === 'cb' || c.type === 'switch') && c.props.state === 'open',
+  };
 }
 
 function comp(id, type, props) { return { id, type, props }; }
@@ -235,6 +250,7 @@ function wire(id, fromComponent, fromPort, toComponent, toPort) {
     console, AppState: appState3, escHtml: (s) => String(s),
     document: { getElementById: () => ({ innerHTML: '', querySelectorAll: () => [] }) },
     UI: { toast: () => {} },
+    Components: componentsStub(wires3),
   };
   vm.createContext(sandbox3);
   const { TCC: TCC3 } = vm.runInContext(`${tccSrc}\n;({ TCC });`, sandbox3);
@@ -253,6 +269,30 @@ function wire(id, fromComponent, fromPort, toComponent, toPort) {
   // impedance -> gradeDistanceZones must flag underreach for this relay.
   assert(result3.z2Apparent > parseFloat(relay3.props.z2_reach_ohm),
     'scenario 5: configured Z2 is below the infeed-corrected apparent impedance (underreach case)');
+}
+
+// ── Scenario TC4: relay left at the 11 kV default on a 132 kV line ─────────
+// [TC4] Reaches are primary ohms at the voltage where the relay measures.
+// The relay's voltage_kv prop defaults to 11 on every relay and used to win
+// over the measured location, so a 132 kV relay's zone pickups
+// (V/(√3·Z)) came out 12x too low on the TCC.
+{
+  const { TCC, components, wires } = makeSandbox();
+  components.set('util1', comp('util1', 'utility', { voltage_kv: 132 }));
+  components.set('bus1', comp('bus1', 'bus', { voltage_kv: 132 }));
+  components.set('cb1', comp('cb1', 'cb', { state: 'closed' }));
+  components.set('ct1', comp('ct1', 'ct', {}));
+  components.set('relay1', comp('relay1', 'relay', {
+    relay_type: '21', voltage_kv: 11, trip_cb: 'cb1', associated_ct: 'ct1',
+  }));
+  components.set('relay2', comp('relay2', 'relay', { relay_type: '21', voltage_kv: 33 }));
+  wires.set('w1', wire('w1', 'util1', 'out', 'bus1', 'at_0'));
+  wires.set('w2', wire('w2', 'bus1', 'at_0', 'ct1', 'top'));
+  wires.set('w3', wire('w3', 'ct1', 'bottom', 'cb1', 'top'));
+  assert(TCC._distanceRelayVoltage(components.get('relay1')) === 132,
+    'TC4: relay measuring a 132 kV bus uses 132 kV, not its 11 kV default prop');
+  assert(TCC._distanceRelayVoltage(components.get('relay2')) === 33,
+    'TC4: an unassociated relay falls back to its own voltage_kv');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

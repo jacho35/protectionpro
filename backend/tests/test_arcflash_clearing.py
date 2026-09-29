@@ -175,10 +175,13 @@ class TestDeviceSearchBFS:
         res = _arc_flash(proj)
         r = res.buses["bus-1"]
         # Expected thermal time from the CB's own curve at the REFERRED
-        # current: M = Iarc·(11/33)/Ir, t = k/(M²−1) with k = class×35.
+        # current: M = Iarc·(11/33)/Ir, t = k/(M²−Mnt²), k = class×(36−Mnt²),
+        # Mnt = 1.05 — the IEC 60947-2 conventional non-tripping current
+        # ([TC3]; was k/(M²−1), which tripped at 1.05·Ir within the hour).
         i_ref = r.arcing_current_ka * 1000.0 * 11.0 / 33.0
         m = i_ref / 280.0
-        t_expected = 5 * 35 / (m * m - 1.0)
+        mnt2 = 1.05 ** 2
+        t_expected = 5 * (36 - mnt2) / (m * m - mnt2)
         assert 0.1 < t_expected < 1.9, "test setup drifted out of the discriminating band"
         assert r.clearing_time_s == pytest.approx(t_expected, abs=2e-3), (
             "expected the referred-current thermal time — 0.05 s indicates "
@@ -221,10 +224,12 @@ class TestFuseClearing:
         )
 
     def test_gg630_current_limiting_region_is_fast(self):
-        """Deep in the current-limiting region (Iarc ≈ 24 kA > the curve's
-        16 kA last point) the same fuse clears in 0.004 s × 1.2 ≈ 0.005 s —
-        no artificial floor is applied. (The 0.1 s-gate re-fit, PROT-21,
-        lowered the curve's last pre-arcing point from 0.008 s to 0.004 s.)
+        """Deep in the current-limiting region (Iarc ≈ 24 kA) the same fuse
+        clears in about 10 ms — no artificial floor is applied.
+        [TC1] Re-baselined: the gate-fitted 630 A curve pre-arcs in 0.01 s at
+        21.4 kA (I²t 4.6e6 A²s, inside the IEC 60269-1 Table 7 corridor
+        2.25e6..7.5e6); the old table's 0.004 s at 16 kA put its I²t (0.26e6)
+        far below the Table 7 minimum pre-arcing I²t.
 
         fault_mva = 433 → Ik3 ≈ 25 kA → Iarc ≈ 23.9 kA.
         """
@@ -244,21 +249,24 @@ class TestFuseClearing:
         r = res.buses["bus-1"]
         assert r.arcing_current_ka > 20.0
         assert 0 < r.clearing_time_s < 0.1
-        assert r.clearing_time_s == pytest.approx(0.0048, abs=0.002)
+        t_pre = 10 ** (math.log10(0.01) + (math.log10(r.arcing_current_ka * 1000) - math.log10(21400))
+                       / (math.log10(33400) - math.log10(21400)) * (math.log10(0.004) - math.log10(0.01)))
+        assert r.clearing_time_s == pytest.approx(round(1.2 * t_pre, 3), abs=1.5e-3)
 
     def test_prearc_interpolation_matches_table_and_convention(self):
         """Unit anchors on the ported curve: exact table point, log-log
         interpolation between points, and infinity below the minimum
         operating current (frontend fuseTripTime convention)."""
-        assert _fuse_prearc_time(630, 2000) == pytest.approx(8.0)
-        # Log-log between [1600, 30] and [2000, 8]:
-        t = _fuse_prearc_time(630, 1800)
-        lo = 10 ** (math.log10(30) +
-                    (math.log10(1800) - math.log10(1600)) /
-                    (math.log10(2000) - math.log10(1600)) *
-                    (math.log10(8) - math.log10(30)))
+        # [TC1] gate-fitted 630 A row: (1010, 600), (3350, 7.07), (10700, 0.1)
+        assert _fuse_prearc_time(630, 3350) == pytest.approx(7.07)
+        # Log-log between [3350, 7.07] and [10700, 0.1]:
+        t = _fuse_prearc_time(630, 5000)
+        lo = 10 ** (math.log10(7.07) +
+                    (math.log10(5000) - math.log10(3350)) /
+                    (math.log10(10700) - math.log10(3350)) *
+                    (math.log10(0.1) - math.log10(7.07)))
         assert t == pytest.approx(lo, rel=1e-6)
-        assert math.isinf(_fuse_prearc_time(630, 500))
+        assert math.isinf(_fuse_prearc_time(630, 1000))
         # Non-tabulated rating scales geometrically from the nearest curve
         # (550 A → 500 A curve × 1.1): min operating point 800 × 1.1 = 880 A
         assert math.isinf(_fuse_prearc_time(550, 870))

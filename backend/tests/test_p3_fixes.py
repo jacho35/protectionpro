@@ -240,8 +240,11 @@ class TestPS9CBThermalRegion:
              "magnetic_pickup": 10.0, "long_time_delay": 10, "cb_type": "mccb"}
 
     def test_thermal_region_is_inverse_time(self):
-        # M = 3 → t = k/(M²−1) = 350/8 = 43.75 s (frontend CB_TRIP_CLASSES)
-        assert _cb_self_clearing_time(self.PROPS, 300.0) == pytest.approx(350.0 / 8.0)
+        # M = 3 → t = k/(M²−Mnt²), k = 10·(36−1.05²), Mnt = 1.05 (IEC 60947-2
+        # conventional non-tripping current) — [TC3]; was 350/(M²−1).
+        mnt2 = 1.05 ** 2
+        assert _cb_self_clearing_time(self.PROPS, 300.0) == pytest.approx(
+            10 * (36 - mnt2) / (9 - mnt2))
 
     def test_below_pickup_never_trips_thermally(self):
         assert _cb_self_clearing_time(self.PROPS, 50.0) == 10000.0
@@ -593,9 +596,15 @@ class TestEE14FuseClearing:
         assert _estimate_clearing_time(self._fuse(400.0), 1000.0) == 5.0
 
     def test_bolted_fault_is_fast(self):
-        # 400 A gG at 10 kA: pre-arc 4 ms × 1.2 = 4.8 ms
+        # 400 A gG at 10 kA: log-log between the gate-fitted points
+        # (7530 A, 0.04 s) and (12000 A, 0.01 s) → ≈ 17 ms pre-arc, × 1.2.
+        # [TC1] Was 4 ms × 1.2 — the old table put 10 kA at 25·In = 4 ms, an
+        # I²t of 0.4e6 A²s, below the IEC 60269-1 Table 7 minimum (0.76e6).
+        pre = 10 ** (math.log10(0.04) + (math.log10(10000) - math.log10(7530))
+                     / (math.log10(12000) - math.log10(7530))
+                     * (math.log10(0.01) - math.log10(0.04)))
         t = _estimate_clearing_time(self._fuse(400.0), 10000.0)
-        assert t == pytest.approx(0.0048, rel=1e-6)
+        assert t == pytest.approx(1.2 * pre, rel=1e-6)
 
     def test_below_minimum_melting_uses_cap(self):
         assert _estimate_clearing_time(self._fuse(400.0), 500.0) == 5.0

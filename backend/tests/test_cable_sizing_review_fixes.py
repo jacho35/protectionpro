@@ -112,8 +112,10 @@ class TestCS2ClearingTimeFromTheDevice:
     def test_relay_curve_matches_iec_60255(self):
         props = {"relay_type": "50/51", "pickup_a": 200, "time_dial": 0.3,
                  "curve": "IEC Standard Inverse", "inst_pickup_a": 0}
+        # 13120/200 = 65.6 x pickup: held at the 20 x time ([TC2], IEC
+        # 60255-151 G_D) — the uncapped equation gave 0.48 s.
         assert _relay_operate_time(props, 13120.0) == pytest.approx(
-            0.3 * 0.14 / ((13120 / 200) ** 0.02 - 1), rel=1e-9)
+            0.3 * 0.14 / (20 ** 0.02 - 1), rel=1e-9)
 
     def test_relay_protected_feeder_fails(self):
         p = _mv_relay()

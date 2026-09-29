@@ -109,7 +109,9 @@ class TestC3DcOffset:
     def test_no_offset_no_delay(self):
         relay = {"pickup_a": 400, "time_dial": 0.1, "curve": "IEC Standard Inverse"}
         sat = ct_saturation_params(CT)
-        t_static = 0.1 * 0.14 / ((ct_effective_current(16000, sat) / 400) ** 0.02 - 1)
+        # [TC2] 9.48 kA effective = 23.7 x pickup: held at the 20 x time
+        m = min(ct_effective_current(16000, sat) / 400, 20.0)
+        t_static = 0.1 * 0.14 / (m ** 0.02 - 1)
         assert _relay_operate_time(relay, 16000, CT, None, 50.0) == pytest.approx(t_static)
 
     def test_kappa_no_longer_derates_threshold(self):
