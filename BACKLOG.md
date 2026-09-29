@@ -16,7 +16,6 @@ section and adding the `## Completed` entry.
 2. **Transformer through-fault withstand (P8)** — IEC 60076-5 category curves vs the through-fault at each transformer. *(Protection Coordination Enhancements)*
 3. **Zero-sequence line capacitance — capacitive earth-fault current (isolated / resonant-earthed MV)** — IEC 60909-0 requires line C₀ for these systems; the engine reports Ik1 ≈ 0 where ~36 A flows on 20 km of 11 kV cable. Plus a Petersen-coil tuning check. *(Fault Analysis Enhancements)*
 4. **SVC on the swing bus reports the bus's whole reactive injection** — `loadflow.py`'s `svc` summary gives it the utility's Q (0.55 Mvar with nothing to regulate); the harmonics study takes that as the SVC's output. *(Load Flow Enhancements)*
-5. **Frequency scan: a voltage-regulating SVC contributes nothing** — the scan runs no load flow, so it has no solved Q to model. Run a baseline load flow as the harmonics study does. Part of engine review #14. *(Harmonics & Power Quality Enhancements)*
 6. **IEC 61000 harmonic limit values unconfirmed** — the IEC mode's IEC 61000-3-6 planning levels and IEC 61000-2-4 Class 2 levels came from the reviewer's reading; confirm against licensed copies. *(Harmonics & Power Quality Enhancements)*
 
 
@@ -215,7 +214,9 @@ Overhead lines are modelled as a "Feeder Type" of the Cable component (`construc
 
 ## Harmonics & Power Quality Enhancements
 Open items from the 2026-09-29 harmonics review (`HARMONICS_REVIEW.md`).
-- **Frequency scan — voltage-regulating SVC**: `frequency_scan.py` builds its shunts without a load flow, so `bus_shunt_admittance` gets no solved Q and a regulating SVC contributes 0 (fixed-Q mode uses its set output). Run a baseline load flow and pass `svc_q` as `run_harmonics` does. Part of engine review #14.
+- ~~**Frequency scan — voltage-regulating SVC**: `frequency_scan.py` builds its shunts without a load flow, so `bus_shunt_admittance` gets no solved Q and a regulating SVC contributes 0 (fixed-Q mode uses its set output). Run a baseline load flow and pass `svc_q` as `run_harmonics` does. Part of engine review #14.~~ **Done** — see Completed (FS5).
+- **Frequency scan — both generator states**: a generator with a closed breaker counts in the source impedance even when the load flow leaves it idle (the scan warns, `FREQUENCY_SCAN_REVIEW.md` L6). Offer a second sweep with idle/standby generators disconnected so grid-only and island resonances show side by side.
+- **Frequency scan — zero-sequence (triplen) network**: the scan is positive-sequence only. A zero-sequence sweep (transformer vector groups and earthing, as the fault study models them) would show triplen resonances in 4-wire LV networks.
 - **Confirm the IEC limit values**: `_iec_ihd_limit` / `_iec_thd_limit` hold IEC 61000-3-6:2008 Table 2 (MV, HV-EHV) and IEC 61000-2-4:2002 Class 2 as the reviewer read them; no licensed copy was in `IEC Standards/`. Check every tabulated order and the formula ranges.
 - **IEC 61000-3-6 emission allocation (stage 2)**: in IEC mode the PCC current is reported, not graded. Grading it needs each customer's agreed power S_i, the supply capacity S_t and the summation exponents; add those as study inputs.
 - **User-entered drive spectra**: `VFD_SPECTRA` are typical values by pulse number and reactor, with no standard to check them against. Allow a measured or datasheet spectrum per drive (IEC 61000-3-12 test data).
@@ -341,6 +342,13 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 ---
 
 ## Completed
+
+### Frequency scan review: per-unit ranking, refined peaks, transformer ratio, live network, FS1–FS5 (2026-09-29)
+- **Review.** `FREQUENCY_SCAN_REVIEW.md` checks `frequency_scan.py` against closed-form RLC resonances and a hand nodal solve in ohms with an ideal transformer. The Z(h) curve, the h_r = √(S_sc/Q_c) location and the tuned-filter peak and dip were exact, as was scale invariance.
+- **FS1.** Resonances were ranked in ohms, so any 11 kV peak outranked any 0.4 kV one. An LV peak of 398 pu at h 6.8 lost the headline to an 18 pu MV peak at h 13.7. They are now ranked in per unit, and the modal has a pu column and a pu chart for mixed voltages. **FS2.** Peaks were the largest sample (−5 % at the default step, −99 % when lightly damped). They are now refined to the true extremum.
+- **FS3.** The harmonic network (shared with harmonics) left out the transformer turns ratio. An 11/0.42 kV unit on a 0.4 kV bus, or a tap, mis-referred the network beyond it: |Z| off by up to 12 %, harmonics HV THD low by up to 8 %. Off-nominal chains are now stamped as the load-flow π and Kron-reduced at each order. **FS4.** Dead islands were scanned and could head the results; they are now dropped and named. **FS5.** A regulating SVC now takes its solved load-flow Q.
+- **Lesser.** Standard peak prominence (L1). The no-capacitor warning uses live capacitance (L2). Warnings for a resonance above h_max (L3) and for idle generators counted in the source (L6). Significant-figure rounding at LV (L4). Empty results report the project frequency (L5).
+- Re-run saved harmonics studies that have an off-nominal transformer. +15 tests in `test_frequency_scan_review_fixes.py`. Cache-bust `3.5.153 → 3.5.154`.
 
 ### Harmonics review: IEEE 519 per-order limits, boards, STATCOM, IEC limit option, H1–H6 (2026-09-29)
 - **Review.** `HARMONICS_REVIEW.md` checks `harmonics.py` against IEEE 519-2014 Tables 1–4 and an independent nodal solve. The solve, THD_V, TDD, Isc/IL, the Table 1 voltage limits and the tuned-filter synthesis were exact.

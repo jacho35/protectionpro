@@ -95,7 +95,7 @@ def test_unbalanced_nameplate_mismatch_matches_balanced():
 def test_harmonic_chain_rebases_transformer_impedance():
     def x_pu(kv):
         chains = _branch_chains(_nameplate_net(kv), 100.0)[0]
-        return next(x for a, b, _r, x in chains if {a, b} == {"A", "B"})
+        return next(x for a, b, _r, x, _st in chains if {a, b} == {"A", "B"})
     # Same ohms, so on the 0.40 kV base the pu value is (0.42/0.40)² larger.
     assert x_pu(0.40) == pytest.approx(x_pu(0.42) * (0.42 / 0.40) ** 2, rel=1e-9)
 

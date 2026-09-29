@@ -160,7 +160,15 @@ $$Z_{kk}(h)=\left[\mathbf{Y}_h^{-1}\right]_{kk}$$
 $$h_r=\sqrt{\frac{S_{sc}}{Q_c}}$$
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>A 2 Mvar bank on an 11 kV bus with $S_{sc}=50$ MVA: $h_r=\sqrt{50/2}=\mathbf{5.0}$. The 5th harmonic — the strongest characteristic harmonic of a 6-pulse drive — sits exactly on the resonance and will be heavily amplified. Moving to a 3 Mvar bank gives $h_r=4.08$; adding a detuning reactor moves it below 4.</p></div>
-<p>Results are impedances in ohms at each bus's own voltage base. They are on-demand and not saved with the project.</p>` },
+<h4>What the scan reports</h4>
+<ul>
+<li>Each resonance's order and $|Z|$ are refined to the true extremum between sweep points, so a sharp peak is not under-read by the step size.</li>
+<li>Resonances are ranked by $|Z|$ in <strong>per unit</strong> on the study base, not ohms: $V_h=Z_{pu}\,I_h$, so per unit compares an LV bus with an MV one. The chart switches to per unit when the scanned buses have different voltages.</li>
+<li>The network is the one the fundamental load flow energises. A bus behind an open breaker is not scanned, a voltage-regulating SVC takes the output the load flow solved, and transformers carry their turns ratio (taps, and an 11/0.42 kV unit on a 0.4 kV bus).</li>
+<li>A generator with its breaker closed counts in the source impedance even when the load flow leaves it idle, which raises the resonant order; the scan names it. Open its breaker to scan the grid-only case.</li>
+<li>The model is balanced positive sequence. Cable capacitance, frequency-dependent resistance and the zero-sequence (triplen) network are not included.</li>
+</ul>
+<p>Impedances are in ohms at each bus's own voltage base and in per unit. Results are on-demand and not saved with the project.</p>` },
 
 { id: 'dyn-filter', group: 'dynamics', title: 'Passive filter sizing',
   std: 'IEEE 1531 · Arrillaga · Analyse ▸ Power quality',

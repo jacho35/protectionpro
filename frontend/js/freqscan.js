@@ -132,7 +132,7 @@ const FrequencyScan = {
     const peaks = (r.resonances || []).filter(x => x.kind === 'parallel');
     const col = peaks.length ? '#c98500' : '#2e7d32';
     const verdict = peaks.length
-      ? `Parallel resonance at ${r.worst_f_hz.toFixed(0)} Hz (order ${r.worst_h.toFixed(2)}) — ${this._esc(r.worst_bus_name)}, ${r.worst_z_ohm.toFixed(2)} Ω`
+      ? `Parallel resonance at ${r.worst_f_hz.toFixed(0)} Hz (order ${r.worst_h.toFixed(2)}) — ${this._esc(r.worst_bus_name)}, ${this._fmt(r.worst_z_ohm)} Ω${r.worst_z_pu ? ` (${this._fmt(r.worst_z_pu)} pu)` : ''}`
       : 'No parallel resonance within the scanned range';
     html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;border-radius:6px;border:1px solid ${col};background:${col}14">
       <div><span style="font-weight:700;color:${col}">${verdict}</span></div>
@@ -146,15 +146,24 @@ const FrequencyScan = {
     this._hydrate(body, r);
   },
 
+  // Significant figures, not fixed decimals: an LV bus's |Z| is milliohms.
+  _fmt(v) {
+    const x = Number(v) || 0;
+    if (x === 0) return '0';
+    return Math.abs(x) >= 1000 ? x.toFixed(0) : String(parseFloat(x.toPrecision(4)));
+  },
+
   _resonanceTable(r) {
     if (!(r.resonances || []).length) return '';
     const rows = r.resonances.map(x => `<tr>
       <td>${this._esc(x.bus_name)}</td>
       <td>${x.kind === 'parallel' ? 'Parallel (peak — amplifies)' : 'Series (dip — sinks)'}</td>
       <td>${x.h.toFixed(2)}</td><td>${x.f_hz.toFixed(0)}</td>
-      <td>${x.z_ohm.toFixed(3)}</td><td>${x.prominence.toFixed(1)}×</td></tr>`).join('');
+      <td>${this._fmt(x.z_ohm)}</td><td>${x.z_pu != null ? this._fmt(x.z_pu) : ''}</td><td>${x.prominence.toFixed(1)}×</td></tr>`).join('');
+    // Ranked by |Z| in per unit (the backend sorts): V_h = Z_pu·I_h, so pu
+    // compares buses of different voltage where ohms cannot.
     return `<table class="af-table" style="font-size:11px;margin-top:4px;font-variant-numeric:tabular-nums">
-      <thead><tr><th>Bus</th><th>Resonance</th><th>Order h</th><th>f (Hz)</th><th>|Z| (Ω)</th><th>Prominence</th></tr></thead>
+      <thead><tr><th>Bus</th><th>Resonance</th><th>Order h</th><th>f (Hz)</th><th>|Z| (Ω)</th><th>|Z| (pu)</th><th>Prominence</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
   },
 
@@ -166,7 +175,7 @@ const FrequencyScan = {
     let rows = '';
     for (let i = 0; i < r.h.length; i += stride) {
       rows += `<tr><td>${r.h[i].toFixed(2)}</td><td>${(r.h[i] * r.f0_hz).toFixed(0)}</td>`
-        + buses.map(b => `<td>${(b.z_ohm[i] ?? 0).toFixed(3)}</td>`).join('') + '</tr>';
+        + buses.map(b => `<td>${this._fmt(b.z_ohm[i] ?? 0)}</td>`).join('') + '</tr>';
     }
     return `<details style="font-size:11px;margin-top:8px"><summary style="cursor:pointer">Impedance data (Ω)</summary>
       <div style="max-height:240px;overflow:auto;margin-top:6px"><table class="af-table" style="font-size:10px;font-variant-numeric:tabular-nums">
@@ -188,19 +197,27 @@ const FrequencyScan = {
         .concat(buses.filter(b => !keep.has(b.id)).slice(0, MAX - keep.size));
     }
     const xs = r.h.map(h => h * r.f0_hz);
+    // Buses of different voltage: plot per unit on the study base, since
+    // ohms put every LV curve (U²) decades below the MV ones.
+    const mixed = new Set(buses.map(b => b.voltage_kv)).size > 1 && r.base_mva > 0;
+    const zb = b => (mixed ? (b.voltage_kv * b.voltage_kv) / r.base_mva : 1);
     const series = buses.map((b, i) => ({
       name: b.name + (b.id === r.worst_bus_id ? ' ◆' : ''),
-      values: b.z_ohm.map(z => (z > 0 ? Math.log10(z) : null)),
+      values: b.z_ohm.map(z => (z > 0 ? Math.log10(z / zb(b)) : null)),
       color: b.id === r.worst_bus_id ? (dark ? '#ff5b5b' : '#c62828') : P.pool[i % P.pool.length],
       width: b.id === r.worst_bus_id ? 2.4 : 1.6,
     }));
     const markers = (r.resonances || [])
-      .filter(x => x.kind === 'parallel').slice(0, 3)
+      .filter(x => x.kind === 'parallel')
+      // One marker per resonant order: the same resonance seen from several
+      // buses (or two within a few %) printed its labels on top of each other.
+      .filter((x, i, a) => a.findIndex(y => y.kind === 'parallel' && Math.abs(y.h - x.h) < 0.04 * x.h) === i)
+      .slice(0, 3)
       .map(x => ({ x: x.f_hz, label: `h=${x.h.toFixed(1)}`, dashed: true,
                    color: dark ? '#ff5b5b' : '#c62828' }));
     this._logChart(el, {
       title: 'Driving-point impedance vs frequency',
-      xLabel: 'Frequency (Hz)', yLabel: '|Z| (Ω, log)', xs, series, markers,
+      xLabel: 'Frequency (Hz)', yLabel: mixed ? `|Z| (pu on ${r.base_mva} MVA, log)` : '|Z| (Ω, log)', xs, series, markers,
     }, P);
   },
 
@@ -223,7 +240,9 @@ const FrequencyScan = {
     const Y = v => padT + plotH - (v - yMin) / (yMax - yMin) * plotH;
     const ohm = e => {
       const v = Math.pow(10, e);
-      return v >= 100 ? v.toFixed(0) : v >= 1 ? (+v.toFixed(1)).toString() : v.toFixed(v >= 0.1 ? 1 : 2);
+      // Below 1 keep two significant figures — an LV decade line at 0.001 Ω
+      // read "0.00" with fixed decimals.
+      return v >= 100 ? v.toFixed(0) : v >= 1 ? (+v.toFixed(1)).toString() : String(parseFloat(v.toPrecision(2)));
     };
 
     let g = '';
@@ -274,7 +293,9 @@ const FrequencyScan = {
       g += `<text x="${x0 + 18}" y="${e.ly + 3}" font-size="9" fill="${P.inkSec}">${this._esc(e.name)}</text>`;
     }
     const title = `<text x="${padL}" y="14" font-size="11" font-weight="600" fill="${P.ink}">${this._esc(spec.title)}</text>`;
-    const yLab = `<text x="${padL}" y="${padT - 6}" font-size="9" fill="${P.tickText}">${this._esc(spec.yLabel)}</text>`;
+    // On the title line, right-aligned over the plot: 6 px under the title it
+    // overprinted it.
+    const yLab = `<text x="${padL + plotW}" y="14" text-anchor="end" font-size="9" fill="${P.tickText}">${this._esc(spec.yLabel)}</text>`;
     const xLab = `<text x="${W - padR}" y="${H - 4}" text-anchor="end" font-size="9" fill="${P.tickText}">${this._esc(spec.xLabel)}</text>`;
     container.style.margin = '0 0 12px';
     container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block" role="img" aria-label="${this._esc(spec.title)}">${title}${yLab}${xLab}${g}</svg>`;

@@ -6,7 +6,7 @@ Module-by-module status of the independent engine reviews. Each review follows
 from the module's own tests; report, then fix with `[ID]` markers and one
 regression test per finding.
 
-*Created 2026-09-28; last updated 2026-09-29 (harmonics review). Update this
+*Created 2026-09-28; last updated 2026-09-29 (frequency-scan review). Update this
 file when a review lands (status, date, PR, write-up).*
 
 **Status:** ✅ reviewed · 🟡 partly reviewed · ⬜ not reviewed
@@ -39,6 +39,7 @@ standard, or first principles only); the review checks against that instead.
 | `conductor_temp.py` (+ the fault study's line-resistance basis, `dc_shortcircuit` hot factor) | ✅ 2026-09-29 | Direct | IEC 60909-0:2001 §2.4, §2.5 eq. (3); IEC 60228 (R20, α), IEC 60889 / IEC 60104 (Al, AlMgSi α); IEC 60364-4-43 Table 43A (θe); IEC 60865-1 (bare conductors) | α per material, library basis (all 113 cables vs IEC 60228), overhead correction idempotence, maximum study at 20 °C, minimum study eq. (3) at θe per insulation, Ik_min, series faults | `CONDUCTOR_TEMP_REVIEW.md` (CT1–CT2, L1–L2), PR #343. **Not covered:** `fault_ansi.py` basis, DB-check Ze and rectifier AC supply impedance (stay hot), skin effect at 20 °C |
 | `line_coupling.py` (+ drawn parallel feeders in `fault.py` / `unbalanced_loadflow.py`) | ✅ 2026-09-29 | Direct | IEC 60909-3:2009 eq. (34)–(36), Table 2; Carson phase-domain model (6 conductors, earth return) | δ and earth-return R, Z0m for the inter-circuit GMD, Z0_eff = [Z0s + (n−1)Z0m]/n vs phase domain (tower + MV poles, two resistivities), library r0, drawn parallel feeders | `LINE_COUPLING_REVIEW.md` (LC1, L1–L3), PR #344. **Not covered:** earth wires, partial-route coupling, series faults on a drawn pair, library x0 |
 | `harmonics.py` (+ shared shunt model in `frequency_scan.py`) | ✅ 2026-09-29 | Partial | IEEE 519-2014 Tables 1–4; IEC 61000-3-6:2008 Table 2 planning levels and IEC 61000-2-4 Class 2 (added as an option, values from the reviewer's reading); independent nodal solve | Nodal solve per order, IHD/THD_V/TDD/Isc/IL, Table 1 voltage and Tables 2–4 current limits (each order, even 25 %), tuned filter, lumped loads incl. boards and motor share, STATCOM (coupling reactance) / SVC (solved Q), dead islands, PCC current, demand factor 0; IEC limit option | `HARMONICS_REVIEW.md` (H1–H6, L1–L8), PR #346. **Not covered:** drive spectra (typical values, no standard), skin effect, transformer phase shift, cable capacitance, IEC 61000-3-6 emission allocation |
+| `frequency_scan.py` (+ shared transformer ratio in `harmonics._branch_chains`) | ✅ 2026-09-29 | Partial | IEC 61000-3-6 (resonance assessment, no numeric method); closed-form RLC resonance; hand nodal solve in ohms with an ideal transformer | Z(h) curve, h_r = √(S_sc/Q_c), tuned-filter peak and dip, peak refinement, prominence, ranking across voltage levels (per unit), dead islands, regulating SVC from the load flow, turns ratio / taps, idle generators, rounding | `FREQUENCY_SCAN_REVIEW.md` (FS1–FS5, L1–L8), PR #TBD. **Not covered:** zero-sequence (triplen) scan, cable capacitance, frequency-dependent R |
 | `loadflow.py` | ✅ 2026-09-28 | Partial | IEC 60038 voltage bands, IEC 60076-1 tap/ratio conventions; method from first principles (hand 2/3-bus, power balance) | Voltage zones in transformer chains, tees, PV/PQ handling, reactive limits, SoC, branch currents; sync-motor pf sign (MG5) | Load-flow review PR #326 (16 findings) + sibling alignment `baffd40`; PR #332 (MG5) |
 
 ## Partly reviewed
@@ -55,7 +56,6 @@ standard, or first principles only); the review checks against that instead.
 
 | # | Module | IEC fit | Standard(s) | Review scope |
 |---|---|---|---|---|
-| 14 | `frequency_scan.py` | Partial | IEC 61000-3-6 (resonance assessment) | Z(h) against an analytic RLC parallel/series resonance; h_r = √(S_sc/Q_c); a voltage-regulating SVC contributes 0 there (no load flow to take its Q from — `HARMONICS_REVIEW.md` H3) |
 | 15 | `filter_sizing.py` | Partial | IEC 61642 (filters and capacitors), IEC 60871 / 60831 (capacitor ratings); engine designs to IEEE 519 / IEEE 1531 | Tuning h_n, Q, detuning, capacitor voltage/current/kvar duty against the IEC capacitor limits (1.1 U, 1.3 I, 1.35 Q) |
 | 16 | `grounding_system.py` | Partial | IEC 61936-1 / EN 50522 (permissible touch voltage vs time), IEC 60479-1 (body current); engine uses IEEE 80 | IEEE 80 worked examples (grid R, Em, Es, GPR, conductor size); note where the IEC touch-voltage curve would give a different verdict |
 | 17 | `load_diversity.py` | Partial | IEC 60364-3 (maximum demand and diversity), SANS 10142-1 | Demand-factor tables and their source, per-bus and per-transformer aggregation, kW vs kVA consistency with load flow |

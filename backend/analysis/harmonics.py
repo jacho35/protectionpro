@@ -362,10 +362,44 @@ def bus_shunt_admittance(bus, comps_at_bus, base_mva, h, svc_q=None) -> complex:
     return acc
 
 
+def fundamental_operating_point(project, method: str = "newton_raphson"):
+    """Fundamental load flow the harmonic network is built around, shared by
+    the harmonics study and the frequency scan ([FS4]/[FS5]).
+
+    Returns (converged, v1, energized, svc_q, lf): per-bus fundamental |V|
+    (pu), which buses are live (a sourceless island is not), each SVC's
+    solved output as a susceptance (Mvar at 1 pu) and the raw result (None if
+    the load flow raised — callers then treat every bus as live)."""
+    v1, energized, svc_q = {}, {}, {}
+    try:
+        lf = _lf.run_load_flow(project, method, include_synthetic=True)
+    except Exception:
+        return False, v1, energized, svc_q, None
+    for bid, b in (lf.buses or {}).items():
+        v1[bid] = float(abs(b.voltage_pu)) if getattr(b, "voltage_pu", None) else 1.0
+        energized[bid] = bool(getattr(b, "energized", True))
+    for u in (lf.svc or []):
+        if u.get("id") is not None and u.get("q_mvar") is not None:
+            # As a susceptance: Q at 1 pu = Q / V² (the shunt model is B).
+            vu = float(u.get("v_pu") or 1.0) or 1.0
+            svc_q[u["id"]] = float(u["q_mvar"]) / (vu * vu)
+    return bool(lf.converged), v1, energized, svc_q, lf
+
+
 def _branch_chains(project, base_mva):
     """Replicate the load-flow branch-chain discovery, returning
-    [(bus_a, bus_b, R_pu, X_pu)] with R/X separated so X can be scaled by h.
-    Also returns (buses, bus_idx, adjacency, components)."""
+    [(bus_a, bus_b, R_pu, X_pu, stages)] with R/X separated so X can be
+    scaled by h. Also returns (buses, bus_idx, adjacency, components).
+
+    ``stages`` is None for a plain series chain. [FS3] A chain whose
+    transformer ratio is off-nominal against its buses — a tap, or the
+    nameplate differing from the drawn bus voltages (every 11/0.42 kV library
+    unit on a 0.4 kV bus) — carries its elements in electrical order instead,
+    [(R_pu, X_pu, t, hv_near_a)] with t None for a cable, so `_build_yh` can
+    stamp each transformer's ideal ratio. The load flow stamps the same ratio
+    (`_reduce_chain_two_port`); the plain R/X sum left it out, so the whole
+    network beyond the transformer was referred through the drawn bus ratio
+    instead of the turns ratio."""
     components = {c.id: c for c in project.components}
     buses = [c for c in project.components
              if c.type in ("bus", "distribution_board")
@@ -410,9 +444,13 @@ def _branch_chains(project, base_mva):
         # Zone by chain POSITION, not walk-path membership (which depends on
         # the seed element — see loadflow._walk_chain_zones). A transformer's
         # entry is its LV zone, to which its nameplate z% is re-based.
-        zones = (_lf.chain_element_zones(_lf.chain_order_from_paths(path_a, path_b), va, vb)
-                 if has_xfmr else {})
-        z_total = complex(0, 0)
+        order = _lf.chain_order_from_paths(path_a, path_b)
+        if has_xfmr:
+            t_local, near_hv, zone_v = _lf._walk_chain_zones(order, va, vb)
+            zones = {e.id: zone_v[m] for m, e in enumerate(order)}
+        else:
+            t_local, near_hv, zones = {}, {}, {}
+        z_elem = {}
         for e in all_elems.values():
             if e.type == "cable":
                 if has_xfmr:
@@ -428,12 +466,18 @@ def _branch_chains(project, base_mva):
                 r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
                 x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
                 npar = max(1, int(e.props.get("num_parallel", 1) or 1))
-                z_total += complex(r / z_base, x / z_base) / npar
+                z_elem[e.id] = complex(r / z_base, x / z_base) / npar
             else:
-                z_total += _lf._get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
+                z_elem[e.id] = _lf._get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
+        z_total = sum(z_elem.values(), complex(0, 0))
         if abs(z_total) < 1e-12:
             z_total = complex(0, 1e-6)
-        chains.append((bus_a, bus_b, z_total.real, z_total.imag))
+        stages = None
+        if any(abs(t - 1.0) > 1e-9 for t in t_local.values()):
+            stages = [(z_elem[e.id].real, z_elem[e.id].imag,
+                       t_local.get(m), near_hv.get(m))
+                      for m, e in enumerate(order) if e.id in z_elem]
+        chains.append((bus_a, bus_b, z_total.real, z_total.imag, stages))
 
     # Solid links through transparent (closed) devices — near-short at all h.
     linked = set()
@@ -454,19 +498,52 @@ def _branch_chains(project, base_mva):
                     if nb not in visited:
                         queue.append(nb)
     for a, b in linked:
-        chains.append((a, b, 0.0, 1e-6))   # tiny series reactance
+        chains.append((a, b, 0.0, 1e-6, None))   # tiny series reactance
 
     return chains, buses, bus_idx, adjacency, components, bus_of
+
+
+def _chain_block(stages, h):
+    """[FS3] 2×2 terminal admittance block (bus_a, bus_b) of an off-nominal
+    chain at order h: each cable a series R + jhX, each transformer its
+    series impedance on the LV side of an ideal t:1 ratio on the HV side
+    (y/t², y, −y/t — the load-flow stamp), internal junctions Kron-reduced.
+    Exact: the internal nodes carry no shunt."""
+    k = len(stages)
+    Yl = np.zeros((k + 1, k + 1), dtype=complex)
+    for m, (r, x, t, hv_near_a) in enumerate(stages):
+        z = complex(r, x * h)
+        y = 1 / z if abs(z) > 1e-12 else complex(0, -1e6)
+        if t is None:
+            hv, lv, t = m, m + 1, 1.0
+        else:
+            hv, lv = (m, m + 1) if hv_near_a else (m + 1, m)
+        Yl[hv, hv] += y / (t * t)
+        Yl[lv, lv] += y
+        Yl[hv, lv] -= y / t
+        Yl[lv, hv] -= y / t
+    if k == 1:
+        return Yl
+    ext, inner = [0, k], list(range(1, k))
+    return (Yl[np.ix_(ext, ext)] - Yl[np.ix_(ext, inner)]
+            @ np.linalg.solve(Yl[np.ix_(inner, inner)], Yl[np.ix_(inner, ext)]))
 
 
 def _build_yh(chains, shunts, bus_idx, h):
     """Assemble the n×n harmonic admittance matrix at order h."""
     n = len(bus_idx)
     Y = np.zeros((n, n), dtype=complex)
-    for bus_a, bus_b, r, x in chains:
+    for bus_a, bus_b, r, x, stages in chains:
+        i, j = bus_idx[bus_a], bus_idx[bus_b]
+        if stages:
+            blk = _chain_block(stages, h)
+            Y[i, i] += blk[0, 0]
+            Y[j, j] += blk[1, 1]
+            Y[i, j] += blk[0, 1]
+            Y[j, i] += blk[1, 0]
+            continue
         z = complex(r, x * h)
         y = 1 / z if abs(z) > 1e-12 else complex(0, -1e6)
-        i, j = bus_idx[bus_a], bus_idx[bus_b]
         Y[i, i] += y
         Y[j, j] += y
         Y[i, j] -= y
@@ -507,23 +584,8 @@ def run_harmonics(project, method: str = "newton_raphson", limits: str | None = 
 
     # 1. Fundamental load flow → per-bus fundamental voltage magnitude,
     #    which buses are live, and each SVC's solved reactive output.
-    v1 = {}
-    energized = {}
-    svc_q = {}
-    fundamental_converged = False
-    try:
-        lf = _lf.run_load_flow(project, method, include_synthetic=True)
-        fundamental_converged = bool(lf.converged)
-        for bid, b in (lf.buses or {}).items():
-            v1[bid] = float(abs(b.voltage_pu)) if getattr(b, "voltage_pu", None) else 1.0
-            energized[bid] = bool(getattr(b, "energized", True))
-        for u in (lf.svc or []):
-            if u.get("id") is not None and u.get("q_mvar") is not None:
-                # As a susceptance: Q at 1 pu = Q / V² (the shunt model is B).
-                vu = float(u.get("v_pu") or 1.0) or 1.0
-                svc_q[u["id"]] = float(u["q_mvar"]) / (vu * vu)
-    except Exception:
-        fundamental_converged = False
+    fundamental_converged, v1, energized, svc_q, _lf_res = \
+        fundamental_operating_point(project, method)
 
     def live(bus_id):
         # [H4] A bus in a sourceless island carries no fundamental current,
