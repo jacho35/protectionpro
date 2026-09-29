@@ -120,7 +120,11 @@ D_e=658.87\sqrt{\frac{\rho}{f}}\ \text{m}$$
 <h4>Conductor operating temperature</h4>
 <p>Underground cable libraries quote resistance hot (90 °C XLPE, 70 °C PVC) while overhead conductors are quoted at 20 °C. Every engine therefore sees an overhead line's resistance corrected once, when the project is built:</p>
 $$R(T)=R_{20}\left[1+\alpha\,(T-20)\right]$$
-<p>with $\alpha\approx0.004$ /°C for aluminium. At the 75 °C rated conductor temperature that is about 22 % more resistance than the library figure — the amount by which overhead losses and voltage drop would otherwise be under-reported. The correction is idempotent: the 20 °C value is kept, so saving and reloading never compounds it. Underground cables are left alone.</p>` },
+<p>with $\alpha\approx0.004$ /°C for aluminium. At the 75 °C rated conductor temperature that is about 22 % more resistance than the library figure — the amount by which overhead losses and voltage drop would otherwise be under-reported. The correction is idempotent: the 20 °C value is kept, so saving and reloading never compounds it. Underground cables are left alone. The AAAC coefficient (0.0036) is taken from the chosen conductor.</p>
+<h4>Conductor temperature in the short-circuit study</h4>
+<p>The fault study does not use operating temperatures. IEC 60909-0 §2.4 takes every line at <strong>20 °C</strong> for the maximum currents, so the hot cable-library value is divided back to its 20 °C figure (×1/1.275 Cu XLPE, ×1/1.282 Al XLPE, ×1/1.20 PVC) and overhead lines run at 20 °C. Using the hot figures understated the maximum $I''_k$ at the end of an LV cable by up to about 20 %. For the <strong>minimum</strong> currents (§2.5, eq. 3) each line is taken at its temperature at the end of the fault:</p>
+$$R_L=\left[1+0.004\,(	heta_e-20)ight]R_{L20}$$
+<p>with $	heta_e$ = 160 °C for PVC (140 °C above 300 mm²), 250 °C for XLPE/EPR (IEC 60364-4-43 Table 43A) and 200 °C for bare overhead conductors (IEC 60865-1). The compliance disconnection check and the cable-sizing far-end check use this minimum study, and so does $I_{k,min}$ in the fault results.</p>` },
 
 { id: 'fault-series', group: 'faults', title: 'Open-conductor & simultaneous faults',
   std: 'Stevenson · Blackburn · sequence-network boundary conditions · Analyse ▸ Short circuit',

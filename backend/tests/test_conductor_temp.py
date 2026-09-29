@@ -242,30 +242,34 @@ class TestNoCompounding:
     """The two pre-existing consumers that also scale resistance."""
 
     def test_minimum_fault_study_retargets_instead_of_multiplying(self):
-        """[PS-3] A minimum-current study scales cable resistance from 20 °C to
+        """[PS-3] A minimum-current study scales line resistance from 20 °C to
         the assumed fault-time conductor temperature. For an overhead line that
         must RE-TARGET the central correction, not multiply on top of it.
 
-        The anchor: asking for a 70 °C minimum-current study must give exactly
-        the same fault currents as a line whose own `temperature_c` prop is 70 —
-        because both describe the same conductor at the same temperature. A
-        compounding implementation would apply 75 °C and then a further ×1.20
-        flat factor, and the two would disagree.
-        """
-        via_arg = run_fault_analysis(_radial(), fault_bus_id="bus-2",
-                                     fault_type="slg",
-                                     conductor_temperature_c=70)
-        via_prop = run_fault_analysis(_radial({"temperature_c": 70}),
-                                      fault_bus_id="bus-2", fault_type="slg")
-        assert via_arg.buses["bus-2"].ik1 == pytest.approx(
-            via_prop.buses["bus-2"].ik1, rel=1e-9)
+        The anchor: the study temperature, not the line's own operating
+        `temperature_c`, sets the resistance — so the result must not depend on
+        that prop. A compounding implementation would apply the prop's
+        temperature and then a further flat factor, and the two would disagree.
 
-        a3 = run_fault_analysis(_radial(), fault_bus_id="bus-2",
-                                fault_type="3phase", conductor_temperature_c=70)
-        b3 = run_fault_analysis(_radial({"temperature_c": 70}),
-                                fault_bus_id="bus-2", fault_type="3phase")
-        assert a3.buses["bus-2"].ik3 == pytest.approx(
-            b3.buses["bus-2"].ik3, rel=1e-9)
+        (Before the conductor-temperature review this compared a 70 °C study
+        with a MAXIMUM study of a line whose prop was 70 °C, i.e. it pinned the
+        maximum study to the operating temperature — defect [CT1]; IEC 60909-0
+        §2.4 takes lines at 20 °C for maximum currents.)
+        """
+        for ft, attr in (("slg", "ik1"), ("3phase", "ik3")):
+            runs = [getattr(run_fault_analysis(_radial({"temperature_c": t}), fault_bus_id="bus-2",
+                                               fault_type=ft, conductor_temperature_c=70
+                                               ).buses["bus-2"], attr)
+                    for t in (20, 75, 120)]
+            assert runs[0] == pytest.approx(runs[1], rel=1e-9)
+            assert runs[0] == pytest.approx(runs[2], rel=1e-9)
+
+    def test_maximum_fault_study_ignores_operating_temperature(self):
+        """[CT1] Maximum study: every line at 20 °C whatever its operating prop."""
+        at = [run_fault_analysis(_radial({"temperature_c": t}), fault_bus_id="bus-2",
+                                 fault_type="3phase").buses["bus-2"].ik3
+              for t in (20, 75)]
+        assert at[0] == pytest.approx(at[1], rel=1e-9)
 
     def test_minimum_fault_study_is_disclosed(self):
         r = run_fault_analysis(_radial(), fault_bus_id="bus-2",

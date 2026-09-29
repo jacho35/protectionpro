@@ -6,7 +6,7 @@ Module-by-module status of the independent engine reviews. Each review follows
 from the module's own tests; report, then fix with `[ID]` markers and one
 regression test per finding.
 
-*Created 2026-09-28; last updated 2026-09-29 (lightning risk review). Update this
+*Created 2026-09-28; last updated 2026-09-29 (conductor temperature review). Update this
 file when a review lands (status, date, PR, write-up).*
 
 **Status:** ✅ reviewed · 🟡 partly reviewed · ⬜ not reviewed
@@ -36,6 +36,7 @@ standard, or first principles only); the review checks against that instead.
 | `compliance.js` (frontend, + `deviceRatingFlags` diagram markers) | ✅ 2026-09-29 | Direct | IEC 60364-4-41 (§411.3.2, Table 41.1, §411.4.5, §411.5.3), IEC 60364-4-43 (§433.1, §434.5.2, §435.1, Table 43A), IEC 60909-0 §5.3.1 / §12, IEC 60076-1, IEC 62271-1 / IEC 60038; SANS 10142-1 | Earth-fault disconnection per circuit at its far end, cable withstand at largest and minimum current, §433.1 incl. I2, earthing system per LV installation, LV neutral from the vector group, maximum demand, rated voltage vs Um, diagram flag basis, HV-side device current | `COMPLIANCE_REVIEW.md` (C1–C9, L1–L5, cross-module X1 Cable Sizing minimum at 70 °C, X2 IEEE 1584 instantaneous clearing times on both sides), PR #340. **Not covered:** NRS 048-2 band above 500 V, Al minimum size, IT second fault, ELV |
 | `dc_shortcircuit.py` | ✅ 2026-09-29 | Direct | IEC 61660-1:1997 (Figure 10, Annex A eq. 54–56; battery clauses and worked Examples 1 and 3 as published in CED E03-035) | Battery peak / quasi-steady / 1/δ / t_pB, τ_1B (Figure 10), rectifier λ_D, κ_D, t_pD, τ_1D from the AC supply impedance, superposition with a common branch, source lead cables, parallel cables, 20 °C conductor resistance | `DC_SHORTCIRCUIT_REVIEW.md` (DC1–DC6, L1–L7), PR #341. **Not covered:** minimum current, capacitor and DC-motor sources, 60 Hz rectifier time forms |
 | `lightning_risk.py` + `lightning_risk_2024.py` + `lightning.js` | ✅ 2026-09-29 | Direct | IEC 62305-2:2024 (Ed. 3, incl. Annex F worked examples), IEC 62305-1:2024; IEC 62305-2:2010 tables (reviewer's reading, cross-checked where 2024 kept them; Table B.9 confirmed from GOST R IEC 62305-2-2010) | 2010 R1 exact over 55,296 input combinations; loss categories, explosion, P_LI, P_LD by screen, P_C combination, ladder; **2024 method added** (edition per assessment) and pinned to Annex F house / office / hospital, R and F, unprotected and protected | `LIGHTNING_RISK_REVIEW.md` (E1, LR1–LR7, L1–L5), PR #342. **Not covered:** TWS, N_DJ, Annex E, multi-zone dialog |
+| `conductor_temp.py` (+ the fault study's line-resistance basis, `dc_shortcircuit` hot factor) | ✅ 2026-09-29 | Direct | IEC 60909-0:2001 §2.4, §2.5 eq. (3); IEC 60228 (R20, α), IEC 60889 / IEC 60104 (Al, AlMgSi α); IEC 60364-4-43 Table 43A (θe); IEC 60865-1 (bare conductors) | α per material, library basis (all 113 cables vs IEC 60228), overhead correction idempotence, maximum study at 20 °C, minimum study eq. (3) at θe per insulation, Ik_min, series faults | `CONDUCTOR_TEMP_REVIEW.md` (CT1–CT2, L1–L2), PR #343. **Not covered:** `fault_ansi.py` basis, DB-check Ze and rectifier AC supply impedance (stay hot), skin effect at 20 °C |
 | `loadflow.py` | ✅ 2026-09-28 | Partial | IEC 60038 voltage bands, IEC 60076-1 tap/ratio conventions; method from first principles (hand 2/3-bus, power balance) | Voltage zones in transformer chains, tees, PV/PQ handling, reactive limits, SoC, branch currents; sync-motor pf sign (MG5) | Load-flow review PR #326 (16 findings) + sibling alignment `baffd40`; PR #332 (MG5) |
 
 ## Partly reviewed
@@ -52,7 +53,6 @@ standard, or first principles only); the review checks against that instead.
 
 | # | Module | IEC fit | Standard(s) | Review scope |
 |---|---|---|---|---|
-| 11 | `conductor_temp.py` | Direct | IEC 60228 (R20, α), IEC 60287-1-1 (operating temperature) | R(θ) = R20·(1 + α(θ − 20)) with the right α for Cu/Al; library reference temperatures; which studies use 20 °C vs operating temperature (IEC 60909 uses 20 °C for max, θe for min) |
 | 12 | `line_coupling.py` | Direct | IEC TR 60909-2 (line data), IEC 60909-3 (earth currents), Carson's equations | Mutual Z0 between parallel circuits against the Carson closed form; earth-return depth vs soil resistivity; effect on SLG results |
 | 13 | `harmonics.py` | Partial | IEC 61000-3-6 (planning levels), IEC 61000-2-4 (compatibility, THD 8 %), IEC 61000-3-12 (equipment); engine uses IEEE 519-2014 | Current injection spectra, frequency-dependent R (skin effect), transformer phase shift, THD/TDD formulas, IEEE 519 limit tables — and whether IEC 61000-3-6 limits should be offered |
 | 14 | `frequency_scan.py` | Partial | IEC 61000-3-6 (resonance assessment) | Z(h) against an analytic RLC parallel/series resonance; h_r = √(S_sc/Q_c) |

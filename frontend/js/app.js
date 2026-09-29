@@ -823,8 +823,8 @@ document.addEventListener('DOMContentLoaded', () => {
         result = await API.runFaultAnalysis(faultBusId, faultType);
         AppState.faultResults = result;
         AppState.faultedBusId = faultBusId;
-        // [PS-3] Companion minimum-current study (c_min = 0.95, hot
-        // conductors) so the compliance disconnection check uses the current
+        // [PS-3] Companion minimum-current study (c_min = 0.95, [CT2]
+        // conductors at their end-of-fault temperature) so the compliance disconnection check uses the current
         // that may actually flow. Non-fatal: compliance falls back (with a
         // warning) to the maximum-current figures if this fails.
         try {

@@ -14,6 +14,12 @@ import pytest
 
 from backend.models.schemas import Component, ProjectData, Wire
 from backend.analysis import fault as F
+from backend.analysis.conductor_temp import insulated_hot_factor
+
+# [CT1] A cable's r_per_km is quoted hot (Cu XLPE at 90 °C, the palette's
+# documented basis); the fault study takes it back to 20 °C. The hand
+# reductions below work in 20 °C ohms, so the fixtures store r20 × HOT.
+HOT = insulated_hot_factor({})
 
 
 C_MAX = 1.1
@@ -64,8 +70,8 @@ class TestF1SimultaneousCouplingSign:
     IL_PU = 0.4
 
     def _net(self, side):
-        cab = lambda cid, r, x: _c(cid, "cable", r_per_km=r, x_per_km=x,
-                                    r0_per_km=r, x0_per_km=x, length_km=1)
+        cab = lambda cid, r, x: _c(cid, "cable", r_per_km=r * HOT, x_per_km=x,
+                                    r0_per_km=r * HOT, x0_per_km=x, length_km=1)
         comps = [
             _c("u", "utility", fault_mva=200, x_r_ratio=10, voltage_kv=self.KV,
                z0_z1_ratio=1, grounding="solidly"),
@@ -151,7 +157,7 @@ class TestF3BoardOwnRotatingLoad:
         comps = [
             _c("u", "utility", fault_mva=20, x_r_ratio=10, voltage_kv=0.4),
             _c("b1", "bus", voltage_kv=0.4),
-            _c("cb1", "cable", r_per_km=0.2, x_per_km=0.08, length_km=0.1),
+            _c("cb1", "cable", r_per_km=0.2 * HOT, x_per_km=0.08, length_km=0.1),
             _c("db", "distribution_board", voltage_kv=0.4, rated_kva=500,
                motor_fraction=0.5, motor_lrc_ratio=6, x_r_ratio=10),
         ]
@@ -224,7 +230,7 @@ class TestF2BuslessTee:
     def test_teed_bus_fault_level(self):
         kv = 11.0
         zb = kv ** 2 / BASE
-        cab = lambda cid, r, x: _c(cid, "cable", r_per_km=r, x_per_km=x, length_km=1)
+        cab = lambda cid, r, x: _c(cid, "cable", r_per_km=r * HOT, x_per_km=x, length_km=1)
         comps = [
             _c("u", "utility", fault_mva=250, x_r_ratio=10, voltage_kv=kv),
             _c("b1", "bus", voltage_kv=kv), cab("c1", 0.3, 0.2),
@@ -507,7 +513,7 @@ class TestF9SteadyStateIk:
         asynchronous motor, Ik_min = I″k at c_min (utility Z_Q with c_min)."""
         kv = 11.0
         zb = kv ** 2 / BASE
-        cab = lambda cid, r, x: _c(cid, "cable", r_per_km=r, x_per_km=x, length_km=1)
+        cab = lambda cid, r, x: _c(cid, "cable", r_per_km=r * HOT, x_per_km=x, length_km=1)
         comps = [
             _c("u", "utility", fault_mva=250, x_r_ratio=10, voltage_kv=kv),
             _c("b1", "bus", voltage_kv=kv), cab("c1", 0.3, 0.2),
@@ -525,7 +531,11 @@ class TestF9SteadyStateIk:
         zq = lambda c: c * BASE / 250 * complex(1, 10) / abs(complex(1, 10))
         ib = BASE / (math.sqrt(3) * kv)
         assert res.ik_steady == pytest.approx(C_MAX / abs(zq(C_MAX) + z_lines) * ib, rel=2e-3)
-        assert res.ik_steady_min == pytest.approx(1.0 / abs(zq(1.0) + z_lines) * ib, rel=2e-3)
+        # [CT2] Ik_min with the lines at their end-of-fault temperature
+        # (XLPE 250 °C, IEC 60909-0 §2.5 eq. 3).
+        z_lines_min = (complex(0.3 * (1 + 0.004 * 230), 0.2)
+                       + complex(0.4 * (1 + 0.004 * 230), 0.25)) / zb
+        assert res.ik_steady_min == pytest.approx(1.0 / abs(zq(1.0) + z_lines_min) * ib, rel=2e-3)
 
     def test_inverter_sustains_its_limit(self):
         comps = [_c("pv", "battery", rated_kva=1000, fault_contribution_pu=1.1),

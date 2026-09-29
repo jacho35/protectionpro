@@ -12,6 +12,12 @@ import pytest
 
 from backend.models.schemas import ProjectData, Component, Wire
 from backend.analysis.fault import run_fault_analysis
+from backend.analysis.conductor_temp import insulated_hot_factor
+
+# [CT1] Cable r_per_km is quoted hot (Cu XLPE, 90 °C); the fault study takes
+# it back to 20 °C. The PS-1 hand values are in 20 °C ohms, so the fixture
+# cables store 0.2 × HOT.
+HOT = insulated_hot_factor({})
 from backend.analysis.arcflash import calc_incident_energy
 from backend.analysis.motor_starting import run_motor_starting
 from backend.analysis.loadflow import run_load_flow
@@ -52,9 +58,9 @@ class TestPS1ParallelPaths:
             _comp("u1", "utility", {"name": "Grid", "fault_mva": 500.0,
                                     "x_r_ratio": 10.0, "voltage_kv": 11.0}),
             _comp("busA", "bus", {"name": "A", "voltage_kv": 11.0}),
-            _comp("c1", "cable", {"name": "C1", "r_per_km": 0.2, "x_per_km": 0.1,
+            _comp("c1", "cable", {"name": "C1", "r_per_km": 0.2 * HOT, "x_per_km": 0.1,
                                   "length_km": 1.0, "voltage_kv": 11.0}),
-            _comp("c2", "cable", {"name": "C2", "r_per_km": 0.2, "x_per_km": 0.1,
+            _comp("c2", "cable", {"name": "C2", "r_per_km": 0.2 * HOT, "x_per_km": 0.1,
                                   "length_km": 1.0, "voltage_kv": 11.0}),
             _comp("busB", "bus", {"name": "B", "voltage_kv": 11.0}),
         ], [
@@ -101,7 +107,7 @@ class TestPS1ParallelPaths:
             _comp("u1", "utility", {"name": "Grid", "fault_mva": 500.0,
                                     "x_r_ratio": 10.0, "voltage_kv": 11.0}),
             _comp("busA", "bus", {"name": "A", "voltage_kv": 11.0}),
-            _comp("c1", "cable", {"name": "C1", "r_per_km": 0.2, "x_per_km": 0.1,
+            _comp("c1", "cable", {"name": "C1", "r_per_km": 0.2 * HOT, "x_per_km": 0.1,
                                   "length_km": 1.0, "voltage_kv": 11.0}),
             _comp("busB", "bus", {"name": "B", "voltage_kv": 11.0}),
         ], [

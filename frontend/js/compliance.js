@@ -1397,7 +1397,7 @@ const Compliance = {
     const usingMin = !!(minBuses && Object.keys(minBuses).length > 0);
     const useBuses = usingMin ? minBuses : maxBuses;
     const basisNote = usingMin
-      ? 'Basis: minimum-current study (c_min = 0.95, conductor resistance at 70 °C) per IEC 60909-0 §5.3.1'
+      ? 'Basis: minimum-current study (c_min = 0.95, conductors at their end-of-fault temperature — PVC 160 °C, XLPE 250 °C) per IEC 60909-0 §2.5'
       : 'Basis: MAXIMUM-current study (c_max = 1.10, 20 °C) — re-run Fault Analysis to compute the minimum-current study; these PASS verdicts are optimistic';
     if (!usingMin) {
       section.items.push({
