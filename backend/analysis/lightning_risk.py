@@ -175,8 +175,8 @@ def _lo_value(explosion_risk: bool, structure_use: str) -> float:
 # ── Table B.9: P_LI by line type and equipment impulse withstand U_W (kV) ──
 PLI_TABLE = {
     "power":   {1.0: 1.0, 1.5: 0.6, 2.5: 0.3, 4.0: 0.16, 6.0: 0.1},
-    # [LR3] TLC at 2.5 kV is 0.2 (the engine had 0.15). Table B.9 of the 2010
-    # edition; its 2024 successor dropped P_LI, so confirm against a 2010 copy.
+    # [LR3] TLC at 2.5 kV is 0.2 (the engine had 0.15) — 2010 Table B.9, as
+    # reproduced in GOST R IEC 62305-2-2010 (identical adoption).
     "telecom": {1.0: 1.0, 1.5: 0.5, 2.5: 0.2, 4.0: 0.08, 6.0: 0.04},
 }
 

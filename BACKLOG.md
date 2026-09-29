@@ -336,14 +336,14 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 - **Fixed (2010 path):**
   - **LR1.** Hotels and schools no longer count internal-system failure as a risk to life. A typical hotel was 47× too high and was sent to LPS class I; SPDs at LPL III–IV alone meet R_T. The old combined card reads as *Hospital*.
   - **LR2.** Risk of explosion: L_F = 0.1 and r_p = 1 (R_B was 25× low).
-  - **LR3.** Telecom P_LI at 2.5 kV changed from 0.15 to 0.2. This is the one value still to confirm against a 2010 copy.
+  - **LR3.** Telecom P_LI at 2.5 kV changed from 0.15 to 0.2, confirmed from the 2010 text (GOST R IEC 62305-2-2010 Table B.9).
   - **LR4.** New *intensive care / theatres* card, L_O = 0.01.
   - **LR5.** Line screen by R_S and U_W (Table B.8) replaces the flat 0.2.
   - **LR6.** P_C combines over the lines, and is 0 with none.
   - **LR7.** The recommendation evaluates every LPS × SPD pair.
   - R_T is now an input, and the tolerable-risk table is cited as Table 4.
 - **Existing results change:** saved 2010 assessments recalculate differently for hotel / school / hospital, explosion-risk, telecom-line and multi-line cases, and the ladder may recommend lighter protection. Stored results are not recomputed; re-assess them.
-- **Open:** the multi-zone dialog (the engine already takes zones); thunderstorm warning systems (P_TWS); adjacent structures (N_DJ); Annex E environmental loss; confirmation of the 2010 Table B.9 TLC value.
+- **Open:** the multi-zone dialog (the engine already takes zones); thunderstorm warning systems (P_TWS); adjacent structures (N_DJ); Annex E environmental loss.
 - **Tests:** `backend/tests/test_lightning_review_fixes.py` (2010 fixes plus Annex F.2/F.3/F.4); `test_regression.py` explosion test re-based on LR6 (it asserted R_C on a structure with no lines).
 
 ### DC short-circuit review: DC1–DC6 and lesser notes (2026-09-29)

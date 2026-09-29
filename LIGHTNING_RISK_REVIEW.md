@@ -8,9 +8,11 @@ derived from the module or its tests.*
 **Source caveat.** The 2010 edition the engine implements is not in
 `IEC Standards/`, and its public previews end before the annexes. So 2010
 table values are the reviewer's reading, cross-checked where the 2024 edition
-kept the same table (below). The one value that remains unconfirmed is
-**LR3 (2010 Table B.9, TLC at 2.5 kV = 0.2)**. Check it against a licensed
-2010 copy before fixing it.
+kept the same table (below). **LR3 (2010 Table B.9) is confirmed** from GOST R
+IEC 62305-2-2010, the identical Russian adoption of the 2010 text:
+- power lines: 1 / 0.6 / 0.3 / 0.16 / 0.1;
+- telecommunication lines: 1 / 0.5 / **0.2** / 0.08 / 0.04;
+- at U_W = 1 / 1.5 / 2.5 / 4 / 6 kV.
 
 **IEC 62305-1:2024 (Ed. 3, in `IEC Standards/`, scanned).** Part 1 has no
 risk tables, but it confirms two things independently:
@@ -40,7 +42,7 @@ findings:
 | LR5 | Table B.11: P_LD columns 1 / 1.5 / 2.5 / 4 / 6 kV are 1, 1, 0.95, 0.9, 0.8 / 0.9, 0.8, 0.6, 0.3, 0.1 / 0.6, 0.4, 0.2, 0.04, 0.02 by R_S band | P_LD by R_S and U_W, exactly as quoted |
 | LR6 | eq. (10) P_C = 1 − Π(1 − P_Ci); Table B.9: C_LD = 0 with no external line | both parts |
 | LR2 (L_F) | Explosion is *very high loss* (L_F1 up to 2 × 10⁻¹) | direction only; 2024 has no single 10⁻¹ value |
-| LR3 | Table B.9 of 2010 (P_LI) no longer exists: 2024 moves U_W into A_I and sets P_Z = P_SPD·C_LI | **cannot be confirmed from 2024** |
+| LR3 | Table B.9 of 2010 (P_LI) no longer exists: 2024 moves U_W into A_I and sets P_Z = P_SPD·C_LI | not in 2024; **confirmed from the 2010 text** (GOST R IEC 62305-2-2010 Table B.9) |
 
 **The 2024 method gives different answers (E1, promoted to a finding in §3).**
 V5 (`v5_house2024.py`) reproduces the 2024 Annex F.2 house exactly from the
@@ -308,7 +310,7 @@ follows the arc-flash pattern for IEEE 1584-2002/2018.
 | E1 | New `lightning_risk_2024.py`, dispatched on the request's `edition`. An absent value means 2010, so saved assessments reproduce; new assessments default to 2024. The engine is multi-zone. The dialog gives one inside zone plus an optional exposed zone. | `lightning_risk_2024.py`, `schemas.py` (`Lightning2024*`, zone results), `lightning.js`, `app.js`, `index.html` |
 | LR1 | Split into *Hotel / school / civic* (no L_O) and *Hospital* (L_O 10⁻³). The saved key `hospital_hotel_school` reads as *Hospital*. | `lightning_risk.py` `LO_BY_USE`, `_LEGACY_USE` |
 | LR2 | L_F = 10⁻¹ and r_p = 1 with a risk of explosion | `_compute_r1` |
-| LR3 | TLC P_LI at 2.5 kV changed from 0.15 to 0.2 (still to confirm on a 2010 copy) | `PLI_TABLE` |
+| LR3 | TLC P_LI at 2.5 kV changed from 0.15 to 0.2, confirmed from GOST R IEC 62305-2-2010 Table B.9 | `PLI_TABLE` |
 | LR4 | *Hospital, intensive care / theatres* at L_O = 10⁻² | `LO_BY_USE` |
 | LR5 | `screen` per line; P_LD from Table B.8 by R_S band and U_W; C_LI from Table B.4. Legacy `shielded: true` becomes bonded with R_S ≤ 1. | `PLD_TABLE`, `_line_screen`, `_line_cld_cli` |
 | LR6 | P_C = 1 − Π(1 − P_SPD·C_LD) over the lines, 0 with none | `_compute_r1` |
