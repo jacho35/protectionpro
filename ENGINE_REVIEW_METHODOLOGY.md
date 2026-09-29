@@ -302,7 +302,7 @@ that covers them. Re-read the new paths before trusting the markers:
 | `grounding_system.py` | `[EE-5]` |
 | `unbalanced_loadflow.py` | `[P5]` |
 | `optimal_powerflow.py` | `[OPF-1]` |
-| `pt_model.py` | `[PS-16]` |
+| `pt_model.py` | `[PS-16]` — first-principles pass done 2026-09-29, `PT_MODEL_REVIEW.md` (PT1–PT4) |
 | `fault_ansi.py` | `[PS-1]` |
 | `duty_check.py` | `[PS-R2-4]` |
 

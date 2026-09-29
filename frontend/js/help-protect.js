@@ -25,7 +25,7 @@ $$t=\text{TDS}\left(\frac{A}{M^{p}-1}+B\right)$$
 <p>IEC Standard Inverse, TDS = 0.3, pickup 400 A, fault 4 kA: $M=10$.</p>
 $$t=0.3\times\frac{0.14}{10^{0.02}-1}=0.3\times\frac{0.14}{0.04713}=\mathbf{0.891\ s}$$</div>
 <h4>Relay pickup and CT referral</h4>
-<p>A relay's pickup is set in secondary amps; the chart refers it to primary through the CT ratio, $I_{pickup,pri}=I_{set}\times\dfrac{I_{CT,pri}}{I_{CT,sec}}$. A CT that saturates changes the current the relay actually sees — see <a href="#" data-help="prot-ct-pt">CT saturation &amp; PT burden</a>.</p>
+<p>A relay's pickup is set in secondary amps; the chart refers it to primary through the CT ratio, $I_{pickup,pri}=I_{set}\times\dfrac{I_{CT,pri}}{I_{CT,sec}}$. A CT that saturates changes the current the relay actually sees — see <a href="#" data-help="prot-ct-pt">CT saturation &amp; PT adequacy</a>.</p>
 <h4>Other characteristics</h4>
 <ul>
 <li><strong>Circuit breakers</strong> — long-time (thermal) and short-time regions plus an instantaneous (magnetic) pickup, which can be dragged directly on the chart. The thermal region is $t=k/(M^2-M_{nt}^2)$, with its asymptote at the conventional non-tripping current: $M_{nt}=1.13$ for an MCB (IEC 60898-1) and 1.05 for an MCCB or ACB (IEC 60947-2). For an MCCB or ACB, $k=\text{class}\times(36-M_{nt}^2)$, so the class is the trip time in seconds at $6\times I_r$. An MCB trips in 30 s at $2.55\,I_n$, the middle of the IEC 60898-1 1–60 s band.</li>
@@ -41,9 +41,9 @@ $$t_{up}(I)\ \ge\ t_{down}(I)+\Delta t$$
 <p>The required margin $\Delta t$ (the coordination time interval) is 0.3 s by default for relay/breaker pairs. Fuses are handled by pair type: a relay or breaker over a <em>downstream</em> fuse needs only 0.2 s (no breaker opening time on the fuse side), an <em>upstream</em> fuse over a relay or breaker needs the full margin, and fuse–fuse pairs are graded by the $I^2t$ ratio rather than a time interval.</p>
 <p>The auto-coordination engine walks the topology, grades each relay and breaker against its neighbours, and reports miscoordination. See <a href="#" data-help="prot-sequence">Sequence of operation</a> for the time-ordered check.</p>` },
 
-{ id: 'prot-ct-pt', group: 'protect', title: 'CT saturation & PT burden',
+{ id: 'prot-ct-pt', group: 'protect', title: 'CT saturation & PT adequacy',
   std: 'IEC 61869-2 (CT) · IEC 61869-3 (PT) · Analyse ▸ Protection & safety ▸ Duty check',
-  kw: 'ct current transformer saturation knee point alf accuracy class burden pt voltage transformer',
+  kw: 'ct current transformer saturation knee point alf accuracy class burden pt voltage transformer vt voltage factor earth fault factor effectively earthed',
   html: String.raw`
 <h4>CT saturation</h4>
 <p>Relay operating times are only right if the CT delivers the primary current faithfully. When a CT saturates, the secondary waveform clips and the relay sees less current — so it operates <em>slower</em> and arc-flash incident energy is <em>higher</em>. The same model is used by the TCC chart, the arc-flash clearing time and the duty check.</p>
@@ -60,12 +60,18 @@ $$\theta=\arccos(1-2k_s),\qquad \eta_1=\frac{\sqrt{\left(\theta-\tfrac12\sin2\th
 <h5>Adequacy check</h5>
 <p>Each protection-relay CT is flagged when $I_{sat}<I''_k$ at its bus (Ik1 for a core-balance CT) — the class criterion, $ALF'\ge I''_k/I_{pn}$ — with a warning under 20 % headroom. The table also gives the time a fully offset fault takes to saturate the core, $t_s=-T_p\ln\!\left(1-\dfrac{K_s-1}{\omega T_p}\right)$ with $K_s=V_{sat}/(I_{sec}Z)$ (IEEE C37.110). Differential (87) and distance (21) relays need transient dimensioning (Ktd), which is flagged but not checked. Guessed accuracy classes (PX without a knee, metering cores, unrecognised strings) warn.</p>
 <h4>PT burden</h4>
-<p>A PT is never driven near saturation in service; its failure mode is <em>burden mismatch</em>. IEC 61869-3 only guarantees the declared accuracy class within 25–100 % of rated burden (at 80–120 % rated voltage). With connected burden $S_b$ and rated burden $S_r$:</p>
+<p>A PT is never driven near saturation in service; its failure mode is <em>burden mismatch</em>. IEC 61869-3 only guarantees the declared accuracy class within 25–100 % of rated burden for burden range II (at 80–120 % rated voltage). With connected burden $S_b$ and rated burden $S_r$:</p>
 $$\text{loading}=\frac{S_b}{S_r}\times100\%$$
 <ul>
 <li>&gt; 100 % — <strong>overburdened</strong>: core and secondary IR drop push ratio and phase error outside the class limits (the checkable defect).</li>
 <li>&lt; 25 % — <strong>under-burdened</strong>: the standard's test points no longer bracket the operating point (informational).</li>
 </ul>
+<p>Burden range I (1–10 VA at unity pf, rated below 10 VA) is classed from 0 VA, so it has no lower limit.</p>
+<h4>PT voltage and voltage factor</h4>
+<p>The rated primary $U_{pr}$ is matched to the bus line voltage $U_n$ or phase voltage $U_n/\sqrt3$, whichever is nearer. A declared phase-to-phase connection always uses $U_n$. Service voltage above 120 % of $U_{pr}$ exceeds the 1.2 continuous factor every VT carries (fail). Below 80 % it is outside the measuring accuracy range (warning).</p>
+<p>A phase-to-earth winding also sees the healthy-phase rise of an earth fault. The earth fault factor at the bus comes from the fault study's sequence impedances ($Z_2=Z_1$):</p>
+$$k=\max\left|a^2-\frac{Z_0-Z_1}{2Z_1+Z_0}\right|,\ \left|a-\frac{Z_0-Z_1}{2Z_1+Z_0}\right|$$
+<p>It equals 1 for $Z_0=Z_1$ and $\sqrt3$ with no zero-sequence path. The required voltage factor is $k\cdot U/U_{pr}$, compared with the declared rated voltage factor (IEC 61869-3 Table 303). A bus with $k\le1.4$ is effectively earthed and 1.5 for 30 s suffices. Otherwise the VT needs 1.9: for 30 s only if earth faults are tripped automatically, else for 8 h. An undeclared voltage factor on a non-effectively earthed bus warns.</p>
 <p>Only PTs that feed a protection or measurement relay (via its <code>associated_pt</code>) are checked.</p>` },
 
 { id: 'prot-sequence', group: 'protect', title: 'Sequence of operation',
