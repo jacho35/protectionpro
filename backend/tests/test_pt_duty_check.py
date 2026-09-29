@@ -58,14 +58,18 @@ def _proj_with_pt(pt_props, relay_type="21", include_relay=True):
 
 
 class TestPTAdequacyCheck:
-    def test_absent_connected_burden_not_checked(self):
-        """Legacy behaviour: a PT with no connected_burden_va specified
-        produces no check output at all — identical to the fully-
-        decorative pre-fix PT."""
+    def test_absent_connected_burden_skips_burden_only(self):
+        """No connected_burden_va: the burden check is skipped (legacy), but
+        the PT is still checked for voltage and voltage factor [PT1/PT2].
+        Re-baselined in the PT model review — this used to assert no row at
+        all, which also hid an overvoltaged or under-rated VT."""
         proj = _proj_with_pt({"ratio": "11000/110", "accuracy_class": "0.5",
                                "burden_va": 30})
         res = run_duty_check(proj)
-        assert res["pt_checks"] == []
+        row = next(r for r in res["pt_checks"] if r["device_id"] == "pt-1")
+        assert row["connected_burden_va"] is None and row["loading_pct"] is None
+        assert row["service_voltage_pct"] == pytest.approx(100.0)
+        assert row["status"] == "pass"  # solidly earthed grid (Z0 = Z1)
 
     def test_well_burdened_pt_passes(self):
         proj = _proj_with_pt({"ratio": "11000/110", "accuracy_class": "0.5",

@@ -8,10 +8,16 @@ Flags any device whose rating is exceeded.
 import math
 from ..models.schemas import ProjectData
 from .ct_model import ct_saturation_params, ct_time_to_saturation, x_r_from_kappa
-from .pt_model import pt_burden_adequacy
+from .pt_model import pt_burden_adequacy, pt_voltage_adequacy, parse_pt_accuracy_limits
 
 # Transparent types that do not form a bus boundary
 TRANSPARENT_TYPES = {"cb", "switch", "fuse", "ct", "pt", "surge_arrester", "bus_duct"}
+
+
+# [PT2] IEC 61869-3: measuring accuracy 80-120 % of rated voltage; 1.2 x
+# continuous is the voltage factor every VT carries.
+_PT_V_MEAS_MIN_PCT = 80.0
+_PT_V_CONT_MAX_PCT = 120.0
 
 
 def _build_adjacency(project):
@@ -623,15 +629,17 @@ def run_duty_check(project: ProjectData):
             "issues": issues,
         })
 
-    # ── PT burden / accuracy-class adequacy check ──
+    # ── PT burden / voltage / voltage-factor adequacy check ──
     # [PS-16 residual] "PT parameters are used in no calculation" — the
-    # voltage-side analogue of the CT check above (pt_model.py). A PT's
-    # failure mode is burden mismatch, not saturation: IEC 61869-3 only
-    # guarantees the declared accuracy class between 25% and 100% of the
-    # PT's rated burden. Only PTs feeding a relay (associated_pt) are
-    # checked — a metering-only PT is not a protection duty concern. A PT
-    # with no connected_burden_va specified is skipped entirely (legacy
-    # behaviour: absent prop -> no check, identical output to before).
+    # voltage-side analogue of the CT check above (pt_model.py). Only PTs
+    # feeding a relay (associated_pt) are checked — a metering-only PT is
+    # not a protection duty concern.
+    # Burden: IEC 61869-3 guarantees the class within the burden range of
+    # the rated output (25-100 % for range II; 0-100 % for range I [PT4]);
+    # skipped when connected_burden_va is not given (legacy).
+    # [PT2] Rated primary vs the bus voltage (80-120 %) and [PT1] the rated
+    # voltage factor vs the bus earth fault factor — checked for every
+    # relay-fed PT on a bus with a known voltage.
     pt_checks = []
     relay_pt_ids = {
         c.props.get("associated_pt")
@@ -642,52 +650,131 @@ def run_duty_check(project: ProjectData):
         if pt.type != "pt" or pt.id not in relay_pt_ids:
             continue
         adequacy = pt_burden_adequacy(pt.props)
-        if adequacy is None:
-            continue  # connected_burden_va not specified — skip (legacy)
 
         pt_name = pt.props.get("name", pt.id)
         bus_ids = _find_upstream_bus(pt.id, adj, comp_map)
-        location_bus = ""
+        location_bus, bus_id = "", None
         for bid in bus_ids:
             if bid in comp_map:
                 location_bus = comp_map[bid].props.get("name", bid)
+                bus_id = bid
                 break
 
-        issues = []
-        loading_pct = adequacy["loading_pct"]
-        if loading_pct is not None and loading_pct > 100:
-            status = "fail"
-            issues.append(
-                f"PT connected burden {adequacy['connected_burden_va']:.1f} VA "
-                f"exceeds its {adequacy['rated_burden_va']:.1f} VA rated burden "
-                f"({loading_pct:.0f}% loaded) — ratio/phase error may exceed "
-                f"the class {adequacy['accuracy_class']} limits "
-                f"(±{adequacy['ratio_error_pct']}%"
-                + (f", ±{adequacy['phase_error_min']:.0f}'" if adequacy['phase_error_min'] else "")
-                + ") [IEC 61869-3]")
-        elif not adequacy["within_qualified_band"]:
-            status = "warning"
-            issues.append(
-                f"PT lightly burdened ({loading_pct:.0f}% of "
-                f"{adequacy['rated_burden_va']:.1f} VA rated) — IEC 61869-3 "
-                "guarantees the declared accuracy class only between 25% and "
-                "100% of rated burden; verify accuracy at this loading")
-        else:
-            status = "pass"
+        volt = None
+        if bus_id is not None:
+            bus_kv = comp_map[bus_id].props.get("voltage_kv")
+            bf = fault_results.buses.get(bus_id) if fault_results else None
+            z1 = z0 = None
+            z0_known = False
+            if bf is not None and bf.z_eq_real is not None and bf.z_eq_imag is not None:
+                z1 = complex(bf.z_eq_real, bf.z_eq_imag)
+                z0_known = True
+                if bf.z0_real is not None and bf.z0_imag is not None:
+                    z0 = complex(bf.z0_real, bf.z0_imag)
+                # z0 None with a z1: fault.py found no zero-sequence path
+            volt = pt_voltage_adequacy(pt.props, bus_kv, z1, z0, z0_known)
 
+        if adequacy is None and volt is None:
+            continue  # nothing checkable (legacy: no connected burden, no bus)
+
+        limits = parse_pt_accuracy_limits(pt.props.get("accuracy_class"))
+        fails, warns = [], []
+        loading_pct = adequacy["loading_pct"] if adequacy else None
+        if adequacy is not None:
+            if loading_pct is not None and loading_pct > 100:
+                fails.append(
+                    f"PT connected burden {adequacy['connected_burden_va']:.1f} VA "
+                    f"exceeds its {adequacy['rated_burden_va']:.1f} VA rated burden "
+                    f"({loading_pct:.0f}% loaded) — ratio/phase error may exceed "
+                    f"the class {adequacy['accuracy_class']} limits "
+                    f"(±{adequacy['ratio_error_pct']}%"
+                    + (f", ±{adequacy['phase_error_min']:.0f}'" if adequacy['phase_error_min'] else "")
+                    + ") [IEC 61869-3]")
+            elif not adequacy["within_qualified_band"]:
+                warns.append(
+                    f"PT lightly burdened ({loading_pct:.0f}% of "
+                    f"{adequacy['rated_burden_va']:.1f} VA rated) — IEC 61869-3 "
+                    "guarantees the declared accuracy class only between 25% and "
+                    "100% of rated burden (burden range II); verify accuracy at "
+                    "this loading")
+        if not limits["recognised"] and pt.props.get("accuracy_class"):
+            # [PT3] an unrecognised class used to be read silently as 0.5
+            warns.append(
+                f"Accuracy class '{pt.props.get('accuracy_class')}' not recognised "
+                "— limits shown are class 0.5 (IEC 61869-3: 0.1/0.2/0.5/1.0/3.0, "
+                "3P/6P, or a dual class such as 0.5/3P)")
+
+        if volt is not None:
+            vpct = volt["service_voltage_pct"]
+            upr_kv = volt["rated_primary_v"] / 1000.0
+            conn_txt = ("applied across the line voltage" if volt["marking"] == "line"
+                        else "applied phase-to-earth")
+            if not volt["ratio_parsed"]:
+                warns.append(
+                    f"Ratio '{pt.props.get('ratio', '')}' not recognised — rated "
+                    "primary taken as 11 kV; enter e.g. 11000/110 or 11000/√3/110/√3")
+            if vpct > _PT_V_CONT_MAX_PCT + 1e-6:
+                fails.append(
+                    f"Service voltage is {vpct:.0f}% of the {upr_kv:g} kV rated "
+                    f"primary ({conn_txt}) — above the 1.2 continuous voltage factor "
+                    "every VT carries; the core is overfluxed [IEC 61869-3 Table 303]")
+            elif vpct < _PT_V_MEAS_MIN_PCT - 1e-6:
+                warns.append(
+                    f"Service voltage is only {vpct:.0f}% of the {upr_kv:g} kV rated "
+                    f"primary ({conn_txt}) — outside the 80-120% range in which the "
+                    "measuring class holds [IEC 61869-3 5.6.201]; check the ratio")
+
+            k = volt["earth_fault_factor"]
+            req = volt["required_voltage_factor"]
+            vf = volt["voltage_factor"]
+            if k is not None and volt["earthed_star"]:
+                earthing = ("effectively earthed" if volt["effectively_earthed"]
+                            else "not effectively earthed")
+                if vf is not None:
+                    if vf + 1e-6 < req:
+                        fails.append(
+                            f"Rated voltage factor {vf:g} is below the {req:.2f} this "
+                            f"bus imposes (earth fault factor {k:.2f}, {earthing}) — "
+                            "the healthy-phase windings are overvoltaged during an "
+                            "earth fault [IEC 61869-3 Table 303]")
+                    elif (not volt["effectively_earthed"]
+                          and volt["voltage_factor_duration_s"] is not None
+                          and volt["voltage_factor_duration_s"] < 8 * 3600):
+                        warns.append(
+                            f"Voltage factor {vf:g} for "
+                            f"{volt['voltage_factor_duration_s']:g} s is adequate only "
+                            "if earth faults are tripped automatically; an isolated or "
+                            "resonant-earthed system that runs on with an earth fault "
+                            "needs 1.9 for 8 h [IEC 61869-3 Table 303]")
+                elif req > 1.2 + 1e-6:
+                    if not volt["effectively_earthed"]:
+                        warns.append(
+                            f"Voltage factor not declared — this bus is {earthing} "
+                            f"(earth fault factor {k:.2f}); a phase-to-earth VT needs "
+                            f"at least {req:.2f} (1.9/30 s with earth-fault tripping, "
+                            "1.9/8 h without) [IEC 61869-3 Table 303]")
+
+        status = "fail" if fails else ("warning" if warns else "pass")
         pt_checks.append({
             "device_id": pt.id,
             "device_name": pt_name,
             "location_bus": location_bus,
             "ratio": pt.props.get("ratio", ""),
-            "accuracy_class": adequacy["accuracy_class"],
-            "rated_burden_va": round(adequacy["rated_burden_va"], 1),
-            "connected_burden_va": round(adequacy["connected_burden_va"], 1),
+            "accuracy_class": limits["class"],
+            "rated_burden_va": round(adequacy["rated_burden_va"], 1) if adequacy else None,
+            "connected_burden_va": round(adequacy["connected_burden_va"], 1) if adequacy else None,
             "loading_pct": round(loading_pct, 1) if loading_pct is not None else None,
-            "ratio_error_pct": adequacy["ratio_error_pct"],
-            "phase_error_min": adequacy["phase_error_min"],
+            "ratio_error_pct": limits["ratio_error_pct"],
+            "phase_error_min": limits["phase_error_min"],
+            "service_voltage_pct": (round(volt["service_voltage_pct"], 1)
+                                    if volt else None),
+            "earth_fault_factor": (round(volt["earth_fault_factor"], 2)
+                                   if volt and volt["earth_fault_factor"] is not None else None),
+            "required_voltage_factor": (round(volt["required_voltage_factor"], 2)
+                                        if volt else None),
+            "voltage_factor": pt.props.get("voltage_factor") or None,
             "status": status,
-            "issues": issues,
+            "issues": fails + warns,
         })
 
     return {"devices": results, "transformers": transformer_results,

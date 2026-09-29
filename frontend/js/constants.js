@@ -1259,10 +1259,12 @@ const FIELD_INFO = {
   'ct.knee_point_v':   'Leave 0 to derive the saturation EMF from the accuracy class: the accuracy-limit EMF E_AL = ALF × I_rated × (Rct + R_rated burden) [IEC 61869-2].\nManual entry (e.g. a PX-class rated knee) overrides it; the knee sits below true saturation, so this is conservative.\nThe dc offset of a fault is evaluated in the time domain by the arc-flash clearing time, not by this value.',
 
   // PT
-  'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V.',
-  'pt.accuracy_class': 'Default 0.5 — metering grade accuracy.\nSource: IEC 61869-3 — accuracy classes: 0.1, 0.2, 0.5, 1.0, 3.0 (measuring); 3P, 6P (protective).\nEach class sets a ratio-error / phase-displacement limit pair, e.g. 0.5 = ±0.5% / ±20\'.',
-  'pt.burden_va':      'Rated burden (VA) — the standard IEC 61869-3 value (e.g. 10/25/50/100/200/400 VA) the PT was tested and accuracy-classed at.\nUsed by: Duty Check — compared against Connected Burden below.',
-  'pt.connected_burden_va': 'Actual VA drawn by everything wired to this PT\'s secondary (relays + meters combined). Leave at 0 if unknown/not modelled — the burden adequacy check is skipped (legacy behaviour).\nSource: IEC 61869-3 — the declared accuracy class (ratio error / phase displacement) is only guaranteed between 25% and 100% of rated burden; above 100% the PT is overburdened, below 25% the classification is unproven at that loading.\nUsed by: Duty Check — "PT Burden Adequacy" (only evaluated for a PT with an associated_pt relay).',
+  'pt.ratio':          'Default 11000/110 — standard 110V secondary.\nSource: IEC 61869-3 — standard secondary voltage: 100V or 110V (÷√3 for a phase-to-earth winding, ÷3 for a residual winding).\nAccepted forms: 11000/110, 11kV/110V, 11000/√3/110/√3.\nUsed by: Duty Check — the rated primary must be within 80–120% of the voltage applied (the bus line voltage, or line/√3 for a phase-to-earth unit).',
+  'pt.accuracy_class': 'Default 0.5 — metering grade accuracy.\nSource: IEC 61869-3 — accuracy classes: 0.1, 0.2, 0.5, 1.0, 3.0 (measuring); 3P, 6P (protective).\nEach class sets a ratio-error / phase-displacement limit pair, e.g. 0.5 = ±0.5% / ±20\'.\nA dual-class winding (e.g. 0.5/3P) is judged on its protective class when it feeds a relay.',
+  'pt.burden_va':      'Rated burden (VA) — the rated output the PT was tested and accuracy-classed at.\nSource: IEC 61869-3 — burden range I: 1 / 2.5 / 5 / 10 VA at unity pf (class holds from 0 VA); range II: 10 / 25 / 50 / 100 VA at 0.8 pf (class holds from 25%).\nUsed by: Duty Check — compared against Connected Burden below.',
+  'pt.connection':    'Phase-to-earth: an earthed-star VT (single-phase units, or a three-phase unit nameplated by the line voltage). Its windings see the healthy-phase voltage rise of an earth fault.\nPhase-to-phase: windings across the line voltage (e.g. open-delta V-V) — no rise.',
+  'pt.voltage_factor': 'Rated voltage factor — the multiple of rated voltage the VT withstands, and for how long.\nSource: IEC 61869-3 Table 303:\n• 1.2 continuous — every VT; phase-to-phase connections\n• 1.5 for 30 s — phase-to-earth, effectively earthed system (earth fault factor ≤ 1.4)\n• 1.9 for 30 s — non-effectively earthed, with automatic earth-fault tripping\n• 1.9 for 8 h — isolated or resonant-earthed, no automatic tripping\nUsed by: Duty Check — compared with the earth fault factor at the bus (from the fault study). Not declared: the required factor is reported, and a non-effectively earthed bus warns.',
+  'pt.connected_burden_va': 'Actual VA drawn by everything wired to this PT\'s secondary (relays + meters combined). Leave at 0 if unknown/not modelled — the burden adequacy check is skipped (legacy behaviour).\nSource: IEC 61869-3 — the declared accuracy class (ratio error / phase displacement) is only guaranteed up to 100% of rated burden, and from 25% for burden range II (10 VA and above); above 100% the PT is overburdened, below the floor the classification is unproven at that loading.\nUsed by: Duty Check — "PT Burden Adequacy" (only evaluated for a PT with an associated_pt relay).',
 
   // Induction Motor
   'motor_induction.efficiency':           'Default 93% — typical for IE3 200 kW motor.\nSource: IEC 60034-30-1 Table 2 — efficiency classes for induction motors.',
@@ -2928,6 +2930,10 @@ const COMPONENT_DEFS = {
       burden_va: 30,
       // 0 = not specified -> burden adequacy check skipped (legacy).
       connected_burden_va: 0,
+      // [PT1] how the primary is connected, and its IEC 61869-3 rated
+      // voltage factor ('' = not declared -> reported, not checked).
+      connection: 'phase_earth',
+      voltage_factor: '',
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -2935,6 +2941,17 @@ const COMPONENT_DEFS = {
       { key: 'accuracy_class', label: 'Accuracy', type: 'text' },
       { key: 'burden_va', label: 'Rated Burden', type: 'number', unit: 'VA' },
       { key: 'connected_burden_va', label: 'Connected Burden', type: 'number', unit: 'VA', min: 0, step: 1, placeholder: 'Not specified' },
+      { key: 'connection', label: 'Connection', type: 'select', options: [
+        { value: 'phase_earth', label: 'Phase-to-earth (earthed star)' },
+        { value: 'phase_phase', label: 'Phase-to-phase' },
+      ] },
+      { key: 'voltage_factor', label: 'Voltage Factor', type: 'select', options: [
+        { value: '', label: 'Not declared' },
+        { value: '1.2', label: '1.2 continuous' },
+        { value: '1.5/30s', label: '1.5 for 30 s' },
+        { value: '1.9/30s', label: '1.9 for 30 s' },
+        { value: '1.9/8h', label: '1.9 for 8 h' },
+      ] },
     ],
   },
 

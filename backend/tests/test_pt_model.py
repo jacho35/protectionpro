@@ -23,23 +23,24 @@ from backend.analysis.pt_model import (
 class TestParsers:
     def test_parse_pt_ratio_valid(self):
         r = parse_pt_ratio("11000/110")
-        assert r == {"primary": 11000.0, "secondary": 110.0, "ratio": 100.0}
+        assert r == {"primary": 11000.0, "secondary": 110.0, "ratio": 100.0, "parsed": True}
 
     def test_parse_pt_ratio_defaults_on_bad_input(self):
         for bad in (None, "", "garbage", "11000", "0/110", "11000/0", "a/b"):
-            assert parse_pt_ratio(bad) == {"primary": 11000.0, "secondary": 110.0, "ratio": 100.0}
+            assert parse_pt_ratio(bad) == {"primary": 11000.0, "secondary": 110.0,
+                                           "ratio": 100.0, "parsed": False}
 
     def test_parse_pt_accuracy_limits_measuring_classes(self):
-        assert parse_pt_accuracy_limits("0.1") == {"class": "0.1", "ratio_error_pct": 0.1, "phase_error_min": 5.0}
-        assert parse_pt_accuracy_limits("0.2") == {"class": "0.2", "ratio_error_pct": 0.2, "phase_error_min": 10.0}
-        assert parse_pt_accuracy_limits("0.5") == {"class": "0.5", "ratio_error_pct": 0.5, "phase_error_min": 20.0}
-        assert parse_pt_accuracy_limits("1.0") == {"class": "1.0", "ratio_error_pct": 1.0, "phase_error_min": 40.0}
+        assert parse_pt_accuracy_limits("0.1") == {"class": "0.1", "ratio_error_pct": 0.1, "phase_error_min": 5.0, "recognised": True}
+        assert parse_pt_accuracy_limits("0.2") == {"class": "0.2", "ratio_error_pct": 0.2, "phase_error_min": 10.0, "recognised": True}
+        assert parse_pt_accuracy_limits("0.5") == {"class": "0.5", "ratio_error_pct": 0.5, "phase_error_min": 20.0, "recognised": True}
+        assert parse_pt_accuracy_limits("1.0") == {"class": "1.0", "ratio_error_pct": 1.0, "phase_error_min": 40.0, "recognised": True}
         c3 = parse_pt_accuracy_limits("3.0")
         assert c3["ratio_error_pct"] == 3.0 and c3["phase_error_min"] is None
 
     def test_parse_pt_accuracy_limits_protective_classes(self):
-        assert parse_pt_accuracy_limits("3P") == {"class": "3P", "ratio_error_pct": 3.0, "phase_error_min": 120.0}
-        assert parse_pt_accuracy_limits("6P") == {"class": "6P", "ratio_error_pct": 6.0, "phase_error_min": 240.0}
+        assert parse_pt_accuracy_limits("3P") == {"class": "3P", "ratio_error_pct": 3.0, "phase_error_min": 120.0, "recognised": True}
+        assert parse_pt_accuracy_limits("6P") == {"class": "6P", "ratio_error_pct": 6.0, "phase_error_min": 240.0, "recognised": True}
         # case-insensitive
         assert parse_pt_accuracy_limits("3p")["ratio_error_pct"] == 3.0
 

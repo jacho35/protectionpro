@@ -318,6 +318,17 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ## Completed
 
+### PT (voltage transformer) model review: PT1–PT4 and lesser notes fixed (2026-09-29)
+- **Review.** `PT_MODEL_REVIEW.md` — `pt_model.py` and the duty-check PT table against IEC 61869-3:2011 (Tables 301–303, burden ranges) and IEC 61869-1 (earth fault factor). Class limits and the range II burden band correct; four defects.
+- **Fixed:**
+  - **PT1.** New rated voltage factor check (`voltage_factor`, `connection` props). The earth fault factor comes from the bus Z1/Z0 in the fault study. A 1.2-rated phase-to-earth VT on an unearthed or NER bus (k = 1.73–1.79) had passed.
+  - **PT2.** The rated primary is checked against the bus voltage: above 120 % fails, below 80 % warns. Ratios like "11kV/110V" and "…/√3" now parse; they used to fall back to 11000/110.
+  - **PT3.** Classes "1", "3" and dual "0.5/3P" parse correctly. A relay-fed dual class uses its P limits, and an unrecognised class warns.
+  - **PT4.** Burden range I (< 10 VA) has no 25 % floor.
+  - Lesser: the table citations now read 301/302/303 (L1), and the rated-burden tooltip lists the IEC 61869-3 ranges (L2).
+- **Behaviour change for saved projects.** Re-run the duty check. Every relay-fed PT now gets a row.
+- `backend/tests/test_pt_model_review_fixes.py`: 19 tests.
+
 ### TCC curve review: TC1–TC4 and lesser notes (2026-09-29)
 - **Review.** `TCC_REVIEW.md` covers the TCC curve functions (`constants.js`, mirrored in `arcflash.py`). They were checked against IEC 60255-151, IEEE C37.112, the IEC 60269-1 gG gates and Table 7 I²t, IEC 60898-1, IEC 60947-2, IEC 60364-4-43 and IEEE C57.109. The IDMT constants are exact; four defects were found.
 - **Fixed:**

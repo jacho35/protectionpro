@@ -2099,11 +2099,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── PT burden / accuracy-class adequacy table ──
     if (ptChecks.length > 0) {
-      html += `<h4 style="margin:12px 0 4px">PT Burden Adequacy</h4>
+      html += `<h4 style="margin:12px 0 4px">PT Adequacy (burden, voltage, voltage factor)</h4>
       <table class="af-table">
         <thead><tr>
           <th>PT</th><th>Bus</th><th>Ratio</th><th>Class</th>
-          <th>Rated (VA)</th><th>Connected (VA)</th><th>Loading</th><th>Status</th>
+          <th>Rated (VA)</th><th>Connected (VA)</th><th>Loading</th>
+          <th title="Service voltage as % of the rated primary (IEC 61869-3: 80–120%)">V / Vr</th>
+          <th title="Earth fault factor at the bus (IEC 61869-1; ≤ 1.4 = effectively earthed)">k</th>
+          <th title="Voltage factor required (k × V/Vr) vs the declared rated voltage factor (IEC 61869-3 Table 303)">Vf req / rated</th>
+          <th>Status</th>
         </tr></thead><tbody>`;
       for (const c of ptChecks) {
         const rowClass = c.status === 'fail' ? 'af-danger' : c.status === 'warning' ? 'af-medium' : 'af-low';
@@ -2115,13 +2119,16 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${escHtml(c.location_bus)}</td>
           <td>${escHtml(String(c.ratio))}</td>
           <td>${escHtml(String(c.accuracy_class))}</td>
-          <td>${c.rated_burden_va.toFixed(1)}</td>
-          <td>${c.connected_burden_va.toFixed(1)}</td>
+          <td>${c.rated_burden_va != null ? c.rated_burden_va.toFixed(1) : '—'}</td>
+          <td>${c.connected_burden_va != null ? c.connected_burden_va.toFixed(1) : '—'}</td>
           <td>${c.loading_pct != null ? c.loading_pct.toFixed(0) + '%' : '—'}</td>
+          <td>${c.service_voltage_pct != null ? c.service_voltage_pct.toFixed(0) + '%' : '—'}</td>
+          <td>${c.earth_fault_factor != null ? c.earth_fault_factor.toFixed(2) : '—'}</td>
+          <td>${c.required_voltage_factor != null ? c.required_voltage_factor.toFixed(2) : '—'} / ${c.voltage_factor ? escHtml(String(c.voltage_factor)) : '—'}</td>
           <td>${statusBadge}</td>
         </tr>`;
         if (c.issues.length > 0) {
-          html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">
+          html += `<tr class="${rowClass}"><td colspan="11" style="padding-left:24px;font-size:11px;color:#b71c1c">
             ${c.issues.join('<br>')}
           </td></tr>`;
         }
