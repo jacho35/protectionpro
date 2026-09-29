@@ -54,7 +54,7 @@ frontend/
     ├── workspaces.js       # Project type (Reticulation / Building / Network) → which workspace tabs show, in workflow order; New-project + type dialogs
     ├── help.js             # Help 'Calculations & tools' viewer: ranked search, KaTeX (js/lib/katex) lazy-loaded; articles are data in help-{faults,flow,dynamics,protect,cables,design,workflow}.js (TeX between $…$ / $$…$$; never a literal $ in text)
     ├── header.js           # Two-row header behaviours: Results menu lists only studies with results; Ctrl K command search (index built from the menus)
-    ├── lightning.js        # Lightning risk (IEC 62305-2): named assessments saved in the project (AppState.lightningAssessments), 4 guided steps, live strike estimate, verdict-first results, PDF report (LightningReport)
+    ├── lightning.js        # Lightning risk (IEC 62305-2, edition per assessment: 2024 default / 2010, absent ⇒ 2010): named assessments saved in the project (AppState.lightningAssessments), 4 guided steps (data-lr-ed fields per edition), live strike estimate, verdict-first results (2024: per zone + frequency F), PDF report (LightningReport)
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
     ├── freqscan.js         # Frequency scan UI (Z vs f setup + log-decade chart)
@@ -99,6 +99,8 @@ backend/
 │   ├── flicker.py          # Voltage flicker (IEC 61000-3-3/-4-15) — planning-level Pst/Plt screening for repetitive motor starts
 │   ├── hosting_capacity.py # Nodal DER hosting capacity — voltage-rise/thermal limited PV injection sweep per bus
 │   ├── arcflash.py         # Arc flash incident energy — IEEE 1584-2002 and 1584-2018
+│   ├── lightning_risk.py   # IEC 62305-2:2010 R1 (the default for a request with no `edition`); dispatches edition "2024" →
+│   ├── lightning_risk_2024.py # IEC 62305-2:2024 — R = R_L1 + R_L2 per zone, frequency of damage F, N_SG = k·N_G; pinned to Annex F (house/office/hospital)
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── db_circuit_check.py # Per-way DB circuit check — derated Iz, Ib<=In<=Iz, volt drop, ECC, earth-loop Zs
 │   ├── iec_60364_tables.py # IEC 60364-5-52 installed-ampacity lookups + ambient/soil tables; capacities (2/3 loaded conductors, methods A1–G) and grouping (B.52.17–19) live in the GENERATED iec_60364_data.py / frontend js/iec-60364-data.js — edit testing/iec-60364-tables-review/iec_60364_5_52_data.json and run build_iec_tables.py, never by hand
@@ -198,6 +200,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/duty-check` | Equipment duty | IEC 60947-2 / IEC 60269 (LV breakers, fuses: largest prospective I″k), IEC 62271-100 (MV: Ib, asymmetry, making), Icw, Ur ≥ Um; relay-fed CTs (IEC 61869-2) and VTs (IEC 61869-3: burden, rated primary vs bus, voltage factor vs the bus earth fault factor) |
 | `/api/analysis/load-diversity` | Demand factors | Load diversity |
 | `/api/analysis/grounding` | Grounding grid | IEEE 80 |
+| `/api/analysis/lightning-risk` | Lightning risk (form, not ProjectData) | IEC 62305-2:2024 (`edition: "2024"`, R + F per zone) or 2010 (R1; absent `edition`) |
 | `/api/analysis/study-manager` | Batch all studies | Runs selected analyses |
 
 ### Projects (CRUD)

@@ -2902,15 +2902,78 @@ document.addEventListener('DOMContentLoaded', () => {
     lps_class: ['lr-lps', 'str'], spd_level: ['lr-spd', 'str'],
     persons_in_zone: ['lr-persons', 'num'], hours_per_year: ['lr-hours', 'num'],
     equipment_withstand_kv: ['lr-uw', 'num'], explosion_risk: ['lr-explosion', 'bool'],
+    edition: ['lr-edition', 'str'], tolerable_risk: ['lr-rt', 'num'],
+  };
+  // 2024-only form fields, saved raw in `ui24` and turned into the request's
+  // `v2024` block by lightning2024Input().
+  const LR24_FIELDS = {
+    dens: ['lr24-dens', 'str'], k: ['lr24-k', 'num'], constr: ['lr24-constr', 'str'],
+    loss: ['lr24-loss', 'str'], life: ['lr24-life', 'bool'], expl: ['lr24-expl', 'str'],
+    touch: ['lr24-touch', 'str'], liion: ['lr24-liion', 'bool'],
+    expEn: ['lr24-exp-en', 'bool'], expHours: ['lr24-exp-hours', 'num'], expFloor: ['lr24-exp-floor', 'str'],
+    expTouch: ['lr24-exp-touch', 'str'], expDirect: ['lr24-exp-direct', 'bool'],
+    l1Hv: ['lr24-l1-hv', 'bool'], l1HvLen: ['lr24-l1-hvlen', 'num'], l2Kind: ['lr24-l2-kind', 'str'],
+    uwp: ['lr24-uwp', 'num'], ks3p: ['lr24-ks3p', 'str'], uwt: ['lr24-uwt', 'num'], ks3t: ['lr24-ks3t', 'str'],
+    eb: ['lr24-eb', 'str'], ft: ['lr24-ft', 'num'],
+  };
+  const _lrRead = (fields) => {
+    const o = {};
+    for (const [key, [id, kind]] of Object.entries(fields)) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      o[key] = kind === 'num' ? parseFloat(el.value) || 0 : kind === 'bool' ? el.checked : el.value;
+    }
+    return o;
+  };
+  const _lrWrite = (fields, o) => {
+    for (const [key, [id, kind]] of Object.entries(fields)) {
+      const el = document.getElementById(id);
+      if (!el || o[key] === undefined) continue;
+      if (kind === 'bool') el.checked = !!o[key];
+      else el.value = o[key];
+    }
   };
 
-  function collectLightningParams() {
-    const p = {};
-    for (const [key, [id, kind]] of Object.entries(LR_FIELDS)) {
-      const el = document.getElementById(id);
-      p[key] = kind === 'num' ? parseFloat(el.value) || 0
-             : kind === 'bool' ? el.checked : el.value;
+  // IEC 62305-2:2024 request block from the form: one inside zone (plus an
+  // optional exposed zone), the power line (LV section, optional HV section)
+  // and the telecom line, and one internal system per connected service.
+  function lightning2024Input(p, u) {
+    const k = u.k > 0 ? u.k : 2;
+    const lines = [], systems = [];
+    const power = p.lines.find(l => l.type === 'power');
+    const tel = p.lines.find(l => l.type === 'telecom');
+    if (power) {
+      const sections = [{ length_m: power.length_m, installation: power.installation, line_type: 'lv', environment: power.environment }];
+      if (u.l1Hv) sections.push({ length_m: u.l1HvLen || 1000, installation: power.installation, line_type: 'hv', environment: power.environment });
+      lines.push({ name: 'Power supply', type: 'power', shield: power.screen || 'unshielded', sections });
+      systems.push({ type: 'power', line: 'Power supply', uw_kv: u.uwp || 2.5, wiring: u.ks3p || 'different_routing', spd_level: p.spd_level });
     }
+    if (tel && u.l2Kind !== 'fibre') {
+      if (u.l2Kind !== 'fibre_copper') {
+        lines.push({ name: 'Telecom', type: 'telecom', shield: tel.screen || 'unshielded',
+          sections: [{ length_m: tel.length_m, installation: tel.installation, line_type: 'lv', environment: tel.environment }] });
+      }
+      systems.push({ type: 'telecom', line: u.l2Kind === 'fibre_copper' ? null : 'Telecom', uw_kv: u.uwt || 1.5,
+        wiring: u.ks3t || 'different_routing', spd_level: p.spd_level });
+    }
+    const zones = [{
+      name: 'Inside the building', kind: 'inside', hours_present: p.hours_per_year, equipment_hours: 8760,
+      floor: p.floor_type, touch_measure: u.touch || 'none',
+      fire_risk: u.expl && u.expl !== 'none' ? u.expl : p.fire_risk, fire_protection: p.fire_protection,
+      lithium_ion: !!u.liion, loss_class: u.loss || 'normal', life_critical: !!u.life,
+      systems, tolerable_frequency: u.ft || 0.1,
+    }];
+    if (u.expEn) {
+      zones.push({ name: 'Roof / outside', kind: 'exposed', hours_present: u.expHours || 0, floor: u.expFloor,
+        touch_measure: u.expTouch || 'none', persons_exposed: !!u.expDirect, fire_risk: 'none', loss_class: 'low' });
+    }
+    const nsg = u.dens === 'nsg' ? p.ground_flash_density : k * p.ground_flash_density;
+    return { strike_density: nsg, k, construction: u.constr || 'masonry', lps_class: p.lps_class,
+      eb_level: u.eb || 'none', lines, zones };
+  }
+
+  function collectLightningParams() {
+    const p = _lrRead(LR_FIELDS);
     p.persons_total = p.persons_in_zone;  // single-zone assessment
     p.lines = [];
     if (document.getElementById('lr-line1-en').checked) {
@@ -2920,7 +2983,7 @@ document.addEventListener('DOMContentLoaded', () => {
         installation: document.getElementById('lr-line1-inst').value,
         environment: document.getElementById('lr-line1-env').value,
         has_transformer: document.getElementById('lr-line1-tx').checked,
-        shielded: false,
+        screen: document.getElementById('lr-line1-screen').value || 'unshielded',
       });
     }
     if (document.getElementById('lr-line2-en').checked) {
@@ -2930,35 +2993,40 @@ document.addEventListener('DOMContentLoaded', () => {
         installation: document.getElementById('lr-line2-inst').value,
         environment: document.getElementById('lr-line2-env').value,
         has_transformer: false,
-        shielded: document.getElementById('lr-line2-shield').checked,
+        screen: document.getElementById('lr-line2-screen').value || 'unshielded',
       });
     }
+    p.ui24 = _lrRead(LR24_FIELDS);
+    if (p.edition === '2024') p.v2024 = lightning2024Input(p, p.ui24);
     return p;
   }
 
   function restoreLightningParams(p) {
     if (!p) return;
-    for (const [key, [id, kind]] of Object.entries(LR_FIELDS)) {
-      const el = document.getElementById(id);
-      if (p[key] === undefined) continue;
-      if (kind === 'bool') el.checked = !!p[key];
-      else el.value = p[key];
-    }
-    const power = (p.lines || []).find(l => l.type === 'power');
-    const telecom = (p.lines || []).find(l => l.type === 'telecom');
+    // A saved assessment from before editions existed is a 2010 one [E1];
+    // the old combined hospital/hotel/school card reads as a hospital [LR1].
+    const q = Object.assign({ edition: '2010' }, p);
+    if (q.structure_use === 'hospital_hotel_school') q.structure_use = 'hospital';
+    _lrWrite(LR_FIELDS, q);
+    if (q.ui24) _lrWrite(LR24_FIELDS, q.ui24);
+    const power = (q.lines || []).find(l => l.type === 'power');
+    const telecom = (q.lines || []).find(l => l.type === 'telecom');
+    // [LR5] saved lines carry only `shielded` (read as bonded, R_S <= 1 ohm/km)
+    const screen = (l) => l.screen || (l.shielded ? 'bonded_rs_le1' : 'unshielded');
     document.getElementById('lr-line1-en').checked = !!power;
     if (power) {
       document.getElementById('lr-line1-len').value = power.length_m;
       document.getElementById('lr-line1-inst').value = power.installation;
       document.getElementById('lr-line1-env').value = power.environment;
       document.getElementById('lr-line1-tx').checked = !!power.has_transformer;
+      document.getElementById('lr-line1-screen').value = screen(power);
     }
     document.getElementById('lr-line2-en').checked = !!telecom;
     if (telecom) {
       document.getElementById('lr-line2-len').value = telecom.length_m;
       document.getElementById('lr-line2-inst').value = telecom.installation;
       document.getElementById('lr-line2-env').value = telecom.environment;
-      document.getElementById('lr-line2-shield').checked = !!telecom.shielded;
+      document.getElementById('lr-line2-screen').value = screen(telecom);
     }
   }
 

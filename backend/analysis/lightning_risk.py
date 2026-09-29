@@ -4,7 +4,13 @@
 Evaluates risk R1 (loss of human life) for a rectangular structure with
 connected service lines, and recommends the minimum protection measures
 (LPS class + coordinated SPDs) that bring R1 within the tolerable limit
-RT = 1e-5 per year (IEC 62305-2 Table 7).
+RT = 1e-5 per year (IEC 62305-2:2010 Table 4; an input, default 1e-5).
+
+This module is the 2010 (Ed. 2) method, kept for assessments made with it and
+for jurisdictions that still adopt it (SANS 62305-2). The current edition is
+IEC 62305-2:2024 (Ed. 3), a different method: see lightning_risk_2024.py.
+`run_lightning_risk` dispatches on the request's `edition` (absent ⇒ 2010,
+so saved assessments reproduce).
 
 Key equations (Ed. 2.0, Annex A/B/C):
   Collection areas:
@@ -49,7 +55,7 @@ from ..models.schemas import (
     LightningProtectionOption,
 )
 
-TOLERABLE_R1 = 1e-5  # IEC 62305-2 Table 7
+TOLERABLE_R1 = 1e-5  # IEC 62305-2:2010 Table 4 (default; the request may set another)
 
 # ── Table A.1: location factor C_D ──
 LOCATION_FACTOR = {
@@ -136,32 +142,79 @@ HAZARD_FACTOR = {
 LT = 1e-2  # injuries by touch/step voltage (all structure types)
 
 LF_BY_USE = {
-    "hospital_hotel_school": 1e-1,
+    "hospital": 1e-1,
+    "hospital_icu": 1e-1,
+    "hotel_school_civic": 1e-1,
     "entertainment_church_museum": 5e-2,
     "industrial_commercial": 2e-2,
     "other": 1e-2,
 }
+LF_EXPLOSION = 1e-1   # [LR2] Table C.2: risk of explosion, whatever the use
 
-# L_O (failure of internal systems) — only life-relevant for hospitals /
-# explosion-risk structures (Table C.2).
+# [LR1] "hospital_hotel_school" was one card that counted a hotel or school as
+# a structure where failure of internal systems endangers life. Saved
+# assessments carry the old key: read it as a hospital (the only reading under
+# which its L_O = 1e-3 was right) so their numbers reproduce.
+_LEGACY_USE = {"hospital_hotel_school": "hospital"}
+
+# L_O (failure of internal systems) — Table C.2 gives it only for a risk of
+# explosion and for hospitals: 1e-2 intensive care / operating block [LR4],
+# 1e-3 other parts. Hotels, schools and civic buildings have none [LR1].
+LO_BY_USE = {"hospital": 1e-3, "hospital_icu": 1e-2}
+
+
+def _structure_use(req) -> str:
+    return _LEGACY_USE.get(req.structure_use, req.structure_use)
+
+
 def _lo_value(explosion_risk: bool, structure_use: str) -> float:
     if explosion_risk:
         return 1e-1
-    if structure_use == "hospital_hotel_school":
-        return 1e-3
-    return 0.0
+    return LO_BY_USE.get(structure_use, 0.0)
 
 # ── Table B.9: P_LI by line type and equipment impulse withstand U_W (kV) ──
 PLI_TABLE = {
     "power":   {1.0: 1.0, 1.5: 0.6, 2.5: 0.3, 4.0: 0.16, 6.0: 0.1},
-    "telecom": {1.0: 1.0, 1.5: 0.5, 2.5: 0.15, 4.0: 0.08, 6.0: 0.04},
+    # [LR3] TLC at 2.5 kV is 0.2 (the engine had 0.15) — 2010 Table B.9, as
+    # reproduced in GOST R IEC 62305-2-2010 (identical adoption).
+    "telecom": {1.0: 1.0, 1.5: 0.5, 2.5: 0.2, 4.0: 0.08, 6.0: 0.04},
 }
+
+# [LR5] Table B.8: P_LD by the screen of the line and U_W. A screen that is not
+# bonded at the entrance (or no screen) gives 1; a bonded screen depends on its
+# resistance R_S. Columns are U_W = 1 / 1.5 / 2.5 / 4 / 6 kV.
+PLD_TABLE = {
+    "unshielded":     [1.0, 1.0, 1.0, 1.0, 1.0],
+    "not_bonded":     [1.0, 1.0, 1.0, 1.0, 1.0],
+    "bonded_rs_5_20": [1.0, 1.0, 0.95, 0.9, 0.8],
+    "bonded_rs_1_5":  [0.9, 0.8, 0.6, 0.3, 0.1],
+    "bonded_rs_le1":  [0.6, 0.4, 0.2, 0.04, 0.02],
+}
+_UW_COLS = [1.0, 1.5, 2.5, 4.0, 6.0]
+
+
+def _line_screen(line: LightningLine) -> str:
+    """[LR5] The line's screen. Saved lines carry only `shielded`; the flat
+    P_LD = 0.2 it used is Table B.8's bonded R_S <= 1 ohm/km at 2.5 kV."""
+    if line.screen:
+        return line.screen
+    return "bonded_rs_le1" if line.shielded else "unshielded"
+
+
+def _line_cld_cli(line: LightningLine, screen: str):
+    """C_LD, C_LI (Table B.4). C_LD = 1 for every external line type the
+    dialog offers; C_LI = 0 for a screen bonded at the equipment's bar, 0.3
+    buried / 0.1 aerial for a screen that is not, 1 unshielded."""
+    if screen.startswith("bonded"):
+        return 1.0, 0.0
+    if screen == "not_bonded":
+        return 1.0, (0.1 if line.installation == "aerial" else 0.3)
+    return 1.0, 1.0
 
 
 def _nearest_withstand(uw_kv: float) -> float:
     """Snap a withstand voltage to the nearest tabulated U_W column."""
-    cols = [1.0, 1.5, 2.5, 4.0, 6.0]
-    return min(cols, key=lambda c: abs(c - uw_kv))
+    return min(_UW_COLS, key=lambda c: abs(c - uw_kv))
 
 
 def collection_area_structure(length_m, width_m, height_m):
@@ -206,19 +259,24 @@ def _compute_r1(req: LightningRiskRequest, lps_class: str, spd_level: str):
     # Occupancy weighting (single zone)
     occ = (req.persons_in_zone / max(req.persons_total, 1)) * (req.hours_per_year / 8760.0)
 
+    use = _structure_use(req)
     rt_floor = FLOOR_FACTOR.get(req.floor_type, 1e-2)
-    rp = FIRE_PROTECTION_FACTOR.get(req.fire_protection, 1.0)
+    # [LR2] Table C.4 note: with a risk of explosion r_p = 1 for all cases —
+    # fire provisions earn no credit where the fire is an explosion.
+    rp = 1.0 if req.explosion_risk else FIRE_PROTECTION_FACTOR.get(req.fire_protection, 1.0)
     rf = 1.0 if req.explosion_risk else FIRE_RISK_FACTOR.get(req.fire_risk, 1e-2)
     hz = HAZARD_FACTOR.get(req.hazard_level, 1.0)
-    lf = LF_BY_USE.get(req.structure_use, 1e-2)
-    lo = _lo_value(req.explosion_risk, req.structure_use)
+    # [LR2] Table C.2: L_F = 1e-1 with a risk of explosion, whatever the use.
+    lf = LF_EXPLOSION if req.explosion_risk else LF_BY_USE.get(use, 1e-2)
+    lo = _lo_value(req.explosion_risk, use)
 
     la = rt_floor * LT * occ
     lb = rp * rf * hz * lf * occ
     lc = lo * occ
 
-    # Internal-system failure endangers life only in these cases (§6.2)
-    systems_life_risk = req.explosion_risk or req.structure_use == "hospital_hotel_school"
+    # Internal-system failure endangers life only for a risk of explosion and
+    # for hospitals (§4.3 eq. 1 footnote; Table C.2) — not hotels/schools [LR1].
+    systems_life_risk = req.explosion_risk or use in LO_BY_USE
 
     pb = PB_BY_LPS.get(lps_class, 1.0)
     pta = 1.0  # no touch-protection measures assumed at the structure
@@ -233,23 +291,34 @@ def _compute_r1(req: LightningRiskRequest, lps_class: str, spd_level: str):
     pms = (1.0 * 1.0 * 1.0 * ks4) ** 2
     pm = pspd * pms if spd_level != "none" else pms
 
+    # [LR6] P_C = P_SPD·C_LD per internal system, combined over the systems
+    # (one per connected line) as 1 − Π(1 − P_C,i). A structure with no
+    # external line has C_LD = 0 (Table B.4: stand-alone systems) ⇒ P_C = 0.
+    pc = 1.0
+    for _ in req.lines:
+        pc *= (1.0 - pspd * 1.0)
+    pc = 1.0 - pc
+
     ra = nd * pa * la
     rb = nd * pb * lb
-    rc = nd * pspd * lc if systems_life_risk else 0.0
+    rc = nd * pc * lc if systems_life_risk else 0.0
     rm = nm * pm * lc if systems_life_risk else 0.0
 
     ru = rv = rw = rz = 0.0
     per_line = []
     for line in req.lines:
         nl, ni = _line_events(req, line)
-        # Unshielded line: P_LD = 1, C_LD = C_LI = 1 (Table B.4)
-        pld = 0.2 if line.shielded else 1.0
-        pu = 1.0 * peb * pld * 1.0          # P_TU=1: no touch protection
-        pv = peb * pld * 1.0
+        # [LR5] P_LD from Table B.8 (screen, R_S, U_W); C_LD, C_LI Table B.4
+        screen = _line_screen(line)
+        uw_col = _UW_COLS.index(_nearest_withstand(req.equipment_withstand_kv))
+        pld = PLD_TABLE.get(screen, PLD_TABLE["unshielded"])[uw_col]
+        cld, cli = _line_cld_cli(line, screen)
+        pu = 1.0 * peb * pld * cld          # P_TU=1: no touch protection
+        pv = peb * pld * cld
         pli = PLI_TABLE.get(line.type, PLI_TABLE["power"])[
             _nearest_withstand(req.equipment_withstand_kv)]
-        pw = pspd * pld * 1.0
-        pz = pspd * pli * 1.0
+        pw = pspd * pld * cld
+        pz = pspd * pli * cli
 
         # L_U uses touch-voltage loss L_T; L_V uses physical-damage loss L_B
         lu = rt_floor * LT * occ
@@ -274,21 +343,45 @@ def _compute_r1(req: LightningRiskRequest, lps_class: str, spd_level: str):
     }
 
 
-# Candidate measure sets in increasing order of cost/intrusiveness
-_PROTECTION_LADDER = [
-    ("none", "none"),
-    ("none", "III-IV"),
-    ("IV", "III-IV"),
-    ("III", "III-IV"),
-    ("II", "II"),
-    ("I", "I"),
-]
+# [LR7] Every (LPS class, coordinated-SPD level) pair, lightest first: LPS
+# class, then SPD level. The old six-step ladder never offered "SPDs at LPL II
+# or I, no LPS" and could recommend a higher LPS class than needed.
+_LPS_ORDER = ["none", "IV", "III", "II", "I"]
+_SPD_ORDER = ["none", "III-IV", "II", "I"]
+_PROTECTION_PAIRS = [(l, s_) for l in _LPS_ORDER for s_ in _SPD_ORDER]
+
+
+def _ladder(req, rt):
+    """Evaluate every pair; return (options, recommended). `options` holds,
+    for each LPS class, the lightest SPD level that meets R_T (or LPL I when
+    none does), so the table stays one row per LPS class."""
+    evaluated = [(l, s_, _compute_r1(req, l, s_)["r1"]) for l, s_ in _PROTECTION_PAIRS]
+    recommended = next(((l, s_, r) for l, s_, r in evaluated if r <= rt), None)
+    options = []
+    for l in _LPS_ORDER:
+        rows = [(l2, s2, r) for l2, s2, r in evaluated if l2 == l]
+        ok = next((row for row in rows if row[2] <= rt), None)
+        options.append(ok or rows[-1])
+    if recommended and recommended not in options:
+        options.append(recommended)
+    options.sort(key=lambda o: (_LPS_ORDER.index(o[0]), _SPD_ORDER.index(o[1])))
+    return options, recommended
 
 
 def run_lightning_risk(req: LightningRiskRequest) -> LightningRiskResult:
-    """Assess R1 for the as-entered protection and recommend the minimum
-    LPS/SPD combination meeting RT = 1e-5."""
+    """Assess the risk for the as-entered protection and recommend the minimum
+    measures meeting R_T. Dispatches on `edition`: "2024" runs IEC
+    62305-2:2024 (lightning_risk_2024.py); anything else, including an absent
+    field on a saved assessment, runs the 2010 method below."""
+    if req.edition == "2024":
+        from .lightning_risk_2024 import run_lightning_risk_2024
+        return run_lightning_risk_2024(req)
+    return _run_2010(req)
+
+
+def _run_2010(req: LightningRiskRequest) -> LightningRiskResult:
     warnings = []
+    rt = req.tolerable_risk if req.tolerable_risk and req.tolerable_risk > 0 else TOLERABLE_R1
     if req.ground_flash_density <= 0:
         warnings.append(
             "Ground flash density Ng must be > 0 — using 1.0 flashes/km²/yr. "
@@ -317,18 +410,12 @@ def run_lightning_risk(req: LightningRiskRequest) -> LightningRiskResult:
         ]
     ]
 
-    # Recommendation ladder
-    options = []
-    recommended: Optional[str] = None
-    for lps, spd in _PROTECTION_LADDER:
-        r = _compute_r1(req, lps, spd)
-        label = _option_label(lps, spd)
-        ok = r["r1"] <= TOLERABLE_R1
-        options.append(LightningProtectionOption(
-            lps_class=lps, spd_level=spd, label=label,
-            r1=r["r1"], compliant=ok))
-        if ok and recommended is None:
-            recommended = label
+    # Recommendation: the lightest pair meeting R_T [LR7]
+    rows, rec = _ladder(req, rt)
+    options = [LightningProtectionOption(
+        lps_class=l, spd_level=s_, label=_option_label(l, s_),
+        r1=r, compliant=r <= rt) for l, s_, r in rows]
+    recommended: Optional[str] = _option_label(rec[0], rec[1]) if rec else None
 
     if recommended is None:
         warnings.append(
@@ -337,14 +424,15 @@ def run_lightning_risk(req: LightningRiskRequest) -> LightningRiskResult:
             "shielding, fire suppression, restricted occupancy, or routing "
             "changes). Review zone assumptions.")
 
-    compliant = base["r1"] <= TOLERABLE_R1
+    compliant = base["r1"] <= rt
     return LightningRiskResult(
         collection_area_m2=round(base["ad"], 1),
         collection_area_near_m2=round(base["am"], 1),
         flashes_to_structure_per_year=base["nd"],
         flashes_near_structure_per_year=base["nm"],
         r1=base["r1"],
-        tolerable_r1=TOLERABLE_R1,
+        tolerable_r1=rt,
+        edition="2010",
         compliant=compliant,
         components=components,
         options=options,

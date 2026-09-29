@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.149">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.149">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.149">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.149">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.149">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.149">
-  <link rel="stylesheet" href="css/lightning.css?v=3.5.149">
-  <link rel="stylesheet" href="css/rates.css?v=3.5.149">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.149">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.149">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.149">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.149">
-  <link rel="stylesheet" href="css/help.css?v=3.5.149">
+  <link rel="stylesheet" href="css/app.css?v=3.5.150">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.150">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.150">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.150">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.150">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.150">
+  <link rel="stylesheet" href="css/lightning.css?v=3.5.150">
+  <link rel="stylesheet" href="css/rates.css?v=3.5.150">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.150">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.150">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.150">
+  <link rel="stylesheet" href="css/schedules.css?v=3.5.150">
+  <link rel="stylesheet" href="css/help.css?v=3.5.150">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -1660,7 +1660,7 @@
       <header class="lr-head">
         <span class="lr-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M9 1.8L4 9h3.6l-.8 5.2L12 7H8.4z"/></svg></span>
         <div class="lr-head-text"><h3 id="lr-title">Lightning risk assessment</h3><div class="lr-head-sub" id="lr-head-sub">Step 1 of 4 — tell us about the structure</div></div>
-        <span class="lr-tag">IEC 62305-2:2010</span><span class="lr-tag">Risk to life, R<sub>1</sub></span>
+        <span class="lr-tag" id="lr-tag-ed">IEC 62305-2:2024</span><span class="lr-tag" id="lr-tag-scope">Risk R and frequency of damage F</span>
         <button class="modal-close" id="btn-close-lightning" aria-label="Close">&times;</button>
       </header>
       <div class="lr-body">
@@ -1686,16 +1686,25 @@
           <section class="lr-panel" data-lr-panel="1">
             <div class="lr-about">
               <div class="lr-about-h"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 4.9v.1"/></svg>What this assessment decides</div>
-              <ul>
-                <li>It estimates <b>R<sub>1</sub></b>, the yearly risk that lightning causes <b>loss of human life</b> in or at this structure, through shock, fire, or (for hospitals, hotels, schools and explosion risks) failure of internal systems.</li>
-                <li>It compares R<sub>1</sub> with the <b>tolerable risk R<sub>T</sub> = 1 × 10⁻⁵ per year</b> (IEC 62305-2, Table 7).</li>
+              <ul data-lr-ed="2024">
+                <li>It estimates <b>R</b>, the yearly risk that lightning causes <b>loss of human life or physical damage</b> to this structure (IEC 62305-2:2024 eq. 6), and <b>F</b>, how often surges damage its internal systems (eq. 12).</li>
+                <li>It compares R with the <b>tolerable risk R<sub>T</sub></b> (typically 1 × 10⁻⁵ per year, set by the authority having jurisdiction) and F with the <b>tolerable frequency F<sub>T</sub></b>.</li>
+                <li>If either is too high, it finds the <b>lightest combination of lightning protection system (LPS), entrance SPDs and coordinated SPDs</b> that brings it within the limit.</li>
+              </ul>
+              <ul data-lr-ed="2010">
+                <li>It estimates <b>R<sub>1</sub></b>, the yearly risk that lightning causes <b>loss of human life</b> in or at this structure, through shock, fire, or (for hospitals and explosion risks) failure of internal systems.</li>
+                <li>It compares R<sub>1</sub> with the <b>tolerable risk R<sub>T</sub></b>, 1 × 10⁻⁵ per year by default (IEC 62305-2:2010, Table 4).</li>
                 <li>If R<sub>1</sub> is too high, it finds the <b>lowest lightning protection system (LPS) class and surge protection (SPD) level</b> that bring it below R<sub>T</sub>.</li>
               </ul>
               <div class="lr-about-meta">
                 <div><b>You’ll need:</b> the building’s size, the site’s lightning ground flash density, how many people use it and for how long, and the power and telecom lines that enter it.</div>
-                <div><b>Scope:</b> one structure, assessed as a single zone. Not assessed: loss of public service (R<sub>2</sub>), cultural heritage (R<sub>3</sub>) or economic loss (R<sub>4</sub>).</div>
+                <div data-lr-ed="2024"><b>Scope:</b> one structure: the inside as one zone, plus an optional exposed zone (roof or open area) for people outside. Not assessed: thunderstorm warning systems, adjacent structures, environmental loss (Annex E).</div>
+                <div data-lr-ed="2010"><b>Scope:</b> one structure, assessed as a single zone. Not assessed: loss of public service (R<sub>2</sub>), cultural heritage (R<sub>3</sub>) or economic loss (R<sub>4</sub>).</div>
               </div>
             </div>
+            <div class="lr-fld lr-ed-pick"><span class="lr-fl">Edition of IEC 62305-2</span>
+              <input type="hidden" id="lr-edition"><div class="lr-seg" role="radiogroup" aria-label="Edition" data-lr-target="lr-edition"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="2024">2024 · Ed. 3 (current)</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="2010">2010 · Ed. 2 (SANS 62305-2)</button></div>
+              <div class="lr-hp">The 2024 edition adds physical damage to the risk, uses the strike-point density N<sub>SG</sub> and assesses the frequency of damage to internal systems; it usually gives a higher risk. Use 2010 where the 2010 text is the adopted standard.</div></div>
             <div><h4 class="lr-h">1 · Structure &amp; site</h4><p class="lr-lead">How big the building is and how exposed its site is sets how often lightning strikes it, or strikes close enough to matter.</p></div>
             <div class="lr-sec-h">Building dimensions</div>
             <div class="lr-dims">
@@ -1707,7 +1716,15 @@
               <figure class="lr-plan" aria-hidden="true"><svg width="150" height="84" viewBox="0 0 160 88" fill="none" stroke-linecap="round"><rect x="44" y="22" width="72" height="44" rx="2" class="lr-plan-bld"/><rect x="18" y="4" width="124" height="80" rx="24" stroke-dasharray="4 3" class="lr-plan-band"/></svg><figcaption class="lr-hp">Strikes inside the dashed band (3H from the walls) hit the building.</figcaption></figure>
             </div>
             <div class="lr-grid-2">
-              <div class="lr-fld"><label class="lr-fl" for="lr-ng">Lightning ground flash density <span class="lr-sym">N<sub>G</sub></span></label><div class="lr-in"><input type="number" id="lr-ng" min="0.1" step="0.1"><span class="lr-u">flashes / km² / yr</span></div><div class="lr-hp">How many lightning flashes strike each km² of ground per year at this site. Take it from the national lightning ground flash density map. South Africa, typically: coastal 1–4, Highveld 6–12.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr-ng"><span id="lr-ng-label">Lightning ground flash density</span> <span class="lr-sym" id="lr-ng-sym">N<sub>G</sub></span></label><div class="lr-in"><input type="number" id="lr-ng" min="0.1" step="0.1"><span class="lr-u" id="lr-ng-unit">flashes / km² / yr</span></div><div class="lr-hp">How many lightning flashes strike each km² of ground per year at this site. Take it from the national lightning ground flash density map. South Africa, typically: coastal 1–4, Highveld 6–12.</div></div>
+              <div class="lr-fld" data-lr-ed="2024"><span class="lr-fl">Density entered as</span>
+                <input type="hidden" id="lr24-dens"><div class="lr-seg" role="radiogroup" aria-label="Density entered as" data-lr-target="lr24-dens"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="ng">Flash density N<sub>G</sub></button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="nsg">Strike-point density N<sub>SG</sub></button></div>
+                <div class="lr-grid-2 lr-tight"><div class="lr-in"><span class="lr-u">k =</span><input type="number" id="lr24-k" min="1" step="0.1"></div></div>
+                <div class="lr-hp">2024 uses strike points: N<sub>SG</sub> = k × N<sub>G</sub>, with k = 2 unless the lightning-location data provider gives another value (A.1). k also scales the strikes near the building and its lines.</div></div>
+            </div>
+            <div data-lr-ed="2024">
+            <div class="lr-sec-h">Construction <span class="lr-sym">P<sub>S</sub></span><span class="lr-hp lr-inline">A bonded metal or reinforced-concrete frame acts as a natural LPS.</span></div>
+            <input type="hidden" id="lr24-constr"><div class="lr-cards lr-cols-2" role="radiogroup" aria-label="Construction" data-lr-target="lr24-constr"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="masonry"><span class="lr-card-t">Wood or masonry</span><span class="lr-card-d">No continuous metal frame.</span><span class="lr-card-f">P<sub>S</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="rc_frame"><span class="lr-card-t">Reinforced concrete or steel frame</span><span class="lr-card-d">Reinforcement interconnected and earthed. Also lets touch, fire and SPD measures count for strikes to the building.</span><span class="lr-card-f">P<sub>S</sub> = 0.5</span></button></div>
             </div>
             <div class="lr-sec-h">Surroundings <span class="lr-sym">C<sub>D</sub></span><span class="lr-hp lr-inline">Taller objects nearby intercept strikes; an exposed building attracts more.</span></div>
             <input type="hidden" id="lr-location"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Surroundings" data-lr-target="lr-location"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="surrounded_by_taller"><span class="lr-card-t">Among taller objects</span><span class="lr-card-d">Trees or buildings nearby are higher than this one.</span><span class="lr-card-f">C<sub>D</sub> = 0.25</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="surrounded_same_height"><span class="lr-card-t">Among similar or lower</span><span class="lr-card-d">Surrounding objects are the same height or lower.</span><span class="lr-card-f">C<sub>D</sub> = 0.5</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="isolated"><span class="lr-card-t">Isolated</span><span class="lr-card-d">No other objects in the vicinity (within 3H).</span><span class="lr-card-f">C<sub>D</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="isolated_hilltop"><span class="lr-card-t">Isolated on a hilltop</span><span class="lr-card-d">Exposed on a hill or knoll.</span><span class="lr-card-f">C<sub>D</sub> = 2</span></button></div>
@@ -1715,13 +1732,20 @@
 
           <section class="lr-panel" data-lr-panel="2" hidden>
             <div><h4 class="lr-h">2 · People &amp; fire</h4><p class="lr-lead">Who is inside, for how long, and how a strike could become a fire decide how much a strike would cost in lives.</p></div>
-            <div class="lr-sec-h">Type of structure <span class="lr-sym">L<sub>F</sub></span><span class="lr-hp lr-inline">Typical loss of life from fire, IEC 62305-2 Table C.2.</span></div>
-            <input type="hidden" id="lr-use"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Type of structure" data-lr-target="lr-use"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="other"><span class="lr-card-t">Residential / other</span><span class="lr-card-d">Homes and anything not listed.</span><span class="lr-card-f">L<sub>F</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="industrial_commercial"><span class="lr-card-t">Industrial / commercial</span><span class="lr-card-d">Factories, shops, offices.</span><span class="lr-card-f">L<sub>F</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="entertainment_church_museum"><span class="lr-card-t">Public assembly</span><span class="lr-card-d">Entertainment venues, churches, museums.</span><span class="lr-card-f">L<sub>F</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="hospital_hotel_school"><span class="lr-card-t">Hospital / hotel / school</span><span class="lr-card-d">Also counts failure of internal systems (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>) as a risk to life.</span><span class="lr-card-f">L<sub>F</sub> = 0.1</span></button></div>
+            <div data-lr-ed="2010">
+            <div class="lr-sec-h">Type of structure <span class="lr-sym">L<sub>F</sub></span><span class="lr-hp lr-inline">Typical loss of life from fire, IEC 62305-2:2010 Table C.2.</span></div>
+            <input type="hidden" id="lr-use"><div class="lr-cards lr-cols-3" role="radiogroup" aria-label="Type of structure" data-lr-target="lr-use"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="other"><span class="lr-card-t">Residential / other</span><span class="lr-card-d">Homes and anything not listed.</span><span class="lr-card-f">L<sub>F</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="industrial_commercial"><span class="lr-card-t">Industrial / commercial</span><span class="lr-card-d">Factories, shops, offices.</span><span class="lr-card-f">L<sub>F</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="entertainment_church_museum"><span class="lr-card-t">Public assembly</span><span class="lr-card-d">Entertainment venues, churches, museums.</span><span class="lr-card-f">L<sub>F</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="hotel_school_civic"><span class="lr-card-t">Hotel / school / civic</span><span class="lr-card-d">Fire loss as a hospital, but internal-system failure is not a risk to life.</span><span class="lr-card-f">L<sub>F</sub> = 0.1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="hospital"><span class="lr-card-t">Hospital</span><span class="lr-card-d">Wards and other parts. Also counts failure of internal systems (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>) as a risk to life.</span><span class="lr-card-f">L<sub>F</sub> = 0.1 · L<sub>O</sub> = 0.001</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="hospital_icu"><span class="lr-card-t">Hospital, intensive care / theatres</span><span class="lr-card-d">Life-support equipment: internal-system failure weighs ten times more.</span><span class="lr-card-f">L<sub>F</sub> = 0.1 · L<sub>O</sub> = 0.01</span></button></div>
+            </div>
+            <div data-lr-ed="2024">
+            <div class="lr-sec-h">Loss class <span class="lr-sym">L<sub>F</sub>, L<sub>O</sub></span><span class="lr-hp lr-inline">IEC 62305-2:2024 Table C.2 — the highest value of each range is used, as the standard recommends.</span></div>
+            <input type="hidden" id="lr24-loss"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Loss class" data-lr-target="lr24-loss"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="low"><span class="lr-card-t">Low loss</span><span class="lr-card-d">Private buildings: houses, flats, farmhouses.</span><span class="lr-card-f">L<sub>F</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="normal"><span class="lr-card-t">Normal loss</span><span class="lr-card-d">Open to the public: offices, hotels, schools, churches, shops.</span><span class="lr-card-f">L<sub>F</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="high"><span class="lr-card-t">High loss</span><span class="lr-card-d">Reduced mobility (hospital wards, prisons), control rooms, museums.</span><span class="lr-card-f">L<sub>F</sub> = 0.1 · L<sub>O</sub> = 0.001</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="very_high"><span class="lr-card-t">Very high loss</span><span class="lr-card-d">Operating theatres, intensive care, life-saving equipment, explosion risk.</span><span class="lr-card-f">L<sub>F</sub> = 0.2 · L<sub>O</sub> = 0.01</span></button></div>
+            <label class="lr-chk"><input type="checkbox" id="lr24-life"> <span><b>Failure of internal systems endangers life</b> (e.g. hospitals, life-saving equipment). Counts R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub> and R<sub>Z</sub> in the risk.</span></label>
+            </div>
             <div class="lr-sec-h">Occupancy</div>
             <div class="lr-grid-3">
-              <div class="lr-fld"><label class="lr-fl" for="lr-persons">People in the structure <span class="lr-sym">n<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr-persons" min="1" step="1"><span class="lr-u">people</span></div><div class="lr-hp">Typical number present when it is in use.</div></div>
+              <div class="lr-fld" data-lr-ed="2010"><label class="lr-fl" for="lr-persons">People in the structure <span class="lr-sym">n<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr-persons" min="1" step="1"><span class="lr-u">people</span></div><div class="lr-hp">Typical number present when it is in use.</div></div>
               <div class="lr-fld"><label class="lr-fl" for="lr-hours">Hours occupied per year <span class="lr-sym">t<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr-hours" min="1" max="8760" step="1"><span class="lr-u">h / yr</span></div><div class="lr-hp">8,760 = always occupied. A school term timetable is about 2,000.</div></div>
-              <div class="lr-fld"><label class="lr-fl" for="lr-hazard">Panic / evacuation <span class="lr-sym">h<sub>z</sub></span></label><select id="lr-hazard" class="lr-sel"><option value="none">None</option><option value="low_panic">Low: up to 2 floors, under 100 people</option><option value="average_panic">Average: 100–1,000 people</option><option value="difficult_evacuation">Difficult evacuation (e.g. immobile patients)</option><option value="high_panic">High: over 1,000 people</option></select><div class="lr-hp">Raises the fire loss when escape is hard.</div></div>
+              <div class="lr-fld" data-lr-ed="2010"><label class="lr-fl" for="lr-hazard">Panic / evacuation <span class="lr-sym">h<sub>z</sub></span></label><select id="lr-hazard" class="lr-sel"><option value="none">None</option><option value="low_panic">Low: up to 2 floors, under 100 people</option><option value="average_panic">Average: 100–1,000 people</option><option value="difficult_evacuation">Difficult evacuation (e.g. immobile patients)</option><option value="high_panic">High: over 1,000 people</option></select><div class="lr-hp">Raises the fire loss when escape is hard.</div></div>
             </div>
             <div class="lr-sec-h">Fire risk <span class="lr-sym">r<sub>f</sub></span><span class="lr-hp lr-inline">From the specific fire load of the contents.</span></div>
             <input type="hidden" id="lr-fire-risk"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Fire risk" data-lr-target="lr-fire-risk"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">Nothing that can sustain a fire.</span><span class="lr-card-f">r<sub>f</sub> = 0</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="low"><span class="lr-card-t">Low</span><span class="lr-card-d">Fire load under 400 MJ/m².</span><span class="lr-card-f">r<sub>f</sub> = 0.001</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="ordinary"><span class="lr-card-t">Ordinary</span><span class="lr-card-d">Fire load 400–800 MJ/m². Most offices, classrooms, homes.</span><span class="lr-card-f">r<sub>f</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="high"><span class="lr-card-t">High</span><span class="lr-card-d">Fire load over 800 MJ/m², e.g. stores, archives.</span><span class="lr-card-f">r<sub>f</sub> = 0.1</span></button></div>
@@ -1731,7 +1755,23 @@
                 <div class="lr-hp">Manual: extinguishers, hydrants, manual alarms, escape routes. Automatic: fixed extinguishing or alarm installations.</div></div>
               <div class="lr-fld"><label class="lr-fl" for="lr-floor">Floor surface <span class="lr-sym">r<sub>t</sub></span></label><select id="lr-floor" class="lr-sel"><option value="agricultural_concrete">Soil or concrete (× 0.01)</option><option value="marble_ceramic">Marble or ceramic (× 0.001)</option><option value="gravel_carpet">Gravel or carpet (× 0.0001)</option><option value="asphalt_wood_linoleum">Asphalt, wood or linoleum (× 0.00001)</option></select><div class="lr-hp">Insulating floors reduce the chance of injury from step and touch voltage.</div></div>
             </div>
-            <label class="lr-chk"><input type="checkbox" id="lr-explosion"> <span><b>Risk of explosion</b> (hazardous-area zones present). Treats fire as certain and counts internal-system failure as a risk to life.</span></label>
+            <label class="lr-chk" data-lr-ed="2010"><input type="checkbox" id="lr-explosion"> <span><b>Risk of explosion</b> (hazardous-area zones present). Treats fire as certain (L<sub>F</sub> = 0.1, no fire-protection credit) and counts internal-system failure as a risk to life.</span></label>
+            <div data-lr-ed="2024">
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr24-expl">Risk of explosion <span class="lr-sym">r<sub>f</sub></span></label><select id="lr24-expl" class="lr-sel"><option value="none">None</option><option value="explosion_z2">Zones 2 / 22 (r<sub>f</sub> = 0.001)</option><option value="explosion_z1">Zones 1 / 21 (r<sub>f</sub> = 0.1)</option><option value="explosion_z0">Zones 0 / 20 or solid explosive (r<sub>f</sub> = 1)</option></select><div class="lr-hp">Replaces the fire risk above, makes the zone very-high loss, removes the fire-protection credit (B.4) and adds physical damage from internal-system failure.</div></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr24-touch">Touch and step protection <span class="lr-sym">P<sub>am</sub></span></label><select id="lr24-touch" class="lr-sel"><option value="none">None</option><option value="warning">Warning notices (× 0.1)</option><option value="insulation">Insulated down-conductors, 3 mm XLPE (× 0.01)</option><option value="soil_equipotential">Meshed earth termination (× 0.01)</option><option value="access_restricted">Access restricted (× 0)</option></select><div class="lr-hp">Counts for strikes to the building only with an LPS or a natural LPS frame (Table 2 note h).</div></div>
+            </div>
+            <label class="lr-chk"><input type="checkbox" id="lr24-liion"> <span><b>Lithium-ion battery storage</b> in the building (not small portable devices): no fire-protection credit (B.4).</span></label>
+            <section class="lr-line" aria-label="Exposed zone">
+              <div class="lr-line-h"><label class="lr-chk lr-chk-strong"><input type="checkbox" id="lr24-exp-en"> People on the roof or in the open next to the building</label><span class="lr-hp">A second, exposed zone: touch/step voltage near the down-conductors (R<sub>AT</sub>) and direct strikes to people on the roof (R<sub>AD</sub>).</span></div>
+              <div class="lr-grid-3">
+                <div class="lr-fld"><label class="lr-fl" for="lr24-exp-hours">Hours present per year <span class="lr-sym">t<sub>z</sub></span></label><div class="lr-in"><input type="number" id="lr24-exp-hours" min="0" max="8760" step="1"><span class="lr-u">h / yr</span></div><div class="lr-hp">Maintenance on the roof, people at the entrance.</div></div>
+                <div class="lr-fld"><label class="lr-fl" for="lr24-exp-floor">Ground surface <span class="lr-sym">r<sub>t</sub></span></label><select id="lr24-exp-floor" class="lr-sel"><option value="agricultural_concrete">Soil or concrete (× 0.01)</option><option value="marble_ceramic">Marble or ceramic (× 0.001)</option><option value="gravel_carpet">Gravel (× 0.0001)</option><option value="asphalt_wood_linoleum">Asphalt (× 0.00001)</option></select></div>
+                <div class="lr-fld"><label class="lr-fl" for="lr24-exp-touch">Protection <span class="lr-sym">P<sub>am</sub></span></label><select id="lr24-exp-touch" class="lr-sel"><option value="none">None</option><option value="warning">Warning notices (× 0.1)</option><option value="insulation">Insulated down-conductors (× 0.01)</option><option value="soil_equipotential">Meshed earth termination (× 0.01)</option><option value="access_restricted">Access restricted (× 0)</option></select></div>
+              </div>
+              <label class="lr-chk"><input type="checkbox" id="lr24-exp-direct"> <span><b>Exposed to a direct strike</b> (people on the roof or a terrace, P<sub>O</sub> = 1).</span></label>
+            </section>
+            </div>
           </section>
 
           <section class="lr-panel" data-lr-panel="3" hidden>
@@ -1742,10 +1782,17 @@
               <div class="lr-fld"><label class="lr-fl" for="lr-line1-len">Length to the next node <span class="lr-sym">L<sub>L</sub></span></label><div class="lr-in"><input type="number" id="lr-line1-len" min="1" step="1"><span class="lr-u">m</span></div><div class="lr-hp">To the substation, transformer or exchange. Unknown? The standard’s default is 1,000 m.</div></div>
               <div class="lr-fld"><span class="lr-fl">Installation <span class="lr-sym">C<sub>I</sub></span></span>
                 <input type="hidden" id="lr-line1-inst"><div class="lr-seg" role="radiogroup" aria-label="Installation" data-lr-target="lr-line1-inst"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="buried">Buried</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="aerial">Aerial</button></div>
-                <div class="lr-hp">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</div></div>
+                <div class="lr-hp"><span data-lr-ed="2010">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</span><span data-lr-ed="2024">An aerial line collects over three times the strikes of a buried one (C<sub>I</sub> = 1 vs 0.3).</span></div></div>
               <div class="lr-fld"><label class="lr-fl" for="lr-line1-env">Line environment <span class="lr-sym">C<sub>E</sub></span></label><select id="lr-line1-env" class="lr-sel"><option value="rural">Rural (CE = 1)</option><option value="suburban">Suburban (CE = 0.5)</option><option value="urban">Urban (CE = 0.1)</option><option value="urban_tall_buildings">Urban, buildings over 20 m (CE = 0.01)</option></select><div class="lr-hp">Buildings along the route shield the line.</div></div>
             </div>
-            <label class="lr-chk"><input type="checkbox" id="lr-line1-tx"> <span><b>HV/LV transformer at the building end</b> (C<sub>T</sub> = 0.2). A transformer between the line and the building blocks much of the surge.</span></label>
+            <label class="lr-chk" data-lr-ed="2010"><input type="checkbox" id="lr-line1-tx"> <span><b>HV/LV transformer at the building end</b> (C<sub>T</sub> = 0.2). A transformer between the line and the building blocks much of the surge.</span></label>
+            <div class="lr-grid-2" data-lr-ed="2024">
+              <div class="lr-fld"><label class="lr-chk"><input type="checkbox" id="lr24-l1-hv"> <span><b>Fed from an HV line</b> through an HV/LV transformer (C<sub>T</sub> = 0.2 for that section). The length above is then the LV section.</span></label></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr24-l1-hvlen">HV section length</label><div class="lr-in"><input type="number" id="lr24-l1-hvlen" min="0" step="1"><span class="lr-u">m</span></div><div class="lr-hp">Up to the first node; 1,000 m when unknown (A.4).</div></div>
+            </div>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr-line1-screen">Cable screen <span class="lr-sym">P<sub>LD</sub>, C<sub>LI</sub></span></label><select id="lr-line1-screen" class="lr-sel"><option value="unshielded">Unshielded</option><option value="not_bonded">Screen not bonded at the entrance</option><option value="bonded_rs_5_20">Screen bonded, 5 &lt; R<sub>S</sub> ≤ 20 Ω/km</option><option value="bonded_rs_1_5">Screen bonded, 1 &lt; R<sub>S</sub> ≤ 5 Ω/km</option><option value="bonded_rs_le1">Screen bonded, R<sub>S</sub> ≤ 1 Ω/km</option><option value="protective_conduit">In bonded metal conduit / lightning-protective cable</option></select><div class="lr-hp">Bonded to the same bar as the equipment. Typical: LV service unshielded; HV cable 1–5 Ω/km.</div></div>
+            </div>
           </section>
             <section class="lr-line" aria-label="Telecom line">
             <div class="lr-line-h"><label class="lr-chk lr-chk-strong"><input type="checkbox" id="lr-line2-en"> Telecom line</label><span class="lr-hp">Copper telephone or data line</span></div>
@@ -1753,23 +1800,45 @@
               <div class="lr-fld"><label class="lr-fl" for="lr-line2-len">Length to the next node <span class="lr-sym">L<sub>L</sub></span></label><div class="lr-in"><input type="number" id="lr-line2-len" min="1" step="1"><span class="lr-u">m</span></div><div class="lr-hp">To the substation, transformer or exchange. Unknown? The standard’s default is 1,000 m.</div></div>
               <div class="lr-fld"><span class="lr-fl">Installation <span class="lr-sym">C<sub>I</sub></span></span>
                 <input type="hidden" id="lr-line2-inst"><div class="lr-seg" role="radiogroup" aria-label="Installation" data-lr-target="lr-line2-inst"><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="buried">Buried</button><button type="button" class="lr-seg-btn" role="radio" aria-checked="false" data-value="aerial">Aerial</button></div>
-                <div class="lr-hp">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</div></div>
+                <div class="lr-hp"><span data-lr-ed="2010">An aerial line collects twice the strikes of a buried one (C<sub>I</sub> = 1 vs 0.5).</span><span data-lr-ed="2024">An aerial line collects over three times the strikes of a buried one (C<sub>I</sub> = 1 vs 0.3).</span></div></div>
               <div class="lr-fld"><label class="lr-fl" for="lr-line2-env">Line environment <span class="lr-sym">C<sub>E</sub></span></label><select id="lr-line2-env" class="lr-sel"><option value="rural">Rural (CE = 1)</option><option value="suburban">Suburban (CE = 0.5)</option><option value="urban">Urban (CE = 0.1)</option><option value="urban_tall_buildings">Urban, buildings over 20 m (CE = 0.01)</option></select><div class="lr-hp">Buildings along the route shield the line.</div></div>
             </div>
-            <label class="lr-chk"><input type="checkbox" id="lr-line2-shield"> <span><b>Shielded and bonded</b> The cable screen is bonded at the entrance, which reduces induced surges.</span></label>
-          </section>
             <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr-line2-screen">Cable screen <span class="lr-sym">P<sub>LD</sub>, C<sub>LI</sub></span></label><select id="lr-line2-screen" class="lr-sel"><option value="unshielded">Unshielded</option><option value="not_bonded">Screen not bonded at the entrance</option><option value="bonded_rs_5_20">Screen bonded, 5 &lt; R<sub>S</sub> ≤ 20 Ω/km</option><option value="bonded_rs_1_5">Screen bonded, 1 &lt; R<sub>S</sub> ≤ 5 Ω/km</option><option value="bonded_rs_le1">Screen bonded, R<sub>S</sub> ≤ 1 Ω/km</option><option value="protective_conduit">In bonded metal conduit / lightning-protective cable</option></select><div class="lr-hp">A typical buried telecom cable has a screen of about 5 Ω/km (2024 B.11 Note 7).</div></div>
+              <div class="lr-fld" data-lr-ed="2024"><label class="lr-fl" for="lr24-l2-kind">Line type</label><select id="lr24-l2-kind" class="lr-sel"><option value="copper">Copper line</option><option value="fibre_copper">Fibre line, copper wiring inside</option><option value="fibre">Fibre throughout</option></select><div class="lr-hp">A metal-free fibre line carries no surge; copper wiring inside still picks up induced surges.</div></div>
+            </div>
+          </section>
+            <div class="lr-grid-2" data-lr-ed="2010">
               <div class="lr-fld"><label class="lr-fl" for="lr-uw">Impulse withstand of equipment inside <span class="lr-sym">U<sub>W</sub></span></label><select id="lr-uw" class="lr-sel"><option value="1">1.0 kV: sensitive electronics</option><option value="1.5">1.5 kV: electronic equipment</option><option value="2.5">2.5 kV: typical final-circuit appliances</option><option value="4">4.0 kV: distribution boards, fixed installation</option><option value="6">6.0 kV: equipment at the origin of the installation</option></select><div class="lr-hp">The surge voltage the weakest internal equipment survives. Lower U<sub>W</sub> means more failures from induced surges.</div></div>
+            </div>
+            <div data-lr-ed="2024">
+            <div class="lr-sec-h">Internal systems <span class="lr-hp lr-inline">The equipment the lines feed. U<sub>W</sub> sets how far away a strike still damages it (r<sub>M</sub> = 350/U<sub>W</sub>, r<sub>I</sub> = 2000/U<sub>W</sub><sup>1.8</sup>); the wiring layout sets the induced surge (K<sub>S3</sub>).</span></div>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr24-uwp">Power equipment withstand <span class="lr-sym">U<sub>W</sub></span></label><select id="lr24-uwp" class="lr-sel"><option value="1">1.0 kV: sensitive electronics</option><option value="1.5">1.5 kV: electronic / telecom equipment</option><option value="2.5">2.5 kV: typical final-circuit appliances</option><option value="4">4.0 kV: distribution boards, fixed installation</option><option value="6">6.0 kV: equipment at the origin of the installation</option></select></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr24-ks3p">Power wiring <span class="lr-sym">K<sub>S3</sub></span></label><select id="lr24-ks3p" class="lr-sel"><option value="different_routing">Unshielded, separate routes (large loops, ~50 m²) × 1</option><option value="same_conduit_wide">Same conduit, ≤ 0.25 m apart (~25 m²) × 0.5</option><option value="same_conduit">Same conduit, ≤ 0.1 m apart (~10 m²) × 0.2</option><option value="same_cable">Same cable (~0.5 m²) × 0.01</option><option value="shielded">Shielded cable or bonded metal conduit × 0.0001</option></select></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr24-uwt">Telecom equipment withstand <span class="lr-sym">U<sub>W</sub></span></label><select id="lr24-uwt" class="lr-sel"><option value="1">1.0 kV: sensitive electronics</option><option value="1.5">1.5 kV: electronic / telecom equipment</option><option value="2.5">2.5 kV: typical final-circuit appliances</option><option value="4">4.0 kV: distribution boards, fixed installation</option><option value="6">6.0 kV: equipment at the origin of the installation</option></select></div>
+              <div class="lr-fld"><label class="lr-fl" for="lr24-ks3t">Telecom wiring <span class="lr-sym">K<sub>S3</sub></span></label><select id="lr24-ks3t" class="lr-sel"><option value="different_routing">Unshielded, separate routes (large loops, ~50 m²) × 1</option><option value="same_conduit_wide">Same conduit, ≤ 0.25 m apart (~25 m²) × 0.5</option><option value="same_conduit">Same conduit, ≤ 0.1 m apart (~10 m²) × 0.2</option><option value="same_cable">Same cable (~0.5 m²) × 0.01</option><option value="shielded">Shielded cable or bonded metal conduit × 0.0001</option></select></div>
+            </div>
+            <div class="lr-hp">A telecom system is included when the telecom line is ticked and is not fibre throughout.</div>
             </div>
           </section>
 
           <section class="lr-panel" data-lr-panel="4" hidden>
             <div><h4 class="lr-h">4 · Existing protection</h4><p class="lr-lead">Leave both at <b>None</b> to assess the building as it stands. The results then recommend the minimum protection it needs. Set them if protection is already installed, to check it is enough.</p></div>
-            <div class="lr-sec-h">Lightning protection system (LPS) <span class="lr-sym">P<sub>B</sub></span><span class="lr-hp lr-inline">Air terminals, down conductors and earthing, per IEC 62305-3.</span></div>
+            <div class="lr-sec-h">Lightning protection system (LPS) <span class="lr-sym">P<sub>B</sub> / P<sub>LPS</sub></span><span class="lr-hp lr-inline">Air terminals, down conductors and earthing, per IEC 62305-3.</span></div>
             <input type="hidden" id="lr-lps"><div class="lr-cards lr-cols-5" role="radiogroup" aria-label="Lightning protection system" data-lr-target="lr-lps"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">No LPS installed.</span><span class="lr-card-f">P<sub>B</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="IV"><span class="lr-card-t">Class IV</span><span class="lr-card-d">Least protective.</span><span class="lr-card-f">P<sub>B</sub> = 0.2</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III"><span class="lr-card-t">Class III</span><span class="lr-card-f">P<sub>B</sub> = 0.1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">Class II</span><span class="lr-card-f">P<sub>B</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">Class I</span><span class="lr-card-d">Most protective.</span><span class="lr-card-f">P<sub>B</sub> = 0.02</span></button></div>
             <div class="lr-sec-h">Coordinated surge protection (SPD) <span class="lr-sym">P<sub>SPD</sub></span><span class="lr-hp lr-inline">A coordinated SPD system on the incoming lines and inside, per IEC 62305-4.</span></div>
-            <input type="hidden" id="lr-spd"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Coordinated surge protection" data-lr-target="lr-spd"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">No coordinated SPD system.</span><span class="lr-card-f">P<sub>SPD</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III-IV"><span class="lr-card-t">LPL III–IV</span><span class="lr-card-f">P<sub>SPD</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">LPL II</span><span class="lr-card-f">P<sub>SPD</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">LPL I</span><span class="lr-card-d">Highest lightning protection level.</span><span class="lr-card-f">P<sub>SPD</sub> = 0.01</span></button></div>
-            <div class="lr-hp">Surge protection is what reduces the internal-system risks (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>). An LPS alone does not.</div>
+            <input type="hidden" id="lr-spd"><div class="lr-cards lr-cols-5" role="radiogroup" aria-label="Coordinated surge protection" data-lr-target="lr-spd"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-d">No coordinated SPD system.</span><span class="lr-card-f">P<sub>SPD</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III-IV"><span class="lr-card-t">LPL III–IV</span><span class="lr-card-f">P<sub>SPD</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">LPL II</span><span class="lr-card-f">P<sub>SPD</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">LPL I</span><span class="lr-card-d">Highest lightning protection level.</span><span class="lr-card-f">P<sub>SPD</sub> = 0.01</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="better" data-lr-ed="2024"><span class="lr-card-t">Better than LPL I</span><span class="lr-card-d">As the Annex F.4 hospital.</span><span class="lr-card-f">P<sub>SPD</sub> = 0.002</span></button></div>
+            <div class="lr-hp">Surge protection is what reduces the internal-system risks (R<sub>C</sub>, R<sub>M</sub>, R<sub>W</sub>, R<sub>Z</sub>) and the frequency of damage F. An LPS alone does not.</div>
+            <div data-lr-ed="2024">
+            <div class="lr-sec-h">Entrance SPDs (equipotential bonding) <span class="lr-sym">P<sub>EB</sub></span><span class="lr-hp lr-inline">SPDs where the lines enter, per IEC 62305-3. An LPS needs them at its own level.</span></div>
+            <input type="hidden" id="lr24-eb"><div class="lr-cards lr-cols-4" role="radiogroup" aria-label="Entrance SPDs" data-lr-target="lr24-eb"><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="none"><span class="lr-card-t">None</span><span class="lr-card-f">P<sub>EB</sub> = 1</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="III-IV"><span class="lr-card-t">LPL III–IV</span><span class="lr-card-f">P<sub>EB</sub> = 0.05</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="II"><span class="lr-card-t">LPL II</span><span class="lr-card-f">P<sub>EB</sub> = 0.02</span></button><button type="button" class="lr-card" role="radio" aria-checked="false" data-value="I"><span class="lr-card-t">LPL I</span><span class="lr-card-f">P<sub>EB</sub> = 0.01</span></button></div>
+            </div>
+            <div class="lr-sec-h">Tolerable values</div>
+            <div class="lr-grid-2">
+              <div class="lr-fld"><label class="lr-fl" for="lr-rt">Tolerable risk <span class="lr-sym">R<sub>T</sub></span></label><div class="lr-in"><input type="number" id="lr-rt" min="0" step="any"><span class="lr-u">per year</span></div><div class="lr-hp">1 × 10⁻⁵ is the representative value; the authority having jurisdiction may set another.</div></div>
+              <div class="lr-fld" data-lr-ed="2024"><label class="lr-fl" for="lr24-ft">Tolerable frequency of damage <span class="lr-sym">F<sub>T</sub></span></label><select id="lr24-ft" class="lr-sel"><option value="0.1">0.1 / yr: internal systems critical to the service</option><option value="1">1 / yr: non-critical internal systems</option><option value="0.05">0.05 / yr</option><option value="0.01">0.01 / yr: e.g. operating theatres, intensive care</option></select><div class="lr-hp">Set by the owner, or by the authority when the service is of public relevance (9.3).</div></div>
+            </div>
           </section>
 
           <section class="lr-panel" data-lr-panel="5" hidden>
@@ -1780,8 +1849,8 @@
           <div class="lr-rail-h">Live estimate</div>
           <div class="lr-stat"><span class="lr-stat-k">Collection area <i>A</i><sub>D</sub></span><span class="lr-stat-v" id="lr-live-ad">—</span><span class="lr-stat-e">The building plus a band of 3H around it</span></div>
           <div class="lr-stat"><span class="lr-stat-k">Direct strikes <i>N</i><sub>D</sub></span><span class="lr-stat-v" id="lr-live-nd">—</span><span class="lr-stat-e" id="lr-live-nd-e"></span></div>
-          <div class="lr-stat"><span class="lr-stat-k">Strikes within 500 m <i>N</i><sub>M</sub></span><span class="lr-stat-v" id="lr-live-nm">—</span><span class="lr-stat-e">Nearby strikes induce surges in internal wiring</span></div>
-          <div class="lr-stat"><span class="lr-stat-k">Tolerable risk <i>R</i><sub>T</sub></span><span class="lr-stat-v">1 × 10⁻⁵ <small>/ yr</small></span><span class="lr-stat-e">IEC 62305-2 Table 7</span></div>
+          <div class="lr-stat"><span class="lr-stat-k" id="lr-live-nm-k">Strikes within 500 m <i>N</i><sub>M</sub></span><span class="lr-stat-v" id="lr-live-nm">—</span><span class="lr-stat-e">Nearby strikes induce surges in internal wiring</span></div>
+          <div class="lr-stat"><span class="lr-stat-k">Tolerable risk <i>R</i><sub>T</sub></span><span class="lr-stat-v" id="lr-live-rt">1 × 10⁻⁵ <small>/ yr</small></span><span class="lr-stat-e" id="lr-live-rt-e">Typical value; set by the authority</span></div>
           <div class="lr-note">These update as you type, so you can see what each input does before running the assessment. Everything you enter is saved to this assessment in the project as you go.</div>
         </aside>
       </div>
@@ -3052,97 +3121,97 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.149"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.149"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.149"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.149"></script>
-  <script src="js/iec-60364-data.js?v=3.5.149"></script>
-  <script src="js/constants.js?v=3.5.149"></script>
-  <script src="js/cablelib.js?v=3.5.149"></script>
-  <script src="js/plan-defs.js?v=3.5.149"></script>
-  <script src="js/ui.js?v=3.5.149"></script>
-  <script src="js/state.js?v=3.5.149"></script>
-  <script src="js/grid.js?v=3.5.149"></script>
-  <script src="js/components.js?v=3.5.149"></script>
-  <script src="js/voltage.js?v=3.5.149"></script>
-  <script src="js/symbols.js?v=3.5.149"></script>
-  <script src="js/canvas.js?v=3.5.149"></script>
-  <script src="js/sidebar.js?v=3.5.149"></script>
-  <script src="js/wiring.js?v=3.5.149"></script>
-  <script src="js/properties.js?v=3.5.149"></script>
-  <script src="js/annotations.js?v=3.5.149"></script>
-  <script src="js/api.js?v=3.5.149"></script>
-  <script src="js/auth.js?v=3.5.149"></script>
-  <script src="js/sharing.js?v=3.5.149"></script>
-  <script src="js/compliance.js?v=3.5.149"></script>
-  <script src="js/tcc.js?v=3.5.149"></script>
-  <script src="js/project.js?v=3.5.149"></script>
-  <script src="js/reports.js?v=3.5.149"></script>
-  <script src="js/verification-templates.js?v=3.5.149"></script>
-  <script src="js/templates.js?v=3.5.149"></script>
-  <script src="js/standard-data.js?v=3.5.149"></script>
-  <script src="js/shared-libs.js?v=3.5.149"></script>
-  <script src="js/undo.js?v=3.5.149"></script>
-  <script src="js/arrange.js?v=3.5.149"></script>
-  <script src="js/revisions.js?v=3.5.149"></script>
-  <script src="js/minimap.js?v=3.5.149"></script>
-  <script src="js/contextmenu.js?v=3.5.149"></script>
-  <script src="js/dbschedule.js?v=3.5.149"></script>
-  <script src="js/control-sim.js?v=3.5.149"></script>
-  <script src="js/dynmotor.js?v=3.5.149"></script>
-  <script src="js/transient.js?v=3.5.149"></script>
-  <script src="js/voltage-stability.js?v=3.5.149"></script>
-  <script src="js/freqscan.js?v=3.5.149"></script>
-  <script src="js/battsizing.js?v=3.5.149"></script>
-  <script src="js/opf.js?v=3.5.149"></script>
-  <script src="js/reliability.js?v=3.5.149"></script>
-  <script src="js/flicker.js?v=3.5.149"></script>
-  <script src="js/hostingcapacity.js?v=3.5.149"></script>
-  <script src="js/filtersizing.js?v=3.5.149"></script>
-  <script src="js/capplace.js?v=3.5.149"></script>
-  <script src="js/contingency.js?v=3.5.149"></script>
-  <script src="js/timeseries.js?v=3.5.149"></script>
-  <script src="js/lfstudy.js?v=3.5.149"></script>
-  <script src="js/interlocking.js?v=3.5.149"></script>
-  <script src="js/sequence.js?v=3.5.149"></script>
-  <script src="js/retic.js?v=3.5.149"></script>
-  <script src="js/schedules.js?v=3.5.149"></script>
-  <script src="js/workspaces.js?v=3.5.149"></script>
-  <script src="js/header.js?v=3.5.149"></script>
-  <script src="js/lightning.js?v=3.5.149"></script>
-  <script src="js/rates.js?v=3.5.149"></script>
-  <script src="js/boq.js?v=3.5.149"></script>
-  <script src="js/cableschedules.js?v=3.5.149"></script>
-  <script src="js/dbaccessories.js?v=3.5.149"></script>
-  <script src="js/dbdrawing.js?v=3.5.149"></script>
-  <script src="js/retic-diagram.js?v=3.5.149"></script>
-  <script src="js/retic-report.js?v=3.5.149"></script>
-  <script src="js/plan-symbols.js?v=3.5.149"></script>
-  <script src="js/plan-engine.js?v=3.5.149"></script>
-  <script src="js/plan-images.js?v=3.5.149"></script>
-  <script src="js/plan-tools.js?v=3.5.149"></script>
-  <script src="js/plan-sync.js?v=3.5.149"></script>
-  <script src="js/sldgen.js?v=3.5.149"></script>
-  <script src="js/plan-csv.js?v=3.5.149"></script>
-  <script src="js/plan-dxf.js?v=3.5.149"></script>
-  <script src="js/plan-export.js?v=3.5.149"></script>
-  <script src="js/plan-lux.js?v=3.5.149"></script>
-  <script src="js/plan-ies.js?v=3.5.149"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.149"></script>
-  <script src="js/plan-dxf-manager.js?v=3.5.149"></script>
-  <script src="js/plan-dd-import.js?v=3.5.149"></script>
-  <script src="js/plan-circuits.js?v=3.5.149"></script>
-  <script src="js/plan-ui.js?v=3.5.149"></script>
-  <script src="js/plan.js?v=3.5.149"></script>
-  <script src="js/help.js?v=3.5.149"></script>
-  <script src="js/help-faults.js?v=3.5.149"></script>
-  <script src="js/help-flow.js?v=3.5.149"></script>
-  <script src="js/help-dynamics.js?v=3.5.149"></script>
-  <script src="js/help-protect.js?v=3.5.149"></script>
-  <script src="js/help-cables.js?v=3.5.149"></script>
-  <script src="js/help-design.js?v=3.5.149"></script>
-  <script src="js/help-workflow.js?v=3.5.149"></script>
-  <script src="js/app.js?v=3.5.149"></script>
-  <script src="js/mobile.js?v=3.5.149"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.150"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.150"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.150"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.150"></script>
+  <script src="js/iec-60364-data.js?v=3.5.150"></script>
+  <script src="js/constants.js?v=3.5.150"></script>
+  <script src="js/cablelib.js?v=3.5.150"></script>
+  <script src="js/plan-defs.js?v=3.5.150"></script>
+  <script src="js/ui.js?v=3.5.150"></script>
+  <script src="js/state.js?v=3.5.150"></script>
+  <script src="js/grid.js?v=3.5.150"></script>
+  <script src="js/components.js?v=3.5.150"></script>
+  <script src="js/voltage.js?v=3.5.150"></script>
+  <script src="js/symbols.js?v=3.5.150"></script>
+  <script src="js/canvas.js?v=3.5.150"></script>
+  <script src="js/sidebar.js?v=3.5.150"></script>
+  <script src="js/wiring.js?v=3.5.150"></script>
+  <script src="js/properties.js?v=3.5.150"></script>
+  <script src="js/annotations.js?v=3.5.150"></script>
+  <script src="js/api.js?v=3.5.150"></script>
+  <script src="js/auth.js?v=3.5.150"></script>
+  <script src="js/sharing.js?v=3.5.150"></script>
+  <script src="js/compliance.js?v=3.5.150"></script>
+  <script src="js/tcc.js?v=3.5.150"></script>
+  <script src="js/project.js?v=3.5.150"></script>
+  <script src="js/reports.js?v=3.5.150"></script>
+  <script src="js/verification-templates.js?v=3.5.150"></script>
+  <script src="js/templates.js?v=3.5.150"></script>
+  <script src="js/standard-data.js?v=3.5.150"></script>
+  <script src="js/shared-libs.js?v=3.5.150"></script>
+  <script src="js/undo.js?v=3.5.150"></script>
+  <script src="js/arrange.js?v=3.5.150"></script>
+  <script src="js/revisions.js?v=3.5.150"></script>
+  <script src="js/minimap.js?v=3.5.150"></script>
+  <script src="js/contextmenu.js?v=3.5.150"></script>
+  <script src="js/dbschedule.js?v=3.5.150"></script>
+  <script src="js/control-sim.js?v=3.5.150"></script>
+  <script src="js/dynmotor.js?v=3.5.150"></script>
+  <script src="js/transient.js?v=3.5.150"></script>
+  <script src="js/voltage-stability.js?v=3.5.150"></script>
+  <script src="js/freqscan.js?v=3.5.150"></script>
+  <script src="js/battsizing.js?v=3.5.150"></script>
+  <script src="js/opf.js?v=3.5.150"></script>
+  <script src="js/reliability.js?v=3.5.150"></script>
+  <script src="js/flicker.js?v=3.5.150"></script>
+  <script src="js/hostingcapacity.js?v=3.5.150"></script>
+  <script src="js/filtersizing.js?v=3.5.150"></script>
+  <script src="js/capplace.js?v=3.5.150"></script>
+  <script src="js/contingency.js?v=3.5.150"></script>
+  <script src="js/timeseries.js?v=3.5.150"></script>
+  <script src="js/lfstudy.js?v=3.5.150"></script>
+  <script src="js/interlocking.js?v=3.5.150"></script>
+  <script src="js/sequence.js?v=3.5.150"></script>
+  <script src="js/retic.js?v=3.5.150"></script>
+  <script src="js/schedules.js?v=3.5.150"></script>
+  <script src="js/workspaces.js?v=3.5.150"></script>
+  <script src="js/header.js?v=3.5.150"></script>
+  <script src="js/lightning.js?v=3.5.150"></script>
+  <script src="js/rates.js?v=3.5.150"></script>
+  <script src="js/boq.js?v=3.5.150"></script>
+  <script src="js/cableschedules.js?v=3.5.150"></script>
+  <script src="js/dbaccessories.js?v=3.5.150"></script>
+  <script src="js/dbdrawing.js?v=3.5.150"></script>
+  <script src="js/retic-diagram.js?v=3.5.150"></script>
+  <script src="js/retic-report.js?v=3.5.150"></script>
+  <script src="js/plan-symbols.js?v=3.5.150"></script>
+  <script src="js/plan-engine.js?v=3.5.150"></script>
+  <script src="js/plan-images.js?v=3.5.150"></script>
+  <script src="js/plan-tools.js?v=3.5.150"></script>
+  <script src="js/plan-sync.js?v=3.5.150"></script>
+  <script src="js/sldgen.js?v=3.5.150"></script>
+  <script src="js/plan-csv.js?v=3.5.150"></script>
+  <script src="js/plan-dxf.js?v=3.5.150"></script>
+  <script src="js/plan-export.js?v=3.5.150"></script>
+  <script src="js/plan-lux.js?v=3.5.150"></script>
+  <script src="js/plan-ies.js?v=3.5.150"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.150"></script>
+  <script src="js/plan-dxf-manager.js?v=3.5.150"></script>
+  <script src="js/plan-dd-import.js?v=3.5.150"></script>
+  <script src="js/plan-circuits.js?v=3.5.150"></script>
+  <script src="js/plan-ui.js?v=3.5.150"></script>
+  <script src="js/plan.js?v=3.5.150"></script>
+  <script src="js/help.js?v=3.5.150"></script>
+  <script src="js/help-faults.js?v=3.5.150"></script>
+  <script src="js/help-flow.js?v=3.5.150"></script>
+  <script src="js/help-dynamics.js?v=3.5.150"></script>
+  <script src="js/help-protect.js?v=3.5.150"></script>
+  <script src="js/help-cables.js?v=3.5.150"></script>
+  <script src="js/help-design.js?v=3.5.150"></script>
+  <script src="js/help-workflow.js?v=3.5.150"></script>
+  <script src="js/app.js?v=3.5.150"></script>
+  <script src="js/mobile.js?v=3.5.150"></script>
 </body>
 </html>

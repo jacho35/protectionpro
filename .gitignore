@@ -12,3 +12,6 @@ scratch/
 # Personal Claude Code settings (permissions) — not shared
 .claude/settings.local.json
 core
+
+# Licensed IEC standards (copyrighted, reference only — never commit)
+IEC Standards/

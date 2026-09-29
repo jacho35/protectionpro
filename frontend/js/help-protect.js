@@ -250,29 +250,34 @@ $$\rho_a(a)=\rho_1\left[1+4\sum_{n=1}^{\infty}K^{n}\left(\frac{1}{\sqrt{1+(2nh_1
 <p>The fitted model can then be applied to the grid design above.</p>` },
 
 { id: 'prot-lightning', group: 'protect', title: 'Lightning risk (IEC 62305-2)',
-  std: 'IEC 62305-2:2010 · Analyse ▸ Earthing & lightning',
-  kw: 'lightning risk r1 lps spd collection area ng flash density structure service line tolerable',
+  std: 'IEC 62305-2:2024 and 2010 · Analyse ▸ Earthing & lightning',
+  kw: 'lightning risk r1 r f frequency of damage lps spd entrance bonding peb collection area ng nsg strike point density flash density loss class structure service line tolerable 2024 2010 sans',
   html: String.raw`
-<p>Evaluates the risk $R_1$ of loss of human life for a rectangular structure with connected service lines, and recommends the minimum protection — an LPS class and coordinated surge protection (SPD) level — that brings $R_1$ within the tolerable limit $R_T=10^{-5}$ per year (IEC 62305-2 Table 7). Assessments are named and saved in the project.</p>
-<h4>1 · Collection areas (m²)</h4>
-<p>For length $L$, width $W$, height $H$, and a service line of length $L_L$:</p>
-$$A_D=LW+2(3H)(L+W)+\pi(3H)^2,\qquad A_M=2\cdot500(L+W)+\pi\cdot500^2$$
-$$A_L=40\,L_L,\qquad A_I=4000\,L_L$$
-<h4>2 · Dangerous events per year</h4>
-<p>With ground flash density $N_G$ (flashes/km²/yr), location factor $C_D$, and line factors $C_I$, $C_E$, $C_T$ (installation, environment, transformer — $C_T=0.2$ for a line with a HV/LV transformer):</p>
-$$N_D=N_GA_DC_D\,10^{-6},\quad N_M=N_GA_M\,10^{-6},\quad N_L=N_GA_LC_IC_EC_T\,10^{-6},\quad N_I=N_GA_IC_IC_EC_T\,10^{-6}$$
-<h4>3 · Risk components</h4>
-$$R_A=N_DP_AL_A,\ \ R_B=N_DP_BL_B,\ \ R_M=N_MP_ML_M$$
-$$R_U=N_LP_UL_U,\ \ R_V=N_LP_VL_V,\ \ R_W=N_LP_WL_W,\ \ R_Z=N_IP_ZL_Z$$
-$$R_1=R_A+R_B+R_C^{*}+R_M^{*}+R_U+R_V+R_W^{*}+R_Z^{*}$$
-<p>(* only where failure of internal systems endangers life — hospitals and structures at risk of explosion.) $P_B$ depends on the LPS class ($1.0$ none, $0.2$ IV, $0.1$ III, $0.05$ II, $0.02$ I); the SPD-dependent probabilities are 1.0 with none, 0.05 (III-IV), 0.02 (II) and 0.01 (I). With $K_{S1}=K_{S2}=1$ (no spatial-shielding credit), $P_{MS}=(K_{S3}K_{S4})^{2}$.</p>
-<h4>4 · Loss factors (Annex C)</h4>
-$$L_A=r_tL_T\frac{n_z}{n_t}\frac{t_z}{8760},\qquad L_B=r_pr_fh_zL_F\frac{n_z}{n_t}\frac{t_z}{8760},\qquad L_C=L_O\frac{n_z}{n_t}\frac{t_z}{8760}$$
-<h4>5 · Decision</h4>
-<p>If $R_1\le10^{-5}$ no protection is needed. Otherwise the engine walks a ladder of increasing protection — no LPS + SPD III-IV, LPS IV + SPD III-IV, LPS III + SPD III-IV, LPS II + SPD II, LPS I + SPD I — and recommends the first rung whose $R_1\le R_T$. If even LPS I with SPD I fails, it says so and lists the further measures needed (spatial shielding, fire suppression, restricted occupancy, re-routed lines).</p>
-<div class="hc-warn">Simplifications, conservative where they matter: a single zone covering the structure ($n_z=n_t$ unless overridden); no adjacent-structure flashes ($N_{DJ}=0$); loss of cultural heritage ($R_3$), public service ($R_2$) and economic loss ($R_4$) are not evaluated.</div>
-<div class="hc-example"><span class="hc-label">Worked example</span>
-<p>A 30 m × 20 m × 8 m building, no lines: $A_D=600+2(24)(50)+\pi(24)^2=600+2400+1809=4809\ \text{m}^2$. At $N_G=6$ and $C_D=1$, $N_D=6\times4809\times10^{-6}=\mathbf{0.0289}$ dangerous events a year — one strike roughly every 35 years.</p></div>` },
+<p>Assesses a rectangular structure with its service lines and recommends the lightest protection — lightning protection system (LPS), entrance SPDs and coordinated SPDs — that brings the risk within the tolerable value $R_T$ (typically $10^{-5}$ per year; an input, since the authority having jurisdiction sets it). Each assessment picks its <b>edition</b>: <b>2024</b> (Ed. 3, the current standard, default for a new assessment) or <b>2010</b> (Ed. 2, still the adopted text in some countries, e.g. SANS 62305-2). An assessment saved before editions were offered stays 2010, so its numbers reproduce. The 2024 method usually gives a higher risk: on the standard's own house example the 2010 method says no protection is needed; 2024 requires entrance SPDs.</p>
+<h4>1 · Dangerous events</h4>
+<p>Collection area of the structure (length $L$, width $W$, height $H$) and of a line section of length $L_L$:</p>
+$$A_D=LW+2(3H)(L+W)+\pi(3H)^2,\qquad A_L=40\,L_L$$
+$$N_D=N\,A_DC_D\,10^{-6},\qquad N_L=N\,A_LC_IC_EC_T\,10^{-6}$$
+<p>$N$ is the ground flash density $N_G$ (2010) or the <b>strike-point density</b> $N_{SG}=k\,N_G$ with $k=2$ unless the lightning-location data provider gives another value (2024, A.1). Strikes <em>near</em> the structure and the line:</p>
+<ul><li><b>2010:</b> $A_M=2\cdot500(L+W)+\pi\,500^2$, $A_I=4000\,L_L$, $N_M=N_GA_M10^{-6}$, $N_I=N_GA_IC_IC_EC_T10^{-6}$.</li>
+<li><b>2024:</b> the distance is set by the equipment withstand $U_W$ (kV): $r_M=350/U_W$ (the weakest internal system), $r_I=2000/U_W^{1.8}$; $A_M=2r_M(L+W)+\pi r_M^2$, $A_I=2r_IL_L$, and $N_M$, $N_I$ are divided by $k$.</li></ul>
+<p>$C_I$ = 1 aerial; buried 0.5 (2010) or 0.3 (2024). $C_T$ = 0.2 for an HV section with an HV/LV transformer.</p>
+<h4>2 · The risk</h4>
+<p><b>2024</b> (eq. 6–8) — one risk $R=R_{L1}+R_{L2}$ summing loss of human life and physical damage, compared with $R_T$ <em>in each zone</em>:</p>
+$$R=R_{AT}+R_{AD}+R_B+R_C+R_M+R_U+R_V+R_W+R_Z$$
+$$R_B=N_DP_B\,(P_PL_{F1}+L_{F2}),\quad P_B=P_SP_{LPS}r_fr_p,\quad P_P=t_z/8760$$
+<p><b>2010</b> — the risk of loss of life only: $R_1=R_A+R_B+R_C^{*}+R_M^{*}+R_U+R_V+R_W^{*}+R_Z^{*}$ with the losses scaled by $\tfrac{n_z}{n_t}\tfrac{t_z}{8760}$.</p>
+<p>The internal-system components ($R_C$, $R_M$, $R_W$, $R_Z$, marked *) count only where failure of internal systems endangers life — hospitals and structures with a risk of explosion (not hotels or schools). In 2024 a risk of explosion also adds their physical-damage part.</p>
+<h4>3 · Frequency of damage (2024)</h4>
+$$F=F_C+F_M+F_W+F_Z,\qquad F_C=N_DP_CP_e,\ F_M=N_MP_MP_e,\ F_W=N_LP_WP_e,\ F_Z=N_IP_ZP_e$$
+<p>How often surges damage the internal systems, against the tolerable $F_T$ (typically 0.1 per year for critical systems, 1 for non-critical). $P_C$ and $P_M$ combine the internal systems: $P_C=1-\prod(1-P_{SPD,i}C_{LD,i})$, $P_M=1-\prod(1-P_{SPD,i}P_{MS,i})$ with $P_{MS}=(K_{S1}K_{S2}K_{S3})^2$.</p>
+<h4>4 · Losses</h4>
+<p><b>2024</b>: a loss class per zone (Table C.2) — low (private buildings) $L_F=0.02$; normal (open to the public) $0.05$; high (hospital wards, prisons, control rooms, museums) $0.1$, $L_O=10^{-3}$; very high (operating theatres, intensive care, explosion) $0.2$, $L_O=10^{-2}$ — the highest value of each range, as recommended. <b>2010</b>: per use, $L_F$ from $0.01$ (other) to $0.1$ (hospitals, hotels, schools, and any structure with a risk of explosion); $L_O=10^{-3}$ hospital, $10^{-2}$ intensive care, $10^{-1}$ explosion.</p>
+<h4>5 · Protection and the recommendation</h4>
+<p>$P_{LPS}$ ($P_B$ in 2010) is $1$, $0.2$, $0.1$, $0.05$, $0.02$ for no LPS and classes IV–I; entrance SPDs give $P_{EB}$ and a coordinated SPD system $P_{SPD}$ of $0.05$, $0.02$, $0.01$ for LPL III–IV, II, I (2024 also offers better than LPL I, $0.002$). A line screen bonded at the entrance lowers $P_{LD}$ by its resistance $R_S$ and $U_W$ (2010 Table B.8, 2024 Table B.11). The recommendation evaluates every combination and reports, for each LPS class, the lightest SPDs that meet $R_T$ (and, in 2024, $F_T$); an LPS always brings its equipotential-bonding SPDs.</p>
+<div class="hc-warn">2024 rules applied from the notes: for strikes to the structure, touch protection, fire provisions and coordinated SPDs count only with an LPS or a reinforced-concrete / steel frame acting as a natural LPS (Table 2 note h); an installed LPS sets $P_S=1$; $r_p=1$ with a risk of explosion or lithium-ion storage. Not assessed: thunderstorm warning systems, adjacent structures, environmental loss (Annex E). The dialog assesses the inside as one zone plus an optional exposed zone (roof / outside); the engine handles any number of zones and reproduces the standard's Annex F house, office and hospital examples.</div>
+<div class="hc-example"><span class="hc-label">Worked example (IEC 62305-2:2024, Annex F.2)</span>
+<p>A 15 × 20 × 6 m isolated masonry house, $N_{SG}=8$, a 1 km aerial LV line and an 800 m aerial telecom line, occupied 4,380 h a year, low loss ($L_{F1}=L_{F2}=0.02$), low fire risk ($r_f=10^{-3}$). $A_D=300+2(18)(35)+\pi\,18^2=2578\ \text{m}^2$, $N_D=0.0206$, $N_L=0.32+0.256$. The fire risk from the lines dominates: $R_V=0.576\times10^{-3}\times(0.5\times0.02+0.02)=1.73\times10^{-5}$, so $R=1.79\times10^{-5}>R_T$. Entrance SPDs of LPL III–IV ($P_{EB}=0.05$) bring it to $0.15\times10^{-5}$.</p></div>` },
 
 { id: 'prot-compliance', group: 'protect', title: 'Compliance report',
   std: 'IEC 60909 · IEC 60364 · IEC 62271 · IEC 60947 · SANS 10142-1 · Analyse ▸ Protection & safety',
