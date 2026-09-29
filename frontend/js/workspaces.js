@@ -3,7 +3,7 @@
  * A project is either a Reticulation, a Building or a Network/plant project,
  * and that decides which workspace tabs it shows, in workflow order:
  *
- *   Reticulation  1 Site plan › 2 Demand › 3 Single-line
+ *   Reticulation  1 Site plan › 2 Demand › 3 Street lighting › 4 Single-line
  *   Building      1 Floor plans › 2 Single-line › 3 Schedules
  *   Network       Single-line · Interlocking
  *
@@ -16,7 +16,7 @@
  * live from its content, so opening an old file changes nothing in it.
  *
  * Workspace keys are the ones switchWorkspace() already uses:
- *   'plan' | 'retic' (shown as "Demand") | 'sld' | 'schedules' | 'interlock'
+ *   'plan' | 'retic' (shown as "Demand") | 'streetlight' | 'sld' | 'schedules' | 'interlock'
  */
 
 const Workspaces = {
@@ -24,7 +24,7 @@ const Workspaces = {
     retic: {
       label: 'Reticulation',
       desc: 'A township or site LV network: minisubs, kiosks and erven, sized by ADMD (NRS 034-1).',
-      core: ['plan', 'retic', 'sld'],
+      core: ['plan', 'retic', 'streetlight', 'sld'],
       planDomain: 'retic',
     },
     building: {
@@ -41,14 +41,15 @@ const Workspaces = {
     },
   },
   // Canonical order for workspaces outside a type's core set.
-  ORDER: ['plan', 'retic', 'sld', 'schedules', 'interlock'],
+  ORDER: ['plan', 'retic', 'streetlight', 'sld', 'schedules', 'interlock'],
   TAB_IDS: {
-    sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan',
+    sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', streetlight: 'btn-workspace-streetlight', plan: 'btn-workspace-plan',
     interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules',
   },
   DESCS: {
     plan: 'Site or floor plans with devices, routes and circuits',
     retic: 'Reticulation: kiosks, erven and ADMD demand',
+    streetlight: 'Street lighting circuits: volt drop per pole, earth loop, phase balance',
     sld: 'The electrical model and every study',
     schedules: 'Distribution-board circuit schedules and checks',
     interlock: 'Breaker interlocking logic, simulated against the single-line',
@@ -88,6 +89,7 @@ const Workspaces = {
     switch (ws) {
       case 'sld': return true;
       case 'retic': return this._reticHasData();
+      case 'streetlight': { const sl = AppState.reticulation && AppState.reticulation.streetLighting; return !!(sl && sl.circuits && sl.circuits.length); }
       case 'plan': return typeof AppState._planMarkupIsEmpty === 'function' && !AppState._planMarkupIsEmpty();
       case 'interlock': return !!(AppState.interlockLogic && AppState.interlockLogic.nodes && AppState.interlockLogic.nodes.length);
       case 'schedules': return this._schedulesHaveData();
@@ -121,7 +123,7 @@ const Workspaces = {
       const d = AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain;
       return d === 'building' ? 'Floor plans' : 'Site plan';
     }
-    return { sld: 'Single-line', retic: 'Demand', schedules: 'Schedules', interlock: 'Interlocking' }[ws] || ws;
+    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking' }[ws] || ws;
   },
 
   // ── Plan domain follows the type ────────────────────────────────────
@@ -247,7 +249,7 @@ const Workspaces = {
   // Label a core workspace as it will read in a project of `type`.
   _coreLabel(type, ws) {
     if (ws === 'plan') return type === 'building' ? 'Floor plans' : 'Site plan';
-    return { sld: 'Single-line', retic: 'Demand', schedules: 'Schedules', interlock: 'Interlocking' }[ws];
+    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking' }[ws];
   },
 
   // New project: pick the type. Resolves to a type id, or null if cancelled.

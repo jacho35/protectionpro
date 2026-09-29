@@ -132,6 +132,10 @@ const STANDARD_CABLES = [
   // (T+E, H07V-R, Surfix, control) come from the former building library;
   // R0/X0 = 0 means "not tabulated": the fault engine then uses 3.5 × R1.
   // Building "x4C Cu PVC/SWA" names are aliases of the Cu PVC LV entries above.
+  // Small 2-core PVC/SWA for single-phase street-lighting strings (same R/X as the 4-core; r0 = 4 × R1, 70 °C in ground).
+  { id: 'cu_pvc_4_lv_2c', name: '4mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.532, x_per_km: 0.093, r0_per_km: 22.13, x0_per_km: 0.260, rated_amps: 50, cores: 2, construction: 'armoured' },
+  { id: 'cu_pvc_6_lv_2c', name: '6mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.696, x_per_km: 0.090, r0_per_km: 14.78, x0_per_km: 0.252, rated_amps: 62, cores: 2, construction: 'armoured' },
+  { id: 'cu_pvc_10_lv_2c', name: '10mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 10, voltage_kv: 0.4, r_per_km: 2.196, x_per_km: 0.084, r0_per_km: 8.784, x0_per_km: 0.235, rated_amps: 83, cores: 2, construction: 'armoured' },
   { id: 'cu_xlpe_16_lv_2c', name: '16mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.466, x_per_km: 0.082, r0_per_km: 5.572, x0_per_km: 0.230, rated_amps: 91, cores: 2, construction: 'armoured' },
   { id: 'cu_xlpe_25_lv_2c', name: '25mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 0.9269, x_per_km: 0.079, r0_per_km: 3.523, x0_per_km: 0.221, rated_amps: 116, cores: 2, construction: 'armoured' },
   { id: 'cu_xlpe_35_lv_2c', name: '35mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 0.6681, x_per_km: 0.077, r0_per_km: 2.539, x0_per_km: 0.216, rated_amps: 140, cores: 2, construction: 'armoured' },

@@ -241,6 +241,37 @@ const AppState = {
       },
       minisubs: [{ id: 'source', name: 'Minisub 1' }],
       kiosks: [], _kioskSeq: 1, _erfSeq: 1, _msSeq: 2,
+      streetLighting: this._defaultStreetLighting(),
+    };
+  },
+  _restoreStreetLighting(sl) {
+    const def = this._defaultStreetLighting();
+    if (!sl || typeof sl !== 'object') return def;
+    const circuits = Array.isArray(sl.circuits) ? sl.circuits.filter(c => c && c.id) : [];
+    let maxC = 0, maxP = 0;
+    for (const c of circuits) {
+      if (!Array.isArray(c.poles)) c.poles = [];
+      const mc = /^slc_(\d+)$/.exec(String(c.id)); if (mc) maxC = Math.max(maxC, +mc[1]);
+      for (const p of c.poles) { const mp = /^slp_(\d+)$/.exec(String(p.id || '')); if (mp) maxP = Math.max(maxP, +mp[1]); }
+    }
+    return {
+      settings: { ...def.settings, ...(sl.settings || {}) },
+      circuits,
+      _circSeq: Math.max(sl._circSeq || 1, maxC + 1),
+      _poleSeq: Math.max(sl._poleSeq || 1, maxP + 1),
+    };
+  },
+  // Street lighting circuits (js/streetlight.js), kept inside the reticulation.
+  _defaultStreetLighting() {
+    return {
+      settings: {
+        vdLimitPct: 5,          // volt drop from the source kiosk / minisub
+        cumVdLimitPct: 10,      // supply drop at the source + circuit drop
+        snakingPct: 3, loopInM: 2,
+        system: '3ph', luminaireId: 'led70', protection: 'B10', spacingM: 35, cable: '',
+      },
+      circuits: [],             // [{id, name, source:{kind,id}, system, …, poles:[{id,name,parent,…}]}]
+      _circSeq: 1, _poleSeq: 1,
     };
   },
 
@@ -1202,6 +1233,7 @@ const AppState = {
     if (typeof Retic !== 'undefined' && Retic.onProjectChanged) {
       Retic.onProjectChanged();
     }
+    if (typeof StreetLight !== 'undefined' && StreetLight.onProjectChanged) StreetLight.onProjectChanged();
     // Plan Markup workspace: same — re-baseline its local undo + image cache
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
       PlanMarkup.onProjectChanged();
@@ -1574,6 +1606,7 @@ const AppState = {
         _kioskSeq: r._kioskSeq || 1,
         _erfSeq: r._erfSeq || 1,
         _msSeq: r._msSeq || 2,
+        streetLighting: this._restoreStreetLighting(r.streetLighting),
       };
       // Repair id sequence counters so genId never collides with loaded ids
       let maxK = 0, maxE = 0, maxM = 0;
@@ -1759,6 +1792,7 @@ const AppState = {
     if (typeof Retic !== 'undefined' && Retic.onProjectChanged) {
       Retic.onProjectChanged();
     }
+    if (typeof StreetLight !== 'undefined' && StreetLight.onProjectChanged) StreetLight.onProjectChanged();
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
       PlanMarkup.onProjectChanged();
     }

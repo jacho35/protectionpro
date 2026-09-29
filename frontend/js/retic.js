@@ -743,7 +743,9 @@ const Retic = {
             <div class="retic-field"><label>ADMD Override (kVA${this._classIs3ph(this._kioskClass(k)) ? '/phase' : ''})</label>
               <input type="number" step="0.01" data-action="kiosk-field" data-kiosk="${k.id}" data-field="admdOverride" value="${k.admdOverride || ''}" placeholder="${this._kioskAdmd(k, true)}"></div>
             <div class="retic-field"><label>Street Lighting (kVA)</label>
-              <input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="streetLightKVA" value="${k.streetLightKVA || ''}" placeholder="0" title="Fixed, undiversified street-lighting load"></div>
+              ${k.streetLightFromCircuits
+                ? `<input type="number" value="${k.streetLightKVA || 0}" readonly title="From this kiosk's circuits in the Street lighting workspace (fixed, undiversified). Edit the circuits there.">`
+                : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="streetLightKVA" value="${k.streetLightKVA || ''}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
             <div class="retic-field"><label>Feeder Cable</label>
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable">${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m)</label>

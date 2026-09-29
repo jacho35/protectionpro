@@ -1,0 +1,184 @@
+/* ProtectionPro — Street lighting workspace (Reticulation) + quick-calc modal.
+ * Same shell recipe as #schedules-workspace. */
+
+#streetlight-workspace {
+  position: absolute;
+  top: var(--toolbar-height);
+  left: 0; right: 0; bottom: 0;
+  display: none;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-family: var(--font-family);
+  --sl-r: #c62828; --sl-w: #6b7280; --sl-b: #1565c0;
+  --sl-bad: #b3261e; --sl-ok: #2e7d32;
+}
+body.dark-mode #streetlight-workspace, body.dark-mode #sl-quick-modal { --sl-r: #ff7b72; --sl-w: #a0a0b0; --sl-b: #6cb6ff; --sl-bad: #ff6b6b; --sl-ok: #69db7c; }
+#sl-quick-modal { --sl-r: #c62828; --sl-w: #6b7280; --sl-b: #1565c0; --sl-bad: #b3261e; --sl-ok: #2e7d32; }
+
+.sl-toolbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+.sl-title { font-weight: 600; font-size: 14px; }
+.sl-sep { width: 1px; height: 20px; background: var(--border-color); }
+.sl-toolbar label { font-size: 12px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+.sl-toolbar input { width: 52px; }
+#streetlight-workspace input, #streetlight-workspace select, #sl-quick-modal input, #sl-quick-modal select {
+  font-size: 12px; padding: 3px 6px;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 4px;
+  font-family: inherit;
+}
+.sl-status { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+
+.sl-body { flex: 1; display: flex; min-height: 0; }
+
+/* ── Rail ── */
+.sl-rail { width: 250px; flex: 0 0 250px; display: flex; flex-direction: column; border-right: 1px solid var(--border-color); background: var(--bg-primary); min-height: 0; }
+.sl-rail-head, .sl-rail-foot { padding: 8px 10px; font-size: 11px; color: var(--text-secondary); }
+.sl-rail-head { border-bottom: 1px solid var(--border-color); text-transform: uppercase; letter-spacing: .04em; }
+.sl-rail-foot { border-top: 1px solid var(--border-color); line-height: 1.4; }
+.sl-rail-list { flex: 1; overflow: auto; padding: 4px 0; }
+.sl-rail-group { padding: 10px 10px 4px; font-size: 11px; font-weight: 600; color: var(--text-secondary); display: flex; justify-content: space-between; gap: 6px; }
+.sl-rail-group span { font-weight: 400; }
+.sl-rail-item { display: flex; flex-direction: column; gap: 2px; width: calc(100% - 12px); margin: 0 6px; padding: 7px 8px; text-align: left; background: none; border: 0; border-radius: 5px; cursor: pointer; color: inherit; font: inherit; }
+.sl-rail-item:hover { background: var(--bg-secondary); }
+.sl-rail-item.active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.sl-rail-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.sl-rail-name { font-size: 13px; font-weight: 600; }
+.sl-rail-meta { font-size: 11px; color: var(--text-secondary); }
+.sl-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; background: var(--bg-tertiary); color: var(--text-secondary); white-space: nowrap; }
+.sl-badge.ok { color: var(--sl-ok); background: color-mix(in srgb, var(--sl-ok) 14%, transparent); }
+.sl-badge.bad { color: var(--sl-bad); background: color-mix(in srgb, var(--sl-bad) 14%, transparent); }
+.sl-empty { padding: 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.sl-empty-main { margin: 40px auto; max-width: 420px; text-align: center; }
+
+/* ── Main: circuit form + poles ── */
+.sl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: auto; }
+.sl-head { display: flex; align-items: center; gap: 10px; }
+#streetlight-workspace .sl-name { font-size: 16px; font-weight: 600; padding: 4px 8px; flex: 1; max-width: 360px; }
+.sl-head-actions { margin-left: auto; display: flex; gap: 6px; }
+.sl-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; }
+.sl-form label, .sl-qc-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.sl-form .sl-wide { grid-column: span 2; }
+.sl-unit { display: flex; align-items: center; gap: 4px; font-weight: 400; }
+.sl-unit input { width: 100%; min-width: 0; }
+.sl-hint { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+
+.sl-poles { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: column; min-height: 200px; }
+.sl-poles-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border-color); font-size: 13px; flex-wrap: wrap; }
+.sl-poles-head label { font-size: 12px; color: var(--text-secondary); display: inline-flex; gap: 4px; align-items: center; }
+.sl-grow { flex: 1; }
+#streetlight-workspace .sl-add-n { width: 50px; }
+.sl-table-wrap { overflow: auto; }
+.sl-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.sl-table th { position: sticky; top: 0; background: var(--bg-secondary); text-align: left; font-size: 11px; font-weight: 600; color: var(--text-secondary); padding: 5px 6px; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+.sl-table td { padding: 2px 6px; border-bottom: 1px solid var(--bg-tertiary); white-space: nowrap; }
+.sl-table .num { text-align: right; font-family: var(--font-mono); }
+#streetlight-workspace .sl-in-name { width: 70px; }
+#streetlight-workspace .sl-in-num { width: 64px; }
+#streetlight-workspace .sl-in-ph { width: 58px; }
+.sl-table td.sl-bad, .sl-bad { color: var(--sl-bad); font-weight: 700; }
+.sl-check { font-weight: 700; font-size: 11px; }
+.sl-ok { color: var(--sl-ok); }
+.sl-mini { display: none; }
+.sl-x { background: none; border: 0; color: var(--text-muted); font-size: 15px; cursor: pointer; padding: 0 4px; }
+.sl-x:hover { color: var(--sl-bad); }
+.sl-ph { display: inline-block; min-width: 18px; margin-left: 4px; text-align: center; font-weight: 700; font-size: 11px; border-radius: 3px; padding: 0 3px; }
+.sl-ph-R { background: var(--sl-r); color: #fff; }
+.sl-ph-W { background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--sl-w); }
+.sl-ph-B { background: var(--sl-b); color: #fff; }
+
+/* ── Results ── */
+.sl-results { width: 340px; flex: 0 0 340px; overflow: auto; padding: 12px 12px 12px 0; display: flex; flex-direction: column; gap: 10px; }
+.sl-card { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.sl-card-head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); }
+.sl-verdict { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 10px; letter-spacing: 0; }
+.sl-verdict.ok { color: var(--sl-ok); background: color-mix(in srgb, var(--sl-ok) 15%, transparent); }
+.sl-verdict.bad { color: var(--sl-bad); background: color-mix(in srgb, var(--sl-bad) 15%, transparent); }
+.sl-fails { color: var(--sl-bad); font-weight: 600; }
+.sl-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sl-stats > div { display: flex; flex-direction: column; gap: 1px; }
+.sl-k { font-size: 11px; color: var(--text-secondary); text-transform: none; letter-spacing: 0; font-weight: 400; }
+.sl-v { font-size: 18px; font-weight: 650; font-family: var(--font-mono); }
+.sl-v.sl-bad { color: var(--sl-bad); }
+.sl-mono { font-family: var(--font-mono); }
+.sl-warn { font-size: 12px; color: var(--warning); line-height: 1.4; }
+.sl-bal { display: grid; grid-template-columns: 26px 1fr 100px; gap: 8px; align-items: center; }
+.sl-bal .sl-mono { text-align: right; }
+.sl-bal-n { border-top: 1px solid var(--bg-tertiary); padding-top: 6px; }
+.sl-bar { display: block; height: 8px; border-radius: 4px; background: var(--bg-tertiary); overflow: hidden; }
+.sl-bar span { display: block; height: 100%; background: var(--accent); }
+.sl-row { display: flex; justify-content: space-between; gap: 8px; }
+.sl-chart { display: block; max-width: 420px; }
+.sl-axis { stroke: var(--border-color); }
+.sl-tick, .sl-lim { font-size: 9px; fill: var(--text-secondary); }
+.sl-lim { fill: var(--sl-bad); }
+
+/* ── Quick calc modal ── */
+#sl-quick-modal .sl-qc { max-width: 980px; width: 96vw; max-height: 92vh; }
+#sl-quick-modal .modal-header { gap: 12px; }
+#sl-quick-modal .modal-header .sl-k { margin-right: auto; }
+.sl-qc-body { display: flex; min-height: 0; flex: 1; overflow: hidden; }
+.sl-qc-form { width: 280px; flex: 0 0 280px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--border-color); background: var(--bg-secondary); overflow: auto; }
+.sl-qc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sl-qc-res { flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.sl-qc-foot { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--border-color); }
+.sl-qc-foot label { font-size: 12px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
+
+@media (max-width: 1100px) {
+  .sl-body { flex-direction: column; overflow: auto; }
+  .sl-rail, .sl-results { width: auto; flex: none; }
+  .sl-main { flex: none; overflow: visible; }
+  .sl-poles { min-height: 0; }
+  .sl-results { padding: 0 12px 12px; }
+  .sl-rail-list { max-height: 220px; }
+  .sl-qc-body { flex-direction: column; overflow: auto; }
+  .sl-qc-form { width: auto; flex: none; border-right: 0; border-bottom: 1px solid var(--border-color); }
+}
+
+/* ── Phone ── */
+@media (max-width: 768px) {
+  /* One scrolling row of actions + limits instead of four wrapped rows. */
+  .sl-toolbar { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding: 6px 10px; scrollbar-width: none; }
+  .sl-toolbar::-webkit-scrollbar { display: none; }
+  .sl-toolbar > * { flex: none; }
+  .sl-title { display: none; }
+  .sl-status { margin-left: 0; }
+  #streetlight-workspace input, #streetlight-workspace select, #streetlight-workspace .btn-small,
+  #sl-quick-modal input, #sl-quick-modal select, #sl-quick-modal .btn-small { min-height: 40px; font-size: 14px; }
+  .sl-rail-item { min-height: 44px; }
+  .sl-main { padding: 10px; }
+  .sl-head { flex-wrap: wrap; }
+  #streetlight-workspace .sl-name { max-width: none; flex: 1 1 100%; }
+  .sl-head-actions { margin-left: 0; }
+  .sl-form { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px; }
+  .sl-form .sl-wide { grid-column: 1 / -1; }
+  .sl-poles-head .sl-hint { flex-basis: 100%; order: 3; }
+  /* The pole grid scrolls sideways with the pole name pinned. */
+  .sl-table-wrap { -webkit-overflow-scrolling: touch; }
+  .sl-table td:first-child, .sl-table th:first-child { position: sticky; left: 0; background: var(--bg-primary); z-index: 1; }
+  .sl-table th:first-child { z-index: 2; background: var(--bg-secondary); }
+  .sl-table td { padding: 3px 5px; }
+  #streetlight-workspace .sl-in-name { width: 64px; }
+  .sl-mini { display: block; font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); padding: 2px 0 1px; }
+  .sl-mini.sl-bad { color: var(--sl-bad); }
+  .sl-x { min-width: 40px; min-height: 40px; font-size: 18px; }
+  .sl-results { padding: 0 10px 12px; }
+  .sl-stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .sl-v { font-size: 16px; }
+  .sl-chart { max-width: none; }
+  /* Quick calc: title on its own line, the note under it. */
+  #sl-quick-modal .modal-header { flex-wrap: wrap; padding: 12px 14px; }
+  #sl-quick-modal .modal-header h3 { flex: 1; }
+  #sl-quick-modal .modal-header .sl-k { order: 3; flex-basis: 100%; margin: 0; }
+  .sl-qc-form, .sl-qc-res { padding: 12px; }
+  .sl-qc-foot { flex-wrap: wrap; padding: 10px 12px; }
+  .sl-qc-foot label { flex: 1 1 100%; }
+  .sl-qc-foot label select { flex: 1; }
+  .sl-qc-foot .btn-small { flex: 1; }
+}

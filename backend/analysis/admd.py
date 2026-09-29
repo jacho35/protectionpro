@@ -587,6 +587,13 @@ def run_admd(request):
     for m in minisubs:
         mid = _get(m, "id")
         d = feeder_demand(groups[mid], settings)
+        # Street lighting fed straight from the minisub's own LV board (not
+        # through a kiosk): fixed and undiversified, like a kiosk's.
+        ms_sl = float(_get(m, "streetLightKVA", 0) or 0)
+        if ms_sl:
+            d["totalKVA"] = _round2(d["totalKVA"] + ms_sl)
+            d["streetLightKVA"] = _round2(d["streetLightKVA"] + ms_sl)
+            d["currentA"] = _round2(d["totalKVA"] * 1000.0 / (math.sqrt(3) * V_3PH_LINE))
         ms_results.append({"minisubId": mid, "name": _get(m, "name", ""), **d})
         sum_kva += d["totalKVA"]
         tot_override += d["overrideKVA"]

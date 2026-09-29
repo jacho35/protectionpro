@@ -69,6 +69,13 @@ section and adding the `## Completed` entry.
 45. **Audit trail** — change tracking with user attribution. *(Multi-User & Collaboration)*
 46. **AI / natural-language search** — query the model and run analyses from plain-language prompts. *(Platform)*
 
+### Street lighting — follow-ups
+
+54. **Street lighting control / switching** — a per-circuit *switching* setting (photocell per luminaire · contactor at the source on photocell/timer · pilot core), and the checks it brings: LED driver inrush vs the MCB (max drivers per breaker), HPS run-up current (≈1.5–2× running) as a second volt-drop case, contactor rating, and a 5-core (pilot) cable option for the BOQ. *(Street Lighting Enhancements)*
+55. **Luminaire library** — luminaires as a layered library kind (shipped → company → shared → user; project carries the ones it uses), with driver type (constant power / constant current) and a constant-power lamp model. *(Street Lighting Enhancements)*
+56. **Street lighting in the BOQ, cable schedules and retic report** — poles, luminaires, pole-base terminations and SL cable runs pole to pole; a Street Lighting schedule section in the retic report. *(Street Lighting Enhancements)*
+57. **Street lighting undo and plan write-back** — the workspace has no undo stack of its own yet, and the circuit's cable does not flow back to the Plan's SL routes. *(Street Lighting Enhancements)*
+
 ### Large or long-horizon — scope decision needed before starting
 
 47. **Standard + user-defined dynamic model library** — GENROU/EXST1/GAST and a DSL/Modelica/UDM mechanism. Large sustained investment; machine/AVR/governor models are fixed built-ins today. *(DIgSILENT / PSS Additions)*
@@ -341,7 +348,24 @@ Gaps surfaced by the PowerFactory/PSS comparison that were not in the ETAP list.
 
 ---
 
+## Street Lighting Enhancements
+
+The Street lighting workspace (Reticulation) solves each circuit with phasors — see the Completed entry. Open:
+
+- **Control / switching (not modelled yet).** Photocell per luminaire changes nothing. A contactor at the kiosk switching the whole circuit adds: (a) LED driver inrush — tens of amps for a fraction of a millisecond per driver, all at once, can nuisance-trip a B-curve MCB, so cap drivers per breaker from driver/MCB data; (b) HPS run-up current ≈ 1.5–2× running for minutes — check VD at run-up too; (c) contactor AC-5a/lamp-load rating. A pilot core (5-core cable) carries negligible current — cable choice and BOQ only. Dimming/CMS only lowers load; full output stays the design case.
+- **Luminaire library.** `SL_LUMINAIRES` in `frontend/js/streetlight.js` is a built-in list; make it a layered library kind in `standard-data.js` and add a constant-power driver model.
+- **BOQ / cable schedules / report.** Feed poles, luminaires, SL cable per span and pole terminations into `BOQ.BASES`; list SL runs in `cableschedules.js`; add a schedule section to `retic-report.js`.
+- **Undo + plan write-back.** Street-lighting edits are not on an undo stack; a circuit's cable is not written back to the Plan routes it came from.
+
 ## Completed
+
+### Street lighting workspace: phasor volt drop, spurs, cumulative VD, earth loop, solver (2026-09-29)
+- **Workspace.** New *Street lighting* tab in Reticulation projects (step 3, between Demand and Single-line; `frontend/js/streetlight.js`, `css/streetlight.css`). Circuits are fed from a kiosk or a minisub and are a tree of poles: 3Φ alternating R-W-B on a 4-core cable or a 1Φ string on 2-core. Setting a pole's *Fed from* to another pole makes a spur, which carries on the phase rotation from its tee pole. Per-pole overrides for span, luminaire and phase; the pole grid uses GridTable.
+- **Engine.** `backend/analysis/street_lighting.py`, `POST /api/analysis/street-lighting`. Lamp currents on their phase angles, span currents from subtree sums, the neutral carrying the phasor sum, so an uneven pole count or spur is not assumed balanced (a 1Φ string reduces to 2·Z·I). Checks per pole: VD from the source (default 5 %), cumulative VD = the Demand feeder VD at the source + the circuit's own (default 10 %), Zs = Ze + 2·|Z|·L with Ik1 = 0.95·U0/Zs ≥ Ia of the MCB / gG fuse (5 s), and cable current rating. Also phase balance, neutral current, kVA, the max-poles solver (bisection over the default build-up, reports the limiting check) and the smallest library cable that passes.
+- **Links.** Ze is estimated from the minisub's transformer plus each feeder leg's phase + neutral loop; supply VD comes from Demand's cumulative feeder VD (0 at a minisub). Each circuit's kVA becomes its source's fixed street-lighting load (`streetLightKVA`, flagged `streetLightFromCircuits`, shown read-only in Demand); `admd.py` now adds a minisub's own `streetLightKVA` to its group. *Sync from plan* builds or updates circuits from the Plan's SL routes (spans, names and branches as spurs) and keeps per-pole overrides; Plan push no longer overwrites a kiosk load that comes from circuits. *Quick calc* sizes a uniform string and saves it as a circuit.
+- **Library.** Added 4, 6 and 10 mm² 2-core Cu PVC LV armoured cables for 1Φ strings.
+- **Phone.** Stacked layout below 1100 px; on phones the toolbar is one scrolling row, controls are ≥ 40 px, the pole grid scrolls sideways with the pole name pinned and a phase · VD · check summary under it, and Quick calc stacks with a full-width Save. The workspace is in the mobile workspace switcher. Cache-bust `3.5.155 → 3.5.156`.
+- +23 tests in `test_street_lighting.py` (hand calcs: 1Φ 2·Z·I, the 3Φ phasor drop, balanced neutral, spur rotation, Zs/Ik1, cumulative VD, solver boundary, smallest cable, minisub SL load). Control/switching, luminaire library, BOQ/report and undo are follow-ups (items 54–57).
 
 ### Frequency scan review: per-unit ranking, refined peaks, transformer ratio, live network, FS1–FS5 (2026-09-29)
 - **Review.** `FREQUENCY_SCAN_REVIEW.md` checks `frequency_scan.py` against closed-form RLC resonances and a hand nodal solve in ohms with an ideal transformer. The Z(h) curve, the h_r = √(S_sc/Q_c) location and the tuned-filter peak and dip were exact, as was scale invariance.
