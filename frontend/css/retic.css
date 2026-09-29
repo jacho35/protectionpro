@@ -259,7 +259,7 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 /* Wide estates need the room — scoped to desktop so the full-width mobile
    rules in mobile.css still win on phones. */
 @media (min-width: 769px) {
-  #retic-diagram-modal .modal-content { max-width: 1500px; width: 94vw; }
+  #retic-diagram-modal .modal-content, #sl-diagram-modal .modal-content { max-width: 1500px; width: 94vw; }
 }
 .rdg-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .rdg-toolbar .rdg-spacer { flex: 1; }

@@ -182,3 +182,6 @@ body.dark-mode #streetlight-workspace, body.dark-mode #sl-quick-modal { --sl-r: 
   .sl-qc-foot label select { flex: 1; }
   .sl-qc-foot .btn-small { flex: 1; }
 }
+
+/* Circuit diagram modal (js/sl-diagram.js) — chrome shared with the retic diagram. */
+#sldg-circuit { font-size: 12px; padding: 3px 6px; max-width: 320px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; }

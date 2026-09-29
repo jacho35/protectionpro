@@ -408,6 +408,7 @@ const StreetLight = {
       this.renderRail();
       this._paintPoleResults();
       this.renderResults();
+      if (typeof SLDiagram !== 'undefined') SLDiagram.refresh();
     } catch (err) {
       if (token !== this._req) return;
       console.error('Street lighting calc failed:', err);
@@ -490,6 +491,7 @@ const StreetLight = {
       <div class="sl-head">
         <input class="sl-name" data-cf="name" value="${escHtml(c.name)}" aria-label="Circuit name">
         <div class="sl-head-actions">
+          <button class="btn-small" data-sl="diagram" title="Schematic of this circuit — poles, phases, spans, volt drop and Zs; PNG / SVG export">Diagram</button>
           <button class="btn-small" data-sl="dup">Duplicate</button>
           <button class="btn-small" data-sl="del">Delete</button>
         </div>
@@ -694,6 +696,7 @@ const StreetLight = {
     else if (act === 'quick') this.openQuickCalc();
     else if (act === 'sync') this.syncFromPlan();
     else if (act === 'select') { this._selId = b.dataset.id; this.renderRail(); this.renderMain(); this.renderResults(); }
+    else if (act === 'diagram' && c) SLDiagram.open(c.id);
     else if (act === 'dup' && c) this.duplicateCircuit(c.id);
     else if (act === 'del' && c) this.deleteCircuit(c.id);
     else if (act === 'add-poles' && c) {
