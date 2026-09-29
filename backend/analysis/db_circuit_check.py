@@ -69,6 +69,33 @@ TOUCH_VOLTAGE_LIMIT_V = 50.0
 # lighting, which is the stricter (and therefore reported) allowance.
 VD_LIMIT_LIGHTING_PCT = 3.0
 VD_LIMIT_GENERAL_PCT = 5.0
+# [L5] IEC 60364-5-52 Table G.52.1: (lighting, other uses) from the origin —
+# A: supplied from a public LV network; B: from a private LV supply
+# (the installation's own transformer or generator).
+VD_LIMITS_BY_SUPPLY = {"public": (3.0, 5.0), "private": (6.0, 8.0)}
+
+# IEC 60909-0 Table 1 maximum voltage factor (LV, +10 % tolerance) — used for
+# the adiabatic check, which needs the LARGEST current the circuit delivers.
+C_MAX = 1.10
+
+# [DB2] IEC 60364-5-54 Table 54.3: k for a protective conductor incorporated in
+# a multi-core cable (initial = insulation operating temperature).
+K_PE_IN_CABLE = {("Cu", "PVC"): 115.0, ("Cu", "XLPE"): 143.0,
+                 ("Al", "PVC"): 76.0, ("Al", "XLPE"): 94.0}
+# Operating time assumed for the adiabatic check: an IEC 60898 MCB in its
+# instantaneous region clears within 0.1 s; an RCD (IEC 61008/61009) within
+# 0.3 s at IΔn. For t < 0.1 s the standard allows the device's I²t let-through
+# instead — using 0.1 s is the conservative upper bound without that data.
+T_MAGNETIC_S = 0.1
+T_RCD_S = 0.3
+
+# Reduced circuit-protective conductor of flat twin-and-earth / multicore
+# cables with a reduced earth (BS 6004 / SANS 1507-3 constructions).
+TE_CPC_MM2 = {1.0: 1.0, 1.5: 1.0, 2.5: 1.5, 4: 1.5, 6: 2.5, 10: 4, 16: 6}
+
+# ECC sizes tried when none is declared (1.0 mm² is the CPC of 1.5 mm² T+E).
+ECC_CANDIDATES = [1.0, 1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150,
+                  185, 240, 300]
 
 _LIGHTING_WORDS = ("light", "lamp", "luminaire", "downlight")
 
@@ -92,15 +119,23 @@ def _num(value, default=0.0):
     return default if math.isnan(n) or math.isinf(n) else n
 
 
-def _lv_cable_row(size_mm2):
-    """LV Cu/PVC library row for a size — exact match, else next size up.
+def _cond(conductor):
+    return "Al" if str(conductor or "Cu").strip().lower().startswith("al") else "Cu"
 
-    Never credits a smaller entry, so a non-standard size is checked against a
-    conductor at least as good as the one drawn.
+
+def _lv_cable_row(size_mm2, conductor="Cu"):
+    """LV library row for a size and conductor material — exact match, else
+    next size up. Never credits a smaller entry, so a non-standard size is
+    checked against a conductor at least as good as the one drawn.
+
+    [DB4] The row is taken for the way's own conductor: aluminium ways used
+    the COPPER row (16 mm² Al read 1.38 Ω/km at 70 °C instead of 2.29), so
+    their voltage drop and Zs were ~40 % low. The 20 °C DC resistance does
+    not depend on the insulation, so any LV row of the material will do.
     """
+    mat = _cond(conductor)
     lv = [c for c in STANDARD_CABLES
-          if c["conductor"] == "Cu" and c["insulation"] == "PVC"
-          and c["voltage_kv"] <= 1]
+          if c["conductor"] == mat and c["voltage_kv"] <= 1]
     exact = [c for c in lv if abs(c["size_mm2"] - size_mm2) < 1e-9]
     if exact:
         return exact[0]
@@ -118,13 +153,13 @@ def _r_hot_per_km(size_mm2, conductor="Cu", insulation="PVC"):
     size = _num(size_mm2)
     if size <= 0:
         return None
-    row = _lv_cable_row(size)
+    mat = _cond(conductor)
+    row = _lv_cable_row(size, mat)
     if row is not None and abs(row["size_mm2"] - size) < 1e-9:
         r20 = row["r_per_km"]
     else:
-        rho = RESISTIVITY.get(str(conductor).title(), RESISTIVITY["Cu"])
-        r20 = rho * 1000.0 / size          # Ohm/km at 20 °C
-    return r20 * _temp_correction(conductor, insulation)
+        r20 = RESISTIVITY[mat] * 1000.0 / size          # Ohm/km at 20 °C
+    return r20 * _temp_correction(mat, insulation)
 
 
 def _x_per_km(size_mm2):
@@ -148,6 +183,103 @@ def ecc_required_mm2(phase_mm2):
     else:
         required = s / 2.0
     return round_up_to_standard(required)
+
+
+def _k_pe(install):
+    """IEC 60364-5-54 Table 54.3 k for the way's protective conductor."""
+    ins = "XLPE" if str(install.get("insulation", "PVC")).upper() == "XLPE" else "PVC"
+    return K_PE_IN_CABLE[(_cond(install.get("conductor")), ins)]
+
+
+def _loop_z(z_supply, size, ecc, length_km, install):
+    """[L3] Earth-fault loop impedance: Ze (complex) + (R1 + R2) at
+    operating temperature."""
+    r1 = (_r_hot_per_km(size, install["conductor"], install["insulation"]) or 0.0) * length_km
+    r2 = (_r_hot_per_km(ecc, install["conductor"], install["insulation"]) or 0.0) * length_km \
+        if ecc else 0.0
+    return complex(z_supply) + r1 + r2, r1, r2
+
+
+def _adiabatic_time(way, i_a, ia, idn_ma):
+    """Operating time (s) of the way's protection at ``i_a`` for the §543.1.2
+    adiabatic check, or None when it would not operate — then the check
+    cannot credit the conductor at all.
+
+    MCB instantaneous region → 0.1 s; else an earth-leakage unit → 0.3 s;
+    else a manufacturer's disconnection time entered on the way ([L2])."""
+    if ia > 0 and i_a >= ia:
+        return T_MAGNETIC_S
+    if idn_ma:
+        return T_RCD_S
+    t = _num(way.get("disconnect_time_s"))
+    return t if t > 0 else None
+
+
+def adiabatic_ecc_mm2(i_a, t_s, k):
+    """IEC 60364-5-54 §543.1.2: S = √(I²t)/k."""
+    return math.sqrt(i_a * i_a * t_s) / k if (i_a > 0 and t_s and k > 0) else None
+
+
+def _assumed_ecc_mm2(way, z_supply, install, v_ll, idn_ma=None):
+    """[DB1] ECC to assume when none is declared: the SMALLEST standard size
+    that complies — by Table 54.7 or by the §543.1.2 adiabatic check at the
+    current it would itself let flow. Reduced-CPC cables (twin-and-earth:
+    2.5/1.5, 4/1.5, 6/2.5 …) comply by the adiabatic route, so assuming the
+    Table 54.7 size (= the live conductor up to 16 mm²) understated Zs: a
+    60 m 2.5 mm² C20 way passed at 1.075 Ω on the assumption and fails at
+    1.413 Ω with its real 1.5 mm² CPC."""
+    size = _num(way.get("cable_mm2"))
+    table = ecc_required_mm2(size)
+    if table is None or z_supply is None:
+        return table
+    in_a = _num(way.get("breaker_a"))
+    ia = MCB_CURVE_MAGNETIC.get(str(way.get("curve") or "C").upper(), 10.0) * in_a
+    u0 = v_ll / math.sqrt(3) if v_ll > 0 else 0.0
+    k = _k_pe(install)
+    length_km = _num(way.get("cable_m")) / 1000.0
+    for s in ECC_CANDIDATES:
+        if s >= table - 1e-9:
+            break
+        zs, _r1, _r2 = _loop_z(z_supply, size, s, length_km, install)
+        if abs(zs) <= 0:
+            continue
+        i_ad = C_MAX * u0 / abs(zs)
+        t = _adiabatic_time(way, i_ad, ia, idn_ma)
+        need = adiabatic_ecc_mm2(i_ad, t, k)
+        if need is not None and need <= s + 1e-9:
+            return float(s)
+    return table
+
+
+def _zone_earthing(board, project):
+    """[L1] Earthing system (TN-S/TN-C/TN-C-S/TT/IT) of the board's supply:
+    from the LV source or transformer feeding its voltage zone (walking buses,
+    boards, cables and closed switchgear, never across a transformer). TN-S
+    when none is set, as the fault engine assumes."""
+    from .loadflow import _is_transparent_and_closed
+    by_id = {c.id: c for c in project.components}
+    adj = {}
+    for w in project.wires:
+        adj.setdefault(w.fromComponent, []).append(w.toComponent)
+        adj.setdefault(w.toComponent, []).append(w.fromComponent)
+    seen, stack = {board.id}, [board.id]
+    while stack:
+        nid = stack.pop()
+        for y in adj.get(nid, []):
+            if y in seen:
+                continue
+            seen.add(y)
+            c = by_id.get(y)
+            if c is None:
+                continue
+            if c.type in ("transformer", "utility", "generator"):
+                es = str(c.props.get("earthing_system", "") or "").upper()
+                if es:
+                    return es
+                continue
+            if c.type in ("bus", "distribution_board", "cable") or _is_transparent_and_closed(c):
+                stack.append(y)
+    return "TN-S"
 
 
 def _is_lighting(description):
@@ -183,6 +315,8 @@ def _board_install(board, req):
         "insulation": str(pick("insulation", "PVC")),
         "soil_kmw": pick("soil_kmw", None),
         "depth_m": pick("depth_m", None),
+        # [L5] IEC Table G.52.1 supply type: public LV network or private supply
+        "supply": "private" if str(pick("supply", "public")).lower() == "private" else "public",
     }
 
 
@@ -193,7 +327,11 @@ def _way_current_a(way, v_ll):
     own nominal voltage rather than a hard-coded 230/400 V pair. A feeder way
     carries the downstream board's demand, already computed by the plan sync.
     """
-    va = _num(way.get("load_va")) * (_num(way.get("demand_factor"), 1.0) or 1.0)
+    # [L4] 0 is a real demand factor (a way switched off in this schedule);
+    # only a missing value defaults to 1.0 — ``x or 1.0`` read 0 as 1.
+    df_raw = way.get("demand_factor")
+    df = 1.0 if df_raw in (None, "") else _num(df_raw, 1.0)
+    va = _num(way.get("load_va")) * df
     is_3p = way.get("poles") == "3P" or way.get("phase") == "RWB"
     if is_3p:
         ib = va / (math.sqrt(3) * v_ll) if v_ll > 0 else 0.0
@@ -228,10 +366,27 @@ def _thevenin_zs_ohm(project, board_id, v_ll):
         return None, "no_earth_return"
     base_mva = _num(getattr(project, "baseMVA", 100.0), 100.0) or 100.0
     z_base = (v_ll / 1000.0) ** 2 / base_mva
-    zs = abs(z1 + z2 + z0) / 3.0 * z_base
-    if not math.isfinite(zs) or zs <= 0:
+    # [L3] Kept complex so the circuit's R1 + R2 adds as an impedance, not to
+    # the magnitude (|Ze| + R over-states Zs by up to a few per cent).
+    zs = (z1 + z2 + z0) / 3.0 * z_base
+    if not (math.isfinite(zs.real) and math.isfinite(zs.imag)) or abs(zs) <= 0:
         return None, None
     return zs, None
+
+
+def _board_node(board, bus_v_pu, project):
+    """The board's electrical node id in the load-flow result (its own id,
+    else a directly-wired bus it is collapsed into), or None."""
+    if board.id in bus_v_pu:
+        return board.id
+    by_id = {c.id: c for c in project.components}
+    for w in project.wires:
+        other = w.toComponent if w.fromComponent == board.id else (
+            w.fromComponent if w.toComponent == board.id else None)
+        if other and other in bus_v_pu and by_id.get(other) is not None \
+                and by_id[other].type in ("bus", "distribution_board"):
+            return other
+    return None
 
 
 def _board_voltage_pu(board, bus_v_pu, project):
@@ -292,7 +447,7 @@ def _resolve_supply_impedance(project, boards, req_default_ze):
 
         declared = board.props.get("ze_ohm")
         if declared not in (None, ""):
-            out = (_num(declared), "declared")
+            out = (complex(_num(declared), 0.0), "declared")
             resolved[board_id] = out
             return out
 
@@ -307,16 +462,20 @@ def _resolve_supply_impedance(project, boards, req_default_ze):
             p_board, p_way = parent
             p_zs, _p_basis = resolve(p_board.id, seen)
             if p_zs is not None:
-                r_ph = _r_hot_per_km(p_way.get("cable_mm2")) or 0.0
-                ecc = _num(p_way.get("ecc_mm2")) or ecc_required_mm2(p_way.get("cable_mm2")) or 0.0
-                r_ecc = _r_hot_per_km(ecc) or 0.0
+                p_inst = _board_install(p_board, {})
+                r_ph = _r_hot_per_km(p_way.get("cable_mm2"), p_inst["conductor"],
+                                     p_inst["insulation"]) or 0.0
+                # [DB1] an undeclared feeder CPC: the smallest compliant one
+                ecc = _num(p_way.get("ecc_mm2")) or _assumed_ecc_mm2(
+                    p_way, p_zs, p_inst, _num(p_board.props.get("voltage_kv"), 0.4) * 1000.0)
+                r_ecc = _r_hot_per_km(ecc, p_inst["conductor"], p_inst["insulation"]) or 0.0
                 length_km = _num(p_way.get("cable_m")) / 1000.0
                 out = (p_zs + (r_ph + r_ecc) * length_km, "chained")
                 resolved[board_id] = out
                 return out
 
         if req_default_ze is not None:
-            out = (_num(req_default_ze), "request_default")
+            out = (complex(_num(req_default_ze), 0.0), "request_default")
             resolved[board_id] = out
             return out
 
@@ -360,6 +519,7 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
     # One load flow for the whole run, best-effort — it only supplies the
     # upstream voltage for the cumulative drop figure.
     bus_v_pu = {}
+    lf_buses = {}
     lf_ok = False
     try:
         from .loadflow import run_load_flow
@@ -371,8 +531,12 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
                 v = getattr(b, "voltage_pu", None)
                 if v is not None and getattr(b, "energized", True):
                     bus_v_pu[bid] = _num(v, 1.0)
+                    lf_buses[bid] = b
     except Exception:
         lf_ok = False
+    from .cable_sizing import _build_adjacency, _zone_origin
+    adj = _build_adjacency(project)
+    comp_map = {c.id: c for c in project.components}
     if not lf_ok:
         warnings.append(
             "Load flow unavailable or did not converge — voltage drop is this "
@@ -389,8 +553,26 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
         v_ph = v_ll / math.sqrt(3) if v_ll > 0 else 0.0
         install = _board_install(board, req)
         z_supply, z_basis = supply.get(board.id, (None, "unavailable"))
-        v_pu = _board_voltage_pu(board, bus_v_pu, project)
-        vd_upstream_pct = None if v_pu is None else max(0.0, (1.0 - v_pu) * 100.0)
+        # [DB3] Upstream drop from the ORIGIN of the installation (the bus of
+        # the board's voltage zone fed by a source or transformer), not from
+        # 1.0 p.u.: with the source at 1.05 p.u. a 5.9 % drop to the board
+        # read as 1.1 %, and MV/transformer drop upstream of the origin was
+        # counted against the installation's limit.
+        node = _board_node(board, bus_v_pu, project)
+        origin = _zone_origin(node, adj, comp_map, lf_buses) if node else None
+        if node is not None and origin is not None:
+            vd_upstream_pct = max(0.0, (lf_buses[origin].voltage_pu
+                                        - lf_buses[node].voltage_pu) * 100.0)
+            origin_name = comp_map[origin].props.get("name", origin) if origin in comp_map else origin
+        else:
+            vd_upstream_pct, origin_name = None, ""
+        earthing = _zone_earthing(board, project)
+        # [L5] Limits for the board's supply type, unless the request set them
+        b_light, b_general = VD_LIMITS_BY_SUPPLY[install["supply"]]
+        if vd_limit_lighting_pct is not None:
+            b_light = vd_light
+        if vd_limit_general_pct is not None:
+            b_general = vd_general
 
         el_ratings = board.props.get("el_ratings")
         el_ratings = el_ratings if isinstance(el_ratings, dict) else {}
@@ -399,7 +581,8 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
         for way in circuits:
             row = _check_way(way, board, board_name, v_ll, v_ph, install,
                              z_supply, z_basis, vd_upstream_pct, lf_ok,
-                             el_ratings, vd_light, vd_general)
+                             el_ratings, b_light, b_general, earthing)
+            row["vd_origin"] = origin_name
             rows.append(row)
             counts[row["status"]] = counts.get(row["status"], 0) + 1
 
@@ -410,8 +593,11 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
             "counts": counts,
             "worst_status": _worst(*[r["status"] for r in rows[-len(circuits):]])
             if circuits else "pass",
-            "z_supply_ohm": _round(z_supply, 4),
+            "z_supply_ohm": _round(abs(z_supply) if z_supply is not None else None, 4),
             "z_supply_basis": z_basis,
+            "earthing_system": earthing,
+            "vd_origin": origin_name,
+            "vd_limits_pct": [b_light, b_general],
             "install": install,
         })
 
@@ -419,7 +605,8 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
 
 
 def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
-               vd_upstream_pct, lf_ok, el_ratings, vd_light, vd_general):
+               vd_upstream_pct, lf_ok, el_ratings, vd_light, vd_general,
+               earthing="TN-S"):
     size = _num(way.get("cable_mm2"))
     length_m = _num(way.get("cable_m"))
     in_a = _num(way.get("breaker_a"))
@@ -506,82 +693,146 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
     if vd_status != "pass":
         messages.append(vd_msg)
 
-    # ── ECC (IEC 60364-5-54 Table 54.7) ──
-    required = ecc_required_mm2(size)
+    # ── ECC and earth-fault loop ──
+    required = ecc_required_mm2(size)          # Table 54.7 size
     declared_ecc = way.get("ecc_mm2")
     has_ecc = declared_ecc not in (None, "", 0)
     ecc_val = _num(declared_ecc) if has_ecc else None
-    if required is None:
-        ecc_status = "info"
-        ecc_msg = "ECC not evaluated — no cable size on this way."
-    elif not has_ecc:
-        ecc_status = "info"
-        ecc_msg = (f"ECC not specified — Table 54.7 requires at least "
-                   f"{required:g} mm² for a {size:g} mm² live conductor.")
-    elif ecc_val + 1e-9 < required:
-        ecc_status = "fail"
-        ecc_msg = (f"ECC {ecc_val:g} mm² is below the {required:g} mm² required "
-                   f"for a {size:g} mm² live conductor — "
-                   f"SANS 10142-1 / IEC 60364-5-54 Table 54.7.")
-    else:
-        ecc_status = "pass"
-        ecc_msg = f"ECC {ecc_val:g} mm² ≥ {required:g} mm² required."
-    if ecc_status != "pass":
-        messages.append(ecc_msg)
+    idn_ma = _rcd_idn_ma(way, el_ratings)
+    # [DB1] With no ECC declared, assume the smallest COMPLIANT one (Table
+    # 54.7 or §543.1.2) — the highest-resistance conductor a compliant
+    # installation could have, so the Zs verdict holds for what is installed.
+    ecc_effective = ecc_val if has_ecc else (
+        _assumed_ecc_mm2(way, z_supply, install, v_ll, idn_ma) if required is not None else None)
 
-    # ── Earth-fault loop impedance / disconnection ──
-    # When no ECC is declared the required minimum is assumed. That is the
-    # highest-resistance compliant conductor, so it gives the WORST Zs — a pass
-    # on the assumption therefore still holds for whatever is actually installed.
-    ecc_effective = ecc_val if has_ecc else required
-    r_phase = (_r_hot_per_km(size, install["conductor"], install["insulation"]) or 0.0) * length_km
-    r_ecc = (_r_hot_per_km(ecc_effective, install["conductor"], install["insulation"]) or 0.0) * length_km \
-        if ecc_effective else 0.0
     limit_s = (DISCONNECT_DISTRIBUTION_S if way.get("type") == "feeder_db"
                else DISCONNECT_FINAL_S)
     ia_mult = MCB_CURVE_MAGNETIC.get(curve, 10.0)
     ia = ia_mult * in_a
     zs = ief = zs_max = None
+    zs_c = None
+    r_phase = r_ecc = 0.0
     zs_basis_bits = []
     if z_supply is None:
         zs_status = "info"
         zs_msg = ("Earth-fault loop impedance not evaluated — no supply "
                   "impedance for this board. Wire it to a source on the SLD, "
                   "or enter a measured Ze in the Schedules workspace.")
+        r_phase = (_r_hot_per_km(size, install["conductor"], install["insulation"]) or 0.0) * length_km
     elif in_a <= 0 or v_ph <= 0:
         zs_status = "info"
         zs_msg = "Earth-fault loop impedance not evaluated — breaker rating or board voltage missing."
     else:
-        zs = z_supply + r_phase + r_ecc
+        zs_c, r_phase, r_ecc = _loop_z(z_supply, size, ecc_effective, length_km, install)
+        zs = abs(zs_c)
         ief = C_MIN * v_ph / zs if zs > 0 else 0.0
         zs_max = C_MIN * v_ph / ia if ia > 0 else None
         if not has_ecc:
             zs_basis_bits.append("assumed_min_ecc")
+        declared_t = _num(way.get("disconnect_time_s"))
         if ief >= ia:
             zs_status = "pass"
             zs_basis_bits.insert(0, "magnetic")
             zs_msg = (f"Zs {zs:.3f} Ω gives {ief:.0f} A ≥ {ia:.0f} A "
                       f"({curve} curve, {ia_mult:g}×In) — instantaneous trip, "
                       f"well inside the {limit_s:g} s limit.")
+            # [DB1] A blank ECC passes only on the assumed conductor. If the
+            # reduced CPC of a twin-and-earth cable of this size would not
+            # reach the magnetic trip, say so — the verdict depends on what
+            # is actually installed.
+            te = TE_CPC_MM2.get(size)
+            if not has_ecc and te is not None and ecc_effective and te < ecc_effective - 1e-9:
+                zs_te = abs(_loop_z(z_supply, size, te, length_km, install)[0])
+                ief_te = C_MIN * v_ph / zs_te if zs_te > 0 else 0.0
+                if ief_te < ia:
+                    zs_status = "warn"
+                    zs_msg = (f"Passes only with an ECC of at least {ecc_effective:g} mm² "
+                              f"(Zs {zs:.3f} Ω). A twin-and-earth CPC of {te:g} mm² gives "
+                              f"Zs {zs_te:.3f} Ω and {ief_te:.0f} A < {ia:.0f} A — it would "
+                              f"fail. Enter the installed ECC.")
         else:
-            idn_ma = _rcd_idn_ma(way, el_ratings)
-            zs_rcd_max = (TOUCH_VOLTAGE_LIMIT_V / (idn_ma / 1000.0)) if idn_ma else None
+            # [L1] RCD route. TN (IEC 60364-4-41 §411.4.4): Zs·Ia ≤ U0 with
+            # Ia = IΔn (an RCD operates within 0.3 s at IΔn). TT (§411.5.3):
+            # RA·IΔn ≤ 50 V — RA is not modelled separately, and Zs ≥ RA, so
+            # testing Zs is conservative. The old code applied the TT 50 V
+            # rule in TN too (1.67 kΩ instead of 7.7 kΩ at 30 mA).
+            tt = earthing == "TT"
+            if idn_ma:
+                u_lim = TOUCH_VOLTAGE_LIMIT_V if tt else v_ph
+                zs_rcd_max = u_lim / (idn_ma / 1000.0)
+            else:
+                zs_rcd_max = None
             if zs_rcd_max is not None and zs <= zs_rcd_max:
                 zs_status = "pass"
                 zs_basis_bits.insert(0, "rcd")
+                rule = "RA·IΔn ≤ 50 V (TT, Zs ≥ RA)" if tt else "Zs·IΔn ≤ U0 (TN)"
                 zs_msg = (f"Magnetic trip not reached ({ief:.0f} A < {ia:.0f} A), "
                           f"but the {idn_ma:g} mA earth-leakage unit on group "
-                          f"'{way.get('el_group')}' satisfies Zs ≤ 50 V/IΔn "
+                          f"'{way.get('el_group')}' satisfies {rule} "
                           f"({zs:.3f} ≤ {zs_rcd_max:.1f} Ω).")
+            elif declared_t > 0 and declared_t <= limit_s + 1e-9:
+                # [L2] IEC 60898-1 guarantees operation only at its conventional
+                # points, so the thermal region can't be credited from the
+                # standard; a time read off the manufacturer's curve can.
+                zs_status = "pass"
+                zs_basis_bits.insert(0, "declared_time")
+                zs_msg = (f"Magnetic trip not reached ({ief:.0f} A < {ia:.0f} A); the "
+                          f"declared disconnection time {declared_t:g} s (manufacturer's "
+                          f"curve) is within the {limit_s:g} s limit.")
             else:
                 zs_status = "fail"
                 zs_basis_bits.insert(0, "magnetic")
+                hint = (" Enter the device's disconnection time at this current "
+                        "from its curve if it is within the limit."
+                        if way.get("type") == "feeder_db" else "")
                 zs_msg = (f"Zs {zs:.3f} Ω exceeds {zs_max:.3f} Ω — the {curve}-curve "
                           f"magnetic trip needs {ia:.0f} A but only {ief:.0f} A is "
                           f"available, so disconnection within {limit_s:g} s is not "
-                          f"achieved (SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41).")
+                          f"achieved (SANS 10142-1 Cl. 5.5.6 / IEC 60364-4-41).{hint}")
     if zs_status != "pass":
         messages.append(zs_msg)
+
+    # [DB2] IEC 60364-5-54 §543.1.1: a protective conductor complies by the
+    # adiabatic calculation (§543.1.2) OR by Table 54.7 (§543.1.3). Only the
+    # table was tested, so a standard twin-and-earth (2.5/1.5 mm²) failed
+    # although §543.1.2 needs 0.43 mm² for it.
+    k_pe = _k_pe(install)
+    ecc_adiabatic = None
+    if required is None:
+        ecc_status = "info"
+        ecc_msg = "ECC not evaluated — no cable size on this way."
+    elif not has_ecc:
+        ecc_status = "info"
+        assumed = (f"assumed {ecc_effective:g} mm², the smallest that complies"
+                   if ecc_effective is not None and ecc_effective < required - 1e-9
+                   else f"Table 54.7 size {required:g} mm² assumed")
+        ecc_msg = (f"ECC not specified — {assumed} (Table 54.7: {required:g} mm²). "
+                   f"Enter the installed ECC.")
+    elif ecc_val + 1e-9 >= required:
+        ecc_status = "pass"
+        ecc_msg = f"ECC {ecc_val:g} mm² ≥ {required:g} mm² (Table 54.7)."
+    else:
+        i_ad = (C_MAX * v_ph / zs) if zs else None
+        t_ad = _adiabatic_time(way, i_ad or 0.0, ia, idn_ma) if i_ad else None
+        ecc_adiabatic = adiabatic_ecc_mm2(i_ad, t_ad, k_pe) if t_ad else None
+        if ecc_adiabatic is not None and ecc_val + 1e-9 >= ecc_adiabatic:
+            ecc_status = "pass"
+            ecc_msg = (f"ECC {ecc_val:g} mm² ≥ {ecc_adiabatic:.2f} mm² by the adiabatic "
+                       f"check √(I²t)/k ({i_ad:.0f} A, {t_ad:g} s, k {k_pe:g}) — "
+                       f"IEC 60364-5-54 §543.1.2 (below the Table 54.7 {required:g} mm²).")
+        elif ecc_adiabatic is not None:
+            ecc_status = "fail"
+            ecc_msg = (f"ECC {ecc_val:g} mm² is below both Table 54.7 ({required:g} mm²) and "
+                       f"the adiabatic requirement {ecc_adiabatic:.2f} mm² "
+                       f"({i_ad:.0f} A, {t_ad:g} s) — IEC 60364-5-54 §543.1.")
+        else:
+            ecc_status = "fail"
+            ecc_msg = (f"ECC {ecc_val:g} mm² is below the Table 54.7 {required:g} mm², and "
+                       f"the adiabatic route needs the fault to be cleared "
+                       f"({'no supply impedance' if zs is None else 'the protection does not operate'})"
+                       f" — IEC 60364-5-54 §543.1.")
+    if ecc_status != "pass":
+        messages.append(ecc_msg)
 
     status = _worst(amp_status, coord_status, vd_status, ecc_status, zs_status)
     return {
@@ -608,9 +859,12 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
         "vd_status": vd_status, "vd_message": vd_msg,
 
         "ecc_mm2": _round(ecc_val, 3), "ecc_required_mm2": _round(required, 3),
+        "ecc_assumed_mm2": _round(ecc_effective, 3) if not has_ecc else None,
+        "ecc_adiabatic_mm2": _round(ecc_adiabatic, 3),
         "ecc_status": ecc_status, "ecc_message": ecc_msg,
 
-        "z_supply_ohm": _round(z_supply, 4), "z_supply_basis": z_basis,
+        "z_supply_ohm": _round(abs(z_supply) if z_supply is not None else None, 4),
+        "z_supply_basis": z_basis, "earthing_system": earthing,
         "r_phase_ohm": _round(r_phase, 4), "r_ecc_ohm": _round(r_ecc, 4),
         "zs_ohm": _round(zs, 4), "zs_max_ohm": _round(zs_max, 4),
         "ia_a": _round(ia, 2), "ia_multiple": _round(ia_mult, 2),
@@ -668,17 +922,24 @@ def _envelope(rows, board_rows, warnings, req, vd_light, vd_general, lf_ok):
             "vd_limit_lighting_pct": vd_light,
             "vd_limit_general_pct": vd_general,
             "vd_convention": (
-                "SANS 10142-1 Cl. 6.6 — 5 % total from the point of supply, "
-                "with a stricter 3 % design allowance applied to lighting ways."),
+                "From the origin of the installation (the bus fed by the source or "
+                "transformer): IEC 60364-5-52 Table G.52.1 — public LV supply 3 % "
+                "lighting / 5 % other, private supply 6 % / 8 % (per board 'supply'); "
+                "SANS 10142-1 Cl. 6.6."),
             "c_min": C_MIN,
             "magnetic_multiples": dict(MCB_CURVE_MAGNETIC),
             "disconnect_times_s": {"final_circuit": DISCONNECT_FINAL_S,
                                    "distribution_circuit": DISCONNECT_DISTRIBUTION_S},
-            "ecc_rule": "IEC 60364-5-54 Table 54.7 / SANS 10142-1",
+            "ecc_rule": ("IEC 60364-5-54 §543.1: Table 54.7 OR the adiabatic check "
+                         "S ≥ √(I²t)/k (k per Table 54.3; I = c_max·U0/Zs; t = 0.1 s "
+                         "MCB instantaneous, 0.3 s RCD, or the declared time). A blank "
+                         "ECC assumes the smallest compliant size."),
+            "rcd_rule": "TN: Zs·IΔn ≤ U0 (§411.4.4); TT: RA·IΔn ≤ 50 V, tested on Zs (§411.5.3)",
             "coordination_rule": (
                 "IEC 60364-4-43 §433.1 Ib ≤ In ≤ Iz. For IEC 60898 MCBs "
                 "I2 = 1.45·In, so I2 ≤ 1.45·Iz follows automatically."),
-            "ampacity_basis": "IEC 60364-5-52 tabulated Iz with ambient, grouping, soil and depth derating",
+            "ampacity_basis": ("IEC 60364-5-52 tabulated Iz (2 or 3 loaded conductors) with "
+                               "ambient, grouping and soil derating"),
             "fault_basis": "IEC 60909-0 §5.3.1 minimum-current (c_min = 0.95, conductors at operating temperature)",
             "load_flow_converged": bool(lf_ok),
         },

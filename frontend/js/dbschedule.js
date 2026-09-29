@@ -36,7 +36,7 @@
 // more — cable_mm2/ecc_mm2 are text inputs so they can carry a searchable
 // datalist without a number spinner — so the coercion is keyed by field name.
 const NUMERIC_KEYS = new Set(['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2',
-  'cable_m', 'load_va', 'demand_factor', 'power_factor']);
+  'cable_m', 'load_va', 'demand_factor', 'power_factor', 'disconnect_time_s']);
 
 const DBSchedule = {
   modal: null,
@@ -67,7 +67,9 @@ const DBSchedule = {
     { k: 'el_group', label: 'EL Group', type: 'text', width: 70 },
     { k: 'cable_mm2', label: 'Cable', type: 'number', unit: 'mm²', width: 74 },
     { k: 'ecc_mm2', label: 'ECC', type: 'number', unit: 'mm²', width: 74,
-      title: 'Earth continuity conductor. Blank leaves it unchanged; type "auto" to clear it back to the IEC 60364-5-54 Table 54.7 minimum.' },
+      title: 'Earth continuity conductor. Blank leaves it unchanged; type "auto" to clear it (the check then assumes the smallest compliant size and warns if a twin-and-earth CPC would fail).' },
+    { k: 'disconnect_time_s', label: 'Disc. t', type: 'number', unit: 's', width: 62,
+      title: 'Disconnection time at the earth-fault current, read off the device\'s curve — lets a way that does not reach the magnetic trip pass within the IEC 60364-4-41 limit (0.4 s final, 5 s distribution). Type "auto" to clear.' },
     { k: 'cable_m', label: 'Length', type: 'number', unit: 'm', width: 62 },
     { k: 'leakage_ma', label: 'Leak', type: 'number', unit: 'mA', width: 62 },
     { k: 'load_va', label: 'Load', type: 'number', unit: 'VA', width: 80 },
@@ -706,8 +708,9 @@ const DBSchedule = {
         } else if (kind === 'ecc') {
           const way = byId.get(td.dataset.id);
           const declared = way && way.ecc_mm2 != null && way.ecc_mm2 !== '' && Number(way.ecc_mm2) > 0;
+          const assumed = row.ecc_assumed_mm2 != null ? row.ecc_assumed_mm2 : row.ecc_required_mm2;
           text = declared ? `${Number(way.ecc_mm2)}`
-            : (row.ecc_required_mm2 != null ? `${row.ecc_required_mm2} min` : '—');
+            : (assumed != null ? `${assumed} min` : '—');
           status = row.ecc_status || 'none';
           title = row.ecc_message || '';
         }
@@ -859,7 +862,7 @@ const DBSchedule = {
         <td data-label="EL Grp"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
         <td data-label="Leak (mA)"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
         <td data-label="Cable mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value."></td>
-        <td data-label="ECC mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank to take the IEC 60364-5-54 Table 54.7 minimum for the live conductor."></td>
+        <td data-label="ECC mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank and the check assumes the smallest compliant size (Table 54.7 or the IEC 60364-5-54 §543.1.2 adiabatic check), warning when a twin-and-earth CPC would fail."></td>
         <td data-label="Len (m)"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
         <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
         <td data-label="PF"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
@@ -1418,7 +1421,7 @@ const DBSchedule = {
       if (f.type === 'number') {
         // A blank ECC means "Table 54.7 minimum", which blank can no longer
         // express here (it means "no change") — so `auto` is the keyword.
-        if (f.k === 'ecc_mm2' && /^auto$/i.test(raw)) { changes.push({ f, val: null }); continue; }
+        if ((f.k === 'ecc_mm2' || f.k === 'disconnect_time_s') && /^auto$/i.test(raw)) { changes.push({ f, val: null }); continue; }
         let v = parseFloat(raw);
         if (isNaN(v)) { rejected.push(f.label); continue; }
         if (f.k === 'demand_factor') v = Math.min(1, Math.max(0, v));

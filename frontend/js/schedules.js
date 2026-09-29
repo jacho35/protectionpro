@@ -56,6 +56,8 @@ const Schedules = {
           <input type="number" id="sch-ambient" value="30" min="10" max="60" step="5"> °C</label>
         <label title="IEC 60364-5-52 reference installation method">Method
           <select id="sch-method">${methodOpts}</select></label>
+        <label title="IEC 60364-5-52 Table G.52.1 voltage-drop limits from the origin: public LV supply 3 % lighting / 5 % other; private supply (own transformer or generator) 6 % / 8 %">Supply
+          <select id="sch-supply"><option value="public">Public LV (3/5 %)</option><option value="private">Private (6/8 %)</option></select></label>
         <label title="Grouping arrangement and the number of circuits sharing the route">Grouping
           <select id="sch-grouping">${groupOpts}</select>
           <input type="number" id="sch-group-n" value="0" min="0" step="1"
@@ -80,7 +82,7 @@ const Schedules = {
       this._commitCurrent();
       if (typeof SLDGen !== 'undefined') SLDGen.generateForBoard(this._boardId);
     });
-    for (const id of ['sch-ambient', 'sch-method', 'sch-grouping', 'sch-group-n']) {
+    for (const id of ['sch-ambient', 'sch-method', 'sch-grouping', 'sch-group-n', 'sch-supply']) {
       ws.querySelector('#' + id).addEventListener('change', () => {
         if (id === 'sch-method') {
           const c = this._installControls();
@@ -253,6 +255,7 @@ const Schedules = {
       method: document.getElementById('sch-method'),
       grouping: document.getElementById('sch-grouping'),
       groupN: document.getElementById('sch-group-n'),
+      supply: document.getElementById('sch-supply'),
     };
   },
 
@@ -266,6 +269,7 @@ const Schedules = {
     c.method.value = inst.method || 'B1';
     this._fillGrouping(c.method.value, inst.grouping || 'bunched');
     c.groupN.value = inst.circuits ?? 0;
+    if (c.supply) c.supply.value = inst.supply === 'private' ? 'private' : 'public';
   },
 
   // Grouping rows for the method's family (air B.52.17, ducts B.52.19, direct
@@ -290,6 +294,9 @@ const Schedules = {
       grouping: c.grouping.value || 'bunched',
       circuits: parseInt(c.groupN.value, 10) || 0,
     };
+    // Only stored when non-default, so boards saved before this field stay
+    // byte-identical when merely visited.
+    if (c.supply && c.supply.value === 'private') next.supply = 'private';
     const cur = comp.props.way_install || null;
     if (JSON.stringify(cur) === JSON.stringify(next)) return;
     comp.props.way_install = next;

@@ -337,8 +337,16 @@ class TestEccVerdict:
         assert r["ecc_mm2"] is None
         assert r["ecc_required_mm2"] == 2.5
         assert "assumed_min_ecc" in (r["zs_basis"] or "")
-        # The assumed conductor is the required minimum, so R_ecc == R_phase.
-        assert r["r_ecc_ohm"] == pytest.approx(r["r_phase_ohm"])
+        # Re-baselined in the DB circuit-check review [DB1]: the assumed ECC is
+        # the SMALLEST compliant one (Table 54.7 or the §543.1.2 adiabatic
+        # check), not the Table 54.7 size — assuming the table size (= the live
+        # conductor) understated Zs for reduced-CPC cables. Here 1.0 mm²:
+        # R2 = 17.5/1.0 Ω/km × 1.20 (70 °C) × 0.03 km = 0.63 Ω, and by hand
+        # I = 1.1·U0/Zs, √(I²·0.1 s)/115 ≤ 1.0 mm².
+        assert r["ecc_assumed_mm2"] == 1.0
+        assert r["r_ecc_ohm"] == pytest.approx(17.5 * 1.2 * 0.03, abs=1e-3)
+        i_ad = 1.1 * (400 / math.sqrt(3)) / r["zs_ohm"]
+        assert math.sqrt(i_ad ** 2 * 0.1) / 115 <= 1.0
 
     def test_undersized_ecc_fails(self):
         p = _board_project([_way(cable_mm2=10, ecc_mm2=4)])
