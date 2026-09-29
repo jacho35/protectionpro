@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof PlanMarkup !== 'undefined') PlanMarkup.init();
   if (typeof Interlocking !== 'undefined') Interlocking.init();
   if (typeof Schedules !== 'undefined') Schedules.init();
+  if (typeof StreetLight !== 'undefined') StreetLight.init();
   if (typeof Sharing !== 'undefined') Sharing.init();
   // Auth last: shows the login gate (a blocking modal) over the initialized —
   // but not-yet-interactable-behind-the-overlay — app until a session exists.
@@ -90,17 +91,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const planWs = document.getElementById('plan-workspace');
     const interlockWs = document.getElementById('interlock-workspace');
     const schedWs = document.getElementById('schedules-workspace');
+    const slWs = document.getElementById('streetlight-workspace');
     // Stand down whichever secondary workspace we're leaving.
     if (typeof Retic !== 'undefined' && Retic._active && name !== 'retic') Retic.deactivate();
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && name !== 'plan') PlanMarkup.deactivate();
     if (typeof Interlocking !== 'undefined' && Interlocking._active && name !== 'interlock') Interlocking.deactivate();
     if (typeof Schedules !== 'undefined' && Schedules._active && name !== 'schedules') Schedules.deactivate();
+    if (typeof StreetLight !== 'undefined' && StreetLight._active && name !== 'streetlight') StreetLight.deactivate();
 
     appc.style.display = (name === 'sld') ? '' : 'none';
     if (reticWs) reticWs.style.display = (name === 'retic') ? 'flex' : 'none';
     if (planWs) planWs.style.display = (name === 'plan') ? 'flex' : 'none';
     if (interlockWs) interlockWs.style.display = (name === 'interlock') ? 'flex' : 'none';
     if (schedWs) schedWs.style.display = (name === 'schedules') ? 'flex' : 'none';
+    if (slWs) slWs.style.display = (name === 'streetlight') ? 'flex' : 'none';
     // Mobile: flag secondary workspaces so the phone CSS hides SLD-only chrome
     // (FABs, selection bar, Components/Analysis nav) and fits the workspace
     // between the mobile header and bottom nav.
@@ -110,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.classList.toggle('ws-secondary-active', name !== 'sld');
     if (typeof window.closeAllToolbarMenus === 'function') window.closeAllToolbarMenus();
 
-    const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', plan: 'btn-workspace-plan', interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules' };
+    const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', streetlight: 'btn-workspace-streetlight', plan: 'btn-workspace-plan', interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules' };
     for (const [key, id] of Object.entries(tabs)) {
       const b = document.getElementById(id);
       if (!b) continue;
@@ -123,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (name === 'plan' && typeof PlanMarkup !== 'undefined') { PlanMarkup.activate(); }
     else if (name === 'interlock' && typeof Interlocking !== 'undefined') { Interlocking.activate(); }
     else if (name === 'schedules' && typeof Schedules !== 'undefined') { Schedules.activate(); }
+    else if (name === 'streetlight' && typeof StreetLight !== 'undefined') { StreetLight.activate(); }
   }
   window.switchWorkspace = switchWorkspace;
   for (const [name, id] of [
@@ -131,6 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['plan', 'btn-workspace-plan'],
     ['interlock', 'btn-workspace-interlock'],
     ['schedules', 'btn-workspace-schedules'],
+    ['streetlight', 'btn-workspace-streetlight'],
   ]) {
     document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
   }

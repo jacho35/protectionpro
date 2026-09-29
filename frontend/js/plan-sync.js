@@ -144,7 +144,9 @@ const PlanSync = {
     }
     for (const [kid, v] of Object.entries(kva)) {
       const krow = R.kiosks.find(k => k.id === kid);
-      if (krow) { krow.streetLightKVA = +v.toFixed(3); summary.sl++; }
+      // A kiosk with circuits in the Street lighting workspace gets its load
+      // from those (per luminaire), not this flat per-pole estimate.
+      if (krow && !krow.streetLightFromCircuits) { krow.streetLightKVA = +v.toFixed(3); summary.sl++; }
     }
 
     AppState.dirty = true;

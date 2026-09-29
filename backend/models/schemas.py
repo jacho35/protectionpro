@@ -429,6 +429,16 @@ class AdmdRequest(BaseModel):
     minisubs: list[MinisubInput] = []       # empty ⇒ one implicit source
 
 
+class StreetLightingRequest(BaseModel):
+    """Street lighting circuits (Reticulation › Street lighting). Each circuit
+    is a dict of camelCase keys resolved by the frontend (cable R/X, luminaire
+    W/pf, protection Ia, Ze, supply VD) — see analysis/street_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    circuits: list[dict] = []
+    candidateCables: list[dict] = []        # for the "smallest cable" search
+
+
 class AdmdKioskResult(BaseModel):
     model_config = {"extra": "allow"}
 

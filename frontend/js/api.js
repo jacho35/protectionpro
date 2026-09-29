@@ -462,6 +462,11 @@ const API = {
     return this.request('/analysis/admd', 'POST', { settings, kiosks, minisubs });
   },
 
+  // Street lighting circuits (Reticulation › Street lighting)
+  async runStreetLighting(body) {
+    return this.request('/analysis/street-lighting', 'POST', body);
+  },
+
   // Run study manager (batch all analyses)
   async runStudyManager(enabledStudies = null) {
     const data = AppState.toJSON();
