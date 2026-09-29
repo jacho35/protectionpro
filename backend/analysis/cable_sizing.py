@@ -471,11 +471,40 @@ def _find_cable_buses(cable_id, adj, comp_map):
     return buses
 
 
+def _recompute_ampacity_block(block):
+    """[T1][T2] Installed rating of a saved calculator block from the IEC
+    60364-5-52 tables, or None when the block lacks the inputs or the
+    standard tabulates no value. SLD cables are three-phase: 3 loaded
+    conductors unless the block says otherwise."""
+    from .iec_60364_tables import installed_ampacity
+    try:
+        size = float(block.get("size_mm2") or 0)
+    except (TypeError, ValueError):
+        return None
+    if size <= 0 or not block.get("method"):
+        return None
+    try:
+        amp = installed_ampacity(
+            size, block.get("method"), block.get("conductor") or "cu",
+            block.get("insulation") or "xlpe",
+            float(block.get("ambient_c") if block.get("ambient_c") is not None else 30),
+            block.get("grouping") or "bunched", int(block.get("circuits") or 1),
+            block.get("soil_kmw"), block.get("depth_m"),
+            loaded=int(block.get("loaded") or 3))
+    except (TypeError, ValueError, KeyError):
+        return None
+    if amp["derated_a"] is None:
+        return None
+    return {"base_a": amp["base_a"], "derating": amp["derating"],
+            "derated_a": amp["derated_a"]}
+
+
 def _format_ampacity_conditions(amp):
     """Human-readable summary of an applied per-cable IEC 60364-5-52 ampacity
     block, for the cable-sizing result row / report."""
     method = amp.get("method", "?")
-    parts = [f"IEC 60364-5-52 method {method}"]
+    parts = [f"IEC 60364-5-52 method {method}",
+             f"{int(amp.get('loaded') or 3)} loaded conductors"]
     if amp.get("ambient_c") is not None:
         env = "ground" if str(method).startswith("D") else "air"
         parts.append(f"{float(amp['ambient_c']):g}°C {env}")
@@ -483,8 +512,6 @@ def _format_ampacity_conditions(amp):
         parts.append(f"{int(amp['circuits'])} circ")
     if amp.get("soil_kmw") is not None:
         parts.append(f"{float(amp['soil_kmw']):g} K·m/W")
-    if amp.get("depth_m") is not None:
-        parts.append(f"{float(amp['depth_m']):g} m deep")
     if amp.get("derating") is not None:
         parts.append(f"derate {float(amp['derating']):.2f}")
     if amp.get("base_a") is not None:
@@ -974,6 +1001,25 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
                 amp_derated_a = float(amp_block.get("derated_a", 0) or 0)
             except (TypeError, ValueError):
                 amp_derated_a = None
+            # [T1][T2] Recompute the installed rating from the saved install
+            # conditions with the corrected IEC 60364-5-52 tables. The saved
+            # derated_a came from the old table (up to 36 % high for a three-
+            # phase SLD cable) and would otherwise stay wrong in every project
+            # saved before the correction.
+            fresh = _recompute_ampacity_block(amp_block)
+            if fresh is not None:
+                if amp_derated_a and abs(fresh["derated_a"] - amp_derated_a) > 0.01 * amp_derated_a:
+                    warning_reasons.append(
+                        f"Installed ampacity recomputed from the IEC 60364-5-52 tables: "
+                        f"{fresh['derated_a']:.1f} A (the {amp_derated_a:.1f} A saved on the "
+                        f"cable came from the superseded table) — re-apply the calculator")
+                amp_derated_a = fresh["derated_a"]
+                amp_block = {**amp_block, "base_a": fresh["base_a"],
+                             "derating": fresh["derating"], "derated_a": fresh["derated_a"]}
+            elif amp_derated_a:
+                warning_reasons.append(
+                    "Installed ampacity: IEC 60364-5-52 tabulates no value for the saved "
+                    "size/method — the saved rating is used; re-apply the calculator")
             if amp_derated_a and amp_derated_a > 0:
                 amp_conditions = _format_ampacity_conditions(amp_block)
 

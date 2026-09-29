@@ -262,43 +262,11 @@ const LOAD_CLASS_CORRECTIONS = ['AMEU', 'British', 'None'];
 const ESTIMATION_METHODS = ['Empirical', 'Herman Beta'];
 
 // ─── IEC 60364-5-52 Standards Database ───
-// Reference installation methods per Table B.52.1
-const IEC_INSTALLATION_METHODS = [
-  { code: 'A1', description: 'Insulated conductors in conduit in thermally insulating wall', type: 'enclosed' },
-  { code: 'A2', description: 'Multi-core cable in conduit in thermally insulating wall', type: 'enclosed' },
-  { code: 'B1', description: 'Insulated conductors in conduit on wall or in trunking', type: 'enclosed' },
-  { code: 'B2', description: 'Multi-core cable in conduit on wall or in trunking', type: 'enclosed' },
-  { code: 'C',  description: 'Single-core or multi-core cable direct on wall (clipped)', type: 'open' },
-  { code: 'D1', description: 'Multi-core cable in underground ducts', type: 'buried' },
-  { code: 'D2', description: 'Multi-core cable direct buried', type: 'buried' },
-  { code: 'E',  description: 'Single-core cables in free air on perforated tray (touching)', type: 'open' },
-  { code: 'F',  description: 'Single-core cables in free air on tray (spaced)', type: 'open' },
-  { code: 'G',  description: 'Single-core cables in free air spaced from wall (cleats)', type: 'open' },
-];
-
-// Base current-carrying capacity (Amps) per IEC 60364-5-52 Table B.52.2–B.52.5
-// 3-phase circuits, PVC and XLPE insulation, 2 loaded conductors (single-phase) or 3 loaded (3-phase)
-// Reference conditions: 30°C ambient air, 20°C ground, 2.5 K·m/W soil resistivity
-// Format: { size_mm2: { method: { pvc_cu, xlpe_cu, pvc_al, xlpe_al } } }
-const IEC_AMPACITY_TABLE = {
-  1.5:   { A1: { pvc_cu: 14.5, xlpe_cu: 19.5, pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 17.5, xlpe_cu: 23,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 22,   xlpe_cu: 26,   pvc_al: null,  xlpe_al: null  } },
-  2.5:   { A1: { pvc_cu: 19.5, xlpe_cu: 27,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 24,   xlpe_cu: 31,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 30,   xlpe_cu: 36,   pvc_al: null,  xlpe_al: null  } },
-  4:     { A1: { pvc_cu: 26,   xlpe_cu: 36,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 32,   xlpe_cu: 42,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 40,   xlpe_cu: 49,   pvc_al: null,  xlpe_al: null  } },
-  6:     { A1: { pvc_cu: 34,   xlpe_cu: 46,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 41,   xlpe_cu: 54,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 51,   xlpe_cu: 63,   pvc_al: null,  xlpe_al: null  } },
-  10:    { A1: { pvc_cu: 46,   xlpe_cu: 63,   pvc_al: null,  xlpe_al: null  }, B1: { pvc_cu: 57,   xlpe_cu: 75,   pvc_al: null,  xlpe_al: null  }, C: { pvc_cu: 70,   xlpe_cu: 86,   pvc_al: null,  xlpe_al: null  } },
-  16:    { A1: { pvc_cu: 61,   xlpe_cu: 85,   pvc_al: 47,    xlpe_al: 65    }, B1: { pvc_cu: 76,   xlpe_cu: 100,  pvc_al: 57,    xlpe_al: 76    }, C: { pvc_cu: 94,   xlpe_cu: 115,  pvc_al: 71,    xlpe_al: 88    }, D1: { pvc_cu: 80,  xlpe_cu: 95,  pvc_al: 62,  xlpe_al: 73 }, D2: { pvc_cu: 87,  xlpe_cu: 102, pvc_al: 67,  xlpe_al: 78 } },
-  25:    { A1: { pvc_cu: 80,   xlpe_cu: 112,  pvc_al: 62,    xlpe_al: 86    }, B1: { pvc_cu: 101,  xlpe_cu: 133,  pvc_al: 78,    xlpe_al: 101   }, C: { pvc_cu: 124,  xlpe_cu: 150,  pvc_al: 95,    xlpe_al: 116   }, D1: { pvc_cu: 106, xlpe_cu: 121, pvc_al: 81,  xlpe_al: 93 }, D2: { pvc_cu: 114, xlpe_cu: 131, pvc_al: 87,  xlpe_al: 100 }, E: { pvc_cu: 131, xlpe_cu: 161, pvc_al: 100, xlpe_al: 123 }, F: { pvc_cu: 146, xlpe_cu: 182, pvc_al: 112, xlpe_al: 140 } },
-  35:    { A1: { pvc_cu: 99,   xlpe_cu: 138,  pvc_al: 77,    xlpe_al: 107   }, B1: { pvc_cu: 125,  xlpe_cu: 164,  pvc_al: 96,    xlpe_al: 125   }, C: { pvc_cu: 154,  xlpe_cu: 185,  pvc_al: 118,   xlpe_al: 142   }, D1: { pvc_cu: 131, xlpe_cu: 146, pvc_al: 100, xlpe_al: 113 }, D2: { pvc_cu: 138, xlpe_cu: 157, pvc_al: 107, xlpe_al: 121 }, E: { pvc_cu: 162, xlpe_cu: 200, pvc_al: 124, xlpe_al: 153 }, F: { pvc_cu: 181, xlpe_cu: 226, pvc_al: 139, xlpe_al: 174 } },
-  50:    { A1: { pvc_cu: 119,  xlpe_cu: 168,  pvc_al: 93,    xlpe_al: 130   }, B1: { pvc_cu: 151,  xlpe_cu: 198,  pvc_al: 117,   xlpe_al: 151   }, C: { pvc_cu: 188,  xlpe_cu: 225,  pvc_al: 144,   xlpe_al: 173   }, D1: { pvc_cu: 153, xlpe_cu: 173, pvc_al: 118, xlpe_al: 133 }, D2: { pvc_cu: 161, xlpe_cu: 185, pvc_al: 124, xlpe_al: 142 }, E: { pvc_cu: 196, xlpe_cu: 242, pvc_al: 150, xlpe_al: 186 }, F: { pvc_cu: 219, xlpe_cu: 275, pvc_al: 168, xlpe_al: 212 } },
-  70:    { A1: { pvc_cu: 151,  xlpe_cu: 213,  pvc_al: 118,   xlpe_al: 165   }, B1: { pvc_cu: 192,  xlpe_cu: 253,  pvc_al: 149,   xlpe_al: 192   }, C: { pvc_cu: 238,  xlpe_cu: 283,  pvc_al: 183,   xlpe_al: 218   }, D1: { pvc_cu: 188, xlpe_cu: 210, pvc_al: 144, xlpe_al: 162 }, D2: { pvc_cu: 197, xlpe_cu: 225, pvc_al: 152, xlpe_al: 173 }, E: { pvc_cu: 251, xlpe_cu: 310, pvc_al: 192, xlpe_al: 237 }, F: { pvc_cu: 281, xlpe_cu: 353, pvc_al: 216, xlpe_al: 272 } },
-  95:    { A1: { pvc_cu: 182,  xlpe_cu: 258,  pvc_al: 142,   xlpe_al: 200   }, B1: { pvc_cu: 232,  xlpe_cu: 306,  pvc_al: 179,   xlpe_al: 233   }, C: { pvc_cu: 289,  xlpe_cu: 344,  pvc_al: 222,   xlpe_al: 265   }, D1: { pvc_cu: 222, xlpe_cu: 249, pvc_al: 171, xlpe_al: 191 }, D2: { pvc_cu: 236, xlpe_cu: 268, pvc_al: 182, xlpe_al: 207 }, E: { pvc_cu: 304, xlpe_cu: 377, pvc_al: 233, xlpe_al: 289 }, F: { pvc_cu: 341, xlpe_cu: 430, pvc_al: 261, xlpe_al: 331 } },
-  120:   { A1: { pvc_cu: 210,  xlpe_cu: 299,  pvc_al: 164,   xlpe_al: 232   }, B1: { pvc_cu: 269,  xlpe_cu: 354,  pvc_al: 206,   xlpe_al: 270   }, C: { pvc_cu: 337,  xlpe_cu: 400,  pvc_al: 259,   xlpe_al: 308   }, D1: { pvc_cu: 251, xlpe_cu: 283, pvc_al: 194, xlpe_al: 218 }, D2: { pvc_cu: 270, xlpe_cu: 306, pvc_al: 208, xlpe_al: 236 }, E: { pvc_cu: 352, xlpe_cu: 437, pvc_al: 269, xlpe_al: 335 }, F: { pvc_cu: 396, xlpe_cu: 500, pvc_al: 304, xlpe_al: 385 } },
-  150:   { A1: { pvc_cu: 240,  xlpe_cu: 344,  pvc_al: 189,   xlpe_al: 265   }, B1: { pvc_cu: 309,  xlpe_cu: 407,  pvc_al: 236,   xlpe_al: 310   }, C: { pvc_cu: 388,  xlpe_cu: 459,  pvc_al: 299,   xlpe_al: 354   }, D1: { pvc_cu: 278, xlpe_cu: 316, pvc_al: 215, xlpe_al: 244 }, D2: { pvc_cu: 300, xlpe_cu: 343, pvc_al: 232, xlpe_al: 265 }, E: { pvc_cu: 406, xlpe_cu: 504, pvc_al: 311, xlpe_al: 386 }, F: { pvc_cu: 456, xlpe_cu: 577, pvc_al: 351, xlpe_al: 444 } },
-  185:   { A1: { pvc_cu: 274,  xlpe_cu: 392,  pvc_al: 215,   xlpe_al: 304   }, B1: { pvc_cu: 353,  xlpe_cu: 464,  pvc_al: 271,   xlpe_al: 354   }, C: { pvc_cu: 447,  xlpe_cu: 527,  pvc_al: 344,   xlpe_al: 407   }, D1: { pvc_cu: 310, xlpe_cu: 352, pvc_al: 239, xlpe_al: 272 }, D2: { pvc_cu: 337, xlpe_cu: 384, pvc_al: 260, xlpe_al: 296 }, E: { pvc_cu: 467, xlpe_cu: 581, pvc_al: 358, xlpe_al: 446 }, F: { pvc_cu: 526, xlpe_cu: 668, pvc_al: 404, xlpe_al: 515 } },
-  240:   { A1: { pvc_cu: 321,  xlpe_cu: 461,  pvc_al: 252,   xlpe_al: 358   }, B1: { pvc_cu: 415,  xlpe_cu: 546,  pvc_al: 319,   xlpe_al: 418   }, C: { pvc_cu: 530,  xlpe_cu: 621,  pvc_al: 408,   xlpe_al: 480   }, D1: { pvc_cu: 355, xlpe_cu: 406, pvc_al: 274, xlpe_al: 314 }, D2: { pvc_cu: 388, xlpe_cu: 442, pvc_al: 300, xlpe_al: 342 }, E: { pvc_cu: 553, xlpe_cu: 689, pvc_al: 424, xlpe_al: 529 }, F: { pvc_cu: 625, xlpe_cu: 795, pvc_al: 481, xlpe_al: 613 } },
-  300:   { A1: { pvc_cu: 367,  xlpe_cu: 530,  pvc_al: 287,   xlpe_al: 411   }, B1: { pvc_cu: 475,  xlpe_cu: 629,  pvc_al: 365,   xlpe_al: 481   }, C: { pvc_cu: 610,  xlpe_cu: 715,  pvc_al: 470,   xlpe_al: 553   }, D1: { pvc_cu: 397, xlpe_cu: 456, pvc_al: 307, xlpe_al: 353 }, D2: { pvc_cu: 435, xlpe_cu: 498, pvc_al: 336, xlpe_al: 385 }, E: { pvc_cu: 637, xlpe_cu: 795, pvc_al: 488, xlpe_al: 611 }, F: { pvc_cu: 720, xlpe_cu: 920, pvc_al: 554, xlpe_al: 710 } },
-  400:   { A1: { pvc_cu: 438,  xlpe_cu: 634,  pvc_al: 344,   xlpe_al: 492   }, B1: { pvc_cu: 571,  xlpe_cu: 754,  pvc_al: 438,   xlpe_al: 578   }, C: { pvc_cu: 739,  xlpe_cu: 860,  pvc_al: 570,   xlpe_al: 665   }, E: { pvc_cu: 772, xlpe_cu: 964, pvc_al: 591, xlpe_al: 741 }, F: { pvc_cu: 878, xlpe_cu: 1122, pvc_al: 676, xlpe_al: 866 } },
-};
+// [T1][T2][T3] Installation methods, current-carrying capacities and grouping
+// factors are GENERATED into js/iec-60364-data.js (IEC_INSTALLATION_METHODS,
+// IEC_AMPACITY, IEC_GROUPING, IEC_GROUPING_LABELS) from the same reference
+// file as the backend's iec_60364_data.py. Look them up through IecAmpacity
+// below, never directly.
 
 // Ambient temperature correction factors — IEC 60364-5-52 Table B.52.14/15
 // Reference ambient: 30°C for air, 20°C for ground
@@ -313,20 +281,9 @@ const IEC_TEMP_CORRECTION = {
   },
 };
 
-// Grouping correction factors — IEC 60364-5-52 Table B.52.17
-// Bunched cables or cables in conduits (touching, single layer)
-// Key = number of circuits/multi-core cables, value = correction factor
-const IEC_GROUPING_FACTORS = {
-  bunched: { 1: 1.00, 2: 0.80, 3: 0.70, 4: 0.65, 5: 0.60, 6: 0.57, 7: 0.54, 8: 0.52, 9: 0.50, 10: 0.48, 12: 0.45, 14: 0.43, 16: 0.41, 18: 0.39, 20: 0.38 },
-  single_layer_wall:  { 1: 1.00, 2: 0.85, 3: 0.79, 4: 0.75, 5: 0.73, 6: 0.72, 7: 0.72, 8: 0.71, 9: 0.70 },
-  single_layer_floor: { 1: 1.00, 2: 0.88, 3: 0.82, 4: 0.77, 5: 0.75, 6: 0.73, 7: 0.73, 8: 0.72, 9: 0.72 },
-  single_layer_tray_touching: { 1: 1.00, 2: 0.87, 3: 0.82, 4: 0.80, 5: 0.80, 6: 0.79, 7: 0.79, 8: 0.78, 9: 0.78 },
-  single_layer_tray_spaced:   { 1: 1.00, 2: 0.89, 3: 0.81, 4: 0.76, 5: 0.73, 6: 0.72, 7: 0.72, 8: 0.71, 9: 0.70 },
-  trefoil_tray_touching:      { 1: 1.00, 2: 0.81, 3: 0.72, 4: 0.68, 5: 0.66, 6: 0.64, 7: 0.63, 8: 0.62, 9: 0.61 },
-};
-
 // Soil thermal resistivity correction — IEC 60364-5-52 Table B.52.16
-// Reference: 2.5 K·m/W
+// Reference: 2.5 K·m/W. [L2] Published for cables in buried ducts; direct-buried
+// cables would get higher factors below 2.5 K·m/W, so this is conservative for D2.
 const IEC_SOIL_RESISTIVITY_FACTORS = {
   0.5: 1.28,
   0.7: 1.20,
@@ -335,18 +292,6 @@ const IEC_SOIL_RESISTIVITY_FACTORS = {
   2.0: 1.05,
   2.5: 1.00,
   3.0: 0.96,
-};
-
-// Depth of laying correction factors — IEC 60364-5-52 Table B.52.18
-// Reference depth: 0.7m
-const IEC_DEPTH_FACTORS = {
-  0.5: 1.02,
-  0.6: 1.01,
-  0.7: 1.00,
-  0.8: 0.99,
-  1.0: 0.97,
-  1.2: 0.95,
-  1.5: 0.93,
 };
 
 // ─── NEC Article 310 Ampacity Tables ─────────────────────────────────────────
@@ -444,7 +389,98 @@ const IEC_60909_VOLTAGE_FACTORS = {
 };
 
 // Standard cable sizes (mm²) per IEC
-const IEC_STANDARD_SIZES = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
+const IEC_STANDARD_SIZES = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500, 630];
+
+// ─── IEC 60364-5-52 lookups (mirror of backend/analysis/iec_60364_tables.py) ───
+const IecAmpacity = {
+  // Legacy grouping names saved in older projects → the IEC row they describe.
+  LEGACY: {
+    single_layer_wall: 'single_layer_wall_floor',
+    single_layer_floor: 'single_layer_wall_floor',
+    single_layer_tray_touching: 'single_layer_perforated_tray',
+    single_layer_tray_spaced: 'single_layer_perforated_tray',
+    trefoil_tray_touching: 'single_layer_perforated_tray',
+  },
+
+  method(code) {
+    return IEC_INSTALLATION_METHODS.find(m => m.code === code) || null;
+  },
+
+  isBuried(code) {
+    const m = this.method(code);
+    return !!m && m.env === 'ground';
+  },
+
+  _key(conductor, insulation) {
+    const c = String(conductor || 'cu').toLowerCase().startsWith('al') ? 'al' : 'cu';
+    const i = String(insulation || 'pvc').toLowerCase() === 'xlpe' ? 'xlpe' : 'pvc';
+    return `${i}_${c}`;
+  },
+
+  // Base capacity (A) or null. loaded: 2 = single-phase, 3 = three-phase (default).
+  base(size, method, conductor, insulation, loaded = 3) {
+    const cells = ((IEC_AMPACITY[this._key(conductor, insulation)] || {})[Number(loaded) === 2 ? 2 : 3] || {})[method];
+    if (!cells) return null;
+    const v = cells[String(Number(size))];
+    return v != null ? v : null;
+  },
+
+  // Grouping rows offered for a method: air rows for A–C/E–G, B.52.19 for D1, B.52.18 for D2.
+  groupingOptions(method) {
+    const fam = method === 'D1' ? 'ducts' : method === 'D2' ? 'buried' : 'air';
+    return Object.keys(IEC_GROUPING).filter(n => IEC_GROUPING[n].env === fam)
+      .map(n => [n, IEC_GROUPING_LABELS[n] || n]);
+  },
+
+  // { name, note } — the IEC row actually used for this method.
+  resolveGrouping(name, method) {
+    let n = this.LEGACY[name] || name;
+    if (!IEC_GROUPING[n]) n = 'bunched';
+    const buried = this.isBuried(method);
+    const fam = IEC_GROUPING[n].env;
+    if (buried && fam === 'air') {
+      return { name: method === 'D1' ? 'ducts_mc_touching' : 'buried_touching',
+               note: `buried method ${method}: grouping from ${method === 'D1' ? 'B.52.19' : 'B.52.18'} (touching)` };
+    }
+    if (!buried && fam !== 'air') return { name: 'bunched', note: `air method ${method}: B.52.17 bunched` };
+    return { name: n, note: '' };
+  },
+
+  // [L1] Step UP to the next tabulated circuit count (no interpolation).
+  groupFactor(name, circuits) {
+    const f = IEC_GROUPING[name].factors;
+    const n = Math.max(1, parseInt(circuits, 10) || 1);
+    const counts = Object.keys(f).map(Number).sort((a, b) => a - b);
+    for (const c of counts) if (c >= n) return { factor: f[c], beyond: false };
+    return { factor: f[counts[counts.length - 1]], beyond: name === 'bunched' || IEC_GROUPING[name].env !== 'air' };
+  },
+
+  _interp(table, x) {
+    const keys = Object.keys(table).map(Number).sort((a, b) => a - b);
+    if (x <= keys[0]) return table[keys[0]];
+    if (x >= keys[keys.length - 1]) return table[keys[keys.length - 1]];
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (keys[i] <= x && x <= keys[i + 1]) {
+        const a = table[keys[i]], b = table[keys[i + 1]];
+        return a + (x - keys[i]) / (keys[i + 1] - keys[i]) * (b - a);
+      }
+    }
+    return 1.0;
+  },
+
+  // Combined derating per IEC 60364-5-52 (ambient × grouping × soil). No depth factor [T5].
+  derating({ method, ambient = 30, insulation = 'pvc', grouping = 'bunched', circuits = 1, soil = 2.5 }) {
+    const buried = this.isBuried(method);
+    const env = buried ? 'ground' : 'air';
+    const ins = String(insulation).toLowerCase() === 'xlpe' ? 'xlpe' : 'pvc';
+    const temp = this._interp(IEC_TEMP_CORRECTION[env][ins], Number(ambient));
+    const g = this.resolveGrouping(grouping, method);
+    const gf = this.groupFactor(g.name, circuits);
+    const soilF = buried ? this._interp(IEC_SOIL_RESISTIVITY_FACTORS, Number(soil)) : 1.0;
+    return { env, temp, group: gf.factor, groupName: g.name, groupNote: g.note,
+             beyond: gf.beyond, soil: soilF, combined: temp * gf.factor * soilF };
+  },
+};
 
 // ─── IDMT Relay Curve Parameters ───
 // IEC 60255 inverse-time curves: t = TDS * (k / (M^a - 1)) + c

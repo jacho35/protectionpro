@@ -1051,7 +1051,7 @@ const Properties = {
 
   // ═══ Per-cable IEC 60364-5-52 installed-ampacity calculator ══════════════
   // Derates a cable's tabulated base ampacity for its real installation
-  // conditions (method, ambient, grouping, soil resistivity, burial depth) and
+  // conditions (method, loaded conductors, ambient, grouping, soil resistivity) and
   // locks the resulting in-service rating into the cable's `rated_amps`. The
   // conditions are stored in `props.ampacity` so the backend cable-sizing study
   // uses the derated rating directly (no run-level re-derating).
@@ -1068,11 +1068,11 @@ const Properties = {
         insulation: amp.insulation || 'xlpe',
         size: amp.size_mm2 || null,
         method: amp.method || null,
+        loaded: Number(amp.loaded) === 2 ? 2 : 3,
         ambient: amp.ambient_c != null ? amp.ambient_c : 30,
-        grouping: amp.grouping || 'bunched',
+        grouping: IecAmpacity.LEGACY[amp.grouping] || amp.grouping || 'bunched',
         circuits: amp.circuits || 1,
         soil: amp.soil_kmw != null ? amp.soil_kmw : 2.5,
-        depth: amp.depth_m != null ? amp.depth_m : 0.7,
         current: amp.design_current_a != null ? amp.design_current_a : (parseFloat(p.standalone_current_a) || null),
       };
     }
@@ -1102,8 +1102,8 @@ const Properties = {
       snapped = IEC_STANDARD_SIZES.find(s => s >= size - 1e-6) || IEC_STANDARD_SIZES[IEC_STANDARD_SIZES.length - 1];
     }
     return {
-      conductor, insulation, size: snapped, method: null,
-      ambient: 30, grouping: 'bunched', circuits: 1, soil: 2.5, depth: 0.7,
+      conductor, insulation, size: snapped, method: null, loaded: 3,
+      ambient: 30, grouping: 'bunched', circuits: 1, soil: 2.5,
       current: parseFloat(p.standalone_current_a) || null,
     };
   },
@@ -1116,7 +1116,7 @@ const Properties = {
     const basics = this._resolveCableBasics(comp);
     document.getElementById('ampacity-modal-body').innerHTML = this._buildAmpacityForm(basics);
     ['amp-size', 'amp-conductor', 'amp-insulation', 'amp-method', 'amp-temp',
-     'amp-grouping', 'amp-circuits', 'amp-soil', 'amp-depth', 'amp-current'].forEach(id => {
+     'amp-grouping', 'amp-circuits', 'amp-soil', 'amp-loaded', 'amp-current'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', () => this._recalcAmpacity());
@@ -1136,30 +1136,27 @@ const Properties = {
     const opt = (v, label, sel) => `<option value="${escHtml(String(v))}"${String(sel) === String(v) ? ' selected' : ''}>${label}</option>`;
     const sizeOpts = (typeof IEC_STANDARD_SIZES !== 'undefined' ? IEC_STANDARD_SIZES : [])
       .map(s => opt(s, `${s} mm²`, b.size || 95)).join('');
-    const methodOpts = (typeof IEC_INSTALLATION_METHODS !== 'undefined' ? IEC_INSTALLATION_METHODS : [])
-      .map(m => opt(m.code, `${m.code} — ${escHtml(m.description)}`, b.method || 'C')).join('');
-    const groupOpts = (typeof IEC_GROUPING_FACTORS !== 'undefined' ? Object.keys(IEC_GROUPING_FACTORS) : [])
-      .map(g => opt(g, g.replace(/_/g, ' '), b.grouping)).join('');
-    const soilOpts = (typeof IEC_SOIL_RESISTIVITY_FACTORS !== 'undefined' ? Object.keys(IEC_SOIL_RESISTIVITY_FACTORS) : [])
+    const method = b.method || 'C';
+    const methodOpts = IEC_INSTALLATION_METHODS
+      .map(m => opt(m.code, `${m.code} — ${escHtml(m.description)}`, method)).join('');
+    const soilOpts = Object.keys(IEC_SOIL_RESISTIVITY_FACTORS)
       .map(s => opt(s, `${s} K·m/W`, b.soil)).join('');
-    const depthOpts = (typeof IEC_DEPTH_FACTORS !== 'undefined' ? Object.keys(IEC_DEPTH_FACTORS) : [])
-      .map(d => opt(d, `${d} m`, b.depth)).join('');
     return `
       <div class="iec-calc-form">
         <div class="iec-calc-row">
           <div class="iec-calc-field"><label>Conductor size</label><select id="amp-size">${sizeOpts}</select></div>
           <div class="iec-calc-field"><label>Conductor</label><select id="amp-conductor">${opt('cu', 'Copper', b.conductor)}${opt('al', 'Aluminium', b.conductor)}</select></div>
           <div class="iec-calc-field"><label>Insulation</label><select id="amp-insulation">${opt('xlpe', 'XLPE (90°C)', b.insulation)}${opt('pvc', 'PVC (70°C)', b.insulation)}</select></div>
+          <div class="iec-calc-field"><label title="IEC 60364-5-52 rates a single-phase circuit on two loaded conductors (Tables B.52.2/.3) and a three-phase circuit on three (B.52.4/.5)">Loaded conductors</label><select id="amp-loaded">${opt(3, '3 — three-phase', b.loaded || 3)}${opt(2, '2 — single-phase', b.loaded || 3)}</select></div>
         </div>
         <div class="iec-calc-row">
           <div class="iec-calc-field" style="flex:2"><label>Installation method</label><select id="amp-method">${methodOpts}</select></div>
           <div class="iec-calc-field"><label>Ambient temp (°C)</label><input type="number" id="amp-temp" value="${b.ambient}" min="10" max="80" step="5"></div>
         </div>
         <div class="iec-calc-row">
-          <div class="iec-calc-field"><label>Grouping</label><select id="amp-grouping">${groupOpts}</select></div>
+          <div class="iec-calc-field" style="flex:2"><label>Grouping</label><select id="amp-grouping" data-sel="${escHtml(String(b.grouping || 'bunched'))}"></select></div>
           <div class="iec-calc-field"><label>No. of circuits</label><input type="number" id="amp-circuits" value="${b.circuits}" min="1" max="20" step="1"></div>
           <div class="iec-calc-field" id="amp-soil-group" style="display:none"><label>Soil ρ (K·m/W)</label><select id="amp-soil">${soilOpts}</select></div>
-          <div class="iec-calc-field" id="amp-depth-group" style="display:none"><label>Depth of laying (m)</label><select id="amp-depth">${depthOpts}</select></div>
         </div>
         <div class="iec-calc-row">
           <div class="iec-calc-field" style="flex:2"><label>Design / load current (A) — optional, for margin check</label><input type="number" id="amp-current" value="${b.current != null ? b.current : ''}" min="0" step="1" placeholder="e.g. 250"></div>
@@ -1168,43 +1165,45 @@ const Properties = {
       <div id="amp-results" class="iec-calc-results"></div>`;
   },
 
+  // Grouping rows depend on the method (air / ducts / direct burial): rebuild
+  // the list when the family changes, keeping the selection when it still fits.
+  _syncGroupingOptions(selectId, method) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const opts = IecAmpacity.groupingOptions(method);
+    const fam = opts.map(o => o[0]).join('|');
+    if (sel.dataset.fam !== fam) {
+      const want = IecAmpacity.resolveGrouping(sel.value || sel.dataset.sel || 'bunched', method).name;
+      sel.innerHTML = opts.map(([v, l]) => `<option value="${v}"${v === want ? ' selected' : ''}>${escHtml(l)}</option>`).join('');
+      sel.dataset.fam = fam;
+    }
+  },
+
   _recalcAmpacity() {
     const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
     const conductor = val('amp-conductor');
     const insulation = val('amp-insulation');
     const method = val('amp-method');
+    this._syncGroupingOptions('amp-grouping', method);
     const size = parseFloat(val('amp-size'));
+    const loaded = parseInt(val('amp-loaded'), 10) === 2 ? 2 : 3;
     const ambient = parseFloat(val('amp-temp')) || 30;
     const grouping = val('amp-grouping');
     const circuits = parseInt(val('amp-circuits'), 10) || 1;
-    const isBuried = String(method).startsWith('D');
+    const isBuried = IecAmpacity.isBuried(method);
     const soil = isBuried ? parseFloat(val('amp-soil')) : 2.5;
-    const depth = isBuried ? parseFloat(val('amp-depth')) : 0.7;
     const current = parseFloat(val('amp-current')) || 0;
 
     const soilGroup = document.getElementById('amp-soil-group');
-    const depthGroup = document.getElementById('amp-depth-group');
     if (soilGroup) soilGroup.style.display = isBuried ? '' : 'none';
-    if (depthGroup) depthGroup.style.display = isBuried ? '' : 'none';
 
-    const interp = StandardData._interpolateFactor.bind(StandardData);
-    const env = isBuried ? 'ground' : 'air';
-    const tempFactor = interp(IEC_TEMP_CORRECTION[env][insulation], ambient);
-    const groupData = IEC_GROUPING_FACTORS[grouping] || IEC_GROUPING_FACTORS.bunched;
-    const groupFactor = interp(groupData, circuits);
-    const soilFactor = isBuried ? interp(IEC_SOIL_RESISTIVITY_FACTORS, soil) : 1.0;
-    const depthFactor = isBuried ? interp(IEC_DEPTH_FACTORS, depth) : 1.0;
-    const derating = tempFactor * groupFactor * soilFactor * depthFactor;
-
-    const key = `${insulation}_${conductor}`;
-    const sizeData = IEC_AMPACITY_TABLE[size];
-    const baseA = (sizeData && sizeData[method] && sizeData[method][key] != null)
-      ? sizeData[method][key] : null;
+    const d = IecAmpacity.derating({ method, ambient, insulation, grouping, circuits, soil });
+    const baseA = IecAmpacity.base(size, method, conductor, insulation, loaded);
 
     this._ampState = {
-      conductor, insulation, method, size, ambient, grouping, circuits,
-      soil, depth, current, baseA, derating,
-      tempFactor, groupFactor, soilFactor, depthFactor, isBuried, env,
+      conductor, insulation, method, size, loaded, ambient, grouping: d.groupName, circuits,
+      soil, current, baseA, derating: d.combined, groupNote: d.groupNote, beyond: d.beyond,
+      tempFactor: d.temp, groupFactor: d.group, soilFactor: d.soil, isBuried, env: d.env,
     };
     this._renderAmpacityResults();
   },
@@ -1216,7 +1215,7 @@ const Properties = {
     if (!s || !resultsDiv) return;
 
     if (s.baseA == null) {
-      resultsDiv.innerHTML = `<div class="iec-calc-error">No IEC 60364-5-52 base ampacity for <strong>${s.size} mm² ${s.conductor === 'cu' ? 'Copper' : 'Aluminium'} ${s.insulation.toUpperCase()}</strong> installed by method <strong>${s.method}</strong>. Choose a different size or installation method.</div>`;
+      resultsDiv.innerHTML = `<div class="iec-calc-error">IEC 60364-5-52 tabulates no value for <strong>${s.size} mm² ${s.conductor === 'cu' ? 'Copper' : 'Aluminium'} ${s.insulation.toUpperCase()}</strong>, method <strong>${s.method}</strong>, <strong>${s.loaded} loaded conductors</strong>. Choose a different size or installation method.</div>`;
       if (applyBtn) applyBtn.disabled = true;
       return;
     }
@@ -1225,11 +1224,10 @@ const Properties = {
     const deratedA = s.baseA * s.derating;
     const factorRows = [
       ['Ambient temperature', `${s.ambient}°C ${s.env}`, s.tempFactor.toFixed(3)],
-      ['Grouping', `${s.circuits} circuit(s), ${s.grouping.replace(/_/g, ' ')}`, s.groupFactor.toFixed(3)],
+      ['Grouping', `${s.circuits} circuit(s), ${escHtml(IEC_GROUPING_LABELS[s.grouping] || s.grouping)}${s.groupNote ? ` — ${escHtml(s.groupNote)}` : ''}${s.beyond ? ' — beyond the table, last factor used' : ''}`, s.groupFactor.toFixed(3)],
     ];
     if (s.isBuried) {
-      factorRows.push(['Soil resistivity', `${s.soil} K·m/W`, s.soilFactor.toFixed(3)]);
-      factorRows.push(['Depth of laying', `${s.depth} m`, s.depthFactor.toFixed(3)]);
+      factorRows.push(['Soil resistivity', `${s.soil} K·m/W (B.52.16)`, s.soilFactor.toFixed(3)]);
     }
 
     let html = `
@@ -1242,7 +1240,7 @@ const Properties = {
         </tbody>
       </table>
       <div class="iec-calc-recommendation">
-        Installed ampacity: I<sub>z</sub> = ${s.baseA} A (base) &times; ${s.derating.toFixed(3)} = <strong>${deratedA.toFixed(1)} A</strong>
+        Installed ampacity: I<sub>z</sub> = ${s.baseA} A (base, ${s.loaded} loaded conductors) &times; ${s.derating.toFixed(3)} = <strong>${deratedA.toFixed(1)} A</strong>
       </div>`;
 
     if (s.current > 0) {
@@ -1274,10 +1272,10 @@ const Properties = {
       insulation: s.insulation,
       size_mm2: s.size,
       ambient_c: s.ambient,
+      loaded: s.loaded,
       grouping: s.grouping,
       circuits: s.circuits,
       soil_kmw: s.isBuried ? s.soil : null,
-      depth_m: s.isBuried ? s.depth : null,
       design_current_a: s.current || null,
       base_a: Math.round(s.baseA * 10) / 10,
       derating: Math.round(s.derating * 1000) / 1000,

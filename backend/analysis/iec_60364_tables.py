@@ -11,9 +11,10 @@ The distribution-board circuit check cannot work that way: a board has tens of
 ways and no user is going to run a modal calculator for each one, so the engine
 has to derate for itself. Hence this port.
 
-KEEP IN SYNC with ``frontend/js/constants.js`` — the tables are transcribed
-verbatim, same values, same units, same reference conditions (30 °C ambient
-air, 20 °C ground, 2.5 K·m/W soil, 0.7 m laying depth). This mirrors the
+The capacity and grouping tables live in the GENERATED ``iec_60364_data.py``
+(twin: ``frontend/js/iec-60364-data.js``), both written from one reference
+file by ``testing/iec-60364-tables-review/build_iec_tables.py``. The ambient
+and soil tables below are mirrored in ``frontend/js/constants.js``. This mirrors the
 existing arrangement for ``cable_sizing.STANDARD_OVERHEAD_LINES``, which
 carries the same "keep in sync with the frontend table" note.
 
@@ -25,155 +26,30 @@ be copied between them.
 
 from __future__ import annotations
 
+from .iec_60364_data import IEC_METHODS, IEC_AMPACITY, IEC_GROUPING, IEC_GROUPING_LABELS
+
 # ─── Reference installation methods, IEC 60364-5-52 Table B.52.1 ───────────
-# ``environment`` selects which ambient-correction column applies.
+# [T3] Codes A1–G with the standard's own descriptions (the old E/F labels
+# were shifted by one — "E" described single-core touching, which is F — and
+# A2, B2 and G were missing). ``environment`` selects the ambient-correction
+# table and the grouping family.
 IEC_INSTALLATION_METHODS = {
-    "A1": {"description": "Insulated conductors in conduit in thermally insulating wall", "environment": "air"},
-    "A2": {"description": "Multi-core cable in conduit in thermally insulating wall", "environment": "air"},
-    "B1": {"description": "Insulated conductors in conduit on wall or in trunking", "environment": "air"},
-    "B2": {"description": "Multi-core cable in conduit on wall or in trunking", "environment": "air"},
-    "C": {"description": "Single-core or multi-core cable direct on wall (clipped)", "environment": "air"},
-    "D1": {"description": "Multi-core cable in underground ducts", "environment": "ground"},
-    "D2": {"description": "Multi-core cable direct buried", "environment": "ground"},
-    "E": {"description": "Single-core cables in free air on perforated tray (touching)", "environment": "air"},
-    "F": {"description": "Single-core cables in free air on tray (spaced)", "environment": "air"},
-    "G": {"description": "Single-core cables in free air spaced from wall (cleats)", "environment": "air"},
+    code: {"description": desc, "environment": env, "tables": tables}
+    for code, (desc, env, tables) in IEC_METHODS.items()
 }
 
-# ─── Base current-carrying capacity (A), Tables B.52.2–B.52.5 ──────────────
-# {size_mm2: {method: {conductor_key: amps}}}, conductor_key = "<ins>_<cond>".
-# Reference conditions: 30 °C ambient air, 20 °C ground, 2.5 K·m/W soil.
-IEC_AMPACITY_TABLE = {
-    1.5: {
-        "A1": {"pvc_cu": 14.5, "xlpe_cu": 19.5, "pvc_al": None, "xlpe_al": None},
-        "B1": {"pvc_cu": 17.5, "xlpe_cu": 23, "pvc_al": None, "xlpe_al": None},
-        "C": {"pvc_cu": 22, "xlpe_cu": 26, "pvc_al": None, "xlpe_al": None},
-    },
-    2.5: {
-        "A1": {"pvc_cu": 19.5, "xlpe_cu": 27, "pvc_al": None, "xlpe_al": None},
-        "B1": {"pvc_cu": 24, "xlpe_cu": 31, "pvc_al": None, "xlpe_al": None},
-        "C": {"pvc_cu": 30, "xlpe_cu": 36, "pvc_al": None, "xlpe_al": None},
-    },
-    4: {
-        "A1": {"pvc_cu": 26, "xlpe_cu": 36, "pvc_al": None, "xlpe_al": None},
-        "B1": {"pvc_cu": 32, "xlpe_cu": 42, "pvc_al": None, "xlpe_al": None},
-        "C": {"pvc_cu": 40, "xlpe_cu": 49, "pvc_al": None, "xlpe_al": None},
-    },
-    6: {
-        "A1": {"pvc_cu": 34, "xlpe_cu": 46, "pvc_al": None, "xlpe_al": None},
-        "B1": {"pvc_cu": 41, "xlpe_cu": 54, "pvc_al": None, "xlpe_al": None},
-        "C": {"pvc_cu": 51, "xlpe_cu": 63, "pvc_al": None, "xlpe_al": None},
-    },
-    10: {
-        "A1": {"pvc_cu": 46, "xlpe_cu": 63, "pvc_al": None, "xlpe_al": None},
-        "B1": {"pvc_cu": 57, "xlpe_cu": 75, "pvc_al": None, "xlpe_al": None},
-        "C": {"pvc_cu": 70, "xlpe_cu": 86, "pvc_al": None, "xlpe_al": None},
-    },
-    16: {
-        "A1": {"pvc_cu": 61, "xlpe_cu": 85, "pvc_al": 47, "xlpe_al": 65},
-        "B1": {"pvc_cu": 76, "xlpe_cu": 100, "pvc_al": 57, "xlpe_al": 76},
-        "C": {"pvc_cu": 94, "xlpe_cu": 115, "pvc_al": 71, "xlpe_al": 88},
-        "D1": {"pvc_cu": 80, "xlpe_cu": 95, "pvc_al": 62, "xlpe_al": 73},
-        "D2": {"pvc_cu": 87, "xlpe_cu": 102, "pvc_al": 67, "xlpe_al": 78},
-    },
-    25: {
-        "A1": {"pvc_cu": 80, "xlpe_cu": 112, "pvc_al": 62, "xlpe_al": 86},
-        "B1": {"pvc_cu": 101, "xlpe_cu": 133, "pvc_al": 78, "xlpe_al": 101},
-        "C": {"pvc_cu": 124, "xlpe_cu": 150, "pvc_al": 95, "xlpe_al": 116},
-        "D1": {"pvc_cu": 106, "xlpe_cu": 121, "pvc_al": 81, "xlpe_al": 93},
-        "D2": {"pvc_cu": 114, "xlpe_cu": 131, "pvc_al": 87, "xlpe_al": 100},
-        "E": {"pvc_cu": 131, "xlpe_cu": 161, "pvc_al": 100, "xlpe_al": 123},
-        "F": {"pvc_cu": 146, "xlpe_cu": 182, "pvc_al": 112, "xlpe_al": 140},
-    },
-    35: {
-        "A1": {"pvc_cu": 99, "xlpe_cu": 138, "pvc_al": 77, "xlpe_al": 107},
-        "B1": {"pvc_cu": 125, "xlpe_cu": 164, "pvc_al": 96, "xlpe_al": 125},
-        "C": {"pvc_cu": 154, "xlpe_cu": 185, "pvc_al": 118, "xlpe_al": 142},
-        "D1": {"pvc_cu": 131, "xlpe_cu": 146, "pvc_al": 100, "xlpe_al": 113},
-        "D2": {"pvc_cu": 138, "xlpe_cu": 157, "pvc_al": 107, "xlpe_al": 121},
-        "E": {"pvc_cu": 162, "xlpe_cu": 200, "pvc_al": 124, "xlpe_al": 153},
-        "F": {"pvc_cu": 181, "xlpe_cu": 226, "pvc_al": 139, "xlpe_al": 174},
-    },
-    50: {
-        "A1": {"pvc_cu": 119, "xlpe_cu": 168, "pvc_al": 93, "xlpe_al": 130},
-        "B1": {"pvc_cu": 151, "xlpe_cu": 198, "pvc_al": 117, "xlpe_al": 151},
-        "C": {"pvc_cu": 188, "xlpe_cu": 225, "pvc_al": 144, "xlpe_al": 173},
-        "D1": {"pvc_cu": 153, "xlpe_cu": 173, "pvc_al": 118, "xlpe_al": 133},
-        "D2": {"pvc_cu": 161, "xlpe_cu": 185, "pvc_al": 124, "xlpe_al": 142},
-        "E": {"pvc_cu": 196, "xlpe_cu": 242, "pvc_al": 150, "xlpe_al": 186},
-        "F": {"pvc_cu": 219, "xlpe_cu": 275, "pvc_al": 168, "xlpe_al": 212},
-    },
-    70: {
-        "A1": {"pvc_cu": 151, "xlpe_cu": 213, "pvc_al": 118, "xlpe_al": 165},
-        "B1": {"pvc_cu": 192, "xlpe_cu": 253, "pvc_al": 149, "xlpe_al": 192},
-        "C": {"pvc_cu": 238, "xlpe_cu": 283, "pvc_al": 183, "xlpe_al": 218},
-        "D1": {"pvc_cu": 188, "xlpe_cu": 210, "pvc_al": 144, "xlpe_al": 162},
-        "D2": {"pvc_cu": 197, "xlpe_cu": 225, "pvc_al": 152, "xlpe_al": 173},
-        "E": {"pvc_cu": 251, "xlpe_cu": 310, "pvc_al": 192, "xlpe_al": 237},
-        "F": {"pvc_cu": 281, "xlpe_cu": 353, "pvc_al": 216, "xlpe_al": 272},
-    },
-    95: {
-        "A1": {"pvc_cu": 182, "xlpe_cu": 258, "pvc_al": 142, "xlpe_al": 200},
-        "B1": {"pvc_cu": 232, "xlpe_cu": 306, "pvc_al": 179, "xlpe_al": 233},
-        "C": {"pvc_cu": 289, "xlpe_cu": 344, "pvc_al": 222, "xlpe_al": 265},
-        "D1": {"pvc_cu": 222, "xlpe_cu": 249, "pvc_al": 171, "xlpe_al": 191},
-        "D2": {"pvc_cu": 236, "xlpe_cu": 268, "pvc_al": 182, "xlpe_al": 207},
-        "E": {"pvc_cu": 304, "xlpe_cu": 377, "pvc_al": 233, "xlpe_al": 289},
-        "F": {"pvc_cu": 341, "xlpe_cu": 430, "pvc_al": 261, "xlpe_al": 331},
-    },
-    120: {
-        "A1": {"pvc_cu": 210, "xlpe_cu": 299, "pvc_al": 164, "xlpe_al": 232},
-        "B1": {"pvc_cu": 269, "xlpe_cu": 354, "pvc_al": 206, "xlpe_al": 270},
-        "C": {"pvc_cu": 337, "xlpe_cu": 400, "pvc_al": 259, "xlpe_al": 308},
-        "D1": {"pvc_cu": 251, "xlpe_cu": 283, "pvc_al": 194, "xlpe_al": 218},
-        "D2": {"pvc_cu": 270, "xlpe_cu": 306, "pvc_al": 208, "xlpe_al": 236},
-        "E": {"pvc_cu": 352, "xlpe_cu": 437, "pvc_al": 269, "xlpe_al": 335},
-        "F": {"pvc_cu": 396, "xlpe_cu": 500, "pvc_al": 304, "xlpe_al": 385},
-    },
-    150: {
-        "A1": {"pvc_cu": 240, "xlpe_cu": 344, "pvc_al": 189, "xlpe_al": 265},
-        "B1": {"pvc_cu": 309, "xlpe_cu": 407, "pvc_al": 236, "xlpe_al": 310},
-        "C": {"pvc_cu": 388, "xlpe_cu": 459, "pvc_al": 299, "xlpe_al": 354},
-        "D1": {"pvc_cu": 278, "xlpe_cu": 316, "pvc_al": 215, "xlpe_al": 244},
-        "D2": {"pvc_cu": 300, "xlpe_cu": 343, "pvc_al": 232, "xlpe_al": 265},
-        "E": {"pvc_cu": 406, "xlpe_cu": 504, "pvc_al": 311, "xlpe_al": 386},
-        "F": {"pvc_cu": 456, "xlpe_cu": 577, "pvc_al": 351, "xlpe_al": 444},
-    },
-    185: {
-        "A1": {"pvc_cu": 274, "xlpe_cu": 392, "pvc_al": 215, "xlpe_al": 304},
-        "B1": {"pvc_cu": 353, "xlpe_cu": 464, "pvc_al": 271, "xlpe_al": 354},
-        "C": {"pvc_cu": 447, "xlpe_cu": 527, "pvc_al": 344, "xlpe_al": 407},
-        "D1": {"pvc_cu": 310, "xlpe_cu": 352, "pvc_al": 239, "xlpe_al": 272},
-        "D2": {"pvc_cu": 337, "xlpe_cu": 384, "pvc_al": 260, "xlpe_al": 296},
-        "E": {"pvc_cu": 467, "xlpe_cu": 581, "pvc_al": 358, "xlpe_al": 446},
-        "F": {"pvc_cu": 526, "xlpe_cu": 668, "pvc_al": 404, "xlpe_al": 515},
-    },
-    240: {
-        "A1": {"pvc_cu": 321, "xlpe_cu": 461, "pvc_al": 252, "xlpe_al": 358},
-        "B1": {"pvc_cu": 415, "xlpe_cu": 546, "pvc_al": 319, "xlpe_al": 418},
-        "C": {"pvc_cu": 530, "xlpe_cu": 621, "pvc_al": 408, "xlpe_al": 480},
-        "D1": {"pvc_cu": 355, "xlpe_cu": 406, "pvc_al": 274, "xlpe_al": 314},
-        "D2": {"pvc_cu": 388, "xlpe_cu": 442, "pvc_al": 300, "xlpe_al": 342},
-        "E": {"pvc_cu": 553, "xlpe_cu": 689, "pvc_al": 424, "xlpe_al": 529},
-        "F": {"pvc_cu": 625, "xlpe_cu": 795, "pvc_al": 481, "xlpe_al": 613},
-    },
-    300: {
-        "A1": {"pvc_cu": 367, "xlpe_cu": 530, "pvc_al": 287, "xlpe_al": 411},
-        "B1": {"pvc_cu": 475, "xlpe_cu": 629, "pvc_al": 365, "xlpe_al": 481},
-        "C": {"pvc_cu": 610, "xlpe_cu": 715, "pvc_al": 470, "xlpe_al": 553},
-        "D1": {"pvc_cu": 397, "xlpe_cu": 456, "pvc_al": 307, "xlpe_al": 353},
-        "D2": {"pvc_cu": 435, "xlpe_cu": 498, "pvc_al": 336, "xlpe_al": 385},
-        "E": {"pvc_cu": 637, "xlpe_cu": 795, "pvc_al": 488, "xlpe_al": 611},
-        "F": {"pvc_cu": 720, "xlpe_cu": 920, "pvc_al": 554, "xlpe_al": 710},
-    },
-    400: {
-        "A1": {"pvc_cu": 438, "xlpe_cu": 634, "pvc_al": 344, "xlpe_al": 492},
-        "B1": {"pvc_cu": 571, "xlpe_cu": 754, "pvc_al": 438, "xlpe_al": 578},
-        "C": {"pvc_cu": 739, "xlpe_cu": 860, "pvc_al": 570, "xlpe_al": 665},
-        "E": {"pvc_cu": 772, "xlpe_cu": 964, "pvc_al": 591, "xlpe_al": 741},
-        "F": {"pvc_cu": 878, "xlpe_cu": 1122, "pvc_al": 676, "xlpe_al": 866},
-    },
-}
+# ─── Base current-carrying capacity (A) ─────────────────────────────────────
+# [T1][T2] Generated from the IEC 60364-5-52 reference by
+# testing/iec-60364-tables-review/build_iec_tables.py (see iec_60364_data.py).
+# The previous table matched the standard only for PVC-Cu A1/B1, sat above
+# even the single-phase values elsewhere (method C +11 % median) and had no
+# notion of loaded conductors, so three-phase circuits were rated 12–36 %
+# high. Values now come per number of loaded conductors: 2 = single-phase
+# (Tables B.52.2/B.52.3, B.52.10–13 two-loaded columns), 3 = three-phase
+# (B.52.4/B.52.5, three-loaded columns). Reference conditions: 30 °C air,
+# 20 °C ground, 2.5 K·m/W soil.
+LOADED_THREE_PHASE = 3
+LOADED_SINGLE_PHASE = 2
 
 # ─── Ambient temperature correction, Tables B.52.14/15 ─────────────────────
 # Reference ambient: 30 °C air, 20 °C ground.
@@ -194,37 +70,42 @@ IEC_TEMP_CORRECTION = {
     },
 }
 
-# ─── Grouping correction, Table B.52.17 ────────────────────────────────────
-# Key = number of circuits / multi-core cables, value = correction factor.
-IEC_GROUPING_FACTORS = {
-    "bunched": {1: 1.00, 2: 0.80, 3: 0.70, 4: 0.65, 5: 0.60, 6: 0.57, 7: 0.54,
-                8: 0.52, 9: 0.50, 10: 0.48, 12: 0.45, 14: 0.43, 16: 0.41,
-                18: 0.39, 20: 0.38},
-    "single_layer_wall": {1: 1.00, 2: 0.85, 3: 0.79, 4: 0.75, 5: 0.73, 6: 0.72,
-                          7: 0.72, 8: 0.71, 9: 0.70},
-    "single_layer_floor": {1: 1.00, 2: 0.88, 3: 0.82, 4: 0.77, 5: 0.75, 6: 0.73,
-                           7: 0.73, 8: 0.72, 9: 0.72},
-    "single_layer_tray_touching": {1: 1.00, 2: 0.87, 3: 0.82, 4: 0.80, 5: 0.80,
-                                   6: 0.79, 7: 0.79, 8: 0.78, 9: 0.78},
-    "single_layer_tray_spaced": {1: 1.00, 2: 0.89, 3: 0.81, 4: 0.76, 5: 0.73,
-                                 6: 0.72, 7: 0.72, 8: 0.71, 9: 0.70},
-    "trefoil_tray_touching": {1: 1.00, 2: 0.81, 3: 0.72, 4: 0.68, 5: 0.66,
-                              6: 0.64, 7: 0.63, 8: 0.62, 9: 0.61},
+# ─── Grouping correction ───────────────────────────────────────────────────
+# [T4] Rows as IEC 60364-5-52 prints them: Table B.52.17 in air (five
+# arrangements), B.52.18 direct in the ground, B.52.19 in ducts. The old
+# table put the perforated-tray row under "floor", the ladder row under "tray
+# touching", the wooden-ceiling row (with 1.00 for one circuit, not 0.95)
+# under "trefoil", had an unsourced "tray spaced" row — and applied these
+# unburied factors to buried cables. Legacy names map onto the IEC row they
+# describe (spaced/trefoil tray → the touching perforated-tray row,
+# conservative).
+IEC_GROUPING_FACTORS = {name: row["factors"] for name, row in IEC_GROUPING.items()}
+LEGACY_GROUPING = {
+    "single_layer_wall": "single_layer_wall_floor",
+    "single_layer_floor": "single_layer_wall_floor",
+    "single_layer_tray_touching": "single_layer_perforated_tray",
+    "single_layer_tray_spaced": "single_layer_perforated_tray",
+    "trefoil_tray_touching": "single_layer_perforated_tray",
 }
 
 # ─── Soil thermal resistivity correction, Table B.52.16 (ref 2.5 K·m/W) ────
+# [L2] The published factors are for cables in buried ducts; for cables laid
+# direct in the ground IEC notes they are higher below 2.5 K·m/W, so applying
+# them to method D2 is conservative (and disclosed in the detail string).
 IEC_SOIL_RESISTIVITY_FACTORS = {0.5: 1.28, 0.7: 1.20, 1.0: 1.18, 1.5: 1.10,
                                 2.0: 1.05, 2.5: 1.00, 3.0: 0.96}
 
-# ─── Depth of laying correction, Table B.52.18 (ref 0.7 m) ─────────────────
-IEC_DEPTH_FACTORS = {0.5: 1.02, 0.6: 1.01, 0.7: 1.00, 0.8: 0.99, 1.0: 0.97,
-                     1.2: 0.95, 1.5: 0.93}
+# [T5] IEC 60364-5-52 has NO depth-of-laying correction (its reference depth
+# is 0.7 m). The old table was labelled "B.52.18" — which is the grouping
+# table for direct burial — had no source, and rated shallow runs above 1.0.
+# Depth is no longer a factor; the argument is accepted and ignored.
+IEC_DEPTH_FACTORS = {}
 
 # Preferred conductor cross-sectional areas (IEC 60228). Same list as the
 # frontend's IEC_STANDARD_SIZES, so an ECC rounded up here and one rounded up
 # in dbschedule.js can never disagree.
 IEC_STANDARD_SIZES = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120,
-                      150, 185, 240, 300, 400]
+                      150, 185, 240, 300, 400, 500, 630]
 
 
 def interpolate_factor(table: dict, value: float) -> float:
@@ -261,13 +142,23 @@ def _conductor_key(conductor: str, insulation: str) -> str:
     return f"{ins}_{cond}"
 
 
-def base_ampacity_a(size_mm2: float, method: str = "B1", conductor: str = "Cu",
-                    insulation: str = "PVC"):
-    """Base (undegraded) current-carrying capacity in A, or None.
+def _loaded(loaded) -> int:
+    try:
+        return LOADED_SINGLE_PHASE if int(loaded) == 2 else LOADED_THREE_PHASE
+    except (TypeError, ValueError):
+        return LOADED_THREE_PHASE
 
-    None means "the standard has no tabulated value for this combination" —
-    e.g. aluminium below 16 mm², or method E/F below 25 mm². Callers must
-    surface that as an *info* verdict, never as a silent pass.
+
+def base_ampacity_a(size_mm2: float, method: str = "B1", conductor: str = "Cu",
+                    insulation: str = "PVC", loaded: int = LOADED_THREE_PHASE):
+    """Base (underated) current-carrying capacity in A, or None.
+
+    ``loaded``: number of loaded conductors — 2 for a single-phase circuit,
+    3 for three-phase (default, the conservative choice when unknown).
+    None means the standard tabulates no value for the combination (e.g.
+    methods A–D above 300 mm², E below 1.5 mm², F/G below 25 mm², method G
+    with two loaded conductors). Callers must surface that as an *info*
+    verdict, never as a silent pass.
     """
     try:
         size = float(size_mm2)
@@ -275,19 +166,14 @@ def base_ampacity_a(size_mm2: float, method: str = "B1", conductor: str = "Cu",
         return None
     if size <= 0:
         return None
-    # Tolerate 4.0-vs-4 key styles: match on value, not on dict identity.
-    row = None
-    for k, v in IEC_AMPACITY_TABLE.items():
+    cells = (IEC_AMPACITY.get(_conductor_key(conductor, insulation), {})
+             .get(_loaded(loaded), {}).get(str(method or "B1")))
+    if not cells:
+        return None
+    for k, v in cells.items():
         if abs(float(k) - size) < 1e-9:
-            row = v
-            break
-    if not row:
-        return None
-    cell = row.get(str(method or "B1"))
-    if not cell:
-        return None
-    val = cell.get(_conductor_key(conductor, insulation))
-    return float(val) if val is not None else None
+            return float(v)
+    return None
 
 
 def round_up_to_standard(size_mm2: float):
@@ -298,6 +184,46 @@ def round_up_to_standard(size_mm2: float):
     return None
 
 
+def resolve_grouping(grouping: str, method: str):
+    """(IEC grouping row name, note) for ``grouping`` under ``method``.
+
+    Legacy names map onto their IEC row. [T4] A buried method (D1/D2) must use
+    the burial tables: an air arrangement is replaced by the touching row of
+    B.52.19 (D1, ducts) or B.52.18 (D2, direct) — and vice versa, a burial
+    arrangement on an air method falls back to "bunched"."""
+    name = LEGACY_GROUPING.get(str(grouping or "bunched"), str(grouping or "bunched"))
+    if name not in IEC_GROUPING:
+        name = "bunched"
+    env = IEC_METHODS.get(str(method or "B1"), ("", "air", ""))[1]
+    fam = IEC_GROUPING[name]["env"]
+    note = ""
+    if env == "ground" and fam == "air":
+        name = "ducts_mc_touching" if str(method) == "D1" else "buried_touching"
+        note = (f"buried method {method}: grouping taken from "
+                f"{'B.52.19' if method == 'D1' else 'B.52.18'} (touching)")
+    elif env == "air" and fam != "air":
+        name = "bunched"
+        note = f"air method {method}: burial grouping replaced by B.52.17 bunched"
+    return name, note
+
+
+def grouping_factor(name: str, circuits: int):
+    """[L1] Grouping factor for ``circuits`` from an IEC row, stepping UP to
+    the next tabulated count (IEC lists 9, 12, 16, 20 — 10 circuits take the
+    12-circuit factor; interpolating between them is not in the standard and
+    was slightly optimistic). Beyond the last count the last factor applies
+    (IEC: "no further reduction" for the single-layer rows); the second value
+    says whether that happened for a row that does not state it."""
+    factors = IEC_GROUPING_FACTORS[name]
+    n = max(1, int(circuits or 1))
+    counts = sorted(factors)
+    for c in counts:
+        if c >= n:
+            return float(factors[c]), False
+    beyond = name == "bunched" or IEC_GROUPING[name]["env"] != "air"
+    return float(factors[counts[-1]]), beyond
+
+
 def derating_factors(method: str = "B1", ambient_c: float = 30.0,
                      insulation: str = "PVC", grouping: str = "bunched",
                      circuits: int = 1, soil_kmw=None, depth_m=None) -> dict:
@@ -305,7 +231,8 @@ def derating_factors(method: str = "B1", ambient_c: float = 30.0,
 
     Returns the individual factors plus their product and a human-readable
     ``detail`` string, so a result row can always explain where its Iz came
-    from rather than presenting a bare number.
+    from rather than presenting a bare number. ``depth_m`` is accepted for
+    compatibility and ignored ([T5]: IEC 60364-5-52 has no depth factor).
     """
     meth = str(method or "B1")
     env = IEC_INSTALLATION_METHODS.get(meth, {}).get("environment", "air")
@@ -315,31 +242,31 @@ def derating_factors(method: str = "B1", ambient_c: float = 30.0,
     temp_table = IEC_TEMP_CORRECTION[env][ins]
     temp_f = interpolate_factor(temp_table, float(ambient_c))
 
-    group_table = IEC_GROUPING_FACTORS.get(str(grouping or "bunched"),
-                                           IEC_GROUPING_FACTORS["bunched"])
+    group_name, group_note = resolve_grouping(grouping, meth)
     n_circuits = max(1, int(circuits or 1))
-    group_f = interpolate_factor(group_table, n_circuits)
+    group_f, beyond = grouping_factor(group_name, n_circuits)
 
     soil_f = interpolate_factor(IEC_SOIL_RESISTIVITY_FACTORS, float(soil_kmw)) \
         if buried and soil_kmw is not None else 1.0
-    depth_f = interpolate_factor(IEC_DEPTH_FACTORS, float(depth_m)) \
-        if buried and depth_m is not None else 1.0
 
-    combined = temp_f * group_f * soil_f * depth_f
+    combined = temp_f * group_f * soil_f
 
     bits = [f"{meth} · {ins.upper()}",
             f"{ambient_c:g} °C {env} x{temp_f:.2f}",
-            f"{n_circuits} circuit(s) {str(grouping).replace('_', ' ')} x{group_f:.2f}"]
+            f"{n_circuits} circuit(s) {IEC_GROUPING_LABELS[group_name]} x{group_f:.2f}"]
+    if group_note:
+        bits.append(group_note)
+    if beyond:
+        bits.append(f"beyond the table's {max(IEC_GROUPING_FACTORS[group_name])} circuits — last factor used")
     if buried and soil_kmw is not None:
-        bits.append(f"soil {soil_kmw:g} K·m/W x{soil_f:.2f}")
-    if buried and depth_m is not None:
-        bits.append(f"depth {depth_m:g} m x{depth_f:.2f}")
+        bits.append(f"soil {soil_kmw:g} K·m/W x{soil_f:.2f} (B.52.16, duct values)")
     bits.append(f"combined x{combined:.3f}")
 
     return {
         "temp": float(temp_f), "grouping": float(group_f),
-        "soil": float(soil_f), "depth": float(depth_f),
+        "soil": float(soil_f), "depth": 1.0,
         "combined": float(combined), "environment": env,
+        "grouping_row": group_name,
         "detail": " · ".join(bits),
     }
 
@@ -347,9 +274,10 @@ def derating_factors(method: str = "B1", ambient_c: float = 30.0,
 def installed_ampacity(size_mm2: float, method: str = "B1", conductor: str = "Cu",
                        insulation: str = "PVC", ambient_c: float = 30.0,
                        grouping: str = "bunched", circuits: int = 1,
-                       soil_kmw=None, depth_m=None) -> dict:
-    """Base and derated Iz for one way's cable, with the factor breakdown."""
-    base = base_ampacity_a(size_mm2, method, conductor, insulation)
+                       soil_kmw=None, depth_m=None,
+                       loaded: int = LOADED_THREE_PHASE) -> dict:
+    """Base and derated Iz for one cable, with the factor breakdown."""
+    base = base_ampacity_a(size_mm2, method, conductor, insulation, loaded)
     f = derating_factors(method, ambient_c, insulation, grouping, circuits,
                          soil_kmw, depth_m)
     derated = None if base is None else float(base) * f["combined"]
@@ -357,6 +285,7 @@ def installed_ampacity(size_mm2: float, method: str = "B1", conductor: str = "Cu
         "base_a": base,
         "derating": f["combined"],
         "derated_a": derated,
+        "loaded": _loaded(loaded),
         "factors": f,
-        "detail": f["detail"],
+        "detail": f"{_loaded(loaded)} loaded conductors · " + f["detail"],
     }

@@ -429,10 +429,13 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
     messages = []
 
     # ── Ampacity + IEC 60364-4-43 §433.1 coordination ──
+    # [T2] IEC 60364-5-52 rates a single-phase way on two loaded conductors
+    # (B.52.2/B.52.3) and a three-phase way on three (B.52.4/B.52.5).
     amp = installed_ampacity(size, install["method"], install["conductor"],
                              install["insulation"], install["ambient_c"],
                              install["grouping"], install["circuits"],
-                             install["soil_kmw"], install["depth_m"])
+                             install["soil_kmw"], install["depth_m"],
+                             loaded=3 if is_3p else 2)
     iz = amp["derated_a"]
     if iz is None:
         amp_status = "info"
