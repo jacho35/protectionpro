@@ -78,7 +78,41 @@ const StreetLight = {
   circuit(id) { return this.circuits.find(c => c.id === id) || null; },
   get selected() { return this.circuit(this._selId); },
 
-  _lum(id) { return SL_LUMINAIRES.find(l => l.id === id) || SL_LUMINAIRES.find(l => l.id === this.defaults.luminaireId) || SL_LUMINAIRES[3]; },
+  // Every luminaire a circuit can use: the built-in list plus the project's
+  // photometry library (Lighting design ▸ imported IES / LDT and generic
+  // optics), which carries its own rated system power. Library entries are
+  // referenced as 'ph:<photometry id>'.
+  luminaires() {
+    const out = SL_LUMINAIRES.map(l => Object.assign({ group: 'Built-in' }, l));
+    const lib = this.data.photometry || {};
+    const list = Object.values(lib).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    for (const p of list) {
+      out.push({ id: 'ph:' + p.id, name: p.name || 'Luminaire', watts: Number(p.watts) || 0, pf: Number(p.pf) || 0.95,
+        group: p.generic ? 'Generic optics (Lighting design)' : 'Imported photometry (IES / LDT)', phId: p.id });
+    }
+    return out;
+  },
+  _lum(id) {
+    const all = this.luminaires();
+    const ok = (l) => l && l.watts > 0;
+    const hit = all.find(l => l.id === id);
+    if (ok(hit)) return hit;
+    const def = all.find(l => l.id === this.defaults.luminaireId);
+    return ok(def) ? def : SL_LUMINAIRES[3];
+  },
+  // <option>s for a luminaire picker, grouped; an entry without a rated power
+  // (an IES file that states none) is listed but disabled until it has one.
+  _lumOptions(sel, withDefault) {
+    const groups = new Map();
+    for (const l of this.luminaires()) { if (!groups.has(l.group)) groups.set(l.group, []); groups.get(l.group).push(l); }
+    let html = withDefault ? `<option value=""${!sel ? ' selected' : ''}>Circuit default</option>` : '';
+    for (const [g, list] of groups) {
+      html += `<optgroup label="${escHtml(g)}">${list.map(l => l.watts > 0
+        ? `<option value="${escHtml(l.id)}"${l.id === sel ? ' selected' : ''}>${escHtml(l.name)}${l.phId ? ` · ${+l.watts.toFixed(1)} W` : ''} · pf ${l.pf}</option>`
+        : `<option value="${escHtml(l.id)}" disabled>${escHtml(l.name)} · no rated power — set it in Lighting design</option>`).join('')}</optgroup>`;
+    }
+    return html;
+  },
   _prot(id) { return SL_PROTECTION.find(p => p.id === id) || SL_PROTECTION[1]; },
   _num(v, d) { const x = parseFloat(v); return isFinite(x) ? x : d; },
   _blank(v) { return v === null || v === undefined || v === ''; },
@@ -510,8 +544,7 @@ const StreetLight = {
     }
     const srcOpts = this._sources().map(s =>
       `<option value="${s.kind}:${escHtml(s.id)}"${this._sourceKey(s) === this._sourceKey(c.source) ? ' selected' : ''}>${escHtml(s.name)} (${s.kind})</option>`).join('');
-    const lumOpts = (sel, withDefault) => (withDefault ? `<option value="">Circuit default</option>` : '') +
-      SL_LUMINAIRES.map(l => `<option value="${l.id}"${l.id === sel ? ' selected' : ''}>${escHtml(l.name)} · pf ${l.pf}</option>`).join('');
+    const lumOpts = (sel, withDefault) => this._lumOptions(sel, withDefault);
     const protOpts = SL_PROTECTION.map(p => `<option value="${p.id}"${p.id === c.protection ? ' selected' : ''}>${escHtml(p.name)}${p.ia ? ` (Ia ${p.ia} A)` : ''}</option>`).join('');
     const phOpts = (sel) => ['R', 'W', 'B'].map(p => `<option value="${p}"${p === sel ? ' selected' : ''}>${p}</option>`).join('');
     const ze = this._ze(c), svd = this._supplyVd(c);
@@ -940,7 +973,7 @@ const StreetLight = {
             <label>System<select data-q="system">
               <option value="3ph"${q.system !== '1ph' ? ' selected' : ''}>3Φ alternating R-W-B</option>
               <option value="1ph"${q.system === '1ph' ? ' selected' : ''}>1Φ string</option></select></label>
-            <label>Luminaire<select data-q="luminaireId">${opt(SL_LUMINAIRES, q.luminaireId, l => `${l.name} · pf ${l.pf}`)}</select></label>
+            <label>Luminaire<select data-q="luminaireId">${this._lumOptions(q.luminaireId, false)}</select></label>
             <label>Cable<select data-q="cable">${cableOpts}</select></label>
             <div class="sl-qc-grid">
               ${num('n', 1, '', 'Poles')}
@@ -958,6 +991,7 @@ const StreetLight = {
           <button class="btn-small btn-primary" data-qc="save">Save as circuit</button>
         </div>
       </div>`;
+    if (typeof SearchSelect !== 'undefined') SearchSelect.attach(m.querySelector('[data-q="cable"]'), { placeholder: 'Type to search cables — e.g. 16 cu, 25*xlpe' });
     this._qcPaint();
   },
 
