@@ -363,6 +363,10 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Dialogs: no accidental close on a drag or stray click (2026-09-30)
+- The street-light **Quick calc** and the Lighting design dialogs (optimiser, luminaire, category helper, apply to circuit, generic optic) no longer close on a backdrop click — × / Cancel / Esc only, so a stray click can't lose a half-filled form.
+- **Every other dialog**: a global guard in `ui.js` counts a backdrop click only when the press also started on the backdrop. A press inside a dialog released over the backdrop (text selection, a mis-aimed click, a drag) is reported by the browser as a backdrop click, and it was closing BOQ, rates, cable schedule, diagram and other dialogs. A real backdrop click still closes them. Cache-bust `3.5.163 → 3.5.164`, app version 1.356b.
+
 ### Street lighting: circuit luminaires from the photometry library; searchable Quick calc cable (2026-09-30)
 - **Luminaires**: every street-lighting luminaire picker (circuit default, per-pole override, Quick calc) lists the built-in luminaires and the project's photometry library from Lighting design (imported IES / LDT and generic optics). Library entries use their rated system power and a new per-luminaire power factor (default 0.95, editable in the luminaire dialog), referenced as `ph:<id>` (`StreetLight.luminaires()`). An entry with no rated power (an IES file that states none) is listed disabled until its power is entered. *Apply spacing to circuit* now sets the design's own luminaire rather than the nearest built-in wattage; a dimmed design is checked on the circuit at full rated power. A luminaire used by a circuit can't be deleted, and editing its power re-runs those circuits.
 - **Searchable cable picker** in the Quick calc: `SearchSelect` (`frontend/js/searchselect.js`), a wildcard type-to-filter box over the hidden native select. Words match in any order, `*` / `?` are wildcards, `mm2` matches `mm²`; arrow keys, Enter and Esc work; the list is fixed-positioned so the dialog never clips it, and sized for touch on a phone. Cache-bust `3.5.162 → 3.5.163`, app version 1.355b.

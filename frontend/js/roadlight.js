@@ -1298,7 +1298,7 @@ const RoadLight = {
     m.oninput = count; m.onchange = count; count();
     m.onclick = async (e) => {
       const b = e.target.closest('[data-m], [data-rl-optuse]');
-      if (e.target === m || (b && b.dataset.m === 'close')) { m.style.display = 'none'; return; }
+      if (b && b.dataset.m === 'close') { m.style.display = 'none'; return; }
       if (!b) return;
       if (b.dataset.rlOptuse !== undefined) { this._useOption(des, this._opt[des.id].options[+b.dataset.rlOptuse]); m.style.display = 'none'; return; }
       if (b.dataset.m !== 'run') return;
@@ -1405,7 +1405,7 @@ const RoadLight = {
     return new Promise((resolve) => {
       const done = (v) => { m.style.display = 'none'; m.onclick = null; m.onkeydown = null; resolve(v); };
       m.onclick = (e) => {
-        if (e.target === m) return done(false);
+        // No backdrop close (× / Cancel / Esc): the dialogs hold forms.
         const b = e.target.closest('[data-m]');
         if (!b || b.disabled) return;
         done(b.dataset.m === 'ok' ? true : b.dataset.m === 'close' ? false : b.dataset.m);
