@@ -24,6 +24,61 @@ const TripUnit = {
     return Number.isFinite(n) ? n : null;
   },
 
+  // ── Breakers of an interlocked-breaker-pair changeover ──
+
+  // A breaker of a breaker-pair changeover as a CB-shaped object: its props
+  // read and write the changeover's cb<n>_* keys (a blank rating falls back to
+  // the changeover's own, CB type to ACB and In to the rated current — the
+  // same view backend/analysis/changeover.py hands the engines). `id` is the
+  // device id that leg has in the analysis (the live leg keeps the changeover
+  // id, the other is <id>__in_<n>).
+  leg(comp, n) {
+    const pre = `cb${n}_`;
+    const skip = new Set(['co_type', 'state', 'contact_duty', 'input_1_label', 'input_2_label', 'name']);
+    const read = (t, k) => {
+      const v = t[pre + k];
+      if (v !== undefined && v !== '' && v !== null) return v;
+      if (k === 'cb_type') return 'acb';
+      if (k === 'trip_rating_a') return read(t, 'rated_current_a');
+      return skip.has(k) || /^cb[12]_/.test(k) ? undefined : t[k];
+    };
+    const legKeys = (t) => {
+      const keys = new Set();
+      for (const k of Object.keys(t)) {
+        if (k.startsWith(pre)) keys.add(k.slice(pre.length));
+        else if (!/^cb[12]_/.test(k) && !skip.has(k)) keys.add(k);
+      }
+      return [...keys];
+    };
+    const props = new Proxy(comp.props, {
+      get: (t, k) => (typeof k === 'string' ? read(t, k) : t[k]),
+      set: (t, k, v) => { t[typeof k === 'string' ? pre + k : k] = v; return true; },
+      deleteProperty: (t, k) => { delete t[typeof k === 'string' ? pre + k : k]; return true; },
+      has: (t, k) => typeof k === 'string' ? read(t, k) !== undefined : k in t,
+      ownKeys: (t) => legKeys(t),
+      getOwnPropertyDescriptor: (t, k) => (typeof k === 'string' && legKeys(t).includes(k)
+        ? { value: read(t, k), writable: true, enumerable: true, configurable: true } : undefined),
+    });
+    const pos = String(comp.props.state || 'in_1');
+    const through = pos === 'in_2' ? 2 : 1;
+    const roman = n === 1 ? 'I' : 'II';
+    return {
+      type: 'cb', props, coParent: comp.id, coLeg: n,
+      id: n === through ? comp.id : `${comp.id}__in_${n}`,
+      label: `${comp.props.name || comp.id} (${roman})`,
+    };
+  },
+
+  // The CB (or changeover breaker) a TCC device stands for
+  targetOfDev(dev) {
+    if (!dev) return null;
+    if (dev.coParent) {
+      const parent = AppState.components.get(dev.coParent);
+      return parent && Components.isBreakerPair(parent) ? this.leg(parent, dev.coLeg) : null;
+    }
+    return AppState.components.get(dev.id) || null;
+  },
+
   // ── Profile resolution ──
 
   entryOf(comp) {
@@ -340,7 +395,7 @@ const TripUnit = {
     if (!types.length && !prof) return '';
     const p = comp.props;
     const entry = this.entryOf(comp);
-    let html = `<div class="prop-section tu-section" data-trip-unit>
+    let html = `<div class="prop-section tu-section" data-trip-unit="${comp.coLeg || ''}">
       <div class="prop-section-title tu-head"><span>Trip unit</span>${prof ? `<button type="button" class="tu-reset-all" data-tu-reset-all title="Put every dial back to the ${entry ? escHtml(entry.name) : 'profile'} default">Reset all</button>` : ''}</div>
       <div class="prop-row"><label>Trip unit</label><select data-tu-profile aria-label="Trip unit">${this._profileOptions(comp)}</select></div>`;
     if (!prof) {
@@ -400,7 +455,7 @@ const TripUnit = {
     AppState.clearResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
-    Properties.show(comp.id);
+    Properties.show(comp.coParent || comp.id);
   },
 
   setDial(comp, key, value) {
@@ -411,9 +466,14 @@ const TripUnit = {
     this._mirrorMagnetic(comp.props, prof, comp.props.cb_type);
   },
 
-  bind(root, comp) {
-    const sec = root.querySelector('[data-trip-unit]');
-    if (!sec) return;
+  bind(root, owner) {
+    root.querySelectorAll('[data-trip-unit]').forEach(sec => {
+      const n = parseInt(sec.dataset.tripUnit, 10);
+      this._bindSection(sec, n ? this.leg(owner, n) : owner);
+    });
+  },
+
+  _bindSection(sec, comp) {
     sec.querySelector('[data-tu-profile]')?.addEventListener('change', (e) => {
       const pid = e.target.value;
       if (pid && TRIP_UNITS[pid]) this.adopt(comp, pid);
@@ -481,7 +541,7 @@ const TripUnit = {
         <td class="tu-sw-now">${cell(oldProps, oldIn, k)}</td>
         <td>${prof.dials[k] ? cell(keepVals, newIn, k) : '—'}</td>
         <td>${cell(defVals, newIn, k)}</td></tr>`).join('');
-    const name = escHtml(comp.props.name || comp.id);
+    const name = escHtml(comp.label || comp.props.name || comp.id);
     const irKept = editedKeys.includes('thermal_pickup') && prof.dials.thermal_pickup && !prof.dials.thermal_pickup.fixed;
 
     return new Promise((resolve) => {
@@ -557,7 +617,7 @@ const TripUnit = {
   // Snap a TCC drag / arrow-key change of a trip-unit breaker to its dials.
   // An electronic MCCB's magnetic handle moves its instantaneous dial.
   snapTccDevice(dev, mode) {
-    const comp = dev && AppState.components.get(dev.id);
+    const comp = this.targetOfDev(dev);
     const prof = comp && this.profile(comp);
     if (!prof) return;
     const p = dev.cbParams;

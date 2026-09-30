@@ -206,6 +206,7 @@ const PropWindow = {
         <h3 class="pw-section-title">${escHtml(s.label)}</h3>
         ${blurb ? `<p class="pw-blurb">${escHtml(blurb)}</p>` : ''}
         <div class="pw-grid">${body}</div>
+        ${this._legTripUnitHtml(comp, s.key)}
         ${this._hiddenNote(def, s.hidden)}
       </section>`;
     }).join('') + `<div class="pw-empty" hidden>No property matches that search.</div>`;
@@ -262,6 +263,14 @@ const PropWindow = {
         }
       }
     }
+  },
+
+  // Trip unit of a breaker-pair changeover's breaker, under its section
+  _legTripUnitHtml(comp, secKey) {
+    const m = /^co_breaker_([12])$/.exec(secKey);
+    if (!m || typeof TripUnit === 'undefined' || !Components.isBreakerPair(comp)) return '';
+    const html = TripUnit.panelHtml(TripUnit.leg(comp, +m[1]));
+    return html ? `<div class="pw-field pw-field--wide" data-search="trip unit ir tr im isd tsd ii long time short time instantaneous magnetic thermal pickup">${html}</div>` : '';
   },
 
   _fieldHtml(comp, def, field) {

@@ -707,7 +707,7 @@ const TCC = {
   // Arrow-key nudge of a trip-unit breaker: one dial position up / down (the
   // instantaneous dial for an electronic MCCB's magnetic handle)
   _stepTripUnitDial(dev, mode, dir) {
-    const comp = AppState.components.get(dev.id);
+    const comp = TripUnit.targetOfDev(dev);
     const prof = comp && TripUnit.profile(comp);
     if (!prof) return;
     const p = dev.cbParams;
@@ -1994,6 +1994,7 @@ const TCC = {
               short_time_pickup: p.short_time_pickup || 0,
               short_time_delay: p.short_time_delay || 0,
               instantaneous_pickup: p.instantaneous_pickup || 0,
+              trip_unit_kind: p.trip_unit_kind || '',
             },
           });
         }
@@ -4519,10 +4520,11 @@ const TCC = {
           </select>
         </div>`;
     } else if (dev.deviceType === 'cb' && typeof TripUnit !== 'undefined'
-               && TripUnit.profile(AppState.components.get(dev.id))) {
-      // A breaker with a trip unit: its dials in their real steps (same as
-      // the properties panel); type and rating come from the breaker
-      const comp = AppState.components.get(dev.id);
+               && TripUnit.profile(TripUnit.targetOfDev(dev))) {
+      // A breaker with a trip unit (a CB or a changeover breaker): its dials
+      // in their real steps (same as the properties panel); type and rating
+      // come from the breaker
+      const comp = TripUnit.targetOfDev(dev);
       const p = dev.cbParams;
       html = `
         <div class="tcc-form-row">
