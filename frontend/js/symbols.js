@@ -746,29 +746,54 @@ const Symbols = {
 
   // Changeover switch (classic): common pivot dot at the bottom, a contact
   // circle per input (filled = the one the blade sits on). Ports: in_1 at
-  // (-20, top), in_2 at (+20, top), out at (0, bottom).
+  // (-20, top), in_2 at (+20, top), out at (0, bottom). Layout 'one_in_two_out'
+  // mirrors it top-to-bottom (see changeoverFlipped / portsFor) with the text
+  // kept upright.
   changeover(w, h, comp) {
     const p = (comp && comp.props) || {};
     const pos = ['in_1', 'off', 'in_2'].includes(p.state) ? p.state : 'in_1';
     const hh = h / 2, px = 20, fix = -hh * 0.45, piv = hh * 0.5;
     const tip = pos === 'in_1' ? [-px, fix] : pos === 'in_2' ? [px, fix] : [0, -hh * 0.2];
     const dot = (x, y, on) => `<circle cx="${x}" cy="${y}" r="3" ${on ? 'fill="currentColor" stroke="none"' : 'fill="var(--bg-primary, #fff)"'}/>`;
-    return `
-      <g class="symbol-changeover ${pos === 'off' ? 'symbol-open' : 'symbol-closed'}" fill="none">
+    const geom = `
         <line x1="${-px}" y1="${-hh}" x2="${-px}" y2="${fix}"/>
         <line x1="${px}" y1="${-hh}" x2="${px}" y2="${fix}"/>
         <line x1="0" y1="${hh}" x2="0" y2="${piv}"/>
         <line x1="0" y1="${piv}" x2="${tip[0]}" y2="${tip[1]}"/>
-        ${dot(0, piv, true)}${dot(-px, fix, pos === 'in_1')}${dot(px, fix, pos === 'in_2')}
+        ${dot(0, piv, true)}${dot(-px, fix, pos === 'in_1')}${dot(px, fix, pos === 'in_2')}`;
+    return `
+      <g class="symbol-changeover ${pos === 'off' ? 'symbol-open' : 'symbol-closed'}" fill="none">
+        ${this._changeoverFlip(p, geom)}
         ${this._changeoverLabels(w, h, p)}
       </g>`;
   },
 
-  // Input labels (e.g. "Mains" / "Gen") beside the two incoming leads.
+  // 1 input → 2 outputs: the common terminal on top, I / II below.
+  changeoverFlipped(p) {
+    return !!p && p.co_layout === 'one_in_two_out';
+  },
+
+  // Mirror text-free geometry top-to-bottom for the 1-in-2-out layout.
+  _changeoverFlip(p, geom) {
+    return this.changeoverFlipped(p) ? `<g transform="scale(1 -1)">${geom}</g>` : geom;
+  },
+
+  // Terminal labels (e.g. "Mains" / "Gen") beside the I / II leads, upright
+  // in either layout.
   _changeoverLabels(w, h, p) {
-    const y = -h / 2 + 7;
+    const y = this.changeoverFlipped(p) ? h / 2 - 2 : -h / 2 + 7;
     const t = (x, anchor, s) => s ? `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="7" fill="#888" stroke="none" font-family="sans-serif">${escHtml(String(s))}</text>` : '';
     return t(-24, 'end', p.input_1_label) + t(24, 'start', p.input_2_label);
+  },
+
+  // A component's ports: the definition's, with top/bottom swapped for a
+  // 1-in-2-out changeover (ids unchanged, so wiring and analysis don't care).
+  portsFor(comp) {
+    const def = COMPONENT_DEFS[comp.type];
+    const ports = (def && def.ports) || [];
+    if (comp.type !== 'changeover' || !this.changeoverFlipped(comp.props)) return ports;
+    const swap = { top: 'bottom', bottom: 'top' };
+    return ports.map(pt => swap[pt.side] ? { ...pt, side: swap[pt.side] } : pt);
   },
 
   offpage_connector(w, h, comp) {
@@ -961,8 +986,9 @@ const Symbols = {
       const pos = ['in_1', 'off', 'in_2'].includes(p.state) ? p.state : 'in_1';
       const cls = `symbol-changeover symbol-iec ${pos === 'off' ? 'symbol-open' : 'symbol-closed'}`;
       const labels = Symbols._changeoverLabels(w, h, p);
+      const flip = Symbols.changeoverFlipped(p);
       if (p.co_type === 'breaker_pair') {
-        return `<g class="${cls}" fill="none">${this._breakerPair(h, pos)}${labels}</g>`;
+        return `<g class="${cls}" fill="none">${Symbols._changeoverFlip(p, this._breakerPair(h, pos))}${labels}</g>`;
       }
       const hh = h / 2, px = 20, piv = hh * 0.5, fix = -hh * 0.45;
       const kind = ['disconnector', 'load_break'].includes(p.contact_duty) ? p.contact_duty : 'switch_disconnector';
@@ -975,16 +1001,18 @@ const Symbols = {
       }
       s += `<line x1="0" y1="${hh}" x2="0" y2="${piv}"/>`;
       s += `<line x1="0" y1="${piv}" x2="${tip[0]}" y2="${tip[1]}"/>`;
+      let text = '';
       if (p.co_type === 'ats') {
         const my = (piv + tip[1]) / 2, mx = tip[0] / 2;
         s += `<line x1="${mx}" y1="${my}" x2="23.5" y2="${my}" stroke-dasharray="2.2,1.8" stroke-width="0.9"/>`;
         s += `<rect x="23.5" y="${my - 5}" width="10" height="10" fill="var(--bg-primary, #fff)"/>`;
-        s += `<text x="28.5" y="${my + 3}" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" stroke="none" font-family="sans-serif">M</text>`;
+        // Outside the mirror so the M stays upright
+        const ty = (flip ? -my : my) + 3;
+        text = `<text x="28.5" y="${ty}" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" stroke="none" font-family="sans-serif">M</text>`;
       }
-      return `<g class="${cls}">${s}${labels}</g>`;
+      return `<g class="${cls}">${Symbols._changeoverFlip(p, s)}${text}${labels}</g>`;
     },
-
-    _breakerPair(h, pos) {
+      _breakerPair(h, pos) {
       const hh = h / 2, px = 20, piv = hh * 0.4, fix = -hh * 0.45, a = 3.3, busY = hh * 0.75;
       let s = `<line x1="0" y1="${hh}" x2="0" y2="${busY}"/><line x1="${-px}" y1="${busY}" x2="${px}" y2="${busY}"/>`;
       for (const [x, on] of [[-px, pos === 'in_1'], [px, pos === 'in_2']]) {
@@ -1168,7 +1196,7 @@ const Symbols = {
       }
       portsHtml = dots.join('');
     } else {
-      portsHtml = (def.ports || []).map(p => {
+      portsHtml = this.portsFor(comp).map(p => {
         const pos = this.getPortPosition(p, w, h);
         return `<circle class="conn-port-hit" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
               <circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
@@ -1226,7 +1254,7 @@ const Symbols = {
       if (!loc) return { x: comp.x, y: comp.y };
       local = loc;
     } else {
-      const port = def.ports.find(p => p.id === portId);
+      const port = this.portsFor(comp).find(p => p.id === portId);
       if (!port) return { x: comp.x, y: comp.y };
       local = this.getPortPosition(port, def.width, def.height);
     }

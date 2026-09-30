@@ -72,6 +72,7 @@ const FIELD_HELP = {
   // ── Switch & changeover ──
   'switch.switch_type': 'Switch-disconnector: can make and break load current and gives isolation.\nLoad-break switch: can switch load current.\nDisconnector: off-load isolation only, and must not be operated under load.',
   'changeover.co_type': 'How the two supplies are selected:\nManual I–0–II: centre-off rotary changeover.\nManual I–II: no off position.\nATS: automatic transfer switch with transfer and retransfer delays.\nInterlocked breaker pair: two breakers, only one closed at a time.\nEvery study sees only the selected input.',
+  'changeover.co_layout': 'How the symbol is drawn:\n2 inputs → 1 output: terminals I and II on top, the common terminal below (a supply changeover).\n1 input → 2 outputs: the common terminal on top, I and II below (one supply switched to either of two loads).\nDrawing only — every study treats both the same way: the selected terminal is connected to the common one. Use this instead of rotating the switch 180°, so the text stays upright.',
   'changeover.state': 'Which input feeds the output. Studies run with only this input connected; the other input is left open.\nUsed by: all studies.',
   'changeover.contact_duty': 'Switching duty of the changeover contacts: switch-disconnector, load-break, or off-load disconnector.',
   'changeover.transfer_delay_s': 'Time the ATS waits after the normal supply fails before it transfers to the standby input.',
