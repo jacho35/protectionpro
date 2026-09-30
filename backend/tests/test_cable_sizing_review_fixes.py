@@ -220,6 +220,26 @@ class TestRecommendationVoltageClass:
         assert r["status"] == "fail"
         assert "0.4kV" in r["recommended_cable"]
 
+    def test_higher_class_cable_recommended_in_its_own_class(self):
+        """An 11 kV library cable run on 3.3 kV keeps voltage_kv at the
+        operating 3.3 (the picker allows higher-rated MV cable). Its class must
+        come from the library entry, or no cable is within 1 kV of 3.3 and the
+        recommendation is lost."""
+        cable = _c("k1", "cable", {"name": "K1", "standard_type": "cu_xlpe_16_11kv",
+                                   "conductor": "Cu", "insulation": "XLPE", "size_mm2": 16,
+                                   "r_per_km": 1.15, "x_per_km": 0.119, "rated_amps": 110,
+                                   "length_km": 0.2, "voltage_kv": 3.3})
+        p = ProjectData(projectName="c33", baseMVA=100.0, frequency=50, components=[
+            _c("u", "utility", {"name": "Grid", "voltage_kv": 3.3, "fault_mva": 100, "x_r_ratio": 10}),
+            _c("b1", "bus", {"name": "MV", "voltage_kv": 3.3}),
+            cable,
+            _c("b2", "bus", {"name": "MV2", "voltage_kv": 3.3}),
+            _c("ld", "static_load", {"name": "L", "rated_kva": 1000, "power_factor": 0.9}),
+        ], wires=[_w("1", "u", "b1"), _w("2", "b1", "k1"), _w("3", "k1", "b2"), _w("4", "b2", "ld")])
+        r = _row(p)
+        assert r["status"] == "fail"
+        assert r["recommended_cable"] and "11kV" in r["recommended_cable"]
+
 
 class TestCS5LargestFaultCurrent:
     """§434.5.2 needs the largest fault current of any type; at a Dyn11 LV
