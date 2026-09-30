@@ -1206,6 +1206,55 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
         demand_mw = (sum(bus_load_p_mw[i] for i in isl_buses)
                      + (loss_adders or {}).get(isl, 0.0))
 
+        # Balancer: highest dispatch priority number; ties broken by type
+        # (utility > generator > wind > solar) then largest available output.
+        def _balancer_key(entry):
+            comp = entry[0]
+            return (_dispatch_priority(comp),
+                    _BALANCER_TYPE_RANK.get(comp.type, 0),
+                    _source_output_mva(comp)[0] if comp.type != "utility" else float("inf"))
+
+        # ── Idle island: sources energise it, but nothing draws power ──
+        # E.g. a generator sync bus whose outgoing changeover is off while the
+        # set breakers stay closed. The sets are live but unloaded — not a
+        # dispatch problem — so run no commitment, droop sharing, minimum-load
+        # or curtailment checks (each would warn about the empty island).
+        # One source still holds the voltage reference so the buses solve
+        # live; every source reports role 'idle' at 0 output, with one note.
+        if (not utilities and not island_batts.get(isl)
+                and sum(bus_load_p_mw[i] for i in isl_buses) <= 1e-9):
+            ref = max(sources, key=_balancer_key)
+            source_bis = {bi for _c, bi, _d in sources}
+            uidx = user_swing_islands.get(isl)
+            swing_idx.add(uidx if uidx in source_bis else ref[1])
+            for comp, bi, _d in sources:
+                dispatched_by_comp[comp.id] = (0.0, 0.0)
+                entries.append({
+                    "source_id": comp.id,
+                    "source_name": str(comp.props.get("name", comp.type)),
+                    "source_type": comp.type,
+                    "bus_id": buses[bi].id, "island": isl,
+                    "priority": _dispatch_priority(comp), "mode": _dispatch_mode(comp),
+                    "role": "idle",
+                    "available_mw": round(_source_output_mva(comp)[0], 4),
+                    "dispatched_mw": 0.0, "curtailed_mw": 0.0,
+                    "available_mvar": round(_source_output_mva(comp)[1], 4),
+                    "dispatched_mvar": 0.0, "curtailed_mvar": 0.0,
+                })
+            names = ", ".join(f"'{c.props.get('name', c.id)}'" for c, _b, _d in sources)
+            shown = ([i for i in isl_buses if not is_synthetic_bus(buses[i].id)]
+                     or sorted({bi for _c, bi, _d in sources}))
+            bnames = ", ".join(f"'{buses[i].props.get('name', buses[i].id)}'"
+                               for i in shown)
+            warnings.append(LoadFlowWarning(
+                elementId=ref[0].id,
+                element_name=str(ref[0].props.get("name", ref[0].type)),
+                message=(f"{names} energise{'s' if len(sources) == 1 else ''} "
+                         f"{bnames} only — no load connected (island isolated "
+                         "from the network); treated as idle."),
+            ))
+            continue
+
         # ── Battery storage pass (BESS + hybrid PV batteries) ──
         # Resolved BEFORE generator commitment and merit dispatch so both see
         # the storage-adjusted demand:
@@ -1302,14 +1351,6 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                     message=(f"Sequence set(s) {held} held off — committed capacity "
                              "covers the island demand."),
                 ))
-
-        # Balancer: highest dispatch priority number; ties broken by type
-        # (utility > generator > wind > solar) then largest available output.
-        def _balancer_key(entry):
-            comp = entry[0]
-            return (_dispatch_priority(comp),
-                    _BALANCER_TYPE_RANK.get(comp.type, 0),
-                    _source_output_mva(comp)[0] if comp.type != "utility" else float("inf"))
 
         # ── Droop parallel load-sharing (islanded synchronous gensets) ──
         # With no utility to hold the island, two or more droop-controlled

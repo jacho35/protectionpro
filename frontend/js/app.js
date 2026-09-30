@@ -622,7 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const roleLabel = {
       balancer: 'Balancer (slack)', dispatched: 'Dispatched',
       curtailed: 'Curtailed', offline: 'Disconnected', standby: 'Standby (idle)',
-      off: 'Off (sequence)',
+      off: 'Off (sequence)', idle: 'Idle (no load)',
     };
     // Power units for the dispatch table: apparent (kVA/MVA, the default —
     // it's what a source is rated and sized in) or real (kW/MW). The choice
@@ -681,7 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${d.role === 'balancer' ? '—' : escHtml(d.mode.replace('_', ' '))}</td>
           <td>${roleLabel[d.role] || escHtml(d.role)}</td>
           <td>${d.source_type === 'utility' && d.available_mw === 0 ? '∞' : fmtVal(d.available_mw, d.available_mvar)}</td>
-          <td>${['offline', 'standby', 'off'].includes(d.role) ? '—' : fmtVal(d.dispatched_mw, d.dispatched_mvar)}</td>
+          <td>${['offline', 'standby', 'off', 'idle'].includes(d.role) ? '—' : fmtVal(d.dispatched_mw, d.dispatched_mvar)}</td>
           <td>${cur}</td></tr>`;
       }
       html += '</tbody></table></div></div>';

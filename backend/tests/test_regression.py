@@ -2929,6 +2929,45 @@ class TestIslandingAndDispatch:
         assert abs(load["g200"] - load["g100"]) < 3.0   # within 3 pp → proportional
         assert any("Droop parallel operation" in w.message for w in res.warnings)
 
+    def test_unloaded_generator_island_is_idle(self):
+        """Two must-run sets on a sync bus whose outgoing breaker is open (the
+        set breakers still closed) form a live island with no load. That is
+        not a dispatch problem: no droop-sharing or minimum-load (wet-stacking)
+        warnings — both sets report 'idle' at 0 kW with one note, the sync bus
+        solves live, and the rest of the network is untouched."""
+        g = {"voltage_kv": 0.4, "power_factor": 0.85, "min_load_pct": 30,
+             "rated_mva": 0.15, "dispatch_mode": "must_run"}
+        comps = [
+            _comp("g1", "generator", {**g, "name": "Gen1"}),
+            _comp("g2", "generator", {**g, "name": "Gen2"}),
+            _comp("bus-s", "bus", {"name": "GEN_SYNC", "voltage_kv": 0.4}),
+            _comp("cb-1", "cb", {"name": "Tie", "state": "open"}),
+            _comp("bus-1", "bus", {"name": "MDB", "voltage_kv": 0.4}),
+            _comp("utility-1", "utility", {"name": "Grid", "voltage_kv": 0.4,
+                                           "fault_mva": 20.0, "x_r_ratio": 5.0}),
+            _comp("static_load-1", "static_load", {
+                "name": "L", "rated_kva": 100.0, "power_factor": 0.85,
+                "voltage_kv": 0.4}),
+        ]
+        wires = [_wire("w1", "g1", "bus-s"), _wire("w2", "g2", "bus-s"),
+                 _wire("w3", "bus-s", "cb-1"), _wire("w4", "cb-1", "bus-1"),
+                 _wire("w5", "utility-1", "bus-1"),
+                 _wire("w6", "bus-1", "static_load-1")]
+        res = run_load_flow(ProjectData(projectName="t", baseMVA=100.0, frequency=50,
+                                        components=comps, wires=wires),
+                            "newton_raphson")
+        assert res.converged
+        e = {d.source_id: d for d in res.dispatch}
+        assert e["g1"].role == "idle" and e["g2"].role == "idle"
+        assert e["g1"].dispatched_mw == 0.0 and e["g2"].dispatched_mw == 0.0
+        msgs = [w.message for w in res.warnings]
+        assert not any("Droop parallel" in m or "minimum load" in m
+                       or "Island without utility" in m for m in msgs)
+        idle = [m for m in msgs if "treated as idle" in m]
+        assert len(idle) == 1 and "'Gen1', 'Gen2'" in idle[0] and "'GEN_SYNC'" in idle[0]
+        assert res.buses["bus-s"].energized and res.buses["bus-s"].voltage_pu == pytest.approx(1.0)
+        assert e["utility-1"].dispatched_mw == pytest.approx(0.085, abs=0.002)
+
     def test_droop_low_load_runs_single_set(self):
         """At 85 kW — well within the 170 kW reference set alone — only the
         reference set runs; the second set is not paralleled needlessly (no
