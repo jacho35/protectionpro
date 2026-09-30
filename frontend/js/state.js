@@ -485,6 +485,43 @@ const AppState = {
     }
     return out;
   },
+  // Board way ids ('w<n>') are minted from planMarkup._seq, but the load-time
+  // _seq repair only scans '_<n>' plan ids — so a reloaded project reissued
+  // ids its schedules already used, and ways ended up sharing an id (within a
+  // board as well as across boards). Lift _seq past every way id, and re-mint
+  // a repeat inside one board, moving the plan devices tagged to that way
+  // (same board, same way number) onto the new id.
+  _repairWayIds() {
+    const pm = this.planMarkup;
+    const boards = [...this.components.values()]
+      .filter(c => c.type === 'distribution_board' && Array.isArray(c.props && c.props.circuits));
+    let maxSeq = 0;
+    for (const b of boards) {
+      for (const w of b.props.circuits) {
+        const m = /^w(\d+)$/.exec(String((w && w.id) || ''));
+        if (m) maxSeq = Math.max(maxSeq, +m[1]);
+      }
+    }
+    pm._seq = Math.max(pm._seq || 1, maxSeq + 1);
+    let planEls = null;
+    for (const b of boards) {
+      const seen = new Set();
+      for (const w of b.props.circuits) {
+        if (!w || !w.id) continue;
+        if (!seen.has(w.id)) { seen.add(w.id); continue; }
+        const old = w.id;
+        w.id = 'w' + (pm._seq++);
+        seen.add(w.id);
+        if (!planEls) planEls = this.planAllElements();
+        const dbEls = new Set(planEls.filter(e => e.type === 'bd_db' && e.sldId === b.id).map(e => e.id));
+        for (const el of planEls) {
+          const p = el.props || {};
+          if (dbEls.has(p.circuitDbId) && p.circuitWid === old && String(p.circuitNo) === String(w.way)) p.circuitWid = w.id;
+        }
+      }
+    }
+  },
+
   planAllElements() { return this._planAllOf('elements'); },
   planAllRoutes() { return this._planAllOf('routes'); },
   planAllPlans() { return this._planAllOf('plans'); },
@@ -1735,6 +1772,7 @@ const AppState = {
       const active = pm.floors.find(f => f.id === pm.activeFloorId) || pm.floors[0];
       for (const k of this._PLAN_FLOOR_KEYS) pm[k] = active.data[k];
     }
+    this._repairWayIds();
     // Restore annotation badge positions
     if (data.annotationOffsets && typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
