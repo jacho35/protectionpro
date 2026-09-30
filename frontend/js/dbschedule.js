@@ -49,7 +49,7 @@ const DBSchedule = {
   _selected: new Set(),   // way ids checked for bulk editing (stable across sort/render)
   _selAnchor: null,       // way id the last plain click landed on — shift-click range origin
   _bulkDraft: {},         // field key → typed bulk-panel value, survives re-render
-  _resIndex: null,        // Map(way id → backend check row), or null before any run
+  _resIndex: null,        // Map('board id|way id' → backend check row), or null before any run
 
   // Lumped-load props recompute() derives from the committed fields
   _DERIVED_KEYS: ['rated_kva', 'demand_factor', 'power_factor', 'phase_a_pct',
@@ -721,19 +721,22 @@ const DBSchedule = {
   },
 
   // ── Backend check results ───────────────────────────────────────────
-  // AppState.dbCheckResults is the authority; _resIndex is a way-id lookup
-  // rebuilt from it. Keyed on the stable id, never the row index, because
-  // sorting by way number reorders the array under us.
+  // AppState.dbCheckResults is the authority; _resIndex is a lookup rebuilt
+  // from it. Keyed on the stable way id, never the row index, because sorting
+  // by way number reorders the array under us — and on the board too: a way
+  // id is unique only within its board, so a bare-id key painted another
+  // board's verdict onto this row.
+  _resKey(boardId, wayId) { return `${boardId}|${wayId}`; },
   syncResults() {
     const res = (typeof AppState !== 'undefined') ? AppState.dbCheckResults : null;
     this._resIndex = (res && Array.isArray(res.ways))
-      ? new Map(res.ways.filter(w => w.way_id).map(w => [w.way_id, w]))
+      ? new Map(res.ways.filter(w => w.way_id).map(w => [this._resKey(w.board_id, w.way_id), w]))
       : null;
     return this._resIndex;
   },
 
   _resultFor(c) {
-    return (this._resIndex && c && c.id) ? this._resIndex.get(c.id) : null;
+    return (this._resIndex && c && c.id) ? this._resIndex.get(this._resKey(this.currentId, c.id)) : null;
   },
 
   // The frozen left band (Way/Description/Breaker/Load) and the frozen right
@@ -761,7 +764,7 @@ const DBSchedule = {
     const comp = AppState.components.get(this.currentId);
     const byId = new Map((comp ? (comp.props.circuits || []) : []).map(c => [c.id, c]));
     this.body.querySelectorAll('td.db-res').forEach(td => {
-      const row = this._resIndex ? this._resIndex.get(td.dataset.id) : null;
+      const row = this._resIndex ? this._resIndex.get(this._resKey(this.currentId, td.dataset.id)) : null;
       const kind = td.dataset.res;
       let text = '—', status = 'none', title = 'Run "Check circuits" to compute';
       if (row) {
@@ -1656,10 +1659,14 @@ const DBSchedule = {
       const way = String(next++);
       if (move) {
         // Same object, same stable id — plan devices tagged by id follow it.
+        // Unless the target board already uses that id (older projects reused
+        // ids across boards): then it takes a fresh one, and its devices too.
+        const oldId = c.id;
+        if (dst.props.circuits.some(x => x.id === oldId)) c.id = this._wayId();
         if (Number(c.plan_qty) > 0 && dstPlan) {
           for (const el of planEls) {
             const p = el.props || {};
-            const byId = p.circuitWid === c.id;
+            const byId = p.circuitWid === oldId && srcPlan && p.circuitDbId === srcPlan.id;
             const byNum = !p.circuitWid && srcPlan && p.circuitDbId === srcPlan.id && String(p.circuitNo) === oldWay;
             if (byId || byNum) { p.circuitDbId = dstPlan.id; p.circuitWid = c.id; p.circuitNo = way; }
           }

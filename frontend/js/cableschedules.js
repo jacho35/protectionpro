@@ -154,13 +154,13 @@ const CableSchedules = {
     });
     const chk = AppState.dbCheckResults;
     const byWay = new Map();
-    if (chk && Array.isArray(chk.ways)) for (const w of chk.ways) if (w.way_id) byWay.set(w.way_id, w);
+    if (chk && Array.isArray(chk.ways)) for (const w of chk.ways) if (w.way_id) byWay.set(`${w.board_id}|${w.way_id}`, w);
     const finals = [];
     const ST = { pass: ['ok', 'OK'], warn: ['amb', 'Check'], fail: ['bad', 'Fail'], info: ['gry', 'Info'] };
     for (const bd of boards) {
       for (const w of bd.props.circuits) {
         if (w.type === 'feeder_db') continue;
-        const r = byWay.get(w.id);
+        const r = byWay.get(`${bd.id}|${w.id}`);
         const s = r ? ST[r.status] || ['gry', r.status] : ['gry', 'Not checked'];
         const why = r ? (r.messages || []).join(' ') : 'Run the circuit check';
         const failOn = r && r.status !== 'pass' ? [r.ampacity_status !== 'pass' && r.ampacity_status !== 'info' ? 'Iz' : '', r.coordination_status !== 'pass' && r.coordination_status !== 'info' ? 'Ib≤In≤Iz' : '', r.vd_status !== 'pass' && r.vd_status !== 'info' ? 'VD' : '', r.ecc_status !== 'pass' && r.ecc_status !== 'info' ? 'ECC' : '', r.zs_status !== 'pass' && r.zs_status !== 'info' ? 'Zs' : ''].filter(Boolean).join(', ') : '';
