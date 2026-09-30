@@ -4082,13 +4082,13 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         from_v = components[from_bus].props.get("voltage_kv", 0) if from_bus in components else 0
         to_v = components[to_bus].props.get("voltage_kv", 0) if to_bus in components else 0
 
-        # Find the transformer to use as the walk boundary
-        xfmr_id = None
-        for eid, e in elems.items():
-            if e.type in ("transformer", "autotransformer"):
-                xfmr_id = eid
-                break
-        if not xfmr_id:
+        # Every transformer in the chain is a walk boundary. Stopping at only
+        # the first one let the walk from the far bus cross a second
+        # (cascaded, e.g. step-up/step-down) unit and judge the cable between
+        # them against the wrong bus voltage.
+        xfmr_ids = {eid for eid, e in elems.items()
+                    if e.type in ("transformer", "autotransformer")}
+        if not xfmr_ids:
             continue
 
         # Walk from each bus toward the transformer, collecting ALL components on that side
@@ -4099,7 +4099,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             stack = list(adjacency.get(side_bus, []))
             while stack:
                 nid = stack.pop()
-                if nid in visited or nid == xfmr_id:
+                if nid in visited or nid in xfmr_ids:
                     continue
                 visited.add(nid)
                 # Don't cross into another bus
@@ -4133,6 +4133,24 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     for neighbor in adjacency.get(nid, []):
                         if neighbor not in visited:
                             stack.append(neighbor)
+
+        # Cables between cascaded transformers touch neither bus; judge them
+        # against the zone voltage the chain builder resolved for them.
+        for eid, e in elems.items():
+            if e.type != "cable" or eid in warned_ids:
+                continue
+            expected_v = cvs.get(eid, 0) or 0
+            actual_v = e.props.get("voltage_kv", 0) or 0
+            if expected_v > 0 and actual_v > 0 and abs(actual_v - expected_v) / expected_v > tolerance:
+                warned_ids.add(eid)
+                voltage_warnings.append(LoadFlowWarning(
+                    elementId=eid,
+                    element_name=e.props.get("name", e.type),
+                    message=(f"Voltage mismatch: rated {actual_v} kV, "
+                             f"expected {expected_v} kV for its position in the chain"),
+                    expected_kv=round(expected_v, 3),
+                    actual_kv=round(actual_v, 3),
+                ))
 
     # ── Dispatch summary ──
     # Balancer (slack) sources: actual output = network injection at the

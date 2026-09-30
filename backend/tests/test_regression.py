@@ -5775,6 +5775,51 @@ class TestCableZoneWarning:
         assert not [w for w in res.warnings
                     if w.elementId == "cable-1" and "Voltage mismatch" in w.message]
 
+    @staticmethod
+    def _step_up_step_down(mid_cable_kv):
+        """0.42 kV bus → step-up 0.42/3.3 → 3.3 kV cable → step-down 3.3/0.42
+        → 0.42 kV bus, with no bus at 3.3 kV (a long LV run boosted to MV)."""
+        comps = [
+            _comp("utility-1", "utility", {
+                "name": "U", "voltage_kv": 0.42, "fault_mva": 20, "x_r_ratio": 5}),
+            _comp("bus-1", "bus", {"name": "B1", "voltage_kv": 0.42}),
+            _comp("tx-up", "transformer", {
+                "name": "TUp", "rated_mva": 0.2, "voltage_hv_kv": 3.3,
+                "voltage_lv_kv": 0.42, "z_percent": 4, "x_r_ratio": 5}),
+            _comp("cable-mid", "cable", {
+                "name": "CMid", "length_km": 1.0, "r_per_km": 0.3, "x_per_km": 0.1,
+                "voltage_kv": mid_cable_kv, "rated_amps": 100}),
+            _comp("tx-down", "transformer", {
+                "name": "TDown", "rated_mva": 0.2, "voltage_hv_kv": 3.3,
+                "voltage_lv_kv": 0.42, "z_percent": 4, "x_r_ratio": 5}),
+            _comp("bus-2", "bus", {"name": "B2", "voltage_kv": 0.42}),
+            _comp("load-1", "static_load", {
+                "name": "L", "rated_kva": 50, "power_factor": 0.9, "demand_factor": 1.0}),
+        ]
+        wires = [
+            _wire("w1", "utility-1", "bus-1", "out", "in"),
+            _wire("w2", "bus-1", "tx-up", "out", "secondary"),
+            _wire("w3", "tx-up", "cable-mid", "primary", "from"),
+            _wire("w4", "cable-mid", "tx-down", "to", "primary"),
+            _wire("w5", "tx-down", "bus-2", "secondary", "in"),
+            _wire("w6", "bus-2", "load-1", "out", "in"),
+        ]
+        return ProjectData(projectName="su-sd", baseMVA=100.0, frequency=50,
+                           components=comps, wires=wires)
+
+    def test_cable_between_cascaded_transformers_judged_on_its_own_zone(self):
+        """The warning walk used only the FIRST transformer as its boundary, so
+        from the far bus it crossed the second unit and flagged a correct
+        3.3 kV cable against 0.42 kV."""
+        res = run_load_flow(self._step_up_step_down(3.3))
+        assert not [w for w in res.warnings
+                    if w.elementId == "cable-mid" and "Voltage mismatch" in w.message]
+
+        res = run_load_flow(self._step_up_step_down(0.42))
+        stale = [w for w in res.warnings
+                 if w.elementId == "cable-mid" and "Voltage mismatch" in w.message]
+        assert stale and stale[0].expected_kv == pytest.approx(3.3)
+
 
 # ── Zero-sequence data provenance (audit F-3) ────────────────────────────
 
