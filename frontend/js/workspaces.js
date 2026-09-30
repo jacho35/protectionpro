@@ -89,7 +89,7 @@ const Workspaces = {
     switch (ws) {
       case 'sld': return true;
       case 'retic': return this._reticHasData();
-      case 'streetlight': { const sl = AppState.reticulation && AppState.reticulation.streetLighting; return !!(sl && sl.circuits && sl.circuits.length); }
+      case 'streetlight': { const sl = AppState.reticulation && AppState.reticulation.streetLighting; return !!(sl && ((sl.circuits && sl.circuits.length) || (sl.roadDesigns && sl.roadDesigns.length))); }
       case 'plan': return typeof AppState._planMarkupIsEmpty === 'function' && !AppState._planMarkupIsEmpty();
       case 'interlock': return !!(AppState.interlockLogic && AppState.interlockLogic.nodes && AppState.interlockLogic.nodes.length);
       case 'schedules': return this._schedulesHaveData();

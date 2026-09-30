@@ -119,7 +119,12 @@ const StreetLight = {
     ws.innerHTML = `
       <div class="sl-toolbar">
         <span class="sl-title">Street lighting</span>
+        <span class="sl-view-toggle" role="tablist" aria-label="Street lighting view">
+          <button role="tab" data-sl="view" data-view="circuits" title="Circuits: volt drop per pole, earth loop, phase balance">Circuits</button>
+          <button role="tab" data-sl="view" data-view="design" title="Lighting design: lux / luminance on the road cross-section (EN 13201 / SANS 10098-1)">Lighting design</button>
+        </span>
         <span class="sl-sep"></span>
+        <span class="sl-tb-circuits">
         <button class="btn-small btn-primary" data-sl="new">+ New circuit</button>
         <button class="btn-small" data-sl="quick" title="Size a uniform string before drawing it — save it as a circuit when it works">Quick calc</button>
         <button class="btn-small" data-sl="sync" title="Create / update circuits from the Plan's street-lighting routes (poles, spans and spurs)">Sync from plan</button>
@@ -132,6 +137,7 @@ const StreetLight = {
           <input type="number" step="0.5" data-df="snakingPct"> %</label>
         <label title="Extra cable per pole to loop into the pole base and back">Loop-in
           <input type="number" step="0.5" data-df="loopInM"> m</label>
+        </span>
         <span class="sl-status" id="sl-status"></span>
       </div>
       <div class="sl-body">
@@ -142,7 +148,8 @@ const StreetLight = {
         </aside>
         <section class="sl-main" id="sl-main"></section>
         <aside class="sl-results" id="sl-results"></aside>
-      </div>`;
+      </div>
+      <div class="sl-body rl-body" id="rl-body" style="display:none"></div>`;
     ws.addEventListener('click', (e) => this._onClick(e));
     ws.addEventListener('change', (e) => this._onChange(e));
   },
@@ -154,13 +161,37 @@ const StreetLight = {
     const ws = document.getElementById('streetlight-workspace');
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
     if (!this.selected) this._selId = this.circuits.length ? this.circuits[0].id : null;
-    this.render();
-    this.recompute(0);
+    this.setView(this._view || 'circuits');
   },
 
   deactivate() {
     this._active = false;
     clearTimeout(this._timer);
+    if (typeof RoadLight !== 'undefined') RoadLight.deactivate();
+  },
+
+  // Circuits (electrical) or Lighting design (photometric, js/roadlight.js).
+  setView(view) {
+    this._view = view === 'design' ? 'design' : 'circuits';
+    const ws = document.getElementById('streetlight-workspace');
+    if (!ws) return;
+    const design = this._view === 'design';
+    ws.querySelectorAll('[data-sl="view"]').forEach(b => {
+      const on = b.dataset.view === this._view;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    ws.querySelector('.sl-tb-circuits').style.display = design ? 'none' : '';
+    ws.querySelector('.sl-body:not(.rl-body)').style.display = design ? 'none' : '';
+    const rl = document.getElementById('rl-body');
+    rl.style.display = design ? '' : 'none';
+    if (design && typeof RoadLight !== 'undefined') {
+      RoadLight.activate(rl);
+    } else {
+      if (typeof RoadLight !== 'undefined') RoadLight.deactivate();
+      this.render();
+      this.recompute(0);
+    }
   },
 
   // Called when the project is replaced (AppState.reset / fromJSON).
@@ -168,6 +199,7 @@ const StreetLight = {
     this._results = {};
     this._selId = null;
     if (this._active) { this._selId = this.circuits.length ? this.circuits[0].id : null; this.render(); this.recompute(0); }
+    if (typeof RoadLight !== 'undefined') RoadLight.onProjectChanged();
   },
 
   // ─── Mutations ──────────────────────────────────────────────────────
@@ -692,7 +724,8 @@ const StreetLight = {
     if (!b) return;
     const act = b.dataset.sl;
     const c = this.selected;
-    if (act === 'new') this.newCircuit();
+    if (act === 'view') this.setView(b.dataset.view);
+    else if (act === 'new') this.newCircuit();
     else if (act === 'quick') this.openQuickCalc();
     else if (act === 'sync') this.syncFromPlan();
     else if (act === 'select') { this._selId = b.dataset.id; this.renderRail(); this.renderMain(); this.renderResults(); }

@@ -259,7 +259,17 @@ const AppState = {
       circuits,
       _circSeq: Math.max(sl._circSeq || 1, maxC + 1),
       _poleSeq: Math.max(sl._poleSeq || 1, maxP + 1),
+      // Road lighting designs + the photometry they use (js/roadlight.js).
+      roadDesigns: Array.isArray(sl.roadDesigns) ? sl.roadDesigns.filter(d => d && d.id) : [],
+      photometry: sl.photometry && typeof sl.photometry === 'object' ? sl.photometry : {},
+      _rdSeq: this._maxSeq(sl.roadDesigns, /^rd_(\d+)$/, sl._rdSeq),
+      _phSeq: this._maxSeq(Object.keys(sl.photometry || {}).map(id => ({ id })), /^ph_(\d+)$/, sl._phSeq),
     };
+  },
+  _maxSeq(list, re, stored) {
+    let max = 0;
+    for (const x of Array.isArray(list) ? list : []) { const m = re.exec(String(x && x.id)); if (m) max = Math.max(max, +m[1]); }
+    return Math.max(stored || 1, max + 1);
   },
   // Street lighting circuits (js/streetlight.js), kept inside the reticulation.
   _defaultStreetLighting() {
@@ -272,6 +282,9 @@ const AppState = {
       },
       circuits: [],             // [{id, name, source:{kind,id}, system, …, poles:[{id,name,parent,…}]}]
       _circSeq: 1, _poleSeq: 1,
+      roadDesigns: [],          // lighting designs on a road cross-section (js/roadlight.js)
+      photometry: {},           // id → canonical Type C web (IES / LDT / generic)
+      _rdSeq: 1, _phSeq: 1,
     };
   },
 
