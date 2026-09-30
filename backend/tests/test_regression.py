@@ -5370,6 +5370,69 @@ class TestInverterReactive:
         assert b.pf == pytest.approx(abs(b.p_mw) / b.s_mva, abs=1e-3)
         assert 0 < b.pf <= 1
 
+    @staticmethod
+    def _unholdable_setpoint(grid):
+        """A 65 kW hybrid inverter told to hold 1.1 p.u. on a board tied by a
+        closed breaker to a 1.0 p.u. reference — a genset behind a short cable
+        (island) or a utility behind one (grid). Holding 1.1 needs far more Q
+        than the inverter has, and NR used to diverge before the reactive-limit
+        clamp (which only ran on a converged solve) could engage."""
+        comps = [
+            _comp("bus-g", "bus", {"name": "GEN", "voltage_kv": 0.42}),
+            _comp("cb-t", "cb", {"name": "Tie", "state": "closed"}),
+            _comp("bus-s", "bus", {"name": "SYNC", "voltage_kv": 0.42}),
+            _comp("pv-1", "solar_pv", {
+                "name": "PV1", "rated_kw": 65, "voltage_kv": 0.42,
+                "num_inverters": 1, "inverter_eff": 0.97, "power_factor": 1,
+                "irradiance_pct": 80, "inverter_type": "hybrid",
+                "battery_kwh": 100, "battery_max_discharge_kw": 200,
+                "battery_soc_pct": 95, "battery_mode": "idle",
+                "dispatch_mode": "must_run", "dispatch_priority": 1,
+                "var_mode": "voltage", "v_setpoint_pu": 1.1}),
+            _comp("load-1", "static_load", {
+                "name": "L", "rated_kva": 150, "power_factor": 0.9,
+                "demand_factor": 1.0}),
+            _comp("cab", "cable", {
+                "name": "C", "length_km": 0.02 if not grid else 0.05,
+                "r_per_km": 0.3, "x_per_km": 0.08, "voltage_kv": 0.42,
+                "rated_amps": 300}),
+        ]
+        wires = [
+            _wire("w2", "bus-g", "cb-t", "out", "in"),
+            _wire("w3", "cb-t", "bus-s", "out", "in"),
+            _wire("w4", "bus-s", "pv-1", "out", "in"),
+            _wire("w5", "bus-s", "load-1", "out", "in"),
+            _wire("w1", "cab", "bus-g", "to", "in"),
+        ]
+        if grid:
+            comps += [
+                _comp("u", "utility", {"name": "U", "voltage_kv": 0.42,
+                                       "fault_mva": 10, "x_r_ratio": 5}),
+                _comp("bus-u", "bus", {"name": "UB", "voltage_kv": 0.42}),
+            ]
+            wires += [_wire("w0", "u", "bus-u", "out", "in"),
+                      _wire("w0b", "bus-u", "cab", "out", "from")]
+        else:
+            comps.append(_comp("gen-1", "generator", {
+                "name": "G1", "rated_mva": 0.3, "voltage_kv": 0.42,
+                "xd_pp": 0.15, "x_r_ratio": 40, "power_factor": 0.85,
+                "dispatch_priority": 2, "dispatch_mode": "merit_order",
+                "gen_control": "droop"}))
+            wires.append(_wire("w0", "gen-1", "cab", "out", "from"))
+        return ProjectData(projectName="unholdable-vset", baseMVA=100.0,
+                           frequency=50, components=comps, wires=wires)
+
+    @pytest.mark.parametrize("grid", [False, True])
+    def test_unholdable_setpoint_converges_at_the_limit(self, grid):
+        res = run_load_flow(self._unholdable_setpoint(grid))
+        assert res.converged
+        # Pinned at the capability circle, so it can't reach 1.1 p.u.
+        assert res.buses["bus-s"].voltage_pu < 1.05
+        assert [w for w in res.warnings
+                if "reactive capability" in w.message and w.elementId == "pv-1"]
+        assert [w for w in res.warnings
+                if "solve diverged" in w.message and "PV1" in w.element_name]
+
 
 # ── ANSI/IEEE C37.010 fault duty ─────────────────────────────────────────
 #

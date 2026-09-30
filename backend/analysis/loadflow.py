@@ -3113,6 +3113,60 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 total -= other["inj_q"]
         return total
 
+    _rescue_count = 0
+    _rescued_names = set()
+
+    def _rescue_regulators():
+        """Clamp every unclamped PV-bus regulator at a reactive limit, chosen
+        from a solve with all of them released to PQ. Returns the names
+        clamped (empty if there is nothing to release or that solve fails)."""
+        # SVCs are left out: a clamped SVC is never reverted to regulation.
+        units = [("gen", u) for u in gen_pv_units.values()] + \
+                [("ibr", u) for u in ibr_pv_units.values()]
+        free = [(k, u) for k, u in units
+                if u["clamped"] is None and not u.get("latched")
+                and bus_types[u["i"]] == 1]
+        if not free:
+            return []
+        # A PQ bus's V_spec is only the NR starting guess: start the released
+        # buses flat, not at the setpoint that caused the divergence (1.1 p.u.
+        # across a stiff bus link is a ~1e5 p.u. first mismatch). The revert
+        # below restores V_spec to the setpoint if regulation is handed back.
+        bt_pq = list(bus_types)
+        for _k, u in free:
+            bt_pq[u["i"]] = 0
+            V_spec[u["i"]] = 1.0
+        V0, ok, _it, _r = solve_with_islands(
+            Y, P_spec, Q_spec, V_spec, bt_pq, dispatch["dead_idx"], method)
+        if not ok:
+            return []
+        names = []
+        for kind, u in free:
+            bi = u["i"]
+            vmag = abs(V0[bi]) if abs(V0[bi]) > 1e-6 else 1.0
+            raise_v = u["vset"] >= vmag
+            if kind == "gen":
+                u["clamped"] = "over" if raise_v else "under"
+                q_lim = u["q_max"] if raise_v else u["q_min"]
+                u["flips"] += 1
+            else:
+                p_inv = sum(dispatch["dispatched_by_comp"].get(cid, (0.0, 0.0))[0]
+                            for cid in u["ids"])
+                q_cap = math.sqrt(max(0.0, u["s_rated"] ** 2
+                                      - min(abs(p_inv), u["s_rated"]) ** 2))
+                u["clamped"] = "cap" if raise_v else "ind"
+                q_lim = q_cap if raise_v else -q_cap
+                u["flips"] += 1
+            bus_types[bi] = 0
+            Q_base[bi] += (q_lim - u["inj_q"]) / base_mva
+            u["inj_q"] = q_lim
+            if kind == "ibr":   # one unit per bus: name every inverter on it
+                names.extend(str(components[cid].props.get("name", cid))
+                             for cid in u["ids"] if cid in components)
+            else:
+                names.append(str(u["name"]))
+        return names
+
     # Outer loop enforces reactive limits on voltage-regulating buses: a
     # SVC/STATCOM or a PV generator that would exceed its Q range is clamped to
     # the limit and switched from a voltage-holding PV bus to a fixed-Q PQ
@@ -3188,6 +3242,20 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             if not adjusted:
                 break
 
+        # Divergence rescue. The Q-limit check below only runs on a CONVERGED
+        # solution, but a regulator whose setpoint needs far more Q than it can
+        # give (a 65 kW inverter told to hold 1.1 p.u. next to a 1.0 p.u.
+        # genset or grid) makes NR diverge first, so the clamp never engages.
+        # Solve once with every unclamped regulator released to PQ, clamp each
+        # at the limit on the side its setpoint pulls towards, and let the
+        # normal clamp/revert passes hand regulation back where it is holdable.
+        if not converged and _rescue_count < 2:
+            _rescued = _rescue_regulators()
+            if _rescued:
+                _rescue_count += 1
+                _rescued_names.update(_rescued)
+                continue
+
         # Reactive-limit check on the converged solution (SVC/STATCOM, then PV
         # generators). A regulating unit that would exceed its Q range is
         # clamped to the limit and reverts to a fixed-Q PQ injection. A STATCOM
@@ -3262,6 +3330,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     continue
                 u["flips"] += 1
                 bus_types[bi] = 0                # PV → PQ at the reactive limit
+                V_spec[bi] = 1.0                 # now only the NR start: flat
                 Q_base[bi] += (q_lim - u["inj_q"]) / base_mva
                 u["inj_q"] = q_lim
                 changed = True
@@ -3310,6 +3379,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     continue
                 u["flips"] += 1
                 bus_types[bi] = 0                # PV → PQ at the reactive limit
+                V_spec[bi] = 1.0                 # now only the NR start: flat
                 Q_base[bi] += (q_lim - u["inj_q"]) / base_mva
                 u["inj_q"] = q_lim
                 changed = True
@@ -4040,6 +4110,17 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                          f"holding {round(u['vset'], 3)} p.u. — bus voltage floats."
                          f"{_latch_note}"),
             ))
+
+    if _rescued_names:
+        _rn = ", ".join(sorted(_rescued_names))
+        voltage_warnings.append(LoadFlowWarning(
+            elementId="", element_name=_rn,
+            message=(f"The solve diverged with {_rn} holding "
+                     f"{'its' if len(_rescued_names) == 1 else 'their'} voltage "
+                     "setpoint — the setpoint needs more reactive power than the "
+                     "rating allows (or conflicts with a nearby source's setpoint). "
+                     "Solved with the unit(s) started at their reactive limit; any "
+                     "still pinned there are listed separately.")))
 
     warned_ids = set()  # Avoid duplicate warnings for the same component
     tolerance = 0.15  # 15% mismatch threshold
