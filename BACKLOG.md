@@ -363,6 +363,9 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Inverters: fixed power factor is P-priority; unity mode ignores pf (2026-09-30)
+- PV and wind below unity PF no longer scale real power down (P = S·|pf|). Real power follows the resource and the converter adds Q = P·tan φ, held on the kVA circle at the set PF only when P and Q together exceed the rating (`_pf_limited_output`). A 65 kW inverter at 80 % / pf 0.9 now exports 52 kW + 25.2 kvar, not 46.8 kW. PV in *Unity (no vars)* mode now gives no vars whatever the PF field says; backup autonomy counts PV real power. Cache-bust `3.5.171 → 3.5.172`, app version 1.363b.
+
 ### Load flow: unloaded generator island reported idle (2026-09-30)
 - A generator sync bus cut off by a changeover in `off` (set breakers still closed) was a live island with no load, and dispatch warned about droop sharing at 0 kW and wet stacking for sets that feed nothing. `plan_dispatch` now treats an island with sources but no utility, battery or load as **idle**: the buses still solve live, every source reports role `idle` at 0 kW, and one note names the sets and the island's buses. Cache-bust `3.5.170 → 3.5.171`, app version 1.362b.
 

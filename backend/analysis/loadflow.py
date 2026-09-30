@@ -2230,6 +2230,23 @@ def _utility_loading_base_mva(util):
             or util.props.get("fault_mva", 500))
 
 
+def _pf_limited_output(p_avail, pf, s_rated):
+    """(P, Q) of a converter source at a fixed power factor, P-priority.
+
+    Real power follows the resource (irradiance / wind), and the converter adds
+    Q = P·tan φ on top — a PF below unity does not throw real power away. Only
+    when P and Q together would exceed the kVA rating is the output held on the
+    rating circle at the set PF (P = S·|pf|). [P3] Signed pf: a negative pf
+    absorbs (leading) vars, matching _inverter_discharge_q and the UI range.
+    """
+    apf = min(1.0, abs(pf)) or 1.0
+    sin_phi = math.sqrt(max(0.0, 1 - apf ** 2)) * (-1.0 if pf < 0 else 1.0)
+    s = p_avail / apf
+    if s_rated > 0 and s > s_rated:
+        s = s_rated
+    return s * apf, s * sin_phi
+
+
 def _source_output_mva(comp):
     """Return (p_mw, q_mvar, s_mva, rated_mva) for a directly-connected source component."""
     if comp.type == "generator":
@@ -2256,26 +2273,21 @@ def _source_output_mva(comp):
             dc_kw = (float(comp.props.get("pv_panel_w", 550) or 0)
                      * max(1, int(comp.props.get("pv_panels_per_string", 1) or 1))
                      * max(1, int(comp.props.get("pv_strings", 1) or 1))) / 1000
-            avail_kw = min(dc_kw * irr * eff, rated_kw)
-            s_mva = avail_kw * n_inv / 1000
+            p_avail = min(dc_kw * irr * eff, rated_kw) * n_inv / 1000
         else:
-            s_mva = rated_full * irr
-        p = s_mva * abs(pf)
-        # [P3] Signed pf: negative pf absorbs (leading) vars, matching
-        # _inverter_discharge_q and the field's UI range (-1..1).
-        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2)) * (-1.0 if pf < 0 else 1.0)
-        return p, q, s_mva, rated_full
+            p_avail = rated_full * irr
+        if _inverter_var_mode(comp) == "unity":
+            pf = 1.0   # 'Unity (no vars)' overrides the power factor
+        p, q = _pf_limited_output(p_avail, pf, rated_full)
+        return p, q, math.hypot(p, q), rated_full
     elif comp.type == "wind_turbine":
         rated = comp.props.get("rated_mva", 2.0)
         n_turb = comp.props.get("num_turbines", 1)
         pf = comp.props.get("power_factor", 0.95)
         wind_pct = comp.props.get("wind_speed_pct", 100) / 100.0
         rated_full = rated * n_turb
-        s_mva = rated_full * wind_pct
-        p = s_mva * abs(pf)
-        # [P3] Signed pf: negative pf absorbs (leading) vars.
-        q = s_mva * math.sqrt(max(0.0, 1 - pf ** 2)) * (-1.0 if pf < 0 else 1.0)
-        return p, q, s_mva, rated_full
+        p, q = _pf_limited_output(rated_full * wind_pct, pf, rated_full)
+        return p, q, math.hypot(p, q), rated_full
     elif comp.type == "battery":
         # Available output only in explicit 'discharging' mode; auto-mode
         # storage is dispatched by the battery pass, not the merit order

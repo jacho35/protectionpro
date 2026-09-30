@@ -5343,6 +5343,45 @@ class TestInverterReactive:
         b = self._pv_badge(res)
         assert res.converged and abs(b.q_mvar) < 1e-6
 
+    def _grid_tied_pv(self, irr, pf, var_mode="power_factor"):
+        return ProjectData(projectName="t", baseMVA=100.0, frequency=50, components=[
+            _comp("util-1", "utility", {"voltage_kv": 0.4, "fault_mva": 100, "x_r_ratio": 10}),
+            _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 0.4}),
+            _comp("load-1", "static_load", {"rated_kva": 100, "power_factor": 0.85,
+                                            "voltage_kv": 0.4}),
+            _comp("pv-1", "solar_pv", {
+                "name": "PV", "rated_kw": 65, "num_inverters": 1, "power_factor": pf,
+                "irradiance_pct": irr, "voltage_kv": 0.4, "var_mode": var_mode}),
+        ], wires=[_wire("w1", "util-1", "bus-1"), _wire("w2", "load-1", "bus-1"),
+                  _wire("w3", "pv-1", "bus-1")])
+
+    @pytest.mark.parametrize("irr, p_kw, q_kvar", [
+        (80, 52.0, 25.19),    # within the kVA rating: P follows the sun, Q = P·tan φ
+        (50, 32.5, 15.74),
+        (100, 58.5, 28.33),   # 65 kW × tan φ would exceed 65 kVA: held at S·pf
+    ])
+    def test_pv_power_factor_is_p_priority(self, irr, p_kw, q_kvar):
+        """A PF below unity adds vars on top of the resource-limited real power;
+        it does not scale P down (the old model gave 46.8 kW at 80 % / pf 0.9).
+        Only at the kVA limit is P reduced to hold the set PF on the circle."""
+        res = run_load_flow(self._grid_tied_pv(irr, 0.9))
+        b = self._pv_badge(res)
+        assert res.converged
+        assert b.p_mw * 1000 == pytest.approx(p_kw, abs=0.2)
+        assert b.q_mvar * 1000 == pytest.approx(q_kvar, abs=0.2)
+
+    def test_pv_negative_pf_absorbs(self):
+        b = self._pv_badge(run_load_flow(self._grid_tied_pv(80, -0.9)))
+        assert b.p_mw * 1000 == pytest.approx(52.0, abs=0.2)
+        assert b.q_mvar * 1000 == pytest.approx(-25.19, abs=0.2)
+
+    def test_pv_unity_mode_ignores_pf(self):
+        """'Unity (no vars)' zeroes the reactive and leaves P at the resource,
+        whatever the Power Factor field says."""
+        b = self._pv_badge(run_load_flow(self._grid_tied_pv(80, 0.9, "unity")))
+        assert b.p_mw * 1000 == pytest.approx(52.0, abs=0.2)
+        assert abs(b.q_mvar) < 1e-6
+
     def _hybrid_behind_cable(self, var_mode, vset=1.05, discharge_kw=20,
                              irr=0, pf=0.98, load_kva=60, load_pf=0.85):
         """Inverter on a PCC bus behind a feeder (so the utility, not the
