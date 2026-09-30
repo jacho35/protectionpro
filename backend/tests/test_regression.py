@@ -33,7 +33,7 @@ from backend.analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from backend.analysis.transient_stability import run_transient_stability
 from backend.analysis.grounding_system import (
     _compute_conductor_size, _compute_n, _compute_K_ii, _compute_L_M,
-    _two_layer_reflection_factor, _compute_two_layer_equivalent_resistivity,
+    _two_layer_reflection_factor, _two_layer_grid_ratios,
     wenner_apparent_resistivity, interpret_wenner_test,
 )
 from backend.analysis.arcflash import (
@@ -743,42 +743,37 @@ class TestGrounding:
         """Without rods Eq. 87 keeps L_M = L_c + L_rod."""
         assert _compute_L_M(1540.0, 0.0, 0.0, 70.0, 70.0, False) == 1540.0
 
-    def test_two_layer_uniform_soil_collapses_to_single_layer(self):
-        """ρ1 = ρ2 (K=0) must reproduce the existing uniform-soil ρ exactly —
-        the two-layer model must be a strict superset, never changing a
-        legacy (uniform-soil) project's result."""
-        rho_eq, K, F = _compute_two_layer_equivalent_resistivity(100.0, 100.0, 3.0, 0.5, 4900.0)
-        assert K == pytest.approx(0.0, abs=1e-9)
-        assert F == pytest.approx(1.0, abs=1e-9)
-        assert rho_eq == pytest.approx(100.0, abs=1e-6)
+    # [G1] The two-layer model is now a method-of-moments solve of the grid
+    # (GROUNDING_REVIEW.md). The previous equivalent-hemisphere ρ_eq tests
+    # pinned a formula that was 3× low over a conductive lower layer; they are
+    # replaced by the physical limits of the new model.
 
-    def test_two_layer_thin_top_layer_limit_is_rho2(self):
-        """Analytic limit (h1 → grid depth, i.e. the grid sits right at the
-        ρ1/ρ2 interface): ρ_eq → ρ2 exactly — this is the correctness anchor
-        documented in `_two_layer_correction_factor` since no published IEEE
-        80 worked example exists for the two-layer case."""
-        rho_eq, K, F = _compute_two_layer_equivalent_resistivity(100.0, 400.0, 0.5, 0.5, 4900.0)
-        assert rho_eq == pytest.approx(400.0, rel=1e-3)
+    def test_two_layer_uniform_soil_collapses_to_single_layer(self):
+        """ρ1 = ρ2 (K=0) must give ratios of exactly 1 — uniform-soil results
+        are the IEEE 80 hand calculation, untouched."""
+        assert _two_layer_reflection_factor(100.0, 100.0) == pytest.approx(0.0, abs=1e-12)
+        r = _two_layer_grid_ratios(30, 30, 6, 6, 0.5, 0.01, 0, 0.0, 100.0, 100.0, 3.0)
+        assert r == pytest.approx((1.0, 1.0, 1.0), abs=1e-9)
+
+    def test_two_layer_grid_in_lower_layer_limit_is_rho2(self):
+        """h1 → 0: the grid sits wholly in ρ2, so R_g → (ρ2/ρ1)·R_g(ρ1)."""
+        R, _, _ = _two_layer_grid_ratios(30, 30, 6, 6, 0.5, 0.01, 0, 0.0, 100.0, 400.0, 0.005)
+        assert R == pytest.approx(4.0, rel=0.02)
 
     def test_two_layer_thick_top_layer_limit_is_rho1(self):
-        """h1 ≫ grid size: the lower layer is effectively out of reach, so
-        ρ_eq → ρ1 (uniform-soil behaviour recovered even with ρ2 ≠ ρ1)."""
-        rho_eq, K, F = _compute_two_layer_equivalent_resistivity(100.0, 2000.0, 1.0e5, 0.5, 4900.0)
-        assert rho_eq == pytest.approx(100.0, rel=1e-2)
+        """h1 ≫ grid size: the lower layer is out of reach — uniform ρ1."""
+        r = _two_layer_grid_ratios(30, 30, 6, 6, 0.5, 0.01, 0, 0.0, 100.0, 2000.0, 1.0e5)
+        assert r == pytest.approx((1.0, 1.0, 1.0), rel=1e-2)
 
-    def test_two_layer_resistive_lower_layer_raises_equivalent_resistivity(self):
-        """A more resistive lower layer (e.g. rock under topsoil, K > 0) can
-        only ever raise ρ_eq above ρ1 — never lower it (monotonic in K)."""
-        rho_eq, K, _ = _compute_two_layer_equivalent_resistivity(100.0, 1000.0, 2.0, 0.5, 4900.0)
-        assert K > 0
-        assert rho_eq > 100.0
+    def test_two_layer_resistive_lower_layer_raises_R_and_mesh_voltage(self):
+        """Rock under topsoil (K > 0) raises R_g AND the mesh voltage."""
+        R, Em, Es = _two_layer_grid_ratios(30, 30, 6, 6, 0.5, 0.01, 0, 0.0, 100.0, 1000.0, 2.0)
+        assert R > 1.0 and Em > 1.0 and Es > 1.0
 
-    def test_two_layer_conductive_lower_layer_lowers_equivalent_resistivity(self):
-        """A more conductive lower layer (e.g. a water table, K < 0) lowers
-        ρ_eq below ρ1."""
-        rho_eq, K, _ = _compute_two_layer_equivalent_resistivity(100.0, 20.0, 2.0, 0.5, 4900.0)
-        assert K < 0
-        assert rho_eq < 100.0
+    def test_two_layer_conductive_lower_layer_lowers_R(self):
+        """A water table (K < 0) lowers R_g and the mesh voltage."""
+        R, Em, _ = _two_layer_grid_ratios(30, 30, 6, 6, 0.5, 0.01, 0, 0.0, 100.0, 20.0, 2.0)
+        assert R < 1.0 and Em < 1.0
 
     def test_wenner_forward_model_uniform_soil(self):
         """K=0 (ρ1=ρ2): apparent resistivity is spacing-independent and

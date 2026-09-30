@@ -4,31 +4,28 @@ Calculates ground grid resistance, touch and step potentials, ground
 potential rise (GPR), and conductor sizing for each bus/substation.
 Uses fault current results from IEC 60909 analysis.
 
-Key IEEE 80 equations:
-  - Grid resistance (Schwarz): R_g = ρ / (4√(A/π)) + ρ / L_T
-  - Ground potential rise: GPR = I_G × R_g
+Key IEEE 80 equations (uniform soil):
+  - Grid resistance (Sverak, IEEE 80 §14.2):
+      R_g = ρ × [1/L_T + 1/√(20A) × (1 + 1/(1 + h√(20/A)))]
+  - Ground potential rise: GPR = I_G × R_g,  I_G = D_f × S_f × 3I₀ (remote share)
   - Touch voltage limit: E_touch = (1000 + 1.5 × C_s × ρ_s) × k / √t_s
   - Step voltage limit: E_step = (1000 + 6 × C_s × ρ_s) × k / √t_s
     (k = 0.116 for 50 kg body weight, 0.157 for 70 kg)
   - Mesh voltage (actual touch): E_m = ρ × I_G × K_m × K_i / L_M
   - Step voltage (actual step): E_s = ρ × I_G × K_s × K_i / L_S
-  - Conductor sizing (Onderdonk): A = I × √(t_c × α_r × ρ_r / (TCAP × ln(1 + (T_m - T_a) / (K_0 + T_a))))
+  - Conductor sizing (Onderdonk, IEEE 80 Eq. 37):
+      A_mm² = I_kA × √(t_c × α_r × ρ_r × 10⁴ / (TCAP × ln((K_0 + T_m)/(K_0 + T_a))))
+    T_m = the lower of the material's fusing point and the joint limit.
 
-Two-layer soil model (IEEE 80 §14.5, optional, off by default):
-  The uniform-soil formulas above assume a single ρ. When the native soil is
-  layered (upper ρ1/thickness h1 over a semi-infinite lower ρ2), R_g and GPR
-  are computed using an EQUIVALENT resistivity ρ_eq derived from the classical
-  method-of-images solution for a hemispherical electrode at the boundary of
-  two-layer earth (Sunde 1949 / Tagg, "Earth Resistances") — the same image
-  physics that underlies the Wenner two-layer apparent-resistivity formula
-  used by the field-test interpreter below. ρ_eq replaces ρ only in the grid
-  RESISTANCE formula (`_compute_grid_resistance`); the mesh/step voltage
-  formulas keep using ρ1 (the layer the grid and a person's feet are actually
-  in), consistent with standard practice for two-layer analysis. See
-  `_compute_two_layer_equivalent_resistivity` for the exact form and its two
-  analytic limits (ρ_eq → ρ1 for a thick top layer, ρ_eq → ρ2 for h1 → 0),
-  used as the correctness anchor since no closed-form IEEE 80 worked example
-  is published for this case.
+Two-layer soil model (optional, off by default):
+  The simplified E_m / E_s / R_g formulas are for uniform soil only; IEEE 80
+  sends layered soil to computer analysis. [G1] When two-layer soil is on,
+  the SAME grid (conductors, perimeter rods) is solved numerically twice by
+  the method of moments with the exact two-layer image Green's functions —
+  once in the real ρ1/ρ2/h1 soil and once in uniform ρ1 — and the uniform
+  IEEE 80 values are scaled by the ratios R, E_m and E_s gain from the
+  layering (`_two_layer_grid_ratios`). Uniform soil is untouched, so the
+  IEEE 80 hand calculation stays exact there.
 
 Wenner four-pin interpreter (`interpret_wenner_test`):
   Fits a two-layer model (ρ1, ρ2, h1) to a set of field apparent-resistivity
@@ -66,7 +63,7 @@ CONDUCTOR_MATERIALS = {
         "rho_r": 20.1,
         "K_0": 293,
         "T_m": 419,
-        "TCAP": 3.846,
+        "TCAP": 3.93,  # [G5] IEEE 80 Table 1 zinc-coated steel rod (was 3.846, the copper-clad value)
     },
     "copper_clad_steel": {
         "name": "Copper-clad steel",
@@ -76,6 +73,18 @@ CONDUCTOR_MATERIALS = {
         "T_m": 1084,
         "TCAP": 3.846,
     },
+}
+
+# [G3] Maximum conductor temperature by joint type (IEEE 80 §11.3.1.1): the
+# Onderdonk size must keep the weakest part of the circuit — the joint — below
+# its limit, not only the conductor below its fusing point. Exothermic
+# (welded) joints are as strong as the conductor, so T_m stays the material's
+# fusing temperature. None = no joint limit.
+JOINT_MAX_TEMP_C = {
+    "exothermic": None,
+    "brazed": 450.0,
+    "pressure": 350.0,
+    "bolted": 250.0,
 }
 
 # Default grounding grid parameters
@@ -95,6 +104,8 @@ DEFAULT_PARAMS = {
     "num_ground_rods": 20,  # n_R number of rods
     "conductor_diameter": 0.01167,  # d (m) — ~4/0 AWG copper
     "conductor_material": "copper_hard",
+    "grid_joint_type": "exothermic",  # [G3] sets T_m for conductor sizing
+    "current_split_factor": 1.0,  # [G2] S_f — share of the remote earth-fault current entering the grid
     "fault_duration": 0.5,  # t_s shock duration (s)
     "fault_clearing_time": 0.5,  # t_c conductor heating time (s)
     "ambient_temp": 40.0,  # T_a ambient (°C)
@@ -153,49 +164,223 @@ def _two_layer_reflection_factor(rho1, rho2):
     return (rho2 - rho1) / denom
 
 
-def _two_layer_correction_factor(K, h_rel, r0, n_terms=100):
-    """Multiplicative correction F such that ρ_eq = ρ1 × F.
+# ── [G1] Two-layer soil: method of moments on the actual grid ──────────────
+#
+# The grid (horizontal conductors + perimeter rods) is cut into straight
+# segments carrying a uniform leakage current each, all held at 1 V; the
+# potential kernel is the exact two-layer point-source Green's function,
+# integrated along each segment (thin-wire kernel, conductor radius a).
+# Field/source in the upper (1) or lower (2) layer, K = (ρ2−ρ1)/(ρ2+ρ1),
+# layer boundary at depth H:
+#   1←1: ρ1/4π · Σ_{n∈Z} K^|n| [1/R(z−z0+2nH) + 1/R(z+z0+2nH)]
+#   2←1: ρ1(1+K)/4π · Σ_{n≥0} K^n [1/R(z−z0+2nH) + 1/R(z+z0+2nH)]
+#   1←2: ρ1(1+K)/4π · Σ_{n≥0} K^n [1/R(z0−z+2nH) + 1/R(z+z0+2nH)]
+#   2←2: ρ2/4π · [1/R(z−z0) − K/R(z+z0−2H) + (1−K²) Σ_{n≥0} K^n/R(z+z0+2nH)]
+# Each term is an image segment at z' = sign·z0 + shift (listed below). The
+# forms satisfy dV/dz = 0 at the surface and continuity of V and of
+# (1/ρ)dV/dz at z = H (checked numerically in the review, GROUNDING_REVIEW.md).
 
-    Derived from the method-of-images solution for a hemispherical electrode
-    of radius r0 sitting h_rel below (i.e. at depth h_rel into) the ρ1 layer,
-    with a ρ1/ρ2 interface a further distance below it:
+_MOM_IMAGE_TOL = 1e-6      # drop image terms whose weight is below this
 
-        F = 1 + 2 × Σ_{n=1}^N  K^n / √(1 + (2·n·h_rel/r0)²)
 
-    Two exact analytic limits anchor this formula (used as the regression
-    test in lieu of a published worked example): h_rel → ∞ (thick top layer)
-    ⇒ F → 1 ⇒ ρ_eq → ρ1; h_rel → 0 (grid sitting right at the interface)
-    ⇒ F → (1+K)/(1−K) ⇒ ρ_eq → ρ2 exactly.
+def _mom_images(K, H, field_layer, src_layer):
+    """[(coef, sign, shift)] for the block, plus the far-image constant.
+
+    Coefficients exclude the ρ/4π prefactor, which `_mom_prefactor` gives.
+    Images further than the far threshold are lumped as coef/|shift| (their
+    distance to every field point is ≈ |shift| — error ≤ 2 % on terms that
+    are themselves small).
     """
-    if r0 <= 0 or abs(K) < 1e-12:
-        return 1.0
-    h_rel = max(h_rel, 0.0)
-    total = 0.0
-    for n in range(1, n_terms + 1):
-        Kn = K ** n
-        if abs(Kn) < 1e-15:
-            break
-        total += Kn / math.sqrt(1 + (2 * n * h_rel / r0) ** 2)
-    return 1.0 + 2.0 * total
+    out = []
+    far_const = 0.0
+    far_dist = 5.0 * _MOM_SCALE[0]
+    aK = abs(K)
+
+    def terms(n_iter, coef_fn, pairs):
+        nonlocal far_const
+        for n in n_iter:
+            c = coef_fn(n)
+            if abs(c) < _MOM_IMAGE_TOL * 1e-3:
+                break
+            for sign, shift in pairs(n):
+                if abs(shift) > far_dist and n != 0:
+                    far_const += c / abs(shift)
+                elif abs(c) >= _MOM_IMAGE_TOL or n == 0:
+                    out.append((c, sign, shift))
+
+    def n_all():
+        yield 0
+        n = 1
+        while True:
+            yield n
+            yield -n
+            n += 1
+
+    if aK < 1e-12:
+        return [(1.0, 1, 0.0), (1.0, -1, 0.0)], 0.0   # uniform: source + surface image
+    if field_layer == 1 and src_layer == 1:
+        terms(n_all(), lambda n: K ** abs(n), lambda n: [(1, -2 * n * H), (-1, -2 * n * H)])
+    elif field_layer == 2 and src_layer == 1:
+        terms(_count(), lambda n: (1 + K) * K ** n, lambda n: [(1, -2 * n * H), (-1, -2 * n * H)])
+    elif field_layer == 1 and src_layer == 2:
+        terms(_count(), lambda n: (1 + K) * K ** n, lambda n: [(1, 2 * n * H), (-1, -2 * n * H)])
+    else:
+        out.append((1.0, 1, 0.0))
+        out.append((-K, -1, 2 * H))
+        terms(_count(), lambda n: (1 - K * K) * K ** n, lambda n: [(-1, -2 * n * H)])
+    return out, far_const
 
 
-def _compute_two_layer_equivalent_resistivity(rho1, rho2, h1, grid_depth, A):
-    """Equivalent uniform resistivity ρ_eq for grid-resistance purposes.
+def _count():
+    n = 0
+    while True:
+        yield n
+        n += 1
 
-    r0 = √(A/π) is the standard IEEE 80 equivalent-hemisphere radius for a
-    grid of area A. h_rel is the thickness of ρ1 soil remaining BELOW the
-    grid before the ρ2 interface is reached (h1 measured from the surface,
-    grid buried at depth grid_depth); a grid already buried below the
-    interface (h1 ≤ grid_depth) is treated as h_rel = 0 (sitting at/below
-    the boundary — the most conservative case for a resistive lower layer).
 
-    Returns (rho_eq, K, F).
-    """
+_MOM_SCALE = [100.0]  # grid diagonal of the current solve (far-image threshold)
+
+
+def _mom_prefactor(rho1, rho2, field_layer, src_layer):
+    if field_layer == 2 and src_layer == 2:
+        return rho2 / (4 * math.pi)
+    return rho1 / (4 * math.pi)
+
+
+def _segment_integral(P, A, B, a):
+    """∫_A^B ds / √(|P − s|² + a²) for every field point × segment (numpy)."""
+    import numpy as np
+    AB = B - A
+    L = np.linalg.norm(AB, axis=-1)
+    u = AB / L[..., None]
+    AP = A[None, :, :] - P[:, None, :]
+    t1 = np.einsum('ijk,jk->ij', AP, u)
+    t2 = t1 + L[None, :]
+    perp2 = np.maximum(np.einsum('ijk,ijk->ij', AP, AP) - t1 * t1, 0.0) + a * a
+    rp = np.sqrt(perp2)
+    return (np.arcsinh(t2 / rp) - np.arcsinh(t1 / rp)) / L[None, :]
+
+
+def _mom_grid_segments(L_x, L_y, n_x, n_y, h, n_R, L_r, H):
+    """Segments (A, B arrays) of the grid; rods on the perimeter (corners
+    first, then evenly spaced — the IEEE 80 K_ii = 1 / Eq. 91 arrangement),
+    split where they cross the layer boundary H."""
+    import numpy as np
+    n_x = max(int(n_x), 2)
+    n_y = max(int(n_y), 2)
+    n_horiz = n_x * (n_y - 1) + n_y * (n_x - 1)
+    sub = 2 if 2 * n_horiz <= 900 else 1
+    segs = []
+    xs = np.linspace(0.0, L_x, n_x)
+    ys = np.linspace(0.0, L_y, n_y)
+    yy = np.linspace(0.0, L_y, (n_y - 1) * sub + 1)
+    xx = np.linspace(0.0, L_x, (n_x - 1) * sub + 1)
+    for x in xs:
+        segs += [((x, yy[i], h), (x, yy[i + 1], h)) for i in range(len(yy) - 1)]
+    for y in ys:
+        segs += [((xx[i], y, h), (xx[i + 1], y, h)) for i in range(len(xx) - 1)]
+    if n_R > 0 and L_r > 0:
+        per = 2.0 * (L_x + L_y)
+        corners = [(0.0, 0.0), (L_x, 0.0), (L_x, L_y), (0.0, L_y)]
+        pts = corners[:min(n_R, 4)]
+        extra = n_R - len(pts)
+
+        def on_perimeter(sp):
+            if sp < L_x:
+                return (sp, 0.0)
+            if sp < L_x + L_y:
+                return (L_x, sp - L_x)
+            if sp < 2 * L_x + L_y:
+                return (2 * L_x + L_y - sp, L_y)
+            return (0.0, per - sp)
+        for k in range(extra):
+            pts.append(on_perimeter(per * (k + 0.5) / extra))
+        z_cuts = sorted({h, h + L_r} | ({H} if h < H < h + L_r else set()))
+        for (x, y) in pts:
+            for z0, z1 in zip(z_cuts[:-1], z_cuts[1:]):
+                nz = max(1, int(math.ceil((z1 - z0) / 1.5)))
+                zz = np.linspace(z0, z1, nz + 1)
+                segs += [((x, y, zz[i]), (x, y, zz[i + 1])) for i in range(nz)]
+    S = np.array(segs, dtype=float)
+    return S[:, 0], S[:, 1]
+
+
+def _mom_matrix(P, P_layer, A, B, S_layer, a, rho1, rho2, H):
+    import numpy as np
     K = _two_layer_reflection_factor(rho1, rho2)
-    r0 = math.sqrt(A / math.pi) if A > 0 else 0.0
-    h_rel = max(h1 - grid_depth, 0.0)
-    F = _two_layer_correction_factor(K, h_rel, r0)
-    return rho1 * F, K, F
+    M = np.zeros((P.shape[0], A.shape[0]))
+    for fl in (1, 2):
+        fi = np.where(P_layer == fl)[0]
+        if fi.size == 0:
+            continue
+        for sl in (1, 2):
+            si = np.where(S_layer == sl)[0]
+            if si.size == 0:
+                continue
+            images, far_const = _mom_images(K, H, fl, sl)
+            pref = _mom_prefactor(rho1, rho2, fl, sl)
+            blk = np.zeros((fi.size, si.size))
+            Pf = P[fi]
+            As, Bs = A[si], B[si]
+            mids = 0.5 * (As + Bs)
+            seg_len = float(np.max(np.linalg.norm(Bs - As, axis=1)))
+            r2 = ((Pf[:, None, 0] - mids[None, :, 0]) ** 2
+                  + (Pf[:, None, 1] - mids[None, :, 1]) ** 2)
+            zp_lo, zp_hi = float(Pf[:, 2].min()), float(Pf[:, 2].max())
+            for c, sign, shift in images:
+                zc = sign * mids[:, 2] + shift
+                gap = max(float(zc.min()) - zp_hi, zp_lo - float(zc.max()), 0.0)
+                if gap > 3.0 * seg_len:
+                    # Distant image: a segment seen from ≥ 3 lengths away is a
+                    # point source to < 1 % — much cheaper than the integral.
+                    dz = Pf[:, None, 2] - zc[None, :]
+                    blk += c / np.sqrt(r2 + dz * dz)
+                    continue
+                Ai = As.copy()
+                Bi = Bs.copy()
+                Ai[:, 2] = sign * Ai[:, 2] + shift
+                Bi[:, 2] = sign * Bi[:, 2] + shift
+                blk += c * _segment_integral(Pf, Ai, Bi, a)
+            blk += far_const
+            M[np.ix_(fi, si)] = pref * blk
+    return M
+
+
+def _mom_solve(L_x, L_y, n_x, n_y, h, d, n_R, L_r, rho1, rho2, H):
+    """(R_g, E_m per ampere, E_s per ampere) of the grid by the method of moments."""
+    import numpy as np
+    _MOM_SCALE[0] = max(math.hypot(L_x, L_y), 10.0)
+    A, B = _mom_grid_segments(L_x, L_y, n_x, n_y, h, n_R, L_r, H)
+    mid = 0.5 * (A + B)
+    layer = np.where(mid[:, 2] < H, 1, 2)
+    G = _mom_matrix(mid, layer, A, B, layer, d / 2.0, rho1, rho2, H)
+    I = np.linalg.solve(G, np.ones(A.shape[0]))
+    R = 1.0 / float(I.sum())
+    # Surface potential (per unit GPR): corner mesh for E_m, 1 m steps out
+    # of the corner and edge mid-points for E_s.
+    Dx = L_x / (max(int(n_x), 2) - 1)
+    Dy = L_y / (max(int(n_y), 2) - 1)
+    gx, gy = np.meshgrid(np.linspace(0, Dx, 9), np.linspace(0, Dy, 9))
+    mesh_pts = np.stack([gx.ravel(), gy.ravel(), np.zeros(gx.size)], 1)
+    s2 = 1 / math.sqrt(2)
+    step_in = np.array([[0, 0, 0], [L_x / 2, 0, 0], [0, L_y / 2, 0]], float)
+    step_out = np.array([[-s2, -s2, 0], [L_x / 2, -1, 0], [-1, L_y / 2, 0]], float)
+    Ps = np.vstack([mesh_pts, step_in, step_out])
+    Vs = _mom_matrix(Ps, np.ones(Ps.shape[0], int), A, B, layer, 1e-6, rho1, rho2, H) @ I
+    nm = mesh_pts.shape[0]
+    em_frac = 1.0 - float(Vs[:nm].min())
+    es_frac = float(np.max(Vs[nm:nm + 3] - Vs[nm + 3:nm + 6]))
+    return R, em_frac * R, es_frac * R
+
+
+def _two_layer_grid_ratios(L_x, L_y, n_x, n_y, h, d, n_R, L_r, rho1, rho2, H):
+    """[G1] Ratios (R_g, E_m, E_s) of the grid in two-layer soil to the same
+    grid in uniform ρ1, from `_mom_solve`. The IEEE 80 uniform-soil values
+    are multiplied by these, so the ratios carry only the layering effect
+    (the uniform formulas' own approximation cancels)."""
+    r2, em2, es2 = _mom_solve(L_x, L_y, n_x, n_y, h, d, n_R, L_r, rho1, rho2, H)
+    r1, em1, es1 = _mom_solve(L_x, L_y, n_x, n_y, h, d, n_R, L_r, rho1, rho1, H)
+    return r2 / r1, em2 / em1, es2 / es1
 
 
 def wenner_apparent_resistivity(rho1, rho2, h1, a, n_terms=100):
@@ -207,7 +392,7 @@ def wenner_apparent_resistivity(rho1, rho2, h1, a, n_terms=100):
         ρa(a) = ρ1 × [1 + 4 × Σ_{n=1}^N ( K^n/√(1+(2nh1/a)²) − K^n/√(4+(2nh1/a)²) )]
 
     K = (ρ2−ρ1)/(ρ2+ρ1). Reduces to ρa = ρ1 for uniform soil (K=0) and to
-    ρa → ρ2 as h1 → 0 (same identity used by `_two_layer_correction_factor`).
+    ρa → ρ2 as h1 → 0.
     """
     if a <= 0 or rho1 <= 0:
         return rho1
@@ -433,18 +618,27 @@ def _compute_decrement_factor(kappa, t_s, freq_hz=50.0):
     return math.sqrt(1.0 + (ta / t_s) * (1.0 - math.exp(-2.0 * t_s / ta)))
 
 
-def _compute_conductor_size(I_fault_a, t_c, material_key="copper_hard", T_a=40.0):
+def _max_conductor_temp(material_key, joint_type="exothermic"):
+    """[G3] T_m for conductor sizing: the lower of the material's fusing
+    temperature and the joint's limit (IEEE 80 §11.3.1.1)."""
+    mat = CONDUCTOR_MATERIALS.get(material_key, CONDUCTOR_MATERIALS["copper_hard"])
+    limit = JOINT_MAX_TEMP_C.get(str(joint_type or "exothermic").lower())
+    return mat["T_m"] if limit is None else min(mat["T_m"], limit)
+
+
+def _compute_conductor_size(I_fault_a, t_c, material_key="copper_hard", T_a=40.0,
+                            joint_type="exothermic"):
     """Compute minimum conductor cross-section per IEEE 80 eq 37 (Onderdonk).
 
     A_mm² = I × √(t_c) × √(α_r × ρ_r / (TCAP × ln(1 + (T_m - T_a)/(K_0 + T_a))))
-    Returns area in mm².
+    T_m per `_max_conductor_temp` (joint limit). Returns area in mm².
     """
     mat = CONDUCTOR_MATERIALS.get(material_key, CONDUCTOR_MATERIALS["copper_hard"])
 
     alpha_r = mat["alpha_r"]
     rho_r = mat["rho_r"]  # μΩ·cm
     K_0 = mat["K_0"]
-    T_m = mat["T_m"]
+    T_m = _max_conductor_temp(material_key, joint_type)
     TCAP = mat["TCAP"]
 
     if T_m <= T_a or t_c <= 0:
@@ -552,35 +746,66 @@ def run_grounding_analysis(project: ProjectData):
         n = _compute_n(L_c, L_x, L_y, A)
         K_ii = _compute_K_ii(n, has_rods)
 
+        joint_type = str(bp.get("grid_joint_type", DEFAULT_PARAMS["grid_joint_type"]) or "exothermic").lower()
+        try:
+            S_f = float(bp.get("current_split_factor", DEFAULT_PARAMS["current_split_factor"]))
+        except (TypeError, ValueError):
+            S_f = 1.0
+        S_f = min(max(S_f, 0.0), 1.0)
+        notes = []
+
         # Get fault current at this bus
         I_fault_ka = 0
         I_fault_1ph_ka = 0
         kappa = 1.8
+        remote_fraction = 1.0
         if fault_results and bus.id in fault_results.buses:
             bus_fault = fault_results.buses[bus.id]
             I_fault_ka = bus_fault.ik3 or 0
             I_fault_1ph_ka = bus_fault.ik1 or 0
             if bus_fault.kappa:
                 kappa = bus_fault.kappa
+            if I_fault_1ph_ka > 0 and bus_fault.ik1_remote_fraction is not None:
+                remote_fraction = float(bus_fault.ik1_remote_fraction)
 
         # Use single-phase fault for grounding (if available, else 3-phase)
         I_sym_ka = I_fault_1ph_ka if I_fault_1ph_ka > 0 else I_fault_ka
+        if I_fault_1ph_ka <= 0 < I_fault_ka:
+            # [G4] No earth-fault path (unearthed / isolated neutral): the
+            # 3-phase current stands in, which is conservative but is not the
+            # earth-fault current (capacitive on an isolated system).
+            notes.append(f"No earth-fault current at this bus (unearthed or isolated neutral) — "
+                         f"the 3-phase current {I_fault_ka:.2f} kA is used instead, which overstates "
+                         f"the grid current; enter the earth-fault current as the design basis.")
 
         # [EE-5] IEEE 80 Eq. 79/64: I_G = D_f × S_f × 3I₀ — apply the
         # decrement factor D_f (asymmetrical DC-offset heating over the
         # fault duration t_s) to the symmetrical earth fault current.
         # X/R is derived from the κ carried in the fault results.
-        # S_f (current division / split factor) is kept at 1.0 — the
-        # conservative assumption that the grid carries the full current.
-        S_f = 1.0
+        # [G2] Only the part of 3I₀ fed from REMOTE neutrals flows through
+        # earth into the grid (IEEE 80 §15.1): the share sourced by a
+        # transformer / generator neutral at this bus returns to it through
+        # the grid conductors. S_f (IEEE 80 §15.9: shield wires, cable
+        # sheaths, other electrodes) then scales the remote share; it
+        # defaults to 1.0, the conservative assumption.
         freq = project.frequency or 50
         D_f = _compute_decrement_factor(kappa, t_s, freq)
-        I_G_ka = D_f * S_f * I_sym_ka
+        I_G_ka = D_f * S_f * remote_fraction * I_sym_ka
         I_G = I_G_ka * 1000  # convert to amps
+        # The grid conductor still carries the whole fault current (it is the
+        # return path to the local neutral), so conductor sizing uses the full
+        # D_f × 3I₀ over the clearing time t_c — not the reduced I_G.
+        D_f_c = _compute_decrement_factor(kappa, t_c, freq)
+        I_cond = D_f_c * I_sym_ka * 1000
 
-        if I_G <= 0:
+        if I_sym_ka <= 0:
             analysis_warnings.append(f"Bus '{bus_name}': no fault current available, skipping.")
             continue
+        if remote_fraction < 1.0:
+            notes.append(f"{(1 - remote_fraction) * 100:.0f}% of the earth-fault current returns through a "
+                         f"transformer or generator neutral at this bus (bonded to this grid), so it does "
+                         f"not enter the soil (IEEE 80 §15.1). A fault on the supply side of that "
+                         f"transformer may be the design case.")
 
         # ── IEEE 80 Calculations ──
 
@@ -590,32 +815,51 @@ def run_grounding_analysis(project: ProjectData):
         # Tolerable voltages
         E_touch_tol, E_step_tol = _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight)
 
-        # Two-layer soil (IEEE 80 §14.5, optional): ρ_eq replaces ρ for grid
-        # resistance/GPR only — mesh/step voltage keep using ρ1 (native `rho`,
-        # the layer the grid and a person's feet are actually in).
-        if two_layer_enabled:
-            rho_eq, two_layer_K, two_layer_F = _compute_two_layer_equivalent_resistivity(rho, rho2, h1_layer, h, A)
-        else:
-            rho_eq, two_layer_K, two_layer_F = rho, 0.0, 1.0
+        # Uniform-soil IEEE 80 values (per the simplified equations)
+        R_g = _compute_grid_resistance(rho, A, L_T, h, d)
+        K_m = _compute_K_m(D, d, h, n, K_ii)
+        K_s = _compute_K_s(D, h, n)
+        K_i = _compute_K_i(n)
+        E_mesh = _compute_mesh_voltage(rho, I_G, K_m, K_i, L_M)
+        E_step = _compute_step_voltage(rho, I_G, K_s, K_i, L_S)
 
-        # Grid resistance
-        R_g = _compute_grid_resistance(rho_eq, A, L_T, h, d)
+        # [G1] Two-layer soil: scale the uniform values by the ratios the
+        # layering produces on this grid (method of moments). The previous
+        # equivalent-hemisphere ρ_eq applied to R_g only and kept ρ1 for
+        # E_m / E_s — up to 2.4× low on E_m over rock and 3× low on R_g
+        # over a conductive lower layer.
+        two_layer_K = 0.0
+        ratio_R = ratio_m = ratio_s = 1.0
+        if two_layer_enabled and rho > 0 and rho2 > 0 and h1_layer > 0 and abs(rho2 - rho) > 1e-9:
+            two_layer_K = _two_layer_reflection_factor(rho, rho2)
+            ratio_R, ratio_m, ratio_s = _two_layer_grid_ratios(
+                L_x, L_y, n_x, n_y, h, d, n_R, L_r, rho, rho2, h1_layer)
+            R_g *= ratio_R
+            E_mesh *= ratio_m
+            E_step *= ratio_s
+        rho_eq = rho * ratio_R
 
         # Ground potential rise
         GPR = I_G * R_g
 
-        # Geometry factors
-        K_m = _compute_K_m(D, d, h, n, K_ii)
-        K_s = _compute_K_s(D, h, n)
-        K_i = _compute_K_i(n)
-
-        # Actual mesh (touch) and step voltages
-        E_mesh = _compute_mesh_voltage(rho, I_G, K_m, K_i, L_M)
-        E_step = _compute_step_voltage(rho, I_G, K_s, K_i, L_S)
-
         # Conductor sizing
-        min_conductor_mm2 = _compute_conductor_size(I_G, t_c, mat_key, T_a)
+        min_conductor_mm2 = _compute_conductor_size(I_cond, t_c, mat_key, T_a, joint_type)
         recommended_size_mm2 = _select_standard_size(min_conductor_mm2)
+
+        # [L1] IEEE 80 validity range of the simplified equations (§16.5)
+        if n > 25:
+            notes.append(f"n = {n:.1f} exceeds 25 — outside the range the IEEE 80 K_m / K_i equations were fitted over.")
+        if not 0.25 <= h <= 2.5:
+            notes.append(f"Grid depth {h} m is outside 0.25–2.5 m — the IEEE 80 E_m / E_s equations are not validated there.")
+        if D < 2.5:
+            notes.append(f"Conductor spacing {D:.2f} m is below 2.5 m — outside the IEEE 80 equations' range.")
+        if d >= 0.25 * h:
+            notes.append(f"Conductor diameter {d} m is not below 0.25·h — outside the IEEE 80 equations' range.")
+        if all(float(bp.get(k, v)) == float(v) for k, v in DEFAULT_PARAMS.items()
+               if k in ("soil_resistivity", "grid_length", "grid_width", "num_conductors_x",
+                        "num_conductors_y", "num_ground_rods", "ground_rod_length")):
+            notes.append("Grid and soil data are the shipped defaults (100 Ω·m, 30 × 30 m, 6 × 6, 20 rods) — "
+                         "enter this bus's measured soil and grid design.")
 
         # Safety checks
         touch_ok = E_mesh <= E_touch_tol
@@ -651,6 +895,9 @@ def run_grounding_analysis(project: ProjectData):
             "upper_layer_thickness_m": h1_layer if two_layer_enabled else None,
             "two_layer_reflection_factor_K": round(two_layer_K, 4) if two_layer_enabled else None,
             "equivalent_resistivity_ohm_m": round(rho_eq, 2) if two_layer_enabled else None,
+            "two_layer_ratio_R": round(ratio_R, 4) if two_layer_enabled else None,
+            "two_layer_ratio_Em": round(ratio_m, 4) if two_layer_enabled else None,
+            "two_layer_ratio_Es": round(ratio_s, 4) if two_layer_enabled else None,
             "grid_area_m2": round(A, 1),
             "grid_dimensions": f"{L_x}m × {L_y}m",
             "total_conductor_length_m": round(L_T, 1),
@@ -667,6 +914,11 @@ def run_grounding_analysis(project: ProjectData):
             "fault_current_ka": round(I_G_ka, 2),
             "symmetrical_fault_ka": round(I_sym_ka, 2),
             "decrement_factor_df": round(D_f, 4),
+            "remote_fraction": round(remote_fraction, 4),
+            "current_split_factor": S_f,
+            "conductor_current_ka": round(I_cond / 1000, 2),
+            "grid_joint_type": joint_type,
+            "conductor_max_temp_c": _max_conductor_temp(mat_key, joint_type),
             "fault_duration_s": t_s,
             # Results
             "grid_resistance_ohm": round(R_g, 4),
@@ -682,6 +934,7 @@ def run_grounding_analysis(project: ProjectData):
             "recommended_conductor_mm2": recommended_size_mm2,
             "status": status,
             "issues": issues,
+            "notes": notes,
         })
 
     # Summary

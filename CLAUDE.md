@@ -119,7 +119,7 @@ backend/
 │   ├── dynamic_motor_starting.py # Time-domain motor acceleration (swing equation)
 │   ├── duty_check.py       # Equipment fault current rating validation
 │   ├── load_diversity.py   # Load demand factor analysis
-│   ├── grounding_system.py # IEEE 80 grounding grid design
+│   ├── grounding_system.py # IEEE 80 grounding grid design; two-layer soil = IEEE 80 values × method-of-moments ratios (layered vs uniform ρ1); I_G uses the fault engine's `ik1_remote_fraction` (share not returning to a local neutral) × S_f; review: GROUNDING_REVIEW.md
 │   ├── study_manager.py    # Batch analysis orchestration
 │   ├── changeover.py       # Changeover switch → 2-terminal devices, applied by every analysis route before any engine runs
 │   ├── offpage.py          # Linked off-page connector pairs → closed switches + a joining wire (props.linked_to; legacy same-name), applied after changeover

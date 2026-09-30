@@ -17,6 +17,7 @@ section and adding the `## Completed` entry.
 3. **Zero-sequence line capacitance — capacitive earth-fault current (isolated / resonant-earthed MV)** — IEC 60909-0 requires line C₀ for these systems; the engine reports Ik1 ≈ 0 where ~36 A flows on 20 km of 11 kV cable. Plus a Petersen-coil tuning check. *(Fault Analysis Enhancements)*
 4. **SVC on the swing bus reports the bus's whole reactive injection** — `loadflow.py`'s `svc` summary gives it the utility's Q (0.55 Mvar with nothing to regulate); the harmonics study takes that as the SVC's output. *(Load Flow Enhancements)*
 6. **IEC 61000 harmonic limit values unconfirmed** — the IEC mode's IEC 61000-3-6 planning levels and IEC 61000-2-4 Class 2 levels came from the reviewer's reading; confirm against licensed copies. *(Harmonics & Power Quality Enhancements)*
+7. **IEC 61936-1 / EN 50522 touch-voltage option for grounding** — permissible touch voltage U_Tp(t_F) with the foot and footwear resistances, as an alternative to the IEEE 80 body-weight limits; IEEE 80 70 kg is 34 % less strict at 1 s. Needs licensed EN 50522 / IEC 60479-1 copies (`GROUNDING_REVIEW.md` L6). *(Standards Coverage)*
 
 
 
@@ -296,6 +297,7 @@ Features identified by comparing ProtectionPro against ETAP's full module set, e
 
 - ~~**ANSI/IEEE C37 Short Circuit**: Short circuit analysis per ANSI standards alongside existing IEC 60909 (required for US market)~~ **Done (3-phase E/X method)** — see Completed.
 - **AS/NZS 3000 Thermal & Shock Protection**: Australian/NZ wiring rules compliance checks
+- **IEC 61936-1 / EN 50522 touch-voltage option for grounding**: EN 50522 permissible touch voltage U_Tp(t_F) plus foot (1.5·ρ_s) and footwear resistances, as an alternative to the IEEE 80 50/70 kg limits. The two agree at 0.5 s; IEEE 80 70 kg is 34 % less strict at 1 s and 16 % at 2 s. Values need confirming against licensed EN 50522 / IEC 60479-1 copies (`GROUNDING_REVIEW.md` L6)
 - ~~**SANS 10142 Wiring of Premises**: Automatic compliance checks for South African wiring rules~~
 
 ### Component & Modelling Gaps
@@ -364,6 +366,14 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Grounding review: numerical two-layer soil, grid current split, joint limits, G1–G5 (2026-09-30)
+- **Review.** `GROUNDING_REVIEW.md` checks `grounding_system.py` against IEEE 80-2013 Annex B Examples 1 and 2, Tables 1, 2 and 10, and an independent method-of-moments solve of the grid in uniform and two-layer earth. Every uniform-soil formula reproduces Annex B to ≤ 0.4 %; the Wenner forward model is exact.
+- **G1.** Two-layer soil kept ρ1 for the mesh and step voltages and took R_g from an equivalent hemisphere: over rock E_m was up to 2.4× low, over a water table R_g and GPR up to 2.9× low (both non-conservative). The grid is now solved numerically in the layered and in uniform soil and the IEEE 80 R_g, E_m, E_s are scaled by the ratios (R within 1 % of the reference).
+- **G2.** Every bus drove its whole earth-fault current into the soil, so an LV board at its own Dyn11 showed 51.6 kA and GPR 86.6 kV. The fault engine now reports the share of 3I₀ returning through remote neutrals (`ik1_remote_fraction`); I_G = D_f × S_f × remote share × 3I₀, with a new **Current Split Factor S_f** bus prop (IEEE 80 §15.9, default 1). The conductor is still sized for the full current.
+- **G3.** Conductor sizing always used the fusing point; a new **Grid Joints** prop (exothermic / brazed 450 °C / pressure 350 °C / bolted 250 °C) sets T_m — bolted copper needs 67 % more area. **G4.** The 3-phase fallback when there is no earth-fault path is now disclosed. **G5.** Galvanised steel TCAP 3.846 → 3.93 (IEEE 80 Table 1); PDF formulas corrected; PDF notes no longer crash on Ω.
+- **Lesser.** Notes for the IEEE 80 validity range (L1) and all-default grid data (L2); informational notes are separate from pass/fail issues. The IEC 61936-1 / EN 50522 comparison (L6) is a new backlog item.
+- Re-run saved grounding studies with two-layer soil or with buses fed by a local transformer neutral. +13 tests in `test_grounding_review_fixes.py`; five two-layer tests re-baselined. Scripts in `testing/grounding-review/`.
 
 ### DB circuit check: click a result for the full calculation (2026-09-30)
 - Clicking an Iz, %VD or ECC result cell in the schedule grid opens the calculation behind that way's verdicts. It covers design current Ib, tabulated Iz with each derating factor and Ib ≤ In ≤ Iz, voltage drop (R20 × temperature factor, Z = R·cos φ + X·sin φ, 2× or √3 form, upstream load-flow drop from the origin, limit), the earth loop (Ze, R1, R2, Zs, If = c_min·U0/Zs against Ia, plus the RCD and declared-time routes) and the ECC (Table 54.7 and the adiabatic S = √(I²t)/k). Each formula has the numbers substituted in. The clicked section is highlighted.
