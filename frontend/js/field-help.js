@@ -75,6 +75,7 @@ const FIELD_HELP = {
   'changeover.state': 'Which input feeds the output. Studies run with only this input connected; the other input is left open.\nUsed by: all studies.',
   'changeover.contact_duty': 'Switching duty of the changeover contacts: switch-disconnector, load-break, or off-load disconnector.',
   'changeover.transfer_delay_s': 'Time the ATS waits after the normal supply fails before it transfers to the standby input.',
+  'changeover.cb_trip_rating_a': 'Trip unit rating In of this breaker. Thermal and magnetic pickups are multiples of it. Leave blank to use the changeover\'s Rated Current.\nUsed by: TCC, Arc Flash, Duty Check.',
   'changeover.retransfer_delay_s': 'Time the ATS waits after the normal supply returns before it transfers back.',
 
   // ── Loads ──

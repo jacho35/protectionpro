@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.364b';
+const APP_VERSION = '1.365b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -1729,6 +1729,34 @@ const DB_ACCESSORY_KINDS = [
   },
 ];
 
+// Trip-unit setpoints for each breaker of an interlocked-breaker-pair
+// changeover: cb1_* is the input I breaker, cb2_* input II. The analysis
+// rewrite (backend/analysis/changeover.py) hands each leg its own settings
+// as a plain CB, and the TCC plots both. Shown only for co_type breaker_pair.
+function changeoverBreakerFields(n) {
+  const sec = `co_breaker_${n}`;
+  const pair = { field: 'co_type', values: ['breaker_pair'] };
+  const acb = { field: `cb${n}_cb_type`, values: ['acb'], also: pair };
+  return [
+    { key: `cb${n}_cb_type`, label: 'CB Type', type: 'select', options: ['mccb', 'acb'],
+      showWhen: pair, section: sec, helpKey: 'cb.cb_type' },
+    { key: `cb${n}_trip_rating_a`, label: 'Trip Rating', type: 'number', unit: 'A',
+      showWhen: pair, section: sec, helpKey: 'changeover.cb_trip_rating_a' },
+    { key: `cb${n}_thermal_pickup`, label: 'Thermal Pickup', type: 'number', unit: '×In',
+      showWhen: pair, section: sec },
+    { key: `cb${n}_magnetic_pickup`, label: 'Magnetic Pickup', type: 'number', unit: '×In',
+      showWhen: pair, section: sec },
+    { key: `cb${n}_long_time_delay`, label: 'LT Delay Class', type: 'number',
+      showWhen: pair, section: sec },
+    { key: `cb${n}_short_time_pickup`, label: 'ST Pickup', type: 'number', unit: '×Ir',
+      showWhen: acb, section: sec, helpKey: 'cb.short_time_pickup' },
+    { key: `cb${n}_short_time_delay`, label: 'ST Delay', type: 'number', unit: 's',
+      showWhen: acb, section: sec, helpKey: 'cb.short_time_delay' },
+    { key: `cb${n}_instantaneous_pickup`, label: 'Instantaneous', type: 'number', unit: '×Ir',
+      showWhen: acb, section: sec, helpKey: 'cb.instantaneous_pickup' },
+  ];
+}
+
 const COMPONENT_DEFS = {
   // --- Sources ---
   utility: {
@@ -2879,6 +2907,10 @@ const COMPONENT_DEFS = {
       breaking_capacity_ka: 25,
       transfer_delay_s: 5,
       retransfer_delay_s: 300,
+      cb1_cb_type: 'acb', cb1_thermal_pickup: 1.0, cb1_magnetic_pickup: 10, cb1_long_time_delay: 10,
+      cb1_short_time_pickup: 0, cb1_short_time_delay: 0, cb1_instantaneous_pickup: 0,
+      cb2_cb_type: 'acb', cb2_thermal_pickup: 1.0, cb2_magnetic_pickup: 10, cb2_long_time_delay: 10,
+      cb2_short_time_pickup: 0, cb2_short_time_delay: 0, cb2_instantaneous_pickup: 0,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -2912,6 +2944,8 @@ const COMPONENT_DEFS = {
         showWhen: { field: 'co_type', values: ['ats'] } },
       { key: 'retransfer_delay_s', label: 'Retransfer Delay', type: 'number', unit: 's',
         showWhen: { field: 'co_type', values: ['ats'] } },
+      ...changeoverBreakerFields(1),
+      ...changeoverBreakerFields(2),
     ],
   },
 

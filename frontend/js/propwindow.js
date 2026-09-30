@@ -26,6 +26,8 @@ const PROP_SECTION_BLURBS = {
   grounding: 'Neutral earthing, earthing system and earth-electrode data.',
   cable_sizing: 'Installation conditions and limits for cable sizing.',
   protection: 'Pickup and time settings plotted on the TCC and used for clearing times.',
+  co_breaker_1: 'Trip unit of the input I breaker. Plotted on the TCC; studies use it while input I is selected.',
+  co_breaker_2: 'Trip unit of the input II breaker. Plotted on the TCC; studies use it while input II is selected.',
   __position: 'Where the symbol sits on the diagram.',
 };
 

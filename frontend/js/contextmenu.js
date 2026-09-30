@@ -141,7 +141,7 @@ const ContextMenu = {
       items.push('---');
     }
 
-    if (['cb', 'fuse', 'relay'].includes(comp.type) && typeof TCC !== 'undefined') {
+    if ((['cb', 'fuse', 'relay'].includes(comp.type) || Components.isBreakerPair(comp)) && typeof TCC !== 'undefined') {
       items.push({
         label: 'View TCC Grading',
         action: () => TCC.openForDevice(comp.id),

@@ -1,6 +1,6 @@
 /* ProtectionPro — Properties Panel */
 
-const SECTION_ORDER = ['General', 'pv', 'battery', 'fault', 'loadflow', 'harmonics', 'dynamic', 'stability', 'arcflash', 'grounding', 'cable_sizing', 'protection'];
+const SECTION_ORDER = ['General', 'pv', 'battery', 'fault', 'loadflow', 'harmonics', 'dynamic', 'stability', 'arcflash', 'grounding', 'cable_sizing', 'protection', 'co_breaker_1', 'co_breaker_2'];
 const SECTION_LABELS = {
   General: 'General',
   fault: 'Fault Analysis',
@@ -12,6 +12,8 @@ const SECTION_LABELS = {
   grounding: 'Grounding',
   cable_sizing: 'Cable Sizing',
   protection: 'Protection Settings',
+  co_breaker_1: 'Breaker I (Input 1)',
+  co_breaker_2: 'Breaker II (Input 2)',
   battery: 'Battery Storage',
   pv: 'PV Array / DC Strings',
   reliability: 'Reliability',
@@ -192,33 +194,37 @@ const Properties = {
   // sidebar and the properties window.
   _visibleFields(comp) {
     const def = COMPONENT_DEFS[comp.type];
-    return def.fields.filter(field => {
-      if (!field.showWhen) return true;
+    // A rule may chain a second rule through `also` — all must hold.
+    const passes = (rule) => {
       // Fall back to the definition default when the dependency prop is absent
       // — legacy components saved before a prop existed (e.g. a bus with no
       // `system` key) must still resolve `system` to its 'ac' default, or
       // every AC-gated field (bus_type, voltage_kv, …) would be hidden.
-      const depDefault = def.defaults ? def.defaults[field.showWhen.field] : undefined;
-      const depVal = comp.props[field.showWhen.field] ?? depDefault ?? '';
-      if (field.showWhen.match) {
-        if (!field.showWhen.match.test(depVal)) return false;
-        if (field.showWhen.side === 'lv') {
+      const depDefault = def.defaults ? def.defaults[rule.field] : undefined;
+      const depVal = comp.props[rule.field] ?? depDefault ?? '';
+      if (rule.match) {
+        if (!rule.match.test(depVal)) return false;
+        if (rule.side === 'lv') {
           const vg = depVal.toLowerCase();
           const lvPart = vg.slice(vg.search(/[a-z]/));
           if (!lvPart.includes('n')) return false;
         }
-      } else if (field.showWhen.values) {
-        if (!field.showWhen.values.includes(depVal)) return false;
+      } else if (rule.values) {
+        if (!rule.values.includes(depVal)) return false;
       }
       // Numeric bounds (e.g. show only for LV sources: { field: 'voltage_lv_kv', max: 1.0 }).
       // Combines with the predicates above — all specified conditions must hold.
-      if (field.showWhen.max != null || field.showWhen.min != null) {
+      if (rule.max != null || rule.min != null) {
         const num = parseFloat(depVal);
         if (!Number.isFinite(num)) return false;
-        if (field.showWhen.max != null && num > field.showWhen.max) return false;
-        if (field.showWhen.min != null && num < field.showWhen.min) return false;
+        if (rule.max != null && num > rule.max) return false;
+        if (rule.min != null && num < rule.min) return false;
       }
-      return true;
+      return rule.also ? passes(rule.also) : true;
+    };
+    return def.fields.filter(field => {
+      if (!field.showWhen) return true;
+      return passes(field.showWhen);
     });
   },
 
@@ -248,7 +254,7 @@ const Properties = {
   _actionsHtml(comp) {
     let html = '';
     // TCC Grading button for protection devices
-    if (['cb', 'fuse', 'relay'].includes(comp.type)) {
+    if (['cb', 'fuse', 'relay'].includes(comp.type) || Components.isBreakerPair(comp)) {
       html += `
         <div class="prop-section prop-tcc-section">
           <button class="prop-action-btn" id="btn-view-tcc" title="Open TCC chart showing this device and upstream protection for grading">
@@ -722,7 +728,7 @@ const Properties = {
       : (FIELD_INFO && FIELD_INFO[field.key] ? field.key : null);
     const hasInfo = !!resolvedInfoKey;
     const helpKey = resolvedInfoKey
-      || [infoKey, field.key].find(k => typeof FIELD_HELP !== 'undefined' && FIELD_HELP[k]) || null;
+      || [infoKey, field.key, field.helpKey].find(k => k && typeof FIELD_HELP !== 'undefined' && FIELD_HELP[k]) || null;
     const infoHtml = helpKey ? `<button type="button" class="prop-info-btn" data-info-key="${helpKey}" title="About ${escHtml(field.label)}" aria-label="About ${escHtml(field.label)}">i</button>` : '';
 
     // "Default" flag: the field still holds its typical/standard (often IEC)
@@ -1089,6 +1095,10 @@ const Properties = {
          'machine_model', 'gov_mode', 'avr_mode', 'gov_model', 'exc_model', 'pss_on',
          'subtransient_on'].includes(field)) {
       this.show(comp.id);
+    } else {
+      // Any other field a showWhen rule (or its `also` chain) reads
+      const gates = (rule) => !!rule && (rule.field === field || gates(rule.also));
+      if ((COMPONENT_DEFS[comp.type]?.fields || []).some(f => gates(f.showWhen))) this.show(comp.id);
     }
 
     // Refresh the Calculated Values section when one of its inputs commits

@@ -752,8 +752,9 @@ const TCC = {
   },
 
   _syncDeviceToSLD(dev, mode) {
-    const comp = AppState.components.get(dev.id);
-    if (!comp) return;
+    const props = this._devProps(dev);
+    if (!props) return;
+    const comp = { props };
 
     if (mode === 'pickup' && comp.props) {
       comp.props.pickup_a = dev.pickup;
@@ -1542,7 +1543,7 @@ const TCC = {
     const snap = new Map();
     for (const dev of this.devices) {
       if (dev.deviceType !== 'relay' && dev.deviceType !== 'cb') continue;
-      const comp = AppState.components.get(dev.id);
+      const comp = { props: this._devProps(dev) };
       snap.set(dev, {
         tds: dev.tds,
         ltd: dev.cbParams?.long_time_delay,
@@ -1555,7 +1556,7 @@ const TCC = {
 
   _restoreAutoSettings(snap) {
     for (const [dev, v] of snap) {
-      const comp = AppState.components.get(dev.id);
+      const comp = { props: this._devProps(dev) };
       if (dev.deviceType === 'relay') {
         dev.tds = v.tds;
         if (comp?.props) comp.props.time_dial = v.compTds;
@@ -1723,8 +1724,11 @@ const TCC = {
     this._restoreDisplayState();
 
     // Auto-select the target device
+    // (a breaker-pair changeover selects the breaker of its live input)
+    const liveLeg = comp.props?.state === 'in_2' ? 2 : 1;
     for (let i = 0; i < this.devices.length; i++) {
-      if (this.devices[i].id === compId) {
+      const d = this.devices[i];
+      if (d.id === compId || (d.coParent === compId && d.coLeg === liveLeg)) {
         this.selectedDeviceIndex = i;
         this._miniSLDEndpointDeviceIdx = i;
         break;
@@ -1838,6 +1842,35 @@ const TCC = {
 
   // ── Load relays and fuses from the SLD ──
 
+  // One breaker of an interlocked-pair changeover as plain CB props: its own
+  // cb<n>_* setting, else an unprefixed one saved on the changeover before
+  // per-breaker settings existed — the same merge as analysis/changeover.py.
+  _coLegProps(comp, n) {
+    const out = {};
+    const own = `cb${n}_`;
+    for (const [k, v] of Object.entries(comp.props || {})) {
+      if (/^cb[12]_/.test(k)) {
+        if (k.startsWith(own) && v !== '' && v != null) out[k.slice(own.length)] = v;
+      } else if (!(k in out)) out[k] = v;
+    }
+    return out;
+  },
+
+  // Props a device's settings are written back to. A changeover breaker has
+  // no component of its own: its keys map onto the parent's cb<n>_* props.
+  _devProps(dev) {
+    if (dev.coParent) {
+      const parent = AppState.components.get(dev.coParent);
+      if (!parent) return null;
+      const pre = `cb${dev.coLeg}_`;
+      return new Proxy(parent.props, {
+        get: (t, k) => (typeof k === 'string' ? t[pre + k] : t[k]),
+        set: (t, k, v) => { t[typeof k === 'string' ? pre + k : k] = v; return true; },
+      });
+    }
+    return AppState.components.get(dev.id)?.props || null;
+  },
+
   _loadDevicesFromNetwork(filterSet = null) {
     for (const [id, comp] of AppState.components) {
       if (filterSet && !filterSet.has(id)) continue;
@@ -1908,6 +1941,34 @@ const TCC = {
           actualRating: ratingA,
           scaledCurve: !nearestRating, // no standard curve within 20% — curve is ratio-scaled
         });
+      } else if (Components.isBreakerPair(comp)) {
+        // Interlocked breaker pair: one CB curve per input breaker, settings
+        // in the changeover's cb1_* / cb2_* props (see _devProps)
+        for (const n of [1, 2]) {
+          const p = this._coLegProps(comp, n);
+          const label = comp.props?.[`input_${n}_label`];
+          this.devices.push({
+            id: `${id}__in_${n}`,
+            coParent: id,
+            coLeg: n,
+            name: `${comp.props?.name || id} (${n === 1 ? 'I' : 'II'})${label ? ' ' + label : ''}`,
+            deviceType: 'cb',
+            color: this._nextColor(),
+            visible: true,
+            voltage_kv: this._resolveDeviceVoltage(id),
+            cbParams: {
+              cb_type: p.cb_type || 'acb',
+              mcb_curve: p.mcb_curve || 'C',
+              trip_rating_a: p.trip_rating_a || p.rated_current_a || 630,
+              thermal_pickup: p.thermal_pickup || 1.0,
+              magnetic_pickup: p.magnetic_pickup || 10,
+              long_time_delay: p.long_time_delay || 10,
+              short_time_pickup: p.short_time_pickup || 0,
+              short_time_delay: p.short_time_delay || 0,
+              instantaneous_pickup: p.instantaneous_pickup || 0,
+            },
+          });
+        }
       } else if (comp.type === 'cb') {
         this.devices.push({
           id,
@@ -2122,6 +2183,7 @@ const TCC = {
   _endpointCompId(dev) {
     if (!dev) return null;
     if (dev.deviceType === 'relay' || dev.deviceType === 'distance_relay') return dev.trip_cb || dev.associated_ct || dev.id;
+    if (dev.coParent) return dev.id; // a changeover breaker is its own path node
     return String(dev.id).split('__')[0];
   },
 
@@ -2145,7 +2207,7 @@ const TCC = {
   _inPathView(dev, set) {
     if (!set) return true;
     if (String(dev.id).startsWith('custom_')) return true; // user-added curves are never hidden by the path
-    const base = String(dev.id).split('__')[0];
+    const base = dev.coParent ? dev.id : String(dev.id).split('__')[0];
     if (set.has(base)) return true;
     if (dev.deviceType === 'relay' || dev.deviceType === 'distance_relay') {
       return set.has(dev.trip_cb) || set.has(dev.associated_ct);
@@ -4604,7 +4666,8 @@ const TCC = {
     }
 
     // Sync to SLD component
-    const comp = AppState.components.get(dev.id);
+    const devProps = this._devProps(dev);
+    const comp = devProps ? { props: devProps } : null;
     if (comp && comp.props) {
       if (dev.deviceType === 'relay') {
         comp.props.pickup_a = dev.pickup;
@@ -5433,18 +5496,38 @@ const TCC = {
     return out;
   },
 
+  // Component adjacency for the path walks. A breaker-pair changeover's
+  // inputs are their own nodes (<id>__in_k, the TCC device id of that
+  // input's breaker), each joined to the changeover (its output side).
+  _pathAdjacency(wires) {
+    const adj = new Map();
+    const link = (a, b) => {
+      if (!adj.has(a)) adj.set(a, []);
+      if (!adj.has(b)) adj.set(b, []);
+      adj.get(a).push(b);
+      adj.get(b).push(a);
+    };
+    const endNode = (cid, port) => {
+      const c = AppState.components.get(cid);
+      if (Components.isBreakerPair(c) && (port === 'in_1' || port === 'in_2')) {
+        const leg = `${cid}__${port}`;
+        if (!adj.has(leg)) link(leg, cid);
+        return leg;
+      }
+      return cid;
+    };
+    for (const [, w] of wires) {
+      link(endNode(w.fromComponent, w.fromPort), endNode(w.toComponent, w.toPort));
+    }
+    return adj;
+  },
+
   _buildProtectionPaths(busMap = null) {
     const wires = AppState.wires;
     if (!wires || wires.size === 0) return [];
 
-    // Build adjacency map: compId -> [{neighbor, fromPort, toPort}]
-    const adj = new Map();
-    for (const [, w] of wires) {
-      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
-      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
-      adj.get(w.fromComponent).push(w.toComponent);
-      adj.get(w.toComponent).push(w.fromComponent);
-    }
+    // Build adjacency map: compId -> [neighbor ids]
+    const adj = this._pathAdjacency(wires);
 
     // Find source components (utility, generator)
     const sources = [];
@@ -5464,7 +5547,7 @@ const TCC = {
     const protTypes = new Set(['relay', 'fuse', 'cb']);
     const isProtDevice = (id) => {
       const comp = AppState.components.get(id);
-      if (!comp) return false;
+      if (!comp) return !!tccDevMap.get(id)?.coParent;
       if (comp.type === 'relay') {
         return comp.props?.relay_type === '50/51' || comp.props?.relay_type === '50N/51N' ||
                comp.props?.relay_type === '67' || comp.props?.relay_type === '21';
@@ -6070,8 +6153,8 @@ const TCC = {
               const newT = this._deviceTripTime(upstream, iUp);
               if (isFinite(newT) && newT >= requiredTime) {
                 coordinated = true;
-                const comp = AppState.components.get(upstream.id);
-                if (comp?.props) comp.props.long_time_delay = cls;
+                const props = this._devProps(upstream);
+                if (props) props.long_time_delay = cls;
                 break;
               }
             }
@@ -6792,13 +6875,7 @@ const TCC = {
     if (!wires || wires.size === 0) return [];
 
     // Build adjacency
-    const adj = new Map();
-    for (const [, w] of wires) {
-      if (!adj.has(w.fromComponent)) adj.set(w.fromComponent, []);
-      if (!adj.has(w.toComponent)) adj.set(w.toComponent, []);
-      adj.get(w.fromComponent).push(w.toComponent);
-      adj.get(w.toComponent).push(w.fromComponent);
-    }
+    const adj = this._pathAdjacency(wires);
 
     // Find sources
     const sources = [];
@@ -6835,13 +6912,18 @@ const TCC = {
         if (allPaths.length >= MAX_PATHS || expansions >= MAX_EXPANSIONS) break;
         expansions++;
         const { node, visited, path } = stack.pop();
-        const comp = AppState.components.get(node);
+        // A changeover input node shows as that input's breaker
+        const tccEntry = tccDevMap.get(node);
+        const coParent = tccEntry?.dev?.coParent;
+        const parent = coParent ? AppState.components.get(coParent) : null;
+        const comp = parent
+          ? { type: 'cb', props: { name: tccEntry.dev.name, rated_current_a: parent.props?.rated_current_a } }
+          : AppState.components.get(node);
         if (!comp) continue;
 
         let currentPath = [...path];
         if (showTypes.has(comp.type)) {
-          const tccEntry = tccDevMap.get(node);
-          const vkv = comp.props?.voltage_kv || this._resolveDeviceVoltage(node);
+          const vkv = comp.props?.voltage_kv || this._resolveDeviceVoltage(coParent || node);
           currentPath.push({
             compId: node,
             comp,

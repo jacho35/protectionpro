@@ -63,6 +63,12 @@ const Components = {
     return out;
   },
 
+  // A changeover built as two interlocked breakers — it carries trip units
+  // (cb1_* / cb2_*) and plots on the TCC.
+  isBreakerPair(c) {
+    return !!c && c.type === 'changeover' && c.props?.co_type === 'breaker_pair';
+  },
+
   // An open CB / switch, or a changeover in position 0.
   isOpenSwitching(c) {
     if (!c || !c.props) return false;
@@ -320,7 +326,7 @@ const Components = {
           for (const id of currentTrail) {
             const c = AppState.components.get(id);
             if (c && (PROTECTION_TYPES.has(c.type) || THERMAL_TYPES.has(c.type) ||
-                      MEASUREMENT_TYPES.has(c.type))) {
+                      MEASUREMENT_TYPES.has(c.type) || this.isBreakerPair(c))) {
               relevant.add(id);
             }
           }

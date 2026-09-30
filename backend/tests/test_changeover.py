@@ -86,6 +86,25 @@ class TestRewrite:
         assert comps["co-1"].type == "cb" and comps["co-1__in_2"].type == "cb"
         assert comps["co-1"].props["trip_rating_a"] == 630
 
+    @pytest.mark.parametrize("state,live,stub", [("in_1", 1, 2), ("in_2", 2, 1)])
+    def test_breaker_pair_legs_take_their_own_settings(self, state, live, stub):
+        p = _network(state, co_type="breaker_pair")
+        co = next(c for c in p.components if c.id == "co-1")
+        co.props.update({
+            "cb1_cb_type": "acb", "cb1_trip_rating_a": 1250, "cb1_short_time_delay": 0.3,
+            "cb2_cb_type": "mccb", "cb2_trip_rating_a": 400, "cb2_magnetic_pickup": 5,
+            "cb2_short_time_delay": "",       # blank: not set
+            "thermal_pickup": 0.9,            # legacy shared setting: both legs
+        })
+        comps = {c.id: c for c in expand_changeovers(p).components}
+        legs = {live: comps["co-1"].props, stub: comps[f"co-1__in_{stub}"].props}
+        assert legs[1]["trip_rating_a"] == 1250 and legs[1]["cb_type"] == "acb"
+        assert legs[1]["short_time_delay"] == 0.3
+        assert legs[2]["trip_rating_a"] == 400 and legs[2]["cb_type"] == "mccb"
+        assert legs[2]["magnetic_pickup"] == 5 and "short_time_delay" not in legs[2]
+        assert legs[1]["thermal_pickup"] == legs[2]["thermal_pickup"] == 0.9
+        assert not any(k.startswith(("cb1_", "cb2_")) for leg in legs.values() for k in leg)
+
     def test_no_changeover_is_identity(self):
         p = _network()
         p = p.model_copy(update={
