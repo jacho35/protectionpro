@@ -461,6 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (AppState.wireStart) {
           Wiring.cancelWire();
         }
+        if (typeof CableFocus !== 'undefined') CableFocus.disable();
         AppState.clearSelection();
         setMode(MODE.SELECT);
         Canvas.render();
@@ -1091,6 +1092,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Bus the results table is filtered to (null = all cables). Follows the
+  // diagram's cable focus when that is on.
+  let _csFilterBus = null;
+
   function showCableSizingResults(result) {
     const modal = document.getElementById('cable-sizing-modal');
     const body = document.getElementById('cable-sizing-body');
@@ -1103,9 +1108,26 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const failCount = cables.filter(c => c.status === 'fail').length;
-    const warnCount = cables.filter(c => c.status === 'warning').length;
-    const passCount = cables.filter(c => c.status === 'pass').length;
+    if (CableFocus.filtering()) _csFilterBus = CableFocus.busId;
+    if (_csFilterBus && !AppState.components.has(_csFilterBus)) _csFilterBus = null;
+    // Buses that have at least one cable, for the picker
+    const busIds = new Set();
+    for (const c of cables) {
+      const { fromId, toId } = CableFocus.cableEnds(c);
+      if (fromId && AppState.components.has(fromId)) busIds.add(fromId);
+      if (toId && AppState.components.has(toId)) busIds.add(toId);
+    }
+    const busName = (id) => { const b = AppState.components.get(id); return b ? (b.props?.name || b.id) : id; };
+    const busList = [...busIds].sort((a, b) => busName(a).localeCompare(busName(b), undefined, { numeric: true }));
+    // The picker shows the filter bus, else the selected bus, else the first
+    const sel = AppState.selectedIds.size === 1 ? [...AppState.selectedIds][0] : null;
+    const pickBus = _csFilterBus || (sel && busIds.has(sel) ? sel : busList[0]);
+
+    const at = _csFilterBus ? CableFocus.cablesAt(_csFilterBus, result) : null;
+    const shown = at ? at.map(e => e.cable) : cables;
+
+    const failCount = shown.filter(c => c.status === 'fail').length;
+    const warnCount = shown.filter(c => c.status === 'warning').length;
 
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
@@ -1114,17 +1136,31 @@ document.addEventListener('DOMContentLoaded', () => {
       html += '</div>';
     }
 
-    if (failCount > 0) {
+    html += `<div class="cs-filter-bar">
+      <span>Show</span>
+      <div class="cs-seg" role="group" aria-label="Cables shown">
+        <button type="button" data-cs-scope="all" aria-pressed="${!_csFilterBus}" class="${!_csFilterBus ? 'active' : ''}">All cables · ${cables.length}</button>
+        <button type="button" data-cs-scope="bus" aria-pressed="${!!_csFilterBus}" class="${_csFilterBus ? 'active' : ''}"${busList.length ? '' : ' disabled'}>At bus</button>
+      </div>
+      <select id="cs-filter-bus" aria-label="Bus"${_csFilterBus ? '' : ' disabled'}>
+        ${busList.map(id => `<option value="${escHtml(id)}"${id === pickBus ? ' selected' : ''}>${escHtml(busName(id))}</option>`).join('')}
+      </select>
+      <span class="cs-filter-spacer"></span>
+      <span class="cs-filter-summary">${at ? `${shown.length} of ${cables.length} · ` : ''}${failCount ? `<b class="cs-fail">${failCount} fail</b>` : '0 fail'} · ${warnCount ? `<b class="cs-warn">${warnCount} warning</b>` : '0 warnings'}</span>
+    </div>`;
+
+    if (failCount > 0 && !at) {
       html += `<div class="af-warning-item" style="color:#d32f2f;font-weight:600;margin-bottom:8px">${failCount} cable(s) FAIL sizing checks</div>`;
     }
 
     html += `<table class="af-table">
       <thead><tr>
-        <th>Cable</th><th>From → To</th><th>Load (A)</th><th>Thermal</th>
+        <th>Cable</th><th>${at ? 'Other end' : 'From → To'}</th><th>Load (A)</th><th>Thermal</th>
         <th title="Voltage drop across this cable; Σ = from the origin of the installation (IEC 60364-5-52 §525), which the limit applies to">VDrop%</th><th title="Overload protection, IEC 60364-4-43 §433.1: Ib ≤ In ≤ Iz and I2 ≤ 1.45·Iz (LV only)">Protection</th><th>Withstand</th><th>Status</th><th>Recommended</th>
       </tr></thead><tbody>`;
 
-    for (const c of cables) {
+    const rowHtml = (c, ends) => {
+      let html = '';
       const rowClass = c.status === 'fail' ? 'af-danger'
         : c.status === 'warning' ? 'af-medium'
         : c.status === 'unknown' ? 'af-unknown' : 'af-low';
@@ -1143,7 +1179,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
       html += `<tr class="${rowClass}" data-cable-id="${c.cable_id}" style="cursor:pointer">
         <td>${escHtml(c.cable_name)}</td>
-        <td>${escHtml(c.from_bus)} → ${escHtml(c.to_bus)}</td>
+        <td>${ends}</td>
         <td>${c.load_current_a.toFixed(1)}</td>
         <td>${thermalIcon} ${c.thermal_loading_pct.toFixed(0)}%${c.ampacity_derated
           ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="${(c.ampacity_conditions || '').replace(/"/g, '&quot;')}">↓ ${c.derated_ampacity_a}A</span>`
@@ -1161,11 +1197,40 @@ document.addEventListener('DOMContentLoaded', () => {
           ${c.issues.join('<br>')}
         </td></tr>`;
       }
+      return html;
+    };
+
+    if (at) {
+      const name = escHtml(busName(_csFilterBus));
+      const groups = [['in', `Incoming to ${name}`, 'from'], ['out', `Outgoing from ${name}`, 'to']];
+      for (const [dir, title, word] of groups) {
+        const rows = at.filter(e => e.dir === dir);
+        html += `<tr class="cs-group-row"><td colspan="9">${title} · ${rows.length}</td></tr>`;
+        if (!rows.length) html += `<tr><td colspan="9" class="cs-none">None</td></tr>`;
+        for (const e of rows) html += rowHtml(e.cable, `${word} ${escHtml(e.otherId ? busName(e.otherId) : '—')}`);
+      }
+    } else {
+      for (const c of cables) html += rowHtml(c, `${escHtml(c.from_bus)} → ${escHtml(c.to_bus)}`);
     }
     html += '</tbody></table>';
 
     body.innerHTML = html;
     modal.style.display = '';
+
+    body.querySelectorAll('[data-cs-scope]').forEach(b => b.addEventListener('click', () => {
+      const sel = body.querySelector('#cs-filter-bus');
+      _csFilterBus = b.dataset.csScope === 'bus' ? (sel && sel.value) || null : null;
+      if (CableFocus.active) {
+        if (_csFilterBus) CableFocus.enable(_csFilterBus); else CableFocus.disable();
+      }
+      showCableSizingResults(result);
+    }));
+    const busSel = body.querySelector('#cs-filter-bus');
+    if (busSel) busSel.addEventListener('change', () => {
+      _csFilterBus = busSel.value || null;
+      if (CableFocus.active && _csFilterBus) CableFocus.enable(_csFilterBus);
+      showCableSizingResults(result);
+    });
 
     // Click-to-highlight cable on SLD
     body.querySelectorAll('tr[data-cable-id]').forEach(row => {
@@ -4446,6 +4511,31 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-toggle-results-loaddiversity').classList.toggle('active', rb.loadDiversity);
     document.getElementById('btn-toggle-results-grounding').classList.toggle('active', rb.grounding);
   }
+
+  // Cable sizing bus focus — Results menu item + the properties-panel button
+  function syncCableFocusButtons() {
+    const on = typeof CableFocus !== 'undefined' && CableFocus.active;
+    const btn = document.getElementById('btn-cable-focus');
+    if (btn) { btn.classList.toggle('active', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    const pb = document.getElementById('btn-bus-cable-focus');
+    if (pb) {
+      const mine = on && CableFocus.busId === pb.dataset.busId;
+      pb.classList.toggle('active', mine);
+      pb.setAttribute('aria-pressed', mine ? 'true' : 'false');
+      pb.lastChild.textContent = mine ? ' Showing only these cables' : ' Show only these cables on the diagram';
+    }
+  }
+  window.syncCableFocusButtons = syncCableFocusButtons;
+  document.getElementById('btn-cable-focus').addEventListener('click', () => {
+    if (!CableFocus.active) {
+      AppState.showResultBoxes.cable = true;
+      _syncResultToggleButtons();
+    }
+    CableFocus.toggle();
+    if (CableFocus.active && !CableFocus.busId) {
+      document.getElementById('status-info').textContent = 'Cable focus on — select a bus to show only its cables.';
+    }
+  });
 
   document.getElementById('btn-toggle-results-all').addEventListener('click', () => {
     const allOn = Object.values(AppState.showResultBoxes).every(Boolean);

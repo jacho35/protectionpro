@@ -3373,3 +3373,45 @@ select.ss-native { display: none !important; }
   .ss-opt { padding: 10px 12px 10px 18px; }
   .ss-input { font-size: 16px !important; }   /* no iOS zoom on focus */
 }
+
+/* ── Cable sizing bus focus (cablefocus.js) ── */
+#sld-canvas .cf-dim { opacity: 0.18; }
+#sld-canvas .cf-cable { filter: drop-shadow(0 0 2px var(--accent)); }
+.cable-focus-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 48px;
+  width: max-content;
+  margin: 0 auto;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
+  padding: 6px 6px 6px 14px;
+  font-size: 13px;
+  color: #fff;
+  background: #1a1a2e;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  white-space: nowrap;
+}
+.cable-focus-bar .cf-title { font-weight: 600; }
+.cable-focus-bar .cf-counts { color: #c9ccd6; flex-shrink: 0; }
+.cable-focus-bar .cf-spacer { width: 4px; }
+.cable-focus-bar kbd { font: inherit; font-size: 11px; color: #c9ccd6; }
+.cable-focus-bar button {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #1a1a2e;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cable-focus-bar button:hover { background: #e6f1fb; }
+body.dark-mode .cable-focus-bar { background: #3a3a50; }

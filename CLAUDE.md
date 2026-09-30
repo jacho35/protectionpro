@@ -42,6 +42,7 @@ frontend/
     ├── symbols.js          # IEC-standard SVG symbol generators (40 types)
     ├── properties.js       # Dynamic property editor per component type
     ├── annotations.js      # Draggable fault/loadflow result badges
+    ├── cablefocus.js       # CableFocus — cable-sizing result boxes filtered to the selected bus's incoming/outgoing cables (Results menu / bus properties button / results-table 'At bus'), rest of the sheet dimmed; session-only
     ├── project.js          # Save/load/export (JSON/SVG/PNG/CSV/PDF)
     ├── api.js              # HTTP client for backend endpoints
     ├── constants.js        # Component definitions, cable/transformer libraries

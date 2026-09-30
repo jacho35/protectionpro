@@ -1123,6 +1123,7 @@ const Canvas = {
 
   // Full re-render of all components and wires
   render() {
+    if (typeof CableFocus !== 'undefined') CableFocus.syncFromSelection();
     // Get page-filtered components and wires
     const pageComps = AppState.getActivePageComponents();
     const pageWires = AppState.getActivePageWires();
@@ -1216,6 +1217,9 @@ const Canvas = {
       const el = this.componentsLayer.querySelector(`[data-id="${id}"]`);
       if (el) el.classList.add('selected');
     }
+
+    // Cable sizing bus focus: dim everything not at the focused bus
+    if (typeof CableFocus !== 'undefined') CableFocus.applyDimming(this.componentsLayer, this.wiresLayer);
 
     // Render annotations if results exist
     Annotations.render();

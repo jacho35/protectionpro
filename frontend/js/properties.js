@@ -199,6 +199,37 @@ const Properties = {
         </div>`;
     }
 
+    // Cable sizing at this bus — its incoming / outgoing cables, and a button
+    // that filters the diagram's cable result boxes to them (CableFocus)
+    if (typeof CableFocus !== 'undefined' && CableFocus.isBus(comp) && AppState.cableSizingResults) {
+      const at = CableFocus.cablesAt(comp.id);
+      if (at.length) {
+        const dot = { pass: 'cf-dot-pass', warning: 'cf-dot-warn', fail: 'cf-dot-fail' };
+        const row = (e) => {
+          const other = e.otherId && AppState.components.get(e.otherId);
+          const otherName = other ? (other.props?.name || other.id) : '—';
+          const pct = e.cable.thermal_loading_pct;
+          return `<div class="cf-prop-row" data-cable-id="${this._esc(e.cable.cable_id)}" title="Select ${this._esc(e.cable.cable_name)}">
+            <span class="cf-dot ${dot[e.cable.status] || 'cf-dot-unknown'}"></span>
+            <span class="cf-prop-name">${this._esc(e.cable.cable_name)}</span>
+            <span class="cf-prop-other">${e.dir === 'in' ? 'from' : 'to'} ${this._esc(otherName)}</span>
+            <span class="cf-prop-pct${e.cable.status === 'fail' ? ' cf-fail' : ''}">${pct != null ? pct.toFixed(0) + '%' : ''}</span>
+          </div>`;
+        };
+        const ins = at.filter(e => e.dir === 'in'), outs = at.filter(e => e.dir === 'out');
+        const mine = CableFocus.active && CableFocus.busId === comp.id;
+        html += `
+          <div class="prop-section cf-prop-section">
+            <div class="prop-section-title">Cable Sizing at this Bus</div>
+            <button class="prop-action-btn${mine ? ' active' : ''}" id="btn-bus-cable-focus" data-bus-id="${this._esc(comp.id)}" aria-pressed="${mine}"
+                    title="Show only this bus's incoming and outgoing cable result boxes on the diagram">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" style="vertical-align:-2px;margin-right:4px"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/></svg>${mine ? ' Showing only these cables' : ' Show only these cables on the diagram'}</button>
+            ${ins.length ? `<div class="cf-prop-group">Incoming</div>${ins.map(row).join('')}` : ''}
+            ${outs.length ? `<div class="cf-prop-group">Outgoing</div>${outs.map(row).join('')}` : ''}
+          </div>`;
+      }
+    }
+
     // Position section
     html += `
       <div class="prop-section">
@@ -252,6 +283,23 @@ const Properties = {
     if (btnDb && typeof DBSchedule !== 'undefined') {
       btnDb.addEventListener('click', () => DBSchedule.open(comp.id));
     }
+
+    const btnCableFocus = this.contentEl.querySelector('#btn-bus-cable-focus');
+    if (btnCableFocus) {
+      btnCableFocus.addEventListener('click', () => {
+        AppState.showResultBoxes.cable = true;
+        window.syncViewToggles?.();
+        CableFocus.toggle(comp.id);
+      });
+    }
+    this.contentEl.querySelectorAll('.cf-prop-row[data-cable-id]').forEach(r => {
+      r.addEventListener('click', () => {
+        AppState.selectedIds.clear();
+        AppState.selectedIds.add(r.dataset.cableId);
+        Canvas.render();
+        this.show(r.dataset.cableId);
+      });
+    });
 
     const btnFault = this.contentEl.querySelector('#btn-fault-terminal');
     if (btnFault) {
