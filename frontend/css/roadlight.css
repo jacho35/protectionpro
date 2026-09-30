@@ -41,8 +41,9 @@ body.dark-mode #streetlight-workspace, body.dark-mode .rl-modal {
 .rl-table input:not([type=number]) { width: 100%; min-width: 90px; }
 .rl-table .sl-in-num, .rl-card-head .sl-in-num { width: 64px; }
 .rl-lum-sel { max-width: 240px; }
-.rl-table select[data-sec="surface"] { max-width: 190px; }
-.rl-table select[data-sec="cls"] { max-width: 140px; }
+.rl-table select[data-sec="surface"] { max-width: 130px; }
+.rl-table select[data-sec="cls"] { max-width: 150px; }
+.rl-table input[data-sec="name"] { min-width: 0; width: 96px; }
 .rl-card { overflow-x: auto; }
 .rl-row-actions { white-space: nowrap; text-align: right; }
 .rl-icon { background: none; border: 0; cursor: pointer; color: var(--text-secondary); font-size: 14px; padding: 2px 5px; border-radius: 4px; }
@@ -127,6 +128,18 @@ label.rl-check { flex-direction: row; align-items: center; gap: 6px; font-weight
 .rl-info-fam { display: flex; flex-direction: column; gap: 4px; }
 .rl-info-fam .rl-chk td:first-child { white-space: nowrap; width: 48px; }
 
+/* Class cell: picker + Suggest, and the SANS night-traffic column under it */
+.rl-cls-pick { display: flex; gap: 4px; align-items: center; }
+.rl-cls-cell .rl-vol { margin-top: 3px; max-width: 250px; display: block; }
+.rl-suggest { white-space: nowrap; }
+.rl-seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; align-self: flex-start; }
+.rl-seg button { font: inherit; font-size: 12px; padding: 5px 12px; background: var(--bg-primary); color: var(--text-secondary); border: 0; cursor: pointer; }
+.rl-seg button + button { border-left: 1px solid var(--border-color); }
+.rl-seg button.active { background: color-mix(in srgb, var(--accent) 16%, var(--bg-primary)); color: var(--text-primary); font-weight: 600; }
+.rl-suggest-out { border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--bg-secondary); }
+.rl-suggest-cls { font-size: 14px; }
+.rl-suggest-out ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 3px; }
+
 /* Stacked layout — same breakpoint as the circuits view */
 @media (max-width: 1100px) {
   .rl-body .sl-rail, .rl-results { width: auto; flex: none; }
@@ -154,7 +167,9 @@ label.rl-check { flex-direction: row; align-items: center; gap: 6px; font-weight
   .rl-table td, #streetlight-workspace .rl-table td:first-child { display: flex; flex-direction: column; gap: 3px; padding: 0; border: 0; position: static; background: none; min-width: 0; }
   .rl-table td::before { content: attr(data-label); font-size: 11px; font-weight: 600; color: var(--text-secondary); }
   .rl-table td.rl-na { display: none; }
-  .rl-table td.rl-wide { grid-column: 1 / -1; }
+  .rl-table td.rl-wide, .rl-table td.rl-cls-cell { grid-column: 1 / -1; }
+  .rl-cls-pick select { flex: 1; min-width: 0; }
+  .rl-cls-cell .rl-vol { max-width: none; width: 100%; }
   .rl-table td.rl-row-actions { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; gap: 6px; }
   .rl-table td.rl-row-actions::before { content: none; }
   .rl-table td.rl-row-actions:empty { display: none; }

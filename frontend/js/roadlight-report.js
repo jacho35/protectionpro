@@ -70,7 +70,10 @@ const RoadLightReport = {
     y += 6;
     doc.text(t(`${AppState.projectName || 'Untitled Project'}  |  ${des.name}  |  ${new Date().toLocaleDateString()}`), M, y);
     y += 4.5;
-    doc.text('Calculated to EN 13201-3; lighting classes EN 13201-2 (as SANS 10098-1 / CIE 115); energy indicators EN 13201-5.', M, y);
+    const sans = RL._std(des) === 'SANS';
+    doc.text(sans
+      ? 'Lighting categories SANS 10098-1:2007 (group A: Table 1; groups B, C: Table 2) and SANS 10098-2:2005; calculated per CIE 140 / EN 13201-3; energy indicators EN 13201-5.'
+      : 'Calculated to EN 13201-3; lighting classes EN 13201-2 (as CIE 115); energy indicators EN 13201-5.', M, y);
     y += 7;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
     doc.setTextColor(...(r.pass ? [46, 125, 50] : [179, 38, 30]));
@@ -94,7 +97,7 @@ const RoadLightReport = {
       startY: y + 1,
       head: [['Strip', 'From - to (m)', 'Width', 'Lanes', 'Class', 'Surface', 'Traffic']],
       body: lay.secs.map(s => [t(s.name || RL._secName(s, des)), `${fmt(s.y0, 2)} - ${fmt(s.y1, 2)}`, `${fmt(s.width, 2)} m`,
-        s.type === 'carriageway' ? s.lanes : '-', s.cls || 'not checked', s.type === 'carriageway' ? s.surface : '-',
+        s.type === 'carriageway' ? s.lanes : '-', t(s.cls ? s.cls + (sans && RL_SANS_A[s.cls] ? ` (night traffic ${RL_SANS_BANDS[RL._hasMedian(des) ? 'median' : 'noMedian'][Math.round(RL._num(s.volume, 0))]})` : '') : 'not checked'), s.type === 'carriageway' ? s.surface : '-',
         s.type === 'carriageway' ? (s.direction === 'reverse' ? 'towards' : 'away') : '-']),
     });
 
@@ -107,7 +110,9 @@ const RoadLightReport = {
       body: [
         ['Arrangement', t(arr)], ['Spacing S', `${fmt(des.spacing, 2)} m`], ['Maintenance factor', fmt(des.mf, 2)],
         ['Calculation grid', `${r.grid.nLong} points along the field (D = ${fmt(r.grid.D, 2)} m); 3 per lane for luminance, <= 1.5 m across for illuminance`],
-        ['Observer', '60 m before the field, 1.5 m eye height, centre of each lane; TI with the 20 deg screening angle'],
+        ['Observer', sans
+          ? '60 m before the field, 1.5 m eye height; L, Uo and TI from one observer a quarter of the carriageway width from the left-hand side, Ul with the observer in each lane (SANS 10098-1 Appendix D); TI with the 20 deg screening angle'
+          : '60 m before the field, 1.5 m eye height, centre of each lane; TI with the 20 deg screening angle'],
       ],
       columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold' } },
     });
@@ -141,6 +146,9 @@ const RoadLightReport = {
       didParseCell: (d) => { if (d.section === 'body' && d.column.index === 4) { if (d.cell.raw === 'FAIL') { d.cell.styles.textColor = [179, 38, 30]; d.cell.styles.fontStyle = 'bold'; } else if (d.cell.raw === 'Pass') d.cell.styles.textColor = [46, 125, 50]; } },
     });
     const notes = r.areas.filter(a => a.note).map(a => `${a.name}: ${a.note}`);
+    for (const a of r.areas) {
+      if (a.family === 'A' && a.ESsides && a.ESsides.length) notes.push(`${a.name}: surround ratio ES ${a.ESsides.map(x => `${x.side} ${fmt(x.REI, 2)}`).join(', ')} (SANS 10098-1 3.6.1 d; no limit tabulated)`);
+    }
     if (notes.length) {
       doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(90);
       let yy = next(4);
