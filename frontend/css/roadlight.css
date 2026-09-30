@@ -41,6 +41,9 @@ body.dark-mode #streetlight-workspace, body.dark-mode .rl-modal {
 .rl-table input:not([type=number]) { width: 100%; min-width: 90px; }
 .rl-table .sl-in-num, .rl-card-head .sl-in-num { width: 64px; }
 .rl-lum-sel { max-width: 240px; }
+.rl-table select[data-sec="surface"] { max-width: 190px; }
+.rl-table select[data-sec="cls"] { max-width: 140px; }
+.rl-card { overflow-x: auto; }
 .rl-row-actions { white-space: nowrap; text-align: right; }
 .rl-icon { background: none; border: 0; cursor: pointer; color: var(--text-secondary); font-size: 14px; padding: 2px 5px; border-radius: 4px; }
 .rl-icon:hover { background: var(--bg-secondary); color: var(--text-primary); }
@@ -115,10 +118,59 @@ label.rl-check { flex-direction: row; align-items: center; gap: 6px; font-weight
 .rl-opt-lums { display: flex; flex-direction: column; gap: 4px; }
 .rl-opt-table td, .rl-opt-table th { white-space: nowrap; }
 
+/* Per-strip class / surface notes under the cross-section table */
+.rl-sec-notes { list-style: none; margin: 0; padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--text-secondary); }
+.rl-sec-notes b { color: var(--text-primary); }
+.rl-note-strip { font-weight: 600; color: var(--text-primary); margin-right: 4px; }
+.rl-note-strip::after { content: ':'; }
+.rl-th-info { font-size: 12px; padding: 0 3px; }
+.rl-info-fam { display: flex; flex-direction: column; gap: 4px; }
+.rl-info-fam .rl-chk td:first-child { white-space: nowrap; width: 48px; }
+
+/* Stacked layout — same breakpoint as the circuits view */
 @media (max-width: 1100px) {
-  .rl-results { width: 300px; flex-basis: 300px; }
-}
-@media (max-width: 800px) {
-  .rl-body { flex-direction: column; overflow: auto; }
   .rl-body .sl-rail, .rl-results { width: auto; flex: none; }
+  .rl-results { padding: 0 12px 12px; overflow: visible; }
+  .rl-rail-designs, .rl-lib-list { flex: none; }
+}
+
+/* ── Phone ── */
+@media (max-width: 768px) {
+  .rl-rail-designs { max-height: none; }
+  .rl-lib-list { max-height: 180px; }
+  #rl-main { padding: 10px; }
+  .rl-card-head { gap: 8px; }
+  .rl-card-head > .sl-hint { flex-basis: 100%; order: 2; }
+  .rl-card-head > .rl-inline { flex: 1 1 calc(50% - 8px); }
+  .rl-card-head > .rl-inline select, .rl-card-head > .rl-inline input, .rl-card-head .sl-unit { flex: 1; min-width: 0; }
+  .rl-card-head .sl-in-num { width: auto; }
+  .rl-card-head > .btn-small { flex: none; }
+  .rl-xs-wrap { padding: 2px; }
+
+  /* Editable tables become one card per strip / row: label over each field. */
+  .rl-table, .rl-table tbody { display: block; }
+  .rl-table thead { display: none; }
+  .rl-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; padding: 10px; border-bottom: 1px solid var(--border-color); }
+  .rl-table td, #streetlight-workspace .rl-table td:first-child { display: flex; flex-direction: column; gap: 3px; padding: 0; border: 0; position: static; background: none; min-width: 0; }
+  .rl-table td::before { content: attr(data-label); font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+  .rl-table td.rl-na { display: none; }
+  .rl-table td.rl-wide { grid-column: 1 / -1; }
+  .rl-table td.rl-row-actions { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; gap: 6px; }
+  .rl-table td.rl-row-actions::before { content: none; }
+  .rl-table td.rl-row-actions:empty { display: none; }
+  .rl-table input, .rl-table select, .rl-table .sl-in-num, .rl-lum-sel { width: 100%; max-width: none; min-width: 0; }
+  .rl-icon { min-width: 40px; min-height: 40px; font-size: 18px; border: 1px solid var(--border-color); }
+  .rl-inline-row > .btn-small { flex: 1 1 auto; }
+  .rl-inline-row > .rl-inline { flex: 1 1 28%; }
+  .rl-inline-row > .rl-inline input { flex: 1; min-width: 0; width: auto; }
+
+  /* Dialogs fill the phone */
+  .rl-modal .modal-content.rl-dialog, .rl-modal .modal-content.rl-modal-wide { width: 100%; max-width: none; max-height: 100%; height: 100%; border-radius: 0; }
+  .rl-dialog-body { padding: 12px; }
+  .rl-dialog-foot { flex-wrap: wrap; }
+  .rl-dialog-foot .btn-small { flex: 1; min-height: 40px; }
+  .rl-modal input, .rl-modal select { min-height: 40px; font-size: 14px; }
+  .rl-modal input[type=checkbox] { min-height: 0; width: 20px; height: 20px; flex: none; }
+  .rl-ph-plot { margin: 0 auto; }
+  .rl-form { grid-template-columns: minmax(0, 1fr); }
 }

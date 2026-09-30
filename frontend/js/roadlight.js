@@ -26,6 +26,36 @@ const RL_SECTION_TYPES = [
   { id: 'median', name: 'Median' },
 ];
 const RL_SURFACES = ['R1', 'R2', 'R3', 'R4', 'C1', 'C2'];
+// CIE road-surface classes (CIE 30-2 / CIE 66 / CIE 144): what each r-table
+// represents. Q0 = average luminance coefficient (brightness), S1 = specular
+// factor (how mirror-like, i.e. how much the far luminaires' glare-spot counts).
+const RL_SURFACE_INFO = {
+  R1: { short: 'Diffuse — concrete, light surfaces', q0: 0.10, s1: 0.25,
+    desc: 'Mostly diffuse. Cement concrete, or asphalt with at least 15 % artificial brightener or 80 % very light aggregate.' },
+  R2: { short: 'Mixed — coarse or new asphalt', q0: 0.07, s1: 0.58,
+    desc: 'Mixed diffuse and specular. Coarse-textured asphalt with more than 60 % gravel over 10 mm, asphalt with 10–15 % brightener, or new asphalt.' },
+  R3: { short: 'Slightly specular — typical asphalt (default)', q0: 0.07, s1: 1.11,
+    desc: 'Slightly specular. Dense asphalt with rough-textured aggregate over 10 mm, after a few months of traffic. The usual choice for an asphalt road.' },
+  R4: { short: 'Specular — smooth or polished asphalt', q0: 0.08, s1: 1.55,
+    desc: 'Mostly specular. Mastic asphalt or very smooth surfaces after several months of use; polished, glossy roads.' },
+  C1: { short: 'Diffuse — C system (concrete, light asphalt)', q0: 0.10, s1: 0.24,
+    desc: 'The two-class C system. Diffuse surfaces: concrete and asphalt with light aggregate.' },
+  C2: { short: 'Specular — C system (most asphalt)', q0: 0.07, s1: 0.97,
+    desc: 'The two-class C system. Most asphalt surfaces; also the CIE 140 example table.' },
+};
+// EN 13201-2:2015 requirements (same as backend road_lighting.py) + what each family is for.
+const RL_CLASS_REQ = {
+  M1: 'L̄ ≥ 2.00 cd/m², Uo ≥ 0.40, Ul ≥ 0.70, TI ≤ 10 %, REI ≥ 0.35', M2: 'L̄ ≥ 1.50 cd/m², Uo ≥ 0.40, Ul ≥ 0.70, TI ≤ 10 %, REI ≥ 0.35',
+  M3: 'L̄ ≥ 1.00 cd/m², Uo ≥ 0.40, Ul ≥ 0.60, TI ≤ 15 %, REI ≥ 0.30', M4: 'L̄ ≥ 0.75 cd/m², Uo ≥ 0.40, Ul ≥ 0.60, TI ≤ 15 %, REI ≥ 0.30',
+  M5: 'L̄ ≥ 0.50 cd/m², Uo ≥ 0.35, Ul ≥ 0.40, TI ≤ 15 %, REI ≥ 0.30', M6: 'L̄ ≥ 0.30 cd/m², Uo ≥ 0.35, Ul ≥ 0.40, TI ≤ 20 %, REI ≥ 0.30',
+  C0: 'Ē ≥ 50 lx, Uo ≥ 0.40', C1: 'Ē ≥ 30 lx, Uo ≥ 0.40', C2: 'Ē ≥ 20 lx, Uo ≥ 0.40', C3: 'Ē ≥ 15 lx, Uo ≥ 0.40', C4: 'Ē ≥ 10 lx, Uo ≥ 0.40', C5: 'Ē ≥ 7.5 lx, Uo ≥ 0.40',
+  P1: 'Ē ≥ 15 lx, Emin ≥ 3.0 lx', P2: 'Ē ≥ 10 lx, Emin ≥ 2.0 lx', P3: 'Ē ≥ 7.5 lx, Emin ≥ 1.5 lx', P4: 'Ē ≥ 5.0 lx, Emin ≥ 1.0 lx', P5: 'Ē ≥ 3.0 lx, Emin ≥ 0.6 lx', P6: 'Ē ≥ 2.0 lx, Emin ≥ 0.4 lx',
+};
+const RL_CLASS_FAMILY = {
+  M: 'Traffic routes (motorised traffic at moderate to high speed) — rated on road-surface luminance. M1 is the most demanding, M6 the least.',
+  C: 'Conflict areas — junctions, roundabouts, crossings, shopping streets — where drivers look at short range, so illuminance is used instead of luminance.',
+  P: 'Pedestrians, cyclists and low-speed residential streets, footpaths and cycle tracks — rated on horizontal illuminance.',
+};
 const RL_CLASS_GROUPS = [
   { label: 'Luminance (traffic routes)', list: ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'] },
   { label: 'Conflict areas', list: ['C0', 'C1', 'C2', 'C3', 'C4', 'C5'] },
@@ -443,7 +473,7 @@ const RoadLight = {
     }
     const opt = (list, sel) => list.map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('');
     const clsOpts = (sel) => `<option value=""${!sel ? ' selected' : ''}>— not lit / not checked</option>` +
-      RL_CLASS_GROUPS.map(g => `<optgroup label="${g.label}">${g.list.map(c => `<option${c === sel ? ' selected' : ''}>${c}</option>`).join('')}</optgroup>`).join('');
+      RL_CLASS_GROUPS.map(g => `<optgroup label="${g.label}">${g.list.map(c => `<option value="${c}"${c === sel ? ' selected' : ''} title="${escHtml(RL_CLASS_REQ[c])}">${c}</option>`).join('')}</optgroup>`).join('');
     const libOpts = (sel) => (this.library[sel] ? '' : '<option value="" selected>— pick a luminaire —</option>') +
       this._libList().map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${escHtml(this._lumLabel(p))}</option>`).join('');
     const circuits = StreetLight.circuits;
@@ -457,23 +487,25 @@ const RoadLight = {
       </div>
       <div class="rl-xs-wrap"><svg id="rl-xs" class="rl-xs" role="img" aria-label="Road cross-section"></svg></div>
       <div class="rl-card">
-        <div class="rl-card-head"><b>Cross-section</b><span class="sl-hint">left to right, looking in the direction of travel on the first carriageway</span>
+        <div class="rl-card-head"><b>Cross-section</b><span class="sl-hint">left to right, looking in the direction of travel on the first carriageway. Each strip's <b>Class</b> is the lighting class it must meet.</span>
+          <button class="btn-small rl-info-btn" data-rl="info" title="What the lighting classes and road surfaces mean">ⓘ Classes &amp; surfaces</button>
           <label class="rl-inline">Template<select data-dz="template"><option value="">Apply a template…</option>${RL_TEMPLATES.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select></label>
           <button class="btn-small" data-rl="addsec">+ Strip</button></div>
-        <table class="sl-table rl-table"><thead><tr><th>Strip</th><th>Name</th><th>Width m</th><th>Lanes</th><th title="EN 13201-2 / SANS 10098-1 lighting class">Class</th><th title="CIE road surface (r-table) for luminance">Surface</th><th title="Direction of travel the observer looks in">Traffic</th><th></th></tr></thead>
+        <table class="sl-table rl-table"><thead><tr><th>Strip</th><th>Name</th><th>Width m</th><th>Lanes</th><th title="EN 13201-2 / SANS 10098-1 lighting class the strip must meet — M traffic routes, C conflict areas, P pedestrian / residential">Class <button class="rl-icon rl-th-info" data-rl="info" aria-label="About lighting classes">ⓘ</button></th><th title="CIE road-surface reflection class (r-table), used for luminance">Surface <button class="rl-icon rl-th-info" data-rl="info" aria-label="About road surfaces">ⓘ</button></th><th title="Direction of travel the observer looks in">Traffic</th><th></th></tr></thead>
         <tbody id="rl-sec-body">${des.sections.map((s, i) => {
           const cw = s.type === 'carriageway';
           return `<tr>
-            <td><select data-sec="type" data-i="${i}">${opt(RL_SECTION_TYPES, s.type)}</select></td>
-            <td><input data-sec="name" data-i="${i}" value="${escHtml(s.name || '')}" placeholder="${escHtml(this._secName(s, des))}"></td>
-            <td><input type="number" step="0.1" min="0" data-sec="width" data-i="${i}" value="${escHtml(s.width)}" class="sl-in-num"></td>
-            <td>${cw ? `<input type="number" step="1" min="1" data-sec="lanes" data-i="${i}" value="${escHtml(s.lanes)}" class="sl-in-num">` : '<span class="sl-k">—</span>'}</td>
-            <td><select data-sec="cls" data-i="${i}">${clsOpts(s.cls)}</select></td>
-            <td>${cw ? `<select data-sec="surface" data-i="${i}">${RL_SURFACES.map(x => `<option${x === s.surface ? ' selected' : ''}>${x}</option>`).join('')}</select>` : '<span class="sl-k">—</span>'}</td>
-            <td>${cw ? `<select data-sec="direction" data-i="${i}"><option value="forward"${s.direction !== 'reverse' ? ' selected' : ''}>→ away</option><option value="reverse"${s.direction === 'reverse' ? ' selected' : ''}>← towards</option></select>` : '<span class="sl-k">—</span>'}</td>
+            <td data-label="Strip"><select data-sec="type" data-i="${i}">${opt(RL_SECTION_TYPES, s.type)}</select></td>
+            <td data-label="Name"><input data-sec="name" data-i="${i}" value="${escHtml(s.name || '')}" placeholder="${escHtml(this._secName(s, des))}"></td>
+            <td data-label="Width m"><input type="number" step="0.1" min="0" data-sec="width" data-i="${i}" value="${escHtml(s.width)}" class="sl-in-num"></td>
+            <td data-label="Lanes"${cw ? '' : ' class="rl-na"'}>${cw ? `<input type="number" step="1" min="1" data-sec="lanes" data-i="${i}" value="${escHtml(s.lanes)}" class="sl-in-num">` : '<span class="sl-k">—</span>'}</td>
+            <td data-label="Lighting class"><select data-sec="cls" data-i="${i}" title="${escHtml(s.cls ? `${s.cls}: ${RL_CLASS_REQ[s.cls] || ''}` : 'Not checked')}">${clsOpts(s.cls)}</select></td>
+            <td data-label="Road surface"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="surface" data-i="${i}" title="${escHtml(`${s.surface}: ${(RL_SURFACE_INFO[s.surface] || {}).desc || ''}`)}">${RL_SURFACES.map(x => `<option value="${x}"${x === s.surface ? ' selected' : ''} title="${escHtml(RL_SURFACE_INFO[x].desc)}">${x} — ${escHtml(RL_SURFACE_INFO[x].short)}</option>`).join('')}</select>` : '<span class="sl-k">—</span>'}</td>
+            <td data-label="Traffic"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="direction" data-i="${i}"><option value="forward"${s.direction !== 'reverse' ? ' selected' : ''}>→ away</option><option value="reverse"${s.direction === 'reverse' ? ' selected' : ''}>← towards</option></select>` : '<span class="sl-k">—</span>'}</td>
             <td class="rl-row-actions"><button class="rl-icon" data-rl-secmv="-1" data-i="${i}" title="Move left" aria-label="Move left">←</button><button class="rl-icon" data-rl-secmv="1" data-i="${i}" title="Move right" aria-label="Move right">→</button><button class="rl-icon" data-rl-secdel="${i}" title="Remove" aria-label="Remove strip">×</button></td>
           </tr>`;
         }).join('')}</tbody></table>
+        ${this._secNotes(des)}
       </div>
       <div class="rl-card">
         <div class="rl-card-head"><b>Luminaires</b>
@@ -484,9 +516,9 @@ const RoadLight = {
           ${des.arrangement === 'custom' ? '<button class="btn-small" data-rl="addrow">+ Row</button>' : ''}</div>
         <table class="sl-table rl-table"><thead><tr><th>Side</th><th>Luminaire</th><th title="Pole behind the kerb (negative = on the carriageway). Median rows: offset from the median centre">Setback m</th><th title="Mounting height of the luminaire above the road">Height m</th><th title="Arm reach from the pole towards the road">Overhang m</th><th title="Upward tilt towards the road">Tilt °</th><th title="Fraction of the spacing this row is shifted along the road (0.5 = staggered)">Offset ×S</th><th title="Dimming level — flux and power scale together">Flux %</th><th title="Extra rotation about the vertical">Rotate °</th><th></th></tr></thead>
         <tbody id="rl-row-body">${des.rows.map((r, i) => `<tr>
-          <td><select data-row="side" data-i="${i}">${opt(RL_SIDES, r.side)}</select></td>
-          <td><select data-row="photometryId" data-i="${i}" class="rl-lum-sel">${libOpts(r.photometryId)}</select></td>
-          ${['setback', 'height', 'overhang', 'tilt', 'xOffset', 'fluxPct', 'rotate'].map(k => `<td><input type="number" step="${k === 'xOffset' ? 0.05 : k === 'fluxPct' ? 5 : k === 'tilt' || k === 'rotate' ? 1 : 0.1}" data-row="${k}" data-i="${i}" value="${escHtml(r[k] ?? '')}" class="sl-in-num"></td>`).join('')}
+          <td data-label="Side"><select data-row="side" data-i="${i}">${opt(RL_SIDES, r.side)}</select></td>
+          <td data-label="Luminaire" class="rl-wide"><select data-row="photometryId" data-i="${i}" class="rl-lum-sel">${libOpts(r.photometryId)}</select></td>
+          ${['setback', 'height', 'overhang', 'tilt', 'xOffset', 'fluxPct', 'rotate'].map(k => `<td data-label="${{ setback: 'Setback m', height: 'Height m', overhang: 'Overhang m', tilt: 'Tilt °', xOffset: 'Offset ×S', fluxPct: 'Flux %', rotate: 'Rotate °' }[k]}"><input type="number" step="${k === 'xOffset' ? 0.05 : k === 'fluxPct' ? 5 : k === 'tilt' || k === 'rotate' ? 1 : 0.1}" data-row="${k}" data-i="${i}" value="${escHtml(r[k] ?? '')}" class="sl-in-num"></td>`).join('')}
           <td class="rl-row-actions">${des.arrangement === 'custom' && des.rows.length > 1 ? `<button class="rl-icon" data-rl-rowdel="${i}" title="Remove row" aria-label="Remove row">×</button>` : ''}</td>
         </tr>`).join('')}</tbody></table>
         <div class="sl-hint rl-hint">Changing a row's height, overhang, tilt or luminaire in a preset arrangement applies to every row — pick <i>Custom rows</i> to set rows individually.</div>
@@ -768,15 +800,18 @@ const RoadLight = {
     if (!svg) return;
     let tip = el.querySelector('.rl-tip');
     if (!tip) { tip = document.createElement('div'); tip.className = 'rl-tip'; el.appendChild(tip); }
-    svg.addEventListener('pointermove', (e) => {
+    // Hover on a mouse, tap on a touch screen.
+    const show = (e) => {
       const c = e.target.closest('rect[data-v]');
       if (!c) { tip.style.display = 'none'; return; }
       tip.textContent = `${(+c.dataset.v).toFixed(1)} lx  ·  x ${(+c.dataset.x).toFixed(1)} m, y ${(+c.dataset.y).toFixed(1)} m`;
       const b = el.getBoundingClientRect();
       tip.style.display = 'block';
-      tip.style.left = Math.min(b.width - 170, e.clientX - b.left + 10) + 'px';
+      tip.style.left = Math.max(0, Math.min(b.width - 170, e.clientX - b.left + 10)) + 'px';
       tip.style.top = (e.clientY - b.top + 12) + 'px';
-    });
+    };
+    svg.addEventListener('pointermove', show);
+    svg.addEventListener('pointerdown', show);
     svg.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
   },
 
@@ -809,6 +844,7 @@ const RoadLight = {
       case 'optimise': this.openOptimise(); break;
       case 'apply': this.applyToCircuit(); break;
       case 'pdf': if (typeof RoadLightReport !== 'undefined') RoadLightReport.export(); break;
+      case 'info': this.openInfo(); break;
     }
   },
 
@@ -850,6 +886,38 @@ const RoadLight = {
       this._afterMutate(des.arrangement !== 'custom' && shared.includes(d.row) || d.row === 'side');
       this._paintSection();
     }
+  },
+
+  // One line per classed strip under the table: its class's requirements and,
+  // for a carriageway, what its road surface is — readable on a phone, where
+  // hover tooltips never show.
+  _secNotes(des) {
+    const lines = des.sections.filter(s => s.cls || s.type === 'carriageway').map(s => {
+      const fam = (s.cls || '')[0];
+      const cls = s.cls ? `<b>${escHtml(s.cls)}</b> ${escHtml(RL_CLASS_REQ[s.cls] || '')}` : '<span class="sl-k">no class — not checked</span>';
+      const warn = fam === 'M' && s.type !== 'carriageway' ? ' <span class="rl-bad">M classes apply to a carriageway</span>' : '';
+      const surf = s.type === 'carriageway' && RL_SURFACE_INFO[s.surface]
+        ? ` · <b>${escHtml(s.surface)}</b> ${escHtml(RL_SURFACE_INFO[s.surface].short.toLowerCase())}${fam === 'M' ? '' : ' <span class="sl-k">(used for M classes only)</span>'}` : '';
+      return `<li><span class="rl-note-strip">${escHtml(s.name || this._secName(s, des))}</span> ${cls}${warn}${surf}</li>`;
+    });
+    return lines.length ? `<ul class="rl-sec-notes">${lines.join('')}</ul>` : '';
+  },
+
+  openInfo() {
+    const fam = (f, list) => `<div class="rl-info-fam"><div class="rl-solve-t">${f} classes</div><p class="rl-lead">${escHtml(RL_CLASS_FAMILY[f])}</p>
+      <table class="rl-chk"><tbody>${list.map(c => `<tr><td><b>${c}</b></td><td>${escHtml(RL_CLASS_REQ[c])}</td></tr>`).join('')}</tbody></table></div>`;
+    this._modal('rl-info-modal', 'Lighting classes &amp; road surfaces', `
+      <p class="rl-lead">Each strip of the cross-section gets its own <b>lighting class</b> in the <i>Class</i> column. The class is chosen from the road's speed, traffic volume and mix, junctions, parking, pedestrians and ambient brightness; use the selection procedure in SANS 10098-1 (or CEN/TR 13201-1). Classes are those of EN 13201-2, which SANS 10098-1 and CIE 115 share.</p>
+      ${fam('M', ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'])}
+      ${fam('C', ['C0', 'C1', 'C2', 'C3', 'C4', 'C5'])}
+      ${fam('P', ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'])}
+      <div class="rl-info-fam"><div class="rl-solve-t">Road surfaces</div>
+      <p class="rl-lead">For M classes the luminance depends on how the surface reflects light towards the driver. Each CIE class is a table of reduced luminance coefficients. <b>Q0</b> is how bright the surface is on average. <b>S1</b> is how mirror-like it is: a high S1 makes the bright patches under the far luminaires stand out and lowers uniformity. Pick R3 for ordinary asphalt unless measurements say otherwise.</p>
+      <table class="rl-chk"><thead><tr><th>Class</th><th>Surface</th><th>Q0</th><th>S1</th></tr></thead><tbody>
+      ${RL_SURFACES.map(k => `<tr><td><b>${k}</b></td><td>${escHtml(RL_SURFACE_INFO[k].desc)}</td><td class="sl-mono">${RL_SURFACE_INFO[k].q0.toFixed(2)}</td><td class="sl-mono">${RL_SURFACE_INFO[k].s1.toFixed(2)}</td></tr>`).join('')}
+      </tbody></table></div>`,
+      `<button class="btn-small btn-primary" data-m="close">Close</button>`, 'rl-modal-wide');
+    this._modalResult(document.getElementById('rl-info-modal'));
   },
 
   // ─── Photometry detail ───────────────────────────────────────────────
@@ -1003,10 +1071,11 @@ const RoadLight = {
     if (o.error) return `<div class="rl-err">${escHtml(o.error)}</div>`;
     if (!o.options.length) return `<div class="rl-best bad">None of the ${o.nEvaluated} combinations passes at any spacing in ${des.sweep.min}–${des.sweep.max} m.</div>`;
     return `<div class="sl-hint">${o.nPassing} of ${o.nEvaluated} combinations pass · ${o.seconds} s${o.nSkipped ? ` · ${o.nSkipped} not run (cap)` : ''} · top ${o.options.length} shown</div>
-      <div class="rl-grid-scroll"><table class="rl-chk rl-opt-table"><thead><tr><th>#</th><th>Luminaire</th><th>Flux</th><th>Height</th><th>Tilt</th><th>Overhang</th><th>Spacing</th><th>W/km</th><th>Poles/km</th><th>PDI</th><th></th></tr></thead>
-      <tbody>${o.options.map((p, i) => `<tr><td>${i + 1}</td><td class="rl-ph-cell">${escHtml((this.library[p.photometryId] || {}).name || '?')}</td><td>${p.fluxPct}%</td><td>${p.height} m</td><td>${p.tilt}°</td><td>${p.overhang} m</td>
-        <td class="sl-mono">${p.spacing} m</td><td class="sl-mono">${Math.round(p.energy.wPerKm).toLocaleString()}</td><td class="sl-mono">${this._fmt(p.energy.polesPerKm, 1)}</td>
-        <td class="sl-mono">${p.energy.pdi === null ? '—' : this._fmt(p.energy.pdi * 1000, 1)}</td><td><button class="btn-small" data-rl-optuse="${i}">Use</button></td></tr>`).join('')}</tbody></table></div>`;
+      <div class="rl-grid-scroll"><table class="rl-chk rl-opt-table"><thead><tr><th></th><th>#</th><th>Spacing</th><th>W/km</th><th>Height</th><th>Tilt</th><th>Overhang</th><th>Flux</th><th>Luminaire</th><th>Poles/km</th><th>PDI</th></tr></thead>
+      <tbody>${o.options.map((p, i) => `<tr><td><button class="btn-small" data-rl-optuse="${i}">Use</button></td><td>${i + 1}</td>
+        <td class="sl-mono">${p.spacing} m</td><td class="sl-mono">${Math.round(p.energy.wPerKm).toLocaleString()}</td><td>${p.height} m</td><td>${p.tilt}°</td><td>${p.overhang} m</td><td>${p.fluxPct}%</td>
+        <td class="rl-ph-cell">${escHtml((this.library[p.photometryId] || {}).name || '?')}</td><td class="sl-mono">${this._fmt(p.energy.polesPerKm, 1)}</td>
+        <td class="sl-mono">${p.energy.pdi === null ? '—' : this._fmt(p.energy.pdi * 1000, 1)}</td></tr>`).join('')}</tbody></table></div>`;
   },
 
   _useOption(des, p) {
