@@ -660,6 +660,16 @@ const MobileUI = {
       const comp = AppState.components.get(compId);
       if (comp) Properties._initSearchableSelects(comp, mobileContent);
     }
+    // Library pickers: the copied SearchSelect box is inert — drop it and
+    // attach a fresh one to the sheet's select (mirrored to desktop above).
+    if (typeof SearchSelect !== 'undefined') {
+      mobileContent.querySelectorAll('.ss').forEach(w => w.remove());
+      const deskBoxes = desktopContent.querySelectorAll('select[data-library]');
+      mobileContent.querySelectorAll('select[data-library]').forEach((sel, k) => {
+        sel.classList.remove('ss-native');
+        SearchSelect.attach(sel, { placeholder: deskBoxes[k]?._ss?.input.placeholder });
+      });
+    }
     // Re-bind ⓘ info buttons — the innerHTML copy loses their listeners
     mobileContent.querySelectorAll('.prop-info-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {

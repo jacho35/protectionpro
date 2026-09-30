@@ -55,7 +55,7 @@ const SearchSelect = {
       const html = [];
       st.items = [];
       const addOpt = (o) => {
-        if (o.value === '' && !o.textContent.trim().startsWith('—')) return;
+        if (o.value === '' && !o.textContent.trim().startsWith('—') && !o.hasAttribute('data-ss-always')) return;
         const text = o.textContent.trim();
         if (terms.length && !o.hasAttribute('data-ss-always') && !terms.every(r => r.test(this._norm(text)))) return;
         const i = st.items.length;
@@ -71,7 +71,10 @@ const SearchSelect = {
       }
       list.innerHTML = html.length ? html.join('') : '<div class="ss-empty">No matches</div>';
       st.active = st.items.findIndex(o => o.value === select.value && !terms.length);
+      // Typing highlights the first real match; an always-listed entry only
+      // when its own text matches (e.g. "custom" → "-- Custom --").
       if (st.active < 0 && terms.length) st.active = st.items.findIndex(o => !o.disabled && !o.hasAttribute('data-ss-always'));
+      if (st.active < 0 && terms.length) st.active = st.items.findIndex(o => !o.disabled && terms.every(r => r.test(this._norm(o.textContent.trim()))));
       mark();
     };
     const mark = () => {
@@ -83,8 +86,9 @@ const SearchSelect = {
       const r = input.getBoundingClientRect();
       const below = window.innerHeight - r.bottom - 8, above = r.top - 8;
       const h = Math.min(320, Math.max(below, above));
-      list.style.left = Math.max(4, r.left) + 'px';
-      list.style.width = Math.max(r.width, 220) + 'px';
+      const w = Math.min(Math.max(r.width, 220), window.innerWidth - 8);
+      list.style.left = Math.max(4, Math.min(r.left, window.innerWidth - w - 4)) + 'px';
+      list.style.width = w + 'px';
       list.style.maxHeight = h + 'px';
       if (below >= Math.min(200, above)) { list.style.top = (r.bottom + 2) + 'px'; list.style.bottom = ''; }
       else { list.style.top = ''; list.style.bottom = (window.innerHeight - r.top + 2) + 'px'; }

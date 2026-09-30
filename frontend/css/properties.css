@@ -120,6 +120,9 @@
   box-shadow: 0 0 0 2px rgba(0,120,215,0.12);
 }
 
+/* Library picker (SearchSelect box over the hidden native select) */
+.prop-row .ss { flex: 1; }
+
 /* Fields locked by a selected standard device — read-only until "Custom".
    Opacity-based so it reads as greyed in both light and dark themes. */
 .prop-row input:disabled,
@@ -801,6 +804,7 @@
 .pw-field .prop-row .unit { font-size: 13px; min-width: 0; color: var(--text-secondary); }
 .pw-field .prop-row .unit-select { height: 36px; max-width: 72px; font-size: 13px; border-radius: 6px; }
 .pw-field .prop-row .searchable-select { flex: 1; }
+.pw-field .prop-row .ss { flex: 1; }
 .pw-field .prop-row .searchable-select-input { height: 36px; font-size: 14px; border-radius: 6px; }
 .pw-field .prop-info-btn { width: 18px; height: 18px; min-width: 18px; font-size: 11px; cursor: help; }
 .pw-field .prop-info-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
