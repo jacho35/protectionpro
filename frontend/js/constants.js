@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.367b';
+const APP_VERSION = '1.368b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
