@@ -14,6 +14,8 @@
  * Keyboard: ↓/↑ move, Enter picks, Esc closes (restores the current value).
  * The list is position: fixed so it is never clipped by a scrolling dialog.
  * Re-attach after the <select> is re-rendered (a new element is a new attach).
+ * An <option data-ss-always> (e.g. CableLib's "Show all cables…") is listed
+ * whatever is typed, so a filtered-out entry is never a dead end.
  */
 
 const SearchSelect = {
@@ -55,7 +57,7 @@ const SearchSelect = {
       const addOpt = (o) => {
         if (o.value === '' && !o.textContent.trim().startsWith('—')) return;
         const text = o.textContent.trim();
-        if (terms.length && !terms.every(r => r.test(this._norm(text)))) return;
+        if (terms.length && !o.hasAttribute('data-ss-always') && !terms.every(r => r.test(this._norm(text)))) return;
         const i = st.items.length;
         st.items.push(o);
         html.push(`<div class="ss-opt${o.value === select.value ? ' sel' : ''}${o.disabled ? ' dis' : ''}" role="option" data-i="${i}">${escHtml(text)}</div>`);
@@ -69,7 +71,7 @@ const SearchSelect = {
       }
       list.innerHTML = html.length ? html.join('') : '<div class="ss-empty">No matches</div>';
       st.active = st.items.findIndex(o => o.value === select.value && !terms.length);
-      if (st.active < 0 && terms.length) st.active = st.items.findIndex(o => !o.disabled);
+      if (st.active < 0 && terms.length) st.active = st.items.findIndex(o => !o.disabled && !o.hasAttribute('data-ss-always'));
       mark();
     };
     const mark = () => {
@@ -147,6 +149,8 @@ const SearchSelect = {
     });
     gone.observe(document.body, { childList: true, subtree: true });
     st.refresh = showCurrent;
+    // Open again with the select's current options (after a caller swapped them in).
+    st.reopen = () => { input.focus(); input.select(); open(''); };
     return st;
   },
 };

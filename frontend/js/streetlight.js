@@ -600,7 +600,18 @@ const StreetLight = {
         </div>
       </div>`;
     this._attachGrid();
+    this._attachSearch(host);
     this._paintPoleResults();
+  },
+
+  // Type-to-search boxes over the circuit's cable and luminaire pickers.
+  // (The pole grid keeps native selects: it is a GridTable.)
+  _attachSearch(root) {
+    if (typeof SearchSelect === 'undefined' || !root) return;
+    const cab = root.querySelector('[data-cf="cable"]');
+    if (cab) SearchSelect.attach(cab, { placeholder: 'Type to search cables — e.g. 16 cu, 25*xlpe' });
+    const lum = root.querySelector('[data-cf="luminaireId"], [data-q="luminaireId"]');
+    if (lum) SearchSelect.attach(lum, { placeholder: 'Type to search luminaires — e.g. led 70, 100*w' });
   },
 
   _poleRows(c, lumOpts) {
@@ -994,6 +1005,7 @@ const StreetLight = {
         </div>
       </div>`;
     if (typeof SearchSelect !== 'undefined') SearchSelect.attach(m.querySelector('[data-q="cable"]'), { placeholder: 'Type to search cables — e.g. 16 cu, 25*xlpe' });
+    this._attachSearch(m);
     this._qcPaint();
   },
 
