@@ -365,6 +365,10 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Changeover switch: 1 input → 2 outputs layout (2026-09-30)
+- New **Layout** prop on the changeover (`co_layout`: `two_in_one_out` default / `one_in_two_out`). The 1-in-2-out layout mirrors the symbol top-to-bottom (classic, IEC, ATS and breaker pair), with the common terminal on top and I / II below. The text (terminal labels, ATS "M", name) stays upright, so there's no need to rotate the switch 180°.
+- Drawing only: `Symbols.portsFor(comp)` swaps the port sides and keeps the ids, so wiring, the backend `expand_changeovers` rewrite and every study are unchanged. "Input 1/2 Label" are renamed to "Terminal I/II Label".
+
 ### Properties window with field explainers (2026-09-30)
 - An optional roomy modal for the selected component's properties (`propwindow.js`). Open it with the header button in the sidebar, by double-clicking a component (detected on the pointer path, because render() rebuilds the DOM and so the browser never fires `dblclick`), or with a component's right-click **Properties Window…**. On the left are the sections with field counts. In the middle, fields sit in two spaced columns, with a "Default: X" line under each changed field and a note saying which setting reveals the hidden fields. On the right are the computed per-unit values, View calculations, and the device actions. **Find a property** searches labels and explainer text in every section.
 - It renders the same fields as the sidebar through shared helpers split out of `Properties.show()`: `_visibleFields`, `_groupSections`, `_actionsHtml` and `_bindContent(root)`. Edits therefore go through `onFieldChange` unchanged, and an open window re-renders whenever the sidebar does, keeping focus, caret and scroll.

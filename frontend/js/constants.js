@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.368b';
+const APP_VERSION = '1.369b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -2966,6 +2966,7 @@ const COMPONENT_DEFS = {
     defaults: {
       name: 'CO',
       co_type: 'manual_i_0_ii',
+      co_layout: 'two_in_one_out',
       state: 'in_1',
       contact_duty: 'switch_disconnector',
       input_1_label: 'Mains',
@@ -2989,14 +2990,21 @@ const COMPONENT_DEFS = {
           { value: 'ats', label: 'Automatic transfer (ATS)' },
           { value: 'breaker_pair', label: 'Interlocked breaker pair' },
         ] },
+      // Drawing only: terminals I / II on top (two supplies → one output) or
+      // below (one supply → two outputs). Analysis is the same either way.
+      { key: 'co_layout', label: 'Layout', type: 'select',
+        options: [
+          { value: 'two_in_one_out', label: '2 inputs → 1 output' },
+          { value: 'one_in_two_out', label: '1 input → 2 outputs' },
+        ] },
       { key: 'state', label: 'Position', type: 'select',
         options: [
           { value: 'in_1', label: 'I — input 1' },
           { value: 'off', label: '0 — off' },
           { value: 'in_2', label: 'II — input 2' },
         ] },
-      { key: 'input_1_label', label: 'Input 1 Label', type: 'text' },
-      { key: 'input_2_label', label: 'Input 2 Label', type: 'text' },
+      { key: 'input_1_label', label: 'Terminal I Label', type: 'text' },
+      { key: 'input_2_label', label: 'Terminal II Label', type: 'text' },
       { key: 'contact_duty', label: 'Contact Duty', type: 'select',
         options: [
           { value: 'switch_disconnector', label: 'Switch-disconnector' },
