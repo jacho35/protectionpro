@@ -145,9 +145,9 @@ def run_backup_autonomy(project: ProjectData) -> dict:
                 inv_kva = float(c.props.get("rated_kva", 100) or 0)
                 unit_pv = 0.0
             else:
-                _p, _q, s_now, rated_full = _source_output_mva(c)
+                p_now, _q, _s, rated_full = _source_output_mva(c)
                 inv_kva = rated_full * 1000
-                unit_pv = min(s_now, rated_full) * 1000
+                unit_pv = min(p_now, rated_full) * 1000
                 pv_kw += unit_pv
             dis_kw = bp["max_discharge_mw"] * 1000
             eta_1way = math.sqrt(min(1.0, max(0.0, float(
