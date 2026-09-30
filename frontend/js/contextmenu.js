@@ -159,6 +159,12 @@ const ContextMenu = {
       label: 'Properties',
       action: () => Properties.show(comp.id),
     });
+    if (typeof PropWindow !== 'undefined') {
+      items.push({
+        label: 'Properties Window…',
+        action: () => PropWindow.open(comp.id),
+      });
+    }
     items.push({
       label: many ? `Rotate ${selCount} Components 90°` : 'Rotate 90°',
       shortcut: 'R',

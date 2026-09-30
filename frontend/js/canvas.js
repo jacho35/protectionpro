@@ -497,6 +497,21 @@ const Canvas = {
       }
       this.render();
       Properties.show(id);
+
+      // Second mouse press on the same component in quick succession: open
+      // its properties window. Detected here, not with 'dblclick' — render()
+      // above rebuilds the component's DOM, so the browser never pairs the
+      // two clicks into a dblclick.
+      const last = this._lastCompPress;
+      const now = e.timeStamp;
+      if (e.pointerType !== 'touch' && !additive && last && last.id === id && now - last.t < 450
+          && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 6 && typeof PropWindow !== 'undefined') {
+        this._lastCompPress = null;
+        AppState.dragState = null;
+        PropWindow.open(id);
+        return;
+      }
+      this._lastCompPress = { id, t: now, x: e.clientX, y: e.clientY };
       return;
     }
 

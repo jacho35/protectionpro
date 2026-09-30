@@ -34,6 +34,14 @@ const Properties = {
     this.contentEl = document.getElementById('properties-content');
     this.calcInfoEl = document.getElementById('calc-info');
 
+    // Optional roomy properties window (propwindow.js)
+    if (typeof PropWindow !== 'undefined') {
+      PropWindow.init();
+      document.getElementById('btn-props-window')?.addEventListener('click', () => {
+        if (this.currentId) PropWindow.open(this.currentId);
+      });
+    }
+
     // Calculation modal
     document.getElementById('btn-show-calc').addEventListener('click', () => this.showCalcModal());
     document.getElementById('btn-close-calc').addEventListener('click', () => this.hideCalcModal());
@@ -64,6 +72,8 @@ const Properties = {
     const def = COMPONENT_DEFS[comp.type];
     this._currentCompType = comp.type;
     document.getElementById('properties-title').textContent = def.name;
+    const pwBtn = document.getElementById('btn-props-window');
+    if (pwBtn) pwBtn.disabled = false;
 
     // Dismiss any open info popup when switching components
     this._dismissInfoPopup();
@@ -86,49 +96,12 @@ const Properties = {
     }
 
     // Build editable fields grouped by section
-    // 1. Filter visible fields
-    const visibleFields = def.fields.filter(field => {
-      if (!field.showWhen) return true;
-      // Fall back to the definition default when the dependency prop is absent
-      // — legacy components saved before a prop existed (e.g. a bus with no
-      // `system` key) must still resolve `system` to its 'ac' default, or
-      // every AC-gated field (bus_type, voltage_kv, …) would be hidden.
-      const depDefault = def.defaults ? def.defaults[field.showWhen.field] : undefined;
-      const depVal = comp.props[field.showWhen.field] ?? depDefault ?? '';
-      if (field.showWhen.match) {
-        if (!field.showWhen.match.test(depVal)) return false;
-        if (field.showWhen.side === 'lv') {
-          const vg = depVal.toLowerCase();
-          const lvPart = vg.slice(vg.search(/[a-z]/));
-          if (!lvPart.includes('n')) return false;
-        }
-      } else if (field.showWhen.values) {
-        if (!field.showWhen.values.includes(depVal)) return false;
-      }
-      // Numeric bounds (e.g. show only for LV sources: { field: 'voltage_lv_kv', max: 1.0 }).
-      // Combines with the predicates above — all specified conditions must hold.
-      if (field.showWhen.max != null || field.showWhen.min != null) {
-        const num = parseFloat(depVal);
-        if (!Number.isFinite(num)) return false;
-        if (field.showWhen.max != null && num > field.showWhen.max) return false;
-        if (field.showWhen.min != null && num < field.showWhen.min) return false;
-      }
-      return true;
-    });
+    const visibleFields = this._visibleFields(comp);
 
-    // 2. Group by section
-    const sectionGroups = {};
-    for (const field of visibleFields) {
-      const sec = field.section || 'General';
-      if (!sectionGroups[sec]) sectionGroups[sec] = [];
-      sectionGroups[sec].push(field);
-    }
-
-    // 3. Determine if we have multiple sections (skip collapsible UI for simple components)
-    const sectionKeys = SECTION_ORDER.filter(s => sectionGroups[s] && sectionGroups[s].length > 0);
+    const { sectionGroups, sectionKeys } = this._groupSections(visibleFields);
     const hasMultipleSections = sectionKeys.length > 1;
 
-    // 4. Render each section
+    // Render each section
     for (const secKey of sectionKeys) {
       const fields = sectionGroups[secKey];
       const label = SECTION_LABELS[secKey] || secKey;
@@ -164,6 +137,116 @@ const Properties = {
       html += '</div>'; // close prop-section
     }
 
+    html += this._actionsHtml(comp);
+
+    // Position section
+    html += `
+      <div class="prop-section">
+        <div class="prop-section-title">Position</div>
+        <div class="prop-row">
+          <label>X</label>
+          <input type="number" data-field="__x" value="${comp.x}" step="${SNAP_SIZE}">
+        </div>
+        <div class="prop-row">
+          <label>Y</label>
+          <input type="number" data-field="__y" value="${comp.y}" step="${SNAP_SIZE}">
+        </div>
+        <div class="prop-row">
+          <label>Rotation</label>
+          <select data-field="__rotation">
+            <option value="0" ${comp.rotation === 0 ? 'selected' : ''}>0°</option>
+            <option value="90" ${comp.rotation === 90 ? 'selected' : ''}>90°</option>
+            <option value="180" ${comp.rotation === 180 ? 'selected' : ''}>180°</option>
+            <option value="270" ${comp.rotation === 270 ? 'selected' : ''}>270°</option>
+          </select>
+        </div>
+      </div>`;
+
+    // Computed values section (per-unit impedances; rated current for loads)
+    const puValues = this.computePerUnit(comp);
+    if (puValues) {
+      const puTitle = ['static_load', 'solar_pv', 'wind_turbine', 'generator', 'distribution_board'].includes(comp.type)
+        ? 'Calculated Values'
+        : `Per-Unit Values (Base: ${AppState.baseMVA} MVA)`;
+      html += `
+        <div class="prop-section">
+          <div class="prop-section-title">${puTitle}</div>
+          ${puValues}
+        </div>`;
+    }
+
+    this.contentEl.innerHTML = html;
+
+    // Always show calc info button if component has calculable data
+    const hasCalc = ['utility', 'generator', 'transformer', 'cable',
+      'motor_induction', 'motor_synchronous', 'bus', 'static_load', 'capacitor_bank'].includes(comp.type);
+    this.calcInfoEl.style.display = hasCalc ? '' : 'none';
+
+    this._bindContent(this.contentEl, comp);
+
+    // Keep an open properties window on the same component in step
+    if (typeof PropWindow !== 'undefined' && PropWindow.isOpen()) PropWindow.render();
+  },
+
+  // Fields of a component that pass their showWhen rules — shared by the
+  // sidebar and the properties window.
+  _visibleFields(comp) {
+    const def = COMPONENT_DEFS[comp.type];
+    return def.fields.filter(field => {
+      if (!field.showWhen) return true;
+      // Fall back to the definition default when the dependency prop is absent
+      // — legacy components saved before a prop existed (e.g. a bus with no
+      // `system` key) must still resolve `system` to its 'ac' default, or
+      // every AC-gated field (bus_type, voltage_kv, …) would be hidden.
+      const depDefault = def.defaults ? def.defaults[field.showWhen.field] : undefined;
+      const depVal = comp.props[field.showWhen.field] ?? depDefault ?? '';
+      if (field.showWhen.match) {
+        if (!field.showWhen.match.test(depVal)) return false;
+        if (field.showWhen.side === 'lv') {
+          const vg = depVal.toLowerCase();
+          const lvPart = vg.slice(vg.search(/[a-z]/));
+          if (!lvPart.includes('n')) return false;
+        }
+      } else if (field.showWhen.values) {
+        if (!field.showWhen.values.includes(depVal)) return false;
+      }
+      // Numeric bounds (e.g. show only for LV sources: { field: 'voltage_lv_kv', max: 1.0 }).
+      // Combines with the predicates above — all specified conditions must hold.
+      if (field.showWhen.max != null || field.showWhen.min != null) {
+        const num = parseFloat(depVal);
+        if (!Number.isFinite(num)) return false;
+        if (field.showWhen.max != null && num > field.showWhen.max) return false;
+        if (field.showWhen.min != null && num < field.showWhen.min) return false;
+      }
+      return true;
+    });
+  },
+
+  // Group visible fields by section, in SECTION_ORDER.
+  _groupSections(visibleFields) {
+    const sectionGroups = {};
+    for (const field of visibleFields) {
+      const sec = field.section || 'General';
+      if (!sectionGroups[sec]) sectionGroups[sec] = [];
+      sectionGroups[sec].push(field);
+    }
+    const sectionKeys = SECTION_ORDER.filter(s => sectionGroups[s] && sectionGroups[s].length > 0);
+    return { sectionGroups, sectionKeys };
+  },
+
+  // Explainer text for an ⓘ key: the documented default/source note
+  // (FIELD_INFO) first, else the plain-language help (FIELD_HELP).
+  fieldHelp(key) {
+    if (!key) return '';
+    if (typeof FIELD_INFO !== 'undefined' && FIELD_INFO[key]) return FIELD_INFO[key];
+    if (typeof FIELD_HELP !== 'undefined' && FIELD_HELP[key]) return FIELD_HELP[key];
+    return '';
+  },
+
+  // Device action buttons (TCC grading, circuit schedule, fault at terminal)
+  // and the bus's cable-sizing list — shared by the sidebar and the window.
+  _actionsHtml(comp) {
+    let html = '';
     // TCC Grading button for protection devices
     if (['cb', 'fuse', 'relay'].includes(comp.type)) {
       html += `
@@ -229,62 +312,25 @@ const Properties = {
           </div>`;
       }
     }
+    return html;
+  },
 
-    // Position section
-    html += `
-      <div class="prop-section">
-        <div class="prop-section-title">Position</div>
-        <div class="prop-row">
-          <label>X</label>
-          <input type="number" data-field="__x" value="${comp.x}" step="${SNAP_SIZE}">
-        </div>
-        <div class="prop-row">
-          <label>Y</label>
-          <input type="number" data-field="__y" value="${comp.y}" step="${SNAP_SIZE}">
-        </div>
-        <div class="prop-row">
-          <label>Rotation</label>
-          <select data-field="__rotation">
-            <option value="0" ${comp.rotation === 0 ? 'selected' : ''}>0°</option>
-            <option value="90" ${comp.rotation === 90 ? 'selected' : ''}>90°</option>
-            <option value="180" ${comp.rotation === 180 ? 'selected' : ''}>180°</option>
-            <option value="270" ${comp.rotation === 270 ? 'selected' : ''}>270°</option>
-          </select>
-        </div>
-      </div>`;
-
-    // Computed values section (per-unit impedances; rated current for loads)
-    const puValues = this.computePerUnit(comp);
-    if (puValues) {
-      const puTitle = ['static_load', 'solar_pv', 'wind_turbine', 'generator', 'distribution_board'].includes(comp.type)
-        ? 'Calculated Values'
-        : `Per-Unit Values (Base: ${AppState.baseMVA} MVA)`;
-      html += `
-        <div class="prop-section">
-          <div class="prop-section-title">${puTitle}</div>
-          ${puValues}
-        </div>`;
-    }
-
-    this.contentEl.innerHTML = html;
-
-    // Always show calc info button if component has calculable data
-    const hasCalc = ['utility', 'generator', 'transformer', 'cable',
-      'motor_induction', 'motor_synchronous', 'bus', 'static_load', 'capacitor_bank'].includes(comp.type);
-    this.calcInfoEl.style.display = hasCalc ? '' : 'none';
-
+  // Bind every control inside a rendered properties container (the sidebar,
+  // or the properties window). infoPopups=false leaves the ⓘ buttons to the
+  // caller.
+  _bindContent(root, comp, { infoPopups = true } = {}) {
     // Bind TCC Grading button
-    const btnTcc = this.contentEl.querySelector('#btn-view-tcc');
+    const btnTcc = root.querySelector('#btn-view-tcc');
     if (btnTcc) {
       btnTcc.addEventListener('click', () => TCC.openForDevice(comp.id));
     }
 
-    const btnDb = this.contentEl.querySelector('#btn-edit-db');
+    const btnDb = root.querySelector('#btn-edit-db');
     if (btnDb && typeof DBSchedule !== 'undefined') {
       btnDb.addEventListener('click', () => DBSchedule.open(comp.id));
     }
 
-    const btnCableFocus = this.contentEl.querySelector('#btn-bus-cable-focus');
+    const btnCableFocus = root.querySelector('#btn-bus-cable-focus');
     if (btnCableFocus) {
       btnCableFocus.addEventListener('click', () => {
         AppState.showResultBoxes.cable = true;
@@ -292,7 +338,7 @@ const Properties = {
         CableFocus.toggle(comp.id);
       });
     }
-    this.contentEl.querySelectorAll('.cf-prop-row[data-cable-id]').forEach(r => {
+    root.querySelectorAll('.cf-prop-row[data-cable-id]').forEach(r => {
       r.addEventListener('click', () => {
         AppState.selectedIds.clear();
         AppState.selectedIds.add(r.dataset.cableId);
@@ -301,7 +347,7 @@ const Properties = {
       });
     });
 
-    const btnFault = this.contentEl.querySelector('#btn-fault-terminal');
+    const btnFault = root.querySelector('#btn-fault-terminal');
     if (btnFault) {
       btnFault.addEventListener('click', () => this.faultAtTerminal(comp.id));
     }
@@ -310,7 +356,7 @@ const Properties = {
     // Live (per-keystroke) input applies the value to state/canvas debounced
     // (~400 ms) without committing; 'change' (blur/Enter/select) commits the
     // edit once: clears stale results and records a single undo step.
-    this.contentEl.querySelectorAll('input, select').forEach(input => {
+    root.querySelectorAll('input, select').forEach(input => {
       input.addEventListener('change', (e) => {
         const f = e.target.dataset.field;
         if (f && this._liveTimers[f]) {
@@ -335,20 +381,20 @@ const Properties = {
     });
 
     // Initialize searchable select widgets (cable dropdown)
-    this._initSearchableSelects(comp);
+    this._initSearchableSelects(comp, root);
 
-    // Bind info button popups
-    this.contentEl.querySelectorAll('.prop-info-btn').forEach(btn => {
+    // Bind info button popups (the properties window binds its own tooltips)
+    if (infoPopups) root.querySelectorAll('.prop-info-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const key = btn.dataset.infoKey;
-        const text = FIELD_INFO[key];
+        const text = this.fieldHelp(key);
         if (text) this._showInfoPopup(btn, text);
       });
     });
 
     // Bind cable impedance reset buttons
-    this.contentEl.querySelectorAll('.prop-reset-btn').forEach(btn => {
+    root.querySelectorAll('.prop-reset-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const fieldKey = btn.dataset.resetField;
@@ -368,7 +414,7 @@ const Properties = {
 
     // Bind "clear to auto" buttons — delete an optional override prop so the
     // engine falls back to its derived default (e.g. generator Q limits).
-    this.contentEl.querySelectorAll('.prop-clear-btn').forEach(btn => {
+    root.querySelectorAll('.prop-clear-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const fieldKey = btn.dataset.clearField;
@@ -386,7 +432,7 @@ const Properties = {
     });
 
     // Bind the per-cable IEC ampacity calculator launch button
-    this.contentEl.querySelectorAll('.prop-ampacity-btn').forEach(btn => {
+    root.querySelectorAll('.prop-ampacity-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.openAmpacityModal();
@@ -394,7 +440,7 @@ const Properties = {
     });
 
     // Bind the cable flow-direction flip button (swaps reported from/to)
-    this.contentEl.querySelectorAll('.prop-flip-btn').forEach(btn => {
+    root.querySelectorAll('.prop-flip-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const c = AppState.components.get(this.currentId);
@@ -410,7 +456,7 @@ const Properties = {
     });
 
     // Bind collapsible section headers
-    this.contentEl.querySelectorAll('.prop-section-header').forEach(header => {
+    root.querySelectorAll('.prop-section-header').forEach(header => {
       header.addEventListener('click', () => {
         const secKey = header.dataset.section;
         const isNowCollapsed = !header.classList.contains('collapsed');
@@ -669,11 +715,15 @@ const Properties = {
     // component-specific key (`type.key`); fall back to a bare `key` entry so
     // notes shared across components (e.g. the IBR converter fields) are defined
     // once.
+    // The plain-language FIELD_HELP explainers fill in where FIELD_INFO has
+    // no entry; they show an ⓘ too but never raise the "default" flag.
     const infoKey = `${this._currentCompType}.${field.key}`;
     const resolvedInfoKey = FIELD_INFO && FIELD_INFO[infoKey] ? infoKey
       : (FIELD_INFO && FIELD_INFO[field.key] ? field.key : null);
     const hasInfo = !!resolvedInfoKey;
-    const infoHtml = hasInfo ? `<button class="prop-info-btn" data-info-key="${resolvedInfoKey}" title="Default value info">i</button>` : '';
+    const helpKey = resolvedInfoKey
+      || [infoKey, field.key].find(k => typeof FIELD_HELP !== 'undefined' && FIELD_HELP[k]) || null;
+    const infoHtml = helpKey ? `<button type="button" class="prop-info-btn" data-info-key="${helpKey}" title="About ${escHtml(field.label)}" aria-label="About ${escHtml(field.label)}">i</button>` : '';
 
     // "Default" flag: the field still holds its typical/standard (often IEC)
     // default — shown so the engineer knows it's an assumed value they can
@@ -2575,7 +2625,10 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
   clear() {
     this.currentId = null;
     this._dismissInfoPopup();
+    if (typeof PropWindow !== 'undefined') PropWindow.close();
     document.getElementById('properties-title').textContent = 'Project Details';
+    const pwBtn = document.getElementById('btn-props-window');
+    if (pwBtn) pwBtn.disabled = true;
     this.contentEl.innerHTML = this._renderProjectDetails();
     this.calcInfoEl.style.display = 'none';
     this._bindProjectDetailsEvents();
