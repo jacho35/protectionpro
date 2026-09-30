@@ -1403,6 +1403,9 @@ body.dark-mode {
   .db-schedule-grid .library-table thead {
     display: none;   /* captions come from td::before instead */
   }
+  /* Cards show every field — column folding is a desktop-grid affordance. */
+  .db-schedule-grid .library-table td[data-grp] { display: flex !important; }
+  .db-schedule-grid .library-table td.db-grp-sum { display: none !important; }
   .db-schedule-grid .library-table,
   .db-schedule-grid .library-table tbody,
   .db-schedule-grid .library-table tr,

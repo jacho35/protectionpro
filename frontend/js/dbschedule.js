@@ -78,6 +78,75 @@ const DBSchedule = {
     { k: 'description', label: 'Description', type: 'text', full: true },
   ],
 
+  // Column groups the grid can fold. `keys` are the [data-k] cells in each, in
+  // visual order. Which groups are folded is a per-browser view preference
+  // (localStorage), never project data.
+  _GROUPS: [
+    { g: 'dev', label: 'Device', keys: ['poles', 'phase', 'curve'] },
+    { g: 'el',  label: 'Earth leakage', keys: ['el_group', 'leakage_ma'] },
+    { g: 'cab', label: 'Cable', keys: ['cable_mm2', 'ecc_mm2', 'cable_m'] },
+    { g: 'dem', label: 'Demand', keys: ['demand_factor', 'power_factor'] },
+  ],
+  _FOLD_KEY: 'protectionpro-db-fold',
+  _fold: null,
+
+  _foldState() {
+    if (!this._fold) {
+      let v = null;
+      try { v = JSON.parse(localStorage.getItem(this._FOLD_KEY)); } catch (_) { v = null; }
+      this._fold = (v && typeof v === 'object') ? v : { dev: true, el: true, cab: false, dem: true };
+    }
+    return this._fold;
+  },
+  _foldedKeys() {
+    const fold = this._foldState();
+    return new Set(this._GROUPS.filter(G => fold[G.g]).flatMap(G => G.keys));
+  },
+  // Fold/unfold in place (class + colspan) — no re-render, so nothing typed is lost.
+  _setFold(g, folded) {
+    const G = this._GROUPS.find(x => x.g === g);
+    if (!G) return;
+    this._foldState()[g] = !!folded;
+    try { localStorage.setItem(this._FOLD_KEY, JSON.stringify(this._fold)); } catch (_) { /* view pref only */ }
+    if (!this.body) return;
+    const grid = this.body.querySelector('.db-schedule-grid');
+    if (grid) grid.classList.toggle(`db-fold-${g}`, !!folded);
+    const th = this.body.querySelector(`th[data-grp-h="${g}"]`);
+    if (th) th.colSpan = folded ? 1 : G.keys.length;
+    const btn = this.body.querySelector(`[data-grp-toggle="${g}"]`);
+    if (btn) btn.setAttribute('aria-expanded', String(!folded));
+    if (folded) this._paintSummaries();
+  },
+
+  // One-line summary shown in place of a folded group.
+  _sumHtml(c, g) {
+    const num = (v, dp) => { const n = Number(v); return Number.isFinite(n) ? n.toFixed(dp) : '—'; };
+    const dot = '<span class="db-grp-dotsep">·</span>';
+    if (g === 'dev') {
+      const poles = c.poles || '1P';
+      const ph = poles === '3P' ? 'RWB' : (c.phase || 'R');
+      return `${escHtml(poles)}${dot}<span class="db-ph-dot db-ph-${escHtml(ph)}"></span>${escHtml(ph)}${dot}${escHtml(c.curve || 'C')}`;
+    }
+    if (g === 'el') return `${escHtml(c.el_group || '—')}${dot}${escHtml(String(Number(c.leakage_ma) || 0))} mA`;
+    if (g === 'cab') {
+      const ecc = (c.ecc_mm2 == null || c.ecc_mm2 === '') ? 'auto' : c.ecc_mm2;
+      return `${escHtml(String(c.cable_mm2 ?? 2.5))} / ${escHtml(String(ecc))}${dot}${escHtml(String(c.cable_m ?? 10))} m`;
+    }
+    if (g === 'dem') return `${num(c.demand_factor ?? 1, 2)}${dot}${num(c.power_factor ?? 0.9, 2)}`;
+    return '';
+  },
+  _paintSummaries(comp) {
+    if (!this.body) return;
+    const board = comp || AppState.components.get(this.currentId);
+    if (!board) return;
+    const circuits = board.props.circuits || [];
+    this.body.querySelectorAll('#db-rows tr[data-idx]').forEach(tr => {
+      const c = circuits[parseInt(tr.dataset.idx)];
+      if (!c) return;
+      tr.querySelectorAll('.db-grp-chip').forEach(btn => { btn.innerHTML = this._sumHtml(c, btn.dataset.grpOpen); });
+    });
+  },
+
   // Stable way id (EE-7). Mint from the shared plan sequence so plan-created
   // and schedule-created ways never collide; device circuit tags reference
   // this id, not the mutable way number.
@@ -845,6 +914,16 @@ const DBSchedule = {
     const opt = (v, cur, label) =>
       `<option value="${v}"${v === cur ? ' selected' : ''}>${label ?? v}</option>`;
 
+    // Column groups (Device / Earth leakage / Cable / Demand) fold to one
+    // summary cell each. Every cell stays in the DOM — folding is CSS only —
+    // so the change handlers, fill-down and GridTable (which skips hidden
+    // cells) are untouched.
+    const fold = this._foldState();
+    const grpLabel = Object.fromEntries(this._GROUPS.map(G => [G.g, G.label]));
+    const sumCell = (c, g) => `<td class="db-grp-sum" data-sum="${g}" data-label="${grpLabel[g]}"><button type="button" class="db-grp-chip" data-grp-open="${g}" title="${grpLabel[g]} — click to unfold and edit">${this._sumHtml(c, g)}</button></td>`;
+    const grpHead = (G) => `<th class="db-grp-h" data-grp-h="${G.g}" colspan="${fold[G.g] ? 1 : G.keys.length}"><button type="button" class="db-grp-btn" data-grp-toggle="${G.g}" aria-expanded="${!fold[G.g]}" title="Fold or unfold the ${G.label.toLowerCase()} columns"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>${G.label}<span class="db-grp-n">${G.keys.length}</span></button></th>`;
+    const foldCls = this._GROUPS.filter(G => fold[G.g]).map(G => ` db-fold-${G.g}`).join('');
+
     // data-label on each cell drives the stacked-card layout on phones (see
     // the #db-modal card rules in mobile.css) — on desktop the labels are
     // unused and the table renders normally.
@@ -855,17 +934,21 @@ const DBSchedule = {
         <td data-label="Description" class="db-col-desc"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%"></td>
         <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
         <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
-        <td data-label="Poles"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
-        <td data-label="Phase"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
+        <td data-label="Poles" data-grp="dev"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
+        <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
           ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
-        <td data-label="Curve"><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
-        <td data-label="EL Grp"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
-        <td data-label="Leak (mA)"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
-        <td data-label="Cable mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value."></td>
-        <td data-label="ECC mm²"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank and the check assumes the smallest compliant size (Table 54.7 or the IEC 60364-5-54 §543.1.2 adiabatic check), warning when a twin-and-earth CPC would fail."></td>
-        <td data-label="Len (m)"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
-        <td data-label="DF"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
-        <td data-label="PF"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
+        <td data-label="Curve" data-grp="dev"><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
+        ${sumCell(c, 'dev')}
+        <td data-label="EL Grp" data-grp="el"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
+        <td data-label="Leak (mA)" data-grp="el"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
+        ${sumCell(c, 'el')}
+        <td data-label="Cable mm²" data-grp="cab"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value."></td>
+        <td data-label="ECC mm²" data-grp="cab"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank and the check assumes the smallest compliant size (Table 54.7 or the IEC 60364-5-54 §543.1.2 adiabatic check), warning when a twin-and-earth CPC would fail."></td>
+        <td data-label="Len (m)" data-grp="cab"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
+        ${sumCell(c, 'cab')}
+        <td data-label="DF" data-grp="dem"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
+        <td data-label="PF" data-grp="dem"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
+        ${sumCell(c, 'dem')}
         <td data-label="FLA (A)" class="db-fla" data-id="${escHtml(c.id)}">—</td>
         <td data-label="Iz (A)" class="db-res st-none" data-res="iz" data-id="${escHtml(c.id)}">—</td>
         <td data-label="%VD" class="db-res st-none" data-res="vd" data-id="${escHtml(c.id)}">—</td>
@@ -924,19 +1007,32 @@ const DBSchedule = {
       <datalist id="db-mm2-datalist">${mm2Options}</datalist>
       <div class="db-phase-bars">${barsHtml}</div>
       <div id="db-bulk-bar"></div>
-      <div class="library-table-wrap db-schedule-grid">
+      <div class="library-table-wrap db-schedule-grid${foldCls}">
         <table class="library-table" style="width:100%;font-size:13px;">
-          <thead><tr>
+          <thead><tr class="db-grp-row">
+            <th class="db-sel-cell"></th><th class="db-col-way"></th><th class="db-col-desc"></th>
+            <th class="db-col-breaker"></th><th class="db-col-load"></th>
+            ${this._GROUPS.map(grpHead).join('')}
+            <th class="db-fla-h db-grp-check">Check</th>
+            <th class="db-res-h" data-res="iz"></th><th class="db-res-h" data-res="vd"></th>
+            <th class="db-res-h" data-res="ecc"></th><th></th>
+          </tr><tr>
             <th class="db-sel-cell"><input type="checkbox" id="db-select-all" title="Select / deselect all ways. Shift-click a row checkbox to select a range."></th>
             <th class="db-col-way">Way</th><th class="db-col-desc">Description</th>
             <th class="db-col-breaker">Breaker (A)</th><th class="db-col-load">Load (VA)</th>
-            <th>Poles</th><th>Ph</th>
-            <th>Curve</th><th>EL Grp</th>
-            <th title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
-            <th>Cable mm²</th>
-            <th title="Earth continuity conductor size. Blank = the IEC 60364-5-54 Table 54.7 minimum for the live conductor.">ECC mm²</th>
-            <th>Len (m)</th><th>DF</th>
-            <th title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th>
+            <th data-grp="dev">Poles</th><th data-grp="dev">Ph</th>
+            <th data-grp="dev">Curve</th>
+            <th class="db-grp-sum" data-sum="dev">Poles · Ph · Curve</th>
+            <th data-grp="el">EL Grp</th>
+            <th data-grp="el" title="Standing earth leakage of the way's devices (mA). Cable insulation leakage is added automatically from the length.">Leak (mA)</th>
+            <th class="db-grp-sum" data-sum="el">Group · mA</th>
+            <th data-grp="cab">Cable mm²</th>
+            <th data-grp="cab" title="Earth continuity conductor size. Blank = the IEC 60364-5-54 Table 54.7 minimum for the live conductor.">ECC mm²</th>
+            <th data-grp="cab">Len (m)</th>
+            <th class="db-grp-sum" data-sum="cab">Live / ECC · Len</th>
+            <th data-grp="dem">DF</th>
+            <th data-grp="dem" title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th>
+            <th class="db-grp-sum" data-sum="dem">DF · PF</th>
             <th class="db-fla-h" title="Full-load current — the connected load (Load VA) at this way's own voltage, WITHOUT the demand factor. This is what the circuit draws with everything on it running. Hover a cell for the diversified design current Ib the cable check is graded against.">FLA (A)</th>
             <th class="db-res-h" data-res="iz" title="Derated current-carrying capacity Iz (IEC 60364-5-52) — compared against the breaker rating In, since SANS 10142-1 / IEC 60364-433 requires Ib ≤ In ≤ Iz. Tooltip also carries the earth-loop (Zs) verdict.">Iz (A)</th>
             <th class="db-res-h" data-res="vd" title="Voltage drop over this way's own length, plus upstream drop when Load Flow has been run. SANS 10142-1 Cl. 6.6: 5 % total, 3 % for lighting.">%VD</th>
@@ -944,7 +1040,7 @@ const DBSchedule = {
             <th></th>
           </tr></thead>
           <tbody id="db-rows">${rows ||
-            '<tr><td colspan="20" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
+            '<tr><td colspan="30" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -981,6 +1077,25 @@ const DBSchedule = {
     this._refreshBulkBar();
     this._paintResults();
     this._wireScrollShadow(this.body.querySelector('.db-schedule-grid'));
+
+    // ── Column groups ──
+    this.body.querySelectorAll('[data-grp-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const g = btn.dataset.grpToggle;
+        this._setFold(g, !this._foldState()[g]);
+      });
+    });
+    this.body.querySelectorAll('[data-grp-open]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const g = btn.dataset.grpOpen;
+        this._setFold(g, false);
+        const tr = btn.closest('tr');
+        const G = this._GROUPS.find(x => x.g === g);
+        const el = tr && G && [...G.keys].map(k => tr.querySelector(`[data-k="${k}"]`))
+          .find(x => x && !x.disabled);
+        if (el) el.focus();
+      });
+    });
 
     // ── Bulk-selection checkboxes ──
     // `click`, not `change`: only a click event carries shiftKey, and by the
@@ -1186,10 +1301,14 @@ const DBSchedule = {
       // A pasted block is applied to the circuit data directly (clamping DF/PF,
       // the 3P ⇒ RWB rule, curve letters) and rows are appended as needed.
       onPaste: ({ cell, rows }) => {
+        // A folded group's columns are hidden, so a pasted block lands in the
+        // columns the user can SEE — the same ones Tab walks through.
+        const folded = this._foldedKeys();
+        const cols = NAV_COLS.filter(k => !folded.has(k));
         const startRow = parseInt(cell.closest('tr').dataset.idx);
-        const startCol = NAV_COLS.indexOf(cell.dataset.k);
+        const startCol = cols.indexOf(cell.dataset.k);
         if (isNaN(startRow) || startCol < 0) return false;
-        this._pasteBlock(circuits, startRow, startCol, rows, NAV_COLS);
+        this._pasteBlock(circuits, startRow, startCol, rows, cols);
         return true;
       },
     });
@@ -1243,6 +1362,7 @@ const DBSchedule = {
   refreshTotals(comp) {
     this._refreshElPanel(comp);
     this._paintFla(comp);
+    this._paintSummaries(comp);
     const totals = this.recompute(comp);
     const ph = totals.phaseVa;
     const phTotal = ph.R + ph.W + ph.B;
@@ -1337,6 +1457,7 @@ const DBSchedule = {
           <span class="db-bulk-sep"></span>
           <button class="btn-small" id="db-bulk-delete" title="Remove all selected ways">Delete selected</button>
           <button class="btn-small" id="db-bulk-clear" title="Clear the selection">Clear</button>
+          ${this._xferHtml()}
         </div>
       </div>`;
 
@@ -1351,6 +1472,11 @@ const DBSchedule = {
     });
     wrap.querySelector('#db-bulk-apply').addEventListener('click', () => this._applyBulkAll());
     wrap.querySelector('#db-bulk-delete').addEventListener('click', () => this._bulkDelete());
+    const xferTarget = wrap.querySelector('#db-xfer-target');
+    if (xferTarget) {
+      wrap.querySelector('#db-xfer-move').addEventListener('click', () => this.transferSelected(xferTarget.value, true));
+      wrap.querySelector('#db-xfer-copy').addEventListener('click', () => this.transferSelected(xferTarget.value, false));
+    }
     wrap.querySelector('#db-bulk-clear').addEventListener('click', () => {
       this._selected.clear();
       this._selAnchor = null;
@@ -1465,6 +1591,121 @@ const DBSchedule = {
     this.render();
     this._notifyEdited();
     this._status(`Removed ${removed} selected way(s).`);
+  },
+
+  // ── Move / copy ways to another board ───────────────────────────────
+  _otherBoards() {
+    return [...AppState.components.values()]
+      .filter(c => c.type === 'distribution_board' && c.id !== this.currentId)
+      .sort((a, b) => String(a.props.name || a.id)
+        .localeCompare(String(b.props.name || b.id), undefined, { numeric: true }));
+  },
+  _xferHtml() {
+    const boards = this._otherBoards();
+    if (!boards.length) return '';
+    const opts = boards.map(b => `<option value="${escHtml(b.id)}">${escHtml(b.props.name || b.id)}</option>`).join('');
+    return `
+          <span class="db-bulk-sep"></span>
+          <label class="db-xfer">To board <select id="db-xfer-target" title="Board to move or copy the selected ways to">${opts}</select></label>
+          <button class="btn-small" id="db-xfer-move" title="Move the selected ways to that board — they are removed here and added after its last way">Move</button>
+          <button class="btn-small" id="db-xfer-copy" title="Copy the selected ways to that board — the copies are ordinary ways, not linked to plan devices">Copy</button>`;
+  },
+  // The plan board (bd_db) linked to an SLD board, or null.
+  _planBoardFor(comp) {
+    if (!comp || typeof AppState.planAllElements !== 'function') return null;
+    return AppState.planAllElements().find(e => e.type === 'bd_db' && e.sldId === comp.id) || null;
+  },
+
+  // Move (or copy) the selected ways to another board. They are appended
+  // after the target's highest way number, keeping their order. Sub-board
+  // feeder ways stay put — they belong to the SLD topology. A MOVED way that
+  // the plan drives takes its tagged devices with it when the target board is
+  // on the plan too; otherwise it stays (a copy is always a plain way).
+  transferSelected(targetId, move) {
+    const src = AppState.components.get(this.currentId);
+    const dst = AppState.components.get(targetId);
+    if (!src || !dst || dst === src || dst.type !== 'distribution_board') return;
+    if (!Array.isArray(dst.props.circuits)) dst.props.circuits = [];
+    this._ensureWayIds(dst);
+    this._ensurePf(dst);
+
+    const picked = (src.props.circuits || []).filter(c => this._selected.has(c.id));
+    const skipped = [];
+    const srcPlan = move ? this._planBoardFor(src) : null;
+    const dstPlan = move ? this._planBoardFor(dst) : null;
+    const todo = picked.filter(c => {
+      if (c.type === 'feeder_db') { skipped.push(`way ${c.way} feeds a sub-board`); return false; }
+      if (move && Number(c.plan_qty) > 0 && !dstPlan) {
+        skipped.push(`way ${c.way} is driven by plan devices and ${dst.props.name || dst.id} is not on the plan`);
+        return false;
+      }
+      return true;
+    });
+    if (!todo.length) {
+      this._status(`Nothing ${move ? 'moved' : 'copied'} — ${skipped.join('; ')}.`);
+      return;
+    }
+
+    const nums = dst.props.circuits.map(c => parseInt(c.way, 10)).filter(n => !isNaN(n));
+    let next = (nums.length ? Math.max(...nums) : 0) + 1;
+    const PLAN_FLAGS = ['plan_qty', '_manualLoadOverride', '_cableManual', '_nameOverride', '_polesManual', '_orphaned'];
+    const planEls = (move && typeof AppState.planAllElements === 'function') ? AppState.planAllElements() : [];
+    const added = [];
+    for (const c of todo) {
+      const oldWay = String(c.way);
+      const way = String(next++);
+      if (move) {
+        // Same object, same stable id — plan devices tagged by id follow it.
+        if (Number(c.plan_qty) > 0 && dstPlan) {
+          for (const el of planEls) {
+            const p = el.props || {};
+            const byId = p.circuitWid === c.id;
+            const byNum = !p.circuitWid && srcPlan && p.circuitDbId === srcPlan.id && String(p.circuitNo) === oldWay;
+            if (byId || byNum) { p.circuitDbId = dstPlan.id; p.circuitWid = c.id; p.circuitNo = way; }
+          }
+        }
+        c.way = way;
+        dst.props.circuits.push(c);
+      } else {
+        const copy = JSON.parse(JSON.stringify(c));
+        for (const k of PLAN_FLAGS) delete copy[k];
+        copy.id = this._wayId();
+        copy.way = way;
+        dst.props.circuits.push(copy);
+      }
+      added.push(way);
+    }
+    if (move) {
+      const gone = new Set(todo.map(c => c.id));
+      const keep = src.props.circuits.filter(c => !gone.has(c.id));
+      src.props.circuits.length = 0;       // in place: render closures hold this array
+      src.props.circuits.push(...keep);
+    }
+    this.recompute(dst);
+    this._normalizeElRatings(dst);
+
+    // A move changes this board, so commit() runs the usual ritual (dirty,
+    // results cleared, one undo snapshot covering both boards). A copy leaves
+    // this board untouched, so the ritual is done here for the target.
+    if (!this.commit()) {
+      AppState.dirty = true;
+      if (typeof Properties !== 'undefined') Properties._notifyResultsCleared();
+      AppState.clearResults();
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      Canvas.render();
+    }
+    if (move && typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
+
+    this._selected.clear();
+    this._selAnchor = null;
+    this.render();
+    if (this.mode === 'workspace' && typeof Schedules !== 'undefined') {
+      Schedules.render();
+      if (Schedules._checkRan && Schedules._scheduleCheck) Schedules._scheduleCheck();
+    }
+    const range = added.length > 1 ? `ways ${added[0]}–${added[added.length - 1]}` : `way ${added[0]}`;
+    this._status(`${move ? 'Moved' : 'Copied'} ${todo.length} way${todo.length === 1 ? '' : 's'} to `
+      + `${dst.props.name || dst.id} as ${range}.` + (skipped.length ? ` Skipped: ${skipped.join('; ')}.` : ''));
   },
 
   // ── EL group leakage panel ──────────────────────────────────────────
