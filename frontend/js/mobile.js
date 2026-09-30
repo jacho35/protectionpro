@@ -664,7 +664,7 @@ const MobileUI = {
     mobileContent.querySelectorAll('.prop-info-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const text = (typeof FIELD_INFO !== 'undefined') && FIELD_INFO[btn.dataset.infoKey];
+        const text = typeof Properties !== 'undefined' && Properties.fieldHelp(btn.dataset.infoKey);
         if (text && typeof Properties !== 'undefined') Properties._showInfoPopup(btn, text);
       });
     });

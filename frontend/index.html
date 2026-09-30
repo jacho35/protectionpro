@@ -495,6 +495,9 @@
     <aside id="properties-panel">
       <div class="properties-header">
         <h2 id="properties-title">Properties</h2>
+        <button id="btn-props-window" class="panel-window-btn" type="button" title="Open properties in a window (or double-click the component)" aria-label="Open properties in a window" disabled>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg>
+        </button>
         <button id="btn-collapse-properties" class="panel-collapse-btn" title="Collapse panel">&#9656;</button>
       </div>
       <div id="properties-content">
@@ -816,6 +819,36 @@
   <!-- Calculation Details Modal -->
   <!-- Right-click context menu (populated by ContextMenu) -->
   <div id="context-menu" role="menu" style="display:none"></div>
+
+  <!-- Properties window (propwindow.js) — before calc-modal so "View calculations" stacks above it -->
+  <div id="prop-window" class="modal" role="dialog" aria-modal="true" aria-labelledby="pw-title" style="display:none">
+    <div class="pw-dialog">
+      <header class="pw-header">
+        <div class="pw-icon" id="pw-icon" aria-hidden="true"></div>
+        <div class="pw-titles">
+          <h2 id="pw-title">Properties</h2>
+          <div id="pw-sub" class="pw-sub"></div>
+        </div>
+        <div class="pw-search">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+          <label for="pw-q" class="pw-sr-only">Find a property</label>
+          <input id="pw-q" type="search" placeholder="Find a property" autocomplete="off" spellcheck="false">
+        </div>
+        <button type="button" class="modal-close" id="pw-close" aria-label="Close properties window">&times;</button>
+      </header>
+      <div class="pw-body" id="pw-body">
+        <nav class="pw-nav" id="pw-nav" aria-label="Property sections"></nav>
+        <div class="pw-main" id="pw-main"></div>
+        <aside class="pw-aside" id="pw-aside" aria-label="Computed values and actions"></aside>
+      </div>
+      <footer class="pw-footer">
+        <span class="pw-footer-note">Changes apply to the diagram as you type.</span>
+        <button type="button" class="pw-btn" id="pw-dock">Show in sidebar</button>
+        <button type="button" class="pw-btn pw-btn-primary" id="pw-done">Done</button>
+      </footer>
+    </div>
+    <div id="pw-tip" class="pw-tip" role="tooltip" hidden></div>
+  </div>
 
   <div id="calc-modal" class="modal" role="dialog" aria-modal="true" aria-label="Dialog" style="display:none">
     <div class="modal-content">
@@ -3147,7 +3180,9 @@
   <script src="js/canvas.js?v=3.5.172"></script>
   <script src="js/sidebar.js?v=3.5.172"></script>
   <script src="js/wiring.js?v=3.5.172"></script>
+  <script src="js/field-help.js?v=3.5.172"></script>
   <script src="js/properties.js?v=3.5.172"></script>
+  <script src="js/propwindow.js?v=3.5.172"></script>
   <script src="js/annotations.js?v=3.5.172"></script>
   <script src="js/cablefocus.js?v=3.5.172"></script>
   <script src="js/api.js?v=3.5.172"></script>

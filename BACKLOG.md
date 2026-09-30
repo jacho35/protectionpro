@@ -363,6 +363,11 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Properties window with field explainers (2026-09-30)
+- An optional roomy modal for the selected component's properties (`propwindow.js`). Open it with the header button in the sidebar, by double-clicking a component (detected on the pointer path, because render() rebuilds the DOM and so the browser never fires `dblclick`), or with a component's right-click **Properties Window…**. On the left are the sections with field counts. In the middle, fields sit in two spaced columns, with a "Default: X" line under each changed field and a note saying which setting reveals the hidden fields. On the right are the computed per-unit values, View calculations, and the device actions. **Find a property** searches labels and explainer text in every section.
+- It renders the same fields as the sidebar through shared helpers split out of `Properties.show()`: `_visibleFields`, `_groupSections`, `_actionsHtml` and `_bindContent(root)`. Edits therefore go through `onFieldChange` unchanged, and an open window re-renders whenever the sidebar does, keeping focus, caret and scroll.
+- ⓘ tooltips open on hover or keyboard focus and pin on click. They show FIELD_INFO text as paragraphs, source lines and "Used by" study chips. The new `field-help.js` (`FIELD_HELP`) adds plain-language explainers for about 90 fields that had none (name, ratings, CB/relay settings, changeover, grounding R/X, …). These entries add an ⓘ but never raise the sidebar's "default" flag. `Properties.fieldHelp(key)` resolves FIELD_INFO → FIELD_HELP for the sidebar popup, the mobile sheet and the window.
+
 ### Inverters: fixed power factor is P-priority; unity mode ignores pf (2026-09-30)
 - PV and wind below unity PF no longer scale real power down (P = S·|pf|). Real power follows the resource and the converter adds Q = P·tan φ, held on the kVA circle at the set PF only when P and Q together exceed the rating (`_pf_limited_output`). A 65 kW inverter at 80 % / pf 0.9 now exports 52 kW + 25.2 kvar, not 46.8 kW. PV in *Unity (no vars)* mode now gives no vars whatever the PF field says; backup autonomy counts PV real power. Cache-bust `3.5.171 → 3.5.172`, app version 1.363b.
 
