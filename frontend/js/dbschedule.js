@@ -735,6 +735,17 @@ const DBSchedule = {
     return this._resIndex;
   },
 
+  // 'a · b · 30 °C air x1.00 · … x0.80 · combined x0.800' → the conditions on
+  // one line, then one line per derating factor.
+  _deratingLines(detail) {
+    if (!detail) return '';
+    const bits = String(detail).split(' · ');
+    const isFactor = x => /\sx\d/.test(x);
+    const head = bits.filter(x => !isFactor(x)).join(' · ');
+    const factors = bits.filter(isFactor).map(x => '  ' + x.replace(/\sx(?=\d)/, ' × '));
+    return [head && ('Iz basis: ' + head), ...factors].filter(Boolean).join('\n');
+  },
+
   _resultFor(c) {
     return (this._resIndex && c && c.id) ? this._resIndex.get(this._resKey(this.currentId, c.id)) : null;
   },
@@ -771,7 +782,9 @@ const DBSchedule = {
         if (kind === 'iz') {
           text = row.iz_derated_a != null ? `${row.iz_derated_a.toFixed(1)}` : '—';
           status = this._worstStatus(row.ampacity_status, row.coordination_status);
-          title = [row.derating_detail, row.coordination_message].filter(Boolean).join(' · ');
+          title = [row.coordination_message,
+            this._deratingLines(row.derating_detail)]
+            .filter(Boolean).join('\n\n');
         } else if (kind === 'vd') {
           const pct = row.vd_total_pct != null ? row.vd_total_pct : row.vd_pct;
           text = pct != null ? `${pct.toFixed(2)}` : '—';
@@ -788,7 +801,7 @@ const DBSchedule = {
         }
         // The earth-loop verdict has no column of its own — surface it on the
         // Iz cell's tooltip so it is never invisible.
-        if (kind === 'iz' && row.zs_message) title += ` · ${row.zs_message}`;
+        if (kind === 'iz' && row.zs_message) title += `\n\nEarth loop: ${row.zs_message}`;
       }
       td.textContent = text;
       td.className = `db-res st-${status}`;
@@ -837,7 +850,7 @@ const DBSchedule = {
       + (df > 0 && df < 1 ? ` (DF ${df.toFixed(2)})` : ''));
     const br = Number(c.breaker_a) || 0;
     if (br) bits.push(`${br} A breaker`);
-    return bits.join(' · ');
+    return bits.join('\n');
   },
 
   _repaintWarnings() {
@@ -874,7 +887,7 @@ const DBSchedule = {
     const colour = (row && row.status === 'warn') ? '#b26a00'
       : (row && row.status === 'info' && all.every(m => (row.messages || []).includes(m))) ? '#888'
       : '#d32f2f';
-    return `<span class="db-warn" title="${escHtml(all.join(' · '))}" style="color:${colour};margin-right:4px;cursor:help;">⚠</span>`;
+    return `<span class="db-warn" title="${escHtml(all.length > 1 ? all.map(m => '• ' + m).join('\n') : all[0])}" style="color:${colour};margin-right:4px;cursor:help;">⚠</span>`;
   },
 
   _wayStatusHtml(c, i, vll) {

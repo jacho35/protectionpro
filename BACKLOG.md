@@ -365,6 +365,9 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Schedule grid tooltips on separate lines (2026-09-30)
+- The Iz cell tooltip was one long ` · `-joined line. It now shows the Ib ≤ In ≤ Iz verdict, then the Iz basis (conductors · method · insulation), one line per derating factor, and the earth-loop verdict under its own label. The ⚠ tooltip lists one message per line, and the FLA tooltip puts each item on its own line.
+
 ### DB circuit check: results shown on the wrong board's ways (2026-09-30)
 - **Cause**: board way ids (`w<n>`) come from `planMarkup._seq`, but the load-time `_seq` repair only scanned plan ids ending in `_<n>`. A reloaded project therefore handed out way ids its schedules already used, so ids repeated across boards (and sometimes on one board). The schedule grid and cable schedules looked up check results by way id alone, so a way could show another board's verdict: a passing 10 A / 2.5 mm² way showed red with a different board's 1.5 mm² result.
 - **Fix**: results are looked up by board + way id (`DBSchedule._resKey`, cable schedules; the PDF was already keyed this way). On load, `AppState._repairWayIds()` moves `_seq` past every way id and gives a repeated id on one board a new one, moving that way's plan devices (same board, same way number) with it. Moving a way onto a board that already uses its id gives it a new one, and the move's plan-device retag is limited to the source board.
