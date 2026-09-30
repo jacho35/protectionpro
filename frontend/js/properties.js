@@ -389,6 +389,17 @@ const Properties = {
     // Initialize searchable select widgets (cable dropdown)
     this._initSearchableSelects(comp, root);
 
+    // Library pickers (CB, fuse, transformer, PV panel): wildcard search box
+    // over the native select, which keeps its value and change handler.
+    // Attached after the change binding above so the search input isn't bound.
+    if (typeof SearchSelect !== 'undefined') {
+      const eg = { cb: 'acb 1600, mccb*250', fuse: 'gg 100, 63*a', transformer: '1000 kva, 11/0.4', pv_panel: '550, mono' };
+      root.querySelectorAll('select[data-library]').forEach(sel => {
+        const hint = eg[sel.dataset.library];
+        SearchSelect.attach(sel, { placeholder: `Custom — type to search${hint ? ', e.g. ' + hint : ''}` });
+      });
+    }
+
     // Bind info button popups (the properties window binds its own tooltips)
     if (infoPopups) root.querySelectorAll('.prop-info-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -591,7 +602,7 @@ const Properties = {
         `<option value="${escHtml(item.id)}" ${value === item.id ? 'selected' : ''}>${escHtml(item.name)}</option>`
       ).join('');
       inputHtml = `<select data-field="${field.key}" data-library="${field.library}">
-        <option value="">-- Custom --</option>${options}</select>`;
+        <option value="" data-ss-always>-- Custom --</option>${options}</select>`;
     } else if (field.type === 'component_select') {
       // Dynamic dropdown listing components of a specific type
       const filterType = field.filter || '';
