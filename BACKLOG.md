@@ -363,6 +363,9 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Load flow: unloaded generator island reported idle (2026-09-30)
+- A generator sync bus cut off by a changeover in `off` (set breakers still closed) was a live island with no load, and dispatch warned about droop sharing at 0 kW and wet stacking for sets that feed nothing. `plan_dispatch` now treats an island with sources but no utility, battery or load as **idle**: the buses still solve live, every source reports role `idle` at 0 kW, and one note names the sets and the island's buses. Cache-bust `3.5.170 → 3.5.171`, app version 1.362b.
+
 ### Street lighting: searchable cable and luminaire pickers on circuits (2026-09-30)
 - The circuit form's **Cable** and **Luminaire** pickers, and the Quick calc **Luminaire**, are `SearchSelect` wildcard boxes, like the Quick calc cable. The pole grid's per-pole luminaire stays a native select, because it is a GridTable cell (keyboard / paste / fill-down).
 - *Show all cables…* (the project's preferred conductor hides the other one) is always listed whatever is typed (`data-ss-always`); picking it swaps in the full list and reopens the search (`CableLib.handleShowAll` → `SearchSelect.reopen()`). Cache-bust `3.5.164 → 3.5.165`, app version 1.357b.

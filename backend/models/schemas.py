@@ -899,7 +899,7 @@ class DispatchEntry(BaseModel):
     island: int = 0          # electrical island number (0 = disconnected)
     priority: float = 0      # dispatch priority, 1 = dispatched first
     mode: str = "must_run"   # must_run | merit_order
-    role: str = "dispatched"  # balancer | dispatched | curtailed | offline
+    role: str = "dispatched"  # balancer | dispatched | curtailed | offline | idle
     available_mw: float = 0
     dispatched_mw: float = 0
     curtailed_mw: float = 0
