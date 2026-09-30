@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.359b';
+const APP_VERSION = '1.360b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -1177,6 +1177,7 @@ const FIELD_INFO = {
   'generator.xd':        'Default Xd = 1.2 p.u. is typical synchronous reactance.\nSource: IEC 60034-4 Table 5 — synchronous reactance range 0.8–1.8 p.u.',
   'generator.x_r_ratio': 'Leave blank to use the IEC 60909-0 §6.6.1 fictitious stator resistance for short circuit: R_G = 0.15·X″d (≤ 1 kV), 0.07·X″d (> 1 kV, < 100 MVA), 0.05·X″d (≥ 100 MVA) — the values the standard uses to set the peak current. Enter a datasheet X/R to override (it is also used by load flow and stability studies, which assume 40 when blank).\nSource: IEC 60909-0 §6.6.1.',
   'generator.power_factor': 'Default PF = 0.85 lagging, typical industrial generator rating.\nSource: IEC 60034-1 §8 — rated power factor.',
+  'generator.voltage_setpoint_pu': 'Voltage (per-unit) the machine holds at its bus. Blank = 1.0 p.u. Applies only when the generator is its island\'s reference (no utility connected) or its bus is set to Bus Type = PV; with a utility connected and a PQ bus it is ignored. Voltage-regulating sources tied closely together (e.g. a genset and a voltage-mode inverter on one board) should use the same setpoint, or the one with less reactive capability ends up pinned at its limit.\nUsed by: Load Flow.',
   'generator.q_max_mvar': 'Maximum over-excited (lagging / capacitive) reactive output the machine can supply while regulating voltage on a PV bus. Leave blank to derive it automatically from the rating and rated power factor: Q = rated_MVA × sin(acos(pf)). Once the solver would demand more than this, the generator can no longer hold its setpoint — it clamps at this limit (PV→PQ) and the bus voltage drifts. Only used when the machine is on a voltage-controlled (PV) bus.\nUsed by: Load Flow.',
   'generator.q_min_mvar': 'Maximum under-excited (leading / inductive) reactive absorption — usually negative. Leave blank to default to −Q Max (a symmetric capability box); set an explicit value for an asymmetric under-excitation limit. When the machine must absorb more than this to hold its setpoint it clamps at the limit and the bus voltage rises. Only used on a voltage-controlled (PV) bus.\nUsed by: Load Flow.',
   'generator.min_load_pct': 'Default 30% — diesel sets running below ~30% of rating for extended periods suffer wet stacking (unburned fuel/carbon build-up).\nSources: engine manufacturers recommend 30–35% minimum (typical spec range 30–50%); NFPA 110 §8.4.2 requires monthly exercising at ≥30% of nameplate kW.\nThe dispatcher curtails solar/wind so a running generator carries at least this load.',
@@ -1890,6 +1891,7 @@ const COMPONENT_DEFS = {
       { key: 'max_load_pct', label: 'Maximum Load', type: 'number', unit: '%', min: 0, max: 100, step: 5, section: 'loadflow' },
       { key: 'gen_control', label: 'Control Scheme', type: 'select', options: ['droop', 'sequential'], section: 'loadflow' },
       { key: 'start_threshold_pct', label: 'Start Threshold', type: 'number', unit: '%', min: 50, max: 100, step: 5, section: 'loadflow', showWhen: { field: 'gen_control', values: ['sequential'] } },
+      { key: 'voltage_setpoint_pu', label: 'Voltage Setpoint', type: 'number', unit: 'pu', min: 0.9, max: 1.1, step: 0.005, placeholder: '1.0', clearable: true, section: 'loadflow' },
       { key: 'q_max_mvar', label: 'Q Max (over-excited)', type: 'number', unit: 'MVAr', step: 0.1, placeholder: 'auto (rated pf)', clearable: true, section: 'loadflow' },
       { key: 'q_min_mvar', label: 'Q Min (under-excited)', type: 'number', unit: 'MVAr', step: 0.1, placeholder: 'auto (rated pf)', clearable: true, section: 'loadflow' },
       { key: 'xd_pp', label: "Xd''", type: 'number', unit: 'p.u.', section: 'fault' },
