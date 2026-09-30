@@ -110,17 +110,27 @@ with $\Phi$ from watts × efficacy (default 100 lm/W, beam 120°). Fine for a fi
 <p>A 3000 lm downlight, 120° cone, directly below (θ = 0), mounted 2.5 m above the working plane: $I_0=3000/(2\pi(1-\cos60^\circ))=3000/3.1416=955$ cd, so $E=955/2.5^2=\mathbf{153\ lx}$ under it.</p></div>` },
 
 { id: 'design-roadlight', group: 'design', title: 'Road lighting design (EN 13201 / SANS 10098-1)',
-  std: 'Street lighting ▸ Lighting design · EN 13201-2/-3/-5 · CIE r-tables',
-  kw: 'road lighting street lux luminance cd/m2 uniformity uo ul threshold increment ti rei edge ratio m class p class c class r3 r-table ies ldt eulumdat spacing optimise ulysse pdi aeci',
+  std: 'Street lighting ▸ Lighting design · SANS 10098-1/-2 · EN 13201-2/-3/-5 · CIE r-tables',
+  kw: 'road lighting street lux luminance cd/m2 uniformity uo ul threshold increment ti rei edge ratio m class p class c class a1 a2 a3 a4 b1 b2 b3 sans 10098 road class category r3 r-table ies ldt eulumdat spacing optimise ulysse pdi aeci',
   html: String.raw`
-<p>Street lighting ▸ <em>Lighting design</em> checks a straight road, drawn as a cross-section, against the EN 13201-2 lighting classes. SANS 10098-1 and CIE 115 use the same M, C and P classes. The strips are carriageways with lanes, footpaths, cycle tracks, verges and medians. One or more rows of luminaires repeat at a common spacing $S$. The calculation follows EN 13201-3.</p>
+<p>Street lighting ▸ <em>Lighting design</em> checks a straight road, drawn as a cross-section, against the lighting categories of the design's <em>Standard</em>: <b>SANS 10098-1</b> (the default for a new design) or <b>EN 13201-2</b>. The strips are carriageways with lanes, footpaths, cycle tracks, verges and medians. One or more rows of luminaires repeat at a common spacing $S$. The photometric calculation follows CIE 140 / EN 13201-3, which SANS 10098-1 adopts.</p>
+<h4>SANS 10098-1 categories</h4>
+<p>SANS 10098-1:2007 has its own categories; they are not the EN M/C/P classes.</p>
+<ul>
+<li><b>Group A</b> (A1 freeways and expressways over 90 km/h, A2 major roads, A3 important urban routes up to 60 km/h, A4 connecting and local distributor roads) is designed on luminance. Table 1 gives $\bar L$, $U_o$, $U_l$ and TI for the maximum traffic volume during darkness, per lane, and for a cross-section with or without a median. The design's median strip sets that column; each carriageway's <em>Night traffic</em> picks the volume. A volume between two columns takes the heavier one.</li>
+<li>$\bar L$, $U_o$ and TI come from <b>one observer</b>, 60 m before the field, 1.5 m high, a quarter of the carriageway width from the left-hand side of the road. For a carriageway with traffic travelling towards you, that is the far edge. $U_l$ is taken along each lane's centre line with the observer in that lane (Appendix D).</li>
+<li>The surround ratio ES is a design parameter with no tabulated limit, so it is reported but not checked.</li>
+<li><b>Groups B</b> (residential streets B1–B3) and <b>C</b> (wholly pedestrian C1, C2) are designed on horizontal illuminance $\bar E$ and $E_{min}$ (Table 2). A B category on a carriageway covers the carriageway plus the footways up to 2 m from its edge. The semi-cylindrical $E_{sc,min}$ is a supplementary criterion for higher-security areas and is not calculated yet.</li>
+<li>From <b>SANS 10098-2</b>: roadway complexes RC0–RC5 (Table 1, $\bar E$ and uniformity 0.4) and cycle / pedestrian ways CP1–CP6 (Table 3).</li>
+</ul>
+<p><em>Suggest…</em> beside each class proposes a category. For a road it uses the functional road class (1 trunk … 5 residential access), the speed limit, the night traffic and the median. For a junction it uses SANS 10098-2 Table 2, and for a cycle or pedestrian way its Table 4. It is a starting point; the road authority's classification governs.</p>
 <h4>Grid</h4>
 <p>The field runs between two consecutive luminaires of the first row. Along the road it has $N = 10$ points when $S \le 30$ m, otherwise the smallest $N$ that makes $D = S/N \le 3$ m. The first point is $D/2$ from the luminaire. For luminance there are 3 points per lane. For illuminance each strip gets $n \ge 3$ points across, spaced $d \le 1.5$ m.</p>
 <h4>Illuminance and luminance</h4>
 $$E=\text{MF}\sum_i \frac{I_i(C,\gamma)\cos^{3}\gamma_i}{H_i^{2}},\qquad L=\text{MF}\sum_i \frac{I_i(C,\gamma)\;r(\beta_i,\tan\gamma_i)}{H_i^{2}}$$
 <p>$I$ is read from the luminaire's measured Type C web. C0 runs along the road and C90 points across it to the side the row faces. The row's tilt and rotation are applied first. $r$ is the reduced luminance coefficient from the road surface's CIE table (R1–R4, C1, C2), read by linear interpolation. $\beta$ is the angle between the observer's vertical plane and the light's vertical plane at the point: 0 when the luminaire stands beyond the point. Luminance counts luminaires from 5H towards the observer to 12H beyond the point, and ignores any with $\tan\gamma > 12$. Illuminance counts luminaires within 5H.</p>
-<h4>Observer, uniformity and glare</h4>
-<p>The observer's eye is 1.5 m high, 60 m before the field, at the centre of each lane in turn. The reported values are the lowest $\bar L$ and $U_o = L_{min}/\bar L$ over those positions, and the lowest $U_l$, taken along the centre line of the observer's own lane.</p>
+<h4>Observer, uniformity and glare (EN 13201)</h4>
+<p>Under EN 13201 the observer's eye is 1.5 m high, 60 m before the field, at the centre of each lane in turn. The reported values are the lowest $\bar L$ and $U_o = L_{min}/\bar L$ over those positions, and the lowest $U_l$, taken along the centre line of the observer's own lane.</p>
 <p>The threshold increment uses initial values (no MF):</p>
 $$f_{TI} = \frac{65\,L_v}{\bar L^{0.8}}\ \%,\qquad L_v = 9.86\left[1+\left(\tfrac{23}{66.4}\right)^{4}\right]\sum_k \frac{E_{eye,k}}{\theta_k^{2}}$$
 <p>The line of sight is 1° below horizontal and $\theta$ is in degrees (1.5°–60°; the CIE 146 small-angle form is used below 1.5°). Luminaires above a 20° car-roof screen are hidden. The observer starts $2.75(H-1.5)$ before the field's first luminaire and moves across one field in steps of $D$. The reported $f_{TI}$ is the worst of those positions. REI is the ratio of $\bar E$ just outside each carriageway edge to $\bar E$ just inside it, on strips $\min(5\,\text{m}, W/2)$ wide.</p>

@@ -43,7 +43,9 @@ const RL_SURFACE_INFO = {
   C2: { short: 'Specular — C system (most asphalt)', q0: 0.07, s1: 0.97,
     desc: 'The two-class C system. Most asphalt surfaces; also the CIE 140 example table.' },
 };
-// EN 13201-2:2015 requirements (same as backend road_lighting.py) + what each family is for.
+// Lighting-class standards (values as backend road_lighting.py). A design
+// picks one (`standard`); a design saved before SANS support has none and is EN.
+// EN 13201-2:2015 — M / C / P classes.
 const RL_CLASS_REQ = {
   M1: 'L̄ ≥ 2.00 cd/m², Uo ≥ 0.40, Ul ≥ 0.70, TI ≤ 10 %, REI ≥ 0.35', M2: 'L̄ ≥ 1.50 cd/m², Uo ≥ 0.40, Ul ≥ 0.70, TI ≤ 10 %, REI ≥ 0.35',
   M3: 'L̄ ≥ 1.00 cd/m², Uo ≥ 0.40, Ul ≥ 0.60, TI ≤ 15 %, REI ≥ 0.30', M4: 'L̄ ≥ 0.75 cd/m², Uo ≥ 0.40, Ul ≥ 0.60, TI ≤ 15 %, REI ≥ 0.30',
@@ -61,6 +63,55 @@ const RL_CLASS_GROUPS = [
   { label: 'Conflict areas', list: ['C0', 'C1', 'C2', 'C3', 'C4', 'C5'] },
   { label: 'Pedestrian / low speed', list: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'] },
 ];
+// SANS 10098-1:2007 Table 1 (group A: Ln cd/m², Uo, UL, TI %) by cross-section
+// and traffic-volume column (0 = heaviest), Table 2 (groups B, C), and the
+// SANS 10098-2:2005 roadway-complex (Table 1) and cycle/pedestrian (Table 3) classes.
+const RL_SANS_A = {
+  A1: { noMedian: [[2, 0.4, 0.7, 15], [1.5, 0.4, 0.7, 20], [1, 0.4, 0.6, 20]], median: [[2, 0.4, 0.7, 15], [1.5, 0.4, 0.7, 20], [1, 0.4, 0.6, 20]] },
+  A2: { noMedian: [[1.5, 0.4, 0.7, 20], [1, 0.4, 0.6, 20], [0.8, 0.4, 0.5, 20]], median: [[1.5, 0.4, 0.7, 20], [1, 0.4, 0.6, 20], [0.8, 0.4, 0.5, 20]] },
+  A3: { noMedian: [[1, 0.4, 0.6, 20], [0.6, 0.4, 0.5, 20], [0.5, 0.4, 0.5, 20]], median: [[1, 0.4, 0.6, 20], [0.8, 0.4, 0.5, 20], [0.5, 0.4, 0.5, 20]] },
+  A4: { noMedian: [[0.75, 0.4, 0.5, 20], [0.5, 0.4, 0.5, 20], [0.3, 0.3, 0.5, 25]], median: [[0.75, 0.4, 0.5, 20], [0.5, 0.4, 0.5, 20], [0.3, 0.3, 0.5, 25]] },
+};
+const RL_SANS_BANDS = {
+  noMedian: ['> 600 veh/h/lane', '≤ 300 veh/h/lane', '≤ 100 veh/h/lane'],
+  median: ['> 900 veh/h/lane', '≤ 600 veh/h/lane', '≤ 200 veh/h/lane'],
+};
+const RL_SANS_CLASS_REQ = {
+  B1: 'Ē ≥ 5 lx, Emin ≥ 1 lx (Esc,min 2 lx supplementary)', B2: 'Ē ≥ 3 lx, Emin ≥ 0.6 lx (Esc,min 1 lx supplementary)', B3: 'Ē ≥ 2 lx, Emin ≥ 0.4 lx (Esc,min 0.6 lx supplementary)',
+  C1: 'Ē ≥ 10 lx, Emin ≥ 3 lx (Esc,min 7.5 lx supplementary)', C2: 'Ē ≥ 7.5 lx, Emin ≥ 1.5 lx (Esc,min 3 lx supplementary)',
+  RC0: 'Ē ≥ 50 lx, Uo ≥ 0.40', RC1: 'Ē ≥ 30 lx, Uo ≥ 0.40', RC2: 'Ē ≥ 20 lx, Uo ≥ 0.40', RC3: 'Ē ≥ 15 lx, Uo ≥ 0.40', RC4: 'Ē ≥ 10 lx, Uo ≥ 0.40', RC5: 'Ē ≥ 7.5 lx, Uo ≥ 0.40',
+  CP1: 'Ē ≥ 15 lx, Emin ≥ 5 lx', CP2: 'Ē ≥ 10 lx, Emin ≥ 3 lx', CP3: 'Ē ≥ 7.5 lx, Emin ≥ 1.5 lx', CP4: 'Ē ≥ 5 lx, Emin ≥ 1 lx', CP5: 'Ē ≥ 3 lx, Emin ≥ 0.6 lx', CP6: 'Ē ≥ 2 lx, Emin ≥ 0.6 lx',
+};
+const RL_SANS_NAMES = {
+  A1: 'Freeway / expressway with median, free of level crossings, > 90 km/h', A2: 'Major road, ≤ 90 km/h', A3: 'Important urban traffic route, ≤ 60 km/h',
+  A4: 'Connecting road, local distributor, residential major road',
+  B1: 'Residential street, medium to high traffic', B2: 'Residential street, medium traffic', B3: 'Residential street, low traffic',
+  C1: 'Wholly pedestrian, city centre', C2: 'Wholly pedestrian, local shopping mall',
+  RC0: 'Roadway complex class 0', RC1: 'Roadway complex class 1', RC2: 'Roadway complex class 2', RC3: 'Roadway complex class 3', RC4: 'Roadway complex class 4', RC5: 'Roadway complex class 5',
+  CP1: 'Cycle / pedestrian way class 1', CP2: 'Cycle / pedestrian way class 2', CP3: 'Cycle / pedestrian way class 3', CP4: 'Cycle / pedestrian way class 4', CP5: 'Cycle / pedestrian way class 5', CP6: 'Cycle / pedestrian way class 6',
+};
+const RL_SANS_GROUPS = [
+  { label: 'Group A — important routes (luminance)', list: ['A1', 'A2', 'A3', 'A4'] },
+  { label: 'Group B — residential streets', list: ['B1', 'B2', 'B3'] },
+  { label: 'Group C — pedestrian areas', list: ['C1', 'C2'] },
+  { label: 'Roadway complexes (SANS 10098-2)', list: ['RC0', 'RC1', 'RC2', 'RC3', 'RC4', 'RC5'] },
+  { label: 'Cycle / pedestrian ways (SANS 10098-2)', list: ['CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6'] },
+];
+const RL_SANS_FAMILY = {
+  A: 'Group A — important routes, designed on road-surface luminance (SANS 10098-1 Table 1). The values depend on the night-time traffic volume per lane and on whether the road has a median. L̄ and Uo are taken from one observer a quarter of the carriageway width in from the left; Ul from an observer in each lane.',
+  B: 'Group B — residential streets, designed on horizontal illuminance over the carriageway and the footways up to 2 m from its edge (Table 2). Semi-cylindrical illuminance is a supplementary criterion for higher-security areas.',
+  C: 'Group C — wholly pedestrian areas (Table 2).',
+  RC: 'Roadway complexes — interchanges, junctions (SANS 10098-2 Table 1); pick the class with SANS 10098-2 Table 2 (crime risk, facial recognition, navigation, pedestrians, ambient brightness). Where the feeder roads are lit, use the next higher road class instead if it is higher (4.2.2.3).',
+  CP: 'Cycle and pedestrian ways (SANS 10098-2 Table 3), selected with its Table 4.',
+};
+const RL_STANDARDS = [
+  { id: 'SANS', name: 'SANS 10098-1 (South Africa)' },
+  { id: 'EN', name: 'EN 13201-2 (M / C / P)' },
+];
+// Switching a design's standard maps each strip's class to the nearest
+// equivalent (the user reviews them — the families are not identical).
+const RL_EN_TO_SANS = { M1: 'A1', M2: 'A2', M3: 'A3', M4: 'A4', M5: 'A4', M6: 'A4', C0: 'RC0', C1: 'RC1', C2: 'RC2', C3: 'RC3', C4: 'RC4', C5: 'RC5' };
+const RL_SANS_TO_EN = { A1: 'M1', A2: 'M2', A3: 'M3', A4: 'M4', B1: 'P4', B2: 'P5', B3: 'P6', C1: 'P2', C2: 'P3', RC0: 'C0', RC1: 'C1', RC2: 'C2', RC3: 'C3', RC4: 'C4', RC5: 'C5', CP1: 'P1', CP2: 'P2', CP3: 'P3', CP4: 'P4', CP5: 'P5', CP6: 'P6' };
 const RL_SIDES = [
   { id: 'left', name: 'Left verge' },
   { id: 'right', name: 'Right verge' },
@@ -75,25 +126,26 @@ const RL_ARRANGEMENTS = [
   { id: 'twin-central', name: 'Twin central' },
   { id: 'custom', name: 'Custom rows' },
 ];
+// `cls` is the EN class, `sans` the SANS 10098-1 category for the same strip.
 const RL_TEMPLATES = [
   { id: 'two-lane', name: 'Two-lane 7.4 m + footpaths', sections: [
-    { type: 'footpath', width: 2, cls: 'P4' },
-    { type: 'carriageway', width: 7.4, lanes: 2, cls: 'M4', surface: 'R3' },
-    { type: 'footpath', width: 2, cls: 'P4' }] },
-  { id: 'residential', name: 'Residential 6 m (P class)', sections: [
-    { type: 'verge', width: 2, cls: '' },
-    { type: 'carriageway', width: 6, lanes: 2, cls: 'P3', surface: 'R3' },
-    { type: 'verge', width: 2, cls: '' }] },
+    { type: 'footpath', width: 2, cls: 'P4', sans: '' },
+    { type: 'carriageway', width: 7.4, lanes: 2, cls: 'M4', sans: 'A4', surface: 'R3' },
+    { type: 'footpath', width: 2, cls: 'P4', sans: '' }] },
+  { id: 'residential', name: 'Residential 6 m', sections: [
+    { type: 'verge', width: 2, cls: '', sans: '' },
+    { type: 'carriageway', width: 6, lanes: 2, cls: 'P3', sans: 'B2', surface: 'R3' },
+    { type: 'verge', width: 2, cls: '', sans: '' }] },
   { id: 'four-lane', name: 'Four-lane 14 m + footpaths', sections: [
-    { type: 'footpath', width: 2.5, cls: 'P3' },
-    { type: 'carriageway', width: 14, lanes: 4, cls: 'M3', surface: 'R3' },
-    { type: 'footpath', width: 2.5, cls: 'P3' }] },
+    { type: 'footpath', width: 2.5, cls: 'P3', sans: '' },
+    { type: 'carriageway', width: 14, lanes: 4, cls: 'M3', sans: 'A3', surface: 'R3' },
+    { type: 'footpath', width: 2.5, cls: 'P3', sans: '' }] },
   { id: 'dual', name: 'Dual carriageway 2 × 7.4 m, 4 m median', sections: [
-    { type: 'footpath', width: 2, cls: 'P4' },
-    { type: 'carriageway', width: 7.4, lanes: 2, cls: 'M3', surface: 'R3', direction: 'forward' },
-    { type: 'median', width: 4, cls: '' },
-    { type: 'carriageway', width: 7.4, lanes: 2, cls: 'M3', surface: 'R3', direction: 'reverse' },
-    { type: 'footpath', width: 2, cls: 'P4' }] },
+    { type: 'footpath', width: 2, cls: 'P4', sans: '' },
+    { type: 'carriageway', width: 7.4, lanes: 2, cls: 'M3', sans: 'A2', surface: 'R3', direction: 'forward' },
+    { type: 'median', width: 4, cls: '', sans: '' },
+    { type: 'carriageway', width: 7.4, lanes: 2, cls: 'M3', sans: 'A2', surface: 'R3', direction: 'reverse' },
+    { type: 'footpath', width: 2, cls: 'P4', sans: '' }] },
 ];
 
 const RoadLight = {
@@ -223,7 +275,7 @@ const RoadLight = {
     const des = {
       id: 'rd_' + (this.sl._rdSeq++),
       name: `Road ${this.designs.length + 1}`,
-      template: 'two-lane', arrangement: 'single-left',
+      template: 'two-lane', arrangement: 'single-left', standard: 'SANS',
       sections: [], rows: [], spacing: 35, mf: 0.8, hours: 4100,
       sweep: { min: 15, max: 60, step: 1 },
       optimise: { heights: '8, 10, 12', tilts: '0, 5, 10', overhangs: '0, 1, 2', fluxPcts: '100', photometryIds: [], rank: 'wPerKm' },
@@ -247,7 +299,45 @@ const RoadLight = {
     const t = RL_TEMPLATES.find(x => x.id === tid);
     if (!t) return;
     des.template = tid;
-    des.sections = t.sections.map(s => Object.assign({ id: this._genSecId(des), name: '', lanes: 2, surface: 'R3', direction: 'forward', cls: '' }, s));
+    const sans = this._std(des) === 'SANS';
+    des.sections = t.sections.map(s => {
+      const o = Object.assign({ id: this._genSecId(des), name: '', lanes: 2, surface: 'R3', direction: 'forward', cls: '', volume: 0 }, s);
+      o.cls = sans ? (s.sans || '') : (s.cls || '');
+      delete o.sans;
+      return o;
+    });
+  },
+
+  // ─── Standard (SANS 10098-1 / EN 13201-2) ────────────────────────────
+  _std(des) { return des && des.standard === 'SANS' ? 'SANS' : 'EN'; },
+  _hasMedian(des) { return des.sections.some(s => s.type === 'median' && this._num(s.width, 0) > 0); },
+  _classGroups(des) { return this._std(des) === 'SANS' ? RL_SANS_GROUPS : RL_CLASS_GROUPS; },
+  _isLumClass(des, cls) { return this._std(des) === 'SANS' ? /^A[1-4]$/.test(cls || '') : /^M[1-6]$/.test(cls || ''); },
+  // Requirement text for a strip's class — SANS group A depends on the
+  // strip's traffic band and the cross-section (median or not).
+  _clsReq(des, cls, s) {
+    if (!cls) return '';
+    if (this._std(des) !== 'SANS') return RL_CLASS_REQ[cls] || '';
+    if (RL_SANS_A[cls]) {
+      const set = this._hasMedian(des) ? 'median' : 'noMedian';
+      const v = Math.min(2, Math.max(0, Math.round(this._num(s && s.volume, 0))));
+      const [ln, uo, ul, ti] = RL_SANS_A[cls][set][v];
+      return `L̄ ≥ ${ln} cd/m², Uo ≥ ${uo}, Ul ≥ ${ul}, TI ≤ ${ti} % (${RL_SANS_BANDS[set][v]}, ${set === 'median' ? 'with' : 'without'} median)`;
+    }
+    return RL_SANS_CLASS_REQ[cls] || '';
+  },
+  _clsName(des, cls) { return this._std(des) === 'SANS' ? (RL_SANS_NAMES[cls] || cls) : cls; },
+  _setStandard(des, std) {
+    const to = std === 'SANS' ? 'SANS' : 'EN';
+    if (this._std(des) === to) return;
+    const map = to === 'SANS' ? RL_EN_TO_SANS : RL_SANS_TO_EN;
+    for (const s of des.sections) {
+      if (!s.cls) continue;
+      if (to === 'SANS' && /^P[1-6]$/.test(s.cls)) s.cls = s.type === 'carriageway' ? ({ P5: 'B2', P6: 'B3' }[s.cls] || 'B1') : 'CP' + s.cls.slice(1);
+      else s.cls = map[s.cls] || '';
+    }
+    des.standard = to;
+    UI.toast && UI.toast(`Classes mapped to ${to === 'SANS' ? 'SANS 10098-1' : 'EN 13201-2'} — check each strip's class.`);
   },
 
   _applyArrangement(des, arr) {
@@ -342,7 +432,8 @@ const RoadLight = {
     const photometry = {};
     for (const id of used) if (this.library[id]) photometry[id] = this.library[id];
     const out = {
-      sections: lay.secs.map(s => ({ type: s.type, name: s.name || this._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction: s.direction })),
+      standard: this._std(des),
+      sections: lay.secs.map(s => ({ type: s.type, name: s.name || this._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction: s.direction, volume: this._num(s.volume, 0) })),
       rows: this._rowsPayload(des, lay),
       spacing: this._num(des.spacing, 30), mf: this._num(des.mf, 0.8), hoursPerYear: this._num(des.hours, 4100),
       photometry, mode: 'verify',
@@ -473,7 +564,7 @@ const RoadLight = {
     }
     const opt = (list, sel) => list.map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('');
     const clsOpts = (sel) => `<option value=""${!sel ? ' selected' : ''}>— not lit / not checked</option>` +
-      RL_CLASS_GROUPS.map(g => `<optgroup label="${g.label}">${g.list.map(c => `<option value="${c}"${c === sel ? ' selected' : ''} title="${escHtml(RL_CLASS_REQ[c])}">${c}</option>`).join('')}</optgroup>`).join('');
+      this._classGroups(des).map(g => `<optgroup label="${g.label}">${g.list.map(c => `<option value="${c}"${c === sel ? ' selected' : ''} title="${escHtml(this._clsName(des, c) + ': ' + this._clsReq(des, c, null))}">${c}${this._std(des) === 'SANS' ? ' — ' + escHtml(RL_SANS_NAMES[c]) : ''}</option>`).join('')}</optgroup>`).join('');
     const libOpts = (sel) => (this.library[sel] ? '' : '<option value="" selected>— pick a luminaire —</option>') +
       this._libList().map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${escHtml(this._lumLabel(p))}</option>`).join('');
     const circuits = StreetLight.circuits;
@@ -489,6 +580,7 @@ const RoadLight = {
       <div class="rl-card">
         <div class="rl-card-head"><b>Cross-section</b><span class="sl-hint">left to right, looking in the direction of travel on the first carriageway. Each strip's <b>Class</b> is the lighting class it must meet.</span>
           <button class="btn-small rl-info-btn" data-rl="info" title="What the lighting classes and road surfaces mean">ⓘ Classes &amp; surfaces</button>
+          <label class="rl-inline" title="The standard each strip's lighting class is checked against">Standard<select data-dz="standard">${RL_STANDARDS.map(x => `<option value="${x.id}"${x.id === this._std(des) ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('')}</select></label>
           <label class="rl-inline">Template<select data-dz="template"><option value="">Apply a template…</option>${RL_TEMPLATES.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select></label>
           <button class="btn-small" data-rl="addsec">+ Strip</button></div>
         <table class="sl-table rl-table"><thead><tr><th>Strip</th><th>Name</th><th>Width m</th><th>Lanes</th><th title="EN 13201-2 / SANS 10098-1 lighting class the strip must meet — M traffic routes, C conflict areas, P pedestrian / residential">Class <button class="rl-icon rl-th-info" data-rl="info" aria-label="About lighting classes">ⓘ</button></th><th title="CIE road-surface reflection class (r-table), used for luminance">Surface <button class="rl-icon rl-th-info" data-rl="info" aria-label="About road surfaces">ⓘ</button></th><th title="Direction of travel the observer looks in">Traffic</th><th></th></tr></thead>
@@ -499,7 +591,8 @@ const RoadLight = {
             <td data-label="Name"><input data-sec="name" data-i="${i}" value="${escHtml(s.name || '')}" placeholder="${escHtml(this._secName(s, des))}"></td>
             <td data-label="Width m"><input type="number" step="0.1" min="0" data-sec="width" data-i="${i}" value="${escHtml(s.width)}" class="sl-in-num"></td>
             <td data-label="Lanes"${cw ? '' : ' class="rl-na"'}>${cw ? `<input type="number" step="1" min="1" data-sec="lanes" data-i="${i}" value="${escHtml(s.lanes)}" class="sl-in-num">` : '<span class="sl-k">—</span>'}</td>
-            <td data-label="Lighting class"><select data-sec="cls" data-i="${i}" title="${escHtml(s.cls ? `${s.cls}: ${RL_CLASS_REQ[s.cls] || ''}` : 'Not checked')}">${clsOpts(s.cls)}</select></td>
+            <td data-label="Lighting class" class="rl-cls-cell"><span class="rl-cls-pick"><select data-sec="cls" data-i="${i}" title="${escHtml(s.cls ? `${this._clsName(des, s.cls)}: ${this._clsReq(des, s.cls, s)}` : 'Not checked')}">${clsOpts(s.cls)}</select>${this._std(des) === 'SANS' && s.type !== 'median' ? `<button class="btn-small rl-suggest" data-rl-suggest="${i}" title="Suggest the SANS category from the road class, speed and traffic">Suggest</button>` : ''}</span>
+              ${cw && this._std(des) === 'SANS' && RL_SANS_A[s.cls] ? `<select data-sec="volume" data-i="${i}" class="rl-vol" title="Maximum traffic volume during darkness (SANS 10098-1 Table 1)">${RL_SANS_BANDS[this._hasMedian(des) ? 'median' : 'noMedian'].map((b, k) => `<option value="${k}"${this._num(s.volume, 0) === k ? ' selected' : ''}>Night traffic ${b}</option>`).join('')}</select>` : ''}</td>
             <td data-label="Road surface"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="surface" data-i="${i}" title="${escHtml(`${s.surface}: ${(RL_SURFACE_INFO[s.surface] || {}).desc || ''}`)}">${RL_SURFACES.map(x => `<option value="${x}"${x === s.surface ? ' selected' : ''} title="${escHtml(RL_SURFACE_INFO[x].desc)}">${x} — ${escHtml(RL_SURFACE_INFO[x].short)}</option>`).join('')}</select>` : '<span class="sl-k">—</span>'}</td>
             <td data-label="Traffic"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="direction" data-i="${i}"><option value="forward"${s.direction !== 'reverse' ? ' selected' : ''}>→ away</option><option value="reverse"${s.direction === 'reverse' ? ' selected' : ''}>← towards</option></select>` : '<span class="sl-k">—</span>'}</td>
             <td class="rl-row-actions"><button class="rl-icon" data-rl-secmv="-1" data-i="${i}" title="Move left" aria-label="Move left">←</button><button class="rl-icon" data-rl-secmv="1" data-i="${i}" title="Move right" aria-label="Move right">→</button><button class="rl-icon" data-rl-secdel="${i}" title="Remove" aria-label="Remove strip">×</button></td>
@@ -659,7 +752,13 @@ const RoadLight = {
     } else {
       body = `<div class="rl-kv"><span>Ē</span><b class="sl-mono">${this._fmt(a.Eav, 2)} lx</b><span>Emin</span><b class="sl-mono">${this._fmt(a.Emin, 2)} lx</b><span>Uo</span><b class="sl-mono">${this._fmt(a.UoE, 2)}</b></div>`;
     }
-    const extra = a.family === 'M' ? `<div class="sl-hint">Ē ${this._fmt(a.Eav, 1)} lx on the carriageway${a.REIsides && a.REIsides.length ? ` · REI ${a.REIsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')}` : ''}${a.observers && a.observers.length > 1 ? ` · worst of ${a.observers.length} observer lanes` : ''}</div>` : '';
+    let extra = '';
+    if (a.family === 'M') {
+      extra = `<div class="sl-hint">Ē ${this._fmt(a.Eav, 1)} lx on the carriageway${a.REIsides && a.REIsides.length ? ` · REI ${a.REIsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')}` : ''}${a.observers && a.observers.length > 1 ? ` · worst of ${a.observers.length} observer lanes` : ''}</div>`;
+    } else if (a.family === 'A') {
+      // SANS 10098-1 group A: the conventional observer, the Table 1 column used, and ES (reported only).
+      extra = `<div class="sl-hint">Night traffic ${escHtml(a.volumeBand || '')} per lane, ${escHtml(a.crossSection || '')} · L̄, Uo, TI from the observer at y = ${this._fmt(a.observer && a.observer.y, 2)} m (a quarter of the width from the left) · Ul per lane ${(a.observers || []).map(o => this._fmt(o.Ul, 2)).join(', ')} · Ē ${this._fmt(a.Eav, 1)} lx${a.ESsides && a.ESsides.length ? ` · surround ratio ES ${a.ESsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')} (no limit tabulated)` : ''}</div>`;
+    }
     return `<div class="rl-block"><div class="rl-block-h">${title}${badge}</div>${body}${extra}${a.note ? `<div class="sl-hint rl-note">${escHtml(a.note)}</div>` : ''}</div>`;
   },
 
@@ -817,11 +916,12 @@ const RoadLight = {
 
   // ─── Events ──────────────────────────────────────────────────────────
   _onClick(e) {
-    const t = e.target.closest('[data-rl], [data-rl-sel], [data-rl-ph], [data-rl-secdel], [data-rl-secmv], [data-rl-rowdel], [data-rl-use], [data-rl-optuse]');
+    const t = e.target.closest('[data-rl], [data-rl-sel], [data-rl-ph], [data-rl-secdel], [data-rl-secmv], [data-rl-rowdel], [data-rl-use], [data-rl-optuse], [data-rl-suggest]');
     if (!t) return;
     const des = this.selected;
     if (t.dataset.rlSel) { this._selId = t.dataset.rlSel; this.render(); if (!this._results[this._selId]) this.recompute(0); return; }
     if (t.dataset.rlPh) { this.openPhotometry(t.dataset.rlPh); return; }
+    if (t.dataset.rlSuggest !== undefined) { this.openSuggest(+t.dataset.rlSuggest); return; }
     if (t.dataset.rlUse) { this.useSpacing(+t.dataset.rlUse); return; }
     if (t.dataset.rlOptuse !== undefined && des) { this._useOption(des, this._opt[des.id].options[+t.dataset.rlOptuse]); return; }
     if (t.dataset.rlSecdel !== undefined && des) { des.sections.splice(+t.dataset.rlSecdel, 1); this._afterMutate(); return; }
@@ -858,6 +958,7 @@ const RoadLight = {
       if (k === 'name') { des.name = t.value || des.name; this._markDirty(); this.renderRail(); return; }
       if (k === 'template') { if (t.value) { this._applyTemplate(des, t.value); if (des.arrangement === 'twin-central' && !des.sections.some(s => s.type === 'median')) this._applyArrangement(des, 'single-left'); } this._afterMutate(); return; }
       if (k === 'arrangement') { this._applyArrangement(des, t.value); this._afterMutate(); return; }
+      if (k === 'standard') { this._setStandard(des, t.value); this._afterMutate(); return; }
       des[k] = this._num(t.value, des[k]);
       this._afterMutate(false);
       this._paintSection();
@@ -868,10 +969,12 @@ const RoadLight = {
       const s = des.sections[+d.i];
       if (!s) return;
       if (d.sec === 'type' || d.sec === 'name' || d.sec === 'cls' || d.sec === 'surface' || d.sec === 'direction') s[d.sec] = t.value;
+      else if (d.sec === 'volume') s.volume = Math.round(this._num(t.value, 0));
       else s[d.sec] = Math.max(d.sec === 'lanes' ? 1 : 0, this._num(t.value, s[d.sec]));
       if (d.sec === 'lanes') s.lanes = Math.round(s.lanes);
-      this._afterMutate(d.sec === 'type');
-      if (d.sec !== 'type') this._paintSection();
+      const structural = d.sec === 'type' || d.sec === 'cls' || d.sec === 'volume';
+      this._afterMutate(structural);
+      if (!structural) this._paintSection();
       return;
     }
     if (d.row) {
@@ -892,32 +995,184 @@ const RoadLight = {
   // for a carriageway, what its road surface is — readable on a phone, where
   // hover tooltips never show.
   _secNotes(des) {
+    const sans = this._std(des) === 'SANS';
     const lines = des.sections.filter(s => s.cls || s.type === 'carriageway').map(s => {
-      const fam = (s.cls || '')[0];
-      const cls = s.cls ? `<b>${escHtml(s.cls)}</b> ${escHtml(RL_CLASS_REQ[s.cls] || '')}` : '<span class="sl-k">no class — not checked</span>';
-      const warn = fam === 'M' && s.type !== 'carriageway' ? ' <span class="rl-bad">M classes apply to a carriageway</span>' : '';
+      const lum = this._isLumClass(des, s.cls);
+      const cls = s.cls ? `<b>${escHtml(s.cls)}</b>${sans ? ' ' + escHtml(RL_SANS_NAMES[s.cls] || '') + ' —' : ''} ${escHtml(this._clsReq(des, s.cls, s))}` : '<span class="sl-k">no class — not checked</span>';
+      const warn = lum && s.type !== 'carriageway' ? ` <span class="rl-bad">${sans ? 'Group A categories' : 'M classes'} apply to a carriageway</span>` : '';
+      const area = sans && /^B[1-3]$/.test(s.cls || '') && s.type === 'carriageway' ? ' <span class="sl-k">(over the carriageway and footways up to 2 m from its edge)</span>' : '';
       const surf = s.type === 'carriageway' && RL_SURFACE_INFO[s.surface]
-        ? ` · <b>${escHtml(s.surface)}</b> ${escHtml(RL_SURFACE_INFO[s.surface].short.toLowerCase())}${fam === 'M' ? '' : ' <span class="sl-k">(used for M classes only)</span>'}` : '';
-      return `<li><span class="rl-note-strip">${escHtml(s.name || this._secName(s, des))}</span> ${cls}${warn}${surf}</li>`;
+        ? ` · <b>${escHtml(s.surface)}</b> ${escHtml(RL_SURFACE_INFO[s.surface].short.toLowerCase())}${lum ? '' : ` <span class="sl-k">(used for ${sans ? 'group A' : 'M classes'} only)</span>`}` : '';
+      return `<li><span class="rl-note-strip">${escHtml(s.name || this._secName(s, des))}</span> ${cls}${area}${warn}${surf}</li>`;
     });
     return lines.length ? `<ul class="rl-sec-notes">${lines.join('')}</ul>` : '';
   },
 
   openInfo() {
-    const fam = (f, list) => `<div class="rl-info-fam"><div class="rl-solve-t">${f} classes</div><p class="rl-lead">${escHtml(RL_CLASS_FAMILY[f])}</p>
-      <table class="rl-chk"><tbody>${list.map(c => `<tr><td><b>${c}</b></td><td>${escHtml(RL_CLASS_REQ[c])}</td></tr>`).join('')}</tbody></table></div>`;
+    const des = this.selected;
+    const sans = this._std(des) === 'SANS';
+    const tbl = (list, reqOf) => `<table class="rl-chk"><tbody>${list.map(c => `<tr><td><b>${c}</b></td><td>${sans ? `${escHtml(RL_SANS_NAMES[c])}<br><span class="sl-k">${escHtml(reqOf(c))}</span>` : escHtml(reqOf(c))}</td></tr>`).join('')}</tbody></table>`;
+    let classes;
+    if (sans) {
+      const set = des && this._hasMedian(des) ? 'median' : 'noMedian';
+      const aTable = `<table class="rl-chk"><thead><tr><th></th>${RL_SANS_BANDS[set].map(b => `<th>${escHtml(b)}</th>`).join('')}</tr></thead><tbody>
+        ${Object.keys(RL_SANS_A).map(c => `<tr><td><b>${c}</b></td>${RL_SANS_A[c][set].map(([ln, uo, ul, ti]) => `<td class="sl-mono">L̄ ${ln} · Uo ${uo} · Ul ${ul} · TI ${ti}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <p class="sl-hint">${Object.keys(RL_SANS_A).map(c => `<b>${c}</b> ${escHtml(RL_SANS_NAMES[c])}`).join(' · ')}. Shown ${set === 'median' ? 'with' : 'without'} a median, as this cross-section is. Traffic is the maximum volume during darkness; a volume between two columns takes the heavier one.</p>`;
+      classes = `
+        <p class="rl-lead">Each strip of the cross-section gets its own <b>category</b> in the <i>Class</i> column, from SANS 10098-1:2007 (tables 1 and 2) and, for junctions and cycle / pedestrian ways, SANS 10098-2:2005. <i>Suggest…</i> picks one from the road's functional class, speed and traffic. Requirements are maintained values: the MF is applied.</p>
+        <div class="rl-info-fam"><div class="rl-solve-t">Group A</div><p class="rl-lead">${escHtml(RL_SANS_FAMILY.A)}</p>${aTable}</div>
+        <div class="rl-info-fam"><div class="rl-solve-t">Groups B and C</div><p class="rl-lead">${escHtml(RL_SANS_FAMILY.B)} ${escHtml(RL_SANS_FAMILY.C)}</p>${tbl(['B1', 'B2', 'B3', 'C1', 'C2'], c => RL_SANS_CLASS_REQ[c])}</div>
+        <div class="rl-info-fam"><div class="rl-solve-t">SANS 10098-2 — roadway complexes</div><p class="rl-lead">${escHtml(RL_SANS_FAMILY.RC)} Table 1 prints 0,4 under E<sub>min</sub>; it is read here as the uniformity ratio E<sub>min</sub>/Ē, as clause 9 uses for traffic circles.</p>${tbl(['RC0', 'RC1', 'RC2', 'RC3', 'RC4', 'RC5'], c => RL_SANS_CLASS_REQ[c])}</div>
+        <div class="rl-info-fam"><div class="rl-solve-t">SANS 10098-2 — cycle and pedestrian ways</div><p class="rl-lead">${escHtml(RL_SANS_FAMILY.CP)}</p>${tbl(['CP1', 'CP2', 'CP3', 'CP4', 'CP5', 'CP6'], c => RL_SANS_CLASS_REQ[c])}</div>`;
+    } else {
+      const fam = (f, list) => `<div class="rl-info-fam"><div class="rl-solve-t">${f} classes</div><p class="rl-lead">${escHtml(RL_CLASS_FAMILY[f])}</p>${tbl(list, c => RL_CLASS_REQ[c])}</div>`;
+      classes = `
+        <p class="rl-lead">Each strip of the cross-section gets its own <b>lighting class</b> in the <i>Class</i> column, from EN 13201-2:2015 (as CIE 115). For a South African design, switch the design's <i>Standard</i> to SANS 10098-1: its categories and observer rule differ.</p>
+        ${fam('M', ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'])}${fam('C', ['C0', 'C1', 'C2', 'C3', 'C4', 'C5'])}${fam('P', ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'])}`;
+    }
     this._modal('rl-info-modal', 'Lighting classes &amp; road surfaces', `
-      <p class="rl-lead">Each strip of the cross-section gets its own <b>lighting class</b> in the <i>Class</i> column. The class is chosen from the road's speed, traffic volume and mix, junctions, parking, pedestrians and ambient brightness; use the selection procedure in SANS 10098-1 (or CEN/TR 13201-1). Classes are those of EN 13201-2, which SANS 10098-1 and CIE 115 share.</p>
-      ${fam('M', ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'])}
-      ${fam('C', ['C0', 'C1', 'C2', 'C3', 'C4', 'C5'])}
-      ${fam('P', ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'])}
+      ${classes}
       <div class="rl-info-fam"><div class="rl-solve-t">Road surfaces</div>
-      <p class="rl-lead">For M classes the luminance depends on how the surface reflects light towards the driver. Each CIE class is a table of reduced luminance coefficients. <b>Q0</b> is how bright the surface is on average. <b>S1</b> is how mirror-like it is: a high S1 makes the bright patches under the far luminaires stand out and lowers uniformity. Pick R3 for ordinary asphalt unless measurements say otherwise.</p>
+      <p class="rl-lead">For luminance designs the result depends on how the surface reflects light towards the driver. Each CIE class is a table of reduced luminance coefficients. <b>Q0</b> is how bright the surface is on average. <b>S1</b> is how mirror-like it is: a high S1 makes the bright patches under the far luminaires stand out and lowers uniformity. SANS 10098-1 (4.1) takes R3 as representative of the dense-mix bituminous surfaces generally used in South Africa.</p>
       <table class="rl-chk"><thead><tr><th>Class</th><th>Surface</th><th>Q0</th><th>S1</th></tr></thead><tbody>
       ${RL_SURFACES.map(k => `<tr><td><b>${k}</b></td><td>${escHtml(RL_SURFACE_INFO[k].desc)}</td><td class="sl-mono">${RL_SURFACE_INFO[k].q0.toFixed(2)}</td><td class="sl-mono">${RL_SURFACE_INFO[k].s1.toFixed(2)}</td></tr>`).join('')}
       </tbody></table></div>`,
       `<button class="btn-small btn-primary" data-m="close">Close</button>`, 'rl-modal-wide');
     this._modalResult(document.getElementById('rl-info-modal'));
+  },
+
+  // ─── SANS class helper ───────────────────────────────────────────────
+  // Functional road class (Definition of road classes, after the Guidelines for
+  // the Provision of Engineering Services in Residential Townships) → SANS
+  // 10098-1 category; SANS 10098-2 tables 2 and 4 for junctions and cycle /
+  // pedestrian ways. Always a suggestion — the designer confirms it.
+  ROAD_CLASSES: [
+    { id: '1', name: 'Class 1 — Trunk road (freeway, national, provincial, inter-regional)' },
+    { id: '2', name: 'Class 2 — Primary distributor (urban freeway, expressway, major arterial)' },
+    { id: '3', name: 'Class 3 — District distributor (minor arterial, major collector)' },
+    { id: '4', name: 'Class 4 — Local distributor (minor collector, collector street)' },
+    { id: '5a', name: 'Class 5a — Residential access collector (up to ~200 dwellings)' },
+    { id: '5b', name: 'Class 5b — Residential access loop (up to ~120 dwellings)' },
+    { id: '5c', name: 'Class 5c — Access cul-de-sac (6–60 dwellings)' },
+    { id: '5d', name: 'Class 5d — Access way (up to 60 dwellings)' },
+    { id: '5e', name: 'Class 5e — Access court (up to ~30 dwellings)' },
+    { id: '5f', name: 'Class 5f — Access strip / panhandle (up to 4 dwellings)' },
+    { id: '5g', name: 'Class 5g — Private road' },
+  ],
+  // SANS 10098-2 Table 2 (roadway complexes): [security group][navigational task High, Normal]
+  // → classes for pedestrians High (brightness H, M, L) then Normal (H, M, L).
+  RC_TABLE: [
+    [[0, 0, 1, 1, 1, 2], [1, 1, 1, 2, 2, 3]],
+    [[1, 2, 2, 2, 3, 3], [1, 2, 2, 2, 3, 4]],
+    [[2, 2, 3, 3, 4, 4], [2, 3, 3, 4, 5, 5]],
+  ],
+  // SANS 10098-2 Table 4 (cycle / pedestrian ways): [crime × recognition] → cyclists High (H, M, L), Normal (H, M, L).
+  CP_TABLE: { 'high-nec': [1, 2, 3, 1, 2, 3], 'high-unn': [1, 2, 3, 2, 3, 4], 'normal-nec': [2, 3, 4, 3, 5, 5], 'normal-unn': [3, 4, 5, 4, 5, 6] },
+
+  _suggestRoad(q, median) {
+    const why = [], sp = this._num(q.speed, NaN), v = this._num(q.volume, NaN);
+    let cls, alts = [];
+    switch (q.roadClass) {
+      case '1': case '2':
+        if (median && sp > 90) { cls = 'A1'; why.push('Freeway / expressway with a median and a speed limit over 90 km/h → A1.'); }
+        else { cls = 'A2'; why.push(`A2 (major road). A1 needs a median, no level crossings and over 90 km/h; this road has ${median ? 'a median' : 'no median'} and ${sp > 90 ? 'over' : 'at most'} 90 km/h.`); alts = ['A1']; }
+        break;
+      case '3':
+        if (sp <= 60) { cls = 'A3'; why.push('District distributor at ≤ 60 km/h — an important urban traffic route → A3.'); alts = ['A2']; }
+        else { cls = 'A2'; why.push('District distributor above 60 km/h → A2 (major road ≤ 90 km/h).'); alts = ['A3']; }
+        break;
+      case '4': cls = 'A4'; why.push('Local distributor — connecting / residential major road → A4.'); break;
+      case '5a': cls = 'B1'; why.push('Residential access collector, the busiest class-5 road → B1 (medium to high traffic).'); alts = ['B2']; break;
+      case '5b': cls = 'B2'; why.push('Residential access loop → B2 (medium traffic).'); alts = ['B1', 'B3']; break;
+      default: cls = 'B2'; why.push('The road-class definitions map class 5 roads to B1 / B2. A very lightly trafficked access road may justify B3 (residential street, low traffic) — confirm with the road authority.'); alts = ['B3']; break;
+    }
+    let volume = 0;
+    if (RL_SANS_A[cls]) {
+      const [lo, mid] = median ? [200, 600] : [100, 300];
+      if (!(v >= 0)) { volume = 0; why.push(`No night-time traffic given — the heaviest column (${RL_SANS_BANDS[median ? 'median' : 'noMedian'][0]}) is used.`); }
+      else {
+        volume = v <= lo ? 2 : v <= mid ? 1 : 0;
+        why.push(`${Math.round(v)} veh/h/lane at night, ${median ? 'with' : 'without'} a median → column ${RL_SANS_BANDS[median ? 'median' : 'noMedian'][volume]} (a volume between two columns takes the heavier).`);
+      }
+    }
+    return { cls, volume, alts, why };
+  },
+
+  _suggestJunction(q) {
+    const group = q.crime === 'high' && q.face === 'nec' ? 0 : q.crime === 'normal' && q.face === 'unn' ? 2 : 1;
+    const col = (q.peds === 'high' ? 0 : 3) + ({ high: 0, medium: 1, low: 2 }[q.bright] || 0);
+    const n = this.RC_TABLE[group][q.nav === 'high' ? 0 : 1][col];
+    const why = [`SANS 10098-2 Table 2 → class ${n}.`];
+    if (group === 1) why.push('Table 2 lists a middle pair of rows without a crime / recognition label; it is used here when only one of "high crime risk" and "facial recognition necessary" applies.');
+    why.push('If the feeder roads are lit, use the next higher road class instead where it is higher (SANS 10098-2 4.2.2.3).');
+    return { cls: 'RC' + n, volume: 0, alts: [], why };
+  },
+
+  _suggestPath(q) {
+    const row = this.CP_TABLE[`${q.crime}-${q.face}`];
+    const col = (q.cyclists === 'high' ? 0 : 3) + ({ high: 0, medium: 1, low: 2 }[q.bright] || 0);
+    const n = row[col];
+    return { cls: 'CP' + n, volume: 0, alts: [], why: [`SANS 10098-2 Table 4 → cycle / pedestrian way class ${n}.`, 'A footway beside a group B street is already covered, up to 2 m from the kerb, by the street\'s category — give it a class only if it needs its own.'] };
+  },
+
+  async openSuggest(i) {
+    const des = this.selected;
+    const s = des && des.sections[i];
+    if (!s) return;
+    const cw = s.type === 'carriageway';
+    const median = this._hasMedian(des);
+    const q = Object.assign({ mode: cw ? 'road' : 'path', roadClass: '4', speed: 60, volume: '', crime: 'normal', face: 'unn', nav: 'normal', peds: 'normal', bright: 'medium', cyclists: 'normal' }, s._suggest || {});
+    const sel = (k, opts) => `<select data-q="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(q[k]) === v ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select>`;
+    const body = () => {
+      const res = q.mode === 'road' ? this._suggestRoad(q, median) : q.mode === 'junction' ? this._suggestJunction(q) : q.mode === 'ped' ? { cls: q.pedArea || 'C2', volume: 0, alts: [], why: ['SANS 10098-1 Table 2: C1 wholly pedestrian in a city centre, C2 in a local shopping mall.'] } : this._suggestPath(q);
+      this._suggestion = res;
+      const modes = cw ? [['road', 'Road'], ['junction', 'Junction / roadway complex']] : [['path', 'Cycle / pedestrian way'], ['ped', 'Wholly pedestrian area']];
+      let form = '';
+      if (q.mode === 'road') form = `
+        <label>Functional road class${sel('roadClass', this.ROAD_CLASSES.map(r => [r.id, r.name]))}</label>
+        <label>Speed limit<span class="sl-unit"><input type="number" step="10" data-q="speed" value="${escHtml(q.speed)}"> km/h</span></label>
+        <label title="Maximum motor vehicles per hour per lane during darkness (SANS 10098-1 Table 1)">Night traffic per lane<span class="sl-unit"><input type="number" step="50" data-q="volume" value="${escHtml(q.volume)}" placeholder="unknown"> veh/h</span></label>
+        <div class="sl-hint">Cross-section: ${median ? 'with' : 'without'} a median (from the strips).</div>`;
+      else if (q.mode === 'junction') form = `
+        <label>Crime risk${sel('crime', [['high', 'High'], ['normal', 'Normal']])}</label>
+        <label>Facial recognition${sel('face', [['nec', 'Necessary'], ['unn', 'Unnecessary']])}</label>
+        <label>Navigational task${sel('nav', [['high', 'High (complex)'], ['normal', 'Normal']])}</label>
+        <label>Pedestrian traffic${sel('peds', [['high', 'High'], ['normal', 'Normal']])}</label>
+        <label>Ambient brightness${sel('bright', [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}</label>`;
+      else if (q.mode === 'ped') form = `<label>Area${sel('pedArea', [['C1', 'C1 — wholly pedestrian, city centre'], ['C2', 'C2 — wholly pedestrian, local shopping mall']])}</label>`;
+      else form = `
+        <label>Crime risk${sel('crime', [['high', 'High'], ['normal', 'Normal']])}</label>
+        <label>Facial recognition${sel('face', [['nec', 'Necessary'], ['unn', 'Unnecessary']])}</label>
+        <label>Cyclist traffic${sel('cyclists', [['high', 'High'], ['normal', 'Normal']])}</label>
+        <label>Ambient brightness${sel('bright', [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}</label>`;
+      const req = this._clsReq(des, res.cls, { volume: res.volume });
+      return `
+        <div class="rl-seg">${modes.map(([v, n]) => `<button type="button" class="${q.mode === v ? 'active' : ''}" data-q-mode="${v}">${n}</button>`).join('')}</div>
+        <div class="rl-form">${form}</div>
+        <div class="rl-suggest-out">
+          <div class="rl-suggest-cls"><span class="rl-cls">${escHtml(res.cls)}</span> <b>${escHtml(RL_SANS_NAMES[res.cls] || '')}</b></div>
+          <div class="sl-hint">${escHtml(req)}</div>
+          <ul>${res.why.map(w => `<li>${escHtml(w)}</li>`).join('')}</ul>
+          ${res.alts.length ? `<div class="sl-hint">Also consider: ${res.alts.map(a => `<button type="button" class="btn-small" data-q-alt="${a}">${a}</button>`).join(' ')}</div>` : ''}
+        </div>`;
+    };
+    const m = this._modal('rl-suggest-modal', `Suggest a category — ${escHtml(s.name || this._secName(s, des))}`, body(),
+      `<button class="btn-small" data-m="close">Cancel</button><button class="btn-small btn-primary" data-m="ok">Use this category</button>`);
+    const bodyEl = m.querySelector('.rl-dialog-body');
+    const refresh = () => { bodyEl.innerHTML = body(); };
+    bodyEl.addEventListener('change', (e) => { const k = e.target.dataset.q; if (k) { q[k] = e.target.value; refresh(); } });
+    bodyEl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-q-mode], [data-q-alt]');
+      if (!b) return;
+      if (b.dataset.qMode) { q.mode = b.dataset.qMode; refresh(); }
+      else { this._suggestion = Object.assign({}, this._suggestion, { cls: b.dataset.qAlt }); bodyEl.querySelector('.rl-suggest-cls').innerHTML = `<span class="rl-cls">${escHtml(b.dataset.qAlt)}</span> <b>${escHtml(RL_SANS_NAMES[b.dataset.qAlt] || '')}</b>`; }
+    });
+    if (!(await this._modalResult(m))) return;
+    const res = this._suggestion;
+    s.cls = res.cls;
+    if (RL_SANS_A[res.cls]) s.volume = res.volume;
+    s._suggest = Object.assign({}, q);
+    this._afterMutate();
   },
 
   // ─── Photometry detail ───────────────────────────────────────────────

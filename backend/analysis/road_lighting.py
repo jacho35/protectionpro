@@ -11,9 +11,16 @@ Ulysse / EN 13201-3 model, and it is what this engine solves:
     C1/C2) and an observer 60 m before the field, 1.5 m high, in each lane
   • Threshold increment TI (disability glare) with the 20° car-roof screen,
     edge illumination ratio REI, overall Uo and longitudinal Ul uniformity
-  • The EN 13201-2 class checks (M1–M6, C0–C5, P1–P6) — the same classes as
-    SANS 10098-1 / CIE 115 — and the EN 13201-5 energy indicators PDI (D_P)
-    and AECI (D_E), plus W/km and poles/km
+  • Class checks to one of two standards, chosen per design (`standard`):
+      EN    EN 13201-2 M1–M6, C0–C5, P1–P6 (the default for a request without
+            one — designs saved before SANS support keep their results)
+      SANS  SANS 10098-1:2007 group A1–A4 (luminance, by traffic volume and
+            median), B1–B3 / C1–C2 (illuminance incl. 2 m of footway), plus the
+            SANS 10098-2 roadway-complex RC0–RC5 and cycle/pedestrian CP1–CP6
+            classes. SANS takes L̄ and Uo from one observer a quarter of the
+            carriageway width from the left, where EN takes each lane's worst.
+  • The EN 13201-5 energy indicators PDI (D_P) and AECI (D_E), plus W/km and
+    poles/km
   • A max-spacing solver and a multi-variable optimiser (height × tilt ×
     overhang × luminaire × dimming) ranked by W/km, poles/km or PDI
 
@@ -37,7 +44,7 @@ import numpy as np
 
 from .road_rtables import RTABLES
 
-# ─── EN 13201-2:2015 lighting classes (also SANS 10098-1 / CIE 115) ─────
+# ─── EN 13201-2:2015 lighting classes (as CIE 115) ─────────────────────
 
 M_CLASSES = {
     "M1": {"Lav": 2.00, "Uo": 0.40, "Ul": 0.70, "TI": 10, "REI": 0.35},
@@ -57,6 +64,51 @@ P_CLASSES = {
     "P3": {"Eav": 7.50, "Emin": 1.50}, "P4": {"Eav": 5.00, "Emin": 1.00},
     "P5": {"Eav": 3.00, "Emin": 0.60}, "P6": {"Eav": 2.00, "Emin": 0.40},
 }
+
+# ─── SANS 10098-1:2007 (ed. 3.3) categories — South Africa ──────────────
+# Group A (luminance): Table 1, per traffic volume during darkness (motor
+# vehicles / h / lane) and cross-section; values (Ln, Uo, UL, TI). Columns are
+# maximum volumes: without median ≤100 / ≤300 / >600, with median ≤200 / ≤600 /
+# >900 — `volume` 0 = heaviest column, 2 = lightest. A volume between two
+# columns takes the heavier one (conservative).
+SANS_A = {
+    "A1": {"noMedian": [(2.0, 0.4, 0.7, 15), (1.5, 0.4, 0.7, 20), (1.0, 0.4, 0.6, 20)],
+           "median":   [(2.0, 0.4, 0.7, 15), (1.5, 0.4, 0.7, 20), (1.0, 0.4, 0.6, 20)]},
+    "A2": {"noMedian": [(1.5, 0.4, 0.7, 20), (1.0, 0.4, 0.6, 20), (0.8, 0.4, 0.5, 20)],
+           "median":   [(1.5, 0.4, 0.7, 20), (1.0, 0.4, 0.6, 20), (0.8, 0.4, 0.5, 20)]},
+    "A3": {"noMedian": [(1.0, 0.4, 0.6, 20), (0.6, 0.4, 0.5, 20), (0.5, 0.4, 0.5, 20)],
+           "median":   [(1.0, 0.4, 0.6, 20), (0.8, 0.4, 0.5, 20), (0.5, 0.4, 0.5, 20)]},
+    "A4": {"noMedian": [(0.75, 0.4, 0.5, 20), (0.5, 0.4, 0.5, 20), (0.3, 0.3, 0.5, 25)],
+           "median":   [(0.75, 0.4, 0.5, 20), (0.5, 0.4, 0.5, 20), (0.3, 0.3, 0.5, 25)]},
+}
+SANS_VOLUME_BANDS = {"noMedian": (">600", "≤300", "≤100"), "median": (">900", "≤600", "≤200")}
+# Groups B and C (horizontal illuminance): Table 2 — Ē, Emin and the
+# supplementary semi-cylindrical Esc,min. On a carriageway the area extends
+# onto the footways up to 2 m from its edge (Table 2 note a).
+SANS_BC = {
+    "B1": {"Eav": 5.0, "Emin": 1.0, "Esc": 2.0}, "B2": {"Eav": 3.0, "Emin": 0.6, "Esc": 1.0},
+    "B3": {"Eav": 2.0, "Emin": 0.4, "Esc": 0.6},
+    "C1": {"Eav": 10.0, "Emin": 3.0, "Esc": 7.5}, "C2": {"Eav": 7.5, "Emin": 1.5, "Esc": 3.0},
+}
+SANS_FOOTWAY_M = 2.0
+# SANS 10098-2:2005 — roadway complexes (Table 1: Ē and 0,4, read as the
+# uniformity ratio as in clause 9) and cycle / pedestrian ways (Table 3).
+SANS_RC = {f"RC{i}": {"Eav": v, "Uo": 0.4} for i, v in enumerate((50.0, 30.0, 20.0, 15.0, 10.0, 7.5))}
+SANS_CP = {f"CP{i + 1}": {"Eav": e, "Emin": m} for i, (e, m) in enumerate(((15, 5), (10, 3), (7.5, 1.5), (5, 1.0), (3, 0.6), (2, 0.6)))}
+
+
+def sans_family(cls: str) -> str:
+    c = (cls or "").upper()
+    if c in SANS_A:
+        return "A"
+    if c in SANS_BC:
+        return "B"
+    if c in SANS_RC:
+        return "RC"
+    if c in SANS_CP:
+        return "CP"
+    return ""
+
 
 OBSERVER_BACK_M = 60.0      # observer distance before the field (EN 13201-3 §7.1.4)
 OBSERVER_EYE_M = 1.5        # eye height
@@ -154,6 +206,9 @@ class _Design:
         self.req = req
         self.mf = min(max(_f(req.get("mf"), 0.8), 0.05), 1.0)
         self.hours = max(_f(req.get("hoursPerYear"), 4100.0), 0.0)
+        # "EN" (EN 13201-2/-3, the default for a request without one — designs
+        # saved before SANS support) or "SANS" (SANS 10098-1/-2).
+        self.standard = "SANS" if str(req.get("standard") or "EN").upper().startswith("SANS") else "EN"
         self.webs = webs if webs is not None else {k: _Web(v) for k, v in (req.get("photometry") or {}).items()}
         y = 0.0
         self.sections = []
@@ -169,8 +224,9 @@ class _Design:
                 "cls": (s.get("cls") or "").upper(),
                 "surface": (s.get("surface") or "R3").upper(),
                 "direction": s.get("direction") or "forward",
+                "volume": min(max(int(_f(s.get("volume"), 0)), 0), 2),
             }
-            sec["family"] = class_family(sec["cls"])
+            sec["family"] = sans_family(sec["cls"]) if self.standard == "SANS" else class_family(sec["cls"])
             self.sections.append(sec)
             y += w
         self.width = y
@@ -198,6 +254,8 @@ class _Design:
             raise ValueError("No luminaire rows")
         if not self.sections:
             raise ValueError("No road cross-section")
+        # SANS Table 1 picks its column by the cross-section: with or without a median.
+        self.has_median = any(s["type"] == "median" for s in self.sections)
 
     def with_params(self, **kw):
         """A copy with every row's height/tilt/overhang/photometry/flux overridden."""
@@ -370,7 +428,9 @@ def evaluate(des: _Design, S: float, full: bool = True, stop_on_fail: bool = Fal
             lit_power_area += e_av * sec["width"] * S
             lit_area += sec["width"] * S
         fam = sec["family"]
-        if fam == "M" and sec["type"] == "carriageway":
+        if des.standard == "SANS":
+            _sans_checks(des, sec, res, xs, D, S, lum, full, E)
+        elif fam == "M" and sec["type"] == "carriageway":
             _luminance_checks(des, sec, res, xs, D, S, lum, full)
         elif fam == "C":
             req = C_CLASSES[sec["cls"]]
@@ -466,6 +526,122 @@ def _luminance_checks(des, sec, res, xs, D, S, lum, full):
     ]
     if res["REI"] is not None:
         res["checks"].append(_chk("REI", "REI", res["REI"], req["REI"], ">=", ""))
+
+
+def _sans_checks(des, sec, res, xs, D, S, lum, full, E):
+    """SANS 10098-1 / -2 checks for one strip (res already holds its Ē grid)."""
+    fam, cls = sec["family"], sec["cls"]
+    if fam == "A":
+        if sec["type"] != "carriageway":
+            res["note"] = "Group A categories apply to a carriageway — this strip is not checked"
+            return
+        _sans_luminance(des, sec, res, xs, D, S, lum, full)
+    elif fam == "B":
+        # On a carriageway the area runs onto the footways up to 2 m from each
+        # edge (Table 2 note a); on a footway / pedestrian strip, just the strip.
+        y0, y1 = sec["y0"], sec["y1"]
+        if sec["type"] == "carriageway":
+            i = des.sections.index(sec)
+            y0 -= _footway_reach(des, i, -1)
+            y1 += _footway_reach(des, i, +1)
+            if y1 - y0 > sec["width"] + 1e-9:
+                ys = _trans_points(y0, y1 - y0)
+                gx, gy = np.meshgrid(xs, ys, indexing="ij")
+                E = _illuminance(des, lum, gx.ravel(), gy.ravel()).reshape(gx.shape)
+                res["Eav"], res["Emin"], res["Emax"] = float(E.mean()), float(E.min()), float(E.max())
+                res["UoE"] = float(E.min() / E.mean()) if E.mean() > 0 else 0.0
+                res["areaY"] = [round(y0, 3), round(y1, 3)]
+                if full:
+                    res["gridE"] = {"x": xs.round(3).tolist(), "y": ys.round(3).tolist(), "v": E.round(3).tolist()}
+        req = SANS_BC[cls]
+        res["checks"] = [
+            _chk("Eav", "Ē", res["Eav"], req["Eav"], ">=", "lx"),
+            _chk("Emin", "Emin", res["Emin"], req["Emin"], ">=", "lx"),
+        ]
+        res["note"] = (f"Semi-cylindrical Esc,min {req['Esc']} lx (supplementary, for higher-security areas) is not calculated."
+                       + (f" Area includes the footways up to {SANS_FOOTWAY_M:g} m from the carriageway edge ({res['areaY'][0]:g}–{res['areaY'][1]:g} m)."
+                          if res.get("areaY") else ""))
+    elif fam == "RC":
+        req = SANS_RC[cls]
+        res["checks"] = [
+            _chk("Eav", "Ē", res["Eav"], req["Eav"], ">=", "lx"),
+            _chk("Uo", "Uo", res["UoE"], req["Uo"], ">=", ""),
+        ]
+    elif fam == "CP":
+        req = SANS_CP[cls]
+        res["checks"] = [
+            _chk("Eav", "Ē", res["Eav"], req["Eav"], ">=", "lx"),
+            _chk("Emin", "Emin", res["Emin"], req["Emin"], ">=", "lx"),
+        ]
+
+
+def _footway_reach(des, i, step):
+    """How far (≤ 2 m) the strips beside carriageway i extend on one side,
+    stopping at another carriageway or a median."""
+    reach, j = 0.0, i + step
+    while 0 <= j < len(des.sections) and reach < SANS_FOOTWAY_M - 1e-9:
+        nb = des.sections[j]
+        if nb["type"] in ("carriageway", "median"):
+            break
+        reach += nb["width"]
+        j += step
+    return min(reach, SANS_FOOTWAY_M)
+
+
+def _sans_luminance(des, sec, res, xs, D, S, lum, full):
+    """SANS 10098-1 §4.1.3 / Appendix D: L̄ and Uo from ONE observer a quarter
+    of the carriageway width in from the left-hand side (for traffic travelling
+    towards −x, the left is the high-y side); Ul along each lane's centre line
+    with the observer in that lane; TI at the conventional (quarter-width)
+    observer. Calculation per CIE 140 — the same grid and luminaire inclusion
+    as EN 13201-3."""
+    band_set = "median" if des.has_median else "noMedian"
+    ln, uo_req, ul_req, ti_req = SANS_A[sec["cls"]][band_set][sec["volume"]]
+    rt = _RTable(sec["surface"])
+    lanes = sec["lanes"]
+    wl = sec["width"] / lanes
+    ys = np.concatenate([sec["y0"] + k * wl + (np.arange(3) + 0.5) * wl / 3 for k in range(lanes)])
+    gx, gy = np.meshgrid(xs, ys, indexing="ij")
+    px, py = gx.ravel(), gy.ravel()
+    sign = -1.0 if sec["direction"] == "reverse" else 1.0
+    ox0 = -OBSERVER_BACK_M if sign > 0 else S + OBSERVER_BACK_M
+    r0 = des.rows[0]
+    first = (r0["xOffset"] % 1.0) * S if sign > 0 else S - ((1.0 - r0["xOffset"] % 1.0) % 1.0) * S
+    ti_x0 = first - sign * 2.75 * max(r0["height"] - OBSERVER_EYE_M, 0.0)
+    far = _luminaires(des, S, min(ti_x0, 0.0) - 10, S + TI_RANGE_M + 10) if sign > 0 else \
+        _luminaires(des, S, -TI_RANGE_M - 10, max(ti_x0, S) + 10)
+    oy_q = sec["y0"] + sec["width"] / 4 if sign > 0 else sec["y1"] - sec["width"] / 4
+    Lq = _luminance(des, lum, px, py, rt, ox0, oy_q, sign).reshape(gx.shape)
+    lav = float(Lq.mean())
+    uo = float(Lq.min() / lav) if lav > 0 else 0.0
+    ti = _threshold_increment(des, far, ti_x0 + sign * np.arange(len(xs)) * D, oy_q, sign, lav / des.mf)
+    lanes_out = []
+    for k in range(lanes):
+        oy = sec["y0"] + (k + 0.5) * wl
+        L = _luminance(des, lum, px, py, rt, ox0, oy, sign).reshape(gx.shape)
+        centre = L[:, 3 * k + 1]
+        lanes_out.append({"lane": k + 1, "y": round(oy, 3),
+                          "Ul": round(float(centre.min() / centre.max()) if centre.max() > 0 else 0.0, 4)})
+    res["Lav"], res["Uo"], res["TI"] = lav, uo, ti
+    res["Ul"] = min(o["Ul"] for o in lanes_out)
+    res["surface"] = rt.name
+    res["observer"] = {"y": round(oy_q, 3), "rule": "quarter of the carriageway width from the left-hand side"}
+    res["observers"] = lanes_out
+    res["volumeBand"] = SANS_VOLUME_BANDS[band_set][sec["volume"]]
+    res["crossSection"] = "with median" if des.has_median else "without median"
+    # Surround ratio ES (§3.6.1 d): a design parameter without a tabulated
+    # limit — reported, not checked.
+    rei, sides = _edge_ratio(des, sec, xs, lum)
+    res["ES"], res["ESsides"] = rei, sides
+    if full:
+        res["gridL"] = {"x": xs.round(3).tolist(), "y": ys.round(3).tolist(), "v": Lq.round(4).tolist(),
+                        "observerY": round(oy_q, 3)}
+    res["checks"] = [
+        _chk("Lav", "L̄", lav, ln, ">=", "cd/m²"),
+        _chk("Uo", "Uo", uo, uo_req, ">=", ""),
+        _chk("Ul", "Ul", res["Ul"], ul_req, ">=", ""),
+        _chk("TI", "TI", ti, ti_req, "<=", "%"),
+    ]
 
 
 def _edge_ratio(des, sec, xs, lum):

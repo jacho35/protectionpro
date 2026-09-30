@@ -288,3 +288,72 @@ def test_generic_optics_integrate_to_rated_flux():
         cd = np.array(p["cd"]); c = np.array(p["c"])
         house = cd[int(np.argmin(np.abs(c - 270)))][60]; street = cd[int(np.argmin(np.abs(c - 90)))][60]
         assert street > 10 * house
+
+
+# ─── SANS 10098-1 / -2 ──────────────────────────────────────────────────
+
+def sans_road(cls="A4", volume=0, median=False, **kw):
+    web = generic_optic("generic_medium", 12000, 90)
+    secs = [{"type": "footpath", "width": 2, "cls": ""},
+            {"type": "carriageway", "width": 7.4, "lanes": 2, "cls": cls, "surface": "R3", "volume": volume}]
+    if median:
+        secs += [{"type": "median", "width": 3}, {"type": "carriageway", "width": 7.4, "lanes": 2, "cls": cls, "surface": "R3",
+                                                   "volume": volume, "direction": "reverse"}]
+    secs.append({"type": "footpath", "width": 2, "cls": ""})
+    return design(secs, [{"y": 1.0, "overhang": 1.5, "facing": "right", "height": 10, "photometryId": "g"}],
+                  {"g": web}, spacing=kw.pop("spacing", 35), mf=0.8, standard="SANS", **kw)
+
+
+class TestSans:
+    def test_group_a_requirements_follow_table_1(self):
+        cw = RL.run_road_lighting(sans_road("A2", volume=1))["result"]["areas"][1]
+        req = {c["key"]: c["req"] for c in cw["checks"]}
+        assert req == {"Lav": 1.0, "Uo": 0.4, "Ul": 0.6, "TI": 20}           # A2, ≤300 veh/h/lane, no median
+        assert "REI" not in req and cw["ES"] is not None                      # ES reported, not checked
+        cw = RL.run_road_lighting(sans_road("A3", volume=1, median=True))["result"]["areas"][1]
+        assert {c["key"]: c["req"] for c in cw["checks"]}["Lav"] == 0.8      # A3 with median, ≤600
+        assert cw["crossSection"] == "with median"
+        cw = RL.run_road_lighting(sans_road("A4", volume=2))["result"]["areas"][1]
+        req = {c["key"]: c["req"] for c in cw["checks"]}
+        assert req == {"Lav": 0.3, "Uo": 0.3, "Ul": 0.5, "TI": 25}
+
+    def test_quarter_width_observer(self):
+        r = RL.run_road_lighting(sans_road("A4"))["result"]["areas"][1]
+        assert r["observer"]["y"] == pytest.approx(2 + 7.4 / 4)
+        assert len(r["observers"]) == 2                                      # Ul per lane
+        # A reverse carriageway's left-hand side is its high-y edge
+        r2 = RL.run_road_lighting(sans_road("A4", median=True))["result"]["areas"][3]
+        assert r2["observer"]["y"] == pytest.approx(2 + 7.4 + 3 + 7.4 - 7.4 / 4)
+
+    def test_quarter_width_observer_luminance_matches_direct_call(self):
+        req = sans_road("A4")
+        out = RL.run_road_lighting(req)["result"]["areas"][1]
+        des = RL._Design(req)
+        S = 35.0
+        xs, _ = RL._long_points(S)
+        lum = RL._luminaires(des, S, -121, S + 121)
+        ys = np.concatenate([2 + k * 3.7 + (np.arange(3) + 0.5) * 3.7 / 3 for k in range(2)])
+        gx, gy = np.meshgrid(xs, ys, indexing="ij")
+        L = RL._luminance(des, lum, gx.ravel(), gy.ravel(), RL._RTable("R3"), -60.0, 2 + 7.4 / 4, 1.0)
+        assert out["Lav"] == pytest.approx(float(L.mean()), rel=1e-12)
+
+    def test_group_b_area_includes_2m_of_footway(self):
+        req = sans_road("B2")
+        req["sections"][0]["width"] = 3.0                                     # only 2 m of it counts
+        cw = RL.run_road_lighting(req)["result"]["areas"][1]
+        assert cw["areaY"] == [1.0, 3.0 + 7.4 + 2.0]
+        assert {c["key"]: c["req"] for c in cw["checks"]} == {"Eav": 3.0, "Emin": 0.6}
+
+    def test_sans_10098_2_classes(self):
+        req = sans_road("RC3")
+        req["sections"][0]["cls"] = "CP4"
+        a = RL.run_road_lighting(req)["result"]["areas"]
+        assert {c["key"]: c["req"] for c in a[1]["checks"]} == {"Eav": 15.0, "Uo": 0.4}
+        assert {c["key"]: c["req"] for c in a[0]["checks"]} == {"Eav": 5, "Emin": 1.0}
+
+    def test_en_default_unchanged(self):
+        req = sans_road("A4")
+        req.pop("standard")
+        req["sections"][1]["cls"] = "M4"
+        cw = RL.run_road_lighting(req)["result"]["areas"][1]
+        assert [c["key"] for c in cw["checks"]] == ["Lav", "Uo", "Ul", "TI", "REI"]
