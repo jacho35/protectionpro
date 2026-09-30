@@ -362,9 +362,9 @@ const Reports = {
         const details = [];
         details.push(`Thermal: ${p.thermal_pickup || 1.0}\u00d7In`);
         details.push(`Mag: ${p.magnetic_pickup || 10}\u00d7In`);
-        if (p.cb_type === 'acb') {
-          if (p.short_time_pickup) details.push(`ST: ${p.short_time_pickup}\u00d7In @ ${p.short_time_delay || 0.1}s`);
-          if (p.instantaneous_pickup) details.push(`Inst: ${p.instantaneous_pickup}\u00d7In`);
+        if (cbHasElectronicTrip(p)) {
+          if (p.short_time_pickup) details.push(`ST: ${p.short_time_pickup}\u00d7Ir @ ${p.short_time_delay || 0.1}s`);
+          if (p.instantaneous_pickup) details.push(`Inst: ${p.instantaneous_pickup}\u00d7Ir`);
         }
         rows.push([
           name, 'CB', type,

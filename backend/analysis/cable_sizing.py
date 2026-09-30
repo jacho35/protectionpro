@@ -1339,6 +1339,11 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
             "ampacity_standard": ampacity_standard,
             "nec_rating": _nec_ampacity_lookup(cp["size_mm2"], cp["conductor"], '75C'),
             "derated_ampacity_a": round(derated_amps, 1) if derated_amps else 0,
+            # Per conductor set — Iz of the whole run is × num_parallel. The
+            # protective device lets the breaker's trip-unit panel suggest an
+            # Ir with Ib ≤ Ir ≤ Iz for the cable it protects.
+            "num_parallel": num_parallel,
+            "protective_device_id": device.id if device is not None else None,
             "ampacity_derated": bool(amp_derated_a and amp_derated_a > 0),
             "ampacity_conditions": amp_conditions,
         })

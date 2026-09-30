@@ -995,6 +995,16 @@ def _lv_small_transformer_exemption(bus, components, adjacency, voltage_kv):
     return len(feeders) == 1 and feeders[0] < 0.125
 
 
+def _cb_has_electronic_trip(props):
+    """Short-time / instantaneous elements (×Ir) apply: every ACB, and an MCCB
+    picked with an electronic trip-unit profile (``trip_unit_kind`` written by
+    the frontend TripUnit). Mirrors cbHasElectronicTrip in constants.js; a
+    breaker without the prop keeps its thermal-magnetic model."""
+    cb_type = props.get("cb_type", "mccb") or "mccb"
+    return cb_type == "acb" or (cb_type == "mccb"
+                                and props.get("trip_unit_kind") == "electronic")
+
+
 def _cb_self_clearing_time(props, current_a):
     """Clearing time of a CB from its own trip-unit model.
 
@@ -1019,13 +1029,14 @@ def _cb_self_clearing_time(props, current_a):
     ir = trip_rating * thermal_pickup  # primary amps at pickup
     magnetic_pickup = float(props.get("magnetic_pickup", 10))
 
-    # ACB electronic-trip short-time / instantaneous settings (×Ir)
-    if props.get("cb_type", "mccb") == "acb":
+    # Electronic-trip short-time / instantaneous settings (×Ir): every ACB,
+    # and an MCCB with an electronic trip-unit profile
+    if _cb_has_electronic_trip(props):
         inst_pickup = float(props.get("instantaneous_pickup", 0) or 0) * ir
         st_pickup = float(props.get("short_time_pickup", 0) or 0) * ir
         st_delay = float(props.get("short_time_delay", 0.1) or 0.1)
         if inst_pickup > 0 and current_a >= inst_pickup:
-            return _cb_instantaneous_clear_time("acb")
+            return _cb_instantaneous_clear_time(props.get("cb_type", "mccb"))
         if st_pickup > 0 and current_a >= st_pickup:
             # Intentional short-time delay + breaker opening time
             return st_delay + _BREAKER_OPENING_TIME_S

@@ -1218,6 +1218,9 @@ const StandardData = {
         <td><input type="number" value="${c.breaking_ka}" data-key="breaking_ka" step="any"></td>
         <td><input type="number" value="${c.magnetic_pickup}" data-key="magnetic_pickup" step="any"></td>
         <td><input type="number" value="${c.long_time_delay}" data-key="long_time_delay" step="any"></td>
+        <td><select data-key="trip_units" aria-label="Trip unit">${this._cbTripUnitOptions(c)}</select></td>
+        ${['short_time_pickup', 'short_time_delay', 'instantaneous_pickup'].map(k =>
+          `<td><input type="number" value="${c[k] ?? ''}" data-key="${k}" data-optional="1" step="any" placeholder="${this._cbTripDefault(c, k)}"></td>`).join('')}
         <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
       </tr>
     `).join('');
@@ -1228,8 +1231,24 @@ const StandardData = {
         const idx = parseInt(row.dataset.index);
         const key = e.target.dataset.key;
         let val = e.target.value;
+        const entry = this.cbs[idx];
+        if (key === 'trip_units') {
+          // '' = Auto (by type and frame), 'none' = no trip unit, else one profile
+          if (val === '') { delete entry.trip_units; delete entry.default_trip_unit; }
+          else if (val === 'none') { entry.trip_units = []; delete entry.default_trip_unit; }
+          else { entry.trip_units = [val]; entry.default_trip_unit = val; }
+          this.renderCBTable();
+          this.syncCBLibrary();
+          return;
+        }
+        if (e.target.dataset.optional && val.trim() === '') {
+          delete entry[key];   // blank = the trip unit's own default
+          this.syncCBLibrary();
+          return;
+        }
         if (e.target.type === 'number') val = parseFloat(val) || 0;
-        this.cbs[idx][key] = val;
+        entry[key] = val;
+        if (key === 'cb_type') this.renderCBTable();   // trip units that fit the new type
         this.syncCBLibrary();
       });
     });
@@ -1243,6 +1262,26 @@ const StandardData = {
         this.syncCBLibrary();
       });
     });
+  },
+
+  // Trip-unit picker for a CB library row: Auto (the inferred profile), each
+  // profile that fits the breaker type, or none
+  _cbTripUnitOptions(c) {
+    const auto = typeof TripUnit !== 'undefined' ? TripUnit.inferFor(c) : null;
+    const cur = Array.isArray(c.trip_units) ? (c.trip_units[0] || 'none') : '';
+    const ids = typeof TripUnit !== 'undefined' ? TripUnit.profilesForType(c.cb_type) : [];
+    if (cur && cur !== 'none' && !ids.includes(cur)) ids.push(cur);
+    return [`<option value=""${cur === '' ? ' selected' : ''}>Auto${auto ? ` (${escHtml(TRIP_UNITS[auto].label)})` : ' (none)'}</option>`]
+      .concat(ids.map(id => `<option value="${id}"${cur === id ? ' selected' : ''}>${escHtml(TRIP_UNITS[id].label)}</option>`))
+      .concat(`<option value="none"${cur === 'none' ? ' selected' : ''}>None</option>`).join('');
+  },
+
+  // The profile default shown as the placeholder of a blank setting cell
+  _cbTripDefault(c, key) {
+    if (typeof TripUnit === 'undefined') return '';
+    const pid = TripUnit.defaultIdFor(c);
+    const d = pid && TRIP_UNITS[pid].dials[key];
+    return d ? String(d.def) : '—';
   },
 
   syncCBLibrary() {

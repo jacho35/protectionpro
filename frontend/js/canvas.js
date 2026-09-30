@@ -1409,7 +1409,7 @@ const Canvas = {
         const fmtA = (a) => a >= 1000 ? `${(a / 1000).toFixed(1)}kA` : `${a.toFixed(0)}A`;
         lines.push(`Ir=${thPu}× (${fmtA(irA)})`);
         lines.push(`Im=${magPu}× (${fmtA(imA)})`);
-        if (cbType === 'ACB' && p.short_time_pickup) {
+        if (cbHasElectronicTrip(p) && p.short_time_pickup) {
           lines.push(`ST=${p.short_time_pickup}×`);
         }
         // Integral earth-fault (residual) release — pickup is a PRIMARY current

@@ -500,6 +500,8 @@ const TCC = {
         p.magnetic_pickup = Math.max(2, Math.min(20, Math.round((p.magnetic_pickup + dir * 0.5 * k) * 2) / 2));
         mode = 'magnetic';
       }
+      // A trip-unit breaker moves to the next dial position instead
+      if (typeof TripUnit !== 'undefined') this._stepTripUnitDial(dev, mode, dir);
     }
     if (!mode) return false;
     this._syncDeviceToSLD(dev, mode);
@@ -702,6 +704,25 @@ const TCC = {
     return false;
   },
 
+  // Arrow-key nudge of a trip-unit breaker: one dial position up / down (the
+  // instantaneous dial for an electronic MCCB's magnetic handle)
+  _stepTripUnitDial(dev, mode, dir) {
+    const comp = AppState.components.get(dev.id);
+    const prof = comp && TripUnit.profile(comp);
+    if (!prof) return;
+    const p = dev.cbParams;
+    const elecMccb = prof.kind === 'electronic' && p.cb_type === 'mccb';
+    const key = mode === 'thermal' ? 'thermal_pickup' : (elecMccb ? 'instantaneous_pickup' : 'magnetic_pickup');
+    const d = prof.dials[key];
+    if (!d || d.fixed) { p[key] = comp.props[key]; return; }   // not adjustable: undo the nudge
+    const cur = comp.props[key];
+    const steps = d.steps.filter(s => !(d.off && s === 0));
+    const i = steps.findIndex(s => Math.abs(s - TripUnit.snap(d, cur)) < 1e-9);
+    const next = steps[Math.max(0, Math.min(steps.length - 1, (i < 0 ? 0 : i) + dir))];
+    p[key] = next;
+    if (key === 'instantaneous_pickup') p.magnetic_pickup = next;
+  },
+
   _handleCurveDragMove(e) {
     const rect = this.canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -728,7 +749,11 @@ const TCC = {
       const newCurrent = this._xToCurrent(mx);
       const Irated = dev.cbParams.trip_rating_a || 630;
       dev.cbParams.thermal_pickup = Math.max(0.4, Math.min(1.0, Math.round(newCurrent / Irated * 20) / 20));
-    } else if (drag.mode.startsWith('zone_')) {
+    }
+    if ((drag.mode === 'magnetic' || drag.mode === 'thermal') && typeof TripUnit !== 'undefined') {
+      TripUnit.snapTccDevice(dev, drag.mode);   // trip-unit breaker: dial positions only
+    }
+    if (drag.mode.startsWith('zone_')) {
       // Horizontal drag → change distance relay zone reach
       const zi = parseInt(drag.mode.split('_')[1]);
       const newCurrent = this._scaleCurrentInverse(this._xToCurrent(mx), dev);
@@ -762,6 +787,9 @@ const TCC = {
       comp.props.time_dial = dev.tds;
     } else if (mode === 'magnetic' && comp.props) {
       comp.props.magnetic_pickup = dev.cbParams.magnetic_pickup;
+      if (dev.cbParams.trip_unit_kind === 'electronic' && dev.cbParams.instantaneous_pickup > 0) {
+        comp.props.instantaneous_pickup = dev.cbParams.instantaneous_pickup;
+      }
     } else if (mode === 'thermal' && comp.props) {
       comp.props.thermal_pickup = dev.cbParams.thermal_pickup;
     } else if (mode.startsWith('zone_') && comp.props) {
@@ -1987,6 +2015,7 @@ const TCC = {
             short_time_pickup: comp.props?.short_time_pickup || 0,
             short_time_delay: comp.props?.short_time_delay || 0,
             instantaneous_pickup: comp.props?.instantaneous_pickup || 0,
+            trip_unit_kind: comp.props?.trip_unit_kind || '',
           },
         });
         // Integral earth-fault (shunt-trip) release fed by a core-balance CT —
@@ -3109,7 +3138,7 @@ const TCC = {
     // ACBs with a short-time element have no 20 ms magnetic region unless an
     // instantaneous pickup is set — must match cbTripTime, which returns the ST
     // delay (not 20 ms) for all currents above the ST pickup
-    const hasST = p.cb_type === 'acb' && p.short_time_pickup > 0;
+    const hasST = cbHasElectronicTrip(p) && p.short_time_pickup > 0;
 
     // --- Thermal (long-time inverse) region ---
     ctx.strokeStyle = dev.color;
@@ -3208,11 +3237,11 @@ const TCC = {
         if (xInst >= this.plotLeft && xInst <= this.plotRight) {
           ctx.beginPath();
           ctx.moveTo(xInst, this._timeToY(stDelay));
-          ctx.lineTo(xInst, this._timeToY(cbInstantaneousClearTime('acb')));
+          ctx.lineTo(xInst, this._timeToY(cbInstantaneousClearTime(p.cb_type)));
           ctx.stroke();
           // Horizontal at the instantaneous clearing time
           ctx.beginPath();
-          const y20 = this._timeToY(cbInstantaneousClearTime('acb'));
+          const y20 = this._timeToY(cbInstantaneousClearTime(p.cb_type));
           ctx.moveTo(xInst, y20);
           ctx.lineTo(this.plotRight, y20);
           ctx.stroke();
@@ -4489,6 +4518,18 @@ const TCC = {
               .map(r => `<option value="${r}" ${r === dev.fuseRating ? 'selected' : ''}>${r}A</option>`).join('')}
           </select>
         </div>`;
+    } else if (dev.deviceType === 'cb' && typeof TripUnit !== 'undefined'
+               && TripUnit.profile(AppState.components.get(dev.id))) {
+      // A breaker with a trip unit: its dials in their real steps (same as
+      // the properties panel); type and rating come from the breaker
+      const comp = AppState.components.get(dev.id);
+      const p = dev.cbParams;
+      html = `
+        <div class="tcc-form-row">
+          <label>Trip unit</label>
+          <span class="tu-fixed">${escHtml(TRIP_UNITS[comp.props.trip_unit].label)} · ${(p.cb_type || 'mccb').toUpperCase()} · In ${p.trip_rating_a} A</span>
+        </div>
+        ${TripUnit.tccRowsHtml(comp, p)}`;
     } else if (dev.deviceType === 'cb') {
       const p = dev.cbParams;
       const isACB = p.cb_type === 'acb';
@@ -4522,7 +4563,7 @@ const TCC = {
         </div>
         <div class="tcc-form-row">
           <label>LT Delay Class</label>
-          <select data-sel-field="cb.long_time_delay">
+          <select data-sel-field="cb.long_time_delay" data-num="1">
             ${[5,10,20,30].map(v => `<option value="${v}" ${p.long_time_delay === v ? 'selected' : ''}>${v}</option>`).join('')}
           </select>
         </div>
@@ -4596,11 +4637,16 @@ const TCC = {
     const dev = this.devices[this.selectedDeviceIndex];
     if (!dev) return;
 
-    const val = el.type === 'number' ? parseFloat(el.value) : el.value;
+    const val = el.type === 'number' || el.dataset.num ? parseFloat(el.value) : el.value;
 
     if (field.startsWith('cb.')) {
       const cbField = field.slice(3);
       dev.cbParams[cbField] = val;
+      // An electronic MCCB's magnetic pickup follows its instantaneous dial
+      if (cbField === 'instantaneous_pickup' && val > 0 && dev.cbParams.cb_type === 'mccb'
+          && dev.cbParams.trip_unit_kind === 'electronic') {
+        dev.cbParams.magnetic_pickup = val;
+      }
       const root = el.closest('#tcc-selected-settings');
       // Show/hide type-specific fields (ACB bands, MCB curve) when type changes
       if (cbField === 'cb_type') {
@@ -4751,6 +4797,7 @@ const TCC = {
         short_time_pickup: cbParams.short_time_pickup || 0,
         short_time_delay: cbParams.short_time_delay || 0,
         instantaneous_pickup: cbParams.instantaneous_pickup || 0,
+        trip_unit_kind: cbParams.trip_unit_kind || '',
       },
     };
     this.devices.push(dev);

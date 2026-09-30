@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.366b';
+const APP_VERSION = '1.367b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -845,6 +845,15 @@ function cbInstantaneousClearTime(cbType) {
   return CB_INSTANTANEOUS_CLEAR_S[cbType] || CB_INSTANTANEOUS_CLEAR_S.mccb;
 }
 
+// A breaker whose trip unit has short-time / instantaneous elements (×Ir):
+// every ACB, and an MCCB picked with an electronic trip-unit profile
+// (trip_unit_kind 'electronic', written by TripUnit). Mirrored by
+// arcflash._cb_has_electronic_trip.
+function cbHasElectronicTrip(p) {
+  const t = (p && p.cb_type) || 'mccb';
+  return t === 'acb' || (t === 'mccb' && p.trip_unit_kind === 'electronic');
+}
+
 /**
  * Calculate CB trip time for a given current.
  * @param {object} params - { cb_type, trip_rating_a, thermal_pickup, magnetic_pickup,
@@ -861,15 +870,16 @@ function cbTripTime(params, currentA) {
 
   if (M <= 1.0) return Infinity;  // Below thermal pickup — no trip
 
-  // ACB with short-time and instantaneous regions
-  if (cbType === 'acb') {
+  // Electronic trip unit (every ACB, and an MCCB with an electronic trip-unit
+  // profile) — short-time and instantaneous regions
+  if (cbHasElectronicTrip(params)) {
     const stPickup = (params.short_time_pickup || 0) * Ir;
     const stDelay = params.short_time_delay || 0.1;
     const instPickup = (params.instantaneous_pickup || 0) * Ir;
 
     // Instantaneous region (highest priority)
     if (instPickup > 0 && currentA >= instPickup) {
-      return cbInstantaneousClearTime('acb');
+      return cbInstantaneousClearTime(cbType);
     }
     // Short-time region
     if (stPickup > 0 && currentA >= stPickup) {
@@ -958,6 +968,66 @@ const PV_PANELS = [
 
 // Standard MCCB frame sizes for the custom device dropdown
 const CB_FRAME_SIZES = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
+
+// ─── Trip-unit profiles (MCCB / ACB) ───
+// A library breaker points at a trip-unit profile (entry.trip_units, else the
+// rule in TripUnit.inferFor). The profile says which settings the unit has
+// and the dial positions each can take; the LIBRARY ENTRY's own values are
+// the defaults written when the breaker is picked (so company / shared / user
+// library edits to an entry's settings are its defaults), falling back to the
+// dial's `def`. Keys are the breaker props the engines already read, in the
+// engines' units — Ir = trip_rating_a × thermal_pickup, and magnetic,
+// short-time and instantaneous pickups are × Ir. A value of 0 on a dial with
+// `off` means the element is switched off. `kind` 'electronic' gives an MCCB
+// the ACB short-time / instantaneous behaviour (cbHasElectronicTrip).
+// `maker` / `curve` are placeholders for manufacturer libraries (later).
+const TRIP_DIALS = {
+  thermal_pickup:       { label: 'Ir',  unit: '× In',      ampsOf: 'In' },
+  long_time_delay:      { label: 'tr',  unit: 's at 6 Ir' },
+  magnetic_pickup:      { label: 'Im',  unit: '× Ir',      ampsOf: 'Ir' },
+  short_time_pickup:    { label: 'Isd', unit: '× Ir',      ampsOf: 'Ir' },
+  short_time_delay:     { label: 'tsd', unit: 's' },
+  instantaneous_pickup: { label: 'Ii',  unit: '× Ir',      ampsOf: 'Ir' },
+};
+const _TU_IR_STEPS = [0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0];
+const TRIP_UNITS = {
+  tm_fixed: {
+    label: 'Thermal-magnetic (fixed)', kind: 'tm', maker: null, curve: { model: 'generic' },
+    dials: {
+      thermal_pickup:  { fixed: true, def: 1.0 },
+      magnetic_pickup: { fixed: true, def: 10 },
+    },
+  },
+  tm_adj: {
+    label: 'Thermal-magnetic (adjustable)', kind: 'tm', maker: null, curve: { model: 'generic' },
+    dials: {
+      thermal_pickup:  { steps: [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0], def: 1.0 },
+      magnetic_pickup: { steps: [5, 6, 7, 8, 9, 10], def: 10 },
+    },
+  },
+  // Short-time off and Ii = 10 × Ir by default: the same curve the MCCB
+  // library gave before trip-unit profiles, until the engineer sets Isd.
+  etu_lsi_mccb: {
+    label: 'Electronic LSI', kind: 'electronic', maker: null, curve: { model: 'generic' },
+    dials: {
+      thermal_pickup:       { steps: _TU_IR_STEPS, def: 1.0 },
+      long_time_delay:      { steps: [5, 10, 20, 30], def: 10 },
+      short_time_pickup:    { steps: [0, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10], off: true, def: 0 },
+      short_time_delay:     { steps: [0.1, 0.2, 0.3, 0.4], def: 0.1 },
+      instantaneous_pickup: { steps: [2, 3, 4, 5, 6, 8, 10, 12, 15], def: 10 },
+    },
+  },
+  etu_lsi: {
+    label: 'Electronic LSI', kind: 'electronic', maker: null, curve: { model: 'generic' },
+    dials: {
+      thermal_pickup:       { steps: _TU_IR_STEPS, def: 1.0 },
+      long_time_delay:      { steps: [5, 10, 20, 30], def: 10 },
+      short_time_pickup:    { steps: [1.5, 2, 2.5, 3, 4, 5, 6, 8, 10], def: 6 },
+      short_time_delay:     { steps: [0.1, 0.15, 0.2, 0.25, 0.3, 0.4], def: 0.1 },
+      instantaneous_pickup: { steps: [0, 2, 3, 4, 6, 8, 10, 12, 15], off: true, def: 12 },
+    },
+  },
+};
 
 // ─── Standard Circuit Breaker Library ───
 // Typical MCCB/ACB ratings per IEC 60947-2
