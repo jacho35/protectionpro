@@ -167,7 +167,7 @@ const CableLib = {
     }
     const rest = list.filter(c => !used.has(c));
     if (rest.length) html += `<optgroup label="Other">${rest.map(opt).join('')}</optgroup>`;
-    if (hidden) html += `<option value="__all__">Show all cables… (${hidden} ${prefer === 'Al' ? 'Cu' : 'Al'} or other)</option>`;
+    if (hidden) html += `<option value="__all__" data-ss-always>Show all cables… (${hidden} ${prefer === 'Al' ? 'Cu' : 'Al'} or other)</option>`;
     return html;
   },
 
@@ -197,6 +197,8 @@ const CableLib = {
     if (!sel || sel.value !== '__all__') return false;
     sel.innerHTML = rebuild(currentValue || '');
     sel.value = this.resolveName(currentValue || '');
+    // A SearchSelect over this select: show its (now full) list again.
+    if (sel._ss) { setTimeout(() => sel._ss.reopen(), 0); return true; }
     setTimeout(() => { try { sel.focus(); if (sel.showPicker) sel.showPicker(); } catch (e) { /* not supported */ } }, 0);
     return true;
   },
