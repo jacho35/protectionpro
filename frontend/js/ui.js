@@ -275,3 +275,18 @@ const ModalFocus = {
 };
 
 document.addEventListener('DOMContentLoaded', () => ModalFocus.init());
+
+// Backdrop clicks everywhere: a click only counts as "outside the dialog" when
+// the press also started on the backdrop. A drag that starts inside a dialog
+// (selecting text, dragging a slider, a mis-aimed click) and is released over
+// the backdrop is reported by the browser as a click on the backdrop — without
+// this guard it closes the dialog and loses what was typed.
+(function guardBackdropClicks() {
+  let downTarget = null;
+  document.addEventListener('pointerdown', (e) => { downTarget = e.target; }, true);
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t === downTarget || !(t instanceof Element)) return;
+    if (t.classList.contains('modal') || t.id === 'voltage-propagation-dialog') e.stopPropagation();
+  }, true);
+})();

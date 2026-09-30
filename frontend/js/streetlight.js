@@ -929,7 +929,9 @@ const StreetLight = {
       document.body.appendChild(m);
       m.addEventListener('change', (e) => this._qcChange(e));
       m.addEventListener('click', (e) => {
-        if (e.target === m || e.target.closest('[data-qc="close"]')) this.closeQuickCalc();
+        // No backdrop close: a form you are typing / picking in must not vanish
+        // on a stray click or a drag that ends outside it (× or Esc close it).
+        if (e.target.closest('[data-qc="close"]')) this.closeQuickCalc();
         else if (e.target.closest('[data-qc="save"]')) this._qcSave();
       });
       m.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.closeQuickCalc(); });
