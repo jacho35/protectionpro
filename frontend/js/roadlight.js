@@ -1180,6 +1180,7 @@ const RoadLight = {
     const p = this.library[id];
     if (!p) return;
     const usedBy = this.designs.filter(d => d.rows.some(r => r.photometryId === id)).map(d => d.name);
+    const usedByCircuits = this._circuitsUsing(id);
     const m = this._modal('rl-ph-modal', escHtml(p.name), `
       <div class="rl-ph">
         <div class="rl-ph-plot">${this._polarSvg(p)}</div>
@@ -1187,7 +1188,8 @@ const RoadLight = {
           <label>Name<input data-p="name" value="${escHtml(p.name)}"></label>
           <label>Manufacturer<input data-p="manufacturer" value="${escHtml(p.manufacturer || '')}"></label>
           <label title="Rated luminaire flux the file's candela values are for. A different value scales the whole distribution (same optic, other lumen package)">Luminaire flux<span class="sl-unit"><input type="number" step="1" data-p="lumens" value="${escHtml(p.lumens)}"> lm</span></label>
-          <label>System power<span class="sl-unit"><input type="number" step="0.1" data-p="watts" value="${escHtml(p.watts)}"> W</span></label>
+          <label title="Rated system power (lamp + driver). Street lighting circuits that use this luminaire load it at this power">System power<span class="sl-unit"><input type="number" step="0.1" data-p="watts" value="${escHtml(p.watts)}"> W</span></label>
+          <label title="Power factor of the driver, for the circuit current and kVA">Power factor<input type="number" step="0.01" min="0.3" max="1" data-p="pf" value="${escHtml(p.pf || 0.95)}"></label>
           <label title="If the file's C90 plane does not point across the road to the street side, rotate it here">Rotate C-planes<select data-p="rotate">${[0, 90, 180, 270].map(a => `<option value="${a}"${+p.rotate === a ? ' selected' : ''}>${a}°</option>`).join('')}</select></label>
           <div class="rl-kv">
             <span>Format</span><b>${escHtml(p.format || '')}${p.fileName ? ' · ' + escHtml(p.fileName) : ''}</b>
@@ -1197,9 +1199,9 @@ const RoadLight = {
             ${p.measurementTilt ? `<span>Measured at tilt</span><b>${p.measurementTilt}°</b>` : ''}
           </div>
           ${p.warning ? `<div class="sl-hint rl-note">${escHtml(p.warning)}</div>` : ''}
-          <div class="sl-hint">${usedBy.length ? 'Used by: ' + usedBy.map(escHtml).join(', ') : 'Not used by any design.'}</div>
+          <div class="sl-hint">${usedBy.length ? 'Used by: ' + usedBy.map(escHtml).join(', ') : 'Not used by any design.'}${usedByCircuits.length ? ` Circuits: ${usedByCircuits.map(escHtml).join(', ')}.` : ''}${!(Number(p.watts) > 0) ? ' <b>No rated power</b> — enter it so circuits can use this luminaire.' : ''}</div>
         </div>
-      </div>`, `<button class="btn-small" data-m="delete"${usedBy.length ? ' disabled title="In use by a design"' : ''}>Delete</button><span style="flex:1"></span><button class="btn-small" data-m="close">Cancel</button><button class="btn-small btn-primary" data-m="ok">Save</button>`, 'rl-modal-wide');
+      </div>`, `<button class="btn-small" data-m="delete"${usedBy.length || usedByCircuits.length ? ' disabled title="In use by a design or a circuit"' : ''}>Delete</button><span style="flex:1"></span><button class="btn-small" data-m="close">Cancel</button><button class="btn-small btn-primary" data-m="ok">Save</button>`, 'rl-modal-wide');
     const res = await this._modalResult(m);
     if (res === 'delete') {
       if (await UI.confirm(`Delete luminaire "${p.name}"?`, { danger: true, okText: 'Delete' })) { delete this.library[id]; this._markDirty(); this.render(); }
@@ -1219,8 +1221,10 @@ const RoadLight = {
     p.name = v('name') || p.name;
     p.manufacturer = v('manufacturer');
     p.watts = this._num(v('watts'), p.watts);
+    p.pf = Math.min(1, Math.max(0.3, this._num(v('pf'), p.pf || 0.95)));
     p.rotate = this._num(v('rotate'), 0);
     this._markDirty();
+    if (this._circuitsUsing(id).length) StreetLight._afterMutate(false);   // their kVA / VD follow the new power
     this.render();
     this.recompute(0);
   },
@@ -1346,26 +1350,36 @@ const RoadLight = {
     if (!des) return;
     const circuits = StreetLight.circuits;
     if (!circuits.length) return;
-    const ph = this.library[(des.rows[0] || {}).photometryId];
-    const watts = ph ? ph.watts * this._num(des.rows[0].fluxPct, 100) / 100 : 0;
-    const match = SL_LUMINAIRES.filter(l => l.id.startsWith('led')).reduce((best, l) => (!best || Math.abs(l.watts - watts) < Math.abs(best.watts - watts) ? l : best), null);
+    const row0 = des.rows[0] || {};
+    const ph = this.library[row0.photometryId];
+    const flux = this._num(row0.fluxPct, 100);
+    const lumId = ph ? 'ph:' + ph.id : null;
+    const hasPower = ph && Number(ph.watts) > 0;
     const m = this._modal('rl-apply-modal', 'Apply to a circuit', `
       <div class="rl-form">
         <label>Circuit<select data-a="circuit">${circuits.map(c => `<option value="${c.id}">${escHtml(c.name)} (${c.poles.length} poles, ${c.spacingM} m)</option>`).join('')}</select></label>
         <label class="rl-check"><input type="checkbox" data-a="spacing" checked> Pole spacing → ${this._fmt(des.spacing, 1)} m</label>
-        ${match && watts ? `<label class="rl-check"><input type="checkbox" data-a="lum"${Math.abs(match.watts - watts) <= 5 ? ' checked' : ''}> Luminaire → ${escHtml(match.name)} <span class="sl-hint">(design: ${this._fmt(watts, 0)} W)</span></label>` : ''}
+        ${ph ? `<label class="rl-check"><input type="checkbox" data-a="lum"${hasPower ? ' checked' : ' disabled'}> Luminaire → ${escHtml(ph.name)} <span class="sl-hint">(${hasPower ? `${this._fmt(ph.watts, 1)} W, pf ${ph.pf || 0.95}` : 'no rated power — set it on the luminaire first'})</span></label>` : ''}
       </div>
-      <p class="sl-hint">The circuit's volt drop, earth loop and kVA are recalculated with it. A staggered or opposite layout puts poles on both sides: each side's circuit takes the same spacing.</p>`,
+      <p class="sl-hint">The circuit's volt drop, earth loop and kVA are recalculated with it${flux !== 100 ? `. The design dims to ${flux} %; the circuit is checked at the luminaire's full rated power, which is the conservative case` : ''}. A staggered or opposite layout puts poles on both sides: each side's circuit takes the same spacing.</p>`,
       `<button class="btn-small" data-m="close">Cancel</button><button class="btn-small btn-primary" data-m="ok">Apply</button>`);
     if (!(await this._modalResult(m))) return;
     const c = StreetLight.circuit(m.querySelector('[data-a="circuit"]').value);
     if (!c) return;
     if (m.querySelector('[data-a="spacing"]').checked) c.spacingM = this._num(des.spacing, c.spacingM);
     const lum = m.querySelector('[data-a="lum"]');
-    if (lum && lum.checked && match) c.luminaireId = match.id;
+    const setLum = lum && lum.checked && hasPower;
+    if (setLum) c.luminaireId = lumId;
     StreetLight._afterMutate(false);
     this._markDirty();
-    await UI.alert(`${c.name} now uses ${c.spacingM} m spacing${lum && lum.checked ? ` and ${match.name}` : ''}.`);
+    await UI.alert(`${c.name} now uses ${c.spacingM} m spacing${setLum ? ` and ${ph.name} (${this._fmt(ph.watts, 1)} W)` : ''}.`);
+  },
+
+  // Street lighting circuits that use a photometry entry as their luminaire
+  // (circuit default or any pole).
+  _circuitsUsing(phId) {
+    const ref = 'ph:' + phId;
+    return StreetLight.circuits.filter(c => c.luminaireId === ref || (c.poles || []).some(p => p.luminaireId === ref)).map(c => c.name);
   },
 
   // ─── Small modal helper ──────────────────────────────────────────────

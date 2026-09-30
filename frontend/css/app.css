@@ -3355,3 +3355,21 @@ body.dark-mode .tcc-ft-slow { color: #ffcc80; }
 .lib-name-badge { display: block; width: fit-content; margin: 4px 0 0; }
 .sl-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; }
 .sl-field input { padding: 6px 8px; }
+
+/* SearchSelect (js/searchselect.js) — type-to-filter box over a hidden <select> */
+select.ss-native { display: none !important; }
+.ss { position: relative; display: flex; align-items: center; min-width: 0; }
+.ss-input { flex: 1; min-width: 0; width: 100%; padding-right: 22px !important; }
+.ss-caret { position: absolute; right: 7px; font-size: 10px; color: var(--text-secondary); cursor: pointer; }
+.ss-list { position: fixed; z-index: 10050; overflow: auto; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 4px 0; font-size: 12px; font-family: var(--font-family); }
+.ss-group { padding: 6px 10px 2px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); }
+.ss-opt { padding: 5px 10px 5px 16px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-opt.act { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.ss-opt.sel { font-weight: 600; }
+.ss-opt.dis { color: var(--text-muted, #999); cursor: not-allowed; }
+.ss-empty { padding: 8px 10px; color: var(--text-secondary); }
+@media (max-width: 768px) {
+  .ss-list { font-size: 14px; }
+  .ss-opt { padding: 10px 12px 10px 18px; }
+  .ss-input { font-size: 16px !important; }   /* no iOS zoom on focus */
+}
