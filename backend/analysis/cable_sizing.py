@@ -974,7 +974,11 @@ def run_cable_sizing(project: ProjectData, ambient_temp_c: float = 30,
         # Voltage CLASS for the recommendation: the chosen library type's, or
         # — for a cable never given a type (voltage_kv is then only the
         # palette default) — the system's.
-        class_kv = (cp["voltage_kv"] if (cp["standard_type"] and cp["voltage_kv"] > 0)
+        # A library type carries its own class (an 11 kV cable run on 3.3 kV
+        # keeps voltage_kv at the operating 3.3), so read it from the entry.
+        _std = next((sc for sc in STANDARD_CABLES if sc["id"] == cp["standard_type"]), None)
+        class_kv = (_std["voltage_kv"] if _std
+                    else cp["voltage_kv"] if (cp["standard_type"] and cp["voltage_kv"] > 0)
                     else system_kv)
         is_lv = 0 < system_kv <= 1.0
 

@@ -499,6 +499,9 @@ const Properties = {
       // zero-sequence fallbacks.
       const filtered = (voltageFilter ? library.filter(voltageFilter.fn) : library)
         .filter(c => isOverhead || CableLib.isSldEligible(c));
+      if (voltageFilter && voltageFilter.sortByVoltage) {
+        filtered.sort((a, b) => a.voltage_kv - b.voltage_kv);   // stable: library order within a class
+      }
       const selectedItem = library.find(c => c.id === value);
       const displayText = value ? (selectedItem ? selectedItem.name : value) : '';
       const hintHtml = voltageFilter ? `<div class="searchable-select-hint">Showing ${voltageFilter.label} cables</div>` : '';
@@ -1407,7 +1410,14 @@ const Properties = {
         comp.props.r0_per_km = cable.r0_per_km;
         comp.props.x0_per_km = cable.x0_per_km;
         comp.props.rated_amps = cable.rated_amps;
-        comp.props.voltage_kv = cable.voltage_kv;
+        // voltage_kv is the cable's OPERATING voltage (voltage propagation and
+        // the load-flow mismatch check compare it with the bus). A cable rated
+        // above its system (11 kV cable on 3.3 kV) keeps the system voltage;
+        // its insulation class stays on the library entry (standard_type).
+        const vf = this._getCableVoltageFilter(comp.id);
+        const sysV = vf ? vf.systemVoltage : null;
+        const fits = sysV && (sysV <= 1.0 ? cable.voltage_kv <= 1.0 : cable.voltage_kv >= sysV - 1e-9);
+        comp.props.voltage_kv = fits && sysV > 1.0 ? sysV : cable.voltage_kv;
       }
     } else if (libraryType === 'overhead') {
       const line = STANDARD_OVERHEAD_LINES.find(c => c.id === typeId);
@@ -2083,10 +2093,17 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
 
     const systemVoltage = [...voltages][0];
     if (systemVoltage <= 1.0) {
-      return { fn: c => c.voltage_kv <= 1.0, label: 'LV' };
-    } else {
-      return { fn: c => c.voltage_kv === systemVoltage, label: `${systemVoltage} kV` };
+      return { fn: c => c.voltage_kv <= 1.0, label: 'LV', systemVoltage };
     }
+    // A cable insulated for a higher voltage is fine on a lower MV system
+    // (the library has no 3.3 / 6.6 kV class, so an 11 kV cable is the usual
+    // choice there); list those too, nearest rating first.
+    return {
+      fn: c => c.voltage_kv > 1.0 && c.voltage_kv >= systemVoltage - 1e-9,
+      label: `${systemVoltage} kV-capable`,
+      sortByVoltage: true,
+      systemVoltage,
+    };
   },
 
   // Initialize searchable select widgets for cable dropdown
