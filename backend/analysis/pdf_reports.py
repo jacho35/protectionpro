@@ -1710,18 +1710,22 @@ def _calc_grounding(pdf, grounding_results):
 
     _calc_label(pdf, "Standard: IEEE Std 80-2013 — Guide for Safety in AC Substation Grounding")
     pdf.ln(2)
-    _calc_body(pdf, "Tolerable touch voltage (IEEE 80 Eq. 29):")
-    _calc_label(pdf, "  E_touch = (1000 + 1.5 * C_s * rho_s) * 0.116 / sqrt(t_s)  [V]  (50 kg person)")
-    _calc_body(pdf, "Tolerable step voltage (IEEE 80 Eq. 28):")
-    _calc_label(pdf, "  E_step  = (1000 + 6.0 * C_s * rho_s) * 0.116 / sqrt(t_s)  [V]")
-    _calc_body(pdf, "  where C_s = surface layer derating, rho_s = surface resistivity [Ohm.m], t_s = fault duration [s].")
+    # [G5] The formulas as the engine evaluates them (previously the 50 kg
+    # constant was printed against the 70 kg default, and a grid-resistance
+    # formula the engine does not use).
+    _calc_body(pdf, "Tolerable touch and step voltages (IEEE 80 §8.3, body weight per bus):")
+    _calc_label(pdf, "  E_touch = (1000 + 1.5 * C_s * rho_s) * k / sqrt(t_s)  [V]")
+    _calc_label(pdf, "  E_step  = (1000 + 6.0 * C_s * rho_s) * k / sqrt(t_s)  [V]   k = 0.116 (50 kg), 0.157 (70 kg)")
+    _calc_body(pdf, "  where C_s = surface layer derating, rho_s = surface resistivity [Ohm.m], t_s = shock duration [s].")
     pdf.ln(2)
-    _calc_body(pdf, "Ground potential rise:")
-    _calc_label(pdf, "  GPR = I_G * R_g  [V]  where I_G = ground fault current, R_g = grid resistance.")
+    _calc_body(pdf, "Grid current and ground potential rise (IEEE 80 §15):")
+    _calc_label(pdf, "  I_G = D_f * S_f * (remote share) * 3I0 ;  GPR = I_G * R_g  [V]")
+    _calc_body(pdf, "  The share of 3I0 returned by a transformer/generator neutral at the bus does not enter the soil.")
     pdf.ln(2)
-    _calc_body(pdf, "Grid resistance (Schwarz formula, IEEE 80 Eq. 53):")
-    _calc_label(pdf, "  R_g = rho/(4*r) + rho/(L_T) * (1 + 1/(1 + h*sqrt(20/A)))")
-    _calc_body(pdf, "  where r = equiv. radius of grid, L_T = total conductor length, A = grid area, h = burial depth.")
+    _calc_body(pdf, "Grid resistance (Sverak, IEEE 80 §14.2):")
+    _calc_label(pdf, "  R_g = rho * [1/L_T + 1/sqrt(20*A) * (1 + 1/(1 + h*sqrt(20/A)))]")
+    _calc_body(pdf, "  where L_T = total buried length, A = grid area, h = burial depth. Two-layer soil: R_g, E_m and E_s")
+    _calc_body(pdf, "  are the uniform values scaled by a numerical (method-of-moments) solve of the grid.")
     pdf.ln(4)
 
     bus_results = grounding_results.get("buses", [])
@@ -1732,7 +1736,10 @@ def _calc_grounding(pdf, grounding_results):
         ("grid_area_m2", "Grid area (m2)"),
         ("grid_dimensions", "Grid dimensions"),
         ("total_conductor_length_m", "Total conductor length (m)"),
-        ("fault_current_ka", "Ground fault current (kA)"),
+        ("symmetrical_fault_ka", "Earth fault current 3I0 (kA)"),
+        ("remote_fraction", "Share returning through earth"),
+        ("current_split_factor", "Split factor S_f"),
+        ("fault_current_ka", "Grid current I_G (kA)"),
         ("grid_resistance_ohm", "Grid resistance (Ohm)"),
         ("gpr_v", "Ground potential rise (V)"),
         ("tolerable_touch_v", "Tolerable touch voltage (V)"),
@@ -1759,6 +1766,9 @@ def _calc_grounding(pdf, grounding_results):
         issues = bus.get("issues", [])
         for iss in issues:
             _calc_body(pdf, f"  ! {iss}")
+        for note in bus.get("notes", []) or []:
+            pdf.set_font("Helvetica", "", 8)
+            pdf.multi_cell(0, 4.5, _safe(f"  i {note}"), new_x="LMARGIN", new_y="NEXT")
         _draw_grounding_grid(pdf, bus)
         pdf.ln(1)
 

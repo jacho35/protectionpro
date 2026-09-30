@@ -272,6 +272,7 @@ can still be worthwhile, at lower priority than an unreviewed module.
 
 | Module | Review | Findings | Outcome |
 |---|---|---|---|
+| `grounding_system.py` (+ `fault.py` Z0 local/remote split) | G1–G5, L1–L6, 2026-09-30 | 5 fixed + notes | `GROUNDING_REVIEW.md`. IEEE 80 Annex B exact to ≤ 0.4 %; two-layer soil replaced by a method-of-moments ratio (R within 1 % of an independent solve); grid current now excludes the share returning to a local neutral. Tests in `test_grounding_review_fixes.py` |
 | `frequency_scan.py` (+ harmonic-network turns ratio) | FS1–FS5, L1–L8, 2026-09-29 | 5 fixed + 3 warnings | `FREQUENCY_SCAN_REVIEW.md`. Z(h) exact vs closed-form RLC and a hand ohmic solve with an ideal transformer; resonances refined to the true extremum and ranked in per unit; dead islands dropped, regulating SVC from the load flow. Tests in `test_frequency_scan_review_fixes.py` |
 | `harmonics.py` (+ `frequency_scan.py` shunts) | H1–H6, L1–L8, 2026-09-29 | 6 fixed + IEC option | `HARMONICS_REVIEW.md`. Nodal solve exact vs a hand 2-bus solve (1e-3 %); IEEE 519 Tables 2–4 now held in full and graded per order; boards, STATCOM/SVC and dead islands corrected. Tests in `test_harmonics_review_fixes.py` |
 | `line_coupling.py` | LC1, 2026-09-29 | 1 fixed + 3 lesser | `LINE_COUPLING_REVIEW.md`. Z0_eff exact vs a 6-conductor phase-domain Carson solve (≤0.08 %); drawn parallel feeders now coupled (exact equivalents). Tests in `test_line_coupling_review_fixes.py` |
@@ -305,7 +306,7 @@ that covers them. Re-read the new paths before trusting the markers:
 | `dynamic_motor_starting.py` | `[EE-12] [PS-1]` |
 | `contingency.py` | `[EE-4] [EE-R2-4]` |
 | `load_diversity.py` | `[EE-13] [EE-R2-5]` |
-| `grounding_system.py` | `[EE-5]` |
+| `grounding_system.py` | `[EE-5]` — first-principles pass done 2026-09-30, `GROUNDING_REVIEW.md` (G1–G5) |
 | `unbalanced_loadflow.py` | `[P5]` |
 | `optimal_powerflow.py` | `[OPF-1]` |
 | `pt_model.py` | `[PS-16]` — first-principles pass done 2026-09-29, `PT_MODEL_REVIEW.md` (PT1–PT4) |

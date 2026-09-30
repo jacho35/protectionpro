@@ -2862,7 +2862,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         ${b.two_layer_soil_enabled ? `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">
           Two-layer soil: ρ₁=${b.soil_resistivity} Ω·m, ρ₂=${b.soil_resistivity_lower} Ω·m, h₁=${b.upper_layer_thickness_m} m
-          → K=${b.two_layer_reflection_factor_K}, ρ<sub>eq</sub>=<strong>${b.equivalent_resistivity_ohm_m} Ω·m</strong> (used for R<sub>grid</sub>/GPR; touch/step use ρ₁)
+          → K=${b.two_layer_reflection_factor_K}; numerical grid solve vs uniform ρ₁: R<sub>grid</sub> ×${b.two_layer_ratio_R}, touch ×${b.two_layer_ratio_Em}, step ×${b.two_layer_ratio_Es} (ρ<sub>eq</sub>=<strong>${b.equivalent_resistivity_ohm_m} Ω·m</strong>)
         </div>` : ''}
         <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div style="background:var(--bg-secondary);border-radius:4px;padding:8px;font-size:12px">
@@ -2890,8 +2890,16 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>`;
       }
 
+      if (b.remote_fraction != null && (b.remote_fraction < 1 || b.current_split_factor < 1)) {
+        html += `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">
+          Grid current I<sub>G</sub> = D<sub>f</sub> × S<sub>f</sub> × remote share × 3I₀ = ${b.decrement_factor_df} × ${b.current_split_factor} × ${b.remote_fraction} × ${b.symmetrical_fault_ka} kA = <strong>${b.fault_current_ka} kA</strong>;
+          conductor sized for ${b.conductor_current_ka} kA</div>`;
+      }
       if (b.issues.length > 0) {
-        html += `<div style="margin-top:6px;font-size:11px;color:#b71c1c">${b.issues.join('<br>')}</div>`;
+        html += `<div style="margin-top:6px;font-size:11px;color:#b71c1c">${b.issues.map(escHtml).join('<br>')}</div>`;
+      }
+      if (b.notes && b.notes.length > 0) {
+        html += `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">${b.notes.map(n => 'ⓘ ' + escHtml(n)).join('<br>')}</div>`;
       }
       html += '</div>';
     }
