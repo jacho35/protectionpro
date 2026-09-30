@@ -181,16 +181,24 @@ const PropWindow = {
       fields: sectionGroups[k],
       hidden: def.fields.filter(f => (f.section || 'General') === k && !visible.includes(f)),
     }));
+    // Breaker trip unit, right after General (its own markup, not a field grid)
+    const tuHtml = typeof TripUnit !== 'undefined' ? TripUnit.panelHtml(comp) : '';
+    if (tuHtml) sections.splice(1, 0, { key: '__tripunit', label: 'Trip unit', fields: [], hidden: [], html: tuHtml });
     sections.push({ key: '__position', label: 'Position', fields: [], hidden: [] });
     if (!sections.some(s => s.key === this._section)) this._section = sections[0].key;
 
     this.navEl.innerHTML = `<div class="pw-nav-title">Sections</div>` + sections.map(s =>
       `<button type="button" class="pw-nav-item" data-sec="${s.key}">
         <span class="pw-nav-label">${escHtml(s.label)}</span>
-        <span class="pw-nav-count">${s.key === '__position' ? '' : s.fields.length}</span>
+        <span class="pw-nav-count">${s.key.startsWith('__') ? '' : s.fields.length}</span>
       </button>`).join('');
 
     this.mainEl.innerHTML = sections.map(s => {
+      if (s.html) {
+        return `<section class="pw-section" data-sec="${s.key}">
+        <h3 class="pw-section-title">${escHtml(s.label)}</h3>
+        <div class="pw-field pw-field--wide" data-search="trip unit ir tr im isd tsd ii long time short time instantaneous magnetic thermal pickup">${s.html}</div></section>`;
+      }
       const blurb = PROP_SECTION_BLURBS[multi ? s.key : '__single'] || '';
       const body = s.key === '__position' ? this._positionHtml(comp)
         : s.fields.map(f => this._fieldHtml(comp, def, f)).join('');

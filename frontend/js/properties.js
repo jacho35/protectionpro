@@ -137,6 +137,9 @@ const Properties = {
         html += '</div>'; // close prop-section-body
       }
       html += '</div>'; // close prop-section
+
+      // Breaker trip unit (profile, dials, Ir suggestion) under General
+      if (isGeneral && typeof TripUnit !== 'undefined') html += TripUnit.panelHtml(comp);
     }
 
     html += this._actionsHtml(comp);
@@ -222,7 +225,10 @@ const Properties = {
       }
       return rule.also ? passes(rule.also) : true;
     };
+    // A breaker with a trip unit shows its dials in the Trip unit section
+    const tuActive = typeof TripUnit !== 'undefined' && TripUnit.activeId(comp);
     return def.fields.filter(field => {
+      if (tuActive && TripUnit.DIAL_KEYS.includes(field.key)) return false;
       if (!field.showWhen) return true;
       return passes(field.showWhen);
     });
@@ -363,6 +369,7 @@ const Properties = {
     // (~400 ms) without committing; 'change' (blur/Enter/select) commits the
     // edit once: clears stale results and records a single undo step.
     root.querySelectorAll('input, select').forEach(input => {
+      if (input.closest('[data-trip-unit]')) return;   // TripUnit.bind handles these
       input.addEventListener('change', (e) => {
         const f = e.target.dataset.field;
         if (f && this._liveTimers[f]) {
@@ -385,6 +392,8 @@ const Properties = {
         });
       }
     });
+
+    if (typeof TripUnit !== 'undefined') TripUnit.bind(root, comp);
 
     // Initialize searchable select widgets (cable dropdown)
     this._initSearchableSelects(comp, root);
@@ -897,6 +906,24 @@ const Properties = {
     }
 
     // Standard type selector — auto-fill fields from library
+    if (e.target.dataset.library === 'cb' && comp.type === 'cb' && typeof TripUnit !== 'undefined') {
+      // Changed trip-unit dials: ask whether the new breaker keeps them
+      TripUnit.confirmSwap(comp, value).then(swap => {
+        if (!swap) { this.show(comp.id); return; }   // cancelled — select reverts
+        comp.props[field] = value;
+        if (value) {
+          this.applyStandardType(comp, 'cb', value);
+          TripUnit.afterLibraryPick(comp, swap);
+        }
+        AppState.dirty = true;
+        this._notifyResultsCleared();
+        AppState.clearResults();
+        if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+        Canvas.render();
+        this.show(comp.id);
+      });
+      return;
+    }
     if (e.target.dataset.library) {
       comp.props[field] = value;
       if (value) {
@@ -1082,6 +1109,12 @@ const Properties = {
         comp.props.ground_rod_length = len;
         this.show(comp.id);
       }
+    }
+
+    // A trip-unit profile that no longer fits the breaker type is dropped
+    if (comp.type === 'cb' && field === 'cb_type' && typeof TripUnit !== 'undefined') {
+      const tu = TripUnit.activeId(comp);
+      if (tu && !TripUnit.profilesForType(value).includes(tu)) TripUnit.clear(comp);
     }
 
     // MCB curve class (or switching to MCB) sets the magnetic pickup to the

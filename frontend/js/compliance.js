@@ -1704,6 +1704,7 @@ const Compliance = {
       short_time_pickup: p.short_time_pickup || 0,
       short_time_delay: p.short_time_delay || 0,
       instantaneous_pickup: p.instantaneous_pickup || 0,
+      trip_unit_kind: p.trip_unit_kind || '',
     };
   },
 

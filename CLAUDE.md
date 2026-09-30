@@ -41,6 +41,7 @@ frontend/
     ├── components.js       # Network graph validation, adjacency, cycle detection
     ├── symbols.js          # IEC-standard SVG symbol generators (40 types)
     ├── properties.js       # Dynamic property editor per component type
+    ├── tripunit.js         # TripUnit — MCCB/ACB trip-unit profiles (TRIP_UNITS in constants.js): library pick writes the entry's settings as defaults, dial pickers + edited/reset, Ir suggestion (Ib ≤ Ir ≤ Iz), keep-or-reset dialog on a breaker swap, TCC drawer rows; `trip_unit_kind: 'electronic'` gives an MCCB short-time/instantaneous in every engine
     ├── annotations.js      # Draggable fault/loadflow result badges
     ├── cablefocus.js       # CableFocus — cable-sizing result boxes filtered to the selected bus's incoming/outgoing cables (Results menu / bus properties button / results-table 'At bus'), rest of the sheet dimmed; session-only
     ├── project.js          # Save/load/export (JSON/SVG/PNG/CSV/PDF)
