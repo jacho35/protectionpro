@@ -11,7 +11,8 @@ Instead of teaching each engine about it, the analysis routes call
 
 * its own id, as a ``switch`` (or ``cb`` for ``co_type = breaker_pair``)
   wired selected-input -> ``out``; closed, or open when ``state = off``
-  (``in_1`` is then the one wired through);
+  (``in_1`` is then the one wired through). A breaker pair's legs take
+  their own trip-unit settings from the ``cb1_*`` / ``cb2_*`` props;
 * ``<id>__in_1`` / ``<id>__in_2``: an OPEN stub device of the same type on
   the input that isn't wired through, so that supply sees an open switching
   device, exactly as it does in the real switchboard.
@@ -23,12 +24,16 @@ result naming keeps the changeover's own id for the live contact.
 
 from __future__ import annotations
 
+import re
+
 CHANGEOVER = "changeover"
 INPUT_PORTS = ("in_1", "in_2")
 _ROMAN = {"in_1": "I", "in_2": "II"}
 
 # Props handed to the rewritten devices (the rest stay on the changeover).
 _RATING_KEYS = ("rated_voltage_kv", "rated_current_a", "breaking_capacity_ka")
+# Per-breaker setting keys of a breaker pair (cb1_* / cb2_*).
+_LEG_PREFIX = re.compile(r"^cb[12]_")
 
 
 def changeover_position(comp) -> str:
@@ -45,11 +50,18 @@ def _leg_props(comp, port: str, closed: bool) -> dict:
     leg["state"] = "closed" if closed else "open"
     leg["changeover_id"] = comp.id
     if props.get("co_type") == "breaker_pair":
-        # Keep any breaker settings the user entered on the changeover; a
-        # trip rating defaults to the frame rating like a fresh CB.
+        # Each breaker's own trip-unit setpoints (cb1_* for input I, cb2_*
+        # for input II) win; any unprefixed breaker setting on the changeover
+        # (projects saved before per-breaker settings) applies to both. A trip
+        # rating defaults to the frame rating like a fresh CB.
+        own = f"cb{port[-1]}_"
         for k, v in props.items():
-            if k not in leg and k not in ("co_type", "state", "contact_duty",
-                                          "input_1_label", "input_2_label"):
+            if k.startswith(own) and v not in (None, ""):
+                leg[k[len(own):]] = v
+        for k, v in props.items():
+            if (k not in leg and not _LEG_PREFIX.match(k)
+                    and k not in ("co_type", "state", "contact_duty",
+                                  "input_1_label", "input_2_label")):
                 leg[k] = v
         leg.setdefault("cb_type", "acb")
         if "rated_current_a" in leg:
