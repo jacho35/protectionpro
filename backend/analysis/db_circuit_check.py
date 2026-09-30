@@ -663,6 +663,7 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
     x_km = _x_per_km(size)
     length_km = length_m / 1000.0
     vd_limit = vd_light if _is_lighting(way.get("description")) else vd_general
+    z_eff = None
     if r_km is None or v_ll <= 0:
         vd_v = vd_pct = vd_total = None
         vd_status = "info"
@@ -711,6 +712,8 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
     ia = ia_mult * in_a
     zs = ief = zs_max = None
     zs_c = None
+    zs_rcd_max = u_lim = None
+    declared_t = _num(way.get("disconnect_time_s"))
     r_phase = r_ecc = 0.0
     zs_basis_bits = []
     if z_supply is None:
@@ -729,7 +732,6 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
         zs_max = C_MIN * v_ph / ia if ia > 0 else None
         if not has_ecc:
             zs_basis_bits.append("assumed_min_ecc")
-        declared_t = _num(way.get("disconnect_time_s"))
         if ief >= ia:
             zs_status = "pass"
             zs_basis_bits.insert(0, "magnetic")
@@ -797,7 +799,7 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
     # table was tested, so a standard twin-and-earth (2.5/1.5 mm²) failed
     # although §543.1.2 needs 0.43 mm² for it.
     k_pe = _k_pe(install)
-    ecc_adiabatic = None
+    ecc_adiabatic = i_ad = t_ad = None
     if required is None:
         ecc_status = "info"
         ecc_msg = "ECC not evaluated — no cable size on this way."
@@ -835,6 +837,43 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
         messages.append(ecc_msg)
 
     status = _worst(amp_status, coord_status, vd_status, ecc_status, zs_status)
+    factors = amp.get("factors") or {}
+    df_raw = way.get("demand_factor")
+    calc = {
+        # Every intermediate value behind the verdicts, for the "how was this
+        # calculated" view — the same numbers the checks above used.
+        "v_ll": _round(v_ll, 2), "v_ph": _round(v_ph, 2), "is_3p": bool(is_3p),
+        "load_va": _round(_num(way.get("load_va")), 2),
+        "demand_factor": _round(1.0 if df_raw in (None, "") else _num(df_raw, 1.0), 4),
+        "feeder": way.get("type") == "feeder_db",
+        "downstream_a": _round(_num(way.get("downstream_a")), 2),
+        "method": install["method"], "conductor": _cond(install["conductor"]),
+        "insulation": install["insulation"], "ambient_c": _round(install["ambient_c"], 2),
+        "grouping": factors.get("grouping_row"), "circuits": install["circuits"],
+        "environment": factors.get("environment"),
+        "loaded": amp.get("loaded"),
+        "f_temp": _round(factors.get("temp"), 4), "f_group": _round(factors.get("grouping"), 4),
+        "f_soil": _round(factors.get("soil"), 4),
+        "soil_kmw": install["soil_kmw"],
+        "pf": _round(pf, 4), "sin_phi": _round(sin_phi, 4),
+        "r_hot_per_km": _round(r_km, 5), "x_per_km": _round(x_km, 5),
+        "r_temp_factor": _round(_temp_correction(_cond(install["conductor"]), install["insulation"]), 4),
+        "z_eff_per_km": _round(z_eff, 5), "length_m": _round(length_m, 2),
+        "lighting": bool(_is_lighting(way.get("description"))),
+        "supply": install["supply"],
+        "z_supply_r": _round(z_supply.real, 5) if z_supply is not None else None,
+        "z_supply_x": _round(z_supply.imag, 5) if z_supply is not None else None,
+        "ecc_effective_mm2": _round(ecc_effective, 3),
+        "r_ecc_per_km": _round(_r_hot_per_km(ecc_effective, install["conductor"], install["insulation"]), 5)
+        if ecc_effective else None,
+        "zs_r": _round(zs_c.real, 5) if zs_c is not None else None,
+        "zs_x": _round(zs_c.imag, 5) if zs_c is not None else None,
+        "c_min": C_MIN, "c_max": C_MAX,
+        "idn_ma": _round(idn_ma, 1), "el_group": way.get("el_group") or "",
+        "zs_rcd_max_ohm": _round(zs_rcd_max, 3), "u_lim_v": _round(u_lim, 2),
+        "declared_time_s": _round(declared_t, 3) if declared_t > 0 else None,
+        "k_pe": _round(k_pe, 1), "i_adiabatic_a": _round(i_ad, 1), "t_adiabatic_s": _round(t_ad, 3),
+    }
     return {
         "board_id": board.id, "board_name": board_name,
         "way_id": way.get("id"), "way": str(way.get("way") or ""),
@@ -875,6 +914,7 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
 
         "status": status,
         "messages": messages,
+        "calc": calc,
     }
 
 

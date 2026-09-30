@@ -403,7 +403,9 @@ class TestEnvelope:
         out = run_db_circuit_check(p)
         json.dumps(out)          # raises TypeError on a numpy scalar
         for r in out["ways"]:
-            for k, v in r.items():
+            for k, v in [*r.items(), *r["calc"].items()]:
+                if k == "calc":
+                    continue
                 assert v is None or isinstance(v, (str, int, float, bool, list)), \
                     f"{k} is {type(v)}"
 

@@ -735,6 +735,121 @@ const DBSchedule = {
     return this._resIndex;
   },
 
+  // ── "How was this calculated" — every step of one way's check, with the
+  // backend's own intermediate values (row.calc) substituted into each
+  // formula. Opened by clicking an Iz / %VD / ECC result cell.
+  showCalc(wayId, focus) {
+    const comp = AppState.components.get(this.currentId);
+    const way = comp && (comp.props.circuits || []).find(c => c.id === wayId);
+    const row = way ? this._resultFor(way) : null;
+    if (!row || !row.calc) {
+      if (typeof UI !== 'undefined' && UI.toast) UI.toast('Run "Check circuits" first — the calculation comes from its result.', 'info');
+      return;
+    }
+    const k = row.calc;
+    const n = (v, d = 2) => (v == null || !isFinite(v)) ? '—' : Number(v).toFixed(d);
+    const g = v => (v == null ? '—' : String(+Number(v).toPrecision(6)));
+    const ST = { pass: '✓ Pass', warn: '⚠ Check', fail: '✗ Fail', info: 'ℹ Info' };
+    const badge = s => `<span class="db-res st-${s || 'none'}" style="float:right;">${ST[s] || ''}</span>`;
+    const step = (id, title, status, formula, msg) => `
+      <div class="calc-step db-calc-${id}">
+        <div class="calc-step-title">${escHtml(title)}${badge(status)}</div>
+        <div class="calc-formula">${escHtml(formula)}</div>
+        ${msg ? `<div class="calc-result">${escHtml(msg)}</div>` : ''}
+      </div>`;
+    const u = k.is_3p ? k.v_ll : k.v_ph;
+    const L = (k.length_m || 0) / 1000;
+
+    // 1. Design current
+    let ib = k.is_3p
+      ? `Ib = S × DF / (√3 × U) = ${g(k.load_va)} × ${g(k.demand_factor)} / (√3 × ${n(k.v_ll, 1)})`
+      : `Ib = S × DF / U0 = ${g(k.load_va)} × ${g(k.demand_factor)} / ${n(k.v_ph, 1)}`;
+    ib += `\n   = ${n(k.feeder ? (k.load_va * k.demand_factor) / (k.is_3p ? Math.sqrt(3) * k.v_ll : k.v_ph) : row.ib_a)} A`;
+    if (k.feeder) ib += `\nFeeder to a sub-board: Ib = max(that, downstream demand ${n(k.downstream_a)} A) = ${n(row.ib_a)} A`;
+    ib += `\n\nU0 = U / √3 = ${n(k.v_ll, 1)} / √3 = ${n(k.v_ph, 1)} V  (board voltage)`;
+
+    // 2. Iz and coordination
+    const fac = [`temperature ${k.ambient_c} °C ${k.environment || ''}: × ${n(k.f_temp, 2)}`,
+      `grouping (${k.circuits} circuit${k.circuits === 1 ? '' : 's'}, ${k.grouping || ''}): × ${n(k.f_group, 2)}`];
+    if (k.environment === 'ground' && k.soil_kmw != null) fac.push(`soil ${k.soil_kmw} K·m/W: × ${n(k.f_soil, 2)}`);
+    const iz = `Tabulated Iz (IEC 60364-5-52, method ${k.method}, ${k.conductor}/${k.insulation},
+  ${k.loaded} loaded conductors, ${g(row.cable_mm2)} mm²) = ${g(row.iz_base_a)} A
+Derating:
+  ${fac.join('\n  ')}
+Iz = ${g(row.iz_base_a)} × ${n(row.derating_factor, 3)} = ${n(row.iz_derated_a, 1)} A
+
+IEC 60364-4-43 §433.1:  Ib ≤ In ≤ Iz
+  ${n(row.ib_a)} A ≤ ${g(row.in_a)} A ≤ ${n(row.iz_derated_a, 1)} A`;
+
+    // 3. Voltage drop
+    let vd;
+    if (row.vd_pct == null) vd = 'Not evaluated — cable size or board voltage missing.';
+    else {
+      const r20 = k.r_hot_per_km / (k.r_temp_factor || 1);
+      vd = `R = R20 × temperature factor = ${n(r20, 3)} × ${n(k.r_temp_factor, 3)} = ${n(k.r_hot_per_km, 3)} Ω/km  (${k.insulation} operating temp.)
+X = ${n(k.x_per_km, 3)} Ω/km    cos φ = ${n(k.pf, 2)}   sin φ = ${n(k.sin_phi, 3)}
+Z = R·cos φ + X·sin φ = ${n(k.r_hot_per_km, 3)} × ${n(k.pf, 2)} + ${n(k.x_per_km, 3)} × ${n(k.sin_phi, 3)} = ${n(k.z_eff_per_km, 4)} Ω/km
+
+` + (k.is_3p
+        ? `ΔU = √3 × Ib × L × Z = √3 × ${n(row.ib_a)} × ${g(L)} km × ${n(k.z_eff_per_km, 4)} = ${n(row.vd_v, 3)} V
+ΔU% = ΔU / U × 100 = ${n(row.vd_v, 3)} / ${n(k.v_ll, 1)} × 100 = ${n(row.vd_pct, 3)} %`
+        : `ΔU = 2 × Ib × L × Z = 2 × ${n(row.ib_a)} × ${g(L)} km × ${n(k.z_eff_per_km, 4)} = ${n(row.vd_v, 3)} V   (phase + neutral)
+ΔU% = ΔU / U0 × 100 = ${n(row.vd_v, 3)} / ${n(k.v_ph, 1)} × 100 = ${n(row.vd_pct, 3)} %`);
+      vd += row.vd_upstream_pct != null
+        ? `\n\nUpstream (load flow, origin '${row.vd_origin || '—'}' → this board) = ${n(row.vd_upstream_pct, 3)} %
+Total = ${n(row.vd_pct, 3)} + ${n(row.vd_upstream_pct, 3)} = ${n(row.vd_total_pct, 3)} %`
+        : `\n\nUpstream drop not included — no load-flow voltage for this board (run Load Flow, or wire the board on the SLD).`;
+      vd += `\nLimit: ${n(row.vd_limit_pct, 1)} % (${k.lighting ? 'lighting' : 'other uses'}, ${k.supply} supply — IEC 60364-5-52 Table G.52.1)`;
+    }
+
+    // 4. Earth-fault loop
+    let zs;
+    if (row.zs_ohm == null) zs = row.zs_message || 'Not evaluated.';
+    else {
+      zs = `Ze = ${n(k.z_supply_r, 4)} + j${n(k.z_supply_x, 4)} Ω  (${({ thevenin: 'from the network, IEC 60909 minimum basis', declared: 'entered Ze', chained: 'feeding board Ze + feeder cable', request_default: 'default Ze' })[row.z_supply_basis] || row.z_supply_basis})
+R1 = R × L = ${n(k.r_hot_per_km, 3)} × ${g(L)} = ${n(row.r_phase_ohm, 4)} Ω
+R2 = R_ecc × L = ${n(k.r_ecc_per_km, 3)} × ${g(L)} = ${n(row.r_ecc_ohm, 4)} Ω  (ECC ${g(k.ecc_effective_mm2)} mm²${row.ecc_assumed_mm2 != null ? ', assumed' : ''})
+Zs = |Ze + R1 + R2| = |${n(k.zs_r, 4)} + j${n(k.zs_x, 4)}| = ${n(row.zs_ohm, 4)} Ω
+
+If = c_min × U0 / Zs = ${k.c_min} × ${n(k.v_ph, 1)} / ${n(row.zs_ohm, 4)} = ${n(row.ief_a, 0)} A
+Ia = ${g(row.ia_multiple)} × In = ${g(row.ia_multiple)} × ${g(row.in_a)} = ${n(row.ia_a, 0)} A  (${row.curve} curve, top of the IEC 60898-1 band)
+Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection limit ${row.disconnect_limit_s} s (IEC 60364-4-41 Table 41.1)`;
+      if (k.idn_ma && k.zs_rcd_max_ohm != null) zs += `\nRCD: ${g(k.idn_ma)} mA on group '${k.el_group}': Zs ≤ ${n(k.u_lim_v, 0)} V / IΔn = ${n(k.zs_rcd_max_ohm, 1)} Ω`;
+      if (k.declared_time_s) zs += `\nDeclared disconnection time ${g(k.declared_time_s)} s (manufacturer's curve)`;
+      zs += `\nEarthing system: ${row.earthing_system}`;
+    }
+
+    // 5. ECC
+    const s = Number(row.cable_mm2) || 0;
+    let ecc = `Table 54.7: phase ${g(s)} mm² → ${s <= 16 ? 'S' : s <= 35 ? '16 mm²' : 'S/2'} = ${g(row.ecc_required_mm2)} mm²`;
+    ecc += `\nInstalled: ${row.ecc_mm2 != null ? g(row.ecc_mm2) + ' mm²' : 'not entered — smallest compliant assumed: ' + g(row.ecc_assumed_mm2) + ' mm²'}`;
+    if (k.i_adiabatic_a != null && k.t_adiabatic_s != null) {
+      ecc += `\n\nAdiabatic (§543.1.2): S = √(I²t) / k
+  I = c_max × U0 / Zs = ${k.c_max} × ${n(k.v_ph, 1)} / ${n(row.zs_ohm, 4)} = ${n(k.i_adiabatic_a, 0)} A
+  t = ${g(k.t_adiabatic_s)} s   k = ${g(k.k_pe)} (Table 54.3, ${k.conductor}/${k.insulation})
+  S = √(${n(k.i_adiabatic_a, 0)}² × ${g(k.t_adiabatic_s)}) / ${g(k.k_pe)} = ${n(row.ecc_adiabatic_mm2, 2)} mm²`;
+    }
+
+    const head = `<div style="margin-bottom:10px;color:var(--text-muted);font-size:12px;">
+      ${escHtml(comp.props.name || comp.id)} · way ${escHtml(row.way)} ${escHtml(row.description || '')} ·
+      ${escHtml(row.poles)} ${escHtml(row.curve)}${g(row.in_a)} A · ${g(row.cable_mm2)} mm² × ${g(k.length_m)} m</div>`;
+    const html = head
+      + step('ib', 'Design current Ib', null, ib, '')
+      + step('iz', 'Current-carrying capacity Iz and Ib ≤ In ≤ Iz', this._worstStatus(row.ampacity_status, row.coordination_status), iz, row.coordination_message)
+      + step('vd', 'Voltage drop', row.vd_status, vd, row.vd_message)
+      + step('zs', 'Earth-fault loop impedance Zs', row.zs_status, zs, row.zs_message)
+      + step('ecc', 'Protective conductor (ECC)', row.ecc_status, ecc, row.ecc_message);
+
+    const modal = document.getElementById('calc-modal');
+    // #db-modal comes later in the page; keep this one on top of it.
+    document.body.appendChild(modal);
+    modal.querySelector('#calc-modal-title').textContent = `Circuit check — way ${row.way}`;
+    modal.querySelector('#calc-modal-body').innerHTML = html;
+    modal.style.display = '';
+    const el = modal.querySelector(`.db-calc-${focus}`);
+    if (el) { el.style.outline = '2px solid var(--accent)'; el.scrollIntoView({ block: 'nearest' }); }
+  },
+
   // 'a · b · 30 °C air x1.00 · … x0.80 · combined x0.800' → the conditions on
   // one line, then one line per derating factor.
   _deratingLines(detail) {
@@ -805,7 +920,7 @@ const DBSchedule = {
       }
       td.textContent = text;
       td.className = `db-res st-${status}`;
-      td.title = title;
+      td.title = row ? `${title}\n\nClick for the full calculation.` : title;
     });
     // The FLA tooltip quotes the backend's Ib once one exists.
     this._paintFla(comp);
@@ -1208,6 +1323,10 @@ const DBSchedule = {
         this.render();
         this._notifyEdited();
       });
+    });
+    // Result cells open the full calculation behind the verdict.
+    this.body.querySelectorAll('td.db-res[data-res]').forEach(td => {
+      td.addEventListener('click', () => this.showCalc(td.dataset.id, td.dataset.res));
     });
     this.body.querySelectorAll('.db-unpin').forEach(btn => {
       btn.addEventListener('click', () => {

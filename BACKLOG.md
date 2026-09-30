@@ -365,6 +365,10 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### DB circuit check: click a result for the full calculation (2026-09-30)
+- Clicking an Iz, %VD or ECC result cell in the schedule grid opens the calculation behind that way's verdicts. It covers design current Ib, tabulated Iz with each derating factor and Ib ≤ In ≤ Iz, voltage drop (R20 × temperature factor, Z = R·cos φ + X·sin φ, 2× or √3 form, upstream load-flow drop from the origin, limit), the earth loop (Ze, R1, R2, Zs, If = c_min·U0/Zs against Ia, plus the RCD and declared-time routes) and the ECC (Table 54.7 and the adiabatic S = √(I²t)/k). Each formula has the numbers substituted in. The clicked section is highlighted.
+- The engine now returns a `calc` block per way with every intermediate value (voltages, R/X per km, cos φ, factors, Ze/Zs parts, k, adiabatic I and t). The checks and verdicts are unchanged.
+
 ### Schedule grid tooltips on separate lines (2026-09-30)
 - The Iz cell tooltip was one long ` · `-joined line. It now shows the Ib ≤ In ≤ Iz verdict, then the Iz basis (conductors · method · insulation), one line per derating factor, and the earth-loop verdict under its own label. The ⚠ tooltip lists one message per line, and the FLA tooltip puts each item on its own line.
 

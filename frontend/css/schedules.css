@@ -142,6 +142,8 @@
 .library-table [data-res="iz"]  { right: 196px; width: 68px; min-width: 68px; }
 /* Weight and style carry the verdict as well as colour, so the states stay
    distinguishable without relying on hue alone. */
+td.db-res { cursor: pointer; }
+td.db-res:hover { text-decoration: underline dotted; }
 .db-res.st-pass { color: #2e7d32; }
 .db-res.st-warn { color: #b26a00; font-weight: 600; }
 .db-res.st-fail { color: #c62828; font-weight: 700; }
