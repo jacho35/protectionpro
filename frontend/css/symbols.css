@@ -539,3 +539,18 @@ body.dark-mode .sld-component.ctl-energized .symbol-control .symbol-text { fill:
 .ctl-mv-nc { transform: rotate(0deg); }
 .sld-component.ctl-closed .ctl-moving { transform: rotate(0deg); }
 .sld-component.ctl-open .ctl-moving { transform: rotate(-28deg); }
+
+/* Cable sizing results — bus filter (CableFocus) */
+.cs-filter-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 10px; background: var(--bg-secondary); border-radius: 4px; font-size: 12px; }
+.cs-seg { display: flex; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; }
+.cs-seg button { padding: 4px 10px; border: 0; background: var(--bg-primary); color: var(--text-secondary); font: inherit; cursor: pointer; }
+.cs-seg button + button { border-left: 1px solid var(--border-color); }
+.cs-seg button.active { background: var(--accent); color: #fff; font-weight: 600; }
+.cs-seg button:disabled { opacity: 0.5; cursor: default; }
+#cs-filter-bus { height: 26px; min-width: 120px; font: inherit; }
+.cs-filter-spacer { flex: 1; }
+.cs-filter-summary { color: var(--text-secondary); }
+.cs-filter-summary .cs-fail { color: var(--danger); }
+.cs-filter-summary .cs-warn { color: var(--warning); }
+.af-table tr.cs-group-row td { padding-top: 12px; font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--accent); background: transparent; border-bottom: 1px solid var(--border-color); }
+.af-table td.cs-none { color: var(--text-muted); font-style: italic; }

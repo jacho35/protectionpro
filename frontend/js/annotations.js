@@ -435,13 +435,16 @@ const Annotations = {
 
     // Cable sizing annotations on cables
     if (AppState.showResultBoxes.cable && AppState.cableSizingResults && AppState.cableSizingResults.cables) {
+      // Bus focus: only the cables at the focused bus, tagged IN / OUT
+      const focusDirs = typeof CableFocus !== 'undefined' ? CableFocus.focusDirections() : null;
       for (const cable of AppState.cableSizingResults.cables) {
         const comp = pageComps.get(cable.cable_id);
         if (!comp) continue;
+        if (focusDirs && !focusDirs.has(cable.cable_id)) continue;
         const key = `cs:${cable.cable_id}`;
         if (this.hiddenResultBoxes.has(key)) continue;
         const pos = this._badgePos(comp, key, 30, -30, stacks);
-        html += this.renderCableSizingBadge(pos.x, pos.y, cable, key);
+        html += this.renderCableSizingBadge(pos.x, pos.y, cable, key, focusDirs && focusDirs.get(cable.cable_id));
         this._advanceStack(stacks, comp, pos);
       }
     }
@@ -860,7 +863,7 @@ const Annotations = {
       </g>`;
   },
 
-  renderCableSizingBadge(x, y, cable, key) {
+  renderCableSizingBadge(x, y, cable, key, focusDir = null) {
     const fillColor = cable.status === 'fail' ? '#d32f2f'
       : cable.status === 'warning' ? '#f57c00'
       : cable.status === 'unknown' ? '#9e9e9e' : '#4caf50';
@@ -892,7 +895,8 @@ const Annotations = {
         ${titleEl}
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
-        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">CABLE</text>
+        <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">${focusDir
+          ? `${focusDir === 'in' ? 'IN' : 'OUT'} · ${escHtml(cable.cable_name)}` : 'CABLE'}</text>
         ${textHtml}
       </g>`;
   },
