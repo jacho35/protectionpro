@@ -365,7 +365,7 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ### Street lighting: searchable cable and luminaire pickers on circuits (2026-09-30)
 - The circuit form's **Cable** and **Luminaire** pickers, and the Quick calc **Luminaire**, are `SearchSelect` wildcard boxes, like the Quick calc cable. The pole grid's per-pole luminaire stays a native select, because it is a GridTable cell (keyboard / paste / fill-down).
-- *Show all cables…* (the project's preferred conductor hides the other one) is always listed whatever is typed (`data-ss-always`); picking it swaps in the full list and reopens the search (`CableLib.handleShowAll` → `SearchSelect.reopen()`).
+- *Show all cables…* (the project's preferred conductor hides the other one) is always listed whatever is typed (`data-ss-always`); picking it swaps in the full list and reopens the search (`CableLib.handleShowAll` → `SearchSelect.reopen()`). Cache-bust `3.5.164 → 3.5.165`, app version 1.357b.
 
 ### Dialogs: no accidental close on a drag or stray click (2026-09-30)
 - The street-light **Quick calc** and the Lighting design dialogs (optimiser, luminaire, category helper, apply to circuit, generic optic) no longer close on a backdrop click — × / Cancel / Esc only, so a stray click can't lose a half-filled form.
