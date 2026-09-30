@@ -28,6 +28,12 @@
 }
 
 /* Dark mode overrides */
+/* Native dropdown lists are painted by the browser: without a dark
+   color-scheme they open light while the options inherit the pale dark-mode
+   text, so the choices were unreadable. */
+body.dark-mode select { color-scheme: dark; }
+body.dark-mode select option,
+body.dark-mode select optgroup { background-color: var(--bg-primary); color: var(--text-primary); }
 body.dark-mode {
   --bg-primary: #1e1e2e;
   --bg-secondary: #252536;
@@ -62,6 +68,10 @@ body.dark-mode .modal-header { border-color: var(--border-color); }
 body.dark-mode input, body.dark-mode select, body.dark-mode textarea {
   background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-color);
 }
+/* .library-table input/select:focus paints #fff, which outranks the rule above
+   and left pale dark-mode text on white in every editable table. */
+body.dark-mode .library-table input:focus,
+body.dark-mode .library-table select:focus { background-color: var(--bg-primary); }
 body.dark-mode .tcc-coord-pass { background: #1a3a1a; }
 body.dark-mode .dropdown-item:hover { background: var(--bg-tertiary); }
 

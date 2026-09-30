@@ -365,6 +365,11 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Schedules grid: foldable column groups + move/copy ways between boards (2026-09-30)
+- **Column groups**: a group header row over the schedule grid folds **Device** (Poles/Ph/Curve), **Earth leakage** (EL grp/Leak), **Cable** (mm²/ECC/Len) and **Demand** (DF/PF). A folded group becomes one summary column (e.g. `1P · ● R · C`). Clicking a summary chip unfolds the group and focuses that way. Folding is CSS only, so edits, fill-down and grid navigation are unchanged. A pasted block goes into the visible columns. Fold state is a per-browser view preference (`localStorage` `protectionpro-db-fold`). Phone cards always show every field.
+- **Readable dropdowns**: the Poles/Ph/Curve cells drop the native arrow for a small chevron shown on hover/focus, so "1P" no longer reads as "1". In dark mode, native dropdown lists now open dark (`color-scheme`, option colours), and a focused table cell no longer turns white (`.library-table select:focus` was painting `#fff` under pale text). Also fixed: the row checkbox cell was stretched to 188 px by a generic library-table rule.
+- **Move / Copy to board**: the bulk-selection bar gains *To board* + **Move** / **Copy**. The ways are appended after the target's highest way number. A copy gets a new id and is a plain way (not linked to plan devices). A move keeps the way's id; a plan-driven way re-tags its plan devices to the target's plan board, or stays put (with a message) when the target is not on the plan. Sub-board feeder ways are never moved. It is one undo step covering both boards.
+
 ### Changeover switch: 1 input → 2 outputs layout (2026-09-30)
 - New **Layout** prop on the changeover (`co_layout`: `two_in_one_out` default / `one_in_two_out`). The 1-in-2-out layout mirrors the symbol top-to-bottom (classic, IEC, ATS and breaker pair), with the common terminal on top and I / II below. The text (terminal labels, ATS "M", name) stays upright, so there's no need to rotate the switch 180°.
 - Drawing only: `Symbols.portsFor(comp)` swaps the port sides and keeps the ids, so wiring, the backend `expand_changeovers` rewrite and every study are unchanged. "Input 1/2 Label" are renamed to "Terminal I/II Label".
