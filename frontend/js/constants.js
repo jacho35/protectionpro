@@ -1799,32 +1799,30 @@ const DB_ACCESSORY_KINDS = [
   },
 ];
 
-// Trip-unit setpoints for each breaker of an interlocked-breaker-pair
-// changeover: cb1_* is the input I breaker, cb2_* input II. The analysis
-// rewrite (backend/analysis/changeover.py) hands each leg its own settings
-// as a plain CB, and the TCC plots both. Shown only for co_type breaker_pair.
+// Fields of each breaker of an interlocked-breaker-pair changeover: every
+// Circuit Breaker field (Standard CB, ratings, trip unit, Icw, E/F release)
+// under the cb<n>_ prefix — cb1_* is the input I breaker, cb2_* input II. The
+// analysis rewrite (backend/analysis/changeover.py) hands each leg its own
+// cb<n>_* props as a plain CB (a leg's unset rating falls back to the
+// changeover's), and the TCC plots both. Shown only for co_type breaker_pair;
+// appended to COMPONENT_DEFS.changeover below, once the CB definition exists.
+const CO_BREAKER_SKIP = new Set(['name', 'state', 'circuit_type']);
+// Leg ratings left blank use the changeover's own value (shown as placeholder)
+const CO_BREAKER_FALLBACK = new Set(['rated_voltage_kv', 'rated_current_a', 'breaking_capacity_ka']);
 function changeoverBreakerFields(n) {
   const sec = `co_breaker_${n}`;
   const pair = { field: 'co_type', values: ['breaker_pair'] };
-  const acb = { field: `cb${n}_cb_type`, values: ['acb'], also: pair };
-  return [
-    { key: `cb${n}_cb_type`, label: 'CB Type', type: 'select', options: ['mccb', 'acb'],
-      showWhen: pair, section: sec, helpKey: 'cb.cb_type' },
-    { key: `cb${n}_trip_rating_a`, label: 'Trip Rating', type: 'number', unit: 'A',
-      showWhen: pair, section: sec, helpKey: 'changeover.cb_trip_rating_a' },
-    { key: `cb${n}_thermal_pickup`, label: 'Thermal Pickup', type: 'number', unit: '×In',
-      showWhen: pair, section: sec },
-    { key: `cb${n}_magnetic_pickup`, label: 'Magnetic Pickup', type: 'number', unit: '×In',
-      showWhen: pair, section: sec },
-    { key: `cb${n}_long_time_delay`, label: 'LT Delay Class', type: 'number',
-      showWhen: pair, section: sec },
-    { key: `cb${n}_short_time_pickup`, label: 'ST Pickup', type: 'number', unit: '×Ir',
-      showWhen: acb, section: sec, helpKey: 'cb.short_time_pickup' },
-    { key: `cb${n}_short_time_delay`, label: 'ST Delay', type: 'number', unit: 's',
-      showWhen: acb, section: sec, helpKey: 'cb.short_time_delay' },
-    { key: `cb${n}_instantaneous_pickup`, label: 'Instantaneous', type: 'number', unit: '×Ir',
-      showWhen: acb, section: sec, helpKey: 'cb.instantaneous_pickup' },
-  ];
+  const prefixRule = (rule) => rule
+    ? { ...rule, field: `cb${n}_${rule.field}`, also: rule.also ? prefixRule(rule.also) : pair }
+    : pair;
+  return COMPONENT_DEFS.cb.fields.filter(f => !CO_BREAKER_SKIP.has(f.key)).map(f => ({
+    ...f,
+    key: `cb${n}_${f.key}`,
+    section: sec,
+    showWhen: prefixRule(f.showWhen),
+    helpKey: f.key === 'trip_rating_a' ? 'changeover.cb_trip_rating_a' : `cb.${f.key}`,
+    ...(CO_BREAKER_FALLBACK.has(f.key) ? { placeholderFrom: f.key } : {}),
+  }));
 }
 
 const COMPONENT_DEFS = {
@@ -3014,8 +3012,7 @@ const COMPONENT_DEFS = {
         showWhen: { field: 'co_type', values: ['ats'] } },
       { key: 'retransfer_delay_s', label: 'Retransfer Delay', type: 'number', unit: 's',
         showWhen: { field: 'co_type', values: ['ats'] } },
-      ...changeoverBreakerFields(1),
-      ...changeoverBreakerFields(2),
+      // + changeoverBreakerFields(1) / (2), appended after COMPONENT_DEFS
     ],
   },
 
@@ -3905,6 +3902,8 @@ const COMPONENT_DEFS = {
     ],
   },
 };
+
+COMPONENT_DEFS.changeover.fields.push(...changeoverBreakerFields(1), ...changeoverBreakerFields(2));
 
 // Component attributes that affect a (balanced) load-flow solution, per type,
 // used by the Load Flow Study Manager (lfstudy.js) to build its editable

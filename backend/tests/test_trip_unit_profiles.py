@@ -62,3 +62,35 @@ class TestCableSizingReportsDevice:
         r = _row(_lv())
         assert r["protective_device_id"] == "cb"
         assert r["num_parallel"] == 1
+
+
+class TestChangeoverBreakerLegs:
+    """A breaker of an interlocked pair carries every CB prop as cb<n>_*; the
+    rewrite hands each leg its own set, so a leg picked as an electronic MCCB
+    trips with its short-time element and its own ratings win over the
+    changeover's."""
+
+    def _project(self):
+        from backend.models.schemas import ProjectData, Component
+        co = Component(id="co", type="changeover", x=0, y=0, props={
+            "name": "CO", "co_type": "breaker_pair", "state": "in_1",
+            "rated_current_a": 630, "breaking_capacity_ka": 25, "rated_voltage_kv": 0.4,
+            "cb1_standard_type": "mccb_400a", "cb1_cb_type": "mccb", "cb1_trip_rating_a": 400,
+            "cb1_rated_current_a": 400, "cb1_breaking_capacity_ka": 50,
+            "cb1_thermal_pickup": 1.0, "cb1_magnetic_pickup": 10, "cb1_long_time_delay": 10,
+            "cb1_short_time_pickup": 4, "cb1_short_time_delay": 0.2, "cb1_instantaneous_pickup": 10,
+            "cb1_trip_unit": "etu_lsi_mccb", "cb1_trip_unit_kind": "electronic",
+            "cb2_cb_type": "acb",
+        })
+        return ProjectData(projectName="co", baseMVA=100.0, frequency=50, components=[co], wires=[])
+
+    def test_leg_keeps_its_trip_unit_and_ratings(self):
+        from backend.analysis.changeover import expand_changeovers
+        comps = {c.id: c for c in expand_changeovers(self._project()).components}
+        leg1, leg2 = comps["co"].props, comps["co__in_2"].props
+        assert leg1["trip_unit_kind"] == "electronic" and leg1["cb_type"] == "mccb"
+        assert leg1["breaking_capacity_ka"] == 50 and leg1["rated_current_a"] == 400
+        assert _cb_self_clearing_time(leg1, 2000.0) == pytest.approx(0.2 + _BREAKER_OPENING_TIME_S)
+        # The other breaker set nothing of its own: the changeover's ratings apply
+        assert leg2["breaking_capacity_ka"] == 25 and leg2["trip_rating_a"] == 630
+        assert "trip_unit_kind" not in leg2

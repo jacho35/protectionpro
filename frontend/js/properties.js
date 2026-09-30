@@ -129,6 +129,10 @@ const Properties = {
       }
 
       for (const field of fields) {
+        const legN = /^cb([12])_trip_rating_a$/.exec(field.key);
+        if (legN && typeof TripUnit !== 'undefined' && Components.isBreakerPair(comp)) {
+          html += TripUnit.panelHtml(TripUnit.leg(comp, +legN[1]));
+        }
         const val = comp.props[field.key] ?? '';
         html += this.renderField(field, val, comp.id);
       }
@@ -227,8 +231,15 @@ const Properties = {
     };
     // A breaker with a trip unit shows its dials in the Trip unit section
     const tuActive = typeof TripUnit !== 'undefined' && TripUnit.activeId(comp);
+    const tuLegs = typeof TripUnit !== 'undefined' && Components.isBreakerPair(comp)
+      ? [1, 2].filter(n => TripUnit.activeId(TripUnit.leg(comp, n))) : [];
+    const legDial = (key) => {
+      const m = /^cb([12])_(.+)$/.exec(key);
+      return !!m && tuLegs.includes(+m[1]) && TripUnit.DIAL_KEYS.includes(m[2]);
+    };
     return def.fields.filter(field => {
       if (tuActive && TripUnit.DIAL_KEYS.includes(field.key)) return false;
+      if (tuLegs.length && legDial(field.key)) return false;
       if (!field.showWhen) return true;
       return passes(field.showWhen);
     });
@@ -544,6 +555,10 @@ const Properties = {
   // library-derived stay editable.
   _lockedByStandard(comp, fieldKey) {
     if (!comp) return false;
+    const leg = comp.type === 'changeover' && /^cb([12])_(.+)$/.exec(fieldKey);
+    if (leg) {
+      return this._libraryControlledFields.cb.includes(leg[2]) && !!comp.props[`cb${leg[1]}_standard_type`];
+    }
     const fields = this._libraryControlledFields[comp.type];
     return !!(fields && fields.includes(fieldKey) && comp.props.standard_type);
   },
@@ -720,7 +735,11 @@ const Properties = {
         if (field.max !== undefined) constraints += ` max="${field.max / displayMult}"`;
         constraints += ` step="${field.step !== undefined ? field.step / displayMult : 'any'}"`;
       }
-      const placeholderHtml = field.placeholder ? ` placeholder="${escHtml(field.placeholder)}"` : '';
+      // placeholderFrom: a blank value uses another prop (a changeover breaker's
+      // rating falls back to the changeover's own) — shown as the placeholder
+      const phFrom = field.placeholderFrom && _comp ? _comp.props[field.placeholderFrom] : undefined;
+      const placeholder = phFrom !== undefined && phFrom !== '' ? String(phFrom) : field.placeholder;
+      const placeholderHtml = placeholder ? ` placeholder="${escHtml(placeholder)}"` : '';
       inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${escHtml(displayValue)}"${placeholderHtml}${constraints}${dis}${lockTitle}>`;
     }
 
@@ -745,7 +764,8 @@ const Properties = {
     // no entry; they show an ⓘ too but never raise the "default" flag.
     const infoKey = `${this._currentCompType}.${field.key}`;
     const resolvedInfoKey = FIELD_INFO && FIELD_INFO[infoKey] ? infoKey
-      : (FIELD_INFO && FIELD_INFO[field.key] ? field.key : null);
+      : (FIELD_INFO && FIELD_INFO[field.key] ? field.key
+        : (FIELD_INFO && field.helpKey && FIELD_INFO[field.helpKey] ? field.helpKey : null));
     const hasInfo = !!resolvedInfoKey;
     const helpKey = resolvedInfoKey
       || [infoKey, field.key, field.helpKey].find(k => k && typeof FIELD_HELP !== 'undefined' && FIELD_HELP[k]) || null;
@@ -914,6 +934,27 @@ const Properties = {
         if (value) {
           this.applyStandardType(comp, 'cb', value);
           TripUnit.afterLibraryPick(comp, swap);
+        }
+        AppState.dirty = true;
+        this._notifyResultsCleared();
+        AppState.clearResults();
+        if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+        Canvas.render();
+        this.show(comp.id);
+      });
+      return;
+    }
+    const coLeg = e.target.dataset.library === 'cb' && comp.type === 'changeover'
+      && /^cb([12])_standard_type$/.exec(field);
+    if (coLeg && typeof TripUnit !== 'undefined') {
+      // A breaker of an interlocked pair: same flow as a CB, through its cb<n>_ view
+      const leg = TripUnit.leg(comp, +coLeg[1]);
+      TripUnit.confirmSwap(leg, value).then(swap => {
+        if (!swap) { this.show(comp.id); return; }
+        comp.props[field] = value;
+        if (value) {
+          this.applyStandardType(leg, 'cb', value);
+          TripUnit.afterLibraryPick(leg, swap);
         }
         AppState.dirty = true;
         this._notifyResultsCleared();
@@ -1115,6 +1156,17 @@ const Properties = {
     if (comp.type === 'cb' && field === 'cb_type' && typeof TripUnit !== 'undefined') {
       const tu = TripUnit.activeId(comp);
       if (tu && !TripUnit.profilesForType(value).includes(tu)) TripUnit.clear(comp);
+    }
+
+    const coType = comp.type === 'changeover' && /^cb([12])_(cb_type|mcb_curve)$/.exec(field);
+    if (coType && typeof TripUnit !== 'undefined') {
+      const leg = TripUnit.leg(comp, +coType[1]);
+      const tu = TripUnit.activeId(leg);
+      if (coType[2] === 'cb_type' && tu && !TripUnit.profilesForType(value).includes(tu)) TripUnit.clear(leg);
+      if (coType[2] === 'mcb_curve' || value === 'mcb') {
+        leg.props.magnetic_pickup = MCB_CURVE_MAGNETIC[leg.props.mcb_curve || 'C'] || 10;
+      }
+      this.show(comp.id);
     }
 
     // MCB curve class (or switching to MCB) sets the magnetic pickup to the
