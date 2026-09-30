@@ -439,6 +439,33 @@ class StreetLightingRequest(BaseModel):
     candidateCables: list[dict] = []        # for the "smallest cable" search
 
 
+class RoadLightingRequest(BaseModel):
+    """Road lighting on a cross-section (EN 13201-3 / SANS 10098-1) — sections,
+    luminaire rows, spacing, MF and the canonical photometry webs they use
+    (photometry.py). mode: verify | maxSpacing | optimise. See
+    analysis/road_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    sections: list[dict] = []
+    rows: list[dict] = []
+    photometry: dict = {}
+    spacing: float = 30.0
+    mf: float = 0.8
+    mode: str = "verify"
+
+
+class PhotometryFileRequest(BaseModel):
+    """An IES LM-63 or EULUMDAT file's text, parsed into a canonical Type C web."""
+    text: str
+    filename: str = ""
+
+
+class GenericOpticRequest(BaseModel):
+    kind: str = "generic_medium"
+    lumens: float = 10000.0
+    watts: float = 80.0
+
+
 class AdmdKioskResult(BaseModel):
     model_config = {"extra": "allow"}
 

@@ -54,6 +54,7 @@ frontend/
     ├── dbschedule.js       # DB circuit schedule grid — renders into the #db-modal OR the Schedules workspace
     ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)
     ├── sl-diagram.js       # Street lighting circuit schematic (SLDiagram): source → main run, spurs on rows below, per-pole phase/VD/Zs, span length/current/neutral; zoom, PNG/SVG export
+    ├── roadlight.js        # Street lighting › Lighting design: EN 13201 road lighting on a cross-section (strips, luminaire rows, arrangements), luminaire library (IES/LDT import, generic optics), results/isolux, max-spacing + optimiser, apply spacing to a circuit; state in reticulation.streetLighting.roadDesigns/.photometry; PDF in roadlight-report.js
     ├── streetlight.js      # Street lighting workspace (Reticulation): circuits fed from a kiosk/minisub as a tree of poles (3Φ R-W-B rotation, spurs carry it on, or 1Φ string), pole grid, results, Quick calc, Sync from plan; circuit kVA → source streetLightKVA (streetLightFromCircuits)
     ├── workspaces.js       # Project type (Reticulation / Building / Network) → which workspace tabs show, in workflow order; New-project + type dialogs
     ├── help.js             # Help 'Calculations & tools' viewer: ranked search, KaTeX (js/lib/katex) lazy-loaded; articles are data in help-{faults,flow,dynamics,protect,cables,design,workflow}.js (TeX between $…$ / $$…$$; never a literal $ in text)
@@ -107,6 +108,8 @@ backend/
 │   ├── lightning_risk_2024.py # IEC 62305-2:2024 — R = R_L1 + R_L2 per zone, frequency of damage F, N_SG = k·N_G; pinned to Annex F (house/office/hospital)
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
 │   ├── street_lighting.py  # Street lighting circuits — phasor VD per pole incl. neutral, cumulative VD (supply + circuit), Zs vs Ia, max-poles solver, smallest cable
+│   ├── road_lighting.py    # EN 13201-3 road lighting on a cross-section — E, L (CIE r-tables in road_rtables.py), Uo/Ul/TI/REI vs EN 13201-2 M/C/P classes, PDI/AECI, max-spacing + height×tilt×overhang×luminaire×dimming optimiser
+│   ├── photometry.py       # IES LM-63 / EULUMDAT → canonical Type C web (0–360° C planes), generic road optics
 │   ├── db_circuit_check.py # Per-way DB circuit check — derated Iz, Ib<=In<=Iz, volt drop, ECC, earth-loop Zs
 │   ├── iec_60364_tables.py # IEC 60364-5-52 installed-ampacity lookups + ambient/soil tables; capacities (2/3 loaded conductors, methods A1–G) and grouping (B.52.17–19) live in the GENERATED iec_60364_data.py / frontend js/iec-60364-data.js — edit testing/iec-60364-tables-review/iec_60364_5_52_data.json and run build_iec_tables.py, never by hand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -200,6 +203,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/arcflash` | Arc flash | IEEE 1584-2002 and IEEE 1584-2018 (per-bus `arc_flash_method`) |
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/street-lighting` | Street lighting circuits (form, not ProjectData) | Phasor VD per pole (R-W-B rotation / 1Φ), cumulative VD, Zs = Ze + 2·\|Z\|·L vs Ia, max-poles solver |
+| `/api/analysis/road-lighting` | Road lighting on a cross-section (form, not ProjectData); `/road-lighting/photometry` parses IES/LDT, `/road-lighting/generic` makes a generic optic | EN 13201-3 E / L (CIE r-tables), Uo, Ul, TI, REI vs EN 13201-2 (SANS 10098-1) M/C/P classes; EN 13201-5 PDI/AECI; `mode` verify / maxSpacing / optimise |
 | `/api/analysis/db-circuit-check` | Per-way DB circuit schedule check | IEC 60364-5-52 Iz + 4-43 §433.1; volt drop from the origin per 5-52 Table G.52.1 / SANS 10142-1 Cl. 6.6; IEC 60364-5-54 §543.1 ECC (Table 54.7 or adiabatic); IEC 60364-4-41 Zs (magnetic / RCD TN·TT / declared time) |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |

@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, StreetLightingRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, StreetLightingRequest, RoadLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -24,6 +24,8 @@ from ..analysis.flicker import run_flicker_analysis
 from ..analysis.hosting_capacity import run_hosting_capacity
 from ..analysis.admd import run_admd
 from ..analysis.street_lighting import run_street_lighting
+from ..analysis.road_lighting import run_road_lighting
+from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
 from ..analysis.backup_autonomy import run_backup_autonomy
@@ -656,6 +658,48 @@ def street_lighting(data: StreetLightingRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Street lighting error: {e}")
+
+
+@router.post("/road-lighting")
+def road_lighting(data: RoadLightingRequest):
+    """Road lighting on a cross-section (EN 13201-3): illuminance, luminance
+    (CIE r-tables), TI, REI and Uo/Ul against the EN 13201-2 / SANS 10098-1
+    classes; mode maxSpacing sweeps the spacing, optimise sweeps height ×
+    tilt × overhang × luminaire × dimming."""
+    try:
+        return run_road_lighting(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Road lighting error: {e}")
+
+
+@router.post("/road-lighting/photometry")
+def road_lighting_photometry(data: PhotometryFileRequest):
+    """Parse an IES LM-63 / EULUMDAT file into the canonical Type C web the
+    road-lighting engine takes (symmetry expanded, 0-360 C planes)."""
+    try:
+        return parse_photometry(data.text, data.filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Photometry file: {e}")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Photometry file could not be read: {e}")
+
+
+@router.get("/road-lighting/generic")
+def road_lighting_generic_list():
+    return [{"kind": k, "name": v["name"]} for k, v in GENERIC_OPTICS.items()]
+
+
+@router.post("/road-lighting/generic")
+def road_lighting_generic(data: GenericOpticRequest):
+    """A generic road distribution (feasibility only) scaled to lumens/watts."""
+    try:
+        return generic_optic(data.kind, data.lumens, data.watts)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/lightning-risk", response_model=LightningRiskResult)

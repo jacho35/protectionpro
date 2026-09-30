@@ -87,7 +87,7 @@ $$f=\frac{d_{known}\ [\text{m}]}{d_{px}},\qquad \ell_{route}=f\sum_{k}\left|\mat
 <h4>Auto-circuiting (Building)</h4>
 <p>Devices tagged to a board way ($\texttt{circuitDbId}$, $\texttt{circuitNo}$) let the plan write the way's load and quantity into the linked board schedule. Untagged devices can inherit a tag through connected final-circuit routes, or be distributed across ways with per-type caps. Routed length flows to the way's cable length, unless the way has been pinned manually.</p>
 <h4>Lighting</h4>
-<p>A calibrated plan can show a lux heatmap — see <a href="#" data-help="design-lux">Lighting (lux) heatmap</a>.</p>` },
+<p>A calibrated plan can show a lux heatmap — see <a href="#" data-help="design-lux">Lighting (lux) heatmap</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
 
 { id: 'design-lux', group: 'design', title: 'Lighting (lux) heatmap',
   std: 'Plan ▸ Lux · IES photometry',
@@ -108,6 +108,29 @@ with $\Phi$ from watts × efficacy (default 100 lm/W, beam 120°). Fine for a fi
 <p>Grid resolution (default 0.5 m) and mounting height (default 2.5 m) are settings. The toast on enabling states which model was used.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>A 3000 lm downlight, 120° cone, directly below (θ = 0), mounted 2.5 m above the working plane: $I_0=3000/(2\pi(1-\cos60^\circ))=3000/3.1416=955$ cd, so $E=955/2.5^2=\mathbf{153\ lx}$ under it.</p></div>` },
+
+{ id: 'design-roadlight', group: 'design', title: 'Road lighting design (EN 13201 / SANS 10098-1)',
+  std: 'Street lighting ▸ Lighting design · EN 13201-2/-3/-5 · CIE r-tables',
+  kw: 'road lighting street lux luminance cd/m2 uniformity uo ul threshold increment ti rei edge ratio m class p class c class r3 r-table ies ldt eulumdat spacing optimise ulysse pdi aeci',
+  html: String.raw`
+<p>Street lighting ▸ <em>Lighting design</em> checks a straight road, drawn as a cross-section, against the EN 13201-2 lighting classes. SANS 10098-1 and CIE 115 use the same M, C and P classes. The strips are carriageways with lanes, footpaths, cycle tracks, verges and medians. One or more rows of luminaires repeat at a common spacing $S$. The calculation follows EN 13201-3.</p>
+<h4>Grid</h4>
+<p>The field runs between two consecutive luminaires of the first row. Along the road it has $N = 10$ points when $S \le 30$ m, otherwise the smallest $N$ that makes $D = S/N \le 3$ m. The first point is $D/2$ from the luminaire. For luminance there are 3 points per lane. For illuminance each strip gets $n \ge 3$ points across, spaced $d \le 1.5$ m.</p>
+<h4>Illuminance and luminance</h4>
+$$E=\text{MF}\sum_i \frac{I_i(C,\gamma)\cos^{3}\gamma_i}{H_i^{2}},\qquad L=\text{MF}\sum_i \frac{I_i(C,\gamma)\;r(\beta_i,\tan\gamma_i)}{H_i^{2}}$$
+<p>$I$ is read from the luminaire's measured Type C web. C0 runs along the road and C90 points across it to the side the row faces. The row's tilt and rotation are applied first. $r$ is the reduced luminance coefficient from the road surface's CIE table (R1–R4, C1, C2), read by linear interpolation. $\beta$ is the angle between the observer's vertical plane and the light's vertical plane at the point: 0 when the luminaire stands beyond the point. Luminance counts luminaires from 5H towards the observer to 12H beyond the point, and ignores any with $\tan\gamma > 12$. Illuminance counts luminaires within 5H.</p>
+<h4>Observer, uniformity and glare</h4>
+<p>The observer's eye is 1.5 m high, 60 m before the field, at the centre of each lane in turn. The reported values are the lowest $\bar L$ and $U_o = L_{min}/\bar L$ over those positions, and the lowest $U_l$, taken along the centre line of the observer's own lane.</p>
+<p>The threshold increment uses initial values (no MF):</p>
+$$f_{TI} = \frac{65\,L_v}{\bar L^{0.8}}\ \%,\qquad L_v = 9.86\left[1+\left(\tfrac{23}{66.4}\right)^{4}\right]\sum_k \frac{E_{eye,k}}{\theta_k^{2}}$$
+<p>The line of sight is 1° below horizontal and $\theta$ is in degrees (1.5°–60°; the CIE 146 small-angle form is used below 1.5°). Luminaires above a 20° car-roof screen are hidden. The observer starts $2.75(H-1.5)$ before the field's first luminaire and moves across one field in steps of $D$. The reported $f_{TI}$ is the worst of those positions. REI is the ratio of $\bar E$ just outside each carriageway edge to $\bar E$ just inside it, on strips $\min(5\,\text{m}, W/2)$ wide.</p>
+<h4>Energy</h4>
+<p>From EN 13201-5: $D_P = P/\sum \bar E_i A_i$ in W/(lx·m²) and $D_E = P\,t/A$ in kWh/(m²·yr), with W/km and poles/km for the quantities.</p>
+<h4>Solving</h4>
+<p><em>Find max spacing</em> sweeps $S$ and returns the largest spacing that passes every class. <em>Optimise</em> tries every combination of mounting height, tilt, overhang, luminaire and dimming level on all rows, each at its largest passing spacing, and ranks the passing options by W/km, poles/km or PDI. <em>Apply spacing to circuit</em> writes the spacing into a street lighting circuit for its volt drop and earth loop check.</p>
+<h4>Photometry</h4>
+<p>Import the manufacturer's IES (LM-63) or EULUMDAT (.ldt) file. If the file's C90 plane does not point to the street side, correct it with the luminaire's <em>Rotate C-planes</em>. Changing the flux rescales the whole web: same optic, other lumen package. The generic optics are smooth representative distributions for feasibility work, not real products.</p>
+<p>Not modelled yet: wet-road $U_{ow}$, P-class $E_{v}$ / $E_{sc}$, and roads that are not straight (see the backlog).</p>` },
 
 { id: 'design-boq', group: 'design', title: 'Bill of quantities, rates & cable schedules',
   std: 'Reports ▸ Bill of Quantities · Rate Library · Cable Schedules',
