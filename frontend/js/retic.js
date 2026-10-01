@@ -578,7 +578,7 @@ const Retic = {
   _searchifyCables() {
     if (typeof SearchSelect === 'undefined') return;
     document.querySelectorAll('#retic-workspace select[data-cable-select]').forEach(sel =>
-      SearchSelect.attach(sel, { placeholder: 'Type to search cables — e.g. 16 cu, 25*xlpe' }));
+      SearchSelect.attach(sel, { placeholder: sel.dataset.ssPlaceholder || 'Type to search cables — e.g. 16 cu, 25*xlpe' }));
   },
 
   _renderSettingsBar() {
@@ -770,9 +770,13 @@ const Retic = {
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m)</label>
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
+            <div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
+              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>
+            <div class="retic-field"><label>Earth fault / ECC (feeder)</label>
+              <div class="earth-cell" data-earth-kiosk="${k.id}">—</div></div>
           </div>
           <table class="erf-table">
-            <thead><tr><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th></th></tr></thead>
+            <thead><tr><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Earth conductor of the service cable (Cu or Al)">Earth Cable</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th title="Earth-fault loop disconnection and ECC size at the end of the service">Earth fault</th><th></th></tr></thead>
             <tbody>${erfRows}</tbody>
           </table>
           <div class="retic-toolbar" style="margin-top:8px">
@@ -785,6 +789,7 @@ const Retic = {
 
     this.updateBadges();
     this.updateVD();   // re-render replaced the cells; VD is client-side, no refetch
+    this.updateEarth();   // …and the last earth-fault check, until the next one lands
     this._attachErfGrids();
   },
 
@@ -818,11 +823,13 @@ const Retic = {
         <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
         <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
         <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType" data-cable-select>${this._cableOptions(e.cableType)}</select></td>
+        <td data-cell="earth" data-label="Earth Cable"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 16 cu, 25 al">${this._earthCableOptions(e.earthCable)}</select></td>
         <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
+        <td class="earth-cell" data-cell="ef" data-label="Earth fault" data-earth-erf="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
       </tr>
-      <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="7"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
+      <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="9"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
   },
 
   // Fixed-load override cell: type amps OR kVA; the other is derived through
@@ -863,10 +870,13 @@ const Retic = {
     };
     try {
       const res = await API.runAdmd(payload, this.kiosks, this.minisubs);
+      const prevEarth = AppState.reticResults && AppState.reticResults.earth;
       AppState.reticResults = res;
+      if (prevEarth) res.earth = prevEarth;     // keep showing the last earth check until the new one lands
       this.updateBadges();
       this.updateVD();
       this.renderSummary();
+      this._doEarth();
       // Linked site-plan elements show Demand figures in their properties.
       if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
       // Keep the topology diagram live while it's open (edits recompute here).
@@ -1251,7 +1261,7 @@ const Retic = {
         const design = this._erfDesignCalc(k, e);
         const vc = this._vdCalc(e.cableType, design.amps, e.length, is3ph);
         const body = document.querySelector(`.calc-panel[data-calc-body="e:${e.id}"]`);
-        if (body) body.innerHTML = this._erfCalcHtml(k, e, design, vc, limit);
+        if (body) body.innerHTML = this._erfCalcHtml(k, e, design, vc, limit) + this._erfEarthHtml(e.id);
         if (!vc) { cell.textContent = '—'; cell.className = 'vd-cell'; continue; }
         const vd = vc.vd;
         const open = this._calcOpen.has('e:' + e.id);
@@ -1295,6 +1305,8 @@ const Retic = {
             <option value=""${!ms.txTypeId ? ' selected' : ''}>Auto${autoTx ? ' — ' + escHtml(autoTx.label) : ''}</option>
             ${txOpts.map(o => `<option value="${o.id}"${ms.txTypeId === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
           </select></span></div>
+        <div class="summary-row"><span class="k" title="The LV device that clears an earth fault anywhere downstream of this minisub; used for the earth-fault loop and ECC checks">LV protection</span><span class="v">
+          <select class="ms-prot" data-action="minisub-field" data-ms="${ms.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(ms.protection)}</select></span></div>
         <div class="summary-row"><span class="k">Utilisation</span><span class="v">${xfmr && xfmr.util != null ? xfmr.util + '%' : '—'}</span></div>
       </div>`;
     }).join('');
@@ -1347,9 +1359,11 @@ const Retic = {
       ${msBlocks}
       ${networkBlock}
       ${feederBlock}
+      ${this._earthSummaryHtml()}
       <div class="retic-toolbar">
         <button class="retic-btn primary" data-action="push-sld" title="Add each minisub's diversified demand to the SLD as an equivalent static load">Push demand to SLD →</button>
       </div>`;
+    this._searchifyCables();
   },
 
   // VD (%) across the single segment feeding one kiosk — the leg from its
@@ -1412,6 +1426,178 @@ const Retic = {
   // dropdown option and used by callers that have no minisub in hand.
   _suggestTransformer(demandKVA) {
     return this._minisubTx(null, demandKVA);
+  },
+
+  // ─── Earth-fault loop + ECC size (backend /retic-earth-check) ───
+  // The minisub's LV device (from the standard CB / fuse lists) clears an earth
+  // fault anywhere downstream; each LV cable carries an earth conductor chosen
+  // from the cable library (Cu or Al). Results live on reticResults.earth.
+
+  // "cb:<id>" / "fuse:<id>" → the library entry, resolved at call time (the
+  // libraries are edited in place by Settings).
+  _protectionDevice(ms) {
+    const v = ms && ms.protection;
+    if (!v) return null;
+    const [kind, id] = String(v).split(':');
+    const e = kind === 'cb' ? STANDARD_CBS.find(c => c.id === id) : kind === 'fuse' ? STANDARD_FUSES.find(f => f.id === id) : null;
+    return e ? { kind, name: e.name, props: e } : null;
+  },
+
+  _protectionOptions(selected) {
+    const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
+    const opt = (kind, x) => `<option value="${kind}:${x.id}"${selected === kind + ':' + x.id ? ' selected' : ''}>${escHtml(x.name)}</option>`;
+    return '<option value="">— none selected —</option>'
+      + `<optgroup label="Circuit breakers (LV)">${STANDARD_CBS.filter(lv).map(x => opt('cb', x)).join('')}</optgroup>`
+      + `<optgroup label="Fuses">${STANDARD_FUSES.filter(lv).map(x => opt('fuse', x)).join('')}</optgroup>`;
+  },
+
+  // Every LV cable in the one library, Cu and Al, any construction. "Assumed"
+  // = Table 54.7 size in the phase conductor's metal.
+  _earthCableOptions(selected) {
+    return CableLib.options(selected, { filter: (c) => !CableLib.isMV(c) })
+      .replace('<option value="">— select —</option>', '<option value="">— assumed (Table 54.7) —</option>');
+  },
+
+  _cableDict(name) {
+    const c = name ? CableLib.byName(name) : null;
+    if (!c) return null;
+    CableLib.normalize(c);
+    return { name: c.name, size_mm2: c.size_mm2, conductor: c.conductor, insulation: c.insulation, r_per_km: c.r_per_km, x_per_km: c.x_per_km };
+  },
+
+  _earthPayload() {
+    const res = AppState.reticResults;
+    const msRes = {};
+    if (res && res.minisubs) for (const m of res.minisubs) msRes[m.minisubId] = m;
+    return {
+      settings: { u0: 230, disconnectTimeS: 5 },
+      minisubs: this.minisubs.map(ms => {
+        const r = msRes[ms.id];
+        const tx = this._minisubTx(ms, r ? r.totalKVA : 0);
+        const e = tx && tx.entry;
+        return {
+          id: ms.id, name: ms.name,
+          tx: e ? { kva: tx.kva, zPercent: e.z_percent, xrRatio: e.x_r_ratio, vLvKv: e.voltage_lv_kv } : null,
+          device: this._protectionDevice(ms),
+        };
+      }),
+      kiosks: this.kiosks.map(k => ({
+        id: k.id, name: k.name, fedFrom: k.fedFrom || 'source',
+        feeder: { cable: this._cableDict(k.feederCable), earth: this._cableDict(k.feederEarth), lengthM: Number(k.feederLength) || 0 },
+        erfs: k.erfs.map(e => ({
+          id: e.id, erfNumber: e.erfNumber,
+          service: { cable: this._cableDict(e.cableType), earth: this._cableDict(e.earthCable), lengthM: Number(e.length) || 0 },
+        })),
+      })),
+    };
+  },
+
+  async _doEarth() {
+    if (!this.kiosks.length || !AppState.reticResults) return;
+    const stamp = this._earthStamp = (this._earthStamp || 0) + 1;
+    try {
+      const r = await API.runReticEarth(this._earthPayload());
+      if (stamp !== this._earthStamp || !AppState.reticResults) return;      // a newer run superseded this one
+      AppState.reticResults.earth = r;
+      this.updateEarth();
+      this.renderSummary();
+      if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
+    } catch (err) {
+      console.error('Earth check failed:', err);
+    }
+  },
+
+  _earthPill(status, text, title) {
+    const cls = status === 'pass' ? 'pass' : status === 'fail' ? 'fail' : 'info';
+    const mark = status === 'pass' ? '✓' : status === 'fail' ? '✗' : '•';
+    return `<span class="status-pill ${cls}" title="${escHtml(title || '')}">${mark} ${escHtml(text)}</span>`;
+  },
+
+  _earthText(item) {
+    if (!item || !item.loop) return '—';
+    const l = item.loop, e = item.ecc;
+    const parts = [];
+    if (l.zsOhm != null) parts.push(`Zs ${l.zsOhm} Ω`);
+    if (l.tS != null) parts.push(l.tS < 10 ? `${l.tS.toFixed(2)} s` : l.tS < 100 ? `${l.tS.toFixed(0)} s` : '>100 s');
+    else if (l.status === 'fail') parts.push('no trip');
+    return parts.join(' · ') || (e ? '' : 'n/a');
+  },
+
+  _earthTip(item) {
+    const l = item.loop || {}, e = item.ecc || {};
+    return [l.note, e.note].filter(Boolean).join('\n');
+  },
+
+  _earthStatus(item) {
+    const order = { pass: 0, info: 1, fail: 2 };
+    const a = (item.loop || {}).status || 'info', b = (item.ecc || {}).status;
+    return b && order[b] > order[a] ? b : a;
+  },
+
+  updateEarth() {
+    const earth = AppState.reticResults && AppState.reticResults.earth;
+    if (!earth) return;
+    for (const k of earth.kiosks) {
+      const kc = document.querySelector(`.earth-cell[data-earth-kiosk="${k.kioskId}"]`);
+      if (kc) kc.innerHTML = this._earthPill(this._earthStatus(k), this._earthText(k), this._earthTip(k));
+      for (const e of k.erfs) {
+        const c = document.querySelector(`.earth-cell[data-earth-erf="${e.erfId}"]`);
+        if (!c) continue;
+        const st = this._earthStatus(e);
+        const open = this._calcOpen.has('e:' + e.erfId);
+        c.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${e.erfId}" aria-expanded="${open}" title="${escHtml(this._earthTip(e))}">${this._earthPill(st, this._earthText(e))} <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
+      }
+    }
+    this.updateVD();     // the expandable panel carries the earth working too
+  },
+
+  // Working for one erf, appended to its Service VD panel.
+  _erfEarthHtml(erfId) {
+    const earth = AppState.reticResults && AppState.reticResults.earth;
+    if (!earth) return '';
+    let item = null;
+    for (const k of earth.kiosks) { item = k.erfs.find(x => x.erfId === erfId); if (item) break; }
+    if (!item) return '';
+    const l = item.loop || {}, e = item.ecc;
+    const f = (n, d = 2) => n == null ? '—' : this._fmt(n, d);
+    const rows = [];
+    if (l.zsOhm != null) {
+      rows.push({ cls: 'calc-leg', cells: ['Earth-fault loop', 'Ze (transformer) + Σ (R1 + R2 + jX1)·L back to the minisub', `Zs ${f(l.zsOhm, 3)} Ω`] });
+      rows.push(['Fault current', `c<sub>min</sub>·U<sub>0</sub> / Zs = 0.95·230 / ${f(l.zsOhm, 3)}`, `${f(l.ifA, 0)} A`]);
+      if (l.tS != null || l.status === 'fail') rows.push(['Clearing time', `minisub device at ${f(l.ifA, 0)} A`, l.tS != null ? `${f(l.tS, 3)} s` : 'does not clear']);
+      if (l.zsMaxOhm != null) rows.push({ cls: 'calc-total ' + (l.status === 'pass' ? 'vd-ok' : l.status === 'fail' ? 'vd-fail' : ''), cells: ['Disconnection', `${l.note || ''} Zs max for ${l.tAllowS} s = ${f(l.zsMaxOhm, 3)} Ω`, l.status === 'pass' ? 'pass' : l.status === 'fail' ? 'FAIL' : '—'] });
+    } else rows.push({ cls: 'calc-warn', cells: ['Earth fault', escHtml(l.note || ''), ''] });
+    if (e) {
+      const src = e.assumed ? `assumed ${e.sizeMm2} mm² ${e.metal}` : `${e.sizeMm2} mm² ${e.metal}`;
+      rows.push(['Earth conductor', src, e.status === 'pass' ? 'pass' : e.status === 'fail' ? 'FAIL' : 'info']);
+      rows.push(['Table 54.7', `minimum for the service phase conductor in ${e.metal}`, e.tableMm2 != null ? `${e.tableMm2} mm²` : '—']);
+      if (e.adiabaticMm2 != null) rows.push(['Adiabatic §543.1.2', `√(I²t)/k = √(${f(e.adiabaticI, 0)}²·${f(e.adiabaticT, 3)}) / ${e.k}`, `${e.adiabaticMm2} mm²`]);
+      rows.push({ cls: 'calc-note-row', cells: ['Result', escHtml(e.note || ''), ''] });
+    }
+    return '<div class="calc-sub">Earth fault &amp; ECC</div>' + this._calcTable(rows);
+  },
+
+  // Summary-panel block: counts, then every item that failed or is incomplete.
+  _earthSummaryHtml() {
+    const earth = AppState.reticResults && AppState.reticResults.earth;
+    if (!earth) return '';
+    const c = earth.counts || {};
+    const fails = [];
+    for (const k of earth.kiosks) {
+      const add = (label, item) => { if (this._earthStatus(item) === 'fail') fails.push({ label, tip: this._earthTip(item) }); };
+      add(`${k.name || 'Kiosk'} feeder`, k);
+      for (const e of k.erfs) add(`${k.name || 'Kiosk'} · erf ${e.erfNumber || ''}`, e);
+    }
+    const rows = fails.slice(0, 30).map(i => `<div class="summary-row"><span class="k" title="${escHtml(i.tip)}">${escHtml(i.label)}</span><span class="v">${this._earthPill('fail', 'Fail', i.tip)}</span></div>`).join('');
+    const todo = c.info ? `<div class="retic-hint">${c.info} check${c.info === 1 ? '' : 's'} still to complete — choose the minisub's LV protection and enter each cable and length.</div>` : '';
+    return `<div class="summary-block">
+      <h3>Earth Fault &amp; ECC</h3>
+      <div class="summary-row"><span class="k">Checks</span><span class="v">${c.pass || 0} pass · ${c.fail || 0} fail · ${c.info || 0} to complete</span></div>
+      ${rows || (c.info ? '' : '<div class="retic-empty">All checks pass.</div>')}
+      ${fails.length > 30 ? `<div class="retic-hint">…and ${fails.length - 30} more.</div>` : ''}
+      ${todo}
+      <details class="earth-basis"><summary>Basis</summary>${(earth.basis || []).map(b => `<p>${escHtml(b)}</p>`).join('')}</details>
+    </div>`;
   },
 
   // Called by AppState.reset()/fromJSON() whenever the project (and with it

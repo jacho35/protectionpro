@@ -472,6 +472,11 @@ const API = {
     return this.request('/analysis/admd', 'POST', { settings, kiosks, minisubs });
   },
 
+  // Reticulation earth-fault loop + ECC size per LV cable (minisub device disconnection)
+  async runReticEarth(body) {
+    return this.request('/analysis/retic-earth-check', 'POST', body);
+  },
+
   // Street lighting circuits (Reticulation › Street lighting)
   async runStreetLighting(body) {
     return this.request('/analysis/street-lighting', 'POST', body);

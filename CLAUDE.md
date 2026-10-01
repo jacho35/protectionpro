@@ -117,6 +117,7 @@ backend/
 │   ├── street_lighting.py  # Street lighting circuits — phasor VD per pole incl. neutral, cumulative VD (supply + circuit), Zs vs Ia, max-poles solver, smallest cable
 │   ├── road_lighting.py    # CIE 140 / EN 13201-3 road lighting on a cross-section — E, L (CIE r-tables in road_rtables.py), Uo/Ul/TI/REI vs SANS 10098-1/-2 categories or EN 13201-2 M/C/P classes, PDI/AECI, max-spacing + height×tilt×overhang×luminaire×dimming optimiser
 │   ├── photometry.py       # IES LM-63 / EULUMDAT → canonical Type C web (0–360° C planes), generic road optics
+│   ├── retic_earth.py      # Reticulation earth-fault loop (Zs = transformer Ze + Σ(R1+R2+jX1)·L vs the minisub LV device's clearing time, IEC 60364-4-41) + ECC size per LV cable (Table 54.7 or §543.1.2 adiabatic, Cu/Al); frontend resolves transformer/device/cables to numbers
 │   ├── db_circuit_check.py # Per-way DB circuit check — derated Iz, Ib<=In<=Iz, volt drop, ECC, earth-loop Zs
 │   ├── iec_60364_tables.py # IEC 60364-5-52 installed-ampacity lookups + ambient/soil tables; capacities (2/3 loaded conductors, methods A1–G) and grouping (B.52.17–19) live in the GENERATED iec_60364_data.py / frontend js/iec-60364-data.js — edit testing/iec-60364-tables-review/iec_60364_5_52_data.json and run build_iec_tables.py, never by hand
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
@@ -214,6 +215,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/cable-sizing` | Cable sizing | IEC 60364 |
 | `/api/analysis/street-lighting` | Street lighting circuits (form, not ProjectData) | Phasor VD per pole (R-W-B rotation / 1Φ), cumulative VD, Zs = Ze + 2·\|Z\|·L vs Ia, max-poles solver |
 | `/api/analysis/road-lighting` | Road lighting on a cross-section (form, not ProjectData); `/road-lighting/photometry` parses IES/LDT, `/road-lighting/generic` makes a generic optic | CIE 140 / EN 13201-3 E / L (CIE r-tables), Uo, Ul, TI, REI; per-design `standard`: `SANS` (SANS 10098-1 A1–A4 by night traffic + median, B1–B3 / C1–C2, SANS 10098-2 RC0–5 / CP1–6; quarter-width observer) or `EN` (EN 13201-2 M/C/P; the default when absent); EN 13201-5 PDI/AECI; `mode` verify / maxSpacing / optimise |
+| `/api/analysis/retic-earth-check` | Reticulation earth-fault loop + ECC size (form, not ProjectData; run by Demand after each ADMD compute) | IEC 60364-4-41 §411.4 (5 s, c_min = 0.95, device clearing time from the CB/fuse models), IEC 60364-5-54 Table 54.7 / §543.1.2 |
 | `/api/analysis/db-circuit-check` | Per-way DB circuit schedule check | IEC 60364-5-52 Iz + 4-43 §433.1; volt drop from the origin per 5-52 Table G.52.1 / SANS 10142-1 Cl. 6.6; IEC 60364-5-54 §543.1 ECC (Table 54.7 or adiabatic); IEC 60364-4-41 Zs (magnetic / RCD TN·TT / declared time) |
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |

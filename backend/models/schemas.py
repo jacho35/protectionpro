@@ -499,6 +499,17 @@ class AdmdRequest(BaseModel):
     minisubs: list[MinisubInput] = []       # empty ⇒ one implicit source
 
 
+class ReticEarthRequest(BaseModel):
+    """Reticulation earth-fault loop + ECC check. The frontend resolves every
+    library reference (transformer Z, minisub device, phase and earth cables)
+    into plain numbers — see analysis/retic_earth.py."""
+    model_config = {"extra": "allow"}
+
+    settings: dict = {}
+    minisubs: list[dict] = []
+    kiosks: list[dict] = []
+
+
 class StreetLightingRequest(BaseModel):
     """Street lighting circuits (Reticulation › Street lighting). Each circuit
     is a dict of camelCase keys resolved by the frontend (cable R/X, luminaire
