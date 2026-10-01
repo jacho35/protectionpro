@@ -243,7 +243,7 @@ INSTRUCTIONS = {
         "diagonals, 7.5 m corner rods and 2.5 m inner rods, two-layer soil 100/300 Ω·m (6.1 m), grid current 744.8 A "
         "(the 11 kV source is sized at 14.19 MVA so the fault study's SLG current I″k1 is 744.8 A; X/R 0.05 gives D_f = 1). The IEEE 80 equations do not cover this grid, so it is solved numerically. "
         "RUN: Grounding study. Expected R_g = {rg:.3f} Ω, GPR ≈ {gpr:.0f} V, worst touch ≈ {touch:.0f} V, worst step ≈ "
-        "{step:.0f} V — CDEGS / ETAP / WinIGS: 1.42–1.43 Ω, 134.4–140.2 V, 77.4–99.2 V. Full working: EARTH_GRID_METHOD.md §8.",
+        "{step:.0f} V — CDEGS / ETAP / WinIGS: 1.42–1.43 Ω, 134.4–140.2 V, 77.4–99.2 V.",
     "ver_motor_start":
         "VERIFICATION TEMPLATE — motor starting voltage dip: 1500 kW motor on a weak (~60 MVA) source, DOL. "
         "RUN: Motor Starting study. Expected DOL start current {i_start:.0f} A, terminal voltage {vt:.3f} p.u., "

@@ -1,4 +1,4 @@
-"""Earth-grid solver validation — every number quoted in EARTH_GRID_METHOD.md.
+"""Earth-grid solver validation — every number quoted in reviews/EARTH_GRID_METHOD.md.
 
 Run in the backend image:
   docker run --rm -v "$PWD":/work -w /work -e PYTHONPATH=/work protectionpro-backend \

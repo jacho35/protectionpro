@@ -282,7 +282,7 @@ $$R_g=\frac{1}{\sum I_{\text{grid}}}\ \ \text{(per volt of GPR)},\qquad V_s(x,y)
 <li><b>Connectivity</b> — bonded conductors must form one metallic network; a piece touching nothing is flagged.</li>
 <li><b>Equal potential</b> — the leakage currents are driven along conductors of impedance $z=R+\omega\mu_0/8+j\,\frac{\omega\mu_0}{2\pi}\ln\frac{D_e}{a}$ ($D_e=658.87\sqrt{\rho/f}$) from each extreme node; a potential drop above 5 % of GPR means the grid is too large, or its conductors too thin, for the equal-potential assumption.</li></ul>
 <h4>6 · Validation</h4>
-<p>Against the Annex H benchmarks (Grids 1–6, including the diagonal Grid 6 and the separately earthed fence of Grid 4) the grid resistance and touch voltages fall inside the spread of CDEGS, ETAP and WinIGS or within 2.5 % of it; step voltages within 5 %. Grid 6: $R_g$ 1.426 Ω (programs 1.42–1.43), worst touch 136.3 V (134.4–140.2), step 85.6 V (77.4–99.2). Full tables: EARTH_GRID_METHOD.md.</p>
+<p>Against the Annex H benchmarks (Grids 1–6, including the diagonal Grid 6 and the separately earthed fence of Grid 4) the grid resistance and touch voltages fall inside the spread of CDEGS, ETAP and WinIGS or within 2.5 % of it; step voltages within 5 %. Grid 6: $R_g$ 1.426 Ω (programs 1.42–1.43), worst touch 136.3 V (134.4–140.2), step 85.6 V (77.4–99.2).</p>
 <h4>7 · Modelling tips</h4>
 <ul>
 <li><b>Create from bus</b> turns a bus's IEEE 80 data into an identical earth grid to start from.</li>

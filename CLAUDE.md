@@ -9,7 +9,7 @@
 
 **Every PR sets the app version to its own PR number**: `APP_VERSION = '1.<PR number>b'` in `frontend/js/constants.js` (PR #348 → `1.348b`). The number is only known once the PR exists, so open the PR, then push a commit that bumps `APP_VERSION` to it. Bump the `?v=` cache-bust in `index.html` in the same commit.
 
-**Engine reviews and audits** (`*_REVIEW.md`, `ENGINE_REVIEW_*.md`, `audit-history/`) live in `reviews/` — local only, gitignored. Code comments and docs refer to them as `reviews/<file>`; put new review write-ups there, never in the repo root.
+**Engine reviews, audits, method/validation write-ups and roadmaps** (`*_REVIEW.md`, `ENGINE_REVIEW_*.md`, `EARTH_GRID_METHOD.md`, `FEATURE_GAP_ANALYSIS.md`, `TRANSIENT_STABILITY_ROADMAP.md`, `audit-history/`) live in `reviews/` — local only, gitignored. Code comments refer to them as `reviews/<file>`; put new ones there, never in the repo root. **User-facing text (help articles, PDF reports, verification-template descriptions, UI strings) never cites a `.md` file** — users can't open them; state the result instead.
 
 ## What is ProtectionPro?
 
@@ -124,7 +124,7 @@ backend/
 │   ├── load_diversity.py   # Load demand factor analysis
 │   ├── grounding_system.py # IEEE 80 grounding grid design; two-layer soil = IEEE 80 values × method-of-moments ratios (layered vs uniform ρ1); I_G uses the fault engine's `ik1_remote_fraction` (share not returning to a local neutral) × S_f; review: reviews/GROUNDING_REVIEW.md
 │   ├── earth_grid.py       # Earth grids of any shape (ProjectData.earthGrids, bus `earth_grid_id`): layout/rod/fence generators → wires, method-of-moments solve (bonded = GPR, unbonded groups float), surface potential, touch/step to IEEE 80 Annex H.3 conventions, connectivity + conductor-impedance checks; `preview()` for the editor
-│   ├── earth_grid_study.py # Per-bus result for a bus on an earth grid: IEEE 80 simplified (plain rectangle only) or numerical headline, IEEE 80 or EN 50522 limits (C2/C3/C4); technical basis + validation: EARTH_GRID_METHOD.md
+│   ├── earth_grid_study.py # Per-bus result for a bus on an earth grid: IEEE 80 simplified (plain rectangle only) or numerical headline, IEEE 80 or EN 50522 limits (C2/C3/C4); technical basis + validation: reviews/EARTH_GRID_METHOD.md
 │   ├── study_manager.py    # Batch analysis orchestration
 │   ├── changeover.py       # Changeover switch → 2-terminal devices, applied by every analysis route before any engine runs
 │   ├── offpage.py          # Linked off-page connector pairs → closed switches + a joining wire (props.linked_to; legacy same-name), applied after changeover

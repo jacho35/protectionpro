@@ -1897,7 +1897,6 @@ def _calc_grounding(pdf, grounding_results):
         _calc_body(pdf, "  give the headline only for a plain, equally spaced rectangle in uniform soil.")
         _calc_body(pdf, "  EN 50522 basis: I_E = r * I\"k1 (Table 1), U_E = I_E * R_g; C2: U_E <= 2 U_Tp; C3: U_E <= 4 U_Tp")
         _calc_body(pdf, "  with measures M; else C4: prospective touch <= U_vTp = U_Tp + I_B (R_H + R_F1 + 1.5 rho_S).")
-        _calc_body(pdf, "  Method and validation: EARTH_GRID_METHOD.md.")
     pdf.ln(4)
 
     bus_results = grounding_results.get("buses", [])

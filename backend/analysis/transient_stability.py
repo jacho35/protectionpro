@@ -1616,7 +1616,7 @@ def _simulate(machines, segments, freq, t_end, dt, record=False, island_of=None,
     # below converts them to an equivalent "voltage behind X'd" EMF each step
     # via a short in-step fixed-point loop, so the network reduction Yred
     # (built once per segment from each machine's fixed X'd impedance) never
-    # needs to change — see module docstring / TRANSIENT_STABILITY_ROADMAP.md.
+    # needs to change — see module docstring / reviews/TRANSIENT_STABILITY_ROADMAP.md.
     sub_tr = [bool(mac.get("sub_transient")) for mac in machines]
     any_sub = any(sub_tr)
     dXd2 = np.array([mac.get("dXd2", 0.0) for mac in machines])

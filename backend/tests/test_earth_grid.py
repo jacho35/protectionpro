@@ -9,7 +9,7 @@ References (none taken from the module):
   * EN 50522:2022 Table B.4 (U_Tp), Table B.1 (I_B), Formula (A.3).
   * The per-bus IEEE 80 path: a plain rectangular grid object must give the
     same simplified values as the same grid entered on the bus.
-Evidence and derivation: EARTH_GRID_METHOD.md.
+Evidence and derivation: reviews/EARTH_GRID_METHOD.md.
 """
 
 import math

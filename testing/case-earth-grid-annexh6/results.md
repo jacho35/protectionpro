@@ -29,5 +29,5 @@ for this type of grid", so the standard gives computer results only.
 **PASS.** Every quantity lies inside the programs' range. Evaluation follows
 Annex H.3.6: touch at every point 0.5 m apart inside the perimeter conductor,
 step at every point 0.5 m apart from 1 m outside the perimeter inward, in any
-direction. Full validation set: `EARTH_GRID_METHOD.md` §8 and
+direction. Full validation set: `reviews/EARTH_GRID_METHOD.md` §8 and
 `testing/earth-grid-validation/validate.py`.

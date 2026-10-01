@@ -1077,7 +1077,7 @@ def analyse(grid, frequency=50.0):
         longest = float(np.max(np.linalg.norm(sol.B - sol.A, axis=1)))
         notes_len.append(f"The grid needs more than {MAX_ELEMENTS} elements at {asked:g} m, so elements up to "
                          f"{longest:.1f} m long are used (on Annex H Grid 3, 4 m elements are within 0.3 % on "
-                         f"R_g, 0.5 % on touch voltage and 5 % on step voltage — EARTH_GRID_METHOD.md §4.7).")
+                         f"R_g, 0.5 % on touch voltage and 5 % on step voltage — reviews/EARTH_GRID_METHOD.md §4.7).")
     kinds = sol.kind
     notes = list(geo["notes"]) + notes_len
 
