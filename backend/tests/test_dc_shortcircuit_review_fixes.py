@@ -1,4 +1,4 @@
-"""Regression tests for the DC short-circuit review (DC_SHORTCIRCUIT_REVIEW.md).
+"""Regression tests for the DC short-circuit review (reviews/DC_SHORTCIRCUIT_REVIEW.md).
 
 Every expected value is derived from IEC 61660-1 (Annex A eq. 54–56 and the
 battery clauses, as reproduced in CED Engineering E03-035 Examples 1 and 3) or

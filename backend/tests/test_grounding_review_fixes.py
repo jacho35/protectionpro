@@ -1,4 +1,4 @@
-"""Regression tests for the grounding-system review (GROUNDING_REVIEW.md).
+"""Regression tests for the grounding-system review (reviews/GROUNDING_REVIEW.md).
 
 Each test reproduces the ORIGINAL defect against an independent reference:
 IEEE 80-2013 Annex B / Table 1 / Table 2, a hand zero-sequence current

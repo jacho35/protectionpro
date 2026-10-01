@@ -2,7 +2,7 @@
 
 The arc-flash engine mirrors the frontend TCC curves (constants.js), so each
 curve defect lived in both. References are the standards' own gates, never
-the previous output. Write-up: TCC_REVIEW.md; frontend twin:
+the previous output. Write-up: reviews/TCC_REVIEW.md; frontend twin:
 frontend/tests/test_tcc_curves.mjs; evidence: testing/tcc-review/.
 """
 

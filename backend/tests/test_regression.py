@@ -3,7 +3,7 @@
 Each test pins an engine result to a hand calculation from the governing
 standard (IEC 60909, IEEE 1584-2002, IEEE 80) so that calculation
 regressions are caught mechanically. These were introduced after the
-2026-06 audit (see audit-history/AUDIT_REPORT.md) — every Critical finding there was
+2026-06 audit (see reviews/audit-history/AUDIT_REPORT.md) — every Critical finding there was
 detectable by one of these tests.
 
 Run with:  python -m pytest backend/tests/ -v
@@ -744,7 +744,7 @@ class TestGrounding:
         assert _compute_L_M(1540.0, 0.0, 0.0, 70.0, 70.0, False) == 1540.0
 
     # [G1] The two-layer model is now a method-of-moments solve of the grid
-    # (GROUNDING_REVIEW.md). The previous equivalent-hemisphere ρ_eq tests
+    # (reviews/GROUNDING_REVIEW.md). The previous equivalent-hemisphere ρ_eq tests
     # pinned a formula that was 3× low over a conductive lower layer; they are
     # replaced by the physical limits of the new model.
 

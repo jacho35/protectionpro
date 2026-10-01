@@ -1,5 +1,5 @@
 /* ProtectionPro — compliance rules regression test (compliance review
- * 2026-09-29, C1–C9, L1–L5; write-up COMPLIANCE_REVIEW.md).
+ * 2026-09-29, C1–C9, L1–L5; write-up reviews/COMPLIANCE_REVIEW.md).
  *
  * Runs the REAL frontend/js/compliance.js (with constants.js for the trip
  * curves) against expectations derived from the standards, never from the

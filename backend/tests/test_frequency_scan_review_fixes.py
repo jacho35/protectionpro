@@ -1,4 +1,4 @@
-"""Regression tests for the frequency_scan.py review (FREQUENCY_SCAN_REVIEW.md,
+"""Regression tests for the frequency_scan.py review (reviews/FREQUENCY_SCAN_REVIEW.md,
 FS1–FS5, L1–L5). Each test reproduces the original defect; the expected
 numbers come from closed-form RLC impedances or a hand nodal solve in ohms
 with an ideal transformer, never from the engine.

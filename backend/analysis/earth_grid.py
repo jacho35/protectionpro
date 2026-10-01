@@ -10,7 +10,7 @@ compute the potential at any surface point. That is what this module does.
 Model (quasi-static, 50/60 Hz):
   * Soil: uniform ρ1, or two horizontal layers ρ1 (thickness H) over ρ2.
     The point-source Green's functions are the image series checked in
-    GROUNDING_REVIEW.md (`grounding_system._mom_images`).
+    reviews/GROUNDING_REVIEW.md (`grounding_system._mom_images`).
   * Metal: straight thin wires (grid conductors, rods, fence wires, posts),
     each cut into elements carrying a constant leakage current per metre.
     Thin-wire kernel: field point on the element axis, source current on its
@@ -1077,7 +1077,7 @@ def analyse(grid, frequency=50.0):
         longest = float(np.max(np.linalg.norm(sol.B - sol.A, axis=1)))
         notes_len.append(f"The grid needs more than {MAX_ELEMENTS} elements at {asked:g} m, so elements up to "
                          f"{longest:.1f} m long are used (on Annex H Grid 3, 4 m elements are within 0.3 % on "
-                         f"R_g, 0.5 % on touch voltage and 5 % on step voltage — EARTH_GRID_METHOD.md §4.7).")
+                         f"R_g, 0.5 % on touch voltage and 5 % on step voltage — reviews/EARTH_GRID_METHOD.md §4.7).")
     kinds = sol.kind
     notes = list(geo["notes"]) + notes_len
 

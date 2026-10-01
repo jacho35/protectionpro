@@ -1,4 +1,4 @@
-"""Compliance review follow-ups (COMPLIANCE_REVIEW.md §4).
+"""Compliance review follow-ups (reviews/COMPLIANCE_REVIEW.md §4).
 
 1. A breaker's instantaneous total clearing time follows IEEE 1584 Table 1 —
    moulded-case integral trip (MCB, MCCB) 1.5 cycles = 0.025 s, LV power /

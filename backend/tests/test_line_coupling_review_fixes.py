@@ -4,7 +4,7 @@ References are taken from outside the module: IEC 60909-3:2009 eq. (34)–(36)
 and Table 2 (earth-return depth δ), and an independent 6-conductor
 phase-domain Carson model of a double-circuit line, never the engine's own
 output. IDs match the ``[LC1]`` markers in ``backend/analysis/line_coupling.py``,
-``fault.py`` and ``unbalanced_loadflow.py``. Write-up: LINE_COUPLING_REVIEW.md.
+``fault.py`` and ``unbalanced_loadflow.py``. Write-up: reviews/LINE_COUPLING_REVIEW.md.
 """
 
 import math

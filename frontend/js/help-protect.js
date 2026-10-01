@@ -253,44 +253,189 @@ $$\rho_a(a)=\rho_1\left[1+4\sum_{n=1}^{\infty}K^{n}\left(\frac{1}{\sqrt{1+(2nh_1
 
 { id: 'prot-earth-grid', group: 'protect', title: 'Earth grids of any shape (numerical)',
   std: 'IEEE 80-2013 §16.8, Annex H · Analyse ▸ Earthing & lightning ▸ Earth grids',
-  kw: 'earth grid diagonal conductor uneven spacing l shaped rods fence separately earthed bonded transfer voltage method of moments numerical touch step heatmap surface potential cdegs annex h equipotential',
+  kw: 'earth grid diagonal conductor uneven spacing l shaped rods fence separately earthed bonded transfer voltage method of moments numerical touch step heatmap surface potential cdegs etap winigs annex h annex b epri equipotential image series two layer soil sunde thin wire kernel element length convergence validation limitations footwear decrement split factor onderdonk conductor size connectivity drawn touch area hover 3d',
   html: String.raw`
-<p>An <strong>earth grid</strong> is described once in the project and any number of buses use it (bus ▸ Grounding ▸ Earth Grid). It can have any layout: diagonal conductors, uneven spacing, an L-shaped outline, rods anywhere and of any length, fences bonded to the grid or separately earthed, and conductors added by hand. IEEE 80 §16.8 sends all of these to "computer analysis"; the simplified equations cover only equally spaced rectangles in uniform soil.</p>
-<h4>1 · Which method</h4>
-<table class="help-ref-table"><thead><tr><th>Grid</th><th>Headline result</th></tr></thead><tbody>
-<tr><td>Plain rectangle, equal spacing, uniform soil, no diagonals, fences or added metal</td><td>IEEE 80 simplified equations; the numerical result is shown beside them</td></tr>
-<tr><td>Anything else, or EN 50522 limits</td><td>Numerical (method of moments); the reason the equations don't apply is stated</td></tr></tbody></table>
-<p>The simplified equations are conservative: on a 30 × 30 m, 6 × 6 grid with 20 rods, $R_g$ is 1.68 Ω against 1.46 Ω numerically. So judge a design change — adding diagonals, say — numerical against numerical.</p>
-<h4>2 · Physics</h4>
-<p>At power frequency the soil current is a steady conduction field ($\nabla\cdot\sigma\nabla V=0$): the skin depth $503\sqrt{\rho/f}$ is about 710 m at 100 Ω·m and 50 Hz. The ground surface is insulating ($\partial V/\partial z=0$), and at a layer interface $V$ and $\sigma\,\partial V/\partial z$ are continuous. Bonded metal is at one potential, the GPR; unbonded metal (a separately earthed fence) floats, taking no net current. The potential of a point source in two-layer soil is the image series, e.g. source and field in the top layer:</p>
-$$V=\frac{\rho_1 I}{4\pi}\sum_{n=-\infty}^{\infty}K^{|n|}\left[\frac1{R(z-z_0+2nH)}+\frac1{R(z+z_0+2nH)}\right],\qquad R(\zeta)=\sqrt{r^2+\zeta^2}$$
-<h4>3 · Numerical method</h4>
-<p>Conductors, rods and fence posts are cut into elements of at most 1 m, each leaking a uniform current. Conductors are split where they cross or meet, so every joint is a node. The potential from element $j$ at a point on another element's axis uses the thin-wire kernel</p>
-$$V=\frac{I_j}{L_j}\int_{A_j}^{B_j}\frac{ds}{\sqrt{|P-s|^2+a_j^2}}=\frac{I_j}{L_j}\Big[\operatorname{asinh}\tfrac{t_2}{\rho_\perp}-\operatorname{asinh}\tfrac{t_1}{\rho_\perp}\Big]$$
-<p>summed over the soil images. Setting every element mid-point to its group potential gives $[G]\,I=V$. An unbonded group adds its potential as an unknown with the condition $\sum I=0$. Then</p>
-$$R_g=\frac{1}{\sum I_{\text{grid}}}\ \ \text{(per volt of GPR)},\qquad V_s(x,y)=\sum_j I_j\,G_j(x,y,0)$$
-<p>Every voltage scales with the grid current, so one solve serves every bus on the grid. Halving the element length to 0.5 m changes $R_g$ by 0.05 % and touch voltage by 0.1 % (Annex H Grid 3).</p>
-<h4>4 · Where touch and step are evaluated</h4>
-<p>The conventions IEEE 80 Annex H used to benchmark CDEGS, ETAP and WinIGS:</p>
+<p>An <strong>earth grid</strong> is described once in the project and any number of buses use it (bus ▸ Grounding ▸ Earth Grid). It can have any layout: diagonal conductors, uneven spacing, an L-shaped outline, rods anywhere and of any length, fences bonded to the grid or separately earthed, and conductors added by hand. A bus without an earth grid keeps the per-bus IEEE 80 calculation (<a href="#" data-help="prot-grounding">Substation grounding</a>), unchanged.</p>
+<h4>1 · Why a numerical method</h4>
+<p>The IEEE 80 simplified equations (§16.5, Annex D) describe an equally spaced square, rectangular, T, triangular or L-shaped mesh in uniform soil, with rods at the perimeter or throughout. They were fitted to computer solutions over a stated range (§16.7): grid area 6.25–10 000 m², 1–40 meshes along a side, mesh 2.5–22.5 m, uniform soil, uniform spacing. IEEE 80 §16.8 calls for computer analysis instead when parameters fall outside those limits, the soil is two-layer, conductors or rods are unevenly spaced, local danger points must be found, or buried metal is not connected to the grid. An earth grid handles all of these:</p>
 <ul>
-<li><b>Touch</b> = GPR − $V_s$ at every point 0.5 m apart inside the grid outline, extended to 1 m outside a bonded fence; the worst points are refined to 0.1 m. The worst touch is located anywhere — on an unevenly spaced grid it is often an interior mesh, not the corner mesh (Annex B Exhibit 2).</li>
-<li><b>Step</b> = the largest $V_s$ difference over 1 m in any direction, from 1 m outside the perimeter inward.</li>
-<li><b>Unbonded fence</b>: its own potential, the worst touch within 1 m reach referred to it, and the grid-to-fence transfer voltage (GPR − $V_{fence}$), which must not be bridged.</li>
-<li>No surface point is taken closer than the 0.08 m foot radius (§7.3) to a post that reaches the surface.</li></ul>
-<h4>5 · Checks</h4>
+<li>diagonal (non-orthogonal) conductors, e.g. across corner meshes;</li>
+<li>uneven spacing, e.g. conductors closer together towards the perimeter;</li>
+<li>L-shaped outlines;</li>
+<li>rods at any position, of any length;</li>
+<li>fences, bonded to the grid or separately earthed;</li>
+<li>two-layer soil;</li>
+<li>the worst touch and step voltage located anywhere, not only at the corner mesh.</li></ul>
+<h4>2 · Which method, which limits</h4>
+<table class="help-ref-table"><thead><tr><th>Grid</th><th>IEEE 80 limits (default)</th><th>EN 50522 limits</th></tr></thead><tbody>
+<tr><td>Plain rectangle: equal spacing, uniform soil, rods by rule or none, no diagonals, added metal, fences or drawn touch area</td><td><b>IEEE 80 simplified</b> equations are the headline (checkable by hand); the numerical result is shown beside them</td><td>Numerical</td></tr>
+<tr><td>Anything else</td><td><b>Numerical</b> (method of moments); the reason the equations don't apply is stated</td><td>Numerical</td></tr></tbody></table>
+<p>The <em>Method</em> setting can force <em>numerical</em> on a plain rectangle. <em>IEEE 80</em> on a grid the equations don't cover falls back to numerical with a note. EN 50522 has no simplified touch-voltage equations, so it always uses the numerical result (see <a href="#" data-help="prot-en50522">Touch voltage to EN 50522</a>).</p>
+<p><b>Compare like with like.</b> The simplified equations are conservative on a plain rectangle: on a 30 × 30 m, 6 × 6 grid with 20 rods, Sverak gives $R_g$ = 1.68 Ω against 1.46 Ω numerically, and $E_m$ is 8 % above the numerical worst touch. So judge a design change — adding diagonals, say — numerical against numerical. The results window shows the numerical value for every grid for this reason.</p>
+<h4>3 · Physical model</h4>
+<p><b>The field.</b> At 50/60 Hz the current field in soil is quasi-static: the skin depth $\delta=503\sqrt{\rho/f}$ is about 710 m at 100 Ω·m and 50 Hz, far larger than a substation. The soil potential obeys the steady conduction equation $\nabla\cdot(\sigma\nabla V)=0$ with an insulating ground surface ($\partial V/\partial z=0$ at $z=0$), $V$ and $\sigma\,\partial V/\partial z$ continuous at a layer interface, and $V\to\rho I/(2\pi r)\to0$ at remote earth.</p>
+<p><b>The metal.</b> Grid conductors, rods, fence posts and buried fence wires are thin straight wires with a radius. Metal bonded together is at one potential:</p>
 <ul>
-<li><b>Connectivity</b> — bonded conductors must form one metallic network; a piece touching nothing is flagged.</li>
-<li><b>Equal potential</b> — the leakage currents are driven along conductors of impedance $z=R+\omega\mu_0/8+j\,\frac{\omega\mu_0}{2\pi}\ln\frac{D_e}{a}$ ($D_e=658.87\sqrt{\rho/f}$) from each extreme node; a potential drop above 5 % of GPR means the grid is too large, or its conductors too thin, for the equal-potential assumption.</li></ul>
-<h4>6 · Validation</h4>
-<p>Against the Annex H benchmarks (Grids 1–6, including the diagonal Grid 6 and the separately earthed fence of Grid 4) the grid resistance and touch voltages fall inside the spread of CDEGS, ETAP and WinIGS or within 2.5 % of it; step voltages within 5 %. Grid 6: $R_g$ 1.426 Ω (programs 1.42–1.43), worst touch 136.3 V (134.4–140.2), step 85.6 V (77.4–99.2). Full tables: EARTH_GRID_METHOD.md.</p>
-<h4>7 · Modelling tips</h4>
+<li><b>the grid</b> — everything bonded to it, including bonded fences. Its potential is the GPR;</li>
+<li><b>unbonded groups</b> — each separately earthed fence, or conductor marked not bonded. Its potential floats: it takes no net current from the fault, and the solve returns its potential.</li></ul>
+<p>"Every bonded conductor at the same potential" is IEEE 80's assumption. Once it holds, topology does not enter the equations: a diagonal is just more metal at the GPR. It is checked for every grid (section 7), because a long, thin conductor in low-resistivity soil is not at one potential along its length. EN 50522 Figures J.4/J.5 show this for a single 95 mm² Cu wire at 0.6 m: its earth impedance stops falling beyond an effective length of about 0.7 km at 50 Ω·m, 1.0 km at 100 Ω·m and 3.2 km at 1000 Ω·m.</p>
+<p><b>Soil.</b> Uniform $\rho_1$, or two horizontal layers: $\rho_1$ from the surface to depth $H$ over $\rho_2$ below, with reflection factor $K=(\rho_2-\rho_1)/(\rho_2+\rho_1)$. The potential per ampere of a point source at depth $z_0$, seen at depth $z$ and horizontal distance $r$, is the classical image series (Sunde; Dawalibi &amp; Mukhedkar), with $R(\zeta)=\sqrt{r^2+\zeta^2}$:</p>
+$$\text{field 1, source 1:}\quad \frac{\rho_1}{4\pi}\sum_{n=-\infty}^{\infty}K^{|n|}\left[\frac1{R(z-z_0+2nH)}+\frac1{R(z+z_0+2nH)}\right]$$
+$$\text{field 2, source 1:}\quad \frac{\rho_1(1+K)}{4\pi}\sum_{n\ge0}K^{n}\left[\frac1{R(z-z_0+2nH)}+\frac1{R(z+z_0+2nH)}\right]$$
+$$\text{field 1, source 2:}\quad \frac{\rho_1(1+K)}{4\pi}\sum_{n\ge0}K^{n}\left[\frac1{R(z_0-z+2nH)}+\frac1{R(z+z_0+2nH)}\right]$$
+$$\text{field 2, source 2:}\quad \frac{\rho_2}{4\pi}\left[\frac1{R(z-z_0)}-\frac{K}{R(z+z_0-2H)}+(1-K^2)\sum_{n\ge0}\frac{K^{n}}{R(z+z_0+2nH)}\right]$$
+<p>These satisfy all three boundary conditions; checked numerically, $V$ and $(1/\rho)\,\partial V/\partial z$ are continuous at the interface and $\partial V/\partial z=0$ at the surface to a residual of $7\times10^{-5}$. Uniform soil is $K=0$: the source plus its surface image. Terms weighing less than $10^{-6}$ are dropped, and images farther than five grid diagonals are lumped as a constant.</p>
+<p><b>Surface layer (crushed rock).</b> It is not part of the field model: it is thin, highly resistive and carries almost none of the grid current. It enters only the body circuit — IEEE 80 $C_s$ (§7.4), or EN 50522 $R_{F2}=1.5\,\rho_S$ — as both standards treat it.</p>
+<h4>4 · Numerical method</h4>
+<p><b>Geometry to wires.</b> The layout generator builds the conductors, diagonals and rods of a rectangle or L. Conductors and rods added by hand are appended, and each fence is built from its offset of the outline: posts along the fence line, plus a buried fence conductor if one is set. Before discretising, every horizontal wire is split where it meets or crosses another at the same depth, and where a rod top or another wire's end lands on it; collinear duplicates are merged, keeping the larger radius. This matters numerically: when two conductors cross inside elements whose mid-points both sit at the crossing, two rows of the system become nearly identical — on the Annex H Grid 6 diagonals that gave negative leakage currents and a surface potential above GPR. With every crossing a node it cannot happen.</p>
+<p><b>Elements.</b> Each wire is cut into $\lceil L/\ell\rceil$ equal elements ($\ell$ = element length, default 1 m). The first and last element of each wire are halved again, because leakage density changes fastest at conductor ends and junctions. A wire crossing the layer interface is split there, so no element straddles two layers. Each element carries a uniform leakage current.</p>
+<p><b>Thin-wire kernel.</b> The potential at point $P$ from element $j$ carrying current $I_j$ uniformly along its length $L_j$ — source current on the element's axis, field point on the other element's axis, the radius $a_j$ keeping the self-term finite — is</p>
+$$V(P)=\frac{I_j}{L_j}\int_{A_j}^{B_j}\frac{ds}{\sqrt{|P-s|^2+a_j^2}}=\frac{I_j}{L_j}\Big[\operatorname{asinh}\tfrac{t_2}{\rho_\perp}-\operatorname{asinh}\tfrac{t_1}{\rho_\perp}\Big]$$
+<p>where $t_1$, $t_2$ are the element ends measured from the foot of the perpendicular from $P$, and $\rho_\perp^2$ = (perpendicular distance)² + $a_j^2$. Each soil image applies the same integral to the mirrored element. Setting every element mid-point to its group potential gives $[G]\,I=V$, $G_{ij}$ = potential at mid-point $i$ per ampere in element $j$.</p>
+<p><b>Floating groups.</b> With unbonded groups the unknowns are the element currents plus one potential $V_k$ per floating group, and each floating group takes no net current:</p>
+$$\begin{bmatrix}G & -E\\ E^{T} & 0\end{bmatrix}\begin{bmatrix}I\\ V\end{bmatrix}=\begin{bmatrix}b\\ 0\end{bmatrix},\qquad b_i=\begin{cases}1 & \text{grid element}\\ 0 & \text{otherwise}\end{cases},\quad E_{ik}=1\ \text{if element } i \text{ is in group } k$$
+<p><b>Resistance and scaling.</b> The solve is per volt of GPR:</p>
+$$R_g=\frac{1}{\sum I_{\text{grid}}},\qquad V_s(x,y)=\sum_j I_j\,G_j(x,y,0)$$
+<p>Every voltage scales linearly with the grid current, so one solve serves every bus on the grid; each bus multiplies the per-unit results by its own GPR $=I_G\,R_g$.</p>
+<p><b>Evaluating the kernel quickly.</b> For each pair of depths, the sum over all soil images of the point-source term $c/\sqrt{r^2+\Delta z^2}$ depends only on the horizontal distance $r$. It is tabulated once (2.5 mm nodes to 2 m, 25 mm to 20 m, then geometric), so each point–element pair costs one interpolation however long the two-layer series is; in uniform soil the point kernel is evaluated directly. Within 4 element lengths of an element image the exact line integral above replaces the point value; beyond that a point source is within about 0.5 % (worst case along a rod's axis). Against a reference that evaluates every near image exactly, a 100 × 100 m grid over resistive rock (100/1000 Ω·m, $H$ = 3 m) agrees to 0.004 % on $R_g$ and 0.02 % on touch voltage. That matters: over a large grid on rock the surface sits at about 97 % of GPR, so touch $(1-V)$ magnifies an error in $V$ about thirtyfold.</p>
+<p><b>Speed.</b> A 200 × 200 m, 21 × 21 grid (3460 elements) solves in about 2 s; the whole study takes about 14 s in uniform soil and 35 s in two-layer soil.</p>
+<p><b>Foot radius.</b> A surface point is never taken closer than 0.08 m — the IEEE 80 §7.3 foot radius — to the axis of an electrode that reaches the surface, such as a fence post. Without it, a raster point exactly on a post axis would report the post's own potential as a step (123 V on Annex H Grid 5, against the programs' 83–91 V). Buried conductors are unaffected.</p>
+<p><b>Element length.</b> Convergence on Annex H Grid 3 (two-layer, 20 rods crossing the interface):</p>
+<table class="help-ref-table"><thead><tr><th>Max element</th><th>Elements</th><th>$R_g$ (Ω)</th><th>T1 (V)</th><th>S1 (V)</th><th>Solve</th></tr></thead><tbody>
+<tr><td>4.0 m</td><td>460</td><td>0.9687</td><td>262.8</td><td>106.3</td><td>0.1 s</td></tr>
+<tr><td>2.0 m</td><td>660</td><td>0.9692</td><td>262.9</td><td>104.1</td><td>0.2 s</td></tr>
+<tr><td><b>1.0 m</b> (default)</td><td>1200</td><td>0.9668</td><td>261.5</td><td>102.0</td><td>0.5 s</td></tr>
+<tr><td>0.5 m</td><td>2200</td><td>0.9663</td><td>261.3</td><td>101.2</td><td>0.9 s</td></tr></tbody></table>
+<p>Going from 1 m to 0.5 m changes $R_g$ by 0.05 %, touch by 0.1 % and step by 1 %. The limit is 4000 elements: a grid that would need more has its element length raised automatically, and a note gives the longest element used. A finer length can be set per grid (Calculation ▸ Advanced).</p>
+<h4>5 · Touch, step and transferred voltage</h4>
+<p><b>Definitions</b> (IEEE 80 §3, §8.1):</p>
 <ul>
-<li><b>Create from bus</b> turns a bus's IEEE 80 data into an identical earth grid to start from.</li>
-<li>Conductors are sized in mm² (16–300 mm² offered); the geometry uses the solid-equivalent diameter $\sqrt{4A/\pi}$ unless a measured outside diameter is entered under Advanced. Rod and post diameters are in mm. An undersized conductor fails the study.</li>
-<li>Point the HV and LV buses of one substation at the same grid; the HV fault usually sets the design.</li>
-<li>Corner meshes carry the highest touch voltage. Remedies (IEEE 80 §16.6): diagonals across corner meshes, closer spacing at the perimeter, rods at the corners and perimeter, a conductor 1 m outside the fence, a better surface layer, faster clearing.</li>
-<li>A bonded fence brings its outside 1 m into the touch area — lay a conductor about 1 m outside it. A separately earthed fence lowers its own touch voltage but creates a transfer voltage.</li>
-<li>Not modelled: metal-to-metal touch, transferred voltages on pipes, cable sheaths or rails, lateral soil variation, more than two layers, lightning.</li></ul>` },
+<li><b>Touch voltage</b> — GPR minus the surface potential where a person stands with a hand on a grounded structure. <b>Mesh voltage</b> is the maximum touch voltage within a mesh.</li>
+<li><b>Step voltage</b> — the surface-potential difference over 1 m with the feet, touching no grounded object.</li>
+<li><b>Transferred voltage</b> — a touch voltage carried into or out of the site by a conductor earthed elsewhere.</li></ul>
+<p>The simplified equations evaluate $E_m$ at the centre of the corner mesh and $E_s$ from the outer corner to 1 m diagonally outside (Table 12). IEEE 80 §16.1 notes that even on an equally spaced square grid the true worst mesh voltage lies slightly off the corner-mesh centre, and that the corner mesh stops being the worst case on an unsymmetrical grid, with rods on or near the perimeter, or with very non-uniform spacing. Annex B Exhibit 2 shows why a search is needed: on its unequally spaced grid the worst touch voltage (17.08 % of GPR) is over the largest interior mesh, while the corner mesh gives only 9.29 %.</p>
+<p><b>Where they are evaluated</b> — the IEEE 80 Annex H.3 conventions the commercial programs were benchmarked on:</p>
+<table class="help-ref-table"><thead><tr><th>Quantity</th><th>Area</th><th>Reference potential</th></tr></thead><tbody>
+<tr><td>Touch, grid</td><td>inside the grid outline (H.3.6 "inside perimeter conductor"); extended to 1 m outside a <b>bonded</b> fence (H.3.5)</td><td>GPR</td></tr>
+<tr><td>Touch, unbonded fence</td><td>within 1 m of the fence line, either side</td><td>the fence's own potential</td></tr>
+<tr><td>Step</td><td>from 1 m outside the grid perimeter inward (H.3.5/H.3.6 S1), and 1 m outside each fence line</td><td>—</td></tr>
+<tr><td>Transfer, grid → unbonded fence</td><td>—</td><td>GPR − $V_{fence}$</td></tr></tbody></table>
+<p>A <b>drawn touch area</b> (a polygon saved with the grid) covers the case in IEEE 80 §17.1: a fence enclosing more than the grid, with service areas people can reach. A drawn area is where people stand, so the step check covers the same area (not the outline + 1 m). With no generated layout it also replaces the convex hull of the conductors as the outline drawn and the grid area reported.</p>
+<p><b>Search.</b></p>
+<ul>
+<li><b>Touch</b> — surface potential on a 0.5 m raster over the touch area (the Annex H spacing; coarsened only when more than about 60 000 points would be needed). The twelve lowest points are refined on a 0.1 m sub-raster. The worst touch voltage and its location are reported.</li>
+<li><b>Step</b> — axis-aligned 1 m differences read off the raster screen the 400 steepest points, plus the raster edge. At each candidate the exact 1 m step is computed in 16 directions, and the eight strongest are searched again on a 0.1 m sub-raster inside the step area, because the peak at a rod or conductor corner falls between raster points. The worst step and its direction are found anywhere, not only on the corner diagonal.</li></ul>
+<p><b>Fences.</b></p>
+<ul>
+<li><b>Bonded fence</b> (IEEE 80 §17.3) — posts, and optionally a buried fence conductor, are part of the grid. The touch area extends to 1 m outside the fence, because people touch the fence from outside.</li>
+<li><b>Unbonded (separately earthed) fence</b> — its own floating group. Reported: its potential, the worst touch voltage within 1 m reach referred to the fence, and the grid-to-fence transfer voltage, which nothing may bridge.</li>
+<li>Annex H takes its fence touch point T4 at the corner of the fence's perimeter conductor, 1 m outside the fence line and so 1.41 m from the fence corner. That point is beyond 1 m reach, so it is not used here; checked on its own it gives 49.0 V against the programs' 49.9–51.1 V.</li></ul>
+<h4>6 · Limits, grid current and conductor size</h4>
+<p><b>Tolerable voltages</b> (IEEE 80 §8.4, Eq. 29/30 step and 32/33 touch, 50 or 70 kg body):</p>
+$$E_{touch}=\frac{(1000+1.5\,C_s\rho_s+R_{shoe}/2)\,k}{\sqrt{t_s}},\qquad E_{step}=\frac{(1000+6\,C_s\rho_s+2R_{shoe})\,k}{\sqrt{t_s}},\qquad k=0.116\ (50\text{ kg}),\ 0.157\ (70\text{ kg})$$
+<p>$C_s$ is Eq. 27; with no surface layer $\rho_s=\rho_1$ and $C_s=1$. $R_{shoe}$ is the optional footwear resistance per foot (Calculation ▸ Footwear resistance): each shoe is in series with its foot, so the feet in parallel add $R_{shoe}/2$ for touch and in series $2R_{shoe}$ for step — the form CDEGS SESThreshold uses. 0 (the default) is IEEE 80 as written.</p>
+<p><b>Grid current</b> (§15, Eqs. 3–4): $I_G=D_f\,S_f\,I_f$.</p>
+<ul>
+<li>$I_f$ is the fault study's $I''_{k1}$ at the bus, reduced to the share fed from remote sources; the share returning through a transformer or generator neutral at the bus stays in the metal (§15.1).</li>
+<li>$S_f$ is the bus's split factor (§15.9, Annex C); $D_f$ the decrement factor for the bus's X/R and $t_s$ (§15.10).</li>
+<li><b>Worst fault location</b> (§15.8): each bus on the grid is evaluated with its own current and the worst is the design case. A fault on the supply side of a local transformer often is; that is why the LV bus of a Dyn transformer shows a GPR near zero.</li></ul>
+<p>EN 50522 replaces the current (no decrement factor), the limits and the pass logic: see <a href="#" data-help="prot-en50522">Touch voltage to EN 50522</a>.</p>
+<p><b>Conductor size.</b> The grid conductor is entered as a cross-section in mm² (16–300 mm² offered), as it is bought. The geometry uses the solid-equivalent diameter $d=\sqrt{4A/\pi}$. A stranded conductor of the same area is about 10–15 % larger outside, so the solid value is slightly conservative (a thinner conductor gives a marginally higher resistance and touch voltage). A measured outside diameter can be entered under Advanced, for the geometry only. Rod and post diameters are in mm. A project saved with a diameter converts on opening to its solid-equivalent size (to 0.01 mm²), which returns the same diameter.</p>
+<p>The minimum size is IEEE 80's Onderdonk equation (§11.3) on the full $D_f\,I''_{k1}$ over $t_c$ — the grid conductor carries the whole fault current back to a local neutral, not only $I_G$. $T_m$ is the lower of the material's fusing point and the joint limit (§11.3.1.1). A conductor smaller than the minimum fails the study, and the issue names the next standard size.</p>
+<h4>7 · Built-in checks</h4>
+<ul>
+<li><b>Connectivity</b> — a union-find over the element end points confirms that every bonded non-fence conductor forms one metallic network. A piece that touches nothing would otherwise be silently treated as bonded; if the network splits, the note gives the number of pieces. Fences are excluded, because their fabric joins the posts.</li>
+<li><b>Equal potential</b> — the leakage currents from the solve are made to flow along the conductors, each with a series impedance with earth return (Carson, simplified):
+$$z=R_{ac}+\frac{\omega\mu_0}{8}+j\,\frac{\omega\mu_0}{2\pi}\ln\frac{D_e}{a},\qquad D_e=658.87\sqrt{\rho_1/f}$$
+The fault current is injected in turn at the four extreme nodes, and the largest drop from the injection node is reported as a percentage of GPR. Above 5 % the equal-potential assumption is questionable and a note says so. It is a first-order check: it takes the equipotential leakage distribution and ignores mutual coupling between conductors, which raises the effective inductance, so a large drop should be taken seriously. The Annex H grids give 0.8–1.5 %.</li>
+<li><b>IEEE 80 applicability</b> — the reason the simplified equations don't apply is stated (e.g. "the grid has diagonal conductors"). For a plain rectangle the §16.7 tested range and the §16.5.2 depth range for $K_s$ are checked.</li></ul>
+<h4>8 · Validation</h4>
+<p><b>Closed forms and invariances</b></p>
+<table class="help-ref-table"><thead><tr><th>Case</th><th>This program</th><th>Reference</th><th>Deviation</th></tr></thead><tbody>
+<tr><td>Rod 3 m, $a$ = 8 mm, 100 Ω·m (Dwight)</td><td>33.53 Ω</td><td>33.49 Ω</td><td>+0.1 %</td></tr>
+<tr><td>Buried wire 20 m, $a$ = 5 mm, $h$ = 0.5 m (Sunde)</td><td>8.486 Ω</td><td>8.496 Ω</td><td>−0.1 %</td></tr>
+<tr><td>Grid 6 rotated 30° and shifted</td><td>$R$ to $3\times10^{-6}$, potentials to $10^{-5}$</td><td>identical</td><td>—</td></tr>
+<tr><td>Annex B Exhibit 1 grid without rods, independent solver</td><td>1.411 Ω</td><td>1.410 Ω</td><td>+0.03 %</td></tr></tbody></table>
+<p><b>IEEE 80 Annex H</b> — "in range" means inside the spread of CDEGS, ETAP and WinIGS; otherwise the deviation is to the nearer end.</p>
+<table class="help-ref-table"><thead><tr><th>Case</th><th>Quantity</th><th>This program</th><th>Programs</th><th></th></tr></thead><tbody>
+<tr><td>Grid 1 (uniform 140 Ω·m, no rods)</td><td>$R_g$</td><td>1.000 Ω</td><td>1.0–1.01</td><td>in range</td></tr>
+<tr><td></td><td>T1 corner-mesh centre</td><td>195.4 V</td><td>194.9–200.9</td><td>in range</td></tr>
+<tr><td></td><td>T3 worst touch</td><td>203.1 V</td><td>202.7–209.0</td><td>in range</td></tr>
+<tr><td></td><td>S1</td><td>91.1 V</td><td>87.2–89.3</td><td>+2.0 %</td></tr>
+<tr><td>Grid 2 (+20 rods)</td><td>$R_g$</td><td>0.917 Ω</td><td>0.917–0.92</td><td>in range</td></tr>
+<tr><td></td><td>T1 / T3</td><td>145.5 / 149.7 V</td><td>145.4–150.2 / 149.6–154.0</td><td>in range</td></tr>
+<tr><td></td><td>S1</td><td>70.7 V</td><td>70.7–79.3</td><td>in range</td></tr>
+<tr><td>Grid 3 (two-layer 300/100 Ω·m, $H$ 6.1 m)</td><td>$R_g$</td><td>0.967 Ω</td><td>0.97–0.972</td><td>−0.3 %</td></tr>
+<tr><td></td><td>T1 / T3</td><td>261.5 / 262.9 V</td><td>261.0–268.5 / 262.5–269.7</td><td>in range</td></tr>
+<tr><td></td><td>S1</td><td>102.0 V</td><td>101.9–117.0</td><td>in range</td></tr>
+<tr><td>Grid 4 (+ separately earthed fence)</td><td>$R_g$</td><td>0.965 Ω</td><td>0.96–0.97</td><td>in range</td></tr>
+<tr><td></td><td>grid → fence transfer</td><td>310.2 V</td><td>309.2–312.4</td><td>in range</td></tr>
+<tr><td></td><td>T1 / T2 / T3</td><td>260.5 / 129.5 / 261.7 V</td><td>within each range</td><td>in range</td></tr>
+<tr><td></td><td>T4 (fence-conductor corner)</td><td>49.0 V</td><td>49.9–51.1</td><td>−1.9 %</td></tr>
+<tr><td></td><td>S1 / S2</td><td>95.5 / 39.8 V</td><td>97.0–97.4 / 37.4–38.1</td><td>−1.5 % / +4.3 %</td></tr>
+<tr><td></td><td>$R$ of the fence alone ¹</td><td>1.69 Ω</td><td>1.6–1.62</td><td>+4.1 %</td></tr>
+<tr><td>Grid 5 (L-shape, bonded fence, two-layer)</td><td>$R_g$ / GPR</td><td>0.807 Ω / 601 V</td><td>0.81 / 602.7–606.4</td><td>−0.3 % / −0.2 %</td></tr>
+<tr><td></td><td>worst touch ²</td><td>128.5 V</td><td>131.6–138.1</td><td>−2.3 %</td></tr>
+<tr><td></td><td>worst step</td><td>90.8 V</td><td>83.0–90.7</td><td>+0.1 %</td></tr>
+<tr><td><b>Grid 6</b> (diagonals, rods 7.5/2.5 m, two-layer)</td><td>$R_g$ / GPR</td><td>1.426 Ω / 1062 V</td><td>1.42–1.43 / 1054–1068</td><td>in range</td></tr>
+<tr><td></td><td>worst touch</td><td>136.3 V</td><td>134.4–140.2</td><td>in range</td></tr>
+<tr><td></td><td>worst step</td><td>85.6 V</td><td>77.4–99.2</td><td>in range</td></tr></tbody></table>
+<p>¹ The fence-conductor depth is not given; 0.5 m is assumed. ² "Every other perimeter crossing" gives 25 rods on this outline; the three programs themselves spread 5 % here.</p>
+<p><b>IEEE 80 Annex B</b> (EPRI TR-100622, an older program)</p>
+<table class="help-ref-table"><thead><tr><th>Case</th><th>Quantity</th><th>This program</th><th>EPRI</th><th>Deviation</th></tr></thead><tbody>
+<tr><td>Ex. 1 (70 × 70 m, 11 × 11, 400 Ω·m)</td><td>$R_g$</td><td>2.645 Ω</td><td>2.67</td><td>−0.9 %</td></tr>
+<tr><td></td><td>worst touch</td><td>965.0 V</td><td>984.3</td><td>−2.0 %</td></tr>
+<tr><td>Ex. 2 (+20 rods) ³</td><td>$R_g$</td><td>2.489 Ω</td><td>2.52</td><td>−1.2 %</td></tr>
+<tr><td></td><td>worst touch</td><td>709.9 V</td><td>756.2</td><td>−6.1 %</td></tr>
+<tr><td></td><td>step</td><td>460.5 V</td><td>459.1</td><td>+0.3 %</td></tr>
+<tr><td>Ex. 4 (L-shape)</td><td>$R_g$ / touch / step</td><td>2.313 Ω / 713.8 V / 471.5 V</td><td>2.34 / 742.9 / 441.8</td><td>−1.1 / −3.9 / +6.7 %</td></tr>
+<tr><td>Exhibit 1 (two-layer, 9 rods 9.1 m)</td><td>$R_g$</td><td>1.137 Ω</td><td>1.353</td><td>−15.9 % ⁴</td></tr>
+<tr><td>Exhibit 2 (unequal spacing) ³</td><td>$R_g$</td><td>1.462 Ω</td><td>1.416</td><td>+3.3 %</td></tr>
+<tr><td></td><td>corner-mesh / worst touch (% GPR)</td><td>8.6 / 15.4</td><td>9.29 / 17.08</td><td>−7 / −10 %</td></tr></tbody></table>
+<p>³ Rod positions are read off the figures; for Ex. 2 "every other perimeter crossing" is assumed. ⁴ Without the rods the result equals an independent solver (first table), so the difference comes from the rods reaching into the more conductive lower layer. Rods crossing the interface are validated by Annex H Grids 3 and 4, where three modern programs agree with this solver to 0.5 %. The Exhibit 1 difference is recorded as unexplained and is not tuned away.</p>
+<p><b>Reading the evidence.</b> Against the three current programs of Annex H the solver is inside their spread, or within 2.5 % of it, for resistance and touch voltage on every grid — including the diagonal Grid 6 and the separately earthed fence of Grid 4. Step voltages sit within 5 %, the same order as the programs' own spread (WinIGS is 20 % below the others on Grid 6). The EPRI program of Annex B gives 1 % more resistance and 2 % more touch voltage on the one fully specified case (Ex. 1); where rod positions are read from figures the touch-voltage gap grows to 4–10 %. No case is solved by both EPRI and the modern programs, so which is closer cannot be settled from the standard; the Annex H agreement — three independent programs, fully specified geometry — is the stronger evidence. Treat a touch voltage within a few percent of its limit as marginal.</p>
+<h4>9 · Limitations</h4>
+<ul>
+<li><b>Equal potential of bonded metal</b> is checked (section 7) but not relaxed. Large sites with thin or steel conductors in low-resistivity soil — PV farms are the typical case — need a solver with conductor impedance.</li>
+<li><b>Soil</b>: horizontal layers only — one or two, no lateral variation (IEEE 80 §16.2.3 notes real soil varies laterally too). The surface layer is in the body circuit only.</li>
+<li><b>Frequency</b>: power frequency only — no lightning or switching transients (IEEE 80 §17.7, EN 50522 Annex F).</li>
+<li><b>Not computed</b>: metal-to-metal touch (IEEE 80 §8.2) and transferred voltages beyond the unbonded fences modelled — pipes, cable sheaths, rails (IEEE 80 §17.9, EN 50522 §6).</li>
+<li><b>Ground surface</b>: flat ground only. The touch area is the grid outline (or fence + 1 m) unless drawn.</li>
+<li><b>EN 50522</b>: C1 (global earthing system) is not assessed; isolated or resonant-earthed currents are user inputs; Table 2 (LV transferred potential) and Annex D conductor sizing are not implemented.</li>
+<li><b>Fault location</b>: one per bus; the worst over the buses on the grid is the design case.</li></ul>
+<h4>10 · Modelling guide</h4>
+<ul>
+<li><b>Start from the bus.</b> <em>Create from bus</em> turns the bus's IEEE 80 data into an earth grid that gives exactly the same result. Then edit it.</li>
+<li><b>One grid per site.</b> Point the HV and LV buses of a substation at the same grid. The HV bus usually sets the design current; the LV bus of a Dyn transformer has little remote current.</li>
+<li><b>Corner meshes first.</b> On an evenly spaced grid the corner mesh carries the highest touch voltage (Annex H Grid 1, T3 on the corner diagonal). Remedies, in the order of IEEE 80 §16.6: diagonals across the corner meshes (<em>Diagonals: corner meshes</em>); closer spacing at the perimeter (uneven spacing positions); rods at the perimeter, especially the corners; a perimeter conductor 1 m outside the fence; more surface-layer resistivity or thickness; faster clearing. Compare each change numerically against numerical.</li>
+<li><b>Uneven spacing.</b> Enter the conductor positions, e.g. 0, 3, 12, 24, 45.7, 67, 79, 88.4, 91.4. The worst touch voltage can then be in an interior mesh (Exhibit 2): read its location on the plan, not only the value.</li>
+<li><b>Fences.</b> A <b>bonded</b> fence extends the touch area to 1 m outside it: lay a perimeter conductor about 1 m outside the fence (<em>Conductor offset</em>) so the potential outside does not drop steeply (IEEE 80 §17.3). A <b>separately earthed</b> fence (not bonded, typically 2–3 m outside the grid with its own conductor) lowers the touch voltage on the fence but creates a grid-to-fence transfer voltage: nothing may bridge the two. Typical posts: spacing about 3 m, depth about 0.8 m, diameter about 50 mm.</li>
+<li><b>Rods.</b> <em>Perimeter, evenly spaced</em> reproduces the per-bus placement (corners first). <em>Every perimeter crossing</em> or <em>every other crossing</em> put rods at conductor joints, as IEEE 80's examples do. Rods into a lower, more conductive layer are very effective (Exhibit 1); rods ending in a resistive lower layer much less so.</li>
+<li><b>Placing by hand.</b> In the editor's plan, <em>+ Conductor</em> and <em>+ Rod</em> place added metal by clicking; points snap to conductor ends, crossings, rods and conductors (Alt places freely). The <em>3-D</em> view shows burial depths, rods and fences.</li>
+<li><b>Soil.</b> Fit $\rho_1/\rho_2/H$ from field readings with the Wenner interpreter. With a resistive lower layer ($K&gt;0$) surface gradients and touch voltage rise sharply; the uniform-soil equations can underestimate touch voltage there by up to 2.4×.</li>
+<li><b>Design current.</b> Check the split factor $S_f$ (IEEE 80 §15.9, Annex C; EN 50522 Annex I reduction factor $r$) and the fault duration. For isolated or resonant systems enter the bus's design earth-fault current.</li>
+<li><b>Element length.</b> 1 m is adequate; use 0.5 m to confirm a marginal result.</li>
+<li><b>Reading the results.</b> The plan shows touch or step voltage as a heat map over its area — green to red up to the limit, red to purple (hatched) above it, with the limit drawn as a contour; <em>Colours vs highest</em> stretches the scale when everything is within the limit. ✕ marks the worst touch point and the short segment the worst 1 m step. Hover (or tap) the plan for the touch and step voltage and surface potential at a point; the highest value in the legend is the calculated worst point, which is refined more finely than the map. Fence posts are squares, rods dots, and unbonded metal is dashed.</li></ul>
+<h4>11 · Saved data</h4>
+<p>Each grid is saved with the project (also what the API and Python client send):</p>
+<table class="help-ref-table"><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>id, name</td><td>identity; buses refer to <code>id</code> through <code>earth_grid_id</code></td></tr>
+<tr><td>soil</td><td>rho1, two_layer (on/off), rho2, h1</td></tr>
+<tr><td>surface</td><td>rho_s, h_s (h_s = 0: no surface layer)</td></tr>
+<tr><td>conductor</td><td>material, area_mm2, optional diameter_m (measured outside diameter, geometry only), depth_m, joint</td></tr>
+<tr><td>layout</td><td>type rect / l / none; length_x, width_y; n_x, n_y or x_lines, y_lines (explicit positions); notch_x, notch_y (L); diagonals none / corner_meshes / all_meshes / full</td></tr>
+<tr><td>rods</td><td>rule none / perimeter_even (with count) / perimeter_nodes / perimeter_alternate / corners / all_nodes; length_m, diameter_m</td></tr>
+<tr><td>fences[]</td><td>name, offset_m (+ out / − in), bonded, post_spacing_m, post_depth_m, post_diameter_m, conductor_offset_m (none = no fence conductor), conductor_depth_m</td></tr>
+<tr><td>extra_conductors[]</td><td>x1, y1, x2, y2, optional depth_m, area_mm2 (or diameter_m), bonded</td></tr>
+<tr><td>extra_rods[]</td><td>x, y, optional length_m, diameter_m, bonded</td></tr>
+<tr><td>touch_area</td><td>optional polygon [[x, y], …]</td></tr>
+<tr><td>method</td><td>auto / ieee80 / numerical</td></tr>
+<tr><td>limits</td><td>ieee80 / en50522</td></tr>
+<tr><td>body_weight</td><td>50 / 70 (IEEE 80)</td></tr>
+<tr><td>ieee80</td><td>footwear_ohm — per foot, in the IEEE 80 limits</td></tr>
+<tr><td>en50522</td><td>footwear_ohm, hand_ohm, measures_m (yes/no)</td></tr>
+<tr><td>element_length_m</td><td>numerical element length, 0.2–5 m</td></tr></tbody></table>
+<p>Per bus: <code>earth_grid_id</code>, plus Fault Duration ($t_s$ / $t_f$), Fault Clearing Time ($t_c$), split factor ($S_f$ or $r$), ambient temperature and the optional design earth-fault current. The grounding study can be limited to selected buses; the fault study still covers the whole network.</p>` },
 
 { id: 'prot-en50522', group: 'protect', title: 'Touch voltage to EN 50522',
   std: 'EN 50522:2022 §5.4, Annex A/B, Table 1 · earth grid ▸ Limits',

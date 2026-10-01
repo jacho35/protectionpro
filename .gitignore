@@ -21,3 +21,12 @@ SANS Standards/
 
 # Earth grid reports from other software (customer projects — reference only, never commit)
 EarthGridExamples/
+
+# Engine review / audit write-ups — local only, not published
+reviews/
+
+# Retired plans and old reference apps — kept locally
+archive/
+
+# Personal notes and scripts
+notes/

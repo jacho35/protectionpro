@@ -249,7 +249,7 @@ def _two_layer_reflection_factor(rho1, rho2):
 #   2←2: ρ2/4π · [1/R(z−z0) − K/R(z+z0−2H) + (1−K²) Σ_{n≥0} K^n/R(z+z0+2nH)]
 # Each term is an image segment at z' = sign·z0 + shift (listed below). The
 # forms satisfy dV/dz = 0 at the surface and continuity of V and of
-# (1/ρ)dV/dz at z = H (checked numerically in the review, GROUNDING_REVIEW.md).
+# (1/ρ)dV/dz at z = H (checked numerically in the review, reviews/GROUNDING_REVIEW.md).
 
 _MOM_IMAGE_TOL = 1e-6      # drop image terms whose weight is below this
 

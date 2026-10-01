@@ -151,7 +151,7 @@ def _current_limit(h: int, isc_il: float, v_kv: float) -> float | None:
 #   MV (1–35 kV) and HV-EHV (> 35 kV): IEC 61000-3-6:2008 Table 2 indicative
 #     planning levels, THD 6.5 % (MV) / 3 % (HV-EHV).
 # No licensed IEC 61000 copy was available to the 2026-09-29 review; these
-# are the published values as the reviewer read them (HARMONICS_REVIEW.md).
+# are the published values as the reviewer read them (reviews/HARMONICS_REVIEW.md).
 def _iec_ihd_limit(h: int, v_kv: float) -> float:
     if v_kv <= 1.0:                                   # IEC 61000-2-4 Class 2
         if h % 2 == 0:

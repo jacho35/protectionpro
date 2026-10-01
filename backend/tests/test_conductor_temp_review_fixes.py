@@ -6,7 +6,7 @@ standard itself — IEC 60909-0:2001 §2.4 (maximum currents: line resistance at
 IEC 60364-4-43 Table 43A (final short-circuit temperatures) — or from the
 IEC 60228 20 °C conductor resistances, never from the engine's earlier output.
 IDs match the ``[CTn]`` / ``[Ln]`` markers in ``backend/analysis/fault.py`` and
-``backend/analysis/conductor_temp.py``. Write-up: CONDUCTOR_TEMP_REVIEW.md.
+``backend/analysis/conductor_temp.py``. Write-up: reviews/CONDUCTOR_TEMP_REVIEW.md.
 """
 
 import math
