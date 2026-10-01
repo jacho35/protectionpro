@@ -62,6 +62,7 @@ frontend/
     ├── workspaces.js       # Project type (Reticulation / Building / Network) → which workspace tabs show, in workflow order; New-project + type dialogs
     ├── help.js             # Help 'Calculations & tools' viewer: ranked search, KaTeX (js/lib/katex) lazy-loaded; articles are data in help-{faults,flow,dynamics,protect,cables,design,workflow}.js (TeX between $…$ / $$…$$; never a literal $ in text)
     ├── header.js           # Two-row header behaviours: Results menu lists only studies with results; Ctrl K command search (index built from the menus)
+    ├── earthgrid.js        # Earth grid editor (AppState.earthGrids): grid list, layout/rods/fences/added metal/calculation form, live plan preview via /earth-grid/preview; buses pick a grid in their grounding section
     ├── lightning.js        # Lightning risk (IEC 62305-2, edition per assessment: 2024 default / 2010, absent ⇒ 2010): named assessments saved in the project (AppState.lightningAssessments), 4 guided steps (data-lr-ed fields per edition), live strike estimate, verdict-first results (2024: per zone + frequency F), PDF report (LightningReport)
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
@@ -120,6 +121,8 @@ backend/
 │   ├── duty_check.py       # Equipment fault current rating validation
 │   ├── load_diversity.py   # Load demand factor analysis
 │   ├── grounding_system.py # IEEE 80 grounding grid design; two-layer soil = IEEE 80 values × method-of-moments ratios (layered vs uniform ρ1); I_G uses the fault engine's `ik1_remote_fraction` (share not returning to a local neutral) × S_f; review: GROUNDING_REVIEW.md
+│   ├── earth_grid.py       # Earth grids of any shape (ProjectData.earthGrids, bus `earth_grid_id`): layout/rod/fence generators → wires, method-of-moments solve (bonded = GPR, unbonded groups float), surface potential, touch/step to IEEE 80 Annex H.3 conventions, connectivity + conductor-impedance checks; `preview()` for the editor
+│   ├── earth_grid_study.py # Per-bus result for a bus on an earth grid: IEEE 80 simplified (plain rectangle only) or numerical headline, IEEE 80 or EN 50522 limits (C2/C3/C4); technical basis + validation: EARTH_GRID_METHOD.md
 │   ├── study_manager.py    # Batch analysis orchestration
 │   ├── changeover.py       # Changeover switch → 2-terminal devices, applied by every analysis route before any engine runs
 │   ├── offpage.py          # Linked off-page connector pairs → closed switches + a joining wire (props.linked_to; legacy same-name), applied after changeover
@@ -212,7 +215,8 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |
 | `/api/analysis/duty-check` | Equipment duty | IEC 60947-2 / IEC 60269 (LV breakers, fuses: largest prospective I″k), IEC 62271-100 (MV: Ib, asymmetry, making), Icw, Ur ≥ Um; relay-fed CTs (IEC 61869-2) and VTs (IEC 61869-3: burden, rated primary vs bus, voltage factor vs the bus earth fault factor) |
 | `/api/analysis/load-diversity` | Demand factors | Load diversity |
-| `/api/analysis/grounding` | Grounding grid | IEEE 80 |
+| `/api/analysis/grounding` | Grounding grid | IEEE 80 per bus; buses on an earth grid object: numerical (method of moments) with IEEE 80 or EN 50522:2022 limits |
+| `/api/analysis/earth-grid/preview` | Earth grid geometry for the editor (`{grid}`, not ProjectData) | plan, element count, connectivity, IEEE 80 applicability — no solve |
 | `/api/analysis/lightning-risk` | Lightning risk (form, not ProjectData) | IEC 62305-2:2024 (`edition: "2024"`, R + F per zone) or 2010 (R1; absent `edition`) |
 | `/api/analysis/study-manager` | Batch all studies | Runs selected analyses |
 

@@ -69,6 +69,13 @@ const VerificationTemplates = {
       "description": "IEEE 80 grounding grid on a square grid with rods. Reproduces the tolerable touch/step voltages, surface derating C_s, grid resistance R_g (Sverak), GPR, geometric factors and mesh voltage exactly (full Eq. 84\u201388 n / K_ii / rod-weighted L_M)."
     },
     {
+      "id": "ver_earth_grid_h6",
+      "name": "Earth Grid with Diagonals (IEEE 80 Annex H Grid 6)",
+      "category": "Verification / Standards",
+      "preview": "70 \u00d7 70 m, corner-to-corner diagonals, two-layer",
+      "description": "Earth grid of any shape, solved numerically: the IEEE 80-2013 Annex H.3.6 benchmark (non-orthogonal conductors, rods of unequal length, two-layer 100/300 \u03a9\u00b7m soil, 744.8 A). Grid resistance and worst touch/step voltage fall inside the range CDEGS, ETAP and WinIGS report (R_g 1.42\u20131.43 \u03a9, touch 134.4\u2013140.2 V, step 77.4\u201399.2 V)."
+    },
+    {
       "id": "ver_motor_start",
       "name": "Motor Starting Voltage Dip",
       "category": "Verification / Standards",
@@ -1127,6 +1134,182 @@ const VerificationTemplates = {
       "dataVersion": 2,
       "projectDetails": {
         "description": "VERIFICATION TEMPLATE — IEEE 80 grounding grid (70 × 70 m, 11 × 11 conductors, 20 rods). RUN: Grounding study. Expected grid resistance R_g = 2.75 Ω, GPR = 5252 V, mesh (touch) voltage 749 V ≤ 841 V tolerable. Full working: Help → Verification."
+      }
+    },
+    "ver_earth_grid_h6": {
+      "projectName": "Earth Grid with Diagonals (IEEE 80 Annex H Grid 6)",
+      "baseMVA": 100.0,
+      "frequency": 60,
+      "components": [
+        {
+          "id": "utility-1",
+          "type": "utility",
+          "x": 300,
+          "y": 40,
+          "rotation": 0,
+          "props": {
+            "name": "Src",
+            "voltage_kv": 11.0,
+            "fault_mva": 100.0,
+            "x_r_ratio": 0.05,
+            "grounding": "solidly"
+          }
+        },
+        {
+          "id": "bus-1",
+          "type": "bus",
+          "x": 200,
+          "y": 160,
+          "rotation": 0,
+          "props": {
+            "name": "Substation",
+            "voltage_kv": 11.0,
+            "earth_grid_id": "eg_annexh6",
+            "design_earth_fault_ka": 0.7448,
+            "fault_duration": 0.5,
+            "fault_clearing_time": 0.5,
+            "current_split_factor": 1.0,
+            "ambient_temp": 40
+          }
+        }
+      ],
+      "wires": [
+        {
+          "id": "w1",
+          "fromComponent": "utility-1",
+          "fromPort": "out",
+          "toComponent": "bus-1",
+          "toPort": "p0"
+        }
+      ],
+      "nextId": 3,
+      "earthGrids": [
+        {
+          "id": "eg_annexh6",
+          "name": "IEEE 80 Annex H Grid 6",
+          "soil": {
+            "rho1": 100,
+            "two_layer": "on",
+            "rho2": 300,
+            "h1": 6.096
+          },
+          "surface": {
+            "rho_s": 2500,
+            "h_s": 0.0
+          },
+          "conductor": {
+            "material": "copper_hard",
+            "diameter_m": 0.0105,
+            "depth_m": 0.5,
+            "joint": "exothermic"
+          },
+          "layout": {
+            "type": "rect",
+            "length_x": 70,
+            "width_y": 70,
+            "n_x": 4,
+            "n_y": 4,
+            "x_lines": [
+              0,
+              14,
+              56,
+              70
+            ],
+            "y_lines": [
+              0,
+              14,
+              56,
+              70
+            ],
+            "diagonals": "full"
+          },
+          "rods": {
+            "rule": "none",
+            "count": 0,
+            "length_m": 7.5,
+            "diameter_m": 0.0159
+          },
+          "fences": [],
+          "extra_conductors": [],
+          "extra_rods": [
+            {
+              "x": 0,
+              "y": 0,
+              "length_m": 7.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 0,
+              "y": 70,
+              "length_m": 7.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 70,
+              "y": 0,
+              "length_m": 7.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 70,
+              "y": 70,
+              "length_m": 7.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 14,
+              "y": 14,
+              "length_m": 2.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 56,
+              "y": 14,
+              "length_m": 2.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 14,
+              "y": 56,
+              "length_m": 2.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 56,
+              "y": 56,
+              "length_m": 2.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            },
+            {
+              "x": 35,
+              "y": 35,
+              "length_m": 2.5,
+              "diameter_m": 0.0159,
+              "bonded": true
+            }
+          ],
+          "method": "auto",
+          "limits": "ieee80",
+          "body_weight": 70,
+          "en50522": {
+            "footwear_ohm": 0,
+            "hand_ohm": 0,
+            "measures_m": "no"
+          },
+          "element_length_m": 1.0
+        }
+      ],
+      "dataVersion": 2,
+      "projectDetails": {
+        "description": "VERIFICATION TEMPLATE — earth grid of any shape, IEEE 80 Annex H Grid 6: 70 × 70 m with corner-to-corner diagonals, 7.5 m corner rods and 2.5 m inner rods, two-layer soil 100/300 Ω·m (6.1 m), grid current 744.8 A (bus Design Earth-Fault Current). The IEEE 80 equations do not cover this grid, so it is solved numerically. RUN: Grounding study. Expected R_g = 1.427 Ω, GPR ≈ 1062 V, worst touch ≈ 136 V, worst step ≈ 84 V — CDEGS / ETAP / WinIGS: 1.42–1.43 Ω, 134.4–140.2 V, 77.4–99.2 V. Full working: EARTH_GRID_METHOD.md §8."
       }
     },
     "ver_motor_start": {

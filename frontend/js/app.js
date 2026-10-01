@@ -2811,6 +2811,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const buses = result.buses || [];
     const summary = result.summary || {};
+    // Buses on an earth grid may use EN 50522 limits or the numerical method
+    const title = document.getElementById('grounding-title');
+    if (title) title.textContent = buses.some(b => b.method) ? 'Grounding System Analysis' : 'Grounding System Analysis — IEEE 80';
 
     let html = '';
 
@@ -2840,6 +2843,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Per-bus results
     for (const b of buses) {
+      // A bus on a project earth grid (has `method`) — its own card with the
+      // plan heatmap (earthgrid.js); per-bus IEEE 80 buses render as before.
+      if (b.method && typeof EarthGridEditor !== 'undefined') {
+        html += EarthGridEditor.resultCardHtml(b, result);
+        continue;
+      }
       const statusColor = b.status === 'fail' ? '#d32f2f' : b.status === 'warning' ? '#f57c00' : '#4caf50';
       const statusLabel = b.status.toUpperCase();
       const touchIcon = b.touch_ok ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>';
@@ -3162,6 +3171,10 @@ document.addEventListener('DOMContentLoaded', () => {
   LightningUI.restore = restoreLightningParams;
   LightningUI.init();
   document.getElementById('btn-lightning').addEventListener('click', () => LightningUI.openModal());
+  document.getElementById('btn-earth-grids').addEventListener('click', () => {
+    window.closeAllToolbarMenus?.();
+    EarthGridEditor.open({ busId: [...AppState.selectedIds].find(id => (AppState.components.get(id) || {}).type === 'bus') || null });
+  });
 
   document.getElementById('btn-run-lightning').addEventListener('click', async () => {
     const params = collectLightningParams();

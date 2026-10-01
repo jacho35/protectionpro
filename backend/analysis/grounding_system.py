@@ -13,7 +13,7 @@ Key IEEE 80 equations (uniform soil):
     (k = 0.116 for 50 kg body weight, 0.157 for 70 kg)
   - Mesh voltage (actual touch): E_m = ρ × I_G × K_m × K_i / L_M
   - Step voltage (actual step): E_s = ρ × I_G × K_s × K_i / L_S
-  - Conductor sizing (Onderdonk, IEEE 80 Eq. 37):
+  - Conductor sizing (Onderdonk, IEEE 80-2013 Eq. 37):
       A_mm² = I_kA × √(t_c × α_r × ρ_r × 10⁴ / (TCAP × ln((K_0 + T_m)/(K_0 + T_a))))
     T_m = the lower of the material's fusing point and the joint limit.
 
@@ -129,12 +129,10 @@ def _compute_surface_derating(rho, rho_s, h_s):
 def _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight=70):
     """Compute tolerable touch and step voltages per IEEE 80.
 
-    For 70 kg person (IEEE 80 eq 32, 33):
-      E_touch = (1000 + 1.5 × C_s × ρ_s) × 0.157 / √t_s
-      E_step  = (1000 + 6.0 × C_s × ρ_s) × 0.157 / √t_s
-
-    For 50 kg person (IEEE 80 eq 29, 30):
-      same formulae with the 0.116 body-current constant
+    IEEE 80-2013 §8.4: step Eq. 29 (50 kg) / 30 (70 kg), touch Eq. 32 / 33:
+      E_touch = (1000 + 1.5 × C_s × ρ_s) × k / √t_s
+      E_step  = (1000 + 6.0 × C_s × ρ_s) × k / √t_s
+    k = 0.157 (70 kg) or 0.116 (50 kg).
     """
     if t_s <= 0:
         t_s = 0.5
@@ -151,8 +149,75 @@ def _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight=70):
     return E_touch, E_step
 
 
+# ── EN 50522:2022 permissible touch voltage (Annex A / B) ──────────────────
+# Table B.4: U_Tp(t_f), bare hand-to-feet contact, 5 % fibrillation, 50 %
+# body impedance, weighted over four current paths (Figure 8 in the text).
+EN50522_UTP = [(0.05, 725.0), (0.10, 655.0), (0.20, 525.0), (0.50, 225.0),
+               (1.00, 115.0), (2.00, 95.0), (5.00, 85.0), (10.0, 85.0)]
+# Table B.1: permissible body current I_B(t_f), curve c2 of IEC 60479-1 (mA).
+EN50522_IB_MA = [(0.05, 900.0), (0.10, 800.0), (0.20, 600.0), (0.50, 200.0),
+                 (1.00, 80.0), (2.00, 60.0), (5.00, 51.0), (10.0, 50.0)]
+# Table B.3: total body impedance Z_T vs body current, hand to hand (mA → Ω).
+EN50522_ZT = [(8, 3250), (20, 2500), (38, 2000), (58, 1725), (81, 1550), (107, 1400),
+              (132, 1325), (157, 1275), (184, 1225), (421, 950), (588, 850), (903, 775), (1290, 775)]
+
+
+def _interp_log_t(table, t, log_y=False):
+    """Interpolate a table in log(t) — Figure 8 / Table B.1 are read on a log
+    time axis. Outside the table the end value holds."""
+    if t <= table[0][0]:
+        return table[0][1]
+    if t >= table[-1][0]:
+        return table[-1][1]
+    for (t0, y0), (t1, y1) in zip(table[:-1], table[1:]):
+        if t0 <= t <= t1:
+            f = (math.log(t) - math.log(t0)) / (math.log(t1) - math.log(t0))
+            if log_y:
+                return math.exp(math.log(y0) + f * (math.log(y1) - math.log(y0)))
+            return y0 + f * (y1 - y0)
+    return table[-1][1]
+
+
+def en50522_touch_limits(t_f, rho_surface, footwear_ohm=0.0, hand_ohm=0.0):
+    """EN 50522:2022 limits for fault duration t_f (s).
+
+    U_Tp  — permissible touch voltage, Table B.4 (log-t interpolation; below
+            0.05 s the 0.05 s value is kept, conservative against Figure 8;
+            beyond 10 s the NOTE value 80 V).
+    U_vTp — prospective permissible touch voltage, Formula (A.3):
+            U_vTp = U_Tp + I_B(t_f)/HF · (R_H + R_F), HF = 1 (left hand to
+            feet), R_F = R_F1 (footwear) + R_F2, R_F2 = 1.5 m⁻¹ · ρ_S.
+    U_Sp  — permissible step voltage per A.3: I_B/HF · Z_T · BF with HF =
+            0.04 (foot to foot), BF = 1, Z_T at that body current (Table B.3),
+            no additional resistances (conservative).
+    """
+    t = max(float(t_f), 1e-3)
+    u_tp = 80.0 if t > 10.0 else _interp_log_t(EN50522_UTP, t)
+    i_b = _interp_log_t(EN50522_IB_MA, t, log_y=True) / 1000.0
+    r_f2 = 1.5 * max(float(rho_surface), 0.0)
+    r_f = max(float(footwear_ohm), 0.0) + r_f2
+    u_vtp = u_tp + i_b * (max(float(hand_ohm), 0.0) + r_f)
+    i_step = i_b / 0.04
+    z_t = _interp_zt(i_step * 1000.0)
+    u_sp = i_step * z_t
+    return dict(U_Tp=u_tp, U_vTp=u_vtp, I_B=i_b, R_F=r_f, R_F2=r_f2, U_Sp=u_sp)
+
+
+def _interp_zt(i_ma):
+    t = EN50522_ZT
+    if i_ma <= t[0][0]:
+        return float(t[0][1])
+    if i_ma >= t[-1][0]:
+        return float(t[-1][1])
+    for (a, za), (b, zb) in zip(t[:-1], t[1:]):
+        if a <= i_ma <= b:
+            f = (math.log(i_ma) - math.log(a)) / (math.log(b) - math.log(a))
+            return za + f * (zb - za)
+    return float(t[-1][1])
+
+
 def _two_layer_reflection_factor(rho1, rho2):
-    """Reflection factor K = (ρ2 − ρ1) / (ρ2 + ρ1) (IEEE 80 §14.5).
+    """Reflection factor K = (ρ2 − ρ1) / (ρ2 + ρ1) (IEEE 80-2013 §7.4, Eq. 21).
 
     K > 0: lower layer more resistive (e.g. rock below topsoil) — raises the
     equivalent resistivity above ρ1. K < 0: lower layer more conductive
@@ -263,7 +328,7 @@ def _segment_integral(P, A, B, a):
 
 def _mom_grid_segments(L_x, L_y, n_x, n_y, h, n_R, L_r, H):
     """Segments (A, B arrays) of the grid; rods on the perimeter (corners
-    first, then evenly spaced — the IEEE 80 K_ii = 1 / Eq. 91 arrangement),
+    first, then evenly spaced — the IEEE 80 K_ii = 1 arrangement, Eq. 87),
     split where they cross the layer boundary H."""
     import numpy as np
     n_x = max(int(n_x), 2)
@@ -496,7 +561,7 @@ def _compute_mesh_voltage(rho, I_G, K_m, K_i, L_M):
 
 
 def _compute_step_voltage(rho, I_G, K_s, K_i, L_S):
-    """Compute step voltage per IEEE 80 eq 92.
+    """Compute step voltage per IEEE 80-2013 Eq. 97.
 
     E_s = ρ × I_G × K_s × K_i / L_S
     """
@@ -521,7 +586,7 @@ def _compute_K_m(D, d, h, n, K_ii=1.0):
 
 
 def _compute_K_s(D, h, n):
-    """Compute step voltage spacing factor K_s per IEEE 80 eq 94.
+    """Compute step voltage spacing factor K_s per IEEE 80-2013 Eq. 99.
 
     K_s = (1/π) × [1/(2h) + 1/(D+h) + 1/D × (1 - 0.5^(n-2))]
     """
@@ -532,7 +597,7 @@ def _compute_K_s(D, h, n):
 
 
 def _compute_K_i(n):
-    """Compute irregularity correction factor K_i per IEEE 80 eq 89.
+    """Compute irregularity correction factor K_i per IEEE 80-2013 Eq. 94.
 
     K_i = 0.644 + 0.148 × n
     """
@@ -540,7 +605,7 @@ def _compute_K_i(n):
 
 
 def _compute_n(L_c, L_x, L_y, A):
-    """Effective number of parallel conductors n per IEEE 80 Eq. 84–87.
+    """Effective number of parallel conductors n per IEEE 80-2013 Eq. 89–93.
 
     n = n_a·n_b·n_c·n_d.  For a square grid this equals n_x (= the old
     ``max(n_x, n_y)`` shortcut); for rectangular grids n_a·n_b differs, which
@@ -559,7 +624,7 @@ def _compute_n(L_c, L_x, L_y, A):
 
 
 def _compute_K_ii(n, has_rods):
-    """Corrective weighting factor K_ii per IEEE 80 Eq. 90/91.
+    """Corrective weighting factor K_ii per IEEE 80-2013 Eq. 87.
 
     Grids with ground rods along the perimeter / corners: K_ii = 1.0.
     Grids without rods (or few rods): K_ii = 1 / (2n)^(2/n).
@@ -572,15 +637,15 @@ def _compute_K_ii(n, has_rods):
 
 
 def _compute_L_M(L_c, L_rod, L_r, L_x, L_y, has_rods):
-    """Effective buried length for the mesh voltage per IEEE 80 Eq. 87/88.
+    """Effective buried length for the mesh voltage per IEEE 80-2013 Eq. 95/96.
 
-    Without rods (Eq. 87):  L_M = L_c + L_rod
-    With rods (Eq. 88):     L_M = L_c + [1.55 + 1.22·(L_r/√(L_x²+L_y²))]·L_R
+    Without rods (Eq. 95):  L_M = L_c + L_rod
+    With rods (Eq. 96):     L_M = L_c + [1.55 + 1.22·(L_r/√(L_x²+L_y²))]·L_R
                             (L_R = total rod length = L_rod)
 
     The previous simplification used L_c + L_rod in both cases, which
     under-states L_M for rod grids and so over-states the mesh voltage by a
-    few percent (conservative).  The full Eq. 88 restores the exact value.
+    few percent (conservative).  The full Eq. 96 restores the exact value.
     """
     if not has_rods or L_rod <= 0:
         return L_c + L_rod
@@ -590,7 +655,7 @@ def _compute_L_M(L_c, L_rod, L_r, L_x, L_y, has_rods):
 
 
 def _compute_decrement_factor(kappa, t_s, freq_hz=50.0):
-    """Decrement factor D_f per IEEE 80-2013 Eq. 79.
+    """Decrement factor D_f per IEEE 80-2013 Eq. 84 (§15.10, Table 10).
 
         D_f = √(1 + (Ta / t_f) × (1 − e^(−2·t_f/Ta)))
         Ta  = X / (ω·R)   (DC offset time constant, s)
@@ -628,7 +693,7 @@ def _max_conductor_temp(material_key, joint_type="exothermic"):
 
 def _compute_conductor_size(I_fault_a, t_c, material_key="copper_hard", T_a=40.0,
                             joint_type="exothermic"):
-    """Compute minimum conductor cross-section per IEEE 80 eq 37 (Onderdonk).
+    """Compute minimum conductor cross-section per IEEE 80-2013 Eq. 37 (Onderdonk).
 
     A_mm² = I × √(t_c) × √(α_r × ρ_r / (TCAP × ln(1 + (T_m - T_a)/(K_0 + T_a))))
     T_m per `_max_conductor_temp` (joint limit). Returns area in mm².
@@ -701,11 +766,28 @@ def run_grounding_analysis(project: ProjectData):
 
     results = []
     analysis_warnings = []
+    # Earth grids of any shape (earth_grid.py) — a bus that names one is
+    # solved numerically / against EN 50522 by earth_grid_study; every other
+    # bus keeps the per-bus IEEE 80 calculation below, unchanged.
+    grids = {str(g.get("id")): g for g in (project.earthGrids or [])
+             if isinstance(g, dict) and g.get("id") is not None}
+    grid_cache = {}
 
     for bus in buses:
         bp = bus.props
         bus_name = bp.get("name", bus.id)
         voltage_kv = float(bp.get("voltage_kv", 11))
+        gid = bp.get("earth_grid_id")
+        if gid not in (None, "", "none"):
+            if str(gid) in grids:
+                from .earth_grid_study import grid_bus_result
+                r = grid_bus_result(bus, grids[str(gid)], grid_cache, fault_results,
+                                    project.frequency or 50, analysis_warnings)
+                if r:
+                    results.append(r)
+                continue
+            analysis_warnings.append(f"Bus '{bus_name}': earth grid '{gid}' not found in the project — "
+                                     f"its own grid data are used.")
 
         # Get grounding parameters (from bus props or defaults)
         rho = float(bp.get("soil_resistivity", DEFAULT_PARAMS["soil_resistivity"]))
@@ -733,16 +815,16 @@ def run_grounding_analysis(project: ProjectData):
         L_c = n_x * L_y + n_y * L_x  # total conductor length (m)
         L_rod = n_R * L_r  # total rod length (m)
         L_T = L_c + L_rod  # total buried conductor length (m)
-        L_S = 0.75 * L_c + 0.85 * L_rod  # effective length for step voltage (Eq. 93)
+        L_S = 0.75 * L_c + 0.85 * L_rod  # effective length for step voltage (Eq. 98)
         has_rods = n_R > 0 and L_r > 0
-        # IEEE 80 Eq. 88 effective length for mesh voltage (rod-weighted)
+        # IEEE 80 Eq. 96 effective length for mesh voltage (rod-weighted)
         L_M = _compute_L_M(L_c, L_rod, L_r, L_x, L_y, has_rods)
 
         # Conductor spacing
         D_x = L_x / max(n_x - 1, 1)  # spacing between x conductors
         D_y = L_y / max(n_y - 1, 1)
         D = (D_x + D_y) / 2  # average spacing
-        # IEEE 80 Eq. 84–87 effective n (equals max(n_x,n_y) for square grids)
+        # IEEE 80 Eq. 89–93 effective n (equals max(n_x,n_y) for square grids)
         n = _compute_n(L_c, L_x, L_y, A)
         K_ii = _compute_K_ii(n, has_rods)
 
@@ -778,7 +860,7 @@ def run_grounding_analysis(project: ProjectData):
                          f"the 3-phase current {I_fault_ka:.2f} kA is used instead, which overstates "
                          f"the grid current; enter the earth-fault current as the design basis.")
 
-        # [EE-5] IEEE 80 Eq. 79/64: I_G = D_f × S_f × 3I₀ — apply the
+        # [EE-5] IEEE 80 Eq. 3/4: I_G = D_f × S_f × 3I₀ — apply the
         # decrement factor D_f (asymmetrical DC-offset heating over the
         # fault duration t_s) to the symmetrical earth fault current.
         # X/R is derived from the κ carried in the fault results.
@@ -846,15 +928,18 @@ def run_grounding_analysis(project: ProjectData):
         min_conductor_mm2 = _compute_conductor_size(I_cond, t_c, mat_key, T_a, joint_type)
         recommended_size_mm2 = _select_standard_size(min_conductor_mm2)
 
-        # [L1] IEEE 80 validity range of the simplified equations (§16.5)
-        if n > 25:
-            notes.append(f"n = {n:.1f} exceeds 25 — outside the range the IEEE 80 K_m / K_i equations were fitted over.")
+        # [L1] Range the simplified equations were compared over (IEEE 80-2013
+        # §16.7: area 6.25–10 000 m², 1–40 meshes a side, mesh 2.5–22.5 m) and
+        # the burial depth of the K_s equation (§16.5.2, 0.25 < h < 2.5 m).
+        meshes = max(n_x, n_y) - 1
+        if not 6.25 <= A <= 10000.0:
+            notes.append(f"Grid area {A:.0f} m² is outside the 6.25–10 000 m² range the IEEE 80 equations were checked over (§16.7).")
+        if meshes > 40:
+            notes.append(f"{meshes} meshes along a side is outside the 1–40 range of IEEE 80 §16.7.")
+        if not (2.5 <= min(D_x, D_y) and max(D_x, D_y) <= 22.5):
+            notes.append(f"Conductor spacing {D_x:.2f} × {D_y:.2f} m is outside the 2.5–22.5 m mesh range of IEEE 80 §16.7.")
         if not 0.25 <= h <= 2.5:
-            notes.append(f"Grid depth {h} m is outside 0.25–2.5 m — the IEEE 80 E_m / E_s equations are not validated there.")
-        if D < 2.5:
-            notes.append(f"Conductor spacing {D:.2f} m is below 2.5 m — outside the IEEE 80 equations' range.")
-        if d >= 0.25 * h:
-            notes.append(f"Conductor diameter {d} m is not below 0.25·h — outside the IEEE 80 equations' range.")
+            notes.append(f"Grid depth {h} m is outside 0.25–2.5 m — the IEEE 80 E_m / E_s equations are not validated there (§16.5.2).")
         if all(float(bp.get(k, v)) == float(v) for k, v in DEFAULT_PARAMS.items()
                if k in ("soil_resistivity", "grid_length", "grid_width", "num_conductors_x",
                         "num_conductors_y", "num_ground_rods", "ground_rod_length")):
@@ -942,8 +1027,13 @@ def run_grounding_analysis(project: ProjectData):
     n_warn = sum(1 for r in results if r["status"] == "warning")
     n_fail = sum(1 for r in results if r["status"] == "fail")
 
+    out_grids = {}
+    if grid_cache:
+        from .earth_grid_study import grids_summary
+        out_grids = grids_summary(grid_cache)
     return {
         "buses": results,
+        "grids": out_grids,
         "summary": {
             "total": len(results),
             "pass": n_pass,

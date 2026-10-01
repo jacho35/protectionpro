@@ -434,10 +434,17 @@ const API = {
     return this.request('/analysis/backup', 'POST', data);
   },
 
-  // Run grounding system analysis (IEEE 80)
+  // Run grounding system analysis (IEEE 80 per bus, or a project earth grid —
+  // AppState.toJSON carries earthGrids)
   async runGroundingAnalysis() {
     const data = AppState.toJSON();
     return this.request('/analysis/grounding', 'POST', data);
+  },
+
+  // Earth grid geometry for the editor's live plan (no solve): element count,
+  // connectivity, IEEE 80 applicability, plan. 400 on bad geometry.
+  async previewEarthGrid(grid) {
+    return this.request('/analysis/earth-grid/preview', 'POST', { grid });
   },
 
   // Interpret a Wenner four-pin soil resistivity test into a two-layer

@@ -219,6 +219,9 @@ const Properties = {
       } else if (rule.values) {
         if (!rule.values.includes(depVal)) return false;
       }
+      // Presence (e.g. a bus's earth_grid_id): empty: true shows the field
+      // only while the dependency is blank, empty: false only once it is set.
+      if (rule.empty !== undefined && ((depVal === '' || depVal == null) !== rule.empty)) return false;
       // Numeric bounds (e.g. show only for LV sources: { field: 'voltage_lv_kv', max: 1.0 }).
       // Combines with the predicates above — all specified conditions must hold.
       if (rule.max != null || rule.min != null) {
@@ -468,6 +471,14 @@ const Properties = {
       });
     });
 
+    // Earth grid editor, opened from this bus
+    root.querySelectorAll('.prop-eg-edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof EarthGridEditor !== 'undefined') EarthGridEditor.open({ busId: this.currentId || comp.id });
+      });
+    });
+
     // Bind the per-cable IEC ampacity calculator launch button
     root.querySelectorAll('.prop-ampacity-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -627,6 +638,16 @@ const Properties = {
       ).join('');
       inputHtml = `<select data-field="${field.key}" data-library="${field.library}">
         <option value="" data-ss-always>-- Custom --</option>${options}</select>`;
+    } else if (field.type === 'earth_grid_select') {
+      // Project earth grids (earthgrid.js), listed at render time, plus the
+      // editor button. '' = the bus's own grounding fields.
+      const grids = Array.isArray(AppState.earthGrids) ? AppState.earthGrids : [];
+      const known = !value || grids.some(g => g.id === value);
+      const opts = [`<option value="" ${!value ? 'selected' : ''}>None — use the fields below</option>`]
+        .concat(grids.map(g => `<option value="${escHtml(g.id)}" ${value === g.id ? 'selected' : ''}>${escHtml(g.name || g.id)}</option>`));
+      if (!known) opts.push(`<option value="${escHtml(value)}" selected>${escHtml(value)} (missing)</option>`);
+      inputHtml = `<div class="prop-eg-pick"><select data-field="${field.key}">${opts.join('')}</select>
+        <button type="button" class="prop-eg-edit-btn" title="Create and edit the project's earth grids">Edit earth grids…</button></div>`;
     } else if (field.type === 'component_select') {
       // Dynamic dropdown listing components of a specific type
       const filterType = field.filter || '';

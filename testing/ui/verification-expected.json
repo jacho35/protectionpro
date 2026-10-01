@@ -134,6 +134,36 @@
       ]
     }
   },
+  "ver_earth_grid_h6": {
+    "route": "grounding",
+    "checks": {
+      "rg": [
+        "buses.0.grid_resistance_ohm",
+        1.4265,
+        0.005
+      ],
+      "gpr": [
+        "buses.0.gpr_v",
+        1062.0,
+        0.005
+      ],
+      "touch": [
+        "buses.0.mesh_voltage_v",
+        136.0,
+        0.01
+      ],
+      "step": [
+        "buses.0.step_voltage_v",
+        84.0,
+        0.02
+      ],
+      "method": [
+        "buses.0.method",
+        "numerical",
+        0.001
+      ]
+    }
+  },
   "ver_motor_start": {
     "route": "motor-starting",
     "checks": {

@@ -612,12 +612,36 @@ def backup_autonomy(data: ProjectData):
 
 @router.post("/grounding")
 def grounding_analysis(data: ProjectData):
-    """Run IEEE 80 grounding system analysis."""
+    """Run the grounding study: per-bus IEEE 80, or an earth grid of any
+    shape (numerical, IEEE 80 or EN 50522 limits) for buses that use one."""
     try:
         return run_grounding_analysis(data)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Grounding analysis error: {e}")
+
+
+class EarthGridPreviewRequest(BaseModel):
+    grid: dict
+
+
+@router.post("/earth-grid/preview")
+def earth_grid_preview(data: EarthGridPreviewRequest):
+    """Geometry of an earth grid for the editor (no solve): plan, element
+    count, connectivity and whether the IEEE 80 simplified equations apply."""
+    from ..analysis.earth_grid import preview
+    from ..analysis.earth_grid_study import ieee80_applicability, to_native
+    try:
+        out = preview(data.grid)
+        ok, why = ieee80_applicability(data.grid)
+        out["ieee80_applicable"] = ok
+        out["ieee80_not_applicable_reason"] = None if ok else why
+        return to_native(out)
+    except (ValueError, KeyError, TypeError, ZeroDivisionError) as e:
+        raise HTTPException(status_code=400, detail=f"Earth grid geometry error: {e}")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Earth grid preview error: {e}")
 
 
 @router.post("/wenner-interpret", response_model=WennerTestResults)
