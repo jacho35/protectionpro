@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 
 from .models.database import init_db, get_db, User
-from .routes import projects, analysis, reports, plan_images, plan_dxf, auth, user_libraries, shared_libraries
+from .routes import projects, analysis, reports, plan_images, plan_dxf, auth, user_libraries, shared_libraries, email_settings
 from .auth import get_current_user
 
 app = FastAPI(
@@ -30,7 +30,9 @@ app.add_middleware(
 # whether to show first-run admin signup vs login).
 @app.get("/api/health")
 def health(db: Session = Depends(get_db)):
-    return {"ok": True, "users": db.query(User).count()}
+    from . import mailer
+    return {"ok": True, "users": db.query(User).count(),
+            "email_configured": mailer.get_config(db) is not None}
 
 
 # API routes. auth.router is public/self-guarding. Every other router requires
@@ -47,6 +49,7 @@ app.include_router(plan_images.router, prefix="/api", dependencies=_auth_gate)
 app.include_router(plan_dxf.router, prefix="/api", dependencies=_auth_gate)
 app.include_router(user_libraries.router, prefix="/api", dependencies=_auth_gate)
 app.include_router(shared_libraries.router, prefix="/api", dependencies=_auth_gate)
+app.include_router(email_settings.router, prefix="/api", dependencies=_auth_gate)
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"

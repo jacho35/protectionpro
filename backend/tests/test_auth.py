@@ -65,7 +65,7 @@ def _register(client, email, password="password123", invite=None, name=""):
 def test_health_reports_user_count(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"ok": True, "users": 0}
+    assert r.json() == {"ok": True, "users": 0, "email_configured": False}
 
 
 def test_first_user_is_admin_and_claims_legacy_data(client):
@@ -179,3 +179,144 @@ def test_no_access_project_is_404_not_403(client):
     admin, bob, pid = _two_users(client)
     # Bob has no share at all → existence hidden as 404 (not 403).
     assert client.get(f"/api/projects/{pid}", headers=_hdr(bob)).status_code == 404
+
+
+def test_user_search_lists_registered_users(client):
+    admin = _register(client, "owner@x.com", name="Owner").json()["access_token"]
+    code = client.post("/api/auth/invites", json={}, headers=_hdr(admin)).json()["code"]
+    _register(client, "thandi@x.com", invite=code, name="Thandi Nkosi")
+    r = client.get("/api/auth/users/search?q=thand", headers=_hdr(admin))
+    assert r.status_code == 200
+    assert [u["email"] for u in r.json()] == ["thandi@x.com"]
+    assert client.get("/api/auth/users/search?q=owner", headers=_hdr(admin)).json() == []
+    assert client.get("/api/auth/users/search?q=a").status_code == 401
+
+
+# ── Email settings, invites by email, password reset ──
+
+def _admin(client):
+    return _hdr(_register(client, "admin@x.com", name="Admin").json()["access_token"])
+
+
+@pytest.fixture()
+def outbox(monkeypatch):
+    from backend import mailer
+    sent = []
+    monkeypatch.setattr(mailer, "send_email", lambda cfg, to, subj, text, html=None: sent.append((to, subj, text)))
+    return sent
+
+
+EMAIL_CFG = {"enabled": True, "host": "smtp.test", "port": 587, "security": "starttls",
+             "username": "u", "password": "secret", "from_name": "PP",
+             "from_address": "noreply@x.com", "app_url": "https://pp.example.com/"}
+
+
+def test_email_settings_admin_only_and_password_hidden(client):
+    h = _admin(client)
+    assert client.get("/api/health").json()["email_configured"] is False
+    r = client.put("/api/settings/email", json=EMAIL_CFG, headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["configured"] and body["has_password"] and "password" not in body
+    assert body["app_url"] == "https://pp.example.com"
+    assert client.get("/api/health").json()["email_configured"] is True
+    # Keeping the password when omitted
+    r = client.put("/api/settings/email", json={**EMAIL_CFG, "password": None}, headers=h)
+    assert r.json()["has_password"] is True
+    # Non-admin refused
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    bob = _hdr(_register(client, "bob@x.com", invite=code).json()["access_token"])
+    assert client.get("/api/settings/email", headers=bob).status_code == 403
+    assert client.put("/api/settings/email", json=EMAIL_CFG, headers=bob).status_code == 403
+
+
+def test_email_validation(client):
+    h = _admin(client)
+    r = client.put("/api/settings/email", json={**EMAIL_CFG, "host": ""}, headers=h)
+    assert r.status_code == 400
+    r = client.put("/api/settings/email", json={"enabled": False}, headers=h)   # skip = fine
+    assert r.status_code == 200 and r.json()["configured"] is False
+
+
+def test_test_email_reports_success_and_failure(client, outbox, monkeypatch):
+    from backend import mailer
+    h = _admin(client)
+    r = client.post("/api/settings/email/test", json=EMAIL_CFG, headers=h).json()
+    assert r["ok"] and outbox[0][0] == "admin@x.com"
+
+    def boom(*a, **k):
+        raise mailer.MailError("Couldn't connect to smtp.test:587.")
+    monkeypatch.setattr(mailer, "send_email", boom)
+    r = client.post("/api/settings/email/test", json=EMAIL_CFG, headers=h).json()
+    assert r == {"ok": False, "message": "Couldn't connect to smtp.test:587."}
+
+
+def test_invite_without_email_gives_link_only(client, outbox):
+    h = _admin(client)
+    r = client.post("/api/auth/invites", json={"email": "n@x.com", "send_email": True,
+                                               "base_url": "https://pp.test", "expires_days": 7}, headers=h).json()
+    assert r["emailed"] is False and r["email_error"]
+    assert r["link"] == f"https://pp.test/#invite={r['code']}"
+    assert outbox == []
+    # Invite with an expiry still registers (naive/aware datetime handling)
+    assert _register(client, "n@x.com", invite=r["code"]).status_code == 200
+
+
+def test_invite_by_email_and_check(client, outbox):
+    h = _admin(client)
+    client.put("/api/settings/email", json=EMAIL_CFG, headers=h)
+    r = client.post("/api/auth/invites", json={"email": "nomsa@x.com", "send_email": True, "note": "Hi!"},
+                    headers=h).json()
+    assert r["emailed"] is True
+    to, subj, text = outbox[0]
+    assert to == "nomsa@x.com" and "invited you" in subj
+    assert f"https://pp.example.com/#invite={r['code']}" in text   # configured address wins
+    chk = client.get(f"/api/auth/invite-check/{r['code']}").json()
+    assert chk["valid"] and chk["email"] == "nomsa@x.com"
+    assert client.get("/api/auth/invite-check/nope").json() == {"valid": False}
+
+
+def test_forgot_and_reset_flow(client, outbox):
+    h = _admin(client)
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    _register(client, "bob@x.com", invite=code)
+    # Email off → generic answer, nothing sent, UI told why
+    r = client.post("/api/auth/forgot", json={"email": "bob@x.com"}).json()
+    assert r == {"ok": True, "email_enabled": False} and outbox == []
+    client.put("/api/settings/email", json=EMAIL_CFG, headers=h)
+    # Unknown and known addresses answer identically
+    assert client.post("/api/auth/forgot", json={"email": "ghost@x.com"}).json()["ok"]
+    assert outbox == []
+    client.post("/api/auth/forgot", json={"email": "bob@x.com"})
+    link = [l for l in outbox[0][2].split() if "#reset=" in l][0]
+    token = link.split("#reset=")[1]
+    ok = client.post("/api/auth/reset", json={"token": token, "password": "brand-new-pw1"})
+    assert ok.status_code == 200 and ok.json()["user"]["email"] == "bob@x.com"
+    assert client.post("/api/auth/login", json={"email": "bob@x.com", "password": "brand-new-pw1"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "bob@x.com", "password": "password123"}).status_code == 401
+    # Single use
+    assert client.post("/api/auth/reset", json={"token": token, "password": "another-pw-22"}).status_code == 400
+    assert client.post("/api/auth/reset", json={"token": "garbage", "password": "another-pw-22"}).status_code == 400
+
+
+def test_admin_reset_link_without_email(client):
+    h = _admin(client)
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    bob = _register(client, "bob@x.com", invite=code).json()
+    uid = bob["user"]["id"]
+    r = client.post(f"/api/auth/users/{uid}/reset-link", json={"base_url": "https://pp.test"}, headers=h).json()
+    assert r["link"].startswith("https://pp.test/#reset=") and not r["emailed"]
+    assert client.post(f"/api/auth/users/{uid}/reset-link", json={}, headers=_hdr(bob["access_token"])).status_code == 403
+    token = r["link"].split("#reset=")[1]
+    assert client.post("/api/auth/reset", json={"token": token, "password": "reset-by-admin1"}).status_code == 200
+
+
+def test_forgot_ignores_client_base_url_and_app_url_required(client, outbox):
+    h = _admin(client)
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    _register(client, "bob@x.com", invite=code)
+    assert client.put("/api/settings/email", json={**EMAIL_CFG, "app_url": ""}, headers=h).status_code == 400
+    assert client.put("/api/settings/email", json={**EMAIL_CFG, "app_url": "javascript:alert(1)"}, headers=h).status_code == 400
+    client.put("/api/settings/email", json=EMAIL_CFG, headers=h)
+    client.post("/api/auth/forgot", json={"email": "bob@x.com", "base_url": "https://evil.example"})
+    assert "evil.example" not in outbox[0][2] and "https://pp.example.com/#reset=" in outbox[0][2]
