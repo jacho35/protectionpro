@@ -315,7 +315,7 @@ const Retic = {
       this._markDirty();
       // Only a rename affects the kiosk list (its Fed From dropdowns show
       // minisub names); a transformer pick is summary-only.
-      if (field === 'name') this.renderKiosks();
+      if (field === 'name' || field === 'earthing') this.renderKiosks();   // earthing decides which cables take an earth conductor
       this.recompute();         // summary re-renders with the new value
       return;
     }
@@ -770,8 +770,12 @@ const Retic = {
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m)</label>
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
-            <div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>
+            <div class="retic-field"><label title="Protective device at the head of this kiosk's incoming feeder. Left blank it inherits the one upstream (ultimately the minisub's). Used for the earth-fault loop and ECC checks.">Feeder Protection</label>
+              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— inherit upstream —')}</select></div>
+            ${this._earthingOf(k) === 'TN-S'
+              ? `<div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
+              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>`
+              : `<div class="retic-field"><label>Feeder Earth</label><div class="earth-pen" title="${this._earthingOf(k)}: the combined PEN conductor (the cable's neutral) is the earth return on the feeders — no separate earth conductor to size.">PEN (${this._earthingOf(k)})</div></div>`}
             <div class="retic-field"><label>Earth fault / ECC (feeder)</label>
               <div class="earth-cell" data-earth-kiosk="${k.id}">—</div></div>
           </div>
@@ -823,7 +827,9 @@ const Retic = {
         <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
         <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
         <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType" data-cable-select>${this._cableOptions(e.cableType)}</select></td>
-        <td data-cell="earth" data-label="Earth Cable"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 16 cu, 25 al">${this._earthCableOptions(e.earthCable)}</select></td>
+        <td data-cell="earth" data-label="Earth Cable">${this._earthingOf(k) === 'TN-C'
+          ? '<div class="earth-pen" title="TN-C: the combined PEN conductor is the earth return — no separate earth conductor to size.">PEN (TN-C)</div>'
+          : `<select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 16 cu, 25 al">${this._earthCableOptions(e.earthCable)}</select>`}</td>
         <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td class="earth-cell" data-cell="ef" data-label="Earth fault" data-earth-erf="${e.id}">—</td>
@@ -1305,6 +1311,10 @@ const Retic = {
             <option value=""${!ms.txTypeId ? ' selected' : ''}>Auto${autoTx ? ' — ' + escHtml(autoTx.label) : ''}</option>
             ${txOpts.map(o => `<option value="${o.id}"${ms.txTypeId === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
           </select></span></div>
+        <div class="summary-row"><span class="k" title="TN-S: separate earth conductor on every LV cable. TN-C: combined PEN throughout, no separate earth conductor. TN-C-S: PEN on the feeders, separate earth conductor on the service cables only.">Earthing system</span><span class="v">
+          <select class="ms-earthing" data-action="minisub-field" data-ms="${ms.id}" data-field="earthing">
+            ${['TN-S', 'TN-C', 'TN-C-S'].map(t => `<option value="${t}"${(ms.earthing || 'TN-S') === t ? ' selected' : ''}>${t}</option>`).join('')}
+          </select></span></div>
         <div class="summary-row"><span class="k" title="The LV device that clears an earth fault anywhere downstream of this minisub; used for the earth-fault loop and ECC checks">LV protection</span><span class="v">
           <select class="ms-prot" data-action="minisub-field" data-ms="${ms.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(ms.protection)}</select></span></div>
         <div class="summary-row"><span class="k">Utilisation</span><span class="v">${xfmr && xfmr.util != null ? xfmr.util + '%' : '—'}</span></div>
@@ -1443,13 +1453,27 @@ const Retic = {
     return e ? { kind, name: e.name, props: e } : null;
   },
 
-  _protectionOptions(selected) {
+  _protectionOptions(selected, blank) {
     const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
     const opt = (kind, x) => `<option value="${kind}:${x.id}"${selected === kind + ':' + x.id ? ' selected' : ''}>${escHtml(x.name)}</option>`;
-    return '<option value="">— none selected —</option>'
+    return `<option value="">${blank || '— none selected —'}</option>`
       + `<optgroup label="Circuit breakers (LV)">${STANDARD_CBS.filter(lv).map(x => opt('cb', x)).join('')}</optgroup>`
       + `<optgroup label="Fuses">${STANDARD_FUSES.filter(lv).map(x => opt('fuse', x)).join('')}</optgroup>`;
   },
+
+  // The minisub a kiosk hangs off (following fedFrom), and so its earthing system.
+  _minisubOf(k) {
+    const seen = new Set();
+    let cur = k;
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      const ms = this.minisubs.find(m => m.id === cur.fedFrom);
+      if (ms) return ms;
+      cur = this.kiosks.find(o => o.id === cur.fedFrom);
+    }
+    return this.minisubs[0] || null;
+  },
+  _earthingOf(k) { const ms = this._minisubOf(k); return (ms && ms.earthing) || 'TN-S'; },
 
   // Every LV cable in the one library, Cu and Al, any construction. "Assumed"
   // = Table 54.7 size in the phase conductor's metal.
@@ -1476,13 +1500,14 @@ const Retic = {
         const tx = this._minisubTx(ms, r ? r.totalKVA : 0);
         const e = tx && tx.entry;
         return {
-          id: ms.id, name: ms.name,
+          id: ms.id, name: ms.name, earthing: ms.earthing || 'TN-S',
           tx: e ? { kva: tx.kva, zPercent: e.z_percent, xrRatio: e.x_r_ratio, vLvKv: e.voltage_lv_kv } : null,
           device: this._protectionDevice(ms),
         };
       }),
       kiosks: this.kiosks.map(k => ({
         id: k.id, name: k.name, fedFrom: k.fedFrom || 'source',
+        device: this._protectionDevice(k),
         feeder: { cable: this._cableDict(k.feederCable), earth: this._cableDict(k.feederEarth), lengthM: Number(k.feederLength) || 0 },
         erfs: k.erfs.map(e => ({
           id: e.id, erfNumber: e.erfNumber,
@@ -1567,7 +1592,10 @@ const Retic = {
       if (l.tS != null || l.status === 'fail') rows.push(['Clearing time', `minisub device at ${f(l.ifA, 0)} A`, l.tS != null ? `${f(l.tS, 3)} s` : 'does not clear']);
       if (l.zsMaxOhm != null) rows.push({ cls: 'calc-total ' + (l.status === 'pass' ? 'vd-ok' : l.status === 'fail' ? 'vd-fail' : ''), cells: ['Disconnection', `${l.note || ''} Zs max for ${l.tAllowS} s = ${f(l.zsMaxOhm, 3)} Ω`, l.status === 'pass' ? 'pass' : l.status === 'fail' ? 'FAIL' : '—'] });
     } else rows.push({ cls: 'calc-warn', cells: ['Earth fault', escHtml(l.note || ''), ''] });
-    if (e) {
+    if (e && e.pen) {
+      rows.push(['Earth return', 'PEN: the cable\'s neutral carries earth-fault current (no separate earth conductor)', 'PEN']);
+      rows.push({ cls: 'calc-note-row', cells: ['PEN conductor', escHtml(e.note || ''), e.status === 'pass' ? 'pass' : 'FAIL'] });
+    } else if (e) {
       const src = e.assumed ? `assumed ${e.sizeMm2} mm² ${e.metal}` : `${e.sizeMm2} mm² ${e.metal}`;
       rows.push(['Earth conductor', src, e.status === 'pass' ? 'pass' : e.status === 'fail' ? 'FAIL' : 'info']);
       rows.push(['Table 54.7', `minimum for the service phase conductor in ${e.metal}`, e.tableMm2 != null ? `${e.tableMm2} mm²` : '—']);
