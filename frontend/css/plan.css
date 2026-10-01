@@ -304,3 +304,11 @@ body.dark-mode .plan-status { background: rgba(30,30,46,0.85); color: #c0c0d0; }
   .dxfm-table select { max-width: 100%; }
   .dxfm-foot { flex-wrap: wrap; }
 }
+
+/* Live Demand read-out on a linked site-plan element */
+.plan-demand { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); font-size: 12px; }
+.plan-demand-title { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+.plan-demand-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; color: var(--text-secondary); }
+.plan-demand-row b { color: var(--text-primary); font-weight: 600; text-align: right; }
+.plan-demand-row.ok b { color: #1b7a34; }
+.plan-demand-row.bad b { color: var(--danger, #d32f2f); }

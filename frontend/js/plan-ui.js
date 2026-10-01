@@ -349,6 +349,7 @@ const PlanUI = {
       if (comp) html += `<div class="plan-linked-note" title="This item is linked to an SLD component">🔗 Linked to SLD: ${escHtml((comp.props && comp.props.name) || comp.type)}</div>`;
     }
     for (const f of fields) html += this._field(f, getVal(f.key));
+    html += this._demandBlock(item, kind);
     html += this._sldLinkField(item, kind);
     // Building auto-circuiting: circuit-tag editor on load devices; bulk-assign
     // on distribution boards.
@@ -360,6 +361,60 @@ const PlanUI = {
     // Delete button
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
     el.innerHTML = html;
+    this._searchifyCables(el);
+  },
+
+  // Cable dropdowns are wildcard type-to-filter boxes ("16 cu", "25*xlpe").
+  _searchifyCables(root) {
+    if (typeof SearchSelect === 'undefined') return;
+    root.querySelectorAll('select[data-cable-select]').forEach(sel =>
+      SearchSelect.attach(sel, { placeholder: 'Type to search cables — e.g. 16 cu, 25*xlpe' }));
+  },
+
+  // Live read-out of the Reticulation (Demand) row behind a linked site-plan
+  // element: computed from the current Demand data every time the panel is
+  // drawn, and redrawn whenever Demand recomputes (Retic._doCompute) or the
+  // Plan workspace is shown. Read-only — edit it in Demand.
+  _demandBlock(item, kind) {
+    if (kind !== 'element' || !item.reticId || typeof Retic === 'undefined' || !AppState.reticulation) return '';
+    const R = AppState.reticulation, res = AppState.reticResults;
+    const rows = [];
+    const row = (k, v, cls) => rows.push(`<div class="plan-demand-row${cls ? ' ' + cls : ''}"><span>${escHtml(k)}</span><b>${v}</b></div>`);
+    const num = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
+    const clsLabel = (k) => { const c = Retic._kioskClass(k); return c ? escHtml(c.label) : '—'; };
+    let title = 'From Demand';
+    if (item.type === 'erf') {
+      let k = null, e = null;
+      for (const kk of R.kiosks) { const f = kk.erfs.find(x => x.id === item.reticId); if (f) { k = kk; e = f; break; } }
+      if (!e) return '';
+      const is3 = Retic._erfIs3ph(k, e);
+      const amps = Retic._erfDesignAmps(k, e);
+      const vc = Retic._vdCalc(e.cableType, amps, e.length, is3);
+      const limit = Retic.settings.maxRunVD;
+      row('Kiosk', escHtml(k.name));
+      row('Load class', Retic._erfOverride(e) ? 'Fixed load' : clsLabel(k));
+      row('Connection', is3 ? '3 phase' : '1 phase');
+      row('Design current', `${num(amps)} A`);
+      row('Service cable', escHtml(e.cableType || '—'));
+      row('Service length', e.length ? `${num(e.length, 1)} m` : '—');
+      if (vc) row('Service volt drop', `${num(vc.vd)} %`, vc.vd > limit ? 'bad' : 'ok');
+    } else if (item.type === 'kiosk') {
+      const k = R.kiosks.find(x => x.id === item.reticId);
+      if (!k) return '';
+      const kr = res && res.kiosks && res.kiosks.find(x => x.kioskId === k.id);
+      row('Load class', clsLabel(k));
+      row('Erven', String(k.erfs.length));
+      if (kr) { row('Demand', `${kr.totalKVA} kVA · ${kr.currentA} A`); row('ADMD', `${kr.admdKVA} kVA${kr.admdPerPhase ? '/ph' : ''}`); }
+      row('Feeder cable', escHtml(k.feederCable || '—'));
+      row('Feeder length', k.feederLength ? `${num(k.feederLength, 1)} m` : '—');
+    } else if (item.type === 'minisub') {
+      const ms = R.minisubs.find(x => x.id === item.reticId);
+      if (!ms) return '';
+      const r = res && res.minisubs && res.minisubs.find(x => x.minisubId === ms.id);
+      row('Kiosks fed', String(R.kiosks.filter(k => k.fedFrom === ms.id).length));
+      if (r) row('Demand', `${r.totalKVA} kVA`);
+    } else return '';
+    return `<div class="plan-demand"><div class="plan-demand-title">${title}</div>${rows.join('')}</div>`;
   },
 
   // Circuit-tag editor for a load device: pick a board + way number. The board
@@ -468,7 +523,7 @@ const PlanUI = {
       return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${f.key}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
     }
     if (f.type === 'cable_select') {
-      return `<div class="plan-field">${label}<select data-key="${f.key}">${this._cableOptions(v, f)}</select></div>`;
+      return `<div class="plan-field">${label}<select data-key="${f.key}" data-cable-select>${this._cableOptions(v, f)}</select></div>`;
     }
     if (f.type === 'select') {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
