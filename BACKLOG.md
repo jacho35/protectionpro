@@ -376,6 +376,11 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Passive filter sizing review: capacitor duty, dominant order by current, FS1–FS3 (2026-10-01)
+- **Review.** `reviews/FILTER_SIZING_REVIEW.md` checks `filter_sizing.py` against a hand single-tuned branch and IEC 60871-1 / 60831-1. The branch synthesis and its coupling to the harmonics engine were exact.
+- **FS2.** Capacitor duty was never checked. The reactor lifts the capacitor above bus voltage (×h²/(h²−1)) and absorbed harmonics add current: a 300 kvar 5th branch on a 3 MW drive ran 1.63 × rated current (limit 1.30) with no warning. Each branch now gets a recommended capacitor rating (U_N, Q_N) and a 1.10 U / 1.30 I / 1.35 Q check, shown in a new capacitor-duty table. **FS1.** Dominant orders were ranked by summed per-unit ratios, so a 20 kW 6-pulse drive outranked a 2 MW 12-pulse one; now by injected current. **FS3.** Default-size text corrected; a note when the network already meets IEEE 519.
+- Re-run filter sizing (not persisted). +3 tests in `test_filter_sizing_review_fixes.py`.
+
 ### Voltage flicker review: IEC 61000-3-3 analytical Pst/Plt, d_max / d_c, limits by voltage, FL1–FL6 (2026-10-01)
 - **Review.** `reviews/FLICKER_REVIEW.md` checks `flicker.py` against the IEC 61000-3-3 analytical method (flicker impression time t_f = 2.3·(F·d)^3.2) and a hand Thevenin divider for d. d was already exact.
 - **FL1.** Pst was a rate average; it is the worst 10-minute window. Below 6 starts/h a whole start lands in one window: a 3 % step at 1 start/h is Pst 0.53, not 0.28 (−47 %). **FL2.** The curve anchor 3 % at 1/min was the literature rounding of 2.77 %; Pst was 7.6 % low at every rate (3 % at 60/h read 1.000 pass, is 1.083 fail). Plt is now the cube-root mean of the twelve windows. **FL3.** d_max ≤ 4 % and d_c ≤ 3.3 % (IEC 61000-3-3 §5, LV) are now checked; d_c from the load flow. **FL4.** Limits by voltage: LV 1.0 / 0.65, MV 0.9 / 0.7, HV 0.8 / 0.6 (IEC/TR 61000-3-7), overridable. **FL5.** d relative to U_n. **FL6.** Setup modal, results table (d_max, d_c, limits) and help rewritten; the curve anchor/exponent are replaced by the shape factor F.

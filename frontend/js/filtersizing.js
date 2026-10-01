@@ -39,7 +39,9 @@ const FilterSizing = {
         Designs <strong>single-tuned LC(R) filter branches</strong> at a bus — one per
         dominant VFD harmonic, detuned to 94% of the order — and verifies the design by
         re-running the IEEE 519 harmonics study with the branches in place. The branch
-        kvar doubles as power-factor correction.</p>
+        kvar doubles as power-factor correction. Each capacitor is then checked against
+        IEC 60871-1 / 60831-1 at the solved harmonic voltages, and a nameplate rating is
+        recommended.</p>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
         <label for="flt-bus">Filter bus</label>
         <select id="flt-bus"><option value="">Auto — worst THD bus</option>${opt}</select>
@@ -114,9 +116,12 @@ const FilterSizing = {
       body.innerHTML = html + `<p style="color:#c62828"><strong>Study did not run.</strong> ${this._esc(r.note || '')}</p>`;
       return;
     }
-    const col = r.meets_ieee519 ? '#2e7d32' : '#c98500';
+    // Capacitor duty (IEC 60871-1 / 60831-1) — absent on results from before it existed.
+    const dutyFail = (r.design || []).some(d => d.cap_compliant === false);
+    const col = r.meets_ieee519 && !dutyFail ? '#2e7d32' : '#c98500';
     const verdict = r.meets_ieee519
       ? `Design meets IEEE 519 — worst THD ${r.baseline.worst_thd_pct}% → ${r.with_filter.worst_thd_pct}%`
+        + (dutyFail ? ' · a capacitor exceeds its duty limits' : '')
       : `Best attempt — worst THD ${r.baseline.worst_thd_pct}% → ${r.with_filter.worst_thd_pct}% (limits still exceeded)`;
     html += `<div style="margin-bottom:12px;padding:10px 14px;border-radius:6px;border:1px solid ${col};background:${col}14">
       <span style="font-weight:700;color:${col}">${this._esc(verdict)}</span>
@@ -128,6 +133,21 @@ const FilterSizing = {
       <thead><tr><th>Target h</th><th>Tuned at</th><th>kvar</th><th>Q</th><th>C (µF)</th><th>L (mH)</th><th>R (Ω)</th></tr></thead><tbody>`
       + (r.design || []).map(d => `<tr><td>${d.harmonic_order}</td><td>${d.tuned_order}</td><td>${d.kvar}</td><td>${d.quality_factor}</td><td>${d.c_uf}</td><td>${d.l_mh}</td><td>${d.r_ohm}</td></tr>`).join('')
       + '</tbody></table>';
+
+    if ((r.design || []).some(d => d.cap_rated_kv != null)) {
+      const std = r.voltage_kv > 1 ? 'IEC 60871-1' : 'IEC 60831-1';
+      const ratio = (v, lim) => `${v}${v > lim ? ' ✗' : ''}`;
+      html += `<div style="font-size:13px;margin:12px 0 4px"><strong>Capacitor duty</strong> <span style="font-size:11px;color:var(--text-muted,#6d6d6d)">— ${std}: r.m.s. voltage ≤ 1.10, current ≤ 1.30, reactive power ≤ 1.35 × rated, at the harmonic voltages solved with the filter in place. The series reactor lifts the capacitor above bus voltage.</span></div>
+      <table class="af-table" style="font-size:11px;font-variant-numeric:tabular-nums">
+      <thead><tr><th>Target h</th><th>Capacitor rating</th><th>U<sub>C1</sub> / U<sub>rms</sub> (kV)</th><th>U ÷ U<sub>N</sub></th><th>I<sub>rms</sub> (A)</th><th>I ÷ I<sub>N</sub></th><th>Q (kvar)</th><th>Q ÷ Q<sub>N</sub></th><th>Reactor I<sub>rms</sub> (A)</th><th>Duty</th></tr></thead><tbody>`
+        + r.design.map(d => `<tr><td>${d.harmonic_order}</td><td>${d.cap_rated_kv} kV · ${d.cap_rated_kvar} kvar</td>
+          <td>${d.cap_u1_kv} / ${d.cap_u_rms_kv}</td><td>${ratio(d.cap_u_ratio, 1.10)}</td>
+          <td>${d.cap_i_rms_a}</td><td>${ratio(d.cap_i_ratio, 1.30)}</td>
+          <td>${d.cap_q_kvar}</td><td>${ratio(d.cap_q_ratio, 1.35)}</td>
+          <td>${d.reactor_i_rms_a}</td>
+          <td style="font-weight:600;color:${d.cap_compliant ? '#2e7d32' : '#c62828'}">${d.cap_compliant ? 'PASS' : 'FAIL'}</td></tr>`).join('')
+        + '</tbody></table>';
+    }
 
     const rows = (r.baseline.buses || []).map(b => {
       const after = (r.with_filter.buses || []).find(x => x.id === b.id) || {};
