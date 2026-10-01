@@ -52,6 +52,10 @@ CASES = [
      "Grounding Grid (IEEE 80)",
      "Square grid + rods — touch/step/GPR",
      "IEEE 80 grounding grid on a square grid with rods. Reproduces the tolerable touch/step voltages, surface derating C_s, grid resistance R_g (Sverak), GPR, geometric factors and mesh voltage exactly (full Eq. 84–88 n / K_ii / rod-weighted L_M)."),
+    ("case-earth-grid-annexh6", "ver_earth_grid_h6",
+     "Earth Grid with Diagonals (IEEE 80 Annex H Grid 6)",
+     "70 × 70 m, corner-to-corner diagonals, two-layer",
+     "Earth grid of any shape, solved numerically: the IEEE 80-2013 Annex H.3.6 benchmark (non-orthogonal conductors, rods of unequal length, two-layer 100/300 Ω·m soil, 744.8 A). Grid resistance and worst touch/step voltage fall inside the range CDEGS, ETAP and WinIGS report (R_g 1.42–1.43 Ω, touch 134.4–140.2 V, step 77.4–99.2 V)."),
     ("case-motor-starting", "ver_motor_start",
      "Motor Starting Voltage Dip",
      "DOL/star-delta/AT/soft — dip at bus",
@@ -126,6 +130,15 @@ EXPECTED = {
         "gpr": ("buses.0.gpr_v", 5252.0),
         "em": ("buses.0.mesh_voltage_v", 749.0),
         "etouch": ("buses.0.tolerable_touch_v", 841.0),
+    }),
+    # IEEE 80 Annex H Table H.10 (CDEGS / ETAP / WinIGS): R 1.42–1.43 Ω,
+    # GPR 1054–1068 V, touch 134.4–140.2 V, step 77.4–99.2 V.
+    "ver_earth_grid_h6": ("grounding", {
+        "rg": ("buses.0.grid_resistance_ohm", 1.4265, 5e-3),
+        "gpr": ("buses.0.gpr_v", 1062.0, 5e-3),
+        "touch": ("buses.0.mesh_voltage_v", 136.0, 1e-2),
+        "step": ("buses.0.step_voltage_v", 84.0, 2e-2),
+        "method": ("buses.0.method", "numerical"),
     }),
     # Dip hand calc (independent 2-bus constant-PQ solve) is 20.92 %; the
     # engine's 20.94 % adds the 99 999 MVA source's own impedance.
@@ -225,6 +238,12 @@ INSTRUCTIONS = {
         "VERIFICATION TEMPLATE — IEEE 80 grounding grid (70 × 70 m, 11 × 11 conductors, 20 rods). "
         "RUN: Grounding study. Expected grid resistance R_g = {rg:.2f} Ω, GPR = {gpr:.0f} V, mesh (touch) voltage "
         "{em:.0f} V ≤ {etouch:.0f} V tolerable. Full working: Help → Verification.",
+    "ver_earth_grid_h6":
+        "VERIFICATION TEMPLATE — earth grid of any shape, IEEE 80 Annex H Grid 6: 70 × 70 m with corner-to-corner "
+        "diagonals, 7.5 m corner rods and 2.5 m inner rods, two-layer soil 100/300 Ω·m (6.1 m), grid current 744.8 A "
+        "(bus Design Earth-Fault Current). The IEEE 80 equations do not cover this grid, so it is solved numerically. "
+        "RUN: Grounding study. Expected R_g = {rg:.3f} Ω, GPR ≈ {gpr:.0f} V, worst touch ≈ {touch:.0f} V, worst step ≈ "
+        "{step:.0f} V — CDEGS / ETAP / WinIGS: 1.42–1.43 Ω, 134.4–140.2 V, 77.4–99.2 V. Full working: EARTH_GRID_METHOD.md §8.",
     "ver_motor_start":
         "VERIFICATION TEMPLATE — motor starting voltage dip: 1500 kW motor on a weak (~60 MVA) source, DOL. "
         "RUN: Motor Starting study. Expected DOL start current {i_start:.0f} A, terminal voltage {vt:.3f} p.u., "

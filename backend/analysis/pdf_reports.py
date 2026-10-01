@@ -1704,16 +1704,176 @@ def _draw_grounding_grid(pdf, bus):
     pdf.ln(2)
 
 
+def _pip(x, y, poly):
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / ((y2 - y1) or 1e-300) + x1:
+            inside = not inside
+    return inside
+
+
+def _touch_colour(frac, over=0.0):
+    """Touch voltage as a fraction of the limit: green (0) → yellow → red
+    (at the limit); above it a second ramp red → deep purple, `over` = how
+    far towards the map's maximum, so hot spots stay visible on a grid
+    far above its limit."""
+    if frac > 1.0:
+        o = min(max(over, 0.0), 1.0)
+        return tuple(int(round(a + (b - a) * o)) for a, b in zip((211, 47, 47), (74, 20, 140)))
+    stops = [(0.0, (46, 125, 50)), (0.5, (253, 216, 53)), (1.0, (211, 47, 47))]
+    for (f0, c0), (f1, c1) in zip(stops[:-1], stops[1:]):
+        if frac <= f1:
+            t = (frac - f0) / (f1 - f0)
+            return tuple(int(round(a + (b - a) * t)) for a, b in zip(c0, c1))
+    return stops[-1][1]
+
+
+def _draw_earth_grid_plan(pdf, bus, grid):
+    """Plan of an earth-grid object with the bus's touch-voltage map
+    (surface potential from the engine × this bus's GPR). No recalculation."""
+    plan = (grid or {}).get("plan") or {}
+    mp = plan.get("map") or {}
+    outline = plan.get("outline") or []
+    if not mp or not outline:
+        return
+    gpr = float(bus.get("gpr_v") or 0.0)
+    lim = float(bus.get("tolerable_touch_v") or 0.0) or 1.0
+    x0m, y0m, dx = mp["x0"], mp["y0"], mp["dx"]
+    nx, ny, v = mp["nx"], mp["ny"], mp["v"]
+    W, H = x0m + dx * (nx - 1) - x0m, y0m + dx * (ny - 1) - y0m
+    box_w, box_h = 120.0, 85.0
+    if pdf.get_y() > pdf.h - (box_h + 25):
+        pdf.add_page()
+    bx = pdf.l_margin
+    by = pdf.get_y() + 2
+    sc = min(box_w / max(W, 1e-6), box_h / max(H, 1e-6))
+
+    def X(x):
+        return bx + (x - x0m) * sc
+
+    def Y(y):
+        return by + box_h - (y - y0m) * sc
+    touch_polys = plan.get("touch_area") or [outline]
+    step = max(1, int(math.ceil(max(nx, ny) / 60)))
+    cell = dx * step * sc
+    cells = []
+    for j in range(0, ny, step):
+        for i in range(0, nx, step):
+            x = x0m + i * dx
+            y = y0m + j * dx
+            if any(_pip(x, y, poly) for poly in touch_polys):
+                cells.append((x, y, (1.0 - v[j * nx + i]) * gpr))
+    t_max = max([c[2] for c in cells] + [lim])
+    for x, y, touch in cells:
+        pdf.set_fill_color(*_touch_colour(touch / lim, (touch - lim) / max(t_max - lim, 1e-9)))
+        pdf.rect(X(x) - cell / 2, Y(y) - cell / 2, cell, cell, style="F")
+    pdf.set_line_width(0.2)
+    for c in plan.get("conductors") or []:
+        x1, y1, x2, y2, kind, grp = c
+        if grp:
+            pdf.set_draw_color(21, 101, 192)
+        elif kind == "diagonal":
+            pdf.set_draw_color(0, 105, 92)
+        else:
+            pdf.set_draw_color(40, 40, 40)
+        pdf.line(X(x1), Y(y1), X(x2), Y(y2))
+    for r in plan.get("rods") or []:
+        x, y, kind, grp = r
+        pdf.set_fill_color(21, 101, 192) if grp else pdf.set_fill_color(20, 20, 20)
+        if kind == "post":
+            pdf.rect(X(x) - 0.45, Y(y) - 0.45, 0.9, 0.9, style="F")
+        else:
+            pdf.ellipse(X(x) - 0.8, Y(y) - 0.8, 1.6, 1.6, style="F")
+    t = bus.get("touch_location_m") or (bus.get("numerical") or {}).get("touch_location_m")
+    if t:
+        pdf.set_draw_color(0, 0, 0)
+        pdf.set_line_width(0.4)
+        pdf.line(X(t[0]) - 1.5, Y(t[1]) - 1.5, X(t[0]) + 1.5, Y(t[1]) + 1.5)
+        pdf.line(X(t[0]) - 1.5, Y(t[1]) + 1.5, X(t[0]) + 1.5, Y(t[1]) - 1.5)
+    st = bus.get("step_location_m") or (bus.get("numerical") or {}).get("step_location_m")
+    if st:
+        pdf.set_draw_color(123, 31, 162)
+        pdf.set_line_width(0.6)
+        pdf.line(X(st[0]), Y(st[1]), X(st[2]), Y(st[3]))
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(0.2)
+    # legend
+    lx = bx + box_w + 4
+    ly = by + 4
+    pdf.set_font("Helvetica", "", 7)
+    legend = [("0 V", 0.0, 0.0), (f"{lim / 2:.0f} V (half the limit)", 0.5, 0.0), (f"{lim:.0f} V = limit", 1.0, 0.0)]
+    if t_max > lim * 1.001:
+        legend.append((f"{t_max:.0f} V (map maximum)", 1.01, 1.0))
+    for k, (lab, frac, over) in enumerate(legend):
+        pdf.set_fill_color(*_touch_colour(frac, over))
+        pdf.rect(lx, ly + k * 5, 4, 3.5, style="F")
+        pdf.set_xy(lx + 5, ly + k * 5 - 0.3)
+        pdf.cell(40, 4, _safe(lab))
+    pdf.set_xy(lx, ly + 22)
+    pdf.multi_cell(45, 3.5, _safe("Touch voltage over the touch area: green-yellow-red up to the limit, "
+                                  "red-purple above it. x = worst touch, purple line = worst 1 m step. "
+                                  "Dots rods, squares fence posts, blue = not bonded."), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_y(by + box_h + 3)
+    _calc_body(pdf, f"  Plan: {W:.0f} x {H:.0f} m shown, map cell {dx * step:.2f} m.")
+    pdf.ln(1)
+
+
+def _calc_earth_grid_rows(pdf, bus):
+    meth = {"ieee80": "IEEE 80 simplified equations (§16.5)",
+            "numerical": "Numerical, method of moments (IEEE 80 §16.8)"}.get(bus.get("method"), bus.get("method"))
+    basis = "EN 50522:2022" if bus.get("limit_basis") == "en50522" else "IEEE 80-2013"
+    _calc_body(pdf, f"  {'Earth grid':<45} = {bus.get('earth_grid_name')}")
+    _calc_body(pdf, f"  {'Method':<45} = {meth}")
+    _calc_body(pdf, f"  {'Limit basis':<45} = {basis}")
+    if bus.get("ieee80_not_applicable_reason"):
+        _calc_body(pdf, f"  {'IEEE 80 equations not used because':<45} = {bus['ieee80_not_applicable_reason']}")
+    num = bus.get("numerical") or {}
+    if num:
+        _calc_body(pdf, f"  {'Numerical: R_g / touch / step':<45} = {num.get('grid_resistance_ohm')} Ohm / "
+                        f"{num.get('touch_v'):.0f} V / {num.get('step_v'):.0f} V")
+        tl = num.get("touch_location_m")
+        sl = num.get("step_location_m")
+        if tl:
+            _calc_body(pdf, f"  {'Worst touch at (x, y)':<45} = ({tl[0]:.1f}, {tl[1]:.1f}) m")
+        if sl:
+            _calc_body(pdf, f"  {'Worst step from -> to':<45} = ({sl[0]:.1f}, {sl[1]:.1f}) -> ({sl[2]:.1f}, {sl[3]:.1f}) m")
+    simp = bus.get("ieee80_simplified")
+    if simp:
+        _calc_body(pdf, f"  {'IEEE 80 simplified: R_g / E_m / E_s':<45} = {simp['grid_resistance_ohm']} Ohm / "
+                        f"{simp['mesh_voltage_v']:.0f} V / {simp['step_voltage_v']:.0f} V (n = {simp['n']})")
+    en = bus.get("en50522")
+    if en:
+        _calc_body(pdf, f"  {'EN 50522: U_E / U_Tp / U_vTp':<45} = {en['U_E_v']:.0f} / {en['U_Tp_v']:.0f} / "
+                        f"{en['U_vTp_v']:.0f} V (R_F = {en['R_F_ohm']:.0f} Ohm)")
+        cond = {"C2": "U_E <= 2 U_Tp - touch criterion met",
+                "C3": "U_E <= 4 U_Tp with specified measures M",
+                "C4": "calculated touch voltage compared with U_vTp"}[en["condition"]]
+        _calc_body(pdf, f"  {'EN 50522 condition':<45} = {en['condition']}: {cond}")
+        _calc_body(pdf, f"  {'Step voltage check (U_E > 20 U_Tp)':<45} = "
+                        + (f"required, U_Sp = {en['U_Sp_v']:.0f} V" if en["step_required"] else "not required"))
+    for f in bus.get("fences") or []:
+        if f.get("bonded"):
+            _calc_body(pdf, f"  {str(f['name']):<45} = bonded to the grid")
+        else:
+            _calc_body(pdf, f"  {str(f['name']) + ' (separately earthed)':<45} = potential "
+                            f"{f['potential_v']:.0f} V, touch {f['touch_v']:.0f} V, transfer {f['transfer_v']:.0f} V")
+    if bus.get("potential_variation_pct") is not None:
+        _calc_body(pdf, f"  {'Conductor-impedance potential variation':<45} = {bus['potential_variation_pct']} % of GPR")
+
+
 def _calc_grounding(pdf, grounding_results):
     pdf.add_page()
-    pdf.section_title("9.  Grounding System Design — IEEE 80")
+    pdf.section_title("9.  Grounding System Design — IEEE 80 / EN 50522")
 
     _calc_label(pdf, "Standard: IEEE Std 80-2013 — Guide for Safety in AC Substation Grounding")
     pdf.ln(2)
     # [G5] The formulas as the engine evaluates them (previously the 50 kg
     # constant was printed against the 70 kg default, and a grid-resistance
     # formula the engine does not use).
-    _calc_body(pdf, "Tolerable touch and step voltages (IEEE 80 §8.3, body weight per bus):")
+    _calc_body(pdf, "Tolerable touch and step voltages (IEEE 80 §8.4, body weight per bus):")
     _calc_label(pdf, "  E_touch = (1000 + 1.5 * C_s * rho_s) * k / sqrt(t_s)  [V]")
     _calc_label(pdf, "  E_step  = (1000 + 6.0 * C_s * rho_s) * k / sqrt(t_s)  [V]   k = 0.116 (50 kg), 0.157 (70 kg)")
     _calc_body(pdf, "  where C_s = surface layer derating, rho_s = surface resistivity [Ohm.m], t_s = shock duration [s].")
@@ -1726,6 +1886,17 @@ def _calc_grounding(pdf, grounding_results):
     _calc_label(pdf, "  R_g = rho * [1/L_T + 1/sqrt(20*A) * (1 + 1/(1 + h*sqrt(20/A)))]")
     _calc_body(pdf, "  where L_T = total buried length, A = grid area, h = burial depth. Two-layer soil: R_g, E_m and E_s")
     _calc_body(pdf, "  are the uniform values scaled by a numerical (method-of-moments) solve of the grid.")
+    pdf.ln(2)
+    if any(b.get("method") for b in grounding_results.get("buses", [])):
+        _calc_body(pdf, "Earth grids (buses with an earth grid object) — IEEE 80 §16.8 computer analysis:")
+        _calc_body(pdf, "  The grid is solved by the method of moments (thin-wire elements, two-layer image Green's")
+        _calc_body(pdf, "  functions, bonded metal at GPR, unbonded fences floating). Touch = GPR - surface potential on a")
+        _calc_body(pdf, "  0.5 m raster over the touch area; step = largest 1 m surface-potential difference from 1 m")
+        _calc_body(pdf, "  outside the perimeter inward (IEEE 80 Annex H.3 conventions). The IEEE 80 simplified equations")
+        _calc_body(pdf, "  give the headline only for a plain, equally spaced rectangle in uniform soil.")
+        _calc_body(pdf, "  EN 50522 basis: I_E = r * I\"k1 (Table 1), U_E = I_E * R_g; C2: U_E <= 2 U_Tp; C3: U_E <= 4 U_Tp")
+        _calc_body(pdf, "  with measures M; else C4: prospective touch <= U_vTp = U_Tp + I_B (R_H + R_F1 + 1.5 rho_S).")
+        _calc_body(pdf, "  Method and validation: EARTH_GRID_METHOD.md.")
     pdf.ln(4)
 
     bus_results = grounding_results.get("buses", [])
@@ -1766,10 +1937,15 @@ def _calc_grounding(pdf, grounding_results):
         issues = bus.get("issues", [])
         for iss in issues:
             _calc_body(pdf, f"  ! {iss}")
+        if bus.get("method"):
+            _calc_earth_grid_rows(pdf, bus)
         for note in bus.get("notes", []) or []:
             pdf.set_font("Helvetica", "", 8)
             pdf.multi_cell(0, 4.5, _safe(f"  i {note}"), new_x="LMARGIN", new_y="NEXT")
-        _draw_grounding_grid(pdf, bus)
+        if bus.get("method"):
+            _draw_earth_grid_plan(pdf, bus, (grounding_results.get("grids") or {}).get(bus.get("earth_grid_id")))
+        else:
+            _draw_grounding_grid(pdf, bus)
         pdf.ln(1)
 
     warnings = grounding_results.get("warnings", [])

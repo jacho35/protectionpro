@@ -202,6 +202,11 @@ const AppState = {
   // Initialized just after the AppState literal (needs PLAN_DEFAULT_LAYERS).
   planMarkup: null,
 
+  // Earth grids of any shape (earthgrid.js) — [{id, name, soil, surface,
+  // conductor, layout, rods, fences, extra_conductors, extra_rods, method,
+  // limits, …}]; a bus uses one through its `earth_grid_id` prop.
+  earthGrids: [],
+
   // Generate unique ID
   genId(prefix) {
     return `${prefix}_${this.nextId++}`;
@@ -1254,6 +1259,8 @@ const AppState = {
     // {id, name, inputs, result, resultKey, updatedAt} — see lightning.js.
     this.lightningAssessments = [];
     this.lightningActiveId = null;
+    // Earth grids of any shape (earthgrid.js); a bus uses one by `earth_grid_id`.
+    this.earthGrids = [];
     // Time-current curves: named chart arrangements ("views": grading point, visible
     // curves, zoom, colours…), the last one used, user-added relays/fuses/breakers/
     // curves, and the grading margin — see tcc.js.
@@ -1478,6 +1485,7 @@ const AppState = {
         ? this.resultsMeta : undefined,
       lightningAssessments: (this.lightningAssessments && this.lightningAssessments.length) ? this.lightningAssessments : undefined,
       lightningActiveId: this.lightningActiveId || undefined,
+      earthGrids: (this.earthGrids && this.earthGrids.length) ? this.earthGrids : undefined,
       tccViews: (this.tccViews && this.tccViews.length) ? this.tccViews : undefined,
       tccActiveViewId: this.tccActiveViewId || undefined,
       tccCustomDevices: (this.tccCustomDevices && this.tccCustomDevices.length) ? this.tccCustomDevices : undefined,
@@ -1818,6 +1826,8 @@ const AppState = {
     }
     this.lightningActiveId = this.lightningAssessments.some(a => a.id === data.lightningActiveId)
       ? data.lightningActiveId : ((this.lightningAssessments[0] || {}).id || null);
+    // Earth grids (earthgrid.js) — a project from before them has none.
+    this.earthGrids = Array.isArray(data.earthGrids) ? data.earthGrids.filter(g => g && typeof g === 'object' && g.id) : [];
     this.tccViews = Array.isArray(data.tccViews) ? data.tccViews.filter(v => v && v.id && v.name) : [];
     this.tccActiveViewId = this.tccViews.some(v => v.id === data.tccActiveViewId) ? data.tccActiveViewId : null;
     this.tccCustomDevices = Array.isArray(data.tccCustomDevices) ? data.tccCustomDevices.filter(d => d && d.id && d.deviceType) : [];

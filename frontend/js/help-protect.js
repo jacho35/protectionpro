@@ -220,6 +220,7 @@ $$E_{inc}=\frac{22\,540}{4\pi(0.455)^2}=8.66\ \text{kJ/m}^2\ \Rightarrow\ E=\fra
   kw: 'grid resistance gpr touch step mesh voltage ground potential rise crushed rock surface layer soil resistivity two layer onderdonk decrement',
   html: String.raw`
 <p>Designs and checks a ground grid: does it keep touch and step voltages within what a person can tolerate, and is the conductor big enough for the fault? Inputs are set on the bus: soil resistivity $\rho$, grid dimensions, conductor and rods, surface layer and fault duration.</p>
+<p>This article is the IEEE 80 <em>simplified</em> method for an equally spaced rectangular grid. For diagonal conductors, uneven spacing, L-shapes, rods anywhere or fences, give the bus an <strong>earth grid</strong>, solved numerically: see <a href="#" data-help="prot-earth-grid">Earth grids of any shape</a>. For EN 50522 limits see <a href="#" data-help="prot-en50522">Touch voltage to EN 50522</a>.</p>
 <h4>1 · Tolerable voltages</h4>
 <p>For a body weight of 70 kg (0.157) or 50 kg (0.116), fault duration $t_s$ and surface-layer resistivity $\rho_s$:</p>
 $$E_{touch}=\frac{(1000+1.5\,C_s\,\rho_s)\,k}{\sqrt{t_s}},\qquad E_{step}=\frac{(1000+6\,C_s\,\rho_s)\,k}{\sqrt{t_s}}$$
@@ -229,7 +230,7 @@ $$C_s=1-\frac{0.09\,(1-\rho/\rho_s)}{2h_s+0.09}$$
 $$R_g=\rho\left[\frac1{L_T}+\frac1{\sqrt{20A}}\left(1+\frac1{1+h\sqrt{20/A}}\right)\right],\qquad \text{GPR}=I_G\,R_g$$
 <p>$A$ is the grid area, $L_T$ total buried conductor length and $h$ burial depth. The grid current includes the decrement factor for the DC offset over the fault duration:</p>
 $$I_G=D_f\,S_f\,I_{0},\qquad D_f=\sqrt{1+\frac{T_a}{t_f}\left(1-e^{-2t_f/T_a}\right)},\quad T_a=\frac{X/R}{2\pi f}$$
-<p>$X/R$ is derived from the bus $\kappa$ ($R/X=-\tfrac13\ln\frac{\kappa-1.02}{0.98}$). The current split factor is $S_f=1$ (conservative).</p>
+<p>$X/R$ is derived from the bus $\kappa$ ($R/X=-\tfrac13\ln\frac{\kappa-1.02}{0.98}$). $I_0$ is the share of the earth-fault current fed from remote sources: current that returns through a transformer or generator neutral at the bus stays in the grid conductors (§15.1). The split factor $S_f$ (§15.9, Annex C) is a bus input, 1 by default (conservative).</p>
 <h4>3 · Mesh and step voltage</h4>
 $$E_m=\frac{\rho\,I_G\,K_m\,K_i}{L_M},\qquad E_s=\frac{\rho\,I_G\,K_s\,K_i}{L_S}$$
 $$K_m=\frac{1}{2\pi}\left[\ln\!\left(\frac{D^{2}}{16hd}+\frac{(D+2h)^{2}}{8Dd}-\frac{h}{4d}\right)+\frac{K_{ii}}{K_h}\ln\frac{8}{\pi(2n-1)}\right],\quad K_h=\sqrt{1+h}$$
@@ -241,13 +242,73 @@ $$K_s=\frac1\pi\left[\frac1{2h}+\frac1{D+h}+\frac1D\left(1-0.5^{\,n-2}\right)\ri
 $$A\,[\text{mm}^2]=I\,[\text{kA}]\sqrt{K_f^{2}\,t_c},\qquad K_f^{2}=\frac{\alpha_r\,\rho_r\cdot10^{4}}{TCAP\cdot\ln\!\left(1+\dfrac{T_m-T_a}{K_0+T_a}\right)}$$
 <p>with the conductor material's constants ($\alpha_r$, $\rho_r$ in µΩ·cm, $K_0$, fusing temperature $T_m$, $TCAP$), ambient $T_a$ (default 40 °C) and fault-clearing time $t_c$, then rounded up to a standard size (16–300 mm²).</p>
 <h4>Two-layer soil</h4>
-<p>When the native soil is layered (upper $\rho_1$, thickness $h_1$, over $\rho_2$) an equivalent resistivity replaces $\rho$ in the grid-<em>resistance</em> formula only (mesh and step keep $\rho_1$, where the grid and feet actually are):</p>
-$$\rho_{eq}=\rho_1F(K,h_{rel},r_0),\quad K=\frac{\rho_2-\rho_1}{\rho_2+\rho_1},\quad r_0=\sqrt{A/\pi}$$
-<p>from the method of images (Sunde / Tagg). Anchors: $\rho_{eq}\to\rho_1$ for a thick top layer, $\to\rho_2$ as $h_1\to0$.</p>
+<p>The simplified equations are for uniform soil (IEEE 80 §16.2.3). With two-layer soil on (upper $\rho_1$, thickness $h_1$, over $\rho_2$, $K=\frac{\rho_2-\rho_1}{\rho_2+\rho_1}$), the same grid is solved numerically twice by the method of moments — once in the layered soil, once in uniform $\rho_1$ — and the uniform IEEE 80 values of $R_g$, $E_m$ and $E_s$ are multiplied by the ratios the layering produces. A resistive lower layer ($K>0$) raises the surface gradients inside the grid; a conductive one lowers the resistance. An earth grid object solves layered soil directly instead of by ratios.</p>
 <h4>Wenner four-pin test interpreter</h4>
 <p>Fits $(\rho_1,\rho_2,h_1)$ to field readings of apparent resistivity $\rho_a(a)$ at probe spacings $a$ by non-linear least squares, using the same two-layer forward model:</p>
 $$\rho_a(a)=\rho_1\left[1+4\sum_{n=1}^{\infty}K^{n}\left(\frac{1}{\sqrt{1+(2nh_1/a)^{2}}}-\frac{1}{\sqrt{4+(2nh_1/a)^{2}}}\right)\right]$$
 <p>The fitted model can then be applied to the grid design above.</p>` },
+
+{ id: 'prot-earth-grid', group: 'protect', title: 'Earth grids of any shape (numerical)',
+  std: 'IEEE 80-2013 §16.8, Annex H · Analyse ▸ Earthing & lightning ▸ Earth grids',
+  kw: 'earth grid diagonal conductor uneven spacing l shaped rods fence separately earthed bonded transfer voltage method of moments numerical touch step heatmap surface potential cdegs annex h equipotential',
+  html: String.raw`
+<p>An <strong>earth grid</strong> is described once in the project and any number of buses use it (bus ▸ Grounding ▸ Earth Grid). It can have any layout: diagonal conductors, uneven spacing, an L-shaped outline, rods anywhere and of any length, fences bonded to the grid or separately earthed, and conductors added by hand. IEEE 80 §16.8 sends all of these to "computer analysis"; the simplified equations cover only equally spaced rectangles in uniform soil.</p>
+<h4>1 · Which method</h4>
+<table class="help-ref-table"><thead><tr><th>Grid</th><th>Headline result</th></tr></thead><tbody>
+<tr><td>Plain rectangle, equal spacing, uniform soil, no diagonals, fences or added metal</td><td>IEEE 80 simplified equations; the numerical result is shown beside them</td></tr>
+<tr><td>Anything else, or EN 50522 limits</td><td>Numerical (method of moments); the reason the equations don't apply is stated</td></tr></tbody></table>
+<p>The simplified equations are conservative: on a 30 × 30 m, 6 × 6 grid with 20 rods, $R_g$ is 1.68 Ω against 1.46 Ω numerically. So judge a design change — adding diagonals, say — numerical against numerical.</p>
+<h4>2 · Physics</h4>
+<p>At power frequency the soil current is a steady conduction field ($\nabla\cdot\sigma\nabla V=0$): the skin depth $503\sqrt{\rho/f}$ is about 710 m at 100 Ω·m and 50 Hz. The ground surface is insulating ($\partial V/\partial z=0$), and at a layer interface $V$ and $\sigma\,\partial V/\partial z$ are continuous. Bonded metal is at one potential, the GPR; unbonded metal (a separately earthed fence) floats, taking no net current. The potential of a point source in two-layer soil is the image series, e.g. source and field in the top layer:</p>
+$$V=\frac{\rho_1 I}{4\pi}\sum_{n=-\infty}^{\infty}K^{|n|}\left[\frac1{R(z-z_0+2nH)}+\frac1{R(z+z_0+2nH)}\right],\qquad R(\zeta)=\sqrt{r^2+\zeta^2}$$
+<h4>3 · Numerical method</h4>
+<p>Conductors, rods and fence posts are cut into elements of at most 1 m, each leaking a uniform current. Conductors are split where they cross or meet, so every joint is a node. The potential from element $j$ at a point on another element's axis uses the thin-wire kernel</p>
+$$V=\frac{I_j}{L_j}\int_{A_j}^{B_j}\frac{ds}{\sqrt{|P-s|^2+a_j^2}}=\frac{I_j}{L_j}\Big[\operatorname{asinh}\tfrac{t_2}{\rho_\perp}-\operatorname{asinh}\tfrac{t_1}{\rho_\perp}\Big]$$
+<p>summed over the soil images. Setting every element mid-point to its group potential gives $[G]\,I=V$. An unbonded group adds its potential as an unknown with the condition $\sum I=0$. Then</p>
+$$R_g=\frac{1}{\sum I_{\text{grid}}}\ \ \text{(per volt of GPR)},\qquad V_s(x,y)=\sum_j I_j\,G_j(x,y,0)$$
+<p>Every voltage scales with the grid current, so one solve serves every bus on the grid. Halving the element length to 0.5 m changes $R_g$ by 0.05 % and touch voltage by 0.1 % (Annex H Grid 3).</p>
+<h4>4 · Where touch and step are evaluated</h4>
+<p>The conventions IEEE 80 Annex H used to benchmark CDEGS, ETAP and WinIGS:</p>
+<ul>
+<li><b>Touch</b> = GPR − $V_s$ at every point 0.5 m apart inside the grid outline, extended to 1 m outside a bonded fence; the worst points are refined to 0.1 m. The worst touch is located anywhere — on an unevenly spaced grid it is often an interior mesh, not the corner mesh (Annex B Exhibit 2).</li>
+<li><b>Step</b> = the largest $V_s$ difference over 1 m in any direction, from 1 m outside the perimeter inward.</li>
+<li><b>Unbonded fence</b>: its own potential, the worst touch within 1 m reach referred to it, and the grid-to-fence transfer voltage (GPR − $V_{fence}$), which must not be bridged.</li>
+<li>No surface point is taken closer than the 0.08 m foot radius (§7.3) to a post that reaches the surface.</li></ul>
+<h4>5 · Checks</h4>
+<ul>
+<li><b>Connectivity</b> — bonded conductors must form one metallic network; a piece touching nothing is flagged.</li>
+<li><b>Equal potential</b> — the leakage currents are driven along conductors of impedance $z=R+\omega\mu_0/8+j\,\frac{\omega\mu_0}{2\pi}\ln\frac{D_e}{a}$ ($D_e=658.87\sqrt{\rho/f}$) from each extreme node; a potential drop above 5 % of GPR means the grid is too large, or its conductors too thin, for the equal-potential assumption.</li></ul>
+<h4>6 · Validation</h4>
+<p>Against the Annex H benchmarks (Grids 1–6, including the diagonal Grid 6 and the separately earthed fence of Grid 4) the grid resistance and touch voltages fall inside the spread of CDEGS, ETAP and WinIGS or within 2.5 % of it; step voltages within 5 %. Grid 6: $R_g$ 1.426 Ω (programs 1.42–1.43), worst touch 136.3 V (134.4–140.2), step 84.4 V (77.4–99.2). Full tables: EARTH_GRID_METHOD.md.</p>
+<h4>7 · Modelling tips</h4>
+<ul>
+<li><b>Create from bus</b> turns a bus's IEEE 80 data into an identical earth grid to start from.</li>
+<li>Point the HV and LV buses of one substation at the same grid; the HV fault usually sets the design.</li>
+<li>Corner meshes carry the highest touch voltage. Remedies (IEEE 80 §16.6): diagonals across corner meshes, closer spacing at the perimeter, rods at the corners and perimeter, a conductor 1 m outside the fence, a better surface layer, faster clearing.</li>
+<li>A bonded fence brings its outside 1 m into the touch area — lay a conductor about 1 m outside it. A separately earthed fence lowers its own touch voltage but creates a transfer voltage.</li>
+<li>Not modelled: metal-to-metal touch, transferred voltages on pipes, cable sheaths or rails, lateral soil variation, more than two layers, lightning.</li></ul>` },
+
+{ id: 'prot-en50522', group: 'protect', title: 'Touch voltage to EN 50522',
+  std: 'EN 50522:2022 §5.4, Annex A/B, Table 1 · earth grid ▸ Limits',
+  kw: 'en 50522 iec 61936 permissible touch voltage utp uvtp c1 c2 c3 c4 earth potential rise ue body current footwear reduction factor figure 8 specified measures m',
+  html: String.raw`
+<p>An earth grid can be checked against EN 50522 instead of IEEE 80 (earth grid ▸ Calculation ▸ Limits). The grid is solved the same way; only the current, the limits and the pass logic change.</p>
+<h4>1 · Current to earth and earth potential rise (Table 1)</h4>
+<p>For low-impedance neutral earthing $I_E=r\cdot I''_{k1}$, or $r\cdot(I''_{k1}-I_N)$ with a neutral earthed in the substation; $r$ is the bus's reduction (split) factor, and the fault study's remote share removes $I_N$. There is no decrement factor. Isolated or resonant-earthed systems use $I_C$ or $I_{RES}$: enter them as the bus's <em>Design Earth-Fault Current</em>. Then $U_E=I_E\,R_g$.</p>
+<h4>2 · Permissible touch voltage</h4>
+<p>$U_{Tp}(t_f)$ is Table B.4 (Figure 8), interpolated in log $t$: 725 V at 0.05 s, 655 V at 0.1 s, 525 V at 0.2 s, 225 V at 0.5 s, 115 V at 1 s, 95 V at 2 s, 85 V at 5–10 s, 80 V beyond. It is for bare hand-to-feet contact. With footwear and the ground under the feet (Formula A.3, $HF=1$):</p>
+$$U_{vTp}=U_{Tp}+\frac{I_B(t_f)}{HF}\,(R_H+R_F),\qquad R_F=R_{F1}+1.5\ \text{m}^{-1}\cdot\rho_S$$
+<p>$I_B$ is Table B.1 (e.g. 200 mA at 0.5 s); $R_{F1}$ the footwear (0 by default, 1000 Ω for old wet shoes per the standard's note); $\rho_S$ the surface-layer resistivity. $1.5\,\rho_S$ is the same two-feet model as IEEE 80 Eq. 15.</p>
+<h4>3 · Procedure (Figure 9)</h4>
+<table class="help-ref-table"><thead><tr><th>Condition</th><th>Test</th></tr></thead><tbody>
+<tr><td>C2</td><td>$U_E\le2\,U_{Tp}$ — touch criterion met, $U_T$ need not be calculated</td></tr>
+<tr><td>C3</td><td>$U_E\le4\,U_{Tp}$ with the specified measures M of Annex E applied (a yes/no on the grid)</td></tr>
+<tr><td>C4</td><td>otherwise the calculated prospective touch voltage (the numerical worst touch) must not exceed $U_{vTp}$</td></tr></tbody></table>
+<p>C1 (part of a global earthing system) is an engineering judgement and is not assessed.</p>
+<h4>4 · Step voltage</h4>
+<p>Needed only when $U_E>20\,U_{Tp}$ (A.3). The permissible value uses $HF=0.04$ (foot to foot), $BF=1$ and the body impedance of Table B.3 at that current, with no footwear credited: $U_{Sp}=\frac{I_B}{0.04}\,Z_T$, e.g. $5\ \text{A}\times775\ \Omega=3875$ V at 0.5 s.</p>
+<h4>5 · Not covered here</h4>
+<p>Transferred potentials (§6 and Table 2 for LV systems) are checked separately. Conductor size is by IEEE 80's Onderdonk equation; EN 50522 Annex D is not implemented.</p>` },
 
 { id: 'prot-lightning', group: 'protect', title: 'Lightning risk (IEC 62305-2)',
   std: 'IEC 62305-2:2024 and 2010 · Analyse ▸ Earthing & lightning',

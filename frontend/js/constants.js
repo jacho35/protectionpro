@@ -1502,6 +1502,8 @@ const FIELD_INFO = {
   'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.\nTypical: single largest motor 1.0, group of 2-4 motors 0.8, 5-10 motors 0.6.',
 
   // Grounding (IEEE 80)
+  'bus.earth_grid_id': 'Use a project earth grid (any shape — diagonals, uneven spacing, L-shape, fences). The grid\'s soil, conductor and limit basis replace this bus\'s own grid fields; fault duration, clearing time and split factor stay per bus.',
+  'bus.design_earth_fault_ka': 'Earth-fault current to design the grid for, instead of the fault study\'s I″k1 — enter I_C or I_RES for isolated or resonant-earthed systems (EN 50522 Table 1). Blank = from the fault study.',
   'bus.soil_type': 'Preset soil class — fills Soil Resistivity with a representative IEEE 80 §12.2 value:\n• Wet clay ≈ 50\n• Moist soil ≈ 100\n• Sandy clay ≈ 150\n• Gravel/sand ≈ 1000\n• Rock ≈ 3000 Ω·m\nPick "Custom" to enter your own (e.g. from a Wenner four-pin measurement). Selecting a type overwrites the resistivity; you can still edit it afterwards.',
   'bus.soil_resistivity': 'Soil resistivity in Ω·m.\nSource: IEEE 80 §12.2 — typical values:\n• Wet clay: 20–100\n• Sandy clay: 50–200\n• Gravel/sand: 200–3000\n• Rock: 1000–10000',
   'bus.crushed_rock_resistivity': 'Surface layer (crushed rock) resistivity ρ_s in Ω·m.\nA high-resistivity surface layer raises the tolerable touch/step voltages.\nSource: IEEE 80 §7.4 — typical crushed rock: 2000–5000 Ω·m (dry higher).',
@@ -1826,6 +1828,9 @@ function changeoverBreakerFields(n) {
     ...(CO_BREAKER_FALLBACK.has(f.key) ? { placeholderFrom: f.key } : {}),
   }));
 }
+
+// showWhen for the per-bus grounding fields a project earth grid replaces
+const EG_NONE = { field: 'earth_grid_id', empty: true };
 
 const COMPONENT_DEFS = {
   // --- Sources ---
@@ -2500,7 +2505,11 @@ const COMPONENT_DEFS = {
       { key: 'enclosure_height_mm', label: 'Enclosure Height (0 = auto, 2018 only)', type: 'number', unit: 'mm', min: 0, step: 10, section: 'arcflash' },
       { key: 'enclosure_depth_mm', label: 'Enclosure Depth (0 = auto, 2018 only)', type: 'number', unit: 'mm', min: 0, step: 10, section: 'arcflash' },
       { key: 'system_grounded', label: 'System Grounding', type: 'select', options: ['unknown', 'grounded', 'ungrounded'], section: 'arcflash' },
-      { key: 'soil_type', label: 'Soil Type', type: 'select', section: 'grounding', options: [
+      // A project earth grid (earthgrid.js) replaces the bus's own grid, soil,
+      // surface, conductor, rod and body-weight fields below (hidden while set).
+      { key: 'earth_grid_id', label: 'Earth Grid', type: 'earth_grid_select', section: 'grounding' },
+      { key: 'design_earth_fault_ka', label: 'Design Earth-Fault Current', type: 'number', unit: 'kA', min: 0, step: 0.1, placeholder: 'from the fault study', clearable: true, section: 'grounding', showWhen: { field: 'earth_grid_id', empty: false } },
+      { key: 'soil_type', label: 'Soil Type', type: 'select', section: 'grounding', showWhen: EG_NONE, options: [
         { value: 'custom', label: 'Custom (use value below)' },
         { value: 'wet_clay', label: 'Wet clay (~50 Ω·m)' },
         { value: 'moist_soil', label: 'Moist soil (~100 Ω·m)' },
@@ -2508,38 +2517,38 @@ const COMPONENT_DEFS = {
         { value: 'gravel_sand', label: 'Gravel / sand (~1000 Ω·m)' },
         { value: 'rock', label: 'Rock (~3000 Ω·m)' },
       ] },
-      { key: 'soil_resistivity', label: 'Soil Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding' },
-      { key: 'crushed_rock_resistivity', label: 'Surface Layer Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding' },
-      { key: 'crushed_rock_depth', label: 'Surface Layer Depth', type: 'number', unit: 'm', step: 0.01, section: 'grounding' },
-      { key: 'two_layer_soil', label: 'Two-Layer Soil Model', type: 'select', options: ['off', 'on'], section: 'grounding' },
-      { key: 'soil_resistivity_lower', label: 'Lower Layer Resistivity (ρ₂)', type: 'number', unit: 'Ω·m', section: 'grounding', showWhen: { field: 'two_layer_soil', values: ['on'] } },
-      { key: 'upper_layer_thickness', label: 'Upper Layer Thickness (h₁)', type: 'number', unit: 'm', step: 0.1, section: 'grounding', showWhen: { field: 'two_layer_soil', values: ['on'] } },
-      { key: 'grid_length', label: 'Grid Length', type: 'number', unit: 'm', section: 'grounding' },
-      { key: 'grid_width', label: 'Grid Width', type: 'number', unit: 'm', section: 'grounding' },
-      { key: 'grid_depth', label: 'Grid Depth', type: 'number', unit: 'm', section: 'grounding' },
-      { key: 'num_conductors_x', label: 'Conductors (X)', type: 'number', section: 'grounding' },
-      { key: 'num_conductors_y', label: 'Conductors (Y)', type: 'number', section: 'grounding' },
-      { key: 'conductor_material', label: 'Conductor Material', type: 'select', section: 'grounding', options: GROUNDING_CONDUCTOR_MATERIALS },
-      { key: 'conductor_diameter', label: 'Conductor Diameter', type: 'number', unit: 'm', step: 0.001, section: 'grounding' },
-      { key: 'grid_joint_type', label: 'Grid Joints', type: 'select', section: 'grounding', options: [
+      { key: 'soil_resistivity', label: 'Soil Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding', showWhen: EG_NONE },
+      { key: 'crushed_rock_resistivity', label: 'Surface Layer Resistivity', type: 'number', unit: 'Ω·m', section: 'grounding', showWhen: EG_NONE },
+      { key: 'crushed_rock_depth', label: 'Surface Layer Depth', type: 'number', unit: 'm', step: 0.01, section: 'grounding', showWhen: EG_NONE },
+      { key: 'two_layer_soil', label: 'Two-Layer Soil Model', type: 'select', options: ['off', 'on'], section: 'grounding', showWhen: EG_NONE },
+      { key: 'soil_resistivity_lower', label: 'Lower Layer Resistivity (ρ₂)', type: 'number', unit: 'Ω·m', section: 'grounding', showWhen: { field: 'earth_grid_id', empty: true, also: { field: 'two_layer_soil', values: ['on'] } } },
+      { key: 'upper_layer_thickness', label: 'Upper Layer Thickness (h₁)', type: 'number', unit: 'm', step: 0.1, section: 'grounding', showWhen: { field: 'earth_grid_id', empty: true, also: { field: 'two_layer_soil', values: ['on'] } } },
+      { key: 'grid_length', label: 'Grid Length', type: 'number', unit: 'm', section: 'grounding', showWhen: EG_NONE },
+      { key: 'grid_width', label: 'Grid Width', type: 'number', unit: 'm', section: 'grounding', showWhen: EG_NONE },
+      { key: 'grid_depth', label: 'Grid Depth', type: 'number', unit: 'm', section: 'grounding', showWhen: EG_NONE },
+      { key: 'num_conductors_x', label: 'Conductors (X)', type: 'number', section: 'grounding', showWhen: EG_NONE },
+      { key: 'num_conductors_y', label: 'Conductors (Y)', type: 'number', section: 'grounding', showWhen: EG_NONE },
+      { key: 'conductor_material', label: 'Conductor Material', type: 'select', section: 'grounding', showWhen: EG_NONE, options: GROUNDING_CONDUCTOR_MATERIALS },
+      { key: 'conductor_diameter', label: 'Conductor Diameter', type: 'number', unit: 'm', step: 0.001, section: 'grounding', showWhen: EG_NONE },
+      { key: 'grid_joint_type', label: 'Grid Joints', type: 'select', section: 'grounding', showWhen: EG_NONE, options: [
         { value: 'exothermic', label: 'Exothermic (welded)' },
         { value: 'brazed', label: 'Brazed (450 °C)' },
         { value: 'pressure', label: 'Pressure connector (350 °C)' },
         { value: 'bolted', label: 'Bolted (250 °C)' },
       ] },
-      { key: 'num_ground_rods', label: 'Ground Rods', type: 'number', section: 'grounding' },
-      { key: 'rod_length_preset', label: 'Rod Length Preset', type: 'select', section: 'grounding', options: [
+      { key: 'num_ground_rods', label: 'Ground Rods', type: 'number', section: 'grounding', showWhen: EG_NONE },
+      { key: 'rod_length_preset', label: 'Rod Length Preset', type: 'select', section: 'grounding', showWhen: EG_NONE, options: [
         { value: 'custom', label: 'Custom (use value below)' },
         { value: '2.4', label: '2.4 m (8 ft)' },
         { value: '3.0', label: '3.0 m' },
         { value: '6.0', label: '6.0 m' },
       ] },
-      { key: 'ground_rod_length', label: 'Rod Length', type: 'number', unit: 'm', step: 0.1, section: 'grounding' },
+      { key: 'ground_rod_length', label: 'Rod Length', type: 'number', unit: 'm', step: 0.1, section: 'grounding', showWhen: EG_NONE },
       { key: 'fault_duration', label: 'Fault Duration (shock, t_s)', type: 'number', unit: 's', step: 0.05, section: 'grounding' },
       { key: 'fault_clearing_time', label: 'Clearing Time (conductor, t_c)', type: 'number', unit: 's', step: 0.05, section: 'grounding' },
       { key: 'current_split_factor', label: 'Current Split Factor (S_f)', type: 'number', step: 0.05, section: 'grounding' },
       { key: 'ambient_temp', label: 'Ambient Temperature', type: 'number', unit: '°C', section: 'grounding' },
-      { key: 'body_weight', label: 'Body Weight', type: 'select', section: 'grounding', options: [
+      { key: 'body_weight', label: 'Body Weight', type: 'select', section: 'grounding', showWhen: EG_NONE, options: [
         { value: 50, label: '50 kg' },
         { value: 70, label: '70 kg' },
       ] },

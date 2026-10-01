@@ -1,0 +1,172 @@
+{
+ "projectName": "Earth grid — IEEE 80 Annex H Grid 6",
+ "baseMVA": 100.0,
+ "frequency": 60,
+ "components": [
+  {
+   "id": "utility-1",
+   "type": "utility",
+   "x": 300,
+   "y": 40,
+   "rotation": 0,
+   "props": {
+    "name": "Src",
+    "voltage_kv": 11.0,
+    "fault_mva": 100.0,
+    "x_r_ratio": 0.05,
+    "grounding": "solidly"
+   }
+  },
+  {
+   "id": "bus-1",
+   "type": "bus",
+   "x": 200,
+   "y": 160,
+   "rotation": 0,
+   "props": {
+    "name": "Substation",
+    "voltage_kv": 11.0,
+    "earth_grid_id": "eg_annexh6",
+    "design_earth_fault_ka": 0.7448,
+    "fault_duration": 0.5,
+    "fault_clearing_time": 0.5,
+    "current_split_factor": 1.0,
+    "ambient_temp": 40
+   }
+  }
+ ],
+ "wires": [
+  {
+   "id": "w1",
+   "fromComponent": "utility-1",
+   "fromPort": "out",
+   "toComponent": "bus-1",
+   "toPort": "p0"
+  }
+ ],
+ "nextId": 3,
+ "earthGrids": [
+  {
+   "id": "eg_annexh6",
+   "name": "IEEE 80 Annex H Grid 6",
+   "soil": {
+    "rho1": 100,
+    "two_layer": "on",
+    "rho2": 300,
+    "h1": 6.096
+   },
+   "surface": {
+    "rho_s": 2500,
+    "h_s": 0.0
+   },
+   "conductor": {
+    "material": "copper_hard",
+    "diameter_m": 0.0105,
+    "depth_m": 0.5,
+    "joint": "exothermic"
+   },
+   "layout": {
+    "type": "rect",
+    "length_x": 70,
+    "width_y": 70,
+    "n_x": 4,
+    "n_y": 4,
+    "x_lines": [
+     0,
+     14,
+     56,
+     70
+    ],
+    "y_lines": [
+     0,
+     14,
+     56,
+     70
+    ],
+    "diagonals": "full"
+   },
+   "rods": {
+    "rule": "none",
+    "count": 0,
+    "length_m": 7.5,
+    "diameter_m": 0.0159
+   },
+   "fences": [],
+   "extra_conductors": [],
+   "extra_rods": [
+    {
+     "x": 0,
+     "y": 0,
+     "length_m": 7.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 0,
+     "y": 70,
+     "length_m": 7.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 70,
+     "y": 0,
+     "length_m": 7.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 70,
+     "y": 70,
+     "length_m": 7.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 14,
+     "y": 14,
+     "length_m": 2.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 56,
+     "y": 14,
+     "length_m": 2.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 14,
+     "y": 56,
+     "length_m": 2.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 56,
+     "y": 56,
+     "length_m": 2.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    },
+    {
+     "x": 35,
+     "y": 35,
+     "length_m": 2.5,
+     "diameter_m": 0.0159,
+     "bonded": true
+    }
+   ],
+   "method": "auto",
+   "limits": "ieee80",
+   "body_weight": 70,
+   "en50522": {
+    "footwear_ohm": 0,
+    "hand_ohm": 0,
+    "measures_m": "no"
+   },
+   "element_length_m": 1.0
+  }
+ ]
+}

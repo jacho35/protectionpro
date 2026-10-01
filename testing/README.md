@@ -1,6 +1,6 @@
 # ProtectionPro Verification — vs. standards / textbook / first-principles
 
-Cross-checks of ProtectionPro's analysis engines — **31 of 39 analyses have an independent numerical reference,
+Cross-checks of ProtectionPro's analysis engines — **32 of 40 analyses have an independent numerical reference,
 8 are pinned by consistency tests only; see [Coverage](#coverage)** — against published standards (IEC 60909, 60364,
 61660; IEEE 1584, 80), textbook worked examples (Glover load flow, Ammerman DC arc flash), published IEC/ETAP
 figures, and exact first-principles / hand calculations. The short-circuit work began from the worked examples at
@@ -19,6 +19,7 @@ substation E3S paper (real-project ETAP case study missing the branch-impedance 
 | Load flow (Newton-Raphson, 3-bus) | ESE 470 / Glover textbook example | `loadflow.py` | **PASS** — voltages/angles ≤0.002 pu / 0.04°, 4-iter convergence |
 | Arc flash (IEEE 1584-2002) | Standards hand-calc (Eq. 1–5) | `arcflash.py` | **PASS** — Iₐ/E/AFB exact (0.000 %), LV + MV |
 | Grounding (IEEE 80) | Standards hand-calc (square grid + rods) | `grounding_system.py` | **PASS** — all quantities exact, incl. mesh voltage (full Eq. 84–88 n / K_ii / L_M) |
+| Earth grids of any shape (numerical) | IEEE 80-2013 Annex H benchmarks (CDEGS / ETAP / WinIGS, Grids 1–6 incl. diagonals and a separately earthed fence) + closed forms | `earth_grid.py` | **PASS** — R_g and touch inside the programs' spread or within 2.5 %, step within 5 %; rod / wire closed forms 0.1 % ([`earth-grid-validation/validate.py`](earth-grid-validation/validate.py), `EARTH_GRID_METHOD.md` §8) |
 | Motor starting (voltage dip) | Standards hand-calc + independent 2-bus solve | `motor_starting.py` | **PASS** — FLC / starting current (5 methods) / dip exact; constant-PQ model characterized |
 | DC load flow | First-principles resistive circuit | `dc_loadflow.py` | **PASS** — voltages / currents / losses exact (≤0.005 %) |
 | DC short circuit (IEC 61660-1) | Published IEC 61660 battery example | `dc_shortcircuit.py` | **PASS** — reproduces the published 5422 A peak exactly from raw nameplate (full 0.9·R_B / 1.05·U_nB / +0.1·R_B factors) |
@@ -178,6 +179,7 @@ equations worked by hand, or an independent closed-form solve). **Consistency on
 | Arc flash, IEEE 1584-2002 | `arcflash.py` | Standard Eq. 1–5 hand calc | case-arcflash-ieee1584 + template |
 | Arc flash, IEEE 1584-2018 | `arcflash.py` | Official IEEE validation spreadsheet (6 fixtures) | `TestArcFlash2018` |
 | Grounding | `grounding_system.py` | IEEE 80 hand calc | case-grounding-ieee80 + template |
+| Earth grids of any shape | `earth_grid.py`, `earth_grid_study.py` | IEEE 80-2013 Annex H (CDEGS / ETAP / WinIGS) + Dwight / Sunde closed forms; EN 50522 Table B.4 | `test_earth_grid.py`, `earth-grid-validation/validate.py` |
 | Motor starting | `motor_starting.py` | Hand calc + independent 2-bus solve | case-motor-starting + template |
 | Duty check | `duty_check.py` | κ·√2·I″k / making / breaking hand calc | case-duty-check + template |
 | Load diversity | `load_diversity.py` | Demand-aggregation hand calc | case-load-diversity + template |

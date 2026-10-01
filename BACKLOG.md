@@ -17,7 +17,6 @@ section and adding the `## Completed` entry.
 3. **Zero-sequence line capacitance — capacitive earth-fault current (isolated / resonant-earthed MV)** — IEC 60909-0 requires line C₀ for these systems; the engine reports Ik1 ≈ 0 where ~36 A flows on 20 km of 11 kV cable. Plus a Petersen-coil tuning check. *(Fault Analysis Enhancements)*
 4. **SVC on the swing bus reports the bus's whole reactive injection** — `loadflow.py`'s `svc` summary gives it the utility's Q (0.55 Mvar with nothing to regulate); the harmonics study takes that as the SVC's output. *(Load Flow Enhancements)*
 6. **IEC 61000 harmonic limit values unconfirmed** — the IEC mode's IEC 61000-3-6 planning levels and IEC 61000-2-4 Class 2 levels came from the reviewer's reading; confirm against licensed copies. *(Harmonics & Power Quality Enhancements)*
-7. **IEC 61936-1 / EN 50522 touch-voltage option for grounding** — permissible touch voltage U_Tp(t_F) with the foot and footwear resistances, as an alternative to the IEEE 80 body-weight limits; IEEE 80 70 kg is 34 % less strict at 1 s. Needs licensed EN 50522 / IEC 60479-1 copies (`GROUNDING_REVIEW.md` L6). *(Standards Coverage)*
 
 
 
@@ -53,6 +52,10 @@ section and adding the `## Completed` entry.
 34. **Load allocation / estimation from metering** — scale modelled loads to feeder-head / AMI data. *(DIgSILENT / PSS Additions)*
 35. **Probabilistic / stochastic load flow** — Monte-Carlo over load & DER uncertainty — the uncertainty model **Stochastic (Monte Carlo) hosting capacity** needs. *(DIgSILENT / PSS Additions)*
 36. **Variants / expansion stages** — time-phased network development; scenarios and LF cases snapshot operating states only. *(DIgSILENT / PSS Additions)*
+62. **Earth grid editor: draw on the plan** — click-to-draw conductors, drag rods, snap to crossings, a drawn touch-area polygon and DXF import of the grid layout; the first build edits by generator + tables. *(Grounding Enhancements)*
+63. **Earth grid with conductor impedance** — solve bonded metal with series impedance instead of one potential, for PV farms and other large or steel-conductor sites where the equal-potential check reports > 5 %. *(Grounding Enhancements)*
+64. **EN 50522 remaining parts** — Table 2 (LV transferred potential), Annex D conductor rating, and C1 global earthing system guidance. *(Standards Coverage)*
+65. **Grounding: metal-to-metal and transferred voltages** — pipes, rails, cable sheaths and unbonded structures inside the site (IEEE 80 §8.2, §17.9) as additional unbonded groups with their own touch evaluation. *(Grounding Enhancements)*
 
 ### Import, export & integration
 
@@ -168,6 +171,10 @@ defect found:
 - ~~**Distance (21) relay** in transient stability: the last remaining protection function from the item above — reuses the per-branch current infrastructure and topology-switch mechanism the over-current relay above added, but needs its own Z=V/I zone evaluator and a directionality decision. See `TRANSIENT_STABILITY_ROADMAP.md`'s "Next up".~~ **Done** — see Completed.
 
 ## Grounding (IEEE 80) Enhancements
+- **Earth grid editor: draw on the plan**: click-to-draw conductors between snap points, drag rods, a drawn touch-area polygon (the engine already accepts `touch_area`), DXF import of the conductor layout.
+- **Earth grid with conductor impedance**: replace the equal-potential assumption with a coupled circuit/field solve (conductor series impedance, mutual coupling) for large sites; the current check (`earth_grid._potential_variation`) flags when it is needed.
+- **Metal-to-metal and transferred voltages**: model pipes, rails and sheaths as unbonded groups with their own touch areas (IEEE 80 §8.2, §17.9; EN 50522 §6).
+- ~~**Earth grids of any shape**: only an equally spaced rectangle could be described (per-bus length / width / conductor counts / perimeter rods). Diagonal conductors, uneven spacing, L-shapes, rods anywhere and fences need IEEE 80 §16.8 computer analysis.~~ **Done** — see Completed.
 - ~~**Two-layer soil model**: the engine assumes uniform soil (single ρ + crushed-rock surface layer). Add the IEEE 80 two-layer model (upper-layer ρ₁/thickness h, lower ρ₂) and a Wenner four-pin measurement interpreter to derive the layer parameters from field data — layered soil materially changes grid resistance and touch/step limits.~~ **Done** — see Completed.
 - ~~**Full IEEE 80 geometric factors**: the grounding engine simplifies three IEEE 80 quantities — `n = max(n_x, n_y)` (correct only for square grids; the standard uses `n = n_a·n_b·n_c·n_d`), `K_ii = 1.0` hardcoded (correct only for grids with rods; no-rods grids use `K_ii = 1/(2n)^(2/n)`), and `L_M = L_c + L_rod` (omits the Eq. 88 rod-length weighting `[1.55 + 1.22·L_r/√(L_x²+L_y²)]·L_R`). Net effect is a mesh (touch) voltage ~5–6 % high (conservative) for square-with-rods grids, and larger error for rectangular/L-shaped or no-rods grids. Implement the full formulas so mesh voltage and non-square / no-rods geometries match IEEE 80 exactly. See `testing/case-grounding-ieee80/results.md`.~~ **Done** — see Completed.
 
@@ -297,7 +304,8 @@ Features identified by comparing ProtectionPro against ETAP's full module set, e
 
 - ~~**ANSI/IEEE C37 Short Circuit**: Short circuit analysis per ANSI standards alongside existing IEC 60909 (required for US market)~~ **Done (3-phase E/X method)** — see Completed.
 - **AS/NZS 3000 Thermal & Shock Protection**: Australian/NZ wiring rules compliance checks
-- **IEC 61936-1 / EN 50522 touch-voltage option for grounding**: EN 50522 permissible touch voltage U_Tp(t_F) plus foot (1.5·ρ_s) and footwear resistances, as an alternative to the IEEE 80 50/70 kg limits. The two agree at 0.5 s; IEEE 80 70 kg is 34 % less strict at 1 s and 16 % at 2 s. Values need confirming against licensed EN 50522 / IEC 60479-1 copies (`GROUNDING_REVIEW.md` L6)
+- **EN 50522 remaining parts**: Table 2 (LV transferred potential), Annex D conductor current rating, C1 global earthing system.
+- ~~**IEC 61936-1 / EN 50522 touch-voltage option for grounding**: EN 50522 permissible touch voltage U_Tp(t_F) plus foot (1.5·ρ_s) and footwear resistances, as an alternative to the IEEE 80 50/70 kg limits. The two agree at 0.5 s; IEEE 80 70 kg is 34 % less strict at 1 s and 16 % at 2 s. Values need confirming against licensed EN 50522 / IEC 60479-1 copies (`GROUNDING_REVIEW.md` L6)~~ **Done** — see Completed.
 - ~~**SANS 10142 Wiring of Premises**: Automatic compliance checks for South African wiring rules~~
 
 ### Component & Modelling Gaps
@@ -366,6 +374,14 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Earth grids of any shape: numerical solve, EN 50522 limits, fences (2026-09-30)
+- **Earth grid objects.** A project holds named earth grids (`earthGrids`); any number of buses use one (`earth_grid_id`), so the HV and LV buses of a substation share one grid. A grid has a layout generator (rectangle or L, equal or uneven spacing, diagonals across corner meshes / all meshes / corner to corner), rods by rule, fences (bonded or separately earthed, posts plus an optional buried fence conductor), and conductors and rods added by hand. A bus without a grid keeps the per-bus IEEE 80 calculation unchanged.
+- **Numerical engine** (`earth_grid.py`). Method of moments: thin-wire elements with uniform leakage, the two-layer image Green's functions from the grounding review, collocation, bonded metal at GPR, unbonded groups floating with zero net current; crossings are split into nodes (a crossing at an element mid-point made the system near-singular). Touch and step are evaluated to the IEEE 80 Annex H.3 conventions: 0.5 m raster over the touch area (outline; 1 m outside a bonded fence), worst points refined to 0.1 m, step in 16 directions from 1 m outside the perimeter inward, unbonded fences referred to their own potential with the grid-to-fence transfer voltage. Surface points keep the 0.08 m foot radius from surface electrodes (IEEE 80 §7.3). Checks: metallic connectivity of the bonded conductors, and conductor impedance (Carson earth return) against the equal-potential assumption, flagged above 5 % of GPR.
+- **Which method.** A plain, equally spaced rectangle in uniform soil keeps the IEEE 80 simplified equations as the headline, with the numerical result beside it; anything else is numerical, with the reason stated. Citations re-anchored to IEEE 80-2013 equation numbers; the validity notes now use the §16.7 tested range.
+- **EN 50522:2022 limits** (per grid): I_E = r·I″k1 (Table 1, no D_f), U_E = I_E·R_g; U_Tp from Table B.4, U_vTp = U_Tp + I_B·(R_H + R_F1 + 1.5·ρ_S) (A.3); Figure 9 conditions C2 / C3 (with specified measures M) / C4; step voltage only when U_E > 20·U_Tp (A.3). A per-bus *Design Earth-Fault Current* covers isolated / resonant systems (I_C, I_RES).
+- **Validation.** IEEE 80 Annex H Grids 1–6 (CDEGS / ETAP / WinIGS): grid resistance and touch voltage inside the programs' spread or within 2.5 %, step within 5 %, including Grid 6 (diagonal conductors: R_g 1.426 Ω vs 1.42–1.43, touch 136.3 V vs 134.4–140.2) and Grid 4 (separately earthed fence: transfer 310.2 V vs 309.2–312.4). Closed forms (rod, wire) to 0.1 %; rotation invariant. Annex B EPRI TR-100622 differences recorded, Exhibit 1 unexplained. `EARTH_GRID_METHOD.md` (technical basis and modelling guide), `testing/earth-grid-validation/validate.py`, +30 tests in `test_earth_grid.py`.
+- **UI.** Earth grid editor (Analyse ▸ Earth grids…, the bus's grounding section, Ctrl K) with a live plan preview, GridTable tables for fences / added conductors / added rods, "Create from bus" (reproduces the bus's own result exactly) and geometry errors shown inline; bus *Earth Grid* picker hides the per-bus grid fields; results window and PDF report with a touch-voltage map (green→red to the limit, red→purple above it, hatched and contoured above the limit) and the worst touch / step marked; full-screen single-column layout and card-per-row tables on phones. Help articles *Earth grids of any shape* and *Touch voltage to EN 50522*; verification template *Earth Grid with Diagonals (IEEE 80 Annex H Grid 6)*.
 
 ### Grounding review: numerical two-layer soil, grid current split, joint limits, G1–G5 (2026-09-30)
 - **Review.** `GROUNDING_REVIEW.md` checks `grounding_system.py` against IEEE 80-2013 Annex B Examples 1 and 2, Tables 1, 2 and 10, and an independent method-of-moments solve of the grid in uniform and two-layer earth. Every uniform-soil formula reproduces Annex B to ≤ 0.4 %; the Wenner forward model is exact.
