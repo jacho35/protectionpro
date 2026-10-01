@@ -173,8 +173,8 @@ $$h_r=\sqrt{\frac{S_{sc}}{Q_c}}$$
 <p>Impedances are in ohms at each bus's own voltage base and in per unit. Results are on-demand and not saved with the project.</p>` },
 
 { id: 'dyn-filter', group: 'dynamics', title: 'Passive filter sizing',
-  std: 'IEEE 1531 · Arrillaga · Analyse ▸ Power quality',
-  kw: 'single tuned filter reactor capacitor quality factor detuned harmonic kvar',
+  std: 'IEEE 1531 · IEC 60871-1 / 60831-1 · Analyse ▸ Power quality',
+  kw: 'single tuned filter reactor capacitor quality factor detuned harmonic kvar capacitor duty rated voltage 60871 60831',
   html: String.raw`
 <p>Designs single-tuned LC(R) filter branches that bring voltage distortion within IEEE 519, then verifies the design by re-running the harmonics study.</p>
 <h4>Single-tuned branch design</h4>
@@ -185,11 +185,15 @@ $$C=\frac{1}{\omega_1X_C},\qquad L=\frac{X_L}{\omega_1},\qquad h_t=\sqrt{\frac{X
 <h4>Procedure</h4>
 <ol>
 <li>Run the harmonics engine for the baseline THD and compliance picture.</li>
-<li>Find the dominant injected orders at the chosen bus (default: the worst-THD bus) from the drive spectra.</li>
+<li>Rank the injected orders by harmonic current, each drive's $I_h=(I_h/I_1)\,I_1$, so a large drive outweighs a small one. Filter at the chosen bus (default: the worst-THD bus).</li>
 <li>Add one tuned branch per dominant order, splitting the total kvar equally, and re-run the harmonics engine.</li>
 <li>Stop at the first branch count that satisfies IEEE 519 everywhere, or report the best attempt with the residual violations.</li>
+<li>Check each capacitor's duty at the harmonic voltages solved with the filter in place, and recommend its nameplate.</li>
 </ol>
-<p>Total filter kvar defaults to the uncompensated reactive demand at the filter bus's island, capped at $1.2\times$ so the filter doubles as power-factor correction. The recommendation is expressed as ordinary <code>capacitor_bank</code> properties (rated kvar, tuning order, quality factor) plus engineering values in µF, mH and Ω per branch.</p>
+<h4>Capacitor duty</h4>
+<p>The capacitor does not sit at bus voltage. The series reactor lifts its fundamental voltage to $U_{C1}=U\,h_t^2/(h_t^2-1)$, which is $+4.7\,\%$ at $h_t=4.7$. The harmonic current the branch absorbs adds $U_{Ch}=I_h\,X_C/h$ on top, with $I_h=V_h/|R+j(hX_L-X_C/h)|$ from the solved bus voltages. The recommended rating is $U_N=\max(U_{C1},\,U_{C,rms}/1.10)$ and $Q_N=U_N^2/X_C$. It is then checked against the continuous limits of IEC 60871-1 (above 1 kV) or IEC 60831-1 (LV): $U_{rms}\le1.10\,U_N$, $I_{rms}\le1.30\,I_N$, $Q\le1.35\,Q_N$. If the current limit fails, the branch is absorbing more harmonic current than its capacitor can carry: choose a higher capacitor voltage or a larger branch.</p>
+<p>The quoted branch kvar is the net fundamental output at bus voltage, which is what the load flow and harmonics studies model. Buy the capacitor at the recommended rating.</p>
+<p>Total filter kvar defaults to the reactive demand of the network's loads (at least 50 kvar), so the filter doubles as power-factor correction. The recommendation is expressed as ordinary <code>capacitor_bank</code> properties (rated kvar, tuning order, quality factor) plus engineering values in µF, mH and Ω per branch.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>$Q_f=600$ kvar at $U=0.4$ kV, tuned to $h_t=4.7$ (to catch the 5th), $Q=40$.</p>
 $$X_{eff}=\frac{0.4^2\times10^{6}}{600\times10^{3}}=0.2667\ \Omega,\quad X_C=0.2667\times\frac{22.09}{21.09}=0.2793\ \Omega,\quad X_L=\frac{0.2793}{22.09}=12.65\ \text{m}\Omega$$
