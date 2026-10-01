@@ -421,6 +421,11 @@ const PlanUI = {
       const k = PlanSync._resolve(R.kiosks, item);
       if (!k) return notLinked();
       const kr = res && res.kiosks && res.kiosks.find(x => x.kioskId === k.id);
+      // The minisub at the head of this kiosk's chain, and the kiosk it is fed from if not directly.
+      const ms = Retic._minisubOf(k);
+      if (ms) row('Fed from minisub', escHtml(ms.name || 'Minisub'));
+      const parent = R.kiosks.find(o => o.id === k.fedFrom);
+      row('Fed directly by', escHtml(parent ? (parent.name || 'Kiosk') : ((ms && ms.name) || 'Minisub')));
       row('Load class', clsLabel(k));
       row('Erven', String(k.erfs.length));
       if (kr) { row('Demand', `${kr.totalKVA} kVA · ${kr.currentA} A`); row('ADMD', `${kr.admdKVA} kVA${kr.admdPerPhase ? '/ph' : ''}`); }
