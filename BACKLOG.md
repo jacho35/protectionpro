@@ -376,6 +376,11 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Voltage flicker review: IEC 61000-3-3 analytical Pst/Plt, d_max / d_c, limits by voltage, FL1–FL6 (2026-10-01)
+- **Review.** `reviews/FLICKER_REVIEW.md` checks `flicker.py` against the IEC 61000-3-3 analytical method (flicker impression time t_f = 2.3·(F·d)^3.2) and a hand Thevenin divider for d. d was already exact.
+- **FL1.** Pst was a rate average; it is the worst 10-minute window. Below 6 starts/h a whole start lands in one window: a 3 % step at 1 start/h is Pst 0.53, not 0.28 (−47 %). **FL2.** The curve anchor 3 % at 1/min was the literature rounding of 2.77 %; Pst was 7.6 % low at every rate (3 % at 60/h read 1.000 pass, is 1.083 fail). Plt is now the cube-root mean of the twelve windows. **FL3.** d_max ≤ 4 % and d_c ≤ 3.3 % (IEC 61000-3-3 §5, LV) are now checked; d_c from the load flow. **FL4.** Limits by voltage: LV 1.0 / 0.65, MV 0.9 / 0.7, HV 0.8 / 0.6 (IEC/TR 61000-3-7), overridable. **FL5.** d relative to U_n. **FL6.** Setup modal, results table (d_max, d_c, limits) and help rewritten; the curve anchor/exponent are replaced by the shape factor F.
+- Re-run flicker screenings (not persisted). +11 tests in `test_flicker_review_fixes.py`; three regression tests and the CI harness checks re-baselined (they pinned the curve fit).
+
 ### Network reduction review: autotransformers in the network, stub referral, nameplate generator, NR1–NR4 (2026-10-01)
 - **Review.** `reviews/NETWORK_REDUCTION_REVIEW.md` checks `network_reduction.py` (the Thevenin network behind dynamic motor starting and transient stability) against hand nodal inverses in ohms. Kron reduction, scale invariance and off-nominal branches were already exact.
 - **NR4.** Autotransformers were never a branch or a source stub, so the network split there. A motor behind one was simulated on an infinite bus (dip 1.000 → 0.838 pu on a 5 MVA unit), and transient stability treated machines beyond one as islanded. 3-winding units are now expanded as in the load flow. **NR1.** Generator Z carried the IEC 60909 K_G (+1.9 %); now nameplate, matching static motor starting. **NR2/NR3.** Source stubs ignored taps and did not refer upstream impedance through an off-nominal transformer (≈0.6 %); now walked in ohms through the actual ratio (also in transient stability).

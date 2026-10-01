@@ -2,12 +2,12 @@
   {
     "name": "Frequency scan: parallel resonance order h_r",
     "predicted": 5.0,
-    "computed": 5.0,
-    "err": "0.000%",
+    "computed": 5.003,
+    "err": "0.060%",
     "tol_pct": 3.0,
     "ok": true,
     "unit": "(h)",
-    "note": "S_sc=250.0 MVA, Q_c=10.0 MVAr -> h_r=sqrt(S_sc/Q_c). resonance f = 250.0 Hz",
+    "note": "S_sc=250.0 MVA, Q_c=10.0 MVAr -> h_r=sqrt(S_sc/Q_c). resonance f = 250.2 Hz",
     "ref": "Classic resonance screening: h_r = sqrt(S_sc/Q_c)"
   },
   {
@@ -88,37 +88,37 @@
     "ref": "Feeder voltage rise dV_pu ~= P_pu*R_pu (unity pf)"
   },
   {
-    "name": "CT model: knee-point voltage V_k = 0.8*ALF*Isn*(Rct+Rb)",
-    "predicted": 72.0,
-    "computed": 72.0,
+    "name": "CT model: saturation EMF E_AL = ALF*Isn*(Rct+Rb)",
+    "predicted": 89.99999999999999,
+    "computed": 89.99999999999999,
     "err": "0.000%",
     "tol_pct": 0.5,
     "ok": true,
     "unit": "V",
     "note": "",
-    "ref": "IEC 61869-2: V_AL=ALF*Isn*(Rct+Rb); Vk~=0.8*V_AL"
+    "ref": "IEC 61869-2: E_AL = ALF*Isn*(Rct+Rb) (class 5P20 at rated burden)"
   },
   {
     "name": "CT model: saturation primary current",
-    "predicted": 6400.0,
-    "computed": 6400.000000000001,
+    "predicted": 8000.0,
+    "computed": 8000.0,
     "err": "0.000%",
     "tol_pct": 0.5,
     "ok": true,
     "unit": "A",
     "note": "",
-    "ref": "I_sat_pri = Vk/(Rct+Rb)*ratio = 0.8*ALF*I_pri_rated"
+    "ref": "I_sat_pri = E_AL/(Rct+Rb)*ratio = ALF*I_pri_rated"
   },
   {
-    "name": "CT model: saturation-clipped effective current at 2x I_sat",
-    "predicted": 9050.966799187809,
-    "computed": 9050.966799187809,
+    "name": "CT model: saturation-clipped fundamental at 2x I_sat",
+    "predicted": 9483.57648845827,
+    "computed": 9483.57648845827,
     "err": "0.000%",
     "tol_pct": 0.5,
     "ok": true,
     "unit": "A",
-    "note": "ks=0.5 -> theta=pi/2 -> eta=sqrt((pi/2)/pi)=0.7071",
-    "ref": "Waveform-clip rms: eta=sqrt((theta-sin2theta/2)/pi)"
+    "note": "ks=0.5 -> theta=pi/2 -> eta1=sqrt((pi/2)^2+1)/pi=0.5927",
+    "ref": "Fundamental of the clipped wave (relays filter to the fundamental)"
   },
   {
     "name": "Battery sizing: required energy (IEEE 485 factors)",
@@ -198,36 +198,36 @@
     "ref": "Kron reduction must reproduce the per-element model exactly"
   },
   {
-    "name": "Flicker: Pst at anchor (d=3%, 1/min)",
+    "name": "Flicker: Pst = 1 at d=2.771 %, 1/min",
     "predicted": 1.0,
-    "computed": 1.0,
+    "computed": 0.9999999999999999,
     "err": "0.000%",
-    "tol_pct": 0.5,
+    "tol_pct": 0.01,
     "ok": true,
     "unit": "Pst",
     "note": "",
-    "ref": "IEC 61000-3-3 Pst=1 borderline curve anchor"
+    "ref": "IEC 61000-3-3 analytical method, t_f = 2.3\u00b7d^3.2"
   },
   {
-    "name": "Flicker: Pst linear in step size (d=6%)",
-    "predicted": 2.0,
-    "computed": 2.0,
+    "name": "Flicker: worst-window Pst, 2 starts/h, d=3 %",
+    "predicted": 0.5272164320911154,
+    "computed": 0.5272164320911154,
     "err": "0.000%",
-    "tol_pct": 0.5,
+    "tol_pct": 0.01,
     "ok": true,
     "unit": "Pst",
     "note": "",
-    "ref": ""
+    "ref": "Pst is the worst 10-min window, not a rate average"
   },
   {
-    "name": "Flicker: Pst rate roll-off (r=10/min)",
-    "predicted": 2.041737944669529,
-    "computed": 2.041737944669529,
+    "name": "Flicker: Plt, 2 starts/h, d=3 %",
+    "predicted": 0.36555145721329063,
+    "computed": 0.36555145721329063,
     "err": "0.000%",
-    "tol_pct": 0.5,
+    "tol_pct": 0.01,
     "ok": true,
-    "unit": "Pst",
+    "unit": "Plt",
     "note": "",
-    "ref": "Pst ~ r^0.31 high-frequency roll-off"
+    "ref": "Plt = (\u03a3 Pst_i\u00b3 / 12)^(1/3)"
   }
 ]

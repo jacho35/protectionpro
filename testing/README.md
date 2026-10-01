@@ -200,7 +200,7 @@ equations worked by hand, or an independent closed-form solve). **Consistency on
 | Battery sizing | `battery_sizing.py` | IEEE 485 energy method | harness |
 | Capacitor placement | `capacitor_placement.py` | Closed-form loss drop (5.3 % discrete-bank residual) | harness |
 | Optimal power flow | `optimal_powerflow.py` | Merit-order dispatch + cost hand calc | harness + `TestOptimalPowerFlow` |
-| Flicker | `flicker.py` | IEC 61000-3-3 Pst curve | harness |
+| Flicker | `flicker.py` | IEC 61000-3-3 analytical method (t_f = 2.3·(F·d)^3.2, worst 10-min Pst, Plt over 2 h) | harness |
 | Lightning risk | `lightning_risk.py` | IEC 62305-2 Eq. A.2 / A.4, R1 hand calc | `TestLightningRisk` |
 | Raceway | `raceway.py` | NEC fill, IEC 60364-5-52 B.52.17 hand calc | `TestRaceway` |
 | Backup autonomy | `backup_autonomy.py` | Usable-energy hand calc | `TestBackupAutonomy` |

@@ -1258,19 +1258,22 @@ class TestFlickerAnalysis:
     """
 
     def test_pst_formula_hand_calc(self):
-        """Pst = (d/d_anchor)*r^exponent, calibrated so d=3% at r=1/min ⇒
-        Pst=1.0 exactly (the anchor point); linear in d; power-law in r."""
-        assert _pst_estimate(3.0, 60.0) == pytest.approx(1.0, rel=1e-9)
-        assert _pst_estimate(6.0, 60.0) == pytest.approx(2.0, rel=1e-9)  # linear in d
-        assert _pst_estimate(3.0, 600.0) == pytest.approx(10.0 ** 0.31, rel=1e-9)  # r=10/min
+        """IEC 61000-3-3 analytical method: t_f = 2.3·d^3.2 s per change,
+        Pst = (Σt_f/600)^(1/3.2) over the worst 10-min window.
+        Re-baselined 2026-10-01 (flicker review FL1/FL2): this test used to
+        pin the old curve fit Pst = (d/3)·r^0.31, which understated Pst."""
+        d1 = (600 / (10 * 2.3)) ** (1 / 3.2)            # Pst = 1 at 1 change/min
+        assert d1 == pytest.approx(2.771, abs=1e-3)
+        assert _pst_estimate(d1, 60.0) == pytest.approx(1.0, rel=1e-9)
+        assert _pst_estimate(2 * d1, 60.0) == pytest.approx(2.0, rel=1e-9)   # linear in d
+        assert _pst_estimate(d1, 600.0) == pytest.approx(10.0 ** (1 / 3.2), rel=1e-9)
         assert _pst_estimate(3.0, 0.0) == 0.0     # non-repetitive excluded
         assert _pst_estimate(0.0, 60.0) == 0.0
 
-    def test_custom_anchor_and_exponent(self):
-        """A user-recalibrated curve (their own IEC 61000-3-3 table reading)
-        must be honoured exactly."""
-        assert _pst_estimate(5.0, 120.0, d_anchor_pct=5.0, exponent=0.5) == \
-            pytest.approx(1.0 * (2.0 ** 0.5), rel=1e-9)
+    def test_shape_factor_scales_d(self):
+        """A shape factor F scales the step: Pst(F·d) = F·Pst(d)."""
+        assert _pst_estimate(4.0, 60.0, shape_factor=0.5) == \
+            pytest.approx(_pst_estimate(2.0, 60.0), rel=1e-9)
 
     def _flicker_project(self, starts_per_hour=60.0):
         """Same fixture as TestMotorStarting.test_voltage_dip_magnitude: a
@@ -1324,20 +1327,29 @@ class TestFlickerAnalysis:
         assert not res["compliant"]
         assert src["plt"] == pytest.approx(src["pst"])  # stationary-source simplification
 
-    def test_infrequent_starts_pass(self):
-        """A handful of starts per day (well under 1/min) keeps Pst low
-        enough to comply even at the same ~7% voltage step."""
+    def test_infrequent_starts_judged_on_the_worst_window(self):
+        """Re-baselined 2026-10-01 (flicker review FL1). One start every ten
+        hours still puts a whole 8.03 % step in some 10-minute window:
+        Pst = 8.033·(2.3/600)^(1/3.2) = 1.41 — a fail (and d_max > 4 %). The old
+        test expected a pass because the curve averaged that start over the
+        hour (Pst 0.07). Plt over two hours holds one start: (1.41³/12)^(1/3)."""
         res = run_flicker_analysis(self._flicker_project(starts_per_hour=0.1))
         src = res["sources"][0]
-        assert src["pst"] < 1.0
-        assert src["compliant"]
+        pst1 = 8.033 * (2.3 / 600) ** (1 / 3.2)
+        assert src["pst"] == pytest.approx(pst1, abs=2e-3)
+        assert src["plt"] == pytest.approx((pst1 ** 3 / 12) ** (1 / 3), abs=2e-3)
+        assert not src["pst_compliant"] and src["plt_compliant"]
+        assert not src["d_max_compliant"] and not src["compliant"]
 
     def test_custom_limits_and_curve_params_pass_through(self):
         res = run_flicker_analysis(self._flicker_project(starts_per_hour=60.0),
                                    pst_limit=5.0, plt_limit=5.0)
         src = res["sources"][0]
         assert src["pst_limit"] == 5.0
-        assert src["compliant"]   # same network, relaxed limit now passes
+        # Relaxed Pst/Plt now pass; the 8 % step still breaks the LV d_max
+        # limit (4 %), which a Pst/Plt override does not touch.
+        assert src["pst_compliant"] and src["plt_compliant"]
+        assert not src["d_max_compliant"] and not src["compliant"]
 
     def test_no_flagged_motors_returns_clear_note(self):
         """A motor with the default flicker_starts_per_hour=0 (once-off

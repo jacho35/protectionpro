@@ -84,22 +84,24 @@ $$\cos\delta_{cr}=\frac{P_m}{P_{max}}\,(\pi-2\delta_0)-\cos\delta_0,\qquad t_{cr
 <div class="hc-warn">The turbine and exciter blocks reproduce qualitative step-response character. A default PSS damps a typical local mode; real tuning compensates phase at the specific machine's mode, which this reduced-order default does not attempt.</div>` },
 
 { id: 'dyn-flicker', group: 'dynamics', title: 'Voltage flicker (Pst / Plt)',
-  std: 'IEC 61000-3-3 Annex · IEC 61000-4-15 · Analyse ▸ Power quality',
-  kw: 'pst plt relative voltage change repetitive motor start flickermeter',
+  std: 'IEC 61000-3-3 · IEC/TR 61000-3-7 · Analyse ▸ Power quality',
+  kw: 'pst plt relative voltage change repetitive motor start flickermeter flicker impression time shape factor dmax dc',
   html: String.raw`
 <div class="hc-warn">A <strong>planning-level screening estimate</strong>, not a flickermeter. A certified IEC 61000-4-15 reading needs the sampled AC waveform through a specific demodulation and perception-weighting chain; a single-line diagram has no such waveform. Confirm a borderline result against the standard's curve or field measurement.</div>
 <h4>Method</h4>
-<p>The physical input to every flicker assessment is the relative voltage change $d\,(\%)$ that one switching event causes. It comes from the same Thevenin superposition as <a href="#" data-help="dyn-motor-static">motor starting</a>:</p>
-$$d\,[\%]=\frac{V_{pre}-V_{start}}{V_{pre}}\times100$$
-<p>For repetitive rectangular steps of size $d$ occurring $r$ times per minute, IEC 61000-3-3's simplified method gives a curve-fitted severity anchored at the best-known reference point — a 3 % step at one change per minute is $P_{st}\approx1$ — with the high-rate roll-off exponent 0.31:</p>
-$$P_{st}\approx\frac{d}{d_{anchor}}\,r^{\,0.31},\qquad d_{anchor}=3.0\ \%$$
-<p>Both $d_{anchor}$ and the exponent are exposed so they can be recalibrated against the standard's table. For a single repetitively switched load whose emission does not vary over two hours, $P_{lt}\approx P_{st}$.</p>
+<p>The physical input to every flicker assessment is the relative voltage change $d\,(\%)$ that one switching event causes, as a share of the nominal voltage (IEC 61000-3-3). It comes from the same Thevenin superposition as <a href="#" data-help="dyn-motor-static">motor starting</a>, from the bus voltage with this motor off:</p>
+$$d_{max}\,[\%]=\frac{V_{pre}-V_{start}}{U_n}\times100$$
+<p>IEC 61000-3-3 turns each voltage change into a <em>flicker impression time</em>, and the short-term severity follows from how much of it falls in a 10-minute window:</p>
+$$t_f=2.3\,(F\,d_{max})^{3.2}\ \text{s},\qquad P_{st}=\left(\frac{\sum t_f}{600\ \text{s}}\right)^{1/3.2}$$
+<p>$F$ is the shape factor: 1 for a rectangular step, which is conservative for a motor start whose voltage recovers as it runs up. $P_{st}$ is taken in the <strong>worst</strong> window. Below six starts an hour that window still holds one whole start, so an infrequent start is not averaged away. $P_{lt}$ is the cube-root mean of the twelve 10-minute values in two hours, with starts spread evenly:</p>
+$$P_{lt}=\left(\frac{1}{12}\sum_{i=1}^{12}P_{st,i}^{3}\right)^{1/3}$$
+<p>The steady change $d_c$ compares the bus with the motor off and running at its load (from the load flow).</p>
 <h4>Limits</h4>
-<p>LV connection defaults: $P_{st}\le1.0$, $P_{lt}\le0.65$. MV/HV limits are project-specific allocations (IEC 61000-3-7) and are entered as overrides rather than hard-coded.</p>
+<p>By the connection voltage, unless overridden. LV (IEC 61000-3-3): $P_{st}\le1.0$, $P_{lt}\le0.65$, $d_{max}\le4\,\%$, $d_c\le3.3\,\%$. MV: $P_{st}\le0.9$, $P_{lt}\le0.7$; HV: $0.8$ and $0.6$. These are the IEC/TR 61000-3-7 indicative planning levels; use the network operator's allocation where one exists.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
-<p>A compressor start causes $d=2.4\,\%$ and repeats 6 times per minute.</p>
-$$P_{st}\approx\frac{2.4}{3.0}\times6^{0.31}=0.8\times1.743=\mathbf{1.39}$$
-<p>which exceeds 1.0: reduce $d$ (soft start, stiffer supply) or the repetition rate. At 1 per minute the same step gives $0.8$ and passes.</p></div>` },
+<p>A compressor start causes $d=3\,\%$ and repeats twice an hour. One start falls in the worst window:</p>
+$$t_f=2.3\times3^{3.2}=77.4\ \text{s},\qquad P_{st}=(77.4/600)^{1/3.2}=\mathbf{0.53}$$
+<p>Over two hours four of the twelve windows hold a start, so $P_{lt}=(4\times0.53^{3}/12)^{1/3}=\mathbf{0.37}$. Both pass. At one start a minute (ten in every window) the same step gives $P_{st}=1.08$ and fails: a step of 2.77 % is the most that rate allows.</p></div>` },
 
 { id: 'dyn-harmonics', group: 'dynamics', title: 'Harmonic analysis (IEEE 519 / IEC 61000)',
   std: 'IEEE 519-2014 · IEC 61000-3-6 · IEC 61000-2-4 · Analyse ▸ Power quality',

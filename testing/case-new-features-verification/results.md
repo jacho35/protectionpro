@@ -47,9 +47,9 @@ Baseline regression suite was also run clean beforehand: **495 passed**.
 | Contingency | radial feed flagged not N-1 secure | false | false | ✓ | — |
 | Contingency | MW lost on feeder outage | 4.00 MW | 4.00 MW | 0.00% | 5% |
 | EE-10 Two-Port | Kron reduction == explicit per-element model | 0.910694 | 0.910694 | 0.00% | 0.1% |
-| Flicker | `Pst=(d/3)·r^0.31` at anchor | 1.0000 | 1.0000 | 0.00% | 0.5% |
-| Flicker | linear in step size (d=6%) | 2.0000 | 2.0000 | 0.00% | 0.5% |
-| Flicker | rate roll-off (r=10/min) | 2.0417 | 2.0417 | 0.00% | 0.5% |
+| Flicker | Pst = 1 at d = 2.771 %, 1 change/min (t_f = 2.3·d^3.2) | 1.0000 | 1.0000 | 0.00% | 0.01% |
+| Flicker | worst 10-min window, 2 starts/h, d = 3 % | 0.5272 | 0.5272 | 0.00% | 0.01% |
+| Flicker | Plt = (ΣPst³/12)^(1/3), 2 starts/h, d = 3 % | 0.3655 | 0.3655 | 0.00% | 0.01% |
 
 Closed-form identities land at machine precision. The handful with looser tolerances are gated by an
 iterative solver (voltage-stability continuation), a bisection search (hosting capacity), or a
