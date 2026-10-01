@@ -12,9 +12,10 @@
    "props": {
     "name": "Src",
     "voltage_kv": 11.0,
-    "fault_mva": 100.0,
+    "fault_mva": 14.1903,
     "x_r_ratio": 0.05,
-    "grounding": "solidly"
+    "grounding": "solidly",
+    "z0_z1_ratio": 1.0
    }
   },
   {
@@ -27,7 +28,6 @@
     "name": "Substation",
     "voltage_kv": 11.0,
     "earth_grid_id": "eg_annexh6",
-    "design_earth_fault_ka": 0.7448,
     "fault_duration": 0.5,
     "fault_clearing_time": 0.5,
     "current_split_factor": 1.0,
