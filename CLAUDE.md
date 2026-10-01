@@ -284,7 +284,7 @@ Component definitions (default props, ports, SVG dimensions) are in `constants.j
 
 ## Built-in Libraries
 
-- **Cable Library** (~113 entries, the only cable library in the app — `STANDARD_CABLES`, read through `CableLib`): MV/LV armoured multicore Cu/Al XLPE/PVC 0.4-33kV (MV 3-core, LV 4-core), LV 2-core single-phase service cables, and building wiring (T+E, H07V-R singles, Surfix, control). Each entry has `construction` + `cores`. Demand, plans, SLD and DB schedules all pick from it; rate/termination keys come from the entry's id. Never add a second cable list
+- **Cable Library** (~140 entries, the only cable library in the app — `STANDARD_CABLES`, read through `CableLib`): MV/LV armoured multicore Cu/Al XLPE/PVC 0.4-33kV (MV 3-core, LV 4-core), LV 2-core single-phase service cables, building wiring (T+E, H07V-R singles, Surfix, control) and insulated earth conductors (`construction: 'earth'`, Cu 1.5–300 mm² and Al 16–300 mm², offered only as the earth conductor in Demand's earth-fault / ECC checks). Each entry has `construction` + `cores`. Demand, plans, SLD and DB schedules all pick from it; rate/termination keys come from the entry's id. Never add a second cable list
 - **Transformer Library** (22 entries): 100kVA-80MVA, vector groups, impedance values
 
 Both are editable via the Settings modal and can be reset to defaults.

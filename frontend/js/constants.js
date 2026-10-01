@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.398b';
+const APP_VERSION = '1.399b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -159,6 +159,37 @@ const STANDARD_CABLES = [
   { id: 'h07vr_cu_50', name: '50mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 50, voltage_kv: 0.4, r_per_km: 0.46, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 151, cores: 1, construction: 'single' },
   { id: 'h07vr_cu_70', name: '70mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 70, voltage_kv: 0.4, r_per_km: 0.32, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 192, cores: 1, construction: 'single' },
   { id: 'h07vr_cu_95', name: '95mm² H07V-R Cu', conductor: 'Cu', insulation: 'PVC', size_mm2: 95, voltage_kv: 0.4, r_per_km: 0.24, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 232, cores: 1, construction: 'single' },
+  // Earth conductors (insulated green/yellow, single-core): the CPC / earth conductor choices for the
+  // earth-fault and ECC checks. R = IEC 60228 class 2 maximum R20 × 1.2 (70 °C PVC operating temperature);
+  // ratings are indicative (single-core PVC in conduit). Copper 1.5–300 mm², aluminium 16–300 mm² (the smallest
+  // aluminium conductor allowed for protective use).
+  { id: 'earth_cu_1.5', name: '1.5mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.52, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 17, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_2.5', name: '2.5mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.892, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 24, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_4', name: '4mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.532, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 32, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_6', name: '6mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.696, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 41, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_10', name: '10mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 10, voltage_kv: 0.4, r_per_km: 2.196, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 57, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_16', name: '16mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.38, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 76, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_25', name: '25mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 25, voltage_kv: 0.4, r_per_km: 0.8724, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 101, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_35', name: '35mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 35, voltage_kv: 0.4, r_per_km: 0.6288, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 125, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_50', name: '50mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 50, voltage_kv: 0.4, r_per_km: 0.4644, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 151, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_70', name: '70mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 70, voltage_kv: 0.4, r_per_km: 0.3216, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 192, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_95', name: '95mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 95, voltage_kv: 0.4, r_per_km: 0.2316, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 232, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_120', name: '120mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.1836, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 269, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_150', name: '150mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.1488, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 309, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_185', name: '185mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1189, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 353, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_240', name: '240mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.09048, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 415, cores: 1, construction: 'earth' },
+  { id: 'earth_cu_300', name: '300mm² Cu Earth', conductor: 'Cu', insulation: 'PVC', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.07212, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 477, cores: 1, construction: 'earth' },
+  { id: 'earth_al_16', name: '16mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.292, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 59, cores: 1, construction: 'earth' },
+  { id: 'earth_al_25', name: '25mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 25, voltage_kv: 0.4, r_per_km: 1.44, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 79, cores: 1, construction: 'earth' },
+  { id: 'earth_al_35', name: '35mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.042, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 98, cores: 1, construction: 'earth' },
+  { id: 'earth_al_50', name: '50mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 50, voltage_kv: 0.4, r_per_km: 0.7692, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 118, cores: 1, construction: 'earth' },
+  { id: 'earth_al_70', name: '70mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 70, voltage_kv: 0.4, r_per_km: 0.5316, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 150, cores: 1, construction: 'earth' },
+  { id: 'earth_al_95', name: '95mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 95, voltage_kv: 0.4, r_per_km: 0.384, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 181, cores: 1, construction: 'earth' },
+  { id: 'earth_al_120', name: '120mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.3036, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 210, cores: 1, construction: 'earth' },
+  { id: 'earth_al_150', name: '150mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.2472, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 241, cores: 1, construction: 'earth' },
+  { id: 'earth_al_185', name: '185mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1968, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 275, cores: 1, construction: 'earth' },
+  { id: 'earth_al_240', name: '240mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.15, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 324, cores: 1, construction: 'earth' },
+  { id: 'earth_al_300', name: '300mm² Al Earth', conductor: 'Al', insulation: 'PVC', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.12, x_per_km: 0, r0_per_km: 0, x0_per_km: 0, rated_amps: 372, cores: 1, construction: 'earth' },
   { id: 'surfix_2c_1.5', name: '1.5mm² Surfix 2C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.6, x_per_km: 0.1, r0_per_km: 0, x0_per_km: 0, rated_amps: 20, cores: 2, construction: 'surfix' },
   { id: 'surfix_2c_2.5', name: '2.5mm² Surfix 2C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.7, x_per_km: 0.095, r0_per_km: 0, x0_per_km: 0, rated_amps: 27, cores: 2, construction: 'surfix' },
   { id: 'surfix_2c_4', name: '4mm² Surfix 2C+E', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.5, x_per_km: 0.093, r0_per_km: 0, x0_per_km: 0, rated_amps: 36, cores: 2, construction: 'surfix' },
