@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, StreetLightingRequest, RoadLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, StreetLightingRequest, RoadLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -23,6 +23,7 @@ from ..analysis.capacitor_placement import run_capacitor_placement
 from ..analysis.flicker import run_flicker_analysis
 from ..analysis.hosting_capacity import run_hosting_capacity
 from ..analysis.admd import run_admd
+from ..analysis.retic_earth import run_retic_earth_check
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
 from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS
@@ -669,6 +670,17 @@ def admd(data: AdmdRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"ADMD analysis error: {e}")
+
+
+@router.post("/retic-earth-check")
+def retic_earth_check(data: ReticEarthRequest):
+    """Reticulation earth-fault loop (disconnection by the minisub's device)
+    and earth-conductor size per LV cable: IEC 60364-4-41 and -5-54."""
+    try:
+        return run_retic_earth_check(data.model_dump())
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Retic earth check error: {e}")
 
 
 @router.post("/street-lighting")

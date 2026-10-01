@@ -1120,7 +1120,8 @@ body.dark-mode {
       "erf   len"
       "phase amps"
       "cable cable"
-      "vd    vd";
+      "earth earth"
+      "vd    ef";
     gap: 8px 10px;
     position: relative;
     padding: 10px 34px 10px 10px;   /* right gutter clears the × button */
@@ -1148,6 +1149,8 @@ body.dark-mode {
   .erf-table td[data-cell="phase"] { grid-area: phase; }
   .erf-table td[data-cell="amps"]  { grid-area: amps; }
   .erf-table td[data-cell="cable"] { grid-area: cable; }
+  .erf-table td[data-cell="earth"] { grid-area: earth; }
+  .erf-table td[data-cell="ef"]    { grid-area: ef; text-align: left; }
   .erf-table td[data-cell="vd"] {
     grid-area: vd;
     text-align: left;

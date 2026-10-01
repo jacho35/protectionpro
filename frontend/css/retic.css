@@ -294,3 +294,13 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 .erf-table .erf-ov input { width: 64px; min-width: 0; flex: 1 1 64px; }
 .erf-ov-u { font-size: 10.5px; color: var(--text-muted); }
 .erf-table .erf-ov input.derived { color: var(--text-muted); font-style: italic; background: var(--bg-secondary); }
+
+/* Earth-fault loop + ECC results */
+.earth-cell { font-size: 12px; white-space: nowrap; }
+.erf-table td.earth-cell { text-align: left; }
+.earth-cell .calc-link { white-space: nowrap; }
+.calc-sub { margin: 8px 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.earth-basis { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+.earth-basis p { margin: 4px 0; }
+.status-pill.info { background: var(--bg-tertiary); color: var(--text-secondary); }
+.earth-cell .status-pill { text-transform: none; font-size: 11px; }
