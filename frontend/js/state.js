@@ -1417,6 +1417,41 @@ const AppState = {
     if (typeof syncViewToggles === 'function') syncViewToggles();
   },
 
+  // Where the user was when this was saved: workspace tab and the SLD / plan
+  // pan + zoom. Restored by fromJSON so a project opens where it was left.
+  _lastViewToJSON() {
+    const r = (n) => Math.round(n * 100) / 100;
+    let workspace = 'sld';
+    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules']) {
+      const el = typeof document !== 'undefined' && document.getElementById(ws + '-workspace');
+      if (el && el.style.display === 'flex') { workspace = ws; break; }
+    }
+    const v = { workspace, zoom: r(this.zoom), panX: r(this.panX), panY: r(this.panY) };
+    if (typeof PlanEngine !== 'undefined' && PlanEngine.view && !this._planMarkupIsEmpty()) {
+      v.plan = { zoom: r(PlanEngine.view.zoom), panX: r(PlanEngine.view.panX), panY: r(PlanEngine.view.panY) };
+    }
+    return v;
+  },
+
+  _applyLastView(v) {
+    if (!v || typeof v !== 'object') return;
+    const ok = (n) => typeof n === 'number' && isFinite(n);
+    if (ok(v.zoom) && v.zoom > 0 && ok(v.panX) && ok(v.panY)) {
+      this.zoom = v.zoom; this.panX = v.panX; this.panY = v.panY;
+    }
+    const p = v.plan;
+    if (p && ok(p.zoom) && p.zoom > 0 && ok(p.panX) && ok(p.panY) && typeof PlanEngine !== 'undefined') {
+      PlanEngine.view = { zoom: p.zoom, panX: p.panX, panY: p.panY };
+    }
+    // Switch tab once the load has finished rendering (and tabs are re-evaluated).
+    if (typeof v.workspace === 'string' && typeof window !== 'undefined' && typeof window.switchWorkspace === 'function') {
+      setTimeout(() => {
+        const btn = document.getElementById('btn-workspace-' + v.workspace);
+        if (v.workspace === 'sld' || (btn && !btn.hidden && btn.style.display !== 'none')) window.switchWorkspace(v.workspace);
+      }, 0);
+    }
+  },
+
   toJSON() {
     return {
       // Schema version. v2: cable r_per_km/r0_per_km store conductor
@@ -1434,6 +1469,7 @@ const AppState = {
       voltageDisplayUnit: this.voltageDisplayUnit,
       showResultBoxes: { ...this.showResultBoxes },
       viewSettings: this._viewSettingsToJSON(),
+      lastView: this._lastViewToJSON(),
       resultBoxFields: (this.resultBoxFields && Object.keys(this.resultBoxFields).length)
         ? this.resultBoxFields : undefined,
       components: [...this.components.values()],
@@ -1572,6 +1608,7 @@ const AppState = {
       Object.assign(this.showResultBoxes, data.showResultBoxes);
     }
     this._applyViewSettings(data.viewSettings);
+    this._applyLastView(data.lastView);
     // Per-value visibility: replace wholesale (absent ⇒ all fields shown, so a
     // project saved without the setting clears any previous project's choices).
     this.resultBoxFields = (data.resultBoxFields && typeof data.resultBoxFields === 'object'
