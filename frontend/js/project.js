@@ -806,6 +806,7 @@ const Project = {
   _fmFolders: [],
   _fmProjects: [],
   _fmCurrentFolder: null, // null = root
+  _fmQuery: '',           // wildcard search over every folder + project
   _recentProjects: [],    // last 3 opened/saved projects
 
   async openProject() {
@@ -817,6 +818,7 @@ const Project = {
       this._fmProjects = projects || [];
       this._fmFolders = folders || [];
       this._fmCurrentFolder = null;
+      this._fmQuery = '';
       this._renderFileManager();
     } catch (e) {
       this._fmProjects = [];
@@ -913,12 +915,18 @@ const Project = {
 
   _renderFileManager() {
     const folderId = this._fmCurrentFolder;
-    const folders = this._fmFolders.filter(f => (f.parent_id || null) === folderId);
+    const query = (this._fmQuery || '').trim();
+    const match = this._fmMatcher(query);
+    // A search looks through every folder and project (shared ones too) and
+    // lists the hits flat; otherwise show just the current folder.
+    const folders = query ? this._fmFolders.filter(f => match(f.name))
+      : this._fmFolders.filter(f => (f.parent_id || null) === folderId);
     // Only the caller's OWN projects live in the folder tree; projects shared
     // with the caller are grouped in a "Shared with me" section at the root
     // (they belong to the owner's folder namespace, not the caller's).
-    const projects = this._fmProjects.filter(
-      p => (p.access === 'owner' || p.access == null) && (p.folder_id || null) === folderId);
+    const projects = query ? this._fmProjects.filter(p => match(p.name))
+      : this._fmProjects.filter(
+        p => (p.access === 'owner' || p.access == null) && (p.folder_id || null) === folderId);
 
     // Breadcrumb
     const crumbs = this._buildBreadcrumbs(folderId);
@@ -950,6 +958,7 @@ const Project = {
           </div>
           <div class="fm-item-info">
             <span class="fm-item-name">${this._esc(f.name)}</span>
+            ${query ? `<small class="fm-item-date">${this._esc(this._fmPath(f.parent_id || null))}</small>` : ''}
           </div>
           <div class="fm-item-actions">
             <button class="fm-btn fm-btn-rename" data-type="folder" data-id="${f.id}" title="Rename">
@@ -970,7 +979,11 @@ const Project = {
         : `<span class="fm-access-badge fm-access-${this._esc(access)}">${this._esc(access)}</span>`;
       const ownerTag = (!isOwner && p.owner_email)
         ? `<small class="fm-item-owner">shared by ${this._esc(p.owner_email)}</small>` : '';
-      const actions = isOwner ? `
+      const exportBtn = `
+            <button class="fm-btn fm-btn-export" data-id="${p.id}" title="Export as JSON">
+              <svg width="12" height="12" viewBox="0 0 16 16"><path d="M8 2v8M4.5 7L8 10.5 11.5 7M2.5 13h11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>`;
+      const actions = exportBtn + (isOwner ? `
             <button class="fm-btn fm-btn-rename" data-type="project" data-id="${p.id}" title="Rename">
               <svg width="12" height="12" viewBox="0 0 16 16"><path d="M11.5 1.5l3 3L5 14H2v-3z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
@@ -982,7 +995,7 @@ const Project = {
             </button>
             <button class="fm-btn fm-btn-delete" data-type="project" data-id="${p.id}" title="Delete">
               <svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
-            </button>` : '';
+            </button>` : '');
       return `
         <div class="fm-item fm-project" data-project-id="${p.id}">
           <div class="fm-item-icon">
@@ -990,7 +1003,7 @@ const Project = {
           </div>
           <div class="fm-item-info">
             <span class="fm-item-name">${this._esc(p.name)}${badge}</span>
-            <small class="fm-item-date">${new Date(p.updated_at).toLocaleDateString()}${ownerTag}</small>
+            <small class="fm-item-date">${new Date(p.updated_at).toLocaleDateString()}${query && isOwner ? ' · ' + this._esc(this._fmPath(p.folder_id || null)) : ''}${ownerTag}</small>
           </div>
           <div class="fm-item-actions">${actions}</div>
         </div>`;
@@ -1005,7 +1018,7 @@ const Project = {
     // "Shared with me" — only at the root level (shared projects aren't in the
     // caller's folder tree).
     let sharedHtml = '';
-    if (folderId === null) {
+    if (folderId === null && !query) {
       const shared = this._fmProjects.filter(p => p.access && p.access !== 'owner');
       shared.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
       if (shared.length) {
@@ -1015,7 +1028,7 @@ const Project = {
     }
 
     if (ownedEmpty && !sharedHtml) {
-      listHtml = '<p class="fm-empty">This folder is empty.</p>';
+      listHtml = `<p class="fm-empty">${query ? 'Nothing matches “' + this._esc(query) + '”.' : 'This folder is empty.'}</p>`;
     }
     listHtml += sharedHtml;
 
@@ -1032,6 +1045,7 @@ const Project = {
         <div class="fm-main">
           <div class="fm-breadcrumb">${breadcrumbHtml}</div>
           <div class="fm-toolbar">
+            <input id="fm-search" type="search" class="fm-search" placeholder="Search all projects (* and ? wildcards)" aria-label="Search projects and folders" autocomplete="off" value="${this._esc(this._fmQuery || '')}">
             <button id="fm-new-folder" class="btn-small">New Folder</button>
             <button id="fm-import-json" class="btn-small btn-primary">Import JSON...</button>
           </div>
@@ -1052,6 +1066,7 @@ const Project = {
       el.addEventListener('click', () => {
         const id = el.dataset.folderId;
         this._fmCurrentFolder = id ? parseInt(id) : null;
+        this._fmQuery = '';
         this._renderFileManager();
       });
     });
@@ -1062,6 +1077,7 @@ const Project = {
         e.preventDefault();
         const id = el.dataset.folderId;
         this._fmCurrentFolder = id ? parseInt(id) : null;
+        this._fmQuery = '';
         this._renderFileManager();
       });
     });
@@ -1070,10 +1086,12 @@ const Project = {
     modal.querySelectorAll('.fm-folder').forEach(el => {
       el.addEventListener('dblclick', () => {
         this._fmCurrentFolder = parseInt(el.dataset.folderId);
+        this._fmQuery = '';
         this._renderFileManager();
       });
       el.querySelector('.fm-item-info')?.addEventListener('click', () => {
         this._fmCurrentFolder = parseInt(el.dataset.folderId);
+        this._fmQuery = '';
         this._renderFileManager();
       });
     });
@@ -1111,6 +1129,37 @@ const Project = {
         }
         modalContent.classList.remove('modal-wide');
         modal.style.display = 'none';
+      });
+    });
+
+    // Wildcard search: re-render, then put the caret back in the box
+    const search = document.getElementById('fm-search');
+    if (search) {
+      if (this._fmRefocus) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); this._fmRefocus = false; }
+      search.addEventListener('input', () => {
+        this._fmQuery = search.value;
+        this._fmRefocus = true;
+        this._renderFileManager();
+      });
+    }
+
+    // Export as JSON (any project you can open, without loading it)
+    modal.querySelectorAll('.fm-btn-export').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const p = this._fmProjects.find(x => String(x.id) === btn.dataset.id);
+        try {
+          const data = await API.exportJSON(btn.dataset.id);
+          const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${(p && p.name) || 'project'}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+          UI.toast(`Exported “${(p && p.name) || 'project'}” as JSON`, 'success');
+        } catch (err) {
+          UI.toast('Failed to export: ' + err.message, 'error');
+        }
       });
     });
 
@@ -1266,6 +1315,25 @@ const Project = {
         UI.toast('Move failed: ' + err.message, 'error');
       }
     });
+  },
+
+  // * = any run, ? = one character, words in any order; case-insensitive.
+  _fmMatcher(q) {
+    const terms = q.toLowerCase().split(/\s+/).filter(Boolean).map(t =>
+      new RegExp(t.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')));
+    return (name) => { const n = String(name || '').toLowerCase(); return terms.every(r => r.test(n)); };
+  },
+
+  _fmPath(folderId) {
+    const parts = [];
+    let id = folderId;
+    while (id !== null && parts.length < 20) {
+      const f = this._fmFolders.find(x => x.id === id);
+      if (!f) break;
+      parts.unshift(f.name);
+      id = f.parent_id || null;
+    }
+    return 'Root' + parts.map(n => ' / ' + n).join('');
   },
 
   _buildBreadcrumbs(folderId) {
