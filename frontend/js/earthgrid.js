@@ -1348,24 +1348,23 @@ const EarthGridEditor = {
     const poly = ring => ring.map(p => `${X(p[0])},${Y(p[1])}`).join(' ');
     let svg = '';
 
-    // Touch-voltage heatmap (results) — map points inside the touch area only
+    // Heatmap (results): o.heat = {F (field per map point), rings, limit, maxT}
     const map = plan.map;
-    if (o.heat && map && map.v && map.nx && map.ny && o.heat.gpr > 0 && o.heat.limit > 0) {
-      const rings = plan.touch_area || [];
-      const maxT = o.heat.maxT != null ? o.heat.maxT : this._touchRange(map, rings, o.heat.gpr).max;
-      const img = this._heatImage(map, rings, o.heat.gpr, o.heat.limit, maxT);
+    const H_ = o.heat;
+    if (H_ && map && map.v && map.nx && map.ny && H_.F && H_.limit > 0) {
+      const img = this._heatImage(map, H_.F, H_.rings, H_.limit, H_.maxT);
       if (img) {
         svg += `<image href="${img.url}" x="${X(img.x0)}" y="${Y(img.y1)}" width="${((img.x1 - img.x0) * s).toFixed(1)}" height="${((img.y1 - img.y0) * s).toFixed(1)}" preserveAspectRatio="none"/>`;
       }
-      if (maxT > o.heat.limit) {
-        const segs = this._limitContour(map, rings, o.heat.gpr, o.heat.limit);
+      if (H_.maxT > H_.limit) {
+        const segs = this._limitContour(map, H_.F, H_.rings, H_.limit);
         const d = segs.map(q => `M${X(q[0])} ${Y(q[1])}L${X(q[2])} ${Y(q[3])}`).join('');
         if (d) svg += `<path d="${d}" class="eg-p-limit-halo"/><path d="${d}" class="eg-p-limit"/>`;
       }
+      for (const ring of H_.rings || []) svg += `<polygon points="${poly(ring)}" class="eg-p-touch-edge"/>`;
     } else {
       for (const ring of plan.touch_area || []) svg += `<polygon points="${poly(ring)}" class="eg-p-touch"/>`;
     }
-    if (o.heat) for (const ring of plan.touch_area || []) svg += `<polygon points="${poly(ring)}" class="eg-p-touch-edge"/>`;
     if ((plan.outline || []).length) svg += `<polygon points="${poly(plan.outline)}" class="eg-p-outline"/>`;
     for (const f of plan.fences || []) {
       if ((f.line || []).length) svg += `<polygon points="${poly(f.line)}" class="eg-p-fence${f.bonded ? '' : ' eg-p-unb'}"><title>${escHtml(f.name || 'Fence')} — ${f.bonded ? 'bonded' : 'separately earthed'}</title></polygon>`;
@@ -1416,7 +1415,7 @@ const EarthGridEditor = {
 
     const label = o.label ? ` of ${escHtml(o.label)}` : '';
     // data-*: the drawing scale, so a click can be turned back into metres
-    const edit = o.edit ? ` data-minx="${minX}" data-maxy="${maxY}" data-s="${s}" data-pad="${PAD}" data-spanx="${spanX}" data-spany="${spanY}"` : '';
+    const edit = o.edit || o.hover ? ` data-minx="${minX}" data-maxy="${maxY}" data-s="${s}" data-pad="${PAD}" data-spanx="${spanX}" data-spany="${spanY}"` : '';
     return `<svg class="eg-plan" viewBox="0 0 ${W.toFixed(1)} ${H.toFixed(1)}" width="100%" preserveAspectRatio="xMidYMid meet" role="img"${edit}
       aria-label="Plan${label}: ${this._n(oMaxX - oMinX)} by ${this._n(oMaxY - oMinY)} metres, ${(plan.conductors || []).length} conductors, ${(plan.rods || []).filter(r => r[2] !== 'post').length} rods">${svg}</svg>`;
   },
@@ -1471,13 +1470,58 @@ const EarthGridEditor = {
   },
   _inTouch(x, y, rings) { return rings.some(r => this._pip(x, y, r)); },
 
-  // Lowest / highest touch voltage among the map points inside the touch area.
-  _touchRange(map, rings, gpr) {
+  // ── Fields over the surface-potential map ─────────────────────────
+  // map.v is V/GPR at nx × ny points spaced dx (rows bottom-up). A field is
+  // one value per map point (NaN = none): touch = (1 − v)·GPR, step = the
+  // largest 1 m difference in 16 directions × GPR (the engine's step rule,
+  // read off the map, so it is smoother than the engine's refined worst).
+  _touchField(map, gpr) {
+    const F = new Float64Array(map.nx * map.ny);
+    for (let k = 0; k < F.length; k++) { const v = map.v[k]; F[k] = v == null ? NaN : (1 - v) * gpr; }
+    return F;
+  },
+  _vAt(map, x, y) {
+    const gx = (x - map.x0) / map.dx, gy = (y - map.y0) / map.dx;
+    if (gx < 0 || gy < 0 || gx > map.nx - 1 || gy > map.ny - 1) return NaN;
+    const i = Math.min(Math.floor(gx), map.nx - 2), j = Math.min(Math.floor(gy), map.ny - 2);
+    const fx = gx - i, fy = gy - j, V = (ii, jj) => map.v[jj * map.nx + ii];
+    const a = V(i, j), b = V(i + 1, j), c = V(i, j + 1), d = V(i + 1, j + 1);
+    if (a == null || b == null || c == null || d == null) return NaN;
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  },
+  _stepField(map, gpr) {
+    const F = new Float64Array(map.nx * map.ny).fill(NaN);
+    const dirs = Array.from({ length: 16 }, (_, k) => [Math.cos(k * Math.PI / 8), Math.sin(k * Math.PI / 8)]);
+    for (let j = 0; j < map.ny; j++) for (let i = 0; i < map.nx; i++) {
+      const v0 = map.v[j * map.nx + i];
+      if (v0 == null) continue;
+      const x = map.x0 + i * map.dx, y = map.y0 + j * map.dx;
+      let best = 0;
+      for (const [c, sn] of dirs) {
+        const v1 = this._vAt(map, x + c, y + sn);
+        if (Number.isFinite(v1)) best = Math.max(best, Math.abs(v0 - v1));
+      }
+      F[j * map.nx + i] = best * gpr;
+    }
+    return F;
+  },
+  // Field value at (x, y) in metres — bilinear between map points.
+  _fieldAt(map, F, x, y) {
+    const gx = (x - map.x0) / map.dx, gy = (y - map.y0) / map.dx;
+    if (gx < 0 || gy < 0 || gx > map.nx - 1 || gy > map.ny - 1) return NaN;
+    const i = Math.min(Math.floor(gx), map.nx - 2), j = Math.min(Math.floor(gy), map.ny - 2);
+    const fx = gx - i, fy = gy - j, G = (ii, jj) => F[jj * map.nx + ii];
+    const a = G(i, j), b = G(i + 1, j), c = G(i, j + 1), d = G(i + 1, j + 1);
+    if ([a, b, c, d].some(q => !Number.isFinite(q))) return G(Math.round(gx), Math.round(gy));
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  },
+
+  // Lowest / highest field value among the map points inside the rings.
+  _fieldRange(map, F, rings) {
     let lo = Infinity, hi = 0;
     for (let j = 0; j < map.ny; j++) for (let i = 0; i < map.nx; i++) {
-      const v = map.v[j * map.nx + i];
-      if (v == null || !this._inTouch(map.x0 + i * map.dx, map.y0 + j * map.dx, rings)) continue;
-      const t = (1 - v) * gpr;
+      const t = F[j * map.nx + i];
+      if (!Number.isFinite(t) || !this._inTouch(map.x0 + i * map.dx, map.y0 + j * map.dx, rings)) continue;
       if (t > hi) hi = t;
       if (t < lo) lo = t;
     }
@@ -1485,8 +1529,8 @@ const EarthGridEditor = {
   },
 
   // Heatmap image spanning the map's sample points (bilinear between them),
-  // transparent outside the touch area. Returns {url, x0, y0, x1, y1} in metres.
-  _heatImage(map, rings, gpr, limit, maxT) {
+  // transparent outside the rings. Returns {url, x0, y0, x1, y1} in metres.
+  _heatImage(map, F, rings, limit, maxT) {
     try {
       const { nx, ny, dx } = map;
       if (nx < 2 || ny < 2) return null;
@@ -1497,25 +1541,14 @@ const EarthGridEditor = {
       const ctx = cv.getContext('2d');
       if (!ctx) return null;
       const img = ctx.createImageData(W, H);
-      const V = (i, j) => map.v[j * nx + i];
       for (let py = 0; py < H; py++) {
         const gy = (H - 1 - py) / K;                 // canvas rows run top-down; map rows bottom-up
-        const j = Math.min(Math.floor(gy), ny - 2), fy = gy - j;
         const y = map.y0 + gy * dx;
         for (let px = 0; px < W; px++) {
-          const gx = px / K;
-          const i = Math.min(Math.floor(gx), nx - 2), fx = gx - i;
-          const x = map.x0 + gx * dx;
-          const a = V(i, j), b = V(i + 1, j), c = V(i, j + 1), d = V(i + 1, j + 1);
-          let v;
-          if (a == null || b == null || c == null || d == null) {
-            v = V(Math.round(gx), Math.round(gy));
-            if (v == null) continue;
-          } else {
-            v = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
-          }
+          const x = map.x0 + (px / K) * dx;
           if (!this._inTouch(x, y, rings)) continue;
-          const t = (1 - v) * gpr;
+          const t = this._fieldAt(map, F, x, y);
+          if (!Number.isFinite(t)) continue;
           let col = this._touchColor(t, limit, maxT);
           if (t > limit && ((px + py) % 8) < 2) col = col.map(q => Math.round(q * 0.45));   // hatching
           const k = (py * W + px) * 4;
@@ -1529,12 +1562,12 @@ const EarthGridEditor = {
     }
   },
 
-  // Limit contour (marching squares on the map, cells inside the touch area)
+  // Limit contour (marching squares on the map, cells inside the rings)
   // → segments [[x1, y1, x2, y2], …] in metres.
-  _limitContour(map, rings, gpr, limit) {
+  _limitContour(map, F, rings, limit) {
     const { nx, ny, dx } = map;
     const segs = [];
-    const f = (i, j) => { const v = map.v[j * nx + i]; return v == null ? null : (1 - v) * gpr - limit; };
+    const f = (i, j) => { const t = F[j * nx + i]; return Number.isFinite(t) ? t - limit : null; };
     for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
       const c = [f(i, j), f(i + 1, j), f(i + 1, j + 1), f(i, j + 1)];
       if (c.some(q => q == null)) continue;
@@ -1557,17 +1590,173 @@ const EarthGridEditor = {
   },
 
   // Legend: 0 → limit (green → red), the limit mark, then limit → max
-  // (red → purple, hatched) when any of the touch area is over the limit.
-  _legendHtml(limit, maxT, f0) {
+  // (red → purple, hatched) when any of the area is over the limit.
+  _legendHtml(limit, maxT, f0, what = 'Touch voltage over the touch area') {
     const over = maxT > limit;
     const wIn = over ? Math.max(25, Math.min(65, 100 * limit / maxT)) : 100;
-    return `<div class="eg-leg-title">Touch voltage over the touch area</div>
+    return `<div class="eg-leg-title">${what}</div>
       <div class="eg-leg-scale">
         <div class="eg-leg-in" style="width:${wIn.toFixed(0)}%;background:${this._gradCss(this.RAMP_IN)}"></div>
-        ${over ? `<div class="eg-leg-limit" title="Tolerable touch voltage"></div><div class="eg-leg-over" style="background:repeating-linear-gradient(45deg, rgba(0,0,0,.5) 0 2px, transparent 2px 8px), ${this._gradCss(this.RAMP_OVER)}"></div>` : ''}
+        ${over ? `<div class="eg-leg-limit" title="Tolerable voltage"></div><div class="eg-leg-over" style="background:repeating-linear-gradient(45deg, rgba(0,0,0,.5) 0 2px, transparent 2px 8px), ${this._gradCss(this.RAMP_OVER)}"></div>` : ''}
       </div>
       <div class="eg-leg-vals"><span>0 V</span><span class="eg-leg-limtxt" style="${over ? `left:${wIn.toFixed(0)}%` : 'right:0'}">limit ${f0(limit)} V</span>${over ? `<span class="eg-leg-maxtxt">max ${f0(maxT)} V</span>` : ''}</div>
       ${over ? '' : `<div class="eg-muted">Highest ${f0(maxT)} V — within the limit everywhere.</div>`}`;
+  },
+
+  // ── Results plan: Touch / Step heat maps, hover readout ────────────
+  _res: {},   // bus id → {b, plan, map, gpr, touch: {F, rings, limit, max, min}, step: {…}, opts, kind}
+
+  // Colour scale: to the limit (default), or — when everything is within
+  // it — stretched to the highest value so the pattern shows.
+  _resLayer(r, kind) {
+    const L = r[kind];
+    if (!L) return null;
+    const lim = r.scale === 'max' && L.max > 0 && L.max < L.limit ? L.max : L.limit;
+    return { F: L.F, rings: L.rings, limit: lim, maxT: L.max, minT: L.min };
+  },
+
+  // Plan + legend for one bus, showing `kind` ('touch' | 'step').
+  _resPlanHtml(key, kind) {
+    const r = this._res[key];
+    if (!r) return '';
+    const f0 = (v) => (v == null || !Number.isFinite(+v) ? '—' : (+v).toFixed(0));
+    const L = r[kind];
+    const heat = L ? Object.assign({ kind }, this._resLayer(r, kind)) : null;
+    const stretched = heat && heat.limit !== L.limit;
+    const svg = this.planSvg(r.plan, Object.assign({}, r.opts, { heat, hover: true }));
+    const what = kind === 'step' ? 'Step voltage (1 m, any direction) over the step area' : 'Touch voltage over the touch area';
+    const how = kind === 'step'
+      ? 'Step voltage = largest surface-potential difference to any point 1 m away, read off the map'
+      : 'Touch voltage = (1 − surface potential / GPR) × GPR, coloured inside the touch area only';
+    return `${svg}<div class="eg-tip" hidden></div>
+      <div class="eg-legend">
+        ${heat ? (stretched
+          ? `<div class="eg-leg-title">${what}</div>
+             <div class="eg-leg-scale"><div class="eg-leg-in" style="width:100%;background:${this._gradCss(this.RAMP_IN)}"></div></div>
+             <div class="eg-leg-vals"><span>0 V</span><span class="eg-leg-limtxt" style="right:0">highest ${f0(L.max)} V</span></div>
+             <div class="eg-muted">Colours stretched to the highest value — ${(100 * L.max / L.limit).toFixed(0)} % of the ${f0(L.limit)} V limit.</div>`
+          : this._legendHtml(L.limit, L.max, f0, what)) : ''}
+        <div class="eg-leg-row eg-muted">${heat && L.max > L.limit && L.min < L.limit ? '<span><b class="eg-leg-lim"></b> limit contour</span>' : ''}${r.b.touch_location_m ? '<span><b class="eg-leg-x">✕</b> worst touch</span>' : ''}${r.b.step_location_m ? '<span><b class="eg-leg-step">—</b> worst step (1 m)</span>' : ''}${r.opts.fenceTouch.length ? '<span><b class="eg-leg-xf">✕</b> fence touch</span>' : ''}</div>
+        ${heat ? `<div class="eg-muted" style="font-size:10.5px">${how}${r.raster ? ` · map ${this._n(r.raster)} m` : ''}. The highest value is the calculated worst point. Hover the plan for the values at a point.</div>` : ''}
+      </div>${this._planKeyHtml(r.plan)}`;
+  },
+
+  _bindResults() {
+    if (this._resBound) return;
+    this._resBound = true;
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-eg-heat], [data-eg-scale]');
+      if (!btn) return;
+      const box = btn.closest('[data-eg-res]');
+      const key = box && box.dataset.egRes;
+      if (!key || !this._res[key]) return;
+      const attr = btn.dataset.egHeat ? 'data-eg-heat' : 'data-eg-scale';
+      if (btn.dataset.egHeat) this._res[key].kind = btn.dataset.egHeat;
+      else this._res[key].scale = btn.dataset.egScale;
+      box.querySelectorAll(`[${attr}]`).forEach(x => {
+        const on = x === btn;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-pressed', String(on));
+      });
+      box.querySelector('.eg-res-body').innerHTML = this._resPlanHtml(key, this._res[key].kind);
+    });
+    const move = (e) => {
+      const svg = e.target.closest && e.target.closest('[data-eg-res] svg.eg-plan');
+      if (!svg) return;
+      const box = svg.closest('[data-eg-res]');
+      this._resHover(box, svg, e);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerdown', move);
+    document.addEventListener('pointerout', (e) => {
+      const svg = e.target.closest && e.target.closest('[data-eg-res] svg.eg-plan');
+      if (!svg || (e.relatedTarget && svg.contains(e.relatedTarget))) return;
+      const box = svg.closest('[data-eg-res]');
+      const tip = box.querySelector('.eg-tip');
+      if (tip) tip.hidden = true;
+      svg.querySelector('.eg-p-hover')?.remove();
+    });
+  },
+
+  // Hover readout: touch, step and surface potential at the pointer.
+  _resHover(box, svg, e) {
+    const r = this._res[box.dataset.egRes];
+    const tip = box.querySelector('.eg-tip');
+    if (!r || !tip) return;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    const sc = +svg.dataset.s, pad = +svg.dataset.pad, minX = +svg.dataset.minx, maxY = +svg.dataset.maxy;
+    const x = minX + (p.x - pad) / sc, y = maxY - (p.y - pad) / sc;
+    const v = this._vAt(r.map, x, y);
+    const f0 = (q) => (+q).toFixed(0);
+    const row = (kind, label) => {
+      const L = r[kind];
+      if (!L) return '';
+      if (!this._inTouch(x, y, L.rings)) return `<div class="eg-tip-row eg-muted">${label}: outside the ${kind} area</div>`;
+      const t = this._fieldAt(r.map, L.F, x, y);
+      if (!Number.isFinite(t)) return '';
+      const pct = 100 * t / L.limit;
+      return `<div class="eg-tip-row${r.kind === kind ? ' eg-tip-main' : ''}">${label}: <b class="${t > L.limit ? 'eg-over' : ''}">${f0(t)} V</b> <span class="eg-muted">${pct.toFixed(0)} % of ${f0(L.limit)} V</span></div>`;
+    };
+    if (!Number.isFinite(v)) { tip.hidden = true; svg.querySelector('.eg-p-hover')?.remove(); return; }
+    tip.innerHTML = `<div class="eg-tip-xy">x ${x.toFixed(1)} m, y ${y.toFixed(1)} m</div>
+      ${r.kind === 'step' ? row('step', 'Step') + row('touch', 'Touch') : row('touch', 'Touch') + row('step', 'Step')}
+      <div class="eg-tip-row eg-muted">Surface potential: ${f0(v * r.gpr)} V (${(100 * v).toFixed(0)} % of GPR)</div>`;
+    tip.hidden = false;
+    // Place the readout next to the pointer, kept inside the plan box
+    const bb = box.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let lx = e.clientX - bb.left + 14, ly = e.clientY - bb.top + 14;
+    if (lx + tw > bb.width) lx = e.clientX - bb.left - tw - 14;
+    if (ly + th > bb.height) ly = e.clientY - bb.top - th - 14;
+    tip.style.left = Math.max(0, lx) + 'px';
+    tip.style.top = Math.max(0, ly) + 'px';
+    // Marker at the point
+    let m = svg.querySelector('.eg-p-hover');
+    if (!m) { m = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); m.setAttribute('class', 'eg-p-hover'); m.setAttribute('r', '4'); svg.appendChild(m); }
+    m.setAttribute('cx', p.x.toFixed(1)); m.setAttribute('cy', p.y.toFixed(1));
+  },
+
+  // Set up the Touch / Step layers of one bus's results plan and return its box.
+  _resCardPlan(b, gridRes, unb) {
+    this._bindResults();
+    const plan = gridRes.plan, map = plan.map;
+    const gpr = +b.gpr_v;
+    const key = String(b.bus_id || b.bus_name);
+    const r = { b, plan, map, gpr, raster: gridRes.raster_m, kind: 'touch',
+      opts: { label: b.earth_grid_name, touchAt: b.touch_location_m || null, stepAt: b.step_location_m || null,
+        fenceTouch: unb.map(f => f.touch_location_m).filter(p => p && p.length === 2) } };
+    const ok = map && map.v && map.nx > 1 && map.ny > 1 && gpr > 0;
+    // The legend's highest value is the calculated worst point (refined
+    // well below the map spacing), never less than the map's own maximum.
+    const layer = (F, rings, limit, worst) => {
+      if (!(limit > 0) || !rings.length) return null;
+      const rg = this._fieldRange(map, F, rings);
+      return { F, rings, limit, min: rg.min, max: Math.max(rg.max, Number.isFinite(+worst) ? +worst : 0) };
+    };
+    if (ok) {
+      r.touch = layer(this._touchField(map, gpr), plan.touch_area || [], +b.tolerable_touch_v, b.mesh_voltage_v);
+      if ((plan.step_area || []).length) {
+        // Read off the map, a 1 m difference can overshoot the exact worst
+        // step a little (interpolation) — hold it to the calculated value.
+        const F = this._stepField(map, gpr), cap = +b.step_voltage_v;
+        if (cap > 0) for (let k = 0; k < F.length; k++) if (F[k] > cap) F[k] = cap;
+        r.step = layer(F, plan.step_area, +b.tolerable_step_v, cap);
+      }
+    }
+    this._res[key] = r;
+    r.scale = 'limit';
+    const seg = r.touch ? `<div class="eg-res-bar">
+      ${r.step ? `<div class="eg-tb-seg" role="group" aria-label="Heat map">
+        <button type="button" class="eg-tb-btn on" data-eg-heat="touch" aria-pressed="true">Touch voltage</button>
+        <button type="button" class="eg-tb-btn" data-eg-heat="step" aria-pressed="false">Step voltage</button></div>` : ''}
+      <div class="eg-tb-seg" role="group" aria-label="Colour scale" title="Within the limit everywhere? Stretch the colours to the highest value to see where it concentrates">
+        <button type="button" class="eg-tb-btn on" data-eg-scale="limit" aria-pressed="true">Colours vs limit</button>
+        <button type="button" class="eg-tb-btn" data-eg-scale="max" aria-pressed="false">vs highest</button></div></div>` : '';
+    return `<div class="eg-res-plan" data-eg-res="${escHtml(key)}">${seg}<div class="eg-res-body">${this._resPlanHtml(key, 'touch')}</div></div>`;
   },
 
   // ── Grounding results card for a bus on an earth grid ──────────────
@@ -1646,25 +1835,7 @@ const EarthGridEditor = {
     if (gridRes && gridRes.error) {
       h += `<div class="eg-pv-err">${escHtml(gridRes.error)}</div>`;
     } else if (gridRes && gridRes.plan) {
-      const limit = +b.tolerable_touch_v;
-      const map = gridRes.plan.map;
-      const heat = map && map.v && b.gpr_v > 0 && limit > 0 ? { gpr: +b.gpr_v, limit } : null;
-      if (heat) {
-        const rg = this._touchRange(map, gridRes.plan.touch_area || [], heat.gpr);
-        heat.maxT = rg.max; heat.minT = rg.min;
-      }
-      const svg = this.planSvg(gridRes.plan, {
-        heat, label: b.earth_grid_name,
-        touchAt: b.touch_location_m || null,
-        stepAt: b.step_location_m || null,
-        fenceTouch: unb.map(f => f.touch_location_m).filter(p => p && p.length === 2),
-      });
-      h += `<div class="eg-res-plan">${svg}
-        <div class="eg-legend">
-          ${heat ? this._legendHtml(limit, heat.maxT, f0) : ''}
-          <div class="eg-leg-row eg-muted">${heat && heat.maxT > limit && heat.minT < limit ? '<span><b class="eg-leg-lim"></b> limit contour</span>' : ''}${b.touch_location_m ? '<span><b class="eg-leg-x">✕</b> worst touch</span>' : ''}${b.step_location_m ? '<span><b class="eg-leg-step">—</b> worst step (1 m)</span>' : ''}${unb.some(f => f.touch_location_m) ? '<span><b class="eg-leg-xf">✕</b> fence touch</span>' : ''}</div>
-          ${heat ? `<div class="eg-muted" style="font-size:10.5px">Touch voltage = (1 − surface potential / GPR) × GPR, coloured inside the touch area only${gridRes.raster_m ? ` · map ${this._n(gridRes.raster_m)} m` : ''}.</div>` : ''}
-        </div>${this._planKeyHtml(gridRes.plan)}</div>`;
+      h += this._resCardPlan(b, gridRes, unb);
     }
 
     if (b.remote_fraction != null && (b.remote_fraction < 1 || b.current_split_factor < 1)) {

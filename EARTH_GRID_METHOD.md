@@ -291,8 +291,10 @@ drawn and the grid area reported.
   voltage and its location are reported.
 - **Step.** Axis-aligned 1 m differences are read off the raster to screen the
   400 steepest points, plus the raster edge. At each candidate the exact 1 m step
-  is computed in 16 directions, so the worst step and its direction are found
-  anywhere, not only at the corner diagonal.
+  is computed in 16 directions, and the eight strongest are searched again on
+  a 0.1 m sub-raster inside the step area (the peak at a rod or conductor
+  corner falls between raster points), so the worst step and its direction are
+  found anywhere, not only at the corner diagonal.
 
 ### 5.4 Fences
 
@@ -460,10 +462,10 @@ deviation is to the nearer end.
 | | R_fence alone | 1.69 Ω | 1.6–1.62 | +4.1 % ¹ |
 | Grid 5 (L-shape, bonded fence, two-layer) | R_g / GPR | 0.807 Ω / 601 V | 0.81 / 602.7–606.4 | −0.3 % / −0.2 % |
 | | worst touch | 128.5 V | 131.6–138.1 | −2.3 % ² |
-| | worst step | 87.8 V | 83.0–90.7 | in range |
+| | worst step | 90.8 V | 83.0–90.7 | +0.1 % |
 | **Grid 6 (diagonals, rods 7.5/2.5 m, two-layer)** | R_g / GPR | 1.426 Ω / 1062 V | 1.42–1.43 / 1054–1068 | in range |
 | | worst touch | 136.3 V | 134.4–140.2 | in range |
-| | worst step | 84.4 V | 77.4–99.2 | in range |
+| | worst step | 85.6 V | 77.4–99.2 | in range |
 
 ¹ The fence-conductor depth is not given; 0.5 m is assumed. ² The rod count
 "every other perimeter crossing" gives 25 rods on this outline; the three
@@ -478,7 +480,7 @@ programs themselves spread 5 % here.
 | Ex. 2 (+20 rods) ³ | R_g | 2.489 Ω | 2.52 | −1.2 % |
 | | worst touch | 709.9 V | 756.2 | −6.1 % |
 | | step | 460.5 V | 459.1 | +0.3 % |
-| Ex. 4 (L-shape) | R_g / touch / step | 2.313 Ω / 713.8 V / 457.8 V | 2.34 / 742.9 / 441.8 | −1.1 / −3.9 / +3.6 % |
+| Ex. 4 (L-shape) | R_g / touch / step | 2.313 Ω / 713.8 V / 471.5 V | 2.34 / 742.9 / 441.8 | −1.1 / −3.9 / +6.7 % |
 | Exhibit 1 (two-layer, 9 rods 9.1 m) | R_g | 1.137 Ω | 1.353 | −15.9 % ⁴ |
 | Exhibit 2 (unequal spacing) ³ | R_g | 1.462 Ω | 1.416 | +3.3 % |
 | | corner-mesh / worst touch (% GPR) | 8.6 / 15.4 | 9.29 / 17.08 | −7 / −10 % |

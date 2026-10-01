@@ -24,7 +24,7 @@ for this type of grid", so the standard gives computer results only.
 | R_g (Ω) | 1.4265 | 1.42 | 1.43 | 1.43 |
 | GPR (V) | 1063 | 1054.4 | 1068.2 | 1063.1 |
 | Worst touch, inside the perimeter (V) | 136 | 134.4 | 140.2 | 136.6 |
-| Worst step, from 1 m outside inward (V) | 84 | 96.4 | 99.2 | 77.4 (S2 84.9) |
+| Worst step, from 1 m outside inward (V) | 86 | 96.4 | 99.2 | 77.4 (S2 84.9) |
 
 **PASS.** Every quantity lies inside the programs' range. Evaluation follows
 Annex H.3.6: touch at every point 0.5 m apart inside the perimeter conductor,

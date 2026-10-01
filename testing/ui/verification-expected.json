@@ -154,7 +154,7 @@
       ],
       "step": [
         "buses.0.step_voltage_v",
-        84.0,
+        86.0,
         0.02
       ],
       "method": [
