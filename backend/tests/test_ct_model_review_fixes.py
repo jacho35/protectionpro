@@ -1,4 +1,4 @@
-"""Regression tests for the CT saturation model review (CT_MODEL_REVIEW.md,
+"""Regression tests for the CT saturation model review (reviews/CT_MODEL_REVIEW.md,
 findings C1–C4, lesser notes L1–L3).
 
 References are independent of the engine: Fourier coefficients of the

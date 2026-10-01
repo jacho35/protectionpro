@@ -10,7 +10,7 @@ compute the potential at any surface point. That is what this module does.
 Model (quasi-static, 50/60 Hz):
   * Soil: uniform ρ1, or two horizontal layers ρ1 (thickness H) over ρ2.
     The point-source Green's functions are the image series checked in
-    GROUNDING_REVIEW.md (`grounding_system._mom_images`).
+    reviews/GROUNDING_REVIEW.md (`grounding_system._mom_images`).
   * Metal: straight thin wires (grid conductors, rods, fence wires, posts),
     each cut into elements carrying a constant leakage current per metre.
     Thin-wire kernel: field point on the element axis, source current on its

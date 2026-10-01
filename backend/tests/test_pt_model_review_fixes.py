@@ -2,7 +2,7 @@
 
 Each test reproduces the original defect against a reference derived from
 IEC 61869-3:2011 / IEC 61869-1 or a closed form, never from the module's
-own output. Write-up: PT_MODEL_REVIEW.md; evidence script:
+own output. Write-up: reviews/PT_MODEL_REVIEW.md; evidence script:
 testing/pt-model-review/v1_core.py.
 """
 

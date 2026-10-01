@@ -1,4 +1,4 @@
-"""Regression tests for the harmonics.py review (HARMONICS_REVIEW.md, H1–H6,
+"""Regression tests for the harmonics.py review (reviews/HARMONICS_REVIEW.md, H1–H6,
 L1–L3). Each test reproduces the original defect; the expected numbers come
 from IEEE 519-2014 Tables 2–4 or from a hand nodal solve, never from the
 engine.

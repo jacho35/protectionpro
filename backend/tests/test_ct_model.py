@@ -15,7 +15,7 @@ knee/Rct override):
 0.8 E_AL put a 7.4 % error at ALF x I_n where a 5P core guarantees <= 5 %.
 [C1] The clipped current is the fundamental (what a numerical relay
 measures), no longer the true RMS. [C3] kappa no longer derates the knee
-(dc offset is simulated in the time domain) — see CT_MODEL_REVIEW.md.
+(dc offset is simulated in the time domain) — see reviews/CT_MODEL_REVIEW.md.
 
 Run with:  python -m pytest backend/tests/test_ct_model.py -v
 """

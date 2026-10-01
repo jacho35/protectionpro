@@ -119,7 +119,7 @@ horizontal distance r, R(ζ) = √(r² + ζ²):
 | 2 ← 2 | ρ₂/4π · [1/R(z−z₀) − K/R(z+z₀−2H) + (1−K²) Σ_{n≥0} Kⁿ/R(z+z₀+2nH)] |
 
 These satisfy the three boundary conditions. The grounding review
-(GROUNDING_REVIEW.md, `v4_green_wenner.py`) checked them numerically: V and
+(reviews/GROUNDING_REVIEW.md, `v4_green_wenner.py`) checked them numerically: V and
 (1/ρ)∂V/∂z are continuous at the interface and ∂V/∂z = 0 at the surface
 (residual ≤ 7 × 10⁻⁵). Uniform soil is K = 0: the source plus its surface image.
 Terms with weight below 10⁻⁶ are dropped. Images farther than five grid
@@ -572,7 +572,7 @@ should be treated as marginal.
 - **Soil.** Use the Wenner interpreter to fit ρ₁/ρ₂/H from field readings. With
   a resistive lower layer (K > 0), surface gradients and touch voltage rise
   sharply. The uniform-soil equations underestimate touch voltage there by up to
-  2.4× (GROUNDING_REVIEW.md G1).
+  2.4× (reviews/GROUNDING_REVIEW.md G1).
 - **Design current.** Check the split factor S_f (IEEE 80 §15.9, Annex C;
   EN 50522 Annex I reduction factor r) and the fault duration. For isolated or
   resonant systems enter the design earth-fault current.

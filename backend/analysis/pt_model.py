@@ -43,7 +43,7 @@ intentionally left out here (see BACKLOG.md).
 measuring / 302 protective limits, Table 303 rated voltage factors, the
 burden ranges of 5.5) and IEC 61869-1 (earth fault factor, effectively
 earthed <= 1.4). Findings PT1-PT4 and notes L1-L2 are marked in code;
-write-up in PT_MODEL_REVIEW.md.
+write-up in reviews/PT_MODEL_REVIEW.md.
 """
 
 import cmath

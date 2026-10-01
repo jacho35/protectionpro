@@ -29,7 +29,7 @@ this is now resolved.
 **Cable resistance at 20 °C.** IEC 61660-1 takes conductor resistance at 20 °C for the maximum current, and
 the app's cable library stores operating-temperature (90 °C) values, which the engine refers back (÷ 1.275 for
 Cu XLPE). The model's cable therefore stores the published 20 °C loop value × 1.275
-(`r_per_km` 0.00828495), so the engine sees the published 6.498 mΩ (review DC4, `DC_SHORTCIRCUIT_REVIEW.md`).
+(`r_per_km` 0.00828495), so the engine sees the published 6.498 mΩ (review DC4, `reviews/DC_SHORTCIRCUIT_REVIEW.md`).
 
 **Rise.** 1/δ = 2/(R_BBr/L_BBr + 1/T_B): 1.56 ms at the terminals, 2.37 ms at the breaker (published 2.40).
 t_pB and τ_1B come from IEC 61660-1 Figure 10 (t_pB = 3.055·(1/δ)^0.928, τ_1B = 0.497·(1/δ)^1.019, digitised):

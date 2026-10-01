@@ -1,4 +1,4 @@
-"""Lightning risk review (LIGHTNING_RISK_REVIEW.md) — regression tests.
+"""Lightning risk review (reviews/LIGHTNING_RISK_REVIEW.md) — regression tests.
 
 Two groups:
   * the 2010 (Ed. 2) engine fixes LR1–LR7, each reproducing the original

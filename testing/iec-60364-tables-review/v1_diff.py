@@ -2,7 +2,7 @@
 
 Pre-fix (commit 9a5433d) this compared the single-valued IEC_AMPACITY_TABLE
 and found most columns matched neither the 2- nor the 3-loaded table (see
-IEC_60364_TABLES_REVIEW.md). Post-fix it checks base_ampacity_a(loaded=2|3)
+reviews/IEC_60364_TABLES_REVIEW.md). Post-fix it checks base_ampacity_a(loaded=2|3)
 against the reference cell by cell; every row should read "neither 0".
 
     python testing/iec-60364-tables-review/v1_diff.py [reference.json]

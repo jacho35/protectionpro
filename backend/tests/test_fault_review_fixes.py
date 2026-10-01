@@ -1,4 +1,4 @@
-"""Regression tests for the 2026-09-28 fault-engine review (FAULT_ENGINE_REVIEW.md).
+"""Regression tests for the 2026-09-28 fault-engine review (reviews/FAULT_ENGINE_REVIEW.md).
 
 Each test reproduces the ORIGINAL defect against an independent reference
 (hand network reduction or a phase-domain solve), never against the engine's

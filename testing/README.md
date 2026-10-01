@@ -89,7 +89,7 @@ no-rods `1/(2n)^(2/n)` branch) and rod-weighted effective length `L_M` are imple
 drops from the old +5.7 % (792 V) to the exact 749 V, and rectangular / no-rods geometries are correct. Full
 detail: [`case-grounding-ieee80/results.md`](case-grounding-ieee80/results.md).
 
-**2026-09-30 review** (`GROUNDING_REVIEW.md`): uniform soil re-checked against the IEEE 80-2013 Annex B
+**2026-09-30 review** (`reviews/GROUNDING_REVIEW.md`): uniform soil re-checked against the IEEE 80-2013 Annex B
 Examples 1 and 2 (≤ 0.4 %). Two-layer soil now has an independent reference, a method-of-moments solve of
 the grid with the exact two-layer image Green's functions (`grounding-review/v3_grid_bem.py`); the engine's
 R_g ratio matches it within 1 % and E_m within +6 % (conservative). The grid current's local/remote split is
