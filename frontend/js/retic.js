@@ -770,8 +770,10 @@ const Retic = {
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m)</label>
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
-            <div class="retic-field"><label title="Protective device at the head of this kiosk's incoming feeder. Left blank it inherits the one upstream (ultimately the minisub's). Used for the earth-fault loop and ECC checks.">Feeder Protection</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— inherit upstream —')}</select></div>
+            ${this._stringHead(k) === k
+              ? `<div class="retic-field"><label title="The breaker at the head of this string of kiosks: every kiosk fed on from this one is protected by it. Left blank it uses the minisub's LV protection. Used for the earth-fault loop and ECC checks.">String Breaker</label>
+              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— use minisub protection —')}</select></div>`
+              : `<div class="retic-field"><label>String Breaker</label><div class="earth-pen" title="Set once on the head of the string (${escHtml(this._stringHead(k).name || 'kiosk')}); every kiosk fed on from it shares that breaker.">${escHtml(this._stringBreakerName(k))} <span style="color:var(--text-muted)">— string of ${escHtml(this._stringHead(k).name || 'kiosk')}</span></div></div>`}
             ${this._earthingOf(k) === 'TN-S'
               ? `<div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>`
@@ -1473,6 +1475,24 @@ const Retic = {
     }
     return this.minisubs[0] || null;
   },
+  // A string of kiosks is everything fed on from a kiosk that hangs directly off
+  // a minisub; they share the breaker set on that head kiosk.
+  _stringHead(k) {
+    const seen = new Set();
+    let cur = k;
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      const parent = this.kiosks.find(o => o.id === cur.fedFrom);
+      if (!parent) return cur;
+      cur = parent;
+    }
+    return cur || k;
+  },
+  _stringBreakerName(k) {
+    const head = this._stringHead(k);
+    const d = this._protectionDevice(head) || this._protectionDevice(this._minisubOf(k));
+    return d ? d.name : 'no device selected';
+  },
   _earthingOf(k) { const ms = this._minisubOf(k); return (ms && ms.earthing) || 'TN-S'; },
 
   // Every LV cable in the one library, Cu and Al, any construction. "Assumed"
@@ -1507,7 +1527,7 @@ const Retic = {
       }),
       kiosks: this.kiosks.map(k => ({
         id: k.id, name: k.name, fedFrom: k.fedFrom || 'source',
-        device: this._protectionDevice(k),
+        device: this._stringHead(k) === k ? this._protectionDevice(k) : null,   // one breaker per string, on its head
         feeder: { cable: this._cableDict(k.feederCable), earth: this._cableDict(k.feederEarth), lengthM: Number(k.feederLength) || 0 },
         erfs: k.erfs.map(e => ({
           id: e.id, erfNumber: e.erfNumber,
