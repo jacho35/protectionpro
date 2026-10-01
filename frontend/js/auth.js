@@ -222,6 +222,14 @@ const Auth = {
       if (e.target.id === 'account-modal') this._hideAccount();
     });
     document.getElementById('btn-logout')?.addEventListener('click', () => this.logout());
+    document.getElementById('btn-open-admin')?.addEventListener('click', () => { this._hideAccount(); this.openAdmin(); });
+    document.getElementById('btn-close-admin')?.addEventListener('click', () => this._hideAdmin());
+    document.getElementById('admin-modal')?.addEventListener('click', e => { if (e.target.id === 'admin-modal') this._hideAdmin(); });
+    document.querySelectorAll('.admin-nav-btn').forEach(b => b.addEventListener('click', () => this._adminTab(b.dataset.adminTab)));
+    ['btn-admin-invite', 'btn-admin-invite2'].forEach(id => document.getElementById(id)?.addEventListener('click', () => this._openInvite()));
+    document.getElementById('btn-close-invite')?.addEventListener('click', () => { document.getElementById('invite-modal').style.display = 'none'; });
+    document.getElementById('admin-users-search')?.addEventListener('input', () => this._renderUsers(true));
+    document.getElementById('admin-projects-search')?.addEventListener('input', () => this._renderAdminProjects(this._users, true));
     document.getElementById('btn-change-password')?.addEventListener('click', () => this._changePassword());
     document.getElementById('btn-generate-invite')?.addEventListener('click', () => this._generateInvite());
     document.getElementById('btn-copy-invite')?.addEventListener('click', () => this._copyInvite());
@@ -232,7 +240,37 @@ const Auth = {
     this._applyAuthedState();
     const m = document.getElementById('account-modal');
     if (m) m.style.display = '';
-    if (this.isAdmin()) { this._refreshMode().then(() => { this._renderInvites(); this._renderUsers(); }); }
+  },
+
+  // Admin console: users, projects and invitations (separate from My account).
+  openAdmin() {
+    if (!this.isAdmin()) return;
+    const m = document.getElementById('admin-modal');
+    if (m) m.style.display = '';
+    this._adminTab(this._adminCurrent || 'users');
+    this._refreshMode().then(() => { this._renderInvites(); this._renderUsers(); });
+  },
+
+  _hideAdmin() {
+    const m = document.getElementById('admin-modal');
+    if (m) m.style.display = 'none';
+  },
+
+  _adminTab(tab) {
+    this._adminCurrent = tab;
+    document.querySelectorAll('.admin-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.adminTab === tab));
+    ['users', 'projects', 'invites'].forEach(t => { const p = document.getElementById('admin-pane-' + t); if (p) p.hidden = t !== tab; });
+  },
+
+  _openInvite() {
+    document.getElementById('invite-result').textContent = '';
+    document.getElementById('invite-link-row').style.display = 'none';
+    document.getElementById('invite-modal').style.display = '';
+  },
+
+  _fmtDate(iso) {
+    if (!iso) return '';
+    return new Date(iso.endsWith('Z') || /[+-]\d\d:/.test(iso) ? iso : iso + 'Z').toLocaleDateString();
   },
 
   // Is email configured? Decides "Send invitation" vs "Create invite link".
@@ -341,19 +379,26 @@ const Auth = {
     });
   },
 
-  async _renderAdminProjects(users) {
+  async _renderAdminProjects(users, filterOnly) {
     const list = document.getElementById('admin-projects-list');
     if (!list) return;
     try {
-      const rows = await API.adminProjects();
-      if (!rows.length) { list.innerHTML = '<p class="auth-hint">No projects yet.</p>'; return; }
-      list.innerHTML = rows.map(p => `<div class="user-row">
-        <span class="invite-for">${this._esc(p.name)}<small>${this._esc(p.owner_name)}${p.owner_active ? '' : ' · deactivated'}${p.updated_at ? ' · ' + new Date(p.updated_at.endsWith('Z') || /[+-]\d\d:/.test(p.updated_at) ? p.updated_at : p.updated_at + 'Z').toLocaleDateString() : ''}</small></span>
-        <button class="btn-small proj-take" data-id="${p.id}" ${p.owner_id === this.user.id ? 'disabled' : ''}>Take ownership</button>
-        <button class="btn-small proj-transfer" data-id="${p.id}" data-name="${this._esc(p.name)}">Transfer…</button>
-      </div>`).join('');
+      if (!filterOnly || !this._projRows) this._projRows = await API.adminProjects();
+      const all = this._projRows;
+      const cnt = document.getElementById('admin-count-projects'); if (cnt) cnt.textContent = all.length;
+      const q = (document.getElementById('admin-projects-search')?.value || '').trim().toLowerCase();
+      const rows = q ? all.filter(p => (p.name + ' ' + p.owner_name).toLowerCase().includes(q)) : all;
+      if (!rows.length) { list.innerHTML = `<div class="empty">${all.length ? 'No projects match.' : 'No projects yet.'}</div>`; return; }
+      list.innerHTML = rows.map(p => `<div class="admin-row admin-cols-projects">
+        <div class="admin-cell-main">${this._esc(p.name)}</div>
+        <div>${this._esc(p.owner_name)}${p.owner_active ? '' : ' <span class="admin-pill off">Deactivated</span>'}</div>
+        <div>${this._fmtDate(p.updated_at)}</div>
+        <div class="admin-actions">
+          <button class="btn-small proj-take" data-id="${p.id}" ${p.owner_id === this.user.id ? 'disabled' : ''}>Take ownership</button>
+          <button class="btn-small proj-transfer" data-id="${p.id}" data-name="${this._esc(p.name)}">Transfer…</button>
+        </div></div>`).join('');
       const doTransfer = async (id, to, keep, msg) => {
-        try { await API.transferProject(id, to, keep); UI.toast && UI.toast(msg, 'success'); this._renderAdminProjects(users);
+        try { await API.transferProject(id, to, keep); UI.toast && UI.toast(msg, 'success'); this._projRows = null; this._renderAdminProjects(users);
           if (typeof Project !== 'undefined' && Project.refreshProjectViewIfOpen) Project.refreshProjectViewIfOpen();
         } catch (e) { UI.toast && UI.toast(e.message || 'Could not transfer', 'error'); }
       };
@@ -377,16 +422,16 @@ const Auth = {
     if (!list) return;
     try {
       const invites = (await API.listInvites()).filter(i => !i.used_by);
-      if (!invites.length) { list.innerHTML = '<p class="auth-hint">No pending invitations.</p>'; return; }
-      list.innerHTML = invites.map(inv => {
-        const exp = inv.expires_at ? ` · expires ${new Date(inv.expires_at.endsWith('Z') || /[+-]\d\d:/.test(inv.expires_at) ? inv.expires_at : inv.expires_at + 'Z').toLocaleDateString()}` : '';
-        return `<div class="invite-row" data-id="${inv.id}">
-          <span class="invite-for">${inv.email ? this._esc(inv.email) : 'Anyone with the link'}<small style="color:var(--text-muted)">${inv.is_admin ? ' · admin' : ''}${exp}</small></span>
+      const cnt = document.getElementById('admin-count-invites'); if (cnt) cnt.textContent = invites.length || '';
+      if (!invites.length) { list.innerHTML = '<div class="empty">No pending invitations.</div>'; return; }
+      list.innerHTML = invites.map(inv => `<div class="admin-row admin-cols-invites" data-id="${inv.id}">
+          <div class="admin-cell-main">${inv.email ? this._esc(inv.email) : 'Anyone with the link'}${inv.is_admin ? '<small>Administrator</small>' : ''}</div>
+          <div>${inv.expires_at ? this._fmtDate(inv.expires_at) : 'No expiry'}</div>
+          <div class="admin-actions">
           ${this._emailOn && inv.email ? `<button class="btn-small invite-resend" data-id="${inv.id}">Resend</button>` : ''}
           <button class="btn-small invite-copy" data-code="${this._esc(inv.code)}">Copy link</button>
-          <button class="btn-small invite-revoke" data-id="${inv.id}">Revoke</button>
-        </div>`;
-      }).join('');
+          <button class="btn-small invite-revoke danger" data-id="${inv.id}">Revoke</button>
+          </div></div>`).join('');
       list.querySelectorAll('.invite-revoke').forEach(btn => btn.addEventListener('click', async () => {
         await API.deleteInvite(parseInt(btn.dataset.id, 10));
         this._renderInvites();
@@ -404,21 +449,29 @@ const Auth = {
     }
   },
 
-  async _renderUsers() {
+  async _renderUsers(filterOnly) {
     const list = document.getElementById('users-list');
     if (!list) return;
     try {
-      const users = await API.listUsers();
+      const users = (filterOnly && this._users) || await API.listUsers();
       this._users = users;
-      this._renderAdminProjects(users);
-      list.innerHTML = users.map(u => `<div class="user-row">
-        <span class="invite-for">${this._esc(u.name || u.email)}<small>${u.name ? this._esc(u.email) : ''}${u.is_admin ? ' · admin' : ''}${u.is_active ? '' : ' · deactivated'}</small></span>
-        ${u.id !== this.user.id ? `<button class="btn-small user-active" data-id="${u.id}" data-active="${u.is_active ? 1 : 0}">${u.is_active ? 'Deactivate' : 'Reactivate'}</button><button class="btn-small user-delete" data-id="${u.id}">Delete</button>` : ''}
+      if (!filterOnly) { this._projRows = null; this._renderAdminProjects(users); }
+      const q = (document.getElementById('admin-users-search')?.value || '').trim().toLowerCase();
+      const shown = q ? users.filter(u => ((u.name || '') + ' ' + u.email).toLowerCase().includes(q)) : users;
+      const cnt = document.getElementById('admin-count-users'); if (cnt) cnt.textContent = users.length;
+      const sub = document.getElementById('admin-users-sub'); if (sub) sub.textContent = `${users.length} users · ${users.filter(u => u.is_active).length} active`;
+      list.innerHTML = !shown.length ? '<div class="empty">No users match.</div>' : shown.map(u => `<div class="admin-row admin-cols-users">
+        <div class="admin-cell-main" data-name="${this._esc(u.name || u.email)}">${this._esc(u.name || u.email)}${u.name ? `<small>${this._esc(u.email)}</small>` : ''}</div>
+        <div>${u.is_admin ? '<span class="admin-pill admin">Admin</span>' : 'User'}</div>
+        <div><span class="admin-pill ${u.is_active ? 'ok' : 'off'}">${u.is_active ? 'Active' : 'Deactivated'}</span></div>
+        <div class="admin-actions">
+        ${u.id === this.user.id ? '<small style="color:var(--text-muted)">This is you</small>' : ''}
+        ${u.id !== this.user.id ? `<button class="btn-small user-active" data-id="${u.id}" data-active="${u.is_active ? 1 : 0}">${u.is_active ? 'Deactivate' : 'Reactivate'}</button><button class="btn-small user-delete danger" data-id="${u.id}">Delete</button>` : ''}
         ${u.id !== this.user.id && u.is_active ? `<button class="btn-small user-role" data-id="${u.id}" data-admin="${u.is_admin ? 1 : 0}">${u.is_admin ? 'Remove admin' : 'Make admin'}</button>` : ''}
         ${this._emailOn && u.is_active ? `<button class="btn-small user-welcome" data-id="${u.id}">Send welcome</button>` : ''}
         ${u.is_active ? `<button class="btn-small user-reset" data-id="${u.id}">${this._emailOn ? 'Email reset link' : 'Copy reset link'}</button>` : ''}
-      </div>`).join('');
-      const nameOf = (btn) => btn.closest('.user-row').querySelector('.invite-for').firstChild.textContent;
+        </div></div>`).join('');
+      const nameOf = (btn) => btn.closest('.admin-row').querySelector('.admin-cell-main').dataset.name;
       list.querySelectorAll('.user-active').forEach(btn => btn.addEventListener('click', async () => {
         const off = btn.dataset.active === '1';
         if (off && !(await UI.confirm(`Deactivate ${nameOf(btn)}? They won’t be able to sign in, but their projects stay as they are. You can reactivate them later.`, { okText: 'Deactivate', danger: true }))) return;
@@ -440,7 +493,7 @@ const Auth = {
       }));
       list.querySelectorAll('.user-role').forEach(btn => btn.addEventListener('click', async () => {
         const makeAdmin = btn.dataset.admin !== '1';
-        const name = btn.closest('.user-row').querySelector('.invite-for').firstChild.textContent;
+        const name = btn.closest('.admin-row').querySelector('.admin-cell-main').dataset.name;
         const ok = await UI.confirm(makeAdmin
           ? `Make ${name} an administrator? They will be able to manage users, invites and email settings.`
           : `Remove administrator access from ${name}?`, { okText: makeAdmin ? 'Make admin' : 'Remove admin', danger: !makeAdmin });
