@@ -1095,6 +1095,7 @@ body.dark-mode {
     border-color: var(--border-color);   /* discoverable as an editable field */
     background: var(--bg-primary);
   }
+  .kiosk-vd-badge { order: 3; flex: 1 0 100%; margin-left: 0; flex-wrap: wrap; gap: 6px; }
   .kiosk-demand-badge {
     order: 3;
     flex: 1 0 100%;
