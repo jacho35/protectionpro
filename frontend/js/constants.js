@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.376b';
+const APP_VERSION = '1.377b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -1519,7 +1519,7 @@ const FIELD_INFO = {
   'bus.num_conductors_x': 'Number of parallel conductors in X direction.\nMore conductors reduce mesh voltage.',
   'bus.num_conductors_y': 'Number of parallel conductors in Y direction.',
   'bus.conductor_material': 'Grid conductor material — sets the Onderdonk/IEEE 80 Table 1 thermal constants used for minimum conductor sizing.\nCopper (hard-drawn) is the usual default; galvanized steel needs a much larger section for the same fault.',
-  'bus.conductor_diameter': 'Grid conductor diameter in metres (default 0.01167 m ≈ 4/0 AWG copper).\nUsed for grid resistance and mesh-factor geometry.',
+  'bus.conductor_area_mm2': 'Grid conductor size in mm² (bare copper or steel, e.g. 50, 70, 95, 120 mm²).\nThe study checks it against the minimum size the fault current needs (IEEE 80 §11.3 Onderdonk) and uses its solid-equivalent diameter √(4A/π) for the grid geometry.',
   'bus.num_ground_rods': 'Number of vertical ground rods.\nSource: IEEE 80 §14.4 — rods help reduce grid resistance.',
   'bus.rod_length_preset': 'Common rod-length picker (2.4 m ≈ 8 ft, 3.0 m, 6.0 m) — fills Rod Length.\nPick "Custom" to keep a non-standard length entered below.',
   'bus.ground_rod_length': 'Length of each ground rod (typically 3 m).\nSource: IEEE 80 §14.4.',
@@ -2481,7 +2481,7 @@ const COMPONENT_DEFS = {
       ground_rod_length: 3.0,
       num_ground_rods: 20,
       conductor_material: 'copper_hard',
-      conductor_diameter: 0.01167,
+      conductor_area_mm2: 70,
       grid_joint_type: 'exothermic',
       current_split_factor: 1.0,
       fault_duration: 0.5,
@@ -2529,7 +2529,7 @@ const COMPONENT_DEFS = {
       { key: 'num_conductors_x', label: 'Conductors (X)', type: 'number', section: 'grounding', showWhen: EG_NONE },
       { key: 'num_conductors_y', label: 'Conductors (Y)', type: 'number', section: 'grounding', showWhen: EG_NONE },
       { key: 'conductor_material', label: 'Conductor Material', type: 'select', section: 'grounding', showWhen: EG_NONE, options: GROUNDING_CONDUCTOR_MATERIALS },
-      { key: 'conductor_diameter', label: 'Conductor Diameter', type: 'number', unit: 'm', step: 0.001, section: 'grounding', showWhen: EG_NONE },
+      { key: 'conductor_area_mm2', label: 'Conductor Size', type: 'number', unit: 'mm²', step: 1, min: 1, section: 'grounding', showWhen: EG_NONE },
       { key: 'grid_joint_type', label: 'Grid Joints', type: 'select', section: 'grounding', showWhen: EG_NONE, options: [
         { value: 'exothermic', label: 'Exothermic (welded)' },
         { value: 'brazed', label: 'Brazed (450 °C)' },

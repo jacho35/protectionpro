@@ -102,7 +102,7 @@ DEFAULT_PARAMS = {
     "num_conductors_y": 6,  # number of parallel conductors in y
     "ground_rod_length": 3.0,  # L_r per rod (m)
     "num_ground_rods": 20,  # n_R number of rods
-    "conductor_diameter": 0.01167,  # d (m) — ~4/0 AWG copper
+    "conductor_diameter": 0.01167,  # d (m) — 107 mm² solid-equivalent; projects saved before conductor_area_mm2
     "conductor_material": "copper_hard",
     "grid_joint_type": "exothermic",  # [G3] sets T_m for conductor sizing
     "current_split_factor": 1.0,  # [G2] S_f — share of the remote earth-fault current entering the grid
@@ -761,6 +761,14 @@ def run_grounding_analysis(project: ProjectData):
         return {"buses": [], "warnings": ["Fault analysis failed — cannot compute grounding."], "summary": {}}
 
     buses = [c for c in project.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"]
+    scope = None
+    if project.groundingBusIds:
+        wanted = {str(b) for b in project.groundingBusIds}
+        scope = [b.id for b in buses if b.id in wanted]
+        buses = [b for b in buses if b.id in wanted]
+        if not buses:
+            return {"buses": [], "warnings": ["None of the selected buses is an AC bus — nothing to evaluate."],
+                    "summary": {}, "scope": {"bus_ids": []}}
     if not buses:
         return {"buses": [], "warnings": ["No buses found."], "summary": {}}
 
@@ -803,7 +811,15 @@ def run_grounding_analysis(project: ProjectData):
         n_y = int(bp.get("num_conductors_y", DEFAULT_PARAMS["num_conductors_y"]))
         L_r = float(bp.get("ground_rod_length", DEFAULT_PARAMS["ground_rod_length"]))
         n_R = int(bp.get("num_ground_rods", DEFAULT_PARAMS["num_ground_rods"]))
-        d = float(bp.get("conductor_diameter", DEFAULT_PARAMS["conductor_diameter"]))
+        # The conductor is specified by its size in mm² (conductor_area_mm2);
+        # older projects carry a diameter. Solid-equivalent d = √(4A/π).
+        area_mm2 = bp.get("conductor_area_mm2")
+        if area_mm2 not in (None, ""):
+            area_mm2 = float(area_mm2)
+            d = math.sqrt(4.0 * area_mm2 / math.pi) / 1000.0
+        else:
+            area_mm2 = None
+            d = float(bp.get("conductor_diameter", DEFAULT_PARAMS["conductor_diameter"]))
         mat_key = bp.get("conductor_material", DEFAULT_PARAMS["conductor_material"])
         t_s = float(bp.get("fault_duration", DEFAULT_PARAMS["fault_duration"]))
         t_c = float(bp.get("fault_clearing_time", DEFAULT_PARAMS["fault_clearing_time"]))
@@ -927,6 +943,7 @@ def run_grounding_analysis(project: ProjectData):
         # Conductor sizing
         min_conductor_mm2 = _compute_conductor_size(I_cond, t_c, mat_key, T_a, joint_type)
         recommended_size_mm2 = _select_standard_size(min_conductor_mm2)
+        conductor_ok = None if area_mm2 is None else area_mm2 >= min_conductor_mm2
 
         # [L1] Range the simplified equations were compared over (IEEE 80-2013
         # §16.7: area 6.25–10 000 m², 1–40 meshes a side, mesh 2.5–22.5 m) and
@@ -960,7 +977,11 @@ def run_grounding_analysis(project: ProjectData):
         if GPR > E_touch_tol and touch_ok:
             issues.append(f"GPR {GPR:.0f}V exceeds touch limit but mesh voltage is safe — verify transferred potentials")
 
-        if not touch_ok or not step_ok:
+        if conductor_ok is False:
+            issues.append(f"Grid conductor {area_mm2:g} mm² is below the {min_conductor_mm2:.1f} mm² the fault "
+                          f"current needs for {t_c:g} s (IEEE 80 §11.3) — use {recommended_size_mm2} mm²")
+
+        if not touch_ok or not step_ok or conductor_ok is False:
             status = "fail"
         elif GPR > E_touch_tol:
             status = "warning"
@@ -1017,6 +1038,8 @@ def run_grounding_analysis(project: ProjectData):
             "step_ok": step_ok,
             "min_conductor_mm2": round(min_conductor_mm2, 1),
             "recommended_conductor_mm2": recommended_size_mm2,
+            "conductor_area_mm2": area_mm2,
+            "conductor_ok": conductor_ok,
             "status": status,
             "issues": issues,
             "notes": notes,
@@ -1041,5 +1064,6 @@ def run_grounding_analysis(project: ProjectData):
             "fail": n_fail,
         },
         "warnings": analysis_warnings,
+        "scope": {"bus_ids": scope} if scope is not None else None,
         "material_options": {k: v["name"] for k, v in CONDUCTOR_MATERIALS.items()},
     }

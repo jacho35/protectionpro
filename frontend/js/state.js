@@ -1617,6 +1617,14 @@ const AppState = {
     }
 
     for (const c of data.components || []) {
+      // The grid conductor is specified by its size in mm²; a bus saved with
+      // only a diameter (m) gets its solid-equivalent size (to 0.01 mm², so the
+      // engine's √(4A/π) returns the diameter to within 3·10⁻⁵ — no visible change).
+      if (c.type === 'bus' && c.props && c.props.conductor_area_mm2 == null && c.props.conductor_diameter != null) {
+        const d = parseFloat(c.props.conductor_diameter);
+        if (Number.isFinite(d) && d > 0) c.props.conductor_area_mm2 = Math.round(Math.PI / 4 * Math.pow(d * 1000, 2) * 100) / 100;
+        delete c.props.conductor_diameter;
+      }
       this.components.set(c.id, c);
     }
     for (const w of data.wires || []) {

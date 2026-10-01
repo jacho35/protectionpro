@@ -7,7 +7,8 @@ for this type of grid", so the standard gives computer results only.
 
 ## Grid
 - 70 × 70 m perimeter, cross-conductors at 14 m and 56 m both ways, and both
-  corner-to-corner diagonals; 2/0 Cu (10.5 mm) at 0.5 m.
+  corner-to-corner diagonals; copper 67.4 mm² (2/0 stranded, measured outside
+  diameter 10.5 mm, entered as the conductor's outside diameter) at 0.5 m.
 - Rods, 5/8 in: 7.5 m at the four corners; 2.5 m at the four inner diagonal
   crossings and the centre.
 - Soil: ρ₁ = 100 Ω·m to 6.096 m over ρ₂ = 300 Ω·m.

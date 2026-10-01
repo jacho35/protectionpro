@@ -2590,13 +2590,28 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('status-info').textContent = 'Add components before running grounding analysis.';
       return;
     }
-    document.getElementById('status-info').textContent = 'Running grounding system analysis (IEEE 80)...';
+    // Scope: with AC buses selected, offer to evaluate only those (as the
+    // fault study does). Asked before the busy state so the dialog is in front.
+    let busIds = null;
+    const selBuses = [...AppState.selectedIds].map(id => AppState.components.get(id))
+      .filter(c => c && c.type === 'bus' && String(c.props.system || 'ac').toLowerCase() !== 'dc');
+    if (selBuses.length) {
+      const names = selBuses.map(c => `"${c.props?.name || c.id}"`).join(', ');
+      const one = selBuses.length === 1;
+      if (await UI.confirm(`Run the grounding study on the selected bus${one ? '' : 'es'} ${names} ONLY?\n\n` +
+          `OK = selected bus${one ? '' : 'es'} only — Cancel = all buses`,
+          { title: 'Grounding Study Scope', okText: one ? 'Selected bus only' : 'Selected buses only', cancelText: 'All buses' })) {
+        busIds = selBuses.map(c => c.id);
+      }
+    }
+    const scopeInfo = busIds ? (busIds.length === 1 ? `bus ${selBuses[0].props?.name || busIds[0]}` : `${busIds.length} selected buses`) : 'all buses';
+    document.getElementById('status-info').textContent = `Running grounding study on ${scopeInfo}...`;
     _setBusy('btn-grounding', true);
     try {
-      const result = await API.runGroundingAnalysis();
+      const result = await API.runGroundingAnalysis(busIds);
       AppState.groundingResults = result;
       Canvas.render();
-      document.getElementById('status-info').textContent = 'Grounding analysis complete.';
+      document.getElementById('status-info').textContent = `Grounding study complete (${scopeInfo}).`;
       showGroundingResults(result);
     } catch (e) {
       console.error('Grounding analysis error:', e);
@@ -2838,7 +2853,8 @@ document.addEventListener('DOMContentLoaded', () => {
       <span style="color:#4caf50;margin-left:8px">${summary.pass} Pass</span>
       <span style="color:#f57c00;margin-left:8px">${warnCount} Warn</span>
       <span style="color:#d32f2f;margin-left:8px">${failCount} Fail</span>
-      ${failCount > 0 ? '<span style="color:#d32f2f;margin-left:16px;font-weight:600">— Touch/step voltage limits exceeded</span>' : ''}
+      ${failCount > 0 ? '<span style="color:#d32f2f;margin-left:16px;font-weight:600">— limits exceeded (touch, step or conductor size)</span>' : ''}
+      ${result.scope && Array.isArray(result.scope.bus_ids) ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">Selected bus${result.scope.bus_ids.length === 1 ? '' : 'es'} only — other buses were not evaluated. Run with nothing selected for every bus.</div>` : ''}
     </div>`;
 
     // Per-bus results
@@ -2865,7 +2881,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div>Fault: <strong>${b.fault_current_ka} kA</strong></div>
           <div>R<sub>grid</sub>: <strong>${b.grid_resistance_ohm.toFixed(3)} Ω</strong></div>
           <div>GPR: <strong>${b.gpr_v.toFixed(0)} V</strong></div>
-          <div>Conductor: <strong>${b.recommended_conductor_mm2} mm²</strong></div>
+          <div>Conductor: ${EarthGridEditor.conductorHtml(b)}</div>
           <div>Rods: <strong>${b.num_ground_rods}</strong></div>
           <div>L<sub>total</sub>: <strong>${b.total_conductor_length_m} m</strong></div>
         </div>
