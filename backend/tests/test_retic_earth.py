@@ -113,3 +113,53 @@ def test_endpoint_roundtrip():
     # auth is required on /api/*; the engine itself is covered above — just make sure the route exists
     c = TestClient(app)
     assert c.post("/api/analysis/retic-earth-check", json=req()).status_code in (200, 401)
+
+
+def test_tns_has_separate_earth_on_feeder_and_service():
+    res = run_retic_earth_check(req())
+    k = res["kiosks"][0]
+    assert k["earthing"] == "TN-S"
+    assert not k["ecc"].get("pen") and not k["erfs"][0]["ecc"].get("pen")
+
+
+def test_tnc_uses_pen_everywhere_and_skips_ecc():
+    r = req(); r["minisubs"][0]["earthing"] = "TN-C"
+    k = run_retic_earth_check(r)["kiosks"][0]
+    assert k["ecc"]["pen"] and k["erfs"][0]["ecc"]["pen"]
+    # PEN return = the phase conductor size → loop R doubles the phase R
+    ze = 0.045 * 420 ** 2 / 500000
+    rr = ze / math.sqrt(37)
+    z = complex(rr, 6 * rr) + complex(2 * 0.2461 * 0.1, 0.08 * 0.1) + complex(2 * 1.466 * 0.03, 0.09 * 0.03)
+    assert k["erfs"][0]["loop"]["zsOhm"] == pytest.approx(abs(z), abs=1e-3)
+
+
+def test_tncs_pen_on_feeders_separate_earth_on_services():
+    r = req(); r["minisubs"][0]["earthing"] = "TN-C-S"
+    k = run_retic_earth_check(r)["kiosks"][0]
+    assert k["ecc"]["pen"] is True
+    assert not k["erfs"][0]["ecc"].get("pen")
+    assert k["erfs"][0]["ecc"]["sizeMm2"] == 25          # the chosen service earth
+
+
+def test_pen_below_minimum_fails():
+    r = req(svc=CU16); r["minisubs"][0]["earthing"] = "TN-C"
+    r["kiosks"][0]["feeder"]["cable"] = {**CU16, "size_mm2": 6, "name": "6mm²"}
+    k = run_retic_earth_check(r)["kiosks"][0]
+    assert k["ecc"]["status"] == "fail"
+
+
+def test_kiosk_device_overrides_and_is_inherited():
+    small = {"kind": "fuse", "name": "gG 63A", "props": {"rated_current_a": 63}}
+    r = req(device=MCCB400)
+    r["kiosks"][0]["device"] = small
+    r["kiosks"].append({"id": "k2", "name": "K2", "fedFrom": "k1",
+                        "feeder": {"cable": CU95, "earth": CU25_E, "lengthM": 100},
+                        "erfs": [{"id": "e2", "erfNumber": "2",
+                                  "service": {"cable": CU16, "earth": CU25_E, "lengthM": 30}}]})
+    res = run_retic_earth_check(r)
+    k1, k2 = res["kiosks"]
+    assert k1["device"] == "gG 63A" and k2["device"] == "gG 63A"        # K2 inherits K1's
+    # the small fuse clears a fault the 400 A MCCB would not
+    assert k1["erfs"][0]["loop"]["status"] == "pass"
+    r2 = req(device=MCCB400)
+    assert run_retic_earth_check(r2)["kiosks"][0]["erfs"][0]["loop"]["status"] == "fail"

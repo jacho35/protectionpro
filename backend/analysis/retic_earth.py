@@ -21,6 +21,18 @@ are made along that path, both on the IEC 60364 TN basis:
   *maximum* end-of-leg fault current (c_max = 1.10) and the time the device
   takes to clear it. Either route passes, as the standard allows.
 
+The earthing system is set per minisub (``earthing``: TN-S, TN-C or TN-C-S,
+absent ⇒ TN-S) and decides which cables carry a separate earth conductor: TN-S
+every LV cable (feeders and services); TN-C none — the PEN conductor is the
+return everywhere; TN-C-S the PEN runs the feeders and the earth conductor is
+separate at the service cable only. A PEN leg takes its return from the cable's
+own neutral (taken as the phase conductor size) and is checked against the
+IEC 60364-5-54 §543.4.1 minimum (10 mm² Cu / 16 mm² Al) instead of an ECC.
+
+Protection can be set per kiosk (``device`` on the kiosk, at the head of its
+incoming feeder): the device that clears a fault is the nearest one back
+towards the minisub, so a kiosk with none inherits the one above it.
+
 Conventions, echoed on every response in ``basis``: the MV network is an ideal
 source unless ``mvFaultMVA`` is given; the minisub's single LV device protects
 every cable downstream of it (no discrimination with kiosk fuses is modelled);
@@ -44,6 +56,8 @@ DEFAULT_U0_V = 230.0
 DEFAULT_T_ALLOW_S = 5.0          # IEC 60364-4-41 Table 41.1: distribution circuits
 ADIABATIC_LIMIT_S = 5.0          # §543.1.2 validity limit
 _RANK = {"pass": 0, "info": 1, "fail": 2}
+# IEC 60364-5-54 §543.4.1: minimum section of a PEN conductor.
+PEN_MIN_MM2 = {"Cu": 10.0, "Al": 16.0}
 
 
 def _num(v, default=0.0):
@@ -165,6 +179,15 @@ def _table_ecc_mm2(phase, earth_metal):
 def _leg_ecc(leg, z_end, device):
     """ECC verdict for one leg, from the loop impedance ``z_end`` at its far end."""
     phase, earth, assumed = leg["phase"], leg["earth"], leg["assumed"]
+    if leg.get("pen"):
+        need = PEN_MIN_MM2[phase["metal"]]
+        ok = phase["size"] >= need - 1e-9
+        return {"pen": True, "assumed": False, "sizeMm2": phase["size"], "metal": phase["metal"],
+                "minMm2": need, "status": "pass" if ok else "fail",
+                "note": (f"PEN conductor {phase['size']:g} mm² {phase['metal']} meets the {need:g} mm² minimum (§543.4.1)."
+                         if ok else
+                         f"PEN conductor {phase['size']:g} mm² {phase['metal']} is below the {need:g} mm² minimum for a combined "
+                         f"neutral/earth conductor (IEC 60364-5-54 §543.4.1).")}
     out = {"given": {"name": earth["name"], "sizeMm2": earth["size"], "metal": earth["metal"]}
            if not assumed else None}
     table = _table_ecc_mm2(phase, earth["metal"])
@@ -231,27 +254,48 @@ def run_retic_earth_check(req: dict) -> dict:
     minisubs = {m.get("id"): m for m in (req.get("minisubs") or [])}
     kiosks = {k.get("id"): k for k in (req.get("kiosks") or [])}
 
-    def leg_of(cab, earth, length_m):
+    def leg_of(cab, earth, length_m, pen=False):
         phase = _cable(cab)
         if not phase or phase["size"] <= 0 or length_m <= 0:
             return None
         e = _cable(earth)
         assumed = e is None or e["size"] <= 0
-        if assumed:
+        if pen:
+            # PEN return: the cable's own neutral, taken as the phase conductor size
+            e, assumed = dict(phase), False
+        elif assumed:
             size = ecc_required_mm2(phase["size"]) or phase["size"]
             e = {"name": "", "size": float(size), "metal": phase["metal"], "ins": phase["ins"],
                  "r": 0.0, "x": 0.0}
         km = length_m / 1000.0
         z = complex((_r_per_km(phase) + _r_per_km(e)) * km, phase["x"] * km)
-        return {"phase": phase, "earth": e, "assumed": assumed, "km": km, "z": z, "u0": u0}
+        return {"phase": phase, "earth": e, "assumed": assumed, "pen": bool(pen), "km": km, "z": z, "u0": u0}
 
     leg_cache = {}
+
+    def system_of(ms):
+        sysm = str((ms or {}).get("earthing") or "TN-S").upper().replace("_", "-")
+        return sysm if sysm in ("TN-S", "TN-C", "TN-C-S") else "TN-S"
 
     def own_leg_of(kid):
         if kid not in leg_cache:
             f = (kiosks[kid].get("feeder") or {})
-            leg_cache[kid] = leg_of(f.get("cable"), f.get("earth"), _num(f.get("lengthM")))
+            ms_id, _chain = kiosk_path(kid)
+            ms = minisubs.get(ms_id) or (next(iter(minisubs.values())) if minisubs else None)
+            pen = system_of(ms) in ("TN-C", "TN-C-S")          # PEN along the feeders
+            leg_cache[kid] = leg_of(f.get("cable"), f.get("earth"), _num(f.get("lengthM")), pen)
         return leg_cache[kid]
+
+    def device_for(kid, ms):
+        """Nearest protective device back towards the minisub (the kiosk's own
+        at the head of its incoming feeder, else an upstream kiosk's, else the
+        minisub's)."""
+        _ms_id, chain = kiosk_path(kid)
+        for cid in reversed(chain):
+            d = kiosks[cid].get("device")
+            if d:
+                return d
+        return (ms or {}).get("device")
 
     def kiosk_path(kid):
         """(minisub id, [kiosk ids minisub→kiosk]) following fedFrom; cycle-safe."""
@@ -267,9 +311,11 @@ def run_retic_earth_check(req: dict) -> dict:
     for kid, k in kiosks.items():
         ms_id, chain = kiosk_path(kid)
         ms = minisubs.get(ms_id) or (next(iter(minisubs.values())) if minisubs else None)
-        device = (ms or {}).get("device")
+        device = device_for(kid, ms)
         ze = _source_z(ms)
-        res = {"kioskId": kid, "name": k.get("name", ""), "minisubId": (ms or {}).get("id")}
+        sysm = system_of(ms)
+        res = {"kioskId": kid, "name": k.get("name", ""), "minisubId": (ms or {}).get("id"),
+               "earthing": sysm, "device": (device or {}).get("name")}
         own_leg = own_leg_of(kid)
         if ze is None:
             res.update({"loop": {"status": "info", "note": "The minisub has no transformer yet (no demand to size one)."},
@@ -295,7 +341,7 @@ def run_retic_earth_check(req: dict) -> dict:
         erf_out = []
         for e in (k.get("erfs") or []):
             svc = e.get("service") or {}
-            sleg = leg_of(svc.get("cable"), svc.get("earth"), _num(svc.get("lengthM")))
+            sleg = leg_of(svc.get("cable"), svc.get("earth"), _num(svc.get("lengthM")), sysm == "TN-C")
             er = {"erfId": e.get("id"), "erfNumber": e.get("erfNumber", "")}
             if sleg is None:
                 er["loop"] = {"status": "info", "note": "No service cable or length — enter them to check this erf."}
@@ -318,6 +364,7 @@ def run_retic_earth_check(req: dict) -> dict:
         ms_out.append({"minisubId": mid, "name": m.get("name", ""),
                        "zeOhm": _round(abs(ze)) if ze is not None else None,
                        "device": (m.get("device") or {}).get("name"),
+                       "earthing": system_of(m),
                        "status": "info" if (ze is None or not m.get("device")) else "pass"})
 
     counts = {"pass": 0, "info": 0, "fail": 0}
@@ -330,7 +377,8 @@ def run_retic_earth_check(req: dict) -> dict:
         "minisubs": ms_out, "kiosks": out_kiosks,
         "basis": [
             f"TN system, U0 = {u0:g} V; minimum fault current c_min = {C_MIN} (IEC 60909-0 §5.3.1), conductors at operating temperature.",
-            f"Disconnection within {t_allow:g} s (IEC 60364-4-41 Table 41.1, distribution circuits) by the minisub's device; no discrimination with kiosk fuses is modelled.",
+            f"Disconnection within {t_allow:g} s (IEC 60364-4-41 Table 41.1, distribution circuits) by the nearest protective device back to the minisub (a kiosk's own, else inherited); no discrimination between devices in series is checked.",
+            "Earthing per minisub: TN-S separate earth conductor on every LV cable; TN-C PEN throughout (no ECC; PEN minimum 10 mm² Cu / 16 mm² Al); TN-C-S PEN on the feeders, separate earth conductor on the service cables only.",
             "Ze is the transformer's short-circuit impedance on its own rated base; the MV network is an ideal source unless a fault level is given.",
             "ECC: IEC 60364-5-54 Table 54.7 (converted by conductivity for another metal) or the §543.1.2 adiabatic size at c_max = 1.10 and the device's clearing time, k from Table 54.3; the leg is evaluated at its far end.",
         ],
