@@ -368,7 +368,7 @@ const PlanUI = {
   _searchifyCables(root) {
     if (typeof SearchSelect === 'undefined') return;
     root.querySelectorAll('select[data-cable-select]').forEach(sel =>
-      SearchSelect.attach(sel, { placeholder: 'Type to search cables — e.g. 16 cu, 25*xlpe' }));
+      SearchSelect.attach(sel, { placeholder: 'No cable — type to search, e.g. 16 cu, 25*xlpe' }));
   },
 
   // Live read-out of the Reticulation (Demand) row behind a linked site-plan
@@ -376,8 +376,9 @@ const PlanUI = {
   // drawn, and redrawn whenever Demand recomputes (Retic._doCompute) or the
   // Plan workspace is shown. Read-only — edit it in Demand.
   _demandBlock(item, kind) {
-    if (kind !== 'element' || !['erf', 'kiosk', 'minisub'].includes(item.type) ||
-        typeof Retic === 'undefined' || !AppState.reticulation) return '';
+    if (typeof Retic === 'undefined' || !AppState.reticulation) return '';
+    if (kind === 'route') return this._demandRouteBlock(item);
+    if (kind !== 'element' || !['erf', 'kiosk', 'minisub'].includes(item.type)) return '';
     const R = AppState.reticulation, res = AppState.reticResults;
     const rows = [];
     const row = (k, v, cls) => rows.push(`<div class="plan-demand-row${cls ? ' ' + cls : ''}"><span>${escHtml(k)}</span><b>${v}</b></div>`);
@@ -418,7 +419,11 @@ const PlanUI = {
       row('Erven', String(k.erfs.length));
       if (kr) { row('Demand', `${kr.totalKVA} kVA · ${kr.currentA} A`); row('ADMD', `${kr.admdKVA} kVA${kr.admdPerPhase ? '/ph' : ''}`); }
       row('Feeder cable', escHtml(k.feederCable || '—'));
-      row('Feeder length', k.feederLength ? `${num(k.feederLength, 1)} m` : '—');
+      const fi = this._feederInfo(k, res);
+      row('Feeder length (incoming leg)', k.feederLength ? `${num(k.feederLength, 1)} m` : '—');
+      row('Cumulative length', fi.cumLen ? `${num(fi.cumLen, 1)} m` : '—');
+      if (fi.legVD != null) row('Incoming leg volt drop', `${num(fi.legVD)} %`);
+      if (fi.cumVD != null) row('Cumulative volt drop', `${num(fi.cumVD)} %`, fi.cumVD > Retic.settings.maxFeederVD ? 'bad' : 'ok');
     } else if (item.type === 'minisub') {
       const ms = PlanSync._resolve(R.minisubs, item);
       if (!ms) return notLinked();
@@ -427,6 +432,74 @@ const PlanUI = {
       if (r) row('Demand', `${r.totalKVA} kVA`);
     } else return '';
     return `<div class="plan-demand"><div class="plan-demand-title">${title}</div>${rows.join('')}</div>`;
+  },
+
+  // Feeder figures for one kiosk: its own (incoming) leg and the running total
+  // back to the minisub — length and volt drop. VD needs the Demand results.
+  _feederInfo(k, res) {
+    const byId = {};
+    if (res && res.kiosks) for (const kr of res.kiosks) byId[kr.kioskId] = kr;
+    let cumLen = 0, id = k.id;
+    const seen = new Set();
+    while (id && id !== 'source' && !seen.has(id)) {
+      seen.add(id);
+      const kk = Retic.kioskById(id);
+      if (!kk) break;
+      cumLen += Number(kk.feederLength) || 0;
+      id = kk.fedFrom || 'source';
+    }
+    const kr = byId[k.id];
+    return {
+      cumLen, kr,
+      legVD: kr ? Retic._legFeederVD(k.id, byId) : null,
+      cumVD: kr ? Retic._cumulativeFeederVD(k.id, byId) : null,
+    };
+  },
+
+  // Demand figures for a drawn cable: a service route shows its erf's load and
+  // volt drop, a kiosk feeder route the leg's load, length and cumulative drop.
+  _demandRouteBlock(route) {
+    if (typeof PlanSync === 'undefined' || !PlanSync._cableLink) return '';
+    const link = PlanSync._cableLink(route, PlanSync._elById());
+    if (!link) return '';
+    const res = AppState.reticResults;
+    const rows = [];
+    const row = (k, v, cls) => rows.push(`<div class="plan-demand-row${cls ? ' ' + cls : ''}"><span>${escHtml(k)}</span><b>${v}</b></div>`);
+    const num = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
+    const cable = CableLib.byName(link.row[link.key]);
+    const rating = cable && cable.rated_amps ? Number(cable.rated_amps) : null;
+    const loading = (amps) => rating && amps ? ` (${Math.round(amps / rating * 100)}% of ${rating} A)` : '';
+    if (link.key === 'cableType') {                      // service cable → erf
+      const e = link.row;
+      const k = Retic.kiosks.find(kk => kk.erfs.includes(e));
+      if (!k) return '';
+      const is3 = Retic._erfIs3ph(k, e), amps = Retic._erfDesignAmps(k, e);
+      const vc = Retic._vdCalc(e.cableType, amps, e.length, is3);
+      const limit = Retic.settings.maxRunVD;
+      row('Erf', escHtml(e.erfNumber || '—') + ' · ' + escHtml(k.name));
+      row('Connection', is3 ? '3 phase' : '1 phase');
+      row('Design current', `${num(amps)} A${loading(amps)}`);
+      row('Length in Demand', e.length ? `${num(e.length, 1)} m` : '—');
+      if (vc) row('Volt drop', `${num(vc.vd)} % (limit ${limit} %)`, vc.vd > limit ? 'bad' : 'ok');
+    } else {                                             // feeder cable → kiosk leg
+      const k = link.row;
+      if (!res && Retic._doCompute && !this._demandAsked) {
+        this._demandAsked = true;
+        Promise.resolve(Retic._doCompute()).finally(() => { this._demandAsked = false; });
+      }
+      const fi = this._feederInfo(k, res);
+      row('Feeds', escHtml(k.name) + ` (${k.erfs.length} erven)`);
+      if (fi.kr) {
+        const kva = fi.kr.feederKVA != null ? fi.kr.feederKVA : fi.kr.totalKVA;
+        const amps = fi.kr.feederA != null ? fi.kr.feederA : fi.kr.currentA;
+        row('Leg load', `${kva} kVA · ${num(amps)} A${loading(amps)}`);
+      }
+      row('Leg length in Demand', k.feederLength ? `${num(k.feederLength, 1)} m` : '—');
+      row('Cumulative length', fi.cumLen ? `${num(fi.cumLen, 1)} m` : '—');
+      if (fi.legVD != null) row('Leg volt drop', `${num(fi.legVD)} %`);
+      if (fi.cumVD != null) row('Cumulative volt drop', `${num(fi.cumVD)} % (limit ${Retic.settings.maxFeederVD} %)`, fi.cumVD > Retic.settings.maxFeederVD ? 'bad' : 'ok');
+    }
+    return `<div class="plan-demand"><div class="plan-demand-title">From Demand</div>${rows.join('')}</div>`;
   },
 
   // Circuit-tag editor for a load device: pick a board + way number. The board
