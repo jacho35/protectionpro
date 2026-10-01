@@ -359,3 +359,93 @@ def test_user_can_change_own_password(client):
     assert client.post("/api/auth/login", json={"email": "admin@x.com", "password": "new-password-1"}).status_code == 200
     assert client.post("/api/auth/login", json={"email": "admin@x.com", "password": "password123"}).status_code == 401
     assert client.post("/api/auth/change-password", json={"current_password": "a", "new_password": "new-password-2"}).status_code == 401
+
+
+def test_admin_roles(client):
+    h = _admin(client)
+    # Invite as administrator
+    code = client.post("/api/auth/invites", json={"is_admin": True}, headers=h).json()["code"]
+    bob = _register(client, "bob@x.com", invite=code).json()
+    assert bob["user"]["is_admin"] is True
+    plain_code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    amy = _register(client, "amy@x.com", invite=plain_code).json()
+    assert amy["user"]["is_admin"] is False
+    # Non-admin can't change roles
+    assert client.patch(f"/api/auth/users/{bob['user']['id']}/admin", json={"is_admin": False},
+                        headers=_hdr(amy["access_token"])).status_code == 403
+    # Promote, then the new admin can use admin features
+    r = client.patch(f"/api/auth/users/{amy['user']['id']}/admin", json={"is_admin": True}, headers=h)
+    assert r.status_code == 200 and r.json()["is_admin"] is True
+    assert client.get("/api/auth/invites", headers=_hdr(amy["access_token"])).status_code == 200
+    # Can't change own role
+    assert client.patch("/api/auth/users/1/admin", json={"is_admin": False}, headers=h).status_code == 400
+    # Demote works while another admin remains
+    assert client.patch(f"/api/auth/users/{amy['user']['id']}/admin", json={"is_admin": False}, headers=h).json()["is_admin"] is False
+    assert client.patch("/api/auth/users/999/admin", json={"is_admin": True}, headers=h).status_code == 404
+
+
+def test_deactivate_reactivate_and_delete_user(client):
+    h = _admin(client)
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    bob = _register(client, "bob@x.com", invite=code, name="Bob").json()
+    bh, bid = _hdr(bob["access_token"]), bob["user"]["id"]
+    pid = client.post("/api/projects", json={"name": "Bob's job", "data": {}}, headers=bh).json()["id"]
+    # Guards
+    assert client.patch("/api/auth/users/1/active", json={"is_active": False}, headers=h).status_code == 400   # self
+    assert client.delete("/api/auth/users/1", headers=h).status_code == 400
+    assert client.patch(f"/api/auth/users/{bid}/active", json={"is_active": False}, headers=bh).status_code == 403
+    # Deactivate: blocked everywhere, nothing lost, hidden from share search
+    assert client.patch(f"/api/auth/users/{bid}/active", json={"is_active": False}, headers=h).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "bob@x.com", "password": "password123"}).status_code == 403
+    assert client.get("/api/auth/me", headers=bh).status_code == 401
+    assert client.get("/api/auth/users/search?q=bob", headers=h).json() == []
+    # Reactivate
+    client.patch(f"/api/auth/users/{bid}/active", json={"is_active": True}, headers=h)
+    assert client.post("/api/auth/login", json={"email": "bob@x.com", "password": "password123"}).status_code == 200
+    # Delete: projects move to the admin, the account is gone
+    r = client.delete(f"/api/auth/users/{bid}", headers=h)
+    assert r.status_code == 200 and r.json()["projects_moved"] == 1
+    assert client.post("/api/auth/login", json={"email": "bob@x.com", "password": "password123"}).status_code == 401
+    assert client.get(f"/api/projects/{pid}", headers=h).status_code == 200
+    assert client.delete("/api/auth/users/999", headers=h).status_code == 404
+
+
+def test_cannot_remove_last_active_admin(client):
+    h = _admin(client)
+    code = client.post("/api/auth/invites", json={"is_admin": True}, headers=h).json()["code"]
+    b = _register(client, "b@x.com", invite=code).json()
+    # b (admin) demotes/deactivates nobody they shouldn't: admin 1 removed by b leaves b — allowed
+    assert client.patch("/api/auth/users/1/active", json={"is_active": False}, headers=_hdr(b["access_token"])).status_code == 200
+    # Now b is the only active admin; b can't remove themselves (self rule), and 1 is inactive
+    assert client.delete(f"/api/auth/users/{b['user']['id']}", headers=_hdr(b["access_token"])).status_code == 400
+
+
+def test_admin_project_list_transfer_and_heir(client):
+    h = _admin(client)
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    bob = _register(client, "bob@x.com", invite=code, name="Bob").json()
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    amy = _register(client, "amy@x.com", invite=code, name="Amy").json()
+    bh = _hdr(bob["access_token"])
+    pid = client.post("/api/projects", json={"projectName": "Bob job", "components": [], "wires": []}, headers=bh).json()["id"]
+    # Admin sees names + owners, but cannot open the project itself
+    rows = [r for r in client.get("/api/admin/projects", headers=h).json() if r["id"] == pid]
+    assert len(rows) == 1 and rows[0]["name"] == "Bob job" and rows[0]["owner_name"] == "Bob"
+    assert "data" not in rows[0]
+    assert client.get(f"/api/projects/{pid}", headers=h).status_code == 404
+    assert client.get("/api/admin/projects", headers=bh).status_code == 403
+    # Take ownership: opens, Bob keeps edit
+    r = client.post(f"/api/admin/projects/{pid}/transfer", json={"to_user_id": 1}, headers=h).json()
+    assert r["previous_owner_kept_edit"] is True
+    assert client.get(f"/api/projects/{pid}", headers=h).status_code == 200
+    assert client.get(f"/api/projects/{pid}", headers=bh).status_code == 200
+    # Transfer to Amy without keeping access
+    client.post(f"/api/admin/projects/{pid}/transfer", json={"to_user_id": amy["user"]["id"], "keep_access": False}, headers=h)
+    assert client.get(f"/api/projects/{pid}", headers=_hdr(amy["access_token"])).status_code == 200
+    assert client.get(f"/api/projects/{pid}", headers=h).status_code == 404
+    # Delete Amy, handing her projects to Bob
+    d = client.delete(f"/api/auth/users/{amy['user']['id']}?transfer_to={bob['user']['id']}", headers=h).json()
+    assert d["projects_moved"] == 1 and d["transferred_to"] == bob["user"]["id"]
+    assert client.get(f"/api/projects/{pid}", headers=bh).status_code == 200
+    # Bad heir
+    assert client.delete(f"/api/auth/users/{bob['user']['id']}?transfer_to={bob['user']['id']}", headers=h).status_code == 400

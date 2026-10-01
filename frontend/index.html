@@ -930,6 +930,7 @@
           <h4 style="margin-top:18px">Invite people</h4>
           <p class="auth-hint" id="invite-mode-hint">Each invite works once.</p>
           <div class="form-group"><label for="invite-email">Email</label><input id="invite-email" type="email" placeholder="Optional — leave blank to just get a link"></div>
+          <div class="form-group"><label for="invite-role">Role</label><select id="invite-role"><option value="user">User</option><option value="admin">Administrator</option></select></div>
           <div class="form-group"><label for="invite-days">Valid for</label><select id="invite-days"><option value="7">7 days</option><option value="3">3 days</option><option value="30">30 days</option></select></div>
           <div class="form-group" id="invite-note-row"><label for="invite-note">Personal note</label><input id="invite-note" type="text" maxlength="300" placeholder="Optional — added to the email"></div>
           <button id="btn-generate-invite" class="btn-primary" type="button">Create invite link</button>
@@ -940,12 +941,30 @@
           </div>
           <h4 style="margin-top:18px">Pending invitations</h4>
           <div id="invites-list" style="margin-top:6px"></div>
+          <h4 style="margin-top:18px">All projects <small style="font-weight:400;color:var(--text-muted)">(names only — to open one, take ownership)</small></h4>
+          <div id="admin-projects-list" style="margin-top:6px"></div>
           <h4 style="margin-top:18px">Users</h4>
           <div id="users-list" style="margin-top:6px"></div>
           <div id="reset-link-row" class="share-add-row" style="display:none;margin-top:10px">
             <input id="reset-link" type="text" readonly aria-label="Password reset link">
             <button id="btn-copy-reset" class="btn-small" type="button">Copy</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pick who receives projects (admin: transfer a project / delete a user) -->
+  <div id="heir-modal" class="modal" role="dialog" aria-modal="true" aria-label="Choose a user" style="display:none;z-index:1300">
+    <div class="modal-content" style="max-width:460px">
+      <div class="modal-header"><h3 id="heir-title">Choose a user</h3><button class="modal-close" id="heir-close">&times;</button></div>
+      <div class="modal-body">
+        <p id="heir-text" class="auth-hint"></p>
+        <div class="form-group"><label for="heir-select" id="heir-label">Give to</label><select id="heir-select"></select></div>
+        <label class="ef-check" id="heir-keep-row"><input type="checkbox" id="heir-keep" checked> Previous owner keeps edit access</label>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button id="heir-cancel" class="btn-secondary" type="button">Cancel</button>
+          <button id="heir-ok" class="btn-primary" type="button">OK</button>
         </div>
       </div>
     </div>

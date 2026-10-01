@@ -9,10 +9,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import mailer
-from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset
+from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset, SharedLibrary
 from ..models.schemas import (
     RegisterRequest, LoginRequest, Token, UserOut,
-    InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, ResetLinkRequest,
+    InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, AdminRoleRequest, ActiveRequest, ResetLinkRequest,
 )
 from ..auth import (
     hash_password, verify_password, create_access_token,
@@ -61,7 +61,7 @@ def register(data: RegisterRequest, background: BackgroundTasks, db: Session = D
         email=email,
         password_hash=hash_password(data.password),
         name=(data.name or "").strip(),
-        is_admin=first_user,
+        is_admin=first_user or bool(invite and invite.is_admin),
         is_active=True,
     )
     db.add(user)
@@ -209,7 +209,7 @@ def create_invite(data: InviteCreate, admin: User = Depends(require_admin),
     expires = data.expires_at
     if data.expires_days:
         expires = datetime.now(timezone.utc) + timedelta(days=data.expires_days)
-    invite = Invite(code=secrets.token_urlsafe(24), email=email,
+    invite = Invite(code=secrets.token_urlsafe(24), email=email, is_admin=data.is_admin,
                     created_by=admin.id, expires_at=expires)
     db.add(invite)
     db.commit()
@@ -243,7 +243,7 @@ def check_invite(code: str, db: Session = Depends(get_db)):
         inv.expires_at.replace(tzinfo=timezone.utc) if inv and inv.expires_at else None)
     if not inv or inv.used_by is not None or (exp and exp < now):
         return {"valid": False}
-    return {"valid": True, "email": inv.email or "", "inviter": inv.creator.name or inv.creator.email}
+    return {"valid": True, "email": inv.email or "", "is_admin": inv.is_admin, "inviter": inv.creator.name or inv.creator.email}
 
 
 @router.delete("/invites/{invite_id}")
@@ -262,6 +262,77 @@ def delete_invite(invite_id: int, admin: User = Depends(require_admin),
 def list_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     return [{"id": u.id, "email": u.email, "name": u.name, "is_admin": u.is_admin,
              "is_active": u.is_active} for u in db.query(User).order_by(User.name, User.email).all()]
+
+
+@router.patch("/users/{user_id}/admin")
+def set_admin(user_id: int, data: AdminRoleRequest, admin: User = Depends(require_admin),
+              db: Session = Depends(get_db)):
+    """Promote a user to administrator, or demote one. Admin only."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="You can't change your own role. Ask another administrator.")
+    if not data.is_admin and user.is_admin:
+        others = db.query(User).filter(User.is_admin == True, User.is_active == True,  # noqa: E712
+                                       User.id != user.id).count()
+        if others == 0:
+            raise HTTPException(status_code=400, detail="There must be at least one administrator.")
+    if data.is_admin and not user.is_active:
+        raise HTTPException(status_code=400, detail="That account is deactivated.")
+    user.is_admin = data.is_admin
+    db.commit()
+    return {"id": user.id, "is_admin": user.is_admin}
+
+
+def _guard_other_user(db, admin: User, user_id: int, verb: str) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail=f"You can't {verb} your own account.")
+    if user.is_admin and user.is_active:
+        others = db.query(User).filter(User.is_admin == True, User.is_active == True,  # noqa: E712
+                                       User.id != user.id).count()
+        if others == 0:
+            raise HTTPException(status_code=400, detail="There must be at least one active administrator.")
+    return user
+
+
+@router.patch("/users/{user_id}/active")
+def set_active(user_id: int, data: ActiveRequest, admin: User = Depends(require_admin),
+               db: Session = Depends(get_db)):
+    """Deactivate (blocks sign-in, keeps everything) or reactivate a user."""
+    user = _guard_other_user(db, admin, user_id, "deactivate") if not data.is_active else (
+        db.query(User).filter(User.id == user_id).first())
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = data.is_active
+    db.commit()
+    return {"id": user.id, "is_active": user.is_active}
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, transfer_to: int = None, admin: User = Depends(require_admin),
+                db: Session = Depends(get_db)):
+    """Remove a user. Their projects, folders and team libraries move to
+    `transfer_to` (default: the deleting admin); their shares, memberships and
+    personal libraries go."""
+    user = _guard_other_user(db, admin, user_id, "delete")
+    heir = admin
+    if transfer_to is not None:
+        heir = db.query(User).filter(User.id == transfer_to).first()
+        if not heir or not heir.is_active or heir.id == user.id:
+            raise HTTPException(status_code=400, detail="Choose an active user to receive their projects.")
+    moved = db.query(Project).filter(Project.owner_id == user.id).count()
+    db.query(Project).filter(Project.owner_id == user.id).update({Project.owner_id: heir.id}, synchronize_session=False)
+    db.query(Folder).filter(Folder.owner_id == user.id).update({Folder.owner_id: heir.id}, synchronize_session=False)
+    db.query(SharedLibrary).filter(SharedLibrary.owner_id == user.id).update({SharedLibrary.owner_id: heir.id}, synchronize_session=False)
+    db.query(Invite).filter(Invite.created_by == user.id).update({Invite.created_by: heir.id}, synchronize_session=False)
+    db.query(Invite).filter(Invite.used_by == user.id).update({Invite.used_by: None}, synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    return {"ok": True, "projects_moved": moved, "transferred_to": heir.id}
 
 
 def _new_reset(db, user: User) -> str:

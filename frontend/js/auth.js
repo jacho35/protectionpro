@@ -306,6 +306,7 @@ const Auth = {
       res.textContent = inv.emailed ? `Invitation sent to ${email}. The link is below in case you need it.`
         : (inv.email_error ? `Couldn’t send the email: ${inv.email_error} Copy the link below instead.` : 'Link created — copy it and send it to the person.');
       document.getElementById('invite-email').value = '';
+      document.getElementById('invite-role').value = 'user';
       this._renderInvites();
     } catch (e) {
       UI.toast && UI.toast(e.message || 'Could not create invite', 'error');
@@ -318,6 +319,53 @@ const Auth = {
     navigator.clipboard?.writeText(input.value)
       .then(() => UI.toast && UI.toast('Invite link copied', 'success'))
       .catch(() => { input.select(); document.execCommand && document.execCommand('copy'); });
+  },
+
+  // Ask which active user should receive something. Resolves {id, keep} or null.
+  _pickUser(users, { title, text, label, okText, showKeep }) {
+    return new Promise(resolve => {
+      const m = document.getElementById('heir-modal');
+      document.getElementById('heir-title').textContent = title;
+      document.getElementById('heir-text').textContent = text;
+      document.getElementById('heir-label').textContent = label;
+      document.getElementById('heir-ok').textContent = okText;
+      document.getElementById('heir-keep-row').style.display = showKeep ? '' : 'none';
+      document.getElementById('heir-keep').checked = true;
+      const sel = document.getElementById('heir-select');
+      sel.innerHTML = users.map(u => `<option value="${u.id}"${u.id === this.user.id ? ' selected' : ''}>${this._esc(u.name || u.email)}${u.name ? ' — ' + this._esc(u.email) : ''}${u.id === this.user.id ? ' (you)' : ''}</option>`).join('');
+      const done = (v) => { m.style.display = 'none'; ['heir-ok', 'heir-cancel', 'heir-close'].forEach(i => { const b = document.getElementById(i); b.replaceWith(b.cloneNode(true)); }); resolve(v); };
+      m.style.display = '';
+      document.getElementById('heir-ok').addEventListener('click', () => done({ id: parseInt(sel.value, 10), keep: document.getElementById('heir-keep').checked }));
+      document.getElementById('heir-cancel').addEventListener('click', () => done(null));
+      document.getElementById('heir-close').addEventListener('click', () => done(null));
+    });
+  },
+
+  async _renderAdminProjects(users) {
+    const list = document.getElementById('admin-projects-list');
+    if (!list) return;
+    try {
+      const rows = await API.adminProjects();
+      if (!rows.length) { list.innerHTML = '<p class="auth-hint">No projects yet.</p>'; return; }
+      list.innerHTML = rows.map(p => `<div class="user-row">
+        <span class="invite-for">${this._esc(p.name)}<small>${this._esc(p.owner_name)}${p.owner_active ? '' : ' · deactivated'}${p.updated_at ? ' · ' + new Date(p.updated_at.endsWith('Z') || /[+-]\d\d:/.test(p.updated_at) ? p.updated_at : p.updated_at + 'Z').toLocaleDateString() : ''}</small></span>
+        <button class="btn-small proj-take" data-id="${p.id}" ${p.owner_id === this.user.id ? 'disabled' : ''}>Take ownership</button>
+        <button class="btn-small proj-transfer" data-id="${p.id}" data-name="${this._esc(p.name)}">Transfer…</button>
+      </div>`).join('');
+      const doTransfer = async (id, to, keep, msg) => {
+        try { await API.transferProject(id, to, keep); UI.toast && UI.toast(msg, 'success'); this._renderAdminProjects(users);
+          if (typeof Project !== 'undefined' && Project.refreshProjectViewIfOpen) Project.refreshProjectViewIfOpen();
+        } catch (e) { UI.toast && UI.toast(e.message || 'Could not transfer', 'error'); }
+      };
+      list.querySelectorAll('.proj-take').forEach(b => b.addEventListener('click', async () => {
+        if (await UI.confirm('Take ownership of this project? It will appear in your own projects, and the previous owner keeps edit access.', { okText: 'Take ownership' }))
+          doTransfer(parseInt(b.dataset.id, 10), this.user.id, true, 'You now own the project');
+      }));
+      list.querySelectorAll('.proj-transfer').forEach(b => b.addEventListener('click', async () => {
+        const pick = await this._pickUser((users || []).filter(u => u.is_active), { title: 'Transfer project', text: `Move “${b.dataset.name}” to another user. It leaves the previous owner’s folders.`, label: 'New owner', okText: 'Transfer', showKeep: true });
+        if (pick) doTransfer(parseInt(b.dataset.id, 10), pick.id, pick.keep, 'Project transferred');
+      }));
+    } catch (e) { list.innerHTML = `<p class="auth-error">${this._esc(e.message || 'Failed to load projects')}</p>`; }
   },
 
   _copy(text, done) {
@@ -333,7 +381,7 @@ const Auth = {
       list.innerHTML = invites.map(inv => {
         const exp = inv.expires_at ? ` · expires ${new Date(inv.expires_at.endsWith('Z') || /[+-]\d\d:/.test(inv.expires_at) ? inv.expires_at : inv.expires_at + 'Z').toLocaleDateString()}` : '';
         return `<div class="invite-row" data-id="${inv.id}">
-          <span class="invite-for">${inv.email ? this._esc(inv.email) : 'Anyone with the link'}<small style="color:var(--text-muted)">${exp}</small></span>
+          <span class="invite-for">${inv.email ? this._esc(inv.email) : 'Anyone with the link'}<small style="color:var(--text-muted)">${inv.is_admin ? ' · admin' : ''}${exp}</small></span>
           ${this._emailOn && inv.email ? `<button class="btn-small invite-resend" data-id="${inv.id}">Resend</button>` : ''}
           <button class="btn-small invite-copy" data-code="${this._esc(inv.code)}">Copy link</button>
           <button class="btn-small invite-revoke" data-id="${inv.id}">Revoke</button>
@@ -361,11 +409,45 @@ const Auth = {
     if (!list) return;
     try {
       const users = await API.listUsers();
+      this._users = users;
+      this._renderAdminProjects(users);
       list.innerHTML = users.map(u => `<div class="user-row">
-        <span class="invite-for">${this._esc(u.name || u.email)}<small>${u.name ? this._esc(u.email) : ''}${u.is_admin ? ' · admin' : ''}</small></span>
-        ${this._emailOn ? `<button class="btn-small user-welcome" data-id="${u.id}">Send welcome</button>` : ''}
-        <button class="btn-small user-reset" data-id="${u.id}">${this._emailOn ? 'Email reset link' : 'Copy reset link'}</button>
+        <span class="invite-for">${this._esc(u.name || u.email)}<small>${u.name ? this._esc(u.email) : ''}${u.is_admin ? ' · admin' : ''}${u.is_active ? '' : ' · deactivated'}</small></span>
+        ${u.id !== this.user.id ? `<button class="btn-small user-active" data-id="${u.id}" data-active="${u.is_active ? 1 : 0}">${u.is_active ? 'Deactivate' : 'Reactivate'}</button><button class="btn-small user-delete" data-id="${u.id}">Delete</button>` : ''}
+        ${u.id !== this.user.id && u.is_active ? `<button class="btn-small user-role" data-id="${u.id}" data-admin="${u.is_admin ? 1 : 0}">${u.is_admin ? 'Remove admin' : 'Make admin'}</button>` : ''}
+        ${this._emailOn && u.is_active ? `<button class="btn-small user-welcome" data-id="${u.id}">Send welcome</button>` : ''}
+        ${u.is_active ? `<button class="btn-small user-reset" data-id="${u.id}">${this._emailOn ? 'Email reset link' : 'Copy reset link'}</button>` : ''}
       </div>`).join('');
+      const nameOf = (btn) => btn.closest('.user-row').querySelector('.invite-for').firstChild.textContent;
+      list.querySelectorAll('.user-active').forEach(btn => btn.addEventListener('click', async () => {
+        const off = btn.dataset.active === '1';
+        if (off && !(await UI.confirm(`Deactivate ${nameOf(btn)}? They won’t be able to sign in, but their projects stay as they are. You can reactivate them later.`, { okText: 'Deactivate', danger: true }))) return;
+        try { await API.setActive(parseInt(btn.dataset.id, 10), !off); this._renderUsers(); }
+        catch (e) { UI.toast && UI.toast(e.message || 'Could not change the account', 'error'); }
+      }));
+      list.querySelectorAll('.user-delete').forEach(btn => btn.addEventListener('click', async () => {
+        const id = parseInt(btn.dataset.id, 10);
+        const pick = await this._pickUser(users.filter(u => u.is_active && u.id !== id), {
+          title: `Delete ${nameOf(btn)}`,
+          text: 'Their projects, folders and team libraries are kept and handed to the user you choose. Their sharing and personal libraries are removed. This can’t be undone — to just stop them signing in, use Deactivate instead.',
+          label: 'Give their projects to', okText: 'Delete user', showKeep: false });
+        if (!pick) return;
+        try {
+          const r = await API.deleteUser(id, pick.id);
+          UI.toast && UI.toast(`User deleted${r.projects_moved ? ` — ${r.projects_moved} project(s) handed over` : ''}`, 'success');
+          this._renderUsers();
+        } catch (e) { UI.toast && UI.toast(e.message || 'Could not delete the user', 'error'); }
+      }));
+      list.querySelectorAll('.user-role').forEach(btn => btn.addEventListener('click', async () => {
+        const makeAdmin = btn.dataset.admin !== '1';
+        const name = btn.closest('.user-row').querySelector('.invite-for').firstChild.textContent;
+        const ok = await UI.confirm(makeAdmin
+          ? `Make ${name} an administrator? They will be able to manage users, invites and email settings.`
+          : `Remove administrator access from ${name}?`, { okText: makeAdmin ? 'Make admin' : 'Remove admin', danger: !makeAdmin });
+        if (!ok) return;
+        try { await API.setAdmin(parseInt(btn.dataset.id, 10), makeAdmin); this._renderUsers(); }
+        catch (e) { UI.toast && UI.toast(e.message || 'Could not change the role', 'error'); }
+      }));
       list.querySelectorAll('.user-welcome').forEach(btn => btn.addEventListener('click', async () => {
         try {
           const r = await API.sendWelcome(parseInt(btn.dataset.id, 10));

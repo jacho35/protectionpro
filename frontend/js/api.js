@@ -605,6 +605,21 @@ const API = {
   async userResetLink(id, send_email, base_url) {
     return this.request(`/auth/users/${id}/reset-link`, 'POST', { send_email, base_url });
   },
+  async setActive(id, is_active) {
+    return this.request(`/auth/users/${id}/active`, 'PATCH', { is_active });
+  },
+  async deleteUser(id, transferTo) {
+    return this.request(`/auth/users/${id}${transferTo ? `?transfer_to=${transferTo}` : ''}`, 'DELETE');
+  },
+  async adminProjects() {
+    return this.request('/admin/projects');
+  },
+  async transferProject(id, to_user_id, keep_access) {
+    return this.request(`/admin/projects/${id}/transfer`, 'POST', { to_user_id, keep_access });
+  },
+  async setAdmin(id, is_admin) {
+    return this.request(`/auth/users/${id}/admin`, 'PATCH', { is_admin });
+  },
   async changePassword(current_password, new_password) {
     return this.request('/auth/change-password', 'POST', { current_password, new_password });
   },
