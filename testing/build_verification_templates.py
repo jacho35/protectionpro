@@ -178,14 +178,17 @@ EXPECTED = {
         "afb_mm": ("buses.bus-1.arc_flash_boundary_mm", 1366.0),
         "ppe": ("buses.bus-1.ppe_category", 3),
     }),
-    # Independent phase-domain solve (Zabc = A·diag(Z0,Z1,Z2)·A⁻¹, V_B = V_A +
-    # Zabc·I(V_B) iterated in phases) — see case-unbalanced-loadflow/results.md.
-    # Was 0.7618 / 0.96146 / 1.00489 / 0.98922 from the old single-pass engine.
+    # Independent phase-domain solve (Zabc = A·diag(Z0,Z1,Z2)·A⁻¹ for the line
+    # AND the 200 MVA source, positive-sequence EMF held at |V1| = 1 at the
+    # source bus, V iterated in phases) — see case-unbalanced-loadflow/results.md.
+    # Was 0.7618 / 0.96146 / 1.00489 / 0.98922 from the old single-pass engine,
+    # then 0.8045 / 0.95967 / 1.00541 / 0.98975 with the source bus wrongly held
+    # at V2 = V0 = 0 (an infinite sequence sink — review U1).
     "ver_unbalanced_lf": ("unbalanced-loadflow", {
-        "vuf": ("buses.bus-2.vuf_pct", 0.8045),
-        "va": ("buses.bus-2.va_pu", 0.95967),
-        "vb": ("buses.bus-2.vb_pu", 1.00541),
-        "vc": ("buses.bus-2.vc_pu", 0.98975),
+        "vuf": ("buses.bus-2.vuf_pct", 1.2330),
+        "va": ("buses.bus-2.va_pu", 0.95448),
+        "vb": ("buses.bus-2.vb_pu", 1.00788),
+        "vc": ("buses.bus-2.vc_pu", 0.99250),
     }),
 }
 

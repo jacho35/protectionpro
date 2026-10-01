@@ -18,6 +18,7 @@ from backend.analysis.duty_check import run_duty_check
 from backend.analysis.load_diversity import _get_load_kw, _get_load_kva
 from backend.analysis.motor_starting import run_motor_starting
 from backend.analysis.unbalanced_loadflow import run_unbalanced_load_flow
+from backend.analysis.loadflow import run_load_flow
 
 
 def _comp(cid, ctype, props, x=0, y=0):
@@ -280,7 +281,12 @@ class TestUnbalancedPVWarning:
             _wire("w4", "busB", "g1"), _wire("w5", "busB", "ld"),
         ])
         res = run_unbalanced_load_flow(proj)
-        assert any("UNLIMITED reactive" in w.message for w in res.warnings)
+        # [U2] (unbalanced LF review, 2026-10-01) the bus is no longer held
+        # with unlimited Q: it holds the voltage the balanced load flow reached
+        # with the generator's reactive limits applied, and says so.
+        assert any("reactive limits applied" in w.message for w in res.warnings)
+        bal = run_load_flow(proj)
+        assert res.buses["busB"].v1_pu == pytest.approx(bal.buses["busB"].voltage_pu, abs=2e-6)
 
     def test_pq_only_network_stays_silent(self):
         proj = _project([
@@ -291,7 +297,7 @@ class TestUnbalancedPVWarning:
                                         "power_factor": 0.9}),
         ], [_wire("w1", "u1", "busA"), _wire("w2", "busA", "ld")])
         res = run_unbalanced_load_flow(proj)
-        assert not any("UNLIMITED reactive" in w.message for w in res.warnings)
+        assert not any("reactive limits applied" in w.message for w in res.warnings)
 
 
 # ── R3-2: nodal Z0 builder honors the inverter x0 prop ───────────────────────

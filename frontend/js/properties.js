@@ -2182,8 +2182,8 @@ V₁ (pos.) = ${br.v1_pu?.toFixed(4)} p.u.
 V₂ (neg.) = ${br.v2_pu?.toFixed(4)} p.u.
 V₀ (zero) = ${br.v0_pu?.toFixed(4)} p.u.
 
-─── Voltage Unbalance Factor (IEC 61000-3-13) ───
-VUF = |V₂|/|V₁| × 100 = ${br.vuf_pct?.toFixed(3)}%  ${br.vuf_pct > 2 ? '⚠ EXCEEDS 2% LIMIT' : br.vuf_pct > 1 ? '⚠ Elevated' : '✓ Within limit'}
+─── Voltage Unbalance Factor ───
+VUF = |V₂|/|V₁| × 100 = ${br.vuf_pct?.toFixed(3)}%  ${br.vuf_pct > vufLimitPct(br.voltage_kv) ? `⚠ EXCEEDS ${vufLimitPct(br.voltage_kv)}% LIMIT` : br.vuf_pct > 1 ? '⚠ Elevated' : '✓ Within limit'}
 
 ─── Per-Phase Active Power Injections ───
 Pa = ${br.pa_mw?.toFixed(4)} MW   Pb = ${br.pb_mw?.toFixed(4)} MW   Pc = ${br.pc_mw?.toFixed(4)} MW</div>

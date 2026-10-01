@@ -8,10 +8,17 @@ A heavily single-phase-loaded feeder then saw the wrong phase voltage at its
 load, so its currents — and the voltage unbalance factor — were mis-stated.
 
 Reference: an independent PHASE-DOMAIN solve of the same 2-bus feeder. The
-source bus is an ideal balanced 1 p.u. (the engine's swing: V2 = V0 = 0), the
-cable's phase impedance matrix is Zabc = A·diag(Z0, Z1, Z2)·A⁻¹ built from the
-same per-km data, and the constant-power load's phase current is iterated to
-V_B = V_A + Zabc·I_inj directly in phases — no sequence networks, no NR.
+500 MVA supply is a positive-sequence EMF behind its own Zs,abc (Z1 = Z2 = Z0 =
+U²/S″k, X/R 15 — the utility default), scaled so the source bus holds
+|V1| = 1 p.u. (the engine's swing). The cable's phase impedance matrix is
+Zabc = A·diag(Z0, Z1, Z2)·A⁻¹ built from the same per-km data, and the
+constant-power load's phase current is iterated to V_B = V_A + Zabc·I_inj
+directly in phases — no sequence networks, no NR.
+
+Re-baselined 2026-10-01 (unbalanced LF review U1): the reference used to hold
+the source bus at V2 = V0 = 0, the same infinite-sequence-sink defect as the
+engine. At this 500 MVA supply the source impedance is ~0.5 % of the cable's,
+so the change is small but well above the 2e-6 tolerance.
 Per-unit convention matches the engine: S is p.u. of the three-phase base,
 V is p.u. line-to-neutral, so I_pu = 3·conj(S_phase / V).
 """
@@ -65,10 +72,15 @@ def _phase_domain_reference(inj_currents, base_mva=None):
     z1 = complex(R1, X1) * KM / z_base
     z0 = complex(R0, X0) * KM / z_base
     z_abc = A_MAT @ np.diag([z0, z1, z1]) @ np.linalg.inv(A_MAT)
-    v_a = np.array([1, A_OP ** 2, A_OP], dtype=complex)
-    v_b = v_a.copy()
+    zs_mag = (base_mva or BASE_MVA) / 500.0
+    zs = complex(zs_mag / math.sqrt(1 + 15 ** 2), zs_mag * 15 / math.sqrt(1 + 15 ** 2))
+    zs_abc = A_MAT @ np.diag([zs, zs, zs]) @ np.linalg.inv(A_MAT)
+    v_b = np.array([1, A_OP ** 2, A_OP], dtype=complex)
     for _ in range(500):
-        v_new = v_a + z_abc @ inj_currents(v_b)
+        i_inj = inj_currents(v_b)
+        i1 = (np.linalg.inv(A_MAT) @ i_inj)[1]
+        v_a = A_MAT @ np.array([0, 1 - zs * i1, 0]) + zs_abc @ i_inj   # |V1_A| = 1
+        v_new = v_a + z_abc @ i_inj
         if np.max(np.abs(v_new - v_b)) < 1e-12:
             return v_new
         v_b = v_new

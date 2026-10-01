@@ -731,7 +731,7 @@ const Annotations = {
     if (this.fieldVisible('unbalancedLF', 'sequence')) {
       entries.push({ t: `V1: ${fmt(result.v1_pu)}  V2: ${fmt(result.v2_pu)}  V0: ${fmt(result.v0_pu)}` });
     }
-    const vufColor = result.vuf_pct > 2 ? '#d32f2f' : result.vuf_pct > 1 ? '#f57c00' : '#1976d2';
+    const vufColor = result.vuf_pct > vufLimitPct(result.voltage_kv) ? '#d32f2f' : result.vuf_pct > 1 ? '#f57c00' : '#1976d2';
     if (this.fieldVisible('unbalancedLF', 'vuf')) {
       entries.push({ t: `VUF: ${result.vuf_pct != null ? result.vuf_pct.toFixed(2) : '—'}%`,
         color: result.vuf_pct > 1 ? vufColor : null });

@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.402b';
+const APP_VERSION = '1.403b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -545,6 +545,16 @@ const IDMT_CURVES = {
 const IDMT_MAX_MULTIPLE = 20;
 
 // Calculate relay trip time for a given current multiple M and TDS
+// Voltage-unbalance limit (%) for a bus voltage — the same rule as the
+// unbalanced load flow's warning: LV the IEC 61000-2-2 compatibility level,
+// MV / HV the IEC/TR 61000-3-13 indicative planning levels.
+function vufLimitPct(kv) {
+  const v = Number(kv) || 0;
+  if (v <= 1.0) return 2.0;
+  if (v <= 35.0) return 1.8;
+  return 1.4;
+}
+
 function idmtTripTime(curveName, M, TDS, maxMultiple = IDMT_MAX_MULTIPLE) {
   if (M <= 1) return Infinity;
   const c = IDMT_CURVES[curveName];
