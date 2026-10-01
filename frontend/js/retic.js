@@ -267,6 +267,7 @@ const Retic = {
       k[key] = v;
       this._snapshot();
       this._markDirty();
+      if (key === 'feederCable' && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn feeder route follows
       // The kiosk's class sets its effective ADMD — refresh the placeholder.
       if (key === 'loadClass') this.renderKiosks();
       this.recompute();
@@ -293,6 +294,7 @@ const Retic = {
       }
       this._snapshot();
       this._markDirty();
+      if (key === 'cableType' && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn service route follows
       // Phase / override decide the single-phase-class-on-3-phase flag and the
       // derived half of the override.
       if (key === 'phase' || key === 'cableType') this._refreshErfCableFlag(k, erf);

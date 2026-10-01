@@ -8,7 +8,10 @@
  * reticulation home (MV routes, trenches, crossings, fibre, RMUs) are carried
  * by the CSV/DXF exports instead.
  *
- * Reticulation remains independently editable; this is a push, never a pull.
+ * Reticulation remains independently editable. Cable types are the exception
+ * and stay in step both ways (see pushRouteCable / pullCablesFromDemand): a
+ * service route's cable ↔ its erf's service cable, a kiosk's feeder route's
+ * cable ↔ the kiosk's feeder cable.
  */
 
 const PlanSync = {
@@ -55,6 +58,66 @@ const PlanSync = {
     const nm = (el.name || '').trim().toLowerCase();
     if (!nm) return null;
     return rows.find(r => (r.name || '').trim().toLowerCase() === nm) || null;
+  },
+
+  // ─── Cable type, kept in step both ways ───
+  // The Demand row a drawn route's cable belongs to: a service route (kiosk↔erf)
+  // → the erf's cableType; an LV route between a kiosk and the element feeding
+  // it → the kiosk's feederCable. {row, key} or null (unlinked / not a feeder).
+  _cableLink(route, elById) {
+    const R = AppState.reticulation;
+    if (!R || !route) return null;
+    const a = elById[route.fromId], b = elById[route.toId];
+    if (!a || !b) return null;
+    if (route.type === 'service') {
+      const eEl = a.type === 'erf' ? a : b.type === 'erf' ? b : null;
+      if (!eEl || !eEl.reticId || (a.type !== 'kiosk' && b.type !== 'kiosk')) return null;
+      for (const k of R.kiosks) {
+        const e = k.erfs.find(x => x.id === eEl.reticId);
+        if (e) return { row: e, key: 'cableType' };
+      }
+      return null;
+    }
+    if (route.type === 'lv') {
+      for (const [c, p] of [[a, b], [b, a]]) {
+        if (c.type !== 'kiosk' || !c.reticId || !p.reticId) continue;
+        const k = R.kiosks.find(x => x.id === c.reticId);
+        if (k && k.fedFrom === p.reticId) return { row: k, key: 'feederCable' };
+      }
+    }
+    return null;
+  },
+
+  // Plan → Demand: a route's cable was changed on the plan.
+  pushRouteCable(route) {
+    if (!route || !route.cableType) return false;
+    const link = this._cableLink(route, this._elById());
+    if (!link || link.row[link.key] === route.cableType) return false;
+    link.row[link.key] = route.cableType;
+    if (typeof Retic !== 'undefined') {
+      if (Retic._markDirty) Retic._markDirty();
+      Retic.recompute();            // no-op until the Demand tab is open; it redraws then
+    }
+    return true;
+  },
+
+  // Demand → Plan: a cable was changed in Demand; update the drawn routes.
+  pullCablesFromDemand() {
+    const pm = AppState.planMarkup;
+    if (!pm || !AppState.reticulation) return 0;
+    const elById = this._elById();
+    let n = 0;
+    for (const r of pm.routes) {
+      const link = this._cableLink(r, elById);
+      const want = link && link.row[link.key];
+      if (want && r.cableType !== want) { r.cableType = want; n++; }
+    }
+    if (n && typeof PlanMarkup !== 'undefined') {
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      if (PlanMarkup.refreshProps) PlanMarkup.refreshProps();
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    }
+    return n;
   },
 
   async pushToSchedules() {

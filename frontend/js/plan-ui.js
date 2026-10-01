@@ -376,17 +376,29 @@ const PlanUI = {
   // drawn, and redrawn whenever Demand recomputes (Retic._doCompute) or the
   // Plan workspace is shown. Read-only — edit it in Demand.
   _demandBlock(item, kind) {
-    if (kind !== 'element' || !item.reticId || typeof Retic === 'undefined' || !AppState.reticulation) return '';
+    if (kind !== 'element' || !['erf', 'kiosk', 'minisub'].includes(item.type) ||
+        typeof Retic === 'undefined' || !AppState.reticulation) return '';
     const R = AppState.reticulation, res = AppState.reticResults;
     const rows = [];
     const row = (k, v, cls) => rows.push(`<div class="plan-demand-row${cls ? ' ' + cls : ''}"><span>${escHtml(k)}</span><b>${v}</b></div>`);
     const num = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
     const clsLabel = (k) => { const c = Retic._kioskClass(k); return c ? escHtml(c.label) : '—'; };
     let title = 'From Demand';
+    const notLinked = () => `<div class="plan-demand"><div class="plan-demand-title">From Demand</div><div class="plan-demand-row"><span>Not in Demand yet — use → Push to Schedules.</span></div></div>`;
+    // Figures for a kiosk / minisub come from the last Demand calculation; ask
+    // for one if none has run this session (it redraws this panel when done).
+    if (item.type !== 'erf' && !res && Retic._doCompute && !this._demandAsked) {
+      this._demandAsked = true;
+      Promise.resolve(Retic._doCompute()).finally(() => { this._demandAsked = false; });
+    }
     if (item.type === 'erf') {
       let k = null, e = null;
-      for (const kk of R.kiosks) { const f = kk.erfs.find(x => x.id === item.reticId); if (f) { k = kk; e = f; break; } }
-      if (!e) return '';
+      const nm = (item.name || '').trim().toLowerCase();
+      for (const kk of R.kiosks) {
+        const f = kk.erfs.find(x => item.reticId ? x.id === item.reticId : (nm && (x.erfNumber || '').trim().toLowerCase() === nm));
+        if (f) { k = kk; e = f; break; }
+      }
+      if (!e) return notLinked();
       const is3 = Retic._erfIs3ph(k, e);
       const amps = Retic._erfDesignAmps(k, e);
       const vc = Retic._vdCalc(e.cableType, amps, e.length, is3);
@@ -399,8 +411,8 @@ const PlanUI = {
       row('Service length', e.length ? `${num(e.length, 1)} m` : '—');
       if (vc) row('Service volt drop', `${num(vc.vd)} %`, vc.vd > limit ? 'bad' : 'ok');
     } else if (item.type === 'kiosk') {
-      const k = R.kiosks.find(x => x.id === item.reticId);
-      if (!k) return '';
+      const k = PlanSync._resolve(R.kiosks, item);
+      if (!k) return notLinked();
       const kr = res && res.kiosks && res.kiosks.find(x => x.kioskId === k.id);
       row('Load class', clsLabel(k));
       row('Erven', String(k.erfs.length));
@@ -408,8 +420,8 @@ const PlanUI = {
       row('Feeder cable', escHtml(k.feederCable || '—'));
       row('Feeder length', k.feederLength ? `${num(k.feederLength, 1)} m` : '—');
     } else if (item.type === 'minisub') {
-      const ms = R.minisubs.find(x => x.id === item.reticId);
-      if (!ms) return '';
+      const ms = PlanSync._resolve(R.minisubs, item);
+      if (!ms) return notLinked();
       const r = res && res.minisubs && res.minisubs.find(x => x.minisubId === ms.id);
       row('Kiosks fed', String(R.kiosks.filter(k => k.fedFrom === ms.id).length));
       if (r) row('Demand', `${r.totalKVA} kVA`);
@@ -715,7 +727,11 @@ const PlanUI = {
         return;
       }
     } else if (kind === 'route') {
-      if (key === 'cableType') item.cableType = val;
+      if (key === 'cableType') {
+        item.cableType = val;
+        // Retic: the linked erf / kiosk takes the same cable in Demand.
+        if (commit && typeof PlanSync !== 'undefined' && PlanSync.pushRouteCable) PlanSync.pushRouteCable(item);
+      }
       else if (key === 'curved') item.curved = val;
       else { item.props = item.props || {}; item.props[key] = val; }
     } else {
