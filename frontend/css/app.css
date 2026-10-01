@@ -3438,6 +3438,9 @@ body.dark-mode .cable-focus-bar { background: #3a3a50; }
   --eg-post: #495057;
   --eg-touch-fill: rgba(0, 120, 215, 0.08);
   --eg-mark: #111;
+  --eg-ground: rgba(140, 110, 70, 0.16);
+  --eg-ground-edge: rgba(140, 110, 70, 0.55);
+  --eg-snap: #e8590c;
 }
 body.dark-mode {
   --eg-cond: #dee2e6;
@@ -3449,6 +3452,9 @@ body.dark-mode {
   --eg-post: #ced4da;
   --eg-touch-fill: rgba(74, 158, 255, 0.12);
   --eg-mark: #fff;
+  --eg-ground: rgba(190, 160, 110, 0.14);
+  --eg-ground-edge: rgba(190, 160, 110, 0.5);
+  --eg-snap: #ff922b;
 }
 .modal-content.eg-dialog {
   width: min(1240px, calc(100vw - 32px)); max-width: none; min-width: 0;
@@ -3502,6 +3508,33 @@ body.dark-mode {
 .eg-row-del:hover { color: var(--danger); }
 .eg-pv-plan { background: var(--bg-secondary); border-radius: 8px; padding: 6px; }
 .eg-pv-plan.eg-stale { opacity: .45; }
+/* Header: unsaved state + Save / Revert */
+.eg-head-acts { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+.eg-dialog .lr-head .modal-close { margin-left: 0; }
+.eg-dirty { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--warning); }
+body:not(.dark-mode) .eg-dirty { color: #c25e00; }
+.eg-dirty::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.eg-dirty[hidden] { display: none; }
+.eg-head-acts button:disabled { opacity: .45; cursor: default; }
+/* Preview toolbar: Plan / 3-D, tools */
+.eg-tb { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.eg-tb-seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+.eg-tb-btn { border: 0; border-right: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); font-size: 12px; font-family: var(--font-family); padding: 4px 10px; cursor: pointer; min-height: 26px; }
+.eg-tb-btn:last-child { border-right: 0; }
+.eg-tb-btn:hover { background: var(--bg-tertiary); }
+.eg-tb-btn.on { background: var(--accent); color: #fff; }
+.eg-tb-hint { font-size: 11.5px; line-height: 1.4; color: var(--text-muted); min-height: 16px; }
+.eg-tb-xy { color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eg-pv-plan.eg-tool-on .eg-plan { cursor: crosshair; touch-action: none; }
+.eg-p-edit { pointer-events: none; }
+.eg-p-snap { fill: none; stroke: var(--text-muted); stroke-width: 1.2; }
+.eg-p-snap.eg-p-snap-hit { stroke: var(--eg-snap); stroke-width: 2; }
+.eg-p-ghost { fill: var(--eg-extra); opacity: .55; }
+.eg-p-pend { fill: var(--eg-snap); }
+.eg-p-band { stroke: var(--eg-extra); stroke-width: 2; stroke-dasharray: 5 3; }
+.eg-3d { display: block; margin: 0 auto; cursor: grab; touch-action: none; border-radius: 6px; }
+.eg-3d:active { cursor: grabbing; }
+.eg-3d:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .eg-pv-status { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .eg-pv-stats { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .eg-pv-app { color: var(--text-secondary); }
@@ -3591,6 +3624,7 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
   .modal-content.eg-dialog { width: 100%; height: calc(100vh - 24px); height: calc(100dvh - 24px); border-radius: 12px; }
   .eg-dialog .lr-head { padding: 10px 12px; }
   .eg-dialog .lr-head-sub { display: none; }
+  .eg-dirty { font-size: 0; gap: 0; }   /* the dot alone; the buttons say the rest */
   .eg-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   /* Rail → top bar: grid select + actions */
   .eg-rail { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; border-right: 0; border-bottom: 1px solid var(--border-color); padding: 8px 12px; overflow: visible; }
@@ -3627,7 +3661,7 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
 /* Touch / narrow: 16 px text keeps iOS from zooming on focus; 40 px targets */
 @media (max-width: 768px), (pointer: coarse) {
   .eg-in input, .eg-in select, .eg-table input, .eg-table select, .eg-rail-select { font-size: 16px; min-height: 40px; height: auto; padding: 6px 8px; box-sizing: border-box; }
-  .eg-dialog .lr-mini, .eg-rail-item, .eg-row-del, .prop-eg-edit-btn { min-height: 40px; }
+  .eg-dialog .lr-mini, .eg-rail-item, .eg-row-del, .prop-eg-edit-btn, .eg-tb-btn, .eg-head-acts button { min-height: 40px; }
   .eg-row-del { min-width: 40px; }
   .eg-sec > summary { min-height: 44px; display: flex; align-items: center; }
   .eg-adv > summary { min-height: 40px; display: flex; align-items: center; }

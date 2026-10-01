@@ -1664,7 +1664,12 @@
   <div id="earth-grid-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="eg-title" style="display:none">
     <div class="modal-content eg-dialog">
       <div class="lr-head">
-        <div class="lr-head-text"><h3 id="eg-title">Earth grids</h3><div class="lr-head-sub">Any shape — the plan updates as you edit. Buses use a grid through their Earth Grid field.</div></div>
+        <div class="lr-head-text"><h3 id="eg-title">Earth grids</h3><div class="lr-head-sub">Any shape — the plan updates as you edit; Save writes the changes to the project. Buses use a grid through their Earth Grid field.</div></div>
+        <div class="eg-head-acts">
+          <span class="eg-dirty" id="eg-dirty" role="status" hidden>Unsaved changes</span>
+          <button type="button" class="btn-small" id="btn-eg-revert" disabled title="Discard the changes made since the last save">Revert</button>
+          <button type="button" class="btn-small btn-primary" id="btn-eg-save" disabled title="Save the earth grids to the project (Ctrl+S)">Save</button>
+        </div>
         <button class="modal-close" id="btn-close-earth-grid" aria-label="Close">&times;</button>
       </div>
       <div class="eg-body">

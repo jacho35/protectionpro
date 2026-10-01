@@ -373,3 +373,27 @@ class TestConductorSizeAndScope:
         assert [b["bus_name"] for b in r["buses"]] == ["Grid bus"]
         assert r["scope"] == {"bus_ids": ["b2"]}
         assert run_grounding_analysis(_project(GRID_OBJ))["scope"] is None
+
+
+class TestPreviewDepths:
+    """The editor's 3-D view reads depths from the preview: conductor rows
+    carry z1, z2 after the 2-D fields; rod rows carry their top depth and
+    length (fence posts start at the surface)."""
+
+    def test_conductor_and_rod_depths(self):
+        from backend.analysis.earth_grid import preview
+        grid = {"layout": {"type": "rect", "length_x": 20, "width_y": 20, "n_x": 3, "n_y": 3},
+                "conductor": {"depth_m": 0.6},
+                "rods": {"rule": "corners", "length_m": 2.4},
+                "extra_conductors": [{"x1": 0, "y1": 0, "x2": -5, "y2": 0, "depth_m": 1.0}],
+                "extra_rods": [{"x": -5, "y": 0, "length_m": 6}],
+                "fences": [{"offset_m": 2, "post_depth_m": 0.9}]}
+        plan = preview(grid)["plan"]
+        grid_rows = [c for c in plan["conductors"] if c[4] == "grid"]
+        assert grid_rows and all(c[6] == c[7] == 0.6 for c in grid_rows)
+        assert [c[6:] for c in plan["conductors"] if c[4] == "extra"] == [[1.0, 1.0]]
+        rods = [r for r in plan["rods"] if r[2] == "rod"]
+        assert len(rods) == 4 and all(r[4:] == [0.6, 2.4] for r in rods)
+        assert [r[4:] for r in plan["rods"] if r[2] == "extra_rod"] == [[0.6, 6.0]]
+        posts = [r for r in plan["rods"] if r[2] == "post"]
+        assert posts and all(r[4:] == [0.0, 0.9] for r in posts)
