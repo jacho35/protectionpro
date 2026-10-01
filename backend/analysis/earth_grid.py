@@ -1157,8 +1157,8 @@ def analyse(grid, frequency=50.0):
 def preview(grid):
     """Geometry of an earth-grid object for the editor — no solve.
 
-    Returns the plan (conductors, rods, fences, outline, touch area), the
-    element count the solve would use, whether the bonded conductors form one
+    Returns the plan (conductors, rods, fences, outline, touch area — with
+    depths, for the editor's 3-D view), the element count the solve would use, whether the bonded conductors form one
     metallic network, and the notes a solve would raise about geometry."""
     geo = build_wires(grid)
     soil_cfg = grid.get("soil") or {}
@@ -1196,10 +1196,13 @@ def preview(grid):
         plan=dict(
             outline=[list(map(float, p)) for p in outline] if outline else [],
             touch_area=[[list(map(float, p)) for p in poly] for poly in touch_polys],
+            # [x1, y1, x2, y2, kind, group, z1, z2] — depths (m, + down) for the 3-D view
             conductors=[[float(w["a"][0]), float(w["a"][1]), float(w["b"][0]), float(w["b"][1]),
-                         w.get("kind", "grid"), int(w["group"])]
+                         w.get("kind", "grid"), int(w["group"]), float(w["a"][2]), float(w["b"][2])]
                         for w in wires if abs(w["a"][0] - w["b"][0]) > 1e-9 or abs(w["a"][1] - w["b"][1]) > 1e-9],
-            rods=[[float(r["x"]), float(r["y"]), r["kind"], int(r["group"])] for r in geo["rods"]],
+            # [x, y, kind, group, top depth, length]
+            rods=[[float(r["x"]), float(r["y"]), r["kind"], int(r["group"]),
+                   float(r.get("top", geo["depth"])), float(r["length"])] for r in geo["rods"]],
             fences=[dict(name=f["name"], bonded=f["bonded"], line=[list(map(float, p)) for p in f["line"]])
                     for f in geo["fences"]],
         ),

@@ -8,8 +8,13 @@
  * flat IEEE 80 fields (grounding_system.py's per-bus path, unchanged).
  *
  * This file is the editor (#earth-grid-modal: rail of grids | form | live
- * plan from POST /analysis/earth-grid/preview) and the grounding results
+ * plan from POST /analysis/earth-grid/preview, with a 3-D view and tools to
+ * place conductors and rods by clicking the plan) and the grounding results
  * card for a bus on an earth grid (plan with the touch-voltage heatmap).
+ *
+ * The editor works on a copy of the grids (and of the buses' grid choices):
+ * nothing reaches the project until Save, and closing with unsaved changes
+ * asks before discarding them.
  * Geometry and every number come from the backend — nothing is recomputed
  * here except which map points fall inside the touch area.
  */
@@ -20,8 +25,13 @@ const EarthGridEditor = {
   _bound: false,
   _previewTimer: null,
   _previewSeq: 0,
-  _undoTimer: null,
   _lastPreview: null,
+  _work: null,        // working copy of the grids while the editor is open
+  _busMap: null,      // bus id → earth grid id (null = none) chosen in the editor, not yet saved
+  _base: '',          // _stateJson() as last opened / saved — dirty = differs
+  view: 'plan',       // 'plan' | '3d'
+  tool: null,         // null | 'conductor' | 'rod' — click-to-add on the plan
+  _pend: null,        // [x, y] start of the conductor being drawn
 
   // Defaults for a new grid — the same values as a new bus's grounding fields
   // (COMPONENT_DEFS.bus.defaults), so "Create from bus" and "New" agree.
@@ -53,14 +63,20 @@ const EarthGridEditor = {
   ],
 
   // ── Data ───────────────────────────────────────────────────────────
+  // The working copy while the editor is open, else the project's grids.
   list() {
+    if (this._work) return this._work;
     if (!Array.isArray(AppState.earthGrids)) AppState.earthGrids = [];
     return AppState.earthGrids;
   },
   get(id) { return this.list().find(g => g.id === id) || null; },
   current() { return this.get(this.activeId) || this.list()[0] || null; },
+  // A bus's grid, counting a choice made in the editor but not yet saved.
+  gridIdOf(bus) {
+    return this._busMap && this._busMap.has(bus.id) ? this._busMap.get(bus.id) : (bus.props.earth_grid_id || null);
+  },
   busesUsing(id) {
-    return [...AppState.components.values()].filter(c => c.type === 'bus' && c.props && c.props.earth_grid_id === id);
+    return [...AppState.components.values()].filter(c => c.type === 'bus' && c.props && this.gridIdOf(c) === id);
   },
 
   _clone(o) { return JSON.parse(JSON.stringify(o)); },
@@ -159,22 +175,79 @@ const EarthGridEditor = {
   // Standard bare-conductor sizes (mm²) offered in the size fields.
   SIZES_MM2: [16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300],
 
-  // Mark the project changed. commit = a finished edit: drop the (now stale)
-  // grounding result and record one undo step (debounced so a burst of
-  // pasted cells is one step).
-  _changed(commit) {
-    AppState.dirty = true;
-    if (!commit) return;
-    if (AppState.groundingResults) AppState.groundingResults = null;
-    clearTimeout(this._undoTimer);
-    this._undoTimer = setTimeout(() => {
-      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
-    }, 150);
+  // ── Working copy, dirty state, save ────────────────────────────────
+  // Copy the project's grids into the editor; nothing is unsaved after this.
+  _begin() {
+    this._work = this._clone(Array.isArray(AppState.earthGrids) ? AppState.earthGrids : []);
+    this._work.forEach(g => this._normalize(g));
+    this._busMap = new Map();
+    this._base = this._stateJson();
+  },
+  // The editor's state, with bus choices that equal the saved ones left out
+  // (so choosing a grid and choosing back again is not a change).
+  _stateJson() {
+    const buses = [...(this._busMap || new Map())].filter(([bid, id]) => {
+      const b = AppState.components.get(bid);
+      return b && (b.props.earth_grid_id || null) !== (id || null);
+    }).sort();
+    return JSON.stringify([this._work, buses]);
+  },
+  isDirty() { return !!this._work && this._stateJson() !== this._base; },
+
+  // An edit happened — refresh the unsaved-changes state.
+  _changed() { this._updateDirty(); },
+
+  _updateDirty() {
+    const dirty = this.isDirty();
+    const ind = this._el('eg-dirty');
+    if (ind) ind.hidden = !dirty;
+    for (const id of ['btn-eg-save', 'btn-eg-revert']) { const b = this._el(id); if (b) b.disabled = !dirty; }
+    const m = this._el('earth-grid-modal');
+    if (m) m.classList.toggle('eg-is-dirty', dirty);
   },
 
-  // Undo/redo replaced AppState.earthGrids — show what is there now.
+  // Write the working copy to the project: one undo step, stale grounding
+  // results dropped.
+  save() {
+    if (!this._work) return;
+    if (!this.isDirty()) return;
+    AppState.earthGrids = this._clone(this._work);
+    for (const [bid, id] of this._busMap) {
+      const b = AppState.components.get(bid);
+      if (!b) continue;
+      if (id) b.props.earth_grid_id = id; else delete b.props.earth_grid_id;
+    }
+    this._busMap.clear();
+    AppState.dirty = true;
+    if (AppState.groundingResults) AppState.groundingResults = null;
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    this._base = this._stateJson();
+    this._updateDirty();
+    this._refreshProps();
+    const st = document.getElementById('status-info');
+    if (st) st.textContent = 'Earth grids saved.';
+  },
+
+  async revert() {
+    if (!this.isDirty()) return;
+    if (!(await UI.confirm('Discard the unsaved changes to the earth grids?', { danger: true, okText: 'Discard' }))) return;
+    this._begin();
+    this._pend = null;
+    if (!this.get(this.activeId)) this.activeId = (this.list()[0] || {}).id || null;
+    this.render();
+  },
+
+  _refreshProps() {
+    if (typeof Properties !== 'undefined' && Properties.currentId && AppState.components.has(Properties.currentId)) {
+      Properties.show(Properties.currentId);
+    }
+  },
+
+  // Undo/redo replaced AppState.earthGrids. With nothing unsaved, show what
+  // is there now; unsaved edits are kept (Save still writes them).
   onStateRestored() {
-    if (!this._isOpen()) return;
+    if (!this._isOpen() || this.isDirty()) return;
+    this._begin();
     if (!this.get(this.activeId)) this.activeId = (this.list()[0] || {}).id || null;
     this.render();
   },
@@ -185,22 +258,33 @@ const EarthGridEditor = {
 
   open(opts = {}) {
     this._bind();
+    if (this._isOpen()) return;
     this.busId = opts.busId || null;
+    this._begin();
+    this._pend = null;
     const bus = this.busId ? AppState.components.get(this.busId) : null;
     if (bus && bus.props.earth_grid_id && this.get(bus.props.earth_grid_id)) this.activeId = bus.props.earth_grid_id;
     if (!this.get(this.activeId)) this.activeId = (this.list()[0] || {}).id || null;
-    this.list().forEach(g => this._normalize(g));
     this._el('earth-grid-modal').style.display = '';
     this.render();
+    this._updateDirty();
   },
 
-  close() {
+  // Close; with unsaved changes, ask first (Cancel keeps the editor open).
+  async close() {
+    if (!this._isOpen()) return;
+    if (this.isDirty()) {
+      if (!(await UI.confirm('The earth grids have unsaved changes. Close and discard them?',
+        { danger: true, okText: 'Discard changes', cancelText: 'Keep editing' }))) return;
+    }
     this._el('earth-grid-modal').style.display = 'none';
     clearTimeout(this._previewTimer);
+    this._work = null;
+    this._busMap = null;
+    this._pend = null;
+    this._stop3d();
     // The bus panel lists the grids by name — refresh it.
-    if (typeof Properties !== 'undefined' && Properties.currentId && AppState.components.has(Properties.currentId)) {
-      Properties.show(Properties.currentId);
-    }
+    this._refreshProps();
   },
 
   _bind() {
@@ -208,8 +292,23 @@ const EarthGridEditor = {
     this._bound = true;
     const m = this._el('earth-grid-modal');
     this._el('btn-close-earth-grid').addEventListener('click', () => this.close());
+    this._el('btn-eg-save').addEventListener('click', () => this.save());
+    this._el('btn-eg-revert').addEventListener('click', () => this.revert());
     m.addEventListener('click', (e) => { if (e.target === m) this.close(); });
-    m.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.target.closest('.gt-grid')) this.close(); });
+    m.addEventListener('keydown', (e) => {
+      // Ctrl+S saves the grids (not the project) while the editor is open
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault(); e.stopPropagation();
+        this.save();
+        return;
+      }
+      if (e.key !== 'Escape' || e.target.closest('.gt-grid')) return;
+      e.stopPropagation();          // the app's Escape would hide the modal without asking
+      if (this._pend) { this._pend = null; this._drawEditOverlay(); return; }
+      if (this.tool) { this._setTool(null); return; }
+      this.close();
+    });
+    this._bindPreview();
 
     this._el('eg-rail').addEventListener('click', (e) => {
       const item = e.target.closest('[data-eg-pick]');
@@ -261,8 +360,8 @@ const EarthGridEditor = {
       const users = this.busesUsing(g.id);
       const who = users.length ? ` ${users.length} bus${users.length > 1 ? 'es use' : ' uses'} it and will go back to ${users.length > 1 ? 'their' : 'its'} own grounding fields.` : '';
       if (!(await UI.confirm(`Delete the earth grid “${g.name}”?${who}`, { danger: true, okText: 'Delete' }))) return;
-      AppState.earthGrids = this.list().filter(x => x !== g);
-      for (const b of users) delete b.props.earth_grid_id;
+      this._work.splice(this._work.indexOf(g), 1);
+      for (const b of users) this._busMap.set(b.id, null);
       this.activeId = (this.list()[0] || {}).id || null;
       this._changed(true);
       this.render();
@@ -270,13 +369,13 @@ const EarthGridEditor = {
       const bus = AppState.components.get(this.busId);
       if (!bus) return;
       const g2 = this.create(`${bus.props.name || bus.id} grid`, this.fromBus(bus));
-      bus.props.earth_grid_id = g2.id;
+      this._busMap.set(bus.id, g2.id);
       this._changed(true);
       this.render();
     } else if (act === 'use' && g) {
       const bus = AppState.components.get(this.busId);
       if (!bus) return;
-      bus.props.earth_grid_id = g.id;
+      this._busMap.set(bus.id, g.id);
       this._changed(true);
       this.render();
     }
@@ -294,7 +393,7 @@ const EarthGridEditor = {
         <p class="eg-muted">An earth grid can have any shape — diagonals, uneven spacing, an L-shape, rods anywhere,
         bonded or separately-earthed fences — and one or more buses can use it through their <b>Earth Grid</b> field.</p>
         <button type="button" class="btn btn-primary" data-eg-act-empty="new">New earth grid</button>
-        ${this._bus() && !this._bus().props.earth_grid_id ? '<button type="button" class="btn btn-secondary" data-eg-act-empty="from-bus">Create from bus</button>' : ''}
+        ${this._bus() && !this.gridIdOf(this._bus()) ? '<button type="button" class="btn btn-secondary" data-eg-act-empty="from-bus">Create from bus</button>' : ''}
       </div>`;
       form.querySelectorAll('[data-eg-act-empty]').forEach(b => b.addEventListener('click', () => this._railAction(b.dataset.egActEmpty)));
       this._el('eg-preview').innerHTML = '';
@@ -321,12 +420,13 @@ const EarthGridEditor = {
     let ctx = '';
     if (bus) {
       const busName = escHtml(bus.props.name || bus.id);
-      if (!bus.props.earth_grid_id) {
+      const busGrid = this.gridIdOf(bus);
+      if (!busGrid) {
         ctx = `<div class="eg-ctx"><span>Opened from <b>${busName}</b>, which uses its own grounding fields.</span>
           <button type="button" class="lr-mini" data-eg-act="from-bus" title="Make an earth grid from this bus's grid, soil, surface, conductor and rod fields — gives the same result — and use it for the bus">Create from bus</button>
           ${cur ? `<button type="button" class="lr-mini" data-eg-act="use">Use “${escHtml(cur.name)}”</button>` : ''}</div>`;
-      } else if (cur && bus.props.earth_grid_id !== cur.id) {
-        ctx = `<div class="eg-ctx"><span><b>${busName}</b> uses “${escHtml((this.get(bus.props.earth_grid_id) || {}).name || bus.props.earth_grid_id)}”.</span>
+      } else if (cur && busGrid !== cur.id) {
+        ctx = `<div class="eg-ctx"><span><b>${busName}</b> uses “${escHtml((this.get(busGrid) || {}).name || busGrid)}”.</span>
           <button type="button" class="lr-mini" data-eg-act="use">Use “${escHtml(cur.name)}” instead</button></div>`;
       } else {
         ctx = `<div class="eg-ctx"><span><b>${busName}</b> uses this grid.</span></div>`;
@@ -697,15 +797,22 @@ const EarthGridEditor = {
     box.classList.remove('eg-busy');
     if (err) {
       const status = box.querySelector('.eg-pv-status');
-      if (this._lastPreview && status) {
+      if (this._lastPreview && this._lastPreview.gridId === g.id && status) {
         box.querySelector('.eg-pv-plan')?.classList.add('eg-stale');
         status.innerHTML = `<div class="eg-pv-err">${escHtml(err)}</div>`;
       } else {
-        box.innerHTML = `<div class="eg-pv-plan"></div><div class="eg-pv-status"><div class="eg-pv-err">${escHtml(err)}</div></div>`;
+        // Nothing drawable yet (e.g. no layout and nothing added): an empty
+        // plan still takes clicks, so conductors and rods can be placed.
+        this._lastPreview = { gridId: g.id, empty: true, plan: { outline: [], touch_area: [], conductors: [], rods: [], fences: [] } };
+        this._snapPts = [];
+        box.innerHTML = `${this._toolbarHtml()}<div class="eg-pv-plan"></div><div class="eg-pv-status"><div class="eg-pv-err">${escHtml(err)}</div></div>`;
+        this._drawView();
       }
       return;
     }
+    res.gridId = g.id;
     this._lastPreview = res;
+    this._snapPts = this._snapPoints(res.plan);
     const lines = [];
     lines.push(`<div class="eg-pv-stats"><span><b>${res.elements}</b> elements</span>
       <span class="${res.connected ? 'eg-ok' : 'eg-warn'}">${res.connected ? 'Connected' : `Not connected — ${res.pieces} separate bonded pieces`}</span></div>`);
@@ -713,9 +820,501 @@ const EarthGridEditor = {
       ? '<div class="eg-pv-app eg-ok">IEEE 80 simplified equations apply</div>'
       : `<div class="eg-pv-app">Numerical method — ${escHtml(res.ieee80_not_applicable_reason || 'IEEE 80 simplified equations do not apply')}</div>`);
     if (res.notes && res.notes.length) lines.push(`<ul class="eg-pv-notes">${res.notes.map(n => `<li>${escHtml(n)}</li>`).join('')}</ul>`);
-    box.innerHTML = `<div class="eg-pv-plan">${this.planSvg(res.plan, { label: g.name })}</div>
+    box.innerHTML = `${this._toolbarHtml()}<div class="eg-pv-plan"></div>
       ${this._planKeyHtml(res.plan)}
       <div class="eg-pv-status">${lines.join('')}</div>`;
+    this._drawView();
+  },
+
+  // ── Preview toolbar: Plan / 3-D, click-to-add tools ────────────────
+  _toolbarHtml() {
+    const v = this.view, t = this.tool;
+    const seg = (attr, val, label, on, title) =>
+      `<button type="button" class="eg-tb-btn${on ? ' on' : ''}" ${attr}="${val}" aria-pressed="${on}"${title ? ` title="${escHtml(title)}"` : ''}>${label}</button>`;
+    let tools;
+    if (v === 'plan') {
+      tools = `<div class="eg-tb-seg" role="group" aria-label="Plan tools">
+          ${seg('data-eg-tool', 'select', 'Select', !t)}
+          ${seg('data-eg-tool', 'conductor', '+ Conductor', t === 'conductor', 'Click to start, click again to end; it carries on from there')}
+          ${seg('data-eg-tool', 'rod', '+ Rod', t === 'rod', 'Click to place a rod')}
+        </div>`;
+    } else {
+      const ex = this._3d.exag;
+      tools = `<div class="eg-tb-seg" role="group" aria-label="Depth scale" title="Depth scale — stretches depths so shallow conductors and rods are easy to tell apart">
+          ${[1, 2, 5].map(k => seg('data-eg-exag', k, `Depth ×${k}`, ex === k)).join('')}
+        </div>
+        <div class="eg-tb-seg" role="group" aria-label="3-D view">
+          <button type="button" class="eg-tb-btn" data-eg-3d="in" title="Zoom in" aria-label="Zoom in">+</button>
+          <button type="button" class="eg-tb-btn" data-eg-3d="out" title="Zoom out" aria-label="Zoom out">−</button>
+          <button type="button" class="eg-tb-btn" data-eg-3d="reset" title="Reset the view">Reset</button>
+        </div>`;
+    }
+    return `<div class="eg-tb">
+        <div class="eg-tb-seg" role="group" aria-label="View">
+          ${seg('data-eg-view', 'plan', 'Plan', v === 'plan')}${seg('data-eg-view', '3d', '3-D', v === '3d')}
+        </div>${tools}
+      </div>
+      <div class="eg-tb-hint" aria-live="polite">${this._hintText()}</div>`;
+  },
+
+  _hintText() {
+    if (this.view === '3d') return 'Drag to turn the grid · scroll or pinch to zoom · double-click to reset.';
+    if (this.tool === 'rod') return 'Click the plan to place a rod. It snaps to crossings, conductor ends and conductors (hold Alt for a free point). Esc ends.';
+    if (this.tool === 'conductor') {
+      return this._pend
+        ? `From (${this._n(this._pend[0])}, ${this._n(this._pend[1])}) m — click the end point. Click the same point again or press Esc to finish.`
+        : 'Click the start of the conductor. It snaps to crossings, conductor ends and conductors (hold Alt for a free point).';
+    }
+    return 'Plan of the grid. Choose + Conductor or + Rod to place them by clicking.';
+  },
+
+  _setHint(extra) {
+    const h = this._el('eg-preview').querySelector('.eg-tb-hint');
+    if (h) h.innerHTML = escHtml(this._hintText()) + (extra ? ` <span class="eg-tb-xy">${extra}</span>` : '');
+  },
+
+  _setTool(tool) {
+    this.tool = tool === 'select' ? null : tool;
+    this._pend = null;
+    this._refreshToolbar();
+    this._drawEditOverlay();
+  },
+
+  _refreshToolbar() {
+    const box = this._el('eg-preview');
+    const tb = box.querySelector('.eg-tb');
+    if (!tb) return;
+    const hint = box.querySelector('.eg-tb-hint');
+    const tmp = document.createElement('div');
+    tmp.innerHTML = this._toolbarHtml();
+    tb.replaceWith(tmp.children[0]);
+    if (hint) hint.replaceWith(tmp.children[0]);
+    box.querySelector('.eg-pv-plan')?.classList.toggle('eg-tool-on', this.view === 'plan' && !!this.tool);
+  },
+
+  // Draw the plan or the 3-D view from the last preview.
+  _drawView() {
+    const box = this._el('eg-preview');
+    const host = box && box.querySelector('.eg-pv-plan');
+    const res = this._lastPreview;
+    const g = this.current();
+    if (!host || !res || !g) return;
+    host.classList.toggle('eg-tool-on', this.view === 'plan' && !!this.tool);
+    host.classList.toggle('eg-pv-3d', this.view === '3d');
+    if (this.view === '3d') {
+      if (res.empty) { this._stop3d(); host.innerHTML = '<div class="eg-muted" style="padding:20px;text-align:center">Nothing to show in 3-D yet</div>'; return; }
+      host.innerHTML = '<canvas class="eg-3d" role="img" tabindex="0"></canvas>';
+      const cv = host.querySelector('canvas');
+      cv.setAttribute('aria-label', `3-D view of ${g.name}: ${(res.plan.conductors || []).length} conductors, ${(res.plan.rods || []).filter(r => r[2] !== 'post').length} rods`);
+      this._start3d(cv);
+    } else {
+      this._stop3d();
+      host.innerHTML = this.planSvg(res.plan, { label: g.name, edit: true });
+      this._drawEditOverlay();
+    }
+  },
+
+  _bindPreview() {
+    const box = this._el('eg-preview');
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-eg-view], [data-eg-tool], [data-eg-exag], [data-eg-3d]');
+      if (!b) return;
+      if (b.dataset.egView) {
+        this.view = b.dataset.egView;
+        this._pend = null;
+        this._refreshToolbar();
+        this._drawView();
+      } else if (b.dataset.egTool) {
+        this._setTool(b.dataset.egTool);
+      } else if (b.dataset.egExag) {
+        this._3d.exag = +b.dataset.egExag;
+        this._refreshToolbar();
+        this._render3d();
+      } else {
+        const a = b.dataset.eg3d;
+        if (a === 'reset') this._reset3d();
+        else this._3d.zoom = Math.min(8, Math.max(0.3, this._3d.zoom * (a === 'in' ? 1.25 : 0.8)));
+        this._render3d();
+      }
+    });
+    // Plan: click-to-add (pointer events — mouse, pen and touch alike)
+    box.addEventListener('pointermove', (e) => {
+      if (this.view !== 'plan' || !this.tool) return;
+      const svg = e.target.closest && e.target.closest('svg.eg-plan');
+      if (!svg) return;
+      this._hover = this._snapAt(svg, e);
+      this._drawEditOverlay();
+    });
+    box.addEventListener('pointerleave', () => { this._hover = null; this._drawEditOverlay(); });
+    box.addEventListener('pointerdown', (e) => {
+      if (this.view !== 'plan' || !this.tool || e.button !== 0) return;
+      const svg = e.target.closest && e.target.closest('svg.eg-plan');
+      if (!svg) return;
+      e.preventDefault();
+      const pt = this._snapAt(svg, e);
+      if (!pt) return;
+      this._placeAt(pt);
+    });
+    box.addEventListener('contextmenu', (e) => {
+      // Right-click ends the conductor being drawn
+      if (this.view === 'plan' && this._pend && e.target.closest('svg.eg-plan')) {
+        e.preventDefault();
+        this._pend = null;
+        this._drawEditOverlay();
+      }
+    });
+  },
+
+  // ── Click-to-add ───────────────────────────────────────────────────
+  // Points a click snaps to: conductor ends, conductor crossings, rods.
+  _snapPoints(plan) {
+    const pts = [];
+    const seen = new Set();
+    const add = (x, y, what) => {
+      const k = `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      pts.push([x, y, what]);
+    };
+    const cs = (plan.conductors || []).filter(c => c[4] !== 'fence_conductor' || !+c[5]);
+    for (const c of cs) { add(c[0], c[1], 'conductor end'); add(c[2], c[3], 'conductor end'); }
+    if (cs.length <= 400) {
+      for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) {
+        const p = this._segX(cs[i], cs[j]);
+        if (p) add(p[0], p[1], 'crossing');
+      }
+    }
+    for (const r of plan.rods || []) if (r[2] !== 'post') add(r[0], r[1], 'rod');
+    return pts;
+  },
+  _segX(a, b) {
+    const [x1, y1, x2, y2] = a, [x3, y3, x4, y4] = b;
+    const d = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
+    if (Math.abs(d) < 1e-12) return null;
+    const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / d;
+    const u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / d;
+    if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+    return [x1 + t * (x2 - x1), y1 + t * (y2 - y1)];
+  },
+
+  // Pointer → grid metres, snapped: a snap point within 10 px, else a point
+  // on a conductor within 7 px, else the nearest 0.5 m (1 m on big grids).
+  // Alt = no snapping (to 0.01 m).
+  _snapAt(svg, e) {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    const s = +svg.dataset.s, pad = +svg.dataset.pad, minX = +svg.dataset.minx, maxY = +svg.dataset.maxy;
+    const x = minX + (p.x - pad) / s, y = maxY - (p.y - pad) / s;
+    const mPerPx = 1 / (s * Math.abs(ctm.a || 1));
+    const r2 = v => Math.round(v * 100) / 100;
+    if (e.altKey) return [r2(x), r2(y), 'free'];
+    let best = null, bd = 10 * mPerPx;
+    for (const q of this._snapPts || []) {
+      const d = Math.hypot(q[0] - x, q[1] - y);
+      if (d < bd) { bd = d; best = q; }
+    }
+    if (best) return [r2(best[0]), r2(best[1]), best[2]];
+    const plan = (this._lastPreview || {}).plan || {};
+    bd = 7 * mPerPx;
+    for (const c of plan.conductors || []) {
+      const dx = c[2] - c[0], dy = c[3] - c[1];
+      const L2 = dx * dx + dy * dy;
+      if (!L2) continue;
+      const t = Math.max(0, Math.min(1, ((x - c[0]) * dx + (y - c[1]) * dy) / L2));
+      const px = c[0] + t * dx, py = c[1] + t * dy;
+      const d = Math.hypot(px - x, py - y);
+      if (d < bd) { bd = d; best = [px, py, 'on a conductor']; }
+    }
+    if (best) return [r2(best[0]), r2(best[1]), best[2]];
+    const span = Math.max(+svg.dataset.spanx || 0, +svg.dataset.spany || 0);
+    const step = span > 150 ? 1 : 0.5;
+    return [r2(Math.round(x / step) * step), r2(Math.round(y / step) * step), 'grid'];
+  },
+
+  _placeAt(pt) {
+    const g = this.current();
+    if (!g) return;
+    const [x, y] = pt;
+    if (this.tool === 'rod') {
+      g.extra_rods.push({ x, y, bonded: true });
+      this._afterPlace('extra_rods');
+      return;
+    }
+    if (!this._pend) { this._pend = [x, y]; this._drawEditOverlay(); return; }
+    const [x0, y0] = this._pend;
+    if (Math.hypot(x - x0, y - y0) < 1e-6) { this._pend = null; this._drawEditOverlay(); return; }  // same point: finish
+    g.extra_conductors.push({ x1: x0, y1: y0, x2: x, y2: y, bonded: true });
+    this._pend = [x, y];          // carry on from the end
+    this._afterPlace('extra_conductors');
+  },
+
+  _afterPlace(list) {
+    this._openSecs[list] = true;
+    const sec = this._el('eg-form').querySelector(`[data-eg-sec="${list}"]`);
+    if (sec) sec.open = true;
+    this._renderTable(list);
+    this._changed(true);
+    this._drawEditOverlay();
+    this._schedulePreview(150);
+  },
+
+  // Snap marker, conductor rubber band and coordinates over the plan.
+  _drawEditOverlay() {
+    const svg = this._el('eg-preview')?.querySelector('svg.eg-plan');
+    if (svg) {
+      let ov = svg.querySelector('.eg-p-edit');
+      if (!ov) { ov = document.createElementNS('http://www.w3.org/2000/svg', 'g'); ov.setAttribute('class', 'eg-p-edit'); svg.appendChild(ov); }
+      const s = +svg.dataset.s, pad = +svg.dataset.pad, minX = +svg.dataset.minx, maxY = +svg.dataset.maxy;
+      const X = x => (pad + (x - minX) * s).toFixed(1), Y = y => (pad + (maxY - y) * s).toFixed(1);
+      let h = '';
+      const hv = this.view === 'plan' && this.tool ? this._hover : null;
+      if (this.tool === 'conductor' && this._pend) {
+        h += `<circle cx="${X(this._pend[0])}" cy="${Y(this._pend[1])}" r="3.6" class="eg-p-pend"/>`;
+        if (hv) h += `<line x1="${X(this._pend[0])}" y1="${Y(this._pend[1])}" x2="${X(hv[0])}" y2="${Y(hv[1])}" class="eg-p-band"/>`;
+      }
+      if (hv) {
+        h += this.tool === 'rod'
+          ? `<circle cx="${X(hv[0])}" cy="${Y(hv[1])}" r="3.4" class="eg-p-ghost"/>`
+          : `<circle cx="${X(hv[0])}" cy="${Y(hv[1])}" r="5" class="eg-p-snap${hv[2] === 'grid' || hv[2] === 'free' ? '' : ' eg-p-snap-hit'}"/>`;
+      }
+      ov.innerHTML = h;
+    }
+    const hv = this.view === 'plan' && this.tool ? this._hover : null;
+    let xy = '';
+    if (hv) {
+      xy = `x ${this._n(hv[0])} m, y ${this._n(hv[1])} m`;
+      if (this._pend && this.tool === 'conductor') xy += ` · ${this._n(Math.round(Math.hypot(hv[0] - this._pend[0], hv[1] - this._pend[1]) * 100) / 100)} m long`;
+      if (hv[2] !== 'grid' && hv[2] !== 'free') xy += ` · ${hv[2]}`;
+    }
+    this._setHint(xy);
+  },
+
+  // ── 3-D view (canvas, own projection — no library) ─────────────────
+  // World: x east, y north, z up (depth = −z). Orbit with yaw/pitch, a
+  // perspective camera, depths stretched by `exag`.
+  _3d: { yaw: -0.6, pitch: 0.55, zoom: 1, exag: 2, cv: null, ro: null, drag: null, pinch: null },
+
+  _reset3d() { Object.assign(this._3d, { yaw: -0.6, pitch: 0.55, zoom: 1 }); },
+
+  _start3d(cv) {
+    this._stop3d();
+    const S = this._3d;
+    S.cv = cv;
+    S.pts = new Map();
+    const host = cv.parentElement;
+    S.ro = new ResizeObserver(() => this._render3d());
+    S.ro.observe(host);
+    cv.addEventListener('pointerdown', (e) => {
+      cv.setPointerCapture(e.pointerId);
+      S.pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (S.pts.size === 2) {
+        const [a, b] = [...S.pts.values()];
+        S.pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), zoom: S.zoom };
+      }
+    });
+    cv.addEventListener('pointermove', (e) => {
+      const prev = S.pts.get(e.pointerId);
+      if (!prev) return;
+      S.pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (S.pts.size >= 2 && S.pinch) {
+        const [a, b] = [...S.pts.values()];
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        S.zoom = Math.min(8, Math.max(0.3, S.pinch.zoom * d / (S.pinch.d || 1)));
+      } else {
+        S.yaw -= (e.clientX - prev[0]) * 0.01;
+        S.pitch = Math.min(Math.PI / 2, Math.max(0.05, S.pitch + (e.clientY - prev[1]) * 0.01));
+      }
+      this._render3d();
+    });
+    const up = (e) => { S.pts.delete(e.pointerId); if (S.pts.size < 2) S.pinch = null; };
+    cv.addEventListener('pointerup', up);
+    cv.addEventListener('pointercancel', up);
+    cv.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      S.zoom = Math.min(8, Math.max(0.3, S.zoom * Math.exp(-e.deltaY * 0.0015)));
+      this._render3d();
+    }, { passive: false });
+    cv.addEventListener('dblclick', () => { this._reset3d(); this._render3d(); });
+    cv.addEventListener('keydown', (e) => {
+      const k = { ArrowLeft: [0.15, 0], ArrowRight: [-0.15, 0], ArrowUp: [0, -0.1], ArrowDown: [0, 0.1] }[e.key];
+      if (!k) return;
+      e.preventDefault();
+      S.yaw += k[0];
+      S.pitch = Math.min(Math.PI / 2, Math.max(0.05, S.pitch + k[1]));
+      this._render3d();
+    });
+    this._render3d();
+  },
+
+  _stop3d() {
+    const S = this._3d;
+    if (S.ro) S.ro.disconnect();
+    S.ro = null;
+    S.cv = null;
+  },
+
+  _render3d() {
+    const S = this._3d, cv = S.cv, res = this._lastPreview, g = this.current();
+    if (!cv || !cv.isConnected || !res || !res.plan || !g) return;
+    const plan = res.plan;
+    const host = cv.parentElement;
+    const cssW = Math.max(200, host.clientWidth - 12);
+    const cssH = Math.round(Math.min(Math.max(260, cssW * 0.78), window.innerHeight * 0.6));
+    const dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(cssW * dpr) || cv.height !== Math.round(cssH * dpr)) {
+      cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+      cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
+    }
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    const css = getComputedStyle(this._el('earth-grid-modal'));
+    const col = n => css.getPropertyValue(n).trim() || '#888';
+    const C = {
+      grid: col('--eg-cond'), diagonal: col('--eg-diag'), extra: col('--eg-extra'), fence_conductor: col('--eg-fence'),
+      unb: col('--eg-unb'), rod: col('--eg-rod'), post: col('--eg-post'), fence: col('--eg-fence'),
+      text: col('--text-secondary'), muted: col('--text-muted'), ground: col('--eg-ground'), groundEdge: col('--eg-ground-edge'),
+    };
+    const ex = S.exag;
+    const dep = +g.conductor.depth_m || 0.5;
+    const conductors = (plan.conductors || []).map(c => [c[0], c[1], c[6] != null ? +c[6] : dep, c[2], c[3], c[7] != null ? +c[7] : dep, c[4], +c[5]]);
+    const rods = (plan.rods || []).map(r => [r[0], r[1], r[4] != null ? +r[4] : (r[2] === 'post' ? 0 : dep), r[5] != null ? +r[5] : (r[2] === 'post' ? 0.8 : +g.rods.length_m || 3), r[2], +r[3]]);
+    const FENCE_H = 1.8;
+    // Extent
+    const xs = [], ys = [];
+    const addP = (x, y) => { xs.push(x); ys.push(y); };
+    (plan.outline || []).forEach(p => addP(p[0], p[1]));
+    conductors.forEach(c => { addP(c[0], c[1]); addP(c[3], c[4]); });
+    rods.forEach(r => addP(r[0], r[1]));
+    (plan.fences || []).forEach(f => (f.line || []).forEach(p => addP(p[0], p[1])));
+    if (!xs.length) return;
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    let maxD = 0;
+    conductors.forEach(c => { maxD = Math.max(maxD, c[2], c[5]); });
+    rods.forEach(r => { maxD = Math.max(maxD, r[2] + r[3]); });
+    const two = g.soil.two_layer === 'on' && +g.soil.h1 > 0;
+    const span = Math.max(maxX - minX, maxY - minY, 1);
+    const m = span * 0.12;
+    const hasFence = (plan.fences || []).length > 0;
+    const zTop = hasFence ? FENCE_H : 0, zBot = -Math.max(maxD, two ? +g.soil.h1 : 0) * ex;
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (zTop + zBot) / 2;
+    // Fit the slab drawn (ground margin included) for any turn of the view:
+    // its plan radius across, plus the depth seen at this tilt down;
+    // perspective enlarges the near side.
+    const Rh = 0.5 * Math.hypot(maxX - minX + 2 * m, maxY - minY + 2 * m);
+    const D = span * 2.6;
+    const sinP = Math.sin(S.pitch), cosP = Math.cos(S.pitch);
+    const nearF = D / Math.max(D - Rh * cosP, D * 0.3);
+    const scale = S.zoom * Math.min(cssW / (2 * Rh * nearF), (cssH - 30) / ((2 * Rh * sinP + (zTop - zBot) * cosP) * nearF)) * 0.96;
+    const cyw = Math.cos(S.yaw), syw = Math.sin(S.yaw), cp = Math.cos(S.pitch), sp = Math.sin(S.pitch);
+    // depth d (m, + away) and screen point of a world point (z already stretched)
+    const P = (x, y, z) => {
+      const dx = x - cx, dy = y - cy, dz = z - cz;
+      const x1 = dx * cyw - dy * syw, y1 = dx * syw + dy * cyw;
+      const u = dz * cp + y1 * sp, d = y1 * cp - dz * sp;
+      const f = D / Math.max(D + d, D * 0.1);
+      return [cssW / 2 + x1 * f * scale, (cssH - 16) / 2 - u * f * scale, d];
+    };
+    const Z = depth => -depth * ex;
+    const line = (a, b, color, w, dash) => {
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+      ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash(dash || []); ctx.stroke();
+    };
+    const poly = (ring, z) => ring.map(p => P(p[0], p[1], z));
+    const path = (pts, close) => {
+      ctx.beginPath();
+      pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      if (close) ctx.closePath();
+    };
+    const groundRing = [[minX - m, minY - m], [maxX + m, minY - m], [maxX + m, maxY + m], [minX - m, maxY + m]];
+
+    // 1. Two-layer boundary (h1), when within view
+    if (two && +g.soil.h1 < maxD * 3) {
+      path(poly(groundRing, Z(+g.soil.h1)), true);
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 0.8; ctx.setLineDash([2, 4]); ctx.stroke();
+      const q = P(maxX + m, minY - m, Z(+g.soil.h1));
+      ctx.setLineDash([]); ctx.fillStyle = C.muted; ctx.font = '10.5px system-ui, sans-serif';
+      ctx.fillText(`ρ₂ below ${this._n(+g.soil.h1)} m`, q[0] + 4, q[1]);
+    }
+    // 2. Buried metal, far to near
+    const items = [];
+    for (const c of conductors) {
+      const a = P(c[0], c[1], Z(c[2])), b = P(c[3], c[4], Z(c[5]));
+      items.push({ d: (a[2] + b[2]) / 2, draw: () => line(a, b, c[7] ? C.unb : (C[c[6]] || C.grid), c[6] === 'extra' ? 2.2 : 1.6, c[7] ? [5, 3] : null) });
+    }
+    for (const r of rods) {
+      const post = r[4] === 'post';
+      const a = P(r[0], r[1], Z(r[2])), b = P(r[0], r[1], Z(r[2] + r[3]));
+      const color = r[5] ? C.unb : post ? C.post : r[4] === 'extra_rod' ? C.extra : C.rod;
+      items.push({ d: (a[2] + b[2]) / 2, draw: () => {
+        line(a, b, color, post ? 2 : 2.6);
+        if (!post) { ctx.beginPath(); ctx.arc(a[0], a[1], 2.4, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill(); }
+      } });
+    }
+    items.sort((p, q) => q.d - p.d).forEach(it => it.draw());
+    // 3. Ground surface (translucent, over the buried metal), outline at z = 0
+    path(poly(groundRing, 0), true);
+    ctx.fillStyle = C.ground; ctx.fill();
+    ctx.strokeStyle = C.groundEdge; ctx.lineWidth = 1; ctx.setLineDash([]); ctx.stroke();
+    if ((plan.outline || []).length) {
+      path(poly(plan.outline, 0), true);
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 0.9; ctx.setLineDash([4, 3]); ctx.stroke();
+    }
+    // 4. Above ground: fence posts and top rail
+    for (const f of plan.fences || []) {
+      if (!(f.line || []).length) continue;
+      const color = f.bonded ? C.fence : C.unb;
+      path(poly(f.line, FENCE_H), true);
+      ctx.strokeStyle = color; ctx.lineWidth = 1.1; ctx.setLineDash([]); ctx.stroke();
+    }
+    for (const r of rods) {
+      if (r[4] !== 'post') continue;
+      line(P(r[0], r[1], 0), P(r[0], r[1], FENCE_H), r[5] ? C.unb : C.post, 1.4);
+    }
+    // 5. Depth ruler at the nearest-left corner + labels
+    const corners = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]];
+    const near = corners.map(p => ({ p, s: P(p[0], p[1], 0) })).sort((a, b) => a.s[2] - b.s[2]);
+    const rc = near.slice(0, 2).sort((a, b) => a.s[0] - b.s[0])[0].p;
+    const rx = rc[0] + (rc[0] === minX ? -m * 0.5 : m * 0.5), ry = rc[1] + (rc[1] === minY ? -m * 0.5 : m * 0.5);
+    const deepest = Math.max(maxD, 0.5);
+    const r0 = P(rx, ry, 0), r1 = P(rx, ry, Z(deepest));
+    line(r0, r1, C.text, 1);
+    ctx.font = '10.5px system-ui, sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.textBaseline = 'middle';
+    // Tick step: a round depth whose ticks sit at least 14 px apart
+    const pxPerM = Math.abs(r1[1] - r0[1]) / deepest || 1;
+    const stepM = [0.5, 1, 2, 5, 10, 20, 50].find(k => k * pxPerM >= 14) || 100;
+    for (let d = 0; d <= deepest + 1e-9; d += stepM) {
+      const q = P(rx, ry, Z(d));
+      line([q[0] - 3, q[1]], [q[0] + 3, q[1]], C.text, 1);
+      ctx.fillText(d ? `−${this._n(d)} m` : '0 m', q[0] + 6, q[1]);
+    }
+    const qd = P(rx, ry, Z(deepest));
+    const lastTick = Math.floor(deepest / stepM + 1e-9) * stepM;
+    if ((deepest - lastTick) * pxPerM >= 12) {
+      line([qd[0] - 3, qd[1]], [qd[0] + 3, qd[1]], C.text, 1);
+      ctx.fillText(`−${this._n(deepest)} m`, qd[0] + 6, qd[1]);
+    }
+    // Axis gizmo (x, y, north) bottom-left
+    const gx = 34, gy = cssH - 30, gl = 18;
+    const ax = (vx, vy, vz) => {
+      const x1 = vx * cyw - vy * syw, y1 = vx * syw + vy * cyw;
+      return [gx + x1 * gl, gy - (vz * cp + y1 * sp) * gl];
+    };
+    ctx.textBaseline = 'middle';
+    [['x', ax(1, 0, 0)], ['y', ax(0, 1, 0)], ['z', ax(0, 0, 1)]].forEach(([lab, q]) => {
+      line([gx, gy], q, C.text, 1.2);
+      ctx.fillText(lab, q[0] + (q[0] >= gx ? 3 : -9), q[1]);
+    });
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = C.muted;
+    const note = ex !== 1 ? `Depths ×${ex}` : 'True scale';
+    ctx.fillText(note, cssW - ctx.measureText(note).width - 8, cssH - 10);
   },
 
   // ── Plan drawing (editor preview and results) ──────────────────────
@@ -730,6 +1329,7 @@ const EarthGridEditor = {
     (plan.conductors || []).forEach(c => { add(c[0], c[1]); add(c[2], c[3]); });
     (plan.rods || []).forEach(r => add(r[0], r[1]));
     (plan.fences || []).forEach(f => (f.line || []).forEach(p => add(p[0], p[1])));
+    if (!pts.length && o.edit) { pts.push([0, 0], [20, 20]); }
     if (!pts.length) return '<div class="eg-muted" style="padding:20px;text-align:center">Nothing to draw yet</div>';
     let minX = Math.min(...pts.map(p => p[0])), maxX = Math.max(...pts.map(p => p[0]));
     let minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
@@ -811,7 +1411,9 @@ const EarthGridEditor = {
       <text x="${(sbX + sbW + 6).toFixed(1)}" y="${sbY + 4}" class="eg-p-dim">${this._n(nice)} m</text></g>`;
 
     const label = o.label ? ` of ${escHtml(o.label)}` : '';
-    return `<svg class="eg-plan" viewBox="0 0 ${W.toFixed(1)} ${H.toFixed(1)}" width="100%" preserveAspectRatio="xMidYMid meet" role="img"
+    // data-*: the drawing scale, so a click can be turned back into metres
+    const edit = o.edit ? ` data-minx="${minX}" data-maxy="${maxY}" data-s="${s}" data-pad="${PAD}" data-spanx="${spanX}" data-spany="${spanY}"` : '';
+    return `<svg class="eg-plan" viewBox="0 0 ${W.toFixed(1)} ${H.toFixed(1)}" width="100%" preserveAspectRatio="xMidYMid meet" role="img"${edit}
       aria-label="Plan${label}: ${this._n(oMaxX - oMinX)} by ${this._n(oMaxY - oMinY)} metres, ${(plan.conductors || []).length} conductors, ${(plan.rods || []).filter(r => r[2] !== 'post').length} rods">${svg}</svg>`;
   },
 

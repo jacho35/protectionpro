@@ -62,7 +62,7 @@ frontend/
     ├── workspaces.js       # Project type (Reticulation / Building / Network) → which workspace tabs show, in workflow order; New-project + type dialogs
     ├── help.js             # Help 'Calculations & tools' viewer: ranked search, KaTeX (js/lib/katex) lazy-loaded; articles are data in help-{faults,flow,dynamics,protect,cables,design,workflow}.js (TeX between $…$ / $$…$$; never a literal $ in text)
     ├── header.js           # Two-row header behaviours: Results menu lists only studies with results; Ctrl K command search (index built from the menus)
-    ├── earthgrid.js        # Earth grid editor (AppState.earthGrids): grid list, layout/rods/fences/added metal/calculation form, live plan preview via /earth-grid/preview; buses pick a grid in their grounding section
+    ├── earthgrid.js        # Earth grid editor (AppState.earthGrids): grid list, layout/rods/fences/added metal/calculation form, live plan / 3-D preview via /earth-grid/preview, click-to-place conductors + rods on the plan; edits a working copy — Save/Revert, discard prompt on close; buses pick a grid in their grounding section
     ├── lightning.js        # Lightning risk (IEC 62305-2, edition per assessment: 2024 default / 2010, absent ⇒ 2010): named assessments saved in the project (AppState.lightningAssessments), 4 guided steps (data-lr-ed fields per edition), live strike estimate, verdict-first results (2024: per zone + frequency F), PDF report (LightningReport)
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
