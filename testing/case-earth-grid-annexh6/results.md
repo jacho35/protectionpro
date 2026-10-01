@@ -11,15 +11,17 @@ for this type of grid", so the standard gives computer results only.
 - Rods, 5/8 in: 7.5 m at the four corners; 2.5 m at the four inner diagonal
   crossings and the centre.
 - Soil: ρ₁ = 100 Ω·m to 6.096 m over ρ₂ = 300 Ω·m.
-- Grid current 744.8 A. The bus's *Design Earth-Fault Current* = 0.7448 kA with
-  S_f = 1, and the source X/R is low enough that κ = 1.02, so D_f = 1 exactly.
+- Grid current 744.8 A, from the network itself. The 11 kV source is sized at
+  14.19 MVA with Z₀ = Z₁, so the fault study's SLG current I″k1 at the bus is
+  0.745 kA. The utility is the only (remote) source, so the whole current
+  enters the soil. S_f = 1, and X/R 0.05 gives κ = 1.02, so D_f = 1 exactly.
 
 ## Result
 
 | Quantity | ProtectionPro | CDEGS | ETAP | WinIGS |
 |---|---|---|---|---|
 | R_g (Ω) | 1.4265 | 1.42 | 1.43 | 1.43 |
-| GPR (V) | 1062 | 1054.4 | 1068.2 | 1063.1 |
+| GPR (V) | 1063 | 1054.4 | 1068.2 | 1063.1 |
 | Worst touch, inside the perimeter (V) | 136 | 134.4 | 140.2 | 136.6 |
 | Worst step, from 1 m outside inward (V) | 84 | 96.4 | 99.2 | 77.4 (S2 84.9) |
 

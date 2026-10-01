@@ -135,7 +135,7 @@ EXPECTED = {
     # GPR 1054–1068 V, touch 134.4–140.2 V, step 77.4–99.2 V.
     "ver_earth_grid_h6": ("grounding", {
         "rg": ("buses.0.grid_resistance_ohm", 1.4265, 5e-3),
-        "gpr": ("buses.0.gpr_v", 1062.0, 5e-3),
+        "gpr": ("buses.0.gpr_v", 1063.0, 5e-3),
         "touch": ("buses.0.mesh_voltage_v", 136.0, 1e-2),
         "step": ("buses.0.step_voltage_v", 84.0, 2e-2),
         "method": ("buses.0.method", "numerical"),
@@ -241,7 +241,7 @@ INSTRUCTIONS = {
     "ver_earth_grid_h6":
         "VERIFICATION TEMPLATE — earth grid of any shape, IEEE 80 Annex H Grid 6: 70 × 70 m with corner-to-corner "
         "diagonals, 7.5 m corner rods and 2.5 m inner rods, two-layer soil 100/300 Ω·m (6.1 m), grid current 744.8 A "
-        "(bus Design Earth-Fault Current). The IEEE 80 equations do not cover this grid, so it is solved numerically. "
+        "(the 11 kV source is sized at 14.19 MVA so the fault study's SLG current I″k1 is 744.8 A; X/R 0.05 gives D_f = 1). The IEEE 80 equations do not cover this grid, so it is solved numerically. "
         "RUN: Grounding study. Expected R_g = {rg:.3f} Ω, GPR ≈ {gpr:.0f} V, worst touch ≈ {touch:.0f} V, worst step ≈ "
         "{step:.0f} V — CDEGS / ETAP / WinIGS: 1.42–1.43 Ω, 134.4–140.2 V, 77.4–99.2 V. Full working: EARTH_GRID_METHOD.md §8.",
     "ver_motor_start":

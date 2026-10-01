@@ -1150,9 +1150,10 @@ const VerificationTemplates = {
           "props": {
             "name": "Src",
             "voltage_kv": 11.0,
-            "fault_mva": 100.0,
+            "fault_mva": 14.1903,
             "x_r_ratio": 0.05,
-            "grounding": "solidly"
+            "grounding": "solidly",
+            "z0_z1_ratio": 1.0
           }
         },
         {
@@ -1165,7 +1166,6 @@ const VerificationTemplates = {
             "name": "Substation",
             "voltage_kv": 11.0,
             "earth_grid_id": "eg_annexh6",
-            "design_earth_fault_ka": 0.7448,
             "fault_duration": 0.5,
             "fault_clearing_time": 0.5,
             "current_split_factor": 1.0,
@@ -1309,7 +1309,7 @@ const VerificationTemplates = {
       ],
       "dataVersion": 2,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — earth grid of any shape, IEEE 80 Annex H Grid 6: 70 × 70 m with corner-to-corner diagonals, 7.5 m corner rods and 2.5 m inner rods, two-layer soil 100/300 Ω·m (6.1 m), grid current 744.8 A (bus Design Earth-Fault Current). The IEEE 80 equations do not cover this grid, so it is solved numerically. RUN: Grounding study. Expected R_g = 1.427 Ω, GPR ≈ 1062 V, worst touch ≈ 136 V, worst step ≈ 84 V — CDEGS / ETAP / WinIGS: 1.42–1.43 Ω, 134.4–140.2 V, 77.4–99.2 V. Full working: EARTH_GRID_METHOD.md §8."
+        "description": "VERIFICATION TEMPLATE — earth grid of any shape, IEEE 80 Annex H Grid 6: 70 × 70 m with corner-to-corner diagonals, 7.5 m corner rods and 2.5 m inner rods, two-layer soil 100/300 Ω·m (6.1 m), grid current 744.8 A (the 11 kV source is sized at 14.19 MVA so the fault study's SLG current I″k1 is 744.8 A; X/R 0.05 gives D_f = 1). The IEEE 80 equations do not cover this grid, so it is solved numerically. RUN: Grounding study. Expected R_g = 1.427 Ω, GPR ≈ 1063 V, worst touch ≈ 136 V, worst step ≈ 84 V — CDEGS / ETAP / WinIGS: 1.42–1.43 Ω, 134.4–140.2 V, 77.4–99.2 V. Full working: EARTH_GRID_METHOD.md §8."
       }
     },
     "ver_motor_start": {
