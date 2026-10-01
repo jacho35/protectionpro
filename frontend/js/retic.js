@@ -562,6 +562,24 @@ const Retic = {
   },
 
   renderSettingsBar() {
+    this._renderSettingsBar();
+    this._searchifyCables();
+  },
+
+  renderKiosks() {
+    this._renderKiosks();
+    this._searchifyCables();
+  },
+
+  // Every cable dropdown here is a wildcard type-to-filter box ("16 cu",
+  // "25*xlpe"); the native select keeps its value + the delegated handlers.
+  _searchifyCables() {
+    if (typeof SearchSelect === 'undefined') return;
+    document.querySelectorAll('#retic-workspace select[data-cable-select]').forEach(sel =>
+      SearchSelect.attach(sel, { placeholder: 'Type to search cables — e.g. 16 cu, 25*xlpe' }));
+  },
+
+  _renderSettingsBar() {
     const bar = document.getElementById('retic-settings-bar');
     if (!bar) return;
     const s = this.settings;
@@ -666,11 +684,11 @@ const Retic = {
         <div class="retic-field"><label>Erven / Kiosk</label>
           <input type="number" step="1" min="0" data-action="setting" data-field="quickErven" value="${Number(s.quickErven) || 0}"></div>
         <div class="retic-field"><label>Service Cable</label>
-          <select data-action="setting" data-field="quickServiceCable">${this._cableOptions(s.quickServiceCable)}</select></div>
+          <select data-action="setting" data-field="quickServiceCable" data-cable-select>${this._cableOptions(s.quickServiceCable)}</select></div>
         <div class="retic-field"><label>Service Len (m)</label>
           <input type="number" step="1" min="1" data-action="setting" data-field="quickServiceLen" value="${Number(s.quickServiceLen) || 0}" title="Worst-case (longest) service run — applied to every erf so the VD check covers the worst stand"></div>
         <div class="retic-field"><label>Feeder Cable</label>
-          <select data-action="setting" data-field="quickFeederCable">${this._cableOptions(s.quickFeederCable)}</select></div>
+          <select data-action="setting" data-field="quickFeederCable" data-cable-select>${this._cableOptions(s.quickFeederCable)}</select></div>
         <div class="retic-field"><label>Feeder Len (m)</label>
           <input type="number" step="1" min="0" data-action="setting" data-field="quickFeederLen" value="${Number(s.quickFeederLen) || 0}"></div>
         <div class="retic-field"><label>Feed From</label>
@@ -684,7 +702,7 @@ const Retic = {
       </div>`;
   },
 
-  renderKiosks() {
+  _renderKiosks() {
     const host = document.getElementById('retic-kiosks');
     if (!host) return;
     const toolbar = `
@@ -747,7 +765,7 @@ const Retic = {
                 ? `<input type="number" value="${k.streetLightKVA || 0}" readonly title="From this kiosk's circuits in the Street lighting workspace (fixed, undiversified). Edit the circuits there.">`
                 : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="streetLightKVA" value="${k.streetLightKVA || ''}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
             <div class="retic-field"><label>Feeder Cable</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable">${this._cableOptions(k.feederCable)}</select></div>
+              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m)</label>
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
           </div>
@@ -797,7 +815,7 @@ const Retic = {
         <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
         <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
         <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
-        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType">${this._cableOptions(e.cableType)}</select></td>
+        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType" data-cable-select>${this._cableOptions(e.cableType)}</select></td>
         <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
@@ -847,6 +865,8 @@ const Retic = {
       this.updateBadges();
       this.updateVD();
       this.renderSummary();
+      // Linked site-plan elements show Demand figures in their properties.
+      if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
       // Keep the topology diagram live while it's open (edits recompute here).
       if (typeof ReticDiagram !== 'undefined' && ReticDiagram.isOpen()) ReticDiagram.render();
     } catch (err) {
