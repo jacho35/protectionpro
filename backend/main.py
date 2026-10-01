@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 
 from .models.database import init_db, get_db, User
-from .routes import projects, analysis, reports, plan_images, plan_dxf, auth, user_libraries, shared_libraries, email_settings
+from .routes import projects, analysis, reports, plan_images, plan_dxf, auth, user_libraries, shared_libraries, email_settings, admin
 from .auth import get_current_user
 
 app = FastAPI(
@@ -50,6 +50,7 @@ app.include_router(plan_dxf.router, prefix="/api", dependencies=_auth_gate)
 app.include_router(user_libraries.router, prefix="/api", dependencies=_auth_gate)
 app.include_router(shared_libraries.router, prefix="/api", dependencies=_auth_gate)
 app.include_router(email_settings.router, prefix="/api", dependencies=_auth_gate)
+app.include_router(admin.router, prefix="/api", dependencies=_auth_gate)
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"

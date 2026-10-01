@@ -347,8 +347,22 @@ class InviteCreate(BaseModel):
     expires_at: Optional[datetime] = None
     expires_days: Optional[int] = Field(default=None, ge=1, le=90)
     send_email: bool = False
+    is_admin: bool = False
     note: Optional[str] = Field(default=None, max_length=300)
     base_url: Optional[str] = None
+
+
+class TransferRequest(BaseModel):
+    to_user_id: int
+    keep_access: bool = True      # previous owner keeps edit access (if still active)
+
+
+class ActiveRequest(BaseModel):
+    is_active: bool
+
+
+class AdminRoleRequest(BaseModel):
+    is_admin: bool
 
 
 class InviteCreated(BaseModel):
@@ -402,6 +416,7 @@ class InviteOut(BaseModel):
     used_by: Optional[int] = None
     used_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
+    is_admin: bool = False
     created_at: datetime
 
     class Config:

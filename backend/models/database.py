@@ -163,6 +163,7 @@ class Invite(Base):
     used_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     used_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
+    is_admin = Column(Boolean, nullable=False, default=False)   # the invitee joins as an administrator
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     creator = relationship("User", foreign_keys=[created_by])
@@ -282,6 +283,7 @@ def init_db():
     _migrate_add_folder_id()
     _migrate_add_owner_id("projects")
     _migrate_add_owner_id("folders")
+    _migrate_add_invite_is_admin()
 
 
 def _migrate_add_folder_id():
@@ -310,6 +312,16 @@ def _migrate_add_owner_id(table: str):
             with engine.begin() as conn:
                 conn.execute(text(
                     f"ALTER TABLE {table} ADD COLUMN owner_id INTEGER REFERENCES users(id)"))
+
+
+def _migrate_add_invite_is_admin():
+    """Add invites.is_admin to an existing DB (idempotent; no Alembic here)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "invites" in insp.get_table_names():
+        if "is_admin" not in [c["name"] for c in insp.get_columns("invites")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE invites ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def get_db():
