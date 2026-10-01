@@ -233,8 +233,9 @@ const Project = {
   },
 
   // Export as JSON file (download)
-  exportJSON() {
+  async exportJSON() {
     const data = AppState.toJSON();
+    if (typeof PlanDxfImport !== 'undefined') await PlanDxfImport.bundle(data);   // embed DXF backgrounds
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -754,7 +755,7 @@ const Project = {
       reader.onerror = () => {
         UI.toast('Could not read the file: ' + (reader.error?.message || 'unknown error'), 'error');
       };
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
         let data;
         try {
           data = JSON.parse(ev.target.result);
@@ -762,6 +763,8 @@ const Project = {
           UI.toast('Not a valid JSON file: ' + err.message, 'error');
           return;
         }
+        // Re-store any embedded DXF backgrounds before the project loads.
+        if (data && data.planAssets && typeof PlanDxfImport !== 'undefined') await PlanDxfImport.unbundle(data);
         // A Distribution Designer export (proj.buildings) isn't a ProtectionPro
         // project — its buildings/floors import into the Plan workspace, not the
         // SLD. Route it there instead of rejecting it as "not a project".
@@ -1150,6 +1153,7 @@ const Project = {
         const p = this._fmProjects.find(x => String(x.id) === btn.dataset.id);
         try {
           const data = await API.exportJSON(btn.dataset.id);
+          if (typeof PlanDxfImport !== 'undefined') await PlanDxfImport.bundle(data);
           const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
           const a = document.createElement('a');
           a.href = url;

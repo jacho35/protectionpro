@@ -432,13 +432,57 @@ const PlanDxfImport = {
     this.invalidate(desc);
   },
 
-  async _upload(data, name) {
+  // ─── Project export / import ───
+  // The project JSON only holds each DXF background's stored id, so an
+  // exported file opened on another server (or after the rows are gone) lost
+  // its drawings. bundle() embeds them as `planAssets.dxf`; unbundle() puts
+  // them back in the store and repoints the ids before the project loads.
+  _descsOf(pm) {
+    const out = [];
+    for (const fl of (pm.floors || [])) for (const d of ((fl.data && fl.data.dxfs) || [])) out.push(d);
+    for (const d of (pm.dxfs || [])) out.push(d);
+    return out;
+  },
+
+  async bundle(data) {
+    const pm = data && data.planMarkup;
+    if (!pm) return data;
+    const ids = [...new Set(this._descsOf(pm).map(d => d.imageId).filter(id => id != null))];
+    if (!ids.length) return data;
+    const assets = {};
+    for (const id of ids) {
+      try {
+        const r = await fetch(`${API_BASE}/plan-images/${id}`, { headers: API.authHeaders() });
+        if (r.ok) assets[id] = await r.json();
+      } catch (_) { /* leave this drawing out; the rest still export */ }
+    }
+    if (Object.keys(assets).length) data.planAssets = { dxf: assets };
+    return data;
+  },
+
+  async unbundle(data) {
+    const assets = data && data.planAssets && data.planAssets.dxf;
+    if (data && data.planAssets) delete data.planAssets;
+    if (!assets || !data.planMarkup) return data;
+    const remap = {};
+    for (const [oldId, json] of Object.entries(assets)) {
+      const desc = this._descsOf(data.planMarkup).find(d => String(d.imageId) === oldId);
+      try { remap[oldId] = (await this._upload(json, (desc && desc.name) || 'DXF', true)).id; }
+      catch (_) { /* that drawing stays missing, as before */ }
+    }
+    for (const d of this._descsOf(data.planMarkup)) {
+      if (d.imageId != null && remap[String(d.imageId)] != null) d.imageId = remap[String(d.imageId)];
+    }
+    return data;
+  },
+
+  async _upload(data, name, orphan) {
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const fd = new FormData();
     fd.append('file', new File([blob], (name || 'dxf') + '.json', { type: 'application/json' }));
     fd.append('kind', 'dxf');
     fd.append('name', name || '');
-    if (AppState.projectId) fd.append('project_id', String(AppState.projectId));
+    if (AppState.projectId && !orphan) fd.append('project_id', String(AppState.projectId));
     const resp = await fetch(`${API_BASE}/plan-images`, { method: 'POST', body: fd, headers: API.authHeaders() });
     if (!resp.ok) {
       let detail = `HTTP ${resp.status}`;
