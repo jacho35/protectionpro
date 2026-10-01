@@ -431,7 +431,10 @@ const PlanUI = {
       const ms = PlanSync._resolve(R.minisubs, item);
       if (!ms) return notLinked();
       const r = res && res.minisubs && res.minisubs.find(x => x.minisubId === ms.id);
-      row('Kiosks fed', String(R.kiosks.filter(k => k.fedFrom === ms.id).length));
+      // Everything downstream, however deep the chain — not just the kiosks wired straight to it.
+      const down = R.kiosks.filter(k => Retic._minisubOf(k) === ms);
+      const strings = down.filter(k => Retic._stringHead(k) === k).length;
+      row('Kiosks fed (downstream)', `${down.length} in ${strings} string${strings === 1 ? '' : 's'}`);
       if (r) row('Demand', `${r.totalKVA} kVA`);
     } else return '';
     return `<div class="plan-demand"><div class="plan-demand-title">${title}</div>${rows.join('')}</div>`;
