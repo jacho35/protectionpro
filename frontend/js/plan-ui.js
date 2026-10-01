@@ -19,6 +19,8 @@ const PlanUI = {
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
       if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
+      const pick = e.target.closest('[data-plan-select]');
+      if (pick) { PlanMarkup.selectOnly(pick.dataset.planSelect); PlanEngine.requestDraw({ fg: true }); return; }
       if (e.target.closest('[data-role="edit-schedule"]')) { this._editBoardSchedule(); return; }
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
@@ -388,6 +390,7 @@ const PlanUI = {
     const num = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
     const clsLabel = (k) => { const c = Retic._kioskClass(k); return c ? escHtml(c.label) : '—'; };
     let title = 'From Demand';
+    let kioskList = null;
     const notLinked = () => `<div class="plan-demand"><div class="plan-demand-title">From Demand</div><div class="plan-demand-row"><span>Not in Demand yet — use → Push to Schedules.</span></div></div>`;
     // Figures for a kiosk / minisub come from the last Demand calculation; ask
     // for one if none has run this session (it redraws this panel when done).
@@ -431,10 +434,35 @@ const PlanUI = {
       const ms = PlanSync._resolve(R.minisubs, item);
       if (!ms) return notLinked();
       const r = res && res.minisubs && res.minisubs.find(x => x.minisubId === ms.id);
-      row('Kiosks fed', String(R.kiosks.filter(k => k.fedFrom === ms.id).length));
+      // Everything downstream, however deep the chain — not just the kiosks wired straight to it.
+      const down = R.kiosks.filter(k => Retic._minisubOf(k) === ms);
+      const strings = down.filter(k => Retic._stringHead(k) === k).length;
+      row('Kiosks fed (downstream)', `${down.length} in ${strings} string${strings === 1 ? '' : 's'}`);
+      kioskList = down;
       if (r) row('Demand', `${r.totalKVA} kVA`);
     } else return '';
-    return `<div class="plan-demand"><div class="plan-demand-title">${title}</div>${rows.join('')}</div>`;
+    return `<div class="plan-demand"><div class="plan-demand-title">${title}</div>${rows.join('')}</div>${kioskList ? this._kioskTable(kioskList, res) : ''}`;
+  },
+
+  // Each downstream kiosk of a selected minisub: demand, feeder length (own and
+  // cumulative back to the minisub) and cumulative volt drop. Click selects it
+  // on the plan.
+  _kioskTable(kiosks, res) {
+    if (!kiosks.length) return '';
+    const num = (n, d = 1) => (Math.round(n * 10 ** d) / 10 ** d).toString();
+    const limit = Retic.settings.maxFeederVD;
+    const planEl = (k) => AppState.planMarkup.elements.find(e => e.type === 'kiosk' && e.reticId === k.id);
+    const body = kiosks.map(k => {
+      const fi = this._feederInfo(k, res), kr = fi.kr, el = planEl(k);
+      return `<tr${el ? ` data-plan-select="${escHtml(el.id)}" class="clickable"` : ''}>
+        <td>${escHtml(k.name || 'Kiosk')}</td>
+        <td>${kr ? num(kr.totalKVA) + ' kVA' : '—'}</td>
+        <td>${k.feederLength ? num(k.feederLength) + ' m' : '—'}</td>
+        <td>${fi.cumLen ? num(fi.cumLen) + ' m' : '—'}</td>
+        <td class="${fi.cumVD != null ? (fi.cumVD > limit ? 'bad' : 'ok') : ''}">${fi.cumVD != null ? num(fi.cumVD, 2) + ' %' : '—'}</td></tr>`;
+    }).join('');
+    return `<div class="plan-demand"><div class="plan-demand-title">Kiosks downstream</div>
+      <table class="plan-demand-table"><thead><tr><th>Kiosk</th><th>Demand</th><th>Feeder</th><th>Σ length</th><th>Σ VD</th></tr></thead><tbody>${body}</tbody></table></div>`;
   },
 
   // Feeder figures for one kiosk: its own (incoming) leg and the running total

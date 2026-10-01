@@ -314,3 +314,9 @@ body.dark-mode .plan-status { background: rgba(30,30,46,0.85); color: #c0c0d0; }
 .plan-demand-row.bad b { color: var(--danger, #d32f2f); }
 .plan-field-current { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
 .plan-field-current b { color: var(--text-primary); font-weight: 600; }
+.plan-demand-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.plan-demand-table th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 2px 4px; }
+.plan-demand-table td { padding: 3px 4px; border-top: 1px solid var(--border-color); color: var(--text-primary); white-space: nowrap; }
+.plan-demand-table tr.clickable { cursor: pointer; }
+.plan-demand-table tr.clickable:hover td { background: var(--bg-tertiary); }
+.plan-demand-table td.ok { color: #1b7a34; } .plan-demand-table td.bad { color: var(--danger, #d32f2f); }
