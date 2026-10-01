@@ -1522,7 +1522,11 @@ const Retic = {
   // Every LV cable in the one library, Cu and Al, any construction. "Assumed"
   // = Table 54.7 size in the phase conductor's metal.
   _earthCableOptions(selected) {
-    return CableLib.options(selected, { filter: (c) => !CableLib.isMV(c) })
+    // Earth conductors first (Cu and Al); any other LV cable stays selectable
+    // (e.g. a core or the armour of a multicore) below them.
+    const groups = [{ label: 'Earth conductors', test: (c) => c.construction === 'earth' },
+      ...CableLib.CONSTRUCTIONS.filter(k => k.id !== 'earth').map(k => ({ label: k.label, test: (c) => c.construction === k.id }))];
+    return CableLib.options(selected, { filter: (c) => !CableLib.isMV(c), groups })
       .replace('<option value="">— select —</option>', '<option value="">— assumed (Table 54.7) —</option>');
   },
 

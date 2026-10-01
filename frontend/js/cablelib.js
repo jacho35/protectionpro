@@ -12,6 +12,9 @@
  *   armoured  MV (3-core) / LV (4-core, or 2-core single-phase services)
  *   te        twin & earth          surfix   Surfix 2C+E / 3C+E
  *   single    H07V-R single-core    control  DALI / 0-10 V / BMS
+ *   earth     insulated earth conductor, Cu and Al — the pick for an earth
+ *             (CPC) conductor in the Reticulation earth-fault / ECC checks;
+ *             never offered as a phase cable
  *
  * Projects reference a cable by NAME (Demand, plans, DB ways) or by id (SLD).
  * The former building library's "x4C Cu PVC/SWA" names were the same cables as
@@ -26,6 +29,7 @@ const CableLib = {
     { id: 'surfix', label: 'Surfix' },
     { id: 'single', label: 'Single-core (H07V-R)' },
     { id: 'control', label: 'Control / signal' },
+    { id: 'earth', label: 'Earth conductor (Cu / Al)' },
   ],
   // Former building-library names → the same cable in the one library.
   ALIASES: {
