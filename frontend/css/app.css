@@ -3586,7 +3586,15 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
 .eg-ftable { width: 100%; margin-top: 8px; font-size: 12px; }
 .eg-ftable th { text-align: left; }
 .eg-over { color: var(--danger); font-weight: 700; }
-.eg-res-plan { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
+.eg-res-plan { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-width: 640px; position: relative; }
+.eg-res-body { display: flex; flex-direction: column; gap: 6px; position: relative; }
+.eg-res-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.eg-res-plan svg.eg-plan { cursor: crosshair; touch-action: none; }
+.eg-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.18); padding: 6px 9px; font-size: 11.5px; line-height: 1.45; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.eg-tip[hidden] { display: none; }
+.eg-tip-xy { font-weight: 600; color: var(--text-secondary); margin-bottom: 2px; }
+.eg-tip-main { font-size: 12.5px; }
+.eg-p-hover { fill: none; stroke: var(--eg-mark); stroke-width: 1.6; pointer-events: none; }
 .eg-res-plan .eg-plan { background: var(--bg-secondary); border-radius: 6px; }
 .eg-legend { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
 .eg-leg-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

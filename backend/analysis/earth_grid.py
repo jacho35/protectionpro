@@ -915,8 +915,11 @@ def _refine_min(sol, pts, V, spacing, mask_fn, ref, k=12):
     return ref - best_v, best_p
 
 
-def _worst_step(sol, pts, V, spacing):
-    """Largest |V(p) − V(p + 1 m·u)| over the step raster, any direction u."""
+def _worst_step(sol, pts, V, spacing, mask_fn=None, k_refine=8):
+    """Largest |V(p) − V(p + 1 m·u)| over the step area, any direction u: the
+    raster is screened, the candidates evaluated exactly in 16 directions,
+    then the strongest refined on a 0.1 m sub-raster (inside the area) — the
+    peak at a rod or conductor corner falls between raster points."""
     # screen with the axis-aligned 1 m differences read off the raster
     x0, y0 = pts[:, 0].min(), pts[:, 1].min()
     lookup = {(round((x - x0) / spacing), round((y - y0) / spacing)): v for (x, y), v in zip(pts, V)}
@@ -932,16 +935,37 @@ def _worst_step(sol, pts, V, spacing):
         screen[idx] = best
     edge = screen == 0      # raster edge: no neighbour inside — keep as candidates
     cand = np.unique(np.concatenate([np.argsort(-screen)[:STEP_CANDIDATES], np.where(edge)[0][:STEP_CANDIDATES]]))
+    dirs = [REACH_M * np.array([math.cos(2 * math.pi * k / 16), math.sin(2 * math.pi * k / 16)]) for k in range(16)]
+
+    def exact(C, Vc):
+        """Per point: its largest 16-direction step and the far foot."""
+        top = np.zeros(len(C))
+        far = np.array(C, float)
+        for u in dirs:
+            Q = C + u
+            d = np.abs(Vc - sol.surface_potential(Q))
+            upd = d > top
+            top[upd] = d[upd]
+            far[upd] = Q[upd]
+        return top, far
+
     C = pts[cand]
-    Vc = V[cand]
-    best, bp, bq = 0.0, None, None
-    for k in range(16):
-        a = 2 * math.pi * k / 16
-        Q = C + REACH_M * np.array([math.cos(a), math.sin(a)])
-        d = np.abs(Vc - sol.surface_potential(Q))
-        j = int(np.argmax(d))
-        if d[j] > best:
-            best, bp, bq = float(d[j]), C[j], Q[j]
+    top, far = exact(C, V[cand])
+    j = int(np.argmax(top))
+    best, bp, bq = float(top[j]), C[j], far[j]
+    if mask_fn is not None:
+        g = np.arange(-spacing, spacing + 1e-9, 0.1)
+        GX, GY = np.meshgrid(g, g)
+        offs = np.column_stack([GX.ravel(), GY.ravel()])
+        for i in np.argsort(-top)[:k_refine]:
+            Q0 = C[i] + offs
+            Q0 = Q0[mask_fn(Q0)]
+            if not len(Q0):
+                continue
+            t, f = exact(Q0, sol.surface_potential(Q0))
+            m = int(np.argmax(t))
+            if t[m] > best:
+                best, bp, bq = float(t[m]), Q0[m], f[m]
     return best, bp, bq
 
 
@@ -1088,7 +1112,7 @@ def analyse(grid, frequency=50.0):
     tm = in_touch(pts)
     touch, touch_at = _refine_min(sol, pts[tm], V[tm], sp, in_touch, 1.0)
     sm = in_step(pts)
-    step, step_a, step_b = _worst_step(sol, pts[sm], V[sm], sp)
+    step, step_a, step_b = _worst_step(sol, pts[sm], V[sm], sp, in_step)
 
     # unbonded fences / metal: within reach of the fence line, referred to
     # the fence's own potential
@@ -1150,6 +1174,7 @@ def analyse(grid, frequency=50.0):
         plan=dict(
             outline=[list(map(float, p)) for p in outline],
             touch_area=[[list(map(float, p)) for p in poly] for poly in touch_polys],
+            step_area=[[list(map(float, p)) for p in poly] for poly in step_polys],
             conductors=[[w["a"][0], w["a"][1], w["b"][0], w["b"][1], w.get("kind", "grid"), int(w["group"])]
                         for w in wires if abs(w["a"][2] - w["b"][2]) > -1 and
                         (abs(w["a"][0] - w["b"][0]) > 1e-9 or abs(w["a"][1] - w["b"][1]) > 1e-9)],

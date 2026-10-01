@@ -137,7 +137,7 @@ EXPECTED = {
         "rg": ("buses.0.grid_resistance_ohm", 1.4265, 5e-3),
         "gpr": ("buses.0.gpr_v", 1063.0, 5e-3),
         "touch": ("buses.0.mesh_voltage_v", 136.0, 1e-2),
-        "step": ("buses.0.step_voltage_v", 84.0, 2e-2),
+        "step": ("buses.0.step_voltage_v", 86.0, 2e-2),
         "method": ("buses.0.method", "numerical"),
     }),
     # Dip hand calc (independent 2-bus constant-PQ solve) is 20.92 %; the

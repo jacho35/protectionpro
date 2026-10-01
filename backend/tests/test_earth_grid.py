@@ -448,3 +448,24 @@ class TestFootwearAndDrawnArea:
         assert -0.5 <= tx <= 10.5 and -0.5 <= ty <= 10.5
         assert -0.5 <= sx1 <= 10.5 and -0.5 <= sy1 <= 10.5
         assert a_area["touch"] < a_hull["touch"]
+
+
+class TestStepRefinement:
+    """The worst step is searched again on a 0.1 m sub-raster: at a rod corner
+    the peak falls between the 0.5 m raster points."""
+
+    def test_refined_step_is_not_below_the_raster_search_and_stays_in_the_area(self):
+        from backend.analysis.earth_grid import _raster, _worst_step, offset_polygon, point_in_polygon
+        wires = _mesh([0, 10], [0, 10]) + [_rod(0, 0, 3), _rod(10, 0, 3), _rod(10, 10, 3), _rod(0, 10, 3)]
+        sol = solve(wires, {"rho1": 100})
+        area = offset_polygon([(0, 0), (10, 0), (10, 10), (0, 10)], 1.0)
+        pts, sp = _raster([area], 0.5)
+        V = sol.surface_potential(pts)
+        mask = lambda Q: point_in_polygon(Q, area)
+        coarse, _, _ = _worst_step(sol, pts, V, sp)
+        fine, a, b = _worst_step(sol, pts, V, sp, mask)
+        assert fine >= coarse - 1e-12
+        assert mask(np.array([a]))[0]
+        assert abs(np.hypot(*(np.array(b) - np.array(a))) - 1.0) < 1e-9
+        # the refined value is the exact step between the two feet it reports
+        assert fine == pytest.approx(abs(np.diff(sol.surface_potential(np.array([a, b])))[0]), rel=1e-9)
