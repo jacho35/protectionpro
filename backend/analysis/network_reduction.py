@@ -43,6 +43,7 @@ from .loadflow import (
     element_impedance_in_zone,
     _reduce_chain_two_port,
     insert_junction_buses,
+    _expand_three_winding,
 )
 from .fault import (
     _utility_impedance,
@@ -50,7 +51,7 @@ from .fault import (
     _solar_pv_impedance,
     _battery_impedance,
     _wind_turbine_impedance,
-    _transformer_far_voltage,
+    _NAMEPLATE_IMPEDANCE,
 )
 
 # Sources modelled as a Thevenin shunt impedance to the reference node. Motors
@@ -59,7 +60,23 @@ SOURCE_TYPES = ("utility", "generator", "solar_pv", "battery", "wind_turbine")
 
 
 def _source_internal_z(comp, base_mva, c):
-    """Source internal (Thevenin) positive-sequence impedance, p.u. system base."""
+    """Source internal (Thevenin) positive-sequence impedance, p.u. system base.
+
+    [NR1] Nameplate impedances: the IEC 60909 correction factors (generator
+    K_G) belong to short-circuit calculations, not to the voltage-dip and
+    stability studies this feeds — the same convention as
+    ``fault.thevenin_z1_at_bus(nameplate=True)`` for static motor starting and
+    flicker. The generator Z used to carry K_G (+2 % on a typical machine), so
+    dynamic and static motor starting disagreed on the same network.
+    """
+    token = _NAMEPLATE_IMPEDANCE.set(True)
+    try:
+        return _source_internal_z_raw(comp, base_mva, c)
+    finally:
+        _NAMEPLATE_IMPEDANCE.reset(token)
+
+
+def _source_internal_z_raw(comp, base_mva, c):
     t = comp.type
     if t == "utility":
         return _utility_impedance(comp, base_mva, c)
@@ -74,15 +91,28 @@ def _source_internal_z(comp, base_mva, c):
     return None
 
 
-def _source_stub(source_id, adjacency, components, bus_of, base_mva):
+def _source_stub(source_id, adjacency, components, bus_of, base_mva, with_ref=False):
     """Impedance from a source to the first bus group it reaches.
 
     Handles the common ``utility → transformer → bus`` / ``gen → cable → bus``
     topologies where the source does not sit directly on a bus. Returns
-    ``(bus_id, z_stub)`` (z_stub p.u. on system base) or ``None`` if the source
-    reaches no bus (open/isolated). Cable impedance bases track the voltage zone
-    exactly as ``fault._collect_source_paths`` does — the zone is anchored at the
-    reached bus and flipped back across each transformer toward the source.
+    ``(bus_id, z_stub)`` (z_stub p.u. on system base, in the reached bus's
+    zone) or ``None`` if the source reaches no bus (open/isolated).
+
+    [NR2/NR3] The stub is walked in ohms, bus → source, referring everything
+    beyond each transformer (or autotransformer) through its ACTUAL turns
+    ratio — rated ratio × (1 + tap) on the HV winding, the same ratio the
+    branch pi-model applies between two buses. The old walk summed per-unit
+    values: it ignored taps and referred nothing beyond a transformer whose
+    nameplate differs from its bus (11/0.42 kV on a 0.4 kV bus), so a source
+    drawn behind its transformer saw a different impedance from the same
+    transformer drawn between two buses. Autotransformers are walked too (they
+    used to block the stub, leaving the source unmodelled).
+
+    With ``with_ref=True`` returns ``(bus_id, z_stub, ref)``: ``ref`` turns the
+    SOURCE's own impedance, in per unit of the zone it sits in, into per unit
+    of the reached bus — callers add ``z_src · ref + z_stub``. ref = 1 when
+    every nameplate matches its zone and taps are nominal.
     """
     visited = {source_id}
     # BFS; each queue item carries the ordered list of branch elements walked.
@@ -95,26 +125,36 @@ def _source_stub(source_id, adjacency, components, bus_of, base_mva):
         if nid in bus_of:
             bus_id = bus_of[nid]
             bus_comp = components.get(bus_id)
-            v = float((bus_comp.props.get("voltage_kv", 11) if bus_comp else 11) or 11)
-            z = complex(0.0, 0.0)
-            # Walk bus → source so cable bases use the correct voltage zone.
-            # Operating-point impedances (loadflow convention, no IEC 60909 K_T)
-            # to stay consistent with the load-flow-derived pre-start voltages.
+            v_bus = float((bus_comp.props.get("voltage_kv", 11) if bus_comp else 11) or 11)
+            v = v_bus          # nominal zone voltage of the element being walked
+            k = 1.0            # ohms there → ohms at the bus: × k²
+            z_ohm = complex(0.0, 0.0)
+            # Walk bus → source. Operating-point impedances (loadflow
+            # convention, no IEC 60909 K_T) to stay consistent with the
+            # load-flow-derived pre-start voltages.
             for e in reversed(path):
-                if e.type == "transformer":
-                    # Re-based to the bus zone when that zone is the LV side
-                    # (nameplate ≠ bus voltage — see loadflow._get_impedance).
-                    hv_n = float(e.props.get("voltage_hv_kv", 33) or 33)
-                    lv_n = float(e.props.get("voltage_lv_kv", 11) or 11)
-                    lv_zone = v if abs(v - lv_n) <= abs(v - hv_n) else None
-                    z += _get_impedance(e, base_mva, v_lv_kv=lv_zone)
-                    v = _transformer_far_voltage(e, v)
+                if e.type in ("transformer", "autotransformer"):
+                    hv = float(e.props.get("voltage_hv_kv", 33) or 33)
+                    lv = float(e.props.get("voltage_lv_kv", 11) or 11)
+                    n = (hv / lv) * (1 + float(e.props.get("tap_percent", 0) or 0) / 100) \
+                        if lv > 0 else 1.0
+                    # Nameplate z% is on the LV winding (tap on HV): its ohms.
+                    z_lv_ohm = _get_impedance(e, base_mva) * (lv ** 2) / base_mva
+                    entered_lv = abs(v - lv) <= abs(v - hv)
+                    if entered_lv:
+                        z_ohm += z_lv_ohm * k * k
+                        k = k / n             # far side is HV: ohms shrink by 1/n²
+                        v = hv
+                    else:
+                        z_ohm += z_lv_ohm * n * n * k * k
+                        k = k * n
+                        v = lv
                 elif e.type == "cable":
-                    z_base = (v ** 2) / base_mva
-                    r = e.props.get("r_per_km", 0.1) * e.props.get("length_km", 1)
-                    x = e.props.get("x_per_km", 0.08) * e.props.get("length_km", 1)
-                    npar = max(1, int(e.props.get("num_parallel", 1) or 1))
-                    z += complex(r / z_base, x / z_base) / npar
+                    z_ohm += _get_impedance(e, base_mva, v_kv=v) * (v ** 2) / base_mva * k * k
+            z_base_bus = (v_bus ** 2) / base_mva
+            z = z_ohm / z_base_bus
+            if with_ref:
+                return bus_id, z, (k * k) * (v ** 2) / (v_bus ** 2)
             return bus_id, z
         comp = components.get(nid)
         if not comp:
@@ -123,7 +163,7 @@ def _source_stub(source_id, adjacency, components, bus_of, base_mva):
             for nb in adjacency.get(nid, []):
                 if nb not in visited:
                     queue.append((nb, path))
-        elif comp.type in ("cable", "transformer"):
+        elif comp.type in ("cable", "transformer", "autotransformer"):
             for nb in adjacency.get(nid, []):
                 if nb not in visited:
                     queue.append((nb, path + [comp]))
@@ -145,6 +185,9 @@ def build_branch_ybus(project):
     # pre-pass the load flow runs, so the two build the same network (and a
     # shared tee cable is not stamped twice) (idempotent).
     project = insert_junction_buses(project)
+    # [NR4] 3-winding autotransformers as a star of 2-winding legs, as the
+    # load flow builds them (idempotent).
+    project = _expand_three_winding(project)
     base_mva = project.baseMVA
     components = {c_.id: c_ for c_ in project.components}
     buses = [c_ for c_ in project.components
@@ -170,7 +213,11 @@ def build_branch_ybus(project):
     # ── Series branch chains between buses (cables / transformers) ──
     processed_chains = set()
     for comp in project.components:
-        if comp.type not in ("cable", "transformer"):
+        # [NR4] Autotransformers seed a chain too (as in the load flow): a
+        # bus–autotransformer–bus branch was never stamped, which split the
+        # network there — dynamic motor starting fell back to an infinite bus
+        # and transient stability lost the machines beyond it.
+        if comp.type not in ("cable", "transformer", "autotransformer"):
             continue
         if comp.id in bus_of:
             continue
@@ -310,11 +357,11 @@ def source_shunt_bus(project, source_comp, ctx=None):
     if z_src is None:
         return None
     stub = _source_stub(source_comp.id, ctx["adjacency"], ctx["components"],
-                        ctx["bus_of"], ctx["base_mva"])
+                        ctx["bus_of"], ctx["base_mva"], with_ref=True)
     if stub is None:
         return None
-    bus_id, z_stub = stub
-    z_tot = z_stub + z_src
+    bus_id, z_stub, ref = stub
+    z_tot = z_stub + z_src * ref
     return (bus_id, z_tot) if abs(z_tot) >= 1e-15 else None
 
 
@@ -339,11 +386,11 @@ def _build_thevenin_ybus(project, c=1.0):
         if z_src is None:
             continue
         stub = _source_stub(comp.id, ctx["adjacency"], ctx["components"],
-                            ctx["bus_of"], base_mva)
+                            ctx["bus_of"], base_mva, with_ref=True)
         if stub is None:
             continue
-        bus_id, z_stub = stub
-        z_tot = z_stub + z_src
+        bus_id, z_stub, ref = stub
+        z_tot = z_stub + z_src * ref
         if abs(z_tot) < 1e-15:
             continue
         Y[bus_idx[bus_id], bus_idx[bus_id]] += 1.0 / z_tot

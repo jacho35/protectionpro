@@ -376,6 +376,11 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Network reduction review: autotransformers in the network, stub referral, nameplate generator, NR1–NR4 (2026-10-01)
+- **Review.** `reviews/NETWORK_REDUCTION_REVIEW.md` checks `network_reduction.py` (the Thevenin network behind dynamic motor starting and transient stability) against hand nodal inverses in ohms. Kron reduction, scale invariance and off-nominal branches were already exact.
+- **NR4.** Autotransformers were never a branch or a source stub, so the network split there. A motor behind one was simulated on an infinite bus (dip 1.000 → 0.838 pu on a 5 MVA unit), and transient stability treated machines beyond one as islanded. 3-winding units are now expanded as in the load flow. **NR1.** Generator Z carried the IEC 60909 K_G (+1.9 %); now nameplate, matching static motor starting. **NR2/NR3.** Source stubs ignored taps and did not refer upstream impedance through an off-nominal transformer (≈0.6 %); now walked in ohms through the actual ratio (also in transient stability).
+- Re-run saved dynamic motor starting / transient stability studies with autotransformers or generator sources. +8 tests in `test_network_reduction_review_fixes.py`.
+
 ### Unbalanced load flow review: supply sequence impedance, transformer Z0 by earthing, balanced-engine parity, U1–U7 (2026-10-01)
 - **Review.** `reviews/UNBALANCED_LOADFLOW_REVIEW.md` checks `unbalanced_loadflow.py` against an independent phase-domain solve (source behind its own Z_abc) and the balanced load flow (balanced limit). The sequence mathematics was already exact.
 - **U1.** The swing bus was forced to V2 = V0 = 0, which made the utility an infinite sequence sink. The point of supply always read VUF 0 %; on a 2 MVA LV supply with a 60 kVA 1P load the true value is 3.1 %. The source now keeps its Z2/Z0. **U2.** VFDs, capacitor steps and constant-Z, the utility setpoint, the Thevenin grid, SVCs, OLTC, 3-winding units and generator setpoints/limits were ignored (0.03–5 % on V). A PV label with no regulator, or a Q-limited generator, held its bus with unlimited Q. The positive sequence now equals the balanced load flow; regulated buses hold the voltage the balanced solve reached, limits applied.
