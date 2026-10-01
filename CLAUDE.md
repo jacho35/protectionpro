@@ -215,7 +215,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |
 | `/api/analysis/duty-check` | Equipment duty | IEC 60947-2 / IEC 60269 (LV breakers, fuses: largest prospective I″k), IEC 62271-100 (MV: Ib, asymmetry, making), Icw, Ur ≥ Um; relay-fed CTs (IEC 61869-2) and VTs (IEC 61869-3: burden, rated primary vs bus, voltage factor vs the bus earth fault factor) |
 | `/api/analysis/load-diversity` | Demand factors | Load diversity |
-| `/api/analysis/grounding` | Grounding grid | IEEE 80 per bus; buses on an earth grid object: numerical (method of moments) with IEEE 80 or EN 50522:2022 limits |
+| `/api/analysis/grounding` | Grounding grid (optional `groundingBusIds` = selected buses only) | IEEE 80 per bus; buses on an earth grid object: numerical (method of moments) with IEEE 80 or EN 50522:2022 limits; conductor size (mm²) checked against Onderdonk |
 | `/api/analysis/earth-grid/preview` | Earth grid geometry for the editor (`{grid}`, not ProjectData) | plan, element count, connectivity, IEEE 80 applicability — no solve |
 | `/api/analysis/lightning-risk` | Lightning risk (form, not ProjectData) | IEC 62305-2:2024 (`edition: "2024"`, R + F per zone) or 2010 (R1; absent `edition`) |
 | `/api/analysis/study-manager` | Batch all studies | Runs selected analyses |

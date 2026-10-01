@@ -336,3 +336,40 @@ class TestGeometryValidation:
         bad = dict(GRID_OBJ, layout=dict(GRID_OBJ["layout"], length_x=-5))
         r = run_grounding_analysis(_project(bad))
         assert any("could not be solved" in w for w in r["warnings"])
+
+
+class TestConductorSizeAndScope:
+    def test_area_gives_the_solid_equivalent_diameter(self):
+        from backend.analysis.earth_grid import conductor_diameter_m
+        assert conductor_diameter_m({"area_mm2": 70}) == pytest.approx(math.sqrt(4 * 70 / math.pi) / 1000)
+        # a measured outside diameter wins for the geometry
+        assert conductor_diameter_m({"area_mm2": 67.43, "diameter_m": 0.0105}) == 0.0105
+
+    def test_bus_area_reproduces_the_diameter_result(self):
+        """An older bus (diameter only) converted to its exact solid-equivalent
+        size gives the same result — the frontend converts on load."""
+        d = BUS_GRID_PROPS["conductor_diameter"]
+        old = _bus(run_grounding_analysis(_project(None)), "Legacy")
+        props = {k: v for k, v in BUS_GRID_PROPS.items() if k != "conductor_diameter"}
+        props["conductor_area_mm2"] = math.pi / 4 * (d * 1000) ** 2
+        p = _project(None)
+        p.components[1].props = {"name": "Legacy", "voltage_kv": 11, **props}
+        new = _bus(run_grounding_analysis(p), "Legacy")
+        for k in ("grid_resistance_ohm", "mesh_voltage_v", "step_voltage_v"):
+            assert new[k] == old[k], k
+        assert new["conductor_ok"] is True
+
+    def test_undersized_conductor_fails(self):
+        g = dict(GRID_OBJ, conductor=dict(GRID_OBJ["conductor"], area_mm2=16))
+        g["conductor"].pop("diameter_m", None)
+        b = _bus(run_grounding_analysis(_project(g)), "Grid bus")
+        assert b["conductor_ok"] is False and b["status"] == "fail"
+        assert any("below the" in i and "mm²" in i for i in b["issues"])
+
+    def test_scope_selected_bus_only(self):
+        p = _project(GRID_OBJ)
+        p.groundingBusIds = ["b2"]
+        r = run_grounding_analysis(p)
+        assert [b["bus_name"] for b in r["buses"]] == ["Grid bus"]
+        assert r["scope"] == {"bus_ids": ["b2"]}
+        assert run_grounding_analysis(_project(GRID_OBJ))["scope"] is None

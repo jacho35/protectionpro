@@ -193,6 +193,9 @@ class ProjectData(BaseModel):
     # layer, conductor, layout generator, rods, fences, extra conductors/rods,
     # calculation method and limit basis. A bus uses one by `earth_grid_id`.
     earthGrids: list[dict] = []
+    # Grounding study scope: evaluate only these buses (None = every AC bus).
+    # The fault study still covers the whole network.
+    groundingBusIds: Optional[list[str]] = None
 
     @model_validator(mode="after")
     def _correct_overhead_resistance(self):

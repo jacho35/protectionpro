@@ -240,7 +240,9 @@ $$K_s=\frac1\pi\left[\frac1{2h}+\frac1{D+h}+\frac1D\left(1-0.5^{\,n-2}\right)\ri
 <p><strong>Fail</strong> if the mesh voltage exceeds the tolerable touch voltage or the step voltage exceeds the tolerable step voltage. <strong>Warning</strong> if both are met but GPR exceeds the tolerable touch voltage (a remote person or a metallic path could still import that potential — verify transferred potentials). <strong>Pass</strong> otherwise; if GPR is below the touch limit the grid is inherently safe.</p>
 <h4>5 · Minimum conductor size (Onderdonk)</h4>
 $$A\,[\text{mm}^2]=I\,[\text{kA}]\sqrt{K_f^{2}\,t_c},\qquad K_f^{2}=\frac{\alpha_r\,\rho_r\cdot10^{4}}{TCAP\cdot\ln\!\left(1+\dfrac{T_m-T_a}{K_0+T_a}\right)}$$
-<p>with the conductor material's constants ($\alpha_r$, $\rho_r$ in µΩ·cm, $K_0$, fusing temperature $T_m$, $TCAP$), ambient $T_a$ (default 40 °C) and fault-clearing time $t_c$, then rounded up to a standard size (16–300 mm²).</p>
+<p>with the conductor material's constants ($\alpha_r$, $\rho_r$ in µΩ·cm, $K_0$, fusing temperature $T_m$, $TCAP$), ambient $T_a$ (default 40 °C) and fault-clearing time $t_c$, then rounded up to a standard size (16–300 mm²). The bus's <em>Conductor Size</em> (mm²) is checked against it: a smaller conductor fails the study. The grid geometry uses the size's solid-equivalent diameter $d=\sqrt{4A/\pi}$.</p>
+<h4>Selected bus only</h4>
+<p>With one or more buses selected, the study asks whether to evaluate only those. The fault study still covers the whole network, because each bus's earth-fault current depends on it.</p>
 <h4>Two-layer soil</h4>
 <p>The simplified equations are for uniform soil (IEEE 80 §16.2.3). With two-layer soil on (upper $\rho_1$, thickness $h_1$, over $\rho_2$, $K=\frac{\rho_2-\rho_1}{\rho_2+\rho_1}$), the same grid is solved numerically twice by the method of moments — once in the layered soil, once in uniform $\rho_1$ — and the uniform IEEE 80 values of $R_g$, $E_m$ and $E_s$ are multiplied by the ratios the layering produces. A resistive lower layer ($K>0$) raises the surface gradients inside the grid; a conductive one lowers the resistance. An earth grid object solves layered soil directly instead of by ratios.</p>
 <h4>Wenner four-pin test interpreter</h4>
@@ -283,6 +285,7 @@ $$R_g=\frac{1}{\sum I_{\text{grid}}}\ \ \text{(per volt of GPR)},\qquad V_s(x,y)
 <h4>7 · Modelling tips</h4>
 <ul>
 <li><b>Create from bus</b> turns a bus's IEEE 80 data into an identical earth grid to start from.</li>
+<li>Conductors are sized in mm² (16–300 mm² offered); the geometry uses the solid-equivalent diameter $\sqrt{4A/\pi}$ unless a measured outside diameter is entered under Advanced. Rod and post diameters are in mm. An undersized conductor fails the study.</li>
 <li>Point the HV and LV buses of one substation at the same grid; the HV fault usually sets the design.</li>
 <li>Corner meshes carry the highest touch voltage. Remedies (IEEE 80 §16.6): diagonals across corner meshes, closer spacing at the perimeter, rods at the corners and perimeter, a conductor 1 m outside the fence, a better surface layer, faster clearing.</li>
 <li>A bonded fence brings its outside 1 m into the touch area — lay a conductor about 1 m outside it. A separately earthed fence lowers its own touch voltage but creates a transfer voltage.</li>

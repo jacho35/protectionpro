@@ -436,8 +436,11 @@ const API = {
 
   // Run grounding system analysis (IEEE 80 per bus, or a project earth grid —
   // AppState.toJSON carries earthGrids)
-  async runGroundingAnalysis() {
+  // busIds: evaluate only these buses (the fault study still covers the
+  // whole network); omitted = every AC bus.
+  async runGroundingAnalysis(busIds) {
     const data = AppState.toJSON();
+    if (Array.isArray(busIds) && busIds.length) data.groundingBusIds = busIds;
     return this.request('/analysis/grounding', 'POST', data);
   },
 

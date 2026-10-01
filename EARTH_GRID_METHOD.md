@@ -367,11 +367,24 @@ a fence enclosing more than the grid, with service areas people can reach.
   checked separately. Conductor size uses IEEE 80's Onderdonk equation (§11.3);
   EN 50522 Annex D is not implemented.
 
-### 6.3 Conductor sizing (both bases)
+### 6.3 Conductor size and sizing (both bases)
 
-Onderdonk (IEEE 80 §11.3) on the full D_f × I″k1 over t_c. The grid conductor
-carries the whole fault current back to a local neutral, not only I_G. T_m is
-the lower of the material's fusing point and the joint limit (§11.3.1.1).
+The grid conductor is specified by its **cross-section in mm²** (e.g. 70 mm²
+bare copper), as conductors are bought. The geometry uses the solid-equivalent
+diameter d = √(4A/π). A stranded conductor of the same area is about 10–15 %
+larger outside, so the solid value is slightly conservative: a thinner
+conductor gives a marginally higher resistance and touch voltage. A measured
+outside diameter can be entered instead, for the geometry only — the Annex H
+template does this for its 2/0 conductor (67.4 mm², 10.5 mm). Rod and post
+diameters are entered in mm. A project saved with a diameter converts, on
+opening, to its solid-equivalent size (to 0.01 mm²), which returns the same
+diameter.
+
+Minimum size: Onderdonk (IEEE 80 §11.3) on the full D_f × I″k1 over t_c. The
+grid conductor carries the whole fault current back to a local neutral, not
+only I_G. T_m is the lower of the material's fusing point and the joint limit
+(§11.3.1.1). **A conductor smaller than the minimum fails the study**, and the
+issue names the next standard size.
 
 ## 7. Built-in checks
 
@@ -574,11 +587,11 @@ should be treated as marginal.
 | `id`, `name` | identity; buses refer to `id` via `earth_grid_id` |
 | `soil` | `rho1`, `two_layer` (`on`/`off`), `rho2`, `h1` |
 | `surface` | `rho_s`, `h_s` (h_s = 0: no surface layer) |
-| `conductor` | `material`, `diameter_m`, `depth_m`, `joint` |
+| `conductor` | `material`, `area_mm2` (size), optional `diameter_m` (measured outside diameter, geometry only), `depth_m`, `joint` |
 | `layout` | `type` `rect` / `l` / `none`; `length_x`, `width_y`; `n_x`, `n_y` or `x_lines`, `y_lines` (explicit positions); `notch_x`, `notch_y` (L); `diagonals` `none` / `corner_meshes` / `all_meshes` / `full` |
 | `rods` | `rule` `none` / `perimeter_even` (with `count`) / `perimeter_nodes` / `perimeter_alternate` / `corners` / `all_nodes`; `length_m`, `diameter_m` |
 | `fences[]` | `name`, `offset_m` (+ out / − in), `bonded`, `post_spacing_m`, `post_depth_m`, `post_diameter_m`, `conductor_offset_m` (none = no fence conductor), `conductor_depth_m` |
-| `extra_conductors[]` | `x1, y1, x2, y2`, optional `depth_m`, `diameter_m`, `bonded` |
+| `extra_conductors[]` | `x1, y1, x2, y2`, optional `depth_m`, `area_mm2` (or `diameter_m`), `bonded` |
 | `extra_rods[]` | `x, y`, optional `length_m`, `diameter_m`, `bonded` |
 | `touch_area` | optional polygon `[[x, y], …]` |
 | `method` | `auto` / `ieee80` / `numerical` |
@@ -586,6 +599,9 @@ should be treated as marginal.
 | `body_weight` | 50 / 70 (IEEE 80) |
 | `en50522` | `footwear_ohm`, `hand_ohm`, `measures_m` (`yes`/`no`) |
 | `element_length_m` | numerical element length, 0.2–5 m |
+
+The study request may carry `groundingBusIds` to evaluate only those buses;
+the fault study still covers the whole network.
 
 Per bus: `earth_grid_id`, plus `fault_duration` (t_s / t_f),
 `fault_clearing_time` (t_c), `current_split_factor` (S_f or r), `ambient_temp`,

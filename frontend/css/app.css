@@ -3471,6 +3471,7 @@ body.dark-mode {
 .eg-empty { padding: 30px 10px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; font-size: 13px; }
 .eg-empty p { margin: 0; line-height: 1.5; }
 .eg-muted { color: var(--text-muted); }
+.eg-bad { color: var(--danger, #c62828); }
 .eg-sec { border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); }
 .eg-sec > summary { padding: 8px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .eg-count { font-weight: 600; font-size: 11px; color: var(--text-muted); margin-left: 4px; }

@@ -532,6 +532,25 @@ def offset_polygon(poly, d):
     return out
 
 
+def area_to_diameter_m(area_mm2):
+    """Diameter of a solid round conductor of cross-section A (mm²):
+    d = √(4A/π). A stranded conductor of the same area is about 10–15 %
+    larger outside; the solid value is the smaller (conservative) radius."""
+    return math.sqrt(4.0 * float(area_mm2) / math.pi) / 1000.0
+
+
+def conductor_diameter_m(cond, default_m=0.01167):
+    """Grid-conductor diameter for the geometry: a measured outside diameter
+    (`diameter_m`) when given, else the solid-equivalent of the size
+    (`area_mm2`, e.g. 70 mm²), else the default."""
+    cond = cond or {}
+    if cond.get("diameter_m") not in (None, ""):
+        return _f(cond.get("diameter_m"), default_m)
+    if cond.get("area_mm2") not in (None, ""):
+        return area_to_diameter_m(cond["area_mm2"])
+    return default_m
+
+
 def _num_strict(v, what):
     try:
         x = float(v)
@@ -548,8 +567,10 @@ def validate_grid(grid):
     layout = grid.get("layout") or {}
     t = str(layout.get("type", "rect")).lower()
     cond = grid.get("conductor") or {}
-    if _num_strict(cond.get("diameter_m", 0.01167), "Conductor diameter") <= 0:
-        raise ValueError("Conductor diameter must be greater than 0.")
+    if cond.get("area_mm2") not in (None, "") and _num_strict(cond["area_mm2"], "Conductor size") <= 0:
+        raise ValueError("Conductor size must be greater than 0 mm².")
+    if cond.get("diameter_m") not in (None, "") and _num_strict(cond["diameter_m"], "Conductor outside diameter") <= 0:
+        raise ValueError("Conductor outside diameter must be greater than 0.")
     if _num_strict(cond.get("depth_m", 0.5), "Burial depth") <= 0:
         raise ValueError("Burial depth must be greater than 0 (conductors are buried).")
     soil = grid.get("soil") or {}
@@ -584,6 +605,8 @@ def validate_grid(grid):
     elif not (grid.get("extra_conductors") or grid.get("extra_rods")):
         raise ValueError("The grid has no layout and no added conductors or rods.")
     for k, c in enumerate(grid.get("extra_conductors") or []):
+        if c.get("area_mm2") not in (None, "") and _num_strict(c["area_mm2"], f"Added conductor {k + 1} size") <= 0:
+            raise ValueError(f"Added conductor {k + 1} size must be greater than 0 mm².")
         x1, y1, x2, y2 = (_num_strict(c.get(n), f"Added conductor {k + 1} {n}") for n in ("x1", "y1", "x2", "y2"))
         if math.hypot(x2 - x1, y2 - y1) < 1e-6:
             raise ValueError(f"Added conductor {k + 1} has zero length.")
@@ -625,7 +648,7 @@ def build_wires(grid):
     validate_grid(grid)
     cond = grid.get("conductor") or {}
     depth = _f(cond.get("depth_m"), 0.5)
-    radius = _f(cond.get("diameter_m"), 0.01167) / 2.0
+    radius = conductor_diameter_m(cond) / 2.0
     layout = grid.get("layout") or {}
     wires, nodes = _layout_wires(layout, depth, radius)
     outline = layout_outline(layout)
@@ -666,7 +689,8 @@ def build_wires(grid):
         z = _f(c.get("depth_m"), depth)
         wires.append(dict(a=(_f(c.get("x1"), 0), _f(c.get("y1"), 0), z),
                           b=(_f(c.get("x2"), 0), _f(c.get("y2"), 0), z),
-                          radius=_f(c.get("diameter_m"), 2 * radius) / 2.0,
+                          radius=(area_to_diameter_m(c["area_mm2"]) if c.get("area_mm2") not in (None, "")
+                                  else _f(c.get("diameter_m"), 2 * radius)) / 2.0,
                           group=0 if c.get("bonded", True) not in (False, "no", "false") else -1,
                           kind="extra"))
     for r in grid.get("extra_rods") or []:

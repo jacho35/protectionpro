@@ -28,7 +28,7 @@ const EarthGridEditor = {
   DEFAULT: {
     soil: { rho1: 100, two_layer: 'off', rho2: 100, h1: 3.0 },
     surface: { rho_s: 2500, h_s: 0.15 },
-    conductor: { material: 'copper_hard', diameter_m: 0.01167, depth_m: 0.5, joint: 'exothermic' },
+    conductor: { material: 'copper_hard', area_mm2: 70, depth_m: 0.5, joint: 'exothermic' },
     layout: { type: 'rect', length_x: 30, width_y: 30, n_x: 6, n_y: 6, x_lines: null, y_lines: null,
       notch_x: 15, notch_y: 15, diagonals: 'none' },
     rods: { rule: 'perimeter_even', count: 20, length_m: 3.0, diameter_m: 0.016 },
@@ -81,6 +81,13 @@ const EarthGridEditor = {
   // objects) so the form never reads through undefined. Values present stay.
   _normalize(g) {
     const D = this.DEFAULT;
+    // A grid saved with only a diameter: its solid-equivalent size (0.01 mm²),
+    // so the engine's √(4A/π) gives the same diameter back.
+    const c = g.conductor;
+    if (c && typeof c === 'object' && c.area_mm2 == null && Number.isFinite(+c.diameter_m) && +c.diameter_m > 0) {
+      c.area_mm2 = Math.round(Math.PI / 4 * Math.pow(+c.diameter_m * 1000, 2) * 100) / 100;
+      delete c.diameter_m;
+    }
     for (const k of ['soil', 'surface', 'conductor', 'layout', 'rods', 'en50522']) {
       g[k] = Object.assign(this._clone(D[k]), (g[k] && typeof g[k] === 'object') ? g[k] : {});
     }
@@ -113,7 +120,7 @@ const EarthGridEditor = {
       soil: { rho1: v('soil_resistivity', 100), two_layer: s('two_layer_soil', 'off') === 'on' ? 'on' : 'off',
         rho2: v('soil_resistivity_lower', 100), h1: v('upper_layer_thickness', 3.0) },
       surface: { rho_s: v('crushed_rock_resistivity', 2500), h_s: v('crushed_rock_depth', 0.15) },
-      conductor: { material: s('conductor_material', 'copper_hard'), diameter_m: v('conductor_diameter', 0.01167),
+      conductor: { material: s('conductor_material', 'copper_hard'), area_mm2: this._busArea(p, d),
         depth_m: v('grid_depth', 0.5), joint: s('grid_joint_type', 'exothermic') },
       layout: { type: 'rect', length_x: v('grid_length', 30), width_y: v('grid_width', 30),
         n_x: Math.round(v('num_conductors_x', 6)), n_y: Math.round(v('num_conductors_y', 6)),
@@ -125,6 +132,32 @@ const EarthGridEditor = {
       element_length_m: 1.0,
     };
   },
+
+  // A bus's conductor size (mm²); an older bus with only a diameter gets its
+  // solid-equivalent size (0.01 mm²).
+  _busArea(p, d) {
+    const a = parseFloat(p.conductor_area_mm2);
+    if (Number.isFinite(a) && a > 0) return a;
+    const dia = parseFloat(p.conductor_diameter);
+    if (Number.isFinite(dia) && dia > 0) return Math.round(Math.PI / 4 * Math.pow(dia * 1000, 2) * 100) / 100;
+    const da = parseFloat(d.conductor_area_mm2);
+    return Number.isFinite(da) && da > 0 ? da : 70;
+  },
+
+  // Results: the grid conductor against the size the fault current needs
+  // (Onderdonk); older results without a selected size show the recommendation.
+  conductorHtml(b) {
+    const min = b.min_conductor_mm2 != null ? (+b.min_conductor_mm2).toFixed(1) : null;
+    if (b.conductor_area_mm2 != null) {
+      const a = +(+b.conductor_area_mm2).toPrecision(4);
+      const ok = b.conductor_ok !== false;
+      return `<strong${ok ? '' : ' class="eg-bad"'}>${a} mm²</strong> <span class="eg-muted">(min ${min}${ok ? '' : `, use ${b.recommended_conductor_mm2}`})</span>`;
+    }
+    return `<strong>${b.recommended_conductor_mm2} mm²</strong>${min ? ` <span class="eg-muted">(min ${min})</span>` : ''}`;
+  },
+
+  // Standard bare-conductor sizes (mm²) offered in the size fields.
+  SIZES_MM2: [16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300],
 
   // Mark the project changed. commit = a finished edit: drop the (now stale)
   // grounding result and record one undo step (debounced so a burst of
@@ -348,7 +381,10 @@ const EarthGridEditor = {
       ] },
       { id: 'conductor', title: 'Conductor', fields: [
         { p: 'conductor.material', label: 'Material', type: 'select', options: mats },
-        { p: 'conductor.diameter_m', label: 'Diameter', unit: 'm', min: 0.001 },
+        { p: 'conductor.area_mm2', label: 'Conductor size', unit: 'mm²', min: 1, sizes: true,
+          hint: 'Cross-section of the bare conductor. Also checked against the minimum size the fault current needs.' },
+        { p: 'conductor.diameter_m', label: 'Outside diameter', unit: 'mm', scale: 1000, min: 1, optional: true, advanced: true, ph: 'from size',
+          hint: 'Blank = the solid-equivalent diameter of the size, √(4A/π) — slightly conservative. Enter a stranded conductor\'s measured diameter to use it instead.' },
         { p: 'conductor.depth_m', label: 'Burial depth', unit: 'm', min: 0.01 },
         { p: 'conductor.joint', label: 'Joints', type: 'select', options: this.JOINTS.map(o => [o.value, o.label]) },
       ] },
@@ -375,7 +411,7 @@ const EarthGridEditor = {
         { p: 'rods.count', label: 'Number of rods', min: 0, step: 1, show: g => g.rods.rule === 'perimeter_even',
           hint: 'Corners first, then evenly spaced round the perimeter.' },
         { p: 'rods.length_m', label: 'Rod length', unit: 'm', min: 0.1, show: rodsOn },
-        { p: 'rods.diameter_m', label: 'Rod diameter', unit: 'm', min: 0.001, show: rodsOn },
+        { p: 'rods.diameter_m', label: 'Rod diameter', unit: 'mm', scale: 1000, min: 1, show: rodsOn },
       ] },
       { id: 'fences', title: 'Fences', table: 'fences' },
       { id: 'extra_conductors', title: 'Added conductors', table: 'extra_conductors' },
@@ -405,18 +441,18 @@ const EarthGridEditor = {
         { k: 'bonded', label: 'Earthing', type: 'bond' },
         { k: 'post_spacing_m', label: 'Post spacing (m)', min: 0.1 },
         { k: 'post_depth_m', label: 'Post depth (m)', min: 0 },
-        { k: 'post_diameter_m', label: 'Post Ø (m)', min: 0.001 },
+        { k: 'post_diameter_m', label: 'Post Ø (mm)', scale: 1000, min: 1 },
         { k: 'conductor_offset_m', label: 'Conductor offset (m)', optional: true, ph: 'none' },
         { k: 'conductor_depth_m', label: 'Conductor depth (m)', min: 0.01 },
       ],
     },
     extra_conductors: {
-      hint: 'Straight conductors in grid coordinates (m, origin at the lower-left corner). Depth / Ø blank = the grid conductor.',
+      hint: 'Straight conductors in grid coordinates (m, origin at the lower-left corner). Depth / size blank = the grid conductor.',
       add: 'Add conductor',
       cols: [
         { k: 'x1', label: 'x₁' }, { k: 'y1', label: 'y₁' }, { k: 'x2', label: 'x₂' }, { k: 'y2', label: 'y₂' },
         { k: 'depth_m', label: 'Depth (m)', optional: true, ph: 'grid', min: 0.01 },
-        { k: 'diameter_m', label: 'Ø (m)', optional: true, ph: 'grid', min: 0.001 },
+        { k: 'area_mm2', label: 'Size (mm²)', optional: true, ph: 'grid', min: 1 },
         { k: 'bonded', label: 'Earthing', type: 'bond' },
       ],
     },
@@ -426,7 +462,7 @@ const EarthGridEditor = {
       cols: [
         { k: 'x', label: 'x' }, { k: 'y', label: 'y' },
         { k: 'length_m', label: 'Length (m)', optional: true, ph: 'rods', min: 0.1 },
-        { k: 'diameter_m', label: 'Ø (m)', optional: true, ph: 'rods', min: 0.001 },
+        { k: 'diameter_m', label: 'Ø (mm)', scale: 1000, optional: true, ph: 'rods', min: 1 },
         { k: 'bonded', label: 'Earthing', type: 'bond' },
       ],
     },
@@ -478,12 +514,21 @@ const EarthGridEditor = {
     } else if (f.type === 'text') {
       input = `<input type="text" id="${id}" data-eg-p="${f.p}" value="${escHtml(v == null ? '' : String(v))}">`;
     } else {
-      input = `<input type="number" id="${id}" data-eg-p="${f.p}" value="${v == null ? '' : escHtml(String(v))}" step="${f.step || 'any'}"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null ? ` max="${f.max}"` : ''}>`;
+      const shown = v == null || v === '' ? '' : this._disp(v, f.scale);
+      const list = f.sizes ? ` list="eg-sizes-list"` : '';
+      const dl = f.sizes ? `<datalist id="eg-sizes-list">${this.SIZES_MM2.map(a => `<option value="${a}">`).join('')}</datalist>` : '';
+      input = `<input type="number" id="${id}" data-eg-p="${f.p}" value="${escHtml(String(shown))}" step="${f.step || 'any'}"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null ? ` max="${f.max}"` : ''}${f.optional ? ' data-eg-opt' : ''}${f.ph ? ` placeholder="${escHtml(f.ph)}"` : ''}${list} inputmode="decimal">${dl}`;
     }
     const unit = f.unit ? `<span class="eg-u">${escHtml(f.unit)}</span>` : '';
     const hint = f.hint ? `<div class="eg-hint">${escHtml(f.hint)}</div>` : '';
     return `<div class="eg-fld${f.type === 'lines' ? ' eg-fld-wide' : ''}" data-eg-fld="${f.p}"><label for="${id}">${escHtml(f.label)}</label>
       <div class="eg-in">${input}${unit}</div>${hint}</div>`;
+  },
+
+  // Stored value → shown value (scale: metres shown as mm); trims float noise.
+  _disp(v, scale) {
+    const n = +v * (scale || 1);
+    return Number.isFinite(n) ? +n.toPrecision(10) : v;
   },
 
   _renderTable(list) {
@@ -501,7 +546,7 @@ const EarthGridEditor = {
         return `${td}<select ${attrs} data-eg-bond><option value="yes"${bonded ? ' selected' : ''}>Bonded</option><option value="no"${bonded ? '' : ' selected'}>Separate</option></select></td>`;
       }
       if (c.type === 'text') return `${td}<input type="text" ${attrs} value="${escHtml(v == null ? '' : String(v))}"></td>`;
-      return `${td}<input type="number" step="any" ${attrs}${c.optional ? ' data-eg-opt' : ''} value="${v == null || v === '' ? '' : escHtml(String(v))}"${c.ph ? ` placeholder="${escHtml(c.ph)}"` : ''}></td>`;
+      return `${td}<input type="number" step="any" inputmode="decimal" ${attrs}${c.optional ? ' data-eg-opt' : ''} value="${v == null || v === '' ? '' : escHtml(String(this._disp(v, c.scale)))}"${c.ph ? ` placeholder="${escHtml(c.ph)}"` : ''}></td>`;
     }).join('')}<td class="eg-td-del"><button type="button" class="eg-row-del" data-eg-row-del="${list}:${i}" title="Remove row" aria-label="Remove row ${i + 1}">&times;</button></td></tr>`).join('')
       || `<tr class="eg-row-empty"><td colspan="${T.cols.length + 1}">None</td></tr>`;
     GridTable.attach(tbody, { onAddRow: () => this._addRow(g, list) });
@@ -548,10 +593,10 @@ const EarthGridEditor = {
           const col = this.TABLES[t.dataset.egList].cols.find(c => c.k === k) || {};
           if (!Number.isFinite(n) || (col.min != null && n < col.min)) {
             t.classList.add('input-invalid');
-            if (commit) { t.value = row[k] == null ? '' : row[k]; t.classList.remove('input-invalid'); }
+            if (commit) { t.value = row[k] == null ? '' : this._disp(row[k], col.scale); t.classList.remove('input-invalid'); }
             return;
           }
-          row[k] = n;
+          row[k] = n / (col.scale || 1);
         }
         t.classList.remove('input-invalid');
       } else row[k] = t.value;
@@ -570,6 +615,17 @@ const EarthGridEditor = {
       } else if (t.type === 'number') {
         const n = parseFloat(t.value);
         const f = this._fieldDef(p) || {};
+        if (f.optional && t.value.trim() === '') {
+          // Optional field left blank: unset it (e.g. outside diameter → from size)
+          const ks = p.split('.');
+          const parent = ks.length > 1 ? this._get(g, ks.slice(0, -1).join('.')) : g;
+          if (parent) delete parent[ks[ks.length - 1]];
+          t.classList.remove('input-invalid');
+          this._applyVisibility(g);
+          this._changed(commit);
+          this._schedulePreview();
+          return;
+        }
         // Out of range (min/max, a notch inside the grid): refuse — keep the stored value
         let max = f.max;
         if (p === 'layout.notch_x') max = +g.layout.length_x;
@@ -578,11 +634,11 @@ const EarthGridEditor = {
         if (out) {
           t.classList.add('input-invalid');
           t.title = Number.isFinite(n) ? `Allowed: ${f.min != null ? f.min : '…'} to ${max != null ? this._n(max) : '…'}` : 'Enter a number';
-          if (commit) { const keep = this._get(g, p); t.value = keep == null ? '' : keep; t.classList.remove('input-invalid'); }
+          if (commit) { const keep = this._get(g, p); t.value = keep == null ? '' : this._disp(keep, f.scale); t.classList.remove('input-invalid'); }
           return;
         }
         t.classList.remove('input-invalid'); t.title = '';
-        if (f.step === 1) val = Math.round(n); else val = n;
+        if (f.step === 1) val = Math.round(n); else val = n / (f.scale || 1);
       } else if (t.dataset.egNum != null) {
         val = Number(t.value);
       } else {
@@ -933,7 +989,7 @@ const EarthGridEditor = {
         <div>Fault: <strong>${b.fault_current_ka} kA</strong></div>
         <div>R<sub>g</sub>: <strong>${f3(b.grid_resistance_ohm)} Ω</strong></div>
         <div>${en ? 'U<sub>E</sub>' : 'GPR'}: <strong>${f0(b.gpr_v)} V</strong></div>
-        <div>Conductor: <strong>${b.recommended_conductor_mm2} mm²</strong>${b.min_conductor_mm2 != null ? ` <span class="eg-muted">(min ${(+b.min_conductor_mm2).toFixed(1)})</span>` : ''}</div>
+        <div>Conductor: ${EarthGridEditor.conductorHtml(b)}</div>
         <div>Rods: <strong>${b.num_ground_rods}</strong></div>
         <div>L<sub>total</sub>: <strong>${b.total_conductor_length_m} m</strong></div>
         <div>Area: <strong>${b.grid_area_m2} m²</strong></div>

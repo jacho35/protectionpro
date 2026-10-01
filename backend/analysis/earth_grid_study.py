@@ -28,7 +28,7 @@ import math
 
 import numpy as np
 
-from .earth_grid import analyse
+from .earth_grid import analyse, conductor_diameter_m
 from .grounding_system import (
     CONDUCTOR_MATERIALS, DEFAULT_PARAMS, _compute_K_i, _compute_K_ii, _compute_K_m,
     _compute_K_s, _compute_L_M, _compute_conductor_size, _compute_decrement_factor,
@@ -106,7 +106,7 @@ def _ieee80_simplified(grid, analysis, rho, I_G):
     n_x = max(int(_num(layout.get("n_x"), 6)), 2)
     n_y = max(int(_num(layout.get("n_y"), 6)), 2)
     h = _num(cond.get("depth_m"), 0.5)
-    d = _num(cond.get("diameter_m"), 0.01167)
+    d = conductor_diameter_m(cond)
     n_R = _rod_count(grid, analysis)
     L_r = _num(rods.get("length_m"), 3.0) if n_R else 0.0
     A = L_x * L_y
@@ -220,6 +220,7 @@ def grid_bus_result(bus, grid, cache, fault_results, frequency, warnings):
     joint = str(cond.get("joint", "exothermic") or "exothermic").lower()
     min_mm2 = _compute_conductor_size(I_cond, t_c, mat_key, T_a, joint)
     mat = CONDUCTOR_MATERIALS.get(mat_key, CONDUCTOR_MATERIALS["copper_hard"])
+    area = _num(cond.get("area_mm2"), 0.0) or None
 
     if basis == "ieee80":
         I_G = D_f * S_f * remote * I_sym_ka * 1000.0
@@ -314,6 +315,13 @@ def grid_bus_result(bus, grid, cache, fault_results, frequency, warnings):
                   R_F_ohm=round(lim["R_F"], 0), I_B_a=round(lim["I_B"], 3), U_Sp_v=round(lim["U_Sp"], 0),
                   condition=condition, measures_m=measures, step_required=step_required)
 
+    conductor_ok = None
+    if area:
+        conductor_ok = area >= min_mm2
+        if not conductor_ok:
+            issues.append(f"Grid conductor {area:g} mm² is below the {min_mm2:.1f} mm² the fault current needs "
+                          f"for {t_c:g} s (IEEE 80 §11.3) — use {_select_standard_size(min_mm2)} mm²")
+            status = "fail"
     notes += a["notes"]
     return to_native({
         "bus_id": bus.id,
@@ -370,6 +378,8 @@ def grid_bus_result(bus, grid, cache, fault_results, frequency, warnings):
         else round(a["potential_variation"] * 100.0, 1),
         "min_conductor_mm2": round(min_mm2, 1),
         "recommended_conductor_mm2": _select_standard_size(min_mm2),
+        "conductor_area_mm2": area,
+        "conductor_ok": conductor_ok,
         "status": status,
         "issues": issues,
         "notes": notes,

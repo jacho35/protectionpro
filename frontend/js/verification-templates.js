@@ -1199,6 +1199,7 @@ const VerificationTemplates = {
           },
           "conductor": {
             "material": "copper_hard",
+            "area_mm2": 67.43,
             "diameter_m": 0.0105,
             "depth_m": 0.5,
             "joint": "exothermic"
