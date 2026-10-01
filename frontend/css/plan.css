@@ -312,3 +312,5 @@ body.dark-mode .plan-status { background: rgba(30,30,46,0.85); color: #c0c0d0; }
 .plan-demand-row b { color: var(--text-primary); font-weight: 600; text-align: right; }
 .plan-demand-row.ok b { color: #1b7a34; }
 .plan-demand-row.bad b { color: var(--danger, #d32f2f); }
+.plan-field-current { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
+.plan-field-current b { color: var(--text-primary); font-weight: 600; }

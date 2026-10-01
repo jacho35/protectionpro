@@ -169,7 +169,7 @@ const CableLib = {
     if (rest.length) html += `<optgroup label="Other">${rest.map(opt).join('')}</optgroup>`;
     // A stored cable the filter/preference left out (other construction, other
     // conductor, MV…) is still listed, so the box never shows blank for it.
-    if (sel && !list.some(c => c.name === sel) && this.byName(sel)) html += `<optgroup label="Current"><option value="${escHtml(sel)}" selected>${escHtml(sel)}</option></optgroup>`;
+    if (sel && !list.some(c => c.name === sel)) html += `<optgroup label="Current"><option value="${escHtml(sel)}" selected>${escHtml(sel)}</option></optgroup>`;
     if (hidden) html += `<option value="__all__" data-ss-always>Show all cables… (${hidden} ${prefer === 'Al' ? 'Cu' : 'Al'} or other)</option>`;
     return html;
   },

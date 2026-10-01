@@ -88,6 +88,34 @@ const PlanSync = {
     return null;
   },
 
+  // The cable Demand would give a new retic route: the Quick Build service /
+  // feeder cable (the same one Push to Schedules falls back to). '' elsewhere.
+  defaultCableFor(type) {
+    const R = AppState.reticulation, pm = AppState.planMarkup;
+    if (!R || !pm || pm.settings.domain !== 'retic') return '';
+    if (type === 'service') return R.settings.quickServiceCable || '';
+    if (type === 'lv') return R.settings.quickFeederCable || '';
+    return '';
+  },
+
+  // A route with no cable shows the one Demand already holds for it (or the
+  // default), so the picker never reads blank when Demand has an answer.
+  // Fills blanks only — never overwrites a chosen cable. Returns how many.
+  fillEmptyCables() {
+    const pm = AppState.planMarkup;
+    if (!pm || !AppState.reticulation || pm.settings.domain !== 'retic') return 0;
+    const elById = this._elById();
+    let n = 0;
+    for (const r of pm.routes) {
+      if (r.cableType) continue;
+      const link = this._cableLink(r, elById);
+      const c = (link && link.row[link.key]) || this.defaultCableFor(r.type);
+      if (c) { r.cableType = c; n++; }
+    }
+    if (n && typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty();
+    return n;
+  },
+
   // Plan → Demand: a route's cable was changed on the plan.
   pushRouteCable(route) {
     if (!route || !route.cableType) return false;

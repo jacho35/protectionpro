@@ -348,6 +348,9 @@ const PlanUI = {
       const comp = AppState.components.get(item.sldId);
       if (comp) html += `<div class="plan-linked-note" title="This item is linked to an SLD component">🔗 Linked to SLD: ${escHtml((comp.props && comp.props.name) || comp.type)}</div>`;
     }
+    if (kind === 'route' && !item.cableType && typeof PlanSync !== 'undefined' && PlanSync.fillEmptyCables) {
+      PlanSync.fillEmptyCables(); getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
+    }
     for (const f of fields) html += this._field(f, getVal(f.key));
     html += this._demandBlock(item, kind);
     html += this._sldLinkField(item, kind);
@@ -376,8 +379,8 @@ const PlanUI = {
   // drawn, and redrawn whenever Demand recomputes (Retic._doCompute) or the
   // Plan workspace is shown. Read-only — edit it in Demand.
   _demandBlock(item, kind) {
-    if (typeof Retic === 'undefined' || !AppState.reticulation) return '';
     if (kind === 'route') return this._demandRouteBlock(item);
+    if (typeof Retic === 'undefined' || !AppState.reticulation) return '';
     if (kind !== 'element' || !['erf', 'kiosk', 'minisub'].includes(item.type)) return '';
     const R = AppState.reticulation, res = AppState.reticResults;
     const rows = [];
@@ -460,15 +463,32 @@ const PlanUI = {
   // volt drop, a kiosk feeder route the leg's load, length and cumulative drop.
   _demandRouteBlock(route) {
     if (typeof PlanSync === 'undefined' || !PlanSync._cableLink) return '';
-    const link = PlanSync._cableLink(route, PlanSync._elById());
-    if (!link) return '';
+    const R = AppState.reticulation;
+    const retic = typeof Retic !== 'undefined' && R && AppState.planMarkup.settings.domain === 'retic';
+    const link = retic ? PlanSync._cableLink(route, PlanSync._elById()) : null;
     const res = AppState.reticResults;
     const rows = [];
     const row = (k, v, cls) => rows.push(`<div class="plan-demand-row${cls ? ' ' + cls : ''}"><span>${escHtml(k)}</span><b>${v}</b></div>`);
     const num = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
-    const cable = CableLib.byName(link.row[link.key]);
+    const cable = CableLib.byName(route.cableType || (link && link.row[link.key]));
     const rating = cable && cable.rated_amps ? Number(cable.rated_amps) : null;
     const loading = (amps) => rating && amps ? ` (${Math.round(amps / rating * 100)}% of ${rating} A)` : '';
+    // What is known about this drawn cable whether or not it is in Demand.
+    const factor = PlanSync._factor && PlanSync._factor();
+    const planLen = factor ? PlanSync._routeLenM(route, factor) : 0;
+    row('Length on plan', planLen ? `${num(planLen, 1)} m` : 'plan not calibrated');
+    if (cable) {
+      row('Cable rating', rating ? `${rating} A` : '—');
+      if (cable.r_per_km != null) row('R · X', `${cable.r_per_km} · ${cable.x_per_km} Ω/km`);
+    }
+    if (!link) {
+      if (!retic) return `<div class="plan-demand"><div class="plan-demand-title">Cable</div>${rows.join('')}</div>`;
+      const why = (!route.fromId || !route.toId) ? 'Both ends must be connected to plan elements (kiosk, erf, minisub).'
+        : (route.type !== 'service' && route.type !== 'lv') ? 'Only service and LV feeder routes are tied to Demand.'
+        : 'Not linked to Demand yet — use → Push to Schedules.';
+      rows.push(`<div class="plan-demand-row"><span>${escHtml(why)}</span></div>`);
+      return `<div class="plan-demand"><div class="plan-demand-title">Cable · Demand</div>${rows.join('')}</div>`;
+    }
     if (link.key === 'cableType') {                      // service cable → erf
       const e = link.row;
       const k = Retic.kiosks.find(kk => kk.erfs.includes(e));
@@ -499,7 +519,7 @@ const PlanUI = {
       if (fi.legVD != null) row('Leg volt drop', `${num(fi.legVD)} %`);
       if (fi.cumVD != null) row('Cumulative volt drop', `${num(fi.cumVD)} % (limit ${Retic.settings.maxFeederVD} %)`, fi.cumVD > Retic.settings.maxFeederVD ? 'bad' : 'ok');
     }
-    return `<div class="plan-demand"><div class="plan-demand-title">From Demand</div>${rows.join('')}</div>`;
+    return `<div class="plan-demand"><div class="plan-demand-title">Cable · From Demand</div>${rows.join('')}</div>`;
   },
 
   // Circuit-tag editor for a load device: pick a board + way number. The board
@@ -608,7 +628,8 @@ const PlanUI = {
       return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${f.key}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
     }
     if (f.type === 'cable_select') {
-      return `<div class="plan-field">${label}<select data-key="${f.key}" data-cable-select>${this._cableOptions(v, f)}</select></div>`;
+      // The size in use is also spelled out under the box, so it reads at a glance.
+      return `<div class="plan-field">${label}<select data-key="${f.key}" data-cable-select>${this._cableOptions(v, f)}</select><div class="plan-field-current">${v ? 'Current: <b>' + escHtml(v) + '</b>' : 'No cable chosen'}</div></div>`;
     }
     if (f.type === 'select') {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
@@ -802,6 +823,8 @@ const PlanUI = {
     } else if (kind === 'route') {
       if (key === 'cableType') {
         item.cableType = val;
+        const cur = e.target.closest('.plan-field') && e.target.closest('.plan-field').querySelector('.plan-field-current');
+        if (cur) cur.innerHTML = val ? 'Current: <b>' + escHtml(val) + '</b>' : 'No cable chosen';
         // Retic: the linked erf / kiosk takes the same cable in Demand.
         if (commit && typeof PlanSync !== 'undefined' && PlanSync.pushRouteCable) PlanSync.pushRouteCable(item);
       }
