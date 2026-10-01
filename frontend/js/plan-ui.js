@@ -301,7 +301,8 @@ const PlanUI = {
       const def = PLAN_DEFS.element(item.type);
       title = def ? def.name : item.type;
       fields = (def && def.fields) || [];
-      getVal = (k) => (k === 'name' || k === 'rotation') ? item[k] : (item.props ? item.props[k] : undefined);
+      fields = fields.concat([{ key: 'symScale', label: 'Symbol scale ×', type: 'number', min: 0.25, max: 10, step: 0.25 }]);
+      getVal = (k) => (k === 'symScale') ? (item.scale || '') : (k === 'name' || k === 'rotation') ? item[k] : (item.props ? item.props[k] : undefined);
     } else if (kind === 'route') {
       const def = PLAN_DEFS.route(item.type);
       title = def ? def.name : item.type;
@@ -632,6 +633,7 @@ const PlanUI = {
     const oldName = item.name;
     if (kind === 'element') {
       if (key === 'name' || key === 'rotation') item[key] = val;
+      else if (key === 'symScale') { if (val > 0 && val !== 1) item.scale = Math.min(10, val); else delete item.scale; }
       else { item.props = item.props || {}; item.props[key] = val; }
       if (key === 'name' && commit && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
         PlanSync.onElementRenamed(item, oldName, val);

@@ -76,6 +76,7 @@ const PlanMarkup = {
             <label class="plan-snap-pill"><input type="checkbox" data-snap="snapVtx" checked> Snap vtx</label>
             <label class="plan-snap-pill" title="Snap to imported DXF geometry: line/polyline ends, midpoints and vertices, circle/arc centres and block insertion points"><input type="checkbox" data-snap="snapDxf" checked> Snap DXF</label>
             <label class="plan-tb-field">Grid (m) <input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"></label>
+            <label class="plan-tb-field" title="Size of every symbol on this plan (1 = standard). Each item can also be scaled on its own in its properties.">Symbols ×<input type="number" id="plan-symbol-scale" min="0.25" max="5" step="0.25" value="1"></label>
           </div>
           <div class="plan-tb-group">
             <button class="plan-tb-btn" data-action="push" title="Push/sync drawn items to the matching workspace">→ Push to Schedules</button>
@@ -164,6 +165,13 @@ const PlanMarkup = {
       } else if (e.target.id === 'plan-grid-size') {
         const v = parseFloat(e.target.value);
         if (isFinite(v) && v > 0) { AppState.planMarkup.settings.gridSize = v; PlanEngine.requestDraw({ bg: true }); }
+      } else if (e.target.id === 'plan-symbol-scale') {
+        const v = parseFloat(e.target.value);
+        if (isFinite(v) && v > 0) {
+          AppState.planMarkup.settings.symbolScale = Math.min(5, Math.max(0.25, v));
+          this._snapshot(); this.markDirty();
+          PlanEngine.requestDraw({ all: true });
+        }
       } else if (e.target.id === 'plan-floor-select') {
         this.setActiveFloor(e.target.value);
       }
@@ -304,6 +312,8 @@ const PlanMarkup = {
     const sel = document.getElementById('plan-floor-select');
     if (!group || !sel) return;
     const pm = AppState.planMarkup;
+    const ss = document.getElementById('plan-symbol-scale');
+    if (ss) ss.value = pm.settings.symbolScale || 1;
     const building = pm.settings.domain === 'building';
     group.style.display = building ? '' : 'none';
     const cbtn = document.getElementById('plan-circuits-btn');
