@@ -348,6 +348,9 @@ const PlanUI = {
       const comp = AppState.components.get(item.sldId);
       if (comp) html += `<div class="plan-linked-note" title="This item is linked to an SLD component">🔗 Linked to SLD: ${escHtml((comp.props && comp.props.name) || comp.type)}</div>`;
     }
+    if (kind === 'route' && !item.cableType && typeof PlanSync !== 'undefined' && PlanSync.fillEmptyCables) {
+      PlanSync.fillEmptyCables(); getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
+    }
     for (const f of fields) html += this._field(f, getVal(f.key));
     html += this._demandBlock(item, kind);
     html += this._sldLinkField(item, kind);
@@ -608,7 +611,8 @@ const PlanUI = {
       return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${f.key}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
     }
     if (f.type === 'cable_select') {
-      return `<div class="plan-field">${label}<select data-key="${f.key}" data-cable-select>${this._cableOptions(v, f)}</select></div>`;
+      // The size in use is also spelled out under the box, so it reads at a glance.
+      return `<div class="plan-field">${label}<select data-key="${f.key}" data-cable-select>${this._cableOptions(v, f)}</select><div class="plan-field-current">${v ? 'Current: <b>' + escHtml(v) + '</b>' : 'No cable chosen'}</div></div>`;
     }
     if (f.type === 'select') {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
@@ -802,6 +806,8 @@ const PlanUI = {
     } else if (kind === 'route') {
       if (key === 'cableType') {
         item.cableType = val;
+        const cur = e.target.closest('.plan-field') && e.target.closest('.plan-field').querySelector('.plan-field-current');
+        if (cur) cur.innerHTML = val ? 'Current: <b>' + escHtml(val) + '</b>' : 'No cable chosen';
         // Retic: the linked erf / kiosk takes the same cable in Demand.
         if (commit && typeof PlanSync !== 'undefined' && PlanSync.pushRouteCable) PlanSync.pushRouteCable(item);
       }

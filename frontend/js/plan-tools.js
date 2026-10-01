@@ -495,7 +495,7 @@ PlanTools.register({
       fromId: d.fromId || null,
       toId: toId || null,
       points: d.points.map(p => ({ x: p.x, y: p.y, ...(p.snappedTo ? { snappedTo: p.snappedTo } : {}) })),
-      cableType: PLAN_DEFS.defaults(d.type).cableType || '',
+      cableType: PLAN_DEFS.defaults(d.type).cableType || ((typeof PlanSync !== 'undefined' && PlanSync.defaultCableFor(d.type, d.fromId, d.toId)) || ''),
       curved: PlanTools.curvedByDefault(d.type),   // final circuits draw as splines
       props: {},
     };

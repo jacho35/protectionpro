@@ -209,6 +209,7 @@ const PlanMarkup = {
   // ─── Lifecycle (called by app.js switchWorkspace) ───
   activate() {
     this._active = true;
+    if (typeof PlanSync !== 'undefined' && PlanSync.fillEmptyCables) PlanSync.fillEmptyCables();
     this.refreshProps();   // Demand may have changed while Plan was hidden
     // Anchor the workspace exactly below the toolbar (whose height varies with
     // width / responsive wrapping) so the workspace tabs stay visible and the
