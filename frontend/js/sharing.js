@@ -9,9 +9,56 @@ const Sharing = {
       if (e.target.id === 'share-modal') this.close();
     });
     document.getElementById('share-add-btn')?.addEventListener('click', () => this._add());
-    document.getElementById('share-email')?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') this._add();
+    const input = document.getElementById('share-email');
+    input?.addEventListener('input', () => this._suggest());
+    input?.addEventListener('keydown', e => {
+      const items = [...document.querySelectorAll('#share-suggest li[data-email]')];
+      const cur = items.findIndex(li => li.classList.contains('active'));
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!items.length) return;
+        e.preventDefault();
+        const n = (cur + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items.forEach((li, i) => li.classList.toggle('active', i === n));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (cur >= 0) this._pick(items[cur].dataset.email); else this._add();
+      } else if (e.key === 'Escape') {
+        this._hideSuggest();
+      }
     });
+    input?.addEventListener('blur', () => setTimeout(() => this._hideSuggest(), 150));
+  },
+
+  _hideSuggest() {
+    const ul = document.getElementById('share-suggest');
+    if (ul) ul.style.display = 'none';
+    document.getElementById('share-email')?.setAttribute('aria-expanded', 'false');
+  },
+
+  _pick(email) {
+    document.getElementById('share-email').value = email;
+    this._hideSuggest();
+    document.getElementById('share-role')?.focus();
+  },
+
+  _suggest() {
+    clearTimeout(this._t);
+    const q = document.getElementById('share-email').value.trim();
+    if (!q) { this._hideSuggest(); return; }
+    this._t = setTimeout(async () => {
+      try {
+        const users = await API.searchUsers(q);
+        if (document.getElementById('share-email').value.trim() !== q) return;
+        const ul = document.getElementById('share-suggest');
+        ul.innerHTML = users.length
+          ? users.map(u => `<li role="option" data-email="${this._esc(u.email)}"><span>${this._esc(u.name || u.email)}</span>${u.name ? `<small>${this._esc(u.email)}</small>` : ''}</li>`).join('')
+          : '<li class="empty">No registered user matches. They need an account first.</li>';
+        ul.querySelectorAll('li[data-email]').forEach(li =>
+          li.addEventListener('mousedown', e => { e.preventDefault(); this._pick(li.dataset.email); }));
+        ul.style.display = '';
+        document.getElementById('share-email').setAttribute('aria-expanded', 'true');
+      } catch (e) { this._hideSuggest(); }
+    }, 150);
   },
 
   async open(projectId, projectName) {

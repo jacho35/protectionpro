@@ -584,7 +584,35 @@ const API = {
     return this.request('/auth/invites');
   },
   async createInvite(opts = {}) {
-    return this.request('/auth/invites', 'POST', opts);   // { email?, expires_at? }
+    // { email?, expires_days?, send_email?, note?, base_url? } → { link, emailed, email_error }
+    return this.request('/auth/invites', 'POST', opts);
+  },
+  async resendInvite(id, base_url) {
+    return this.request(`/auth/invites/${id}/send`, 'POST', { base_url });
+  },
+  async inviteCheck(code) {
+    return this.request(`/auth/invite-check/${encodeURIComponent(code)}`);
+  },
+  async forgotPassword(email) {
+    return this.request('/auth/forgot', 'POST', { email, base_url: location.origin + location.pathname.replace(/\/[^/]*$/, '') });
+  },
+  async resetPassword(token, password) {
+    return this.request('/auth/reset', 'POST', { token, password });
+  },
+  async listUsers() {
+    return this.request('/auth/users');
+  },
+  async userResetLink(id, send_email, base_url) {
+    return this.request(`/auth/users/${id}/reset-link`, 'POST', { send_email, base_url });
+  },
+  async getEmailSettings() {
+    return this.request('/settings/email');
+  },
+  async saveEmailSettings(cfg) {
+    return this.request('/settings/email', 'PUT', cfg);
+  },
+  async testEmailSettings(cfg) {
+    return this.request('/settings/email/test', 'POST', cfg);
   },
   async deleteInvite(id) {
     return this.request(`/auth/invites/${id}`, 'DELETE');
@@ -593,6 +621,9 @@ const API = {
   // ── Project sharing (grants keyed by the collaborator's user id) ──
   async listShares(projectId) {
     return this.request(`/projects/${projectId}/shares`);
+  },
+  async searchUsers(q) {
+    return this.request(`/auth/users/search?q=${encodeURIComponent(q)}`);
   },
   async shareProject(projectId, email, role) {
     return this.request(`/projects/${projectId}/shares`, 'POST', { email, role });

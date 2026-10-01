@@ -90,6 +90,7 @@ clients/
 └── python/                 # Python API client (protectionpro_client.py, httpx) — batch/parametric scripting; see its README
 
 backend/
+├── mailer.py               # Optional SMTP: config in app_settings (password never returned), send_email, invite/reset messages; callers fall back to a copy-able link when get_config() is None
 ├── main.py                 # FastAPI app, CORS, static file serving, DB init
 ├── models/
 │   ├── database.py         # SQLAlchemy Project model, SQLite setup
@@ -132,6 +133,7 @@ backend/
 └── routes/
     ├── analysis.py         # POST /api/analysis/* endpoints
     ├── projects.py         # CRUD /api/projects endpoints
+    ├── email_settings.py   # GET/PUT /api/settings/email, POST /test (admin only)
     ├── user_libraries.py   # GET/PUT/DELETE /api/user-libraries (+ /default-rates) — the signed-in user's own libraries and default rates
     ├── shared_libraries.py # /api/shared-libraries — team libraries: members (view/edit), per-entry versioned saves (409 on stale), admin company standard
     └── reports.py          # CSV & PDF export endpoints
@@ -384,7 +386,7 @@ Access at `http://localhost:8000`
 
 ## Authentication
 
-JWT bearer auth (`backend/auth.py`, `routes/auth.py`, frontend `auth.js` login gate). Every `/api/*` route except `/api/auth/*` and `/api/health` needs `Authorization: Bearer <token>`. The first registered user is the admin; further users register with an admin-minted invite code. Projects are owned per user and can be shared (`/api/projects/{id}/shares`, view/edit). CORS allows all origins.
+JWT bearer auth (`backend/auth.py`, `routes/auth.py`, frontend `auth.js` login gate; `setup.js` wizard on a server with no users). Invites (`/auth/invites`, optionally emailed, expiry in days) and password reset (`/auth/forgot` → emailed 1-hour single-use link, `/auth/reset`; admin `/auth/users/{id}/reset-link` for servers without email) work with or without a mail server — links are `/#invite=<code>` and `/#reset=<token>`. Every `/api/*` route except `/api/auth/*` and `/api/health` needs `Authorization: Bearer <token>`. The first registered user is the admin; further users register with an admin-minted invite code. Projects are owned per user and can be shared (`/api/projects/{id}/shares`, view/edit). CORS allows all origins.
 
 ## Testing
 

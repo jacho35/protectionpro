@@ -345,6 +345,47 @@ class LoginRequest(BaseModel):
 class InviteCreate(BaseModel):
     email: Optional[str] = None
     expires_at: Optional[datetime] = None
+    expires_days: Optional[int] = Field(default=None, ge=1, le=90)
+    send_email: bool = False
+    note: Optional[str] = Field(default=None, max_length=300)
+    base_url: Optional[str] = None
+
+
+class InviteCreated(BaseModel):
+    id: int
+    code: str
+    email: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    link: str
+    emailed: bool = False
+    email_error: Optional[str] = None
+
+
+class ForgotRequest(BaseModel):
+    email: str
+    base_url: Optional[str] = None
+
+
+class ResetRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+
+
+class ResetLinkRequest(BaseModel):
+    send_email: bool = False
+    base_url: Optional[str] = None
+
+
+class EmailConfigIn(BaseModel):
+    enabled: bool = True
+    host: str = ""
+    port: int = Field(default=587, ge=1, le=65535)
+    security: str = "starttls"          # starttls | ssl | none
+    username: str = ""
+    password: Optional[str] = None      # None = keep the stored one
+    from_name: str = "ProtectionPro"
+    from_address: str = ""
+    app_url: str = ""
 
 
 class InviteOut(BaseModel):

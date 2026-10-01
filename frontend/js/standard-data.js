@@ -856,6 +856,7 @@ const StandardData = {
     { group: 'Libraries', tab: 'fuses', sub: () => 'Ratings and breaking capacity', count: s => s.fuses.length },
     { group: 'Libraries', tab: 'shared-libs', sub: () => 'Company standard and team libraries', count: s => s._sharedLayers.length },
     { group: 'Reference', tab: 'load-classes', sub: () => 'Demand parameters (NRS 034-1)', count: s => s.loadClasses.length },
+    { group: 'Server', tab: 'email', sub: () => 'Invites and password resets (optional)', adminOnly: true },
     { group: 'Reference', tab: 'iec-standards', sub: () => 'Ampacity, sizing and derating tables' },
   ],
 
@@ -903,7 +904,7 @@ const StandardData = {
     let html = '', last = '';
     for (const sec of this._SECTIONS) {
       const tab = document.querySelector(`.settings-tab[data-tab="${sec.tab}"]`);
-      if (!tab) continue;
+      if (!tab || tab.hidden) continue;
       if (sec.group !== last) { html += `<div class="settings-home-group">${sec.group}</div>`; last = sec.group; }
       const n = sec.count ? sec.count(this) : null;
       html += `<button type="button" class="settings-home-row" data-go="${sec.tab}"><span class="settings-home-text"><span class="settings-home-title">${escHtml(tab.textContent.trim())}</span><span class="settings-home-sub">${escHtml(sec.sub())}</span></span>${n != null ? `<span class="settings-home-count">${n}</span>` : ''}<span class="settings-home-chev" aria-hidden="true">›</span></button>`;
@@ -936,6 +937,15 @@ const StandardData = {
     document.querySelector('#settings-modal .modal-body')?.scrollTo(0, 0);
   },
 
+  // ─── Email tab (admin only; optional) ───
+  async _renderEmailTab() {
+    if (!this._emailForm) {
+      this._emailForm = EmailForm.create(document.getElementById('email-settings-form'),
+        { showSave: true, adminEmail: typeof Auth !== 'undefined' ? Auth.currentEmail() : '' });
+    }
+    await this._emailForm.load();
+  },
+
   // ─── Tab Switching ───
   bindTabs() {
     document.querySelectorAll('.settings-tab').forEach(tab => {
@@ -952,6 +962,7 @@ const StandardData = {
         if (tab.dataset.tab === 'load-classes') this.renderLoadClassTable();
         if (tab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
         if (tab.dataset.tab === 'shared-libs' && typeof SharedLibs !== 'undefined') SharedLibs.render();
+        if (tab.dataset.tab === 'email') this._renderEmailTab();
       });
     });
   },

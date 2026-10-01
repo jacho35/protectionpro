@@ -881,6 +881,21 @@
           <div class="form-group"><label for="auth-login-password">Password</label><input id="auth-login-password" type="password" autocomplete="current-password"></div>
           <div id="auth-login-error" class="auth-error"></div>
           <button id="auth-login-submit" class="btn-primary" type="button">Sign in</button>
+          <button id="auth-forgot-link" class="auth-link" type="button">Forgot your password?</button>
+        </div>
+        <div id="auth-forgot-pane" style="display:none">
+          <p class="auth-hint" id="auth-forgot-intro">Enter your email and we’ll send you a link to choose a new password.</p>
+          <div class="form-group"><label for="auth-forgot-email">Email</label><input id="auth-forgot-email" type="email" autocomplete="username"></div>
+          <div id="auth-forgot-msg" class="auth-error" role="status"></div>
+          <button id="auth-forgot-submit" class="btn-primary" type="button">Send reset link</button>
+          <button id="auth-forgot-back" class="auth-link" type="button">Back to sign in</button>
+        </div>
+        <div id="auth-reset-pane" style="display:none">
+          <p class="auth-hint">Choose a new password for your account.</p>
+          <div class="form-group"><label for="auth-reset-password">New password</label><input id="auth-reset-password" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
+          <div class="form-group"><label for="auth-reset-confirm">Confirm</label><input id="auth-reset-confirm" type="password" autocomplete="new-password"></div>
+          <div id="auth-reset-error" class="auth-error"></div>
+          <button id="auth-reset-submit" class="btn-primary" type="button">Save password and sign in</button>
         </div>
         <div id="auth-register-pane" style="display:none">
           <div class="form-group"><label for="auth-reg-name">Name</label><input id="auth-reg-name" type="text" autocomplete="name"></div>
@@ -897,7 +912,7 @@
 
   <!-- Account + admin invites -->
   <div id="account-modal" class="modal" role="dialog" aria-modal="true" aria-label="Account" style="display:none">
-    <div class="modal-content" style="max-width:520px">
+    <div class="modal-content" style="max-width:600px">
       <div class="modal-header">
         <h3>Account</h3>
         <button class="modal-close" id="btn-close-account">&times;</button>
@@ -906,17 +921,77 @@
         <p>Signed in as <strong id="account-email-display"></strong></p>
         <button id="btn-logout" class="btn-secondary" type="button">Log out</button>
         <div id="account-invites-section" style="display:none">
-          <h4 style="margin-top:18px">Invites</h4>
-          <p class="auth-hint">Generate a link to invite a new user. Each invite works once.</p>
-          <div class="form-group"><label for="invite-email">Restrict to email</label><input id="invite-email" type="email" placeholder="Optional"></div>
-          <button id="btn-generate-invite" class="btn-small" type="button">Generate invite link</button>
+          <h4 style="margin-top:18px">Invite people</h4>
+          <p class="auth-hint" id="invite-mode-hint">Each invite works once.</p>
+          <div class="form-group"><label for="invite-email">Email</label><input id="invite-email" type="email" placeholder="Optional — leave blank to just get a link"></div>
+          <div class="form-group"><label for="invite-days">Valid for</label><select id="invite-days"><option value="7">7 days</option><option value="3">3 days</option><option value="30">30 days</option></select></div>
+          <div class="form-group" id="invite-note-row"><label for="invite-note">Personal note</label><input id="invite-note" type="text" maxlength="300" placeholder="Optional — added to the email"></div>
+          <button id="btn-generate-invite" class="btn-primary" type="button">Create invite link</button>
+          <div id="invite-result" class="auth-hint" role="status"></div>
           <div id="invite-link-row" class="share-add-row" style="display:none;margin-top:10px">
-            <input id="invite-link" type="text" readonly>
+            <input id="invite-link" type="text" readonly aria-label="Invite link">
             <button id="btn-copy-invite" class="btn-small" type="button">Copy</button>
           </div>
-          <div id="invites-list" style="margin-top:12px"></div>
+          <h4 style="margin-top:18px">Pending invitations</h4>
+          <div id="invites-list" style="margin-top:6px"></div>
+          <h4 style="margin-top:18px">Users</h4>
+          <div id="users-list" style="margin-top:6px"></div>
+          <div id="reset-link-row" class="share-add-row" style="display:none;margin-top:10px">
+            <input id="reset-link" type="text" readonly aria-label="Password reset link">
+            <button id="btn-copy-reset" class="btn-small" type="button">Copy</button>
+          </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- First-run setup wizard (shown instead of sign-in when the server has no users) -->
+  <div id="setup-modal" class="modal setup-modal" role="dialog" aria-modal="true" aria-label="First-time setup" style="display:none">
+    <div class="setup-shell">
+      <aside class="setup-rail">
+        <div class="setup-brand">ProtectionPro</div>
+        <div class="setup-kicker">First-time setup</div>
+        <ol id="setup-steps" class="setup-steps"></ol>
+        <p class="setup-rail-foot">Takes about two minutes. Everything here can be changed later in Settings.</p>
+      </aside>
+      <section class="setup-main">
+        <div id="setup-pane-1" class="setup-pane">
+          <h2>Welcome. Let’s get your server ready.</h2>
+          <p class="setup-lead">You’ll create the administrator account, then decide whether this server should send email. Email is optional — the app works fully without it.</p>
+          <div class="setup-cards">
+            <div><b>1 · Administrator</b><span>The first account. It can invite everyone else.</span></div>
+            <div><b>2 · Email</b><span>Optional. Sends invites and password resets.</span></div>
+            <div><b>3 · Finish</b><span>Review and open the app.</span></div>
+          </div>
+        </div>
+        <div id="setup-pane-2" class="setup-pane" hidden>
+          <h2>Create the administrator account</h2>
+          <p class="setup-lead">This is the first user. They manage people, libraries and email settings.</p>
+          <div class="ef-field"><label for="setup-name">Full name</label><input id="setup-name" type="text" autocomplete="name"></div>
+          <div class="ef-field"><label for="setup-email">Email address</label><input id="setup-email" type="email" autocomplete="username"><div class="ef-hint">Used to sign in, and to receive invites and resets.</div></div>
+          <div class="ef-field"><label for="setup-pass">Password</label><input id="setup-pass" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+            <div class="setup-meter"><div id="setup-meter-bar"></div></div><div class="ef-hint" id="setup-meter-label"></div></div>
+          <div id="setup-admin-error" class="auth-error" role="alert"></div>
+        </div>
+        <div id="setup-pane-3" class="setup-pane" hidden>
+          <h2>Email <span class="setup-badge">Optional</span></h2>
+          <p class="setup-lead">Connect an outgoing mail server so ProtectionPro can email invitations and password-reset links.</p>
+          <div id="setup-email-form"></div>
+          <div id="setup-email-error" class="auth-error" role="alert"></div>
+        </div>
+        <div id="setup-pane-4" class="setup-pane" hidden>
+          <h2>You’re all set</h2>
+          <div class="setup-summary">
+            <div><small>Administrator</small><b id="setup-done-admin"></b></div>
+            <div><small>Email</small><b id="setup-done-email"></b><span id="setup-done-note"></span></div>
+          </div>
+          <p>Next: open <b>Account</b> to invite your team.</p>
+        </div>
+        <div class="setup-actions">
+          <button id="setup-back" class="btn-secondary" type="button" hidden>Back</button>
+          <button id="setup-next" class="btn-primary" type="button">Get started</button>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -930,7 +1005,10 @@
       <div class="modal-body">
         <div id="share-list"></div>
         <div class="share-add-row" style="margin-top:12px">
-          <input id="share-email" type="email" placeholder="collaborator@email.com">
+          <div class="share-pick">
+            <input id="share-email" type="text" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="share-suggest" aria-label="Collaborator name or email" placeholder="Search by name or email">
+            <ul id="share-suggest" class="share-suggest" role="listbox" style="display:none"></ul>
+          </div>
           <select id="share-role">
             <option value="view">View</option>
             <option value="edit">Edit</option>
@@ -2371,6 +2449,7 @@
         <button class="settings-tab" data-tab="load-classes">Load Classes</button>
         <button class="settings-tab" data-tab="shared-libs">Shared Libraries</button>
         <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
+        <button class="settings-tab" data-tab="email" id="settings-tab-btn-email" hidden>Email</button>
       </div>
       <div class="modal-body">
         <!-- System Base Tab -->
@@ -2522,6 +2601,12 @@
           </div>
         </div>
         <!-- Load Classes Tab (NRS 034-1 / CTEF100 ADMD) -->
+        <!-- Email (SMTP) Tab — admin only, optional -->
+        <div id="settings-tab-email" class="settings-tab-content">
+          <p class="sl-intro">Connect an outgoing mail server so ProtectionPro can email invitations and password-reset links. <b>Email is optional</b> — without it, invites and resets give you a link to share yourself.</p>
+          <div id="email-settings-form"></div>
+        </div>
+
         <!-- Shared (team) libraries Tab -->
         <div id="settings-tab-shared-libs" class="settings-tab-content">
           <p class="sl-intro">Libraries shared with you or by you. Their entries appear in the library tabs (badged) under your own edits, which always win. The <b>company standard</b>, if your admin has set one, is read-only for everyone.</p>
@@ -3216,6 +3301,8 @@
   <script src="js/annotations.js?v=3.5.191"></script>
   <script src="js/cablefocus.js?v=3.5.191"></script>
   <script src="js/api.js?v=3.5.191"></script>
+  <script src="js/emailform.js?v=3.5.191"></script>
+  <script src="js/setup.js?v=3.5.191"></script>
   <script src="js/auth.js?v=3.5.191"></script>
   <script src="js/sharing.js?v=3.5.191"></script>
   <script src="js/compliance.js?v=3.5.191"></script>
