@@ -408,12 +408,12 @@ def _bus_complex_voltages(lf, bus_ids):
     return out
 
 
-def _machine_reactance(comp, base_mva, z_stub):
+def _machine_reactance(comp, base_mva, z_stub, ref=1.0):
     """Internal-node → bus impedance (p.u. system base): X′d (or the utility
     Thevenin impedance) plus any step-up transformer/cable stub, and the inertia
     constant H (s, system base) with the infinite-bus flag."""
     if comp.type == "utility":
-        z = _source_internal_z(comp, base_mva, 1.0) + z_stub
+        z = _source_internal_z(comp, base_mva, 1.0) * ref + z_stub
         return z, INFINITE_H, True
     if _ibr_ctrl(comp) == "gfm":
         # Grid-forming converter: a voltage behind the PHYSICAL coupling
@@ -423,12 +423,12 @@ def _machine_reactance(comp, base_mva, z_stub):
         # synthetic/virtual inertia the control emulates.
         rated = _ibr_rated_mva(comp)
         xf = max(float(comp.props.get("ibr_xf_pu", 0.15) or 0.15), 1e-3)
-        z = complex(0.0, xf * base_mva / rated) + z_stub
+        z = complex(0.0, xf * base_mva / rated) * ref + z_stub
         h_v = max(float(comp.props.get("ibr_inertia_h_s", 3.0) or 3.0), 0.1)
         return z, h_v * rated / base_mva, False
     rated = float(comp.props.get("rated_mva", 10) or 10)
     xdp = float(comp.props.get("xd_p", 0.25) or 0.25)
-    z = complex(0.0, xdp * base_mva / rated) + z_stub
+    z = complex(0.0, xdp * base_mva / rated) * ref + z_stub
     h_machine = float(comp.props.get("inertia_h_s", 4) or 4)
     h_sys = h_machine * rated / base_mva      # H scales with the machine rating
     return z, h_sys, False
@@ -457,13 +457,17 @@ def _collect_machines(project, ctx, lf):
     on_bus = {}
     staged = []
     for comp in sources:
-        stub = _source_stub(comp.id, adjacency, components, bus_of, base_mva)
+        stub = _source_stub(comp.id, adjacency, components, bus_of, base_mva,
+                            with_ref=True)
         if stub is None:
             continue
-        bus_id, z_stub = stub
+        bus_id, z_stub, ref = stub
         if bus_id not in bus_idx or bus_id not in Vc:
             continue
-        z, h_sys, infinite = _machine_reactance(comp, base_mva, z_stub)
+        # [NR2] The machine's own impedance is on its zone's base; ref refers
+        # it through the stub's actual turns ratio to the bus (1 when every
+        # nameplate matches its zone and taps are nominal).
+        z, h_sys, infinite = _machine_reactance(comp, base_mva, z_stub, ref)
         staged.append((comp, bus_id, z, h_sys, infinite))
         on_bus[bus_id] = on_bus.get(bus_id, 0) + 1
 
