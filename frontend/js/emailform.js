@@ -49,6 +49,9 @@ const EmailForm = {
             <div class="ef-field"><label for="${id}-faddr">Sender address</label><input id="${id}-faddr" data-ef="from_address" type="email" placeholder="noreply@yourcompany.com"></div>
           </div>
           <div class="ef-field"><label for="${id}-url">Address people use to reach this server</label><input id="${id}-url" data-ef="app_url" type="url" class="ef-mono"><div class="ef-hint">Invite and reset links in emails start with this address. We filled in the one you’re using now.</div></div>
+          <div class="ef-field"><label class="ef-check"><input type="checkbox" data-ef="welcome_auto"> Email a welcome message when someone joins</label>
+            <label for="${id}-wnote" style="margin-top:6px">Welcome message <span class="ef-hint" style="font-weight:400">(optional — added to every welcome email)</span></label>
+            <textarea id="${id}-wnote" data-ef="welcome_note" rows="3" maxlength="1000" placeholder="e.g. Start with the Phase 2 project in the shared folder."></textarea></div>
           <div class="ef-testrow">
             <button type="button" class="btn-secondary" data-ef="test">Send test email</button>
             <div class="ef-status" data-ef="status" role="status"></div>
@@ -91,6 +94,7 @@ const EmailForm = {
       password: val('password') === '' ? null : val('password'),
       from_name: val('from_name').trim() || 'ProtectionPro', from_address: val('from_address').trim(),
       app_url: val('app_url').trim(),
+      welcome_auto: q('welcome_auto').checked, welcome_note: val('welcome_note').trim(),
     });
 
     q('test').addEventListener('click', async () => {
@@ -119,6 +123,7 @@ const EmailForm = {
         q('username').value = c.username || ''; q('password').value = '';
         q('from_name').value = c.from_name || 'ProtectionPro'; q('from_address').value = c.from_address || '';
         q('app_url').value = c.app_url || EmailForm.defaultAppUrl();
+        q('welcome_auto').checked = c.welcome_auto !== false; q('welcome_note').value = c.welcome_note || '';
         if (c.host && !c.enabled) state.on = false;
         setStatus(opts.adminEmail ? `We’ll send a short message to ${opts.adminEmail} to check the settings.` : '');
         paint();

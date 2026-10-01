@@ -366,6 +366,11 @@ class ForgotRequest(BaseModel):
     base_url: Optional[str] = None
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 class ResetRequest(BaseModel):
     token: str
     password: str = Field(min_length=8)
@@ -386,6 +391,8 @@ class EmailConfigIn(BaseModel):
     from_name: str = "ProtectionPro"
     from_address: str = ""
     app_url: str = ""
+    welcome_auto: bool = True            # email new users when they join
+    welcome_note: str = Field(default="", max_length=1000)
 
 
 class InviteOut(BaseModel):

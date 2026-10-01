@@ -222,6 +222,7 @@ const Auth = {
       if (e.target.id === 'account-modal') this._hideAccount();
     });
     document.getElementById('btn-logout')?.addEventListener('click', () => this.logout());
+    document.getElementById('btn-change-password')?.addEventListener('click', () => this._changePassword());
     document.getElementById('btn-generate-invite')?.addEventListener('click', () => this._generateInvite());
     document.getElementById('btn-copy-invite')?.addEventListener('click', () => this._copyInvite());
     document.getElementById('btn-copy-reset')?.addEventListener('click', () => this._copy(document.getElementById('reset-link').value, 'Reset link copied'));
@@ -249,6 +250,21 @@ const Auth = {
   },
 
   _base() { return location.origin + location.pathname.replace(/\/[^/]*$/, ''); },
+
+  async _changePassword() {
+    const cur = document.getElementById('pw-current'), nw = document.getElementById('pw-new'), cf = document.getElementById('pw-confirm');
+    const msg = document.getElementById('pw-msg');
+    msg.className = 'auth-error';
+    if (!cur.value) { msg.textContent = 'Enter your current password.'; return; }
+    if (nw.value.length < 8) { msg.textContent = 'The new password must be at least 8 characters.'; return; }
+    if (nw.value !== cf.value) { msg.textContent = 'The two new passwords don’t match.'; return; }
+    try {
+      await API.changePassword(cur.value, nw.value);
+      cur.value = nw.value = cf.value = '';
+      msg.className = 'auth-hint';
+      msg.textContent = 'Password changed.';
+    } catch (e) { msg.textContent = e.message || 'Could not change the password.'; }
+  },
 
   _hideAccount() {
     const m = document.getElementById('account-modal');
@@ -347,8 +363,15 @@ const Auth = {
       const users = await API.listUsers();
       list.innerHTML = users.map(u => `<div class="user-row">
         <span class="invite-for">${this._esc(u.name || u.email)}<small>${u.name ? this._esc(u.email) : ''}${u.is_admin ? ' · admin' : ''}</small></span>
+        ${this._emailOn ? `<button class="btn-small user-welcome" data-id="${u.id}">Send welcome</button>` : ''}
         <button class="btn-small user-reset" data-id="${u.id}">${this._emailOn ? 'Email reset link' : 'Copy reset link'}</button>
       </div>`).join('');
+      list.querySelectorAll('.user-welcome').forEach(btn => btn.addEventListener('click', async () => {
+        try {
+          const r = await API.sendWelcome(parseInt(btn.dataset.id, 10));
+          UI.toast && UI.toast(r.emailed ? 'Welcome email sent' : (r.email_error || 'Not sent'), r.emailed ? 'success' : 'error');
+        } catch (e) { UI.toast && UI.toast(e.message, 'error'); }
+      }));
       list.querySelectorAll('.user-reset').forEach(btn => btn.addEventListener('click', async () => {
         try {
           const r = await API.userResetLink(parseInt(btn.dataset.id, 10), this._emailOn, this._base());

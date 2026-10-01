@@ -320,3 +320,42 @@ def test_forgot_ignores_client_base_url_and_app_url_required(client, outbox):
     client.put("/api/settings/email", json=EMAIL_CFG, headers=h)
     client.post("/api/auth/forgot", json={"email": "bob@x.com", "base_url": "https://evil.example"})
     assert "evil.example" not in outbox[0][2] and "https://pp.example.com/#reset=" in outbox[0][2]
+
+
+def test_welcome_email_on_join_and_manual(client, outbox):
+    h = _admin(client)
+    client.put("/api/settings/email", json={**EMAIL_CFG, "welcome_note": "Start with Phase 2."}, headers=h)
+    code = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    r = _register(client, "bob@x.com", invite=code, name="Bob")
+    assert r.status_code == 200
+    to, subj, text = outbox[-1]
+    assert to == "bob@x.com" and subj == "Welcome to ProtectionPro"
+    assert "Start with Phase 2." in text and "https://pp.example.com" in text
+    n = len(outbox)
+    # Manual send; admin only
+    uid = r.json()["user"]["id"]
+    assert client.post(f"/api/auth/users/{uid}/welcome", headers=h).json()["emailed"] is True
+    assert len(outbox) == n + 1
+    assert client.post(f"/api/auth/users/{uid}/welcome", headers=_hdr(r.json()["access_token"])).status_code == 403
+    # Auto-send can be switched off
+    client.put("/api/settings/email", json={**EMAIL_CFG, "welcome_auto": False}, headers=h)
+    code2 = client.post("/api/auth/invites", json={}, headers=h).json()["code"]
+    _register(client, "amy@x.com", invite=code2)
+    assert len(outbox) == n + 1
+
+
+def test_welcome_manual_needs_email(client):
+    h = _admin(client)
+    assert client.post("/api/auth/users/1/welcome", headers=h).status_code == 400
+
+
+def test_user_can_change_own_password(client):
+    h = _admin(client)
+    r = client.post("/api/auth/change-password", json={"current_password": "wrong-pass", "new_password": "new-password-1"}, headers=h)
+    assert r.status_code == 400
+    assert client.post("/api/auth/change-password", json={"current_password": "password123", "new_password": "short"}, headers=h).status_code == 422
+    assert client.post("/api/auth/change-password", json={"current_password": "password123", "new_password": "password123"}, headers=h).status_code == 400
+    assert client.post("/api/auth/change-password", json={"current_password": "password123", "new_password": "new-password-1"}, headers=h).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "admin@x.com", "password": "new-password-1"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "admin@x.com", "password": "password123"}).status_code == 401
+    assert client.post("/api/auth/change-password", json={"current_password": "a", "new_password": "new-password-2"}).status_code == 401
