@@ -233,7 +233,7 @@ def _loop_status(device, z_total, u0, t_allow):
     zs = abs(z_total)
     i_min = C_MIN * u0 / zs if zs > 0 else 0.0
     if not device:
-        return "info", i_min, None, None, None, "Select the minisub's protective device to check disconnection."
+        return "info", i_min, None, None, None, "Select the string's breaker to check disconnection."
     t = _clearing_time(device, i_min)
     ia = _min_operating_current(device, t_allow)
     zs_max = (C_MIN * u0 / ia) if ia else None
@@ -377,7 +377,7 @@ def run_retic_earth_check(req: dict) -> dict:
         "minisubs": ms_out, "kiosks": out_kiosks,
         "basis": [
             f"TN system, U0 = {u0:g} V; minimum fault current c_min = {C_MIN} (IEC 60909-0 §5.3.1), conductors at operating temperature.",
-            f"Disconnection within {t_allow:g} s (IEC 60364-4-41 Table 41.1, distribution circuits) by the nearest protective device back to the minisub (a kiosk's own, else inherited); no discrimination between devices in series is checked.",
+            f"Disconnection within {t_allow:g} s (IEC 60364-4-41 Table 41.1, distribution circuits) by the breaker at the head of the string (a kiosk with none of its own uses the nearest one back towards the minisub); no discrimination between devices in series is checked.",
             "Earthing per minisub: TN-S separate earth conductor on every LV cable; TN-C PEN throughout (no ECC; PEN minimum 10 mm² Cu / 16 mm² Al); TN-C-S PEN on the feeders, separate earth conductor on the service cables only.",
             "Ze is the transformer's short-circuit impedance on its own rated base; the MV network is an ideal source unless a fault level is given.",
             "ECC: IEC 60364-5-54 Table 54.7 (converted by conductivity for another metal) or the §543.1.2 adiabatic size at c_max = 1.10 and the device's clearing time, k from Table 54.3; the leg is evaluated at its far end.",

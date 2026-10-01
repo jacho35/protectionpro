@@ -269,7 +269,7 @@ const Retic = {
       this._markDirty();
       if (key === 'feederCable' && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn feeder route follows
       // The kiosk's class sets its effective ADMD — refresh the placeholder.
-      if (key === 'loadClass') this.renderKiosks();
+      if (key === 'loadClass' || key === 'protection') this.renderKiosks();   // the card and the side-bar Strings list show the same pick
       this.recompute();
       return;
     }
@@ -558,6 +558,7 @@ const Retic = {
   // ─── Rendering ───
   render() {
     if (!this._active) return;
+    this._migrateProtection();
     this.renderSettingsBar();
     this.renderKiosks();
     this.renderSummary();
@@ -771,8 +772,8 @@ const Retic = {
             <div class="retic-field"><label>Feeder Length (m)</label>
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
             ${this._stringHead(k) === k
-              ? `<div class="retic-field"><label title="The breaker at the head of this string of kiosks: every kiosk fed on from this one is protected by it. Left blank it uses the minisub's LV protection. Used for the earth-fault loop and ECC checks.">String Breaker</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— use minisub protection —')}</select></div>`
+              ? `<div class="retic-field"><label title="The breaker at the head of this string of kiosks: every kiosk fed on from this one is protected by it. Used for the earth-fault loop and ECC checks. Also settable in the side bar's Strings list.">String Breaker</label>
+              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— select breaker —')}</select></div>`
               : `<div class="retic-field"><label>String Breaker</label><div class="earth-pen" title="Set once on the head of the string (${escHtml(this._stringHead(k).name || 'kiosk')}); every kiosk fed on from it shares that breaker.">${escHtml(this._stringBreakerName(k))} <span style="color:var(--text-muted)">— string of ${escHtml(this._stringHead(k).name || 'kiosk')}</span></div></div>`}
             ${this._earthingOf(k) === 'TN-S'
               ? `<div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
@@ -1317,8 +1318,7 @@ const Retic = {
           <select class="ms-earthing" data-action="minisub-field" data-ms="${ms.id}" data-field="earthing">
             ${['TN-S', 'TN-C', 'TN-C-S'].map(t => `<option value="${t}"${(ms.earthing || 'TN-S') === t ? ' selected' : ''}>${t}</option>`).join('')}
           </select></span></div>
-        <div class="summary-row"><span class="k" title="The LV device that clears an earth fault anywhere downstream of this minisub; used for the earth-fault loop and ECC checks">LV protection</span><span class="v">
-          <select class="ms-prot" data-action="minisub-field" data-ms="${ms.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(ms.protection)}</select></span></div>
+        ${this._stringsRows(ms)}
         <div class="summary-row"><span class="k">Utilisation</span><span class="v">${xfmr && xfmr.util != null ? xfmr.util + '%' : '—'}</span></div>
       </div>`;
     }).join('');
@@ -1489,9 +1489,33 @@ const Retic = {
     return cur || k;
   },
   _stringBreakerName(k) {
-    const head = this._stringHead(k);
-    const d = this._protectionDevice(head) || this._protectionDevice(this._minisubOf(k));
-    return d ? d.name : 'no device selected';
+    const d = this._protectionDevice(this._stringHead(k));
+    return d ? d.name : 'no breaker selected';
+  },
+
+  // Side-bar rows for one minisub: its strings (a head kiosk and everything
+  // fed on from it), each with the breaker picker. Same field as the head
+  // kiosk's card, so the two stay in step.
+  _stringsRows(ms) {
+    const heads = this.kiosks.filter(k => this._stringHead(k) === k && this._minisubOf(k) === ms);
+    if (!heads.length) return '<div class="summary-row"><span class="k">Strings</span><span class="v">no kiosks yet</span></div>';
+    const size = (h) => this.kiosks.filter(k => this._stringHead(k) === h).length;
+    return heads.map(h => `<div class="summary-row"><span class="k" title="One breaker protects this whole string: ${escHtml(h.name || 'Kiosk')} and every kiosk fed on from it. Used for the earth-fault loop and ECC checks.">${escHtml(h.name || 'Kiosk')} string <span style="color:var(--text-muted)">(${size(h)} kiosk${size(h) === 1 ? '' : 's'})</span></span><span class="v">
+          <select class="ms-prot" data-action="kiosk-field" data-kiosk="${h.id}" data-field="protection" data-cable-select data-ss-placeholder="String breaker — e.g. mccb 250, gg 100">${this._protectionOptions(h.protection, '— select breaker —')}</select></span></div>`).join('');
+  },
+
+  // Older projects set one LV protection device on the minisub. Breakers now
+  // belong to strings: copy it onto each string head that has none, once.
+  _migrateProtection() {
+    let changed = false;
+    for (const ms of this.minisubs) {
+      if (!ms.protection) continue;
+      for (const k of this.kiosks) {
+        if (this._stringHead(k) === k && this._minisubOf(k) === ms && !k.protection) { k.protection = ms.protection; changed = true; }
+      }
+      delete ms.protection; changed = true;
+    }
+    if (changed && this._markDirty) this._markDirty();
   },
   _earthingOf(k) { const ms = this._minisubOf(k); return (ms && ms.earthing) || 'TN-S'; },
 
@@ -1510,6 +1534,7 @@ const Retic = {
   },
 
   _earthPayload() {
+    this._migrateProtection();
     const res = AppState.reticResults;
     const msRes = {};
     if (res && res.minisubs) for (const m of res.minisubs) msRes[m.minisubId] = m;
@@ -1522,7 +1547,7 @@ const Retic = {
         return {
           id: ms.id, name: ms.name, earthing: ms.earthing || 'TN-S',
           tx: e ? { kva: tx.kva, zPercent: e.z_percent, xrRatio: e.x_r_ratio, vLvKv: e.voltage_lv_kv } : null,
-          device: this._protectionDevice(ms),
+          device: null,
         };
       }),
       kiosks: this.kiosks.map(k => ({
@@ -1637,7 +1662,7 @@ const Retic = {
       for (const e of k.erfs) add(`${k.name || 'Kiosk'} · erf ${e.erfNumber || ''}`, e);
     }
     const rows = fails.slice(0, 30).map(i => `<div class="summary-row"><span class="k" title="${escHtml(i.tip)}">${escHtml(i.label)}</span><span class="v">${this._earthPill('fail', 'Fail', i.tip)}</span></div>`).join('');
-    const todo = c.info ? `<div class="retic-hint">${c.info} check${c.info === 1 ? '' : 's'} still to complete — choose the minisub's LV protection and enter each cable and length.</div>` : '';
+    const todo = c.info ? `<div class="retic-hint">${c.info} check${c.info === 1 ? '' : 's'} still to complete — choose each string's breaker and enter each cable and length.</div>` : '';
     return `<div class="summary-block">
       <h3>Earth Fault &amp; ECC</h3>
       <div class="summary-row"><span class="k">Checks</span><span class="v">${c.pass || 0} pass · ${c.fail || 0} fail · ${c.info || 0} to complete</span></div>
