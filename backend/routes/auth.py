@@ -5,14 +5,14 @@ import secrets
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import mailer
 from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset
 from ..models.schemas import (
     RegisterRequest, LoginRequest, Token, UserOut,
-    InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ResetLinkRequest,
+    InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, ResetLinkRequest,
 )
 from ..auth import (
     hash_password, verify_password, create_access_token,
@@ -32,7 +32,7 @@ def _token_for(user: User) -> Token:
 
 
 @router.post("/register", response_model=Token)
-def register(data: RegisterRequest, db: Session = Depends(get_db)):
+def register(data: RegisterRequest, background: BackgroundTasks, db: Session = Depends(get_db)):
     email = _norm_email(data.email)
     if "@" not in email or len(email) < 3:
         raise HTTPException(status_code=400, detail="A valid email is required")
@@ -80,7 +80,18 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(user)
+    cfg = mailer.get_config(db)
+    if cfg and not first_user and cfg.get("welcome_auto", True) and _base(cfg, None):
+        background.add_task(_send_welcome, cfg, user.name, user.email)   # best effort, off the request
     return _token_for(user)
+
+
+def _send_welcome(cfg, name, email):
+    subject, text, html = mailer.welcome_message(name, email, _base(cfg, None), cfg.get("welcome_note", ""))
+    try:
+        mailer.send_email(cfg, email, subject, text, html)
+    except mailer.MailError:
+        pass
 
 
 @router.post("/login", response_model=Token)
@@ -113,6 +124,19 @@ def search_users(q: str = "", user: User = Depends(get_current_user),
             .filter((User.email.like(like)) | (User.name.ilike(like)))
             .order_by(User.name, User.email).limit(8).all())
     return [{"id": u.id, "email": u.email, "name": u.name} for u in rows]
+
+
+@router.post("/change-password")
+def change_password(data: ChangePasswordRequest, user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Any signed-in user can change their own password (needs the current one)."""
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Your current password is incorrect")
+    if data.current_password == data.new_password:
+        raise HTTPException(status_code=400, detail="Choose a password different from the current one")
+    user.password_hash = hash_password(data.new_password)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/logout")
@@ -251,6 +275,25 @@ def _new_reset(db, user: User) -> str:
 def _email_reset(cfg, user: User, link: str):
     subject, text, html = mailer.reset_message(user.name, link, RESET_MINUTES)
     mailer.send_email(cfg, user.email, subject, text, html)
+
+
+@router.post("/users/{user_id}/welcome")
+def send_welcome(user_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    cfg = mailer.get_config(db)
+    if not cfg:
+        raise HTTPException(status_code=400, detail="Email isn't set up on this server. Set it up in Settings › Email.")
+    base = _base(cfg, None)
+    if not base:
+        raise HTTPException(status_code=400, detail="Set the server address in Settings › Email first.")
+    subject, text, html = mailer.welcome_message(user.name, user.email, base, cfg.get("welcome_note", ""))
+    try:
+        mailer.send_email(cfg, user.email, subject, text, html)
+    except mailer.MailError as e:
+        return {"emailed": False, "email_error": str(e)}
+    return {"emailed": True, "email_error": None}
 
 
 @router.post("/forgot")

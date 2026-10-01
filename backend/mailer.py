@@ -65,6 +65,7 @@ def public_view(db) -> dict:
         "username": cfg.get("username", ""), "has_password": bool(cfg.get("password")),
         "from_name": cfg.get("from_name", "ProtectionPro"),
         "from_address": cfg.get("from_address", ""), "app_url": cfg.get("app_url", ""),
+        "welcome_auto": cfg.get("welcome_auto", True), "welcome_note": cfg.get("welcome_note", ""),
         "configured": get_config(db) is not None,
     }
 
@@ -88,6 +89,7 @@ def merged(db, data) -> dict:
         "username": data.username.strip(), "password": pw,
         "from_name": data.from_name.strip() or "ProtectionPro",
         "from_address": data.from_address.strip(), "app_url": data.app_url.strip().rstrip("/"),
+        "welcome_auto": data.welcome_auto, "welcome_note": data.welcome_note.strip(),
     }
 
 
@@ -173,4 +175,20 @@ def reset_message(name: str, link: str, minutes: int):
     html = _shell(escape(hi), "<p>We received a request to reset the password for your ProtectionPro account.</p>",
                   "Choose a new password", link,
                   "This link works once and expires in 1 hour. Didn’t ask for this? Ignore this email — your password stays as it is.")
+    return subject, text, html
+
+
+def welcome_message(name: str, email: str, link: str, note: str = ""):
+    subject = "Welcome to ProtectionPro"
+    hi = f"Hi {name}," if name else "Hi,"
+    note_txt = f"\n{note}\n" if note else ""
+    text = (f"{hi}\n\nYour ProtectionPro account is ready. Sign in with {email}.\n{note_txt}\n"
+            f"Open ProtectionPro: {link}\n\n"
+            "Forgot your password? Use “Forgot your password?” on the sign-in page and we’ll email you a reset link.\n")
+    note_html = (f'<p style="padding:12px 14px;background:#F3F6F8;border-radius:6px;white-space:pre-line">{escape(note)}</p>'
+                 if note else "")
+    html = _shell(escape(subject),
+                  f"<p>{escape(hi)}</p><p>Your ProtectionPro account is ready. Sign in with <b>{escape(email)}</b>.</p>{note_html}",
+                  "Open ProtectionPro", link,
+                  "Forgot your password? Use “Forgot your password?” on the sign-in page and we’ll email you a reset link.")
     return subject, text, html

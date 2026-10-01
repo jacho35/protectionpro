@@ -3776,3 +3776,6 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
 .ef [data-ef="fields"] { display: flex; flex-direction: column; gap: 14px; }
 .ef [data-ef="fields"][hidden] { display: none; }
 .ef-testrow button, .ef-actions button { min-height: 36px; padding: 0 16px; }
+.ef-check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.ef-check input { width: auto; height: auto; }
+.ef-field textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; font: inherit; font-size: 13px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); resize: vertical; }

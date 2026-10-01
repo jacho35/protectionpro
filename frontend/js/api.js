@@ -605,6 +605,12 @@ const API = {
   async userResetLink(id, send_email, base_url) {
     return this.request(`/auth/users/${id}/reset-link`, 'POST', { send_email, base_url });
   },
+  async changePassword(current_password, new_password) {
+    return this.request('/auth/change-password', 'POST', { current_password, new_password });
+  },
+  async sendWelcome(id) {
+    return this.request(`/auth/users/${id}/welcome`, 'POST');
+  },
   async getEmailSettings() {
     return this.request('/settings/email');
   },
