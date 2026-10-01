@@ -910,45 +910,89 @@
     </div>
   </div>
 
-  <!-- Account + admin invites -->
+  <!-- Account (personal) -->
   <div id="account-modal" class="modal" role="dialog" aria-modal="true" aria-label="Account" style="display:none">
-    <div class="modal-content" style="max-width:600px">
+    <div class="modal-content" style="max-width:520px">
       <div class="modal-header">
-        <h3>Account</h3>
+        <h3>My account</h3>
         <button class="modal-close" id="btn-close-account">&times;</button>
       </div>
       <div class="modal-body">
         <p>Signed in as <strong id="account-email-display"></strong></p>
-        <button id="btn-logout" class="btn-secondary" type="button">Log out</button>
         <h4 style="margin-top:18px">Change password</h4>
         <div class="form-group"><label for="pw-current">Current password</label><input id="pw-current" type="password" autocomplete="current-password"></div>
         <div class="form-group"><label for="pw-new">New password</label><input id="pw-new" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
         <div class="form-group"><label for="pw-confirm">Confirm</label><input id="pw-confirm" type="password" autocomplete="new-password"></div>
         <div id="pw-msg" class="auth-error" role="status"></div>
         <button id="btn-change-password" class="btn-primary" type="button">Change password</button>
-        <div id="account-invites-section" style="display:none">
-          <h4 style="margin-top:18px">Invite people</h4>
-          <p class="auth-hint" id="invite-mode-hint">Each invite works once.</p>
-          <div class="form-group"><label for="invite-email">Email</label><input id="invite-email" type="email" placeholder="Optional — leave blank to just get a link"></div>
-          <div class="form-group"><label for="invite-role">Role</label><select id="invite-role"><option value="user">User</option><option value="admin">Administrator</option></select></div>
-          <div class="form-group"><label for="invite-days">Valid for</label><select id="invite-days"><option value="7">7 days</option><option value="3">3 days</option><option value="30">30 days</option></select></div>
-          <div class="form-group" id="invite-note-row"><label for="invite-note">Personal note</label><input id="invite-note" type="text" maxlength="300" placeholder="Optional — added to the email"></div>
-          <button id="btn-generate-invite" class="btn-primary" type="button">Create invite link</button>
-          <div id="invite-result" class="auth-hint" role="status"></div>
-          <div id="invite-link-row" class="share-add-row" style="display:none;margin-top:10px">
-            <input id="invite-link" type="text" readonly aria-label="Invite link">
-            <button id="btn-copy-invite" class="btn-small" type="button">Copy</button>
+        <div id="account-invites-section" class="acct-admin-card" style="display:none">
+          <div><strong>Administration</strong><small>Users, projects and invitations</small></div>
+          <button id="btn-open-admin" class="btn-small" type="button">Open admin console</button>
+        </div>
+      </div>
+      <div class="acct-footer"><button id="btn-logout" class="btn-small" type="button">Log out</button></div>
+    </div>
+  </div>
+
+  <!-- Admin console (admins only) -->
+  <div id="admin-modal" class="modal" role="dialog" aria-modal="true" aria-label="Administration" style="display:none">
+    <div class="modal-content admin-console">
+      <div class="modal-header">
+        <h3>Administration</h3>
+        <button class="modal-close" id="btn-close-admin">&times;</button>
+      </div>
+      <div class="admin-body">
+        <nav class="admin-nav" aria-label="Admin sections">
+          <button type="button" class="admin-nav-btn active" data-admin-tab="users">Users <span id="admin-count-users"></span></button>
+          <button type="button" class="admin-nav-btn" data-admin-tab="projects">Projects <span id="admin-count-projects"></span></button>
+          <button type="button" class="admin-nav-btn" data-admin-tab="invites">Invites <span id="admin-count-invites"></span></button>
+        </nav>
+        <section class="admin-pane" id="admin-pane-users">
+          <div class="admin-pane-head">
+            <div><h4>Users</h4><small id="admin-users-sub"></small></div>
+            <div class="admin-tools"><input id="admin-users-search" type="search" placeholder="Search name or email" aria-label="Search users"><button id="btn-admin-invite" class="btn-primary" type="button">Invite user</button></div>
           </div>
-          <h4 style="margin-top:18px">Pending invitations</h4>
-          <div id="invites-list" style="margin-top:6px"></div>
-          <h4 style="margin-top:18px">All projects <small style="font-weight:400;color:var(--text-muted)">(names only — to open one, take ownership)</small></h4>
-          <div id="admin-projects-list" style="margin-top:6px"></div>
-          <h4 style="margin-top:18px">Users</h4>
-          <div id="users-list" style="margin-top:6px"></div>
-          <div id="reset-link-row" class="share-add-row" style="display:none;margin-top:10px">
+          <div class="admin-table-head admin-cols-users"><div>User</div><div>Role</div><div>Status</div><div></div></div>
+          <div id="users-list" class="admin-rows"></div>
+          <div id="reset-link-row" class="share-add-row admin-foot" style="display:none">
             <input id="reset-link" type="text" readonly aria-label="Password reset link">
             <button id="btn-copy-reset" class="btn-small" type="button">Copy</button>
           </div>
+          <div class="admin-note">Deleting a user asks who should receive their projects first.</div>
+        </section>
+        <section class="admin-pane" id="admin-pane-projects" hidden>
+          <div class="admin-pane-head">
+            <div><h4>All projects</h4><small>Names only — to open one, take ownership.</small></div>
+            <div class="admin-tools"><input id="admin-projects-search" type="search" placeholder="Search project or owner" aria-label="Search projects"></div>
+          </div>
+          <div class="admin-table-head admin-cols-projects"><div>Project</div><div>Owner</div><div>Updated</div><div></div></div>
+          <div id="admin-projects-list" class="admin-rows"></div>
+        </section>
+        <section class="admin-pane" id="admin-pane-invites" hidden>
+          <div class="admin-pane-head"><div><h4>Pending invitations</h4><small>Each invite works once.</small></div>
+            <div class="admin-tools"><button id="btn-admin-invite2" class="btn-primary" type="button">Invite user</button></div></div>
+          <div class="admin-table-head admin-cols-invites"><div>Invited</div><div>Expires</div><div></div></div>
+          <div id="invites-list" class="admin-rows"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invite a user -->
+  <div id="invite-modal" class="modal" role="dialog" aria-modal="true" aria-label="Invite user" style="display:none;z-index:1300">
+    <div class="modal-content" style="max-width:480px">
+      <div class="modal-header"><h3>Invite user</h3><button class="modal-close" id="btn-close-invite">&times;</button></div>
+      <div class="modal-body">
+        <p class="auth-hint" id="invite-mode-hint">Each invite works once.</p>
+        <div class="form-group"><label for="invite-email">Email</label><input id="invite-email" type="email" placeholder="Optional — leave blank to just get a link"></div>
+        <div class="form-group"><label for="invite-role">Role</label><select id="invite-role"><option value="user">User</option><option value="admin">Administrator</option></select></div>
+        <div class="form-group"><label for="invite-days">Valid for</label><select id="invite-days"><option value="7">7 days</option><option value="3">3 days</option><option value="30">30 days</option></select></div>
+        <div class="form-group" id="invite-note-row"><label for="invite-note">Personal note</label><input id="invite-note" type="text" maxlength="300" placeholder="Optional — added to the email"></div>
+        <button id="btn-generate-invite" class="btn-primary" type="button">Create invite link</button>
+        <div id="invite-result" class="auth-hint" role="status"></div>
+        <div id="invite-link-row" class="share-add-row" style="display:none;margin-top:10px">
+          <input id="invite-link" type="text" readonly aria-label="Invite link">
+          <button id="btn-copy-invite" class="btn-small" type="button">Copy</button>
         </div>
       </div>
     </div>
