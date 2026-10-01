@@ -13,7 +13,8 @@
  */
 const Flicker = {
   _result: null,
-  _cfg: { pst_limit: 1.0, plt_limit: 0.65, d_anchor_pct: 3.0, exponent: 0.31 },
+  // Limits blank = by connection voltage (backend _limits_for).
+  _cfg: { pst_limit: null, plt_limit: null, shape_factor: 1.0 },
 
   _esc(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -29,35 +30,32 @@ const Flicker = {
         Flicker property section — a once-off start is excluded) for repetitive-switching
         voltage flicker. Relative voltage change is computed by the same Thevenin
         superposition as the Motor Starting study; Pst/Plt are a
-        <strong>planning-level estimate</strong> from the IEC 61000-3-3-style simplified
-        curve, not a certified IEC 61000-4-15 flickermeter measurement — verify a
-        borderline/failing result against the standard's own curve or by field measurement.</p>
+        <strong>planning-level estimate</strong> by the IEC 61000-3-3 analytical method,
+        not a certified IEC 61000-4-15 flickermeter measurement — confirm a borderline
+        result by measurement.</p>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
         <label for="flk-pst">Pst limit</label>
-        <input id="flk-pst" type="number" min="0.1" step="0.05" value="${c.pst_limit}">
+        <input id="flk-pst" type="number" min="0.1" step="0.05" placeholder="by voltage" value="${c.pst_limit ?? ''}">
         <label for="flk-plt">Plt limit</label>
-        <input id="flk-plt" type="number" min="0.1" step="0.05" value="${c.plt_limit}">
-        <label for="flk-anchor">Curve anchor d (%) @ 1/min</label>
-        <input id="flk-anchor" type="number" min="0.1" step="0.1" value="${c.d_anchor_pct}">
-        <label for="flk-exp">Curve exponent</label>
-        <input id="flk-exp" type="number" min="0.05" max="1" step="0.01" value="${c.exponent}">
+        <input id="flk-plt" type="number" min="0.1" step="0.05" placeholder="by voltage" value="${c.plt_limit ?? ''}">
+        <label for="flk-shape">Shape factor F</label>
+        <input id="flk-shape" type="number" min="0.05" max="1" step="0.05" value="${c.shape_factor}">
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:12px 0 0">
-        Defaults: Pst ≤ 1.0 / Plt ≤ 0.65 are the IEC 61000-3-3 LV connection limits — an
-        MV/HV connection typically uses a utility-allocated IEC 61000-3-7 planning level
-        instead. The curve anchor/exponent default to the standard's own most-cited
-        reference point (≈3% step at 1 change/min ⇒ Pst≈1) and 0.31 roll-off exponent;
-        adjust if you have the standard's exact curve to hand.</p>`;
+        Limits left blank follow the connection voltage: LV Pst ≤ 1.0, Plt ≤ 0.65 with
+        d<sub>max</sub> ≤ 4 % and d<sub>c</sub> ≤ 3.3 % (IEC 61000-3-3); MV Pst 0.9 / Plt 0.7 and HV
+        0.8 / 0.6 (IEC/TR 61000-3-7 indicative planning levels — use the network operator's
+        allocation where you have one). F = 1 treats each start as a rectangular step, which
+        is conservative; a smaller F suits a start whose voltage recovers quickly.</p>`;
     document.getElementById('flk-config-modal').style.display = '';
   },
 
   _readConfig() {
     const v = id => document.getElementById(id);
     this._cfg = {
-      pst_limit: parseFloat(v('flk-pst').value) || 1.0,
-      plt_limit: parseFloat(v('flk-plt').value) || 0.65,
-      d_anchor_pct: parseFloat(v('flk-anchor').value) || 3.0,
-      exponent: parseFloat(v('flk-exp').value) || 0.31,
+      pst_limit: parseFloat(v('flk-pst').value) || null,
+      plt_limit: parseFloat(v('flk-plt').value) || null,
+      shape_factor: parseFloat(v('flk-shape').value) || 1.0,
     };
     return this._cfg;
   },
@@ -71,7 +69,7 @@ const Flicker = {
     try {
       const result = await API.runFlickerAnalysis({
         pstLimit: c.pst_limit, pltLimit: c.plt_limit,
-        dAnchorPct: c.d_anchor_pct, exponent: c.exponent,
+        shapeFactor: c.shape_factor,
       });
       this._result = result;
       this.show(result);
@@ -114,7 +112,7 @@ const Flicker = {
     const col = r.compliant ? '#2e7d32' : '#c62828';
     const verdict = r.compliant
       ? `All ${r.sources.length} screened source(s) within limit`
-      : `${r.sources.filter(s => !s.compliant).length} of ${r.sources.length} source(s) exceed the Pst/Plt limit`;
+      : `${r.sources.filter(s => !s.compliant).length} of ${r.sources.length} source(s) exceed a flicker limit`;
     html += `<div style="margin-bottom:10px;padding:10px 14px;border-radius:6px;border:1px solid ${col};background:${col}14">
       <span style="font-weight:700;color:${col}">${this._esc(verdict)}</span>
     </div>`;
@@ -127,14 +125,16 @@ const Flicker = {
         <td>${this._esc(s.terminal_bus)}</td>
         <td>${this._esc(s.starting_method)}</td>
         <td>${s.starts_per_hour}</td>
-        <td>${s.relative_voltage_change_pct}</td>
+        <td>${s.relative_voltage_change_pct}${s.d_max_compliant === false ? ' ✗' : ''}</td>
+        <td>${s.steady_voltage_change_pct ?? '—'}${s.d_c_compliant === false ? ' ✗' : ''}</td>
         <td>${s.pst}${s.pst_compliant ? '' : ' ✗'}</td>
         <td>${s.plt}${s.plt_compliant ? '' : ' ✗'}</td>
+        <td title="${this._esc(s.limit_basis || '')}">${s.pst_limit} / ${s.plt_limit}${s.d_max_limit_pct != null ? ` · d ${s.d_max_limit_pct} / ${s.d_c_limit_pct} %` : ''}</td>
         <td style="color:${okCol};font-weight:600">${s.compliant ? 'PASS' : 'FAIL'}</td>
       </tr>`;
     }).join('');
     html += `<table class="af-table" style="font-size:11px;font-variant-numeric:tabular-nums">
-      <thead><tr><th>Motor</th><th>Bus</th><th>Starting</th><th>Starts/h</th><th>d (%)</th><th>Pst</th><th>Plt</th><th>Verdict</th></tr></thead>
+      <thead><tr><th>Motor</th><th>Bus</th><th>Starting</th><th>Starts/h</th><th>d<sub>max</sub> (%)</th><th>d<sub>c</sub> (%)</th><th>Pst</th><th>Plt</th><th>Limits</th><th>Verdict</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
     body.innerHTML = html;
   },

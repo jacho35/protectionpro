@@ -1691,10 +1691,11 @@ class HostingCapacityResults(BaseModel):
 
 class FlickerAnalysisRequest(ProjectData):
     """ProjectData plus voltage-flicker screening options (all optional)."""
-    pst_limit: Optional[float] = None        # default 1.0 (IEC 61000-3-3 LV)
-    plt_limit: Optional[float] = None        # default 0.65 (IEC 61000-3-3 LV)
-    d_anchor_pct: Optional[float] = None      # curve calibration (default 3.0)
-    exponent: Optional[float] = None          # curve exponent (default 0.31)
+    pst_limit: Optional[float] = None        # override; default by voltage (IEC 61000-3-3 LV 1.0, IEC/TR 61000-3-7 MV 0.9 / HV 0.8)
+    plt_limit: Optional[float] = None        # override; default LV 0.65, MV 0.7, HV 0.6
+    shape_factor: Optional[float] = None     # IEC 61000-3-3 shape factor F (default 1 = rectangular)
+    d_anchor_pct: Optional[float] = None      # retired curve-fit parameter — ignored, warns
+    exponent: Optional[float] = None          # retired curve-fit parameter — ignored, warns
 
 
 class FlickerAnalysisResults(BaseModel):
@@ -1703,8 +1704,7 @@ class FlickerAnalysisResults(BaseModel):
     converged: bool = False
     sources: list[dict] = []           # per-motor Pst/Plt + compliance
     compliant: bool = True
-    d_anchor_pct: float = 3.0
-    exponent: float = 0.31
+    shape_factor: float = 1.0
     method: str = ""
     warnings: list[str] = []
     note: str = ""

@@ -300,13 +300,12 @@ const API = {
   },
 
   // Run voltage flicker screening (IEC 61000-3-3 / IEC 61000-4-15).
-  // opts: { pstLimit, pltLimit, dAnchorPct, exponent } — optional.
+  // opts: { pstLimit, pltLimit, shapeFactor } — optional (limits default by voltage).
   async runFlickerAnalysis(opts = {}) {
     const data = AppState.toJSON();
     if (opts.pstLimit != null) data.pst_limit = opts.pstLimit;
     if (opts.pltLimit != null) data.plt_limit = opts.pltLimit;
-    if (opts.dAnchorPct != null) data.d_anchor_pct = opts.dAnchorPct;
-    if (opts.exponent != null) data.exponent = opts.exponent;
+    if (opts.shapeFactor != null) data.shape_factor = opts.shapeFactor;
     return this.request('/analysis/flicker', 'POST', data);
   },
 

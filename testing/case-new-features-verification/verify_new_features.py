@@ -508,21 +508,28 @@ def check_ee10_two_port():
 
 
 # =====================================================================
-# 12. FLICKER — planning Pst curve anchor & scaling (IEC 61000-3-3 Annex B)
+# 12. FLICKER — IEC 61000-3-3 analytical method (flicker impression time)
 # =====================================================================
 def check_flicker():
-    from backend.analysis.flicker import _pst_estimate
-    # Anchor: 3% step at 1 change/min (=60/hr) -> Pst = 1.0
-    p1 = _pst_estimate(3.0, 60.0)
-    record("Flicker: Pst at anchor (d=3%, 1/min)", 1.0, p1, 0.5, unit="Pst",
-           ref="IEC 61000-3-3 Pst=1 borderline curve anchor")
-    # Linear in d: doubling d doubles Pst
-    p2 = _pst_estimate(6.0, 60.0)
-    record("Flicker: Pst linear in step size (d=6%)", 2.0, p2, 0.5, unit="Pst")
-    # Rate roll-off exponent 0.31: 10/min vs 1/min -> 10^0.31
-    p3 = _pst_estimate(3.0, 600.0)
-    record("Flicker: Pst rate roll-off (r=10/min)", 10.0 ** 0.31, p3, 0.5,
-           unit="Pst", ref="Pst ~ r^0.31 high-frequency roll-off")
+    from backend.analysis.flicker import _pst_plt
+    # Closed forms from the standard's method, not from the engine:
+    # t_f = 2.3·d^3.2 s per change; Pst = (Σt_f/600)^(1/3.2).
+    # (1) Pst = 1 at one change a minute (10 in the window) needs
+    #     d = (600/(10·2.3))^(1/3.2) = 2.771 %.
+    d1 = (600 / (10 * 2.3)) ** (1 / 3.2)
+    record("Flicker: Pst = 1 at d=2.771 %, 1/min", 1.0, _pst_plt(d1, 60.0)[0], 0.01,
+           unit="Pst", ref="IEC 61000-3-3 analytical method, t_f = 2.3·d^3.2")
+    # (2) One start in the worst 10-min window (2 starts/h, 3 % step):
+    #     Pst = (2.3·3^3.2/600)^(1/3.2) = 3·(2.3/600)^(1/3.2).
+    record("Flicker: worst-window Pst, 2 starts/h, d=3 %", 3 * (2.3 / 600) ** (1 / 3.2),
+           _pst_plt(3.0, 2.0)[0], 0.01, unit="Pst",
+           ref="Pst is the worst 10-min window, not a rate average")
+    # (3) Plt for 2 starts/h: 4 starts in 2 h, one in each of 4 windows →
+    #     Plt = (4·Pst1³/12)^(1/3).
+    p1 = 3 * (2.3 / 600) ** (1 / 3.2)
+    record("Flicker: Plt, 2 starts/h, d=3 %", (4 * p1 ** 3 / 12) ** (1 / 3),
+           _pst_plt(3.0, 2.0)[1], 0.01, unit="Plt",
+           ref="Plt = (Σ Pst_i³ / 12)^(1/3)")
 
 
 def main(argv=None):

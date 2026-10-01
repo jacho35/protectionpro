@@ -277,12 +277,11 @@ class ProtectionPro:
 
     def flicker(self, project: dict, *, pst_limit: Optional[float] = None,
                plt_limit: Optional[float] = None,
-               d_anchor_pct: Optional[float] = None,
-               exponent: Optional[float] = None) -> dict:
-        """Voltage flicker screening (IEC 61000-3-3 / IEC 61000-4-15)."""
+               shape_factor: Optional[float] = None) -> dict:
+        """Voltage flicker screening (IEC 61000-3-3 analytical Pst/Plt).
+        Limits default by connection voltage; shape_factor is F (default 1)."""
         return self.analyze("flicker", project, pst_limit=pst_limit,
-                            plt_limit=plt_limit, d_anchor_pct=d_anchor_pct,
-                            exponent=exponent)
+                            plt_limit=plt_limit, shape_factor=shape_factor)
 
     def hosting_capacity(self, project: dict, *,
                          candidate_bus_ids: Optional[list[str]] = None,

@@ -335,7 +335,7 @@ def flicker_analysis(data: FlickerAnalysisRequest):
     rate, from a rigorous Thevenin relative-voltage-change calculation."""
     try:
         kwargs = {}
-        for f in ("pst_limit", "plt_limit", "d_anchor_pct", "exponent"):
+        for f in ("pst_limit", "plt_limit", "shape_factor", "d_anchor_pct", "exponent"):
             v = getattr(data, f)
             if v is not None:
                 kwargs[f] = v

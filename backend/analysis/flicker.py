@@ -13,31 +13,35 @@ input every flicker assessment starts from — the **relative voltage change
 d(%)** a switching event causes — using the same Thevenin-superposition
 machinery the static motor-starting study is built on (`motor_starting.py`),
 and then translate that into a **planning-level Pst/Plt estimate** via the
-documented simplified method IEC 61000-3-3 itself provides for exactly this
-purpose (Annex B): repetitive rectangular voltage steps of magnitude d(%),
-occurring r times per minute, have an empirically-curve-fitted severity.
+analytical method IEC 61000-3-3 itself provides for exactly this purpose
+(the flicker impression time, its Annex on the evaluation of Pst from d(t)):
 
-The curve-fit used here is anchored at the single most consistently-cited
-reference point in the flicker literature — a ~3 % step at 1 change/minute
-corresponds to Pst ≈ 1 (the IEC "Pst = 1" borderline-of-irritability curve) —
-with the well-established high-frequency roll-off exponent 0.31:
+    t_f  = 2.3 · (F · d_max)^3.2        seconds of "flicker impression" per
+                                        voltage change (d in %, F the shape
+                                        factor: 1 for a rectangular step)
+    Pst  = (Σ t_f / T_p)^(1/3.2),       T_p = 600 s (one 10-minute window)
+    Plt  = (Σ_i Pst_i³ / 12)^(1/3)      over the twelve windows of two hours
 
-    Pst_estimate = (d / d_anchor) · r^exponent,   d_anchor = 3.0 (%), exponent = 0.31
+[FL1] Pst is the worst 10-minute window, not a rate average: a motor starting
+twice an hour puts one whole start in some window, and that window's Pst is
+the one the limit applies to. [FL2] The old curve fit, Pst = (d/3 %)·r^0.31,
+was anchored at "3 % at 1 change/min ⇒ Pst = 1"; the analytical method puts
+that point at d = 2.77 % (the IEC 61000-4-15 Pst = 1 curve gives ≈ 2.7 %), so
+the fit understated Pst by 7–8 % at every rate, and by up to 57 % below six
+starts an hour where it averaged a single start over the hour.
 
-Both `d_anchor` and `exponent` are exposed as request parameters so a user
-with the actual IEC 61000-3-3 table at hand can recalibrate the estimate.
-**This is a screening estimate, not a certified measurement** — a borderline
-or failing result should be confirmed against the standard's own curve/table
-or by field measurement before being used as a compliance determination.
+The shape factor F (request ``shape_factor``) defaults to 1, the rectangular
+step — conservative for a motor start, whose voltage recovers as the motor
+runs up (IEC 61000-3-3 gives F < 1 for that characteristic). The method is
+valid for voltage changes at least about 1 s apart.
 
-For Plt, IEC 61000-3-3 permits Plt ≈ Pst when the disturbance source's
-emission does not vary materially over the 2-hour assessment window (the
-normal case for a single repetitively-switched load) — used here directly.
-
-Compliance limits default to the IEC 61000-3-3 LV connection values
-(Pst ≤ 1.0, Plt ≤ 0.65); MV/HV connections are assessed against
-utility/IEC 61000-3-7-allocated planning levels, which are project-specific
-and passed in as overrides rather than hard-coded.
+Limits ([FL4], by the connection voltage, overridable): LV — IEC 61000-3-3,
+Pst ≤ 1.0, Plt ≤ 0.65, plus the voltage-change limits d_max ≤ 4 % and
+d_c ≤ 3.3 % ([FL3], d_c the steady change once the motor runs); MV / HV —
+IEC/TR 61000-3-7 indicative planning levels, Pst 0.9 / Plt 0.7 (MV) and
+0.8 / 0.6 (HV-EHV), with no d limit applied (rapid voltage change limits at
+MV/HV are network-operator allocations). d is relative to the NOMINAL
+voltage (IEC 61000-3-3 §3), not the pre-start voltage.
 
 Results are on-demand (not persisted).
 """
@@ -54,10 +58,13 @@ from .motor_starting import (
     _solve_start_v, _locked_rotor_pf, _nameplate_unit, VFD_SUPPLY_PF,
 )
 
-DEFAULT_PST_LIMIT = 1.0
+DEFAULT_PST_LIMIT = 1.0     # IEC 61000-3-3 (LV)
 DEFAULT_PLT_LIMIT = 0.65
-DEFAULT_D_ANCHOR_PCT = 3.0
-DEFAULT_EXPONENT = 0.31
+D_MAX_LIMIT_PCT = 4.0       # IEC 61000-3-3 §5 (LV)
+D_C_LIMIT_PCT = 3.3
+TF_COEF_S = 2.3             # flicker impression time t_f = 2.3·(F·d)^3.2 s
+TF_EXP = 3.2
+T_SHORT_S = 600.0           # Pst window (10 min); Plt = 12 windows (2 h)
 
 
 def _starts_per_hour(comp):
@@ -68,25 +75,48 @@ def _starts_per_hour(comp):
         return 0.0
 
 
-def _pst_estimate(d_pct, starts_per_hour, d_anchor_pct=DEFAULT_D_ANCHOR_PCT,
-                  exponent=DEFAULT_EXPONENT):
-    """Planning-level Pst estimate for a repetitive rectangular voltage step
-    of magnitude d_pct (%) occurring starts_per_hour times per hour — see the
-    module docstring for the method, calibration anchor and its limits.
-    Returns 0.0 for a non-repetitive (starts_per_hour <= 0) event."""
+def _limits_for(v_kv):
+    """[FL4] (Pst, Plt, d_max, d_c, basis) limits for a connection voltage.
+    d limits are None where none is applied (MV/HV)."""
+    v = float(v_kv or 0)
+    if v <= 1.0:
+        return DEFAULT_PST_LIMIT, DEFAULT_PLT_LIMIT, D_MAX_LIMIT_PCT, D_C_LIMIT_PCT, \
+            "IEC 61000-3-3 (LV)"
+    if v <= 35.0:
+        return 0.9, 0.7, None, None, "IEC/TR 61000-3-7 MV planning level"
+    return 0.8, 0.6, None, None, "IEC/TR 61000-3-7 HV planning level"
+
+
+def _pst_plt(d_pct, starts_per_hour, shape_factor=1.0):
+    """[FL1/FL2] (Pst, Plt) for one voltage change of d_pct (%) repeated
+    starts_per_hour times an hour, by the IEC 61000-3-3 analytical method
+    (module docstring). Pst is the worst 10-minute window; starts are spread
+    evenly over two hours for Plt. (0, 0) for a non-repetitive event."""
     if starts_per_hour <= 0 or d_pct <= 0:
-        return 0.0
-    r_per_min = starts_per_hour / 60.0
-    return (d_pct / d_anchor_pct) * (r_per_min ** exponent)
+        return 0.0, 0.0
+    t_f = TF_COEF_S * (max(shape_factor, 0.0) * d_pct) ** TF_EXP
+    n_10 = max(1, math.ceil(starts_per_hour / 6.0 - 1e-9))   # worst window
+    pst = (n_10 * t_f / T_SHORT_S) ** (1 / TF_EXP)
+    n_2h = max(1, math.ceil(2.0 * starts_per_hour - 1e-9))
+    counts = [0] * 12
+    for k in range(n_2h):
+        counts[min(11, int(((k + 0.5) * 120.0 / n_2h) // 10))] += 1
+    plt = (sum(((c * t_f / T_SHORT_S) ** (1 / TF_EXP)) ** 3 for c in counts) / 12) ** (1 / 3)
+    return pst, plt
+
+
+def _pst_estimate(d_pct, starts_per_hour, shape_factor=1.0):
+    """Worst-window Pst (see _pst_plt). Kept for callers of the old name."""
+    return _pst_plt(d_pct, starts_per_hour, shape_factor)[0]
 
 
 def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
-                         plt_limit: float = None, d_anchor_pct: float = None,
-                         exponent: float = None) -> dict:
-    pst_limit = DEFAULT_PST_LIMIT if pst_limit is None else float(pst_limit)
-    plt_limit = DEFAULT_PLT_LIMIT if plt_limit is None else float(plt_limit)
-    d_anchor = DEFAULT_D_ANCHOR_PCT if d_anchor_pct is None else max(0.01, float(d_anchor_pct))
-    exp = DEFAULT_EXPONENT if exponent is None else float(exponent)
+                         plt_limit: float = None, shape_factor: float = None,
+                         d_anchor_pct: float = None, exponent: float = None) -> dict:
+    """``pst_limit`` / ``plt_limit`` override the by-voltage defaults for every
+    bus. ``d_anchor_pct`` / ``exponent`` belonged to the old curve fit and are
+    ignored (with a warning)."""
+    shape = 1.0 if shape_factor is None else min(max(float(shape_factor), 0.05), 1.0)
 
     project = insert_implicit_load_buses(project)
     comp_map = {c.id: c for c in project.components}
@@ -114,6 +144,10 @@ def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
     v_pre = {bid: b.voltage_pu for bid, b in (baseline.buses or {}).items()}
 
     warnings = []
+    if d_anchor_pct is not None or exponent is not None:
+        warnings.append("Curve anchor / exponent are no longer used: Pst and Plt "
+                        "now follow the IEC 61000-3-3 analytical method "
+                        "(t_f = 2.3·(F·d)^3.2). Use the shape factor F instead.")
     sources = []
     for motor in motors:
         mp = motor.props
@@ -181,12 +215,27 @@ def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
                             "until the starting condition itself is fixed.")
             continue
 
-        d_pct = max(0.0, (v_pre_term - v_start) / v_pre_term * 100.0) if v_pre_term > 0 else 0.0
-        pst = _pst_estimate(d_pct, starts_hr, d_anchor, exp)
-        plt = pst   # stationary repetitive source — IEC 61000-3-3 simplification
+        # [FL5] d relative to the NOMINAL voltage (IEC 61000-3-3 §3: ΔU/U_n);
+        # per-unit voltages are on the bus's nominal, so U_n = 1.
+        d_pct = max(0.0, (v_pre_term - v_start) * 100.0)
+        # [FL3] d_c: the steady change from motor off to motor running — the
+        # baseline load flow has every motor in service.
+        v_run = v_pre.get(terminal_bus, v_pre_term)
+        d_c_pct = max(0.0, (v_pre_term - v_run) * 100.0)
+        pst, plt = _pst_plt(d_pct, starts_hr, shape)
 
-        pst_ok = pst <= pst_limit + 1e-9
-        plt_ok = plt <= plt_limit + 1e-9
+        bus_kv = float(bus_comp.props.get("voltage_kv", voltage_kv) or voltage_kv) if bus_comp else voltage_kv
+        lim_pst, lim_plt, lim_dmax, lim_dc, basis = _limits_for(bus_kv)
+        if pst_limit is not None:
+            lim_pst = float(pst_limit)
+        if plt_limit is not None:
+            lim_plt = float(plt_limit)
+        if pst_limit is not None or plt_limit is not None:
+            basis = "user limit"
+        pst_ok = pst <= lim_pst + 1e-9
+        plt_ok = plt <= lim_plt + 1e-9
+        dmax_ok = lim_dmax is None or d_pct <= lim_dmax + 1e-9
+        dc_ok = lim_dc is None or d_c_pct <= lim_dc + 1e-9
         sources.append({
             "motor_id": motor.id,
             "motor_name": name,
@@ -194,13 +243,19 @@ def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
             "starting_method": method_label,
             "starts_per_hour": round(starts_hr, 3),
             "relative_voltage_change_pct": round(d_pct, 3),
+            "steady_voltage_change_pct": round(d_c_pct, 3),
             "pst": round(pst, 3),
             "plt": round(plt, 3),
-            "pst_limit": pst_limit,
-            "plt_limit": plt_limit,
+            "pst_limit": lim_pst,
+            "plt_limit": lim_plt,
+            "d_max_limit_pct": lim_dmax,
+            "d_c_limit_pct": lim_dc,
+            "limit_basis": basis,
             "pst_compliant": pst_ok,
             "plt_compliant": plt_ok,
-            "compliant": bool(pst_ok and plt_ok),
+            "d_max_compliant": dmax_ok,
+            "d_c_compliant": dc_ok,
+            "compliant": bool(pst_ok and plt_ok and dmax_ok and dc_ok),
         })
 
     sources.sort(key=lambda s: -s["pst"])
@@ -210,18 +265,16 @@ def run_flicker_analysis(project: ProjectData, pst_limit: float = None,
         "converged": True,
         "sources": sources,
         "compliant": overall_compliant,
-        "d_anchor_pct": d_anchor,
-        "exponent": exp,
-        "method": ("Planning-level screening estimate: relative voltage "
-                   "change d(%) from Thevenin-superposition (motor-starting "
-                   "machinery), translated to Pst via the IEC 61000-3-3-style "
-                   "simplified curve Pst = (d/d_anchor)*r^exponent "
-                   f"(default anchor {DEFAULT_D_ANCHOR_PCT}% at 1 change/min, "
-                   f"exponent {DEFAULT_EXPONENT}); Plt = Pst for a stationary "
-                   "repetitive source. NOT a certified IEC 61000-4-15 "
-                   "flickermeter measurement — verify borderline/failing "
-                   "results against the standard's own curve or by field "
-                   "measurement."),
+        "shape_factor": shape,
+        "method": ("Planning-level screening estimate: the relative voltage "
+                   "change d (% of nominal) from Thevenin superposition (the "
+                   "motor-starting model), converted to Pst and Plt by the IEC "
+                   "61000-3-3 analytical method: flicker impression time "
+                   f"t_f = 2.3·(F·d)^3.2 s per start (F = {shape:g}), Pst = "
+                   "(Σt_f / 600 s)^(1/3.2) in the worst 10-minute window, Plt "
+                   "the cube-root mean of the twelve 10-minute Pst values in "
+                   "two hours. Not a certified IEC 61000-4-15 flickermeter "
+                   "measurement — confirm a borderline result by measurement."),
         "warnings": warnings,
         "note": "",
     }
