@@ -749,10 +749,13 @@ const Retic = {
         <div class="kiosk-head" data-action="toggle-kiosk" data-kiosk="${k.id}">
           <span class="toggle">${k.collapsed ? '▸' : '▾'}</span>
           <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${k.id}" data-field="name" value="${escHtml(k.name)}" onclick="event.stopPropagation()">
+          <button type="button" class="kiosk-vd-badge" data-kiosk-vd="${k.id}" data-action="toggle-calc" data-calc="f:${k.id}"
+            aria-expanded="${this._calcOpen.has('f:' + k.id)}" title="Cumulative feeder volt drop from the minisub — click for the leg-by-leg working">Feeder VD —</button>
           <button type="button" class="kiosk-demand-badge" data-kiosk="${k.id}" data-action="toggle-calc" data-calc="k:${k.id}"
             aria-expanded="${this._calcOpen.has('k:' + k.id)}" title="Show how this demand is calculated">— kVA</button>
           <button class="btn-icon-del" data-action="del-kiosk" data-kiosk="${k.id}" title="Delete kiosk">&times;</button>
         </div>
+        <div class="calc-panel" data-calc-panel="f:${k.id}"${this._calcOpen.has('f:' + k.id) ? '' : ' hidden'}></div>
         <div class="calc-panel" data-calc-panel="k:${k.id}"${this._calcOpen.has('k:' + k.id) ? '' : ' hidden'}></div>
         ${k.collapsed ? '' : `
         <div class="kiosk-body">
@@ -906,6 +909,22 @@ const Retic = {
       el.innerHTML = `${kr.totalKVA} kVA <span class="sep">|</span> ${kr.currentA} A <span class="sep">|</span> ${kr.conns} conns <span class="sep">|</span> ADMD ${kr.admdKVA}${kr.admdPerPhase ? '/ph' : ''} <span class="calc-caret">${this._calcOpen.has('k:' + kr.kioskId) ? '▴' : '▾'}</span>`;
       const panel = document.querySelector(`.calc-panel[data-calc-panel="k:${kr.kioskId}"]`);
       if (panel) panel.innerHTML = this._kioskCalcHtml(kr);
+    });
+    // Cumulative feeder VD in each kiosk's header, with its leg-by-leg working.
+    const limit = this.settings.maxFeederVD;
+    document.querySelectorAll('.kiosk-vd-badge[data-kiosk-vd]').forEach(el => {
+      const id = el.dataset.kioskVd;
+      const cum = byId[id] ? this._cumulativeFeederVD(id, byId) : null;
+      const leg = byId[id] ? this._legFeederVD(id, byId) : null;
+      const open = this._calcOpen.has('f:' + id);
+      el.classList.toggle('vd-ok', cum != null && cum <= limit);
+      el.classList.toggle('vd-fail', cum != null && cum > limit);
+      el.innerHTML = cum == null ? 'Feeder VD —'
+        : `Feeder VD ${cum.toFixed(2)}% <span class="sep">|</span> leg ${leg == null ? '—' : leg.toFixed(2) + '%'} <span class="calc-caret">${open ? '▴' : '▾'}</span>`;
+      el.title = cum == null ? 'Enter the feeder cable and length (here and on the kiosks above) to see the feeder volt drop'
+        : 'Cumulative feeder volt drop from the minisub — click for the leg-by-leg working';
+      const panel = document.querySelector(`.calc-panel[data-calc-panel="f:${id}"]`);
+      if (panel) panel.innerHTML = cum == null ? '' : this._feederCalcHtml(id, byId);
     });
     const tk = document.getElementById('retic-total-kva');
     const ta = document.getElementById('retic-total-a');
@@ -1339,31 +1358,30 @@ const Retic = {
         <div class="summary-row"><span class="k">Method</span><span class="v">${res ? res.settings.estimationMethod : s.estimationMethod}</span></div>
       </div>`;
 
-    // Per-kiosk feeder VD uses the subtree (downstream) current the segment
-    // carries; cumulative VD sums segments from the minisub down to the kiosk.
+    // Per-kiosk feeder VD lives in each kiosk's header (a long list does not scale
+    // to a big project); the side bar only summarises the worst case.
     let feederBlock = '';
     if (res && this.kiosks.length) {
       const byId = {};
       for (const kr of res.kiosks) byId[kr.kioskId] = kr;
-      const feederRows = res.kiosks.map(kr => {
+      const limit = s.maxFeederVD;
+      let worst = null, over = 0, counted = 0;
+      for (const kr of res.kiosks) {
         const cum = this._cumulativeFeederVD(kr.kioskId, byId);
-        const cls = cum == null ? '' : (cum > this.settings.maxFeederVD ? 'fail' : 'pass');
-        const vdTxt = cum == null ? '—' : cum.toFixed(2) + '%';
-        const feederKva = kr.feederKVA != null ? kr.feederKVA : kr.totalKVA;
-        const key = 'f:' + kr.kioskId, open = this._calcOpen.has(key);
-        const kk = this.kioskById(kr.kioskId);
-        let cumLen = 0;
-        { const seen = new Set(); let id = kr.kioskId;
-          while (id && id !== 'source' && !seen.has(id)) { seen.add(id); const o = this.kioskById(id); if (!o) break; cumLen += Number(o.feederLength) || 0; id = o.fedFrom || 'source'; } }
-        const detail = `${kr.totalKVA} kVA · ${kr.currentA} A · ${kr.conns} conns · feeder ${kk && kk.feederLength ? kk.feederLength + ' m' : '—'}${cumLen ? ` (Σ ${Math.round(cumLen * 10) / 10} m)` : ''}`;
-        return `<div class="summary-row"><span class="k">${escHtml(kr.name || 'Kiosk')} <span style="color:var(--text-muted)">(${feederKva} kVA feed)</span><small class="kiosk-detail">${detail}</small></span>
-          <span class="v">${cum == null ? '—' : `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="${key}" aria-expanded="${open}" title="Show how this volt drop is calculated"><span class="status-pill ${cls}">${vdTxt}</span> <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`}</span></div>
-          ${cum == null ? '' : `<div class="calc-panel" data-calc-panel="${key}"${open ? '' : ' hidden'}>${this._feederCalcHtml(kr.kioskId, byId)}</div>`}`;
-      }).join('');
+        if (cum == null) continue;
+        counted++;
+        if (cum > limit) over++;
+        if (!worst || cum > worst.cum) worst = { cum, name: kr.name || 'Kiosk', id: kr.kioskId };
+      }
       feederBlock = `
       <div class="summary-block">
-        <h3>Per-Kiosk Feeder VD (cumulative from minisub)</h3>
-        ${feederRows || '<div class="retic-empty">—</div>'}
+        <h3>Feeder Volt Drop</h3>
+        ${worst ? `
+        <div class="summary-row"><span class="k">Worst: ${escHtml(worst.name)}</span><span class="v"><span class="status-pill ${worst.cum > limit ? 'fail' : 'pass'}">${worst.cum.toFixed(2)}%</span></span></div>
+        <div class="summary-row"><span class="k">Limit</span><span class="v">${limit}%</span></div>
+        <div class="summary-row"><span class="k">Over the limit</span><span class="v">${over} of ${counted} kiosk${counted === 1 ? '' : 's'}</span></div>
+        <div class="retic-hint">Each kiosk shows its own figure, with the working, in its header.</div>`
+        : '<div class="retic-empty">Enter feeder cables and lengths to see feeder volt drop.</div>'}
       </div>`;
     }
 
