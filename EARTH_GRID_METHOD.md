@@ -277,7 +277,11 @@ programs were benchmarked on:
 | Transfer, grid → unbonded fence | — | GPR − V_fence |
 
 A custom touch area can be given as a polygon for the case in IEEE 80 §17.1:
-a fence enclosing more than the grid, with service areas people can reach.
+a fence enclosing more than the grid, with service areas people can reach. A
+drawn area is where people stand, so the step check covers the same area (not
+the outline + 1 m), as CDEGS does with one observation area for touch and
+step. With no generated layout it also replaces the convex hull as the outline
+drawn and the grid area reported.
 
 ### 5.3 Search
 
@@ -598,6 +602,7 @@ should be treated as marginal.
 | `limits` | `ieee80` / `en50522` |
 | `body_weight` | 50 / 70 (IEEE 80) |
 | `en50522` | `footwear_ohm`, `hand_ohm`, `measures_m` (`yes`/`no`) |
+| `ieee80` | `footwear_ohm` — each shoe (Ω per foot) in the IEEE 80 limits: + R/2 to the touch body circuit, + 2R to the step one (the SESThreshold / CDEGS form); 0 = Eq. 29–33 as written |
 | `element_length_m` | numerical element length, 0.2–5 m |
 
 The study request may carry `groundingBusIds` to evaluate only those buses;

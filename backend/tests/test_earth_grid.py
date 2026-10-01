@@ -397,3 +397,54 @@ class TestPreviewDepths:
         assert [r[4:] for r in plan["rods"] if r[2] == "extra_rod"] == [[0.6, 6.0]]
         posts = [r for r in plan["rods"] if r[2] == "post"]
         assert posts and all(r[4:] == [0.0, 0.9] for r in posts)
+
+
+class TestFootwearAndDrawnArea:
+    """IEEE 80 limits with footwear (SESThreshold form) and a drawn touch area
+    bounding the step check."""
+
+    def test_footwear_adds_shoe_resistance_to_the_body_circuit(self):
+        from backend.analysis.grounding_system import _compute_tolerable_voltages
+        k = 0.116 / math.sqrt(0.5)
+        t0, s0 = _compute_tolerable_voltages(400, 0.8269, 0.5, 50)
+        t1, s1 = _compute_tolerable_voltages(400, 0.8269, 0.5, 50, footwear_ohm=1000)
+        assert t0 == pytest.approx((1000 + 1.5 * 0.8269 * 400) * k)          # Eq. 32 unchanged
+        assert t1 - t0 == pytest.approx(500 * k)                             # feet in parallel
+        assert s1 - s0 == pytest.approx(2000 * k)                            # feet in series
+
+    def test_footwear_reproduces_a_sesthreshold_limit(self):
+        # SESThreshold, 50 kg, 0.5 s, 1000 Ω body, foot 1059.5 Ω, shoe 1000 Ω, D_f 1.0618:
+        # touch 313.61 V, step 790.92 V. Same body circuit with C_s chosen so 3·C_s·ρ_s = 1059.5 Ω.
+        from backend.analysis.grounding_system import _compute_tolerable_voltages
+        cs = 1059.5 / (3 * 400)
+        t, s = _compute_tolerable_voltages(400, cs, 0.5, 50, footwear_ohm=1000)
+        assert t / 1.0618 == pytest.approx(313.61, rel=1e-3)
+        assert s / 1.0618 == pytest.approx(790.92, rel=1e-3)
+
+    def test_study_reports_footwear_and_raises_the_limits(self):
+        r0 = _bus(run_grounding_analysis(_project(dict(GRID_OBJ, method="numerical"))), "Grid bus")
+        r1 = _bus(run_grounding_analysis(_project(dict(GRID_OBJ, method="numerical", ieee80={"footwear_ohm": 1000}))), "Grid bus")
+        assert r0["footwear_ohm"] is None and r1["footwear_ohm"] == 1000
+        assert r1["tolerable_touch_v"] > r0["tolerable_touch_v"] and r1["tolerable_step_v"] > r0["tolerable_step_v"]
+        assert r1["mesh_voltage_v"] == r0["mesh_voltage_v"]
+
+    def test_drawn_touch_area_also_bounds_the_step_check(self):
+        # Two loops 40 m apart joined by one conductor: the hull spans the bare
+        # ground between them; a drawn area round the first loop keeps touch
+        # and step inside it, and the hull note is not given.
+        loops = []
+        for x0 in (0, 50):
+            pts = [(x0, 0), (x0 + 10, 0), (x0 + 10, 10), (x0, 10)]
+            loops += [dict(x1=a[0], y1=a[1], x2=b[0], y2=b[1]) for a, b in zip(pts, pts[1:] + pts[:1])]
+        grid = {"soil": {"rho1": 100}, "conductor": {"depth_m": 0.5, "area_mm2": 70}, "layout": {"type": "none"},
+                "extra_conductors": loops + [dict(x1=10, y1=5, x2=50, y2=5)]}
+        area = [[-0.5, -0.5], [10.5, -0.5], [10.5, 10.5], [-0.5, 10.5]]
+        a_hull = analyse(grid)
+        a_area = analyse(dict(grid, touch_area=area))
+        assert any("convex hull" in n for n in a_hull["notes"])
+        assert not any("convex hull" in n for n in a_area["notes"])
+        tx, ty = a_area["touch_at"]
+        sx1, sy1, _, _ = a_area["step_at"]
+        assert -0.5 <= tx <= 10.5 and -0.5 <= ty <= 10.5
+        assert -0.5 <= sx1 <= 10.5 and -0.5 <= sy1 <= 10.5
+        assert a_area["touch"] < a_hull["touch"]

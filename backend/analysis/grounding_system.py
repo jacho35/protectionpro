@@ -126,13 +126,18 @@ def _compute_surface_derating(rho, rho_s, h_s):
     return C_s
 
 
-def _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight=70):
+def _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight=70, footwear_ohm=0.0):
     """Compute tolerable touch and step voltages per IEEE 80.
 
     IEEE 80-2013 §8.4: step Eq. 29 (50 kg) / 30 (70 kg), touch Eq. 32 / 33:
       E_touch = (1000 + 1.5 × C_s × ρ_s) × k / √t_s
       E_step  = (1000 + 6.0 × C_s × ρ_s) × k / √t_s
     k = 0.157 (70 kg) or 0.116 (50 kg).
+
+    footwear_ohm: resistance of each shoe (Ω per foot), in series with that
+    foot's own resistance 3·C_s·ρ_s — the feet are in parallel for touch
+    (+ R_shoe / 2) and in series for step (+ 2·R_shoe), as SESThreshold
+    (CDEGS) adds it. 0 = the IEEE 80 equations above.
     """
     if t_s <= 0:
         t_s = 0.5
@@ -143,8 +148,9 @@ def _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight=70):
     else:
         k = 0.116  # 50 kg
 
-    E_touch = (1000 + 1.5 * C_s * rho_s) * k / sqrt_ts
-    E_step = (1000 + 6.0 * C_s * rho_s) * k / sqrt_ts
+    r_shoe = max(float(footwear_ohm or 0.0), 0.0)
+    E_touch = (1000 + 1.5 * C_s * rho_s + r_shoe / 2) * k / sqrt_ts
+    E_step = (1000 + 6.0 * C_s * rho_s + 2 * r_shoe) * k / sqrt_ts
 
     return E_touch, E_step
 

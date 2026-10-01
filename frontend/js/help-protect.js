@@ -226,6 +226,7 @@ $$E_{inc}=\frac{22\,540}{4\pi(0.455)^2}=8.66\ \text{kJ/m}^2\ \Rightarrow\ E=\fra
 $$E_{touch}=\frac{(1000+1.5\,C_s\,\rho_s)\,k}{\sqrt{t_s}},\qquad E_{step}=\frac{(1000+6\,C_s\,\rho_s)\,k}{\sqrt{t_s}}$$
 $$C_s=1-\frac{0.09\,(1-\rho/\rho_s)}{2h_s+0.09}$$
 <p>$h_s$ is the surface-layer thickness. A high-resistivity crushed-rock layer raises the tolerable limits.</p>
+<p>On an earth grid, a <b>footwear resistance</b> $R_{shoe}$ (Ω per foot) can be credited, as CDEGS SESThreshold does: each shoe is in series with its foot, so the touch limit becomes $(1000+1.5\,C_s\rho_s+R_{shoe}/2)\,k/\sqrt{t_s}$ and the step limit $(1000+6\,C_s\rho_s+2R_{shoe})\,k/\sqrt{t_s}$. 0 (the default) is the equations above.</p>
 <h4>2 · Grid resistance and ground potential rise</h4>
 $$R_g=\rho\left[\frac1{L_T}+\frac1{\sqrt{20A}}\left(1+\frac1{1+h\sqrt{20/A}}\right)\right],\qquad \text{GPR}=I_G\,R_g$$
 <p>$A$ is the grid area, $L_T$ total buried conductor length and $h$ burial depth. The grid current includes the decrement factor for the DC offset over the fault duration:</p>

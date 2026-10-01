@@ -1876,6 +1876,7 @@ def _calc_grounding(pdf, grounding_results):
     _calc_body(pdf, "Tolerable touch and step voltages (IEEE 80 §8.4, body weight per bus):")
     _calc_label(pdf, "  E_touch = (1000 + 1.5 * C_s * rho_s) * k / sqrt(t_s)  [V]")
     _calc_label(pdf, "  E_step  = (1000 + 6.0 * C_s * rho_s) * k / sqrt(t_s)  [V]   k = 0.116 (50 kg), 0.157 (70 kg)")
+    _calc_label(pdf, "  With footwear R_shoe (Ohm per foot, earth grids): + R_shoe/2 in E_touch, + 2 R_shoe in E_step")
     _calc_body(pdf, "  where C_s = surface layer derating, rho_s = surface resistivity [Ohm.m], t_s = shock duration [s].")
     pdf.ln(2)
     _calc_body(pdf, "Grid current and ground potential rise (IEEE 80 §15):")
@@ -1915,6 +1916,7 @@ def _calc_grounding(pdf, grounding_results):
         ("gpr_v", "Ground potential rise (V)"),
         ("tolerable_touch_v", "Tolerable touch voltage (V)"),
         ("tolerable_step_v", "Tolerable step voltage (V)"),
+        ("footwear_ohm", "Footwear resistance in limits (Ohm/foot)"),
         ("mesh_voltage_v", "Calculated mesh/touch voltage (V)"),
         ("step_voltage_v", "Calculated step voltage (V)"),
         ("touch_ok", "Touch voltage OK"),

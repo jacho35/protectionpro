@@ -748,7 +748,8 @@ def build_wires(grid):
     if outline is None:
         outline = _hull([w["a"][:2] for w in all_wires if w["group"] == 0]
                         + [w["b"][:2] for w in all_wires if w["group"] == 0])
-        if outline:
+        custom = grid.get("touch_area")
+        if outline and not (isinstance(custom, list) and len(custom) >= 3):
             notes.append("No generated layout — the touch area is the convex hull of the bonded conductors.")
     return dict(wires=all_wires, outline=outline, rods=rods, fences=fences, notes=notes,
                 depth=depth, conductor_radius=radius)
@@ -1066,7 +1067,13 @@ def analyse(grid, frequency=50.0):
             touch_polys.append(offset_polygon(fc["line"], REACH_M))
     custom = grid.get("touch_area")
     if isinstance(custom, list) and len(custom) >= 3:
+        # A drawn touch area is where people stand: the step check covers the
+        # same area (as CDEGS does with one observation area for both).
         touch_polys = [[(float(p[0]), float(p[1])) for p in custom]]
+        step_polys = touch_polys + step_polys[1:]
+        if _hull_outline(grid):
+            outline = touch_polys[0]        # drawn and reported instead of the convex hull
+    in_step = lambda Q: np.any([point_in_polygon(Q, poly) for poly in step_polys], axis=0)
 
     def in_touch(Q):
         m = np.zeros(len(Q), bool)
@@ -1076,7 +1083,6 @@ def analyse(grid, frequency=50.0):
 
     # one surface evaluation on one raster covering the touch, step and fence
     # areas; each area is a mask over it
-    in_step = lambda Q: np.any([point_in_polygon(Q, poly) for poly in step_polys], axis=0)
     pts, sp = _raster(step_polys + touch_polys, RASTER_M)
     V = sol.surface_potential(pts)
     tm = in_touch(pts)
@@ -1154,6 +1160,12 @@ def analyse(grid, frequency=50.0):
     )
 
 
+def _hull_outline(grid):
+    """No generated layout: the outline is only the convex hull of the metal,
+    so a drawn touch area stands in for it (plan and grid area)."""
+    return str((grid.get("layout") or {}).get("type", "rect")).lower() not in ("rect", "l")
+
+
 def preview(grid):
     """Geometry of an earth-grid object for the editor — no solve.
 
@@ -1188,6 +1200,8 @@ def preview(grid):
     custom = grid.get("touch_area")
     if isinstance(custom, list) and len(custom) >= 3:
         touch_polys = [[(float(p[0]), float(p[1])) for p in custom]]
+        if _hull_outline(grid):
+            outline = touch_polys[0]
     return dict(
         elements=int(len(A)),
         connected=n_comp <= 1,
