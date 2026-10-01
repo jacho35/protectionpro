@@ -904,7 +904,7 @@ def _refine_min(sol, pts, V, spacing, mask_fn, ref, k=12):
         c = pts[i]
         g = np.arange(-spacing, spacing + 1e-9, 0.1)
         X, Y = np.meshgrid(c[0] + g, c[1] + g)
-        Q = np.column_stack([X.ravel(), Y.ravel()])
+        Q = np.round(np.column_stack([X.ravel(), Y.ravel()]), 6)    # float noise off the 0.1 m offsets
         Q = Q[mask_fn(Q)]
         if len(Q) == 0:
             continue
@@ -958,7 +958,7 @@ def _worst_step(sol, pts, V, spacing, mask_fn=None, k_refine=8):
         GX, GY = np.meshgrid(g, g)
         offs = np.column_stack([GX.ravel(), GY.ravel()])
         for i in np.argsort(-top)[:k_refine]:
-            Q0 = C[i] + offs
+            Q0 = np.round(C[i] + offs, 6)    # float noise off the 0.1 m offsets (an edge point stays on the edge)
             Q0 = Q0[mask_fn(Q0)]
             if not len(Q0):
                 continue
