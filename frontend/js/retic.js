@@ -1351,7 +1351,12 @@ const Retic = {
         const vdTxt = cum == null ? '—' : cum.toFixed(2) + '%';
         const feederKva = kr.feederKVA != null ? kr.feederKVA : kr.totalKVA;
         const key = 'f:' + kr.kioskId, open = this._calcOpen.has(key);
-        return `<div class="summary-row"><span class="k">${escHtml(kr.name || 'Kiosk')} <span style="color:var(--text-muted)">(${feederKva} kVA feed)</span></span>
+        const kk = this.kioskById(kr.kioskId);
+        let cumLen = 0;
+        { const seen = new Set(); let id = kr.kioskId;
+          while (id && id !== 'source' && !seen.has(id)) { seen.add(id); const o = this.kioskById(id); if (!o) break; cumLen += Number(o.feederLength) || 0; id = o.fedFrom || 'source'; } }
+        const detail = `${kr.totalKVA} kVA · ${kr.currentA} A · ${kr.conns} conns · feeder ${kk && kk.feederLength ? kk.feederLength + ' m' : '—'}${cumLen ? ` (Σ ${Math.round(cumLen * 10) / 10} m)` : ''}`;
+        return `<div class="summary-row"><span class="k">${escHtml(kr.name || 'Kiosk')} <span style="color:var(--text-muted)">(${feederKva} kVA feed)</span><small class="kiosk-detail">${detail}</small></span>
           <span class="v">${cum == null ? '—' : `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="${key}" aria-expanded="${open}" title="Show how this volt drop is calculated"><span class="status-pill ${cls}">${vdTxt}</span> <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`}</span></div>
           ${cum == null ? '' : `<div class="calc-panel" data-calc-panel="${key}"${open ? '' : ' hidden'}>${this._feederCalcHtml(kr.kioskId, byId)}</div>`}`;
       }).join('');
