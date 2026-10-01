@@ -265,9 +265,10 @@ def grid_bus_result(bus, grid, cache, fault_results, frequency, warnings):
 
     issues = []
     en = None
+    footwear = _num((grid.get("ieee80") or {}).get("footwear_ohm"), 0.0) if basis == "ieee80" else 0.0
     if basis == "ieee80":
         C_s = _compute_surface_derating(rho1, rho_s, h_s) if h_s > 0 else 1.0
-        tol_touch, tol_step = _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight)
+        tol_touch, tol_step = _compute_tolerable_voltages(rho_s, C_s, t_s, body_weight, footwear)
         touch_ok = E_mesh <= tol_touch
         step_ok = E_step <= tol_step
         for f in fences:
@@ -357,6 +358,7 @@ def grid_bus_result(bus, grid, cache, fault_results, frequency, warnings):
         "surface_derating_Cs": round(C_s, 4) if C_s is not None else None,
         "tolerable_touch_v": round(tol_touch, 0),
         "tolerable_step_v": round(tol_step, 0),
+        "footwear_ohm": footwear if footwear > 0 else None,
         "mesh_voltage_v": round(E_mesh, 0),
         "step_voltage_v": round(E_step, 0),
         "touch_location_m": [round(v, 2) for v in a["touch_at"]] if method == "numerical" else None,

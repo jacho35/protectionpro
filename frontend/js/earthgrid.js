@@ -49,6 +49,7 @@ const EarthGridEditor = {
     limits: 'ieee80',
     body_weight: 70,
     en50522: { footwear_ohm: 0, hand_ohm: 0, measures_m: 'no' },
+    ieee80: { footwear_ohm: 0 },
     element_length_m: 1.0,
   },
 
@@ -104,7 +105,7 @@ const EarthGridEditor = {
       c.area_mm2 = Math.round(Math.PI / 4 * Math.pow(+c.diameter_m * 1000, 2) * 100) / 100;
       delete c.diameter_m;
     }
-    for (const k of ['soil', 'surface', 'conductor', 'layout', 'rods', 'en50522']) {
+    for (const k of ['soil', 'surface', 'conductor', 'layout', 'rods', 'en50522', 'ieee80']) {
       g[k] = Object.assign(this._clone(D[k]), (g[k] && typeof g[k] === 'object') ? g[k] : {});
     }
     for (const k of ['fences', 'extra_conductors', 'extra_rods']) if (!Array.isArray(g[k])) g[k] = [];
@@ -145,6 +146,7 @@ const EarthGridEditor = {
       fences: [], extra_conductors: [], extra_rods: [],
       method: 'auto', limits: 'ieee80', body_weight: v('body_weight', 70) === 50 ? 50 : 70,
       en50522: { footwear_ohm: 0, hand_ohm: 0, measures_m: 'no' },
+      ieee80: { footwear_ohm: 0 },
       element_length_m: 1.0,
     };
   },
@@ -521,6 +523,8 @@ const EarthGridEditor = {
           ['auto', 'Auto — IEEE 80 where it applies, else numerical'], ['ieee80', 'IEEE 80 simplified equations'], ['numerical', 'Numerical (method of moments)']] },
         { p: 'limits', label: 'Limit basis', type: 'select', options: [['ieee80', 'IEEE 80 (body weight)'], ['en50522', 'EN 50522 (U_Tp)']] },
         { p: 'body_weight', label: 'Body weight', type: 'select', num: true, show: ieee, options: [[50, '50 kg'], [70, '70 kg']] },
+        { p: 'ieee80.footwear_ohm', label: 'Footwear resistance (per foot)', unit: 'Ω', min: 0, show: ieee,
+          hint: 'Each shoe, in series with that foot: adds R/2 to the touch limit\'s body circuit and 2R to the step limit\'s, as CDEGS SESThreshold does. 0 = IEEE 80 Eq. 29–33 as written.' },
         { p: 'en50522.footwear_ohm', label: 'Footwear resistance R_F1', unit: 'Ω', min: 0, show: g => !ieee(g) },
         { p: 'en50522.hand_ohm', label: 'Hand contact resistance', unit: 'Ω', min: 0, show: g => !ieee(g) },
         { p: 'en50522.measures_m', label: 'Specified measures M applied', type: 'select', show: g => !ieee(g), options: [['no', 'No'], ['yes', 'Yes']],
@@ -1599,7 +1603,7 @@ const EarthGridEditor = {
       <div class="eg-tv">
         <div><div><strong>Touch Voltage</strong> ${ok(b.touch_ok)}</div>
           <div>Actual: <strong>${f0(b.mesh_voltage_v)} V</strong></div>
-          <div>Limit: <strong>${f0(b.tolerable_touch_v)} V</strong> <span class="eg-muted">${en ? 'U<sub>vTp</sub>' : ''}</span></div></div>
+          <div>Limit: <strong>${f0(b.tolerable_touch_v)} V</strong> <span class="eg-muted">${en ? 'U<sub>vTp</sub>' : b.footwear_ohm ? `with ${f0(b.footwear_ohm)} Ω footwear` : ''}</span></div></div>
         <div><div><strong>Step Voltage</strong> ${ok(b.step_ok)}</div>
           <div>Actual: <strong>${f0(b.step_voltage_v)} V</strong></div>
           <div>Limit: <strong>${f0(b.tolerable_step_v)} V</strong></div>
