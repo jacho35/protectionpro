@@ -2485,7 +2485,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const buses = result.buses || [];
     const xfmrs = result.transformers || [];
     const summary = result.summary || {};
-    const iecFactors = result.iec_demand_factors || {};
+    const refFactors = result.reference_demand_factors || {};
+    const ksTable = result.ks_table || [];
+    const warnings = result.warnings || [];
 
     let html = '';
 
@@ -2504,7 +2506,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (xfmrs.length > 0) {
       html += '<h4 style="margin:12px 0 8px;font-size:13px">Transformer Loading</h4>';
       html += `<table class="af-table"><thead><tr>
-        <th>Transformer</th><th>Rating (kVA)</th><th>Fed Buses</th>
+        <th>Transformer</th><th>Rating (kVA)</th><th>Feeds</th>
         <th>Installed (kVA)</th><th>Demand (kVA)</th>
         <th>Installed %</th><th>Demand %</th><th>Status</th>
       </tr></thead><tbody>`;
@@ -2530,54 +2532,65 @@ document.addEventListener('DOMContentLoaded', () => {
       html += '</tbody></table>';
     }
 
-    // Per-bus breakdown
+    if (warnings.length) {
+      html += `<div style="border:1px solid #f57c00;background:#f57c0011;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px">${warnings.map(escHtml).join('<br>')}</div>`;
+    }
+
+    // Per-board breakdown: every board with what it feeds, Ks per board
     if (buses.length > 0) {
-      html += '<h4 style="margin:16px 0 8px;font-size:13px">Bus Load Summary</h4>';
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">Board Maximum Demand</h4>';
       html += `<table class="af-table"><thead><tr>
-        <th>Bus</th><th>Loads</th><th>Installed (kVA)</th><th>Demand (kVA)</th>
-        <th>Diversity</th><th>Diversified (kVA)</th><th>Eff. DF</th><th>Current (A)</th>
+        <th>Board</th><th>Fed from</th><th>Circuits</th><th>Installed (kVA)</th><th>Σ Demand (kVA)</th>
+        <th>K<sub>s</sub></th><th>Max demand (kVA)</th><th>Eff. DF</th><th>Current (A)</th>
       </tr></thead><tbody>`;
       for (const b of buses) {
+        const cap = b.capacitor_kvar > 0 ? ` <span title="Capacitor banks on this board">(−${b.capacitor_kvar.toFixed(0)} kvar)</span>` : '';
         html += `<tr>
-          <td>${escHtml(b.bus_name)}</td>
-          <td>${b.num_loads}</td>
+          <td>${escHtml(b.bus_name)}${b.node_type === 'distribution_board' ? ' <span style="color:var(--text-secondary)">(DB)</span>' : ''}</td>
+          <td>${(b.fed_from || []).map(escHtml).join(', ') || '—'}</td>
+          <td>${b.num_circuits ?? b.num_loads}</td>
           <td>${b.installed_kva.toFixed(0)}</td>
           <td>${b.demand_kva.toFixed(0)}</td>
-          <td>${b.diversity_factor.toFixed(3)}</td>
-          <td><strong>${b.diversified_demand_kva.toFixed(0)}</strong></td>
+          <td>${b.diversity_factor.toFixed(2)}</td>
+          <td><strong>${b.diversified_demand_kva.toFixed(0)}</strong>${cap}</td>
           <td>${b.effective_demand_factor.toFixed(3)}</td>
           <td>${b.demand_current_a.toFixed(1)}</td>
         </tr>`;
 
-        // Expandable per-load detail
-        if (b.loads && b.loads.length > 0) {
-          html += `<tr><td colspan="8" style="padding:0 0 0 20px">
-            <details style="font-size:11px"><summary style="cursor:pointer;color:var(--text-secondary)">Show ${b.loads.length} loads</summary>
+        const circuits = b.circuits || [];
+        if (circuits.length > 0) {
+          html += `<tr><td colspan="9" style="padding:0 0 0 20px">
+            <details style="font-size:11px"><summary style="cursor:pointer;color:var(--text-secondary)">Show ${circuits.length} circuit${circuits.length === 1 ? '' : 's'}</summary>
             <table style="width:100%;font-size:11px;margin:4px 0"><thead><tr>
-              <th style="text-align:left">Load</th><th>Type</th><th>Installed kVA</th><th>DF</th><th>Demand kVA</th><th>PF</th>
+              <th style="text-align:left">Circuit</th><th>Type</th><th>Installed kVA</th><th>Demand kVA</th><th>Demand kW</th>
             </tr></thead><tbody>`;
-          for (const l of b.loads) {
-            const typeLabel = l.load_type === 'motor_induction' ? 'IM'
-              : l.load_type === 'motor_synchronous' ? 'SM' : 'Load';
+          const kindLabel = { load: 'Load', feeder: 'Feeder', schedule: 'DB schedule' };
+          for (const c of circuits) {
             html += `<tr>
-              <td style="text-align:left">${escHtml(l.load_name)}</td><td>${typeLabel}</td>
-              <td>${l.installed_kva.toFixed(1)}</td><td>${l.demand_factor.toFixed(2)}</td>
-              <td>${l.demand_kva.toFixed(1)}</td><td>${l.power_factor.toFixed(2)}</td>
+              <td style="text-align:left">${escHtml(c.name)}</td><td>${kindLabel[c.kind] || c.kind}</td>
+              <td>${c.installed_kva.toFixed(1)}</td><td>${c.demand_kva.toFixed(1)}</td><td>${c.demand_kw.toFixed(1)}</td>
             </tr>`;
           }
           html += '</tbody></table></details></td></tr>';
         }
       }
       html += '</tbody></table>';
+      html += `<p style="font-size:11px;color:var(--text-secondary);margin:6px 0 0">Max demand = K<sub>s</sub> × the phasor sum of the circuits' demand (kW, kvar), less any capacitor kvar. Each board includes everything it feeds; K<sub>s</sub> applies to LV boards only.</p>`;
     }
 
-    // IEC reference demand factors
-    const iecEntries = Object.entries(iecFactors);
-    if (iecEntries.length > 0) {
-      html += '<h4 style="margin:16px 0 8px;font-size:13px">IEC Reference Demand Factors</h4>';
-      html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px 16px;font-size:11px">';
-      for (const [, info] of iecEntries) {
-        html += `<div><strong>${info.factor.toFixed(1)}</strong> — ${info.description}</div>`;
+    // Coincidence factor table and typical demand factors
+    if (ksTable.length > 0) {
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">Coincidence factor K<sub>s</sub> (IEC 61439 rated diversity factor)</h4>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:4px 16px;font-size:11px">';
+      for (const r of ksTable) html += `<div>${escHtml(r.circuits)} circuit${r.circuits === '1' ? '' : 's'}: <strong>${r.ks.toFixed(1)}</strong></div>`;
+      html += '</div>';
+    }
+    const refEntries = Object.values(refFactors);
+    if (refEntries.length > 0) {
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">Typical demand factors (set per load)</h4>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px;font-size:11px">';
+      for (const info of refEntries) {
+        html += `<div><strong>${info.factor.toFixed(2)}</strong> — ${escHtml(info.description)} <span style="color:var(--text-secondary)">(${escHtml(info.source)})</span></div>`;
       }
       html += '</div>';
     }

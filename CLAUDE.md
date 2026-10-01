@@ -123,7 +123,7 @@ backend/
 │   ├── motor_starting.py   # Locked-rotor current, voltage dip analysis
 │   ├── dynamic_motor_starting.py # Time-domain motor acceleration (swing equation)
 │   ├── duty_check.py       # Equipment fault current rating validation
-│   ├── load_diversity.py   # Load demand factor analysis
+│   ├── load_diversity.py   # Maximum demand: nodes (buses/boards) + branches, supply direction from the utility, board-by-board Ks (IEC 61439) roll-up, transformer = its downstream side (parallel units share by rating)
 │   ├── grounding_system.py # IEEE 80 grounding grid design; two-layer soil = IEEE 80 values × method-of-moments ratios (layered vs uniform ρ1); I_G uses the fault engine's `ik1_remote_fraction` (share not returning to a local neutral) × S_f; review: reviews/GROUNDING_REVIEW.md
 │   ├── earth_grid.py       # Earth grids of any shape (ProjectData.earthGrids, bus `earth_grid_id`): layout/rod/fence generators → wires, method-of-moments solve (bonded = GPR, unbonded groups float), surface potential, touch/step to IEEE 80 Annex H.3 conventions, connectivity + conductor-impedance checks; `preview()` for the editor
 │   ├── earth_grid_study.py # Per-bus result for a bus on an earth grid: IEEE 80 simplified (plain rectangle only) or numerical headline, IEEE 80 or EN 50522 limits (C2/C3/C4); technical basis + validation: reviews/EARTH_GRID_METHOD.md
@@ -220,7 +220,7 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/motor-starting` | Voltage dip | Motor starting analysis |
 | `/api/analysis/dynamic-motor-starting` | Motor acceleration | Time-domain swing-equation simulation |
 | `/api/analysis/duty-check` | Equipment duty | IEC 60947-2 / IEC 60269 (LV breakers, fuses: largest prospective I″k), IEC 62271-100 (MV: Ib, asymmetry, making), Icw, Ur ≥ Um; relay-fed CTs (IEC 61869-2) and VTs (IEC 61869-3: burden, rated primary vs bus, voltage factor vs the bus earth fault factor) |
-| `/api/analysis/load-diversity` | Demand factors | Load diversity |
+| `/api/analysis/load-diversity` | Maximum demand per board and transformer (demand rolled up from the supply, phasor P + jQ) | IEC 61439 rated diversity factor Ks per LV board; per-load demand factors |
 | `/api/analysis/grounding` | Grounding grid (optional `groundingBusIds` = selected buses only) | IEEE 80 per bus; buses on an earth grid object: numerical (method of moments) with IEEE 80 or EN 50522:2022 limits; conductor size (mm²) checked against Onderdonk |
 | `/api/analysis/earth-grid/preview` | Earth grid geometry for the editor (`{grid}`, not ProjectData) | plan, element count, connectivity, IEEE 80 applicability — no solve |
 | `/api/analysis/lightning-risk` | Lightning risk (form, not ProjectData) | IEC 62305-2:2024 (`edition: "2024"`, R + F per zone) or 2010 (R1; absent `edition`) |

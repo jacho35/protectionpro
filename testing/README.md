@@ -24,7 +24,7 @@ substation E3S paper (real-project ETAP case study missing the branch-impedance 
 | DC load flow | First-principles resistive circuit | `dc_loadflow.py` | **PASS** — voltages / currents / losses exact (≤0.005 %) |
 | DC short circuit (IEC 61660-1) | Published IEC 61660 battery example | `dc_shortcircuit.py` | **PASS** — reproduces the published 5422 A peak exactly from raw nameplate (full 0.9·R_B / 1.05·U_nB / +0.1·R_B factors) |
 | Equipment duty check | Hand-calc over verified fault engine | `duty_check.py` | **PASS** — peak / making / breaking-duty comparisons exact |
-| Load diversity | Exact demand-aggregation hand-calc | `load_diversity.py` | **PASS** — demand factors, IEC Ks, diversified demand exact |
+| Load diversity | Exact demand-aggregation hand-calc | `load_diversity.py` | **PASS** — demand factors, IEC 61439 Ks, phasor-sum diversified demand exact |
 | DC arc flash (Stokes & Oppenlander) | Published Ammerman/CED DC method | `dc_arcflash.py` | **PASS** — arc operating point + incident energy exact (≤0.06 %) |
 | Unbalanced load flow (symmetrical comp.) | Independent phase-domain solve + balanced limit | `unbalanced_loadflow.py` | **PASS** — phase voltages & VUF match a phase-domain (Zabc) solve exactly; balanced limit |
 
@@ -115,8 +115,9 @@ inductance is unknown), and the converter current-limit is exact. Detail:
 ## Duty check, load diversity, DC arc flash, unbalanced LF — PASS
 - **Equipment duty check** — peak (κ·√2·I″k), making capacity (2.5·Icu MV / IEC 60947-2 LV), breaking duty (Ib)
   and pass/fail comparisons reproduce hand calculations exactly, on top of the verified fault engine.
-- **Load diversity** — per-load demand factors, IEC group coincidence factor Ks, diversified demand, effective
-  demand factor and demand current all exact.
+- **Load diversity** — per-load demand factors, the IEC 61439 coincidence factor Ks, the diversified demand
+  (phasor sum of kW and kvar, equal to the load flow's load), effective demand factor and demand current all
+  exact. The board hierarchy and transformer attribution are pinned by `test_load_diversity_review_fixes.py`.
 - **DC arc flash** — the Stokes & Oppenlander arc operating point and the spherical incident-energy / boundary
   reproduce the published Ammerman/CED DC method exactly (≤0.06 %, calorie rounding).
 - **Unbalanced load flow** — phase voltages and VUF match an independent phase-domain solve (Zabc =
@@ -156,7 +157,7 @@ Detail: [`case-duty-check/`](case-duty-check/results.md) · [`case-load-diversit
 - **Motor starting** — full-load & starting current (all methods) and voltage dip reproduce hand calculations / an independent 2-bus solve exactly; the constant-PQ rotor model is conservative for weak systems.
 - **DC load flow** — bus voltages, cable currents and losses reproduce an exact resistive-circuit solution (≤0.005 %).
 - **DC short circuit** — the IEC 61660-1 battery peak reproduces the published example **exactly from raw nameplate** (full 0.9·R_B / 1.05·U_nB / +0.1·R_B / T_B factors), and the converter current-limit is exact.
-- **Duty check / load diversity / DC arc flash / unbalanced LF** — all reproduce their governing formulas (κ·√2·I″k & making capacity; IEC demand factors & Ks; Stokes & Oppenlander + spherical incident energy; symmetrical-component transform & VUF) exactly.
+- **Duty check / load diversity / DC arc flash / unbalanced LF** — all reproduce their governing formulas (κ·√2·I″k & making capacity; demand factors & IEC 61439 Ks; Stokes & Oppenlander + spherical incident energy; symmetrical-component transform & VUF) exactly.
 
 ## Surveyed but not reproducible (recorded, not verified)
 - ETAP official V&V PDF — results-comparison doc, inputs cited to external sources: [`reference/etap-vv-pdf-survey.md`](reference/etap-vv-pdf-survey.md).
@@ -183,7 +184,7 @@ equations worked by hand, or an independent closed-form solve). **Consistency on
 | Earth grids of any shape | `earth_grid.py`, `earth_grid_study.py` | IEEE 80-2013 Annex H (CDEGS / ETAP / WinIGS) + Dwight / Sunde closed forms; EN 50522 Table B.4 | `test_earth_grid.py`, `earth-grid-validation/validate.py` |
 | Motor starting | `motor_starting.py` | Hand calc + independent 2-bus solve | case-motor-starting + template |
 | Duty check | `duty_check.py` | κ·√2·I″k / making / breaking hand calc | case-duty-check + template |
-| Load diversity | `load_diversity.py` | Demand-aggregation hand calc | case-load-diversity + template |
+| Load diversity | `load_diversity.py` | Demand-aggregation hand calc; load-flow P/Q parity | case-load-diversity + template; `test_load_diversity_review_fixes.py` |
 | DC load flow | `dc_loadflow.py` | Exact resistive circuit | case-dc-loadflow + template |
 | DC short circuit | `dc_shortcircuit.py` | IEC 61660-1 published example | case-dc-shortcircuit + template |
 | DC arc flash | `dc_arcflash.py` | Ammerman / CED published method | case-dc-arcflash + template |

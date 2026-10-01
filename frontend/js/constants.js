@@ -1519,7 +1519,7 @@ const FIELD_INFO = {
 
   // Static Load
   'static_load.power_factor': 'Default PF = 0.85 lagging — typical mixed commercial/industrial load.\nSource: General practice — power factor range 0.7–0.95 depending on load type.',
-  'static_load.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed load.\nSource: IEC 60439 / IEC 61439.\nTypical values: lighting 1.0, socket outlets 0.4, motors (group) 0.5–0.8.',
+  'static_load.demand_factor': 'Demand factor (0–1): ratio of this load\'s maximum demand to its installed rating.\nNo IEC standard tabulates these. SANS 10142-1 Annex C examples: residential lighting, heating, cooking and socket outlets 0.5; water heaters and motors 1.0; lifts 1 / 0.75 / 0.6 for 1 / 2 / 3+.\nThe Load Diversity study applies the IEC 61439 coincidence factor Ks per board on top.',
   'static_load.motor_fraction': 'Rotating share of this lumped load (0–1). When > 0 that fraction back-feeds short circuits as an induction-motor equivalent per IEC 60909-0 §13, instead of contributing nothing.\n0 = pure static load (default, unchanged). Typical mixed MCC 0.4–0.7.',
   'static_load.motor_lrc_ratio': 'Locked-rotor current ratio (LRC = I_start / I_FLC) of the motor fraction. Sets the sub-transient reactance X″ ≈ 1/LRC.\nSource: IEC 60909-0 §13. Typical DOL induction motors 5–7 (default 6).',
   'distribution_board.motor_fraction': 'Rotating share of the board load (0–1) that back-feeds short circuits as an induction-motor equivalent per IEC 60909-0 §13.\n0 = treat as pure static load (default).',
@@ -1540,7 +1540,7 @@ const FIELD_INFO = {
   'cable.standalone_clearing_s': 'Hand-entered protective-device clearing time for the fault-withstand check, in s. 0 = estimate from the upstream breaker.',
 
   // Motor demand factors
-  'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.\nTypical: single largest motor 1.0, group of 2-4 motors 0.8, 5-10 motors 0.6.',
+  'motor_induction.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating (input power kW/η).\nNo IEC standard tabulates these; SANS 10142-1 Annex C uses 1.0 for motors. Typical practice for a motor group: 0.75 per motor.\nThe Load Diversity study applies the IEC 61439 coincidence factor Ks per board on top.',
 
   // Grounding (IEEE 80)
   'bus.earth_grid_id': 'Use a project earth grid (any shape — diagonals, uneven spacing, L-shape, fences). The grid\'s soil, conductor and limit basis replace this bus\'s own grid fields; fault duration, clearing time and split factor stay per bus.',
@@ -1568,7 +1568,7 @@ const FIELD_INFO = {
   'bus.fault_clearing_time': 'Conductor heating time t_c in seconds — used for the adiabatic (Onderdonk) minimum conductor size.\nOften equal to t_s, but can differ (e.g. backup-clearing time for sizing).\nSource: IEEE 80 §11.3.',
   'bus.ambient_temp': 'Ambient temperature °C for the conductor-sizing thermal calc (reference for the allowed temperature rise).\nSource: IEEE 80 §11.3 — typically 40 °C.',
   'bus.body_weight': 'Body weight for the tolerable touch/step voltage limits: 50 kg (k = 0.116) is more conservative, 70 kg (k = 0.157) is the IEEE 80 default.\nSource: IEEE 80 §8.3.',
-  'motor_synchronous.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nSource: IEC 60439 / IEC 61439.',
+  'motor_synchronous.demand_factor': 'Demand factor (0–1): ratio of maximum demand to installed rating.\nNo IEC standard tabulates these; SANS 10142-1 Annex C uses 1.0 for motors.',
 
   // Surge Arrester
   'surge_arrester.mcov_kv': 'Default MCOV = 8.4 kV (for 11 kV system, ratio ≈ 0.76).\nSource: IEC 60099-4 §5.2 — maximum continuous operating voltage.\nMCOV ≥ Um / √3 for grounded systems.',

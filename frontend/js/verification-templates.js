@@ -108,7 +108,7 @@ const VerificationTemplates = {
       "name": "Load Diversity / Demand Factors",
       "category": "Verification / Standards",
       "preview": "Grouped loads \u2014 Ks & diversified demand",
-      "description": "Load diversity study. Per-load demand factors, IEC group coincidence factor Ks, diversified demand, effective demand factor and demand current all reproduce an exact demand-aggregation hand calc."
+      "description": "Load diversity study. Per-load demand factors, the IEC 61439 coincidence factor Ks (0.9 for three circuits), the diversified demand as the phasor sum of the loads' kW and kvar, effective demand factor and demand current all reproduce an exact hand calculation."
     },
     {
       "id": "ver_dc_arcflash",
@@ -1774,7 +1774,7 @@ const VerificationTemplates = {
       "nextId": 50,
       "dataVersion": 2,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — load diversity / demand factors (IEC 60439). RUN: Load Diversity study. Expected installed 255 kVA, coincidence factor Ks = 0.85, diversified demand 200 kVA, demand current 288.6 A. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — load diversity / demand factors (IEC 60439). RUN: Load Diversity study. Expected installed 255 kVA, coincidence factor Ks = 0.90, diversified demand 212 kVA, demand current 305.3 A. Full working: Help → Verification."
       }
     },
     "ver_dc_arcflash": {
