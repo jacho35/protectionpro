@@ -297,7 +297,7 @@ PlanTools.register({
     if (!f || f.kind !== 'element') return null;
     const def = PLAN_DEFS.element(f.item.type);
     if (!def || !def.rotatable) return null;
-    const half = PlanEngine.glyphHalf(f.item.type, f.item.props);
+    const half = PlanEngine.glyphHalf(f.item.type, f.item.props, f.item);
     return { el: f.item, hx: f.item.x, hy: f.item.y - half - 18 / PlanEngine.view.zoom };
   },
 
