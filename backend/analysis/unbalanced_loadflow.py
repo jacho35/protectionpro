@@ -5,7 +5,13 @@ and zero sequence networks:
 
   - Positive sequence (Y1): solved via Newton-Raphson (reuses balanced LF solver)
   - Negative sequence (Y2): linear solve with unbalanced load injections
-  - Zero sequence (Y0):     linear solve; transformer delta windings block Z0
+  - Zero sequence (Y0):     linear solve; transformer earth paths follow the
+                            earthing settings (fault.py's rule, see _zero_seq_walk)
+
+Every source keeps its own negative/zero-sequence impedance, so the point of
+supply shows the unbalance its fault level allows, and the positive sequence is
+the balanced load flow's network: same pre-passes, loads and regulated-bus
+voltages. Review: reviews/UNBALANCED_LOADFLOW_REVIEW.md (U1–U7).
 
 Parallel circuits (``num_parallel`` > 1) are scaled in the zero sequence by
 ``line_coupling.parallel_z0_scale``, not by a plain 1/n divide — see
@@ -17,7 +23,8 @@ Per-phase load unbalance is specified on static_load components via:
 Outputs per bus:
   - Per-phase voltages (Va, Vb, Vc) in p.u. and kV
   - Sequence voltages (V1, V2, V0)
-  - Voltage Unbalance Factor: VUF = |V2|/|V1| × 100%  (IEC 61000-3-13)
+  - Voltage Unbalance Factor: VUF = |V2|/|V1| × 100%  (IEC 61000-4-30 §5.7.1;
+    limit by voltage, see _vuf_limit)
 
 Outputs per branch:
   - Per-phase currents (Ia, Ib, Ic) and neutral current In
@@ -26,7 +33,6 @@ Outputs per branch:
 """
 
 import math
-import re
 import numpy as np
 from ..models.schemas import (
     ProjectData, LoadFlowWarning,
@@ -41,8 +47,11 @@ from .loadflow import (
     _reduce_chain_two_port,
     is_synthetic_bus, SYNTHETIC_BUS_PREFIX,
     sync_motor_q_sign as _lf_sync_q_sign,
+    _insert_grid_source_impedance, is_grid_bus, GRID_Z_PREFIX,
+    _utility_models_impedance, _expand_three_winding, _run_oltc,
+    _inverter_var_mode, _inverter_rating_mva, run_load_flow,
 )
-from .fault import _grounding_impedance
+from .fault import _transformer_zero_seq, _machine_neutral_z, GEN_Z0_Z1_DEFAULT
 from .line_coupling import (coupling_note, parallel_z0_scale, equivalent_z0_ohm,
                             set_drawn_coupling, drawn_coupling_scope, drawn_coupling_note,
                             z0_source_note)
@@ -65,96 +74,95 @@ _A_inv = np.array([
 ], dtype=complex) / 3
 
 
-def _xfmr_blocks_zero_seq(comp) -> bool:
-    """Return True if any transformer winding blocks zero-sequence current.
+_UNEARTHED = ("ungrounded", "isolated", "none", "unearthed")
 
-    Delta windings (d/D) and ungrounded wye (Y/y without following N/n)
-    block zero-sequence current flow through the transformer.
+
+def _utility_unearthed(comp) -> bool:
+    """A utility source has no zero-sequence path when its neutral is
+    unearthed — the same values fault.py's walker gates on (IEC 60909-0 §6.4).
+    Absent ⇒ solidly earthed."""
+    return str(comp.props.get("grounding", "solidly") or "solidly").lower() in _UNEARTHED
+
+
+def _xfmr_side_facing(comp, v_kv):
+    """'hv' or 'lv': the winding of a transformer that faces a zone at v_kv
+    (nearest nameplate voltage — the same rule the old shunt placement used)."""
+    v_hv = float(comp.props.get("voltage_hv_kv", 33) or 33)
+    v_lv = float(comp.props.get("voltage_lv_kv", 11) or 11)
+    return "hv" if abs(v_kv - v_hv) <= abs(v_kv - v_lv) else "lv"
+
+
+def _xfmr_zero_seq_entry(comp, base_mva, side):
+    """[U3] Zero-sequence behaviour of a two-winding transformer entered from
+    winding ``side`` ('hv' / 'lv'), from fault.py's ``_transformer_zero_seq``
+    so the two engines read one rule: the earthing settings are authoritative,
+    not the vector-group letters (a YNyn0 left at its default ungrounded HV
+    neutral is a single-earthed star-star, not a through path); Z0T =
+    z0_z1_ratio·Z1T (PS-8c); a YNyn through path carries 3·Zn of BOTH
+    neutrals; a single-earthed star-star on a three-limb core sources I0
+    through its magnetising branch Z0m.
+
+    Returns (kind, z_pu, v_side_kv):
+      kind 'shunt'   — a Z0 path to earth at this winding (far side Δ/zigzag
+                       or single-earthed magnetising branch);
+      kind 'through' — I0 passes to the far winding (earthed star both sides);
+      kind None      — blocked (this winding Δ or an unearthed star).
+    z_pu is on the study base at the nameplate voltage of ``side``; the
+    caller re-bases it to the zone it is stamped in."""
+    step_up = comp.props.get("winding_config") == "step_up"
+    port = {("hv", False): "primary", ("lv", False): "secondary",
+            ("hv", True): "secondary", ("lv", True): "primary"}[(side, step_up)]
+    z_gnd, far_side = _transformer_zero_seq(comp, base_mva, port)
+    v_side = float(comp.props.get(f"voltage_{side}_kv", 33 if side == "hv" else 11) or 0)
+    if z_gnd is None or far_side == "blocked":
+        return None, None, v_side
+    ratio = float(comp.props.get("z0_z1_ratio", 0) or 0)
+    z0t = _get_impedance(comp, base_mva) * (ratio if ratio > 0 else 1.0)
+    kind = "through" if far_side == "grounded" else "shunt"
+    return kind, z0t + z_gnd, v_side
+
+
+def _zero_seq_walk(elems, v_start, base_mva, zones, freq_hz, grid_z0):
+    """[U3] Walk an ordered chain from one end bus (zone voltage ``v_start``)
+    accumulating zero-sequence series impedance, as fault.py's Z0 walker does.
+
+    Returns ('through', z) when I0 passes the whole chain, ('shunt', z, xid)
+    when a transformer turns it to earth (z = everything in series from the
+    bus up to and including that earth path; xid = the transformer), or
+    ('blocked',) when the path opens. Every impedance is in per unit of the
+    zone it sits in (cables at their chain zone, a transformer at the zone it
+    is entered from), the same t = 1 simplification as the old stamp.
     """
-    vg = comp.props.get("vector_group", "Dyn11").strip()
-
-    # Delta (d/D) and zigzag (z/Z) windings both block zero-sequence
-    # THROUGH-flow — the winding circulates Z0 internally rather than
-    # passing it through (same classification as fault.py _transformer_zero_seq).
-    if any(c in ('d', 'D', 'z', 'Z') for c in vg if c.isalpha()):
-        return True
-
-    # Ungrounded wye: Y or y not immediately followed by N or n
-    for i, c in enumerate(vg):
-        if c in ('Y', 'y'):
-            next_c = vg[i + 1] if i + 1 < len(vg) else ''
-            if next_c not in ('N', 'n'):
-                return True  # Ungrounded wye — blocks zero sequence
-
-    return False
-
-
-def _xfmr_z0_shunts(comp, candidate_buses, base_mva):
-    """Zero-sequence ground shunts contributed by a Z0-blocking transformer.
-
-    A Dyn/YNd transformer blocks zero-sequence THROUGH-flow, but its
-    grounded-wye winding plus the delta circulation path is itself the
-    dominant zero-sequence return path for the network on the wye side
-    (e.g. the LV network of a Dyn11 distribution transformer). Without this
-    shunt the downstream Y0 row is singular and the zero-sequence solve
-    fails. Z_T0 ≈ Z_T1 is used (no zero-sequence prop exists), plus 3·Zn
-    for impedance-grounded neutrals.
-
-    Args:
-        comp: transformer component
-        candidate_buses: {bus_id: nominal_voltage_kv} of buses adjacent to
-            the transformer's chain
-        base_mva: system base
-
-    Returns list of (bus_id, y0_shunt_pu) tuples.
-    """
-    vg = comp.props.get("vector_group", "Dyn11").strip()
-    lv_part = re.sub(r'^[A-Z]+', '', vg)
-    hv_grounded = vg.upper().startswith("YN") or vg.upper().startswith("ZN")
-    # Delta (D) and zigzag (Z) windings both provide a Z0 circulation path,
-    # so either makes the grounded-wye winding on the OTHER side a Z0 source
-    # (matches fault.py _transformer_zero_seq).
-    hv_circulates = len(vg) > 0 and vg[0].upper() in ('D', 'Z')
-    lv_grounded = lv_part.lower().startswith("yn") or lv_part.lower().startswith("zn")
-    lv_circulates = len(lv_part) > 0 and lv_part[0].lower() in ('d', 'z')
-
-    sides = []
-    if lv_grounded and hv_circulates:
-        sides.append('lv')   # Dyn / Dzn — shunt at the LV bus
-    if hv_grounded and lv_circulates:
-        sides.append('hv')   # YNd / YNz — shunt at the HV bus
-    if not sides or not candidate_buses:
-        return []
-
-    v_hv = comp.props.get("voltage_hv_kv", 33)
-    v_lv = comp.props.get("voltage_lv_kv", 11)
-    z_t0_nameplate = _get_impedance(comp, base_mva)  # Z_T0 ≈ Z_T1, on the nameplate voltage
-
-    shunts = []
-    for side in sides:
-        v_side = v_lv if side == 'lv' else v_hv
-        v_other = v_hv if side == 'lv' else v_lv
-        # Pick the candidate bus whose nominal voltage matches this winding
-        bus_id = min(candidate_buses, key=lambda b: abs(candidate_buses[b] - v_side))
-        if abs(candidate_buses[bus_id] - v_side) > abs(candidate_buses[bus_id] - v_other):
-            continue  # The only adjacent bus is on the other winding
-        # User grounding config is authoritative (same convention as fault.py)
-        grounding_cfg = comp.props.get(
-            f"grounding_{side}",
-            "solidly_grounded" if side == 'lv' else "ungrounded")
-        z_base_side = (v_side ** 2) / base_mva if v_side > 0 else 1.0
-        z_n = _grounding_impedance(grounding_cfg, comp, side, z_base_side)
-        if z_n is None:
-            continue  # Winding set ungrounded — no zero-sequence path
-        # Re-base the nameplate impedance to the bus it is stamped at when the
-        # winding voltage differs from that bus (see loadflow._get_impedance).
-        v_bus = candidate_buses[bus_id]
-        z_t0 = (z_t0_nameplate * (v_side / v_bus) ** 2
-                if v_side and v_bus and v_bus > 0 else z_t0_nameplate)
-        z_shunt = z_t0 + 3 * z_n
-        if abs(z_shunt) > 1e-15:
-            shunts.append((bus_id, 1 / z_shunt))
-    return shunts
+    acc = complex(0, 0)
+    v_cur = v_start
+    for e in elems:
+        if e.type == "cable":
+            if e.id.startswith(GRID_Z_PREFIX):
+                z = grid_z0.get(e.id)
+                if z is None:
+                    return ("blocked",)
+                acc += z
+            else:
+                v_cur = zones.get(e.id) or v_cur
+                acc += _cable_z0_pu(e, base_mva, v_cur, freq_hz)
+        elif e.type == "transformer":
+            side = _xfmr_side_facing(e, v_cur)
+            kind, z, v_side = _xfmr_zero_seq_entry(e, base_mva, side)
+            if kind is None:
+                return ("blocked",)
+            if v_side > 0 and v_cur > 0:
+                z = z * (v_side / v_cur) ** 2
+            acc += z
+            if kind == "shunt":
+                return ("shunt", acc, e.id)
+            other = "lv" if side == "hv" else "hv"
+            v_cur = float(e.props.get(f"voltage_{other}_kv", v_cur) or v_cur)
+        elif e.type == "autotransformer":
+            # Metallic HV–LV path: Z0 passes through (re-based to its LV zone).
+            acc += _get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
+        else:
+            acc += _get_impedance(e, base_mva, v_kv=v_cur) * 3
+    return ("through", acc)
 
 
 def _cable_z0_self_per_km(elem):
@@ -233,6 +241,20 @@ def _add_to_ybus(Y, i, j, y, t, hv_bus_id, bus_a_id, bus_b_id):
         Y[j, i] -= y
 
 
+def _vuf_limit(v_kv):
+    """[U6] Voltage-unbalance limit (%) and its basis for a bus voltage.
+    LV: the IEC 61000-2-2 compatibility level, 2 % (also EN 50160). MV / HV:
+    the IEC/TR 61000-3-13:2008 Table 1 indicative planning levels, 1.8 % at
+    MV (≤ 35 kV) and 1.4 % at HV-EHV — planning levels sit below the
+    compatibility level to leave headroom for the rest of the network."""
+    v = float(v_kv or 0)
+    if v <= 1.0:
+        return 2.0, "IEC 61000-2-2 LV compatibility level"
+    if v <= 35.0:
+        return 1.8, "IEC/TR 61000-3-13 MV planning level"
+    return 1.4, "IEC/TR 61000-3-13 HV planning level"
+
+
 # Sequence-network fixed-point iteration (S#1-F18): passes and the largest
 # change in any sequence voltage (p.u.) between passes that counts as settled.
 SEQ_MAX_ITERATIONS = 50
@@ -252,6 +274,31 @@ def run_unbalanced_load_flow(
     # A node at every cable tee the drawing left without a bus (same pre-pass
     # as the balanced load flow), so no cable is shared between two chains.
     project = insert_implicit_load_buses(insert_junction_buses(project))
+    # [U2] The rest of the balanced engine's pre-passes, so both engines solve
+    # the same network: 3-winding autotransformers as a star of 2-winding legs,
+    # a Thevenin-modelled utility behind its source impedance, and regulating
+    # OLTC taps iterated to their setpoint (on the positive sequence — the
+    # balanced-equivalent loading, as a real AVC relay averages its phases).
+    project = _expand_three_winding(project)
+    project, grid_warnings = _insert_grid_source_impedance(project)
+    oltc_warnings: list = []
+    _oltc_units = [c for c in project.components
+                   if c.type in ("transformer", "autotransformer")
+                   and str(c.props.get("tap_mode", "fixed") or "fixed").lower() == "regulating"]
+    if _oltc_units:
+        project = _run_oltc(project, method, _oltc_units, warnings=oltc_warnings)
+    # [U2] Balanced solve of the same network. Regulated buses (a generator on
+    # a PV bus, a voltage-regulating SVC, a voltage-mode inverter) are held
+    # below at the |V| it reached: its reactive-limit clamps and reverts are
+    # the balanced engine's, so a unit within its range holds its setpoint
+    # and a clamped one holds what it could actually reach — instead of the
+    # unlimited reactive power a bare PV constraint here would grant.
+    try:
+        _bal = run_load_flow(project, method, include_synthetic=True, _regulate=False)
+        bal_vpu = ({bid: b.voltage_pu for bid, b in _bal.buses.items()}
+                   if _bal.converged else {})
+    except Exception:   # the unbalanced solve stands on its own setpoints
+        bal_vpu = {}
     base_mva = project.baseMVA
     # Only the zero-sequence parallel-coupling model is frequency-dependent
     # (Carson's earth-return depth); everything else here is at nominal.
@@ -290,7 +337,38 @@ def run_unbalanced_load_flow(
     processed_chains: set = set()
     # Each entry: (elems, bus_a, bus_b, y1, y2, y0, t, hv_bus, cable_voltages)
     branch_chains = []
-    z0_shunts: list[tuple[str, complex]] = []  # (bus_id, y0_shunt) from Dyn/YNd xfmrs
+    z0_shunts: list[tuple[str, complex]] = []  # (bus_id, y0_shunt) from transformer earth paths
+    _z0_shunt_keys: set = set()                 # (bus_id, transformer_id) already stamped
+
+    # Thevenin-modelled utilities (lf_grid_model: thevenin): the pre-pass put
+    # the source impedance in series as a synthetic cable. In the negative and
+    # zero sequence that element carries the utility's OWN Z2 = z2/z1·Z and
+    # Z0 = z0/z1·Z (open when its neutral is unearthed) — not the cable's
+    # 3.5× fallback — and the internal EMF bus behind it is held ideal.
+    def _ratio(cp, key, legacy):
+        r = float(cp.get(key, 0) or cp.get(legacy, 0) or 0)
+        return r if r > 0 else 1.0
+    grid_z2_ratio: dict[str, float] = {}
+    grid_z0: dict[str, complex | None] = {}
+    for c in project.components:
+        if c.type != "cable" or not c.id.startswith(GRID_Z_PREFIX):
+            continue
+        util = components.get(c.id[len(GRID_Z_PREFIX):])
+        if util is None:
+            continue
+        z1g = _get_impedance(c, base_mva, v_kv=float(util.props.get("voltage_kv", 33) or 33))
+        grid_z2_ratio[c.id] = _ratio(util.props, "z2_z1_ratio", "x2_ratio")
+        grid_z0[c.id] = (None if _utility_unearthed(util)
+                         else z1g * _ratio(util.props, "z0_z1_ratio", "x0_ratio"))
+
+    def _add_z0_shunt(bus_id, walk):
+        """[U3] Stamp the earth path a zero-sequence walk ended on, once per
+        (bus, transformer) — two seeds of one chain walk the same path."""
+        if walk[0] != "shunt" or (bus_id, walk[2]) in _z0_shunt_keys:
+            return
+        _z0_shunt_keys.add((bus_id, walk[2]))
+        if abs(walk[1]) > 1e-15:
+            z0_shunts.append((bus_id, 1 / walk[1]))
 
     for comp in project.components:
         if comp.type not in ("cable", "transformer"):
@@ -303,14 +381,15 @@ def run_unbalanced_load_flow(
         results = _find_bus_paths(comp.id, adjacency, components, bus_of)
         if len(results) < 2:
             # Single-bus transformer (e.g. utility incomer TX): not a
-            # bus-to-bus branch, but a Dyn/YNd unit still grounds the
-            # zero-sequence network at its wye-side bus.
-            if (comp.type == "transformer" and len(results) == 1
-                    and _xfmr_blocks_zero_seq(comp)):
-                only_bus = results[0][0]
+            # bus-to-bus branch, but a Dyn/YNd unit still earths the
+            # zero-sequence network at its star-side bus — walked from that
+            # bus so any cable in between is in series with the earth path.
+            if comp.type == "transformer" and len(results) == 1:
+                only_bus, path = results[0]
                 only_v = (components[only_bus].props.get("voltage_kv", 11)
                           if only_bus in components else 11)
-                z0_shunts.extend(_xfmr_z0_shunts(comp, {only_bus: only_v}, base_mva))
+                _add_z0_shunt(only_bus, _zero_seq_walk(
+                    list(reversed(path)), only_v, base_mva, {}, freq_hz, grid_z0))
             continue
 
         bus_a, path_a = results[0]
@@ -333,8 +412,6 @@ def run_unbalanced_load_flow(
 
         z1_total = complex(0, 0)
         z2_total = complex(0, 0)
-        z0_total: complex | None = complex(0, 0)
-        z0_blocked = False
 
         # Zone voltages are needed by BOTH branches: the transformer branch
         # assigns each cable to its own side's zone, the no-transformer branch
@@ -352,20 +429,7 @@ def run_unbalanced_load_flow(
             zones = chain_element_zones(chain_order, bus_a_v, bus_b_v)
 
             for e in all_elems.values():
-                if e.type == "transformer":
-                    z = _get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
-                    z1_total += z
-                    z2_total += z           # Z2 = Z1 for transformer (passive element)
-                    if _xfmr_blocks_zero_seq(e):
-                        z0_blocked = True
-                        # H6: blocked through-flow, but a grounded-wye
-                        # winding still grounds Y0 at its side's bus
-                        z0_shunts.extend(_xfmr_z0_shunts(
-                            e, {bus_a: bus_a_v, bus_b: bus_b_v}, base_mva))
-                    else:
-                        z0_total = (z0_total or complex(0, 0)) + z
-
-                elif e.type == "cable":
+                if e.type == "cable":
                     v_kv = zones[e.id]
                     cable_voltages[e.id] = v_kv
                     z_base = (v_kv ** 2) / base_mva
@@ -380,43 +444,47 @@ def run_unbalanced_load_flow(
                     n_par = max(1, int(e.props.get("num_parallel", 1) or 1))
                     z1_cable = complex(r1 / z_base, x1 / z_base) / n_par
                     z1_total += z1_cable
-                    z2_total += z1_cable
-                    if not z0_blocked:
-                        z0_total = ((z0_total or complex(0, 0))
-                                    + _cable_z0_pu(e, base_mva, v_kv, freq_hz))
+                    z2_total += z1_cable * grid_z2_ratio.get(e.id, 1.0)
                 else:
-                    # An autotransformer: metallic HV–LV path, so Z0 passes
-                    # through; re-based to its LV zone like a transformer.
+                    # Transformer / autotransformer, re-based to its LV zone;
+                    # Z2 = Z1 (passive element).
                     z = _get_impedance(e, base_mva, v_lv_kv=zones.get(e.id))
                     z1_total += z
                     z2_total += z
-                    if not z0_blocked:
-                        z0_total = (z0_total or complex(0, 0)) + z
-
         else:
             # No transformer — all cables, and the whole chain sits in ONE
             # voltage zone, the one its bounding buses define. Both the Z1 and
             # the Z0 base take that zone voltage, so a cable carrying a stale
             # voltage_kv prop is still referred to the right per-unit base
             # ([EE-12 mirror], see loadflow._get_impedance).
+            zones = {e.id: bus_a_v for e in all_elems.values()}
             for e in all_elems.values():
                 z = _get_impedance(e, base_mva, v_kv=bus_a_v)
                 z1_total += z
-                z2_total += z
+                z2_total += z * grid_z2_ratio.get(e.id, 1.0)
                 if e.type == "cable":
                     cable_voltages[e.id] = bus_a_v
-                    z0_total = ((z0_total or complex(0, 0))
-                                + _cable_z0_pu(e, base_mva, bus_a_v, freq_hz))
-                else:
-                    z0_total = (z0_total or complex(0, 0)) + z * 3
+
+        # [U3] Zero sequence: walk the chain from each end as fault.py does.
+        # I0 either passes the whole chain (a series branch), or a transformer
+        # turns it to earth — then that earth path, IN SERIES with every cable
+        # between it and the bus, is a shunt at that bus. The old code summed
+        # elements in dict order, so a cable after a Dyn unit (transformer →
+        # cable → board, no bus between) was dropped from the earth path.
+        walk_a = _zero_seq_walk(chain_order, bus_a_v, base_mva, zones, freq_hz, grid_z0)
+        if walk_a[0] == "through":
+            z0_total = walk_a[1]
+            y0 = (1 / z0_total) if abs(z0_total) > 1e-15 else complex(0, -1e6)
+        else:
+            y0 = complex(0, 0)
+            _add_z0_shunt(bus_a, walk_a)
+            _add_z0_shunt(bus_b, _zero_seq_walk(list(reversed(chain_order)), bus_b_v,
+                                                base_mva, zones, freq_hz, grid_z0))
 
         # Zero-impedance chains: tiny series reactance (large susceptance)
         # rather than a real conductance, to avoid fictitious resistive losses
         y1 = (1 / z1_total) if abs(z1_total) > 1e-15 else complex(0, -1e6)
         y2 = (1 / z2_total) if abs(z2_total) > 1e-15 else complex(0, -1e6)
-        y0 = (0 if z0_blocked or z0_total is None
-              else ((1 / z0_total) if abs(z0_total) > 1e-15 else complex(0, -1e6)))
-        y0 = complex(y0)
 
         # Electrical order, so cascaded transformers multiply their ratios in
         # the order they are met (a dict gives graph-walk order).
@@ -505,6 +573,15 @@ def run_unbalanced_load_flow(
     V_spec = np.ones(n)
     bus_load_p_mw = np.zeros(n)  # per-bus load (consumption, MW) for dispatch
     special_bus_loads: dict[int, list] = {}  # bus_idx -> [(phase_conn, total_p_pu, total_q_pu)]
+    # [U1] Buses where a source stamps its own negative-sequence impedance
+    # (utility, generator). A swing bus WITHOUT one — a grid-forming inverter
+    # or a Thevenin utility's internal EMF bus — is an ideal source in that
+    # sequence and is held at V2 = 0; every other bus keeps its shunts.
+    y2_src: set[int] = set()
+    ideal0: set[int] = set()   # Thevenin EMF of an earthed utility: V0 = 0 there
+    vset_of: dict[int, float] = {}       # setpoint of a regulated / source bus
+    regulated: set[int] = set()          # buses a unit holds as PV
+    pv_label_warnings: list = []
 
     for bus in buses:
         i = bus_idx[bus.id]
@@ -519,8 +596,21 @@ def run_unbalanced_load_flow(
             connected = list(connected) + [bus]
         for comp in connected:
             if comp.type == "utility":
+                try:
+                    _uv = float(comp.props.get("v_setpoint_pu", 1.0) or 1.0)
+                except (TypeError, ValueError):
+                    _uv = 1.0
+                if _uv > 0:
+                    vset_of[i] = _uv   # [U2] the swing holds the setpoint
                 y_src = _utility_admittance(comp, base_mva)
                 Y1[i, i] += y_src
+                if _utility_models_impedance(comp) and is_grid_bus(bus.id):
+                    # Its impedance is the series element in front of this EMF
+                    # bus (see grid_z0) — the EMF itself is ideal in Y2/Y0.
+                    if not _utility_unearthed(comp):
+                        ideal0.add(i)
+                    continue
+                y2_src.add(i)
                 # Negative sequence: apply z2_z1_ratio if specified
                 # Also accept legacy "x2_ratio" key for backwards compatibility
                 z2_z1 = float(comp.props.get("z2_z1_ratio", 0) or comp.props.get("x2_ratio", 0))
@@ -529,8 +619,8 @@ def run_unbalanced_load_flow(
                     Y2[i, i] += y_src / z2_z1
                 else:
                     Y2[i, i] += y_src
-                grounding = comp.props.get("grounding", "solidly")
-                if grounding in ("solidly", "direct", ""):
+                # Same earthing gate as fault.py (absent ⇒ solidly earthed).
+                if not _utility_unearthed(comp):
                     # Zero sequence: apply z0_z1_ratio if specified
                     # Also accept legacy "x0_ratio" key for backwards compatibility
                     z0_z1 = float(comp.props.get("z0_z1_ratio", 0) or comp.props.get("x0_ratio", 0))
@@ -542,6 +632,13 @@ def run_unbalanced_load_flow(
             elif comp.type == "generator":
                 # Output injection comes from the merit-order dispatcher
                 # (plan_dispatch) below; only sequence impedances are added here.
+                vset = float(comp.props.get("voltage_setpoint_pu", 0)
+                             or comp.props.get("v_setpoint_pu", 0) or 0)
+                if vset > 0:
+                    vset_of.setdefault(i, vset)
+                if bt == "PV":
+                    regulated.add(i)
+                y2_src.add(i)
                 rated = comp.props.get("rated_mva", 10)
                 # Generator internal impedance for neg/zero sequence networks
                 xd_pp = comp.props.get("xd_pp", 0.15)
@@ -560,19 +657,32 @@ def run_unbalanced_load_flow(
                 Y2[i, i] += y2_gen
                 # Zero sequence: use x0 if > 0, else [MG4] the typical
                 # machine ratio Z0 = GEN_Z0_Z1_DEFAULT·Z1 (shared with fault.py)
-                x0_val = float(comp.props.get("x0", 0))
-                if x0_val > 0:
-                    x0_pu = x0_val * base_mva / rated
-                    r0_pu = x0_pu / xr
-                    y0_gen = 1 / complex(r0_pu, x0_pu)
-                else:
-                    from .fault import GEN_Z0_Z1_DEFAULT
-                    y0_gen = (1 / (GEN_Z0_Z1_DEFAULT * z1_gen)
-                              if abs(z1_gen) > 1e-15 else 0)
-                Y0[i, i] += y0_gen
+                # [U4] Only an earthed star point sources I0 (fault.py PS-2):
+                # the `grounding` prop gates it and an impedance-earthed
+                # neutral adds 3·Zn. Z0 from x0 if > 0, else [MG4] the typical
+                # machine ratio Z0 = GEN_Z0_Z1_DEFAULT·Z1 (shared with fault.py).
+                zn = _machine_neutral_z(comp, bus.props.get("voltage_kv", 11), base_mva)
+                if zn is not None:
+                    x0_val = float(comp.props.get("x0", 0))
+                    if x0_val > 0:
+                        x0_pu = x0_val * base_mva / rated
+                        z0_gen = complex(x0_pu / xr, x0_pu)
+                    else:
+                        z0_gen = GEN_Z0_Z1_DEFAULT * z1_gen
+                    z0_gen = z0_gen + 3 * zn
+                    if abs(z0_gen) > 1e-15:
+                        Y0[i, i] += 1 / z0_gen
 
-            elif comp.type in ("solar_pv", "wind_turbine"):
-                pass  # Injection set by the merit-order dispatcher below
+            elif comp.type in ("solar_pv", "wind_turbine", "battery"):
+                # Injection set by the merit-order dispatcher below. [U2] A
+                # storage inverter in voltage mode holds its bus (a PV bus), as
+                # in the balanced engine. Inverters present no Z2/Z0 shunt:
+                # they inject balanced current (fault.py PS-2).
+                if (comp.type in ("battery", "solar_pv")
+                        and _inverter_var_mode(comp) == "voltage"
+                        and _inverter_rating_mva(comp) > 0):
+                    regulated.add(i)
+                    vset_of.setdefault(i, float(comp.props.get("v_setpoint_pu", 1.0) or 1.0))
 
             elif comp.type == "static_load" or (comp.type == "distribution_board" and comp.id == bus.id):
                 rated = comp.props.get("rated_kva", 100) / 1000
@@ -666,29 +776,77 @@ def run_unbalanced_load_flow(
                 else:
                     y2_mot = 1 / z1_mot if abs(z1_mot) > 1e-15 else 0
                 Y2[i, i] += y2_mot
-                # Zero sequence: use x0 if > 0, else Z0 = Z1
-                x0_val = float(comp.props.get("x0", 0))
-                if x0_val > 0:
-                    x0_pu = x0_val * base_mva / rated_mva
-                    r0_pu = x0_pu / xr
-                    y0_mot = 1 / complex(r0_pu, x0_pu)
-                else:
-                    y0_mot = 1 / z1_mot if abs(z1_mot) > 1e-15 else 0
-                Y0[i, i] += y0_mot
+                # [U4] No zero-sequence shunt: a motor's star point is not
+                # earthed (fault.py gives motors no Z0). The old Y0 = 1/Z1
+                # here was a phantom earth at every synchronous motor.
 
             elif comp.type == "capacitor_bank":
+                # [U2] Constant susceptance (EE-9 in the balanced engine), so
+                # its output follows V² — and, being a delta or unearthed-star
+                # bank, a shunt in the positive and negative sequence only.
+                # Switched bank: steps_in_service/steps of the rating.
                 kvar = comp.props.get("rated_kvar", 100)
-                q = kvar / 1000 / base_mva / 3
-                Q_phase[i, :] += q
+                _steps = max(1, int(comp.props.get("steps", 1) or 1))
+                _sis = comp.props.get("steps_in_service")
+                if _sis not in (None, ""):
+                    kvar = kvar * min(_steps, max(0, int(_sis))) / _steps
+                y_cap = complex(0, kvar / 1000 / base_mva)
+                Y1[i, i] += y_cap
+                Y2[i, i] += y_cap
 
-    # ── Auto-assign swing bus (M1, mirrors balanced load flow) ──
-    # Without a slack reference NR/GS diverges or returns garbage.
+            elif comp.type == "vfd":
+                # [U2] A drive's front end draws balanced fundamental current:
+                # a positive-sequence constant-power load (with the motors),
+                # same input power as the balanced engine.
+                rated_kw = comp.props.get("rated_kw", 200)
+                eff = comp.props.get("efficiency", 0.96) or 0.96
+                load = float(comp.props.get("load_pct", 100) or 0) / 100.0
+                dpf = float(comp.props.get("displacement_pf", 0.98) or 0.98)
+                df = comp.props.get("demand_factor", 1.0)
+                p_mw = rated_kw * load / (eff * 1000) * df
+                q_mvar = (p_mw * math.sqrt(max(0.0, 1 - dpf ** 2)) / dpf) if dpf > 0 else 0.0
+                for arr, val in ((P_phase, p_mw), (P_mot, p_mw), (Q_phase, q_mvar), (Q_mot, q_mvar)):
+                    arr[i, :] -= val / base_mva / 3
+                bus_load_p_mw[i] += p_mw
+
+            elif comp.type == "svc":
+                # [U2] SVC / STATCOM: fixed-Q mode injects its set Q
+                # (balanced, positive sequence); a voltage-regulating unit
+                # holds its bus as the balanced engine does.
+                cp = comp.props
+                ctrl = str(cp.get("control_mode", "voltage_regulating") or "voltage_regulating").lower()
+                if ctrl == "fixed_q":
+                    q_out = float(cp.get("q_output_mvar", 0) or 0)
+                    Q_phase[i, :] += q_out / base_mva / 3
+                    Q_mot[i, :] += q_out / base_mva / 3
+                else:
+                    regulated.add(i)
+                    vset_of.setdefault(i, float(cp.get("v_setpoint_pu", 1.0) or 1.0))
+
+    # [U2] Bus types as the balanced engine sets them: a regulated bus is PV;
+    # a bus LABELLED PV with no regulating unit on it is solved PQ (holding it
+    # would fabricate reactive power from nothing).
+    for bus in buses:
+        i = bus_idx[bus.id]
+        if i in regulated:
+            bus_types[i] = 1
+        elif bus_types[i] == 1:
+            bus_types[i] = 0
+            _bname = str(bus.props.get("name", bus.id))
+            pv_label_warnings.append(LoadFlowWarning(
+                elementId=bus.id, element_name=_bname,
+                message=(f"Bus '{_bname}' is labelled PV but has no voltage-"
+                         "regulating source on it (generator, voltage-mode "
+                         "inverter or SVC) — solved as a PQ bus instead of "
+                         "holding its voltage with reactive power from nothing.")))
+
     # MODELLING NOTE: the utility is also represented above as a Y1 shunt
-    # admittance (its source impedance). With the utility bus held at
-    # 1.0 p.u. by the swing constraint that shunt is benign in the
-    # positive-sequence solve, and it is REQUIRED in Y2/Y0 as the source's
-    # negative/zero-sequence return path — so it is kept, unlike in the
-    # balanced solver which drops it entirely.
+    # admittance (its source impedance). With the utility bus held at its
+    # setpoint by the swing constraint that shunt is benign in the positive-
+    # sequence solve (an ideal source at its terminals, as in the balanced
+    # engine), and it is REQUIRED in Y2/Y0 as the source's negative/zero-
+    # sequence impedance — which is why the swing bus is NOT forced to
+    # V2 = V0 = 0 below ([U1]).
     # ── Island detection, per-island swing selection, and dispatch ──
     # Shared with the balanced solver: each electrical island gets its own
     # slack (utility connection bus, else user-labelled Swing, else the
@@ -698,6 +856,14 @@ def run_unbalanced_load_flow(
                              branch_pairs, bus_load_p_mw)
     for i in dispatch["swing_idx"]:
         bus_types[i] = 2
+    # [U2] Voltage held at each PV / swing bus: what the balanced solve reached
+    # there (setpoint within limits, the clamped voltage otherwise), else the
+    # unit's own setpoint (utility v_setpoint_pu, generator / SVC / inverter).
+    for b in buses:
+        i = bus_idx[b.id]
+        if bus_types[i] in (1, 2):
+            v_bal = bal_vpu.get(b.id)
+            V_spec[i] = v_bal if v_bal and v_bal > 0 else vset_of.get(i, 1.0)
 
     # ── Sequence networks, iterated to a consistent solution (S#1-F18) ──
     # Constant-power loads draw phase currents set by their ACTUAL phase (or
@@ -726,6 +892,10 @@ def run_unbalanced_load_flow(
         for _ph, p_pu, q_pu in loads:
             S1_loads[bus_i] -= complex(p_pu, q_pu)
 
+    # Phase-current injections of the phase-domain loads at the latest pass —
+    # kept for the per-phase power report ([U5]).
+    I_abc_all = np.zeros((n, 3), dtype=complex)
+
     def _load_seq_currents(V0_, V1_, V2_):
         """Sequence current injections of the phase-domain loads at the phase
         voltages built from (V0_, V1_, V2_). Per-unit convention: S is p.u.
@@ -736,6 +906,7 @@ def run_unbalanced_load_flow(
         I0_ = np.zeros(n, dtype=complex)
         I1_ = np.zeros(n, dtype=complex)
         I2_ = np.zeros(n, dtype=complex)
+        I_abc_all[:, :] = 0
         for i in range(n):
             if abs(V1_[i]) < 1e-10:
                 continue   # de-energized bus — its loads draw nothing
@@ -762,14 +933,25 @@ def run_unbalanced_load_flow(
                     v_ph = (Va_i, Vb_i, Vc_i)[k]
                     if abs(v_ph) > 1e-10:
                         I_abc[k] -= 3 * np.conj(S_consumed / v_ph)
+            I_abc_all[i, :] = I_abc
             I_seq = _A_inv @ I_abc
             I0_[i], I1_[i], I2_[i] = I_seq[0], I_seq[1], I_seq[2]
         return I0_, I1_, I2_
 
     swing_idx = [i for i, bt in enumerate(bus_types) if bt == 2]
+    ideal2 = [i for i in swing_idx if i not in y2_src]
 
-    def _solve_seq(Y_mat, I_inj):
-        """Solve sequence network with swing buses forced to zero voltage.
+    def _solve_seq(Y_mat, I_inj, ideal):
+        """Solve a sequence network, holding the buses in ``ideal`` at zero.
+
+        [U1] Only buses that are ideal sources in this sequence are held: a
+        swing bus whose source has no impedance stamped in it (a grid-forming
+        inverter in Y2, a Thevenin utility's EMF bus). The utility / generator
+        swing keeps its Z2/Z0 shunt and develops V = Z·I like any other bus —
+        forcing it to zero made the source an infinite sink, so the point of
+        supply always read VUF = 0 and everything downstream lost the source's
+        share. A component with no earth at all (no shunt anywhere) carries no
+        sequence current and is left at V = 0.
 
         Solves per connected component so that a floating subnetwork (e.g.
         buses with no zero-sequence path to ground behind a delta winding)
@@ -781,7 +963,7 @@ def run_unbalanced_load_flow(
             return V_out
         Y_mod = Y_mat.copy()
         I_mod = I_inj.copy()
-        for sw in swing_idx:
+        for sw in ideal:
             Y_mod[sw, :] = 0
             Y_mod[:, sw] = 0
             Y_mod[sw, sw] = 1.0
@@ -804,6 +986,12 @@ def run_unbalanced_load_flow(
             sub_I = I_mod[idx]
             if not np.any(np.abs(sub_I) > 1e-12):
                 continue  # No injections in this component — V stays 0
+            # Floating component: every row sums to zero (no shunt, no held
+            # bus) — the matrix is singular in exact arithmetic but may not
+            # raise numerically, so test it directly.
+            scale = float(np.max(np.abs(np.diag(sub_Y)))) or 1.0
+            if float(np.max(np.abs(sub_Y.sum(axis=1)))) < 1e-9 * scale:
+                continue
             try:
                 V_out[idx] = np.linalg.solve(sub_Y, sub_I)
             except np.linalg.LinAlgError:
@@ -825,8 +1013,8 @@ def run_unbalanced_load_flow(
         if not converged:
             break
         I0_inj, I1_inj, I2_inj = _load_seq_currents(V0, V1, V2)
-        V2_new = _solve_seq(Y2, I2_inj)
-        V0_new = _solve_seq(Y0, I0_inj)
+        V2_new = _solve_seq(Y2, I2_inj, ideal2)
+        V0_new = _solve_seq(Y0, I0_inj, ideal0)
         change = max(float(np.max(np.abs(V2_new - V2), initial=0.0)),
                      float(np.max(np.abs(V0_new - V0), initial=0.0)),
                      float(np.max(np.abs(V1 - V1_prev), initial=0.0))
@@ -857,6 +1045,13 @@ def run_unbalanced_load_flow(
 
         v1_m = abs(V1[i])
         v2_m = abs(V2[i])
+        # [U5] Power drawn on each phase at the solved voltages: the
+        # phase-domain loads' S_ph = V_ph·conj(I_ph)/3 (p.u. of the three-phase
+        # base — see _load_seq_currents), plus the motors' / drives' balanced
+        # share. The old report was the 3P specification only, so a 1P or 2P
+        # load read 0 on every phase. Sign: injection (a load is negative).
+        p_ph = [float((v_ph * np.conj(I_abc_all[i, k])).real) / 3 + P_mot[i, k]
+                for k, v_ph in enumerate((Va[i], Vb[i], Vc[i]))]
         vuf = (v2_m / v1_m * 100) if v1_m > 1e-10 else 0.0
 
         bus_results[bus.id] = UnbalancedLoadFlowBus(
@@ -876,9 +1071,9 @@ def run_unbalanced_load_flow(
             v2_pu=round(v2_m, 6),
             v0_pu=round(abs(V0[i]), 6),
             vuf_pct=round(vuf, 4),
-            pa_mw=round(P_phase[i, 0] * base_mva, 4),
-            pb_mw=round(P_phase[i, 1] * base_mva, 4),
-            pc_mw=round(P_phase[i, 2] * base_mva, 4),
+            pa_mw=round(p_ph[0] * base_mva, 4),
+            pb_mw=round(p_ph[1] * base_mva, 4),
+            pc_mw=round(p_ph[2] * base_mva, 4),
         )
 
     # ── Build branch results ──
@@ -977,8 +1172,10 @@ def run_unbalanced_load_flow(
                                            amps, loading))
 
     # ── Warnings: high VUF ──
-    VUF_LIMIT = 2.0   # IEC 61000-3-13 limit for industrial systems
     warnings: list[LoadFlowWarning] = []
+    warnings.extend(grid_warnings)
+    warnings.extend(oltc_warnings)
+    warnings.extend(pv_label_warnings)
     warnings.extend(dispatch["warnings"])
     # [P5] Unlike the balanced engine (_assess_solution), this schema has no
     # solution_quality field — but a bare `converged=False` with no warning
@@ -1013,32 +1210,29 @@ def run_unbalanced_load_flow(
                          "The operating point may be infeasible: load beyond "
                          "the network's loadability limit, a source too weak "
                          "for the demand, or an overloaded transformer.")))
-    # [R3-1] The unbalanced engine calls the sequence solver directly and has
-    # no generator-capability registration, so a user-labelled PV bus holds
-    # its voltage with UNBOUNDED reactive power (the balanced engine's
-    # reactive-limit clamp does not run here) — non-conservative if the
-    # regulating machine cannot actually supply the Q. Surface it.
+    # [R3-1 → U2] A regulated bus is held at the voltage the balanced load
+    # flow reached there, which applies the unit's reactive limits (a clamped
+    # unit holds only what it could reach). The unbalanced solve does not
+    # re-check those limits against its own, slightly different, positive-
+    # sequence loading — said once per regulated bus.
     for bus in buses:
-        if str(bus.props.get("bus_type", "PQ")) == "PV":
-            _i = bus_idx[bus.id]
-            if _i in dispatch["dead_idx"]:
-                continue
+        _i = bus_idx[bus.id]
+        if _i in regulated and _i not in dispatch["dead_idx"] and bus_types[_i] == 1:
             warnings.append(LoadFlowWarning(
                 elementId=bus.id,
                 element_name=bus.props.get("name", bus.id),
-                message=("PV bus voltage is held with UNLIMITED reactive "
-                         "power in the unbalanced solver (no capability "
-                         "clamp) — verify the regulating machine can supply "
-                         "the implied Q, or check the setpoint with the "
-                         "balanced load flow (which enforces limits)."),
-            ))
+                message=(f"Regulated bus held at {V_spec[_i]:.4f} p.u. (positive "
+                         "sequence) — the voltage the balanced load flow reached "
+                         "with the unit's reactive limits applied. The "
+                         "unbalanced solve does not re-check those limits.")))
     for bus_id, br in bus_results.items():
-        if br.vuf_pct > VUF_LIMIT:
+        limit, basis = _vuf_limit(br.voltage_kv)
+        if br.vuf_pct > limit:
             warnings.append(LoadFlowWarning(
                 elementId=bus_id,
                 element_name=br.bus_name,
                 message=(f"High voltage unbalance: VUF = {br.vuf_pct:.2f}% "
-                         f"(IEC 61000-3-13 limit: {VUF_LIMIT}%)"),
+                         f"(limit {limit:g}% — {basis})"),
             ))
     # Disclose the parallel zero-sequence treatment. It moves Z0 by ~1.7x on a
     # typical double-circuit tower, and V0 / VUF here are read straight off the
@@ -1079,6 +1273,11 @@ def run_unbalanced_load_flow(
     # balanced solver does: drop their rows and re-point branch endpoints at
     # the real load/source they stand for. Only bus-to-bus rows exist here, so
     # no source-row re-anchoring is needed.
+    # The Thevenin EMF bus and its source-impedance element are internal too.
+    for bid in [b for b in bus_results if is_grid_bus(b)]:
+        bus_results.pop(bid)
+    branch_results = [br for br in branch_results
+                      if not str(br.elementId).startswith(GRID_Z_PREFIX)]
     syn_ids = {bid for bid in bus_results if is_synthetic_bus(bid)}
     if syn_ids:
         for bid in syn_ids:

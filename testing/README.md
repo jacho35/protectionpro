@@ -121,8 +121,9 @@ inductance is unknown), and the converter current-limit is exact. Detail:
   reproduce the published Ammerman/CED DC method exactly (≤0.06 %, calorie rounding).
 - **Unbalanced load flow** — phase voltages and VUF match an independent phase-domain solve (Zabc =
   A·diag(Z0,Z1,Z2)·A⁻¹, load currents iterated at the actual phase voltages) exactly, and it collapses to the
-  balanced solution when balanced. Before 2026-09-28 a single-pass solve understated this case's VUF by ~5 %
-  (0.76 vs 0.80 %). (A full IEEE 13-bus abc-frame match is out of scope for this sequence-based engine.)
+  balanced solution when balanced. The reference carries the source's own Z1/Z2/Z0 (a 200 MVA supply), so the
+  VUF is 1.233 %. A single-pass solve (before 2026-09-28) gave 0.76 %. Holding the source bus at V2 = V0 = 0
+  (before 2026-10-01) gave 0.80 %. (A full IEEE 13-bus abc-frame match is out of scope for this sequence-based engine.)
 
 Detail: [`case-duty-check/`](case-duty-check/results.md) · [`case-load-diversity/`](case-load-diversity/results.md) · [`case-dc-arcflash/`](case-dc-arcflash/results.md) · [`case-unbalanced-loadflow/`](case-unbalanced-loadflow/results.md).
 

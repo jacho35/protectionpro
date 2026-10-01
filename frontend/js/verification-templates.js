@@ -1943,7 +1943,7 @@ const VerificationTemplates = {
       ],
       "nextId": 50,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — unbalanced load flow (symmetrical components), phase split 60/20/20. RUN: Load Flow (unbalanced). Expected VUF 0.80 %, Va/Vb/Vc = 0.960 / 1.005 / 0.990 p.u. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — unbalanced load flow (symmetrical components), phase split 60/20/20. RUN: Load Flow (unbalanced). Expected VUF 1.23 %, Va/Vb/Vc = 0.954 / 1.008 / 0.993 p.u. Full working: Help → Verification."
       }
     }
   },
