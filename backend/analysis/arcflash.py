@@ -20,32 +20,31 @@ three fixed anchor voltages (600 V / 2700 V / 14,300 V) via per-electrode-
 voltage range; incident energy additionally applies an equipment-enclosure-
 -size correction factor (CF, box configs only — VOA/HOA are always CF=1);
 arc-flash boundary has a closed-form algebraic inverse (no bisection needed).
-Coefficients were transcribed from the official IEEE 1584-2018 validation
-spreadsheet via the open-source (MIT) reference implementation
-github.com/jgrimard/arc-flash-calculator (whose own test suite checks
-144,000 rows of that spreadsheet); the arcing-current variation-factor
-polynomial (`_RATIO_2018`) is not published by that source and was instead
-fitted exactly (Vandermonde solve, residual ~1e-15) to the seven distinct
-Voc values exercised by the official spreadsheet — see
-backend/tests/test_regression.py::TestArcFlash2018 for the verified fixtures
-this was checked against (six rows spanning all 5 electrode configs and all
-3 voltage-blend regions, matched to <0.0003%).
+Coefficients (Tables 1-7) were transcribed from the official IEEE 1584-2018
+validation spreadsheet via the open-source (MIT) reference implementation
+github.com/jgrimard/arc-flash-calculator. The arc flash review (2026-10-02)
+ran the engine against all 144,000 rows of that spreadsheet: arcing current,
+incident energy and boundary (full and reduced) agree to ≤ 2.4e-6 relative,
+every electrode configuration, voltage-blend region and enclosure-size branch
+included. The variation factor `_VARCF_2018` is the standard's Table 2
+(Iarc_min = Iarc·(1 − 0.5·VarCf), Eq. 2).
 
 References:
 - IEEE 1584-2002 "Guide for Performing Arc-Flash Hazard Calculations"
 - IEEE 1584-2018 "Guide for Performing Arc-Flash Hazard Calculations"
 - NFPA 70E "Standard for Electrical Safety in the Workplace"
 
-Valid ranges:
+Valid ranges (checked per bus, see _validity_warnings):
   IEEE 1584-2002 (§1.2):
   - Voltage: 208V to 15,000V (3-phase); frequency 50/60 Hz
   - Bolted fault current: 700A to 106,000A
-  - Gap between conductors: 13mm to 152mm (empirical model derivation;
-    incident-energy normalisation per Eq. 3 is bounded 6.35-76.2mm)
+  - Gap between conductors: 13mm to 152mm
   - Working distance: ≥ 305mm; fault clearing time: up to 2 seconds
-  IEEE 1584-2018:
+  IEEE 1584-2018 (§4.2):
   - Voltage: 208V to 15,000V (3-phase)
   - Bolted fault current: 500A-106,000A (≤600V) or 200A-65,000A (>600V)
+  - Gap: 6.35-76.2mm (≤600V) or 19.05-254mm (>600V)
+  - Working distance: ≥ 305mm; enclosure width/height ≤ 1244.6mm
 """
 
 import math
@@ -82,7 +81,10 @@ PPE_CATEGORIES = [
     (4.0, 8.0, 2, "Category 2", "Arc-rated shirt, pants, flash suit hood, hard hat"),
     (8.0, 25.0, 3, "Category 3", "Arc flash suit, hard hat, balaclava"),
     (25.0, 40.0, 4, "Category 4", "Multi-layer arc flash suit"),
-    (40.0, 1e6, -1, "DANGER", "Exceeds 40 cal/cm² — Do not work energized"),
+    # NFPA 70E has no PPE category above 40 cal/cm² (Table 130.7(C)(15)(c)
+    # stops there) and §130.2 requires a justified energized work permit —
+    # it does not forbid the work outright.
+    (40.0, 1e6, -1, "DANGER", "Exceeds 40 cal/cm² — no PPE category applies; de-energize (NFPA 70E §130.2)"),
 ]
 
 
@@ -138,7 +140,7 @@ def _get_ppe(incident_energy):
     for low, high, cat, name, desc in PPE_CATEGORIES:
         if low <= incident_energy < high:
             return cat, name, desc
-    return -1, "DANGER", "Exceeds 40 cal/cm² — Do not work energized"
+    return -1, "DANGER", PPE_CATEGORIES[-1][4]
 
 
 @dataclass
@@ -231,6 +233,27 @@ def calc_arcing_current(ibf_ka, voc_kv, gap_mm, config="VCB"):
     return iarc, iarc_reduced
 
 
+def _distance_exponent_2002(voc_kv, gap_mm, config, equipment_class=None):
+    """Distance exponent x (IEEE 1584-2002 Table 4).
+
+    [PS-4] An explicit equipment class keys x directly (the authoritative
+    Table 4 mapping). The gap-based fallback covers legacy calls: 25 mm LV
+    MCC/panel, 32 mm LV switchgear, 102/153 mm MV switchgear — and ≤15 mm
+    is the cable class, x = 2.000 at every voltage level (previously
+    misread as MCC/panel 1.641, understating energy).
+    """
+    if config in ("VOA", "HOA"):
+        return 2.0  # Open air (all voltages)
+    if equipment_class and equipment_class in _X_BY_CLASS:
+        return _X_BY_CLASS[equipment_class]
+    if gap_mm <= 15:
+        return 2.0  # Cable class (13 mm gap), Table 4
+    if voc_kv <= 1.0:
+        # LV enclosed: switchgear (gap ≥ 32mm) x=1.473; MCC/panel x=1.641
+        return 1.473 if gap_mm >= 32 else 1.641
+    return 0.973  # MV enclosed (5/15 kV switchgear)
+
+
 def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
                          config="VCB", enclosure_mm=508, grounded=False,
                          equipment_class=None):
@@ -284,23 +307,7 @@ def calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, dist_mm,
     # Cf: calculation factor for voltage (IEEE 1584-2002 Eq. 6: 1.5 for ≤1kV, 1.0 above)
     cf = 1.5 if voc_kv <= 1.0 else 1.0
 
-    # Distance exponent x (IEEE 1584-2002 Table 4)
-    # [PS-4] An explicit equipment class keys x directly (the authoritative
-    # Table 4 mapping). The gap-based fallback covers legacy calls: 25 mm LV
-    # MCC/panel, 32 mm LV switchgear, 102/153 mm MV switchgear — and ≤15 mm
-    # is the cable class, x = 2.000 at every voltage level (previously
-    # misread as MCC/panel 1.641, understating energy).
-    if config in ("VOA", "HOA"):
-        x_factor = 2.0  # Open air (all voltages)
-    elif equipment_class and equipment_class in _X_BY_CLASS:
-        x_factor = _X_BY_CLASS[equipment_class]
-    elif gap_mm <= 15:
-        x_factor = 2.0  # Cable class (13 mm gap), Table 4
-    elif voc_kv <= 1.0:
-        # LV enclosed: switchgear (gap ≥ 32mm) x=1.473; MCC/panel x=1.641
-        x_factor = 1.473 if gap_mm >= 32 else 1.641
-    else:
-        x_factor = 0.973  # MV enclosed (5/15 kV switchgear)
+    x_factor = _distance_exponent_2002(voc_kv, gap_mm, config, equipment_class)
 
     # Scale to actual time and distance (IEEE 1584-2002 Eq. 5)
     # E = 4.184 × Cf × En × (t/0.2) × (610/D)^x  → in J/cm²
@@ -336,19 +343,21 @@ def calc_arc_flash_boundary(iarc_ka, voc_kv, t_arc_s, gap_mm,
     if iarc_ka <= 0 or t_arc_s <= 0 or threshold_cal <= 0:
         return 0.0
 
-    # Iterative approach: find distance where E = threshold
-    # Use bisection between 300mm and 50,000mm
-    low, high = 300.0, 50000.0
-    for _ in range(50):
-        mid = (low + high) / 2
-        e = calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, mid,
+    # [AF2] Closed form, IEEE 1584-2002 Eq. 7:
+    #   D_B = 610·[4.184·Cf·En·(t/0.2)/E_B]^(1/x)
+    # i.e. the distance at which Eq. 5 falls to the threshold. E is a pure
+    # power law in D, so D_B = 610·(E_610/E_B)^(1/x) with E_610 the energy
+    # at the 610 mm normalising distance. This replaced a bisection held
+    # between 300 mm and 50 m: a slow MV clearance (25 kA, 2 s, x = 0.973)
+    # has a 73 m boundary and was reported as 50 m — 32 % short — and a
+    # small LV boundary was reported at the 300 mm floor.
+    e_610 = calc_incident_energy(iarc_ka, voc_kv, t_arc_s, gap_mm, 610.0,
                                  config, enclosure_mm, grounded,
                                  equipment_class=equipment_class)
-        if e > threshold_cal:
-            low = mid
-        else:
-            high = mid
-    return round((low + high) / 2, 0)
+    if e_610 <= 0:
+        return 0.0
+    x = _distance_exponent_2002(voc_kv, gap_mm, config, equipment_class)
+    return round(610.0 * (e_610 / threshold_cal) ** (1.0 / x), 0)
 
 
 # ── IEEE 1584-2018 model ─────────────────────────────────────────────────
@@ -429,22 +438,20 @@ _ENCLOSURE_DIMS_BY_CLASS_2018 = {
     "mv_switchgear_15kv": (1143.0, 762.0, 762.0),  # 45x30x30 in
 }
 
-# Arcing-current variation ratio Iarc_min/Iarc_max as a function of system
-# voltage (kV), per electrode configuration — IEEE 1584-2018's analogue of
-# the 2002 model's fixed 0.85 "reduced arcing current" check (§5.5), except
-# here the reduction itself varies continuously with voltage and config.
-# Coefficients are a degree-6 polynomial (Horner form, highest degree first)
-# fitted EXACTLY (max residual ~1e-15) to the 7 distinct Voc values in the
-# official IEEE 1584-2018 validation spreadsheet, where this ratio is
-# confirmed (independently, by direct inspection of the spreadsheet's
-# I_arc_min/I_arc_max columns) to depend on nothing but (config, Voc) —
-# not on Ibf, gap, or working distance. See module docstring provenance note.
-_RATIO_2018 = {
-    "VCB":  (0.0, 7.1344880013806882e-07, -4.1568490876782811e-05, 9.6909998353760830e-04, -1.1182999988481407e-02, 6.3224999996645215e-02, 8.4887000000033108e-01),
-    "VCBB": (-5.6899988962564733e-07, 3.0143496996869202e-05, -6.3789997716666045e-04, 6.8889999588070197e-03, -4.0108499971186269e-02, 1.2032999999161118e-01, 8.3238000000082746e-01),
-    "HCB":  (0.0, 1.5485001592392914e-06, -8.2025001209733053e-05, 1.6804500021749386e-03, -1.6654000001514319e-02, 8.0910000000438687e-02, 8.2686499999995700e-01),
-    "VOA":  (-4.7802992275318946e-07, 2.5771497898259193e-05, -5.5804998402079217e-04, 6.2099999711778993e-03, -3.7562499979846432e-02, 1.1791999999413577e-01, 8.3152000000057802e-01),
-    "HOA":  (0.0, 1.5777505466499183e-06, -8.4100004153807138e-05, 1.7303500074748322e-03, -1.7062000005208879e-02, 7.9950000001509453e-02, 8.2685499999985179e-01),
+# Table 2 — arcing-current variation correction factor VarCf as a degree-6
+# polynomial in Voc (kV), k1..k7 highest degree first (Eq. 2):
+#   VarCf = k1·V⁶ + k2·V⁵ + k3·V⁴ + k4·V³ + k5·V² + k6·V + k7
+#   Iarc_min = Iarc · (1 − 0.5·VarCf)
+# IEEE 1584-2018's analogue of the 2002 model's fixed 0.85 second
+# calculation (§5.5). [AF-L1] This replaced a polynomial fitted to the seven
+# spreadsheet voltages; the review found the fit was exactly 1 − 0.5·Table 2
+# (to 1e-15), so the standard's own coefficients are now held instead.
+_VARCF_2018 = {
+    "VCB":  (0.0, -0.0000014269, 0.000083137, -0.0019382, 0.022366, -0.12645, 0.30226),
+    "VCBB": (1.138e-06, -6.0287e-05, 0.0012758, -0.013778, 0.080217, -0.24066, 0.33524),
+    "HCB":  (0.0, -3.097e-06, 0.00016405, -0.0033609, 0.033308, -0.16182, 0.34627),
+    "VOA":  (9.5606e-07, -5.1543e-05, 0.0011161, -0.01242, 0.075125, -0.23584, 0.33696),
+    "HOA":  (0.0, -3.1555e-06, 0.0001682, -0.0034607, 0.034124, -0.1599, 0.34629),
 }
 
 
@@ -479,10 +486,11 @@ def _iarc_anchors_2018(ibf_ka, gap_mm, config):
 
 
 def _reduced_current_ratio_2018(voc_kv, config):
-    ratio = 0.0
-    for c in _RATIO_2018[config]:
-        ratio = ratio * voc_kv + c
-    return ratio
+    """Iarc_min / Iarc = 1 − 0.5·VarCf (IEEE 1584-2018 Eq. 2, Table 2)."""
+    var_cf = 0.0
+    for c in _VARCF_2018[config]:
+        var_cf = var_cf * voc_kv + c
+    return 1.0 - 0.5 * var_cf
 
 
 def calc_arcing_current_2018(ibf_ka, voc_kv, gap_mm, config="VCB"):
@@ -661,8 +669,12 @@ def calc_arc_flash_boundary_2018(iarc_ka, ratio, ibf_ka, voc_kv, t_arc_s, gap_mm
     return round(afb, 0)
 
 
-# Source component types — used to identify the upstream (source) side of a bus
-_SOURCE_TYPES = {"utility", "generator", "solar_pv", "wind_turbine"}
+# Source component types — used to identify the upstream (source) side of a bus.
+# [AF4] Battery storage is a fault source in fault.py (_REAL_SOURCE_TYPES): a
+# breaker on a BESS infeed was treated as a downstream feeder and skipped, so
+# the arc was taken as cleared when the grid side opened while the BESS kept
+# feeding it.
+_SOURCE_TYPES = {"utility", "generator", "solar_pv", "wind_turbine", "battery"}
 
 # Circuit-breaker mechanical opening time (s) added on top of a relay operate
 # time — a typical 3-5 cycle breaker opens in 60-100 ms.
@@ -683,6 +695,14 @@ def _cb_instantaneous_clear_time(cb_type):
 
 # Maximum clearing time per IEEE 1584 (2 s arc-sustainability assumption)
 _MAX_CLEARING_TIME_S = 2.0
+
+# [AF3] Shortest fuse clearing time credited: IEEE 1584 fuse guidance — when
+# the arcing current lies beyond the bottom of the time-current curve, use
+# 0.01 s (the curves are published down to 10 ms; the model's linear-in-time
+# energy is not validated for shorter arcs). The gG table is extended below
+# 10 ms by its I²t line, so a fuse deep in its current-limiting region was
+# credited with 4.8 ms and its incident energy came out half the guide's.
+_FUSE_MIN_CLEAR_S = 0.01
 
 # ── gG fuse pre-arcing curves (IEC 60269) ────────────────────────────────
 # Pre-arcing (minimum melting) time-current points: [current_A, time_s].
@@ -1115,22 +1135,50 @@ def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,
         t_pre = _fuse_prearc_time(rating, current_a)
         if t_pre is None or math.isinf(t_pre):
             return _MAX_CLEARING_TIME_S
-        # Pre-arc → total clearing: × 1.2 (project convention, tcc.js).
-        # No lower floor: fuses genuinely clear in < 10 ms deep in the
-        # current-limiting region.
-        return min(t_pre * 1.2, _MAX_CLEARING_TIME_S)
+        # Pre-arc → total clearing: × 1.2 (project convention, tcc.js —
+        # at least IEEE 1584's +15 % / +10 % melt-to-clear allowance).
+        # [AF3] Floored at 0.01 s: the guide's value beyond the bottom of
+        # the curve, however fast the fuse limits.
+        return min(max(t_pre * 1.2, _FUSE_MIN_CLEAR_S), _MAX_CLEARING_TIME_S)
 
     return _MAX_CLEARING_TIME_S
 
 
+def device_current_shares(fault_bus):
+    """[AF1] Share of the bus's bolted 3-phase current carried by each
+    element on an infeed path, in that element's own amps: element id →
+    I_bf,element / I_bf,bus (from the fault study's branch contributions,
+    which are referred across transformers by the rated ratio [F7]).
+    Empty when the fault result has no branch detail."""
+    ibf = getattr(fault_bus, "ik3", 0) or 0
+    if ibf <= 0:
+        return {}
+    shares = {}
+    for br in getattr(fault_bus, "branches", None) or []:
+        if br.ik_ka and br.ik_ka > 0:
+            shares[br.element_id] = br.ik_ka / ibf
+    return shares
+
+
 def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None,
-                      freq_hz=50.0):
+                      freq_hz=50.0, device_share=None):
     """Estimate fault clearing time from upstream protection devices.
 
     ``kappa``: IEC 60909 peak factor at the faulted bus (fault_bus.kappa
     from the prior fault-analysis call); it gives the X/R for the CT's
     dc-offset (transient) saturation delay — see ct_model.py. ``freq_hz``:
     system frequency for that time-domain CT evaluation.
+
+    ``device_share`` [AF1]: element id → the element's share of the bus
+    bolted current (device_current_shares). Each device is timed at ITS OWN
+    arcing current, I_arc × I_bf,device / I_bf (the IEEE 1584 procedure
+    reads each device's curve at the arcing current flowing through it). Without it every infeed
+    breaker was timed at the TOTAL arcing current, so on a board with two
+    infeeds (or motor contribution) each breaker was credited with tripping
+    faster than it does — a utility relay instantaneous set above the grid
+    share but below the total read 0.08 s instead of 0.76 s, and the label
+    came out at 40 % of the energy. Devices without a share (no branch
+    detail) fall back to the total, referred across transformers.
 
     BFS from the faulted bus toward the source(s): the walk passes through
     non-device components (cables, buses, closed switches, CTs without
@@ -1192,8 +1240,12 @@ def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None,
             # Skip downstream feeder devices — they do not clear a bus fault
             if not _leads_to_source(nid, bus.id, components, adjacency):
                 continue
-            # Refer the arcing current to the device's voltage level
-            i_dev = iarc_a * v_bus / v_here if v_here > 0 else iarc_a
+            if device_share and nid in device_share:
+                # [AF1] This device's own share, already in its own amps
+                i_dev = iarc_a * device_share[nid]
+            else:
+                # Refer the arcing current to the device's voltage level
+                i_dev = iarc_a * v_bus / v_here if v_here > 0 else iarc_a
             path_times.append(
                 _device_clearing_time(comp, i_dev, relay_by_ct, relay_by_cb,
                                       components, kappa, freq_hz))
@@ -1284,6 +1336,8 @@ def run_arc_flash(project_data, fault_results):
             continue
 
         ibf_ka = fault_bus.ik3  # 3-phase bolted fault current
+        # [AF1] Each infeed device is timed at its own share of Iarc
+        shares = device_current_shares(fault_bus)
 
         # [gap #7] Conductor gap: an explicit per-bus override wins, then the
         # equipment class (so LV switchgear 32 mm vs MCC/panel 25 mm can be
@@ -1303,11 +1357,13 @@ def run_arc_flash(project_data, fault_results):
                     validity_warnings.append("Below IEEE 1584-2018 range for ≤600V (< 500A)")
                 elif ibf_a > 106000:
                     validity_warnings.append("Above IEEE 1584-2018 range (> 106kA)")
+                gap_lo, gap_hi = 6.35, 76.2
             else:
                 if ibf_a < 200:
                     validity_warnings.append("Below IEEE 1584-2018 range for >600V (< 200A)")
                 elif ibf_a > 65000:
                     validity_warnings.append("Above IEEE 1584-2018 range for >600V (> 65kA)")
+                gap_lo, gap_hi = 19.05, 254.0
         else:
             # [EE-10] 700 A model floor per IEEE 1584-2002 §1.2 (and the module
             # header) — the previous 500 A check under-warned
@@ -1315,11 +1371,21 @@ def run_arc_flash(project_data, fault_results):
                 validity_warnings.append("Below IEEE 1584 range (< 700A)")
             elif ibf_a > 106000:
                 validity_warnings.append("Above IEEE 1584 range (> 106kA)")
-            if gap_mm < 6.35 or gap_mm > 76.2:
-                validity_warnings.append(
-                    f"Gap {gap_mm}mm outside IEEE 1584-2002 incident-energy model "
-                    "range (6.35-76.2mm) — results extrapolated"
-                )
+            # §1.2 states 13-152 mm; the 153 mm 15 kV switchgear gap this
+            # module uses (Table 4) is not treated as extrapolation.
+            gap_lo, gap_hi = 13.0, 153.0
+        # [AF7] Gap range per edition. The 2002 check used 6.35-76.2 mm (the
+        # 2018 LV range), so every 2002 MV switchgear bus (104/153 mm) carried
+        # an "extrapolated" warning, while 2018 buses were never checked.
+        if gap_mm < gap_lo or gap_mm > gap_hi:
+            validity_warnings.append(
+                f"Gap {gap_mm:g} mm outside the {method} model range "
+                f"({gap_lo:g}-{gap_hi:g} mm) — results extrapolated")
+        # [AF7] Both editions are fitted at working distances of 305 mm and up.
+        if working_dist < 305:
+            validity_warnings.append(
+                f"Working distance {working_dist:g} mm below the IEEE 1584 model "
+                "range (≥ 305 mm) — results extrapolated")
         if voltage_kv > 15:
             validity_warnings.append(f"Voltage {voltage_kv}kV exceeds IEEE 1584 range (≤ 15kV)")
         if voltage_kv < 0.208:
@@ -1338,12 +1404,19 @@ def run_arc_flash(project_data, fault_results):
             width_mm, height_mm, depth_mm = _get_enclosure_dims_2018(bus.props, equipment_class)
             cf = _enclosure_correction_factor_2018(electrode_config, voltage_kv,
                                                    width_mm, height_mm, depth_mm)
+            if electrode_config not in ("VOA", "HOA") and max(width_mm, height_mm) > 1244.6:
+                # [AF7] Table 6 caps the enclosure at 1244.6 mm (49 in); a
+                # larger box is evaluated as 1244.6 mm.
+                warn = "; ".join(([warn] if warn else []) + [
+                    "Enclosure larger than the IEEE 1584-2018 range (1244.6 mm) "
+                    "— evaluated at 1244.6 mm"])
 
             iarc, iarc_reduced, ratio = calc_arcing_current_2018(
                 ibf_ka, voltage_kv, gap_mm, electrode_config)
 
             t_clear = get_clearing_time(bus, components, adjacency, iarc,
-                                        kappa=fault_bus.kappa, freq_hz=freq_hz)
+                                        kappa=fault_bus.kappa, freq_hz=freq_hz,
+                                        device_share=shares)
             e_cal = calc_incident_energy_2018(iarc, 1.0, ibf_ka, voltage_kv,
                                               t_clear, gap_mm, working_dist,
                                               electrode_config, cf)
@@ -1352,7 +1425,8 @@ def run_arc_flash(project_data, fault_results):
             # variation factor, replacing 2002's flat 0.85): re-evaluate the
             # actual protective-device TCC at the reduced current too.
             t_clear_reduced = get_clearing_time(bus, components, adjacency,
-                                                iarc_reduced, kappa=fault_bus.kappa, freq_hz=freq_hz)
+                                                iarc_reduced, kappa=fault_bus.kappa, freq_hz=freq_hz,
+                                        device_share=shares)
             e_cal_reduced = calc_incident_energy_2018(iarc_reduced, ratio, ibf_ka,
                                                       voltage_kv, t_clear_reduced,
                                                       gap_mm, working_dist,
@@ -1379,7 +1453,8 @@ def run_arc_flash(project_data, fault_results):
             # Estimate clearing time from upstream protection devices,
             # using the arcing current to resolve instantaneous vs delayed trips
             t_clear = get_clearing_time(bus, components, adjacency, iarc,
-                                        kappa=fault_bus.kappa, freq_hz=freq_hz)
+                                        kappa=fault_bus.kappa, freq_hz=freq_hz,
+                                        device_share=shares)
 
             # Incident energy at working distance
             e_cal = calc_incident_energy(iarc, voltage_kv, t_clear, gap_mm,
@@ -1393,7 +1468,8 @@ def run_arc_flash(project_data, fault_results):
             # scaling t_clear by a fixed heuristic — the true ratio for an IDMT
             # relay near pickup can be several×, not 1.5×.
             t_clear_reduced = get_clearing_time(bus, components, adjacency,
-                                                iarc_reduced, kappa=fault_bus.kappa, freq_hz=freq_hz)
+                                                iarc_reduced, kappa=fault_bus.kappa, freq_hz=freq_hz,
+                                        device_share=shares)
             e_cal_reduced = calc_incident_energy(iarc_reduced, voltage_kv,
                                                   t_clear_reduced, gap_mm,
                                                   working_dist, electrode_config,
@@ -1417,17 +1493,25 @@ def run_arc_flash(project_data, fault_results):
                                                   equipment_class=equipment_class)
             afb = max(afb_full, afb_reduced)
 
-        # [PS-13b/c] Advisory notes (both are conservative directions).
+        # [AF-L2] The clearing time reported (and printed on the label) is the
+        # one behind the reported energy — the reduced-current pass when that
+        # governs, not always the full-current one.
+        t_governing = t_clear_reduced if e_cal_reduced > e_cal else t_clear
+
+        # [PS-13b/c] Advisory notes (conservative direction: the energy is
+        # reported anyway). [AF-L3] Each edition's own wording.
         _notes = []
-        if _lv_small_transformer_exemption(bus, components, adjacency, voltage_kv):
+        if method == "IEEE 1584-2018":
+            if voltage_kv <= 0.240 and ibf_ka < 2.0:
+                _notes.append(
+                    "IEEE 1584-2018: a sustained arc is less likely at 240 V or "
+                    "below with under 2 kA available; incident energy is "
+                    "conservatively reported anyway")
+        elif _lv_small_transformer_exemption(bus, components, adjacency, voltage_kv):
             _notes.append(
-                "IEEE 1584: <240 V bus fed by a single transformer <125 kVA "
+                "IEEE 1584-2002: <240 V bus fed by a single transformer <125 kVA "
                 "may be exempted from arc-flash assessment; incident energy "
                 "is conservatively reported anyway")
-        if afb <= 300.0:
-            _notes.append(
-                "Arc-flash boundary reported at the 300 mm evaluation floor "
-                "(actual boundary may be smaller)")
         if _notes:
             warn = "; ".join(([warn] if warn else []) + _notes)
 
@@ -1436,7 +1520,8 @@ def run_arc_flash(project_data, fault_results):
 
         # Generate NFPA 70E label
         label = _generate_label(bus_name, voltage_kv, e_worst, afb, ppe_cat,
-                                ppe_name, ppe_desc, ibf_ka, t_clear, method)
+                                ppe_name, ppe_desc, ibf_ka, t_governing, method,
+                                working_dist)
 
         results[bus_id] = ArcFlashBusResult(
             bus_id=bus_id,
@@ -1448,7 +1533,7 @@ def run_arc_flash(project_data, fault_results):
             incident_energy_cal=round(e_worst, 2),
             incident_energy_reduced_cal=round(e_cal_reduced, 2),
             arc_flash_boundary_mm=round(afb, 0),
-            clearing_time_s=round(t_clear, 3),
+            clearing_time_s=round(t_governing, 3),
             working_distance_mm=working_dist,
             electrode_config=electrode_config,
             gap_mm=gap_mm,
@@ -1575,9 +1660,28 @@ def _generate_recommendations(result, bus, components, adjacency):
     return recs
 
 
+def min_arc_rating_text(energy_cal):
+    """Minimum arc rating of clothing for a label (NFPA 70E §130.5(H)): the
+    incident energy rounded UP to 0.1 cal/cm²; none needed below 1.2."""
+    if energy_cal < 1.2:
+        return "not required (< 1.2 cal/cm²)"
+    if energy_cal >= 40.0:
+        return "no PPE category applies (> 40 cal/cm²)"
+    return f"{math.ceil(energy_cal * 10 - 1e-9) / 10:.1f} cal/cm²"
+
+
 def _generate_label(bus_name, voltage_kv, energy, boundary_mm, ppe_cat,
-                    ppe_name, ppe_desc, ibf_ka, t_clear, method="IEEE 1584-2002"):
-    """Generate NFPA 70E arc flash warning label text."""
+                    ppe_name, ppe_desc, ibf_ka, t_clear, method="IEEE 1584-2002",
+                    working_dist_mm=None):
+    """Generate NFPA 70E arc flash warning label text.
+
+    [AF6] NFPA 70E §130.5(H): nominal voltage, arc flash boundary, and the
+    available incident energy WITH its working distance or the PPE category
+    — not both — plus optionally the minimum arc rating of clothing. The
+    label printed the energy with no working distance and the category
+    beside it; it now gives energy at the working distance and the minimum
+    arc rating, and no category. (The results table keeps the category.)
+    """
     boundary_in = round(boundary_mm / 25.4, 1)
     boundary_ft = round(boundary_in / 12, 1)
 
@@ -1588,13 +1692,13 @@ def _generate_label(bus_name, voltage_kv, energy, boundary_mm, ppe_cat,
     else:
         header = "⚡ CAUTION — ARC FLASH HAZARD"
 
+    at_wd = f" at {working_dist_mm:.0f} mm" if working_dist_mm else ""
     label = f"""{header}
 Equipment: {bus_name}
-Voltage: {voltage_kv} kV
-Incident Energy: {energy:.1f} cal/cm²
+Nominal Voltage: {voltage_kv} kV
 Arc Flash Boundary: {boundary_ft} ft ({boundary_mm:.0f} mm)
-PPE: {ppe_name}
-{ppe_desc}
+Incident Energy: {energy:.1f} cal/cm²{at_wd}
+Minimum Arc Rating: {min_arc_rating_text(energy)}
 Bolted Fault: {ibf_ka:.1f} kA
 Clearing Time: {t_clear:.3f} s
 Method: {method}"""

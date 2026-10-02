@@ -143,11 +143,12 @@ $$E=4.184\,C_f\,E_n\,\frac{t}{0.2}\left(\frac{610}{D}\right)^{x}\ \ [\text{J/cm}
 <p>Protective devices slow down near their pickup, and a lower arcing current can mean a <em>longer</em> arc. The study therefore runs twice — at the full $I_a$ and at a reduced $I_a$ — evaluates the real clearing time from the device curves at each current, and the <strong>higher</strong> incident energy and the <strong>larger</strong> boundary govern.</p>
 $$I_{a,red}=0.85\,I_a\ (V\le1\ \text{kV}),\qquad I_{a,red}=0.90\,I_a\ (V>1\ \text{kV, deliberate conservative extension})$$
 <h4>4 · Clearing time</h4>
-<p>The upstream device is found from the topology. For a relay: $t=t_{relay}(I_{eff})+t_{CB}$ with $t_{CB}=80$ ms and $I_{eff}$ the CT-saturated current; for a fuse: $1.2\times$ the pre-arcing time; for a breaker: its own characteristic. Capped at 2 s (the arc-sustainability assumption). A small LV transformer (below 125 kVA, under 240 V) is exempt as generally minimal.</p>
+<p>The upstream devices are found from the topology. Each one is read at the arcing current <em>it</em> carries — its share of the bolted fault current from the short-circuit study, $I_{a,dev}=I_a\,I_{bf,dev}/I_{bf}$ — so on a board fed from the grid and a generator, the grid breaker sees only the grid's share. For a relay: $t=t_{relay}(I_{eff})+t_{CB}$ with $t_{CB}=80$ ms and $I_{eff}$ the CT-saturated current; for a fuse: $1.2\times$ the pre-arcing time, never less than 0.01 s (the bottom of a published fuse curve); for a breaker: its own characteristic. With several infeeds (grid, generators, PV, wind, battery storage) the arc lasts until the slowest one clears. Capped at 2 s (the arc-sustainability assumption). A bus below 240 V fed from a single transformer below 125 kVA may be exempted (2002); the 2018 edition says a sustained arc is less likely at 240 V or below with under 2 kA available. The energy is reported either way.</p>
 <h4>5 · Boundary and PPE</h4>
-<p>The arc flash boundary is the distance at which $E$ falls to 1.2 cal/cm² (onset of a second-degree burn), found by bisection on $E(D)$. PPE category follows NFPA 70E:</p>
+<p>The arc flash boundary is the distance at which $E$ falls to 1.2 cal/cm² (onset of a second-degree burn), found in closed form (Eq. 7): $D_B=610\,(E_{610}/1.2)^{1/x}$ with $E_{610}$ the energy at 610 mm. PPE category follows NFPA 70E:</p>
 <table class="help-ref-table"><thead><tr><th>Category</th><th>$E$ (cal/cm²)</th></tr></thead><tbody>
-<tr><td>0</td><td>&lt; 1.2</td></tr><tr><td>1</td><td>1.2 – 4</td></tr><tr><td>2</td><td>4 – 8</td></tr><tr><td>3</td><td>8 – 25</td></tr><tr><td>4</td><td>25 – 40</td></tr><tr><td>DANGER</td><td>&gt; 40 — do not work energised</td></tr></tbody></table>
+<tr><td>0</td><td>&lt; 1.2</td></tr><tr><td>1</td><td>1.2 – 4</td></tr><tr><td>2</td><td>4 – 8</td></tr><tr><td>3</td><td>8 – 25</td></tr><tr><td>4</td><td>25 – 40</td></tr><tr><td>DANGER</td><td>&gt; 40 — no PPE category applies; de-energise (NFPA 70E §130.2)</td></tr></tbody></table>
+<p>The printed label follows NFPA 70E §130.5(H): nominal voltage, the arc flash boundary, the incident energy <em>at its working distance</em> and the minimum arc rating of clothing. It does not also print the PPE category, because the standard allows the incident energy or the category on a label, not both. The results table still shows the category.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>$I_{bf}=25$ kA, 0.48 kV, $G=32$ mm enclosed (VCB), $D=455$ mm, LV switchgear ($x=1.473$), ungrounded, $t=0.2$ s.</p>
 $$\log I_a=-0.097+0.662(1.3979)+0.0966(0.48)+0.000526(32)+0.5588(0.48)(1.3979)-0.00304(32)(1.3979)=1.1306\ \Rightarrow\ I_a=13.5\ \text{kA}$$
@@ -155,7 +156,7 @@ $$\log E_n=-0.555+1.081(1.1306)+0.0011(32)=0.7024\ \Rightarrow\ E_n=5.04$$
 $$E=1.5\times5.04\times\frac{0.2}{0.2}\times\left(\frac{610}{455}\right)^{1.473}=1.5\times5.04\times1.540=\mathbf{11.6\ cal/cm^2}$$
 <p>PPE category 3, arc flash boundary about 2.1 m. Halving the clearing time halves the energy — the most effective single measure.</p></div>
 <h4>Applicability (2002)</h4>
-<p>208 V–15 kV, three-phase, 50/60 Hz, bolted fault 0.7–106 kA, gaps 13–152 mm, working distance ≥ 305 mm, clearing time up to 2 s. Above 15 kV the Ralph Lee theoretical model applies.</p>
+<p>208 V–15 kV, three-phase, 50/60 Hz, bolted fault 0.7–106 kA, gaps 13–152 mm, working distance ≥ 305 mm, clearing time up to 2 s. A bus outside these ranges carries a warning. Above 15 kV the Ralph Lee theoretical model applies.</p>
 <h4>Reducing the hazard</h4>
 <ol>
 <li><strong>Shorten clearing time</strong> — energy is directly proportional to it: instantaneous trips, arc-flash detection relays (&lt;35 ms), bus differential (87B), zone-selective interlocking, maintenance-mode switches.</li>
@@ -178,7 +179,7 @@ $$I_{a,V}=10^{\,\log_{10}I_{a,V}}\cdot\left(k_4I_{bf}^{6}+k_5I_{bf}^{5}+k_6I_{bf
 $$I_a=\left[\left(\frac{0.6}{V_{oc}}\right)^{2}\left(\frac{1}{I_{600}^{2}}-\frac{0.36-V_{oc}^{2}}{0.36\,I_{bf}^{2}}\right)\right]^{-1/2}$$
 <p><strong>Above 600 V</strong>, linear interpolation between anchors. With $I_1=\dfrac{I_{2700}-I_{600}}{2.1}(V_{oc}-2.7)+I_{2700}$ and $I_2=\dfrac{I_{14300}-I_{2700}}{11.6}(V_{oc}-14.3)+I_{14300}$:</p>
 $$I_a=\begin{cases}I_2 & V_{oc}>2.7\ \text{kV}\\[2pt] I_1\dfrac{2.7-V_{oc}}{2.1}+I_2\dfrac{V_{oc}-0.6}{2.1} & 0.6<V_{oc}\le2.7\ \text{kV}\end{cases}$$
-<p>$I_a$ is clamped to $I_{bf}$. A voltage- and configuration-dependent variation factor $\rho(V_{oc})$ gives the reduced current $I_{a,red}=\rho\,I_a$ for the second pass (the reduced-current logic of the 2002 article applies).</p>
+<p>$I_a$ is clamped to $I_{bf}$. The variation correction factor of Table 2, a sixth-order polynomial in $V_{oc}$ per configuration, gives the reduced current for the second pass: $I_{a,red}=I_a\,(1-0.5\,VarC_f)=\rho\,I_a$ (the reduced-current logic of the 2002 article applies).</p>
 <h4>3 · Incident energy at each anchor</h4>
 $$E_V=\frac{12.552}{50}\,t\,\cdot10^{\,x_V},\qquad
 x_V=k_1+k_2\log G+\frac{k_3I_{a,V}}{\sum_{j=4}^{10}k_jI_{bf}^{\,11-j}}+k_{11}\log I_{bf}+k_{12}\log D+k_{13}\log I_a+\log\frac1{C_F}$$
@@ -192,7 +193,7 @@ $$C_F=b_1\,EES^{2}+b_2\,EES+b_3\ \ (\text{typical}),\qquad C_F=\frac{1}{b_1\,EES
 $$\log D_V=\frac{k_1+k_2\log G+\dfrac{k_3I_{a,V}}{\sum k_jI_{bf}^{11-j}}+k_{11}\log I_{bf}+k_{13}\log I_a+\log\dfrac1{C_F}-\log\dfrac{E_b\,\cdot50/3}{t}}{-k_{12}}$$
 <p>and the three anchors are blended as above. The larger of the full- and reduced-current results governs.</p>
 <h4>Applicability</h4>
-<p>208 V–15 kV; bolted fault 0.5–106 kA ($\le600$ V) or 0.2–65 kA ($>600$ V). Above 15 kV the Ralph Lee model applies. The coefficients were transcribed from the official IEEE 1584-2018 validation spreadsheet; the arcing-current variation polynomial is not published there and was fitted exactly to the seven $V_{oc}$ values the spreadsheet uses. Verified against six spreadsheet rows spanning all five configurations and all three blend regions to under 0.0003 %.</p>` },
+<p>208 V–15 kV; bolted fault 0.5–106 kA ($\le600$ V) or 0.2–65 kA ($>600$ V); gap 6.35–76.2 mm ($\le600$ V) or 19.05–254 mm ($>600$ V); working distance ≥ 305 mm; enclosure up to 1244.6 mm. A bus outside these ranges carries a warning. Above 15 kV the Ralph Lee model applies. Verified against every row of the official IEEE 1584-2018 validation spreadsheet (144,000 rows: all five configurations, all three blend regions, every enclosure size): arcing current, incident energy and boundary, full and reduced, agree to within 0.0003 %.</p>` },
 
 { id: 'prot-dcarcflash', group: 'protect', title: 'DC arc flash',
   std: 'Stokes & Oppenländer (1985) · Ammerman et al. (2010) · DGUV-I 203-077 · Analyse ▸ Protection & safety',
