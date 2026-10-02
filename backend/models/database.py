@@ -205,6 +205,8 @@ class SharedLibrary(Base):
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
                       nullable=False, index=True)
     is_company_default = Column(Boolean, nullable=False, default=False)
+    # Currency symbol/code for this library's rates (BOQ prices); None = not set.
+    currency = Column(String(8), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
@@ -310,6 +312,7 @@ def init_db():
     _migrate_add_owner_id("projects")
     _migrate_add_owner_id("folders")
     _migrate_add_invite_is_admin()
+    _migrate_add_library_currency()
 
 
 def _migrate_add_folder_id():
@@ -348,6 +351,16 @@ def _migrate_add_invite_is_admin():
         if "is_admin" not in [c["name"] for c in insp.get_columns("invites")]:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE invites ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+
+
+def _migrate_add_library_currency():
+    """Add shared_libraries.currency to an existing DB (idempotent; no Alembic here)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "shared_libraries" in insp.get_table_names():
+        if "currency" not in [c["name"] for c in insp.get_columns("shared_libraries")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE shared_libraries ADD COLUMN currency VARCHAR(8)"))
 
 
 def get_db():

@@ -72,6 +72,7 @@
 .rt-tbl .rt-num { text-align: right; }
 .rt-c-key { width: 150px; } .rt-c-unit { width: 44px; } .rt-c-rate { width: 96px; } .rt-c-waste { width: 72px; }
 .rt-c-sup { width: 104px; } .rt-c-st { width: 136px; } .rt-c-qf { width: 176px; } .rt-c-fac { width: 62px; }
+.rt-c-src { width: 150px; } .rt-src { font-size: 11.5px; color: var(--text-secondary); } .rt-src-ed { color: var(--warning); }
 .rt-c-of { width: 250px; } .rt-c-bill { width: 150px; }
 /* Quantity from: a select in a grid cell, tinted when a rule counts the item */
 .rt-tbl td.rt-qf, .rt-tbl td.rt-ofc { padding: 0 4px; }
@@ -232,3 +233,11 @@
 .q-foot { display: flex; justify-content: space-between; padding: 8px 12px 4px; margin-top: 4px; border-top: 1px solid var(--border-color); font-size: 11.5px; color: var(--text-muted); }
 .q-foot kbd { font-family: var(--font-mono); font-size: 10.5px; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: 4px; }
 @media (max-width: 720px) { .toolbar-menu-panel.q-panel { width: min(380px, calc(100vw - 32px)); } }
+
+/* Company price list dialogs */
+.rt-co-dialog { width: min(640px, 94vw); max-height: 86vh; display: flex; flex-direction: column; }
+.rt-co-body { padding: 14px 18px; overflow-y: auto; font-size: 13px; }
+.rt-co-body h4 { margin: 12px 0 6px; font-size: 13px; }
+.rt-co-lead { margin: 0 0 6px; color: var(--text-secondary); }
+.rt-co-tbl td { height: 26px; }
+.rt-co-body .rt-chk { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }

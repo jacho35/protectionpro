@@ -305,7 +305,22 @@ class SharedLibraryOut(BaseModel):
     owner_email: str
     role: str                          # 'owner' | 'edit' | 'view'
     is_company_default: bool
+    currency: Optional[str] = None     # currency of this library's rates
     entries: list[LibraryEntryOut] = []
+
+
+class SharedLibraryCurrency(BaseModel):
+    currency: str
+
+
+class LibraryUpsertItem(BaseModel):
+    kind: str
+    data: dict
+    base_version: Optional[int] = None   # omit to create; else the version you edited
+
+
+class LibraryUpsertIn(BaseModel):
+    entries: list[LibraryUpsertItem]
 
 
 # ── Auth / users ──

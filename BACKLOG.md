@@ -72,7 +72,6 @@ section and adding the `## Completed` entry.
 44. **Real-time collaboration** — multiple users editing one SLD. *(Multi-User & Collaboration)*
 45. **Audit trail** — change tracking with user attribution. *(Multi-User & Collaboration)*
 46. **AI / natural-language search** — query the model and run analyses from plain-language prompts. *(Platform)*
-- **Company master libraries — phase 2: rates in the company library** — a `rates` shared-library kind, company price list seeds new projects, refresh merges by item key (project-only edits kept), price dates. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 3: drift visibility** — record the company version an override / project snapshot was based on; "out of date" flag, field diff, revert-to-company. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 4: quoted-project freeze** — a quoted flag locks a project's rates and library snapshot; company changes show but never apply. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 5: submissions and approvals** — users submit entries to the company library, any admin (not on their own) approves / requests changes / rejects; decisions notify via the notifications center. *(Multi-User & Collaboration)*
@@ -382,6 +381,12 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Company master libraries — phase 2: rates in the company library (2026-10-02)
+- The company standard library can now hold the **company price list**: a `rates` shared-library kind (one entry per rate item key — material, labour, waste %, supplier, price date, and description/unit/category for items added by an import; quantity rules stay with the project), versioned like every other entry (409 on a stale save), plus a **company currency** (`shared_libraries.currency`, `PUT /api/shared-libraries/{id}/currency`). `POST /api/shared-libraries/{id}/entries/upsert` publishes many entries at once (stale/colliding ones come back as `conflicts`, one notification per batch).
+- **Any admin now edits the company standard's entries** (`_role_for` gives a non-owner admin edit on it); everyone else still reads it.
+- Rate library: a **new project starts from the company price list** (currency included); **Refresh from company** merges by item key — adds new prices, takes the company's changes to prices still as the company set them, and lists (never replaces, unless ticked) prices the project changed itself; **Publish to company…** (admins) sends the project's changed prices and can set the company currency. Items carry a price date and source (`Company v3` / `Edited (company v3)`), shown in a new "Price date · source" column; "Save as my default" drops the company markers.
+- Tests: `test_company_rates.py` (validation, admin edit, currency, upsert). Next: phase 3 — drift visibility (see the plan).
 
 ### Notifications center (2026-10-02)
 - A **bell with an unread badge** in the app bar opens a side panel (All / Libraries / Projects) listing what changed: a project shared with you, your access changed or removed, edits on a shared project, library entries added / changed / removed, the company standard set or cleared, library membership changes, and library deletion. Clicking one marks it read and opens the project or the library settings; per-item dismiss, "Mark all read" (per tab), "Show older" paging.
