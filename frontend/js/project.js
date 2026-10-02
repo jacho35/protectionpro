@@ -869,29 +869,37 @@ const Project = {
     container.querySelectorAll('.recent-project-item').forEach(btn => {
       btn.addEventListener('click', async () => {
         window.closeAllToolbarMenus?.();
-        if (!(await this._confirmDiscardUnsaved())) return;
-        try {
-          const data = await API.loadProject(btn.dataset.id);
-          RevisionTimeline.clearLocal(); // switching projects
-          AppState.fromJSON(data);
-          UndoManager.clear();
-          AppState.projectId = btn.dataset.id;
-          Canvas.updateTransform();
-          if (typeof renderPageTabs === 'function') renderPageTabs();
-          Canvas.render();
-          Properties.clear();
-          document.title = `ProtectionPro — ${AppState.projectName}`;
-          updateProjectNameDisplay();
-          this._addRecent(btn.dataset.id, AppState.projectName);
-          RevisionTimeline.show();
-          this._statusMsg('Project loaded.');
-          this._noticeStaleResults();
-          if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
-        } catch (err) {
-          UI.toast('Failed to load project: ' + err.message, 'error');
-        }
+        this.openById(btn.dataset.id);
       });
     });
+  },
+
+  // Open a saved project by id (recent list, notification links). Asks before
+  // discarding unsaved work; returns whether the project was loaded.
+  async openById(id) {
+    if (!(await this._confirmDiscardUnsaved())) return false;
+    try {
+      const data = await API.loadProject(id);
+      RevisionTimeline.clearLocal(); // switching projects
+      AppState.fromJSON(data);
+      UndoManager.clear();
+      AppState.projectId = String(id);
+      Canvas.updateTransform();
+      if (typeof renderPageTabs === 'function') renderPageTabs();
+      Canvas.render();
+      Properties.clear();
+      document.title = `ProtectionPro — ${AppState.projectName}`;
+      updateProjectNameDisplay();
+      this._addRecent(id, AppState.projectName);
+      RevisionTimeline.show();
+      this._statusMsg('Project loaded.');
+      this._noticeStaleResults();
+      if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
+      return true;
+    } catch (err) {
+      UI.toast('Failed to load project: ' + err.message, 'error');
+      return false;
+    }
   },
 
   // ── Folder tree builder ──

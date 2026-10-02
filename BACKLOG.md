@@ -72,6 +72,12 @@ section and adding the `## Completed` entry.
 44. **Real-time collaboration** — multiple users editing one SLD. *(Multi-User & Collaboration)*
 45. **Audit trail** — change tracking with user attribution. *(Multi-User & Collaboration)*
 46. **AI / natural-language search** — query the model and run analyses from plain-language prompts. *(Platform)*
+- **Company master libraries — phase 2: rates in the company library** — a `rates` shared-library kind, company price list seeds new projects, refresh merges by item key (project-only edits kept), price dates. *(Multi-User & Collaboration)*
+- **Company master libraries — phase 3: drift visibility** — record the company version an override / project snapshot was based on; "out of date" flag, field diff, revert-to-company. *(Multi-User & Collaboration)*
+- **Company master libraries — phase 4: quoted-project freeze** — a quoted flag locks a project's rates and library snapshot; company changes show but never apply. *(Multi-User & Collaboration)*
+- **Company master libraries — phase 5: submissions and approvals** — users submit entries to the company library, any admin (not on their own) approves / requests changes / rejects; decisions notify via the notifications center. *(Multi-User & Collaboration)*
+- **Company master libraries — phase 6: Libraries screen and admin tools** — full-screen manager under Project (replaces the Settings library tabs), retire flag, history table, designation log. *(Multi-User & Collaboration)*
+- **Notifications — email delivery, per-user preferences, approvals tab** — optional email for notifications through the existing mailer; preferences; an Approvals tab once phase 5 lands. *(Multi-User & Collaboration)*
 
 ### Street lighting — follow-ups
 
@@ -252,6 +258,7 @@ Open items from the 2026-09-29 harmonics review (`reviews/HARMONICS_REVIEW.md`).
 - ~~**User authentication**: Login system with role-based access~~
 - ~~**Project sharing**: Share projects between users~~
 - **Real-time collaboration**: Multiple users editing the same SLD simultaneously
+- ~~**Notifications center**: in-app notifications for library changes, project shares and edits on shared projects~~ (done — see Completed)
 - **Audit trail**: Track changes with user attribution
 - ~~**Version history**: Track changes and revert to previous versions~~
 
@@ -375,6 +382,11 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Notifications center (2026-10-02)
+- A **bell with an unread badge** in the app bar opens a side panel (All / Libraries / Projects) listing what changed: a project shared with you, your access changed or removed, edits on a shared project, library entries added / changed / removed, the company standard set or cleared, library membership changes, and library deletion. Clicking one marks it read and opens the project or the library settings; per-item dismiss, "Mark all read" (per tab), "Show older" paging.
+- Server side: `notifications` table, `backend/notifications.py` (`notify()` writes in the same transaction as the change; the actor is never notified; unread notifications with the same `group_key` coalesce into one with a count, so autosaves on a shared project show as "N saves"), `/api/notifications` (list, unread-count, read, delete; scoped to the caller; read items expire after 90 days). The company standard fans out to every active user, other libraries to owner + members. The client polls the unread count every 45 s while the tab is visible and toasts when it grows.
+- `Project.openById(id)` factored out of the recent-projects handler. Tests: `test_notifications.py` (isolation, events, coalescing, fan-out, paging, expiry). Design and the remaining phases: Platform & collaboration items above.
 
 ### Quantities as a workspace tab (2026-10-02)
 - Bill of quantities, Cable schedules and the Rate library moved from the header Quantities menu to a **Quantities** workspace tab: step 5 of a Reticulation project, step 4 of a Building project, opt-in for Network (kept visible once the rate library holds rates). A rail switches between the three views, with no-rate / problem badges. The existing dialogs are docked into the pane (`js/quantities.js`, `css/quantities.css`), so every feature and export is unchanged; the Output-menu entries and Ctrl K open the tab. The header menu remains only for the phone layout.

@@ -203,6 +203,7 @@ const Auth = {
     // Component libraries are per user: load this user's (never the previous user's).
     if (typeof StandardData !== 'undefined') StandardData.loadFromServer(this.user.id);
     if (typeof Rates !== 'undefined') Rates.loadDefaultFromServer(this.user.id);
+    if (typeof Notifications !== 'undefined') Notifications.start();
     const label = document.getElementById('account-email');
     if (label) label.textContent = this.user.email;
     const disp = document.getElementById('account-email-display');

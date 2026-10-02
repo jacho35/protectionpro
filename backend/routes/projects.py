@@ -11,6 +11,7 @@ from ..models.schemas import (
     ShareCreate, ShareRoleUpdate, ShareOut,
 )
 from ..auth import get_current_user, require_project
+from ..notifications import notify, display_name
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -149,12 +150,24 @@ def get_project(project_id: int, ctx=Depends(require_project("view"))):
 
 @router.put("/{project_id}")
 def update_project(project_id: int, data: ProjectData,
-                   ctx=Depends(require_project("edit")), db: Session = Depends(get_db)):
+                   ctx=Depends(require_project("edit")), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
     project, _level = ctx
     project.name = data.projectName
     project.data = json.dumps(data.model_dump())
     project.base_mva = data.baseMVA
     project.frequency = data.frequency
+    # Tell everyone else on a shared project. Saves while a notification is still
+    # unread coalesce into one ("N saves"), so autosave does not flood the list.
+    audience = {s.user_id for s in db.query(ProjectShare)
+                .filter(ProjectShare.project_id == project.id).all()}
+    if project.owner_id is not None:
+        audience.add(project.owner_id)
+    who = display_name(user)
+    notify(db, audience, "projects", "project_edited",
+           f"{who} saved changes to “{project.name}”.", actor=user,
+           message_many=f"{who} saved changes to “{project.name}” ({{count}} saves).",
+           link={"type": "project", "id": project.id}, group_key=f"proj-edit:{project.id}")
     db.commit()
     return {"id": project.id, "name": project.name}
 
@@ -225,7 +238,8 @@ def list_shares(project_id: int, ctx=Depends(require_project("owner")),
 
 @router.post("/{project_id}/shares", response_model=list[ShareOut])
 def add_share(project_id: int, data: ShareCreate,
-              ctx=Depends(require_project("owner")), db: Session = Depends(get_db)):
+              ctx=Depends(require_project("owner")), db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
     project, _level = ctx
     email = _norm_email(data.email)
     target = db.query(User).filter(User.email == email).first()
@@ -237,22 +251,39 @@ def add_share(project_id: int, data: ShareCreate,
     share = (db.query(ProjectShare)
              .filter(ProjectShare.project_id == project.id,
                      ProjectShare.user_id == target.id).first())
+    access = "edit access" if data.role == "edit" else "view access"
+    link = {"type": "project", "id": project.id}
     if share:
+        changed = share.role != data.role
         share.role = data.role   # upsert / change role
+        if changed:
+            notify(db, [target.id], "projects", "project_role_changed",
+                   f"{display_name(user)} changed your access to “{project.name}” to {access}.",
+                   actor=user, link=link)
     else:
         db.add(ProjectShare(project_id=project.id, user_id=target.id, role=data.role))
+        notify(db, [target.id], "projects", "project_shared",
+               f"{display_name(user)} shared “{project.name}” with you ({access}).",
+               actor=user, link=link)
     db.commit()
     return _shares_out(db, project.id)
 
 
 @router.patch("/{project_id}/shares/{user_id}", response_model=list[ShareOut])
 def update_share(project_id: int, user_id: int, data: ShareRoleUpdate,
-                 ctx=Depends(require_project("owner")), db: Session = Depends(get_db)):
+                 ctx=Depends(require_project("owner")), db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
     share = (db.query(ProjectShare)
              .filter(ProjectShare.project_id == project_id,
                      ProjectShare.user_id == user_id).first())
     if not share:
         raise HTTPException(status_code=404, detail="Share not found")
+    if share.role != data.role:
+        project, _level = ctx
+        access = "edit access" if data.role == "edit" else "view access"
+        notify(db, [user_id], "projects", "project_role_changed",
+               f"{display_name(user)} changed your access to “{project.name}” to {access}.",
+               actor=user, link={"type": "project", "id": project.id})
     share.role = data.role
     db.commit()
     return _shares_out(db, project_id)
@@ -260,11 +291,15 @@ def update_share(project_id: int, user_id: int, data: ShareRoleUpdate,
 
 @router.delete("/{project_id}/shares/{user_id}", response_model=list[ShareOut])
 def remove_share(project_id: int, user_id: int,
-                 ctx=Depends(require_project("owner")), db: Session = Depends(get_db)):
+                 ctx=Depends(require_project("owner")), db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
     share = (db.query(ProjectShare)
              .filter(ProjectShare.project_id == project_id,
                      ProjectShare.user_id == user_id).first())
     if share:
+        project, _level = ctx
+        notify(db, [user_id], "projects", "project_unshared",
+               f"{display_name(user)} stopped sharing “{project.name}” with you.", actor=user)
         db.delete(share)
         db.commit()
     return _shares_out(db, project_id)
