@@ -897,8 +897,7 @@ const StandardData = {
       if (!wrap) continue;
       const bar = document.createElement('div');
       bar.className = 'lib-searchbar';
-      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><button type="button" class="btn-small lib-open-mgr" title="Company standard, where entries come from, out-of-date edits, submissions and history">Libraries manager…</button><button type="button" class="btn-small lib-submit" data-lib-key="${cfg.arr}" hidden title="Propose your own entries for the company library">Submit to company…</button><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
-      bar.querySelector('.lib-open-mgr').addEventListener('click', () => { document.getElementById('settings-modal').style.display = 'none'; Libraries.open({ view: cfg.arr }); });
+      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><button type="button" class="btn-small lib-submit" data-lib-key="${cfg.arr}" hidden title="Propose your own entries for the company library">Submit to company…</button><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
       bar.querySelector('.lib-submit').addEventListener('click', () => Submissions.pickAndSubmit(cfg.arr));
       bar.querySelector('.lib-drift').addEventListener('click', (e) => { if (e.target.closest('[data-drift-review]')) this.reviewDrift(); });
       bar.querySelector('.lib-target').addEventListener('click', (e) => { if (e.target.closest('[data-stop-edit]')) this.setEditTarget(null); });
@@ -914,6 +913,7 @@ const StandardData = {
   _badgeFor(key, entry) {
     if (!entry) return null;
     if (entry._projectOnly) return { t: 'This project', cls: 'proj', tip: 'Brought in for this project only; not saved to your library' };
+    if (entry._retired && this.originOf(key, entry).origin !== 'own') return { t: 'Retired', cls: 'retired', tip: 'Retired: hidden from the pickers; projects that already use it are unaffected' };
     const o = this.originOf(key, entry);
     const T = this._editTarget;
     if (o.origin === 'company') return { t: 'Company', cls: 'company', tip: 'Company standard: ' + (o.name || '') };
@@ -1186,7 +1186,11 @@ const StandardData = {
   // ─── Tab Switching ───
   bindTabs() {
     document.querySelectorAll('.settings-tab').forEach(tab => {
+      // The library tabs are links: the libraries are managed in the Libraries manager (Project → Libraries…).
+      const link = { cables: 'cables', transformers: 'transformers', cbs: 'cbs', fuses: 'fuses', 'load-classes': 'loadClasses', 'shared-libs': 'teams' }[tab.dataset.tab];
+      if (link) tab.title = 'Opens in the Libraries manager';
       tab.addEventListener('click', () => {
+        if (link && typeof Libraries !== 'undefined') { Libraries.open({ view: link }); return; }
         document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
         tab.classList.add('active');

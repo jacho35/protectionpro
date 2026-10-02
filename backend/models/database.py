@@ -124,6 +124,8 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     name = Column(String(255), nullable=False, default="")
     is_admin = Column(Boolean, nullable=False, default=False)
+    # Library approver: may review company-library submissions without being an administrator.
+    is_approver = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -375,6 +377,7 @@ def init_db():
     _migrate_add_invite_is_admin()
     _migrate_add_library_currency()
     _migrate_add_entry_retired()
+    _migrate_add_user_approver()
 
 
 def _migrate_add_folder_id():
@@ -433,6 +436,16 @@ def _migrate_add_entry_retired():
         if "retired" not in [c["name"] for c in insp.get_columns("shared_library_entries")]:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE shared_library_entries ADD COLUMN retired BOOLEAN NOT NULL DEFAULT 0"))
+
+
+def _migrate_add_user_approver():
+    """Add users.is_approver to an existing DB (idempotent; no Alembic here)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "users" in insp.get_table_names():
+        if "is_approver" not in [c["name"] for c in insp.get_columns("users")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_approver BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def get_db():

@@ -278,6 +278,7 @@ class LibraryMemberOut(BaseModel):
 class LibraryEntryIn(BaseModel):
     data: dict
     base_version: int | None = None    # None = create; else the version being replaced
+    restored_from: int | None = None   # the version this restores (recorded in the history)
 
 
 class LibraryEntryOut(BaseModel):
@@ -331,6 +332,7 @@ class UserOut(BaseModel):
     email: str
     name: str
     is_admin: bool
+    is_approver: bool = False
     is_active: bool
     created_at: datetime
 
@@ -379,6 +381,10 @@ class ActiveRequest(BaseModel):
 
 class AdminRoleRequest(BaseModel):
     is_admin: bool
+
+
+class ApproverRequest(BaseModel):
+    is_approver: bool
 
 
 class InviteCreated(BaseModel):

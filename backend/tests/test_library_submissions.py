@@ -162,3 +162,48 @@ def test_batch_submit_replace_open_and_batch_decision(client):
     assert client.post(S, json={"entries": [{"kind": "rates", "data": {"id": "B-1", "rate": 2}}]}, headers=u).status_code == 422
     n = _notes(client, u, "submission_approved")
     assert len(n) == 1 and "3 of your submissions" in n[0]["message"]
+
+
+def test_approver_role_reviews_without_being_admin(client):
+    lib, admin = _setup(client)
+    appr, user = _login(client, "ap1@x.com"), _login(client, "ap2@x.com")
+    me = client.get("/api/auth/me", headers=appr).json()
+    assert me["is_approver"] is False
+    sub = client.post(S, json={"entries": [{"kind": "cbs", "data": {"id": "ap_cb", "name": "AP CB"}}]}, headers=user).json()[0]
+    # nobody but reviewers sees the queue or decides
+    assert client.get(S, headers=appr).json() == []
+    assert client.post(f"{S}/decide", json={"ids": [sub["id"]], "action": "approve"}, headers=appr).status_code == 403
+    # only an admin can make someone an approver
+    assert client.patch(f"/api/auth/users/{me['id']}/approver", json={"is_approver": True}, headers=user).status_code == 403
+    assert client.patch(f"/api/auth/users/{me['id']}/approver", json={"is_approver": True}, headers=admin).json()["is_approver"] is True
+    assert client.get("/api/auth/me", headers=appr).json()["is_approver"] is True
+    assert sub["id"] in [x["id"] for x in client.get(S, headers=appr).json()]
+    assert client.get(f"{S}/counts", headers=appr).json()["waiting"] >= 1
+    # approvers are told about NEW submissions too
+    s2 = client.post(S, json={"entries": [{"kind": "cbs", "data": {"id": "ap_cb2", "name": "AP CB 2"}}]}, headers=user).json()[0]
+    assert any("AP CB 2" in n["message"] for n in client.get("/api/notifications", headers=appr).json()["items"])
+    r = client.post(f"{S}/decide", json={"ids": [sub["id"], s2["id"]], "action": "approve"}, headers=appr).json()
+    assert len(r["done"]) == 2
+    assert _entries(client, admin, lib)["ap_cb"]["version"] == 1
+    # an approver cannot decide their own submission either
+    mine = client.post(S, json={"entries": [{"kind": "cbs", "data": {"id": "ap_own", "name": "Own"}}]}, headers=appr).json()[0]
+    r = client.post(f"{S}/decide", json={"ids": [mine["id"]], "action": "approve"}, headers=appr).json()
+    assert r["done"] == [] and "own" in r["errors"][0]["error"]
+    # removing the role takes the access away again
+    client.patch(f"/api/auth/users/{me['id']}/approver", json={"is_approver": False}, headers=admin)
+    assert client.post(f"{S}/decide", json={"ids": [mine["id"]], "action": "reject"}, headers=appr).status_code == 403
+
+
+def test_restore_version_is_recorded_in_history(client):
+    lib, admin = _setup(client)
+    P = f"{LIB}/{lib}/entries/cbs/rest1"
+    client.put(P, json={"data": {"id": "rest1", "name": "A", "rated_current_a": 100}}, headers=admin)
+    client.put(P, json={"data": {"id": "rest1", "name": "A", "rated_current_a": 200}, "base_version": 1}, headers=admin)
+    r = client.put(P, json={"data": {"id": "rest1", "name": "A", "rated_current_a": 100}, "base_version": 2, "restored_from": 1}, headers=admin)
+    assert r.status_code == 200 and r.json()["version"] == 3
+    hist = client.get(f"{LIB}/activity", params={"entry_id": "rest1"}, headers=admin).json()
+    assert hist[0]["detail"] == "restored from v1" and hist[0]["version"] == 3
+    client.delete(P, headers=admin)
+    gone = client.get(f"{LIB}/activity", params={"entry_id": "rest1", "action": "entry_deleted"}, headers=admin).json()[0]
+    r = client.put(P, json={"data": gone["data"], "restored_from": 3}, headers=admin)          # undelete = create again
+    assert r.status_code == 200 and r.json()["version"] == 1

@@ -677,6 +677,9 @@ const API = {
   async transferProject(id, to_user_id, keep_access) {
     return this.request(`/admin/projects/${id}/transfer`, 'POST', { to_user_id, keep_access });
   },
+  async setApprover(id, is_approver) {
+    return this.request(`/auth/users/${id}/approver`, 'PATCH', { is_approver });
+  },
   async setAdmin(id, is_admin) {
     return this.request(`/auth/users/${id}/admin`, 'PATCH', { is_admin });
   },

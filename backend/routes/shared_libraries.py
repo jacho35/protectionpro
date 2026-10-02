@@ -415,7 +415,8 @@ def put_entry(library_id: int, kind: str, entry_id: str, body: LibraryEntryIn,
                                data=raw, version=1, updated_by=user.id)
         db.add(e)
         _notify_entry(db, lib, user, kind, entry_id, _entry_label(kind, entry_id, body.data), "added")
-        log_activity(db, lib, user, "entry_created", kind=kind, entry_id=entry_id, version=1, data=body.data)
+        log_activity(db, lib, user, "entry_created", kind=kind, entry_id=entry_id, version=1, data=body.data,
+                     detail=f"restored from v{body.restored_from}" if body.restored_from else "")
     else:
         if body.base_version is None:
             raise _conflict(e, "An entry with this id already exists.")
@@ -425,7 +426,8 @@ def put_entry(library_id: int, kind: str, entry_id: str, body: LibraryEntryIn,
         e.data, e.version, e.updated_by = raw, e.version + 1, user.id
         _notify_entry(db, lib, user, kind, entry_id, _entry_label(kind, entry_id, body.data), "updated")
         _notify_override_drift(db, lib, [(kind, entry_id, e.version)], user)
-        log_activity(db, lib, user, "entry_updated", kind=kind, entry_id=entry_id, version=e.version, data=body.data)
+        log_activity(db, lib, user, "entry_updated", kind=kind, entry_id=entry_id, version=e.version, data=body.data,
+                     detail=f"restored from v{body.restored_from}" if body.restored_from else "")
     lib.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(e)
