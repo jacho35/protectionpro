@@ -1121,9 +1121,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const typeId = (r && r.type) || '';
       const sizeOpts = Conduit.sizes(typeId).map(sz => opt(sz, c.conduit_size || '', sz)).join('');
       return `
-        <td data-label="Conduit tag" data-grp="con"><input type="text" data-k="conduit_tag" value="${escHtml(c.conduit_tag || '')}" style="width:64px" placeholder="own" title="Ways with the same tag share one conduit — their cables are added together. Blank = this way has its own conduit."></td>
-        <td data-label="Conduit type" data-grp="con"><select data-k="conduit_type"><option value="">—</option>${Conduit.TYPES.map(t => opt(t.id, typeId, t.label)).join('')}</select></td>
-        <td data-label="Conduit size" data-grp="con"><select data-k="conduit_size" ${typeId ? '' : 'disabled'}><option value="">${cells.auto || 'Auto'}</option>${sizeOpts}</select></td>
+        <td data-label="Conduit tag" data-grp="con"><input type="text" data-k="conduit_tag" value="${escHtml(c.conduit_tag || '')}" style="width:68px" placeholder="own" title="Ways with the same tag share one conduit — their cables are added together. Blank = this way has its own conduit."></td>
+        <td data-label="Conduit type" data-grp="con"><select data-k="conduit_type" style="width:104px"><option value="">—</option>${Conduit.TYPES.map(t => opt(t.id, typeId, t.label)).join('')}</select></td>
+        <td data-label="Conduit size" data-grp="con"><select data-k="conduit_size" style="width:92px" ${typeId ? '' : 'disabled'}><option value="">${cells.auto || 'Auto'}</option>${sizeOpts}</select></td>
         <td data-label="Cables" data-grp="con" class="db-con-n" data-con="n">${cells.n}</td>
         <td data-label="Fill" data-grp="con" class="db-con-fill" data-con="fill">${cells.fill}</td>
         <td data-label="Conduit check" data-grp="con" class="db-con-check" data-con="check">${cells.check}</td>`;
