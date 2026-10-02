@@ -72,7 +72,6 @@ section and adding the `## Completed` entry.
 44. **Real-time collaboration** — multiple users editing one SLD. *(Multi-User & Collaboration)*
 45. **Audit trail** — change tracking with user attribution. *(Multi-User & Collaboration)*
 46. **AI / natural-language search** — query the model and run analyses from plain-language prompts. *(Platform)*
-- **Company master libraries — phase 4: quoted-project freeze** — a quoted flag locks a project's rates and library snapshot; company changes show but never apply. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 5: submissions and approvals** — users submit entries to the company library, any admin (not on their own) approves / requests changes / rejects; decisions notify via the notifications center. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 6: Libraries screen and admin tools** — full-screen manager under Project (replaces the Settings library tabs), retire flag, history table, designation log. *(Multi-User & Collaboration)*
 - **Notifications — email delivery, per-user preferences, approvals tab** — optional email for notifications through the existing mailer; preferences; an Approvals tab once phase 5 lands. *(Multi-User & Collaboration)*
@@ -380,6 +379,12 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Company master libraries — phase 4: quoted-project freeze, plus phase 3 follow-ups (2026-10-02)
+- **Project → Mark as Quoted…** (optional note, e.g. the quote number) locks the project's rate library — prices, currency, waste, quantity rules, import / refresh / publish / load-default — and keeps the library entries it uses as they were (`AppState.quoted`, `quotedLibrary`, `quoteLog`, saved with the project). A "Quoted <date>" chip sits beside the project type; **Reopen for editing** (menu or chip) is a confirmed action and is logged. Company price changes after the quote show as information in the rate library ("changed since for N items — not applied"); opening a quoted project uses the entries it was quoted with without asking and without touching your libraries; the BOQ header and PDF say "Prices as quoted <date>".
+- Phase 3 follow-ups: an override of a **shipped** entry now records a fingerprint and shows Out of date when the shipped value is corrected (Use shipped / Keep mine); an override whose company/shared entry was **removed** is flagged (Keep as my own / Delete my copy) and the server notifies the person; "out of date" notifications are marked read once nothing is out of date any more (reviewed here or elsewhere). `base` records now accept `fp` and `gone`.
+- Fix: the rate library's Refresh / Publish buttons were visible to everyone (a CSS rule overrode `hidden`).
+- Tests: `test_library_drift.py` gained the removal / record-validation test. Next: phase 5 — submissions and approvals.
 
 ### Company master libraries — phase 3: drift visibility (2026-10-02)
 - Your own edit of a company / shared library entry now records **which version it was made against** (`base: { id: { library, version } }` beside `set` / `removed` in your account's overrides document; an old override with no record is taken as made against what is there at first load). When the company or shared library changes the entry, it shows **Out of date** (table badge, an amber count on the Settings button, a banner on each library tab, a toast at sign-in) and **Review…** lists the field differences with per row *Use the company's entry* (drops your override), *Keep mine, mark reviewed* or *Decide later*.

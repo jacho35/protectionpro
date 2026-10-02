@@ -115,7 +115,7 @@ const StandardData = {
     const set = new Map(((ov && Array.isArray(ov.set)) ? ov.set : []).filter(e => e && e.id).map(e => [e.id, e]));
     this._ovBase[key] = {};
     if (ov && ov.base && typeof ov.base === 'object') {
-      for (const [id, r] of Object.entries(ov.base)) if (set.has(id) && r && Number.isInteger(r.version)) this._ovBase[key][id] = { library: r.library ?? null, version: r.version };
+      for (const [id, r] of Object.entries(ov.base)) if (set.has(id) && r && Number.isInteger(r.version)) this._ovBase[key][id] = { library: r.library ?? null, version: r.version, ...(typeof r.fp === 'string' ? { fp: r.fp } : {}), ...(r.gone ? { gone: true } : {}) };
     }
     const next = this._base[key].filter(e => !removed.has(e.id)).map(e => set.has(e.id) ? this._clone(set.get(e.id)) : this._clone(e));
     const have = new Set(next.map(e => e.id));
@@ -135,10 +135,14 @@ const StandardData = {
     // (made before this was kept) is taken as made against what is there now.
     const prev = this._ovBase[key] || {}, nb = {};
     for (const e of set) {
-      const src = (this._baseSrc[key] || {})[e.id];
-      if (!src || src.version == null) continue;      // shipped / your own entry: nothing to drift from
-      const rec = prev[e.id];
-      nb[e.id] = rec && rec.library === src.libraryId ? rec : { library: src.libraryId, version: src.version };
+      const src = (this._baseSrc[key] || {})[e.id], rec = prev[e.id], b = base.get(e.id);
+      if (b && src && src.version != null) {          // over a company / shared entry
+        nb[e.id] = rec && rec.library === src.libraryId ? { library: rec.library, version: rec.version } : { library: src.libraryId, version: src.version };
+      } else if (b) {                                  // over a shipped entry: remember what it looked like
+        nb[e.id] = { library: null, version: 1, fp: rec && rec.fp ? rec.fp : this._fp(key, b) };
+      } else if (rec) {                                // the entry it was based on is gone
+        nb[e.id] = { ...rec, gone: true };
+      }
     }
     this._ovBase[key] = nb;
     return { set, removed, base: nb };
@@ -151,8 +155,24 @@ const StandardData = {
     if (!entry || entry._projectOnly) return null;
     if (this.originOf(key, entry).origin !== 'own') return null;
     const src = (this._baseSrc[key] || {})[entry.id], rec = (this._ovBase[key] || {})[entry.id];
-    if (!src || src.version == null || !rec || rec.library !== src.libraryId || src.version <= rec.version) return null;
-    return { since: rec.version, now: src.version, name: src.name, company: src.origin === 'company', libraryId: src.libraryId };
+    if (!rec) return null;
+    const L = rec.library == null ? null : this._sharedLayers.find(l => l.id === rec.library);
+    const where = L ? { name: L.name, company: !!L.is_company_default } : { name: null, company: false };
+    if (!src) return { kind: 'removed', since: rec.version, ...where };   // a record exists only if it had a base entry, which is gone now
+    if (src.version == null) {                         // shipped
+      const b = this._base[key].find(x => x.id === entry.id);
+      return rec.fp && b && rec.fp !== this._fp(key, b) ? { kind: 'shipped', since: null, now: null, name: null, company: false } : null;
+    }
+    if (rec.library !== src.libraryId || src.version <= rec.version) return null;
+    return { kind: 'layer', since: rec.version, now: src.version, name: src.name, company: src.origin === 'company', libraryId: src.libraryId };
+  },
+  // Short stable fingerprint of an entry's values (what a shipped-entry override was made against).
+  _fp(key, e) {
+    const o = this._plain(key, e), keys = Object.keys(o).sort();
+    const str = JSON.stringify(keys.map(k => [k, o[k]]));
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16);
   },
   driftList() {
     const out = [];
@@ -168,17 +188,26 @@ const StandardData = {
     return [...new Set([...Object.keys(a), ...Object.keys(b)])]
       .filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map(k => ({ k, mine: a[k], theirs: b[k] }));
   },
-  // Take the company/shared entry again (drops your override of it).
+  // Take the company/shared/shipped entry again (drops your override of it).
   useLayerEntry(key, id) {
     const at = this[key].findIndex(x => x.id === id), b = this._base[key].find(x => x.id === id);
     if (at < 0 || !b) return;
     this[key][at] = this._clone(b);
     delete (this._ovBase[key] || {})[id];
   },
-  // Keep your override and mark it reviewed against what is there now.
+  // Keep your override and mark it reviewed against what is there now (for a removed base entry:
+  // it becomes simply your own entry).
   keepOverride(key, id) {
-    const src = (this._baseSrc[key] || {})[id];
-    if (src && src.version != null) (this._ovBase[key] = this._ovBase[key] || {})[id] = { library: src.libraryId, version: src.version };
+    const src = (this._baseSrc[key] || {})[id], r = this._ovBase[key] = this._ovBase[key] || {};
+    if (!src) { delete r[id]; return; }
+    if (src.version != null) r[id] = { library: src.libraryId, version: src.version };
+    else { const b = this._base[key].find(x => x.id === id); if (b) r[id] = { library: null, version: 1, fp: this._fp(key, b) }; }
+  },
+  // Delete your copy of an entry whose base entry was removed.
+  dropOverride(key, id) {
+    if (this._base[key].some(x => x.id === id)) return this.useLayerEntry(key, id);
+    this[key] = this[key].filter(x => x.id !== id);
+    delete (this._ovBase[key] || {})[id];
   },
   // Overrides loaded without a version record get one now; true when any did (so it is saved).
   _recordMissingBases() {
@@ -198,7 +227,7 @@ const StandardData = {
     if (btn) btn.setAttribute('aria-label', n ? `Settings, ${n} edited library ${n === 1 ? 'entry' : 'entries'} out of date` : 'Settings');
     document.querySelectorAll('.lib-drift').forEach(el => {
       el.hidden = !n;
-      if (n) el.innerHTML = `<span><b>${n}</b> of your edited library entries ${n === 1 ? 'is' : 'are'} out of date — the company or a shared library has changed ${n === 1 ? 'it' : 'them'} since you edited.</span> <button type="button" class="btn-small" data-drift-review>Review…</button>`;
+      if (n) el.innerHTML = `<span><b>${n}</b> of your edited library entries ${n === 1 ? 'is' : 'are'} out of date — ${n === 1 ? 'it was' : 'they were'} changed or removed, or the shipped value was corrected, since you edited.</span> <button type="button" class="btn-small" data-drift-review>Review…</button>`;
     });
     return n;
   },
@@ -603,7 +632,14 @@ const StandardData = {
       }
     }
     if (!rows.length) return;
-    const choices = await this._reviewDialog(rows);
+    // A quoted project is reproduced as quoted: its entries are used for this project only, without
+    // asking, and nothing in your libraries changes. Differences from today's libraries are shown.
+    const quoted = typeof AppState !== 'undefined' && AppState.quoted;
+    const choices = quoted ? rows.map(r => 'project') : await this._reviewDialog(rows);
+    if (quoted && typeof UI !== 'undefined') {
+      const n = rows.filter(r => r.kind === 'differs').length, mis = rows.length - n;
+      UI.toast(`Quoted project: using the library entries it was quoted with${n ? ` (${n} differ from your libraries now)` : ''}${mis ? `${n ? ', ' : ' ('}${mis} not in your libraries${n ? '' : ')'}` : ''}. Your libraries are unchanged.`, 'info', 8000);
+    }
     if (!choices) return;
     let added = 0, only = 0, swapped = 0;
     const toPublish = {};          // shared library id → entries
@@ -644,7 +680,8 @@ const StandardData = {
   // Once per sign-in: say so when overrides have drifted, and let the Settings button show the count.
   _noteDriftOnLoad() {
     const n = this._driftBadge();
-    if (n && typeof UI !== 'undefined') UI.toast(`${n} of your edited library entries ${n === 1 ? 'is' : 'are'} out of date — the company or a shared library changed ${n === 1 ? 'it' : 'them'}. Review in Settings.`, 'warning', 8000);
+    if (!n && typeof Notifications !== 'undefined') Notifications.clearDriftIfResolved();
+    if (n && typeof UI !== 'undefined') UI.toast(`${n} of your edited library entries ${n === 1 ? 'is' : 'are'} out of date — changed or removed since you edited ${n === 1 ? 'it' : 'them'}. Review in Settings.`, 'warning', 8000);
   },
 
   // The Review dialog: every override that has drifted, with the field differences, and per row
@@ -659,17 +696,26 @@ const StandardData = {
       m.style.display = 'flex'; m.style.zIndex = '3000';
       m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-labelledby', 'lib-drift-title');
       const body = rows.map((r, i) => {
-        const where = r.d.company ? 'the company standard' : `“${r.d.name}”`;
-        const diffs = this.entryDiff(r.key, r.e, r.theirs);
-        const table = diffs.length
-          ? `<table style="font-size:12px;border-collapse:collapse;margin-top:6px"><thead><tr><th align="left" style="padding-right:14px">Field</th><th align="left" style="padding-right:14px">Yours</th><th align="left">${r.d.company ? 'Company' : 'Shared'} now</th></tr></thead><tbody>${diffs.slice(0, 8).map(d => `<tr><td style="padding-right:14px;opacity:.75">${escHtml(d.k)}</td><td style="padding-right:14px">${escHtml(this._fmt(d.mine))}</td><td><b>${escHtml(this._fmt(d.theirs))}</b></td></tr>`).join('')}</tbody></table>${diffs.length > 8 ? `<div style="font-size:12px;opacity:.7">+${diffs.length - 8} more fields</div>` : ''}`
+        const k = r.d.kind;
+        const where = r.d.company ? 'the company standard' : `“${r.d.name || 'a shared library'}”`;
+        const diffs = r.theirs ? this.entryDiff(r.key, r.e, r.theirs) : [];
+        const theirsHead = k === 'shipped' ? 'Shipped now' : r.d.company ? 'Company now' : 'Shared now';
+        const table = !r.theirs ? ''
+          : diffs.length
+          ? `<table style="font-size:12px;border-collapse:collapse;margin-top:6px"><thead><tr><th align="left" style="padding-right:14px">Field</th><th align="left" style="padding-right:14px">Yours</th><th align="left">${theirsHead}</th></tr></thead><tbody>${diffs.slice(0, 8).map(d => `<tr><td style="padding-right:14px;opacity:.75">${escHtml(d.k)}</td><td style="padding-right:14px">${escHtml(this._fmt(d.mine))}</td><td><b>${escHtml(this._fmt(d.theirs))}</b></td></tr>`).join('')}</tbody></table>${diffs.length > 8 ? `<div style="font-size:12px;opacity:.7">+${diffs.length - 8} more fields</div>` : ''}`
           : '<div style="font-size:12px;opacity:.7;margin-top:6px">The values now match yours.</div>';
-        return `<tr><td>${this._LIBNAME[r.key]}</td><td><b>${escHtml(this._label(r.e))}</b><div style="font-size:12px;opacity:.7">${escHtml(r.e.id)} · edited against v${r.d.since} of ${escHtml(where)}, now v${r.d.now}</div>${table}</td><td><select data-i="${i}"><option value="later">Decide later</option><option value="use">Use ${r.d.company ? "the company's" : 'the shared'} entry</option><option value="keep">Keep mine, mark reviewed</option></select></td></tr>`;
+        const what = k === 'removed' ? `edited against v${r.d.since} of ${where}, which has since been removed — this is now only your copy`
+          : k === 'shipped' ? 'edited against an older shipped value, which has since been corrected'
+          : `edited against v${r.d.since} of ${where}, now v${r.d.now}`;
+        const opts = k === 'removed'
+          ? '<option value="later">Decide later</option><option value="keep">Keep as my own entry</option><option value="drop">Delete my copy</option>'
+          : `<option value="later">Decide later</option><option value="use">Use ${k === 'shipped' ? 'the shipped' : r.d.company ? "the company's" : 'the shared'} entry</option><option value="keep">Keep mine, mark reviewed</option>`;
+        return `<tr><td>${this._LIBNAME[r.key]}</td><td><b>${escHtml(this._label(r.e))}</b><div style="font-size:12px;opacity:.7">${escHtml(r.e.id)} · ${what}</div>${table}</td><td><select data-i="${i}">${opts}</select></td></tr>`;
       }).join('');
       m.innerHTML = `<div class="modal-content" style="max-width:860px;width:92vw;max-height:86vh;display:flex;flex-direction:column">
         <div class="modal-header"><h3 id="lib-drift-title">Edited entries that are out of date</h3></div>
         <div class="modal-body" style="overflow:auto">
-          <p style="margin:0 0 12px">You edited these company or shared library entries, and they have been changed since. Your edit stays in effect until you decide. Projects already built keep the values they were saved with.</p>
+          <p style="margin:0 0 12px">You edited these library entries, and the entry underneath them — company, shared or shipped — has been changed or removed since. Your edit stays in effect until you decide. Projects already built keep the values they were saved with.</p>
           <table class="props-table" style="width:100%;border-collapse:collapse"><thead><tr><th align="left">Library</th><th align="left">Entry</th><th align="left">What to do</th></tr></thead><tbody>${body}</tbody></table>
         </div>
         <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">
@@ -691,12 +737,14 @@ const StandardData = {
     rows.forEach((r, i) => {
       if (choices[i] === 'use') { this.useLayerEntry(r.key, r.e.id); used++; }
       else if (choices[i] === 'keep') { this.keepOverride(r.key, r.e.id); kept++; }
+      else if (choices[i] === 'drop') { this.dropOverride(r.key, r.e.id); used++; }
     });
     if (!used && !kept) return;
     const t = this._editTarget; this._editTarget = null;        // your library, never the shared one being edited
     this._syncAll();
     this._editTarget = t; this._takeSnap();
-    if (typeof UI !== 'undefined') UI.toast(`${used ? used + ' now use the library entry' : ''}${used && kept ? ', ' : ''}${kept ? kept + ' kept as yours' : ''}.`, 'success');
+    if (typeof UI !== 'undefined') UI.toast(`${used ? used + ' now use the library entry (or were deleted)' : ''}${used && kept ? ', ' : ''}${kept ? kept + ' kept as yours' : ''}.`, 'success');
+    if (typeof Notifications !== 'undefined') Notifications.clearDriftIfResolved();
   },
 
   _fmt(v) { return v === undefined ? '—' : String(v); },
@@ -831,7 +879,9 @@ const StandardData = {
       const under = (this._baseSrc[key] || {})[entry.id];
       if (!under) return { t: 'Mine', cls: 'own', tip: 'Added by you' };
       const d = this.driftOf(key, entry);
-      if (d) return { t: 'Out of date', cls: 'own drift', tip: `Your edit was made against ${d.company ? 'the company standard' : '“' + d.name + '”'} v${d.since}; it is now v${d.now}. Review it in Settings.` };
+      if (d) return { t: 'Out of date', cls: 'own drift', tip: d.kind === 'removed' ? `The ${d.company ? 'company standard' : 'shared'} entry your edit was based on has been removed. Review it in Settings.`
+        : d.kind === 'shipped' ? 'Your edit was made against an older shipped value, which has since been corrected. Review it in Settings.'
+        : `Your edit was made against ${d.company ? 'the company standard' : '“' + d.name + '”'} v${d.since}; it is now v${d.now}. Review it in Settings.` };
       return { t: 'Edited', cls: 'own', tip: 'Your override of the ' + (under.origin === 'shipped' ? 'shipped' : under.name) + ' entry' };
     }
     return null;

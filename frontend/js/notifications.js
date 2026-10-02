@@ -201,6 +201,17 @@ const Notifications = {
     this._renderList();
   },
 
+  // "Your edit is out of date" notifications stop meaning anything once nothing is out of date
+  // (reviewed here, or in another browser): mark them read.
+  async clearDriftIfResolved() {
+    if (typeof StandardData === 'undefined' || StandardData.driftList().length) return;
+    try {
+      const res = await API.getNotifications({ category: 'libraries', unreadOnly: true, limit: 100 });
+      const ids = res.items.filter(i => i.kind === 'override_out_of_date').map(i => i.id);
+      if (ids.length) { await API.markNotificationsRead({ ids }); this.refreshCount(); }
+    } catch (_) { /* not signed in yet — nothing to clear */ }
+  },
+
   // ── links ──
 
   _actionLabel(n) {

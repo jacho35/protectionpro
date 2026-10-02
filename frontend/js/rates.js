@@ -385,6 +385,7 @@ const Rates = {
   // rule: an object, null (= measured only, overriding a default), or
   // undefined (= back to the catalogue default).
   setRule(key, rule) {
+    if (this._locked()) return;
     const L = this.lib();
     const it = L.items[key] || (L.items[key] = {});
     if (rule === undefined) delete it.rule; else it.rule = rule ? Object.assign({}, rule) : null;
@@ -403,6 +404,7 @@ const Rates = {
   },
   // field: 'rate' (material) | 'labour' | 'waste' | 'supplier'; value already cleaned (number|null|string)
   set(key, field, value) {
+    if (this._locked()) return;
     const L = this.lib();
     const it = L.items[key] || (L.items[key] = {});
     if (field === 'supplier') { if (value) it.supplier = String(value); else delete it.supplier; }
@@ -415,6 +417,26 @@ const Rates = {
     this._touch();
   },
   _today() { return new Date().toISOString().slice(0, 10); },
+
+  // A quoted project's prices are locked (quote.js). Entry points that would change them call _deny().
+  _locked() { return typeof Quote !== 'undefined' && Quote.isQuoted(); },
+  _deny() {
+    if (!this._locked()) return false;
+    UI.toast('This project is quoted, so its prices are locked. Reopen it for editing to change them.', 'warning', 6000);
+    return true;
+  },
+  onQuoteChanged() { if (document.getElementById('rates-modal')) { this._undo = null; this.render(); } },
+  // Lock the controls while quoted.
+  _applyLock() {
+    const m = document.getElementById('rates-modal');
+    if (!m) return;
+    const lk = this._locked();
+    m.classList.toggle('rt-quoted', lk);
+    m.querySelectorAll('#rt-rows input, #rt-rows select').forEach(e => { e.disabled = lk; });
+    m.querySelectorAll('#rt-cur, #rt-dwaste, [data-rt="add"], [data-rt="import"], [data-rt="load-default"]').forEach(e => { e.disabled = lk; });
+    const r = m.querySelector('#rt-co-refresh'), p = m.querySelector('#rt-co-publish');
+    if (lk) { if (r) r.hidden = true; if (p) p.hidden = true; }
+  },
 
   // Keys the current project uses (from the BOQ's quantity take-off).
   // Also keeps the default bill (this._bill) for rule / percentage status.
@@ -545,6 +567,7 @@ const Rates = {
       else if (a === 'save-default') this.saveDefault();
       else if (a === 'load-default') this.loadDefault();
       else if (a === 'co-refresh') this.refreshFromCompany();
+      else if (a === 'reopen') Quote.reopen();
       else if (a === 'co-publish') this.publishToCompany();
       else if (a === 'undo') this.undo();
       else if (a === 'labour-ok') { this.lib().labourNoteSeen = true; AppState.dirty = true; this._renderBanner(); }
@@ -705,6 +728,7 @@ const Rates = {
     m.querySelector('#rt-rule-note').hidden = this.tab === 'allow';
     m.querySelector('#rt-pct-note').hidden = this.tab !== 'allow';
     this.renderRows();
+    this._applyLock();
   },
 
   _renderHeadTags() {
@@ -738,7 +762,12 @@ const Rates = {
     const b = document.getElementById('rt-banner');
     if (!b) return;
     const L = this.lib();
-    if (this._undo) {
+    if (this._locked()) {
+      const d = this.driftRows().length;
+      b.hidden = false;
+      b.className = 'rt-banner warn';
+      b.innerHTML = `<span><b>${escHtml(Quote.describe())}.</b> Prices and quantity rules are locked.${d ? ` The company price list has changed since for ${d} item${d === 1 ? '' : 's'} — not applied.` : ''}</span><button type="button" class="rt-lk" data-rt="reopen">Reopen for editing</button>`;
+    } else if (this._undo) {
       b.hidden = false;
       b.className = 'rt-banner ok';
       b.innerHTML = `<span>${escHtml(this._undo.label)}</span><button type="button" class="rt-lk" data-rt="undo">Undo</button>`;
@@ -869,6 +898,7 @@ const Rates = {
     }
     GridTable.attach(tbody, { cells: '[data-f]', onSelect: (info) => this._renderStat(info) });
     this._renderStat(null);
+    this._applyLock();
   },
 
   // ── "Percentage of" picker (Preliminaries & allowances tab) ─────────
@@ -1268,6 +1298,7 @@ const Rates = {
   },
 
   applyImport(plan, { addNew = true, clearMissing = false } = {}) {
+    if (this._deny()) return 0;
     const before = JSON.parse(JSON.stringify(this.lib()));
     let n = 0;
     for (const c of plan.changes) { if (c.field === 'rule') this.setRule(c.key, c.value); else this.set(c.key, c.field, c.to); n++; }
@@ -1445,6 +1476,7 @@ const Rates = {
     this._renderBanner();
   },
   async loadDefault() {
+    if (this._deny()) return;
     const d = this._readDefault();
     if (!d) { UI.alert('You have no saved default rates yet. Enter rates, then click "Save as my default".'); return; }
     const L = this.lib();
@@ -1547,6 +1579,7 @@ const Rates = {
 
   // A brand-new project (nothing entered, nothing ever touched) starts from the company price list.
   _seedFromCompany() {
+    if (this._locked()) return;
     const L = this.lib();
     if (Object.keys(L.items).length || L.updatedAt) return;
     const plan = this.planRefresh();
@@ -1557,6 +1590,7 @@ const Rates = {
   },
 
   async refreshFromCompany() {
+    if (this._deny()) return;
     await this._reloadCompany();
     const plan = this.planRefresh();
     if (!plan) { UI.alert('There is no company price list yet.'); return; }
@@ -1618,6 +1652,7 @@ const Rates = {
   },
 
   async publishToCompany() {
+    if (this._deny()) return;
     await this._reloadCompany();
     const plan = this.planPublish();
     if (!plan || !this._canPublish()) { UI.alert('You cannot publish to the company price list.'); return; }
