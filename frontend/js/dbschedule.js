@@ -86,6 +86,7 @@ const DBSchedule = {
     { g: 'el',  label: 'Earth leakage', keys: ['el_group', 'leakage_ma'] },
     { g: 'cab', label: 'Cable', keys: ['cable_mm2', 'ecc_mm2', 'cable_m'] },
     { g: 'dem', label: 'Demand', keys: ['demand_factor', 'power_factor'] },
+    { g: 'con', label: 'Conduit', keys: ['conduit_tag', 'conduit_type', 'conduit_size', 'conduit_n', 'conduit_fill', 'conduit_check'] },
   ],
   _FOLD_KEY: 'protectionpro-db-fold',
   _fold: null,
@@ -133,7 +134,62 @@ const DBSchedule = {
       return `${escHtml(String(c.cable_mm2 ?? 2.5))} / ${escHtml(String(ecc))}${dot}${escHtml(String(c.cable_m ?? 10))} m`;
     }
     if (g === 'dem') return `${num(c.demand_factor ?? 1, 2)}${dot}${num(c.power_factor ?? 0.9, 2)}`;
+    if (g === 'con') {
+      const r = this._conEval && this._conEval.get(c.id);
+      if (!r || r.status === 'none') return '<span class="db-con-none">No conduit</span>';
+      const t = Conduit.type(r.type);
+      return `<span class="db-con-tag">${escHtml(r.tag || 'own')}</span>${escHtml(t.label)} ${escHtml(r.size)}${dot}${r.fillPct.toFixed(1)} %`
+        + ` <span class="db-con-chip-s db-con-${r.status}">${escHtml(Conduit.statusLabel(r))}</span>`;
+    }
     return '';
+  },
+  // Conduit fill is pure geometry on the way list, so it is recomputed here on
+  // every edit and painted in place (focus survives). Returns the verdict map.
+  _conduitCells(r) {
+    if (!r || r.status === 'none') {
+      return { n: '—', fill: '<span class="db-con-none">—</span>', check: '', auto: '' };
+    }
+    const w = Math.min(100, r.fillPct / (Conduit.LIMIT_PCT * 1.5) * 100);
+    const fill = `<span class="db-con-bar" title="${escHtml(Conduit.tooltip(r))}"><i class="db-con-${r.status}" style="width:${w.toFixed(1)}%"></i><b></b></span>`
+      + `<span class="db-con-pct">${r.fillPct.toFixed(1)} %</span>`;
+    const lbl = escHtml(Conduit.statusLabel(r));
+    const check = (r.status === 'over' && r.suggest)
+      ? `<button type="button" class="db-con-chip-s db-con-over" data-con-apply="${escHtml(r.suggest)}" title="Use ${escHtml(r.suggest)} for this conduit">${lbl}</button>`
+      : `<span class="db-con-chip-s db-con-${r.status}">${lbl}</span>`;
+    return { n: String(r.n), fill, check, auto: r.auto ? `Auto · ${r.size}` : '' };
+  },
+  _paintConduit(comp) {
+    if (!this.body) return;
+    const board = comp || AppState.components.get(this.currentId);
+    if (!board) return;
+    const circuits = board.props.circuits || [];
+    this._conEval = Conduit.evaluate(circuits);
+    this.body.querySelectorAll('#db-rows tr[data-idx]').forEach(tr => {
+      const c = circuits[parseInt(tr.dataset.idx)];
+      if (!c) return;
+      const cells = this._conduitCells(this._conEval.get(c.id));
+      const set = (k, html) => { const el = tr.querySelector(`[data-con="${k}"]`); if (el) el.innerHTML = html; };
+      set('n', cells.n); set('fill', cells.fill); set('check', cells.check);
+      const sel = tr.querySelector('select[data-k="conduit_size"]');
+      if (sel && sel.options[0]) sel.options[0].textContent = cells.auto || 'Auto';
+    });
+    this._paintSummaries(board);
+    this._bindConduitApply(board);
+  },
+  _bindConduitApply(comp) {
+    const circuits = comp.props.circuits || [];
+    this.body.querySelectorAll('[data-con-apply]').forEach(btn => {
+      btn.onclick = () => {
+        const c = circuits[parseInt(btn.closest('tr').dataset.idx)];
+        if (!c) return;
+        const grp = Conduit.groups(circuits);
+        const tag = String(c.conduit_tag || '').trim();
+        const members = tag ? grp.get('tag:' + tag.toLowerCase()) : [c];
+        for (const m of members) m.conduit_size = btn.dataset.conApply;
+        this.render();
+        this._notifyEdited();
+      };
+    });
   },
   _paintSummaries(comp) {
     if (!this.body) return;
@@ -1034,6 +1090,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     if (!comp) return;
     const circuits = comp.props.circuits;
     this.syncResults();
+    Conduit.syncGroups(circuits);
+    this._conEval = Conduit.evaluate(circuits);
 
     // Drop selection entries for ways that no longer exist.
     const validIds = new Set(circuits.map(c => c.id));
@@ -1054,6 +1112,22 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const sumCell = (c, g) => `<td class="db-grp-sum" data-sum="${g}" data-label="${grpLabel[g]}"><button type="button" class="db-grp-chip" data-grp-open="${g}" title="${grpLabel[g]} — click to unfold and edit">${this._sumHtml(c, g)}</button></td>`;
     const grpHead = (G) => `<th class="db-grp-h" data-grp-h="${G.g}" colspan="${fold[G.g] ? 1 : G.keys.length}"><button type="button" class="db-grp-btn" data-grp-toggle="${G.g}" aria-expanded="${!fold[G.g]}" title="Fold or unfold the ${G.label.toLowerCase()} columns"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>${G.label}<span class="db-grp-n">${G.keys.length}</span></button></th>`;
     const foldCls = this._GROUPS.filter(G => fold[G.g]).map(G => ` db-fold-${G.g}`).join('');
+
+    // Conduit group cells: tag (shared-conduit key), type, size (blank = auto),
+    // then the live verdict cells that _paintConduit refreshes in place.
+    const conCells = (c) => {
+      const r = this._conEval.get(c.id);
+      const cells = this._conduitCells(r);
+      const typeId = (r && r.type) || '';
+      const sizeOpts = Conduit.sizes(typeId).map(sz => opt(sz, c.conduit_size || '', sz)).join('');
+      return `
+        <td data-label="Conduit tag" data-grp="con"><input type="text" data-k="conduit_tag" value="${escHtml(c.conduit_tag || '')}" style="width:64px" placeholder="own" title="Ways with the same tag share one conduit — their cables are added together. Blank = this way has its own conduit."></td>
+        <td data-label="Conduit type" data-grp="con"><select data-k="conduit_type"><option value="">—</option>${Conduit.TYPES.map(t => opt(t.id, typeId, t.label)).join('')}</select></td>
+        <td data-label="Conduit size" data-grp="con"><select data-k="conduit_size" ${typeId ? '' : 'disabled'}><option value="">${cells.auto || 'Auto'}</option>${sizeOpts}</select></td>
+        <td data-label="Cables" data-grp="con" class="db-con-n" data-con="n">${cells.n}</td>
+        <td data-label="Fill" data-grp="con" class="db-con-fill" data-con="fill">${cells.fill}</td>
+        <td data-label="Conduit check" data-grp="con" class="db-con-check" data-con="check">${cells.check}</td>`;
+    };
 
     // data-label on each cell drives the stacked-card layout on phones (see
     // the #db-modal card rules in mobile.css) — on desktop the labels are
@@ -1080,6 +1154,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <td data-label="DF" data-grp="dem"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
         <td data-label="PF" data-grp="dem"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
         ${sumCell(c, 'dem')}
+        ${conCells(c)}
+        ${sumCell(c, 'con')}
         <td data-label="FLA (A)" class="db-fla" data-id="${escHtml(c.id)}">—</td>
         <td data-label="Iz (A)" class="db-res st-none" data-res="iz" data-id="${escHtml(c.id)}">—</td>
         <td data-label="%VD" class="db-res st-none" data-res="vd" data-id="${escHtml(c.id)}">—</td>
@@ -1164,6 +1240,13 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             <th data-grp="dem">DF</th>
             <th data-grp="dem" title="Per-circuit power factor. The board-level PF is the diversified P/Q vector rollup of these.">PF</th>
             <th class="db-grp-sum" data-sum="dem">DF · PF</th>
+            <th data-grp="con" title="Ways with the same tag share one conduit. Blank = its own conduit.">Tag</th>
+            <th data-grp="con">Type</th>
+            <th data-grp="con" title="Blank = auto: the smallest size that passes the fill limit. Pick a size to override.">Size (mm)</th>
+            <th data-grp="con" title="Ways in this conduit">Ways</th>
+            <th data-grp="con" title="Conductor area ÷ conduit internal area (live + neutral + ECC, typical single-core PVC diameters). Limit 40 %. Hover the bar for the figures.">Fill</th>
+            <th data-grp="con">Check</th>
+            <th class="db-grp-sum" data-sum="con">Tag · Type · Size · Fill</th>
             <th class="db-fla-h" title="Full-load current — the connected load (Load VA) at this way's own voltage, WITHOUT the demand factor. This is what the circuit draws with everything on it running. Hover a cell for the diversified design current Ib the cable check is graded against.">FLA (A)</th>
             <th class="db-res-h" data-res="iz" title="Derated current-carrying capacity Iz (IEC 60364-5-52) — compared against the breaker rating In, since SANS 10142-1 / IEC 60364-433 requires Ib ≤ In ≤ Iz. Tooltip also carries the earth-loop (Zs) verdict.">Iz (A)</th>
             <th class="db-res-h" data-res="vd" title="Voltage drop over this way's own length, plus upstream drop when Load Flow has been run. SANS 10142-1 Cl. 6.6: 5 % total, 3 % for lighting.">%VD</th>
@@ -1378,6 +1461,25 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           else if (k === 'description') c._nameOverride = true;
           else if (k === 'poles' || k === 'phase') c._polesManual = true;
         }
+        if (k === 'conduit_tag' || k === 'conduit_type' || k === 'conduit_size') {
+          // A conduit is shared by every way with the same tag, so an edit to its
+          // type/size lands on all of them; joining a tag adopts that conduit.
+          c[k] = String(v).trim();
+          if (k === 'conduit_type') c.conduit_size = '';
+          const tag = String(c.conduit_tag || '').trim().toLowerCase();
+          if (tag) {
+            const others = circuits.filter(o => o !== c && String(o.conduit_tag || '').trim().toLowerCase() === tag);
+            if (k === 'conduit_tag' && others.length) {
+              const src = others.find(o => o.conduit_type) || others[0];
+              c.conduit_type = src.conduit_type || ''; c.conduit_size = src.conduit_size || '';
+            } else if (k !== 'conduit_tag') {
+              for (const o of others) { o.conduit_type = c.conduit_type; o.conduit_size = c.conduit_size; }
+            }
+          }
+          this.render();
+          this._notifyEdited();
+          return;
+        }
         if (k === 'way') {
           // Editing a way number re-sorts the schedule by circuit number so
           // rows always read in order (numeric-aware: 1,2,10 not 1,10,2).
@@ -1411,15 +1513,17 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         } else {
           this.refreshTotals(comp);
         }
+        this._paintConduit(comp);
       });
     });
+    this._bindConduitApply(comp);
 
     // Excel-style grid (grid.js): selection, Enter/Tab/arrow navigation,
     // copy, fill-down, no number stepping. Column order is the VISUAL order of
     // the [data-k] cells, which NAV_COLS mirrors for pasted blocks.
     const NAV_COLS = ['way', 'description', 'breaker_a', 'load_va', 'poles', 'phase',
       'curve', 'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m',
-      'demand_factor', 'power_factor'];
+      'demand_factor', 'power_factor', 'conduit_tag', 'conduit_type', 'conduit_size'];
     this._focusCell = (row, k) => {
       const el = this.body.querySelector(`#db-rows tr[data-idx="${row}"] [data-k="${k}"]`);
       if (el) { el.focus(); if (el.select) el.select(); }
@@ -1482,11 +1586,17 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
         } else if (key === 'curve') {
           if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
+        } else if (key === 'conduit_type') {
+          const t = Conduit.parseType(raw);
+          if (t || /^(-|—|none)$/i.test(raw)) { c.conduit_type = t; c.conduit_size = ''; } else bad++;
+        } else if (key === 'conduit_size') {
+          c.conduit_size = /^auto$/i.test(raw) ? '' : raw.replace(/x/i, '×');
         } else {
           c[key] = raw;
         }
       }
     }
+    Conduit.syncGroups(circuits);
     this.render();
     this._notifyEdited();
     this._status(`Pasted ${lines.length} row(s) into the schedule.` + (bad ? ` ${bad} value(s) were not numbers and were skipped.` : ''));
@@ -1937,7 +2047,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // harmlessly.
   XLSX_HEADERS: ['Way', 'Description', 'Breaker (A)', 'Load (VA)', 'Poles', 'Phase',
     'Curve', 'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)',
-    'Demand Factor', 'Power Factor', 'FLA (A)'],
+    'Demand Factor', 'Power Factor', 'FLA (A)', 'Conduit Tag', 'Conduit Type', 'Conduit Size'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
@@ -1949,11 +2059,12 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       c.cable_mm2 ?? '', c.ecc_mm2 ?? '', c.cable_m ?? '',
       c.demand_factor ?? 1, c.power_factor ?? 0.9,
       Math.round(this._wayFlaA(c, vll) * 10) / 10,
+      c.conduit_tag ?? '', (Conduit.type(c.conduit_type) || {}).label ?? '', c.conduit_size ?? '',
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 11 }, { wch: 10 }, { wch: 6 },
       { wch: 6 }, { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 },
-      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }];
+      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');
@@ -1991,6 +2102,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         cable_m: col('length', 'len'),
         load_va: col('load', 'va'), demand_factor: col('demand', 'df'),
         power_factor: col('power', 'pf'),
+        conduit_tag: col('conduit tag'), conduit_type: col('conduit type'), conduit_size: col('conduit size'),
       };
       if (idx.load_va === -1 && idx.description === -1) {
         UI.toast('Could not recognise the columns — export a schedule first to get the expected template.', 'error');
@@ -2019,6 +2131,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           load_va: num('load_va', 0),
           demand_factor: Math.min(1, Math.max(0, num('demand_factor', 1))),
           power_factor: Math.min(1, Math.max(0.05, num('power_factor', 0.9))),
+          conduit_tag: String(get('conduit_tag') || '').trim(),
+          conduit_type: Conduit.parseType(get('conduit_type')),
+          conduit_size: /^auto$/i.test(String(get('conduit_size'))) ? '' : String(get('conduit_size') || '').trim().replace(/x/i, '×'),
         });
       }
       if (circuits.length === 0) {

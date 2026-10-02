@@ -509,11 +509,13 @@ body.dark-mode .dba-note.warn { color: #ef5350; }
 .db-schedule-grid.db-fold-dev [data-grp="dev"],
 .db-schedule-grid.db-fold-el  [data-grp="el"],
 .db-schedule-grid.db-fold-cab [data-grp="cab"],
-.db-schedule-grid.db-fold-dem [data-grp="dem"] { display: none; }
+.db-schedule-grid.db-fold-dem [data-grp="dem"],
+.db-schedule-grid.db-fold-con [data-grp="con"] { display: none; }
 .db-schedule-grid.db-fold-dev .db-grp-sum[data-sum="dev"],
 .db-schedule-grid.db-fold-el  .db-grp-sum[data-sum="el"],
 .db-schedule-grid.db-fold-cab .db-grp-sum[data-sum="cab"],
-.db-schedule-grid.db-fold-dem .db-grp-sum[data-sum="dem"] { display: table-cell; }
+.db-schedule-grid.db-fold-dem .db-grp-sum[data-sum="dem"],
+.db-schedule-grid.db-fold-con .db-grp-sum[data-sum="con"] { display: table-cell; }
 .db-schedule-grid .library-table td.db-grp-sum { white-space: nowrap; padding: 2px 6px; }
 .db-grp-chip {
   display: inline-flex; align-items: center; gap: 5px;
@@ -555,3 +557,26 @@ body.dark-mode .db-schedule-grid .library-table td select:focus { background-col
 /* Move / copy to another board, in the bulk-edit bar. */
 .db-xfer { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 .db-xfer select { max-width: 200px; }
+
+/* Conduit fill (DB schedule): bar with a tick at the limit, text verdicts */
+.db-con-n { text-align: center; color: var(--text-secondary); }
+.db-con-fill { white-space: nowrap; }
+.db-con-bar { position: relative; display: inline-block; width: 70px; height: 9px; margin-right: 6px;
+  vertical-align: middle; background: var(--bg-tertiary); border-radius: 2px; }
+.db-con-bar i { position: absolute; left: 0; top: 0; height: 9px; border-radius: 2px; background: var(--success); }
+.db-con-bar i.db-con-near { background: var(--warning); }
+.db-con-bar i.db-con-over { background: var(--danger); }
+.db-con-bar b { position: absolute; left: 66.7%; top: -3px; width: 2px; height: 15px; background: var(--text-primary); }
+.db-con-pct { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.db-con-none { color: var(--text-muted); }
+.db-con-chip-s { display: inline-block; font: inherit; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 3px;
+  border: 0; white-space: nowrap; background: var(--bg-tertiary); color: var(--text-secondary); }
+.db-con-chip-s.db-con-ok { background: #e5f4e7; color: #1b5e20; }
+.db-con-chip-s.db-con-near { background: #fff0d6; color: #8a4b00; }
+.db-con-chip-s.db-con-over { background: #fdeaea; color: #a61e1e; }
+button.db-con-chip-s { cursor: pointer; }
+button.db-con-chip-s:hover, button.db-con-chip-s:focus-visible { outline: 2px solid var(--accent); }
+.db-con-tag { display: inline-block; margin-right: 5px; padding: 1px 6px; border-radius: 3px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; }
+body.dark-mode .db-con-chip-s.db-con-ok { background: #1f3a24; color: #8fe39c; }
+body.dark-mode .db-con-chip-s.db-con-near { background: #433210; color: #ffd98a; }
+body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8; }
