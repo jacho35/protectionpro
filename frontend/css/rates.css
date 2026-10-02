@@ -241,3 +241,4 @@
 .rt-co-lead { margin: 0 0 6px; color: var(--text-secondary); }
 .rt-co-tbl td { height: 26px; }
 .rt-co-body .rt-chk { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }
+.rt-src-new { color: var(--accent); font-weight: 600; }

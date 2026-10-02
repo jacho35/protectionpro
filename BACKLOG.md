@@ -72,7 +72,6 @@ section and adding the `## Completed` entry.
 44. **Real-time collaboration** — multiple users editing one SLD. *(Multi-User & Collaboration)*
 45. **Audit trail** — change tracking with user attribution. *(Multi-User & Collaboration)*
 46. **AI / natural-language search** — query the model and run analyses from plain-language prompts. *(Platform)*
-- **Company master libraries — phase 3: drift visibility** — record the company version an override / project snapshot was based on; "out of date" flag, field diff, revert-to-company. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 4: quoted-project freeze** — a quoted flag locks a project's rates and library snapshot; company changes show but never apply. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 5: submissions and approvals** — users submit entries to the company library, any admin (not on their own) approves / requests changes / rejects; decisions notify via the notifications center. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 6: Libraries screen and admin tools** — full-screen manager under Project (replaces the Settings library tabs), retire flag, history table, designation log. *(Multi-User & Collaboration)*
@@ -381,6 +380,13 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Company master libraries — phase 3: drift visibility (2026-10-02)
+- Your own edit of a company / shared library entry now records **which version it was made against** (`base: { id: { library, version } }` beside `set` / `removed` in your account's overrides document; an old override with no record is taken as made against what is there at first load). When the company or shared library changes the entry, it shows **Out of date** (table badge, an amber count on the Settings button, a banner on each library tab, a toast at sign-in) and **Review…** lists the field differences with per row *Use the company's entry* (drops your override), *Keep mine, mark reviewed* or *Decide later*.
+- The server notifies people whose own edit of a changed entry is out of date (`override_out_of_date`, coalesced per library, skipped when they have already reviewed that version; the link opens the Review dialog). Batch publishes are covered.
+- Projects record the company / shared entry version in `libraryOrigins` (`version`, and `baseVersion` for an override), so opening a project says "this project used v2, the company is now v4".
+- Rate library: items taken from the company list carry the version (`cv`); when the company moved on, a banner says how many prices changed (separating ones you edited), the source column shows "↑ v4 available", and Refresh from company marks prices you keep as reviewed.
+- Tests: `test_library_drift.py` (base validation, notify / skip reviewed / coalesce, batch). Next: phase 4 — quoted-project freeze.
 
 ### Company master libraries — phase 2: rates in the company library (2026-10-02)
 - The company standard library can now hold the **company price list**: a `rates` shared-library kind (one entry per rate item key — material, labour, waste %, supplier, price date, and description/unit/category for items added by an import; quantity rules stay with the project), versioned like every other entry (409 on a stale save), plus a **company currency** (`shared_libraries.currency`, `PUT /api/shared-libraries/{id}/currency`). `POST /api/shared-libraries/{id}/entries/upsert` publishes many entries at once (stale/colliding ones come back as `conflicts`, one notification per batch).

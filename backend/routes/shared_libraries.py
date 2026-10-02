@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..notifications import notify, display_name, all_active_user_ids
 from ..models.database import (get_db, User, SharedLibrary, SharedLibraryMember,
-                               SharedLibraryEntry)
+                               SharedLibraryEntry, UserLibrary)
 from ..models.schemas import (SharedLibraryCreate, SharedLibraryRename,
                               SharedLibraryCompanyFlag, LibraryMemberAdd,
                               LibraryMemberRole, LibraryMemberOut, LibraryEntryIn,
@@ -135,6 +135,48 @@ def _check_rate(data: dict) -> None:
     d = data.get("priceDate")
     if d is not None and not (isinstance(d, str) and _DATE.match(d)):
         raise HTTPException(status_code=422, detail="priceDate must be YYYY-MM-DD")
+
+
+def _notify_override_drift(db: Session, lib: SharedLibrary, changed: list, actor: User) -> None:
+    """Tell users who hold their OWN edit of an entry that has just changed in this library
+    that their copy is now out of date. `changed` = [(kind, entry_id, new_version)], rates
+    excluded (they are not overridden). A user whose override already records this version
+    (or a newer one) as reviewed is left alone."""
+    changed = [c for c in changed if c[0] != "rates"]
+    if not changed:
+        return
+    audience = _audience(db, lib) - {actor.id}
+    if not audience:
+        return
+    where = _lib_label(lib)
+    rows = db.query(UserLibrary).filter(UserLibrary.user_id.in_(audience)).all()
+    for row in rows:
+        try:
+            doc = json.loads(row.data)
+        except ValueError:
+            continue
+        if doc.get("format") != "overrides":
+            continue
+        hit = []
+        for kind, eid, version in changed:
+            ov = doc.get(kind)
+            if not isinstance(ov, dict):
+                continue
+            mine = next((e for e in ov.get("set", []) if isinstance(e, dict) and e.get("id") == eid), None)
+            if mine is None:
+                continue
+            rec = (ov.get("base") or {}).get(eid)
+            if isinstance(rec, dict) and rec.get("library") == lib.id and (rec.get("version") or 0) >= version:
+                continue
+            hit.append(str(mine.get("name") or mine.get("label") or eid))
+        if hit:
+            one = len(hit) == 1
+            notify(db, [row.user_id], "libraries", "override_out_of_date",
+                   f"Your edited “{hit[0]}” is out of date — {where} has changed it." if one
+                   else f"{len(hit)} of your edited library entries are out of date — {where} has changed them.",
+                   actor=actor, link={"type": "library", "id": lib.id, "drift": True},
+                   message_many=f"Some of your edited library entries are out of date — {where} has changed them.",
+                   group_key=f"drift:{lib.id}")
 
 
 def _check_entry(kind: str, entry_id: str, data: dict) -> str:
@@ -356,6 +398,7 @@ def put_entry(library_id: int, kind: str, entry_id: str, body: LibraryEntryIn,
             raise _conflict(e, f"Changed by {who} since you loaded it.")
         e.data, e.version, e.updated_by = raw, e.version + 1, user.id
         _notify_entry(db, lib, user, kind, entry_id, _entry_label(kind, entry_id, body.data), "updated")
+        _notify_override_drift(db, lib, [(kind, entry_id, e.version)], user)
     lib.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(e)
@@ -452,6 +495,7 @@ def upsert_entries(library_id: int, body: LibraryUpsertIn, user: User = Depends(
             e.data, e.version, e.updated_by = raw, e.version + 1, user.id
             updated.append({"kind": item.kind, "id": eid, "version": e.version})
     n = len(created) + len(updated)
+    _notify_override_drift(db, lib, [(u["kind"], u["id"], u["version"]) for u in updated], user)
     if n:
         lib.updated_at = datetime.now(timezone.utc)
         notify(db, _audience(db, lib), "libraries", "library_entries_published",

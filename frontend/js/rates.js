@@ -583,7 +583,7 @@ const Rates = {
     if (!tr) return;
     const key = tr.dataset.key, f = el.dataset.f;
     const raw = el.value.trim();
-    if (f === 'supplier') { this.set(key, 'supplier', raw); const sc = tr.querySelector('td[data-td="src"]'); if (sc) sc.innerHTML = this._srcText(this.get(key)); return; }
+    if (f === 'supplier') { this.set(key, 'supplier', raw); const sc = tr.querySelector('td[data-td="src"]'); if (sc) sc.innerHTML = this._srcText(this.get(key), key); return; }
     if (f === 'basis') { this._setBasis(key, el.value); this._afterRuleChange(); return; }
     if (f === 'factor' || f === 'pct') {
       const cur = this.getRule(key);
@@ -617,7 +617,7 @@ const Rates = {
       const nr = !this.priced(this.get(key)) && !!(row && row.used);
       tr.querySelectorAll('td[data-td="rate"], td[data-td="labour"]').forEach(td => td.classList.toggle('rt-nr', nr));
       if (row) tr.querySelector('td[data-td="st"]').innerHTML = this._pill(row);
-      const sc = tr.querySelector('td[data-td="src"]'); if (sc) sc.innerHTML = this._srcText(this.get(key));
+      const sc = tr.querySelector('td[data-td="src"]'); if (sc) sc.innerHTML = this._srcText(this.get(key), key);
       this._renderCounts();
       this._renderBanner();
     }
@@ -686,6 +686,7 @@ const Rates = {
     const m = document.getElementById('rates-modal');
     if (!m) return;
     this._rows = this.rows(this._used);
+    this._co = this.companyLayer();
     const L = this.lib();
     if (this.tab === 'allow' && (this.filter === 'norate' || this.filter === 'notcounted')) this.filter = 'all';
     m.querySelector('#rt-cur').value = L.currency;
@@ -745,6 +746,11 @@ const Rates = {
       b.hidden = false;
       b.className = 'rt-banner';
       b.innerHTML = `<span>This project has no rates yet. You have saved default rates.</span><button type="button" class="rt-lk" data-rt="load-default">Load my default rates</button>`;
+    } else if (this.driftRows().length) {
+      const d = this.driftRows(), ed = d.filter(x => x.edited).length;
+      b.hidden = false;
+      b.className = 'rt-banner warn';
+      b.innerHTML = `<span>${d.length} price${d.length === 1 ? ' has' : 's have'} changed in the company list since this project took ${d.length === 1 ? 'it' : 'them'}${ed ? ` (${ed} you edited yourself)` : ''}.</span><button type="button" class="rt-lk" data-rt="co-refresh">Review &amp; refresh</button>`;
     } else if (!L.labourNoteSeen && this._hasOldRates(L)) {
       b.hidden = false;
       b.className = 'rt-banner';
@@ -760,12 +766,14 @@ const Rates = {
 
   // Status pill: what the bill does with the item in this project.
   // "1 Oct 2026 · Company v3" — when the price was set and where it came from.
-  _srcText(v) {
+  _srcText(v, key) {
     if (!this.priced(v)) return '';
     const date = v.priceDate ? new Date(v.priceDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
     const src = v.src === 'company' ? `Company v${v.cv}` : v.src === 'edited' ? `Edited (company v${v.cv})` : '';
-    const t = [date, src].filter(Boolean).join(' · ');
-    return t ? `<span class="${v.src === 'edited' ? 'rt-src-ed' : ''}" title="${escHtml(t)}">${escHtml(t)}</span>` : '';
+    const co = key && this._co && this._co.entries.get(key);
+    const newer = co && v.cv && co.version > v.cv ? ` · ↑ v${co.version} available` : '';
+    const t = [date, src].filter(Boolean).join(' · ') + newer;
+    return t ? `<span class="${v.src === 'edited' ? 'rt-src-ed' : ''}${newer ? ' rt-src-new' : ''}" title="${escHtml(t)}">${escHtml(t)}</span>` : '';
   },
 
   _pill(r) {
@@ -849,7 +857,7 @@ const Rates = {
         ${r.cat === 'term' ? '<td class="rt-ro rt-num" title="Terminations are counted per cable end; no waste allowance">—</td>'
           : `<td><input class="rt-gc rt-num" data-f="waste" inputmode="decimal" value="${v.waste}" aria-label="Waste % for ${d}"></td>`}
         <td><input class="rt-gc" data-f="supplier" value="${escHtml(v.supplier)}" aria-label="Supplier code for ${d}"></td>
-        <td class="rt-ro rt-src" data-td="src">${this._srcText(v)}</td>
+        <td class="rt-ro rt-src" data-td="src">${this._srcText(v, r.key)}</td>
         <td class="rt-ro" data-td="st">${this._pill(r)}</td></tr>`;
     }).join('');
     const empty = m.querySelector('#rt-empty');
@@ -1468,6 +1476,21 @@ const Rates = {
 
   _descMap() { return new Map(this.catalogue().map(c => [c.key, c.desc])); },
 
+  // Project prices taken from the company list whose company entry has since moved on
+  // (a newer version): { key, now, cv }. Prices the project edited itself count too — the
+  // company changed what they were based on — so the user can decide.
+  driftRows() {
+    const co = this.companyLayer();
+    if (!co) return [];
+    const out = [];
+    for (const [key, it] of Object.entries(this.lib().items)) {
+      if ((it.src !== 'company' && it.src !== 'edited') || !it.cv) continue;
+      const ce = co.entries.get(key);
+      if (ce && ce.version > it.cv && !this._sameVals(it, ce.data)) out.push({ key, now: ce.version, cv: it.cv, edited: it.src === 'edited' });
+    }
+    return out;
+  },
+
   // Same prices? (rate / labour / waste / supplier; a waste the project never set matches a company null.)
   _sameVals(it, d) {
     const n = v => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
@@ -1513,6 +1536,8 @@ const Rates = {
     const before = JSON.parse(JSON.stringify(L));
     let n = 0;
     for (const r of [...plan.add, ...plan.update, ...(overwriteKept ? plan.keep : [])]) { this._takeCompany(r.key, r.entry); n++; }
+    // Prices the project keeps as its own: reviewed against this company version, so they stop being flagged.
+    if (!overwriteKept) for (const r of plan.keep) { const it = L.items[r.key]; if (it && it.src) it.cv = r.entry.version; }
     for (const r of plan.same) { const it = L.items[r.key]; it.src = 'company'; it.cv = r.entry.version; if (r.entry.data.priceDate && !it.priceDate) it.priceDate = r.entry.data.priceDate; }
     if (adoptCurrency && plan.co.currency) L.currency = plan.co.currency;
     this._touch();

@@ -44,6 +44,14 @@ def _validate(data: dict) -> str:
             if not ok:
                 raise HTTPException(status_code=422,
                                     detail=f"Library '{key}' must be {{set: [entries with an id], removed: [ids]}}")
+            # `base`: the company/shared entry version each override was made against.
+            base = val.get("base", {})
+            if not (isinstance(base, dict) and all(
+                    isinstance(r, dict) and isinstance(r.get("version"), int) and r["version"] >= 1
+                    and (r.get("library") is None or isinstance(r["library"], int))
+                    for r in base.values())):
+                raise HTTPException(status_code=422,
+                                    detail=f"Library '{key}' base must map entry ids to {{library, version}}")
         elif not _is_entries(val):
             raise HTTPException(status_code=422, detail=f"Library '{key}' must be a list of entries with an id")
     raw = json.dumps(data, separators=(",", ":"))
