@@ -26,7 +26,8 @@ const Submissions = {
   _detail: null,
   _counts: { waiting: 0, changes_requested: 0 },
 
-  _admin() { return typeof Auth !== 'undefined' && Auth.isAdmin(); },
+  // A reviewer: an administrator or a library approver (the backend enforces it).
+  _admin() { return typeof Auth !== 'undefined' && Auth.isApprover(); },
   _me() { return typeof Auth !== 'undefined' && Auth.user ? Auth.user.id : null; },
   _companyLibrary() {
     const layers = (typeof StandardData !== 'undefined' && StandardData._sharedLayers) || [];
@@ -37,9 +38,8 @@ const Submissions = {
   async refreshBadge() {
     try { this._counts = await API.getSubmissionCounts(); } catch (_) { return; }
     const n = (this._counts.waiting || 0) + (this._counts.changes_requested || 0);
-    const b = document.getElementById('submissions-badge');
-    if (b) { b.hidden = !n; b.textContent = String(n); }
     if (this._open) this._renderRail();
+    if (typeof Libraries !== 'undefined') Libraries.refreshBadge();
   },
 
   // ── submitting ──
@@ -247,9 +247,9 @@ const Submissions = {
       actions = `<label class="subm-note-l">Note to the submitter<textarea id="subm-note" rows="3" placeholder="${s.status === 'pending' ? 'Required to request changes' : ''}"></textarea></label>
         <button type="button" class="btn-primary" data-decide="approve" ${s.status !== 'pending' ? 'disabled' : ''}>Approve and ${s.change_type === 'change' ? 'update' : 'add to'} company</button>
         <div class="subm-two"><button type="button" class="btn-small" data-decide="request_changes" ${s.status !== 'pending' ? 'disabled' : ''}>Request changes</button><button type="button" class="btn-small danger" data-decide="reject">Reject</button></div>
-        <div class="subm-hint">Any admin can decide, but not on their own submission. Every decision notifies the submitter.</div>`;
+        <div class="subm-hint">Any admin or approver can decide, but not on their own submission. Every decision notifies the submitter.</div>`;
     } else if (this._admin() && open && mine) {
-      actions = '<div class="subm-hint">This is your own submission, so another admin has to decide it.</div>';
+      actions = '<div class="subm-hint">This is your own submission, so another admin or approver has to decide it.</div>';
     }
     if (mine && open) {
       const canRe = s.kind !== 'rates' && StandardData[s.kind] && StandardData[s.kind].some(e => e.id === s.entry_id);
@@ -331,5 +331,5 @@ const Submissions = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('btn-submissions')?.addEventListener('click', () => { window.closeAllToolbarMenus?.(); Submissions.open(); });
+  /* opened from the Libraries manager and from notifications */
 });

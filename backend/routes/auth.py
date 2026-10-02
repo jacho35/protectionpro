@@ -12,7 +12,7 @@ from .. import mailer
 from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset, SharedLibrary
 from ..models.schemas import (
     RegisterRequest, LoginRequest, Token, UserOut,
-    InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, AdminRoleRequest, ActiveRequest, ResetLinkRequest,
+    InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, AdminRoleRequest, ApproverRequest, ActiveRequest, ResetLinkRequest,
 )
 from ..auth import (
     hash_password, verify_password, create_access_token,
@@ -261,7 +261,7 @@ def delete_invite(invite_id: int, admin: User = Depends(require_admin),
 @router.get("/users")
 def list_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     return [{"id": u.id, "email": u.email, "name": u.name, "is_admin": u.is_admin,
-             "is_active": u.is_active} for u in db.query(User).order_by(User.name, User.email).all()]
+             "is_approver": bool(u.is_approver), "is_active": u.is_active} for u in db.query(User).order_by(User.name, User.email).all()]
 
 
 @router.patch("/users/{user_id}/admin")
@@ -297,6 +297,20 @@ def _guard_other_user(db, admin: User, user_id: int, verb: str) -> User:
         if others == 0:
             raise HTTPException(status_code=400, detail="There must be at least one active administrator.")
     return user
+
+
+@router.patch("/users/{user_id}/approver")
+def set_approver(user_id: int, data: ApproverRequest, admin: User = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    """Make a user a library approver (or remove that). Admin only. Administrators approve anyway."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if data.is_approver and not user.is_active:
+        raise HTTPException(status_code=400, detail="That account is deactivated.")
+    user.is_approver = data.is_approver
+    db.commit()
+    return {"id": user.id, "is_approver": user.is_approver}
 
 
 @router.patch("/users/{user_id}/active")

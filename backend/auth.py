@@ -122,6 +122,13 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_reviewer(user: User = Depends(get_current_user)) -> User:
+    """An administrator or a library approver (decides company-library submissions)."""
+    if not (user.is_admin or user.is_approver):
+        raise HTTPException(status_code=403, detail="Approver access required")
+    return user
+
+
 # ── Project access control ──
 
 _LEVELS = {"view": 0, "edit": 1, "owner": 2}

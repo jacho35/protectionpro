@@ -35,6 +35,10 @@ def _validate(data: dict) -> str:
     for key, val in data.items():
         if key in ("version", "format"):
             continue
+        if key == "layerOrder":            # the user's own order of their shared libraries (ids, first wins last)
+            if not (isinstance(val, list) and len(val) <= 200 and all(isinstance(i, int) for i in val)):
+                raise HTTPException(status_code=422, detail="layerOrder must be a list of library ids")
+            continue
         if key not in LIBRARY_KEYS:
             raise HTTPException(status_code=422, detail=f"Unknown library '{key}'")
         if fmt == "overrides":

@@ -5,6 +5,8 @@ const Auth = {
   _pendingInvite: null,
 
   isAdmin() { return !!(this.user && this.user.is_admin); },
+  // May review company-library submissions: an administrator or a library approver.
+  isApprover() { return !!(this.user && (this.user.is_admin || this.user.is_approver)); },
   currentUserId() { return this.user ? this.user.id : null; },
   currentEmail() { return this.user ? this.user.email : null; },
 
@@ -463,12 +465,13 @@ const Auth = {
       const sub = document.getElementById('admin-users-sub'); if (sub) sub.textContent = `${users.length} users · ${users.filter(u => u.is_active).length} active`;
       list.innerHTML = !shown.length ? '<div class="empty">No users match.</div>' : shown.map(u => `<div class="admin-row admin-cols-users">
         <div class="admin-cell-main" data-name="${this._esc(u.name || u.email)}">${this._esc(u.name || u.email)}${u.name ? `<small>${this._esc(u.email)}</small>` : ''}</div>
-        <div>${u.is_admin ? '<span class="admin-pill admin">Admin</span>' : 'User'}</div>
+        <div>${u.is_admin ? '<span class="admin-pill admin">Admin</span>' : u.is_approver ? '<span class="admin-pill ok">Approver</span>' : 'User'}</div>
         <div><span class="admin-pill ${u.is_active ? 'ok' : 'off'}">${u.is_active ? 'Active' : 'Deactivated'}</span></div>
         <div class="admin-actions">
         ${u.id === this.user.id ? '<small style="color:var(--text-muted)">This is you</small>' : ''}
         ${u.id !== this.user.id ? `<button class="btn-small user-active" data-id="${u.id}" data-active="${u.is_active ? 1 : 0}">${u.is_active ? 'Deactivate' : 'Reactivate'}</button><button class="btn-small user-delete danger" data-id="${u.id}">Delete</button>` : ''}
         ${u.id !== this.user.id && u.is_active ? `<button class="btn-small user-role" data-id="${u.id}" data-admin="${u.is_admin ? 1 : 0}">${u.is_admin ? 'Remove admin' : 'Make admin'}</button>` : ''}
+        ${!u.is_admin && u.is_active ? `<button class="btn-small user-approver" data-id="${u.id}" data-approver="${u.is_approver ? 1 : 0}" title="An approver reviews submissions to the company library without being an administrator">${u.is_approver ? 'Remove approver' : 'Make approver'}</button>` : ''}
         ${this._emailOn && u.is_active ? `<button class="btn-small user-welcome" data-id="${u.id}">Send welcome</button>` : ''}
         ${u.is_active ? `<button class="btn-small user-reset" data-id="${u.id}">${this._emailOn ? 'Email reset link' : 'Copy reset link'}</button>` : ''}
         </div></div>`).join('');
@@ -500,6 +503,10 @@ const Auth = {
           : `Remove administrator access from ${name}?`, { okText: makeAdmin ? 'Make admin' : 'Remove admin', danger: !makeAdmin });
         if (!ok) return;
         try { await API.setAdmin(parseInt(btn.dataset.id, 10), makeAdmin); this._renderUsers(); }
+        catch (e) { UI.toast && UI.toast(e.message || 'Could not change the role', 'error'); }
+      }));
+      list.querySelectorAll('.user-approver').forEach(btn => btn.addEventListener('click', async () => {
+        try { await API.setApprover(parseInt(btn.dataset.id, 10), btn.dataset.approver !== '1'); this._renderUsers(); }
         catch (e) { UI.toast && UI.toast(e.message || 'Could not change the role', 'error'); }
       }));
       list.querySelectorAll('.user-welcome').forEach(btn => btn.addEventListener('click', async () => {

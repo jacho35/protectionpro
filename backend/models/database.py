@@ -124,6 +124,8 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     name = Column(String(255), nullable=False, default="")
     is_admin = Column(Boolean, nullable=False, default=False)
+    # Library approver: may review company-library submissions without being an administrator.
+    is_approver = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -249,6 +251,8 @@ class SharedLibraryEntry(Base):
     entry_id = Column(String(128), nullable=False)  # the entry's own id
     data = Column(Text, nullable=False)              # entry JSON
     version = Column(Integer, nullable=False, default=1)
+    # Retired: hidden from pickers but still resolvable, so projects using it are unaffected.
+    retired = Column(Boolean, nullable=False, default=False)
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
@@ -336,6 +340,35 @@ class LibrarySubmission(Base):
     decider = relationship("User", foreign_keys=[decided_by])
 
 
+class LibraryActivity(Base):
+    """Append-only log of what happened to shared libraries and their entries: entry
+    created / updated / deleted / retired, company standard designated / cleared, members,
+    currency, ownership. Entry rows keep the data written, so a history can show what changed."""
+    __tablename__ = "library_activity"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    library_id = Column(Integer, ForeignKey("shared_libraries.id", ondelete="SET NULL"), nullable=True, index=True)
+    library_name = Column(String(255), nullable=False, default="")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    by = Column(String(255), nullable=False, default="")          # who, as written then
+    action = Column(String(32), nullable=False, index=True)
+    kind = Column(String(16), nullable=True)
+    entry_id = Column(String(128), nullable=True, index=True)
+    version = Column(Integer, nullable=True)
+    data = Column(Text, nullable=True)
+    detail = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class NotificationPref(Base):
+    """A user's choice about getting notifications by email (only when the server has email set up)."""
+    __tablename__ = "notification_prefs"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    email_enabled = Column(Boolean, nullable=False, default=False)
+    categories = Column(Text, nullable=False, default='["libraries","projects","approvals"]')
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_add_folder_id()
@@ -343,6 +376,8 @@ def init_db():
     _migrate_add_owner_id("folders")
     _migrate_add_invite_is_admin()
     _migrate_add_library_currency()
+    _migrate_add_entry_retired()
+    _migrate_add_user_approver()
 
 
 def _migrate_add_folder_id():
@@ -391,6 +426,26 @@ def _migrate_add_library_currency():
         if "currency" not in [c["name"] for c in insp.get_columns("shared_libraries")]:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE shared_libraries ADD COLUMN currency VARCHAR(8)"))
+
+
+def _migrate_add_entry_retired():
+    """Add shared_library_entries.retired to an existing DB (idempotent; no Alembic here)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "shared_library_entries" in insp.get_table_names():
+        if "retired" not in [c["name"] for c in insp.get_columns("shared_library_entries")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE shared_library_entries ADD COLUMN retired BOOLEAN NOT NULL DEFAULT 0"))
+
+
+def _migrate_add_user_approver():
+    """Add users.is_approver to an existing DB (idempotent; no Alembic here)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "users" in insp.get_table_names():
+        if "is_approver" not in [c["name"] for c in insp.get_columns("users")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_approver BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def get_db():

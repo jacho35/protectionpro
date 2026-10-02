@@ -15,12 +15,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user, require_reviewer
 from ..models.database import (get_db, User, SharedLibrary, SharedLibraryEntry, LibrarySubmission)
 from ..models.schemas import (SubmissionCreate, SubmissionOut, SubmissionDecision, SubmissionResubmit)
 from ..notifications import notify, display_name
 from .shared_libraries import (_check_entry, _entry_label, _notify_entry, _notify_override_drift,
-                               _entry_out, _lib_label)
+                               _entry_out, _lib_label, log_activity)
 
 router = APIRouter(prefix="/library-submissions", tags=["library-submissions"])
 
@@ -51,8 +51,14 @@ def _out(s: LibrarySubmission, current=None) -> SubmissionOut:
         created_at=s.created_at, updated_at=s.updated_at, current=current)
 
 
-def _admin_ids(db: Session) -> set[int]:
-    return {uid for (uid,) in db.query(User.id).filter(User.is_admin.is_(True), User.is_active.is_(True)).all()}
+def _reviewer_ids(db: Session) -> set[int]:
+    """Who is told about new submissions: administrators and library approvers."""
+    return {uid for (uid,) in db.query(User.id).filter(User.is_active.is_(True),
+                                                       (User.is_admin.is_(True)) | (User.is_approver.is_(True))).all()}
+
+
+def _is_reviewer(user: User) -> bool:
+    return bool(user.is_admin or user.is_approver)
 
 
 def _get(db: Session, sid: int) -> LibrarySubmission:
@@ -63,7 +69,7 @@ def _get(db: Session, sid: int) -> LibrarySubmission:
 
 
 def _can_see(s: LibrarySubmission, user: User) -> bool:
-    return user.is_admin or s.submitter_id == user.id
+    return _is_reviewer(user) or s.submitter_id == user.id
 
 
 # ── submit ──
@@ -103,7 +109,7 @@ def submit(body: SubmissionCreate, user: User = Depends(get_current_user), db: S
     db.flush()
     n, who = len(out), display_name(user)
     first = _entry_label(out[0].kind, out[0].entry_id, json.loads(out[0].data))
-    notify(db, _admin_ids(db), "approvals", "submission_received",
+    notify(db, _reviewer_ids(db), "approvals", "submission_received",
            f"{who} submitted “{first}” to the company library." if n == 1
            else f"{who} submitted {n} entries to the company library (“{first}” and {n - 1} more).",
            actor=user, link={"type": "submissions", "id": out[0].id})
@@ -118,9 +124,9 @@ def submit(body: SubmissionCreate, user: User = Depends(get_current_user), db: S
 @router.get("", response_model=list[SubmissionOut])
 def list_submissions(status: str | None = None, mine: bool = False, limit: int = 500,
                      user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Admins: everyone's (or only theirs with ?mine=true). Everyone else: their own."""
+    """Reviewers (admins, approvers): everyone's (or only theirs with ?mine=true). Everyone else: their own."""
     q = db.query(LibrarySubmission)
-    if mine or not user.is_admin:
+    if mine or not _is_reviewer(user):
         q = q.filter(LibrarySubmission.submitter_id == user.id)
     if status:
         q = q.filter(LibrarySubmission.status == status)
@@ -131,7 +137,7 @@ def list_submissions(status: str | None = None, mine: bool = False, limit: int =
 @router.get("/counts")
 def counts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """For the badge: waiting (admins: every pending submission) and the caller's own that need changes."""
-    waiting = db.query(LibrarySubmission).filter(LibrarySubmission.status == "pending").count() if user.is_admin else 0
+    waiting = db.query(LibrarySubmission).filter(LibrarySubmission.status == "pending").count() if _is_reviewer(user) else 0
     mine = (db.query(LibrarySubmission)
             .filter(LibrarySubmission.submitter_id == user.id, LibrarySubmission.status == "changes_requested").count())
     return {"waiting": waiting, "changes_requested": mine}
@@ -167,17 +173,21 @@ def _apply(db: Session, lib: SharedLibrary, admin: User, s: LibrarySubmission, f
         db.add(SharedLibraryEntry(library_id=lib.id, kind=s.kind, entry_id=s.entry_id, data=raw,
                                   version=1, updated_by=s.submitter_id))
         _notify_entry(db, lib, admin, s.kind, s.entry_id, label, "added")
+        log_activity(db, lib, admin, "entry_created", kind=s.kind, entry_id=s.entry_id, version=1, data=data,
+                     detail=f"approved submission #{s.id} from {display_name(s.submitter)}")
     elif json.loads(cur.data) != data:
         cur.data, cur.version, cur.updated_by = raw, cur.version + 1, s.submitter_id
         _notify_entry(db, lib, admin, s.kind, s.entry_id, label, "updated")
         _notify_override_drift(db, lib, [(s.kind, s.entry_id, cur.version)], admin)
+        log_activity(db, lib, admin, "entry_updated", kind=s.kind, entry_id=s.entry_id, version=cur.version, data=data,
+                     detail=f"approved submission #{s.id} from {display_name(s.submitter)}")
     lib.updated_at = datetime.now(timezone.utc)
     return None
 
 
 @router.post("/decide")
-def decide(body: SubmissionDecision, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Approve, request changes to, or reject submissions (admins; never your own)."""
+def decide(body: SubmissionDecision, admin: User = Depends(require_reviewer), db: Session = Depends(get_db)):
+    """Approve, request changes to, or reject submissions (admins and approvers; never your own)."""
     if body.action not in ("approve", "request_changes", "reject"):
         raise HTTPException(status_code=422, detail="action must be approve, request_changes or reject")
     note = (body.note or "").strip()[:2000]
@@ -249,7 +259,7 @@ def resubmit(sid: int, body: SubmissionResubmit, user: User = Depends(get_curren
     s.change_type = "change" if cur is not None else "new"
     s.base_version = cur.version if cur is not None else None
     s.status, s.decision_note, s.decided_by, s.decided_at = "pending", "", None, None
-    notify(db, _admin_ids(db), "approvals", "submission_received",
+    notify(db, _reviewer_ids(db), "approvals", "submission_received",
            f"{display_name(user)} updated their submission “{_entry_label(s.kind, s.entry_id, json.loads(s.data))}” for review.",
            actor=user, link={"type": "submissions", "id": s.id})
     db.commit()

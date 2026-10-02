@@ -104,10 +104,12 @@ const Notifications = {
         <button type="button" class="notif-close" id="notif-close" aria-label="Close notifications">&times;</button>
       </div>
       <div class="notif-tabs" id="notif-tabs" role="tablist"></div>
-      <div class="notif-list" id="notif-list" aria-live="polite"></div>`;
+      <div class="notif-list" id="notif-list" aria-live="polite"></div>
+      <div class="notif-foot"><button type="button" class="notif-link-btn" id="notif-prefs">Email preferences…</button></div>`;
     document.body.appendChild(el);
     el.querySelector('#notif-close').addEventListener('click', () => this.close());
     el.querySelector('#notif-mark-all').addEventListener('click', () => this.markAllRead());
+    el.querySelector('#notif-prefs').addEventListener('click', () => this.editPrefs());
     el.querySelector('#notif-tabs').addEventListener('click', e => {
       const b = e.target.closest('[data-tab]');
       if (b) { this._tab = b.dataset.tab; this._renderTabs(); this.load(); }
@@ -214,12 +216,39 @@ const Notifications = {
     } catch (_) { /* not signed in yet — nothing to clear */ }
   },
 
+  // Email me about new notifications (only when the server has email set up).
+  async editPrefs() {
+    let p;
+    try { p = await API.getNotificationPrefs(); } catch (e) { UI.toast(e.message, 'error'); return; }
+    if (!p.email_available) { UI.alert('Email is not set up on this server, so notifications stay in the app. An administrator can set it up in Settings → Email.'); return; }
+    const m = document.createElement('div');
+    m.className = 'modal'; m.style.display = 'flex'; m.style.zIndex = '3000';
+    m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-labelledby', 'np-title');
+    const cat = (id, label) => `<label class="rt-chk" style="display:flex;gap:8px;margin:6px 0"><input type="checkbox" data-cat="${id}" ${p.categories.includes(id) ? 'checked' : ''}><span>${label}</span></label>`;
+    m.innerHTML = `<div class="modal-content" style="max-width:420px;width:92vw"><div class="modal-header"><h3 id="np-title">Email preferences</h3></div>
+      <div class="modal-body"><label class="rt-chk" style="display:flex;gap:8px"><input type="checkbox" id="np-on" ${p.email_enabled ? 'checked' : ''}><span><b>Email me about new notifications</b></span></label>
+        <div style="margin:10px 0 4px 24px;font-size:13px">Send emails about:</div><div style="margin-left:24px">${cat('libraries', 'Library changes')}${cat('projects', 'Project shares')}${cat('approvals', 'Submissions and approvals')}</div>
+        <p style="font-size:12px;opacity:.75;margin:10px 0 0">Edits to a shared project stay in the app and are never emailed.</p></div>
+      <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn-small" data-a="cancel">Cancel</button><button type="button" class="btn-primary" data-a="ok">Save</button></div></div>`;
+    document.body.appendChild(m);
+    const done = async ok => {
+      if (ok) {
+        try { await API.setNotificationPrefs({ email_enabled: m.querySelector('#np-on').checked, categories: [...m.querySelectorAll('[data-cat]:checked')].map(x => x.dataset.cat) }); UI.toast('Saved.', 'success'); }
+        catch (e) { UI.toast(e.message, 'error'); return; }
+      }
+      m.remove();
+    };
+    m.addEventListener('click', e => { const a = e.target.closest('[data-a]'); if (a) done(a.dataset.a === 'ok'); });
+    m.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } });
+    setTimeout(() => m.querySelector('#np-on').focus(), 30);
+  },
+
   // ── links ──
 
   _actionLabel(n) {
     const t = n.link && n.link.type;
     if (t === 'project') return 'Open project';
-    if (t === 'library') return n.link.drift ? 'Review my edits' : 'View libraries';
+    if (t === 'library') return n.link.drift ? 'Review my edits' : 'Open libraries';
     if (t === 'submissions') return 'Open submissions';
     return '';
   },
@@ -234,11 +263,11 @@ const Notifications = {
       Submissions.open({ id: l.id });
     } else if (l.type === 'library' && l.drift) {
       this.close();
-      StandardData.reviewDrift();
+      Libraries.open({ view: 'drift' });
     } else if (l.type === 'library') {
       this.close();
-      StandardData.open();
-      document.querySelector('.settings-tab[data-tab="shared-libs"]')?.click();
+      if (l.kind && Libraries.KEYS.includes(l.kind)) Libraries.open({ view: l.kind, id: l.entryId });
+      else Libraries.open({ view: 'teams' });
     }
   },
 

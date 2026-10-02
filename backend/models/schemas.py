@@ -278,6 +278,7 @@ class LibraryMemberOut(BaseModel):
 class LibraryEntryIn(BaseModel):
     data: dict
     base_version: int | None = None    # None = create; else the version being replaced
+    restored_from: int | None = None   # the version this restores (recorded in the history)
 
 
 class LibraryEntryOut(BaseModel):
@@ -285,6 +286,7 @@ class LibraryEntryOut(BaseModel):
     id: str
     data: dict
     version: int
+    retired: bool = False
     updated_by: str | None = None
     updated_at: datetime | None = None
 
@@ -330,6 +332,7 @@ class UserOut(BaseModel):
     email: str
     name: str
     is_admin: bool
+    is_approver: bool = False
     is_active: bool
     created_at: datetime
 
@@ -378,6 +381,10 @@ class ActiveRequest(BaseModel):
 
 class AdminRoleRequest(BaseModel):
     is_admin: bool
+
+
+class ApproverRequest(BaseModel):
+    is_approver: bool
 
 
 class InviteCreated(BaseModel):
@@ -501,6 +508,39 @@ class SubmissionDecision(BaseModel):
 class SubmissionResubmit(BaseModel):
     data: Optional[dict] = None
     note: Optional[str] = None
+
+
+# ── Library activity, retiring, ownership ───────────────────────────────────
+
+class EntryRetired(BaseModel):
+    value: bool
+
+
+class LibraryOwnerChange(BaseModel):
+    user_id: int
+
+
+class ActivityOut(BaseModel):
+    id: int
+    library_id: Optional[int] = None
+    library_name: str
+    by: str
+    action: str
+    kind: Optional[str] = None
+    entry_id: Optional[str] = None
+    version: Optional[int] = None
+    data: Optional[dict] = None
+    detail: str
+    created_at: datetime
+
+
+class NotificationPrefs(BaseModel):
+    email_enabled: bool = False
+    categories: list[str] = ["libraries", "projects", "approvals"]
+
+
+class NotificationPrefsOut(NotificationPrefs):
+    email_available: bool = False        # the server has email set up
 
 
 # ── Notifications center ────────────────────────────────────────────────────

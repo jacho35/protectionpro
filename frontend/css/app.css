@@ -3886,3 +3886,26 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
   .subm-detail { width: auto; border-left: 0; border-top: 1px solid var(--border-color); }
 }
 .lib-submit[hidden] { display: none; }
+
+/* ── Libraries manager ── */
+.lib-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.lib-modes { display: flex; gap: 4px; padding: 3px; background: var(--bg-tertiary); border-radius: 8px; }
+.lib-mode { min-height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.lib-mode.on { background: var(--bg-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.lib-field { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.lib-field input, .lib-field select { min-height: 32px; border: 1px solid var(--border-color); border-radius: 6px; padding: 0 8px; background: var(--bg-primary); color: var(--text-primary); }
+.lib-count { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+.lib-card { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; font-size: 14px; line-height: 1.5; overflow: auto; }
+.lib-card h3 { margin: 0 0 8px; font-size: 17px; }
+.lib-hist-row { padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 12px; }
+.subm-pill.gry { background: var(--bg-tertiary); color: var(--text-secondary); }
+.notif-foot { padding: 8px 16px; border-top: 1px solid var(--border-color); }
+.lib-badge.retired { background: var(--bg-tertiary); border-color: var(--border-color); color: var(--text-muted); text-decoration: line-through; }
+/* Settings panes docked in the Libraries manager */
+.lib-dock { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.lib-dock-flow { flex: none; overflow: visible; }
+.settings-tab-content.lib-docked { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 0; }
+.lib-dock .library-table-wrap { flex: 1; min-height: 0; }
+.lib-dock tr.lib-row-sel td { background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary)); }
+.lib-dock .modal.q-docked { min-height: 0; }
+.lib-dock .library-table-wrap { max-height: none !important; height: auto; flex: 1 1 auto; }
