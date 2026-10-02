@@ -3358,26 +3358,26 @@ body.dark-mode .tcc-ft-slow { color: #ffcc80; }
 .lib-drift { flex: 1 1 100%; margin-top: 8px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); font-size: 13px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .lib-drift[hidden] { display: none; }
 .notif-badge.drift { background: var(--warning); color: #1a1a2e; }
-.sl-intro, .sl-note { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; }
-.sl-bar { display: flex; gap: 8px; margin-bottom: 12px; }
-.sl-card { border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
-.sl-card.sl-editing { border-color: #2e7d32; box-shadow: 0 0 0 1px #2e7d32 inset; }
-.sl-head { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.sl-role { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
-.sl-sub { font-size: 12px; color: var(--text-secondary); margin: 2px 0 10px; }
-.sl-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.sl-company { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+.shl-intro, .shl-note { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; }
+.shl-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.shl-card { border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.shl-card.shl-editing { border-color: #2e7d32; box-shadow: 0 0 0 1px #2e7d32 inset; }
+.shl-head { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.shl-role { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
+.shl-sub { font-size: 12px; color: var(--text-secondary); margin: 2px 0 10px; }
+.shl-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.shl-company { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
 .btn-danger-text { color: #c62828; }
-.sl-members { margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 10px; }
-.sl-member { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
-.sl-member > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.sl-add { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.sl-add input { flex: 1 1 220px; min-width: 0; }
-.sl-pick { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; }
-.sl-pick span { font-size: 12px; color: var(--text-secondary); min-width: 110px; }
+.shl-members { margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 10px; }
+.shl-member { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.shl-member > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.shl-add { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.shl-add input { flex: 1 1 220px; min-width: 0; }
+.shl-pick { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; }
+.shl-pick span { font-size: 12px; color: var(--text-secondary); min-width: 110px; }
 .lib-name-badge { display: block; width: fit-content; margin: 4px 0 0; }
-.sl-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; }
-.sl-field input { padding: 6px 8px; }
+.shl-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+.shl-field input { padding: 6px 8px; }
 
 /* SearchSelect (js/searchselect.js) — type-to-filter box over a hidden <select> */
 select.ss-native { display: none !important; }
@@ -3909,3 +3909,10 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
 .lib-dock tr.lib-row-sel td { background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary)); }
 .lib-dock .modal.q-docked { min-height: 0; }
 .lib-dock .library-table-wrap { max-height: none !important; height: auto; flex: 1 1 auto; }
+/* Libraries manager: the content column scrolls; docked flow panes keep their natural height; hidden really hides */
+.lib-screen .subm-main { overflow-y: auto; min-height: 0; }
+.lib-screen .subm-detail[hidden] { display: none; }
+.lib-dock-flow .settings-tab-content.lib-docked { flex: none; overflow: visible; }
+.lib-dock-flow .lib-docked > * { flex-shrink: 0; }
+.lib-dock-flow { flex: none; }
+.lib-screen .lib-card { flex: none; overflow: visible; }
