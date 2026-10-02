@@ -181,12 +181,21 @@ class TestDeviceSearchBFS:
         # current: M = Iarc·(11/33)/Ir, t = k/(M²−Mnt²), k = class×(36−Mnt²),
         # Mnt = 1.05 — the IEC 60947-2 conventional non-tripping current
         # ([TC3]; was k/(M²−1), which tripped at 1.05·Ir within the hour).
-        i_ref = r.arcing_current_ka * 1000.0 * 11.0 / 33.0
-        m = i_ref / 280.0
         mnt2 = 1.05 ** 2
-        t_expected = 5 * (36 - mnt2) / (m * m - mnt2)
+
+        def t_thermal(iarc_ka):
+            m = iarc_ka * 1000.0 * 11.0 / 33.0 / 280.0
+            return 5 * (36 - mnt2) / (m * m - mnt2)
+
+        t_expected = t_thermal(r.arcing_current_ka)
         assert 0.1 < t_expected < 1.9, "test setup drifted out of the discriminating band"
-        assert r.clearing_time_s == pytest.approx(t_expected, abs=2e-3), (
+        # [AF-L2] Re-baselined: the reported clearing time is the one behind
+        # the reported energy. Here the reduced-current pass (0.90·Iarc at
+        # MV) clears slower and governs the energy, so its time is reported
+        # (1.94 s); this test used to read the full-current time (1.57 s)
+        # while the energy came from the reduced pass.
+        assert r.incident_energy_cal == r.incident_energy_reduced_cal
+        assert r.clearing_time_s == pytest.approx(t_thermal(r.arcing_current_reduced_ka), abs=2e-3), (
             "expected the referred-current thermal time — 0.05 s indicates "
             "the arcing current was not referred across the transformer; "
             "2.0 s indicates the transformer was not traversed"
@@ -228,7 +237,8 @@ class TestFuseClearing:
 
     def test_gg630_current_limiting_region_is_fast(self):
         """Deep in the current-limiting region (Iarc ≈ 24 kA) the same fuse
-        clears in about 10 ms — no artificial floor is applied.
+        clears in about 10-20 ms. ([AF3] adds a 0.01 s floor for currents
+        beyond the bottom of the curve; this case sits above it.)
         [TC1] Re-baselined: the gate-fitted 630 A curve pre-arcs in 0.01 s at
         21.4 kA (I²t 4.6e6 A²s, inside the IEC 60269-1 Table 7 corridor
         2.25e6..7.5e6); the old table's 0.004 s at 16 kA put its I²t (0.26e6)
@@ -254,7 +264,14 @@ class TestFuseClearing:
         assert 0 < r.clearing_time_s < 0.1
         t_pre = 10 ** (math.log10(0.01) + (math.log10(r.arcing_current_ka * 1000) - math.log10(21400))
                        / (math.log10(33400) - math.log10(21400)) * (math.log10(0.004) - math.log10(0.01)))
-        assert r.clearing_time_s == pytest.approx(round(1.2 * t_pre, 3), abs=1.5e-3)
+        # Full-current pass: 1.2 × pre-arc, above the [AF3] 0.01 s floor
+        assert 1.2 * t_pre > 0.01
+        # [AF-L2] Re-baselined: the reduced-current pass (0.90·Iarc at MV)
+        # pre-arcs slower and governs the energy, so ITS time is reported
+        # (0.016 s); the test used to read the full-current 0.012 s.
+        assert r.incident_energy_cal == r.incident_energy_reduced_cal
+        t_pre_red = _fuse_prearc_time(630, r.arcing_current_reduced_ka * 1000)
+        assert r.clearing_time_s == pytest.approx(round(1.2 * t_pre_red, 3), abs=1.5e-3)
 
     def test_prearc_interpolation_matches_table_and_convention(self):
         """Unit anchors on the ported curve: exact table point, log-log

@@ -831,7 +831,8 @@ const Annotations = {
   renderArcFlashBadge(x, y, result, key, title = 'ARC FLASH') {
     const lines = [];
     if (this.fieldVisible('arcflash', 'energy')) lines.push(`${result.incident_energy_cal.toFixed(2)} cal/cm²`);
-    if (this.fieldVisible('arcflash', 'ppe')) lines.push(`PPE: Cat ${result.ppe_category}`);
+    // ppe_category -1 = above 40 cal/cm² (no PPE category applies) — the most severe result
+    if (this.fieldVisible('arcflash', 'ppe')) lines.push(result.ppe_category === -1 ? 'PPE: DANGER >40' : `PPE: Cat ${result.ppe_category}`);
     if (this.fieldVisible('arcflash', 'afb')) lines.push(`AFB: ${(result.arc_flash_boundary_mm / 1000).toFixed(2)} m`);
     if (this.fieldVisible('arcflash', 'iarc')) lines.push(`Iarc: ${result.arcing_current_ka.toFixed(2)} kA`);
 
@@ -842,7 +843,7 @@ const Annotations = {
 
     // Color by PPE category
     let fillColor;
-    if (result.ppe_category >= 4) fillColor = '#d32f2f';       // red - danger
+    if (result.ppe_category >= 4 || result.ppe_category === -1) fillColor = '#d32f2f';  // red - danger
     else if (result.ppe_category === 3) fillColor = '#e65100';  // dark orange
     else if (result.ppe_category === 2) fillColor = '#f57c00';  // orange
     else if (result.ppe_category === 1) fillColor = '#fbc02d';  // yellow

@@ -464,7 +464,7 @@ const Reports = {
         r.bolted_fault_ka != null ? Number(r.bolted_fault_ka).toFixed(2) : '\u2014',
         r.arcing_current_ka != null ? Number(r.arcing_current_ka).toFixed(2) : '\u2014',
         r.incident_energy_cal != null ? Number(r.incident_energy_cal).toFixed(2) : '\u2014',
-        r.ppe_category != null ? String(r.ppe_category) : '\u2014',
+        r.ppe_category != null ? (r.ppe_category === -1 ? 'DANGER (>40)' : String(r.ppe_category)) : '\u2014',
         r.arc_flash_boundary_mm != null ? (Number(r.arc_flash_boundary_mm) / 1000).toFixed(2) : '\u2014',
         r.working_distance_mm != null ? String(r.working_distance_mm) : '\u2014',
         (r.method || '\u2014').replace('IEEE 1584-', ''),
@@ -547,21 +547,26 @@ const Reports = {
     let ly = bodyY + 12;
 
     const energy = r.incident_energy_cal != null ? r.incident_energy_cal.toFixed(2) : '—';
-    const ppe = r.ppe_category != null ? r.ppe_category : '—';
     const afb = r.arc_flash_boundary_mm != null ? (r.arc_flash_boundary_mm / 1000).toFixed(2) : '—';
     const iarc = r.arcing_current_ka != null ? r.arcing_current_ka.toFixed(2) : '—';
     const ibf = r.bolted_fault_ka != null ? r.bolted_fault_ka.toFixed(2) : '—';
     const wd = r.working_distance_mm != null ? r.working_distance_mm : '—';
     const vkv = r.voltage_kv != null ? r.voltage_kv : '—';
 
+    // NFPA 70E §130.5(H): incident energy with its working distance, or the
+    // PPE category — not both; plus the minimum arc rating of clothing.
+    const e = r.incident_energy_cal;
+    const minArc = e == null ? '—'
+      : e < 1.2 ? 'not required (< 1.2 cal/cm²)'
+      : e >= 40 ? 'no PPE category applies (> 40 cal/cm²)'
+      : `${(Math.ceil(e * 10 - 1e-9) / 10).toFixed(1)} cal/cm²`;
     const labelData = [
-      ['Incident Energy:', `${energy} cal/cm²`],
-      ['PPE Category:', `Cat ${ppe}`],
+      ['Nominal Voltage:', `${vkv} kV`],
       ['Arc Flash Boundary:', `${afb} m`],
+      ['Incident Energy:', `${energy} cal/cm² at ${wd} mm`],
+      ['Min. Arc Rating:', minArc],
       ['Arcing Current:', `${iarc} kA`],
       ['Bolted Fault Current:', `${ibf} kA`],
-      ['Working Distance:', `${wd} mm`],
-      ['Nominal Voltage:', `${vkv} kV`],
     ];
 
     doc.setFontSize(8);

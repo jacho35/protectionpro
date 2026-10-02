@@ -3589,7 +3589,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </tr></thead><tbody>`;
 
     for (const b of entries) {
-      const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
+      const ppeClass = (b.ppe_category >= 4 || b.ppe_category === -1) ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
       const hasRecs = b.recommendations && b.recommendations.length > 0;
       html += `<tr class="${ppeClass}">
         <td>${escHtml(b.bus_name || b.bus_id)}</td>
@@ -3599,7 +3599,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
         <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
         <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
-        <td><span class="af-ppe-badge">${b.ppe_category}</span></td>
+        <td><span class="af-ppe-badge">${b.ppe_category === -1 ? 'DANGER' : b.ppe_category}</span></td>
         <td>${b.ppe_name}</td>
         <td>${escHtml((b.method || '—').replace('IEEE 1584-', ''))}</td>
       </tr>`;
@@ -3653,7 +3653,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </tr></thead><tbody>`;
 
     for (const b of entries) {
-      const ppeClass = b.ppe_category >= 4 ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
+      const ppeClass = (b.ppe_category >= 4 || b.ppe_category === -1) ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
       const hasRecs = b.recommendations && b.recommendations.length > 0;
       html += `<tr class="${ppeClass}">
         <td>${escHtml(b.bus_name || b.bus_id)}</td>
@@ -3664,7 +3664,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
         <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
         <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
-        <td><span class="af-ppe-badge">${b.ppe_category}</span></td>
+        <td><span class="af-ppe-badge">${b.ppe_category === -1 ? 'DANGER' : b.ppe_category}</span></td>
         <td>${b.ppe_name}</td>
       </tr>`;
       if (hasRecs) {

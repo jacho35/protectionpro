@@ -991,7 +991,7 @@ const MobileUI = {
     let html = `<p class="mres-note">${buses.length} buses · ${escHtml(r.method || '')} · highest incident energy first</p>`;
     for (const w of (r.warnings || [])) html += `<div class="mres-flag mres-banner">${mIcon('warn', 15)} ${escHtml(w)}</div>`;
     return html + buses.map(b => this._card(b.bus_id, b.bus_name, `${this._fmt(b.voltage_kv, 3)} kV · cleared in ${this._fmt(b.clearing_time_s, 3)} s`, [
-      ['Energy', this._fmt(b.incident_energy_cal, 1) + ' cal/cm²'], ['PPE', b.ppe_category != null ? 'Cat ' + b.ppe_category : '—'],
+      ['Energy', this._fmt(b.incident_energy_cal, 1) + ' cal/cm²'], ['PPE', b.ppe_category == null ? '—' : b.ppe_category === -1 ? 'DANGER (>40 cal/cm²)' : 'Cat ' + b.ppe_category],
       ['Boundary', this._fmt(b.arc_flash_boundary_mm, 0) + ' mm'],
     ])).join('');
   },

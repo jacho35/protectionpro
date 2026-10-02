@@ -8,6 +8,7 @@ from datetime import date
 from fpdf import FPDF
 
 from .cable_sizing import STANDARD_CABLES as _CABLE_LIB
+from .arcflash import min_arc_rating_text
 
 
 # Unicode the core (latin-1) PDF fonts cannot encode, mapped to an ASCII
@@ -37,6 +38,13 @@ _UNICODE_FALLBACKS = {
     "\u00c9": "E", "\u00e8": "e", "\u00e9": "e",
 }
 
+
+
+def _ppe_text(cat):
+    """PPE category for a table cell: -1 is DANGER (> 40 cal/cm², no category)."""
+    if cat is None or cat == "—":
+        return "—"
+    return "DANGER (>40)" if cat == -1 else str(cat)
 
 def _safe(text):
     """Replace Unicode chars that core fonts can't handle.
@@ -871,7 +879,7 @@ def _render_arcflash(pdf, arcflash_results, comp_map):
             f"{r.get('bolted_fault_ka', 0):.2f}",
             f"{r.get('arcing_current_ka', 0):.2f}",
             f"{r.get('incident_energy_cal', 0):.2f}",
-            str(r.get("ppe_category", "—")),
+            _ppe_text(r.get("ppe_category")),
             f"{r.get('arc_flash_boundary_mm', 0) / 1000:.2f}",
             str(r.get("working_distance_mm", "—")),
             r.get("method", "—").replace("IEEE 1584-", ""),
@@ -1249,7 +1257,7 @@ def _calc_arcflash(pdf, arcflash_results):
             _calc_body(pdf, f"    I_arc / I_bf ratio = {ratio:.4f}  (typical 0.85–0.98 for MV; lower for LV)")
         _calc_body(pdf, f"  Working distance:          WD      = {wd} mm")
         _calc_body(pdf, f"  Incident energy:           E       = {e:.4f} cal/cm^2")
-        _calc_body(pdf, f"  PPE category:              Cat     = {ppe}")
+        _calc_body(pdf, f"  PPE category:              Cat     = {_ppe_text(ppe)}")
         _calc_body(pdf, f"  Arc flash boundary:        AFB     = {afb_mm/1000:.3f} m  ({afb_mm:.0f} mm)")
 
         recs = r.get("recommendations", [])
@@ -2058,21 +2066,23 @@ def _draw_label(pdf, x, y, w, h, bus_name, r, project_name):
 
     # Data fields
     energy = f"{r.get('incident_energy_cal', 0):.2f}" if r.get("incident_energy_cal") is not None else "—"
-    ppe = r.get("ppe_category", "—")
     afb = f"{r.get('arc_flash_boundary_mm', 0) / 1000:.2f}" if r.get("arc_flash_boundary_mm") else "—"
     iarc = f"{r.get('arcing_current_ka', 0):.2f}" if r.get("arcing_current_ka") else "—"
     ibf = f"{r.get('bolted_fault_ka', 0):.2f}" if r.get("bolted_fault_ka") else "—"
     wd = r.get("working_distance_mm", "—")
     vkv = r.get("voltage_kv", "—")
 
+    # [AF6] NFPA 70E §130.5(H): incident energy WITH its working distance,
+    # or the PPE category — not both. The label gives the energy at the
+    # working distance and the minimum arc rating of clothing.
+    e_val = r.get("incident_energy_cal")
     fields = [
-        ("Incident Energy:", f"{energy} cal/cm²"),
-        ("PPE Category:", f"Cat {ppe}"),
+        ("Nominal Voltage:", f"{vkv} kV"),
         ("Arc Flash Boundary:", f"{afb} m"),
+        ("Incident Energy:", f"{energy} cal/cm² at {wd} mm"),
+        ("Min. Arc Rating:", min_arc_rating_text(e_val) if e_val is not None else "—"),
         ("Arcing Current:", f"{iarc} kA"),
         ("Bolted Fault Current:", f"{ibf} kA"),
-        ("Working Distance:", f"{wd} mm"),
-        ("Nominal Voltage:", f"{vkv} kV"),
     ]
 
     ly = body_y + 9

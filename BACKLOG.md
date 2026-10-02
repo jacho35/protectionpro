@@ -377,6 +377,12 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 ## Completed
 
+### Arc flash review: per-device arcing current, closed-form 2002 boundary, fuse floor, NFPA 70E label, AF1–AF7 (2026-10-02)
+- **Review.** `reviews/ARCFLASH_REVIEW.md` checks `arcflash.py` against all 144,000 rows of the official IEEE 1584-2018 validation spreadsheet (≤ 2.4e-6, every electrode configuration, blend region and enclosure size; the old fixtures were six small shallow boxes) and IEEE 1584-2002 by hand (exact). The equations were right; their use on a network and on the label was not.
+- **AF1 (non-conservative).** Every infeed breaker was timed at the bus's total arcing current. Each device now reads its own share (I_arc × I_bf,device / I_bf from the fault study's branch contributions). On a grid + generator 11 kV board the grid relay's instantaneous no longer picks up falsely: 5.78 → 14.39 cal/cm², PPE 2 → 3. **AF2.** The 2002 boundary bisection stopped at 50 m (a slow MV clearance: 73 m reported as 50 m) and floored at 300 mm; now Eq. 7 in closed form. **AF3.** Fuses deep in current limiting were credited with 4.8 ms; IEEE 1584 uses 0.01 s beyond the bottom of the curve (energy was ~50 % low). **AF4.** A battery infeed's breaker was skipped as a feeder. **AF5.** DANGER (> 40 cal/cm²) showed green and "Cat -1" on the diagram, tables and labels. **AF6.** Labels now follow NFPA 70E §130.5(H): incident energy at the working distance plus minimum arc rating, not alongside the PPE category. **AF7.** Gap / working-distance / enclosure validity ranges per edition (2002 MV buses no longer all warn "extrapolated"; 2018 gaps now checked).
+- Lesser: the 2018 variation factor is the standard's Table 2 (the "fitted" polynomial was exactly it); the reported clearing time is the governing pass's; the 2018 low-voltage exemption wording. Help articles updated.
+- **Re-run Arc Flash and reprint labels** — results rise on multi-infeed and BESS-fed boards and fuse-protected buses. +23 tests in `test_arcflash_review_fixes.py`.
+
 ### Fix: Settings opened behind the Quantities tab (2026-10-02)
 - The rate library docked in the Quantities pane kept `#rates-modal`'s own `z-index: 1050`, which a flex item honours even when static, so it painted above the Settings modal (z-index 1000) and every other dialog. Docked dialogs now always use `z-index: auto`; checked for the rate library, BOQ and cable schedules views.
 
