@@ -24,13 +24,13 @@ const Workspaces = {
     retic: {
       label: 'Reticulation',
       desc: 'A township or site LV network: minisubs, kiosks and erven, sized by ADMD (NRS 034-1).',
-      core: ['plan', 'retic', 'streetlight', 'sld'],
+      core: ['plan', 'retic', 'streetlight', 'sld', 'quantities'],
       planDomain: 'retic',
     },
     building: {
       label: 'Building',
       desc: 'Floors, distribution boards and final circuits, down to each way.',
-      core: ['plan', 'sld', 'schedules'],
+      core: ['plan', 'sld', 'schedules', 'quantities'],
       planDomain: 'building',
     },
     network: {
@@ -41,10 +41,10 @@ const Workspaces = {
     },
   },
   // Canonical order for workspaces outside a type's core set.
-  ORDER: ['plan', 'retic', 'streetlight', 'sld', 'schedules', 'interlock'],
+  ORDER: ['plan', 'retic', 'streetlight', 'sld', 'schedules', 'interlock', 'quantities'],
   TAB_IDS: {
     sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', streetlight: 'btn-workspace-streetlight', plan: 'btn-workspace-plan',
-    interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules',
+    interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules', quantities: 'btn-workspace-quantities',
   },
   DESCS: {
     plan: 'Site or floor plans with devices, routes and circuits',
@@ -53,6 +53,7 @@ const Workspaces = {
     sld: 'The electrical model and every study',
     schedules: 'Distribution-board circuit schedules and checks',
     interlock: 'Breaker interlocking logic, simulated against the single-line',
+    quantities: 'Bill of quantities, cable schedules and the rate library',
   },
 
   // ── Type ────────────────────────────────────────────────────────────
@@ -93,6 +94,8 @@ const Workspaces = {
       case 'plan': return typeof AppState._planMarkupIsEmpty === 'function' && !AppState._planMarkupIsEmpty();
       case 'interlock': return !!(AppState.interlockLogic && AppState.interlockLogic.nodes && AppState.interlockLogic.nodes.length);
       case 'schedules': return this._schedulesHaveData();
+      // A project that already priced something keeps its Quantities tab.
+      case 'quantities': { const L = AppState.rateLibrary; return !!(L && ((L.items && Object.keys(L.items).length) || (L.custom && Object.keys(L.custom).length))); }
       default: return false;
     }
   },
@@ -123,7 +126,7 @@ const Workspaces = {
       const d = AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain;
       return d === 'building' ? 'Floor plans' : 'Site plan';
     }
-    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking' }[ws] || ws;
+    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities' }[ws] || ws;
   },
 
   // ── Plan domain follows the type ────────────────────────────────────
@@ -249,7 +252,7 @@ const Workspaces = {
   // Label a core workspace as it will read in a project of `type`.
   _coreLabel(type, ws) {
     if (ws === 'plan') return type === 'building' ? 'Floor plans' : 'Site plan';
-    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking' }[ws];
+    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities' }[ws];
   },
 
   // New project: pick the type. Resolves to a type id, or null if cancelled.

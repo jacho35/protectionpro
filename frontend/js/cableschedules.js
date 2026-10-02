@@ -198,7 +198,7 @@ const CableSchedules = {
       this.render();
     }
   },
-  close() { const m = document.getElementById('cables-modal'); if (m) m.style.display = 'none'; },
+  close() { const m = document.getElementById('cables-modal'); if (m && !m.classList.contains('q-docked')) m.style.display = 'none'; },
 
   _ensureDom() {
     if (document.getElementById('cables-modal')) return;

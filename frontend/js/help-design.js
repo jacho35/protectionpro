@@ -143,7 +143,7 @@ $$f_{TI} = \frac{65\,L_v}{\bar L^{0.8}}\ \%,\qquad L_v = 9.86\left[1+\left(\tfra
 <p>Not modelled yet: wet-road $U_{ow}$, P-class $E_{v}$ / $E_{sc}$, and roads that are not straight (see the backlog).</p>` },
 
 { id: 'design-boq', group: 'design', title: 'Bill of quantities, rates & cable schedules',
-  std: 'Reports ▸ Bill of Quantities · Rate Library · Cable Schedules',
+  std: 'Quantities tab (last step) ▸ Bill of quantities · Cable schedules · Rate library',
   kw: 'boq bill of quantities rates rate library material labour allowance termination take-off cable schedule price cost',
   html: String.raw`
 <h4>Take-off</h4>

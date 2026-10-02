@@ -450,6 +450,7 @@ const Rates = {
   close() {
     this._closeOf();
     const m = document.getElementById('rates-modal');
+    if (m && m.classList.contains('q-docked')) return;   // docked in Quantities: leave with the tabs
     if (m) m.style.display = 'none';
     const cb = this._onDone; this._onDone = null;
     if (cb) cb();

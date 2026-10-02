@@ -1291,6 +1291,7 @@ const AppState = {
       Retic.onProjectChanged();
     }
     if (typeof StreetLight !== 'undefined' && StreetLight.onProjectChanged) StreetLight.onProjectChanged();
+    if (typeof Quantities !== 'undefined' && Quantities.onProjectChanged) Quantities.onProjectChanged();
     // Plan Markup workspace: same — re-baseline its local undo + image cache
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onProjectChanged) {
       PlanMarkup.onProjectChanged();
@@ -1422,7 +1423,7 @@ const AppState = {
   _lastViewToJSON() {
     const r = (n) => Math.round(n * 100) / 100;
     let workspace = 'sld';
-    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules']) {
+    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules', 'quantities']) {
       const el = typeof document !== 'undefined' && document.getElementById(ws + '-workspace');
       if (el && el.style.display === 'flex') { workspace = ws; break; }
     }

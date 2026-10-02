@@ -1,0 +1,71 @@
+/* ProtectionPro — Quantities workspace.
+ *
+ * Shell (rail + pane) in the same recipe as #schedules-workspace. The three
+ * views are the BOQ / Cable schedules / Rate library dialogs docked into the
+ * pane: `.q-docked` turns the fixed overlay into a plain full-size panel.
+ */
+
+#quantities-workspace {
+  position: absolute;
+  top: var(--toolbar-height);
+  left: 0; right: 0; bottom: 0;
+  display: none;
+  flex-direction: row;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-family: var(--font-family);
+}
+
+.q-rail {
+  width: 260px; flex: 0 0 260px;
+  display: flex; flex-direction: column;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-color);
+  min-height: 0;
+}
+.q-rail-head { padding: 12px 14px 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); }
+.q-rail-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+.q-rail-item {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 9px 10px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.q-rail-item:hover { background: var(--bg-tertiary); }
+.q-rail-item.active { background: var(--bg-tertiary); box-shadow: inset 3px 0 0 var(--accent); }
+.q-rail-item.active .q-rail-t { color: var(--accent); }
+.q-rail-ic { flex: 0 0 auto; margin-top: 1px; color: var(--text-secondary); }
+.q-rail-item.active .q-rail-ic { color: var(--accent); }
+.q-rail-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.q-rail-t { font-size: 13px; font-weight: 600; }
+.q-rail-d { font-size: 11px; line-height: 1.35; color: var(--text-secondary); }
+.q-rail-foot { margin-top: auto; padding: 10px 14px; border-top: 1px solid var(--border-color); font-size: 11px; line-height: 1.4; color: var(--text-secondary); }
+
+.q-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+/* A dialog docked in the pane: no overlay, fills the pane, no close button. */
+.modal.q-docked {
+  position: static; inset: auto; z-index: auto;
+  flex: 1; min-height: 0; width: 100%;
+  background: none; align-items: stretch; justify-content: stretch;
+}
+.modal.q-docked > .modal-content.rt-dialog {
+  width: 100%; height: 100%; max-width: none; max-height: none;
+  border-radius: 0; box-shadow: none;
+}
+.modal.q-docked [data-bq="close"],
+.modal.q-docked [data-cs="close"],
+.modal.q-docked [data-rt="close"] { display: none; }
+
+/* The workspace tab replaces the header Quantities menu on desktop
+   (the menu stays for the phone layout, which has its own panel). */
+@media (min-width: 769px) {
+  #menu-quantities { display: none; }
+}
+@media (max-width: 768px) {
+  .q-rail { width: 100%; flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border-color); }
+  #quantities-workspace { flex-direction: column; }
+  .q-rail-d, .q-rail-foot { display: none; }
+  .q-rail-list { flex-direction: row; overflow-x: auto; padding-bottom: 6px; }
+  .q-rail-item { width: auto; white-space: nowrap; }
+}

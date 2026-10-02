@@ -541,7 +541,7 @@ const BOQ = {
     this.render();
     document.getElementById('boq-modal').style.display = 'flex';
   },
-  close() { const m = document.getElementById('boq-modal'); if (m) m.style.display = 'none'; },
+  close() { const m = document.getElementById('boq-modal'); if (m && !m.classList.contains('q-docked')) m.style.display = 'none'; },
 
   _ensureDom() {
     if (document.getElementById('boq-modal')) return;
@@ -583,10 +583,11 @@ const BOQ = {
       if (!b) { if (e.target === m) this.close(); return; }
       const a = b.dataset.bq;
       if (a === 'close') this.close();
-      else if (a === 'rates') Rates.open({ onDone: () => this.render() });
+      else if (a === 'rates') { if (Quantities._active) Quantities.show('rates'); else Rates.open({ onDone: () => this.render() }); }
       else if (a === 'set-rates') {
         const first = (this._last && this._last.missing[0]) || null;
-        Rates.open({ tab: first ? first.cat : undefined, filter: 'norate', onDone: () => this.render() });
+        const ro = { tab: first ? first.cat : undefined, filter: 'norate' };
+        if (Quantities._active) Quantities.show('rates', ro); else Rates.open({ ...ro, onDone: () => this.render() });
       }
       else if (a === 'csv') this.exportFile('csv');
       else if (a === 'xlsx') this.exportFile('xlsx');
