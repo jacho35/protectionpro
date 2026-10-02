@@ -15,6 +15,16 @@
  * Rates entered before labour was split out sit in `rate`, so they count as
  * material. Waste % applies to material only (boq.js).
  *
+ * Company price list: the company standard shared library (StandardData's
+ * `_sharedLayers`) can hold a `rates` entry per item key (id = the key; data
+ * = { rate, labour, waste, supplier, priceDate, desc/unit/cat for items added
+ * by an import }) and a currency. A new project is seeded from it; "Refresh
+ * from company" merges by key and keeps a rate the project changed itself;
+ * admins "Publish to company". A project item records where it stands:
+ * `priceDate` (when the rate was set), `src: 'company'` + `cv` (the company
+ * entry version it was taken from) or `src: 'edited'` once changed locally.
+ * Quantity rules never travel with prices.
+ *
  * `rule` ("Quantity from") counts items nobody draws from what the project
  * measures (boq.js BASES): { basis, factor } → factor × that count, basis
  * 'fixed' → factor, or null for "measured only". An item without a stored
@@ -357,7 +367,7 @@ const Rates = {
     const c = cat || (L && L.custom && L.custom[key] && L.custom[key].cat) || this.guessCat(key);
     const num = v => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
     const waste = (it.waste === null || it.waste === undefined || it.waste === '') ? this.defaultWaste(c) : Number(it.waste) || 0;
-    return { rate: num(it.rate), labour: num(it.labour), waste, supplier: it.supplier || '' };
+    return { rate: num(it.rate), labour: num(it.labour), waste, supplier: it.supplier || '', priceDate: it.priceDate || '', src: it.src || '', cv: it.cv || 0 };
   },
   // Priced = a material or a labour rate is entered.
   priced(v) { return !!v && (v.rate != null || v.labour != null); },
@@ -398,9 +408,13 @@ const Rates = {
     if (field === 'supplier') { if (value) it.supplier = String(value); else delete it.supplier; }
     else if (value === null || value === undefined || value === '') delete it[field];
     else it[field] = Number(value);
+    // Provenance: a price changed here is dated today, and no longer the company's as taken.
+    if (it.src === 'company') it.src = 'edited';
+    if (field === 'rate' || field === 'labour') it.priceDate = this._today();
     this._prune(key);
     this._touch();
   },
+  _today() { return new Date().toISOString().slice(0, 10); },
 
   // Keys the current project uses (from the BOQ's quantity take-off).
   // Also keeps the default bill (this._bill) for rule / percentage status.
@@ -442,6 +456,7 @@ const Rates = {
     this._ensureDom();
     this._used = this.usedLines();
     this.lib();
+    this._seedFromCompany();
     this.render();
     const m = document.getElementById('rates-modal');
     m.style.display = 'flex';
@@ -507,6 +522,8 @@ const Rates = {
         <div class="rt-note"><b>Editing in Excel:</b> Export, change <b>Material rate</b>, <b>Labour rate</b>, <b>Waste %</b> or <b>Supplier code</b>, and import the file back. Rows are matched on <b>Key</b>, which never changes, so keep that column as it is. New keys with a description become new items. You see every change before it is applied.</div>
       </main>
       <footer class="rt-foot">
+        <button type="button" class="rt-btn" data-rt="co-refresh" id="rt-co-refresh" hidden title="Bring this project's prices up to date with the company price list">Refresh from company</button>
+        <button type="button" class="rt-btn" data-rt="co-publish" id="rt-co-publish" hidden title="Add this project's prices to the company price list">Publish to company…</button>
         <button type="button" class="rt-btn" data-rt="load-default">Load my default rates</button>
         <button type="button" class="rt-btn" data-rt="save-default">Save as my default</button>
         <label class="rt-foot-f">Currency <input type="text" id="rt-cur" maxlength="6" aria-label="Currency symbol"></label>
@@ -527,6 +544,8 @@ const Rates = {
       else if (a === 'import') m.querySelector('#rt-file').click();
       else if (a === 'save-default') this.saveDefault();
       else if (a === 'load-default') this.loadDefault();
+      else if (a === 'co-refresh') this.refreshFromCompany();
+      else if (a === 'co-publish') this.publishToCompany();
       else if (a === 'undo') this.undo();
       else if (a === 'labour-ok') { this.lib().labourNoteSeen = true; AppState.dirty = true; this._renderBanner(); }
       else if (a === 'tab') { this.tab = b.dataset.v; this._closeOf(); this.render(); }
@@ -564,7 +583,7 @@ const Rates = {
     if (!tr) return;
     const key = tr.dataset.key, f = el.dataset.f;
     const raw = el.value.trim();
-    if (f === 'supplier') { this.set(key, 'supplier', raw); return; }
+    if (f === 'supplier') { this.set(key, 'supplier', raw); const sc = tr.querySelector('td[data-td="src"]'); if (sc) sc.innerHTML = this._srcText(this.get(key)); return; }
     if (f === 'basis') { this._setBasis(key, el.value); this._afterRuleChange(); return; }
     if (f === 'factor' || f === 'pct') {
       const cur = this.getRule(key);
@@ -598,6 +617,7 @@ const Rates = {
       const nr = !this.priced(this.get(key)) && !!(row && row.used);
       tr.querySelectorAll('td[data-td="rate"], td[data-td="labour"]').forEach(td => td.classList.toggle('rt-nr', nr));
       if (row) tr.querySelector('td[data-td="st"]').innerHTML = this._pill(row);
+      const sc = tr.querySelector('td[data-td="src"]'); if (sc) sc.innerHTML = this._srcText(this.get(key));
       this._renderCounts();
       this._renderBanner();
     }
@@ -679,6 +699,7 @@ const Rates = {
     this._renderHeadTags();
     this._renderCounts();
     this._renderBanner();
+    this._renderCompanyButtons();
     m.querySelector('#rt-term-note').hidden = this.tab !== 'term';
     m.querySelector('#rt-rule-note').hidden = this.tab === 'allow';
     m.querySelector('#rt-pct-note').hidden = this.tab !== 'allow';
@@ -738,6 +759,15 @@ const Rates = {
   },
 
   // Status pill: what the bill does with the item in this project.
+  // "1 Oct 2026 · Company v3" — when the price was set and where it came from.
+  _srcText(v) {
+    if (!this.priced(v)) return '';
+    const date = v.priceDate ? new Date(v.priceDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const src = v.src === 'company' ? `Company v${v.cv}` : v.src === 'edited' ? `Edited (company v${v.cv})` : '';
+    const t = [date, src].filter(Boolean).join(' · ');
+    return t ? `<span class="${v.src === 'edited' ? 'rt-src-ed' : ''}" title="${escHtml(t)}">${escHtml(t)}</span>` : '';
+  },
+
   _pill(r) {
     if (r.orphan) return '<span class="rt-pill gry" title="Stored with the project, but no library item has this key any more">Not in library</span>';
     if (this._isPctRow(r)) {
@@ -792,7 +822,7 @@ const Rates = {
       ? `<tr><th class="rt-c-key">Key</th><th>Description</th><th class="rt-c-unit">Unit</th><th class="rt-c-of">Percentage of</th><th class="rt-c-fac rt-num">%</th><th class="rt-c-bill rt-num">In this bill (${cur})</th><th class="rt-c-st">Status</th></tr>`
       : `<tr><th class="rt-c-key">Key</th><th>Description</th><th class="rt-c-unit">Unit</th><th class="rt-c-qf">Quantity from</th><th class="rt-c-fac rt-num">Factor</th>
          <th class="rt-c-rate rt-num">Material (${cur})</th><th class="rt-c-rate rt-num">Labour (${cur})</th><th class="rt-c-waste rt-num">Waste %</th>
-         <th class="rt-c-sup">Supplier code</th><th class="rt-c-st">Status</th></tr>`;
+         <th class="rt-c-sup">Supplier code</th><th class="rt-c-src">Price date · source</th><th class="rt-c-st">Status</th></tr>`;
     tbody.innerHTML = vis.map(r => {
       const d = escHtml(r.desc);
       const head = `<td class="rt-ro rt-code" title="${escHtml(r.key)}">${escHtml(r.key)}</td><td class="rt-ro" title="${d}">${d}</td><td class="rt-ro">${escHtml(r.unit || '')}</td>`;
@@ -819,6 +849,7 @@ const Rates = {
         ${r.cat === 'term' ? '<td class="rt-ro rt-num" title="Terminations are counted per cable end; no waste allowance">—</td>'
           : `<td><input class="rt-gc rt-num" data-f="waste" inputmode="decimal" value="${v.waste}" aria-label="Waste % for ${d}"></td>`}
         <td><input class="rt-gc" data-f="supplier" value="${escHtml(v.supplier)}" aria-label="Supplier code for ${d}"></td>
+        <td class="rt-ro rt-src" data-td="src">${this._srcText(v)}</td>
         <td class="rt-ro" data-td="st">${this._pill(r)}</td></tr>`;
     }).join('');
     const empty = m.querySelector('#rt-empty');
@@ -1394,7 +1425,10 @@ const Rates = {
   },
   async saveDefault() {
     const L = this.lib();
-    const doc = { currency: L.currency, defaultWaste: L.defaultWaste, items: L.items, custom: L.custom, savedAt: new Date().toISOString() };
+    // Company provenance is about this project's link to the company list, not part of a personal default.
+    const items = JSON.parse(JSON.stringify(L.items));
+    for (const it of Object.values(items)) { delete it.src; delete it.cv; }
+    const doc = { currency: L.currency, defaultWaste: L.defaultWaste, items, custom: L.custom, savedAt: new Date().toISOString() };
     try {
       await API.saveUserDefaultRates(doc);
     } catch (e) { UI.toast('Could not save your default rates: ' + e.message, 'error'); return; }
@@ -1412,5 +1446,205 @@ const Rates = {
     AppState.dirty = true;
     this._undo = { lib: before, label: `Loaded ${Object.keys(d.items || {}).length} default rates.` };
     this.render();
+  },
+
+  // ── Company price list ─────────────────────────────────────────────
+  companyLayer() {
+    const layers = (typeof StandardData !== 'undefined' && StandardData._sharedLayers) || [];
+    const lib = layers.find(l => l.is_company_default);
+    if (!lib) return null;
+    const entries = new Map();
+    for (const e of lib.entries || []) if (e.kind === 'rates' && e.data && e.data.id) entries.set(e.data.id, { data: e.data, version: e.version });
+    return { id: lib.id, name: lib.name, role: lib.role, currency: lib.currency || null, entries };
+  },
+  _canPublish() { const c = this.companyLayer(); return !!c && (c.role === 'edit' || c.role === 'owner'); },
+
+  _renderCompanyButtons() {
+    const c = this.companyLayer();
+    const r = document.getElementById('rt-co-refresh'), p = document.getElementById('rt-co-publish');
+    if (r) { r.hidden = !(c && c.entries.size); r.title = c ? `Bring this project's prices up to date with “${c.name}”` : ''; }
+    if (p) p.hidden = !this._canPublish();
+  },
+
+  _descMap() { return new Map(this.catalogue().map(c => [c.key, c.desc])); },
+
+  // Same prices? (rate / labour / waste / supplier; a waste the project never set matches a company null.)
+  _sameVals(it, d) {
+    const n = v => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
+    return n(it.rate) === n(d.rate) && n(it.labour) === n(d.labour) && n(it.waste) === n(d.waste) && (it.supplier || '') === (d.supplier || '');
+  },
+  _hasVals(it) { return !!it && (it.rate != null || it.labour != null || it.waste != null || !!it.supplier); },
+
+  // What a refresh would do, per company item: add (project has no price), update (project still
+  // has the company's earlier price), keep (the project's own price differs — never overwritten
+  // unless asked), same (already equal; just records where it came from).
+  planRefresh() {
+    const co = this.companyLayer();
+    if (!co) return null;
+    const L = this.lib(), desc = this._descMap();
+    const plan = { co, add: [], update: [], keep: [], same: [] };
+    for (const [key, ce] of co.entries) {
+      const it = L.items[key];
+      const row = { key, desc: ce.data.desc || desc.get(key) || key, entry: ce, was: it };
+      if (!this._hasVals(it)) plan.add.push(row);
+      else if (this._sameVals(it, ce.data)) plan.same.push(row);
+      else if (it.src === 'company') plan.update.push(row);
+      else plan.keep.push(row);
+    }
+    return plan;
+  },
+
+  _takeCompany(key, ce) {
+    const L = this.lib(), d = ce.data, prev = L.items[key] || {};
+    const it = {};
+    if (d.rate != null) it.rate = d.rate;
+    if (d.labour != null) it.labour = d.labour;
+    if (d.waste != null) it.waste = d.waste;
+    if (d.supplier) it.supplier = d.supplier;
+    if (d.priceDate) it.priceDate = d.priceDate;
+    if ('rule' in prev) it.rule = prev.rule;       // quantity rules stay the project's own
+    it.src = 'company'; it.cv = ce.version;
+    L.items[key] = it;
+    if (d.desc && !this._descMap().has(key)) L.custom[key] = { desc: d.desc, unit: d.unit || 'ea', cat: d.cat || this.guessCat(key) };
+  },
+
+  applyRefresh(plan, { overwriteKept = false, adoptCurrency = false } = {}) {
+    const L = this.lib();
+    const before = JSON.parse(JSON.stringify(L));
+    let n = 0;
+    for (const r of [...plan.add, ...plan.update, ...(overwriteKept ? plan.keep : [])]) { this._takeCompany(r.key, r.entry); n++; }
+    for (const r of plan.same) { const it = L.items[r.key]; it.src = 'company'; it.cv = r.entry.version; if (r.entry.data.priceDate && !it.priceDate) it.priceDate = r.entry.data.priceDate; }
+    if (adoptCurrency && plan.co.currency) L.currency = plan.co.currency;
+    this._touch();
+    this._undo = { lib: before, label: `Updated ${n} rate${n === 1 ? '' : 's'} from the company price list.` };
+    return n;
+  },
+
+  // A brand-new project (nothing entered, nothing ever touched) starts from the company price list.
+  _seedFromCompany() {
+    const L = this.lib();
+    if (Object.keys(L.items).length || L.updatedAt) return;
+    const plan = this.planRefresh();
+    if (!plan || !plan.add.length) return;
+    this.applyRefresh(plan, { adoptCurrency: true });
+    this._undo = null;
+    UI.toast(`Started from the company price list (${plan.add.length} rates).`, 'info', 5000);
+  },
+
+  async refreshFromCompany() {
+    await this._reloadCompany();
+    const plan = this.planRefresh();
+    if (!plan) { UI.alert('There is no company price list yet.'); return; }
+    const L = this.lib();
+    const curDiff = plan.co.currency && plan.co.currency !== L.currency;
+    const nothing = !plan.add.length && !plan.update.length && !plan.keep.length;
+    if (nothing && !curDiff) {
+      if (plan.same.length) { this.applyRefresh(plan); this._undo = null; this.render(); }
+      UI.toast('This project already matches the company price list.', 'success');
+      return;
+    }
+    const list = (rows, field) => rows.length ? `<table class="rt-tbl rt-co-tbl"><tbody>${rows.slice(0, 8).map(r => {
+      const c = r.entry.data, w = r.was || {};
+      const fmt = o => [o.rate != null ? `M ${this.num2(o.rate)}` : '', o.labour != null ? `L ${this.num2(o.labour)}` : ''].filter(Boolean).join(' / ') || '—';
+      return `<tr><td class="rt-ro rt-code">${escHtml(r.key)}</td><td class="rt-ro">${escHtml(r.desc)}</td><td class="rt-ro rt-num">${field === 'add' ? '' : escHtml(fmt(w)) + ' → '}${escHtml(fmt(c))}</td></tr>`;
+    }).join('')}</tbody></table>${rows.length > 8 ? `<div class="rt-note-i">…and ${rows.length - 8} more</div>` : ''}` : '';
+    const act = plan.add.length + plan.update.length + plan.keep.length > 0 || !!curDiff;
+    const body = `
+      <p class="rt-co-lead">Company price list “${escHtml(plan.co.name)}”. Your own edited prices are never replaced unless you tick the box.</p>
+      ${plan.add.length ? `<h4>${plan.add.length} new</h4>${list(plan.add, 'add')}` : ''}
+      ${plan.update.length ? `<h4>${plan.update.length} changed by the company</h4>${list(plan.update, 'update')}` : ''}
+      ${plan.keep.length ? `<h4>${plan.keep.length} where your price differs</h4>${list(plan.keep, 'keep')}
+        <label class="rt-chk"><input type="checkbox" data-co="overwrite"><span>Replace my prices for these ${plan.keep.length} with the company's</span></label>` : ''}
+      ${curDiff ? `<label class="rt-chk"><input type="checkbox" data-co="currency" ${Object.keys(L.items).length ? '' : 'checked'}><span>Use the company currency (${escHtml(plan.co.currency)}) in this project — it is ${escHtml(L.currency)} now</span></label>` : ''}`;
+    const res = await this._coDialog({ title: 'Refresh from company', body, okText: act ? 'Update' : 'Close', hideCancel: !act });
+    if (!res || !(plan.add.length + plan.update.length || res.overwrite || res.currency)) return;
+    const n = this.applyRefresh(plan, { overwriteKept: !!res.overwrite, adoptCurrency: !!res.currency });
+    this._used = this.usedLines();
+    this.render();
+    UI.toast(`Updated ${n} rate${n === 1 ? '' : 's'} from the company price list. Undo is in the banner.`, 'success');
+  },
+
+  async _reloadCompany() {
+    try { if (typeof StandardData !== 'undefined' && StandardData.reloadShared) await StandardData.reloadShared(); }
+    catch (e) { console.warn('Could not re-read the shared libraries', e); }
+  },
+
+  // What this project would publish: every priced item that differs from the company's.
+  planPublish() {
+    const co = this.companyLayer();
+    if (!co) return null;
+    const L = this.lib(), desc = this._descMap();
+    const items = [];
+    for (const [key, it] of Object.entries(L.items)) {
+      if (it.rate == null && it.labour == null) continue;
+      const data = { id: key };
+      if (it.rate != null) data.rate = it.rate;
+      if (it.labour != null) data.labour = it.labour;
+      if (it.waste != null) data.waste = it.waste;
+      if (it.supplier) data.supplier = it.supplier;
+      data.priceDate = it.priceDate || this._today();
+      const c = L.custom[key];
+      if (c && !desc.has(key)) { data.desc = String(c.desc || key).slice(0, 255); data.unit = String(c.unit || 'ea').slice(0, 16); data.cat = String(c.cat || this.guessCat(key)).slice(0, 16); }
+      const ex = co.entries.get(key);
+      if (ex && this._sameVals(it, ex.data)) continue;
+      items.push({ key, data, base_version: ex ? ex.version : undefined, isNew: !ex });
+    }
+    return { co, items };
+  },
+
+  async publishToCompany() {
+    await this._reloadCompany();
+    const plan = this.planPublish();
+    if (!plan || !this._canPublish()) { UI.alert('You cannot publish to the company price list.'); return; }
+    const L = this.lib();
+    const curDiff = L.currency && L.currency !== plan.co.currency;
+    if (!plan.items.length && !curDiff) { UI.toast('Nothing to publish — the company list already has these prices.', 'info'); return; }
+    const nNew = plan.items.filter(i => i.isNew).length, nChg = plan.items.length - nNew;
+    const body = `
+      <p class="rt-co-lead">Publish to “${escHtml(plan.co.name)}”. Everyone at the company gets these prices the next time they refresh, and is notified.</p>
+      ${plan.items.length ? `<p><b>${nNew}</b> new and <b>${nChg}</b> changed rate${plan.items.length === 1 ? '' : 's'} from this project.</p>` : '<p>No price changes.</p>'}
+      ${plan.items.length ? '<p class="rt-note-i">Only prices go to the company — not quantity rules. Rates you leave blank are not published.</p>' : ''}
+      ${curDiff ? `<label class="rt-chk"><input type="checkbox" data-co="currency" ${plan.co.currency ? '' : 'checked'}><span>Set the company currency to ${escHtml(L.currency)}${plan.co.currency ? ` (it is ${escHtml(plan.co.currency)} now — changes it for everyone)` : ''}</span></label>` : ''}`;
+    const res = await this._coDialog({ title: 'Publish to company', body, okText: 'Publish' });
+    if (!res) return;
+    try {
+      let msg = [];
+      if (plan.items.length) {
+        const r = await API.upsertSharedEntries(plan.co.id, plan.items.map(i => ({ kind: 'rates', data: i.data, base_version: i.base_version })));
+        const ver = new Map([...r.created, ...r.updated].map(x => [x.id, x.version]));
+        for (const [key, v] of ver) { const it = L.items[key]; if (it) { it.src = 'company'; it.cv = v; it.priceDate = it.priceDate || this._today(); } }
+        msg.push(`${ver.size} rate${ver.size === 1 ? '' : 's'} published`);
+        if (r.conflicts.length) msg.push(`${r.conflicts.length} changed by someone else — refresh from company first`);
+      }
+      if (res.currency) { await API.setLibraryCurrency(plan.co.id, L.currency); msg.push(`company currency set to ${L.currency}`); }
+      await this._reloadCompany();
+      this._touch();
+      this.render();
+      UI.toast(msg.join('; ') + '.', msg.length > 1 || /someone/.test(msg[0] || '') ? 'warning' : 'success', 7000);
+    } catch (e) { UI.toast('Could not publish: ' + e.message, 'error', 8000); }
+  },
+
+  // Small modal for the two company actions: resolves to {overwrite, currency} (the ticked boxes) or null.
+  _coDialog({ title, body, okText, hideCancel }) {
+    return new Promise(resolve => {
+      let m = document.getElementById('rt-co-modal');
+      if (m) m.remove();
+      m = document.createElement('div');
+      m.id = 'rt-co-modal';
+      m.className = 'modal';
+      m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-labelledby', 'rt-co-title');
+      m.style.cssText = 'display:flex;z-index:2100';
+      m.innerHTML = `<div class="modal-content rt-co-dialog"><header class="rt-head"><div class="rt-head-text"><h3 id="rt-co-title">${escHtml(title)}</h3></div></header>
+        <main class="rt-co-body">${body}</main>
+        <footer class="rt-foot"><span class="rt-grow"></span>${hideCancel ? '' : '<button type="button" class="rt-btn" data-co="cancel">Cancel</button>'}<button type="button" class="rt-btn primary" data-co="ok">${escHtml(okText)}</button></footer></div>`;
+      document.body.appendChild(m);
+      const done = ok => {
+        const out = ok ? { overwrite: !!m.querySelector('[data-co="overwrite"]:checked'), currency: !!m.querySelector('[data-co="currency"]:checked') } : null;
+        m.remove(); resolve(out);
+      };
+      m.addEventListener('click', e => { const b = e.target.closest('button[data-co]'); if (b) done(b.dataset.co === 'ok'); else if (e.target === m) done(false); });
+      m.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } });
+      setTimeout(() => m.querySelector('[data-co="ok"]').focus(), 30);
+    });
   },
 };

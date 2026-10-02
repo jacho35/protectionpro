@@ -526,6 +526,8 @@ const API = {
   },
   async deleteNotification(id) { return this.request(`/notifications/${id}`, 'DELETE'); },
 
+  async upsertSharedEntries(id, entries) { return this.request(`/shared-libraries/${id}/entries/upsert`, 'POST', { entries }); },
+  async setLibraryCurrency(id, currency) { return this.request(`/shared-libraries/${id}/currency`, 'PUT', { currency }); },
   async getSharedLibraries() { return this.request('/shared-libraries'); },
   async createSharedLibrary(name) { return this.request('/shared-libraries', 'POST', { name }); },
   async renameSharedLibrary(id, name) { return this.request(`/shared-libraries/${id}`, 'PATCH', { name }); },

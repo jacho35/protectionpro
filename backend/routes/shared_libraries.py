@@ -11,6 +11,7 @@ answers 409 with the current entry instead of overwriting it.
 """
 
 import json
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,11 +24,12 @@ from ..models.database import (get_db, User, SharedLibrary, SharedLibraryMember,
 from ..models.schemas import (SharedLibraryCreate, SharedLibraryRename,
                               SharedLibraryCompanyFlag, LibraryMemberAdd,
                               LibraryMemberRole, LibraryMemberOut, LibraryEntryIn,
-                              LibraryEntryOut, LibraryBulkIn, SharedLibraryOut)
+                              LibraryEntryOut, LibraryBulkIn, SharedLibraryOut,
+                              SharedLibraryCurrency, LibraryUpsertIn)
 
 router = APIRouter(prefix="/shared-libraries", tags=["shared-libraries"])
 
-KINDS = ("cables", "transformers", "cbs", "fuses", "loadClasses")
+KINDS = ("cables", "transformers", "cbs", "fuses", "loadClasses", "rates")
 MAX_ENTRY_BYTES = 256 * 1024
 _LEVELS = {"view": 0, "edit": 1, "owner": 2}
 
@@ -48,7 +50,8 @@ def _role_for(db: Session, lib: SharedLibrary, user: User):
     if m:
         return m.role
     if lib.is_company_default:
-        return "view"
+        # Any admin maintains the company standard's entries; everyone else reads it.
+        return "edit" if user.is_admin else "view"
     return None
 
 
@@ -74,7 +77,7 @@ def _entry_out(e: SharedLibraryEntry) -> LibraryEntryOut:
 def _lib_out(db: Session, lib: SharedLibrary, role: str, with_entries: bool) -> SharedLibraryOut:
     return SharedLibraryOut(
         id=lib.id, name=lib.name, owner_id=lib.owner_id, owner_email=lib.owner.email,
-        role=role, is_company_default=lib.is_company_default,
+        role=role, is_company_default=lib.is_company_default, currency=lib.currency,
         entries=[_entry_out(e) for e in lib.entries] if with_entries else [])
 
 
@@ -108,11 +111,39 @@ def _notify_entry(db, lib, user, kind, entry_id, label, verb):
            group_key=f"lib:{lib.id}")
 
 
+_RATE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,127}$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# A rates entry is one BOQ item's price: id = the item key (e.g. CBL-95-AL-XLPE-LV).
+# Quantity rules stay with the project; only what a price list carries is shared.
+_RATE_FIELDS = {"id", "rate", "labour", "waste", "supplier", "priceDate", "desc", "unit", "cat"}
+
+
+def _check_rate(data: dict) -> None:
+    if not _RATE_ID.match(str(data.get("id", ""))):
+        raise HTTPException(status_code=422, detail="A rate's id must be its item key (letters, digits, . _ -)")
+    extra = set(data) - _RATE_FIELDS
+    if extra:
+        raise HTTPException(status_code=422, detail=f"Unknown rate field(s): {', '.join(sorted(extra))}")
+    for f in ("rate", "labour", "waste"):
+        v = data.get(f)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 or v != v):
+            raise HTTPException(status_code=422, detail=f"Rate field '{f}' must be a number of 0 or more")
+    for f, n in (("supplier", 64), ("desc", 255), ("unit", 16), ("cat", 16)):
+        v = data.get(f)
+        if v is not None and (not isinstance(v, str) or len(v) > n):
+            raise HTTPException(status_code=422, detail=f"Rate field '{f}' must be text up to {n} characters")
+    d = data.get("priceDate")
+    if d is not None and not (isinstance(d, str) and _DATE.match(d)):
+        raise HTTPException(status_code=422, detail="priceDate must be YYYY-MM-DD")
+
+
 def _check_entry(kind: str, entry_id: str, data: dict) -> str:
     if kind not in KINDS:
         raise HTTPException(status_code=422, detail=f"Unknown library '{kind}'")
     if not entry_id or data.get("id") != entry_id:
         raise HTTPException(status_code=422, detail="Entry data must carry the same id as its path")
+    if kind == "rates":
+        _check_rate(data)
     raw = json.dumps(data, separators=(",", ":"))
     if len(raw.encode()) > MAX_ENTRY_BYTES:
         raise HTTPException(status_code=413, detail="Entry too large")
@@ -190,6 +221,23 @@ def set_company_default(library_id: int, data: SharedLibraryCompanyFlag,
                actor=admin, link={"type": "library", "id": lib.id})
     db.commit()
     return _lib_out(db, lib, _role_for(db, lib, admin) or "view", False)
+
+
+@router.put("/{library_id}/currency", response_model=SharedLibraryOut)
+def set_currency(library_id: int, data: SharedLibraryCurrency,
+                 user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The currency of this library's rates. Needs edit access (any admin for the company standard)."""
+    lib, role = _get_lib(db, library_id, user, "edit")
+    cur = data.currency.strip()
+    if not cur or len(cur) > 8:
+        raise HTTPException(status_code=422, detail="Currency must be 1-8 characters")
+    if cur != lib.currency:
+        lib.currency = cur
+        notify(db, _audience(db, lib), "libraries", "library_currency_changed",
+               f"{display_name(user)} set the currency of {_lib_label(lib)} to {cur}.", actor=user,
+               link={"type": "library", "id": lib.id})
+    db.commit()
+    return _lib_out(db, lib, role, False)
 
 
 @router.delete("/{library_id}")
@@ -365,3 +413,50 @@ def import_entries(library_id: int, body: LibraryBulkIn, user: User = Depends(ge
                actor=user, link={"type": "library", "id": lib.id})
     db.commit()
     return {"created": created, "skipped": skipped}
+
+
+@router.post("/{library_id}/entries/upsert")
+def upsert_entries(library_id: int, body: LibraryUpsertIn, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Create or update many entries in one call (publishing a price list). Each item states
+    the version it was based on (`base_version`, omitted to create); one that is stale — or
+    would create an id that exists — is reported in `conflicts` with the current entry and
+    left untouched, while the rest are applied. One notification covers the batch."""
+    lib, _ = _get_lib(db, library_id, user, "edit")
+    if len(body.entries) > 2000:
+        raise HTTPException(status_code=413, detail="Too many entries in one call (max 2000)")
+    created, updated, conflicts = [], [], []
+    for item in body.entries:
+        eid = item.data.get("id")
+        raw = _check_entry(item.kind, eid, item.data)
+        e = (db.query(SharedLibraryEntry)
+             .filter(SharedLibraryEntry.library_id == lib.id, SharedLibraryEntry.kind == item.kind,
+                     SharedLibraryEntry.entry_id == eid).first())
+        if e is None:
+            if item.base_version is not None:
+                conflicts.append({"kind": item.kind, "id": eid, "message": "Deleted by someone else.",
+                                  "current": None})
+                continue
+            db.add(SharedLibraryEntry(library_id=lib.id, kind=item.kind, entry_id=eid, data=raw,
+                                      version=1, updated_by=user.id))
+            created.append({"kind": item.kind, "id": eid, "version": 1})
+        else:
+            if item.base_version != e.version:
+                conflicts.append({"kind": item.kind, "id": eid,
+                                  "message": "Changed since you loaded it." if item.base_version is not None
+                                  else "An entry with this id already exists.",
+                                  "current": _entry_out(e).model_dump(mode="json")})
+                continue
+            if json.loads(e.data) == item.data:
+                continue                      # nothing changed: no new version
+            e.data, e.version, e.updated_by = raw, e.version + 1, user.id
+            updated.append({"kind": item.kind, "id": eid, "version": e.version})
+    n = len(created) + len(updated)
+    if n:
+        lib.updated_at = datetime.now(timezone.utc)
+        notify(db, _audience(db, lib), "libraries", "library_entries_published",
+               f"{display_name(user)} published {n} {'entry' if n == 1 else 'entries'} to {_lib_label(lib)}"
+               f" ({len(created)} new, {len(updated)} updated).", actor=user,
+               link={"type": "library", "id": lib.id})
+    db.commit()
+    return {"created": created, "updated": updated, "conflicts": conflicts}
