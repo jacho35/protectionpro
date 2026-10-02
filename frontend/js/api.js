@@ -508,6 +508,26 @@ const API = {
   async saveUserLibraries(data) { return this.request('/user-libraries', 'PUT', { data }); },
   async resetUserLibraries() { return this.request('/user-libraries', 'DELETE'); },
   // Shared (team) libraries the signed-in user can read (owned, member, company standard), with entries
+  // ── Company library submissions ──
+  async submitToCompany(entries, note) { return this.request('/library-submissions', 'POST', { entries, note: note || '' }); },
+  async listSubmissions({ status, mine } = {}) {
+    const q = new URLSearchParams();
+    if (status) q.set('status', status);
+    if (mine) q.set('mine', 'true');
+    const qs = q.toString();
+    return this.request('/library-submissions' + (qs ? '?' + qs : ''));
+  },
+  async getSubmission(id) { return this.request(`/library-submissions/${id}`); },
+  async getSubmissionCounts() { return this.request('/library-submissions/counts'); },
+  async decideSubmissions(ids, action, note, force) { return this.request('/library-submissions/decide', 'POST', { ids, action, note: note || '', force: !!force }); },
+  async resubmitSubmission(id, data, note) {
+    const body = {};
+    if (data !== undefined) body.data = data;
+    if (note !== undefined) body.note = note;
+    return this.request(`/library-submissions/${id}/resubmit`, 'POST', body);
+  },
+  async withdrawSubmission(id) { return this.request(`/library-submissions/${id}`, 'DELETE'); },
+
   // ── Notifications center ──
   async getNotifications({ category, unreadOnly, beforeId, limit } = {}) {
     const q = new URLSearchParams();

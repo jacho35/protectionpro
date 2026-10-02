@@ -306,6 +306,36 @@ class Notification(Base):
     actor = relationship("User", foreign_keys=[actor_id])
 
 
+class LibrarySubmission(Base):
+    """A user's proposal to add / change one entry of the company standard library.
+
+    A snapshot of the entry plus a note; the company library is untouched until an admin
+    approves. `batch` groups entries submitted together (e.g. a set of rate prices).
+    status: pending | changes_requested | approved | rejected."""
+    __tablename__ = "library_submissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    submitter_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    library_id = Column(Integer, ForeignKey("shared_libraries.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(16), nullable=False)
+    entry_id = Column(String(128), nullable=False)
+    data = Column(Text, nullable=False)
+    note = Column(Text, nullable=False, default="")
+    change_type = Column(String(8), nullable=False, default="new")      # 'new' | 'change'
+    base_version = Column(Integer, nullable=True)                       # company entry version it was based on
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    decision_note = Column(Text, nullable=False, default="")
+    decided_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    batch = Column(String(36), nullable=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    submitter = relationship("User", foreign_keys=[submitter_id])
+    decider = relationship("User", foreign_keys=[decided_by])
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_add_folder_id()

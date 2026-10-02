@@ -599,6 +599,13 @@ const StandardData = {
     this.syncFuseLibrary(); this.syncLoadClassLibrary();
     for (const [bodyId, cfg] of Object.entries(this._LIB)) if (document.getElementById(bodyId)) this[cfg.render]();
     this._driftBadge();
+    this._renderSubmitButtons();
+  },
+  // "Submit to company…" is for people who cannot edit the company library directly (admins can).
+  _renderSubmitButtons() {
+    const co = this._sharedLayers.find(l => l.is_company_default);
+    const show = !!co && co.role !== 'edit' && co.role !== 'owner';
+    document.querySelectorAll('.lib-submit').forEach(b => { b.hidden = !show; });
   },
 
   // Compare a just-opened project's entries with this user's libraries. Silent when
@@ -856,7 +863,8 @@ const StandardData = {
       if (!wrap) continue;
       const bar = document.createElement('div');
       bar.className = 'lib-searchbar';
-      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
+      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><button type="button" class="btn-small lib-submit" data-lib-key="${cfg.arr}" hidden title="Propose your own entries for the company library">Submit to company…</button><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
+      bar.querySelector('.lib-submit').addEventListener('click', () => Submissions.pickAndSubmit(cfg.arr));
       bar.querySelector('.lib-drift').addEventListener('click', (e) => { if (e.target.closest('[data-drift-review]')) this.reviewDrift(); });
       bar.querySelector('.lib-target').addEventListener('click', (e) => { if (e.target.closest('[data-stop-edit]')) this.setEditTarget(null); });
       wrap.parentNode.insertBefore(bar, wrap);

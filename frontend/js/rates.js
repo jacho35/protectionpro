@@ -435,7 +435,8 @@ const Rates = {
     m.querySelectorAll('#rt-rows input, #rt-rows select').forEach(e => { e.disabled = lk; });
     m.querySelectorAll('#rt-cur, #rt-dwaste, [data-rt="add"], [data-rt="import"], [data-rt="load-default"]').forEach(e => { e.disabled = lk; });
     const r = m.querySelector('#rt-co-refresh'), p = m.querySelector('#rt-co-publish');
-    if (lk) { if (r) r.hidden = true; if (p) p.hidden = true; }
+    const sb = m.querySelector('#rt-co-submit');
+    if (lk) { if (r) r.hidden = true; if (p) p.hidden = true; if (sb) sb.hidden = true; }
   },
 
   // Keys the current project uses (from the BOQ's quantity take-off).
@@ -545,6 +546,7 @@ const Rates = {
       </main>
       <footer class="rt-foot">
         <button type="button" class="rt-btn" data-rt="co-refresh" id="rt-co-refresh" hidden title="Bring this project's prices up to date with the company price list">Refresh from company</button>
+        <button type="button" class="rt-btn" data-rt="co-submit" id="rt-co-submit" hidden title="Propose this project's prices for the company price list; an admin reviews them">Submit prices to company…</button>
         <button type="button" class="rt-btn" data-rt="co-publish" id="rt-co-publish" hidden title="Add this project's prices to the company price list">Publish to company…</button>
         <button type="button" class="rt-btn" data-rt="load-default">Load my default rates</button>
         <button type="button" class="rt-btn" data-rt="save-default">Save as my default</button>
@@ -568,6 +570,7 @@ const Rates = {
       else if (a === 'load-default') this.loadDefault();
       else if (a === 'co-refresh') this.refreshFromCompany();
       else if (a === 'reopen') Quote.reopen();
+      else if (a === 'co-submit') this.submitToCompany();
       else if (a === 'co-publish') this.publishToCompany();
       else if (a === 'undo') this.undo();
       else if (a === 'labour-ok') { this.lib().labourNoteSeen = true; AppState.dirty = true; this._renderBanner(); }
@@ -1504,6 +1507,8 @@ const Rates = {
     const r = document.getElementById('rt-co-refresh'), p = document.getElementById('rt-co-publish');
     if (r) { r.hidden = !(c && c.entries.size); r.title = c ? `Bring this project's prices up to date with “${c.name}”` : ''; }
     if (p) p.hidden = !this._canPublish();
+    const sb = document.getElementById('rt-co-submit');
+    if (sb) sb.hidden = !(c && !this._canPublish());
   },
 
   _descMap() { return new Map(this.catalogue().map(c => [c.key, c.desc])); },
@@ -1682,6 +1687,20 @@ const Rates = {
       this.render();
       UI.toast(msg.join('; ') + '.', msg.length > 1 || /someone/.test(msg[0] || '') ? 'warning' : 'success', 7000);
     } catch (e) { UI.toast('Could not publish: ' + e.message, 'error', 8000); }
+  },
+
+  // People who cannot publish propose their prices instead: an admin approves them into the company list.
+  async submitToCompany() {
+    if (this._deny()) return;
+    await this._reloadCompany();
+    const plan = this.planPublish();
+    if (!plan) { UI.alert('There is no company price list to submit to yet.'); return; }
+    if (!plan.items.length) { UI.toast('Nothing to submit — the company list already has these prices.', 'info'); return; }
+    const nNew = plan.items.filter(i => i.isNew).length, nChg = plan.items.length - nNew;
+    const note = await UI.prompt(`Submit ${nNew} new and ${nChg} changed price${plan.items.length === 1 ? '' : 's'} to “${plan.co.name}” for approval? An admin reviews them; the company list only changes if they approve.\n\nOptional note for the reviewer:`, '', { title: 'Submit prices to company', okText: 'Submit' });
+    if (note === null || note === undefined) return;
+    try { await Submissions.submit(plan.items.map(i => ({ kind: 'rates', data: i.data, base_version: i.base_version })), note); }
+    catch (e) { UI.toast('Could not submit: ' + e.message, 'error', 8000); }
   },
 
   // Small modal for the two company actions: resolves to {overwrite, currency} (the ticked boxes) or null.
