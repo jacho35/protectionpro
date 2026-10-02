@@ -289,12 +289,12 @@
       ],
       "e": [
         "buses.bus-1.incident_energy_cal",
-        10.82,
+        10.83,
         0.001
       ],
       "afb_mm": [
         "buses.bus-1.arc_flash_boundary_mm",
-        1366.0,
+        1367.0,
         0.001
       ],
       "ppe": [

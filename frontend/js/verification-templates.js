@@ -115,7 +115,7 @@ const VerificationTemplates = {
       "name": "DC Arc Flash (Stokes & Oppenl\u00e4nder)",
       "category": "Verification / Standards",
       "preview": "DC bus \u2014 arc operating point & E",
-      "description": "DC arc flash via the Ammerman / CED published method. The Stokes & Oppenl\u00e4nder arc operating point and the spherical incident-energy / boundary reproduce the reference to \u22640.06 % (calorie rounding)."
+      "description": "DC arc flash via the Ammerman / CED published method, on a 250 V DC bus fed by a battery (open-air electrode configuration, as the reference). The Stokes & Oppenl\u00e4nder arc operating point and the spherical incident-energy / boundary reproduce the reference exactly."
     },
     {
       "id": "ver_unbalanced_lf",
@@ -1784,17 +1784,19 @@ const VerificationTemplates = {
       "voltageFactor": 1.0,
       "components": [
         {
-          "id": "utility-1",
-          "type": "utility",
+          "id": "dcbat-1",
+          "type": "dc_battery",
           "x": 300,
           "y": 40,
           "rotation": 0,
           "props": {
-            "name": "Src",
-            "voltage_kv": 0.25,
-            "fault_mva": 4.3301,
-            "x_r_ratio": 10,
-            "grounding": "solidly"
+            "name": "Battery",
+            "nominal_v": 250,
+            "emf_v": 0,
+            "ah_capacity": 200,
+            "internal_r_mohm": 25,
+            "internal_l_uh": 0,
+            "max_discharge_a": 0
           }
         },
         {
@@ -1805,18 +1807,21 @@ const VerificationTemplates = {
           "rotation": 0,
           "props": {
             "name": "DCbus",
+            "system": "dc",
+            "voltage_dc_v": 250,
             "voltage_kv": 0.25,
             "dc_bolted_fault_ka": 10.0,
-            "gap_mm": 25.0,
-            "working_distance_mm": 455.0
+            "conductor_gap_mm": 25.0,
+            "working_distance_mm": 455.0,
+            "electrode_config": "VOA"
           }
         }
       ],
       "wires": [
         {
           "id": "w1",
-          "fromComponent": "utility-1",
-          "fromPort": "out",
+          "fromComponent": "dcbat-1",
+          "fromPort": "dc",
           "toComponent": "bus-1",
           "toPort": "p0"
         }
@@ -1824,7 +1829,7 @@ const VerificationTemplates = {
       "nextId": 50,
       "dataVersion": 2,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — DC arc flash (Stokes & Oppenländer / Ammerman-CED). RUN: DC Arc Flash analysis. Expected arc current 6196 A, incident energy 10.82 cal/cm², boundary 1366 mm, PPE Cat 3. The DC bolted fault is set via dc_bolted_fault_ka on the bus. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — DC arc flash (Stokes & Oppenländer / Ammerman-CED). RUN: DC Arc Flash analysis. Expected arc current 6196 A, incident energy 10.83 cal/cm², boundary 1367 mm, PPE Cat 3. The DC bolted fault (10 kA) is entered on the DC bus. Full working: Help → Verification."
       }
     },
     "ver_unbalanced_lf": {

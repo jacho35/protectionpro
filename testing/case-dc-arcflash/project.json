@@ -5,17 +5,19 @@
   "voltageFactor": 1.0,
   "components": [
     {
-      "id": "utility-1",
-      "type": "utility",
+      "id": "dcbat-1",
+      "type": "dc_battery",
       "x": 300,
       "y": 40,
       "rotation": 0,
       "props": {
-        "name": "Src",
-        "voltage_kv": 0.25,
-        "fault_mva": 4.3301,
-        "x_r_ratio": 10,
-        "grounding": "solidly"
+        "name": "Battery",
+        "nominal_v": 250,
+        "emf_v": 0,
+        "ah_capacity": 200,
+        "internal_r_mohm": 25,
+        "internal_l_uh": 0,
+        "max_discharge_a": 0
       }
     },
     {
@@ -26,18 +28,21 @@
       "rotation": 0,
       "props": {
         "name": "DCbus",
+        "system": "dc",
+        "voltage_dc_v": 250,
         "voltage_kv": 0.25,
         "dc_bolted_fault_ka": 10.0,
-        "gap_mm": 25.0,
-        "working_distance_mm": 455.0
+        "conductor_gap_mm": 25.0,
+        "working_distance_mm": 455.0,
+        "electrode_config": "VOA"
       }
     }
   ],
   "wires": [
     {
       "id": "w1",
-      "fromComponent": "utility-1",
-      "fromPort": "out",
+      "fromComponent": "dcbat-1",
+      "fromPort": "dc",
       "toComponent": "bus-1",
       "toPort": "p0"
     }

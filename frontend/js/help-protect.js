@@ -199,22 +199,24 @@ $$\log D_V=\frac{k_1+k_2\log G+\dfrac{k_3I_{a,V}}{\sum k_jI_{bf}^{11-j}}+k_{11}\
   std: 'Stokes & Oppenländer (1985) · Ammerman et al. (2010) · DGUV-I 203-077 · Analyse ▸ Protection & safety',
   kw: 'dc arc flash battery ups solar pv rectifier stokes oppenlander incident energy',
   html: String.raw`
-<p>For DC systems — battery rooms, UPS, rectifiers, PV DC buses — where the IEEE 1584 AC regressions do not apply.</p>
+<p>For DC systems — battery rooms, UPS, rectifiers, PV DC buses — where the IEEE 1584 AC regressions do not apply. The study runs on every bus whose <em>System</em> is set to DC. Its bolted fault current is the IEC 61660-1 quasi-steady short-circuit current from the DC short-circuit study (from the batteries, rectifiers and chargers that reach the bus), unless a <em>DC Fault Current</em> is entered on the bus.</p>
 <h4>Arc as a non-linear resistance</h4>
 <p>The arc is a current-dependent resistance in series with the source resistance $R_{sys}=V_{sys}/I_{bolted}$:</p>
 $$R_{arc}(I)=\frac{20+0.534\,G}{I^{0.88}},\qquad I_{arc}=\frac{V_{sys}}{R_{sys}+R_{arc}(I_{arc})}$$
-<p>solved by fixed-point iteration from $I_{bolted}/2$. The arc voltage is then</p>
+<p>$G$ is the conductor gap in mm. Since $I\,R_{sys}+(20+0.534\,G)\,I^{0.12}$ rises steadily with $I$, the operating point is found exactly by bisection. The arc voltage is then</p>
 $$V_{arc}=I_{arc}R_{arc}=(20+0.534\,G)\,I_{arc}^{0.12}$$
 <p>If $V_{sys}\le20+0.534\,G$ the source cannot sustain an arc across that gap and $I_{arc}=0$.</p>
 <h4>Incident energy — spherical radiation</h4>
 $$P_{arc}=V_{arc}I_{arc},\qquad E_{arc}=P_{arc}\,t,\qquad E_{inc}=\frac{E_{arc}}{4\pi D^{2}}\ \ [\text{J/m}^2]$$
-$$E[\text{cal/cm}^2]=\frac{E_{inc}}{41868}$$
-<p>The boundary follows analytically: $D_{AFB}=\sqrt{\dfrac{E_{arc}}{4\pi\cdot41868\cdot1.2}}$.</p>
+$$E[\text{cal/cm}^2]=k_{box}\,\frac{E_{inc}}{41\,840}$$
+<p>That is the open-air value ($k_{box}=1$, electrode configuration VOA/HOA). An arc inside equipment is focused toward the opening, so for enclosed configurations $k_{box}=3$ (the NFPA 70E Annex D arc-in-a-box factor). The boundary follows analytically: $D_{AFB}=\sqrt{\dfrac{k_{box}\,E_{arc}}{4\pi\cdot41\,840\cdot1.2}}$.</p>
+<p>The clearing time comes from the protective device between the bus and its DC sources (battery, rectifier, charger), read at the arcing current: the device curves of the AC study, capped at 2 s.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>250 V DC, $I_{bolted}=4$ kA ($R_{sys}=0.0625\ \Omega$), gap 25 mm, $t=0.1$ s, $D=455$ mm.</p>
-<p>$20+0.534\times25=33.35$. Iterating $I=250/\big(0.0625+33.35/I^{0.88}\big)$ converges to $I_{arc}=2.63$ kA (66 % of bolted), so $V_{arc}=33.35\times2627^{0.12}=85.8$ V, $P_{arc}=225$ kW and $E_{arc}=22.5$ kJ. Then</p>
-$$E_{inc}=\frac{22\,540}{4\pi(0.455)^2}=8.66\ \text{kJ/m}^2\ \Rightarrow\ E=\frac{8660}{41868}=\mathbf{0.21\ cal/cm^2},\qquad D_{AFB}=189\ \text{mm}$$</div>
-<p>Valid for 48–1500 V DC, gaps 13–152 mm, working distance ≥ 305 mm, clearing time up to 2 s. PPE category follows NFPA 70E as for AC.</p>` },
+<p>$20+0.534\times25=33.35$. The operating point of $I=250/\big(0.0625+33.35/I^{0.88}\big)$ is $I_{arc}=2.63$ kA (66 % of bolted), so $V_{arc}=33.35\times2627^{0.12}=85.8$ V, $P_{arc}=225$ kW and $E_{arc}=22.5$ kJ. Then</p>
+$$E_{inc}=\frac{22\,540}{4\pi(0.455)^2}=8.66\ \text{kJ/m}^2\ \Rightarrow\ E=\frac{8664}{41\,840}=\mathbf{0.21\ cal/cm^2}\ \text{(open air)},\qquad D_{AFB}=189\ \text{mm}$$
+<p>In an enclosure: $E=0.62$ cal/cm², $D_{AFB}=327$ mm.</p></div>
+<p>The Stokes &amp; Oppenländer data cover gaps of 5–500 mm and arcing currents of 100 A–100 kA; results outside those, or at a working distance below 305 mm, carry a warning. The printed label follows NFPA 70E §130.5(H), as for AC: incident energy at the working distance and the minimum arc rating, not the PPE category.</p>` },
 
 { id: 'prot-grounding', group: 'protect', title: 'Substation grounding (IEEE 80)',
   std: 'IEEE 80-2013 · Analyse ▸ Earthing & lightning',

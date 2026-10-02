@@ -4,9 +4,14 @@ Implements the Stokes & Oppenlander (1985) empirical model for DC arc flash:
 - DC arcing current solved iteratively from the circuit equation with the
   current-dependent arc resistance R_arc = (20 + 0.534·G) / I_arc^0.88
 - Arc voltage V_arc = I_arc · R_arc(I_arc)
-- Incident energy via point-source spherical radiation model
+- Incident energy via point-source spherical radiation model (open air),
+  × 3 for an arc in an enclosure (NFPA 70E Annex D.5 arc-in-a-box factor)
 - Arc flash boundary calculation
 - PPE category per NFPA 70E Table 130.7(C)(15)(a)
+
+Runs on DC buses (bus `system` = 'dc'), with the DC bolted fault current from
+the IEC 61660-1 short-circuit engine (dc_shortcircuit.py). See
+reviews/DC_ARCFLASH_REVIEW.md (DA1-DA6).
 
 References:
 - Stokes, A.D. & Oppenlander, W.T. (1985), "Electric Arcs in Open Air",
@@ -27,7 +32,21 @@ Valid ranges:
 import math
 from dataclasses import dataclass, field
 
-from .arcflash import get_clearing_time, _get_ppe, PPE_CATEGORIES
+from .arcflash import get_clearing_time, _get_ppe, PPE_CATEGORIES, min_arc_rating_text
+
+# [DA3] DC fault sources for the clearing-time walk (plus the AC ones — a
+# rectifier's AC side is reached through the rectifier, which is itself a
+# source here, so the walk stops there).
+_DC_SOURCE_TYPES = {"dc_battery", "rectifier", "charger",
+                    "utility", "generator", "solar_pv", "wind_turbine", "battery"}
+
+# [DA2] NFPA 70E Annex D.5: an arc in an enclosure focuses the energy toward
+# the opening — the open-air (spherical) incident energy is multiplied by 3.
+_ARC_IN_BOX_FACTOR = 3.0
+
+# J/cm² per cal/cm² — the thermochemical calorie (4.184 J), as IEEE 1584,
+# NFPA 70E and the Ammerman/CED method (0.239 cal/J). [DA-L1] Was 4.1868.
+_J_PER_CAL = 4.184
 
 
 # ─── Typical DC conductor gaps (mm) by system voltage ───
@@ -81,6 +100,7 @@ class DCArcFlashBusResult:
     ppe_category: int
     ppe_name: str
     ppe_description: str
+    enclosure: str = "open air"  # [DA2] incident-energy geometry used
     warning: str = ""
     label_html: str = ""         # Pre-formatted NFPA 70E label HTML
     recommendations: list = field(default_factory=list)
@@ -134,14 +154,22 @@ def solve_dc_arc(v_sys, r_sys_ohm, gap_mm, max_iter=30, tol=1e-6):
         return 0.0, 0.0, 0.0
 
     i_bolted = v_sys / r_sys_ohm
-    i_arc = i_bolted / 2.0
-    for _ in range(max_iter):
-        r_arc = _dc_arc_resistance(i_arc, gap_mm)
-        i_new = v_sys / (r_sys_ohm + r_arc)
-        if abs(i_new - i_arc) <= tol * max(i_new, 1e-9):
-            i_arc = i_new
+    # [DA-L2] The operating point is the root of
+    #   f(I) = I·R_sys + (20 + 0.534·G)·I^0.12 − V_sys,
+    # strictly increasing in I, so bisection on (0, I_bf] is exact. A fixed
+    # 30-step iteration was used; its contraction factor 0.88·V_arc/V_sys
+    # approaches 0.88 near arc extinction, where 30 steps leave ~2 % error.
+    a_arc = 20.0 + 0.534 * gap_mm
+    lo, hi = 0.0, i_bolted
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if mid * r_sys_ohm + a_arc * mid ** 0.12 > v_sys:
+            hi = mid
+        else:
+            lo = mid
+        if hi - lo <= tol * max(hi, 1e-9) * 1e-3:
             break
-        i_arc = i_new
+    i_arc = 0.5 * (lo + hi)
 
     i_arc = min(i_arc, i_bolted)  # cannot exceed bolted fault current
     r_arc = _dc_arc_resistance(i_arc, gap_mm)
@@ -173,7 +201,8 @@ def calc_dc_arcing_current(ibf_a, v_dc, gap_mm):
     return iarc
 
 
-def calc_dc_incident_energy(iarc_a, gap_mm, t_clear_s, working_dist_mm):
+def calc_dc_incident_energy(iarc_a, gap_mm, t_clear_s, working_dist_mm,
+                            box_factor=1.0):
     """Calculate DC incident energy per Stokes & Oppenlander spherical model.
 
     Uses point-source radiation in a sphere:
@@ -183,7 +212,9 @@ def calc_dc_incident_energy(iarc_a, gap_mm, t_clear_s, working_dist_mm):
         P_arc = V_arc * I_arc            (arc power, watts)
         E_arc = P_arc * t                (arc energy, joules)
         E_incident = E_arc / (4 * pi * D^2)   (J/m², D in metres)
-        E_cal = E_incident / 41868       (convert J/m² to cal/cm²)
+        E_cal = E_incident / 41840       (convert J/m² to cal/cm²)
+        × box_factor                     (3 for an arc in an enclosure,
+                                          NFPA 70E Annex D.5)
 
     Args:
         iarc_a: DC arcing current in amperes.
@@ -203,12 +234,13 @@ def calc_dc_incident_energy(iarc_a, gap_mm, t_clear_s, working_dist_mm):
 
     d_m = working_dist_mm / 1000.0             # convert mm to metres
     e_incident_jm2 = e_arc / (4.0 * math.pi * d_m ** 2)  # J/m²
-    e_cal = e_incident_jm2 / 41868.0           # cal/cm²
+    e_cal = e_incident_jm2 / (_J_PER_CAL * 1e4) * box_factor   # cal/cm²
 
     return max(0.0, e_cal)
 
 
-def calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear_s, threshold_cal=1.2):
+def calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear_s, threshold_cal=1.2,
+                               box_factor=1.0):
     """Calculate DC arc flash boundary distance.
 
     The arc flash boundary is the distance at which incident energy equals
@@ -239,7 +271,7 @@ def calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear_s, threshold_cal=1.2):
 
     # D in metres: E_threshold = E_arc / (4*pi*D^2 * 41868)
     # D^2 = E_arc / (4*pi*41868*threshold)
-    d_sq = e_arc / (4.0 * math.pi * 41868.0 * threshold_cal)
+    d_sq = e_arc * box_factor / (4.0 * math.pi * _J_PER_CAL * 1e4 * threshold_cal)
 
     if d_sq <= 0:
         return 0.0
@@ -250,85 +282,88 @@ def calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear_s, threshold_cal=1.2):
     return round(d_mm, 0)
 
 
-def run_dc_arc_flash(project_data, fault_results):
-    """Run DC arc flash analysis using fault analysis results.
+def _bus_gap_mm(bus, v_dc):
+    """[DA4] The properties panel writes ``conductor_gap_mm``; the engine read
+    ``gap_mm`` (never written by the UI), so a user's gap was ignored."""
+    for key in ("conductor_gap_mm", "gap_mm"):
+        try:
+            g = float(bus.props.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            g = 0.0
+        if g > 0:
+            return g
+    return _get_dc_gap(v_dc / 1000.0)
 
-    Iterates over all buses in the project, calculates DC arcing current,
-    incident energy, arc flash boundary, and PPE category per the
-    Stokes & Oppenlander method.
 
-    Args:
-        project_data: ProjectData with all components and wires.
-        fault_results: FaultResults from prior fault analysis.
+def run_dc_arc_flash(project_data, dc_sc_results=None):
+    """Run DC arc flash on every DC bus.
 
-    Returns:
-        DCArcFlashResults with per-bus DC arc flash calculations.
+    [DA1] Buses are the DC buses (``system`` = 'dc') and the bolted fault
+    current is the IEC 61660-1 quasi-steady short-circuit current from
+    dc_shortcircuit.py (an explicit ``dc_bolted_fault_ka`` on the bus wins).
+    This used to select the AC buses — ``system != 'dc'`` — and treat each as
+    a DC system at its AC voltage with the AC three-phase fault current: every
+    AC bus got a meaningless "DC" label and no DC bus was ever studied.
+
+    ``dc_sc_results``: a DCShortCircuitResults; computed here when omitted
+    (any other object, e.g. an AC FaultResults from an older caller, is
+    ignored).
     """
-    components = {c.id: c for c in project_data.components}
-    buses = {c.id: c for c in project_data.components if c.type == "bus" and str(c.props.get("system", "ac")).lower() != "dc"}
+    from .dc_shortcircuit import run_dc_short_circuit
+    from .dc_loadflow import _is_dc_bus, _bus_nominal_v
 
-    # Build adjacency from wires
+    components = {c.id: c for c in project_data.components}
+    buses = {c.id: c for c in project_data.components if _is_dc_bus(c)}
+    warnings = []
+    if not buses:
+        return DCArcFlashResults(buses={}, warnings=[
+            "No DC buses in the network. Set a bus's System property to 'DC' "
+            "to study DC arc flash."])
+
+    if dc_sc_results is None or not hasattr(dc_sc_results, "converged"):
+        dc_sc_results = run_dc_short_circuit(project_data)
+    sc_buses = getattr(dc_sc_results, "buses", {}) or {}
+
     adjacency = {}
     for w in project_data.wires:
-        fc, tc = w.fromComponent, w.toComponent
-        if fc not in adjacency:
-            adjacency[fc] = []
-        if tc not in adjacency:
-            adjacency[tc] = []
-        adjacency[fc].append((tc, w.fromPort, w.toPort))
-        adjacency[tc].append((fc, w.toPort, w.fromPort))
+        adjacency.setdefault(w.fromComponent, []).append((w.toComponent, w.fromPort, w.toPort))
+        adjacency.setdefault(w.toComponent, []).append((w.fromComponent, w.toPort, w.fromPort))
 
     results = {}
-    warnings = []
 
     for bus_id, bus in buses.items():
-        voltage_kv = float(bus.props.get("voltage_kv", 0.6))
-        voltage_v = voltage_kv * 1000.0
+        voltage_v = _bus_nominal_v(bus)
+        voltage_kv = voltage_v / 1000.0
         bus_name = bus.props.get("name", bus_id)
-        working_dist = float(bus.props.get("working_distance_mm", 455))
-        gap_mm = float(bus.props.get("gap_mm", 0)) or _get_dc_gap(voltage_kv)
+        working_dist = float(bus.props.get("working_distance_mm", 455) or 455)
+        gap_mm = _bus_gap_mm(bus, voltage_v)
+        # [DA2] Open air only for an open-air electrode configuration
+        open_air = str(bus.props.get("electrode_config", "VCB")) in ("VOA", "HOA")
+        box = 1.0 if open_air else _ARC_IN_BOX_FACTOR
 
-        # Get bolted fault current from fault results
-        fault_bus = fault_results.buses.get(bus_id)
-        if not fault_bus or not fault_bus.ik3:
-            warnings.append(
-                f"No fault data for bus '{bus_name}' — run fault analysis first"
-            )
-            continue
-
-        # DC bolted fault current. A genuine DC bus has no 3-phase fault; the
-        # correct input is the DC bolted fault from the battery/rectifier
-        # source impedance. Use an explicit `dc_bolted_fault_ka` prop when the
-        # user supplies one; otherwise fall back to the AC 3-phase result as an
-        # approximation and warn — it has no rigorous DC meaning.
         dc_bolted_ka = float(bus.props.get("dc_bolted_fault_ka", 0) or 0)
+        sc = sc_buses.get(bus_id)
         if dc_bolted_ka > 0:
             ibf_ka = dc_bolted_ka
+        elif sc is not None and sc.ik_ka > 0:
+            ibf_ka = sc.ik_ka
         else:
-            ibf_ka = fault_bus.ik3  # AC 3-phase result used as a stand-in
             warnings.append(
-                f"Bus '{bus_name}': no DC bolted fault current specified — using "
-                f"the AC 3-phase fault result ({ibf_ka:.1f} kA) as an approximation. "
-                "Set a DC fault level (dc_bolted_fault_ka) for a valid DC result."
-            )
+                f"Bus '{bus_name}': no DC fault current (no DC source reaches it) "
+                "— no DC arc flash label produced")
+            continue
         ibf_a = ibf_ka * 1000.0
 
-        # Validate DC applicability
-        warn = ""
+        notes = []
         if voltage_v > 1500:
-            warn = (
-                f"DC voltage {voltage_v:.0f}V exceeds typical DC range (> 1500V). "
-                "Results may be unreliable — consult a specialist."
-            )
+            notes.append(f"DC voltage {voltage_v:.0f} V exceeds the typical DC range (> 1500 V)")
         if voltage_v < 48:
-            warn = (
-                f"DC voltage {voltage_v:.0f}V is very low. "
-                "Arc flash hazard is unlikely at this voltage level."
-            )
+            notes.append(f"DC voltage {voltage_v:.0f} V is very low — a sustained arc is unlikely")
+        if working_dist < 305:
+            notes.append(f"Working distance {working_dist:g} mm below 305 mm — extrapolated")
+        if gap_mm < 5 or gap_mm > 500:
+            notes.append(f"Gap {gap_mm:g} mm outside the Stokes & Oppenländer data (5-500 mm)")
 
-        # DC arc operating point (arcing current + arc voltage) solved
-        # iteratively per Stokes & Oppenlander: R_sys from the bolted fault
-        # current, R_arc = (20 + 0.534·G)/I^0.88.
         r_sys = voltage_v / ibf_a
         iarc_a, v_arc, _r_arc = solve_dc_arc(voltage_v, r_sys, gap_mm)
 
@@ -338,25 +373,22 @@ def run_dc_arc_flash(project_data, fault_results):
                 f"sustain an arc across {gap_mm:.0f} mm gap."
             )
             continue
+        if iarc_a < 100 or iarc_a > 100000:
+            notes.append(f"Arcing current {iarc_a:.0f} A outside the Stokes & "
+                         "Oppenländer data (100 A-100 kA)")
 
-        # Clearing time from protection devices. Pass the DC arcing current
-        # (kA) so the instantaneous-pickup comparison can fire; without it the
-        # estimator falls through to its slow time-delayed buckets.
-        t_clear = get_clearing_time(bus, components, adjacency, iarc_ka=iarc_a / 1000.0)
+        # [DA3] DC sources for the device walk
+        t_clear = get_clearing_time(bus, components, adjacency, iarc_ka=iarc_a / 1000.0,
+                                    source_types=_DC_SOURCE_TYPES)
 
-        # Incident energy at working distance
-        e_cal = calc_dc_incident_energy(iarc_a, gap_mm, t_clear, working_dist)
+        e_cal = calc_dc_incident_energy(iarc_a, gap_mm, t_clear, working_dist, box)
+        afb = calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear, box_factor=box)
 
-        # Arc flash boundary
-        afb = calc_dc_arc_flash_boundary(iarc_a, gap_mm, t_clear)
-
-        # PPE category
         ppe_cat, ppe_name, ppe_desc = _get_ppe(e_cal)
 
-        # Generate label
         label = _generate_dc_label(
             bus_name, voltage_v, e_cal, afb, ppe_cat,
-            ppe_name, ppe_desc, ibf_ka, iarc_a, t_clear
+            ppe_name, ppe_desc, ibf_ka, iarc_a, t_clear, working_dist
         )
 
         results[bus_id] = DCArcFlashBusResult(
@@ -375,11 +407,11 @@ def run_dc_arc_flash(project_data, fault_results):
             ppe_category=ppe_cat,
             ppe_name=ppe_name,
             ppe_description=ppe_desc,
-            warning=warn,
+            enclosure="open air" if open_air else "enclosed (×3, NFPA 70E Annex D.5)",
+            warning="; ".join(notes),
             label_html=label,
         )
 
-    # Generate recommendations for each bus
     for bus_id, r in results.items():
         r.recommendations = _generate_dc_recommendations(
             r, buses[bus_id], components, adjacency
@@ -487,7 +519,8 @@ def _generate_dc_recommendations(result, bus, components, adjacency):
 
 
 def _generate_dc_label(bus_name, voltage_v, energy, boundary_mm, ppe_cat,
-                        ppe_name, ppe_desc, ibf_ka, iarc_a, t_clear):
+                        ppe_name, ppe_desc, ibf_ka, iarc_a, t_clear,
+                        working_dist_mm=None):
     """Generate NFPA 70E DC arc flash warning label text.
 
     Args:
@@ -515,13 +548,15 @@ def _generate_dc_label(bus_name, voltage_v, energy, boundary_mm, ppe_cat,
     else:
         header = "⚡ CAUTION — DC ARC FLASH HAZARD"
 
+    # [DA5] NFPA 70E §130.5(H), as the AC label (review AF6): incident energy
+    # at its working distance plus the minimum arc rating, no PPE category.
+    at_wd = f" at {working_dist_mm:.0f} mm" if working_dist_mm else ""
     label = f"""{header}
 Equipment: {bus_name}
-DC Voltage: {voltage_v:.0f} V
-Incident Energy: {energy:.1f} cal/cm²
+Nominal Voltage: {voltage_v:.0f} V DC
 Arc Flash Boundary: {boundary_ft} ft ({boundary_mm:.0f} mm)
-PPE: {ppe_name}
-{ppe_desc}
+Incident Energy: {energy:.1f} cal/cm²{at_wd}
+Minimum Arc Rating: {min_arc_rating_text(energy)}
 Bolted Fault: {ibf_ka:.1f} kA
 Arcing Current: {iarc_a:.0f} A (DC)
 Clearing Time: {t_clear:.3f} s
