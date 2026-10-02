@@ -163,10 +163,29 @@ const DBSchedule = {
     const board = comp || AppState.components.get(this.currentId);
     if (!board) return;
     const circuits = board.props.circuits || [];
+    Conduit.syncGroups(circuits);
     this._conEval = Conduit.evaluate(circuits);
     this.body.querySelectorAll('#db-rows tr[data-idx]').forEach(tr => {
       const c = circuits[parseInt(tr.dataset.idx)];
       if (!c) return;
+      // Tag/type/size edits reach every way in the conduit, so the controls are
+      // brought in line in place — a full render() would reset the scroll.
+      const res = this._conEval.get(c.id);
+      const typeId = (res && res.type) || '';
+      const tagIn = tr.querySelector('input[data-k="conduit_tag"]');
+      if (tagIn && document.activeElement !== tagIn) tagIn.value = c.conduit_tag || '';
+      const typeSel = tr.querySelector('select[data-k="conduit_type"]');
+      if (typeSel) typeSel.value = typeId;
+      const sizeSel = tr.querySelector('select[data-k="conduit_size"]');
+      if (sizeSel) {
+        if (sizeSel.dataset.type !== typeId) {
+          sizeSel.dataset.type = typeId;
+          sizeSel.innerHTML = '<option value="">Auto</option>'
+            + Conduit.sizes(typeId).map(sz => `<option value="${sz}">${sz}</option>`).join('');
+        }
+        sizeSel.disabled = !typeId;
+        sizeSel.value = Conduit.sizes(typeId).includes(c.conduit_size) ? c.conduit_size : '';
+      }
       const cells = this._conduitCells(this._conEval.get(c.id));
       const set = (k, html) => { const el = tr.querySelector(`[data-con="${k}"]`); if (el) el.innerHTML = html; };
       set('n', cells.n); set('fill', cells.fill); set('check', cells.check);
@@ -186,7 +205,7 @@ const DBSchedule = {
         const tag = String(c.conduit_tag || '').trim();
         const members = tag ? grp.get('tag:' + tag.toLowerCase()) : [c];
         for (const m of members) m.conduit_size = btn.dataset.conApply;
-        this.render();
+        this._paintConduit(comp);
         this._notifyEdited();
       };
     });
@@ -1123,7 +1142,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       return `
         <td data-label="Conduit tag" data-grp="con"><input type="text" data-k="conduit_tag" value="${escHtml(c.conduit_tag || '')}" style="width:68px" placeholder="own" title="Ways with the same tag share one conduit — their cables are added together. Blank = this way has its own conduit."></td>
         <td data-label="Conduit type" data-grp="con"><select data-k="conduit_type" style="width:104px"><option value="">—</option>${Conduit.TYPES.map(t => opt(t.id, typeId, t.label)).join('')}</select></td>
-        <td data-label="Conduit size" data-grp="con"><select data-k="conduit_size" style="width:92px" ${typeId ? '' : 'disabled'}><option value="">${cells.auto || 'Auto'}</option>${sizeOpts}</select></td>
+        <td data-label="Conduit size" data-grp="con"><select data-k="conduit_size" data-type="${typeId}" style="width:92px" ${typeId ? '' : 'disabled'}><option value="">${cells.auto || 'Auto'}</option>${sizeOpts}</select></td>
         <td data-label="Cables" data-grp="con" class="db-con-n" data-con="n">${cells.n}</td>
         <td data-label="Fill" data-grp="con" class="db-con-fill" data-con="fill">${cells.fill}</td>
         <td data-label="Conduit check" data-grp="con" class="db-con-check" data-con="check">${cells.check}</td>`;
@@ -1476,7 +1495,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
               for (const o of others) { o.conduit_type = c.conduit_type; o.conduit_size = c.conduit_size; }
             }
           }
-          this.render();
+          this._paintConduit(comp);
           this._notifyEdited();
           return;
         }
