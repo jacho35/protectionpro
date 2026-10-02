@@ -1594,12 +1594,13 @@ def _calc_load_diversity(pdf, ld_results):
     pdf.add_page()
     pdf.section_title("8.  Load Diversity & Demand Factors")
 
-    _calc_label(pdf, "Method: Demand factor / diversity factor analysis (IEC 60364-1 / SANS 10142)")
+    _calc_label(pdf, "Method: per-load demand factors, IEC 61439 coincidence factor Ks per LV board")
     pdf.ln(2)
-    _calc_body(pdf, "Maximum demand:")
-    _calc_label(pdf, "  MD = sum(P_i * DF_i)  where DF_i = demand factor for load i")
-    _calc_body(pdf, "Diversity factor:")
-    _calc_label(pdf, "  FD = sum(MD_i) / MD_total  (FD >= 1.0)")
+    _calc_body(pdf, "Load demand:")
+    _calc_label(pdf, "  P_i = P_in,i * DF_i,  Q_i = P_i * tan(phi_i)  (motors: P_in = P_r / eta)")
+    _calc_body(pdf, "Board maximum demand (circuits = loads + feeders to other boards):")
+    _calc_label(pdf, "  S_max = | Ks(n) * sum(P_i + jQ_i) - jQ_C |,  I_max = S_max / (sqrt(3) * U)")
+    _calc_label(pdf, "  Ks = 1.0 (n = 1), 0.9 (2-3), 0.8 (4-5), 0.7 (6-9), 0.6 (10 or more); MV boards Ks = 1")
     pdf.ln(4)
 
     summary = ld_results.get("summary", {})
@@ -1613,6 +1614,17 @@ def _calc_load_diversity(pdf, ld_results):
 
     buses = ld_results.get("buses", [])
     if buses:
+        _calc_subsection(pdf, "Board Maximum Demand")
+        headers = ["Board", "Circuits", "Installed (kVA)", "Ks", "Max demand (kVA)", "Current (A)"]
+        avail = pdf.w - pdf.l_margin - pdf.r_margin
+        widths = [avail * 0.26, avail * 0.12, avail * 0.16, avail * 0.1, avail * 0.2, avail * 0.16]
+        rows = [[str(b.get("bus_name", b.get("bus_id", ""))),
+                 str(b.get("num_circuits", b.get("num_loads", 0))),
+                 f"{b.get('installed_kva', 0):.1f}", f"{b.get('diversity_factor', 1):.2f}",
+                 f"{b.get('diversified_demand_kva', 0):.1f}", f"{b.get('demand_current_a', 0):.1f}"]
+                for b in buses]
+        _table(pdf, headers, rows, widths, header_color=(100, 60, 160))
+        pdf.ln(2)
         _calc_subsection(pdf, "Load Calculations per Bus")
         headers = ["Load", "Bus", "Installed (kW)", "Demand Factor", "Demand (kW)"]
         avail = pdf.w - pdf.l_margin - pdf.r_margin

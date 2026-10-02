@@ -75,7 +75,7 @@ CASES = [
     ("case-load-diversity", "ver_diversity",
      "Load Diversity / Demand Factors",
      "Grouped loads — Ks & diversified demand",
-     "Load diversity study. Per-load demand factors, IEC group coincidence factor Ks, diversified demand, effective demand factor and demand current all reproduce an exact demand-aggregation hand calc."),
+     "Load diversity study. Per-load demand factors, the IEC 61439 coincidence factor Ks (0.9 for three circuits), the diversified demand as the phasor sum of the loads' kW and kvar, effective demand factor and demand current all reproduce an exact hand calculation."),
     ("case-dc-arcflash", "ver_dc_arcflash",
      "DC Arc Flash (Stokes & Oppenländer)",
      "DC bus — arc operating point & E",
@@ -168,9 +168,9 @@ EXPECTED = {
     }),
     "ver_diversity": ("load-diversity", {
         "installed": ("buses.0.installed_kva", 255.26),
-        "ks": ("buses.0.diversity_factor", 0.85),
-        "demand": ("buses.0.diversified_demand_kva", 199.97),
-        "i_demand": ("buses.0.demand_current_a", 288.6),
+        "ks": ("buses.0.diversity_factor", 0.9),
+        "demand": ("buses.0.diversified_demand_kva", 211.55),
+        "i_demand": ("buses.0.demand_current_a", 305.3),
     }),
     "ver_dc_arcflash": ("dc-arcflash", {
         "i_arc": ("buses.bus-1.dc_arcing_current_a", 6196.3),

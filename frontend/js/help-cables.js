@@ -143,29 +143,34 @@ $$I_z'=I_z\cdot k_{grp}(n),\qquad k_{grp}=1.00,\ 0.80,\ 0.70,\ 0.65,\ 0.60,\ 0.5
 <p>Three cables of 32 mm OD in a 100 mm conduit (ID 100 mm): fill $=3\times32^2/100^2=30.7\%\le40\%$ ✓. Jam ratio $=1.05\times100/32=3.28$, just above the 3.2 upper bound ✓. Grouping: $k_{grp}(3)=0.70$.</p></div>` },
 
 { id: 'cable-diversity', group: 'cables', title: 'Load diversity & demand factors',
-  std: 'IEC 61439 · IEC 60364 · Analyse ▸ Sizing & installation',
-  kw: 'demand factor maximum demand coincidence diversity installed load transformer utilisation',
+  std: 'IEC 61439 · SANS 10142-1 Annex C · Analyse ▸ Sizing & installation',
+  kw: 'demand factor maximum demand coincidence diversity installed load transformer utilisation ks rated diversity factor board',
   html: String.raw`
-<p>Not every installed load runs at once. This study converts installed load into the <em>maximum demand</em> the supply must actually carry, per load, per bus and per transformer.</p>
+<p>Not every installed load runs at once. This study converts installed load into the <em>maximum demand</em> each board and transformer must carry.</p>
 <h4>Per load</h4>
-$$S_{demand}=S_{installed}\times DF,\qquad S_{installed}=\frac{P_r}{\eta\cos\varphi}\ (\text{motors, input power})$$
-<p>$DF$ is the load's <code>demand_factor</code>. Recommended values by category (IEC 61439 / 60364):</p>
-<table class="help-ref-table"><thead><tr><th>Category</th><th>$DF$</th><th>Category</th><th>$DF$</th></tr></thead><tbody>
-<tr><td>Lighting</td><td>1.0</td><td>Motor group 5–10</td><td>0.6</td></tr>
-<tr><td>Heating / air-conditioning</td><td>1.0</td><td>Motor group &gt;10</td><td>0.5</td></tr>
-<tr><td>Socket outlets</td><td>0.4</td><td>Welding</td><td>0.3</td></tr>
-<tr><td>Single motor (largest)</td><td>1.0</td><td>Lifts and cranes</td><td>0.5</td></tr>
-<tr><td>Motor group 2–4</td><td>0.8</td><td>Cooking</td><td>0.8</td></tr>
-<tr><td>Mixed commercial</td><td>0.7</td><td>Mixed industrial</td><td>0.6</td></tr></tbody></table>
-<h4>Per bus — coincidence</h4>
-<p>On top of the per-load factors, a group coincidence factor $K_s\le1$ reflects that many loads seldom peak together. It depends on the number of loads $N$ on the bus, linearly interpolated from</p>
-<table class="help-ref-table"><thead><tr><th>$N$</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>8</th><th>10</th><th>15</th><th>20</th><th>30</th><th>50</th></tr></thead><tbody>
-<tr><td>$K_s$</td><td>1.00</td><td>0.90</td><td>0.85</td><td>0.80</td><td>0.78</td><td>0.75</td><td>0.72</td><td>0.70</td><td>0.65</td><td>0.60</td><td>0.57</td><td>0.52</td></tr></tbody></table>
-$$S_{max}=K_s\sum S_{demand},\qquad I_{max}=\frac{S_{max}}{\sqrt3\,U},\qquad DF_{eff}=\frac{S_{max}}{\sum S_{installed}}$$
-<p>(The result key is called <em>diversity factor</em> for API compatibility, but it is the coincidence factor $K_s$; the classical diversity factor is its reciprocal, $\ge1$.)</p>
+<p>Each load's demand is its installed input power times its <code>demand_factor</code> $DF$, in kW and kvar exactly as the load flow models it:</p>
+$$P_{d}=P_{in}\,DF,\qquad Q_{d}=\pm P_{d}\tan\varphi,\qquad P_{in}=\frac{P_r}{\eta}\ (\text{motors, drives})$$
+<p>A drive also scales by its load %. A leading synchronous motor gives negative kvar. A distribution board's own schedule (each way's VA × DF × the board diversity) counts as one load.</p>
+<p>No IEC standard tabulates per-load demand factors; set them from the design. Typical values:</p>
+<table class="help-ref-table"><thead><tr><th>Load</th><th>$DF$</th><th>Source</th></tr></thead><tbody>
+<tr><td>Residential lighting, heating, cooking, socket outlets</td><td>0.5</td><td>SANS 10142-1 Annex C</td></tr>
+<tr><td>Residential water heaters, motors</td><td>1.0</td><td>SANS 10142-1 Annex C</td></tr>
+<tr><td>Lifts: 1 / 2 / 3 or more</td><td>1.0 / 0.75 / 0.6</td><td>SANS 10142-1 Annex C</td></tr>
+<tr><td>Lighting, heating / air-conditioning (non-residential)</td><td>1.0</td><td>practice</td></tr>
+<tr><td>Socket outlets (general)</td><td>0.4</td><td>practice</td></tr>
+<tr><td>Motor group, per motor</td><td>0.75</td><td>practice</td></tr>
+<tr><td>Welding</td><td>0.3</td><td>practice</td></tr></tbody></table>
+<h4>Per board — coincidence</h4>
+<p>Each bus and distribution board is a board. Its circuits are everything it feeds: each load, each feeder to another board (with that board's own maximum demand), and a distribution board's own schedule. Parallel feeders to the same board count as one circuit. The circuits seldom peak together, so an LV board applies the IEC 61439 rated diversity factor $K_s$ for its number of circuits $n$:</p>
+<table class="help-ref-table"><thead><tr><th>$n$</th><th>1</th><th>2–3</th><th>4–5</th><th>6–9</th><th>10 and more</th></tr></thead><tbody>
+<tr><td>$K_s$</td><td>1.0</td><td>0.9</td><td>0.8</td><td>0.7</td><td>0.6</td></tr></tbody></table>
+$$S_{max}=\Bigl|K_s\sum_i\left(P_i+jQ_i\right)-jQ_C\Bigr|,\qquad I_{max}=\frac{S_{max}}{\sqrt3\,U},\qquad DF_{eff}=\frac{S_{max}}{\sum S_{installed}}$$
+<p>The circuits add as phasors, so a power-factor-correction bank ($Q_C$, steps in service, not diversified) and a leading synchronous motor reduce the kVA. An MV board sums its circuits ($K_s=1$): IEC 61439 covers LV assemblies. The demand rolls up from the far end, so a main board's maximum demand includes its sub-boards at their diversified demand. (The result key is called <em>diversity factor</em> for API compatibility, but it is $K_s$; the classical diversity factor is its reciprocal, $\ge1$.)</p>
+<h4>Direction of supply</h4>
+<p>The supply is traced from the utility, or in a network with no utility from the highest-voltage boards (those with a source first). A generator on an LV board does not reverse its transformer, and its output is not netted off the demand.</p>
 <h4>Per transformer</h4>
-<p>Only the LV-side (load-side) buses are counted, to avoid double-counting through the HV winding. Utilisation is the diversified demand divided by the nameplate, and compared with the installed-load utilisation so the margin the diversity buys is visible.</p>
+<p>A transformer carries everything on its downstream side, however it is wired: to a busbar, through a cable, or with its HV side not drawn. Units in parallel onto the same board share it in proportion to rating. Utilisation is the maximum demand divided by the nameplate. It is compared with the installed-load utilisation so the margin the diversity buys is visible. Above 80 % is a warning and above 100 % a failure.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
-<p>10 loads of 50 kVA installed on one bus, each with $DF=0.8$: $\sum S_{demand}=10\times40=400$ kVA; $K_s(10)=0.70$ so $S_{max}=\mathbf{280\ kVA}$ against 500 kVA installed ($DF_{eff}=0.56$). On a 400 V bus, $I_{max}=280/(\sqrt3\times0.4)=404$ A.</p></div>` }
+<p>A 0.4 kV main board feeds four sub-boards by cable, each with three 100 kVA loads at pf 0.9 and $DF=1$. Each sub-board: $K_s(3)=0.9$, so $S_{max}=270$ kVA. The main board has four circuits, so $K_s(4)=0.8$ and $S_{max}=0.8\times4\times270=\mathbf{864\ kVA}$ against 1200 kVA installed ($DF_{eff}=0.72$), and $I_{max}=864/(\sqrt3\times0.4)=1247$ A. A 1000 kVA transformer feeding it is loaded to 86 %, a warning.</p></div>` }
 
 );
