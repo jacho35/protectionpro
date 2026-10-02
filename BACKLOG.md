@@ -377,6 +377,9 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors â€
 
 ## Completed
 
+### Fix: Settings opened behind the Quantities tab (2026-10-02)
+- The rate library docked in the Quantities pane kept `#rates-modal`'s own `z-index: 1050`, which a flex item honours even when static, so it painted above the Settings modal (z-index 1000) and every other dialog. Docked dialogs now always use `z-index: auto`; checked for the rate library, BOQ and cable schedules views.
+
 ### Fix: shared libraries panel clipped in the Libraries manager (2026-10-02)
 - The Team libraries screen (and Settings' old Shared Libraries tab) had its toolbar squashed to 8 px and the members email box pushed out of reach: the shared-libraries panel reused class names (`sl-bar`, `sl-card`, `sl-head`, â€¦) that the street-lighting stylesheet also defines. The panel's classes are now `shl-*`; the manager's content column scrolls and its layer-order card no longer shrinks.
 
