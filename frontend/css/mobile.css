@@ -1903,3 +1903,8 @@ body.dark-mode {
 .mm-foot .mm-link-btn { min-height: 0; padding: 0; }
 
 #settings-modal.settings-compact .lib-name-badge { display: none; }
+
+/* Bulk cable change is a desktop-grid feature: no tick column in the card layout */
+@media (max-width: 768px) {
+  .erf-table td[data-cell="sel"], .erf-table th.sel-col { display: none; }
+}
