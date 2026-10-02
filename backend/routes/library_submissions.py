@@ -20,7 +20,7 @@ from ..models.database import (get_db, User, SharedLibrary, SharedLibraryEntry, 
 from ..models.schemas import (SubmissionCreate, SubmissionOut, SubmissionDecision, SubmissionResubmit)
 from ..notifications import notify, display_name
 from .shared_libraries import (_check_entry, _entry_label, _notify_entry, _notify_override_drift,
-                               _entry_out, _lib_label)
+                               _entry_out, _lib_label, log_activity)
 
 router = APIRouter(prefix="/library-submissions", tags=["library-submissions"])
 
@@ -167,10 +167,14 @@ def _apply(db: Session, lib: SharedLibrary, admin: User, s: LibrarySubmission, f
         db.add(SharedLibraryEntry(library_id=lib.id, kind=s.kind, entry_id=s.entry_id, data=raw,
                                   version=1, updated_by=s.submitter_id))
         _notify_entry(db, lib, admin, s.kind, s.entry_id, label, "added")
+        log_activity(db, lib, admin, "entry_created", kind=s.kind, entry_id=s.entry_id, version=1, data=data,
+                     detail=f"approved submission #{s.id} from {display_name(s.submitter)}")
     elif json.loads(cur.data) != data:
         cur.data, cur.version, cur.updated_by = raw, cur.version + 1, s.submitter_id
         _notify_entry(db, lib, admin, s.kind, s.entry_id, label, "updated")
         _notify_override_drift(db, lib, [(s.kind, s.entry_id, cur.version)], admin)
+        log_activity(db, lib, admin, "entry_updated", kind=s.kind, entry_id=s.entry_id, version=cur.version, data=data,
+                     detail=f"approved submission #{s.id} from {display_name(s.submitter)}")
     lib.updated_at = datetime.now(timezone.utc)
     return None
 

@@ -20,12 +20,13 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..notifications import notify, display_name, all_active_user_ids
 from ..models.database import (get_db, User, SharedLibrary, SharedLibraryMember,
-                               SharedLibraryEntry, UserLibrary)
+                               SharedLibraryEntry, UserLibrary, LibraryActivity)
 from ..models.schemas import (SharedLibraryCreate, SharedLibraryRename,
                               SharedLibraryCompanyFlag, LibraryMemberAdd,
                               LibraryMemberRole, LibraryMemberOut, LibraryEntryIn,
                               LibraryEntryOut, LibraryBulkIn, SharedLibraryOut,
-                              SharedLibraryCurrency, LibraryUpsertIn)
+                              SharedLibraryCurrency, LibraryUpsertIn, EntryRetired,
+                              LibraryOwnerChange, ActivityOut)
 
 router = APIRouter(prefix="/shared-libraries", tags=["shared-libraries"])
 
@@ -69,7 +70,7 @@ def _get_lib(db: Session, library_id: int, user: User, min_level: str = "view"):
 
 def _entry_out(e: SharedLibraryEntry) -> LibraryEntryOut:
     return LibraryEntryOut(kind=e.kind, id=e.entry_id, data=json.loads(e.data),
-                           version=e.version,
+                           version=e.version, retired=bool(e.retired),
                            updated_by=e.editor.email if e.editor else None,
                            updated_at=e.updated_at)
 
@@ -96,6 +97,15 @@ def _audience(db: Session, lib: SharedLibrary) -> set[int]:
 
 def _lib_label(lib: SharedLibrary) -> str:
     return f"{lib.name} (company standard)" if lib.is_company_default else lib.name
+
+
+def log_activity(db: Session, lib: SharedLibrary | None, user: User | None, action: str, *, kind=None,
+                 entry_id=None, version=None, data=None, detail: str = "") -> None:
+    """Append to the library activity log (same transaction as the change it records)."""
+    db.add(LibraryActivity(library_id=lib.id if lib is not None else None, library_name=lib.name if lib is not None else "",
+                           user_id=user.id if user is not None else None, by=display_name(user) if user is not None else "",
+                           action=action, kind=kind, entry_id=entry_id, version=version,
+                           data=json.dumps(data, separators=(",", ":")) if data is not None else None, detail=detail))
 
 
 def _entry_label(kind: str, entry_id: str, data: dict | None) -> str:
@@ -231,6 +241,8 @@ def create_library(data: SharedLibraryCreate, user: User = Depends(get_current_u
         raise HTTPException(status_code=422, detail="A library needs a name")
     lib = SharedLibrary(name=name[:255], owner_id=user.id)
     db.add(lib)
+    db.flush()
+    log_activity(db, lib, user, "library_created")
     db.commit()
     db.refresh(lib)
     return _lib_out(db, lib, "owner", True)
@@ -243,6 +255,7 @@ def rename_library(library_id: int, data: SharedLibraryRename,
     name = data.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="A library needs a name")
+    log_activity(db, lib, user, "library_renamed", detail=f"{lib.name} → {name[:255]}")
     lib.name = name[:255]
     db.commit()
     return _lib_out(db, lib, role, False)
@@ -266,6 +279,7 @@ def set_company_default(library_id: int, data: SharedLibraryCompanyFlag,
                if data.value else f"{who} cleared “{lib.name}” as the company standard library.")
         notify(db, all_active_user_ids(db), "libraries", "company_standard_changed", msg,
                actor=admin, link={"type": "library", "id": lib.id})
+        log_activity(db, lib, admin, "company_designated" if data.value else "company_cleared")
     db.commit()
     return _lib_out(db, lib, _role_for(db, lib, admin) or "view", False)
 
@@ -279,6 +293,7 @@ def set_currency(library_id: int, data: SharedLibraryCurrency,
     if not cur or len(cur) > 8:
         raise HTTPException(status_code=422, detail="Currency must be 1-8 characters")
     if cur != lib.currency:
+        log_activity(db, lib, user, "currency_changed", detail=f"{lib.currency or '—'} → {cur}")
         lib.currency = cur
         notify(db, _audience(db, lib), "libraries", "library_currency_changed",
                f"{display_name(user)} set the currency of {_lib_label(lib)} to {cur}.", actor=user,
@@ -293,6 +308,7 @@ def delete_library(library_id: int, user: User = Depends(get_current_user),
     lib, _ = _get_lib(db, library_id, user, "owner")
     notify(db, _audience(db, lib), "libraries", "library_deleted",
            f"{display_name(user)} deleted the library “{lib.name}”.", actor=user)
+    log_activity(db, lib, user, "library_deleted")
     db.delete(lib)
     db.commit()
     return {"ok": True}
@@ -327,12 +343,14 @@ def add_member(library_id: int, data: LibraryMemberAdd, user: User = Depends(get
             notify(db, [target.id], "libraries", "library_role_changed",
                    f"{display_name(user)} changed your access to the library “{lib.name}” to {access}.",
                    actor=user, link=link)
+            log_activity(db, lib, user, "member_role", detail=f"{target.email}: {data.role}")
         m.role = data.role
     else:
         db.add(SharedLibraryMember(library_id=lib.id, user_id=target.id, role=data.role))
         notify(db, [target.id], "libraries", "library_shared",
                f"{display_name(user)} added you to the library “{lib.name}” ({access}).",
                actor=user, link=link)
+        log_activity(db, lib, user, "member_added", detail=f"{target.email}: {data.role}")
     db.commit()
     db.refresh(lib)
     return _members_out(lib)
@@ -352,6 +370,7 @@ def update_member(library_id: int, user_id: int, data: LibraryMemberRole,
         notify(db, [user_id], "libraries", "library_role_changed",
                f"{display_name(user)} changed your access to the library “{lib.name}” to {access}.",
                actor=user, link={"type": "library", "id": lib.id})
+    log_activity(db, lib, user, "member_role", detail=f"user {user_id}: {data.role}")
     m.role = data.role
     db.commit()
     db.refresh(lib)
@@ -372,6 +391,7 @@ def remove_member(library_id: int, user_id: int, user: User = Depends(get_curren
         if user_id != user.id:
             notify(db, [user_id], "libraries", "library_unshared",
                    f"{display_name(user)} removed you from the library “{lib.name}”.", actor=user)
+        log_activity(db, lib, user, "member_removed" if user_id != user.id else "member_left", detail=f"user {user_id}")
         db.delete(m)
         db.commit()
     return {"ok": True}
@@ -395,6 +415,7 @@ def put_entry(library_id: int, kind: str, entry_id: str, body: LibraryEntryIn,
                                data=raw, version=1, updated_by=user.id)
         db.add(e)
         _notify_entry(db, lib, user, kind, entry_id, _entry_label(kind, entry_id, body.data), "added")
+        log_activity(db, lib, user, "entry_created", kind=kind, entry_id=entry_id, version=1, data=body.data)
     else:
         if body.base_version is None:
             raise _conflict(e, "An entry with this id already exists.")
@@ -404,6 +425,7 @@ def put_entry(library_id: int, kind: str, entry_id: str, body: LibraryEntryIn,
         e.data, e.version, e.updated_by = raw, e.version + 1, user.id
         _notify_entry(db, lib, user, kind, entry_id, _entry_label(kind, entry_id, body.data), "updated")
         _notify_override_drift(db, lib, [(kind, entry_id, e.version)], user)
+        log_activity(db, lib, user, "entry_updated", kind=kind, entry_id=entry_id, version=e.version, data=body.data)
     lib.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(e)
@@ -430,6 +452,7 @@ def delete_entry(library_id: int, kind: str, entry_id: str, base_version: int | 
         label = entry_id
     _notify_entry(db, lib, user, kind, entry_id, label, "removed")
     _notify_override_drift(db, lib, [(kind, entry_id, e.version)], user, removed=True)
+    log_activity(db, lib, user, "entry_deleted", kind=kind, entry_id=entry_id, version=e.version, data=json.loads(e.data))
     db.delete(e)
     db.commit()
     return {"ok": True}
@@ -455,6 +478,7 @@ def import_entries(library_id: int, body: LibraryBulkIn, user: User = Depends(ge
         db.add(SharedLibraryEntry(library_id=lib.id, kind=item.kind, entry_id=eid,
                                   data=raw, version=1, updated_by=user.id))
         created.append({"kind": item.kind, "id": eid})
+        log_activity(db, lib, user, "entry_created", kind=item.kind, entry_id=eid, version=1, data=item.data, detail="import")
     if created:
         n = len(created)
         notify(db, _audience(db, lib), "libraries", "library_entries_added",
@@ -489,6 +513,7 @@ def upsert_entries(library_id: int, body: LibraryUpsertIn, user: User = Depends(
             db.add(SharedLibraryEntry(library_id=lib.id, kind=item.kind, entry_id=eid, data=raw,
                                       version=1, updated_by=user.id))
             created.append({"kind": item.kind, "id": eid, "version": 1})
+            log_activity(db, lib, user, "entry_created", kind=item.kind, entry_id=eid, version=1, data=item.data, detail="publish")
         else:
             if item.base_version != e.version:
                 conflicts.append({"kind": item.kind, "id": eid,
@@ -500,6 +525,7 @@ def upsert_entries(library_id: int, body: LibraryUpsertIn, user: User = Depends(
                 continue                      # nothing changed: no new version
             e.data, e.version, e.updated_by = raw, e.version + 1, user.id
             updated.append({"kind": item.kind, "id": eid, "version": e.version})
+            log_activity(db, lib, user, "entry_updated", kind=item.kind, entry_id=eid, version=e.version, data=item.data, detail="publish")
     n = len(created) + len(updated)
     _notify_override_drift(db, lib, [(u["kind"], u["id"], u["version"]) for u in updated], user)
     if n:
@@ -510,3 +536,94 @@ def upsert_entries(library_id: int, body: LibraryUpsertIn, user: User = Depends(
                link={"type": "library", "id": lib.id})
     db.commit()
     return {"created": created, "updated": updated, "conflicts": conflicts}
+
+
+# ── retiring, ownership, activity ──
+
+@router.put("/{library_id}/entries/{kind}/{entry_id}/retired", response_model=LibraryEntryOut)
+def set_entry_retired(library_id: int, kind: str, entry_id: str, body: EntryRetired,
+                      user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Retire (hide from pickers; projects that use it are unaffected) or restore an entry."""
+    lib, _ = _get_lib(db, library_id, user, "edit")
+    e = _company_or_lib_entry(db, lib, kind, entry_id)
+    if bool(e.retired) != body.value:
+        e.retired = body.value
+        label = _entry_label(kind, entry_id, json.loads(e.data))
+        where = _lib_label(lib)
+        notify(db, _audience(db, lib), "libraries", "library_entry_retired",
+               f"{display_name(user)} retired “{label}” in {where} — it no longer appears in pickers; projects using it are unaffected."
+               if body.value else f"{display_name(user)} restored “{label}” in {where}.",
+               actor=user, link={"type": "library", "id": lib.id, "kind": kind, "entryId": entry_id})
+        log_activity(db, lib, user, "entry_retired" if body.value else "entry_restored", kind=kind, entry_id=entry_id, version=e.version)
+        lib.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(e)
+    return _entry_out(e)
+
+
+def _company_or_lib_entry(db: Session, lib: SharedLibrary, kind: str, entry_id: str) -> SharedLibraryEntry:
+    e = (db.query(SharedLibraryEntry)
+         .filter(SharedLibraryEntry.library_id == lib.id, SharedLibraryEntry.kind == kind,
+                 SharedLibraryEntry.entry_id == entry_id).first())
+    if e is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return e
+
+
+@router.put("/{library_id}/owner", response_model=SharedLibraryOut)
+def change_owner(library_id: int, body: LibraryOwnerChange, user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """Hand a library to another active user. The owner can; for the company standard so can any admin."""
+    lib = db.query(SharedLibrary).filter(SharedLibrary.id == library_id).first()
+    if lib is None or _role_for(db, lib, user) is None:
+        raise HTTPException(status_code=404, detail="Library not found")
+    if lib.owner_id != user.id and not (lib.is_company_default and user.is_admin):
+        raise HTTPException(status_code=403, detail="Only the owner (or an admin, for the company standard) can hand it over")
+    target = db.query(User).filter(User.id == body.user_id, User.is_active.is_(True)).first()
+    if target is None:
+        raise HTTPException(status_code=400, detail="Choose an active user")
+    if target.id != lib.owner_id:
+        # The new owner no longer needs a membership.
+        db.query(SharedLibraryMember).filter(SharedLibraryMember.library_id == lib.id,
+                                             SharedLibraryMember.user_id == target.id).delete(synchronize_session=False)
+        log_activity(db, lib, user, "library_owner_changed", detail=f"user {lib.owner_id} → {target.email}")
+        lib.owner_id = target.id
+        notify(db, [target.id], "libraries", "library_owner_changed",
+               f"{display_name(user)} made you the owner of the library “{lib.name}”.", actor=user,
+               link={"type": "library", "id": lib.id})
+    db.commit()
+    db.refresh(lib)
+    return _lib_out(db, lib, _role_for(db, lib, user) or "view", False)
+
+
+@router.get("/activity", response_model=list[ActivityOut])
+def activity(library_id: int | None = None, kind: str | None = None, entry_id: str | None = None,
+             action: str | None = None, limit: int = 200,
+             user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The activity log: admins see everything; others see libraries they can read."""
+    q = db.query(LibraryActivity)
+    if library_id is not None:
+        q = q.filter(LibraryActivity.library_id == library_id)
+    if kind:
+        q = q.filter(LibraryActivity.kind == kind)
+    if entry_id:
+        q = q.filter(LibraryActivity.entry_id == entry_id)
+    if action:
+        q = q.filter(LibraryActivity.action == action)
+    rows = q.order_by(LibraryActivity.created_at.desc(), LibraryActivity.id.desc()).limit(min(max(limit, 1), 1000)).all()
+    if not user.is_admin:
+        readable = {}
+        out = []
+        for r in rows:
+            if r.library_id is None:
+                continue
+            if r.library_id not in readable:
+                lib = db.query(SharedLibrary).filter(SharedLibrary.id == r.library_id).first()
+                readable[r.library_id] = bool(lib and _role_for(db, lib, user))
+            if readable[r.library_id]:
+                out.append(r)
+        rows = out
+    return [ActivityOut(id=r.id, library_id=r.library_id, library_name=r.library_name, by=r.by, action=r.action,
+                        kind=r.kind, entry_id=r.entry_id, version=r.version,
+                        data=json.loads(r.data) if r.data else None, detail=r.detail, created_at=r.created_at)
+            for r in rows]

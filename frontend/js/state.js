@@ -1906,6 +1906,8 @@ const AppState = {
     // One cable library: rewrite retired names. Custom/edited library entries the project
     // uses are compared with YOUR libraries and offered, never applied silently.
     if (typeof CableLib !== 'undefined') CableLib.onProjectLoaded();
+    // A loaded project may use RETIRED library entries: keep them resolvable in the pickers' lists.
+    if (typeof StandardData !== 'undefined' && StandardData._hasRetired && StandardData._hasRetired()) StandardData._syncAllQuiet();
     if (typeof StandardData !== 'undefined') {
       const items = data.libraryItems || (Array.isArray(data.customCables) ? { cables: data.customCables } : null);
       if (items) setTimeout(() => StandardData.reviewProjectLibraries(items, data.libraryOrigins), 600);

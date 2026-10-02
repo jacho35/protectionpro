@@ -37,9 +37,8 @@ const Submissions = {
   async refreshBadge() {
     try { this._counts = await API.getSubmissionCounts(); } catch (_) { return; }
     const n = (this._counts.waiting || 0) + (this._counts.changes_requested || 0);
-    const b = document.getElementById('submissions-badge');
-    if (b) { b.hidden = !n; b.textContent = String(n); }
     if (this._open) this._renderRail();
+    if (typeof Libraries !== 'undefined') Libraries.refreshBadge();
   },
 
   // ── submitting ──
@@ -331,5 +330,5 @@ const Submissions = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('btn-submissions')?.addEventListener('click', () => { window.closeAllToolbarMenus?.(); Submissions.open(); });
+  /* opened from the Libraries manager and from notifications */
 });

@@ -508,6 +508,22 @@ const API = {
   async saveUserLibraries(data) { return this.request('/user-libraries', 'PUT', { data }); },
   async resetUserLibraries() { return this.request('/user-libraries', 'DELETE'); },
   // Shared (team) libraries the signed-in user can read (owned, member, company standard), with entries
+  // ── Library activity, retiring, ownership, notification email ──
+  async getLibraryActivity({ libraryId, kind, entryId, action, limit } = {}) {
+    const q = new URLSearchParams();
+    if (libraryId != null) q.set('library_id', libraryId);
+    if (kind) q.set('kind', kind);
+    if (entryId) q.set('entry_id', entryId);
+    if (action) q.set('action', action);
+    if (limit) q.set('limit', limit);
+    const qs = q.toString();
+    return this.request('/shared-libraries/activity' + (qs ? '?' + qs : ''));
+  },
+  async setEntryRetired(id, kind, entryId, value) { return this.request(`/shared-libraries/${id}/entries/${kind}/${encodeURIComponent(entryId)}/retired`, 'PUT', { value }); },
+  async changeLibraryOwner(id, userId) { return this.request(`/shared-libraries/${id}/owner`, 'PUT', { user_id: userId }); },
+  async getNotificationPrefs() { return this.request('/notifications/preferences'); },
+  async setNotificationPrefs(p) { return this.request('/notifications/preferences', 'PUT', p); },
+
   // ── Company library submissions ──
   async submitToCompany(entries, note) { return this.request('/library-submissions', 'POST', { entries, note: note || '' }); },
   async listSubmissions({ status, mine } = {}) {

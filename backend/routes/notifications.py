@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..models.database import get_db, User, Notification
-from ..models.schemas import NotificationOut, NotificationList, NotificationsRead, UnreadCounts
-from ..notifications import CATEGORIES, display_name, render_message
+from ..models.database import NotificationPref
+from ..models.schemas import (NotificationOut, NotificationList, NotificationsRead, UnreadCounts,
+                              NotificationPrefs, NotificationPrefsOut)
+from ..notifications import CATEGORIES, display_name, render_message, get_prefs
+from .. import mailer
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -78,6 +81,24 @@ def mark_read(body: NotificationsRead, user: User = Depends(get_current_user),
     q.update({Notification.read_at: datetime.now(timezone.utc)}, synchronize_session=False)
     db.commit()
     return _counts(db, user)
+
+
+@router.get("/preferences", response_model=NotificationPrefsOut)
+def get_preferences(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    enabled, cats = get_prefs(db, user.id)
+    return NotificationPrefsOut(email_enabled=enabled, categories=cats, email_available=mailer.get_config(db) is not None)
+
+
+@router.put("/preferences", response_model=NotificationPrefsOut)
+def set_preferences(body: NotificationPrefs, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    cats = [c for c in body.categories if c in CATEGORIES]
+    row = db.query(NotificationPref).filter(NotificationPref.user_id == user.id).first()
+    if row is None:
+        row = NotificationPref(user_id=user.id)
+        db.add(row)
+    row.email_enabled, row.categories = body.email_enabled, json.dumps(cats)
+    db.commit()
+    return NotificationPrefsOut(email_enabled=row.email_enabled, categories=cats, email_available=mailer.get_config(db) is not None)
 
 
 @router.delete("/{notification_id}")

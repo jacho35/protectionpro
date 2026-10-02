@@ -72,8 +72,6 @@ section and adding the `## Completed` entry.
 44. **Real-time collaboration** — multiple users editing one SLD. *(Multi-User & Collaboration)*
 45. **Audit trail** — change tracking with user attribution. *(Multi-User & Collaboration)*
 46. **AI / natural-language search** — query the model and run analyses from plain-language prompts. *(Platform)*
-- **Company master libraries — phase 6: Libraries screen and admin tools** — full-screen manager under Project (replaces the Settings library tabs), retire flag, history table, designation log. *(Multi-User & Collaboration)*
-- **Notifications — email delivery, per-user preferences, approvals tab** — optional email for notifications through the existing mailer; preferences; per-user preferences. *(Multi-User & Collaboration)*
 
 ### Street lighting — follow-ups
 
@@ -378,6 +376,13 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Company master libraries — phase 6: Libraries manager and admin tools; notification email (2026-10-02)
+- **Project → Libraries…** (badge: out-of-date edits + submissions waiting) opens a full-screen manager: the five component libraries with Effective / Company only / My overrides views, search, source and status per entry and a detail pane (fields, drift warning, **history** of the company/shared entry with what changed), *Rates & prices* (company list, drift, open / refresh / publish / submit), *Out of date* (Review all), *Team libraries* (your **layer order** with ↑ / ↓, **clash report**, hand the company standard to another owner), *Submissions* (opens the queue), *Activity log* and *Import / export* (JSON of your overrides / the company library). Settings' library tabs keep their per-kind editors and gain a **Libraries manager…** button; notifications' library links open the manager.
+- **Retire**: admins (or editors) retire a company entry — hidden from pickers but still resolvable for projects that use it (no new version; everyone is notified); *Restore* undoes it. **History**: `library_activity` records entry created / updated / deleted / retired / restored (with the data written), approvals, publishes, imports, company designated / cleared, currency, members, rename, delete and ownership changes (`GET /api/shared-libraries/activity`). **Ownership**: `PUT /api/shared-libraries/{id}/owner` (owner, or any admin for the company standard). **Layer order**: per user, `layerOrder` in your overrides document.
+- **Email for notifications**: opt-in per person (notifications panel → Email preferences…: on/off + categories; only offered when the server has email set up); one email per commit listing the new notifications; shared-project edits are never emailed; a mail failure never affects the app.
+- Rate library CSV / Excel export gains **Price date** and **Source** columns (ignored on import).
+- Tests: `test_library_admin.py`. This completes the company master libraries plan (phases 1–6).
 
 ### Company master libraries — phase 5: submissions and approvals (2026-10-02)
 - Users propose entries for the company library — cables, breakers, fuses, transformers, load classes (Settings → each library tab → **Submit to company…**, for anyone who cannot edit the company library directly) and rate prices (rate library → **Submit prices to company…**) — each as a snapshot plus a note. Submitting the same entry again replaces the open submission; an entry identical to the company's is not a submission.

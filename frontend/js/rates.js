@@ -1122,7 +1122,7 @@ const Rates = {
   },
 
   // ── Export ─────────────────────────────────────────────────────────
-  HEAD: ['Key', 'Category', 'Description', 'Unit', 'Material rate', 'Labour rate', 'Waste %', 'Supplier code', 'Quantity from', 'In this project'],
+  HEAD: ['Key', 'Category', 'Description', 'Unit', 'Material rate', 'Labour rate', 'Waste %', 'Supplier code', 'Quantity from', 'In this project', 'Price date', 'Source'],
   _exportRows() {
     const rows = (this._rows || this.rows(this.usedLines())).filter(r => !r.orphan);
     const order = this.CATS.map(c => c.id);
@@ -1130,7 +1130,7 @@ const Rates = {
     const cat = id => (this.CATS.find(c => c.id === id) || {}).label || id;
     return rows.map(r => {
       const v = this.get(r.key, r.cat);
-      return [r.key, cat(r.cat), r.desc, r.unit, v.rate == null ? '' : v.rate, v.labour == null ? '' : v.labour, v.waste, v.supplier, this.ruleText(this.getRule(r.key)), r.used ? 'Yes' : ''];
+      return [r.key, cat(r.cat), r.desc, r.unit, v.rate == null ? '' : v.rate, v.labour == null ? '' : v.labour, v.waste, v.supplier, this.ruleText(this.getRule(r.key)), r.used ? 'Yes' : '', v.priceDate || '', v.src === 'company' ? `Company v${v.cv}` : v.src === 'edited' ? `Edited (company v${v.cv})` : ''];
     });
   },
   _fname(ext) {
@@ -1150,8 +1150,8 @@ const Rates = {
     } else {
       if (typeof XLSX === 'undefined') { UI.toast('The Excel library did not load. Export CSV instead.', 'error'); return; }
       const ws = XLSX.utils.aoa_to_sheet([this.HEAD, ...rows]);
-      ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 44 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 24 }, { wch: 14 }];
-      ws['!autofilter'] = { ref: `A1:J${rows.length + 1}` };
+      ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 44 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 22 }];
+      ws['!autofilter'] = { ref: `A1:L${rows.length + 1}` };
       const about = XLSX.utils.aoa_to_sheet([
         ['ProtectionPro rate library'],
         [`Project: ${AppState.projectName || ''}`],
@@ -1161,6 +1161,7 @@ const Rates = {
         ['Rows are matched on Key. Do not change the Key column.'],
         ['Description and Unit are for reading only; they are not imported for existing keys.'],
         ['A new row with a new Key and a Description is added as a new item.'],
+        ['Price date and Source (where the price came from) are for reading only; they are not imported.'],
         ['Material and labour are per unit. Waste % adds to material only; labour is paid on the measured quantity.'],
         ['An item with both rates blank has "no rate": it is left out of the BOQ total and flagged.'],
         ['Quantity from: "measured" (counted from the drawings and schedules), "fixed 1" (a lump sum),'],

@@ -75,6 +75,8 @@ const StandardData = {
   // and edits made by teammates in shared libraries reach you without you re-copying anything.
   _sharedLayers: [],        // [{ id, name, role, is_company_default, entries: [{kind, id, data, version}] }]
   _base: {},                // key → entries below your overrides (defaults + company + shared)
+  _layerOrder: [],          // YOUR order of shared library ids (later wins), saved in your overrides document
+  _clashes: [],             // entries two non-shipped layers both provide: { key, id, label, winner, loser }
   _baseSrc: {},             // key → id → { origin: 'shipped'|'company'|'shared', name, libraryId, version } (version: shared/company only)
   _ovBase: {},              // key → id → { library, version }: the company/shared entry version YOUR override of it was made against
 
@@ -82,9 +84,12 @@ const StandardData = {
 
   _buildBase() {
     this._base = {}; this._baseSrc = {};
-    // company standard first, then the rest by name
+    // company standard first, then your shared libraries in YOUR order (Team libraries: move up / down;
+    // later wins), those you have not placed after them by name
+    const rank = id => { const i = this._layerOrder.indexOf(id); return i < 0 ? Infinity : i; };
     const layers = [...this._sharedLayers].sort((a, b) =>
-      (b.is_company_default ? 1 : 0) - (a.is_company_default ? 1 : 0) || String(a.name).localeCompare(String(b.name)));
+      (b.is_company_default ? 1 : 0) - (a.is_company_default ? 1 : 0) || rank(a.id) - rank(b.id) || String(a.name).localeCompare(String(b.name)));
+    this._clashes = [];
     for (const key of this._LIBKEYS) {
       const list = this._defaults[key].map(e => this._clone(e));
       const src = {};
@@ -94,8 +99,11 @@ const StandardData = {
           if (en.kind !== key || !en.data || !en.data.id) continue;
           const at = list.findIndex(x => x.id === en.data.id);
           const e = this._clone(en.data);
+          if (en.retired) e._retired = true;
+          const prior = src[e.id];
+          if (prior && prior.origin !== 'shipped') this._clashes.push({ key, id: e.id, label: this._label(e), winner: L.name, loser: prior.name, winnerCompany: !!L.is_company_default });
           if (at >= 0) list[at] = e; else list.push(e);
-          src[e.id] = { origin: L.is_company_default ? 'company' : 'shared', name: L.name, libraryId: L.id, version: en.version };
+          src[e.id] = { origin: L.is_company_default ? 'company' : 'shared', name: L.name, libraryId: L.id, version: en.version, retired: !!en.retired };
         }
       }
       this._base[key] = list; this._baseSrc[key] = src;
@@ -235,6 +243,7 @@ const StandardData = {
   _payload() {
     const doc = { version: this._DATA_VERSION, format: 'overrides' };
     for (const key of this._LIBKEYS) doc[key] = this._ownOverrides(key);
+    if (this._layerOrder.length) doc.layerOrder = this._layerOrder;
     return doc;
   },
 
@@ -255,6 +264,7 @@ const StandardData = {
       return false;
     }
     const overrides = doc.format === 'overrides';
+    this._layerOrder = Array.isArray(doc.layerOrder) ? doc.layerOrder.filter(Number.isInteger) : [];
     for (const key of this._LIBKEYS) {
       if (overrides) this._applyOverrides(key, doc[key]);
       else if (Array.isArray(doc[key])) this._applyOverrides(key, this._overridesFromFull(key, doc[key]));
@@ -302,6 +312,7 @@ const StandardData = {
       // Both must load: saving overrides against an incomplete base would lose deletions.
       const [res, shared] = await Promise.all([API.getUserLibraries(), API.getSharedLibraries()]);
       this._sharedLayers = Array.isArray(shared) ? shared : [];
+      this._layerOrder = res && res.data && Array.isArray(res.data.layerOrder) ? res.data.layerOrder.filter(Number.isInteger) : [];
       this._buildBase();
       let resave = false, migrate = false;
       if (res && res.data) {
@@ -547,9 +558,24 @@ const StandardData = {
     return under.name ? { kind: 'override', of: under.origin, library: { id: under.libraryId, name: under.name }, baseVersion: rec ? rec.version : undefined, version: under.version } : { kind: 'override', of: 'shipped' };
   },
 
-  _collectUsed() {
-    const none = { items: undefined, origins: undefined };
-    if (!this._defaults || typeof AppState === 'undefined') return none;
+  // What the pickers offer: the library without RETIRED company/shared entries — except those the
+  // project in memory still uses, so existing equipment keeps resolving.
+  _hasRetired() { return this._LIBKEYS.some(k => (this[k] || []).some(e => e._retired)); },
+
+  // Your order of the shared libraries (company standard always first); later wins on a clash.
+  async setLayerOrder(ids) {
+    this._layerOrder = ids.filter(Number.isInteger);
+    await this.reloadShared();
+  },
+
+  _pickable(key) {
+    if (!this[key].some(e => e._retired)) return this[key];
+    const used = this._usedIds()[key];
+    return this[key].filter(e => !e._retired || used.has(e.id));
+  },
+
+  // Library entry ids the project in memory uses, per library.
+  _usedIds() {
     const ids = { cables: new Set(), transformers: new Set(), cbs: new Set(), fuses: new Set(), loadClasses: new Set() };
     const typeKey = { transformer: 'transformers', cb: 'cbs', fuse: 'fuses' };
     for (const c of AppState.components.values()) {
@@ -566,6 +592,13 @@ const StandardData = {
       }
       for (const id of [...ids.loadClasses]) ids.loadClasses.add(id + '_3ph');   // 3-phase twin is read alongside
     }
+    return ids;
+  },
+
+  _collectUsed() {
+    const none = { items: undefined, origins: undefined };
+    if (!this._defaults || typeof AppState === 'undefined') return none;
+    const ids = this._usedIds();
     const out = {}, origins = {};
     for (const key of this._LIBKEYS) {
       const shipped = new Map(this._defaults[key].map(e => [e.id, e]));
@@ -613,6 +646,7 @@ const StandardData = {
   async reviewProjectLibraries(items, origins) {
     if (!this._defaults || !items || typeof items !== 'object') return;
     await this.ready;                      // compare with the user's libraries, not the defaults they replace
+    if (this._hasRetired()) this._syncAllQuiet();   // retired entries this project uses must resolve
     const rows = [];
     for (const key of this._LIBKEYS) {
       for (const e of Array.isArray(items[key]) ? items[key] : []) {
@@ -863,7 +897,8 @@ const StandardData = {
       if (!wrap) continue;
       const bar = document.createElement('div');
       bar.className = 'lib-searchbar';
-      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><button type="button" class="btn-small lib-submit" data-lib-key="${cfg.arr}" hidden title="Propose your own entries for the company library">Submit to company…</button><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
+      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><button type="button" class="btn-small lib-open-mgr" title="Company standard, where entries come from, out-of-date edits, submissions and history">Libraries manager…</button><button type="button" class="btn-small lib-submit" data-lib-key="${cfg.arr}" hidden title="Propose your own entries for the company library">Submit to company…</button><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
+      bar.querySelector('.lib-open-mgr').addEventListener('click', () => { document.getElementById('settings-modal').style.display = 'none'; Libraries.open({ view: cfg.arr }); });
       bar.querySelector('.lib-submit').addEventListener('click', () => Submissions.pickAndSubmit(cfg.arr));
       bar.querySelector('.lib-drift').addEventListener('click', (e) => { if (e.target.closest('[data-drift-review]')) this.reviewDrift(); });
       bar.querySelector('.lib-target').addEventListener('click', (e) => { if (e.target.closest('[data-stop-edit]')) this.setEditTarget(null); });
@@ -1251,7 +1286,7 @@ const StandardData = {
   syncCableLibrary() {
     // Update the global STANDARD_CABLES array in-place
     STANDARD_CABLES.length = 0;
-    for (const c of this.cables) STANDARD_CABLES.push(typeof CableLib !== 'undefined' ? CableLib.normalize(c) : c);
+    for (const c of this._pickable('cables')) STANDARD_CABLES.push(typeof CableLib !== 'undefined' ? CableLib.normalize(c) : c);
     this._persist();
   },
 
@@ -1321,7 +1356,7 @@ const StandardData = {
   syncLoadClassLibrary() {
     // Update the global STANDARD_LOAD_CLASSES array in-place
     STANDARD_LOAD_CLASSES.length = 0;
-    for (const c of this.loadClasses) STANDARD_LOAD_CLASSES.push(c);
+    for (const c of this._pickable('loadClasses')) STANDARD_LOAD_CLASSES.push(c);
     this._persist();
   },
 
@@ -1390,7 +1425,7 @@ const StandardData = {
 
   syncTransformerLibrary() {
     STANDARD_TRANSFORMERS.length = 0;
-    for (const t of this.transformers) STANDARD_TRANSFORMERS.push(t);
+    for (const t of this._pickable('transformers')) STANDARD_TRANSFORMERS.push(t);
     this._persist();
   },
 
@@ -1499,7 +1534,7 @@ const StandardData = {
 
   syncCBLibrary() {
     STANDARD_CBS.length = 0;
-    for (const c of this.cbs) STANDARD_CBS.push(c);
+    for (const c of this._pickable('cbs')) STANDARD_CBS.push(c);
     this._persist();
   },
 
@@ -1565,7 +1600,7 @@ const StandardData = {
 
   syncFuseLibrary() {
     STANDARD_FUSES.length = 0;
-    for (const f of this.fuses) STANDARD_FUSES.push(f);
+    for (const f of this._pickable('fuses')) STANDARD_FUSES.push(f);
     this._persist();
   },
 
